@@ -72,7 +72,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 1.6.1 | Held-out benchmark task set | backlog | — | Lock before corpus gen starts |
+| 1.6.1 | Held-out benchmark task set | done | feature/benchmark-held-out-tasks | Lock before corpus gen starts |
 | 1.6.2 | Token efficiency measurement | backlog | — | Depends on 1.5 complete |
 | 1.6.3 | Pass@1 measurement | backlog | — | Depends on 1.6.2 |
 | 1.6.4 | Gate 1 decision document | backlog | — | Depends on 1.6.3 |
@@ -84,6 +84,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | ID | Story | Completed | Branch |
 |----|-------|-----------|--------|
 | 1.1.1 | Character set finalisation | 2026-03-27 | feature/spec-character-set (toke-spec) |
+| 1.6.1 | Held-out benchmark task set | 2026-03-27 | feature/benchmark-held-out-tasks (toke-benchmark) |
 
 ---
 
