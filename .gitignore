@@ -1,0 +1,25 @@
+# Build outputs
+tkc
+*.o
+*.a
+*.ll
+*.bc
+*.tki
+
+# LLVM build artifacts
+build/
+cmake-build-*/
+
+# Editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Test outputs
+test/output/
+test/*.out
+
+# macOS
+.DS_Store
+**/.DS_Store

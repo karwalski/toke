@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-conform:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            sudo apt-get install -y llvm-dev
+          else
+            brew install llvm
+          fi
+
+      - name: Build tkc
+        run: make
+
+      - name: Lint
+        run: make lint
+
+      - name: Conformance suite
+        run: make conform
+
+      - name: Verify conformance 100%
+        run: make conform-check
