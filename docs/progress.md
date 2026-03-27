@@ -20,7 +20,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 1.1.1 | Character set finalisation | planned | — | Start here |
+| 1.1.1 | Character set finalisation | done | feature/spec-character-set | [x] 80 chars enumerated with class [x] Every symbol has named primary/secondary role [x] String delimiter assigned to `"` [x] Excluded chars listed with rationale [x] Frozen at M0 2026-03-27 [x] No conflicting dual roles at same position |
 | 1.1.2 | Keyword table lock | backlog | — | Depends on 1.1.1 |
 | 1.1.3 | Symbol disambiguation rules | backlog | — | Depends on 1.1.1 |
 | 1.1.4 | Formal EBNF grammar | backlog | — | Depends on 1.1.1–1.1.3 |
@@ -81,7 +81,9 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 ## Completed Stories
 
-None yet.
+| ID | Story | Completed | Branch |
+|----|-------|-----------|--------|
+| 1.1.1 | Character set finalisation | 2026-03-27 | feature/spec-character-set (toke-spec) |
 
 ---
 
