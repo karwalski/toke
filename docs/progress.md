@@ -21,7 +21,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
 | 1.1.1 | Character set finalisation | done | feature/spec-character-set | [x] 80 chars enumerated with class [x] Every symbol has named primary/secondary role [x] String delimiter assigned to `"` [x] Excluded chars listed with rationale [x] Frozen at M0 2026-03-27 [x] No conflicting dual roles at same position |
-| 1.1.2 | Keyword table lock | backlog | — | Depends on 1.1.1 |
+| 1.1.2 | Keyword table lock | done | feature/spec-keyword-table | [x] 12 keywords listed with exact lexical form [x] Each keyword's production rule identified [x] true/false documented as predefined identifiers [x] Prefix-conflict analysis: lp/let share `l`, resolved by second char [x] Underscore excluded, identifier rule updated [x] Frozen at M0 2026-03-27 |
 | 1.1.3 | Symbol disambiguation rules | backlog | — | Depends on 1.1.1 |
 | 1.1.4 | Formal EBNF grammar | backlog | — | Depends on 1.1.1–1.1.3 |
 | 1.1.5 | Phase 2 transformation rules | backlog | — | Depends on 1.1.4 |
@@ -84,6 +84,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | ID | Story | Completed | Branch |
 |----|-------|-----------|--------|
 | 1.1.1 | Character set finalisation | 2026-03-27 | feature/spec-character-set (toke-spec) |
+| 1.1.2 | Keyword table lock | 2026-03-27 | feature/spec-keyword-table (toke-spec) |
 | 1.6.1 | Held-out benchmark task set | 2026-03-27 | feature/benchmark-held-out-tasks (toke-benchmark) |
 
 ---
