@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  compile-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tkc is available
+        run: tkc --version
+
+      - name: Compile-check all stdlib modules
+        run: |
+          for f in std/*.tk; do
+            tkc --check "$f" || exit 1
+          done
