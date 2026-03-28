@@ -222,7 +222,7 @@ static const char *arena_intern(Arena *arena, const char *s, int len) {
 /* Insert a Decl into the current scope.
  * Returns -1 and emits E3012 if name already declared in this scope. */
 static int scope_insert(Scope *s, Arena *arena, const char *src,
-                        int tok_start, int tok_len, int name_start, int name_len,
+                        int tok_start, int tok_len __attribute__((unused)), int name_start, int name_len,
                         DeclKind kind, const Node *def_node,
                         int node_line, int node_col) {
     if (scope_lookup_local(s, src + name_start, name_len)) {
