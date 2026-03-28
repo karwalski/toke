@@ -54,8 +54,7 @@ test-stdlib-env:
 
 test-stdlib-crypto:
 	$(CC) $(CFLAGS) -o test/stdlib/test_crypto \
-	    test/stdlib/test_crypto.c src/stdlib/crypto.c src/stdlib/str.c \
-	    -framework CoreFoundation -framework Security
+	    test/stdlib/test_crypto.c src/stdlib/crypto.c src/stdlib/str.c
 	./test/stdlib/test_crypto
 
 test-stdlib-time:

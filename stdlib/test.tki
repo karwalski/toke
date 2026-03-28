@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "module": "std.test",
+  "exports": [
+    {"kind": "func", "name": "test.assert",    "params": ["bool", "str"],        "return": "bool"},
+    {"kind": "func", "name": "test.assert_eq", "params": ["str", "str", "str"],  "return": "bool"},
+    {"kind": "func", "name": "test.assert_ne", "params": ["str", "str", "str"],  "return": "bool"}
+  ]
+}
