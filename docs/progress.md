@@ -135,21 +135,21 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 3.7.1 | SBOM generation for compiler releases | done | feature/supply-chain-3.7 (tkc) | SPDX JSON via syft; published as release artifact |
 | 3.7.2 | Release binary signing | done | feature/supply-chain-3.7 (tkc) | cosign keyless; tamper test in CI; docs/security/release-signing.md |
 | 3.7.3 | Reproducible builds for the compiler | backlog | — | Depends on 3.1 complete |
-| 3.7.4 | Model release safety evaluation | in_progress | feature/supply-chain-3.7 (toke-models) | — |
+| 3.7.4 | Model release safety evaluation | done | feature/supply-chain-3.7 (toke-models) | [x] LlamaGuard eval process doc [x] safety_eval.py (dry-run verified) [x] 50 adversarial templates (5 categories) [x] docs/security/model-safety-evals.md |
 
 ### Epic 3.8 — Standard Library Production Hardening
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 3.8.1 | std.log structured logging | in_progress | feature/stdlib-3.8-log (tkc + toke-stdlib) | — |
-| 3.8.2 | stdlib performance benchmarks | in_progress | feature/stdlib-3.8-bench (tkc) | — |
-| 3.8.3 | stdlib conformance test coverage | in_progress | feature/stdlib-3.8-bench (tkc) | — |
+| 3.8.1 | std.log structured logging | done | feature/stdlib-3.8-log (tkc + toke-stdlib) | [x] NDJSON stderr [x] TK_LOG_LEVEL [x] log.info/warn/error [x] 12/12 tests |
+| 3.8.2 | stdlib performance benchmarks | done | feature/stdlib-3.8-bench (tkc) | [x] 9 modules benchmarked [x] baseline.txt (M-series) [x] make bench [x] bench.yml CI |
+| 3.8.3 | stdlib conformance test coverage | done | feature/stdlib-3.8-bench (tkc) | [x] 100% function coverage [x] 30 gap tests [x] docs/stdlib-coverage.md |
 
 ### Epic 4.6 — Security Audit and Hosted Service Readiness
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 4.6.1 | Third-party security audit of the compiler | in_progress | feature/audit-4.6 (tkc) | — |
+| 4.6.1 | Third-party security audit of the compiler | done | feature/audit-4.6 (tkc) | [x] audit-scope.md (435 lines) [x] 4 scope areas [x] codebase map [x] TD items cross-referenced [x] accepted-risk register |
 | 4.6.2 | SOC 2 readiness assessment (conditional on hosted service) | backlog | — | Conditional: only if hosted service launches |
 
 ---
@@ -182,6 +182,13 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 2.7.4 | std.time | 2026-03-28 | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) |
 | 1.1.7 | Meta-repo README and project landing page | 2026-03-28 | feature/meta-readme (toke) |
 | 2.7.5 | std.test | 2026-03-28 | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) |
+| 3.7.1 | SBOM generation for compiler releases | 2026-03-28 | feature/supply-chain-3.7 (tkc) |
+| 3.7.2 | Release binary signing | 2026-03-28 | feature/supply-chain-3.7 (tkc) |
+| 3.7.4 | Model release safety evaluation | 2026-03-28 | feature/supply-chain-3.7 (toke-model) |
+| 3.8.1 | std.log structured logging | 2026-03-28 | feature/stdlib-3.8-log (tkc + toke-stdlib) |
+| 3.8.2 | stdlib performance benchmarks | 2026-03-28 | feature/stdlib-3.8-bench (tkc) |
+| 3.8.3 | stdlib conformance test coverage | 2026-03-28 | feature/stdlib-3.8-bench (tkc) |
+| 4.6.1 | Third-party security audit readiness | 2026-03-28 | feature/audit-4.6 (tkc) |
 
 ---
 
