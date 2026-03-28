@@ -101,6 +101,22 @@ Acceptance criteria:
 
 ---
 
+**Story 1.1.7 — Meta-repo README and project landing page**
+
+As a new contributor or evaluator, I want a single public repository to land on that explains the toke project, links to all sub-repositories, and shows the current phase and gate status, so that I can orient myself without reading internal project docs.
+
+Acceptance criteria:
+- README.md is committed to the root of github.com/karwalski/toke
+- Plain-language explanation of what toke is and why it exists (the thesis)
+- Elevator pitch: one or two sentences suitable for a conference abstract
+- Links to all 7 sub-repositories, each with a one-sentence description of its role
+- Current phase and milestone status visible at a glance
+- Getting-started section: minimum steps to build the compiler and run the conformance suite
+- Licence and contributing section links to CONTRIBUTING.md and SECURITY.md in tkc
+- No placeholder text; all content is accurate at the time of commit
+
+---
+
 ### EPIC 1.2 — Reference Compiler Frontend
 
 *Build the minimal compiler frontend in C: lexer, parser, name resolver, and type checker. Zero external dependencies. Structured error output from the first line of error-emitting code.*
