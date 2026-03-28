@@ -1,0 +1,37 @@
+=== toke stdlib performance benchmarks ===
+Format: BENCH <function> <N> <total_ms> <avg_us/iter>
+Regression threshold: >20% vs baseline commits to benchmark/results/
+
+BENCH c_native.strcpy[baseline]                 50000 iters      0.00 ms total     0.000 us/iter
+
+BENCH str.concat                                50000 iters      1.36 ms total     0.027 us/iter
+BENCH str.split                                 10000 iters      1.88 ms total     0.188 us/iter
+BENCH str.contains                              50000 iters      0.53 ms total     0.011 us/iter
+BENCH str.upper                                 50000 iters      1.48 ms total     0.030 us/iter
+BENCH str.len                                   50000 iters      1.09 ms total     0.022 us/iter
+
+BENCH json.dec                                   5000 iters      0.14 ms total     0.028 us/iter
+BENCH json.str                                  20000 iters      0.55 ms total     0.027 us/iter
+BENCH json.u64                                  20000 iters      0.66 ms total     0.033 us/iter
+BENCH json.enc                                  20000 iters      0.46 ms total     0.023 us/iter
+
+BENCH file.write+read+delete                      500 iters    280.23 ms total   560.464 us/iter
+BENCH file.exists                                2000 iters      9.48 ms total     4.740 us/iter
+
+BENCH crypto.sha256                              5000 iters      1.46 ms total     0.293 us/iter
+BENCH crypto.hmac_sha256                         5000 iters      5.63 ms total     1.126 us/iter
+BENCH crypto.to_hex                             20000 iters      0.75 ms total     0.037 us/iter
+BENCH c_native.sha256_memcpy[baseline]           5000 iters      0.00 ms total     0.000 us/iter
+
+BENCH time.now                                  20000 iters      0.33 ms total     0.016 us/iter
+BENCH time.since                                20000 iters      0.35 ms total     0.017 us/iter
+BENCH time.format                                5000 iters      3.22 ms total     0.645 us/iter
+
+BENCH env.get (present)                         20000 iters      0.35 ms total     0.018 us/iter
+BENCH env.get_or (absent)                       20000 iters      1.00 ms total     0.050 us/iter
+
+BENCH process.spawn+wait(true)                     50 iters    260.58 ms total  5211.540 us/iter
+
+BENCH log.info (2 fields, to /dev/null)         10000 iters      9.20 ms total     0.920 us/iter
+
+=== benchmarks complete ===

@@ -1,0 +1,26 @@
+name: stdlib benchmarks
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+jobs:
+  bench:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SQLite
+        run: brew install sqlite3 || true
+
+      - name: Build stdlib benchmark
+        run: make bench
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results-${{ github.sha }}
+          path: benchmark/results/
+          retention-days: 90

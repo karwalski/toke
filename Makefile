@@ -6,7 +6,7 @@ SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
 OBJS    = $(SRCS:.c=.o)
 BIN     = tkc
 
-.PHONY: all clean lint conform conform-check build-all ci test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test test-stdlib-log
+.PHONY: all clean lint conform conform-check build-all ci test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage bench
 
 all: $(BIN)
 
@@ -72,8 +72,28 @@ test-stdlib-log:
 	    test/stdlib/test_log.c src/stdlib/log.c src/stdlib/tk_time.c
 	./test/stdlib/test_log
 
+test-stdlib-coverage:
+	$(CC) $(CFLAGS) -Isrc/stdlib -o test/stdlib/test_stdlib_coverage \
+	    test/stdlib/test_stdlib_coverage.c \
+	    src/stdlib/json.c src/stdlib/file.c src/stdlib/str.c \
+	    src/stdlib/db.c -lsqlite3
+	./test/stdlib/test_stdlib_coverage
+
+bench:
+	$(CC) -O2 -Isrc/stdlib -o test/stdlib/bench_stdlib \
+	    test/stdlib/bench_stdlib.c \
+	    src/stdlib/str.c src/stdlib/json.c src/stdlib/file.c \
+	    src/stdlib/crypto.c src/stdlib/tk_time.c src/stdlib/process.c \
+	    src/stdlib/env.c src/stdlib/log.c src/stdlib/tk_test.c \
+	    src/stdlib/db.c src/stdlib/http.c -lsqlite3
+	./test/stdlib/bench_stdlib
+
 clean:
-	rm -f $(OBJS) $(BIN) test/stdlib/test_str test/stdlib/test_db test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto test/stdlib/test_time test/stdlib/test_tktest test/stdlib/test_log fuzz-lexer fuzz-parser
+	rm -f $(OBJS) $(BIN) test/stdlib/test_str test/stdlib/test_db \
+	    test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto \
+	    test/stdlib/test_time test/stdlib/test_tktest test/stdlib/test_log \
+	    test/stdlib/test_stdlib_coverage test/stdlib/bench_stdlib \
+	    fuzz-lexer fuzz-parser
 
 FUZZ_FLAGS = -fsanitize=address,undefined,fuzzer -g
 
