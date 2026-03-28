@@ -56,8 +56,8 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 1.8.1 | Corpus pipeline threat model document | backlog | — | Before 1.5 starts |
-| 1.8.2 | Sandboxed execution of generated programs | backlog | — | Before 1.5 starts |
+| 1.8.1 | Corpus pipeline threat model document | done | feature/security-threat-model-sandbox | [x] T1-T5 threat categories [x] likelihood/impact/mitigation [x] sign-off table |
+| 1.8.2 | Sandboxed execution of generated programs | done | feature/security-threat-model-sandbox | [x] sandbox-exec (macOS) [x] Docker fallback [x] 10s timeout [x] clean env [x] setup docs |
 
 ### Epic 1.3 — Standard Library Core
 
