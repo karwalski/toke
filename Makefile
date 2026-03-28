@@ -6,7 +6,7 @@ SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
 OBJS    = $(SRCS:.c=.o)
 BIN     = tkc
 
-.PHONY: all clean lint conform conform-check build-all ci test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test
+.PHONY: all clean lint conform conform-check build-all ci test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test test-stdlib-log
 
 all: $(BIN)
 
@@ -67,8 +67,13 @@ test-stdlib-test:
 	    test/stdlib/test_tktest.c src/stdlib/tk_test.c
 	./test/stdlib/test_tktest
 
+test-stdlib-log:
+	$(CC) $(CFLAGS) -o test/stdlib/test_log \
+	    test/stdlib/test_log.c src/stdlib/log.c src/stdlib/tk_time.c
+	./test/stdlib/test_log
+
 clean:
-	rm -f $(OBJS) $(BIN) test/stdlib/test_str test/stdlib/test_db test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto test/stdlib/test_time test/stdlib/test_tktest fuzz-lexer fuzz-parser
+	rm -f $(OBJS) $(BIN) test/stdlib/test_str test/stdlib/test_db test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto test/stdlib/test_time test/stdlib/test_tktest test/stdlib/test_log fuzz-lexer fuzz-parser
 
 FUZZ_FLAGS = -fsanitize=address,undefined,fuzzer -g
 

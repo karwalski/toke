@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "module": "std.log",
+  "exports": [
+    {"kind": "func", "name": "log.info",  "params": ["str", "[[str]]"], "return": "bool"},
+    {"kind": "func", "name": "log.warn",  "params": ["str", "[[str]]"], "return": "bool"},
+    {"kind": "func", "name": "log.error", "params": ["str", "[[str]]"], "return": "bool"}
+  ]
+}
