@@ -26,7 +26,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.1.4 | Formal EBNF grammar | done | feature/spec-ebnf-grammar | [x] 65 productions covering all constructs [x] LL(1) verified [x] Unambiguous [x] All 8 open questions resolved [x] Committed to spec/grammar.ebnf [x] Frozen at M0 2026-03-27 |
 | 1.1.5 | Profile 2 transformation rules | done | feature/spec-phase2-transform | [x] Type sigil rule (TYPE_IDENT→$name) [x] Array literal rule ([]→@()) [x] Array index rule (a[n]→a.get(n)) [x] Determinism proof [x] Round-trip spec [x] 20+ example pairs [x] Frozen M0 2026-03-28 |
 | 1.1.6 | Spec review and alignment | done | feature/spec-review-m0 | [x] Cross-document review complete [x] 7 blocking issues resolved [x] grammar.ebnf fully populated (was stub) [x] character-set.md created [x] keywords.md created [x] symbol-disambiguation.md created [x] phase2-transform.md created [x] CastExpr production added [x] LoopStmt semicolon ambiguity fixed [x] spec-review-m0.md written [x] 4 warnings, 4 notes in risk register [x] Frozen M0 2026-03-27 |
-| 1.1.7 | Meta-repo README and project landing page | backlog | — | Links to all 7 sub-repos; phase/gate status; getting-started; contributing/security links |
+| 1.1.7 | Meta-repo README and project landing page | done | feature/meta-readme (toke) | [x] Plain-language thesis [x] 7 sub-repo links [x] Phase/gate status table [x] Getting-started (build + conform) [x] Licence + contributing links [x] No placeholder text |
 
 ### Epic 1.2 — Reference Compiler Frontend
 
@@ -109,7 +109,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 1.10.1 | Phase 1 full integration and conformance review | backlog | — | Wire make conform; verify all passes vs spec; stdlib tests; monitor endpoints; review report to docs/phase1-review.md |
+| 1.10.1 | Phase 1 full integration and conformance review | done | docs/phase1-review (tkc) | [x] 62/62 conformance [x] all 9 compiler passes [x] stdlib tests pass [x] docs/phase1-review.md written [x] 6 TD items logged |
 
 ### Epic 2.6 — Responsible Disclosure and CVE Process
 
@@ -122,34 +122,34 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 2.7.1 | std.process | backlog | — | Depends on 1.3.1 (std.str) |
-| 2.7.2 | std.env | backlog | — | Depends on 1.3.1 (std.str) |
-| 2.7.3 | std.crypto | backlog | — | Depends on 1.3.1 (std.str) |
-| 2.7.4 | std.time | backlog | — | Depends on 1.3.1 (std.str) |
-| 2.7.5 | std.test | backlog | — | Depends on 1.3.1 (std.str) |
+| 2.7.1 | std.process | done | feature/stdlib-2.7-process-env (tkc + toke-stdlib) | [x] POSIX fork/exec/pipe/waitpid [x] ProcessHandle [x] process.tokei [x] 28/28 tests |
+| 2.7.2 | std.env | done | feature/stdlib-2.7-process-env (tkc + toke-stdlib) | [x] getenv/setenv/unsetenv [x] EnvErrKind [x] env.tokei [x] tests pass |
+| 2.7.3 | std.crypto | done | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) | [x] SHA-256 + HMAC-SHA-256 [x] self-contained [x] crypto.tokei [x] test vectors pass |
+| 2.7.4 | std.time | done | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) | [x] clock_gettime [x] strftime [x] time.tokei [x] tests pass |
+| 2.7.5 | std.test | done | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) | [x] assert/assert_eq/assert_ne [x] DIAGNOSTIC stderr format [x] test.tokei [x] tests pass |
 
 ### Epic 3.7 — Supply Chain Security and Release Signing
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 3.7.1 | SBOM generation for compiler releases | backlog | — | Before Phase 3 release |
-| 3.7.2 | Release binary signing | backlog | — | Before Phase 3 release |
+| 3.7.1 | SBOM generation for compiler releases | done | feature/supply-chain-3.7 (tkc) | SPDX JSON via syft; published as release artifact |
+| 3.7.2 | Release binary signing | done | feature/supply-chain-3.7 (tkc) | cosign keyless; tamper test in CI; docs/security/release-signing.md |
 | 3.7.3 | Reproducible builds for the compiler | backlog | — | Depends on 3.1 complete |
-| 3.7.4 | Model release safety evaluation | backlog | — | Before model release |
+| 3.7.4 | Model release safety evaluation | in_progress | feature/supply-chain-3.7 (toke-models) | — |
 
 ### Epic 3.8 — Standard Library Production Hardening
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 3.8.1 | std.log structured logging | backlog | — | Depends on 1.3.1 (std.str), 2.7.4 (std.time) |
-| 3.8.2 | stdlib performance benchmarks | backlog | — | Depends on Epic 1.3 complete |
-| 3.8.3 | stdlib conformance test coverage | backlog | — | Depends on Epic 1.3 complete |
+| 3.8.1 | std.log structured logging | in_progress | feature/stdlib-3.8-log (tkc + toke-stdlib) | — |
+| 3.8.2 | stdlib performance benchmarks | in_progress | feature/stdlib-3.8-bench (tkc) | — |
+| 3.8.3 | stdlib conformance test coverage | in_progress | feature/stdlib-3.8-bench (tkc) | — |
 
 ### Epic 4.6 — Security Audit and Hosted Service Readiness
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 4.6.1 | Third-party security audit of the compiler | backlog | — | Before v1.0 release |
+| 4.6.1 | Third-party security audit of the compiler | in_progress | feature/audit-4.6 (tkc) | — |
 | 4.6.2 | SOC 2 readiness assessment (conditional on hosted service) | backlog | — | Conditional: only if hosted service launches |
 
 ---
@@ -175,6 +175,13 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.2.9 | CLI interface | 2026-03-28 | feature/compiler-cli (tkc) |
 | 1.2.10 | Conformance test suite (Profile 1) | 2026-03-28 | test/compiler-conformance-suite (tkc) |
 | 1.6.1 | Held-out benchmark task set | 2026-03-27 | feature/benchmark-held-out-tasks (toke-benchmark) |
+| 1.10.1 | Phase 1 integration and conformance review | 2026-03-28 | docs/phase1-review (tkc) |
+| 2.7.1 | std.process | 2026-03-28 | feature/stdlib-2.7-process-env (tkc + toke-stdlib) |
+| 2.7.2 | std.env | 2026-03-28 | feature/stdlib-2.7-process-env (tkc + toke-stdlib) |
+| 2.7.3 | std.crypto | 2026-03-28 | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) |
+| 2.7.4 | std.time | 2026-03-28 | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) |
+| 1.1.7 | Meta-repo README and project landing page | 2026-03-28 | feature/meta-readme (toke) |
+| 2.7.5 | std.test | 2026-03-28 | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) |
 
 ---
 
