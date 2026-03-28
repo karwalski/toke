@@ -1,0 +1,9 @@
+id: L013
+series: L
+description: "Decimal integer literal is classified as INT_LIT"
+input: |
+  M=test;
+  F=num():i64{<42};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

@@ -1,0 +1,12 @@
+id: G012
+series: G
+description: "Valid match expression with two arms (MatchExpr)"
+input: |
+  M=test;
+  T=Opt{Some:i64;None:bool};
+  F=unwrap(v:Opt):i64{
+    <v|{Some:x x;None:_ 0}
+  };
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

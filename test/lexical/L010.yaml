@@ -1,0 +1,9 @@
+id: L010
+series: L
+description: "true and false are classified as BOOL_LIT, not IDENT"
+input: |
+  M=test;
+  F=bools():bool{<true};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

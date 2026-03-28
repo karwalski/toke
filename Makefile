@@ -20,12 +20,10 @@ lint:
 	$(CC) $(CFLAGS) --analyze $(SRCS)
 
 conform:
-	@echo "Conformance suite not yet implemented"
-	@exit 1
+	@bash test/run_conform.sh
 
 conform-check:
-	@echo "Conformance check not yet implemented"
-	@exit 1
+	@bash test/run_conform.sh && echo "CONFORMANCE: 100%"
 
 build-all:
 	$(MAKE) CC=cc CFLAGS="$(CFLAGS) --target=x86_64-linux-gnu"

@@ -1,0 +1,11 @@
+id: D008
+series: D
+description: "Severity field is \"error\" for E-series codes"
+input: |
+  M=test;
+  F=bad():Str{<"\q"};
+expected_exit_code: 1
+expected_error_codes: ["E1001"]
+expected_diag_field:
+  field: "severity"
+  value: "error"

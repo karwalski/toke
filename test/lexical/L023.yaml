@@ -1,0 +1,9 @@
+id: L023
+series: L
+description: "Empty string literal is a valid STR_LIT"
+input: |
+  M=test;
+  F=empty():Str{<""};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

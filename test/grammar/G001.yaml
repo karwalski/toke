@@ -1,0 +1,8 @@
+id: G001
+series: G
+description: "Valid module declaration with dotted path"
+input: |
+  M=com.example.app;
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

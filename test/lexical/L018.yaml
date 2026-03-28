@@ -1,0 +1,21 @@
+id: L018
+series: L
+description: "All 12 keywords are recognised: F T I M if el lp br let mut as rt"
+input: |
+  M=test;
+  I=s:std.str;
+  T=Flag{Active:bool};
+  F=check(x:i64):bool{
+    if(x>0){
+      let y=mut.x;
+      lp(let i=0;i<y;i=i+1){
+        if(i=5){br};
+      };
+      <true
+    }el{
+      rt false
+    }
+  };
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

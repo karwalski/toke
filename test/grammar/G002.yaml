@@ -1,0 +1,9 @@
+id: G002
+series: G
+description: "Valid function declaration with zero parameters"
+input: |
+  M=test;
+  F=zero():i64{<0};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

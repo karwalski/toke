@@ -1,0 +1,10 @@
+id: G013
+series: G
+description: "Valid struct literal expression (StructLit)"
+input: |
+  M=test;
+  T=Pair{a:i64;b:i64};
+  F=make():Pair{<Pair{a:1;b:2}};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

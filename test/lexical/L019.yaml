@@ -1,0 +1,10 @@
+id: L019
+series: L
+description: "Single-char keyword F stands alone; FuncHelper lexes as TYPE_IDENT not keyword"
+input: |
+  M=test;
+  T=FuncHelper{val:i64};
+  F=make():FuncHelper{<FuncHelper{val:1}};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

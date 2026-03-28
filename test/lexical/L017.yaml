@@ -1,0 +1,9 @@
+id: L017
+series: L
+description: "String literal is classified as STR_LIT"
+input: |
+  M=test;
+  F=greet():Str{<"hello world"};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""
