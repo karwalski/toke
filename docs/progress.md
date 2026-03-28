@@ -145,6 +145,12 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 3.8.2 | stdlib performance benchmarks | done | feature/stdlib-3.8-bench (tkc) | [x] 9 modules benchmarked [x] baseline.txt (M-series) [x] make bench [x] bench.yml CI |
 | 3.8.3 | stdlib conformance test coverage | done | feature/stdlib-3.8-bench (tkc) | [x] 100% function coverage [x] 30 gap tests [x] docs/stdlib-coverage.md |
 
+### Epic 2.8 — LLVM Backend Correctness
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 2.8.1 | Fix LLVM IR emission for end-to-end compilation | backlog | — | 5 known codegen defects: param load, let-bind child index, call return types, match arm index, cast stub. Depends on 2.1 (done). |
+
 ### Epic 2.1 — Phase 2 Language Extensions
 
 | ID | Story | Status | Branch | Notes |

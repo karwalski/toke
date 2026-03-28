@@ -1090,6 +1090,39 @@ Acceptance criteria:
 
 ---
 
+### EPIC 2.8 — LLVM Backend Correctness
+
+---
+
+**Story 2.8.1 — Fix LLVM IR emission for end-to-end compilation**
+
+As a compiler engineer, I want `tkc` to emit valid LLVM IR for all Phase 1 and Phase 2 language constructs so that `clang` can assemble the output into a working binary.
+
+Dependencies: 2.1 (Phase 2 Language Extensions — done)
+
+Background: The front-end (lex → parse → names → types → interface) works correctly and passes 79 conformance tests. The LLVM IR backend (`llvm.c`, ~460 lines) emits `.ll` text that `clang` then assembles. However, several codegen bugs prevent end-to-end compilation. This story fixes all known defects so that a valid toke program compiles to a runnable binary.
+
+Known defects:
+
+1. **Parameter load uses wrong SSA name (P0).** `NODE_IDENT` emits `load i64, ptr %name` but function params are spilled to `%name.addr`. The load must use `%name.addr` for params (not locals). Fix: track which identifiers are params (e.g. emit `%name` directly without load, or reference `%name.addr`).
+
+2. **`let` binding init reads wrong child index.** `emit_stmt` for `NODE_BIND_STMT` checks `child_count >= 3` and reads `children[2]`, but bindings have 2 children: `[0]=IDENT, [1]=expr`. Fix: check `child_count >= 2`, use `children[1]`.
+
+3. **All function calls assume `i64` return type.** `NODE_CALL_EXPR` always emits `call i64 @fn(...)`, even for functions returning `void`, `f64`, `bool`, or `str`. Fix: look up the callee's return type and emit the correct LLVM type.
+
+4. **Match arm indexes wrong child.** Match arm emission reads `arm->children[1]` as the body, but arms have 3 children: `[0]=pattern, [1]=binding, [2]=body`. Fix: emit `arm->children[2]`.
+
+5. **`as` cast is identity stub.** Currently a no-op `add`. Fix: emit `sitofp`/`fptosi`/`trunc`/`zext`/`bitcast` as appropriate for the source and target types.
+
+Acceptance criteria:
+- `tkc --out binary input.tk` produces a runnable binary for programs using: arithmetic, function calls with params, let bindings, if/else, loops, return, string literals, struct literals, array literals
+- All 5 known defects above are fixed
+- At least 5 end-to-end tests: compile → run → check output (exit code or stdout via `puts`)
+- Existing 79 conformance tests still pass (`make conform`)
+- No new compiler warnings under `-Werror`
+
+---
+
 ### EPIC 3.1 — Production Compiler
 
 ---
