@@ -30,7 +30,7 @@
 | 1.6 | Gate 1 Benchmark | backlog |
 | 1.7 | Compiler Security and SAST | backlog |
 | 1.8 | Corpus Pipeline Threat Model | backlog |
-| 2.6 | Responsible Disclosure and CVE Process | backlog |
+| 2.6 | Responsible Disclosure and CVE Process | done |
 | 3.7 | Supply Chain Security and Release Signing | backlog |
 | 4.6 | Security Audit and Hosted Service Readiness | backlog |
 
@@ -63,4 +63,7 @@ Epics 1.2, 1.3, 1.7, 1.8 complete.
 **Current blocker:** Epic 1.4 (Mac Studio configuration) requires physical hardware setup.
 All of 1.4.x, 1.5.x, and 1.6.2–1.6.4 are blocked until 1.4.1 is done.
 
-Running in parallel: Epic 2.6 (Responsible Disclosure and CVE Process) — documentation only, no hardware dependency.
+Epic 2.6 (Responsible Disclosure and CVE Process) complete (feature/security-disclosure).
+GitHub UI actions still required: enable private vulnerability reporting on karwalski/tkc, karwalski/toke-corpus, karwalski/toke-model; establish Advisory Database point of contact.
+
+Epics 2.7 (Standard Library Expansion) and 3.8 (Standard Library Production Hardening) added to backlog.

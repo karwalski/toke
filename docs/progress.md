@@ -99,8 +99,8 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 2.6.1 | Security policy and disclosure process | backlog | — | Before first public release |
-| 2.6.2 | CVE coordination process | backlog | — | Depends on 2.6.1 |
+| 2.6.1 | Security policy and disclosure process | done | feature/security-disclosure | SECURITY.md in tkc/corpus/model; README linked |
+| 2.6.2 | CVE coordination process | done | feature/security-disclosure | docs/security/cve-process.md |
 
 ### Epic 2.7 — Standard Library Expansion
 
