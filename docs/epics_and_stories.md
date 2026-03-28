@@ -946,6 +946,27 @@ Acceptance criteria:
 - Decision document committed to repository and tagged gate2-decision
 - Decision made within 2 weeks of Month 14
 
+### EPIC 1.10 — Phase 1 Integration and Conformance Review
+
+*Verify end-to-end that everything built in Phase 1 matches its specification and runs without errors. Identify gaps, wire test infrastructure, and confirm the system is ready for corpus generation.*
+
+---
+
+**Story 1.10.1 — Phase 1 full integration and conformance review**
+
+As a project lead, I want a structured verification pass over every Phase 1 component — compiler, standard library, monitoring console — that confirms each piece runs correctly, matches the spec, and is ready for corpus generation, so that known gaps are documented before corpus work begins.
+
+Acceptance criteria:
+- Conformance test harness (`make conform`) is wired and runs all 62 YAML test cases end-to-end; pass rate documented
+- Every compiler pass (lexer, parser, import resolver, name resolver, type checker, diag emitter, interface emitter, LLVM backend, CLI) verified against its corresponding spec section and test series
+- All 5 stdlib unit test suites pass (std.str, std.db, std.json, std.file, std.http); .tokei interface files verified present and matching compiled signatures
+- Monitoring console endpoints verified: GET /api/jobs, POST /api/jobs, GET /api/jobs/{id}, GET /api/status, POST /api/jobs/{id}/cancel, GET /api/jobs/{id}/stream
+- All known tech-debt items (arena escape E5001 conservatism, LLVM cast stub, struct field GEP offset-0, nested break) are documented in a review report with Phase 2 priority
+- Corpus pipeline readiness assessed: what runs now, what needs Mac Studio, what can be scaffolded
+- Review report committed to tkc/docs/phase1-review.md
+
+---
+
 ### EPIC 2.6 — Responsible Disclosure and CVE Process
 
 *Establish a security vulnerability reporting process before the compiler and tools are publicly used.*

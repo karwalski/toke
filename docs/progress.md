@@ -105,6 +105,12 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.6.3 | Pass@1 measurement | backlog | — | Depends on 1.6.2 |
 | 1.6.4 | Gate 1 decision document | backlog | — | Depends on 1.6.3 |
 
+### Epic 1.10 — Phase 1 Integration and Conformance Review
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 1.10.1 | Phase 1 full integration and conformance review | backlog | — | Wire make conform; verify all passes vs spec; stdlib tests; monitor endpoints; review report to docs/phase1-review.md |
+
 ### Epic 2.6 — Responsible Disclosure and CVE Process
 
 | ID | Story | Status | Branch | Notes |

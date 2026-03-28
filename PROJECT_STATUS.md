@@ -31,6 +31,7 @@
 | 1.7 | Compiler Security and SAST | backlog |
 | 1.8 | Corpus Pipeline Threat Model | backlog |
 | 1.9 | Remote Monitoring Console | done |
+| 1.10 | Phase 1 Integration and Conformance Review | backlog |
 | 2.6 | Responsible Disclosure and CVE Process | done |
 | 3.7 | Supply Chain Security and Release Signing | backlog |
 | 4.6 | Security Audit and Hosted Service Readiness | backlog |
