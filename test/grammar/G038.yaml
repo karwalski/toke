@@ -4,7 +4,7 @@ description: "spawn and await used together in a function"
 input: |
   M=test;
   F=compute():i64{<10};
-  F=run():i64{L=t:spawn(compute);L=r:await(t);<r};
+  F=run():i64{let t=spawn(compute);let r=await(t);<r};
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

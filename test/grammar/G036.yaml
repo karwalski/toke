@@ -4,7 +4,7 @@ description: "spawn(myFunc) call expression parses correctly"
 input: |
   M=test;
   F=myFunc():i64{<42};
-  F=main():i64{L=t:spawn(myFunc);<await(t)};
+  F=main():i64{let t=spawn(myFunc);<await(t)};
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""
