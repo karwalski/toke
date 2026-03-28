@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "module": "std.file",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "FileErr",
+      "sum": true,
+      "variants": [
+        {"name": "NotFound",   "type": "str"},
+        {"name": "Permission", "type": "str"},
+        {"name": "IO",         "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "file.read",   "params": ["str"],         "return": "str!FileErr"},
+    {"kind": "func", "name": "file.write",  "params": ["str", "str"],  "return": "bool!FileErr"},
+    {"kind": "func", "name": "file.append", "params": ["str", "str"],  "return": "bool!FileErr"},
+    {"kind": "func", "name": "file.exists", "params": ["str"],         "return": "bool"},
+    {"kind": "func", "name": "file.delete", "params": ["str"],         "return": "bool!FileErr"},
+    {"kind": "func", "name": "file.list",   "params": ["str"],         "return": "[str]!FileErr"}
+  ]
+}

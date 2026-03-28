@@ -67,7 +67,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.3.2 | std.http | in_progress | feature/stdlib-http | Depends on 1.3.1 |
 | 1.3.3 | std.db | in_progress | feature/stdlib-db | Depends on 1.3.1 |
 | 1.3.4 | std.json | in_progress | feature/stdlib-json | Depends on 1.3.1 |
-| 1.3.5 | std.file | in_progress | feature/stdlib-file | Depends on 1.3.1 |
+| 1.3.5 | std.file | done | feature/stdlib-file | [x] 6/6 functions [x] FileErr sum type [x] file.tki [x] 138 lines [x] 9 test assertions |
 
 ### Epic 1.4 — Mac Studio Setup and Local Pipeline
 
