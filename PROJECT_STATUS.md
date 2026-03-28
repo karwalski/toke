@@ -30,6 +30,7 @@
 | 1.6 | Gate 1 Benchmark | backlog |
 | 1.7 | Compiler Security and SAST | backlog |
 | 1.8 | Corpus Pipeline Threat Model | backlog |
+| 1.9 | Remote Monitoring Console | in_progress |
 | 2.6 | Responsible Disclosure and CVE Process | done |
 | 3.7 | Supply Chain Security and Release Signing | backlog |
 | 4.6 | Security Audit and Hosted Service Readiness | backlog |
@@ -67,3 +68,5 @@ Epic 2.6 (Responsible Disclosure and CVE Process) complete (feature/security-dis
 GitHub UI actions still required: enable private vulnerability reporting on karwalski/tkc, karwalski/toke-corpus, karwalski/toke-model; establish Advisory Database point of contact.
 
 Epics 2.7 (Standard Library Expansion) and 3.8 (Standard Library Production Hardening) added to backlog.
+
+Epic 1.9 (Remote Monitoring Console) started: stories 1.9.1 (job manager daemon) and 1.9.2 (web dashboard) implemented at toke-corpus/monitor/. Stories 1.9.3 (log streaming) and 1.9.4 (auth/HTTPS) remain.

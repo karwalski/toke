@@ -69,6 +69,15 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.3.4 | std.json | done | feature/stdlib-json | [x] 8/8 functions [x] JsonErr sum type [x] json.tki [x] recursive key extractor [x] 7 test assertions |
 | 1.3.5 | std.file | done | feature/stdlib-file | [x] 6/6 functions [x] FileErr sum type [x] file.tki [x] 138 lines [x] 9 test assertions |
 
+### Epic 1.9 — Remote Monitoring Console
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 1.9.1 | Job manager daemon | done | feature/monitor-console | Flask REST API, subprocess manager, jobs.json persistence |
+| 1.9.2 | Web dashboard | done | feature/monitor-console | Dark-theme SPA, auto-refresh, log panel |
+| 1.9.3 | Log streaming | backlog | — | Depends on 1.9.1, 1.9.2 |
+| 1.9.4 | Authentication and HTTPS | backlog | — | Depends on 1.9.1, 1.9.2 |
+
 ### Epic 1.4 — Mac Studio Setup and Local Pipeline
 
 | ID | Story | Status | Branch | Notes |

@@ -638,6 +638,83 @@ Acceptance criteria:
 
 ---
 
+### EPIC 1.9 — Remote Monitoring Console
+
+*Provide a web-based monitoring and control interface for the Mac Studio's long-running operations — corpus generation, model training, and benchmark runs — accessible remotely over VPN or port-forwarding.*
+
+**Sequencing note:** Stories 1.9.1 and 1.9.2 have no hardware dependency and can be developed and tested on any machine. Full integration testing against live corpus/training jobs requires Epic 1.4 (Mac Studio) to be complete. The service lives in `toke-corpus/monitor/`.
+
+---
+
+**Story 1.9.1 — Job manager daemon**
+
+As a project operator, I want a lightweight background service running on the Mac Studio that tracks all long-running jobs and exposes a JSON REST API, so that the status of corpus generation, training runs, and benchmarks is always observable from any machine on the network.
+
+Dependencies: none (can develop on any machine; integration requires 1.4.1)
+
+Acceptance criteria:
+- Service is implemented in Python (Flask + psutil), lives at toke-corpus/monitor/server.py and monitor/jobs.py
+- GET /api/jobs returns all jobs with id, name, state, start time, duration, and last 5 log lines
+- POST /api/jobs enqueues a new job with name and shell command; job runs as a subprocess
+- GET /api/jobs/{id} returns full job detail including last 200 log lines from monitor/logs/{id}.log
+- POST /api/jobs/{id}/cancel cancels a running job
+- GET /api/status returns cpu%, mem%, and disk% via psutil
+- Job states: queued, running, done, failed, cancelled
+- Job list persists to monitor/jobs.json on every state change; restart does not lose history
+- Listens on 0.0.0.0:7700 by default; overridable via TK_MONITOR_PORT
+- If TK_MONITOR_TOKEN env var is set, every request requires Authorization: Bearer <token>
+
+---
+
+**Story 1.9.2 — Web dashboard**
+
+As a project operator, I want a browser-based dashboard served by the job manager daemon, so that I can monitor and control long-running jobs from any device without installing additional software.
+
+Dependencies: 1.9.1
+
+Acceptance criteria:
+- Dashboard is served at GET / by the same Flask process as the REST API
+- All jobs are displayed in a table with state colour-coding (running=green, failed=red, cancelled=grey, done=blue)
+- Dashboard auto-refreshes job table and system status bar every 5 seconds via fetch()
+- Clicking a job row expands to show the last 50 log lines inline
+- System status bar (CPU%, mem%, disk%) is shown at the top and updates every 5 seconds
+- A "New Job" form accepts a job name and shell command and submits via POST /api/jobs
+- Running jobs have a "Cancel" button that calls POST /api/jobs/{id}/cancel
+- Pure HTML + vanilla JS; no build step; no external CDN dependencies; inline all styles and scripts
+- Dark theme
+
+---
+
+**Story 1.9.3 — Log streaming**
+
+As a project operator, I want live log output from running jobs to stream to the browser in real time, so that I can watch corpus generation or training progress without polling.
+
+Dependencies: 1.9.1, 1.9.2
+
+Acceptance criteria:
+- GET /api/jobs/{id}/stream returns a Server-Sent Events stream of new log lines as they are written
+- Dashboard log panel subscribes to the SSE stream when a running job is expanded
+- Stream closes automatically when the job transitions to done, failed, or cancelled
+- If the browser disconnects and reconnects, the full log tail is sent before resuming the stream
+- Implementation uses Python threading; no asyncio dependency
+
+---
+
+**Story 1.9.4 — Authentication and HTTPS**
+
+As a project operator, I want the monitoring console secured with a bearer token and optionally served over HTTPS, so that it is safe to expose via port-forwarding without relying solely on VPN.
+
+Dependencies: 1.9.1, 1.9.2
+
+Acceptance criteria:
+- Bearer token auth is enforced when TK_MONITOR_TOKEN is set (story 1.9.1 implements the mechanism; this story validates and documents it)
+- If TK_MONITOR_CERT and TK_MONITOR_KEY env vars are set, the Flask server starts with TLS using those cert/key paths
+- Setup instructions for generating a self-signed certificate are documented in monitor/README.md
+- A curl example demonstrating authenticated access is included in the README
+- The port-forwarding setup guide covers both VPN access and direct port-forward with token auth
+
+---
+
 ## Phase 2 — Language Viability (Months 6–14)
 
 **Phase objective:** Extend tk with generics (collection types), a basic concurrency model, C FFI, and module versioning. Train the first fine-tuned model. Validate that token efficiency is retained with the extended language.
