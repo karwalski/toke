@@ -44,7 +44,7 @@ None.
 
 ## Known Technical Debt
 
-None yet.
+- Arena escape detection (E5001) is conservative: flags any assignment to a module-scope variable inside an arena block. Needs `arena_depth` field added to `Decl` struct in names.h to distinguish pre-arena vs. in-arena declarations. (story 1.2.5)
 
 ---
 
