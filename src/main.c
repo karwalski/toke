@@ -25,8 +25,6 @@ void   arena_free(Arena *arena);
 
 int  diag_error_count(void);
 void diag_reset(void);
-typedef enum { DIAG_FMT_TEXT = 0, DIAG_FMT_JSON = 1 } DiagFormat;
-void diag_set_format(DiagFormat fmt);
 
 int lex(const char *src, int src_len, Token *tokens, int token_cap);
 

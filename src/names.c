@@ -333,29 +333,13 @@ static int resolve_node(const Node *node, const char *src,
         break;
 
     case NODE_FIELD_EXPR: {
-        /* alias.field — child[0] is the qualifier (NODE_IDENT),
-         * child[1] is the field name.  Verify child[0] is an import alias. */
-        const Node *qualifier = node->child_count > 0 ? node->children[0] : NULL;
-        if (qualifier && qualifier->kind == NODE_IDENT) {
-            const char *qname = src + qualifier->tok_start;
-            int         qlen  = qualifier->tok_len;
-            Decl *d = scope_lookup(scope, qname, qlen);
-            if (!d) {
-                char msg[256];
-                int ml = qlen < 200 ? qlen : 200;
-                char nb[201]; memcpy(nb, qname, (size_t)ml); nb[ml] = '\0';
-                snprintf(msg, sizeof(msg),
-                         "identifier '%s' is not declared", nb);
-                diag_emit(DIAG_ERROR, E3011, qualifier->start,
-                          qualifier->line, qualifier->col, msg, "fix", NULL);
-                *had_error = 1;
-            }
-            /* field name (child[1]) is a member selection, not a standalone
-             * identifier reference — do not resolve it against the scope. */
-        }
-        /* Still walk child[1] if it's a nested expression */
-        for (int i = 1; i < node->child_count; i++)
-            resolve_node(node->children[i], src, scope, arena, had_error);
+        /* expr.field — child[0] is the base expression (resolve recursively),
+         * child[1] is the field name (NODE_IDENT — do NOT resolve as an
+         * identifier; it is a struct member name, resolved by the type checker).
+         * When child[0] is a simple IDENT, verify it is declared. */
+        if (node->child_count > 0)
+            resolve_node(node->children[0], src, scope, arena, had_error);
+        /* child[1] (field name) intentionally skipped — not a standalone ref. */
         break;
     }
 
@@ -388,6 +372,73 @@ static int resolve_node(const Node *node, const char *src,
         if (!block) { *had_error = 1; return -1; }
         for (int i = 0; i < node->child_count; i++)
             resolve_node(node->children[i], src, block, arena, had_error);
+        break;
+    }
+
+    case NODE_MATCH_STMT: {
+        /* expr | { Arm ; ... }
+         * children[0]: subject expr — resolve in current scope
+         * children[1..]: NODE_MATCH_ARM — each has its own arm scope */
+        if (node->child_count > 0)
+            resolve_node(node->children[0], src, scope, arena, had_error);
+        for (int i = 1; i < node->child_count; i++)
+            resolve_node(node->children[i], src, scope, arena, had_error);
+        break;
+    }
+
+    case NODE_MATCH_ARM: {
+        /* Variant : binding body
+         * children[0]: NODE_TYPE_IDENT (variant label — not a standalone ref)
+         * children[1]: NODE_IDENT (binding name — insert into arm scope)
+         * children[2]: body expr (resolve in arm scope) */
+        Scope *arm_scope = push_scope(arena, scope);
+        if (!arm_scope) { *had_error = 1; return -1; }
+        /* children[0] (variant label) intentionally skipped */
+        const Node *bname = node->child_count > 1 ? node->children[1] : NULL;
+        if (bname && bname->kind == NODE_IDENT) {
+            DeclKind dk = DECL_LET;
+            int r = scope_insert(arm_scope, arena, src,
+                                 bname->start, bname->tok_len,
+                                 bname->tok_start, bname->tok_len,
+                                 dk, node, bname->line, bname->col);
+            if (r < 0) *had_error = 1;
+        }
+        if (node->child_count > 2)
+            resolve_node(node->children[2], src, arm_scope, arena, had_error);
+        break;
+    }
+
+    case NODE_LOOP_STMT: {
+        /* lp(let i=0; cond; step){ body }
+         * children[0]: NODE_LOOP_INIT  — optional init (may be NULL or no-op)
+         * children[1]: condition expr
+         * children[2]: step expr/stmt
+         * children[3]: NODE_STMT_LIST body
+         * The loop init variable must be visible in cond/step/body. */
+        Scope *lp_scope = push_scope(arena, scope);
+        if (!lp_scope) { *had_error = 1; return -1; }
+
+        const Node *init = node->child_count > 0 ? node->children[0] : NULL;
+        if (init && init->kind == NODE_LOOP_INIT) {
+            /* Resolve the init expression first (RHS), then bind the name. */
+            if (init->child_count > 1)
+                resolve_node(init->children[1], src, lp_scope, arena, had_error);
+            if (init->op == TK_KW_LET || init->op == TK_KW_MUT) {
+                const Node *vname = init->child_count > 0 ? init->children[0] : NULL;
+                if (vname) {
+                    DeclKind dk = (init->op == TK_KW_MUT) ? DECL_MUT : DECL_LET;
+                    int r = scope_insert(lp_scope, arena, src,
+                                         vname->start, vname->tok_len,
+                                         vname->tok_start, vname->tok_len,
+                                         dk, init, vname->line, vname->col);
+                    if (r < 0) *had_error = 1;
+                }
+            }
+        }
+
+        /* Resolve condition, step, and body in loop scope. */
+        for (int i = 1; i < node->child_count; i++)
+            resolve_node(node->children[i], src, lp_scope, arena, had_error);
         break;
     }
 

@@ -21,6 +21,13 @@ static void ch(Node *par, Node *c) { if (par&&c&&par->child_count<NODE_MAX_CHILD
 static int  teq(Parser *p, Token *t, const char *s) { int l=(int)strlen(s); return t->len==l&&!memcmp(p->src+t->start,s,(size_t)l); }
 static void eerr(Parser *p, int code, Token *t, const char *msg) { p->errs++; diag_emit(DIAG_ERROR,code,t->start,t->line,t->col,msg,"fix",NULL); }
 static void sync(Parser *p) { while(peek(p)!=TK_EOF){TokenKind k=peek(p);adv(p);if(k==TK_SEMICOLON||k==TK_RBRACE)return;} }
+/* opt_semi — consume ';' if present; silent if next token is '}' or EOF
+ * (trailing semicolon elision: last stmt in a block need not carry ';'). */
+static void opt_semi(Parser *p) {
+    if(peek(p)==TK_SEMICOLON){adv(p);return;}
+    if(peek(p)==TK_RBRACE||peek(p)==TK_EOF) return;
+    eerr(p,E2003,cur(p),"missing semicolon");
+}
 static Token *xp(Parser *p, TokenKind k, const char *w) {
     (void)w; if(peek(p)==k) return adv(p);
     eerr(p, peek(p)==TK_EOF?E2004:E2002, cur(p), "unexpected token"); return NULL;
@@ -192,6 +199,7 @@ static Node *parse_loop_stmt(Parser *p) {
     if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
     ch(n,parse_stmt_list(p,t));
     if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+    if(peek(p)==TK_SEMICOLON) adv(p);  /* optional trailing ';' after loop block */
     return n;
 }
 
@@ -209,6 +217,7 @@ static Node *parse_if_stmt(Parser *p) {
         if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
         ch(n,parse_stmt_list(p,t));
         if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");}
+    if(peek(p)==TK_SEMICOLON) adv(p);  /* optional trailing ';' after if/el block */
     return n;
 }
 
@@ -218,17 +227,20 @@ static Node *parse_stmt(Parser *p) {
     switch(peek(p)){
     case TK_KW_LET:{
         adv(p); Token *nt=cur(p);
+        if(peek(p)==TK_BOOL_LIT){
+            eerr(p,1010,nt,"reserved literal cannot be used as an identifier");
+            sync(p);return NULL;}
         if(!xp(p,TK_IDENT,"identifier")){ sync(p);return NULL;}
         if(!xp(p,TK_EQ,"'='")){ sync(p);return NULL;}
         int mut=(peek(p)==TK_KW_MUT);
         Node *n=mk(p,mut?NODE_MUT_BIND_STMT:NODE_BIND_STMT,t); ch(n,mk(p,NODE_IDENT,nt));
         if(mut){adv(p);if(!xp(p,TK_DOT,"'.'")){ sync(p);return n;}}
         ch(n,parse_expr(p));
-        if(!xp(p,TK_SEMICOLON,"';'"))eerr(p,E2003,cur(p),"missing semicolon");
+        opt_semi(p);
         return n;}
-    case TK_KW_BR:{adv(p);Node *n=mk(p,NODE_BREAK_STMT,t);if(!xp(p,TK_SEMICOLON,"';'"))eerr(p,E2003,cur(p),"missing semicolon");return n;}
+    case TK_KW_BR:{adv(p);Node *n=mk(p,NODE_BREAK_STMT,t);opt_semi(p);return n;}
     case TK_KW_RT:
-    case TK_LT:{adv(p);Node *n=mk(p,NODE_RETURN_STMT,t);ch(n,parse_expr(p));if(!xp(p,TK_SEMICOLON,"';'"))eerr(p,E2003,cur(p),"missing semicolon");return n;}
+    case TK_LT:{adv(p);Node *n=mk(p,NODE_RETURN_STMT,t);ch(n,parse_expr(p));opt_semi(p);return n;}
     case TK_KW_IF: return parse_if_stmt(p);
     case TK_KW_LP: return parse_loop_stmt(p);
     case TK_LBRACE:
@@ -242,9 +254,9 @@ static Node *parse_stmt(Parser *p) {
         /* AssignStmt: IDENT '=' Expr ';' — one-token ahead check on '=' */
         if(p->pos+1<p->n&&p->toks[p->pos+1].kind==TK_EQ){
             adv(p);adv(p);Node *n=mk(p,NODE_ASSIGN_STMT,t);ch(n,mk(p,NODE_IDENT,t));
-            ch(n,parse_expr(p));if(!xp(p,TK_SEMICOLON,"';'"))eerr(p,E2003,cur(p),"missing semicolon");return n;}
+            ch(n,parse_expr(p));opt_semi(p);return n;}
         /* fall through to ExprStmt */
-    default:{Node *n=mk(p,NODE_EXPR_STMT,t);ch(n,parse_expr(p));if(!xp(p,TK_SEMICOLON,"';'"))eerr(p,E2003,cur(p),"missing semicolon");return n;}
+    default:{Node *n=mk(p,NODE_EXPR_STMT,t);ch(n,parse_expr(p));opt_semi(p);return n;}
     }
 }
 
@@ -270,7 +282,7 @@ static Node *parse_module_decl(Parser *p) {
     Node *n=mk(p,NODE_MODULE,t);
     if(!xp(p,TK_EQ,"'='")){ sync(p);return n;}
     ch(n,parse_module_path(p));
-    if(!xp(p,TK_SEMICOLON,"';'"))eerr(p,E2003,cur(p),"missing semicolon");
+    opt_semi(p);
     return n;
 }
 
@@ -283,7 +295,7 @@ static Node *parse_import_decl(Parser *p) {
     ch(n,mk(p,NODE_IDENT,at));
     if(!xp(p,TK_COLON,"':'")){ sync(p);return n;}
     ch(n,parse_module_path(p));
-    if(!xp(p,TK_SEMICOLON,"';'"))eerr(p,E2003,cur(p),"missing semicolon");
+    opt_semi(p);
     return n;
 }
 
@@ -313,7 +325,7 @@ static Node *parse_type_decl(Parser *p) {
     if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
     ch(n,parse_field_list(p));
     if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
-    if(!xp(p,TK_SEMICOLON,"';'"))eerr(p,E2003,cur(p),"missing semicolon");
+    opt_semi(p);
     return n;
 }
 
@@ -325,7 +337,7 @@ static Node *parse_const_decl(Parser *p) {
     ch(n,parse_literal(p));
     if(!xp(p,TK_COLON,"':'")){ sync(p);return n;}
     ch(n,parse_type_expr(p));
-    if(!xp(p,TK_SEMICOLON,"';'"))eerr(p,E2003,cur(p),"missing semicolon");
+    opt_semi(p);
     return n;
 }
 
@@ -359,7 +371,7 @@ static Node *parse_func_decl(Parser *p) {
     if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
     ch(n,parse_stmt_list(p,t));
     if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
-    if(!xp(p,TK_SEMICOLON,"';'"))eerr(p,E2003,cur(p),"missing semicolon");
+    opt_semi(p);
     return n;
 }
 
@@ -372,7 +384,7 @@ parse(Token *tokens, int count, const char *src, Arena *arena)
     Token *first=cur(&p);
     Node *root=mk(&p,NODE_PROGRAM,first);
     if(peek(&p)==TK_KW_M) ch(root,parse_module_decl(&p));
-    else eerr(&p,E2002,first,"unexpected token");
+    else { diag_emit(DIAG_ERROR,E2001,first->start,first->line,first->col,"module declaration must appear first","fix",NULL); p.errs++; }
     int phase=1; /* 1=import 2=type 3=const 4=func */
     while(peek(&p)!=TK_EOF){
         Token *t=cur(&p); int cp;

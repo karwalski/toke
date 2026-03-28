@@ -5,81 +5,18 @@
  * parser.h — AST node types, Token/TokenKind definitions, and parse() entry
  * point for the toke reference compiler.
  *
- * Token and TokenKind are defined here because lexer.h is still a stub;
- * they will migrate to lexer.h in story 1.2.1.
+ * TokenKind and Token definitions migrated to lexer.h (story 1.2.1 complete).
+ * This file includes lexer.h and adds a TK_SEMICOLON alias for TK_SEMI.
  *
  * Story: 1.2.2  Branch: feature/compiler-parser
  */
 
 #include "arena.h"
 #include "diag.h"
+#include "lexer.h"  /* TokenKind, Token, lex() — single authoritative definition */
 
-/* ────────────────────────────────────────────────────────────────────────── */
-/* Token kinds — 38 total: 12 keywords, 4 literals, 2 identifier classes,   */
-/* 18 symbols, TK_EOF, TK_ERROR                                              */
-/* ────────────────────────────────────────────────────────────────────────── */
-
-typedef enum {
-    /* Literals */
-    TK_INT_LIT,       /* integer literal (decimal / hex / binary) */
-    TK_FLOAT_LIT,     /* floating-point literal                   */
-    TK_STR_LIT,       /* string literal — span includes " delims  */
-    TK_BOOL_LIT,      /* true | false                             */
-
-    /* Identifiers */
-    TK_IDENT,         /* lowercase-initial user identifier        */
-    TK_TYPE_IDENT,    /* uppercase-initial identifier             */
-
-    /* Keywords — 12 */
-    TK_KW_F,          /* F  — function declaration                */
-    TK_KW_T,          /* T  — type declaration                    */
-    TK_KW_I,          /* I  — import declaration                  */
-    TK_KW_M,          /* M  — module declaration                  */
-    TK_KW_IF,         /* if                                       */
-    TK_KW_EL,         /* el — else                                */
-    TK_KW_LP,         /* lp — loop                                */
-    TK_KW_BR,         /* br — break                               */
-    TK_KW_LET,        /* let                                      */
-    TK_KW_MUT,        /* mut                                      */
-    TK_KW_AS,         /* as  — cast                               */
-    TK_KW_RT,         /* rt  — return (long form)                 */
-
-    /* Symbols — 18 */
-    TK_EQ,            /* =  */
-    TK_LT,            /* <  */
-    TK_GT,            /* >  */
-    TK_PLUS,          /* +  */
-    TK_MINUS,         /* -  */
-    TK_STAR,          /* *  */
-    TK_SLASH,         /* /  */
-    TK_BANG,          /* !  */
-    TK_PIPE,          /* |  */
-    TK_DOT,           /* .  */
-    TK_COLON,         /* :  */
-    TK_SEMICOLON,     /* ;  */
-    TK_LPAREN,        /* (  */
-    TK_RPAREN,        /* )  */
-    TK_LBRACE,        /* {  */
-    TK_RBRACE,        /* }  */
-    TK_LBRACKET,      /* [  */
-    TK_RBRACKET,      /* ]  */
-
-    /* Sentinels */
-    TK_EOF,
-    TK_ERROR
-} TokenKind;
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* Token — produced by the lexer, consumed by the parser                     */
-/* ────────────────────────────────────────────────────────────────────────── */
-
-typedef struct {
-    TokenKind kind;
-    int       start;  /* byte offset into source buffer */
-    int       len;    /* length in bytes                */
-    int       line;   /* 1-based line number            */
-    int       col;    /* 1-based column number          */
-} Token;
+/* TK_SEMICOLON alias for readability in parser code */
+#define TK_SEMICOLON TK_SEMI
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* AST node kinds                                                             */

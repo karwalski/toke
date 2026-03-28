@@ -33,7 +33,11 @@ static const char *type_name(const Type *t) {
 static int types_equal(const Type *a, const Type *b) {
     if (!a||!b) return 0; if (a==b) return 1; if (a->kind!=b->kind) return 0;
     if (a->kind==TY_STRUCT) return a->name&&b->name&&strcmp(a->name,b->name)==0;
-    if (a->kind==TY_ARRAY||a->kind==TY_FUNC||a->kind==TY_ERROR_TYPE) return types_equal(a->elem,b->elem);
+    if (a->kind==TY_ARRAY||a->kind==TY_FUNC||a->kind==TY_ERROR_TYPE) {
+        /* TY_UNKNOWN elem is compatible with any elem (e.g. empty array literal []). */
+        if ((a->elem&&a->elem->kind==TY_UNKNOWN)||(b->elem&&b->elem->kind==TY_UNKNOWN)) return 1;
+        return types_equal(a->elem,b->elem);
+    }
     return 1;
 }
 
@@ -127,6 +131,21 @@ static Type *infer(Ctx *cx, const Node *node) {
     case NODE_FLOAT_LIT: return mk_type(A,TY_F64);
     case NODE_STR_LIT:   return mk_type(A,TY_STR);
     case NODE_BOOL_LIT:  return mk_type(A,TY_BOOL);
+
+    case NODE_STRUCT_LIT:
+        /* node token is the TYPE_IDENT — resolve_type looks it up in scope. */
+        return resolve_type(cx, node);
+
+    case NODE_ARRAY_LIT: {
+        /* Infer element type from first element; return [elem_type]. */
+        Type *at = mk_type(A, TY_ARRAY);
+        if (!at) return mk_type(A, TY_UNKNOWN);
+        if (node->child_count > 0)
+            at->elem = infer(cx, node->children[0]);
+        else
+            at->elem = mk_type(A, TY_UNKNOWN);
+        return at;
+    }
 
     case NODE_IDENT: {
         char nb[128]; TOKSTR(nb,cx->src,node);

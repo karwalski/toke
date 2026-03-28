@@ -94,7 +94,7 @@ emit_json(DiagSeverity sev, int code,
     json_escape(stderr, message);
     fprintf(stderr,
             "\",\"file\":\"\","
-            "\"pos\":%d,\"line\":%d,\"column\":%d,"
+            "\"pos\":{\"offset\":%d,\"line\":%d,\"col\":%d},"
             "\"span_start\":%d,\"span_end\":%d,"
             "\"context\":[],\"expected\":\"\",\"got\":\"\"",
             byte_offset, line, col,

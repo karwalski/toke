@@ -67,8 +67,13 @@ if block:
 # Handle inline scalar (key: value or key: "value")
 inline = re.search(r'^' + re.escape(key) + r':\s*(.+)$', content, re.MULTILINE)
 if inline:
-    val = inline.group(1).strip().strip('"')
-    print(val)
+    val = inline.group(1).strip()
+    if val.startswith('"') and val.endswith('"'):
+        # Decode YAML double-quoted string escapes
+        val = val[1:-1]
+        val = val.replace('\\r', '\r').replace('\\n', '\n').replace('\\t', '\t')
+        val = val.replace('\\\\"', '"').replace('\\\\', '\\')
+    print(val, end='')
     sys.exit(0)
 
 sys.exit(0)  # key not found → empty output

@@ -143,7 +143,8 @@ static int lex_string(Lexer *l, int start, int line, int col)
             } else if (esc == '(') {
                 diag_emit(DIAG_WARNING, LEX_W1010, l->pos - 1, l->line, l->col - 1,
                           "string interpolation \\( is not supported in Phase 1; "
-                          "use str.concat() instead", NULL);
+                          "use str.concat() instead",
+                          "fix", "use str.concat() for string composition", NULL);
                 advance(l);
                 int depth = 1;
                 while (l->pos < l->len && depth > 0) {
