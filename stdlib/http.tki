@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "module": "std.http",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "Req",
+      "fields": [
+        {"name": "method",  "type": "str"},
+        {"name": "path",    "type": "str"},
+        {"name": "headers", "type": "[[str]]"},
+        {"name": "body",    "type": "str"},
+        {"name": "params",  "type": "[[str]]"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "Res",
+      "fields": [
+        {"name": "status",  "type": "u16"},
+        {"name": "headers", "type": "[[str]]"},
+        {"name": "body",    "type": "str"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "HttpErr",
+      "variants": [
+        {"name": "BadRequest", "type": "str"},
+        {"name": "NotFound",   "type": "str"},
+        {"name": "Internal",   "type": "str"},
+        {"name": "Timeout",    "type": "u32"}
+      ]
+    },
+    {"kind": "func", "name": "http.param",    "params": ["Req", "str"],        "return": "str!HttpErr"},
+    {"kind": "func", "name": "http.header",   "params": ["Req", "str"],        "return": "str!HttpErr"},
+    {"kind": "func", "name": "http.Res.ok",   "params": ["str"],               "return": "Res"},
+    {"kind": "func", "name": "http.Res.json", "params": ["u16", "str"],        "return": "Res"},
+    {"kind": "func", "name": "http.Res.bad",  "params": ["str"],               "return": "Res"},
+    {"kind": "func", "name": "http.Res.err",  "params": ["str"],               "return": "Res"},
+    {"kind": "route", "name": "http.GET",    "params": ["str", "FuncDecl"]},
+    {"kind": "route", "name": "http.POST",   "params": ["str", "FuncDecl"]},
+    {"kind": "route", "name": "http.PUT",    "params": ["str", "FuncDecl"]},
+    {"kind": "route", "name": "http.DELETE", "params": ["str", "FuncDecl"]},
+    {"kind": "route", "name": "http.PATCH",  "params": ["str", "FuncDecl"]}
+  ]
+}

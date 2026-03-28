@@ -24,7 +24,7 @@
 |------|-------|--------|
 | 1.1 | Language Specification Lock | done |
 | 1.2 | Reference Compiler Frontend | done |
-| 1.3 | Standard Library Core | backlog |
+| 1.3 | Standard Library Core | done |
 | 1.4 | Mac Studio Setup and Local Pipeline | backlog |
 | 1.5 | Phase A Corpus Generation | backlog |
 | 1.6 | Gate 1 Benchmark | backlog |
@@ -58,9 +58,9 @@ Two pre-conditions must be met before 1.2.1 starts:
   2. Document string interpolation lexer strategy
 Both are ~1 day each and can run in parallel with sprint planning.
 
-Epic 1.2 complete. All 10 stories done across 10 feature branches.
+Epics 1.2, 1.3, 1.7, 1.8 complete.
 
-Start Epic 1.3 — Standard Library Core.
-Stories 1.3.1 (std.str) is the first dependency; 1.3.2–1.3.5 depend on it.
-Parallel: Epic 1.4 (Mac Studio setup) can begin independently.
-Parallel: Epic 1.7 (SAST/security) stories 1.7.1, 1.7.3, 1.7.4, 1.7.5 can begin now.
+**Current blocker:** Epic 1.4 (Mac Studio configuration) requires physical hardware setup.
+All of 1.4.x, 1.5.x, and 1.6.2–1.6.4 are blocked until 1.4.1 is done.
+
+Running in parallel: Epic 2.6 (Responsible Disclosure and CVE Process) — documentation only, no hardware dependency.
