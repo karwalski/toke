@@ -61,6 +61,7 @@ typedef enum {
     NODE_TYPE_EXPR,
     NODE_ARRAY_TYPE,
     NODE_FUNC_TYPE,
+    NODE_PTR_TYPE,
     NODE_MATCH_ARM,
     NODE_RETURN_SPEC,
     NODE_MODULE_PATH,
@@ -102,6 +103,7 @@ typedef enum { DIAG_WARNING = 0, DIAG_ERROR = 1 } DiagSeverity;
 #define E2002 2002   /* unexpected token (expected X, got Y)        */
 #define E2003 2003   /* missing semicolon                           */
 #define E2004 2004   /* unclosed delimiter                          */
+#define E2010 2010   /* pointer type *T used outside extern function */
 
 /*
  * diag_emit — forward declaration matching the variadic convention.

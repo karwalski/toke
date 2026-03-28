@@ -26,6 +26,7 @@ static const char *type_name(const Type *t) {
     case TY_U64: return "u64";   case TY_F64: return "f64";   case TY_STR: return "str";
     case TY_STRUCT: return t->name?t->name:"struct"; case TY_ARRAY: return "array";
     case TY_FUNC: return "func"; case TY_ERROR_TYPE: return t->elem?type_name(t->elem):"error";
+    case TY_PTR: return "ptr";
     default: return "unknown";
     }
 }
@@ -33,6 +34,7 @@ static const char *type_name(const Type *t) {
 static int types_equal(const Type *a, const Type *b) {
     if (!a||!b) return 0; if (a==b) return 1; if (a->kind!=b->kind) return 0;
     if (a->kind==TY_STRUCT) return a->name&&b->name&&strcmp(a->name,b->name)==0;
+    if (a->kind==TY_PTR) return types_equal(a->elem, b->elem);
     if (a->kind==TY_ARRAY||a->kind==TY_FUNC||a->kind==TY_ERROR_TYPE) {
         /* TY_UNKNOWN elem is compatible with any elem (e.g. empty array literal []). */
         if ((a->elem&&a->elem->kind==TY_UNKNOWN)||(b->elem&&b->elem->kind==TY_UNKNOWN)) return 1;
@@ -63,9 +65,22 @@ typedef struct { TypeEnv *env; const char *src;
 
 static Type *infer(Ctx *cx, const Node *node);
 
+/* Return 1 if the type (or any nested type) contains TY_PTR. */
+static int contains_ptr(const Type *t) {
+    if (!t) return 0;
+    if (t->kind == TY_PTR) return 1;
+    if (t->elem && contains_ptr(t->elem)) return 1;
+    return 0;
+}
+
 static Type *resolve_type(Ctx *cx, const Node *n) {
     if (!n) return mk_type(cx->env->arena, TY_UNKNOWN);
     char nb[128]; TOKSTR(nb, cx->src, n);
+    if (n->kind == NODE_PTR_TYPE) {
+        Type *t = mk_type(cx->env->arena, TY_PTR);
+        if (t && n->child_count > 0) t->elem = resolve_type(cx, n->children[0]);
+        return t ? t : mk_type(cx->env->arena, TY_UNKNOWN);
+    }
     if (n->kind == NODE_ARRAY_TYPE) {
         Type *at = mk_type(cx->env->arena, TY_ARRAY);
         if (at && n->child_count > 0) at->elem = resolve_type(cx, n->children[0]);
@@ -336,10 +351,31 @@ static Type *infer(Ctx *cx, const Node *node) {
 
     case NODE_FUNC_DECL: {
         Type *ret=mk_type(A,TY_VOID);
+        int has_body=0;
         for (int i=0;i<node->child_count;i++) {
             const Node *ch=node->children[i];
             if (ch&&ch->kind==NODE_RETURN_SPEC&&ch->child_count>0)
-                { ret=resolve_type(cx,ch->children[0]); break; }
+                ret=resolve_type(cx,ch->children[0]);
+            if (ch&&ch->kind==NODE_STMT_LIST) has_body=1;
+        }
+        /* E2010: pointer types are only allowed in extern (bodyless) functions */
+        if (has_body) {
+            for (int i=0;i<node->child_count;i++) {
+                const Node *ch=node->children[i];
+                if (ch&&ch->kind==NODE_PARAM&&ch->child_count>1) {
+                    Type *pt=resolve_type(cx,ch->children[1]);
+                    if (contains_ptr(pt)) {
+                        diag_emit(DIAG_ERROR,E2010,ch->start,ch->line,ch->col,
+                            "pointer type *T used outside extern function","fix",(const char*)NULL);
+                        cx->had_error=1;
+                    }
+                }
+            }
+            if (contains_ptr(ret)) {
+                diag_emit(DIAG_ERROR,E2010,node->start,node->line,node->col,
+                    "pointer type *T used outside extern function","fix",(const char*)NULL);
+                cx->had_error=1;
+            }
         }
         Type *saved=cx->fn_ret; cx->fn_ret=ret;
         for (int i=0;i<node->child_count;i++) infer(cx,node->children[i]);

@@ -317,14 +317,45 @@ static void emit_toplevel(Ctx *c, const Node *n)
             if (n->children[i]->kind == NODE_RETURN_SPEC) {
                 const Node *rs = n->children[i];
                 if (rs->child_count > 0) {
-                    char rn[64]; tok_cp(c->src, rs->children[0], rn, sizeof rn);
-                    if      (!strcmp(rn, "bool")) ret = "i1";
-                    else if (!strcmp(rn, "f64"))  ret = "double";
-                    else if (!strcmp(rn, "str"))  ret = "ptr";
-                    else if (!strcmp(rn, "void")) ret = "void";
-                    else                          ret = "i64";
+                    if (rs->children[0]->kind == NODE_PTR_TYPE) {
+                        ret = "ptr";
+                    } else {
+                        char rn[64]; tok_cp(c->src, rs->children[0], rn, sizeof rn);
+                        if      (!strcmp(rn, "bool")) ret = "i1";
+                        else if (!strcmp(rn, "f64"))  ret = "double";
+                        else if (!strcmp(rn, "str"))  ret = "ptr";
+                        else if (!strcmp(rn, "void")) ret = "void";
+                        else                          ret = "i64";
+                    }
                 }
             }
+        }
+        /* Map parameter types to LLVM types */
+        if (body_i < 0) {
+            /* extern: emit declare */
+            fprintf(c->out, "\ndeclare %s @%s(", ret, tb);
+            int first = 1;
+            for (int i = 1; i < n->child_count; i++) {
+                if (n->children[i]->kind != NODE_PARAM) continue;
+                if (!first) fputs(", ", c->out);
+                /* Determine LLVM type for param */
+                const char *pty = "i64";
+                if (n->children[i]->child_count > 1 && n->children[i]->children[1]) {
+                    const Node *pt = n->children[i]->children[1];
+                    if (pt->kind == NODE_PTR_TYPE) {
+                        pty = "ptr";
+                    } else {
+                        char ptn[64]; tok_cp(c->src, pt, ptn, sizeof ptn);
+                        if      (!strcmp(ptn, "bool")) pty = "i1";
+                        else if (!strcmp(ptn, "f64"))  pty = "double";
+                        else if (!strcmp(ptn, "str"))  pty = "ptr";
+                    }
+                }
+                fputs(pty, c->out);
+                first = 0;
+            }
+            fputs(")\n", c->out);
+            break;
         }
         fprintf(c->out, "\ndefine %s @%s(", ret, tb);
         int first = 1;

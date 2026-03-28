@@ -1,0 +1,9 @@
+id: G028
+series: G
+description: "Normal function with body still works (regression)"
+input: |
+  M=test;
+  F=hello():i64{<42};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

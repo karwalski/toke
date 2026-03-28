@@ -33,8 +33,11 @@ typedef enum {
     TY_ARRAY,        /* [T] — element type in ->elem                      */
     TY_FUNC,         /* function type — return type in ->elem             */
     TY_ERROR_TYPE,   /* T!Err error union — carries result type in ->elem */
+    TY_PTR,          /* raw pointer *T — FFI only */
     TY_UNKNOWN,      /* sentinel: sub-expression already emitted an error */
 } TypeKind;
+
+#define E4060 4060  /* FFI type mismatch                              */
 
 typedef struct Type {
     TypeKind      kind;
