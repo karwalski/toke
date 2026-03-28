@@ -1123,6 +1123,214 @@ Acceptance criteria:
 
 ---
 
+### EPIC 2.9 — Tokenizer Pipeline Scaffolding
+
+---
+
+**Story 2.9.1 — Corpus preparation script (prepare.py)**
+
+As an ML engineer, I want the corpus preparation script fully implemented and tested with synthetic data, so that when the real corpus arrives it can be processed without delay.
+
+Dependencies: None (synthetic test data)
+
+Acceptance criteria:
+- `prepare.py` accepts JSONL corpus entries and outputs a deduplicated text file for BPE training
+- String literal contents are replaced with placeholder tokens
+- Dataset is split 90/10 (train/validation)
+- Unit tests cover: JSONL parsing, deduplication, placeholder replacement, splitting, edge cases (empty files, malformed entries)
+- Script runs successfully on synthetic corpus of 100 generated toke programs
+- `pyproject.toml` updated with runtime dependencies (sentencepiece or tokenizers)
+
+---
+
+**Story 2.9.2 — BPE training wrapper (train.py)**
+
+As an ML engineer, I want the BPE training script fully implemented with SentencePiece integration, so that tokenizer training is a single command once the corpus is ready.
+
+Dependencies: 2.9.1
+
+Acceptance criteria:
+- `train.py` wraps SentencePiece BPE training with configurable vocab size (default 32,768)
+- Accepts prepared text file from 2.9.1
+- Outputs a tokenizer model in a standard format (sentencepiece .model + .vocab)
+- Unit tests verify: argument parsing, config validation, training on small synthetic corpus produces a loadable model
+- Training completes on the synthetic corpus in under 60 seconds
+
+---
+
+**Story 2.9.3 — Tokenizer evaluation script (eval.py)**
+
+As a validation engineer, I want the evaluation script fully implemented to compare any trained tokenizer against cl100k_base, so that token density improvement can be measured as soon as a tokenizer is trained.
+
+Dependencies: 2.9.2
+
+Acceptance criteria:
+- `eval.py` loads a trained tokenizer and cl100k_base, tokenises the benchmark task set, and computes token count ratios
+- Output is JSON: per-task token counts, mean/median improvement, summary statistics
+- Loads benchmark tasks from toke-benchmark hidden_tests/ directory
+- Unit tests cover: metric computation, JSON output schema, edge cases (empty programs, single-token programs)
+- Script runs successfully using the synthetic tokenizer from 2.9.2 tests
+
+---
+
+### EPIC 2.10 — Benchmark Harness and Reference Implementations
+
+---
+
+**Story 2.10.1 — Benchmark evaluation harness (run.py, score.py, report.py)**
+
+As a validation engineer, I want the benchmark evaluation harness fully implemented, so that model outputs can be scored as soon as a model produces them.
+
+Dependencies: None
+
+Acceptance criteria:
+- `harness/run.py` accepts a model output directory and a task set, executes generated programs against test cases, and records results
+- `harness/score.py` computes Pass@1, Pass@3, Pass@5 metrics; per-category breakdowns; token efficiency via cl100k_base
+- `harness/report.py` generates a JSON summary and human-readable report
+- Unit tests cover: scoring logic with mock outputs (all-pass, all-fail, partial), metric edge cases, report format
+- Harness runs in dry-run mode without a model
+
+---
+
+**Story 2.10.2 — Phase A Python reference implementations (50+ tasks)**
+
+As a validation engineer, I want Python reference implementations for at least 50 Phase A benchmark tasks, so that differential testing can begin as soon as corpus generation starts.
+
+Dependencies: None (tasks already exist in toke-benchmark/hidden_tests/)
+
+Acceptance criteria:
+- At least 50 Python functions in `baselines/python/` corresponding to Phase A tasks
+- Each function passes all test cases for its task (verified by a test script)
+- Implementations are idiomatic Python, not generated
+- A runner script executes all baselines against the hidden test YAML files and reports pass/fail
+
+---
+
+**Story 2.10.3 — Phase A C reference implementations (50+ tasks)**
+
+As a validation engineer, I want C reference implementations for at least 50 Phase A benchmark tasks, so that the four-language differential testing pipeline has a C baseline.
+
+Dependencies: None
+
+Acceptance criteria:
+- At least 50 C implementations in `baselines/c/` corresponding to Phase A tasks
+- Each implementation compiles cleanly with `-Wall -Wextra -Werror` and passes all test cases
+- A runner script compiles and executes all baselines against the hidden test YAML files
+
+---
+
+**Story 2.10.4 — Benchmark CI workflow**
+
+As a validation engineer, I want CI that validates all benchmark tasks have correct schemas and all reference implementations pass their tests.
+
+Dependencies: 2.10.2
+
+Acceptance criteria:
+- GitHub Actions workflow validates: task YAML schemas, unique task IDs, test case count per task
+- Workflow runs reference implementation test suite
+- Workflow fails if any reference implementation fails its test cases
+
+---
+
+### EPIC 2.11 — Corpus Pipeline Test Infrastructure
+
+---
+
+**Story 2.11.1 — Corpus pipeline unit tests**
+
+As a corpus engineer, I want comprehensive unit tests for all corpus pipeline modules, so that pipeline correctness is verified before hardware arrives.
+
+Dependencies: None
+
+Acceptance criteria:
+- `test_curriculum.py`: task generation determinism, variant coverage, ID uniqueness (curriculum.py is 1,285 lines — it needs tests)
+- `test_validate.py`: tkc invocation mocking, diagnostic JSON parsing, error code extraction
+- `test_validate_schema.py`: valid/invalid corpus entries against schema.json
+- `test_compile.py`: compilation wrapper behaviour, timeout handling
+- `test_vote.py`: majority voting edge cases (unanimous, 2-way tie, all disagree, single voter)
+- All tests pass with `pytest` and no external dependencies (mock tkc, mock model)
+
+---
+
+**Story 2.11.2 — Corpus pipeline dry-run integration test**
+
+As a corpus engineer, I want a dry-run integration test that exercises the full pipeline end-to-end with mock data, so that pipeline integration is verified without hardware.
+
+Dependencies: 2.11.1
+
+Acceptance criteria:
+- Single command runs: generate task → generate code (dry-run) → validate → differential (mocked refs) → judge (mocked)
+- Pipeline produces a valid corpus entry matching schema.json
+- Test completes in under 30 seconds
+- Test runs in CI
+
+---
+
+### EPIC 2.12 — Specification Completion
+
+---
+
+**Story 2.12.1 — Error code registry (spec/errors.md)**
+
+As a repair loop engineer, I want the complete error code registry extracted from the compiler source and published in the spec, so that automated repair systems have a stable reference.
+
+Dependencies: None (extract from tkc source)
+
+Acceptance criteria:
+- All E-series, W-series codes documented with: code, meaning, stage, example trigger, fix field value
+- Extracted mechanically from tkc src/ (diag.h, parser.h, types.h, names.h, ir.h, llvm.h)
+- Cross-referenced with conformance test IDs where applicable
+- Published in toke-spec/spec/errors.md
+
+---
+
+**Story 2.12.2 — Formal semantics stub (spec/semantics.md)**
+
+As a language standardiser, I want the type rules and scoping rules documented from the reference implementation, so that the semantics spec is started before the Phase 4 formalisation push.
+
+Dependencies: None (extract from tkc types.c, names.c)
+
+Acceptance criteria:
+- All 10+ type checking rules documented in prose (formal inference rules deferred to 4.1.2)
+- Scope chain rules documented: module, function, block, loop, match arm
+- Predefined identifiers listed with their types
+- Arena escape rules documented with examples
+- Published in toke-spec/spec/semantics.md
+
+---
+
+**Story 2.12.3 — Standard library signatures (spec/stdlib-signatures.md)**
+
+As a compiler implementer, I want all stdlib function signatures documented in one place, so that alternate implementations can be built without reading the C source.
+
+Dependencies: None (extract from tkc stdlib/*.h and stdlib/*.tki)
+
+Acceptance criteria:
+- All 9 modules documented: str, json, file, process, env, crypto, time, test, log
+- Each function: name, parameter types, return type, error type
+- Each error sum type: variant names and meanings
+- Published in toke-spec/spec/stdlib-signatures.md
+
+---
+
+### EPIC 2.13 — Standard Library Documentation
+
+---
+
+**Story 2.13.1 — Complete stdlib module documentation**
+
+As a toke developer, I want each stdlib module fully documented with function signatures, examples, and error handling guidance in toke-stdlib.
+
+Dependencies: None
+
+Acceptance criteria:
+- All 12 .md files in toke-stdlib/std/ completed (currently stubs)
+- Each documents: module purpose, all function signatures, parameter descriptions, return values, error types and when they occur
+- At least one usage example per function
+- Cross-references to the .tki interface file
+
+---
+
 ### EPIC 3.1 — Production Compiler
 
 ---

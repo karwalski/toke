@@ -151,6 +151,44 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 |----|-------|--------|--------|-------|
 | 2.8.1 | Fix LLVM IR emission for end-to-end compilation | backlog | — | 5 known codegen defects: param load, let-bind child index, call return types, match arm index, cast stub. Depends on 2.1 (done). |
 
+### Epic 2.9 — Tokenizer Pipeline Scaffolding
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 2.9.1 | Corpus preparation script (prepare.py) | backlog | — | No hardware deps. Synthetic test data. |
+| 2.9.2 | BPE training wrapper (train.py) | backlog | — | Depends on 2.9.1 |
+| 2.9.3 | Tokenizer evaluation script (eval.py) | backlog | — | Depends on 2.9.2. Uses toke-benchmark tasks. |
+
+### Epic 2.10 — Benchmark Harness and Reference Implementations
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 2.10.1 | Benchmark evaluation harness (run/score/report) | backlog | — | No deps. Dry-run mode. |
+| 2.10.2 | Phase A Python reference implementations (50+) | backlog | — | No deps. Tasks exist. |
+| 2.10.3 | Phase A C reference implementations (50+) | backlog | — | No deps. |
+| 2.10.4 | Benchmark CI workflow | backlog | — | Depends on 2.10.2 |
+
+### Epic 2.11 — Corpus Pipeline Test Infrastructure
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 2.11.1 | Corpus pipeline unit tests | backlog | — | No deps. Mock tkc + model. |
+| 2.11.2 | Corpus pipeline dry-run integration test | backlog | — | Depends on 2.11.1 |
+
+### Epic 2.12 — Specification Completion
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 2.12.1 | Error code registry (spec/errors.md) | backlog | — | Extract from tkc source. No deps. |
+| 2.12.2 | Formal semantics stub (spec/semantics.md) | backlog | — | Extract from tkc types.c/names.c. No deps. |
+| 2.12.3 | Standard library signatures (spec/stdlib-signatures.md) | backlog | — | Extract from tkc stdlib/*.h. No deps. |
+
+### Epic 2.13 — Standard Library Documentation
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 2.13.1 | Complete stdlib module documentation | backlog | — | 12 .md files in toke-stdlib. No deps. |
+
 ### Epic 2.1 — Phase 2 Language Extensions
 
 | ID | Story | Status | Branch | Notes |
