@@ -48,8 +48,8 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 |----|-------|--------|--------|-------|
 | 1.7.1 | SAST on compiler C code | done | feature/security-sast-dco | [x] cppcheck CI [x] clang-tidy [x] PR annotations [x] 63-line workflow |
 | 1.7.2 | Compiler input fuzzing | done | feature/security-fuzzing | [x] libFuzzer lexer+parser targets [x] ASAN+UBSAN [x] 5 corpus files [x] make fuzz [x] nightly CI |
-| 1.7.3 | Secret scanning in corpus pipeline | backlog | — | Can parallel 1.4.x |
-| 1.7.4 | Dependency vulnerability scanning | backlog | — | Can parallel 1.4.x |
+| 1.7.3 | Secret scanning in corpus pipeline | done | feature/security-secret-dep-scan (toke-corpus, toke-model) | [x] gitleaks CI [x] .gitignore hardened [x] pre-commit docs (GitHub UI: enable secret scanning) |
+| 1.7.4 | Dependency vulnerability scanning | done | feature/security-secret-dep-scan (toke-corpus, toke-model) | [x] Dependabot [x] pip-audit CI [x] pyproject.toml pinned (GitHub UI: enable Dependabot alerts) |
 | 1.7.5 | Signed commits and DCO enforcement | done | feature/security-sast-dco | [x] dco.yml [x] retroactive signoff [x] CONTRIBUTING.md [x] README notice (GitHub App install: manual) |
 
 ### Epic 1.8 — Corpus Pipeline Threat Model
