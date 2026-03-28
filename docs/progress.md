@@ -33,11 +33,11 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 |----|-------|--------|--------|-------|
 | 1.2.1 | Lexer implementation | done | feature/compiler-lexer | [x] 80-char set [x] 38 token kinds [x] W1010 [x] E1001 E1002 E1003 [x] 296 lines |
 | 1.2.2 | Parser implementation | done | feature/compiler-parser | [x] All 47 non-terminals [x] LL(1) [x] AST with source positions [x] E2001–E2004 diagnostics [x] 394 lines |
-| 1.2.3 | Import resolver | done | feature/compiler-import-resolver | [x] .tki loading [x] E2030 unresolved [x] E2031 circular [x] std.* prefix [x] SymbolTable [x] 179 lines |
+| 1.2.3 | Import resolver | done | feature/compiler-import-resolver | [x] .tokei loading [x] E2030 unresolved [x] E2031 circular [x] std.* prefix [x] SymbolTable [x] 179 lines |
 | 1.2.4 | Name resolver | done | feature/compiler-name-resolver | [x] Scope chain [x] Predefined ids [x] Import aliases [x] E3011 E3012 [x] All scope levels |
 | 1.2.5 | Type checker | done | feature/compiler-type-checker | [x] 10/10 rules [x] E4031 E4010 E4011 E4025 E5001 E3020 [x] 346 lines (arena escape: conservative — Decl needs depth stamp) |
 | 1.2.6 | Structured diagnostic emitter | done | feature/compiler-diag | [x] JSON schema 1.0 [x] fix field omitted when absent [x] --diag-text [x] 180 lines |
-| 1.2.7 | Interface file emitter | done | feature/compiler-interface-emitter | [x] JSON .tki [x] module/func/type/const [x] interface_hash [x] E9001 [x] 190 lines |
+| 1.2.7 | Interface file emitter | done | feature/compiler-interface-emitter | [x] JSON .tokei [x] module/func/type/const [x] interface_hash [x] E9001 [x] 190 lines |
 | 1.2.8 | LLVM IR backend | done | feature/compiler-llvm-backend | [x] Text IR all constructs [x] 3 targets via clang [x] E9002 E9003 [x] 396 lines (cast/field-offset/nested-break stubs) |
 | 1.2.9 | CLI interface | done | feature/compiler-cli | [x] All flags [x] Full pipeline [x] Exit codes 0/1/2/3 [x] isatty diag [x] 186 lines |
 | 1.2.10 | Conformance test suite (Phase 1) | done | test/compiler-conformance-suite | [x] 62 tests [x] L/G/D series [x] run_conform.sh [x] make conform wired |
@@ -63,11 +63,11 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 1.3.1 | std.str | done | feature/stdlib-str | [x] 14/14 functions [x] str.tki [x] C impl 222 lines [x] 22 test assertions |
-| 1.3.2 | std.http | done | feature/stdlib-http | [x] Req/Res/HttpErr types [x] 5 route verbs [x] :param extraction [x] POSIX server [x] http.tki |
-| 1.3.3 | std.db | done | feature/stdlib-db | [x] 8/8 functions [x] SQLite3 backend [x] DbErr sum type [x] db.tki [x] in-memory test suite |
-| 1.3.4 | std.json | done | feature/stdlib-json | [x] 8/8 functions [x] JsonErr sum type [x] json.tki [x] recursive key extractor [x] 7 test assertions |
-| 1.3.5 | std.file | done | feature/stdlib-file | [x] 6/6 functions [x] FileErr sum type [x] file.tki [x] 138 lines [x] 9 test assertions |
+| 1.3.1 | std.str | done | feature/stdlib-str | [x] 14/14 functions [x] str.tokei [x] C impl 222 lines [x] 22 test assertions |
+| 1.3.2 | std.http | done | feature/stdlib-http | [x] Req/Res/HttpErr types [x] 5 route verbs [x] :param extraction [x] POSIX server [x] http.tokei |
+| 1.3.3 | std.db | done | feature/stdlib-db | [x] 8/8 functions [x] SQLite3 backend [x] DbErr sum type [x] db.tokei [x] in-memory test suite |
+| 1.3.4 | std.json | done | feature/stdlib-json | [x] 8/8 functions [x] JsonErr sum type [x] json.tokei [x] recursive key extractor [x] 7 test assertions |
+| 1.3.5 | std.file | done | feature/stdlib-file | [x] 6/6 functions [x] FileErr sum type [x] file.tokei [x] 138 lines [x] 9 test assertions |
 
 ### Epic 1.9 — Remote Monitoring Console
 

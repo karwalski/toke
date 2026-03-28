@@ -30,7 +30,7 @@ Produces `./tkc` binary.
 
     --target <arch-os>    e.g. x86_64-linux, arm64-macos
     --out <path>          output binary path
-    --emit-interface      emit .tki interface files
+    --emit-interface      emit .tokei interface files
     --check               type-check only, no code generation
     --phase1              80-character set (default)
     --phase2              56-character set

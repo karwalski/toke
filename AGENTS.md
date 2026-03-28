@@ -5,7 +5,7 @@
 **Repository:** https://github.com/tokelang/spec  
 **Project:** toke — machine-native language for LLM code generation  
 **Compiler binary:** tkc  
-**File extension:** .tk
+**File extension:** .toke
 
 This file is the authoritative operating specification for any AI coding agent working in this repository. Read it in full before touching any file. It is not a suggestion document — it is a contract.
 
@@ -59,7 +59,7 @@ These rules are specific to toke and take precedence over general coding agent c
 
 ### 3.2 Corpus rules
 
-- Never add entries to the corpus that have not passed the full validation pipeline (compiler + differential test + Qwen judge). No exceptions.
+- Never add entries to the corpus that have not passed the full validation pipeline (compiler + differential test + Qwen judge). No exceptions. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tokei interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
 - Never commit test task IDs to the corpus directory. Held-out benchmark tasks in `benchmark/hidden_tests/` must not appear in `corpus/`.
 - The corpus metadata schema defined in `corpus/schema.json` is normative. Do not add fields without updating the schema and the schema validation tests.
 - Corpus deduplication runs before every batch commit to the corpus. Do not bypass it.
@@ -71,8 +71,8 @@ These rules are specific to toke and take precedence over general coding agent c
 
 ### 3.4 Standard library rules
 
-- All stdlib function signatures are normative per the RFC. Do not change a stdlib function signature without updating the spec, the .tki interface file, all call sites in the corpus, and the conformance tests.
-- Stdlib source files are toke source (.tk). They must compile cleanly with the current tkc before being committed.
+- All stdlib function signatures are normative per the RFC. Do not change a stdlib function signature without updating the spec, the .tokei interface file, all call sites in the corpus, and the conformance tests.
+- Stdlib source files are toke source (.toke). They must compile cleanly with the current tkc before being committed.
 - Stdlib implementations may use C FFI internally. FFI usage in stdlib must be clearly commented with the C function signature and the rationale for using FFI over a toke implementation.
 
 ### 3.5 Benchmark and test isolation rules
@@ -295,13 +295,13 @@ tokelang/
 │   │   └── protocol/       P-series
 │   └── Makefile
 │
-├── stdlib/                 Standard library (.tk source)
-│   ├── std.str.tk
-│   ├── std.http.tk
-│   ├── std.db.tk
-│   ├── std.json.tk
-│   ├── std.file.tk
-│   └── std.net.tk
+├── stdlib/                 Standard library (.toke source)
+│   ├── std.str.toke
+│   ├── std.http.toke
+│   ├── std.db.toke
+│   ├── std.json.toke
+│   ├── std.file.toke
+│   └── std.net.toke
 │
 ├── corpus/
 │   ├── generator/          Task curriculum generator
@@ -342,7 +342,7 @@ tokelang/
 File placement rules:
 - New C source files go in `tkc/src/`
 - New conformance tests go in the correct series subdirectory under `tkc/test/`
-- New stdlib modules go in `stdlib/` as `.tk` files
+- New stdlib modules go in `stdlib/` as `.toke` files
 - Architecture decisions go in `docs/architecture/ADR-NNNN.md`
 - Do not create `helpers.c`, `utils.c`, `misc.py`, or similar vague files
 
@@ -414,7 +414,7 @@ def generate(t, v):
 - all types defined before all functions
 - every partial function has its error type explicitly declared
 - no function longer than 30 statements
-- every stdlib file compiles cleanly with `tkc --check` before commit
+- every stdlib .toke file compiles cleanly with `tkc --check` before commit
 
 ### 9.4 Comments
 
@@ -441,7 +441,7 @@ The repair loop depends on error quality. Every error message must:
 - include enough context for a model to fix it without reading the full source
 - provide a `fix` if and only if the fix is correct in every case this error is emitted
 
-Do not trade diagnostic quality for implementation convenience.
+Do not trade diagnostic quality for implementation convenience. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tokei interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
 
 ---
 

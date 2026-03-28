@@ -158,7 +158,7 @@ output_dir = Path("/Users/matt/tokelang/corpus/data")
 
 ### File structure
 
-Every `.tk` file follows this order with no exceptions:
+Every `.toke` file follows this order with no exceptions:
 1. Module declaration
 2. Import declarations
 3. Type declarations (structs first, then sum types)
@@ -170,7 +170,7 @@ Every `.tk` file follows this order with no exceptions:
 | Thing | Convention | Example |
 |-------|------------|---------|
 | Types (Phase 1) | PascalCase | `HttpReq` |
-| Types (Phase 2) | $lowercase | `$http_req` |
+| Types (Phase 2) | $lowercase | `$user` |
 | Functions | snake_case | `parse_route_param` |
 | Parameters | snake_case | `req_body` |
 | Local bindings | snake_case | `row_count` |
@@ -187,7 +187,7 @@ toke has no comment syntax. Use a companion `.md` file in the same directory for
 
 ```
 stdlib/
-├── std.http.tk
+├── std.http.toke
 ├── std.http.md    ← documentation for std.http
 ```
 
@@ -247,5 +247,5 @@ These are the most common mistakes. Avoid them:
 - Adding an `#include` for a non-standard library header in the compiler frontend
 - Hardcoding file paths in Python scripts
 - Skipping type annotations on Python functions
-- Committing stdlib `.tk` files that do not compile with `tkc --check`
+- Committing stdlib `.toke` files that do not compile with `tkc --check`
 - Adding a new stdlib function that is not in the RFC spec without creating a spec amendment issue first
