@@ -1,0 +1,16 @@
+(* std.process — stub; implemented in the C layer (src/stdlib/process.c).
+ *
+ * The reference compiler resolves std.process imports via stdlib/process.tki
+ * and links against the C implementation directly.  This file exists to
+ * satisfy source-level tooling that expects a .tk file for every module.
+ *
+ * Exported interface (see stdlib/process.tki):
+ *   process.spawn(cmd:[Str]):Handle!ProcessErr
+ *   process.wait(h:Handle):i32!ProcessErr
+ *   process.stdout(h:Handle):Str!ProcessErr
+ *   process.kill(h:Handle):bool
+ *   type Handle          -- opaque OS process handle
+ *   sum  ProcessErr      -- NotFound | Permission | IO
+ *
+ * Story: 2.7.1  Branch: feature/stdlib-2.7-process-env
+ *)
