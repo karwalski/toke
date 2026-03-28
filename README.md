@@ -1,5 +1,7 @@
 # tkc — the toke reference compiler
 
+See [SECURITY.md](SECURITY.md) for the vulnerability disclosure policy.
+
 tkc is the reference compiler for [toke](https://github.com/karwalski/toke-spec),
 a machine-native programming language designed for LLM code generation.
 
