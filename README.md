@@ -38,7 +38,7 @@ If toke does not show a measurable token-efficiency advantage over Python, Go, o
 |------------|------|
 | [karwalski/toke](https://github.com/karwalski/toke) | This meta-repo: project landing page, issue tracker for cross-repo work |
 | [karwalski/tkc](https://github.com/karwalski/tkc) | Reference compiler (C), standard library, conformance test suite, project docs |
-| [karwalski/toke-spec](https://github.com/karwalski/toke-spec) | Language specification: grammar.ebnf, character set, keyword table, Phase 2 transform rules |
+| [karwalski/toke-spec](https://github.com/karwalski/toke-spec) | Language specification: grammar.ebnf, character set, keyword table, Profile 2 transform rules |
 | [karwalski/toke-corpus](https://github.com/karwalski/toke-corpus) | Corpus generation pipeline, monitoring console, sandbox execution harness |
 | [karwalski/toke-model](https://github.com/karwalski/toke-model) | Fine-tuning scripts and model evaluation harness |
 | [karwalski/toke-benchmark](https://github.com/karwalski/toke-benchmark) | Held-out benchmark task set (500 tasks, gitignored output), gate measurement scripts |
