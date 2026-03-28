@@ -2,7 +2,7 @@
 #define TK_DIAG_H
 
 /*
- * diag.h — structured diagnostic emitter for the toke Phase 1 reference
+ * diag.h — structured diagnostic emitter for the toke Profile 1 reference
  * compiler.
  *
  * Diagnostics are emitted to stderr as one JSON object per line (default) or

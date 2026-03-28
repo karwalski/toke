@@ -4,7 +4,7 @@
 /*
  * types.h — Type checker for the toke reference compiler.
  *
- * Enforces all 10 Phase-1 type rules from spec Section 13.6.
+ * Enforces all 10 Profile-1 type rules from spec Section 13.6.
  * All allocation is through the supplied Arena; no malloc/free.
  *
  * Story: 1.2.5  Branch: feature/compiler-type-checker
@@ -52,7 +52,7 @@ typedef struct TypeEnv {
 } TypeEnv;
 
 /*
- * type_check — walk the AST rooted at ast and enforce the 10 Phase-1
+ * type_check — walk the AST rooted at ast and enforce the 10 Profile-1
  * type rules.  Diagnostics are emitted via diag_emit().
  *
  * Returns 0 if no type errors were found, -1 otherwise.

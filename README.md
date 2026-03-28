@@ -32,8 +32,8 @@ Produces `./tkc` binary.
     --out <path>          output binary path
     --emit-interface      emit .tokei interface files
     --check               type-check only, no code generation
-    --phase1              80-character set (default)
-    --phase2              56-character set
+    --profile1            Profile 1: 80-character set (default)
+    --profile2            Profile 2: 56-character set
     --diag-json           structured JSON diagnostics (default)
     --diag-text           human-readable diagnostics
 

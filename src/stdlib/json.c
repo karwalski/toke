@@ -144,7 +144,7 @@ static int find_json_key(const char *raw, const char *key,
 /* Public API                                                           */
 /* ------------------------------------------------------------------ */
 
-/* json_enc — Phase 1 stub: wrap Str in quotes with minimal escaping */
+/* json_enc — Profile 1 stub: wrap Str in quotes with minimal escaping */
 const char *json_enc(const char *v) {
     if (!v) return "\"\"";
     size_t n = strlen(v);

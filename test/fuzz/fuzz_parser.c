@@ -21,13 +21,13 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     diag_reset();
 
-    /* Lex phase */
+    /* Lex stage */
     int token_cap = (int)(size / 2) + 16;
     Token tokens[token_cap > 0 ? token_cap : 16];
 
     int count = lex((const char *)data, (int)size, tokens, token_cap);
 
-    /* Parse phase — arena must be freed after every invocation to prevent
+    /* Parse stage — arena must be freed after every invocation to prevent
      * memory growth across fuzz runs (libFuzzer reuses the process). */
     Arena arena;
     arena_init(&arena);

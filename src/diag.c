@@ -88,7 +88,7 @@ emit_json(DiagSeverity sev, int code,
             "\"diagnostic_id\":\"%s\","
             "\"error_code\":\"%s\","
             "\"severity\":\"%s\","
-            "\"phase\":\"%s\","
+            "\"stage\":\"%s\","
             "\"message\":\"",
             diag_id, code_str, severity_str(sev), phase_for_code(code));
     json_escape(stderr, message);

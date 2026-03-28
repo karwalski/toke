@@ -60,7 +60,7 @@ Acceptance criteria:
 
 **Story 1.1.4 — Formal EBNF grammar**
 
-As a compiler engineer, I want a complete formal EBNF grammar for toke Phase 1, so that the parser is built from a single authoritative document and conformance tests can be mechanically generated from it.
+As a compiler engineer, I want a complete formal EBNF grammar for toke Profile 1, so that the parser is built from a single authoritative document and conformance tests can be mechanically generated from it.
 
 Acceptance criteria:
 - Grammar covers all constructs: module, import, type, constant, function, all statement forms, all expression forms, all literal forms, all type expression forms
@@ -71,29 +71,29 @@ Acceptance criteria:
 
 ---
 
-**Story 1.1.5 — Phase 2 transformation rules**
+**Story 1.1.5 — Profile 2 transformation rules**
 
-As a tooling developer, I want the Phase 1 to Phase 2 transformation rules documented precisely, so that a mechanical translator can convert any valid Phase 1 program to a valid Phase 2 program without human judgment.
+As a tooling developer, I want the Profile 1 to Profile 2 transformation rules documented precisely, so that a mechanical translator can convert any valid Profile 1 program to a valid Profile 2 program without human judgment.
 
 Acceptance criteria:
 - Uppercase type name to $ sigil rule is formally stated with no exceptions
 - Array literal [] to @() rule is formally stated with no exceptions
 - Array index a[n] to a.get(n) rule is formally stated
-- Transformation is deterministic: one Phase 1 program maps to exactly one Phase 2 program
-- A round-trip test exists: Phase 1 → Phase 2 → Phase 1 produces the original program
-- At least 20 example pairs (Phase 1, Phase 2) are included in the spec
+- Transformation is deterministic: one Profile 1 program maps to exactly one Profile 2 program
+- A round-trip test exists: Profile 1 → Profile 2 → Profile 1 produces the original program
+- At least 20 example pairs (Profile 1, Profile 2) are included in the spec
 
 ---
 
 **Story 1.1.6 — Spec review and alignment**
 
-As a compiler engineer, I want all Phase 1 spec documents reviewed for internal consistency and completeness before compiler work begins, so that the risk of mid-implementation spec changes is minimised.
+As a compiler engineer, I want all Profile 1 spec documents reviewed for internal consistency and completeness before compiler work begins, so that the risk of mid-implementation spec changes is minimised.
 
 Acceptance criteria:
 - All five spec documents reviewed: character-set.md, keywords.md, symbol-disambiguation.md, grammar.ebnf, phase2-transform.md
 - Every production in grammar.ebnf references only terminals defined in character-set.md and keywords.md
 - Every disambiguation rule in symbol-disambiguation.md is present and correctly encoded in grammar.ebnf
-- Every Phase 2 transformation in phase2-transform.md references valid grammar non-terminals from grammar.ebnf
+- Every Profile 2 transformation in phase2-transform.md references valid grammar non-terminals from grammar.ebnf
 - No contradictions between any two spec documents
 - Any gap, ambiguity, or risk item that would require a compiler change post-implementation is documented
 - A review report is committed to toke-spec/docs/spec-review-m0.md
@@ -125,16 +125,16 @@ Acceptance criteria:
 
 **Story 1.2.1 — Lexer implementation**
 
-As a compiler engineer, I want a C lexer that accepts a Phase 1 source file and produces a flat token stream with no whitespace tokens, so that the parser receives a clean token sequence independent of formatting.
+As a compiler engineer, I want a C lexer that accepts a Profile 1 source file and produces a flat token stream with no whitespace tokens, so that the parser receives a clean token sequence independent of formatting.
 
 Acceptance criteria:
-- Lexer correctly classifies all 80 Phase 1 characters into their token classes
+- Lexer correctly classifies all 80 Profile 1 characters into their token classes
 - Whitespace between tokens is silently consumed and produces no tokens
 - Two programs differing only in whitespace between tokens produce identical token streams
 - String literal content is captured verbatim including escape sequences
 - Invalid escape sequences produce a structured E1001 diagnostic and halt
 - Unterminated string literals produce a structured E1002 diagnostic and halt
-- Characters outside the Phase 1 set in structural positions produce E1003
+- Characters outside the Profile 1 set in structural positions produce E1003
 - Lexer processes a 200-token source file in under 1ms on reference hardware
 - Lexer source is under 300 lines of C
 
@@ -142,10 +142,10 @@ Acceptance criteria:
 
 **Story 1.2.2 — Parser implementation**
 
-As a compiler engineer, I want a C parser that accepts the token stream from the lexer and produces an AST, so that all downstream phases work from a single structured representation.
+As a compiler engineer, I want a C parser that accepts the token stream from the lexer and produces an AST, so that all downstream stages work from a single structured representation.
 
 Acceptance criteria:
-- Parser implements the complete Phase 1 EBNF grammar with no extensions
+- Parser implements the complete Profile 1 EBNF grammar with no extensions
 - Parser is LL(1): no production examines more than one token of lookahead
 - Every grammar violation produces a structured diagnostic with error code, position, and context
 - AST nodes carry source position information (byte offset, line, column)
@@ -207,7 +207,7 @@ As a repair loop engineer, I want every compiler error to be emitted as a JSON-s
 
 Acceptance criteria:
 - All diagnostics conform to the schema defined in Section 9.1 of the spec
-- schema_version is "1.0" for all Phase 1 diagnostics
+- schema_version is "1.0" for all Profile 1 diagnostics
 - fix field is populated for all mechanically derivable corrections
 - fix field is omitted (not null, not empty string) when no mechanical fix exists
 - Diagnostics are emitted to stderr, one JSON object per line
@@ -235,7 +235,7 @@ Acceptance criteria:
 As a compiler engineer, I want a backend that lowers toke IR to LLVM IR and invokes LLVM to produce a native binary, so that toke programs run as self-contained native executables with no runtime dependency.
 
 Acceptance criteria:
-- LLVM IR is generated for all constructs defined in the Phase 1 grammar
+- LLVM IR is generated for all constructs defined in the Profile 1 grammar
 - Native binaries are produced for x86-64 Linux, ARM64 Linux, and ARM64 macOS
 - Produced binaries have no external runtime dependency beyond libc
 - Binary overhead for a minimal toke program is under 100KB
@@ -254,16 +254,16 @@ Acceptance criteria:
 - --out flag specifies binary output path
 - --emit-interface flag triggers .tokei emission
 - --check flag runs type checking only without code generation
-- --phase1 and --phase2 flags select character set profile
+- --profile1 and --profile2 flags select character set profile
 - --diag-json and --diag-text flags select diagnostic format
 - Exit codes are: 0 (success), 1 (compilation error), 2 (internal error), 3 (usage error)
 - --version prints compiler version and exits 0
 
 ---
 
-**Story 1.2.10 — Conformance test suite (Phase 1)**
+**Story 1.2.10 — Conformance test suite (Profile 1)**
 
-As a compiler engineer, I want a conformance test suite covering all Phase 1 language features, so that any change to the compiler can be validated against expected behaviour for every construct.
+As a compiler engineer, I want a conformance test suite covering all Profile 1 language features, so that any change to the compiler can be validated against expected behaviour for every construct.
 
 Acceptance criteria:
 - Test suite covers all L-series (lexical), G-series (grammar), N-series (name resolution), T-series (type checking), C-series (code generation), and D-series (diagnostic) categories
@@ -525,7 +525,7 @@ Acceptance criteria:
 As a validation engineer, I want Pass@1 measurements for tk on the benchmark task set using a general-purpose LLM with the toke spec in context, so that Gate 1 has an empirical correctness result before any fine-tuning. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tokei interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
 
 Acceptance criteria:
-- Each benchmark task is attempted 10 times using Claude Haiku 4.5 with the full Phase 1 spec in the system prompt
+- Each benchmark task is attempted 10 times using Claude Haiku 4.5 with the full Profile 1 spec in the system prompt
 - Pass@1 is computed as the fraction of tasks where at least 1 of 10 attempts compiles and passes all test inputs
 - Mean repair iterations per task is recorded
 - Results are committed to benchmark/results/gate1_pass.json
@@ -541,7 +541,7 @@ Acceptance criteria:
 - Document states the measured token reduction percentage
 - Document states the measured Pass@1 percentage
 - Document compares results against gate criteria (>10% reduction, ≥60% Pass@1)
-- Document states the decision: proceed to Phase 2 or pivot to IR approach
+- Document states the decision: proceed to project Phase 2 or pivot to IR approach
 - Document is committed to the repository and tagged as gate1-decision
 - Decision is made within 2 weeks of M5.5
 
@@ -795,16 +795,16 @@ Acceptance criteria:
 
 ---
 
-### EPIC 2.2 — Phase 2 Tokenizer
+### EPIC 2.2 — Profile 2 Tokenizer
 
 ---
 
-**Story 2.2.1 — Phase 1 corpus preparation for tokenizer training**
+**Story 2.2.1 — Profile 1 corpus preparation for tokenizer training**
 
-As an ML engineer, I want the Phase 1 corpus prepared as a clean text dataset for BPE tokenizer training, so that the purpose-built tokenizer is trained on representative, high-quality toke source.
+As an ML engineer, I want the Profile 1 corpus prepared as a clean text dataset for BPE tokenizer training, so that the purpose-built tokenizer is trained on representative, high-quality toke source.
 
 Acceptance criteria:
-- All validated Phase 1 corpus entries are extracted as raw .toke source text
+- All validated Profile 1 corpus entries are extracted as raw .toke source text
 - String literal contents are stripped and replaced with placeholder tokens
 - Dataset is deduplicated at the character level
 - Dataset size is at least 500,000 source files
@@ -815,7 +815,7 @@ Acceptance criteria:
 
 **Story 2.2.2 — BPE tokenizer training**
 
-As an ML engineer, I want a purpose-built BPE tokenizer trained on the toke corpus with a 32,768-token vocabulary, so that Phase 2 achieves substantially lower token counts than cl100k_base.
+As an ML engineer, I want a purpose-built BPE tokenizer trained on the toke corpus with a 32,768-token vocabulary, so that Profile 2 achieves substantially lower token counts than cl100k_base.
 
 Acceptance criteria:
 - Tokenizer is trained using a standard BPE implementation (SentencePiece or tiktoken-compatible)
@@ -829,14 +829,14 @@ Acceptance criteria:
 
 **Story 2.2.3 — Tokenizer evaluation**
 
-As a validation engineer, I want the purpose-built tokenizer evaluated against cl100k_base on the Gate 1 benchmark task set, so that the token density improvement is quantified before committing to Phase 2.
+As a validation engineer, I want the purpose-built tokenizer evaluated against cl100k_base on the Gate 1 benchmark task set, so that the token density improvement is quantified before committing to project Phase 2.
 
 Acceptance criteria:
-- Token counts are measured for Phase 2 source using the purpose-built tokenizer
-- Token counts are measured for Phase 1 source using cl100k_base
+- Token counts are measured for Profile 2 source using the purpose-built tokenizer
+- Token counts are measured for Profile 1 source using cl100k_base
 - Token density improvement ratio is computed for each benchmark task
 - Mean improvement across the benchmark set is reported
-- Target: at least 2x token density improvement over cl100k_base for Phase 2 source
+- Target: at least 2x token density improvement over cl100k_base for Profile 2 source
 - Results are committed to benchmark/results/tokenizer_eval.json
 
 ---
@@ -1367,12 +1367,12 @@ Acceptance criteria:
 
 **Story 3.8.2 — stdlib performance benchmarks**
 
-As a compiler engineer, I want performance benchmarks for all Phase 1 stdlib modules so that regressions in stdlib performance are detected before releases.
+As a compiler engineer, I want performance benchmarks for all Profile 1 stdlib modules so that regressions in stdlib performance are detected before releases.
 
 Dependencies: Epic 1.3 complete
 
 Acceptance criteria:
-- Benchmark suite covers all six Phase 1 stdlib modules
+- Benchmark suite covers all six Profile 1 stdlib modules
 - Benchmarks run as part of the release validation workflow
 - Baseline performance figures are committed to benchmark/results/
 - Any release that shows greater than 20% regression on a benchmark is blocked until the regression is explained or fixed
@@ -1409,7 +1409,7 @@ Acceptance criteria:
 As a language standardiser, I want the final EBNF grammar committed to the spec repository with machine-verified freedom from ambiguity, so that any implementer can build a conforming compiler from the grammar alone.
 
 Acceptance criteria:
-- Grammar covers all constructs including Phase 2 extensions
+- Grammar covers all constructs including Profile 2 extensions
 - ANTLR4 generation from the grammar produces no warnings or conflicts
 - Grammar is versioned with a stable URL
 - Grammar is accompanied by an annotated example for each production
@@ -1435,7 +1435,7 @@ Acceptance criteria:
 As a repair loop engineer, I want the complete error code registry published as a stable document, so that automated repair systems can depend on error codes being stable across compiler versions.
 
 Acceptance criteria:
-- All E-series, W-series, and L-series codes are documented with: code, meaning, phase, example source that triggers it, fix field value where applicable
+- All E-series, W-series, and L-series codes are documented with: code, meaning, stage, example source that triggers it, fix field value where applicable
 - Registry is published at a stable URL
 - Registry version is tied to spec version
 - Any future addition of error codes follows a documented process
@@ -1478,7 +1478,7 @@ As a repair loop engineer, I want a published suite of D-series tests that verif
 
 Acceptance criteria:
 - Every error code has at least one D-series test
-- Each test verifies: error_code, phase, span_start, span_end, expected, got fields
+- Each test verifies: error_code, stage, span_start, span_end, expected, got fields
 - At least 50 tests verify fix field correctness
 - Tests verify that fix field is absent (not null, not empty) when no mechanical fix exists
 - Tests are runnable against any conforming tkc binary

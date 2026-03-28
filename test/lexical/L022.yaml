@@ -1,6 +1,6 @@
 id: L022
 series: L
-description: "Underscore is not in Phase 1 character set; emits E1003 in structural position"
+description: "Underscore is not in Profile 1 character set; emits E1003 in structural position"
 input: |
   M=test;
   F=bad():i64{let my_var=1;<my_var};

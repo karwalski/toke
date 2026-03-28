@@ -24,7 +24,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.1.2 | Keyword table lock | done | feature/spec-keyword-table | [x] 12 keywords listed with exact lexical form [x] Each keyword's production rule identified [x] true/false documented as predefined identifiers [x] Prefix-conflict analysis: lp/let share `l`, resolved by second char [x] Underscore excluded, identifier rule updated [x] Frozen at M0 2026-03-27 |
 | 1.1.3 | Symbol disambiguation rules | done | feature/spec-symbol-disambiguation | [x] 14 dual-role symbols documented [x] All rules LL(1) one-token lookahead [x] Two examples per symbol [x] Summary table [x] Frozen M0 2026-03-27 |
 | 1.1.4 | Formal EBNF grammar | done | feature/spec-ebnf-grammar | [x] 65 productions covering all constructs [x] LL(1) verified [x] Unambiguous [x] All 8 open questions resolved [x] Committed to spec/grammar.ebnf [x] Frozen at M0 2026-03-27 |
-| 1.1.5 | Phase 2 transformation rules | done | feature/spec-phase2-transform | [x] Type sigil rule (TYPE_IDENT→$name) [x] Array literal rule ([]→@()) [x] Array index rule (a[n]→a.get(n)) [x] Determinism proof [x] Round-trip spec [x] 20+ example pairs [x] Frozen M0 2026-03-28 |
+| 1.1.5 | Profile 2 transformation rules | done | feature/spec-phase2-transform | [x] Type sigil rule (TYPE_IDENT→$name) [x] Array literal rule ([]→@()) [x] Array index rule (a[n]→a.get(n)) [x] Determinism proof [x] Round-trip spec [x] 20+ example pairs [x] Frozen M0 2026-03-28 |
 | 1.1.6 | Spec review and alignment | done | feature/spec-review-m0 | [x] Cross-document review complete [x] 7 blocking issues resolved [x] grammar.ebnf fully populated (was stub) [x] character-set.md created [x] keywords.md created [x] symbol-disambiguation.md created [x] phase2-transform.md created [x] CastExpr production added [x] LoopStmt semicolon ambiguity fixed [x] spec-review-m0.md written [x] 4 warnings, 4 notes in risk register [x] Frozen M0 2026-03-27 |
 | 1.1.7 | Meta-repo README and project landing page | backlog | — | Links to all 7 sub-repos; phase/gate status; getting-started; contributing/security links |
 
@@ -41,7 +41,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.2.7 | Interface file emitter | done | feature/compiler-interface-emitter | [x] JSON .tokei [x] module/func/type/const [x] interface_hash [x] E9001 [x] 190 lines |
 | 1.2.8 | LLVM IR backend | done | feature/compiler-llvm-backend | [x] Text IR all constructs [x] 3 targets via clang [x] E9002 E9003 [x] 396 lines (cast/field-offset/nested-break stubs) |
 | 1.2.9 | CLI interface | done | feature/compiler-cli | [x] All flags [x] Full pipeline [x] Exit codes 0/1/2/3 [x] isatty diag [x] 186 lines |
-| 1.2.10 | Conformance test suite (Phase 1) | done | test/compiler-conformance-suite | [x] 62 tests [x] L/G/D series [x] run_conform.sh [x] make conform wired |
+| 1.2.10 | Conformance test suite (Profile 1) | done | test/compiler-conformance-suite | [x] 62 tests [x] L/G/D series [x] run_conform.sh [x] make conform wired |
 
 ### Epic 1.7 — Compiler Security and SAST
 
@@ -162,7 +162,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.1.2 | Keyword table lock | 2026-03-27 | feature/spec-keyword-table (toke-spec) |
 | 1.1.3 | Symbol disambiguation rules | 2026-03-27 | feature/spec-symbol-disambiguation (toke-spec) |
 | 1.1.4 | Formal EBNF grammar | 2026-03-27 | feature/spec-ebnf-grammar (toke-spec) |
-| 1.1.5 | Phase 2 transformation rules | 2026-03-28 | feature/spec-phase2-transform (toke-spec) |
+| 1.1.5 | Profile 2 transformation rules | 2026-03-28 | feature/spec-phase2-transform (toke-spec) |
 | 1.1.6 | Spec review and alignment | 2026-03-27 | feature/spec-review-m0 (toke-spec) |
 | 1.2.1 | Lexer implementation | 2026-03-28 | feature/compiler-lexer (tkc) |
 | 1.2.2 | Parser implementation | 2026-03-28 | feature/compiler-parser (tkc) |
@@ -173,7 +173,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.2.7 | Interface file emitter | 2026-03-28 | feature/compiler-interface-emitter (tkc) |
 | 1.2.8 | LLVM IR backend | 2026-03-28 | feature/compiler-llvm-backend (tkc) |
 | 1.2.9 | CLI interface | 2026-03-28 | feature/compiler-cli (tkc) |
-| 1.2.10 | Conformance test suite (Phase 1) | 2026-03-28 | test/compiler-conformance-suite (tkc) |
+| 1.2.10 | Conformance test suite (Profile 1) | 2026-03-28 | test/compiler-conformance-suite (tkc) |
 | 1.6.1 | Held-out benchmark task set | 2026-03-27 | feature/benchmark-held-out-tasks (toke-benchmark) |
 
 ---

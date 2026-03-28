@@ -18,7 +18,7 @@ toke is a compiled, statically typed programming language designed for LLM code 
 - **`tkc/`** — the reference compiler, written in C, zero external dependencies (excluding LLVM)
 - **`stdlib/`** — the toke standard library, written in toke
 - **`corpus/`** — corpus generation pipeline, validation harness, Qwen judge agent, differential testing
-- **`tokenizer/`** — Phase 2 BPE tokenizer training and evaluation scripts
+- **`tokenizer/`** — Profile 2 BPE tokenizer training and evaluation scripts
 - **`models/`** — QLoRA fine-tuning scripts (MLX) and benchmark evaluation harness
 - **`benchmark/`** — task definitions, hidden test cases, reference implementations
 - **`spec/`** — formal grammar (EBNF), semantics, error code registry
@@ -474,7 +474,7 @@ done         all acceptance criteria met, tests pass, docs updated
 **Status:** done  
 **Branch:** feature/lexer-phase1-implementation  
 **Acceptance criteria met:**
-- [x] Correctly classifies all 80 Phase 1 characters
+- [x] Correctly classifies all 80 Profile 1 characters
 - [x] Whitespace consumed silently
 - [x] E1001, E1002, E1003 emitted correctly
 - [x] 200-token file lexed in under 1ms

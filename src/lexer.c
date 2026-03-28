@@ -142,7 +142,7 @@ static int lex_string(Lexer *l, int start, int line, int col)
                 }
             } else if (esc == '(') {
                 diag_emit(DIAG_WARNING, LEX_W1010, l->pos - 1, l->line, l->col - 1,
-                          "string interpolation \\( is not supported in Phase 1; "
+                          "string interpolation \\( is not supported in Profile 1; "
                           "use str.concat() instead",
                           "fix", "use str.concat() for string composition", NULL);
                 advance(l);
@@ -230,7 +230,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap)
         case '|':  sym = TK_PIPE;     break;
         default:
             diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
-                      "character outside Phase 1 character set", NULL);
+                      "character outside Profile 1 character set", NULL);
             return -1;
         }
         advance(&l);

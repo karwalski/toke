@@ -2,7 +2,7 @@
 #define TK_LEXER_H
 
 /*
- * lexer.h — token definitions and lex() entry point for the toke Phase 1
+ * lexer.h — token definitions and lex() entry point for the toke Profile 1
  * reference compiler.
  */
 

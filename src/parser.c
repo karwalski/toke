@@ -1,4 +1,4 @@
-/* parser.c — LL(1) recursive-descent parser for toke Phase 1. Story 1.2.2. */
+/* parser.c — LL(1) recursive-descent parser for toke Profile 1. Story 1.2.2. */
 #include <stdarg.h>
 #include <stddef.h>
 #include <string.h>

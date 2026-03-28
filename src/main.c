@@ -30,7 +30,7 @@ int lex(const char *src, int src_len, Token *tokens, int token_cap);
 
 /* ── Constants ─────────────────────────────────────────────────────── */
 
-#define VERSION   "tkc 0.1.0 (Phase 1)"
+#define VERSION   "tkc 0.1.0 (Profile 1)"
 #define EUSAGE    3
 #define EINTERNAL 2
 #define ECOMPILE  1
@@ -43,8 +43,8 @@ static const char HELP[] =
     "  --out <path>        Output binary path (default: source stem)\n"
     "  --emit-interface    Also emit .tki interface file\n"
     "  --check             Type check only; no code generation\n"
-    "  --phase1            Phase 1 character set (default)\n"
-    "  --phase2            Phase 2 character set (informational only in v0.1)\n"
+    "  --profile1          Profile 1 character set (80 chars, default)\n"
+    "  --profile2          Profile 2 character set (56 chars, informational only in v0.1)\n"
     "  --diag-json         Emit diagnostics as JSON (default when not a tty)\n"
     "  --diag-text         Emit diagnostics as human-readable text\n"
     "  --version           Print version and exit\n"
@@ -74,8 +74,11 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--help"))       { puts(HELP);   return 0; }
         else if (!strcmp(argv[i], "--emit-interface")) emit_iface = 1;
         else if (!strcmp(argv[i], "--check"))          check_only = 1;
-        else if (!strcmp(argv[i], "--phase1"))     { /* default */ }
-        else if (!strcmp(argv[i], "--phase2"))     { /* informational */ }
+        else if (!strcmp(argv[i], "--profile1"))    { /* default */ }
+        else if (!strcmp(argv[i], "--profile2"))   { /* informational */ }
+        /* backward-compat aliases (deprecated): --phase1, --phase2 */
+        else if (!strcmp(argv[i], "--phase1"))     { /* default; use --profile1 */ }
+        else if (!strcmp(argv[i], "--phase2"))     { /* informational; use --profile2 */ }
         else if (!strcmp(argv[i], "--diag-json"))  djson = 1;
         else if (!strcmp(argv[i], "--diag-text"))  dtext = 1;
         else if (!strcmp(argv[i], "--target")) {
