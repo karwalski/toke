@@ -45,6 +45,7 @@ None.
 ## Known Technical Debt
 
 - Arena escape detection (E5001) is conservative: flags any assignment to a module-scope variable inside an arena block. Needs `arena_depth` field added to `Decl` struct in names.h to distinguish pre-arena vs. in-arena declarations. (story 1.2.5)
+- LLVM backend: `as` cast emits identity stub (full sitofp/fptosi/trunc/zext requires TypeEnv wiring); struct field GEP always uses offset 0 (correct only for first field); nested break requires a loop-label stack. (story 1.2.8)
 
 ---
 
