@@ -1,0 +1,10 @@
+id: G037
+series: G
+description: "await(t) call expression parses correctly"
+input: |
+  M=test;
+  F=work():i64{<1};
+  F=main():i64{L=t:spawn(work);<await(t)};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

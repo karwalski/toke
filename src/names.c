@@ -547,7 +547,8 @@ int resolve_names(const Node *ast, const char *src,
 
     /* Seed predefined identifiers */
     static const char *predefined[] = {
-        "true", "false", "bool", "i64", "u64", "f64", "str", "void", NULL
+        "true", "false", "bool", "i64", "u64", "f64", "str", "void",
+        "spawn", "await", "Task", NULL
     };
     for (int i = 0; predefined[i]; i++)
         seed_predefined(mscope, arena, predefined[i]);
