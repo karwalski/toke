@@ -1,0 +1,9 @@
+id: G034
+series: G
+description: "Non-empty array literal still works after map syntax (regression)"
+input: |
+  M=test;
+  F=nums():[i64]{<[10;20;30]};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

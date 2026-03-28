@@ -1,0 +1,9 @@
+id: D015
+series: D
+description: "Inconsistent map literal value types emit E4043"
+input: |
+  M=test;
+  F=bad():i64{<[1:10; 2:"x"]};
+expected_exit_code: 1
+expected_error_codes: ["E4043"]
+expected_output: ""

@@ -65,7 +65,10 @@ typedef enum {
     NODE_MATCH_ARM,
     NODE_RETURN_SPEC,
     NODE_MODULE_PATH,
-    NODE_LOOP_INIT
+    NODE_LOOP_INIT,
+    NODE_MAP_TYPE,
+    NODE_MAP_LIT,
+    NODE_MAP_ENTRY
 } NodeKind;
 
 /* ────────────────────────────────────────────────────────────────────────── */

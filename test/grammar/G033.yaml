@@ -1,0 +1,9 @@
+id: G033
+series: G
+description: "Map literal [1:10; 2:20] parses"
+input: |
+  M=test;
+  F=make():[i64:i64]{<[1:10; 2:20]};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

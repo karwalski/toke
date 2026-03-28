@@ -34,9 +34,18 @@ typedef enum {
     TY_FUNC,         /* function type — return type in ->elem             */
     TY_ERROR_TYPE,   /* T!Err error union — carries result type in ->elem */
     TY_PTR,          /* raw pointer *T — FFI only */
+    TY_MAP,          /* [K:V] — key type in ->elem, value type via ->field_types[0] */
+    TY_TASK,         /* Task — async task handle, carries return type in ->elem */
     TY_UNKNOWN,      /* sentinel: sub-expression already emitted an error */
 } TypeKind;
 
+#define E4040 4040  /* map key type mismatch                          */
+#define E4041 4041  /* map value type mismatch                        */
+#define E4042 4042  /* method on non-collection type                  */
+#define E4043 4043  /* inconsistent types in map literal              */
+#define E4050 4050  /* spawn argument not a callable function          */
+#define E4051 4051  /* await argument not a Task                       */
+#define E4052 4052  /* spawned function has parameters (v0.1: nullary) */
 #define E4060 4060  /* FFI type mismatch                              */
 
 typedef struct Type {

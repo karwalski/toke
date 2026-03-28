@@ -26,7 +26,7 @@ static const char *type_name(const Type *t) {
     case TY_U64: return "u64";   case TY_F64: return "f64";   case TY_STR: return "str";
     case TY_STRUCT: return t->name?t->name:"struct"; case TY_ARRAY: return "array";
     case TY_FUNC: return "func"; case TY_ERROR_TYPE: return t->elem?type_name(t->elem):"error";
-    case TY_PTR: return "ptr";
+    case TY_PTR: return "ptr"; case TY_MAP: return "map"; case TY_TASK: return "Task";
     default: return "unknown";
     }
 }
@@ -35,6 +35,17 @@ static int types_equal(const Type *a, const Type *b) {
     if (!a||!b) return 0; if (a==b) return 1; if (a->kind!=b->kind) return 0;
     if (a->kind==TY_STRUCT) return a->name&&b->name&&strcmp(a->name,b->name)==0;
     if (a->kind==TY_PTR) return types_equal(a->elem, b->elem);
+    if (a->kind==TY_MAP) {
+        /* TY_UNKNOWN key/value is compatible with any (mirrors array behavior). */
+        if ((a->elem&&a->elem->kind==TY_UNKNOWN)||(b->elem&&b->elem->kind==TY_UNKNOWN)) return 1;
+        if (!types_equal(a->elem,b->elem)) return 0;
+        Type *av=a->field_count>0&&a->field_types?a->field_types[0]:NULL;
+        Type *bv=b->field_count>0&&b->field_types?b->field_types[0]:NULL;
+        if (!av||!bv) return av==bv;
+        if ((av->kind==TY_UNKNOWN)||(bv->kind==TY_UNKNOWN)) return 1;
+        return types_equal(av,bv);
+    }
+    if (a->kind==TY_TASK) return types_equal(a->elem, b->elem);
     if (a->kind==TY_ARRAY||a->kind==TY_FUNC||a->kind==TY_ERROR_TYPE) {
         /* TY_UNKNOWN elem is compatible with any elem (e.g. empty array literal []). */
         if ((a->elem&&a->elem->kind==TY_UNKNOWN)||(b->elem&&b->elem->kind==TY_UNKNOWN)) return 1;
@@ -85,6 +96,17 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
         Type *at = mk_type(cx->env->arena, TY_ARRAY);
         if (at && n->child_count > 0) at->elem = resolve_type(cx, n->children[0]);
         return at ? at : mk_type(cx->env->arena, TY_UNKNOWN);
+    }
+    if (n->kind == NODE_MAP_TYPE) {
+        Type *mt = mk_type(cx->env->arena, TY_MAP);
+        if (!mt) return mk_type(cx->env->arena, TY_UNKNOWN);
+        if (n->child_count > 0) mt->elem = resolve_type(cx, n->children[0]);
+        if (n->child_count > 1) {
+            mt->field_count = 1;
+            mt->field_types = (Type **)arena_alloc(cx->env->arena, (int)sizeof(Type *));
+            if (mt->field_types) mt->field_types[0] = resolve_type(cx, n->children[1]);
+        }
+        return mt;
     }
     if (strcmp(nb,"void")==0) return mk_type(cx->env->arena, TY_VOID);
     if (strcmp(nb,"bool")==0) return mk_type(cx->env->arena, TY_BOOL);
@@ -162,6 +184,38 @@ static Type *infer(Ctx *cx, const Node *node) {
         return at;
     }
 
+    case NODE_MAP_LIT: {
+        Type *mt = mk_type(A, TY_MAP);
+        if (!mt) return mk_type(A, TY_UNKNOWN);
+        Type *kt = NULL, *vt = NULL;
+        for (int i = 0; i < node->child_count; i++) {
+            const Node *entry = node->children[i];
+            if (!entry || entry->kind != NODE_MAP_ENTRY) continue;
+            Type *ek = entry->child_count > 0 ? infer(cx, entry->children[0]) : mk_type(A, TY_UNKNOWN);
+            Type *ev = entry->child_count > 1 ? infer(cx, entry->children[1]) : mk_type(A, TY_UNKNOWN);
+            if (!kt) { kt = ek; vt = ev; }
+            else {
+                if (ek->kind != TY_UNKNOWN && kt->kind != TY_UNKNOWN && !types_equal(kt, ek)) {
+                    char msg[256];
+                    snprintf(msg, sizeof(msg), "inconsistent map key type: expected '%s', got '%s'", type_name(kt), type_name(ek));
+                    diag_emit(DIAG_ERROR, E4043, entry->start, entry->line, entry->col, msg, "fix", (const char *)NULL);
+                    cx->had_error = 1;
+                }
+                if (ev->kind != TY_UNKNOWN && vt->kind != TY_UNKNOWN && !types_equal(vt, ev)) {
+                    char msg[256];
+                    snprintf(msg, sizeof(msg), "inconsistent map value type: expected '%s', got '%s'", type_name(vt), type_name(ev));
+                    diag_emit(DIAG_ERROR, E4043, entry->start, entry->line, entry->col, msg, "fix", (const char *)NULL);
+                    cx->had_error = 1;
+                }
+            }
+        }
+        mt->elem = kt ? kt : mk_type(A, TY_UNKNOWN);
+        mt->field_count = 1;
+        mt->field_types = (Type **)arena_alloc(A, (int)sizeof(Type *));
+        if (mt->field_types) mt->field_types[0] = vt ? vt : mk_type(A, TY_UNKNOWN);
+        return mt;
+    }
+
     case NODE_IDENT: {
         char nb[128]; TOKSTR(nb,cx->src,node);
         Decl *d=tc_lookup(cx->env->names->module_scope,nb,(int)strlen(nb));
@@ -209,6 +263,58 @@ static Type *infer(Ctx *cx, const Node *node) {
     case NODE_CALL_EXPR: {
         if (node->child_count<1) return mk_type(A,TY_UNKNOWN);
         char nb[128]; TOKSTR(nb,cx->src,node->children[0]);
+
+        /* spawn(fn) — async task creation */
+        if (strcmp(nb,"spawn")==0) {
+            if (node->child_count<2) {
+                diag_emit(DIAG_ERROR,E4050,node->start,node->line,node->col,
+                    "spawn argument not a callable function","fix",(const char*)NULL);
+                cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+            }
+            const Node *arg=node->children[1];
+            char fn_name[128]; TOKSTR(fn_name,cx->src,arg);
+            Decl *fd=tc_lookup(cx->env->names->module_scope,fn_name,(int)strlen(fn_name));
+            if (!fd||!fd->def_node||fd->def_node->kind!=NODE_FUNC_DECL) {
+                diag_emit(DIAG_ERROR,E4050,node->start,node->line,node->col,
+                    "spawn argument not a callable function","fix",(const char*)NULL);
+                cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+            }
+            const Node *fndef=fd->def_node; int pc=0;
+            for (int i=0;i<fndef->child_count;i++)
+                if (fndef->children[i]&&fndef->children[i]->kind==NODE_PARAM) pc++;
+            if (pc>0) {
+                diag_emit(DIAG_ERROR,E4052,node->start,node->line,node->col,
+                    "spawned function has parameters; v0.1 requires nullary functions",
+                    "fix",(const char*)NULL);
+                cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+            }
+            Type *task=mk_type(A,TY_TASK);
+            if (!task) return mk_type(A,TY_UNKNOWN);
+            task->elem=mk_type(A,TY_VOID);
+            for (int i=0;i<fndef->child_count;i++) {
+                const Node *ch=fndef->children[i];
+                if (ch&&ch->kind==NODE_RETURN_SPEC&&ch->child_count>0)
+                    { task->elem=resolve_type(cx,ch->children[0]); break; }
+            }
+            return task;
+        }
+
+        /* await(t) — extract result from Task */
+        if (strcmp(nb,"await")==0) {
+            if (node->child_count<2) {
+                diag_emit(DIAG_ERROR,E4051,node->start,node->line,node->col,
+                    "await argument not a Task","fix",(const char*)NULL);
+                cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+            }
+            Type *arg_t=infer(cx,node->children[1]);
+            if (arg_t->kind!=TY_TASK&&arg_t->kind!=TY_UNKNOWN) {
+                diag_emit(DIAG_ERROR,E4051,node->start,node->line,node->col,
+                    "await argument not a Task","fix",(const char*)NULL);
+                cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+            }
+            return (arg_t->kind==TY_TASK&&arg_t->elem)?arg_t->elem:mk_type(A,TY_UNKNOWN);
+        }
+
         Decl *d=tc_lookup(cx->env->names->module_scope,nb,(int)strlen(nb));
         if (!d||!d->def_node||d->def_node->kind!=NODE_FUNC_DECL) {
             for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
@@ -257,9 +363,12 @@ static Type *infer(Ctx *cx, const Node *node) {
 
     case NODE_FIELD_EXPR: {
         Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
-        if (base->kind!=TY_STRUCT) return mk_type(A,TY_UNKNOWN);
         if (node->child_count<2||!node->children[1]) return mk_type(A,TY_UNKNOWN);
         char fname[128]; TOKSTR(fname,cx->src,node->children[1]);
+        /* .len on arrays and maps returns u64 */
+        if ((base->kind==TY_ARRAY||base->kind==TY_MAP) && strcmp(fname,"len")==0)
+            return mk_type(A,TY_U64);
+        if (base->kind!=TY_STRUCT) return mk_type(A,TY_UNKNOWN);
         for (int i=0;i<base->field_count;i++)
             if (base->field_names[i]&&strcmp(base->field_names[i],fname)==0)
                 return base->field_types[i];

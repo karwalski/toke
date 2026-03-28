@@ -1,0 +1,9 @@
+id: G032
+series: G
+description: "Map type [i64:i64] parses in function signature"
+input: |
+  M=test;
+  F=get(m: [i64:i64]; k: i64):i64{<0};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

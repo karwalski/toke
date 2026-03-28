@@ -59,7 +59,9 @@ static Node *parse_func_type(Parser *p) {
 /* TypeExpr = '*' TypeExpr | ScalarType | TYPE_IDENT | '[' TypeExpr ']' | FuncTypeExpr */
 static Node *parse_type_expr(Parser *p) {
     if(peek(p)==TK_STAR){Token *t=adv(p);Node *n=mk(p,NODE_PTR_TYPE,t);ch(n,parse_type_expr(p));return n;}
-    if(peek(p)==TK_LBRACKET){Token *t=xp(p,TK_LBRACKET,"'['");Node *n=mk(p,NODE_ARRAY_TYPE,t);ch(n,parse_type_expr(p));if(!xp(p,TK_RBRACKET,"']'"))eerr(p,E2004,cur(p),"unclosed delimiter");return n;}
+    if(peek(p)==TK_LBRACKET){Token *t=xp(p,TK_LBRACKET,"'['");Node *first=parse_type_expr(p);
+        if(peek(p)==TK_COLON){adv(p);Node *n=mk(p,NODE_MAP_TYPE,t);ch(n,first);ch(n,parse_type_expr(p));if(!xp(p,TK_RBRACKET,"']'"))eerr(p,E2004,cur(p),"unclosed delimiter");return n;}
+        Node *n=mk(p,NODE_ARRAY_TYPE,t);ch(n,first);if(!xp(p,TK_RBRACKET,"']'"))eerr(p,E2004,cur(p),"unclosed delimiter");return n;}
     if(peek(p)==TK_LPAREN) return parse_func_type(p);
     Token *t=cur(p);
     if(is_scalar(p,t)){Node *n=mk(p,NODE_TYPE_EXPR,t);adv(p);return n;}
@@ -94,9 +96,21 @@ static Node *parse_primary(Parser *p) {
         return mk(p,NODE_TYPE_IDENT,t);
     }
     if(peek(p)==TK_LPAREN){adv(p);Node *e=parse_expr(p);if(!xp(p,TK_RPAREN,"')'"))eerr(p,E2004,cur(p),"unclosed delimiter");return e;}
-    if(peek(p)==TK_LBRACKET){ /* ArrayLit = '[' (Expr (';' Expr)*)? ']' */
-        Token *lt=xp(p,TK_LBRACKET,"'['"); Node *n=mk(p,NODE_ARRAY_LIT,lt);
-        if(peek(p)!=TK_RBRACKET){ch(n,parse_expr(p));while(peek(p)==TK_SEMICOLON){adv(p);ch(n,parse_expr(p));}}
+    if(peek(p)==TK_LBRACKET){ /* ArrayLit or MapLit */
+        Token *lt=xp(p,TK_LBRACKET,"'['");
+        if(peek(p)==TK_RBRACKET){/* empty array [] */
+            Node *n=mk(p,NODE_ARRAY_LIT,lt);adv(p);return n;}
+        Node *first=parse_expr(p);
+        if(peek(p)==TK_COLON){/* MapLit = '[' Expr ':' Expr (';' Expr ':' Expr)* ']' */
+            adv(p);Node *n=mk(p,NODE_MAP_LIT,lt);
+            Node *entry=mk(p,NODE_MAP_ENTRY,lt);ch(entry,first);ch(entry,parse_expr(p));ch(n,entry);
+            while(peek(p)==TK_SEMICOLON){adv(p);if(peek(p)==TK_RBRACKET)break;
+                Token *et=cur(p);Node *e2=mk(p,NODE_MAP_ENTRY,et);ch(e2,parse_expr(p));
+                if(!xp(p,TK_COLON,"':'"))break;ch(e2,parse_expr(p));ch(n,e2);}
+            if(!xp(p,TK_RBRACKET,"']'"))eerr(p,E2004,cur(p),"unclosed delimiter");return n;}
+        /* ArrayLit = '[' Expr (';' Expr)* ']' */
+        Node *n=mk(p,NODE_ARRAY_LIT,lt);ch(n,first);
+        while(peek(p)==TK_SEMICOLON){adv(p);ch(n,parse_expr(p));}
         if(!xp(p,TK_RBRACKET,"']'"))eerr(p,E2004,cur(p),"unclosed delimiter"); return n;
     }
     return parse_literal(p);
