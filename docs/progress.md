@@ -65,7 +65,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 |----|-------|--------|--------|-------|
 | 1.3.1 | std.str | done | feature/stdlib-str | [x] 14/14 functions [x] str.tki [x] C impl 222 lines [x] 22 test assertions |
 | 1.3.2 | std.http | in_progress | feature/stdlib-http | Depends on 1.3.1 |
-| 1.3.3 | std.db | in_progress | feature/stdlib-db | Depends on 1.3.1 |
+| 1.3.3 | std.db | done | feature/stdlib-db | [x] 8/8 functions [x] SQLite3 backend [x] DbErr sum type [x] db.tki [x] in-memory test suite |
 | 1.3.4 | std.json | done | feature/stdlib-json | [x] 8/8 functions [x] JsonErr sum type [x] json.tki [x] recursive key extractor [x] 7 test assertions |
 | 1.3.5 | std.file | done | feature/stdlib-file | [x] 6/6 functions [x] FileErr sum type [x] file.tki [x] 138 lines [x] 9 test assertions |
 

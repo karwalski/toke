@@ -39,8 +39,13 @@ test-stdlib:
 	    test/stdlib/test_str.c src/stdlib/str.c
 	./test/stdlib/test_str
 
+test-stdlib-db:
+	$(CC) $(CFLAGS) -o test/stdlib/test_db \
+	    test/stdlib/test_db.c src/stdlib/db.c -lsqlite3
+	./test/stdlib/test_db
+
 clean:
-	rm -f $(OBJS) $(BIN) test/stdlib/test_str fuzz-lexer fuzz-parser
+	rm -f $(OBJS) $(BIN) test/stdlib/test_str test/stdlib/test_db fuzz-lexer fuzz-parser
 
 FUZZ_FLAGS = -fsanitize=address,undefined,fuzzer -g
 

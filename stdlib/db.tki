@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "module": "std.db",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "Row",
+      "fields": [
+        {"name": "cols", "type": "[[str]]"}
+      ]
+    },
+    {
+      "kind": "sum_type",
+      "name": "DbErr",
+      "variants": [
+        {"name": "Connection", "type": "str"},
+        {"name": "Query",      "type": "str"},
+        {"name": "NotFound",   "type": "str"},
+        {"name": "Constraint", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "db.one",  "params": ["str", "[str]"], "return": "Row!DbErr"},
+    {"kind": "func", "name": "db.many", "params": ["str", "[str]"], "return": "[Row]!DbErr"},
+    {"kind": "func", "name": "db.exec", "params": ["str", "[str]"], "return": "u64!DbErr"},
+    {"kind": "func", "name": "row.str",  "params": ["Row", "str"], "return": "str!DbErr"},
+    {"kind": "func", "name": "row.u64",  "params": ["Row", "str"], "return": "u64!DbErr"},
+    {"kind": "func", "name": "row.i64",  "params": ["Row", "str"], "return": "i64!DbErr"},
+    {"kind": "func", "name": "row.f64",  "params": ["Row", "str"], "return": "f64!DbErr"},
+    {"kind": "func", "name": "row.bool", "params": ["Row", "str"], "return": "bool!DbErr"}
+  ]
+}
