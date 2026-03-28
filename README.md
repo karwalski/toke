@@ -7,6 +7,11 @@ a machine-native programming language designed for LLM code generation.
 
 Phase 1 — Falsification. Under active development.
 
+## DCO
+
+All contributions require a `Signed-off-by` trailer in every commit
+(`git commit -s`). See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
 ## Building
 
 Requirements: C99 compiler, LLVM (for the backend), Make.

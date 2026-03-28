@@ -1,0 +1,5 @@
+require:
+  members: true
+  committers: true
+allowRemediationCommits:
+  individual: true
