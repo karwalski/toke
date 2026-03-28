@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "module": "std.str",
+  "exports": [
+    {"kind": "func", "name": "str.len", "params": ["str"], "return": "u64"},
+    {"kind": "func", "name": "str.concat", "params": ["str", "str"], "return": "str"},
+    {"kind": "func", "name": "str.slice", "params": ["str", "u64", "u64"], "return": "str!SliceErr"},
+    {"kind": "func", "name": "str.from_int", "params": ["i64"], "return": "str"},
+    {"kind": "func", "name": "str.from_float", "params": ["f64"], "return": "str"},
+    {"kind": "func", "name": "str.to_int", "params": ["str"], "return": "i64!ParseErr"},
+    {"kind": "func", "name": "str.to_float", "params": ["str"], "return": "f64!ParseErr"},
+    {"kind": "func", "name": "str.contains", "params": ["str", "str"], "return": "bool"},
+    {"kind": "func", "name": "str.split", "params": ["str", "str"], "return": "[str]"},
+    {"kind": "func", "name": "str.trim", "params": ["str"], "return": "str"},
+    {"kind": "func", "name": "str.upper", "params": ["str"], "return": "str"},
+    {"kind": "func", "name": "str.lower", "params": ["str"], "return": "str"},
+    {"kind": "func", "name": "str.bytes", "params": ["str"], "return": "[byte]"},
+    {"kind": "func", "name": "str.from_bytes", "params": ["[byte]"], "return": "str!EncodingErr"},
+    {"kind": "type", "name": "SliceErr", "fields": [{"name": "msg", "type": "str"}]},
+    {"kind": "type", "name": "ParseErr", "fields": [{"name": "msg", "type": "str"}]},
+    {"kind": "type", "name": "EncodingErr", "fields": [{"name": "msg", "type": "str"}]}
+  ]
+}

@@ -63,11 +63,11 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 1.3.1 | std.str | backlog | — | Depends on 1.2.9 |
-| 1.3.2 | std.http | backlog | — | Depends on 1.3.1 |
-| 1.3.3 | std.db | backlog | — | Depends on 1.3.1 |
-| 1.3.4 | std.json | backlog | — | Depends on 1.3.1 |
-| 1.3.5 | std.file | backlog | — | Depends on 1.3.1 |
+| 1.3.1 | std.str | done | feature/stdlib-str | [x] 14/14 functions [x] str.tki [x] C impl 222 lines [x] 22 test assertions |
+| 1.3.2 | std.http | in_progress | feature/stdlib-http | Depends on 1.3.1 |
+| 1.3.3 | std.db | in_progress | feature/stdlib-db | Depends on 1.3.1 |
+| 1.3.4 | std.json | in_progress | feature/stdlib-json | Depends on 1.3.1 |
+| 1.3.5 | std.file | in_progress | feature/stdlib-file | Depends on 1.3.1 |
 
 ### Epic 1.4 — Mac Studio Setup and Local Pipeline
 

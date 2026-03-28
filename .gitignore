@@ -5,6 +5,8 @@ tkc
 *.ll
 *.bc
 *.tki
+# Hand-crafted stdlib interface files are tracked (exception to *.tki)
+!stdlib/*.tki
 
 # LLVM build artifacts
 build/
