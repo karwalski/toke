@@ -1,0 +1,4 @@
+M=main;
+F=boundary():void{
+    let a = "~";
+}

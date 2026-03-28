@@ -1,11 +1,12 @@
 CC      = cc
 CFLAGS  = -std=c99 -Wall -Wextra -Wpedantic -Werror -g
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
-          src/arena.c src/ir.c src/llvm.c src/diag.c src/main.c
+          src/arena.c src/ir.c src/llvm.c src/diag.c src/main.c \
+          src/stdlib/str.c
 OBJS    = $(SRCS:.c=.o)
 BIN     = tkc
 
-.PHONY: all clean lint conform conform-check build-all ci
+.PHONY: all clean lint conform conform-check build-all ci test-stdlib
 
 all: $(BIN)
 
@@ -33,5 +34,24 @@ build-all:
 
 ci: lint conform conform-check
 
+test-stdlib:
+	$(CC) $(CFLAGS) -o test/stdlib/test_str \
+	    test/stdlib/test_str.c src/stdlib/str.c
+	./test/stdlib/test_str
+
 clean:
-	rm -f $(OBJS) $(BIN)
+	rm -f $(OBJS) $(BIN) test/stdlib/test_str fuzz-lexer fuzz-parser
+
+FUZZ_FLAGS = -fsanitize=address,undefined,fuzzer -g
+
+fuzz-lexer: test/fuzz/fuzz_lexer.c src/lexer.o src/diag.o src/arena.o
+	$(CC) $(FUZZ_FLAGS) -o fuzz-lexer $^
+
+fuzz-parser: test/fuzz/fuzz_parser.c src/lexer.o src/parser.o src/diag.o src/arena.o src/names.o src/types.o
+	$(CC) $(FUZZ_FLAGS) -o fuzz-parser $^
+
+fuzz: fuzz-lexer fuzz-parser
+	./fuzz-lexer -max_total_time=60 test/fuzz/corpus/
+	./fuzz-parser -max_total_time=60 test/fuzz/corpus/
+
+.PHONY: fuzz fuzz-lexer fuzz-parser

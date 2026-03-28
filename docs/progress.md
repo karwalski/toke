@@ -47,7 +47,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
 | 1.7.1 | SAST on compiler C code | done | feature/security-sast-dco | [x] cppcheck CI [x] clang-tidy [x] PR annotations [x] 63-line workflow |
-| 1.7.2 | Compiler input fuzzing | backlog | — | Depends on 1.2.2 |
+| 1.7.2 | Compiler input fuzzing | done | feature/security-fuzzing | [x] libFuzzer lexer+parser targets [x] ASAN+UBSAN [x] 5 corpus files [x] make fuzz [x] nightly CI |
 | 1.7.3 | Secret scanning in corpus pipeline | backlog | — | Can parallel 1.4.x |
 | 1.7.4 | Dependency vulnerability scanning | backlog | — | Can parallel 1.4.x |
 | 1.7.5 | Signed commits and DCO enforcement | done | feature/security-sast-dco | [x] dco.yml [x] retroactive signoff [x] CONTRIBUTING.md [x] README notice (GitHub App install: manual) |
