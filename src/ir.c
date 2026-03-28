@@ -99,7 +99,7 @@ int emit_interface(const Node *ast, const char *src,
     char mod[256]; collect_module_path(ast, src, mod, sizeof(mod));
     fputs("{\n  \"schema_version\": \"1.0\",\n  \"module\": \"", fp);
     json_str(fp, mod, (int)strlen(mod));
-    fputs("\",\n  \"exports\": [", fp);
+    fputs("\",\n  \"version\": \"1.0.0\",\n  \"exports\": [", fp);
 
     int first = 1;
     char nbuf[128], tbuf[128];
@@ -112,7 +112,14 @@ int emit_interface(const Node *ast, const char *src,
             if (!first) fputs(",", fp); first = 0;
             fputs("\n    {\"kind\": \"func\", \"name\": \"", fp);
             json_str(fp, nbuf, (int)strlen(nbuf));
-            fputs("\", \"params\": [", fp);
+            fputs("\", ", fp);
+            /* Check if function is extern (bodyless) */
+            { int has_body = 0;
+              for (int j = 0; j < top->child_count; j++)
+                  if (top->children[j] && top->children[j]->kind == NODE_STMT_LIST) { has_body = 1; break; }
+              if (!has_body) fputs("\"extern\": true, ", fp);
+            }
+            fputs("\"params\": [", fp);
             int fp2 = 1;
             for (int j = 1; j < top->child_count; j++) {
                 const Node *ch = top->children[j];

@@ -56,8 +56,9 @@ static Node *parse_func_type(Parser *p) {
     return n;
 }
 
-/* TypeExpr = ScalarType | TYPE_IDENT | '[' TypeExpr ']' | FuncTypeExpr */
+/* TypeExpr = '*' TypeExpr | ScalarType | TYPE_IDENT | '[' TypeExpr ']' | FuncTypeExpr */
 static Node *parse_type_expr(Parser *p) {
+    if(peek(p)==TK_STAR){Token *t=adv(p);Node *n=mk(p,NODE_PTR_TYPE,t);ch(n,parse_type_expr(p));return n;}
     if(peek(p)==TK_LBRACKET){Token *t=xp(p,TK_LBRACKET,"'['");Node *n=mk(p,NODE_ARRAY_TYPE,t);ch(n,parse_type_expr(p));if(!xp(p,TK_RBRACKET,"']'"))eerr(p,E2004,cur(p),"unclosed delimiter");return n;}
     if(peek(p)==TK_LPAREN) return parse_func_type(p);
     Token *t=cur(p);
@@ -286,7 +287,7 @@ static Node *parse_module_decl(Parser *p) {
     return n;
 }
 
-/* ImportDecl = 'I' '=' IDENT ':' ModulePath ';' */
+/* ImportDecl = 'I' '=' IDENT ':' ModulePath (STR_LIT)? ';' */
 static Node *parse_import_decl(Parser *p) {
     Token *t=xp(p,TK_KW_I,"'I'"); if(!t) return NULL;
     Node *n=mk(p,NODE_IMPORT,t);
@@ -295,6 +296,11 @@ static Node *parse_import_decl(Parser *p) {
     ch(n,mk(p,NODE_IDENT,at));
     if(!xp(p,TK_COLON,"':'")){ sync(p);return n;}
     ch(n,parse_module_path(p));
+    /* Optional version string: I=alias:module.path "1.2"; */
+    if(peek(p)==TK_STR_LIT){
+        Token *vt=cur(p); adv(p);
+        ch(n,mk(p,NODE_STR_LIT,vt));
+    }
     opt_semi(p);
     return n;
 }
@@ -368,9 +374,12 @@ static Node *parse_func_decl(Parser *p) {
     ch(rspec,parse_type_expr(p));
     if(peek(p)==TK_BANG){adv(p);ch(rspec,parse_type_expr(p));}
     ch(n,rspec);
-    if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
-    ch(n,parse_stmt_list(p,t));
-    if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+    if(peek(p)==TK_LBRACE){
+        xp(p,TK_LBRACE,"'{'");
+        ch(n,parse_stmt_list(p,t));
+        if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+    }
+    /* else: bodyless = extern declaration */
     opt_semi(p);
     return n;
 }

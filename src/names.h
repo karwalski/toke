@@ -21,6 +21,9 @@
 
 #define E2030 2030  /* unresolved import                                 */
 #define E2031 2031  /* circular import detected                          */
+#define E2035 2035  /* malformed version string in import                */
+#define E2036 2036  /* no compatible version found                       */
+#define E2037 2037  /* version conflict between imports                  */
 
 /* ── ImportEntry ──────────────────────────────────────────────────────── */
 
@@ -33,6 +36,7 @@
 typedef struct {
     char *alias_name;   /* heap-allocated (realloc family)  */
     char *module_path;  /* heap-allocated (realloc family)  */
+    char *version;      /* heap-allocated version string, or NULL if unversioned */
     int   resolved;
 } ImportEntry;
 

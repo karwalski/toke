@@ -94,14 +94,44 @@ static void ifl_pop (InFlight *f)                { if (f->count > 0) f->count--;
 
 /* ── SymbolTable growth ───────────────────────────────────────────────── */
 
-static int st_push(SymbolTable *st, char *alias, char *path, int resolved) {
+static int st_push(SymbolTable *st, char *alias, char *path, char *version, int resolved) {
     ImportEntry *ne = (ImportEntry *)realloc(
         st->entries, (size_t)(st->count + 1) * sizeof(ImportEntry));
     if (!ne) return -1;
     st->entries = ne;
-    st->entries[st->count] = (ImportEntry){ alias, path, resolved };
+    ne[st->count].alias_name  = alias;
+    ne[st->count].module_path = path;
+    ne[st->count].version     = version;
+    ne[st->count].resolved    = resolved;
     st->count++;
     return 0;
+}
+
+/* Validate version string: "major.minor" or "major.minor.patch".
+ * Each component must be a non-negative integer. Returns 1 if valid, 0 if not. */
+static int validate_version(const char *v) {
+    if (!v || !*v) return 0;
+    int parts = 0, digits = 0;
+    for (const char *p = v; ; p++) {
+        if (*p >= '0' && *p <= '9') { digits++; }
+        else if (*p == '.' || *p == '\0') {
+            if (digits == 0) return 0;
+            parts++; digits = 0;
+            if (*p == '\0') break;
+        } else { return 0; }
+    }
+    return (parts == 2 || parts == 3);
+}
+
+/* Extract the major version number from a version string. Returns -1 on failure. */
+static int version_major(const char *v) {
+    if (!v) return -1;
+    int maj = 0;
+    for (const char *p = v; *p && *p != '.'; p++) {
+        if (*p < '0' || *p > '9') return -1;
+        maj = maj * 10 + (*p - '0');
+    }
+    return maj;
 }
 
 /* ── Public API ───────────────────────────────────────────────────────── */
@@ -129,9 +159,52 @@ int resolve_imports(const Node *ast, const char *src,
         char *mpath = strdup(pbuf);
         if (!alias || !mpath) { free(alias); free(mpath); err = 1; continue; }
 
+        /* Extract optional version string (child[2] == NODE_STR_LIT) */
+        char *ver = NULL;
+        if (d->child_count >= 3 && d->children[2] &&
+            d->children[2]->kind == NODE_STR_LIT) {
+            const Node *vn = d->children[2];
+            /* Token text includes quotes; strip them */
+            int vstart = vn->tok_start + 1;
+            int vlen   = vn->tok_len - 2;
+            if (vlen > 0) {
+                ver = span_dup(src, vstart, vlen);
+                if (ver && !validate_version(ver)) {
+                    char msg[256];
+                    snprintf(msg, sizeof(msg),
+                             "malformed version string \"%s\" in import", ver);
+                    diag_emit(DIAG_ERROR, E2035, vn->start, vn->line, vn->col,
+                              msg, "fix", NULL);
+                    err = 1;
+                    free(ver); ver = NULL;
+                }
+            }
+        }
+
+        /* Version conflict detection: same module, different major version */
+        if (ver) {
+            int new_maj = version_major(ver);
+            for (int j = 0; j < out->count; j++) {
+                if (strcmp(out->entries[j].module_path, mpath) == 0 &&
+                    out->entries[j].version != NULL) {
+                    int old_maj = version_major(out->entries[j].version);
+                    if (old_maj >= 0 && new_maj >= 0 && old_maj != new_maj) {
+                        char msg[256];
+                        snprintf(msg, sizeof(msg),
+                                 "version conflict for module '%s': "
+                                 "\"%s\" vs \"%s\"",
+                                 mpath, out->entries[j].version, ver);
+                        diag_emit(DIAG_ERROR, E2037, d->start, d->line, d->col,
+                                  msg, "fix", NULL);
+                        err = 1;
+                    }
+                }
+            }
+        }
+
         /* std.* — always resolved, no file needed */
         if (strncmp(mpath, "std.", 4) == 0 || strcmp(mpath, "std") == 0) {
-            st_push(out, alias, mpath, 1);
+            st_push(out, alias, mpath, ver, 1);
             continue;
         }
 
@@ -141,18 +214,27 @@ int resolve_imports(const Node *ast, const char *src,
             snprintf(msg, sizeof(msg),
                      "circular import detected: '%s' is already being resolved", mpath);
             diag_emit(DIAG_ERROR, E2031, d->start, d->line, d->col, msg, "fix", NULL);
-            err = 1; st_push(out, alias, mpath, 0); continue;
+            err = 1; st_push(out, alias, mpath, ver, 0); continue;
         }
 
-        /* File lookup */
+        /* File lookup — try versioned .tki first, then unversioned */
         char fpath[MAX_PATH];
         strncpy(fpath, mpath, MAX_PATH - 1); fpath[MAX_PATH - 1] = '\0';
         dots_to_slashes(fpath);
 
         ifl_push(&inf, mpath);
 
-        if (tki_exists(sp, fpath)) {
-            st_push(out, alias, mpath, 1);
+        int found = 0;
+        if (ver) {
+            /* Try versioned path: module/path.1.2.tki */
+            char vfpath[MAX_PATH * 2];
+            snprintf(vfpath, sizeof(vfpath), "%s.%s", fpath, ver);
+            if (tki_exists(sp, vfpath)) { found = 1; }
+        }
+        if (!found && tki_exists(sp, fpath)) { found = 1; }
+
+        if (found) {
+            st_push(out, alias, mpath, ver, 1);
         } else {
             char *avail = build_avail_list(sp);
             char msg[MAX_PATH + 512];
@@ -160,7 +242,7 @@ int resolve_imports(const Node *ast, const char *src,
                      "module '%s' not found; available: %s", mpath, avail ? avail : "");
             free(avail);
             diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col, msg, "fix", NULL);
-            err = 1; st_push(out, alias, mpath, 0);
+            err = 1; st_push(out, alias, mpath, ver, 0);
         }
 
         ifl_pop(&inf);
@@ -173,6 +255,7 @@ void symtab_free(SymbolTable *st) {
     for (int i = 0; i < st->count; i++) {
         free(st->entries[i].alias_name);
         free(st->entries[i].module_path);
+        free(st->entries[i].version);
     }
     free(st->entries);
     st->entries = NULL; st->count = 0;
