@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "module": "std.json",
+  "exports": [
+    {"kind": "type", "name": "Json",    "fields": [{"name": "raw", "type": "str"}]},
+    {"kind": "type", "name": "JsonErr", "fields": [
+      {"name": "Parse",   "type": "str"},
+      {"name": "Type",    "type": "str"},
+      {"name": "Missing", "type": "str"}
+    ]},
+    {"kind": "func", "name": "json.enc",  "params": ["str"],             "return": "str"},
+    {"kind": "func", "name": "json.dec",  "params": ["str"],             "return": "Json!JsonErr"},
+    {"kind": "func", "name": "json.str",  "params": ["Json", "str"],     "return": "str!JsonErr"},
+    {"kind": "func", "name": "json.u64",  "params": ["Json", "str"],     "return": "u64!JsonErr"},
+    {"kind": "func", "name": "json.i64",  "params": ["Json", "str"],     "return": "i64!JsonErr"},
+    {"kind": "func", "name": "json.f64",  "params": ["Json", "str"],     "return": "f64!JsonErr"},
+    {"kind": "func", "name": "json.bool", "params": ["Json", "str"],     "return": "bool!JsonErr"},
+    {"kind": "func", "name": "json.arr",  "params": ["Json", "str"],     "return": "[Json]!JsonErr"}
+  ]
+}
