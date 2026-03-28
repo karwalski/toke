@@ -34,8 +34,8 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.2.1 | Lexer implementation | backlog | — | Depends on 1.1 complete |
 | 1.2.2 | Parser implementation | done | feature/compiler-parser | [x] All 47 non-terminals [x] LL(1) [x] AST with source positions [x] E2001–E2004 diagnostics [x] 394 lines |
 | 1.2.3 | Import resolver | done | feature/compiler-import-resolver | [x] .tki loading [x] E2030 unresolved [x] E2031 circular [x] std.* prefix [x] SymbolTable [x] 179 lines |
-| 1.2.4 | Name resolver | in_progress | feature/compiler-name-resolver | Depends on 1.2.3 |
-| 1.2.5 | Type checker | backlog | — | Depends on 1.2.4 |
+| 1.2.4 | Name resolver | done | feature/compiler-name-resolver | [x] Scope chain [x] Predefined ids [x] Import aliases [x] E3011 E3012 [x] All scope levels |
+| 1.2.5 | Type checker | in_progress | feature/compiler-type-checker | Depends on 1.2.4 |
 | 1.2.6 | Structured diagnostic emitter | backlog | — | Can parallel 1.2.5 |
 | 1.2.7 | Interface file emitter | backlog | — | Depends on 1.2.5 |
 | 1.2.8 | LLVM IR backend | backlog | — | Depends on 1.2.5 |

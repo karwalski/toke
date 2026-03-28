@@ -73,4 +73,46 @@ int resolve_imports(const Node *ast, const char *src,
  */
 void symtab_free(SymbolTable *st);
 
+/* ── Name resolution ─────────────────────────────────────────────────── */
+
+typedef enum {
+    DECL_FUNC,
+    DECL_TYPE,
+    DECL_CONST,
+    DECL_PARAM,
+    DECL_LET,
+    DECL_MUT,
+    DECL_PREDEFINED,   /* true, false, built-in types */
+    DECL_IMPORT_ALIAS, /* alias introduced by an import */
+} DeclKind;
+
+typedef struct Decl {
+    const char   *name;      /* interned in arena */
+    int           name_len;
+    DeclKind      kind;
+    const Node   *def_node;  /* NULL for predefined */
+    struct Decl  *next;      /* linked list within scope */
+} Decl;
+
+typedef struct Scope {
+    Decl         *head;
+    struct Scope *parent;
+} Scope;
+
+typedef struct {
+    Scope        *module_scope;
+    Arena        *arena;
+} NameEnv;
+
+/* Error codes for name resolution */
+#define E3011 3011  /* identifier not declared    */
+#define E3012 3012  /* identifier already declared in this scope */
+
+/* Resolve all identifier references in the AST.
+ * symtab: output of resolve_imports().
+ * src:    original source buffer.
+ * Returns 0 on success, -1 if any identifier could not be resolved. */
+int resolve_names(const Node *ast, const char *src,
+                  const SymbolTable *symtab, Arena *arena, NameEnv *out);
+
 #endif /* TK_NAMES_H */

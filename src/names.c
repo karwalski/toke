@@ -177,3 +177,299 @@ void symtab_free(SymbolTable *st) {
     free(st->entries);
     st->entries = NULL; st->count = 0;
 }
+
+/* ── Name resolution ──────────────────────────────────────────────────── */
+
+/* Allocate a Scope from arena, linked to parent. */
+static Scope *push_scope(Arena *arena, Scope *parent) {
+    Scope *s = (Scope *)arena_alloc(arena, (int)sizeof(Scope));
+    if (!s) return NULL;
+    s->head   = NULL;
+    s->parent = parent;
+    return s;
+}
+
+/* Look up name (not NUL-terminated, length given) in scope chain.
+ * Returns first matching Decl, or NULL if not found. */
+static Decl *scope_lookup(const Scope *s, const char *name, int len) {
+    for (; s; s = s->parent) {
+        for (Decl *d = s->head; d; d = d->next) {
+            if (d->name_len == len && memcmp(d->name, name, (size_t)len) == 0)
+                return d;
+        }
+    }
+    return NULL;
+}
+
+/* Look up name only in the immediate (current) scope — for duplicate check. */
+static Decl *scope_lookup_local(const Scope *s, const char *name, int len) {
+    for (Decl *d = s->head; d; d = d->next) {
+        if (d->name_len == len && memcmp(d->name, name, (size_t)len) == 0)
+            return d;
+    }
+    return NULL;
+}
+
+/* Intern a string into the arena (copies bytes, appends NUL). */
+static const char *arena_intern(Arena *arena, const char *s, int len) {
+    char *p = (char *)arena_alloc(arena, len + 1);
+    if (!p) return NULL;
+    memcpy(p, s, (size_t)len);
+    p[len] = '\0';
+    return p;
+}
+
+/* Insert a Decl into the current scope.
+ * Returns -1 and emits E3012 if name already declared in this scope. */
+static int scope_insert(Scope *s, Arena *arena, const char *src,
+                        int tok_start, int tok_len, int name_start, int name_len,
+                        DeclKind kind, const Node *def_node,
+                        int node_line, int node_col) {
+    if (scope_lookup_local(s, src + name_start, name_len)) {
+        char msg[256];
+        /* Copy name for message */
+        int mlen = name_len < 200 ? name_len : 200;
+        char nbuf[201];
+        memcpy(nbuf, src + name_start, (size_t)mlen);
+        nbuf[mlen] = '\0';
+        snprintf(msg, sizeof(msg),
+                 "identifier '%s' is already declared in this scope", nbuf);
+        diag_emit(DIAG_ERROR, E3012, tok_start, node_line, node_col, msg,
+                  "fix", NULL);
+        return -1;
+    }
+    Decl *d = (Decl *)arena_alloc(arena, (int)sizeof(Decl));
+    if (!d) return -1;
+    d->name     = arena_intern(arena, src + name_start, name_len);
+    d->name_len = name_len;
+    d->kind     = kind;
+    d->def_node = def_node;
+    d->next     = s->head;
+    s->head     = d;
+    return 0;
+}
+
+/* Insert a predefined identifier (name is a string literal). */
+static void seed_predefined(Scope *s, Arena *arena, const char *name) {
+    int len = (int)strlen(name);
+    Decl *d = (Decl *)arena_alloc(arena, (int)sizeof(Decl));
+    if (!d) return;
+    d->name     = arena_intern(arena, name, len);
+    d->name_len = len;
+    d->kind     = DECL_PREDEFINED;
+    d->def_node = NULL;
+    d->next     = s->head;
+    s->head     = d;
+}
+
+/* Forward declaration for mutual recursion. */
+static int resolve_node(const Node *node, const char *src,
+                        Scope *scope, Arena *arena, int *had_error);
+
+/* Resolve an identifier reference: look up and emit E3011 if not found. */
+static void resolve_ident(const Node *node, const char *src,
+                          Scope *scope, int *had_error) {
+    const char *name = src + node->tok_start;
+    int         len  = node->tok_len;
+    if (!scope_lookup(scope, name, len)) {
+        char msg[256];
+        int mlen = len < 200 ? len : 200;
+        char nbuf[201];
+        memcpy(nbuf, name, (size_t)mlen);
+        nbuf[mlen] = '\0';
+        snprintf(msg, sizeof(msg), "identifier '%s' is not declared", nbuf);
+        diag_emit(DIAG_ERROR, E3011, node->start, node->line, node->col,
+                  msg, "fix", NULL);
+        *had_error = 1;
+    }
+}
+
+/* Walk a NODE_FUNC_DECL: push scope, register params, walk body. */
+static int resolve_func(const Node *node, const char *src,
+                        Scope *module_scope, Arena *arena, int *had_error) {
+    /* child[0]: name (NODE_IDENT), child[1..]: params/return/body */
+    Scope *fn_scope = push_scope(arena, module_scope);
+    if (!fn_scope) return -1;
+
+    for (int i = 0; i < node->child_count; i++) {
+        const Node *ch = node->children[i];
+        if (!ch) continue;
+        if (ch->kind == NODE_PARAM) {
+            /* NODE_PARAM child[0] = name, child[1] = type */
+            const Node *pname = ch->child_count > 0 ? ch->children[0] : NULL;
+            if (pname && (pname->kind == NODE_IDENT ||
+                          pname->kind == NODE_TYPE_IDENT)) {
+                scope_insert(fn_scope, arena, src,
+                             pname->start, pname->tok_len,
+                             pname->tok_start, pname->tok_len,
+                             DECL_PARAM, ch,
+                             pname->line, pname->col);
+            }
+            /* Resolve type expression in param */
+            if (ch->child_count > 1)
+                resolve_node(ch->children[1], src, fn_scope, arena, had_error);
+        } else if (ch->kind == NODE_STMT_LIST) {
+            resolve_node(ch, src, fn_scope, arena, had_error);
+        } else {
+            /* return type expression or other sub-nodes */
+            resolve_node(ch, src, fn_scope, arena, had_error);
+        }
+    }
+    return 0;
+}
+
+static int resolve_node(const Node *node, const char *src,
+                        Scope *scope, Arena *arena, int *had_error) {
+    if (!node) return 0;
+
+    switch (node->kind) {
+    case NODE_IDENT:
+        resolve_ident(node, src, scope, had_error);
+        break;
+
+    case NODE_TYPE_IDENT:
+        /* Type identifiers are resolved the same way as regular identifiers. */
+        resolve_ident(node, src, scope, had_error);
+        break;
+
+    case NODE_FIELD_EXPR: {
+        /* alias.field — child[0] is the qualifier (NODE_IDENT),
+         * child[1] is the field name.  Verify child[0] is an import alias. */
+        const Node *qualifier = node->child_count > 0 ? node->children[0] : NULL;
+        if (qualifier && qualifier->kind == NODE_IDENT) {
+            const char *qname = src + qualifier->tok_start;
+            int         qlen  = qualifier->tok_len;
+            Decl *d = scope_lookup(scope, qname, qlen);
+            if (!d) {
+                char msg[256];
+                int ml = qlen < 200 ? qlen : 200;
+                char nb[201]; memcpy(nb, qname, (size_t)ml); nb[ml] = '\0';
+                snprintf(msg, sizeof(msg),
+                         "identifier '%s' is not declared", nb);
+                diag_emit(DIAG_ERROR, E3011, qualifier->start,
+                          qualifier->line, qualifier->col, msg, "fix", NULL);
+                *had_error = 1;
+            }
+            /* field name (child[1]) is a member selection, not a standalone
+             * identifier reference — do not resolve it against the scope. */
+        }
+        /* Still walk child[1] if it's a nested expression */
+        for (int i = 1; i < node->child_count; i++)
+            resolve_node(node->children[i], src, scope, arena, had_error);
+        break;
+    }
+
+    case NODE_FUNC_DECL:
+        /* name is child[0] — already registered in module scope; skip it,
+         * then open a function scope for params and body. */
+        resolve_func(node, src, scope, arena, had_error);
+        break;
+
+    case NODE_BIND_STMT:
+    case NODE_MUT_BIND_STMT: {
+        /* child[0] = name, child[1] = type (optional), child[2] = init expr */
+        /* Resolve RHS before inserting name (no self-reference). */
+        for (int i = 1; i < node->child_count; i++)
+            resolve_node(node->children[i], src, scope, arena, had_error);
+        const Node *bname = node->child_count > 0 ? node->children[0] : NULL;
+        if (bname) {
+            DeclKind dk = (node->kind == NODE_MUT_BIND_STMT) ? DECL_MUT : DECL_LET;
+            int r = scope_insert(scope, arena, src,
+                                 bname->start, bname->tok_len,
+                                 bname->tok_start, bname->tok_len,
+                                 dk, node, bname->line, bname->col);
+            if (r < 0) *had_error = 1;
+        }
+        break;
+    }
+
+    case NODE_STMT_LIST: {
+        Scope *block = push_scope(arena, scope);
+        if (!block) { *had_error = 1; return -1; }
+        for (int i = 0; i < node->child_count; i++)
+            resolve_node(node->children[i], src, block, arena, had_error);
+        break;
+    }
+
+    default:
+        /* Generic: walk all children */
+        for (int i = 0; i < node->child_count; i++)
+            resolve_node(node->children[i], src, scope, arena, had_error);
+        break;
+    }
+    return 0;
+}
+
+int resolve_names(const Node *ast, const char *src,
+                  const SymbolTable *symtab, Arena *arena, NameEnv *out) {
+    if (!ast || !src || !symtab || !arena || !out) return -1;
+
+    /* Build module scope */
+    Scope *mscope = push_scope(arena, NULL);
+    if (!mscope) return -1;
+
+    out->module_scope = mscope;
+    out->arena        = arena;
+
+    /* Seed predefined identifiers */
+    static const char *predefined[] = {
+        "true", "false", "bool", "i64", "u64", "f64", "str", "void", NULL
+    };
+    for (int i = 0; predefined[i]; i++)
+        seed_predefined(mscope, arena, predefined[i]);
+
+    /* Register import aliases */
+    for (int i = 0; i < symtab->count; i++) {
+        const ImportEntry *ie = &symtab->entries[i];
+        if (!ie->resolved) continue;
+        int alen = (int)strlen(ie->alias_name);
+        Decl *d = (Decl *)arena_alloc(arena, (int)sizeof(Decl));
+        if (!d) return -1;
+        d->name     = arena_intern(arena, ie->alias_name, alen);
+        d->name_len = alen;
+        d->kind     = DECL_IMPORT_ALIAS;
+        d->def_node = NULL;
+        d->next     = mscope->head;
+        mscope->head = d;
+    }
+
+    /* First pass: register all module-scope declarations (forward-decl). */
+    for (int i = 0; i < ast->child_count; i++) {
+        const Node *d = ast->children[i];
+        if (!d) continue;
+        DeclKind dk;
+        const Node *name_node = NULL;
+
+        if (d->kind == NODE_FUNC_DECL) {
+            dk = DECL_FUNC;
+            name_node = d->child_count > 0 ? d->children[0] : NULL;
+        } else if (d->kind == NODE_TYPE_DECL) {
+            dk = DECL_TYPE;
+            name_node = d->child_count > 0 ? d->children[0] : NULL;
+        } else if (d->kind == NODE_CONST_DECL) {
+            dk = DECL_CONST;
+            name_node = d->child_count > 0 ? d->children[0] : NULL;
+        } else {
+            continue;
+        }
+
+        if (!name_node) continue;
+        scope_insert(mscope, arena, src,
+                     name_node->start, name_node->tok_len,
+                     name_node->tok_start, name_node->tok_len,
+                     dk, d, name_node->line, name_node->col);
+    }
+
+    /* Second pass: resolve references inside each top-level declaration. */
+    int had_error = 0;
+    for (int i = 0; i < ast->child_count; i++) {
+        const Node *d = ast->children[i];
+        if (!d) continue;
+        /* Skip nodes that are purely declarations with no expressions */
+        if (d->kind == NODE_MODULE) continue;
+        if (d->kind == NODE_IMPORT) continue;
+        resolve_node(d, src, mscope, arena, &had_error);
+    }
+
+    return had_error ? -1 : 0;
+}
