@@ -3,7 +3,7 @@
 
 **Last updated:** see git log  
 **Current phase:** Phase 1 — Falsification  
-**Current milestone:** M0 — Specification lock
+**Current milestone:** M1 — Reference compiler
 
 ---
 
@@ -22,8 +22,8 @@
 
 | Epic | Title | Status |
 |------|-------|--------|
-| 1.1 | Language Specification Lock | planned |
-| 1.2 | Reference Compiler Frontend | backlog |
+| 1.1 | Language Specification Lock | done |
+| 1.2 | Reference Compiler Frontend | in_progress |
 | 1.3 | Standard Library Core | backlog |
 | 1.4 | Mac Studio Setup and Local Pipeline | backlog |
 | 1.5 | Phase A Corpus Generation | backlog |
@@ -45,5 +45,6 @@ None yet.
 
 ## Next Action
 
-Start Epic 1.1, Story 1.1.1 — Character set finalisation.  
+Epic 1.1 complete. Start Epic 1.2 — Reference Compiler Frontend.
+Stories 1.2.1 (lexer), 1.2.6 (diagnostic emitter), and 1.2.10 (conformance suite) can run in parallel.
 See `docs/epics_and_stories.md` for acceptance criteria.

@@ -85,6 +85,22 @@ Acceptance criteria:
 
 ---
 
+**Story 1.1.6 — Spec review and alignment**
+
+As a compiler engineer, I want all Phase 1 spec documents reviewed for internal consistency and completeness before compiler work begins, so that the risk of mid-implementation spec changes is minimised.
+
+Acceptance criteria:
+- All five spec documents reviewed: character-set.md, keywords.md, symbol-disambiguation.md, grammar.ebnf, phase2-transform.md
+- Every production in grammar.ebnf references only terminals defined in character-set.md and keywords.md
+- Every disambiguation rule in symbol-disambiguation.md is present and correctly encoded in grammar.ebnf
+- Every Phase 2 transformation in phase2-transform.md references valid grammar non-terminals from grammar.ebnf
+- No contradictions between any two spec documents
+- Any gap, ambiguity, or risk item that would require a compiler change post-implementation is documented
+- A review report is committed to toke-spec/docs/spec-review-m0.md
+- Any identified issues are either resolved in the spec or logged as a numbered risk item in the report
+
+---
+
 ### EPIC 1.2 — Reference Compiler Frontend
 
 *Build the minimal compiler frontend in C: lexer, parser, name resolver, and type checker. Zero external dependencies. Structured error output from the first line of error-emitting code.*

@@ -24,7 +24,8 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.1.2 | Keyword table lock | done | feature/spec-keyword-table | [x] 12 keywords listed with exact lexical form [x] Each keyword's production rule identified [x] true/false documented as predefined identifiers [x] Prefix-conflict analysis: lp/let share `l`, resolved by second char [x] Underscore excluded, identifier rule updated [x] Frozen at M0 2026-03-27 |
 | 1.1.3 | Symbol disambiguation rules | done | feature/spec-symbol-disambiguation | [x] 14 dual-role symbols documented [x] All rules LL(1) one-token lookahead [x] Two examples per symbol [x] Summary table [x] Frozen M0 2026-03-27 |
 | 1.1.4 | Formal EBNF grammar | done | feature/spec-ebnf-grammar | [x] 65 productions covering all constructs [x] LL(1) verified [x] Unambiguous [x] All 8 open questions resolved [x] Committed to spec/grammar.ebnf [x] Frozen at M0 2026-03-27 |
-| 1.1.5 | Phase 2 transformation rules | backlog | — | Depends on 1.1.4 |
+| 1.1.5 | Phase 2 transformation rules | done | feature/spec-phase2-transform | [x] Type sigil rule (TYPE_IDENT→$name) [x] Array literal rule ([]→@()) [x] Array index rule (a[n]→a.get(n)) [x] Determinism proof [x] Round-trip spec [x] 20+ example pairs [x] Frozen M0 2026-03-28 |
+| 1.1.6 | Spec review and alignment | planned | — | Added pre-compiler gate |
 
 ### Epic 1.2 — Reference Compiler Frontend
 
@@ -72,7 +73,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 1.6.1 | Held-out benchmark task set | done | feature/benchmark-held-out-tasks | Lock before corpus gen starts |
+| 1.6.1 | Held-out benchmark task set | done | feature/benchmark-held-out-tasks | [x] 500 tasks [x] 120 test inputs each [x] Gitignored [x] Generation script committed |
 | 1.6.2 | Token efficiency measurement | backlog | — | Depends on 1.5 complete |
 | 1.6.3 | Pass@1 measurement | backlog | — | Depends on 1.6.2 |
 | 1.6.4 | Gate 1 decision document | backlog | — | Depends on 1.6.3 |
@@ -87,6 +88,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.1.2 | Keyword table lock | 2026-03-27 | feature/spec-keyword-table (toke-spec) |
 | 1.1.3 | Symbol disambiguation rules | 2026-03-27 | feature/spec-symbol-disambiguation (toke-spec) |
 | 1.1.4 | Formal EBNF grammar | 2026-03-27 | feature/spec-ebnf-grammar (toke-spec) |
+| 1.1.5 | Phase 2 transformation rules | 2026-03-28 | feature/spec-phase2-transform (toke-spec) |
 | 1.6.1 | Held-out benchmark task set | 2026-03-27 | feature/benchmark-held-out-tasks (toke-benchmark) |
 
 ---
