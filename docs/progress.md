@@ -75,8 +75,8 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 |----|-------|--------|--------|-------|
 | 1.9.1 | Job manager daemon | done | feature/monitor-console | Flask REST API, subprocess manager, jobs.json persistence |
 | 1.9.2 | Web dashboard | done | feature/monitor-console | Dark-theme SPA, auto-refresh, log panel |
-| 1.9.3 | Log streaming | backlog | — | Depends on 1.9.1, 1.9.2 |
-| 1.9.4 | Authentication and HTTPS | backlog | — | Depends on 1.9.1, 1.9.2 |
+| 1.9.3 | Log streaming | done | feature/monitor-console | SSE /api/jobs/{id}/stream; EventSource in dashboard |
+| 1.9.4 | Authentication and HTTPS | done | feature/monitor-console | TLS via TK_MONITOR_CERT/KEY; token query param for SSE |
 
 ### Epic 1.4 — Mac Studio Setup and Local Pipeline
 
