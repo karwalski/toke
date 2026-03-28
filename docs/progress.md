@@ -40,7 +40,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.2.7 | Interface file emitter | backlog | — | Depends on 1.2.5 |
 | 1.2.8 | LLVM IR backend | backlog | — | Depends on 1.2.5 |
 | 1.2.9 | CLI interface | backlog | — | Depends on 1.2.8 |
-| 1.2.10 | Conformance test suite (Phase 1) | backlog | — | Parallel with 1.2.1–1.2.9 |
+| 1.2.10 | Conformance test suite (Phase 1) | in_progress | test/compiler-conformance-suite | L-series (25 tests), G-series (25 tests), D-series (12 tests) written; N/T/C stubs with READMEs; runner at test/run_conform.sh; `make conform` wired |
 
 ### Epic 1.3 — Standard Library Core
 

@@ -1,0 +1,9 @@
+id: G011
+series: G
+description: "Return statement long form: rt expr ;"
+input: |
+  M=test;
+  F=one():i64{rt 1};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

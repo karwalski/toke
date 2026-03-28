@@ -1,0 +1,9 @@
+id: G015
+series: G
+description: "Valid empty array literal"
+input: |
+  M=test;
+  F=empty():[i64]{<[]};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

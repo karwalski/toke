@@ -1,0 +1,15 @@
+id: L024
+series: L
+description: "Keyword lp is not confused with let — second char disambiguates l-prefix"
+input: |
+  M=test;
+  F=counting():i64{
+    let sum=0;
+    lp(let i=0;i<10;i=i+1){
+      sum=sum+i;
+    };
+    <sum
+  };
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

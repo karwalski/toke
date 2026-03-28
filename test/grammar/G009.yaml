@@ -1,0 +1,14 @@
+id: G009
+series: G
+description: "Valid loop statement (LoopStmt) with break"
+input: |
+  M=test;
+  F=firstneg(arr:[i64]):i64{
+    lp(let i=0;i<arr.len;i=i+1){
+      if(arr.get(i)<0){<arr.get(i)};
+    };
+    <0
+  };
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

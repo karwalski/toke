@@ -1,0 +1,10 @@
+id: D010
+series: D
+description: "pos.line is 1-based: error on first line reports line 1"
+input: |
+  M=test;F=bad():Str{<"\q"};
+expected_exit_code: 1
+expected_error_codes: ["E1001"]
+expected_diag_field:
+  field: "pos.line"
+  value: 1

@@ -1,0 +1,9 @@
+id: L008
+series: L
+description: "Hex escape sequence \\xNN in string literal is accepted"
+input: |
+  M=test;
+  F=hexesc():Str{<"\x41\xFF"};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

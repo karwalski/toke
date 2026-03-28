@@ -1,0 +1,9 @@
+id: G004
+series: G
+description: "Valid struct type declaration with IDENT field names"
+input: |
+  M=test;
+  T=Point{x:i64;y:i64};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

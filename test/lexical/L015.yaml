@@ -1,0 +1,9 @@
+id: L015
+series: L
+description: "Binary integer literal 0b... is classified as INT_LIT"
+input: |
+  M=test;
+  F=binnum():i64{<0b1010};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

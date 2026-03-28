@@ -1,0 +1,13 @@
+id: G016
+series: G
+description: "Valid mutable binding statement (MutBindStmt)"
+input: |
+  M=test;
+  F=counter():i64{
+    let n=mut.0;
+    n=n+1;
+    <n
+  };
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

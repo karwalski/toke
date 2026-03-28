@@ -1,0 +1,10 @@
+id: L012
+series: L
+description: "Uppercase-initial identifier is classified as TYPE_IDENT"
+input: |
+  M=test;
+  T=Point{x:i64;y:i64};
+  F=origin():Point{<Point{x:0;y:0}};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

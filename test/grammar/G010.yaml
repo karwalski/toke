@@ -1,0 +1,9 @@
+id: G010
+series: G
+description: "Return statement short form: < expr ;"
+input: |
+  M=test;
+  F=one():i64{<1};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

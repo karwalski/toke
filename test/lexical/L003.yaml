@@ -1,0 +1,9 @@
+id: L003
+series: L
+description: "Character outside Phase 1 set in structural position emits E1003 (pound sign)"
+input: |
+  M=test;
+  F=bad():i64{<1£};
+expected_exit_code: 1
+expected_error_codes: ["E1003"]
+expected_fix: ""

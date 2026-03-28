@@ -1,0 +1,11 @@
+id: D006
+series: D
+description: "Diagnostic schema_version field is \"1.0\""
+input: |
+  M=test;
+  F=bad():Str{<"\q"};
+expected_exit_code: 1
+expected_error_codes: ["E1001"]
+expected_diag_field:
+  field: "schema_version"
+  value: "1.0"

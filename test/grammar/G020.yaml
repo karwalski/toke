@@ -1,0 +1,11 @@
+id: G020
+series: G
+description: "Valid member access chain (PostfixExpr)"
+input: |
+  M=test;
+  T=Inner{val:i64};
+  T=Outer{inner:Inner};
+  F=getval(o:Outer):i64{<o.inner.val};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""
