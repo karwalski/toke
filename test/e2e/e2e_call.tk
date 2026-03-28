@@ -1,0 +1,8 @@
+M=test;
+F=triple(n:i64):i64{
+  <n*3
+};
+F=main():i64{
+  let v=triple(5);
+  <v
+};

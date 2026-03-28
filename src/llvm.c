@@ -6,9 +6,55 @@
 #include <string.h>
 #include <stdlib.h>
 
-typedef struct { FILE *out; const char *src; int tmp, str_idx, lbl; } Ctx;
+#define MAX_FUNCS 128
+typedef struct { char name[128]; const char *ret; } FnSig;
+typedef struct { FILE *out; const char *src; int tmp, str_idx, lbl; int term; FnSig fns[MAX_FUNCS]; int fn_count; } Ctx;
 static int next_tmp(Ctx *c){return c->tmp++;} static int next_lbl(Ctx *c){return c->lbl++;} static int next_str(Ctx *c){return c->str_idx++;}
 static void tok_cp(const char *src,const Node *n,char *buf,int sz){int len=n->tok_len<sz-1?n->tok_len:sz-1;memcpy(buf,src+n->tok_start,(size_t)len);buf[len]='\0';}
+
+static const char *lookup_ret(Ctx *c, const char *name) {
+    for (int i = 0; i < c->fn_count; i++)
+        if (!strcmp(c->fns[i].name, name)) return c->fns[i].ret;
+    return "i64"; /* default */
+}
+
+static void register_fn(Ctx *c, const char *name, const char *ret) {
+    if (c->fn_count >= MAX_FUNCS) return;
+    int len = (int)strlen(name);
+    if (len >= 128) len = 127;
+    memcpy(c->fns[c->fn_count].name, name, (size_t)len);
+    c->fns[c->fn_count].name[len] = '\0';
+    c->fns[c->fn_count].ret = ret;
+    c->fn_count++;
+}
+
+static void prepass_funcs(Ctx *c, const Node *n) {
+    char tb[256];
+    if (n->kind == NODE_PROGRAM || n->kind == NODE_MODULE) {
+        for (int i = 0; i < n->child_count; i++) prepass_funcs(c, n->children[i]);
+        return;
+    }
+    if (n->kind != NODE_FUNC_DECL) return;
+    tok_cp(c->src, n->children[0], tb, sizeof tb);
+    const char *ret = "void";
+    for (int i = 1; i < n->child_count; i++) {
+        if (n->children[i]->kind == NODE_RETURN_SPEC) {
+            const Node *rs = n->children[i];
+            if (rs->child_count > 0) {
+                if (rs->children[0]->kind == NODE_PTR_TYPE) { ret = "ptr"; }
+                else {
+                    char rn[64]; tok_cp(c->src, rs->children[0], rn, sizeof rn);
+                    if      (!strcmp(rn, "bool")) ret = "i1";
+                    else if (!strcmp(rn, "f64"))  ret = "double";
+                    else if (!strcmp(rn, "str"))  ret = "ptr";
+                    else if (!strcmp(rn, "void")) ret = "void";
+                    else                          ret = "i64";
+                }
+            }
+        }
+    }
+    register_fn(c, tb, ret);
+}
 
 static int emit_str_global(Ctx *c, const char *raw, int rlen)
 {
@@ -116,8 +162,20 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         int args[NODE_MAX_CHILDREN], na = n->child_count - 1;
         for (int i = 0; i < na; i++) args[i] = emit_expr(c, n->children[i+1]);
+        const char *callee_ret = lookup_ret(c, tb);
+        if (!strcmp(callee_ret, "void")) {
+            fprintf(c->out, "  call void @%s(", tb);
+            for (int i = 0; i < na; i++) {
+                if (i) fputc(',', c->out);
+                fprintf(c->out, " i64 %%t%d", args[i]);
+            }
+            fputs(")\n", c->out);
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
+            return t;
+        }
         t = next_tmp(c);
-        fprintf(c->out, "  %%t%d = call i64 @%s(", t, tb);
+        fprintf(c->out, "  %%t%d = call %s @%s(", t, callee_ret, tb);
         for (int i = 0; i < na; i++) {
             if (i) fputc(',', c->out);
             fprintf(c->out, " i64 %%t%d", args[i]);
@@ -128,8 +186,21 @@ static int emit_expr(Ctx *c, const Node *n)
     case NODE_CAST_EXPR: {
         int v = emit_expr(c, n->children[0]);
         t = next_tmp(c);
-        fprintf(c->out, "  ; as-cast — identity stub\n");
-        fprintf(c->out, "  %%t%d = add i64 0, %%t%d\n", t, v);
+        if (n->child_count >= 2 && n->children[1]) {
+            char tn[64]; tok_cp(c->src, n->children[1], tn, sizeof tn);
+            if (!strcmp(tn, "f64")) {
+                fprintf(c->out, "  %%t%d = sitofp i64 %%t%d to double\n", t, v);
+                return t;
+            } else if (!strcmp(tn, "i64")) {
+                fprintf(c->out, "  %%t%d = fptosi double %%t%d to i64\n", t, v);
+                return t;
+            } else if (!strcmp(tn, "bool")) {
+                fprintf(c->out, "  %%t%d = trunc i64 %%t%d to i1\n", t, v);
+                return t;
+            }
+        }
+        /* identity / unknown cast */
+        fprintf(c->out, "  %%t%d = add i64 0, %%t%d ; as-cast identity\n", t, v);
         return t;
     }
     case NODE_FIELD_EXPR: {
@@ -205,8 +276,8 @@ static void emit_stmt(Ctx *c, const Node *n)
     case NODE_MUT_BIND_STMT:
         tok_cp(c->src, n->children[0], tb, sizeof tb);
         fprintf(c->out, "  %%%s = alloca i64\n", tb);
-        if (n->child_count >= 3) {
-            int v = emit_expr(c, n->children[2]);
+        if (n->child_count >= 2) {
+            int v = emit_expr(c, n->children[1]);
             fprintf(c->out, "  store i64 %%t%d, ptr %%%s\n", v, tb);
         }
         break;
@@ -222,21 +293,28 @@ static void emit_stmt(Ctx *c, const Node *n)
         } else {
             fputs("  ret void\n", c->out);
         }
+        c->term = 1;
         break;
     case NODE_BREAK_STMT:
         fprintf(c->out, "  br label %%loop_exit%d\n", c->lbl - 1);
+        c->term = 1;
         break;
     case NODE_IF_STMT: {
         int L = next_lbl(c);
         int cv = emit_expr(c, n->children[0]);
         fprintf(c->out, "  br i1 %%t%d, label %%if_then%d, label %%if_else%d\n", cv, L, L);
         fprintf(c->out, "if_then%d:\n", L);
+        c->term = 0;
         emit_stmt(c, n->children[1]);
-        fprintf(c->out, "  br label %%if_merge%d\n", L);
+        int then_term = c->term;
+        if (!then_term) fprintf(c->out, "  br label %%if_merge%d\n", L);
         fprintf(c->out, "if_else%d:\n", L);
+        c->term = 0;
         if (n->child_count >= 3) emit_stmt(c, n->children[2]);
-        fprintf(c->out, "  br label %%if_merge%d\n", L);
-        fprintf(c->out, "if_merge%d:\n", L);
+        int else_term = c->term;
+        if (!else_term) fprintf(c->out, "  br label %%if_merge%d\n", L);
+        if (!then_term || !else_term) fprintf(c->out, "if_merge%d:\n", L);
+        c->term = then_term && else_term;
         break;
     }
     case NODE_LOOP_STMT: {
@@ -262,10 +340,12 @@ static void emit_stmt(Ctx *c, const Node *n)
         }
         fprintf(c->out, "loop_body%d:\n", L);
         int save = c->lbl; c->lbl = L + 1;
+        c->term = 0;
         emit_stmt(c, body);
         c->lbl = save;
-        fprintf(c->out, "  br label %%loop_hdr%d\n", L);
+        if (!c->term) fprintf(c->out, "  br label %%loop_hdr%d\n", L);
         fprintf(c->out, "loop_exit%d:\n", L);
+        c->term = 0;
         break;
     }
     case NODE_ARENA_STMT:
@@ -284,7 +364,8 @@ static void emit_stmt(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, %%t%d\n", cv, sv, pv);
             fprintf(c->out, "  br i1 %%t%d, label %%marm%d, label %%mnxt%d\n", cv, AL, AL);
             fprintf(c->out, "marm%d:\n", AL);
-            emit_stmt(c, arm->children[1]);
+            if (arm->child_count >= 3) emit_stmt(c, arm->children[2]);
+            else if (arm->child_count >= 2) emit_stmt(c, arm->children[1]);
             fprintf(c->out, "  br label %%mend%d\n", ML);
             fprintf(c->out, "mnxt%d:\n", AL);
         }
@@ -392,7 +473,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
             if (n->children[i]->kind != NODE_PARAM) continue;
             char pn[128]; tok_cp(c->src, n->children[i]->children[0], pn, sizeof pn);
             if (!first) fputs(", ", c->out);
-            fprintf(c->out, "i64 %%%s", pn);
+            fprintf(c->out, "i64 %%%s.arg", pn);
             first = 0;
         }
         fputs(") {\nentry:\n", c->out);
@@ -400,10 +481,14 @@ static void emit_toplevel(Ctx *c, const Node *n)
         for (int i = 1; i < n->child_count; i++) {
             if (n->children[i]->kind != NODE_PARAM) continue;
             char pn[128]; tok_cp(c->src, n->children[i]->children[0], pn, sizeof pn);
-            fprintf(c->out, "  %%%s.addr = alloca i64\n  store i64 %%%s, ptr %%%s.addr\n", pn, pn, pn);
+            fprintf(c->out, "  %%%s = alloca i64\n  store i64 %%%s.arg, ptr %%%s\n", pn, pn, pn);
         }
+        c->term = 0;
         if (body_i >= 0) emit_stmt(c, n->children[body_i]);
-        if (!strcmp(ret, "void")) fputs("  ret void\n", c->out);
+        if (!c->term) {
+            if (!strcmp(ret, "void")) fputs("  ret void\n", c->out);
+            else fputs("  ret i64 0 ; implicit return\n", c->out);
+        }
         fputs("}\n", c->out);
         break;
     }
@@ -425,7 +510,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
                   "LLVM IR emission failed: cannot open output file", (void*)0);
         return -1;
     }
-    Ctx ctx; ctx.out = f; ctx.src = src; ctx.tmp = 0; ctx.str_idx = 0; ctx.lbl = 0;
+    Ctx ctx; memset(&ctx, 0, sizeof ctx); ctx.out = f; ctx.src = src;
 
     fputs("; module generated by tkc\n", f);
     if (env && env->target && env->target[0])
@@ -433,6 +518,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("\ndeclare i32 @printf(ptr, ...)\ndeclare i32 @puts(ptr)\n", f);
     fputs("declare ptr @tk_spawn(ptr)\ndeclare i64 @tk_await(ptr)\n\n", f);
 
+    prepass_funcs(&ctx, ast);
     emit_toplevel(&ctx, ast);
 
     if (fflush(f) || ferror(f)) {

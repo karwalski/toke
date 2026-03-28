@@ -6,7 +6,7 @@ SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
 OBJS    = $(SRCS:.c=.o)
 BIN     = tkc
 
-.PHONY: all clean lint conform conform-check build-all ci test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage bench
+.PHONY: all clean lint conform conform-check build-all ci test-e2e test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage bench
 
 all: $(BIN)
 
@@ -29,6 +29,9 @@ build-all:
 	$(MAKE) CC=cc CFLAGS="$(CFLAGS) --target=x86_64-linux-gnu"
 	$(MAKE) CC=cc CFLAGS="$(CFLAGS) --target=aarch64-linux-gnu"
 	$(MAKE) CC=cc CFLAGS="$(CFLAGS) --target=aarch64-apple-macos"
+
+test-e2e: $(BIN)
+	@bash test/e2e/run_e2e.sh
 
 ci: lint conform conform-check
 
