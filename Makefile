@@ -6,7 +6,7 @@ SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
 OBJS    = $(SRCS:.c=.o)
 BIN     = tkc
 
-.PHONY: all clean lint conform conform-check build-all ci test-stdlib
+.PHONY: all clean lint conform conform-check build-all ci test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test
 
 all: $(BIN)
 
@@ -42,8 +42,34 @@ test-stdlib-db:
 	    test/stdlib/test_db.c src/stdlib/db.c -lsqlite3
 	./test/stdlib/test_db
 
+test-stdlib-process:
+	$(CC) $(CFLAGS) -o test/stdlib/test_process \
+	    test/stdlib/test_process.c src/stdlib/process.c
+	./test/stdlib/test_process
+
+test-stdlib-env:
+	$(CC) $(CFLAGS) -o test/stdlib/test_env \
+	    test/stdlib/test_env.c src/stdlib/env.c
+	./test/stdlib/test_env
+
+test-stdlib-crypto:
+	$(CC) $(CFLAGS) -o test/stdlib/test_crypto \
+	    test/stdlib/test_crypto.c src/stdlib/crypto.c src/stdlib/str.c \
+	    -framework CoreFoundation -framework Security
+	./test/stdlib/test_crypto
+
+test-stdlib-time:
+	$(CC) $(CFLAGS) -o test/stdlib/test_time \
+	    test/stdlib/test_time.c src/stdlib/tk_time.c
+	./test/stdlib/test_time
+
+test-stdlib-test:
+	$(CC) $(CFLAGS) -o test/stdlib/test_tktest \
+	    test/stdlib/test_tktest.c src/stdlib/tk_test.c
+	./test/stdlib/test_tktest
+
 clean:
-	rm -f $(OBJS) $(BIN) test/stdlib/test_str test/stdlib/test_db fuzz-lexer fuzz-parser
+	rm -f $(OBJS) $(BIN) test/stdlib/test_str test/stdlib/test_db test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto test/stdlib/test_time test/stdlib/test_tktest fuzz-lexer fuzz-parser
 
 FUZZ_FLAGS = -fsanitize=address,undefined,fuzzer -g
 

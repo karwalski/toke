@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "module": "std.process",
+  "exports": [
+    {"kind": "func", "name": "process.spawn",  "params": ["[str]"],          "return": "Handle!ProcessErr"},
+    {"kind": "func", "name": "process.wait",   "params": ["Handle"],         "return": "i32!ProcessErr"},
+    {"kind": "func", "name": "process.stdout", "params": ["Handle"],         "return": "str!ProcessErr"},
+    {"kind": "func", "name": "process.kill",   "params": ["Handle"],         "return": "bool"},
+    {"kind": "type", "name": "Handle",         "fields": []},
+    {"kind": "sum",  "name": "ProcessErr",     "variants": ["NotFound", "Permission", "IO"]}
+  ]
+}
