@@ -102,6 +102,16 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 2.6.1 | Security policy and disclosure process | backlog | — | Before first public release |
 | 2.6.2 | CVE coordination process | backlog | — | Depends on 2.6.1 |
 
+### Epic 2.7 — Standard Library Expansion
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 2.7.1 | std.process | backlog | — | Depends on 1.3.1 (std.str) |
+| 2.7.2 | std.env | backlog | — | Depends on 1.3.1 (std.str) |
+| 2.7.3 | std.crypto | backlog | — | Depends on 1.3.1 (std.str) |
+| 2.7.4 | std.time | backlog | — | Depends on 1.3.1 (std.str) |
+| 2.7.5 | std.test | backlog | — | Depends on 1.3.1 (std.str) |
+
 ### Epic 3.7 — Supply Chain Security and Release Signing
 
 | ID | Story | Status | Branch | Notes |
@@ -110,6 +120,14 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 3.7.2 | Release binary signing | backlog | — | Before Phase 3 release |
 | 3.7.3 | Reproducible builds for the compiler | backlog | — | Depends on 3.1 complete |
 | 3.7.4 | Model release safety evaluation | backlog | — | Before model release |
+
+### Epic 3.8 — Standard Library Production Hardening
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 3.8.1 | std.log structured logging | backlog | — | Depends on 1.3.1 (std.str), 2.7.4 (std.time) |
+| 3.8.2 | stdlib performance benchmarks | backlog | — | Depends on Epic 1.3 complete |
+| 3.8.3 | stdlib conformance test coverage | backlog | — | Depends on Epic 1.3 complete |
 
 ### Epic 4.6 — Security Audit and Hosted Service Readiness
 

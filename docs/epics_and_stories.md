@@ -263,11 +263,15 @@ Acceptance criteria:
 
 *Implement the minimal stdlib required to generate useful programs: http, db, json, file. These are interfaces that the type checker validates; their implementations can be stubs initially.*
 
+**Sequencing note:** std.str MUST be complete before Phase A corpus generation begins (Milestone M5). All other modules MUST be complete before Phase C corpus generation begins. std.str is a dependency of all other stdlib modules and MUST be worked first. The remaining five modules may be developed in parallel once std.str is done.
+
 ---
 
 **Story 1.3.1 — std.str implementation**
 
 As a program author, I want the std.str module available with all signatures defined in the spec, so that string manipulation is possible in generated programs from the earliest corpus phase.
+
+Dependencies: none (must be done first)
 
 Acceptance criteria:
 - All functions listed in Section 17.1 of the spec are implemented
@@ -282,6 +286,8 @@ Acceptance criteria:
 
 As a corpus engineer, I want the std.http module available with route registration working end-to-end, so that Phase C corpus programs can generate working HTTP handlers.
 
+Dependencies: 1.3.1 (std.str)
+
 Acceptance criteria:
 - All types and functions listed in Section 17.2 of the spec are defined
 - http.GET, http.POST, http.PUT, http.DELETE, http.PATCH route registration compiles
@@ -294,6 +300,8 @@ Acceptance criteria:
 **Story 1.3.3 — std.db interface**
 
 As a corpus engineer, I want the std.db module available with query functions typed correctly, so that database access patterns can appear in corpus programs from Phase B.
+
+Dependencies: 1.3.1 (std.str)
 
 Acceptance criteria:
 - All types and functions in Section 17.3 of the spec are defined
@@ -308,6 +316,8 @@ Acceptance criteria:
 
 As a corpus engineer, I want the std.json module available, so that JSON encoding and decoding appears in corpus programs and HTTP handlers.
 
+Dependencies: 1.3.1 (std.str)
+
 Acceptance criteria:
 - All types and functions in Section 17.4 of the spec are defined
 - json.dec returns Json!JsonErr and is correctly typed
@@ -321,10 +331,29 @@ Acceptance criteria:
 
 As a corpus engineer, I want the std.file module available, so that file I/O patterns can appear in Phase C corpus programs.
 
+Dependencies: 1.3.1 (std.str)
+
 Acceptance criteria:
 - All types and functions in Section 17.5 of the spec are defined
 - FileErr sum type is defined and exhaustively matchable
 - file.read and file.write compile and execute end-to-end
+- .tki interface file is emitted and accurate
+
+---
+
+**Story 1.3.6 — std.net interface**
+
+As a corpus engineer, I want the std.net module available with TCP socket primitives, so that network communication patterns can appear in Phase C corpus programs beyond what std.http provides.
+
+Dependencies: 1.3.1 (std.str), 1.3.5 (std.file)
+
+Acceptance criteria:
+- All types and functions in Section 17.6 of the spec are defined
+- Socket type is defined with fd field
+- NetErr sum type is defined (Connect, Read, Write, Timeout variants) and exhaustively matchable
+- net.connect(host:Str;port:u64):Socket!NetErr is implemented
+- net.read and net.write operate on Socket handles
+- net.close(s:Socket):bool is implemented
 - .tki interface file is emitted and accurate
 
 ---
@@ -856,6 +885,91 @@ Acceptance criteria:
 
 ---
 
+### EPIC 2.7 — Standard Library Expansion
+
+*Extend the stdlib with modules required to validate that toke can express real-world application patterns beyond what Phase 1 corpus programs demonstrate.*
+
+**Sequencing note:** These modules are needed for Gate 2 validation (language viability). They are not needed for Gate 1. Development begins after Gate 1 passes and the Phase 2 compiler extensions are stable.
+
+---
+
+**Story 2.7.1 — std.process**
+
+As a program author, I want a std.process module that allows spawning and communicating with subprocesses, so that toke programs can orchestrate system tools without dropping to C FFI.
+
+Dependencies: 1.3.1 (std.str)
+
+Acceptance criteria:
+- process.spawn(cmd:[Str]):Handle!ProcessErr is implemented
+- process.wait(h:Handle):i32!ProcessErr is implemented
+- process.stdout(h:Handle):Str!ProcessErr is implemented
+- process.kill(h:Handle):bool is implemented
+- ProcessErr sum type covers: NotFound, Permission, IO variants
+- Module compiles cleanly with tkc --check
+- At least 10 corpus programs use std.process in Phase B-C generation
+
+---
+
+**Story 2.7.2 — std.env**
+
+As a program author, I want a std.env module for reading environment variables and configuration, so that toke programs can be configured without hardcoded values.
+
+Dependencies: 1.3.1 (std.str)
+
+Acceptance criteria:
+- env.get(key:Str):Str!EnvErr is implemented
+- env.get_or(key:Str;default:Str):Str is implemented
+- env.set(key:Str;val:Str):bool is implemented
+- EnvErr sum type covers: NotFound, Invalid variants
+- Module compiles cleanly with tkc --check
+
+---
+
+**Story 2.7.3 — std.crypto**
+
+As a program author, I want a std.crypto module providing hashing and HMAC primitives, so that toke HTTP handlers can implement authentication without depending on C libraries directly.
+
+Dependencies: 1.3.1 (std.str)
+
+Acceptance criteria:
+- crypto.sha256(data:[Byte]):[Byte] is implemented
+- crypto.hmac_sha256(key:[Byte];data:[Byte]):[Byte] is implemented
+- crypto.to_hex(data:[Byte]):Str is implemented
+- Implementation uses C FFI to a standard crypto library internally
+- Module compiles cleanly with tkc --check
+
+---
+
+**Story 2.7.4 — std.time**
+
+As a program author, I want a std.time module for working with timestamps and durations, so that toke programs can implement rate limiting, caching, and logging without platform-specific calls.
+
+Dependencies: 1.3.1 (std.str)
+
+Acceptance criteria:
+- time.now():u64 returns Unix timestamp in milliseconds
+- time.format(ts:u64;fmt:Str):Str formats a timestamp
+- time.since(ts:u64):u64 returns milliseconds elapsed
+- Module compiles cleanly with tkc --check
+
+---
+
+**Story 2.7.5 — std.test**
+
+As a corpus engineer, I want a std.test module providing assertion primitives, so that toke test programs in the corpus can verify their own output without relying on external test runners.
+
+Dependencies: 1.3.1 (std.str)
+
+Acceptance criteria:
+- test.assert(cond:bool;msg:Str):bool is implemented
+- test.assert_eq(a:Str;b:Str;msg:Str):bool is implemented
+- test.assert_ne(a:Str;b:Str;msg:Str):bool is implemented
+- Failed assertions emit a structured diagnostic to stderr
+- Module compiles cleanly with tkc --check
+- At least 20 Phase B-C corpus programs use std.test assertions
+
+---
+
 ## Phase 3 — Ecosystem Proof (Months 14–26)
 
 **Phase objective:** Build the full end-to-end ecosystem. Expand the corpus through all phases. Train 7B and 32B models. Establish the self-improvement loop. Demonstrate multi-model generation quality.
@@ -1110,6 +1224,59 @@ Acceptance criteria:
 - Any model that fails safety evaluation is not published
 - Safety evaluation results are documented and committed to docs/security/model-safety-evals.md
 - The evaluation process is repeatable and documented so it can run on each subsequent model release
+
+---
+
+### EPIC 3.8 — Standard Library Production Hardening
+
+*Bring the stdlib to production quality with the additional modules required for real-world application development and ecosystem completeness.*
+
+**Sequencing note:** These modules and improvements are needed for Phase D and E corpus generation and for the ecosystem proof gate. They are not needed for Gate 2.
+
+---
+
+**Story 3.8.1 — std.log structured logging**
+
+As a program author, I want a std.log module providing structured logging, so that toke applications produce machine-readable log output compatible with log aggregation systems.
+
+Dependencies: 1.3.1 (std.str), 2.7.4 (std.time)
+
+Acceptance criteria:
+- log.info(msg:Str;fields:[[Str]]):bool is implemented
+- log.warn(msg:Str;fields:[[Str]]):bool is implemented
+- log.error(msg:Str;fields:[[Str]]):bool is implemented
+- Output is newline-delimited JSON to stderr
+- log level is configurable via environment variable TK_LOG_LEVEL
+- Module compiles cleanly with tkc --check
+
+---
+
+**Story 3.8.2 — stdlib performance benchmarks**
+
+As a compiler engineer, I want performance benchmarks for all Phase 1 stdlib modules so that regressions in stdlib performance are detected before releases.
+
+Dependencies: Epic 1.3 complete
+
+Acceptance criteria:
+- Benchmark suite covers all six Phase 1 stdlib modules
+- Benchmarks run as part of the release validation workflow
+- Baseline performance figures are committed to benchmark/results/
+- Any release that shows greater than 20% regression on a benchmark is blocked until the regression is explained or fixed
+- Benchmark results include comparison against equivalent C implementations
+
+---
+
+**Story 3.8.3 — stdlib conformance test coverage**
+
+As a compiler engineer, I want the stdlib test coverage to reach 100% of documented function signatures so that every stdlib function has a verified test before production use.
+
+Dependencies: Epic 1.3 complete
+
+Acceptance criteria:
+- Every function in every stdlib module has at least one test covering the happy path
+- Every fallible function has at least one test covering each error variant in its error type
+- Tests run as part of the CI suite for the stdlib repository
+- Coverage report is generated and committed to docs/
 
 ---
 
