@@ -500,6 +500,113 @@ Acceptance criteria:
 - Document is committed to the repository and tagged as gate1-decision
 - Decision is made within 2 weeks of M5.5
 
+### EPIC 1.7 — Compiler Security and SAST
+
+*Establish static analysis, fuzz testing, and secret scanning from the first compiler commit so that security defects are caught before public release.*
+
+---
+
+**Story 1.7.1 — SAST on compiler C code**
+
+As a security engineer, I want automated static analysis running on all C code in tkc/ on every pull request, so that memory safety issues, buffer overruns, and undefined behaviour are caught before they reach main.
+
+Acceptance criteria:
+- cppcheck or clang-analyzer runs in CI on every PR to the tkc repository
+- Any error-level finding blocks merge
+- Warning-level findings are reviewed and either fixed or documented with rationale
+- CI step is added to .github/workflows/ci.yml in the tkc repository
+- A baseline run on the initial lexer.c produces zero errors
+- Results are reported as CI annotations on the PR, not only in logs
+
+---
+
+**Story 1.7.2 — Compiler input fuzzing**
+
+As a security engineer, I want fuzz testing on the tkc lexer and parser so that malformed or adversarial toke source cannot crash the compiler or produce undefined behaviour.
+
+Acceptance criteria:
+- libFuzzer or AFL++ fuzz target is created for the lexer token stream
+- A fuzz target is created for the parser consuming a token stream
+- Fuzzer runs for at least 60 seconds as part of the nightly CI job
+- Any crash or sanitizer finding is treated as a P0 bug and blocks the next release
+- Fuzzer corpus of interesting inputs is committed to tkc/test/fuzz/
+- AddressSanitizer and UndefinedBehaviourSanitizer are enabled during fuzzing runs
+- make fuzz target is documented in CONTRIBUTING.md
+
+---
+
+**Story 1.7.3 — Secret scanning in corpus pipeline**
+
+As a security engineer, I want automated secret scanning on all commits to the corpus generation and model training repositories so that API keys, credentials, and tokens are never committed to git.
+
+Acceptance criteria:
+- GitHub secret scanning is enabled on the corpus and model repositories
+- gitleaks or truffleHog runs in CI on every PR to those repositories
+- .gitignore files in both repositories exclude .env files; this is verified as part of this story
+- Pre-commit hook template is documented in CONTRIBUTING.md for local use
+- Any secret detection finding blocks merge with zero exceptions
+- The Claude API key and Qwen access credentials are documented as environment variable names only and are never hardcoded in any file
+
+---
+
+**Story 1.7.4 — Dependency vulnerability scanning**
+
+As a security engineer, I want automated vulnerability scanning on all Python dependencies in the corpus, tokenizer, model, and benchmark repositories so that known CVEs in third-party libraries are detected.
+
+Acceptance criteria:
+- GitHub Dependabot is enabled on all four Python repositories
+- pip-audit or safety runs in CI on every PR to those repositories
+- Any critical or high severity CVE blocks merge
+- pyproject.toml in each repository pins dependency versions
+- Weekly automated dependency update PRs are enabled via Dependabot
+- A baseline scan on initial project setup produces zero critical findings
+
+---
+
+**Story 1.7.5 — Signed commits and DCO enforcement**
+
+As a project maintainer, I want all contributions to require a Developer Certificate of Origin sign-off so that every contributor has attested they have the right to submit the code under the project licence.
+
+Acceptance criteria:
+- DCO check is enabled via DCO GitHub App or probot/dco on all repositories
+- Any PR without Signed-off-by in all commits is blocked from merge
+- CONTRIBUTING.md in every repository documents the sign-off requirement with the exact git commit -s command
+- Each repository README includes a brief DCO notice
+- Initial commits from the project author are covered via a .github/dco-signoffs/ retroactive attestation file
+
+---
+
+### EPIC 1.8 — Corpus Pipeline Threat Model
+
+*Identify and mitigate the security risks specific to the generate-compile-execute pipeline before it runs at scale.*
+
+---
+
+**Story 1.8.1 — Corpus pipeline threat model document**
+
+As a security engineer, I want a written threat model for the corpus generation pipeline so that known attack surfaces are documented and mitigations are in place before the pipeline runs 50,000 programs.
+
+Acceptance criteria:
+- Threat model document is created at docs/security/threat-model.md
+- Document covers the following threat categories: (a) LLM prompt injection via task descriptions; (b) malicious code execution via the differential test harness compiling and running generated programs; (c) API key exfiltration via generated programs that make network calls; (d) corpus poisoning via adversarial task descriptions; (e) holdout task leakage from the benchmark hidden test directory
+- Each threat has a documented likelihood, impact, and mitigation
+- The differential test harness execution environment is sandboxed (covered by 1.8.2)
+- Document is reviewed and approved before Phase A corpus generation begins
+
+---
+
+**Story 1.8.2 — Sandboxed execution of generated programs**
+
+As a security engineer, I want all generated programs executed during differential testing to run in a sandboxed environment so that a malicious generated program cannot affect the host system or exfiltrate credentials.
+
+Acceptance criteria:
+- Generated binaries are executed inside a container or sandbox (Docker, gVisor, or macOS sandbox-exec)
+- Sandbox restricts: outbound network access, filesystem writes outside a designated temporary directory, and process spawning
+- Execution timeout is enforced (maximum 10 seconds per program)
+- If a program exceeds the timeout or the sandbox reports a violation, the entry is discarded and logged rather than retried
+- The sandbox setup is documented and reproducible on the Mac Studio
+- At least one test confirms that a program attempting an outbound HTTP call is blocked by the sandbox
+
 ---
 
 ## Phase 2 — Language Viability (Months 6–14)
@@ -717,6 +824,36 @@ Acceptance criteria:
 - Decision document committed to repository and tagged gate2-decision
 - Decision made within 2 weeks of Month 14
 
+### EPIC 2.6 — Responsible Disclosure and CVE Process
+
+*Establish a security vulnerability reporting process before the compiler and tools are publicly used.*
+
+---
+
+**Story 2.6.1 — Security policy and disclosure process**
+
+As a project maintainer, I want a documented security policy and responsible disclosure process published before the first public release so that researchers know how to report vulnerabilities safely.
+
+Acceptance criteria:
+- SECURITY.md is added to every public repository
+- SECURITY.md documents: (a) how to report a vulnerability (private email or GitHub private vulnerability reporting); (b) what information to include in a report; (c) expected response timeline: acknowledge within 72 hours, triage within 7 days; (d) the disclosure timeline: fix within 90 days, coordinated public disclosure thereafter; (e) what is in scope: the compiler, corpus pipeline, released models; (f) what is out of scope: third-party dependencies, user-written toke programs
+- GitHub private vulnerability reporting is enabled on the compiler and corpus repositories
+- A security contact email is established (security@tokelang.dev or equivalent)
+- The policy is linked from each repository README
+
+---
+
+**Story 2.6.2 — CVE coordination process**
+
+As a project maintainer, I want a documented process for issuing CVEs when significant compiler vulnerabilities are discovered so that downstream users are notified through established channels.
+
+Acceptance criteria:
+- Process document is created at docs/security/cve-process.md
+- Document covers: how to request a CVE from MITRE or GitHub Advisory, how to notify major downstream users, how to publish advisories
+- At least one point of contact with GitHub Advisory Database is established
+- The process is referenced in SECURITY.md
+- An internal test scenario (non-public) is run through the process to verify it works before a real vulnerability arrives
+
 ---
 
 ## Phase 3 — Ecosystem Proof (Months 14–26)
@@ -917,6 +1054,63 @@ Acceptance criteria:
 - Gate 3 decision document committed to repository and tagged gate3-decision
 - Decision made within 2 weeks of Month 26
 
+### EPIC 3.7 — Supply Chain Security and Release Signing
+
+*Produce verifiable, reproducible releases with a software bill of materials and cryptographic signing before any production adoption.*
+
+---
+
+**Story 3.7.1 — SBOM generation for compiler releases**
+
+As a security engineer, I want a Software Bill of Materials generated for every compiler release so that users and enterprises can verify the dependency chain of the compiler binary.
+
+Acceptance criteria:
+- SBOM is generated in SPDX or CycloneDX format as part of the release workflow
+- SBOM covers all statically linked libraries including LLVM components
+- SBOM is published as a release artefact alongside the binary
+- The GitHub Actions release workflow automatically generates and attaches the SBOM on every tagged release
+- SBOM generation is tested on at least one release candidate before the production process is relied upon
+
+---
+
+**Story 3.7.2 — Release binary signing**
+
+As a security engineer, I want all compiler release binaries signed with a verifiable key so that users can confirm they received an authentic binary that has not been tampered with.
+
+Acceptance criteria:
+- Releases are signed using sigstore cosign (preferred) or GPG
+- The signing key or sigstore identity is documented in the repository
+- Verification instructions are included in each set of release notes
+- The release workflow automatically signs binaries before publishing
+- At least one test confirms that a tampered binary fails signature verification
+- The signing process is documented at docs/security/release-signing.md
+
+---
+
+**Story 3.7.3 — Reproducible builds for the compiler**
+
+As a security engineer, I want the compiler to build reproducibly from source so that any user can verify the released binary matches the published source code.
+
+Acceptance criteria:
+- Two independent builds from the same source commit produce byte-identical binaries after stripping build timestamps
+- Reproducibility is verified in CI by building twice and comparing the outputs
+- Build environment is fully specified: compiler version, LLVM version, OS version, and flags are all pinned in the Makefile or build config
+- Instructions for performing a reproducibility verification are at docs/security/reproducible-builds.md
+- Any change that breaks reproducibility is treated as a P1 bug
+
+---
+
+**Story 3.7.4 — Model release safety evaluation**
+
+As an ML engineer, I want released toke models evaluated for safety and output toxicity before publication so that models do not generate harmful content when prompted outside their intended use case.
+
+Acceptance criteria:
+- Each model release is evaluated against a standard safety benchmark (LlamaGuard or equivalent) before publication
+- The model is tested with adversarial prompts designed to elicit harmful code generation such as exploit patterns and malware structures
+- Any model that fails safety evaluation is not published
+- Safety evaluation results are documented and committed to docs/security/model-safety-evals.md
+- The evaluation process is repeatable and documented so it can run on each subsequent model release
+
 ---
 
 ## Phase 4 — Standard Pathway (Months 26–32)
@@ -1111,6 +1305,42 @@ Acceptance criteria:
 - Proposal identifies at least 3 external parties who have expressed interest in participation
 - Proposal is reviewed by a lawyer familiar with open source IP before submission
 - Proposal is submitted by the end of Month 32
+
+### EPIC 4.6 — Security Audit and Hosted Service Readiness
+
+*Complete an independent security audit of the compiler and establish SOC 2 readiness only if tokelang.dev operates as a hosted compilation service.*
+
+**Note:** This epic contains a conditional story (4.6.2). Story 4.6.2 applies only if a hosted compilation API is launched. If no hosted service exists by Phase 4, 4.6.2 should be closed as not-applicable with a documented reason.
+
+---
+
+**Story 4.6.1 — Third-party security audit of the compiler**
+
+As a project lead, I want an independent third-party security audit of the compiler conducted before the version 1.0 release so that the security posture is verified by an external expert before broad adoption.
+
+Acceptance criteria:
+- A qualified security firm with compiler and C expertise is engaged
+- Audit scope covers: memory safety in the compiler frontend, input validation in the lexer and parser, diagnostic output injection risks, and FFI boundary safety
+- All critical and high severity findings are remediated before release
+- Medium findings are either remediated or carry a documented accepted-risk decision
+- The audit report summary is published at docs/security/ (the full report need not be public)
+- Remediation is verified by the auditing firm before final signoff
+
+---
+
+**Story 4.6.2 — SOC 2 readiness assessment (conditional on hosted service)**
+
+PRECONDITION: This story is activated only if tokelang.dev operates as a hosted compilation service. If no hosted service is launched, close this story as not-applicable and document the reason.
+
+As a project lead, I want a SOC 2 Type I readiness assessment completed if tokelang.dev operates as a hosted compilation service, so that enterprise customers can request evidence of security controls.
+
+Acceptance criteria:
+- This story is marked not-applicable and closed if no hosted service is launched by the end of Phase 4
+- If a hosted service is launched: a readiness assessment against SOC 2 Trust Service Criteria is conducted by a qualified assessor
+- Gaps between current controls and SOC 2 requirements are documented
+- A remediation roadmap is produced
+- Access logging, change management audit trail, and incident response procedures are in place and evidenced
+- A SOC 2 Type II audit is planned for 12 months after Type I attestation
 
 ---
 

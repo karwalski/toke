@@ -28,6 +28,11 @@
 | 1.4 | Mac Studio Setup and Local Pipeline | backlog |
 | 1.5 | Phase A Corpus Generation | backlog |
 | 1.6 | Gate 1 Benchmark | backlog |
+| 1.7 | Compiler Security and SAST | backlog |
+| 1.8 | Corpus Pipeline Threat Model | backlog |
+| 2.6 | Responsible Disclosure and CVE Process | backlog |
+| 3.7 | Supply Chain Security and Release Signing | backlog |
+| 4.6 | Security Audit and Hosted Service Readiness | backlog |
 
 ---
 

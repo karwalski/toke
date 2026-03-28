@@ -32,7 +32,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
 | 1.2.1 | Lexer implementation | backlog | — | Depends on 1.1 complete |
-| 1.2.2 | Parser implementation | backlog | — | Depends on 1.2.1 |
+| 1.2.2 | Parser implementation | in_progress | feature/compiler-parser | Depends on 1.2.1 |
 | 1.2.3 | Import resolver | backlog | — | Depends on 1.2.2 |
 | 1.2.4 | Name resolver | backlog | — | Depends on 1.2.3 |
 | 1.2.5 | Type checker | backlog | — | Depends on 1.2.4 |
@@ -41,6 +41,23 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.2.8 | LLVM IR backend | backlog | — | Depends on 1.2.5 |
 | 1.2.9 | CLI interface | backlog | — | Depends on 1.2.8 |
 | 1.2.10 | Conformance test suite (Phase 1) | backlog | — | Parallel with 1.2.1–1.2.9 |
+
+### Epic 1.7 — Compiler Security and SAST
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 1.7.1 | SAST on compiler C code | backlog | — | Can parallel 1.2.x |
+| 1.7.2 | Compiler input fuzzing | backlog | — | Depends on 1.2.2 |
+| 1.7.3 | Secret scanning in corpus pipeline | backlog | — | Can parallel 1.4.x |
+| 1.7.4 | Dependency vulnerability scanning | backlog | — | Can parallel 1.4.x |
+| 1.7.5 | Signed commits and DCO enforcement | backlog | — | Can parallel 1.2.x |
+
+### Epic 1.8 — Corpus Pipeline Threat Model
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 1.8.1 | Corpus pipeline threat model document | backlog | — | Before 1.5 starts |
+| 1.8.2 | Sandboxed execution of generated programs | backlog | — | Before 1.5 starts |
 
 ### Epic 1.3 — Standard Library Core
 
@@ -77,6 +94,29 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.6.2 | Token efficiency measurement | backlog | — | Depends on 1.5 complete |
 | 1.6.3 | Pass@1 measurement | backlog | — | Depends on 1.6.2 |
 | 1.6.4 | Gate 1 decision document | backlog | — | Depends on 1.6.3 |
+
+### Epic 2.6 — Responsible Disclosure and CVE Process
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 2.6.1 | Security policy and disclosure process | backlog | — | Before first public release |
+| 2.6.2 | CVE coordination process | backlog | — | Depends on 2.6.1 |
+
+### Epic 3.7 — Supply Chain Security and Release Signing
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 3.7.1 | SBOM generation for compiler releases | backlog | — | Before Phase 3 release |
+| 3.7.2 | Release binary signing | backlog | — | Before Phase 3 release |
+| 3.7.3 | Reproducible builds for the compiler | backlog | — | Depends on 3.1 complete |
+| 3.7.4 | Model release safety evaluation | backlog | — | Before model release |
+
+### Epic 4.6 — Security Audit and Hosted Service Readiness
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 4.6.1 | Third-party security audit of the compiler | backlog | — | Before v1.0 release |
+| 4.6.2 | SOC 2 readiness assessment (conditional on hosted service) | backlog | — | Conditional: only if hosted service launches |
 
 ---
 
