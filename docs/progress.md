@@ -37,8 +37,8 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 1.2.4 | Name resolver | done | feature/compiler-name-resolver | [x] Scope chain [x] Predefined ids [x] Import aliases [x] E3011 E3012 [x] All scope levels |
 | 1.2.5 | Type checker | done | feature/compiler-type-checker | [x] 10/10 rules [x] E4031 E4010 E4011 E4025 E5001 E3020 [x] 346 lines (arena escape: conservative — Decl needs depth stamp) |
 | 1.2.6 | Structured diagnostic emitter | backlog | — | Can parallel 1.2.5 |
-| 1.2.7 | Interface file emitter | in_progress | feature/compiler-interface-emitter | Depends on 1.2.5 |
-| 1.2.8 | LLVM IR backend | backlog | — | Depends on 1.2.5 |
+| 1.2.7 | Interface file emitter | done | feature/compiler-interface-emitter | [x] JSON .tki [x] module/func/type/const [x] interface_hash [x] E9001 [x] 190 lines |
+| 1.2.8 | LLVM IR backend | in_progress | feature/compiler-llvm-backend | Depends on 1.2.5 |
 | 1.2.9 | CLI interface | backlog | — | Depends on 1.2.8 |
 | 1.2.10 | Conformance test suite (Phase 1) | backlog | — | Parallel with 1.2.1–1.2.9 |
 
