@@ -145,6 +145,15 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 3.8.2 | stdlib performance benchmarks | done | feature/stdlib-3.8-bench (tkc) | [x] 9 modules benchmarked [x] baseline.txt (M-series) [x] make bench [x] bench.yml CI |
 | 3.8.3 | stdlib conformance test coverage | done | feature/stdlib-3.8-bench (tkc) | [x] 100% function coverage [x] 30 gap tests [x] docs/stdlib-coverage.md |
 
+### Epic 2.1 — Phase 2 Language Extensions
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 2.1.1 | Generic collection types (Map) | done | feature/lang-2.1-async (tkc) | [x] `[K:V]` map type [x] `[k:v; k2:v2]` map literal [x] NODE_MAP_TYPE/LIT/ENTRY [x] TY_MAP [x] `.len` on arrays/maps [x] E4040-E4043 [x] G032-G035 D015 |
+| 2.1.2 | Async task model (spawn/await) | done | feature/lang-2.1-async (tkc) | [x] spawn/await/Task predefined identifiers [x] TY_TASK [x] E4050-E4052 [x] pthread runtime stubs [x] G036-G038 D016 |
+| 2.1.3 | Minimal C FFI | done | feature/lang-2.1-ffi (tkc) | [x] Bodyless extern functions [x] `*T` pointer types [x] NODE_PTR_TYPE [x] TY_PTR [x] `declare` vs `define` in LLVM [x] E2010 E4060 [x] G026-G029 D013 |
+| 2.1.4 | Module versioning | done | feature/lang-2.1-versioning (tkc) | [x] Optional `"ver"` string in imports [x] Semver validation [x] Version conflict detection [x] E2035-E2037 [x] G030-G031 D014 |
+
 ### Epic 4.6 — Security Audit and Hosted Service Readiness
 
 | ID | Story | Status | Branch | Notes |
@@ -189,6 +198,10 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 3.8.2 | stdlib performance benchmarks | 2026-03-28 | feature/stdlib-3.8-bench (tkc) |
 | 3.8.3 | stdlib conformance test coverage | 2026-03-28 | feature/stdlib-3.8-bench (tkc) |
 | 4.6.1 | Third-party security audit readiness | 2026-03-28 | feature/audit-4.6 (tkc) |
+| 2.1.1 | Generic collection types (Map) | 2026-03-29 | feature/lang-2.1-async (tkc) |
+| 2.1.2 | Async task model (spawn/await) | 2026-03-29 | feature/lang-2.1-async (tkc) |
+| 2.1.3 | Minimal C FFI | 2026-03-29 | feature/lang-2.1-ffi (tkc) |
+| 2.1.4 | Module versioning | 2026-03-29 | feature/lang-2.1-versioning (tkc) |
 
 ---
 
