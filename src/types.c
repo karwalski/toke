@@ -72,7 +72,8 @@ static Decl *tc_lookup(const Scope *s, const char *name, int len) {
 } while(0)
 
 typedef struct { TypeEnv *env; const char *src;
-                 Type *fn_ret; int had_error; } Ctx;
+                 Type *fn_ret; int had_error;
+                 const Node *fn_node; } Ctx;
 
 static Type *infer(Ctx *cx, const Node *node);
 
@@ -121,25 +122,33 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
         if (!st) return mk_type(cx->env->arena, TY_UNKNOWN);
         const Node *nn = decl->child_count>0?decl->children[0]:NULL;
         if (nn) { char snb[128]; TOKSTR(snb,cx->src,nn); st->name=ty_intern(cx->env->arena,snb); }
-        int fc=0;
-        for (int i=1;i<decl->child_count;i++)
-            if (decl->children[i]&&decl->children[i]->kind==NODE_FIELD) fc++;
+        /* Collect NODE_FIELD children — they may be direct children of the
+         * TYPE_DECL or wrapped in a NODE_STMT_LIST (from parse_field_list). */
+        const Node *fields[64]; int fc=0;
+        for (int i=1;i<decl->child_count;i++) {
+            const Node *ci=decl->children[i]; if(!ci) continue;
+            if (ci->kind==NODE_FIELD) { if(fc<64)fields[fc++]=ci; }
+            else if (ci->kind==NODE_STMT_LIST) {
+                for (int j=0;j<ci->child_count;j++) {
+                    const Node *fj=ci->children[j];
+                    if (fj&&fj->kind==NODE_FIELD&&fc<64) fields[fc++]=fj;
+                }
+            }
+        }
         if (fc>0) {
             st->field_names=(const char**)arena_alloc(cx->env->arena,fc*(int)sizeof(char*));
             st->field_types=(Type**)arena_alloc(cx->env->arena,fc*(int)sizeof(Type*));
             if (st->field_names&&st->field_types) {
-                st->field_count=fc; int fi=0;
-                for (int i=1;i<decl->child_count&&fi<fc;i++) {
-                    const Node *f=decl->children[i];
-                    if (!f||f->kind!=NODE_FIELD) continue;
+                st->field_count=fc;
+                for (int fi=0;fi<fc;fi++) {
+                    const Node *f=fields[fi];
                     char fnb[128]={0};
-                    const Node *fn=f->child_count>0?f->children[0]:NULL;
-                    if (fn) TOKSTR(fnb,cx->src,fn);
+                    /* NODE_FIELD: tok_start/tok_len = field name, child[0] = type expr */
+                    TOKSTR(fnb,cx->src,f);
                     st->field_names[fi]=ty_intern(cx->env->arena,fnb);
-                    st->field_types[fi]=f->child_count>1
-                        ?resolve_type(cx,f->children[1])
+                    st->field_types[fi]=f->child_count>0
+                        ?resolve_type(cx,f->children[0])
                         :mk_type(cx->env->arena,TY_UNKNOWN);
-                    fi++;
                 }
             }
         }
@@ -169,9 +178,17 @@ static Type *infer(Ctx *cx, const Node *node) {
     case NODE_STR_LIT:   return mk_type(A,TY_STR);
     case NODE_BOOL_LIT:  return mk_type(A,TY_BOOL);
 
-    case NODE_STRUCT_LIT:
+    case NODE_STRUCT_LIT: {
         /* node token is the TYPE_IDENT — resolve_type looks it up in scope. */
-        return resolve_type(cx, node);
+        Type *st = resolve_type(cx, node);
+        /* Infer types of field init value expressions so they are type-checked. */
+        for (int i=0;i<node->child_count;i++) {
+            const Node *fi = node->children[i];
+            if (fi && fi->kind == NODE_FIELD_INIT && fi->child_count > 0)
+                infer(cx, fi->children[0]);
+        }
+        return st;
+    }
 
     case NODE_ARRAY_LIT: {
         /* Infer element type from first element; return [elem_type]. */
@@ -218,7 +235,20 @@ static Type *infer(Ctx *cx, const Node *node) {
 
     case NODE_IDENT: {
         char nb[128]; TOKSTR(nb,cx->src,node);
-        Decl *d=tc_lookup(cx->env->names->module_scope,nb,(int)strlen(nb));
+        int nlen=(int)strlen(nb);
+        Decl *d=tc_lookup(cx->env->names->module_scope,nb,nlen);
+        /* If not found at module scope, check current function's params and local binds. */
+        if ((!d||!d->def_node)&&cx->fn_node) {
+            for (int pi=0;pi<cx->fn_node->child_count;pi++) {
+                const Node *pc=cx->fn_node->children[pi];
+                if (!pc) continue;
+                if (pc->kind==NODE_PARAM&&pc->child_count>0) {
+                    char pn[128]; TOKSTR(pn,cx->src,pc->children[0]);
+                    if (strcmp(pn,nb)==0&&pc->child_count>1)
+                        return resolve_type(cx,pc->children[1]);
+                }
+            }
+        }
         if (!d||!d->def_node) return mk_type(A,TY_UNKNOWN);
         const Node *def=d->def_node;
         if ((def->kind==NODE_BIND_STMT||def->kind==NODE_MUT_BIND_STMT)) {
@@ -361,6 +391,25 @@ static Type *infer(Ctx *cx, const Node *node) {
         return (inner->kind==TY_ERROR_TYPE&&inner->elem)?inner->elem:mk_type(A,TY_UNKNOWN);
     }
 
+    case NODE_INDEX_EXPR: {
+        Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
+        Type *idx=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
+        if (base->kind!=TY_UNKNOWN&&base->kind!=TY_ARRAY) {
+            char msg[256];
+            snprintf(msg,sizeof(msg),"type mismatch: cannot index into '%s'; expected array type",type_name(base));
+            diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,"fix",(const char*)NULL);
+            cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+        }
+        if (idx->kind!=TY_UNKNOWN&&idx->kind!=TY_I64&&idx->kind!=TY_U64) {
+            char msg[256];
+            snprintf(msg,sizeof(msg),"type mismatch: array index must be integer, got '%s'",type_name(idx));
+            diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,"fix",(const char*)NULL);
+            cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+        }
+        if (base->kind==TY_ARRAY&&base->elem) return base->elem;
+        return mk_type(A,TY_UNKNOWN);
+    }
+
     case NODE_FIELD_EXPR: {
         Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         if (node->child_count<2||!node->children[1]) return mk_type(A,TY_UNKNOWN);
@@ -401,7 +450,12 @@ static Type *infer(Ctx *cx, const Node *node) {
 
     case NODE_RETURN_STMT: {
         Type *val=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_VOID);
-        if (cx->fn_ret&&cx->fn_ret->kind!=TY_UNKNOWN&&val->kind!=TY_UNKNOWN
+        if (cx->fn_ret&&cx->fn_ret->kind==TY_VOID&&node->child_count>0
+            &&val->kind!=TY_UNKNOWN&&val->kind!=TY_VOID) {
+            diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,
+                "void function cannot return a value","fix","remove the return value",(const char*)NULL);
+            cx->had_error=1;
+        } else if (cx->fn_ret&&cx->fn_ret->kind!=TY_UNKNOWN&&val->kind!=TY_UNKNOWN
             &&!types_equal(cx->fn_ret,val)) {
             char fix[128]; snprintf(fix,sizeof(fix),"cast return value to %s using 'as'",type_name(cx->fn_ret));
             emit_mm(cx,node,cx->fn_ret,val,fix);
@@ -487,8 +541,9 @@ static Type *infer(Ctx *cx, const Node *node) {
             }
         }
         Type *saved=cx->fn_ret; cx->fn_ret=ret;
+        const Node *saved_fn=cx->fn_node; cx->fn_node=node;
         for (int i=0;i<node->child_count;i++) infer(cx,node->children[i]);
-        cx->fn_ret=saved;
+        cx->fn_node=saved_fn; cx->fn_ret=saved;
         return mk_type(A,TY_VOID);
     }
 
@@ -504,7 +559,7 @@ int type_check(const Node *ast, const char *src,
                NameEnv *names, Arena *arena, TypeEnv *out) {
     if (!ast||!src||!names||!arena||!out) return -1;
     out->names=names; out->arena=arena; out->arena_depth=0;
-    Ctx cx; cx.env=out; cx.src=src; cx.fn_ret=NULL; cx.had_error=0;
+    Ctx cx; cx.env=out; cx.src=src; cx.fn_ret=NULL; cx.had_error=0; cx.fn_node=NULL;
     for (int i=0;i<ast->child_count;i++) infer(&cx,ast->children[i]);
     return cx.had_error?-1:0;
 }

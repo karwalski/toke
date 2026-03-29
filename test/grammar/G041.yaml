@@ -1,0 +1,9 @@
+id: G041
+series: G
+description: "Void function with bare return (<;) parses correctly"
+input: |
+  M=test;
+  F=noop():void{<};
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

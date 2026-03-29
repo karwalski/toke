@@ -41,7 +41,7 @@ static Node *parse_type_expr(Parser *p);
 
 static int is_scalar(Parser *p, Token *t) {
     if (t->kind!=TK_IDENT&&t->kind!=TK_TYPE_IDENT) return 0;
-    static const char *sc[]={"u8","u16","u32","u64","i8","i16","i32","i64","f32","f64","bool","Str","Byte",NULL};
+    static const char *sc[]={"u8","u16","u32","u64","i8","i16","i32","i64","f32","f64","bool","Str","Byte","void",NULL};
     for(int i=0;sc[i];i++) if(teq(p,t,sc[i])) return 1;
     return 0;
 }
@@ -118,10 +118,14 @@ static Node *parse_primary(Parser *p) {
 
 /* ── Expression precedence chain ──────────────────────────────────── */
 
-/* PostfixExpr = PrimaryExpr ('.' IDENT)* */
+/* PostfixExpr = PrimaryExpr ('.' IDENT | '[' Expr ']')* */
 static Node *parse_postfix(Parser *p) {
     Node *l=parse_primary(p);
-    while(peek(p)==TK_DOT){Token *d=adv(p);Token *f=cur(p);if(!xp(p,TK_IDENT,"field"))break;Node *n=mk(p,NODE_FIELD_EXPR,d);ch(n,l);ch(n,mk(p,NODE_IDENT,f));l=n;}
+    for(;;){
+        if(peek(p)==TK_DOT){Token *d=adv(p);Token *f=cur(p);if(!xp(p,TK_IDENT,"field"))break;Node *n=mk(p,NODE_FIELD_EXPR,d);ch(n,l);ch(n,mk(p,NODE_IDENT,f));l=n;}
+        else if(peek(p)==TK_LBRACKET){Token *d=adv(p);Node *n=mk(p,NODE_INDEX_EXPR,d);ch(n,l);ch(n,parse_expr(p));if(!xp(p,TK_RBRACKET,"']'"))eerr(p,E2004,cur(p),"unclosed delimiter");l=n;}
+        else break;
+    }
     return l;
 }
 
@@ -255,7 +259,10 @@ static Node *parse_stmt(Parser *p) {
         return n;}
     case TK_KW_BR:{adv(p);Node *n=mk(p,NODE_BREAK_STMT,t);opt_semi(p);return n;}
     case TK_KW_RT:
-    case TK_LT:{adv(p);Node *n=mk(p,NODE_RETURN_STMT,t);ch(n,parse_expr(p));opt_semi(p);return n;}
+    case TK_LT:{adv(p);Node *n=mk(p,NODE_RETURN_STMT,t);
+        if(peek(p)!=TK_SEMICOLON&&peek(p)!=TK_RBRACE&&peek(p)!=TK_EOF)
+            ch(n,parse_expr(p));
+        opt_semi(p);return n;}
     case TK_KW_IF: return parse_if_stmt(p);
     case TK_KW_LP: return parse_loop_stmt(p);
     case TK_LBRACE:
