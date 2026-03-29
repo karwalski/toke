@@ -149,45 +149,45 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 2.8.1 | Fix LLVM IR emission for end-to-end compilation | backlog | — | 5 known codegen defects: param load, let-bind child index, call return types, match arm index, cast stub. Depends on 2.1 (done). |
+| 2.8.1 | Fix LLVM IR emission for end-to-end compilation | done | feature/codegen-2.8 (tkc) | [x] 5 defects fixed: param SSA naming, let-bind child index, call return types, match arm index, cast emission [x] Terminator tracking [x] prepass_funcs() [x] 5/5 e2e tests pass [x] 79/79 conformance |
 
 ### Epic 2.9 — Tokenizer Pipeline Scaffolding
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 2.9.1 | Corpus preparation script (prepare.py) | backlog | — | No hardware deps. Synthetic test data. |
-| 2.9.2 | BPE training wrapper (train.py) | backlog | — | Depends on 2.9.1 |
-| 2.9.3 | Tokenizer evaluation script (eval.py) | backlog | — | Depends on 2.9.2. Uses toke-benchmark tasks. |
+| 2.9.1 | Corpus preparation script (prepare.py) | done | feature/tokenizer-2.9 (toke-tokenizer) | [x] JSONL extraction [x] String placeholder replacement [x] SHA-256 dedup [x] Configurable train/valid split [x] 25/25 tests pass |
+| 2.9.2 | BPE training wrapper (train.py) | done | feature/tokenizer-2.9 (toke-tokenizer) | [x] SentencePiece BPE wrapper [x] Toke-specific defaults [x] Dry-run mode [x] 17/17 tests pass |
+| 2.9.3 | Tokenizer evaluation script (eval.py) | done | feature/tokenizer-2.9 (toke-tokenizer) | [x] vs cl100k_base comparison [x] Compression ratio, fertility, vocab utilization [x] JSON report [x] 32/32 tests pass |
 
 ### Epic 2.10 — Benchmark Harness and Reference Implementations
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 2.10.1 | Benchmark evaluation harness (run/score/report) | backlog | — | No deps. Dry-run mode. |
-| 2.10.2 | Phase A Python reference implementations (50+) | backlog | — | No deps. Tasks exist. |
-| 2.10.3 | Phase A C reference implementations (50+) | backlog | — | No deps. |
-| 2.10.4 | Benchmark CI workflow | backlog | — | Depends on 2.10.2 |
+| 2.10.1 | Benchmark evaluation harness (run/score/report) | done | feature/benchmark-2.10-harness (toke-benchmark) | [x] Task discovery [x] Scoring/timeout [x] JSON reports [x] Dry-run [x] 32/32 tests pass |
+| 2.10.2 | Phase A Python reference implementations (50+) | done | feature/benchmark-2.10-baselines (toke-benchmark) | [x] 60 tasks [x] run_baselines.py runner [x] solutions.py |
+| 2.10.3 | Phase A C reference implementations (50+) | done | feature/benchmark-2.10-harness (toke-benchmark) | [x] 60 tasks in C11 [x] Makefile [x] Smoke tests pass |
+| 2.10.4 | Benchmark CI workflow | done | feature/benchmark-2.10-harness (toke-benchmark) | [x] Unit tests [x] Python dry-run [x] C build+smoke [x] Manual dispatch |
 
 ### Epic 2.11 — Corpus Pipeline Test Infrastructure
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 2.11.1 | Corpus pipeline unit tests | backlog | — | No deps. Mock tkc + model. |
-| 2.11.2 | Corpus pipeline dry-run integration test | backlog | — | Depends on 2.11.1 |
+| 2.11.1 | Corpus pipeline unit tests | done | feature/corpus-2.11-tests (toke-corpus) | [x] 93 tests across 5 files [x] curriculum, validate, schema, compile, vote |
+| 2.11.2 | Corpus pipeline dry-run integration test | done | feature/corpus-2.11-tests (toke-corpus) | [x] 38 tests [x] Full pipeline mock [x] JSONL format validation [x] Error handling |
 
 ### Epic 2.12 — Specification Completion
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 2.12.1 | Error code registry (spec/errors.md) | backlog | — | Extract from tkc source. No deps. |
-| 2.12.2 | Formal semantics stub (spec/semantics.md) | backlog | — | Extract from tkc types.c/names.c. No deps. |
-| 2.12.3 | Standard library signatures (spec/stdlib-signatures.md) | backlog | — | Extract from tkc stdlib/*.h. No deps. |
+| 2.12.1 | Error code registry (spec/errors.md) | done | feature/spec-2.12-errors (toke-spec) | [x] 34 error/warning codes [x] Stage, severity, message, fix field [x] Conformance test cross-refs |
+| 2.12.2 | Formal semantics stub (spec/semantics.md) | done | feature/spec-2.12-semantics (toke-spec) | [x] 13 type kinds [x] Inference rules [x] Scoping [x] Error propagation [x] 556 lines |
+| 2.12.3 | Standard library signatures (spec/stdlib-signatures.md) | done | feature/spec-2.12-stdlib (toke-spec) | [x] 11 modules [x] 61 functions [x] All error types documented |
 
 ### Epic 2.13 — Standard Library Documentation
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 2.13.1 | Complete stdlib module documentation | backlog | — | 12 .md files in toke-stdlib. No deps. |
+| 2.13.1 | Complete stdlib module documentation | done | feature/stdlib-2.13-docs (toke-stdlib) | [x] 12 modules documented [x] 955 lines [x] Signatures, params, returns, examples |
 
 ### Epic 2.1 — Phase 2 Language Extensions
 
@@ -204,6 +204,55 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 |----|-------|--------|--------|-------|
 | 4.6.1 | Third-party security audit of the compiler | done | feature/audit-4.6 (tkc) | [x] audit-scope.md (435 lines) [x] 4 scope areas [x] codebase map [x] TD items cross-referenced [x] accepted-risk register |
 | 4.6.2 | SOC 2 readiness assessment (conditional on hosted service) | backlog | — | Conditional: only if hosted service launches |
+
+### Epic 5.1 — Project Website (tokelang.dev)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 5.1.1 | Site scaffold and landing page | done | feature/web-5.1 (toke-web) | [x] Astro Starlight [x] Landing page with hero, token comparison, CTAs [x] Responsive [x] Search built-in |
+| 5.1.2 | About page and project philosophy | done | feature/web-5.1 (toke-web) | [x] Why toke [x] Design principles [x] All repos listed |
+| 5.1.3 | API specification browser | done | feature/web-5.1 (toke-web) | [x] Type system ref [x] Grammar ref [x] Error codes [x] 11 stdlib modules |
+| 5.1.4 | Getting Started guide | done | feature/web-5.1 (toke-web) | [x] Install [x] Hello World [x] Language tour [x] Project structure |
+| 5.1.5 | Human training course | done | feature/web-5.1 (toke-web) | [x] 10 lessons + overview [x] Exercises [x] Full project in lesson 10 |
+| 5.1.6 | Web-based translator and comparison tool | on_hold | — | ON HOLD per user request. Needs tokenizer pipeline + translation engine. |
+| 5.1.7 | Community and contribution hub | done | feature/web-5.1 (toke-web) | [x] Contributing guide [x] Enterprise adoption page |
+| 5.1.8 | Site CI/CD and deployment | done | feature/web-5.1 (toke-web) | [x] GitHub Actions [x] Build + deploy [x] Pagefind search [x] Sitemap |
+
+### Epic 5.2 — Phase 2 Character Reduction Documentation
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 5.2.1 | Update website and learning materials for Phase 2 character reduction | backlog | — | Depends on Phase 2 tokenizer work |
+
+### Epic 6.1 — Publish to Hugging Face
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 6.1.1 | Create Hugging Face organisation and model card | backlog | — | Depends on model training complete (Epic 1.5/1.6) |
+| 6.1.2 | Upload model weights and tokenizer | backlog | — | Depends on 6.1.1 |
+| 6.1.3 | Publish benchmark results and evaluation dataset | backlog | — | Depends on 6.1.2, Gate 1 pass |
+| 6.1.4 | Inference API and demo space | backlog | — | Depends on 6.1.2 |
+
+### Epic 6.2 — Repository Scaffolding
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 6.2.1 | Create toke-eval repository | backlog | — | No hard dependency; meaningful work requires model training |
+| 6.2.2 | Create toke-model repository scaffold | backlog | — | Exists locally but not on GitHub; meaningful work requires corpus completion |
+
+### Epic 7.1 — Website Code Example Correctness
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 7.1.1 | Rewrite website examples to remove underscores from identifiers | backlog | — | 28+ files affected; snake_case → camelCase |
+| 7.1.2 | Fix match arm return syntax in website examples | backlog | — | `<` goes before match expr, not inside arms |
+| 7.1.3 | Fix error variant construction and propagation syntax | backlog | — | `Type.Variant(payload)` and `!ErrType.Variant` syntax |
+| 7.1.4 | Fix typed empty collection literals in website examples | backlog | — | `[Type][]` → correct syntax |
+| 7.1.5 | Fix loop init and spawn/await syntax in website examples | backlog | — | Missing `let` in lp init; spawn/await call syntax |
+| 7.1.6 | Implement array indexing `arr[i]` in compiler | backlog | — | Core language feature; 12+ website examples depend on it |
+| 7.1.7 | Implement void return type in compiler | backlog | — | 8+ website examples use `:void` |
+| 7.1.8 | Fix struct literal with field access expression crash | backlog | — | Compiler crash (silent exit 1) on `Pt{x:a.x+b.x}` |
+| 7.1.9 | Website code example conformance test suite | backlog | — | Automated CI test; depends on 7.1.1–7.1.8 |
 
 ---
 
@@ -246,6 +295,27 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 2.1.2 | Async task model (spawn/await) | 2026-03-29 | feature/lang-2.1-async (tkc) |
 | 2.1.3 | Minimal C FFI | 2026-03-29 | feature/lang-2.1-ffi (tkc) |
 | 2.1.4 | Module versioning | 2026-03-29 | feature/lang-2.1-versioning (tkc) |
+| 2.8.1 | Fix LLVM IR emission for end-to-end compilation | 2026-03-29 | feature/codegen-2.8 (tkc) |
+| 2.9.1 | Corpus preparation script (prepare.py) | 2026-03-29 | feature/tokenizer-2.9 (toke-tokenizer) |
+| 2.10.2 | Phase A Python reference implementations | 2026-03-29 | feature/benchmark-2.10-baselines (toke-benchmark) |
+| 2.11.1 | Corpus pipeline unit tests | 2026-03-29 | feature/corpus-2.11-tests (toke-corpus) |
+| 2.12.1 | Error code registry | 2026-03-29 | feature/spec-2.12-errors (toke-spec) |
+| 2.12.3 | Standard library signatures | 2026-03-29 | feature/spec-2.12-stdlib (toke-spec) |
+| 2.13.1 | Complete stdlib module documentation | 2026-03-29 | feature/stdlib-2.13-docs (toke-stdlib) |
+| 2.9.2 | BPE training wrapper (train.py) | 2026-03-29 | feature/tokenizer-2.9 (toke-tokenizer) |
+| 2.9.3 | Tokenizer evaluation script (eval.py) | 2026-03-29 | feature/tokenizer-2.9 (toke-tokenizer) |
+| 2.10.1 | Benchmark evaluation harness | 2026-03-29 | feature/benchmark-2.10-harness (toke-benchmark) |
+| 2.10.3 | Phase A C reference implementations | 2026-03-29 | feature/benchmark-2.10-harness (toke-benchmark) |
+| 2.10.4 | Benchmark CI workflow | 2026-03-29 | feature/benchmark-2.10-harness (toke-benchmark) |
+| 2.11.2 | Corpus pipeline dry-run integration test | 2026-03-29 | feature/corpus-2.11-tests (toke-corpus) |
+| 2.12.2 | Formal semantics stub | 2026-03-29 | feature/spec-2.12-semantics (toke-spec) |
+| 5.1.1 | Site scaffold and landing page | 2026-03-29 | feature/web-5.1 (toke-web) |
+| 5.1.2 | About page and project philosophy | 2026-03-29 | feature/web-5.1 (toke-web) |
+| 5.1.3 | API specification browser | 2026-03-29 | feature/web-5.1 (toke-web) |
+| 5.1.4 | Getting Started guide | 2026-03-29 | feature/web-5.1 (toke-web) |
+| 5.1.5 | Human training course | 2026-03-29 | feature/web-5.1 (toke-web) |
+| 5.1.7 | Community and contribution hub | 2026-03-29 | feature/web-5.1 (toke-web) |
+| 5.1.8 | Site CI/CD and deployment | 2026-03-29 | feature/web-5.1 (toke-web) |
 
 ---
 

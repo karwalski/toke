@@ -1866,4 +1866,382 @@ Acceptance criteria:
 
 ---
 
-*These stories and epics cover all 32 months of the toke project plan. Each epic maps to a section of the RFC and the project plan. Story completion is the acceptance criterion for milestone delivery. Gate stories are the single most important stories in each phase: if a gate story's acceptance criteria are not met, the phase does not proceed.*
+---
+
+## Cross-Phase — Project Website and Developer Experience
+
+---
+
+### EPIC 5.1 — Project Website (tokelang.dev)
+
+*Build the public-facing project website at tokelang.dev. The site serves as the entry point for developers, enterprises, and contributors. It hosts documentation, a language tutorial, API reference, and an interactive translator/comparison tool. Repository: toke-web.*
+
+---
+
+**Story 5.1.1 — Site scaffold and landing page**
+
+As a visitor to tokelang.dev, I want a clean, well-designed landing page that explains what toke is and why it exists, so that I can decide within 30 seconds whether the project is relevant to me.
+
+Acceptance criteria:
+- Static site scaffold (Next.js, Astro, or similar SSG) committed to `toke-web` repository
+- Landing page with hero section: tagline, 1-sentence value proposition, CTA to "Get Started"
+- "Why toke?" section: problem statement (LLM token inefficiency for code), thesis (purpose-built language = fewer tokens = faster/cheaper inference), key benefit bullets
+- Visual showing token count comparison (toke vs Python for equivalent program)
+- Links to all 7 project repositories with brief descriptions
+- Responsive design (mobile + desktop)
+- Footer: MIT licence, GitHub link, community links
+- Deployed to tokelang.dev (Vercel/Netlify)
+
+---
+
+**Story 5.1.2 — About page and project philosophy**
+
+As a potential contributor or enterprise evaluator, I want an about page that explains the project's goals, design philosophy, and open-source commitment, so that I understand the project's vision and governance.
+
+Acceptance criteria:
+- About page with sections: Vision, Problem Statement, Approach, Design Principles, Open Source Commitment
+- Problem statement: LLMs waste tokens on verbose syntax, toke compresses code 3-5x vs Python while remaining human-writable
+- Design principles: Profile 1 (80 chars), LL(1) grammar, 12 keywords, everything is explicit
+- Open source section: MIT licence, contribution welcome, enterprise use encouraged
+- Enterprise section: toke is designed for companies building their own AI coding systems — lower inference cost, faster generation, deterministic compilation
+- Community section: how to participate, where to ask questions, contribution guidelines link
+
+---
+
+**Story 5.1.3 — API specification browser**
+
+As a developer learning toke, I want a searchable API specification document covering the full language and standard library, so that I can quickly find syntax, types, and function signatures without reading raw spec files.
+
+Acceptance criteria:
+- API reference section generated from spec/stdlib-signatures.md and spec/grammar.ebnf
+- Searchable: text search filters results in real-time
+- Navigation: sidebar with module list, anchor links to each function
+- Each function entry shows: signature, parameters with types, return type, error type (if any), 1-2 usage examples
+- Type system reference: all built-in types (i64, f64, u64, bool, Str, void, [T], [K:V], Task, *T, error unions)
+- Grammar reference: production rules with syntax highlighting
+- Error code reference: all E/W codes with description and fix guidance
+- Mobile-friendly layout
+
+---
+
+**Story 5.1.4 — Getting Started guide**
+
+As a new developer, I want a step-by-step getting started guide that takes me from zero to a running toke program, so that I can evaluate the language hands-on.
+
+Acceptance criteria:
+- Installation section: build tkc from source (clone, make, verify with `tkc --version`)
+- "Hello World" walkthrough: write a minimal module, compile, run
+- Language tour covering: modules (M=), functions (F=), let bindings, types (i64, f64, Str, bool), if/else, loops, arrays, error handling (try/match)
+- Standard library quickstart: file I/O, string operations, JSON parsing
+- Project structure: how to organize multi-module programs, import syntax
+- Each section has copy-pasteable code blocks with expected output
+- Estimated completion time: 30 minutes
+
+---
+
+**Story 5.1.5 — Human training course**
+
+As a developer who wants to learn toke deeply, I want a structured multi-lesson training course that builds knowledge progressively, so that I can become proficient in the language over a weekend.
+
+Acceptance criteria:
+- Course structure: 8-10 lessons, each 20-30 minutes
+- Lesson 1: Why toke exists, design philosophy, token efficiency thesis
+- Lesson 2: Modules, functions, basic types, return values
+- Lesson 3: Control flow (if/else, match, loops), expressions vs statements
+- Lesson 4: Arrays, maps, collection operations, .len
+- Lesson 5: Error handling (error types, try, match on errors, propagation)
+- Lesson 6: String handling, string literals, standard library (std.str, std.json)
+- Lesson 7: Modules and imports, interface files, multi-file projects
+- Lesson 8: Advanced topics (FFI, async/spawn/await, pointers, extern functions)
+- Lesson 9: Standard library deep dive (std.http, std.db, std.file, std.crypto)
+- Lesson 10: Real-world project — build a complete application in toke
+- Each lesson has: explanation text, code examples, exercises with solutions
+- Progress tracking (lesson completion checkmarks)
+- Hosted at tokelang.dev/learn
+
+---
+
+**Story 5.1.6 — Web-based translator and comparison tool**
+
+As a developer evaluating toke, I want an interactive web tool that translates code between toke and common languages, comparing token counts and performance, so that I can see the efficiency gains first-hand.
+
+Acceptance criteria:
+- Interactive split-pane editor: toke on left, target language on right
+- Supported target languages: Python, JavaScript, Go, Rust, C (at minimum)
+- Translation direction: toke-to-target and target-to-toke
+- Token count display for both panes: shows token count using cl100k_base (GPT-4 tokenizer) and the toke BPE tokenizer
+- Compression ratio displayed prominently (e.g., "toke: 47 tokens, Python: 156 tokens — 3.3x more efficient")
+- Performance metrics panel: estimated inference cost savings at current API pricing
+- Pre-loaded example programs (at least 10 curated examples covering different patterns)
+- Syntax highlighting for all supported languages
+- Client-side tokenization (WASM SentencePiece or API endpoint)
+- Share button: generates permalink to current code pair
+- Mobile-responsive layout
+
+---
+
+**Story 5.1.7 — Community and contribution hub**
+
+As an open-source contributor, I want a community page that makes it easy to find contribution opportunities and connect with other toke developers, so that I can start contributing quickly.
+
+Acceptance criteria:
+- Community page with: "Good first issues" feed (pulled from GitHub), contributor guide summary, code of conduct link
+- Links to all repos with their current status and contribution areas
+- "For Enterprise" section: how companies can adopt toke for their AI coding pipelines, integration guidance, support channels
+- Discussion forum link (GitHub Discussions or similar)
+- Newsletter/updates signup (optional)
+- Contributor recognition: list of contributors from git history
+
+---
+
+**Story 5.1.8 — Site CI/CD and deployment**
+
+As a maintainer, I want automated build, test, and deployment for the website, so that content updates go live automatically on merge to main.
+
+Acceptance criteria:
+- GitHub Actions workflow: build → test → deploy on push to main
+- Preview deployments on pull requests
+- Lighthouse CI: performance score >= 90, accessibility score >= 90
+- Link checker: no broken internal or external links
+- Build time under 60 seconds
+- Deployed to tokelang.dev with HTTPS
+
+---
+
+### EPIC 5.2 — Phase 2 Character Reduction Documentation
+
+*Update all public-facing documentation and learning materials to cover the Phase 2 (56-character) reduced character set and the purpose-built tokenizer that uses it.*
+
+---
+
+**Story 5.2.1 — Update website and learning materials for Phase 2 character reduction**
+
+As a developer learning toke, I want documentation explaining the Phase 2 (56-character) profile, so that I understand what characters are removed, why, how the purpose-built tokenizer uses the reduced set, and how to translate between Phase 1 and Phase 2.
+
+Acceptance criteria:
+- Dedicated documentation page explaining the Phase 2 (56-character) profile
+- Clear explanation of which characters are removed from the 80-character Phase 1 set and the rationale for each removal
+- Description of how the purpose-built tokenizer leverages the reduced character set for efficiency
+- Transformation rules from Phase 1 to Phase 2 documented with examples
+- Performance implications explained (token count reduction, inference cost impact)
+- Getting Started guide updated to reference Phase 2 where appropriate
+- Learning course updated to include Phase 2 references where appropriate
+- API/reference section updated to include Phase 2 character set and transformation rules
+- Depends on: Phase 2 tokenizer work
+
+---
+
+### EPIC 6.1 — Publish to Hugging Face
+
+*Package and publish the fine-tuned toke model, tokenizer, benchmarks, and a live demo to Hugging Face so the community can evaluate, reproduce, and build on the work.*
+
+---
+
+**Story 6.1.1 — Create Hugging Face organisation and model card**
+
+As a project maintainer, I want a karwalski organisation on Hugging Face with a complete model card, so that the model is discoverable and its capabilities, limitations, and training data are transparently documented.
+
+Acceptance criteria:
+- karwalski organisation created on Hugging Face
+- Model card includes: license, intended use, out-of-scope use, training data description, evaluation metrics
+- Model card follows Hugging Face model card template best practices
+- Links to project website (tokelang.dev) and source repos
+- Depends on: model training complete (Epic 1.5/1.6)
+
+---
+
+**Story 6.1.2 — Upload model weights and tokenizer**
+
+As a researcher, I want the fine-tuned model weights, tokenizer files, and config uploaded to Hugging Face Hub, so that I can download and run the toke model locally.
+
+Acceptance criteria:
+- Fine-tuned model weights uploaded to Hugging Face Hub under karwalski org
+- Tokenizer files (vocab, merges, config) uploaded alongside the model
+- Model config (architecture, hyperparameters) included
+- Quantized variants (GGUF, AWQ) uploaded if applicable
+- README/model card updated with download and usage instructions
+- Depends on: 6.1.1
+
+---
+
+**Story 6.1.3 — Publish benchmark results and evaluation dataset**
+
+As a researcher, I want the held-out benchmark task set, evaluation scripts, and published results available in the model repo, so that I can reproduce the evaluation and compare against other models.
+
+Acceptance criteria:
+- Held-out benchmark task set uploaded to the model repo
+- Evaluation scripts uploaded with clear usage instructions
+- Published results (token efficiency, pass@1, compression ratios) included
+- Reproducibility instructions: environment, dependencies, exact commands to replicate results
+- Depends on: 6.1.2, Gate 1 pass
+
+---
+
+**Story 6.1.4 — Inference API and demo space**
+
+As a developer evaluating toke, I want a Hugging Face Space with a simple demo where I can paste a task description and see generated toke code with token count comparison, so that I can experience the efficiency gains interactively.
+
+Acceptance criteria:
+- Hugging Face Space created under karwalski org
+- Demo interface: text input for task description, generated toke code output
+- Token count comparison displayed: toke tokens vs equivalent Python/JS tokens
+- Compression ratio prominently shown
+- Space runs without requiring local setup (hosted inference)
+- Depends on: 6.1.2
+
+---
+
+### EPIC 6.2 — Repository Scaffolding
+
+*Create planned repositories that are referenced in documentation but do not yet exist.*
+
+---
+
+**Story 6.2.1 — Create toke-eval repository**
+
+As a contributor, I want the toke-eval repository to exist with a proper README, license, and scaffold, so that evaluation pipeline work can begin and website links are not dead.
+
+Acceptance criteria:
+- Repository created at github.com/karwalski/toke-eval
+- README with purpose, planned scope, and dependency note (depends on model + benchmark)
+- Apache 2.0 license
+- Basic directory structure for evaluation scripts
+- Website references updated: remove "(planned)" labels from repos.md and contributing.md
+- Depends on: no hard dependency, but meaningful work requires model training
+
+---
+
+**Story 6.2.2 — Create toke-model repository scaffold**
+
+As a contributor, I want the toke-model repository scaffolded with README, license, and directory structure, so that model training work has a home when the corpus pipeline is ready.
+
+Acceptance criteria:
+- Repository created at github.com/karwalski/toke-model (currently exists locally but not on GitHub)
+- README with purpose, planned scope, and dependency note
+- Apache 2.0 license
+- Directory structure for training scripts, configs, and evaluation
+- Website references updated: remove "(planned)" labels
+- Depends on: no hard dependency, but meaningful work requires corpus completion
+
+---
+
+### EPIC 7.1 — Website Code Example Correctness
+
+*Fix all code examples on tokelang.dev that do not compile against the reference compiler. Bugs are split into compiler-side fixes and website-side documentation fixes.*
+
+---
+
+**Story 7.1.1 — Rewrite website examples to remove underscores from identifiers**
+
+As a learner, I want all code examples on the website to use valid toke identifiers (no underscores), so that I can copy examples and have them compile.
+
+Acceptance criteria:
+- All snake_case identifiers across all website code examples replaced with camelCase or concatenated names (e.g. `find_first_negative` → `findFirstNeg`, `rect_area` → `rectArea`)
+- Naming is consistent across lessons (same function keeps same name everywhere it appears)
+- All 28+ affected files updated
+- Website builds clean after changes
+
+---
+
+**Story 7.1.2 — Fix match arm return syntax in website examples**
+
+As a learner, I want match expression examples to use correct syntax, so that the patterns I learn actually work.
+
+Acceptance criteria:
+- All match arms updated: `<` return goes before the entire match expression, not inside individual arms
+- Pattern: `<expr|{Variant:binding body}` where arms contain bare expressions, not `<expr`
+- All affected examples in lessons 03, 05, 07, and tour.md corrected
+- At least 3 examples verified against `tkc --check`
+
+---
+
+**Story 7.1.3 — Fix error variant construction and propagation syntax in website examples**
+
+As a learner, I want error handling examples to use correct syntax, so that I can build real programs with error types.
+
+Acceptance criteria:
+- Variant construction: determine and document correct syntax (replace `Type.Variant(payload)`)
+- Error propagation: change `expr!ErrType.Variant` to `expr!ErrType` (no variant suffix)
+- All affected examples in lessons 05, 06, 07, 09, 10, and tour.md corrected
+- At least 3 examples verified against `tkc --check`
+
+---
+
+**Story 7.1.4 — Fix typed empty collection literals in website examples**
+
+As a learner, I want collection literal examples to use correct syntax for empty arrays and maps.
+
+Acceptance criteria:
+- Replace `[Type][]` with correct empty literal syntax throughout website
+- Replace `[K:V][]` with correct empty map literal syntax
+- All affected examples in lessons 04, 06, 10 corrected
+- Verified against `tkc --check`
+
+---
+
+**Story 7.1.5 — Fix loop init and spawn/await syntax in website examples**
+
+As a learner, I want loop and async examples to use correct syntax.
+
+Acceptance criteria:
+- All `lp(i=0;...)` changed to `lp(let i=0;...)` in tour.md
+- All `spawn func(args)` / `await task` changed to `spawn(func)` / `await(task)` in lesson 08
+- Arena block examples in lesson 08 marked as "Phase 2 — not yet implemented"
+- Verified against `tkc --check` where applicable
+
+---
+
+**Story 7.1.6 — Implement array indexing in compiler**
+
+As a developer, I want `arr[i]` array element access to work in the compiler, so that the most basic collection operation is supported.
+
+Acceptance criteria:
+- Parser handles `expr[expr]` as a postfix index operation
+- Type checker validates index is integer type, base is array type
+- Returns element type of the array
+- LLVM backend emits correct index access
+- Conformance tests added
+- All existing 79 tests still pass
+
+---
+
+**Story 7.1.7 — Implement void return type in compiler**
+
+As a developer, I want `void` to be a recognized return type, so that functions with side effects can be properly typed.
+
+Acceptance criteria:
+- `void` recognized as a valid type in return position
+- Functions with `:void` return type cannot use `<expr` (only bare `<` or implicit return)
+- Type checker enforces void functions don't return values
+- Conformance tests added
+- All existing 79 tests still pass
+
+---
+
+**Story 7.1.8 — Fix struct literal with field access expression crash**
+
+As a developer, I want struct literals containing field access expressions (e.g. `Pt{x:a.x+b.x}`) to compile without crashing.
+
+Acceptance criteria:
+- Compiler does not crash on struct literals with member access in field values
+- Proper diagnostic emitted if the expression is invalid (no silent exit)
+- Conformance test added for this case
+- All existing 79 tests still pass
+
+---
+
+**Story 7.1.9 — Website code example conformance test suite**
+
+As a maintainer, I want an automated test that extracts all code examples from the website and runs them through `tkc --check`, so that documentation drift is caught before deployment.
+
+Acceptance criteria:
+- Script extracts all toke code blocks from website markdown/mdx files
+- Complete programs (with `M=`) tested directly; fragments wrapped in valid scaffold
+- Examples that use stdlib imports tested with `--check` (expected failures noted)
+- Test runs in CI alongside website build
+- Report lists pass/fail per example with file and line reference
+- Depends on: 7.1.1–7.1.8 (all syntax fixes complete first)
+
+---
+
+*These stories and epics cover all 32 months of the toke project plan, plus cross-phase initiatives. Each epic maps to a section of the RFC and the project plan. Story completion is the acceptance criterion for milestone delivery. Gate stories are the single most important stories in each phase: if a gate story's acceptance criteria are not met, the phase does not proceed.*
