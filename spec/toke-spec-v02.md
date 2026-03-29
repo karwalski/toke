@@ -206,7 +206,7 @@ Additional terms:
 | construct | a syntactic unit recognised by the grammar |
 | token | a single atomic lexical unit produced by the lexer |
 | tk token | an LLM vocabulary token in the tokenizer sense (distinguished from lexical token by context) |
-| Phase 1 | the 81-character variant of the language, used with existing LLM tokenizers |
+| Phase 1 | the 80-character variant of the language, used with existing LLM tokenizers |
 | Phase 2 | the 56-character variant, used with the purpose-built toke tokenizer |
 | tkc | the reference compiler binary |
 | arena | a lexically scoped memory region whose allocations are freed on scope exit |
@@ -215,11 +215,11 @@ Additional terms:
 
 ---
 
-## 7. Character Set — Phase 1 (81 Characters) [N]
+## 7. Character Set — Phase 1 (80 Characters) [N]
 
 Version 0.1 normatively defines Phase 1. Phase 2 is specified in Section 8 as a profile for use with the purpose-built tokenizer.
 
-Phase 1 uses exactly 81 characters. No character outside this set shall appear in toke source except within string literal content, where arbitrary UTF-8 is permitted.
+Phase 1 uses exactly 80 characters. No character outside this set shall appear in toke source except within string literal content, where arbitrary UTF-8 is permitted.
 
 ### 7.1 Complete Phase 1 Character Table
 
@@ -229,12 +229,12 @@ CLASS        CHARACTERS                                                 COUNT
 Lowercase    a b c d e f g h i j k l m n o p q r s t u v w x y z       26
 Uppercase    A B C D E F G H I J K L M N O P Q R S T U V W X Y Z       26
 Digits       0 1 2 3 4 5 6 7 8 9                                         10
-Symbols      ( ) { } [ ] = : . ; + - * / < > ! | "                      19
+Symbols      ( ) { } [ ] = : . ; + - * / < > ! |                        18
 ──────────────────────────────────────────────────────────────────────────────
-TOTAL                                                                     81
+TOTAL                                                                     80
 ```
 
-Note: The total is 81 characters. The double-quote `"` is counted in the symbol set as the string literal delimiter. This section is authoritative once M0 is declared.
+Note: The double-quote `"` appears in source as the string delimiter for string literals but is not a structural symbol — it is consumed by the lexer during string literal scanning and never produces a token. It is analogous to whitespace in this regard. The 80 characters above are the complete set of characters that carry structural meaning in toke source. This section is authoritative once M0 is declared.
 
 ### 7.2 Excluded Characters
 
@@ -264,7 +264,7 @@ No other escape sequences are defined. An unrecognised escape sequence is a comp
 
 ---
 
-## 8. Character Set — Phase 2 (57 Characters) [N]
+## 8. Character Set — Phase 2 (56 Characters) [N]
 
 Phase 2 is a reduced character set profile for use with the purpose-built toke tokenizer. It is a strict subset of Phase 1 except for two new sigil characters (`$` and `@`).
 
@@ -293,10 +293,10 @@ CLASS        CHARACTERS                                                 COUNT
 ──────────────────────────────────────────────────────────────────────────────
 Lowercase    a b c d e f g h i j k l m n o p q r s t u v w x y z       26
 Digits       0 1 2 3 4 5 6 7 8 9                                         10
-Symbols      ( ) { } = : . ; + - * / < > ! | " $ @                      19
+Symbols      ( ) { } = : . ; + - * / < > ! | $ @                        18
 Reserved     ^ ~                                                           2
 ──────────────────────────────────────────────────────────────────────────────
-TOTAL                                                                     57
+TOTAL                                                                     56
 ```
 
 The reserved characters `^` and `~` are not assigned in version 0.1 but are excluded from use to preserve their availability for version 0.2 extensions.
@@ -1914,7 +1914,8 @@ The following JSON Schema defines the normative diagnostic record format for ver
 | `>` | greater-than | — |
 | `!` | error propagation | logical not |
 | `\|` | match block open | union type separator |
-| `"` | string literal delimiter | — |
+
+> **Note:** The double-quote `"` appears in source as the string delimiter but is not a structural symbol — it is consumed by the lexer during string literal scanning and never produces a token. See Section 7 note.
 
 ### Phase 2 Additional Symbols
 
