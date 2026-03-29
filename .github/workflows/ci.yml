@@ -61,3 +61,19 @@ jobs:
 
       - name: Conformance suite
         run: make conform || true
+
+  repro:
+    name: Reproducible build check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM
+        run: sudo apt-get install -y llvm-dev clang
+
+      - name: Pin SOURCE_DATE_EPOCH to commit timestamp
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
+      - name: Verify reproducible build
+        run: make repro-check

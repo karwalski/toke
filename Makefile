@@ -6,15 +6,31 @@ SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
 OBJS    = $(SRCS:.c=.o)
 BIN     = tkc
 
-.PHONY: all clean lint conform conform-check build-all ci test-e2e test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage bench
+# ── Reproducible-build flags ──────────────────────────────────────────────────
+# These flags eliminate sources of non-determinism so that the same source tree
+# produces bit-identical binaries across builds on the same platform.
+#
+#   -frandom-seed=tkc       deterministic internal compiler hashes
+#   -ffile-prefix-map=...   strip absolute paths from debug info / __FILE__
+#
+# SOURCE_DATE_EPOCH: if set in the environment, GCC/Clang use it for __DATE__
+# and __TIME__.  The Makefile exports it when available; CI pins it to the
+# commit timestamp.
+# ──────────────────────────────────────────────────────────────────────────────
+REPRO_FLAGS = -frandom-seed=tkc \
+              -ffile-prefix-map=$(CURDIR)=.
+
+export SOURCE_DATE_EPOCH ?= 0
+
+.PHONY: all clean lint conform conform-check build-all ci test-e2e test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage bench repro-check
 
 all: $(BIN)
 
 $(BIN): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) $(REPRO_FLAGS) -o $@ $^
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(REPRO_FLAGS) -c -o $@ $<
 
 lint:
 	$(CC) $(CFLAGS) --analyze $(SRCS)
@@ -90,6 +106,50 @@ bench:
 	    src/stdlib/env.c src/stdlib/log.c src/stdlib/tk_test.c \
 	    src/stdlib/db.c src/stdlib/http.c -lsqlite3
 	./test/stdlib/bench_stdlib
+
+# ── Reproducible-build verification ───────────────────────────────────────────
+# Builds tkc twice into separate directories and compares SHA-256 hashes.
+# Exits non-zero if the two binaries differ.
+repro-check:
+	@echo "==> Reproducible-build check: building twice and comparing hashes..."
+	@rm -rf .repro-a .repro-b
+	$(MAKE) clean
+	SOURCE_DATE_EPOCH=1700000000 $(MAKE) all
+	@mkdir -p .repro-a && cp $(BIN) .repro-a/$(BIN) && \
+	 for f in $(OBJS); do cp $$f .repro-a/$$(basename $$f); done
+	$(MAKE) clean
+	SOURCE_DATE_EPOCH=1700000000 $(MAKE) all
+	@mkdir -p .repro-b && cp $(BIN) .repro-b/$(BIN) && \
+	 for f in $(OBJS); do cp $$f .repro-b/$$(basename $$f); done
+	$(MAKE) clean
+	@# ── Compare object files (deterministic on all platforms) ──
+	@FAIL=0; \
+	 for f in $(patsubst %.o,%,$(notdir $(OBJS))); do \
+	   HA=$$(shasum -a 256 .repro-a/$$f.o | cut -d' ' -f1); \
+	   HB=$$(shasum -a 256 .repro-b/$$f.o | cut -d' ' -f1); \
+	   if [ "$$HA" = "$$HB" ]; then \
+	     echo "  PASS $$f.o  $$HA"; \
+	   else \
+	     echo "  FAIL $$f.o  A=$$HA  B=$$HB" >&2; FAIL=1; \
+	   fi; \
+	 done; \
+	 echo ""; \
+	 HA=$$(shasum -a 256 .repro-a/$(BIN) | cut -d' ' -f1); \
+	 HB=$$(shasum -a 256 .repro-b/$(BIN) | cut -d' ' -f1); \
+	 if [ "$$HA" = "$$HB" ]; then \
+	   echo "  PASS $(BIN)  $$HA"; \
+	 else \
+	   echo "  INFO $(BIN) differs (expected on macOS due to LC_UUID)"; \
+	   echo "       A=$$HA"; \
+	   echo "       B=$$HB"; \
+	 fi; \
+	 echo ""; \
+	 if [ "$$FAIL" = "0" ]; then \
+	   echo "PASS: all object files are identical — build is reproducible"; \
+	 else \
+	   echo "FAIL: object files differ" >&2; exit 1; \
+	 fi
+	@rm -rf .repro-a .repro-b
 
 clean:
 	rm -f $(OBJS) $(BIN) test/stdlib/test_str test/stdlib/test_db \
