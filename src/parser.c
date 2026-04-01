@@ -87,7 +87,7 @@ static Node *parse_primary(Parser *p) {
         if(peek(p)==TK_LBRACE){ /* StructLit = TypeName '{' FieldInit (';' FieldInit)* '}' */
             Node *n=mk(p,NODE_STRUCT_LIT,t); xp(p,TK_LBRACE,"'{'");
             while(peek(p)!=TK_RBRACE&&peek(p)!=TK_EOF){
-                Token *ft=cur(p); if(!xp(p,TK_IDENT,"field name")){sync(p);break;}
+                Token *ft=cur(p); if(peek(p)==TK_IDENT||peek(p)==TK_TYPE_IDENT){adv(p);}else{xp(p,TK_IDENT,"field name");sync(p);break;}
                 Node *fi=mk(p,NODE_FIELD_INIT,ft); if(!xp(p,TK_COLON,"':'")){ sync(p);break;}
                 ch(fi,parse_expr(p)); ch(n,fi); if(peek(p)==TK_SEMICOLON)adv(p);else break;
             }
@@ -270,21 +270,22 @@ static Node *parse_stmt(Parser *p) {
         if(p->pos+1<p->n&&p->toks[p->pos+1].kind==TK_IDENT&&teq(p,&p->toks[p->pos+1],"arena")){
             adv(p);adv(p);Node *n=mk(p,NODE_ARENA_STMT,t);
             ch(n,parse_stmt_list(p,t));
-            if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");return n;}
+            if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+            return n;}
         eerr(p,E2002,t,"unexpected token");sync(p);return NULL;
     case TK_IDENT:
         /* AssignStmt: IDENT '=' Expr ';' — one-token ahead check on '=' */
         if(p->pos+1<p->n&&p->toks[p->pos+1].kind==TK_EQ){
             adv(p);adv(p);Node *n=mk(p,NODE_ASSIGN_STMT,t);ch(n,mk(p,NODE_IDENT,t));
             ch(n,parse_expr(p));opt_semi(p);return n;}
-        /* fall through to ExprStmt */
+        __attribute__((fallthrough));
     default:{Node *n=mk(p,NODE_EXPR_STMT,t);ch(n,parse_expr(p));opt_semi(p);return n;}
     }
 }
 
 static Node *parse_stmt_list(Parser *p, Token *ref) {
     Node *n=mk(p,NODE_STMT_LIST,ref);
-    while(peek(p)!=TK_RBRACE&&peek(p)!=TK_EOF){int sv=p->pos;Node *s=parse_stmt(p);if(s){ch(n,s);}else if(p->pos==sv){sync(p);}}
+    while(peek(p)!=TK_RBRACE&&peek(p)!=TK_EOF){int sv=p->pos;Node *s=parse_stmt(p);if(s)ch(n,s);if(p->pos==sv){sync(p);}}
     return n;
 }
 

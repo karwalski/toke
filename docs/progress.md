@@ -83,26 +83,26 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 1.4.1 | Mac Studio configuration | backlog | — | Hardware prerequisite |
-| 1.4.2 | Local inference pipeline | backlog | — | Depends on 1.4.1 |
-| 1.4.3 | Corpus storage schema | backlog | — | Depends on 1.4.2 |
+| 1.4.1 | Mac Studio configuration | bypassed | — | Used EC2 cloud instead (Epic 8.1) |
+| 1.4.2 | Local inference pipeline | bypassed | — | Cloud pipeline in Epic 8.1 |
+| 1.4.3 | Corpus storage schema | done | — | Implemented in corpus pipeline (schema.json) |
 
 ### Epic 1.5 — Phase A Corpus Generation
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 1.5.1 | Task curriculum generator | backlog | — | Depends on 1.4 complete |
-| 1.5.2 | Four-language parallel generation | backlog | — | Depends on 1.5.1 |
-| 1.5.3 | Differential test harness | backlog | — | Depends on 1.5.2 |
-| 1.5.4 | Corpus quality metrics | backlog | — | Depends on 1.5.3 |
+| 1.5.1 | Task curriculum generator | done | — | 339 templates, 50K tasks (via Epic 8.1.3) |
+| 1.5.2 | Four-language parallel generation | done | — | Multi-model pipeline: Haiku 4.5, GPT-4.1-mini, Grok-3-mini (via Epic 8.1) |
+| 1.5.3 | Differential test harness | done | — | Python/C/Java majority agreement (via Epic 8.1.7) |
+| 1.5.4 | Corpus quality metrics | done | — | 46,754 entries: A=26,978 B=9,776 C=5,000 D=5,000 |
 
 ### Epic 1.6 — Gate 1 Benchmark
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
 | 1.6.1 | Held-out benchmark task set | done | feature/benchmark-held-out-tasks | [x] 500 tasks [x] 120 test inputs each [x] Gitignored [x] Generation script committed |
-| 1.6.2 | Token efficiency measurement | backlog | — | Depends on 1.5 complete |
-| 1.6.3 | Pass@1 measurement | backlog | — | Depends on 1.6.2 |
+| 1.6.2 | Token efficiency measurement | done | — | [x] 12.5% reduction (8K vocab) [x] 13.1% reduction (32K vocab) [x] eval_report.json [x] Gate 1 threshold met (>10%) |
+| 1.6.3 | Pass@1 measurement | in_progress | — | Harness ready with toke integration. Blocked on model training completion |
 | 1.6.4 | Gate 1 decision document | backlog | — | Depends on 1.6.3 |
 
 ### Epic 1.10 — Phase 1 Integration and Conformance Review
@@ -218,11 +218,38 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 5.1.7 | Community and contribution hub | done | feature/web-5.1 (toke-web) | [x] Contributing guide [x] Enterprise adoption page |
 | 5.1.8 | Site CI/CD and deployment | done | feature/web-5.1 (toke-web) | [x] GitHub Actions [x] Build + deploy [x] Pagefind search [x] Sitemap |
 
-### Epic 5.2 — Phase 2 Character Reduction Documentation
+### Epic 5.2 — Phase 2 Website Updates
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 5.2.1 | Update website and learning materials for Phase 2 character reduction | backlog | — | Depends on Phase 2 tokenizer work |
+| 5.2.1 | Update website to present toke as one language (56-char set) | done | — | [x] All 38+ docs converted to Phase 2 syntax [x] Phase 1 tabs removed from homepage [x] Sidebar renamed to "How toke Was Built" [x] Phase 2 ref pages reframed as methodology [x] "available in Phase 2" removed from 11 stdlib pages [x] Deployed to Lightsail 2026-04-01 |
+
+### Epic 2.14 — Corpus Phase 2 Transformation
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 2.14.1 | Phase 1→Phase 2 corpus transformation script | done | — | [x] transform/phase1_to_phase2.py [x] 55 unit tests [x] Context-aware tokenizer (not regex) [x] All 8 transformation rules [x] 46,754 entries processed [x] corpus_p2.jsonl output |
+
+### Epic 2.15 — Model Training Pipeline (MLX)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 2.15.1 | MLX QLoRA fine-tuning script | done | — | [x] finetune/train_mlx.py [x] Qwen 2.5 Coder 7B [x] rank 64, alpha 128 [x] cosine schedule [x] configs/7b_mlx.yaml |
+| 2.15.2 | MLX data preparation and validation | done | — | [x] finetune/prepare_mlx_data.py [x] Existing ChatML data MLX-compatible [x] Validation mode |
+| 2.15.3 | MLX adapter merging | done | — | [x] finetune/merge_mlx.py [x] mlx_lm.fuse integration [x] de-quantize option |
+
+### Epic 2.16 — Benchmark Toke Integration
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 2.16.1 | Toke solution loader and model inference mode in benchmark harness | done | — | [x] load_toke_solutions() with tkc compilation [x] load_model_solutions() for Pass@1 [x] --model-endpoint CLI [x] Incremental build |
+
+### Epic 2.17 — Research Review Document
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 2.17.1 | Research review request document | done | — | [x] toke-spec/docs/research-review-request.md [x] 8 design questions for reviewers [x] Preliminary results (12.5% token reduction) [x] Placeholders for final tokenizer + Pass@1 results |
+| 2.17.2 | Update research review with final results | backlog | — | Fill PLACEHOLDER markers after tokenizer retraining + model training + Gate 1 benchmark |
 
 ### Epic 6.1 — Publish to Hugging Face
 
@@ -253,6 +280,18 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 7.1.7 | Implement void return type in compiler | backlog | — | 8+ website examples use `:void` |
 | 7.1.8 | Fix struct literal with field access expression crash | backlog | — | Compiler crash (silent exit 1) on `Pt{x:a.x+b.x}` |
 | 7.1.9 | Website code example conformance test suite | backlog | — | Automated CI test; depends on 7.1.1–7.1.8 |
+| 7.2.1 | Review `.tk` file extension decision | backlog | — | Audit conflicts (Tcl/Tk, Linguist), evaluate alternatives, record decision in spec |
+| 7.3.1 | Audit empty stub files across all repos | done | — | 12 empty files found, 3 stories with false done status, 1 missing from tracking |
+| 8.1.1 | Provision cloud instance and deploy toolchain | done | — | Setup/deploy/verify scripts in infra/ |
+| 8.1.2 | Multi-provider API client layer | done | — | 4 providers + 29 tests |
+| 8.1.3 | Task curriculum generator | done | — | 339 templates, 50K tasks, 25 tests |
+| 8.1.4 | Generation prompt templates | done | — | 7 prompts, syntax-verified against compiler |
+| 8.1.5 | Model capability trial framework | done | — | Trial runner + scorer, 23 tests |
+| 8.1.6 | Model pool manager and task router | done | — | Category routing, auto-rebalance, 18 tests |
+| 8.1.7 | Validation pipeline | done | — | Compiler + diff test + quality + dedup, 36 tests |
+| 8.1.8 | Correction loop and escalation engine | done | — | 3-attempt retries, tier escalation, 17 tests |
+| 8.1.9 | Corpus writer and metrics dashboard | done | — | Schema output, checkpointing, metrics, 19 tests |
+| 8.1.10 | Orchestrator main loop | done | — | Full pipeline entry point, 10 integration tests |
 
 ---
 
@@ -316,9 +355,32 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 5.1.5 | Human training course | 2026-03-29 | feature/web-5.1 (toke-web) |
 | 5.1.7 | Community and contribution hub | 2026-03-29 | feature/web-5.1 (toke-web) |
 | 5.1.8 | Site CI/CD and deployment | 2026-03-29 | feature/web-5.1 (toke-web) |
+| 7.3.1 | Audit empty stub files across all repos | 2026-03-30 | — |
+| 8.1.1 | Provision cloud instance and deploy toolchain | 2026-03-30 | — |
+| 8.1.2 | Multi-provider API client layer | 2026-03-30 | — |
+| 8.1.3 | Task curriculum generator | 2026-03-30 | — |
+| 8.1.4 | Generation prompt templates | 2026-03-30 | — |
+| 8.1.5 | Model capability trial framework | 2026-03-30 | — |
+| 8.1.6 | Model pool manager and task router | 2026-03-30 | — |
+| 8.1.7 | Validation pipeline | 2026-03-30 | — |
+| 8.1.8 | Correction loop and escalation engine | 2026-03-30 | — |
+| 8.1.9 | Corpus writer and metrics dashboard | 2026-03-30 | — |
+| 8.1.10 | Orchestrator main loop | 2026-03-30 | — |
+| 1.5.1 | Task curriculum generator | 2026-03-31 | — |
+| 1.5.2 | Four-language parallel generation | 2026-03-31 | — |
+| 1.5.3 | Differential test harness | 2026-03-31 | — |
+| 1.5.4 | Corpus quality metrics | 2026-04-01 | — |
+| 1.6.2 | Token efficiency measurement | 2026-04-01 | — |
+| 5.2.1 | Update website for Phase 2 | 2026-04-01 | — (toke-web) |
+| 2.14.1 | Phase 1→Phase 2 corpus transformation script | 2026-04-01 | — (toke-corpus) |
+| 2.15.1 | MLX QLoRA fine-tuning script | 2026-04-01 | — (toke-models) |
+| 2.15.2 | MLX data preparation and validation | 2026-04-01 | — (toke-models) |
+| 2.15.3 | MLX adapter merging | 2026-04-01 | — (toke-models) |
+| 2.16.1 | Toke solution loader and model inference | 2026-04-01 | — (toke-benchmark) |
+| 2.17.1 | Research review request document | 2026-04-01 | — (toke-spec) |
 
 ---
 
 ## Active Blockers
 
-None.
+- Tokenizer retraining on Phase 2 corpus (22% complete). Blocks model retraining and Gate 1 Pass@1 evaluation.

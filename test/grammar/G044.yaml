@@ -1,0 +1,15 @@
+id: G044
+series: G
+description: "Void function called from another function parses correctly"
+input: |
+  M=test;
+  F=setup():void{
+    let x=1;
+  };
+  F=main():i64{
+    setup();
+    <0
+  };
+expected_exit_code: 0
+expected_error_codes: []
+expected_output: ""

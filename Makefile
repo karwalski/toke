@@ -1,5 +1,5 @@
 CC      = cc
-CFLAGS  = -std=c99 -Wall -Wextra -Wpedantic -Werror -g
+CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -g
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/main.c \
           src/stdlib/str.c

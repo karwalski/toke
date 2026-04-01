@@ -46,10 +46,10 @@ Profile 2 eliminates all 26 uppercase letters. Type names use a `$`-prefixed low
 
 **CLI flags:** `--profile1` (default), `--profile2`. The deprecated aliases `--phase1` and `--phase2` are accepted with a warning.
 
-**Authoritative spec files:**
-- `/Users/matthew.watt/tk/toke-spec/spec/character-set.md`
-- `/Users/matthew.watt/tk/toke-spec/spec/phase2-transform.md`
-- `/Users/matthew.watt/tk/toke-spec/spec/grammar.ebnf`
+**Authoritative spec files (in toke-spec repo):**
+- `spec/character-set.md`
+- `spec/phase2-transform.md`
+- `spec/grammar.ebnf`
 
 ---
 

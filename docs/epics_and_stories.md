@@ -2244,4 +2244,281 @@ Acceptance criteria:
 
 ---
 
+### EPIC 7.2 — File Extension Review
+
+*Review the `.tk` file extension decision and decide whether to keep, change, or alias it. The extension appears throughout the compiler, spec, test harness, and documentation.*
+
+---
+
+**Story 7.2.1 — Review `.tk` file extension decision**
+
+As a language designer, I want to review the decision to use `.tk` as the source file extension, so that any conflicts or concerns (e.g. Tcl/Tk association, Tokelau TLD overlap, tooling detection) are identified and resolved before the ecosystem hardens around the convention.
+
+Acceptance criteria:
+- Audit all uses of `.tk` across repos: compiler (`run_e2e.sh`, `run_conform.sh`), spec (`language-proposal-v03.md`, `semantics.md`), website docs, and corpus tooling
+- Document the original rationale for `.tk` (from the language proposal)
+- List known conflicts: Tcl/Tk `.tk` files, GitHub Linguist classification, editor syntax detection
+- Evaluate alternatives (e.g. `.toke`, `.tke`) against token-efficiency goals and ecosystem friction
+- Decision recorded in spec with rationale — either reaffirm `.tk` or define a migration path
+- If changed: update compiler, test harness, spec, website, and corpus tooling in a follow-up story
+
+---
+
+### EPIC 7.3 — Stub File Audit
+
+*Identify empty stub files across all repos that may have been marked as complete but contain no implementation, and create stories for any unblocked development work.*
+
+---
+
+**Story 7.3.1 — Audit empty stub files across all repos**
+
+As a project maintainer, I want to identify all empty or placeholder files across toke repos that were scaffolded but never implemented, so that I can accurately track what work remains and avoid false confidence in project completeness.
+
+Acceptance criteria:
+- Scan all 8 repos for empty files (0 bytes) and stub files (only imports/boilerplate, no logic)
+- Cross-reference against progress.md — flag any files associated with stories marked `done`
+- Cross-reference against epics_and_stories.md — identify unblocked work that depends on these stubs
+- Produce a report: file path, associated story (if any), current story status, whether work is unblocked
+- Create follow-up stories for any implementation work that is unblocked
+- Update progress.md to correct any inaccurate story statuses
+
+---
+
+### EPIC 8.1 — Cloud Corpus Phase A Generation
+
+*Build and run the corpus generation pipeline on cloud compute using multi-provider LLM APIs. Generates 50,000 Phase A programs with differential testing across 4 languages, multi-model capability trials, and tiered workload allocation. See `toke-corpus/docs/cloud-corpus-proposal.md` for the full proposal.*
+
+---
+
+**Story 8.1.1 — Provision cloud instance and deploy toolchain**
+
+As an infrastructure engineer, I want a cloud compute instance provisioned with all required compilers and runtimes, so that the corpus pipeline can validate programs without external dependencies.
+
+Acceptance criteria:
+- EC2 or Lightsail instance provisioned: 8 vCPU, 16 GB RAM, 80 GB SSD, Ubuntu 24.04
+- `tkc` cross-compiled for Linux amd64 and deployed to instance (or built from source)
+- `gcc 13+`, `python 3.11+`, `openjdk 21+` installed and verified
+- Python venv created with pipeline dependencies (`httpx`, `asyncio`, `tiktoken`, etc.)
+- SSH access configured and tested
+- Instance can compile and run a toke program end-to-end
+- No IP addresses, keys, or credentials committed to any repo
+
+---
+
+**Story 8.1.2 — Multi-provider API client layer**
+
+As a pipeline developer, I want a unified API client layer that dispatches generation requests to multiple LLM providers, so that the orchestrator can route tasks without provider-specific logic.
+
+Acceptance criteria:
+- Abstract base class `ProviderClient` with: `generate(prompt, system) -> str`, `generate_batch(prompts) -> list[str]`, `name`, `tier`, `cost_per_input_mtok`, `cost_per_output_mtok`
+- Concrete implementations for: Anthropic (batch API), OpenAI (batch API), Google Gemini, DeepSeek
+- Each client handles: authentication, retries (exp backoff), rate limiting, cost tracking per call
+- Prompt caching / context caching used where provider supports it
+- All API keys read from environment variables — never hardcoded
+- Unit tests with mocked API responses for each provider
+- Cost tracking: each call records input/output tokens and running cost
+
+---
+
+**Story 8.1.3 — Task curriculum generator**
+
+As a corpus engineer, I want the curriculum generator to produce 50,000 Phase A task specifications from templates, so that the generation pipeline has a deterministic, reproducible input.
+
+Acceptance criteria:
+- Generates tasks across all 6 Phase A categories (A-MTH, A-CND, A-STR, A-ARR, A-SRT, A-ERR)
+- Each task has: `task_id`, `category`, `description`, `expected_signature`, `difficulty_tier`
+- Tasks are deterministically seeded (same seed = same curriculum)
+- Variant parameters ensure coverage of all type combinations per category
+- Distribution: ~8,000–10,000 tasks per category (configurable)
+- Output: JSON file with all 50K task specs
+- Unit tests verify category distribution, uniqueness, and schema conformance
+
+---
+
+**Story 8.1.4 — Generation prompt templates**
+
+As a corpus engineer, I want well-tested prompt templates for toke generation, reference language generation, and test input generation, so that models produce correctly structured output.
+
+Acceptance criteria:
+- System prompt includes: toke spec excerpt (grammar, types, error model), 5+ worked examples per category
+- Generation prompt template: takes task spec, returns toke source code
+- Reference language prompts: Python, C, Java — each with language-specific constraints
+- Test input generation prompt: produces 5+ test cases per task with expected outputs
+- Correction prompt template: includes compiler diagnostic, expected output, grammar reference
+- All prompts are markdown files in `prompts/` directory (not hardcoded in Python)
+- Prompts tested against at least 2 models to verify structured output compliance
+- System prompt fits within 4,000 tokens (optimized for caching efficiency)
+
+---
+
+**Story 8.1.5 — Model capability trial framework**
+
+As a corpus engineer, I want to run a 500-task capability trial across all candidate models and automatically score/rank them, so that I can allocate the workload to the best-performing models.
+
+Acceptance criteria:
+- Trial runner sends 500 tasks (covering all 6 categories) to each candidate model
+- Each response validated: `tkc --check`, reference compilation, differential test
+- Scoring rubric: first-pass compile rate (40%), differential agreement (30%), correction success (20%), cost efficiency (10%)
+- Models scoring below 50% first-pass compile rate are automatically dropped
+- Produces model scorecard: per-model and per-category scores, cost per accepted program
+- Scorecard saved to `metrics/trial_results.json`
+- Allocation recommendation output: which models get what % of workload
+- Can be re-run with different prompt variants to iterate on prompt quality
+
+---
+
+**Story 8.1.6 — Model pool manager and task router**
+
+As a pipeline developer, I want a pool manager that routes tasks to models based on trial results and category difficulty, so that the workload is distributed optimally across tiers.
+
+Acceptance criteria:
+- Pool config: list of surviving models with tier, allocation %, and category preferences
+- Task router: assigns each task to a model based on category, tier allocation, and current progress
+- Enforces 40% minimum Tier 2 allocation (30% primary + 10% escalation reserve)
+- Category-aware routing: harder categories (A-ERR, A-SRT) get more Tier 2 allocation
+- Escalation logic: Tier 1 failure → Tier 2 primary → Tier 2 alternate → Sonnet (last resort)
+- Progress tracking: tasks dispatched, pending, accepted, failed, escalated per model
+- Automatic rebalancing: if a model's failure rate exceeds 50% mid-run, shift its allocation
+
+---
+
+**Story 8.1.7 — Validation pipeline (compiler + differential test + quality)**
+
+As a corpus engineer, I want an automated validation pipeline that compiles, runs, and scores every generated program, so that only correct programs enter the corpus.
+
+Acceptance criteria:
+- Compiler validation: `tkc --check` for toke; `gcc`, `python3 -c`, `javac` for references
+- Execution: run all 4 binaries against shared test inputs, capture stdout + exit code
+- Majority vote: ≥3 of 4 must agree on output; disagreements logged with full output
+- Quality scoring: token efficiency (tk vs python), holdout isolation check, schema conformance
+- Embedding deduplication: cosine similarity >0.95 with existing entry → reject
+- 8 parallel validation workers (configurable)
+- Each validation result written to `logs/` with full trace (compilation output, test results, vote)
+- Validation can run independently of generation (process a directory of pending programs)
+
+---
+
+**Story 8.1.8 — Correction loop and escalation engine**
+
+As a corpus engineer, I want failed programs to be automatically resubmitted with structured error feedback, so that correctable failures don't waste task slots.
+
+Acceptance criteria:
+- Failed programs get structured prompt: compiler diagnostic JSON + expected output + grammar reference
+- Max 3 correction attempts per task per tier
+- Escalation chain: Tier 1 model → Tier 2 primary → Tier 2 alternate → discard + replace
+- Replacement: discarded tasks replaced with new task specs from the curriculum reserve
+- Cost tracking per correction attempt
+- Metrics: correction success rate by model, by category, by attempt number
+- Configurable: max attempts, escalation thresholds, replacement behaviour
+
+---
+
+**Story 8.1.9 — Corpus writer and metrics dashboard**
+
+As a project maintainer, I want validated corpus entries written to disk per the normative schema with real-time progress and cost metrics, so that I can monitor the run and verify the output.
+
+Acceptance criteria:
+- Accepted entries written as JSON to `corpus/phase_a/` conforming to `corpus/schema.json`
+- Each entry includes: `id`, `version`, `phase`, `task_id`, `tk_source`, `tk_tokens`, `model`, `attempts`, `validation`, `differential`, `judge`
+- `judge.score` computed from validation metrics (not a separate LLM call for Phase A)
+- Real-time metrics file (`metrics/progress.json`) updated every 60 seconds:
+  - Total tasks: dispatched, pending, accepted, failed, escalated
+  - Per-model: tasks, acceptance rate, cost
+  - Per-category: tasks, acceptance rate
+  - Total cost (API + compute)
+  - Estimated time remaining
+- Human-readable progress line printed to stdout every 5 minutes
+- Checkpoint file enables restart from last completed batch on failure
+
+---
+
+**Story 8.1.10 — Orchestrator main loop and end-to-end integration**
+
+As a corpus engineer, I want a single entry point that runs the complete pipeline from curriculum generation through corpus packaging, so that the full run can execute unattended.
+
+Acceptance criteria:
+- `python main.py --phase A --tasks 50000 --config config.yaml` runs the full pipeline
+- Config file specifies: API keys (env var references), model pool, tier allocations, thresholds
+- Pipeline stages: curriculum → trial (optional, `--skip-trial`) → dispatch → validate → correct → write
+- Graceful shutdown: Ctrl+C saves checkpoint, in-flight tasks marked pending
+- Resume: `--resume` flag picks up from last checkpoint
+- End-of-run report: total programs, per-category breakdown, cost breakdown, model scorecard, quality metrics
+- Dry-run mode: `--dry-run` generates curriculum + prompts but makes no API calls
+- Integration test: end-to-end with mocked APIs, 10 tasks, all stages exercised
+
+---
+
+---
+
+### EPIC 2.10 — Compiler Hardening
+
+---
+
+**Story 2.10.1 — Populate conformance test suites for type checking, name resolution, and codegen (T/N/C-series)**
+
+As a compiler engineer, I want the T-series (type checking), N-series (name resolution), and C-series (code generation) conformance test categories populated with test cases, so that regressions in these compiler phases are caught automatically.
+
+Dependencies: 1.2.10 (conformance test framework exists)
+
+Background: Story 1.2.10 established the conformance test framework with L-series (25 lexical tests), G-series (25 grammar tests), and D-series (12 diagnostic tests). The T-series, N-series, and C-series directories exist but contain no test files. The 46,754-entry corpus provides implicit coverage, but structured regression tests are needed to catch targeted regressions during Phase 2 compiler changes.
+
+Acceptance criteria:
+- At least 30 T-series tests covering: type compatibility for all primitive types (i64, u64, f64, bool, Str), array element type checking, struct field type validation, error union type checking, function return type verification, binary operator type rules
+- At least 15 N-series tests covering: undefined variable detection, duplicate name detection, scope shadowing, cross-module name resolution, struct/type name resolution
+- At least 15 C-series tests covering: arithmetic codegen (all binary ops), function call with parameters, let binding initialization, if/else branching, loop iteration, return values, string literals, array indexing, struct construction
+- All new tests pass with current compiler (`make conform`)
+- CI runs expanded test suite on every commit
+
+---
+
+**Story 2.10.2 — Scalar width validation in type checker**
+
+As a compiler engineer, I want the type checker to validate scalar width constraints, so that integer overflow and narrowing conversions are caught at compile time rather than producing silent runtime bugs.
+
+Dependencies: 1.2.5 (type checker)
+
+Background: The type checker accepts all integer literal values without checking whether they fit in the target scalar type. For example, assigning a value exceeding i64 range to an i64 binding produces no diagnostic. This is acceptable for Phase 1 corpus generation (the corpus uses reasonable values), but must be addressed before Phase 2 end-to-end compilation produces binaries.
+
+Acceptance criteria:
+- Integer literal overflow detection: literals exceeding i64 range (signed) or u64 range (unsigned) produce a diagnostic
+- Narrowing cast warnings: `as` casts from wider to narrower types produce a warning diagnostic
+- At least 10 T-series tests covering width validation edge cases
+- No false positives on existing 46,754 corpus entries (validate by running `tkc --check` on a sample)
+- Existing conformance tests still pass
+
+---
+
+---
+
+### EPIC 2.11 — Spec Proposals (Phase 2 Candidates)
+
+---
+
+**Story 2.11.1 — Externalized string table with placeholder syntax**
+
+As a language designer, I want toke source to reference string literals via placeholders that resolve against an external string table, so that verbose multilingual text stays outside the token-optimized source and can support arbitrary character sets without inflating the tokenizer vocabulary.
+
+Dependencies: Phase 2 spec finalization
+
+Background: toke's Profile 1 character set is 80 ASCII chars, optimised for token density. Inline string literals (`"hello"`) work but embed natural-language text directly in source, which (a) wastes BPE vocabulary on natural-language tokens that don't recur across programs, (b) cannot represent non-ASCII characters (CJK, Arabic, emoji, etc.) without a Profile 2 charset expansion, and (c) mixes i18n concerns with logic.
+
+Proposed design (for researcher review — not final):
+- Placeholder syntax in source: `$1`, `$2`, ... or `$key` references
+- Companion string table (JSON or similar) maps placeholders to values, optionally per-locale
+- Compiler resolves placeholders at compile time (static) or runtime links a string table (dynamic)
+- Alternative: implement as stdlib (`std.i18n.get(key;locale)`) rather than language syntax, keeping spec simpler
+
+Trade-offs to evaluate:
+- Language-level syntax is more token-efficient but adds complexity to the spec
+- stdlib approach is simpler but still requires string literals for keys
+- Could coexist with inline strings — placeholders are opt-in for i18n / verbose text
+- Impacts tokenizer vocabulary: with externalized strings, BPE vocab is purely code patterns
+
+Acceptance criteria (for proposal, not implementation):
+- Written spec proposal with syntax options, trade-off analysis, and tokenizer impact estimate
+- Included in Phase 2 spec review package for researcher feedback
+- Decision documented: language-level vs stdlib vs hybrid approach
+
+---
+
 *These stories and epics cover all 32 months of the toke project plan, plus cross-phase initiatives. Each epic maps to a section of the RFC and the project plan. Story completion is the acceptance criterion for milestone delivery. Gate stories are the single most important stories in each phase: if a gate story's acceptance criteria are not met, the phase does not proceed.*

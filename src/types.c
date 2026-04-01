@@ -157,6 +157,26 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
     return mk_type(cx->env->arena, TY_UNKNOWN);
 }
 
+/* resolve_return_spec — resolve a NODE_RETURN_SPEC into a Type.
+ * child[0] = success type, child[1] = error type (optional).
+ * When both are present, returns TY_ERROR_TYPE with elem = success type. */
+static Type *resolve_return_spec(Ctx *cx, const Node *rspec) {
+    Arena *A = cx->env->arena;
+    if (!rspec || rspec->child_count < 1) return mk_type(A, TY_VOID);
+    Type *success = resolve_type(cx, rspec->children[0]);
+    if (rspec->child_count < 2) return success;
+    /* Error union: T!Err */
+    Type *et = mk_type(A, TY_ERROR_TYPE);
+    if (!et) return success;
+    et->elem = success;
+    Type *err = resolve_type(cx, rspec->children[1]);
+    et->name = err ? err->name : NULL;
+    et->field_count = err ? err->field_count : 0;
+    et->field_names = err ? err->field_names : NULL;
+    et->field_types = err ? err->field_types : NULL;
+    return et;
+}
+
 static void emit_mm(Ctx *cx, const Node *n, const Type *exp,
                     const Type *got, const char *fix) {
     char msg[256];
@@ -324,7 +344,7 @@ static Type *infer(Ctx *cx, const Node *node) {
             for (int i=0;i<fndef->child_count;i++) {
                 const Node *ch=fndef->children[i];
                 if (ch&&ch->kind==NODE_RETURN_SPEC&&ch->child_count>0)
-                    { task->elem=resolve_type(cx,ch->children[0]); break; }
+                    { task->elem=resolve_return_spec(cx,ch); break; }
             }
             return task;
         }
@@ -370,7 +390,7 @@ static Type *infer(Ctx *cx, const Node *node) {
         for (int i=0;i<fn->child_count;i++) {
             const Node *ch=fn->children[i];
             if (ch&&ch->kind==NODE_RETURN_SPEC&&ch->child_count>0)
-                return resolve_type(cx,ch->children[0]);
+                return resolve_return_spec(cx,ch);
         }
         return mk_type(A,TY_VOID);
     }
@@ -457,8 +477,18 @@ static Type *infer(Ctx *cx, const Node *node) {
             cx->had_error=1;
         } else if (cx->fn_ret&&cx->fn_ret->kind!=TY_UNKNOWN&&val->kind!=TY_UNKNOWN
             &&!types_equal(cx->fn_ret,val)) {
-            char fix[128]; snprintf(fix,sizeof(fix),"cast return value to %s using 'as'",type_name(cx->fn_ret));
-            emit_mm(cx,node,cx->fn_ret,val,fix);
+            /* In error-union functions (T!Err), allow returning either
+             * the success type T or the error type Err. */
+            int ok=0;
+            if (cx->fn_ret->kind==TY_ERROR_TYPE) {
+                if (cx->fn_ret->elem&&types_equal(cx->fn_ret->elem,val)) ok=1;
+                if (val->kind==TY_STRUCT&&cx->fn_ret->name&&val->name
+                    &&strcmp(cx->fn_ret->name,val->name)==0) ok=1;
+            }
+            if (!ok) {
+                char fix[128]; snprintf(fix,sizeof(fix),"cast return value to %s using 'as'",type_name(cx->fn_ret));
+                emit_mm(cx,node,cx->fn_ret,val,fix);
+            }
         }
         return mk_type(A,TY_VOID);
     }
@@ -518,7 +548,7 @@ static Type *infer(Ctx *cx, const Node *node) {
         for (int i=0;i<node->child_count;i++) {
             const Node *ch=node->children[i];
             if (ch&&ch->kind==NODE_RETURN_SPEC&&ch->child_count>0)
-                ret=resolve_type(cx,ch->children[0]);
+                ret=resolve_return_spec(cx,ch);
             if (ch&&ch->kind==NODE_STMT_LIST) has_body=1;
         }
         /* E2010: pointer types are only allowed in extern (bodyless) functions */

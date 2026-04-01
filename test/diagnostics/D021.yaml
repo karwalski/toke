@@ -1,0 +1,8 @@
+id: D021
+series: D
+description: "Array indexing with constant index type-checks successfully"
+input: |
+  M=test;
+  F=get(arr:[i64]):i64{<arr[0]};
+expected_exit_code: 0
+expected_error_codes: []

@@ -124,7 +124,7 @@ int main(int argc, char **argv)
     int rc = 0;
 
     /* Lex */
-    int tcap = (int)(slen / 2 + 16);
+    int tcap = (int)(slen + 16);
     Token *toks = arena_alloc(arena, tcap * (int)sizeof(Token));
     if (!toks) { rc = EINTERNAL; goto done; }
     int tc = lex(sbuf, (int)slen, toks, tcap);

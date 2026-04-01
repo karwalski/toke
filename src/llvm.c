@@ -7,25 +7,155 @@
 #include <stdlib.h>
 
 #define MAX_FUNCS 128
-typedef struct { char name[128]; const char *ret; } FnSig;
-typedef struct { FILE *out; const char *src; int tmp, str_idx, lbl; int term; FnSig fns[MAX_FUNCS]; int fn_count; } Ctx;
+#define MAX_PTR_LOCALS 64
+#define MAX_STRUCT_TYPES 64
+typedef struct { char name[128]; const char *ret; char ret_type_name[128]; const char *param_tys[NODE_MAX_CHILDREN]; char param_type_names[NODE_MAX_CHILDREN][128]; int param_count; } FnSig;
+typedef struct { char name[128]; char struct_type[128]; } PtrLocal;
+typedef struct { char name[128]; int field_count; char field_names[NODE_MAX_CHILDREN][128]; } StructInfo;
+typedef struct { FILE *out; const char *src; int tmp, str_idx, lbl; int term; FnSig fns[MAX_FUNCS]; int fn_count; PtrLocal ptrs[MAX_PTR_LOCALS]; int ptr_count; StructInfo structs[MAX_STRUCT_TYPES]; int struct_count; const char *cur_fn_ret; } Ctx;
 static int next_tmp(Ctx *c){return c->tmp++;} static int next_lbl(Ctx *c){return c->lbl++;} static int next_str(Ctx *c){return c->str_idx++;}
 static void tok_cp(const char *src,const Node *n,char *buf,int sz){int len=n->tok_len<sz-1?n->tok_len:sz-1;memcpy(buf,src+n->tok_start,(size_t)len);buf[len]='\0';}
 
-static const char *lookup_ret(Ctx *c, const char *name) {
-    for (int i = 0; i < c->fn_count; i++)
-        if (!strcmp(c->fns[i].name, name)) return c->fns[i].ret;
-    return "i64"; /* default */
-}
-
-static void register_fn(Ctx *c, const char *name, const char *ret) {
-    if (c->fn_count >= MAX_FUNCS) return;
+static void mark_ptr_with_type(Ctx *c, const char *name, const char *stype) {
+    if (c->ptr_count >= MAX_PTR_LOCALS) return;
     int len = (int)strlen(name);
     if (len >= 128) len = 127;
-    memcpy(c->fns[c->fn_count].name, name, (size_t)len);
-    c->fns[c->fn_count].name[len] = '\0';
-    c->fns[c->fn_count].ret = ret;
+    memcpy(c->ptrs[c->ptr_count].name, name, (size_t)len);
+    c->ptrs[c->ptr_count].name[len] = '\0';
+    c->ptrs[c->ptr_count].struct_type[0] = '\0';
+    if (stype) {
+        int slen = (int)strlen(stype);
+        if (slen >= 128) slen = 127;
+        memcpy(c->ptrs[c->ptr_count].struct_type, stype, (size_t)slen);
+        c->ptrs[c->ptr_count].struct_type[slen] = '\0';
+    }
+    c->ptr_count++;
+}
+
+static int is_ptr_local(Ctx *c, const char *name) {
+    for (int i = 0; i < c->ptr_count; i++)
+        if (!strcmp(c->ptrs[i].name, name)) return 1;
+    return 0;
+}
+static const char *ptr_local_struct_type(Ctx *c, const char *name) {
+    for (int i = 0; i < c->ptr_count; i++)
+        if (!strcmp(c->ptrs[i].name, name) && c->ptrs[i].struct_type[0])
+            return c->ptrs[i].struct_type;
+    return NULL;
+}
+
+/* ── Struct type registry ──────────────────────────────────────────── */
+
+static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, const char *src) {
+    if (c->struct_count >= MAX_STRUCT_TYPES) return;
+    StructInfo *si = &c->structs[c->struct_count];
+    int len = (int)strlen(name);
+    if (len >= 128) len = 127;
+    memcpy(si->name, name, (size_t)len);
+    si->name[len] = '\0';
+    si->field_count = fc;
+    /* Extract field names from type decl.  Fields may be direct children
+     * or wrapped in a NODE_STMT_LIST (from parse_field_list). */
+    int fi = 0;
+    for (int i = 1; i < decl->child_count && fi < NODE_MAX_CHILDREN; i++) {
+        const Node *ch = decl->children[i];
+        if (!ch) continue;
+        if (ch->kind == NODE_FIELD) {
+            tok_cp(src, ch, si->field_names[fi++], 128);
+        } else if (ch->kind == NODE_STMT_LIST) {
+            for (int j = 0; j < ch->child_count && fi < NODE_MAX_CHILDREN; j++) {
+                const Node *fj = ch->children[j];
+                if (fj && fj->kind == NODE_FIELD)
+                    tok_cp(src, fj, si->field_names[fi++], 128);
+            }
+        }
+    }
+    c->struct_count++;
+}
+
+static const StructInfo *lookup_struct(Ctx *c, const char *name) {
+    for (int i = 0; i < c->struct_count; i++)
+        if (!strcmp(c->structs[i].name, name)) return &c->structs[i];
+    return NULL;
+}
+
+/* Return the field index for a given field name in a struct, or 0 if not found. */
+static int struct_field_index(const StructInfo *si, const char *fname) {
+    if (!si) return 0;
+    for (int i = 0; i < si->field_count; i++)
+        if (!strcmp(si->field_names[i], fname)) return i;
+    return 0; /* fallback */
+}
+
+static int is_struct_type_name(Ctx *c, const char *name) {
+    return lookup_struct(c, name) != NULL;
+}
+
+/* Return 1 if a type-expression AST node represents a pointer-at-LLVM-level type
+ * (arrays, maps, pointers, strings, structs). */
+static int is_ptr_type_node(Ctx *c, const Node *ty) {
+    if (!ty) return 0;
+    if (ty->kind == NODE_ARRAY_TYPE || ty->kind == NODE_MAP_TYPE || ty->kind == NODE_PTR_TYPE)
+        return 1;
+    /* TYPE_IDENT that names a struct type */
+    if (ty->kind == NODE_TYPE_IDENT || ty->kind == NODE_TYPE_EXPR) {
+        char tn[128]; tok_cp(c->src, ty, tn, sizeof tn);
+        if (is_struct_type_name(c, tn)) return 1;
+    }
+    return 0;
+}
+
+/* Resolve a return-spec or param type node to an LLVM type string. */
+static const char *resolve_llvm_type(Ctx *c, const Node *ty) {
+    if (!ty) return "i64";
+    if (is_ptr_type_node(c, ty)) return "ptr";
+    char tn[64]; tok_cp(c->src, ty, tn, sizeof tn);
+    if (!strcmp(tn, "bool")) return "i1";
+    if (!strcmp(tn, "f64"))  return "double";
+    if (!strcmp(tn, "str"))  return "ptr";
+    if (!strcmp(tn, "void")) return "void";
+    return "i64";
+}
+
+static FnSig *register_fn(Ctx *c, const char *name, const char *ret) {
+    if (c->fn_count >= MAX_FUNCS) return NULL;
+    FnSig *s = &c->fns[c->fn_count];
+    int len = (int)strlen(name);
+    if (len >= 128) len = 127;
+    memcpy(s->name, name, (size_t)len);
+    s->name[len] = '\0';
+    s->ret = ret;
+    s->ret_type_name[0] = '\0';
+    s->param_count = 0;
     c->fn_count++;
+    return s;
+}
+static const FnSig *lookup_fn(Ctx *c, const char *name) {
+    for (int i = 0; i < c->fn_count; i++)
+        if (!strcmp(c->fns[i].name, name)) return &c->fns[i];
+    return NULL;
+}
+
+/* ── Prepass: collect struct type declarations ─────────────────────── */
+
+static void prepass_structs(Ctx *c, const Node *n) {
+    if (n->kind == NODE_PROGRAM || n->kind == NODE_MODULE) {
+        for (int i = 0; i < n->child_count; i++) prepass_structs(c, n->children[i]);
+        return;
+    }
+    if (n->kind != NODE_TYPE_DECL || n->child_count < 1) return;
+    char tb[128]; tok_cp(c->src, n->children[0], tb, sizeof tb);
+    /* Count fields: they may be in a NODE_STMT_LIST child */
+    int fc = 0;
+    for (int i = 1; i < n->child_count; i++) {
+        const Node *ch = n->children[i];
+        if (!ch) continue;
+        if (ch->kind == NODE_FIELD) fc++;
+        else if (ch->kind == NODE_STMT_LIST)
+            for (int j = 0; j < ch->child_count; j++)
+                if (ch->children[j] && ch->children[j]->kind == NODE_FIELD) fc++;
+    }
+    register_struct(c, tb, fc, n, c->src);
 }
 
 static void prepass_funcs(Ctx *c, const Node *n) {
@@ -37,23 +167,32 @@ static void prepass_funcs(Ctx *c, const Node *n) {
     if (n->kind != NODE_FUNC_DECL) return;
     tok_cp(c->src, n->children[0], tb, sizeof tb);
     const char *ret = "void";
+    char ret_tn[128] = "";
     for (int i = 1; i < n->child_count; i++) {
         if (n->children[i]->kind == NODE_RETURN_SPEC) {
             const Node *rs = n->children[i];
             if (rs->child_count > 0) {
-                if (rs->children[0]->kind == NODE_PTR_TYPE) { ret = "ptr"; }
-                else {
-                    char rn[64]; tok_cp(c->src, rs->children[0], rn, sizeof rn);
-                    if      (!strcmp(rn, "bool")) ret = "i1";
-                    else if (!strcmp(rn, "f64"))  ret = "double";
-                    else if (!strcmp(rn, "str"))  ret = "ptr";
-                    else if (!strcmp(rn, "void")) ret = "void";
-                    else                          ret = "i64";
-                }
+                ret = resolve_llvm_type(c, rs->children[0]);
+                tok_cp(c->src, rs->children[0], ret_tn, sizeof ret_tn);
             }
         }
     }
-    register_fn(c, tb, ret);
+    FnSig *sig = register_fn(c, tb, ret);
+    if (sig) {
+        memcpy(sig->ret_type_name, ret_tn, sizeof sig->ret_type_name);
+        for (int i = 1; i < n->child_count && sig->param_count < NODE_MAX_CHILDREN; i++) {
+            if (n->children[i]->kind != NODE_PARAM) continue;
+            const char *pty = "i64";
+            if (n->children[i]->child_count > 1 && n->children[i]->children[1]) {
+                pty = resolve_llvm_type(c, n->children[i]->children[1]);
+                tok_cp(c->src, n->children[i]->children[1],
+                       sig->param_type_names[sig->param_count], 128);
+            } else {
+                sig->param_type_names[sig->param_count][0] = '\0';
+            }
+            sig->param_tys[sig->param_count++] = pty;
+        }
+    }
 }
 
 static int emit_str_global(Ctx *c, const char *raw, int rlen)
@@ -81,6 +220,23 @@ static int emit_str_global(Ctx *c, const char *raw, int rlen)
 
 static int emit_expr(Ctx *c, const Node *n);
 static void emit_stmt(Ctx *c, const Node *n);
+
+/* Resolve the struct type name from a NODE_FIELD_EXPR's base expression.
+ * Walks through identifiers to find the struct type.  Returns NULL if unknown. */
+static const StructInfo *resolve_base_struct(Ctx *c, const Node *base) {
+    /* For a NODE_STRUCT_LIT, the type name is in its token */
+    if (base->kind == NODE_STRUCT_LIT) {
+        char tn[128]; tok_cp(c->src, base, tn, sizeof tn);
+        return lookup_struct(c, tn);
+    }
+    /* For a NODE_IDENT, check if it's a ptr-local with a known struct type */
+    if (base->kind == NODE_IDENT) {
+        char nb[128]; tok_cp(c->src, base, nb, sizeof nb);
+        const char *stype = ptr_local_struct_type(c, nb);
+        if (stype) return lookup_struct(c, stype);
+    }
+    return NULL;
+}
 
 static int emit_expr(Ctx *c, const Node *n)
 {
@@ -112,7 +268,10 @@ static int emit_expr(Ctx *c, const Node *n)
     case NODE_IDENT:
         tok_cp(c->src, n, tb, sizeof tb);
         t = next_tmp(c);
-        fprintf(c->out, "  %%t%d = load i64, ptr %%%s\n", t, tb);
+        if (is_ptr_local(c, tb))
+            fprintf(c->out, "  %%t%d = load ptr, ptr %%%s\n", t, tb);
+        else
+            fprintf(c->out, "  %%t%d = load i64, ptr %%%s\n", t, tb);
         return t;
     case NODE_BINARY_EXPR: {
         int lhs=emit_expr(c,n->children[0]), rhs=emit_expr(c,n->children[1]);
@@ -162,12 +321,14 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         int args[NODE_MAX_CHILDREN], na = n->child_count - 1;
         for (int i = 0; i < na; i++) args[i] = emit_expr(c, n->children[i+1]);
-        const char *callee_ret = lookup_ret(c, tb);
+        const FnSig *callee = lookup_fn(c, tb);
+        const char *callee_ret = callee ? callee->ret : "i64";
         if (!strcmp(callee_ret, "void")) {
             fprintf(c->out, "  call void @%s(", tb);
             for (int i = 0; i < na; i++) {
                 if (i) fputc(',', c->out);
-                fprintf(c->out, " i64 %%t%d", args[i]);
+                const char *aty = (callee && i < callee->param_count) ? callee->param_tys[i] : "i64";
+                fprintf(c->out, " %s %%t%d", aty, args[i]);
             }
             fputs(")\n", c->out);
             t = next_tmp(c);
@@ -178,7 +339,8 @@ static int emit_expr(Ctx *c, const Node *n)
         fprintf(c->out, "  %%t%d = call %s @%s(", t, callee_ret, tb);
         for (int i = 0; i < na; i++) {
             if (i) fputc(',', c->out);
-            fprintf(c->out, " i64 %%t%d", args[i]);
+            const char *aty = (callee && i < callee->param_count) ? callee->param_tys[i] : "i64";
+            fprintf(c->out, " %s %%t%d", aty, args[i]);
         }
         fputs(")\n", c->out);
         return t;
@@ -204,10 +366,18 @@ static int emit_expr(Ctx *c, const Node *n)
         return t;
     }
     case NODE_FIELD_EXPR: {
+        /* Determine the struct type from the base expression so we can
+         * compute the correct field index for the GEP. */
         char fn[128]; tok_cp(c->src, n->children[1], fn, sizeof fn);
         int base = emit_expr(c, n->children[0]);
+        /* Try to find the struct info for the base.  For identifiers we
+         * do not yet track their type, so fall back to looking at the
+         * node's struct literal if present, or use index 0 by default. */
+        int fidx = 0;
+        const StructInfo *si = resolve_base_struct(c, n->children[0]);
+        if (si) fidx = struct_field_index(si, fn);
         t2 = next_tmp(c); t = next_tmp(c);
-        fprintf(c->out, "  %%t%d = getelementptr i64, ptr %%t%d, i32 0 ; .%s\n", t2, base, fn);
+        fprintf(c->out, "  %%t%d = getelementptr i64, ptr %%t%d, i32 %d ; .%s\n", t2, base, fidx, fn);
         fprintf(c->out, "  %%t%d = load i64, ptr %%t%d\n", t, t2);
         return t;
     }
@@ -220,13 +390,29 @@ static int emit_expr(Ctx *c, const Node *n)
         return t;
     }
     case NODE_STRUCT_LIT: {
+        /* Look up the struct to get field count and field names for
+         * correct allocation and field-to-index mapping. */
+        char sn[128]; tok_cp(c->src, n, sn, sizeof sn);
+        const StructInfo *si = lookup_struct(c, sn);
+        int nfields = si ? si->field_count : (n->child_count > 0 ? n->child_count : 1);
         t = next_tmp(c);
-        fprintf(c->out, "  %%t%d = alloca i64 ; struct_lit\n", t);
+        fprintf(c->out, "  %%t%d = alloca i64, i32 %d ; struct_lit %s\n", t, nfields, sn);
         for (int i = 0; i < n->child_count; i++) {
             const Node *fi = n->children[i];
-            if (fi->child_count >= 2) {
-                t3 = emit_expr(c, fi->children[1]);
-                fprintf(c->out, "  store i64 %%t%d, ptr %%t%d ; field %d\n", t3, t, i);
+            if (!fi || fi->kind != NODE_FIELD_INIT) continue;
+            /* Determine field index: match the field name from the init
+             * against the struct declaration's field order. */
+            int fidx = i; /* default: positional */
+            if (si && fi->tok_len > 0) {
+                char fname[128]; tok_cp(c->src, fi, fname, sizeof fname);
+                fidx = struct_field_index(si, fname);
+            }
+            if (fi->child_count >= 1) {
+                t3 = emit_expr(c, fi->children[0]);
+                t2 = next_tmp(c);
+                fprintf(c->out, "  %%t%d = getelementptr i64, ptr %%t%d, i32 %d ; .%s\n",
+                        t2, t, fidx, si ? si->field_names[fidx] : "?");
+                fprintf(c->out, "  store i64 %%t%d, ptr %%t%d\n", t3, t2);
             }
         }
         return t;
@@ -266,6 +452,53 @@ static int emit_expr(Ctx *c, const Node *n)
     }
 }
 
+/* Return the struct type name of an expression, or NULL if not a struct. */
+static const char *expr_struct_type(Ctx *c, const Node *n) {
+    if (!n) return NULL;
+    if (n->kind == NODE_STRUCT_LIT) {
+        /* For struct literals, the type name is in the token */
+        static char sn[128];
+        tok_cp(c->src, n, sn, sizeof sn);
+        if (lookup_struct(c, sn)) return sn;
+        return NULL;
+    }
+    if (n->kind == NODE_IDENT) {
+        char nb[128]; tok_cp(c->src, n, nb, sizeof nb);
+        return ptr_local_struct_type(c, nb);
+    }
+    if (n->kind == NODE_CALL_EXPR && n->child_count >= 1) {
+        char fn[128]; tok_cp(c->src, n->children[0], fn, sizeof fn);
+        const FnSig *sig = lookup_fn(c, fn);
+        if (sig && sig->ret_type_name[0] && lookup_struct(c, sig->ret_type_name))
+            return sig->ret_type_name;
+        return NULL;
+    }
+    return NULL;
+}
+
+/* Return 1 if the expression node will produce a ptr-typed LLVM value. */
+static int expr_is_ptr(Ctx *c, const Node *n) {
+    if (!n) return 0;
+    switch (n->kind) {
+    case NODE_STRUCT_LIT:
+    case NODE_ARRAY_LIT:
+    case NODE_MAP_LIT:
+        return 1;
+    case NODE_IDENT: {
+        char nb[128]; tok_cp(c->src, n, nb, sizeof nb);
+        return is_ptr_local(c, nb);
+    }
+    case NODE_CALL_EXPR: {
+        if (n->child_count < 1) return 0;
+        char fn[128]; tok_cp(c->src, n->children[0], fn, sizeof fn);
+        const FnSig *sig = lookup_fn(c, fn);
+        return sig && !strcmp(sig->ret, "ptr");
+    }
+    default:
+        return 0;
+    }
+}
+
 /* ── Statement emission ────────────────────────────────────────────── */
 
 static void emit_stmt(Ctx *c, const Node *n)
@@ -275,21 +508,36 @@ static void emit_stmt(Ctx *c, const Node *n)
     case NODE_BIND_STMT:
     case NODE_MUT_BIND_STMT:
         tok_cp(c->src, n->children[0], tb, sizeof tb);
-        fprintf(c->out, "  %%%s = alloca i64\n", tb);
-        if (n->child_count >= 2) {
+        if (n->child_count >= 2 && expr_is_ptr(c, n->children[1])) {
+            const char *stype = expr_struct_type(c, n->children[1]);
+            mark_ptr_with_type(c, tb, stype);
+            fprintf(c->out, "  %%%s = alloca ptr\n", tb);
             int v = emit_expr(c, n->children[1]);
-            fprintf(c->out, "  store i64 %%t%d, ptr %%%s\n", v, tb);
+            fprintf(c->out, "  store ptr %%t%d, ptr %%%s\n", v, tb);
+        } else {
+            fprintf(c->out, "  %%%s = alloca i64\n", tb);
+            if (n->child_count >= 2) {
+                int v = emit_expr(c, n->children[1]);
+                fprintf(c->out, "  store i64 %%t%d, ptr %%%s\n", v, tb);
+            }
         }
         break;
     case NODE_ASSIGN_STMT:
         tok_cp(c->src, n->children[0], tb, sizeof tb);
-        { int v = emit_expr(c, n->children[1]);
-          fprintf(c->out, "  store i64 %%t%d, ptr %%%s\n", v, tb); }
+        if (is_ptr_local(c, tb)) {
+            int v = emit_expr(c, n->children[1]);
+            fprintf(c->out, "  store ptr %%t%d, ptr %%%s\n", v, tb);
+        } else {
+            int v = emit_expr(c, n->children[1]);
+            fprintf(c->out, "  store i64 %%t%d, ptr %%%s\n", v, tb);
+        }
         break;
     case NODE_RETURN_STMT:
         if (n->child_count > 0) {
             int v = emit_expr(c, n->children[0]);
-            fprintf(c->out, "  ret i64 %%t%d\n", v);
+            /* Use the function's return type for the ret instruction */
+            const char *rt = c->cur_fn_ret ? c->cur_fn_ret : "i64";
+            fprintf(c->out, "  ret %s %%t%d\n", rt, v);
         } else {
             fputs("  ret void\n", c->out);
         }
@@ -426,18 +674,8 @@ static void emit_toplevel(Ctx *c, const Node *n)
             if (n->children[i]->kind == NODE_STMT_LIST)  body_i = i;
             if (n->children[i]->kind == NODE_RETURN_SPEC) {
                 const Node *rs = n->children[i];
-                if (rs->child_count > 0) {
-                    if (rs->children[0]->kind == NODE_PTR_TYPE) {
-                        ret = "ptr";
-                    } else {
-                        char rn[64]; tok_cp(c->src, rs->children[0], rn, sizeof rn);
-                        if      (!strcmp(rn, "bool")) ret = "i1";
-                        else if (!strcmp(rn, "f64"))  ret = "double";
-                        else if (!strcmp(rn, "str"))  ret = "ptr";
-                        else if (!strcmp(rn, "void")) ret = "void";
-                        else                          ret = "i64";
-                    }
-                }
+                if (rs->child_count > 0)
+                    ret = resolve_llvm_type(c, rs->children[0]);
             }
         }
         /* Map parameter types to LLVM types */
@@ -448,32 +686,25 @@ static void emit_toplevel(Ctx *c, const Node *n)
             for (int i = 1; i < n->child_count; i++) {
                 if (n->children[i]->kind != NODE_PARAM) continue;
                 if (!first) fputs(", ", c->out);
-                /* Determine LLVM type for param */
                 const char *pty = "i64";
-                if (n->children[i]->child_count > 1 && n->children[i]->children[1]) {
-                    const Node *pt = n->children[i]->children[1];
-                    if (pt->kind == NODE_PTR_TYPE) {
-                        pty = "ptr";
-                    } else {
-                        char ptn[64]; tok_cp(c->src, pt, ptn, sizeof ptn);
-                        if      (!strcmp(ptn, "bool")) pty = "i1";
-                        else if (!strcmp(ptn, "f64"))  pty = "double";
-                        else if (!strcmp(ptn, "str"))  pty = "ptr";
-                    }
-                }
+                if (n->children[i]->child_count > 1 && n->children[i]->children[1])
+                    pty = resolve_llvm_type(c, n->children[i]->children[1]);
                 fputs(pty, c->out);
                 first = 0;
             }
             fputs(")\n", c->out);
             break;
         }
+        c->ptr_count = 0; /* reset ptr-local tracking for each function */
+        c->cur_fn_ret = ret;
         fprintf(c->out, "\ndefine %s @%s(", ret, tb);
         int first = 1;
         for (int i = 1; i < n->child_count; i++) {
             if (n->children[i]->kind != NODE_PARAM) continue;
             char pn[128]; tok_cp(c->src, n->children[i]->children[0], pn, sizeof pn);
             if (!first) fputs(", ", c->out);
-            fprintf(c->out, "i64 %%%s.arg", pn);
+            int pptr = (n->children[i]->child_count > 1 && is_ptr_type_node(c, n->children[i]->children[1]));
+            fprintf(c->out, "%s %%%s.arg", pptr ? "ptr" : "i64", pn);
             first = 0;
         }
         fputs(") {\nentry:\n", c->out);
@@ -481,15 +712,27 @@ static void emit_toplevel(Ctx *c, const Node *n)
         for (int i = 1; i < n->child_count; i++) {
             if (n->children[i]->kind != NODE_PARAM) continue;
             char pn[128]; tok_cp(c->src, n->children[i]->children[0], pn, sizeof pn);
-            fprintf(c->out, "  %%%s = alloca i64\n  store i64 %%%s.arg, ptr %%%s\n", pn, pn, pn);
+            int pptr = (n->children[i]->child_count > 1 && is_ptr_type_node(c, n->children[i]->children[1]));
+            if (pptr) {
+                /* Extract the type name for struct tracking */
+                char pty_name[128] = "";
+                if (n->children[i]->child_count > 1 && n->children[i]->children[1])
+                    tok_cp(c->src, n->children[i]->children[1], pty_name, sizeof pty_name);
+                const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
+                mark_ptr_with_type(c, pn, stype);
+                fprintf(c->out, "  %%%s = alloca ptr\n  store ptr %%%s.arg, ptr %%%s\n", pn, pn, pn);
+            } else {
+                fprintf(c->out, "  %%%s = alloca i64\n  store i64 %%%s.arg, ptr %%%s\n", pn, pn, pn);
+            }
         }
         c->term = 0;
         if (body_i >= 0) emit_stmt(c, n->children[body_i]);
         if (!c->term) {
             if (!strcmp(ret, "void")) fputs("  ret void\n", c->out);
-            else fputs("  ret i64 0 ; implicit return\n", c->out);
+            else fprintf(c->out, "  ret %s 0 ; implicit return\n", ret);
         }
         fputs("}\n", c->out);
+        c->cur_fn_ret = NULL;
         break;
     }
     case NODE_IMPORT: break;  /* nothing to emit */
@@ -518,6 +761,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("\ndeclare i32 @printf(ptr, ...)\ndeclare i32 @puts(ptr)\n", f);
     fputs("declare ptr @tk_spawn(ptr)\ndeclare i64 @tk_await(ptr)\n\n", f);
 
+    prepass_structs(&ctx, ast);
     prepass_funcs(&ctx, ast);
     emit_toplevel(&ctx, ast);
 
