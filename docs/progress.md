@@ -308,6 +308,106 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 ---
 
+## Phase 2 — Gate 2 Preparation
+
+**Gate 2 criterion:** Extended features + 7B model beats baseline
+**Source:** read-only-research/Open source curricula for coding LLMs.md
+
+### Epic 9.1 — Training Data Expansion
+
+**Goal:** Scale instruction-tuning dataset from ~47K to ≥200K high-quality instruction–solution pairs.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 9.1.1 | Reverse OSS-Instruct: corpus → problem descriptions | backlog | — | **P0** Pipeline: existing .toke → NL problem descriptions via teacher model (Qwen 32B). JSONL output with problem_description, toke_solution, test_cases, difficulty_tier. ≥80% validation rate. Ref: OSS-Instruct / Magicoder |
+| 9.1.2 | Parallel corpus: Python ↔ toke translation pairs | backlog | — | **P0** ≥2,000 semantically equivalent Python/toke pairs. Compiler-verified + functionally equivalent. Include 1,000 benchmark tasks + APPS/MBPP translations. Token count ratio per pair. Ref: CodeXGLUE, APPS, MBPP |
+| 9.1.3 | Evol-Instruct complexity escalation for toke | backlog | — | **P1** 5 toke-specific evolution dimensions (type constraints, error propagation, multi-module, algorithmic complexity, mutable state). 3-5 evolved variants per seed. ≥50K new pairs. Ref: WizardCoder, Evol-Instruct-Code-80K |
+| 9.1.4 | Execution feedback annotation | backlog | — | **P1** Annotate samples with compiler diagnostics + execution results. Generate broken variants (1-3 mutations/program). ≥30K repair pairs (broken_source, diagnostics) → fixed_source. RLEF-compatible. Ref: OpenCodeInstruct |
+
+### Epic 9.2 — Curriculum Learning
+
+**Goal:** Structure training so the model learns toke incrementally from basic syntax to full-featured programs.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 9.2.1 | Define toke skill ladder | backlog | — | **P0** ≥5 stages: (1) expressions/bindings, (2) functions/types, (3) control flow, (4) modules/imports/sum types, (5) error handling/stdlib. Tag all training samples. Define curriculum schedule. Ref: Curriculum Learning for Small Code LMs |
+| 9.2.2 | TAROT-style test-driven curriculum with compiler feedback | backlog | — | **P1** Adaptive training loop: evaluate diagnostic subset (100 tasks) per checkpoint, aggregate error codes → weakness profile, reweight data mix. ≥3 iterations. Depends on 9.2.1. Ref: TAROT (2026) |
+| 9.2.3 | Teacher-student evaluation loop | backlog | — | **P2** Teacher generates 500 problems/iteration, student generates toke solutions, compiler verifies, teacher targets weak areas. ≥2 iterations before Gate 2. Depends on 9.2.1. Ref: NVIDIA data flywheel, SelfCodeAlign |
+
+### Epic 9.3 — Cross-Language Transfer and Low-Resource Techniques
+
+**Goal:** Transfer base model's existing code knowledge into toke generation.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 9.3.1 | Specification-grounded prompting | backlog | — | **P0** Condensed spec reference (≤4K tokens): character set, keywords, type sigils, operators, error syntax. Include in training + inference prompts. A/B eval: Pass@1 with/without spec context. Ref: Bridging the Knowledge Void (2026) |
+| 9.3.2 | Few-shot exemplar bank | backlog | — | **P0** 20-30 canonical toke examples covering every language feature. Line-by-line annotations. Stored in toke-corpus/exemplars/. Test few-shot vs zero-shot. Ref: SWE-AGI / MoonBit |
+| 9.3.3 | Python-to-toke translation fine-tuning stage | backlog | — | **P1** Translation fine-tuning on parallel corpus (9.1.2). Format: "Translate Python to toke". Runs after base instruction-tuning. Pass@1 ≥70% on translation tasks. Ref: UniCoder, CodeXGLUE |
+
+### Epic 9.4 — Token Efficiency Measurement and Comparison
+
+**Goal:** Rigorously quantify toke's token efficiency against baselines and existing reduction techniques.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 9.4.1 | ShortCoder comparison harness | backlog | — | **P0** Head-to-head: toke vs ShortCoder-optimised Python on 200 HumanEval/MBPP problems. 4 token counts per problem (Python, ShortCoder Python, toke cl100k, toke BPE). Confidence intervals. Ref: ShortCoder (2026) |
+| 9.4.2 | Multi-tokenizer token economy analysis | backlog | — | **P1** Token counts across ≥4 tokenizers (cl100k, Qwen, Llama, toke BPE) on all 1,000 benchmark tasks. Flag tasks where toke is token-longer. Extends 2.9.3 eval work. |
+| 9.4.3 | Cost and latency benchmarking | backlog | — | **P2** Wall-clock generation time + estimated API cost: Python-mode vs toke-mode on 100 tasks. Time-per-correct-solution. Break-even analysis on Pass@1. |
+
+### Epic 9.5 — Reinforcement Learning from Compiler Feedback
+
+**Goal:** Use toke's structured JSON diagnostics as a reward signal for RL-based training.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 9.5.1 | Compiler-as-verifier reward model | backlog | — | **P1** Reward: +1.0 compile+tests pass, +0.5 compile+partial, 0.0 fail. Consumes tkc --check JSON. GRPO or equivalent. ≥1 RL epoch. Measure Pass@1 improvement vs SFT-only. Ref: RLEF (2024), GRPO |
+| 9.5.2 | Error-code-aware reward shaping | backlog | — | **P2** Severity tiers: lex > parse > type > semantic errors. Monotonic partial credit. A/B: flat vs shaped reward on 500 tasks. Close with negative results if no improvement. |
+
+### Epic 9.6 — Evaluation and Benchmarking Infrastructure
+
+**Goal:** Expand evaluation harness for Gate 2 and comparison with published baselines.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 9.6.1 | EvalPlus-compatible harness | backlog | — | **P0** Extend toke-eval (6.2.1) to output EvalPlus format. Pass@k unbiased estimator. Greedy + temperature sampling (T=0.2, 0.8). Sandboxed execution (Docker). Ref: EvalPlus |
+| 9.6.2 | Expanded benchmark: APPS and MBPP adaptation | backlog | — | **P1** 200 APPS + 200 MBPP problems translated to toke. Reference solutions + ≥3 test cases each. Stored in toke-benchmark, separated from training data. Ref: APPS, MBPP |
+| 9.6.3 | Automated regression testing on training checkpoints | backlog | — | **P1** CI pipeline: run benchmark on each checkpoint. Track Pass@1, token count, compile rate, error distribution. Alert on >5% Pass@1 drop. Training curve visualisation. |
+
+### Epic 9.7 — Data Efficiency
+
+**Goal:** Maximise model quality per training sample given small corpus.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 9.7.1 | IFD-based data selection | backlog | — | **P1** IFD scores on all training samples. K-Means clustering + top-m% selection. Compare: full vs 60% vs 40% vs 20%. Optimal selection rate → use for subsequent training. Ref: Lv et al. (2025) |
+| 9.7.2 | Dynamic packing for toke training | backlog | — | **P1** Sort by token length, concatenate to fill context window. Padding ratio <5%. Measure throughput improvement. No Pass@1 degradation. |
+
+### Epic 9.8 — Tokenizer Optimisation
+
+**Goal:** Fully optimise BPE tokenizer for toke's 56-character set.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 9.8.1 | Retrain BPE on production corpus | backlog | — | **P0** Retrain SentencePiece on full 47K corpus. Benchmark 1K/2K/4K/8K vocab sizes. Char-to-token ratio ≤1.8. Common patterns (m=, f=, i=, t=, let, <, :$) as single tokens. Round-trip fidelity. Extends 2.9.x pipeline. |
+| 9.8.2 | Tokenizer alignment with base model vocabulary | backlog | — | **P1** Overlap analysis: toke BPE vs Qwen tokenizer. If >30% novel tokens → prototype vocab extension. If ≤30% → document feasibility of Qwen tokenizer directly. Recommendation with data. |
+
+### Story Dependency Graph (Gate 2 Critical Path)
+
+```
+9.8.1 BPE retrain ──▶ 9.1.1 Reverse OSS-Instruct ──▶ 9.1.2 Parallel corpus ──▶ 9.2.1 Skill ladder
+                                                                                        │
+9.3.1 Spec-grounded prompting ─────────────────────────────────────────────────────────┤
+9.3.2 Few-shot exemplar bank ──────────────────────────────────────────────────────────┘
+                                                                                        │
+                                                                              QLoRA training
+                                                                                        │
+                                                                              9.6.1 EvalPlus ──▶ Gate 2
+```
+
+**Critical path:** 9.8.1 → 9.1.1 → 9.1.2 → 9.2.1 → 9.3.1 + 9.3.2 → QLoRA → 9.6.1 → Gate 2
+
+---
+
 ## Completed Stories
 
 | ID | Story | Completed | Branch |
@@ -423,6 +523,7 @@ All Phase 2 work runs locally (Mac Studio M4 Max). No cloud instances needed.
 
 | Compute | Stories |
 |---------|---------|
-| **local** | 6.1.1-6.1.3, 7.1.1-7.1.5 (on_hold), 7.1.9 (on_hold) |
+| **local** | 6.1.1-6.1.3, 7.1.1-7.1.5 (on_hold), 7.1.9 (on_hold), 9.1.x-9.8.x (Gate 2 prep) |
 | **cloud/HF** | 6.1.4 (HuggingFace Spaces demo) |
+| **cloud (API)** | 9.1.1, 9.1.3, 9.2.3 (teacher model inference) |
 | **no compute** | All EC2 instances can be suspended |
