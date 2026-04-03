@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "module": "std.i18n",
+  "exports": [
+    {"kind": "type", "name": "I18nBundle", "fields": [{"name": "data", "type": "str"}]},
+    {"kind": "type", "name": "I18nErr",    "fields": [
+      {"name": "NotFound", "type": "str"},
+      {"name": "Parse",    "type": "str"}
+    ]},
+    {"kind": "func", "name": "i18n.load",   "params": ["str", "str"],             "return": "I18nBundle!I18nErr"},
+    {"kind": "func", "name": "i18n.get",    "params": ["I18nBundle", "str"],       "return": "str"},
+    {"kind": "func", "name": "i18n.fmt",    "params": ["I18nBundle", "str", "str"],"return": "str"},
+    {"kind": "func", "name": "i18n.locale", "params": [],                          "return": "str"}
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "module": "std.toon",
+  "exports": [
+    {"kind": "type", "name": "Toon",    "fields": [{"name": "raw", "type": "str"}]},
+    {"kind": "type", "name": "ToonErr", "fields": [
+      {"name": "Parse",   "type": "str"},
+      {"name": "Type",    "type": "str"},
+      {"name": "Missing", "type": "str"}
+    ]},
+    {"kind": "func", "name": "toon.enc",     "params": ["str"],              "return": "str"},
+    {"kind": "func", "name": "toon.dec",     "params": ["str"],              "return": "Toon!ToonErr"},
+    {"kind": "func", "name": "toon.str",     "params": ["Toon", "str"],      "return": "str!ToonErr"},
+    {"kind": "func", "name": "toon.i64",     "params": ["Toon", "str"],      "return": "i64!ToonErr"},
+    {"kind": "func", "name": "toon.f64",     "params": ["Toon", "str"],      "return": "f64!ToonErr"},
+    {"kind": "func", "name": "toon.bool",    "params": ["Toon", "str"],      "return": "bool!ToonErr"},
+    {"kind": "func", "name": "toon.arr",     "params": ["Toon", "str"],      "return": "[Toon]!ToonErr"},
+    {"kind": "func", "name": "toon.from_json", "params": ["str"],            "return": "str"},
+    {"kind": "func", "name": "toon.to_json",   "params": ["str"],            "return": "str"}
+  ]
+}

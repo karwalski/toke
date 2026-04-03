@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "module": "std.yaml",
+  "exports": [
+    {"kind": "type", "name": "Yaml",    "fields": [{"name": "raw", "type": "str"}]},
+    {"kind": "type", "name": "YamlErr", "fields": [
+      {"name": "Parse",   "type": "str"},
+      {"name": "Type",    "type": "str"},
+      {"name": "Missing", "type": "str"}
+    ]},
+    {"kind": "func", "name": "yaml.enc",     "params": ["str"],              "return": "str"},
+    {"kind": "func", "name": "yaml.dec",     "params": ["str"],              "return": "Yaml!YamlErr"},
+    {"kind": "func", "name": "yaml.str",     "params": ["Yaml", "str"],      "return": "str!YamlErr"},
+    {"kind": "func", "name": "yaml.i64",     "params": ["Yaml", "str"],      "return": "i64!YamlErr"},
+    {"kind": "func", "name": "yaml.f64",     "params": ["Yaml", "str"],      "return": "f64!YamlErr"},
+    {"kind": "func", "name": "yaml.bool",    "params": ["Yaml", "str"],      "return": "bool!YamlErr"},
+    {"kind": "func", "name": "yaml.arr",     "params": ["Yaml", "str"],      "return": "[Yaml]!YamlErr"},
+    {"kind": "func", "name": "yaml.from_json", "params": ["str"],            "return": "str"},
+    {"kind": "func", "name": "yaml.to_json",   "params": ["str"],            "return": "str"}
+  ]
+}

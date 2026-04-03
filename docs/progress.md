@@ -1,8 +1,9 @@
 # docs/progress.md
 ## toke — Story Progress Tracker
 
-**Project phase:** Phase 1 — Falsification  
-**Active milestone:** M0  
+**Project phase:** Phase 2 — Language Extensions
+**Active milestone:** M3
+**Gate 1:** PASS (2026-04-03) — 12.5% token reduction, 63.7% Pass@1
 **Last updated:** see git log
 
 ---
@@ -102,8 +103,8 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 |----|-------|--------|--------|-------|
 | 1.6.1 | Held-out benchmark task set | done | feature/benchmark-held-out-tasks | [x] 500 tasks [x] 120 test inputs each [x] Gitignored [x] Generation script committed |
 | 1.6.2 | Token efficiency measurement | done | — | [x] 12.5% reduction (8K vocab) [x] 13.1% reduction (32K vocab) [x] eval_report.json [x] Gate 1 threshold met (>10%) |
-| 1.6.3 | Pass@1 measurement | in_progress | — | Harness ready with toke integration. Blocked on model training completion |
-| 1.6.4 | Gate 1 decision document | backlog | — | Depends on 1.6.3 |
+| 1.6.3 | Pass@1 measurement | done | — | [x] 1000-task benchmark (500 original + 500 expanded) [x] 923/1000 compiled (92.3%) [x] 588/923 Pass@1 (63.7%) [x] Gate 1 threshold met (>60%) [x] 7 codegen fixes applied (Epic 2.8) [x] Zero regressions |
+| 1.6.4 | Gate 1 decision document | done | — | [x] gate1-decision.md in toke-spec/docs [x] Full results, verdict, and next steps [x] Gate 1: PASS (2026-04-03) |
 
 ### Epic 1.10 — Phase 1 Integration and Conformance Review
 
@@ -134,7 +135,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 |----|-------|--------|--------|-------|
 | 3.7.1 | SBOM generation for compiler releases | done | feature/supply-chain-3.7 (tkc) | SPDX JSON via syft; published as release artifact |
 | 3.7.2 | Release binary signing | done | feature/supply-chain-3.7 (tkc) | cosign keyless; tamper test in CI; docs/security/release-signing.md |
-| 3.7.3 | Reproducible builds for the compiler | backlog | — | Depends on 3.1 complete |
+| 3.7.3 | Reproducible builds for the compiler | backlog | — | **[local]** Depends on 3.1 complete |
 | 3.7.4 | Model release safety evaluation | done | feature/supply-chain-3.7 (toke-models) | [x] LlamaGuard eval process doc [x] safety_eval.py (dry-run verified) [x] 50 adversarial templates (5 categories) [x] docs/security/model-safety-evals.md |
 
 ### Epic 3.8 — Standard Library Production Hardening
@@ -150,6 +151,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
 | 2.8.1 | Fix LLVM IR emission for end-to-end compilation | done | feature/codegen-2.8 (tkc) | [x] 5 defects fixed: param SSA naming, let-bind child index, call return types, match arm index, cast emission [x] Terminator tracking [x] prepass_funcs() [x] 5/5 e2e tests pass [x] 79/79 conformance |
+| 2.8.2 | Fix loop variable codegen (lp construct) | done | — | **[local]** Three bugs fixed: (1) NODE_LOOP_INIT had no emit_stmt handler — loop var never alloca'd/stored (2) loop step (i=i+1) never emitted before back-edge branch (3) break label used fragile `lbl-1` arithmetic — replaced with dedicated `break_lbl` field. [x] 90/90 conformance [x] 9/9 e2e [x] nested loops [x] nested break |
 
 ### Epic 2.9 — Tokenizer Pipeline Scaffolding
 
@@ -249,38 +251,49 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
 | 2.17.1 | Research review request document | done | — | [x] toke-spec/docs/research-review-request.md [x] 8 design questions for reviewers [x] Preliminary results (12.5% token reduction) [x] Placeholders for final tokenizer + Pass@1 results |
-| 2.17.2 | Update research review with final results | backlog | — | Fill PLACEHOLDER markers after tokenizer retraining + model training + Gate 1 benchmark |
+| 2.17.2 | Update research review with final results | done | 2026-04-03 | [x] All 6 PLACEHOLDER markers filled with Gate 1 results [x] Status updated to Post-Gate 1 PASS [x] Stdlib 11→14 [x] Benchmark 500→1000 [x] Appendix B+C filled [x] RFC updated with Gate 1 results [x] stdlib-signatures.md completed (14 modules) |
 
 ### Epic 6.1 — Publish to Hugging Face
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 6.1.1 | Create Hugging Face organisation and model card | backlog | — | Depends on model training complete (Epic 1.5/1.6) |
-| 6.1.2 | Upload model weights and tokenizer | backlog | — | Depends on 6.1.1 |
-| 6.1.3 | Publish benchmark results and evaluation dataset | backlog | — | Depends on 6.1.2, Gate 1 pass |
-| 6.1.4 | Inference API and demo space | backlog | — | Depends on 6.1.2 |
+| 6.1.1 | Create Hugging Face organisation and model card | backlog | — | **[local]** Depends on Gate 1 pass |
+| 6.1.2 | Upload model weights and tokenizer | backlog | — | **[local]** Upload adapter + tokenizer. Depends on 6.1.1 |
+| 6.1.3 | Publish benchmark results and evaluation dataset | backlog | — | **[local]** Depends on 6.1.2, Gate 1 pass |
+| 6.1.4 | Inference API and demo space | backlog | — | **[cloud/HF]** HuggingFace Spaces. Depends on 6.1.2 |
 
 ### Epic 6.2 — Repository Scaffolding
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 6.2.1 | Create toke-eval repository | backlog | — | No hard dependency; meaningful work requires model training |
-| 6.2.2 | Create toke-model repository scaffold | backlog | — | Exists locally but not on GitHub; meaningful work requires corpus completion |
+| 6.2.1 | Create toke-eval repository | backlog | — | **[local]** No hard dependency |
+| 6.2.2 | Create toke-model repository scaffold | backlog | — | **[local]** Exists locally, pushed to GitHub on docs/terminology-rename branch |
+
+### Epic 6.3 — Serialization Format Support (TOON / YAML / JSON Alternates)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 6.3.1 | Review research on JSON alternates for LLM pipelines | done | — | [x] Research reviewed [x] TOON as default, YAML/JSON secondary, extensible modules [x] Format selection recommendation documented in memory |
+| 6.3.2 | Implement TOON serialization module (std.toon) | done | — | [x] toon.tki interface [x] toon.h/toon.c C impl [x] parse/emit/field extraction [x] JSON↔TOON conversion [x] codegen mapping [x] 17 tests pass |
+| 6.3.3 | Extend std.json and add std.yaml modules | done | — | [x] yaml.tki interface [x] yaml.h/yaml.c C impl [x] flat mappings + sequences [x] JSON↔YAML conversion [x] codegen mapping [x] 26 tests pass |
+| 6.3.4 | Extensible format module interface | done | — | [x] Common .tki pattern: enc/dec/str/i64/f64/bool/arr + from_json/to_json [x] All 3 modules (json/toon/yaml) follow same interface [x] codegen resolve_stdlib_call extensible per module |
+| 6.3.5 | String externalisation and i18n placeholder support | done | — | [x] i18n.tki interface [x] i18n.h/i18n.c C impl [x] TOON/YAML/JSON bundle loading with locale fallback [x] {placeholder} substitution [x] codegen mapping [x] 15 tests pass |
+| 6.3.6 | Document serialization strategy across website, spec, and repos | done | — | [x] Website stdlib pages: toon.md, yaml.md, i18n.md [x] Data Formats reference page with format hierarchy and i18n [x] ADR-0003 in toke-spec (serialization strategy + i18n) [x] tkc README stdlib table with 14 modules [x] Website builds clean (44 pages) |
 
 ### Epic 7.1 — Website Code Example Correctness
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 7.1.1 | Rewrite website examples to remove underscores from identifiers | backlog | — | 28+ files affected; snake_case → camelCase |
-| 7.1.2 | Fix match arm return syntax in website examples | backlog | — | `<` goes before match expr, not inside arms |
-| 7.1.3 | Fix error variant construction and propagation syntax | backlog | — | `Type.Variant(payload)` and `!ErrType.Variant` syntax |
-| 7.1.4 | Fix typed empty collection literals in website examples | backlog | — | `[Type][]` → correct syntax |
-| 7.1.5 | Fix loop init and spawn/await syntax in website examples | backlog | — | Missing `let` in lp init; spawn/await call syntax |
-| 7.1.6 | Implement array indexing `arr[i]` in compiler | backlog | — | Core language feature; 12+ website examples depend on it |
-| 7.1.7 | Implement void return type in compiler | backlog | — | 8+ website examples use `:void` |
-| 7.1.8 | Fix struct literal with field access expression crash | backlog | — | Compiler crash (silent exit 1) on `Pt{x:a.x+b.x}` |
-| 7.1.9 | Website code example conformance test suite | backlog | — | Automated CI test; depends on 7.1.1–7.1.8 |
-| 7.2.1 | Review `.tk` file extension decision | backlog | — | Audit conflicts (Tcl/Tk, Linguist), evaluate alternatives, record decision in spec |
+| 7.1.1 | Rewrite website examples to remove underscores from identifiers | on_hold | — | **[local]** 28+ files affected; parked until spec locked |
+| 7.1.2 | Fix match arm return syntax in website examples | on_hold | — | **[local]** Parked until spec locked |
+| 7.1.3 | Fix error variant construction and propagation syntax | on_hold | — | **[local]** Parked until spec locked |
+| 7.1.4 | Fix typed empty collection literals in website examples | on_hold | — | **[local]** Parked until spec locked |
+| 7.1.5 | Fix loop init and spawn/await syntax in website examples | on_hold | — | **[local]** Parked until spec locked |
+| 7.1.6 | Implement array indexing `arr[i]` in compiler | done | — | [x] PtrLocal tracking [x] NODE_IDENT for ptr-typed locals [x] Function param/call codegen for array types [x] e2e_array_index test |
+| 7.1.7 | Implement void return type in compiler | done | — | [x] Void return verification [x] e2e_void test |
+| 7.1.8 | Fix struct literal with field access expression crash | done | — | [x] Struct type registry [x] prepass_structs [x] Multi-field GEP codegen [x] Field access codegen [x] e2e_struct_field tests |
+| 7.1.9 | Website code example conformance test suite | on_hold | — | **[local]** Automated CI test; depends on 7.1.1–7.1.5; parked until spec locked |
+| 7.2.1 | Review `.tk` file extension decision | done | — | [x] ADR-0002 in toke-spec [x] Linguist conflict documented [x] .gitattributes mitigation [x] Decision: keep .tk |
 | 7.3.1 | Audit empty stub files across all repos | done | — | 12 empty files found, 3 stories with false done status, 1 missing from tracking |
 | 8.1.1 | Provision cloud instance and deploy toolchain | done | — | Setup/deploy/verify scripts in infra/ |
 | 8.1.2 | Multi-provider API client layer | done | — | 4 providers + 29 tests |
@@ -378,9 +391,34 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 2.15.3 | MLX adapter merging | 2026-04-01 | — (toke-models) |
 | 2.16.1 | Toke solution loader and model inference | 2026-04-01 | — (toke-benchmark) |
 | 2.17.1 | Research review request document | 2026-04-01 | — (toke-spec) |
+| 7.1.6 | Implement array indexing in compiler | 2026-04-01 | — (tkc) |
+| 7.1.7 | Implement void return type in compiler | 2026-04-01 | — (tkc) |
+| 7.1.8 | Fix struct literal crash | 2026-04-01 | — (tkc) |
+| 7.2.1 | Review .tk file extension decision | 2026-04-01 | — (toke-spec) |
+| 1.6.3 | Pass@1 measurement | 2026-04-03 | — (toke-benchmark) |
+| 1.6.4 | Gate 1 decision document | 2026-04-03 | — (toke-spec) |
+| 2.8.1 | LLVM IR backend codegen fixes | 2026-04-03 | — (tkc) |
+| 2.8.2 | Runtime library extensions | 2026-04-03 | — (tkc) |
+| 6.3.1 | Research review: JSON alternates | 2026-04-03 | — |
+| 6.3.2 | Implement std.toon module | 2026-04-03 | — (tkc) |
+| 6.3.3 | Add std.yaml module | 2026-04-03 | — (tkc) |
+| 6.3.4 | Extensible format module interface | 2026-04-03 | — (tkc) |
+| 6.3.5 | String externalisation and i18n | 2026-04-03 | — (tkc) |
+| 6.3.6 | Document serialization strategy | 2026-04-03 | — (toke-spec, toke-web, tkc) |
+| 2.17.2 | Update research review with final results | 2026-04-03 | — (toke-spec) |
 
 ---
 
 ## Active Blockers
 
-- Tokenizer retraining on Phase 2 corpus (22% complete). Blocks model retraining and Gate 1 Pass@1 evaluation.
+None. Gate 1 passed 2026-04-03.
+
+## Compute Summary
+
+All Phase 2 work runs locally (Mac Studio M4 Max). No cloud instances needed.
+
+| Compute | Stories |
+|---------|---------|
+| **local** | 6.1.1-6.1.3, 6.2.1-6.2.2, 7.1.1-7.1.5 (on_hold), 7.1.9 (on_hold), 3.7.3 |
+| **cloud/HF** | 6.1.4 (HuggingFace Spaces demo) |
+| **no compute** | All EC2 instances can be suspended |

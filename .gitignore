@@ -21,6 +21,14 @@ cmake-build-*/
 # Test outputs
 test/output/
 test/*.out
+test/stdlib/test_toon
+test/stdlib/test_yaml
+test/stdlib/test_i18n
+**/*.dSYM/
+
+# Xcode / Instruments
+*.plist
+.claude/
 
 # macOS
 .DS_Store

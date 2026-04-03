@@ -1,5 +1,6 @@
 CC      = cc
-CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -g
+CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -g \
+          -DTKC_STDLIB_DIR='"$(CURDIR)/src/stdlib"'
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/main.c \
           src/stdlib/str.c
@@ -90,6 +91,21 @@ test-stdlib-log:
 	$(CC) $(CFLAGS) -o test/stdlib/test_log \
 	    test/stdlib/test_log.c src/stdlib/log.c src/stdlib/tk_time.c
 	./test/stdlib/test_log
+
+test-stdlib-toon:
+	$(CC) $(CFLAGS) -Isrc/stdlib -o test/stdlib/test_toon \
+	    test/stdlib/test_toon.c src/stdlib/toon.c
+	./test/stdlib/test_toon
+
+test-stdlib-yaml:
+	$(CC) $(CFLAGS) -Isrc/stdlib -o test/stdlib/test_yaml \
+	    test/stdlib/test_yaml.c src/stdlib/yaml.c
+	./test/stdlib/test_yaml
+
+test-stdlib-i18n:
+	$(CC) $(CFLAGS) -Isrc/stdlib -o test/stdlib/test_i18n \
+	    test/stdlib/test_i18n.c src/stdlib/i18n.c
+	./test/stdlib/test_i18n
 
 test-stdlib-coverage:
 	$(CC) $(CFLAGS) -Isrc/stdlib -o test/stdlib/test_stdlib_coverage \
