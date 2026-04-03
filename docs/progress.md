@@ -135,7 +135,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 |----|-------|--------|--------|-------|
 | 3.7.1 | SBOM generation for compiler releases | done | feature/supply-chain-3.7 (tkc) | SPDX JSON via syft; published as release artifact |
 | 3.7.2 | Release binary signing | done | feature/supply-chain-3.7 (tkc) | cosign keyless; tamper test in CI; docs/security/release-signing.md |
-| 3.7.3 | Reproducible builds for the compiler | backlog | — | **[local]** Depends on 3.1 complete |
+| 3.7.3 | Reproducible builds for the compiler | done | 2026-04-03 | [x] REPRO_FLAGS (frandom-seed, ffile-prefix-map) [x] SOURCE_DATE_EPOCH [x] make repro-check (all .o bit-identical) [x] docs/security/reproducible-builds.md [x] macOS LC_UUID variance documented |
 | 3.7.4 | Model release safety evaluation | done | feature/supply-chain-3.7 (toke-models) | [x] LlamaGuard eval process doc [x] safety_eval.py (dry-run verified) [x] 50 adversarial templates (5 categories) [x] docs/security/model-safety-evals.md |
 
 ### Epic 3.8 — Standard Library Production Hardening
@@ -205,7 +205,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
 | 4.6.1 | Third-party security audit of the compiler | done | feature/audit-4.6 (tkc) | [x] audit-scope.md (435 lines) [x] 4 scope areas [x] codebase map [x] TD items cross-referenced [x] accepted-risk register |
-| 4.6.2 | SOC 2 readiness assessment (conditional on hosted service) | backlog | — | Conditional: only if hosted service launches |
+| 4.6.2 | SOC 2 readiness assessment (conditional on hosted service) | done | 2026-04-03 | [x] Draft gap analysis against TSC criteria [x] 8 gaps identified (all deferred to hosted service) [x] docs/security/soc2-readiness.md [x] Strong security foundations confirmed |
 
 ### Epic 5.1 — Project Website (tokelang.dev)
 
@@ -266,8 +266,8 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 6.2.1 | Create toke-eval repository | backlog | — | **[local]** No hard dependency |
-| 6.2.2 | Create toke-model repository scaffold | backlog | — | **[local]** Exists locally, pushed to GitHub on docs/terminology-rename branch |
+| 6.2.1 | Create toke-eval repository | done | 2026-04-03 | [x] toke_eval package (pass_at_k, token_efficiency, report) [x] pyproject.toml [x] README with usage examples |
+| 6.2.2 | Create toke-model repository scaffold | done | 2026-04-03 | [x] Merged docs/terminology-rename to main [x] README updated for Gate 1 [x] Empty eval stubs removed (moved to toke-eval) |
 
 ### Epic 6.3 — Serialization Format Support (TOON / YAML / JSON Alternates)
 
@@ -406,6 +406,10 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 6.3.5 | String externalisation and i18n | 2026-04-03 | — (tkc) |
 | 6.3.6 | Document serialization strategy | 2026-04-03 | — (toke-spec, toke-web, tkc) |
 | 2.17.2 | Update research review with final results | 2026-04-03 | — (toke-spec) |
+| 6.2.1 | Create toke-eval repository | 2026-04-03 | — (toke-eval) |
+| 6.2.2 | Finalise toke-models repo scaffold | 2026-04-03 | — (toke-models) |
+| 3.7.3 | Reproducible builds for the compiler | 2026-04-03 | — (tkc) |
+| 4.6.2 | SOC 2 readiness assessment (draft) | 2026-04-03 | — (tkc) |
 
 ---
 
@@ -419,6 +423,6 @@ All Phase 2 work runs locally (Mac Studio M4 Max). No cloud instances needed.
 
 | Compute | Stories |
 |---------|---------|
-| **local** | 6.1.1-6.1.3, 6.2.1-6.2.2, 7.1.1-7.1.5 (on_hold), 7.1.9 (on_hold), 3.7.3 |
+| **local** | 6.1.1-6.1.3, 7.1.1-7.1.5 (on_hold), 7.1.9 (on_hold) |
 | **cloud/HF** | 6.1.4 (HuggingFace Spaces demo) |
 | **no compute** | All EC2 instances can be suspended |
