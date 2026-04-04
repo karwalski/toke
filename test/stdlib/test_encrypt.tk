@@ -1,0 +1,215 @@
+m=test_encrypt;
+i=enc:std.encrypt;
+i=cry:std.crypto;
+
+(* AES-256-GCM: keygen produces a 32-byte key *)
+f=test_keygen_len():bool{
+  let key=enc.aes256gcm_keygen();
+  let expected:u64=32;
+  (test.eq(key.len;expected));
+  <true
+};
+
+(* AES-256-GCM: noncegen produces a 12-byte nonce *)
+f=test_noncegen_len():bool{
+  let nonce=enc.aes256gcm_noncegen();
+  let expected:u64=12;
+  (test.eq(nonce.len;expected));
+  <true
+};
+
+(* AES-256-GCM: encrypt then decrypt round-trips the plaintext *)
+f=test_aes_roundtrip():bool{
+  let key=enc.aes256gcm_keygen();
+  let nonce=enc.aes256gcm_noncegen();
+  let plain=str.bytes("hello encrypt world");
+  let aad=str.bytes("v1");
+  let ct=enc.aes256gcm_encrypt(key;nonce;plain;aad);
+  (* ciphertext is plaintext.len + 16 bytes for the auth tag *)
+  let expected_ct_len:u64=plain.len+16;
+  (test.eq(ct.len;expected_ct_len));
+  let result=enc.aes256gcm_decrypt(key;nonce;ct;aad);
+  (test.eq(result.err;""));
+  (test.eq(result.ok.len;plain.len));
+  <true
+};
+
+(* AES-256-GCM: wrong key produces an auth error, not plaintext *)
+f=test_aes_wrong_key():bool{
+  let key=enc.aes256gcm_keygen();
+  let bad_key=enc.aes256gcm_keygen();
+  let nonce=enc.aes256gcm_noncegen();
+  let plain=str.bytes("secret data");
+  let ct=enc.aes256gcm_encrypt(key;nonce;plain;@());
+  let result=enc.aes256gcm_decrypt(bad_key;nonce;ct;@());
+  (* decryption must fail *)
+  <result.err!=""
+};
+
+(* AES-256-GCM: tampered ciphertext is rejected *)
+f=test_aes_tamper():bool{
+  let key=enc.aes256gcm_keygen();
+  let nonce=enc.aes256gcm_noncegen();
+  let plain=str.bytes("tamper test");
+  let ct=enc.aes256gcm_encrypt(key;nonce;plain;@());
+  (* flip one byte in the ciphertext body *)
+  let bad_ct=@(ct.slice(0;1);@(255);ct.slice(2;ct.len));
+  let result=enc.aes256gcm_decrypt(key;nonce;bad_ct;@());
+  <result.err!=""
+};
+
+(* X25519: keypair sizes are correct *)
+f=test_x25519_keypair_len():bool{
+  let kp=enc.x25519_keypair();
+  let expected:u64=32;
+  (test.eq(kp.pubkey.len;expected));
+  (test.eq(kp.privkey.len;expected));
+  <true
+};
+
+(* X25519: DH produces the same shared secret from both sides *)
+f=test_x25519_dh_symmetric():bool{
+  let alice=enc.x25519_keypair();
+  let bob=enc.x25519_keypair();
+  let shared_a=enc.x25519_dh(alice.privkey;bob.pubkey);
+  let shared_b=enc.x25519_dh(bob.privkey;alice.pubkey);
+  let expected:u64=32;
+  (test.eq(shared_a.len;expected));
+  <cry.constanteq(shared_a;shared_b)
+};
+
+(* X25519: DH with different peers produces different secrets *)
+f=test_x25519_dh_distinct():bool{
+  let alice=enc.x25519_keypair();
+  let bob=enc.x25519_keypair();
+  let carol=enc.x25519_keypair();
+  let s_ab=enc.x25519_dh(alice.privkey;bob.pubkey);
+  let s_ac=enc.x25519_dh(alice.privkey;carol.pubkey);
+  <(!cry.constanteq(s_ab;s_ac))
+};
+
+(* Ed25519: keypair sizes are correct *)
+f=test_ed25519_keypair_len():bool{
+  let kp=enc.ed25519_keypair();
+  let expected_pub:u64=32;
+  let expected_priv:u64=64;
+  (test.eq(kp.pubkey.len;expected_pub));
+  (test.eq(kp.privkey.len;expected_priv));
+  <true
+};
+
+(* Ed25519: sign produces a 64-byte signature *)
+f=test_ed25519_sign_len():bool{
+  let kp=enc.ed25519_keypair();
+  let msg=str.bytes("sign me");
+  let sig=enc.ed25519_sign(kp.privkey;msg);
+  let expected:u64=64;
+  (test.eq(sig.len;expected));
+  <true
+};
+
+(* Ed25519: valid signature verifies *)
+f=test_ed25519_verify_ok():bool{
+  let kp=enc.ed25519_keypair();
+  let msg=str.bytes("authenticate this message");
+  let sig=enc.ed25519_sign(kp.privkey;msg);
+  <enc.ed25519_verify(kp.pubkey;msg;sig)
+};
+
+(* Ed25519: tampered message fails verification *)
+f=test_ed25519_verify_tamper():bool{
+  let kp=enc.ed25519_keypair();
+  let msg=str.bytes("original message");
+  let sig=enc.ed25519_sign(kp.privkey;msg);
+  let bad_msg=str.bytes("tampered message");
+  <(!enc.ed25519_verify(kp.pubkey;bad_msg;sig))
+};
+
+(* Ed25519: wrong public key fails verification *)
+f=test_ed25519_verify_wrong_key():bool{
+  let kp=enc.ed25519_keypair();
+  let other=enc.ed25519_keypair();
+  let msg=str.bytes("message");
+  let sig=enc.ed25519_sign(kp.privkey;msg);
+  <(!enc.ed25519_verify(other.pubkey;msg;sig))
+};
+
+(* HKDF-SHA-256: output length matches requested len *)
+f=test_hkdf_len():bool{
+  let ikm=str.bytes("input key material");
+  let salt=str.bytes("salt");
+  let info=str.bytes("context");
+  let n:u64=32;
+  let out=enc.hkdf_sha256(ikm;salt;info;n);
+  (test.eq(out.len;n));
+  <true
+};
+
+(* HKDF-SHA-256: different info labels produce different outputs *)
+f=test_hkdf_info_separation():bool{
+  let ikm=str.bytes("shared-secret");
+  let salt=@();
+  let out_a=enc.hkdf_sha256(ikm;salt;str.bytes("use-a");32);
+  let out_b=enc.hkdf_sha256(ikm;salt;str.bytes("use-b");32);
+  <(!cry.constanteq(out_a;out_b))
+};
+
+(* HKDF-SHA-256: longer output length is honoured *)
+f=test_hkdf_long():bool{
+  let ikm=str.bytes("seed");
+  let out=enc.hkdf_sha256(ikm;@();@();64);
+  let expected:u64=64;
+  (test.eq(out.len;expected));
+  <true
+};
+
+(* TLS cert fingerprint: returns 32 bytes for a valid PEM cert placeholder *)
+f=test_tls_fingerprint_len():bool{
+  (* Minimal self-signed certificate PEM for interface testing only.
+     A real implementation would validate the DER structure. *)
+  let pem="-----BEGIN CERTIFICATE-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0000000000000000000\n-----END CERTIFICATE-----";
+  let fp=enc.tls_cert_fingerprint(pem);
+  let expected:u64=32;
+  (test.eq(fp.len;expected));
+  <true
+};
+
+(* End-to-end pattern: X25519 DH + HKDF + AES-256-GCM *)
+f=test_full_e2e():bool{
+  let alice=enc.x25519_keypair();
+  let bob=enc.x25519_keypair();
+  (* Alice derives a session key to Bob *)
+  let raw=enc.x25519_dh(alice.privkey;bob.pubkey);
+  let key=enc.hkdf_sha256(raw;@();str.bytes("session-key-v1");32);
+  let nonce=enc.aes256gcm_noncegen();
+  let plain=str.bytes("end to end secret");
+  let ct=enc.aes256gcm_encrypt(key;nonce;plain;@());
+  (* Bob derives the same session key and decrypts *)
+  let raw_b=enc.x25519_dh(bob.privkey;alice.pubkey);
+  let key_b=enc.hkdf_sha256(raw_b;@();str.bytes("session-key-v1");32);
+  let result=enc.aes256gcm_decrypt(key_b;nonce;ct;@());
+  (test.eq(result.err;""));
+  <cry.constanteq(result.ok;plain)
+};
+
+f=main():i64{
+  (test.ok(test_keygen_len()));
+  (test.ok(test_noncegen_len()));
+  (test.ok(test_aes_roundtrip()));
+  (test.ok(test_aes_wrong_key()));
+  (test.ok(test_aes_tamper()));
+  (test.ok(test_x25519_keypair_len()));
+  (test.ok(test_x25519_dh_symmetric()));
+  (test.ok(test_x25519_dh_distinct()));
+  (test.ok(test_ed25519_keypair_len()));
+  (test.ok(test_ed25519_sign_len()));
+  (test.ok(test_ed25519_verify_ok()));
+  (test.ok(test_ed25519_verify_tamper()));
+  (test.ok(test_ed25519_verify_wrong_key()));
+  (test.ok(test_hkdf_len()));
+  (test.ok(test_hkdf_info_separation()));
+  (test.ok(test_hkdf_long()));
+  (test.ok(test_tls_fingerprint_len()));
+  (test.ok(test_full_e2e()));
+  <0
+};
