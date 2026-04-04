@@ -1,0 +1,255 @@
+m=test_image;
+i=image:std.image;
+i=test:std.test;
+
+(* Build a minimal 2x2 RGBA pixel buffer for use across tests. *)
+f=make_2x2():imgbuf{
+  (* 4 pixels x 4 channels = 16 bytes; RGBA layout *)
+  let data=@(
+    255;0;0;255;    (* top-left:     red   *)
+    0;255;0;255;    (* top-right:    green *)
+    0;0;255;255;    (* bottom-left:  blue  *)
+    255;255;0;255   (* bottom-right: yellow *)
+  );
+  let w:u32=2;
+  let h:u32=2;
+  let ch:u8=4;
+  <image.from_raw(data;w;h;ch)
+};
+
+(* from_raw wraps bytes without error -- check dimensions. *)
+f=test_from_raw():bool{
+  let buf=make_2x2();
+  let expected_w:u32=2;
+  let expected_h:u32=2;
+  let expected_ch:u8=4;
+  let expected_len:u64=16;
+  (test.eq(buf.width;expected_w));
+  (test.eq(buf.height;expected_h));
+  (test.eq(buf.channels;expected_ch));
+  (test.eq(buf.data.len;expected_len));
+  <true
+};
+
+(* pixel_at returns the correct bytes for each corner. *)
+f=test_pixel_at_corners():bool{
+  let buf=make_2x2();
+
+  let tl=image.pixel_at(buf;0;0);
+  (match tl{
+    ok(px){
+      let expected_r:u8=255;
+      let expected_g:u8=0;
+      (test.eq(px.0;expected_r));
+      (test.eq(px.1;expected_g));
+    };
+    err(msg){ (test.fail(msg)); };
+  });
+
+  let tr=image.pixel_at(buf;1;0);
+  (match tr{
+    ok(px){
+      let expected_g:u8=255;
+      (test.eq(px.1;expected_g));
+    };
+    err(msg){ (test.fail(msg)); };
+  });
+
+  <true
+};
+
+(* pixel_at rejects out-of-bounds coordinates. *)
+f=test_pixel_at_oob():bool{
+  let buf=make_2x2();
+  let result=image.pixel_at(buf;5;5);
+  (match result{
+    ok(_){ (test.fail("expected error for oob pixel")); <false };
+    err(_){ <true };
+  })
+};
+
+(* resize returns a buffer with the requested dimensions. *)
+f=test_resize():bool{
+  let buf=make_2x2();
+  let resized=image.resize(buf;8;8);
+  let expected_w:u32=8;
+  let expected_h:u32=8;
+  let expected_len:u64=256;   (* 8*8*4 *)
+  (test.eq(resized.width;expected_w));
+  (test.eq(resized.height;expected_h));
+  (test.eq(resized.data.len;expected_len));
+  <true
+};
+
+(* crop returns the correct sub-region dimensions. *)
+f=test_crop_valid():bool{
+  let buf=image.from_raw(
+    @(
+      10;20;30;255; 40;50;60;255; 70;80;90;255; 100;110;120;255;
+      11;21;31;255; 41;51;61;255; 71;81;91;255; 101;111;121;255;
+      12;22;32;255; 42;52;62;255; 72;82;92;255; 102;112;122;255;
+      13;23;33;255; 43;53;63;255; 73;83;93;255; 103;113;123;255
+    );
+    4;4;4
+  );
+  let result=image.crop(buf;1;1;2;2);
+  (match result{
+    ok(cropped){
+      let expected_w:u32=2;
+      let expected_h:u32=2;
+      let expected_len:u64=16;
+      (test.eq(cropped.width;expected_w));
+      (test.eq(cropped.height;expected_h));
+      (test.eq(cropped.data.len;expected_len));
+      <true
+    };
+    err(msg){ (test.fail(msg)); <false };
+  })
+};
+
+(* crop rejects a rectangle that extends outside the buffer. *)
+f=test_crop_oob():bool{
+  let buf=make_2x2();
+  let result=image.crop(buf;1;1;5;5);
+  (match result{
+    ok(_){ (test.fail("expected oob error")); <false };
+    err(_){ <true };
+  })
+};
+
+(* to_grayscale produces a single-channel buffer of the same dimensions. *)
+f=test_to_grayscale():bool{
+  let buf=make_2x2();
+  let gray=image.to_grayscale(buf);
+  let expected_ch:u8=1;
+  let expected_len:u64=4;   (* 2*2*1 *)
+  (test.eq(gray.channels;expected_ch));
+  (test.eq(gray.width;buf.width));
+  (test.eq(gray.height;buf.height));
+  (test.eq(gray.data.len;expected_len));
+  <true
+};
+
+(* flip_h preserves dimensions. *)
+f=test_flip_h_dims():bool{
+  let buf=make_2x2();
+  let flipped=image.flip_h(buf);
+  (test.eq(flipped.width;buf.width));
+  (test.eq(flipped.height;buf.height));
+  (test.eq(flipped.channels;buf.channels));
+  <true
+};
+
+(* flip_h swaps left and right pixels on the first row. *)
+f=test_flip_h_pixels():bool{
+  let buf=make_2x2();
+  (* top-left after flip_h should be the original top-right: green *)
+  let px_result=image.pixel_at((image.flip_h(buf));0;0);
+  (match px_result{
+    ok(px){
+      let expected_r:u8=0;
+      let expected_g:u8=255;
+      (test.eq(px.0;expected_r));
+      (test.eq(px.1;expected_g));
+      <true
+    };
+    err(msg){ (test.fail(msg)); <false };
+  })
+};
+
+(* flip_v preserves dimensions. *)
+f=test_flip_v_dims():bool{
+  let buf=make_2x2();
+  let flipped=image.flip_v(buf);
+  (test.eq(flipped.width;buf.width));
+  (test.eq(flipped.height;buf.height));
+  (test.eq(flipped.channels;buf.channels));
+  <true
+};
+
+(* flip_v swaps top and bottom rows. *)
+f=test_flip_v_pixels():bool{
+  let buf=make_2x2();
+  (* top-left after flip_v should be the original bottom-left: blue *)
+  let px_result=image.pixel_at((image.flip_v(buf));0;0);
+  (match px_result{
+    ok(px){
+      let expected_r:u8=0;
+      let expected_b:u8=255;
+      (test.eq(px.0;expected_r));
+      (test.eq(px.2;expected_b));
+      <true
+    };
+    err(msg){ (test.fail(msg)); <false };
+  })
+};
+
+(* encode then decode round-trip preserves dimensions for PNG. *)
+f=test_encode_decode_png():bool{
+  let buf=make_2x2();
+  let enc_result=image.encode(buf;$imgfmt.Png;0);
+  (match enc_result{
+    ok(png_bytes){
+      let dec_result=image.decode(png_bytes);
+      (match dec_result{
+        ok(decoded){
+          (test.eq(decoded.width;buf.width));
+          (test.eq(decoded.height;buf.height));
+          (test.eq(decoded.channels;buf.channels));
+          <true
+        };
+        err(msg){ (test.fail("decode failed: " ++ msg)); <false };
+      })
+    };
+    err(msg){ (test.fail("encode failed: " ++ msg)); <false };
+  })
+};
+
+(* encode then decode round-trip preserves dimensions for JPEG. *)
+f=test_encode_decode_jpeg():bool{
+  let buf=make_2x2();
+  (* JPEG is lossy so only check dimensions, not pixel values *)
+  let enc_result=image.encode(buf;$imgfmt.Jpeg;90);
+  (match enc_result{
+    ok(jpeg_bytes){
+      let dec_result=image.decode(jpeg_bytes);
+      (match dec_result{
+        ok(decoded){
+          (test.eq(decoded.width;buf.width));
+          (test.eq(decoded.height;buf.height));
+          <true
+        };
+        err(msg){ (test.fail("jpeg decode failed: " ++ msg)); <false };
+      })
+    };
+    err(msg){ (test.fail("jpeg encode failed: " ++ msg)); <false };
+  })
+};
+
+(* decode rejects obviously invalid bytes. *)
+f=test_decode_bad_bytes():bool{
+  let garbage=@(0;1;2;3;4;5;6;7);
+  let result=image.decode(garbage);
+  (match result{
+    ok(_){ (test.fail("expected decode error for garbage bytes")); <false };
+    err(_){ <true };
+  })
+};
+
+f=main():i64{
+  (test.ok(test_from_raw()));
+  (test.ok(test_pixel_at_corners()));
+  (test.ok(test_pixel_at_oob()));
+  (test.ok(test_resize()));
+  (test.ok(test_crop_valid()));
+  (test.ok(test_crop_oob()));
+  (test.ok(test_to_grayscale()));
+  (test.ok(test_flip_h_dims()));
+  (test.ok(test_flip_h_pixels()));
+  (test.ok(test_flip_v_dims()));
+  (test.ok(test_flip_v_pixels()));
+  (test.ok(test_encode_decode_png()));
+  (test.ok(test_encode_decode_jpeg()));
+  (test.ok(test_decode_bad_bytes()));
+  <0
+};

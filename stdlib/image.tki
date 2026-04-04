@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "module": "std.image",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "imgbuf",
+      "fields": [
+        {"name": "width",    "type": "u32"},
+        {"name": "height",   "type": "u32"},
+        {"name": "channels", "type": "u8"},
+        {"name": "data",     "type": "[byte]"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "imgfmt",
+      "sum": true,
+      "variants": ["Png", "Jpeg", "Webp", "Bmp"]
+    },
+    {"kind": "func", "name": "image.decode",       "params": ["[byte]"],                           "return": "imgbuf!str"},
+    {"kind": "func", "name": "image.encode",       "params": ["imgbuf", "imgfmt", "u8"],           "return": "[byte]!str"},
+    {"kind": "func", "name": "image.resize",       "params": ["imgbuf", "u32", "u32"],             "return": "imgbuf"},
+    {"kind": "func", "name": "image.crop",         "params": ["imgbuf", "u32", "u32", "u32", "u32"], "return": "imgbuf!str"},
+    {"kind": "func", "name": "image.to_grayscale", "params": ["imgbuf"],                           "return": "imgbuf"},
+    {"kind": "func", "name": "image.flip_h",       "params": ["imgbuf"],                           "return": "imgbuf"},
+    {"kind": "func", "name": "image.flip_v",       "params": ["imgbuf"],                           "return": "imgbuf"},
+    {"kind": "func", "name": "image.pixel_at",     "params": ["imgbuf", "u32", "u32"],             "return": "[byte]!str"},
+    {"kind": "func", "name": "image.from_raw",     "params": ["[byte]", "u32", "u32", "u8"],       "return": "imgbuf"}
+  ]
+}
