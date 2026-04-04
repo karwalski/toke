@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "module": "std.template",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "tmpl",
+      "fields": [
+        {"name": "id",   "type": "u64"},
+        {"name": "src",  "type": "str"}
+      ],
+      "note": "Opaque compiled template handle. Slots are {{varname}} atoms that survive compress/decompress."
+    },
+    {
+      "kind": "type",
+      "name": "tmplvars",
+      "fields": [
+        {"name": "entries", "type": "@($str:$str)"}
+      ],
+      "note": "Variable bindings map: string key to string value."
+    },
+    {
+      "kind": "type",
+      "name": "tmplerr",
+      "fields": [
+        {"name": "msg", "type": "str"},
+        {"name": "pos", "type": "u64"}
+      ],
+      "note": "Template error with human-readable message and byte offset in source."
+    },
+    {"kind": "func", "name": "tpl.compile",    "params": ["str"],                    "return": "$tmpl!$tmplerr",
+      "note": "Compile a template string containing {{varname}} slots. Returns an opaque $tmpl handle on success, $tmplerr on unknown slot syntax."},
+    {"kind": "func", "name": "tpl.render",     "params": ["$tmpl", "$tmplvars"],     "return": "$str!$tmplerr",
+      "note": "Render template t with variable bindings vars. Substitutes each {{name}} with the corresponding value from vars. Returns $tmplerr if a slot name has no binding."},
+    {"kind": "func", "name": "tpl.vars",       "params": ["@($str:$str)"],           "return": "$tmplvars",
+      "note": "Construct a $tmplvars binding map from an array of string:string pairs."},
+    {"kind": "func", "name": "tpl.html",       "params": ["$str", "@($str:$str)", "@$str"], "return": "$str",
+      "note": "Construct an HTML element inline. tag is the element name (e.g. \"div\"), attrs is an array of name:value attribute pairs, children is an array of already-rendered child strings. Returns the full element string."},
+    {"kind": "func", "name": "tpl.escape",     "params": ["$str"],                   "return": "$str",
+      "note": "HTML-escape a string: & -> &amp;  < -> &lt;  > -> &gt;  \" -> &quot;  ' -> &#39;"},
+    {"kind": "func", "name": "tpl.renderfile", "params": ["$str", "$tmplvars"],      "return": "$str!$tmplerr",
+      "note": "Load a template from file at path, compile it, and render with vars. Returns $tmplerr if the file cannot be read or contains invalid slots."}
+  ]
+}
