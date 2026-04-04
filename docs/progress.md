@@ -954,6 +954,26 @@ Stories: 10.2.9, 10.3.3, 10.3.4, 10.3.7, 10.3.8, 10.3.9, 10.5.2, 10.5.3, 10.5.5,
 | 12.6.2 | std.svg | backlog | — | **P3** Programmatic SVG generation for custom visualisations beyond std.chart. Diagrams, flowcharts, node graphs. 200+ corpus examples. |
 | 12.6.3 | std.canvas | backlog | — | **P3** JS Canvas API bindings for std.html output. 2D drawing commands serialised as JS. Gaming and 3D explicitly out of scope. 200+ corpus examples. |
 
+### Epic 13.1 — Loke Integration: Compression API
+
+**Goal:** Expose toke as a stable compression/decompression service for loke (and other consumers). Loke uses toke to reduce token spend before LLM calls and restore original content after. Placeholders from loke's anonymisation pipeline ($PERSON_1, $EMAIL_1 etc.) must survive the round-trip unchanged. All tools are exposed over the existing MCP server.
+
+**Dependency notes:**
+- Topic 4 (TOON bridge): already complete — Epic 6.3 (std.toon done). See 6.3.6 for migration docs.
+- Topic 8 (scripting primitives): already backlogged — see Epics 12.3-12.5 (std.csv, std.math, std.dataframe, std.analytics, std.ml).
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 13.1.1 | Placeholder-preserving compress/decompress API | backlog | — | **P0** Loke's privacy pipeline produces tokens like $PERSON_1 and $EMAIL_1. toke's compress operation must treat any `$IDENT_N` pattern (sigil + uppercase + underscore + digit) as an opaque atom — never split, rewrite, or conflate with type sigils. Decompress must restore byte-identical output. Spec the atom-preservation contract, add conformance tests with representative loke placeholder sequences. Covers loke F3.5 (reversal engine). |
+| 13.1.2 | toke_compress and toke_decompress MCP tools | backlog | — | **P0** Add two new tools to toke-mcp: `toke_compress(input:str;preserve_atoms:@str):$compressed` and `toke_decompress(input:$compressed):str`. Signatures are frozen once loke depends on them — document them in TOOLS.md with stability guarantee. Must work over both MCP stdio and HTTP transport. Covers loke F7.4. |
+| 13.1.3 | toke_analyse MCP tool — pre-flight token estimation | backlog | — | **P1** Add `toke_analyse(input:str;tokenizer:str):$tokenreport` tool. Returns expected token count for the input (raw and compressed estimates) without actually compressing. `$tokenreport` includes: `raw_tokens:u64`, `est_compressed_tokens:u64`, `reduction_pct:f64`, `tokenizer:$str`. Used by loke F4.5 (token budget manager) for daily/weekly limit enforcement before calling LLMs. Tokenizer param selects cl100k_base, o200k_base, or toke-bpe. |
+| 13.1.4 | Streaming-compatible compress output | backlog | — | **P0** toke compression of prompts is fine as a batch operation. However if toke is applied to LLM response post-processing, it must not buffer the full stream. Add a streaming mode to the compress API: `toke_compress_stream` yields compressed chunks as input arrives. Must be compatible with SSE and chunked HTTP. Covers loke F5.4 (all provider integrations are streaming). |
+| 13.1.5 | Schema-aware compression for structured data | backlog | — | **P1** When input is JSON, CSV, or DB result rows, toke should represent it as a compact schema + data encoding rather than compressing flat text. E.g. a 1000-row CSV should emit a header schema once and encode rows as positional tuples. Target: 30-60% token savings vs raw JSON/CSV (TOON baseline). Add structured-input detection heuristic, schema extraction, and schema-anchored encoding. Covers loke F4.2 (data profiler). |
+| 13.1.6 | Parameterised template format with slot preservation | backlog | — | **P2** Loke needs reusable prompt templates with variable slots (e.g. `{{user_query}}`, `{{context_summary}}`). toke must: (a) treat `{{IDENT}}` as an opaque atom during compress/decompress (like placeholders in 13.1.1), (b) provide a `toke_render(template:$compressed;vars:@($str:str)):str` MCP tool that substitutes variables without re-compressing the whole template. Covers loke A1.4 (dashboard persistence) and A2.3 (codebase profiling). |
+| 13.1.7 | TOON→toke migration guide | backlog | — | **P1** Loke F4.1/F4.2 are specced around TOON. Since TOON is already implemented (Epic 6.3), document: (a) which TOON use cases toke compress supersedes and which remain TOON territory, (b) whether loke should build F4.1 at all or skip to toke compression directly, (c) a bridge adapter so existing TOON serialisers can be wrapped without rewrite. Publish in toke-spec/docs/toon-toke-bridge.md. Covers loke F4.1 decision gate. |
+
+---
+
 ### Sprint S1 — Default Syntax (Critical Path)
 
 **Goal:** Compiler speaks default (56-char) syntax. All tests pass. Spec aligned.
