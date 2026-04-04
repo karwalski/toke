@@ -942,7 +942,7 @@ Stories: 10.2.9, 10.3.3, 10.3.4, 10.3.7, 10.3.8, 10.3.9, 10.5.2, 10.5.3, 10.5.5,
 | 12.5.1 | std.dataframe | done | — | **P1** Columnar typed data structure. Filter, group-by, join, pivot, window functions. Arena-friendly design (column arrays allocated in bulk). Import from CSV (std.csv), JSON (std.json), and std.db query results. 200+ corpus examples. |
 | 12.5.2 | std.analytics | done | — | **P1** Aggregation pipelines on dataframes. Time-series bucketing, moving averages, anomaly detection (z-score), correlation matrices. Outputs feed directly into std.chart. Depends on std.dataframe (12.5.1) + std.math (12.3.2). 200+ corpus examples. |
 | 12.5.3 | std.ml | done | — | **P2** Inference-only ML primitives. Linear/logistic regression, k-means, decision trees, k-nearest neighbours. Train on std.dataframe columns. No GPU, no backprop — small-data, in-process models for classification/prediction. Depends on std.dataframe (12.5.1) + std.math (12.3.2). 200+ corpus examples. |
-| 12.5.4 | std.encrypt | backlog | — | **P1** Symmetric encryption (AES-256-GCM), asymmetric (X25519 key exchange, Ed25519 signing), TLS client certificate handling. Deferred from Tier 0 because hashing covers 90% of early needs; full encryption needed for data-at-rest and E2E security in production APIs. 200+ corpus examples. |
+| 12.5.4 | std.encrypt | done | — | **P1** Symmetric encryption (AES-256-GCM), asymmetric (X25519 key exchange, Ed25519 signing), TLS client certificate handling. Deferred from Tier 0 because hashing covers 90% of early needs; full encryption needed for data-at-rest and E2E security in production APIs. 200+ corpus examples. |
 
 ### Epic 12.6 — Standard Library Tier 5: Media & Visualization Extensions
 
@@ -950,9 +950,9 @@ Stories: 10.2.9, 10.3.3, 10.3.4, 10.3.7, 10.3.8, 10.3.9, 10.5.2, 10.5.3, 10.5.5,
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 12.6.1 | std.image | backlog | — | **P3** PNG/JPEG decode to pixel buffer, resize, crop, format conversion. Needed for image upload handling in APIs. Not core to platform thesis. 200+ corpus examples. |
-| 12.6.2 | std.svg | backlog | — | **P3** Programmatic SVG generation for custom visualisations beyond std.chart. Diagrams, flowcharts, node graphs. 200+ corpus examples. |
-| 12.6.3 | std.canvas | backlog | — | **P3** JS Canvas API bindings for std.html output. 2D drawing commands serialised as JS. Gaming and 3D explicitly out of scope. 200+ corpus examples. |
+| 12.6.1 | std.image | done | — | **P3** PNG/JPEG decode to pixel buffer, resize, crop, format conversion. Needed for image upload handling in APIs. Not core to platform thesis. 200+ corpus examples. |
+| 12.6.2 | std.svg | done | — | **P3** Programmatic SVG generation for custom visualisations beyond std.chart. Diagrams, flowcharts, node graphs. 200+ corpus examples. |
+| 12.6.3 | std.canvas | done | — | **P3** JS Canvas API bindings for std.html output. 2D drawing commands serialised as JS. Gaming and 3D explicitly out of scope. 200+ corpus examples. |
 
 ### Epic 13.1 — Loke Integration: Compression API
 
