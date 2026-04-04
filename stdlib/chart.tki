@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "module": "std.chart",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "dataset",
+      "fields": [
+        {"name": "label", "type": "str"},
+        {"name": "data",  "type": "[f64]"},
+        {"name": "color", "type": "str"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "chartspec",
+      "fields": [
+        {"name": "type",     "type": "str"},
+        {"name": "labels",   "type": "[str]"},
+        {"name": "datasets", "type": "[dataset]"},
+        {"name": "title",    "type": "str"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "charterr",
+      "fields": [
+        {"name": "msg", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "chart.bar",     "params": ["[str]", "[f64]", "str"],             "return": "chartspec"},
+    {"kind": "func", "name": "chart.line",    "params": ["[str]", "[dataset]", "str"],          "return": "chartspec"},
+    {"kind": "func", "name": "chart.scatter", "params": ["[f64]", "[f64]", "str"],              "return": "chartspec"},
+    {"kind": "func", "name": "chart.pie",     "params": ["[str]", "[f64]", "str"],              "return": "chartspec"},
+    {"kind": "func", "name": "chart.tojson",  "params": ["chartspec"],                          "return": "[byte]"},
+    {"kind": "func", "name": "chart.tovega",  "params": ["chartspec"],                          "return": "[byte]"}
+  ]
+}

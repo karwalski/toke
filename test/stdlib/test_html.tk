@@ -1,0 +1,47 @@
+m=html_test;
+
+(* Demonstrate std.html: build a document and verify rendered output. *)
+
+f=build_doc():$str{
+  let d=html.doc();
+  html.title(d;"My Page");
+  html.style(d;"body { font-family: sans-serif; }");
+  html.script(d;"console.log('hello');");
+
+  let heading=html.h1("Hello, World!");
+  html.append(d;heading);
+
+  let para=html.p("This is a paragraph.");
+  html.append(d;para);
+
+  let attrs=@(@("class";"container");@("id";"main"));
+  let inner=@(html.h2("Section");html.p("Content here."));
+  let section=html.div(attrs;inner);
+  html.append(d;section);
+
+  let headers=@("Name";"Age";"City");
+  let rows=@(
+    @("Alice";"30";"Sydney");
+    @("Bob";"25";"Melbourne")
+  );
+  let tbl=html.table(headers;rows);
+  html.append(d;tbl);
+
+  <html.render(d)
+};
+
+f=escape_smoke():bool{
+  let escaped=html.escape("<script>alert('xss')</script>");
+  (* Must not contain raw < or > after escaping. *)
+  <(!str.contains(escaped;"<script>"))
+};
+
+f=main():i64{
+  let out=build_doc();
+  (* Rendered output must be non-empty and contain key landmarks. *)
+  (test.ok(out.len>0));
+  (test.ok(str.contains(out;"Hello, World!")));
+  (test.ok(str.contains(out;"My Page")));
+  (test.ok(escape_smoke()));
+  <0
+};

@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "module": "std.llm",
+  "imports": [
+    {"alias": "http", "module": "std.http"},
+    {"alias": "json", "module": "std.json"}
+  ],
+  "exports": [
+    {
+      "kind": "type",
+      "name": "llmclient",
+      "fields": [
+        {"name": "provider", "type": "str"},
+        {"name": "model",    "type": "str"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "llmmsg",
+      "fields": [
+        {"name": "role",    "type": "str"},
+        {"name": "content", "type": "str"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "llmresp",
+      "fields": [
+        {"name": "content",    "type": "str"},
+        {"name": "tokens_in",  "type": "u64"},
+        {"name": "tokens_out", "type": "u64"},
+        {"name": "model",      "type": "str"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "llmerr",
+      "fields": [
+        {"name": "msg",  "type": "str"},
+        {"name": "code", "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "llmstream",
+      "opaque": true,
+      "fields": [
+        {"name": "id", "type": "u64"}
+      ]
+    },
+    {"kind": "func", "name": "llm.client",     "params": ["str", "str", "str"],     "return": "llmclient"},
+    {"kind": "func", "name": "llm.chat",        "params": ["llmclient", "[llmmsg]"], "return": "llmresp!llmerr"},
+    {"kind": "func", "name": "llm.chatstream",  "params": ["llmclient", "[llmmsg]"], "return": "llmstream!llmerr"},
+    {"kind": "func", "name": "llm.streamnext",  "params": ["llmstream"],             "return": "str!llmerr"},
+    {"kind": "func", "name": "llm.complete",    "params": ["llmclient", "str"],      "return": "str!llmerr"},
+    {"kind": "func", "name": "llm.countokens",  "params": ["llmclient", "str"],      "return": "u64"}
+  ]
+}

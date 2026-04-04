@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "module": "std.router",
+  "imports": [
+    {"alias": "http", "module": "std.http"}
+  ],
+  "exports": [
+    {
+      "kind": "type",
+      "name": "router",
+      "opaque": true,
+      "fields": [
+        {"name": "id", "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "ctx",
+      "fields": [
+        {"name": "req",    "type": "http.Req"},
+        {"name": "params", "type": "[[str]]"},
+        {"name": "state",  "type": "[[str]]"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "handler",
+      "opaque": true,
+      "fields": [
+        {"name": "id", "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "middleware",
+      "opaque": true,
+      "fields": [
+        {"name": "id", "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "routererr",
+      "fields": [
+        {"name": "msg", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "router.new",    "params": [],                                  "return": "router"},
+    {"kind": "func", "name": "router.get",    "params": ["router", "str", "handler"],        "return": "void"},
+    {"kind": "func", "name": "router.post",   "params": ["router", "str", "handler"],        "return": "void"},
+    {"kind": "func", "name": "router.put",    "params": ["router", "str", "handler"],        "return": "void"},
+    {"kind": "func", "name": "router.delete", "params": ["router", "str", "handler"],        "return": "void"},
+    {"kind": "func", "name": "router.use",    "params": ["router", "middleware"],            "return": "void"},
+    {"kind": "func", "name": "router.serve",  "params": ["router", "str", "u64"],           "return": "void!routererr"}
+  ]
+}

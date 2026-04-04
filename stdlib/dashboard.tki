@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "module": "std.dashboard",
+  "imports": [
+    {"alias": "chart",  "module": "std.chart"},
+    {"alias": "html",   "module": "std.html"},
+    {"alias": "ws",     "module": "std.ws"},
+    {"alias": "router", "module": "std.router"}
+  ],
+  "exports": [
+    {
+      "kind": "type",
+      "name": "dashboard",
+      "opaque": true,
+      "fields": [
+        {"name": "id", "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "dashwidget",
+      "fields": [
+        {"name": "id",   "type": "str"},
+        {"name": "type", "type": "str"},
+        {"name": "spec", "type": "[byte]"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "dasherr",
+      "fields": [
+        {"name": "msg", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "dashboard.new",      "params": ["str", "u64"],                               "return": "dashboard"},
+    {"kind": "func", "name": "dashboard.addchart",  "params": ["dashboard", "str", "chart.chartspec"],     "return": "dashwidget"},
+    {"kind": "func", "name": "dashboard.addtable",  "params": ["dashboard", "str", "[str]"],               "return": "dashwidget"},
+    {"kind": "func", "name": "dashboard.update",    "params": ["dashboard", "dashwidget", "[byte]"],       "return": "void"},
+    {"kind": "func", "name": "dashboard.serve",     "params": ["dashboard"],                               "return": "void!dasherr"}
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "module": "std.llm.tool",
+  "imports": [
+    {"alias": "llm", "module": "std.llm"}
+  ],
+  "exports": [
+    {
+      "kind": "type",
+      "name": "tooldecl",
+      "fields": [
+        {"name": "name",   "type": "str"},
+        {"name": "desc",   "type": "str"},
+        {"name": "params", "type": "[toolparam]"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "toolparam",
+      "fields": [
+        {"name": "name",     "type": "str"},
+        {"name": "type",     "type": "str"},
+        {"name": "desc",     "type": "str"},
+        {"name": "required", "type": "bool"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "toolcall",
+      "fields": [
+        {"name": "name", "type": "str"},
+        {"name": "args", "type": "[[str]]"},
+        {"name": "id",   "type": "str"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "toolresult",
+      "fields": [
+        {"name": "id",      "type": "str"},
+        {"name": "content", "type": "str"},
+        {"name": "error",   "type": "bool"}
+      ]
+    },
+    {"kind": "func", "name": "llm.withtools",     "params": ["llm.llmclient", "[tooldecl]"],                        "return": "llm.llmclient"},
+    {"kind": "func", "name": "llm.chatwithtools", "params": ["llm.llmclient", "[llm.llmmsg]"],                      "return": "toolcall!llm.llmerr"},
+    {"kind": "func", "name": "llm.submitresult",  "params": ["llm.llmclient", "[llm.llmmsg]", "toolresult"],        "return": "llm.llmresp!llm.llmerr"}
+  ]
+}

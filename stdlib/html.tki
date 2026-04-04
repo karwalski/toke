@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "module": "std.html",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "htmldoc",
+      "opaque": true,
+      "fields": [
+        {"name": "id", "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "htmlnode",
+      "fields": [
+        {"name": "tag",     "type": "str"},
+        {"name": "attrs",   "type": "[[str]]"},
+        {"name": "content", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "html.doc",    "params": [],                              "return": "htmldoc"},
+    {"kind": "func", "name": "html.title",  "params": ["htmldoc", "str"],              "return": "void"},
+    {"kind": "func", "name": "html.style",  "params": ["htmldoc", "str"],              "return": "void"},
+    {"kind": "func", "name": "html.script", "params": ["htmldoc", "str"],              "return": "void"},
+    {"kind": "func", "name": "html.div",    "params": ["[[str]]", "[htmlnode]"],        "return": "htmlnode"},
+    {"kind": "func", "name": "html.p",      "params": ["str"],                         "return": "htmlnode"},
+    {"kind": "func", "name": "html.h1",     "params": ["str"],                         "return": "htmlnode"},
+    {"kind": "func", "name": "html.h2",     "params": ["str"],                         "return": "htmlnode"},
+    {"kind": "func", "name": "html.table",  "params": ["[str]", "[[str]]"],            "return": "htmlnode"},
+    {"kind": "func", "name": "html.append", "params": ["htmldoc", "htmlnode"],         "return": "void"},
+    {"kind": "func", "name": "html.render", "params": ["htmldoc"],                     "return": "str"},
+    {"kind": "func", "name": "html.escape", "params": ["str"],                         "return": "str"}
+  ]
+}
