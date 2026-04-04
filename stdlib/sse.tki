@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "module": "std.sse",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "ssectx",
+      "fields": [
+        {"name": "id",   "type": "u64"},
+        {"name": "open", "type": "bool"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "sseevent",
+      "fields": [
+        {"name": "id",    "type": "str"},
+        {"name": "event", "type": "str"},
+        {"name": "data",  "type": "str"},
+        {"name": "retry", "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "sseerr",
+      "fields": [
+        {"name": "msg", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "sse.emit",      "params": ["ssectx", "sseevent"], "return": "void!sseerr"},
+    {"kind": "func", "name": "sse.emitdata",  "params": ["ssectx", "str"],      "return": "void!sseerr"},
+    {"kind": "func", "name": "sse.close",     "params": ["ssectx"],             "return": "void"},
+    {"kind": "func", "name": "sse.keepalive", "params": ["ssectx", "u64"],      "return": "void"}
+  ]
+}

@@ -1,6 +1,6 @@
 # toke Standard Library — Normative Signatures
 
-**Status:** Complete — 14 modules with C runtime backing
+**Status:** Complete — 17 modules with C runtime backing
 
 This file is the normative interface for the toke standard library.
 Changes here require coordinated updates to toke-stdlib and toke-benchmark.
@@ -12,7 +12,9 @@ Changes here require coordinated updates to toke-stdlib and toke-benchmark.
 - `std.toon` — TOON (Token-Oriented Object Notation) — default serialization format
 - `std.yaml` — YAML encoding, decoding, and typed field extraction
 - `std.i18n` — internationalisation — locale-aware string bundles with placeholder substitution
-- `std.http` — HTTP request/response handling and routing
+- `std.http` — HTTP request/response handling, routing, and HTTP client with connection pooling
+- `std.ws` — WebSocket client/server: connect, send, recv, broadcast
+- `std.sse` — Server-Sent Events: emit, keepalive, connection lifecycle
 - `std.db` — database queries (SQLite3 backend)
 - `std.file` — file I/O (read, write, append, list, delete)
 - `std.env` — environment variable access
@@ -109,9 +111,32 @@ f=locale():$str
 ### std.http
 
 ```
-f=get(url:$str):$str
-f=post(url:$str;body:$str):$str
-f=listen(addr:$str;handler:$str):void
+(* server-side routing *)
+f=param(req:$Req;key:$str):$str!$HttpErr
+f=header(req:$Req;key:$str):$str!$HttpErr
+f=Res.ok(body:$str):$Res
+f=Res.json(status:u16;body:$str):$Res
+f=Res.bad(msg:$str):$Res
+f=Res.err(msg:$str):$Res
+http.GET(path:$str;handler:FuncDecl)
+http.POST(path:$str;handler:FuncDecl)
+http.PUT(path:$str;handler:FuncDecl)
+http.DELETE(path:$str;handler:FuncDecl)
+http.PATCH(path:$str;handler:FuncDecl)
+(* client-side: types *)
+t=$httpclient{baseurl:$str;pool_size:u64;timeout_ms:u64}
+t=$httpreq{method:$str;url:$str;headers:@($str:$str);body:@byte}
+t=$httpresp{status:u64;headers:@($str:$str);body:@byte}
+t=$httperr{msg:$str;code:u64}
+t=$httpstream{id:u64;open:bool}
+(* client-side: functions *)
+f=http.client(baseurl:$str):$httpclient
+f=http.get(c:$httpclient;path:$str):$httpresp!$httperr
+f=http.post(c:$httpclient;path:$str;body:@byte;ctype:$str):$httpresp!$httperr
+f=http.put(c:$httpclient;path:$str;body:@byte;ctype:$str):$httpresp!$httperr
+f=http.delete(c:$httpclient;path:$str):$httpresp!$httperr
+f=http.stream(c:$httpclient;req:$httpreq):$httpstream!$httperr
+f=http.streamnext(s:$httpstream):@byte!$httperr
 ```
 
 ### std.db
@@ -185,4 +210,30 @@ f=eq(a:i64;b:i64):void
 f=neq(a:i64;b:i64):void
 f=ok(cond:bool):void
 f=fail(msg:$str):void
+```
+
+### std.ws
+
+```
+t=$wsconn{id:u64;ready:bool}
+t=$wsmsg{payload:@byte;fin:bool;opcode:u64}
+t=$wserr{msg:$str}
+f=ws.connect(url:$str):$wsconn!$wserr
+f=ws.send(conn:$wsconn;msg:$str):void!$wserr
+f=ws.sendbytes(conn:$wsconn;data:@byte):void!$wserr
+f=ws.recv(conn:$wsconn):$wsmsg!$wserr
+f=ws.close(conn:$wsconn):void
+f=ws.broadcast(conns:@$wsconn;msg:$str):void
+```
+
+### std.sse
+
+```
+t=$ssectx{id:u64;open:bool}
+t=$sseevent{id:$str;event:$str;data:$str;retry:u64}
+t=$sseerr{msg:$str}
+f=sse.emit(ctx:$ssectx;event:$sseevent):void!$sseerr
+f=sse.emitdata(ctx:$ssectx;data:$str):void!$sseerr
+f=sse.close(ctx:$ssectx):void
+f=sse.keepalive(ctx:$ssectx;interval:u64):void
 ```

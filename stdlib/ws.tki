@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "module": "std.ws",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "wsconn",
+      "fields": [
+        {"name": "id",    "type": "u64"},
+        {"name": "ready", "type": "bool"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "wsmsg",
+      "fields": [
+        {"name": "payload", "type": "[byte]"},
+        {"name": "fin",     "type": "bool"},
+        {"name": "opcode",  "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "wserr",
+      "fields": [
+        {"name": "msg", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "ws.connect",   "params": ["str"],            "return": "wsconn!wserr"},
+    {"kind": "func", "name": "ws.send",      "params": ["wsconn", "str"],  "return": "void!wserr"},
+    {"kind": "func", "name": "ws.sendbytes", "params": ["wsconn", "[byte]"],"return": "void!wserr"},
+    {"kind": "func", "name": "ws.recv",      "params": ["wsconn"],         "return": "wsmsg!wserr"},
+    {"kind": "func", "name": "ws.close",     "params": ["wsconn"],         "return": "void"},
+    {"kind": "func", "name": "ws.broadcast", "params": ["[wsconn]", "str"],"return": "void"}
+  ]
+}

@@ -1,0 +1,100 @@
+m=http_client_test;
+
+(* std.http client — examples covering GET, POST, PUT, DELETE and streaming.
+   The client function creates a connection-pooled handle bound to a base URL.
+   All request functions propagate network errors via the ! result type. *)
+
+(* Fetch a JSON resource and extract a field from the response body. *)
+f=fetch_user(id:u64):$str!$httperr{
+  let c=http.client("https://api.example.com");
+  let path=str.concat("/users/";str.from_u64(id));
+  let resp=http.get(c;path)?;
+  let body_str=str.from_bytes(resp.body);
+  let j=json.dec(body_str)?;
+  <json.str(j;"name")?
+};
+
+(* POST a JSON body and check that the server acknowledged it. *)
+f=create_user(name:$str;email:$str):u64!$httperr{
+  let c=http.client("https://api.example.com");
+  let payload=str.concat(
+    str.concat("{\"name\":\"";name);
+    str.concat("\";\"email\":\"";str.concat(email;"\"}"))
+  );
+  let body=str.bytes(payload);
+  let resp=http.post(c;"/users";body;"application/json")?;
+  if resp.status!=201{
+    <err($httperr{msg:"unexpected status";code:resp.status})
+  };
+  let j=json.dec(str.from_bytes(resp.body))?;
+  <json.u64(j;"id")?
+};
+
+(* PUT replaces an existing resource. *)
+f=update_user(id:u64;name:$str):void!$httperr{
+  let c=http.client("https://api.example.com");
+  let path=str.concat("/users/";str.from_u64(id));
+  let payload=str.concat("{\"name\":\"";str.concat(name;"\"}"));
+  let resp=http.put(c;path;str.bytes(payload);"application/json")?;
+  if resp.status!=200{
+    <err($httperr{msg:"put failed";code:resp.status})
+  };
+  <ok(void)
+};
+
+(* DELETE removes a resource. *)
+f=delete_user(id:u64):void!$httperr{
+  let c=http.client("https://api.example.com");
+  let path=str.concat("/users/";str.from_u64(id));
+  let resp=http.delete(c;path)?;
+  if resp.status!=204{
+    <err($httperr{msg:"delete failed";code:resp.status})
+  };
+  <ok(void)
+};
+
+(* Stream a chunked response and accumulate bytes. *)
+f=stream_download(url:$str):@byte!$httperr{
+  let c=http.client(url);
+  let req=$httpreq{
+    method:"GET";
+    url:"/download";
+    headers:@();
+    body:@()
+  };
+  let s=http.stream(c;req)?;
+  let buf:@byte=@();
+  let running:bool=true;
+  loop{
+    if !running{break};
+    let chunk=http.streamnext(s);
+    (match chunk{
+      ok(bytes){
+        if bytes.len==0{
+          set running=false;
+        }el{
+          set buf=buf+bytes;
+        };
+      };
+      err(e){
+        if e.code==0{
+          set running=false;
+        }el{
+          <err(e)
+        };
+      };
+    });
+  };
+  <ok(buf)
+};
+
+(* Smoke test: client construction returns a usable handle. *)
+f=test_client_construct():bool{
+  let c=http.client("https://httpbin.org");
+  <c.baseurl=="https://httpbin.org"
+};
+
+f=main():i64{
+  (test.ok(test_client_construct()));
+  <0
+};
