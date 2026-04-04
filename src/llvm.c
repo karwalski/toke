@@ -1,29 +1,176 @@
-/* llvm.c — LLVM IR text emitter for toke. Story: 1.2.8 */
+/*
+ * llvm.c — LLVM IR text emitter for toke.  Story: 1.2.8
+ *
+ * This file is the backend of the tkc compiler.  It walks the AST produced
+ * by the parser and emits LLVM IR text (.ll) to a file.  The emitter works
+ * in four phases:
+ *
+ *   1. Prepass — Three separate walks over the AST collect struct type
+ *      declarations (prepass_structs), function signatures (prepass_funcs),
+ *      and import aliases (prepass_imports) into the Ctx registries.  This
+ *      information is needed before any IR is emitted because forward
+ *      references to functions and types are common.
+ *
+ *   2. Top-level emission (emit_toplevel) — Walks top-level declarations
+ *      (NODE_TYPE_DECL, NODE_CONST_DECL, NODE_FUNC_DECL) and emits LLVM
+ *      struct definitions, global constants, and function definitions
+ *      (or extern declarations for bodyless functions).
+ *
+ *   3. Expression/statement emission (emit_expr, emit_stmt) — Recursively
+ *      emits IR for expression trees and statement blocks.  Each emit_expr
+ *      call returns the SSA temporary number (%tN) holding the result.
+ *      emit_stmt handles control flow (if, loop, match, break, return).
+ *
+ *   4. Finalization — After all functions are emitted, the buffered string
+ *      globals (str_globals) are flushed to the file, followed by the
+ *      C-compatible main() wrapper that calls tk_main().
+ *
+ * All per-compilation state lives in the Ctx struct, which is stack-allocated
+ * in emit_llvm_ir and threaded through every function.
+ */
 #include "llvm.h"
 #include "parser.h"
 #include "diag.h"
+#include "tkc_limits.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
 
-#define MAX_FUNCS 128
-#define MAX_PTR_LOCALS 64
-#define MAX_STRUCT_TYPES 64
-#define MAX_IMPORTS 32
-typedef struct { char name[128]; const char *ret; char ret_type_name[128]; const char *param_tys[NODE_MAX_CHILDREN]; char param_type_names[NODE_MAX_CHILDREN][128]; int param_count; } FnSig;
-typedef struct { char name[128]; char struct_type[128]; } PtrLocal;
-typedef struct { char name[128]; int field_count; char field_names[NODE_MAX_CHILDREN][128]; } StructInfo;
-typedef struct { char alias[64]; char module[64]; } ImportAlias; /* e.g. alias="j", module="json" */
-#define MAX_LOCALS 128
-typedef struct { char name[128]; const char *ty; } LocalType;
-typedef struct { char toke_name[128]; char llvm_name[128]; } NameAlias;
-typedef struct { FILE *out; const char *src; int tmp, str_idx, lbl; int term; int break_lbl; FnSig fns[MAX_FUNCS]; int fn_count; PtrLocal ptrs[MAX_PTR_LOCALS]; int ptr_count; StructInfo structs[MAX_STRUCT_TYPES]; int struct_count; const char *cur_fn_ret; ImportAlias imports[MAX_IMPORTS]; int import_count; LocalType locals[MAX_LOCALS]; int local_count; NameAlias aliases[MAX_LOCALS]; int alias_count; int name_scope; char str_globals[64*1024]; int str_globals_len; } Ctx;
+/* ── Internal data structures ──────────────────────────────────────── */
+
+/*
+ * FnSig — Registered function signature.
+ *   name:            LLVM symbol name (toke "main" becomes "tk_main").
+ *   ret:             LLVM return type string ("i64", "ptr", "void", etc.).
+ *   ret_type_name:   Original toke type name from the return spec, used to
+ *                    propagate struct type info through call expressions.
+ *   param_tys:       LLVM type for each parameter.
+ *   param_type_names: Original toke type name for each parameter (for struct
+ *                    propagation through ptr-local tracking).
+ *   param_count:     Number of parameters.
+ *   is_internal:     1 if the function has a body (define), 0 if extern
+ *                    (declare).  Internal functions use fastcc calling
+ *                    convention; extern functions use the default C convention.
+ */
+typedef struct { char name[NAME_BUF]; const char *ret; char ret_type_name[NAME_BUF]; const char *param_tys[TKC_MAX_PARAMS]; char param_type_names[TKC_MAX_PARAMS][NAME_BUF]; int param_count; int is_internal; } FnSig;
+
+/*
+ * PtrLocal — Tracks local variables that hold pointer values at the LLVM
+ *   level (arrays, maps, strings, struct pointers).  The struct_type field
+ *   records the toke struct name when known, so that field access on those
+ *   variables can resolve field indices via the StructInfo registry.
+ */
+typedef struct { char name[NAME_BUF]; char struct_type[NAME_BUF]; } PtrLocal;
+
+/*
+ * StructInfo — Registered struct type.
+ *   name:         Toke struct name (also used as LLVM %struct.<name>).
+ *   field_count:  Number of fields.
+ *   field_names:  Ordered field names, used to map symbolic field access
+ *                 (e.g. .x) to a GEP index.
+ *
+ * All struct fields are represented as i64 at the LLVM level; the struct
+ * is laid out as { i64, i64, ... } with one slot per field.
+ */
+typedef struct { char name[NAME_BUF]; int field_count; char field_names[TKC_MAX_PARAMS][NAME_BUF]; } StructInfo;
+
+/*
+ * ImportAlias — Maps a toke import alias to its module name.
+ *   alias:   The local alias (e.g. "j" from `use j = std.json`).
+ *   module:  The terminal module name (e.g. "json").
+ * Used by resolve_stdlib_call to translate qualified calls like j.parse()
+ * into C runtime function names like tk_json_parse().
+ */
+typedef struct { char alias[ALIAS_BUF]; char module[ALIAS_BUF]; } ImportAlias; /* e.g. alias="j", module="json" */
+
+/*
+ * LocalType — Records the LLVM type associated with a local variable name.
+ *   Needed so that load/store instructions use the correct type (i64, i1,
+ *   double, ptr) rather than assuming i64 for everything.
+ */
+typedef struct { char name[NAME_BUF]; const char *ty; } LocalType;
+
+/*
+ * NameAlias — Maps a toke variable name to a unique LLVM name.
+ *   When variable shadowing occurs (e.g. the same name bound in nested
+ *   scopes), make_unique_name appends a ".N" suffix and records the
+ *   mapping here.  get_llvm_name resolves the latest alias.
+ */
+typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias;
+
+/*
+ * Ctx — The central compilation context / state machine for IR emission.
+ *
+ *   Output:
+ *     out          — File handle for the .ll output.
+ *     src          — Full source text (for tok_cp extraction).
+ *     arena        — Optional arena allocator for internal arrays.
+ *
+ *   SSA counters (monotonically increasing, never reset within a module):
+ *     tmp          — Next SSA temporary number (%t0, %t1, ...).
+ *     str_idx      — Next string global index (@.str.0, @.str.1, ...).
+ *     lbl          — Next label suffix for control-flow blocks.
+ *
+ *   Control-flow state (reset per function):
+ *     term         — 1 if the current basic block has been terminated
+ *                    (ret, br, unreachable).  Prevents emitting a
+ *                    fall-through branch after an already-terminated block.
+ *     break_lbl    — Label index for the innermost enclosing loop's exit
+ *                    block, used by NODE_BREAK_STMT.
+ *     cur_fn_ret   — LLVM return type of the function currently being
+ *                    emitted, for correct ret instructions.
+ *     cur_fn_name  — LLVM name of the current function, for tail-call
+ *                    detection in NODE_RETURN_STMT.
+ *
+ *   Registries (populated by prepass, consulted during emission):
+ *     fns / fn_count / fn_cap         — Known function signatures.
+ *     structs / struct_count / struct_cap — Known struct types.
+ *     imports / import_count / import_cap — Import alias mappings.
+ *
+ *   Per-function tracking (reset at each NODE_FUNC_DECL):
+ *     ptrs / ptr_count / ptr_cap      — Pointer-typed locals in scope.
+ *     locals / local_count / local_cap — LLVM type for each local variable.
+ *     aliases / alias_count / alias_cap — Variable-name shadowing aliases.
+ *     name_scope   — Counter for generating unique ".N" suffixes.
+ *
+ *   String globals buffer:
+ *     str_globals / str_globals_len    — Accumulates @.str.N constant
+ *                    definitions during emission.  These are written to the
+ *                    output file after all functions, because LLVM IR requires
+ *                    global constants at module scope but we encounter string
+ *                    literals while emitting function bodies.
+ */
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; } Ctx;
+
+/* ── SSA counter helpers ───────────────────────────────────────────── */
+/* next_tmp: allocate the next SSA temporary (%tN).
+ * next_lbl: allocate the next label suffix for control-flow blocks.
+ * next_str: allocate the next string global index (@.str.N). */
 static int next_tmp(Ctx *c){return c->tmp++;} static int next_lbl(Ctx *c){return c->lbl++;} static int next_str(Ctx *c){return c->str_idx++;}
+
+/*
+ * tok_cp — Copy a token's text from the source buffer into a NUL-terminated
+ * buffer.  Uses the node's tok_start and tok_len to locate the text.
+ * Truncates to sz-1 if the token is longer than the buffer.
+ */
 static void tok_cp(const char *src,const Node *n,char *buf,int sz){int len=n->tok_len<sz-1?n->tok_len:sz-1;memcpy(buf,src+n->tok_start,(size_t)len);buf[len]='\0';}
 
+/*
+ * mark_ptr_with_type — Register a local variable as pointer-typed.
+ *
+ * Called when a let/mut binding or parameter has an LLVM type of "ptr".
+ * Records the variable name and, if known, the toke struct type name so
+ * that subsequent field-access expressions (NODE_FIELD_EXPR) on this
+ * variable can look up the correct field index from the StructInfo registry.
+ *
+ * The ptrs array is reset at the start of each function (ptr_count = 0).
+ */
 static void mark_ptr_with_type(Ctx *c, const char *name, const char *stype) {
-    if (c->ptr_count >= MAX_PTR_LOCALS) return;
+    if (c->ptr_count >= c->ptr_cap) {
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many pointer locals", "fix", NULL);
+        return;
+    }
     int len = (int)strlen(name);
     if (len >= 128) len = 127;
     memcpy(c->ptrs[c->ptr_count].name, name, (size_t)len);
@@ -38,11 +185,22 @@ static void mark_ptr_with_type(Ctx *c, const char *name, const char *stype) {
     c->ptr_count++;
 }
 
+/*
+ * is_ptr_local — Return 1 if `name` was previously registered via
+ * mark_ptr_with_type, indicating it should be loaded/stored as "ptr"
+ * rather than "i64".
+ */
 static int is_ptr_local(Ctx *c, const char *name) {
     for (int i = 0; i < c->ptr_count; i++)
         if (!strcmp(c->ptrs[i].name, name)) return 1;
     return 0;
 }
+/*
+ * ptr_local_struct_type — Return the toke struct type name associated with
+ * a pointer local, or NULL if the variable is not a known struct-typed
+ * pointer.  Used by resolve_base_struct to map variable references to
+ * their struct layout for field-index resolution.
+ */
 static const char *ptr_local_struct_type(Ctx *c, const char *name) {
     for (int i = 0; i < c->ptr_count; i++)
         if (!strcmp(c->ptrs[i].name, name) && c->ptrs[i].struct_type[0])
@@ -52,8 +210,24 @@ static const char *ptr_local_struct_type(Ctx *c, const char *name) {
 
 /* ── Struct type registry ──────────────────────────────────────────── */
 
+/*
+ * register_struct — Add a struct type to the Ctx registry.
+ *
+ * Called from prepass_structs for each NODE_TYPE_DECL.  Records the struct
+ * name, field count, and ordered field names.  Field names are extracted
+ * from the type declaration's children: they may appear as direct
+ * NODE_FIELD children or wrapped in a NODE_STMT_LIST (produced by
+ * parse_field_list).
+ *
+ * The field order matters because struct fields are accessed by GEP index
+ * (getelementptr i64, ptr %base, i32 <field_index>), so the index must
+ * match the declaration order exactly.
+ */
 static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, const char *src) {
-    if (c->struct_count >= MAX_STRUCT_TYPES) return;
+    if (c->struct_count >= c->struct_cap) {
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many struct types", "fix", NULL);
+        return;
+    }
     StructInfo *si = &c->structs[c->struct_count];
     int len = (int)strlen(name);
     if (len >= 128) len = 127;
@@ -63,13 +237,13 @@ static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, 
     /* Extract field names from type decl.  Fields may be direct children
      * or wrapped in a NODE_STMT_LIST (from parse_field_list). */
     int fi = 0;
-    for (int i = 1; i < decl->child_count && fi < NODE_MAX_CHILDREN; i++) {
+    for (int i = 1; i < decl->child_count && fi < TKC_MAX_PARAMS; i++) {
         const Node *ch = decl->children[i];
         if (!ch) continue;
         if (ch->kind == NODE_FIELD) {
             tok_cp(src, ch, si->field_names[fi++], 128);
         } else if (ch->kind == NODE_STMT_LIST) {
-            for (int j = 0; j < ch->child_count && fi < NODE_MAX_CHILDREN; j++) {
+            for (int j = 0; j < ch->child_count && fi < TKC_MAX_PARAMS; j++) {
                 const Node *fj = ch->children[j];
                 if (fj && fj->kind == NODE_FIELD)
                     tok_cp(src, fj, si->field_names[fi++], 128);
@@ -79,6 +253,10 @@ static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, 
     c->struct_count++;
 }
 
+/*
+ * lookup_struct — Find a registered struct by toke name.
+ * Returns a pointer to the StructInfo entry, or NULL if not found.
+ */
 static const StructInfo *lookup_struct(Ctx *c, const char *name) {
     for (int i = 0; i < c->struct_count; i++)
         if (!strcmp(c->structs[i].name, name)) return &c->structs[i];
@@ -93,6 +271,11 @@ static int struct_field_index(const StructInfo *si, const char *fname) {
     return 0; /* fallback */
 }
 
+/*
+ * is_struct_type_name — Return 1 if `name` is a registered struct type.
+ * Used by is_ptr_type_node to determine whether a type identifier refers
+ * to a struct (which is pointer-typed at the LLVM level).
+ */
 static int is_struct_type_name(Ctx *c, const char *name) {
     return lookup_struct(c, name) != NULL;
 }
@@ -111,7 +294,21 @@ static int is_ptr_type_node(Ctx *c, const Node *ty) {
     return 0;
 }
 
-/* Resolve a return-spec or param type node to an LLVM type string. */
+/*
+ * resolve_llvm_type — Map a toke type-expression AST node to an LLVM IR
+ * type string.
+ *
+ * Used during the prepass (for function signatures) and during emission
+ * (for parameter/return types).  The mapping is:
+ *   bool          → "i1"
+ *   f64           → "double"
+ *   str           → "ptr"       (string is a pointer to a char array)
+ *   void          → "void"
+ *   array/map/ptr → "ptr"       (compound types are heap-allocated)
+ *   struct name   → "ptr"       (structs are stack-allocated, passed by ptr)
+ *   (default)     → "i64"       (integer, the toke default numeric type)
+ *   NULL node     → "i64"       (missing type annotation defaults to i64)
+ */
 static const char *resolve_llvm_type(Ctx *c, const Node *ty) {
     if (!ty) return "i64";
     if (is_ptr_type_node(c, ty)) return "ptr";
@@ -123,8 +320,19 @@ static const char *resolve_llvm_type(Ctx *c, const Node *ty) {
     return "i64";
 }
 
+/*
+ * register_fn — Add a function signature to the Ctx registry.
+ *
+ * Called from prepass_funcs for each NODE_FUNC_DECL.  Stores the LLVM
+ * symbol name, return type, and allocates a slot for parameter types
+ * (filled in by the caller).  Returns a pointer to the new FnSig so the
+ * caller can populate param_tys, param_type_names, and is_internal.
+ */
 static FnSig *register_fn(Ctx *c, const char *name, const char *ret) {
-    if (c->fn_count >= MAX_FUNCS) return NULL;
+    if (c->fn_count >= c->fn_cap) {
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many functions", "fix", NULL);
+        return NULL;
+    }
     FnSig *s = &c->fns[c->fn_count];
     int len = (int)strlen(name);
     if (len >= 128) len = 127;
@@ -136,6 +344,12 @@ static FnSig *register_fn(Ctx *c, const char *name, const char *ret) {
     c->fn_count++;
     return s;
 }
+/*
+ * lookup_fn — Find a registered function signature by LLVM symbol name.
+ * Returns NULL if no function with that name was seen during prepass.
+ * Used at call sites to determine return type, parameter types, and
+ * calling convention (fastcc for internal, default for extern).
+ */
 static const FnSig *lookup_fn(Ctx *c, const char *name) {
     for (int i = 0; i < c->fn_count; i++)
         if (!strcmp(c->fns[i].name, name)) return &c->fns[i];
@@ -144,6 +358,17 @@ static const FnSig *lookup_fn(Ctx *c, const char *name) {
 
 /* ── Prepass: collect struct type declarations ─────────────────────── */
 
+/*
+ * prepass_structs — Walk the AST and register all struct type declarations.
+ *
+ * Recurses into NODE_PROGRAM and NODE_MODULE containers.  For each
+ * NODE_TYPE_DECL, counts the fields (which may be direct NODE_FIELD
+ * children or nested inside a NODE_STMT_LIST) and calls register_struct
+ * to record the struct in the Ctx registry.
+ *
+ * Must run before emit_toplevel so that struct types are available when
+ * resolving parameter/return types and field-access expressions.
+ */
 static void prepass_structs(Ctx *c, const Node *n) {
     if (n->kind == NODE_PROGRAM || n->kind == NODE_MODULE) {
         for (int i = 0; i < n->child_count; i++) prepass_structs(c, n->children[i]);
@@ -164,6 +389,20 @@ static void prepass_structs(Ctx *c, const Node *n) {
     register_struct(c, tb, fc, n, c->src);
 }
 
+/*
+ * prepass_funcs — Walk the AST and register all function signatures.
+ *
+ * For each NODE_FUNC_DECL, extracts the function name (renaming "main"
+ * to "tk_main"), determines the return type from NODE_RETURN_SPEC (if
+ * present, else "void"), and records each NODE_PARAM's LLVM type.
+ *
+ * Also determines is_internal: functions with a NODE_STMT_LIST child
+ * have a body and will be emitted as `define fastcc`; those without are
+ * extern declarations (`declare`).
+ *
+ * Must run before emit_toplevel so that call expressions can look up
+ * parameter and return types for correct coercion and calling convention.
+ */
 static void prepass_funcs(Ctx *c, const Node *n) {
     char tb[256];
     if (n->kind == NODE_PROGRAM || n->kind == NODE_MODULE) {
@@ -187,7 +426,13 @@ static void prepass_funcs(Ctx *c, const Node *n) {
     FnSig *sig = register_fn(c, tb, ret);
     if (sig) {
         memcpy(sig->ret_type_name, ret_tn, sizeof sig->ret_type_name);
-        for (int i = 1; i < n->child_count && sig->param_count < NODE_MAX_CHILDREN; i++) {
+        /* Determine if function has a body (internal) vs extern (declaration only) */
+        int has_body = 0;
+        for (int i = 1; i < n->child_count; i++) {
+            if (n->children[i]->kind == NODE_STMT_LIST) { has_body = 1; break; }
+        }
+        sig->is_internal = has_body;
+        for (int i = 1; i < n->child_count && sig->param_count < TKC_MAX_PARAMS; i++) {
             if (n->children[i]->kind != NODE_PARAM) continue;
             const char *pty = "i64";
             if (n->children[i]->child_count > 1 && n->children[i]->children[1]) {
@@ -204,12 +449,26 @@ static void prepass_funcs(Ctx *c, const Node *n) {
 
 /* ── Import alias collection ──────────────────────────────────────── */
 
+/*
+ * prepass_imports — Walk the AST and register all import alias mappings.
+ *
+ * For each NODE_IMPORT, extracts the alias (children[0]) and the terminal
+ * module name from the NODE_MODULE_PATH (children[1]).  For example,
+ * `use j = std.json` produces alias="j", module="json".
+ *
+ * These mappings are later consulted by resolve_stdlib_call to translate
+ * qualified calls like j.parse(x) into C runtime function names.
+ */
 static void prepass_imports(Ctx *c, const Node *n) {
     if (n->kind == NODE_PROGRAM || n->kind == NODE_MODULE) {
         for (int i = 0; i < n->child_count; i++) prepass_imports(c, n->children[i]);
         return;
     }
-    if (n->kind != NODE_IMPORT || c->import_count >= MAX_IMPORTS) return;
+    if (n->kind != NODE_IMPORT) return;
+    if (c->import_count >= c->import_cap) {
+        diag_emit(DIAG_ERROR, E9010, n->start, n->line, n->col, "compiler limit exceeded: too many imports", "fix", NULL);
+        return;
+    }
     /* NODE_IMPORT children: [0]=alias (IDENT), [1..]=module path segments (IDENT) */
     if (n->child_count < 2) return;
     ImportAlias *ia = &c->imports[c->import_count];
@@ -224,8 +483,25 @@ static void prepass_imports(Ctx *c, const Node *n) {
     c->import_count++;
 }
 
-/* Resolve a qualified call like j.parse(x) to a C runtime function name.
- * Returns the C function name, or NULL if not a stdlib call. */
+/*
+ * resolve_stdlib_call — Translate a qualified method call into a C runtime
+ * function name.
+ *
+ * Given an import alias (e.g. "j") and a method name (e.g. "parse"),
+ * looks up the alias in the imports registry to find the module name
+ * (e.g. "json"), then maps module+method to the corresponding C runtime
+ * function name (e.g. "tk_json_parse").
+ *
+ * Supported modules and their methods:
+ *   std.json  — parse, print, enc, dec
+ *   std.toon  — enc, dec, str, i64, f64, bool, arr, from_json, to_json
+ *   std.yaml  — enc, dec, str, i64, f64, bool, arr, from_json, to_json
+ *   std.i18n  — load, get, fmt, locale
+ *   std.str   — argv, len, concat, split, trim, upper, lower
+ *
+ * Returns the C function name string, or NULL if the alias/method
+ * combination does not match any known stdlib function.
+ */
 static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *method) {
     /* Find which module this alias refers to */
     const char *mod = NULL;
@@ -285,7 +561,17 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
     return NULL;
 }
 
-/* Append to the string globals buffer (emitted at module scope before functions) */
+/*
+ * str_buf_append — Append formatted text to the string globals buffer.
+ *
+ * String literal constants (@.str.N) must appear at LLVM module scope,
+ * but we encounter them while emitting function bodies.  Rather than
+ * making a second pass, we buffer all string global definitions into
+ * ctx.str_globals and flush them after all functions are emitted.
+ *
+ * Uses vsnprintf for safe formatting; silently truncates if the buffer
+ * is full (TKC_STR_GLOBALS_SIZE).
+ */
 static void str_buf_append(Ctx *c, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
@@ -297,6 +583,21 @@ static void str_buf_append(Ctx *c, const char *fmt, ...) {
     va_end(ap);
 }
 
+/*
+ * emit_str_global — Buffer a string literal as an LLVM global constant.
+ *
+ * Takes the raw token text (including quotes) and its length.  Strips the
+ * surrounding quotes, processes escape sequences (\n → \0A, \t → \09,
+ * \\ → \5C, \" → \22), and hex-escapes any non-printable characters.
+ * Appends a NUL terminator (\00).
+ *
+ * The resulting definition (e.g. @.str.0 = private unnamed_addr constant
+ * [5 x i8] c"hello\00") is appended to the str_globals buffer, not written
+ * directly to the output file.
+ *
+ * Returns the string index (N in @.str.N) so the caller can emit a GEP
+ * to obtain a ptr to the string data.
+ */
 static int emit_str_global(Ctx *c, const char *raw, int rlen)
 {
     const char *inner = raw + 1; int ilen = rlen-2; if(ilen<0)ilen=0;
@@ -323,6 +624,9 @@ static int emit_str_global(Ctx *c, const char *raw, int rlen)
 
 /* ── Expression emission ───────────────────────────────────────────── */
 
+/* Forward declarations — needed because emit_expr and emit_stmt are
+ * mutually recursive (e.g. NODE_IF_STMT contains expressions, and
+ * NODE_CALL_EXPR emits sub-expressions for arguments). */
 static int emit_expr(Ctx *c, const Node *n);
 static void emit_stmt(Ctx *c, const Node *n);
 static void set_local_type(Ctx *c, const char *name, const char *ty);
@@ -331,8 +635,18 @@ static const char *expr_llvm_type(Ctx *c, const Node *n);
 static const char *get_llvm_name(Ctx *c, const char *toke_name);
 static const char *make_unique_name(Ctx *c, const char *toke_name);
 
-/* Resolve the struct type name from a NODE_FIELD_EXPR's base expression.
- * Walks through identifiers to find the struct type.  Returns NULL if unknown. */
+/*
+ * resolve_base_struct — Determine the struct type of a field-access base.
+ *
+ * Given the base expression of a NODE_FIELD_EXPR (e.g. the `p` in `p.x`),
+ * returns the StructInfo for the struct type, or NULL if the base is not
+ * a known struct.  Handles two cases:
+ *   - NODE_STRUCT_LIT: the type name is directly in the token.
+ *   - NODE_IDENT: checks ptr_local_struct_type to see if the variable
+ *     was bound to a struct value.
+ *
+ * The returned StructInfo is used to resolve field names to GEP indices.
+ */
 static const StructInfo *resolve_base_struct(Ctx *c, const Node *base) {
     /* For a NODE_STRUCT_LIT, the type name is in its token */
     if (base->kind == NODE_STRUCT_LIT) {
@@ -348,6 +662,33 @@ static const StructInfo *resolve_base_struct(Ctx *c, const Node *base) {
     return NULL;
 }
 
+/*
+ * emit_expr — Emit LLVM IR for an expression node, returning the SSA
+ * temporary number (%tN) that holds the result.
+ *
+ * Each AST node kind has its own emission strategy:
+ *
+ *   NODE_INT_LIT     → `add i64 0, <literal>` (materialise constant)
+ *   NODE_FLOAT_LIT   → `fadd double 0.0, <literal>`
+ *   NODE_BOOL_LIT    → `add i1 0, 0|1`
+ *   NODE_STR_LIT     → buffer a @.str.N global, GEP to get ptr
+ *   NODE_IDENT       → `load <type>, ptr %<name>` (or constant for true/false)
+ *   NODE_BINARY_EXPR → type-aware arithmetic with overflow checks (D2=E),
+ *                       comparisons, pointer concat, and type coercions
+ *   NODE_UNARY_EXPR  → negation (sub 0) or logical not (xor 1)
+ *   NODE_CALL_EXPR   → resolve callee (user fn, stdlib, qualified), coerce
+ *                       args, emit call with correct calling convention
+ *   NODE_CAST_EXPR   → type conversion (sitofp, fptosi, zext, trunc, etc.)
+ *   NODE_FIELD_EXPR  → struct field GEP or .len access (ptr[-1])
+ *   NODE_INDEX_EXPR  → array element GEP + load
+ *   NODE_STRUCT_LIT  → alloca + store for each field init
+ *   NODE_ARRAY_LIT   → alloca [len+1], store length at [0], data at [1..]
+ *   NODE_MAP_LIT     → call tk_map_new + tk_map_put per entry
+ *   NODE_PROPAGATE_EXPR → placeholder, delegates to child expression
+ *
+ * Type coercion between i1/i64/double/ptr is handled inline where needed
+ * (e.g. zext i1 to i64 for arithmetic, ptrtoint for comparisons).
+ */
 static int emit_expr(Ctx *c, const Node *n)
 {
     char tb[256]; int t, t2, t3;
@@ -422,6 +763,20 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = call ptr @tk_array_concat(ptr %%t%d, ptr %%t%d)\n", t, lhs, rhs);
             return t;
         }
+        /* ptr == ptr, ptr < ptr, ptr > ptr: compare pointers directly
+         * without ptrtoint, preserving alias analysis information */
+        if (!strcmp(lty, "ptr") && !strcmp(rty, "ptr") &&
+            (n->op == TK_EQ || n->op == TK_LT || n->op == TK_GT)) {
+            t = next_tmp(c);
+            const char *cmp;
+            switch (n->op) {
+            case TK_LT: cmp = "ult"; break;
+            case TK_GT: cmp = "ugt"; break;
+            default:    cmp = "eq";   break;
+            }
+            fprintf(c->out, "  %%t%d = icmp %s ptr %%t%d, %%t%d\n", t, cmp, lhs, rhs);
+            return t;
+        }
         /* Coerce i1 operands to i64 for arithmetic/comparisons */
         if (!strcmp(lty, "i1")) {
             int z = next_tmp(c);
@@ -441,20 +796,43 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, rhs);
             rhs = z;
         }
-        t = next_tmp(c);
-        const char *op;
-        switch (n->op) {
-        case TK_PLUS:  op = "add i64";      break;
-        case TK_MINUS: op = "sub i64";      break;
-        case TK_STAR:  op = "mul i64";      break;
-        case TK_SLASH: op = "sdiv i64";     break;
-        case TK_LT:    op = "icmp slt i64"; break;
-        case TK_GT:    op = "icmp sgt i64"; break;
-        case TK_EQ:    op = "icmp eq i64";  break;
-        default:       op = "add i64";
-            fprintf(c->out, "  ; unsupported binop %d\n", (int)n->op);
+        /* Checked arithmetic for +, -, * (D2=E) */
+        if (n->op == TK_PLUS || n->op == TK_MINUS || n->op == TK_STAR) {
+            const char *intrinsic;
+            int op_code;
+            switch (n->op) {
+            case TK_PLUS:  intrinsic = "@llvm.sadd.with.overflow.i64"; op_code = 0; break;
+            case TK_MINUS: intrinsic = "@llvm.ssub.with.overflow.i64"; op_code = 1; break;
+            default:       intrinsic = "@llvm.smul.with.overflow.i64"; op_code = 2; break;
+            }
+            int r = next_tmp(c);
+            fprintf(c->out, "  %%t%d = call {i64, i1} %s(i64 %%t%d, i64 %%t%d)\n", r, intrinsic, lhs, rhs);
+            int val = next_tmp(c);
+            fprintf(c->out, "  %%t%d = extractvalue {i64, i1} %%t%d, 0\n", val, r);
+            int ov = next_tmp(c);
+            fprintf(c->out, "  %%t%d = extractvalue {i64, i1} %%t%d, 1\n", ov, r);
+            int lbl_trap = next_lbl(c);
+            int lbl_cont = next_lbl(c);
+            fprintf(c->out, "  br i1 %%t%d, label %%ov_trap%d, label %%ov_ok%d\n", ov, lbl_trap, lbl_cont);
+            fprintf(c->out, "ov_trap%d:\n", lbl_trap);
+            fprintf(c->out, "  call void @tk_overflow_trap(i32 %d)\n", op_code);
+            fprintf(c->out, "  unreachable\n");
+            fprintf(c->out, "ov_ok%d:\n", lbl_cont);
+            c->term = 0;
+            t = val;
+        } else {
+            t = next_tmp(c);
+            const char *op;
+            switch (n->op) {
+            case TK_SLASH: op = "sdiv i64";     break;
+            case TK_LT:    op = "icmp slt i64"; break;
+            case TK_GT:    op = "icmp sgt i64"; break;
+            case TK_EQ:    op = "icmp eq i64";  break;
+            default:       op = "add i64";
+                fprintf(c->out, "  ; unsupported binop %d\n", (int)n->op);
+            }
+            fprintf(c->out, "  %%t%d = %s %%t%d, %%t%d\n", t, op, lhs, rhs);
         }
-        fprintf(c->out, "  %%t%d = %s %%t%d, %%t%d\n", t, op, lhs, rhs);
         return t;
     }
     case NODE_UNARY_EXPR: {
@@ -491,23 +869,8 @@ static int emit_expr(Ctx *c, const Node *n)
             strncpy(tb, resolved_fn, sizeof tb - 1); tb[sizeof tb - 1] = '\0';
         }
 
-        /* spawn(fn) -> call ptr @tk_spawn(ptr @fn) */
-        if (!strcmp(tb, "spawn") && n->child_count >= 2) {
-            char fn_name[256];
-            tok_cp(c->src, n->children[1], fn_name, sizeof fn_name);
-            t = next_tmp(c);
-            fprintf(c->out, "  %%t%d = call ptr @tk_spawn(ptr @%s)\n", t, fn_name);
-            return t;
-        }
-        /* await(t) -> call i64 @tk_await(ptr %t) */
-        if (!strcmp(tb, "await") && n->child_count >= 2) {
-            int av = emit_expr(c, n->children[1]);
-            t = next_tmp(c);
-            fprintf(c->out, "  %%t%d = call i64 @tk_await(ptr %%t%d)\n", t, av);
-            return t;
-        }
-        int args[NODE_MAX_CHILDREN], na = n->child_count - 1;
-        const char *arg_tys[NODE_MAX_CHILDREN];
+        int args[TKC_MAX_PARAMS], na = n->child_count - 1;
+        const char *arg_tys[TKC_MAX_PARAMS];
         for (int i = 0; i < na; i++) {
             args[i] = emit_expr(c, n->children[i+1]);
             arg_tys[i] = expr_llvm_type(c, n->children[i+1]);
@@ -576,8 +939,10 @@ static int emit_expr(Ctx *c, const Node *n)
             }
         }
 
+        {
+        const char *cc = (callee && callee->is_internal) ? " fastcc" : "";
         if (!strcmp(callee_ret, "void")) {
-            fprintf(c->out, "  call void @%s(", tb);
+            fprintf(c->out, "  call%s void @%s(", cc, tb);
             for (int i = 0; i < na; i++) {
                 if (i) fputc(',', c->out);
                 const char *aty = (callee && i < callee->param_count) ? callee->param_tys[i] : "i64";
@@ -592,7 +957,7 @@ static int emit_expr(Ctx *c, const Node *n)
             return t;
         }
         t = next_tmp(c);
-        fprintf(c->out, "  %%t%d = call %s @%s(", t, callee_ret, tb);
+        fprintf(c->out, "  %%t%d = call%s %s @%s(", t, cc, callee_ret, tb);
         for (int i = 0; i < na; i++) {
             if (i) fputc(',', c->out);
             const char *aty = (callee && i < callee->param_count) ? callee->param_tys[i] : "i64";
@@ -603,6 +968,7 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         fputs(")\n", c->out);
         return t;
+        }
     }
     case NODE_CAST_EXPR: {
         int v = emit_expr(c, n->children[0]);
@@ -659,7 +1025,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 base = conv;
             }
             t2 = next_tmp(c); t = next_tmp(c);
-            fprintf(c->out, "  %%t%d = getelementptr i64, ptr %%t%d, i32 -1 ; .len\n", t2, base);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, ptr %%t%d, i32 -1 ; .len\n", t2, base);
             fprintf(c->out, "  %%t%d = load i64, ptr %%t%d\n", t, t2);
             return t;
         }
@@ -677,7 +1043,7 @@ static int emit_expr(Ctx *c, const Node *n)
             }
         }
         t2 = next_tmp(c); t = next_tmp(c);
-        fprintf(c->out, "  %%t%d = getelementptr i64, ptr %%t%d, i32 %d ; .%s\n", t2, base, fidx, fn);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds i64, ptr %%t%d, i32 %d ; .%s\n", t2, base, fidx, fn);
         fprintf(c->out, "  %%t%d = load i64, ptr %%t%d\n", t, t2);
         return t;
     }
@@ -717,7 +1083,7 @@ static int emit_expr(Ctx *c, const Node *n)
             if (fi->child_count >= 1) {
                 t3 = emit_expr(c, fi->children[0]);
                 t2 = next_tmp(c);
-                fprintf(c->out, "  %%t%d = getelementptr i64, ptr %%t%d, i32 %d ; .%s\n",
+                fprintf(c->out, "  %%t%d = getelementptr inbounds i64, ptr %%t%d, i32 %d ; .%s\n",
                         t2, t, fidx, si ? si->field_names[fidx] : "?");
                 fprintf(c->out, "  store i64 %%t%d, ptr %%t%d\n", t3, t2);
             }
@@ -732,15 +1098,15 @@ static int emit_expr(Ctx *c, const Node *n)
                 block, n->child_count + 1, n->child_count);
         /* Store length at index 0 of the block */
         t2 = next_tmp(c);
-        fprintf(c->out, "  %%t%d = getelementptr i64, ptr %%t%d, i64 0\n", t2, block);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds i64, ptr %%t%d, i64 0\n", t2, block);
         fprintf(c->out, "  store i64 %d, ptr %%t%d ; .len\n", n->child_count, t2);
         /* Data pointer = block + 1 */
         t = next_tmp(c);
-        fprintf(c->out, "  %%t%d = getelementptr i64, ptr %%t%d, i64 1 ; data start\n", t, block);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds i64, ptr %%t%d, i64 1 ; data start\n", t, block);
         for (int i = 0; i < n->child_count; i++) {
             int ev = emit_expr(c, n->children[i]);
             t3 = next_tmp(c);
-            fprintf(c->out, "  %%t%d = getelementptr i64, ptr %%t%d, i64 %d\n", t3, t, i);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, ptr %%t%d, i64 %d\n", t3, t, i);
             fprintf(c->out, "  store i64 %%t%d, ptr %%t%d\n", ev, t3);
         }
         return t;
@@ -769,7 +1135,19 @@ static int emit_expr(Ctx *c, const Node *n)
     }
 }
 
-/* Return the struct type name of an expression, or NULL if not a struct. */
+/*
+ * expr_struct_type — Return the toke struct type name for an expression,
+ * or NULL if the expression does not produce a struct value.
+ *
+ * Used at let/mut binding sites to propagate struct type information
+ * into the PtrLocal registry, so that later field-access on the bound
+ * variable can resolve field indices.
+ *
+ * Handles three cases:
+ *   NODE_STRUCT_LIT — type name is in the token text.
+ *   NODE_IDENT      — looks up the variable's struct type from ptrs registry.
+ *   NODE_CALL_EXPR  — uses the callee's ret_type_name from the FnSig.
+ */
 static const char *expr_struct_type(Ctx *c, const Node *n) {
     if (!n) return NULL;
     if (n->kind == NODE_STRUCT_LIT) {
@@ -793,8 +1171,15 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
     return NULL;
 }
 
-/* Track the LLVM type of a local variable (for correct load/store). */
-/* Get the current LLVM name for a toke variable (latest alias) */
+/*
+ * get_llvm_name — Resolve a toke variable name to its current LLVM name.
+ *
+ * When variable shadowing occurs (e.g. a loop body re-binds a name that
+ * exists in the outer scope), make_unique_name creates an alias with a
+ * ".N" suffix.  This function searches the alias table in reverse order
+ * (most recent first) to find the latest LLVM name for a given toke name.
+ * Returns the original name if no alias exists.
+ */
 static const char *get_llvm_name(Ctx *c, const char *toke_name) {
     /* Search aliases in reverse order to find the latest */
     for (int i = c->alias_count - 1; i >= 0; i--)
@@ -803,8 +1188,19 @@ static const char *get_llvm_name(Ctx *c, const char *toke_name) {
     return toke_name; /* no alias, use original */
 }
 
-/* Register a new unique LLVM name for a toke variable.
- * If the toke name has been used before, appends .N suffix. */
+/*
+ * make_unique_name — Generate a unique LLVM name for a toke variable,
+ * handling variable shadowing.
+ *
+ * If the toke name has not been used as a local in this function, returns
+ * it unchanged (first use needs no renaming).  If it already exists in
+ * the locals table (exact match or prefix with ".N" suffix), allocates a
+ * new alias "name.N" (where N is an incrementing scope counter) and
+ * records it in the aliases table so that get_llvm_name can resolve it.
+ *
+ * This ensures that LLVM IR sees distinct alloca names even when toke
+ * allows rebinding the same name in nested scopes.
+ */
 static const char *make_unique_name(Ctx *c, const char *toke_name) {
     /* Check if this name already exists in locals */
     int exists = 0;
@@ -817,23 +1213,43 @@ static const char *make_unique_name(Ctx *c, const char *toke_name) {
     if (!exists) return toke_name; /* first use, no renaming needed */
 
     /* Generate a unique name */
-    if (c->alias_count >= MAX_LOCALS) return toke_name;
+    if (c->alias_count >= c->alias_cap) {
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many name aliases", "fix", NULL);
+        return toke_name;
+    }
     NameAlias *a = &c->aliases[c->alias_count++];
     strncpy(a->toke_name, toke_name, 127); a->toke_name[127] = '\0';
     snprintf(a->llvm_name, 128, "%s.%d", toke_name, ++c->name_scope);
     return a->llvm_name;
 }
 
+/*
+ * set_local_type — Record (or update) the LLVM type for a local variable.
+ *
+ * Called when a variable is first bound (let/mut) or when a parameter is
+ * spilled.  The type is stored so that subsequent load/store instructions
+ * use the correct LLVM type rather than defaulting to i64.
+ */
 static void set_local_type(Ctx *c, const char *name, const char *ty) {
     /* Update existing entry if present */
     for (int i = 0; i < c->local_count; i++) {
         if (!strcmp(c->locals[i].name, name)) { c->locals[i].ty = ty; return; }
     }
-    if (c->local_count >= MAX_LOCALS) return;
+    if (c->local_count >= c->local_cap) {
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many local variables", "fix", NULL);
+        return;
+    }
     LocalType *lt = &c->locals[c->local_count++];
     strncpy(lt->name, name, 127); lt->name[127] = '\0';
     lt->ty = ty;
 }
+/*
+ * get_local_type — Look up the LLVM type for a local variable.
+ *
+ * Returns the type recorded by set_local_type.  Falls back to "ptr" if
+ * the name is a known pointer local (from is_ptr_local), or "i64" as the
+ * ultimate default.
+ */
 static const char *get_local_type(Ctx *c, const char *name) {
     for (int i = 0; i < c->local_count; i++)
         if (!strcmp(c->locals[i].name, name)) return c->locals[i].ty;
@@ -841,9 +1257,24 @@ static const char *get_local_type(Ctx *c, const char *name) {
     return "i64";
 }
 
-/* Return the LLVM IR type string that emit_expr will produce for node n.
- * This is used at type boundaries (let, assign, return, call args) to emit
- * correct store/ret instructions. */
+/*
+ * expr_llvm_type — Predict the LLVM IR type that emit_expr will produce
+ * for a given expression node, *without* emitting any IR.
+ *
+ * This is a static analysis function used at type boundaries (let bindings,
+ * assignments, return statements, call argument coercion) to determine
+ * what type coercion is needed.  It mirrors the logic of emit_expr:
+ *
+ *   Literals:     INT→i64, FLOAT→double, BOOL→i1, STR→ptr
+ *   Compounds:    STRUCT_LIT/ARRAY_LIT/MAP_LIT → ptr
+ *   Identifiers:  true/false→i1, else look up local type
+ *   Binary:       comparisons→i1, ptr+anything→ptr, else i64
+ *   Unary:        !→i1, -→i64
+ *   Calls:        look up FnSig return type, or use stdlib conventions
+ *   Casts:        determined by target type
+ *   Index:        i64 (array element)
+ *   Field:        i64 (struct field or .len)
+ */
 static const char *expr_llvm_type(Ctx *c, const Node *n) {
     if (!n) return "i64";
     switch (n->kind) {
@@ -921,6 +1352,66 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
 
 /* ── Statement emission ────────────────────────────────────────────── */
 
+/*
+ * emit_stmt — Emit LLVM IR for a statement node.
+ *
+ * Unlike emit_expr (which returns an SSA temporary), emit_stmt produces
+ * side-effecting IR (stores, branches, calls) and manages the Ctx.term
+ * flag to track basic-block termination.
+ *
+ * Statement kinds:
+ *
+ *   NODE_BIND_STMT / NODE_MUT_BIND_STMT (let / mut):
+ *     Allocates a local variable (alloca), emits the initialiser expression,
+ *     and stores the result.  Registers the variable's LLVM type and, for
+ *     pointer-typed values, records the struct type for field-access.
+ *     Variable shadowing is handled via make_unique_name.
+ *
+ *   NODE_ASSIGN_STMT:
+ *     Resolves the variable's LLVM name and type, emits the RHS expression,
+ *     and stores the result into the existing alloca.
+ *
+ *   NODE_RETURN_STMT:
+ *     Emits the return value (if any) with type coercion to match the
+ *     function's declared return type.  Detects tail-recursive calls
+ *     (return f(args) where f == current function) and emits `musttail
+ *     call fastcc` for guaranteed tail-call optimisation.  Sets term=1.
+ *
+ *   NODE_BREAK_STMT:
+ *     Emits `br label %loop_exitN` using the saved break_lbl from the
+ *     enclosing loop.  Sets term=1.
+ *
+ *   NODE_IF_STMT:
+ *     Emits a conditional branch with if_then/if_else/if_merge blocks.
+ *     The condition is coerced to i1 if not already boolean.  Tracks
+ *     termination: if both branches terminate, the merge block is omitted
+ *     and term=1; otherwise term=0.
+ *
+ *   NODE_LOOP_INIT:
+ *     Emits the loop variable initialisation (alloca + store), identical
+ *     to let-binding logic.  Emitted just before the loop header.
+ *
+ *   NODE_LOOP_STMT:
+ *     Emits a structured loop with loop_hdr/loop_body/loop_exit blocks.
+ *     Supports optional init (NODE_LOOP_INIT), optional condition
+ *     expression, and optional step (NODE_ASSIGN_STMT).  Saves/restores
+ *     break_lbl for nested loops.
+ *
+ *   NODE_ARENA_STMT:
+ *     Placeholder for arena-scoped allocation.  Currently emits comment
+ *     markers and delegates to the body statement.
+ *
+ *   NODE_MATCH_STMT:
+ *     Emits a series of equality comparisons against the scrutinee value.
+ *     Each arm gets its own label (marmN); on match, the arm body executes
+ *     and branches to the merge label (mendN).
+ *
+ *   NODE_STMT_LIST:
+ *     Emits each child statement sequentially.
+ *
+ *   NODE_EXPR_STMT:
+ *     Evaluates the expression for side effects, discarding the result.
+ */
 static void emit_stmt(Ctx *c, const Node *n)
 {
     char tb[256];
@@ -958,6 +1449,65 @@ static void emit_stmt(Ctx *c, const Node *n)
     case NODE_RETURN_STMT:
         if (n->child_count > 0) {
             const char *rt = c->cur_fn_ret ? c->cur_fn_ret : "i64";
+            /* Detect tail-recursive call: return expr is a call to the current function */
+            if (n->children[0]->kind == NODE_CALL_EXPR && c->cur_fn_name[0] &&
+                n->children[0]->children[0]->kind != NODE_FIELD_EXPR) {
+                char callee_name[256];
+                tok_cp(c->src, n->children[0]->children[0], callee_name, sizeof callee_name);
+                if (!strcmp(callee_name, "main")) strcpy(callee_name, "tk_main");
+                if (!strcmp(callee_name, c->cur_fn_name)) {
+                    /* Tail-recursive call — emit musttail call fastcc */
+                    const Node *call = n->children[0];
+                    const FnSig *callee = lookup_fn(c, callee_name);
+                    int na = call->child_count - 1;
+                    int args[TKC_MAX_PARAMS];
+                    for (int i = 0; i < na; i++)
+                        args[i] = emit_expr(c, call->children[i+1]);
+                    /* Coerce arguments to match parameter types */
+                    for (int i = 0; i < na; i++) {
+                        const char *aty = expr_llvm_type(c, call->children[i+1]);
+                        const char *pty = (callee && i < callee->param_count) ? callee->param_tys[i] : "i64";
+                        if (strcmp(aty, pty)) {
+                            int z = next_tmp(c);
+                            if (!strcmp(aty, "i1") && !strcmp(pty, "i64"))
+                                fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, args[i]);
+                            else if (!strcmp(aty, "i64") && !strcmp(pty, "i1"))
+                                fprintf(c->out, "  %%t%d = trunc i64 %%t%d to i1\n", z, args[i]);
+                            else if (!strcmp(aty, "ptr") && !strcmp(pty, "i64"))
+                                fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, args[i]);
+                            else if (!strcmp(aty, "i64") && !strcmp(pty, "ptr"))
+                                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to ptr\n", z, args[i]);
+                            else if (!strcmp(aty, "i64") && !strcmp(pty, "double"))
+                                fprintf(c->out, "  %%t%d = sitofp i64 %%t%d to double\n", z, args[i]);
+                            else if (!strcmp(aty, "double") && !strcmp(pty, "i64"))
+                                fprintf(c->out, "  %%t%d = fptosi double %%t%d to i64\n", z, args[i]);
+                            else
+                                fprintf(c->out, "  %%t%d = add i64 0, %%t%d ; tail coerce fallback\n", z, args[i]);
+                            args[i] = z;
+                        }
+                    }
+                    if (!strcmp(rt, "void")) {
+                        fprintf(c->out, "  musttail call fastcc void @%s(", callee_name);
+                        for (int i = 0; i < na; i++) {
+                            if (i) fputc(',', c->out);
+                            const char *pty = (callee && i < callee->param_count) ? callee->param_tys[i] : "i64";
+                            fprintf(c->out, " %s %%t%d", pty, args[i]);
+                        }
+                        fputs(")\n  ret void\n", c->out);
+                    } else {
+                        int tv = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = musttail call fastcc %s @%s(", tv, rt, callee_name);
+                        for (int i = 0; i < na; i++) {
+                            if (i) fputc(',', c->out);
+                            const char *pty = (callee && i < callee->param_count) ? callee->param_tys[i] : "i64";
+                            fprintf(c->out, " %s %%t%d", pty, args[i]);
+                        }
+                        fprintf(c->out, ")\n  ret %s %%t%d\n", rt, tv);
+                    }
+                    c->term = 1;
+                    break;
+                }
+            }
             if (!strcmp(rt, "void")) {
                 /* void function with <expr — emit the expr for side effects, return void */
                 emit_expr(c, n->children[0]);
@@ -1126,6 +1676,37 @@ static void emit_stmt(Ctx *c, const Node *n)
 
 /* ── Top-level declarations ────────────────────────────────────────── */
 
+/*
+ * emit_toplevel — Emit LLVM IR for top-level AST nodes.
+ *
+ * Recurses into NODE_PROGRAM and NODE_MODULE containers.  Handles:
+ *
+ *   NODE_TYPE_DECL:
+ *     Emits an LLVM named struct type: %struct.<name> = type { i64, i64, ... }
+ *     with one i64 slot per field.  Empty structs get a single i8 placeholder.
+ *
+ *   NODE_CONST_DECL:
+ *     Emits a module-level constant.  Integer constants become
+ *     `@name = constant i64 <value>`.  String constants are emitted via
+ *     emit_str_global and stored as a constant pointer to the string data.
+ *     Other types get a stub `constant i64 0`.
+ *
+ *   NODE_FUNC_DECL:
+ *     If the function has no body (body_i < 0), emits `declare <ret> @name(...)`.
+ *     Otherwise, emits a full `define dso_local fastcc <ret> @name(...) { }`:
+ *       - Resets per-function state (ptr_count, local_count, aliases).
+ *       - Emits parameter spills: each param gets an alloca and store from
+ *         the .arg SSA value, because LLVM SSA values cannot be reassigned
+ *         but toke parameters are mutable.
+ *       - Emits the function body via emit_stmt.
+ *       - Appends an implicit return if the body did not terminate (term==0).
+ *     Toke "main" is renamed to "tk_main" to avoid collision with the
+ *     C-compatible main() wrapper emitted separately.
+ *
+ *   NODE_IMPORT:
+ *     Silently skipped (imports have no IR representation; they were
+ *     handled by prepass_imports).
+ */
 static void emit_toplevel(Ctx *c, const Node *n)
 {
     char tb[256];
@@ -1193,7 +1774,8 @@ static void emit_toplevel(Ctx *c, const Node *n)
         c->local_count = 0; /* reset local type tracking */
         c->alias_count = 0; c->name_scope = 0; /* reset variable scoping */
         c->cur_fn_ret = ret;
-        fprintf(c->out, "\ndefine %s @%s(", ret, tb);
+        strncpy(c->cur_fn_name, tb, NAME_BUF - 1); c->cur_fn_name[NAME_BUF - 1] = '\0';
+        fprintf(c->out, "\ndefine dso_local fastcc %s @%s(", ret, tb);
         int first = 1;
         for (int i = 1; i < n->child_count; i++) {
             if (n->children[i]->kind != NODE_PARAM) continue;
@@ -1205,7 +1787,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
             fprintf(c->out, "%s %%%s.arg", pty, pn);
             first = 0;
         }
-        fputs(") {\nentry:\n", c->out);
+        fputs(") nounwind #0 {\nentry:\n", c->out);
         /* Spill params */
         for (int i = 1; i < n->child_count; i++) {
             if (n->children[i]->kind != NODE_PARAM) continue;
@@ -1231,6 +1813,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
         }
         fputs("}\n", c->out);
         c->cur_fn_ret = NULL;
+        c->cur_fn_name[0] = '\0';
         break;
     }
     case NODE_IMPORT: break;  /* nothing to emit */
@@ -1242,6 +1825,33 @@ static void emit_toplevel(Ctx *c, const Node *n)
 
 /* ── Public API ────────────────────────────────────────────────────── */
 
+/*
+ * emit_llvm_ir — Main entry point: emit a complete LLVM IR module (.ll file).
+ *
+ * Orchestrates the full emission pipeline:
+ *
+ *   1. Opens the output file and initialises the Ctx state machine.
+ *   2. Allocates all dynamic arrays (fns, ptrs, structs, imports, locals,
+ *      aliases) from the arena if available, otherwise via calloc.  Sizes
+ *      come from TkcLimits (configurable via CodegenEnv).
+ *   3. Emits the module header: target triple, target datalayout (inferred
+ *      from the target string or compile-time platform detection), and
+ *      runtime/intrinsic declarations (printf, tk_json_parse, overflow
+ *      intrinsics, etc.).
+ *   4. Runs three prepass walks: prepass_structs, prepass_funcs,
+ *      prepass_imports — populating the Ctx registries.
+ *   5. Calls emit_toplevel to emit all struct types, constants, and
+ *      function definitions.
+ *   6. Flushes the buffered string globals (@.str.N constants) that
+ *      accumulated during function emission.
+ *   7. Emits the C-compatible main() wrapper that calls tk_runtime_init
+ *      and then tk_main.  If tk_main returns i64, truncates to i32 for
+ *      the process exit code.
+ *   8. Emits function attributes (#0) for stack probing and protection.
+ *   9. Cleans up: flushes and closes the file, frees non-arena allocations.
+ *
+ * Returns 0 on success, -1 on I/O error (with diagnostic emitted).
+ */
 int emit_llvm_ir(const Node *ast, const char *src,
                  const CodegenEnv *env, const char *out_ll)
 {
@@ -1252,12 +1862,59 @@ int emit_llvm_ir(const Node *ast, const char *src,
         return -1;
     }
     Ctx ctx; memset(&ctx, 0, sizeof ctx); ctx.out = f; ctx.src = src;
+    /* Allocate dynamic arrays from arena using runtime limits */
+    Arena *ar = (env && env->arena) ? env->arena : NULL;
+    ctx.arena = ar;
+    TkcLimits lim; tkc_limits_defaults(&lim);
+    if (env) lim = env->limits;
+    ctx.fn_cap     = lim.max_funcs;
+    ctx.ptr_cap    = lim.max_locals;  /* ptr locals share locals budget */
+    ctx.struct_cap = lim.max_struct_types;
+    ctx.import_cap = lim.max_imports;
+    ctx.local_cap  = lim.max_locals;
+    ctx.alias_cap  = lim.max_locals;
+    if (ar) {
+        ctx.fns     = (FnSig *)arena_alloc(ar, ctx.fn_cap * (int)sizeof(FnSig));
+        ctx.ptrs    = (PtrLocal *)arena_alloc(ar, ctx.ptr_cap * (int)sizeof(PtrLocal));
+        ctx.structs = (StructInfo *)arena_alloc(ar, ctx.struct_cap * (int)sizeof(StructInfo));
+        ctx.imports = (ImportAlias *)arena_alloc(ar, ctx.import_cap * (int)sizeof(ImportAlias));
+        ctx.locals  = (LocalType *)arena_alloc(ar, ctx.local_cap * (int)sizeof(LocalType));
+        ctx.aliases = (NameAlias *)arena_alloc(ar, ctx.alias_cap * (int)sizeof(NameAlias));
+    } else {
+        ctx.fns     = (FnSig *)calloc((size_t)ctx.fn_cap, sizeof(FnSig));
+        ctx.ptrs    = (PtrLocal *)calloc((size_t)ctx.ptr_cap, sizeof(PtrLocal));
+        ctx.structs = (StructInfo *)calloc((size_t)ctx.struct_cap, sizeof(StructInfo));
+        ctx.imports = (ImportAlias *)calloc((size_t)ctx.import_cap, sizeof(ImportAlias));
+        ctx.locals  = (LocalType *)calloc((size_t)ctx.local_cap, sizeof(LocalType));
+        ctx.aliases = (NameAlias *)calloc((size_t)ctx.alias_cap, sizeof(NameAlias));
+    }
 
     fputs("; module generated by tkc\n", f);
-    if (env && env->target && env->target[0])
+    if (env && env->target && env->target[0]) {
         fprintf(f, "target triple = \"%s\"\n", env->target);
+        /* Emit target datalayout for common targets.
+         * Omitting datalayout disables target-specific optimizations. */
+        if (strstr(env->target, "x86_64") && strstr(env->target, "linux"))
+            fputs("target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"\n", f);
+        else if (strstr(env->target, "aarch64") && strstr(env->target, "linux"))
+            fputs("target datalayout = \"e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128-Fn32\"\n", f);
+        else if (strstr(env->target, "aarch64") && strstr(env->target, "macos"))
+            fputs("target datalayout = \"e-m:o-i64:64-i128:128-n32:64-S128-Fn32\"\n", f);
+        else if (strstr(env->target, "x86_64") && strstr(env->target, "macos"))
+            fputs("target datalayout = \"e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"\n", f);
+    } else {
+        /* No target specified — emit native datalayout for current platform */
+#if defined(__x86_64__) && defined(__linux__)
+        fputs("target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"\n", f);
+#elif defined(__aarch64__) && defined(__linux__)
+        fputs("target datalayout = \"e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128-Fn32\"\n", f);
+#elif defined(__aarch64__) && defined(__APPLE__)
+        fputs("target datalayout = \"e-m:o-i64:64-i128:128-n32:64-S128-Fn32\"\n", f);
+#elif defined(__x86_64__) && defined(__APPLE__)
+        fputs("target datalayout = \"e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"\n", f);
+#endif
+    }
     fputs("\ndeclare i32 @printf(ptr, ...)\ndeclare i32 @puts(ptr)\n", f);
-    fputs("declare ptr @tk_spawn(ptr)\ndeclare i64 @tk_await(ptr)\n", f);
     /* Runtime declarations for std.json and std.str */
     fputs("declare i64 @tk_json_parse(ptr)\n", f);
     fputs("declare void @tk_json_print(i64)\n", f);
@@ -1269,7 +1926,12 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_str_char_at(ptr, i64)\n", f);
     fputs("declare void @tk_json_print_bool(i64)\n", f);
     fputs("declare void @tk_json_print_arr(ptr)\n", f);
-    fputs("declare void @tk_json_print_str(ptr)\n\n", f);
+    fputs("declare void @tk_json_print_str(ptr)\n", f);
+    /* Checked overflow intrinsics and trap (D2=E) */
+    fputs("declare {i64, i1} @llvm.sadd.with.overflow.i64(i64, i64)\n", f);
+    fputs("declare {i64, i1} @llvm.ssub.with.overflow.i64(i64, i64)\n", f);
+    fputs("declare {i64, i1} @llvm.smul.with.overflow.i64(i64, i64)\n", f);
+    fputs("declare void @tk_overflow_trap(i32)\n\n", f);
 
     prepass_structs(&ctx, ast);
     prepass_funcs(&ctx, ast);
@@ -1281,32 +1943,49 @@ int emit_llvm_ir(const Node *ast, const char *src,
         fwrite(ctx.str_globals, 1, (size_t)ctx.str_globals_len, f);
 
     /* Emit C-compatible main wrapper that inits runtime and calls tk_main */
-    fputs("\ndefine i32 @main(i32 %argc, ptr %argv) {\n", f);
+    fputs("\ndefine i32 @main(i32 %argc, ptr %argv) #0 {\n", f);
     fputs("  call void @tk_runtime_init(i32 %argc, ptr %argv)\n", f);
     /* Check if toke main returns void or i64 */
     const FnSig *tkmain = lookup_fn(&ctx, "tk_main");
     if (tkmain && !strcmp(tkmain->ret, "void")) {
-        fputs("  call void @tk_main()\n", f);
+        fputs("  call fastcc void @tk_main()\n", f);
         fputs("  ret i32 0\n", f);
     } else {
-        fputs("  %r = call i64 @tk_main()\n", f);
+        fputs("  %r = call fastcc i64 @tk_main()\n", f);
         fputs("  %rc = trunc i64 %r to i32\n", f);
         fputs("  ret i32 %rc\n", f);
     }
     fputs("}\n", f);
 
+    /* Stack probe and stack-protector attributes for recursion safety */
+    fputs("\nattributes #0 = { \"probe-stack\"=\"inline-asm\" \"stack-protector-buffer-size\"=\"8\" }\n", f);
+
     if (fflush(f) || ferror(f)) {
         fclose(f);
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free(ctx.structs); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: I/O error writing .ll file", (void*)0);
         return -1;
     }
+    if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free(ctx.structs); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
     fclose(f);
     return 0;
 }
 
-/* Find the tk_runtime.c source file.  Check relative to the tkc binary
- * (../src/stdlib/ or same-dir src/stdlib/) and TKC_RUNTIME_DIR env var. */
+/*
+ * find_runtime_source — Locate the tk_runtime.c file on disk.
+ *
+ * The runtime provides C implementations of stdlib functions (tk_json_parse,
+ * tk_str_argv, tk_overflow_trap, etc.) that toke programs call via the
+ * declared-but-not-defined functions in the emitted IR.
+ *
+ * Search order:
+ *   1. TKC_RUNTIME_DIR environment variable (if set).
+ *   2. TKC_STDLIB_DIR macro (set at compile time via -D in the Makefile).
+ *   3. "src/stdlib/tk_runtime.c" relative to cwd (development fallback).
+ *
+ * Returns a static path string, or NULL if no runtime source was found.
+ */
 static const char *find_runtime_source(void) {
     static char path[512];
     const char *env = getenv("TKC_RUNTIME_DIR");
@@ -1327,20 +2006,36 @@ static const char *find_runtime_source(void) {
     return NULL;
 }
 
-int compile_binary(const char *out_ll, const char *out_bin, const char *target)
+/*
+ * compile_binary — Invoke clang to compile the emitted .ll file into a
+ * native binary.
+ *
+ * Builds a clang command line with:
+ *   -O<level>   — optimisation level (clamped to 0..3).
+ *   -target     — cross-compilation target triple (if provided).
+ *   -o <out_bin> — output binary path.
+ *   <out_ll>    — the LLVM IR file emitted by emit_llvm_ir.
+ *   <runtime>   — tk_runtime.c (if found by find_runtime_source), which
+ *                 provides C implementations of the toke stdlib functions.
+ *
+ * Returns 0 on success, -1 if clang fails (with E9003 diagnostic).
+ */
+int compile_binary(const char *out_ll, const char *out_bin, const char *target,
+                   int opt_level)
 {
     char cmd[2048];
+    int ol = (opt_level < 0) ? 0 : (opt_level > 3) ? 3 : opt_level;
     const char *rt = find_runtime_source();
     if (rt) {
         if(target&&target[0])
-            snprintf(cmd,sizeof cmd,"clang -O1 -target %s -o %s %s %s",target,out_bin,out_ll,rt);
+            snprintf(cmd,sizeof cmd,"clang -O%d -target %s -o %s %s %s",ol,target,out_bin,out_ll,rt);
         else
-            snprintf(cmd,sizeof cmd,"clang -O1 -o %s %s %s",out_bin,out_ll,rt);
+            snprintf(cmd,sizeof cmd,"clang -O%d -o %s %s %s",ol,out_bin,out_ll,rt);
     } else {
         if(target&&target[0])
-            snprintf(cmd,sizeof cmd,"clang -O1 -target %s -o %s %s",target,out_bin,out_ll);
+            snprintf(cmd,sizeof cmd,"clang -O%d -target %s -o %s %s",ol,target,out_bin,out_ll);
         else
-            snprintf(cmd,sizeof cmd,"clang -O1 -o %s %s",out_bin,out_ll);
+            snprintf(cmd,sizeof cmd,"clang -O%d -o %s %s",ol,out_bin,out_ll);
     }
     int rc = system(cmd);
     if(rc!=0){char msg[256];snprintf(msg,sizeof msg,"clang invocation failed with exit code %d",rc);

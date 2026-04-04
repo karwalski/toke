@@ -14,6 +14,7 @@
 #include "arena.h"
 #include "diag.h"
 #include "lexer.h"  /* TokenKind, Token, lex() — single authoritative definition */
+#include "tkc_limits.h"
 
 /* TK_SEMICOLON alias for readability in parser code */
 #define TK_SEMICOLON TK_SEMI
@@ -75,7 +76,6 @@ typedef enum {
 /* AST Node — discriminated union, arena-allocated                           */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-#define NODE_MAX_CHILDREN 8
 
 typedef struct Node Node;
 struct Node {
@@ -83,8 +83,9 @@ struct Node {
     int      start;         /* byte offset of first token       */
     int      line;          /* 1-based line of first token      */
     int      col;           /* 1-based column of first token    */
-    Node    *children[NODE_MAX_CHILDREN];
+    Node   **children;      /* arena-allocated, grows dynamically */
     int      child_count;
+    int      child_cap;     /* current capacity of children array */
     /* Leaf-node token span (meaningful when child_count == 0) */
     int      tok_start;     /* byte offset                      */
     int      tok_len;       /* length in bytes                  */

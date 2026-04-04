@@ -250,3 +250,12 @@ int64_t tk_str_char_at(const char *s, int64_t idx) {
 void tk_json_print(int64_t val) {
     tk_json_print_i64(val);
 }
+
+/* ── Checked arithmetic trap (D2=E) ────────────────────────────────── */
+
+void tk_overflow_trap(int32_t op_code) {
+    static const char *ops[] = {"addition", "subtraction", "multiplication"};
+    const char *name = (op_code >= 0 && op_code <= 2) ? ops[op_code] : "arithmetic";
+    fprintf(stderr, "RT002: integer overflow in %s\n", name);
+    exit(1);
+}

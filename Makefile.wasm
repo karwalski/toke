@@ -1,0 +1,57 @@
+# Makefile.wasm — Emscripten build for tkc WASM module.
+#
+# Compiles the toke reference compiler to WebAssembly for use in a
+# browser-based playground.  Requires the Emscripten SDK (emcc on PATH).
+#
+# Usage:
+#   source /path/to/emsdk/emsdk_env.sh
+#   make -f Makefile.wasm
+#
+# Story: 10.12.31
+
+CC      = emcc
+CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
+          -Wno-misleading-indentation -DTKC_WASM_BUILD \
+          -DTKC_STDLIB_DIR='"/stdlib"'
+
+# Sources: all compiler pipeline files plus the WASM API shim.
+# Excludes main.c (replaced by wasm_api.c) and llvm.c / ir.c (no codegen
+# in the browser — check and format only).
+SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
+          src/arena.c src/diag.c src/config.c src/fmt.c \
+          src/stdlib/str.c \
+          src/wasm_api.c
+
+OUTDIR  = wasm
+TARGET  = $(OUTDIR)/tkc.js
+
+# Functions exported to JavaScript via cwrap / ccall.
+EXPORTED_FUNCTIONS = _tkc_check_source,_tkc_format_source,_tkc_get_diagnostics,_tkc_version,_tkc_free,_malloc,_free
+
+# Runtime helpers available in JS.
+EXPORTED_RUNTIME = ccall,cwrap,UTF8ToString,stringToUTF8,lengthBytesUTF8
+
+# Emscripten link flags.
+EM_FLAGS = -O2 \
+           -s TOTAL_MEMORY=16MB \
+           -s EXPORTED_FUNCTIONS='[$(EXPORTED_FUNCTIONS)]' \
+           -s EXPORTED_RUNTIME_METHODS='[$(EXPORTED_RUNTIME)]' \
+           -s MODULARIZE=1 \
+           -s EXPORT_NAME='createTkcModule' \
+           -s NO_FILESYSTEM=1 \
+           -s ALLOW_MEMORY_GROWTH=0 \
+           -s ENVIRONMENT='web' \
+           -s SINGLE_FILE=0
+
+.PHONY: all clean
+
+all: $(TARGET)
+
+$(TARGET): $(SRCS) | $(OUTDIR)
+	$(CC) $(CFLAGS) $(EM_FLAGS) -o $@ $(SRCS)
+
+$(OUTDIR):
+	mkdir -p $(OUTDIR)
+
+clean:
+	rm -f $(OUTDIR)/tkc.js $(OUTDIR)/tkc.wasm

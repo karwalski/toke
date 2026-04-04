@@ -1,0 +1,14 @@
+M=test;
+F=main():i64{
+  let x=0;
+  let y=0;
+  if(x>y){
+    <1
+  }el{
+    if(x<y){
+      <2
+    }el{
+      <0
+    }
+  }
+};

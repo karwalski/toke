@@ -52,4 +52,8 @@ int64_t tk_str_char_at(const char *s, int64_t idx);
 /* Generic print: prints i64 by default (most benchmark tasks). */
 void    tk_json_print(int64_t val);
 
+/* Checked arithmetic overflow trap (D2=E).
+ * op_code: 0=add, 1=sub, 2=mul. Prints RT002 and exits. */
+void    tk_overflow_trap(int32_t op_code);
+
 #endif /* TK_RUNTIME_H */

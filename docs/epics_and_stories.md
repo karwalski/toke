@@ -161,7 +161,7 @@ Acceptance criteria:
 As a compiler engineer, I want an import resolver that validates all imports against available interface files before type checking begins, so that unresolved imports fail fast with a helpful diagnostic listing available modules.
 
 Acceptance criteria:
-- Resolver loads .tokei interface files for all declared imports
+- Resolver loads .tki interface files for all declared imports
 - Unresolved imports produce E2030 with a list of available modules in the diagnostic
 - Circular imports are detected before type checking and produce E2031
 - Resolver handles the std.* module path prefix
@@ -203,7 +203,7 @@ Acceptance criteria:
 
 **Story 1.2.6 — Structured diagnostic emitter**
 
-As a repair loop engineer, I want every compiler error to be emitted as a JSON-schema-conforming diagnostic record, so that automated repair systems can consume errors without parsing English prose. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tokei interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
+As a repair loop engineer, I want every compiler error to be emitted as a JSON-schema-conforming diagnostic record, so that automated repair systems can consume errors without parsing English prose. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tki interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
 
 Acceptance criteria:
 - All diagnostics conform to the schema defined in Section 9.1 of the spec
@@ -219,14 +219,14 @@ Acceptance criteria:
 
 **Story 1.2.7 — Interface file emitter**
 
-As a build system developer, I want the compiler to emit a .tokei interface file for each compiled module, so that dependent modules can be type-checked against the interface without recompiling the source.
+As a build system developer, I want the compiler to emit a .tki interface file for each compiled module, so that dependent modules can be type-checked against the interface without recompiling the source.
 
 Acceptance criteria:
-- .tokei file is emitted alongside the binary for every successful compilation
-- .tokei file contains module path, exported symbol names, kinds, and signatures
-- .tokei file is machine-readable (JSON or equivalent)
-- A module can be type-checked using only its dependencies' .tokei files
-- .tokei files support incremental compilation: changing an implementation file that does not change exported signatures does not require recompilation of dependents
+- .tki file is emitted alongside the binary for every successful compilation
+- .tki file contains module path, exported symbol names, kinds, and signatures
+- .tki file is machine-readable (JSON or equivalent)
+- A module can be type-checked using only its dependencies' .tki files
+- .tki files support incremental compilation: changing an implementation file that does not change exported signatures does not require recompilation of dependents
 
 ---
 
@@ -252,7 +252,7 @@ Acceptance criteria:
 - tkc [flags] <source-files> invocation works
 - --target flag accepts arch-os strings
 - --out flag specifies binary output path
-- --emit-interface flag triggers .tokei emission
+- --emit-interface flag triggers .tki emission
 - --check flag runs type checking only without code generation
 - --profile1 and --profile2 flags select character set profile
 - --diag-json and --diag-text flags select diagnostic format
@@ -294,7 +294,7 @@ Acceptance criteria:
 - All functions have correct type signatures enforced by the type checker
 - String interpolation \(expr) syntax is handled by the compiler
 - Functions are tested against known inputs and outputs
-- .tokei interface file is emitted and accurate
+- .tki interface file is emitted and accurate
 
 ---
 
@@ -309,7 +309,7 @@ Acceptance criteria:
 - http.GET, http.POST, http.PUT, http.DELETE, http.PATCH route registration compiles
 - Route pattern parameters (:id, :name) are parsed and accessible via req.param()
 - A minimal HTTP server accepting a request and returning a response runs end-to-end
-- .tokei interface file is emitted and accurate
+- .tki interface file is emitted and accurate
 
 ---
 
@@ -324,7 +324,7 @@ Acceptance criteria:
 - db.one, db.many, db.exec accept typed parameters
 - Row accessor functions (row.str, row.u64, row.i64, row.f64, row.bool) type-check correctly
 - DbErr sum type is defined and exhaustively matchable
-- .tokei interface file is emitted and accurate
+- .tki interface file is emitted and accurate
 
 ---
 
@@ -339,7 +339,7 @@ Acceptance criteria:
 - json.dec returns Json!JsonErr and is correctly typed
 - json.enc accepts Str and returns Str (generic version deferred)
 - Field accessor functions type-check correctly
-- .tokei interface file is emitted and accurate
+- .tki interface file is emitted and accurate
 
 ---
 
@@ -353,7 +353,7 @@ Acceptance criteria:
 - All types and functions in Section 17.5 of the spec are defined
 - FileErr sum type is defined and exhaustively matchable
 - file.read and file.write compile and execute end-to-end
-- .tokei interface file is emitted and accurate
+- .tki interface file is emitted and accurate
 
 ---
 
@@ -370,7 +370,7 @@ Acceptance criteria:
 - net.connect(host:Str;port:u64):Socket!NetErr is implemented
 - net.read and net.write operate on Socket handles
 - net.close(s:Socket):bool is implemented
-- .tokei interface file is emitted and accurate
+- .tki interface file is emitted and accurate
 
 ---
 
@@ -402,7 +402,7 @@ Acceptance criteria:
 As a corpus engineer, I want a pipeline that sends generation tasks to Qwen locally and falls back to Claude API on failure, so that API costs are minimised without sacrificing corpus quality.
 
 Acceptance criteria:
-- Pipeline sends task + spec to Qwen 32B first (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tokei interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
+- Pipeline sends task + spec to Qwen 32B first (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tki interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
 - Generated code is passed to tkc for validation
 - On compile success: entry is saved to corpus
 - On compile failure: structured error is appended to prompt and retried locally (max 2 retries)
@@ -444,7 +444,7 @@ Acceptance criteria:
 - Tasks are parameterised: the same template produces 100+ distinct variants
 - Generated tasks are deduplicated before dispatch
 - Generator produces at least 60,000 tasks (50,000 target + 20% buffer for failures)
-- Task descriptions are concise enough that the spec + task fits in under 2,000 tokens (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tokei interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
+- Task descriptions are concise enough that the spec + task fits in under 2,000 tokens (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tki interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
 
 ---
 
@@ -522,7 +522,7 @@ Acceptance criteria:
 
 **Story 1.6.3 — Pass@1 measurement**
 
-As a validation engineer, I want Pass@1 measurements for tk on the benchmark task set using a general-purpose LLM with the toke spec in context, so that Gate 1 has an empirical correctness result before any fine-tuning. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tokei interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
+As a validation engineer, I want Pass@1 measurements for tk on the benchmark task set using a general-purpose LLM with the toke spec in context, so that Gate 1 has an empirical correctness result before any fine-tuning. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tki interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
 
 Acceptance criteria:
 - Each benchmark task is attempted 10 times using Claude Haiku 4.5 with the full Profile 1 spec in the system prompt
@@ -847,7 +847,7 @@ Acceptance criteria:
 
 **Story 2.3.1 — Training data preparation**
 
-As an ML engineer, I want the Phase A corpus formatted as instruction-tuning examples for Qwen 2.5 Coder 7B, so that the fine-tuning run has clean, correctly formatted data. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tokei interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
+As an ML engineer, I want the Phase A corpus formatted as instruction-tuning examples for Qwen 2.5 Coder 7B, so that the fine-tuning run has clean, correctly formatted data. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tki interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
 
 Acceptance criteria:
 - All Phase A corpus entries are converted to [INST]/[/INST] format
@@ -959,7 +959,7 @@ As a project lead, I want a structured verification pass over every Phase 1 comp
 Acceptance criteria:
 - Conformance test harness (`make conform`) is wired and runs all 62 YAML test cases end-to-end; pass rate documented
 - Every compiler pass (lexer, parser, import resolver, name resolver, type checker, diag emitter, interface emitter, LLVM backend, CLI) verified against its corresponding spec section and test series
-- All 5 stdlib unit test suites pass (std.str, std.db, std.json, std.file, std.http); .tokei interface files verified present and matching compiled signatures
+- All 5 stdlib unit test suites pass (std.str, std.db, std.json, std.file, std.http); .tki interface files verified present and matching compiled signatures
 - Monitoring console endpoints verified: GET /api/jobs, POST /api/jobs, GET /api/jobs/{id}, GET /api/status, POST /api/jobs/{id}/cancel, GET /api/jobs/{id}/stream
 - All known tech-debt items (arena escape E5001 conservatism, LLVM cast stub, struct field GEP offset-0, nested break) are documented in a review report with Phase 2 priority
 - Corpus pipeline readiness assessed: what runs now, what needs Mac Studio, what can be scaffolded
@@ -1484,7 +1484,7 @@ Acceptance criteria:
 
 **Story 3.5.2 — Autonomous corpus growth**
 
-As an ML engineer, I want the fine-tuned model continuously generating new corpus entries without human initiation, so that the corpus grows and improves without engineering intervention after setup. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tokei interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
+As an ML engineer, I want the fine-tuned model continuously generating new corpus entries without human initiation, so that the corpus grows and improves without engineering intervention after setup. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tki interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
 
 Acceptance criteria:
 - Model generates 500 new Phase A–C programs per day autonomously

@@ -1,17 +1,50 @@
-/* names.c — Import resolver for the toke reference compiler. Story 1.2.3. */
+/* names.c — Import resolver and name-resolution pass for the toke
+ *           reference compiler. Story 1.2.3 (import resolver),
+ *           extended by the name-resolution pass (resolve_names).
+ *
+ * This file contains two major subsystems:
+ *
+ *   1. **Import resolution** (resolve_imports):
+ *      Walks the top-level AST produced by the parser, finds every
+ *      NODE_IMPORT node, and verifies that the corresponding .tki
+ *      interface file exists on disk (or that the module belongs to the
+ *      std.* standard-library namespace, which is always treated as
+ *      resolved without file I/O).  The output is a flat SymbolTable
+ *      mapping alias names to dotted module paths.  Circular-import
+ *      detection uses an in-flight stack (InFlight).
+ *
+ *   2. **Name resolution** (resolve_names):
+ *      A second tree walk that builds a lexical scope chain (Scope /
+ *      Decl linked lists allocated from an Arena) and checks that every
+ *      identifier reference has a visible declaration.  The module scope
+ *      is seeded with predefined identifiers (true, false, built-in
+ *      types), import aliases from the SymbolTable, and all top-level
+ *      declarations (two-pass: register first, then resolve bodies, so
+ *      forward references work).
+ *
+ * Both passes communicate errors through the diagnostic subsystem
+ * (diag_emit) and return 0 on success or -1 on any failure.
+ */
 #include "names.h"
+#include "tkc_limits.h"
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_PATH  512
-#define MAX_IFL   64
-#define MAX_AVAIL 256
-
 /* ── Helpers ──────────────────────────────────────────────────────────── */
 
-/* Copy a token span into a new heap string. */
+/*
+ * span_dup — copy a token span into a new heap-allocated string.
+ *
+ * Parameters:
+ *   src   — full source buffer.
+ *   start — byte offset into src where the span begins.
+ *   len   — number of bytes to copy.
+ *
+ * Returns a NUL-terminated heap string, or NULL on allocation failure.
+ * The caller is responsible for freeing the returned pointer.
+ */
 static char *span_dup(const char *src, int start, int len) {
     char *s = (char *)malloc((size_t)(len + 1));
     if (!s) return NULL;
@@ -20,7 +53,24 @@ static char *span_dup(const char *src, int start, int len) {
     return s;
 }
 
-/* Reconstruct a dotted path from NODE_MODULE_PATH into buf[buf_sz]. */
+/*
+ * node_path_str — reconstruct a dotted module path from a NODE_MODULE_PATH
+ *                 AST node into a caller-supplied buffer.
+ *
+ * A NODE_MODULE_PATH contains one or more children, each representing a
+ * single segment of the dotted path (e.g. "std", "io").  This function
+ * concatenates them with '.' separators to produce the canonical string
+ * form (e.g. "std.io").
+ *
+ * Parameters:
+ *   mp     — the NODE_MODULE_PATH node whose children are path segments.
+ *   src    — the full source buffer (segment text is extracted via
+ *            tok_start / tok_len).
+ *   buf    — output buffer.
+ *   buf_sz — size of buf in bytes.
+ *
+ * Returns buf on success, or NULL if the path would overflow the buffer.
+ */
 static char *node_path_str(const Node *mp, const char *src,
                             char *buf, int buf_sz) {
     int pos = 0;
@@ -36,16 +86,38 @@ static char *node_path_str(const Node *mp, const char *src,
     return buf;
 }
 
+/*
+ * dots_to_slashes — convert a dotted module path (e.g. "net.http") into
+ * a file-system relative path (e.g. "net/http") by replacing every '.'
+ * with '/'.  Operates in-place on a mutable string.
+ */
 static void dots_to_slashes(char *s) { for (; *s; s++) if (*s == '.') *s = '/'; }
 
-/* Scan search_path for *.tki; build comma-separated list (caller frees). */
-static char *build_avail_list(const char *sp) {
-    char *av[MAX_AVAIL]; int n = 0;
+/*
+ * build_avail_list — scan a directory for available .tki interface files
+ *                    and return them as a comma-separated string.
+ *
+ * This is called when an import fails to resolve so the diagnostic
+ * message can suggest available modules (a "did you mean?" affordance).
+ *
+ * Parameters:
+ *   sp        — the search_path directory to scan.
+ *   max_avail — compiler limit on the number of modules to collect
+ *               (from TkcLimits.max_avail_modules).
+ *
+ * Returns a heap-allocated string like "foo.tki, bar.tki" or an empty
+ * string "" if no .tki files are found.  The caller must free the result.
+ * Emits E9010 if the number of .tki files exceeds max_avail.
+ */
+static char *build_avail_list(const char *sp, int max_avail) {
+    char **av = (char **)malloc((size_t)max_avail * sizeof(char *));
+    if (!av) { char *e = (char *)malloc(1); if (e) e[0] = '\0'; return e; }
+    int n = 0;
     if (sp) {
         DIR *d = opendir(sp);
         if (d) {
             struct dirent *e;
-            while (n < MAX_AVAIL && (e = readdir(d)) != NULL) {
+            while (n < max_avail && (e = readdir(d)) != NULL) {
                 size_t nl = strlen(e->d_name);
                 if (nl > 4 && memcmp(e->d_name + nl - 4, ".tki", 4) == 0) {
                     av[n] = strdup(e->d_name);
@@ -53,13 +125,15 @@ static char *build_avail_list(const char *sp) {
                 }
             }
             closedir(d);
+            if (n >= max_avail)
+                diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many modules in directory", "fix", NULL);
         }
     }
-    if (n == 0) { char *e = (char *)malloc(1); if (e) e[0] = '\0'; return e; }
+    if (n == 0) { free(av); char *e = (char *)malloc(1); if (e) e[0] = '\0'; return e; }
     int total = 0;
     for (int i = 0; i < n; i++) { if (i) total += 2; total += (int)strlen(av[i]); }
     char *out = (char *)malloc((size_t)(total + 1));
-    if (!out) { for (int i = 0; i < n; i++) free(av[i]); return NULL; }
+    if (!out) { for (int i = 0; i < n; i++) free(av[i]); free(av); return NULL; }
     int pos = 0;
     for (int i = 0; i < n; i++) {
         if (i) { out[pos++] = ','; out[pos++] = ' '; }
@@ -68,12 +142,24 @@ static char *build_avail_list(const char *sp) {
         free(av[i]);
     }
     out[pos] = '\0';
+    free(av);
     return out;
 }
 
-/* Return 1 if <sp>/<rel_path>.tki is readable. */
+/*
+ * tki_exists — check whether a .tki interface file exists and is readable.
+ *
+ * Constructs the path "<sp>/<rel>.tki" and attempts to fopen it.
+ * Returns 1 if the file can be opened (and closes it immediately),
+ * or 0 if it cannot be found / opened.
+ *
+ * Parameters:
+ *   sp  — the search directory (defaults to "." if NULL).
+ *   rel — the relative path with slashes (already converted from dots
+ *          by dots_to_slashes), without the .tki extension.
+ */
 static int tki_exists(const char *sp, const char *rel) {
-    char full[MAX_PATH * 2];
+    char full[TKC_MAX_PATH * 2];
     int n = snprintf(full, sizeof(full), "%s/%s.tki", sp ? sp : ".", rel);
     if (n < 0 || n >= (int)sizeof(full)) return 0;
     FILE *f = fopen(full, "r");
@@ -83,17 +169,59 @@ static int tki_exists(const char *sp, const char *rel) {
 
 /* ── In-flight set for circular-import detection ─────────────────────── */
 
-typedef struct { const char *paths[MAX_IFL]; int count; } InFlight;
+/*
+ * InFlight — a small stack of module paths currently being resolved.
+ *
+ * When resolve_imports begins resolving a module it pushes its dotted
+ * path onto this stack.  Before starting any new resolution it checks
+ * whether the path is already on the stack; if so, a circular import
+ * has been detected and E2031 is emitted.  After a module finishes
+ * resolving its path is popped.
+ *
+ * The capacity is bounded by limits->max_imports_in_flight.
+ */
+typedef struct { const char **paths; int count; int capacity; } InFlight;
 
+/*
+ * ifl_has — return 1 if module path p is already on the in-flight stack.
+ * Uses strcmp for exact string comparison on the dotted path.
+ */
 static int  ifl_has (const InFlight *f, const char *p) {
     for (int i = 0; i < f->count; i++) if (strcmp(f->paths[i], p) == 0) return 1;
     return 0;
 }
-static void ifl_push(InFlight *f, const char *p) { if (f->count < MAX_IFL) f->paths[f->count++] = p; }
+/*
+ * ifl_push — push a module path onto the in-flight stack.
+ * Emits E9010 and returns without pushing if the stack is full.
+ */
+static void ifl_push(InFlight *f, const char *p) {
+    if (f->count >= f->capacity) {
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many imports in flight", "fix", NULL);
+        return;
+    }
+    f->paths[f->count++] = p;
+}
+/* ifl_pop — remove the most recent entry from the in-flight stack. */
 static void ifl_pop (InFlight *f)                { if (f->count > 0) f->count--; }
 
 /* ── SymbolTable growth ───────────────────────────────────────────────── */
 
+/*
+ * st_push — append an ImportEntry to the SymbolTable.
+ *
+ * Grows the entries array by one slot via realloc and fills in the new
+ * entry with the provided alias, dotted module path, optional version
+ * string, and resolved flag.
+ *
+ * Parameters:
+ *   st       — target SymbolTable (entries array may be reallocated).
+ *   alias    — heap-allocated alias string (ownership transferred to st).
+ *   path     — heap-allocated dotted module path (ownership transferred).
+ *   version  — heap-allocated version string, or NULL (ownership transferred).
+ *   resolved — 1 if the module was successfully located, 0 if not.
+ *
+ * Returns 0 on success, -1 on allocation failure.
+ */
 static int st_push(SymbolTable *st, char *alias, char *path, char *version, int resolved) {
     ImportEntry *ne = (ImportEntry *)realloc(
         st->entries, (size_t)(st->count + 1) * sizeof(ImportEntry));
@@ -107,8 +235,16 @@ static int st_push(SymbolTable *st, char *alias, char *path, char *version, int 
     return 0;
 }
 
-/* Validate version string: "major.minor" or "major.minor.patch".
- * Each component must be a non-negative integer. Returns 1 if valid, 0 if not. */
+/*
+ * validate_version — check that a version string conforms to the toke
+ *                    versioning scheme: "major.minor" or "major.minor.patch".
+ *
+ * Each component must consist of one or more decimal digits (no leading
+ * signs, no whitespace).  Examples of valid strings: "1.0", "2.3.17".
+ * Examples of invalid strings: "", "1", "1.0.0.0", "v1.0".
+ *
+ * Returns 1 if the string is valid, 0 otherwise.
+ */
 static int validate_version(const char *v) {
     if (!v || !*v) return 0;
     int parts = 0, digits = 0;
@@ -123,7 +259,15 @@ static int validate_version(const char *v) {
     return (parts == 2 || parts == 3);
 }
 
-/* Extract the major version number from a version string. Returns -1 on failure. */
+/*
+ * version_major — extract the major (first) component of a version string.
+ *
+ * Parses decimal digits up to the first '.' or end-of-string.
+ * Returns the integer value, or -1 if v is NULL or contains non-digit
+ * characters before the first dot.  Used for major-version conflict
+ * detection: two imports of the same module with different major
+ * versions trigger E2037.
+ */
 static int version_major(const char *v) {
     if (!v) return -1;
     int maj = 0;
@@ -136,13 +280,48 @@ static int version_major(const char *v) {
 
 /* ── Public API ───────────────────────────────────────────────────────── */
 
+/*
+ * resolve_imports — walk the top-level AST and resolve every I= import.
+ *
+ * This is the first semantic pass after parsing.  It iterates over
+ * every child of the root NODE_PROGRAM node, picks out NODE_IMPORT
+ * nodes, and for each one:
+ *
+ *   1. Extracts the alias identifier (child[0], NODE_IDENT) and the
+ *      dotted module path (child[1], NODE_MODULE_PATH).
+ *   2. Optionally extracts a version string (child[2], NODE_STR_LIT)
+ *      and validates its format via validate_version().
+ *   3. Detects major-version conflicts: if the same module path has
+ *      already been imported with a different major version, emits E2037.
+ *   4. Short-circuits for standard-library modules ("std.*"): these are
+ *      always marked resolved without any file lookup.
+ *   5. Checks the InFlight stack for circular imports (E2031).
+ *   6. Converts the dotted path to a filesystem path and probes for a
+ *      .tki file — first with a versioned suffix, then without.
+ *   7. If no .tki file is found, emits E2030 with a list of available
+ *      modules in the search directory.
+ *
+ * Parameters:
+ *   ast         — root NODE_PROGRAM from the parser.
+ *   src         — the original source text.
+ *   search_path — directory to search for .tki interface files.
+ *   limits      — compiler limits (max imports in flight, max avail, etc.).
+ *   out         — caller-supplied SymbolTable, initialised by this call.
+ *
+ * Returns 0 if all imports resolved, -1 on any failure.
+ */
 int resolve_imports(const Node *ast, const char *src,
-                    const char *search_path, SymbolTable *out) {
-    if (!ast || !src || !out) return -1;
+                    const char *search_path, const TkcLimits *limits,
+                    SymbolTable *out) {
+    if (!ast || !src || !limits || !out) return -1;
     out->entries = NULL; out->count = 0; out->search_path = search_path;
 
     int err = 0;
-    InFlight inf; inf.count = 0;
+    InFlight inf;
+    inf.count = 0;
+    inf.capacity = limits->max_imports_in_flight;
+    inf.paths = (const char **)malloc((size_t)inf.capacity * sizeof(const char *));
+    if (!inf.paths) return -1;
     const char *sp = search_path ? search_path : ".";
 
     for (int i = 0; i < ast->child_count; i++) {
@@ -152,8 +331,8 @@ int resolve_imports(const Node *ast, const char *src,
         const Node *an = d->children[0];  /* NODE_IDENT — alias       */
         const Node *pn = d->children[1];  /* NODE_MODULE_PATH         */
 
-        char pbuf[MAX_PATH];
-        if (!node_path_str(pn, src, pbuf, MAX_PATH)) { err = 1; continue; }
+        char pbuf[TKC_MAX_PATH];
+        if (!node_path_str(pn, src, pbuf, TKC_MAX_PATH)) { err = 1; continue; }
 
         char *alias = span_dup(src, an->tok_start, an->tok_len);
         char *mpath = strdup(pbuf);
@@ -210,7 +389,7 @@ int resolve_imports(const Node *ast, const char *src,
 
         /* Circular import check */
         if (ifl_has(&inf, mpath)) {
-            char msg[MAX_PATH + 80];
+            char msg[TKC_MAX_PATH + 80];
             snprintf(msg, sizeof(msg),
                      "circular import detected: '%s' is already being resolved", mpath);
             diag_emit(DIAG_ERROR, E2031, d->start, d->line, d->col, msg, "fix", NULL);
@@ -218,8 +397,8 @@ int resolve_imports(const Node *ast, const char *src,
         }
 
         /* File lookup — try versioned .tki first, then unversioned */
-        char fpath[MAX_PATH];
-        strncpy(fpath, mpath, MAX_PATH - 1); fpath[MAX_PATH - 1] = '\0';
+        char fpath[TKC_MAX_PATH];
+        strncpy(fpath, mpath, TKC_MAX_PATH - 1); fpath[TKC_MAX_PATH - 1] = '\0';
         dots_to_slashes(fpath);
 
         ifl_push(&inf, mpath);
@@ -227,7 +406,7 @@ int resolve_imports(const Node *ast, const char *src,
         int found = 0;
         if (ver) {
             /* Try versioned path: module/path.1.2.tki */
-            char vfpath[MAX_PATH * 2];
+            char vfpath[TKC_MAX_PATH * 2];
             snprintf(vfpath, sizeof(vfpath), "%s.%s", fpath, ver);
             if (tki_exists(sp, vfpath)) { found = 1; }
         }
@@ -236,8 +415,8 @@ int resolve_imports(const Node *ast, const char *src,
         if (found) {
             st_push(out, alias, mpath, ver, 1);
         } else {
-            char *avail = build_avail_list(sp);
-            char msg[MAX_PATH + 512];
+            char *avail = build_avail_list(sp, limits->max_avail_modules);
+            char msg[TKC_MAX_PATH + 512];
             snprintf(msg, sizeof(msg),
                      "module '%s' not found; available: %s", mpath, avail ? avail : "");
             free(avail);
@@ -247,9 +426,18 @@ int resolve_imports(const Node *ast, const char *src,
 
         ifl_pop(&inf);
     }
+    free(inf.paths);
     return err ? -1 : 0;
 }
 
+/*
+ * symtab_free — release all heap memory owned by a SymbolTable.
+ *
+ * Frees each entry's alias_name, module_path, and version strings, then
+ * frees the entries array itself.  Does NOT free the SymbolTable struct
+ * (it is typically stack-allocated by the caller).  After this call
+ * st->entries is NULL and st->count is 0.
+ */
 void symtab_free(SymbolTable *st) {
     if (!st) return;
     for (int i = 0; i < st->count; i++) {
@@ -263,7 +451,21 @@ void symtab_free(SymbolTable *st) {
 
 /* ── Name resolution ──────────────────────────────────────────────────── */
 
-/* Allocate a Scope from arena, linked to parent. */
+/*
+ * push_scope — allocate a new Scope from the arena and link it to its
+ *              parent scope, forming a chain for lexical scoping.
+ *
+ * The scope chain is walked upward by scope_lookup when resolving
+ * identifier references: inner scopes shadow outer ones.  Scopes are
+ * created for the module level, each function body, each statement
+ * block (NODE_STMT_LIST), each match arm, and each loop.
+ *
+ * Parameters:
+ *   arena  — memory arena for all name-resolution allocations.
+ *   parent — enclosing scope, or NULL for the top-level module scope.
+ *
+ * Returns a pointer to the new Scope, or NULL on allocation failure.
+ */
 static Scope *push_scope(Arena *arena, Scope *parent) {
     Scope *s = (Scope *)arena_alloc(arena, (int)sizeof(Scope));
     if (!s) return NULL;
@@ -272,8 +474,17 @@ static Scope *push_scope(Arena *arena, Scope *parent) {
     return s;
 }
 
-/* Look up name (not NUL-terminated, length given) in scope chain.
- * Returns first matching Decl, or NULL if not found. */
+/*
+ * scope_lookup — search the entire scope chain for a declaration.
+ *
+ * Starting from the innermost scope s, walks outward through parent
+ * pointers until a Decl with a matching name and length is found.
+ * Name comparison uses memcmp (the name pointer is NOT NUL-terminated
+ * in all call sites; the length is authoritative).
+ *
+ * Returns the first matching Decl (innermost scope wins), or NULL if
+ * the name is not declared anywhere in the chain.
+ */
 static Decl *scope_lookup(const Scope *s, const char *name, int len) {
     for (; s; s = s->parent) {
         for (Decl *d = s->head; d; d = d->next) {
@@ -284,7 +495,17 @@ static Decl *scope_lookup(const Scope *s, const char *name, int len) {
     return NULL;
 }
 
-/* Look up name only in the immediate (current) scope — for duplicate check. */
+/*
+ * scope_lookup_local — search only the immediate (current) scope for a
+ *                      declaration with the given name and length.
+ *
+ * Unlike scope_lookup this does NOT walk the parent chain.  It is used
+ * by scope_insert to detect duplicate declarations within the same
+ * scope (which triggers E3012).
+ *
+ * Returns the matching Decl, or NULL if no declaration with that name
+ * exists in this specific scope.
+ */
 static Decl *scope_lookup_local(const Scope *s, const char *name, int len) {
     for (Decl *d = s->head; d; d = d->next) {
         if (d->name_len == len && memcmp(d->name, name, (size_t)len) == 0)
@@ -293,7 +514,15 @@ static Decl *scope_lookup_local(const Scope *s, const char *name, int len) {
     return NULL;
 }
 
-/* Intern a string into the arena (copies bytes, appends NUL). */
+/*
+ * arena_intern — copy a string into the arena, appending a NUL terminator.
+ *
+ * This produces a stable, NUL-terminated copy of the name that can be
+ * stored in Decl.name and will live as long as the arena.  The source
+ * string need not be NUL-terminated; exactly len bytes are copied.
+ *
+ * Returns a pointer to the interned string, or NULL on arena exhaustion.
+ */
 static const char *arena_intern(Arena *arena, const char *s, int len) {
     char *p = (char *)arena_alloc(arena, len + 1);
     if (!p) return NULL;
@@ -302,8 +531,31 @@ static const char *arena_intern(Arena *arena, const char *s, int len) {
     return p;
 }
 
-/* Insert a Decl into the current scope.
- * Returns -1 and emits E3012 if name already declared in this scope. */
+/*
+ * scope_insert — declare a new identifier in the current scope.
+ *
+ * First checks for a duplicate in the same scope via scope_lookup_local;
+ * if the name is already declared, emits E3012 ("identifier already
+ * declared in this scope") and returns -1.  Otherwise allocates a Decl
+ * from the arena, interns the name, and prepends it to the scope's
+ * linked list (s->head).
+ *
+ * Parameters:
+ *   s          — the scope to insert into.
+ *   arena      — memory arena for the Decl and interned name.
+ *   src        — full source buffer.
+ *   tok_start  — byte offset of the token (used for diagnostic location).
+ *   tok_len    — length of the token (currently unused, reserved).
+ *   name_start — byte offset in src where the identifier text begins.
+ *   name_len   — length of the identifier text.
+ *   kind       — the DeclKind (DECL_FUNC, DECL_LET, DECL_PARAM, etc.).
+ *   def_node   — the AST node that defines this declaration (for later
+ *                passes that may need to inspect the definition).
+ *   node_line  — source line number for diagnostics.
+ *   node_col   — source column number for diagnostics.
+ *
+ * Returns 0 on success, -1 on duplicate or allocation failure.
+ */
 static int scope_insert(Scope *s, Arena *arena, const char *src,
                         int tok_start, int tok_len __attribute__((unused)), int name_start, int name_len,
                         DeclKind kind, const Node *def_node,
@@ -332,7 +584,23 @@ static int scope_insert(Scope *s, Arena *arena, const char *src,
     return 0;
 }
 
-/* Insert a predefined identifier (name is a string literal). */
+/*
+ * seed_predefined — insert a built-in identifier into the module scope.
+ *
+ * Predefined identifiers (true, false, bool, i64, u64, f64, str, void)
+ * are always available without any import or declaration.  They are
+ * seeded into the module scope before any user declarations are
+ * registered, so they can be shadowed by user-defined names (the scope
+ * chain lookup returns the innermost match first).
+ *
+ * The Decl is allocated from the arena with kind = DECL_PREDEFINED and
+ * def_node = NULL (no corresponding AST node).
+ *
+ * Parameters:
+ *   s     — the module-level scope.
+ *   arena — memory arena.
+ *   name  — the predefined identifier as a C string literal.
+ */
 static void seed_predefined(Scope *s, Arena *arena, const char *name) {
     int len = (int)strlen(name);
     Decl *d = (Decl *)arena_alloc(arena, (int)sizeof(Decl));
@@ -345,11 +613,28 @@ static void seed_predefined(Scope *s, Arena *arena, const char *name) {
     s->head     = d;
 }
 
-/* Forward declaration for mutual recursion. */
+/* Forward declaration — resolve_node and resolve_func are mutually
+ * recursive (resolve_node dispatches to resolve_func for NODE_FUNC_DECL,
+ * and resolve_func calls resolve_node for sub-expressions). */
 static int resolve_node(const Node *node, const char *src,
                         Scope *scope, Arena *arena, int *had_error);
 
-/* Resolve an identifier reference: look up and emit E3011 if not found. */
+/*
+ * resolve_ident — resolve an identifier reference against the scope chain.
+ *
+ * Looks up the identifier's name (extracted from the source via
+ * tok_start / tok_len) in the scope chain.  If not found, emits E3011
+ * ("identifier is not declared") and sets *had_error.
+ *
+ * This is called for both NODE_IDENT and NODE_TYPE_IDENT nodes,
+ * because toke treats type names and value names in the same namespace.
+ *
+ * Parameters:
+ *   node      — the NODE_IDENT or NODE_TYPE_IDENT AST node.
+ *   src       — full source buffer.
+ *   scope     — the innermost scope at the point of reference.
+ *   had_error — out-parameter; set to 1 if the identifier is unresolved.
+ */
 static void resolve_ident(const Node *node, const char *src,
                           Scope *scope, int *had_error) {
     const char *name = src + node->tok_start;
@@ -367,7 +652,33 @@ static void resolve_ident(const Node *node, const char *src,
     }
 }
 
-/* Walk a NODE_FUNC_DECL: push scope, register params, walk body. */
+/*
+ * resolve_func — resolve identifiers inside a function declaration.
+ *
+ * Creates a new scope (fn_scope) whose parent is the module scope,
+ * then iterates over the function's children:
+ *
+ *   - NODE_PARAM: registers the parameter name in fn_scope (via
+ *     scope_insert with DECL_PARAM), then resolves the type expression
+ *     in the parameter (child[1]) within fn_scope.
+ *   - NODE_STMT_LIST (the function body): resolved recursively in
+ *     fn_scope, which will push further nested scopes as needed.
+ *   - Other children (e.g. return-type annotations): resolved
+ *     recursively in fn_scope.
+ *
+ * Note: child[0] is the function's own name (NODE_IDENT), which was
+ * already registered in the module scope by the first pass of
+ * resolve_names.  resolve_func does NOT re-resolve or re-register it.
+ *
+ * Parameters:
+ *   node         — the NODE_FUNC_DECL AST node.
+ *   src          — full source buffer.
+ *   module_scope — the enclosing module scope (parent of fn_scope).
+ *   arena        — memory arena.
+ *   had_error    — out-parameter; set to 1 on any resolution failure.
+ *
+ * Returns 0 on success, -1 on allocation failure.
+ */
 static int resolve_func(const Node *node, const char *src,
                         Scope *module_scope, Arena *arena, int *had_error) {
     /* child[0]: name (NODE_IDENT), child[1..]: params/return/body */
@@ -401,6 +712,61 @@ static int resolve_func(const Node *node, const char *src,
     return 0;
 }
 
+/*
+ * resolve_node — the main recursive name-resolution dispatcher.
+ *
+ * Dispatches on the AST node kind to perform the appropriate scope and
+ * resolution actions.  The key cases are:
+ *
+ *   NODE_IDENT / NODE_TYPE_IDENT:
+ *     Resolve as an identifier reference via resolve_ident.
+ *
+ *   NODE_FIELD_EXPR (e.g. x.field):
+ *     Only resolve the base expression (child[0]); the field name
+ *     (child[1]) is NOT resolved here — it is a struct member name
+ *     that will be validated later by the type checker.
+ *
+ *   NODE_FUNC_DECL:
+ *     Delegated to resolve_func (opens a new scope for parameters and
+ *     body).
+ *
+ *   NODE_BIND_STMT / NODE_MUT_BIND_STMT (let / mut bindings):
+ *     Resolves the right-hand side first, then inserts the new name
+ *     into the current scope.  This ordering prevents self-reference
+ *     in the initialiser (e.g. "let x = x + 1" where x is not yet
+ *     declared).
+ *
+ *   NODE_STMT_LIST:
+ *     Pushes a new block scope and resolves all children within it.
+ *
+ *   NODE_MATCH_STMT:
+ *     Resolves the subject expression in the current scope, then
+ *     resolves each match arm (which gets its own arm scope).
+ *
+ *   NODE_MATCH_ARM:
+ *     Opens an arm scope, inserts the binding name (child[1]) into it,
+ *     and resolves the arm body (child[2]) within that scope.  The
+ *     variant label (child[0]) is intentionally not resolved — it is
+ *     validated by the type checker.
+ *
+ *   NODE_LOOP_STMT (lp):
+ *     Opens a loop scope for the init variable, then resolves the
+ *     condition, step, and body within that scope so the loop variable
+ *     is visible throughout.
+ *
+ *   Default:
+ *     Recursively walks all children (covers literals, binary ops,
+ *     call expressions, etc. that do not introduce new scopes).
+ *
+ * Parameters:
+ *   node      — the AST node to resolve.
+ *   src       — full source buffer.
+ *   scope     — the innermost scope at this point in the tree.
+ *   arena     — memory arena for scope/decl allocations.
+ *   had_error — out-parameter; set to 1 on any resolution failure.
+ *
+ * Returns 0 on success, -1 on allocation failure.
+ */
 static int resolve_node(const Node *node, const char *src,
                         Scope *scope, Arena *arena, int *had_error) {
     if (!node) return 0;
@@ -534,6 +900,40 @@ static int resolve_node(const Node *node, const char *src,
     return 0;
 }
 
+/*
+ * resolve_names — top-level entry point for name resolution.
+ *
+ * This is the second semantic pass (after resolve_imports).  It builds
+ * a lexical scope chain and verifies that every identifier reference in
+ * the AST has a visible declaration.  The algorithm is:
+ *
+ *   1. Create the module scope (no parent).
+ *   2. Seed predefined identifiers: true, false, bool, i64, u64, f64,
+ *      str, void.  These are always in scope.
+ *   3. Register import aliases from the SymbolTable (only resolved
+ *      imports; unresolved ones were already reported by
+ *      resolve_imports).
+ *   4. **First pass** over the AST: register all module-level
+ *      declarations (F=, T=, const) into the module scope.  This is
+ *      done before resolving bodies so that forward references between
+ *      top-level declarations work (e.g. function A can call function B
+ *      even if B is defined after A).
+ *   5. **Second pass** over the AST: recursively resolve every
+ *      identifier reference inside function bodies, type definitions,
+ *      and constant initialisers via resolve_node.
+ *
+ * The output NameEnv contains the module scope and arena pointer so
+ * later passes can inspect declarations if needed.
+ *
+ * Parameters:
+ *   ast    — root NODE_PROGRAM from the parser.
+ *   src    — the original source text.
+ *   symtab — output of resolve_imports (import alias table).
+ *   arena  — memory arena (all Scope/Decl allocations go here).
+ *   out    — caller-supplied NameEnv, filled by this call.
+ *
+ * Returns 0 on success, -1 if any identifier could not be resolved.
+ */
 int resolve_names(const Node *ast, const char *src,
                   const SymbolTable *symtab, Arena *arena, NameEnv *out) {
     if (!ast || !src || !symtab || !arena || !out) return -1;
@@ -548,7 +948,7 @@ int resolve_names(const Node *ast, const char *src,
     /* Seed predefined identifiers */
     static const char *predefined[] = {
         "true", "false", "bool", "i64", "u64", "f64", "str", "void",
-        "spawn", "await", "Task", NULL
+        NULL
     };
     for (int i = 0; predefined[i]; i++)
         seed_predefined(mscope, arena, predefined[i]);

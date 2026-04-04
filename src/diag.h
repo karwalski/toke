@@ -53,8 +53,15 @@ void diag_emit_span(DiagSeverity severity, int code,
 int  diag_error_count(void);
 void diag_reset(void);
 
-/* Alternate format selector used by main.c (TEXT=0, JSON=1). */
-typedef enum { DIAG_FMT_TEXT = 0, DIAG_FMT_JSON = 1 } DiagFormat;
+/* Alternate format selector used by main.c (TEXT=0, JSON=1, SARIF=2). */
+typedef enum { DIAG_FMT_TEXT = 0, DIAG_FMT_JSON = 1, DIAG_FMT_SARIF = 2 } DiagFormat;
 void diag_set_format(DiagFormat fmt);
+
+/* Set the source filename for SARIF location reporting. */
+void diag_set_source_file(const char *path);
+
+/* Flush buffered SARIF output. Call before exit when DIAG_FMT_SARIF is active.
+ * No-op in other modes. Writes the complete SARIF v2.1.0 envelope to stdout. */
+void diag_flush_sarif(void);
 
 #endif /* TK_DIAG_H */

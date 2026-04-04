@@ -1,0 +1,16 @@
+M=bench;
+F=inc(x:i64):i64{<x+1};
+F=dbl(x:i64):i64{<x*2};
+F=sqr(x:i64):i64{<x*x};
+F=sub3(x:i64):i64{<x-3};
+F=add7(x:i64):i64{<x+7};
+F=chain(x:i64):i64{
+  <add7(sub3(sqr(dbl(inc(x)))))
+};
+F=main():i64{
+  let s=mut.0;
+  lp(let i=0;i<10000000;i=i+1){
+    s=s+chain(i)
+  };
+  <s
+};

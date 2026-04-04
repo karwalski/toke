@@ -2,8 +2,8 @@ CC      = cc
 CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -g \
           -DTKC_STDLIB_DIR='"$(CURDIR)/src/stdlib"'
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
-          src/arena.c src/ir.c src/llvm.c src/diag.c src/main.c \
-          src/stdlib/str.c
+          src/arena.c src/ir.c src/llvm.c src/diag.c src/config.c src/fmt.c src/progress.c \
+          src/sourcemap.c src/ast_json.c src/main.c src/stdlib/str.c
 OBJS    = $(SRCS:.c=.o)
 BIN     = tkc
 
@@ -23,7 +23,7 @@ REPRO_FLAGS = -frandom-seed=tkc \
 
 export SOURCE_DATE_EPOCH ?= 0
 
-.PHONY: all clean lint conform conform-check build-all ci test-e2e test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage bench repro-check
+.PHONY: all clean lint conform conform-check build-all ci test-e2e verify-ir stress test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage bench repro-check
 
 all: $(BIN)
 
@@ -49,6 +49,12 @@ build-all:
 
 test-e2e: $(BIN)
 	@bash test/e2e/run_e2e.sh
+
+verify-ir: $(BIN)
+	@bash test/verify_ir.sh
+
+stress: $(BIN)
+	@bash test/stress/run_stress.sh
 
 ci: lint conform conform-check
 

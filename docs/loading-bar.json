@@ -1,0 +1,37 @@
+{
+  "loading_bar_percentage": {
+    "0": "  ~≈\n  ∿˜\n*████████████████████████████████████▓▓▓",
+    "10": "     ˜\n    ~≈\n....:*███████████████████████████████▓▓▓",
+    "20": "        ∿\n       ~˜\n..........:*█████████████████████████▓▓▓",
+    "30": "            ≈\n           ∿~\n...............:*████████████████████▓▓▓",
+    "40": "                 ˜\n                ~≈\n....................:*███████████████▓▓▓",
+    "50": "                      ∿\n                     ˜~\n.........................:*██████████▓▓▓",
+    "60": "                           ≈\n                          ∿˜\n..............................:*█████▓▓▓",
+    "70": "                               ~\n                              ≈∿\n...................................:*██▓▓▓",
+    "80": "                                    ˜\n                                   ~≈\n......................................:*▓▓▓",
+    "90": "                                      ∿\n                                     ˜~\n.......................................: ▓▓▓",
+    "100": " \n \n.......................................: ▓▓▓"
+  },
+  "loading_messages": [
+    "Rolling things up…",
+    "Packing it in…",
+    "Getting a good hit on the server…",
+    "Pulling data slowly…",
+    "Blazing through requests…",
+    "Lighting up the pipeline…",
+    "Taking a long drag from the database…",
+    "Inhaling your preferences…",
+    "Passing it to the next process…",
+    "Hitting the cache real smooth…",
+    "Grinding through the queue…",
+    "Cherrying the connection…",
+    "Toasting the buffers…",
+    "Puff puff processing…",
+    "Almost cashed out…",
+    "Deep in rotation…",
+    "Sparking up the backend…",
+    "Cottonmouth loading…",
+    "Holding it in…",
+    "Exhaling results…"
+  ]
+}

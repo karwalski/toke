@@ -1,0 +1,23 @@
+M=bench;
+F=isprime(n:i64):i64{
+  if(n<2){<0}el{
+    let d=mut.2;
+    let found=mut.1;
+    lp(let dummy=0;d*d<n+1;dummy=0){
+      if(n-n/d*d=0){
+        found=0;
+        d=n
+      }el{
+        d=d+1
+      }
+    };
+    <found
+  }
+};
+F=main():i64{
+  let count=mut.0;
+  lp(let i=2;i<50000;i=i+1){
+    count=count+isprime(i)
+  };
+  <count
+};

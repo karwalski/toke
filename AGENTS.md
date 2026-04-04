@@ -59,7 +59,7 @@ These rules are specific to toke and take precedence over general coding agent c
 
 ### 3.2 Corpus rules
 
-- Never add entries to the corpus that have not passed the full validation pipeline (compiler + differential test + Qwen judge). No exceptions. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tokei interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
+- Never add entries to the corpus that have not passed the full validation pipeline (compiler + differential test + Qwen judge). No exceptions. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tki interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
 - Never commit test task IDs to the corpus directory. Held-out benchmark tasks in `benchmark/hidden_tests/` must not appear in `corpus/`.
 - The corpus metadata schema defined in `corpus/schema.json` is normative. Do not add fields without updating the schema and the schema validation tests.
 - Corpus deduplication runs before every batch commit to the corpus. Do not bypass it.
@@ -71,7 +71,7 @@ These rules are specific to toke and take precedence over general coding agent c
 
 ### 3.4 Standard library rules
 
-- All stdlib function signatures are normative per the RFC. Do not change a stdlib function signature without updating the spec, the .tokei interface file, all call sites in the corpus, and the conformance tests.
+- All stdlib function signatures are normative per the RFC. Do not change a stdlib function signature without updating the spec, the .tki interface file, all call sites in the corpus, and the conformance tests.
 - Stdlib source files are toke source (.toke). They must compile cleanly with the current tkc before being committed.
 - Stdlib implementations may use C FFI internally. FFI usage in stdlib must be clearly commented with the C function signature and the rationale for using FFI over a toke implementation.
 
@@ -441,7 +441,7 @@ The repair loop depends on error quality. Every error message must:
 - include enough context for a model to fix it without reading the full source
 - provide a `fix` if and only if the fix is correct in every case this error is emitted
 
-Do not trade diagnostic quality for implementation convenience. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tokei interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
+Do not trade diagnostic quality for implementation convenience. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tki interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
 
 ---
 

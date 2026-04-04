@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>toke playground</title>
+<style>
+  :root {
+    --bg:        #1e1e2e;
+    --surface:   #272738;
+    --border:    #3a3a5c;
+    --text:      #cdd6f4;
+    --text-dim:  #7f849c;
+    --accent:    #89b4fa;
+    --green:     #a6e3a1;
+    --red:       #f38ba8;
+    --yellow:    #f9e2af;
+    --mono:      'Fira Code', 'JetBrains Mono', 'Cascadia Code', 'Menlo', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ──────────────────────────────────────────────────────── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.25rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  header h1 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  header .version {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+
+  /* ── Toolbar ─────────────────────────────────────────────────────── */
+  .toolbar {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem 1.25rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .toolbar button {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    padding: 0.35rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .toolbar button:hover {
+    border-color: var(--accent);
+    background: var(--surface);
+  }
+
+  .toolbar button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .toolbar button.active {
+    border-color: var(--accent);
+    background: rgba(137, 180, 250, 0.1);
+  }
+
+  .toolbar .spacer { flex: 1; }
+
+  /* ── Panels ──────────────────────────────────────────────────────── */
+  .panels {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .panel + .panel {
+    border-left: 1px solid var(--border);
+  }
+
+  .panel-header {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0.4rem 1rem;
+    color: var(--text-dim);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  #editor {
+    flex: 1;
+    resize: none;
+    border: none;
+    outline: none;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    padding: 1rem;
+    tab-size: 2;
+  }
+
+  #output {
+    flex: 1;
+    overflow: auto;
+    padding: 1rem;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ── Diagnostics ─────────────────────────────────────────────────── */
+  .diag {
+    margin-bottom: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 3px;
+    border-left: 3px solid transparent;
+  }
+
+  .diag.error {
+    background: rgba(243, 139, 168, 0.08);
+    border-left-color: var(--red);
+  }
+
+  .diag.warning {
+    background: rgba(249, 226, 175, 0.08);
+    border-left-color: var(--yellow);
+  }
+
+  .diag .code {
+    color: var(--text-dim);
+    font-size: 0.7rem;
+  }
+
+  .diag .location {
+    color: var(--accent);
+    font-size: 0.75rem;
+  }
+
+  .diag .msg {
+    color: var(--text);
+  }
+
+  .success-msg {
+    color: var(--green);
+  }
+
+  .formatted-output {
+    color: var(--text);
+  }
+
+  /* ── Status bar ──────────────────────────────────────────────────── */
+  .status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.3rem 1.25rem;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+  }
+
+  .status .indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 0.4rem;
+    background: var(--yellow);
+  }
+
+  .status .indicator.ready { background: var(--green); }
+  .status .indicator.error { background: var(--red); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>toke playground</h1>
+  <span class="version" id="version-label">loading...</span>
+</header>
+
+<div class="toolbar">
+  <button id="btn-check" disabled>Check</button>
+  <button id="btn-format" disabled>Format</button>
+  <div class="spacer"></div>
+  <button id="btn-example">Load example</button>
+</div>
+
+<div class="panels">
+  <div class="panel">
+    <div class="panel-header">source</div>
+    <textarea id="editor" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off">// Try some toke code
+F main() {
+  let x = 42;
+  rt x;
+}
+</textarea>
+  </div>
+  <div class="panel">
+    <div class="panel-header">output</div>
+    <div id="output"><span class="diag">Press "Check" or "Format" to run the compiler.</span></div>
+  </div>
+</div>
+
+<div class="status">
+  <span><span class="indicator" id="status-dot"></span><span id="status-text">Loading WASM module...</span></span>
+  <span id="status-time"></span>
+</div>
+
+<!-- Load the Emscripten-generated module and the JS wrapper -->
+<script src="tkc.js"></script>
+<script src="tkc-wasm.js"></script>
+<script>
+(async function () {
+  const editor     = document.getElementById('editor');
+  const output     = document.getElementById('output');
+  const btnCheck   = document.getElementById('btn-check');
+  const btnFormat  = document.getElementById('btn-format');
+  const btnExample = document.getElementById('btn-example');
+  const statusDot  = document.getElementById('status-dot');
+  const statusText = document.getElementById('status-text');
+  const statusTime = document.getElementById('status-time');
+  const versionLbl = document.getElementById('version-label');
+
+  function setStatus(state, text) {
+    statusDot.className = 'indicator ' + state;
+    statusText.textContent = text;
+  }
+
+  /* ── Initialise WASM ───────────────────────────────────────────── */
+  try {
+    await TkcWasm.init();
+    versionLbl.textContent = TkcWasm.version();
+    setStatus('ready', 'WASM ready');
+    btnCheck.disabled = false;
+    btnFormat.disabled = false;
+  } catch (err) {
+    setStatus('error', 'Failed to load WASM: ' + err.message);
+    console.error(err);
+    return;
+  }
+
+  /* ── Render diagnostics ────────────────────────────────────────── */
+  function renderDiagnostics(result) {
+    output.innerHTML = '';
+
+    if (result.success) {
+      const el = document.createElement('div');
+      el.className = 'success-msg';
+      el.textContent = 'All checks passed (stage: ' + (result.stage || 'types') + ')';
+      output.appendChild(el);
+    }
+
+    if (result.diagnostics && result.diagnostics.length > 0) {
+      result.diagnostics.forEach(function (d) {
+        const el = document.createElement('div');
+        el.className = 'diag ' + (d.severity || 'error');
+        el.innerHTML =
+          '<span class="location">line ' + d.line + ':' + d.col + '</span> ' +
+          '<span class="code">E' + d.code + '</span> ' +
+          '<span class="msg">' + escapeHtml(d.message) + '</span>';
+        output.appendChild(el);
+      });
+    } else if (!result.success) {
+      const el = document.createElement('div');
+      el.className = 'diag error';
+      el.textContent = 'Compilation failed at stage: ' + (result.stage || 'unknown') +
+                        ' (' + result.error_count + ' error(s))';
+      output.appendChild(el);
+    }
+  }
+
+  function renderFormatted(result) {
+    output.innerHTML = '';
+
+    if (result.success && result.formatted) {
+      const el = document.createElement('div');
+      el.className = 'formatted-output';
+      el.textContent = result.formatted;
+      output.appendChild(el);
+    } else {
+      renderDiagnostics(result);
+    }
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  /* ── Button handlers ───────────────────────────────────────────── */
+  btnCheck.addEventListener('click', function () {
+    var t0 = performance.now();
+    var result = TkcWasm.check(editor.value);
+    var elapsed = (performance.now() - t0).toFixed(1);
+    statusTime.textContent = elapsed + ' ms';
+    renderDiagnostics(result);
+  });
+
+  btnFormat.addEventListener('click', function () {
+    var t0 = performance.now();
+    var result = TkcWasm.format(editor.value);
+    var elapsed = (performance.now() - t0).toFixed(1);
+    statusTime.textContent = elapsed + ' ms';
+    renderFormatted(result);
+  });
+
+  /* ── Example loader ────────────────────────────────────────────── */
+  var examples = [
+    '// Hello world\nF main() {\n  let msg = "hello";\n  rt 0;\n}\n',
+    '// Fibonacci\nF fib(n: i64) -> i64 {\n  if n < 2 {\n    rt n;\n  }\n  rt fib(n - 1) + fib(n - 2);\n}\n\nF main() {\n  let x = fib(10);\n  rt 0;\n}\n',
+    '// Type error example\nF main() {\n  let x: i64 = "oops";\n  rt x;\n}\n',
+  ];
+  var exIdx = 0;
+
+  btnExample.addEventListener('click', function () {
+    editor.value = examples[exIdx % examples.length];
+    exIdx++;
+    output.innerHTML = '<span class="diag">Example loaded. Press "Check" or "Format".</span>';
+  });
+})();
+</script>
+</body>
+</html>

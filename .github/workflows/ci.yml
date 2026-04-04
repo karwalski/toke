@@ -20,7 +20,7 @@ jobs:
 
       - name: Lint (clang-format dry-run)
         run: |
-          clang-format --dry-run --Werror src/*.c src/*.h 2>/dev/null || true
+          clang-format --dry-run --Werror src/*.c src/*.h 2>/dev/null
 
       - name: make lint (static analysis via compiler --analyze)
         run: make lint
@@ -60,7 +60,10 @@ jobs:
         run: make
 
       - name: Conformance suite
-        run: make conform || true
+        run: make conform
+
+      - name: Verify LLVM IR (llvm-as + opt -verify)
+        run: make verify-ir
 
   repro:
     name: Reproducible build check

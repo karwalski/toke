@@ -100,7 +100,7 @@ const, match, loop, return, call, binary/unary expressions, struct literals, cas
 
 | Criterion | Verified |
 |-----------|---------|
-| .tokei file loading from filesystem | yes |
+| .tki file loading from filesystem | yes |
 | std.* prefix routing to stdlib/ directory | yes |
 | SymbolTable populated with imported module exports | yes |
 | E2030 — unresolved import | yes |
@@ -173,18 +173,18 @@ accuracy (line/col), and --diag-text human-readable rendering.
 
 | Criterion | Verified |
 |-----------|---------|
-| Emits JSON .tokei files | yes |
+| Emits JSON .tki files | yes |
 | Captures module name, exported functions, types, constants | yes |
 | `interface_hash` field (SHA-256 of canonical export list) | yes |
 | E9001 — interface file write failure | yes |
-| .tokei files for all 5 stdlib modules present in stdlib/ | yes |
+| .tki files for all 5 stdlib modules present in stdlib/ | yes |
 | Implementation size | 190 lines |
 
-The five stdlib interface files (`stdlib/str.tokei`, `stdlib/db.tokei`,
-`stdlib/file.tokei`, `stdlib/http.tokei`, `stdlib/json.tokei`) were generated from
+The five stdlib interface files (`stdlib/str.tki`, `stdlib/db.tki`,
+`stdlib/file.tki`, `stdlib/http.tki`, `stdlib/json.tki`) were generated from
 the C implementations and match the exported function signatures in the corresponding
-`.c` and `.h` files. Spot-checked: `str.tokei` exports 14 functions consistent with
-`src/stdlib/str.h`; `db.tokei` exports 8 functions consistent with `src/stdlib/db.h`.
+`.c` and `.h` files. Spot-checked: `str.tki` exports 14 functions consistent with
+`src/stdlib/str.h`; `db.tki` exports 8 functions consistent with `src/stdlib/db.h`.
 
 ### 2.8 LLVM IR backend (`src/llvm.c`) — story 1.2.8
 
@@ -250,14 +250,14 @@ All five stdlib modules are implemented in `src/stdlib/`:
 
 ### 3.2 Interface files
 
-All five `.tokei` interface files are present in `stdlib/`:
+All five `.tki` interface files are present in `stdlib/`:
 
 ```
-stdlib/str.tokei
-stdlib/db.tokei
-stdlib/file.tokei
-stdlib/http.tokei
-stdlib/json.tokei
+stdlib/str.tki
+stdlib/db.tki
+stdlib/file.tki
+stdlib/http.tki
+stdlib/json.tki
 ```
 
 Each file is a valid JSON document containing `module`, `functions`, `types`,
@@ -277,7 +277,7 @@ the compiled C headers.
 **Test file presence does not equal test execution.** `test_file.c`, `test_http.c`,
 and `test_json.c` exist in `test/stdlib/` but have no corresponding `make` targets.
 These three modules are exercised only through the G-series conformance tests that
-compile programs importing them via their .tokei interfaces; their C implementations
+compile programs importing them via their .tki interfaces; their C implementations
 are not directly unit-tested via an executable test binary.
 
 **Action required (Phase 2, low priority):** Add `test-stdlib-file`, `test-stdlib-http`,
@@ -454,7 +454,7 @@ the Mac Studio is configured (Epic 1.4).
 | `make conform` wired and runs all 62 YAML tests end-to-end | done — 62/62 pass |
 | Every compiler pass verified against spec section and test series | done — see §2 |
 | All 5 stdlib unit test suites pass | partial — str and db pass; file/http/json have no executable targets |
-| stdlib .tokei interface files present and matching compiled signatures | done — 5/5 present |
+| stdlib .tki interface files present and matching compiled signatures | done — 5/5 present |
 | Monitoring console endpoints verified | done — see §4 |
 | All known tech-debt items documented with Phase 2 priority | done — see §6, TD-001 through TD-006 |
 | Corpus pipeline readiness assessed | done — see §5 |

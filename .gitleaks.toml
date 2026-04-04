@@ -1,0 +1,18 @@
+title = "toke gitleaks config"
+
+# Extend the default gitleaks rules — this file adds project-specific
+# allowlist entries only.  All built-in rules (AWS keys, generic secrets,
+# private keys, etc.) remain active.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Project-wide allowlist"
+paths = [
+  '''.gitleaks\.toml''',
+  '''test/fixtures/.*''',
+  '''testdata/.*''',
+  '''examples/.*''',
+  '''vendor/.*''',
+]

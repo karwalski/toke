@@ -1,0 +1,10 @@
+M=bench;
+F=main():i64{
+  let s=mut.0;
+  lp(let i=0;i<1000;i=i+1){
+    lp(let j=0;j<1000;j=j+1){
+      s=s+i*j
+    }
+  };
+  <s
+};

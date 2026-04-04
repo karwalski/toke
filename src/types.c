@@ -1,8 +1,89 @@
-/* types.c — Type checker for the toke reference compiler. Story 1.2.5. */
+/*
+ * types.c — Type checker for the toke Profile 1 reference compiler.
+ *
+ * =========================================================================
+ * Role in the compiler pipeline
+ * =========================================================================
+ * The type checker is the third stage of compilation, running after lexing
+ * and parsing/name-resolution.  It walks the AST produced by the parser and
+ * enforces the 10 Profile-1 type rules defined in toke-spec-v02 Section 13.6.
+ *
+ * The type checker is purely a validation pass — it does not transform the
+ * AST.  All diagnostics are emitted via diag_emit() and the pass returns
+ * 0 (success) or -1 (one or more type errors found).
+ *
+ * =========================================================================
+ * Profile 1 type system (Section 13.6)
+ * =========================================================================
+ * Profile 1 provides six primitive types and four composite type forms:
+ *
+ *   Primitives:  void, bool, i64, u64, f64, str
+ *   Composites:  [T] (array), [K:V] (map), T (struct), T!Err (error union)
+ *   FFI-only:    *T  (raw pointer, extern functions only — E2010)
+ *
+ * Key rules enforced here:
+ *   1. Arithmetic operators (+, -, *, /) require matching numeric types on
+ *      both sides.  No implicit widening or narrowing.
+ *   2. Comparison operators (<, >, ==) require matching types.
+ *   3. Unary minus (-) requires i64 or f64.
+ *   4. Explicit casts via 'as' are the only coercion mechanism — there are
+ *      no implicit coercions in Profile 1.
+ *   5. Assignment and binding type annotations must match the initialiser.
+ *   6. Function call arguments must match parameter types.
+ *   7. Return values must match the declared return type.
+ *   8. Error-union functions (T!Err) may return either T or Err; the !
+ *      propagation operator unwraps the success type.
+ *   9. Array indexing requires an integer index (i64 or u64).
+ *  10. Struct field access is validated against the struct definition.
+ *
+ * =========================================================================
+ * Type inference strategy
+ * =========================================================================
+ * Inference is bottom-up: the infer() function recursively descends into
+ * sub-expressions and returns the inferred Type* for each node.  Literals
+ * have fixed types; identifiers are resolved via the name table; binary
+ * expressions check operand compatibility and return the result type.
+ *
+ * TY_UNKNOWN acts as a "poison" sentinel — when a sub-expression has already
+ * emitted a type error, its type is set to TY_UNKNOWN.  Any operation
+ * involving TY_UNKNOWN silently succeeds to avoid cascading diagnostics.
+ *
+ * =========================================================================
+ * Error handling strategy (diagnostic codes)
+ * =========================================================================
+ *   E2010 — Pointer type *T used outside an extern (bodyless) function.
+ *   E3020 — Error propagation (!) applied to a non-error-union value.
+ *   E4010 — Non-exhaustive match statement (missing boolean arm).
+ *   E4011 — Match arms have inconsistent types.
+ *   E4025 — Struct field access on a field name that does not exist.
+ *   E4031 — Type mismatch (the general-purpose type error code).
+ *   E4043 — Inconsistent key or value types in a map literal.
+ *   E5001 — Value escapes arena scope.
+ *
+ * Every diagnostic includes a "fix" hint when a reasonable suggestion can
+ * be generated (e.g. "cast RHS to i64 using 'as'").
+ *
+ * =========================================================================
+ * Memory allocation
+ * =========================================================================
+ * All Type nodes and interned strings are allocated from the caller-supplied
+ * Arena.  No malloc/free calls occur in this file.
+ *
+ * Story: 1.2.5  Branch: feature/compiler-type-checker
+ * =========================================================================
+ */
 #include "types.h"
 #include <string.h>
 #include <stdio.h>
 
+/*
+ * ty_intern — intern (copy) a NUL-terminated string into the arena.
+ *
+ * Returns an arena-allocated copy of `s`.  Used to persist type and field
+ * names so they outlive any stack buffers they were extracted into.
+ * If arena allocation fails, returns the original pointer `s` as a
+ * best-effort fallback (the caller must tolerate this).
+ */
 static const char *ty_intern(Arena *arena, const char *s) {
     int len = (int)strlen(s);
     char *p = (char *)arena_alloc(arena, len + 1);
@@ -11,6 +92,15 @@ static const char *ty_intern(Arena *arena, const char *s) {
     return p;
 }
 
+/*
+ * mk_type — allocate and zero-initialise a new Type node.
+ *
+ * Every Type node created by the checker flows through this function.
+ * The node is allocated from the arena and all fields are set to safe
+ * defaults: kind = k, name/elem = NULL, field_count = 0.
+ *
+ * Returns NULL only if the arena is exhausted.
+ */
 static Type *mk_type(Arena *arena, TypeKind k) {
     Type *t = (Type *)arena_alloc(arena, (int)sizeof(Type));
     if (!t) return NULL;
@@ -19,6 +109,16 @@ static Type *mk_type(Arena *arena, TypeKind k) {
     return t;
 }
 
+/*
+ * type_name — return a human-readable name for a Type.
+ *
+ * Used exclusively in diagnostic messages.  For primitives and built-in
+ * composite kinds the name is a fixed string ("i64", "array", etc.).
+ * For TY_STRUCT, returns the user-defined struct name if available.
+ * For TY_ERROR_TYPE, recurses into the wrapped success type.
+ *
+ * Returns "unknown" for NULL or unrecognised kinds.
+ */
 static const char *type_name(const Type *t) {
     if (!t) return "unknown";
     switch (t->kind) {
@@ -26,11 +126,28 @@ static const char *type_name(const Type *t) {
     case TY_U64: return "u64";   case TY_F64: return "f64";   case TY_STR: return "str";
     case TY_STRUCT: return t->name?t->name:"struct"; case TY_ARRAY: return "array";
     case TY_FUNC: return "func"; case TY_ERROR_TYPE: return t->elem?type_name(t->elem):"error";
-    case TY_PTR: return "ptr"; case TY_MAP: return "map"; case TY_TASK: return "Task";
+    case TY_PTR: return "ptr"; case TY_MAP: return "map";
     default: return "unknown";
     }
 }
 
+/*
+ * types_equal — structural type equality check.
+ *
+ * Profile 1 uses nominal equality for structs (same name => same type)
+ * and structural equality for everything else.
+ *
+ * Special cases:
+ *   - TY_PTR: recursive equality on the pointed-to type.
+ *   - TY_MAP: recursive equality on both key (->elem) and value
+ *     (->field_types[0]) types.  A TY_UNKNOWN key or value is considered
+ *     compatible with any type (mirrors empty-literal behaviour).
+ *   - TY_ARRAY, TY_FUNC, TY_ERROR_TYPE: recursive equality on ->elem.
+ *     A TY_UNKNOWN elem matches anything (e.g. empty array literal []).
+ *   - All other kinds (primitives): equal iff the kind enum matches.
+ *
+ * Returns 0 if either pointer is NULL (defensive).
+ */
 static int types_equal(const Type *a, const Type *b) {
     if (!a||!b) return 0; if (a==b) return 1; if (a->kind!=b->kind) return 0;
     if (a->kind==TY_STRUCT) return a->name&&b->name&&strcmp(a->name,b->name)==0;
@@ -45,7 +162,6 @@ static int types_equal(const Type *a, const Type *b) {
         if ((av->kind==TY_UNKNOWN)||(bv->kind==TY_UNKNOWN)) return 1;
         return types_equal(av,bv);
     }
-    if (a->kind==TY_TASK) return types_equal(a->elem, b->elem);
     if (a->kind==TY_ARRAY||a->kind==TY_FUNC||a->kind==TY_ERROR_TYPE) {
         /* TY_UNKNOWN elem is compatible with any elem (e.g. empty array literal []). */
         if ((a->elem&&a->elem->kind==TY_UNKNOWN)||(b->elem&&b->elem->kind==TY_UNKNOWN)) return 1;
@@ -54,10 +170,29 @@ static int types_equal(const Type *a, const Type *b) {
     return 1;
 }
 
+/*
+ * is_numeric — return 1 if `t` is one of the three numeric types.
+ *
+ * Profile 1 numeric types are: i64 (signed 64-bit integer),
+ * u64 (unsigned 64-bit integer), and f64 (64-bit float).
+ * Used to validate operands of arithmetic operators.
+ */
 static int is_numeric(const Type *t) {
     return t && (t->kind==TY_I64 || t->kind==TY_U64 || t->kind==TY_F64);
 }
 
+/*
+ * tc_lookup — look up a name in the scope chain.
+ *
+ * Walks from the innermost scope `s` outward through parent scopes,
+ * searching each scope's declaration list for a Decl whose name matches
+ * the given (name, len) pair.  Returns the first match, or NULL if the
+ * name is not found in any enclosing scope.
+ *
+ * This is the type checker's counterpart to the name resolver's lookup;
+ * it reuses the same Scope/Decl structures populated during name
+ * resolution (names.c).
+ */
 static Decl *tc_lookup(const Scope *s, const char *name, int len) {
     for (; s; s = s->parent)
         for (Decl *d = s->head; d; d = d->next)
@@ -66,18 +201,48 @@ static Decl *tc_lookup(const Scope *s, const char *name, int len) {
     return NULL;
 }
 
+/*
+ * TOKSTR — extract a NUL-terminated token string from the source buffer.
+ *
+ * Copies up to sizeof(buf)-1 bytes from src at the node's token position
+ * into buf[], then NUL-terminates.  Used throughout the checker to convert
+ * AST node tokens (stored as offset+length into the source) into C strings
+ * for name lookups and diagnostic messages.
+ */
 #define TOKSTR(buf,src,node) do { \
     int _l=(node)->tok_len<(int)(sizeof(buf)-1)?(node)->tok_len:(int)(sizeof(buf)-1); \
     memcpy(buf,(src)+(node)->tok_start,(size_t)_l); buf[_l]='\0'; \
 } while(0)
 
+/*
+ * Ctx — per-invocation context for the type checker walk.
+ *
+ *   env       — the TypeEnv holding the arena and name table.
+ *   src       — raw source text (used with TOKSTR to extract identifiers).
+ *   fn_ret    — the declared return type of the current function, or NULL
+ *               when outside any function.  Used to validate return stmts.
+ *   had_error — set to 1 when any diagnostic is emitted; drives the final
+ *               return value of type_check().
+ *   fn_node   — the NODE_FUNC_DECL of the enclosing function, or NULL.
+ *               Used to look up parameter types when an identifier is not
+ *               found at module scope.
+ */
 typedef struct { TypeEnv *env; const char *src;
                  Type *fn_ret; int had_error;
                  const Node *fn_node; } Ctx;
 
+/* Forward declaration: infer() is the main recursive type-inference walker. */
 static Type *infer(Ctx *cx, const Node *node);
 
-/* Return 1 if the type (or any nested type) contains TY_PTR. */
+/*
+ * contains_ptr — return 1 if the type tree contains TY_PTR at any depth.
+ *
+ * Used to enforce the E2010 rule: pointer types (*T) are only valid in
+ * extern (bodyless) function declarations.  If a function has a body
+ * (i.e. is not extern), any parameter or return type containing *T is
+ * rejected.  This function recurses through ->elem to catch nested
+ * pointers like [*T] or **T.
+ */
 static int contains_ptr(const Type *t) {
     if (!t) return 0;
     if (t->kind == TY_PTR) return 1;
@@ -85,6 +250,34 @@ static int contains_ptr(const Type *t) {
     return 0;
 }
 
+/*
+ * resolve_type — convert a type-annotation AST node into a Type*.
+ *
+ * This function handles all forms of type syntax in Profile 1:
+ *
+ *   Primitive names:  "void", "bool", "i64", "u64", "f64", "str"
+ *     Looked up by string comparison and mapped to the corresponding
+ *     TY_* kind.
+ *
+ *   NODE_PTR_TYPE:  *T
+ *     Creates TY_PTR with ->elem = resolve_type(child[0]).
+ *
+ *   NODE_ARRAY_TYPE:  [T]
+ *     Creates TY_ARRAY with ->elem = resolve_type(child[0]).
+ *
+ *   NODE_MAP_TYPE:  [K:V]
+ *     Creates TY_MAP with ->elem = key type and ->field_types[0] = value
+ *     type.
+ *
+ *   User-defined type names (structs):
+ *     Looked up in the module scope via tc_lookup.  If found and the
+ *     definition is a NODE_TYPE_DECL (T= keyword), builds a TY_STRUCT
+ *     with field names and types extracted from the declaration's
+ *     NODE_FIELD children.
+ *
+ * Returns TY_UNKNOWN if the node is NULL or the type name is not
+ * recognised — this prevents cascading errors.
+ */
 static Type *resolve_type(Ctx *cx, const Node *n) {
     if (!n) return mk_type(cx->env->arena, TY_UNKNOWN);
     char nb[128]; TOKSTR(nb, cx->src, n);
@@ -157,9 +350,24 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
     return mk_type(cx->env->arena, TY_UNKNOWN);
 }
 
-/* resolve_return_spec — resolve a NODE_RETURN_SPEC into a Type.
- * child[0] = success type, child[1] = error type (optional).
- * When both are present, returns TY_ERROR_TYPE with elem = success type. */
+/*
+ * resolve_return_spec — resolve a NODE_RETURN_SPEC into a Type.
+ *
+ * A return spec has one or two children:
+ *   child[0] = success/result type (always present)
+ *   child[1] = error type (optional, present for error-union returns)
+ *
+ * When only child[0] is present, returns the success type directly.
+ * When child[1] is also present, constructs a TY_ERROR_TYPE whose:
+ *   ->elem         = the success type T
+ *   ->name         = the error struct name (e.g. "MyError")
+ *   ->field_count/names/types = copied from the resolved error type
+ *
+ * This enables error-union return types like "i64!ParseError" where the
+ * function may return either an i64 value or a ParseError struct.
+ *
+ * Returns TY_VOID if rspec is NULL or has no children.
+ */
 static Type *resolve_return_spec(Ctx *cx, const Node *rspec) {
     Arena *A = cx->env->arena;
     if (!rspec || rspec->child_count < 1) return mk_type(A, TY_VOID);
@@ -177,6 +385,18 @@ static Type *resolve_return_spec(Ctx *cx, const Node *rspec) {
     return et;
 }
 
+/*
+ * emit_mm — emit a type-mismatch diagnostic (E4031).
+ *
+ * Formats a "type mismatch: expected 'X', got 'Y'" message and emits it
+ * via diag_emit().  If `fix` is non-NULL, it is included as the "fix"
+ * hint in the diagnostic (e.g. "cast RHS to i64 using 'as'").
+ *
+ * Sets cx->had_error = 1 so the final type_check() return value reflects
+ * the failure.  This is the most commonly emitted diagnostic — it covers
+ * assignment mismatches, argument mismatches, return type mismatches, and
+ * binary operator mismatches.
+ */
 static void emit_mm(Ctx *cx, const Node *n, const Type *exp,
                     const Type *got, const char *fix) {
     char msg[256];
@@ -189,17 +409,51 @@ static void emit_mm(Ctx *cx, const Node *n, const Type *exp,
     cx->had_error=1;
 }
 
+/*
+ * infer — recursively infer the type of an AST node.
+ *
+ * This is the core of the type checker.  It pattern-matches on node->kind
+ * and returns the inferred Type* for the expression or statement.
+ *
+ * For expressions, the returned type represents the value's type:
+ *   - Literals: fixed types (INT_LIT->i64, FLOAT_LIT->f64, etc.)
+ *   - Identifiers: resolved from the declaration's type annotation or
+ *     initialiser.
+ *   - Binary/unary: validated and combined according to operator rules.
+ *   - Calls: matched against the callee's parameter types; returns the
+ *     callee's declared return type.
+ *   - Casts: returns the target type (the cast itself is always trusted).
+ *
+ * For statements, the returned type is typically TY_VOID (statements
+ * produce no value), but the function still recurses into sub-expressions
+ * to validate them.
+ *
+ * TY_UNKNOWN is used as a "poison" type — if a sub-expression has already
+ * emitted an error, comparisons against TY_UNKNOWN are silently accepted
+ * to prevent cascading diagnostics (Section 13.6 rule: one error per
+ * root cause).
+ */
 static Type *infer(Ctx *cx, const Node *node) {
     if (!node) return mk_type(cx->env->arena, TY_UNKNOWN);
     Arena *A = cx->env->arena;
     switch (node->kind) {
+
+    /* ── Literals ────────────────────────────────────────────────────────
+     * Each literal kind maps to exactly one primitive type.  No inference
+     * is needed; the type is determined by the token kind alone.
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_INT_LIT:   return mk_type(A,TY_I64);
     case NODE_FLOAT_LIT: return mk_type(A,TY_F64);
     case NODE_STR_LIT:   return mk_type(A,TY_STR);
     case NODE_BOOL_LIT:  return mk_type(A,TY_BOOL);
 
+    /* ── Struct literal ───────────────────────────────────────────────────
+     * A struct literal uses the type name as its token (e.g. "Point{x: 1;
+     * y: 2}").  resolve_type looks up the T= declaration and builds the
+     * TY_STRUCT.  Each NODE_FIELD_INIT child's value expression is also
+     * inferred to ensure field initialisers are type-checked.
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_STRUCT_LIT: {
-        /* node token is the TYPE_IDENT — resolve_type looks it up in scope. */
         Type *st = resolve_type(cx, node);
         /* Infer types of field init value expressions so they are type-checked. */
         for (int i=0;i<node->child_count;i++) {
@@ -210,8 +464,12 @@ static Type *infer(Ctx *cx, const Node *node) {
         return st;
     }
 
+    /* ── Array literal ────────────────────────────────────────────────────
+     * Infers the element type from the first element.  An empty array
+     * literal [] gets elem = TY_UNKNOWN, which is compatible with any
+     * target type via the types_equal TY_UNKNOWN rule.
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_ARRAY_LIT: {
-        /* Infer element type from first element; return [elem_type]. */
         Type *at = mk_type(A, TY_ARRAY);
         if (!at) return mk_type(A, TY_UNKNOWN);
         if (node->child_count > 0)
@@ -221,6 +479,13 @@ static Type *infer(Ctx *cx, const Node *node) {
         return at;
     }
 
+    /* ── Map literal ──────────────────────────────────────────────────────
+     * Infers key and value types from the first NODE_MAP_ENTRY child.
+     * Subsequent entries are validated for consistency — all keys must
+     * share the same type and all values must share the same type.
+     * Mismatches emit E4043.  An empty map literal gets TY_UNKNOWN for
+     * both key and value types.
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_MAP_LIT: {
         Type *mt = mk_type(A, TY_MAP);
         if (!mt) return mk_type(A, TY_UNKNOWN);
@@ -253,6 +518,18 @@ static Type *infer(Ctx *cx, const Node *node) {
         return mt;
     }
 
+    /* ── Identifier ──────────────────────────────────────────────────────
+     * Resolves the identifier's type by looking up its declaration:
+     *   1. Module scope (tc_lookup) — covers top-level binds and functions.
+     *   2. If not found and we are inside a function, scan the function's
+     *      NODE_PARAM children for a matching parameter name.
+     *   3. From the declaration, extract the type from:
+     *      - Explicit type annotation (child[1] of a bind/param).
+     *      - Inferred from the initialiser expression (child[2] of a bind).
+     *      - TY_FUNC for function declarations.
+     * Returns TY_UNKNOWN if the name cannot be resolved (the name resolver
+     * will have already emitted an error for truly undefined names).
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_IDENT: {
         char nb[128]; TOKSTR(nb,cx->src,node);
         int nlen=(int)strlen(nb);
@@ -281,6 +558,15 @@ static Type *infer(Ctx *cx, const Node *node) {
         return mk_type(A,TY_UNKNOWN);
     }
 
+    /* ── Unary expression ─────────────────────────────────────────────────
+     * Currently only unary minus (-) is type-checked.  The operand must be
+     * i64 or f64 — applying minus to bool, str, or struct types is an
+     * error (E4031).  u64 is excluded because negation of an unsigned
+     * value is not meaningful in Profile 1.
+     *
+     * The result type is the same as the operand type (i64 stays i64,
+     * f64 stays f64).
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_UNARY_EXPR: {
         Type *op=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         if (node->op==TK_MINUS&&op->kind!=TY_UNKNOWN
@@ -293,6 +579,19 @@ static Type *infer(Ctx *cx, const Node *node) {
         return op;
     }
 
+    /* ── Binary expression ────────────────────────────────────────────────
+     * Arithmetic operators (+, -, *, /):
+     *   Both operands must be numeric AND must have matching types.
+     *   Profile 1 has no implicit widening — i64 + f64 is an error.
+     *   The result type is the common operand type.
+     *
+     * Comparison operators (<, >, ==):
+     *   Both operands must have matching types (including non-numeric
+     *   types like str == str).  The result type is always TY_BOOL.
+     *
+     * If either operand is TY_UNKNOWN, the check is skipped (poison
+     * propagation).  The fix hint suggests using 'as' to cast the RHS.
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_BINARY_EXPR: {
         Type *l=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *r=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
@@ -310,60 +609,22 @@ static Type *infer(Ctx *cx, const Node *node) {
         return cmp?mk_type(A,TY_BOOL):l;
     }
 
+    /* ── Function call ────────────────────────────────────────────────────
+     * Resolves the callee by name and validates each argument against the
+     * corresponding parameter type.  Steps:
+     *   1. Look up the callee in module scope.
+     *   2. If not found or not a NODE_FUNC_DECL, infer argument types
+     *      (for side-effect checking) and return TY_UNKNOWN.
+     *   3. Walk the function's NODE_PARAM children in order, matching
+     *      each to the corresponding argument (child[1+i] of the call
+     *      node).  Emit E4031 if the argument type does not match.
+     *   4. Infer any extra arguments beyond the parameter count.
+     *   5. Find the NODE_RETURN_SPEC and resolve it to get the call's
+     *      result type.  If no return spec exists, default to TY_VOID.
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_CALL_EXPR: {
         if (node->child_count<1) return mk_type(A,TY_UNKNOWN);
         char nb[128]; TOKSTR(nb,cx->src,node->children[0]);
-
-        /* spawn(fn) — async task creation */
-        if (strcmp(nb,"spawn")==0) {
-            if (node->child_count<2) {
-                diag_emit(DIAG_ERROR,E4050,node->start,node->line,node->col,
-                    "spawn argument not a callable function","fix",(const char*)NULL);
-                cx->had_error=1; return mk_type(A,TY_UNKNOWN);
-            }
-            const Node *arg=node->children[1];
-            char fn_name[128]; TOKSTR(fn_name,cx->src,arg);
-            Decl *fd=tc_lookup(cx->env->names->module_scope,fn_name,(int)strlen(fn_name));
-            if (!fd||!fd->def_node||fd->def_node->kind!=NODE_FUNC_DECL) {
-                diag_emit(DIAG_ERROR,E4050,node->start,node->line,node->col,
-                    "spawn argument not a callable function","fix",(const char*)NULL);
-                cx->had_error=1; return mk_type(A,TY_UNKNOWN);
-            }
-            const Node *fndef=fd->def_node; int pc=0;
-            for (int i=0;i<fndef->child_count;i++)
-                if (fndef->children[i]&&fndef->children[i]->kind==NODE_PARAM) pc++;
-            if (pc>0) {
-                diag_emit(DIAG_ERROR,E4052,node->start,node->line,node->col,
-                    "spawned function has parameters; v0.1 requires nullary functions",
-                    "fix",(const char*)NULL);
-                cx->had_error=1; return mk_type(A,TY_UNKNOWN);
-            }
-            Type *task=mk_type(A,TY_TASK);
-            if (!task) return mk_type(A,TY_UNKNOWN);
-            task->elem=mk_type(A,TY_VOID);
-            for (int i=0;i<fndef->child_count;i++) {
-                const Node *ch=fndef->children[i];
-                if (ch&&ch->kind==NODE_RETURN_SPEC&&ch->child_count>0)
-                    { task->elem=resolve_return_spec(cx,ch); break; }
-            }
-            return task;
-        }
-
-        /* await(t) — extract result from Task */
-        if (strcmp(nb,"await")==0) {
-            if (node->child_count<2) {
-                diag_emit(DIAG_ERROR,E4051,node->start,node->line,node->col,
-                    "await argument not a Task","fix",(const char*)NULL);
-                cx->had_error=1; return mk_type(A,TY_UNKNOWN);
-            }
-            Type *arg_t=infer(cx,node->children[1]);
-            if (arg_t->kind!=TY_TASK&&arg_t->kind!=TY_UNKNOWN) {
-                diag_emit(DIAG_ERROR,E4051,node->start,node->line,node->col,
-                    "await argument not a Task","fix",(const char*)NULL);
-                cx->had_error=1; return mk_type(A,TY_UNKNOWN);
-            }
-            return (arg_t->kind==TY_TASK&&arg_t->elem)?arg_t->elem:mk_type(A,TY_UNKNOWN);
-        }
 
         Decl *d=tc_lookup(cx->env->names->module_scope,nb,(int)strlen(nb));
         if (!d||!d->def_node||d->def_node->kind!=NODE_FUNC_DECL) {
@@ -395,10 +656,30 @@ static Type *infer(Ctx *cx, const Node *node) {
         return mk_type(A,TY_VOID);
     }
 
+    /* ── Cast expression (as) ────────────────────────────────────────────
+     * The 'as' keyword is the only coercion mechanism in Profile 1.
+     * The checker infers the source expression type (for side-effect
+     * validation) but trusts the target type unconditionally — no
+     * compile-time check is performed on cast validity.  The result
+     * type is the declared target type.
+     *
+     * child[0] = source expression, child[1] = target type annotation.
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_CAST_EXPR:
         if (node->child_count>1) { infer(cx,node->children[0]); return resolve_type(cx,node->children[1]); }
         return mk_type(A,TY_UNKNOWN);
 
+    /* ── Error propagation (!) ───────────────────────────────────────────
+     * The ! operator unwraps an error-union value T!Err, returning the
+     * success type T.  If the value is the error variant, the error is
+     * propagated to the enclosing function's caller (which must itself
+     * return T!Err).
+     *
+     * Validation (E3020):
+     *   - The enclosing function must have an error-union return type.
+     *   - The operand must itself be a TY_ERROR_TYPE.
+     * If valid, the result type is the success type (inner->elem).
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_PROPAGATE_EXPR: {
         Type *inner=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         if (!cx->fn_ret||cx->fn_ret->kind!=TY_ERROR_TYPE||
@@ -411,6 +692,17 @@ static Type *infer(Ctx *cx, const Node *node) {
         return (inner->kind==TY_ERROR_TYPE&&inner->elem)?inner->elem:mk_type(A,TY_UNKNOWN);
     }
 
+    /* ── Index expression (a[i]) ────────────────────────────────────────
+     * Validates two things:
+     *   1. The base expression must be an array (TY_ARRAY).  Indexing
+     *      into a non-array type is an error (E4031).
+     *   2. The index expression must be an integer type (i64 or u64).
+     *      Floating-point or string indices are rejected (E4031).
+     *
+     * If the base is a valid array, the result type is the array's
+     * element type (base->elem).  Otherwise TY_UNKNOWN is returned to
+     * suppress cascading diagnostics.
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_INDEX_EXPR: {
         Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *idx=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
@@ -430,6 +722,23 @@ static Type *infer(Ctx *cx, const Node *node) {
         return mk_type(A,TY_UNKNOWN);
     }
 
+    /* ── Field access expression (a.field) ──────────────────────────────
+     * Handles the dot operator for struct field access and the built-in
+     * .len property on arrays and maps.
+     *
+     * Built-in property:
+     *   .len on TY_ARRAY or TY_MAP returns TY_U64 (the collection's
+     *   element/entry count).
+     *
+     * Struct field access:
+     *   Scans the struct's field_names[] array for a matching field.
+     *   If found, returns the corresponding field type.  If not found,
+     *   emits E4025 ("struct 'X' has no field 'Y'").
+     *
+     * If the base is not a struct (and .len does not apply), returns
+     * TY_UNKNOWN silently — the name resolver will have caught truly
+     * invalid accesses already.
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_FIELD_EXPR: {
         Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         if (node->child_count<2||!node->children[1]) return mk_type(A,TY_UNKNOWN);
@@ -448,6 +757,20 @@ static Type *infer(Ctx *cx, const Node *node) {
         cx->had_error=1; return mk_type(A,TY_UNKNOWN);
     }
 
+    /* ── Bind / mutable-bind statement (let / let mut) ─────────────────
+     * Validates that the explicit type annotation (child[1]), if present,
+     * matches the inferred type of the initialiser expression (child[2]).
+     *
+     * If both are present and neither is TY_UNKNOWN, types_equal() is
+     * used to compare them.  A mismatch emits E4031 with a fix hint
+     * suggesting an 'as' cast.
+     *
+     * If only the annotation is present (no initialiser), or only the
+     * initialiser (no annotation), no check is needed — the binding's
+     * type is simply the one that is present.
+     *
+     * Returns TY_VOID (bindings are statements, not expressions).
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_BIND_STMT: case NODE_MUT_BIND_STMT: {
         Type *ann =(node->child_count>1&&node->children[1])?resolve_type(cx,node->children[1]):NULL;
         Type *init=(node->child_count>2&&node->children[2])?infer(cx,node->children[2]):NULL;
@@ -458,6 +781,17 @@ static Type *infer(Ctx *cx, const Node *node) {
         return mk_type(A,TY_VOID);
     }
 
+    /* ── Assignment statement (x = expr) ───────────────────────────────
+     * Validates that the RHS type matches the LHS type.  The LHS type
+     * is inferred from the target expression (typically an identifier
+     * whose type was established at its binding site).
+     *
+     * If both sides are known and do not match, emits E4031 with a fix
+     * hint.  TY_UNKNOWN on either side suppresses the check (poison
+     * propagation).
+     *
+     * Returns TY_VOID (assignments are statements).
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_ASSIGN_STMT: {
         Type *lhs=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *rhs=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
@@ -468,6 +802,23 @@ static Type *infer(Ctx *cx, const Node *node) {
         return mk_type(A,TY_VOID);
     }
 
+    /* ── Return statement ──────────────────────────────────────────────
+     * Validates the returned value against the enclosing function's
+     * declared return type (cx->fn_ret).
+     *
+     * Three cases are checked:
+     *   1. Void function returning a value: emits E4031 with fix hint
+     *      "remove the return value".
+     *   2. Non-void function returning the wrong type: emits E4031
+     *      with fix hint suggesting an 'as' cast.
+     *   3. Error-union function (T!Err): the return value may be either
+     *      the success type T (checked via types_equal on fn_ret->elem)
+     *      or the error struct Err (checked via struct name comparison).
+     *      Both are accepted without error.
+     *
+     * Returns TY_VOID (the return statement itself produces no value
+     * in the enclosing statement context).
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_RETURN_STMT: {
         Type *val=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_VOID);
         if (cx->fn_ret&&cx->fn_ret->kind==TY_VOID&&node->child_count>0
@@ -493,6 +844,24 @@ static Type *infer(Ctx *cx, const Node *node) {
         return mk_type(A,TY_VOID);
     }
 
+    /* ── Match statement ──────────────────────────────────────────────
+     * Type-checks a match statement, which pattern-matches on a
+     * scrutinee value.  The checker performs three validations:
+     *
+     *   1. Arm body type consistency (E4011): all match arms must
+     *      produce values of the same type.  The first arm's type is
+     *      used as the reference; subsequent arms are compared against
+     *      it.  TY_UNKNOWN arms are tolerated (poison propagation).
+     *
+     *   2. Boolean exhaustiveness (E4010): when the scrutinee is
+     *      TY_BOOL, both 'true' and 'false' arms must be present.
+     *      Missing arms emit separate E4010 diagnostics.
+     *
+     *   3. Arm body inference: each arm's body expression is recursively
+     *      inferred so that nested expressions are also type-checked.
+     *
+     * Returns the common arm type, or TY_VOID if no arms exist.
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_MATCH_STMT: {
         if (node->child_count<1) return mk_type(A,TY_VOID);
         Type *scr=infer(cx,node->children[0]),*arm_type=NULL; int has_t=0,has_f=0;
@@ -519,6 +888,20 @@ static Type *infer(Ctx *cx, const Node *node) {
         return arm_type?arm_type:mk_type(A,TY_VOID);
     }
 
+    /* ── Arena statement ──────────────────────────────────────────────
+     * The 'arena { ... }' block introduces a scoped allocation region.
+     * Values allocated inside an arena block must not escape to outer
+     * scopes — assigning an arena-local value to a module-scope variable
+     * is a compile-time error (E5001).
+     *
+     * Tracking is done via cx->env->arena_depth, which is incremented
+     * on entry and decremented on exit.  Inside the block, any
+     * NODE_ASSIGN_STMT whose LHS identifier resolves to a module-scope
+     * declaration triggers E5001.
+     *
+     * All child statements are recursively inferred for normal type
+     * checking.  Returns TY_VOID.
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_ARENA_STMT: {
         cx->env->arena_depth++;
         for (int i=0;i<node->child_count;i++) {
@@ -542,6 +925,25 @@ static Type *infer(Ctx *cx, const Node *node) {
         return mk_type(A,TY_VOID);
     }
 
+    /* ── Function declaration ────────────────────────────────────────────
+     * Processes a function definition in two phases:
+     *
+     * Phase 1 — Resolve return type and validate pointer usage (E2010):
+     *   Scans children for NODE_RETURN_SPEC to determine the function's
+     *   return type.  If a NODE_STMT_LIST child is present, the function
+     *   has a body (i.e. is not extern).  Non-extern functions must not
+     *   use pointer types (*T) in parameters or return type — pointer
+     *   types are FFI-only in Profile 1.
+     *
+     * Phase 2 — Type-check the function body:
+     *   Saves and restores cx->fn_ret and cx->fn_node (supporting nested
+     *   function declarations, though Profile 1 does not currently allow
+     *   them).  Then recursively infers all child nodes, which includes
+     *   the function body's statements and any return statements that
+     *   will be validated against the saved fn_ret.
+     *
+     * Returns TY_VOID (a function declaration is a statement).
+     * ──────────────────────────────────────────────────────────────────── */
     case NODE_FUNC_DECL: {
         Type *ret=mk_type(A,TY_VOID);
         int has_body=0;
@@ -577,6 +979,16 @@ static Type *infer(Ctx *cx, const Node *node) {
         return mk_type(A,TY_VOID);
     }
 
+    /* ── Default fallthrough ─────────────────────────────────────────────
+     * Handles all node kinds not explicitly matched above (e.g.
+     * NODE_STMT_LIST, NODE_IF_STMT, NODE_WHILE_STMT, NODE_TYPE_DECL).
+     * These nodes do not have specific type rules — the checker simply
+     * recurses into all children so that any nested expressions and
+     * statements are still validated.
+     *
+     * Returns the type of the last child (useful for expression-position
+     * blocks where the block's value is the final expression).
+     * ──────────────────────────────────────────────────────────────────── */
     default: {
         Type *last=mk_type(A,TY_VOID);
         for (int i=0;i<node->child_count;i++) last=infer(cx,node->children[i]);
@@ -585,6 +997,28 @@ static Type *infer(Ctx *cx, const Node *node) {
     }
 }
 
+/*
+ * type_check — public entry point for the type checker pass.
+ *
+ * Called by the compiler driver after lexing, parsing, and name resolution.
+ * Initialises a TypeEnv and a Ctx, then walks every top-level AST node
+ * through infer(), which recursively validates all expressions and
+ * statements.
+ *
+ * Parameters:
+ *   ast   — the root AST node (NODE_PROGRAM) produced by the parser.
+ *   src   — the original source text (used by TOKSTR to extract names).
+ *   names — the NameEnv populated by the name resolver (names.c).
+ *   arena — the memory arena for allocating Type nodes.
+ *   out   — the TypeEnv to populate (caller-allocated, zeroed).
+ *
+ * Returns:
+ *    0  — all type checks passed, no diagnostics emitted.
+ *   -1  — one or more type errors were detected (diagnostics already
+ *          emitted via diag_emit).
+ *   -1  — also returned immediately if any input pointer is NULL
+ *          (defensive guard).
+ */
 int type_check(const Node *ast, const char *src,
                NameEnv *names, Arena *arena, TypeEnv *out) {
     if (!ast||!src||!names||!arena||!out) return -1;

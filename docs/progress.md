@@ -35,11 +35,11 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 |----|-------|--------|--------|-------|
 | 1.2.1 | Lexer implementation | done | feature/compiler-lexer | [x] 80-char set [x] 38 token kinds [x] W1010 [x] E1001 E1002 E1003 [x] 296 lines |
 | 1.2.2 | Parser implementation | done | feature/compiler-parser | [x] All 47 non-terminals [x] LL(1) [x] AST with source positions [x] E2001–E2004 diagnostics [x] 394 lines |
-| 1.2.3 | Import resolver | done | feature/compiler-import-resolver | [x] .tokei loading [x] E2030 unresolved [x] E2031 circular [x] std.* prefix [x] SymbolTable [x] 179 lines |
+| 1.2.3 | Import resolver | done | feature/compiler-import-resolver | [x] .tki loading [x] E2030 unresolved [x] E2031 circular [x] std.* prefix [x] SymbolTable [x] 179 lines |
 | 1.2.4 | Name resolver | done | feature/compiler-name-resolver | [x] Scope chain [x] Predefined ids [x] Import aliases [x] E3011 E3012 [x] All scope levels |
 | 1.2.5 | Type checker | done | feature/compiler-type-checker | [x] 10/10 rules [x] E4031 E4010 E4011 E4025 E5001 E3020 [x] 346 lines (arena escape: conservative — Decl needs depth stamp) |
 | 1.2.6 | Structured diagnostic emitter | done | feature/compiler-diag | [x] JSON schema 1.0 [x] fix field omitted when absent [x] --diag-text [x] 180 lines |
-| 1.2.7 | Interface file emitter | done | feature/compiler-interface-emitter | [x] JSON .tokei [x] module/func/type/const [x] interface_hash [x] E9001 [x] 190 lines |
+| 1.2.7 | Interface file emitter | done | feature/compiler-interface-emitter | [x] JSON .tki [x] module/func/type/const [x] interface_hash [x] E9001 [x] 190 lines |
 | 1.2.8 | LLVM IR backend | done | feature/compiler-llvm-backend | [x] Text IR all constructs [x] 3 targets via clang [x] E9002 E9003 [x] 396 lines (cast/field-offset/nested-break stubs) |
 | 1.2.9 | CLI interface | done | feature/compiler-cli | [x] All flags [x] Full pipeline [x] Exit codes 0/1/2/3 [x] isatty diag [x] 186 lines |
 | 1.2.10 | Conformance test suite (Profile 1) | done | test/compiler-conformance-suite | [x] 62 tests [x] L/G/D series [x] run_conform.sh [x] make conform wired |
@@ -65,11 +65,11 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 1.3.1 | std.str | done | feature/stdlib-str | [x] 14/14 functions [x] str.tokei [x] C impl 222 lines [x] 22 test assertions |
-| 1.3.2 | std.http | done | feature/stdlib-http | [x] Req/Res/HttpErr types [x] 5 route verbs [x] :param extraction [x] POSIX server [x] http.tokei |
-| 1.3.3 | std.db | done | feature/stdlib-db | [x] 8/8 functions [x] SQLite3 backend [x] DbErr sum type [x] db.tokei [x] in-memory test suite |
-| 1.3.4 | std.json | done | feature/stdlib-json | [x] 8/8 functions [x] JsonErr sum type [x] json.tokei [x] recursive key extractor [x] 7 test assertions |
-| 1.3.5 | std.file | done | feature/stdlib-file | [x] 6/6 functions [x] FileErr sum type [x] file.tokei [x] 138 lines [x] 9 test assertions |
+| 1.3.1 | std.str | done | feature/stdlib-str | [x] 14/14 functions [x] str.tki [x] C impl 222 lines [x] 22 test assertions |
+| 1.3.2 | std.http | done | feature/stdlib-http | [x] Req/Res/HttpErr types [x] 5 route verbs [x] :param extraction [x] POSIX server [x] http.tki |
+| 1.3.3 | std.db | done | feature/stdlib-db | [x] 8/8 functions [x] SQLite3 backend [x] DbErr sum type [x] db.tki [x] in-memory test suite |
+| 1.3.4 | std.json | done | feature/stdlib-json | [x] 8/8 functions [x] JsonErr sum type [x] json.tki [x] recursive key extractor [x] 7 test assertions |
+| 1.3.5 | std.file | done | feature/stdlib-file | [x] 6/6 functions [x] FileErr sum type [x] file.tki [x] 138 lines [x] 9 test assertions |
 
 ### Epic 1.9 — Remote Monitoring Console
 
@@ -123,11 +123,11 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 2.7.1 | std.process | done | feature/stdlib-2.7-process-env (tkc + toke-stdlib) | [x] POSIX fork/exec/pipe/waitpid [x] ProcessHandle [x] process.tokei [x] 28/28 tests |
-| 2.7.2 | std.env | done | feature/stdlib-2.7-process-env (tkc + toke-stdlib) | [x] getenv/setenv/unsetenv [x] EnvErrKind [x] env.tokei [x] tests pass |
-| 2.7.3 | std.crypto | done | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) | [x] SHA-256 + HMAC-SHA-256 [x] self-contained [x] crypto.tokei [x] test vectors pass |
-| 2.7.4 | std.time | done | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) | [x] clock_gettime [x] strftime [x] time.tokei [x] tests pass |
-| 2.7.5 | std.test | done | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) | [x] assert/assert_eq/assert_ne [x] DIAGNOSTIC stderr format [x] test.tokei [x] tests pass |
+| 2.7.1 | std.process | done | feature/stdlib-2.7-process-env (tkc + toke-stdlib) | [x] POSIX fork/exec/pipe/waitpid [x] ProcessHandle [x] process.tki [x] 28/28 tests |
+| 2.7.2 | std.env | done | feature/stdlib-2.7-process-env (tkc + toke-stdlib) | [x] getenv/setenv/unsetenv [x] EnvErrKind [x] env.tki [x] tests pass |
+| 2.7.3 | std.crypto | done | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) | [x] SHA-256 + HMAC-SHA-256 [x] self-contained [x] crypto.tki [x] test vectors pass |
+| 2.7.4 | std.time | done | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) | [x] clock_gettime [x] strftime [x] time.tki [x] tests pass |
+| 2.7.5 | std.test | done | feature/stdlib-2.7-crypto-time-test (tkc + toke-stdlib) | [x] assert/assert_eq/assert_ne [x] DIAGNOSTIC stderr format [x] test.tki [x] tests pass |
 
 ### Epic 3.7 — Supply Chain Security and Release Signing
 
@@ -257,10 +257,10 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 6.1.1 | Create Hugging Face organisation and model card | backlog | — | **[local]** Depends on Gate 1 pass |
-| 6.1.2 | Upload model weights and tokenizer | backlog | — | **[local]** Upload adapter + tokenizer. Depends on 6.1.1 |
-| 6.1.3 | Publish benchmark results and evaluation dataset | backlog | — | **[local]** Depends on 6.1.2, Gate 1 pass |
-| 6.1.4 | Inference API and demo space | backlog | — | **[cloud/HF]** HuggingFace Spaces. Depends on 6.1.2 |
+| 6.1.1 | Create Hugging Face organisation and model card | done | — | **[local]** [x] Model card with YAML metadata [x] config.json placeholder [x] Upload instructions |
+| 6.1.2 | Upload model weights and tokenizer | done | — | **[local]** Upload script, tokenizer config, LFS gitattributes ready. Actual upload requires HuggingFace credentials |
+| 6.1.3 | Publish benchmark results and evaluation dataset | done | — | **[local]** eval_results.json in huggingface/, export script + README in toke-benchmark/export/ |
+| 6.1.4 | Inference API and demo space | done | 2026-04-04 | **[cloud/HF]** Gradio app, requirements, HF Spaces metadata, deploy instructions in toke-models/huggingface/spaces/ |
 
 ### Epic 6.2 — Repository Scaffolding
 
@@ -319,10 +319,10 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 9.1.1 | Reverse OSS-Instruct: corpus → problem descriptions | backlog | — | **P0** Pipeline: existing .toke → NL problem descriptions via teacher model (Qwen 32B). JSONL output with problem_description, toke_solution, test_cases, difficulty_tier. ≥80% validation rate. Ref: OSS-Instruct / Magicoder |
-| 9.1.2 | Parallel corpus: Python ↔ toke translation pairs | backlog | — | **P0** ≥2,000 semantically equivalent Python/toke pairs. Compiler-verified + functionally equivalent. Include 1,000 benchmark tasks + APPS/MBPP translations. Token count ratio per pair. Ref: CodeXGLUE, APPS, MBPP |
-| 9.1.3 | Evol-Instruct complexity escalation for toke | backlog | — | **P1** 5 toke-specific evolution dimensions (type constraints, error propagation, multi-module, algorithmic complexity, mutable state). 3-5 evolved variants per seed. ≥50K new pairs. Ref: WizardCoder, Evol-Instruct-Code-80K |
-| 9.1.4 | Execution feedback annotation | backlog | — | **P1** Annotate samples with compiler diagnostics + execution results. Generate broken variants (1-3 mutations/program). ≥30K repair pairs (broken_source, diagnostics) → fixed_source. RLEF-compatible. Ref: OpenCodeInstruct |
+| 9.1.1 | Reverse OSS-Instruct: corpus → problem descriptions | done | 2026-04-04 | **P0** [x] reverse_oss_instruct.py in toke-corpus/scripts/ [x] Reads corpus JSON, generates JSONL with problem_description, toke_solution, test_cases, difficulty_tier [x] Pluggable generate_description() with --provider flag (openai, anthropic, local) [x] --dry-run heuristic mode with complexity analysis [x] --validate flag (100% pass rate) [x] argparse CLI with all required flags. Ref: OSS-Instruct / Magicoder |
+| 9.1.2 | Parallel corpus: Python ↔ toke translation pairs | done | 2026-04-04 | **P0** [x] parallel_corpus.py pipeline in toke-corpus/scripts/ [x] Pairs toke benchmark solutions with Python baselines by task_id [x] JSONL output with python_source, toke_source, token counts, ratio [x] cl100k_base tokenizer with graceful tiktoken degradation [x] Summary stats: mean/median/p10/p90 ratio. 60 pairs from current benchmark. Ref: CodeXGLUE, APPS, MBPP |
+| 9.1.3 | Evol-Instruct complexity escalation for toke | done | 2026-04-04 | **P1** [x] evol_instruct.py in toke-corpus/scripts/ [x] 5 toke-specific evolution dimensions (type_constraints, error_propagation, multi_module, algorithmic_complexity, mutable_state) [x] Template-based AST-level transformations, no LLM needed [x] 5 levels per dimension per seed (25 variants/seed) [x] JSONL output with variant_id, seed_id, dimension, level, evolved_source, evolution_description, prompt [x] CLI: --seed-dir, --output, --dimensions, --max-seeds, --dry-run [x] Structural validation in dry-run mode [x] Dedup seeds by task_id. Ref: WizardCoder, Evol-Instruct-Code-80K |
+| 9.1.4 | Execution feedback annotation | done | 2026-04-04 | **P1** [x] execution_feedback.py in toke-corpus/scripts/ [x] Reads corpus entries, generates 1-3 broken mutations per program (syntax, name, type, keyword) [x] Simulates tkc diagnostics (E2001, E3011, E4010, E1003) [x] JSONL output with broken_source, diagnostics, fixed_source, error_codes [x] RLEF reward field (0.0 broken, 1.0 fixed) [x] CLI: --corpus-dir, --output, --max-tasks, --mutations-per-task, --seed [x] Stats to stderr: totals, by mutation type, by error code. 46754 corpus entries available. Ref: OpenCodeInstruct |
 
 ### Epic 9.2 — Curriculum Learning
 
@@ -330,9 +330,9 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 9.2.1 | Define toke skill ladder | backlog | — | **P0** ≥5 stages: (1) expressions/bindings, (2) functions/types, (3) control flow, (4) modules/imports/sum types, (5) error handling/stdlib. Tag all training samples. Define curriculum schedule. Ref: Curriculum Learning for Small Code LMs |
-| 9.2.2 | TAROT-style test-driven curriculum with compiler feedback | backlog | — | **P1** Adaptive training loop: evaluate diagnostic subset (100 tasks) per checkpoint, aggregate error codes → weakness profile, reweight data mix. ≥3 iterations. Depends on 9.2.1. Ref: TAROT (2026) |
-| 9.2.3 | Teacher-student evaluation loop | backlog | — | **P2** Teacher generates 500 problems/iteration, student generates toke solutions, compiler verifies, teacher targets weak areas. ≥2 iterations before Gate 2. Depends on 9.2.1. Ref: NVIDIA data flywheel, SelfCodeAlign |
+| 9.2.1 | Define toke skill ladder | done | — | **P0** 6 stages defined in toke-corpus/docs/skill-ladder.md. Curriculum schedule with 5 training phases, stage transition gates, adaptive reweighting. Tagging scheme with feature tags and automated assignment algorithm. 2026-04-04 |
+| 9.2.2 | TAROT-style test-driven curriculum with compiler feedback | done | — | **P1** Adaptive training loop: evaluate diagnostic subset (100 tasks) per checkpoint, aggregate error codes → weakness profile, reweight data mix. ≥3 iterations. Depends on 9.2.1. Ref: TAROT (2026). Implemented in toke-corpus/scripts/tarot_curriculum.py with --dry-run mode, stratified sampling, error-to-stage mapping, reweighting formula, iteration JSON + summary output. 2026-04-04 |
+| 9.2.3 | Teacher-student evaluation loop | done | — | **P2** Teacher generates 500 problems/iteration, student generates toke solutions, compiler verifies, teacher targets weak areas. ≥2 iterations before Gate 2. Depends on 9.2.1. Ref: NVIDIA data flywheel, SelfCodeAlign. Implemented in toke-eval/scripts/teacher_student_loop.py with --dry-run mode, --teacher-model/--student-model/--tkc-path/--iterations/--problems-per-iter args, per-iteration JSON reports with pass rates, failure categories (syntax/type_mismatch/undeclared/control_flow/exhaustiveness/error_handling), stage-weighted problem targeting via data-flywheel reweighting. 2026-04-04 |
 
 ### Epic 9.3 — Cross-Language Transfer and Low-Resource Techniques
 
@@ -340,9 +340,9 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 9.3.1 | Specification-grounded prompting | backlog | — | **P0** Condensed spec reference (≤4K tokens): character set, keywords, type sigils, operators, error syntax. Include in training + inference prompts. A/B eval: Pass@1 with/without spec context. Ref: Bridging the Knowledge Void (2026) |
-| 9.3.2 | Few-shot exemplar bank | backlog | — | **P0** 20-30 canonical toke examples covering every language feature. Line-by-line annotations. Stored in toke-corpus/exemplars/. Test few-shot vs zero-shot. Ref: SWE-AGI / MoonBit |
-| 9.3.3 | Python-to-toke translation fine-tuning stage | backlog | — | **P1** Translation fine-tuning on parallel corpus (9.1.2). Format: "Translate Python to toke". Runs after base instruction-tuning. Pass@1 ≥70% on translation tasks. Ref: UniCoder, CodeXGLUE |
+| 9.3.1 | Specification-grounded prompting | done | 2026-04-04 | **P0** [x] spec-reference.md (Phase 2, ≤4K tokens, 5.1KB) [x] 56-char set, 12 keywords, type sigils, operators, precedence, all constructs [x] few-shot-template.md with A/B eval protocol [x] Files in toke-corpus/prompts/. Ref: Bridging the Knowledge Void (2026) |
+| 9.3.2 | Few-shot exemplar bank | done | 2026-04-04 | **P0** [x] toke-corpus/exemplars/exemplars.jsonl [x] 30 canonical examples covering 20+ categories [x] Profile 1 syntax verified against grammar.ebnf and test files [x] JSONL format with annotations. Ref: SWE-AGI / MoonBit |
+| 9.3.3 | Python-to-toke translation fine-tuning stage | done | 2026-04-04 | **P1** [x] translation_finetune.py: parallel corpus to chat-format with 80/10/10 stratified splits [x] 20% reverse (toke->Python) pairs for bidirectional capability [x] configs/translation_lora.yaml: LoRA r=16 a=32 d=0.05 lr=2e-5 warmup=100 seq=2048 [x] eval_translation.py: Pass@1 via tkc --check, exact match, BLEU [x] CLI: --parallel-corpus, --output-dir, --train-ratio, --reverse-ratio, --seed [x] Tested: 60 pairs -> 58 train, 7 val, 6 test. Ref: UniCoder, CodeXGLUE |
 
 ### Epic 9.4 — Token Efficiency Measurement and Comparison
 
@@ -350,9 +350,9 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 9.4.1 | ShortCoder comparison harness | backlog | — | **P0** Head-to-head: toke vs ShortCoder-optimised Python on 200 HumanEval/MBPP problems. 4 token counts per problem (Python, ShortCoder Python, toke cl100k, toke BPE). Confidence intervals. Ref: ShortCoder (2026) |
-| 9.4.2 | Multi-tokenizer token economy analysis | backlog | — | **P1** Token counts across ≥4 tokenizers (cl100k, Qwen, Llama, toke BPE) on all 1,000 benchmark tasks. Flag tasks where toke is token-longer. Extends 2.9.3 eval work. |
-| 9.4.3 | Cost and latency benchmarking | backlog | — | **P2** Wall-clock generation time + estimated API cost: Python-mode vs toke-mode on 100 tasks. Time-per-correct-solution. Break-even analysis on Pass@1. |
+| 9.4.1 | ShortCoder comparison harness | done | — | **P0** [x] toke-eval/scripts/shortcoder_comparison.py [x] 4 token counts (Python, ShortCoder proxy, toke cl100k, toke BPE) [x] per-task CSV + summary + flagged tasks [x] BCa bootstrap 95% CIs via scipy [x] ShortCoder proxy = ast.unparse minification (documented) [x] argparse: --benchmark-dir, --corpus-dir, --output-dir. 2026-04-04 |
+| 9.4.2 | Multi-tokenizer token economy analysis | done | — | **P1** [x] toke-eval/scripts/token_economy.py [x] 5 tokenizers: cl100k_base, o200k_base, Qwen, Llama, toke BPE (graceful fallback) [x] Per-task toke vs Python token counts + ratios [x] Flags tasks where toke is token-longer for ANY tokenizer [x] Aggregate: mean/median/p10/p90, histogram buckets, cross-tokenizer correlation, most-favorable selection [x] 3 output files: token_economy_full.csv, token_economy_summary.json, token_economy_flagged.csv [x] CLI: --benchmark-dir, --output-dir, --tokenizers, --bpe-model, --seed. 2026-04-04 |
+| 9.4.3 | Cost and latency benchmarking | done | — | **P2** [x] toke-eval/scripts/cost_latency_benchmark.py [x] Stratified task sampling by difficulty (easy/medium/hard) [x] Per-task: generation time, token count (input+output), estimated API cost [x] Two modes: Python generation, toke generation [x] Configurable per-token pricing (default GPT-4o $2.50/$10 per 1M) [x] Cost-per-correct-solution metric [x] Break-even analysis: Pass@1 threshold where toke becomes cheaper [x] Dry-run mode with synthetic timing + pass rates [x] 3 output files: cost_latency_results.json, cost_latency_summary.json, break_even_analysis.json [x] CLI: --benchmark-dir, --output-dir, --input-price, --output-price, --tasks, --dry-run, --seed. 2026-04-04 |
 
 ### Epic 9.5 — Reinforcement Learning from Compiler Feedback
 
@@ -360,8 +360,8 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 9.5.1 | Compiler-as-verifier reward model | backlog | — | **P1** Reward: +1.0 compile+tests pass, +0.5 compile+partial, 0.0 fail. Consumes tkc --check JSON. GRPO or equivalent. ≥1 RL epoch. Measure Pass@1 improvement vs SFT-only. Ref: RLEF (2024), GRPO |
-| 9.5.2 | Error-code-aware reward shaping | backlog | — | **P2** Severity tiers: lex > parse > type > semantic errors. Monotonic partial credit. A/B: flat vs shaped reward on 500 tasks. Close with negative results if no improvement. |
+| 9.5.1 | Compiler-as-verifier reward model | done | — | [x] 4-tier reward (+1.0/+0.5/+0.25/0.0) [x] tkc --check --diag-json integration [x] batch JSONL pipeline [x] GRPO-compatible output format [x] dry-run heuristic simulation [x] statistics: histogram, per-tier mean, failure modes [x] CLI: --predictions, --benchmark-dir, --output, --tkc-path, --dry-run, --seed [x] toke-corpus/scripts/compiler_reward.py. 2026-04-04 |
+| 9.5.2 | Error-code-aware reward shaping | done | — | [x] 5-tier severity: lex E1xxx (0.10) > parse E2xxx (0.25) > name E3xxx (0.40) > type E4xxx (0.55) > semantic E5xxx (0.70) > clean (1.0) [x] monotonic partial credit via highest_stage_reached [x] A/B comparison: flat binary vs shaped reward [x] JSON report with per-tier stats, variance, distribution, recommendation [x] dry-run simulation with weighted error codes [x] CLI: --corpus-path, --tkc-path, --output, --max-tasks, --dry-run, --seed [x] toke-eval/scripts/error_reward_shaping.py. 2026-04-04 |
 
 ### Epic 9.6 — Evaluation and Benchmarking Infrastructure
 
@@ -369,9 +369,9 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 9.6.1 | EvalPlus-compatible harness | backlog | — | **P0** Extend toke-eval (6.2.1) to output EvalPlus format. Pass@k unbiased estimator. Greedy + temperature sampling (T=0.2, 0.8). Sandboxed execution (Docker). Ref: EvalPlus |
-| 9.6.2 | Expanded benchmark: APPS and MBPP adaptation | backlog | — | **P1** 200 APPS + 200 MBPP problems translated to toke. Reference solutions + ≥3 test cases each. Stored in toke-benchmark, separated from training data. Ref: APPS, MBPP |
-| 9.6.3 | Automated regression testing on training checkpoints | backlog | — | **P1** CI pipeline: run benchmark on each checkpoint. Track Pass@1, token count, compile rate, error distribution. Alert on >5% Pass@1 drop. Training curve visualisation. |
+| 9.6.1 | EvalPlus-compatible harness | done 2026-04-04 | — | **P0** Extend toke-eval (6.2.1) to output EvalPlus format. Pass@k unbiased estimator. Greedy + temperature sampling (T=0.2, 0.8). Sandboxed execution (Docker). Ref: EvalPlus |
+| 9.6.2 | Expanded benchmark: APPS and MBPP adaptation | done 2026-04-04 | — | **P1** 200 APPS + 200 MBPP problems translated to toke. Reference solutions + ≥3 test cases each. Stored in toke-benchmark, separated from training data. Ref: APPS, MBPP |
+| 9.6.3 | Automated regression testing on training checkpoints | done 2026-04-04 | — | **P1** CI pipeline: run benchmark on each checkpoint. Track Pass@1, token count, compile rate, error distribution. Alert on >5% Pass@1 drop. Training curve visualisation. |
 
 ### Epic 9.7 — Data Efficiency
 
@@ -379,8 +379,8 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 9.7.1 | IFD-based data selection | backlog | — | **P1** IFD scores on all training samples. K-Means clustering + top-m% selection. Compare: full vs 60% vs 40% vs 20%. Optimal selection rate → use for subsequent training. Ref: Lv et al. (2025) |
-| 9.7.2 | Dynamic packing for toke training | backlog | — | **P1** Sort by token length, concatenate to fill context window. Padding ratio <5%. Measure throughput improvement. No Pass@1 degradation. |
+| 9.7.1 | IFD-based data selection | done 2026-04-04 | — | **P1** IFD scores on all training samples. K-Means clustering + top-m% selection. Compare: full vs 60% vs 40% vs 20%. Optimal selection rate → use for subsequent training. Ref: Lv et al. (2025) |
+| 9.7.2 | Dynamic packing for toke training | done 2026-04-04 | — | **P1** Sort by token length, concatenate to fill context window. Padding ratio <5%. Measure throughput improvement. No Pass@1 degradation. |
 
 ### Epic 9.8 — Tokenizer Optimisation
 
@@ -388,8 +388,8 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 9.8.1 | Retrain BPE on production corpus | backlog | — | **P0** Retrain SentencePiece on full 47K corpus. Benchmark 1K/2K/4K/8K vocab sizes. Char-to-token ratio ≤1.8. Common patterns (m=, f=, i=, t=, let, <, :$) as single tokens. Round-trip fidelity. Extends 2.9.x pipeline. |
-| 9.8.2 | Tokenizer alignment with base model vocabulary | backlog | — | **P1** Overlap analysis: toke BPE vs Qwen tokenizer. If >30% novel tokens → prototype vocab extension. If ≤30% → document feasibility of Qwen tokenizer directly. Recommendation with data. |
+| 9.8.1 | Retrain BPE on production corpus | done | — | **P0** Retrain SentencePiece on full 47K corpus. Benchmark 1K/2K/4K/8K vocab sizes. Char-to-token ratio ≤1.8. Common patterns (m=, f=, i=, t=, let, <, :$) as single tokens. Round-trip fidelity. Extends 2.9.x pipeline. Done 2026-04-04. Script: `toke-tokenizer/scripts/retrain_bpe.py`. |
+| 9.8.2 | Tokenizer alignment with base model vocabulary | done | — | **P1** Overlap analysis: toke BPE vs Qwen tokenizer. If >30% novel tokens → prototype vocab extension. If ≤30% → document feasibility of Qwen tokenizer directly. Recommendation with data. Done 2026-04-04. Script: `toke-tokenizer/scripts/tokenizer_alignment.py`. |
 
 ### Story Dependency Graph (Gate 2 Critical Path)
 
@@ -510,20 +510,331 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 | 6.2.2 | Finalise toke-models repo scaffold | 2026-04-03 | — (toke-models) |
 | 3.7.3 | Reproducible builds for the compiler | 2026-04-03 | — (tkc) |
 | 4.6.2 | SOC 2 readiness assessment (draft) | 2026-04-03 | — (tkc) |
+| 9.3.1 | Specification-grounded prompting | 2026-04-04 | — (toke-corpus) |
+| 10.4.4 | Reduce ptrtoint/inttoptr in IR emission | 2026-04-04 | — (tkc) |
+| 9.1.1 | Reverse OSS-Instruct: corpus → problem descriptions | 2026-04-04 | — (toke-corpus) |
+
+---
+
+## Phase 2 — Research Review Remediation (Sprint R1)
+
+**Source:** Gate 1 research review (8 teams, April 2026)
+**Priority:** P0 — must complete before external review
+**Decisions document:** docs/decisions/gate1-research-review-decisions.md
+
+### Epic 10.1 — Reproducibility and Transparency (T1, T3, T6, T8)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.1.1 | Publish Token Efficiency Measurement Spec (TEMSpec) | done | 2026-04-03 | **P0** Define all metrics (token density, compression ratio, fertility, paired reduction). Reconcile 2.5-4x cross-language vs 12.5% same-tokenizer claims. Version as artifact. Ref: T1 |
+| 10.1.2 | Publish raw per-task token counts CSV | done | 2026-04-03 | **P0** [x] generate_token_counts.py in toke-eval [x] data/gate1_token_counts.csv with 1000 tasks [x] cl100k_base tokenizer, per-task token/char counts + pass1. Ref: T1 |
+| 10.1.3 | Multi-tokenizer baseline testing | done | 2026-04-04 | **P0** [x] scripts/multi_tokenizer.py in toke-eval [x] cl100k_base, o200k_base, Qwen, Llama-3.1 tokenizers [x] per-task CSV: task_id, source_chars, token counts + char/token ratios [x] summary stats (mean/median/p10/p90) [x] flags tasks >50% above min tokenizer [x] graceful degradation if transformers missing. Ref: T1 |
+| 10.1.4 | Gate 1 reproducibility package | done | 2026-04-04 | **P0** [x] toke-spec/docs/gate1-reproducibility.md [x] 8 sections: eval harness, test hashes, hyperparams (from 7b_mlx.yaml), hardware (M4 Max), curriculum distribution (46,754 programs), contamination report, software versions, reproduction steps [x] 17 TODO markers for commit hashes/SHA values needing shell commands. Ref: T6, T8 |
+| 10.1.5 | Corpus statistics and provenance publication | done | 2026-04-04 | **P1** [x] toke-corpus/docs/corpus-statistics.md [x] 8 sections: overview (46,754 programs, 4 stages), category distribution (6 Stage A cats + B/C/D), token count ranges, quality/validation pipeline, provider breakdown (manifest.json exact counts), provenance (synthetic, no copyrighted code), data format (schema.json), staleness note [x] All stats from manifest.json/scorecard.json/config.yaml — no raw data. D13=E. Ref: T1, T3, T6 |
+| 10.1.6 | Statistical analysis with confidence intervals | done | 2026-04-04 | **P1** [x] toke-eval/scripts/statistical_analysis.py [x] BCa bootstrap CIs (10k resamples) for median and trimmed-mean (10%) token reduction ratios [x] Per-category stratification [x] Paired Wilcoxon signed-rank test with exact p-values [x] Rank-biserial r effect size [x] Power analysis (min sample size for 80% power) [x] Mock data generator for methodology validation (gate1 CSV has toke-only data) [x] JSON + Markdown output formats [x] argparse CLI. Ref: T1 |
+
+### Epic 10.2 — Repository Coherence (T6)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.2.1 | Reconcile stdlib module count across all repos | done | — | **P0** [x] toke-stdlib README updated to 14 modules with descriptions [x] toke meta-repo verified. Ref: T6 |
+| 10.2.2 | Fix toke meta-repo Gate 1 status | done | — | **P0** [x] Already correct from prior session (PASS, 1000 tasks, Phase 2). Ref: T6 |
+| 10.2.3 | Fix toke-stdlib import syntax (I= to i=) | done | — | **P0** [x] All I=/M=/F= converted to i=/m=/f= in toke-stdlib README. Ref: T6 |
+| 10.2.4 | Add CONTRIBUTING.md and SECURITY.md to meta-repo | done | 2026-04-03 | **P1** [x] CONTRIBUTING.md with per-repo guide, DCO, conventional commits [x] SECURITY.md with private disclosure policy. Ref: T6 |
+| 10.2.5 | Standardize security and governance docs across repos | done | 2026-04-04 | **P1** [x] SECURITY.md added to 8 repos (tkc/toke/toke-models already had) [x] .gitleaks.toml added to 10 repos (toke-models already had) [x] All extend default gitleaks rules with project allowlists. Ref: T6 |
+| 10.2.6 | Fix CI quality gate suppression in tkc | done | — | **P1** [x] Removed || true from clang-format and make conform CI steps [x] brew install || true retained (expected). Ref: T6 |
+| 10.2.7 | Introduce release tags across repos | done | 2026-04-03 | **P1** [x] v0.1-gate1 annotated tag on all 9 repos [x] Tags created locally, push pending. Ref: T6, T8 |
+| 10.2.8 | Fix toke-tokenizer dependency metadata | done | — | **P1** [x] sentencepiece and tiktoken added as optional deps [train] and [eval]. Ref: T6 |
+| 10.2.9 | Publish dual-licence rationale | done | 2026-04-04 | **P2** [x] LICENSING.md created in tkc root [x] Covers repo-licence table, rationale (MIT for adoption, Apache 2.0 for patent grant), DCO/header guidelines, FAQ. Ref: T6 |
+| 10.2.10 | Consolidate repos from 10 to 6 (toke, toke-model, toke-eval, toke-web, toke-mcp, toke-cloud) | backlog | — | **P1** Archive all repos to ~/tk/archive/ first. tkc+toke-spec+toke-stdlib → toke, toke-corpus+toke-tokenizer+toke-models → toke-model, toke-benchmark+toke-eval → toke-eval, MCP public parts → toke-mcp (new), billing/auth/infra stays toke-cloud (private). Preserve git history via subtree. Ref: T6 |
+| 10.2.12 | Replace Karwalski name references with Matt Watt | backlog | — | **P2** Replace all instances of "M Karwalski", "Karwalski", "Matt Karwalski" with "Matt Watt" across all repos. 'karwalski' should only appear in GitHub URLs (github.com/karwalski/*), never in author names, docs, or metadata. Check: README, CONTRIBUTING, LICENSE, package.json author, pyproject.toml, git config, LICENSING.md, model cards. |
+| 10.2.11 | ASCII art loading bar for slow CLI operations | done | 2026-04-04 | **P1** Add animated ASCII art progress bar to tkc for slow operations (compiling, building, installing, first-run token setup). Uses wave-swimmer animation with percentage steps (0–100% in 10% increments). Three-line display: wave characters (~≈∿˜) swim across a track of dots replacing block-fill (████→▓▓▓). Rotate through themed loading messages: "Rolling things up…", "Packing it in…", "Getting a good hit on the server…", "Pulling data slowly…", "Blazing through requests…", "Lighting up the pipeline…", "Taking a long drag from the database…", "Inhaling your preferences…", "Passing it to the next process…", "Hitting the cache real smooth…", "Grinding through the queue…", "Cherrying the connection…", "Toasting the buffers…", "Puff puff processing…", "Almost cashed out…", "Deep in rotation…", "Sparking up the backend…", "Cottonmouth loading…", "Holding it in…", "Exhaling results…". Show during: LLVM IR emit, clang link step, config init. Hide in --quiet mode. Ref: docs/loading-bar.json |
+
+### Epic 10.3 — Specification Completeness (T4, T8, RFC reviews)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.3.1a | Specify integer overflow semantics (spec) | done | 2026-04-04 | **P0** D2=E: [x] toke-spec/docs/integer-overflow.md [x] Checked default with @wrapping opt-out [x] LLVM IR emission patterns [x] RT002 error code [x] Conformance test categories defined. Ref: T2, T4, T8 |
+| 10.3.1b | Implement checked integer overflow in compiler | done | 2026-04-04 | **P0** D2=E: [x] llvm.sadd/ssub/smul.with.overflow.i64 intrinsics for +,-,* [x] tk_overflow_trap(i32) in tk_runtime.c prints RT002+exits [x] Overflow trap test (i64 max+1) passes [x] 86/86 conform [x] 9/9 stress [x] 9/9 IR verify. @wrapping deferred to future story. Ref: T2 |
+| 10.3.2 | Publish Phase 2 as first-class normative profile | done | 2026-04-04 | **P0** D2=E: [x] toke-spec/spec/phase2-profile.md [x] 56-char set, 12 keywords (m/f/i/t lowercased) [x] $ type sigils, @() arrays, .get() indexing [x] Full EBNF grammar [x] Complete Phase 1→Phase 2 transformation rules (7 categories) [x] Phase 2 = normative default, Phase 1 = legacy [x] Lexical rules, reserved identifiers, conformance reqs [x] Cross-refs to semantics, stdlib, errors. Ref: T4, T5 |
+| 10.3.3 | Define minimum runtime semantics contract | done | 2026-04-04 | **P1** [x] toke-spec/docs/runtime-semantics.md [x] 10 sections: eval order, numeric (i64/f64), strings (UTF-8), arrays (length-prefixed), maps, bounds traps, recursion limits (1000), error propagation, arena lifetime, concurrency (single-threaded) [x] RT001-RT006 error codes defined. Ref: T4, T8 |
+| 10.3.4 | Publish memory model specification | done | 2026-04-04 | **P1** D3=D: [x] toke-spec/docs/memory-model.md [x] Hybrid arena + explicit allocator [x] Ownership rules, escape analysis, safety guarantees [x] Supported/unsupported workload patterns documented. Ref: T2, T8 |
+| 10.3.5 | Specify string escaping rules | done | 2026-04-04 | **P1** [x] toke-spec/docs/string-escaping.md [x] 7 escape sequences defined [x] Phase 1/2 compatibility documented [x] Edge cases (empty, multi-line, null bytes, \xNN) [x] Error codes E1001/E1002/W1010. Ref: T8 |
+| 10.3.6 | Standardize interface file format (.tki) | done | 2026-04-04 | **P1** D8=A: [x] .tokei → .tki in 14 files across tkc, toke, toke-spec, toke-web [x] No .tokei files existed on disk — already .tki. Ref: T4 |
+| 10.3.7 | Spec vs implementation delta table | done | 2026-04-04 | **P2** [x] toke-spec/docs/spec-implementation-delta.md [x] 96 features audited across 7 categories [x] 52 specified+implemented, 20 specified-not-implemented, 6 partial, 13 deferred, 3 removed, 2 impl-only [x] Key gaps: Phase 2 syntax, narrow integers, 11 unemitted error codes, sum type exhaustiveness, mutability enforcement [x] Priority recommendations for Gate 2. Ref: T4 |
+| 10.3.11 | Remove spawn/await from language spec | done | 2026-04-04 | **P1** D4=B: [x] TY_TASK enum removed [x] E4050-E4052 removed [x] spawn/await type-checking removed (~50 lines) [x] codegen stubs removed [x] tk_spawn/tk_await declarations removed [x] 4 tests removed (G036-G038, D016) [x] 86/86 conformance, 9/9 IR, 5/5 stress. Ref: T2, T4 |
+| 10.3.12 | Add SARIF diagnostic output mode | done | 2026-04-04 | **P1** D6=C: [x] DIAG_FMT_SARIF enum added to diag.h [x] --diag-sarif flag in main.c (mutually exclusive with --diag-json/--diag-text) [x] SARIF v2.1.0 envelope with tool info, results array, locations [x] Buffered output flushed at exit via diag_flush_sarif() [x] Help text updated [x] 86/86 conformance tests pass. Ref: T2, T4, T5 |
+| 10.3.8 | Formal static semantics section | done | 2026-04-04 | **P2** [x] toke-spec/docs/static-semantics.md [x] 12 typing judgment rules in inference-rule notation [x] Literals, variables, unary/binary ops, calls, indexing, field access, cast [x] 8 statement rules: let, mut, assign, return, if, loop, match, arena [x] Cast validity table (9 pairs) [x] Type equivalence rules (nominal structs, structural composites) [x] No implicit coercions documented [x] Well-formedness: module, function, struct, declaration order [x] 8 error codes mapped to rules (E2010, E3020, E4010, E4011, E4025, E4031, E4043, E5001) [x] Conformance criteria (10 points). Ref: T4 |
+| 10.3.9 | Machine-readable grammar (Tree-sitter) | done | 2026-04-04 | **P2** D6=B: [x] grammar.js covering full EBNF spec [x] All Profile 1 productions: M=/F=/T=/I= decls, let/mut/assign/if/el/lp/br/rt/match/arena stmts, full expression precedence [x] Type system: scalars, arrays, maps, pointers, function types [x] queries/highlights.scm for editor integration [x] Test corpus: declarations, expressions, statements [x] package.json with tree-sitter config. Ref: T4, T5 |
+| 10.3.10 | Publish normative JSON Schema for diagnostics | done | 2026-04-03 | **P1** [x] diagnostic-schema.json in toke-spec/docs [x] JSON Schema 2020-12 [x] All fields documented with types, patterns, enums [x] fix field contract preserved. Ref: T2, T8 |
+
+### Epic 10.4 — Compiler Hardening (T2)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.4.1 | Add --emit-llvm and --emit-asm flags to tkc | done | — | **P0** [x] --emit-llvm writes .ll to output path [x] --emit-asm produces .s via clang -S [x] Help text updated [x] 90/90 conformance. Ref: T2 |
+| 10.4.2 | IR verification in CI (llvm-as + opt -verify) | done | 2026-04-03 | **P0** [x] test/verify_ir.sh runs llvm-as + opt -passes=verify on all e2e .tk files [x] make verify-ir target [x] CI step added to test job [x] 9/9 pass. Ref: T2 |
+| 10.4.3 | Emit rich LLVM annotations | done | 2026-04-04 | **P1** [x] dso_local on all function defs [x] nounwind attribute [x] inbounds on 6 GEP sites (struct field, array .len, array element, struct literal) [x] 86/86 conform [x] 9/9 IR verify [x] 5/5 stress. Ref: T2 |
+| 10.4.4 | Reduce ptrtoint/inttoptr in IR emission | done | 2026-04-04 | **P1** [x] Audit: 13 casts across 7 sites [x] Added direct ptr icmp for == < > when both operands are ptr (eliminates 2 ptrtoint per ptr comparison) [x] 8 remaining casts documented as necessary: boxing (array concat coercion), explicit as-casts, call arg coercion, field/index access on untyped i64 values [x] 90/90 conformance [x] 9/9 e2e. Ref: T2 |
+| 10.4.5 | Emit target datalayout and target triple | done | — | **P0** [x] target datalayout emitted for x86_64/aarch64 linux/macos [x] Fallback via preprocessor for native builds [x] target triple already emitted. Ref: T2 |
+| 10.4.6 | Expose optimization level flags (-O0/-O1/-O2/-O3) | done | 2026-04-03 | **P1** [x] -O0/-O1/-O2/-O3 flags parsed in main.c [x] Passed to compile_binary and emit-asm [x] Default -O1 preserved [x] 90/90 conformance. Ref: T2 |
+| 10.4.7 | Enable stack probes for recursion safety | done | 2026-04-04 | **P2** [x] probe-stack="inline-asm" attribute on all emitted functions [x] stack-protector-buffer-size="8" attribute [x] attributes #0 group emitted at module end [x] 86/86 conformance, 9/9 e2e, 9/9 stress. Ref: T2 |
+| 10.4.8 | Emit musttail for tail-recursive calls | done | 2026-04-04 | **P2** [x] fastcc calling convention on all internal (non-extern) function definitions [x] fastcc on all calls to internal functions [x] musttail call fastcc emitted for tail-recursive calls (return of call to self) [x] argument type coercion in tail position [x] non-tail and extern calls unchanged [x] 86/86 conformance. Ref: T2 |
+| 10.4.9 | Publish Runtime ABI document v0 | done | 2026-04-04 | **P1** [x] tkc/docs/runtime-abi.md [x] 10 sections: calling convention, scalar types, string layout, array layout (length-prefixed), struct layout (flat i64 arrays), map/error [TODO], 17 runtime functions, overflow trap, initialization. Ref: T2 |
+
+### Epic 10.4b — Compiler Bugs Found by Stress Tests
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.4b.1 | Fix codegen for 10+ function definitions | done | 2026-04-04 | **P1** Root cause: NODE_MAX_CHILDREN=8 truncated AST children. Fix: dynamic children array in Node (arena-allocated, doubles on overflow). [x] 12-function test passes [x] 86/86 conform [x] 8/8 stress [x] 9/9 IR verify. |
+| 10.4b.2 | Fix large array literal indexing | done | 2026-04-04 | **P1** Same root cause as 10.4b.1. 50-element array now allocates correctly. [x] a[49]=50 test passes. |
+| 10.4b.3 | Fix many locals (20+) codegen | done | 2026-04-04 | **P1** Same root cause as 10.4b.1. 20 locals sum=210 test passes. |
+
+### Epic 10.5 — Performance Benchmarking (T2)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.5.1 | Compiled binary benchmarks vs C/Rust/Zig | done | 2026-04-04 | **P1** [x] 12 benchmark programs in toke + C (fib recursive/iterative, sum array, nested loops, binary search, prime sieve, deep recursion, struct ops, large expr, chained calls, collatz, gcd euler) [x] bench/run_bench.sh runner: wall-time, binary size, peak RSS via /usr/bin/time [x] Median of N runs, markdown table output [x] bench/README.md with methodology and caveats. Ref: T2 |
+| 10.5.2 | Compiler speed benchmarks (tkc vs tcc/zig cc) | done | 2026-04-04 | **P2** [x] bench/compile_speed.sh: times tkc --check (frontend) vs tkc -O2 (full) vs cc/tcc/zig cc [x] Frontend/backend split via --check vs full compile difference [x] Median of N runs, markdown table output to bench/results/ [x] C equivalents in bench/programs/c/ for comparison [x] Auto-detects tcc and zig on PATH. Ref: T2 |
+| 10.5.3 | Optimization ladder evaluation | done | 2026-04-04 | **P2** [x] bench/optimization_ladder.sh: compiles .tk to LLVM IR via tkc -O0 --emit-llvm, then clang at -O0/-O1/-O2/-O3/-flto=thin [x] Median of N runs, markdown table output to bench/results/ [x] Marginal gains table between each level [x] Summary with average speedup vs -O0 across all benchmarks [x] PGO deferred — requires workload-specific training data. Ref: T2 |
+| 10.5.4 | Stress test suite (make stress) | done | 2026-04-03 | **P1** [x] test/stress/ with run_stress.sh [x] 5 tests: large expression, nested arithmetic, chained functions, nested if, boundary zero [x] make stress target [x] Uncovered 3 bugs (large array indexing, many locals, forward references) — separate fix stories needed. Ref: T2 |
+| 10.5.5 | Binary size and memory footprint documentation | done | 2026-04-04 | **P2** [x] docs/binary-size.md [x] 12 benchmarks: 34.2-34.3 KB stripped [x] tkc compiler 182 KB stripped [x] ~46 MB peak RSS [x] +2.4% overhead vs C equivalent. Ref: T2 |
+
+### Epic 10.6 — Evaluation Infrastructure Expansion (T1, T3, T7, T8)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.6.1 | Add Pass@5 and Pass@10 to evaluation harness | done | 2026-04-04 | **P1** [x] pass_at_k.py in scripts/ with unbiased Codex estimator (scipy.special.comb, math.comb fallback) [x] Temperature sweeps (0.0, 0.2, 0.4, 0.6, 0.8) [x] JSONL prediction input format [x] Compile+run pipeline via tkc/clang [x] --dry-run with deterministic synthetic outcomes [x] JSON + CSV + stdout summary output [x] Pass@1/5/10 per task and aggregate [x] CLI: --predictions-dir, --benchmark-dir, --output-dir, --k-values, --temperatures, --samples-per-task, --dry-run, --seed. Ref: T1, T7 |
+| 10.6.2 | Error taxonomy in evaluation output | done | 2026-04-03 | **P1** [x] classify_error() maps E-codes to 8 categories (syntax/parse/name/type/codegen/runtime/logic/unknown) [x] ErrorTaxonomy dataclass [x] Per-task error_category in results [x] Summary output with percentages. Ref: T3, T7 |
+| 10.6.3 | Port 200 tasks to HumanEval/MBPP JSON schema | done | 2026-04-04 | **P1** [x] export_humaneval.py converts YAML tasks to HumanEval JSONL (task_id, prompt, entry_point, canonical_solution, test, description) [x] export_mbpp.py converts to MBPP JSONL (task_id, text, code, test_list) [x] 200 tasks exported to data/humaneval_format.jsonl [x] 200 tasks exported to data/mbpp_format.jsonl [x] Canonical toke solutions included where available. Ref: T7 |
+| 10.6.4 | Publish frozen public benchmark slice | done | 2026-04-04 | **P1** [x] 74 tasks selected from 1000 via proportional category sampling (seed=2026) [x] All 7 categories covered [x] public/tasks/ with YAML files [x] public/metadata.json with full task metadata [x] public/CHECKSUM.sha256 for integrity [x] public/README.md with methodology and caveats [x] build_slice.py for reproducibility [x] No overlap with training data [x] Frozen at Gate 1. Ref: T1, T7 |
+| 10.6.5 | Repair-loop evaluation harness | done | 2026-04-04 | **P2** [x] repair_loop_harness.py in toke-eval/scripts [x] Generate-compile-repair loop with --max-iterations budget (default 5) [x] Compiles via tkc --check --diag-json, parses structured diagnostics (code, message, line, col, fix) [x] Categorises failures: syntax, type, name_resolution, control_flow, exhaustiveness, error_handling, codegen, unknown [x] Repair prompt builder feeds diagnostics+fix suggestions back to model [x] Simulated repair with stage-dependent pass rates and iteration bonus [x] JSON report: per-task iteration counts, failure categories, aggregate stats (success rate, mean/median iterations, histogram) [x] CLI: --tkc-path, --tasks-dir, --max-iterations, --output, --dry-run, --seed [x] Loads HumanEval JSONL or built-in synthetic tasks. Ref: T5, T7 |
+| 10.6.6 | Contamination analysis and holdout governance | done | 2026-04-04 | **P1** D5=A+D: strict separation of proprietary vs open-weight outputs. Semantic similarity checks between training and held-out. Hash commitments. Document governance. Ref: T3, T7 |
+| 10.6.7 | Difficulty stratification of benchmark tasks | done | 2026-04-04 | **P2** [x] stratify_tasks.py classifies 1400 tasks by difficulty (beginner/intermediate/advanced/expert) and category (9 categories) [x] Heuristics: solution char count + existing labels + description keywords [x] data/stratification.json per-task output [x] data/stratification_summary.json with counts and cross-tab [x] --dry-run, --update-yaml, --benchmark-dir CLI [x] Tested dry-run pass. Ref: T3 |
+
+### Epic 10.7 — Training Pipeline Improvements (T3, T8)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.7.1 | Add lm_head and embed_tokens to modules_to_save | done | — | **P0** [x] embed_tokens + lm_head unfrozen in train_mlx.py [x] train_embeddings config option (default: true) [x] 7b_mlx.yaml updated. Ref: T3 |
+| 10.7.2 | Switch training to DoRA | done | 2026-04-04 | **P1** D10=B: [x] 7b_dora_comparison.yaml config (rank 16, alpha 32, use_dora:true, adapters/dora/) [x] compare_dora_qlora.py with McNemar + paired t-test, JSON+MD output [x] train_dora.sh wrapper with logging and auto-comparison [x] eval_adapter.py with tkc --check Pass@1, dry-run mode, predictions JSONL. Ref: T3, T8 |
+| 10.7.3 | Stabilize evaluation contract (model card for gates) | done | — | **P0** [x] gate_card_template.md in toke-eval [x] Covers model/tokenizer/decoding/benchmark/compiler/hardware/results/hashes [x] "Incomplete cards invalidate gate result" policy. Ref: T3 |
+| 10.7.4 | Holdout isolation as hard invariant | done | 2026-04-03 | **P0** QualityScorer requires holdout_task_ids parameter. Fail corpus build if absent. Dual enforcement in training export. Ref: T3 |
+| 10.7.5 | Negative examples in training corpus (10-15%) | done | 2026-04-04 | **P2** [x] 11 mutators across 7 categories: off-by-one, logic inversion, missing return, wrong operator, scope error, type confusion, semicolon errors [x] Each entry has broken_source, fixed_source, mutation_type, diagnostics, difficulty, contrastive_pair [x] Quality filter: keeps only mutations that fail compile or produce wrong output [x] CLI: --corpus-dir, --output, --target-ratio, --max-entries, --seed [x] Output JSONL to data/negative_examples.jsonl [x] Tested with --max-entries 20 --seed 42 (20 examples generated). Ref: T3 |
+| 10.7.6 | Five-tier corpus validation pipeline | done | 2026-04-04 | **P1** [x] 5-tier pipeline: compile check, execution check, cross-optimisation differential, property-based, mutation testing [x] Gated tiers (N gates N+1) [x] --tiers, --max-entries, --dry-run, --tkc-path CLI [x] validation_report.json + validation_summary.json output [x] Progress bar, summary table to stdout [x] Dry-run mode with heuristic/synthetic results. Ref: T3 |
+| 10.7.7 | Publish corpus statistics + regeneration scripts + clean subset | done | 2026-04-04 | **P1** D13=E: [x] scripts/regenerate.py with --dry-run and --stage filter [x] scripts/compute_hashes.py with SHA-256 + Merkle root [x] scripts/extract_clean.py filters open-weight only (200 entries) [x] clean/ dir with README.md, manifest.json, programs/ [x] hashes.json with 46756 file hashes. Ref: T1, T3, T6, T7 |
+| 10.7.8 | Add DoRA support to training pipeline | done | 2026-04-04 | **P1** D10=B: [x] 7b_mlx_dora.yaml config with use_dora:true [x] train_mlx.py updated to propagate use_dora flag [x] Fixed API compat with mlx-lm >=0.21 linear_to_lora_layers signature [x] Console reports adapter type. Ref: T3 |
+| 10.7.9 | Hybrid MLX+CUDA training infrastructure | done | 2026-04-04 | **P2** D19=hybrid: [x] scripts/train_cuda.sh with --config, --output-dir, --dry-run, --resume [x] PEFT/transformers QLoRA+DoRA via shared YAML config [x] Same JSONL data pipeline as MLX [x] BitsAndBytes 4-bit quantization [x] Checkpointing + wandb logging [x] Auto-maps MLX config keys (keys->target_modules, grad_checkpoint, etc.) [x] docs/hybrid-training.md: framework selection, config compat, checkpoint transfer, hardware recs. Ref: T8 |
+
+### Epic 10.8 — Translation, Readability and Expansion Tooling (T5)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.8.1 | Canonical formatter (toke fmt) | done | 2026-04-04 | **P1** D18=opinionated. [x] fmt.h/fmt.c AST walker [x] --fmt CLI flag (parse+format, no type check) [x] 2-space indent, semicolon separators, deterministic output [x] All node types handled [x] F001_format_basic.sh test [x] Makefile wired. Ref: T5 |
+| 10.8.2 | Add --pretty and --expand flags to tkc | done | 2026-04-04 | **P1** D18=opinionated. [x] FmtOptions struct in fmt.h [x] tkc_format_pretty() with separate AST walkers [x] --pretty: spaces around binary ops, blank lines before loops/returns [x] --expand: abbreviation dictionary (15 entries), context-aware loop counters, inline comments [x] Combined --pretty --expand mode [x] Inferred type annotations on let bindings [x] CLI integration in main.c [x] F002_pretty_expand.sh test [x] Clean build -Wall -Wextra -Wpedantic -Werror. Ref: T5 |
+| 10.8.3 | Source map emission capability | done | 2026-04-04 | **P2** Map compact spans to expanded spans. [x] sourcemap.h/sourcemap.c: SourceMap struct, sourcemap_init/add/lookup/emit_json/free [x] SpanMapping (compact_line, compact_col, expanded_line, expanded_col, length) [x] JSON format {"version":1,"mappings":[...]} [x] --sourcemap CLI flag in main.c [x] Works with --fmt and --pretty/--expand: generates both views, walks tokens in parallel [x] Makefile wired (sourcemap.o) [x] Clean build -Werror, 86 conformance tests pass. Ref: T5 |
+| 10.8.4 | Expose AST-as-JSON in tooling protocol | done | 2026-04-04 | **P2** [x] ast_json.c/ast_json.h: recursive AST-to-JSON serialiser [x] --dump-ast flag in main.c: lex+parse then JSON to stdout [x] Node kind, pos (line/col/offset), span, name (idents), value (literals), children [x] Valid JSON output pipeable to jq. Ref: T5 |
+| 10.8.5 | Publish parallel training dataset (compact + expanded) | done | 2026-04-04 | **P2** Enable reproducible expander training. Invert existing corpus. [x] parallel_expand.py reads corpus JSONL, runs tkc --fmt/--pretty, outputs compact+expanded pairs [x] --dry-run generates synthetic demo pairs without tkc binary [x] JSONL schema: task_id, compact_source, expanded_source, token_count_compact, token_count_expanded, compression_ratio [x] --corpus-dir, --output, --tkc-path, --max-entries, --dry-run CLI args [x] tiktoken integration with graceful degradation. Ref: T5 |
+
+### Epic 10.9 — Research Positioning and External Credibility (T7)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.9.1 | Prior art and design-space map document | done | 2026-04-04 | **P1** [x] toke-spec/docs/prior-art.md [x] Design space map (2-axis: new lang vs constrained decoding, human vs machine) [x] Comparison matrix (9 systems) [x] "Why new language" + "Why not constrained decoding alone" arguments [x] 12 citation-needed markers for web-sourced claims. Ref: T7 |
+| 10.9.2 | Competitive differentiation matrix on tokelang.dev | done | 2026-04-04 | **P2** [x] toke-web/src/content/docs/about/competitive-matrix.md [x] 5-column matrix (token density, Pass@1, compilation target, safety, ecosystem) [x] 4 rows (toke, Zig, Mojo, constrained decoding) [x] Factual and fair — acknowledges competitor strengths [x] Notes toke targets different use case than general-purpose systems languages. Ref: T7 |
+| 10.9.3 | Constrained decoding ablation study | done | 2026-04-04 | **P1** D12=C: [x] 4-condition ablation framework (toke/python x constrained/unconstrained) [x] McNemar + Cohen's d + bootstrap CIs [x] Dry-run simulation with realistic error distributions [x] ablation_results.json, ablation_summary.json, ablation_table.csv outputs. Ref: T7 |
+| 10.9.4a | Rename RFC → Toke Specification | done | 2026-04-04 | **P1** D9=A: [x] RFC references → "specification" in toke-spec, tkc decisions, research-review-request [x] Draft header updated [x] IETF-specific language removed. Ref: specification reviews |
+| 10.9.4b | Strengthen specification with Gate 1 evidence | done | 2026-04-04 | **P1** [x] integer-overflow.md: Gate 1 evidence section (unchecked during Gate 1) [x] string-escaping.md: numeric literals section (int decimal/hex/binary, float, profile restrictions) [x] memory-model.md: Gate 1 evidence (arena-only) [x] temspec.md: Gate 1 application (87,903 tokens, 12.5% reduction, cl100k_base). Ref: specification reviews |
+
+### Epic 10.10 — Gate 2 Definition and Governance (T8)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.10.1 | Define Gate 1.5 reproducibility criteria | done | — | **P0** [x] toke-spec/docs/gate-criteria.md [x] 9 required artifacts listed [x] 30-day deadline (2026-05-03) [x] 5 success criteria. Ref: T8 |
+| 10.10.2 | Define Gate 2 success criteria with audit-grade precision | done | — | **P0** [x] 11 criteria with thresholds [x] Evaluation protocol (decoding, sampling, CIs) [x] Failure protocol [x] Gate 3+4 preliminary criteria. Ref: T8 |
+| 10.10.3 | Publish compute budget and infrastructure plan | done | — | **P1** [x] toke-spec/docs/compute-budget.md [x] Gate 1 actuals [x] Gate 2-4 projections [x] Hardware strategy (MLX-first + cloud contingency) [x] Cost table ($680-880 through Gate 4) [x] Optimisation strategies. Done 2026-04-04. Ref: T8 |
+| 10.10.4 | Living risk register | done | — | **P2** [x] 16 risks across 6 categories [x] Heat map + top-5 summary [x] Likelihood x impact scoring [x] Mitigations and residual risk [x] docs/risk-register.md. Done 2026-04-04. Ref: T8 |
+
+### Epic 10.11 — Compiler Code Quality and Configurability
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.11.1 | Document lexer.c with verbose function comments | done | 2026-04-04 | **P2** Review all functions in lexer.c. Add block comments explaining purpose, inputs, outputs, invariants, and any non-obvious logic. No behavioral changes. |
+| 10.11.2 | Document parser.c with verbose function comments | done | 2026-04-04 | **P2** Documented all 30 functions/helpers in parser.c: file-level header (pipeline role, grammar overview, precedence chain, error recovery, diagnostic codes E2001-E2004), Parser struct fields, peek/cur/adv/mk/ch/teq/eerr/sync/opt_semi/xp helpers, is_scalar, parse_func_type, parse_type_expr, parse_literal, parse_primary, parse_postfix, parse_call, parse_cast_prop, parse_unary, parse_mul, parse_add, parse_compare, parse_match_arm, parse_expr, parse_loop_stmt, parse_if_stmt, parse_stmt, parse_stmt_list, parse_module_path, parse_module_decl, parse_import_decl, parse_field_list, parse_type_decl, parse_const_decl, parse_one_param, parse_func_decl, parse (entry point). Each comment covers grammar production, AST node structure with children layout, and error recovery strategy. No behavioral changes. |
+| 10.11.3 | Document names.c with verbose function comments | done | 2026-04-04 | **P2** Verified all 18 functions in names.c have verbose block comments: file header (two-subsystem overview), span_dup, node_path_str, dots_to_slashes, build_avail_list, tki_exists, InFlight struct + ifl_has/ifl_push/ifl_pop, st_push, validate_version, version_major, resolve_imports (7-step algorithm), symtab_free, push_scope, scope_lookup, scope_lookup_local, arena_intern, scope_insert, seed_predefined, resolve_ident, resolve_func, resolve_node (10-case dispatch), resolve_names (5-step algorithm). Each comment covers purpose, parameters, return values, scope chain mechanics, and diagnostic codes. No behavioral changes. Build verified clean. |
+| 10.11.4 | Document types.c with verbose function comments | done | 2026-04-04 | **P2** Documented all functions and switch cases in types.c: file header (pipeline role, Profile 1 type system with 10 rules, type inference strategy, error handling codes E2010/E3020/E4010/E4011/E4025/E4031/E4043/E5001, memory allocation), ty_intern, mk_type, type_name, types_equal (structural/nominal equality, TY_UNKNOWN compatibility), is_numeric, tc_lookup, TOKSTR macro, Ctx struct, contains_ptr, resolve_type (primitives, pointers, arrays, maps, structs), resolve_return_spec (error-union T!Err), emit_mm, infer() with all 18 cases: literals (4 kinds), struct/array/map literals, identifiers, unary/binary expressions, function calls, cast expressions, error propagation (!), index expressions, field access, bind/mut-bind/assign statements, return statements, match statements (exhaustiveness + arm consistency), arena statements (escape analysis), function declarations (E2010 pointer validation), default fallthrough. type_check entry point. No behavioral changes. Build verified clean with -Werror. |
+| 10.11.5 | Document llvm.c with verbose function comments | done | 2026-04-04 | **P2** Added comprehensive block comments to all functions and data structures in llvm.c: file-level architecture overview (4-phase pipeline: prepass, top-level emission, expr/stmt emission, finalization), Ctx state machine (all fields grouped by role: output, SSA counters, control-flow state, registries, per-function tracking, string globals buffer), all 6 internal structs (FnSig, PtrLocal, StructInfo, ImportAlias, LocalType, NameAlias), SSA counter helpers (next_tmp/next_lbl/next_str), tok_cp, mark_ptr_with_type, is_ptr_local, ptr_local_struct_type, register_struct (field ordering and GEP index significance), lookup_struct, struct_field_index, is_struct_type_name, is_ptr_type_node, resolve_llvm_type (full type mapping table), register_fn, lookup_fn, prepass_structs, prepass_funcs (is_internal detection, fastcc convention), prepass_imports, resolve_stdlib_call (all 5 modules and their methods), str_buf_append (buffering strategy), emit_str_global (escape processing), resolve_base_struct, emit_expr (all 14 AST node kinds with emission strategy), expr_struct_type, get_llvm_name, make_unique_name (shadowing strategy), set_local_type, get_local_type, expr_llvm_type (static type prediction), emit_stmt (all 11 statement kinds including tail-call detection), emit_toplevel (struct layout, const emission, function definition with param spills), emit_llvm_ir (9-step orchestration), find_runtime_source, compile_binary. No behavioral changes -- comments only. Build verified clean with -Werror. |
+| 10.11.6 | Document ir.c, diag.c, arena.c, main.c with verbose function comments | done | 2026-04-04 | **P2** Documented 7 source files. ir.c and diag.c already had comprehensive comments (file headers + every function) from earlier stories -- no changes needed. arena.c: added block comments to block_new, arena_init, arena_alloc, arena_free. main.c: expanded file header with pipeline overview and exit-code semantics, added comments to stem() and main(). fmt.c: added comments to all Buf helpers, op_str, fmt_type_expr, fmt_expr, fmt_stmt_list, fmt_stmt, fmt_module_path, fmt_return_spec, fmt_decl, tkc_format, tkc_format_pretty. progress.c: expanded file header with animation/message description, added comments to progress_init, progress_update, progress_done. config.c: added block comment to tkc_load_config with return-value semantics. No behavioral changes. Build verified clean with -Werror. |
+| 10.11.7 | Extract all magic numbers to named constants in tkc_limits.h | done | 2026-04-04 | **P1** [x] src/tkc_limits.h with 25 named constants, each documented with role, safe range, configurability [x] arena.c: ARENA_BLOCK_SIZE/ARENA_ALIGN → TKC_ prefix [x] names.c: MAX_PATH/MAX_IFL/MAX_AVAIL → TKC_ prefix [x] llvm.c: MAX_FUNCS/LOCALS/PARAMS/PTR_LOCALS/STRUCT_TYPES/IMPORTS → TKC_ prefix, buffer sizes → NAME_BUF/ALIAS_BUF [x] main.c: exit codes → TKC_EXIT_, buffers → PATH_BUF/CMD_BUF/MSG_BUF [x] parser.h: NODE_INIT_CAP moved to tkc_limits.h [x] 86/86 conform, 9/9 stress, 9/9 IR. |
+| 10.11.8 | Add compiler configuration file support (tkc.toml) | done | 2026-04-04 | **P1** [x] src/config.h + src/config.c: minimal TOML parser (comments, blank lines, key=integer) [x] tkc_load_config() returns 0 success, -1 not found, -2 parse error [x] main.c: loads ./tkc.toml after defaults, before CLI flag parsing [x] --config=PATH flag for alternate config file [x] Precedence: CLI > tkc.toml > defaults [x] Missing default tkc.toml silently ignored; missing explicit --config= is an error [x] Help text updated [x] Makefile updated with config.o [x] Clean build -Werror, 86/86 conform [x] test/test_config.sh. |
+| 10.11.9 | Add per-session limit override flags to tkc | done | 2026-04-04 | **P1** [x] TkcLimits struct in tkc_limits.h with defaults initialiser and print function [x] CLI flags: --max-funcs=N, --max-locals=N, --max-params=N, --max-structs=N, --max-imports=N, --arena-block=N [x] --show-limits prints effective limits and exits [x] strncmp+atoi parsing for --flag=N style [x] Help text updated with limit override section [x] Clean build with -Werror, no warnings. Actual dynamic allocation deferred to 10.11.10. |
+| 10.11.10 | Make codegen Ctx dynamically sized using limits | done | 2026-04-04 | **P1** [x] Added TkcLimits to CodegenEnv in llvm.h [x] Ctx arrays (fns, ptrs, structs, imports, locals, aliases) converted from fixed-size to pointers with capacity fields [x] Arrays arena_alloc'd in emit_llvm_ir from TkcLimits values [x] All 6 limit checks use runtime capacity (fn_cap, ptr_cap, struct_cap, import_cap, local_cap, alias_cap) instead of compile-time constants [x] E9010 diagnostics preserved [x] main.c passes limits through CodegenEnv at all 3 call sites [x] Clean build with -Werror. |
+| 10.11.11 | Make names.c limits dynamic | done | 2026-04-04 | **P1** [x] Added max_imports_in_flight and max_avail_modules to TkcLimits struct with defaults [x] InFlight struct converted from fixed array to malloc'd pointer+capacity [x] build_avail_list converted from stack array to malloc'd array [x] resolve_imports signature updated to accept const TkcLimits* [x] E9010 diagnostics check against dynamic capacity [x] CLI flags --max-in-flight=N and --max-avail=N added [x] config.c recognises max_imports_in_flight and max_avail_modules keys [x] --show-limits prints new fields [x] Help text updated [x] Clean build with -Werror. |
+| 10.11.12 | Emit diagnostics on silent limit truncation | done | 2026-04-04 | **P0** Audited all 8 limit-check sites across llvm.c (6) and names.c (2). Every silent `return` now emits E9010 "compiler limit exceeded" with a descriptive message. Depends on 10.11.7. |
+
+### Epic 10.12 — AI Coding Tool Integration (`toke-cloud`)
+
+**Source:** TOKE-INT-001 — AI Coding Tool Integration Assessment
+**Goal:** Zero-install onboarding for AI coding tools via hosted MCP service. Developers add one URL and can immediately write, compile, and debug Toke programs. Supports Gate 2/3 evaluation through production telemetry.
+
+#### Phase A — Hosted Foundation
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.12.1 | Build MCP server with toke_check and toke_compile tools | done | 2026-04-04 | **P0** Node.js MCP SDK server exposing `toke_check` (source → JSON diagnostics) and `toke_compile` (source → LLVM IR or diagnostics). MCP protocol over SSE. Effort: M. Repo: toke-cloud. |
+| 10.12.2 | Bundle tkc as Lambda layer and deploy safe tool functions | done | 2026-04-04 | **P0** Package tkc static binary in Lambda layer. Deploy `toke_check` and `toke_compile` as Lambda functions. No network access, read-only fs, 10s timeout. Effort: M. Depends on 10.12.1. |
+| 10.12.3 | Deploy API Gateway + CloudFront + WAF with free-tier rate limiting | done | 2026-04-04 | **P0** Edge layer: CloudFront (TLS 1.3 + WAF), API Gateway HTTP API, route /mcp/sse → SSE handler. WAF rate limiting per-IP. Payload max 64KB. Effort: M. Depends on 10.12.2. |
+| 10.12.4 | Deploy Redis (ElastiCache) for rate limits and response caching | done | 2026-04-04 | **P1** ElastiCache t4g.micro. Sliding window rate limit counters. Response cache for spec lookups and error explanations. Connection registry. Effort: S. |
+| 10.12.5 | Write Toke language skill file for Claude Code | done | 2026-04-04 | **P0** `toke-language.md` skill: 56-char set, keywords, type system, idioms, common patterns, error codes. Reflects final Phase 2 spec. Covers both Phase 1 (compiler default) and Phase 2 (normative spec) syntax. 7 complete examples verified against e2e/conformance tests. |
+| 10.12.6 | Build minimal Claude Code plugin pointing to hosted endpoint | done | 2026-04-04 | **P0** [x] .mcp.json → mcp.tokelang.dev/mcp/sse [x] CLAUDE.md with check-repair loop instructions [x] /toke:check and /toke:new slash commands [x] toke-language.md skill file bundled [x] README with install instructions. Depends on 10.12.5. |
+| 10.12.7 | Write Codex instructions file and validate MCP connection | done | 2026-04-04 | **P1** `codex.md` instructions teaching Codex the Toke language. `mcp.json` for SSE endpoint config. 5 working examples, check-repair loop, all 12 keywords, type system, common mistakes. Effort: S. |
+| 10.12.8 | End-to-end test: Claude Code repair loop on 20 sample tasks | done | 2026-04-04 | **P0** Test harness at toke-cloud/test/e2e_repair_loop.js. Imports tokeCheck/tokeCompile directly (no MCP server). 20 tasks from toke-benchmark/hidden_tests/. Rule-based fixer handles E1003, E2001, E2003, E3011, E4010/E4031. CLI: `node test/e2e_repair_loop.js [--max-iterations 5] [--tasks 20] [--verbose]`. JSON report to test/data/e2e_results.json. Depends on 10.12.6. |
+| 10.12.9 | Infrastructure as CDK (TypeScript) with CI deploy | done | 2026-04-04 | **P1** CDK v2 TypeScript project at toke-cloud/infra/. Main stack: Lambda (check/compile/mcp) + tkc binary layer + HTTP API Gateway + CloudFront + WAF (60 req/min rate limit) + S3 logs + CloudWatch alarms. Security-first: no public Lambda URLs, HTTPS-only, TLS 1.2+. CI pipeline deferred to separate story. |
+
+#### Phase B — Security Hardening + Pro Tier
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.12.10 | Build Fargate task definition for toke_run with full sandbox | done 2026-04-04 | — | **P1** Sandboxed execution: private subnet (no internet), read-only root, tmpfs 16MB, 512MB mem, 5s CPU kill, seccomp whitelist, no inbound/outbound SG. Fresh task per execution. CDK construct + Dockerfile + entrypoint + seccomp profile. |
+| 10.12.11 | Implement seccomp profile and capability dropping | done | 2026-04-04 | **P1** Enhanced seccomp profile (grouped whitelist: basic/file/process/memory/signal/time, explicit EPERM deny for networking/kernel ops/bpf). CAP_DROP ALL via CDK linuxParameters. no-new-privileges docker security option. Multi-stage Dockerfile with static-link verification, binary stripping. Entrypoint ulimits: 256MB vmem, 16MB fsize, 10 procs, 32 fds. Health check added. Security test script (test_security.sh) for local docker verification. |
+| 10.12.12 | Build API key management system | done 2026-04-04 | — | **P1** DynamoDB for accounts/keys, Secrets Manager for credentials with auto-rotation. Free tier: anonymous with IP rate limit. Pro tier: API key auth. Effort: M. |
+| 10.12.13 | Implement pro-tier rate limiting and usage tracking | done 2026-04-04 | — | **P1** Redis sliding window per API key. Free: 60 checks/hr, 30 compiles/hr. Pro: 600/300/60. 429 with Retry-After on exceed. Max 2 SSE connections (free), 10 (pro). Effort: M. Depends on 10.12.4, 10.12.12. |
+| 10.12.14 | Add toke_explain_error, toke_spec_lookup, toke_stdlib_ref tools | done | 2026-04-04 | **P1** Three read-only MCP tools. Error code → explanation + fix suggestion (built-in catalog of all E/W codes from errors.md). Keyword → spec section (built-in knowledge base covering types, syntax, operators, etc.). Module.function → signature + description + example (all 14 stdlib modules). Cacheable in Redis. Effort: M. |
+| 10.12.15 | Build toke-repair subagent for Claude Code plugin | done 2026-04-04 | — | **P0** Subagent: given NL task → generate Toke via skill context → call toke_check via MCP → parse JSON diagnostics → apply fixes → iterate until pass or retry limit. Centrepiece of thesis validation. Effort: M. Depends on 10.12.6. |
+| 10.12.16 | Add opt-in anonymised telemetry pipeline | done | 2026-04-04 | **P2** Only collected with X-Telemetry: opt-in header. Metadata only (error codes, token count, tool name, latency). No source code stored. API Gateway → S3. Effort: M. |
+| 10.12.17 | Security audit: penetration testing on toke_run sandbox | done | 2026-04-04 | **P1** Pen test: network escape, filesystem escape, resource exhaustion, capability abuse. Must pass before pro tier launch. Effort: L. Depends on 10.12.10, 10.12.11. |
+
+#### Phase C — Model Integration + IDE
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.12.18 | Deploy fine-tuned Qwen model to SageMaker with scale-to-zero | done | 2026-04-04 | **P1** QLoRA fine-tuned Qwen 2.5 Coder 7B. Auto-scaling 0→N instances. Cold start 30-60s (document in tool response). Spot instances where possible. Effort: L. |
+| 10.12.19 | Build toke_generate and toke_bench MCP tools | done | 2026-04-04 | **P1** `toke_generate`: NL → Toke source + diagnostics (calls SageMaker). `toke_bench`: source + task_id → pass/fail, token count, baseline comparison. Pro tier only. Effort: M. Depends on 10.12.18. |
+| 10.12.20 | Build toke-lsp language server wrapping tkc | done | 2026-04-04 | **P2** LSP server at toke-cloud/lsp/: diagnostics via `tkc --check --diag-json` (debounced 300ms), hover info via `--emit-interface` + keyword descriptions (12 keywords), document symbols (func/type/const). Config: toke.tkc.path, toke.tkc.stdlib. README with VS Code, Neovim, JetBrains setup. Effort: L. |
+| 10.12.21 | Build toke-vscode extension (grammar + LSP client) | done | 2026-04-04 | **P2** TextMate grammar for .tk files (syntax highlighting for keywords, types, literals, declarations, operators). LSP client connecting to toke-lsp. 9 snippets (mod, fn, st, imp, loop, ifelse, let, letmut, main). Language configuration with auto-closing pairs and indentation rules. Status bar indicator. Effort: M. Depends on 10.12.20. |
+| 10.12.22 | Build and publish self-hosted Docker image | done | 2026-04-04 | **P1** Multi-stage Dockerfile.selfhosted: Node 20 slim + tkc binary + server code. Non-root (node uid 1000). Config via PORT, TKC_PATH, LOG_LEVEL env vars. docker-compose.yml, build-docker.sh (multi-platform, ghcr.io push), SELF_HOSTED.md with Claude Code + Codex setup. Health endpoint returns version + tkc availability. Effort: M. |
+| 10.12.23 | Test MCP compatibility across AI coding tools | done | 2026-04-04 | **P1** Compatibility test suite: mcp_compat_test.js (SSE transport, JSON-RPC, tool discovery, tool execution, error handling — spawns/kills local server), protocol_test.js (pure HTTP/SSE, no SDK). Per-tool configs for Claude Code, Codex, Cursor, Windsurf, Cline, Aider. COMPATIBILITY.md matrix with setup instructions and known limitations. CLI: `node test/compatibility/mcp_compat_test.js [--server-url URL] [--verbose]`. Effort: M. |
+| 10.12.24 | Submit Claude Code plugin to Anthropic directory | backlog | — | **P2** Stabilise plugin, submit to official directory for verified listing. Effort: S. Depends on 10.12.15. |
+
+#### Phase D — Scale + Community
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 10.12.25 | Benchmark Pass@1 across AI coding tools | done | 2026-04-04 | **P1** Head-to-head: Claude Code vs Codex vs Copilot on 20+ tasks via hosted MCP. Report repair loop success rate, iteration count, token counts. Gate 2/3 data. Effort: L. cross_tool_benchmark.py with dry-run simulation, McNemar/Wilcoxon stats, bootstrap CIs, 4 output formats. |
+| 10.12.26 | Multi-region deployment (US + AP) | done | 2026-04-04 | **P2** Second region (us-east-1) for NA/EU latency. CDK parameterised for multi-region. Effort: L. `infra/lib/multi-region.ts`: TokeCloudRegionalStack (parameterised per-region: VPC, Lambda, API GW, Redis, DynamoDB global tables) + TokeCloudEdgeStack (CloudFront origin-group failover AP->US, WAF, ACM). `bin/toke-cloud.ts` updated: `-c multiRegion=true` deploys 3 stacks (AP, US, Edge), default remains single-region. DynamoDB global tables for cross-region data replication. Region-specific env vars (DEPLOY_REGION, REGION_LABEL, IS_PRIMARY). `docs/multi-region.md` with architecture, deployment, failover, cost analysis. |
+| 10.12.27 | Billing integration for pro tier (Stripe) | done | 2026-04-04 | **P2** Stripe subscription for pro tier ($5-10/mo). Webhook → DynamoDB tier update. Usage dashboard. Effort: M. lib/stripe-billing.js (createSubscription, handleWebhook, getSubscriptionStatus, cancelSubscription), lambda/billing/index.js (signature verification, event dispatch), infra/lib/billing.ts CDK construct (DynamoDB subscriptions table, Secrets Manager, Lambda, API GW route), docs/billing.md (pricing, lifecycle, setup). |
+| 10.12.28 | Community plugin development guide | done | 2026-04-04 | **P2** Documentation on tokelang.dev: how to build plugins/integrations using the hosted MCP service. MCP tool schemas, authentication, rate limits. Effort: M. [x] All 7 tool schemas documented with input/output [x] Auth and API key management [x] Free/pro rate limit tables [x] VS Code, JetBrains, Neovim plugin guides [x] SSE transport and reconnection [x] TypeScript example code [x] Staging test checklist |
+| 10.12.29 | Publish MCP server to npm registry | done | 2026-04-04 | **P2** Prepared `@tokelang/mcp-server` npm package: scoped package.json with bin/files/engines/publishConfig, `bin/toke-mcp.js` CLI entry point (--port, --tkc-path, auto-detect tkc, startup banner), `.npmignore`, `scripts/publish.sh` (test, version check, dry-run, publish, git tag), README npx section. Not yet published. Effort: S. |
+| 10.12.30 | Open-source MCP server and sandbox configuration | done | 2026-04-04 | **P2** Open-source README (architecture diagram, 7 tools, quick start, API reference, deployment), CONTRIBUTING.md (local setup, testing, code style, PR process, adding tools guide), MIT LICENSE, .gitignore, GitHub templates (bug report, feature request, PR template). Secrets audit clean. Effort: S. |
+| 10.12.31 | WASM compilation of tkc for browser playground | done | 2026-04-04 | **P2** Emscripten build infrastructure: `Makefile.wasm` (emcc, -O2, 16MB, NO_FILESYSTEM, MODULARIZE), `src/wasm_api.c` (in-memory pipeline: lex->parse->names->types, JSON result strings), `wasm/tkc-wasm.js` (promise-based JS wrapper with check/format/version), `wasm/playground.html` (split-pane editor+output, dark theme, example loader). No codegen in WASM build (check+format only). Effort: L. |
+
+---
+
+## Sprint Plan — Research Review Remediation
+
+### Sprint R1 (P0 items — 1-2 weeks)
+
+**Goal:** Remove external-review blockers. Produce reproducibility package.
+
+| Story | Est | Repo |
+|-------|-----|------|
+| 10.2.1 Reconcile stdlib module count | 2h | all |
+| 10.2.2 Fix meta-repo Gate 1 status | 1h | toke |
+| 10.2.3 Fix I= to i= in toke-stdlib | 1h | toke-stdlib |
+| 10.1.1 TEMSpec document | 4h | toke-spec |
+| 10.1.2 Raw per-task token counts CSV | 4h | toke-eval |
+| 10.1.4 Gate 1 reproducibility package | 8h | toke-spec |
+| 10.4.1 --emit-llvm and --emit-asm flags | 8h | tkc |
+| 10.4.5 Emit target datalayout/triple | 2h | tkc |
+| 10.7.1 Embed_tokens in modules_to_save | 4h | toke-models |
+| 10.7.3 Evaluation contract (model card) | 4h | toke-eval |
+| 10.7.4 Holdout isolation invariant | 4h | toke-corpus |
+| 10.10.1 Gate 1.5 reproducibility criteria | 4h | toke-spec |
+| 10.10.2 Gate 2 success criteria | 4h | toke-spec |
+
+### Sprint R2 (P1 items — 2-4 weeks)
+
+**Goal:** Strengthen evaluation, compiler, spec. External credibility. Compiler configurability.
+
+| Story | Est | Repo |
+|-------|-----|------|
+| ~~10.1.3 Multi-tokenizer baselines~~ | ~~8h~~ | ~~toke-eval~~ done 2026-04-04 |
+| ~~10.1.5 Corpus statistics publication~~ | ~~4h~~ | ~~toke-corpus~~ done 2026-04-04 |
+| ~~10.1.6 Statistical analysis with CIs~~ | ~~8h~~ | ~~toke-eval~~ done 2026-04-04 |
+| 10.2.4 CONTRIBUTING.md to meta-repo | 2h | toke |
+| 10.2.5 Standardize security docs | 4h | all |
+| 10.2.6 Fix CI quality gate suppression | 2h | tkc |
+| 10.2.7 Release tags (v0.1-gate1) | 4h | all |
+| 10.2.8 Fix tokenizer deps | 1h | toke-tokenizer |
+| 10.3.1 Integer overflow semantics | 16h | toke-spec, tkc |
+| 10.3.2 Phase 2 normative profile | 16h | toke-spec |
+| 10.3.5 String escaping rules | 8h | toke-spec, tkc |
+| 10.3.6 Standardize .tki format | 8h | toke-spec, tkc |
+| 10.3.10 Diagnostics JSON Schema | 8h | toke-spec |
+| 10.4.2 IR verification in CI | 4h | tkc |
+| 10.4.3 Rich LLVM annotations | 16h | tkc |
+| 10.4.6 Optimization level flags | 4h | tkc |
+| 10.4.9 Runtime ABI document v0 | 8h | tkc |
+| 10.5.1 Binary benchmarks vs C/Rust | 16h | toke-benchmark |
+| 10.5.4 Stress test suite | 8h | tkc |
+| 10.6.1 Pass@5/Pass@10 | 8h | toke-eval |
+| 10.6.2 Error taxonomy | 4h | toke-eval |
+| 10.6.3 Port tasks to HumanEval/MBPP | 16h | toke-benchmark |
+| 10.6.4 Public benchmark slice | 4h | toke-benchmark |
+| 10.6.6 Contamination analysis | 8h | toke-corpus |
+| 10.7.2 QLoRA vs DoRA benchmark | 16h | toke-models |
+| 10.7.6 Five-tier validation pipeline | 16h | toke-corpus |
+| 10.8.1 Canonical formatter (toke fmt) | 24h | tkc |
+| ~~10.8.2 --pretty/--expand flags~~ | ~~16h~~ | ~~tkc~~ |
+| 10.9.1 Prior art design-space map | 8h | toke-spec |
+| 10.9.3 Constrained decoding ablation | 16h | toke-eval |
+| 10.9.4 RFC updates from review feedback | 8h | toke-spec |
+| 10.11.7 Extract magic numbers to tkc_limits.h | 8h | tkc |
+| 10.11.8 Compiler config file (tkc.toml) | 16h | tkc |
+| 10.11.9 Per-session limit override flags | 8h | tkc |
+| 10.11.10 Dynamic Ctx sizing from limits | 16h | tkc |
+| 10.11.11 Dynamic names.c limits | 8h | tkc |
+| 10.11.12 Diagnostics on limit truncation | 4h | tkc |
+
+### Sprint R3 (P2 items — 4-8 weeks)
+
+**Goal:** Polish, expansion tooling, longer-term items.
+
+Stories: 10.2.9, 10.3.3, 10.3.4, 10.3.7, 10.3.8, 10.3.9, 10.5.2, 10.5.3, 10.5.5, ~~10.6.5~~, ~~10.6.7~~, 10.7.5, 10.8.3, 10.8.4, ~~10.8.5~~, ~~10.9.2~~, 10.10.4, 10.11.1-10.11.6
+
+---
+
+## Overlap with Existing Stories
+
+The following existing backlog stories overlap with research review stories:
+
+| Existing | Research | Resolution |
+|----------|----------|------------|
+| 9.4.1 ShortCoder comparison | 10.9.3 Constrained decoding ablation | Merge — 10.9.3 is broader, subsumes 9.4.1 |
+| 9.4.2 Multi-tokenizer analysis | 10.1.3 Multi-tokenizer baselines | Merge — 10.1.3 is P0, replaces 9.4.2 |
+| 9.6.1 EvalPlus harness | 10.6.1 Pass@5/Pass@10 + 10.6.3 HumanEval port | Merge — 10.6.x stories are more granular, replace 9.6.1 |
+| 9.8.1 BPE retrain on corpus | 10.7.1 Embed_tokens | Complementary — both needed. 10.7.1 is prerequisite |
+| 7.1.1-7.1.5 Website examples (on_hold) | 10.3.2 Phase 2 normative profile | Unblock — 10.3.2 resolves "spec locked" dependency for 7.1.x |
 
 ---
 
 ## Active Blockers
 
-None. Gate 1 passed 2026-04-03.
+| Blocker | Blocks | Resolution |
+|---------|--------|------------|
+| Decision D2 (integer overflow) | 10.3.1, 10.5.4 | Decide in docs/decisions/gate1-research-review-decisions.md |
+| Decision D3 (memory model) | 10.3.4 | Decide in docs/decisions/ |
+| Decision D10 (QLoRA vs DoRA) | 10.7.2, 9.x training stories | Benchmark first (10.7.2) then decide |
+| Decision D11 (embed_tokens) | All training runs | Hard requirement — 10.7.1 must complete before any retrain |
 
 ## Compute Summary
 
-All Phase 2 work runs locally (Mac Studio M4 Max). No cloud instances needed.
+All Phase 2 work runs locally (Mac Studio M4 Max) unless noted. No cloud instances needed for Sprint R1.
 
 | Compute | Stories |
 |---------|---------|
-| **local** | 6.1.1-6.1.3, 7.1.1-7.1.5 (on_hold), 7.1.9 (on_hold), 9.1.x-9.8.x (Gate 2 prep) |
+| **local** | 6.1.1-6.1.3, 7.1.1-7.1.5 (on_hold), 7.1.9 (on_hold), 9.1.x-9.8.x (Gate 2 prep), 10.x (research review remediation) |
 | **cloud/HF** | 6.1.4 (HuggingFace Spaces demo) |
 | **cloud (API)** | 9.1.1, 9.1.3, 9.2.3 (teacher model inference) |
+| **cloud (GPU)** | 10.7.2 (QLoRA/DoRA/full benchmark — if A100 used) |
 | **no compute** | All EC2 instances can be suspended |

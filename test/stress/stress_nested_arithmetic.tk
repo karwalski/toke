@@ -1,0 +1,9 @@
+M=test;
+F=main():i64{
+  let a=3;
+  let b=7;
+  let c=a*b+a-b;
+  let d=c*2+a;
+  let e=d-c+b*a;
+  <e
+};

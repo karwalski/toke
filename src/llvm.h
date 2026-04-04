@@ -12,6 +12,7 @@
  */
 
 #include "types.h"
+#include "tkc_limits.h"
 
 /* ── Error codes ─────────────────────────────────────────────────────── */
 
@@ -25,6 +26,7 @@ typedef struct {
     NameEnv    *names;
     Arena      *arena;
     const char *target;  /* LLVM triple, e.g. "aarch64-apple-macos" or NULL */
+    TkcLimits   limits;  /* runtime-configurable capacity limits */
 } CodegenEnv;
 
 /* ── Public API ───────────────────────────────────────────────────────── */
@@ -36,7 +38,9 @@ int emit_llvm_ir(const Node *ast, const char *src,
 
 /* compile_binary: invoke clang to compile out_ll to a native binary at out_bin.
  * target: LLVM triple string (NULL = native target).
+ * opt_level: optimization level 0-3 (passed as -O0..-O3 to clang).
  * Returns 0 on success, -1 if clang invocation fails (E9003 emitted). */
-int compile_binary(const char *out_ll, const char *out_bin, const char *target);
+int compile_binary(const char *out_ll, const char *out_bin, const char *target,
+                   int opt_level);
 
 #endif /* TK_LLVM_H */

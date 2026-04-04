@@ -16,6 +16,7 @@
  */
 
 #include "parser.h"
+#include "tkc_limits.h"
 
 /* ── Error codes ──────────────────────────────────────────────────────── */
 
@@ -69,7 +70,8 @@ typedef struct {
  * Diagnostics are emitted via diag_emit() for each failure.
  */
 int resolve_imports(const Node *ast, const char *src,
-                    const char *search_path, SymbolTable *out);
+                    const char *search_path, const TkcLimits *limits,
+                    SymbolTable *out);
 
 /*
  * symtab_free — release all heap memory owned by a SymbolTable.

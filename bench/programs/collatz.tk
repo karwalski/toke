@@ -1,0 +1,21 @@
+M=bench;
+F=collatz(n:i64):i64{
+  let v=mut.n;
+  let steps=mut.0;
+  lp(let dummy=0;v>1;dummy=0){
+    if(v-v/2*2=0){
+      v=v/2
+    }el{
+      v=v*3+1
+    };
+    steps=steps+1
+  };
+  <steps
+};
+F=main():i64{
+  let total=mut.0;
+  lp(let i=1;i<500000;i=i+1){
+    total=total+collatz(i)
+  };
+  <total
+};
