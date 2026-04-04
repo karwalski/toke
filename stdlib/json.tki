@@ -3,7 +3,7 @@
   "module": "std.json",
   "exports": [
     {"kind": "type", "name": "Json",    "fields": [{"name": "raw", "type": "str"}]},
-    {"kind": "type", "name": "JsonErr", "fields": [
+    {"kind": "type", "name": "JsonErr", "sum": true, "variants": [
       {"name": "Parse",   "type": "str"},
       {"name": "Type",    "type": "str"},
       {"name": "Missing", "type": "str"}
@@ -15,6 +15,61 @@
     {"kind": "func", "name": "json.i64",  "params": ["Json", "str"],     "return": "i64!JsonErr"},
     {"kind": "func", "name": "json.f64",  "params": ["Json", "str"],     "return": "f64!JsonErr"},
     {"kind": "func", "name": "json.bool", "params": ["Json", "str"],     "return": "bool!JsonErr"},
-    {"kind": "func", "name": "json.arr",  "params": ["Json", "str"],     "return": "[Json]!JsonErr"}
+    {"kind": "func", "name": "json.arr",  "params": ["Json", "str"],     "return": "[Json]!JsonErr"},
+
+    {
+      "kind": "type",
+      "name": "JsonWriter",
+      "fields": [
+        {"name": "buf", "type": "[byte]"},
+        {"name": "pos", "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "JsonStream",
+      "opaque": true,
+      "fields": [
+        {"name": "buf",    "type": "[byte]"},
+        {"name": "pos",    "type": "u64"},
+        {"name": "depth",  "type": "u64"},
+        {"name": "state",  "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "JsonToken",
+      "sum": true,
+      "variants": [
+        {"name": "ObjectStart", "type": "void"},
+        {"name": "ObjectEnd",   "type": "void"},
+        {"name": "ArrayStart",  "type": "void"},
+        {"name": "ArrayEnd",    "type": "void"},
+        {"name": "Key",         "type": "str"},
+        {"name": "Str",         "type": "str"},
+        {"name": "U64",         "type": "u64"},
+        {"name": "I64",         "type": "i64"},
+        {"name": "F64",         "type": "f64"},
+        {"name": "Bool",        "type": "bool"},
+        {"name": "Null",        "type": "void"},
+        {"name": "End",         "type": "void"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "JsonStreamErr",
+      "sum": true,
+      "variants": [
+        {"name": "Truncated",  "type": "str"},
+        {"name": "Invalid",    "type": "str"},
+        {"name": "Overflow",   "type": "str"}
+      ]
+    },
+
+    {"kind": "func", "name": "json.streamparser", "params": ["[byte]"],              "return": "JsonStream"},
+    {"kind": "func", "name": "json.streamnext",   "params": ["JsonStream"],           "return": "JsonToken!JsonStreamErr"},
+    {"kind": "func", "name": "json.streamemit",   "params": ["JsonWriter", "Json"],   "return": "void!JsonStreamErr"},
+    {"kind": "func", "name": "json.newwriter",    "params": ["u64"],                  "return": "JsonWriter"},
+    {"kind": "func", "name": "json.writerbytes",  "params": ["JsonWriter"],           "return": "[byte]"}
   ]
 }

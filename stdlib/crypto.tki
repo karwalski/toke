@@ -2,8 +2,12 @@
   "schema_version": "1.0",
   "module": "std.crypto",
   "exports": [
-    {"kind": "func", "name": "crypto.sha256",     "params": ["[byte]"],          "return": "[byte]"},
-    {"kind": "func", "name": "crypto.hmac_sha256", "params": ["[byte]", "[byte]"], "return": "[byte]"},
-    {"kind": "func", "name": "crypto.to_hex",      "params": ["[byte]"],          "return": "str"}
+    {"kind": "func", "name": "crypto.sha256",      "params": ["[byte]"],            "return": "[byte]"},
+    {"kind": "func", "name": "crypto.sha512",      "params": ["[byte]"],            "return": "[byte]"},
+    {"kind": "func", "name": "crypto.hmacsha256",  "params": ["[byte]", "[byte]"],  "return": "[byte]"},
+    {"kind": "func", "name": "crypto.hmacsha512",  "params": ["[byte]", "[byte]"],  "return": "[byte]"},
+    {"kind": "func", "name": "crypto.constanteq",  "params": ["[byte]", "[byte]"],  "return": "bool"},
+    {"kind": "func", "name": "crypto.randombytes", "params": ["u64"],               "return": "[byte]"},
+    {"kind": "func", "name": "crypto.to_hex",      "params": ["[byte]"],            "return": "str"}
   ]
 }

@@ -1,0 +1,63 @@
+m=json_stream_test;
+
+(* Demonstrate streaming parse of a large JSON array.
+   The input is a JSON array of records; we walk the token
+   stream and sum a numeric field without materialising the
+   full array in memory. *)
+
+f=sum_counts(input:@byte):i64!$jsonstreamerr{
+  let parser=$json.streamparser(input);
+  let total:i64=0;
+  let in_array:bool=false;
+  let in_object:bool=false;
+  let want_count:bool=false;
+  let running:bool=true;
+  loop{
+    if !running{break};
+    let tok=json.streamnext(parser)?;
+    if tok==$jsontoken.ArrayStart{
+      set in_array=true;
+    };
+    if tok==$jsontoken.ObjectStart{
+      set in_object=true;
+    };
+    if tok==$jsontoken.ObjectEnd{
+      set in_object=false;
+      set want_count=false;
+    };
+    if tok==$jsontoken.ArrayEnd{
+      set in_array=false;
+      set running=false;
+    };
+    if tok==$jsontoken.Key{
+      if tok.Key=="count"{
+        set want_count=true;
+      };
+    };
+    if tok==$jsontoken.U64{
+      if want_count{
+        set total=total+tok.U64:i64;
+        set want_count=false;
+      };
+    };
+    if tok==$jsontoken.End{
+      set running=false;
+    };
+  };
+  <total
+};
+
+f=main():i64{
+  let data=str.bytes("[{\"id\":1;\"count\":10};{\"id\":2;\"count\":25};{\"id\":3;\"count\":5}]");
+  let result=sum_counts(data);
+  (match result{
+    ok(n){
+      (test.eq(n;40));
+      <0
+    };
+    err(e){
+      (log.error("stream parse failed"));
+      <1
+    };
+  })
+};

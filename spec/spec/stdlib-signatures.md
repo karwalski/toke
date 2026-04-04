@@ -17,7 +17,7 @@ Changes here require coordinated updates to toke-stdlib and toke-benchmark.
 - `std.file` — file I/O (read, write, append, list, delete)
 - `std.env` — environment variable access
 - `std.process` — subprocess spawning and control
-- `std.crypto` — SHA-256, HMAC-SHA-256, hex encoding
+- `std.crypto` — SHA-256, SHA-512, HMAC-SHA-256, HMAC-SHA-512, constant-time compare, random bytes, hex encoding
 - `std.time` — time operations (now, format, since)
 - `std.log` — structured logging
 - `std.test` — test assertions
@@ -56,6 +56,17 @@ f=bool(s:$str;key:$str):bool
 f=arr(s:$str;key:$str):@$str
 f=parse(s:$str):i64
 f=print(val:i64):void
+
+(* Streaming API — 12.1.1 *)
+t=$jsonstream{buf:@byte;pos:u64;depth:u64;state:u64}
+t=$jsontoken{ObjectStart:void;ObjectEnd:void;ArrayStart:void;ArrayEnd:void;Key:$str;Str:$str;U64:u64;I64:i64;F64:f64;Bool:bool;Null:void;End:void}
+t=$jsonstreamerr{Truncated:$str;Invalid:$str;Overflow:$str}
+t=$writer{buf:@byte;pos:u64}
+f=json.streamparser(input:@byte):$jsonstream
+f=json.streamnext(parser:$jsonstream):$jsontoken!$jsonstreamerr
+f=json.streamemit(writer:$writer;val:$json):void!$jsonstreamerr
+f=json.newwriter(capacity:u64):$writer
+f=json.writerbytes(writer:$writer):@byte
 ```
 
 ### std.toon
@@ -141,9 +152,13 @@ f=kill(pid:i64):void
 ### std.crypto
 
 ```
-f=sha256(data:$str):$str
-f=hmac(key:$str;data:$str):$str
-f=hex(data:$str):$str
+f=sha256(data:@byte):@byte
+f=sha512(data:@byte):@byte
+f=hmacsha256(key:@byte;data:@byte):@byte
+f=hmacsha512(key:@byte;data:@byte):@byte
+f=constanteq(a:@byte;b:@byte):bool
+f=randombytes(n:u64):@byte
+f=to_hex(data:@byte):$str
 ```
 
 ### std.time
