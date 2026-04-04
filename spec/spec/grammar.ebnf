@@ -1,0 +1,219 @@
+(* toke Phase 1 Formal Grammar — EBNF *)
+(* Normative per toke-spec-v02.md Section 11. *)
+(* Matches the reference compiler (tkc/src/parser.c) as of 2026-03-29. *)
+(*                                                                        *)
+(* Notation:                                                              *)
+(*   =   definition          ;   termination                              *)
+(*   |   alternation         ( ) grouping                                 *)
+(*   [ ] optional (0 or 1)   { } repetition (0 or more)                  *)
+(*                                                                        *)
+(* Terminals: single-quoted strings are keywords/symbols; UPPER_CASE      *)
+(* names are token classes produced by the lexer.                         *)
+(*                                                                        *)
+(* Semicolon elision: the trailing semicolon of the last statement        *)
+(* before a closing '}' or EOF may be omitted. In the grammar below,     *)
+(* every Stmt and Decl is written with a terminating ';', but the         *)
+(* compiler silently accepts its absence in that position.                *)
+
+
+(* ================================================================== *)
+(* Top-level structure                                                 *)
+(* ================================================================== *)
+
+SourceFile   = ModuleDecl { ImportDecl } { TypeDecl } { ConstDecl }
+               { FuncDecl } EOF ;
+
+
+(* ================================================================== *)
+(* Module                                                              *)
+(* ================================================================== *)
+
+ModuleDecl   = 'M' '=' ModulePath ';' ;
+ModulePath   = IDENT { '.' IDENT } ;
+
+
+(* ================================================================== *)
+(* Imports                                                             *)
+(* ================================================================== *)
+
+ImportDecl   = 'I' '=' IDENT ':' ModulePath [ STR_LIT ] ';' ;
+
+
+(* ================================================================== *)
+(* Type declarations                                                   *)
+(* ================================================================== *)
+
+TypeDecl     = 'T' '=' TypeName '{' FieldList '}' ';' ;
+TypeName     = TYPE_IDENT ;
+FieldList    = Field { ';' Field } ;
+Field        = IDENT ':' TypeExpr ;
+
+
+(* ================================================================== *)
+(* Constant declarations                                               *)
+(* ================================================================== *)
+
+ConstDecl    = IDENT '=' LiteralExpr ':' TypeExpr ';' ;
+
+
+(* ================================================================== *)
+(* Function declarations                                               *)
+(* ================================================================== *)
+
+FuncDecl     = 'F' '=' IDENT '(' [ ParamList ] ')' ':' ReturnSpec
+               [ '{' StmtList '}' ] ';' ;
+ParamList    = Param { ';' Param } ;
+Param        = IDENT ':' TypeExpr ;
+ReturnSpec   = TypeExpr [ '!' TypeExpr ] ;
+
+
+(* ================================================================== *)
+(* HTTP route shorthand (stdlib macro expansion)                       *)
+(* ================================================================== *)
+
+RouteDecl    = IDENT '.' HttpMethod '(' STR_LIT ';' FuncDecl ')' ;
+HttpMethod   = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
+
+
+(* ================================================================== *)
+(* Statements                                                          *)
+(* ================================================================== *)
+
+StmtList     = { Stmt } ;
+
+Stmt         = BindStmt
+             | MutBindStmt
+             | AssignStmt
+             | ReturnStmt
+             | IfStmt
+             | LoopStmt
+             | BreakStmt
+             | ArenaStmt
+             | ExprStmt
+             ;
+
+BindStmt     = 'let' IDENT '=' Expr ';' ;
+MutBindStmt  = 'let' IDENT '=' 'mut' '.' Expr ';' ;
+AssignStmt   = IDENT '=' Expr ';' ;
+ReturnStmt   = ( '<' | 'rt' ) Expr ';' ;
+BreakStmt    = 'br' ';' ;
+
+IfStmt       = 'if' '(' Expr ')' '{' StmtList '}' [ 'el' '{' StmtList '}' ] ;
+LoopStmt     = 'lp' '(' LoopInit ';' Expr ';' LoopStep ')' '{' StmtList '}' ;
+LoopInit     = [ 'let' ] IDENT '=' Expr ;
+LoopStep     = IDENT '=' Expr ;
+ArenaStmt    = '{' 'arena' StmtList '}' ;
+
+ExprStmt     = Expr ';' ;
+
+
+(* ================================================================== *)
+(* Expressions — precedence from lowest to highest                     *)
+(* ================================================================== *)
+
+Expr         = MatchExpr ;
+
+MatchExpr    = CompareExpr [ '|' '{' MatchArmList '}' ] ;
+
+CompareExpr  = AddExpr [ ( '<' | '>' | '=' ) AddExpr ] ;
+
+AddExpr      = MulExpr { ( '+' | '-' ) MulExpr } ;
+
+MulExpr      = UnaryExpr { ( '*' | '/' ) UnaryExpr } ;
+
+UnaryExpr    = '-' UnaryExpr
+             | '!' UnaryExpr
+             | CastExpr
+             ;
+
+CastExpr     = PropagateExpr [ 'as' TypeExpr ] ;
+
+PropagateExpr = CallExpr [ '!' TypeExpr ] ;
+
+CallExpr     = PostfixExpr { '(' [ ArgList ] ')' } ;
+
+PostfixExpr  = PrimaryExpr { '.' IDENT } ;
+
+PrimaryExpr  = IDENT
+             | LiteralExpr
+             | '(' Expr ')'
+             | StructLit
+             | ArrayLit
+             | MapLit
+             ;
+
+
+(* ================================================================== *)
+(* Match arms                                                          *)
+(* ================================================================== *)
+
+MatchArmList = MatchArm { ';' MatchArm } ;
+MatchArm     = TYPE_IDENT ':' IDENT Expr ;
+
+
+(* ================================================================== *)
+(* Struct, array, and map literals                                     *)
+(* ================================================================== *)
+
+StructLit    = TypeName '{' FieldInit { ';' FieldInit } '}' ;
+FieldInit    = IDENT ':' Expr ;
+
+ArrayLit     = '[' [ Expr { ';' Expr } ] ']' ;
+
+MapLit       = '[' MapEntry { ';' MapEntry } ']' ;
+MapEntry     = Expr ':' Expr ;
+
+
+(* ================================================================== *)
+(* Argument list                                                       *)
+(* ================================================================== *)
+
+ArgList      = Expr { ';' Expr } ;
+
+
+(* ================================================================== *)
+(* Type expressions                                                    *)
+(* ================================================================== *)
+
+TypeExpr     = PtrTypeExpr
+             | MapTypeExpr
+             | ArrayTypeExpr
+             | FuncTypeExpr
+             | ScalarType
+             | TYPE_IDENT
+             ;
+
+PtrTypeExpr  = '*' TypeExpr ;
+
+MapTypeExpr  = '[' TypeExpr ':' TypeExpr ']' ;
+
+ArrayTypeExpr = '[' TypeExpr ']' ;
+
+FuncTypeExpr = '(' TypeExpr { ';' TypeExpr } ')' ':' TypeExpr ;
+
+ScalarType   = 'u8'  | 'u16' | 'u32' | 'u64'
+             | 'i8'  | 'i16' | 'i32' | 'i64'
+             | 'f32' | 'f64'
+             | 'bool'
+             | 'Str'
+             | 'Byte'
+             ;
+
+
+(* ================================================================== *)
+(* Literals                                                            *)
+(* ================================================================== *)
+
+LiteralExpr  = INT_LIT | FLOAT_LIT | STR_LIT | BOOL_LIT ;
+
+
+(* ================================================================== *)
+(* Token classes (produced by the lexer)                               *)
+(* ================================================================== *)
+(* IDENT       — lowercase-initial identifier   [a-z][a-zA-Z0-9_]*   *)
+(* TYPE_IDENT  — uppercase-initial identifier   [A-Z][a-zA-Z0-9_]*   *)
+(* INT_LIT     — decimal integer literal        [0-9]+                *)
+(* FLOAT_LIT   — decimal float literal          [0-9]+ '.' [0-9]+    *)
+(* STR_LIT     — double-quoted string literal   '"' ... '"'           *)
+(* BOOL_LIT    — boolean literal                'true' | 'false'      *)
+(* EOF         — end of input                                         *)
