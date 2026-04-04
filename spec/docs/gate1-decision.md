@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-03
 **Status:** PASS
-**Deciders:** M. Karwalski
+**Deciders:** Matt Watt
 **Story:** 1.6.4
 
 ---

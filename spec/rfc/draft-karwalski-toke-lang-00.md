@@ -1,5 +1,5 @@
 ```
-Independent Submission                                       M. Karwalski
+Independent Submission                                       Matt Watt
 Request for Comments: draft-karwalski-toke-lang-00          tokelang.dev
 Category: Informational                                       March 2026
 ISSN: pending
@@ -49,7 +49,7 @@ Status of This Memo
 
 Copyright Notice
 
-   Copyright (c) 2026 M. Karwalski.  All rights reserved.
+   Copyright (c) 2026 Matt Watt.  All rights reserved.
 
    This document is made available under the Creative Commons
    Attribution 4.0 International License (CC BY 4.0).
@@ -2229,7 +2229,7 @@ Table of Contents
 
 ## Author's Address
 
-   M. Karwalski
+   Matt Watt
    tokelang.dev
 
    Email: spec@tokelang.dev
