@@ -1,0 +1,736 @@
+/*
+ * dataframe.c — Implementation of the std.dataframe standard library module.
+ *
+ * Provides an in-memory columnar dataframe backed by RFC 4180 CSV ingestion.
+ * Each column is either DF_COL_F64 (all values parseable as double) or
+ * DF_COL_STR (anything else).
+ *
+ * malloc is permitted here: this is a stdlib boundary, not arena-managed
+ * compiler code. Callers own the returned pointers; use df_free().
+ *
+ * No external dependencies beyond libc and csv.h.
+ *
+ * Story: 16.1.3
+ */
+
+#include "dataframe.h"
+#include "csv.h"
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <errno.h>
+
+/* =========================================================================
+ * Internal helpers
+ * ========================================================================= */
+
+/* Duplicate a C string onto the heap.  Returns NULL if s is NULL. */
+static char *df_strdup(const char *s)
+{
+    if (!s) return NULL;
+    size_t n = strlen(s) + 1;
+    char *p = malloc(n);
+    if (p) memcpy(p, s, n);
+    return p;
+}
+
+/* Try to parse s as a finite double.  Returns 1 on success, 0 otherwise.
+ * Empty strings are NOT considered numeric. */
+static int is_f64(const char *s)
+{
+    if (!s || *s == '\0') return 0;
+    char *end;
+    errno = 0;
+    strtod(s, &end);
+    if (errno != 0) return 0;
+    /* entire string must be consumed */
+    while (*end == ' ' || *end == '\t') end++;
+    return *end == '\0';
+}
+
+/* Allocate a new, empty DfCol with the given name and type.
+ * f64_data / str_data are set to NULL; nrows is 0. */
+static DfCol make_col(const char *name, DfColType type)
+{
+    DfCol c;
+    c.name     = df_strdup(name);
+    c.type     = type;
+    c.f64_data = NULL;
+    c.str_data = NULL;
+    c.nrows    = 0;
+    return c;
+}
+
+/* Free the contents of a single DfCol (but not the DfCol struct itself). */
+static void col_free_contents(DfCol *c)
+{
+    if (!c) return;
+    free((char *)c->name);
+    if (c->type == DF_COL_F64) {
+        free(c->f64_data);
+    } else {
+        if (c->str_data) {
+            for (uint64_t i = 0; i < c->nrows; i++)
+                free(c->str_data[i]);
+            free(c->str_data);
+        }
+    }
+}
+
+/* =========================================================================
+ * df_new
+ * ========================================================================= */
+
+TkDataframe *df_new(void)
+{
+    TkDataframe *df = calloc(1, sizeof(TkDataframe));
+    return df;
+}
+
+/* =========================================================================
+ * df_free
+ * ========================================================================= */
+
+void df_free(TkDataframe *df)
+{
+    if (!df) return;
+    for (uint64_t j = 0; j < df->ncols; j++)
+        col_free_contents(&df->cols[j]);
+    free(df->cols);
+    free(df);
+}
+
+/* =========================================================================
+ * df_fromcsv
+ * ========================================================================= */
+
+DfResult df_fromcsv(const char *csv_data, uint64_t csv_len, int has_header)
+{
+    DfResult result = {NULL, 0, NULL};
+
+    if (!csv_data || csv_len == 0) {
+        result.is_err = 1;
+        result.err_msg = "df_fromcsv: empty input";
+        return result;
+    }
+
+    uint64_t nrows_raw = 0;
+    StrArray *rows = csv_parse(csv_data, csv_len, &nrows_raw);
+    if (!rows || nrows_raw == 0) {
+        result.is_err = 1;
+        result.err_msg = "df_fromcsv: csv_parse returned no rows";
+        return result;
+    }
+
+    /* Determine header row and data row range. */
+    uint64_t header_idx  = 0;   /* index of the header row in rows[] */
+    uint64_t data_start  = has_header ? 1 : 0;
+    uint64_t data_nrows  = (nrows_raw > data_start) ? nrows_raw - data_start : 0;
+    uint64_t ncols       = rows[header_idx].len;
+
+    if (ncols == 0) {
+        result.is_err = 1;
+        result.err_msg = "df_fromcsv: no columns found";
+        /* free rows */
+        for (uint64_t r = 0; r < nrows_raw; r++) {
+            for (uint64_t c = 0; c < rows[r].len; c++)
+                free((char *)rows[r].data[c]);
+            free((char **)rows[r].data);
+        }
+        free(rows);
+        return result;
+    }
+
+    /* Build column names. */
+    char **col_names = malloc(ncols * sizeof(char *));
+    if (!col_names) goto oom;
+
+    if (has_header) {
+        for (uint64_t j = 0; j < ncols; j++)
+            col_names[j] = df_strdup(rows[0].data[j]);
+    } else {
+        char buf[32];
+        for (uint64_t j = 0; j < ncols; j++) {
+            snprintf(buf, sizeof(buf), "col%llu", (unsigned long long)j);
+            col_names[j] = df_strdup(buf);
+        }
+    }
+
+    /* Detect column types: if every data value in the column is f64 → F64. */
+    DfColType *types = malloc(ncols * sizeof(DfColType));
+    if (!types) goto oom;
+
+    for (uint64_t j = 0; j < ncols; j++) {
+        types[j] = DF_COL_F64;  /* optimistic */
+        for (uint64_t r = 0; r < data_nrows; r++) {
+            uint64_t row_idx = data_start + r;
+            const char *val = (j < rows[row_idx].len) ? rows[row_idx].data[j] : "";
+            if (!is_f64(val)) {
+                types[j] = DF_COL_STR;
+                break;
+            }
+        }
+    }
+
+    /* Allocate the dataframe and columns. */
+    TkDataframe *df = df_new();
+    if (!df) goto oom;
+    df->ncols = ncols;
+    df->nrows = data_nrows;
+    df->cols  = calloc(ncols, sizeof(DfCol));
+    if (!df->cols) { free(df); goto oom; }
+
+    for (uint64_t j = 0; j < ncols; j++) {
+        df->cols[j] = make_col(col_names[j], types[j]);
+        df->cols[j].nrows = data_nrows;
+
+        if (types[j] == DF_COL_F64) {
+            df->cols[j].f64_data = malloc(data_nrows * sizeof(double));
+            if (!df->cols[j].f64_data) { df_free(df); goto oom; }
+            for (uint64_t r = 0; r < data_nrows; r++) {
+                uint64_t row_idx = data_start + r;
+                const char *val = (j < rows[row_idx].len) ? rows[row_idx].data[j] : "0";
+                df->cols[j].f64_data[r] = strtod(val, NULL);
+            }
+        } else {
+            df->cols[j].str_data = malloc(data_nrows * sizeof(char *));
+            if (!df->cols[j].str_data) { df_free(df); goto oom; }
+            for (uint64_t r = 0; r < data_nrows; r++) {
+                uint64_t row_idx = data_start + r;
+                const char *val = (j < rows[row_idx].len) ? rows[row_idx].data[j] : "";
+                df->cols[j].str_data[r] = df_strdup(val);
+            }
+        }
+    }
+
+    /* Cleanup temporaries. */
+    for (uint64_t j = 0; j < ncols; j++) free(col_names[j]);
+    free(col_names);
+    free(types);
+    for (uint64_t r = 0; r < nrows_raw; r++) {
+        for (uint64_t c = 0; c < rows[r].len; c++)
+            free((char *)rows[r].data[c]);
+        free((char **)rows[r].data);
+    }
+    free(rows);
+
+    result.ok = df;
+    return result;
+
+oom:
+    result.is_err = 1;
+    result.err_msg = "df_fromcsv: out of memory";
+    return result;
+}
+
+/* =========================================================================
+ * df_column
+ * ========================================================================= */
+
+DfCol *df_column(TkDataframe *df, const char *name)
+{
+    if (!df || !name) return NULL;
+    for (uint64_t j = 0; j < df->ncols; j++) {
+        if (df->cols[j].name && strcmp(df->cols[j].name, name) == 0)
+            return &df->cols[j];
+    }
+    return NULL;
+}
+
+/* =========================================================================
+ * df_shape
+ * ========================================================================= */
+
+void df_shape(TkDataframe *df, uint64_t *nrows_out, uint64_t *ncols_out)
+{
+    if (!df) {
+        if (nrows_out) *nrows_out = 0;
+        if (ncols_out) *ncols_out = 0;
+        return;
+    }
+    if (nrows_out) *nrows_out = df->nrows;
+    if (ncols_out) *ncols_out = df->ncols;
+}
+
+/* =========================================================================
+ * Internal: copy_rows_subset — build a new dataframe with a subset of rows.
+ * row_mask[r] != 0  →  row r is included.
+ * ========================================================================= */
+
+static TkDataframe *copy_rows_subset(TkDataframe *src, const int *row_mask,
+                                     uint64_t new_nrows)
+{
+    TkDataframe *dst = df_new();
+    if (!dst) return NULL;
+    dst->ncols = src->ncols;
+    dst->nrows = new_nrows;
+    dst->cols  = calloc(src->ncols, sizeof(DfCol));
+    if (!dst->cols) { free(dst); return NULL; }
+
+    for (uint64_t j = 0; j < src->ncols; j++) {
+        DfCol *sc = &src->cols[j];
+        DfCol *dc = &dst->cols[j];
+        dc->name  = df_strdup(sc->name);
+        dc->type  = sc->type;
+        dc->nrows = new_nrows;
+
+        if (sc->type == DF_COL_F64) {
+            dc->f64_data = malloc(new_nrows * sizeof(double));
+            if (!dc->f64_data) { df_free(dst); return NULL; }
+            uint64_t k = 0;
+            for (uint64_t r = 0; r < src->nrows; r++)
+                if (row_mask[r]) dc->f64_data[k++] = sc->f64_data[r];
+        } else {
+            dc->str_data = malloc(new_nrows * sizeof(char *));
+            if (!dc->str_data) { df_free(dst); return NULL; }
+            uint64_t k = 0;
+            for (uint64_t r = 0; r < src->nrows; r++)
+                if (row_mask[r]) dc->str_data[k++] = df_strdup(sc->str_data[r]);
+        }
+    }
+    return dst;
+}
+
+/* =========================================================================
+ * df_filter
+ * ========================================================================= */
+
+TkDataframe *df_filter(TkDataframe *df, const char *col,
+                       double threshold, int op)
+{
+    if (!df || !col) return NULL;
+    DfCol *c = df_column(df, col);
+    if (!c || c->type != DF_COL_F64) return NULL;
+
+    int *mask = calloc(df->nrows, sizeof(int));
+    if (!mask) return NULL;
+
+    uint64_t new_nrows = 0;
+    for (uint64_t r = 0; r < df->nrows; r++) {
+        double v = c->f64_data[r];
+        int keep = 0;
+        switch (op) {
+            case 0: keep = (v <  threshold); break;
+            case 1: keep = (v <= threshold); break;
+            case 2: keep = (v == threshold); break;
+            case 3: keep = (v >= threshold); break;
+            case 4: keep = (v >  threshold); break;
+            default: break;
+        }
+        mask[r] = keep;
+        if (keep) new_nrows++;
+    }
+
+    TkDataframe *result = copy_rows_subset(df, mask, new_nrows);
+    free(mask);
+    return result;
+}
+
+/* =========================================================================
+ * df_head
+ * ========================================================================= */
+
+TkDataframe *df_head(TkDataframe *df, uint64_t n)
+{
+    if (!df) return NULL;
+    uint64_t take = (n < df->nrows) ? n : df->nrows;
+    int *mask = calloc(df->nrows, sizeof(int));
+    if (!mask) return NULL;
+    for (uint64_t r = 0; r < take; r++) mask[r] = 1;
+    TkDataframe *result = copy_rows_subset(df, mask, take);
+    free(mask);
+    return result;
+}
+
+/* =========================================================================
+ * df_tojson
+ * ========================================================================= */
+
+/* Simple dynamic string buffer for JSON construction. */
+typedef struct {
+    char    *buf;
+    size_t   len;
+    size_t   cap;
+} StrBuf;
+
+static int sb_init(StrBuf *sb)
+{
+    sb->cap = 256;
+    sb->len = 0;
+    sb->buf = malloc(sb->cap);
+    return sb->buf ? 0 : -1;
+}
+
+static int sb_grow(StrBuf *sb, size_t needed)
+{
+    while (sb->len + needed + 1 > sb->cap) {
+        sb->cap *= 2;
+        char *p = realloc(sb->buf, sb->cap);
+        if (!p) return -1;
+        sb->buf = p;
+    }
+    return 0;
+}
+
+static void sb_append(StrBuf *sb, const char *s)
+{
+    size_t n = strlen(s);
+    if (sb_grow(sb, n) == 0) {
+        memcpy(sb->buf + sb->len, s, n);
+        sb->len += n;
+        sb->buf[sb->len] = '\0';
+    }
+}
+
+static void sb_append_f64(StrBuf *sb, double v)
+{
+    char tmp[64];
+    /* Use %g to produce compact output; fall back to full precision. */
+    snprintf(tmp, sizeof(tmp), "%.17g", v);
+    sb_append(sb, tmp);
+}
+
+/* Append a JSON-escaped quoted string. */
+static void sb_append_json_str(StrBuf *sb, const char *s)
+{
+    sb_append(sb, "\"");
+    for (; *s; s++) {
+        char esc[4] = {0, 0, 0, 0};
+        switch (*s) {
+            case '"':  esc[0]='\\'; esc[1]='"';  break;
+            case '\\': esc[0]='\\'; esc[1]='\\'; break;
+            case '\n': esc[0]='\\'; esc[1]='n';  break;
+            case '\r': esc[0]='\\'; esc[1]='r';  break;
+            case '\t': esc[0]='\\'; esc[1]='t';  break;
+            default:   esc[0]=*s; break;
+        }
+        sb_append(sb, esc);
+    }
+    sb_append(sb, "\"");
+}
+
+const char *df_tojson(TkDataframe *df)
+{
+    if (!df) return NULL;
+
+    StrBuf sb;
+    if (sb_init(&sb) != 0) return NULL;
+
+    sb_append(&sb, "[");
+    for (uint64_t r = 0; r < df->nrows; r++) {
+        if (r > 0) sb_append(&sb, ",");
+        sb_append(&sb, "{");
+        for (uint64_t j = 0; j < df->ncols; j++) {
+            if (j > 0) sb_append(&sb, ",");
+            DfCol *c = &df->cols[j];
+            sb_append_json_str(&sb, c->name);
+            sb_append(&sb, ":");
+            if (c->type == DF_COL_F64) {
+                sb_append_f64(&sb, c->f64_data[r]);
+            } else {
+                const char *sv = c->str_data ? c->str_data[r] : "";
+                sb_append_json_str(&sb, sv ? sv : "");
+            }
+        }
+        sb_append(&sb, "}");
+    }
+    sb_append(&sb, "]");
+
+    return sb.buf;  /* caller owns */
+}
+
+/* =========================================================================
+ * df_join  (inner hash join on a string column)
+ * ========================================================================= */
+
+/* A very simple open-addressing hash table mapping string → list of row indices. */
+
+#define HT_INIT_SIZE 64
+
+typedef struct HtNode {
+    char        *key;
+    uint64_t    *rows;       /* row indices in left frame */
+    uint64_t     nrows;
+    uint64_t     cap;
+    struct HtNode *next;     /* chaining */
+} HtNode;
+
+typedef struct {
+    HtNode  **buckets;
+    uint64_t  size;
+} HashTable;
+
+static uint64_t ht_hash(const char *s, uint64_t size)
+{
+    uint64_t h = 14695981039346656037ULL;
+    for (; *s; s++) {
+        h ^= (unsigned char)*s;
+        h *= 1099511628211ULL;
+    }
+    return h % size;
+}
+
+static HashTable *ht_new(uint64_t size)
+{
+    HashTable *ht = calloc(1, sizeof(HashTable));
+    if (!ht) return NULL;
+    ht->size    = size;
+    ht->buckets = calloc(size, sizeof(HtNode *));
+    if (!ht->buckets) { free(ht); return NULL; }
+    return ht;
+}
+
+static void ht_insert(HashTable *ht, const char *key, uint64_t row_idx)
+{
+    uint64_t h = ht_hash(key, ht->size);
+    HtNode *n = ht->buckets[h];
+    while (n) {
+        if (strcmp(n->key, key) == 0) {
+            /* append row index */
+            if (n->nrows == n->cap) {
+                n->cap = n->cap ? n->cap * 2 : 4;
+                n->rows = realloc(n->rows, n->cap * sizeof(uint64_t));
+            }
+            n->rows[n->nrows++] = row_idx;
+            return;
+        }
+        n = n->next;
+    }
+    /* new node */
+    n = calloc(1, sizeof(HtNode));
+    n->key      = df_strdup(key);
+    n->cap      = 4;
+    n->rows     = malloc(4 * sizeof(uint64_t));
+    n->rows[0]  = row_idx;
+    n->nrows    = 1;
+    n->next     = ht->buckets[h];
+    ht->buckets[h] = n;
+}
+
+static HtNode *ht_lookup(HashTable *ht, const char *key)
+{
+    uint64_t h = ht_hash(key, ht->size);
+    HtNode *n = ht->buckets[h];
+    while (n) {
+        if (strcmp(n->key, key) == 0) return n;
+        n = n->next;
+    }
+    return NULL;
+}
+
+static void ht_free(HashTable *ht)
+{
+    if (!ht) return;
+    for (uint64_t i = 0; i < ht->size; i++) {
+        HtNode *n = ht->buckets[i];
+        while (n) {
+            HtNode *nx = n->next;
+            free(n->key);
+            free(n->rows);
+            free(n);
+            n = nx;
+        }
+    }
+    free(ht->buckets);
+    free(ht);
+}
+
+DfResult df_join(TkDataframe *left, TkDataframe *right, const char *on_col)
+{
+    DfResult res = {NULL, 0, NULL};
+
+    if (!left || !right || !on_col) {
+        res.is_err = 1; res.err_msg = "df_join: NULL argument"; return res;
+    }
+
+    DfCol *lcol = df_column(left, on_col);
+    DfCol *rcol = df_column(right, on_col);
+
+    if (!lcol || lcol->type != DF_COL_STR) {
+        res.is_err = 1; res.err_msg = "df_join: key column not found in left or not DF_COL_STR";
+        return res;
+    }
+    if (!rcol || rcol->type != DF_COL_STR) {
+        res.is_err = 1; res.err_msg = "df_join: key column not found in right or not DF_COL_STR";
+        return res;
+    }
+
+    /* Build hash table on left key column. */
+    uint64_t ht_size = left->nrows * 2 + HT_INIT_SIZE;
+    HashTable *ht = ht_new(ht_size);
+    if (!ht) { res.is_err = 1; res.err_msg = "df_join: OOM"; return res; }
+
+    for (uint64_t r = 0; r < left->nrows; r++)
+        ht_insert(ht, lcol->str_data[r], r);
+
+    /* First pass: count output rows. */
+    uint64_t out_nrows = 0;
+    for (uint64_t r = 0; r < right->nrows; r++) {
+        HtNode *nd = ht_lookup(ht, rcol->str_data[r]);
+        if (nd) out_nrows += nd->nrows;
+    }
+
+    /* Build output schema:
+     *   all left cols, then all right cols except the join key. */
+    uint64_t right_extra = 0;
+    for (uint64_t j = 0; j < right->ncols; j++)
+        if (strcmp(right->cols[j].name, on_col) != 0) right_extra++;
+
+    uint64_t out_ncols = left->ncols + right_extra;
+
+    TkDataframe *out = df_new();
+    if (!out) { ht_free(ht); res.is_err = 1; res.err_msg = "df_join: OOM"; return res; }
+    out->ncols = out_ncols;
+    out->nrows = out_nrows;
+    out->cols  = calloc(out_ncols, sizeof(DfCol));
+    if (!out->cols) { df_free(out); ht_free(ht); res.is_err = 1; res.err_msg = "df_join: OOM"; return res; }
+
+    /* Allocate output column storage. */
+    for (uint64_t j = 0; j < left->ncols; j++) {
+        out->cols[j].name  = df_strdup(left->cols[j].name);
+        out->cols[j].type  = left->cols[j].type;
+        out->cols[j].nrows = out_nrows;
+        if (left->cols[j].type == DF_COL_F64)
+            out->cols[j].f64_data = malloc(out_nrows * sizeof(double));
+        else
+            out->cols[j].str_data = malloc(out_nrows * sizeof(char *));
+    }
+    uint64_t oj = left->ncols;
+    for (uint64_t j = 0; j < right->ncols; j++) {
+        if (strcmp(right->cols[j].name, on_col) == 0) continue;
+        out->cols[oj].name  = df_strdup(right->cols[j].name);
+        out->cols[oj].type  = right->cols[j].type;
+        out->cols[oj].nrows = out_nrows;
+        if (right->cols[j].type == DF_COL_F64)
+            out->cols[oj].f64_data = malloc(out_nrows * sizeof(double));
+        else
+            out->cols[oj].str_data = malloc(out_nrows * sizeof(char *));
+        oj++;
+    }
+
+    /* Second pass: fill output rows. */
+    uint64_t out_r = 0;
+    for (uint64_t rr = 0; rr < right->nrows; rr++) {
+        HtNode *nd = ht_lookup(ht, rcol->str_data[rr]);
+        if (!nd) continue;
+        for (uint64_t m = 0; m < nd->nrows; m++) {
+            uint64_t lr = nd->rows[m];
+            /* Copy left columns. */
+            for (uint64_t j = 0; j < left->ncols; j++) {
+                DfCol *src = &left->cols[j];
+                DfCol *dst = &out->cols[j];
+                if (src->type == DF_COL_F64)
+                    dst->f64_data[out_r] = src->f64_data[lr];
+                else
+                    dst->str_data[out_r] = df_strdup(src->str_data[lr]);
+            }
+            /* Copy right non-key columns. */
+            uint64_t oj2 = left->ncols;
+            for (uint64_t j = 0; j < right->ncols; j++) {
+                if (strcmp(right->cols[j].name, on_col) == 0) continue;
+                DfCol *src = &right->cols[j];
+                DfCol *dst = &out->cols[oj2];
+                if (src->type == DF_COL_F64)
+                    dst->f64_data[out_r] = src->f64_data[rr];
+                else
+                    dst->str_data[out_r] = df_strdup(src->str_data[rr]);
+                oj2++;
+            }
+            out_r++;
+        }
+    }
+
+    ht_free(ht);
+    res.ok = out;
+    return res;
+}
+
+/* =========================================================================
+ * df_groupby
+ * ========================================================================= */
+
+DfGroupResult df_groupby(TkDataframe *df, const char *group_col,
+                         const char *agg_col, int agg)
+{
+    DfGroupResult empty = {NULL, 0};
+    if (!df || !group_col || !agg_col) return empty;
+
+    DfCol *gc = df_column(df, group_col);
+    DfCol *ac = df_column(df, agg_col);
+    if (!gc || gc->type != DF_COL_STR) return empty;
+    if (!ac || ac->type != DF_COL_F64) return empty;
+
+    /* Use a hash table to track unique group values and their accumulators. */
+    uint64_t ht_size = df->nrows * 2 + HT_INIT_SIZE;
+
+    /* We'll build a separate lightweight accumulator structure. */
+    typedef struct GroupAcc {
+        char           *key;
+        double          sum;
+        uint64_t        count;
+        struct GroupAcc *next;
+    } GroupAcc;
+
+    uint64_t bkt_size = ht_size;
+    GroupAcc **buckets = calloc(bkt_size, sizeof(GroupAcc *));
+    if (!buckets) return empty;
+    uint64_t n_groups = 0;
+
+    for (uint64_t r = 0; r < df->nrows; r++) {
+        const char *key = gc->str_data[r];
+        double val      = ac->f64_data[r];
+        uint64_t h      = ht_hash(key, bkt_size);
+        GroupAcc *ga    = buckets[h];
+        while (ga) {
+            if (strcmp(ga->key, key) == 0) break;
+            ga = ga->next;
+        }
+        if (!ga) {
+            ga = calloc(1, sizeof(GroupAcc));
+            if (!ga) {
+                /* leak and return empty on OOM */
+                free(buckets);
+                return empty;
+            }
+            ga->key    = df_strdup(key);
+            ga->next   = buckets[h];
+            buckets[h] = ga;
+            n_groups++;
+        }
+        ga->sum   += val;
+        ga->count += 1;
+    }
+
+    /* Collect results. */
+    DfGroupRow *rows = malloc(n_groups * sizeof(DfGroupRow));
+    if (!rows) {
+        free(buckets);
+        return empty;
+    }
+
+    uint64_t idx = 0;
+    for (uint64_t i = 0; i < bkt_size && idx < n_groups; i++) {
+        GroupAcc *ga = buckets[i];
+        while (ga) {
+            rows[idx].group_val = ga->key;  /* transfer ownership */
+            switch (agg) {
+                case 0: rows[idx].agg_result = (double)ga->count; break;
+                case 1: rows[idx].agg_result = ga->sum;           break;
+                case 2: rows[idx].agg_result = ga->count > 0
+                            ? ga->sum / (double)ga->count : 0.0;  break;
+                default: rows[idx].agg_result = 0.0; break;
+            }
+            idx++;
+            GroupAcc *nx = ga->next;
+            free(ga);   /* key was transferred; do not free here */
+            ga = nx;
+        }
+    }
+    free(buckets);
+
+    DfGroupResult gr;
+    gr.rows  = rows;
+    gr.nrows = n_groups;
+    return gr;
+}
