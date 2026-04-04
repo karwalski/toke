@@ -1,0 +1,1 @@
+(* std.auth — stub, C backend; depends on std.encoding (b64urlencode) and std.crypto (hmacsha256/hmacsha512) *)

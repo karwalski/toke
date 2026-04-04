@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "module": "std.encoding",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "EncodingErr",
+      "fields": [
+        {"name": "msg", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "encoding.b64encode",    "params": ["[byte]"],       "return": "str"},
+    {"kind": "func", "name": "encoding.b64urlencode", "params": ["[byte]"],       "return": "str"},
+    {"kind": "func", "name": "encoding.b64decode",    "params": ["str"],          "return": "[byte]!EncodingErr"},
+    {"kind": "func", "name": "encoding.b64urldecode", "params": ["str"],          "return": "[byte]!EncodingErr"},
+    {"kind": "func", "name": "encoding.hexencode",    "params": ["[byte]"],       "return": "str"},
+    {"kind": "func", "name": "encoding.hexdecode",    "params": ["str"],          "return": "[byte]!EncodingErr"},
+    {"kind": "func", "name": "encoding.urlencode",    "params": ["str"],          "return": "str"},
+    {"kind": "func", "name": "encoding.urldecode",    "params": ["str"],          "return": "str!EncodingErr"}
+  ]
+}

@@ -1,0 +1,63 @@
+m=auth_jwt;
+i=auth:std.auth;
+i=enc:std.encoding;
+i=time:std.time;
+
+(* sign a JWT with HS256 and verify the round-trip *)
+f=test_jwt_sign_verify():bool!$auth.$autherr{
+  let secret=@(115;101;99;114;101;116);
+  let now=time.now();
+  let claims=$auth.$jwtclaims{
+    sub:"user-42";
+    iss:"myapp";
+    exp:now+3600;
+    iat:now;
+    extra:@()
+  };
+  let token=auth.jwtsign(claims;secret;$auth.$jwtalg.Hs256)!$auth.$autherr;
+  let verified=auth.jwtverify(token;secret)!$auth.$autherr;
+  let expired=auth.jwtexpired(verified);
+  <verified.sub=="user-42"&&expired==false
+};
+
+(* expired token is detected correctly *)
+f=test_jwt_expired():bool!$auth.$autherr{
+  let secret=@(115;101;99;114;101;116);
+  let past=time.now()-7200;
+  let claims=$auth.$jwtclaims{
+    sub:"user-1";
+    iss:"myapp";
+    exp:past;
+    iat:past;
+    extra:@()
+  };
+  let token=auth.jwtsign(claims;secret;$auth.$jwtalg.Hs256)!$auth.$autherr;
+  let verified=auth.jwtverify(token;secret)!$auth.$autherr;
+  <auth.jwtexpired(verified)==true
+};
+
+(* bearer token extraction from Authorization header *)
+f=test_bearer_extract():bool!$auth.$autherr{
+  let header="Bearer eyJhbGciOiJIUzI1NiJ9.test.sig";
+  let token=auth.bearerextract(header)!$auth.$autherr;
+  <token=="eyJhbGciOiJIUzI1NiJ9.test.sig"
+};
+
+(* API key generate and validate *)
+f=test_apikey():bool!$auth.$autherr{
+  let key=auth.apikeygenerate("sk");
+  let store=$auth.$keystore{handle:0};
+  let valid=auth.apikeyvalidate(key;store)!$auth.$autherr;
+  <valid==true
+};
+
+f=main():i64{
+  let r0=test_jwt_sign_verify()!$auth.$autherr;
+  let r1=test_jwt_expired()!$auth.$autherr;
+  let r2=test_bearer_extract()!$auth.$autherr;
+  if(r0&&r1&&r2){
+    <0
+  }el{
+    <1
+  }
+};

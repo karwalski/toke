@@ -1,0 +1,1 @@
+(* std.encoding — stub, C backend via libc base64/hex/percent-encoding *)
