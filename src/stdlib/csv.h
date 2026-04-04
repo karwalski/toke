@@ -1,0 +1,72 @@
+#ifndef TK_STDLIB_CSV_H
+#define TK_STDLIB_CSV_H
+
+/*
+ * csv.h — C interface for the std.csv standard library module.
+ *
+ * Type mappings:
+ *   [Str]    = StrArray  (defined in str.h)
+ *   [Byte]   = ByteArray (defined in str.h)
+ *   Str      = const char *  (null-terminated UTF-8)
+ *
+ * Implementation is RFC 4180 compliant and self-contained (no external
+ * dependencies beyond libc).
+ *
+ * Story: 16.1.1
+ */
+
+#include "str.h"
+
+typedef struct TkCsvReader TkCsvReader;
+typedef struct TkCsvWriter TkCsvWriter;
+
+/* Reader */
+
+/* csv_reader_new: create a reader that parses from the given in-memory buffer.
+ * data is not copied; caller must keep it alive for the lifetime of the reader.
+ * Returns a heap-allocated reader; caller must call csv_reader_free(). */
+TkCsvReader *csv_reader_new(const char *data, uint64_t len);
+void         csv_reader_free(TkCsvReader *r);
+
+/* csv_reader_has_next: returns 1 if there is at least one more row to read,
+ * 0 at EOF. */
+int          csv_reader_has_next(TkCsvReader *r);
+
+/* csv_reader_next: reads and returns the next row as a StrArray.
+ * Each field is a heap-allocated, NUL-terminated string; caller owns them.
+ * Returns an empty StrArray (len==0, data==NULL) at EOF. */
+StrArray     csv_reader_next(TkCsvReader *r);
+
+/* csv_reader_header: returns the first row.
+ * If has_next has been called zero times this reads the first row and caches
+ * it so that subsequent next() calls begin from the second row.
+ * If the reader has already advanced past row 0, returns the cached copy. */
+StrArray     csv_reader_header(TkCsvReader *r);
+
+/* Writer */
+
+/* csv_writer_new: create an empty writer.
+ * Caller must call csv_writer_free() when done. */
+TkCsvWriter *csv_writer_new(void);
+void         csv_writer_free(TkCsvWriter *w);
+
+/* csv_writer_writerow: append one row to the writer's internal buffer.
+ * Fields containing ',', '"', '\n', or '\r' are quoted; '"' inside a quoted
+ * field is doubled (""). */
+void         csv_writer_writerow(TkCsvWriter *w, StrArray row);
+
+/* csv_writer_flush: return the accumulated CSV as a heap-allocated
+ * NUL-terminated string. Caller owns the returned pointer.
+ * The writer's buffer is NOT cleared; successive flush() calls return the
+ * full accumulated text. */
+const char  *csv_writer_flush(TkCsvWriter *w);
+
+/* Convenience */
+
+/* csv_parse: parse an entire CSV buffer and return all rows as a
+ * heap-allocated array of StrArray.  *nrows_out is set to the number of rows.
+ * Each field string and the array itself are heap-allocated; caller owns them.
+ * Returns NULL (and sets *nrows_out=0) on empty input. */
+StrArray    *csv_parse(const char *data, uint64_t len, uint64_t *nrows_out);
+
+#endif /* TK_STDLIB_CSV_H */
