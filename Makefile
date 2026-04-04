@@ -3,7 +3,8 @@ CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -Wno-misleadin
           -DTKC_STDLIB_DIR='"$(CURDIR)/src/stdlib"'
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/config.c src/fmt.c src/progress.c \
-          src/sourcemap.c src/ast_json.c src/migrate.c src/companion.c src/main.c src/stdlib/str.c
+          src/sourcemap.c src/ast_json.c src/migrate.c src/companion.c src/compress.c \
+          src/main.c src/stdlib/str.c
 OBJS    = $(SRCS:.c=.o)
 BIN     = tkc
 
@@ -23,7 +24,7 @@ REPRO_FLAGS = -frandom-seed=tkc \
 
 export SOURCE_DATE_EPOCH ?= 0
 
-.PHONY: all clean lint conform conform-check build-all ci test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage bench repro-check
+.PHONY: all clean lint conform conform-check build-all ci test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage bench repro-check test-compress test-compress-stream test-compress-schema
 
 all: $(BIN)
 
@@ -58,6 +59,15 @@ test-companion-diff: $(BIN)
 
 test-migrate: $(BIN)
 	@bash test/migrate/run_migrate.sh
+
+test-compress: $(BIN)
+	@bash test/compress/compress_placeholder.sh
+
+test-compress-stream: $(BIN)
+	@bash test/compress/compress_stream.sh
+
+test-compress-schema: $(BIN)
+	@bash test/compress/compress_schema.sh
 
 verify-ir: $(BIN)
 	@bash test/verify_ir.sh

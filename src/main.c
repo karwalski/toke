@@ -34,6 +34,7 @@
 #include "ast_json.h" /* ast_dump_json() */
 #include "sourcemap.h" /* SourceMap, sourcemap_*() */
 #include "companion.h" /* emit_companion() */
+#include "compress.h"  /* compress_text(), decompress_text(), compress_stream_*() */
 #include "tkc_limits.h"
 #include "config.h"
 #include "progress.h"
@@ -80,6 +81,9 @@ static const char HELP[] =
     "  --companion-out <p> Write companion file to <p> instead of stdout\n"
     "  --verify-companion <f> Verify companion file hash against source\n"
     "  --companion-diff <f>   Compare source against companion, report divergences\n"
+    "  --compress          Compress text from stdin to reduced-token form (stdout)\n"
+    "  --decompress        Decompress text from stdin back to original form (stdout)\n"
+    "  --compress-stream   Stream-compress stdin line-by-line, emitting chunks\n"
     "  --migrate           Migrate legacy .tk file to default syntax (stdout)\n"
     "  --legacy            Legacy mode (80-char syntax, uppercase keywords)\n"
     "  --profile1          Deprecated alias for --legacy\n"
@@ -204,6 +208,7 @@ int main(int argc, char **argv)
     int pretty = 0, expand = 0, sourcemap = 0;
     int dump_ast = 0;
     int migrate = 0;
+    int do_compress = 0, do_decompress = 0, do_compress_stream = 0;
     int companion = 0;
     const char *companion_out = NULL;
     const char *verify_companion_path = NULL;
@@ -247,7 +252,10 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--sourcemap"))      sourcemap = 1;
         else if (!strcmp(argv[i], "--check"))          check_only = 1;
         else if (!strcmp(argv[i], "--dump-ast"))       dump_ast = 1;
-        else if (!strcmp(argv[i], "--migrate"))      migrate = 1;
+        else if (!strcmp(argv[i], "--migrate"))         migrate = 1;
+        else if (!strcmp(argv[i], "--compress"))        do_compress = 1;
+        else if (!strcmp(argv[i], "--decompress"))      do_decompress = 1;
+        else if (!strcmp(argv[i], "--compress-stream")) do_compress_stream = 1;
         else if (!strcmp(argv[i], "--companion"))    companion = 1;
         else if (!strcmp(argv[i], "--companion-out")) {
             companion = 1;
@@ -312,6 +320,73 @@ int main(int argc, char **argv)
         printf("  arena-block  = %d\n", limits.arena_block_size);
         return 0;
     }
+    /* --compress / --decompress / --compress-stream: standalone stdin modes */
+    if ((do_compress + do_decompress + do_compress_stream) > 1) {
+        fputs("tkc: --compress, --decompress, and --compress-stream are mutually exclusive\n", stderr);
+        return EUSAGE;
+    }
+    if (do_compress || do_decompress || do_compress_stream) {
+        /* Read all of stdin into a malloc'd buffer */
+        char *ibuf = NULL;
+        size_t ilen = 0, icap = 0;
+        int ch;
+        while ((ch = fgetc(stdin)) != EOF) {
+            if (ilen >= icap) {
+                size_t newcap = icap == 0 ? 4096 : icap * 2;
+                char *tmp = realloc(ibuf, newcap);
+                if (!tmp) { free(ibuf); fputs("tkc: out of memory\n", stderr); return EINTERNAL; }
+                ibuf = tmp; icap = newcap;
+            }
+            ibuf[ilen++] = (char)ch;
+        }
+
+        if (do_compress_stream) {
+            /* Stream-compress: feed line-by-line to streaming API */
+            CompressStreamCtx sctx;
+            compress_stream_init(&sctx, stdout);
+            size_t si = 0;
+            while (si < ilen) {
+                size_t line_start = si;
+                while (si < ilen && ibuf[si] != '\n') si++;
+                if (si < ilen) si++; /* include newline */
+                compress_stream_feed(&sctx, ibuf + line_start,
+                                     (int)(si - line_start));
+            }
+            compress_stream_flush(&sctx);
+            free(ibuf);
+            return 0;
+        }
+
+        /* Batch compress or decompress */
+        size_t out_size = ilen * 4 + 128;
+        char *obuf = malloc(out_size);
+        if (!obuf) { free(ibuf); fputs("tkc: out of memory\n", stderr); return EINTERNAL; }
+
+        int written;
+        if (do_compress) {
+            /* Auto-detect input type for schema-aware compression */
+            CompressInputType ctype = detect_input_type(ibuf ? ibuf : "", ilen);
+            if (ctype == COMPRESS_JSON)
+                written = compress_json(ibuf ? ibuf : "", ilen, obuf);
+            else if (ctype == COMPRESS_CSV)
+                written = compress_csv(ibuf ? ibuf : "", ilen, obuf);
+            else
+                written = compress_text(ibuf ? ibuf : "", ilen, obuf);
+        } else {
+            written = decompress_text(ibuf ? ibuf : "", ilen, obuf);
+        }
+
+        free(ibuf);
+        if (written < 0) {
+            free(obuf);
+            fputs("tkc: compression error\n", stderr);
+            return EINTERNAL;
+        }
+        fwrite(obuf, 1, (size_t)written, stdout);
+        free(obuf);
+        return 0;
+    }
+
     /* --verify-companion: standalone mode, no source file needed */
     if (verify_companion_path) return verify_companion(verify_companion_path);
     if (!src)            { puts(HELP); return EUSAGE; }
@@ -327,7 +402,7 @@ int main(int argc, char **argv)
     if (migrate) profile = PROFILE_LEGACY;
 
     /* Progress bar: skip for fast-path modes */
-    int fast_path = fmt_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp;
+    int fast_path = fmt_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp || do_compress || do_decompress || do_compress_stream;
     progress_init(fast_path);
 
     /* Read source file — only malloc in the pipeline */
