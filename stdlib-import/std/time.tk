@@ -1,0 +1,1 @@
+(* std.time — stub, C backend via clock_gettime / strftime *)
