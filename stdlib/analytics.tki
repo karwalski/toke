@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "module": "std.analytics",
+  "imports": [
+    {"alias": "df",   "module": "std.dataframe"},
+    {"alias": "math", "module": "std.math"}
+  ],
+  "exports": [
+    {
+      "kind": "type",
+      "name": "statsrow",
+      "fields": [
+        {"name": "col",    "type": "str"},
+        {"name": "count",  "type": "u64"},
+        {"name": "mean",   "type": "f64"},
+        {"name": "stddev", "type": "f64"},
+        {"name": "min",    "type": "f64"},
+        {"name": "p25",    "type": "f64"},
+        {"name": "p50",    "type": "f64"},
+        {"name": "p75",    "type": "f64"},
+        {"name": "max",    "type": "f64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "groupstat",
+      "fields": [
+        {"name": "group", "type": "str"},
+        {"name": "count", "type": "u64"},
+        {"name": "sum",   "type": "f64"},
+        {"name": "mean",  "type": "f64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "tspoint",
+      "fields": [
+        {"name": "ts",           "type": "u64"},
+        {"name": "value",        "type": "f64"},
+        {"name": "rolling_mean", "type": "f64"}
+      ]
+    },
+    {"kind": "func", "name": "analytics.describe",    "params": ["dataframe"],                          "return": "[statsrow]!dferr"},
+    {"kind": "func", "name": "analytics.groupstats",  "params": ["dataframe", "str", "str"],            "return": "[groupstat]!dferr"},
+    {"kind": "func", "name": "analytics.timeseries",  "params": ["dataframe", "str", "str", "u64"],     "return": "[tspoint]!dferr"},
+    {"kind": "func", "name": "analytics.anomalies",   "params": ["dataframe", "str", "f64"],            "return": "[u64]!dferr"},
+    {"kind": "func", "name": "analytics.pivot",       "params": ["dataframe", "str", "str", "str"],     "return": "dataframe!dferr"},
+    {"kind": "func", "name": "analytics.corr",        "params": ["dataframe", "str", "str"],            "return": "f64!dferr"}
+  ]
+}

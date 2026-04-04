@@ -1,0 +1,68 @@
+m=math_stats_test;
+i=math:std.math;
+i=test:std.test;
+
+(* Basic aggregate functions on a small dataset. *)
+f=aggregates():bool{
+  let xs=@(1.0;2.0;3.0;4.0;5.0);
+  (test.eq(math.sum(xs);15.0));
+  (test.eq(math.mean(xs);3.0));
+  (test.eq(math.min(xs);1.0));
+  (test.eq(math.max(xs);5.0));
+  <true
+};
+
+(* Median of an odd-length slice. *)
+f=median_odd():bool{
+  let xs=@(7.0;1.0;5.0;3.0;9.0);
+  (test.eq(math.median(xs);5.0));
+  <true
+};
+
+(* Standard deviation: known result for [2,4,4,4,5,5,7,9]. *)
+f=stddev_known():bool{
+  let xs=@(2.0;4.0;4.0;4.0;5.0;5.0;7.0;9.0);
+  let sd=math.stddev(xs);
+  (* population stddev = 2.0 *)
+  let diff=math.abs(sd-2.0);
+  <(diff<0.01)
+};
+
+(* Percentile: p=0.0 returns min, p=1.0 returns max. *)
+f=percentile_bounds():bool{
+  let xs=@(10.0;20.0;30.0;40.0;50.0);
+  (test.eq(math.percentile(xs;0.0);10.0));
+  (test.eq(math.percentile(xs;1.0);50.0));
+  <true
+};
+
+(* Linear regression: y = 2x + 1 should recover slope=2, intercept=1. *)
+f=linreg_exact():bool{
+  let xs=@(0.0;1.0;2.0;3.0;4.0);
+  let ys=@(1.0;3.0;5.0;7.0;9.0);
+  let res=math.linreg(xs;ys);
+  let slope_ok=math.abs(res.slope-2.0)<0.001;
+  let intercept_ok=math.abs(res.intercept-1.0)<0.001;
+  let r2_ok=res.r2>0.999;
+  <(slope_ok&intercept_ok&r2_ok)
+};
+
+(* Scalar helpers. *)
+f=scalar_ops():bool{
+  (test.eq(math.abs(-3.5);3.5));
+  (test.eq(math.sqrt(9.0);3.0));
+  (test.eq(math.floor(3.7);3));
+  (test.eq(math.ceil(3.1);4));
+  (test.eq(math.pow(2.0;10.0);1024.0));
+  <true
+};
+
+f=main():i64{
+  (test.ok(aggregates()));
+  (test.ok(median_odd()));
+  (test.ok(stddev_known()));
+  (test.ok(percentile_bounds()));
+  (test.ok(linreg_exact()));
+  (test.ok(scalar_ops()));
+  <0
+};

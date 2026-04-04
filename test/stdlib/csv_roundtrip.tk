@@ -1,0 +1,80 @@
+m=csv_roundtrip_test;
+i=csv:std.csv;
+i=test:std.test;
+i=str:std.str;
+
+(* Round-trip: write rows then parse them back and verify field values. *)
+f=roundtrip():bool{
+  let w=csv.writer(44);
+  (csv.writerow(w;@("name";"score";"grade")));
+  (csv.writerow(w;@("alice";"95";"A")));
+  (csv.writerow(w;@("bob";"82";"B")));
+  let bytes=csv.flush(w);
+  let result=csv.parse(bytes);
+  (match result{
+    ok(rows){
+      (test.eq(rows.len;3));
+      let hdr=rows.get(0);
+      (test.eq(hdr.fields.get(0);"name"));
+      (test.eq(hdr.fields.get(1);"score"));
+      let r1=rows.get(1);
+      (test.eq(r1.fields.get(0);"alice"));
+      (test.eq(r1.fields.get(2);"A"));
+      <true
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+(* Streaming reader: header then rows one at a time. *)
+f=streaming():bool{
+  let data=str.bytes("id,val\n1,10\n2,20\n3,30\n");
+  let r=csv.reader(data;44);
+  let hdr_result=csv.header(r);
+  (match hdr_result{
+    ok(h){
+      (test.eq(h.len;2));
+      (test.eq(h.get(0);"id"));
+    };
+    err(e){
+      (test.fail(e.msg));
+    };
+  });
+  let row1=csv.next(r);
+  (match row1{
+    ok(row){
+      (test.eq(row.fields.get(1);"10"));
+    };
+    err(e){
+      (test.fail(e.msg));
+    };
+  });
+  <true
+};
+
+(* Tab-separated values: sep=9 (ASCII tab). *)
+f=tsv_parse():bool{
+  let data=str.bytes("a\tb\tc\n1\t2\t3\n");
+  let r=csv.reader(data;9);
+  let hdr_result=csv.header(r);
+  (match hdr_result{
+    ok(h){
+      (test.eq(h.len;3));
+      (test.eq(h.get(2);"c"));
+    };
+    err(e){
+      (test.fail(e.msg));
+    };
+  });
+  <true
+};
+
+f=main():i64{
+  (test.ok(roundtrip()));
+  (test.ok(streaming()));
+  (test.ok(tsv_parse()));
+  <0
+};

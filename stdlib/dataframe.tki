@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "module": "std.dataframe",
+  "imports": [
+    {"alias": "csv", "module": "std.csv"}
+  ],
+  "exports": [
+    {
+      "kind": "type",
+      "name": "dataframe",
+      "opaque": true,
+      "fields": [
+        {"name": "ncols",   "type": "u64"},
+        {"name": "nrows",   "type": "u64"},
+        {"name": "arena",   "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "series",
+      "fields": [
+        {"name": "name",  "type": "str"},
+        {"name": "dtype", "type": "str"},
+        {"name": "len",   "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "dfshape",
+      "fields": [
+        {"name": "rows", "type": "u64"},
+        {"name": "cols", "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "dferr",
+      "fields": [
+        {"name": "msg", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "df.fromcsv",    "params": ["[byte]"],                     "return": "dataframe!dferr"},
+    {"kind": "func", "name": "df.fromrows",   "params": ["[str]", "[csvrow]"],           "return": "dataframe"},
+    {"kind": "func", "name": "df.column",     "params": ["dataframe", "str"],            "return": "[f64]!dferr"},
+    {"kind": "func", "name": "df.columnstr",  "params": ["dataframe", "str"],            "return": "[str]!dferr"},
+    {"kind": "func", "name": "df.filter",     "params": ["dataframe", "str", "str", "str"], "return": "dataframe!dferr"},
+    {"kind": "func", "name": "df.groupby",    "params": ["dataframe", "str"],            "return": "[dataframe]!dferr"},
+    {"kind": "func", "name": "df.join",       "params": ["dataframe", "dataframe", "str"], "return": "dataframe!dferr"},
+    {"kind": "func", "name": "df.head",       "params": ["dataframe", "u64"],            "return": "dataframe"},
+    {"kind": "func", "name": "df.shape",      "params": ["dataframe"],                   "return": "dfshape"},
+    {"kind": "func", "name": "df.tojson",     "params": ["dataframe"],                   "return": "[byte]!dferr"},
+    {"kind": "func", "name": "df.tocsv",      "params": ["dataframe"],                   "return": "[byte]"},
+    {"kind": "func", "name": "df.schema",     "params": ["dataframe"],                   "return": "[series]"}
+  ]
+}

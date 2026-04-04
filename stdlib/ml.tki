@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0",
+  "module": "std.ml",
+  "imports": [
+    {"alias": "df",   "module": "std.dataframe"},
+    {"alias": "math", "module": "std.math"}
+  ],
+  "exports": [
+    {
+      "kind": "type",
+      "name": "row",
+      "fields": [
+        {"name": "vals", "type": "[f64]"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "linearmodel",
+      "fields": [
+        {"name": "coef",      "type": "[f64]"},
+        {"name": "intercept", "type": "f64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "centroid",
+      "fields": [
+        {"name": "id",     "type": "u64"},
+        {"name": "center", "type": "[f64]"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "kmeansmodel",
+      "fields": [
+        {"name": "centroids", "type": "[centroid]"},
+        {"name": "k",         "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "dtreemodel",
+      "opaque": true,
+      "fields": [
+        {"name": "nodes",    "type": "u64"},
+        {"name": "maxdepth", "type": "u64"},
+        {"name": "arena",    "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "mlerr",
+      "fields": [
+        {"name": "msg", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "ml.linregfit",     "params": ["[row]", "[f64]"],          "return": "linearmodel!mlerr"},
+    {"kind": "func", "name": "ml.linregpredict", "params": ["linearmodel", "[f64]"],    "return": "f64"},
+    {"kind": "func", "name": "ml.kmeanstrain",   "params": ["[row]", "u64", "u64"],     "return": "kmeansmodel!mlerr"},
+    {"kind": "func", "name": "ml.kmeansassign",  "params": ["kmeansmodel", "[f64]"],    "return": "u64"},
+    {"kind": "func", "name": "ml.dtreefit",      "params": ["[row]", "[str]", "u64"],   "return": "dtreemodel!mlerr"},
+    {"kind": "func", "name": "ml.dtreepredict",  "params": ["dtreemodel", "[f64]"],     "return": "str"},
+    {"kind": "func", "name": "ml.knnpredict",    "params": ["[row]", "[str]", "[f64]", "u64"], "return": "str"}
+  ]
+}

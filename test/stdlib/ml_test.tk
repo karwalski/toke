@@ -1,0 +1,97 @@
+m=ml_test;
+i=ml:std.ml;
+i=test:std.test;
+
+(* Linear regression: fit y = 2x, predict at x=5 => 10. *)
+f=linreg_fit_predict():bool{
+  let x_train=@(
+    $row{vals:@(0.0)};
+    $row{vals:@(1.0)};
+    $row{vals:@(2.0)};
+    $row{vals:@(3.0)};
+    $row{vals:@(4.0)}
+  );
+  let y_train=@(0.0;2.0;4.0;6.0;8.0);
+  let fit_result=ml.linregfit(x_train;y_train);
+  (match fit_result{
+    ok(model){
+      let pred=ml.linregpredict(model;@(5.0));
+      let diff=pred-10.0;
+      let abs_diff=if diff<0.0{<(-diff);}el{<diff;};
+      <(abs_diff<0.01)
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+(* k-means: two well-separated clusters should assign correctly. *)
+f=kmeans_two_clusters():bool{
+  let data=@(
+    $row{vals:@(0.0;0.0)};
+    $row{vals:@(0.1;0.1)};
+    $row{vals:@(0.2;0.0)};
+    $row{vals:@(10.0;10.0)};
+    $row{vals:@(10.1;9.9)};
+    $row{vals:@(9.9;10.1)}
+  );
+  let fit_result=ml.kmeanstrain(data;2;100);
+  (match fit_result{
+    ok(model){
+      (test.eq(model.k;2));
+      let c0=ml.kmeansassign(model;@(0.0;0.0));
+      let c1=ml.kmeansassign(model;@(10.0;10.0));
+      (* The two query points must land in different clusters. *)
+      <(!(c0=c1))
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+(* k-NN: 1-NN on linearly separable classes. *)
+f=knn_classify():bool{
+  let train_x=@(
+    $row{vals:@(1.0)};
+    $row{vals:@(2.0)};
+    $row{vals:@(8.0)};
+    $row{vals:@(9.0)}
+  );
+  let train_y=@("low";"low";"high";"high");
+  let label=ml.knnpredict(train_x;train_y;@(1.5);1);
+  <(label="low")
+};
+
+(* Decision tree: fit binary labels and predict. *)
+f=dtree_fit_predict():bool{
+  let x_train=@(
+    $row{vals:@(0.0;0.0)};
+    $row{vals:@(0.0;1.0)};
+    $row{vals:@(1.0;0.0)};
+    $row{vals:@(1.0;1.0)}
+  );
+  let y_train=@("neg";"neg";"neg";"pos");
+  let fit_result=ml.dtreefit(x_train;y_train;5);
+  (match fit_result{
+    ok(model){
+      let label=ml.dtreepredict(model;@(1.0;1.0));
+      <(label="pos")
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+f=main():i64{
+  (test.ok(linreg_fit_predict()));
+  (test.ok(kmeans_two_clusters()));
+  (test.ok(knn_classify()));
+  (test.ok(dtree_fit_predict()));
+  <0
+};

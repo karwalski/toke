@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "module": "std.math",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "linregresult",
+      "fields": [
+        {"name": "slope",     "type": "f64"},
+        {"name": "intercept", "type": "f64"},
+        {"name": "r2",        "type": "f64"}
+      ]
+    },
+    {"kind": "func", "name": "math.sum",        "params": ["[f64]"],          "return": "f64"},
+    {"kind": "func", "name": "math.mean",       "params": ["[f64]"],          "return": "f64"},
+    {"kind": "func", "name": "math.median",     "params": ["[f64]"],          "return": "f64"},
+    {"kind": "func", "name": "math.stddev",     "params": ["[f64]"],          "return": "f64"},
+    {"kind": "func", "name": "math.variance",   "params": ["[f64]"],          "return": "f64"},
+    {"kind": "func", "name": "math.percentile", "params": ["[f64]", "f64"],   "return": "f64"},
+    {"kind": "func", "name": "math.linreg",     "params": ["[f64]", "[f64]"], "return": "linregresult"},
+    {"kind": "func", "name": "math.min",        "params": ["[f64]"],          "return": "f64"},
+    {"kind": "func", "name": "math.max",        "params": ["[f64]"],          "return": "f64"},
+    {"kind": "func", "name": "math.abs",        "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.sqrt",       "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.floor",      "params": ["f64"],            "return": "i64"},
+    {"kind": "func", "name": "math.ceil",       "params": ["f64"],            "return": "i64"},
+    {"kind": "func", "name": "math.pow",        "params": ["f64", "f64"],     "return": "f64"}
+  ]
+}

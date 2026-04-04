@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "module": "std.csv",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "csvrow",
+      "fields": [
+        {"name": "fields", "type": "[str]"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "csvreader",
+      "opaque": true,
+      "fields": [
+        {"name": "data",  "type": "[byte]"},
+        {"name": "pos",   "type": "u64"},
+        {"name": "sep",   "type": "u8"},
+        {"name": "line",  "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "csvwriter",
+      "opaque": true,
+      "fields": [
+        {"name": "buf",  "type": "[byte]"},
+        {"name": "sep",  "type": "u8"},
+        {"name": "pos",  "type": "u64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "csverr",
+      "fields": [
+        {"name": "msg",  "type": "str"},
+        {"name": "line", "type": "u64"}
+      ]
+    },
+    {"kind": "func", "name": "csv.reader",   "params": ["[byte]", "u8"],           "return": "csvreader"},
+    {"kind": "func", "name": "csv.next",     "params": ["csvreader"],              "return": "csvrow!csverr"},
+    {"kind": "func", "name": "csv.header",   "params": ["csvreader"],              "return": "[str]!csverr"},
+    {"kind": "func", "name": "csv.writer",   "params": ["u8"],                    "return": "csvwriter"},
+    {"kind": "func", "name": "csv.writerow", "params": ["csvwriter", "[str]"],     "return": "void"},
+    {"kind": "func", "name": "csv.flush",    "params": ["csvwriter"],              "return": "[byte]"},
+    {"kind": "func", "name": "csv.parse",    "params": ["[byte]"],                 "return": "[csvrow]!csverr"}
+  ]
+}

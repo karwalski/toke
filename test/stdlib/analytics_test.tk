@@ -1,0 +1,124 @@
+m=analytics_test;
+i=df:std.dataframe;
+i=analytics:std.analytics;
+i=test:std.test;
+i=str:std.str;
+
+(* Helper: build a simple numeric dataframe inline. *)
+f=make_frame():$dataframe{
+  let data=str.bytes("group,value,ts\nA,10,1\nA,20,2\nB,30,3\nB,40,4\nA,15,5\n");
+  let result=df.fromcsv(data);
+  (match result{
+    ok(frame){<frame};
+    err(e){
+      (test.fail(e.msg));
+      <df.head(df.fromcsv(str.bytes("g,v,t\n0,0,0\n")).ok;0)
+    };
+  })
+};
+
+(* describe: per-column stats, one statsrow per numeric column. *)
+f=describe_test():bool{
+  let frame=make_frame();
+  let result=analytics.describe(frame);
+  (match result{
+    ok(rows){
+      (* at least one statsrow returned *)
+      <(rows.len>0)
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+(* groupstats: mean of 'value' per 'group'. *)
+f=groupstats_test():bool{
+  let frame=make_frame();
+  let result=analytics.groupstats(frame;"group";"value");
+  (match result{
+    ok(stats){
+      (* Two groups: A and B *)
+      (test.eq(stats.len;2));
+      <true
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+(* timeseries: rolling mean window=2 over 'value' indexed by 'ts'. *)
+f=timeseries_test():bool{
+  let frame=make_frame();
+  let result=analytics.timeseries(frame;"ts";"value";2);
+  (match result{
+    ok(pts){
+      (test.eq(pts.len;5));
+      <true
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+(* anomalies: z-score threshold 2.0 — no anomalies in uniform data. *)
+f=anomalies_test():bool{
+  let data=str.bytes("v\n1\n2\n3\n4\n5\n");
+  let result=df.fromcsv(data);
+  (match result{
+    ok(frame){
+      let anom=analytics.anomalies(frame;"v";2.0);
+      (match anom{
+        ok(idxs){
+          <(idxs.len=0)
+        };
+        err(e){
+          (test.fail(e.msg));
+          <false
+        };
+      })
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+(* corr: perfectly correlated columns should return ~1.0. *)
+f=corr_test():bool{
+  let data=str.bytes("x,y\n1,2\n2,4\n3,6\n4,8\n");
+  let result=df.fromcsv(data);
+  (match result{
+    ok(frame){
+      let r=analytics.corr(frame;"x";"y");
+      (match r{
+        ok(c){
+          <(c>0.99)
+        };
+        err(e){
+          (test.fail(e.msg));
+          <false
+        };
+      })
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+f=main():i64{
+  (test.ok(describe_test()));
+  (test.ok(groupstats_test()));
+  (test.ok(timeseries_test()));
+  (test.ok(anomalies_test()));
+  (test.ok(corr_test()));
+  <0
+};

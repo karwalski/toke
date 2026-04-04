@@ -1,0 +1,120 @@
+m=dataframe_test;
+i=df:std.dataframe;
+i=test:std.test;
+i=str:std.str;
+
+(* Build a dataframe from raw CSV bytes and inspect shape. *)
+f=fromcsv_shape():bool{
+  let data=str.bytes("name,age,score\nalice,30,95.5\nbob,25,82.0\ncarol,28,88.0\n");
+  let result=df.fromcsv(data);
+  (match result{
+    ok(frame){
+      let s=df.shape(frame);
+      (test.eq(s.rows;3));
+      (test.eq(s.cols;3));
+      <true
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+(* Retrieve a numeric column by name. *)
+f=column_numeric():bool{
+  let data=str.bytes("x,y\n1,10\n2,20\n3,30\n");
+  let result=df.fromcsv(data);
+  (match result{
+    ok(frame){
+      let col_result=df.column(frame;"y");
+      (match col_result{
+        ok(vals){
+          (test.eq(vals.len;3));
+          (test.eq(vals.get(0);10.0));
+          (test.eq(vals.get(2);30.0));
+          <true
+        };
+        err(e){
+          (test.fail(e.msg));
+          <false
+        };
+      })
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+(* Filter: keep only rows where score > 85. *)
+f=filter_gt():bool{
+  let data=str.bytes("name,score\nalice,95\nbob,70\ncarol,88\n");
+  let result=df.fromcsv(data);
+  (match result{
+    ok(frame){
+      let filtered=df.filter(frame;"score";"gt";"85");
+      (match filtered{
+        ok(f2){
+          let s=df.shape(f2);
+          (test.eq(s.rows;2));
+          <true
+        };
+        err(e){
+          (test.fail(e.msg));
+          <false
+        };
+      })
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+(* head: take first 2 rows. *)
+f=head_rows():bool{
+  let data=str.bytes("id,val\n1,a\n2,b\n3,c\n4,d\n5,e\n");
+  let result=df.fromcsv(data);
+  (match result{
+    ok(frame){
+      let h=df.head(frame;2);
+      let s=df.shape(h);
+      (test.eq(s.rows;2));
+      <true
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+(* schema: returns one series entry per column. *)
+f=schema_check():bool{
+  let data=str.bytes("a,b,c\n1,2,3\n");
+  let result=df.fromcsv(data);
+  (match result{
+    ok(frame){
+      let cols=df.schema(frame);
+      (test.eq(cols.len;3));
+      (test.eq(cols.get(0).name;"a"));
+      <true
+    };
+    err(e){
+      (test.fail(e.msg));
+      <false
+    };
+  })
+};
+
+f=main():i64{
+  (test.ok(fromcsv_shape()));
+  (test.ok(column_numeric()));
+  (test.ok(filter_gt()));
+  (test.ok(head_rows()));
+  (test.ok(schema_check()));
+  <0
+};
