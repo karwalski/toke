@@ -15,7 +15,7 @@
 
 ### EPIC 1.1 — Language Specification Lock
 
-*Lock the Phase 1 language definition completely before writing a single line of compiler code. Every subsequent epic depends on this being stable.*
+*Lock the legacy profile language definition completely before writing a single line of compiler code. Every subsequent epic depends on this being stable.*
 
 ---
 
@@ -60,7 +60,7 @@ Acceptance criteria:
 
 **Story 1.1.4 — Formal EBNF grammar**
 
-As a compiler engineer, I want a complete formal EBNF grammar for toke Profile 1, so that the parser is built from a single authoritative document and conformance tests can be mechanically generated from it.
+As a compiler engineer, I want a complete formal EBNF grammar for the toke legacy profile, so that the parser is built from a single authoritative document and conformance tests can be mechanically generated from it.
 
 Acceptance criteria:
 - Grammar covers all constructs: module, import, type, constant, function, all statement forms, all expression forms, all literal forms, all type expression forms
@@ -71,29 +71,29 @@ Acceptance criteria:
 
 ---
 
-**Story 1.1.5 — Profile 2 transformation rules**
+**Story 1.1.5 — Legacy to default syntax transformation rules**
 
-As a tooling developer, I want the Profile 1 to Profile 2 transformation rules documented precisely, so that a mechanical translator can convert any valid Profile 1 program to a valid Profile 2 program without human judgment.
+As a tooling developer, I want the legacy to default syntax transformation rules documented precisely, so that a mechanical translator can convert any valid legacy profile program to a valid default syntax program without human judgment.
 
 Acceptance criteria:
 - Uppercase type name to $ sigil rule is formally stated with no exceptions
 - Array literal [] to @() rule is formally stated with no exceptions
 - Array index a[n] to a.get(n) rule is formally stated
-- Transformation is deterministic: one Profile 1 program maps to exactly one Profile 2 program
-- A round-trip test exists: Profile 1 → Profile 2 → Profile 1 produces the original program
-- At least 20 example pairs (Profile 1, Profile 2) are included in the spec
+- Transformation is deterministic: one legacy profile program maps to exactly one default syntax program
+- A round-trip test exists: legacy → default → legacy produces the original program
+- At least 20 example pairs (legacy, default) are included in the spec
 
 ---
 
 **Story 1.1.6 — Spec review and alignment**
 
-As a compiler engineer, I want all Profile 1 spec documents reviewed for internal consistency and completeness before compiler work begins, so that the risk of mid-implementation spec changes is minimised.
+As a compiler engineer, I want all legacy profile spec documents reviewed for internal consistency and completeness before compiler work begins, so that the risk of mid-implementation spec changes is minimised.
 
 Acceptance criteria:
 - All five spec documents reviewed: character-set.md, keywords.md, symbol-disambiguation.md, grammar.ebnf, phase2-transform.md
 - Every production in grammar.ebnf references only terminals defined in character-set.md and keywords.md
 - Every disambiguation rule in symbol-disambiguation.md is present and correctly encoded in grammar.ebnf
-- Every Profile 2 transformation in phase2-transform.md references valid grammar non-terminals from grammar.ebnf
+- Every default syntax transformation in phase2-transform.md references valid grammar non-terminals from grammar.ebnf
 - No contradictions between any two spec documents
 - Any gap, ambiguity, or risk item that would require a compiler change post-implementation is documented
 - A review report is committed to toke-spec/docs/spec-review-m0.md
@@ -125,16 +125,16 @@ Acceptance criteria:
 
 **Story 1.2.1 — Lexer implementation**
 
-As a compiler engineer, I want a C lexer that accepts a Profile 1 source file and produces a flat token stream with no whitespace tokens, so that the parser receives a clean token sequence independent of formatting.
+As a compiler engineer, I want a C lexer that accepts a legacy profile source file and produces a flat token stream with no whitespace tokens, so that the parser receives a clean token sequence independent of formatting.
 
 Acceptance criteria:
-- Lexer correctly classifies all 80 Profile 1 characters into their token classes
+- Lexer correctly classifies all 80 legacy profile characters into their token classes
 - Whitespace between tokens is silently consumed and produces no tokens
 - Two programs differing only in whitespace between tokens produce identical token streams
 - String literal content is captured verbatim including escape sequences
 - Invalid escape sequences produce a structured E1001 diagnostic and halt
 - Unterminated string literals produce a structured E1002 diagnostic and halt
-- Characters outside the Profile 1 set in structural positions produce E1003
+- Characters outside the legacy character set in structural positions produce E1003
 - Lexer processes a 200-token source file in under 1ms on reference hardware
 - Lexer source is under 300 lines of C
 
@@ -145,7 +145,7 @@ Acceptance criteria:
 As a compiler engineer, I want a C parser that accepts the token stream from the lexer and produces an AST, so that all downstream stages work from a single structured representation.
 
 Acceptance criteria:
-- Parser implements the complete Profile 1 EBNF grammar with no extensions
+- Parser implements the complete legacy profile EBNF grammar with no extensions
 - Parser is LL(1): no production examines more than one token of lookahead
 - Every grammar violation produces a structured diagnostic with error code, position, and context
 - AST nodes carry source position information (byte offset, line, column)
@@ -207,7 +207,7 @@ As a repair loop engineer, I want every compiler error to be emitted as a JSON-s
 
 Acceptance criteria:
 - All diagnostics conform to the schema defined in Section 9.1 of the spec
-- schema_version is "1.0" for all Profile 1 diagnostics
+- schema_version is "1.0" for all legacy profile diagnostics
 - fix field is populated for all mechanically derivable corrections
 - fix field is omitted (not null, not empty string) when no mechanical fix exists
 - Diagnostics are emitted to stderr, one JSON object per line
@@ -235,7 +235,7 @@ Acceptance criteria:
 As a compiler engineer, I want a backend that lowers toke IR to LLVM IR and invokes LLVM to produce a native binary, so that toke programs run as self-contained native executables with no runtime dependency.
 
 Acceptance criteria:
-- LLVM IR is generated for all constructs defined in the Profile 1 grammar
+- LLVM IR is generated for all constructs defined in the legacy profile grammar
 - Native binaries are produced for x86-64 Linux, ARM64 Linux, and ARM64 macOS
 - Produced binaries have no external runtime dependency beyond libc
 - Binary overhead for a minimal toke program is under 100KB
@@ -254,16 +254,16 @@ Acceptance criteria:
 - --out flag specifies binary output path
 - --emit-interface flag triggers .tki emission
 - --check flag runs type checking only without code generation
-- --profile1 and --profile2 flags select character set profile
+- --profile1 and --profile2 flags select character set (legacy or default)
 - --diag-json and --diag-text flags select diagnostic format
 - Exit codes are: 0 (success), 1 (compilation error), 2 (internal error), 3 (usage error)
 - --version prints compiler version and exits 0
 
 ---
 
-**Story 1.2.10 — Conformance test suite (Profile 1)**
+**Story 1.2.10 — Conformance test suite (legacy profile)**
 
-As a compiler engineer, I want a conformance test suite covering all Profile 1 language features, so that any change to the compiler can be validated against expected behaviour for every construct.
+As a compiler engineer, I want a conformance test suite covering all legacy profile language features, so that any change to the compiler can be validated against expected behaviour for every construct.
 
 Acceptance criteria:
 - Test suite covers all L-series (lexical), G-series (grammar), N-series (name resolution), T-series (type checking), C-series (code generation), and D-series (diagnostic) categories
@@ -525,7 +525,7 @@ Acceptance criteria:
 As a validation engineer, I want Pass@1 measurements for tk on the benchmark task set using a general-purpose LLM with the toke spec in context, so that Gate 1 has an empirical correctness result before any fine-tuning. (The task description passed to the model should itself be expressed as densely as the toke spec allows — toke's structured type context and import .tki interface files serve as the compressed task representation, replacing verbose natural language scaffolding.)
 
 Acceptance criteria:
-- Each benchmark task is attempted 10 times using Claude Haiku 4.5 with the full Profile 1 spec in the system prompt
+- Each benchmark task is attempted 10 times using Claude Haiku 4.5 with the full legacy profile spec in the system prompt
 - Pass@1 is computed as the fraction of tasks where at least 1 of 10 attempts compiles and passes all test inputs
 - Mean repair iterations per task is recorded
 - Results are committed to benchmark/results/gate1_pass.json
@@ -541,7 +541,7 @@ Acceptance criteria:
 - Document states the measured token reduction percentage
 - Document states the measured Pass@1 percentage
 - Document compares results against gate criteria (>10% reduction, ≥60% Pass@1)
-- Document states the decision: proceed to project Phase 2 or pivot to IR approach
+- Document states the decision: proceed to default syntax implementation or pivot to IR approach
 - Document is committed to the repository and tagged as gate1-decision
 - Decision is made within 2 weeks of M5.5
 
@@ -795,16 +795,16 @@ Acceptance criteria:
 
 ---
 
-### EPIC 2.2 — Profile 2 Tokenizer
+### EPIC 2.2 — Default Syntax Tokenizer
 
 ---
 
-**Story 2.2.1 — Profile 1 corpus preparation for tokenizer training**
+**Story 2.2.1 — Legacy corpus preparation for tokenizer training**
 
-As an ML engineer, I want the Profile 1 corpus prepared as a clean text dataset for BPE tokenizer training, so that the purpose-built tokenizer is trained on representative, high-quality toke source.
+As an ML engineer, I want the legacy profile corpus prepared as a clean text dataset for BPE tokenizer training, so that the purpose-built tokenizer is trained on representative, high-quality toke source.
 
 Acceptance criteria:
-- All validated Profile 1 corpus entries are extracted as raw .toke source text
+- All validated legacy profile corpus entries are extracted as raw .toke source text
 - String literal contents are stripped and replaced with placeholder tokens
 - Dataset is deduplicated at the character level
 - Dataset size is at least 500,000 source files
@@ -815,7 +815,7 @@ Acceptance criteria:
 
 **Story 2.2.2 — BPE tokenizer training**
 
-As an ML engineer, I want a purpose-built BPE tokenizer trained on the toke corpus with a 32,768-token vocabulary, so that Profile 2 achieves substantially lower token counts than cl100k_base.
+As an ML engineer, I want a purpose-built BPE tokenizer trained on the toke corpus with a 32,768-token vocabulary, so that the default syntax achieves substantially lower token counts than cl100k_base.
 
 Acceptance criteria:
 - Tokenizer is trained using a standard BPE implementation (SentencePiece or tiktoken-compatible)
@@ -829,14 +829,14 @@ Acceptance criteria:
 
 **Story 2.2.3 — Tokenizer evaluation**
 
-As a validation engineer, I want the purpose-built tokenizer evaluated against cl100k_base on the Gate 1 benchmark task set, so that the token density improvement is quantified before committing to project Phase 2.
+As a validation engineer, I want the purpose-built tokenizer evaluated against cl100k_base on the Gate 1 benchmark task set, so that the token density improvement is quantified before committing to full default syntax adoption.
 
 Acceptance criteria:
-- Token counts are measured for Profile 2 source using the purpose-built tokenizer
-- Token counts are measured for Profile 1 source using cl100k_base
+- Token counts are measured for default syntax source using the purpose-built tokenizer
+- Token counts are measured for legacy profile source using cl100k_base
 - Token density improvement ratio is computed for each benchmark task
 - Mean improvement across the benchmark set is reported
-- Target: at least 2x token density improvement over cl100k_base for Profile 2 source
+- Target: at least 2x token density improvement over cl100k_base for default syntax source
 - Results are committed to benchmark/results/tokenizer_eval.json
 
 ---
@@ -882,7 +882,7 @@ Acceptance criteria:
 - Mean repair iterations is measured
 - Results are compared against the pre-fine-tune baseline from Gate 1
 - Fine-tuned model must show improvement over baseline on Pass@1
-- Results are committed to benchmark/results/phase2_model_eval.json
+- Results are committed to benchmark/results/default_syntax_model_eval.json
 
 ---
 
@@ -1001,7 +1001,7 @@ Acceptance criteria:
 
 ### EPIC 2.7 — Standard Library Expansion
 
-*Extend the stdlib with modules required to validate that toke can express real-world application patterns beyond what Phase 1 corpus programs demonstrate.*
+*Extend the stdlib with modules required to validate that toke can express real-world application patterns beyond what the initial corpus programs demonstrate.*
 
 **Sequencing note:** These modules are needed for Gate 2 validation (language viability). They are not needed for Gate 1. Development begins after Gate 1 passes and the Phase 2 compiler extensions are stable.
 
@@ -1096,9 +1096,9 @@ Acceptance criteria:
 
 **Story 2.8.1 — Fix LLVM IR emission for end-to-end compilation**
 
-As a compiler engineer, I want `tkc` to emit valid LLVM IR for all Phase 1 and Phase 2 language constructs so that `clang` can assemble the output into a working binary.
+As a compiler engineer, I want `tkc` to emit valid LLVM IR for all legacy and default syntax language constructs so that `clang` can assemble the output into a working binary.
 
-Dependencies: 2.1 (Phase 2 Language Extensions — done)
+Dependencies: 2.1 (Default Syntax Implementation — done)
 
 Background: The front-end (lex → parse → names → types → interface) works correctly and passes 79 conformance tests. The LLVM IR backend (`llvm.c`, ~460 lines) emits `.ll` text that `clang` then assembles. However, several codegen bugs prevent end-to-end compilation. This story fixes all known defects so that a valid toke program compiles to a runnable binary.
 
@@ -1340,7 +1340,7 @@ Acceptance criteria:
 As a compiler engineer, I want the compiler hardened to handle the full language spec robustly at production quality, so that the corpus generation pipeline and CI run without compiler bugs.
 
 Acceptance criteria:
-- Compiler handles all constructs from the extended Phase 2 language without crashing
+- Compiler handles all constructs from the extended default syntax language without crashing
 - Internal compiler errors (exit code 2) do not occur on any valid or invalid toke source
 - Compiler processes 1,000 files per minute in batch mode
 - All conformance tests pass
@@ -1608,12 +1608,12 @@ Acceptance criteria:
 
 **Story 3.8.2 — stdlib performance benchmarks**
 
-As a compiler engineer, I want performance benchmarks for all Profile 1 stdlib modules so that regressions in stdlib performance are detected before releases.
+As a compiler engineer, I want performance benchmarks for all legacy profile stdlib modules so that regressions in stdlib performance are detected before releases.
 
 Dependencies: Epic 1.3 complete
 
 Acceptance criteria:
-- Benchmark suite covers all six Profile 1 stdlib modules
+- Benchmark suite covers all six legacy profile stdlib modules
 - Benchmarks run as part of the release validation workflow
 - Baseline performance figures are committed to benchmark/results/
 - Any release that shows greater than 20% regression on a benchmark is blocked until the regression is explained or fixed
@@ -1650,7 +1650,7 @@ Acceptance criteria:
 As a language standardiser, I want the final EBNF grammar committed to the spec repository with machine-verified freedom from ambiguity, so that any implementer can build a conforming compiler from the grammar alone.
 
 Acceptance criteria:
-- Grammar covers all constructs including Profile 2 extensions
+- Grammar covers all constructs including default syntax extensions
 - ANTLR4 generation from the grammar produces no warnings or conflicts
 - Grammar is versioned with a stable URL
 - Grammar is accompanied by an annotated example for each production
@@ -1901,7 +1901,7 @@ As a potential contributor or enterprise evaluator, I want an about page that ex
 Acceptance criteria:
 - About page with sections: Vision, Problem Statement, Approach, Design Principles, Open Source Commitment
 - Problem statement: LLMs waste tokens on verbose syntax, toke compresses code 3-5x vs Python while remaining human-writable
-- Design principles: Profile 1 (80 chars), LL(1) grammar, 12 keywords, everything is explicit
+- Design principles: toke character set (56 chars), LL(1) grammar, 12 keywords, everything is explicit
 - Open source section: MIT licence, contribution welcome, enterprise use encouraged
 - Enterprise section: toke is designed for companies building their own AI coding systems — lower inference cost, faster generation, deterministic compilation
 - Community section: how to participate, where to ask questions, contribution guidelines link
@@ -2008,26 +2008,26 @@ Acceptance criteria:
 
 ---
 
-### EPIC 5.2 — Phase 2 Character Reduction Documentation
+### EPIC 5.2 — Default Syntax Character Reduction Documentation
 
-*Update all public-facing documentation and learning materials to cover the Phase 2 (56-character) reduced character set and the purpose-built tokenizer that uses it.*
+*Update all public-facing documentation and learning materials to cover the default syntax (56-character) reduced character set and the purpose-built tokenizer that uses it.*
 
 ---
 
-**Story 5.2.1 — Update website and learning materials for Phase 2 character reduction**
+**Story 5.2.1 — Update website and learning materials for default syntax character reduction**
 
-As a developer learning toke, I want documentation explaining the Phase 2 (56-character) profile, so that I understand what characters are removed, why, how the purpose-built tokenizer uses the reduced set, and how to translate between Phase 1 and Phase 2.
+As a developer learning toke, I want documentation explaining the default syntax (56-character) profile, so that I understand what characters are removed, why, how the purpose-built tokenizer uses the reduced set, and how to translate between legacy and default syntax.
 
 Acceptance criteria:
-- Dedicated documentation page explaining the Phase 2 (56-character) profile
-- Clear explanation of which characters are removed from the 80-character Phase 1 set and the rationale for each removal
+- Dedicated documentation page explaining the default syntax (56-character) profile
+- Clear explanation of which characters are removed from the 80-character legacy set and the rationale for each removal
 - Description of how the purpose-built tokenizer leverages the reduced character set for efficiency
-- Transformation rules from Phase 1 to Phase 2 documented with examples
+- Transformation rules from legacy to default syntax documented with examples
 - Performance implications explained (token count reduction, inference cost impact)
-- Getting Started guide updated to reference Phase 2 where appropriate
-- Learning course updated to include Phase 2 references where appropriate
-- API/reference section updated to include Phase 2 character set and transformation rules
-- Depends on: Phase 2 tokenizer work
+- Getting Started guide updated to reference default syntax where appropriate
+- Learning course updated to include default syntax references where appropriate
+- API/reference section updated to include default syntax character set and transformation rules
+- Depends on: default syntax tokenizer work
 
 ---
 
@@ -2500,7 +2500,7 @@ As a language designer, I want toke source to reference string literals via plac
 
 Dependencies: Phase 2 spec finalization
 
-Background: toke's Profile 1 character set is 80 ASCII chars, optimised for token density. Inline string literals (`"hello"`) work but embed natural-language text directly in source, which (a) wastes BPE vocabulary on natural-language tokens that don't recur across programs, (b) cannot represent non-ASCII characters (CJK, Arabic, emoji, etc.) without a Profile 2 charset expansion, and (c) mixes i18n concerns with logic.
+Background: toke's legacy character set is 80 ASCII chars, optimised for token density. Inline string literals (`"hello"`) work but embed natural-language text directly in source, which (a) wastes BPE vocabulary on natural-language tokens that don't recur across programs, (b) cannot represent non-ASCII characters (CJK, Arabic, emoji, etc.) without a default syntax charset expansion, and (c) mixes i18n concerns with logic.
 
 Proposed design (for researcher review — not final):
 - Placeholder syntax in source: `$1`, `$2`, ... or `$key` references

@@ -1,0 +1,11 @@
+id: D031
+series: D
+description: "Wrong argument count in function call emits E4026"
+input: |
+  M=test;
+  F=add(a: i64; b: i64):i64{<a};
+  F=main():void{
+    add(1)
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4026"]

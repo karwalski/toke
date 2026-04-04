@@ -1,0 +1,11 @@
+id: G092
+series: G
+description: "Sum type declaration with $-prefix in default mode"
+input: |
+  m=test;
+  t=$shape{Circle:f64;Rect:f64;Triangle:f64};
+  f=area(s:$shape):f64{
+    <s|{Circle:r r;Rect:r r;Triangle:r r}
+  };
+expected_exit_code: 0
+expected_error_codes: []

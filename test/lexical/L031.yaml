@@ -1,0 +1,8 @@
+id: L031
+series: L
+description: "Left square bracket produces E1003 in default mode"
+input: |
+  m=test;
+  f=bad():i64{let a=[1;2;3];<1};
+expected_exit_code: 1
+expected_error_codes: ["E1003"]

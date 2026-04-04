@@ -1,7 +1,7 @@
 # toke Glossary — Terminology Reference
 
 **Status:** Normative
-**Frozen:** 2026-03-28
+**Frozen:** 2026-03-28 (updated 2026-04-04)
 **Authority:** toke-spec-v02.md, epics_and_stories.md, this file
 
 ---
@@ -25,26 +25,26 @@ This project uses the word "phase" in four distinct senses. To eliminate ambigui
 | 3 | Ecosystem Proof | Months 14–26 | Gate 3 (Month 26) |
 | 4 | Standard Pathway | Months 26–32 | Gate 4 (Month 32) |
 
-**Usage in docs:** "project Phase 1", "project Phase 2", "Phase 1 go/no-go gate". Never abbreviated to P1/P2 (those abbreviations are reserved for Profile 1/2).
+**Usage in docs:** "project Phase 1", "project Phase 2", "Phase 1 go/no-go gate". Never abbreviated to P1/P2.
 
 **Do not rename.** These terms are part of the project planning framework and appear in cost models, milestone charts, and deliverable lists.
 
 ---
 
-### 2. LANGUAGE_PHASE → Profile 1 / Profile 2
+### 2. LANGUAGE_PROFILE → Default Syntax / Legacy Syntax
 
-**Canonical term:** Profile 1 (P1) and Profile 2 (P2)
+**Canonical term:** Default syntax (toke syntax) and Legacy syntax (legacy profile)
 
 **Definition:** The two character-set profiles of the toke source language.
 
-| Profile | Characters | Tokenizer | Abbreviation |
-|---------|-----------|-----------|--------------|
-| Profile 1 | 80 characters (26 lower + 26 upper + 10 digits + 18 symbols) | Compatible with cl100k_base and existing LLM tokenizers | P1 |
-| Profile 2 | 56 characters (26 lower + 10 digits + 20 symbols, including `$` and `@`) | Purpose-built BPE tokenizer trained on Profile 1 corpus | P2 |
+| Profile | Characters | Tokenizer | Status |
+|---------|-----------|-----------|--------|
+| Legacy (80 characters) | 26 lower + 26 upper + 10 digits + 18 symbols | Compatible with cl100k_base and existing LLM tokenizers | Historical — used for bootstrapping |
+| Default (56 characters) | 26 lower + 10 digits + 20 symbols, including `$` and `@` | Purpose-built BPE tokenizer trained on legacy corpus | Current — the normative toke syntax |
 
-Profile 2 eliminates all 26 uppercase letters. Type names use a `$`-prefixed lowercase form. Array literal syntax `[...]` becomes `@(...)`.
+The default syntax eliminates all 26 uppercase letters. Type names use a `$`-prefixed lowercase form. Array literal syntax `[...]` becomes `@(...)`.
 
-**CLI flags:** `--profile1` (default), `--profile2`. The deprecated aliases `--phase1` and `--phase2` are accepted with a warning.
+**CLI flags:** `--profile1` (legacy), `--profile2` (default). The deprecated aliases `--phase1` and `--phase2` are accepted with a warning.
 
 **Authoritative spec files (in toke-spec repo):**
 - `spec/character-set.md`
@@ -100,13 +100,15 @@ Profile 2 eliminates all 26 uppercase letters. Type names use a `$`-prefixed low
 
 | Term you see | Canonical meaning | Action |
 |-------------|------------------|--------|
-| "Phase 1 character set" | Profile 1 | → "Profile 1 character set" |
-| "Phase 2 sigil syntax" | Profile 2 | → "Profile 2 sigil syntax" |
+| "Phase 1 character set" | Legacy profile | → "legacy character set" |
+| "Phase 2 sigil syntax" | Default syntax | → "default syntax (sigil encoding)" |
 | "Phase A corpus" | Corpus Phase A | Leave unchanged |
 | "project Phase 1" | Project Phase 1 | Leave unchanged |
 | `"phase": "type_check"` in JSON | Compiler stage | → `"stage": "type_check"` |
 | "lex phase" / "parse phase" | Compiler stage | → "lex stage" / "parse stage" |
+| "Profile 1" / "P1" | Legacy profile | → "legacy profile" or "legacy syntax" |
+| "Profile 2" / "P2" | Default syntax | → "default syntax" or "toke syntax" |
 
 ---
 
-*Frozen 2026-03-28. Changes require a spec amendment.*
+*Frozen 2026-03-28 (terminology updated 2026-04-04). Changes require a spec amendment.*

@@ -1,0 +1,11 @@
+id: D022
+series: D
+description: "Non-exhaustive match on sum type emits E5001"
+input: |
+  M=test;
+  T=Color{Red:i64;Green:i64;Blue:i64};
+  F=name(c:Color):i64{
+    <c|{Red:r r;Green:g g}
+  };
+expected_exit_code: 1
+expected_error_codes: ["E5001"]

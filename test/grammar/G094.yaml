@@ -1,0 +1,14 @@
+id: G094
+series: G
+description: "Loop with array .get() indexing in default mode"
+input: |
+  m=test;
+  f=sum(arr:@i64):i64{
+    let total=mut.0;
+    lp(let i=0;i<arr.len;i=i+1){
+      total=total+arr.get(i);
+    };
+    <total
+  };
+expected_exit_code: 0
+expected_error_codes: []

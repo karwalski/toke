@@ -1,0 +1,7 @@
+M=test;
+F=add(a:i64;b:i64):i64{
+  <a+b
+};
+F=main():i64{
+  <add(3;4)
+};

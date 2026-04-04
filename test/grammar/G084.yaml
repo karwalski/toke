@@ -1,0 +1,8 @@
+id: G084
+series: G
+description: "Comparison operators in default mode"
+input: |
+  m=test;
+  f=cmp(a:i64;b:i64):bool{<a<b};
+expected_exit_code: 0
+expected_error_codes: []

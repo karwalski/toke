@@ -1,0 +1,11 @@
+id: D045
+series: D
+description: "Unreachable code after return in default mode emits E5002"
+input: |
+  m=test;
+  f=bad():i64{
+    <1;
+    let x=2
+  };
+expected_exit_code: 1
+expected_error_codes: ["E5002"]

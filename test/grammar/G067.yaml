@@ -1,0 +1,12 @@
+id: G067
+series: G
+description: "Mutable binding with let mut. in default mode"
+input: |
+  m=test;
+  f=counter():i64{
+    let n=mut.0;
+    n=n+1;
+    <n
+  };
+expected_exit_code: 0
+expected_error_codes: []

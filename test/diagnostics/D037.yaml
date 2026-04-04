@@ -1,0 +1,8 @@
+id: D037
+series: D
+description: "Void function returning value in default mode emits E4031"
+input: |
+  m=test;
+  f=bad():void{<42};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]

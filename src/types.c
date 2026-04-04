@@ -56,9 +56,12 @@
  *   E4010 — Non-exhaustive match statement (missing boolean arm).
  *   E4011 — Match arms have inconsistent types.
  *   E4025 — Struct field access on a field name that does not exist.
+ *   E4026 — Wrong argument count in function call.
  *   E4031 — Type mismatch (the general-purpose type error code).
  *   E4043 — Inconsistent key or value types in a map literal.
  *   E5001 — Value escapes arena scope.
+ *   E5002 — Unreachable code after return statement.
+ *   W1001 — Lossy cast warning (e.g. f64 to i64).
  *
  * Every diagnostic includes a "fix" hint when a reasonable suggestion can
  * be generated (e.g. "cast RHS to i64 using 'as'").
@@ -124,6 +127,9 @@ static const char *type_name(const Type *t) {
     switch (t->kind) {
     case TY_VOID: return "void"; case TY_BOOL: return "bool"; case TY_I64: return "i64";
     case TY_U64: return "u64";   case TY_F64: return "f64";   case TY_STR: return "str";
+    case TY_I8: return "i8";     case TY_I16: return "i16";   case TY_I32: return "i32";
+    case TY_U8: return "u8";     case TY_U16: return "u16";   case TY_U32: return "u32";
+    case TY_F32: return "f32";
     case TY_STRUCT: return t->name?t->name:"struct"; case TY_ARRAY: return "array";
     case TY_FUNC: return "func"; case TY_ERROR_TYPE: return t->elem?type_name(t->elem):"error";
     case TY_PTR: return "ptr"; case TY_MAP: return "map";
@@ -178,7 +184,10 @@ static int types_equal(const Type *a, const Type *b) {
  * Used to validate operands of arithmetic operators.
  */
 static int is_numeric(const Type *t) {
-    return t && (t->kind==TY_I64 || t->kind==TY_U64 || t->kind==TY_F64);
+    return t && (t->kind==TY_I64 || t->kind==TY_U64 || t->kind==TY_F64
+              || t->kind==TY_I8  || t->kind==TY_I16 || t->kind==TY_I32
+              || t->kind==TY_U8  || t->kind==TY_U16 || t->kind==TY_U32
+              || t->kind==TY_F32);
 }
 
 /*
@@ -233,6 +242,60 @@ typedef struct { TypeEnv *env; const char *src;
 
 /* Forward declaration: infer() is the main recursive type-inference walker. */
 static Type *infer(Ctx *cx, const Node *node);
+
+/*
+ * find_binding_kind — search the AST tree rooted at `root` for a binding
+ * (NODE_BIND_STMT or NODE_MUT_BIND_STMT) whose name matches (name, nlen).
+ * Also searches NODE_LOOP_INIT nodes.
+ *
+ * Returns:
+ *   NODE_BIND_STMT      — immutable let binding found
+ *   NODE_MUT_BIND_STMT  — mutable let binding found
+ *   NODE_LOOP_INIT      — loop init variable (implicitly mutable)
+ *   -1                  — not found
+ */
+static int find_binding_kind(const Node *root, const char *src,
+                             const char *name, int nlen) {
+    if (!root) return -1;
+    if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT)
+        &&root->child_count>0&&root->children[0]) {
+        int tl=root->children[0]->tok_len;
+        if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0)
+            return (int)root->kind;
+    }
+    if (root->kind==NODE_LOOP_INIT&&root->child_count>0&&root->children[0]) {
+        int tl=root->children[0]->tok_len;
+        if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0)
+            return (int)NODE_LOOP_INIT;
+    }
+    for (int i=0;i<root->child_count;i++) {
+        int r=find_binding_kind(root->children[i],src,name,nlen);
+        if (r>=0) return r;
+    }
+    return -1;
+}
+
+/*
+ * find_binding_node — search the AST tree for a binding whose name matches.
+ * Returns the binding node (NODE_BIND_STMT/NODE_MUT_BIND_STMT/NODE_LOOP_INIT),
+ * or NULL if not found.  Used by NODE_IDENT to resolve local variable types.
+ */
+static const Node *find_binding_node(const Node *root, const char *src,
+                                     const char *name, int nlen) {
+    if (!root) return NULL;
+    if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT
+         ||root->kind==NODE_LOOP_INIT)
+        &&root->child_count>0&&root->children[0]) {
+        int tl=root->children[0]->tok_len;
+        if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0)
+            return root;
+    }
+    for (int i=0;i<root->child_count;i++) {
+        const Node *r=find_binding_node(root->children[i],src,name,nlen);
+        if (r) return r;
+    }
+    return NULL;
+}
 
 /*
  * contains_ptr — return 1 if the type tree contains TY_PTR at any depth.
@@ -308,6 +371,14 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
     if (strcmp(nb,"u64") ==0) return mk_type(cx->env->arena, TY_U64);
     if (strcmp(nb,"f64") ==0) return mk_type(cx->env->arena, TY_F64);
     if (strcmp(nb,"str") ==0) return mk_type(cx->env->arena, TY_STR);
+    if (strcmp(nb,"i8")  ==0) return mk_type(cx->env->arena, TY_I8);
+    if (strcmp(nb,"i16") ==0) return mk_type(cx->env->arena, TY_I16);
+    if (strcmp(nb,"i32") ==0) return mk_type(cx->env->arena, TY_I32);
+    if (strcmp(nb,"u8")  ==0) return mk_type(cx->env->arena, TY_U8);
+    if (strcmp(nb,"u16") ==0) return mk_type(cx->env->arena, TY_U16);
+    if (strcmp(nb,"u32") ==0) return mk_type(cx->env->arena, TY_U32);
+    if (strcmp(nb,"f32") ==0) return mk_type(cx->env->arena, TY_F32);
+    if (strcmp(nb,"Byte")==0) return mk_type(cx->env->arena, TY_U8);
     Decl *d = tc_lookup(cx->env->names->module_scope, nb, (int)strlen(nb));
     if (d && d->def_node && d->def_node->kind == NODE_TYPE_DECL) {
         const Node *decl = d->def_node;
@@ -545,10 +616,17 @@ static Type *infer(Ctx *cx, const Node *node) {
                         return resolve_type(cx,pc->children[1]);
                 }
             }
+            /* Search the function body for local bindings with type annotations. */
+            const Node *bn=find_binding_node(cx->fn_node,cx->src,nb,nlen);
+            if (bn && (bn->kind==NODE_BIND_STMT||bn->kind==NODE_MUT_BIND_STMT)) {
+                if (bn->child_count>2&&bn->children[1]) return resolve_type(cx,bn->children[1]);
+                if (bn->child_count>1&&bn->children[1]) return resolve_type(cx,bn->children[1]);
+            }
         }
         if (!d||!d->def_node) return mk_type(A,TY_UNKNOWN);
         const Node *def=d->def_node;
         if ((def->kind==NODE_BIND_STMT||def->kind==NODE_MUT_BIND_STMT)) {
+            if (def->child_count>2&&def->children[1]) return resolve_type(cx,def->children[1]);
             if (def->child_count>1&&def->children[1]) return resolve_type(cx,def->children[1]);
             if (def->child_count>2&&def->children[2]) return infer(cx,def->children[2]);
         }
@@ -570,7 +648,9 @@ static Type *infer(Ctx *cx, const Node *node) {
     case NODE_UNARY_EXPR: {
         Type *op=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         if (node->op==TK_MINUS&&op->kind!=TY_UNKNOWN
-            &&op->kind!=TY_I64&&op->kind!=TY_F64) {
+            &&op->kind!=TY_I64&&op->kind!=TY_F64
+            &&op->kind!=TY_I8&&op->kind!=TY_I16&&op->kind!=TY_I32
+            &&op->kind!=TY_F32) {
             char msg[128];
             snprintf(msg,sizeof(msg),"type mismatch: expected 'i64' or 'f64', got '%s'",type_name(op));
             diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,"fix",(const char*)NULL);
@@ -598,6 +678,18 @@ static Type *infer(Ctx *cx, const Node *node) {
         if (l->kind==TY_UNKNOWN||r->kind==TY_UNKNOWN) return mk_type(A,TY_UNKNOWN);
         int arith=(node->op==TK_PLUS||node->op==TK_MINUS||node->op==TK_STAR||node->op==TK_SLASH);
         int cmp  =(node->op==TK_LT  ||node->op==TK_GT  ||node->op==TK_EQ);
+        int logic=(node->op==TK_AND  ||node->op==TK_OR);
+        if (logic) {
+            if (l->kind!=TY_BOOL) {
+                emit_mm(cx,node,mk_type(A,TY_BOOL),l,"operand of && / || must be bool");
+                return mk_type(A,TY_BOOL);
+            }
+            if (r->kind!=TY_BOOL) {
+                emit_mm(cx,node,mk_type(A,TY_BOOL),r,"operand of && / || must be bool");
+                return mk_type(A,TY_BOOL);
+            }
+            return mk_type(A,TY_BOOL);
+        }
         if (arith||cmp) {
             if ((arith&&(!is_numeric(l)||!types_equal(l,r)))||(cmp&&!types_equal(l,r))) {
                 char fix[64];
@@ -632,10 +724,34 @@ static Type *infer(Ctx *cx, const Node *node) {
             return mk_type(A,TY_UNKNOWN);
         }
         const Node *fn=d->def_node; int pi=0;
+        /* Count expected parameters */
+        for (int i=0;i<fn->child_count;i++) {
+            const Node *ch=fn->children[i];
+            if (ch&&ch->kind==NODE_PARAM) pi++;
+        }
+        /* E4026: wrong argument count */
+        int actual_args=node->child_count-1;
+        if (actual_args!=pi) {
+            char msg[256];
+            snprintf(msg,sizeof(msg),"wrong number of arguments: expected %d, got %d",pi,actual_args);
+            diag_emit(DIAG_ERROR,E4026,node->start,node->line,node->col,msg,
+                      "fix",(const char*)NULL);
+            cx->had_error=1;
+            for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
+            /* Still resolve return type even on arg count mismatch */
+            for (int i=0;i<fn->child_count;i++) {
+                const Node *ch=fn->children[i];
+                if (ch&&ch->kind==NODE_RETURN_SPEC&&ch->child_count>0)
+                    return resolve_return_spec(cx,ch);
+            }
+            return mk_type(A,TY_VOID);
+        }
+        /* Type-check each argument against its parameter */
+        int pj=0;
         for (int i=0;i<fn->child_count;i++) {
             const Node *ch=fn->children[i];
             if (!ch||ch->kind!=NODE_PARAM) continue;
-            int ai=1+pi;
+            int ai=1+pj;
             if (ai<node->child_count) {
                 Type *at=infer(cx,node->children[ai]);
                 Type *pt=ch->child_count>1?resolve_type(cx,ch->children[1]):mk_type(A,TY_UNKNOWN);
@@ -645,9 +761,9 @@ static Type *infer(Ctx *cx, const Node *node) {
                     emit_mm(cx,node->children[ai],pt,at,fix);
                 }
             }
-            pi++;
+            pj++;
         }
-        for (int i=1+pi;i<node->child_count;i++) infer(cx,node->children[i]);
+        for (int i=1+pj;i<node->child_count;i++) infer(cx,node->children[i]);
         for (int i=0;i<fn->child_count;i++) {
             const Node *ch=fn->children[i];
             if (ch&&ch->kind==NODE_RETURN_SPEC&&ch->child_count>0)
@@ -665,9 +781,28 @@ static Type *infer(Ctx *cx, const Node *node) {
      *
      * child[0] = source expression, child[1] = target type annotation.
      * ──────────────────────────────────────────────────────────────────── */
-    case NODE_CAST_EXPR:
-        if (node->child_count>1) { infer(cx,node->children[0]); return resolve_type(cx,node->children[1]); }
+    case NODE_CAST_EXPR: {
+        if (node->child_count>1) {
+            Type *src_t=infer(cx,node->children[0]);
+            Type *dst_t=resolve_type(cx,node->children[1]);
+            /* W1001: warn on potentially lossy casts between numeric types */
+            if (src_t->kind!=TY_UNKNOWN&&dst_t->kind!=TY_UNKNOWN) {
+                int lossy=0;
+                if (src_t->kind==TY_F64&&(dst_t->kind==TY_I64||dst_t->kind==TY_U64)) lossy=1;
+                if (src_t->kind==TY_I64&&dst_t->kind==TY_U64) lossy=1;
+                if (src_t->kind==TY_U64&&dst_t->kind==TY_I64) lossy=1;
+                if (lossy) {
+                    char msg[256];
+                    snprintf(msg,sizeof(msg),"lossy cast from '%s' to '%s'",
+                             type_name(src_t),type_name(dst_t));
+                    diag_emit(DIAG_WARNING,W1001,node->start,node->line,node->col,
+                              msg,"fix",(const char*)NULL);
+                }
+            }
+            return dst_t;
+        }
         return mk_type(A,TY_UNKNOWN);
+    }
 
     /* ── Error propagation (!) ───────────────────────────────────────────
      * The ! operator unwraps an error-union value T!Err, returning the
@@ -712,7 +847,9 @@ static Type *infer(Ctx *cx, const Node *node) {
             diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,"fix",(const char*)NULL);
             cx->had_error=1; return mk_type(A,TY_UNKNOWN);
         }
-        if (idx->kind!=TY_UNKNOWN&&idx->kind!=TY_I64&&idx->kind!=TY_U64) {
+        if (idx->kind!=TY_UNKNOWN&&idx->kind!=TY_I64&&idx->kind!=TY_U64
+            &&idx->kind!=TY_I8&&idx->kind!=TY_I16&&idx->kind!=TY_I32
+            &&idx->kind!=TY_U8&&idx->kind!=TY_U16&&idx->kind!=TY_U32) {
             char msg[256];
             snprintf(msg,sizeof(msg),"type mismatch: array index must be integer, got '%s'",type_name(idx));
             diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,"fix",(const char*)NULL);
@@ -793,6 +930,39 @@ static Type *infer(Ctx *cx, const Node *node) {
      * Returns TY_VOID (assignments are statements).
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_ASSIGN_STMT: {
+        /* ── Mutability check ─────────────────────────────────────────
+         * If the LHS is a simple identifier, find its binding in the
+         * enclosing function AST.  If the binding is NODE_BIND_STMT
+         * (immutable let) or NODE_PARAM, emit E4070.
+         * NODE_MUT_BIND_STMT and NODE_LOOP_INIT are mutable. */
+        if (node->child_count>0&&node->children[0]->kind==NODE_IDENT&&cx->fn_node) {
+            char nb[256]; TOKSTR(nb,cx->src,node->children[0]);
+            int nlen=(int)strlen(nb);
+            int immutable=0;
+            /* Check function parameters (immutable by default). */
+            for (int pi=0;pi<cx->fn_node->child_count;pi++) {
+                const Node *pc=cx->fn_node->children[pi];
+                if (pc&&pc->kind==NODE_PARAM&&pc->child_count>0) {
+                    char pn[128]; TOKSTR(pn,cx->src,pc->children[0]);
+                    if (strcmp(pn,nb)==0) { immutable=1; break; }
+                }
+            }
+            /* Check local bindings by searching the function AST. */
+            if (!immutable) {
+                int bk=find_binding_kind(cx->fn_node,cx->src,nb,nlen);
+                if (bk==(int)NODE_BIND_STMT) immutable=1;
+                /* NODE_MUT_BIND_STMT and NODE_LOOP_INIT are mutable — no error. */
+            }
+            if (immutable) {
+                char msg[256];
+                snprintf(msg,sizeof(msg),
+                    "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
+                diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
+                    "fix","let x = mut.expr",(const char*)NULL);
+                cx->had_error=1;
+                return mk_type(A,TY_VOID);
+            }
+        }
         Type *lhs=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *rhs=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
         if (lhs->kind!=TY_UNKNOWN&&rhs->kind!=TY_UNKNOWN&&!types_equal(lhs,rhs)) {
@@ -865,12 +1035,19 @@ static Type *infer(Ctx *cx, const Node *node) {
     case NODE_MATCH_STMT: {
         if (node->child_count<1) return mk_type(A,TY_VOID);
         Type *scr=infer(cx,node->children[0]),*arm_type=NULL; int has_t=0,has_f=0;
+        /* Collect match arm variant names for sum type exhaustiveness check */
+        const char *arm_tags[64]; int arm_tag_count=0;
         for (int i=1;i<node->child_count;i++) {
             const Node *arm=node->children[i];
             if (!arm||arm->kind!=NODE_MATCH_ARM) continue;
             if (scr->kind==TY_BOOL&&arm->child_count>0&&arm->children[0]&&arm->children[0]->kind==NODE_BOOL_LIT) {
                 char pb[8]; TOKSTR(pb,cx->src,arm->children[0]);
                 if (strcmp(pb,"true")==0) has_t=1; else has_f=1;
+            }
+            /* Record variant tag from arm pattern (children[0] = NODE_TYPE_IDENT) */
+            if (arm->child_count>0&&arm->children[0]&&arm->children[0]->kind==NODE_TYPE_IDENT) {
+                char tb[128]; TOKSTR(tb,cx->src,arm->children[0]);
+                if (arm_tag_count<64) arm_tags[arm_tag_count++]=ty_intern(A,tb);
             }
             Type *at=arm->child_count>1&&arm->children[1]?infer(cx,arm->children[1]):mk_type(A,TY_VOID);
             if (!arm_type) { arm_type=at; }
@@ -881,10 +1058,37 @@ static Type *infer(Ctx *cx, const Node *node) {
                 cx->had_error=1;
             }
         }
+        /* Bool exhaustiveness check */
         if (scr->kind==TY_BOOL&&!has_t) { diag_emit(DIAG_ERROR,E4010,node->start,node->line,node->col,
             "non-exhaustive match: missing arm for 'true'","fix",(const char*)NULL); cx->had_error=1; }
         if (scr->kind==TY_BOOL&&!has_f) { diag_emit(DIAG_ERROR,E4010,node->start,node->line,node->col,
             "non-exhaustive match: missing arm for 'false'","fix",(const char*)NULL); cx->had_error=1; }
+        /* Sum type exhaustiveness check: if scrutinee is a struct (sum type)
+         * with variant fields, verify every variant is covered by a match arm. */
+        if (scr->kind==TY_STRUCT&&scr->field_count>0&&scr->field_names) {
+            char missing[512]; missing[0]='\0'; int miss_count=0;
+            for (int vi=0;vi<scr->field_count;vi++) {
+                const char *vn=scr->field_names[vi];
+                int found=0;
+                for (int ai=0;ai<arm_tag_count;ai++) {
+                    if (strcmp(vn,arm_tags[ai])==0) { found=1; break; }
+                }
+                if (!found) {
+                    if (miss_count>0) { size_t cur_len=strlen(missing);
+                        snprintf(missing+cur_len,sizeof(missing)-cur_len,", "); }
+                    size_t cur_len=strlen(missing);
+                    snprintf(missing+cur_len,sizeof(missing)-cur_len,"'%s'",vn);
+                    miss_count++;
+                }
+            }
+            if (miss_count>0) {
+                char msg[768];
+                snprintf(msg,sizeof(msg),"non-exhaustive match: missing variant(s) %s",missing);
+                diag_emit(DIAG_ERROR,E5001,node->start,node->line,node->col,msg,"fix",
+                    "add the missing match arm(s)",(const char*)NULL);
+                cx->had_error=1;
+            }
+        }
         return arm_type?arm_type:mk_type(A,TY_VOID);
     }
 
@@ -979,9 +1183,31 @@ static Type *infer(Ctx *cx, const Node *node) {
         return mk_type(A,TY_VOID);
     }
 
+    /* ── Statement list ──────────────────────────────────────────────────
+     * Walk children in order.  If a NODE_RETURN_STMT is encountered and
+     * there are subsequent statements, emit E5002 (unreachable code).
+     * ──────────────────────────────────────────────────────────────────── */
+    case NODE_STMT_LIST: {
+        Type *last=mk_type(A,TY_VOID);
+        int saw_return=0;
+        for (int i=0;i<node->child_count;i++) {
+            const Node *ch=node->children[i];
+            if (!ch) continue;
+            if (saw_return) {
+                diag_emit(DIAG_ERROR,E5002,ch->start,ch->line,ch->col,
+                    "unreachable code after return statement","fix",(const char*)NULL);
+                cx->had_error=1;
+                break; /* stop checking after first unreachable */
+            }
+            last=infer(cx,ch);
+            if (ch->kind==NODE_RETURN_STMT) saw_return=1;
+        }
+        return last;
+    }
+
     /* ── Default fallthrough ─────────────────────────────────────────────
      * Handles all node kinds not explicitly matched above (e.g.
-     * NODE_STMT_LIST, NODE_IF_STMT, NODE_WHILE_STMT, NODE_TYPE_DECL).
+     * NODE_IF_STMT, NODE_WHILE_STMT, NODE_TYPE_DECL).
      * These nodes do not have specific type rules — the checker simply
      * recurses into all children so that any nested expressions and
      * statements are still validated.

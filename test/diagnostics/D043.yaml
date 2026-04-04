@@ -1,0 +1,9 @@
+id: D043
+series: D
+description: "Duplicate field name in struct in default mode emits E2015"
+input: |
+  m=test;
+  t=$pt{x:i64;x:i64};
+  f=main():void{};
+expected_exit_code: 1
+expected_error_codes: ["E2015"]

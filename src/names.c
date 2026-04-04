@@ -875,7 +875,9 @@ static int resolve_node(const Node *node, const char *src,
             if (init->op == TK_KW_LET || init->op == TK_KW_MUT) {
                 const Node *vname = init->child_count > 0 ? init->children[0] : NULL;
                 if (vname) {
-                    DeclKind dk = (init->op == TK_KW_MUT) ? DECL_MUT : DECL_LET;
+                    /* Loop variables are implicitly mutable — the loop
+                     * step reassigns them on every iteration. */
+                    DeclKind dk = DECL_MUT;
                     int r = scope_insert(lp_scope, arena, src,
                                          vname->start, vname->tok_len,
                                          vname->tok_start, vname->tok_len,

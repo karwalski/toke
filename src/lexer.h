@@ -2,9 +2,15 @@
 #define TK_LEXER_H
 
 /*
- * lexer.h — token definitions and lex() entry point for the toke Profile 1
- * reference compiler.
+ * lexer.h — token definitions and lex() entry point for the toke reference
+ * compiler.
  */
+
+/* Profile selects the character set and keyword recognition rules. */
+typedef enum {
+    PROFILE_DEFAULT = 0,   /* 56-char syntax: lowercase keywords, $ for types, @ */
+    PROFILE_LEGACY  = 1    /* 80-char syntax: uppercase keywords, TK_TYPE_IDENT  */
+} Profile;
 
 typedef enum {
     /* Keywords (12) */
@@ -50,6 +56,10 @@ typedef enum {
     TK_GT,
     TK_BANG,
     TK_PIPE,
+    TK_DOLLAR,
+    TK_AT,
+    TK_AND,
+    TK_OR,
 
     /* Special */
     TK_EOF,
@@ -64,6 +74,6 @@ typedef struct {
     int       col;
 } Token;
 
-int lex(const char *src, int src_len, Token *out, int out_cap);
+int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile);
 
 #endif /* TK_LEXER_H */

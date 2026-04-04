@@ -1,6 +1,7 @@
 id: L004
 series: L
 description: "Character outside Profile 1 set in structural position emits E1003 (at-sign)"
+flags: --legacy
 input: |
   M=test;
   F=bad():i64{<@1};

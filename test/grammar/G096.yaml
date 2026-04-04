@@ -1,0 +1,12 @@
+id: G096
+series: G
+description: "Narrow integer types with default syntax"
+input: |
+  m=test;
+  f=narrow():i64{
+    let a:i32=42 as i32;
+    let b:i64=a as i64;
+    <b
+  };
+expected_exit_code: 0
+expected_error_codes: []

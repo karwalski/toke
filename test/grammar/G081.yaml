@@ -1,0 +1,8 @@
+id: G081
+series: G
+description: "Cast expression with as in default mode"
+input: |
+  m=test;
+  f=widen(x:i32):i64{<x as i64};
+expected_exit_code: 0
+expected_error_codes: []

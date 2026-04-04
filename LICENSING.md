@@ -13,7 +13,7 @@ users and contributors.
 | `toke-stdlib` | MIT | Standard library (.toke source) |
 | `tkc` | Apache 2.0 | Reference compiler (C) |
 | `toke-corpus` | Apache 2.0 | Corpus generation pipeline |
-| `toke-tokenizer` | Apache 2.0 | BPE tokenizer (Profile 2) |
+| `toke-tokenizer` | Apache 2.0 | BPE tokenizer (default syntax) |
 | `toke-models` | Apache 2.0 | QLoRA fine-tuning and evaluation |
 | `toke-benchmark` | Apache 2.0 | Benchmark tasks and harness |
 

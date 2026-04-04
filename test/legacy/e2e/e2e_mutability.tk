@@ -1,0 +1,7 @@
+M=test;
+F=main():i64{
+  let x=mut.10;
+  x=20;
+  x=30;
+  <x
+};

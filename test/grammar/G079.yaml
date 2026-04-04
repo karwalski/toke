@@ -1,0 +1,10 @@
+id: G079
+series: G
+description: "Field access on struct in default mode"
+input: |
+  m=test;
+  t=$inner{val:i64};
+  t=$outer{inner:$inner};
+  f=getval(o:$outer):i64{<o.inner.val};
+expected_exit_code: 0
+expected_error_codes: []

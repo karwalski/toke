@@ -1,0 +1,8 @@
+id: G089
+series: G
+description: "Unary negation in default mode"
+input: |
+  m=test;
+  f=neg(x:i64):i64{<-x};
+expected_exit_code: 0
+expected_error_codes: []

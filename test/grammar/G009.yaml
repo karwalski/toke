@@ -12,3 +12,4 @@ input: |
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""
+flags: --legacy

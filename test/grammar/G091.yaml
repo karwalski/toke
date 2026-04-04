@@ -1,0 +1,9 @@
+id: G091
+series: G
+description: "Constant declaration at module scope in default mode"
+input: |
+  m=test;
+  maxval=100:i64;
+  f=limit():i64{<maxval};
+expected_exit_code: 0
+expected_error_codes: []

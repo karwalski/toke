@@ -1,0 +1,11 @@
+id: D039
+series: D
+description: "Assignment to function parameter in default mode emits E4070"
+input: |
+  m=test;
+  f=bad(x:i64):i64{
+    x=2;
+    <x
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4070"]

@@ -11,7 +11,7 @@
 
 | # | Criterion | Threshold | Result | Verdict |
 |---|-----------|-----------|--------|---------|
-| 1 | Token reduction on held-out D2C tasks using Phase 1 character set | >= 10% | 12.5% (8K vocab) / 13.1% (32K vocab) | **PASS** |
+| 1 | Token reduction on held-out D2C tasks using legacy character set | >= 10% | 12.5% (8K vocab) / 13.1% (32K vocab) | **PASS** |
 | 2 | First-pass compile success (Pass@1) | >= 60% | 63.7% (588/923 tasks) | **PASS** |
 
 **Failure consequence (not triggered):** Halt language development and pivot to typed-IR approach only.
@@ -94,7 +94,7 @@ These are predominantly model quality issues, not compiler bugs. Further trainin
 
 ---
 
-## What Was Built in Phase 1
+## What Was Built in Project Phase 1
 
 ### Reference Compiler (tkc)
 
@@ -143,12 +143,12 @@ SAST (cppcheck + clang-tidy), libFuzzer fuzzing, secret scanning, dependency sca
 
 ---
 
-## Phase 2 — Next Steps
+## Next Steps
 
 With Gate 1 passed, the project proceeds to:
 
-1. **Phase 2 language extensions** (Epic 2.1) — 56-character set, type sigils, array literals
-2. **Corpus Phase 2 transformation** (Epic 2.14) — transform 46K programs to Phase 2 syntax
+1. **Default syntax implementation** (Epic 2.1) — 56-character set, type sigils, array literals
+2. **Corpus default syntax transformation** (Epic 2.14) — transform 46K programs to default syntax
 3. **Model scaling** — larger base models, expanded training data, improved prompts
 4. **Hugging Face publication** (Epic 6.1) — model card, weights, benchmark results
 5. **Research review** (Story 2.17.2) — update placeholders with final Gate 1 results

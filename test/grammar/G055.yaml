@@ -1,0 +1,8 @@
+id: G055
+series: G
+description: "At-paren map literal is recognized in default mode"
+input: |
+  m=test;
+  f=mk():i64{let m=@(1:10;2:20);<1};
+expected_exit_code: 0
+expected_error_codes: []

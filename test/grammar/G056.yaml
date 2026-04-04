@@ -1,0 +1,8 @@
+id: G056
+series: G
+description: "Array type @i64 is recognized in default mode"
+input: |
+  m=test;
+  f=first(a:@i64):i64{<a.get(0)};
+expected_exit_code: 0
+expected_error_codes: []

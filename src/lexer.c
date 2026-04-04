@@ -1,5 +1,5 @@
 /*
- * lexer.c — Lexical analyser for the toke Profile 1 reference compiler.
+ * lexer.c — Lexical analyser for the toke reference compiler.
  *
  * =========================================================================
  * Role in the compiler pipeline
@@ -10,15 +10,26 @@
  * and the lexer fills it sequentially via emit().
  *
  * =========================================================================
- * Profile 1 character set (80 characters)
+ * Character sets
  * =========================================================================
- * toke Profile 1 restricts source files to an 80-character repertoire:
+ * Default mode (56-char syntax):
+ *   - Letters        a-z  A-Z                (52)
+ *   - Digits         0-9                     (10)
+ *   - Symbols        ( ) { } [ ] = : . ; + - * / < > ! | " \ $ @   (20)
+ *   Keywords are lowercase (m=, f=, t=, i=); uppercase also accepted.
+ *   $ prefixes type references; @ is a valid token.
+ *   Uppercase-initial identifiers are plain TK_IDENT (not TK_TYPE_IDENT).
+ *
+ * Legacy mode (80-char syntax, PROFILE_LEGACY):
  *   - Letters        a-z  A-Z                (52)
  *   - Digits         0-9                     (10)
  *   - Symbols        ( ) { } [ ] = : . ; + - * / < > ! | " \   (18)
- * Any character outside this set (after whitespace is excluded) triggers
- * diagnostic E1003.  Whitespace characters (space, tab, CR, LF) are
- * consumed silently and never produce tokens.
+ *   Keywords are uppercase (M=, F=, T=, I=).
+ *   Uppercase-initial identifiers produce TK_TYPE_IDENT.
+ *   $ and @ produce E1003.
+ *
+ * Any character outside the active set (after whitespace is excluded)
+ * triggers diagnostic E1003.
  *
  * =========================================================================
  * Token storage
@@ -36,8 +47,10 @@
  * =========================================================================
  *   E1001 — Invalid escape sequence in a string literal.
  *   E1002 — Unterminated string literal (EOF before closing quote).
- *   E1003 — Character outside the Profile 1 character set.
- *   W1010 — String interpolation \( attempted (not supported in Profile 1).
+ *   E1003 — Character outside the allowed character set.
+ *   E1004 — Unterminated string at EOF (distinct from mid-file E1002).
+ *   E1005 — Invalid numeric literal (0x/0b with no digits, etc.).
+ *   W1010 — String interpolation \( attempted (not supported).
  *
  * Errors cause lex() to return -1 immediately after emitting the
  * diagnostic via diag_emit().  The W1010 warning is non-fatal; lexing
@@ -54,6 +67,8 @@
 #define LEX_E1001 1001   /* invalid escape sequence                       */
 #define LEX_E1002 1002   /* unterminated string literal                   */
 #define LEX_E1003 1003   /* character outside Profile 1 set               */
+#define LEX_E1004 1004   /* unterminated string at EOF                    */
+#define LEX_E1005 1005   /* invalid numeric literal                       */
 #define LEX_W1010 1010   /* string interpolation not supported (warning)  */
 
 /*
@@ -78,6 +93,7 @@ typedef struct {
     Token      *out;
     int         out_cap;
     int         out_n;
+    Profile     profile;
 } Lexer;
 
 /* Forward declarations. */
@@ -148,7 +164,9 @@ static int is_whitespace(char c)
  * ----------------------------------------------------------------------- */
 
 typedef struct { const char *word; TokenKind kind; } KwEntry;
-static const KwEntry KEYWORDS[] = {
+
+/* Legacy-mode keywords: uppercase single-letter, plus multi-char keywords. */
+static const KwEntry KEYWORDS_LEGACY[] = {
     { "F",     TK_KW_F   }, { "T",     TK_KW_T   },
     { "I",     TK_KW_I   }, { "M",     TK_KW_M   },
     { "if",    TK_KW_IF  }, { "el",    TK_KW_EL  },
@@ -157,45 +175,70 @@ static const KwEntry KEYWORDS[] = {
     { "as",    TK_KW_AS  }, { "rt",    TK_KW_RT  },
     { "true",  TK_BOOL_LIT }, { "false", TK_BOOL_LIT },
 };
-#define KW_COUNT ((int)(sizeof(KEYWORDS) / sizeof(KEYWORDS[0])))
+#define KW_LEGACY_COUNT ((int)(sizeof(KEYWORDS_LEGACY) / sizeof(KEYWORDS_LEGACY[0])))
+
+/* Default-mode keywords: uppercase single-letter keywords (F/T/I/M) are
+ * still recognized so existing code using uppercase declarations continues
+ * to work.  Lowercase single-letter forms (m/f/i/t) are NOT in the keyword
+ * table — the parser handles them via lookahead (is_decl_ident), keeping
+ * them as TK_IDENT so that e.g. `i` inside a function body is a variable. */
+static const KwEntry KEYWORDS_DEFAULT[] = {
+    { "F",     TK_KW_F   }, { "T",     TK_KW_T   },
+    { "I",     TK_KW_I   }, { "M",     TK_KW_M   },
+    { "if",    TK_KW_IF  }, { "el",    TK_KW_EL  },
+    { "lp",    TK_KW_LP  }, { "br",    TK_KW_BR  },
+    { "let",   TK_KW_LET }, { "mut",   TK_KW_MUT },
+    { "as",    TK_KW_AS  }, { "rt",    TK_KW_RT  },
+    { "true",  TK_BOOL_LIT }, { "false", TK_BOOL_LIT },
+};
+#define KW_DEFAULT_COUNT ((int)(sizeof(KEYWORDS_DEFAULT) / sizeof(KEYWORDS_DEFAULT[0])))
 
 /*
  * classify_ident — Determine whether a scanned identifier is a keyword,
  *                  boolean literal, type identifier, or plain identifier.
  *
  * Parameters:
- *   src   — full source text
- *   start — byte offset where the identifier begins
- *   len   — length of the identifier in bytes
+ *   src     — full source text
+ *   start   — byte offset where the identifier begins
+ *   len     — length of the identifier in bytes
+ *   profile — PROFILE_DEFAULT or PROFILE_LEGACY
  *
  * Returns:
  *   The appropriate TokenKind.  Lookup proceeds as follows:
  *     1. If the identifier is >= 32 characters it cannot be a keyword
  *        (all keywords are <= 5 chars), so skip the table search.
  *     2. Copy the identifier into a NUL-terminated local buffer and
- *        compare against every entry in KEYWORDS[].
- *     3. If no keyword matches, inspect the first character: an uppercase
- *        letter means the token is a type identifier (TK_TYPE_IDENT),
- *        otherwise it is a plain identifier (TK_IDENT).
- *
- * Non-obvious logic — prefix disambiguation:
- *   Because keywords like "lp" and "let" share a common prefix, the
- *   lexer does NOT try to match keywords character-by-character during
- *   scanning.  Instead, lex_ident() consumes the full run of identifier
- *   characters first, then classify_ident() matches the complete string
- *   against the keyword table.  This avoids ambiguity: "lp" matches
- *   TK_KW_LP while "let" matches TK_KW_LET, and "lpx" matches TK_IDENT.
+ *        compare against every entry in the profile's keyword table.
+ *     3. If no keyword matches:
+ *        - Both modes: uppercase-initial -> TK_TYPE_IDENT, else TK_IDENT.
  */
-static TokenKind classify_ident(const char *src, int start, int len)
+static TokenKind classify_ident(const char *src, int start, int len,
+                                Profile profile)
 {
     char buf[32];
     int i;
+    const KwEntry *table;
+    int count;
+
+    if (profile == PROFILE_LEGACY) {
+        table = KEYWORDS_LEGACY;
+        count = KW_LEGACY_COUNT;
+    } else {
+        table = KEYWORDS_DEFAULT;
+        count = KW_DEFAULT_COUNT;
+    }
+
     if (len >= 32) goto not_kw;
     for (i = 0; i < len; i++) buf[i] = src[start + i];
     buf[len] = '\0';
-    for (i = 0; i < KW_COUNT; i++)
-        if (strcmp(buf, KEYWORDS[i].word) == 0) return KEYWORDS[i].kind;
+    for (i = 0; i < count; i++)
+        if (strcmp(buf, table[i].word) == 0) return table[i].kind;
+
 not_kw:
+    /* Both modes: uppercase-initial identifiers produce TK_TYPE_IDENT.
+     * In default mode, $ + ident is also a type reference (handled by the
+     * parser), but TK_TYPE_IDENT is retained for backward compatibility
+     * so that existing code using uppercase type names still works. */
     return (src[start] >= 'A' && src[start] <= 'Z') ? TK_TYPE_IDENT : TK_IDENT;
 }
 
@@ -288,11 +331,21 @@ static int lex_number(Lexer *l, int start, int line, int col)
         char next = l->src[l->pos + 1];
         if (next == 'x' || next == 'X') {
             advance(l); advance(l);
+            if (l->pos >= l->len || !is_hex(l->src[l->pos])) {
+                diag_emit(DIAG_ERROR, LEX_E1005, start, line, col,
+                          "invalid numeric literal: 0x requires hex digits", NULL);
+                return -1;
+            }
             while (l->pos < l->len && is_hex(l->src[l->pos])) advance(l);
             return emit(l, TK_INT_LIT, start, l->pos - start, line, col);
         }
         if (next == 'b' || next == 'B') {
             advance(l); advance(l);
+            if (l->pos >= l->len || (l->src[l->pos] != '0' && l->src[l->pos] != '1')) {
+                diag_emit(DIAG_ERROR, LEX_E1005, start, line, col,
+                          "invalid numeric literal: 0b requires binary digits", NULL);
+                return -1;
+            }
             while (l->pos < l->len &&
                    (l->src[l->pos] == '0' || l->src[l->pos] == '1')) advance(l);
             return emit(l, TK_INT_LIT, start, l->pos - start, line, col);
@@ -339,7 +392,7 @@ static int lex_number(Lexer *l, int start, int line, int col)
  * Error conditions:
  *   - Backslash followed by an unrecognised character -> E1001.
  *   - \x not followed by exactly two hex digits       -> E1001.
- *   - EOF reached before a closing '"'                -> E1002.
+ *   - EOF reached before a closing '"'                -> E1004.
  */
 static int lex_string(Lexer *l, int start, int line, int col)
 {
@@ -388,8 +441,8 @@ static int lex_string(Lexer *l, int start, int line, int col)
             advance(l);
         }
     }
-    diag_emit(DIAG_ERROR, LEX_E1002, start, line, col,
-              "unterminated string literal", NULL);
+    diag_emit(DIAG_ERROR, LEX_E1004, start, line, col,
+              "unterminated string literal at end of file", NULL);
     return -1;
 }
 
@@ -417,7 +470,8 @@ static int lex_ident(Lexer *l, int start, int line, int col)
 {
     while (l->pos < l->len && is_ident_cont(l->src[l->pos])) advance(l);
     int len = l->pos - start;
-    return emit(l, classify_ident(l->src, start, len), start, len, line, col);
+    return emit(l, classify_ident(l->src, start, len, l->profile),
+                start, len, line, col);
 }
 
 /*
@@ -463,7 +517,7 @@ static int lex_ident(Lexer *l, int start, int line, int col)
  *   it begins with l->pos still on the first digit, because the leading
  *   '0' may need to be inspected for prefix detection (0x, 0b).
  */
-int lex(const char *src, int src_len, Token *out, int out_cap)
+int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
 {
     Lexer l;
     l.src     = src;
@@ -474,6 +528,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap)
     l.out     = out;
     l.out_cap = out_cap;
     l.out_n   = 0;
+    l.profile = profile;
 
     while (l.pos < l.len) {
         char c     = src[l.pos];
@@ -509,8 +564,22 @@ int lex(const char *src, int src_len, Token *out, int out_cap)
         case ')':  sym = TK_RPAREN;   break;
         case '{':  sym = TK_LBRACE;   break;
         case '}':  sym = TK_RBRACE;   break;
-        case '[':  sym = TK_LBRACKET; break;
-        case ']':  sym = TK_RBRACKET; break;
+        case '[':
+            if (l.profile == PROFILE_DEFAULT) {
+                diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
+                          "square brackets are not allowed in default mode; "
+                          "use @() for arrays/maps", NULL);
+                return -1;
+            }
+            sym = TK_LBRACKET; break;
+        case ']':
+            if (l.profile == PROFILE_DEFAULT) {
+                diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
+                          "square brackets are not allowed in default mode; "
+                          "use @() for arrays/maps", NULL);
+                return -1;
+            }
+            sym = TK_RBRACKET; break;
         case '=':  sym = TK_EQ;       break;
         case ':':  sym = TK_COLON;    break;
         case '.':  sym = TK_DOT;      break;
@@ -522,10 +591,39 @@ int lex(const char *src, int src_len, Token *out, int out_cap)
         case '<':  sym = TK_LT;       break;
         case '>':  sym = TK_GT;       break;
         case '!':  sym = TK_BANG;     break;
-        case '|':  sym = TK_PIPE;     break;
+        case '|':
+            if (l.pos + 1 < l.len && src[l.pos + 1] == '|') {
+                advance(&l); advance(&l);
+                if (emit(&l, TK_OR, start, 2, line, col) < 0) return -1;
+                continue;
+            }
+            sym = TK_PIPE; break;
+        case '&':
+            if (l.pos + 1 < l.len && src[l.pos + 1] == '&') {
+                advance(&l); advance(&l);
+                if (emit(&l, TK_AND, start, 2, line, col) < 0) return -1;
+                continue;
+            }
+            diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
+                      "character outside allowed character set", NULL);
+            return -1;
+        case '$':
+            if (l.profile == PROFILE_LEGACY) {
+                diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
+                          "character outside Profile 1 character set", NULL);
+                return -1;
+            }
+            sym = TK_DOLLAR; break;
+        case '@':
+            if (l.profile == PROFILE_LEGACY) {
+                diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
+                          "character outside Profile 1 character set", NULL);
+                return -1;
+            }
+            sym = TK_AT; break;
         default:
             diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
-                      "character outside Profile 1 character set", NULL);
+                      "character outside allowed character set", NULL);
             return -1;
         }
         advance(&l);

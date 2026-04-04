@@ -176,7 +176,7 @@ toke uses a **TOON-first serialization strategy**: TOON (Token-Oriented Object N
 
 ### 5.1 Tokenizer Evaluation
 
-BPE tokenizer trained on the Phase 1 corpus (46,730 programs). Evaluated on 4,675 held-out programs.
+BPE tokenizer trained on the legacy profile corpus (46,730 programs). Evaluated on 4,675 held-out programs.
 
 | Metric | 8K Vocabulary | 32K Vocabulary |
 |--------|--------------|----------------|
@@ -187,7 +187,7 @@ BPE tokenizer trained on the Phase 1 corpus (46,730 programs). Evaluated on 4,67
 | Vocabulary utilisation | 70.2% | 23.5% |
 | Fertility | 0.377 | 0.374 |
 
-> **Note:** These results are from the Phase 1 (80-character) corpus. The Phase 2 (56-character) corpus transformation is complete (46,754 entries transformed). The reduced character set is expected to improve these numbers further.
+> **Note:** These results are from the legacy profile (80-character) corpus. The default syntax (56-character) corpus transformation is complete (46,754 entries transformed). The reduced character set is expected to improve these numbers further.
 
 ### 5.2 Token Efficiency vs Other Languages
 
@@ -228,7 +228,7 @@ Full Gate 1 decision document: [gate1-decision.md](https://github.com/karwalski/
 
 We specifically invite critique and alternative perspectives on the following decisions:
 
-### 6.1 Character Set Reduction (80 → 56 characters)
+### 6.1 Character Set Reduction (Legacy 80 → Default 56 characters)
 
 Removing uppercase letters eliminates case-based type/value distinction (common in Go, Haskell, Rust). Instead, toke uses `$` sigils for type names (`$user`, `$str`). This reduces the character set but increases average identifier length by 1 character.
 
@@ -322,12 +322,12 @@ These questions from the RFC (Section 23) remain unresolved:
 
 | Milestone | Status | Key Result |
 |-----------|--------|------------|
-| 1.1 Language specification | Complete | LL(1) grammar, 56-char set, 12 keywords |
+| 1.1 Language specification | Complete | LL(1) grammar, toke character set (56 chars), 12 keywords |
 | 1.2 Reference compiler | Complete | Single-pass C99, LLVM backend, 90 conformance + 9 e2e tests |
 | 1.3 Standard library | Complete | 14 modules, C runtime backing |
-| 1.5 Training corpus | Complete | 46,754 validated programs, Phase 2 syntax |
+| 1.5 Training corpus | Complete | 46,754 validated programs, default syntax |
 | 1.6 Gate 1 evaluation | **PASS** | 12.5% token reduction, 63.7% Pass@1 (588/923 tasks) |
-| 2.2 Purpose-built tokenizer | Complete | 8K/32K vocab, Phase 1 corpus |
+| 2.2 Purpose-built tokenizer | Complete | 8K/32K vocab, legacy profile corpus |
 | 2.3 Fine-tuned model | Complete | QLoRA on Qwen 2.5 Coder 7B, LoRA adapter |
 | 6.3 Serialization formats | Complete | TOON, YAML, JSON modules + i18n (ADR-0003) |
 
@@ -378,7 +378,7 @@ FuncDecl    = "f" , "=" , Ident , "(" , [ ParamList ] , ")" , [ ":" , TypeExpr ]
 
 ## Appendix B: Tokenizer Comparison
 
-### Token Reduction vs cl100k_base (Phase 1 Corpus)
+### Token Reduction vs cl100k_base (Legacy Profile Corpus)
 
 | Metric | 8K Vocabulary | 32K Vocabulary |
 |--------|--------------|----------------|
@@ -398,7 +398,7 @@ FuncDecl    = "f" , "=" , Ident , "(" , [ ParamList ] , ")" , [ ":" , TypeExpr ]
 | Python | 156 | 3.0x |
 | C | 168 | 3.2x |
 
-## Appendix C: Sample Corpus Entries (Phase 2 Syntax)
+## Appendix C: Sample Corpus Entries (Default Syntax)
 
 ### Array sum (Phase A — Array, 45 tokens)
 ```
@@ -430,7 +430,7 @@ m=reverse;f=reverse(s:$str):$str{let len=s.len;let result=mut."";lp(let i=len-1;
 m=bubblesort;f=bubbleSort(arr:@i64):@i64{let result=mut.arr;let n=arr.len;lp(let x=0;x<n;x=x+1){lp(let y=0;y+1<n;y=y+1){if(result.get(y)>result.get(y+1)){let tmp=result.get(y);result.get(y)=result.get(y+1);result.get(y+1)=tmp;};};};<result};
 ```
 
-**Key Phase 2 syntax features visible in these examples:**
+**Key default syntax features visible in these examples:**
 - Lowercase keywords: `m=`, `f=`, `t=`, `lp`, `el`
 - `$` type sigils: `$str`, `$matherr`, `$divbyzero`
 - `@` array types: `@i64`

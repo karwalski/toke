@@ -1,0 +1,8 @@
+id: G085
+series: G
+description: "Equality comparison in default mode"
+input: |
+  m=test;
+  f=eq(a:i64;b:i64):bool{<a=b};
+expected_exit_code: 0
+expected_error_codes: []

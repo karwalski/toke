@@ -1,0 +1,8 @@
+id: G086
+series: G
+description: "Arithmetic operators in default mode"
+input: |
+  m=test;
+  f=calc(a:i64;b:i64):i64{<a+b-a*b/b};
+expected_exit_code: 0
+expected_error_codes: []

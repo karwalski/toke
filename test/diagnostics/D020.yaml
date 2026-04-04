@@ -6,3 +6,4 @@ input: |
   F=bad(arr:[i64];x:bool):i64{<arr[x]};
 expected_exit_code: 1
 expected_error_codes: ["E4031"]
+flags: --legacy

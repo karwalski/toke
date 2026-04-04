@@ -1,0 +1,9 @@
+id: G063
+series: G
+description: "Type declaration with lowercase t= and dollar-prefix in default mode"
+input: |
+  m=test;
+  t=$point{x:i64;y:i64};
+  f=mk():$point{<$point{x:0;y:0}};
+expected_exit_code: 0
+expected_error_codes: []

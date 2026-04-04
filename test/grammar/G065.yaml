@@ -1,0 +1,11 @@
+id: G065
+series: G
+description: "Multiple imports with lowercase i= in default mode"
+input: |
+  m=test;
+  i=s:std.str;
+  i=h:std.http;
+  i=d:std.db;
+  f=noop():bool{<true};
+expected_exit_code: 0
+expected_error_codes: []

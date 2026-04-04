@@ -9,8 +9,8 @@ toke is a programming language built for machines, not humans. Its syntax
 is designed to minimise token usage in LLM generation while eliminating
 ambiguity and providing structured, machine-readable compiler diagnostics.
 
-- **Phase 1:** 80-character set, compatible with existing LLM tokenizers
-- **Phase 2:** 56-character set, for use with the purpose-built toke tokenizer
+- **Legacy profile:** 80-character set, compatible with existing LLM tokenizers (used for bootstrapping)
+- **Default syntax:** 56-character set, for use with the purpose-built toke tokenizer
 
 Programs compile to native machine code via LLVM. No runtime. No GC.
 
@@ -20,7 +20,7 @@ Programs compile to native machine code via LLVM. No runtime. No GC.
 - `spec/grammar.ebnf` — the normative formal grammar
 - `spec/semantics.md` — type rules and memory model
 - `spec/errors.md` — error code registry
-- `examples/` — example programs in Phase 1 and Phase 2 syntax
+- `examples/` — example programs in legacy and default syntax
 
 ## Related repositories
 

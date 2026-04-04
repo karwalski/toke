@@ -64,7 +64,7 @@ criteria. Source line counts are from the committed implementation.
 
 | Criterion | Verified |
 |-----------|---------|
-| 80-character set (spec §2.1) | yes |
+| legacy character set (spec §2.1) | yes |
 | 38 token kinds | yes |
 | W1010 — non-structural out-of-set character in string literal | yes |
 | E1001 — unterminated string literal | yes |
@@ -145,7 +145,7 @@ requires adding a `depth` field to `Decl` and comparing at call sites; scheduled
 **Match type inference limitation:** Sum type variant types are not fully tracked through
 match arms. The type checker verifies arm exhaustiveness and that all arms return the
 same concrete type, but does not propagate variant payload types into arm bodies.
-This is sufficient for Phase 1 programs; Phase 2 will require full variant typing.
+This is sufficient for legacy profile programs; the next project phase will require full variant typing.
 
 ### 2.6 Structured diagnostic emitter (`src/diag.c`) — story 1.2.6
 
@@ -326,7 +326,7 @@ TLS: certificate and key paths via `TK_MONITOR_CERT` / `TK_MONITOR_KEY`.
 | Corpus storage schema (JSON schema, validation stubs) | scaffolded |
 | Sandboxed execution profile (`sandbox-exec`, Docker) | done (story 1.8.2) |
 | Threat model documentation | done (story 1.8.1) |
-| tkc compiler: accepts all Phase 1 toke programs | done |
+| tkc compiler: accepts all legacy profile toke programs | done |
 
 ### 5.2 What runs now (without Mac Studio)
 
@@ -381,7 +381,7 @@ nested bindings may receive spurious E5001 diagnostics. Fix: add `int depth` to
 **Phase 2 priority:** High
 **Detail:** The `as` type-cast expression compiles to a `bitcast i64* to i64*`
 no-op placeholder. No integer widening, narrowing, or pointer-to-integer conversion
-is performed. Any Phase 1 program using `as` will produce a binary with incorrect
+is performed. Any legacy profile program using `as` will produce a binary with incorrect
 runtime behaviour. Fix: pattern-match on source and destination types and emit the
 correct LLVM instruction (`zext`, `sext`, `trunc`, `ptrtoint`, `inttoptr`, `fpext`,
 `fptrunc`, or `fptoui`/`uitofp` as appropriate).
@@ -412,9 +412,9 @@ labelled break).
 **Phase 2 priority:** Low (Phase 2 sum types)
 **Detail:** Match arm bodies are type-checked for mutual consistency and
 exhaustiveness, but payload types of sum type variants are not propagated into arm
-bodies as bound variables. This is sufficient for Phase 1 programs (which use match
+bodies as bound variables. This is sufficient for legacy profile programs (which use match
 on bool or simple enumerations). Full sum type support with payload binding is a
-Phase 2 feature; the current implementation will need to be extended rather than
+future feature; the current implementation will need to be extended rather than
 replaced.
 
 ### TD-006 — No dedicated test executables for std.file, std.http, std.json

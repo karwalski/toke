@@ -1,0 +1,8 @@
+id: L030
+series: L
+description: "At sign (@) is a valid token in default mode for array/map literals"
+input: |
+  m=test;
+  f=mk():i64{let a=@(1;2;3);<a.get(0)};
+expected_exit_code: 0
+expected_error_codes: []

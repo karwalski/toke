@@ -1,0 +1,13 @@
+id: G070
+series: G
+description: "Loop statement with break in default mode"
+input: |
+  m=test;
+  f=find():i64{
+    lp(let i=0;i<100;i=i+1){
+      if(i=5){br};
+    };
+    <5
+  };
+expected_exit_code: 0
+expected_error_codes: []

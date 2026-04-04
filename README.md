@@ -7,7 +7,7 @@ a machine-native programming language designed for LLM code generation.
 
 ## Status
 
-Phase 2 — Language Extensions. Gate 1 passed 2026-04-03 (12.5% token reduction, 63.7% Pass@1).
+Default Syntax Implementation. Gate 1 passed 2026-04-03 (12.5% token reduction, 63.7% Pass@1).
 
 ## DCO
 
@@ -32,8 +32,8 @@ Produces `./tkc` binary.
     --out <path>          output binary path
     --emit-interface      emit .tki interface files
     --check               type-check only, no code generation
-    --profile1            Profile 1: 80-character set (default)
-    --profile2            Profile 2: 56-character set
+    --profile1            legacy profile: 80-character set
+    --profile2            default syntax: 56-character set (default)
     --diag-json           structured JSON diagnostics (default)
     --diag-text           human-readable diagnostics
 

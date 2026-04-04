@@ -1,0 +1,8 @@
+id: G077
+series: G
+description: "Map type parameter @($i64:$str) in default mode"
+input: |
+  m=test;
+  f=lookup(m:@($i64:$str)):i64{<1};
+expected_exit_code: 0
+expected_error_codes: []

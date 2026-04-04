@@ -1,0 +1,11 @@
+id: G082
+series: G
+description: "Logical AND (&&) in default mode"
+input: |
+  m=test;
+  f=main():i64{
+    let a=true&&false;
+    <0
+  };
+expected_exit_code: 0
+expected_error_codes: []

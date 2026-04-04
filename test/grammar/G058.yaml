@@ -1,0 +1,8 @@
+id: G058
+series: G
+description: "Map type @($i64:$i64) is recognized in default mode"
+input: |
+  m=test;
+  f=mk(m:@($i64:$i64)):i64{<1};
+expected_exit_code: 0
+expected_error_codes: []

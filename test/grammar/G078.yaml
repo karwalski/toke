@@ -1,0 +1,9 @@
+id: G078
+series: G
+description: "Struct literal with $-prefix type in default mode"
+input: |
+  m=test;
+  t=$pair{a:i64;b:i64};
+  f=make():$pair{<$pair{a:1;b:2}};
+expected_exit_code: 0
+expected_error_codes: []

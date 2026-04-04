@@ -1,0 +1,12 @@
+id: G046
+series: G
+description: "Narrow integer types i8/i16/i32 are recognized and type-checked"
+input: |
+  M=test;
+  F=narrow():i64{
+    let a:i32=42 as i32;
+    let b:i64=a as i64;
+    <b
+  };
+expected_exit_code: 0
+expected_error_codes: []

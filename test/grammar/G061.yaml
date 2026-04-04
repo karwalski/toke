@@ -1,0 +1,8 @@
+id: G061
+series: G
+description: "Function declaration with lowercase f= zero parameters"
+input: |
+  m=test;
+  f=zero():i64{<0};
+expected_exit_code: 0
+expected_error_codes: []

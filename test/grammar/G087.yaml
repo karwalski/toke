@@ -1,0 +1,9 @@
+id: G087
+series: G
+description: "Function call with multiple arguments in default mode"
+input: |
+  m=test;
+  f=add(a:i64;b:i64):i64{<a+b};
+  f=main():i64{<add(1;2)};
+expected_exit_code: 0
+expected_error_codes: []

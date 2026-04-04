@@ -33,9 +33,11 @@
 #include "fmt.h"     /* tkc_format() */
 #include "ast_json.h" /* ast_dump_json() */
 #include "sourcemap.h" /* SourceMap, sourcemap_*() */
+#include "companion.h" /* emit_companion() */
 #include "tkc_limits.h"
 #include "config.h"
 #include "progress.h"
+#include "migrate.h"
 
 /* Forward declarations for stubs not yet exported by their headers */
 #ifndef TK_ARENA_TYPES_DEFINED
@@ -49,11 +51,11 @@ void   arena_free(Arena *arena);
 int  diag_error_count(void);
 void diag_reset(void);
 
-int lex(const char *src, int src_len, Token *tokens, int token_cap);
+int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile profile);
 
 /* ── Constants ─────────────────────────────────────────────────────── */
 
-#define VERSION   "tkc 0.1.0 (Profile 1)"
+#define VERSION   "tkc 0.1.0"
 #define EUSAGE    TKC_EXIT_USAGE
 #define EINTERNAL TKC_EXIT_INTERNAL
 #define ECOMPILE  TKC_EXIT_COMPILE
@@ -74,8 +76,14 @@ static const char HELP[] =
     "  --sourcemap         Emit .map source map alongside --fmt/--pretty output\n"
     "  --dump-ast          Dump parsed AST as JSON to stdout and exit\n"
     "  --check             Type check only; no code generation\n"
-    "  --profile1          Profile 1 character set (80 chars, default)\n"
-    "  --profile2          Profile 2 character set (56 chars, informational only in v0.1)\n"
+    "  --companion         Generate .tkc.md companion file skeleton to stdout\n"
+    "  --companion-out <p> Write companion file to <p> instead of stdout\n"
+    "  --verify-companion <f> Verify companion file hash against source\n"
+    "  --companion-diff <f>   Compare source against companion, report divergences\n"
+    "  --migrate           Migrate legacy .tk file to default syntax (stdout)\n"
+    "  --legacy            Legacy mode (80-char syntax, uppercase keywords)\n"
+    "  --profile1          Deprecated alias for --legacy\n"
+    "  --profile2          Deprecated alias for default mode\n"
     "  --diag-json         Emit diagnostics as JSON (default when not a tty)\n"
     "  --diag-text         Emit diagnostics as human-readable text\n"
     "  --diag-sarif        Emit diagnostics as SARIF v2.1.0 JSON to stdout\n"
@@ -195,7 +203,13 @@ int main(int argc, char **argv)
     int emit_ll = 0, emit_asm = 0, opt_level = 1, fmt_only = 0;
     int pretty = 0, expand = 0, sourcemap = 0;
     int dump_ast = 0;
+    int migrate = 0;
+    int companion = 0;
+    const char *companion_out = NULL;
+    const char *verify_companion_path = NULL;
+    const char *companion_diff_comp = NULL;
     int show_limits = 0;
+    Profile profile = PROFILE_DEFAULT;
     TkcLimits limits;
     tkc_limits_defaults(&limits);
 
@@ -233,11 +247,27 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--sourcemap"))      sourcemap = 1;
         else if (!strcmp(argv[i], "--check"))          check_only = 1;
         else if (!strcmp(argv[i], "--dump-ast"))       dump_ast = 1;
-        else if (!strcmp(argv[i], "--profile1"))    { /* default */ }
-        else if (!strcmp(argv[i], "--profile2"))   { /* informational */ }
-        /* backward-compat aliases (deprecated): --phase1, --phase2 */
-        else if (!strcmp(argv[i], "--phase1"))     { /* default; use --profile1 */ }
-        else if (!strcmp(argv[i], "--phase2"))     { /* informational; use --profile2 */ }
+        else if (!strcmp(argv[i], "--migrate"))      migrate = 1;
+        else if (!strcmp(argv[i], "--companion"))    companion = 1;
+        else if (!strcmp(argv[i], "--companion-out")) {
+            companion = 1;
+            if (++i >= argc) { fputs("tkc: --companion-out requires an argument\n", stderr); return EUSAGE; }
+            companion_out = argv[i];
+        }
+        else if (!strcmp(argv[i], "--verify-companion")) {
+            if (++i >= argc) { fputs("tkc: --verify-companion requires an argument\n", stderr); return EUSAGE; }
+            verify_companion_path = argv[i];
+        }
+        else if (!strcmp(argv[i], "--companion-diff")) {
+            if (++i >= argc) { fputs("tkc: --companion-diff requires a companion file argument\n", stderr); return EUSAGE; }
+            companion_diff_comp = argv[i];
+        }
+        else if (!strcmp(argv[i], "--legacy"))       profile = PROFILE_LEGACY;
+        /* deprecated aliases */
+        else if (!strcmp(argv[i], "--profile1"))   profile = PROFILE_LEGACY;
+        else if (!strcmp(argv[i], "--profile2"))   { /* default mode, no-op */ }
+        else if (!strcmp(argv[i], "--phase1"))     profile = PROFILE_LEGACY;
+        else if (!strcmp(argv[i], "--phase2"))     { /* default mode, no-op */ }
         else if (!strcmp(argv[i], "-O0"))             opt_level = 0;
         else if (!strcmp(argv[i], "-O1"))             opt_level = 1;
         else if (!strcmp(argv[i], "-O2"))             opt_level = 2;
@@ -282,6 +312,8 @@ int main(int argc, char **argv)
         printf("  arena-block  = %d\n", limits.arena_block_size);
         return 0;
     }
+    /* --verify-companion: standalone mode, no source file needed */
+    if (verify_companion_path) return verify_companion(verify_companion_path);
     if (!src)            { puts(HELP); return EUSAGE; }
     if ((djson + dtext + dsarif) > 1) { fputs("tkc: --diag-json, --diag-text, and --diag-sarif are mutually exclusive\n", stderr); return EUSAGE; }
 
@@ -291,8 +323,11 @@ int main(int argc, char **argv)
                     isatty(STDOUT_FILENO) ? DIAG_FMT_TEXT : DIAG_FMT_JSON);
     diag_set_source_file(src);
 
+    /* --migrate forces legacy profile for lexing */
+    if (migrate) profile = PROFILE_LEGACY;
+
     /* Progress bar: skip for fast-path modes */
-    int fast_path = fmt_only || pretty || expand || check_only || dump_ast;
+    int fast_path = fmt_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp;
     progress_init(fast_path);
 
     /* Read source file — only malloc in the pipeline */
@@ -319,14 +354,28 @@ int main(int argc, char **argv)
     int tcap = (int)(slen + 16);
     Token *toks = arena_alloc(arena, tcap * (int)sizeof(Token));
     if (!toks) { rc = EINTERNAL; goto done; }
-    int tc = lex(sbuf, (int)slen, toks, tcap);
+    int tc = lex(sbuf, (int)slen, toks, tcap, profile);
     if (tc < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
     progress_update(10);
 
+    /* --migrate: transform legacy tokens to default syntax and exit */
+    if (migrate) {
+        if (tkc_migrate(sbuf, (int)slen, toks, tc, stdout) < 0) {
+            rc = EINTERNAL;
+        }
+        goto done;
+    }
+
     /* Parse */
-    Node *ast = parse(toks, tc, sbuf, arena);
+    Node *ast = parse(toks, tc, sbuf, arena, profile);
     if (!ast || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
     progress_update(30);
+
+    /* --companion-diff: compare source AST against existing companion */
+    if (companion_diff_comp) {
+        rc = companion_diff(src, sbuf, slen, ast, companion_diff_comp);
+        goto done;
+    }
 
     /* --dump-ast: serialise AST as JSON to stdout, then exit */
     if (dump_ast) {
@@ -400,6 +449,22 @@ int main(int argc, char **argv)
     progress_update(70);
 
     if (check_only) { symtab_free(&st); goto done; }
+
+    /* --companion: generate .tkc.md skeleton and exit */
+    if (companion) {
+        FILE *comp_out = stdout;
+        if (companion_out) {
+            comp_out = fopen(companion_out, "w");
+            if (!comp_out) {
+                fprintf(stderr, "tkc: cannot open '%s' for writing\n", companion_out);
+                symtab_free(&st); rc = EUSAGE; goto done;
+            }
+        }
+        emit_companion(comp_out, src, sbuf, slen, ast);
+        if (companion_out) fclose(comp_out);
+        symtab_free(&st);
+        goto done;
+    }
 
     /* Derive output path */
     char obin[PATH_BUF], ostm[MSG_BUF];

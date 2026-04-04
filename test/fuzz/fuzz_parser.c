@@ -14,9 +14,6 @@
 #include "../../src/arena.h"    /* Arena, arena_init, arena_free    */
 #include "../../src/diag.h"     /* diag_reset                       */
 
-/* Forward declaration — lexer.h is still a stub; real impl in lexer.c */
-int lex(const char *src, int src_len, Token *tokens, int token_cap);
-
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     diag_reset();
@@ -25,7 +22,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     int token_cap = (int)(size / 2) + 16;
     Token tokens[token_cap > 0 ? token_cap : 16];
 
-    int count = lex((const char *)data, (int)size, tokens, token_cap);
+    int count = lex((const char *)data, (int)size, tokens, token_cap, PROFILE_DEFAULT);
 
     /* Parse stage — arena must be freed after every invocation to prevent
      * memory growth across fuzz runs (libFuzzer reuses the process). */
@@ -34,7 +31,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     /* Ignore the returned root node; we are looking for crashes and
      * sanitizer findings, not semantic correctness. */
-    parse(tokens, count, (const char *)data, &arena);
+    parse(tokens, count, (const char *)data, &arena, PROFILE_DEFAULT);
 
     arena_free(&arena);
     return 0;

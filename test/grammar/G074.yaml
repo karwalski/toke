@@ -1,0 +1,8 @@
+id: G074
+series: G
+description: "Array literal with @() syntax in default mode"
+input: |
+  m=test;
+  f=nums():i64{let a=@(10;20;30);<a.get(0)};
+expected_exit_code: 0
+expected_error_codes: []

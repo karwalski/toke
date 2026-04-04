@@ -1,0 +1,11 @@
+id: D041
+series: D
+description: "Logical AND with non-bool operand in default mode emits E4031"
+input: |
+  m=test;
+  f=main():i64{
+    if(1&&true){<0};
+    <1
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]

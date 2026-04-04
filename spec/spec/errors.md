@@ -2,7 +2,7 @@
 
 **Status:** Complete (Story 2.12.1)
 
-This file is the normative error code registry for toke Profile 1.
+This file is the normative error code registry for the toke legacy profile.
 Error codes are stable -- never renumber or change the meaning of an existing code.
 
 See `spec/toke-spec-v02.md` Appendix A for the diagnostic JSON schema.
@@ -30,7 +30,7 @@ See `spec/toke-spec-v02.md` Appendix A for the diagnostic JSON schema.
 |------|----------|-------|-------------------|---------------------|
 | E1001 | error | lex | Invalid escape sequence | D001, D006, D007, D008, D010, D011, D012 |
 | E1002 | error | lex | Unterminated string literal | D002 |
-| E1003 | error | lex | Character outside Profile 1 set | D003 |
+| E1003 | error | lex | Character outside legacy character set | D003 |
 | E1004 | error | lex | Identifier beginning with a digit | -- |
 | E1005 | error | lex | Non-UTF-8 byte sequence | -- |
 | E1010 | error | parse | Reserved literal used as identifier | D004 |
@@ -100,8 +100,8 @@ that is not one of `"`, `\`, `n`, `t`, `r`, `0`, `x`, or `(`. Also emitted when
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():Str{<"\q"};
+m=test;
+f=bad():$str{<"\q"};
 ```
 
 ---
@@ -121,30 +121,30 @@ F=bad():Str{<"\q"};
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():Str{<"unterminated};
+m=test;
+f=bad():$str{<"unterminated};
 ```
 
 ---
 
-### E1003 -- Character outside Profile 1 character set
+### E1003 -- Character outside legacy character set
 
 | Field | Value |
 |-------|-------|
 | **Code** | E1003 |
 | **Stage** | lex |
 | **Severity** | error |
-| **Message** | `character outside Profile 1 character set` |
+| **Message** | `character outside legacy character set` |
 | **Fix field** | absent |
 | **Conformance test** | D003 |
 
 **Notes:** Any byte that is not whitespace, alphanumeric, or a recognised symbol
-triggers this error. The Profile 1 character set is ASCII-only.
+triggers this error. The legacy character set is ASCII-only.
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{<1£};
+m=test;
+f=bad():i64{<1£};
 ```
 
 ---
@@ -165,8 +165,8 @@ valid numeric literal (e.g. `3foo`). Identifiers must begin with a letter.
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{let 3x=1;<3x};
+m=test;
+f=bad():i64{let 3x=1;<3x};
 ```
 
 ---
@@ -205,8 +205,8 @@ actually emitted by the parser stage.
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{let true=1;<true};
+m=test;
+f=bad():i64{let true=1;<true};
 ```
 
 ---
@@ -230,14 +230,14 @@ warning, not an error -- the code is valid but potentially lossy.
 
 ---
 
-### W1010 -- String interpolation not supported in Profile 1
+### W1010 -- String interpolation not supported in legacy profile
 
 | Field | Value |
 |-------|-------|
 | **Code** | W1010 |
 | **Stage** | lex |
 | **Severity** | warning |
-| **Message** | `string interpolation \( is not supported in Profile 1; use str.concat() instead` |
+| **Message** | `string interpolation \( is not supported in the legacy profile; use str.concat() instead` |
 | **Fix field** | `"use str.concat() for string composition"` |
 | **Conformance test** | D005, D009 |
 
@@ -247,8 +247,8 @@ field is informational only -- there is no mechanical auto-fix.
 
 **Example trigger:**
 ```toke
-M=test;
-F=interp():Str{<"hello \(name)"};
+m=test;
+f=interp():$str{<"hello \(name)"};
 ```
 
 ---
@@ -267,12 +267,12 @@ F=interp():Str{<"hello \(name)"};
 | **Conformance test** | G024 |
 
 **Notes:** A toke source file must follow the declaration order:
-`M` (module) then `I` (import) then `T` (type) then constants then `F` (function).
-This error fires when a declaration appears out of order or when `M=` is missing.
+`m` (module) then `i` (import) then `t` (type) then constants then `f` (function).
+This error fires when a declaration appears out of order or when `m=` is missing.
 
 **Example trigger:**
 ```toke
-F=bad():i64{<0};
+f=bad():i64{<0};
 ```
 
 ---
@@ -294,8 +294,8 @@ not match any expected production.
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{<1 @};
+m=test;
+f=bad():i64{<1 @};
 ```
 
 ---
@@ -317,8 +317,8 @@ consecutive statements inside a block.
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{let x=1 let y=2;<x};
+m=test;
+f=bad():i64{let x=1 let y=2;<x};
 ```
 
 ---
@@ -340,8 +340,8 @@ the current token is `TK_EOF`.
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{<(1+2};
+m=test;
+f=bad():i64{<(1+2};
 ```
 
 ---
@@ -373,7 +373,7 @@ path must be unique within a compilation unit.
 | **Fix field** | absent |
 | **Conformance test** | -- |
 
-**Notes:** Toke does not support wildcard imports (e.g. `I=*:std`). All imports
+**Notes:** Toke does not support wildcard imports (e.g. `i=*:std`). All imports
 must be explicitly named.
 
 ---
@@ -395,8 +395,8 @@ signatures. If a function has a body (i.e. it is not an FFI declaration), using
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad(s:*u8):i64{<42};
+m=test;
+f=bad(s:*u8):i64{<42};
 ```
 
 ---
@@ -418,8 +418,8 @@ single type is a compile error.
 
 **Example trigger:**
 ```toke
-M=test;
-T=Bad{name:Str;NotFound:bool};
+m=test;
+t=$bad{name:$str;NotFound:bool};
 ```
 
 ---
@@ -453,7 +453,7 @@ pointer or arena indirection has infinite size and cannot be laid out in memory.
 | **Fix field** | absent |
 | **Conformance test** | -- |
 
-**Notes:** The module path in an `I=` declaration does not resolve to any `.tki`
+**Notes:** The module path in an `i=` declaration does not resolve to any `.tki`
 interface file on the search path.
 
 ---
@@ -490,9 +490,9 @@ the expected `MAJOR.MINOR` or `MAJOR.MINOR.PATCH` format.
 
 **Example trigger:**
 ```toke
-M=test;
-I=io:std.io "abc";
-F=noop():bool{<true};
+m=test;
+i=io:std.io "abc";
+f=noop():bool{<true};
 ```
 
 ---
@@ -548,8 +548,8 @@ scope.
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{<x};
+m=test;
+f=bad():i64{<x};
 ```
 
 ---
@@ -570,8 +570,8 @@ across scope boundaries is allowed; duplicate declaration within one scope is no
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{let x=1;let x=2;<x};
+m=test;
+f=bad():i64{let x=1;let x=2;<x};
 ```
 
 ---
@@ -611,8 +611,8 @@ evaluate to type `bool`. Using any other type is a compile error.
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{if 1{<1}el{<0}};
+m=test;
+f=bad():i64{if 1{<1}el{<0}};
 ```
 
 ---
@@ -634,8 +634,8 @@ once per missing arm).
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{match true{true=>{<1}}};
+m=test;
+f=bad():i64{match true{true=>{<1}}};
 ```
 
 ---
@@ -652,7 +652,7 @@ F=bad():i64{match true{true=>{<1}}};
 | **Conformance test** | -- |
 
 **Notes:** All arms of a `match` expression must evaluate to the same type. If
-one arm returns `i64` and another returns `Str`, this error fires.
+one arm returns `i64` and another returns `$str`, this error fires.
 
 ---
 
@@ -672,9 +672,9 @@ declared parameter type.
 
 **Example trigger:**
 ```toke
-M=test;
-F=inc(x:i64):i64{<x+1};
-F=bad():i64{<inc("hello")};
+m=test;
+f=inc(x:i64):i64{<x+1};
+f=bad():i64{<inc("hello")};
 ```
 
 ---
@@ -695,8 +695,8 @@ match the function's declared return type.
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{<"hello"};
+m=test;
+f=bad():i64{<"hello"};
 ```
 
 ---
@@ -733,8 +733,8 @@ does not exist in the struct type.
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{let a=[1;2;3];<a["x"]};
+m=test;
+f=bad():i64{let a=@(1;2;3);<a.get("x")};
 ```
 
 ---
@@ -822,8 +822,8 @@ that deviate trigger this error.
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{<[1:10; 2:"x"]};
+m=test;
+f=bad():i64{<@(1:10; 2:"x")};
 ```
 
 ---
@@ -860,9 +860,9 @@ value of any other type emits this error.
 
 **Example trigger:**
 ```toke
-M=test;
-F=notask():i64{<42};
-F=main():i64{<await(notask())};
+m=test;
+f=notask():i64{<42};
+f=main():i64{<await(notask())};
 ```
 
 ---
@@ -878,7 +878,7 @@ F=main():i64{<await(notask())};
 | **Fix field** | absent |
 | **Conformance test** | -- |
 
-**Notes:** In Profile 1 (v0.1), `spawn` only accepts nullary (zero-parameter)
+**Notes:** In the legacy profile (v0.1), `spawn` only accepts nullary (zero-parameter)
 functions. This restriction may be lifted in a future profile.
 
 ---
@@ -895,7 +895,7 @@ functions. This restriction may be lifted in a future profile.
 | **Conformance test** | -- |
 
 **Notes:** Defined in `types.h` but not yet emitted. Reserved for type mismatches
-at FFI boundaries (e.g. passing a toke `Str` where the extern declaration
+at FFI boundaries (e.g. passing a toke `$str` where the extern declaration
 expects `*u8`).
 
 ---
@@ -918,8 +918,8 @@ outer scope would cause a dangling reference when the arena is freed.
 
 **Example trigger:**
 ```toke
-M=test;
-F=bad():i64{let x=0;{arena x=1};<x};
+m=test;
+f=bad():i64{let x=0;{arena x=1};<x};
 ```
 
 ---

@@ -1,0 +1,8 @@
+id: G052
+series: G
+description: "Lowercase m=/f= keywords work in default mode"
+input: |
+  m=test;
+  f=add(a:i64;b:i64):i64{<a+b};
+expected_exit_code: 0
+expected_error_codes: []

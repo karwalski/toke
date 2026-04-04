@@ -65,7 +65,7 @@ const fmtResult = TkcWasm.format('F main(){rt 0;}');
 
 // Get version string
 const ver = TkcWasm.version();
-// => "tkc 0.1.0-wasm (Profile 1)"
+// => "tkc 0.1.0-wasm (legacy profile)"
 ```
 
 ## Architecture

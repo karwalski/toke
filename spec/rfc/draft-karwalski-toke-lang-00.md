@@ -25,9 +25,9 @@ Abstract
    efficiently under BPE tokenization.
 
    The language was developed iteratively: an initial 80-character
-   development profile (using uppercase keywords and bracket arrays)
+   legacy profile (using uppercase keywords and bracket arrays)
    was used to bootstrap the compiler, generate the training corpus,
-   and validate the core thesis.  The 56-character production profile
+   and validate the core thesis.  The 56-character default syntax
    described in this document is the result of that process and is the
    normative specification of the toke language.
 
@@ -248,14 +248,14 @@ Table of Contents
    tkc:
       The reference compiler binary for toke.
 
-   Development profile:
+   Legacy profile:
       The 80-character bootstrapping variant of the toke source
       language, used during early compiler development and corpus
       generation to maintain compatibility with existing LLM
       tokenizers.  Uses uppercase keywords (F=, T=, I=, M=) and
       bracket array syntax ([a;b;c]).  Not the normative language.
 
-   Production profile (normative):
+   Default syntax (normative):
       The 56-character variant that constitutes the toke language as
       specified in this document.  Uses sigil-based encoding ($type,
       @(a;b;c)) and lowercase keywords (f=, t=, i=, m=).  Designed
@@ -462,15 +462,15 @@ Table of Contents
       merged tokens: $user, $str, @( each become one vocabulary entry
       after sufficient corpus exposure.
 
-### 5.2.  Development Profile (80 Characters) — Historical
+### 5.2.  Legacy Profile (80 Characters) — Historical
 
-   During early development, toke used an 80-character bootstrapping
+   During early development, toke used an 80-character legacy
    profile to maintain compatibility with existing LLM tokenizers
    (cl100k_base).  This profile used uppercase keywords (F=, T=, I=,
    M=), uppercase-initial type names (User, Str), and bracket array
    syntax ([a;b;c], a[n]).
 
-   The development profile served three purposes:
+   The legacy profile served three purposes:
 
    1.  Bootstrapping the compiler and conformance suite without
        requiring a purpose-built tokenizer.
@@ -479,13 +479,13 @@ Table of Contents
    3.  Measuring baseline token efficiency against conventional
        languages before applying sigil-based compression.
 
-   The development profile is NOT the normative toke language.
-   Mechanical translation between the development profile and the
-   production 56-character language is fully deterministic and
+   The legacy profile is NOT the normative toke language.
+   Mechanical translation between the legacy profile and the
+   default 56-character syntax is fully deterministic and
    implemented in the reference compiler via --profile1 and --profile2
    flags.
 
-   The 80-character profile uses 26 lowercase + 26 uppercase + 10
+   The legacy profile uses 26 lowercase + 26 uppercase + 10
    digits + 19 symbols = 81 structural characters.  It is documented
    here for methodological transparency and to contextualise the
    Gate 1 benchmark results, which were measured using the development
@@ -586,7 +586,7 @@ Table of Contents
    are single characters.  Boolean literals true and false are
    predefined identifiers, not keywords, and MUST NOT be redefined.
 
-   NOTE: In the development profile (80-character), the declaration
+   NOTE: In the legacy profile (80-character), the declaration
    keywords are uppercase (F, T, I, M).  The production language uses
    lowercase throughout.
 
@@ -1485,7 +1485,7 @@ Table of Contents
 
 ### 15.3.  Training Data Format
 
-   Initial model training uses the development profile (80-character)
+   Initial model training uses the legacy profile (80-character)
    corpus, since this is the corpus that was generated and validated
    during the bootstrapping phase.  The training data format uses
    ChatML with a system prompt establishing toke expertise.
@@ -1559,7 +1559,7 @@ Table of Contents
 ### 15.4.  Purpose-Built Tokenizer
 
    The purpose-built tokenizer is trained on the validated corpus,
-   mechanically translated to the production 56-character profile.
+   mechanically translated to the default 56-character syntax.
 
 ```
    Vocabulary size:   32,768 tokens (2^15)
@@ -1672,8 +1672,8 @@ Table of Contents
 
    NOTE: The project phases below (Stage 1-4) describe the project
    timeline and validation gates.  These are distinct from the
-   language profiles: the "development profile" (80-char) and
-   "production profile" (56-char) described in Section 5.
+   language profiles: the "legacy profile" (80-char) and
+   "default syntax" (56-char) described in Section 5.
 
 ### 17.1.  Stage 1 — Falsification (Months 1-8)
 
@@ -1714,7 +1714,7 @@ Table of Contents
 
 ### 17.2.  Stage 2 — Language Viability (Months 8-14)
 
-   Objective: transition to the production 56-character profile, extend
+   Objective: transition to the default 56-character syntax, extend
    tk with essential features, and validate expressiveness without
    sacrificing the token efficiency gains.
 
@@ -2016,7 +2016,7 @@ Table of Contents
 ```
    ID    Deliverable                                          Target  Status
    ----  ---------------------------------------------------  ------  -------
-   M0    Spec locked: 80-char set, symbols, keywords, EBNF       1    DONE
+   M0    Spec locked: legacy character set, symbols, keywords, EBNF  1    DONE
    M0.5  Mac Studio purchased and configured                      1    DONE
    M0.5  Qwen 2.5 Coder 32B running locally, pipeline tested     1    DONE
    M1    tkc lexer + parser, zero dependencies, LL(1)             2    DONE
@@ -2044,7 +2044,7 @@ Table of Contents
    profile corpus (73K training examples, eval loss 0.158).  Gate 1
    evaluation completed 2026-04-03: PASS.  Token reduction 12.5%
    (threshold >10%), Pass@1 63.7% (threshold >=60%) on 1,000 held-out
-   tasks.  The project proceeds to Phase 2 (Language Extensions).
+   tasks.  The project proceeds to default syntax implementation.
 
 ---
 

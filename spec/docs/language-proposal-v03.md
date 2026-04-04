@@ -42,7 +42,7 @@ The name is self-referential: a language designed to minimise token usage has a 
 
 ## 3. Character Sets
 
-### 3.1 Phase 1 — 80 Characters
+### 3.1 Legacy Profile — 80 Characters
 
 80 characters. Round in binary (7 bits with one spare). Compatible with cl100k_base and all current major LLM tokenizers. Used for all corpus generation, prototype compiler, and initial model training.
 
@@ -62,13 +62,13 @@ TOTAL                                                                  80
 - No comments — the language is machine-generated; comments are metadata stored outside source files
 - No `@`, `#`, `$`, `%`, `^`, `&`, `~`, `` ` ``, `\`, `'`, `,`, `?`
 
-String literals use `"` as delimiter. `"` occupies one symbol slot in the final 80-character table. The exact symbol allocation is locked at M0.
+String literals use `"` as delimiter. `"` occupies one symbol slot in the final legacy character table. The exact symbol allocation is locked at M0.
 
-### 3.2 Phase 2 — 56 Characters
+### 3.2 Default Syntax — 56 Characters
 
-Activated when the purpose-built tokenizer is trained on the Phase 1 corpus. Requires retraining.
+Activated when the purpose-built tokenizer is trained on the legacy corpus. Requires retraining.
 
-**Differences from Phase 1:**
+**Differences from legacy profile:**
 - Drop all 26 uppercase letters. Replace with `$` sigil prefix for type names: `User` → `$user`
 - Replace `[]` (2 chars) with `@` sigil for array literals: `[1;2;3]` → `@(1;2;3)`, index via `.n`
 - Net: −26 −2 +1(`$`) +1(`@`) = −26, rounded to 56 by reserving `^` and `~` for future use
@@ -87,18 +87,18 @@ TOTAL                                                                  56
 
 ### 3.3 Token Count Estimates
 
-Illustrative token counts for a typical HTTP handler across character set and tokenizer combinations. Evaluation baselines are included for benchmark context; actual measured values are determined during Phase 1 validation.
+Illustrative token counts for a typical HTTP handler across character set and tokenizer combinations. Evaluation baselines are included for benchmark context; actual measured values are determined during Gate 1 validation.
 
 ```
-tk Phase 1, cl100k_base:       ~38 tokens
-tk Phase 2, cl100k_base:       ~43 tokens  (+5, sigil overhead)
-tk Phase 1, purpose tokenizer: ~26 tokens  (common patterns merge)
-tk Phase 2, purpose tokenizer: ~22 tokens  (sigils merge, further reduction)
+tk legacy, cl100k_base:        ~38 tokens
+tk default, cl100k_base:       ~43 tokens  (+5, sigil overhead)
+tk legacy, purpose tokenizer:  ~26 tokens  (common patterns merge)
+tk default, purpose tokenizer: ~22 tokens  (sigils merge, further reduction)
 Python baseline:               ~85 tokens
 TypeScript baseline:           ~92 tokens
 ```
 
-The Phase 2 + purpose tokenizer combination is expected to achieve approximately 4× token density versus the Python baseline for equivalent logic. These estimates will be validated empirically at Gate 1.
+The default syntax + purpose tokenizer combination is expected to achieve approximately 4× token density versus the Python baseline for equivalent logic. These estimates will be validated empirically at Gate 1.
 
 ---
 
@@ -116,8 +116,8 @@ Every symbol has exactly one meaning. No overloading that requires context to re
 | `)`    | Call close / group close | —                         |
 | `{`    | Block open               | Struct literal open       |
 | `}`    | Block close              | Struct literal close      |
-| `[`    | Array open (Phase 1)     | Index open (Phase 1)      |
-| `]`    | Array close (Phase 1)    | Index close (Phase 1)     |
+| `[`    | Array open (legacy)      | Index open (legacy)       |
+| `]`    | Array close (legacy)     | Index close (legacy)      |
 | `+`    | Add                      | String concat             |
 | `-`    | Subtract                 | Negate                    |
 | `*`    | Multiply                 | Pointer deref (FFI only)  |
@@ -198,7 +198,7 @@ get_user(id)|{
 
 ### 5.5 A Complete Example
 
-HTTP user API module, Phase 1:
+HTTP user API module, legacy syntax:
 
 ```
 M=api.user;
@@ -594,7 +594,7 @@ F=get_user(id:u64):$user!$db_err{
 }
 ```
 
-Multi-language comparison examples (Phase 2 tokenizer training):
+Multi-language comparison examples (default syntax tokenizer training):
 ```
 [TASK] Sum all integers in an array.
 [PYTHON 85 tokens] def sum_arr(a): return sum(a)
@@ -603,17 +603,17 @@ Multi-language comparison examples (Phase 2 tokenizer training):
 [RATIO] 0.33× Python tokens. All four implementations agree on 1,000 test inputs.
 ```
 
-### 13.3 Purpose-Built Tokenizer (Phase 2)
+### 13.3 Purpose-Built Tokenizer (Default Syntax)
 
-Trained exclusively on the Phase 1 corpus. Vocabulary: 32,768 tokens (2^15).
+Trained exclusively on the legacy profile corpus. Vocabulary: 32,768 tokens (2^15).
 
 Training process:
-1. Collect all Phase 1 validated `.tk` files (~500,000 files)
+1. Collect all legacy profile validated `.tk` files (~500,000 files)
 2. Strip string literal contents (tokenize separately as natural language)
 3. Run BPE training targeting 32,768 vocabulary
 4. Verify top 100 most common tk constructs are single tokens
 5. Manually inspect and correct pathological merges
-6. Freeze vocabulary — no changes after Phase 2 begins
+6. Freeze vocabulary — no changes after default syntax work begins
 
 Expected improvement: 2.5–4× fewer tokens per tk program vs cl100k_base, based on purpose-built tokenizer advantages for highly repetitive structured languages.
 
@@ -688,7 +688,7 @@ Adopted from the research framework, updated with toke name and current timeline
 **Deliverables:**
 - Extended compiler: generics, async model, C FFI, module versioning
 - Phase B–C corpus (50,000 additional programs)
-- Phase 2 purpose-built tokenizer
+- Default syntax purpose-built tokenizer
 - First fine-tuned model: Qwen 2.5 Coder 7B on Phase A corpus
 - Benchmark results for system-level tasks (HTTP servers, database clients)
 
@@ -756,7 +756,7 @@ No model training in Phase 1. General models with tk spec in context validate th
 | Parallel generation (all 4 languages) | Adds ~$120 | $120 |
 | Qwen judge agent runs | Local, zero API cost | $0 |
 | Agent 3 (Sonnet) review, Phase D | ~20% of 5K Phase D entries | $80 |
-| Phase 2 tokenizer training | CPU job ~12hrs local | $0 |
+| Default syntax tokenizer training | CPU job ~12hrs local | $0 |
 | 7B QLoRA fine-tune (3 runs) | Mac Studio local, MLX, ~20hrs each | $0 |
 | 32B QLoRA fine-tune (2 runs) | Mac Studio local, MLX, ~60hrs each | $0 |
 | Cloud A100 burst (if needed) | 40hrs Lambda Labs overflow | $60 |
@@ -889,7 +889,7 @@ tokelang/
 │   ├── judge/              Qwen judge agent
 │   └── diff_test/          parallel 4-language differential testing
 ├── tokenizer/
-│   ├── train.py            Phase 2 BPE tokenizer training
+│   ├── train.py            default syntax BPE tokenizer training
 │   └── eval.py             tokenizer evaluation protocol
 ├── models/
 │   ├── finetune/           QLoRA training scripts (MLX)
@@ -912,7 +912,7 @@ Each subdirectory has a GitHub Actions CI pipeline. The conformance suite runs o
 
 | Milestone | Deliverable | Month |
 |-----------|-------------|-------|
-| M0 | toke spec locked (80-char set, symbol table, keywords, grammar sketch) | 1 |
+| M0 | toke spec locked (legacy character set, symbol table, keywords, grammar sketch) | 1 |
 | M0.5 | Mac Studio M4 Max purchased and configured | 1 |
 | M0.5 | Qwen 2.5 Coder 32B running locally, pipeline tested | 1 |
 | M1 | tkc lexer + parser, zero dependencies, LL(1) | 2 |
@@ -923,7 +923,7 @@ Each subdirectory has a GitHub Actions CI pipeline. The conformance suite runs o
 | M5.5 | **Phase 1 go/no-go: token efficiency + Pass@1 results** | 8 |
 | M6 | Prototype fine-tune: Qwen 7B on Phase A, first accuracy benchmark | 10 |
 | M7 | Phase B–C corpus: 50,000 additional programs | 14 |
-| M8 | Phase 2 tokenizer trained and validated | 16 |
+| M8 | Default syntax tokenizer trained and validated | 16 |
 | M9 | Development models: 7B + 32B on full Phase A–C corpus | 18 |
 | M9.5 | **Phase 2 go/no-go: language viability results** | 18 |
 | M10 | Phase D corpus + agent review pipeline | 22 |

@@ -1,0 +1,8 @@
+id: G090
+series: G
+description: "Logical not (!) in default mode"
+input: |
+  m=test;
+  f=flip(b:bool):bool{<!b};
+expected_exit_code: 0
+expected_error_codes: []

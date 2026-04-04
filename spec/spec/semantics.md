@@ -27,7 +27,7 @@ A conforming implementation SHALL support the following primitive types:
 | `u64`  | Unsigned 64-bit integer      | `0`        |
 | `f64`  | IEEE 754 double-precision    | `0.0`      |
 | `bool` | Boolean (`true` or `false`)  | `false`    |
-| `Str`  | Immutable UTF-8 string       | `""`       |
+| `$str` | Immutable UTF-8 string       | `""`       |
 | `void` | Unit type (no value)         | n/a        |
 
 > **Note:** `void` is an implementation-defined type used by the compiler for
@@ -35,7 +35,7 @@ A conforming implementation SHALL support the following primitive types:
 > listed in the main spec's primitive type table (Section 13.1) and should be
 > considered an internal compiler type rather than a user-facing primitive.
 
-The type keywords `i64`, `u64`, `f64`, `bool`, `Str`, and `void` are predefined
+The type keywords `i64`, `u64`, `f64`, `bool`, `$str`, and `void` are predefined
 identifiers (Section 4.3) and are always in scope.
 
 ### 1.1a Additional Primitive Types (spec-defined, not yet implemented)
@@ -45,7 +45,7 @@ implemented in the reference compiler:
 
 | Type   | Description                  | Status              |
 |--------|------------------------------|---------------------|
-| `Byte` | Single byte (u8 alias)       | Spec-defined        |
+| `$byte` | Single byte (u8 alias)      | Spec-defined        |
 | `i8`   | Signed 8-bit integer         | Not yet implemented |
 | `i16`  | Signed 16-bit integer        | Not yet implemented |
 | `i32`  | Signed 32-bit integer        | Not yet implemented |
@@ -54,21 +54,21 @@ implemented in the reference compiler:
 | `u32`  | Unsigned 32-bit integer      | Not yet implemented |
 | `f32`  | IEEE 754 single-precision    | Not yet implemented |
 
-A conforming Profile 1 implementation need only support the types in Section 1.1.
-The full type table will be required in a future profile.
+A conforming legacy profile implementation need only support the types in Section 1.1.
+The full type table will be required in the default syntax.
 
 ### 1.2 Composite Types
 
 | Type syntax | Kind        | Description                                     |
 |-------------|-------------|-------------------------------------------------|
-| `[T]`       | Array       | Ordered, homogeneous sequence of element type T  |
-| `[K:V]`     | Map         | Key-value collection; K and V are homogeneous    |
+| `@$t`       | Array       | Ordered, homogeneous sequence of element type T  |
+| `@($k:$v)`  | Map         | Key-value collection; K and V are homogeneous    |
 | `T!Err`     | Error union | Sum type: either a value of type T or an error   |
 | `*T`        | Pointer     | Raw pointer to T (FFI only, Section 7.2)         |
 
 **Array.** The element type is determined by the first element of an array
 literal, or by an explicit type annotation on the binding. An empty array
-literal `[]` has element type `unknown` until constrained by context.
+literal `@()` has element type `unknown` until constrained by context.
 
 **Map.** The key and value types are determined by the first entry of a map
 literal. All subsequent entries must have key and value types equal to the
@@ -86,11 +86,11 @@ signatures. Use of `*T` in a function with a body is a compile error
 
 | Type syntax | Kind     | Description                               |
 |-------------|----------|-------------------------------------------|
-| `T=Name{}`  | Struct   | Named product type with ordered fields     |
+| `t=$name{}`  | Struct   | Named product type with ordered fields     |
 | `Task<T>`   | Task     | Async task handle yielding type T          |
 | `func`      | Function | First-class function reference (internal)  |
 
-**Struct.** Declared via `T=Name{field1:Type1; field2:Type2; ...}`.
+**Struct.** Declared via `t=$name{field1:$type1; field2:$type2; ...}`.
 Two struct types are equal if and only if they have the same name (nominal
 typing). Field access is via dot notation: `expr.field`. Accessing a
 non-existent field is a compile error `[errors.md E4025]`.
@@ -122,12 +122,12 @@ This section defines how the type of each expression form is determined.
 |---------------------------|---------------|--------------------------------|
 | Integer literal           | `i64`         | `[grammar.ebnf IntLit]`        |
 | Floating-point literal    | `f64`         | `[grammar.ebnf FloatLit]`      |
-| String literal            | `Str`         | `[grammar.ebnf StrLit]`        |
+| String literal            | `$str`        | `[grammar.ebnf StrLit]`        |
 | Boolean literal           | `bool`        | `true` or `false`              |
-| Array literal `[e1;e2;..]`| `[T]`         | T = type of first element      |
-| Empty array literal `[]`  | `[unknown]`   | Constrained by annotation      |
-| Map literal `[k1:v1;..]`  | `[K:V]`       | K,V from first entry           |
-| Struct literal `Name{..}` | `Name`        | Resolved via type declaration  |
+| Array literal `@(e1;e2;..)`| `@$t`        | T = type of first element      |
+| Empty array literal `@()` | `@unknown`    | Constrained by annotation      |
+| Map literal `@(k1:v1;..)` | `@($k:$v)`   | K,V from first entry           |
+| Struct literal `$name{..}`| `$name`       | Resolved via type declaration  |
 
 ### 2.2 Identifier Expressions
 
@@ -172,7 +172,7 @@ For a binary expression `lhs op rhs`:
 
 A cast expression `expr as T` evaluates `expr` and produces a value of type `T`.
 The source expression type is inferred but not constrained against the target
-type -- all casts are unconditionally allowed in Profile 1.
+type -- all casts are unconditionally allowed in the legacy profile.
 
 STUB: A future profile may restrict which type pairs are castable.
 
@@ -186,7 +186,7 @@ For a call expression `f(a1, a2, ...)`:
 3. The result type is the function's declared return type, or `void` if no
    return type is specified.
 4. Extra arguments beyond the declared parameters are inferred but not checked
-   against any parameter type (they are silently accepted in Profile 1).
+   against any parameter type (they are silently accepted in the legacy profile).
 
 **Special call forms** are described in Section 7.1 (`spawn`, `await`).
 
@@ -194,7 +194,7 @@ For a call expression `f(a1, a2, ...)`:
 
 For a field access `expr.field`:
 
-- If `expr` has type `[T]` (array) or `[K:V]` (map) and `field` is `len`,
+- If `expr` has type `@$t` (array) or `@($k:$v)` (map) and `field` is `len`,
   the result type is `u64`.
 - If `expr` has a struct type, the field name is looked up in the struct's
   field list. If found, the result type is the field's declared type.
@@ -242,8 +242,8 @@ Two types are *equal* according to the following rules:
 3. **Structs:** Two struct types are equal iff they have the same name
    (nominal equality).
 4. **Pointers:** `*T == *U` iff `T == U`.
-5. **Arrays:** `[T] == [U]` iff `T == U`, or if either element type is `unknown`.
-6. **Maps:** `[K1:V1] == [K2:V2]` iff `K1 == K2` and `V1 == V2`, or if either
+5. **Arrays:** `@$t == @$u` iff `T == U`, or if either element type is `unknown`.
+6. **Maps:** `@($k1:$v1) == @($k2:$v2)` iff `K1 == K2` and `V1 == V2`, or if either
    key or value type is `unknown`.
 7. **Tasks:** `Task<T> == Task<U>` iff `T == U`.
 8. **Error unions:** `T1!E1 == T2!E2` iff `T1 == T2`, or if either inner type
@@ -253,7 +253,7 @@ Two types are *equal* according to the following rules:
 
 ### 3.2 Implicit Coercions
 
-Profile 1 defines **no implicit coercions**. There is no automatic widening
+The legacy profile defines **no implicit coercions**. There is no automatic widening
 (e.g., `i64` to `f64`), no automatic narrowing, and no implicit conversion
 between numeric types.
 
@@ -276,9 +276,9 @@ Name resolution uses a chain of lexical scopes. The scope chain, from outermost
 to innermost, is:
 
 1. **Module scope** -- contains predefined identifiers (Section 4.3), import
-   aliases (Section 6), and all top-level declarations (`F=`, `T=`, constants).
+   aliases (Section 6), and all top-level declarations (`f=`, `t=`, constants).
 2. **Function scope** -- contains the function's parameters. Created when
-   entering a `F=` declaration body.
+   entering a `f=` declaration body.
 3. **Block scope** -- created for each `{ ... }` statement list, `lp()` loop,
    and match arm (`|{...}`). Nested blocks create nested scopes.
 
@@ -289,19 +289,19 @@ is returned.
 
 | Kind              | Introduced by           | Mutable | Notes                        |
 |-------------------|-------------------------|---------|------------------------------|
-| `DECL_FUNC`       | `F=name(...)`           | no      | Forward-declared in pass 1   |
-| `DECL_TYPE`       | `T=Name{...}`           | no      | Forward-declared in pass 1   |
+| `DECL_FUNC`       | `f=name(...)`           | no      | Forward-declared in pass 1   |
+| `DECL_TYPE`       | `t=$name{...}`          | no      | Forward-declared in pass 1   |
 | `DECL_CONST`      | `name = literal : Type;`| no      | Forward-declared in pass 1   |
 | `DECL_PARAM`      | Function parameter      | no      | Bound in function scope      |
 | `DECL_LET`        | `let x = ...`           | no      | Bound in enclosing block     |
 | `DECL_MUT`        | `let x=mut.expr`        | yes     | Bound in enclosing block     |
 | `DECL_PREDEFINED` | Built-in                | no      | Always in module scope       |
-| `DECL_IMPORT_ALIAS` | `I=alias:path`        | no      | Resolved import alias        |
+| `DECL_IMPORT_ALIAS` | `i=alias:path`        | no      | Resolved import alias        |
 
 > **Constant syntax discrepancy:** The spec grammar `[grammar.ebnf ConstDecl]`
 > defines constant declarations as `IDENT = LiteralExpr : TypeExpr ;` (e.g.,
-> `PI = 3.14159 : f64;`). The reference compiler currently uses a `C=` sigil
-> prefix (`C=PI 3.14159:f64;`). This document follows the spec grammar form;
+> `PI = 3.14159 : f64;`). The reference compiler currently uses a `c=` sigil
+> prefix (`c=PI 3.14159:f64;`). This document follows the spec grammar form;
 > compiler output may differ until the compiler is updated.
 
 ### 4.3 Predefined Identifiers
@@ -309,7 +309,7 @@ is returned.
 The following identifiers are seeded into the module scope before any
 user-declared names:
 
-    true   false   bool   i64   u64   f64   Str   void   spawn   await   Task
+    true   false   bool   i64   u64   f64   $str   void   spawn   await   Task
 
 These cannot be shadowed by module-level declarations (since they occupy the
 same scope), but they CAN be shadowed by function parameters or local bindings
@@ -317,7 +317,7 @@ in inner scopes.
 
 ### 4.4 Forward Declaration
 
-All module-scope declarations (`F=`, `T=`, constants) are registered in a first
+All module-scope declarations (`f=`, `t=`, constants) are registered in a first
 pass before any references are resolved. This means:
 - Functions may call other functions declared later in the file.
 - Types may reference other types declared later in the file.
@@ -389,7 +389,7 @@ exhaustiveness only for `bool` scrutinees.
 
 ### 6.1 Import Declarations
 
-An import declaration `I=alias:module.path` or `I=alias:module.path "version"`
+An import declaration `i=alias:module.path` or `i=alias:module.path "version"`
 introduces an import alias into the module scope.
 
 **Resolution order:**
@@ -427,11 +427,11 @@ the compiler emits `[errors.md E2031]`. Circular imports are prohibited.
 
 Within a source file, declarations must appear in the following order:
 
-1. Module declaration (`M=`)
-2. Import declarations (`I=`)
-3. Type declarations (`T=`)
-4. Constant declarations (`C=`)
-5. Function declarations (`F=`)
+1. Module declaration (`m=`)
+2. Import declarations (`i=`)
+3. Type declarations (`t=`)
+4. Constant declarations (`c=`)
+5. Function declarations (`f=`)
 
 Violation: `[errors.md E2001]`.
 
@@ -444,7 +444,7 @@ Violation: `[errors.md E2001]`.
 **spawn(f):**
 - `f` must be a declared function (not an arbitrary expression).
   Violation: `[errors.md E4050]`.
-- In Profile 1, `f` must be nullary (zero parameters).
+- In the legacy profile, `f` must be nullary (zero parameters).
   Violation: `[errors.md E4052]`.
 - The result type is `Task<T>` where `T` is the return type of `f`.
   If `f` has no return type annotation, `T` is `void`.
@@ -456,7 +456,7 @@ Violation: `[errors.md E2001]`.
 `spawn` and `await` are predefined identifiers, not keywords. They can
 theoretically be shadowed (Section 4.5), though doing so is not recommended.
 
-> **Note:** `spawn`, `await`, and `Task` are Phase 2 additions to the language.
+> **Note:** `spawn`, `await`, and `Task` are default syntax additions to the language.
 > They do not yet appear in the main spec's reserved identifier list (Section 14).
 > Their semantics are defined here based on the reference compiler implementation
 > and are subject to change when formally incorporated into the main spec.
@@ -465,7 +465,7 @@ theoretically be shadowed (Section 4.5), though doing so is not recommended.
 
 An extern function is a function declaration without a body:
 ```
-F=name(param1:Type1; param2:Type2):ReturnType;
+f=name(param1:$type1; param2:$type2):$returntype;
 ```
 
 Extern functions:
@@ -475,8 +475,8 @@ Extern functions:
 - Have their parameter and return types checked at call sites like any other
   function.
 
-The `contains_ptr` check is recursive: `[*T]` (array of pointers) or
-`*[T]` (pointer to array) are both detected and rejected in non-extern
+The `contains_ptr` check is recursive: `@*$t` (array of pointers) or
+`*@$t` (pointer to array) are both detected and rejected in non-extern
 context.
 
 ### 7.3 Arena Blocks
@@ -530,8 +530,8 @@ pattern coverage for all scrutinee types.
 
 The `.len` property is available on arrays and maps:
 
-- `expr.len` where `expr : [T]` has type `u64`.
-- `expr.len` where `expr : [K:V]` has type `u64`.
+- `expr.len` where `expr : @$t` has type `u64`.
+- `expr.len` where `expr : @($k:$v)` has type `u64`.
 
 Accessing `.len` on a non-collection type falls through to struct field
 lookup (and likely produces `[errors.md E4025]` or type `unknown`).
@@ -540,14 +540,14 @@ lookup (and likely produces `[errors.md E4025]` or type `unknown`).
 
 ## 10. Map Literal Consistency
 
-A map literal `[k1:v1; k2:v2; ...]` is typed as follows:
+A map literal `@(k1:v1; k2:v2; ...)` is typed as follows:
 
 1. The key type `K` is the inferred type of the first key `k1`.
 2. The value type `V` is the inferred type of the first value `v1`.
 3. For each subsequent entry `ki:vi`:
    - If `type(ki) != K` and neither is `unknown`: `[errors.md E4043]`.
    - If `type(vi) != V` and neither is `unknown`: `[errors.md E4043]`.
-4. The map literal type is `[K:V]`.
+4. The map literal type is `@($k:$v)`.
 
 ---
 
@@ -586,10 +586,10 @@ The following areas are marked STUB and require further formalization:
 |---------|------------------------------------------------|-----------------------|
 | 2.3     | Logical not operator typing                    | Grammar formalization |
 | 2.4     | Logical operator (`&&`, `||`) typing           | Grammar formalization |
-| 2.5     | Cast restriction rules (which pairs allowed)   | Profile 2 design     |
+| 2.5     | Cast restriction rules (which pairs allowed)   | Default syntax design |
 | 2.9     | Mutability enforcement on assignment LHS       | Type checker update   |
 | 3.1.9   | Function type equality (parameter lists)       | Type checker update   |
 | 5.3     | Match on error union variants                  | Error type design     |
 | 6.2     | Interface file format specification             | Spec amendment        |
 | 7.3     | Arena lifetime formal rules                    | Memory model spec     |
-| 8.2     | Exhaustiveness for non-bool scrutinees         | Profile 2 design     |
+| 8.2     | Exhaustiveness for non-bool scrutinees         | Default syntax design |

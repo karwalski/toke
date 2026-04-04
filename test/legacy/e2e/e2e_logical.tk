@@ -1,0 +1,10 @@
+M=test;
+F=main():i64{
+  let a = true && true;
+  let b = true && false;
+  let c = false || true;
+  let d = false || false;
+  let e = true || false && false;
+  if(a){ if(!b){ if(c){ if(!d){ if(e){ <0 } } } } };
+  <1
+};

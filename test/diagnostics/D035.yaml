@@ -1,0 +1,7 @@
+id: D035
+series: D
+description: "Missing module declaration in default mode emits E2001"
+input: |
+  f=bad():i64{<0};
+expected_exit_code: 1
+expected_error_codes: ["E2001"]

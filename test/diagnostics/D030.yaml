@@ -1,0 +1,9 @@
+id: D030
+series: D
+description: "Duplicate field name in struct declaration emits E2015"
+input: |
+  M=test;
+  T=Pt{x: i64; x: i64};
+  F=main():void{};
+expected_exit_code: 1
+expected_error_codes: ["E2015"]

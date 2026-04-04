@@ -56,6 +56,8 @@
  *   E2002 — Unexpected token (expected X, got Y).
  *   E2003 — Missing semicolon between statements.
  *   E2004 — Unclosed delimiter (parenthesis, bracket, or brace).
+ *   E2005 — Unexpected token in type position.
+ *   E2015 — Duplicate field name in struct declaration.
  *
  * Story: 1.2.2  Comments: 10.11.2
  * =========================================================================
@@ -75,7 +77,7 @@
  *   a    — arena allocator for all AST node memory
  *   errs — running count of emitted errors (used for the bail-out cap)
  */
-typedef struct { Token *toks; int n; int pos; const char *src; Arena *a; int errs; } Parser;
+typedef struct { Token *toks; int n; int pos; const char *src; Arena *a; int errs; Profile profile; } Parser;
 
 /*
  * peek — return the TokenKind at the current position without advancing.
@@ -102,6 +104,11 @@ static Token    *cur(Parser *p)   { return &p->toks[p->pos < p->n ? p->pos : p->
  * location at the token that triggered the production.
  */
 static Token    *adv(Parser *p)   { Token *t = cur(p); if (p->pos < p->n-1) p->pos++; return t; }
+
+/*
+ * peek_at — return the TokenKind at a given offset from current position.
+ */
+static TokenKind peek_at(Parser *p, int off) { int i=p->pos+off; return i<p->n ? p->toks[i].kind : TK_EOF; }
 
 /*
  * mk — allocate and initialise a new AST Node.
@@ -285,9 +292,24 @@ static Node *parse_func_type(Parser *p) {
  *
  * Error recovery: emits E2002 and returns NULL on unrecognised type token.
  */
-/* TypeExpr = '*' TypeExpr | ScalarType | TYPE_IDENT | '[' TypeExpr ']' | FuncTypeExpr */
+/* TypeExpr = '*' TypeExpr | ScalarType | TYPE_IDENT | '[' TypeExpr ']' | FuncTypeExpr
+ *          | '$' IDENT (default mode: type reference)
+ *          | '@' TypeExpr (default mode: array type)
+ *          | '@' '(' TypeExpr ':' TypeExpr ')' (default mode: map type) */
 static Node *parse_type_expr(Parser *p) {
     if(peek(p)==TK_STAR){Token *t=adv(p);Node *n=mk(p,NODE_PTR_TYPE,t);ch(p,n,parse_type_expr(p));return n;}
+    /* Default mode: $ident is a type reference */
+    if(peek(p)==TK_DOLLAR){Token *dt=adv(p);Token *nt=cur(p);
+        if(!xp(p,TK_IDENT,"type name after '$'")){eerr(p,E2002,dt,"unexpected token");return NULL;}
+        return mk(p,NODE_TYPE_IDENT,nt);}
+    /* Default mode: @$type for array type, @($key:$val) for map type */
+    if(peek(p)==TK_AT){Token *at=adv(p);
+        if(peek(p)==TK_LPAREN){adv(p);Node *n=mk(p,NODE_MAP_TYPE,at);
+            ch(p,n,parse_type_expr(p));xp(p,TK_COLON,"':' in map type");
+            ch(p,n,parse_type_expr(p));
+            if(!xp(p,TK_RPAREN,"')' to close map type"))eerr(p,E2004,cur(p),"unclosed delimiter");
+            return n;}
+        {Node *n=mk(p,NODE_ARRAY_TYPE,at);ch(p,n,parse_type_expr(p));return n;}}
     if(peek(p)==TK_LBRACKET){Token *t=xp(p,TK_LBRACKET,"'['");Node *first=parse_type_expr(p);
         if(peek(p)==TK_COLON){adv(p);Node *n=mk(p,NODE_MAP_TYPE,t);ch(p,n,first);ch(p,n,parse_type_expr(p));if(!xp(p,TK_RBRACKET,"']'"))eerr(p,E2004,cur(p),"unclosed delimiter");return n;}
         Node *n=mk(p,NODE_ARRAY_TYPE,t);ch(p,n,first);if(!xp(p,TK_RBRACKET,"']'"))eerr(p,E2004,cur(p),"unclosed delimiter");return n;}
@@ -295,7 +317,7 @@ static Node *parse_type_expr(Parser *p) {
     Token *t=cur(p);
     if(is_scalar(p,t)){Node *n=mk(p,NODE_TYPE_EXPR,t);adv(p);return n;}
     if(peek(p)==TK_TYPE_IDENT){Node *n=mk(p,NODE_TYPE_IDENT,t);adv(p);return n;}
-    eerr(p,E2002,t,"unexpected token"); return NULL;
+    eerr(p,E2005,t,"unexpected token in type position"); return NULL;
 }
 
 /* ── Literals ─────────────────────────────────────────────────────── */
@@ -377,8 +399,43 @@ static Node *parse_primary(Parser *p) {
         }
         return mk(p,NODE_TYPE_IDENT,t);
     }
+    /* Default mode: $name{...} is struct literal, $name alone is type ref */
+    if(peek(p)==TK_DOLLAR){
+        adv(p); /* consume $ */
+        Token *nt=cur(p);
+        if(peek(p)!=TK_IDENT){eerr(p,E2002,nt,"expected identifier after '$'");return NULL;}
+        adv(p); /* consume ident */
+        if(peek(p)==TK_LBRACE){ /* $Name{field:val; ...} */
+            Node *n=mk(p,NODE_STRUCT_LIT,nt); xp(p,TK_LBRACE,"'{'");
+            while(peek(p)!=TK_RBRACE&&peek(p)!=TK_EOF){
+                Token *ft=cur(p); if(peek(p)==TK_IDENT||peek(p)==TK_TYPE_IDENT){adv(p);}else{xp(p,TK_IDENT,"field name");sync(p);break;}
+                Node *fi=mk(p,NODE_FIELD_INIT,ft); if(!xp(p,TK_COLON,"':'")){ sync(p);break;}
+                ch(p,fi,parse_expr(p)); ch(p,n,fi); if(peek(p)==TK_SEMICOLON)adv(p);else break;
+            }
+            if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter"); return n;
+        }
+        return mk(p,NODE_TYPE_IDENT,nt);
+    }
+    /* Default mode: @(...) array/map literal */
+    if(peek(p)==TK_AT){
+        Token *at=adv(p); /* consume @ */
+        if(!xp(p,TK_LPAREN,"'(' after '@'")){return NULL;}
+        if(peek(p)==TK_RPAREN){adv(p);return mk(p,NODE_ARRAY_LIT,at);} /* empty @() */
+        Node *first=parse_expr(p);
+        if(peek(p)==TK_COLON){ /* MapLit: @(key:val; ...) */
+            adv(p);Node *n=mk(p,NODE_MAP_LIT,at);
+            Node *entry=mk(p,NODE_MAP_ENTRY,at);ch(p,entry,first);ch(p,entry,parse_expr(p));ch(p,n,entry);
+            while(peek(p)==TK_SEMICOLON){adv(p);if(peek(p)==TK_RPAREN)break;
+                Token *et=cur(p);Node *e2=mk(p,NODE_MAP_ENTRY,et);ch(p,e2,parse_expr(p));
+                if(!xp(p,TK_COLON,"':'"))break;ch(p,e2,parse_expr(p));ch(p,n,e2);}
+            if(!xp(p,TK_RPAREN,"')' to close map literal"))eerr(p,E2004,cur(p),"unclosed delimiter");return n;}
+        /* ArrayLit: @(expr; expr; ...) */
+        Node *n=mk(p,NODE_ARRAY_LIT,at);ch(p,n,first);
+        while(peek(p)==TK_SEMICOLON){adv(p);if(peek(p)==TK_RPAREN)break;ch(p,n,parse_expr(p));}
+        if(!xp(p,TK_RPAREN,"')' to close array literal"))eerr(p,E2004,cur(p),"unclosed delimiter");return n;
+    }
     if(peek(p)==TK_LPAREN){adv(p);Node *e=parse_expr(p);if(!xp(p,TK_RPAREN,"')'"))eerr(p,E2004,cur(p),"unclosed delimiter");return e;}
-    if(peek(p)==TK_LBRACKET){ /* ArrayLit or MapLit */
+    if(peek(p)==TK_LBRACKET){ /* ArrayLit or MapLit (legacy mode) */
         Token *lt=xp(p,TK_LBRACKET,"'['");
         if(peek(p)==TK_RBRACKET){/* empty array [] */
             Node *n=mk(p,NODE_ARRAY_LIT,lt);adv(p);return n;}
@@ -420,11 +477,24 @@ static Node *parse_primary(Parser *p) {
  * Error recovery: breaks the loop on missing field name after '.';
  * emits E2004 on unclosed ']'.
  */
-/* PostfixExpr = PrimaryExpr ('.' IDENT | '[' Expr ']')* */
+/* PostfixExpr = PrimaryExpr ('.' IDENT | '.' 'get' '(' Expr ')' | '[' Expr ']')* */
 static Node *parse_postfix(Parser *p) {
     Node *l=parse_primary(p);
     for(;;){
-        if(peek(p)==TK_DOT){Token *d=adv(p);Token *f=cur(p);if(!xp(p,TK_IDENT,"field"))break;Node *n=mk(p,NODE_FIELD_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_IDENT,f));l=n;}
+        if(peek(p)==TK_DOT){
+            Token *d=adv(p);Token *f=cur(p);
+            /* .get(expr) → NODE_INDEX_EXPR (array/map indexing in default mode) */
+            if(peek(p)==TK_IDENT&&teq(p,f,"get")&&peek_at(p,1)==TK_LPAREN){
+                adv(p); /* consume "get" */
+                adv(p); /* consume ( */
+                Node *n=mk(p,NODE_INDEX_EXPR,d);ch(p,n,l);ch(p,n,parse_expr(p));
+                if(!xp(p,TK_RPAREN,"')' after index"))eerr(p,E2004,cur(p),"unclosed delimiter");
+                l=n;
+            } else {
+                if(!xp(p,TK_IDENT,"field"))break;
+                Node *n=mk(p,NODE_FIELD_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_IDENT,f));l=n;
+            }
+        }
         else if(peek(p)==TK_LBRACKET){Token *d=adv(p);Node *n=mk(p,NODE_INDEX_EXPR,d);ch(p,n,l);ch(p,n,parse_expr(p));if(!xp(p,TK_RBRACKET,"']'"))eerr(p,E2004,cur(p),"unclosed delimiter");l=n;}
         else break;
     }
@@ -571,6 +641,20 @@ static Node *parse_compare(Parser *p) {
     return l;
 }
 
+/* AndExpr = CompareExpr ('&&' CompareExpr)* */
+static Node *parse_and(Parser *p) {
+    Node *l=parse_compare(p);
+    while(peek(p)==TK_AND){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_compare(p));l=n;}
+    return l;
+}
+
+/* OrExpr = AndExpr ('||' AndExpr)* */
+static Node *parse_or(Parser *p) {
+    Node *l=parse_and(p);
+    while(peek(p)==TK_OR){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_and(p));l=n;}
+    return l;
+}
+
 /*
  * parse_match_arm — parse a single arm of a match expression.
  *
@@ -617,7 +701,7 @@ static Node *parse_match_arm(Parser *p) {
  * on unclosed '}'.
  */
 static Node *parse_expr(Parser *p) {
-    Node *l=parse_compare(p);
+    Node *l=parse_or(p);
     if(peek(p)!=TK_PIPE) return l;
     Token *t=adv(p); Node *n=mk(p,NODE_MATCH_STMT,t); ch(p,n,l);
     if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
@@ -770,9 +854,13 @@ static Node *parse_stmt(Parser *p) {
             eerr(p,1010,nt,"reserved literal cannot be used as an identifier");
             sync(p);return NULL;}
         if(!xp(p,TK_IDENT,"identifier")){ sync(p);return NULL;}
+        /* Optional type annotation: let x:type = expr */
+        Node *type_ann=NULL;
+        if(peek(p)==TK_COLON){adv(p);type_ann=parse_type_expr(p);}
         if(!xp(p,TK_EQ,"'='")){ sync(p);return NULL;}
         int mut=(peek(p)==TK_KW_MUT);
         Node *n=mk(p,mut?NODE_MUT_BIND_STMT:NODE_BIND_STMT,t); ch(p,n,mk(p,NODE_IDENT,nt));
+        if(type_ann) ch(p,n,type_ann);
         if(mut){adv(p);if(!xp(p,TK_DOT,"'.'")){ sync(p);return n;}}
         ch(p,n,parse_expr(p));
         opt_semi(p);
@@ -938,9 +1026,19 @@ static Node *parse_import_decl(Parser *p) {
 /* FieldList = Field (';' Field)*  (used by TypeDecl) */
 static Node *parse_field_list(Parser *p) {
     Node *n=mk(p,NODE_STMT_LIST,cur(p));
+    /* Track field names for duplicate detection (E2015). */
+    const char *seen_names[64]; int seen_starts[64]; int seen_lens[64]; int seen_count=0;
     do {
         Token *ft=cur(p); TokenKind fk=peek(p);
         if(fk!=TK_IDENT&&fk!=TK_TYPE_IDENT){ eerr(p,E2002,ft,"unexpected token");break;}
+        /* Check for duplicate field name */
+        for(int i=0;i<seen_count;i++){
+            if(seen_lens[i]==ft->len&&memcmp(p->src+seen_starts[i],p->src+ft->start,(size_t)ft->len)==0){
+                eerr(p,E2015,ft,"duplicate field name in struct declaration");
+                break;
+            }
+        }
+        if(seen_count<64){seen_names[seen_count]=p->src+ft->start;seen_starts[seen_count]=ft->start;seen_lens[seen_count]=ft->len;seen_count++;}
         adv(p); Node *f=mk(p,NODE_FIELD,ft);
         if(!xp(p,TK_COLON,"':'")){ sync(p);break;}
         ch(p,f,parse_type_expr(p)); ch(p,n,f);
@@ -1131,31 +1229,130 @@ static Node *parse_func_decl(Parser *p) {
  *   - Returns NULL only on truly fatal conditions (NULL input, zero
  *     token count, or NULL arena).
  */
+/*
+ * is_decl_ident — check if current token is a lowercase declaration keyword
+ * (m/f/i/t) followed by '=' at the top level in default mode.
+ *
+ * Returns the declaration phase (1=import 2=type 3=unused 4=func 5=module)
+ * or 0 if not a declaration keyword.
+ */
+static int is_decl_ident(Parser *p) {
+    if(p->profile!=PROFILE_DEFAULT) return 0;
+    if(peek(p)!=TK_IDENT) return 0;
+    if(peek_at(p,1)!=TK_EQ) return 0;
+    Token *t=cur(p);
+    if(t->len!=1) return 0;
+    char c=p->src[t->start];
+    if(c=='m') return 5;
+    if(c=='i') return 1;
+    if(c=='t') return 2;
+    if(c=='f') return 4;
+    return 0;
+}
+
+/*
+ * consume_decl_kw — consume a lowercase declaration ident + '=' and
+ * create a synthetic keyword consumption equivalent to xp(TK_KW_X).
+ * Returns the token for the keyword ident, or NULL on failure.
+ */
+static Token *consume_decl_kw(Parser *p) {
+    Token *t=adv(p); /* consume the single-letter ident */
+    /* The '=' is consumed by the caller (parse_*_decl already does xp(TK_EQ)) */
+    return t;
+}
+
 /* ── SourceFile = ModuleDecl ImportDecl* TypeDecl* ConstDecl* FuncDecl* EOF ── */
 Node *
-parse(Token *tokens, int count, const char *src, Arena *arena)
+parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
 {
     if(!tokens||count<=0||!arena) return NULL;
-    Parser p={tokens,count,0,src?src:"",arena,0};
+    Parser p;
+    p.toks=tokens; p.n=count; p.pos=0; p.src=src?src:""; p.a=arena; p.errs=0; p.profile=profile;
     Token *first=cur(&p);
     Node *root=mk(&p,NODE_PROGRAM,first);
-    if(peek(&p)==TK_KW_M) ch(&p,root,parse_module_decl(&p));
+    /* Module declaration: M= or m= */
+    if(peek(&p)==TK_KW_M||(is_decl_ident(&p)==5)){
+        if(peek(&p)==TK_KW_M){
+            ch(&p,root,parse_module_decl(&p));
+        } else {
+            /* lowercase m= : consume 'm', then manually parse like parse_module_decl */
+            Token *mt=consume_decl_kw(&p);
+            Node *n=mk(&p,NODE_MODULE,mt);
+            if(!xp(&p,TK_EQ,"'='")){ sync(&p); ch(&p,root,n); }
+            else { ch(&p,n,parse_module_path(&p)); opt_semi(&p); ch(&p,root,n); }
+        }
+    }
     else { diag_emit(DIAG_ERROR,E2001,first->start,first->line,first->col,"module declaration must appear first","fix",NULL); p.errs++; }
     int phase=1; /* 1=import 2=type 3=const 4=func */
     while(peek(&p)!=TK_EOF){
         Token *t=cur(&p); int cp;
-        if(peek(&p)==TK_KW_I)     cp=1;
-        else if(peek(&p)==TK_KW_T) cp=2;
-        else if(peek(&p)==TK_IDENT)cp=3;
-        else if(peek(&p)==TK_KW_F) cp=4;
+        int di=is_decl_ident(&p);
+        if(peek(&p)==TK_KW_I||(di==1))     cp=1;
+        else if(peek(&p)==TK_KW_T||(di==2)) cp=2;
+        else if(peek(&p)==TK_IDENT&&di==0)   cp=3;
+        else if(peek(&p)==TK_KW_F||(di==4)) cp=4;
         else{eerr(&p,E2002,t,"unexpected token");sync(&p);if(p.errs>16)break;continue;}
         if(cp<phase){diag_emit(DIAG_ERROR,E2001,t->start,t->line,t->col,"declaration ordering violation","fix",NULL);p.errs++;}
         else if(cp>phase) phase=cp;
         Node *d;
-        if(cp==1)      d=parse_import_decl(&p);
-        else if(cp==2) d=parse_type_decl(&p);
+        if(cp==1){
+            if(peek(&p)==TK_KW_I) d=parse_import_decl(&p);
+            else { Token *it=consume_decl_kw(&p);Node *n=mk(&p,NODE_IMPORT,it);
+                if(!xp(&p,TK_EQ,"'='")){ sync(&p);d=n; }
+                else {
+                    Token *at=cur(&p); if(!xp(&p,TK_IDENT,"import alias")){ sync(&p);d=n; }
+                    else { ch(&p,n,mk(&p,NODE_IDENT,at));
+                        if(!xp(&p,TK_COLON,"':'")){ sync(&p);d=n; }
+                        else { ch(&p,n,parse_module_path(&p));
+                            if(peek(&p)==TK_STR_LIT){Token *vt=cur(&p);adv(&p);ch(&p,n,mk(&p,NODE_STR_LIT,vt));}
+                            opt_semi(&p); d=n; }}}
+            }
+        }
+        else if(cp==2){
+            if(peek(&p)==TK_KW_T) d=parse_type_decl(&p);
+            else { Token *tt=consume_decl_kw(&p);Node *n=mk(&p,NODE_TYPE_DECL,tt);
+                if(!xp(&p,TK_EQ,"'='")){ sync(&p);d=n; }
+                else {
+                    /* In default mode, type name after t= can be $ident or uppercase TK_IDENT */
+                    Token *nt=cur(&p);
+                    if(peek(&p)==TK_DOLLAR){adv(&p);nt=cur(&p);
+                        if(!xp(&p,TK_IDENT,"type name")){ sync(&p);d=n;goto next_decl;}
+                    } else if(peek(&p)==TK_IDENT||peek(&p)==TK_TYPE_IDENT){
+                        adv(&p);
+                    } else {xp(&p,TK_IDENT,"type name");sync(&p);d=n;goto next_decl;}
+                    ch(&p,n,mk(&p,NODE_TYPE_IDENT,nt));
+                    if(!xp(&p,TK_LBRACE,"'{'")){ sync(&p);d=n; }
+                    else { ch(&p,n,parse_field_list(&p));
+                        if(!xp(&p,TK_RBRACE,"'}'"))eerr(&p,E2004,cur(&p),"unclosed delimiter");
+                        opt_semi(&p); d=n; }}
+            }
+        }
         else if(cp==3) d=parse_const_decl(&p);
-        else           d=parse_func_decl(&p);
+        else {
+            if(peek(&p)==TK_KW_F) d=parse_func_decl(&p);
+            else { Token *ft=consume_decl_kw(&p);Node *n=mk(&p,NODE_FUNC_DECL,ft);
+                if(!xp(&p,TK_EQ,"'='")){ sync(&p);d=n; }
+                else {
+                    Token *nt=cur(&p); if(!xp(&p,TK_IDENT,"function name")){ sync(&p);d=n; }
+                    else { ch(&p,n,mk(&p,NODE_IDENT,nt));
+                        if(!xp(&p,TK_LPAREN,"'('")){ sync(&p);d=n; }
+                        else {
+                            if(peek(&p)!=TK_RPAREN){parse_one_param(&p,n);
+                                while(peek(&p)==TK_SEMICOLON&&p.pos+1<p.n&&p.toks[p.pos+1].kind!=TK_RPAREN){adv(&p);parse_one_param(&p,n);}}
+                            if(!xp(&p,TK_RPAREN,"')'"))eerr(&p,E2004,cur(&p),"unclosed delimiter");
+                            if(!xp(&p,TK_COLON,"':'")){ sync(&p);d=n; }
+                            else {
+                                Token *rs=cur(&p); Node *rspec=mk(&p,NODE_RETURN_SPEC,rs);
+                                ch(&p,rspec,parse_type_expr(&p));
+                                if(peek(&p)==TK_BANG){adv(&p);ch(&p,rspec,parse_type_expr(&p));}
+                                ch(&p,n,rspec);
+                                if(peek(&p)==TK_LBRACE){xp(&p,TK_LBRACE,"'{'");
+                                    ch(&p,n,parse_stmt_list(&p,ft));
+                                    if(!xp(&p,TK_RBRACE,"'}'"))eerr(&p,E2004,cur(&p),"unclosed delimiter");}
+                                opt_semi(&p); d=n; }}}}
+            }
+        }
+        next_decl:
         ch(&p,root,d);
     }
     return root;

@@ -39,11 +39,11 @@ void diag_set_format(DiagFormat fmt);
 void diag_set_source_file(const char *path);
 void diag_flush_sarif(void);
 
-int lex(const char *src, int src_len, Token *tokens, int token_cap);
+int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile profile);
 
 /* ── Version ────────────────────────────────────────────────────────── */
 
-#define TKC_WASM_VERSION "tkc 0.1.0-wasm (Profile 1)"
+#define TKC_WASM_VERSION "tkc 0.1.0-wasm"
 
 /* ── Diagnostic capture ─────────────────────────────────────────────
  *
@@ -166,7 +166,7 @@ static PipeResult run_pipeline(const char *source, const char *up_to)
     r.toks = arena_alloc(r.arena, tcap * (int)sizeof(Token));
     if (!r.toks) { r.fail_stage = "lex"; return r; }
 
-    r.tc = lex(source, slen, r.toks, tcap);
+    r.tc = lex(source, slen, r.toks, tcap, PROFILE_DEFAULT);
     if (r.tc < 0 || diag_error_count() > 0) {
         r.fail_stage = "lex";
         return r;

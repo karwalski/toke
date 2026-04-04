@@ -1,0 +1,9 @@
+id: L029
+series: L
+description: "Dollar sign ($) is a valid token in default mode for type names"
+input: |
+  m=test;
+  t=$pt{x:i64;y:i64};
+  f=mk():$pt{<$pt{x:1;y:2}};
+expected_exit_code: 0
+expected_error_codes: []

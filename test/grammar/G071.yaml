@@ -1,0 +1,8 @@
+id: G071
+series: G
+description: "Return short form < in default mode"
+input: |
+  m=test;
+  f=one():i64{<1};
+expected_exit_code: 0
+expected_error_codes: []

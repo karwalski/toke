@@ -1,0 +1,7 @@
+id: G059
+series: G
+description: "Module declaration with lowercase m= in default mode"
+input: |
+  m=test;
+expected_exit_code: 0
+expected_error_codes: []

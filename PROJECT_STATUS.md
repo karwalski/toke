@@ -2,7 +2,7 @@
 ## toke — Live Project Status
 
 **Last updated:** see git log  
-**Current phase:** Phase 1 — Falsification
+**Current phase:** Default Syntax Implementation (Gate 1 passed)
 **Current milestone:** M1 — Reference compiler complete; M2 — Standard Library Core
 
 ---
@@ -18,7 +18,7 @@
 
 ---
 
-## Phase 1 Epic Status
+## Epic Status
 
 | Epic | Title | Status |
 |------|-------|--------|

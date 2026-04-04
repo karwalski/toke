@@ -1,0 +1,11 @@
+id: G066
+series: G
+description: "Let binding in default mode"
+input: |
+  m=test;
+  f=main():i64{
+    let x=42;
+    <x
+  };
+expected_exit_code: 0
+expected_error_codes: []

@@ -1,0 +1,8 @@
+id: G057
+series: G
+description: "Square brackets produce E1003 in default mode"
+input: |
+  M=test;
+  F=bad():i64{let a=[1;2;3];<1};
+expected_exit_code: 1
+expected_error_codes: ["E1003"]

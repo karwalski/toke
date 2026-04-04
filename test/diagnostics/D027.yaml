@@ -1,0 +1,11 @@
+id: D027
+series: D
+description: "Returning i32 from i64 function without cast emits E4031"
+input: |
+  M=test;
+  F=bad():i64{
+    let a:i32=42 as i32;
+    <a
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]

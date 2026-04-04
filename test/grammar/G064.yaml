@@ -1,0 +1,9 @@
+id: G064
+series: G
+description: "Import declaration with lowercase i= in default mode"
+input: |
+  m=test;
+  i=s:std.str;
+  f=greet():Str{<"hi"};
+expected_exit_code: 0
+expected_error_codes: []

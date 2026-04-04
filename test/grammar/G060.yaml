@@ -1,0 +1,7 @@
+id: G060
+series: G
+description: "Module declaration with dotted path in default mode"
+input: |
+  m=com.example.app;
+expected_exit_code: 0
+expected_error_codes: []

@@ -61,6 +61,13 @@ static const char *type_to_str(const Type *t, char *buf, int size)
         case TY_U64:   snprintf(buf, size, "u64");  break;
         case TY_F64:   snprintf(buf, size, "f64");  break;
         case TY_STR:   snprintf(buf, size, "str");  break;
+        case TY_I8:    snprintf(buf, size, "i8");   break;
+        case TY_I16:   snprintf(buf, size, "i16");  break;
+        case TY_I32:   snprintf(buf, size, "i32");  break;
+        case TY_U8:    snprintf(buf, size, "u8");   break;
+        case TY_U16:   snprintf(buf, size, "u16");  break;
+        case TY_U32:   snprintf(buf, size, "u32");  break;
+        case TY_F32:   snprintf(buf, size, "f32");  break;
         case TY_STRUCT:
             snprintf(buf, size, "%s", t->name ? t->name : "struct"); break;
         case TY_ARRAY: {

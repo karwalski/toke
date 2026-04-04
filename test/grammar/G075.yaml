@@ -1,0 +1,8 @@
+id: G075
+series: G
+description: "Map literal with @() colon syntax in default mode"
+input: |
+  m=test;
+  f=mk():i64{let m=@(1:10;2:20;3:30);<1};
+expected_exit_code: 0
+expected_error_codes: []

@@ -27,7 +27,7 @@ Each decision lists the conflicting recommendations, which teams raised it, and 
 
 **Recommendation:** Option A + C combined. Define TEMSpec, report both metrics clearly.
 
-**Decision:** 12.5% reduction was for the phase 1 80 char format. website also clearly mentions best practice and full program expansion. leave both as is, we will update when we have new numbers after phase 2.... so A.
+**Decision:** 12.5% reduction was for the legacy 80-char format. website also clearly mentions best practice and full program expansion. leave both as is, we will update when we have new numbers after default syntax work.... so A.
 
 ---
 

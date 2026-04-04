@@ -1,0 +1,11 @@
+id: G049
+series: G
+description: "logical AND (&&) with bool operands"
+input: |
+  M=test;
+  F=main():i64{
+    let a = true && false;
+    <0
+  };
+expected_exit_code: 0
+expected_error_codes: []

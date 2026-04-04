@@ -1,0 +1,8 @@
+id: G072
+series: G
+description: "Return long form rt in default mode"
+input: |
+  m=test;
+  f=one():i64{rt 1};
+expected_exit_code: 0
+expected_error_codes: []

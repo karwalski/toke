@@ -1,0 +1,8 @@
+id: G080
+series: G
+description: "Array index with .get() in default mode"
+input: |
+  m=test;
+  f=second(a:@i64):i64{<a.get(1)};
+expected_exit_code: 0
+expected_error_codes: []

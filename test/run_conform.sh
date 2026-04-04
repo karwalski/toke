@@ -170,6 +170,10 @@ run_test() {
     expected_fix="$(yaml_get "${yaml_file}" "expected_fix" 2>/dev/null || true)"
     expected_fix_absent="$(yaml_get "${yaml_file}" "expected_fix_absent" 2>/dev/null || echo "false")"
 
+    # Optional extra CLI flags (e.g. --legacy)
+    local extra_flags
+    extra_flags="$(yaml_get "${yaml_file}" "flags" 2>/dev/null || true)"
+
     # Write input to a temp file
     local tmpfile
     tmpfile="$(mktemp /tmp/tkc_conform_XXXXXX.tk)"
@@ -178,7 +182,8 @@ run_test() {
     # Run tkc --check --diag-json against the input
     diag_json_output=""
     actual_exit=0
-    diag_json_output="$("${TKC}" --check --diag-json "${tmpfile}" 2>&1)" || actual_exit=$?
+    # shellcheck disable=SC2086
+    diag_json_output="$("${TKC}" --check --diag-json ${extra_flags} "${tmpfile}" 2>&1)" || actual_exit=$?
 
     rm -f "${tmpfile}"
 

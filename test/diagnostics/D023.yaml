@@ -1,0 +1,11 @@
+id: D023
+series: D
+description: "Single-variant sum type match must still cover the one variant"
+input: |
+  M=test;
+  T=Wrapper{Val:i64};
+  F=unwrap(w:Wrapper):i64{
+    <w|{Val:v v}
+  };
+expected_exit_code: 0
+expected_error_codes: []

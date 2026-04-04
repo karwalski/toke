@@ -315,8 +315,12 @@ static const char *resolve_llvm_type(Ctx *c, const Node *ty) {
     char tn[64]; tok_cp(c->src, ty, tn, sizeof tn);
     if (!strcmp(tn, "bool")) return "i1";
     if (!strcmp(tn, "f64"))  return "double";
+    if (!strcmp(tn, "f32"))  return "float";
     if (!strcmp(tn, "str"))  return "ptr";
     if (!strcmp(tn, "void")) return "void";
+    if (!strcmp(tn, "i8")  || !strcmp(tn, "u8")  || !strcmp(tn, "Byte")) return "i8";
+    if (!strcmp(tn, "i16") || !strcmp(tn, "u16")) return "i16";
+    if (!strcmp(tn, "i32") || !strcmp(tn, "u32")) return "i32";
     return "i64";
 }
 
@@ -737,6 +741,33 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         return t;
     case NODE_BINARY_EXPR: {
+        /* Short-circuit codegen for && and || */
+        if (n->op == TK_AND || n->op == TK_OR) {
+            int res_alloca = next_tmp(c);
+            fprintf(c->out, "  %%t%d = alloca i1\n", res_alloca);
+            /* Store the short-circuit default: false for &&, true for || */
+            fprintf(c->out, "  store i1 %s, ptr %%t%d\n",
+                    n->op == TK_AND ? "false" : "true", res_alloca);
+            int lhs = emit_expr(c, n->children[0]);
+            int lbl_rhs = next_lbl(c);
+            int lbl_end = next_lbl(c);
+            if (n->op == TK_AND)
+                fprintf(c->out, "  br i1 %%t%d, label %%logic_rhs%d, label %%logic_end%d\n",
+                        lhs, lbl_rhs, lbl_end);
+            else
+                fprintf(c->out, "  br i1 %%t%d, label %%logic_end%d, label %%logic_rhs%d\n",
+                        lhs, lbl_end, lbl_rhs);
+            fprintf(c->out, "logic_rhs%d:\n", lbl_rhs);
+            c->term = 0;
+            int rhs = emit_expr(c, n->children[1]);
+            fprintf(c->out, "  store i1 %%t%d, ptr %%t%d\n", rhs, res_alloca);
+            fprintf(c->out, "  br label %%logic_end%d\n", lbl_end);
+            fprintf(c->out, "logic_end%d:\n", lbl_end);
+            c->term = 0;
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = load i1, ptr %%t%d\n", t, res_alloca);
+            return t;
+        }
         int lhs=emit_expr(c,n->children[0]), rhs=emit_expr(c,n->children[1]);
         const char *lty = expr_llvm_type(c, n->children[0]);
         const char *rty = expr_llvm_type(c, n->children[1]);
@@ -777,27 +808,59 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = icmp %s ptr %%t%d, %%t%d\n", t, cmp, lhs, rhs);
             return t;
         }
-        /* Coerce i1 operands to i64 for arithmetic/comparisons */
-        if (!strcmp(lty, "i1")) {
-            int z = next_tmp(c);
-            fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, lhs);
-            lhs = z;
-        } else if (!strcmp(lty, "ptr")) {
-            int z = next_tmp(c);
-            fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, lhs);
-            lhs = z;
+        /* Determine the operand LLVM type for binary ops.
+         * For narrow int/float types, use the actual type; for i1/ptr, coerce. */
+        int is_narrow_int = (!strcmp(lty, "i8") || !strcmp(lty, "i16") || !strcmp(lty, "i32"));
+        int is_float_binop = (!strcmp(lty, "double") || !strcmp(lty, "float"));
+        if (!is_narrow_int && !is_float_binop) {
+            /* Coerce i1 operands to i64 for arithmetic/comparisons */
+            if (!strcmp(lty, "i1")) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, lhs);
+                lhs = z; lty = "i64";
+            } else if (!strcmp(lty, "ptr")) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, lhs);
+                lhs = z; lty = "i64";
+            }
+            if (!strcmp(rty, "i1")) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, rhs);
+                rhs = z; rty = "i64";
+            } else if (!strcmp(rty, "ptr")) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, rhs);
+                rhs = z; rty = "i64";
+            }
         }
-        if (!strcmp(rty, "i1")) {
-            int z = next_tmp(c);
-            fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, rhs);
-            rhs = z;
-        } else if (!strcmp(rty, "ptr")) {
-            int z = next_tmp(c);
-            fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, rhs);
-            rhs = z;
+        /* Float binary operations */
+        if (is_float_binop) {
+            t = next_tmp(c);
+            const char *fop;
+            switch (n->op) {
+            case TK_PLUS:  fop = "fadd"; break;
+            case TK_MINUS: fop = "fsub"; break;
+            case TK_STAR:  fop = "fmul"; break;
+            case TK_SLASH: fop = "fdiv"; break;
+            case TK_LT:
+                fprintf(c->out, "  %%t%d = fcmp olt %s %%t%d, %%t%d\n", t, lty, lhs, rhs);
+                return t;
+            case TK_GT:
+                fprintf(c->out, "  %%t%d = fcmp ogt %s %%t%d, %%t%d\n", t, lty, lhs, rhs);
+                return t;
+            case TK_EQ:
+                fprintf(c->out, "  %%t%d = fcmp oeq %s %%t%d, %%t%d\n", t, lty, lhs, rhs);
+                return t;
+            default: fop = "fadd";
+                fprintf(c->out, "  ; unsupported float binop %d\n", (int)n->op);
+            }
+            fprintf(c->out, "  %%t%d = %s %s %%t%d, %%t%d\n", t, fop, lty, lhs, rhs);
+            return t;
         }
-        /* Checked arithmetic for +, -, * (D2=E) */
-        if (n->op == TK_PLUS || n->op == TK_MINUS || n->op == TK_STAR) {
+        /* Determine the integer type string for operations */
+        const char *ity = lty; /* e.g. "i64", "i32", "i16", "i8" */
+        /* Checked arithmetic for +, -, * (D2=E) — only for i64 */
+        if ((n->op == TK_PLUS || n->op == TK_MINUS || n->op == TK_STAR) && !strcmp(ity, "i64")) {
             const char *intrinsic;
             int op_code;
             switch (n->op) {
@@ -820,26 +883,41 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "ov_ok%d:\n", lbl_cont);
             c->term = 0;
             t = val;
+        } else if (is_narrow_int && (n->op == TK_PLUS || n->op == TK_MINUS || n->op == TK_STAR)) {
+            /* Narrow int arithmetic — no overflow check (wraps) */
+            t = next_tmp(c);
+            const char *iop;
+            switch (n->op) {
+            case TK_PLUS:  iop = "add"; break;
+            case TK_MINUS: iop = "sub"; break;
+            default:       iop = "mul"; break;
+            }
+            fprintf(c->out, "  %%t%d = %s %s %%t%d, %%t%d\n", t, iop, ity, lhs, rhs);
         } else {
             t = next_tmp(c);
-            const char *op;
+            char op_buf[32];
             switch (n->op) {
-            case TK_SLASH: op = "sdiv i64";     break;
-            case TK_LT:    op = "icmp slt i64"; break;
-            case TK_GT:    op = "icmp sgt i64"; break;
-            case TK_EQ:    op = "icmp eq i64";  break;
-            default:       op = "add i64";
+            case TK_SLASH: snprintf(op_buf, sizeof op_buf, "sdiv %s", ity); break;
+            case TK_LT:    snprintf(op_buf, sizeof op_buf, "icmp slt %s", ity); break;
+            case TK_GT:    snprintf(op_buf, sizeof op_buf, "icmp sgt %s", ity); break;
+            case TK_EQ:    snprintf(op_buf, sizeof op_buf, "icmp eq %s", ity); break;
+            default:       snprintf(op_buf, sizeof op_buf, "add %s", ity);
                 fprintf(c->out, "  ; unsupported binop %d\n", (int)n->op);
             }
-            fprintf(c->out, "  %%t%d = %s %%t%d, %%t%d\n", t, op, lhs, rhs);
+            fprintf(c->out, "  %%t%d = %s %%t%d, %%t%d\n", t, op_buf, lhs, rhs);
         }
         return t;
     }
     case NODE_UNARY_EXPR: {
         int v = emit_expr(c, n->children[0]);
         t = next_tmp(c);
-        if (n->op == TK_MINUS)
-            fprintf(c->out, "  %%t%d = sub i64 0, %%t%d\n", t, v);
+        if (n->op == TK_MINUS) {
+            const char *uty = expr_llvm_type(c, n->children[0]);
+            if (!strcmp(uty, "double") || !strcmp(uty, "float"))
+                fprintf(c->out, "  %%t%d = fneg %s %%t%d\n", t, uty, v);
+            else
+                fprintf(c->out, "  %%t%d = sub %s 0, %%t%d\n", t, uty, v);
+        }
         else if (n->op == TK_BANG)
             fprintf(c->out, "  %%t%d = xor i1 %%t%d, 1\n", t, v);
         else
@@ -976,30 +1054,77 @@ static int emit_expr(Ctx *c, const Node *n)
         t = next_tmp(c);
         if (n->child_count >= 2 && n->children[1]) {
             char tn[64]; tok_cp(c->src, n->children[1], tn, sizeof tn);
-            if (!strcmp(tn, "f64")) {
-                if (!strcmp(src_ty, "double")) {
-                    fprintf(c->out, "  %%t%d = fadd double 0.0, %%t%d\n", t, v);
-                } else {
-                    fprintf(c->out, "  %%t%d = sitofp i64 %%t%d to double\n", t, v);
-                }
-                return t;
-            } else if (!strcmp(tn, "i64") || !strcmp(tn, "u64")) {
-                if (!strcmp(src_ty, "double")) {
-                    fprintf(c->out, "  %%t%d = fptosi double %%t%d to i64\n", t, v);
-                } else if (!strcmp(src_ty, "i1")) {
-                    fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", t, v);
+            /* Determine target LLVM type and signedness from toke type name */
+            const char *dst_ty = NULL;
+            int dst_signed = 1;
+            int dst_is_float = 0;
+            if (!strcmp(tn, "f64"))  { dst_ty = "double"; dst_is_float = 1; }
+            else if (!strcmp(tn, "f32"))  { dst_ty = "float";  dst_is_float = 1; }
+            else if (!strcmp(tn, "i64"))  { dst_ty = "i64"; }
+            else if (!strcmp(tn, "u64"))  { dst_ty = "i64"; dst_signed = 0; }
+            else if (!strcmp(tn, "i32"))  { dst_ty = "i32"; }
+            else if (!strcmp(tn, "u32"))  { dst_ty = "i32"; dst_signed = 0; }
+            else if (!strcmp(tn, "i16"))  { dst_ty = "i16"; }
+            else if (!strcmp(tn, "u16"))  { dst_ty = "i16"; dst_signed = 0; }
+            else if (!strcmp(tn, "i8"))   { dst_ty = "i8"; }
+            else if (!strcmp(tn, "u8") || !strcmp(tn, "Byte"))
+                                          { dst_ty = "i8"; dst_signed = 0; }
+            else if (!strcmp(tn, "bool")) { dst_ty = "i1"; }
+            if (dst_ty) {
+                int src_is_float = (!strcmp(src_ty, "double") || !strcmp(src_ty, "float"));
+                int src_is_int = (!strcmp(src_ty, "i64") || !strcmp(src_ty, "i32") ||
+                                  !strcmp(src_ty, "i16") || !strcmp(src_ty, "i8") ||
+                                  !strcmp(src_ty, "i1"));
+                if (!strcmp(src_ty, dst_ty)) {
+                    /* Same LLVM type — identity */
+                    if (dst_is_float)
+                        fprintf(c->out, "  %%t%d = fadd %s 0.0, %%t%d\n", t, dst_ty, v);
+                    else
+                        fprintf(c->out, "  %%t%d = add %s 0, %%t%d\n", t, dst_ty, v);
+                } else if (dst_is_float && src_is_float) {
+                    /* float <-> float */
+                    int sbits = !strcmp(src_ty, "double") ? 64 : 32;
+                    int dbits = !strcmp(dst_ty, "double") ? 64 : 32;
+                    if (dbits > sbits)
+                        fprintf(c->out, "  %%t%d = fpext %s %%t%d to %s\n", t, src_ty, v, dst_ty);
+                    else
+                        fprintf(c->out, "  %%t%d = fptrunc %s %%t%d to %s\n", t, src_ty, v, dst_ty);
+                } else if (dst_is_float && src_is_int) {
+                    /* int -> float */
+                    fprintf(c->out, "  %%t%d = sitofp %s %%t%d to %s\n", t, src_ty, v, dst_ty);
+                } else if (src_is_float && !dst_is_float) {
+                    /* float -> int */
+                    if (dst_signed)
+                        fprintf(c->out, "  %%t%d = fptosi %s %%t%d to %s\n", t, src_ty, v, dst_ty);
+                    else
+                        fprintf(c->out, "  %%t%d = fptoui %s %%t%d to %s\n", t, src_ty, v, dst_ty);
+                } else if (src_is_int && !dst_is_float) {
+                    /* int -> int: trunc, sext, or zext */
+                    int sb = 64;
+                    if (!strcmp(src_ty, "i32")) sb = 32;
+                    else if (!strcmp(src_ty, "i16")) sb = 16;
+                    else if (!strcmp(src_ty, "i8")) sb = 8;
+                    else if (!strcmp(src_ty, "i1")) sb = 1;
+                    int db = 64;
+                    if (!strcmp(dst_ty, "i32")) db = 32;
+                    else if (!strcmp(dst_ty, "i16")) db = 16;
+                    else if (!strcmp(dst_ty, "i8")) db = 8;
+                    else if (!strcmp(dst_ty, "i1")) db = 1;
+                    if (db > sb) {
+                        int use_zext = (!strcmp(src_ty, "i1") || !dst_signed);
+                        if (use_zext)
+                            fprintf(c->out, "  %%t%d = zext %s %%t%d to %s\n", t, src_ty, v, dst_ty);
+                        else
+                            fprintf(c->out, "  %%t%d = sext %s %%t%d to %s\n", t, src_ty, v, dst_ty);
+                    } else if (db < sb) {
+                        fprintf(c->out, "  %%t%d = trunc %s %%t%d to %s\n", t, src_ty, v, dst_ty);
+                    } else {
+                        fprintf(c->out, "  %%t%d = add %s 0, %%t%d\n", t, dst_ty, v);
+                    }
                 } else if (!strcmp(src_ty, "ptr")) {
-                    fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", t, v);
+                    fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to %s\n", t, v, dst_ty);
                 } else {
-                    /* already i64 — pass through */
-                    fprintf(c->out, "  %%t%d = add i64 0, %%t%d\n", t, v);
-                }
-                return t;
-            } else if (!strcmp(tn, "bool")) {
-                if (!strcmp(src_ty, "i1")) {
-                    fprintf(c->out, "  %%t%d = add i1 0, %%t%d\n", t, v);
-                } else {
-                    fprintf(c->out, "  %%t%d = trunc i64 %%t%d to i1\n", t, v);
+                    fprintf(c->out, "  %%t%d = add %s 0, %%t%d\n", t, dst_ty, v);
                 }
                 return t;
             }
@@ -1298,17 +1423,26 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
     }
     case NODE_BINARY_EXPR:
         switch (n->op) {
-        case TK_LT: case TK_GT: case TK_EQ: return "i1";
-        case TK_PLUS: {
+        case TK_LT: case TK_GT: case TK_EQ:
+        case TK_AND: case TK_OR: return "i1";
+        case TK_PLUS: case TK_MINUS: case TK_STAR: case TK_SLASH: {
             const char *lt = expr_llvm_type(c, n->children[0]);
             const char *rt = expr_llvm_type(c, n->children[1]);
             if (!strcmp(lt, "ptr") || !strcmp(rt, "ptr")) return "ptr";
+            /* For narrow/float types, return the operand type */
+            if (!strcmp(lt, "double") || !strcmp(lt, "float") ||
+                !strcmp(lt, "i32") || !strcmp(lt, "i16") || !strcmp(lt, "i8"))
+                return lt;
+            if (!strcmp(rt, "double") || !strcmp(rt, "float") ||
+                !strcmp(rt, "i32") || !strcmp(rt, "i16") || !strcmp(rt, "i8"))
+                return rt;
             return "i64";
         }
         default: return "i64";
         }
     case NODE_UNARY_EXPR:
         if (n->op == TK_BANG) return "i1";
+        if (n->op == TK_MINUS) return expr_llvm_type(c, n->children[0]);
         return "i64";
     case NODE_CALL_EXPR: {
         if (n->child_count < 1) return "i64";
@@ -1333,7 +1467,11 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         if (n->child_count >= 2 && n->children[1]) {
             char tn[64]; tok_cp(c->src, n->children[1], tn, sizeof tn);
             if (!strcmp(tn, "f64")) return "double";
+            if (!strcmp(tn, "f32")) return "float";
             if (!strcmp(tn, "i64") || !strcmp(tn, "u64")) return "i64";
+            if (!strcmp(tn, "i32") || !strcmp(tn, "u32")) return "i32";
+            if (!strcmp(tn, "i16") || !strcmp(tn, "u16")) return "i16";
+            if (!strcmp(tn, "i8")  || !strcmp(tn, "u8") || !strcmp(tn, "Byte")) return "i8";
             if (!strcmp(tn, "bool")) return "i1";
         }
         return "ptr"; /* array / unknown cast → inttoptr */
@@ -1422,19 +1560,30 @@ static void emit_stmt(Ctx *c, const Node *n)
         { const char *uname = make_unique_name(c, tb);
           if (uname != tb) strncpy(tb, uname, sizeof tb - 1);
         }
-        if (n->child_count >= 2) {
-            const char *vty = expr_llvm_type(c, n->children[1]);
+        {
+        /* Determine which child is the init expression.
+         * 3 children: [0]=ident [1]=type_ann [2]=init
+         * 2 children: [0]=ident [1]=init */
+        int has_ann = (n->child_count >= 3 && n->children[2]);
+        const Node *init_node = has_ann ? n->children[2] : (n->child_count >= 2 ? n->children[1] : NULL);
+        if (init_node) {
+            const char *vty;
+            if (has_ann)
+                vty = resolve_llvm_type(c, n->children[1]);
+            else
+                vty = expr_llvm_type(c, init_node);
             if (!strcmp(vty, "ptr")) {
-                const char *stype = expr_struct_type(c, n->children[1]);
+                const char *stype = expr_struct_type(c, init_node);
                 mark_ptr_with_type(c, tb, stype);
             }
             set_local_type(c, tb, vty);
             fprintf(c->out, "  %%%s = alloca %s\n", tb, vty);
-            int v = emit_expr(c, n->children[1]);
+            int v = emit_expr(c, init_node);
             fprintf(c->out, "  store %s %%t%d, ptr %%%s\n", vty, v, tb);
         } else {
             set_local_type(c, tb, "i64");
             fprintf(c->out, "  %%%s = alloca i64\n", tb);
+        }
         }
         break;
     case NODE_ASSIGN_STMT:
@@ -1534,6 +1683,14 @@ static void emit_stmt(Ctx *c, const Node *n)
                     int z = next_tmp(c);
                     fprintf(c->out, "  %%t%d = sitofp i64 %%t%d to double\n", z, v);
                     fprintf(c->out, "  ret double %%t%d\n", z);
+                } else if (!strcmp(ety, "float") && !strcmp(rt, "double")) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = fpext float %%t%d to double\n", z, v);
+                    fprintf(c->out, "  ret double %%t%d\n", z);
+                } else if (!strcmp(ety, "double") && !strcmp(rt, "float")) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = fptrunc double %%t%d to float\n", z, v);
+                    fprintf(c->out, "  ret float %%t%d\n", z);
                 } else {
                     fprintf(c->out, "  ret %s %%t%d\n", rt, v);
                 }

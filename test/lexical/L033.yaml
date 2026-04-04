@@ -1,0 +1,8 @@
+id: L033
+series: L
+description: "Lowercase m followed by = is recognized as module declaration start"
+input: |
+  m=mymodule;
+  f=noop():i64{<0};
+expected_exit_code: 0
+expected_error_codes: []

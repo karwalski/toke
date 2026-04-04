@@ -1,0 +1,8 @@
+id: D036
+series: D
+description: "Type mismatch returning Str from i64 function in default mode emits E4031"
+input: |
+  m=test;
+  f=bad():i64{<"hello"};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]

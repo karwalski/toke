@@ -1,0 +1,11 @@
+id: G073
+series: G
+description: "Match expression on sum type in default mode"
+input: |
+  m=test;
+  t=$opt{Some:i64;None:bool};
+  f=unwrap(v:$opt):i64{
+    <v|{Some:x x;None:n 0}
+  };
+expected_exit_code: 0
+expected_error_codes: []

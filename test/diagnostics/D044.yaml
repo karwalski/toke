@@ -1,0 +1,10 @@
+id: D044
+series: D
+description: "Lossy cast from f64 to i64 in default mode emits W1001"
+input: |
+  m=test;
+  f=main():i64{
+    <3.14 as i64
+  };
+expected_exit_code: 0
+expected_error_codes: ["W1001"]

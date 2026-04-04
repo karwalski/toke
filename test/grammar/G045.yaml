@@ -1,0 +1,11 @@
+id: G045
+series: G
+description: "Exhaustive match on sum type with all variants covered succeeds"
+input: |
+  M=test;
+  T=Color{Red:i64;Green:i64;Blue:i64};
+  F=name(c:Color):i64{
+    <c|{Red:r r;Green:g g;Blue:b b}
+  };
+expected_exit_code: 0
+expected_error_codes: []

@@ -6,3 +6,4 @@ input: |
   F=get(arr:[i64]):i64{<arr[0]};
 expected_exit_code: 0
 expected_error_codes: []
+flags: --legacy

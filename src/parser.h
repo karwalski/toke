@@ -107,7 +107,9 @@ typedef enum { DIAG_WARNING = 0, DIAG_ERROR = 1 } DiagSeverity;
 #define E2002 2002   /* unexpected token (expected X, got Y)        */
 #define E2003 2003   /* missing semicolon                           */
 #define E2004 2004   /* unclosed delimiter                          */
+#define E2005 2005   /* unexpected token in type position           */
 #define E2010 2010   /* pointer type *T used outside extern function */
+#define E2015 2015   /* duplicate field name in struct declaration  */
 
 /*
  * diag_emit — forward declaration matching the variadic convention.
@@ -136,13 +138,14 @@ void *arena_alloc(Arena *arena, int size);
 /*
  * parse — parse a flat token array into an AST.
  *
- * tokens : array of Token produced by the lexer
- * count  : number of tokens (must end with TK_EOF)
- * src    : original source bytes (used for token text comparison)
- * arena  : allocation arena for AST nodes
+ * tokens  : array of Token produced by the lexer
+ * count   : number of tokens (must end with TK_EOF)
+ * src     : original source bytes (used for token text comparison)
+ * arena   : allocation arena for AST nodes
+ * profile : PROFILE_DEFAULT or PROFILE_LEGACY — controls syntax variant
  *
  * Returns the root NODE_PROGRAM node, or NULL on fatal (unrecoverable) error.
  */
-Node *parse(Token *tokens, int count, const char *src, Arena *arena);
+Node *parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile);
 
 #endif /* TK_PARSER_H */

@@ -1,0 +1,11 @@
+id: G097
+series: G
+description: "f32 type with cast in default mode"
+input: |
+  m=test;
+  f=narrow():f64{
+    let a:f32=3.14 as f32;
+    <a as f64
+  };
+expected_exit_code: 0
+expected_error_codes: []

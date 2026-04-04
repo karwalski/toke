@@ -1,11 +1,11 @@
 # toke Language Specification
 ## Version 0.1 — Draft
 
-**Language name:** toke  
-**Written shorthand:** tk  
-**Compiler binary:** tkc  
-**File extension:** .tk  
-**Package registry name:** tokelang  
+**Language name:** toke
+**Written shorthand:** tk
+**Compiler binary:** tkc
+**File extension:** .tk
+**Package registry name:** tokelang
 **Specification status:** Draft — normative sections marked [N], informative sections marked [I]
 
 ---
@@ -18,31 +18,31 @@
 4. Goals and Non-Goals
 5. Standardisation Layers
 6. Terminology and Notation
-7. Character Set — Phase 1 (80 characters)
-8. Character Set — Phase 2 (56 characters)
-9. Lexical Rules
-10. Source Model
-11. Grammar — Formal EBNF
-12. Core Language Constructs
-13. Type System
-14. Error Model
-15. Memory Model
-16. Module and Interface Structure
-17. Standard Library Interface
-18. Compiler Requirements
-19. Structured Diagnostics Specification
-20. Tooling Protocol
-21. Conformance
-22. Benchmarking and Adoption Criteria
-23. Security and Safety Requirements
-24. Reference Implementation Requirements
-25. Deferred Items
-26. Governance and Versioning
-27. Appendix A — Error Code Registry
-28. Appendix B — Diagnostic Schema (normative)
-29. Appendix C — Tooling Protocol Schema (normative)
-30. Appendix D — Keyword and Symbol Reference
-31. Appendix E — Reserved Identifiers
+7. Character Set (56 Characters)
+8. Lexical Rules
+9. Source Model
+10. Grammar — Formal EBNF
+11. Core Language Constructs
+12. Type System
+13. Error Model
+14. Memory Model
+15. Module and Interface Structure
+16. Standard Library Interface
+17. Compiler Requirements
+18. Structured Diagnostics Specification
+19. Tooling Protocol
+20. Conformance
+21. Benchmarking and Adoption Criteria
+22. Security and Safety Requirements
+23. Reference Implementation Requirements
+24. Deferred Items
+25. Governance and Versioning
+26. Appendix A — Error Code Registry
+27. Appendix B — Diagnostic Schema (normative)
+28. Appendix C — Tooling Protocol Schema (normative)
+29. Appendix D — Keyword and Symbol Reference
+30. Appendix E — Reserved Identifiers
+31. Appendix F — Legacy Profile
 
 ---
 
@@ -56,7 +56,7 @@ The purpose of toke is to define a language and associated tooling standard that
 - eliminates syntactic ambiguity and multiple equivalent forms for the same construct
 - supports deterministic parsing and type checking from the first character of any construct
 - provides machine-readable, structured compiler diagnostics suitable for automated repair loops
-- supports iterative generate–compile–inspect–repair workflows without human interpretation of error output
+- supports iterative generate-compile-inspect-repair workflows without human interpretation of error output
 - compiles to efficient native binaries through a stable backend with no runtime dependency
 - enables future interoperability through typed intermediate representations and protocol-level integration
 
@@ -70,7 +70,7 @@ This specification defines:
 
 - the normative properties of the toke source language (Layer A)
 - the structure of source files and modules
-- the complete character sets for Phase 1 (80 chars) and Phase 2 (56 chars)
+- the complete character set (56 chars)
 - the formal grammar in EBNF
 - the type system baseline
 - the error model and memory model
@@ -82,15 +82,15 @@ This specification defines:
 
 This specification version 0.1 does not fully specify:
 
-- concurrency semantics (Section 25.1)
-- full foreign function interface rules (Section 25.2)
-- package registry governance (Section 25.3)
-- formal memory model with ownership annotations (Section 25.4)
-- debugger metadata formats (Section 25.5)
-- canonical binary intermediate representation (Section 25.6)
-- Phase 2 tokenizer vocabulary (Section 25.7)
+- concurrency semantics (Section 24.1)
+- full foreign function interface rules (Section 24.2)
+- package registry governance (Section 24.3)
+- formal memory model with ownership annotations (Section 24.4)
+- debugger metadata formats (Section 24.5)
+- canonical binary intermediate representation (Section 24.6)
+- tokenizer vocabulary (Section 24.7)
 
-Those are listed as deferred items in Section 25.
+Those are listed as deferred items in Section 24.
 
 ---
 
@@ -178,11 +178,11 @@ Structured diagnostics schema, exit behaviour, interface extraction format, and 
 
 ### Layer C — Tooling Protocol
 
-Standard request and response shapes for compilation, validation, testing, and repair workflows. Partially specified in version 0.1; Section 20 defines the normative baseline.
+Standard request and response shapes for compilation, validation, testing, and repair workflows. Partially specified in version 0.1; Section 19 defines the normative baseline.
 
 ### Layer D — Intermediate Representation
 
-A future typed IR or canonical AST serialisation for machine-to-machine exchange. Deferred to version 0.2 (Section 25.6).
+A future typed IR or canonical AST serialisation for machine-to-machine exchange. Deferred to version 0.2 (Section 24.6).
 
 **Version 0.1 standardises Layers A and B in full, and provides a normative baseline for Layer C.**
 
@@ -206,8 +206,7 @@ Additional terms:
 | construct | a syntactic unit recognised by the grammar |
 | token | a single atomic lexical unit produced by the lexer |
 | tk token | an LLM vocabulary token in the tokenizer sense (distinguished from lexical token by context) |
-| Phase 1 | the 80-character variant of the language, used with existing LLM tokenizers |
-| Phase 2 | the 56-character variant, used with the purpose-built toke tokenizer |
+| legacy profile | the 80-character variant of the language using uppercase keywords and `[]` arrays; available via `--legacy` flag (see Appendix F) |
 | tkc | the reference compiler binary |
 | arena | a lexically scoped memory region whose allocations are freed on scope exit |
 | diagnostic | a structured machine-readable compiler message |
@@ -215,36 +214,40 @@ Additional terms:
 
 ---
 
-## 7. Character Set — Phase 1 (80 Characters) [N]
+## 7. Character Set (56 Characters) [N]
 
-Version 0.1 normatively defines Phase 1. Phase 2 is specified in Section 8 as a profile for use with the purpose-built tokenizer.
+toke source uses exactly 56 characters. No character outside this set shall appear in toke source except within string literal content, where arbitrary UTF-8 is permitted.
 
-Phase 1 uses exactly 80 characters. No character outside this set shall appear in toke source except within string literal content, where arbitrary UTF-8 is permitted.
-
-### 7.1 Complete Phase 1 Character Table
+### 7.1 Complete Character Table
 
 ```
 CLASS        CHARACTERS                                                 COUNT
 ──────────────────────────────────────────────────────────────────────────────
 Lowercase    a b c d e f g h i j k l m n o p q r s t u v w x y z       26
-Uppercase    A B C D E F G H I J K L M N O P Q R S T U V W X Y Z       26
-Digits       0 1 2 3 4 5 6 7 8 9                                         10
-Symbols      ( ) { } [ ] = : . ; + - * / < > ! |                        18
+Digits       0 1 2 3 4 5 6 7 8 9                                       10
+Symbols      ( ) { } = : . ; + - * / < > ! | $ @                       18
+Reserved     ^ ~                                                         2
 ──────────────────────────────────────────────────────────────────────────────
-TOTAL                                                                     80
+TOTAL                                                                   56
 ```
 
-Note: The double-quote `"` appears in source as the string delimiter for string literals but is not a structural symbol — it is consumed by the lexer during string literal scanning and never produces a token. It is analogous to whitespace in this regard. The 80 characters above are the complete set of characters that carry structural meaning in toke source. This section is authoritative once M0 is declared.
+The reserved characters `^` and `~` are not assigned in version 0.1 but are excluded from use to preserve their availability for version 0.2 extensions.
+
+Note: The double-quote `"` appears in source as the string delimiter for string literals but is not a structural symbol — it is consumed by the lexer during string literal scanning and never produces a token. It is analogous to whitespace in this regard.
 
 ### 7.2 Excluded Characters
 
 The following character classes are explicitly excluded from structural toke source:
 
+- Uppercase letters (A-Z) — not used in structural positions; type references use the `$` sigil instead
+- Square brackets `[` `]` — not used; array literals use `@(...)`, array types use `@$type`
 - Whitespace (space U+0020, tab U+0009, carriage return U+000D, line feed U+000A) — structurally meaningless; permitted only within string literals
 - Comments — no comment syntax is defined; comments are metadata stored outside source files
-- `@`, `#`, `$`, `%`, `^`, `&`, `~`, `` ` ``, `\`, `'`, `,`, `?` — not assigned in Phase 1
+- `#`, `%`, `&`, `` ` ``, `\`, `'`, `,`, `?` — not assigned
 
 The absence of whitespace as a structural element means the lexer produces a flat token stream with no position-dependent meaning. Two programs that differ only in whitespace between tokens are lexically identical.
+
+Note: The `&` character does not appear alone, but the two-character sequence `&&` is a logical-and operator (see Section 7.4). Similarly `||` is logical-or, composed of two `|` characters.
 
 ### 7.3 String Literal Content
 
@@ -262,67 +265,36 @@ String literals are delimited by `"`. Within a string literal, any valid UTF-8 s
 
 No other escape sequences are defined. An unrecognised escape sequence is a compile error (E1001).
 
----
+### 7.4 Multi-Character Operators
 
-## 8. Character Set — Phase 2 (56 Characters) [N]
+The following multi-character sequences are recognised as single tokens:
 
-Phase 2 is a reduced character set profile for use with the purpose-built toke tokenizer. It is a strict subset of Phase 1 except for two new sigil characters (`$` and `@`).
+| Sequence | Token | Meaning |
+|----------|-------|---------|
+| `&&` | TK_AND | logical and |
+| `\|\|` | TK_OR | logical or |
 
-Phase 2 source is not valid Phase 1 source. A conforming compiler shall accept a command-line flag or file header indicating Phase 2 mode. The default mode is Phase 1.
+### 7.5 Tokenizer Efficiency [I]
 
-### 8.1 Phase 1 to Phase 2 Transformations
-
-**Uppercase elimination:** All uppercase-initial type names are prefixed with `$` and lowercased.
-
-```
-Phase 1:    T=User{id:u64;name:Str}
-Phase 2:    T=$user{id:u64;name:$str}
-```
-
-**Array literal change:** Array literals `[...]` become `@(...)`. Array indexing `a[n]` becomes `a.n` for constant indices or `a.get(n)` for variable indices.
-
-```
-Phase 1:    [id;name;email]
-Phase 2:    @(id;name;email)
-```
-
-### 8.2 Complete Phase 2 Character Table
-
-```
-CLASS        CHARACTERS                                                 COUNT
-──────────────────────────────────────────────────────────────────────────────
-Lowercase    a b c d e f g h i j k l m n o p q r s t u v w x y z       26
-Digits       0 1 2 3 4 5 6 7 8 9                                         10
-Symbols      ( ) { } = : . ; + - * / < > ! | $ @                        18
-Reserved     ^ ~                                                           2
-──────────────────────────────────────────────────────────────────────────────
-TOTAL                                                                     56
-```
-
-The reserved characters `^` and `~` are not assigned in version 0.1 but are excluded from use to preserve their availability for version 0.2 extensions.
-
-### 8.3 Tokenizer Efficiency [I]
-
-With the purpose-built toke tokenizer trained on Phase 1 corpus:
+With the purpose-built toke tokenizer:
 
 - `$user`, `$str`, `$err` each tokenize as a single vocabulary token due to 100% co-occurrence of `$` with a type name
 - `@(` tokenizes as a single token (always together)
-- Common patterns such as `F=`, `!$err`, `<$res.ok` become single tokens
-- Expected token density improvement: 2.5–4× fewer LLM tokens per program vs cl100k_base
+- Common patterns such as `f=`, `!$err`, `<$res.ok` become single tokens
+- Expected token density improvement: 2.5-4x fewer LLM tokens per program vs cl100k_base
 
 ---
 
-## 9. Lexical Rules [N]
+## 8. Lexical Rules [N]
 
-### 9.1 Token Classes
+### 8.1 Token Classes
 
 The lexer produces tokens of the following classes:
 
 | Class | Description | Examples |
 |-------|-------------|---------|
-| KEYWORD | Reserved identifier | `F` `T` `I` `M` `if` `el` `lp` `br` `let` `mut` `as` `rt` |
-| IDENT | User-defined identifier | `getuser` `HttpReq` `count` |
-| TYPE_IDENT | Uppercase-initial identifier (Phase 1 only) | `User` `HttpError` `Str` |
+| IDENT | User-defined identifier or context keyword | `getuser` `count` `m` `f` `t` `i` |
+| TYPE_IDENT | `$`-prefixed type reference | `$user` `$str` `$i64` |
 | INT_LIT | Integer literal | `0` `42` `1024` `0xFF` |
 | FLOAT_LIT | Floating-point literal | `3.14` `0.5` `1.0e9` |
 | STR_LIT | String literal | `"hello"` `"user \(id)"` |
@@ -331,8 +303,6 @@ The lexer produces tokens of the following classes:
 | RPAREN | `)` | |
 | LBRACE | `{` | |
 | RBRACE | `}` | |
-| LBRACKET | `[` | |
-| RBRACKET | `]` | |
 | EQ | `=` | |
 | COLON | `:` | |
 | DOT | `.` | |
@@ -345,39 +315,62 @@ The lexer produces tokens of the following classes:
 | GT | `>` | |
 | BANG | `!` | |
 | PIPE | `\|` | |
+| DOLLAR | `$` | |
+| AT | `@` | |
+| AND | `&&` | |
+| OR | `\|\|` | |
 | EOF | End of input | |
 
-### 9.2 Lexical Precedence
+### 8.2 Context Keywords
+
+The declaration keywords `m`, `f`, `t`, `i` are **not** reserved words. The lexer emits them as `TK_IDENT`. The parser recognises them as declaration introducers only when they appear at the top level followed by `=` (i.e., `m=`, `f=`, `t=`, `i=`). Inside function bodies, these identifiers may be used as variable names.
+
+The following identifiers are reserved keywords:
+
+| Keyword | Role |
+|---------|------|
+| `if` | conditional branch |
+| `el` | else branch (follows `if` block only) |
+| `lp` | loop (the single loop construct) |
+| `br` | break — exits the innermost loop |
+| `let` | immutable binding |
+| `mut` | mutable qualifier on binding |
+| `as` | type cast |
+| `rt` | return (long-form alternative to `<` for clarity in nested expressions) |
+
+Boolean literals `true` and `false` are not keywords; they are predefined identifiers. They may not be redefined.
+
+### 8.3 Lexical Precedence
 
 When multiple token classes could match at the current position, the following precedence applies:
 
 1. KEYWORD — reserved identifiers take precedence over IDENT
-2. TYPE_IDENT — uppercase-initial identifiers (Phase 1 only)
-3. IDENT — lowercase-initial identifiers
-4. Numeric literals — longest match
-5. String literals — delimited by `"`, terminated by unescaped `"`
+2. IDENT — lowercase-initial identifiers
+3. Numeric literals — longest match
+4. String literals — delimited by `"`, terminated by unescaped `"`
+5. Multi-character operators (`&&`, `||`) — longest match
 6. Single-character symbols — exact match
 
-### 9.3 Identifier Rules
+### 8.4 Identifier Rules
 
 An identifier:
-- begins with a letter (a–z, A–Z in Phase 1; a–z only in Phase 2)
-- continues with letters or digits (0–9)
+- begins with a letter (a-z)
+- continues with letters or digits (0-9)
 - is case-sensitive
 - must not be a reserved keyword
 
-In Phase 1, identifiers beginning with an uppercase letter are type identifiers (TYPE_IDENT). In Phase 2, type identifiers are prefixed with `$` and are lowercase.
+Type references are prefixed with `$` and are lowercase: `$user`, `$str`, `$i64`.
 
-### 9.4 Integer Literals
+### 8.5 Integer Literals
 
 Integer literals may be:
-- decimal: one or more digits `0–9`
-- hexadecimal: `0x` followed by one or more digits `0–9`, `a–f`, `A–F`
+- decimal: one or more digits `0-9`
+- hexadecimal: `0x` followed by one or more digits `0-9`, `a-f`, `A-F`
 - binary: `0b` followed by one or more digits `0` or `1`
 
 Integer literals have no suffix. The type of an integer literal is inferred from its binding context. If context does not resolve the type, the literal is typed as `i64` by default.
 
-### 9.5 Float Literals
+### 8.6 Float Literals
 
 Float literals consist of:
 - a decimal integer part
@@ -387,23 +380,23 @@ Float literals consist of:
 
 Float literals have no suffix. The default float type is `f64`.
 
-### 9.6 String Literals
+### 8.7 String Literals
 
-String literals begin and end with `"`. Content may include any UTF-8 codepoint subject to the escape sequences defined in Section 7.3. String interpolation uses `\(expr)` syntax where `expr` is a toke expression that must resolve to a `Str`-compatible type.
+String literals begin and end with `"`. Content may include any UTF-8 codepoint subject to the escape sequences defined in Section 7.3. String interpolation uses `\(expr)` syntax where `expr` is a toke expression that must resolve to a `$str`-compatible type.
 
-### 9.7 Lexer Errors
+### 8.8 Lexer Errors
 
-The lexer shall emit a structured diagnostic (Section 19) and halt on:
+The lexer shall emit a structured diagnostic (Section 18) and halt on:
 - an invalid escape sequence within a string literal (E1001)
 - an unterminated string literal at end of file (E1002)
-- a character outside the Phase 1 or Phase 2 character set in a structural position (E1003)
+- a character outside the character set in a structural position (E1003)
 - an identifier beginning with a digit (E1004)
 
 ---
 
-## 10. Source Model [N]
+## 9. Source Model [N]
 
-### 10.1 Source File Structure
+### 9.1 Source File Structure
 
 A toke source file (.tk) consists of a sequence of declarations in the following mandatory order:
 
@@ -417,7 +410,7 @@ No other ordering is valid. A declaration of kind N shall not appear before all 
 
 The compiler shall emit diagnostic E2001 if declarations appear out of order.
 
-### 10.2 One Primary Export Per File
+### 9.2 One Primary Export Per File
 
 Each source file should export exactly one primary construct. This is a strong convention enforced by the project linter, not the compiler. Files exporting multiple primary constructs are valid but produce a linter warning (L0001).
 
@@ -428,45 +421,41 @@ This discipline ensures that LLM generation context for a single file is bounded
 
 A typical toke generation context is under 500 LLM tokens.
 
-### 10.3 File Encoding
+### 9.3 File Encoding
 
 Source files shall be encoded as UTF-8. A byte order mark (BOM) at the start of a file shall be silently ignored. Any non-UTF-8 byte sequence is a compiler error (E1005).
 
 ---
 
-## 11. Grammar — Formal EBNF [N]
+## 10. Grammar — Formal EBNF [N]
 
-The following EBNF defines the complete normative grammar for toke Phase 1. Terminals are shown in single quotes or as token class names in UPPERCASE. Nonterminals are shown in PascalCase. `?` means zero or one. `*` means zero or more. `+` means one or more. `|` is alternation. `()` is grouping.
+The following EBNF defines the complete normative grammar for toke. Terminals are shown in single quotes or as token class names in UPPERCASE. Nonterminals are shown in PascalCase. `?` means zero or one. `*` means zero or more. `+` means one or more. `|` is alternation. `()` is grouping.
 
 ```ebnf
 (* Top-level structure *)
 SourceFile      = ModuleDecl ImportDecl* TypeDecl* ConstDecl* FuncDecl* EOF ;
 
-(* Module *)
-ModuleDecl      = 'M' '=' ModulePath ';' ;
+(* Module — 'm' is a context keyword, not a reserved word *)
+ModuleDecl      = 'm' '=' ModulePath ';' ;
 ModulePath      = IDENT ( '.' IDENT )* ;
 
-(* Imports *)
-ImportDecl      = 'I' '=' IDENT ':' ModulePath ';' ;
+(* Imports — 'i' is a context keyword *)
+ImportDecl      = 'i' '=' IDENT ':' ModulePath ';' ;
 
-(* Type declarations *)
-TypeDecl        = 'T' '=' TypeName '{' FieldList '}' ';' ;
-TypeName        = TYPE_IDENT ;
+(* Type declarations — 't' is a context keyword *)
+TypeDecl        = 't' '=' '$' TypeName '{' FieldList '}' ';' ;
+TypeName        = IDENT ;
 FieldList       = Field ( ';' Field )* ;
 Field           = IDENT ':' TypeExpr ;
 
 (* Constant declarations *)
 ConstDecl       = IDENT '=' LiteralExpr ':' TypeExpr ';' ;
 
-(* Function declarations *)
-FuncDecl        = 'F' '=' IDENT '(' ParamList ')' ':' ReturnSpec '{' StmtList '}' ';' ;
+(* Function declarations — 'f' is a context keyword *)
+FuncDecl        = 'f' '=' IDENT '(' ParamList ')' ':' ReturnSpec '{' StmtList '}' ';' ;
 ParamList       = Param ( ';' Param )* | (* empty *) ;
 Param           = IDENT ':' TypeExpr ;
 ReturnSpec      = TypeExpr ( '!' TypeExpr )? ;
-
-(* HTTP route shorthand — stdlib macro expansion *)
-RouteDecl       = IDENT '.' HttpMethod '(' STR_LIT ';' FuncDecl ')' ;
-HttpMethod      = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' ;
 
 (* Statements *)
 StmtList        = Stmt* ;
@@ -494,7 +483,9 @@ ArenaStmt       = '{' 'arena' StmtList '}' ;
 ExprStmt        = Expr ';' ;
 
 (* Expressions — precedence low to high *)
-Expr            = MatchExpr ;
+Expr            = OrExpr ;
+OrExpr          = AndExpr ( '||' AndExpr )* ;
+AndExpr         = MatchExpr ( '&&' MatchExpr )* ;
 MatchExpr       = CompareExpr ( '|' '{' MatchArmList '}' )? ;
 CompareExpr     = AddExpr ( ( '<' | '>' | '=' ) AddExpr )? ;
 AddExpr         = MulExpr ( ( '+' | '-' ) MulExpr )* ;
@@ -511,41 +502,49 @@ PrimaryExpr     = IDENT
                 | '(' Expr ')'
                 | StructLit
                 | ArrayLit
+                | MapLit
                 ;
 
 (* Match arms *)
 MatchArmList    = MatchArm ( ';' MatchArm )* ;
 MatchArm        = TypeExpr ':' IDENT Expr ;
 
-(* Struct and array literals *)
-StructLit       = TypeName '{' FieldInit ( ';' FieldInit )* '}' ;
+(* Struct literal — $name{field:val; ...} *)
+StructLit       = '$' IDENT '{' FieldInit ( ';' FieldInit )* '}' ;
 FieldInit       = IDENT ':' Expr ;
-ArrayLit        = '[' ( Expr ( ';' Expr )* )? ']' ;
+
+(* Array literal — @(expr; expr; ...) *)
+ArrayLit        = '@' '(' ( Expr ( ';' Expr )* )? ')' ;
+
+(* Map literal — @(key:val; key:val; ...) *)
+MapLit          = '@' '(' Expr ':' Expr ( ';' Expr ':' Expr )* ')' ;
 
 (* Argument list *)
 ArgList         = Expr ( ';' Expr )* | (* empty *) ;
 
 (* Type expressions *)
 TypeExpr        = ScalarType
-                | TYPE_IDENT
+                | '$' IDENT
                 | ArrayTypeExpr
+                | MapTypeExpr
                 | FuncTypeExpr
                 ;
 ScalarType      = 'u8'  | 'u16' | 'u32' | 'u64'
                 | 'i8'  | 'i16' | 'i32' | 'i64'
                 | 'f32' | 'f64'
                 | 'bool'
-                | 'Str'
-                | 'Byte'
+                | 'str'
+                | 'byte'
                 ;
-ArrayTypeExpr   = '[' TypeExpr ']' ;
+ArrayTypeExpr   = '@' TypeExpr ;
+MapTypeExpr     = '@' '(' TypeExpr ':' TypeExpr ')' ;
 FuncTypeExpr    = '(' TypeExpr ( ';' TypeExpr )* ')' ':' TypeExpr ;
 
 (* Literals *)
 LiteralExpr     = INT_LIT | FLOAT_LIT | STR_LIT | BOOL_LIT ;
 ```
 
-### 11.1 Grammar Properties [N]
+### 10.1 Grammar Properties [N]
 
 The grammar as defined is:
 - **Context-free** — no production requires semantic context to resolve
@@ -554,24 +553,33 @@ The grammar as defined is:
 
 Any implementation that requires more than one token of lookahead is non-conforming.
 
-### 11.2 Grammar Validation [I]
+### 10.2 Grammar Validation [I]
 
 The reference ANTLR4 grammar, generated from the EBNF above, shall be part of the conformance suite and shall produce no ambiguity warnings. Parser generators that report shift-reduce or reduce-reduce conflicts on this grammar indicate an implementation error, not a specification ambiguity.
 
 ---
 
-## 12. Core Language Constructs [N]
+## 11. Core Language Constructs [N]
 
-### 12.1 Keywords
+### 11.1 Declaration Keywords
 
-The following 12 identifiers are reserved and may not be used as user-defined identifiers:
+The four declaration keywords are context-sensitive identifiers recognised by the parser when followed by `=` at the top level:
+
+| Keyword | Role | Notes |
+|---------|------|-------|
+| `m=` | module declaration | context keyword; `m` is a valid variable name inside functions |
+| `f=` | function definition | context keyword; `f` is a valid variable name inside functions |
+| `t=` | type definition | context keyword; `t` is a valid variable name inside functions |
+| `i=` | import declaration | context keyword; `i` is a valid variable name inside functions |
+
+These are not reserved words. The lexer emits `TK_IDENT` for `m`, `f`, `t`, `i`; the parser checks context (top-level position followed by `=`) to distinguish declarations from variable references.
+
+### 11.2 Reserved Keywords
+
+The following 8 identifiers are reserved and may not be used as user-defined identifiers:
 
 | Keyword | Role |
 |---------|------|
-| `F` | function definition |
-| `T` | type definition |
-| `I` | import declaration |
-| `M` | module declaration |
 | `if` | conditional branch |
 | `el` | else branch (follows `if` block only) |
 | `lp` | loop (the single loop construct) |
@@ -583,71 +591,71 @@ The following 12 identifiers are reserved and may not be used as user-defined id
 
 Boolean literals `true` and `false` are not keywords; they are predefined identifiers. They may not be redefined.
 
-### 12.2 Module Declaration
+### 11.3 Module Declaration
 
 Every source file begins with exactly one module declaration:
 
 ```
-M=module.path;
+m=module.path;
 ```
 
 The module path is a dot-separated sequence of lowercase identifiers. It identifies the module globally. Two source files with the same module path are part of the same module unless they conflict on exported names, which is a compiler error (E2005).
 
 **Example:**
 ```
-M=api.user;
+m=api.user;
 ```
 
-### 12.3 Import Declarations
+### 11.4 Import Declarations
 
 ```
-I=localAlias:module.path;
+i=localalias:module.path;
 ```
 
-`localAlias` is the name by which the imported module's exports are accessed within this file. `module.path` is the fully qualified module path.
+`localalias` is the name by which the imported module's exports are accessed within this file. `module.path` is the fully qualified module path.
 
 All imports must precede all type, constant, and function declarations. Wildcard imports are prohibited (E2006).
 
 **Example:**
 ```
-I=http:std.http;
-I=db:std.db;
-I=json:std.json;
+i=http:std.http;
+i=db:std.db;
+i=json:std.json;
 ```
 
-After this, `http.Req`, `db.one`, `json.enc` etc. are accessible.
+After this, `http.$req`, `db.one`, `json.enc` etc. are accessible.
 
-### 12.4 Type Declarations
+### 11.5 Type Declarations
 
 ```
-T=TypeName{field1:Type1;field2:Type2};
+t=$typename{field1:$type1;field2:$type2};
 ```
 
 A type declaration defines either a **struct type** or a **sum type** (tagged union). The distinction is lexical:
 - Struct: all field names are lowercase identifiers
-- Sum type: all field names begin with uppercase (TYPE_IDENT)
+- Sum type: all field names begin with uppercase (variant tags)
 - Mixing is a compile error (E2011)
 
 **Struct example:**
 ```
-T=User{id:u64;name:Str;email:Str};
+t=$user{id:u64;name:str;email:str};
 ```
 
 **Sum type (error variants) example:**
 ```
-T=UserErr{
+t=$usererr{
   NotFound:u64;
-  BadInput:Str;
-  DbErr:Str
+  BadInput:str;
+  DbErr:str
 };
 ```
 
 In a sum type, each field name is a variant tag and its type is the payload. The zero-payload variant is expressed with type `bool` and the value `true` is implicit.
 
-### 12.5 Function Declarations
+### 11.6 Function Declarations
 
 ```
-F=name(param1:Type1;param2:Type2):ReturnType!ErrorType{
+f=name(param1:$type1;param2:$type2):$returntype!$errortype{
   body
 };
 ```
@@ -655,28 +663,28 @@ F=name(param1:Type1;param2:Type2):ReturnType!ErrorType{
 Every function declaration shall explicitly state:
 - all parameter names and their types
 - the return type
-- the error type if the function is fallible (marked with `!ErrorType`)
+- the error type if the function is fallible (marked with `!$errortype`)
 
-A function without `!ErrorType` is total: it shall not contain any `!` error-propagation operations that could fail (E3001).
+A function without `!$errortype` is total: it shall not contain any `!` error-propagation operations that could fail (E3001).
 
-A function with `!ErrorType` is partial: all error-propagation operations within the body must be of a type coercible to `ErrorType`.
+A function with `!$errortype` is partial: all error-propagation operations within the body must be of a type coercible to `$errortype`.
 
 **Example — total function:**
 ```
-F=add(a:i64;b:i64):i64{
+f=add(a:i64;b:i64):i64{
   <a+b;
 };
 ```
 
 **Example — partial function:**
 ```
-F=getuser(id:u64):User!UserErr{
-  r=db.one("SELECT id,name FROM users WHERE id=?",[id])!UserErr.DbErr;
-  <User{id:r.u64(id);name:r.str(name)};
+f=getuser(id:u64):$user!$usererr{
+  r=db.one("SELECT id,name FROM users WHERE id=?";@(id))!$usererr.DbErr;
+  <$user{id:r.u64(id);name:r.str(name)};
 };
 ```
 
-### 12.6 Return Statement
+### 11.7 Return Statement
 
 Two syntactically equivalent return forms are defined:
 
@@ -687,7 +695,7 @@ rt expr      long form — preferred when the return is deeply nested
 
 Both forms require the expression to match the declared return type. A missing return in a non-void function is a compile error (E3005).
 
-### 12.7 Bindings
+### 11.8 Bindings
 
 **Immutable binding:**
 ```
@@ -707,7 +715,7 @@ name=new_value;
 ```
 Assigning to an immutable binding is a compile error (E3010). Assigning to an undeclared name is a compile error (E3011).
 
-### 12.8 Conditionals
+### 11.9 Conditionals
 
 ```
 if(condition){
@@ -740,7 +748,7 @@ if(a){
 }
 ```
 
-### 12.9 Loop
+### 11.10 Loop
 
 toke defines exactly one loop construct:
 
@@ -760,16 +768,34 @@ There is no `while`, `do-while`, `for-each`, or `until` construct. Recursive fun
 
 **Example — sum array:**
 ```
-F=sum(arr:[i64]):i64{
+f=sum(arr:@i64):i64{
   let acc=mut.0;
   lp(let i=0;i<arr.len;i=i+1){
-    acc=acc+arr[i]
+    acc=acc+arr.get(i)
   };
   <acc
 };
 ```
 
-### 12.10 Match Expression
+### 11.11 Logical Operators
+
+toke provides two logical operators:
+
+| Operator | Meaning |
+|----------|---------|
+| `&&` | logical and (short-circuiting) |
+| `\|\|` | logical or (short-circuiting) |
+
+Both operands must be of type `bool`. These operators are lower precedence than comparison operators and higher precedence than match expressions.
+
+**Example:**
+```
+if(a>0 && b>0){
+  <a+b
+};
+```
+
+### 11.12 Match Expression
 
 ```
 expr|{
@@ -778,7 +804,7 @@ expr|{
 }
 ```
 
-The match expression applies to a sum type or to a `Result` type. Each arm names a variant, binds its payload to a local name, and provides a result expression.
+The match expression applies to a sum type or to a `$result` type. Each arm names a variant, binds its payload to a local name, and provides a result expression.
 
 Match is **exhaustive**: the compiler rejects any match that does not cover all variants (E4010). When a variant is added to a sum type, all match expressions on that type fail to compile until they are updated.
 
@@ -787,31 +813,31 @@ The match expression is an expression, not a statement. Its result type is the c
 **Example:**
 ```
 getuser(id)|{
-  Ok:u   <Res.ok(json.enc(u));
-  Err:e  <Res.err(json.enc(e))
+  Ok:u   <$res.ok(json.enc(u));
+  Err:e  <$res.err(json.enc(e))
 }
 ```
 
-### 12.11 Error Propagation
+### 11.13 Error Propagation
 
 ```
-expr!ErrorVariant
+expr!$errorvariant
 ```
 
-The `!` operator propagates an error from a partial call. If `expr` evaluates to `Err(e)`, the current function returns `Err(ErrorVariant(e))`. If `expr` evaluates to `Ok(v)`, execution continues with value `v`.
+The `!` operator propagates an error from a partial call. If `expr` evaluates to `Err(e)`, the current function returns `Err($errorvariant(e))`. If `expr` evaluates to `Ok(v)`, execution continues with value `v`.
 
 The right-hand side of `!` must be a variant constructor of the current function's declared error type (E3020).
 
 **Example:**
 ```
-F=handle(req:http.Req):http.Res!ApiErr{
-  body=json.dec(req.body)!ApiErr.BadRequest;
-  user=db.getuser(body.id)!ApiErr.DbError;
-  <http.Res.ok(json.enc(user))
+f=handle(req:$http.req):$http.res!$apierr{
+  body=json.dec(req.body)!$apierr.BadRequest;
+  user=db.getuser(body.id)!$apierr.DbError;
+  <$http.res.ok(json.enc(user))
 };
 ```
 
-### 12.12 Arena Blocks
+### 11.14 Arena Blocks
 
 ```
 {arena
@@ -825,9 +851,9 @@ Returning a pointer or reference to an arena-allocated value across the arena bo
 
 ---
 
-## 13. Type System [N]
+## 12. Type System [N]
 
-### 13.1 Primitive Types
+### 12.1 Primitive Types
 
 | Type | Description | Width |
 |------|-------------|-------|
@@ -842,32 +868,58 @@ Returning a pointer or reference to an arena-allocated value across the arena bo
 | `f32` | IEEE 754 binary32 | 32-bit |
 | `f64` | IEEE 754 binary64 | 64-bit |
 | `bool` | boolean | 1 logical bit |
-| `Str` | UTF-8 string | heap-allocated |
-| `Byte` | single byte | 8-bit unsigned |
+| `str` | UTF-8 string | heap-allocated |
+| `byte` | single byte (alias for `u8`) | 8-bit unsigned |
 
-### 13.2 Array Types
+In type expressions, primitive types are written without the `$` sigil: `i64`, `str`, `bool`. User-defined types require `$`: `$user`, `$mytype`.
 
-`[T]` is a dynamically-sized array of elements of type `T`. Arrays are heap-allocated within the current arena. The `.len` member returns a `u64`. Array access `a[i]` returns type `T`; out-of-bounds access at runtime is a trap (Section 15.2).
+### 12.2 Array Types
 
-### 13.3 Record Types
+`@$t` is a dynamically-sized array of elements of type `$t`. Arrays are heap-allocated within the current arena. The `.len` member returns a `u64`. Array access uses `arr.get(i)` which returns type `$t`; out-of-bounds access at runtime is a trap (Section 14.2).
 
-Declared with `T=Name{...}`. Fields are accessed with `.fieldname`. Records are value types — assignment copies the record. Records may not contain pointers to themselves (no recursive struct definitions without indirection — E2015).
-
-### 13.4 Sum Types
-
-Declared with `T=Name{Variant1:PayloadType;...}`. Sum types are the mechanism for error types and tagged unions. The `Result` type is a built-in sum type:
-
+**Array literal:**
 ```
-T=Result{Ok:T;Err:E}
+let a = @(1; 2; 3);
 ```
 
-All partial functions return `Result<T, E>` implicitly, expressed in the signature as `:T!E`.
+**Array type in signature:**
+```
+f=sum(arr:@i64):i64{ ... };
+```
 
-### 13.5 No Implicit Coercion
+### 12.3 Map Types
+
+`@($k:$v)` is a map from key type `$k` to value type `$v`.
+
+**Map literal:**
+```
+let m = @(1:10; 2:20; 3:30);
+```
+
+### 12.4 Record Types
+
+Declared with `t=$name{...}`. Fields are accessed with `.fieldname`. Records are value types — assignment copies the record. Records may not contain pointers to themselves (no recursive struct definitions without indirection — E2015).
+
+**Struct literal:**
+```
+let p = $point{x: 1; y: 2};
+```
+
+### 12.5 Sum Types
+
+Declared with `t=$name{Variant1:$payloadtype;...}`. Sum types are the mechanism for error types and tagged unions. The `$result` type is a built-in sum type:
+
+```
+t=$result{Ok:$t;Err:$e}
+```
+
+All partial functions return `$result` implicitly, expressed in the signature as `:$t!$e`.
+
+### 12.6 No Implicit Coercion
 
 No implicit type coercions are defined. Specifically prohibited:
 
-- numeric widening (e.g. `i32` → `i64` automatically) — use `as`
+- numeric widening (e.g. `i32` to `i64` automatically) — use `as`
 - string conversion (integer to string, etc.) — use stdlib `str.fromint` etc.
 - truthiness conversion (integer or pointer to bool) — use explicit comparison
 
@@ -878,7 +930,7 @@ let wide = narrow as i64;
 
 Casts that could truncate or lose precision generate a compile-time warning (W1001) and a runtime trap if the value does not fit.
 
-### 13.6 Type Checking Rules
+### 12.7 Type Checking Rules
 
 The type checker shall enforce:
 
@@ -889,48 +941,48 @@ The type checker shall enforce:
 5. Match arms are exhaustive and cover exactly the variants of the matched type (E4010)
 6. All match arms return the same type (E4011)
 7. Arena-allocated values do not escape the arena (E5001)
-8. Mutable bindings are not captured in closures (closures are deferred — Section 25.8)
+8. Mutable bindings are not captured in closures (closures are deferred — Section 24.8)
 9. Struct field access refers to a field declared in that struct (E4025)
 10. Array access index is of type `u64` or a type promotable to `u64` via `as` (E4026)
 
-### 13.7 Generics (Deferred)
+### 12.8 Generics (Deferred)
 
-Generic type parameters are deferred to version 0.2. The collection types `[T]` are built-in and do not require a generic annotation in source. All user-defined types are concrete in version 0.1.
+Generic type parameters are deferred to version 0.2. The collection types `@$t` are built-in and do not require a generic annotation in source. All user-defined types are concrete in version 0.1.
 
 ---
 
-## 14. Error Model [N]
+## 13. Error Model [N]
 
-### 14.1 The Result Type
+### 13.1 The Result Type
 
-All fallible operations return a `Result` type. The declaration syntax `:T!E` desugars to a return of `Result<T, E>`. The `!` propagation operator is the primary mechanism for working with results.
+All fallible operations return a `$result` type. The declaration syntax `:$t!$e` desugars to a return of `$result`. The `!` propagation operator is the primary mechanism for working with results.
 
-### 14.2 Error Type Declaration
+### 13.2 Error Type Declaration
 
 Error types are sum types where each variant represents a distinct failure mode:
 
 ```
-T=DbErr{
-  ConnectionFailed:Str;
-  QueryFailed:Str;
+t=$dberr{
+  ConnectionFailed:str;
+  QueryFailed:str;
   NotFound:u64;
   Timeout:u32
 };
 ```
 
-### 14.3 Error Propagation Rules
+### 13.3 Error Propagation Rules
 
-The `!` operator: `expr!TargetVariant`
+The `!` operator: `expr!$targetvariant`
 
 1. Evaluates `expr`
 2. If `Ok(v)`: returns `v`, execution continues
-3. If `Err(e)`: constructs `TargetVariant(e)` and returns `Err(TargetVariant(e))` from the current function
+3. If `Err(e)`: constructs `$targetvariant(e)` and returns `Err($targetvariant(e))` from the current function
 
-The type of `e` must be coercible to the payload type of `TargetVariant`. The type of `TargetVariant` must be a variant of the current function's declared error type.
+The type of `e` must be coercible to the payload type of `$targetvariant`. The type of `$targetvariant` must be a variant of the current function's declared error type.
 
 If the error types are not coercible, the compiler emits E3021.
 
-### 14.4 Explicit Match on Errors
+### 13.4 Explicit Match on Errors
 
 When propagation is not appropriate, errors are matched explicitly:
 
@@ -941,7 +993,7 @@ result|{
 }
 ```
 
-### 14.5 Runtime Traps
+### 13.5 Runtime Traps
 
 Certain conditions cannot be detected statically and produce runtime traps:
 
@@ -957,15 +1009,15 @@ Certain conditions cannot be detected statically and produce runtime traps:
 
 Runtime traps write a structured trap record to stderr and terminate the process with exit code 2. The trap record format is defined in Appendix B.
 
-### 14.6 No Exceptions
+### 13.6 No Exceptions
 
 toke does not define exception semantics, stack unwinding, or catch blocks. All error handling is explicit at every call site. This is a design constraint, not a limitation.
 
 ---
 
-## 15. Memory Model [N]
+## 14. Memory Model [N]
 
-### 15.1 Arena Allocation
+### 14.1 Arena Allocation
 
 toke uses lexical arena allocation. Every function body is an implicit arena. All allocations made within the function body (strings, arrays, structs) are freed when the function returns, via any path.
 
@@ -973,22 +1025,22 @@ Explicit `{arena ... }` blocks create sub-arenas with shorter lifetimes. These a
 
 The allocator is a bump allocator per arena, providing O(1) allocation cost. Deallocation is bulk: the entire arena is freed in a single operation on scope exit.
 
-### 15.2 Allocation Rules
+### 14.2 Allocation Rules
 
 1. Allocations within a function body are valid for the lifetime of that function call
 2. Allocations within an arena block are valid for the lifetime of that block
 3. A value allocated in inner scope A shall not be returned from, passed out of, or stored in a location with a lifetime longer than A (E5001)
 4. Module-level constants and static data are allocated at program start and freed at program exit
 
-### 15.3 Static Lifetime
+### 14.3 Static Lifetime
 
 Module-level declarations (constants, connection pools, caches) have static lifetime. They are initialised once at program start in declaration order and are never freed during execution. Circular initialisation dependencies are a compile error (E2020).
 
-### 15.4 No Pointer Arithmetic
+### 14.4 No Pointer Arithmetic
 
-Pointer arithmetic is not defined in version 0.1. Raw pointers are only accessible through FFI declarations (deferred, Section 25.2). Within toke source, all memory access is through named fields, array indices, and function calls.
+Pointer arithmetic is not defined in version 0.1. Raw pointers are only accessible through FFI declarations (deferred, Section 24.2). Within toke source, all memory access is through named fields, array `.get()` calls, and function calls.
 
-### 15.5 Memory Safety Guarantees
+### 14.5 Memory Safety Guarantees
 
 In well-typed toke code (no FFI):
 - No use-after-free: arena discipline prevents access to freed memory
@@ -999,18 +1051,18 @@ In well-typed toke code (no FFI):
 
 ---
 
-## 16. Module and Interface Structure [N]
+## 15. Module and Interface Structure [N]
 
-### 16.1 Module Identity
+### 15.1 Module Identity
 
 A module is identified by its fully-qualified path (e.g. `api.user`, `std.http`). The path determines the expected file location relative to the project root:
 
 ```
-api/user.tk       → module api.user
-std/http.tk       → module std.http
+api/user.tk       -> module api.user
+std/http.tk       -> module std.http
 ```
 
-### 16.2 Import Resolution
+### 15.2 Import Resolution
 
 At the start of type checking, the compiler resolves all imports. For each import:
 
@@ -1020,140 +1072,140 @@ At the start of type checking, the compiler resolves all imports. For each impor
 
 If a module path cannot be resolved, the compiler emits E2030 and lists the modules available in the current project.
 
-### 16.3 Circular Imports
+### 15.3 Circular Imports
 
 Circular imports are prohibited (E2031). The import graph must be a directed acyclic graph. The compiler detects cycles before type checking begins.
 
-### 16.4 Exports
+### 15.4 Exports
 
 All top-level declarations in a source file are exported by default. In version 0.1 there is no access control modifier. A future version may introduce explicit visibility annotations.
 
-### 16.5 Interface Files
+### 15.5 Interface Files
 
 The compiler shall emit a `.tki` interface file for each compiled module. The interface file contains:
 
 ```
-module: Str
-version: Str
+module: str
+version: str
 exports: [
-  { name: Str; kind: "type"|"func"|"const"; signature: Str }
+  { name: str; kind: "type"|"func"|"const"; signature: str }
 ]
 ```
 
 Interface files are consumed during import resolution. They allow incremental compilation: a module can be type-checked against its dependencies' interface files without recompiling the dependencies from source.
 
-### 16.6 Wildcard Imports
+### 15.6 Wildcard Imports
 
 Wildcard imports are prohibited in version 0.1. Every imported symbol must be accessed through its alias. This ensures that the source of every identifier is unambiguous without reading import declarations.
 
 ---
 
-## 17. Standard Library Interface [N]
+## 16. Standard Library Interface [N]
 
 The standard library modules are part of the toke specification. Their signatures are normative; their implementations are not.
 
-### 17.1 std.str
+### 16.1 std.str
 
 ```
-F=str.len(s:Str):u64
-F=str.concat(a:Str;b:Str):Str
-F=str.slice(s:Str;start:u64;end:u64):Str!str.SliceErr
-F=str.fromint(n:i64):Str
-F=str.fromfloat(n:f64):Str
-F=str.toint(s:Str):i64!str.ParseErr
-F=str.tofloat(s:Str):f64!str.ParseErr
-F=str.contains(s:Str;sub:Str):bool
-F=str.split(s:Str;sep:Str):[Str]
-F=str.trim(s:Str):Str
-F=str.upper(s:Str):Str
-F=str.lower(s:Str):Str
-F=str.bytes(s:Str):[Byte]
-F=str.frombytes(b:[Byte]):Str!str.EncodingErr
+f=str.len(s:str):u64
+f=str.concat(a:str;b:str):str
+f=str.slice(s:str;start:u64;end:u64):str!$str.sliceerr
+f=str.fromint(n:i64):str
+f=str.fromfloat(n:f64):str
+f=str.toint(s:str):i64!$str.parseerr
+f=str.tofloat(s:str):f64!$str.parseerr
+f=str.contains(s:str;sub:str):bool
+f=str.split(s:str;sep:str):@str
+f=str.trim(s:str):str
+f=str.upper(s:str):str
+f=str.lower(s:str):str
+f=str.bytes(s:str):@byte
+f=str.frombytes(b:@byte):str!$str.encodingerr
 ```
 
-### 17.2 std.http
+### 16.2 std.http
 
 ```
-T=Req{method:Str;path:Str;headers:[[Str]];body:Str;params:[[Str]]}
-T=Res{status:u16;headers:[[Str]];body:Str}
-T=HttpErr{BadRequest:Str;NotFound:Str;Internal:Str;Timeout:u32}
+t=$req{method:str;path:str;headers:@(@str);body:str;params:@(@str)}
+t=$res{status:u16;headers:@(@str);body:str}
+t=$httperr{BadRequest:str;NotFound:str;Internal:str;Timeout:u32}
 
-F=http.param(req:Req;name:Str):Str!HttpErr
-F=http.header(req:Req;name:Str):Str!HttpErr
-F=http.Res.ok(body:Str):Res
-F=http.Res.json(status:u16;body:Str):Res
-F=http.Res.bad(msg:Str):Res
-F=http.Res.err(msg:Str):Res
+f=http.param(req:$req;name:str):str!$httperr
+f=http.header(req:$req;name:str):str!$httperr
+f=http.res.ok(body:str):$res
+f=http.res.json(status:u16;body:str):$res
+f=http.res.bad(msg:str):$res
+f=http.res.err(msg:str):$res
 
 (* Route registration — these are compiler-expanded, not runtime calls *)
-http.GET(pattern:Str;handler:FuncDecl)
-http.POST(pattern:Str;handler:FuncDecl)
-http.PUT(pattern:Str;handler:FuncDecl)
-http.DELETE(pattern:Str;handler:FuncDecl)
+http.get(pattern:str;handler:f)
+http.post(pattern:str;handler:f)
+http.put(pattern:str;handler:f)
+http.delete(pattern:str;handler:f)
 ```
 
-### 17.3 std.db
+### 16.3 std.db
 
 ```
-T=Row{cols:[[Str]]}
-T=DbErr{Connection:Str;Query:Str;NotFound:Str;Constraint:Str}
+t=$row{cols:@(@str)}
+t=$dberr{Connection:str;Query:str;NotFound:str;Constraint:str}
 
-F=db.one(sql:Str;params:[Str]):Row!DbErr
-F=db.many(sql:Str;params:[Str]):[Row]!DbErr
-F=db.exec(sql:Str;params:[Str]):u64!DbErr
-F=row.str(r:Row;col:Str):Str!DbErr
-F=row.u64(r:Row;col:Str):u64!DbErr
-F=row.i64(r:Row;col:Str):i64!DbErr
-F=row.f64(r:Row;col:Str):f64!DbErr
-F=row.bool(r:Row;col:Str):bool!DbErr
+f=db.one(sql:str;params:@str):$row!$dberr
+f=db.many(sql:str;params:@str):@$row!$dberr
+f=db.exec(sql:str;params:@str):u64!$dberr
+f=row.str(r:$row;col:str):str!$dberr
+f=row.u64(r:$row;col:str):u64!$dberr
+f=row.i64(r:$row;col:str):i64!$dberr
+f=row.f64(r:$row;col:str):f64!$dberr
+f=row.bool(r:$row;col:str):bool!$dberr
 ```
 
-### 17.4 std.json
+### 16.4 std.json
 
 ```
-T=Json{raw:Str}
-T=JsonErr{Parse:Str;Type:Str;Missing:Str}
+t=$json{raw:str}
+t=$jsonerr{Parse:str;Type:str;Missing:str}
 
-F=json.enc(v:T):Str           (* generic — deferred; uses Str for v0.1 *)
-F=json.dec(s:Str):Json!JsonErr
-F=json.str(j:Json;key:Str):Str!JsonErr
-F=json.u64(j:Json;key:Str):u64!JsonErr
-F=json.i64(j:Json;key:Str):i64!JsonErr
-F=json.f64(j:Json;key:Str):f64!JsonErr
-F=json.bool(j:Json;key:Str):bool!JsonErr
-F=json.arr(j:Json;key:Str):[Json]!JsonErr
+f=json.enc(v:$t):str           (* generic — deferred; uses str for v0.1 *)
+f=json.dec(s:str):$json!$jsonerr
+f=json.str(j:$json;key:str):str!$jsonerr
+f=json.u64(j:$json;key:str):u64!$jsonerr
+f=json.i64(j:$json;key:str):i64!$jsonerr
+f=json.f64(j:$json;key:str):f64!$jsonerr
+f=json.bool(j:$json;key:str):bool!$jsonerr
+f=json.arr(j:$json;key:str):@$json!$jsonerr
 ```
 
-### 17.5 std.file
+### 16.5 std.file
 
 ```
-T=FileErr{NotFound:Str;Permission:Str;IO:Str}
+t=$fileerr{NotFound:str;Permission:str;IO:str}
 
-F=file.read(path:Str):Str!FileErr
-F=file.write(path:Str;content:Str):bool!FileErr
-F=file.append(path:Str;content:Str):bool!FileErr
-F=file.exists(path:Str):bool
-F=file.delete(path:Str):bool!FileErr
-F=file.list(dir:Str):[Str]!FileErr
+f=file.read(path:str):str!$fileerr
+f=file.write(path:str;content:str):bool!$fileerr
+f=file.append(path:str;content:str):bool!$fileerr
+f=file.exists(path:str):bool
+f=file.delete(path:str):bool!$fileerr
+f=file.list(dir:str):@str!$fileerr
 ```
 
-### 17.6 std.net
+### 16.6 std.net
 
 ```
-T=Socket{fd:u64}
-T=NetErr{Connect:Str;Read:Str;Write:Str;Timeout:u32}
+t=$socket{fd:u64}
+t=$neterr{Connect:str;Read:str;Write:str;Timeout:u32}
 
-F=net.connect(host:Str;port:u16):Socket!NetErr
-F=net.read(s:Socket;buf:[Byte]):u64!NetErr
-F=net.write(s:Socket;data:[Byte]):u64!NetErr
-F=net.close(s:Socket):bool
+f=net.connect(host:str;port:u16):$socket!$neterr
+f=net.read(s:$socket;buf:@byte):u64!$neterr
+f=net.write(s:$socket;data:@byte):u64!$neterr
+f=net.close(s:$socket):bool
 ```
 
 ---
 
-## 18. Compiler Requirements [N]
+## 17. Compiler Requirements [N]
 
-### 18.1 Required Phases
+### 17.1 Required Phases
 
 A conforming tkc implementation shall provide the following phases in order:
 
@@ -1161,15 +1213,15 @@ A conforming tkc implementation shall provide the following phases in order:
 2. **Parsing** — produces an AST; fails with structured E1xxx/E2xxx diagnostic on grammar violation
 3. **Import resolution** — resolves all imports to interface files; fails with E2030 on missing module
 4. **Name resolution** — resolves all identifier references to declarations; fails with E3011/E3012
-5. **Type checking** — enforces all type rules from Section 13.6; fails with E4xxx diagnostics
-6. **Arena validation** — verifies arena escape rules from Section 15.2; fails with E5001
+5. **Type checking** — enforces all type rules from Section 12.7; fails with E4xxx diagnostics
+6. **Arena validation** — verifies arena escape rules from Section 14.2; fails with E5001
 7. **IR lowering** — produces toke IR in SSA form with explicit types
 8. **LLVM IR emission** — produces LLVM IR from toke IR
 9. **Native code generation** — invokes LLVM to produce native binary
 10. **Interface emission** — produces `.tki` interface file for each compiled module
 11. **Structured diagnostics emission** — all errors and warnings written to stderr in schema-conforming format
 
-### 18.2 Compilation Targets
+### 17.2 Compilation Targets
 
 A conforming implementation shall support at minimum:
 
@@ -1179,7 +1231,7 @@ A conforming implementation shall support at minimum:
 
 Additional targets (WASM, Windows PE) may be supported as extensions.
 
-### 18.3 Determinism
+### 17.3 Determinism
 
 Given the same source files, compiler version, target architecture, and flags, a conforming compiler shall:
 - produce identical diagnostics (same error codes, same locations)
@@ -1187,7 +1239,7 @@ Given the same source files, compiler version, target architecture, and flags, a
 
 Output binary byte-identity is not required (link addresses may vary); semantic equivalence is required.
 
-### 18.4 Exit Codes
+### 17.4 Exit Codes
 
 | Exit code | Meaning |
 |-----------|---------|
@@ -1196,7 +1248,7 @@ Output binary byte-identity is not required (link addresses may vary); semantic 
 | 2 | Internal compiler error; bug report should be filed |
 | 3 | Usage error (invalid flags, missing input files) |
 
-### 18.5 Performance Requirements [I]
+### 17.5 Performance Requirements [I]
 
 The compiler should complete the following within the stated time on reference hardware (Apple M4, single core):
 
@@ -1209,7 +1261,7 @@ The compiler should complete the following within the stated time on reference h
 
 These targets ensure the compiler runs synchronously within LLM API call timeouts.
 
-### 18.6 Standard Command-Line Interface
+### 17.6 Standard Command-Line Interface
 
 ```
 tkc [flags] <source-files>
@@ -1220,8 +1272,7 @@ Flags:
   --emit-ir             emit LLVM IR alongside binary
   --emit-interface      emit .tki interface files
   --check               type-check only, no code generation
-  --phase1              use Phase 1 character set (default)
-  --phase2              use Phase 2 character set
+  --legacy              use legacy profile (80-char syntax, uppercase keywords)
   --diag-json           emit diagnostics as JSON (default: true)
   --diag-text           emit diagnostics as human-readable text
   --version             print compiler version and exit
@@ -1229,11 +1280,11 @@ Flags:
 
 ---
 
-## 19. Structured Diagnostics Specification [N]
+## 18. Structured Diagnostics Specification [N]
 
 Structured diagnostics are mandatory. A conforming compiler shall emit all errors, warnings, and informational messages in the schema defined below. Free-form text messages shall not be the primary diagnostic channel.
 
-### 19.1 Diagnostic Schema
+### 18.1 Diagnostic Schema
 
 Every diagnostic record shall conform to the following schema:
 
@@ -1259,12 +1310,12 @@ Every diagnostic record shall conform to the following schema:
 ```
 
 The `fix` field shall be populated whenever the correction is deterministic. Examples of mechanically derivable fixes:
-- wrong type accessor: `r.str(id)` when field is `u64` → `fix: r.u64(id)`
-- missing error propagation: unchecked partial call → `fix: add !ErrorVariant`
-- wrong variant name: misspelled variant → `fix: CorrectVariantName`
-- missing import: unresolved identifier that matches a stdlib module → `fix: add I=alias:std.module`
+- wrong type accessor: `r.str(id)` when field is `u64` -> `fix: r.u64(id)`
+- missing error propagation: unchecked partial call -> `fix: add !$errorvariant`
+- wrong variant name: misspelled variant -> `fix: CorrectVariantName`
+- missing import: unresolved identifier that matches a stdlib module -> `fix: add i=alias:std.module`
 
-### 19.2 Example Diagnostic
+### 18.2 Example Diagnostic
 
 ```json
 {
@@ -1281,18 +1332,18 @@ The `fix` field shall be populated whenever the correction is deterministic. Exa
   "span_start": 242,
   "span_end": 258,
   "context": [
-    "10: F=getuser(id:u64):User!UserErr{",
-    "11:   r=db.one(sql;[id])!UserErr.DbErr;",
-    "12:   <User{id:r.str(id);name:r.str(name)}",
+    "10: f=getuser(id:u64):$user!$usererr{",
+    "11:   r=db.one(sql;@(id))!$usererr.DbErr;",
+    "12:   <$user{id:r.str(id);name:r.str(name)}",
     "13: };"
   ],
   "expected": "u64",
-  "got": "Str",
+  "got": "str",
   "fix": "r.u64(id)"
 }
 ```
 
-### 19.3 Diagnostic Stability Contract
+### 18.3 Diagnostic Stability Contract
 
 - `error_code` values are stable across patch versions; minor versions may add new codes but shall not change existing meanings
 - `fix` field values are stable within a compiler version
@@ -1300,14 +1351,14 @@ The `fix` field shall be populated whenever the correction is deterministic. Exa
 
 Any automated repair system may depend on `error_code` and `fix` being stable between patch releases of the same minor version.
 
-### 19.4 Runtime Trap Schema
+### 18.4 Runtime Trap Schema
 
 Runtime traps emit the following record to stderr and exit with code 2:
 
 ```json
 {
   "schema_version": "1.0",
-  "trap_code": "<string: RT001–RT007>",
+  "trap_code": "<string: RT001-RT007>",
   "message": "<string>",
   "file": "<string: source file where trap originated>",
   "line": "<integer>",
@@ -1319,17 +1370,17 @@ Runtime traps emit the following record to stderr and exit with code 2:
 
 ---
 
-## 20. Tooling Protocol [N]
+## 19. Tooling Protocol [N]
 
-The tooling protocol defines a machine-callable interface for driving the tkc compiler programmatically. It supports the generate–compile–inspect–repair loop without shell invocation.
+The tooling protocol defines a machine-callable interface for driving the tkc compiler programmatically. It supports the generate-compile-inspect-repair loop without shell invocation.
 
-### 20.1 Transport
+### 19.1 Transport
 
 The tooling protocol is transport-agnostic. Reference implementations shall support:
 - JSON over stdin/stdout (primary)
 - JSON-RPC 2.0 over TCP (optional)
 
-### 20.2 Operations
+### 19.2 Operations
 
 | Operation | Description |
 |-----------|-------------|
@@ -1341,7 +1392,7 @@ The tooling protocol is transport-agnostic. Reference implementations shall supp
 | `run_tests` | Compile and run test functions, return test results |
 | `emit_diagnostics` | Return all diagnostics for a source file without compiling |
 
-### 20.3 Request Schema
+### 19.3 Request Schema
 
 ```json
 {
@@ -1355,7 +1406,7 @@ The tooling protocol is transport-agnostic. Reference implementations shall supp
 }
 ```
 
-### 20.4 Response Schema
+### 19.4 Response Schema
 
 Every operation returns:
 
@@ -1365,7 +1416,7 @@ Every operation returns:
   "status":       "<ok|error>",
   "tool_version": "<string: tkc version>",
   "elapsed_ms":   "<integer>",
-  "diagnostics":  ["<diagnostic record per Section 19.1>"],
+  "diagnostics":  ["<diagnostic record per Section 18.1>"],
   "artefacts":    {
     "binary_path":    "<string, if compiled>",
     "interface_path": "<string, if emitted>",
@@ -1377,7 +1428,7 @@ Every operation returns:
 }
 ```
 
-### 20.5 Repair Loop Integration [I]
+### 19.5 Repair Loop Integration [I]
 
 A repair loop using the tooling protocol operates as follows:
 
@@ -1391,13 +1442,13 @@ A repair loop using the tooling protocol operates as follows:
 4. IF max_attempts exceeded: escalate to LLM with full diagnostics array
 ```
 
-The mechanical fix application in step 3b requires no LLM invocation and typically resolves type mismatches, missing error propagations, and wrong accessor calls within 1–2 rounds.
+The mechanical fix application in step 3b requires no LLM invocation and typically resolves type mismatches, missing error propagations, and wrong accessor calls within 1-2 rounds.
 
 ---
 
-## 21. Conformance [N]
+## 20. Conformance [N]
 
-### 21.1 Conformance Levels
+### 20.1 Conformance Levels
 
 | Level | Requirement |
 |-------|-------------|
@@ -1410,7 +1461,7 @@ The mechanical fix application in step 3b requires no LLM invocation and typical
 
 A conforming implementation shall achieve Level 6.
 
-### 21.2 Conformance Test Categories
+### 20.2 Conformance Test Categories
 
 The conformance suite shall include tests in the following categories:
 
@@ -1422,7 +1473,7 @@ The conformance suite shall include tests in the following categories:
 - EOF handling
 
 **Grammar tests (G-series)**
-- all valid productions from Section 11
+- all valid productions from Section 10
 - all invalid constructs (parser rejects with correct error code)
 - declaration ordering violations
 - nested structure limits
@@ -1435,7 +1486,7 @@ The conformance suite shall include tests in the following categories:
 - module path resolution
 
 **Type checking tests (T-series)**
-- all type rules from Section 13.6
+- all type rules from Section 12.7
 - no-implicit-coercion cases
 - exhaustive match enforcement
 - error propagation type compatibility
@@ -1453,11 +1504,11 @@ The conformance suite shall include tests in the following categories:
 - `fix` field accuracy for mechanically derivable cases
 
 **Tooling protocol tests (P-series)**
-- all operations in Section 20.2
+- all operations in Section 19.2
 - request/response schema conformance
 - repair loop round-trip
 
-### 21.3 Conformance Evaluation
+### 20.3 Conformance Evaluation
 
 Conformance is evaluated against normative expected outputs, not just successful compilation. Each test specifies:
 - input source
@@ -1468,11 +1519,11 @@ Conformance is evaluated against normative expected outputs, not just successful
 
 ---
 
-## 22. Benchmarking and Adoption Criteria [N]
+## 21. Benchmarking and Adoption Criteria [N]
 
 This section defines the evidence required before toke is elevated to a broader industry standard. Adoption requires demonstrated, measurable performance against defined baselines and thresholds.
 
-### 22.1 Evaluation Baselines
+### 21.1 Evaluation Baselines
 
 A candidate implementation shall be evaluated against the following baselines. These baselines define the evaluation context; they do not constitute claims about relative performance until benchmarks are run.
 
@@ -1483,7 +1534,7 @@ A candidate implementation shall be evaluated against the following baselines. T
 - A structured AST representation (JSON)
 - One low-level IR (WASM textual format)
 
-### 22.2 Benchmark Task Categories
+### 21.2 Benchmark Task Categories
 
 **Category D2C — Algorithmic (single file)**
 Standard computational problems requiring correct logic: sorting, graph traversal, string processing, arithmetic. Hidden tests include edge cases and performance constraints. These tasks validate single-function generation quality.
@@ -1497,7 +1548,7 @@ Bug-fix and refactoring tasks: present code with subtle bugs, measure whether th
 **Category I2C — Interop**
 Tasks requiring FFI or multi-language integration (deferred for full specification; test protocol integration in v0.1).
 
-### 22.3 Required Benchmark Metrics
+### 21.3 Required Benchmark Metrics
 
 | Metric | Definition |
 |--------|------------|
@@ -1506,53 +1557,53 @@ Tasks requiring FFI or multi-language integration (deferred for full specificati
 | Pass@1 | % of compilable first-attempt programs that pass all hidden tests |
 | Pass@k | % of tasks solved within k generation attempts |
 | Repair iterations | Mean number of compile-fix cycles before passing tests |
-| Total cost | Token count × iterations, normalised |
+| Total cost | Token count x iterations, normalised |
 | Multi-file success | % of Category C2C tasks completed correctly |
 | Diagnostic usefulness | % of errors with a populated `fix` field that leads to a correct repair |
 | Runtime performance | Geometric mean of execution time ratio vs native baseline |
 | Binary size | Geometric mean of binary size ratio vs native baseline |
 
-### 22.4 Minimum Evidence Threshold
+### 21.4 Minimum Evidence Threshold
 
 A proposal for formal standardisation shall demonstrate:
 
-- token reduction ≥ 15% on the D2C benchmark suite using the purpose-built tokenizer, measured against the evaluation baselines in Section 22.1
-- Pass@1 ≥ 70% on D2C tasks
-- Pass@3 ≥ 80% on D2C tasks
+- token reduction >= 15% on the D2C benchmark suite using the purpose-built tokenizer, measured against the evaluation baselines in Section 21.1
+- Pass@1 >= 70% on D2C tasks
+- Pass@3 >= 80% on D2C tasks
 - stable compiler diagnostics (schema conformance 100%)
 - reproducible results across at least two independent LLM families
-- functioning multi-file ecosystem prototype (Category C2C pass rate ≥ 60%)
+- functioning multi-file ecosystem prototype (Category C2C pass rate >= 60%)
 - no critical ambiguity in core semantics (zero grammar ambiguity, zero type rule contradictions)
 
-### 22.5 Go/No-Go Gates
+### 21.5 Go/No-Go Gates
 
 The project plan defines four gates. Each gate has a pass criterion; failure triggers a defined response.
 
-**Gate 1 (Month 8):** Token reduction ≥ 10% on held-out D2C tasks using Phase 1 character set; first-pass compile success ≥ 60%. Failure: halt language development and pivot to typed-IR approach only.
+**Gate 1 (Month 8):** Token reduction >= 10% on held-out D2C tasks; first-pass compile success >= 60%. Failure: halt language development and pivot to typed-IR approach only.
 
-**Gate 2 (Month 14):** Extended language features maintain token efficiency; trained 7B model achieves ≥ 65% Pass@1 on D2C tasks. Failure: redesign extended feature set before proceeding.
+**Gate 2 (Month 14):** Extended language features maintain token efficiency; trained 7B model achieves >= 65% Pass@1 on D2C tasks. Failure: redesign extended feature set before proceeding.
 
-**Gate 3 (Month 26):** Two or more independent LLM families achieve ≥ 70% Pass@1 on D2C tasks; self-improvement loop demonstrably improving corpus quality over successive iterations. Failure: re-evaluate standard prospects.
+**Gate 3 (Month 26):** Two or more independent LLM families achieve >= 70% Pass@1 on D2C tasks; self-improvement loop demonstrably improving corpus quality over successive iterations. Failure: re-evaluate standard prospects.
 
-**Gate 4 (Month 32):** Benchmark evidence meets all thresholds in Section 22.4; formal specification complete; conformance suite published; consortium proposal ready. Failure: distill findings into a typed-IR standard instead.
+**Gate 4 (Month 32):** Benchmark evidence meets all thresholds in Section 21.4; formal specification complete; conformance suite published; consortium proposal ready. Failure: distill findings into a typed-IR standard instead.
 
 ---
 
-## 23. Security and Safety Requirements [N]
+## 22. Security and Safety Requirements [N]
 
-### 23.1 Static Safety
+### 22.1 Static Safety
 
 The compiler shall reject the following statically where detectable:
 
 - out-of-bounds constant-index violations (E4026)
-- type-invalid operations that cannot produce well-typed results (E4020–E4029)
+- type-invalid operations that cannot produce well-typed results (E4020-E4029)
 - unresolved imports (E2030)
-- invalid error type compatibility in `!` propagation (E3020–E3022)
+- invalid error type compatibility in `!` propagation (E3020-E3022)
 - arena escape violations (E5001)
 - circular import dependencies (E2031)
 - uninitialised binding use (E3015)
 
-### 23.2 Runtime Safety
+### 22.2 Runtime Safety
 
 Where static rejection is not possible, the runtime shall:
 
@@ -1561,13 +1612,13 @@ Where static rejection is not possible, the runtime shall:
 - trap on integer overflow when using checked arithmetic operations (RT003)
 - trap on arena boundary violations (RT005)
 
-All traps produce a structured trap record (Section 19.4) and exit with code 2. Traps shall not produce undefined behaviour; the programme terminates cleanly.
+All traps produce a structured trap record (Section 18.4) and exit with code 2. Traps shall not produce undefined behaviour; the programme terminates cleanly.
 
-### 23.3 Repair-Loop Safety
+### 22.3 Repair-Loop Safety
 
 Structured diagnostics shall not rely on unstable free-form prose. The `error_code` field is the primary machine-readable signal. The `fix` field shall be populated only when the suggested fix is deterministically correct; an incorrect suggested fix is a conformance defect.
 
-### 23.4 Sandboxing Properties [I]
+### 22.4 Sandboxing Properties [I]
 
 Because toke's runtime calls are limited to explicit stdlib operations, a toke programme without FFI:
 
@@ -1580,14 +1631,14 @@ These properties make toke programmes safer to execute in LLM-driven generation 
 
 ---
 
-## 24. Reference Implementation Requirements [N]
+## 23. Reference Implementation Requirements [N]
 
 The reference implementation (`tkc`) shall include:
 
 - compiler frontend (lexer, parser, name resolver, type checker, arena validator)
 - LLVM IR backend
-- structured diagnostic emitter (Section 19 schema)
-- tooling protocol server (Section 20)
+- structured diagnostic emitter (Section 18 schema)
+- tooling protocol server (Section 19)
 - canonical interface file emitter (`.tki` format)
 - conformance suite runner
 - benchmark harness integrating with the parallel differential testing pipeline
@@ -1603,55 +1654,55 @@ The reference implementation shall be:
 
 ---
 
-## 25. Deferred Items [N]
+## 24. Deferred Items [N]
 
 The following items are explicitly deferred from version 0.1. Each requires a dedicated follow-on specification or incorporation into version 0.2.
 
-### 25.1 Concurrency and Async Semantics
+### 24.1 Concurrency and Async Semantics
 
 Async/await, goroutine-style lightweight threads, message passing, channels, and structured concurrency are all deferred. Version 0.1 is single-threaded. The concurrency model must be chosen consistently with the arena memory model and specified in version 0.2.
 
-### 25.2 Foreign Function Interface
+### 24.2 Foreign Function Interface
 
 The rules for calling C functions from toke, passing raw pointers, managing non-arena memory in FFI contexts, and ABI conventions for each target platform are deferred. A minimal `extern` declaration syntax is reserved but not specified.
 
-### 25.3 Package Registry Governance
+### 24.3 Package Registry Governance
 
 Package naming conventions, version resolution, dependency manifest format, registry protocol, and governance structure are deferred.
 
-### 25.4 Formal Memory Model with Ownership Annotations
+### 24.4 Formal Memory Model with Ownership Annotations
 
-The arena model is informally specified in Section 15. A formal operational semantics with proof obligations for memory safety is deferred.
+The arena model is informally specified in Section 14. A formal operational semantics with proof obligations for memory safety is deferred.
 
-### 25.5 Debugger Metadata
+### 24.5 Debugger Metadata
 
 DWARF or equivalent metadata for interactive debugging, source maps for IDE integration, and variable inspection are deferred.
 
-### 25.6 Canonical Binary IR
+### 24.6 Canonical Binary IR
 
 A typed binary intermediate representation for toke programmes suitable for distribution, static analysis, and machine-to-machine exchange without recompilation is deferred.
 
-### 25.7 Phase 2 Tokenizer Vocabulary
+### 24.7 Tokenizer Vocabulary
 
-The formal vocabulary specification for the purpose-built 32,768-token BPE tokenizer for Phase 2 is deferred pending completion of the Phase 1 corpus. The tokenizer specification will form a separate document.
+The formal vocabulary specification for the purpose-built 32,768-token BPE tokenizer is deferred pending completion of the corpus. The tokenizer specification will form a separate document.
 
-### 25.8 Closures and Higher-Order Functions
+### 24.8 Closures and Higher-Order Functions
 
 First-class functions as values and closures capturing bindings from enclosing scopes are deferred due to interactions with the arena model (captured mutable bindings and arena lifetime).
 
-### 25.9 Generics and Parametric Types
+### 24.9 Generics and Parametric Types
 
 Generic type parameters beyond built-in collection types are deferred to version 0.2.
 
-### 25.10 Option Type
+### 24.10 Option Type
 
-A built-in `Option<T>` type is deferred. In version 0.1, optionality is expressed through sum types: `T=MaybeUser{Some:User;None:bool}`.
+A built-in `$option` type is deferred. In version 0.1, optionality is expressed through sum types: `t=$maybeuser{Some:$user;None:bool}`.
 
 ---
 
-## 26. Governance and Versioning [N]
+## 25. Governance and Versioning [N]
 
-### 26.1 Version Scheme
+### 25.1 Version Scheme
 
 The toke specification is versioned semantically as `MAJOR.MINOR.PATCH`:
 
@@ -1659,16 +1710,16 @@ The toke specification is versioned semantically as `MAJOR.MINOR.PATCH`:
 - **Minor** — backward-compatible additions; existing source remains valid
 - **Patch** — wording clarifications and defect corrections with no normative behaviour change
 
-Version 0.1 is the initial draft specification. Version 1.0 will be designated when the Phase 3 ecosystem proof is complete and the conformance suite passes for at least two independent compiler implementations.
+Version 0.1 is the initial draft specification. Version 1.0 will be designated when the ecosystem proof is complete and the conformance suite passes for at least two independent compiler implementations.
 
-### 26.2 Stability Guarantees by Version
+### 25.2 Stability Guarantees by Version
 
 - `0.x` — specification is unstable; any aspect may change between minor versions
 - `1.x` — source language (Layer A) is stable; breaking changes require a major version bump
 - `1.x` — diagnostic error codes are stable; new codes may be added in minor versions
 - `1.x` — tooling protocol schema is stable for existing fields; new fields may be added
 
-### 26.3 Change Process
+### 25.3 Change Process
 
 Changes to the normative specification shall be:
 
@@ -1679,7 +1730,7 @@ Changes to the normative specification shall be:
 
 Patch changes may be made with a 7-day review period.
 
-### 26.4 Open Governance
+### 25.4 Open Governance
 
 The specification repository shall be public. All normative and informative sections shall be clearly marked. Reference tests shall be openly licensed. No single organisation shall have unilateral authority over the specification after version 1.0.
 
@@ -1695,7 +1746,7 @@ Error codes are stable across patch versions. All codes beginning with `E` are e
 |------|---------|
 | E1001 | Unrecognised escape sequence in string literal |
 | E1002 | Unterminated string literal at end of file |
-| E1003 | Character outside Phase 1/Phase 2 character set in structural position |
+| E1003 | Character outside toke character set in structural position |
 | E1004 | Identifier begins with digit |
 | E1005 | Invalid UTF-8 byte sequence in source file |
 
@@ -1712,7 +1763,7 @@ Error codes are stable across patch versions. All codes beginning with `E` are e
 | E2007 | Unexpected token — expected production does not match |
 | E2008 | Missing closing delimiter |
 | E2009 | Empty function body |
-| E2010 | Pointer type `*T` used outside extern function |
+| E2010 | Pointer type `*$t` used outside extern function |
 | E2011 | Mixed struct and sum fields in type declaration |
 | E2015 | Recursive struct without indirection |
 | E2020 | Circular static initialisation |
@@ -1875,21 +1926,26 @@ The following JSON Schema defines the normative diagnostic record format for ver
 
 ## Appendix D — Keyword and Symbol Reference [I]
 
-### Keywords
+### Declaration Keywords (Context-Sensitive)
 
 | Keyword | Role | Notes |
 |---------|------|-------|
-| `F` | Function definition | Always uppercase |
-| `T` | Type definition | Always uppercase |
-| `I` | Import declaration | Always uppercase |
-| `M` | Module declaration | Always uppercase |
+| `m=` | Module declaration | `m` is a valid variable name inside functions |
+| `f=` | Function definition | `f` is a valid variable name inside functions |
+| `t=` | Type definition | `t` is a valid variable name inside functions |
+| `i=` | Import declaration | `i` is a valid variable name inside functions |
+
+### Reserved Keywords
+
+| Keyword | Role | Notes |
+|---------|------|-------|
 | `if` | Conditional | Lowercase |
 | `el` | Else branch | Follows `}` of `if` only |
 | `lp` | Loop | The single loop construct |
 | `br` | Break | Exits innermost `lp` |
 | `let` | Binding | `let x=v` immutable; `let x=mut.v` mutable |
 | `mut` | Mutable qualifier | Used as `mut.value` in binding only |
-| `as` | Type cast | `expr as TargetType` |
+| `as` | Type cast | `expr as $targettype` |
 | `rt` | Return (long form) | Equivalent to `<` |
 
 ### Operators
@@ -1904,27 +1960,22 @@ The following JSON Schema defines the normative diagnostic record format for ver
 | `)` | call close | group close |
 | `{` | block open | struct literal open |
 | `}` | block close | struct literal close |
-| `[` | array literal open (Phase 1) | array index open (Phase 1) |
-| `]` | array literal close (Phase 1) | array index close (Phase 1) |
 | `+` | add | string concat |
 | `-` | subtract | unary negate |
 | `*` | multiply | pointer deref (FFI only) |
-| `/` | divide | — |
+| `/` | divide | -- |
 | `<` | return (short form) | less-than in comparison |
-| `>` | greater-than | — |
+| `>` | greater-than | -- |
 | `!` | error propagation | logical not |
 | `\|` | match block open | union type separator |
+| `&&` | logical and | -- |
+| `\|\|` | logical or | -- |
+| `$` | type name sigil prefix | -- |
+| `@` | array/map literal and type sigil | -- |
+| `^` | reserved, unassigned | -- |
+| `~` | reserved, unassigned | -- |
 
 > **Note:** The double-quote `"` appears in source as the string delimiter but is not a structural symbol — it is consumed by the lexer during string literal scanning and never produces a token. See Section 7 note.
-
-### Phase 2 Additional Symbols
-
-| Symbol | Role |
-|--------|------|
-| `$` | Type name sigil prefix (replaces uppercase) |
-| `@` | Array literal sigil (replaces `[`) |
-| `^` | Reserved, unassigned |
-| `~` | Reserved, unassigned |
 
 ---
 
@@ -1932,13 +1983,13 @@ The following JSON Schema defines the normative diagnostic record format for ver
 
 The following identifiers are reserved and may not be used as user-defined names:
 
-**Keywords (Section 12.1):** `F` `T` `I` `M` `if` `el` `lp` `br` `let` `mut` `as` `rt`
+**Reserved keywords (Section 11.2):** `if` `el` `lp` `br` `let` `mut` `as` `rt`
 
 **Predefined values:** `true` `false`
 
-**Built-in types (scalar):** `u8` `u16` `u32` `u64` `i8` `i16` `i32` `i64` `f32` `f64` `bool` `Str` `Byte`
+**Built-in types (scalar):** `u8` `u16` `u32` `u64` `i8` `i16` `i32` `i64` `f32` `f64` `bool` `str` `byte`
 
-**Built-in type constructors:** `Ok` `Err` (variants of the built-in Result type)
+**Built-in type constructors:** `Ok` `Err` (variants of the built-in `$result` type)
 
 **Special identifiers:** `arena` (used as block introducer), `len` (array length member — not reusable as a field name in user types)
 
@@ -1946,8 +1997,95 @@ The following identifiers are reserved and may not be used as user-defined names
 
 ---
 
+## Appendix F — Legacy Profile [I]
+
+The legacy profile is an 80-character variant of the toke language available via the `--legacy` compiler flag. It was the original development syntax and remains supported for backward compatibility.
+
+### F.1 Character Set (80 Characters)
+
+```
+CLASS        CHARACTERS                                                 COUNT
+──────────────────────────────────────────────────────────────────────────────
+Lowercase    a b c d e f g h i j k l m n o p q r s t u v w x y z       26
+Uppercase    A B C D E F G H I J K L M N O P Q R S T U V W X Y Z       26
+Digits       0 1 2 3 4 5 6 7 8 9                                       10
+Symbols      ( ) { } [ ] = : . ; + - * / < > ! |                       18
+──────────────────────────────────────────────────────────────────────────────
+TOTAL                                                                   80
+```
+
+### F.2 Differences from Default Syntax
+
+| Feature | Default syntax | Legacy profile |
+|---------|---------------|----------------|
+| Declaration keywords | `m=` `f=` `t=` `i=` (lowercase) | `M=` `F=` `T=` `I=` (uppercase, reserved) |
+| Type names | `$user`, `$str` | `User`, `Str` (uppercase-initial) |
+| Array literal | `@(1; 2; 3)` | `[1; 2; 3]` |
+| Array type | `@i64` | `[i64]` |
+| Map literal | `@(1:10; 2:20)` | `[1:10; 2:20]` |
+| Map type | `@(i64:str)` | `[i64:str]` |
+| Array indexing | `arr.get(0)` | `arr[0]` |
+| Struct literal | `$point{x: 1; y: 2}` | `Point{x: 1; y: 2}` |
+| `$` and `@` | structural symbols | not available (E1003) |
+| `[` and `]` | not available | array delimiters |
+
+### F.3 Legacy Profile Keywords
+
+In legacy mode, the four declaration keywords are uppercase reserved words:
+
+| Keyword | Role |
+|---------|------|
+| `F` | function definition (reserved) |
+| `T` | type definition (reserved) |
+| `I` | import declaration (reserved) |
+| `M` | module declaration (reserved) |
+
+All other keywords (`if`, `el`, `lp`, `br`, `let`, `mut`, `as`, `rt`) are identical in both modes.
+
+### F.4 Scalar Type Names in Legacy Mode
+
+| Default | Legacy |
+|---------|--------|
+| `str` | `Str` |
+| `byte` | `Byte` |
+
+All numeric types (`i64`, `u64`, `f64`, `bool`, etc.) are identical in both modes.
+
+### F.5 Example — Legacy vs Default
+
+**Legacy profile (`--legacy`):**
+```
+M=api.user;
+T=User{id:u64;name:Str;email:Str};
+F=getuser(id:u64):User!UserErr{
+  r=db.one("SELECT id,name FROM users WHERE id=?";[id])!UserErr.DbErr;
+  <User{id:r.u64(id);name:r.str(name)}
+};
+```
+
+**Default syntax (no flag):**
+```
+m=api.user;
+t=$user{id:u64;name:str;email:str};
+f=getuser(id:u64):$user!$usererr{
+  r=db.one("SELECT id,name FROM users WHERE id=?";@(id))!$usererr.DbErr;
+  <$user{id:r.u64(id);name:r.str(name)}
+};
+```
+
+### F.6 Compiler Flag
+
+```
+tkc --legacy source.tk        # compile in legacy mode
+tkc source.tk                  # compile in default mode (no flag needed)
+```
+
+The deprecated flags `--phase1` and `--profile1` are aliases for `--legacy` and may be removed in a future version.
+
+---
+
 *toke specification version 0.1 — draft. All normative sections are marked [N]. All informative sections are marked [I]. Sections without a marker are informative by default.*
 
-*Repository: https://github.com/tokelang/spec*  
-*Issues: https://github.com/tokelang/spec/issues*  
+*Repository: https://github.com/tokelang/spec*
+*Issues: https://github.com/tokelang/spec/issues*
 *Change log: https://github.com/tokelang/spec/CHANGELOG.md*

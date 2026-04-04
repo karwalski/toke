@@ -169,8 +169,8 @@ Every `.toke` file follows this order with no exceptions:
 
 | Thing | Convention | Example |
 |-------|------------|---------|
-| Types (Profile 1) | PascalCase | `HttpReq` |
-| Types (Profile 2) | $lowercase | `$user` |
+| Types (legacy syntax) | PascalCase | `HttpReq` |
+| Types (default syntax) | $lowercase | `$user` |
 | Functions | snake_case | `parse_route_param` |
 | Parameters | snake_case | `req_body` |
 | Local bindings | snake_case | `row_count` |
@@ -208,7 +208,7 @@ All T-series conformance tests for match pass.
 ```
 fix(lexer): emit E1003 for out-of-set chars in structural position
 
-Characters outside the 80-char Profile 1 set in structural positions
+Characters outside the 80-char legacy character set in structural positions
 now emit E1003 with byte offset and span. Previously the lexer
 produced an internal error instead of a user-facing diagnostic.
 ```

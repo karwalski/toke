@@ -1,9 +1,10 @@
 # docs/progress.md
 ## toke — Story Progress Tracker
 
-**Project phase:** Phase 2 — Language Extensions
+**Project phase:** Default Syntax Implementation (formerly "Phase 2")
 **Active milestone:** M3
 **Gate 1:** PASS (2026-04-03) — 12.5% token reduction, 63.7% Pass@1
+**Decision (2026-04-04):** 56-char syntax is "toke" (default). 80-char syntax is "legacy profile" (`--legacy`).
 **Last updated:** see git log
 
 ---
@@ -284,15 +285,16 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 7.1.1 | Rewrite website examples to remove underscores from identifiers | on_hold | — | **[local]** 28+ files affected; parked until spec locked |
-| 7.1.2 | Fix match arm return syntax in website examples | on_hold | — | **[local]** Parked until spec locked |
-| 7.1.3 | Fix error variant construction and propagation syntax | on_hold | — | **[local]** Parked until spec locked |
-| 7.1.4 | Fix typed empty collection literals in website examples | on_hold | — | **[local]** Parked until spec locked |
-| 7.1.5 | Fix loop init and spawn/await syntax in website examples | on_hold | — | **[local]** Parked until spec locked |
+| 7.1.1 | Rewrite website examples to remove underscores from identifiers | done | 2026-04-04 | **[local]** [x] camelCase identifiers fixed across 3 files (toHex, readFile, readAll, parseLine) [x] No underscores remain in code examples |
+| 7.1.2 | Fix match arm return syntax in website examples | done | 2026-04-04 | **[local]** [x] Single-arm match shorthand replaced with two-arm syntax in 7 files [x] if/el syntax fixed in 6 stdlib files |
+| 7.1.3 | Fix error variant construction and propagation syntax | done | 2026-04-04 | **[local]** [x] Ok:/Err: arms in match expressions [x] .ok?/.err? postfix replaced [x] http.Res constructors lowercased |
+| 7.1.4 | Fix typed empty collection literals in website examples | done | 2026-04-04 | **[local]** [x] Array/map literals use @() syntax [x] .get() indexing throughout |
+| 7.1.5 | Fix loop init and spawn/await syntax in website examples | done | 2026-04-04 | **[local]** [x] spawn/await examples removed [x] Loop syntax corrected [x] != replaced with !(x=0) |
 | 7.1.6 | Implement array indexing `arr[i]` in compiler | done | — | [x] PtrLocal tracking [x] NODE_IDENT for ptr-typed locals [x] Function param/call codegen for array types [x] e2e_array_index test |
 | 7.1.7 | Implement void return type in compiler | done | — | [x] Void return verification [x] e2e_void test |
 | 7.1.8 | Fix struct literal with field access expression crash | done | — | [x] Struct type registry [x] prepass_structs [x] Multi-field GEP codegen [x] Field access codegen [x] e2e_struct_field tests |
-| 7.1.9 | Website code example conformance test suite | on_hold | — | **[local]** Automated CI test; depends on 7.1.1–7.1.5; parked until spec locked |
+| 7.1.9 | Website code example conformance test suite | done | 2026-04-04 | **[local]** [x] test/check_examples.sh: extracts toke blocks from 45 docs, runs tkc --check [x] Skips fragments (no m=), non-toke blocks, skip-check annotated [x] Baseline: 48 checked, 24 pass, 24 fail (50%), threshold set at 50% [x] Failures mostly cross-module imports (E2030) and unimplemented features [x] npm run test:examples wired in package.json |
+| 7.1.10 | Add loke showcase to website homepage | done | 2026-04-04 | **[local]** [x] "Built with toke" section added to index.mdx between Development Timeline and Ready to Start [x] loke card with description and link to loke.tokelang.dev [x] Single mention, no other pages affected |
 | 7.2.1 | Review `.tk` file extension decision | done | — | [x] ADR-0002 in toke-spec [x] Linguist conflict documented [x] .gitattributes mitigation [x] Decision: keep .tk |
 | 7.3.1 | Audit empty stub files across all repos | done | — | 12 empty files found, 3 stories with false done status, 1 missing from tracking |
 | 8.1.1 | Provision cloud instance and deploy toolchain | done | — | Setup/deploy/verify scripts in infra/ |
@@ -308,9 +310,9 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 ---
 
-## Phase 2 — Gate 2 Preparation
+## Gate 2 Preparation
 
-**Gate 2 criterion:** Extended features + 7B model beats baseline
+**Gate 2 criterion:** Default syntax implemented, extended features, 7B model beats baseline
 **Source:** read-only-research/Open source curricula for coding LLMs.md
 
 ### Epic 9.1 — Training Data Expansion
@@ -516,7 +518,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 
 ---
 
-## Phase 2 — Research Review Remediation (Sprint R1)
+## Research Review Remediation (Sprint R1)
 
 **Source:** Gate 1 research review (8 teams, April 2026)
 **Priority:** P0 — must complete before external review
@@ -801,6 +803,192 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done`
 **Goal:** Polish, expansion tooling, longer-term items.
 
 Stories: 10.2.9, 10.3.3, 10.3.4, 10.3.7, 10.3.8, 10.3.9, 10.5.2, 10.5.3, 10.5.5, ~~10.6.5~~, ~~10.6.7~~, 10.7.5, 10.8.3, 10.8.4, ~~10.8.5~~, ~~10.9.2~~, 10.10.4, 10.11.1-10.11.6
+
+---
+
+## Default Syntax — Compiler Implementation and Gate 2 Readiness
+
+**Decision (2026-04-04):** The 56-character syntax is toke's default and only actively developed syntax. The 80-character uppercase syntax is retained as "legacy profile" (`--legacy` flag) for backward compatibility and generic tokenizer use. Stop referring to "Phase 2" or "Profile 2" — it is simply "toke."
+
+**Gate 2 criterion:** All 5 key gaps from spec-implementation-delta.md closed. Default syntax compiles, passes conformance, and spec is researcher-approved.
+
+### Epic 11.1 — Default Syntax Compiler Implementation
+
+**Goal:** Make the 56-char syntax the compiler's default mode. Legacy (80-char) available via `--legacy`.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 11.1.1 | Lexer: default syntax tokens and character set | done | 2026-04-04 | **P0** [x] TK_DOLLAR and TK_AT token kinds [x] Profile enum (PROFILE_DEFAULT/PROFILE_LEGACY) [x] $ and @ recognized in default mode, E1003 in legacy [x] --legacy CLI flag [x] Version string updated to "tkc 0.1.0" [x] Lowercase keyword disambiguation deferred to parser (11.1.2) [x] 92/92 conform, 10/10 e2e, 9/9 stress |
+| 11.1.2 | Parser: `$name` types, `@()` arrays and maps, `.get()` indexing | done | 2026-04-04 | **P0** [x] $ident type references in parse_type_expr [x] @() array literals with ; separation [x] @() map literals disambiguated by : [x] @$type array type, @($k:$v) map type [x] .get(expr) → NODE_INDEX_EXPR [x] $name{} struct literals [x] [] blocked in default mode (E1003) [x] Lowercase m=/f=/i=/t= via is_decl_ident() (lexer emits TK_IDENT, parser checks context) [x] Profile passed to parse() [x] G052-G058 + e2e_default_syntax [x] Existing bracket tests flagged --legacy [x] 115 conform, 13 e2e, 9 stress |
+| 11.1.3 | Name resolver and type checker: handle default syntax AST | done | 2026-04-04 | **P0** No changes needed — parser reuses same AST node kinds (NODE_TYPE_IDENT, NODE_ARRAY_LIT, NODE_MAP_LIT, NODE_INDEX_EXPR) for default syntax. Name resolver and type checker work unchanged. Confirmed by 115 conformance tests passing with default syntax. |
+| 11.1.4 | LLVM backend: emit correct IR for `.get()` array indexing | done | 2026-04-04 | **P0** No changes needed — parser emits NODE_INDEX_EXPR for .get(), same as legacy arr[i]. LLVM backend handles it identically. Confirmed by e2e_default_syntax test (compile+run). |
+| 11.1.5 | CLI: default mode is 56-char, `--legacy` for 80-char | done | 2026-04-04 | **P0** Completed as part of 11.1.1. [x] PROFILE_DEFAULT is default [x] --legacy flag [x] --profile1/--phase1 deprecated aliases [x] Version string "tkc 0.1.0" [x] Profile passed to lex() [x] Help text updated |
+| 11.1.6 | New conformance test suite (default syntax) | done | 2026-04-04 | **P0** [x] 57 new tests: L029-L033 (lexical), G059-G098 (grammar), D034-D045 (diagnostics) [x] Covers all default syntax: m=/f=/t=/i=, $name types, @() arrays/maps, .get() indexing, &&/||, narrow types [x] 172 total tests, all passing |
+| 11.1.7 | Migrate e2e and stress tests to default syntax | done | 2026-04-04 | **P1** [x] All 13 e2e and 9 stress tests converted to default syntax [x] Legacy copies in test/legacy/e2e/ and test/legacy/stress/ [x] run_e2e.sh and run_stress.sh support --legacy flag [x] All tests passing |
+| 11.1.8 | Verify corpus compiles with updated compiler | done | 2026-04-04 | **P1** [x] 500 entries sampled from corpus_p2.jsonl (46,754 total) [x] 53.2% pass rate [x] Top failures: type mismatches 40%, $-prefixed types unrecognized 25%, arr.0 dot-index 21%, immutable assignment 11% [x] Findings documented — corpus transformation script needs update for new syntax rules |
+| 11.1.9 | Update error message catalog examples to default syntax | done | 2026-04-04 | **P1** [x] errors.md: 23 code examples converted to default syntax [x] semantics.md: type tables, literals, declarations updated [x] stdlib-signatures.md already in default syntax |
+
+### Epic 11.2 — Gate 2 Soundness Gaps
+
+**Goal:** Close the 5 remaining spec-implementation gaps identified in spec-implementation-delta.md.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 11.2.1 | Narrow integer types in type checker and codegen | done | 2026-04-04 | **P1** [x] TY_I8/I16/I32/U8/U16/U32/F32 in type system [x] resolve_type mapping [x] LLVM trunc/sext/zext/fptrunc/fpext codegen [x] Byte alias for u8 [x] let x:type annotation parsing [x] G046-G048 + D027 tests [x] e2e_narrow_int [x] 96 conform, 11 e2e |
+| 11.2.2 | Missing diagnostic error codes | done | 2026-04-04 | **P1** [x] 7 of 11 implemented (4 already covered by existing codes) [x] E1004 unterminated string EOF [x] E1005 invalid numeric literal [x] E2005 unexpected token in type position [x] E2015 duplicate field name [x] E4026 wrong argument count [x] E5002 unreachable code after return [x] W1001 lossy cast warning [x] L026-L028 + D029-D033 tests [x] Skipped: E4001→E3011, E4020→E4031, E2006→E2003, E2011→E2002 |
+| 11.2.3 | Sum type match exhaustiveness | done | 2026-04-04 | **P1** [x] Collect variant tags from type declaration [x] Check match arms cover all variants [x] E5001 for missing variants with names listed [x] G045 + D022 + D023 tests [x] Bool exhaustiveness unchanged |
+| 11.2.4 | Mutability enforcement | done | 2026-04-04 | **P1** [x] E4070 "cannot assign to immutable binding" [x] find_binding_kind() helper [x] Loop vars implicitly mutable [x] Function params immutable [x] D024-D026 tests [x] e2e_mutability [x] L024 updated [x] 92 conform, 10 e2e, 9 stress |
+| 11.2.5 | Logical operators (`&&` and `||`) | done | 2026-04-04 | **P1** [x] TK_AND/TK_OR in lexer (& alone → E1003) [x] parse_and()/parse_or() with OR > AND > comparison precedence [x] Bool operand type checking (E4031) [x] Short-circuit codegen via alloca [x] G049-G051 + D028 + e2e_logical [x] 115 conform, 13 e2e |
+
+### Epic 11.3 — Documentation and Ecosystem Alignment
+
+**Goal:** Ensure all documentation, examples, tools, and IDE integrations use and reference the default (56-char) syntax.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 11.3.1 | Review and compile-test all website code examples | done | 2026-04-04 | **P0** [x] 63 complete programs tested [x] 52% pass rate (63% excl error demos) [x] 17 files fixed in toke-web: array type @(T)→@T, struct field $fieldname→fieldname [x] Remaining failures: cross-module types, unimplemented features |
+| 11.3.2 | Update MCP skill file, Claude plugin, and Codex instructions | done | 2026-04-04 | **P1** [x] 7 files updated in toke-mcp [x] toke-language.md skill rewritten for default syntax [x] CLAUDE.md, commands, agents updated [x] codex.md rewritten [x] All examples use m=/f=/$name/@() |
+| 11.3.3 | Update Tree-sitter grammar for default syntax | done | 2026-04-04 | **P1** [x] grammar.js with 66 rules (both profiles) [x] highlights.scm with $ and @ highlighting [x] package.json [x] Covers: $name types, @() arrays/maps, .get() indexing, &&/|| |
+| 11.3.4 | Update error catalog and stdlib docs to default syntax | done | 2026-04-04 | **P1** [x] stdlib-signatures.md already in default syntax [x] 1 fix in toke-web (FileErr → $fileerr) [x] No .tki files to update |
+| 11.3.5 | Build migration tool (`tkc --migrate`) | done | 2026-04-04 | **P2** [x] src/migrate.c + migrate.h [x] Token-level legacy→default transformation [x] Uppercase keywords M/F/T/I → lowercase [x] Type idents Vec2 → $vec2 [x] Whitespace/formatting preserved [x] 2 test cases + make test-migrate [x] Compiles clean -Werror |
+| 11.3.6 | Remove "Phase 2" / "Profile 2" terminology across all repos | done | 2026-04-04 | **P1** [x] 33+ files updated across toke, toke-mcp, toke-web repos [x] "Phase 2" → "default syntax", "Phase 1" → "legacy profile" [x] Preserved git branch names, file names, source code, progress.md [x] Factual counts ("56 characters") retained |
+
+### Epic 11.4 — Specification Alignment and Research Signoff
+
+**Goal:** Ensure the spec accurately reflects the implemented compiler, then get researcher signoff before locking syntax.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 11.4.1 | Update spec-implementation-delta.md after 11.1 and 11.2 work | done | 2026-04-04 | **P0** [x] All 5 key gaps marked RESOLVED [x] 24 rows updated from "not implemented" to "specified + implemented" [x] Summary: 110 specified+implemented (was 52), 5 not implemented (was 20) |
+| 11.4.2 | Re-run token efficiency benchmarks with compiler-verified code | done | 2026-04-04 | **P1** [x] 5,000 entries benchmarked from corpus_p2.jsonl [x] 80.9% compiler pass rate [x] Token reduction: 63% vs Python, 84.9% vs C, 73.5% vs Java (cl100k_base) [x] eval_report_gate2.json published to toke-eval/data/ [x] 19.1% corpus failures due to parser tightening — corpus regen needed (see 11.5.7) |
+| 11.4.3 | Align spec document with implemented state | done | 2026-04-04 | **P0** [x] Default syntax is now primary presentation [x] Appendix F: Legacy Profile (80-char) [x] Grammar: $type, @() arrays/maps, &&/||, lowercase m=/f=/t=/i= context keywords [x] Keyword table split: 4 context-sensitive + 8 reserved [x] All examples converted [x] Removed Phase 1/2/Profile 2 terminology [x] RouteDecl removed (stdlib macro) |
+| 11.4.4 | Prepare researcher review package and request signoff | done | 2026-04-04 | **P0** [x] gate2-review-package.md in toke-spec/docs/ [x] Executive summary, syntax overview, design goals assessment [x] All numbers verified from source artifacts [x] 8 specific reviewer questions [x] Timeline: 2-week review window closes 2026-04-18, freeze target 2026-04-25 [x] Appendix with artifact links |
+| 11.4.5 | Syntax freeze — tag v0.2-syntax-lock | backlog | — | **P0** After researcher signoff: freeze spec syntax. Tag all repos `v0.2-syntax-lock`. No syntax changes after this tag without formal amendment process. Update gate-criteria.md. Depends on 11.4.4. |
+| 11.4.6 | BPE tokenizer validation with final syntax | done | 2026-04-04 | **P1** [x] Tokenizer (8k vocab SentencePiece) trained on old uppercase syntax only [x] 0/13 new syntax patterns are single tokens ($, @ fall to byte encoding) [x] Corpus needs regeneration in default syntax before retrain [x] eval script + JSON report in toke-tokenizer/docs/ [x] Follow-up: retrain after corpus regen |
+| 11.4.7 | Update Gate 2 spec-implementation delta to zero key gaps | done | 2026-04-04 | **P0** [x] All 5 key gaps confirmed CLOSED [x] Gate 2 readiness section added to gate-criteria.md [x] Test results: 172 conformance, 13 e2e, 9 stress — all passing |
+
+### Epic 11.5 — Companion Files
+
+**Goal:** Generate plain-language companion files (`.tkc.md`) alongside toke source files. Companion files contain human-readable explanations of code, enabling peer review, security review, and documentation. Include a content hash for version assurance, and target high round-trip fidelity (an LLM reading the companion file should regenerate equivalent code).
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 11.5.1 | Companion file format spec | done | 2026-04-04 | **P1** [x] .tkc.md format defined in docs/companion-file-spec.md [x] YAML frontmatter: source_file, source_hash (SHA-256), compiler_version, generated_at, format_version [x] 6 structured sections: Module, Types, Functions, Constants, Control Flow, Notes [x] Round-trip fidelity guidelines [x] Worked example (prime_sieve.tk) [x] Versioning policy |
+| 11.5.2 | Companion file generation (`tkc --companion`) | done | 2026-04-04 | **P1** [x] src/companion.c + companion.h (portable C99 SHA-256) [x] YAML frontmatter: source_file, source_hash, compiler_version, generated_at, format_version [x] Sections: Module (imports), Types (fields), Functions (signatures, params), Constants [x] --companion (stdout) and --companion-out <path> flags [x] TODO placeholders for LLM/human prose [x] Compiles clean -Werror |
+| 11.5.3 | Round-trip fidelity validation | backlog | — | **P1** Given a companion file, feed it through a toke-trained LLM and measure code similarity to the original source. Target: ≥90% AST-equivalent regeneration for standard patterns. Metric: exact match on function signatures, type declarations; fuzzy match on expression bodies. Depends on 11.5.2. |
+| 11.5.4 | Companion diff / compare feature | done | 2026-04-04 | **P2** [x] --companion-diff flag in main.c [x] companion_diff() in companion.c (~200 lines) [x] Detects NEW/REMOVED/CHANGED functions and types [x] Hash mismatch detection [x] Exit codes: 0 no divergences, 1 divergences, 2 error [x] 7 test cases + make test-companion-diff [x] Compiles clean -Werror |
+| 11.5.5 | MCP tool: `toke_companion` | done | 2026-04-04 | **P2** [x] tools/companion.js in toke-mcp [x] 3 modes: generate, verify, diff [x] Registered as 8th MCP tool in server.js [x] Schema: source (required), mode (optional), companion (optional) [x] Temp file cleanup in finally block |
+| 11.5.6 | Companion file hash verification | done | 2026-04-04 | **P1** [x] --verify-companion flag in main.c [x] verify_companion() + extract_frontmatter_field() in companion.c [x] Resolves source_file relative to companion dir [x] Reuses existing SHA-256 [x] Exit codes: 0 match, 1 mismatch, 2 error [x] 6 test cases + make test-companion [x] Compiles clean -Werror |
+
+### Epic 11.6 — Corpus and Tokenizer Refresh
+
+**Goal:** Regenerate the training corpus in default syntax and retrain the BPE tokenizer so key syntax patterns (`$type`, `@(`, `m=`, `f=`) become single tokens.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 11.6.1 | Regenerate corpus in default syntax | done | 2026-04-04 | **P1** [x] to_default_syntax.py transformer (12 rule categories) [x] corpus_default.jsonl: 46,754 entries [x] ~90% tkc --check pass rate [x] Zero transformation-introduced errors [x] Remaining failures: pre-existing E4070 immutable (75%), E4031 type mismatch (20%), E3012 duplicate (1%) |
+| 11.6.2 | Retrain BPE tokenizer on default syntax corpus | done | 2026-04-04 | **P1** [x] 14 user-defined symbols added [x] Trained on 46,754 default-syntax entries (22MB) [x] 14/14 key patterns are single tokens (was 0/14) [x] Char-to-token ratio 0.352 (7.5% improvement) [x] Old model backed up, new model installed [x] eval_retrain_11_6_2.json published |
+
+### Epic 12.1 — Standard Library Tier 0: Foundation Extensions
+
+**Goal:** Extend existing stdlib modules (json, http, crypto) with production-grade capabilities. Each module ships with 200+ corpus examples.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 12.1.1 | std.json: streaming encode/decode | backlog | — | **P1** Add streaming JSON encoder/decoder for large payloads. JSON Pointer (RFC 6901) read/write. JSON Patch (RFC 6902) apply. Schema validation against type defs. Extends existing 8-function json module. 200+ corpus examples. |
+| 12.1.2 | std.http: client and connection pooling | backlog | — | **P1** HTTP client (GET/POST/PUT/DELETE/PATCH), connection pooling, request/response streaming, middleware chain pattern, timeout/retry. Extends existing server-only http module. 200+ corpus examples. |
+| 12.1.3 | std.crypto: extended hashing and HMAC | backlog | — | **P1** Add SHA-512, BLAKE3 hashing. Extend HMAC beyond SHA-256. Constant-time compare utility. Extends existing SHA-256 + HMAC-SHA-256 module. 200+ corpus examples. Prerequisite for auth, API keys, token signing. |
+
+### Epic 12.2 — Standard Library Tier 1: Web & API Platform
+
+**Goal:** Build a production API framework on top of the foundation. Auth, routing, WebSocket, and template generation.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 12.2.1 | std.encoding | backlog | — | **P1** Base64 encode/decode, hex encode/decode, URL percent-encoding/decoding. Prerequisite for auth headers, cookie values, data URIs. .tki interface + C impl. 200+ corpus examples. |
+| 12.2.2 | std.auth | backlog | — | **P1** JWT sign/verify (HS256, RS256), API key validation, OAuth2 client credentials flow, bearer token extraction middleware. Depends on std.crypto + std.encoding + std.json. 200+ corpus examples. |
+| 12.2.3 | std.router | backlog | — | **P1** Path parameters (`/users/:id`), query string parsing, middleware composition, CORS handling, rate limiting, request body validation against `t=` type schemas. Builds API framework on raw std.http. 200+ corpus examples. |
+| 12.2.4 | std.ws | backlog | — | **P1** WebSocket upgrade from HTTP connection, message framing (text/binary), ping/pong, connection lifecycle management, broadcast to multiple clients. Needed for dashboards and streaming LLM output. 200+ corpus examples. |
+| 12.2.5 | std.template | backlog | — | **P2** HTML/JS/CSS generation from toke types. Typed template fragments, HTML escaping, component composition, `<script>` and `<style>` inline embedding. Structural generation from data, not a full templating engine. 200+ corpus examples. |
+
+### Epic 12.3 — Standard Library Tier 2: Data & LLM Integration
+
+**Goal:** CSV ingest, math/stats primitives, and first-class LLM client support — toke's highest-value differentiator.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 12.3.1 | std.csv | backlog | — | **P1** Parse/emit CSV and TSV with typed column mapping. Quote handling, header detection, streaming read for large files. Fast path for analytics data ingest. 200+ corpus examples. |
+| 12.3.2 | std.math | backlog | — | **P1** Statistics: mean, median, stddev, percentiles, histograms, linear regression. Matrix/vector ops for small dimensions (up to 4x4). Foundation for analytics and ML modules. 200+ corpus examples. |
+| 12.3.3 | std.llm | backlog | — | **P0** HTTP client wrapper for OpenAI/Anthropic/local model APIs. Streaming token consumption via SSE, structured output parsing (JSON mode), prompt construction helpers, token counting, retry with exponential backoff, multi-provider abstraction. Highest-value differentiator: a language for LLM code gen with first-class LLM client support. Depends on std.http client (12.1.2) + std.json (12.1.1). 200+ corpus examples. |
+| 12.3.4 | std.llm.tool | backlog | — | **P1** Tool-use/function-calling protocol. Type-safe tool definitions generated from toke function signatures. Automatic JSON schema emission from `t=` type defs. Tool result parsing. Lets toke programs act as both LLM-generated code and LLM-consuming agents. Depends on std.llm (12.3.3). 200+ corpus examples. |
+
+### Epic 12.4 — Standard Library Tier 3: Visualization & Dashboards
+
+**Goal:** Data-to-dashboard pipeline. A single toke program produces a self-contained monitoring dashboard with no frontend build toolchain.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 12.4.1 | std.chart | backlog | — | **P1** Data-to-JSON serialisation targeting Chart.js/Vega-Lite/minimal custom spec. Line, bar, scatter, histogram, heatmap chart types. Output is a JSON descriptor — rendering is client-side. 200+ corpus examples. |
+| 12.4.2 | std.html | backlog | — | **P1** Structured HTML document builder. DOM-like tree construction, CSS class composition, JS snippet embedding, `<canvas>` and `<svg>` element support. Full document generation (more structured than std.template). 200+ corpus examples. |
+| 12.4.3 | std.dashboard | backlog | — | **P1** Composition layer combining std.chart + std.html + std.ws. Layout grid, auto-refresh intervals, WebSocket push for real-time data. Single toke program → self-contained monitoring dashboard served by std.router. 200+ corpus examples. Depends on 12.4.1, 12.4.2, 12.2.4, 12.2.3. |
+| 12.4.4 | std.sse | backlog | — | **P1** Server-Sent Events endpoint helper. Simpler than WebSocket for one-way streaming: LLM token streams, live chart updates, log tailing. Connection management, event naming, retry hints. 200+ corpus examples. |
+
+### Epic 12.5 — Standard Library Tier 4: Analytics & ML
+
+**Goal:** Ingest, analyse, visualise, and serve data — all in one toke program. Close the loop.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 12.5.1 | std.dataframe | backlog | — | **P1** Columnar typed data structure. Filter, group-by, join, pivot, window functions. Arena-friendly design (column arrays allocated in bulk). Import from CSV (std.csv), JSON (std.json), and std.db query results. 200+ corpus examples. |
+| 12.5.2 | std.analytics | backlog | — | **P1** Aggregation pipelines on dataframes. Time-series bucketing, moving averages, anomaly detection (z-score), correlation matrices. Outputs feed directly into std.chart. Depends on std.dataframe (12.5.1) + std.math (12.3.2). 200+ corpus examples. |
+| 12.5.3 | std.ml | backlog | — | **P2** Inference-only ML primitives. Linear/logistic regression, k-means, decision trees, k-nearest neighbours. Train on std.dataframe columns. No GPU, no backprop — small-data, in-process models for classification/prediction. Depends on std.dataframe (12.5.1) + std.math (12.3.2). 200+ corpus examples. |
+| 12.5.4 | std.encrypt | backlog | — | **P1** Symmetric encryption (AES-256-GCM), asymmetric (X25519 key exchange, Ed25519 signing), TLS client certificate handling. Deferred from Tier 0 because hashing covers 90% of early needs; full encryption needed for data-at-rest and E2E security in production APIs. 200+ corpus examples. |
+
+### Epic 12.6 — Standard Library Tier 5: Media & Visualization Extensions
+
+**Goal:** Lower-priority modules added as demand warrants.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 12.6.1 | std.image | backlog | — | **P3** PNG/JPEG decode to pixel buffer, resize, crop, format conversion. Needed for image upload handling in APIs. Not core to platform thesis. 200+ corpus examples. |
+| 12.6.2 | std.svg | backlog | — | **P3** Programmatic SVG generation for custom visualisations beyond std.chart. Diagrams, flowcharts, node graphs. 200+ corpus examples. |
+| 12.6.3 | std.canvas | backlog | — | **P3** JS Canvas API bindings for std.html output. 2D drawing commands serialised as JS. Gaming and 3D explicitly out of scope. 200+ corpus examples. |
+
+### Sprint S1 — Default Syntax (Critical Path)
+
+**Goal:** Compiler speaks default (56-char) syntax. All tests pass. Spec aligned.
+
+**Critical path:** 11.1.1 → 11.1.2 → 11.1.3 → 11.1.4 → 11.1.5 → 11.1.6 → 11.3.1 → 11.4.3 → 11.4.4 → 11.4.5
+
+| Story | Est | Priority | Repo | Depends |
+|-------|-----|----------|------|---------|
+| 11.1.1 Lexer: default syntax tokens | 8h | P0 | toke | — |
+| 11.1.2 Parser: $name, @(), .get() | 16h | P0 | toke | 11.1.1 |
+| 11.1.3 Names + types: handle new AST | 8h | P0 | toke | 11.1.2 |
+| 11.1.4 LLVM backend: .get() codegen | 8h | P0 | toke | 11.1.3 |
+| 11.1.5 CLI: default mode + --legacy | 4h | P0 | toke | 11.1.1 |
+| 11.1.6 New conformance tests (86+) | 16h | P0 | toke | 11.1.5 |
+| 11.1.7 Migrate e2e + stress tests | 8h | P1 | toke | 11.1.6 |
+| 11.1.8 Verify corpus compiles | 4h | P1 | toke | 11.1.5 |
+| 11.1.9 Error catalog default syntax | 4h | P1 | toke-spec | 11.1.5 |
+| 11.2.1 Narrow integer types | 16h | P1 | toke | — |
+| 11.2.2 Missing error codes (11) | 12h | P1 | toke | — |
+| 11.2.3 Sum type exhaustiveness | 8h | P1 | toke | — |
+| 11.2.4 Mutability enforcement | 8h | P1 | toke | — |
+| 11.2.5 Logical operators (&&, ||) | 8h | P1 | toke | — |
+| 11.3.1 Website example compile-test | 8h | P0 | toke-web | 11.1.5 |
+| 11.3.2 MCP/plugin/Codex updates | 4h | P1 | toke-mcp | 11.1.5 |
+| 11.3.3 Tree-sitter grammar update | 8h | P1 | toke | 11.1.5 |
+| 11.3.4 Error + stdlib docs update | 4h | P1 | toke-spec | 11.1.5 |
+| 11.3.5 Migration tool (--migrate) | 16h | P2 | toke | 11.1.5 |
+| 11.3.6 Remove Phase 2 terminology | 4h | P1 | all | 11.1.5 |
+| 11.4.1 Delta table re-audit | 4h | P0 | toke-spec | 11.1.6, 11.2.x |
+| 11.4.2 Re-run token benchmarks | 8h | P1 | toke-eval | 11.1.8 |
+| 11.4.3 Align spec with compiler | 16h | P0 | toke-spec | 11.4.1 |
+| 11.4.4 Researcher review package | 8h | P0 | toke-spec | 11.4.1-3 |
+| 11.4.5 Syntax freeze (v0.2-syntax-lock) | 2h | P0 | all | 11.4.4 |
+| 11.4.6 BPE tokenizer validation | 4h | P1 | toke-model | 11.1.8 |
+| 11.4.7 Gate 2 delta to zero gaps | 4h | P0 | toke-spec | 11.4.1 |
 
 ---
 
