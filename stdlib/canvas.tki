@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "module": "std.canvas",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "canvasop",
+      "opaque": true,
+      "fields": [
+        {"name": "tag", "type": "str"},
+        {"name": "data", "type": "str"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "canvas",
+      "fields": [
+        {"name": "id",     "type": "str"},
+        {"name": "width",  "type": "u32"},
+        {"name": "height", "type": "u32"},
+        {"name": "ops",    "type": "[canvasop]"}
+      ]
+    },
+    {"kind": "func", "name": "canvas.new",         "params": ["str", "u32", "u32"],                       "return": "canvas"},
+    {"kind": "func", "name": "canvas.fill_rect",   "params": ["canvas", "f64", "f64", "f64", "f64", "str"], "return": "canvas"},
+    {"kind": "func", "name": "canvas.stroke_rect", "params": ["canvas", "f64", "f64", "f64", "f64", "str", "f64"], "return": "canvas"},
+    {"kind": "func", "name": "canvas.clear_rect",  "params": ["canvas", "f64", "f64", "f64", "f64"],       "return": "canvas"},
+    {"kind": "func", "name": "canvas.fill_text",   "params": ["canvas", "str", "f64", "f64", "str", "str"], "return": "canvas"},
+    {"kind": "func", "name": "canvas.begin_path",  "params": ["canvas"],                                   "return": "canvas"},
+    {"kind": "func", "name": "canvas.move_to",     "params": ["canvas", "f64", "f64"],                     "return": "canvas"},
+    {"kind": "func", "name": "canvas.line_to",     "params": ["canvas", "f64", "f64"],                     "return": "canvas"},
+    {"kind": "func", "name": "canvas.arc",         "params": ["canvas", "f64", "f64", "f64", "f64", "f64"], "return": "canvas"},
+    {"kind": "func", "name": "canvas.close_path",  "params": ["canvas"],                                   "return": "canvas"},
+    {"kind": "func", "name": "canvas.fill",        "params": ["canvas", "str"],                            "return": "canvas"},
+    {"kind": "func", "name": "canvas.stroke",      "params": ["canvas", "str", "f64"],                     "return": "canvas"},
+    {"kind": "func", "name": "canvas.draw_image",  "params": ["canvas", "str", "f64", "f64", "f64", "f64"], "return": "canvas"},
+    {"kind": "func", "name": "canvas.set_alpha",   "params": ["canvas", "f64"],                            "return": "canvas"},
+    {"kind": "func", "name": "canvas.to_js",       "params": ["canvas"],                                   "return": "str"},
+    {"kind": "func", "name": "canvas.to_html",     "params": ["canvas"],                                   "return": "str"}
+  ]
+}

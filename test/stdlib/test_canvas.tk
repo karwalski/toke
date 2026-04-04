@@ -1,0 +1,126 @@
+m=canvas_test;
+
+(* Smoke tests for std.canvas: builder pattern, drawing commands, serialisation. *)
+
+f=new_smoke():bool{
+  let c=canvas.new("smoke"; 200; 100);
+  <c.id=="smoke" && c.width==200 && c.height==100 && c.ops.len==0
+};
+
+f=fill_rect_smoke():bool{
+  let c=canvas.new("r"; 400; 300);
+  let c=canvas.fill_rect(c;0.0;0.0;400.0;300.0;"#ff0000");
+  <c.ops.len==1
+};
+
+f=stroke_rect_smoke():bool{
+  let c=canvas.new("r"; 400; 300);
+  let c=canvas.stroke_rect(c;10.0;10.0;100.0;50.0;"#0000ff";2.0);
+  <c.ops.len==1
+};
+
+f=clear_rect_smoke():bool{
+  let c=canvas.new("r"; 400; 300);
+  let c=canvas.fill_rect(c;0.0;0.0;400.0;300.0;"#ffffff");
+  let c=canvas.clear_rect(c;0.0;0.0;400.0;300.0);
+  <c.ops.len==2
+};
+
+f=fill_text_smoke():bool{
+  let c=canvas.new("t"; 320; 240);
+  let c=canvas.fill_text(c;"Hello Canvas";10.0;30.0;"16px sans-serif";"#111111");
+  <c.ops.len==1
+};
+
+f=path_smoke():bool{
+  (* begin_path / move_to / line_to / close_path / stroke *)
+  let c=canvas.new("path"; 300; 300);
+  let c=canvas.begin_path(c);
+  let c=canvas.move_to(c;50.0;50.0);
+  let c=canvas.line_to(c;250.0;50.0);
+  let c=canvas.line_to(c;150.0;230.0);
+  let c=canvas.close_path(c);
+  let c=canvas.stroke(c;"#e74c3c";3.0);
+  <c.ops.len==6
+};
+
+f=arc_fill_smoke():bool{
+  let pi=3.141592653589793;
+  let c=canvas.new("arc"; 200; 200);
+  let c=canvas.begin_path(c);
+  let c=canvas.arc(c;100.0;100.0;60.0;0.0;pi*2.0);
+  let c=canvas.fill(c;"#2ecc71");
+  <c.ops.len==3
+};
+
+f=draw_image_smoke():bool{
+  let c=canvas.new("img"; 640; 480);
+  let c=canvas.draw_image(c;"https://example.com/logo.png";0.0;0.0;64.0;64.0);
+  <c.ops.len==1
+};
+
+f=set_alpha_smoke():bool{
+  let c=canvas.new("alpha"; 100; 100);
+  let c=canvas.set_alpha(c;0.5);
+  let c=canvas.fill_rect(c;0.0;0.0;100.0;100.0;"#000000");
+  let c=canvas.set_alpha(c;1.0);
+  <c.ops.len==3
+};
+
+f=ops_accumulate():bool{
+  (* Each drawing call appends exactly one op; chain of 5 yields 5 ops. *)
+  let c=canvas.new("acc"; 500; 500);
+  let c=canvas.fill_rect(c;0.0;0.0;500.0;500.0;"#f0f0f0");
+  let c=canvas.begin_path(c);
+  let c=canvas.move_to(c;10.0;10.0);
+  let c=canvas.line_to(c;490.0;490.0);
+  let c=canvas.stroke(c;"#333333";1.0);
+  <c.ops.len==5
+};
+
+f=to_js_smoke():bool{
+  let c=canvas.new("js"; 300; 200);
+  let c=canvas.fill_rect(c;0.0;0.0;300.0;200.0;"#abcdef");
+  let js=canvas.to_js(c);
+  (* Must be non-empty and reference the canvas id. *)
+  <js.len>0 && str.contains(js;"js")
+};
+
+f=to_html_smoke():bool{
+  let c=canvas.new("html_out"; 480; 270);
+  let c=canvas.fill_rect(c;0.0;0.0;480.0;270.0;"#1a1a2e");
+  let c=canvas.fill_text(c;"Toke Canvas";40.0;50.0;"bold 22px monospace";"#e0e0e0");
+  let frag=canvas.to_html(c);
+  (* Fragment must contain a <canvas> element and a <script> block. *)
+  <str.contains(frag;"<canvas") && str.contains(frag;"<script")
+};
+
+f=html_integration_smoke():bool{
+  (* canvas.to_js() output can be passed to html.script() without error. *)
+  let c=canvas.new("embed"; 640; 480);
+  let c=canvas.fill_rect(c;0.0;0.0;640.0;480.0;"#ffffff");
+  let c=canvas.fill_text(c;"Embedded";20.0;40.0;"18px sans-serif";"#000000");
+  let js=canvas.to_js(c);
+  let d=html.doc();
+  html.title(d;"Canvas Integration");
+  html.script(d;js);
+  let out=html.render(d);
+  <str.contains(out;"<canvas") || str.contains(out;"getContext")
+};
+
+f=main():i64{
+  (test.ok(new_smoke()));
+  (test.ok(fill_rect_smoke()));
+  (test.ok(stroke_rect_smoke()));
+  (test.ok(clear_rect_smoke()));
+  (test.ok(fill_text_smoke()));
+  (test.ok(path_smoke()));
+  (test.ok(arc_fill_smoke()));
+  (test.ok(draw_image_smoke()));
+  (test.ok(set_alpha_smoke()));
+  (test.ok(ops_accumulate()));
+  (test.ok(to_js_smoke()));
+  (test.ok(to_html_smoke()));
+  (test.ok(html_integration_smoke()));
+  <0
+};
