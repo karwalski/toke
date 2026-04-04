@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "module": "std.svg",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "svgdoc",
+      "fields": [
+        {"name": "width",    "type": "f64"},
+        {"name": "height",   "type": "f64"},
+        {"name": "viewbox",  "type": "str"},
+        {"name": "elements", "type": "[svgelem]"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "svgelem",
+      "opaque": true
+    },
+    {
+      "kind": "type",
+      "name": "svgstyle",
+      "fields": [
+        {"name": "fill",         "type": "str"},
+        {"name": "stroke",       "type": "str"},
+        {"name": "stroke_width", "type": "f64"},
+        {"name": "opacity",      "type": "f64"},
+        {"name": "font_size",    "type": "f64"},
+        {"name": "font_family",  "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "svg.doc",      "params": ["f64", "f64"],                          "return": "svgdoc"},
+    {"kind": "func", "name": "svg.rect",     "params": ["f64", "f64", "f64", "f64", "svgstyle"], "return": "svgelem"},
+    {"kind": "func", "name": "svg.circle",   "params": ["f64", "f64", "f64", "svgstyle"],        "return": "svgelem"},
+    {"kind": "func", "name": "svg.line",     "params": ["f64", "f64", "f64", "f64", "svgstyle"], "return": "svgelem"},
+    {"kind": "func", "name": "svg.path",     "params": ["str", "svgstyle"],                      "return": "svgelem"},
+    {"kind": "func", "name": "svg.text",     "params": ["f64", "f64", "str", "svgstyle"],        "return": "svgelem"},
+    {"kind": "func", "name": "svg.group",    "params": ["[svgelem]", "str"],                     "return": "svgelem"},
+    {"kind": "func", "name": "svg.polyline", "params": ["[[f64]]", "svgstyle"],                  "return": "svgelem"},
+    {"kind": "func", "name": "svg.polygon",  "params": ["[[f64]]", "svgstyle"],                  "return": "svgelem"},
+    {"kind": "func", "name": "svg.append",   "params": ["svgdoc", "svgelem"],                    "return": "svgdoc"},
+    {"kind": "func", "name": "svg.render",   "params": ["svgdoc"],                               "return": "str"},
+    {"kind": "func", "name": "svg.style",    "params": ["str", "str", "f64"],                    "return": "svgstyle"},
+    {"kind": "func", "name": "svg.arrow",    "params": ["f64", "f64", "f64", "f64", "svgstyle"], "return": "svgelem"}
+  ]
+}

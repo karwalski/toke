@@ -1,0 +1,144 @@
+m=svg_test;
+
+(* Smoke-tests for std.svg: programmatic SVG generation. *)
+
+f=doc_create():bool{
+  let d=svg.doc(800.0;600.0);
+  <d.width==800.0 && d.height==600.0
+};
+
+f=style_constructor():bool{
+  let s=svg.style("red";"black";2.0);
+  <s.fill=="red" && s.stroke=="black" && s.stroke_width==2.0
+};
+
+f=rect_smoke():bool{
+  let d=svg.doc(400.0;300.0);
+  let s=svg.style("gold";"black";1.0);
+  let r=svg.rect(10.0;20.0;100.0;50.0;s);
+  let d=svg.append(d;r);
+  <d.elements.len==1
+};
+
+f=circle_smoke():bool{
+  let d=svg.doc(400.0;300.0);
+  let s=svg.style("tomato";"darkred";2.0);
+  let c=svg.circle(200.0;150.0;60.0;s);
+  let d=svg.append(d;c);
+  <d.elements.len==1
+};
+
+f=line_smoke():bool{
+  let d=svg.doc(400.0;300.0);
+  let s=svg.style("none";"grey";1.0);
+  let l=svg.line(0.0;0.0;400.0;300.0;s);
+  let d=svg.append(d;l);
+  <d.elements.len==1
+};
+
+f=path_smoke():bool{
+  let d=svg.doc(400.0;300.0);
+  let s=svg.style("none";"black";1.5);
+  let p=svg.path("M 10 10 L 200 100 L 390 10 Z";s);
+  let d=svg.append(d;p);
+  <d.elements.len==1
+};
+
+f=text_smoke():bool{
+  let d=svg.doc(400.0;300.0);
+  let s=$svgstyle{fill:"#333";stroke:"none";stroke_width:0.0;opacity:1.0;font_size:18.0;font_family:"sans-serif"};
+  let t=svg.text(50.0;150.0;"Hello, SVG!";s);
+  let d=svg.append(d;t);
+  <d.elements.len==1
+};
+
+f=group_smoke():bool{
+  let s=svg.style("cornflowerblue";"none";0.0);
+  let r1=svg.rect(0.0;0.0;40.0;40.0;s);
+  let r2=svg.rect(50.0;0.0;40.0;40.0;s);
+  let g=svg.group(@(r1;r2);"translate(100,100)");
+  let d=svg.doc(400.0;300.0);
+  let d=svg.append(d;g);
+  <d.elements.len==1
+};
+
+f=group_no_transform():bool{
+  let s=svg.style("pink";"none";0.0);
+  let c=svg.circle(20.0;20.0;10.0;s);
+  let g=svg.group(@(c);"");
+  let d=svg.doc(200.0;200.0);
+  let d=svg.append(d;g);
+  <d.elements.len==1
+};
+
+f=polyline_smoke():bool{
+  let pts=@(@(0.0;0.0);@(100.0;50.0);@(200.0;20.0);@(300.0;80.0));
+  let s=svg.style("none";"steelblue";2.0);
+  let pl=svg.polyline(pts;s);
+  let d=svg.doc(400.0;200.0);
+  let d=svg.append(d;pl);
+  <d.elements.len==1
+};
+
+f=polygon_smoke():bool{
+  let pts=@(@(150.0;10.0);@(250.0;190.0);@(50.0;190.0));
+  let s=svg.style("limegreen";"darkgreen";1.5);
+  let tri=svg.polygon(pts;s);
+  let d=svg.doc(300.0;200.0);
+  let d=svg.append(d;tri);
+  <d.elements.len==1
+};
+
+f=arrow_smoke():bool{
+  let d=svg.doc(400.0;200.0);
+  let s=svg.style("none";"#555";2.0);
+  let a=svg.arrow(50.0;100.0;350.0;100.0;s);
+  let d=svg.append(d;a);
+  <d.elements.len==1
+};
+
+f=render_nonempty():bool{
+  let d=svg.doc(200.0;200.0);
+  let s=svg.style("blue";"black";1.0);
+  let d=svg.append(d;svg.rect(10.0;10.0;80.0;80.0;s));
+  let out=svg.render(d);
+  <out.len>0
+};
+
+f=render_contains_svg_tag():bool{
+  let d=svg.doc(100.0;100.0);
+  let s=svg.style("red";"none";0.0);
+  let d=svg.append(d;svg.circle(50.0;50.0;40.0;s));
+  let out=svg.render(d);
+  (* rendered string must open with an <svg ...> element *)
+  <str.contains(out;"<svg")
+};
+
+f=multi_element_doc():bool{
+  let d=svg.doc(600.0;400.0);
+  let box_s=svg.style("#e8f4f8";"#2c7bb6";2.0);
+  let arr_s=svg.style("none";"#555";1.5);
+  let d=svg.append(d;svg.rect(50.0;60.0;160.0;60.0;box_s));
+  let d=svg.append(d;svg.arrow(130.0;120.0;130.0;180.0;arr_s));
+  let d=svg.append(d;svg.rect(50.0;180.0;160.0;60.0;box_s));
+  <d.elements.len==3
+};
+
+f=main():i64{
+  (test.ok(doc_create()));
+  (test.ok(style_constructor()));
+  (test.ok(rect_smoke()));
+  (test.ok(circle_smoke()));
+  (test.ok(line_smoke()));
+  (test.ok(path_smoke()));
+  (test.ok(text_smoke()));
+  (test.ok(group_smoke()));
+  (test.ok(group_no_transform()));
+  (test.ok(polyline_smoke()));
+  (test.ok(polygon_smoke()));
+  (test.ok(arrow_smoke()));
+  (test.ok(render_nonempty()));
+  (test.ok(render_contains_svg_tag()));
+  (test.ok(multi_element_doc()));
+  <0
+};
