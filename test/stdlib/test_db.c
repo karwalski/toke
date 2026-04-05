@@ -64,6 +64,104 @@ int main(void)
 
     db_close();
 
+    /* ── Story 29.2.1: prepared statements and transactions ─────────────────── */
+
+    ASSERT(db_open(":memory:") == 0, "29.2.1 db_open(:memory:) for stmt/tx tests");
+
+    /* Set up a fresh table for prepared-statement tests */
+    U64Result cr2 = db_exec(
+        "CREATE TABLE u(id INTEGER, val TEXT)", no_params);
+    ASSERT(!cr2.is_err, "29.2.1 CREATE TABLE u ok");
+
+    db_exec("INSERT INTO u VALUES(1,'alpha')", no_params);
+    db_exec("INSERT INTO u VALUES(2,'beta')",  no_params);
+    db_exec("INSERT INTO u VALUES(3,'gamma')", no_params);
+
+    /* db_prepare ─────────────────────────────────────────────────────────── */
+    StmtResult sr2 = db_prepare(0, "SELECT id,val FROM u ORDER BY id");
+    ASSERT(!sr2.is_err,  "29.2.1 db_prepare ok");
+    ASSERT(sr2.ok != NULL, "29.2.1 db_prepare returns non-NULL stmt");
+
+    /* db_bind (no params for this query) ─────────────────────────────────── */
+    BoolResult br = db_bind(sr2.ok, no_params);
+    ASSERT(!br.is_err, "29.2.1 db_bind no_params ok");
+
+    /* db_step row 1 ──────────────────────────────────────────────────────── */
+    RowResult step1 = db_step(sr2.ok);
+    ASSERT(!step1.is_err, "29.2.1 db_step row 1 ok");
+    StrResult v1 = row_str(step1.ok, "val");
+    ASSERT(!v1.is_err, "29.2.1 db_step row 1 val ok");
+    ASSERT_STREQ(v1.ok, "alpha", "29.2.1 db_step row 1 val==alpha");
+
+    /* db_step row 2 ──────────────────────────────────────────────────────── */
+    RowResult step2 = db_step(sr2.ok);
+    ASSERT(!step2.is_err, "29.2.1 db_step row 2 ok");
+    StrResult v2 = row_str(step2.ok, "val");
+    ASSERT_STREQ(v2.ok, "beta", "29.2.1 db_step row 2 val==beta");
+
+    /* db_step row 3 ──────────────────────────────────────────────────────── */
+    RowResult step3 = db_step(sr2.ok);
+    ASSERT(!step3.is_err, "29.2.1 db_step row 3 ok");
+    StrResult v3 = row_str(step3.ok, "val");
+    ASSERT_STREQ(v3.ok, "gamma", "29.2.1 db_step row 3 val==gamma");
+
+    /* db_step done sentinel ──────────────────────────────────────────────── */
+    RowResult done = db_step(sr2.ok);
+    ASSERT(done.is_err, "29.2.1 db_step done is_err==1");
+    ASSERT_STREQ(done.err.msg, "done", "29.2.1 db_step done msg==done");
+
+    /* db_finalize ────────────────────────────────────────────────────────── */
+    db_finalize(sr2.ok);
+    /* If we reach here without a crash the finalize succeeded */
+    ASSERT(1, "29.2.1 db_finalize completes without crash");
+
+    /* db_prepare with bound params ───────────────────────────────────────── */
+    StmtResult sr3 = db_prepare(0, "SELECT id,val FROM u WHERE id=?");
+    ASSERT(!sr3.is_err, "29.2.1 db_prepare with ? ok");
+    const char *p1[1] = {"2"};
+    StrArray one_param = {p1, 1};
+    BoolResult br2 = db_bind(sr3.ok, one_param);
+    ASSERT(!br2.is_err, "29.2.1 db_bind id=2 ok");
+    RowResult stepP = db_step(sr3.ok);
+    ASSERT(!stepP.is_err, "29.2.1 db_step bound param row ok");
+    StrResult vP = row_str(stepP.ok, "val");
+    ASSERT_STREQ(vP.ok, "beta", "29.2.1 db_step bound param val==beta");
+    RowResult doneP = db_step(sr3.ok);
+    ASSERT(doneP.is_err && doneP.err.kind == DB_ERR_NOT_FOUND,
+           "29.2.1 db_step bound param done sentinel");
+    db_finalize(sr3.ok);
+
+    /* ── Transactions: commit ─────────────────────────────────────────────── */
+    BoolResult beg1 = db_begin(0);
+    ASSERT(!beg1.is_err, "29.2.1 db_begin ok");
+
+    db_exec("INSERT INTO u VALUES(4,'delta')", no_params);
+
+    BoolResult com1 = db_commit(0);
+    ASSERT(!com1.is_err, "29.2.1 db_commit ok");
+
+    /* Row should now be visible */
+    RowResult committed = db_one("SELECT val FROM u WHERE id=4", no_params);
+    ASSERT(!committed.is_err, "29.2.1 committed row visible after COMMIT");
+    StrResult cv = row_str(committed.ok, "val");
+    ASSERT_STREQ(cv.ok, "delta", "29.2.1 committed val==delta");
+
+    /* ── Transactions: rollback ───────────────────────────────────────────── */
+    BoolResult beg2 = db_begin(0);
+    ASSERT(!beg2.is_err, "29.2.1 db_begin for rollback ok");
+
+    db_exec("INSERT INTO u VALUES(5,'epsilon')", no_params);
+
+    BoolResult rb = db_rollback(0);
+    ASSERT(!rb.is_err, "29.2.1 db_rollback ok");
+
+    /* Row should NOT be visible */
+    RowResult rolled = db_one("SELECT val FROM u WHERE id=5", no_params);
+    ASSERT(rolled.is_err && rolled.err.kind == DB_ERR_NOT_FOUND,
+           "29.2.1 rolled-back row NOT visible after ROLLBACK");
+
+    db_close();
+
     if (failures == 0) { printf("All tests passed.\n"); return 0; }
     fprintf(stderr, "%d test(s) failed.\n", failures);
     return 1;

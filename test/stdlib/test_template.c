@@ -240,6 +240,88 @@ int main(void)
         ASSERT(got == NULL, "tmpl_renderfile: missing file returns NULL");
     }
 
+    /* ---- 21. {{#if}} with non-empty key renders block ---- */
+    {
+        TkTmpl *t = tmpl_compile("{{#if name}}Hello {{name}}!{{/if}}");
+        TkTmplVar vars[] = {{"name", "World"}};
+        const char *got = tmpl_render(t, vars, 1);
+        ASSERT_STREQ(got, "Hello World!",
+                     "if: non-empty key renders block with slot");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
+    /* ---- 22. {{#if}} with empty value suppresses block ---- */
+    {
+        TkTmpl *t = tmpl_compile("{{#if name}}Hello{{/if}}");
+        TkTmplVar vars[] = {{"name", ""}};
+        const char *got = tmpl_render(t, vars, 1);
+        ASSERT_STREQ(got, "", "if: empty value suppresses block");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
+    /* ---- 23. {{#unless}} with missing key renders block ---- */
+    {
+        TkTmpl *t = tmpl_compile("{{#unless missing}}Default{{/unless}}");
+        const char *got = tmpl_render(t, NULL, 0);
+        ASSERT_STREQ(got, "Default",
+                     "unless: missing key renders block");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
+    /* ---- 24. {{#unless}} with non-empty key suppresses block ---- */
+    {
+        TkTmpl *t = tmpl_compile("{{#unless name}}No name{{/unless}}");
+        TkTmplVar vars[] = {{"name", "Alice"}};
+        const char *got = tmpl_render(t, vars, 1);
+        ASSERT_STREQ(got, "", "unless: non-empty value suppresses block");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
+    /* ---- 25. {{#each}} basic iteration with {{.}} ---- */
+    {
+        TkTmpl *t = tmpl_compile("{{#each items}}{{.}} {{/each}}");
+        TkTmplVar vars[] = {{"items", "[\"a\",\"b\",\"c\"]"}};
+        const char *got = tmpl_render(t, vars, 1);
+        ASSERT_STREQ(got, "a b c ", "each: basic iteration with {{.}}");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
+    /* ---- 26. {{#each}} with {{@index}} ---- */
+    {
+        TkTmpl *t = tmpl_compile("{{#each nums}}{{@index}}:{{.}} {{/each}}");
+        TkTmplVar vars[] = {{"nums", "[\"x\",\"y\"]"}};
+        const char *got = tmpl_render(t, vars, 1);
+        ASSERT_STREQ(got, "0:x 1:y ", "each: {{@index}} gives 0-based index");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
+    /* ---- 27. {{#each}} with empty array renders nothing ---- */
+    {
+        TkTmpl *t = tmpl_compile("{{#each empty}}item{{/each}}");
+        TkTmplVar vars[] = {{"empty", "[]"}};
+        const char *got = tmpl_render(t, vars, 1);
+        ASSERT_STREQ(got, "", "each: empty array renders nothing");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
+    /* ---- 28. {{#each}} HTML-escapes {{.}} in renderhtml ---- */
+    {
+        TkTmpl *t = tmpl_compile("{{#each items}}{{.}}{{/each}}");
+        TkTmplVar vars[] = {{"items", "[\"<b>\"]"}};
+        const char *got = tmpl_renderhtml(t, vars, 1);
+        ASSERT_STREQ(got, "&lt;b&gt;",
+                     "each: renderhtml escapes {{.}}");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
     /* ---- report ---- */
     if (failures == 0) {
         printf("All tests passed.\n");

@@ -22,6 +22,7 @@
 
 typedef struct { const char *raw; } Json;
 typedef struct { Json *data; uint64_t len; } JsonArray;
+typedef struct { const char **data; uint64_t len; } StrArray;
 
 typedef enum {
     JSON_ERR_PARSE   = 0,
@@ -38,6 +39,7 @@ typedef struct { int64_t   ok; int is_err; JsonErr err; } I64JsonResult;
 typedef struct { double    ok; int is_err; JsonErr err; } F64JsonResult;
 typedef struct { int       ok; int is_err; JsonErr err; } BoolJsonResult;
 typedef struct { JsonArray ok; int is_err; JsonErr err; } JsonArrayResult;
+typedef struct { StrArray  ok; int is_err; JsonErr err; } StrArrayJsonResult;
 
 const char    *json_enc(const char *v);
 JsonResult     json_dec(const char *s);
@@ -47,6 +49,33 @@ I64JsonResult  json_i64(Json j, const char *key);
 F64JsonResult  json_f64(Json j, const char *key);
 BoolJsonResult json_bool(Json j, const char *key);
 JsonArrayResult json_arr(Json j, const char *key);
+
+/* ------------------------------------------------------------------ */
+/* Object inspection and manipulation — Story 29.1.1                  */
+/* ------------------------------------------------------------------ */
+
+/* json_keys — return heap-allocated StrArray of top-level key names.
+ * Caller owns the StrArray and each string inside it.
+ * Returns is_err=1 with JSON_ERR_TYPE if j is not an object. */
+StrArrayJsonResult json_keys(Json j);
+
+/* json_has — return 1 if key exists in top-level object, 0 otherwise. */
+int json_has(Json j, const char *key);
+
+/* json_len — number of elements in an array, or number of keys in an object.
+ * Returns is_err=1 with JSON_ERR_TYPE for any other type. */
+U64JsonResult json_len(Json j);
+
+/* json_type — return a string literal describing j's type:
+ * "null", "object", "array", "string", "number", or "bool". */
+StrJsonResult json_type(Json j);
+
+/* json_pretty — return a malloc'd string with 2-space-indented JSON.
+ * Caller owns the returned string. */
+StrJsonResult json_pretty(Json j);
+
+/* json_is_null — return 1 if j[key] is null or the key is missing, 0 otherwise. */
+int json_is_null(Json j, const char *key);
 
 /* ------------------------------------------------------------------ */
 /* Streaming API — Story 35.1.3                                        */

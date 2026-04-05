@@ -48,4 +48,18 @@ const char     *str_lower(const char *s);
 ByteArray       str_bytes(const char *s);
 StrEncResult    str_from_bytes(ByteArray b);
 
+/* Story 28.1.1 — search and transform */
+int64_t         str_index(const char *s, const char *sub);
+int64_t         str_rindex(const char *s, const char *sub);
+const char     *str_replace(const char *s, const char *old, const char *new_val);
+const char     *str_replace_first(const char *s, const char *old, const char *new_val);
+const char     *str_join(const char *sep, StrArray parts);
+const char     *str_repeat(const char *s, uint64_t n);
+
+/* Story 28.1.2 — prefix/suffix and line operations */
+int             str_starts_with(const char *s, const char *prefix);
+int             str_ends_with(const char *s, const char *suffix);
+StrArray        str_split_lines(const char *s);
+uint64_t        str_count(const char *s, const char *sub);
+
 #endif /* TK_STDLIB_STR_H */

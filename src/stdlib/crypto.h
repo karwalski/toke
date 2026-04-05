@@ -51,6 +51,32 @@ ByteArray crypto_randombytes(uint64_t n);
  * Caller owns the returned pointer. */
 const char *crypto_to_hex(ByteArray data);
 
+/* crypto.from_hex(hex:Str):[Byte]!CryptoErr
+ * Decode a lowercase or uppercase hex string into bytes.
+ * On success, returns NULL and sets *out (heap-allocated .data, caller owns).
+ * On error (odd length, invalid chars), returns a static error message string
+ * and sets out->data = NULL, out->len = 0.
+ * Story: 29.6.1 */
+const char *crypto_from_hex(const char *hex, ByteArray *out);
+
+/* Result type for bcrypt (mirrors StrSliceResult pattern).
+ * Story: 29.6.1 */
+typedef struct { const char *ok; int is_err; const char *err_msg; } CryptoStrResult;
+
+/* crypto.bcrypt_hash(password:Str;cost:i64):Str!CryptoErr
+ * Hash a password with bcrypt.  cost must be 4-31 (log2 of iterations).
+ * Returns CryptoStrResult.ok pointing to a heap-allocated 60-char string
+ * "$2b$NN$<22-char-salt><31-char-hash>" on success (is_err=0).
+ * Caller owns the returned ok pointer.
+ * Story: 29.6.1 */
+CryptoStrResult crypto_bcrypt_hash(const char *password, int cost);
+
+/* crypto.bcrypt_verify(password:Str;hash:Str):bool
+ * Verify a plaintext password against a bcrypt hash string.
+ * Returns 1 on match, 0 on mismatch or malformed hash.
+ * Story: 29.6.1 */
+int crypto_bcrypt_verify(const char *password, const char *hash);
+
 /* .tki compatibility aliases (crypto.hmacsha256 → crypto_hmacsha256) */
 #define crypto_hmacsha256 crypto_hmac_sha256
 #define crypto_hmacsha512 crypto_hmac_sha512

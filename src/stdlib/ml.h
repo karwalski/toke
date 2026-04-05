@@ -115,4 +115,59 @@ double      ml_knnpredict(F64Array *train_cols, uint64_t nfeatures,
                            double *train_labels, uint64_t ntrain,
                            double *query_point, uint64_t k);
 
+/* -------------------------------------------------------------------------
+ * Train/test split and evaluation metrics (Story 31.3.1)
+ * ------------------------------------------------------------------------- */
+
+/* Train/test split result */
+typedef struct {
+    uint64_t *train_idx;
+    uint64_t  ntrain;
+    uint64_t *test_idx;
+    uint64_t  ntest;
+} SplitResult;
+
+/* Confusion matrix (2-class: label 0 = negative, label 1 = positive) */
+typedef struct {
+    uint64_t tp; /* true positive  */
+    uint64_t tn; /* true negative  */
+    uint64_t fp; /* false positive */
+    uint64_t fn; /* false negative */
+} ConfusionMatrix;
+
+/* Precision/recall/F1 */
+typedef struct { double precision; double recall; double f1; } PRF1Result;
+
+/* ml_train_test_split: shuffle n indices and split into train/test sets.
+ *   n         – total number of samples
+ *   test_size – fraction [0,1] of samples for the test set (e.g. 0.2)
+ *   seed      – LCG random seed
+ * Returns heap-allocated train_idx and test_idx; caller must call
+ * ml_split_free() when done. */
+SplitResult ml_train_test_split(uint64_t n, double test_size, uint64_t seed);
+
+/* ml_confusion_matrix: compute binary confusion matrix over n samples. */
+ConfusionMatrix ml_confusion_matrix(const uint64_t *y_true,
+                                    const uint64_t *y_pred, uint64_t n);
+
+/* ml_precision_recall_f1: compute precision, recall and F1 score.
+ * Returns 0.0 for each metric when the denominator is zero. */
+PRF1Result ml_precision_recall_f1(const uint64_t *y_true,
+                                  const uint64_t *y_pred, uint64_t n);
+
+/* ml_accuracy: fraction of correctly predicted labels. */
+double ml_accuracy(const uint64_t *y_true, const uint64_t *y_pred,
+                   uint64_t n);
+
+/* ml_standardize: z-score normalisation.  Returns heap-allocated array of
+ * length n.  If stddev==0, all values are 0.0. */
+double *ml_standardize(const double *xs, uint64_t n);
+
+/* ml_normalize: min-max normalisation to [0,1].  Returns heap-allocated
+ * array of length n.  If max==min, all values are 0.0. */
+double *ml_normalize(const double *xs, uint64_t n);
+
+/* ml_split_free: free the arrays inside a SplitResult. */
+void ml_split_free(SplitResult *s);
+
 #endif /* TK_STDLIB_ML_H */

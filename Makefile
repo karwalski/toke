@@ -47,7 +47,8 @@ export SOURCE_DATE_EPOCH ?= 0
 	test-stdlib-security-integration test-stdlib-network-integration \
 	test-stdlib-viz-integration test-stdlib-data-pipeline test-stdlib-llm-live \
 	test-stdlib-http test-stdlib-http-cookies test-stdlib-http-multipart \
-	test-stdlib-http-form test-stdlib-http-tls
+	test-stdlib-http-form test-stdlib-http-tls \
+	test-stdlib-file
 
 all: $(BIN)
 
@@ -109,6 +110,11 @@ test-stdlib-db:
 	$(CC) $(CFLAGS) -o test/stdlib/test_db \
 	    test/stdlib/test_db.c src/stdlib/db.c -lsqlite3
 	./test/stdlib/test_db
+
+test-stdlib-file:
+	$(CC) $(CFLAGS) -o test/stdlib/test_file \
+	    test/stdlib/test_file.c src/stdlib/file.c
+	./test/stdlib/test_file
 
 test-stdlib-http:
 	$(CC) $(CFLAGS) -o test/stdlib/test_http \
@@ -193,6 +199,11 @@ test-stdlib-toon:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_toon \
 	    test/stdlib/test_toon.c src/stdlib/toon.c
 	./test/stdlib/test_toon
+
+test-stdlib-json:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_json \
+	    test/stdlib/test_json.c src/stdlib/json.c
+	./test/stdlib/test_json
 
 test-stdlib-yaml:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_yaml \

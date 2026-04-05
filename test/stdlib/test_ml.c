@@ -21,6 +21,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <math.h>
 #include "../../src/stdlib/ml.h"
 
@@ -494,6 +495,152 @@ static void test_linreg_empty(void)
 }
 
 /* =========================================================================
+ * 6. Train/test split (Story 31.3.1)
+ * ========================================================================= */
+
+static void test_train_test_split(void)
+{
+    /* Split 10 samples with 30% test -> ntest=3, ntrain=7. */
+    SplitResult s = ml_train_test_split(10, 0.3, 42);
+
+    ASSERT(s.ntrain == 7, "train_test_split(10, 0.3): ntrain==7");
+    ASSERT(s.ntest  == 3, "train_test_split(10, 0.3): ntest==3");
+
+    /* All indices present exactly once across train + test. */
+    uint8_t seen[10] = {0};
+    for (uint64_t i = 0; i < s.ntrain; i++) {
+        ASSERT(s.train_idx[i] < 10, "train_test_split: train index in range");
+        seen[s.train_idx[i]]++;
+    }
+    for (uint64_t i = 0; i < s.ntest; i++) {
+        ASSERT(s.test_idx[i] < 10, "train_test_split: test index in range");
+        seen[s.test_idx[i]]++;
+    }
+    int all_unique = 1;
+    for (int i = 0; i < 10; i++) { if (seen[i] != 1) { all_unique = 0; break; } }
+    ASSERT(all_unique, "train_test_split: all 10 indices appear exactly once");
+
+    ml_split_free(&s);
+    ASSERT(s.train_idx == NULL, "ml_split_free: train_idx set to NULL");
+    ASSERT(s.test_idx  == NULL, "ml_split_free: test_idx set to NULL");
+}
+
+/* =========================================================================
+ * 7. Confusion matrix (Story 31.3.1)
+ * ========================================================================= */
+
+static void test_confusion_matrix(void)
+{
+    /* y_true=[1,1,0,0], y_pred=[1,0,1,0] -> tp=1, fn=1, fp=1, tn=1 */
+    uint64_t y_true[] = {1, 1, 0, 0};
+    uint64_t y_pred[] = {1, 0, 1, 0};
+    ConfusionMatrix cm = ml_confusion_matrix(y_true, y_pred, 4);
+    ASSERT(cm.tp == 1, "confusion_matrix: tp==1");
+    ASSERT(cm.tn == 1, "confusion_matrix: tn==1");
+    ASSERT(cm.fp == 1, "confusion_matrix: fp==1");
+    ASSERT(cm.fn == 1, "confusion_matrix: fn==1");
+}
+
+/* =========================================================================
+ * 8. Accuracy (Story 31.3.1)
+ * ========================================================================= */
+
+static void test_accuracy(void)
+{
+    /* y_true=[1,1,0,0], y_pred=[1,0,0,0] -> 3/4 correct = 0.75 */
+    uint64_t y_true[] = {1, 1, 0, 0};
+    uint64_t y_pred[] = {1, 0, 0, 0};
+    double acc = ml_accuracy(y_true, y_pred, 4);
+    ASSERT_NEAR(acc, 0.75, 1e-10, "accuracy([1,1,0,0],[1,0,0,0])==0.75");
+}
+
+/* =========================================================================
+ * 9. Precision / recall / F1 (Story 31.3.1)
+ * ========================================================================= */
+
+static void test_prf1_perfect(void)
+{
+    /* Perfect predictor: precision=1, recall=1, f1=1. */
+    uint64_t y_true[] = {1, 1, 0, 0};
+    uint64_t y_pred[] = {1, 1, 0, 0};
+    PRF1Result r = ml_precision_recall_f1(y_true, y_pred, 4);
+    ASSERT_NEAR(r.precision, 1.0, 1e-10, "prf1 perfect: precision==1.0");
+    ASSERT_NEAR(r.recall,    1.0, 1e-10, "prf1 perfect: recall==1.0");
+    ASSERT_NEAR(r.f1,        1.0, 1e-10, "prf1 perfect: f1==1.0");
+}
+
+static void test_prf1_zero_division(void)
+{
+    /* All true negatives: TP=0, FP=0, FN=0 -> precision and recall are 0. */
+    uint64_t y_true[] = {0, 0, 0};
+    uint64_t y_pred[] = {0, 0, 0};
+    PRF1Result r = ml_precision_recall_f1(y_true, y_pred, 3);
+    ASSERT_NEAR(r.precision, 0.0, 1e-10, "prf1 zero-div: precision==0.0");
+    ASSERT_NEAR(r.recall,    0.0, 1e-10, "prf1 zero-div: recall==0.0");
+    ASSERT_NEAR(r.f1,        0.0, 1e-10, "prf1 zero-div: f1==0.0");
+}
+
+/* =========================================================================
+ * 10. Standardize (Story 31.3.1)
+ * ========================================================================= */
+
+static void test_standardize(void)
+{
+    double xs[] = {1.0, 2.0, 3.0, 4.0, 5.0};
+    double *z = ml_standardize(xs, 5);
+    ASSERT(z != NULL, "standardize: returns non-NULL");
+
+    /* Mean of z-scores must be ~0, stddev ~1. */
+    double mean = 0.0;
+    for (int i = 0; i < 5; i++) mean += z[i];
+    mean /= 5.0;
+    ASSERT_NEAR(mean, 0.0, 1e-10, "standardize: mean of z-scores ~0");
+
+    double var = 0.0;
+    for (int i = 0; i < 5; i++) { double d = z[i] - mean; var += d * d; }
+    var /= 5.0;
+    ASSERT_NEAR(var, 1.0, 1e-10, "standardize: variance of z-scores ~1");
+
+    free(z);
+}
+
+static void test_standardize_constant(void)
+{
+    /* Constant input: stddev=0 -> all zeros. */
+    double xs[] = {7.0, 7.0, 7.0};
+    double *z = ml_standardize(xs, 3);
+    ASSERT(z != NULL, "standardize constant: returns non-NULL");
+    ASSERT_NEAR(z[0], 0.0, 1e-10, "standardize constant: output is 0.0");
+    ASSERT_NEAR(z[1], 0.0, 1e-10, "standardize constant: output is 0.0 (idx 1)");
+    free(z);
+}
+
+/* =========================================================================
+ * 11. Normalize (Story 31.3.1)
+ * ========================================================================= */
+
+static void test_normalize(void)
+{
+    double xs[] = {0.0, 5.0, 10.0};
+    double *n = ml_normalize(xs, 3);
+    ASSERT(n != NULL, "normalize: returns non-NULL");
+    ASSERT_NEAR(n[0], 0.0, 1e-10, "normalize [0,5,10]: n[0]==0.0");
+    ASSERT_NEAR(n[1], 0.5, 1e-10, "normalize [0,5,10]: n[1]==0.5");
+    ASSERT_NEAR(n[2], 1.0, 1e-10, "normalize [0,5,10]: n[2]==1.0");
+    free(n);
+}
+
+static void test_normalize_constant(void)
+{
+    /* Constant input: max==min -> all zeros. */
+    double xs[] = {3.0, 3.0, 3.0};
+    double *n = ml_normalize(xs, 3);
+    ASSERT(n != NULL, "normalize constant: returns non-NULL");
+    ASSERT_NEAR(n[0], 0.0, 1e-10, "normalize constant: output is 0.0");
+    free(n);
+}
+
+/* =========================================================================
  * main
  * ========================================================================= */
 
@@ -521,6 +668,17 @@ int main(void)
     test_knn_iris_like_3class();
     test_knn_empty_training_set();
     test_knn_k_greater_than_ntrain();
+
+    /* Story 31.3.1: train/test split and evaluation metrics */
+    test_train_test_split();
+    test_confusion_matrix();
+    test_accuracy();
+    test_prf1_perfect();
+    test_prf1_zero_division();
+    test_standardize();
+    test_standardize_constant();
+    test_normalize();
+    test_normalize_constant();
 
     if (failures == 0) {
         printf("All ml tests passed.\n");

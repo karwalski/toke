@@ -291,6 +291,117 @@ int main(void) {
         free(w.buf);
     }
 
+    /* ================================================================ */
+    /* Story 29.1.1 — object inspection and manipulation               */
+    /* ================================================================ */
+
+    /* --- json_keys --- */
+    {
+        Json jk; jk.raw = "{\"a\":1,\"b\":2,\"c\":3}";
+        StrArrayJsonResult kr = json_keys(jk);
+        CHECK(!kr.is_err && kr.ok.len == 3, "json_keys: len=3");
+        if (!kr.is_err && kr.ok.len == 3) {
+            CHECK(strcmp(kr.ok.data[0], "a") == 0, "json_keys: key[0]=a");
+            CHECK(strcmp(kr.ok.data[1], "b") == 0, "json_keys: key[1]=b");
+            CHECK(strcmp(kr.ok.data[2], "c") == 0, "json_keys: key[2]=c");
+            for (uint64_t ki = 0; ki < kr.ok.len; ki++) free((void *)kr.ok.data[ki]);
+            free(kr.ok.data);
+        }
+    }
+
+    /* --- json_keys on non-object --- */
+    {
+        Json jk2; jk2.raw = "[1,2,3]";
+        StrArrayJsonResult kr2 = json_keys(jk2);
+        CHECK(kr2.is_err && kr2.err.kind == JSON_ERR_TYPE,
+              "json_keys: non-object returns err");
+    }
+
+    /* --- json_has --- */
+    {
+        Json jh; jh.raw = "{\"a\":1,\"b\":2,\"c\":3}";
+        CHECK(json_has(jh, "b") == 1, "json_has: key b exists");
+        CHECK(json_has(jh, "z") == 0, "json_has: key z missing");
+    }
+
+    /* --- json_len array --- */
+    {
+        Json jla; jla.raw = "[1,2,3,4,5]";
+        U64JsonResult lr = json_len(jla);
+        CHECK(!lr.is_err && lr.ok == 5, "json_len: array len=5");
+    }
+
+    /* --- json_len object --- */
+    {
+        Json jlo; jlo.raw = "{\"a\":1,\"b\":2}";
+        U64JsonResult lr2 = json_len(jlo);
+        CHECK(!lr2.is_err && lr2.ok == 2, "json_len: object len=2");
+    }
+
+    /* --- json_len on non-array/non-object --- */
+    {
+        Json jlx; jlx.raw = "\"hello\"";
+        U64JsonResult lr3 = json_len(jlx);
+        CHECK(lr3.is_err && lr3.err.kind == JSON_ERR_TYPE,
+              "json_len: non-array/object returns err");
+    }
+
+    /* --- json_type --- */
+    {
+        Json jt1; jt1.raw = "{\"a\":1}";
+        StrJsonResult tr1 = json_type(jt1);
+        CHECK(!tr1.is_err && strcmp(tr1.ok, "object") == 0, "json_type: object");
+
+        Json jt2; jt2.raw = "[1,2]";
+        StrJsonResult tr2 = json_type(jt2);
+        CHECK(!tr2.is_err && strcmp(tr2.ok, "array") == 0, "json_type: array");
+
+        Json jt3; jt3.raw = "\"hello\"";
+        StrJsonResult tr3 = json_type(jt3);
+        CHECK(!tr3.is_err && strcmp(tr3.ok, "string") == 0, "json_type: string");
+
+        Json jt4; jt4.raw = "42";
+        StrJsonResult tr4 = json_type(jt4);
+        CHECK(!tr4.is_err && strcmp(tr4.ok, "number") == 0, "json_type: number");
+
+        Json jt5; jt5.raw = "true";
+        StrJsonResult tr5 = json_type(jt5);
+        CHECK(!tr5.is_err && strcmp(tr5.ok, "bool") == 0, "json_type: bool (true)");
+
+        Json jt6; jt6.raw = "false";
+        StrJsonResult tr6 = json_type(jt6);
+        CHECK(!tr6.is_err && strcmp(tr6.ok, "bool") == 0, "json_type: bool (false)");
+
+        Json jt7; jt7.raw = "null";
+        StrJsonResult tr7 = json_type(jt7);
+        CHECK(!tr7.is_err && strcmp(tr7.ok, "null") == 0, "json_type: null");
+    }
+
+    /* --- json_pretty --- */
+    {
+        Json jp; jp.raw = "{\"a\":1,\"b\":[2,3]}";
+        StrJsonResult pr = json_pretty(jp);
+        CHECK(!pr.is_err, "json_pretty: no error");
+        if (!pr.is_err) {
+            /* Must contain newlines and spaces */
+            CHECK(strchr(pr.ok, '\n') != NULL, "json_pretty: has newlines");
+            CHECK(strstr(pr.ok, "  ") != NULL, "json_pretty: has indentation");
+            free((void *)pr.ok);
+        }
+    }
+
+    /* --- json_is_null --- */
+    {
+        Json jn1; jn1.raw = "{\"x\":null}";
+        CHECK(json_is_null(jn1, "x") == 1, "json_is_null: x=null -> 1");
+
+        Json jn2; jn2.raw = "{\"x\":1}";
+        CHECK(json_is_null(jn2, "x") == 0, "json_is_null: x=1 -> 0");
+
+        Json jn3; jn3.raw = "{\"x\":1}";
+        CHECK(json_is_null(jn3, "missing") == 1, "json_is_null: missing key -> 1");
+    }
+
     /* --- summary --- */
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

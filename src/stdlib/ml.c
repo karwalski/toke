@@ -542,3 +542,167 @@ double ml_knnpredict(F64Array *train_cols, uint64_t nfeatures,
     free(kd); free(kl);
     return best_lbl;
 }
+
+/* =========================================================================
+ * Train/test split and evaluation metrics (Story 31.3.1)
+ * ========================================================================= */
+
+/*
+ * ml_train_test_split — shuffle n indices with Fisher-Yates using an LCG
+ * PRNG, then assign the first ceil(n * test_size) shuffled indices to the
+ * test set and the remainder to the train set.
+ */
+SplitResult ml_train_test_split(uint64_t n, double test_size, uint64_t seed)
+{
+    SplitResult s;
+    s.train_idx = NULL;
+    s.ntrain    = 0;
+    s.test_idx  = NULL;
+    s.ntest     = 0;
+
+    if (n == 0) return s;
+
+    /* Build index array [0..n-1]. */
+    uint64_t *idx = (uint64_t *)malloc(n * sizeof(uint64_t));
+    if (!idx) return s;
+    for (uint64_t i = 0; i < n; i++) idx[i] = i;
+
+    /* Fisher-Yates shuffle with LCG. */
+    uint64_t rng = seed;
+    for (uint64_t i = n - 1; i > 0; i--) {
+        rng = rng * 6364136223846793005ULL + 1442695040888963407ULL;
+        uint64_t j = rng % (i + 1);
+        uint64_t tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
+    }
+
+    /* Determine split sizes. */
+    uint64_t ntest = (uint64_t)(n * test_size + 0.9999999999); /* ceil */
+    if (ntest > n) ntest = n;
+    uint64_t ntrain = n - ntest;
+
+    s.test_idx  = (uint64_t *)malloc(ntest  * sizeof(uint64_t));
+    s.train_idx = (uint64_t *)malloc(ntrain * sizeof(uint64_t));
+    if (!s.test_idx || !s.train_idx) {
+        free(idx); free(s.test_idx); free(s.train_idx);
+        s.test_idx = NULL; s.train_idx = NULL;
+        return s;
+    }
+
+    /* First ntest shuffled indices → test set, the rest → train set. */
+    for (uint64_t i = 0; i < ntest;  i++) s.test_idx[i]  = idx[i];
+    for (uint64_t i = 0; i < ntrain; i++) s.train_idx[i] = idx[ntest + i];
+
+    s.ntrain = ntrain;
+    s.ntest  = ntest;
+    free(idx);
+    return s;
+}
+
+/* ml_confusion_matrix — count TP, TN, FP, FN for binary labels (0/1). */
+ConfusionMatrix ml_confusion_matrix(const uint64_t *y_true,
+                                    const uint64_t *y_pred, uint64_t n)
+{
+    ConfusionMatrix cm = {0, 0, 0, 0};
+    for (uint64_t i = 0; i < n; i++) {
+        uint64_t t = y_true[i];
+        uint64_t p = y_pred[i];
+        if      (t == 1 && p == 1) cm.tp++;
+        else if (t == 0 && p == 0) cm.tn++;
+        else if (t == 0 && p == 1) cm.fp++;
+        else if (t == 1 && p == 0) cm.fn++;
+    }
+    return cm;
+}
+
+/* ml_precision_recall_f1 — derive precision, recall and F1 from counts. */
+PRF1Result ml_precision_recall_f1(const uint64_t *y_true,
+                                  const uint64_t *y_pred, uint64_t n)
+{
+    ConfusionMatrix cm = ml_confusion_matrix(y_true, y_pred, n);
+    PRF1Result r = {0.0, 0.0, 0.0};
+
+    double tp = (double)cm.tp;
+    double fp = (double)cm.fp;
+    double fn = (double)cm.fn;
+
+    double prec_denom = tp + fp;
+    double rec_denom  = tp + fn;
+
+    r.precision = (prec_denom > 0.0) ? tp / prec_denom : 0.0;
+    r.recall    = (rec_denom  > 0.0) ? tp / rec_denom  : 0.0;
+
+    double f1_denom = r.precision + r.recall;
+    r.f1 = (f1_denom > 0.0) ? 2.0 * r.precision * r.recall / f1_denom : 0.0;
+    return r;
+}
+
+/* ml_accuracy — fraction of matching labels. */
+double ml_accuracy(const uint64_t *y_true, const uint64_t *y_pred,
+                   uint64_t n)
+{
+    if (n == 0) return 0.0;
+    uint64_t correct = 0;
+    for (uint64_t i = 0; i < n; i++) {
+        if (y_true[i] == y_pred[i]) correct++;
+    }
+    return (double)correct / (double)n;
+}
+
+/* ml_standardize — z-score: z = (x - mean) / stddev.
+ * Returns NULL on allocation failure.  If stddev == 0, all zeros. */
+double *ml_standardize(const double *xs, uint64_t n)
+{
+    if (n == 0) return NULL;
+    double *out = (double *)malloc(n * sizeof(double));
+    if (!out) return NULL;
+
+    double mean = 0.0;
+    for (uint64_t i = 0; i < n; i++) mean += xs[i];
+    mean /= (double)n;
+
+    double var = 0.0;
+    for (uint64_t i = 0; i < n; i++) {
+        double d = xs[i] - mean;
+        var += d * d;
+    }
+    var /= (double)n;
+    double sd = sqrt(var);
+
+    if (sd < 1e-15) {
+        for (uint64_t i = 0; i < n; i++) out[i] = 0.0;
+    } else {
+        for (uint64_t i = 0; i < n; i++) out[i] = (xs[i] - mean) / sd;
+    }
+    return out;
+}
+
+/* ml_normalize — min-max to [0,1].
+ * Returns NULL on allocation failure.  If max == min, all zeros. */
+double *ml_normalize(const double *xs, uint64_t n)
+{
+    if (n == 0) return NULL;
+    double *out = (double *)malloc(n * sizeof(double));
+    if (!out) return NULL;
+
+    double mn = xs[0], mx = xs[0];
+    for (uint64_t i = 1; i < n; i++) {
+        if (xs[i] < mn) mn = xs[i];
+        if (xs[i] > mx) mx = xs[i];
+    }
+
+    double range = mx - mn;
+    if (fabs(range) < 1e-15) {
+        for (uint64_t i = 0; i < n; i++) out[i] = 0.0;
+    } else {
+        for (uint64_t i = 0; i < n; i++) out[i] = (xs[i] - mn) / range;
+    }
+    return out;
+}
+
+/* ml_split_free — release the index arrays inside a SplitResult. */
+void ml_split_free(SplitResult *s)
+{
+    if (!s) return;
+    free(s->train_idx); s->train_idx = NULL; s->ntrain = 0;
+    free(s->test_idx);  s->test_idx  = NULL; s->ntest  = 0;
+}

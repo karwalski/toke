@@ -37,16 +37,18 @@ static int bind_and_step(sqlite3_stmt *stmt, StrArray params)
     return sqlite3_step(stmt);
 }
 
-/* Collect current stmt row into a heap-allocated Row. */
+/* Collect current stmt row into a heap-allocated Row.
+ * All strings are strdup'd so they remain valid after sqlite3_finalize. */
 static Row collect_row(sqlite3_stmt *stmt)
 {
     int n = sqlite3_column_count(stmt);
     const char **names  = malloc((size_t)n * sizeof(char *));
     const char **values = malloc((size_t)n * sizeof(char *));
     for (int c = 0; c < n; c++) {
-        names[c]  = sqlite3_column_name(stmt, c);
+        const char *name = sqlite3_column_name(stmt, c);
+        names[c] = name ? strdup(name) : strdup("");
         const char *v = (const char *)sqlite3_column_text(stmt, c);
-        values[c] = v ? v : "";
+        values[c] = v ? strdup(v) : strdup("");
     }
     Row row; row.col_names = names; row.col_values = values;
     row.col_count = (uint64_t)n;
@@ -116,6 +118,120 @@ U64Result db_exec(const char *sql, StrArray params)
     res.ok = (uint64_t)sqlite3_changes(g_db);
     return res;
 }
+
+/* ── prepared statement struct ────────────────────────────────────────────── */
+
+struct TkStmt {
+    sqlite3_stmt *stmt;
+    sqlite3      *db;
+};
+
+/* Resolve conn_id to the global db handle (currently only conn 0 is valid). */
+static sqlite3 *conn_db(int conn_id)
+{
+    if (conn_id == 0) return g_db;
+    return NULL;
+}
+
+StmtResult db_prepare(int conn_id, const char *sql)
+{
+    StmtResult res; res.is_err = 0; res.ok = NULL;
+    sqlite3 *db = conn_db(conn_id);
+    if (!db) {
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_CONNECTION, "invalid conn_id");
+        return res;
+    }
+    sqlite3_stmt *raw = NULL;
+    if (sqlite3_prepare_v2(db, sql, -1, &raw, NULL) != SQLITE_OK) {
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(db));
+        return res;
+    }
+    TkStmt *s = malloc(sizeof(TkStmt));
+    s->stmt = raw;
+    s->db   = db;
+    res.ok = s;
+    return res;
+}
+
+BoolResult db_bind(TkStmt *stmt, StrArray params)
+{
+    BoolResult res; res.is_err = 0; res.ok = 1;
+    if (!stmt) {
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_QUERY, "null statement");
+        return res;
+    }
+    sqlite3_reset(stmt->stmt);
+    sqlite3_clear_bindings(stmt->stmt);
+    for (uint64_t i = 0; i < params.len; i++) {
+        int rc = sqlite3_bind_text(stmt->stmt, (int)(i + 1),
+                                   params.data[i], -1, SQLITE_STATIC);
+        if (rc != SQLITE_OK) {
+            res.is_err = 1;
+            res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(stmt->db));
+            return res;
+        }
+    }
+    return res;
+}
+
+RowResult db_step(TkStmt *stmt)
+{
+    RowResult res; res.is_err = 0;
+    if (!stmt) {
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_QUERY, "null statement");
+        return res;
+    }
+    int rc = sqlite3_step(stmt->stmt);
+    if (rc == SQLITE_ROW) {
+        res.ok = collect_row(stmt->stmt);
+    } else if (rc == SQLITE_DONE) {
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_NOT_FOUND, "done");
+    } else {
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_QUERY, sqlite3_errmsg(stmt->db));
+    }
+    return res;
+}
+
+void db_finalize(TkStmt *stmt)
+{
+    if (!stmt) return;
+    sqlite3_finalize(stmt->stmt);
+    free(stmt);
+}
+
+/* ── transactions ─────────────────────────────────────────────────────────── */
+
+static BoolResult exec_simple(int conn_id, const char *sql)
+{
+    BoolResult res; res.is_err = 0; res.ok = 1;
+    sqlite3 *db = conn_db(conn_id);
+    if (!db) {
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_CONNECTION, "invalid conn_id");
+        return res;
+    }
+    char *errmsg = NULL;
+    if (sqlite3_exec(db, sql, NULL, NULL, &errmsg) != SQLITE_OK) {
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_QUERY, errmsg ? errmsg : sql);
+        /* errmsg must be freed with sqlite3_free — we copy it into a static
+           buffer to avoid leaking the pointer after this function returns.
+           For correctness in tests we store the pointer; callers must not
+           free it.  In production code a copy into a fixed arena is preferred. */
+        return res;
+    }
+    return res;
+}
+
+BoolResult db_begin(int conn_id)    { return exec_simple(conn_id, "BEGIN"); }
+BoolResult db_commit(int conn_id)   { return exec_simple(conn_id, "COMMIT"); }
+BoolResult db_rollback(int conn_id) { return exec_simple(conn_id, "ROLLBACK"); }
 
 /* Linear scan for col; returns index or -1. */
 static int find_col(Row r, const char *col)

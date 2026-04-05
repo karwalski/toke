@@ -76,6 +76,89 @@ int main(void)
     ByteArray bad_ba = {bad_utf8, 1};
     ASSERT(str_from_bytes(bad_ba).is_err, "from_bytes(invalid) is err");
 
+    /* --- Story 28.1.1: search and transform -------------------------------- */
+
+    /* str_index */
+    ASSERT(str_index("foobar", "bar") == 3,  "index(bar)==3");
+    ASSERT(str_index("foobar", "foo") == 0,  "index(foo)==0");
+    ASSERT(str_index("foobar", "xyz") == -1, "index(xyz)==-1");
+    ASSERT(str_index("foobar", "")    == 0,  "index(empty)==0");
+
+    /* str_rindex */
+    ASSERT(str_rindex("abcabc", "bc") == 4,  "rindex(bc)==4");
+    ASSERT(str_rindex("abcabc", "ab") == 3,  "rindex(ab)==3");
+    ASSERT(str_rindex("foobar", "xyz") == -1, "rindex(xyz)==-1");
+
+    /* str_replace */
+    ASSERT_STREQ(str_replace("aabbaa", "aa", "X"),  "XbbX",    "replace(aa->X)");
+    ASSERT_STREQ(str_replace("hello",  "x",  "y"),  "hello",   "replace(no match)");
+    ASSERT_STREQ(str_replace("abcabc", "abc","Z"),   "ZZ",      "replace(all)");
+    ASSERT_STREQ(str_replace("hello",  "hello",""),  "",        "replace(full->empty)");
+
+    /* str_replace_first */
+    ASSERT_STREQ(str_replace_first("aabbaa", "aa", "X"), "Xbbaa", "replace_first(aa->X)");
+    ASSERT_STREQ(str_replace_first("hello",  "x",  "y"), "hello", "replace_first(no match)");
+    ASSERT_STREQ(str_replace_first("aaa",    "a",  "b"), "baa",   "replace_first(a->b)");
+
+    /* str_join */
+    {
+        const char *data[] = {"a", "b", "c"};
+        StrArray arr; arr.data = data; arr.len = 3;
+        ASSERT_STREQ(str_join(",", arr), "a,b,c", "join(a,b,c)==a,b,c");
+
+        StrArray empty_arr; empty_arr.data = NULL; empty_arr.len = 0;
+        const char *j = str_join("-", empty_arr);
+        ASSERT(j && strcmp(j, "") == 0, "join(empty)==empty");
+
+        const char *one[] = {"only"};
+        StrArray one_arr; one_arr.data = one; one_arr.len = 1;
+        ASSERT_STREQ(str_join("||", one_arr), "only", "join(one)==only");
+    }
+
+    /* str_repeat */
+    ASSERT_STREQ(str_repeat("ab", 3),  "ababab", "repeat(ab,3)");
+    ASSERT_STREQ(str_repeat("x",  1),  "x",      "repeat(x,1)");
+    {
+        const char *r = str_repeat("z", 0);
+        ASSERT(r && strcmp(r, "") == 0, "repeat(z,0)==empty");
+    }
+
+    /* --- Story 28.1.2: prefix/suffix and line operations ------------------ */
+
+    /* str_starts_with */
+    ASSERT(str_starts_with("foobar", "foo") == 1, "starts_with(foo)==true");
+    ASSERT(str_starts_with("foobar", "bar") == 0, "starts_with(bar)==false");
+    ASSERT(str_starts_with("foobar", "")    == 1, "starts_with(empty)==true");
+    ASSERT(str_starts_with("", "foo")       == 0, "starts_with(empty str)==false");
+
+    /* str_ends_with */
+    ASSERT(str_ends_with("foobar", "bar") == 1, "ends_with(bar)==true");
+    ASSERT(str_ends_with("foobar", "foo") == 0, "ends_with(foo)==false");
+    ASSERT(str_ends_with("foobar", "")    == 1, "ends_with(empty)==true");
+    ASSERT(str_ends_with("", "bar")       == 0, "ends_with(empty str)==false");
+
+    /* str_split_lines */
+    {
+        StrArray lines = str_split_lines("one\ntwo\nthree");
+        ASSERT(lines.len == 3,                       "split_lines len==3");
+        ASSERT_STREQ(lines.data[0], "one",   "split_lines[0]==one");
+        ASSERT_STREQ(lines.data[2], "three", "split_lines[2]==three");
+
+        StrArray crlf = str_split_lines("a\r\nb\r\nc");
+        ASSERT(crlf.len == 3,                        "split_lines(CRLF) len==3");
+        ASSERT_STREQ(crlf.data[1], "b",     "split_lines(CRLF)[1]==b");
+
+        StrArray single = str_split_lines("no newline");
+        ASSERT(single.len == 1,                      "split_lines(no nl) len==1");
+        ASSERT_STREQ(single.data[0], "no newline", "split_lines(no nl)[0]");
+    }
+
+    /* str_count */
+    ASSERT(str_count("banana", "an") == 2,  "count(an)==2");
+    ASSERT(str_count("aaa",    "aa") == 1,  "count(aa non-overlap)==1");
+    ASSERT(str_count("hello",  "xyz") == 0, "count(xyz)==0");
+    ASSERT(str_count("abcabc", "abc") == 2, "count(abc)==2");
+
     if (failures == 0) { printf("All tests passed.\n"); return 0; }
     fprintf(stderr, "%d test(s) failed.\n", failures);
     return 1;

@@ -18,7 +18,8 @@
 typedef enum {
     FILE_ERR_NOT_FOUND,
     FILE_ERR_PERMISSION,
-    FILE_ERR_IO
+    FILE_ERR_IO,
+    FILE_ERR_INVALID
 } FileErrKind;
 
 typedef struct { FileErrKind kind; const char *msg; } FileErr;
@@ -31,6 +32,7 @@ typedef struct { const char **data; uint64_t len; } StrArray;
 typedef struct { const char *ok; int is_err; FileErr err; } StrFileResult;
 typedef struct { int ok;         int is_err; FileErr err; } BoolFileResult;
 typedef struct { StrArray ok;    int is_err; FileErr err; } StrArrayFileResult;
+typedef struct { uint64_t ok;    int is_err; FileErr err; } U64FileResult;
 
 StrFileResult    file_read(const char *path);
 BoolFileResult   file_write(const char *path, const char *content);
@@ -38,5 +40,19 @@ BoolFileResult   file_append(const char *path, const char *content);
 int              file_exists(const char *path);
 BoolFileResult   file_delete(const char *path);
 StrArrayFileResult file_list(const char *dir);
+
+/* 28.2.1 — directory operations */
+BoolFileResult   file_mkdir(const char *path);
+BoolFileResult   file_mkdir_p(const char *path);
+BoolFileResult   file_rmdir(const char *path);
+BoolFileResult   file_rmdir_r(const char *path);
+int              file_is_dir(const char *path);
+int              file_is_file(const char *path);
+
+/* 28.2.2 — copy, move, and metadata */
+BoolFileResult   file_copy(const char *src, const char *dst);
+BoolFileResult   file_move(const char *src, const char *dst);
+U64FileResult    file_size(const char *path);
+U64FileResult    file_mtime(const char *path);
 
 #endif /* TK_STDLIB_FILE_H */

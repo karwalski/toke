@@ -312,6 +312,303 @@ JsonArrayResult json_arr(Json j, const char *key) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Object inspection and manipulation — Story 29.1.1                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * json_keys — return heap-allocated StrArray of top-level key names.
+ * Iterates the object once to count, then again to fill.
+ */
+StrArrayJsonResult json_keys(Json j) {
+    StrArrayJsonResult r;
+    const char *p = skip_ws(j.raw);
+    if (!p || *p != '{') {
+        r.is_err = 1;
+        r.err = make_err(JSON_ERR_TYPE, "not an object");
+        return r;
+    }
+    p++;
+
+    /* first pass: count keys */
+    uint64_t count = 0;
+    const char *q = skip_ws(p);
+    if (*q != '}') {
+        while (*q) {
+            q = skip_ws(q);
+            if (*q != '"') { r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "bad object"); return r; }
+            const char *ke = skip_string(q);
+            if (!ke) { r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "bad key"); return r; }
+            q = skip_ws(ke);
+            if (*q != ':') { r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "bad object"); return r; }
+            q = skip_value(skip_ws(q + 1));
+            if (!q) { r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "bad value"); return r; }
+            count++;
+            q = skip_ws(q);
+            if (*q == '}') break;
+            if (*q == ',') { q++; continue; }
+            r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "bad object"); return r;
+        }
+    }
+
+    /* allocate array of pointers */
+    const char **keys = NULL;
+    if (count > 0) {
+        keys = malloc(count * sizeof(const char *));
+        if (!keys) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
+    }
+
+    /* second pass: extract key strings */
+    q = skip_ws(p);
+    for (uint64_t i = 0; i < count; i++) {
+        q = skip_ws(q);
+        /* q points at opening quote of key */
+        const char *ks = q + 1;
+        const char *ke = skip_string(q);
+        /* ke points past closing quote */
+        size_t klen = (size_t)((ke - 1) - ks);
+        char *buf = malloc(klen + 1);
+        if (!buf) {
+            /* free already-allocated keys */
+            for (uint64_t x = 0; x < i; x++) free((void *)keys[x]);
+            free(keys);
+            r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r;
+        }
+        /* basic unescape */
+        const char *src = ks;
+        char *dst = buf;
+        while (src < ke - 1) {
+            if (*src == '\\') { src++; *dst++ = *src++; }
+            else               { *dst++ = *src++; }
+        }
+        *dst = '\0';
+        keys[i] = buf;
+        /* advance past value and comma */
+        ke = skip_ws(ke); /* skip past ':' */
+        if (*ke != ':') break;
+        q = skip_value(skip_ws(ke + 1));
+        q = skip_ws(q);
+        if (*q == ',') q++;
+    }
+
+    r.is_err = 0;
+    r.ok.data = keys;
+    r.ok.len  = count;
+    return r;
+}
+
+/*
+ * json_has — return 1 if key exists in top-level object, 0 otherwise.
+ * Scans for "key": without performing full value extraction.
+ */
+int json_has(Json j, const char *key) {
+    const char *vs, *ve;
+    return find_json_key(j.raw, key, &vs, &ve);
+}
+
+/*
+ * json_len — count elements in array or keys in object.
+ */
+U64JsonResult json_len(Json j) {
+    U64JsonResult r;
+    const char *p = skip_ws(j.raw);
+    if (!p) { r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "null json"); return r; }
+
+    if (*p == '[') {
+        /* array: count top-level elements */
+        p++;
+        p = skip_ws(p);
+        if (*p == ']') { r.is_err = 0; r.ok = 0; return r; }
+        uint64_t count = 0;
+        while (*p) {
+            const char *end = skip_value(skip_ws(p));
+            if (!end) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "bad array"); return r; }
+            count++;
+            p = skip_ws(end);
+            if (*p == ']') { r.is_err = 0; r.ok = count; return r; }
+            if (*p == ',') { p++; continue; }
+            r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "bad array"); return r;
+        }
+        r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "unterminated array"); return r;
+    }
+
+    if (*p == '{') {
+        /* object: count top-level keys */
+        p++;
+        p = skip_ws(p);
+        if (*p == '}') { r.is_err = 0; r.ok = 0; return r; }
+        uint64_t count = 0;
+        while (*p) {
+            p = skip_ws(p);
+            if (*p != '"') { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "bad object"); return r; }
+            const char *ke = skip_string(p);
+            if (!ke) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "bad key"); return r; }
+            p = skip_ws(ke);
+            if (*p != ':') { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "bad object"); return r; }
+            p = skip_value(skip_ws(p + 1));
+            if (!p) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "bad value"); return r; }
+            count++;
+            p = skip_ws(p);
+            if (*p == '}') { r.is_err = 0; r.ok = count; return r; }
+            if (*p == ',') { p++; continue; }
+            r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "bad object"); return r;
+        }
+        r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "unterminated object"); return r;
+    }
+
+    r.is_err = 1;
+    r.err = make_err(JSON_ERR_TYPE, "not an array or object");
+    return r;
+}
+
+/*
+ * json_type — return a string literal identifying j's type.
+ */
+StrJsonResult json_type(Json j) {
+    StrJsonResult r;
+    const char *p = skip_ws(j.raw);
+    if (!p || *p == '\0') {
+        r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "empty json"); return r;
+    }
+    r.is_err = 0;
+    if (*p == '{')                         { r.ok = "object"; return r; }
+    if (*p == '[')                         { r.ok = "array";  return r; }
+    if (*p == '"')                         { r.ok = "string"; return r; }
+    if (*p == 't' || *p == 'f')            { r.ok = "bool";   return r; }
+    if (*p == 'n')                         { r.ok = "null";   return r; }
+    if (*p == '-' || (*p >= '0' && *p <= '9')) { r.ok = "number"; return r; }
+    r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "unrecognised json"); return r;
+}
+
+/*
+ * json_pretty — produce a malloc'd pretty-printed (2-space indent) string.
+ * Handles nested objects and arrays; copies strings verbatim.
+ */
+StrJsonResult json_pretty(Json j) {
+    StrJsonResult r;
+    if (!j.raw) {
+        r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "null json"); return r;
+    }
+    const char *src = j.raw;
+    size_t slen = strlen(src);
+
+    /* worst-case output is substantially larger than input due to indentation;
+     * allocate generously: 8 * input length + some headroom */
+    size_t cap = slen * 8 + 64;
+    char *buf = malloc(cap);
+    if (!buf) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
+
+    size_t pos = 0;
+    int    depth = 0;
+    int    in_str = 0;
+
+#define PRETTY_PUT(c) do { if (pos + 1 < cap) buf[pos++] = (char)(c); } while(0)
+#define PRETTY_NEWLINE_INDENT() do { \
+    PRETTY_PUT('\n'); \
+    for (int _i = 0; _i < depth; _i++) { PRETTY_PUT(' '); PRETTY_PUT(' '); } \
+} while(0)
+
+    for (size_t i = 0; i < slen; i++) {
+        char c = src[i];
+
+        if (in_str) {
+            PRETTY_PUT(c);
+            if (c == '\\' && i + 1 < slen) {
+                /* escaped char — copy the next byte verbatim */
+                i++;
+                PRETTY_PUT(src[i]);
+            } else if (c == '"') {
+                in_str = 0;
+            }
+            continue;
+        }
+
+        /* skip whitespace outside strings */
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
+
+        switch (c) {
+        case '{':
+        case '[':
+            PRETTY_PUT(c);
+            /* peek ahead to see if the container is empty */
+            {
+                size_t peek = i + 1;
+                while (peek < slen &&
+                       (src[peek] == ' ' || src[peek] == '\t' ||
+                        src[peek] == '\n' || src[peek] == '\r'))
+                    peek++;
+                char close = (c == '{') ? '}' : ']';
+                if (peek < slen && src[peek] == close) {
+                    /* empty container — don't indent */
+                } else {
+                    depth++;
+                    PRETTY_NEWLINE_INDENT();
+                }
+            }
+            break;
+
+        case '}':
+        case ']':
+            /* check if we just opened (depth decreased already via empty check above) */
+            {
+                /* walk back in output to see if last non-ws char was [ or { */
+                int prev_open = 0;
+                if (pos > 0) {
+                    size_t bp = pos;
+                    while (bp > 0) {
+                        char prev = buf[bp - 1];
+                        if (prev == ' ' || prev == '\n') { bp--; continue; }
+                        if (prev == '{' || prev == '[') prev_open = 1;
+                        break;
+                    }
+                }
+                if (!prev_open) {
+                    depth--;
+                    PRETTY_NEWLINE_INDENT();
+                }
+            }
+            PRETTY_PUT(c);
+            break;
+
+        case ',':
+            PRETTY_PUT(c);
+            PRETTY_NEWLINE_INDENT();
+            break;
+
+        case ':':
+            PRETTY_PUT(c);
+            PRETTY_PUT(' ');
+            break;
+
+        case '"':
+            in_str = 1;
+            PRETTY_PUT(c);
+            break;
+
+        default:
+            PRETTY_PUT(c);
+            break;
+        }
+    }
+
+#undef PRETTY_PUT
+#undef PRETTY_NEWLINE_INDENT
+
+    buf[pos] = '\0';
+    r.is_err = 0;
+    r.ok = buf;
+    return r;
+}
+
+/*
+ * json_is_null — return 1 if j[key] is null or the key is missing.
+ */
+int json_is_null(Json j, const char *key) {
+    const char *vs, *ve;
+    if (!find_json_key(j.raw, key, &vs, &ve)) return 1; /* missing */
+    return (strncmp(vs, "null", 4) == 0) ? 1 : 0;
+}
+
+/* ------------------------------------------------------------------ */
 /* Streaming API — Story 35.1.3                                        */
 /* ------------------------------------------------------------------ */
 

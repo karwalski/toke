@@ -12,9 +12,8 @@
  * Story: 16.1.2
  */
 
-#include <math.h>
+#include <math.h>   /* system math — must be angle brackets, not quotes */
 #include "math.h"
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -203,3 +202,19 @@ double math_sqrt(double x)  { return sqrt(x);       }
 double math_floor(double x) { return floor(x);      }
 double math_ceil(double x)  { return ceil(x);       }
 double math_pow(double base, double exp) { return pow(base, exp); }
+
+/* -----------------------------------------------------------------------
+ * Trig / transcendental wrappers (Story 29.3.1)
+ * ----------------------------------------------------------------------- */
+
+double math_sin(double x)              { return sin(x);        }
+double math_cos(double x)              { return cos(x);        }
+double math_tan(double x)              { return tan(x);        }
+double math_asin(double x)             { return asin(x);       }
+double math_acos(double x)             { return acos(x);       }
+double math_atan(double x)             { return atan(x);       }
+double math_atan2(double y, double x)  { return atan2(y, x);   }
+double math_log(double x)              { return log(x);        }
+double math_log10(double x)            { return log10(x);      }
+double math_exp(double x)              { return exp(x);        }
+double math_hypot(double x, double y)  { return hypot(x, y);   }

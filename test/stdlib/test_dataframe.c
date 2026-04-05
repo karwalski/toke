@@ -788,6 +788,292 @@ static void t40_shape_null(void)
 }
 
 /* -------------------------------------------------------------------------
+ * Story 31.1.1: df_sort, df_unique, df_drop_column, df_rename_column,
+ *               df_select_columns, df_value_counts
+ * ------------------------------------------------------------------------- */
+
+/*
+ * Test CSV:
+ *   name,age,city
+ *   Alice,30,NYC
+ *   Bob,25,LA
+ *   Carol,30,NYC
+ *   Dave,25,Chicago
+ */
+static const char *CSV_31 =
+    "name,age,city\r\n"
+    "Alice,30,NYC\r\n"
+    "Bob,25,LA\r\n"
+    "Carol,30,NYC\r\n"
+    "Dave,25,Chicago\r\n";
+
+static TkDataframe *parse_31(void)
+{
+    uint64_t len = (uint64_t)strlen(CSV_31);
+    DfResult r   = df_fromcsv(CSV_31, len, 1);
+    ASSERT(!r.is_err, "parse_31: df_fromcsv succeeded");
+    return r.ok;
+}
+
+/* T41: df_sort by "age" ascending → Bob/Dave (25) before Alice/Carol (30) */
+static void t41_sort_age_ascending(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    TkDataframe *s = df_sort(df, "age", 1);
+    ASSERT(s != NULL,       "T41: df_sort non-NULL");
+    ASSERT(s->nrows == 4,   "T41: sorted frame has 4 rows");
+    DfCol *age = df_column(s, "age");
+    ASSERT(age != NULL,     "T41: 'age' col present after sort");
+    if (age) {
+        ASSERT(age->f64_data[0] == 25.0, "T41: first sorted row age==25");
+        ASSERT(age->f64_data[1] == 25.0, "T41: second sorted row age==25");
+        ASSERT(age->f64_data[2] == 30.0, "T41: third sorted row age==30");
+        ASSERT(age->f64_data[3] == 30.0, "T41: fourth sorted row age==30");
+    }
+    df_free(s);
+    df_free(df);
+}
+
+/* T42: df_sort by "name" ascending → Alice, Bob, Carol, Dave */
+static void t42_sort_name_ascending(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    TkDataframe *s = df_sort(df, "name", 1);
+    ASSERT(s != NULL,     "T42: df_sort by name non-NULL");
+    ASSERT(s->nrows == 4, "T42: 4 rows");
+    DfCol *name = df_column(s, "name");
+    ASSERT(name != NULL,  "T42: 'name' col present");
+    if (name) {
+        ASSERT_STREQ(name->str_data[0], "Alice", "T42: [0]==Alice");
+        ASSERT_STREQ(name->str_data[1], "Bob",   "T42: [1]==Bob");
+        ASSERT_STREQ(name->str_data[2], "Carol",  "T42: [2]==Carol");
+        ASSERT_STREQ(name->str_data[3], "Dave",   "T42: [3]==Dave");
+    }
+    df_free(s);
+    df_free(df);
+}
+
+/* T43: df_sort descending by "name" → Dave, Carol, Bob, Alice */
+static void t43_sort_name_descending(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    TkDataframe *s = df_sort(df, "name", 0);
+    ASSERT(s != NULL,     "T43: df_sort descending non-NULL");
+    DfCol *name = df_column(s, "name");
+    ASSERT(name != NULL,  "T43: 'name' col present");
+    if (name) {
+        ASSERT_STREQ(name->str_data[0], "Dave",  "T43: [0]==Dave");
+        ASSERT_STREQ(name->str_data[3], "Alice", "T43: [3]==Alice");
+    }
+    df_free(s);
+    df_free(df);
+}
+
+/* T44: df_sort on missing col returns NULL */
+static void t44_sort_missing_col(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    TkDataframe *s = df_sort(df, "noexist", 1);
+    ASSERT(s == NULL, "T44: df_sort missing col returns NULL");
+    df_free(df);
+}
+
+/* T45: df_unique by "age" → 2 rows (first 30-row=Alice, first 25-row=Bob) */
+static void t45_unique_age(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    TkDataframe *u = df_unique(df, "age");
+    ASSERT(u != NULL,     "T45: df_unique non-NULL");
+    ASSERT(u->nrows == 2, "T45: 2 unique ages");
+    DfCol *age  = df_column(u, "age");
+    DfCol *name = df_column(u, "name");
+    ASSERT(age != NULL,   "T45: age col present");
+    if (age) {
+        /* Original order: Alice(30) first, Bob(25) first */
+        ASSERT(age->f64_data[0] == 30.0, "T45: first unique age==30");
+        ASSERT(age->f64_data[1] == 25.0, "T45: second unique age==25");
+    }
+    if (name) {
+        ASSERT_STREQ(name->str_data[0], "Alice", "T45: first unique name==Alice");
+        ASSERT_STREQ(name->str_data[1], "Bob",   "T45: second unique name==Bob");
+    }
+    df_free(u);
+    df_free(df);
+}
+
+/* T46: df_unique by "city" → 3 rows (NYC, LA, Chicago) */
+static void t46_unique_city(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    TkDataframe *u = df_unique(df, "city");
+    ASSERT(u != NULL,     "T46: df_unique city non-NULL");
+    ASSERT(u->nrows == 3, "T46: 3 unique cities");
+    df_free(u);
+    df_free(df);
+}
+
+/* T47: df_unique on missing col returns NULL */
+static void t47_unique_missing_col(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    TkDataframe *u = df_unique(df, "noexist");
+    ASSERT(u == NULL, "T47: df_unique missing col returns NULL");
+    df_free(df);
+}
+
+/* T48: df_drop_column "city" → 2 columns remain (name, age) */
+static void t48_drop_column(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    TkDataframe *d = df_drop_column(df, "city");
+    ASSERT(d != NULL,       "T48: df_drop_column non-NULL");
+    ASSERT(d->ncols == 2,   "T48: 2 columns after drop");
+    ASSERT(d->nrows == 4,   "T48: 4 rows preserved");
+    ASSERT(df_column(d, "name") != NULL, "T48: 'name' still present");
+    ASSERT(df_column(d, "age")  != NULL, "T48: 'age' still present");
+    ASSERT(df_column(d, "city") == NULL, "T48: 'city' gone");
+    df_free(d);
+    df_free(df);
+}
+
+/* T49: df_drop_column on missing col returns a full copy */
+static void t49_drop_column_missing(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    TkDataframe *d = df_drop_column(df, "noexist");
+    ASSERT(d != NULL,       "T49: drop missing col returns non-NULL");
+    ASSERT(d->ncols == 3,   "T49: all 3 columns preserved");
+    ASSERT(d->nrows == 4,   "T49: all 4 rows preserved");
+    df_free(d);
+    df_free(df);
+}
+
+/* T50: df_rename_column "age" to "years" */
+static void t50_rename_column(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    TkDataframe *r = df_rename_column(df, "age", "years");
+    ASSERT(r != NULL,       "T50: df_rename_column non-NULL");
+    ASSERT(r->ncols == 3,   "T50: 3 columns");
+    ASSERT(df_column(r, "years") != NULL, "T50: 'years' exists");
+    ASSERT(df_column(r, "age")   == NULL, "T50: 'age' gone");
+    /* Data preserved */
+    DfCol *years = df_column(r, "years");
+    if (years) ASSERT(years->f64_data[0] == 30.0, "T50: years[0]==30");
+    df_free(r);
+    df_free(df);
+}
+
+/* T51: df_rename_column on missing col returns a full copy */
+static void t51_rename_column_missing(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    TkDataframe *r = df_rename_column(df, "noexist", "whatever");
+    ASSERT(r != NULL,     "T51: rename missing col returns non-NULL");
+    ASSERT(r->ncols == 3, "T51: all 3 cols preserved");
+    ASSERT(df_column(r, "name") != NULL, "T51: 'name' still present");
+    df_free(r);
+    df_free(df);
+}
+
+/* T52: df_select_columns with ["name","age"] → 2 columns in that order */
+static void t52_select_columns(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    const char *sel[] = {"name", "age"};
+    TkDataframe *s = df_select_columns(df, sel, 2);
+    ASSERT(s != NULL,       "T52: df_select_columns non-NULL");
+    ASSERT(s->ncols == 2,   "T52: 2 columns");
+    ASSERT(s->nrows == 4,   "T52: 4 rows");
+    /* Order must be preserved: col[0]=name, col[1]=age */
+    ASSERT(s->cols[0].name && strcmp(s->cols[0].name, "name") == 0,
+           "T52: col[0] is 'name'");
+    ASSERT(s->cols[1].name && strcmp(s->cols[1].name, "age")  == 0,
+           "T52: col[1] is 'age'");
+    ASSERT(df_column(s, "city") == NULL, "T52: 'city' not in result");
+    df_free(s);
+    df_free(df);
+}
+
+/* T53: df_select_columns with reversed order → columns in reversed order */
+static void t53_select_columns_order(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    const char *sel[] = {"city", "name"};
+    TkDataframe *s = df_select_columns(df, sel, 2);
+    ASSERT(s != NULL,     "T53: select reversed order non-NULL");
+    ASSERT(s->ncols == 2, "T53: 2 columns");
+    if (s->ncols == 2) {
+        ASSERT(s->cols[0].name && strcmp(s->cols[0].name, "city") == 0,
+               "T53: col[0] is 'city'");
+        ASSERT(s->cols[1].name && strcmp(s->cols[1].name, "name") == 0,
+               "T53: col[1] is 'name'");
+    }
+    df_free(s);
+    df_free(df);
+}
+
+/* T54: df_value_counts "city" → NYC:2, LA:1, Chicago:1 */
+static void t54_value_counts_city(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    DfGroupResult gr = df_value_counts(df, "city");
+    ASSERT(gr.nrows == 3, "T54: 3 unique cities");
+    if (gr.nrows == 3) {
+        /* Find NYC and verify count == 2 */
+        int found_nyc = 0, found_la = 0, found_chicago = 0;
+        for (uint64_t i = 0; i < gr.nrows; i++) {
+            const char *k = gr.rows[i].group_val;
+            double      v = gr.rows[i].agg_result;
+            if (k && strcmp(k, "NYC") == 0)     { found_nyc     = (v == 2.0); }
+            if (k && strcmp(k, "LA") == 0)      { found_la      = (v == 1.0); }
+            if (k && strcmp(k, "Chicago") == 0) { found_chicago = (v == 1.0); }
+        }
+        ASSERT(found_nyc,     "T54: NYC count == 2");
+        ASSERT(found_la,      "T54: LA count == 1");
+        ASSERT(found_chicago, "T54: Chicago count == 1");
+    }
+    for (uint64_t i = 0; i < gr.nrows; i++) free((char *)gr.rows[i].group_val);
+    free(gr.rows);
+    df_free(df);
+}
+
+/* T55: df_value_counts on missing col returns empty result */
+static void t55_value_counts_missing(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    DfGroupResult gr = df_value_counts(df, "noexist");
+    ASSERT(gr.nrows == 0, "T55: value_counts missing col returns 0 groups");
+    ASSERT(gr.rows == NULL, "T55: value_counts missing col rows is NULL");
+    df_free(df);
+}
+
+/* T56: df_value_counts on f64 col returns empty (only str supported) */
+static void t56_value_counts_f64_col(void)
+{
+    TkDataframe *df = parse_31();
+    if (!df) return;
+    DfGroupResult gr = df_value_counts(df, "age");
+    ASSERT(gr.nrows == 0, "T56: value_counts on f64 col returns 0 groups");
+    df_free(df);
+}
+
+/* -------------------------------------------------------------------------
  * main
  * ------------------------------------------------------------------------- */
 
@@ -833,7 +1119,23 @@ int main(void)
     t38_head_zero();
     t39_tojson_empty();
     t40_shape_null();
+    t41_sort_age_ascending();
+    t42_sort_name_ascending();
+    t43_sort_name_descending();
+    t44_sort_missing_col();
+    t45_unique_age();
+    t46_unique_city();
+    t47_unique_missing_col();
+    t48_drop_column();
+    t49_drop_column_missing();
+    t50_rename_column();
+    t51_rename_column_missing();
+    t52_select_columns();
+    t53_select_columns_order();
+    t54_value_counts_city();
+    t55_value_counts_missing();
+    t56_value_counts_f64_col();
 
-    printf("\n%s — %d failure(s)\n", failures == 0 ? "ALL PASS" : "FAILED", failures);
+    printf("\n%s -- %d failure(s)\n", failures == 0 ? "ALL PASS" : "FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

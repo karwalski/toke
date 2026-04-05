@@ -69,4 +69,39 @@ double       math_ceil(double x);
 /* math.pow(base:f64;exp:f64):f64 */
 double       math_pow(double base, double exp);
 
+/* Trig / transcendental wrappers (Story 29.3.1) */
+
+/* math.sin(x:f64):f64 */
+double       math_sin(double x);
+
+/* math.cos(x:f64):f64 */
+double       math_cos(double x);
+
+/* math.tan(x:f64):f64 */
+double       math_tan(double x);
+
+/* math.asin(x:f64):f64 */
+double       math_asin(double x);
+
+/* math.acos(x:f64):f64 */
+double       math_acos(double x);
+
+/* math.atan(x:f64):f64 */
+double       math_atan(double x);
+
+/* math.atan2(y:f64;x:f64):f64 */
+double       math_atan2(double y, double x);
+
+/* math.log(x:f64):f64 — natural log ln(x) */
+double       math_log(double x);
+
+/* math.log10(x:f64):f64 — log base 10 */
+double       math_log10(double x);
+
+/* math.exp(x:f64):f64 — e^x */
+double       math_exp(double x);
+
+/* math.hypot(x:f64;y:f64):f64 — sqrt(x*x + y*y) */
+double       math_hypot(double x, double y);
+
 #endif /* TK_STDLIB_MATH_H */

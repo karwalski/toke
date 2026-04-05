@@ -283,6 +283,48 @@ int main(void)
     ASSERT_DBL_EQ(math_floor(-3.7), -4.0, 1e-12, "floor(-3.7) == -4.0");
     ASSERT_DBL_EQ(math_ceil(-3.2), -3.0, 1e-12, "ceil(-3.2) == -3.0");
 
+    /* ===================================================================
+     * Trig / transcendental functions (Story 29.3.1)
+     * =================================================================== */
+
+#define TK_PI 3.14159265358979323846
+
+    /* --- math_sin --- */
+    ASSERT_DBL_EQ(math_sin(0.0),       0.0, 1e-9, "sin(0.0) == 0.0");
+    ASSERT_DBL_EQ(math_sin(TK_PI/2.0), 1.0, 1e-9, "sin(pi/2) == 1.0");
+
+    /* --- math_cos --- */
+    ASSERT_DBL_EQ(math_cos(0.0), 1.0, 1e-9, "cos(0.0) == 1.0");
+
+    /* --- math_tan --- */
+    ASSERT_DBL_EQ(math_tan(0.0), 0.0, 1e-9, "tan(0.0) == 0.0");
+
+    /* --- math_asin --- */
+    ASSERT_DBL_EQ(math_asin(0.0), 0.0, 1e-9, "asin(0.0) == 0.0");
+
+    /* --- math_acos --- */
+    ASSERT_DBL_EQ(math_acos(1.0), 0.0, 1e-9, "acos(1.0) == 0.0");
+
+    /* --- math_atan --- */
+    ASSERT_DBL_EQ(math_atan(0.0), 0.0, 1e-9, "atan(0.0) == 0.0");
+
+    /* --- math_atan2 --- */
+    ASSERT_DBL_EQ(math_atan2(1.0, 0.0), TK_PI/2.0, 1e-9,
+                  "atan2(1.0, 0.0) == pi/2");
+
+    /* --- math_log --- */
+    ASSERT_DBL_EQ(math_log(1.0), 0.0, 1e-9, "log(1.0) == 0.0");
+
+    /* --- math_log10 --- */
+    ASSERT_DBL_EQ(math_log10(1.0),   0.0, 1e-9, "log10(1.0) == 0.0");
+    ASSERT_DBL_EQ(math_log10(100.0), 2.0, 1e-9, "log10(100.0) == 2.0");
+
+    /* --- math_exp --- */
+    ASSERT_DBL_EQ(math_exp(0.0), 1.0, 1e-9, "exp(0.0) == 1.0");
+
+    /* --- math_hypot --- */
+    ASSERT_DBL_EQ(math_hypot(3.0, 4.0), 5.0, 1e-9, "hypot(3.0, 4.0) == 5.0");
+
     /* --- summary --- */
     if (failures == 0) {
         printf("\nAll tests passed.\n");

@@ -220,3 +220,231 @@ StrEncResult str_from_bytes(ByteArray b)
     r.ok = out;
     return r;
 }
+
+/* --- Story 28.1.1: search and transform ---------------------------------- */
+
+int64_t str_index(const char *s, const char *sub)
+{
+    if (!s || !sub) return -1;
+    const char *p = strstr(s, sub);
+    if (!p) return -1;
+    return (int64_t)(p - s);
+}
+
+int64_t str_rindex(const char *s, const char *sub)
+{
+    if (!s || !sub) return -1;
+    size_t slen   = strlen(s);
+    size_t sublen = strlen(sub);
+    if (sublen == 0) return (int64_t)slen; /* convention: empty sub at end */
+    if (sublen > slen) return -1;
+    /* scan from right */
+    const char *last = NULL;
+    const char *p    = s;
+    while ((p = strstr(p, sub)) != NULL) {
+        last = p;
+        p++;
+    }
+    return last ? (int64_t)(last - s) : -1;
+}
+
+const char *str_replace(const char *s, const char *old, const char *new_val)
+{
+    if (!s || !old || !new_val) return NULL;
+    size_t oldlen = strlen(old);
+    size_t newlen = strlen(new_val);
+    if (oldlen == 0) {
+        /* nothing to replace — return copy */
+        size_t slen = strlen(s);
+        char *copy = malloc(slen + 1);
+        if (!copy) return NULL;
+        memcpy(copy, s, slen + 1);
+        return copy;
+    }
+    /* count occurrences */
+    size_t count = 0;
+    const char *p = s;
+    while ((p = strstr(p, old)) != NULL) { count++; p += oldlen; }
+    size_t slen = strlen(s);
+    size_t outsz = slen + count * (newlen - oldlen) + 1; /* may be smaller */
+    /* newlen >= oldlen path: outsz is fine; newlen < oldlen: shrinks, still fine */
+    char *out = malloc(outsz);
+    if (!out) return NULL;
+    char *w = out;
+    p = s;
+    const char *found;
+    while ((found = strstr(p, old)) != NULL) {
+        size_t before = (size_t)(found - p);
+        memcpy(w, p, before);
+        w += before;
+        memcpy(w, new_val, newlen);
+        w += newlen;
+        p = found + oldlen;
+    }
+    size_t tail = strlen(p);
+    memcpy(w, p, tail + 1); /* include NUL */
+    return out;
+}
+
+const char *str_replace_first(const char *s, const char *old, const char *new_val)
+{
+    if (!s || !old || !new_val) return NULL;
+    size_t oldlen = strlen(old);
+    if (oldlen == 0) {
+        size_t slen = strlen(s);
+        char *copy = malloc(slen + 1);
+        if (!copy) return NULL;
+        memcpy(copy, s, slen + 1);
+        return copy;
+    }
+    const char *found = strstr(s, old);
+    if (!found) {
+        size_t slen = strlen(s);
+        char *copy = malloc(slen + 1);
+        if (!copy) return NULL;
+        memcpy(copy, s, slen + 1);
+        return copy;
+    }
+    size_t newlen  = strlen(new_val);
+    size_t before  = (size_t)(found - s);
+    size_t after   = strlen(found + oldlen);
+    size_t outsz   = before + newlen + after + 1;
+    char *out = malloc(outsz);
+    if (!out) return NULL;
+    memcpy(out, s, before);
+    memcpy(out + before, new_val, newlen);
+    memcpy(out + before + newlen, found + oldlen, after + 1);
+    return out;
+}
+
+const char *str_join(const char *sep, StrArray parts)
+{
+    if (!sep) sep = "";
+    if (parts.len == 0 || !parts.data) {
+        char *empty = malloc(1);
+        if (!empty) return NULL;
+        empty[0] = '\0';
+        return empty;
+    }
+    size_t seplen = strlen(sep);
+    size_t total  = 0;
+    uint64_t i;
+    for (i = 0; i < parts.len; i++) {
+        if (parts.data[i]) total += strlen(parts.data[i]);
+        if (i + 1 < parts.len) total += seplen;
+    }
+    char *out = malloc(total + 1);
+    if (!out) return NULL;
+    char *w = out;
+    for (i = 0; i < parts.len; i++) {
+        if (parts.data[i]) {
+            size_t plen = strlen(parts.data[i]);
+            memcpy(w, parts.data[i], plen);
+            w += plen;
+        }
+        if (i + 1 < parts.len) {
+            memcpy(w, sep, seplen);
+            w += seplen;
+        }
+    }
+    *w = '\0';
+    return out;
+}
+
+const char *str_repeat(const char *s, uint64_t n)
+{
+    if (!s) return NULL;
+    if (n == 0) {
+        char *empty = malloc(1);
+        if (!empty) return NULL;
+        empty[0] = '\0';
+        return empty;
+    }
+    size_t slen  = strlen(s);
+    size_t total = slen * (size_t)n;
+    char *out = malloc(total + 1);
+    if (!out) return NULL;
+    for (uint64_t i = 0; i < n; i++)
+        memcpy(out + i * slen, s, slen);
+    out[total] = '\0';
+    return out;
+}
+
+/* --- Story 28.1.2: prefix/suffix and line operations --------------------- */
+
+int str_starts_with(const char *s, const char *prefix)
+{
+    if (!s || !prefix) return 0;
+    size_t plen = strlen(prefix);
+    return strncmp(s, prefix, plen) == 0 ? 1 : 0;
+}
+
+int str_ends_with(const char *s, const char *suffix)
+{
+    if (!s || !suffix) return 0;
+    size_t slen    = strlen(s);
+    size_t suflen  = strlen(suffix);
+    if (suflen > slen) return 0;
+    return strcmp(s + slen - suflen, suffix) == 0 ? 1 : 0;
+}
+
+StrArray str_split_lines(const char *s)
+{
+    StrArray result = {NULL, 0};
+    if (!s) return result;
+
+    /* count lines */
+    size_t count = 1;
+    const char *p = s;
+    while (*p) {
+        if (*p == '\n') count++;
+        p++;
+    }
+
+    result.data = malloc(count * sizeof(const char *));
+    if (!result.data) return result;
+
+    size_t i = 0;
+    p = s;
+    const char *line_start = s;
+    while (*p) {
+        if (*p == '\n') {
+            size_t llen = (size_t)(p - line_start);
+            /* strip trailing \r if present (CRLF) */
+            if (llen > 0 && line_start[llen - 1] == '\r') llen--;
+            char *piece = malloc(llen + 1);
+            if (!piece) break;
+            memcpy(piece, line_start, llen);
+            piece[llen] = '\0';
+            result.data[i++] = piece;
+            line_start = p + 1;
+        }
+        p++;
+    }
+    /* last (or only) line, possibly empty */
+    {
+        size_t llen = (size_t)(p - line_start);
+        if (llen > 0 && line_start[llen - 1] == '\r') llen--;
+        char *piece = malloc(llen + 1);
+        if (piece) {
+            memcpy(piece, line_start, llen);
+            piece[llen] = '\0';
+            result.data[i++] = piece;
+        }
+    }
+    result.len = i;
+    return result;
+}
+
+uint64_t str_count(const char *s, const char *sub)
+{
+    if (!s || !sub || *sub == '\0') return 0;
+    uint64_t count  = 0;
+    size_t   sublen = strlen(sub);
+    const char *p   = s;
+    while ((p = strstr(p, sub)) != NULL) {
+        count++;
+        p += sublen;
+    }
+    return count;
+}

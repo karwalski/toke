@@ -63,6 +63,72 @@ int main(void)
     const char *s4 = tk_time_format(fixed_ms, "year=%Y");
     ASSERT_STREQ(s4, "year=2024", "format literal text");
 
+    /* --- tk_time_parse() --- */
+
+    /* Parse a known date with %Y-%m-%d; result must be non-zero */
+    TimeParseResult pr1 = tk_time_parse("2024-01-15", "%Y-%m-%d");
+    ASSERT(pr1.is_err == 0, "parse('2024-01-15','%Y-%m-%d') succeeds");
+    ASSERT(pr1.ok > 0, "parse('2024-01-15') returns non-zero timestamp");
+
+    /* The known timestamp for 2024-01-15 00:00:00 UTC = 1705276800 seconds */
+    ASSERT(pr1.ok == 1705276800ULL * 1000ULL,
+           "parse('2024-01-15') matches expected UTC ms");
+
+    /* Empty string must produce is_err=1 */
+    TimeParseResult pr2 = tk_time_parse("", "%Y-%m-%d");
+    ASSERT(pr2.is_err == 1, "parse('') gives is_err=1");
+    ASSERT(pr2.err_msg != NULL, "parse('') err_msg is not NULL");
+
+    /* NULL string must produce is_err=1 */
+    TimeParseResult pr3 = tk_time_parse(NULL, "%Y-%m-%d");
+    ASSERT(pr3.is_err == 1, "parse(NULL) gives is_err=1");
+
+    /* String that does not match format */
+    TimeParseResult pr4 = tk_time_parse("not-a-date", "%Y-%m-%d");
+    ASSERT(pr4.is_err == 1, "parse('not-a-date') gives is_err=1");
+
+    /* Parse with time format */
+    TimeParseResult pr5 = tk_time_parse("2024-01-15T12:34:56", "%Y-%m-%dT%H:%M:%S");
+    ASSERT(pr5.is_err == 0, "parse ISO datetime succeeds");
+    ASSERT(pr5.ok > 0, "parse ISO datetime returns non-zero timestamp");
+
+    /* --- tk_time_add() --- */
+
+    /* Add 1 hour (3 600 000 ms) to a base timestamp */
+    uint64_t base_ms = 1705276800ULL * 1000ULL; /* 2024-01-15 00:00:00 UTC */
+    uint64_t added   = tk_time_add(base_ms, 3600000LL);
+    ASSERT(added == base_ms + 3600000ULL, "add(base, 1h) == base + 3600000");
+
+    /* Subtract 1 hour via negative duration */
+    uint64_t subtracted = tk_time_add(base_ms, -3600000LL);
+    ASSERT(subtracted == base_ms - 3600000ULL, "add(base, -1h) == base - 3600000");
+
+    /* Saturate on underflow: subtracting more than ts_ms holds */
+    uint64_t clamped_low = tk_time_add(500ULL, -1000LL);
+    ASSERT(clamped_low == 0, "add underflow saturates to 0");
+
+    /* Saturate on overflow */
+    uint64_t clamped_high = tk_time_add(UINT64_MAX, 1LL);
+    ASSERT(clamped_high == UINT64_MAX, "add overflow saturates to UINT64_MAX");
+
+    /* Zero duration is a no-op */
+    ASSERT(tk_time_add(base_ms, 0LL) == base_ms, "add(base, 0) == base");
+
+    /* --- tk_time_diff() --- */
+
+    /* Two timestamps 1 second apart → diff = 1000 ms */
+    uint64_t ts_a = 1705276800ULL * 1000ULL;
+    uint64_t ts_b = ts_a + 1000ULL;
+    int64_t  diff1 = tk_time_diff(ts_b, ts_a);
+    ASSERT(diff1 == 1000LL, "diff(ts+1s, ts) == 1000 ms");
+
+    /* Reversed order → negative */
+    int64_t diff2 = tk_time_diff(ts_a, ts_b);
+    ASSERT(diff2 == -1000LL, "diff(ts, ts+1s) == -1000 ms");
+
+    /* Same timestamp → zero */
+    ASSERT(tk_time_diff(ts_a, ts_a) == 0LL, "diff(ts, ts) == 0");
+
     if (failures == 0) { printf("All time tests passed.\n"); return 0; }
     fprintf(stderr, "%d test(s) failed.\n", failures);
     return 1;

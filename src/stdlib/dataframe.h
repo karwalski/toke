@@ -152,4 +152,40 @@ typedef struct {
 DfGroupResult df_groupby(TkDataframe *df, const char *group_col,
                          const char *agg_col, int agg);
 
+/* -------------------------------------------------------------------------
+ * Sort, unique, and column operations  (Story 31.1.1)
+ * ------------------------------------------------------------------------- */
+
+/* df_sort: return a new dataframe with rows sorted by the values in col.
+ * For numeric-looking values, sorts numerically; otherwise sorts as strings.
+ * ascending=1 for A→Z / 0→9; ascending=0 for the reverse.
+ * Returns NULL if col is not found. */
+TkDataframe *df_sort(TkDataframe *df, const char *col, int ascending);
+
+/* df_unique: return a new dataframe keeping only the first occurrence of each
+ * distinct value in col, preserving original row order.
+ * Returns NULL if col is not found. */
+TkDataframe *df_unique(TkDataframe *df, const char *col);
+
+/* df_drop_column: return a new dataframe without the named column.
+ * If col is not found, returns a copy of the original. */
+TkDataframe *df_drop_column(TkDataframe *df, const char *col);
+
+/* df_rename_column: return a new dataframe with old_name renamed to new_name.
+ * If old_name is not found, returns a copy of the original. */
+TkDataframe *df_rename_column(TkDataframe *df, const char *old_name,
+                               const char *new_name);
+
+/* df_select_columns: return a new dataframe containing only the columns listed
+ * in cols (in the given order).  Columns not found are silently skipped.
+ * Returns NULL if df or cols is NULL. */
+TkDataframe *df_select_columns(TkDataframe *df, const char **cols,
+                                uint64_t ncols);
+
+/* df_value_counts: return a DfGroupResult where each group key is a unique
+ * value in col and agg_result is the number of rows with that value.
+ * The group_col must be a DF_COL_STR column.
+ * Returns an empty result (nrows==0, rows==NULL) on error. */
+DfGroupResult df_value_counts(TkDataframe *df, const char *col);
+
 #endif /* TK_STDLIB_DATAFRAME_H */

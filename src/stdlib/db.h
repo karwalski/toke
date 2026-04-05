@@ -80,4 +80,20 @@ I64Result  row_i64(Row r,  const char *col);
 F64Result  row_f64(Row r,  const char *col);
 BoolResult row_bool(Row r, const char *col);
 
+/* ── prepared statements ──────────────────────────────────────────────────── */
+
+typedef struct TkStmt TkStmt;
+typedef struct { TkStmt *ok; int is_err; DbErr err; } StmtResult;
+
+StmtResult db_prepare(int conn_id, const char *sql);
+BoolResult db_bind(TkStmt *stmt, StrArray params);
+RowResult  db_step(TkStmt *stmt);
+void       db_finalize(TkStmt *stmt);
+
+/* ── transactions ─────────────────────────────────────────────────────────── */
+
+BoolResult db_begin(int conn_id);
+BoolResult db_commit(int conn_id);
+BoolResult db_rollback(int conn_id);
+
 #endif /* TK_STDLIB_DB_H */

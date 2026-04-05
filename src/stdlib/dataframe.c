@@ -886,6 +886,367 @@ const char *df_tocsv(TkDataframe *df)
 }
 
 /* =========================================================================
+ * Story 31.1.1: df_sort, df_unique, df_drop_column, df_rename_column,
+ *               df_select_columns, df_value_counts
+ * ========================================================================= */
+
+/* -------------------------------------------------------------------------
+ * df_sort
+ * ------------------------------------------------------------------------- */
+
+/* Comparison context passed through qsort via a global (C99 has no qsort_r
+ * in all implementations, so we use a file-scope struct). */
+typedef struct {
+    DfCol *sort_col;
+    int    ascending;
+} SortCtx;
+
+static SortCtx g_sort_ctx;
+
+/* Get a string representation of row r from col, used for sort comparisons. */
+static const char *sort_col_str(DfCol *c, uint64_t r)
+{
+    if (c->type == DF_COL_STR) {
+        return c->str_data ? c->str_data[r] : "";
+    }
+    return NULL;  /* f64 columns are handled separately */
+}
+
+/* qsort comparator working on uint64_t row indices. */
+static int sort_cmp_rows(const void *a, const void *b)
+{
+    uint64_t ra = *(const uint64_t *)a;
+    uint64_t rb = *(const uint64_t *)b;
+    DfCol  *c   = g_sort_ctx.sort_col;
+    int     asc = g_sort_ctx.ascending;
+    int     cmp = 0;
+
+    if (c->type == DF_COL_F64) {
+        double va = c->f64_data[ra];
+        double vb = c->f64_data[rb];
+        if (va < vb) cmp = -1;
+        else if (va > vb) cmp = 1;
+        else cmp = 0;
+    } else {
+        /* String column: try numeric parse first */
+        const char *sa = sort_col_str(c, ra);
+        const char *sb = sort_col_str(c, rb);
+        if (!sa) sa = "";
+        if (!sb) sb = "";
+        char *ea, *eb;
+        double na = strtod(sa, &ea);
+        double nb = strtod(sb, &eb);
+        /* Both fully numeric? compare as doubles */
+        if (*ea == '\0' && *eb == '\0' && sa != ea && sb != eb) {
+            if (na < nb) cmp = -1;
+            else if (na > nb) cmp = 1;
+            else cmp = 0;
+        } else {
+            cmp = strcmp(sa, sb);
+        }
+    }
+
+    return asc ? cmp : -cmp;
+}
+
+TkDataframe *df_sort(TkDataframe *df, const char *col, int ascending)
+{
+    if (!df || !col) return NULL;
+    DfCol *c = df_column(df, col);
+    if (!c) return NULL;
+
+    /* Build an array of row indices then sort it. */
+    uint64_t *idx = malloc(df->nrows * sizeof(uint64_t));
+    if (!idx) return NULL;
+    for (uint64_t r = 0; r < df->nrows; r++) idx[r] = r;
+
+    g_sort_ctx.sort_col  = c;
+    g_sort_ctx.ascending = ascending;
+    qsort(idx, (size_t)df->nrows, sizeof(uint64_t), sort_cmp_rows);
+
+    /* Build the result dataframe in sorted order. */
+    TkDataframe *dst = df_new();
+    if (!dst) { free(idx); return NULL; }
+    dst->ncols = df->ncols;
+    dst->nrows = df->nrows;
+    dst->cols  = calloc(df->ncols, sizeof(DfCol));
+    if (!dst->cols) { free(idx); df_free(dst); return NULL; }
+
+    for (uint64_t j = 0; j < df->ncols; j++) {
+        DfCol *sc = &df->cols[j];
+        DfCol *dc = &dst->cols[j];
+        dc->name  = df_strdup(sc->name);
+        dc->type  = sc->type;
+        dc->nrows = df->nrows;
+
+        if (sc->type == DF_COL_F64) {
+            dc->f64_data = malloc(df->nrows * sizeof(double));
+            if (!dc->f64_data) { free(idx); df_free(dst); return NULL; }
+            for (uint64_t r = 0; r < df->nrows; r++)
+                dc->f64_data[r] = sc->f64_data[idx[r]];
+        } else {
+            dc->str_data = malloc(df->nrows * sizeof(char *));
+            if (!dc->str_data) { free(idx); df_free(dst); return NULL; }
+            for (uint64_t r = 0; r < df->nrows; r++)
+                dc->str_data[r] = df_strdup(sc->str_data[idx[r]]);
+        }
+    }
+
+    free(idx);
+    return dst;
+}
+
+/* -------------------------------------------------------------------------
+ * df_unique
+ * ------------------------------------------------------------------------- */
+
+TkDataframe *df_unique(TkDataframe *df, const char *col)
+{
+    if (!df || !col) return NULL;
+    DfCol *c = df_column(df, col);
+    if (!c) return NULL;
+
+    /* Build a mask: include row r if its value hasn't been seen before. */
+    int *mask = calloc(df->nrows, sizeof(int));
+    if (!mask) return NULL;
+
+    /* Use the existing hash table infrastructure for dedup tracking. */
+    uint64_t ht_size = df->nrows * 2 + HT_INIT_SIZE;
+    HashTable *seen = ht_new(ht_size);
+    if (!seen) { free(mask); return NULL; }
+
+    uint64_t new_nrows = 0;
+    for (uint64_t r = 0; r < df->nrows; r++) {
+        char tmp[64];
+        const char *key;
+        if (c->type == DF_COL_F64) {
+            snprintf(tmp, sizeof(tmp), "%.17g", c->f64_data[r]);
+            key = tmp;
+        } else {
+            key = c->str_data ? (c->str_data[r] ? c->str_data[r] : "") : "";
+        }
+        if (!ht_lookup(seen, key)) {
+            /* Mark as seen by inserting a dummy row index */
+            ht_insert(seen, key, r);
+            mask[r] = 1;
+            new_nrows++;
+        }
+    }
+
+    ht_free(seen);
+    TkDataframe *result = copy_rows_subset(df, mask, new_nrows);
+    free(mask);
+    return result;
+}
+
+/* -------------------------------------------------------------------------
+ * df_drop_column
+ * ------------------------------------------------------------------------- */
+
+TkDataframe *df_drop_column(TkDataframe *df, const char *col)
+{
+    if (!df || !col) return NULL;
+
+    /* Find the column index to drop (or -1 if not found). */
+    int64_t drop_idx = -1;
+    for (uint64_t j = 0; j < df->ncols; j++) {
+        if (df->cols[j].name && strcmp(df->cols[j].name, col) == 0) {
+            drop_idx = (int64_t)j;
+            break;
+        }
+    }
+
+    uint64_t new_ncols = (drop_idx >= 0) ? df->ncols - 1 : df->ncols;
+
+    TkDataframe *dst = df_new();
+    if (!dst) return NULL;
+    dst->nrows = df->nrows;
+    dst->ncols = new_ncols;
+    if (new_ncols == 0) {
+        dst->cols = NULL;
+        return dst;
+    }
+    dst->cols = calloc(new_ncols, sizeof(DfCol));
+    if (!dst->cols) { df_free(dst); return NULL; }
+
+    uint64_t di = 0;
+    for (uint64_t j = 0; j < df->ncols; j++) {
+        if ((int64_t)j == drop_idx) continue;
+        DfCol *sc = &df->cols[j];
+        DfCol *dc = &dst->cols[di];
+        dc->name  = df_strdup(sc->name);
+        dc->type  = sc->type;
+        dc->nrows = sc->nrows;
+        if (sc->type == DF_COL_F64) {
+            dc->f64_data = malloc(sc->nrows * sizeof(double));
+            if (!dc->f64_data) { df_free(dst); return NULL; }
+            memcpy(dc->f64_data, sc->f64_data, sc->nrows * sizeof(double));
+        } else {
+            dc->str_data = malloc(sc->nrows * sizeof(char *));
+            if (!dc->str_data) { df_free(dst); return NULL; }
+            for (uint64_t r = 0; r < sc->nrows; r++)
+                dc->str_data[r] = df_strdup(sc->str_data[r]);
+        }
+        di++;
+    }
+    return dst;
+}
+
+/* -------------------------------------------------------------------------
+ * df_rename_column
+ * ------------------------------------------------------------------------- */
+
+TkDataframe *df_rename_column(TkDataframe *df, const char *old_name,
+                               const char *new_name)
+{
+    if (!df || !old_name || !new_name) return NULL;
+
+    TkDataframe *dst = df_new();
+    if (!dst) return NULL;
+    dst->nrows = df->nrows;
+    dst->ncols = df->ncols;
+    dst->cols  = calloc(df->ncols, sizeof(DfCol));
+    if (!dst->cols) { df_free(dst); return NULL; }
+
+    for (uint64_t j = 0; j < df->ncols; j++) {
+        DfCol *sc = &df->cols[j];
+        DfCol *dc = &dst->cols[j];
+        /* Rename if this is the target column */
+        int rename = (sc->name && strcmp(sc->name, old_name) == 0);
+        dc->name  = df_strdup(rename ? new_name : sc->name);
+        dc->type  = sc->type;
+        dc->nrows = sc->nrows;
+        if (sc->type == DF_COL_F64) {
+            dc->f64_data = malloc(sc->nrows * sizeof(double));
+            if (!dc->f64_data) { df_free(dst); return NULL; }
+            memcpy(dc->f64_data, sc->f64_data, sc->nrows * sizeof(double));
+        } else {
+            dc->str_data = malloc(sc->nrows * sizeof(char *));
+            if (!dc->str_data) { df_free(dst); return NULL; }
+            for (uint64_t r = 0; r < sc->nrows; r++)
+                dc->str_data[r] = df_strdup(sc->str_data[r]);
+        }
+    }
+    return dst;
+}
+
+/* -------------------------------------------------------------------------
+ * df_select_columns
+ * ------------------------------------------------------------------------- */
+
+TkDataframe *df_select_columns(TkDataframe *df, const char **cols,
+                                uint64_t ncols)
+{
+    if (!df || !cols) return NULL;
+
+    /* Count how many of the requested columns actually exist. */
+    uint64_t found = 0;
+    for (uint64_t i = 0; i < ncols; i++) {
+        if (cols[i] && df_column(df, cols[i])) found++;
+    }
+
+    TkDataframe *dst = df_new();
+    if (!dst) return NULL;
+    dst->nrows = df->nrows;
+    dst->ncols = found;
+    if (found == 0) {
+        dst->cols = NULL;
+        return dst;
+    }
+    dst->cols = calloc(found, sizeof(DfCol));
+    if (!dst->cols) { df_free(dst); return NULL; }
+
+    uint64_t di = 0;
+    for (uint64_t i = 0; i < ncols; i++) {
+        if (!cols[i]) continue;
+        DfCol *sc = df_column(df, cols[i]);
+        if (!sc) continue;
+        DfCol *dc = &dst->cols[di];
+        dc->name  = df_strdup(sc->name);
+        dc->type  = sc->type;
+        dc->nrows = sc->nrows;
+        if (sc->type == DF_COL_F64) {
+            dc->f64_data = malloc(sc->nrows * sizeof(double));
+            if (!dc->f64_data) { df_free(dst); return NULL; }
+            memcpy(dc->f64_data, sc->f64_data, sc->nrows * sizeof(double));
+        } else {
+            dc->str_data = malloc(sc->nrows * sizeof(char *));
+            if (!dc->str_data) { df_free(dst); return NULL; }
+            for (uint64_t r = 0; r < sc->nrows; r++)
+                dc->str_data[r] = df_strdup(sc->str_data[r]);
+        }
+        di++;
+    }
+    return dst;
+}
+
+/* -------------------------------------------------------------------------
+ * df_value_counts
+ * ------------------------------------------------------------------------- */
+
+DfGroupResult df_value_counts(TkDataframe *df, const char *col)
+{
+    DfGroupResult empty = {NULL, 0};
+    if (!df || !col) return empty;
+
+    DfCol *c = df_column(df, col);
+    if (!c || c->type != DF_COL_STR) return empty;
+
+    /* Reuse the GroupAcc pattern from df_groupby. */
+    typedef struct VcAcc {
+        char          *key;
+        uint64_t       count;
+        struct VcAcc  *next;
+    } VcAcc;
+
+    uint64_t bkt_size = df->nrows * 2 + HT_INIT_SIZE;
+    VcAcc **buckets = calloc(bkt_size, sizeof(VcAcc *));
+    if (!buckets) return empty;
+    uint64_t n_groups = 0;
+
+    for (uint64_t r = 0; r < df->nrows; r++) {
+        const char *key = c->str_data[r] ? c->str_data[r] : "";
+        uint64_t h      = ht_hash(key, bkt_size);
+        VcAcc *va       = buckets[h];
+        while (va) {
+            if (strcmp(va->key, key) == 0) break;
+            va = va->next;
+        }
+        if (!va) {
+            va = calloc(1, sizeof(VcAcc));
+            if (!va) { free(buckets); return empty; }
+            va->key    = df_strdup(key);
+            va->next   = buckets[h];
+            buckets[h] = va;
+            n_groups++;
+        }
+        va->count++;
+    }
+
+    DfGroupRow *rows = malloc(n_groups * sizeof(DfGroupRow));
+    if (!rows) { free(buckets); return empty; }
+
+    uint64_t idx = 0;
+    for (uint64_t i = 0; i < bkt_size && idx < n_groups; i++) {
+        VcAcc *va = buckets[i];
+        while (va) {
+            rows[idx].group_val  = va->key;   /* transfer ownership */
+            rows[idx].agg_result = (double)va->count;
+            idx++;
+            VcAcc *nx = va->next;
+            free(va);
+            va = nx;
+        }
+    }
+    free(buckets);
+
+    DfGroupResult gr;
+    gr.rows  = rows;
+    gr.nrows = n_groups;
+    return gr;
+}
+
+/* =========================================================================
  * df_schema  (return column metadata)
  * ========================================================================= */
 
