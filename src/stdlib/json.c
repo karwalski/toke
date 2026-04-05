@@ -4,7 +4,7 @@
  * Minimal recursive-descent key extractor for flat JSON objects.
  * No external JSON library; all parsing is hand-rolled.
  *
- * Story: 1.3.4  Branch: feature/stdlib-json
+ * Story: 1.3.4, 35.1.3  Branch: feature/stdlib-json
  */
 
 #include "json.h"
@@ -309,4 +309,447 @@ JsonArrayResult json_arr(Json j, const char *key) {
         if (*p == ',') p++;
     }
     r.is_err = 0; r.ok.data = arr; r.ok.len = count; return r;
+}
+
+/* ------------------------------------------------------------------ */
+/* Streaming API — Story 35.1.3                                        */
+/* ------------------------------------------------------------------ */
+
+/* --- helpers for the streaming parser --- */
+
+static JsonStreamErr stream_err(JsonStreamErrKind kind, const char *msg) {
+    JsonStreamErr e;
+    e.kind = kind;
+    e.msg  = msg;
+    return e;
+}
+
+static JsonTokenResult tok_ok(JsonToken t) {
+    JsonTokenResult r;
+    r.is_err = 0;
+    r.ok = t;
+    return r;
+}
+
+static JsonTokenResult tok_err(JsonStreamErrKind kind, const char *msg) {
+    JsonTokenResult r;
+    r.is_err = 1;
+    r.err = stream_err(kind, msg);
+    return r;
+}
+
+static JsonToken tok_simple(JsonTokenKind kind) {
+    JsonToken t;
+    t.kind = kind;
+    t.val.u64 = 0;
+    return t;
+}
+
+static int stream_eof(const JsonStream *s) {
+    return s->pos >= s->len;
+}
+
+static uint8_t stream_peek(const JsonStream *s) {
+    return s->buf[s->pos];
+}
+
+static void stream_skip_ws(JsonStream *s) {
+    while (s->pos < s->len) {
+        uint8_t c = s->buf[s->pos];
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
+            s->pos++;
+        else
+            break;
+    }
+}
+
+/*
+ * Parse a JSON string starting at s->pos (which must be '"').
+ * Returns a malloc'd C-string with escapes resolved, or NULL on error.
+ * Advances s->pos past the closing quote.
+ */
+static char *stream_parse_string(JsonStream *s) {
+    if (stream_eof(s) || stream_peek(s) != '"') return NULL;
+    s->pos++; /* skip opening quote */
+
+    /* first pass: measure length */
+    uint64_t start = s->pos;
+    uint64_t slen = 0;
+    while (s->pos < s->len) {
+        uint8_t c = s->buf[s->pos];
+        if (c == '\\') {
+            s->pos += 2;
+            slen++;
+        } else if (c == '"') {
+            break;
+        } else {
+            s->pos++;
+            slen++;
+        }
+    }
+    if (s->pos >= s->len) return NULL; /* unterminated */
+
+    /* allocate and second pass: copy with basic unescape */
+    char *buf = malloc(slen + 1);
+    if (!buf) return NULL;
+    uint64_t rp = start;
+    char *wp = buf;
+    while (rp < s->pos) {
+        uint8_t c = s->buf[rp];
+        if (c == '\\') {
+            rp++;
+            uint8_t esc = s->buf[rp];
+            switch (esc) {
+                case '"':  *wp++ = '"';  break;
+                case '\\': *wp++ = '\\'; break;
+                case '/':  *wp++ = '/';  break;
+                case 'b':  *wp++ = '\b'; break;
+                case 'f':  *wp++ = '\f'; break;
+                case 'n':  *wp++ = '\n'; break;
+                case 'r':  *wp++ = '\r'; break;
+                case 't':  *wp++ = '\t'; break;
+                default:   *wp++ = (char)esc; break;
+            }
+            rp++;
+        } else {
+            *wp++ = (char)c;
+            rp++;
+        }
+    }
+    *wp = '\0';
+    s->pos++; /* skip closing quote */
+    return buf;
+}
+
+/*
+ * Parse a JSON number starting at s->pos.
+ * Determines whether it is integer (u64/i64) or float (f64).
+ * Advances s->pos past the number.
+ */
+static JsonTokenResult stream_parse_number(JsonStream *s) {
+    uint64_t start = s->pos;
+    int is_neg = 0;
+    int is_float = 0;
+
+    if (s->buf[s->pos] == '-') { is_neg = 1; s->pos++; }
+    if (s->pos >= s->len || s->buf[s->pos] < '0' || s->buf[s->pos] > '9')
+        return tok_err(JSON_STREAM_ERR_INVALID, "bad number");
+
+    while (s->pos < s->len && s->buf[s->pos] >= '0' && s->buf[s->pos] <= '9')
+        s->pos++;
+
+    if (s->pos < s->len && s->buf[s->pos] == '.') {
+        is_float = 1;
+        s->pos++;
+        while (s->pos < s->len && s->buf[s->pos] >= '0' && s->buf[s->pos] <= '9')
+            s->pos++;
+    }
+    if (s->pos < s->len && (s->buf[s->pos] == 'e' || s->buf[s->pos] == 'E')) {
+        is_float = 1;
+        s->pos++;
+        if (s->pos < s->len && (s->buf[s->pos] == '+' || s->buf[s->pos] == '-'))
+            s->pos++;
+        while (s->pos < s->len && s->buf[s->pos] >= '0' && s->buf[s->pos] <= '9')
+            s->pos++;
+    }
+
+    /* NUL-terminated copy for strto* */
+    size_t nlen = (size_t)(s->pos - start);
+    char tmp[64];
+    if (nlen >= sizeof(tmp))
+        return tok_err(JSON_STREAM_ERR_OVERFLOW, "number too long");
+    memcpy(tmp, s->buf + start, nlen);
+    tmp[nlen] = '\0';
+
+    JsonToken t;
+    if (is_float) {
+        char *end;
+        t.kind = JSON_TOK_F64;
+        t.val.f64 = strtod(tmp, &end);
+    } else if (is_neg) {
+        char *end;
+        t.kind = JSON_TOK_I64;
+        t.val.i64 = (int64_t)strtoll(tmp, &end, 10);
+    } else {
+        char *end;
+        t.kind = JSON_TOK_U64;
+        t.val.u64 = (uint64_t)strtoull(tmp, &end, 10);
+    }
+    return tok_ok(t);
+}
+
+/* --- public streaming parser --- */
+
+JsonStream json_streamparser(const uint8_t *buf, uint64_t len) {
+    JsonStream s;
+    s.buf   = buf;
+    s.len   = len;
+    s.pos   = 0;
+    s.depth = 0;
+    s.stack[0] = JSON_STATE_VALUE;
+    return s;
+}
+
+JsonTokenResult json_streamnext(JsonStream *s) {
+    stream_skip_ws(s);
+
+    if (s->depth == 0 && s->stack[0] == JSON_STATE_DONE) {
+        return tok_ok(tok_simple(JSON_TOK_END));
+    }
+
+    if (stream_eof(s))
+        return tok_err(JSON_STREAM_ERR_TRUNCATED, "unexpected end of input");
+
+    JsonStreamState state = s->stack[s->depth];
+    uint8_t c = stream_peek(s);
+
+    switch (state) {
+    case JSON_STATE_VALUE:
+    case JSON_STATE_OBJ_VALUE:
+    case JSON_STATE_ARR_VALUE_OR_END:
+    {
+        /* In array context, also accept ']' */
+        if (state == JSON_STATE_ARR_VALUE_OR_END && c == ']') {
+            s->pos++;
+            if (s->depth == 0)
+                return tok_err(JSON_STREAM_ERR_INVALID, "unexpected ']'");
+            s->depth--;
+            /* After closing array, container decides next state */
+            if (s->depth == 0) {
+                s->stack[0] = JSON_STATE_DONE;
+            } else {
+                JsonStreamState parent = s->stack[s->depth];
+                if (parent == JSON_STATE_OBJ_VALUE)
+                    s->stack[s->depth] = JSON_STATE_OBJ_COMMA;
+                else if (parent == JSON_STATE_ARR_VALUE_OR_END)
+                    s->stack[s->depth] = JSON_STATE_ARR_COMMA;
+            }
+            return tok_ok(tok_simple(JSON_TOK_ARRAY_END));
+        }
+
+        /* Parse value */
+        if (c == '{') {
+            s->pos++;
+            if (s->depth > 0) {
+                /* transition the current frame to post-value */
+                if (state == JSON_STATE_OBJ_VALUE)
+                    s->stack[s->depth] = JSON_STATE_OBJ_COMMA;
+                else if (state == JSON_STATE_ARR_VALUE_OR_END)
+                    s->stack[s->depth] = JSON_STATE_ARR_COMMA;
+            }
+            s->depth++;
+            if (s->depth >= JSON_STREAM_MAX_DEPTH)
+                return tok_err(JSON_STREAM_ERR_OVERFLOW, "nesting too deep");
+            s->stack[s->depth] = JSON_STATE_OBJ_KEY_OR_END;
+            return tok_ok(tok_simple(JSON_TOK_OBJECT_START));
+        }
+        if (c == '[') {
+            s->pos++;
+            if (s->depth > 0) {
+                if (state == JSON_STATE_OBJ_VALUE)
+                    s->stack[s->depth] = JSON_STATE_OBJ_COMMA;
+                else if (state == JSON_STATE_ARR_VALUE_OR_END)
+                    s->stack[s->depth] = JSON_STATE_ARR_COMMA;
+            }
+            s->depth++;
+            if (s->depth >= JSON_STREAM_MAX_DEPTH)
+                return tok_err(JSON_STREAM_ERR_OVERFLOW, "nesting too deep");
+            s->stack[s->depth] = JSON_STATE_ARR_VALUE_OR_END;
+            return tok_ok(tok_simple(JSON_TOK_ARRAY_START));
+        }
+        if (c == '"') {
+            char *str = stream_parse_string(s);
+            if (!str)
+                return tok_err(JSON_STREAM_ERR_INVALID, "bad string");
+            JsonToken t;
+            t.kind = JSON_TOK_STR;
+            t.val.str = str;
+            /* transition state after scalar */
+            if (s->depth == 0) {
+                s->stack[0] = JSON_STATE_DONE;
+            } else {
+                if (state == JSON_STATE_OBJ_VALUE)
+                    s->stack[s->depth] = JSON_STATE_OBJ_COMMA;
+                else if (state == JSON_STATE_ARR_VALUE_OR_END)
+                    s->stack[s->depth] = JSON_STATE_ARR_COMMA;
+            }
+            return tok_ok(t);
+        }
+        if (c == 't') {
+            if (s->pos + 4 > s->len || memcmp(s->buf + s->pos, "true", 4) != 0)
+                return tok_err(JSON_STREAM_ERR_INVALID, "bad token");
+            s->pos += 4;
+            JsonToken t;
+            t.kind = JSON_TOK_BOOL;
+            t.val.b = 1;
+            if (s->depth == 0) s->stack[0] = JSON_STATE_DONE;
+            else if (state == JSON_STATE_OBJ_VALUE)
+                s->stack[s->depth] = JSON_STATE_OBJ_COMMA;
+            else if (state == JSON_STATE_ARR_VALUE_OR_END)
+                s->stack[s->depth] = JSON_STATE_ARR_COMMA;
+            return tok_ok(t);
+        }
+        if (c == 'f') {
+            if (s->pos + 5 > s->len || memcmp(s->buf + s->pos, "false", 5) != 0)
+                return tok_err(JSON_STREAM_ERR_INVALID, "bad token");
+            s->pos += 5;
+            JsonToken t;
+            t.kind = JSON_TOK_BOOL;
+            t.val.b = 0;
+            if (s->depth == 0) s->stack[0] = JSON_STATE_DONE;
+            else if (state == JSON_STATE_OBJ_VALUE)
+                s->stack[s->depth] = JSON_STATE_OBJ_COMMA;
+            else if (state == JSON_STATE_ARR_VALUE_OR_END)
+                s->stack[s->depth] = JSON_STATE_ARR_COMMA;
+            return tok_ok(t);
+        }
+        if (c == 'n') {
+            if (s->pos + 4 > s->len || memcmp(s->buf + s->pos, "null", 4) != 0)
+                return tok_err(JSON_STREAM_ERR_INVALID, "bad token");
+            s->pos += 4;
+            if (s->depth == 0) s->stack[0] = JSON_STATE_DONE;
+            else if (state == JSON_STATE_OBJ_VALUE)
+                s->stack[s->depth] = JSON_STATE_OBJ_COMMA;
+            else if (state == JSON_STATE_ARR_VALUE_OR_END)
+                s->stack[s->depth] = JSON_STATE_ARR_COMMA;
+            return tok_ok(tok_simple(JSON_TOK_NULL));
+        }
+        if (c == '-' || (c >= '0' && c <= '9')) {
+            JsonTokenResult nr = stream_parse_number(s);
+            if (!nr.is_err) {
+                if (s->depth == 0) s->stack[0] = JSON_STATE_DONE;
+                else if (state == JSON_STATE_OBJ_VALUE)
+                    s->stack[s->depth] = JSON_STATE_OBJ_COMMA;
+                else if (state == JSON_STATE_ARR_VALUE_OR_END)
+                    s->stack[s->depth] = JSON_STATE_ARR_COMMA;
+            }
+            return nr;
+        }
+        return tok_err(JSON_STREAM_ERR_INVALID, "unexpected character");
+    }
+
+    case JSON_STATE_OBJ_KEY_OR_END:
+        if (c == '}') {
+            s->pos++;
+            s->depth--;
+            if (s->depth == 0) {
+                s->stack[0] = JSON_STATE_DONE;
+            }
+            return tok_ok(tok_simple(JSON_TOK_OBJECT_END));
+        }
+        if (c == '"') {
+            char *str = stream_parse_string(s);
+            if (!str)
+                return tok_err(JSON_STREAM_ERR_INVALID, "bad key");
+            s->stack[s->depth] = JSON_STATE_OBJ_COLON;
+            JsonToken t;
+            t.kind = JSON_TOK_KEY;
+            t.val.str = str;
+            return tok_ok(t);
+        }
+        return tok_err(JSON_STREAM_ERR_INVALID, "expected key or '}'");
+
+    case JSON_STATE_OBJ_COLON:
+        if (c != ':')
+            return tok_err(JSON_STREAM_ERR_INVALID, "expected ':'");
+        s->pos++;
+        s->stack[s->depth] = JSON_STATE_OBJ_VALUE;
+        return json_streamnext(s); /* tail-recurse into value */
+
+    case JSON_STATE_OBJ_COMMA:
+        if (c == '}') {
+            s->pos++;
+            s->depth--;
+            if (s->depth == 0) {
+                s->stack[0] = JSON_STATE_DONE;
+            }
+            return tok_ok(tok_simple(JSON_TOK_OBJECT_END));
+        }
+        if (c == ',') {
+            s->pos++;
+            s->stack[s->depth] = JSON_STATE_OBJ_KEY_OR_END;
+            return json_streamnext(s);
+        }
+        return tok_err(JSON_STREAM_ERR_INVALID, "expected ',' or '}'");
+
+    case JSON_STATE_ARR_COMMA:
+        if (c == ']') {
+            s->pos++;
+            s->depth--;
+            if (s->depth == 0) {
+                s->stack[0] = JSON_STATE_DONE;
+            }
+            return tok_ok(tok_simple(JSON_TOK_ARRAY_END));
+        }
+        if (c == ',') {
+            s->pos++;
+            s->stack[s->depth] = JSON_STATE_ARR_VALUE_OR_END;
+            return json_streamnext(s);
+        }
+        return tok_err(JSON_STREAM_ERR_INVALID, "expected ',' or ']'");
+
+    case JSON_STATE_DONE:
+        return tok_ok(tok_simple(JSON_TOK_END));
+    }
+
+    return tok_err(JSON_STREAM_ERR_INVALID, "internal error");
+}
+
+/* --- streaming writer --- */
+
+JsonWriter json_newwriter(uint64_t initial_cap) {
+    JsonWriter w;
+    if (initial_cap < 64) initial_cap = 64;
+    w.buf = malloc((size_t)initial_cap);
+    w.cap = w.buf ? initial_cap : 0;
+    w.pos = 0;
+    return w;
+}
+
+static int writer_ensure(JsonWriter *w, uint64_t needed) {
+    if (w->pos + needed <= w->cap) return 1;
+    uint64_t newcap = w->cap * 2;
+    while (newcap < w->pos + needed) newcap *= 2;
+    uint8_t *nb = realloc(w->buf, (size_t)newcap);
+    if (!nb) return 0;
+    w->buf = nb;
+    w->cap = newcap;
+    return 1;
+}
+
+static void writer_append(JsonWriter *w, const char *data, size_t len) {
+    if (writer_ensure(w, len)) {
+        memcpy(w->buf + w->pos, data, len);
+        w->pos += len;
+    }
+}
+
+/*
+ * json_streamemit — serialize a Json value (raw JSON text) into the writer.
+ *
+ * The Json.raw field is already valid JSON, so we copy it directly.
+ */
+JsonStreamVoidResult json_streamemit(JsonWriter *w, Json j) {
+    JsonStreamVoidResult r;
+    if (!j.raw) {
+        r.is_err = 1;
+        r.err = stream_err(JSON_STREAM_ERR_INVALID, "null json");
+        return r;
+    }
+    size_t len = strlen(j.raw);
+    if (!writer_ensure(w, len)) {
+        r.is_err = 1;
+        r.err = stream_err(JSON_STREAM_ERR_OVERFLOW, "writer oom");
+        return r;
+    }
+    writer_append(w, j.raw, len);
+    r.is_err = 0;
+    return r;
+}
+
+JsonBytes json_writerbytes(const JsonWriter *w) {
+    JsonBytes b;
+    b.data = w->buf;
+    b.len  = w->pos;
+    return b;
 }

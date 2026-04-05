@@ -65,13 +65,33 @@ int             auth_jwtexpired(const char *token);
  * API keys
  * ----------------------------------------------------------------------- */
 
-/* auth_apikeygen — generate a fresh API key: 32 random bytes encoded as
- * URL-safe base64 (no padding).  Returns a heap-allocated string; caller
- * must free(). */
+/* auth_apikeygenerate — generate a fresh API key: 32 random bytes encoded
+ * as URL-safe base64 (no padding).  Returns a heap-allocated string; caller
+ * must free().  Canonical name per std.auth contract. */
+const char     *auth_apikeygenerate(void);
+
+/* auth_apikeygen — alias for auth_apikeygenerate (legacy name). */
 const char     *auth_apikeygen(void);
 
 /* auth_apikeyvalidate — constant-time comparison of two null-terminated
  * strings.  Returns 1 if equal, 0 if not.  Both pointers must be non-NULL. */
 int             auth_apikeyvalidate(const char *provided, const char *stored);
+
+/* -----------------------------------------------------------------------
+ * Bearer token extraction
+ * ----------------------------------------------------------------------- */
+
+/* Result of auth_bearerextract. */
+typedef struct {
+    const char *ok;      /* heap-allocated token string; NULL on error */
+    int         is_err;
+    const char *err_msg;
+} BearerResult;
+
+/* auth_bearerextract — extract the Bearer token from an Authorization
+ * header value (e.g. "Bearer eyJhbG..." → "eyJhbG...").
+ * Returns BearerResult; on success .ok is heap-allocated, caller must
+ * free().  On error .is_err == 1 and .ok == NULL. */
+BearerResult    auth_bearerextract(const char *header_value);
 
 #endif /* TK_STDLIB_AUTH_H */

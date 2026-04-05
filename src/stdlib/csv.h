@@ -69,4 +69,19 @@ const char  *csv_writer_flush(TkCsvWriter *w);
  * Returns NULL (and sets *nrows_out=0) on empty input. */
 StrArray    *csv_parse(const char *data, uint64_t len, uint64_t *nrows_out);
 
+/* -----------------------------------------------------------------------
+ * .tki-aligned aliases (Story 35.1.11)
+ *
+ * The std.csv .tki contract uses csv.reader, csv.next, etc.  The compiler
+ * maps module.func → module_func, so the expected C symbols are csv_reader,
+ * csv_next, etc.  The macros below provide those names as aliases for the
+ * original longer forms so both spellings work.
+ * ----------------------------------------------------------------------- */
+#define csv_reader    csv_reader_new
+#define csv_next      csv_reader_next
+#define csv_header    csv_reader_header
+#define csv_writer    csv_writer_new
+#define csv_writerow  csv_writer_writerow
+#define csv_flush     csv_writer_flush
+
 #endif /* TK_STDLIB_CSV_H */

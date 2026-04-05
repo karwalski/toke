@@ -151,6 +151,95 @@ int main(void)
         tmpl_free(t);
     }
 
+    /* ---- 13. tmpl_vars: construct variable bindings ---- */
+    {
+        const char *keys[]   = {"greeting", "name"};
+        const char *values[] = {"Hi",       "Carol"};
+        TkTmplVar *vars = tmpl_vars(keys, values, 2);
+        ASSERT(vars != NULL, "tmpl_vars: non-NULL result");
+        ASSERT_STREQ(vars[0].key, "greeting", "tmpl_vars: key[0] = greeting");
+        ASSERT_STREQ(vars[0].value, "Hi",     "tmpl_vars: value[0] = Hi");
+        ASSERT_STREQ(vars[1].key, "name",     "tmpl_vars: key[1] = name");
+        ASSERT_STREQ(vars[1].value, "Carol",  "tmpl_vars: value[1] = Carol");
+
+        /* use the constructed vars in a render */
+        TkTmpl *t = tmpl_compile("{{greeting}}, {{name}}!");
+        const char *got = tmpl_render(t, vars, 2);
+        ASSERT_STREQ(got, "Hi, Carol!", "tmpl_vars: render with constructed vars");
+        free((void *)got);
+        tmpl_free(t);
+        free(vars);
+    }
+
+    /* ---- 14. tmpl_vars: zero count returns NULL ---- */
+    {
+        TkTmplVar *vars = tmpl_vars(NULL, NULL, 0);
+        ASSERT(vars == NULL, "tmpl_vars: nvar=0 returns NULL");
+    }
+
+    /* ---- 15. tmpl_html: simple element with attributes and children ---- */
+    {
+        const char *ak[] = {"class", "id"};
+        const char *av[] = {"main",  "box"};
+        const char *ch[] = {"hello"};
+        const char *got = tmpl_html("div", ak, av, 2, ch, 1);
+        ASSERT_STREQ(got, "<div class=\"main\" id=\"box\">hello</div>",
+                     "tmpl_html: div with attrs and child");
+        free((void *)got);
+    }
+
+    /* ---- 16. tmpl_html: no attributes, no children ---- */
+    {
+        const char *got = tmpl_html("br", NULL, NULL, 0, NULL, 0);
+        ASSERT_STREQ(got, "<br></br>", "tmpl_html: empty element");
+        free((void *)got);
+    }
+
+    /* ---- 17. tmpl_html: attribute values are HTML-escaped ---- */
+    {
+        const char *ak[] = {"title"};
+        const char *av[] = {"a&b<c\"d"};
+        const char *got = tmpl_html("span", ak, av, 1, NULL, 0);
+        ASSERT_STREQ(got, "<span title=\"a&amp;b&lt;c&quot;d\"></span>",
+                     "tmpl_html: attribute values escaped");
+        free((void *)got);
+    }
+
+    /* ---- 18. tmpl_html: multiple children concatenated ---- */
+    {
+        const char *ch[] = {"<b>one</b>", "<i>two</i>"};
+        const char *got = tmpl_html("p", NULL, NULL, 0, ch, 2);
+        ASSERT_STREQ(got, "<p><b>one</b><i>two</i></p>",
+                     "tmpl_html: multiple children");
+        free((void *)got);
+    }
+
+    /* ---- 19. tmpl_renderfile: load, compile, render ---- */
+    {
+        /* write a temporary template file */
+        const char *tmppath = "/tmp/test_tpl_renderfile.txt";
+        FILE *fp = fopen(tmppath, "w");
+        ASSERT(fp != NULL, "tmpl_renderfile: create temp file");
+        if (fp) {
+            fprintf(fp, "Hello, {{who}}!");
+            fclose(fp);
+
+            TkTmplVar vars[] = {{"who", "World"}};
+            const char *got = tmpl_renderfile(tmppath, vars, 1);
+            ASSERT_STREQ(got, "Hello, World!",
+                         "tmpl_renderfile: renders from file");
+            free((void *)got);
+            remove(tmppath);
+        }
+    }
+
+    /* ---- 20. tmpl_renderfile: non-existent file returns NULL ---- */
+    {
+        const char *got = tmpl_renderfile("/tmp/no_such_file_ever.txt",
+                                          NULL, 0);
+        ASSERT(got == NULL, "tmpl_renderfile: missing file returns NULL");
+    }
+
     /* ---- report ---- */
     if (failures == 0) {
         printf("All tests passed.\n");

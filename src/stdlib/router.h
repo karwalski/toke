@@ -39,6 +39,18 @@ typedef struct {
 /* Handler function pointer */
 typedef TkRouteResp (*TkRouteHandler)(TkRouteCtx ctx);
 
+/* Middleware function pointer.
+ * Receives the request context and a 'next' handler that invokes the
+ * remaining middleware chain (and ultimately the route handler).
+ * Returning a response directly short-circuits the chain. */
+typedef TkRouteResp (*TkMiddleware)(TkRouteCtx ctx, TkRouteHandler next);
+
+/* Router error — returned by router_serve on failure */
+typedef struct {
+    int         failed;    /* non-zero when an error occurred */
+    const char *msg;
+} TkRouterErr;
+
 TkRouter   *router_new(void);
 void        router_free(TkRouter *r);
 void        router_get(TkRouter *r, const char *pattern, TkRouteHandler h);
@@ -46,9 +58,18 @@ void        router_post(TkRouter *r, const char *pattern, TkRouteHandler h);
 void        router_put(TkRouter *r, const char *pattern, TkRouteHandler h);
 void        router_delete(TkRouter *r, const char *pattern, TkRouteHandler h);
 
+/* Add middleware to the router's chain (called before route handlers) */
+void        router_use(TkRouter *r, TkMiddleware mw);
+
 /* Match a request — returns handler result or 404 response */
 TkRouteResp router_dispatch(TkRouter *r, const char *method, const char *path,
                              const char *query, const char *body);
+
+/* Start an HTTP server using this router for dispatch.
+ * Binds to the given host:port and blocks, serving requests.
+ * host may be NULL or "" to bind to all interfaces.
+ * Returns TkRouterErr (failed==0 on clean shutdown). */
+TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port);
 
 /* Query string helpers */
 const char *router_query_get(const char *query, const char *key); /* URL-decode value for key */

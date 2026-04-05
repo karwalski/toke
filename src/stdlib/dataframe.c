@@ -734,3 +734,176 @@ DfGroupResult df_groupby(TkDataframe *df, const char *group_col,
     gr.nrows = n_groups;
     return gr;
 }
+
+/* =========================================================================
+ * df_fromrows  (build dataframe from row-major string data)
+ * ========================================================================= */
+
+TkDataframe *df_fromrows(const char **headers, uint64_t ncols,
+                          const char ***rows, uint64_t nrows)
+{
+    if (!headers || ncols == 0) return NULL;
+
+    /* Detect column types: if every data value parses as f64 → DF_COL_F64. */
+    DfColType *types = malloc(ncols * sizeof(DfColType));
+    if (!types) return NULL;
+
+    for (uint64_t j = 0; j < ncols; j++) {
+        types[j] = DF_COL_F64; /* optimistic */
+        for (uint64_t r = 0; r < nrows; r++) {
+            const char *val = rows[r][j];
+            if (!is_f64(val)) {
+                types[j] = DF_COL_STR;
+                break;
+            }
+        }
+    }
+
+    TkDataframe *df = df_new();
+    if (!df) { free(types); return NULL; }
+    df->ncols = ncols;
+    df->nrows = nrows;
+    df->cols  = calloc(ncols, sizeof(DfCol));
+    if (!df->cols) { free(df); free(types); return NULL; }
+
+    for (uint64_t j = 0; j < ncols; j++) {
+        df->cols[j] = make_col(headers[j], types[j]);
+        df->cols[j].nrows = nrows;
+
+        if (types[j] == DF_COL_F64) {
+            df->cols[j].f64_data = malloc(nrows * sizeof(double));
+            if (!df->cols[j].f64_data) { df_free(df); free(types); return NULL; }
+            for (uint64_t r = 0; r < nrows; r++) {
+                const char *val = rows[r][j];
+                df->cols[j].f64_data[r] = strtod(val ? val : "0", NULL);
+            }
+        } else {
+            df->cols[j].str_data = malloc(nrows * sizeof(char *));
+            if (!df->cols[j].str_data) { df_free(df); free(types); return NULL; }
+            for (uint64_t r = 0; r < nrows; r++) {
+                const char *val = rows[r][j];
+                df->cols[j].str_data[r] = df_strdup(val ? val : "");
+            }
+        }
+    }
+
+    free(types);
+    return df;
+}
+
+/* =========================================================================
+ * df_columnstr  (extract a string column by name)
+ * ========================================================================= */
+
+char **df_columnstr(TkDataframe *df, const char *name, uint64_t *out_len)
+{
+    if (out_len) *out_len = 0;
+    if (!df || !name) return NULL;
+
+    DfCol *c = df_column(df, name);
+    if (!c || c->type != DF_COL_STR) return NULL;
+
+    char **result = malloc(c->nrows * sizeof(char *));
+    if (!result) return NULL;
+
+    for (uint64_t r = 0; r < c->nrows; r++) {
+        result[r] = df_strdup(c->str_data[r]);
+        if (!result[r]) {
+            /* clean up on OOM */
+            for (uint64_t k = 0; k < r; k++) free(result[k]);
+            free(result);
+            return NULL;
+        }
+    }
+
+    if (out_len) *out_len = c->nrows;
+    return result;
+}
+
+/* =========================================================================
+ * df_tocsv  (serialise dataframe as CSV string)
+ * ========================================================================= */
+
+const char *df_tocsv(TkDataframe *df)
+{
+    if (!df) return NULL;
+
+    TkCsvWriter *w = csv_writer_new();
+    if (!w) return NULL;
+
+    /* Header row. */
+    {
+        const char **hdr = malloc(df->ncols * sizeof(const char *));
+        if (!hdr) { csv_writer_free(w); return NULL; }
+        for (uint64_t j = 0; j < df->ncols; j++)
+            hdr[j] = df->cols[j].name;
+        StrArray row;
+        row.data = hdr;
+        row.len  = df->ncols;
+        csv_writer_writerow(w, row);
+        free(hdr);
+    }
+
+    /* Data rows. */
+    {
+        const char **fields = malloc(df->ncols * sizeof(const char *));
+        char       **owned  = malloc(df->ncols * sizeof(char *));
+        if (!fields || !owned) {
+            free(fields); free(owned);
+            csv_writer_free(w);
+            return NULL;
+        }
+
+        for (uint64_t r = 0; r < df->nrows; r++) {
+            for (uint64_t j = 0; j < df->ncols; j++) {
+                if (df->cols[j].type == DF_COL_F64) {
+                    char buf[64];
+                    snprintf(buf, sizeof(buf), "%.17g", df->cols[j].f64_data[r]);
+                    owned[j] = df_strdup(buf);
+                    fields[j] = owned[j];
+                } else {
+                    owned[j] = NULL;
+                    fields[j] = df->cols[j].str_data[r]
+                                    ? df->cols[j].str_data[r] : "";
+                }
+            }
+            StrArray row;
+            row.data = fields;
+            row.len  = df->ncols;
+            csv_writer_writerow(w, row);
+            for (uint64_t j = 0; j < df->ncols; j++)
+                free(owned[j]);
+        }
+        free(fields);
+        free(owned);
+    }
+
+    const char *csv = csv_writer_flush(w);
+    /* We need to own the string after freeing the writer, so dup it. */
+    char *result = df_strdup(csv);
+    csv_writer_free(w);
+    return result;
+}
+
+/* =========================================================================
+ * df_schema  (return column metadata)
+ * ========================================================================= */
+
+DfSeries *df_schema(TkDataframe *df, uint64_t *out_len)
+{
+    if (out_len) *out_len = 0;
+    if (!df) return NULL;
+
+    DfSeries *series = malloc(df->ncols * sizeof(DfSeries));
+    if (!series) return NULL;
+
+    for (uint64_t j = 0; j < df->ncols; j++) {
+        series[j].name  = df_strdup(df->cols[j].name);
+        series[j].dtype = df_strdup(
+            df->cols[j].type == DF_COL_F64 ? "f64" : "str");
+        series[j].len   = df->cols[j].nrows;
+    }
+
+    if (out_len) *out_len = df->ncols;
+    return series;
+}

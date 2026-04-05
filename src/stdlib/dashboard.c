@@ -13,6 +13,7 @@
  */
 
 #include "dashboard.h"
+#include "router.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -306,4 +307,53 @@ const char *dashboard_render(TkDashboard *d)
 
     const char *result = html_render(doc);
     return result;
+}
+
+/* -----------------------------------------------------------------------
+ * Serve
+ * ----------------------------------------------------------------------- */
+
+/* File-scope pointer used to pass the rendered HTML to the route handler.
+ * This is set by dashboard_serve before calling router_serve and remains
+ * valid for the lifetime of the blocking serve call. */
+static const char *s_serve_html;
+
+static TkRouteResp dashboard_index_handler(TkRouteCtx ctx)
+{
+    (void)ctx;
+    return router_resp_ok(s_serve_html, "text/html; charset=utf-8");
+}
+
+TkRouterErr dashboard_serve(TkDashboard *d, uint64_t port)
+{
+    TkRouterErr err = {0, NULL};
+
+    if (!d) {
+        err.failed = 1;
+        err.msg    = "dashboard_serve: NULL dashboard";
+        return err;
+    }
+
+    const char *html = dashboard_render(d);
+    if (!html) {
+        err.failed = 1;
+        err.msg    = "dashboard_serve: render failed";
+        return err;
+    }
+
+    s_serve_html = html;
+
+    TkRouter *r = router_new();
+    if (!r) {
+        err.failed = 1;
+        err.msg    = "dashboard_serve: router_new failed";
+        return err;
+    }
+
+    router_get(r, "/", dashboard_index_handler);
+
+    err = router_serve(r, "0.0.0.0", port);
+
+    router_free(r);
+    return err;
 }

@@ -102,6 +102,35 @@ void         df_free(TkDataframe *df);
  * The key column appears once in the result. */
 DfResult     df_join(TkDataframe *left, TkDataframe *right, const char *on_col);
 
+/* df_fromrows: build a dataframe from column names and row-major string data.
+ * headers is an array of ncols column names; rows is an array of nrows
+ * StrArrays, each of length ncols.  Columns where every value is parseable
+ * as f64 become DF_COL_F64; all others become DF_COL_STR.
+ * Returns a heap-allocated dataframe; caller owns it via df_free(). */
+TkDataframe *df_fromrows(const char **headers, uint64_t ncols,
+                          const char ***rows, uint64_t nrows);
+
+/* df_columnstr: return an array of heap-allocated strings for the named
+ * string column.  Sets *out_len to the number of elements.
+ * Returns NULL if the column is not found or is not DF_COL_STR.
+ * Caller owns the returned array and each string in it. */
+char       **df_columnstr(TkDataframe *df, const char *name, uint64_t *out_len);
+
+/* df_tocsv: serialise the dataframe as RFC 4180 CSV with a header row.
+ * Returns a heap-allocated NUL-terminated string; caller owns it. */
+const char  *df_tocsv(TkDataframe *df);
+
+/* df_schema: return column metadata.  Sets *out_len to the number of columns.
+ * Each DfSeries describes one column (name, type string, length).
+ * Caller owns the returned array and each name/dtype string in it. */
+typedef struct {
+    char     *name;     /* heap-allocated column name */
+    char     *dtype;    /* "f64" or "str"             */
+    uint64_t  len;      /* number of rows             */
+} DfSeries;
+
+DfSeries    *df_schema(TkDataframe *df, uint64_t *out_len);
+
 /* -------------------------------------------------------------------------
  * GroupBy + aggregate
  * ------------------------------------------------------------------------- */

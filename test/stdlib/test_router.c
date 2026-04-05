@@ -7,7 +7,7 @@
  *   1.  Exact route: GET /hello matches /hello handler
  *   2.  Param route: GET /users/42 captures id="42"
  *   3.  Two params:  /a/:x/b/:y captures x and y
- *   4.  Wildcard:    /files/* matches /files/a/b/c
+ *   4.  Wildcard:    /files/ star matches /files/a/b/c
  *   5.  No match:    /missing → status 404
  *   6.  Method mismatch: POST on GET-only route → status 404
  *   7.  Multiple routes: correct handler called per path
@@ -99,6 +99,35 @@ static TkRouteResp handler_me(TkRouteCtx ctx)
 {
     (void)ctx;
     return router_resp_ok("me", "text/plain");
+}
+
+/* ----------------------------------------------------------------------- */
+/* Middleware test helpers                                                    */
+/* ----------------------------------------------------------------------- */
+
+static int mw_called_count = 0;
+
+/* Pass-through middleware — just records that it was called, then calls next */
+static TkRouteResp mw_passthrough(TkRouteCtx ctx, TkRouteHandler next)
+{
+    mw_called_count++;
+    return next(ctx);
+}
+
+/* Second pass-through — to test chaining order */
+static int mw2_called_count = 0;
+static TkRouteResp mw_passthrough2(TkRouteCtx ctx, TkRouteHandler next)
+{
+    mw2_called_count++;
+    return next(ctx);
+}
+
+/* Short-circuit middleware — returns 403 without calling next */
+static TkRouteResp mw_auth_deny(TkRouteCtx ctx, TkRouteHandler next)
+{
+    (void)ctx;
+    (void)next;
+    return router_resp_status(403, "Forbidden");
 }
 
 /* ----------------------------------------------------------------------- */
@@ -239,6 +268,63 @@ int main(void)
         router_get(r, "/users/me",  handler_me);
         TkRouteResp resp = router_dispatch(r, "GET", "/users/me", NULL, NULL);
         ASSERT_STREQ(resp.body, "me", "T12: exact beats param at same depth");
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 13: middleware pass-through — handler still called                */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        mw_called_count = 0;
+        router_use(r, mw_passthrough);
+        router_get(r, "/hello", handler_hello);
+        TkRouteResp resp = router_dispatch(r, "GET", "/hello", NULL, NULL);
+        ASSERT_INTEQ(resp.status, 200, "T13: middleware pass-through status=200");
+        ASSERT_STREQ(resp.body, "hello", "T13: middleware pass-through body");
+        ASSERT_INTEQ(mw_called_count, 1, "T13: middleware was invoked once");
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 14: middleware short-circuit — handler NOT called                 */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        router_use(r, mw_auth_deny);
+        router_get(r, "/hello", handler_hello);
+        TkRouteResp resp = router_dispatch(r, "GET", "/hello", NULL, NULL);
+        ASSERT_INTEQ(resp.status, 403, "T14: short-circuit middleware status=403");
+        ASSERT_STREQ(resp.body, "Forbidden", "T14: short-circuit body");
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 15: two middleware chained — both called in order                 */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        mw_called_count  = 0;
+        mw2_called_count = 0;
+        router_use(r, mw_passthrough);
+        router_use(r, mw_passthrough2);
+        router_get(r, "/hello", handler_hello);
+        TkRouteResp resp = router_dispatch(r, "GET", "/hello", NULL, NULL);
+        ASSERT_INTEQ(resp.status, 200, "T15: chained middleware status=200");
+        ASSERT_INTEQ(mw_called_count, 1, "T15: first middleware called");
+        ASSERT_INTEQ(mw2_called_count, 1, "T15: second middleware called");
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 16: no middleware — dispatch works as before                      */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        router_get(r, "/hello", handler_hello);
+        TkRouteResp resp = router_dispatch(r, "GET", "/hello", NULL, NULL);
+        ASSERT_INTEQ(resp.status, 200, "T16: no-middleware dispatch status=200");
+        ASSERT_STREQ(resp.body, "hello", "T16: no-middleware dispatch body");
         router_free(r);
     }
 

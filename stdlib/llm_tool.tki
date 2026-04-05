@@ -44,6 +44,8 @@
     },
     {"kind": "func", "name": "llm.withtools",     "params": ["llm.llmclient", "[tooldecl]"],                        "return": "llm.llmclient"},
     {"kind": "func", "name": "llm.chatwithtools", "params": ["llm.llmclient", "[llm.llmmsg]"],                      "return": "toolcall!llm.llmerr"},
-    {"kind": "func", "name": "llm.submitresult",  "params": ["llm.llmclient", "[llm.llmmsg]", "toolresult"],        "return": "llm.llmresp!llm.llmerr"}
+    {"kind": "func", "name": "llm.submitresult",  "params": ["llm.llmclient", "[llm.llmmsg]", "toolresult"],        "return": "llm.llmresp!llm.llmerr"},
+    {"kind": "func", "name": "llm.parsetoolcalls","params": ["str"],                                               "return": "toolcall!llm.llmerr"},
+    {"kind": "func", "name": "llm.resultmsgs",    "params": ["[toolresult]"],                                      "return": "[llm.llmmsg]"}
   ]
 }

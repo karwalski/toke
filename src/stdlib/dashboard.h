@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include "chart.h"
 #include "html.h"
+#include "router.h"
 
 typedef enum { DASH_WIDGET_CHART, DASH_WIDGET_TABLE } DashWidgetType;
 
@@ -52,5 +53,9 @@ void         dashboard_addtable(TkDashboard *d, const char *id, const char *titl
                                  uint32_t colspan, uint32_t rowspan);
 void         dashboard_update(TkDashboard *d, const char *widget_id, TkChartSpec *new_spec);
 const char  *dashboard_render(TkDashboard *d);   /* full HTML string */
+
+/* Render the dashboard to HTML and serve it on a single GET "/" route.
+ * Binds to 0.0.0.0:port and blocks.  Returns TkRouterErr on failure. */
+TkRouterErr  dashboard_serve(TkDashboard *d, uint64_t port);
 
 #endif /* TK_STDLIB_DASHBOARD_H */

@@ -8,6 +8,7 @@
 
 #include "json.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 
@@ -67,6 +68,228 @@ int main(void) {
     CHECK(!fr.is_err, "json_dec f64 object");
     F64JsonResult fv = json_f64(fr.ok, "pi");
     CHECK(!fv.is_err && fv.ok > 3.13 && fv.ok < 3.15, "json_f64 key=pi");
+
+    /* ================================================================ */
+    /* Streaming API — Story 35.1.3                                     */
+    /* ================================================================ */
+
+    /* --- json_streamparser + json_streamnext: simple object --- */
+    {
+        const char *input = "{\"name\":\"alice\",\"age\":30}";
+        JsonStream st = json_streamparser(
+            (const uint8_t *)input, (uint64_t)strlen(input));
+
+        JsonTokenResult tr;
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_OBJECT_START,
+              "stream: ObjectStart");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_KEY &&
+              strcmp(tr.ok.val.str, "name") == 0,
+              "stream: Key=name");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_STR &&
+              strcmp(tr.ok.val.str, "alice") == 0,
+              "stream: Str=alice");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_KEY &&
+              strcmp(tr.ok.val.str, "age") == 0,
+              "stream: Key=age");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_U64 &&
+              tr.ok.val.u64 == 30,
+              "stream: U64=30");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_OBJECT_END,
+              "stream: ObjectEnd");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_END,
+              "stream: End");
+    }
+
+    /* --- streaming parser: array with mixed types --- */
+    {
+        const char *input = "[1, -42, 3.14, true, false, null, \"hi\"]";
+        JsonStream st = json_streamparser(
+            (const uint8_t *)input, (uint64_t)strlen(input));
+
+        JsonTokenResult tr;
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_ARRAY_START,
+              "stream arr: ArrayStart");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_U64 && tr.ok.val.u64 == 1,
+              "stream arr: U64=1");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_I64 && tr.ok.val.i64 == -42,
+              "stream arr: I64=-42");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_F64 &&
+              tr.ok.val.f64 > 3.13 && tr.ok.val.f64 < 3.15,
+              "stream arr: F64=3.14");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_BOOL && tr.ok.val.b == 1,
+              "stream arr: Bool=true");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_BOOL && tr.ok.val.b == 0,
+              "stream arr: Bool=false");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_NULL,
+              "stream arr: Null");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_STR &&
+              strcmp(tr.ok.val.str, "hi") == 0,
+              "stream arr: Str=hi");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_ARRAY_END,
+              "stream arr: ArrayEnd");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_END,
+              "stream arr: End");
+    }
+
+    /* --- streaming parser: nested object --- */
+    {
+        const char *input = "{\"a\":{\"b\":1}}";
+        JsonStream st = json_streamparser(
+            (const uint8_t *)input, (uint64_t)strlen(input));
+
+        JsonTokenResult tr;
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_OBJECT_START,
+              "stream nested: outer ObjectStart");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_KEY &&
+              strcmp(tr.ok.val.str, "a") == 0,
+              "stream nested: Key=a");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_OBJECT_START,
+              "stream nested: inner ObjectStart");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_KEY &&
+              strcmp(tr.ok.val.str, "b") == 0,
+              "stream nested: Key=b");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_U64 && tr.ok.val.u64 == 1,
+              "stream nested: U64=1");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_OBJECT_END,
+              "stream nested: inner ObjectEnd");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_OBJECT_END,
+              "stream nested: outer ObjectEnd");
+
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_END,
+              "stream nested: End");
+    }
+
+    /* --- streaming parser: error on truncated input --- */
+    {
+        const char *input = "{\"key\":";
+        JsonStream st = json_streamparser(
+            (const uint8_t *)input, (uint64_t)strlen(input));
+
+        json_streamnext(&st); /* ObjectStart */
+        json_streamnext(&st); /* Key */
+        JsonTokenResult tr = json_streamnext(&st);
+        CHECK(tr.is_err && tr.err.kind == JSON_STREAM_ERR_TRUNCATED,
+              "stream err: truncated");
+    }
+
+    /* --- streaming parser: empty object --- */
+    {
+        const char *input = "{}";
+        JsonStream st = json_streamparser(
+            (const uint8_t *)input, (uint64_t)strlen(input));
+
+        JsonTokenResult tr;
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_OBJECT_START,
+              "stream empty obj: ObjectStart");
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_OBJECT_END,
+              "stream empty obj: ObjectEnd");
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_END,
+              "stream empty obj: End");
+    }
+
+    /* --- streaming parser: empty array --- */
+    {
+        const char *input = "[]";
+        JsonStream st = json_streamparser(
+            (const uint8_t *)input, (uint64_t)strlen(input));
+
+        JsonTokenResult tr;
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_ARRAY_START,
+              "stream empty arr: ArrayStart");
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_ARRAY_END,
+              "stream empty arr: ArrayEnd");
+        tr = json_streamnext(&st);
+        CHECK(!tr.is_err && tr.ok.kind == JSON_TOK_END,
+              "stream empty arr: End");
+    }
+
+    /* --- json_newwriter + json_streamemit + json_writerbytes --- */
+    {
+        JsonWriter w = json_newwriter(64);
+        Json j1; j1.raw = "{\"x\":1}";
+        JsonStreamVoidResult er = json_streamemit(&w, j1);
+        CHECK(!er.is_err, "writer: emit ok");
+
+        JsonBytes bytes = json_writerbytes(&w);
+        CHECK(bytes.len == 7 && memcmp(bytes.data, "{\"x\":1}", 7) == 0,
+              "writer: bytes match");
+
+        /* emit a second value */
+        Json j2; j2.raw = "[2,3]";
+        er = json_streamemit(&w, j2);
+        CHECK(!er.is_err, "writer: second emit ok");
+
+        bytes = json_writerbytes(&w);
+        CHECK(bytes.len == 12 &&
+              memcmp(bytes.data, "{\"x\":1}[2,3]", 12) == 0,
+              "writer: accumulated bytes");
+
+        free(w.buf);
+    }
+
+    /* --- json_streamemit: null json error --- */
+    {
+        JsonWriter w = json_newwriter(64);
+        Json jn; jn.raw = NULL;
+        JsonStreamVoidResult er = json_streamemit(&w, jn);
+        CHECK(er.is_err && er.err.kind == JSON_STREAM_ERR_INVALID,
+              "writer: null json error");
+        free(w.buf);
+    }
 
     /* --- summary --- */
     printf("\n%d passed, %d failed\n", g_pass, g_fail);

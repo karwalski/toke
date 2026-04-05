@@ -19,6 +19,11 @@
  *   T13  df_join unmatched rows are not included (inner join)
  *   T14  df_fromcsv no-header mode generates synthetic column names
  *   T15  df_filter op <= (op=1) keeps threshold value itself
+ *   T16  df_fromrows creates dataframe with correct shape and types
+ *   T17  df_columnstr returns string data for a str column
+ *   T18  df_columnstr returns NULL for an f64 column
+ *   T19  df_tocsv round-trips: fromcsv → tocsv produces header + data rows
+ *   T20  df_schema returns correct column names and dtypes
  */
 
 #include <stdio.h>
@@ -318,6 +323,88 @@ static void t15_filter_lte(void)
     df_free(df);
 }
 
+static void t16_fromrows(void)
+{
+    const char *headers[] = {"city", "pop"};
+    const char *row0[] = {"Sydney", "5000000"};
+    const char *row1[] = {"Melbourne", "4900000"};
+    const char *row2[] = {"Brisbane", "2500000"};
+    const char **rows[] = {row0, row1, row2};
+    TkDataframe *df = df_fromrows(headers, 2, (const char ***)rows, 3);
+    ASSERT(df != NULL,         "T16: df_fromrows returns non-NULL");
+    ASSERT(df->ncols == 2,     "T16: 2 columns");
+    ASSERT(df->nrows == 3,     "T16: 3 rows");
+    DfCol *city = df_column(df, "city");
+    ASSERT(city != NULL && city->type == DF_COL_STR, "T16: city is str column");
+    ASSERT_STREQ(city->str_data[0], "Sydney", "T16: city[0] == Sydney");
+    DfCol *pop = df_column(df, "pop");
+    ASSERT(pop != NULL && pop->type == DF_COL_F64, "T16: pop is f64 column");
+    ASSERT(pop->f64_data[0] == 5000000.0, "T16: pop[0] == 5000000");
+    df_free(df);
+}
+
+static void t17_columnstr(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+    uint64_t len = 0;
+    char **names = df_columnstr(df, "name", &len);
+    ASSERT(names != NULL, "T17: df_columnstr returns non-NULL for str col");
+    ASSERT(len == 4,      "T17: 4 elements");
+    ASSERT_STREQ(names[0], "Alice", "T17: names[0] == Alice");
+    ASSERT_STREQ(names[3], "Dave",  "T17: names[3] == Dave");
+    for (uint64_t i = 0; i < len; i++) free(names[i]);
+    free(names);
+    df_free(df);
+}
+
+static void t18_columnstr_f64_returns_null(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+    uint64_t len = 0;
+    char **result = df_columnstr(df, "age", &len);
+    ASSERT(result == NULL, "T18: df_columnstr returns NULL for f64 column");
+    ASSERT(len == 0,       "T18: out_len remains 0");
+    df_free(df);
+}
+
+static void t19_tocsv(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+    const char *csv = df_tocsv(df);
+    ASSERT(csv != NULL, "T19: df_tocsv returns non-NULL");
+    /* Should contain the header */
+    ASSERT(strstr(csv, "name") != NULL,  "T19: CSV contains 'name' header");
+    ASSERT(strstr(csv, "age") != NULL,   "T19: CSV contains 'age' header");
+    ASSERT(strstr(csv, "score") != NULL, "T19: CSV contains 'score' header");
+    /* Should contain data */
+    ASSERT(strstr(csv, "Alice") != NULL, "T19: CSV contains 'Alice'");
+    ASSERT(strstr(csv, "Bob") != NULL,   "T19: CSV contains 'Bob'");
+    free((char *)csv);
+    df_free(df);
+}
+
+static void t20_schema(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+    uint64_t len = 0;
+    DfSeries *s = df_schema(df, &len);
+    ASSERT(s != NULL,  "T20: df_schema returns non-NULL");
+    ASSERT(len == 3,   "T20: 3 columns in schema");
+    /* name col is str, age is f64, score is f64 */
+    ASSERT_STREQ(s[0].name, "name",  "T20: schema[0].name == name");
+    ASSERT_STREQ(s[0].dtype, "str",  "T20: schema[0].dtype == str");
+    ASSERT_STREQ(s[1].name, "age",   "T20: schema[1].name == age");
+    ASSERT_STREQ(s[1].dtype, "f64",  "T20: schema[1].dtype == f64");
+    ASSERT(s[0].len == 4, "T20: schema[0].len == 4");
+    for (uint64_t i = 0; i < len; i++) { free(s[i].name); free(s[i].dtype); }
+    free(s);
+    df_free(df);
+}
+
 /* -------------------------------------------------------------------------
  * main
  * ------------------------------------------------------------------------- */
@@ -339,6 +426,11 @@ int main(void)
     t13_join_excludes_unmatched();
     t14_fromcsv_no_header();
     t15_filter_lte();
+    t16_fromrows();
+    t17_columnstr();
+    t18_columnstr_f64_returns_null();
+    t19_tocsv();
+    t20_schema();
 
     printf("\n%s — %d failure(s)\n", failures == 0 ? "ALL PASS" : "FAILED", failures);
     return failures == 0 ? 0 : 1;

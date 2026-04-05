@@ -552,6 +552,14 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         if (!strcmp(method, "fmt"))    return "i18n_fmt";
         if (!strcmp(method, "locale")) return "i18n_locale";
     }
+    /* std.llm.tool functions (module terminal segment: "tool") */
+    if (!strcmp(mod, "tool")) {
+        if (!strcmp(method, "withtools"))       return "llm_tool_withtools";
+        if (!strcmp(method, "chatwithtools"))   return "llm_tool_chatwithtools";
+        if (!strcmp(method, "submitresult"))    return "llm_tool_submitresult";
+        if (!strcmp(method, "parsetoolcalls"))  return "llm_tool_parsetoolcalls";
+        if (!strcmp(method, "resultmsgs"))      return "llm_tool_resultmsgs";
+    }
     /* std.str functions */
     if (!strcmp(mod, "str")) {
         if (!strcmp(method, "argv"))   return "tk_str_argv";

@@ -24,7 +24,7 @@ REPRO_FLAGS = -frandom-seed=tkc \
 
 export SOURCE_DATE_EPOCH ?= 0
 
-.PHONY: all clean lint conform conform-check build-all ci test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage bench repro-check test-compress test-compress-stream test-compress-schema
+.PHONY: all clean lint conform conform-check build-all ci test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema
 
 all: $(BIN)
 
@@ -102,6 +102,11 @@ test-stdlib-crypto:
 	    test/stdlib/test_crypto.c src/stdlib/crypto.c src/stdlib/str.c
 	./test/stdlib/test_crypto
 
+test-stdlib-auth:
+	$(CC) $(CFLAGS) -o test/stdlib/test_auth \
+	    test/stdlib/test_auth.c src/stdlib/auth.c src/stdlib/encoding.c src/stdlib/crypto.c src/stdlib/str.c
+	./test/stdlib/test_auth
+
 test-stdlib-time:
 	$(CC) $(CFLAGS) -o test/stdlib/test_time \
 	    test/stdlib/test_time.c src/stdlib/tk_time.c
@@ -131,6 +136,16 @@ test-stdlib-i18n:
 	$(CC) $(CFLAGS) -Isrc/stdlib -o test/stdlib/test_i18n \
 	    test/stdlib/test_i18n.c src/stdlib/i18n.c
 	./test/stdlib/test_i18n
+
+test-stdlib-dataframe:
+	$(CC) $(CFLAGS) -Wno-unused-function -Isrc/stdlib -o test/stdlib/test_dataframe \
+	    test/stdlib/test_dataframe.c src/stdlib/dataframe.c src/stdlib/csv.c src/stdlib/str.c
+	./test/stdlib/test_dataframe
+
+test-stdlib-analytics:
+	$(CC) $(CFLAGS) -Wno-unused-function -iquote src/stdlib -o test/stdlib/test_analytics \
+	    test/stdlib/test_analytics.c src/stdlib/analytics.c src/stdlib/dataframe.c src/stdlib/csv.c src/stdlib/str.c src/stdlib/math.c -lm
+	./test/stdlib/test_analytics
 
 test-stdlib-coverage:
 	$(CC) $(CFLAGS) -Isrc/stdlib -o test/stdlib/test_stdlib_coverage \

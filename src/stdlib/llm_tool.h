@@ -85,4 +85,29 @@ ToolCallResult llm_parse_tool_calls(const char *response_json);
 TkLlmMsg      *llm_tool_result_msgs(TkToolResult *results, uint64_t nresults,
                                      uint64_t *nmsgs_out);
 
+/* -----------------------------------------------------------------------
+ * .tki-aligned aliases (Story 35.1.12)
+ *
+ * The std.llm.tool .tki contract exports names like llm.withtools,
+ * llm.chatwithtools, etc.  The compiler's resolve_stdlib_call maps these
+ * to the llm_tool_<method> C symbol convention.  The #defines below
+ * provide those canonical names while keeping the original symbols for
+ * backward compatibility.
+ * ----------------------------------------------------------------------- */
+
+/* llm.withtools → llm_tool_withtools */
+#define llm_tool_withtools       llm_tool_build_tools_json
+
+/* llm.chatwithtools → llm_tool_chatwithtools */
+#define llm_tool_chatwithtools   llm_chatwithtools
+
+/* llm.submitresult → llm_tool_submitresult */
+#define llm_tool_submitresult    llm_submitresult
+
+/* llm.parsetoolcalls → llm_tool_parsetoolcalls */
+#define llm_tool_parsetoolcalls  llm_parse_tool_calls
+
+/* llm.resultmsgs → llm_tool_resultmsgs */
+#define llm_tool_resultmsgs      llm_tool_result_msgs
+
 #endif /* TK_STDLIB_LLM_TOOL_H */

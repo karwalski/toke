@@ -74,4 +74,74 @@ int http_route_count(void);
 /* Server — blocks; dispatches to registered routes */
 int http_serve(uint16_t port);
 
+/* ── Client types (Story 35.1.2) ──────────────────────────────────── */
+
+typedef struct {
+    char    *base_url;
+    uint64_t pool_size;
+    uint64_t timeout_ms;
+} HttpClient;
+
+typedef struct {
+    const char  *method;
+    const char  *url;
+    StrPairArray headers;
+    uint8_t     *body;
+    uint64_t     body_len;
+} HttpClientReq;
+
+typedef struct {
+    uint64_t     status;
+    StrPairArray headers;
+    uint8_t     *body;
+    uint64_t     body_len;
+    int          is_err;
+    char        *err_msg;
+    uint64_t     err_code;
+} HttpClientResp;
+
+typedef struct {
+    uint64_t id;
+    int      open;
+    int      fd;         /* internal: socket file descriptor */
+    char    *buf;        /* internal: leftover read buffer   */
+    uint64_t buf_len;
+    uint64_t buf_cap;
+} HttpStream;
+
+typedef struct {
+    HttpStream stream;
+    int        is_err;
+    char      *err_msg;
+    uint64_t   err_code;
+} HttpStreamResult;
+
+typedef struct {
+    uint8_t *data;
+    uint64_t len;
+    int      is_err;
+    char    *err_msg;
+    uint64_t err_code;
+} HttpChunkResult;
+
+/* Client constructor */
+HttpClient *http_client(const char *base_url);
+
+/* Client destructor */
+void http_client_free(HttpClient *c);
+
+/* HTTP methods */
+HttpClientResp http_get   (HttpClient *c, const char *path);
+HttpClientResp http_post  (HttpClient *c, const char *path,
+                           const uint8_t *body, uint64_t body_len,
+                           const char *content_type);
+HttpClientResp http_put   (HttpClient *c, const char *path,
+                           const uint8_t *body, uint64_t body_len,
+                           const char *content_type);
+HttpClientResp http_delete(HttpClient *c, const char *path);
+
+/* Streaming */
+HttpStreamResult http_stream    (HttpClient *c, HttpClientReq req);
+HttpChunkResult  http_streamnext(HttpStream *s);
+
 #endif /* TK_STDLIB_HTTP_H */

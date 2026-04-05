@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <stdint.h>
+#include <inttypes.h>
 
 /* -----------------------------------------------------------------------
  * Internal helpers
@@ -446,7 +447,7 @@ int auth_jwtexpired(const char *token)
  * API key generation
  * ----------------------------------------------------------------------- */
 
-const char *auth_apikeygen(void)
+const char *auth_apikeygenerate(void)
 {
     uint8_t raw[32];
 
@@ -464,6 +465,12 @@ const char *auth_apikeygen(void)
     ByteArray   ba  = ba_of_bytes(raw, sizeof(raw));
     const char *key = encoding_b64urlencode(ba);
     return key;   /* heap-allocated, caller frees */
+}
+
+/* Legacy alias. */
+const char *auth_apikeygen(void)
+{
+    return auth_apikeygenerate();
 }
 
 /* -----------------------------------------------------------------------
@@ -489,4 +496,49 @@ int auth_apikeyvalidate(const char *provided, const char *stored)
     }
 
     return acc == 0 ? 1 : 0;
+}
+
+/* -----------------------------------------------------------------------
+ * Bearer token extraction
+ * ----------------------------------------------------------------------- */
+
+BearerResult auth_bearerextract(const char *header_value)
+{
+    BearerResult result;
+    result.ok      = NULL;
+    result.is_err  = 1;
+    result.err_msg = "invalid header";
+
+    if (!header_value) {
+        result.err_msg = "NULL header value";
+        return result;
+    }
+
+    /* Must start with "Bearer " (case-sensitive, single space). */
+    const char *prefix = "Bearer ";
+    size_t prefix_len = 7;
+
+    if (strncmp(header_value, prefix, prefix_len) != 0) {
+        result.err_msg = "not a Bearer token";
+        return result;
+    }
+
+    const char *token_start = header_value + prefix_len;
+
+    /* Token must be non-empty. */
+    if (*token_start == '\0') {
+        result.err_msg = "empty Bearer token";
+        return result;
+    }
+
+    char *token = strdup(token_start);
+    if (!token) {
+        result.err_msg = "out of memory";
+        return result;
+    }
+
+    result.ok      = token;
+    result.is_err  = 0;
+    result.err_msg = NULL;
+    return result;
 }

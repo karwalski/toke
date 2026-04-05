@@ -305,12 +305,158 @@ static void test_is_upgrade_request_case_insensitive(void)
 }
 
 /* -----------------------------------------------------------------------
+ * Test 14: ws_connect — NULL url returns error
+ * ----------------------------------------------------------------------- */
+static void test_connect_null_url(void)
+{
+    WsConnResult r = ws_connect(NULL);
+    ASSERT(r.is_err == 1, "ws_connect(NULL): is_err == 1");
+    ASSERT(r.conn == NULL, "ws_connect(NULL): conn == NULL");
+}
+
+/* -----------------------------------------------------------------------
+ * Test 15: ws_connect — invalid scheme returns error
+ * ----------------------------------------------------------------------- */
+static void test_connect_invalid_scheme(void)
+{
+    WsConnResult r = ws_connect("http://example.com");
+    ASSERT(r.is_err == 1, "ws_connect(http://): is_err == 1");
+    ASSERT(r.conn == NULL, "ws_connect(http://): conn == NULL");
+}
+
+/* -----------------------------------------------------------------------
+ * Test 16: ws_connect — unreachable host returns error
+ * ----------------------------------------------------------------------- */
+static void test_connect_unreachable(void)
+{
+    /* Use a non-routable address to get a quick failure */
+    WsConnResult r = ws_connect("ws://192.0.2.1:1/test");
+    ASSERT(r.is_err == 1, "ws_connect(unreachable): is_err == 1");
+    ASSERT(r.conn == NULL, "ws_connect(unreachable): conn == NULL");
+}
+
+/* -----------------------------------------------------------------------
+ * Test 17: ws_send — NULL connection returns error
+ * ----------------------------------------------------------------------- */
+static void test_send_null_conn(void)
+{
+    WsSendResult r = ws_send(NULL, "hello");
+    ASSERT(r.is_err == 1, "ws_send(NULL conn): is_err == 1");
+}
+
+/* -----------------------------------------------------------------------
+ * Test 18: ws_send — closed connection returns error
+ * ----------------------------------------------------------------------- */
+static void test_send_closed_conn(void)
+{
+    WsConn conn;
+    WsSendResult r;
+    conn.fd     = -1;
+    conn.mask   = 1;
+    conn.closed = 1;
+    r = ws_send(&conn, "hello");
+    ASSERT(r.is_err == 1, "ws_send(closed): is_err == 1");
+}
+
+/* -----------------------------------------------------------------------
+ * Test 19: ws_sendbytes — NULL connection returns error
+ * ----------------------------------------------------------------------- */
+static void test_sendbytes_null_conn(void)
+{
+    uint8_t data[] = {0x01, 0x02};
+    WsSendResult r = ws_sendbytes(NULL, data, 2);
+    ASSERT(r.is_err == 1, "ws_sendbytes(NULL conn): is_err == 1");
+}
+
+/* -----------------------------------------------------------------------
+ * Test 20: ws_recv — NULL connection returns error
+ * ----------------------------------------------------------------------- */
+static void test_recv_null_conn(void)
+{
+    WsRecvResult r = ws_recv(NULL);
+    ASSERT(r.is_err == 1, "ws_recv(NULL conn): is_err == 1");
+    ASSERT(r.frame == NULL, "ws_recv(NULL conn): frame == NULL");
+}
+
+/* -----------------------------------------------------------------------
+ * Test 21: ws_recv — closed connection returns error
+ * ----------------------------------------------------------------------- */
+static void test_recv_closed_conn(void)
+{
+    WsConn conn;
+    WsRecvResult r;
+    conn.fd     = -1;
+    conn.mask   = 1;
+    conn.closed = 1;
+    r = ws_recv(&conn);
+    ASSERT(r.is_err == 1, "ws_recv(closed): is_err == 1");
+    ASSERT(r.frame == NULL, "ws_recv(closed): frame == NULL");
+}
+
+/* -----------------------------------------------------------------------
+ * Test 22: ws_close — NULL is safe (no crash)
+ * ----------------------------------------------------------------------- */
+static void test_close_null(void)
+{
+    ws_close(NULL);  /* must not crash */
+    ASSERT(1, "ws_close(NULL): no crash");
+}
+
+/* -----------------------------------------------------------------------
+ * Test 23: ws_close — double close is safe
+ * ----------------------------------------------------------------------- */
+static void test_close_double(void)
+{
+    WsConn conn;
+    conn.fd     = -1;
+    conn.mask   = 1;
+    conn.closed = 1;
+    ws_close(&conn);
+    ws_close(&conn);
+    ASSERT(conn.closed == 1, "ws_close(double): still closed, no crash");
+}
+
+/* -----------------------------------------------------------------------
+ * Test 24: ws_broadcast — NULL args are safe
+ * ----------------------------------------------------------------------- */
+static void test_broadcast_null(void)
+{
+    ws_broadcast(NULL, 0, "hello");   /* must not crash */
+    ws_broadcast(NULL, 5, NULL);      /* must not crash */
+    ASSERT(1, "ws_broadcast(NULL args): no crash");
+}
+
+/* -----------------------------------------------------------------------
+ * Test 25: ws_conn_free — NULL is safe
+ * ----------------------------------------------------------------------- */
+static void test_conn_free_null(void)
+{
+    ws_conn_free(NULL);  /* must not crash */
+    ASSERT(1, "ws_conn_free(NULL): no crash");
+}
+
+/* -----------------------------------------------------------------------
+ * Test 26: ws_send — NULL text returns error
+ * ----------------------------------------------------------------------- */
+static void test_send_null_text(void)
+{
+    WsConn conn;
+    WsSendResult r;
+    conn.fd     = -1;
+    conn.mask   = 1;
+    conn.closed = 0;
+    r = ws_send(&conn, NULL);
+    ASSERT(r.is_err == 1, "ws_send(NULL text): is_err == 1");
+}
+
+/* -----------------------------------------------------------------------
  * main
  * ----------------------------------------------------------------------- */
 int main(void)
 {
     printf("=== test_ws ===\n");
 
+    /* Low-level frame tests (Story 15.1.1) */
     test_encode_decode_text_roundtrip();
     test_unmasked_frame_header_bytes();
     test_masked_frame_roundtrip();
@@ -324,6 +470,21 @@ int main(void)
     test_decode_truncated_buffer();
     test_decode_truncated_payload();
     test_is_upgrade_request_case_insensitive();
+
+    /* High-level API tests (Story 35.1.4) */
+    test_connect_null_url();
+    test_connect_invalid_scheme();
+    test_connect_unreachable();
+    test_send_null_conn();
+    test_send_closed_conn();
+    test_sendbytes_null_conn();
+    test_recv_null_conn();
+    test_recv_closed_conn();
+    test_close_null();
+    test_close_double();
+    test_broadcast_null();
+    test_conn_free_null();
+    test_send_null_text();
 
     printf("=== %s ===\n", failures == 0 ? "ALL PASS" : "FAILURES");
     return failures == 0 ? 0 : 1;

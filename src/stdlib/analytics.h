@@ -72,6 +72,28 @@ typedef struct {
 } CorrMatrix;
 
 /* -------------------------------------------------------------------------
+ * analytics.groupstats — per-group descriptive statistics
+ * ------------------------------------------------------------------------- */
+
+typedef struct {
+    const char *group;      /* group value (borrowed from dataframe) */
+    uint64_t    count;
+    double      sum;
+    double      mean;
+} GroupStatRow;
+
+typedef struct {
+    GroupStatRow *rows;
+    uint64_t      ngroups;
+} GroupStatResult;
+
+/* -------------------------------------------------------------------------
+ * analytics.pivot — pivot table producing a new dataframe
+ * ------------------------------------------------------------------------- */
+
+/* No extra types needed; analytics_pivot returns a TkDataframe*. */
+
+/* -------------------------------------------------------------------------
  * Function declarations
  * ------------------------------------------------------------------------- */
 
@@ -98,5 +120,20 @@ AnomalyResult  analytics_anomalies(TkDataframe *df, const char *col,
  * DF_COL_F64 columns in df.  matrix is stored row-major (ncols×ncols).
  * Caller owns the returned CorrMatrix (col_names and matrix arrays). */
 CorrMatrix     analytics_corr(TkDataframe *df);
+
+/* analytics_groupstats: group df by the string column group_col and compute
+ * count, sum, and mean of the f64 column val_col for each unique group.
+ * Caller owns the returned GroupStatResult (and its rows array). */
+GroupStatResult analytics_groupstats(TkDataframe *df, const char *group_col,
+                                      const char *val_col);
+
+/* analytics_pivot: build a pivot table from df.  row_col (DF_COL_STR) supplies
+ * unique row keys, col_col (DF_COL_STR) supplies unique column keys, and
+ * val_col (DF_COL_F64) supplies values.  Cells are filled with the sum of
+ * val_col for matching (row_key, col_key) pairs.  Returns a new dataframe
+ * whose first column is the row key and remaining columns are the unique
+ * column keys.  Returns NULL on error.  Caller owns the result via df_free(). */
+TkDataframe   *analytics_pivot(TkDataframe *df, const char *row_col,
+                                const char *col_col, const char *val_col);
 
 #endif /* TK_STDLIB_ANALYTICS_H */

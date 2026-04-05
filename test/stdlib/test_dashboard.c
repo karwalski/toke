@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include "../../src/stdlib/dashboard.h"
 #include "../../src/stdlib/chart.h"
+#include "../../src/stdlib/router.h"
 
 static int failures = 0;
 
@@ -242,6 +243,25 @@ static void test_update_changes_chart(void)
     dashboard_free(d);
 }
 
+static void test_serve_function_exists(void)
+{
+    /* Verify dashboard_serve is a valid, non-NULL function pointer.
+     * We do not actually call it (it would block), just confirm linkage. */
+    typedef TkRouterErr (*ServeFn)(TkDashboard *, uint64_t);
+    ServeFn fn = dashboard_serve;
+    ASSERT(fn != NULL, "dashboard_serve function pointer is non-NULL");
+}
+
+static void test_serve_null_dashboard(void)
+{
+    /* Calling with NULL should return an error, not crash or block. */
+    TkRouterErr err = dashboard_serve(NULL, 9999);
+    ASSERT(err.failed != 0,
+           "dashboard_serve(NULL, ...) returns error");
+    ASSERT(err.msg != NULL,
+           "dashboard_serve(NULL, ...) error has message");
+}
+
 static void test_render_always_nonnull(void)
 {
     /* Empty dashboard */
@@ -277,6 +297,8 @@ int main(void)
     test_two_widgets_both_ids();
     test_update_changes_chart();
     test_render_always_nonnull();
+    test_serve_function_exists();
+    test_serve_null_dashboard();
 
     if (failures == 0) {
         printf("\nAll tests passed.\n");

@@ -18,6 +18,9 @@
  *   - auth_apikeyvalidate("abc","abc") = 1
  *   - auth_apikeyvalidate("abc","abd") = 0
  *   - auth_apikeyvalidate("","") = 1
+ *   - auth_apikeygenerate returns non-NULL non-empty string
+ *   - auth_bearerextract("Bearer <token>") extracts token
+ *   - auth_bearerextract rejects non-Bearer, NULL, empty, lowercase, no-space
  */
 
 #include <stdio.h>
@@ -172,6 +175,47 @@ int main(void)
 
     ASSERT(auth_apikeyvalidate("abc", "ab") == 0,
            "apikeyvalidate different lengths returns 0");
+
+    /* ------------------------------------------------------------------ */
+    /* auth_apikeygenerate (canonical name)                                */
+    /* ------------------------------------------------------------------ */
+
+    const char *key3 = auth_apikeygenerate();
+    ASSERT(key3 != NULL,       "apikeygenerate returns non-NULL");
+    ASSERT(key3 && strlen(key3) > 0, "apikeygenerate returns non-empty string");
+    free((void *)key3);
+
+    /* ------------------------------------------------------------------ */
+    /* auth_bearerextract                                                  */
+    /* ------------------------------------------------------------------ */
+
+    /* Happy path: standard Bearer header. */
+    BearerResult br1 = auth_bearerextract("Bearer eyJhbGciOiJIUzI1NiJ9");
+    ASSERT(br1.is_err == 0, "bearerextract valid header is_err==0");
+    ASSERT_STREQ(br1.ok, "eyJhbGciOiJIUzI1NiJ9",
+                 "bearerextract extracts token");
+    free((void *)br1.ok);
+
+    /* Not a Bearer token (Basic auth). */
+    BearerResult br2 = auth_bearerextract("Basic dXNlcjpwYXNz");
+    ASSERT(br2.is_err == 1, "bearerextract Basic scheme returns is_err=1");
+    ASSERT(br2.ok == NULL,  "bearerextract Basic scheme ok==NULL");
+
+    /* NULL input. */
+    BearerResult br3 = auth_bearerextract(NULL);
+    ASSERT(br3.is_err == 1, "bearerextract NULL returns is_err=1");
+
+    /* Empty Bearer token ("Bearer " with nothing after). */
+    BearerResult br4 = auth_bearerextract("Bearer ");
+    ASSERT(br4.is_err == 1, "bearerextract empty token returns is_err=1");
+
+    /* Case mismatch ("bearer" lowercase). */
+    BearerResult br5 = auth_bearerextract("bearer token123");
+    ASSERT(br5.is_err == 1, "bearerextract lowercase bearer returns is_err=1");
+
+    /* No space after Bearer. */
+    BearerResult br6 = auth_bearerextract("BearerToken123");
+    ASSERT(br6.is_err == 1, "bearerextract no space returns is_err=1");
 
     /* ------------------------------------------------------------------ */
     /* Cleanup and summary                                                 */

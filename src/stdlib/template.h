@@ -50,4 +50,43 @@ const char *tmpl_renderhtml(TkTmpl *t, const TkTmplVar *vars, uint64_t nvar);
  * Returns a heap-allocated string; caller owns it. */
 const char *tmpl_escape(const char *s);
 
+/* tmpl_vars — construct a TkTmplVar array from parallel key/value arrays.
+ * nvar is the number of entries.  The returned array is heap-allocated;
+ * caller owns it and must free() it.  The key/value pointers are borrowed
+ * from the caller's arrays and must remain valid while the result is in use.
+ * Returns NULL on allocation failure. */
+TkTmplVar  *tmpl_vars(const char *const *keys, const char *const *values,
+                       uint64_t nvar);
+
+/* tmpl_html — construct an HTML element string.
+ * tag is the element name (e.g. "div").
+ * attr_keys/attr_values are parallel arrays of attribute name/value pairs
+ * with nattr entries.  children is an array of nchild already-rendered
+ * child strings that are concatenated inside the element.
+ * Returns a heap-allocated string; caller owns it.  Returns NULL on
+ * allocation failure. */
+const char *tmpl_html(const char *tag,
+                      const char *const *attr_keys,
+                      const char *const *attr_values,
+                      uint64_t nattr,
+                      const char *const *children,
+                      uint64_t nchild);
+
+/* tmpl_renderfile — load a template from the file at path, compile it,
+ * render with the given variable bindings, and return the result.
+ * Returns a heap-allocated string on success; caller owns it.
+ * Returns NULL if the file cannot be read or compilation/rendering fails. */
+const char *tmpl_renderfile(const char *path, const TkTmplVar *vars,
+                            uint64_t nvar);
+
+/* .tki compatibility aliases (tpl.* → tpl_*) */
+#define tpl_compile   tmpl_compile
+#define tpl_free      tmpl_free
+#define tpl_render    tmpl_render
+#define tpl_renderhtml tmpl_renderhtml
+#define tpl_vars      tmpl_vars
+#define tpl_html      tmpl_html
+#define tpl_escape    tmpl_escape
+#define tpl_renderfile tmpl_renderfile
+
 #endif /* TK_STDLIB_TEMPLATE_H */

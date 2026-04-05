@@ -1,12 +1,12 @@
 /*
- * test_analytics.c — Unit tests for the std.analytics C library (Story 16.1.4).
+ * test_analytics.c — Unit tests for the std.analytics C library.
  *
  * Build and run: make test-stdlib-analytics
  *
  * All tests use synthetic dataframes built via df_fromcsv so that the full
  * parsing path is exercised along with the analytics logic.
  *
- * Test inventory (10 tests):
+ * Test inventory (16 tests):
  *   1.  describe: mean==3.0 on [1,2,3,4,5]
  *   2.  describe: min==1.0, max==5.0 on [1,2,3,4,5]
  *   3.  describe: ncols counts only f64 columns (mixed df)
@@ -17,9 +17,16 @@
  *   8.  corr: coefficient≈-1.0 for anti-correlated columns
  *   9.  corr: coefficient near 0.0 for uncorrelated columns
  *  10.  timeseries: 4 events in 2 equal buckets → 2 buckets, each count==2
+ *  11.  groupstats: 2 groups with correct count/sum/mean
+ *  12.  groupstats: single group covers all rows
+ *  13.  groupstats: returns empty on bad column name
+ *  14.  pivot: 2×2 pivot with correct sums
+ *  15.  pivot: duplicate (row,col) pairs are summed
+ *  16.  pivot: returns NULL on bad column name
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
@@ -229,6 +236,213 @@ static void test_timeseries_two_buckets(void)
 }
 
 /* -------------------------------------------------------------------------
+ * Test 11: groupstats — 2 groups with correct count/sum/mean
+ *
+ * group,val
+ * a,10
+ * b,20
+ * a,30
+ * b,40
+ *
+ * group "a": count=2, sum=40, mean=20
+ * group "b": count=2, sum=60, mean=30
+ * ------------------------------------------------------------------------- */
+
+static void test_groupstats_two_groups(void)
+{
+    const char *csv = "group,val\na,10\nb,20\na,30\nb,40\n";
+    DfResult dr = df_fromcsv(csv, (uint64_t)strlen(csv), 1);
+    ASSERT(!dr.is_err, "groupstats_two: df_fromcsv succeeds");
+    if (dr.is_err) return;
+
+    GroupStatResult gs = analytics_groupstats(dr.ok, "group", "val");
+    ASSERT(gs.ngroups == 2, "groupstats_two: ngroups==2");
+
+    if (gs.ngroups == 2) {
+        /* Find group "a" and "b" (order may vary). */
+        GroupStatRow *ga = NULL;
+        GroupStatRow *gb = NULL;
+        for (uint64_t i = 0; i < gs.ngroups; i++) {
+            if (strcmp(gs.rows[i].group, "a") == 0) ga = &gs.rows[i];
+            if (strcmp(gs.rows[i].group, "b") == 0) gb = &gs.rows[i];
+        }
+        ASSERT(ga != NULL && gb != NULL, "groupstats_two: found groups a and b");
+        if (ga && gb) {
+            ASSERT(ga->count == 2, "groupstats_two: a.count==2");
+            ASSERT_NEAR(ga->sum,  40.0, 1e-9, "groupstats_two: a.sum==40");
+            ASSERT_NEAR(ga->mean, 20.0, 1e-9, "groupstats_two: a.mean==20");
+            ASSERT(gb->count == 2, "groupstats_two: b.count==2");
+            ASSERT_NEAR(gb->sum,  60.0, 1e-9, "groupstats_two: b.sum==60");
+            ASSERT_NEAR(gb->mean, 30.0, 1e-9, "groupstats_two: b.mean==30");
+        }
+    }
+
+    free(gs.rows);
+    df_free(dr.ok);
+}
+
+/* -------------------------------------------------------------------------
+ * Test 12: groupstats — single group covers all rows
+ * ------------------------------------------------------------------------- */
+
+static void test_groupstats_single_group(void)
+{
+    const char *csv = "g,v\nx,1\nx,2\nx,3\n";
+    DfResult dr = df_fromcsv(csv, (uint64_t)strlen(csv), 1);
+    ASSERT(!dr.is_err, "groupstats_single: df_fromcsv succeeds");
+    if (dr.is_err) return;
+
+    GroupStatResult gs = analytics_groupstats(dr.ok, "g", "v");
+    ASSERT(gs.ngroups == 1, "groupstats_single: ngroups==1");
+    if (gs.ngroups == 1) {
+        ASSERT(gs.rows[0].count == 3, "groupstats_single: count==3");
+        ASSERT_NEAR(gs.rows[0].sum,  6.0, 1e-9, "groupstats_single: sum==6");
+        ASSERT_NEAR(gs.rows[0].mean, 2.0, 1e-9, "groupstats_single: mean==2");
+    }
+
+    free(gs.rows);
+    df_free(dr.ok);
+}
+
+/* -------------------------------------------------------------------------
+ * Test 13: groupstats — returns empty on bad column name
+ * ------------------------------------------------------------------------- */
+
+static void test_groupstats_bad_col(void)
+{
+    const char *csv = "g,v\nx,1\n";
+    DfResult dr = df_fromcsv(csv, (uint64_t)strlen(csv), 1);
+    ASSERT(!dr.is_err, "groupstats_bad: df_fromcsv succeeds");
+    if (dr.is_err) return;
+
+    GroupStatResult gs = analytics_groupstats(dr.ok, "nonexistent", "v");
+    ASSERT(gs.ngroups == 0, "groupstats_bad: ngroups==0 for bad group_col");
+
+    gs = analytics_groupstats(dr.ok, "g", "nonexistent");
+    ASSERT(gs.ngroups == 0, "groupstats_bad: ngroups==0 for bad val_col");
+
+    df_free(dr.ok);
+}
+
+/* -------------------------------------------------------------------------
+ * Test 14: pivot — 2×2 pivot with correct sums
+ *
+ * row,col,val
+ * r1,c1,10
+ * r1,c2,20
+ * r2,c1,30
+ * r2,c2,40
+ *
+ * Expected pivot:
+ *   row | c1 | c2
+ *   r1  | 10 | 20
+ *   r2  | 30 | 40
+ * ------------------------------------------------------------------------- */
+
+static void test_pivot_basic(void)
+{
+    const char *csv = "row,col,val\nr1,c1,10\nr1,c2,20\nr2,c1,30\nr2,c2,40\n";
+    DfResult dr = df_fromcsv(csv, (uint64_t)strlen(csv), 1);
+    ASSERT(!dr.is_err, "pivot_basic: df_fromcsv succeeds");
+    if (dr.is_err) return;
+
+    TkDataframe *piv = analytics_pivot(dr.ok, "row", "col", "val");
+    ASSERT(piv != NULL, "pivot_basic: result not NULL");
+
+    if (piv) {
+        ASSERT(piv->nrows == 2, "pivot_basic: nrows==2");
+        /* 3 columns: row key + c1 + c2 */
+        ASSERT(piv->ncols == 3, "pivot_basic: ncols==3");
+
+        /* Find the c1 and c2 columns. */
+        DfCol *c1 = df_column(piv, "c1");
+        DfCol *c2 = df_column(piv, "c2");
+        ASSERT(c1 != NULL && c2 != NULL, "pivot_basic: found c1 and c2 cols");
+
+        if (c1 && c2 && c1->type == DF_COL_F64 && c2->type == DF_COL_F64) {
+            /* Find which row is r1 and which is r2. */
+            DfCol *rkey = df_column(piv, "row");
+            ASSERT(rkey != NULL && rkey->type == DF_COL_STR,
+                   "pivot_basic: row key col is str");
+            if (rkey && rkey->type == DF_COL_STR) {
+                for (uint64_t i = 0; i < piv->nrows; i++) {
+                    if (strcmp(rkey->str_data[i], "r1") == 0) {
+                        ASSERT_NEAR(c1->f64_data[i], 10.0, 1e-9,
+                                    "pivot_basic: r1,c1==10");
+                        ASSERT_NEAR(c2->f64_data[i], 20.0, 1e-9,
+                                    "pivot_basic: r1,c2==20");
+                    } else if (strcmp(rkey->str_data[i], "r2") == 0) {
+                        ASSERT_NEAR(c1->f64_data[i], 30.0, 1e-9,
+                                    "pivot_basic: r2,c1==30");
+                        ASSERT_NEAR(c2->f64_data[i], 40.0, 1e-9,
+                                    "pivot_basic: r2,c2==40");
+                    }
+                }
+            }
+        }
+
+        df_free(piv);
+    }
+
+    df_free(dr.ok);
+}
+
+/* -------------------------------------------------------------------------
+ * Test 15: pivot — duplicate (row,col) pairs are summed
+ *
+ * row,col,val
+ * r1,c1,5
+ * r1,c1,15
+ *
+ * Expected: r1,c1 = 20
+ * ------------------------------------------------------------------------- */
+
+static void test_pivot_sum_duplicates(void)
+{
+    const char *csv = "row,col,val\nr1,c1,5\nr1,c1,15\n";
+    DfResult dr = df_fromcsv(csv, (uint64_t)strlen(csv), 1);
+    ASSERT(!dr.is_err, "pivot_dup: df_fromcsv succeeds");
+    if (dr.is_err) return;
+
+    TkDataframe *piv = analytics_pivot(dr.ok, "row", "col", "val");
+    ASSERT(piv != NULL, "pivot_dup: result not NULL");
+
+    if (piv) {
+        DfCol *c1 = df_column(piv, "c1");
+        ASSERT(c1 != NULL && c1->type == DF_COL_F64, "pivot_dup: c1 is f64");
+        if (c1 && c1->type == DF_COL_F64) {
+            ASSERT_NEAR(c1->f64_data[0], 20.0, 1e-9, "pivot_dup: sum==20");
+        }
+        df_free(piv);
+    }
+
+    df_free(dr.ok);
+}
+
+/* -------------------------------------------------------------------------
+ * Test 16: pivot — returns NULL on bad column name
+ * ------------------------------------------------------------------------- */
+
+static void test_pivot_bad_col(void)
+{
+    const char *csv = "row,col,val\nr1,c1,10\n";
+    DfResult dr = df_fromcsv(csv, (uint64_t)strlen(csv), 1);
+    ASSERT(!dr.is_err, "pivot_bad: df_fromcsv succeeds");
+    if (dr.is_err) return;
+
+    TkDataframe *piv = analytics_pivot(dr.ok, "nope", "col", "val");
+    ASSERT(piv == NULL, "pivot_bad: NULL for bad row_col");
+
+    piv = analytics_pivot(dr.ok, "row", "nope", "val");
+    ASSERT(piv == NULL, "pivot_bad: NULL for bad col_col");
+
+    piv = analytics_pivot(dr.ok, "row", "col", "nope");
+    ASSERT(piv == NULL, "pivot_bad: NULL for bad val_col");
+
+    df_free(dr.ok);
+}
+
+/* -------------------------------------------------------------------------
  * main
  * ------------------------------------------------------------------------- */
 
@@ -243,6 +457,12 @@ int main(void)
     test_corr_perfect_negative();
     test_corr_uncorrelated();
     test_timeseries_two_buckets();
+    test_groupstats_two_groups();
+    test_groupstats_single_group();
+    test_groupstats_bad_col();
+    test_pivot_basic();
+    test_pivot_sum_duplicates();
+    test_pivot_bad_col();
 
     if (failures == 0) {
         printf("All analytics tests passed.\n");

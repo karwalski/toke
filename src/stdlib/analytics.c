@@ -15,6 +15,7 @@
  */
 
 #include "analytics.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -262,6 +263,285 @@ AnomalyResult analytics_anomalies(TkDataframe *df, const char *col,
     result.noutliers = count;
 
     return result;
+}
+
+/* -------------------------------------------------------------------------
+ * analytics_groupstats
+ * ------------------------------------------------------------------------- */
+
+GroupStatResult analytics_groupstats(TkDataframe *df, const char *group_col,
+                                      const char *val_col)
+{
+    GroupStatResult result;
+    result.rows    = NULL;
+    result.ngroups = 0;
+
+    if (!df || !group_col || !val_col) {
+        return result;
+    }
+
+    DfCol *gcol = df_column(df, group_col);
+    if (!gcol || gcol->type != DF_COL_STR) {
+        return result;
+    }
+
+    DfCol *vcol = df_column(df, val_col);
+    if (!vcol || vcol->type != DF_COL_F64) {
+        return result;
+    }
+
+    uint64_t nrows = df->nrows;
+    if (nrows == 0) {
+        return result;
+    }
+
+    /* Collect unique group values.  Simple O(n*g) approach — fine for stdlib
+     * use where group counts are modest. */
+    uint64_t cap = 16;
+    uint64_t ngroups = 0;
+
+    /* Parallel arrays: group key, running sum, running count. */
+    const char **keys  = (const char **)malloc(cap * sizeof(const char *));
+    double      *sums  = (double *)calloc(cap, sizeof(double));
+    uint64_t    *cnts  = (uint64_t *)calloc(cap, sizeof(uint64_t));
+    if (!keys || !sums || !cnts) {
+        free(keys);
+        free(sums);
+        free(cnts);
+        return result;
+    }
+
+    for (uint64_t r = 0; r < nrows; r++) {
+        const char *gval = gcol->str_data[r];
+        double      val  = vcol->f64_data[r];
+
+        /* Find existing group. */
+        uint64_t gi = 0;
+        for (; gi < ngroups; gi++) {
+            if (strcmp(keys[gi], gval) == 0) {
+                break;
+            }
+        }
+
+        if (gi == ngroups) {
+            /* New group. */
+            if (ngroups == cap) {
+                cap *= 2;
+                const char **nk = (const char **)realloc(keys, cap * sizeof(const char *));
+                double      *ns = (double *)realloc(sums, cap * sizeof(double));
+                uint64_t    *nc = (uint64_t *)realloc(cnts, cap * sizeof(uint64_t));
+                if (!nk || !ns || !nc) {
+                    free(nk ? nk : keys);
+                    free(ns ? ns : sums);
+                    free(nc ? nc : cnts);
+                    return result;
+                }
+                keys = nk;
+                sums = ns;
+                cnts = nc;
+                /* Zero the new portion of sums and cnts. */
+                memset(sums + ngroups, 0, (cap - ngroups) * sizeof(double));
+                memset(cnts + ngroups, 0, (cap - ngroups) * sizeof(uint64_t));
+            }
+            keys[ngroups] = gval;
+            sums[ngroups] = 0.0;
+            cnts[ngroups] = 0;
+            ngroups++;
+        }
+
+        sums[gi] += val;
+        cnts[gi] += 1;
+    }
+
+    result.rows = (GroupStatRow *)malloc(ngroups * sizeof(GroupStatRow));
+    if (!result.rows) {
+        free(keys);
+        free(sums);
+        free(cnts);
+        return result;
+    }
+
+    for (uint64_t i = 0; i < ngroups; i++) {
+        result.rows[i].group = keys[i];
+        result.rows[i].count = cnts[i];
+        result.rows[i].sum   = sums[i];
+        result.rows[i].mean  = (cnts[i] > 0) ? sums[i] / (double)cnts[i] : 0.0;
+    }
+    result.ngroups = ngroups;
+
+    free(keys);
+    free(sums);
+    free(cnts);
+    return result;
+}
+
+/* -------------------------------------------------------------------------
+ * analytics_pivot
+ * ------------------------------------------------------------------------- */
+
+TkDataframe *analytics_pivot(TkDataframe *df, const char *row_col,
+                              const char *col_col, const char *val_col)
+{
+    if (!df || !row_col || !col_col || !val_col) {
+        return NULL;
+    }
+
+    DfCol *rcol = df_column(df, row_col);
+    if (!rcol || rcol->type != DF_COL_STR) {
+        return NULL;
+    }
+
+    DfCol *ccol = df_column(df, col_col);
+    if (!ccol || ccol->type != DF_COL_STR) {
+        return NULL;
+    }
+
+    DfCol *vcol = df_column(df, val_col);
+    if (!vcol || vcol->type != DF_COL_F64) {
+        return NULL;
+    }
+
+    uint64_t nrows = df->nrows;
+    if (nrows == 0) {
+        return df_new();
+    }
+
+    /* Collect unique row keys and column keys. */
+    uint64_t rk_cap = 16, rk_n = 0;
+    uint64_t ck_cap = 16, ck_n = 0;
+    const char **rk = (const char **)malloc(rk_cap * sizeof(const char *));
+    const char **ck = (const char **)malloc(ck_cap * sizeof(const char *));
+    if (!rk || !ck) {
+        free(rk);
+        free(ck);
+        return NULL;
+    }
+
+    for (uint64_t i = 0; i < nrows; i++) {
+        /* Add row key if new. */
+        const char *rv = rcol->str_data[i];
+        uint64_t found = 0;
+        for (uint64_t j = 0; j < rk_n; j++) {
+            if (strcmp(rk[j], rv) == 0) { found = 1; break; }
+        }
+        if (!found) {
+            if (rk_n == rk_cap) {
+                rk_cap *= 2;
+                const char **tmp = (const char **)realloc(rk, rk_cap * sizeof(const char *));
+                if (!tmp) { free(rk); free(ck); return NULL; }
+                rk = tmp;
+            }
+            rk[rk_n++] = rv;
+        }
+
+        /* Add col key if new. */
+        const char *cv = ccol->str_data[i];
+        found = 0;
+        for (uint64_t j = 0; j < ck_n; j++) {
+            if (strcmp(ck[j], cv) == 0) { found = 1; break; }
+        }
+        if (!found) {
+            if (ck_n == ck_cap) {
+                ck_cap *= 2;
+                const char **tmp = (const char **)realloc(ck, ck_cap * sizeof(const char *));
+                if (!tmp) { free(rk); free(ck); return NULL; }
+                ck = tmp;
+            }
+            ck[ck_n++] = cv;
+        }
+    }
+
+    /* Build a rk_n x ck_n aggregation matrix (sum). */
+    double *agg = (double *)calloc(rk_n * ck_n, sizeof(double));
+    if (!agg) {
+        free(rk);
+        free(ck);
+        return NULL;
+    }
+
+    for (uint64_t i = 0; i < nrows; i++) {
+        const char *rv = rcol->str_data[i];
+        const char *cv = ccol->str_data[i];
+        double      vv = vcol->f64_data[i];
+
+        uint64_t ri = 0, ci = 0;
+        for (ri = 0; ri < rk_n; ri++) {
+            if (strcmp(rk[ri], rv) == 0) break;
+        }
+        for (ci = 0; ci < ck_n; ci++) {
+            if (strcmp(ck[ci], cv) == 0) break;
+        }
+        agg[ri * ck_n + ci] += vv;
+    }
+
+    /* Build the result dataframe using df_fromrows.
+     * Output has (1 + ck_n) columns: the row key column + one column per
+     * unique column key.  Values are stringified doubles. */
+    uint64_t out_ncols = 1 + ck_n;
+
+    /* Headers: first is row_col name, then each unique col key. */
+    const char **headers = (const char **)malloc(out_ncols * sizeof(const char *));
+    if (!headers) {
+        free(rk); free(ck); free(agg);
+        return NULL;
+    }
+    headers[0] = row_col;
+    for (uint64_t c = 0; c < ck_n; c++) {
+        headers[1 + c] = ck[c];
+    }
+
+    /* Build row data as string arrays.  Each cell is a char buffer. */
+    /* We need rk_n rows, each with out_ncols strings. */
+    char ***row_ptrs = (char ***)malloc(rk_n * sizeof(char **));
+    if (!row_ptrs) {
+        free(rk); free(ck); free(agg); free(headers);
+        return NULL;
+    }
+    for (uint64_t r = 0; r < rk_n; r++) {
+        row_ptrs[r] = (char **)malloc(out_ncols * sizeof(char *));
+        if (!row_ptrs[r]) {
+            for (uint64_t rr = 0; rr < r; rr++) {
+                for (uint64_t cc = 0; cc < out_ncols; cc++) free(row_ptrs[rr][cc]);
+                free(row_ptrs[rr]);
+            }
+            free(row_ptrs); free(rk); free(ck); free(agg); free(headers);
+            return NULL;
+        }
+
+        /* First column: the row key string. */
+        row_ptrs[r][0] = (char *)malloc(strlen(rk[r]) + 1);
+        if (row_ptrs[r][0]) {
+            strcpy(row_ptrs[r][0], rk[r]);
+        }
+
+        /* Remaining columns: stringified aggregate values. */
+        for (uint64_t c = 0; c < ck_n; c++) {
+            char buf[64];
+            snprintf(buf, sizeof(buf), "%.17g", agg[r * ck_n + c]);
+            row_ptrs[r][1 + c] = (char *)malloc(strlen(buf) + 1);
+            if (row_ptrs[r][1 + c]) {
+                strcpy(row_ptrs[r][1 + c], buf);
+            }
+        }
+    }
+
+    TkDataframe *pivot = df_fromrows(headers, out_ncols,
+                                      (const char ***)row_ptrs, rk_n);
+
+    /* Clean up temp strings. */
+    for (uint64_t r = 0; r < rk_n; r++) {
+        for (uint64_t c = 0; c < out_ncols; c++) {
+            free(row_ptrs[r][c]);
+        }
+        free(row_ptrs[r]);
+    }
+    free(row_ptrs);
+    free(headers);
+    free(agg);
+    free(rk);
+    free(ck);
+
+    return pivot;
 }
 
 /* -------------------------------------------------------------------------

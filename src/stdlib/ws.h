@@ -78,4 +78,62 @@ int            ws_is_upgrade_request(const char *http_headers);
 void           ws_frame_free(WsFrame *f);
 void           ws_encode_result_free(WsEncodeResult *r);
 
+/* -----------------------------------------------------------------------
+ * High-level connection API (Story 35.1.4)
+ *
+ * Maps to the std.ws .tki contract: ws.connect, ws.send, ws.sendbytes,
+ * ws.recv, ws.close, ws.broadcast.
+ * Built on top of the low-level frame encode/decode functions above.
+ * ----------------------------------------------------------------------- */
+
+/* Connection handle — wraps a TCP socket with WebSocket state. */
+typedef struct {
+    int      fd;        /* underlying TCP socket descriptor        */
+    int      mask;      /* 1 = client (mask outgoing frames)       */
+    int      closed;    /* 1 = close frame sent or received        */
+} WsConn;
+
+/* Result of ws_connect. */
+typedef struct {
+    WsConn     *conn;     /* NULL on error */
+    int         is_err;
+    const char *err_msg;
+} WsConnResult;
+
+/* Result of ws_recv. */
+typedef struct {
+    WsFrame    *frame;    /* NULL on error */
+    int         is_err;
+    const char *err_msg;
+} WsRecvResult;
+
+/* Result of ws_send / ws_sendbytes. */
+typedef struct {
+    int         is_err;
+    const char *err_msg;
+} WsSendResult;
+
+/* Connect to a WebSocket server (ws:// URL).
+ * Performs TCP connect + HTTP Upgrade handshake.
+ * Caller owns the returned WsConn; release with ws_close + ws_conn_free. */
+WsConnResult   ws_connect(const char *url);
+
+/* Send a UTF-8 text message on an open connection. */
+WsSendResult   ws_send(WsConn *conn, const char *text);
+
+/* Send a binary message on an open connection. */
+WsSendResult   ws_sendbytes(WsConn *conn, const uint8_t *data, uint64_t len);
+
+/* Receive the next complete message (blocks until a full frame arrives). */
+WsRecvResult   ws_recv(WsConn *conn);
+
+/* Send a close frame and shut down the connection. Safe to call twice. */
+void           ws_close(WsConn *conn);
+
+/* Send the same text message to every connection in the array. */
+void           ws_broadcast(WsConn **conns, uint64_t count, const char *text);
+
+/* Free a WsConn struct. Call ws_close first if still open. */
+void           ws_conn_free(WsConn *conn);
+
 #endif /* TK_STDLIB_WS_H */

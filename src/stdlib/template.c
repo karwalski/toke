@@ -22,6 +22,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* -----------------------------------------------------------------------
  * Internal segment representation
@@ -328,4 +329,161 @@ const char *tmpl_render(TkTmpl *t, const TkTmplVar *vars, uint64_t nvar)
 const char *tmpl_renderhtml(TkTmpl *t, const TkTmplVar *vars, uint64_t nvar)
 {
     return render_internal(t, vars, nvar, 1);
+}
+
+/* -----------------------------------------------------------------------
+ * tmpl_vars
+ * ----------------------------------------------------------------------- */
+
+TkTmplVar *tmpl_vars(const char *const *keys, const char *const *values,
+                      uint64_t nvar)
+{
+    if (nvar == 0) return NULL;
+    if (!keys || !values) return NULL;
+
+    TkTmplVar *out = (TkTmplVar *)malloc(nvar * sizeof(TkTmplVar));
+    if (!out) return NULL;
+
+    for (uint64_t i = 0; i < nvar; i++) {
+        out[i].key   = keys[i];
+        out[i].value = values[i];
+    }
+    return out;
+}
+
+/* -----------------------------------------------------------------------
+ * tmpl_html
+ * ----------------------------------------------------------------------- */
+
+const char *tmpl_html(const char *tag,
+                      const char *const *attr_keys,
+                      const char *const *attr_values,
+                      uint64_t nattr,
+                      const char *const *children,
+                      uint64_t nchild)
+{
+    if (!tag) return NULL;
+
+    size_t tag_len = strlen(tag);
+
+    /* Calculate total output length. */
+    /* <tag attr="val" attr="val">children</tag> */
+    size_t total = 1 + tag_len; /* opening < + tag */
+
+    for (uint64_t i = 0; i < nattr; i++) {
+        if (!attr_keys || !attr_values) break;
+        const char *ak = attr_keys[i]   ? attr_keys[i]   : "";
+        const char *av = attr_values[i]  ? attr_values[i] : "";
+        /* space + key + =" + escaped_value + " */
+        total += 1 + strlen(ak) + 2;
+        for (const char *p = av; *p; p++) {
+            switch (*p) {
+                case '&':  total += 5; break;
+                case '<':  total += 4; break;
+                case '>':  total += 4; break;
+                case '"':  total += 6; break;
+                case '\'': total += 5; break;
+                default:   total += 1; break;
+            }
+        }
+        total += 1; /* closing quote */
+    }
+
+    total += 1; /* > after opening tag */
+
+    for (uint64_t i = 0; i < nchild; i++) {
+        if (children && children[i])
+            total += strlen(children[i]);
+    }
+
+    total += 2 + tag_len + 1; /* </ + tag + > */
+
+    char *out = (char *)malloc(total + 1);
+    if (!out) return NULL;
+
+    char *q = out;
+
+    /* opening tag */
+    *q++ = '<';
+    memcpy(q, tag, tag_len);
+    q += tag_len;
+
+    /* attributes */
+    for (uint64_t i = 0; i < nattr; i++) {
+        if (!attr_keys || !attr_values) break;
+        const char *ak = attr_keys[i]   ? attr_keys[i]   : "";
+        const char *av = attr_values[i]  ? attr_values[i] : "";
+        *q++ = ' ';
+        size_t ak_len = strlen(ak);
+        memcpy(q, ak, ak_len);
+        q += ak_len;
+        *q++ = '=';
+        *q++ = '"';
+        for (const char *p = av; *p; p++) {
+            switch (*p) {
+                case '&':  memcpy(q, "&amp;",  5); q += 5; break;
+                case '<':  memcpy(q, "&lt;",   4); q += 4; break;
+                case '>':  memcpy(q, "&gt;",   4); q += 4; break;
+                case '"':  memcpy(q, "&quot;", 6); q += 6; break;
+                case '\'': memcpy(q, "&#39;",  5); q += 5; break;
+                default:   *q++ = *p;              break;
+            }
+        }
+        *q++ = '"';
+    }
+
+    *q++ = '>';
+
+    /* children */
+    for (uint64_t i = 0; i < nchild; i++) {
+        if (children && children[i]) {
+            size_t clen = strlen(children[i]);
+            memcpy(q, children[i], clen);
+            q += clen;
+        }
+    }
+
+    /* closing tag */
+    *q++ = '<';
+    *q++ = '/';
+    memcpy(q, tag, tag_len);
+    q += tag_len;
+    *q++ = '>';
+    *q = '\0';
+
+    return out;
+}
+
+/* -----------------------------------------------------------------------
+ * tmpl_renderfile
+ * ----------------------------------------------------------------------- */
+
+const char *tmpl_renderfile(const char *path, const TkTmplVar *vars,
+                            uint64_t nvar)
+{
+    if (!path) return NULL;
+
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return NULL;
+
+    /* determine file size */
+    if (fseek(fp, 0, SEEK_END) != 0) { fclose(fp); return NULL; }
+    long fsize = ftell(fp);
+    if (fsize < 0) { fclose(fp); return NULL; }
+    rewind(fp);
+
+    char *src = (char *)malloc((size_t)fsize + 1);
+    if (!src) { fclose(fp); return NULL; }
+
+    size_t nread = fread(src, 1, (size_t)fsize, fp);
+    fclose(fp);
+    src[nread] = '\0';
+
+    TkTmpl *t = tmpl_compile(src);
+    free(src);
+    if (!t) return NULL;
+
+    const char *result = tmpl_render(t, vars, nvar);
+    tmpl_free(t);
+    return result;
 }

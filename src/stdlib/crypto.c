@@ -15,7 +15,7 @@
  */
 
 #include "crypto.h"
-#include <stdlib.h>
+#include <stdlib.h>   /* malloc, arc4random_buf (macOS/BSD) */
 #include <string.h>
 
 /* -----------------------------------------------------------------------
@@ -241,6 +241,206 @@ static void sha256_oneshot(const uint8_t *data, uint64_t len,
 }
 
 /* -----------------------------------------------------------------------
+ * SHA-512 core (FIPS 180-4)
+ * Portable, self-contained, C99 conformant.
+ * Uses 64-bit words and 80 rounds (vs SHA-256's 32-bit/64 rounds).
+ * ----------------------------------------------------------------------- */
+
+#define SHA512_DIGEST_SIZE  64
+#define SHA512_BLOCK_SIZE  128
+
+typedef struct {
+    uint64_t h[8];
+    uint8_t  block[SHA512_BLOCK_SIZE];
+    uint32_t block_len;
+    uint64_t total_len;  /* total bytes processed (low 64 bits) */
+} Sha512State;
+
+static const uint64_t SHA512_K[80] = {
+    0x428a2f98d728ae22ULL, 0x7137449123ef65cdULL,
+    0xb5c0fbcfec4d3b2fULL, 0xe9b5dba58189dbbcULL,
+    0x3956c25bf348b538ULL, 0x59f111f1b605d019ULL,
+    0x923f82a4af194f9bULL, 0xab1c5ed5da6d8118ULL,
+    0xd807aa98a3030242ULL, 0x12835b0145706fbeULL,
+    0x243185be4ee4b28cULL, 0x550c7dc3d5ffb4e2ULL,
+    0x72be5d74f27b896fULL, 0x80deb1fe3b1696b1ULL,
+    0x9bdc06a725c71235ULL, 0xc19bf174cf692694ULL,
+    0xe49b69c19ef14ad2ULL, 0xefbe4786384f25e3ULL,
+    0x0fc19dc68b8cd5b5ULL, 0x240ca1cc77ac9c65ULL,
+    0x2de92c6f592b0275ULL, 0x4a7484aa6ea6e483ULL,
+    0x5cb0a9dcbd41fbd4ULL, 0x76f988da831153b5ULL,
+    0x983e5152ee66dfabULL, 0xa831c66d2db43210ULL,
+    0xb00327c898fb213fULL, 0xbf597fc7beef0ee4ULL,
+    0xc6e00bf33da88fc2ULL, 0xd5a79147930aa725ULL,
+    0x06ca6351e003826fULL, 0x142929670a0e6e70ULL,
+    0x27b70a8546d22ffcULL, 0x2e1b21385c26c926ULL,
+    0x4d2c6dfc5ac42aedULL, 0x53380d139d95b3dfULL,
+    0x650a73548baf63deULL, 0x766a0abb3c77b2a8ULL,
+    0x81c2c92e47edaee6ULL, 0x92722c851482353bULL,
+    0xa2bfe8a14cf10364ULL, 0xa81a664bbc423001ULL,
+    0xc24b8b70d0f89791ULL, 0xc76c51a30654be30ULL,
+    0xd192e819d6ef5218ULL, 0xd69906245565a910ULL,
+    0xf40e35855771202aULL, 0x106aa07032bbd1b8ULL,
+    0x19a4c116b8d2d0c8ULL, 0x1e376c085141ab53ULL,
+    0x2748774cdf8eeb99ULL, 0x34b0bcb5e19b48a8ULL,
+    0x391c0cb3c5c95a63ULL, 0x4ed8aa4ae3418acbULL,
+    0x5b9cca4f7763e373ULL, 0x682e6ff3d6b2b8a3ULL,
+    0x748f82ee5defb2fcULL, 0x78a5636f43172f60ULL,
+    0x84c87814a1f0ab72ULL, 0x8cc702081a6439ecULL,
+    0x90befffa23631e28ULL, 0xa4506cebde82bde9ULL,
+    0xbef9a3f7b2c67915ULL, 0xc67178f2e372532bULL,
+    0xca273eceea26619cULL, 0xd186b8c721c0c207ULL,
+    0xeada7dd6cde0eb1eULL, 0xf57d4f7fee6ed178ULL,
+    0x06f067aa72176fbaULL, 0x0a637dc5a2c898a6ULL,
+    0x113f9804bef90daeULL, 0x1b710b35131c471bULL,
+    0x28db77f523047d84ULL, 0x32caab7b40c72493ULL,
+    0x3c9ebe0a15c9bebcULL, 0x431d67c49c100d4cULL,
+    0x4cc5d4becb3e42b6ULL, 0x597f299cfc657e2aULL,
+    0x5fcb6fab3ad6faecULL, 0x6c44198c4a475817ULL
+};
+
+static void sha512_init_state(Sha512State *s)
+{
+    s->h[0] = 0x6a09e667f3bcc908ULL;
+    s->h[1] = 0xbb67ae8584caa73bULL;
+    s->h[2] = 0x3c6ef372fe94f82bULL;
+    s->h[3] = 0xa54ff53a5f1d36f1ULL;
+    s->h[4] = 0x510e527fade682d1ULL;
+    s->h[5] = 0x9b05688c2b3e6c1fULL;
+    s->h[6] = 0x1f83d9abfb41bd6bULL;
+    s->h[7] = 0x5be0cd19137e2179ULL;
+    s->block_len = 0;
+    s->total_len = 0;
+}
+
+/* SHA-512 uses 64-bit rotations */
+#define SHR64(x, n)   ((x) >> (n))
+#define ROTR64(x, n)  (SHR64(x, n) | ((x) << (64 - (n))))
+
+#define S512_0(x) (ROTR64(x,  1) ^ ROTR64(x,  8) ^ SHR64(x, 7))
+#define S512_1(x) (ROTR64(x, 19) ^ ROTR64(x, 61) ^ SHR64(x, 6))
+#define E512_0(x) (ROTR64(x, 28) ^ ROTR64(x, 34) ^ ROTR64(x, 39))
+#define E512_1(x) (ROTR64(x, 14) ^ ROTR64(x, 18) ^ ROTR64(x, 41))
+/* F0 and F1 are the same logic as SHA-256, reused via macro names */
+#define F512_0(x, y, z) (((x) & (y)) | ((z) & ((x) | (y))))
+#define F512_1(x, y, z) ((z) ^ ((x) & ((y) ^ (z))))
+
+static void sha512_process_block(Sha512State *s, const uint8_t data[SHA512_BLOCK_SIZE])
+{
+    uint64_t w[16];
+    uint64_t a, b, c, d, e, f, g, h, tmp1, tmp2;
+    int i;
+
+    /* Load block into w[0..15] big-endian */
+    for (i = 0; i < 16; i++) {
+        w[i] = ((uint64_t)data[i * 8]     << 56)
+             | ((uint64_t)data[i * 8 + 1] << 48)
+             | ((uint64_t)data[i * 8 + 2] << 40)
+             | ((uint64_t)data[i * 8 + 3] << 32)
+             | ((uint64_t)data[i * 8 + 4] << 24)
+             | ((uint64_t)data[i * 8 + 5] << 16)
+             | ((uint64_t)data[i * 8 + 6] <<  8)
+             | ((uint64_t)data[i * 8 + 7]);
+    }
+
+    a = s->h[0]; b = s->h[1]; c = s->h[2]; d = s->h[3];
+    e = s->h[4]; f = s->h[5]; g = s->h[6]; h = s->h[7];
+
+    for (i = 0; i < 80; i++) {
+        if (i >= 16) {
+            w[i & 15] += S512_1(w[(i - 2) & 15])
+                       + w[(i - 7) & 15]
+                       + S512_0(w[(i - 15) & 15]);
+        }
+        tmp1 = h + E512_1(e) + F512_1(e, f, g) + SHA512_K[i] + w[i & 15];
+        tmp2 = E512_0(a) + F512_0(a, b, c);
+        h = g; g = f; f = e; e = d + tmp1;
+        d = c; c = b; b = a; a = tmp1 + tmp2;
+    }
+
+    s->h[0] += a; s->h[1] += b; s->h[2] += c; s->h[3] += d;
+    s->h[4] += e; s->h[5] += f; s->h[6] += g; s->h[7] += h;
+}
+
+static void sha512_update_state(Sha512State *s, const uint8_t *data, uint64_t len)
+{
+    uint64_t i;
+    for (i = 0; i < len; i++) {
+        s->block[s->block_len++] = data[i];
+        if (s->block_len == SHA512_BLOCK_SIZE) {
+            sha512_process_block(s, s->block);
+            s->block_len = 0;
+        }
+    }
+    s->total_len += len;
+}
+
+static void sha512_finish(Sha512State *s, uint8_t digest[SHA512_DIGEST_SIZE])
+{
+    uint64_t bit_len;
+    uint32_t i;
+
+    /* Append 0x80 */
+    s->block[s->block_len++] = 0x80;
+
+    /* If not enough room for 16-byte length field, flush block */
+    if (s->block_len > 112) {
+        while (s->block_len < SHA512_BLOCK_SIZE)
+            s->block[s->block_len++] = 0x00;
+        sha512_process_block(s, s->block);
+        s->block_len = 0;
+    }
+
+    /* Zero-pad to byte 112 */
+    while (s->block_len < 112)
+        s->block[s->block_len++] = 0x00;
+
+    /* Append big-endian bit length (128-bit, high 64 bits always 0 here) */
+    bit_len = s->total_len * 8;
+    s->block[112] = 0;  /* high 64 bits = 0 */
+    s->block[113] = 0;
+    s->block[114] = 0;
+    s->block[115] = 0;
+    s->block[116] = 0;
+    s->block[117] = 0;
+    s->block[118] = 0;
+    s->block[119] = 0;
+    s->block[120] = (uint8_t)(bit_len >> 56);
+    s->block[121] = (uint8_t)(bit_len >> 48);
+    s->block[122] = (uint8_t)(bit_len >> 40);
+    s->block[123] = (uint8_t)(bit_len >> 32);
+    s->block[124] = (uint8_t)(bit_len >> 24);
+    s->block[125] = (uint8_t)(bit_len >> 16);
+    s->block[126] = (uint8_t)(bit_len >>  8);
+    s->block[127] = (uint8_t)(bit_len);
+
+    sha512_process_block(s, s->block);
+
+    /* Output digest in big-endian */
+    for (i = 0; i < 8; i++) {
+        digest[i * 8]     = (uint8_t)(s->h[i] >> 56);
+        digest[i * 8 + 1] = (uint8_t)(s->h[i] >> 48);
+        digest[i * 8 + 2] = (uint8_t)(s->h[i] >> 40);
+        digest[i * 8 + 3] = (uint8_t)(s->h[i] >> 32);
+        digest[i * 8 + 4] = (uint8_t)(s->h[i] >> 24);
+        digest[i * 8 + 5] = (uint8_t)(s->h[i] >> 16);
+        digest[i * 8 + 6] = (uint8_t)(s->h[i] >>  8);
+        digest[i * 8 + 7] = (uint8_t)(s->h[i]);
+    }
+}
+
+/* Single-call SHA-512. */
+static void sha512_oneshot(const uint8_t *data, uint64_t len,
+                           uint8_t digest[SHA512_DIGEST_SIZE])
+{
+    Sha512State s;
+    sha512_init_state(&s);
+    if (data && len > 0)
+        sha512_update_state(&s, data, len);
+    sha512_finish(&s, digest);
+}
+
+/* -----------------------------------------------------------------------
  * Public API
  * ----------------------------------------------------------------------- */
 
@@ -298,6 +498,97 @@ ByteArray crypto_hmac_sha256(ByteArray key, ByteArray data)
 
     result.data = mac;
     result.len  = SHA256_DIGEST_SIZE;
+    return result;
+}
+
+ByteArray crypto_sha512(ByteArray data)
+{
+    ByteArray result = {NULL, 0};
+    uint8_t *digest = malloc(SHA512_DIGEST_SIZE);
+    if (!digest) return result;
+    sha512_oneshot(data.data, data.len, digest);
+    result.data = digest;
+    result.len  = SHA512_DIGEST_SIZE;
+    return result;
+}
+
+ByteArray crypto_hmac_sha512(ByteArray key, ByteArray data)
+{
+    /* RFC 2104: HMAC = H( (K XOR opad) || H( (K XOR ipad) || msg ) ) */
+    uint8_t k_block[SHA512_BLOCK_SIZE];
+    uint8_t inner[SHA512_DIGEST_SIZE];
+    uint8_t *mac = malloc(SHA512_DIGEST_SIZE);
+    ByteArray result = {NULL, 0};
+    Sha512State s;
+    int i;
+
+    if (!mac) return result;
+
+    /* Derive key block */
+    memset(k_block, 0, sizeof(k_block));
+    if (key.data && key.len > 0) {
+        if (key.len > SHA512_BLOCK_SIZE) {
+            sha512_oneshot(key.data, key.len, k_block);
+        } else {
+            memcpy(k_block, key.data, (size_t)key.len);
+        }
+    }
+
+    /* Inner hash: SHA-512( (K XOR ipad) || message ) */
+    sha512_init_state(&s);
+    for (i = 0; i < SHA512_BLOCK_SIZE; i++)
+        k_block[i] ^= 0x36;
+    sha512_update_state(&s, k_block, SHA512_BLOCK_SIZE);
+    if (data.data && data.len > 0)
+        sha512_update_state(&s, data.data, data.len);
+    sha512_finish(&s, inner);
+
+    /* Restore opad: k_block currently has ipad applied, un-apply then apply opad */
+    for (i = 0; i < SHA512_BLOCK_SIZE; i++)
+        k_block[i] ^= (0x36 ^ 0x5c);
+
+    /* Outer hash: SHA-512( (K XOR opad) || inner ) */
+    sha512_init_state(&s);
+    sha512_update_state(&s, k_block, SHA512_BLOCK_SIZE);
+    sha512_update_state(&s, inner, SHA512_DIGEST_SIZE);
+    sha512_finish(&s, mac);
+
+    result.data = mac;
+    result.len  = SHA512_DIGEST_SIZE;
+    return result;
+}
+
+int crypto_constanteq(ByteArray a, ByteArray b)
+{
+    uint64_t i;
+    volatile uint8_t diff = 0;
+
+    if (a.len != b.len) return 0;
+    if (a.len == 0)     return 1;
+    if (!a.data || !b.data) return 0;
+
+    for (i = 0; i < a.len; i++)
+        diff |= a.data[i] ^ b.data[i];
+
+    return diff == 0 ? 1 : 0;
+}
+
+ByteArray crypto_randombytes(uint64_t n)
+{
+    ByteArray result = {NULL, 0};
+    uint8_t *buf;
+
+    if (n == 0) {
+        result.len = 0;
+        return result;
+    }
+
+    buf = malloc((size_t)n);
+    if (!buf) return result;
+
+    arc4random_buf(buf, (size_t)n);
+    result.data = buf;
+    result.len  = n;
     return result;
 }
 

@@ -21,12 +21,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 /* ----------------------------------------------------------------------- */
 /* Internal route entry                                                      */
 /* ----------------------------------------------------------------------- */
 
-#define MAX_PARAMS 32
+#define MAX_PARAMS      32
+#define MAX_MIDDLEWARE   64
 
 typedef struct TkRoute {
     char           *method;
@@ -36,8 +40,10 @@ typedef struct TkRoute {
 } TkRoute;
 
 struct TkRouter {
-    TkRoute *head;
-    TkRoute *tail;
+    TkRoute      *head;
+    TkRoute      *tail;
+    TkMiddleware  middleware[MAX_MIDDLEWARE];
+    int           nmw;
 };
 
 /* ----------------------------------------------------------------------- */
@@ -152,6 +158,7 @@ TkRouter *router_new(void)
     if (!r) return NULL;
     r->head = NULL;
     r->tail = NULL;
+    r->nmw  = 0;
     return r;
 }
 
@@ -190,6 +197,41 @@ void router_get   (TkRouter *r, const char *p, TkRouteHandler h) { add_route(r, 
 void router_post  (TkRouter *r, const char *p, TkRouteHandler h) { add_route(r, "POST",   p, h); }
 void router_put   (TkRouter *r, const char *p, TkRouteHandler h) { add_route(r, "PUT",    p, h); }
 void router_delete(TkRouter *r, const char *p, TkRouteHandler h) { add_route(r, "DELETE", p, h); }
+
+/* ----------------------------------------------------------------------- */
+/* Middleware                                                                 */
+/* ----------------------------------------------------------------------- */
+
+void router_use(TkRouter *r, TkMiddleware mw)
+{
+    if (!r || !mw || r->nmw >= MAX_MIDDLEWARE) return;
+    r->middleware[r->nmw++] = mw;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Middleware chain runner                                                    */
+/* ----------------------------------------------------------------------- */
+
+/* Closure-style context for building the chain. */
+typedef struct {
+    TkRouter       *router;
+    int             mw_index;   /* next middleware to invoke */
+    TkRouteHandler  final;      /* terminal route handler    */
+} MwChainCtx;
+
+/* Thread-local chain context — used to thread state through middleware.
+ * Single-threaded accept loop, so a simple static is safe. */
+static MwChainCtx mw_chain_ctx;
+
+static TkRouteResp mw_chain_next(TkRouteCtx ctx)
+{
+    MwChainCtx *c = &mw_chain_ctx;
+    if (c->mw_index < c->router->nmw) {
+        TkMiddleware mw = c->router->middleware[c->mw_index++];
+        return mw(ctx, mw_chain_next);
+    }
+    return c->final(ctx);
+}
 
 /* ----------------------------------------------------------------------- */
 /* Dispatch                                                                  */
@@ -239,7 +281,15 @@ TkRouteResp router_dispatch(TkRouter *r, const char *method, const char *path,
     ctx.param_values = best_result.nparam ? best_result.values : NULL;
     ctx.nparam       = (uint64_t)best_result.nparam;
 
-    TkRouteResp resp = best_route->handler(ctx);
+    TkRouteResp resp;
+    if (r->nmw > 0) {
+        mw_chain_ctx.router   = r;
+        mw_chain_ctx.mw_index = 0;
+        mw_chain_ctx.final    = best_route->handler;
+        resp = mw_chain_next(ctx);
+    } else {
+        resp = best_route->handler(ctx);
+    }
 
     /* free param strings */
     for (int i = 0; i < best_result.nparam; i++) {
@@ -353,4 +403,145 @@ TkRouteResp router_resp_404(void)
     resp.body         = "Not Found";
     resp.content_type = "text/plain";
     return resp;
+}
+
+/* ----------------------------------------------------------------------- */
+/* HTTP request parser (minimal — mirrors http.c approach)                   */
+/* ----------------------------------------------------------------------- */
+
+static void router_parse_request(const char *raw,
+                                  const char **method_out,
+                                  const char **path_out,
+                                  const char **query_out,
+                                  const char **body_out)
+{
+    static char method_buf[16];
+    static char path_buf[2048];
+    static char query_buf[2048];
+
+    *method_out = NULL;
+    *path_out   = NULL;
+    *query_out  = NULL;
+    *body_out   = NULL;
+
+    /* Request line: METHOD /path?query HTTP/1.x\r\n */
+    int mi = 0;
+    while (*raw && *raw != ' ' && mi < 15) method_buf[mi++] = *raw++;
+    method_buf[mi] = '\0';
+    *method_out = method_buf;
+
+    if (*raw == ' ') raw++;
+
+    /* path (up to '?' or ' ') */
+    int pi = 0;
+    while (*raw && *raw != '?' && *raw != ' ' && pi < 2047) path_buf[pi++] = *raw++;
+    path_buf[pi] = '\0';
+    *path_out = path_buf;
+
+    /* query string */
+    if (*raw == '?') {
+        raw++;
+        int qi = 0;
+        while (*raw && *raw != ' ' && qi < 2047) query_buf[qi++] = *raw++;
+        query_buf[qi] = '\0';
+        *query_out = query_buf;
+    }
+
+    /* skip to body: past \r\n\r\n */
+    const char *sep = strstr(raw, "\r\n\r\n");
+    if (sep) *body_out = sep + 4;
+}
+
+/* ----------------------------------------------------------------------- */
+/* router_serve — HTTP server using this router for dispatch                 */
+/* ----------------------------------------------------------------------- */
+
+static void router_send_response(int fd, TkRouteResp resp)
+{
+    char header[512];
+    const char *ct = resp.content_type ? resp.content_type : "text/plain";
+    const char *bd = resp.body ? resp.body : "";
+    size_t bl = strlen(bd);
+    int n = snprintf(header, sizeof(header),
+                     "HTTP/1.1 %d OK\r\n"
+                     "Content-Type: %s\r\n"
+                     "Content-Length: %zu\r\n"
+                     "Connection: close\r\n\r\n",
+                     resp.status, ct, bl);
+    if (n > 0) {
+        (void)write(fd, header, (size_t)n);
+    }
+    if (bl) {
+        (void)write(fd, bd, bl);
+    }
+}
+
+TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
+{
+    (void)host; /* bind to all interfaces regardless for now */
+    TkRouterErr ok_err;
+    memset(&ok_err, 0, sizeof(ok_err));
+
+    if (!r) {
+        TkRouterErr e = {1, "router is NULL"};
+        return e;
+    }
+    if (port > 65535) {
+        TkRouterErr e = {1, "port out of range"};
+        return e;
+    }
+
+    int srv = socket(AF_INET, SOCK_STREAM, 0);
+    if (srv < 0) {
+        TkRouterErr e = {1, "socket() failed"};
+        return e;
+    }
+
+    int opt = 1;
+    setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family      = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port        = htons((uint16_t)port);
+
+    if (bind(srv, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        close(srv);
+        TkRouterErr e = {1, "bind() failed"};
+        return e;
+    }
+    if (listen(srv, 8) < 0) {
+        close(srv);
+        TkRouterErr e = {1, "listen() failed"};
+        return e;
+    }
+
+    for (;;) {
+        int fd = accept(srv, NULL, NULL);
+        if (fd < 0) continue;
+
+        char raw[8192];
+        memset(raw, 0, sizeof(raw));
+        ssize_t nr = read(fd, raw, sizeof(raw) - 1);
+        if (nr <= 0) { close(fd); continue; }
+
+        const char *method = NULL;
+        const char *path   = NULL;
+        const char *query  = NULL;
+        const char *body   = NULL;
+        router_parse_request(raw, &method, &path, &query, &body);
+
+        TkRouteResp resp = router_dispatch(r,
+            method ? method : "GET",
+            path   ? path   : "/",
+            query, body);
+
+        router_send_response(fd, resp);
+        close(fd);
+    }
+
+    /* unreachable in normal operation */
+    close(srv);
+    return ok_err;
 }
