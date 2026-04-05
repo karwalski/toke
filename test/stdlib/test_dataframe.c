@@ -1074,6 +1074,233 @@ static void t56_value_counts_f64_col(void)
 }
 
 /* -------------------------------------------------------------------------
+ * Story 31.1.2: df_concat, df_fillna, df_dropna, df_sample, df_get_row,
+ *               df_to_html, df_to_csv
+ * ------------------------------------------------------------------------- */
+
+/* T57: df_concat two frames with the same columns → nrows = sum */
+static void t57_concat_same_columns(void)
+{
+    /* Build two small frames from CSV_WITH_HEADER (4 rows each). */
+    TkDataframe *a = parse_hdr(CSV_WITH_HEADER);
+    TkDataframe *b = parse_hdr(CSV_WITH_HEADER);
+    if (!a || !b) { df_free(a); df_free(b); return; }
+
+    TkDataframe *c = df_concat(a, b);
+    ASSERT(c != NULL,         "T57: df_concat non-NULL");
+    ASSERT(c->nrows == 8,     "T57: concat same cols → 8 rows");
+    ASSERT(c->ncols == 3,     "T57: concat same cols → 3 columns (no duplication)");
+    /* Spot-check: first row is Alice, fifth row is also Alice */
+    DfCol *name = df_column(c, "name");
+    ASSERT(name != NULL, "T57: 'name' col present");
+    if (name) {
+        ASSERT_STREQ(name->str_data[0], "Alice", "T57: row 0 == Alice");
+        ASSERT_STREQ(name->str_data[4], "Alice", "T57: row 4 == Alice");
+    }
+    df_free(c);
+    df_free(a);
+    df_free(b);
+}
+
+/* T58: df_concat frames with different columns → all columns present, missing filled */
+static void t58_concat_different_columns(void)
+{
+    /* left: name, age  (2 cols, 2 rows) */
+    const char *csv_l =
+        "name,age\r\n"
+        "Alice,30\r\n"
+        "Bob,25\r\n";
+    /* right: name, city  (2 cols, 2 rows) */
+    const char *csv_r =
+        "name,city\r\n"
+        "Carol,NYC\r\n"
+        "Dave,LA\r\n";
+
+    DfResult rl = df_fromcsv(csv_l, (uint64_t)strlen(csv_l), 1);
+    DfResult rr = df_fromcsv(csv_r, (uint64_t)strlen(csv_r), 1);
+    if (rl.is_err || !rl.ok || rr.is_err || !rr.ok) {
+        ASSERT(0, "T58: parsing CSVs"); df_free(rl.ok); df_free(rr.ok); return;
+    }
+
+    TkDataframe *c = df_concat(rl.ok, rr.ok);
+    ASSERT(c != NULL,       "T58: df_concat different cols non-NULL");
+    ASSERT(c->nrows == 4,   "T58: 4 total rows");
+    /* Union: name, age, city = 3 columns */
+    ASSERT(c->ncols == 3,   "T58: 3 columns in union");
+    ASSERT(df_column(c, "name") != NULL, "T58: 'name' present");
+    ASSERT(df_column(c, "age")  != NULL, "T58: 'age' present");
+    ASSERT(df_column(c, "city") != NULL, "T58: 'city' present");
+
+    /* Right rows (3,4) should have empty "age" since right frame has no 'age'. */
+    /* age column is f64 (all values in left are numeric), so missing right rows → 0.0 */
+    DfCol *age = df_column(c, "age");
+    ASSERT(age != NULL, "T58: age col present");
+    if (age) {
+        ASSERT(age->f64_data[0] == 30.0, "T58: age[0] == 30");
+        ASSERT(age->f64_data[1] == 25.0, "T58: age[1] == 25");
+        /* rows 2,3 come from right which has no 'age' → 0.0 */
+        ASSERT(age->f64_data[2] == 0.0,  "T58: age[2] == 0.0 (missing)");
+        ASSERT(age->f64_data[3] == 0.0,  "T58: age[3] == 0.0 (missing)");
+    }
+
+    /* Left rows (1,2) should have empty "city". */
+    DfCol *city = df_column(c, "city");
+    ASSERT(city != NULL, "T58: city col present");
+    if (city) {
+        ASSERT(city->str_data[0] != NULL, "T58: city[0] non-NULL");
+        /* city[0] and city[1] come from left which has no 'city' → "" */
+        ASSERT(city->str_data[0][0] == '\0', "T58: city[0] == empty string");
+        ASSERT_STREQ(city->str_data[2], "NYC", "T58: city[2] == NYC");
+        ASSERT_STREQ(city->str_data[3], "LA",  "T58: city[3] == LA");
+    }
+
+    df_free(c);
+    df_free(rl.ok);
+    df_free(rr.ok);
+}
+
+/* T59: df_fillna replaces empty values in a column */
+static void t59_fillna(void)
+{
+    /* Frame with some empty name values */
+    const char *csv =
+        "name,score\r\n"
+        "Alice,95\r\n"
+        ",82\r\n"
+        "Carol,90\r\n"
+        ",78\r\n";
+    DfResult r = df_fromcsv(csv, (uint64_t)strlen(csv), 1);
+    if (r.is_err || !r.ok) { ASSERT(0, "T59: parse CSV"); return; }
+
+    TkDataframe *filled = df_fillna(r.ok, "name", "Unknown");
+    ASSERT(filled != NULL,          "T59: df_fillna non-NULL");
+    ASSERT(filled->nrows == 4,      "T59: 4 rows preserved");
+    DfCol *name = df_column(filled, "name");
+    ASSERT(name != NULL,            "T59: 'name' col present");
+    if (name) {
+        ASSERT_STREQ(name->str_data[0], "Alice",   "T59: name[0] == Alice (unchanged)");
+        ASSERT_STREQ(name->str_data[1], "Unknown", "T59: name[1] == Unknown (was empty)");
+        ASSERT_STREQ(name->str_data[2], "Carol",   "T59: name[2] == Carol (unchanged)");
+        ASSERT_STREQ(name->str_data[3], "Unknown", "T59: name[3] == Unknown (was empty)");
+    }
+    df_free(filled);
+    df_free(r.ok);
+}
+
+/* T60: df_dropna removes rows with empty values in a column */
+static void t60_dropna(void)
+{
+    const char *csv =
+        "name,score\r\n"
+        "Alice,95\r\n"
+        ",82\r\n"
+        "Carol,90\r\n"
+        ",78\r\n";
+    DfResult r = df_fromcsv(csv, (uint64_t)strlen(csv), 1);
+    if (r.is_err || !r.ok) { ASSERT(0, "T60: parse CSV"); return; }
+
+    TkDataframe *dropped = df_dropna(r.ok, "name");
+    ASSERT(dropped != NULL,         "T60: df_dropna non-NULL");
+    ASSERT(dropped->nrows == 2,     "T60: 2 rows remain after dropna");
+    DfCol *name = df_column(dropped, "name");
+    ASSERT(name != NULL,            "T60: 'name' col present");
+    if (name) {
+        ASSERT_STREQ(name->str_data[0], "Alice", "T60: name[0] == Alice");
+        ASSERT_STREQ(name->str_data[1], "Carol", "T60: name[1] == Carol");
+    }
+    df_free(dropped);
+    df_free(r.ok);
+}
+
+/* T61: df_sample returns the requested number of rows */
+static void t61_sample(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER); /* 4 rows */
+    if (!df) return;
+
+    TkDataframe *s = df_sample(df, 2, 42);
+    ASSERT(s != NULL,       "T61: df_sample non-NULL");
+    ASSERT(s->nrows == 2,   "T61: df_sample(df,2,42) returns 2 rows");
+    ASSERT(s->ncols == df->ncols, "T61: column count preserved");
+
+    /* Each sampled row index must correspond to a valid index (0..3).
+     * Verify the 'age' values are among {30,25,30,22}. */
+    DfCol *age = df_column(s, "age");
+    ASSERT(age != NULL, "T61: 'age' col in sample");
+    if (age) {
+        double v0 = age->f64_data[0];
+        double v1 = age->f64_data[1];
+        int ok0 = (v0 == 30.0 || v0 == 25.0 || v0 == 22.0);
+        int ok1 = (v1 == 30.0 || v1 == 25.0 || v1 == 22.0);
+        ASSERT(ok0, "T61: sampled age[0] is a valid age");
+        ASSERT(ok1, "T61: sampled age[1] is a valid age");
+    }
+
+    df_free(s);
+    df_free(df);
+}
+
+/* T62: df_get_row at valid index returns correct data */
+static void t62_get_row_valid(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+
+    /* Row 1 is Bob, age=25, score=82 */
+    DfResult r = df_get_row(df, 1);
+    ASSERT(!r.is_err,       "T62: df_get_row valid idx no error");
+    ASSERT(r.ok != NULL,    "T62: df_get_row returns non-NULL frame");
+    if (r.ok) {
+        ASSERT(r.ok->nrows == 1,  "T62: returned frame has 1 row");
+        ASSERT(r.ok->ncols == 3,  "T62: returned frame has 3 cols");
+        DfCol *name = df_column(r.ok, "name");
+        ASSERT(name != NULL, "T62: 'name' col present");
+        if (name) ASSERT_STREQ(name->str_data[0], "Bob", "T62: name == Bob");
+        DfCol *age = df_column(r.ok, "age");
+        ASSERT(age != NULL, "T62: 'age' col present");
+        if (age) ASSERT(age->f64_data[0] == 25.0, "T62: age == 25");
+        df_free(r.ok);
+    }
+    df_free(df);
+}
+
+/* T63: df_get_row at out-of-bounds index returns is_err=1 */
+static void t63_get_row_oob(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER); /* 4 rows */
+    if (!df) return;
+
+    DfResult r = df_get_row(df, 99);
+    ASSERT(r.is_err,        "T63: df_get_row oob returns is_err=1");
+    ASSERT(r.ok == NULL,    "T63: df_get_row oob ok is NULL");
+    ASSERT(r.err_msg != NULL, "T63: df_get_row oob has err_msg");
+
+    df_free(df);
+}
+
+/* T64: df_to_html contains expected HTML tags */
+static void t64_to_html(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+
+    const char *html = df_to_html(df);
+    ASSERT(html != NULL,                        "T64: df_to_html non-NULL");
+    ASSERT(strstr(html, "<table>") != NULL,     "T64: contains <table>");
+    ASSERT(strstr(html, "<thead>") != NULL,     "T64: contains <thead>");
+    ASSERT(strstr(html, "<tbody>") != NULL,     "T64: contains <tbody>");
+    ASSERT(strstr(html, "<th>") != NULL,        "T64: contains <th>");
+    ASSERT(strstr(html, "<td>") != NULL,        "T64: contains <td>");
+    /* Column names should appear in header */
+    ASSERT(strstr(html, "name") != NULL,        "T64: 'name' in html");
+    ASSERT(strstr(html, "age") != NULL,         "T64: 'age' in html");
+    /* Data should appear */
+    ASSERT(strstr(html, "Alice") != NULL,       "T64: 'Alice' in html");
+    free((char *)html);
+    df_free(df);
+}
+
+/* -------------------------------------------------------------------------
  * main
  * ------------------------------------------------------------------------- */
 
@@ -1135,6 +1362,14 @@ int main(void)
     t54_value_counts_city();
     t55_value_counts_missing();
     t56_value_counts_f64_col();
+    t57_concat_same_columns();
+    t58_concat_different_columns();
+    t59_fillna();
+    t60_dropna();
+    t61_sample();
+    t62_get_row_valid();
+    t63_get_row_oob();
+    t64_to_html();
 
     printf("\n%s -- %d failure(s)\n", failures == 0 ? "ALL PASS" : "FAILED", failures);
     return failures == 0 ? 0 : 1;

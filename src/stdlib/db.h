@@ -31,6 +31,7 @@ typedef struct { const char **data; uint64_t len; } StrArray;
 typedef struct {
     const char **col_names;
     const char **col_values;
+    int         *col_nulls;   /* 1 if the column value was SQL NULL, else 0 */
     uint64_t     col_count;
 } Row;
 
@@ -79,6 +80,14 @@ U64Result  row_u64(Row r,  const char *col);
 I64Result  row_i64(Row r,  const char *col);
 F64Result  row_f64(Row r,  const char *col);
 BoolResult row_bool(Row r, const char *col);
+
+/* ── metadata and result inspection (Story 29.2.2) ───────────────────────── */
+
+U64Result  db_last_insert_id(int conn_id);           /* last INSERT rowid      */
+U64Result  db_affected_rows(int conn_id);            /* rows affected by last stmt */
+StrArray   db_columns(Row r);                        /* column names from a Row */
+int        db_is_null(Row r, const char *col);       /* 1 if value is NULL/missing */
+int        db_table_exists(int conn_id, const char *name); /* 1 if table exists */
 
 /* ── prepared statements ──────────────────────────────────────────────────── */
 

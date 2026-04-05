@@ -18,6 +18,41 @@
 
 #include "str.h"
 
+/* encoding.utf8_validate(data:[Byte]):Bool
+ * Returns 1 if data is valid UTF-8, 0 otherwise.
+ * Rejects overlong encodings, surrogates (U+D800-U+DFFF), and
+ * code points above U+10FFFF. */
+int encoding_utf8_validate(ByteArray data);
+
+/* encoding.utf8_rune_count(s:Str):UInt
+ * Counts Unicode code points in the null-terminated UTF-8 string s.
+ * Lead bytes (not 10xxxxxx) are counted; continuation bytes are skipped. */
+uint64_t encoding_utf8_rune_count(const char *s);
+
+/* Result type for functions that return a string or an error. */
+typedef struct {
+    const char *ok;
+    int         is_err;
+    const char *err_msg;
+} EncStrResult;
+
+/* Result type for functions that return bytes or an error. */
+typedef struct {
+    ByteArray   ok;
+    int         is_err;
+    const char *err_msg;
+} EncBytesResult;
+
+/* encoding.base32encode(data:[Byte]):Str
+ * Encodes data using RFC 4648 base32 (uppercase A-Z, 2-7, '=' padding).
+ * Returns a heap-allocated string; caller owns it. Returns NULL on alloc fail. */
+const char *encoding_base32_encode(ByteArray data);
+
+/* encoding.base32decode(s:Str):[Byte]
+ * Decodes RFC 4648 base32 (uppercase or lowercase; '=' padding ignored).
+ * Returns is_err=1 with err_msg on invalid input. */
+EncBytesResult encoding_base32_decode(const char *s);
+
 /* encoding.b64encode(data:[Byte]):Str
  * Returns a heap-allocated standard base64 string (RFC 4648, with padding).
  * Caller owns the returned pointer. */

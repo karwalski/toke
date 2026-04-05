@@ -8,6 +8,10 @@
 
 static sqlite3 *g_db = NULL;
 
+/* Forward declarations — defined later in this file. */
+static sqlite3 *conn_db(int conn_id);
+static int find_col(Row r, const char *col);
+
 int db_open(const char *dsn)
 {
     if (sqlite3_open(dsn, &g_db) != SQLITE_OK) {
@@ -38,20 +42,24 @@ static int bind_and_step(sqlite3_stmt *stmt, StrArray params)
 }
 
 /* Collect current stmt row into a heap-allocated Row.
- * All strings are strdup'd so they remain valid after sqlite3_finalize. */
+ * All strings are strdup'd so they remain valid after sqlite3_finalize.
+ * col_nulls[c] is set to 1 when the column value is SQL NULL. */
 static Row collect_row(sqlite3_stmt *stmt)
 {
     int n = sqlite3_column_count(stmt);
     const char **names  = malloc((size_t)n * sizeof(char *));
     const char **values = malloc((size_t)n * sizeof(char *));
+    int         *nulls  = malloc((size_t)n * sizeof(int));
     for (int c = 0; c < n; c++) {
         const char *name = sqlite3_column_name(stmt, c);
         names[c] = name ? strdup(name) : strdup("");
+        int is_null = (sqlite3_column_type(stmt, c) == SQLITE_NULL);
+        nulls[c] = is_null;
         const char *v = (const char *)sqlite3_column_text(stmt, c);
         values[c] = v ? strdup(v) : strdup("");
     }
     Row row; row.col_names = names; row.col_values = values;
-    row.col_count = (uint64_t)n;
+    row.col_nulls = nulls; row.col_count = (uint64_t)n;
     return row;
 }
 
@@ -117,6 +125,64 @@ U64Result db_exec(const char *sql, StrArray params)
     }
     res.ok = (uint64_t)sqlite3_changes(g_db);
     return res;
+}
+
+/* ── metadata and result inspection (Story 29.2.2) ───────────────────────── */
+
+U64Result db_last_insert_id(int conn_id)
+{
+    U64Result res; res.is_err = 0; res.ok = 0;
+    sqlite3 *db = conn_db(conn_id);
+    if (!db) {
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_CONNECTION, "invalid conn_id");
+        return res;
+    }
+    res.ok = (uint64_t)sqlite3_last_insert_rowid(db);
+    return res;
+}
+
+U64Result db_affected_rows(int conn_id)
+{
+    U64Result res; res.is_err = 0; res.ok = 0;
+    sqlite3 *db = conn_db(conn_id);
+    if (!db) {
+        res.is_err = 1;
+        res.err = make_err(DB_ERR_CONNECTION, "invalid conn_id");
+        return res;
+    }
+    res.ok = (uint64_t)sqlite3_changes(db);
+    return res;
+}
+
+StrArray db_columns(Row r)
+{
+    StrArray sa;
+    sa.data = r.col_names;
+    sa.len  = r.col_count;
+    return sa;
+}
+
+int db_is_null(Row r, const char *col)
+{
+    int idx = find_col(r, col);
+    if (idx < 0) return 0;
+    return r.col_nulls[idx];
+}
+
+int db_table_exists(int conn_id, const char *name)
+{
+    sqlite3 *db = conn_db(conn_id);
+    if (!db) return 0;
+    const char *sql =
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?";
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK)
+        return 0;
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
+    int exists = (sqlite3_step(stmt) == SQLITE_ROW) ? 1 : 0;
+    sqlite3_finalize(stmt);
+    return exists;
 }
 
 /* ── prepared statement struct ────────────────────────────────────────────── */

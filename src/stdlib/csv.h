@@ -43,6 +43,24 @@ StrArray     csv_reader_next(TkCsvReader *r);
  * If the reader has already advanced past row 0, returns the cached copy. */
 StrArray     csv_reader_header(TkCsvReader *r);
 
+/* csv_reader_set_separator: change the field delimiter (default ',').
+ * Must be called before reading any rows.  Pass '\t' for TSV. */
+void         csv_reader_set_separator(TkCsvReader *r, char sep);
+
+/* csv_reader_set_quote: change the quote character (default '"').
+ * Must be called before reading any rows. */
+void         csv_reader_set_quote(TkCsvReader *r, char ch);
+
+/* csv_reader_lazyquotes: if enabled (non-zero), a bare quote character that
+ * appears inside an unquoted field is treated as a literal character rather
+ * than a parse error.  Disabled by default. */
+void         csv_reader_lazyquotes(TkCsvReader *r, int enabled);
+
+/* csv_reader_line_number: return the current 1-based line number.
+ * Returns 0 before any rows have been read; increments by 1 after each
+ * successful csv_reader_next() call. */
+uint64_t     csv_reader_line_number(TkCsvReader *r);
+
 /* Writer */
 
 /* csv_writer_new: create an empty writer.
@@ -60,6 +78,15 @@ void         csv_writer_writerow(TkCsvWriter *w, StrArray row);
  * The writer's buffer is NOT cleared; successive flush() calls return the
  * full accumulated text. */
 const char  *csv_writer_flush(TkCsvWriter *w);
+
+/* csv_writer_set_separator: change the field delimiter (default ',').
+ * Must be called before writing any rows. */
+void         csv_writer_set_separator(TkCsvWriter *w, char sep);
+
+/* csv_writer_use_crlf: if enabled (non-zero), rows are terminated with
+ * "\r\n" instead of "\r\n" (the default already uses "\r\n" per RFC 4180,
+ * but this function makes the choice explicit).  Pass 0 to use "\n" only. */
+void         csv_writer_use_crlf(TkCsvWriter *w, int enabled);
 
 /* Convenience */
 

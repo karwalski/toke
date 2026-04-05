@@ -10,9 +10,16 @@
  *   Str!EnvErr = EnvGetResult
  *
  * Story: 2.7.2  Branch: feature/stdlib-2.7-process-env
+ * Story: 28.5.1 env_list, env_delete, env_expand, env_file_load
  */
 
 #include <stdint.h>
+
+/*
+ * StrArray — heap-allocated array of C strings.
+ * data[0..len-1] are individually heap-allocated; callers own the array.
+ */
+typedef struct { const char **data; uint64_t len; } EnvStrArray;
 
 /* EnvErr variant enum */
 typedef enum {
@@ -42,5 +49,40 @@ const char  *env_get_or(const char *key, const char *default_val);
  * Returns 1 on success, 0 on failure (invalid key/value or OS error).
  */
 int          env_set(const char *key, const char *val);
+
+/*
+ * env_list — return all environment variable names as a heap-allocated
+ * EnvStrArray.  The caller owns the array and each string inside it.
+ * Returns an EnvStrArray with len==0 and data==NULL on allocation failure.
+ */
+EnvStrArray  env_list(void);
+
+/*
+ * env_delete — unset an environment variable via unsetenv(3).
+ * Returns 1 on success, 0 on error (invalid key or unsetenv failure).
+ */
+int          env_delete(const char *key);
+
+/*
+ * env_expand — substitute $VAR, ${VAR}, and $$ in tmpl.
+ *   $VAR     ends at the first character that is not [A-Za-z0-9_]
+ *   ${VAR}   ends at the closing '}'
+ *   $$       expands to a single literal '$'
+ *   unknown variable names expand to ""
+ * Returns a heap-allocated NUL-terminated string; caller must free.
+ * Returns NULL on allocation failure.
+ */
+char        *env_expand(const char *tmpl);
+
+/*
+ * env_file_load — parse a KEY=VALUE dotenv file at path.
+ *   - Blank lines and lines beginning with '#' are skipped.
+ *   - Leading/trailing whitespace is stripped from keys and unquoted values.
+ *   - Values may be double- or single-quoted; quotes are stripped.
+ *   - Inside double-quoted values, \n \t \\ are recognised.
+ *   - Each pair is installed via setenv(3) (overwrites existing).
+ * Returns the number of variables set, or -1 on file-open failure.
+ */
+int          env_file_load(const char *path);
 
 #endif /* TK_STDLIB_ENV_H */

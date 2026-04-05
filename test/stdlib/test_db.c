@@ -162,6 +162,56 @@ int main(void)
 
     db_close();
 
+    /* ── Story 29.2.2: metadata and result inspection ────────────────────────── */
+
+    ASSERT(db_open(":memory:") == 0, "29.2.2 db_open(:memory:) for metadata tests");
+
+    U64Result cr3 = db_exec(
+        "CREATE TABLE m(id INTEGER PRIMARY KEY AUTOINCREMENT, val TEXT)",
+        no_params);
+    ASSERT(!cr3.is_err, "29.2.2 CREATE TABLE m ok");
+
+    /* db_last_insert_id after INSERT */
+    db_exec("INSERT INTO m(val) VALUES('first')", no_params);
+    U64Result lid = db_last_insert_id(0);
+    ASSERT(!lid.is_err, "29.2.2 db_last_insert_id ok");
+    ASSERT(lid.ok == 1, "29.2.2 db_last_insert_id == 1");
+
+    db_exec("INSERT INTO m(val) VALUES('second')", no_params);
+    U64Result lid2 = db_last_insert_id(0);
+    ASSERT(!lid2.is_err, "29.2.2 db_last_insert_id second ok");
+    ASSERT(lid2.ok == 2, "29.2.2 db_last_insert_id == 2");
+
+    /* db_affected_rows after UPDATE */
+    db_exec("INSERT INTO m(val) VALUES('third')",  no_params);
+    db_exec("INSERT INTO m(val) VALUES('fourth')", no_params);
+    db_exec("UPDATE m SET val='updated' WHERE id >= 2", no_params);
+    U64Result aff = db_affected_rows(0);
+    ASSERT(!aff.is_err, "29.2.2 db_affected_rows ok");
+    ASSERT(aff.ok == 3, "29.2.2 db_affected_rows == 3");
+
+    /* db_columns from a SELECT row */
+    RowResult mr = db_one("SELECT id, val FROM m WHERE id=1", no_params);
+    ASSERT(!mr.is_err, "29.2.2 db_one for columns test ok");
+    StrArray cols = db_columns(mr.ok);
+    ASSERT(cols.len == 2, "29.2.2 db_columns len == 2");
+    ASSERT(cols.data != NULL, "29.2.2 db_columns data non-NULL");
+    ASSERT_STREQ(cols.data[0], "id",  "29.2.2 db_columns[0] == id");
+    ASSERT_STREQ(cols.data[1], "val", "29.2.2 db_columns[1] == val");
+
+    /* db_is_null: INSERT NULL value then check */
+    db_exec("INSERT INTO m(id, val) VALUES(10, NULL)", no_params);
+    RowResult nr = db_one("SELECT id, val FROM m WHERE id=10", no_params);
+    ASSERT(!nr.is_err, "29.2.2 db_one NULL row ok");
+    ASSERT(db_is_null(nr.ok, "val") == 1,  "29.2.2 db_is_null(val) == 1 for NULL");
+    ASSERT(db_is_null(nr.ok, "id")  == 0,  "29.2.2 db_is_null(id)  == 0 for non-NULL");
+
+    /* db_table_exists */
+    ASSERT(db_table_exists(0, "m")           == 1, "29.2.2 db_table_exists m == 1");
+    ASSERT(db_table_exists(0, "no_such_tbl") == 0, "29.2.2 db_table_exists no_such_tbl == 0");
+
+    db_close();
+
     if (failures == 0) { printf("All tests passed.\n"); return 0; }
     fprintf(stderr, "%d test(s) failed.\n", failures);
     return 1;

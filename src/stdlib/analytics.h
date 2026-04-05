@@ -136,4 +136,73 @@ GroupStatResult analytics_groupstats(TkDataframe *df, const char *group_col,
 TkDataframe   *analytics_pivot(TkDataframe *df, const char *row_col,
                                 const char *col_col, const char *val_col);
 
+/* -------------------------------------------------------------------------
+ * analytics.ttest — Welch's two-sample t-test (Story 31.2.1)
+ * ------------------------------------------------------------------------- */
+
+typedef struct {
+    double t_stat;
+    double p_value;
+} TtestResult;
+
+/* analytics_ttest: perform a Welch's two-sample t-test on g1 and g2.
+ * Returns t_stat=0.0 and p_value=1.0 if either group has fewer than 2
+ * elements.  p_value uses a logistic approximation of the two-tailed
+ * t-distribution CDF.  Caller owns nothing (no heap allocation). */
+TtestResult analytics_ttest(F64Array g1, F64Array g2);
+
+/* -------------------------------------------------------------------------
+ * analytics.histogram — equal-width histogram (Story 31.2.1)
+ * ------------------------------------------------------------------------- */
+
+typedef struct {
+    const double   *bins;    /* nbins+1 bin edges: [min, min+w, ..., max] */
+    const uint64_t *counts;  /* nbins bucket counts */
+    uint64_t        n;       /* number of bins (== nbins) */
+} HistResult;
+
+/* analytics_histogram: bin xs into nbins equal-width buckets.
+ * bins has nbins+1 edges; counts has nbins values summing to xs.len.
+ * The last bin is closed on the right (inclusive of max).
+ * Caller owns bins and counts (both heap-allocated). */
+HistResult analytics_histogram(F64Array xs, uint64_t nbins);
+
+/* -------------------------------------------------------------------------
+ * analytics.moving_average / analytics.exponential_smoothing (31.2.1)
+ * ------------------------------------------------------------------------- */
+
+/* analytics_moving_average: trailing window moving average.
+ * For index i, averages xs[max(0,i-window+1)..i].
+ * Returns a heap-allocated F64Array of the same length as xs.
+ * data pointer is NULL on allocation failure. */
+F64Array analytics_moving_average(F64Array xs, uint64_t window);
+
+/* analytics_exponential_smoothing: S[0]=xs[0], S[i]=alpha*xs[i]+(1-alpha)*S[i-1].
+ * Returns a heap-allocated F64Array of the same length as xs.
+ * data pointer is NULL on allocation failure or empty input. */
+F64Array analytics_exponential_smoothing(F64Array xs, double alpha);
+
+/* -------------------------------------------------------------------------
+ * analytics.trend — linear regression vs. index (Story 31.2.1)
+ * ------------------------------------------------------------------------- */
+
+typedef struct {
+    double slope;
+    double intercept;
+    double r2;
+} TrendResult;
+
+/* analytics_trend: fit y = slope*i + intercept where i is the array index
+ * [0..n-1].  r2 = 1 - SS_res/SS_tot.  Returns zero-valued struct on
+ * degenerate input (fewer than 2 points or zero variance in indices). */
+TrendResult analytics_trend(F64Array ts);
+
+/* -------------------------------------------------------------------------
+ * analytics.covariance (Story 31.2.1)
+ * ------------------------------------------------------------------------- */
+
+/* analytics_covariance: population covariance of xs and ys.
+ * Returns 0.0 if either array is empty or lengths differ. */
+double analytics_covariance(F64Array xs, F64Array ys);
+
 #endif /* TK_STDLIB_ANALYTICS_H */

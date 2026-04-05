@@ -402,6 +402,83 @@ int main(void) {
         CHECK(json_is_null(jn3, "missing") == 1, "json_is_null: missing key -> 1");
     }
 
+    /* ================================================================ */
+    /* Story 29.1.2 — path access and construction                     */
+    /* ================================================================ */
+
+    /* --- json_at: dotted path hit --- */
+    {
+        Json jpath; jpath.raw = "{\"user\":{\"name\":\"Alice\"}}";
+        JsonResult pr = json_at(jpath, "user.name");
+        CHECK(!pr.is_err && strcmp(pr.ok.raw, "\"Alice\"") == 0,
+              "json_at: user.name == \"Alice\"");
+        if (!pr.is_err) free((void *)pr.ok.raw);
+    }
+
+    /* --- json_at: missing key --- */
+    {
+        Json jpath2; jpath2.raw = "{\"user\":{\"name\":\"Alice\"}}";
+        JsonResult pr2 = json_at(jpath2, "user.missing");
+        CHECK(pr2.is_err, "json_at: missing key returns err");
+    }
+
+    /* --- json_index: valid index --- */
+    {
+        Json jarr; jarr.raw = "[10,20,30]";
+        JsonResult ir = json_index(jarr, 1);
+        CHECK(!ir.is_err && strcmp(ir.ok.raw, "20") == 0,
+              "json_index: [10,20,30][1] == 20");
+        if (!ir.is_err) free((void *)ir.ok.raw);
+    }
+
+    /* --- json_index: out of bounds --- */
+    {
+        Json jarr2; jarr2.raw = "[10,20,30]";
+        JsonResult ir2 = json_index(jarr2, 5);
+        CHECK(ir2.is_err, "json_index: out of bounds returns err");
+    }
+
+    /* --- json_merge: disjoint keys --- */
+    {
+        Json jm1; jm1.raw = "{\"a\":1}";
+        Json jm2; jm2.raw = "{\"b\":2}";
+        JsonResult mr = json_merge(jm1, jm2);
+        CHECK(!mr.is_err, "json_merge: disjoint no error");
+        if (!mr.is_err) {
+            CHECK(strstr(mr.ok.raw, "\"a\"") != NULL, "json_merge: disjoint has a");
+            CHECK(strstr(mr.ok.raw, "\"b\"") != NULL, "json_merge: disjoint has b");
+            free((void *)mr.ok.raw);
+        }
+    }
+
+    /* --- json_merge: j2 overrides j1 --- */
+    {
+        Json jm3; jm3.raw = "{\"a\":1}";
+        Json jm4; jm4.raw = "{\"a\":2}";
+        JsonResult mr2 = json_merge(jm3, jm4);
+        CHECK(!mr2.is_err, "json_merge: override no error");
+        if (!mr2.is_err) {
+            /* "a":2 must appear, "a":1 must not be the value */
+            CHECK(strstr(mr2.ok.raw, "\"a\":2") != NULL, "json_merge: j2 wins (a=2)");
+            free((void *)mr2.ok.raw);
+        }
+    }
+
+    /* --- json_from_pairs --- */
+    {
+        const char *keys[]   = { "x", "y" };
+        const char *values[] = { "1", "hello" };
+        Json fp = json_from_pairs(keys, values, 2);
+        CHECK(fp.raw != NULL, "json_from_pairs: raw not null");
+        if (fp.raw) {
+            CHECK(strstr(fp.raw, "\"x\"") != NULL, "json_from_pairs: has key x");
+            CHECK(strstr(fp.raw, "\"y\"") != NULL, "json_from_pairs: has key y");
+            CHECK(strstr(fp.raw, "\"1\"") != NULL, "json_from_pairs: has value 1");
+            CHECK(strstr(fp.raw, "\"hello\"") != NULL, "json_from_pairs: has value hello");
+            free((void *)fp.raw);
+        }
+    }
+
     /* --- summary --- */
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

@@ -499,3 +499,326 @@ const char *html_node_render(TkHtmlNode *node)
     render_node(node, &b);
     return buf_take(&b);
 }
+
+/* -----------------------------------------------------------------------
+ * Internal helper: append uint64 as decimal string
+ * ----------------------------------------------------------------------- */
+
+static void buf_append_u64(Buf *b, uint64_t v)
+{
+    char tmp[24];
+    int  len = 0;
+    if (v == 0) {
+        buf_appendc(b, '0');
+        return;
+    }
+    while (v > 0) {
+        tmp[len++] = (char)('0' + (int)(v % 10));
+        v /= 10;
+    }
+    /* tmp is reversed */
+    for (int i = len - 1; i >= 0; i--) {
+        buf_appendc(b, tmp[i]);
+    }
+}
+
+/* -----------------------------------------------------------------------
+ * String-based element constructors (Story 34.1.1)
+ * ----------------------------------------------------------------------- */
+
+const char *html_form(const char *action, const char *method,
+                      const char *const *children, uint64_t nchild)
+{
+    Buf b;
+    buf_init(&b);
+    buf_append(&b, "<form action=\"");
+    if (action) buf_append(&b, action);
+    buf_append(&b, "\" method=\"");
+    if (method) buf_append(&b, method);
+    buf_append(&b, "\">\n");
+    for (uint64_t i = 0; i < nchild; i++) {
+        if (children && children[i]) {
+            buf_append(&b, children[i]);
+            buf_appendc(&b, '\n');
+        }
+    }
+    buf_append(&b, "</form>");
+    return buf_take(&b);
+}
+
+const char *html_input(const char *type, const char *name, const char *value)
+{
+    Buf b;
+    buf_init(&b);
+    buf_append(&b, "<input type=\"");
+    if (type)  buf_append(&b, type);
+    buf_append(&b, "\" name=\"");
+    if (name)  buf_append(&b, name);
+    buf_append(&b, "\" value=\"");
+    if (value) buf_append(&b, value);
+    buf_append(&b, "\">");
+    return buf_take(&b);
+}
+
+const char *html_select(const char *name,
+                        const char *const *options, uint64_t nopts,
+                        const char *selected)
+{
+    Buf b;
+    buf_init(&b);
+    buf_append(&b, "<select name=\"");
+    if (name) buf_append(&b, name);
+    buf_append(&b, "\">\n");
+    for (uint64_t i = 0; i < nopts; i++) {
+        const char *opt = (options && options[i]) ? options[i] : "";
+        buf_append(&b, "<option value=\"");
+        buf_append(&b, opt);
+        buf_appendc(&b, '"');
+        if (selected && strcmp(opt, selected) == 0) {
+            buf_append(&b, " selected");
+        }
+        buf_appendc(&b, '>');
+        buf_append(&b, opt);
+        buf_append(&b, "</option>\n");
+    }
+    buf_append(&b, "</select>");
+    return buf_take(&b);
+}
+
+const char *html_textarea(const char *name, const char *content,
+                           uint64_t rows, uint64_t cols)
+{
+    Buf b;
+    buf_init(&b);
+    buf_append(&b, "<textarea name=\"");
+    if (name) buf_append(&b, name);
+    buf_append(&b, "\" rows=\"");
+    buf_append_u64(&b, rows);
+    buf_append(&b, "\" cols=\"");
+    buf_append_u64(&b, cols);
+    buf_append(&b, "\">");
+    if (content) buf_append(&b, content);
+    buf_append(&b, "</textarea>");
+    return buf_take(&b);
+}
+
+const char *html_button(const char *text, const char *type)
+{
+    Buf b;
+    buf_init(&b);
+    buf_append(&b, "<button type=\"");
+    if (type) buf_append(&b, type);
+    buf_append(&b, "\">");
+    if (text) buf_append(&b, text);
+    buf_append(&b, "</button>");
+    return buf_take(&b);
+}
+
+const char *html_label(const char *for_id, const char *text)
+{
+    Buf b;
+    buf_init(&b);
+    buf_append(&b, "<label for=\"");
+    if (for_id) buf_append(&b, for_id);
+    buf_append(&b, "\">");
+    if (text) buf_append(&b, text);
+    buf_append(&b, "</label>");
+    return buf_take(&b);
+}
+
+static const char *list_build(const char *tag,
+                               const char *const *items, uint64_t n)
+{
+    Buf b;
+    buf_init(&b);
+    buf_appendc(&b, '<');
+    buf_append(&b, tag);
+    buf_append(&b, ">\n");
+    for (uint64_t i = 0; i < n; i++) {
+        buf_append(&b, "<li>");
+        if (items && items[i]) buf_append(&b, items[i]);
+        buf_append(&b, "</li>\n");
+    }
+    buf_append(&b, "</");
+    buf_append(&b, tag);
+    buf_appendc(&b, '>');
+    return buf_take(&b);
+}
+
+const char *html_ul(const char *const *items, uint64_t n)
+{
+    return list_build("ul", items, n);
+}
+
+const char *html_ol(const char *const *items, uint64_t n)
+{
+    return list_build("ol", items, n);
+}
+
+const char *html_br(void)
+{
+    return strdup("<br>");
+}
+
+const char *html_hr(void)
+{
+    return strdup("<hr>");
+}
+
+const char *html_pre(const char *content)
+{
+    Buf b;
+    buf_init(&b);
+    buf_append(&b, "<pre>");
+    if (content) buf_append(&b, content);
+    buf_append(&b, "</pre>");
+    return buf_take(&b);
+}
+
+const char *html_code(const char *content)
+{
+    Buf b;
+    buf_init(&b);
+    buf_append(&b, "<code>");
+    if (content) buf_append(&b, content);
+    buf_append(&b, "</code>");
+    return buf_take(&b);
+}
+
+/* -----------------------------------------------------------------------
+ * String-based attribute helpers (Story 34.1.2)
+ *
+ * html_attr, html_class_add, html_id: parse the HTML string to find the
+ * first '>' and insert the attribute before it.
+ * ----------------------------------------------------------------------- */
+
+/*
+ * Insert " name=\"value\"" before the first '>' in `node`.
+ * Returns a new heap-allocated string.
+ */
+static const char *insert_attr_before_gt(const char *node,
+                                          const char *name,
+                                          const char *value)
+{
+    if (!node || !name || !value) return node ? strdup(node) : NULL;
+
+    const char *gt = strchr(node, '>');
+    if (!gt) {
+        /* No '>' found; just return a copy unchanged. */
+        return strdup(node);
+    }
+
+    /* Build:  prefix + " name=\"value\"" + suffix */
+    size_t prefix_len = (size_t)(gt - node);
+    size_t name_len   = strlen(name);
+    size_t value_len  = strlen(value);
+    size_t suffix_len = strlen(gt);   /* includes '>' */
+
+    /* " name=\"value\"" = 1 + name_len + 2 + value_len + 1 */
+    size_t insert_len = 1 + name_len + 2 + value_len + 1;
+    size_t total      = prefix_len + insert_len + suffix_len + 1;
+
+    char *out = (char *)malloc(total);
+    if (!out) return NULL;
+
+    char *p = out;
+    memcpy(p, node, prefix_len); p += prefix_len;
+    *p++ = ' ';
+    memcpy(p, name, name_len);   p += name_len;
+    *p++ = '=';
+    *p++ = '"';
+    memcpy(p, value, value_len); p += value_len;
+    *p++ = '"';
+    memcpy(p, gt, suffix_len);   p += suffix_len;
+    *p = '\0';
+    return out;
+}
+
+const char *html_attr(const char *node, const char *name, const char *value)
+{
+    return insert_attr_before_gt(node, name, value);
+}
+
+const char *html_class_add(const char *node, const char *cls)
+{
+    if (!node || !cls) return node ? strdup(node) : NULL;
+
+    /* Look for class="..." in the string (within the opening tag only). */
+    const char *gt  = strchr(node, '>');
+    size_t tag_len  = gt ? (size_t)(gt - node) : strlen(node);
+
+    /* Search for ' class="' within the tag portion. */
+    const char *found = NULL;
+    {
+        /* Manual scan limited to tag_len characters. */
+        const char *needle = "class=\"";
+        size_t nlen = strlen(needle);
+        for (size_t i = 0; i + nlen <= tag_len; i++) {
+            if (memcmp(node + i, needle, nlen) == 0) {
+                found = node + i;
+                break;
+            }
+        }
+    }
+
+    if (found) {
+        /*
+         * Append " cls" to the existing class value.
+         * found points to "class=\"...value...\""
+         * We want to insert " cls" before the closing '"'.
+         */
+        const char *class_val_start = found + 7;  /* skip 'class="' */
+        const char *closing_quote   = strchr(class_val_start, '"');
+        if (!closing_quote) {
+            /* Malformed; fall back to inserting a new attribute. */
+            return insert_attr_before_gt(node, "class", cls);
+        }
+
+        /* Build new string with " cls" inserted before closing_quote. */
+        size_t before_len  = (size_t)(closing_quote - node);
+        size_t cls_len     = strlen(cls);
+        size_t after_len   = strlen(closing_quote); /* includes '"' */
+        size_t total       = before_len + 1 + cls_len + after_len + 1;
+
+        char *out = (char *)malloc(total);
+        if (!out) return NULL;
+
+        char *p = out;
+        memcpy(p, node, before_len);    p += before_len;
+        *p++ = ' ';
+        memcpy(p, cls, cls_len);        p += cls_len;
+        memcpy(p, closing_quote, after_len); p += after_len;
+        *p = '\0';
+        return out;
+    }
+
+    /* No existing class attribute — add one. */
+    return insert_attr_before_gt(node, "class", cls);
+}
+
+const char *html_id(const char *node, const char *id)
+{
+    return insert_attr_before_gt(node, "id", id);
+}
+
+const char *html_meta(const char *name, const char *content)
+{
+    Buf b;
+    buf_init(&b);
+    buf_append(&b, "<meta name=\"");
+    if (name)    buf_append(&b, name);
+    buf_append(&b, "\" content=\"");
+    if (content) buf_append(&b, content);
+    buf_append(&b, "\">");
+    return buf_take(&b);
+}
+
+const char *html_link_stylesheet(const char *href)
+{
+    Buf b;
+    buf_init(&b);
+    buf_append(&b, "<link rel=\"stylesheet\" href=\"");
+    if (href) buf_append(&b, href);
+    buf_append(&b, "\">");
+    return buf_take(&b);
+}

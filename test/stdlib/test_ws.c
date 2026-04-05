@@ -596,6 +596,91 @@ static void test_pong_frame_roundtrip(void)
 }
 
 /* -----------------------------------------------------------------------
+ * Story 34.6.1: close frame helpers and upgrade utilities
+ * ----------------------------------------------------------------------- */
+
+/* Test 33: ws_handle_close_frame — 5-byte payload (code 1000 + "bye") */
+static void test_handle_close_frame_with_reason(void)
+{
+    /* payload: [0x03, 0xE8, 'b', 'y', 'e', '\0'] — NUL added for C string */
+    uint8_t raw[6] = { 0x03, 0xE8, 'b', 'y', 'e', '\0' };
+    ByteArray payload;
+    WsCloseFrame cf;
+    payload.data = raw;
+    payload.len  = 5; /* only 5 bytes of WS payload */
+    cf = ws_handle_close_frame(payload);
+    ASSERT(cf.code == 1000, "ws_handle_close_frame: code == 1000");
+    ASSERT(cf.reason != NULL && strcmp(cf.reason, "bye") == 0,
+           "ws_handle_close_frame: reason == \"bye\"");
+}
+
+/* Test 34: ws_handle_close_frame — empty payload → code=1000, reason="" */
+static void test_handle_close_frame_empty(void)
+{
+    ByteArray payload;
+    WsCloseFrame cf;
+    payload.data = NULL;
+    payload.len  = 0;
+    cf = ws_handle_close_frame(payload);
+    ASSERT(cf.code == 1000, "ws_handle_close_frame(empty): code == 1000");
+    ASSERT(cf.reason != NULL && strcmp(cf.reason, "") == 0,
+           "ws_handle_close_frame(empty): reason == \"\"");
+}
+
+/* Test 35: ws_build_close_frame — first 2 bytes encode 1001 big-endian */
+static void test_build_close_frame(void)
+{
+    ByteArray ba = ws_build_close_frame(1001, "going away");
+    ASSERT(ba.data != NULL, "ws_build_close_frame: data not NULL");
+    ASSERT(ba.len >= 2, "ws_build_close_frame: len >= 2");
+    /* 1001 = 0x03E9; big-endian: [0x03, 0xE9] */
+    ASSERT(ba.data[0] == 0x03 && ba.data[1] == 0xE9,
+           "ws_build_close_frame: first 2 bytes encode 1001 big-endian");
+    free((void *)ba.data);
+}
+
+/* Test 36: ws_parse_upgrade_headers — finds Sec-WebSocket-Key */
+static void test_parse_upgrade_headers(void)
+{
+    const char *names[3]  = { "Host", "Sec-WebSocket-Key", "Connection" };
+    const char *values[3] = { "example.com", "dGhlIHNhbXBsZSBub25jZQ==", "Upgrade" };
+    WsUpgradeHeaders h = ws_parse_upgrade_headers(names, values, 3);
+    ASSERT(h.sec_key != NULL, "ws_parse_upgrade_headers: sec_key not NULL");
+    ASSERT_STREQ(h.sec_key, "dGhlIHNhbXBsZSBub25jZQ==",
+                 "ws_parse_upgrade_headers: sec_key value matches");
+    ASSERT(h.protocol   == NULL, "ws_parse_upgrade_headers: protocol is NULL");
+    ASSERT(h.extensions == NULL, "ws_parse_upgrade_headers: extensions is NULL");
+}
+
+/* Test 37: ws_build_upgrade_response — contains 101 and Sec-WebSocket-Accept */
+static void test_build_upgrade_response(void)
+{
+    const char *resp = ws_build_upgrade_response("abc123+/=", NULL);
+    ASSERT(resp != NULL, "ws_build_upgrade_response: result not NULL");
+    ASSERT(strstr(resp, "101 Switching Protocols") != NULL,
+           "ws_build_upgrade_response: contains '101 Switching Protocols'");
+    ASSERT(strstr(resp, "Sec-WebSocket-Accept: abc123+/=") != NULL,
+           "ws_build_upgrade_response: contains 'Sec-WebSocket-Accept: abc123+/='");
+    free((void *)resp);
+}
+
+/* Test 38: ws_validate_utf8 — valid ASCII returns 1 */
+static void test_validate_utf8_valid_ascii(void)
+{
+    const uint8_t *data = (const uint8_t *)"hello";
+    ASSERT(ws_validate_utf8(data, 5) == 1,
+           "ws_validate_utf8: valid ASCII returns 1");
+}
+
+/* Test 39: ws_validate_utf8 — invalid byte 0xFF returns 0 */
+static void test_validate_utf8_invalid_byte(void)
+{
+    const uint8_t data[1] = { 0xFF };
+    ASSERT(ws_validate_utf8(data, 1) == 0,
+           "ws_validate_utf8: invalid byte 0xFF returns 0");
+}
+
+/* -----------------------------------------------------------------------
  * main
  * ----------------------------------------------------------------------- */
 int main(void)
@@ -639,6 +724,15 @@ int main(void)
     test_masked_zero_payload();
     test_close_frame_with_status();
     test_pong_frame_roundtrip();
+
+    /* Close frame helpers and upgrade utilities (Story 34.6.1) */
+    test_handle_close_frame_with_reason();
+    test_handle_close_frame_empty();
+    test_build_close_frame();
+    test_parse_upgrade_headers();
+    test_build_upgrade_response();
+    test_validate_utf8_valid_ascii();
+    test_validate_utf8_invalid_byte();
 
     printf("=== %s ===\n", failures == 0 ? "ALL PASS" : "FAILURES");
     return failures == 0 ? 0 : 1;

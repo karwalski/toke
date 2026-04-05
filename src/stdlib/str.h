@@ -62,4 +62,13 @@ int             str_ends_with(const char *s, const char *suffix);
 StrArray        str_split_lines(const char *s);
 uint64_t        str_count(const char *s, const char *sub);
 
+/* Story 28.1.3 — padding, reverse, and character class tests */
+const char     *str_pad_left(const char *s, uint64_t width, char ch);
+const char     *str_pad_right(const char *s, uint64_t width, char ch);
+const char     *str_reverse(const char *s);
+int             str_is_alpha(const char *s);
+int             str_is_digit(const char *s);
+int             str_is_alnum(const char *s);
+int             str_is_space(const char *s);
+
 #endif /* TK_STDLIB_STR_H */

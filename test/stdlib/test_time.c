@@ -129,6 +129,57 @@ int main(void)
     /* Same timestamp → zero */
     ASSERT(tk_time_diff(ts_a, ts_a) == 0LL, "diff(ts, ts) == 0");
 
+    /* --- Story 28.3.2: tk_time_to_parts() --- */
+
+    /* Unix epoch (ts=0) must break down to 1970-01-01 00:00:00 UTC */
+    TkTimeParts epoch = tk_time_to_parts(0ULL);
+    ASSERT(epoch.year  == 1970, "to_parts(0).year == 1970");
+    ASSERT(epoch.month == 1,    "to_parts(0).month == 1");
+    ASSERT(epoch.day   == 1,    "to_parts(0).day == 1");
+    ASSERT(epoch.hour  == 0,    "to_parts(0).hour == 0");
+    ASSERT(epoch.min   == 0,    "to_parts(0).min == 0");
+    ASSERT(epoch.sec   == 0,    "to_parts(0).sec == 0");
+
+    /* --- Story 28.3.2: tk_time_from_parts() round-trip --- */
+
+    TkTimeParts input;
+    input.year  = 2024;
+    input.month = 1;
+    input.day   = 15;
+    input.hour  = 12;
+    input.min   = 0;
+    input.sec   = 0;
+    uint64_t rt_ts = tk_time_from_parts(input);
+    ASSERT(rt_ts > 0, "from_parts({2024,1,15,12,0,0}) returns non-zero timestamp");
+    TkTimeParts rt = tk_time_to_parts(rt_ts);
+    ASSERT(rt.year  == 2024, "from_parts round-trip: year == 2024");
+    ASSERT(rt.month == 1,    "from_parts round-trip: month == 1");
+    ASSERT(rt.day   == 15,   "from_parts round-trip: day == 15");
+    ASSERT(rt.hour  == 12,   "from_parts round-trip: hour == 12");
+    ASSERT(rt.min   == 0,    "from_parts round-trip: min == 0");
+    ASSERT(rt.sec   == 0,    "from_parts round-trip: sec == 0");
+
+    /* --- Story 28.3.2: tk_time_weekday() --- */
+
+    /* 2024-01-15 was a Monday (weekday == 1).
+     * Use the same fixed_ms as format() tests: 1705322096000 ms (12:34:56 UTC).
+     * The date portion is still 2024-01-15, so weekday must be 1. */
+    uint8_t wd = tk_time_weekday(fixed_ms);
+    ASSERT(wd == 1, "weekday(2024-01-15) == 1 (Monday)");
+
+    /* --- Story 28.3.2: tk_time_is_leap_year() --- */
+
+    ASSERT(tk_time_is_leap_year(2024) == 1, "is_leap_year(2024) == 1");
+    ASSERT(tk_time_is_leap_year(2023) == 0, "is_leap_year(2023) == 0");
+    ASSERT(tk_time_is_leap_year(1900) == 0, "is_leap_year(1900) == 0 (century, not /400)");
+    ASSERT(tk_time_is_leap_year(2000) == 1, "is_leap_year(2000) == 1 (divisible by 400)");
+
+    /* --- Story 28.3.2: tk_time_days_in_month() --- */
+
+    ASSERT(tk_time_days_in_month(2024, 2) == 29, "days_in_month(2024, 2) == 29 (leap Feb)");
+    ASSERT(tk_time_days_in_month(2023, 2) == 28, "days_in_month(2023, 2) == 28 (non-leap Feb)");
+    ASSERT(tk_time_days_in_month(2024, 1) == 31, "days_in_month(2024, 1) == 31 (January)");
+
     if (failures == 0) { printf("All time tests passed.\n"); return 0; }
     fprintf(stderr, "%d test(s) failed.\n", failures);
     return 1;

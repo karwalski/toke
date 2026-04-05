@@ -55,4 +55,13 @@ BoolFileResult   file_move(const char *src, const char *dst);
 U64FileResult    file_size(const char *path);
 U64FileResult    file_mtime(const char *path);
 
+/* 28.2.3 — path utilities */
+const char      *file_join(const char *a, const char *b);
+const char      *file_basename(const char *path);
+const char      *file_dirname(const char *path);
+const char      *file_absolute(const char *path);
+const char      *file_ext(const char *path);
+StrArrayFileResult file_readlines(const char *path);
+StrArrayFileResult file_glob(const char *pattern);
+
 #endif /* TK_STDLIB_FILE_H */

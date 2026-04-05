@@ -513,6 +513,215 @@ int main(void)
     }
 
     /* ================================================================== */
+    /* UTF-8 validation (story 29.5.1)                                     */
+    /* ================================================================== */
+
+    /* 51 — Valid ASCII is valid UTF-8 */
+    {
+        ByteArray ascii = ba_from_str("hello");
+        ASSERT(encoding_utf8_validate(ascii) == 1,
+               "utf8_validate(\"hello\") == 1");
+    }
+
+    /* 52 — Valid 2-byte sequence: U+00E9 = C3 A9 (e-acute) */
+    {
+        const uint8_t e_acute[] = {0xc3, 0xa9};
+        ByteArray ba = ba_from_bytes(e_acute, 2);
+        ASSERT(encoding_utf8_validate(ba) == 1,
+               "utf8_validate(U+00E9 C3 A9) == 1");
+    }
+
+    /* 53 — Invalid byte 0xFF is not valid UTF-8 */
+    {
+        const uint8_t invalid[] = {0xff};
+        ByteArray ba = ba_from_bytes(invalid, 1);
+        ASSERT(encoding_utf8_validate(ba) == 0,
+               "utf8_validate(0xff) == 0");
+    }
+
+    /* 54 — Overlong encoding of U+0000 (0xC0 0x80) is invalid */
+    {
+        const uint8_t overlong[] = {0xc0, 0x80};
+        ByteArray ba = ba_from_bytes(overlong, 2);
+        ASSERT(encoding_utf8_validate(ba) == 0,
+               "utf8_validate(overlong 0xC0 0x80) == 0");
+    }
+
+    /* 55 — Surrogate U+D800 (0xED 0xA0 0x80) is invalid */
+    {
+        const uint8_t surrogate[] = {0xed, 0xa0, 0x80};
+        ByteArray ba = ba_from_bytes(surrogate, 3);
+        ASSERT(encoding_utf8_validate(ba) == 0,
+               "utf8_validate(surrogate U+D800) == 0");
+    }
+
+    /* 56 — Empty ByteArray is valid */
+    {
+        ByteArray empty_ba = {NULL, 0};
+        ASSERT(encoding_utf8_validate(empty_ba) == 1,
+               "utf8_validate(empty) == 1");
+    }
+
+    /* ================================================================== */
+    /* UTF-8 rune counting (story 29.5.1)                                  */
+    /* ================================================================== */
+
+    /* 57 — ASCII: one rune per byte */
+    ASSERT(encoding_utf8_rune_count("hello") == 5,
+           "utf8_rune_count(\"hello\") == 5");
+
+    /* 58 — e-acute is 2 bytes but 1 rune: "héllo" == 5 runes */
+    {
+        /* h + 0xC3 0xA9 (é) + l + l + o */
+        const char hello[] = {'h', (char)0xc3, (char)0xa9, 'l', 'l', 'o', '\0'};
+        ASSERT(encoding_utf8_rune_count(hello) == 5,
+               "utf8_rune_count(\"h\\xc3\\xa9llo\") == 5");
+    }
+
+    /* 59 — Empty string has 0 runes */
+    ASSERT(encoding_utf8_rune_count("") == 0,
+           "utf8_rune_count(\"\") == 0");
+
+    /* 60 — NULL returns 0 */
+    ASSERT(encoding_utf8_rune_count(NULL) == 0,
+           "utf8_rune_count(NULL) == 0");
+
+    /* ================================================================== */
+    /* Base32 encode (RFC 4648, story 29.5.1)                              */
+    /* ================================================================== */
+
+    /* RFC 4648 §10 test vectors */
+
+    /* 61 — "" → "" */
+    {
+        ByteArray empty_ba = {NULL, 0};
+        const char *b32_empty = encoding_base32_encode(empty_ba);
+        ASSERT(b32_empty && strlen(b32_empty) == 0,
+               "base32_encode(\"\") == \"\"");
+        free((void *)b32_empty);
+    }
+
+    /* 62 — "f" → "MY======" */
+    {
+        ByteArray f_ba = ba_from_str("f");
+        const char *b32_f = encoding_base32_encode(f_ba);
+        ASSERT_STREQ(b32_f, "MY======",
+                     "base32_encode(\"f\") == \"MY======\"");
+        free((void *)b32_f);
+    }
+
+    /* 63 — "fo" → "MZXQ====" */
+    {
+        ByteArray fo_ba = ba_from_str("fo");
+        const char *b32_fo = encoding_base32_encode(fo_ba);
+        ASSERT_STREQ(b32_fo, "MZXQ====",
+                     "base32_encode(\"fo\") == \"MZXQ====\"");
+        free((void *)b32_fo);
+    }
+
+    /* 64 — "foo" → "MZXW6===" */
+    {
+        ByteArray foo_ba = ba_from_str("foo");
+        const char *b32_foo = encoding_base32_encode(foo_ba);
+        ASSERT_STREQ(b32_foo, "MZXW6===",
+                     "base32_encode(\"foo\") == \"MZXW6===\"");
+        free((void *)b32_foo);
+    }
+
+    /* 65 — "foob" → "MZXW6YQ=" */
+    {
+        ByteArray foob_ba = ba_from_str("foob");
+        const char *b32_foob = encoding_base32_encode(foob_ba);
+        ASSERT_STREQ(b32_foob, "MZXW6YQ=",
+                     "base32_encode(\"foob\") == \"MZXW6YQ=\"");
+        free((void *)b32_foob);
+    }
+
+    /* 66 — "fooba" → "MZXW6YTB" */
+    {
+        ByteArray fooba_ba = ba_from_str("fooba");
+        const char *b32_fooba = encoding_base32_encode(fooba_ba);
+        ASSERT_STREQ(b32_fooba, "MZXW6YTB",
+                     "base32_encode(\"fooba\") == \"MZXW6YTB\"");
+        free((void *)b32_fooba);
+    }
+
+    /* 67 — "foobar" → "MZXW6YTBOI======" */
+    {
+        ByteArray foobar_ba = ba_from_str("foobar");
+        const char *b32_foobar = encoding_base32_encode(foobar_ba);
+        ASSERT_STREQ(b32_foobar, "MZXW6YTBOI======",
+                     "base32_encode(\"foobar\") == \"MZXW6YTBOI======\"");
+        free((void *)b32_foobar);
+    }
+
+    /* ================================================================== */
+    /* Base32 decode (RFC 4648, story 29.5.1)                              */
+    /* ================================================================== */
+
+    /* 68 — "MZXW6===" → "foo" */
+    {
+        EncBytesResult r = encoding_base32_decode("MZXW6===");
+        ASSERT(!r.is_err && r.ok.len == 3 &&
+               r.ok.data[0] == 'f' &&
+               r.ok.data[1] == 'o' &&
+               r.ok.data[2] == 'o',
+               "base32_decode(\"MZXW6===\") == \"foo\"");
+        free((void *)r.ok.data);
+    }
+
+    /* 69 — lowercase input accepted: "mzxw6===" → "foo" */
+    {
+        EncBytesResult r = encoding_base32_decode("mzxw6===");
+        ASSERT(!r.is_err && r.ok.len == 3 &&
+               r.ok.data[0] == 'f' &&
+               r.ok.data[1] == 'o' &&
+               r.ok.data[2] == 'o',
+               "base32_decode(lowercase \"mzxw6===\") == \"foo\"");
+        free((void *)r.ok.data);
+    }
+
+    /* 70 — "MZXW6YTBOI======" → "foobar" */
+    {
+        EncBytesResult r = encoding_base32_decode("MZXW6YTBOI======");
+        ASSERT(!r.is_err && r.ok.len == 6 &&
+               memcmp(r.ok.data, "foobar", 6) == 0,
+               "base32_decode(\"MZXW6YTBOI======\") == \"foobar\"");
+        free((void *)r.ok.data);
+    }
+
+    /* 71 — Invalid character returns is_err=1 */
+    {
+        EncBytesResult r = encoding_base32_decode("MZXW6!==");
+        ASSERT(r.is_err == 1,
+               "base32_decode with invalid char '!' returns is_err=1");
+        free((void *)r.ok.data);
+    }
+
+    /* 72 — Empty string returns empty bytes, no error */
+    {
+        EncBytesResult r = encoding_base32_decode("");
+        ASSERT(!r.is_err && r.ok.len == 0,
+               "base32_decode(\"\") returns empty, no error");
+        free((void *)r.ok.data);
+    }
+
+    /* 73 — Base32 round-trip */
+    {
+        ByteArray orig = ba_from_str("Hello, World!");
+        const char *enc = encoding_base32_encode(orig);
+        ASSERT(enc != NULL, "base32_encode(\"Hello, World!\") != NULL");
+        if (enc) {
+            EncBytesResult dec = encoding_base32_decode(enc);
+            ASSERT(!dec.is_err && dec.ok.len == orig.len &&
+                   memcmp(dec.ok.data, orig.data, orig.len) == 0,
+                   "base32 round-trip \"Hello, World!\"");
+            free((void *)dec.ok.data);
+            free((void *)enc);
+        }
+    }
+
+    /* ================================================================== */
     /* Summary                                                              */
     /* ================================================================== */
 

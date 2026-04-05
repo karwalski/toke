@@ -176,3 +176,64 @@ int64_t tk_time_diff(uint64_t ts1_ms, uint64_t ts2_ms)
         return -(int64_t)d;
     }
 }
+
+/* --- Story 28.3.2: date breakdown and calendar --- */
+
+TkTimeParts tk_time_to_parts(uint64_t ts_ms)
+{
+    TkTimeParts parts;
+    time_t secs = (time_t)(ts_ms / 1000ULL);
+    struct tm tm_info;
+    memset(&tm_info, 0, sizeof(tm_info));
+    gmtime_r(&secs, &tm_info);
+    parts.year  = tm_info.tm_year + 1900;
+    parts.month = tm_info.tm_mon + 1;
+    parts.day   = tm_info.tm_mday;
+    parts.hour  = tm_info.tm_hour;
+    parts.min   = tm_info.tm_min;
+    parts.sec   = tm_info.tm_sec;
+    return parts;
+}
+
+uint64_t tk_time_from_parts(TkTimeParts parts)
+{
+    struct tm tm_info;
+    memset(&tm_info, 0, sizeof(tm_info));
+    tm_info.tm_year  = parts.year - 1900;
+    tm_info.tm_mon   = parts.month - 1;
+    tm_info.tm_mday  = parts.day;
+    tm_info.tm_hour  = parts.hour;
+    tm_info.tm_min   = parts.min;
+    tm_info.tm_sec   = parts.sec;
+    tm_info.tm_isdst = -1;
+    time_t secs = timegm(&tm_info);
+    if (secs == (time_t)-1) return 0;
+    return (uint64_t)secs * 1000ULL;
+}
+
+uint8_t tk_time_weekday(uint64_t ts_ms)
+{
+    time_t secs = (time_t)(ts_ms / 1000ULL);
+    struct tm tm_info;
+    memset(&tm_info, 0, sizeof(tm_info));
+    gmtime_r(&secs, &tm_info);
+    return (uint8_t)tm_info.tm_wday; /* 0=Sun, 1=Mon, ..., 6=Sat */
+}
+
+int tk_time_is_leap_year(int year)
+{
+    if (year % 400 == 0) return 1;
+    if (year % 100 == 0) return 0;
+    if (year % 4   == 0) return 1;
+    return 0;
+}
+
+uint8_t tk_time_days_in_month(int year, int month)
+{
+    static const uint8_t days[13] = {
+        0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+    };
+    if (month < 1 || month > 12) return 0;
+    if (month == 2 && tk_time_is_leap_year(year)) return 29;
+    return days[month];
+}

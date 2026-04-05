@@ -218,3 +218,92 @@ double math_log(double x)              { return log(x);        }
 double math_log10(double x)            { return log10(x);      }
 double math_exp(double x)              { return exp(x);        }
 double math_hypot(double x, double y)  { return hypot(x, y);   }
+
+/* -----------------------------------------------------------------------
+ * Rounding, NaN/Inf classification, and combinatorics (Story 29.3.2)
+ * ----------------------------------------------------------------------- */
+
+double math_round(double x, int digits)
+{
+    double scale = pow(10.0, (double)digits);
+    return round(x * scale) / scale;
+}
+
+double math_trunc(double x)            { return trunc(x);           }
+double math_fmod(double x, double y)   { return fmod(x, y);         }
+int    math_isnan(double x)            { return isnan(x) ? 1 : 0;   }
+int    math_isinf(double x)            { return isinf(x) ? 1 : 0;   }
+double math_copysign(double x, double y) { return copysign(x, y);   }
+
+int64_t math_gcd(int64_t a, int64_t b)
+{
+    /* Use absolute values so result is always non-negative. */
+    if (a < 0) a = -a;
+    if (b < 0) b = -b;
+    while (b != 0) {
+        int64_t t = b;
+        b = a % b;
+        a = t;
+    }
+    return a;
+}
+
+int64_t math_lcm(int64_t a, int64_t b)
+{
+    if (a == 0 || b == 0) return 0;
+    int64_t g = math_gcd(a, b);
+    /* Divide before multiply to reduce overflow risk. */
+    int64_t div = a / g;
+    /* Check for overflow: if |div| > INT64_MAX / |b|, overflow. */
+    if (b < 0) b = -b;
+    if (div < 0) div = -div;
+    /* INT64_MAX = 9223372036854775807 */
+    if (div > (int64_t)9223372036854775807LL / b) return -1;
+    return div * b;
+}
+
+int64_t math_factorial(uint64_t n)
+{
+    if (n > 20) return -1; /* 21! overflows int64 */
+    int64_t result = 1;
+    uint64_t i;
+    for (i = 2; i <= n; i++) {
+        result *= (int64_t)i;
+    }
+    return result;
+}
+
+double math_mode(F64Array xs)
+{
+    if (xs.len == 0) return 0.0 / 0.0; /* NaN */
+
+    double *buf = sorted_copy(xs);
+    if (!buf) return 0.0 / 0.0;
+
+    /* Find longest run in the sorted copy. */
+    uint64_t best_count = 0;
+    double   best_val   = 0.0 / 0.0;
+    int      unique_mode = 0; /* 1 if exactly one value has best_count */
+
+    uint64_t i = 0;
+    while (i < xs.len) {
+        uint64_t run = 1;
+        while (i + run < xs.len && buf[i + run] == buf[i]) {
+            run++;
+        }
+        if (run > best_count) {
+            best_count  = run;
+            best_val    = buf[i];
+            unique_mode = 1;
+        } else if (run == best_count) {
+            unique_mode = 0; /* tie — no unique mode */
+        }
+        i += run;
+    }
+
+    free(buf);
+
+    /* No mode if every element is unique (best_count == 1) or there's a tie. */
+    if (best_count <= 1 || !unique_mode) return 0.0 / 0.0;
+    return best_val;
+}

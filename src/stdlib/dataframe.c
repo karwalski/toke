@@ -1247,6 +1247,352 @@ DfGroupResult df_value_counts(TkDataframe *df, const char *col)
 }
 
 /* =========================================================================
+ * Story 31.1.2: df_concat, df_fillna, df_dropna, df_sample, df_get_row,
+ *               df_to_html, df_to_csv
+ * ========================================================================= */
+
+/* -------------------------------------------------------------------------
+ * df_concat
+ * ------------------------------------------------------------------------- */
+
+TkDataframe *df_concat(TkDataframe *left, TkDataframe *right)
+{
+    if (!left || !right) return NULL;
+
+    /* Build the union of column names (left-first order). */
+    uint64_t max_cols = left->ncols + right->ncols;
+    char **names = malloc(max_cols * sizeof(char *));
+    if (!names) return NULL;
+
+    uint64_t ncols = 0;
+    /* Add all left columns first. */
+    for (uint64_t j = 0; j < left->ncols; j++)
+        names[ncols++] = df_strdup(left->cols[j].name);
+
+    /* Add right columns not already in left. */
+    for (uint64_t j = 0; j < right->ncols; j++) {
+        const char *rname = right->cols[j].name;
+        int found = 0;
+        for (uint64_t k = 0; k < left->ncols; k++) {
+            if (left->cols[k].name && rname &&
+                strcmp(left->cols[k].name, rname) == 0) {
+                found = 1;
+                break;
+            }
+        }
+        if (!found)
+            names[ncols++] = df_strdup(rname);
+    }
+
+    uint64_t nrows = left->nrows + right->nrows;
+
+    TkDataframe *dst = df_new();
+    if (!dst) {
+        for (uint64_t i = 0; i < ncols; i++) free(names[i]);
+        free(names);
+        return NULL;
+    }
+    dst->ncols = ncols;
+    dst->nrows = nrows;
+    dst->cols  = calloc(ncols, sizeof(DfCol));
+    if (!dst->cols) {
+        for (uint64_t i = 0; i < ncols; i++) free(names[i]);
+        free(names);
+        df_free(dst);
+        return NULL;
+    }
+
+    for (uint64_t j = 0; j < ncols; j++) {
+        DfCol *dc = &dst->cols[j];
+        dc->name  = names[j]; /* transfer ownership */
+        /* Determine type: prefer the left frame's type; if the column exists
+         * only in right, use right's type; if in neither, use STR. */
+        DfCol *lc = df_column(left, names[j]);
+        DfCol *rc = df_column(right, names[j]);
+        DfColType typ = DF_COL_STR;
+        if (lc) typ = lc->type;
+        else if (rc) typ = rc->type;
+        dc->type  = typ;
+        dc->nrows = nrows;
+
+        if (typ == DF_COL_F64) {
+            dc->f64_data = malloc(nrows * sizeof(double));
+            if (!dc->f64_data) { free(names); df_free(dst); return NULL; }
+            for (uint64_t r = 0; r < left->nrows; r++)
+                dc->f64_data[r] = lc ? lc->f64_data[r] : 0.0;
+            for (uint64_t r = 0; r < right->nrows; r++) {
+                if (rc)
+                    dc->f64_data[left->nrows + r] = rc->f64_data[r];
+                else
+                    dc->f64_data[left->nrows + r] = 0.0;
+            }
+        } else {
+            dc->str_data = malloc(nrows * sizeof(char *));
+            if (!dc->str_data) { free(names); df_free(dst); return NULL; }
+            for (uint64_t r = 0; r < left->nrows; r++) {
+                if (lc && lc->str_data)
+                    dc->str_data[r] = df_strdup(lc->str_data[r]);
+                else
+                    dc->str_data[r] = df_strdup("");
+            }
+            for (uint64_t r = 0; r < right->nrows; r++) {
+                if (rc && rc->str_data)
+                    dc->str_data[left->nrows + r] = df_strdup(rc->str_data[r]);
+                else
+                    dc->str_data[left->nrows + r] = df_strdup("");
+            }
+        }
+    }
+
+    free(names); /* individual strings were transferred into cols */
+    return dst;
+}
+
+/* -------------------------------------------------------------------------
+ * df_fillna
+ * ------------------------------------------------------------------------- */
+
+TkDataframe *df_fillna(TkDataframe *df, const char *col, const char *value)
+{
+    if (!df || !col || !value) return NULL;
+    DfCol *sc = df_column(df, col);
+    if (!sc || sc->type != DF_COL_STR) return NULL;
+
+    /* Build a full copy of the dataframe, substituting missing values. */
+    TkDataframe *dst = df_new();
+    if (!dst) return NULL;
+    dst->ncols = df->ncols;
+    dst->nrows = df->nrows;
+    dst->cols  = calloc(df->ncols, sizeof(DfCol));
+    if (!dst->cols) { df_free(dst); return NULL; }
+
+    for (uint64_t j = 0; j < df->ncols; j++) {
+        DfCol *src = &df->cols[j];
+        DfCol *dc  = &dst->cols[j];
+        int is_target = (src->name && strcmp(src->name, col) == 0);
+
+        dc->name  = df_strdup(src->name);
+        dc->type  = src->type;
+        dc->nrows = src->nrows;
+
+        if (src->type == DF_COL_F64) {
+            dc->f64_data = malloc(src->nrows * sizeof(double));
+            if (!dc->f64_data) { df_free(dst); return NULL; }
+            memcpy(dc->f64_data, src->f64_data, src->nrows * sizeof(double));
+        } else {
+            dc->str_data = malloc(src->nrows * sizeof(char *));
+            if (!dc->str_data) { df_free(dst); return NULL; }
+            for (uint64_t r = 0; r < src->nrows; r++) {
+                const char *v = src->str_data ? src->str_data[r] : NULL;
+                if (is_target && (!v || *v == '\0'))
+                    dc->str_data[r] = df_strdup(value);
+                else
+                    dc->str_data[r] = df_strdup(v ? v : "");
+            }
+        }
+    }
+    return dst;
+}
+
+/* -------------------------------------------------------------------------
+ * df_dropna
+ * ------------------------------------------------------------------------- */
+
+TkDataframe *df_dropna(TkDataframe *df, const char *col)
+{
+    if (!df || !col) return NULL;
+    DfCol *c = df_column(df, col);
+    if (!c || c->type != DF_COL_STR) return NULL;
+
+    int *mask = calloc(df->nrows, sizeof(int));
+    if (!mask) return NULL;
+
+    uint64_t new_nrows = 0;
+    for (uint64_t r = 0; r < df->nrows; r++) {
+        const char *v = c->str_data ? c->str_data[r] : NULL;
+        if (v && *v != '\0') {
+            mask[r] = 1;
+            new_nrows++;
+        }
+    }
+
+    TkDataframe *result = copy_rows_subset(df, mask, new_nrows);
+    free(mask);
+    return result;
+}
+
+/* -------------------------------------------------------------------------
+ * df_sample  (Fisher-Yates with LCG)
+ * ------------------------------------------------------------------------- */
+
+TkDataframe *df_sample(TkDataframe *df, uint64_t n, uint64_t seed)
+{
+    if (!df) return NULL;
+    uint64_t nrows = df->nrows;
+    if (nrows == 0) return df_head(df, 0);
+
+    /* Build index array [0, nrows-1]. */
+    uint64_t *idx = malloc(nrows * sizeof(uint64_t));
+    if (!idx) return NULL;
+    for (uint64_t r = 0; r < nrows; r++) idx[r] = r;
+
+    /* Fisher-Yates shuffle with LCG random number generator.
+     * LCG parameters from Numerical Recipes (Knuth). */
+    uint64_t state = seed ^ 0xdeadbeefcafeULL;
+    uint64_t take  = (n < nrows) ? n : nrows;
+
+    for (uint64_t i = 0; i < take; i++) {
+        /* Advance LCG state */
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        /* Map to [i, nrows-1] */
+        uint64_t range = nrows - i;
+        uint64_t j     = i + (state % range);
+        /* Swap */
+        uint64_t tmp = idx[i];
+        idx[i] = idx[j];
+        idx[j] = tmp;
+    }
+
+    /* Build a new dataframe using the first take indices. */
+    TkDataframe *dst = df_new();
+    if (!dst) { free(idx); return NULL; }
+    dst->ncols = df->ncols;
+    dst->nrows = take;
+    dst->cols  = calloc(df->ncols, sizeof(DfCol));
+    if (!dst->cols) { free(idx); df_free(dst); return NULL; }
+
+    for (uint64_t j = 0; j < df->ncols; j++) {
+        DfCol *sc = &df->cols[j];
+        DfCol *dc = &dst->cols[j];
+        dc->name  = df_strdup(sc->name);
+        dc->type  = sc->type;
+        dc->nrows = take;
+
+        if (sc->type == DF_COL_F64) {
+            dc->f64_data = malloc(take * sizeof(double));
+            if (!dc->f64_data) { free(idx); df_free(dst); return NULL; }
+            for (uint64_t r = 0; r < take; r++)
+                dc->f64_data[r] = sc->f64_data[idx[r]];
+        } else {
+            dc->str_data = malloc(take * sizeof(char *));
+            if (!dc->str_data) { free(idx); df_free(dst); return NULL; }
+            for (uint64_t r = 0; r < take; r++)
+                dc->str_data[r] = df_strdup(
+                    sc->str_data ? (sc->str_data[idx[r]] ? sc->str_data[idx[r]] : "") : "");
+        }
+    }
+
+    free(idx);
+    return dst;
+}
+
+/* -------------------------------------------------------------------------
+ * df_get_row
+ * ------------------------------------------------------------------------- */
+
+DfResult df_get_row(TkDataframe *df, uint64_t idx)
+{
+    DfResult res = {NULL, 0, NULL};
+    if (!df) {
+        res.is_err  = 1;
+        res.err_msg = "df_get_row: NULL dataframe";
+        return res;
+    }
+    if (idx >= df->nrows) {
+        res.is_err  = 1;
+        res.err_msg = "df_get_row: index out of bounds";
+        return res;
+    }
+
+    int *mask = calloc(df->nrows, sizeof(int));
+    if (!mask) {
+        res.is_err  = 1;
+        res.err_msg = "df_get_row: out of memory";
+        return res;
+    }
+    mask[idx] = 1;
+    TkDataframe *row = copy_rows_subset(df, mask, 1);
+    free(mask);
+    if (!row) {
+        res.is_err  = 1;
+        res.err_msg = "df_get_row: out of memory";
+        return res;
+    }
+    res.ok = row;
+    return res;
+}
+
+/* -------------------------------------------------------------------------
+ * df_to_html
+ * ------------------------------------------------------------------------- */
+
+/* Append s to sb with HTML escaping of <, >, &, ", '. */
+static void sb_append_html(StrBuf *sb, const char *s)
+{
+    if (!s) return;
+    for (; *s; s++) {
+        switch (*s) {
+            case '<':  sb_append(sb, "&lt;");   break;
+            case '>':  sb_append(sb, "&gt;");   break;
+            case '&':  sb_append(sb, "&amp;");  break;
+            case '"':  sb_append(sb, "&quot;"); break;
+            case '\'': sb_append(sb, "&#39;");  break;
+            default: {
+                char tmp[2] = { *s, '\0' };
+                sb_append(sb, tmp);
+                break;
+            }
+        }
+    }
+}
+
+const char *df_to_html(TkDataframe *df)
+{
+    if (!df) return NULL;
+
+    StrBuf sb;
+    if (sb_init(&sb) != 0) return NULL;
+
+    sb_append(&sb, "<table>\n<thead>\n<tr>");
+    for (uint64_t j = 0; j < df->ncols; j++) {
+        sb_append(&sb, "<th>");
+        sb_append_html(&sb, df->cols[j].name ? df->cols[j].name : "");
+        sb_append(&sb, "</th>");
+    }
+    sb_append(&sb, "</tr>\n</thead>\n<tbody>\n");
+
+    char numtmp[64];
+    for (uint64_t r = 0; r < df->nrows; r++) {
+        sb_append(&sb, "<tr>");
+        for (uint64_t j = 0; j < df->ncols; j++) {
+            DfCol *c = &df->cols[j];
+            sb_append(&sb, "<td>");
+            if (c->type == DF_COL_F64) {
+                snprintf(numtmp, sizeof(numtmp), "%.17g", c->f64_data[r]);
+                sb_append(&sb, numtmp);
+            } else {
+                const char *v = (c->str_data && c->str_data[r]) ? c->str_data[r] : "";
+                sb_append_html(&sb, v);
+            }
+            sb_append(&sb, "</td>");
+        }
+        sb_append(&sb, "</tr>\n");
+    }
+
+    sb_append(&sb, "</tbody>\n</table>");
+    return sb.buf; /* caller owns */
+}
+
+/* -------------------------------------------------------------------------
+ * df_to_csv  (alias for df_tocsv)
+ * ------------------------------------------------------------------------- */
+
+const char *df_to_csv(TkDataframe *df)
+{
+    return df_tocsv(df);
+}
+
+/* =========================================================================
  * df_schema  (return column metadata)
  * ========================================================================= */
 

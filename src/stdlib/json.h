@@ -78,6 +78,30 @@ StrJsonResult json_pretty(Json j);
 int json_is_null(Json j, const char *key);
 
 /* ------------------------------------------------------------------ */
+/* Path access and construction — Story 29.1.2                        */
+/* ------------------------------------------------------------------ */
+
+/* json_at — traverse a dotted path, e.g. "user.address.city".
+ * For each segment: looks up the key in an object, or parses the segment
+ * as an integer index into an array.
+ * Returns JSON_ERR_MISSING if any segment fails. */
+JsonResult json_at(Json j, const char *path);
+
+/* json_index — return the i-th element of a JSON array.
+ * Returns JSON_ERR_TYPE if j is not an array, JSON_ERR_MISSING if out of bounds. */
+JsonResult json_index(Json j, uint64_t i);
+
+/* json_merge — shallow merge of two JSON objects.
+ * Keys from j2 override j1. Returns a new heap-allocated JSON object.
+ * Returns JSON_ERR_TYPE if either argument is not an object. */
+JsonResult json_merge(Json j1, Json j2);
+
+/* json_from_pairs — build a JSON object from parallel key/value arrays.
+ * Values are treated as strings and JSON-encoded via json_enc().
+ * Returns Json{ .raw = "{\"key1\":\"val1\",...}" } (heap-allocated). */
+Json json_from_pairs(const char *const *keys, const char *const *values, uint64_t n);
+
+/* ------------------------------------------------------------------ */
 /* Streaming API — Story 35.1.3                                        */
 /* ------------------------------------------------------------------ */
 

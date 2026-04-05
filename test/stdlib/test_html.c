@@ -327,6 +327,185 @@ int main(void)
     }
 
     /* -------------------------------------------------------------------
+     * Story 34.1.1 tests
+     * ------------------------------------------------------------------- */
+
+    /* 22. html_form */
+    {
+        const char *children[2];
+        children[0] = "<input type=\"text\" name=\"user\" value=\"\">";
+        children[1] = "<button type=\"submit\">Go</button>";
+        const char *out = html_form("/login", "POST", children, 2);
+        ASSERT_CONTAINS(out, "<form",           "html_form: contains <form");
+        ASSERT_CONTAINS(out, "action=\"/login\"","html_form: action attribute");
+        ASSERT_CONTAINS(out, "method=\"POST\"",  "html_form: method attribute");
+        ASSERT_CONTAINS(out, children[0],        "html_form: first child present");
+        ASSERT_CONTAINS(out, "</form>",          "html_form: closing tag");
+        free((void *)out);
+    }
+
+    /* 23. html_input */
+    {
+        const char *out = html_input("text", "username", "");
+        ASSERT_STREQ(out, "<input type=\"text\" name=\"username\" value=\"\">",
+                     "html_input: renders correctly");
+        free((void *)out);
+    }
+
+    /* 24. html_select with selected option */
+    {
+        const char *opts[2] = {"red", "blue"};
+        const char *out = html_select("color", opts, 2, "blue");
+        ASSERT_CONTAINS(out, "<select",       "html_select: opening tag");
+        ASSERT_CONTAINS(out, "name=\"color\"","html_select: name attribute");
+        ASSERT_CONTAINS(out, "<option",       "html_select: option element");
+        ASSERT_CONTAINS(out, "selected",      "html_select: selected attribute present");
+        /* red should not be selected */
+        {
+            const char *red_opt = strstr(out, "value=\"red\"");
+            ASSERT(red_opt && strstr(red_opt, "selected") > strstr(out, "value=\"blue\""),
+                   "html_select: selected on blue not red");
+        }
+        free((void *)out);
+    }
+
+    /* 25. html_textarea */
+    {
+        const char *out = html_textarea("notes", "hello", 5, 40);
+        ASSERT_CONTAINS(out, "<textarea",     "html_textarea: opening tag");
+        ASSERT_CONTAINS(out, "name=\"notes\"","html_textarea: name attribute");
+        ASSERT_CONTAINS(out, "rows=\"5\"",    "html_textarea: rows attribute");
+        ASSERT_CONTAINS(out, "cols=\"40\"",   "html_textarea: cols attribute");
+        ASSERT_CONTAINS(out, "hello",         "html_textarea: content");
+        ASSERT_CONTAINS(out, "</textarea>",   "html_textarea: closing tag");
+        free((void *)out);
+    }
+
+    /* 26. html_button */
+    {
+        const char *out = html_button("Submit", "submit");
+        ASSERT_STREQ(out, "<button type=\"submit\">Submit</button>",
+                     "html_button: renders correctly");
+        free((void *)out);
+    }
+
+    /* 27. html_label */
+    {
+        const char *out = html_label("email", "Email address");
+        ASSERT_CONTAINS(out, "for=\"email\"",   "html_label: for attribute");
+        ASSERT_CONTAINS(out, "Email address",   "html_label: text content");
+        ASSERT_CONTAINS(out, "</label>",         "html_label: closing tag");
+        free((void *)out);
+    }
+
+    /* 28. html_ul */
+    {
+        const char *items[3] = {"a", "b", "c"};
+        const char *out = html_ul(items, 3);
+        ASSERT_CONTAINS(out, "<ul>",      "html_ul: opening tag");
+        ASSERT_CONTAINS(out, "<li>a</li>","html_ul: first item");
+        ASSERT_CONTAINS(out, "<li>b</li>","html_ul: second item");
+        ASSERT_CONTAINS(out, "<li>c</li>","html_ul: third item");
+        ASSERT_CONTAINS(out, "</ul>",     "html_ul: closing tag");
+        free((void *)out);
+    }
+
+    /* 29. html_ol */
+    {
+        const char *items[2] = {"first", "second"};
+        const char *out = html_ol(items, 2);
+        ASSERT_CONTAINS(out, "<ol>",           "html_ol: opening tag");
+        ASSERT_CONTAINS(out, "<li>first</li>", "html_ol: first item");
+        ASSERT_CONTAINS(out, "</ol>",          "html_ol: closing tag");
+        free((void *)out);
+    }
+
+    /* 30. html_br */
+    {
+        const char *out = html_br();
+        ASSERT_STREQ(out, "<br>", "html_br: renders as <br>");
+        free((void *)out);
+    }
+
+    /* 31. html_hr */
+    {
+        const char *out = html_hr();
+        ASSERT_STREQ(out, "<hr>", "html_hr: renders as <hr>");
+        free((void *)out);
+    }
+
+    /* 32. html_pre */
+    {
+        const char *out = html_pre("code here");
+        ASSERT_STREQ(out, "<pre>code here</pre>",
+                     "html_pre: renders correctly");
+        free((void *)out);
+    }
+
+    /* 33. html_code */
+    {
+        const char *out = html_code("x = 1");
+        ASSERT_STREQ(out, "<code>x = 1</code>",
+                     "html_code: renders correctly");
+        free((void *)out);
+    }
+
+    /* -------------------------------------------------------------------
+     * Story 34.1.2 tests
+     * ------------------------------------------------------------------- */
+
+    /* 34. html_attr: add attribute to existing element string */
+    {
+        const char *out = html_attr("<div class=\"foo\">content</div>",
+                                    "id", "bar");
+        ASSERT_CONTAINS(out, "id=\"bar\"",    "html_attr: id attribute added");
+        ASSERT_CONTAINS(out, "class=\"foo\"", "html_attr: existing class preserved");
+        ASSERT_CONTAINS(out, "content</div>", "html_attr: content preserved");
+        free((void *)out);
+    }
+
+    /* 35. html_class_add: append to existing class */
+    {
+        const char *out = html_class_add("<div class=\"foo\">content</div>", "bar");
+        ASSERT_CONTAINS(out, "class=\"foo bar\"", "html_class_add: class becomes foo bar");
+        ASSERT_CONTAINS(out, "content</div>",     "html_class_add: content preserved");
+        free((void *)out);
+    }
+
+    /* 36. html_class_add: add class when none exists */
+    {
+        const char *out = html_class_add("<div>content</div>", "newclass");
+        ASSERT_CONTAINS(out, "class=\"newclass\"","html_class_add: class added when absent");
+        free((void *)out);
+    }
+
+    /* 37. html_id: set id attribute */
+    {
+        const char *out = html_id("<p>text</p>", "main");
+        ASSERT_CONTAINS(out, "id=\"main\"", "html_id: id attribute set");
+        ASSERT_CONTAINS(out, "text</p>",    "html_id: content preserved");
+        free((void *)out);
+    }
+
+    /* 38. html_meta */
+    {
+        const char *out = html_meta("viewport", "width=device-width");
+        ASSERT_STREQ(out,
+                     "<meta name=\"viewport\" content=\"width=device-width\">",
+                     "html_meta: renders correctly");
+        free((void *)out);
+    }
+
+    /* 39. html_link_stylesheet */
+    {
+        const char *out = html_link_stylesheet("/style.css");
+        ASSERT_CONTAINS(out, "rel=\"stylesheet\"",  "html_link_stylesheet: rel attribute");
+        ASSERT_CONTAINS(out, "href=\"/style.css\"", "html_link_stylesheet: href attribute");
+        ASSERT_CONTAINS(out, "<link",               "html_link_stylesheet: link tag");
+        free((void *)out);
+    }
+
+    /* -------------------------------------------------------------------
      * Summary
      * ------------------------------------------------------------------- */
     if (failures == 0) {

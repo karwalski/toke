@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <netdb.h>
 #include <errno.h>
 #include <time.h>
@@ -1064,4 +1065,194 @@ void ws_conn_free(WsConn *conn)
         conn->fd = -1;
     }
     free(conn);
+}
+
+/* -----------------------------------------------------------------------
+ * Close frame helpers and upgrade utilities (Story 34.6.1)
+ * ----------------------------------------------------------------------- */
+
+WsCloseFrame ws_handle_close_frame(ByteArray payload)
+{
+    WsCloseFrame cf;
+    cf.code   = 1000;
+    cf.reason = "";
+
+    if (payload.len == 0 || payload.data == NULL)
+        return cf;
+
+    if (payload.len >= 2) {
+        uint16_t code_be;
+        memcpy(&code_be, payload.data, 2);
+        cf.code = ntohs(code_be);
+        /* reason is the remaining bytes as a C string; ws_decode_frame
+         * allocates payload with a trailing NUL so this is safe. */
+        cf.reason = (payload.len > 2)
+                  ? (const char *)(payload.data + 2)
+                  : "";
+    }
+
+    return cf;
+}
+
+ByteArray ws_build_close_frame(uint16_t code, const char *reason)
+{
+    ByteArray ba;
+    size_t reason_len = (reason != NULL) ? strlen(reason) : 0;
+    size_t total      = 2 + reason_len;
+    uint8_t *buf;
+    uint16_t code_be;
+
+    ba.data = NULL;
+    ba.len  = 0;
+
+    buf = (uint8_t *)malloc(total);
+    if (!buf) return ba;
+
+    code_be = htons(code);
+    memcpy(buf, &code_be, 2);
+    if (reason_len > 0)
+        memcpy(buf + 2, reason, reason_len);
+
+    ba.data = buf;
+    ba.len  = (uint64_t)total;
+    return ba;
+}
+
+WsUpgradeHeaders ws_parse_upgrade_headers(const char *const *hnames,
+                                          const char *const *hvalues,
+                                          uint64_t nhdrs)
+{
+    WsUpgradeHeaders hdrs;
+    uint64_t i;
+    char lower[64];
+    size_t nlen;
+    size_t j;
+
+    hdrs.sec_key    = NULL;
+    hdrs.protocol   = NULL;
+    hdrs.extensions = NULL;
+
+    if (!hnames || !hvalues) return hdrs;
+
+    for (i = 0; i < nhdrs; i++) {
+        if (!hnames[i]) continue;
+        nlen = strlen(hnames[i]);
+        if (nlen >= sizeof(lower)) continue;
+
+        for (j = 0; j < nlen; j++)
+            lower[j] = (char)tolower((unsigned char)hnames[i][j]);
+        lower[nlen] = '\0';
+
+        if (strcmp(lower, "sec-websocket-key") == 0) {
+            hdrs.sec_key = hvalues[i];
+        } else if (strcmp(lower, "sec-websocket-protocol") == 0) {
+            hdrs.protocol = hvalues[i];
+        } else if (strcmp(lower, "sec-websocket-extensions") == 0) {
+            hdrs.extensions = hvalues[i];
+        }
+    }
+
+    return hdrs;
+}
+
+const char *ws_build_upgrade_response(const char *accept_key,
+                                      const char *protocols)
+{
+    /*
+     * Build:
+     *   HTTP/1.1 101 Switching Protocols\r\n
+     *   Upgrade: websocket\r\n
+     *   Connection: Upgrade\r\n
+     *   Sec-WebSocket-Accept: <accept_key>\r\n
+     *   [Sec-WebSocket-Protocol: <protocols>\r\n]
+     *   \r\n
+     */
+    static const char preamble[] =
+        "HTTP/1.1 101 Switching Protocols\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Accept: ";
+    static const char crlf[]     = "\r\n";
+    static const char proto_hdr[] = "Sec-WebSocket-Protocol: ";
+
+    size_t key_len   = accept_key  ? strlen(accept_key)  : 0;
+    size_t proto_len = protocols   ? strlen(protocols)   : 0;
+    size_t total;
+    char  *buf;
+    char  *p;
+
+    total = strlen(preamble)
+          + key_len
+          + strlen(crlf)          /* after accept key */
+          + (protocols ? strlen(proto_hdr) + proto_len + strlen(crlf) : 0)
+          + strlen(crlf)          /* blank line */
+          + 1;                    /* NUL */
+
+    buf = (char *)malloc(total);
+    if (!buf) return NULL;
+
+    p = buf;
+
+    memcpy(p, preamble, strlen(preamble)); p += strlen(preamble);
+    if (key_len > 0) { memcpy(p, accept_key, key_len); p += key_len; }
+    memcpy(p, crlf, strlen(crlf)); p += strlen(crlf);
+
+    if (protocols) {
+        memcpy(p, proto_hdr, strlen(proto_hdr)); p += strlen(proto_hdr);
+        memcpy(p, protocols, proto_len);         p += proto_len;
+        memcpy(p, crlf, strlen(crlf));           p += strlen(crlf);
+    }
+
+    memcpy(p, crlf, strlen(crlf)); p += strlen(crlf);
+    *p = '\0';
+
+    return buf;
+}
+
+int ws_validate_utf8(const uint8_t *payload, size_t len)
+{
+    const uint8_t *p   = payload;
+    const uint8_t *end = p + len;
+
+    if (!payload) return (len == 0) ? 1 : 0;
+
+    while (p < end) {
+        uint8_t  b = *p++;
+        uint32_t cp;
+        int      extra;
+        int      i;
+
+        if (b < 0x80) {
+            /* ASCII fast path */
+            continue;
+        } else if ((b & 0xe0u) == 0xc0u) {
+            cp    = (uint32_t)(b & 0x1fu);
+            extra = 1;
+        } else if ((b & 0xf0u) == 0xe0u) {
+            cp    = (uint32_t)(b & 0x0fu);
+            extra = 2;
+        } else if ((b & 0xf8u) == 0xf0u) {
+            cp    = (uint32_t)(b & 0x07u);
+            extra = 3;
+        } else {
+            return 0;
+        }
+
+        for (i = 0; i < extra; i++) {
+            uint8_t c;
+            if (p >= end) return 0;
+            c = *p++;
+            if ((c & 0xc0u) != 0x80u) return 0;
+            cp = (cp << 6) | (uint32_t)(c & 0x3fu);
+        }
+
+        if (extra == 1 && cp < 0x80u)    return 0;
+        if (extra == 2 && cp < 0x800u)   return 0;
+        if (extra == 3 && cp < 0x10000u) return 0;
+
+        if (cp >= 0xd800u && cp <= 0xdfffu) return 0;
+        if (cp > 0x10ffffu)                 return 0;
+    }
+
+    return 1;
 }

@@ -68,4 +68,39 @@ int tk_test_assert_nil(const void *ptr, const char *msg);
  * Passes if ptr != NULL; emits diagnostic and returns 0 otherwise. */
 int tk_test_assert_not_nil(const void *ptr, const char *msg);
 
+/* -----------------------------------------------------------------------
+ * Story 28.4.2: test runner and lifecycle hooks
+ * ----------------------------------------------------------------------- */
+
+#include <stdint.h>
+
+/* Function pointer type for test functions and lifecycle hooks. */
+typedef void (*TkTestFn)(void);
+
+/* Register a function called BEFORE each test run by tk_test_run(). */
+void tk_test_setup(TkTestFn fn);
+
+/* Register a function called AFTER each test run by tk_test_run()
+ * (called even when the test fails). */
+void tk_test_teardown(TkTestFn fn);
+
+/* Run fn() as a named test.  Calls setup/teardown if registered.
+ * Prints "PASS [name]" or "FAIL [name]" to stderr.
+ * Increments the global passed/failed counters. */
+void tk_test_run(const char *name, TkTestFn fn);
+
+/* Accumulated test statistics. */
+typedef struct {
+    uint64_t passed;
+    uint64_t failed;
+    uint64_t skipped;
+} TkTestSummary;
+
+/* Return the accumulated pass/fail/skip counts. */
+TkTestSummary tk_test_summary(void);
+
+/* Print "Results: X passed, Y failed" to stderr.
+ * Calls exit(1) if failed > 0. */
+void tk_test_print_summary(void);
+
 #endif /* TK_STDLIB_TK_TEST_H */

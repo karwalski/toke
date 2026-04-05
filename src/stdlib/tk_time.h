@@ -53,4 +53,36 @@ uint64_t tk_time_add(uint64_t ts_ms, int64_t duration_ms);
  * Returns ts1_ms - ts2_ms in milliseconds (may be negative). */
 int64_t tk_time_diff(uint64_t ts1_ms, uint64_t ts2_ms);
 
+/* Story: 28.3.2 — date breakdown and calendar */
+
+/* Broken-down UTC date/time fields. */
+typedef struct {
+    int year;   /* e.g. 2024 */
+    int month;  /* 1-12 */
+    int day;    /* 1-31 */
+    int hour;   /* 0-23 */
+    int min;    /* 0-59 */
+    int sec;    /* 0-59 */
+} TkTimeParts;
+
+/* time.to_parts(ts:u64):TkTimeParts
+ * Converts a millisecond Unix timestamp to UTC date/time fields. */
+TkTimeParts tk_time_to_parts(uint64_t ts_ms);
+
+/* time.from_parts(parts:TkTimeParts):u64
+ * Converts UTC date/time fields to a millisecond Unix timestamp. */
+uint64_t tk_time_from_parts(TkTimeParts parts);
+
+/* time.weekday(ts:u64):u8
+ * Returns the day of the week for the given timestamp: 0=Sun, 1=Mon, ..., 6=Sat. */
+uint8_t tk_time_weekday(uint64_t ts_ms);
+
+/* time.is_leap_year(year:int):int
+ * Returns 1 if the given year is a leap year, 0 otherwise. */
+int tk_time_is_leap_year(int year);
+
+/* time.days_in_month(year:int;month:int):u8
+ * Returns the number of days in the given month (1-12) of the given year. */
+uint8_t tk_time_days_in_month(int year, int month);
+
 #endif /* TK_STDLIB_TK_TIME_H */

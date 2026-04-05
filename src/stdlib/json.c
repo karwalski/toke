@@ -609,6 +609,331 @@ int json_is_null(Json j, const char *key) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Path access and construction — Story 29.1.2                        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * json_at — traverse a dotted path.
+ * Splits path on '.', then for each segment either looks up a key in an
+ * object, or parses the segment as a decimal index into an array.
+ */
+JsonResult json_at(Json j, const char *path) {
+    JsonResult r;
+    /* work on a mutable copy of path */
+    size_t plen = strlen(path);
+    char *buf = malloc(plen + 1);
+    if (!buf) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
+    memcpy(buf, path, plen + 1);
+
+    Json cur = j;
+    char *seg = buf;
+    int done = 0;
+    while (!done) {
+        /* find next dot or end-of-string */
+        char *dot = strchr(seg, '.');
+        if (dot) {
+            *dot = '\0';
+        } else {
+            done = 1;
+        }
+
+        /* determine current JSON type */
+        const char *p = skip_ws(cur.raw);
+        if (!p) {
+            free(buf);
+            r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, seg); return r;
+        }
+
+        if (*p == '{') {
+            /* object: look up key */
+            const char *vs, *ve;
+            if (!find_json_key(cur.raw, seg, &vs, &ve)) {
+                free(buf);
+                r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "key not found"); return r;
+            }
+            size_t vlen = (size_t)(ve - vs);
+            char *vbuf = malloc(vlen + 1);
+            if (!vbuf) { free(buf); r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
+            memcpy(vbuf, vs, vlen);
+            vbuf[vlen] = '\0';
+            /* cur.raw now points to a heap-allocated string; we need to manage it.
+             * For simplicity, we track only the final value — intermediate buffers
+             * are freed on the next iteration via a local variable. */
+            cur.raw = vbuf;
+            /* mark so we free it on next iteration */
+        } else if (*p == '[') {
+            /* array: parse segment as integer index */
+            char *endptr;
+            unsigned long idx = strtoul(seg, &endptr, 10);
+            if (endptr == seg || *endptr != '\0') {
+                free(buf);
+                r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "invalid array index"); return r;
+            }
+            /* find the idx-th element */
+            const char *ap = skip_ws(p + 1);
+            if (*ap == ']') {
+                free(buf);
+                r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "index out of bounds"); return r;
+            }
+            unsigned long count = 0;
+            const char *elem_s = NULL;
+            const char *elem_e = NULL;
+            while (*ap) {
+                elem_s = skip_ws(ap);
+                elem_e = skip_value(elem_s);
+                if (!elem_e) {
+                    free(buf);
+                    r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "bad array"); return r;
+                }
+                if (count == idx) break;
+                count++;
+                ap = skip_ws(elem_e);
+                if (*ap == ']') { elem_s = NULL; break; }
+                if (*ap == ',') { ap++; continue; }
+                free(buf);
+                r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "bad array"); return r;
+            }
+            if (!elem_s || count != idx) {
+                free(buf);
+                r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "index out of bounds"); return r;
+            }
+            size_t vlen = (size_t)(elem_e - elem_s);
+            char *vbuf = malloc(vlen + 1);
+            if (!vbuf) { free(buf); r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
+            memcpy(vbuf, elem_s, vlen);
+            vbuf[vlen] = '\0';
+            cur.raw = vbuf;
+        } else {
+            /* scalar — cannot descend further */
+            free(buf);
+            r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "cannot descend into scalar"); return r;
+        }
+
+        if (!done) seg = dot + 1;
+    }
+
+    free(buf);
+    r.is_err = 0;
+    r.ok = cur;
+    return r;
+}
+
+/*
+ * json_index — return the i-th element of a JSON array.
+ */
+JsonResult json_index(Json j, uint64_t i) {
+    JsonResult r;
+    const char *p = skip_ws(j.raw);
+    if (!p || *p != '[') {
+        r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "not an array"); return r;
+    }
+    p++; /* skip '[' */
+    p = skip_ws(p);
+    if (*p == ']') {
+        r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "index out of bounds"); return r;
+    }
+    uint64_t count = 0;
+    while (*p) {
+        const char *elem_s = skip_ws(p);
+        const char *elem_e = skip_value(elem_s);
+        if (!elem_e) {
+            r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "bad array"); return r;
+        }
+        if (count == i) {
+            size_t vlen = (size_t)(elem_e - elem_s);
+            char *buf = malloc(vlen + 1);
+            if (!buf) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
+            memcpy(buf, elem_s, vlen);
+            buf[vlen] = '\0';
+            r.is_err = 0;
+            r.ok.raw = buf;
+            return r;
+        }
+        count++;
+        p = skip_ws(elem_e);
+        if (*p == ']') break;
+        if (*p == ',') { p++; continue; }
+        r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "bad array"); return r;
+    }
+    r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "index out of bounds"); return r;
+}
+
+/*
+ * json_merge — shallow merge of two JSON objects.
+ * All keys from j1 are included; keys from j2 are added (or override j1).
+ * Returns a new heap-allocated JSON object string.
+ */
+JsonResult json_merge(Json j1, Json j2) {
+    JsonResult r;
+    const char *p1 = skip_ws(j1.raw);
+    const char *p2 = skip_ws(j2.raw);
+    if (!p1 || *p1 != '{') {
+        r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "j1 is not an object"); return r;
+    }
+    if (!p2 || *p2 != '{') {
+        r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "j2 is not an object"); return r;
+    }
+
+    /*
+     * Strategy: build output buffer by:
+     *   1. Emit all key:value pairs from j1 where the key is NOT in j2.
+     *   2. Emit all key:value pairs from j2.
+     * This gives j2 keys priority (override semantics).
+     *
+     * We accumulate into a growable buffer.
+     */
+    size_t cap = strlen(j1.raw) + strlen(j2.raw) + 8;
+    char *out = malloc(cap);
+    if (!out) { r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
+    size_t pos = 0;
+    int    first = 1;
+
+#define MERGE_ENSURE(n) do { \
+    if (pos + (n) + 1 >= cap) { \
+        cap = cap * 2 + (n) + 1; \
+        char *tmp = realloc(out, cap); \
+        if (!tmp) { free(out); r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; } \
+        out = tmp; \
+    } \
+} while(0)
+
+#define MERGE_APPEND(s, n) do { MERGE_ENSURE(n); memcpy(out + pos, (s), (n)); pos += (n); } while(0)
+#define MERGE_PUTC(c)      do { MERGE_ENSURE(1); out[pos++] = (char)(c); } while(0)
+
+    MERGE_PUTC('{');
+
+    /* Pass 1: emit j1 entries not overridden by j2 */
+    const char *q = skip_ws(p1 + 1);
+    while (*q && *q != '}') {
+        q = skip_ws(q);
+        if (*q != '"') break;
+        const char *ks = q;
+        const char *ke = skip_string(q);
+        if (!ke) break;
+        /* extract key text (without quotes) for json_has lookup */
+        size_t klen = (size_t)((ke - 1) - (ks + 1));
+        char *ktmp = malloc(klen + 1);
+        if (!ktmp) {
+            free(out);
+            r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r;
+        }
+        memcpy(ktmp, ks + 1, klen);
+        ktmp[klen] = '\0';
+
+        q = skip_ws(ke);
+        if (*q != ':') { free(ktmp); break; }
+        const char *vs = skip_ws(q + 1);
+        const char *ve = skip_value(vs);
+        if (!ve) { free(ktmp); break; }
+
+        /* only emit if j2 does NOT have this key */
+        if (!json_has(j2, ktmp)) {
+            if (!first) MERGE_PUTC(',');
+            first = 0;
+            /* emit "key":value */
+            MERGE_APPEND(ks, (size_t)(ve - ks));
+        }
+        free(ktmp);
+
+        q = skip_ws(ve);
+        if (*q == ',') q++;
+    }
+
+    /* Pass 2: emit all j2 entries */
+    q = skip_ws(p2 + 1);
+    while (*q && *q != '}') {
+        q = skip_ws(q);
+        if (*q != '"') break;
+        const char *ks = q;
+        const char *ke = skip_string(q);
+        if (!ke) break;
+
+        q = skip_ws(ke);
+        if (*q != ':') break;
+        const char *vs = skip_ws(q + 1);
+        const char *ve = skip_value(vs);
+        if (!ve) break;
+
+        if (!first) MERGE_PUTC(',');
+        first = 0;
+        MERGE_APPEND(ks, (size_t)(ve - ks));
+
+        q = skip_ws(ve);
+        if (*q == ',') q++;
+    }
+
+    MERGE_PUTC('}');
+    out[pos] = '\0';
+
+#undef MERGE_ENSURE
+#undef MERGE_APPEND
+#undef MERGE_PUTC
+
+    r.is_err = 0;
+    r.ok.raw = out;
+    return r;
+}
+
+/*
+ * json_from_pairs — build a JSON object from parallel key/value arrays.
+ * Values are encoded as JSON strings via json_enc().
+ */
+Json json_from_pairs(const char *const *keys, const char *const *values, uint64_t n) {
+    Json result;
+    result.raw = NULL;
+
+    /* estimate capacity */
+    size_t cap = 4;
+    for (uint64_t i = 0; i < n; i++) {
+        cap += strlen(keys[i]) * 2 + strlen(values[i]) * 2 + 8;
+    }
+    char *out = malloc(cap);
+    if (!out) return result;
+
+    size_t pos = 0;
+
+#define PAIRS_ENSURE(nn) do { \
+    if (pos + (nn) + 1 >= cap) { \
+        cap = cap * 2 + (nn) + 1; \
+        char *tmp = realloc(out, cap); \
+        if (!tmp) { free(out); result.raw = NULL; return result; } \
+        out = tmp; \
+    } \
+} while(0)
+
+#define PAIRS_APPEND(s, nn) do { PAIRS_ENSURE(nn); memcpy(out + pos, (s), (nn)); pos += (nn); } while(0)
+#define PAIRS_PUTC(c)       do { PAIRS_ENSURE(1); out[pos++] = (char)(c); } while(0)
+
+    PAIRS_PUTC('{');
+    for (uint64_t i = 0; i < n; i++) {
+        if (i > 0) PAIRS_PUTC(',');
+        /* key as JSON string */
+        const char *enc_key = json_enc(keys[i]);
+        size_t klen = strlen(enc_key);
+        PAIRS_APPEND(enc_key, klen);
+        /* json_enc returns a malloc'd string — free it */
+        free((void *)enc_key);
+
+        PAIRS_PUTC(':');
+
+        /* value as JSON string */
+        const char *enc_val = json_enc(values[i]);
+        size_t vlen = strlen(enc_val);
+        PAIRS_APPEND(enc_val, vlen);
+        free((void *)enc_val);
+    }
+    PAIRS_PUTC('}');
+    out[pos] = '\0';
+
+#undef PAIRS_ENSURE
+#undef PAIRS_APPEND
+#undef PAIRS_PUTC
+
+    result.raw = out;
+    return result;
+}
+
+/* ------------------------------------------------------------------ */
 /* Streaming API — Story 35.1.3                                        */
 /* ------------------------------------------------------------------ */
 

@@ -104,4 +104,43 @@ double       math_exp(double x);
 /* math.hypot(x:f64;y:f64):f64 — sqrt(x*x + y*y) */
 double       math_hypot(double x, double y);
 
+/* -----------------------------------------------------------------------
+ * Rounding, NaN/Inf classification, and combinatorics (Story 29.3.2)
+ * ----------------------------------------------------------------------- */
+
+/* math.round(x:f64;digits:int):f64 — round to N decimal places */
+double       math_round(double x, int digits);
+
+/* math.trunc(x:f64):f64 — truncate toward zero */
+double       math_trunc(double x);
+
+/* math.fmod(x:f64;y:f64):f64 — floating-point remainder */
+double       math_fmod(double x, double y);
+
+/* math.isnan(x:f64):int — 1 if x is NaN, 0 otherwise */
+int          math_isnan(double x);
+
+/* math.isinf(x:f64):int — 1 if x is +/-Inf, 0 otherwise */
+int          math_isinf(double x);
+
+/* math.copysign(x:f64;y:f64):f64 — magnitude of x with sign of y */
+double       math_copysign(double x, double y);
+
+/* math.gcd(a:int;b:int):int — greatest common divisor (always >= 0) */
+int64_t      math_gcd(int64_t a, int64_t b);
+
+/* math.lcm(a:int;b:int):int — least common multiple (always >= 0);
+ * returns -1 on overflow */
+int64_t      math_lcm(int64_t a, int64_t b);
+
+/* math.factorial(n:uint):int — n!; returns -1 for n > 20 (overflow) */
+int64_t      math_factorial(uint64_t n);
+
+/* math.mode(xs:[f64]):f64 — most frequent value;
+ * returns NaN if empty or no unique mode */
+double       math_mode(F64Array xs);
+
+#define MATH_E   2.718281828459045235360
+#define MATH_TAU 6.283185307179586476925
+
 #endif /* TK_STDLIB_MATH_H */

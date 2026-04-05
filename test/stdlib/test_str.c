@@ -159,6 +159,50 @@ int main(void)
     ASSERT(str_count("hello",  "xyz") == 0, "count(xyz)==0");
     ASSERT(str_count("abcabc", "abc") == 2, "count(abc)==2");
 
+    /* --- Story 28.1.3: padding, reverse, and character class tests --------- */
+
+    /* str_pad_left */
+    ASSERT_STREQ(str_pad_left("hi", 5, '-'),   "---hi", "pad_left(hi,5,-)");
+    ASSERT_STREQ(str_pad_left("hi", 2, '-'),   "hi",    "pad_left(hi,2,-) exact width");
+    ASSERT_STREQ(str_pad_left("hello", 3, '-'),"hello", "pad_left(hello,3,-) over width");
+    ASSERT_STREQ(str_pad_left("", 3, '*'),     "***",   "pad_left(empty,3,*)");
+
+    /* str_pad_right */
+    ASSERT_STREQ(str_pad_right("hi", 5, '-'),    "hi---", "pad_right(hi,5,-)");
+    ASSERT_STREQ(str_pad_right("hi", 2, '-'),    "hi",    "pad_right(hi,2,-) exact width");
+    ASSERT_STREQ(str_pad_right("hello", 3, '-'), "hello", "pad_right(hello,3,-) over width");
+    ASSERT_STREQ(str_pad_right("", 3, '*'),      "***",   "pad_right(empty,3,*)");
+
+    /* str_reverse */
+    ASSERT_STREQ(str_reverse("hello"),  "olleh", "reverse(hello)");
+    ASSERT_STREQ(str_reverse("a"),      "a",     "reverse(single char)");
+    ASSERT_STREQ(str_reverse(""),       "",      "reverse(empty)");
+    ASSERT_STREQ(str_reverse("abcd"),   "dcba",  "reverse(abcd)");
+
+    /* str_is_alpha */
+    ASSERT(str_is_alpha("hello") == 1,  "is_alpha(hello)==true");
+    ASSERT(str_is_alpha("abc123") == 0, "is_alpha(abc123)==false");
+    ASSERT(str_is_alpha("") == 0,       "is_alpha(empty)==false");
+    ASSERT(str_is_alpha("Hello") == 1,  "is_alpha(Hello mixed case)==true");
+
+    /* str_is_digit */
+    ASSERT(str_is_digit("12345") == 1,  "is_digit(12345)==true");
+    ASSERT(str_is_digit("12a45") == 0,  "is_digit(12a45)==false");
+    ASSERT(str_is_digit("") == 0,       "is_digit(empty)==false");
+    ASSERT(str_is_digit("0") == 1,      "is_digit(0)==true");
+
+    /* str_is_alnum */
+    ASSERT(str_is_alnum("abc123") == 1, "is_alnum(abc123)==true");
+    ASSERT(str_is_alnum("abc!") == 0,   "is_alnum(abc!)==false");
+    ASSERT(str_is_alnum("") == 0,       "is_alnum(empty)==false");
+    ASSERT(str_is_alnum("A1") == 1,     "is_alnum(A1)==true");
+
+    /* str_is_space */
+    ASSERT(str_is_space("   ") == 1,    "is_space(spaces)==true");
+    ASSERT(str_is_space(" \t\n") == 1,  "is_space(mixed whitespace)==true");
+    ASSERT(str_is_space("") == 0,       "is_space(empty)==false");
+    ASSERT(str_is_space(" a ") == 0,    "is_space(contains non-space)==false");
+
     if (failures == 0) { printf("All tests passed.\n"); return 0; }
     fprintf(stderr, "%d test(s) failed.\n", failures);
     return 1;

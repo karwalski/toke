@@ -132,9 +132,14 @@ static void __attribute__((unused)) rowbuf_free_fields(RowBuf *r)
  * parse_row() reads one row from (data+pos, len) and advances *pos.
  * Returns 1 if a row was parsed, 0 at EOF (before reading any byte).
  * On return *row contains the fields (caller owns them).
+ *
+ * sep        — field separator character
+ * quote_char — quote character
+ * lazyquotes — if non-zero, a bare quote in an unquoted field is literal
  * ----------------------------------------------------------------------- */
 
-static int parse_row(const char *data, uint64_t len, uint64_t *pos, RowBuf *row)
+static int parse_row(const char *data, uint64_t len, uint64_t *pos,
+                     RowBuf *row, char sep, char quote_char, int lazyquotes)
 {
     if (*pos >= len) return 0;
 
@@ -148,11 +153,11 @@ static int parse_row(const char *data, uint64_t len, uint64_t *pos, RowBuf *row)
         char c = data[*pos];
 
         if (in_quotes) {
-            if (c == '"') {
+            if (c == quote_char) {
                 /* Peek at next char to distinguish doubled-quote from close */
-                if (*pos + 1 < len && data[*pos + 1] == '"') {
-                    /* Escaped quote: "" → " */
-                    gbuf_push(&field, '"');
+                if (*pos + 1 < len && data[*pos + 1] == quote_char) {
+                    /* Escaped quote: qq → q */
+                    gbuf_push(&field, quote_char);
                     *pos += 2;
                 } else {
                     /* Closing quote */
@@ -164,10 +169,18 @@ static int parse_row(const char *data, uint64_t len, uint64_t *pos, RowBuf *row)
                 (*pos)++;
             }
         } else {
-            if (c == '"') {
-                in_quotes = 1;
-                (*pos)++;
-            } else if (c == ',') {
+            if (c == quote_char) {
+                /* In lazyquotes mode, a quote that appears after the field
+                 * has already accumulated characters is treated as a literal
+                 * rather than opening a quoted section. */
+                if (lazyquotes && field.len > 0) {
+                    gbuf_push(&field, c);
+                    (*pos)++;
+                } else {
+                    in_quotes = 1;
+                    (*pos)++;
+                }
+            } else if (c == sep) {
                 rowbuf_push(row, gbuf_to_str(&field));
                 field.len = 0; /* reset without freeing buffer */
                 (*pos)++;
@@ -207,6 +220,12 @@ struct TkCsvReader {
 
     int         header_read;   /* 1 if header row has been fetched */
     StrArray    header_cache;  /* cached first row */
+
+    /* Dialect settings (Story 29.4.1) */
+    char        sep;           /* field separator, default ',' */
+    char        quote_char;    /* quote character, default '"' */
+    int         lazyquotes;    /* lenient bare-quote handling */
+    uint64_t    line_number;   /* 1-based; 0 before any row read */
 };
 
 TkCsvReader *csv_reader_new(const char *data, uint64_t len)
@@ -218,7 +237,31 @@ TkCsvReader *csv_reader_new(const char *data, uint64_t len)
     r->header_read  = 0;
     r->header_cache.data = NULL;
     r->header_cache.len  = 0;
+    r->sep          = ',';
+    r->quote_char   = '"';
+    r->lazyquotes   = 0;
+    r->line_number  = 0;
     return r;
+}
+
+void csv_reader_set_separator(TkCsvReader *r, char sep)
+{
+    r->sep = sep;
+}
+
+void csv_reader_set_quote(TkCsvReader *r, char ch)
+{
+    r->quote_char = ch;
+}
+
+void csv_reader_lazyquotes(TkCsvReader *r, int enabled)
+{
+    r->lazyquotes = enabled;
+}
+
+uint64_t csv_reader_line_number(TkCsvReader *r)
+{
+    return r->line_number;
 }
 
 void csv_reader_free(TkCsvReader *r)
@@ -243,7 +286,9 @@ StrArray csv_reader_next(TkCsvReader *r)
     if (r->pos >= r->len) return empty;
 
     RowBuf row;
-    if (!parse_row(r->data, r->len, &r->pos, &row)) return empty;
+    if (!parse_row(r->data, r->len, &r->pos, &row,
+                   r->sep, r->quote_char, r->lazyquotes)) return empty;
+    r->line_number++;
     return rowbuf_to_strarray(&row);
 }
 
@@ -265,6 +310,10 @@ StrArray csv_reader_header(TkCsvReader *r)
 struct TkCsvWriter {
     GrowBuf buf;
     int     first_row; /* 1 if no rows have been written yet */
+
+    /* Dialect settings (Story 29.4.1) */
+    char    sep;       /* field separator, default ',' */
+    int     use_crlf;  /* 1 = \r\n endings, 0 = \n only; default 1 (RFC 4180) */
 };
 
 TkCsvWriter *csv_writer_new(void)
@@ -272,7 +321,19 @@ TkCsvWriter *csv_writer_new(void)
     TkCsvWriter *w = (TkCsvWriter *)malloc(sizeof(TkCsvWriter));
     gbuf_init(&w->buf);
     w->first_row = 1;
+    w->sep       = ',';
+    w->use_crlf  = 1; /* RFC 4180 default */
     return w;
+}
+
+void csv_writer_set_separator(TkCsvWriter *w, char sep)
+{
+    w->sep = sep;
+}
+
+void csv_writer_use_crlf(TkCsvWriter *w, int enabled)
+{
+    w->use_crlf = enabled;
 }
 
 void csv_writer_free(TkCsvWriter *w)
@@ -282,11 +343,11 @@ void csv_writer_free(TkCsvWriter *w)
     free(w);
 }
 
-/* Determine whether a field value needs quoting. */
-static int field_needs_quoting(const char *s)
+/* Determine whether a field value needs quoting given the separator. */
+static int field_needs_quoting(const char *s, char sep)
 {
     for (const char *p = s; *p; p++) {
-        if (*p == ',' || *p == '"' || *p == '\n' || *p == '\r') return 1;
+        if (*p == sep || *p == '"' || *p == '\n' || *p == '\r') return 1;
     }
     return 0;
 }
@@ -294,14 +355,18 @@ static int field_needs_quoting(const char *s)
 void csv_writer_writerow(TkCsvWriter *w, StrArray row)
 {
     if (!w->first_row) {
-        gbuf_append(&w->buf, "\r\n", 2);
+        if (w->use_crlf) {
+            gbuf_append(&w->buf, "\r\n", 2);
+        } else {
+            gbuf_push(&w->buf, '\n');
+        }
     }
     w->first_row = 0;
 
     for (uint64_t i = 0; i < row.len; i++) {
-        if (i > 0) gbuf_push(&w->buf, ',');
+        if (i > 0) gbuf_push(&w->buf, w->sep);
         const char *f = row.data[i] ? row.data[i] : "";
-        if (field_needs_quoting(f)) {
+        if (field_needs_quoting(f, w->sep)) {
             gbuf_push(&w->buf, '"');
             for (const char *p = f; *p; p++) {
                 if (*p == '"') gbuf_push(&w->buf, '"'); /* double it */
@@ -336,7 +401,7 @@ StrArray *csv_parse(const char *data, uint64_t len, uint64_t *nrows_out)
 
     while (pos < len) {
         RowBuf row;
-        if (!parse_row(data, len, &pos, &row)) break;
+        if (!parse_row(data, len, &pos, &row, ',', '"', 0)) break;
         if (rows_len == rows_cap) {
             rows_cap *= 2;
             rows = (StrArray *)realloc(rows, rows_cap * sizeof(StrArray));

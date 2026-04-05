@@ -632,3 +632,258 @@ CorrMatrix analytics_corr(TkDataframe *df)
     free(f64_cols);
     return result;
 }
+
+/* -------------------------------------------------------------------------
+ * analytics_ttest — Welch's two-sample t-test (Story 31.2.1)
+ * ------------------------------------------------------------------------- */
+
+TtestResult analytics_ttest(F64Array g1, F64Array g2)
+{
+    TtestResult result;
+    result.t_stat  = 0.0;
+    result.p_value = 1.0;
+
+    if (g1.len < 2 || g2.len < 2) {
+        return result;
+    }
+
+    double n1 = (double)g1.len;
+    double n2 = (double)g2.len;
+
+    /* Compute means. */
+    double sum1 = 0.0, sum2 = 0.0;
+    for (uint64_t i = 0; i < g1.len; i++) sum1 += g1.data[i];
+    for (uint64_t i = 0; i < g2.len; i++) sum2 += g2.data[i];
+    double mean1 = sum1 / n1;
+    double mean2 = sum2 / n2;
+
+    /* Compute sample variances (Bessel-corrected, n-1). */
+    double ssq1 = 0.0, ssq2 = 0.0;
+    for (uint64_t i = 0; i < g1.len; i++) {
+        double d = g1.data[i] - mean1;
+        ssq1 += d * d;
+    }
+    for (uint64_t i = 0; i < g2.len; i++) {
+        double d = g2.data[i] - mean2;
+        ssq2 += d * d;
+    }
+    double var1 = ssq1 / (n1 - 1.0);
+    double var2 = ssq2 / (n2 - 1.0);
+
+    double se = sqrt(var1 / n1 + var2 / n2);
+    if (se == 0.0) {
+        return result;
+    }
+
+    double t = (mean1 - mean2) / se;
+
+    /* Two-tailed p-value via logistic approximation. */
+    double abs_t = fabs(t);
+    double p = 2.0 / (1.0 + exp(abs_t * 0.717 + 0.416));
+
+    result.t_stat  = t;
+    result.p_value = p;
+    return result;
+}
+
+/* -------------------------------------------------------------------------
+ * analytics_histogram (Story 31.2.1)
+ * ------------------------------------------------------------------------- */
+
+HistResult analytics_histogram(F64Array xs, uint64_t nbins)
+{
+    HistResult result;
+    result.bins   = NULL;
+    result.counts = NULL;
+    result.n      = 0;
+
+    if (xs.len == 0 || nbins == 0) {
+        return result;
+    }
+
+    double xmin = xs.data[0];
+    double xmax = xs.data[0];
+    for (uint64_t i = 1; i < xs.len; i++) {
+        if (xs.data[i] < xmin) xmin = xs.data[i];
+        if (xs.data[i] > xmax) xmax = xs.data[i];
+    }
+
+    /* Allocate bin edges (nbins+1) and counts (nbins). */
+    double   *bins   = (double   *)malloc((nbins + 1) * sizeof(double));
+    uint64_t *counts = (uint64_t *)calloc(nbins, sizeof(uint64_t));
+    if (!bins || !counts) {
+        free(bins);
+        free(counts);
+        return result;
+    }
+
+    double range = xmax - xmin;
+    double bin_width = (range == 0.0) ? 1.0 : range / (double)nbins;
+
+    for (uint64_t b = 0; b <= nbins; b++) {
+        bins[b] = xmin + (double)b * bin_width;
+    }
+    /* Ensure last edge is exactly xmax to avoid floating-point drift. */
+    bins[nbins] = xmax;
+
+    for (uint64_t i = 0; i < xs.len; i++) {
+        uint64_t b;
+        if (range == 0.0) {
+            b = 0;
+        } else {
+            double pos = (xs.data[i] - xmin) / bin_width;
+            b = (uint64_t)pos;
+            if (b >= nbins) b = nbins - 1;  /* last bin inclusive of xmax */
+        }
+        counts[b]++;
+    }
+
+    result.bins   = bins;
+    result.counts = counts;
+    result.n      = nbins;
+    return result;
+}
+
+/* -------------------------------------------------------------------------
+ * analytics_moving_average (Story 31.2.1)
+ * ------------------------------------------------------------------------- */
+
+F64Array analytics_moving_average(F64Array xs, uint64_t window)
+{
+    F64Array result;
+    result.data = NULL;
+    result.len  = 0;
+
+    if (xs.len == 0 || window == 0) {
+        return result;
+    }
+
+    double *out = (double *)malloc(xs.len * sizeof(double));
+    if (!out) {
+        return result;
+    }
+
+    for (uint64_t i = 0; i < xs.len; i++) {
+        /* Trailing window: average xs[start..i] inclusive. */
+        uint64_t start = (i + 1 >= window) ? (i + 1 - window) : 0;
+        uint64_t count = i - start + 1;
+        double   sum   = 0.0;
+        for (uint64_t j = start; j <= i; j++) {
+            sum += xs.data[j];
+        }
+        out[i] = sum / (double)count;
+    }
+
+    result.data = out;
+    result.len  = xs.len;
+    return result;
+}
+
+/* -------------------------------------------------------------------------
+ * analytics_exponential_smoothing (Story 31.2.1)
+ * ------------------------------------------------------------------------- */
+
+F64Array analytics_exponential_smoothing(F64Array xs, double alpha)
+{
+    F64Array result;
+    result.data = NULL;
+    result.len  = 0;
+
+    if (xs.len == 0) {
+        return result;
+    }
+
+    double *out = (double *)malloc(xs.len * sizeof(double));
+    if (!out) {
+        return result;
+    }
+
+    out[0] = xs.data[0];
+    for (uint64_t i = 1; i < xs.len; i++) {
+        out[i] = alpha * xs.data[i] + (1.0 - alpha) * out[i - 1];
+    }
+
+    result.data = out;
+    result.len  = xs.len;
+    return result;
+}
+
+/* -------------------------------------------------------------------------
+ * analytics_trend — linear regression vs. index (Story 31.2.1)
+ * ------------------------------------------------------------------------- */
+
+TrendResult analytics_trend(F64Array ts)
+{
+    TrendResult result;
+    result.slope     = 0.0;
+    result.intercept = 0.0;
+    result.r2        = 0.0;
+
+    uint64_t n = ts.len;
+    if (n < 2) {
+        return result;
+    }
+
+    /* xs are indices 0..n-1; ys are ts.data values. */
+    double dn   = (double)n;
+    /* mean of indices [0..n-1] = (n-1)/2 */
+    double mx   = (dn - 1.0) / 2.0;
+    double my   = 0.0;
+    for (uint64_t i = 0; i < n; i++) {
+        my += ts.data[i];
+    }
+    my /= dn;
+
+    double sxx = 0.0, sxy = 0.0;
+    for (uint64_t i = 0; i < n; i++) {
+        double dx = (double)i - mx;
+        sxx += dx * dx;
+        sxy += dx * (ts.data[i] - my);
+    }
+
+    if (sxx == 0.0) {
+        return result;
+    }
+
+    result.slope     = sxy / sxx;
+    result.intercept = my - result.slope * mx;
+
+    /* r2 = 1 - SS_res / SS_tot */
+    double ss_res = 0.0, ss_tot = 0.0;
+    for (uint64_t i = 0; i < n; i++) {
+        double y_pred = result.slope * (double)i + result.intercept;
+        double res    = ts.data[i] - y_pred;
+        double dev    = ts.data[i] - my;
+        ss_res += res * res;
+        ss_tot += dev * dev;
+    }
+    result.r2 = (ss_tot == 0.0) ? 1.0 : 1.0 - ss_res / ss_tot;
+
+    return result;
+}
+
+/* -------------------------------------------------------------------------
+ * analytics_covariance (Story 31.2.1)
+ * ------------------------------------------------------------------------- */
+
+double analytics_covariance(F64Array xs, F64Array ys)
+{
+    if (xs.len == 0 || ys.len == 0 || xs.len != ys.len) {
+        return 0.0;
+    }
+
+    double n    = (double)xs.len;
+    double sumx = 0.0, sumy = 0.0;
+    for (uint64_t i = 0; i < xs.len; i++) {
+        sumx += xs.data[i];
+        sumy += ys.data[i];
+    }
+    double mx = sumx / n;
+    double my = sumy / n;
+
+    double cov = 0.0;
+    for (uint64_t i = 0; i < xs.len; i++) {
+        cov += (xs.data[i] - mx) * (ys.data[i] - my);
+    }
+    return cov / n;
+}

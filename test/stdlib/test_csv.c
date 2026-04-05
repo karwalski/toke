@@ -583,6 +583,141 @@ static void test_multirow_roundtrip(void)
 }
 
 /* -----------------------------------------------------------------------
+ * Story 29.4.1 tests — configuration and dialects
+ * ----------------------------------------------------------------------- */
+
+/* Test 25: TSV — separator '\t', parse "a\tb\tc\n" → 3 fields */
+static void test_tsv_separator(void)
+{
+    const char *tsv = "a\tb\tc\n";
+    TkCsvReader *r = csv_reader_new(tsv, (uint64_t)strlen(tsv));
+    csv_reader_set_separator(r, '\t');
+
+    StrArray row = csv_reader_next(r);
+    ASSERT_INTEQ((int)row.len, 3,   "tsv: 3 fields");
+    ASSERT_STREQ(row.data[0], "a",  "tsv: field0 == 'a'");
+    ASSERT_STREQ(row.data[1], "b",  "tsv: field1 == 'b'");
+    ASSERT_STREQ(row.data[2], "c",  "tsv: field2 == 'c'");
+
+    free_row(row);
+    csv_reader_free(r);
+}
+
+/* Test 26: Custom quote character '|' — |field with "quotes"| → correct field */
+static void test_custom_quote_char(void)
+{
+    const char *csv = "|field with \"quotes\"|";
+    TkCsvReader *r = csv_reader_new(csv, (uint64_t)strlen(csv));
+    csv_reader_set_quote(r, '|');
+
+    StrArray row = csv_reader_next(r);
+    ASSERT_INTEQ((int)row.len, 1,                       "custom_quote: 1 field");
+    ASSERT_STREQ(row.data[0], "field with \"quotes\"",  "custom_quote: field value");
+
+    free_row(row);
+    csv_reader_free(r);
+}
+
+/* Test 27: Writer separator '\t' — output contains tabs, not commas */
+static void test_writer_tsv_separator(void)
+{
+    const char *fields[3] = {"x", "y", "z"};
+    StrArray row;
+    row.data = fields;
+    row.len  = 3;
+
+    TkCsvWriter *w = csv_writer_new();
+    csv_writer_set_separator(w, '\t');
+    csv_writer_writerow(w, row);
+    const char *out = csv_writer_flush(w);
+
+    /* Verify tabs present and commas absent between fields */
+    ASSERT(strchr(out, '\t') != NULL,  "writer_tsv: output has tabs");
+    /* The only commas that could appear would be inside fields (none here) */
+    ASSERT(out[1] == '\t',             "writer_tsv: second char is tab");
+    ASSERT(out[3] == '\t',             "writer_tsv: fourth char is tab");
+
+    csv_writer_free(w);
+    free((void *)out);
+}
+
+/* Test 28: Writer use_crlf(1) — row ends with \r\n */
+static void test_writer_crlf(void)
+{
+    const char *fields[2] = {"a", "b"};
+    StrArray row;
+    row.data = fields;
+    row.len  = 2;
+
+    /* use_crlf already defaults to 1, but call it explicitly */
+    TkCsvWriter *w = csv_writer_new();
+    csv_writer_use_crlf(w, 1);
+    csv_writer_writerow(w, row);
+    /* Write a second row so the \r\n row terminator is actually emitted */
+    csv_writer_writerow(w, row);
+    const char *out = csv_writer_flush(w);
+    uint64_t outlen = (uint64_t)strlen(out);
+
+    /* First row ends with \r\n (before the second row begins) */
+    ASSERT(outlen >= 4,                    "writer_crlf: output has content");
+    /* Find the \r\n separator between row 0 and row 1 */
+    int found_crlf = 0;
+    for (uint64_t i = 0; i + 1 < outlen; i++) {
+        if (out[i] == '\r' && out[i + 1] == '\n') { found_crlf = 1; break; }
+    }
+    ASSERT(found_crlf, "writer_crlf: \\r\\n present between rows");
+
+    csv_writer_free(w);
+    free((void *)out);
+}
+
+/* Test 29: Writer use_crlf(0) — row ends with \n, no \r */
+static void test_writer_lf_only(void)
+{
+    const char *fields[2] = {"a", "b"};
+    StrArray row;
+    row.data = fields;
+    row.len  = 2;
+
+    TkCsvWriter *w = csv_writer_new();
+    csv_writer_use_crlf(w, 0);
+    csv_writer_writerow(w, row);
+    csv_writer_writerow(w, row);
+    const char *out = csv_writer_flush(w);
+
+    /* There must be a \n separator */
+    ASSERT(strchr(out, '\n') != NULL,   "writer_lf: \\n present");
+    /* And no \r character at all */
+    ASSERT(strchr(out, '\r') == NULL,   "writer_lf: no \\r present");
+
+    csv_writer_free(w);
+    free((void *)out);
+}
+
+/* Test 30: csv_reader_line_number — parse 3 rows, verify increments */
+static void test_line_number(void)
+{
+    const char *csv = "a,b\nc,d\ne,f";
+    TkCsvReader *r = csv_reader_new(csv, (uint64_t)strlen(csv));
+
+    ASSERT_INTEQ((int)csv_reader_line_number(r), 0, "line_number: 0 before any read");
+
+    StrArray row0 = csv_reader_next(r);
+    ASSERT_INTEQ((int)csv_reader_line_number(r), 1, "line_number: 1 after row 1");
+    free_row(row0);
+
+    StrArray row1 = csv_reader_next(r);
+    ASSERT_INTEQ((int)csv_reader_line_number(r), 2, "line_number: 2 after row 2");
+    free_row(row1);
+
+    StrArray row2 = csv_reader_next(r);
+    ASSERT_INTEQ((int)csv_reader_line_number(r), 3, "line_number: 3 after row 3");
+    free_row(row2);
+
+    csv_reader_free(r);
+}
+
+/* -----------------------------------------------------------------------
  * main
  * ----------------------------------------------------------------------- */
 int main(void)
@@ -611,6 +746,12 @@ int main(void)
     test_embedded_escaped_quotes();
     test_full_roundtrip();
     test_multirow_roundtrip();
+    test_tsv_separator();
+    test_custom_quote_char();
+    test_writer_tsv_separator();
+    test_writer_crlf();
+    test_writer_lf_only();
+    test_line_number();
 
     if (failures == 0) {
         printf("\nAll tests passed.\n");

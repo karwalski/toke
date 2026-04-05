@@ -188,4 +188,44 @@ TkDataframe *df_select_columns(TkDataframe *df, const char **cols,
  * Returns an empty result (nrows==0, rows==NULL) on error. */
 DfGroupResult df_value_counts(TkDataframe *df, const char *col);
 
+/* -------------------------------------------------------------------------
+ * Concat, missing data, sampling, row access, and export  (Story 31.1.2)
+ * ------------------------------------------------------------------------- */
+
+/* df_concat: return a new dataframe stacking all rows from left followed by
+ * all rows from right.  Columns are the UNION of both frames (left-first
+ * order).  Where a frame has no column matching a name, the missing values
+ * are filled with NULL / empty string (DF_COL_STR columns) or 0.0
+ * (DF_COL_F64 columns).  Returns NULL on OOM or invalid inputs. */
+TkDataframe *df_concat(TkDataframe *left, TkDataframe *right);
+
+/* df_fillna: return a new dataframe where every NULL or empty-string value
+ * in string column col is replaced with value.  Returns NULL if col is not
+ * found or is not DF_COL_STR. */
+TkDataframe *df_fillna(TkDataframe *df, const char *col, const char *value);
+
+/* df_dropna: return a new dataframe with rows removed where column col has a
+ * NULL or empty-string value.  Returns NULL if col is not found or is not
+ * DF_COL_STR. */
+TkDataframe *df_dropna(TkDataframe *df, const char *col);
+
+/* df_sample: return a new dataframe with n rows chosen uniformly at random
+ * without replacement using Fisher-Yates shuffle seeded by seed.  If
+ * n >= nrows all rows are returned in shuffled order.  Returns NULL on OOM
+ * or NULL input. */
+TkDataframe *df_sample(TkDataframe *df, uint64_t n, uint64_t seed);
+
+/* df_get_row: return a single-row dataframe containing the row at idx.
+ * Sets is_err on the returned DfResult if idx is out of bounds. */
+DfResult     df_get_row(TkDataframe *df, uint64_t idx);
+
+/* df_to_html: render the dataframe as an HTML <table> with a <thead>
+ * (column names) and a <tbody> (data rows).  HTML special characters in
+ * values are escaped.  Returns a heap-allocated NUL-terminated string;
+ * caller owns it. */
+const char  *df_to_html(TkDataframe *df);
+
+/* df_to_csv: alias for df_tocsv. */
+const char  *df_to_csv(TkDataframe *df);
+
 #endif /* TK_STDLIB_DATAFRAME_H */

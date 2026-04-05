@@ -325,6 +325,89 @@ int main(void)
     /* --- math_hypot --- */
     ASSERT_DBL_EQ(math_hypot(3.0, 4.0), 5.0, 1e-9, "hypot(3.0, 4.0) == 5.0");
 
+    /* ===================================================================
+     * Rounding, NaN/Inf classification, and combinatorics (Story 29.3.2)
+     * =================================================================== */
+
+    /* --- math_round --- */
+    ASSERT_DBL_EQ(math_round(3.14159, 2), 3.14, 1e-9,
+                  "round(3.14159, 2) ≈ 3.14");
+
+    /* --- math_trunc --- */
+    ASSERT_DBL_EQ(math_trunc(3.9),  3.0, 1e-12, "trunc(3.9) == 3.0");
+    ASSERT_DBL_EQ(math_trunc(-3.9), -3.0, 1e-12, "trunc(-3.9) == -3.0");
+
+    /* --- math_fmod --- */
+    ASSERT_DBL_EQ(math_fmod(10.0, 3.0), 1.0, 1e-9, "fmod(10.0, 3.0) ≈ 1.0");
+
+    /* --- math_isnan --- */
+    {
+        volatile double nan_val = 0.0;
+        nan_val /= nan_val;
+        ASSERT(math_isnan(nan_val) == 1, "isnan(0.0/0.0) == 1");
+        ASSERT(math_isnan(1.0)     == 0, "isnan(1.0) == 0");
+    }
+
+    /* --- math_isinf --- */
+    {
+        volatile double inf_val = 1.0;
+        volatile double zero    = 0.0;
+        inf_val /= zero;
+        ASSERT(math_isinf(inf_val) == 1, "isinf(1.0/0.0) == 1");
+        ASSERT(math_isinf(1.0)     == 0, "isinf(1.0) == 0");
+    }
+
+    /* --- math_copysign --- */
+    ASSERT_DBL_EQ(math_copysign(3.0, -1.0), -3.0, 1e-12,
+                  "copysign(3.0, -1.0) == -3.0");
+    ASSERT_DBL_EQ(math_copysign(-3.0, 1.0),  3.0, 1e-12,
+                  "copysign(-3.0, 1.0) == 3.0");
+
+    /* --- math_gcd --- */
+    ASSERT(math_gcd(12, 8) == 4, "gcd(12, 8) == 4");
+    ASSERT(math_gcd(0, 5)  == 5, "gcd(0, 5) == 5");
+    ASSERT(math_gcd(5, 0)  == 5, "gcd(5, 0) == 5");
+    ASSERT(math_gcd(-12, 8) == 4, "gcd(-12, 8) == 4 (always non-negative)");
+
+    /* --- math_lcm --- */
+    ASSERT(math_lcm(4, 6) == 12, "lcm(4, 6) == 12");
+    ASSERT(math_lcm(0, 5) == 0,  "lcm(0, 5) == 0");
+
+    /* --- math_factorial --- */
+    ASSERT(math_factorial(0)  == 1,   "factorial(0) == 1");
+    ASSERT(math_factorial(1)  == 1,   "factorial(1) == 1");
+    ASSERT(math_factorial(5)  == 120, "factorial(5) == 120");
+    ASSERT(math_factorial(20) == (int64_t)2432902008176640000LL,
+           "factorial(20) == 2432902008176640000");
+    ASSERT(math_factorial(21) == -1,  "factorial(21) == -1 (overflow)");
+
+    /* --- math_mode --- */
+    {
+        double xs_mode[] = {1.0, 2.0, 2.0, 3.0};
+        ASSERT_DBL_EQ(math_mode(FA(xs_mode)), 2.0, 1e-12,
+                      "mode([1,2,2,3]) == 2.0");
+    }
+    {
+        /* Tie: no unique mode → NaN */
+        double xs_tie[] = {1.0, 1.0, 2.0, 2.0};
+        ASSERT(isnan(math_mode(FA(xs_tie))),
+               "mode([1,1,2,2]) is NaN (tie)");
+    }
+    {
+        /* All unique → NaN */
+        double xs_uniq[] = {1.0, 2.0, 3.0};
+        ASSERT(isnan(math_mode(FA(xs_uniq))),
+               "mode([1,2,3]) is NaN (all unique)");
+    }
+    {
+        /* Empty → NaN */
+        F64Array empty = { NULL, 0 };
+        ASSERT(isnan(math_mode(empty)), "mode(empty) is NaN");
+    }
+
+    /* --- MATH_TAU ≈ 2 * pi --- */
+    ASSERT_DBL_EQ(MATH_TAU, 2.0 * TK_PI, 1e-9, "MATH_TAU ≈ 2 * pi");
+
     /* --- summary --- */
     if (failures == 0) {
         printf("\nAll tests passed.\n");

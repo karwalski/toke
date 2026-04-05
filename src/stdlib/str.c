@@ -448,3 +448,95 @@ uint64_t str_count(const char *s, const char *sub)
     }
     return count;
 }
+
+/* --- Story 28.1.3: padding, reverse, and character class tests ----------- */
+
+const char *str_pad_left(const char *s, uint64_t width, char ch)
+{
+    if (!s) return NULL;
+    size_t slen = strlen(s);
+    if ((uint64_t)slen >= width) {
+        char *copy = malloc(slen + 1);
+        if (!copy) return NULL;
+        memcpy(copy, s, slen + 1);
+        return copy;
+    }
+    size_t pad = (size_t)(width - (uint64_t)slen);
+    char *out = malloc(width + 1);
+    if (!out) return NULL;
+    memset(out, ch, pad);
+    memcpy(out + pad, s, slen);
+    out[width] = '\0';
+    return out;
+}
+
+const char *str_pad_right(const char *s, uint64_t width, char ch)
+{
+    if (!s) return NULL;
+    size_t slen = strlen(s);
+    if ((uint64_t)slen >= width) {
+        char *copy = malloc(slen + 1);
+        if (!copy) return NULL;
+        memcpy(copy, s, slen + 1);
+        return copy;
+    }
+    size_t pad = (size_t)(width - (uint64_t)slen);
+    char *out = malloc(width + 1);
+    if (!out) return NULL;
+    memcpy(out, s, slen);
+    memset(out + slen, ch, pad);
+    out[width] = '\0';
+    return out;
+}
+
+const char *str_reverse(const char *s)
+{
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    char *out = malloc(len + 1);
+    if (!out) return NULL;
+    for (size_t i = 0; i < len; i++)
+        out[i] = s[len - 1 - i];
+    out[len] = '\0';
+    return out;
+}
+
+int str_is_alpha(const char *s)
+{
+    if (!s || *s == '\0') return 0;
+    while (*s) {
+        if (!isalpha((unsigned char)*s)) return 0;
+        s++;
+    }
+    return 1;
+}
+
+int str_is_digit(const char *s)
+{
+    if (!s || *s == '\0') return 0;
+    while (*s) {
+        if (!isdigit((unsigned char)*s)) return 0;
+        s++;
+    }
+    return 1;
+}
+
+int str_is_alnum(const char *s)
+{
+    if (!s || *s == '\0') return 0;
+    while (*s) {
+        if (!isalnum((unsigned char)*s)) return 0;
+        s++;
+    }
+    return 1;
+}
+
+int str_is_space(const char *s)
+{
+    if (!s || *s == '\0') return 0;
+    while (*s) {
+        if (!isspace((unsigned char)*s)) return 0;
+        s++;
+    }
+    return 1;
+}

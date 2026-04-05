@@ -20,7 +20,9 @@
  * Story: 15.1.1
  */
 
+#include <stddef.h>
 #include <stdint.h>
+#include "str.h"
 
 /* WebSocket opcodes (RFC 6455 §5.2) */
 typedef enum {
@@ -135,5 +137,53 @@ void           ws_broadcast(WsConn **conns, uint64_t count, const char *text);
 
 /* Free a WsConn struct. Call ws_close first if still open. */
 void           ws_conn_free(WsConn *conn);
+
+/* -----------------------------------------------------------------------
+ * Close frame helpers and upgrade utilities (Story 34.6.1)
+ * ----------------------------------------------------------------------- */
+
+/* Parsed WebSocket close frame (RFC 6455 §5.5.1). */
+typedef struct {
+    uint16_t    code;   /* status code, e.g. 1000 */
+    const char *reason; /* UTF-8 reason string (points into caller-managed buf) */
+} WsCloseFrame;
+
+/* Parse a close frame payload.
+ * If payload.len == 0: code=1000, reason="".
+ * If payload.len >= 2: code = ntohs(first 2 bytes), reason = remaining bytes
+ *   interpreted as a null-terminated string (caller must ensure payload.data
+ *   has room for a NUL terminator, or use the returned reason within the
+ *   lifetime of payload.data).
+ * The returned reason pointer aliases payload.data. */
+WsCloseFrame ws_handle_close_frame(ByteArray payload);
+
+/* Build a close frame payload: 2-byte big-endian status code + reason bytes.
+ * Returns a heap-allocated ByteArray; caller owns .data (free with free()). */
+ByteArray    ws_build_close_frame(uint16_t code, const char *reason);
+
+/* Headers extracted from a WebSocket upgrade request. */
+typedef struct {
+    const char *sec_key;    /* Sec-WebSocket-Key value, or NULL if absent */
+    const char *protocol;   /* Sec-WebSocket-Protocol value, or NULL */
+    const char *extensions; /* Sec-WebSocket-Extensions value, or NULL */
+} WsUpgradeHeaders;
+
+/* Scan an array of header name/value pairs (nhdrs entries) for the three
+ * WebSocket upgrade headers.  Header name comparison is case-insensitive.
+ * The returned string pointers alias the supplied hvalues array. */
+WsUpgradeHeaders ws_parse_upgrade_headers(const char *const *hnames,
+                                          const char *const *hvalues,
+                                          uint64_t nhdrs);
+
+/* Build the HTTP/1.1 101 Switching Protocols upgrade response string.
+ * protocols may be NULL (no Sec-WebSocket-Protocol header added).
+ * Returns a heap-allocated null-terminated string; caller owns it. */
+const char *ws_build_upgrade_response(const char *accept_key,
+                                      const char *protocols);
+
+/* Validate a UTF-8 byte sequence of length len (not null-terminated).
+ * Returns 1 if valid UTF-8 per RFC 6455 §3.4, 0 otherwise.
+ * Rejects overlong encodings, surrogates, and code points above U+10FFFF. */
+int ws_validate_utf8(const uint8_t *payload, size_t len);
 
 #endif /* TK_STDLIB_WS_H */
