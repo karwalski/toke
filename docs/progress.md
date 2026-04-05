@@ -1117,3 +1117,125 @@ C implementations for all rendering and media modules.
 | 18.1.6 | std.image C implementation | done | — | **P2** Implement `src/stdlib/image.c`: PNG decode/encode (libpng, linked as system lib or vendored), JPEG decode/encode (libjpeg-turbo), pixel buffer alloc (arena), resize (bilinear), crop (bounds-checked copy), grayscale conversion (luminance formula), flip operations. Conformance: `test/stdlib/conform_image.sh` — encode a synthetic 4×4 RGBA buffer to PNG, decode it back, verify dimensions and pixel values. |
 | 18.1.7 | Visualization integration test | done | — | **P2** Toke program: dataframe → analytics → chart JSON → html doc with embedded chart → render to file. Verifies the chart→html→dashboard stack. Depends on 16.1.3, 18.1.1, 18.1.2. |
 
+
+---
+
+### Epic 19 — Build System Integration
+
+Link all 20 new stdlib C implementations into the build system so `tkc` can actually invoke them and tests can be compiled and run. Currently these are standalone `.c` files not in any Makefile target.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 19.1.1 | Add Makefile test targets for all 20 new stdlib modules | backlog | — | **P0** Add `test-stdlib-{encoding,encrypt,auth,ws,sse,router,template,csv,math,llm,llm_tool,chart,html,dashboard,svg,canvas,image,dataframe,analytics,ml}` targets. Each compiles test_{module}.c + {module}.c, runs, reports pass/fail. Add `test-stdlib-all-new` aggregate target. Must compile clean with `-std=c99 -Wall -Wextra -Wpedantic -Werror`. |
+| 19.1.2 | Add Makefile test targets for integration tests | backlog | — | **P0** Add `test-stdlib-security-integration`, `test-stdlib-network-integration`, `test-stdlib-viz-integration`, `test-stdlib-data-pipeline`, `test-stdlib-llm-live` targets. Each links the required modules together. `test-stdlib-llm-live` is opt-in (not in default `ci`). |
+| 19.1.3 | Compile and fix all test builds to pass clean | backlog | — | **P0** Run every test target from 19.1.1 and 19.1.2. Fix any compilation errors (missing includes, type mismatches, undefined references). All 20 module tests + 4 integration tests must compile and pass. Track results in a test matrix. |
+| 19.1.4 | Link stdlib modules into tkc binary for `i=` imports | backlog | — | **P1** Add the new .c files to the SRCS list in Makefile (or a STDLIB_SRCS variable) so that toke programs using `i=std.encoding;` etc. can resolve to the C implementations at compile/link time. Verify with a minimal toke program that imports and calls each module. |
+
+---
+
+### Epic 20 — Module Unit Test Hardening
+
+Current C tests cover happy paths. Add edge case, error path, boundary condition, and memory tests for every module. Each module needs at least 20 test cases covering the full API surface.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 20.1.1 | Harden encoding tests: edge cases and invalid input | backlog | — | **P1** Add: empty input for all 8 functions, max-length strings, invalid UTF-8 in urlencode, null bytes in base64, decode of corrupted padding, percent-encoding of all reserved chars. Target: 25+ total tests. |
+| 20.1.2 | Harden encrypt tests: key/nonce size validation and known vectors | backlog | — | **P1** Add: AES-256-GCM NIST test vectors (from SP 800-38D), wrong key/nonce size errors, zero-length plaintext, max-length AAD, X25519 known-answer (RFC 7748 §6.1), Ed25519 known-answer (RFC 8032 §7.1). Target: 25+ total tests. |
+| 20.1.3 | Harden auth tests: malformed tokens and timing | backlog | — | **P1** Add: JWT with missing fields, JWT with extra dots, JWT with non-base64 segments, expired-by-1-second boundary, verify with empty secret, API key of different lengths. Target: 20+ total tests. |
+| 20.1.4 | Harden csv tests: RFC 4180 compliance suite | backlog | — | **P1** Add: field with only quotes, field with only newlines, 0-column row, 1000-column row, 100KB streaming read, BOM handling, trailing CRLF variations. Target: 20+ total tests. |
+| 20.1.5 | Harden math tests: NaN/Inf propagation and precision | backlog | — | **P1** Add: NaN in input arrays, +/-Inf inputs, single-element median/stddev, identical-values stddev=0, percentile at boundaries (0.001, 99.999), linreg with vertical line, linreg with all same x. Target: 25+ total tests. |
+| 20.1.6 | Harden dataframe tests: type coercion and large data | backlog | — | **P1** Add: 10K-row dataframe performance, mixed numeric/string column (should be str), empty dataframe operations, join on missing column, groupby on f64 column (error), filter on str column (error). Target: 20+ total tests. |
+| 20.1.7 | Harden network module tests: ws/sse/router edge cases | backlog | — | **P1** Add: WS frame with 0-byte payload, WS 64-bit extended length, SSE with empty data, SSE with \r\n line endings, router with trailing slashes, router with URL-encoded path segments, duplicate route registration. Target: 25+ total across 3 modules. |
+| 20.1.8 | Harden visualization tests: html/svg/chart/canvas edge cases | backlog | — | **P2** Add: HTML special chars in all positions, SVG coordinate precision, chart with 0 datasets, chart with 1000 labels, canvas op count overflow, dashboard with 0 widgets, deeply nested HTML nodes. Target: 25+ total across 4 modules. |
+| 20.1.9 | Harden ml tests: convergence, degenerate inputs, known datasets | backlog | — | **P2** Add: k-means with k > n_points, k-means single-point clusters, decision tree max_depth=1, KNN with k=n_train, linreg single point, linreg with collinear points, Iris-like 3-class dataset for KNN. Target: 20+ total. |
+
+---
+
+### Epic 21 — Real-World Integration Scenarios
+
+Multi-step tests simulating actual use cases. These verify modules work together in production-like workflows.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 21.1.1 | HTTP API client: request → JSON parse → data extraction | backlog | — | **P1** Build a test that constructs an HTTP request using the LLM module's request builder, creates a mock JSON response string, parses it with json.h functions, extracts fields, validates structure. Covers: llm_build_request + json parsing + string manipulation. No actual network call. |
+| 21.1.2 | Auth-protected API flow: keygen → JWT → verify → encrypt payload | backlog | — | **P1** Full auth flow: generate API key, sign JWT, encode Authorization header with encoding module, encrypt a JSON payload with AES-GCM, decrypt and verify JWT on the "server side". End-to-end in one test file. |
+| 21.1.3 | Data analytics dashboard: CSV → analyze → chart → HTML → file | backlog | — | **P1** Load a realistic CSV dataset (50+ rows, 5+ columns). Run analytics_describe, detect anomalies, compute correlations. Build a bar chart + table. Compose into a dashboard. Render to HTML string. Verify the output is valid HTML with embedded chart data. |
+| 21.1.4 | Template-based email rendering with escaped user data | backlog | — | **P2** Compile a template with `{{name}}`, `{{email}}`, `{{message}}` slots. Render with values containing HTML special chars (`<script>alert(1)</script>`). Verify `tmpl_renderhtml` produces safe output with no unescaped `<script>` tags. |
+| 21.1.5 | Image processing pipeline: create → resize → grayscale → encode → decode | backlog | — | **P2** Create a 64x64 RGBA buffer with a gradient pattern. Resize to 32x32. Convert to grayscale. Encode as PNG. Decode the PNG bytes. Verify dimensions and that pixel values are reasonable (not corrupt). Full round-trip. |
+| 21.1.6 | WebSocket protocol handshake simulation | backlog | — | **P1** Simulate a full WS upgrade: build upgrade request headers, compute accept key, send a text frame, receive and decode it, exchange ping/pong, send close frame. All in-memory using the ws encode/decode functions. |
+| 21.1.7 | ML prediction pipeline: CSV → train → predict → evaluate accuracy | backlog | — | **P2** Load a classification dataset from CSV into a dataframe. Split into train/test. Train a decision tree. Predict on test set. Compute accuracy (count correct / total). Verify accuracy > 70% on a linearly-separable synthetic dataset. |
+| 21.1.8 | SVG diagram generation from structured data | backlog | — | **P2** Read a CSV of nodes and edges. Build an SVG document with circles for nodes (positioned in a grid), lines for edges, text labels. Render to SVG string. Verify it contains expected number of `<circle>`, `<line>`, `<text>` elements. |
+
+---
+
+### Epic 22 — Corpus Regeneration (Frozen Default Syntax)
+
+Generate a fresh, expanded corpus using the frozen default syntax. Include open-source model generation for diversity. This is prerequisite to a valid Phase 2 training run.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 22.1.1 | Verify existing corpus is fully converted to default syntax | backlog | — | **P0** Sample 100 entries from each phase (A/B/C/D). Confirm all use `$` sigils, `@()` arrays, lowercase keywords. If any are still Phase 1 uppercase, run `to_default_syntax.py` on the full corpus. Report conversion coverage. |
+| 22.1.2 | Generate 10K new corpus entries using open-source local models | backlog | — | **P0** Use Qwen 2.5 Coder 7B (local via Ollama) and Llama 3.2 to generate toke programs in default syntax. Pipeline: prompt model → extract code → `tkc --check` → keep passing programs. Target: 10,000 new validated entries. Focus on stdlib usage (the 20 new modules). |
+| 22.1.3 | Generate 10K corpus entries using Claude/GPT with stdlib context | backlog | — | **P0** Use Claude Sonnet and GPT-4o to generate programs exercising the new stdlib modules (http, csv, json, llm, chart, html, etc.). Provide .tki files as context. `tkc --check` validation. Target: 10,000 new validated entries with diverse stdlib usage. |
+| 22.1.4 | Expand corpus with multi-module integration programs | backlog | — | **P1** Generate 5,000 programs that import 2+ stdlib modules and use them together (e.g., CSV→chart, http→json, auth→encrypt). These are harder to generate but critical for training the model on realistic usage patterns. |
+| 22.1.5 | Corpus quality audit and dedup | backlog | — | **P1** Deduplicate the expanded corpus. Run quality scoring. Remove entries below threshold. Produce final manifest with stats. Target: 70K+ validated programs total (original 47K + new 20K+ after dedup). |
+| 22.1.6 | Prepare training data JSONL from expanded corpus | backlog | — | **P0** Run the data preparation pipeline to produce train/eval split in ChatML JSONL format. Ensure all examples use default syntax. Store in `toke-model/training-data-v2/`. Depends on 22.1.1-22.1.5. |
+
+---
+
+### Epic 23 — Tokenizer Retrain on Expanded Corpus
+
+Retrain the BPE tokenizer on the expanded default-syntax corpus and evaluate against baselines.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 23.1.1 | Verify current tokenizer was trained on default syntax | backlog | — | **P0** Run `eval.py` with the current 8K and 32K tokenizer models against a sample of default-syntax programs. Check that `$`, `@()`, lowercase keywords are single tokens or efficiently tokenized. Report results. If not trained on default syntax, proceed to 23.1.2. |
+| 23.1.2 | Retrain 8K BPE tokenizer on expanded default-syntax corpus | backlog | — | **P0** Run `train.py` with the full expanded corpus (70K+ programs). 8K vocabulary. Evaluate: token count reduction vs cl100k_base and o200k_base. Target: ≥15% reduction vs cl100k_base. Depends on 22.1.5. |
+| 23.1.3 | Retrain 32K BPE tokenizer and evaluate vocab utilization | backlog | — | **P1** Retrain at 32K vocabulary. Evaluate vocab utilization (was 23.5% — should improve with larger corpus). Compare token counts against 8K model. Determine if 32K is worth the complexity or if 8K suffices. |
+| 23.1.4 | Tokenizer regression tests: ensure all stdlib identifiers tokenize cleanly | backlog | — | **P1** For each of the 30+ stdlib module names and common function names (e.g., `crypto.sha256`, `df_fromcsv`, `chart_tojson`), verify the tokenizer does not split them badly (no mid-word breaks). Report any problematic tokenizations. |
+
+---
+
+### Epic 24 — Model Training Round 2 (Default Syntax)
+
+Full training run with the frozen default syntax, expanded corpus, and retrained tokenizer. Evaluate against Gate 2 criteria.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 24.1.1 | Train 7B model on default-syntax corpus (QLoRA/DoRA) | backlog | — | **P0** Run `train_mlx.py` with DoRA config on the expanded training data (from 22.1.6) using the retrained tokenizer (from 23.1.2). Mac Studio M4 Max local training. Target: eval loss < 0.15. Depends on 22.1.6, 23.1.2. |
+| 24.1.2 | Merge adapters and evaluate Pass@1 | backlog | — | **P0** Merge LoRA/DoRA adapters into base model. Run `gate2_benchmark.py` on the 1000-task benchmark suite. Compare Pass@1 against Gate 1 baseline (63.7%). Target: ≥70% Pass@1. Depends on 24.1.1. |
+| 24.1.3 | Evaluate token efficiency with retrained tokenizer | backlog | — | **P0** Measure token reduction of model-generated code vs Python/C/Java using the new tokenizer. Compare against Gate 1 baseline (12.5%). Target: ≥20% token reduction. Depends on 24.1.2. |
+| 24.1.4 | Gate 2 assessment and go/no-go decision | backlog | — | **P0** Compile Gate 2 report: Pass@1, token reduction, compilation rate, stdlib usage in generated code. Document decision. If gate passes, proceed to Phase 3 planning. If not, identify remediation stories. Depends on 24.1.2, 24.1.3. |
+| 24.1.5 | Publish model to HuggingFace and update model card | backlog | — | **P1** Upload merged model weights, tokenizer, and updated model card to HuggingFace. Include Gate 2 results, training details, and usage instructions. Update the README with default syntax examples. Depends on 24.1.4 (gate pass). |
+
+---
+
+### Epic 25 — Website & Documentation Refresh
+
+Update the website to reflect current state: 6-repo structure, 30+ stdlib modules, Phase 2 progress, timeline status.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 25.1.1 | Update DevTimeline component with Phase 2 completion status | backlog | — | **P0** In DevTimeline.astro: Mark 2.1 (Language Extensions) as Complete. Update 2.2 (Tokenizer) status text with current metrics. Update 2.3 (First Model) with Gate 1 results. Update repo links to new consolidated names (toke, toke-model, toke-eval). Fix any "toke-models" → "toke-model" references. |
+| 25.1.2 | Update repos.md with current 6-repo structure | backlog | — | **P0** Replace the old 10-repo table with the consolidated 6-repo structure: toke (compiler+spec+stdlib), toke-model (corpus+tokenizer+models), toke-eval (benchmark+eval), toke-web, toke-mcp, toke-cloud (private). Update all status fields to current state. Remove "blocked" and "not started" for repos that are now active. |
+| 25.1.3 | Update stdlib lesson (09-stdlib.md) with all 30+ modules | backlog | — | **P0** Add all new modules to the Available list: encoding, encrypt, auth, ws, sse, router, template, csv, math, llm, llm_tool, chart, html, dashboard, svg, canvas, image, dataframe, analytics, ml. Move std.math from Planned to Available. Group modules by tier (Foundation, Web, Data, LLM, Visualization). |
+| 25.1.4 | Update homepage stats and claims | backlog | — | **P1** Update "11 standard library modules" → "30+ standard library modules". Update the feature cards. Add mentions of LLM integration, data analytics, and visualization capabilities. Verify all numeric claims match current data. |
+| 25.1.5 | Add API reference pages for all new stdlib modules | backlog | — | **P1** Create documentation pages in `/reference/stdlib/` for each of the 20 new modules. Each page: module overview, function signatures, usage examples in default syntax, notes on dependencies. Use the existing .md files from the toke/stdlib/ directory as source material. |
+| 25.1.6 | Add project changelog/status page | backlog | — | **P2** Create `/about/changelog.md` or `/about/status.md` documenting key milestones: Gate 1 pass, syntax freeze, stdlib expansion, consolidation. Link from homepage and navbar. |
+| 25.1.7 | Validate all website code examples compile | backlog | — | **P0** Run `test/check_examples.sh` and fix any failures. Every toke code block on the website must compile with `tkc --check`. Target: 100% pass rate (up from current 50%). Fix syntax errors, update outdated examples, add `skip-check` only where examples are intentionally partial. |
+| 25.1.8 | Validate training course examples and exercises | backlog | — | **P1** Verify all 10 lessons in `/learn/` have compilable, runnable examples. Test each lesson's exercises produce expected output. Fix any that use outdated syntax or reference unavailable stdlib modules. |
+| 25.1.9 | Deploy updated website and verify live | backlog | — | **P1** Build, deploy to Lightsail, verify all pages render correctly. Run linkinator. Test on mobile. Clear Cloudflare cache. Depends on 25.1.1-25.1.8. |
+
+---
+
+### Epic 26 — Specification & API Documentation Update
+
+Update toke-spec to reflect all new stdlib modules and ensure the specification is comprehensive and current.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 26.1.1 | Add stdlib module specifications to toke-spec | backlog | — | **P1** For each of the 20 new modules: add a section in the spec documenting the module name, function signatures (using toke type syntax), error conditions, and guarantees. Reference the .tki files as canonical. Publish in `toke-spec/spec/stdlib/`. |
+| 26.1.2 | Update spec-implementation-delta.md for new modules | backlog | — | **P1** Update the delta tracking document to include all 20 new modules. Each should show: specified (in .tki) + implemented (in .c) + tested (test_{module}.c). |
+| 26.1.3 | Verify .tki interface files match C implementations exactly | backlog | — | **P0** For each module, compare the function names and parameter types in the .tki file against the actual C header (.h) file. Fix any mismatches. The .tki is the contract; the .h must conform. |
+| 26.1.4 | Push spec updates to GitHub and update website API browser | backlog | — | **P1** Push toke-spec changes. Verify the website API specification browser at `/reference/` reflects the new modules. Depends on 26.1.1-26.1.3, 25.1.5. |
+
