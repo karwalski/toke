@@ -71,8 +71,89 @@ HttpResult http_header(Req req, const char *name);
 /* Route count (for testing) */
 int http_route_count(void);
 
+/* ── Cookie support (Story 27.1.7) ─────────────────────────────────── */
+
+/* http_cookie — extract cookie value for 'name' from Cookie: header.
+ * Returns heap-allocated string (caller owns) or NULL if not found. */
+const char *http_cookie(const char *cookie_header, const char *name);
+
+typedef struct {
+    const char *path;       /* e.g. "/" — NULL means omit */
+    const char *domain;     /* NULL means omit */
+    int64_t     max_age;    /* -1 means omit */
+    int         secure;     /* 0 = omit, 1 = add Secure */
+    int         http_only;  /* 0 = omit, 1 = add HttpOnly */
+    const char *same_site;  /* "Strict", "Lax", "None" or NULL */
+} TkCookieOpts;
+
+/* http_set_cookie_header — build a Set-Cookie header value string.
+ * Returns heap-allocated string (caller owns). */
+const char *http_set_cookie_header(const char *name, const char *value,
+                                    TkCookieOpts opts);
+
+/* Keep-alive defaults (Story 27.1.3) */
+#define HTTP_KEEPALIVE_IDLE_TIMEOUT_S 30
+#define HTTP_KEEPALIVE_MAX_REQUESTS   1000
+
+/* ── Server request-size limits (Story 27.1.9) ───────────────────────── */
+
+/* Default limits applied to every incoming server request. */
+#define HTTP_DEFAULT_MAX_HEADER_SIZE  8192U      /* 8 KiB  */
+#define HTTP_DEFAULT_MAX_BODY_SIZE    1048576U   /* 1 MiB  */
+#define HTTP_DEFAULT_TIMEOUT_SECS     30U
+
+/*
+ * Override the server request-size limits before calling http_serve().
+ *
+ *   max_header   – maximum total header bytes before \r\n\r\n is found.
+ *                  0 means keep the current value.
+ *   max_body     – maximum Content-Length accepted.
+ *                  0 means keep the current value.
+ *   timeout_secs – SO_RCVTIMEO applied to each accepted socket.
+ *                  0 means keep the current value.
+ */
+void http_set_limits(uint32_t max_header, uint32_t max_body,
+                     uint32_t timeout_secs);
+
 /* Server — blocks; dispatches to registered routes */
 int http_serve(uint16_t port);
+
+/*
+ * http_handle_fd — process one HTTP request/response cycle on an already-
+ * connected socket fd, applying the current srv_limits.  The socket is
+ * closed before returning.  Intended for use in tests via socketpair(2).
+ */
+void http_handle_fd(int fd);
+
+/* ── Pre-fork worker pool (Story 27.1.1) ────────────────────────────── */
+
+/* TkHttpRouter — opaque handle passed to http_serve_workers.
+ * Internally wraps a snapshot of the global route table taken at
+ * http_router_new() call time. */
+typedef struct TkHttpRouter TkHttpRouter;
+
+/* TkHttpErr — server-level error codes returned by http_serve_workers. */
+typedef enum {
+    TK_HTTP_OK         = 0,
+    TK_HTTP_ERR_BIND   = 1,
+    TK_HTTP_ERR_LISTEN = 2,
+    TK_HTTP_ERR_FORK   = 3,
+    TK_HTTP_ERR_SOCKET = 4
+} TkHttpErr;
+
+/* http_router_new — capture the current global route table into a
+ * TkHttpRouter.  The caller owns the returned pointer; free with
+ * http_router_free(). */
+TkHttpRouter *http_router_new(void);
+
+/* http_router_free — release a TkHttpRouter. */
+void http_router_free(TkHttpRouter *r);
+
+/* http_serve_workers — start HTTP server with pre-fork worker pool.
+ * nworkers=1 is equivalent to http_serve (single process).
+ * host may be NULL for all interfaces. */
+TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
+                              uint64_t port, uint64_t nworkers);
 
 /* ── Client types (Story 35.1.2) ──────────────────────────────────── */
 

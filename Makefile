@@ -45,7 +45,8 @@ export SOURCE_DATE_EPOCH ?= 0
 	test-stdlib-image test-stdlib-ml \
 	test-stdlib-all-new \
 	test-stdlib-security-integration test-stdlib-network-integration \
-	test-stdlib-viz-integration test-stdlib-data-pipeline test-stdlib-llm-live
+	test-stdlib-viz-integration test-stdlib-data-pipeline test-stdlib-llm-live \
+	test-stdlib-http test-stdlib-http-cookies
 
 all: $(BIN)
 
@@ -107,6 +108,16 @@ test-stdlib-db:
 	$(CC) $(CFLAGS) -o test/stdlib/test_db \
 	    test/stdlib/test_db.c src/stdlib/db.c -lsqlite3
 	./test/stdlib/test_db
+
+test-stdlib-http:
+	$(CC) $(CFLAGS) -o test/stdlib/test_http \
+	    test/stdlib/test_http.c src/stdlib/http.c
+	./test/stdlib/test_http
+
+test-stdlib-http-cookies:
+	$(CC) $(CFLAGS) -o test/stdlib/test_http_cookies \
+	    test/stdlib/test_http_cookies.c src/stdlib/http.c
+	./test/stdlib/test_http_cookies
 
 test-stdlib-process:
 	$(CC) $(CFLAGS) -o test/stdlib/test_process \

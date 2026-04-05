@@ -16,7 +16,33 @@
 #include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <netdb.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <signal.h>
+
+/* ── Server request-size limits (Story 27.1.9) ───────────────────────── */
+
+typedef struct {
+    uint32_t max_header;   /* bytes before \r\n\r\n         */
+    uint32_t max_body;     /* Content-Length ceiling         */
+    uint32_t timeout_secs; /* SO_RCVTIMEO on accepted socket */
+} SrvLimits;
+
+static SrvLimits srv_limits = {
+    HTTP_DEFAULT_MAX_HEADER_SIZE,
+    HTTP_DEFAULT_MAX_BODY_SIZE,
+    HTTP_DEFAULT_TIMEOUT_SECS
+};
+
+void http_set_limits(uint32_t max_header, uint32_t max_body,
+                     uint32_t timeout_secs)
+{
+    if (max_header   > 0) srv_limits.max_header   = max_header;
+    if (max_body     > 0) srv_limits.max_body     = max_body;
+    if (timeout_secs > 0) srv_limits.timeout_secs = timeout_secs;
+}
 
 /* ── Route table ─────────────────────────────────────────────────────── */
 
@@ -137,18 +163,187 @@ static const char *reason(uint16_t s) {
     switch (s) {
         case 200: return "OK"; case 201: return "Created";
         case 400: return "Bad Request"; case 404: return "Not Found";
+        case 408: return "Request Timeout";
+        case 413: return "Payload Too Large";
+        case 431: return "Request Header Fields Too Large";
         default:  return "Internal Server Error";
     }
 }
 
-static void send_response(int fd, Res res) {
+static void send_response(int fd, Res res, int keep_alive) {
     size_t bl = res.body ? strlen(res.body) : 0;
-    char hdr[256];
+    const char *conn_hdr = keep_alive ? "keep-alive" : "close";
+    char hdr[320];
     int hl = snprintf(hdr, sizeof(hdr),
-        "HTTP/1.1 %u %s\r\nContent-Length: %zu\r\n\r\n",
-        res.status, reason(res.status), bl);
+        "HTTP/1.1 %u %s\r\n"
+        "Content-Length: %zu\r\n"
+        "Connection: %s\r\n"
+        "\r\n",
+        res.status, reason(res.status), bl, conn_hdr);
     write(fd, hdr, (size_t)hl);
     if (bl) write(fd, res.body, bl);
+}
+
+/* ── Keep-alive connection constants ────────────────────────────────── */
+
+#define KEEPALIVE_IDLE_TIMEOUT_S 30
+#define KEEPALIVE_MAX_REQUESTS   1000
+
+/* ── Connection handler (single accepted socket) ────────────────────── */
+
+/*
+ * req_wants_close — return 1 if the request signals Connection: close,
+ * 0 if it signals keep-alive (or is silent, defaulting to keep-alive
+ * for HTTP/1.1).
+ */
+static int req_wants_close(const char *raw)
+{
+    /* Walk header lines looking for Connection: */
+    const char *p = strstr(raw, "\r\n");
+    while (p) {
+        p += 2; /* skip \r\n */
+        const char *eol = strstr(p, "\r\n");
+        if (!eol || eol == p) break; /* blank line = end of headers */
+        if (strncasecmp(p, "Connection:", 11) == 0) {
+            const char *v = p + 11;
+            while (*v == ' ') v++;
+            if (strncasecmp(v, "close", 5) == 0) return 1;
+            return 0; /* "keep-alive" or anything else */
+        }
+        p = eol;
+    }
+    return 0; /* HTTP/1.1 default: keep-alive */
+}
+
+/*
+ * send_error — write a minimal error response and close.
+ * Used for limit violations detected before a full Req is parsed.
+ */
+static void send_error(int fd, uint16_t status)
+{
+    Res r = make_res(status, reason(status));
+    send_response(fd, r, 0 /* Connection: close */);
+}
+
+static void handle_connection(int fd)
+{
+    /* Apply the (possibly user-overridden) receive timeout. */
+    struct timeval tv;
+    tv.tv_sec  = (long)srv_limits.timeout_secs;
+    tv.tv_usec = 0;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    /*
+     * Allocate a per-connection read buffer large enough for the maximum
+     * allowed header block plus the maximum allowed body, plus a null byte.
+     */
+    size_t buf_cap = (size_t)srv_limits.max_header
+                   + (size_t)srv_limits.max_body + 8;
+    char *raw = malloc(buf_cap);
+    if (!raw) { close(fd); return; }
+
+    int requests = 0;
+
+    for (;;) {
+        memset(raw, 0, buf_cap);
+
+        /* ── Phase 1: read headers, enforcing max_header ── */
+        size_t hdr_used = 0;
+        int    hdr_ok   = 0; /* set to 1 when \r\n\r\n is found */
+
+        while (hdr_used < (size_t)srv_limits.max_header) {
+            size_t space = (size_t)srv_limits.max_header - hdr_used;
+            ssize_t n = read(fd, raw + hdr_used, space);
+            if (n <= 0) {
+                if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                    send_error(fd, 408);
+                free(raw); close(fd); return;
+            }
+            hdr_used += (size_t)n;
+            raw[hdr_used] = '\0';
+            if (strstr(raw, "\r\n\r\n")) { hdr_ok = 1; break; }
+        }
+
+        if (!hdr_ok) {
+            /* Filled max_header bytes without finding end-of-headers */
+            send_error(fd, 431);
+            free(raw); close(fd); return;
+        }
+
+        /* ── Phase 2: enforce Content-Length limit ── */
+        const char *cl_hdr = NULL;
+        {
+            char *p = raw;
+            while (p && (size_t)(p - raw) < hdr_used) {
+                if (strncasecmp(p, "Content-Length:", 15) == 0) {
+                    cl_hdr = p + 15;
+                    break;
+                }
+                p = strstr(p, "\r\n");
+                if (p) p += 2;
+            }
+        }
+
+        if (cl_hdr) {
+            long long cl = atoll(cl_hdr);
+            if (cl < 0 ||
+                (unsigned long long)cl >
+                (unsigned long long)srv_limits.max_body) {
+                send_error(fd, 413);
+                free(raw); close(fd); return;
+            }
+
+            /* ── Phase 3: read remaining body bytes ── */
+            const char *sep = strstr(raw, "\r\n\r\n");
+            if (sep) {
+                size_t hlen      = (size_t)(sep - raw) + 4;
+                size_t body_have = hdr_used - hlen;
+                size_t content_len = (size_t)cl;
+
+                while (body_have < content_len) {
+                    size_t need  = content_len - body_have;
+                    size_t space = buf_cap - hdr_used - 1;
+                    if (space == 0) break;
+                    ssize_t n = read(fd, raw + hdr_used,
+                                     need < space ? need : space);
+                    if (n <= 0) {
+                        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                            send_error(fd, 408);
+                        free(raw); close(fd); return;
+                    }
+                    hdr_used   += (size_t)n;
+                    body_have  += (size_t)n;
+                    raw[hdr_used] = '\0';
+                }
+            }
+        }
+
+        requests++;
+
+        int client_wants_close = req_wants_close(raw);
+        int max_reached        = (requests >= KEEPALIVE_MAX_REQUESTS);
+        int keep_alive         = (!client_wants_close && !max_reached);
+
+        Req req = parse_request(raw);
+        Res res = make_res(404, "Not Found");
+        StrPair params[32]; int pc = 0;
+        for (int i = 0; i < route_count; i++) {
+            if (req.method && strcmp(route_table[i].method, req.method) != 0)
+                continue;
+            if (match_pattern(route_table[i].pattern,
+                              req.path ? req.path : "", params, &pc)) {
+                req.params.data = params; req.params.len = (uint64_t)pc;
+                res = route_table[i].h(req); break;
+            }
+        }
+
+        send_response(fd, res, keep_alive);
+
+        if (!keep_alive) break;
+    }
+
+    free(raw);
+    close(fd);
 }
 
 /* ── Server ─────────────────────────────────────────────────────────── */
@@ -163,23 +358,309 @@ int http_serve(uint16_t port) {
     if (listen(srv, 8)<0){close(srv);return -1;}
     for (;;) {
         int fd = accept(srv, NULL, NULL); if (fd < 0) continue;
-        char raw[8192] = {0}; ssize_t n = read(fd, raw, sizeof(raw)-1);
-        if (n <= 0) { close(fd); continue; }
-        Req req = parse_request(raw);
-        Res res = make_res(404, "Not Found");
-        StrPair params[32]; int pc = 0;
-        for (int i = 0; i < route_count; i++) {
-            if (req.method && strcmp(route_table[i].method, req.method) != 0)
-                continue;
-            if (match_pattern(route_table[i].pattern,
-                              req.path ? req.path : "", params, &pc)) {
-                req.params.data = params; req.params.len = (uint64_t)pc;
-                res = route_table[i].h(req); break;
-            }
-        }
-        send_response(fd, res); close(fd);
+        handle_connection(fd);
     }
     close(srv); return 0;
+}
+
+/* ── http_handle_fd — test / embedding hook (Story 27.1.9) ─────────── */
+
+void http_handle_fd(int fd)
+{
+    handle_connection(fd);
+}
+
+/* ── Pre-fork worker pool (Story 27.1.1) ────────────────────────────── */
+
+/*
+ * TkHttpRouter — snapshot of the global route table captured at
+ * http_router_new() call time.  Each worker gets its own copy via fork
+ * COW; there is no shared mutable state between workers.
+ */
+struct TkHttpRouter {
+    Route routes[MAX_ROUTES];
+    int   count;
+};
+
+TkHttpRouter *http_router_new(void)
+{
+    TkHttpRouter *r = malloc(sizeof(TkHttpRouter));
+    if (!r) return NULL;
+    r->count = route_count;
+    if (r->count > MAX_ROUTES) r->count = MAX_ROUTES;
+    memcpy(r->routes, route_table, (size_t)r->count * sizeof(Route));
+    return r;
+}
+
+void http_router_free(TkHttpRouter *r)
+{
+    free(r);
+}
+
+/* g_worker_pids — written before any fork(), read-only in parent after. */
+#define TK_MAX_WORKERS 256
+
+static pid_t    g_worker_pids[TK_MAX_WORKERS];
+static uint64_t g_nworkers_global = 0;
+
+static void workers_parent_sighandler(int sig)
+{
+    for (uint64_t i = 0; i < g_nworkers_global; i++) {
+        if (g_worker_pids[i] > 0)
+            kill(g_worker_pids[i], sig);
+    }
+    _exit(0);
+}
+
+/* bind_listen — create, bind, and listen a TCP socket.
+ * host == NULL means INADDR_ANY.  Returns fd or -1 on error. */
+static int bind_listen(const char *host, uint64_t port)
+{
+    int srv = socket(AF_INET, SOCK_STREAM, 0);
+    if (srv < 0) return -1;
+
+    int opt = 1;
+    setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#ifdef SO_REUSEPORT
+    setsockopt(srv, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+#endif
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port   = htons((uint16_t)port);
+
+    if (host == NULL || host[0] == '\0') {
+        addr.sin_addr.s_addr = INADDR_ANY;
+    } else {
+        if (inet_pton(AF_INET, host, &addr.sin_addr) != 1) {
+            close(srv); return -1;
+        }
+    }
+
+    if (bind(srv, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        close(srv); return -1;
+    }
+    if (listen(srv, 128) < 0) {
+        close(srv); return -1;
+    }
+    return srv;
+}
+
+/* worker_loop — accept and handle connections; never returns. */
+static void worker_loop(int srv_fd, TkHttpRouter *r)
+{
+    route_count = r->count;
+    memcpy(route_table, r->routes, (size_t)r->count * sizeof(Route));
+
+    for (;;) {
+        int fd = accept(srv_fd, NULL, NULL);
+        if (fd < 0) {
+            if (errno == EINTR) continue;
+            continue;
+        }
+        handle_connection(fd);
+    }
+}
+
+TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
+                              uint64_t port, uint64_t nworkers)
+{
+    if (!r) return TK_HTTP_ERR_SOCKET;
+
+    /* nworkers == 1: single-process path, no fork */
+    if (nworkers <= 1) {
+        int srv = bind_listen(host, port);
+        if (srv < 0) return TK_HTTP_ERR_BIND;
+        worker_loop(srv, r); /* does not return */
+        close(srv);
+        return TK_HTTP_OK;
+    }
+
+    /* Multi-worker pre-fork path */
+    if (nworkers > TK_MAX_WORKERS) nworkers = TK_MAX_WORKERS;
+
+    int srv = bind_listen(host, port);
+    if (srv < 0) return TK_HTTP_ERR_BIND;
+
+    g_nworkers_global = nworkers;
+    signal(SIGTERM, workers_parent_sighandler);
+    signal(SIGINT,  workers_parent_sighandler);
+
+    for (uint64_t i = 0; i < nworkers; i++) {
+        pid_t pid = fork();
+        if (pid < 0) {
+            for (uint64_t j = 0; j < i; j++)
+                kill(g_worker_pids[j], SIGTERM);
+            close(srv);
+            return TK_HTTP_ERR_FORK;
+        }
+        if (pid == 0) {
+            worker_loop(srv, r);
+            _exit(0);
+        }
+        g_worker_pids[i] = pid;
+    }
+
+    close(srv); /* parent closes; workers hold their inherited copies */
+
+    /* Parent: supervise, restart workers that die abnormally */
+    for (;;) {
+        int   wstatus = 0;
+        pid_t died    = waitpid(-1, &wstatus, 0);
+        if (died < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+
+        uint64_t slot = nworkers; /* sentinel: not found */
+        for (uint64_t i = 0; i < nworkers; i++) {
+            if (g_worker_pids[i] == died) { slot = i; break; }
+        }
+        if (slot >= nworkers) continue;
+
+        if (WIFSIGNALED(wstatus) ||
+            (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) != 0)) {
+            int new_srv = bind_listen(host, port);
+            if (new_srv < 0) { g_worker_pids[slot] = -1; continue; }
+            pid_t pid = fork();
+            if (pid < 0) {
+                close(new_srv);
+                g_worker_pids[slot] = -1;
+                continue;
+            }
+            if (pid == 0) {
+                worker_loop(new_srv, r);
+                _exit(0);
+            }
+            close(new_srv);
+            g_worker_pids[slot] = pid;
+        } else {
+            g_worker_pids[slot] = -1;
+        }
+    }
+
+    return TK_HTTP_OK;
+}
+
+/* ── Cookie support (Story 27.1.7) ──────────────────────────────────── */
+
+/* url_decode_char — decode %XX escape; returns decoded byte or -1 on error. */
+static int url_decode_char(const char *p)
+{
+    int hi, lo;
+    if (!p[0] || !p[1]) return -1;
+    hi = (p[0] >= '0' && p[0] <= '9') ? (p[0] - '0')
+       : (p[0] >= 'A' && p[0] <= 'F') ? (p[0] - 'A' + 10)
+       : (p[0] >= 'a' && p[0] <= 'f') ? (p[0] - 'a' + 10)
+       : -1;
+    lo = (p[1] >= '0' && p[1] <= '9') ? (p[1] - '0')
+       : (p[1] >= 'A' && p[1] <= 'F') ? (p[1] - 'A' + 10)
+       : (p[1] >= 'a' && p[1] <= 'f') ? (p[1] - 'a' + 10)
+       : -1;
+    if (hi < 0 || lo < 0) return -1;
+    return (hi << 4) | lo;
+}
+
+/* url_decode — decode percent-encoded cookie value; caller owns result. */
+static char *url_decode(const char *s, size_t len)
+{
+    char *out = malloc(len + 1);
+    if (!out) return NULL;
+    size_t wi = 0;
+    for (size_t ri = 0; ri < len; ri++) {
+        if (s[ri] == '%' && ri + 2 < len) {
+            int c = url_decode_char(s + ri + 1);
+            if (c >= 0) { out[wi++] = (char)c; ri += 2; continue; }
+        }
+        out[wi++] = s[ri];
+    }
+    out[wi] = '\0';
+    return out;
+}
+
+const char *http_cookie(const char *cookie_header, const char *name)
+{
+    if (!cookie_header || !name) return NULL;
+    size_t namelen = strlen(name);
+    const char *p = cookie_header;
+
+    while (*p) {
+        /* skip leading whitespace */
+        while (*p == ' ' || *p == '\t') p++;
+
+        /* find '=' separating name from value */
+        const char *eq = strchr(p, '=');
+        if (!eq) break;
+
+        /* trim trailing whitespace from key */
+        const char *key_end = eq;
+        while (key_end > p &&
+               (*(key_end - 1) == ' ' || *(key_end - 1) == '\t'))
+            key_end--;
+        size_t klen = (size_t)(key_end - p);
+
+        const char *val_start = eq + 1;
+        /* skip leading whitespace in value */
+        while (*val_start == ' ' || *val_start == '\t') val_start++;
+
+        /* value ends at ';' or end of string */
+        const char *semi = strchr(val_start, ';');
+        size_t vlen = semi ? (size_t)(semi - val_start) : strlen(val_start);
+
+        /* trim trailing whitespace from value */
+        while (vlen > 0 && (val_start[vlen - 1] == ' ' ||
+                             val_start[vlen - 1] == '\t'))
+            vlen--;
+
+        if (klen == namelen && memcmp(p, name, klen) == 0)
+            return url_decode(val_start, vlen);
+
+        /* advance past this pair */
+        if (semi) p = semi + 1;
+        else break;
+    }
+    return NULL;
+}
+
+const char *http_set_cookie_header(const char *name, const char *value,
+                                    TkCookieOpts opts)
+{
+    if (!name || !value) return NULL;
+
+    /* estimate buffer: name=value + all optional attributes */
+    size_t cap = strlen(name) + strlen(value) + 256;
+    if (opts.path)      cap += strlen(opts.path)      + 8;
+    if (opts.domain)    cap += strlen(opts.domain)    + 10;
+    if (opts.same_site) cap += strlen(opts.same_site) + 12;
+
+    char *buf = malloc(cap);
+    if (!buf) return NULL;
+
+    int n = snprintf(buf, cap, "%s=%s", name, value);
+
+    if (opts.path)
+        n += snprintf(buf + n, cap - (size_t)n, "; Path=%s", opts.path);
+
+    if (opts.domain)
+        n += snprintf(buf + n, cap - (size_t)n, "; Domain=%s", opts.domain);
+
+    if (opts.max_age >= 0)
+        n += snprintf(buf + n, cap - (size_t)n,
+                      "; Max-Age=%lld", (long long)opts.max_age);
+
+    if (opts.secure)
+        n += snprintf(buf + n, cap - (size_t)n, "; Secure");
+
+    if (opts.http_only)
+        n += snprintf(buf + n, cap - (size_t)n, "; HttpOnly");
+
+    if (opts.same_site)
+        n += snprintf(buf + n, cap - (size_t)n,
+                      "; SameSite=%s", opts.same_site);
+
+    (void)n;
+    return buf;
 }
 
 /* ── Client API (Story 35.1.2) ─────────────────────────────────────── */
