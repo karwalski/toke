@@ -18,6 +18,7 @@
  */
 
 #include "router.h"
+#include "ws.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -29,6 +30,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <zlib.h>
 
 /* ----------------------------------------------------------------------- */
 /* Internal route entry                                                      */
@@ -37,6 +39,7 @@
 #define MAX_PARAMS        32
 #define MAX_MIDDLEWARE    64
 #define MAX_CORS_HEADERS  16  /* max CORS response headers we build */
+#define MAX_WS_ROUTES     16  /* max WebSocket upgrade handlers      */
 
 /* Client IP populated by router_serve for each accepted connection.
  * Empty string when no connection context (e.g. direct router_dispatch call). */
@@ -49,6 +52,15 @@ typedef struct TkRoute {
     struct TkRoute *next;
 } TkRoute;
 
+/* WebSocket endpoint registration */
+typedef struct {
+    char           pattern[512];
+    TkWsOnOpen     on_open;
+    TkWsOnMessage  on_message;
+    TkWsOnClose    on_close;
+    int            in_use;
+} TkWsRoute;
+
 struct TkRouter {
     TkRoute      *head;
     TkRoute      *tail;
@@ -56,6 +68,8 @@ struct TkRouter {
     int           nmw;
     int           cors_enabled;
     TkCorsOpts    cors_opts;
+    TkWsRoute     ws_routes[MAX_WS_ROUTES];
+    int           nws;
 };
 
 /* ----------------------------------------------------------------------- */
@@ -172,7 +186,9 @@ TkRouter *router_new(void)
     r->tail         = NULL;
     r->nmw          = 0;
     r->cors_enabled = 0;
+    r->nws          = 0;
     memset(&r->cors_opts, 0, sizeof(r->cors_opts));
+    memset(r->ws_routes, 0, sizeof(r->ws_routes));
     return r;
 }
 
@@ -211,6 +227,19 @@ void router_get   (TkRouter *r, const char *p, TkRouteHandler h) { add_route(r, 
 void router_post  (TkRouter *r, const char *p, TkRouteHandler h) { add_route(r, "POST",   p, h); }
 void router_put   (TkRouter *r, const char *p, TkRouteHandler h) { add_route(r, "PUT",    p, h); }
 void router_delete(TkRouter *r, const char *p, TkRouteHandler h) { add_route(r, "DELETE", p, h); }
+
+void router_ws(TkRouter *r, const char *pattern,
+               TkWsOnOpen on_open, TkWsOnMessage on_message, TkWsOnClose on_close)
+{
+    if (!r || !pattern || r->nws >= MAX_WS_ROUTES) return;
+    TkWsRoute *ws = &r->ws_routes[r->nws++];
+    strncpy(ws->pattern, pattern, sizeof(ws->pattern) - 1);
+    ws->pattern[sizeof(ws->pattern) - 1] = '\0';
+    ws->on_open    = on_open;
+    ws->on_message = on_message;
+    ws->on_close   = on_close;
+    ws->in_use     = 1;
+}
 
 /* ----------------------------------------------------------------------- */
 /* Middleware                                                                 */
@@ -733,6 +762,229 @@ static void router_parse_request(const char *raw,
 }
 
 /* ----------------------------------------------------------------------- */
+/* WebSocket upgrade helper (Story 27.1.15)                                  */
+/* ----------------------------------------------------------------------- */
+
+/*
+ * ws_extract_header — scan raw HTTP request bytes for a header by name
+ * (case-insensitive).  Writes NUL-terminated value into out_buf.
+ * Returns out_buf on success, NULL if the header is not present.
+ */
+static const char *ws_extract_header(const char *raw,
+                                      const char *name,
+                                      char *out_buf, size_t out_len)
+{
+    size_t name_len = strlen(name);
+    const char *p = raw;
+
+    /* Skip the request line */
+    while (*p && *p != '\r' && *p != '\n') p++;
+    while (*p == '\r' || *p == '\n') p++;
+
+    while (*p) {
+        const char *line_end = p;
+        while (*line_end && *line_end != '\r' && *line_end != '\n') line_end++;
+        if (line_end == p) break; /* empty line = end of headers */
+
+        const char *colon = p;
+        while (colon < line_end && *colon != ':') colon++;
+
+        if (colon < line_end) {
+            size_t hlen = (size_t)(colon - p);
+            if (hlen == name_len) {
+                size_t i;
+                int ok = 1;
+                for (i = 0; i < hlen; i++) {
+                    char a = p[i], b = name[i];
+                    if (a >= 'A' && a <= 'Z') a = (char)(a + 32);
+                    if (b >= 'A' && b <= 'Z') b = (char)(b + 32);
+                    if (a != b) { ok = 0; break; }
+                }
+                if (ok) {
+                    const char *val = colon + 1;
+                    while (val < line_end && *val == ' ') val++;
+                    const char *val_end = line_end;
+                    while (val_end > val &&
+                           (*(val_end-1) == ' ' || *(val_end-1) == '\r'))
+                        val_end--;
+                    size_t vlen = (size_t)(val_end - val);
+                    if (vlen >= out_len) vlen = out_len - 1;
+                    memcpy(out_buf, val, vlen);
+                    out_buf[vlen] = '\0';
+                    return out_buf;
+                }
+            }
+        }
+
+        p = line_end;
+        while (*p == '\r' || *p == '\n') p++;
+    }
+    return NULL;
+}
+
+/*
+ * router_ws_try_upgrade — attempt to handle a WebSocket upgrade on fd.
+ *
+ * Returns 1 if the request carried Upgrade: websocket (regardless of
+ * whether a matching route was found — the caller must NOT send a normal
+ * HTTP response in that case).
+ * Returns 0 if the request is a plain HTTP request.
+ *
+ * raw  — raw bytes read from the socket.
+ * path — already-parsed URL path.
+ */
+static int router_ws_try_upgrade(TkRouter *r, int fd,
+                                  const char *raw, const char *path)
+{
+    char upgrade_val[64];
+    char ws_key[128];
+    int  i;
+
+    if (!ws_extract_header(raw, "Upgrade", upgrade_val, sizeof(upgrade_val)))
+        return 0;
+
+    /* Normalise to lowercase for comparison */
+    {
+        size_t j;
+        for (j = 0; upgrade_val[j]; j++) {
+            char c = upgrade_val[j];
+            if (c >= 'A' && c <= 'Z') upgrade_val[j] = (char)(c + 32);
+        }
+    }
+    if (strcmp(upgrade_val, "websocket") != 0)
+        return 0;
+
+    /* Find a matching WS route */
+    TkWsRoute *matched = NULL;
+    for (i = 0; i < r->nws; i++) {
+        if (!r->ws_routes[i].in_use) continue;
+        MatchResult mr = match_route(r->ws_routes[i].pattern, path);
+        {
+            int k;
+            for (k = 0; k < mr.nparam; k++) {
+                free((char *)mr.names[k]);
+                free((char *)mr.values[k]);
+            }
+        }
+        if (mr.matched) {
+            matched = &r->ws_routes[i];
+            break;
+        }
+    }
+
+    if (!matched) {
+        static const char resp404[] =
+            "HTTP/1.1 404 Not Found\r\n"
+            "Content-Length: 0\r\n"
+            "Connection: close\r\n\r\n";
+        (void)write(fd, resp404, sizeof(resp404) - 1);
+        return 1;
+    }
+
+    if (!ws_extract_header(raw, "Sec-WebSocket-Key", ws_key, sizeof(ws_key))) {
+        static const char resp400[] =
+            "HTTP/1.1 400 Bad Request\r\n"
+            "Content-Length: 0\r\n"
+            "Connection: close\r\n\r\n";
+        (void)write(fd, resp400, sizeof(resp400) - 1);
+        return 1;
+    }
+
+    /* Compute accept key and send 101 */
+    {
+        const char *accept = ws_accept_key(ws_key);
+        if (!accept) {
+            static const char resp500[] =
+                "HTTP/1.1 500 Internal Server Error\r\n"
+                "Content-Length: 0\r\n"
+                "Connection: close\r\n\r\n";
+            (void)write(fd, resp500, sizeof(resp500) - 1);
+            return 1;
+        }
+        {
+            char resp101[512];
+            int n = snprintf(resp101, sizeof(resp101),
+                             "HTTP/1.1 101 Switching Protocols\r\n"
+                             "Upgrade: websocket\r\n"
+                             "Connection: Upgrade\r\n"
+                             "Sec-WebSocket-Accept: %s\r\n\r\n",
+                             accept);
+            free((char *)accept);
+            if (n > 0) (void)write(fd, resp101, (size_t)n);
+        }
+    }
+
+    if (matched->on_open)
+        matched->on_open(fd);
+
+    /* Frame receive loop */
+    {
+        uint8_t  buf[65536];
+        uint64_t buf_used = 0;
+
+        for (;;) {
+            ssize_t nr = read(fd, buf + buf_used,
+                              sizeof(buf) - (size_t)buf_used - 1);
+            if (nr <= 0) break;
+            buf_used += (uint64_t)nr;
+
+            while (buf_used > 0) {
+                uint64_t consumed = 0;
+                WsFrameResult fr = ws_decode_frame(buf, buf_used, &consumed);
+                if (fr.is_err || fr.frame == NULL) break; /* need more data */
+
+                WsFrame *frame = fr.frame;
+
+                switch (frame->opcode) {
+                case WS_PING: {
+                    WsEncodeResult pong =
+                        ws_encode_frame(WS_PONG,
+                                        frame->payload,
+                                        frame->payload_len, 0);
+                    if (!pong.is_err && pong.data)
+                        (void)write(fd, pong.data, (size_t)pong.len);
+                    ws_encode_result_free(&pong);
+                    break;
+                }
+                case WS_CLOSE: {
+                    WsEncodeResult cfr =
+                        ws_encode_frame(WS_CLOSE, NULL, 0, 0);
+                    if (!cfr.is_err && cfr.data)
+                        (void)write(fd, cfr.data, (size_t)cfr.len);
+                    ws_encode_result_free(&cfr);
+                    if (matched->on_close)
+                        matched->on_close(fd);
+                    ws_frame_free(frame);
+                    return 1;
+                }
+                case WS_TEXT:
+                case WS_BINARY:
+                    if (matched->on_message)
+                        matched->on_message(fd,
+                                            (const char *)frame->payload,
+                                            (size_t)frame->payload_len,
+                                            frame->opcode == WS_BINARY ? 1 : 0);
+                    break;
+                default:
+                    break;
+                }
+
+                ws_frame_free(frame);
+                buf_used -= consumed;
+                if (buf_used > 0)
+                    memmove(buf, buf + consumed, (size_t)buf_used);
+            }
+        }
+    }
+
+    /* EOF without a WS close frame */
+    if (matched->on_close)
+        matched->on_close(fd);
+
+    return 1;
+}
+
+/* ----------------------------------------------------------------------- */
 /* router_serve — HTTP server using this router for dispatch                 */
 /* ----------------------------------------------------------------------- */
 
@@ -820,6 +1072,14 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
         const char *body   = NULL;
         router_parse_request(raw, &method, &path, &query, &body);
 
+        /* Check for WebSocket upgrade before normal HTTP dispatch */
+        if (r->nws > 0 &&
+            router_ws_try_upgrade(r, fd, raw, path ? path : "/")) {
+            serve_client_ip[0] = '\0';
+            close(fd);
+            continue;
+        }
+
         TkRouteResp resp = router_dispatch(r,
             method ? method : "GET",
             path   ? path   : "/",
@@ -833,6 +1093,35 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
     /* unreachable in normal operation */
     close(srv);
     return ok_err;
+}
+
+void router_handle_fd(TkRouter *r, int fd)
+{
+    if (!r || fd < 0) return;
+
+    char raw[8192];
+    memset(raw, 0, sizeof(raw));
+    ssize_t nr = read(fd, raw, sizeof(raw) - 1);
+    if (nr <= 0) { close(fd); return; }
+
+    const char *method = NULL;
+    const char *path   = NULL;
+    const char *query  = NULL;
+    const char *body   = NULL;
+    router_parse_request(raw, &method, &path, &query, &body);
+
+    if (r->nws > 0 &&
+        router_ws_try_upgrade(r, fd, raw, path ? path : "/")) {
+        close(fd);
+        return;
+    }
+
+    TkRouteResp resp = router_dispatch(r,
+        method ? method : "GET",
+        path   ? path   : "/",
+        query, body);
+    router_send_response(fd, resp);
+    close(fd);
 }
 
 /* ----------------------------------------------------------------------- */
@@ -1330,4 +1619,143 @@ void router_use_log(TkRouter *r, int format, const char *path)
         log_mw_cfg.log_path[0] = '\0'; /* NULL → stderr */
     }
     router_use(r, log_middleware);
+}
+
+/* ----------------------------------------------------------------------- */
+/* Gzip response compression middleware (Story 27.1.6)                      */
+/* ----------------------------------------------------------------------- */
+
+/* Minimum body size (bytes) below which gzip is not applied.
+ * Stored in a static slot so the middleware function can read it. */
+static size_t gzip_min_size = 1024;
+
+/*
+ * gzip_skip_type — return 1 if the Content-Type is already compressed
+ * (image, video, audio, and application/octet-stream subtypes).
+ * These types gain nothing from gzip and may grow slightly.
+ */
+static int gzip_skip_type(const char *ct)
+{
+    if (!ct) return 0;
+    if (strncmp(ct, "image/",  6) == 0) return 1;
+    if (strncmp(ct, "video/",  6) == 0) return 1;
+    if (strncmp(ct, "audio/",  6) == 0) return 1;
+    if (strcmp(ct,  "application/octet-stream") == 0) return 1;
+    return 0;
+}
+
+/*
+ * gzip_compress — compress src (srclen bytes) into a newly malloc'd buffer.
+ * Uses deflateInit2 with windowBits=15|16 to produce a gzip-format stream.
+ * On success, *dst_out receives the buffer and *dst_len receives its length.
+ * Returns 0 on success, non-zero on failure (caller must not free *dst_out).
+ */
+static int gzip_compress(const char *src, size_t srclen,
+                          char **dst_out, size_t *dst_len)
+{
+    /* Worst-case bound: zlib adds at most 0.1% + 12 bytes; gzip header is
+     * 18 bytes.  compressBound gives a safe upper limit for deflate; we add
+     * a small constant to cover the gzip envelope. */
+    uLong bound = compressBound((uLong)srclen) + 32UL;
+    char *buf = malloc(bound);
+    if (!buf) return -1;
+
+    z_stream zs;
+    memset(&zs, 0, sizeof(zs));
+    /* windowBits = 15 | 16 selects gzip wrapping (not raw deflate). */
+    if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+                     15 | 16, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+        free(buf);
+        return -1;
+    }
+
+    zs.next_in   = (Bytef *)(uintptr_t)src;
+    zs.avail_in  = (uInt)srclen;
+    zs.next_out  = (Bytef *)buf;
+    zs.avail_out = (uInt)bound;
+
+    if (deflate(&zs, Z_FINISH) != Z_STREAM_END) {
+        deflateEnd(&zs);
+        free(buf);
+        return -1;
+    }
+
+    *dst_len = (size_t)zs.total_out;
+    deflateEnd(&zs);
+
+    *dst_out = buf;
+    return 0;
+}
+
+/*
+ * gzip_middleware — compress the response body when:
+ *   - The client sends Accept-Encoding: gzip
+ *   - The response body is at least gzip_min_size bytes
+ *   - The Content-Type is not an already-compressed type
+ *
+ * On compression: body is replaced with the gzip bytes; the old body
+ * is NOT freed (it is owned by the route handler, not the middleware).
+ * The new compressed body IS heap-allocated and owned by the caller of
+ * router_dispatch.
+ */
+static TkRouteResp gzip_middleware(TkRouteCtx ctx, TkRouteHandler next)
+{
+    TkRouteResp resp = next(ctx);
+
+    /* Only compress 2xx responses with a non-empty body. */
+    if (resp.status < 200 || resp.status >= 300) return resp;
+    if (!resp.body || resp.body[0] == '\0')       return resp;
+
+    /* Check Accept-Encoding header for "gzip". */
+    const char *ae = ctx_req_header(ctx, "Accept-Encoding");
+    if (!ae || strstr(ae, "gzip") == NULL) return resp;
+
+    /* Skip already-compressed MIME types. */
+    if (gzip_skip_type(resp.content_type)) return resp;
+
+    /* Skip bodies below the configured minimum size. */
+    size_t bodylen = strlen(resp.body);
+    if (bodylen < gzip_min_size) return resp;
+
+    /* Compress. */
+    char  *compressed = NULL;
+    size_t compressed_len = 0;
+    if (gzip_compress(resp.body, bodylen, &compressed, &compressed_len) != 0) {
+        /* Compression failed: return uncompressed response unchanged. */
+        return resp;
+    }
+
+    /* Build updated header array with Content-Encoding and Vary appended. */
+    uint64_t nh = resp.nheaders;
+    const char **new_names = malloc((nh + 2) * sizeof(char *));
+    const char **new_vals  = malloc((nh + 2) * sizeof(char *));
+    if (!new_names || !new_vals) {
+        free(new_names);
+        free(new_vals);
+        free(compressed);
+        return resp;
+    }
+
+    /* Copy pre-existing headers. */
+    for (uint64_t i = 0; i < nh; i++) {
+        new_names[i] = resp.header_names  ? resp.header_names[i]  : NULL;
+        new_vals[i]  = resp.header_values ? resp.header_values[i] : NULL;
+    }
+    new_names[nh]     = "Content-Encoding";
+    new_vals[nh]      = "gzip";
+    new_names[nh + 1] = "Vary";
+    new_vals[nh + 1]  = "Accept-Encoding";
+
+    resp.body          = compressed;
+    resp.header_names  = new_names;
+    resp.header_values = new_vals;
+    resp.nheaders      = nh + 2;
+    return resp;
+}
+
+void router_use_gzip(TkRouter *r, size_t min_size)
+{
+    if (!r) return;
+    gzip_min_size = min_size;
+    router_use(r, gzip_middleware);
 }

@@ -24,7 +24,9 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
 #include "../../src/stdlib/router.h"
+#include "../../src/stdlib/ws.h"
 
 static int failures = 0;
 
@@ -101,6 +103,13 @@ static TkRouteResp handler_me(TkRouteCtx ctx)
 {
     (void)ctx;
     return router_resp_ok("me", "text/plain");
+}
+
+/* Handler that returns a fake image/png response (for gzip skip test) */
+static TkRouteResp handler_png(TkRouteCtx ctx)
+{
+    (void)ctx;
+    return router_resp_ok("\x89PNG", "image/png");
 }
 
 /* ----------------------------------------------------------------------- */
@@ -1050,6 +1059,238 @@ int main(void)
         }
         ASSERT(!etag_found, "T46: etag mw — no ETag header on 404 response");
         router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Gzip middleware tests (Story 27.1.6)                                  */
+    /* ------------------------------------------------------------------ */
+
+    /* ------------------------------------------------------------------ */
+    /* Test 47: text response >= min_size with Accept-Encoding: gzip        */
+    /*          is compressed; Content-Encoding: gzip header is set         */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        /* min_size = 1: compress everything */
+        router_use_gzip(r, 1);
+        router_get(r, "/hello", handler_hello);
+
+        const char *hnames[] = { "Accept-Encoding" };
+        const char *hvals[]  = { "gzip" };
+        TkRouteResp resp = router_dispatch_ex(r, "GET", "/hello",
+                                              NULL, NULL,
+                                              hnames, hvals, 1);
+        ASSERT_INTEQ(resp.status, 200, "T47: gzip mw — status still 200");
+
+        int found_ce = 0;
+        int found_vary = 0;
+        for (uint64_t i = 0; i < resp.nheaders; i++) {
+            if (resp.header_names && resp.header_names[i]) {
+                if (strcmp(resp.header_names[i], "Content-Encoding") == 0 &&
+                    resp.header_values && resp.header_values[i] &&
+                    strcmp(resp.header_values[i], "gzip") == 0)
+                    found_ce = 1;
+                if (strcmp(resp.header_names[i], "Vary") == 0 &&
+                    resp.header_values && resp.header_values[i] &&
+                    strcmp(resp.header_values[i], "Accept-Encoding") == 0)
+                    found_vary = 1;
+            }
+        }
+        ASSERT(found_ce,   "T47: gzip mw — Content-Encoding: gzip present");
+        ASSERT(found_vary, "T47: gzip mw — Vary: Accept-Encoding present");
+        ASSERT(resp.body != NULL, "T47: gzip mw — body is non-NULL");
+
+        /* Free compressed body and header arrays */
+        if (resp.body)     free((char *)resp.body);
+        if (resp.nheaders) { free(resp.header_names); free(resp.header_values); }
+
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 48: no Accept-Encoding header — response passes through         */
+    /*          uncompressed (no Content-Encoding header added)             */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        router_use_gzip(r, 1);
+        router_get(r, "/hello", handler_hello);
+
+        TkRouteResp resp = router_dispatch(r, "GET", "/hello", NULL, NULL);
+        ASSERT_INTEQ(resp.status, 200, "T48: gzip mw — no AE header, status 200");
+
+        int found_ce = 0;
+        for (uint64_t i = 0; i < resp.nheaders; i++) {
+            if (resp.header_names && resp.header_names[i] &&
+                strcmp(resp.header_names[i], "Content-Encoding") == 0)
+                found_ce = 1;
+        }
+        ASSERT(!found_ce, "T48: gzip mw — no AE header → no Content-Encoding");
+
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 49: body smaller than min_size — not compressed                 */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        /* min_size = 1 MB — "hello" (5 bytes) will not be compressed */
+        router_use_gzip(r, 1048576);
+        router_get(r, "/hello", handler_hello);
+
+        const char *hnames[] = { "Accept-Encoding" };
+        const char *hvals[]  = { "gzip" };
+        TkRouteResp resp = router_dispatch_ex(r, "GET", "/hello",
+                                              NULL, NULL,
+                                              hnames, hvals, 1);
+        ASSERT_INTEQ(resp.status, 200, "T49: gzip mw — below min_size, status 200");
+
+        int found_ce = 0;
+        for (uint64_t i = 0; i < resp.nheaders; i++) {
+            if (resp.header_names && resp.header_names[i] &&
+                strcmp(resp.header_names[i], "Content-Encoding") == 0)
+                found_ce = 1;
+        }
+        ASSERT(!found_ce, "T49: gzip mw — below min_size → no Content-Encoding");
+
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 50: image/png Content-Type is skipped (already compressed)      */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        router_use_gzip(r, 1);
+        router_get(r, "/img", handler_png);
+
+        const char *hnames[] = { "Accept-Encoding" };
+        const char *hvals[]  = { "gzip" };
+        TkRouteResp resp = router_dispatch_ex(r, "GET", "/img",
+                                              NULL, NULL,
+                                              hnames, hvals, 1);
+        ASSERT_INTEQ(resp.status, 200, "T50: gzip mw — image/png status 200");
+
+        int found_ce = 0;
+        for (uint64_t i = 0; i < resp.nheaders; i++) {
+            if (resp.header_names && resp.header_names[i] &&
+                strcmp(resp.header_names[i], "Content-Encoding") == 0)
+                found_ce = 1;
+        }
+        ASSERT(!found_ce, "T50: gzip mw — image/png skipped, no Content-Encoding");
+
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* WebSocket upgrade tests (Story 27.1.15)                              */
+    /* ------------------------------------------------------------------ */
+
+    /* ------------------------------------------------------------------ */
+    /* Test 51: WS upgrade — 101 response with Sec-WebSocket-Accept         */
+    /* ------------------------------------------------------------------ */
+    {
+        int sv[2];
+        int rc = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+        ASSERT(rc == 0, "T51: socketpair created");
+
+        if (rc == 0) {
+            /* Build a valid WS upgrade request */
+            const char *client_key = "dGhlIHNhbXBsZSBub25jZQ==";
+            char req[512];
+            snprintf(req, sizeof(req),
+                     "GET /ws HTTP/1.1\r\n"
+                     "Host: localhost\r\n"
+                     "Upgrade: websocket\r\n"
+                     "Connection: Upgrade\r\n"
+                     "Sec-WebSocket-Key: %s\r\n"
+                     "Sec-WebSocket-Version: 13\r\n"
+                     "\r\n",
+                     client_key);
+
+            /* Write request to one end, register a WS route, handle on other end */
+            TkRouter *r = router_new();
+            router_ws(r, "/ws", NULL, NULL, NULL);
+
+            /* Write from sv[0], handle from sv[1] */
+            ssize_t written = write(sv[0], req, strlen(req));
+            /* Shut down write half so router_handle_fd can detect EOF in
+             * the WS receive loop (no frames will be sent) */
+            shutdown(sv[0], SHUT_WR);
+
+            ASSERT(written > 0, "T51: request written to socketpair");
+
+            router_handle_fd(r, sv[1]);
+
+            /* Read the response from sv[0] */
+            char resp_buf[1024];
+            memset(resp_buf, 0, sizeof(resp_buf));
+            ssize_t nr = read(sv[0], resp_buf, sizeof(resp_buf) - 1);
+            ASSERT(nr > 0, "T51: response received");
+
+            /* Check for 101 status line */
+            ASSERT(strstr(resp_buf, "101") != NULL,
+                   "T51: WS upgrade — 101 Switching Protocols");
+
+            /* Check for Sec-WebSocket-Accept header */
+            ASSERT(strstr(resp_buf, "Sec-WebSocket-Accept:") != NULL,
+                   "T51: WS upgrade — Sec-WebSocket-Accept header present");
+
+            /* Verify the accept key value is correct per RFC 6455 */
+            const char *expected_accept = ws_accept_key(client_key);
+            ASSERT(expected_accept != NULL,
+                   "T51: WS upgrade — expected accept key computed");
+            if (expected_accept) {
+                ASSERT(strstr(resp_buf, expected_accept) != NULL,
+                       "T51: WS upgrade — Sec-WebSocket-Accept value correct");
+                free((char *)expected_accept);
+            }
+
+            close(sv[0]);
+            router_free(r);
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 52: plain HTTP request is not consumed by WS upgrade check      */
+    /* ------------------------------------------------------------------ */
+    {
+        int sv[2];
+        int rc = socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+        ASSERT(rc == 0, "T52: socketpair created");
+
+        if (rc == 0) {
+            const char *req =
+                "GET /hello HTTP/1.1\r\n"
+                "Host: localhost\r\n"
+                "\r\n";
+
+            TkRouter *r = router_new();
+            router_get(r, "/hello", handler_hello);
+            router_ws(r, "/ws", NULL, NULL, NULL);
+
+            ssize_t written = write(sv[0], req, strlen(req));
+            ASSERT(written > 0, "T52: request written to socketpair");
+
+            router_handle_fd(r, sv[1]);
+
+            char resp_buf[1024];
+            memset(resp_buf, 0, sizeof(resp_buf));
+            ssize_t nr = read(sv[0], resp_buf, sizeof(resp_buf) - 1);
+            ASSERT(nr > 0, "T52: response received");
+
+            /* Must be a normal 200 HTTP response, not 101 */
+            ASSERT(strstr(resp_buf, "200") != NULL,
+                   "T52: plain GET — 200 OK (not intercepted by WS upgrade)");
+            ASSERT(strstr(resp_buf, "101") == NULL,
+                   "T52: plain GET — no 101 in response");
+            ASSERT(strstr(resp_buf, "hello") != NULL,
+                   "T52: plain GET — body is 'hello'");
+
+            close(sv[0]);
+            router_free(r);
+        }
     }
 
     /* ------------------------------------------------------------------ */

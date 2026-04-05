@@ -19,7 +19,7 @@ STDLIB_SRCS = \
 
 SRCS    += $(STDLIB_SRCS)
 OBJS    = $(SRCS:.c=.o)
-LDLIBS  = -lm
+LDLIBS  = -lm -lz
 BIN     = tkc
 
 # ── Reproducible-build flags ──────────────────────────────────────────────────
@@ -218,7 +218,7 @@ test-stdlib-sse:
 
 test-stdlib-router:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_router \
-	    test/stdlib/test_router.c src/stdlib/router.c
+	    test/stdlib/test_router.c src/stdlib/router.c src/stdlib/ws.c -lz
 	./test/stdlib/test_router
 
 test-stdlib-template:
@@ -258,7 +258,7 @@ test-stdlib-html:
 
 test-stdlib-dashboard:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_dashboard \
-	    test/stdlib/test_dashboard.c src/stdlib/dashboard.c src/stdlib/chart.c src/stdlib/html.c src/stdlib/router.c
+	    test/stdlib/test_dashboard.c src/stdlib/dashboard.c src/stdlib/chart.c src/stdlib/html.c src/stdlib/router.c -lz
 	./test/stdlib/test_dashboard
 
 test-stdlib-svg:
@@ -302,7 +302,7 @@ test-stdlib-security-integration:
 test-stdlib-network-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_network_integration \
 	    test/stdlib/test_network_integration.c \
-	    src/stdlib/router.c src/stdlib/ws.c src/stdlib/sse.c
+	    src/stdlib/router.c src/stdlib/ws.c src/stdlib/sse.c -lz
 	./test/stdlib/test_network_integration
 
 test-stdlib-viz-integration:
@@ -310,7 +310,7 @@ test-stdlib-viz-integration:
 	    test/stdlib/test_viz_integration.c \
 	    src/stdlib/chart.c src/stdlib/html.c src/stdlib/svg.c src/stdlib/canvas.c \
 	    src/stdlib/dashboard.c src/stdlib/router.c \
-	    src/stdlib/dataframe.c src/stdlib/csv.c src/stdlib/math.c src/stdlib/str.c -lm
+	    src/stdlib/dataframe.c src/stdlib/csv.c src/stdlib/math.c src/stdlib/str.c -lm -lz
 	./test/stdlib/test_viz_integration
 
 test-stdlib-data-pipeline:
