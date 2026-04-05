@@ -5,7 +5,21 @@ SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/config.c src/fmt.c src/progress.c \
           src/sourcemap.c src/ast_json.c src/migrate.c src/companion.c src/compress.c \
           src/main.c src/stdlib/str.c
+
+# ── Story 19.1.4: stdlib modules linked into tkc for i= imports ──────────
+STDLIB_SRCS = \
+          src/stdlib/crypto.c \
+          src/stdlib/encoding.c src/stdlib/encrypt.c src/stdlib/auth.c \
+          src/stdlib/ws.c src/stdlib/sse.c src/stdlib/router.c \
+          src/stdlib/template.c src/stdlib/csv.c src/stdlib/math.c \
+          src/stdlib/llm.c src/stdlib/llm_tool.c \
+          src/stdlib/chart.c src/stdlib/html.c src/stdlib/dashboard.c \
+          src/stdlib/svg.c src/stdlib/canvas.c src/stdlib/image.c \
+          src/stdlib/dataframe.c src/stdlib/analytics.c src/stdlib/ml.c
+
+SRCS    += $(STDLIB_SRCS)
 OBJS    = $(SRCS:.c=.o)
+LDLIBS  = -lm
 BIN     = tkc
 
 # ── Reproducible-build flags ──────────────────────────────────────────────────
@@ -36,7 +50,7 @@ export SOURCE_DATE_EPOCH ?= 0
 all: $(BIN)
 
 $(BIN): $(OBJS)
-	$(CC) $(CFLAGS) $(REPRO_FLAGS) -o $@ $^
+	$(CC) $(CFLAGS) $(REPRO_FLAGS) -o $@ $^ $(LDLIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) $(REPRO_FLAGS) -c -o $@ $<
