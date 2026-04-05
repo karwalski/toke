@@ -24,6 +24,9 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <errno.h>
 
 /* ----------------------------------------------------------------------- */
 /* Internal route entry                                                      */
@@ -544,4 +547,258 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port)
     /* unreachable in normal operation */
     close(srv);
     return ok_err;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Static file serving (Story 27.1.5)                                        */
+/* ----------------------------------------------------------------------- */
+
+/* MIME type table — extension → content-type */
+typedef struct { const char *ext; const char *mime; } MimeEntry;
+
+static const MimeEntry MIME_TABLE[] = {
+    { "html",  "text/html" },
+    { "css",   "text/css" },
+    { "js",    "application/javascript" },
+    { "json",  "application/json" },
+    { "png",   "image/png" },
+    { "jpg",   "image/jpeg" },
+    { "gif",   "image/gif" },
+    { "svg",   "image/svg+xml" },
+    { "ico",   "image/x-icon" },
+    { "txt",   "text/plain" },
+    { "pdf",   "application/pdf" },
+    { "wasm",  "application/wasm" },
+    { "mp4",   "video/mp4" },
+    { "webm",  "video/webm" },
+    { NULL, NULL }
+};
+
+static const char *mime_for_path(const char *path)
+{
+    const char *dot = strrchr(path, '.');
+    if (!dot || dot[1] == '\0') return "application/octet-stream";
+    const char *ext = dot + 1;
+    for (int i = 0; MIME_TABLE[i].ext; i++) {
+        if (strcmp(ext, MIME_TABLE[i].ext) == 0)
+            return MIME_TABLE[i].mime;
+    }
+    return "application/octet-stream";
+}
+
+/* Check for path traversal: reject any path containing ".." or "//" */
+static int has_traversal(const char *path)
+{
+    /* Reject ".." components */
+    const char *p = path;
+    while (*p) {
+        if (p[0] == '.' && p[1] == '.') return 1;
+        if (p[0] == '/' && p[1] == '/') return 1;
+        p++;
+    }
+    return 0;
+}
+
+/* Build response with a dynamically-allocated body.
+ * status, body (heap), and content_type must all be set.
+ * nheaders/header_names/header_values cover additional headers. */
+static TkRouteResp static_resp_with_body(int status, char *body,
+                                          const char *ct,
+                                          const char **hnames,
+                                          const char **hvals,
+                                          uint64_t nh)
+{
+    TkRouteResp resp;
+    memset(&resp, 0, sizeof(resp));
+    resp.status       = status;
+    resp.body         = body;
+    resp.content_type = ct;
+    resp.header_names  = hnames;
+    resp.header_values = hvals;
+    resp.nheaders      = nh;
+    return resp;
+}
+
+/* router_static_serve — public entry point for serving a single file.
+ * dir_path: filesystem directory root (e.g. "/var/www/static")
+ * rel_path: relative URL path after the prefix (e.g. "style.css" or "")
+ * if_none_match: value of the If-None-Match request header, or NULL
+ *
+ * On status 200: resp.body and resp.header_values[0] (ETag) are heap-allocated;
+ * callers are responsible for freeing them.
+ */
+TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
+                                 const char *if_none_match)
+{
+    if (!dir_path || !rel_path) return router_resp_status(403, "Forbidden");
+
+    /* Reject traversal in the relative portion */
+    if (has_traversal(rel_path)) return router_resp_status(403, "Forbidden");
+
+    /* Build full filesystem path */
+    char full[4096];
+    /* Skip any leading '/' in rel_path to avoid double-slash */
+    const char *rel = rel_path;
+    while (*rel == '/') rel++;
+
+    int n;
+    if (*rel == '\0') {
+        n = snprintf(full, sizeof(full), "%s", dir_path);
+    } else {
+        n = snprintf(full, sizeof(full), "%s/%s", dir_path, rel);
+    }
+    if (n < 0 || (size_t)n >= sizeof(full))
+        return router_resp_status(403, "Forbidden");
+
+    /* stat the path */
+    struct stat st;
+    if (stat(full, &st) != 0) {
+        if (errno == ENOENT || errno == ENOTDIR)
+            return router_resp_404();
+        return router_resp_status(403, "Forbidden");
+    }
+
+    /* If directory, append /index.html */
+    if (S_ISDIR(st.st_mode)) {
+        int m = snprintf(full, sizeof(full), "%s/%s/index.html", dir_path, rel);
+        if (m < 0 || (size_t)m >= sizeof(full))
+            return router_resp_status(403, "Forbidden");
+        if (stat(full, &st) != 0)
+            return router_resp_404();
+    }
+
+    /* Build ETag: "{mtime}-{size}" */
+    char etag[64];
+    snprintf(etag, sizeof(etag), "\"%ld-%ld\"",
+             (long)st.st_mtime, (long)st.st_size);
+
+    /* Conditional GET: If-None-Match */
+    if (if_none_match && strcmp(if_none_match, etag) == 0) {
+        TkRouteResp resp;
+        memset(&resp, 0, sizeof(resp));
+        resp.status = 304;
+        return resp;
+    }
+
+    /* Read file contents */
+    int fd = open(full, O_RDONLY);
+    if (fd < 0) return router_resp_status(403, "Forbidden");
+
+    size_t fsz = (size_t)st.st_size;
+    char *buf = malloc(fsz + 1);
+    if (!buf) { close(fd); return router_resp_status(500, "Internal Error"); }
+
+    size_t total = 0;
+    while (total < fsz) {
+        ssize_t nr = read(fd, buf + total, fsz - total);
+        if (nr <= 0) break;
+        total += (size_t)nr;
+    }
+    buf[total] = '\0';
+    close(fd);
+
+    /* Build ETag header (heap-allocated so caller can inspect) */
+    const char **hnames = malloc(sizeof(char *));
+    const char **hvals  = malloc(sizeof(char *));
+    if (!hnames || !hvals) {
+        free(hnames); free(hvals); free(buf);
+        return router_resp_status(500, "Internal Error");
+    }
+    hnames[0] = "ETag";
+    hvals[0]  = strdup(etag);
+    if (!hvals[0]) {
+        free(hnames); free(hvals); free(buf);
+        return router_resp_status(500, "Internal Error");
+    }
+
+    const char *mime = mime_for_path(full);
+    return static_resp_with_body(200, buf, mime, hnames, hvals, 1);
+}
+
+/* Per-prefix handler: the StaticCtx is embedded in a heap allocation
+ * referenced by the per-route context.  Because TkRouteHandler has no
+ * closure argument we use a small trampoline array. */
+
+#define MAX_STATIC_ROUTES 16
+
+typedef struct {
+    char url_prefix[512];
+    char dir_path[1024];
+    int  in_use;
+} StaticEntry;
+
+static StaticEntry static_entries[MAX_STATIC_ROUTES];
+
+/* One trampoline per slot — we declare them as forward references and
+ * define them with a macro below. */
+
+/* Macro to define a trampoline for slot N.
+ * Strips the registered prefix from ctx.path to get the relative sub-path,
+ * then delegates to router_static_serve.
+ * If-None-Match is not available through TkRouteCtx (no header map); the
+ * full server loop (router_serve) handles conditional GET at a higher level. */
+#define DEFINE_STATIC_TRAMPOLINE(N)                                         \
+static TkRouteResp static_handler_##N(TkRouteCtx ctx)                      \
+{                                                                           \
+    StaticEntry *se = &static_entries[N];                                   \
+    const char *rel = ctx.path;                                             \
+    size_t plen = strlen(se->url_prefix);                                   \
+    if (strncmp(rel, se->url_prefix, plen) == 0) rel += plen;              \
+    return router_static_serve(se->dir_path, rel, NULL);                   \
+}
+
+DEFINE_STATIC_TRAMPOLINE(0)
+DEFINE_STATIC_TRAMPOLINE(1)
+DEFINE_STATIC_TRAMPOLINE(2)
+DEFINE_STATIC_TRAMPOLINE(3)
+DEFINE_STATIC_TRAMPOLINE(4)
+DEFINE_STATIC_TRAMPOLINE(5)
+DEFINE_STATIC_TRAMPOLINE(6)
+DEFINE_STATIC_TRAMPOLINE(7)
+DEFINE_STATIC_TRAMPOLINE(8)
+DEFINE_STATIC_TRAMPOLINE(9)
+DEFINE_STATIC_TRAMPOLINE(10)
+DEFINE_STATIC_TRAMPOLINE(11)
+DEFINE_STATIC_TRAMPOLINE(12)
+DEFINE_STATIC_TRAMPOLINE(13)
+DEFINE_STATIC_TRAMPOLINE(14)
+DEFINE_STATIC_TRAMPOLINE(15)
+
+static TkRouteHandler static_trampolines[MAX_STATIC_ROUTES] = {
+    static_handler_0,  static_handler_1,  static_handler_2,  static_handler_3,
+    static_handler_4,  static_handler_5,  static_handler_6,  static_handler_7,
+    static_handler_8,  static_handler_9,  static_handler_10, static_handler_11,
+    static_handler_12, static_handler_13, static_handler_14, static_handler_15,
+};
+
+void router_static(TkRouter *r, const char *url_prefix, const char *dir_path)
+{
+    if (!r || !url_prefix || !dir_path) return;
+
+    /* Find a free slot */
+    int slot = -1;
+    for (int i = 0; i < MAX_STATIC_ROUTES; i++) {
+        if (!static_entries[i].in_use) { slot = i; break; }
+    }
+    if (slot < 0) return; /* no slots available */
+
+    StaticEntry *se = &static_entries[slot];
+    strncpy(se->url_prefix, url_prefix, sizeof(se->url_prefix) - 1);
+    se->url_prefix[sizeof(se->url_prefix) - 1] = '\0';
+    strncpy(se->dir_path, dir_path, sizeof(se->dir_path) - 1);
+    se->dir_path[sizeof(se->dir_path) - 1] = '\0';
+    se->in_use = 1;
+
+    /* Register a wildcard GET route for the prefix */
+    char pattern[544];
+    /* Normalise: strip trailing slash from prefix for pattern construction */
+    size_t plen = strlen(url_prefix);
+    char prefix_norm[512];
+    strncpy(prefix_norm, url_prefix, sizeof(prefix_norm) - 1);
+    prefix_norm[sizeof(prefix_norm) - 1] = '\0';
+    if (plen > 1 && prefix_norm[plen - 1] == '/')
+        prefix_norm[plen - 1] = '\0';
+
+    snprintf(pattern, sizeof(pattern), "%s/*", prefix_norm);
+    add_route(r, "GET", pattern, static_trampolines[slot]);
 }

@@ -74,6 +74,21 @@ TkRouterErr router_serve(TkRouter *r, const char *host, uint64_t port);
 /* Query string helpers */
 const char *router_query_get(const char *query, const char *key); /* URL-decode value for key */
 
+/* router_static — serve files from dir_path under url_prefix.
+ * e.g. router_static(r, "/static/", "/var/www/static")
+ * Features: MIME detection, index.html for directories,
+ * path traversal protection, ETag (mtime+size), conditional GET (304). */
+void router_static(TkRouter *r, const char *url_prefix, const char *dir_path);
+
+/* router_static_serve — directly serve a single request for a file under
+ * dir_path.  rel_path is the URL path component after stripping the prefix
+ * (e.g. "style.css").  if_none_match may be NULL.
+ * Returns a TkRouteResp with status 200/304/403/404.
+ * When status==200, resp.body is a heap-allocated buffer the caller must free.
+ * resp.header_values[0] (the ETag string) is also heap-allocated. */
+TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
+                                 const char *if_none_match);
+
 /* Convenience response constructors */
 TkRouteResp router_resp_ok(const char *body, const char *ct);
 TkRouteResp router_resp_json(const char *json_body);

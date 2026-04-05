@@ -11,6 +11,7 @@
  * Story: 1.3.2  Branch: feature/stdlib-http
  */
 
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct { const char *key; const char *val; } StrPair;
@@ -71,6 +72,36 @@ HttpResult http_header(Req req, const char *name);
 /* Route count (for testing) */
 int http_route_count(void);
 
+/* ── Multipart/form-data parsing (Story 27.1.8) ─────────────────────── */
+
+typedef struct {
+    const char *name;         /* field name from Content-Disposition */
+    const char *filename;     /* NULL if not a file upload */
+    const char *content_type; /* NULL if not specified */
+    const char *data;         /* field data (may contain \0) */
+    size_t      data_len;
+} TkMultipart;
+
+typedef struct {
+    TkMultipart *parts;
+    size_t       nparts;
+} TkMultipartResult;
+
+/* http_multipart_parse — parse a multipart/form-data body.
+ * boundary is the boundary string from Content-Type header.
+ * body/body_len is the raw request body.
+ * Returns a TkMultipartResult; caller must call http_multipart_free(). */
+TkMultipartResult http_multipart_parse(const char *boundary,
+                                        const char *body, size_t body_len);
+
+/* http_multipart_free — release all resources. */
+void http_multipart_free(TkMultipartResult r);
+
+/* http_multipart_boundary — extract boundary from Content-Type header value.
+ * e.g. "multipart/form-data; boundary=----WebKitFormBoundary..."
+ * Returns heap-allocated boundary string or NULL. */
+const char *http_multipart_boundary(const char *content_type);
+
 /* ── Cookie support (Story 27.1.7) ─────────────────────────────────── */
 
 /* http_cookie — extract cookie value for 'name' from Cookie: header.
@@ -90,6 +121,18 @@ typedef struct {
  * Returns heap-allocated string (caller owns). */
 const char *http_set_cookie_header(const char *name, const char *value,
                                     TkCookieOpts opts);
+
+/* ── Chunked transfer encoding (Story 27.1.4) ────────────────────────── */
+
+/* http_chunked_write — write body as chunked encoding to fd.
+ * data/len is split into chunks of at most chunk_size bytes.
+ * Returns 0 on success, -1 on write error. */
+int http_chunked_write(int fd, const char *data, size_t len, size_t chunk_size);
+
+/* http_chunked_read — read a chunked body from fd into a malloc'd buffer.
+ * Returns heap-allocated buffer (caller owns) and sets *out_len.
+ * Returns NULL on error. */
+char *http_chunked_read(int fd, size_t *out_len);
 
 /* Keep-alive defaults (Story 27.1.3) */
 #define HTTP_KEEPALIVE_IDLE_TIMEOUT_S 30
@@ -114,6 +157,12 @@ const char *http_set_cookie_header(const char *name, const char *value,
  */
 void http_set_limits(uint32_t max_header, uint32_t max_body,
                      uint32_t timeout_secs);
+
+/* http_shutdown — signal the server to stop accepting new connections.
+ * In-flight requests complete normally. */
+void http_shutdown(void);
+
+#define HTTP_DRAIN_TIMEOUT_SECS 10
 
 /* Server — blocks; dispatches to registered routes */
 int http_serve(uint16_t port);

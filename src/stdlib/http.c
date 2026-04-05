@@ -21,6 +21,16 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <time.h>
+
+/* ── Graceful shutdown flag (Story 27.1.10) ─────────────────────────── */
+
+static volatile sig_atomic_t g_shutdown_requested = 0;
+
+void http_shutdown(void)
+{
+    g_shutdown_requested = 1;
+}
 
 /* ── Server request-size limits (Story 27.1.9) ───────────────────────── */
 
@@ -157,6 +167,143 @@ static Req parse_request(const char *raw) {
     free(buf); return req;
 }
 
+/* ── Chunked transfer encoding (Story 27.1.4) ───────────────────────── */
+
+/*
+ * http_chunked_write — write body as HTTP/1.1 chunked encoding to fd.
+ *
+ * The body is split into chunks of at most chunk_size bytes.  Each chunk is
+ * sent as:  <hex-length>\r\n<data>\r\n
+ * Followed by a terminating chunk:  0\r\n\r\n
+ *
+ * chunk_size == 0 is treated as a single chunk containing the whole body.
+ *
+ * Returns 0 on success, -1 on write error.
+ */
+int http_chunked_write(int fd, const char *data, size_t len, size_t chunk_size)
+{
+    if (chunk_size == 0) chunk_size = len ? len : 1;
+
+    size_t off = 0;
+    while (off < len) {
+        size_t csz = len - off;
+        if (csz > chunk_size) csz = chunk_size;
+
+        /* Write chunk header: <hex-size>\r\n */
+        char hdr[32];
+        int hl = snprintf(hdr, sizeof(hdr), "%zx\r\n", csz);
+        if (hl < 0) return -1;
+        if (write(fd, hdr, (size_t)hl) < 0) return -1;
+
+        /* Write chunk data */
+        if (write(fd, data + off, csz) < 0) return -1;
+
+        /* Write chunk trailer \r\n */
+        if (write(fd, "\r\n", 2) < 0) return -1;
+
+        off += csz;
+    }
+
+    /* Terminating chunk */
+    if (write(fd, "0\r\n\r\n", 5) < 0) return -1;
+
+    return 0;
+}
+
+/*
+ * http_chunked_read — read a chunked-encoded body from fd.
+ *
+ * Parses the sequence:
+ *   <hex-len>[chunk-ext]\r\n
+ *   <data>\r\n
+ *   ...
+ *   0\r\n\r\n
+ *
+ * Chunk extensions after the hex length (e.g. ";name=value") are ignored.
+ *
+ * Returns a malloc'd buffer containing the reassembled body, and sets
+ * *out_len to its length.  Returns NULL on allocation failure or protocol
+ * error.  Caller owns the returned buffer.
+ */
+char *http_chunked_read(int fd, size_t *out_len)
+{
+    size_t  buf_cap = 4096;
+    size_t  buf_len = 0;
+    char   *buf     = malloc(buf_cap);
+    if (!buf) return NULL;
+
+    /* Line-reading buffer: holds at most one "hex\r\n" line */
+    char line[128];
+
+    for (;;) {
+        /* Read chunk-size line byte-by-byte until \r\n */
+        size_t li = 0;
+        for (;;) {
+            if (li + 1 >= sizeof(line)) { free(buf); return NULL; }
+            ssize_t n = read(fd, line + li, 1);
+            if (n <= 0) { free(buf); return NULL; }
+            li++;
+            if (li >= 2 && line[li - 2] == '\r' && line[li - 1] == '\n')
+                break;
+        }
+        line[li - 2] = '\0'; /* trim \r\n */
+
+        /* Ignore chunk extensions: truncate at first ';' */
+        char *semi = strchr(line, ';');
+        if (semi) *semi = '\0';
+
+        /* Parse hex length */
+        size_t csz = 0;
+        {
+            const char *endp = line;
+            while (*endp) {
+                char c = *endp;
+                size_t nibble;
+                if      (c >= '0' && c <= '9') nibble = (size_t)(c - '0');
+                else if (c >= 'a' && c <= 'f') nibble = (size_t)(c - 'a' + 10);
+                else if (c >= 'A' && c <= 'F') nibble = (size_t)(c - 'A' + 10);
+                else { free(buf); return NULL; }
+                csz = csz * 16u + nibble;
+                endp++;
+            }
+        }
+
+        if (csz == 0) {
+            /* Last chunk: consume trailing \r\n */
+            char tail[2];
+            ssize_t n = read(fd, tail, 2);
+            (void)n;
+            break;
+        }
+
+        /* Grow output buffer if needed (+1 for NUL terminator) */
+        if (buf_len + csz + 1 > buf_cap) {
+            while (buf_cap < buf_len + csz + 1) buf_cap *= 2;
+            char *tmp = realloc(buf, buf_cap);
+            if (!tmp) { free(buf); return NULL; }
+            buf = tmp;
+        }
+
+        /* Read csz bytes of chunk data */
+        size_t rread = 0;
+        while (rread < csz) {
+            ssize_t n = read(fd, buf + buf_len + rread, csz - rread);
+            if (n <= 0) { free(buf); return NULL; }
+            rread += (size_t)n;
+        }
+        buf_len += csz;
+
+        /* Consume trailing \r\n after chunk data */
+        char crlf[2];
+        ssize_t n = read(fd, crlf, 2);
+        if (n < 2) { free(buf); return NULL; }
+    }
+
+    buf[buf_len] = '\0';
+    *out_len = buf_len;
+    return buf;
+}
+
 /* ── Response serialisation ─────────────────────────────────────────── */
 
 static const char *reason(uint16_t s) {
@@ -170,18 +317,56 @@ static const char *reason(uint16_t s) {
     }
 }
 
+/*
+ * res_has_content_length — return 1 if res.headers contains a Content-Length
+ * header, 0 otherwise.
+ */
+static int res_has_content_length(Res res)
+{
+    for (uint64_t i = 0; i < res.headers.len; i++) {
+        if (res.headers.data[i].key &&
+            strcasecmp(res.headers.data[i].key, "Content-Length") == 0)
+            return 1;
+    }
+    return 0;
+}
+
+/*
+ * send_response — serialise and send a Res to fd.
+ *
+ * If Res.body is non-NULL and Res.headers contains no Content-Length entry,
+ * the body is sent with Transfer-Encoding: chunked (Story 27.1.4).
+ * If Res.headers already carries Content-Length (set by the handler), the
+ * body is sent with that fixed length instead.
+ */
 static void send_response(int fd, Res res, int keep_alive) {
-    size_t bl = res.body ? strlen(res.body) : 0;
     const char *conn_hdr = keep_alive ? "keep-alive" : "close";
-    char hdr[320];
-    int hl = snprintf(hdr, sizeof(hdr),
-        "HTTP/1.1 %u %s\r\n"
-        "Content-Length: %zu\r\n"
-        "Connection: %s\r\n"
-        "\r\n",
-        res.status, reason(res.status), bl, conn_hdr);
-    write(fd, hdr, (size_t)hl);
-    if (bl) write(fd, res.body, bl);
+
+    if (res.body != NULL && !res_has_content_length(res)) {
+        /* Chunked path */
+        char hdr[320];
+        int hl = snprintf(hdr, sizeof(hdr),
+            "HTTP/1.1 %u %s\r\n"
+            "Transfer-Encoding: chunked\r\n"
+            "Connection: %s\r\n"
+            "\r\n",
+            res.status, reason(res.status), conn_hdr);
+        write(fd, hdr, (size_t)hl);
+        /* Default chunk size: 4096 bytes */
+        http_chunked_write(fd, res.body, strlen(res.body), 4096);
+    } else {
+        /* Fixed Content-Length path (body may be NULL for empty responses) */
+        size_t bl = res.body ? strlen(res.body) : 0;
+        char hdr[320];
+        int hl = snprintf(hdr, sizeof(hdr),
+            "HTTP/1.1 %u %s\r\n"
+            "Content-Length: %zu\r\n"
+            "Connection: %s\r\n"
+            "\r\n",
+            res.status, reason(res.status), bl, conn_hdr);
+        write(fd, hdr, (size_t)hl);
+        if (bl) write(fd, res.body, bl);
+    }
 }
 
 /* ── Keep-alive connection constants ────────────────────────────────── */
@@ -284,7 +469,24 @@ static void handle_connection(int fd)
             }
         }
 
-        if (cl_hdr) {
+        /* ── Phase 2b: detect Transfer-Encoding: chunked ── */
+        int req_is_chunked = 0;
+        {
+            const char *p2 = raw;
+            while (p2 && (size_t)(p2 - raw) < hdr_used) {
+                if (strncasecmp(p2, "Transfer-Encoding:", 18) == 0) {
+                    const char *v = p2 + 18;
+                    while (*v == ' ') v++;
+                    if (strncasecmp(v, "chunked", 7) == 0)
+                        req_is_chunked = 1;
+                    break;
+                }
+                p2 = strstr(p2, "\r\n");
+                if (p2) p2 += 2;
+            }
+        }
+
+        if (cl_hdr && !req_is_chunked) {
             long long cl = atoll(cl_hdr);
             if (cl < 0 ||
                 (unsigned long long)cl >
@@ -325,6 +527,18 @@ static void handle_connection(int fd)
         int keep_alive         = (!client_wants_close && !max_reached);
 
         Req req = parse_request(raw);
+
+        /* ── Phase 4: reassemble chunked request body ── */
+        if (req_is_chunked) {
+            size_t decoded_len = 0;
+            char  *decoded     = http_chunked_read(fd, &decoded_len);
+            if (decoded) {
+                /* Replace the parsed body with the decoded one */
+                free((void *)req.body);
+                req.body = decoded;
+            }
+        }
+
         Res res = make_res(404, "Not Found");
         StrPair params[32]; int pc = 0;
         for (int i = 0; i < route_count; i++) {
@@ -348,6 +562,12 @@ static void handle_connection(int fd)
 
 /* ── Server ─────────────────────────────────────────────────────────── */
 
+static void serve_sighandler(int sig)
+{
+    (void)sig;
+    g_shutdown_requested = 1;
+}
+
 int http_serve(uint16_t port) {
     int srv = socket(AF_INET, SOCK_STREAM, 0); if (srv < 0) return -1;
     int opt = 1; setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -356,8 +576,20 @@ int http_serve(uint16_t port) {
     addr.sin_port = htons(port);
     if (bind(srv,(struct sockaddr*)&addr,sizeof(addr))<0){close(srv);return -1;}
     if (listen(srv, 8)<0){close(srv);return -1;}
+
+    signal(SIGTERM, serve_sighandler);
+    signal(SIGINT,  serve_sighandler);
+
     for (;;) {
-        int fd = accept(srv, NULL, NULL); if (fd < 0) continue;
+        int fd = accept(srv, NULL, NULL);
+        if (fd < 0) {
+            if (errno == EINTR) {
+                if (g_shutdown_requested) break;
+                continue;
+            }
+            continue;
+        }
+        if (g_shutdown_requested) { close(fd); break; }
         handle_connection(fd);
     }
     close(srv); return 0;
@@ -405,11 +637,8 @@ static uint64_t g_nworkers_global = 0;
 
 static void workers_parent_sighandler(int sig)
 {
-    for (uint64_t i = 0; i < g_nworkers_global; i++) {
-        if (g_worker_pids[i] > 0)
-            kill(g_worker_pids[i], sig);
-    }
-    _exit(0);
+    (void)sig;
+    g_shutdown_requested = 1;
 }
 
 /* bind_listen — create, bind, and listen a TCP socket.
@@ -447,7 +676,7 @@ static int bind_listen(const char *host, uint64_t port)
     return srv;
 }
 
-/* worker_loop — accept and handle connections; never returns. */
+/* worker_loop — accept and handle connections; exits when shutdown is set. */
 static void worker_loop(int srv_fd, TkHttpRouter *r)
 {
     route_count = r->count;
@@ -456,9 +685,13 @@ static void worker_loop(int srv_fd, TkHttpRouter *r)
     for (;;) {
         int fd = accept(srv_fd, NULL, NULL);
         if (fd < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR) {
+                if (g_shutdown_requested) break;
+                continue;
+            }
             continue;
         }
+        if (g_shutdown_requested) { close(fd); break; }
         handle_connection(fd);
     }
 }
@@ -507,12 +740,69 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
     /* Parent: supervise, restart workers that die abnormally */
     for (;;) {
         int   wstatus = 0;
-        pid_t died    = waitpid(-1, &wstatus, 0);
+        pid_t died    = waitpid(-1, &wstatus, WNOHANG);
+
         if (died < 0) {
-            if (errno == EINTR) continue;
-            break;
+            if (errno == EINTR) {
+                /* Check shutdown flag set by signal handler */
+            } else {
+                break;
+            }
         }
 
+        if (g_shutdown_requested) {
+            /* Send SIGTERM to all live workers */
+            for (uint64_t i = 0; i < nworkers; i++) {
+                if (g_worker_pids[i] > 0)
+                    kill(g_worker_pids[i], SIGTERM);
+            }
+
+            /* Wait up to HTTP_DRAIN_TIMEOUT_SECS for workers to exit */
+            time_t deadline = time(NULL) + HTTP_DRAIN_TIMEOUT_SECS;
+            for (;;) {
+                int all_done = 1;
+                for (uint64_t i = 0; i < nworkers; i++) {
+                    if (g_worker_pids[i] <= 0) continue;
+                    int ws = 0;
+                    pid_t p = waitpid(g_worker_pids[i], &ws, WNOHANG);
+                    if (p == g_worker_pids[i])
+                        g_worker_pids[i] = -1;
+                    else
+                        all_done = 0;
+                }
+                if (all_done) break;
+                if (time(NULL) >= deadline) {
+                    /* Drain timeout: SIGKILL remaining workers */
+                    for (uint64_t i = 0; i < nworkers; i++) {
+                        if (g_worker_pids[i] > 0) {
+                            kill(g_worker_pids[i], SIGKILL);
+                            waitpid(g_worker_pids[i], NULL, 0);
+                            g_worker_pids[i] = -1;
+                        }
+                    }
+                    break;
+                }
+                /* Brief yield to avoid busy-spin */
+                {
+                    struct timespec ts;
+                    ts.tv_sec  = 0;
+                    ts.tv_nsec = 10000000; /* 10 ms */
+                    nanosleep(&ts, NULL);
+                }
+            }
+            break; /* exit supervision loop */
+        }
+
+        if (died <= 0) {
+            /* WNOHANG: no child exited yet; yield and retry */
+            struct timespec ts;
+            ts.tv_sec  = 0;
+            ts.tv_nsec = 10000000; /* 10 ms */
+            nanosleep(&ts, NULL);
+            continue;
+        }
+
+        /* A worker exited — record and optionally restart */
         uint64_t slot = nworkers; /* sentinel: not found */
         for (uint64_t i = 0; i < nworkers; i++) {
             if (g_worker_pids[i] == died) { slot = i; break; }
@@ -661,6 +951,293 @@ const char *http_set_cookie_header(const char *name, const char *value,
 
     (void)n;
     return buf;
+}
+
+/* ── Multipart/form-data parsing (Story 27.1.8) ─────────────────────── */
+
+#define MP_MAX_BODY_BYTES  (50UL * 1024UL * 1024UL)   /* 50 MiB */
+#define MP_MAX_PART_BYTES  (10UL * 1024UL * 1024UL)   /* 10 MiB */
+
+/*
+ * mp_find — memmem-style search without POSIX extension dependency.
+ */
+static const char *mp_find(const char *hay, size_t hlen,
+                            const char *needle, size_t nlen)
+{
+    if (nlen == 0 || hlen < nlen) return NULL;
+    for (size_t i = 0; i <= hlen - nlen; i++) {
+        if (memcmp(hay + i, needle, nlen) == 0)
+            return hay + i;
+    }
+    return NULL;
+}
+
+static char *mp_strdup_n(const char *s, size_t n)
+{
+    char *p = malloc(n + 1);
+    if (!p) return NULL;
+    memcpy(p, s, n);
+    p[n] = '\0';
+    return p;
+}
+
+static const char *mp_skip_ws(const char *p)
+{
+    while (*p == ' ' || *p == '\t') p++;
+    return p;
+}
+
+/* mp_parse_cd_param — extract param="value" from Content-Disposition line. */
+static char *mp_parse_cd_param(const char *hdr, const char *param)
+{
+    size_t plen = strlen(param);
+    const char *p = hdr;
+    while (*p) {
+        p = strchr(p, ';');
+        if (!p) break;
+        p++;
+        p = mp_skip_ws(p);
+        if (strncasecmp(p, param, plen) == 0 && p[plen] == '=') {
+            p += plen + 1;
+            if (*p == '"') {
+                p++;
+                const char *end = strchr(p, '"');
+                if (!end) return mp_strdup_n(p, strlen(p));
+                return mp_strdup_n(p, (size_t)(end - p));
+            }
+            const char *end = p;
+            while (*end && *end != ';' && *end != ' ' && *end != '\t')
+                end++;
+            return mp_strdup_n(p, (size_t)(end - p));
+        }
+    }
+    return NULL;
+}
+
+/* mp_parse_headers — extract name/filename/content-type from part headers. */
+static int mp_parse_headers(const char *hdr_block, size_t hdr_len,
+                             char **name_out, char **filename_out,
+                             char **content_type_out)
+{
+    *name_out         = NULL;
+    *filename_out     = NULL;
+    *content_type_out = NULL;
+
+    const char *p   = hdr_block;
+    const char *end = hdr_block + hdr_len;
+
+    while (p < end) {
+        const char *eol     = mp_find(p, (size_t)(end - p), "\r\n", 2);
+        size_t      linelen = eol ? (size_t)(eol - p) : (size_t)(end - p);
+        if (linelen == 0) break;
+
+        if (strncasecmp(p, "Content-Disposition:", 20) == 0) {
+            char *line = mp_strdup_n(p, linelen);
+            if (line) {
+                *name_out     = mp_parse_cd_param(line, "name");
+                *filename_out = mp_parse_cd_param(line, "filename");
+                free(line);
+            }
+        } else if (strncasecmp(p, "Content-Type:", 13) == 0) {
+            const char *v    = mp_skip_ws(p + 13);
+            const char *vend = p + linelen;
+            while (vend > v && (*(vend-1) == ' ' || *(vend-1) == '\t'))
+                vend--;
+            *content_type_out = mp_strdup_n(v, (size_t)(vend - v));
+        }
+
+        if (!eol) break;
+        p = eol + 2;
+    }
+
+    if (!*name_out) return -1;
+    return 0;
+}
+
+const char *http_multipart_boundary(const char *content_type)
+{
+    if (!content_type) return NULL;
+    const char *p = content_type;
+    while (*p) {
+        if (strncasecmp(p, "boundary=", 9) == 0) {
+            p += 9;
+            if (*p == '"') {
+                p++;
+                const char *end = strchr(p, '"');
+                if (!end) return mp_strdup_n(p, strlen(p));
+                return mp_strdup_n(p, (size_t)(end - p));
+            }
+            const char *end = p;
+            while (*end && *end != ';' && *end != ' ' && *end != '\t')
+                end++;
+            return mp_strdup_n(p, (size_t)(end - p));
+        }
+        p++;
+    }
+    return NULL;
+}
+
+TkMultipartResult http_multipart_parse(const char *boundary,
+                                        const char *body, size_t body_len)
+{
+    TkMultipartResult result;
+    result.parts  = NULL;
+    result.nparts = 0;
+
+    if (!boundary || !body || body_len == 0 || body_len > MP_MAX_BODY_BYTES)
+        return result;
+
+    size_t blen = strlen(boundary);
+    if (blen == 0) return result;
+
+    /* Build delimiter: "--" + boundary */
+    size_t delim_len = blen + 2;
+    char *delim = malloc(delim_len + 1);
+    if (!delim) return result;
+    memcpy(delim, "--", 2);
+    memcpy(delim + 2, boundary, blen);
+    delim[delim_len] = '\0';
+
+    /* Build final delimiter: "--" + boundary + "--" */
+    size_t final_len = delim_len + 2;
+    char *final_delim = malloc(final_len + 1);
+    if (!final_delim) { free(delim); return result; }
+    memcpy(final_delim, delim, delim_len);
+    memcpy(final_delim + delim_len, "--", 2);
+    final_delim[final_len] = '\0';
+
+    size_t cap = 64;
+    TkMultipart *parts = malloc(cap * sizeof(TkMultipart));
+    if (!parts) { free(delim); free(final_delim); return result; }
+
+    /* Find and skip the opening boundary line */
+    const char *pos = mp_find(body, body_len, delim, delim_len);
+    if (!pos) { free(delim); free(final_delim); free(parts); return result; }
+
+    pos += delim_len;
+    {
+        size_t used = (size_t)(pos - body);
+        size_t left = body_len - used;
+        if (left >= 2 && pos[0] == '\r' && pos[1] == '\n') {
+            pos += 2;
+        } else if (left >= 1 && pos[0] == '\n') {
+            pos += 1;
+        }
+    }
+
+    for (;;) {
+        size_t rem = body_len - (size_t)(pos - body);
+        if (rem == 0) break;
+
+        if (rem >= final_len && memcmp(pos, final_delim, final_len) == 0)
+            break;
+
+        const char *hdr_end = mp_find(pos, rem, "\r\n\r\n", 4);
+        if (!hdr_end) break;
+
+        size_t hdr_len2 = (size_t)(hdr_end - pos);
+        char *name         = NULL;
+        char *filename     = NULL;
+        char *content_type = NULL;
+
+        if (mp_parse_headers(pos, hdr_len2,
+                             &name, &filename, &content_type) != 0) {
+            free(name); free(filename); free(content_type);
+            const char *next = mp_find(hdr_end + 4,
+                                       rem - hdr_len2 - 4, delim, delim_len);
+            if (!next) break;
+            pos = next + delim_len;
+            rem = body_len - (size_t)(pos - body);
+            if (rem >= 2 && pos[0] == '\r' && pos[1] == '\n') { pos += 2; }
+            else if (rem >= 1 && pos[0] == '\n') { pos += 1; }
+            continue;
+        }
+
+        const char *data_start = hdr_end + 4;
+        size_t      data_rem   = rem - hdr_len2 - 4;
+
+        /* Delimiter that ends part data: CRLF + "--" + boundary */
+        size_t crlf_delim_len = 2 + delim_len;
+        char *crlf_delim = malloc(crlf_delim_len + 1);
+        if (!crlf_delim) {
+            free(name); free(filename); free(content_type); break;
+        }
+        memcpy(crlf_delim, "\r\n", 2);
+        memcpy(crlf_delim + 2, delim, delim_len);
+        crlf_delim[crlf_delim_len] = '\0';
+
+        const char *data_end = mp_find(data_start, data_rem,
+                                        crlf_delim, crlf_delim_len);
+        free(crlf_delim);
+
+        if (!data_end) {
+            free(name); free(filename); free(content_type); break;
+        }
+
+        size_t part_data_len = (size_t)(data_end - data_start);
+
+        if (part_data_len > MP_MAX_PART_BYTES) {
+            free(name); free(filename); free(content_type);
+            pos = data_end + 2 + delim_len;
+            rem = body_len - (size_t)(pos - body);
+            if (rem >= 2 && pos[0] == '\r' && pos[1] == '\n') { pos += 2; }
+            else if (rem >= 1 && pos[0] == '\n') { pos += 1; }
+            continue;
+        }
+
+        char *data_copy = malloc(part_data_len + 1);
+        if (!data_copy) {
+            free(name); free(filename); free(content_type); break;
+        }
+        memcpy(data_copy, data_start, part_data_len);
+        data_copy[part_data_len] = '\0';
+
+        if (result.nparts >= cap) {
+            size_t new_cap = cap * 2;
+            TkMultipart *tmp = realloc(parts, new_cap * sizeof(TkMultipart));
+            if (!tmp) {
+                free(name); free(filename); free(content_type);
+                free(data_copy); break;
+            }
+            parts = tmp;
+            cap   = new_cap;
+        }
+
+        parts[result.nparts].name         = name;
+        parts[result.nparts].filename     = filename;
+        parts[result.nparts].content_type = content_type;
+        parts[result.nparts].data         = data_copy;
+        parts[result.nparts].data_len     = part_data_len;
+        result.nparts++;
+
+        /* Advance past: CRLF (part of CRLF+delim match) + delim */
+        pos = data_end + 2 + delim_len;
+        rem = body_len - (size_t)(pos - body);
+
+        /* Final boundary suffix "--" means we're done */
+        if (rem >= 2 && pos[0] == '-' && pos[1] == '-')
+            break;
+
+        if (rem >= 2 && pos[0] == '\r' && pos[1] == '\n') { pos += 2; }
+        else if (rem >= 1 && pos[0] == '\n') { pos += 1; }
+        else { break; }
+    }
+
+    free(delim);
+    free(final_delim);
+    result.parts = parts;
+    return result;
+}
+
+void http_multipart_free(TkMultipartResult r)
+{
+    for (size_t i = 0; i < r.nparts; i++) {
+        free((void *)(uintptr_t)r.parts[i].name);
+        free((void *)(uintptr_t)r.parts[i].filename);
+        free((void *)(uintptr_t)r.parts[i].content_type);
+        free((void *)(uintptr_t)r.parts[i].data);
+    }
+    free(r.parts);
 }
 
 /* ── Client API (Story 35.1.2) ─────────────────────────────────────── */

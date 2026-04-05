@@ -46,7 +46,7 @@ export SOURCE_DATE_EPOCH ?= 0
 	test-stdlib-all-new \
 	test-stdlib-security-integration test-stdlib-network-integration \
 	test-stdlib-viz-integration test-stdlib-data-pipeline test-stdlib-llm-live \
-	test-stdlib-http test-stdlib-http-cookies
+	test-stdlib-http test-stdlib-http-cookies test-stdlib-http-multipart
 
 all: $(BIN)
 
@@ -118,6 +118,11 @@ test-stdlib-http-cookies:
 	$(CC) $(CFLAGS) -o test/stdlib/test_http_cookies \
 	    test/stdlib/test_http_cookies.c src/stdlib/http.c
 	./test/stdlib/test_http_cookies
+
+test-stdlib-http-multipart:
+	$(CC) $(CFLAGS) -o test/stdlib/test_http_multipart \
+	    test/stdlib/test_http_multipart.c src/stdlib/http.c
+	./test/stdlib/test_http_multipart
 
 test-stdlib-process:
 	$(CC) $(CFLAGS) -o test/stdlib/test_process \

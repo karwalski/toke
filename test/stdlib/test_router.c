@@ -22,6 +22,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <unistd.h>
+#include <sys/stat.h>
 #include "../../src/stdlib/router.h"
 
 static int failures = 0;
@@ -446,6 +448,149 @@ int main(void)
     {
         const char *val = router_query_get(NULL, "x");
         ASSERT(val == NULL, "T26: query_get NULL query returns NULL");
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Static file serving tests (Story 27.1.5)                              */
+    /* ------------------------------------------------------------------ */
+
+    /* Create a temp directory and file for these tests */
+    char tmpdir[256];
+    const char *tmpbase = "/tmp";
+    snprintf(tmpdir, sizeof(tmpdir), "%s/test_router_static_XXXXXX", tmpbase);
+    char *made = mkdtemp(tmpdir);
+    if (!made) {
+        fprintf(stderr, "FAIL: could not create temp dir for static tests\n");
+        failures++;
+    } else {
+        /* Write a small HTML file */
+        char filepath[512];
+        snprintf(filepath, sizeof(filepath), "%s/hello.html", tmpdir);
+        FILE *f = fopen(filepath, "w");
+        if (f) {
+            fputs("<h1>Hello</h1>", f);
+            fclose(f);
+        }
+
+        /* ---------------------------------------------------------------- */
+        /* Test 27: serve file — status 200, correct Content-Type           */
+        /* ---------------------------------------------------------------- */
+        {
+            TkRouteResp resp = router_static_serve(tmpdir, "hello.html", NULL);
+            ASSERT_INTEQ(resp.status, 200, "T27: static serve status=200");
+            ASSERT_STREQ(resp.content_type, "text/html",
+                         "T27: static serve content_type='text/html'");
+            ASSERT_STREQ(resp.body, "<h1>Hello</h1>",
+                         "T27: static serve body correct");
+            /* Clean up heap allocations */
+            if (resp.status == 200) {
+                free((char *)resp.body);
+                if (resp.nheaders > 0) {
+                    free((char *)resp.header_values[0]);
+                    free(resp.header_names);
+                    free(resp.header_values);
+                }
+            }
+        }
+
+        /* ---------------------------------------------------------------- */
+        /* Test 28: path traversal /../secret → 403                          */
+        /* ---------------------------------------------------------------- */
+        {
+            TkRouteResp resp = router_static_serve(tmpdir, "/../secret", NULL);
+            ASSERT_INTEQ(resp.status, 403, "T28: path traversal → 403");
+        }
+
+        /* ---------------------------------------------------------------- */
+        /* Test 29: missing file → 404                                       */
+        /* ---------------------------------------------------------------- */
+        {
+            TkRouteResp resp = router_static_serve(tmpdir, "nosuchfile.txt", NULL);
+            ASSERT_INTEQ(resp.status, 404, "T29: missing file → 404");
+        }
+
+        /* ---------------------------------------------------------------- */
+        /* Test 30: ETag header present in 200 response                      */
+        /* ---------------------------------------------------------------- */
+        {
+            TkRouteResp resp = router_static_serve(tmpdir, "hello.html", NULL);
+            ASSERT_INTEQ(resp.status, 200, "T30: ETag test — status=200");
+            ASSERT(resp.nheaders >= 1, "T30: at least one extra header");
+            int etag_found = 0;
+            for (uint64_t i = 0; i < resp.nheaders; i++) {
+                if (resp.header_names[i] &&
+                    strcmp(resp.header_names[i], "ETag") == 0 &&
+                    resp.header_values[i] && resp.header_values[i][0] != '\0') {
+                    etag_found = 1;
+                }
+            }
+            ASSERT(etag_found, "T30: ETag header present and non-empty");
+            if (resp.status == 200) {
+                free((char *)resp.body);
+                if (resp.nheaders > 0) {
+                    free((char *)resp.header_values[0]);
+                    free(resp.header_names);
+                    free(resp.header_values);
+                }
+            }
+        }
+
+        /* ---------------------------------------------------------------- */
+        /* Test 31: If-None-Match matching ETag → 304                        */
+        /* ---------------------------------------------------------------- */
+        {
+            /* First request to get the real ETag */
+            TkRouteResp r1 = router_static_serve(tmpdir, "hello.html", NULL);
+            ASSERT_INTEQ(r1.status, 200, "T31: first request status=200");
+
+            if (r1.status == 200 && r1.nheaders > 0 && r1.header_values[0]) {
+                char *etag = strdup(r1.header_values[0]);
+
+                /* Second request with matching ETag → 304 */
+                TkRouteResp r2 = router_static_serve(tmpdir, "hello.html", etag);
+                ASSERT_INTEQ(r2.status, 304, "T31: matching If-None-Match → 304");
+
+                free(etag);
+            }
+
+            /* Clean up first response */
+            if (r1.status == 200) {
+                free((char *)r1.body);
+                if (r1.nheaders > 0) {
+                    free((char *)r1.header_values[0]);
+                    free(r1.header_names);
+                    free(r1.header_values);
+                }
+            }
+        }
+
+        /* ---------------------------------------------------------------- */
+        /* Test 32: router_static registers route; dispatch returns 200      */
+        /* ---------------------------------------------------------------- */
+        {
+            /* Reset static_entries for this test by using a fresh router.
+             * Note: static_entries is module-global; using a fresh slot. */
+            TkRouter *r = router_new();
+            router_static(r, "/assets/", tmpdir);
+            TkRouteResp resp = router_dispatch(r, "GET", "/assets/hello.html",
+                                               NULL, NULL);
+            ASSERT_INTEQ(resp.status, 200, "T32: router_static dispatch status=200");
+            ASSERT_STREQ(resp.content_type, "text/html",
+                         "T32: router_static dispatch content_type='text/html'");
+            if (resp.status == 200) {
+                free((char *)resp.body);
+                if (resp.nheaders > 0) {
+                    free((char *)resp.header_values[0]);
+                    free(resp.header_names);
+                    free(resp.header_values);
+                }
+            }
+            router_free(r);
+        }
+
+        /* Clean up temp file and directory */
+        remove(filepath);
+        rmdir(tmpdir);
     }
 
     /* ------------------------------------------------------------------ */
