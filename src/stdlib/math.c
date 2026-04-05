@@ -12,6 +12,7 @@
  * Story: 16.1.2
  */
 
+#include <math.h>
 #include "math.h"
 #include <math.h>
 #include <stdlib.h>

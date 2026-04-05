@@ -24,6 +24,8 @@
 #include <netdb.h>
 #include <errno.h>
 #include <time.h>
+#include <fcntl.h>
+#include <poll.h>
 
 /* -----------------------------------------------------------------------
  * SHA-1 core (RFC 3174)
@@ -707,8 +709,35 @@ WsConnResult ws_connect(const char *url)
     for (rp = ai; rp; rp = rp->ai_next) {
         fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (fd < 0) continue;
-        if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0)
+        /* Set non-blocking for connect with timeout */
+        {
+            int flags = fcntl(fd, F_GETFL, 0);
+            if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        }
+        if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) {
+            /* Immediately connected — restore blocking mode */
+            int flags = fcntl(fd, F_GETFL, 0);
+            if (flags >= 0) fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
             break;
+        }
+        if (errno == EINPROGRESS) {
+            struct pollfd pfd;
+            pfd.fd = fd;
+            pfd.events = POLLOUT;
+            pfd.revents = 0;
+            int pr = poll(&pfd, 1, 3000); /* 3 second timeout */
+            if (pr > 0 && (pfd.revents & POLLOUT)) {
+                int so_err = 0;
+                socklen_t so_len = sizeof(so_err);
+                getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_err, &so_len);
+                if (so_err == 0) {
+                    /* Connected — restore blocking mode */
+                    int flags = fcntl(fd, F_GETFL, 0);
+                    if (flags >= 0) fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
+                    break;
+                }
+            }
+        }
         close(fd);
         fd = -1;
     }

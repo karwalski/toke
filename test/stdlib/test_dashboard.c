@@ -279,6 +279,55 @@ static void test_render_always_nonnull(void)
 }
 
 /* -----------------------------------------------------------------------
+ * Test: Dashboard with 0 widgets (Story 20.1.8)
+ * ----------------------------------------------------------------------- */
+static void test_zero_widgets_render(void)
+{
+    TkDashboard *d   = dashboard_new("EmptyDash", 3);
+    const char  *html = dashboard_render(d);
+
+    ASSERT(html != NULL, "0-widgets: render returns non-NULL");
+    ASSERT_CONTAINS(html, "<!DOCTYPE html>",
+                    "0-widgets: render produces valid DOCTYPE");
+    ASSERT_CONTAINS(html, "<html>",
+                    "0-widgets: render contains <html>");
+    ASSERT_CONTAINS(html, "</html>",
+                    "0-widgets: render contains </html>");
+    ASSERT_CONTAINS(html, "display:grid",
+                    "0-widgets: CSS grid still present with no widgets");
+
+    dashboard_free(d);
+}
+
+/* -----------------------------------------------------------------------
+ * Test: Dashboard render produces valid HTML structure (Story 20.1.8)
+ * ----------------------------------------------------------------------- */
+static void test_render_valid_html_structure(void)
+{
+    TkDashboard *d    = dashboard_new("StructTest", 2);
+    TkChartSpec *spec = make_bar_chart("Test");
+    dashboard_addchart(d, "s1", "Widget", spec, 0, 0, 1, 1);
+
+    const char *html = dashboard_render(d);
+    ASSERT(html != NULL, "html-structure: render non-NULL");
+    ASSERT_CONTAINS(html, "<head>",
+                    "html-structure: contains <head>");
+    ASSERT_CONTAINS(html, "</head>",
+                    "html-structure: contains </head>");
+    ASSERT_CONTAINS(html, "<body>",
+                    "html-structure: contains <body>");
+    ASSERT_CONTAINS(html, "</body>",
+                    "html-structure: contains </body>");
+    ASSERT_CONTAINS(html, "<title>StructTest</title>",
+                    "html-structure: title tag correct");
+    ASSERT_CONTAINS(html, "<style>",
+                    "html-structure: style tag present");
+
+    chart_free(spec);
+    dashboard_free(d);
+}
+
+/* -----------------------------------------------------------------------
  * Main
  * ----------------------------------------------------------------------- */
 
@@ -299,6 +348,8 @@ int main(void)
     test_render_always_nonnull();
     test_serve_function_exists();
     test_serve_null_dashboard();
+    test_zero_widgets_render();
+    test_render_valid_html_structure();
 
     if (failures == 0) {
         printf("\nAll tests passed.\n");

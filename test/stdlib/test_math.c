@@ -97,12 +97,191 @@ int main(void)
     ASSERT_DBL_EQ(math_ceil(3.2),       4.0,    1e-12, "ceil(3.2) == 4.0");
     ASSERT_DBL_EQ(math_pow(2.0, 10.0),  1024.0, 1e-9,  "pow(2.0, 10.0) == 1024.0");
 
-    /* --- empty array returns NaN --- */
+    /* ===================================================================
+     * Edge-case and hardening tests (Story 20.1.5)
+     * =================================================================== */
+
+    /* --- Empty arrays return NaN for all aggregate functions --- */
     {
         F64Array empty = { NULL, 0 };
-        double m = math_mean(empty);
-        ASSERT(isnan(m), "mean(empty) returns NaN");
+        ASSERT(isnan(math_mean(empty)),       "mean(empty) returns NaN");
+        ASSERT(isnan(math_median(empty)),     "median(empty) returns NaN");
+        ASSERT(isnan(math_stddev(empty)),     "stddev(empty) returns NaN");
+        ASSERT(isnan(math_variance(empty)),   "variance(empty) returns NaN");
+        ASSERT(isnan(math_min(empty)),        "min(empty) returns NaN");
+        ASSERT(isnan(math_max(empty)),        "max(empty) returns NaN");
+        ASSERT(isnan(math_percentile(empty, 50.0)),
+               "percentile(empty, 50) returns NaN");
+        ASSERT_DBL_EQ(math_sum(empty), 0.0, 1e-12, "sum(empty) == 0.0");
     }
+
+    /* --- NaN propagation in input arrays --- */
+    {
+        double xs[] = {1.0, NAN, 3.0};
+        ASSERT(isnan(math_sum(FA(xs))),    "sum([1,NaN,3]) is NaN");
+        ASSERT(isnan(math_mean(FA(xs))),   "mean([1,NaN,3]) is NaN");
+        ASSERT(isnan(math_stddev(FA(xs))), "stddev([1,NaN,3]) is NaN");
+    }
+
+    /* --- +/-Inf inputs --- */
+    {
+        double xs[] = {1.0, INFINITY, 3.0};
+        ASSERT(math_sum(FA(xs)) == INFINITY, "sum([1,Inf,3]) == Inf");
+        ASSERT(math_mean(FA(xs)) == INFINITY, "mean([1,Inf,3]) == Inf");
+        ASSERT(math_max(FA(xs)) == INFINITY, "max([1,Inf,3]) == Inf");
+    }
+    {
+        double xs[] = {1.0, -INFINITY, 3.0};
+        ASSERT(math_sum(FA(xs)) == -INFINITY, "sum([1,-Inf,3]) == -Inf");
+        ASSERT(math_min(FA(xs)) == -INFINITY, "min([1,-Inf,3]) == -Inf");
+    }
+    {
+        double xs[] = {INFINITY, -INFINITY};
+        ASSERT(isnan(math_sum(FA(xs))), "sum([Inf,-Inf]) is NaN");
+    }
+
+    /* --- Single-element arrays --- */
+    {
+        double xs[] = {42.0};
+        ASSERT_DBL_EQ(math_median(FA(xs)), 42.0, 1e-12,
+                      "median([42]) == 42.0");
+        ASSERT_DBL_EQ(math_stddev(FA(xs)), 0.0, 1e-12,
+                      "stddev([42]) == 0.0 (single element)");
+        ASSERT_DBL_EQ(math_variance(FA(xs)), 0.0, 1e-12,
+                      "variance([42]) == 0.0 (single element)");
+        ASSERT_DBL_EQ(math_mean(FA(xs)), 42.0, 1e-12,
+                      "mean([42]) == 42.0");
+        ASSERT_DBL_EQ(math_min(FA(xs)), 42.0, 1e-12,
+                      "min([42]) == 42.0");
+        ASSERT_DBL_EQ(math_max(FA(xs)), 42.0, 1e-12,
+                      "max([42]) == 42.0");
+    }
+
+    /* --- Identical values: stddev == 0 --- */
+    {
+        double xs[] = {7.0, 7.0, 7.0, 7.0, 7.0};
+        ASSERT_DBL_EQ(math_stddev(FA(xs)), 0.0, 1e-12,
+                      "stddev([7,7,7,7,7]) == 0.0");
+        ASSERT_DBL_EQ(math_variance(FA(xs)), 0.0, 1e-12,
+                      "variance([7,7,7,7,7]) == 0.0");
+        ASSERT_DBL_EQ(math_median(FA(xs)), 7.0, 1e-12,
+                      "median([7,7,7,7,7]) == 7.0");
+    }
+
+    /* --- Percentile at extreme boundaries --- */
+    {
+        double xs[] = {10.0, 20.0, 30.0, 40.0, 50.0};
+        ASSERT_DBL_EQ(math_percentile(FA(xs), 0.0), 10.0, 1e-12,
+                      "percentile(5-elem, 0) == min");
+        ASSERT_DBL_EQ(math_percentile(FA(xs), 100.0), 50.0, 1e-12,
+                      "percentile(5-elem, 100) == max");
+        /* Near-boundary: 0.001 and 99.999 */
+        double p_low = math_percentile(FA(xs), 0.001);
+        ASSERT(p_low >= 10.0 && p_low <= 10.001,
+               "percentile(5-elem, 0.001) near min");
+        double p_high = math_percentile(FA(xs), 99.999);
+        ASSERT(p_high >= 49.999 && p_high <= 50.0,
+               "percentile(5-elem, 99.999) near max");
+        /* Negative and >100 clamp */
+        ASSERT_DBL_EQ(math_percentile(FA(xs), -5.0), 10.0, 1e-12,
+                      "percentile(5-elem, -5) clamps to min");
+        ASSERT_DBL_EQ(math_percentile(FA(xs), 105.0), 50.0, 1e-12,
+                      "percentile(5-elem, 105) clamps to max");
+    }
+
+    /* --- Single-element percentile --- */
+    {
+        double xs[] = {99.0};
+        ASSERT_DBL_EQ(math_percentile(FA(xs), 0.0), 99.0, 1e-12,
+                      "percentile([99], 0) == 99");
+        ASSERT_DBL_EQ(math_percentile(FA(xs), 50.0), 99.0, 1e-12,
+                      "percentile([99], 50) == 99");
+        ASSERT_DBL_EQ(math_percentile(FA(xs), 100.0), 99.0, 1e-12,
+                      "percentile([99], 100) == 99");
+    }
+
+    /* --- Linear regression: vertical line (all same x) --- */
+    {
+        double xs[] = {5.0, 5.0, 5.0};
+        double ys[] = {1.0, 2.0, 3.0};
+        LinRegResult lr = math_linreg(FA(xs), FA(ys));
+        ASSERT(isnan(lr.slope),     "linreg vertical: slope is NaN");
+        ASSERT(isnan(lr.intercept), "linreg vertical: intercept is NaN");
+        ASSERT(isnan(lr.r_squared), "linreg vertical: r_squared is NaN");
+    }
+
+    /* --- Linear regression: all same y (horizontal line) --- */
+    {
+        double xs[] = {1.0, 2.0, 3.0};
+        double ys[] = {5.0, 5.0, 5.0};
+        LinRegResult lr = math_linreg(FA(xs), FA(ys));
+        ASSERT_DBL_EQ(lr.slope, 0.0, 1e-12,
+                      "linreg horizontal: slope == 0");
+        ASSERT_DBL_EQ(lr.intercept, 5.0, 1e-12,
+                      "linreg horizontal: intercept == 5");
+        ASSERT_DBL_EQ(lr.r_squared, 1.0, 1e-12,
+                      "linreg horizontal: r_squared == 1 (perfect flat)");
+    }
+
+    /* --- Linear regression: single point --- */
+    {
+        double xs[] = {3.0};
+        double ys[] = {7.0};
+        LinRegResult lr = math_linreg(FA(xs), FA(ys));
+        /* Single point: sxx==0, returns NaN */
+        ASSERT(isnan(lr.slope), "linreg single point: slope is NaN");
+    }
+
+    /* --- Linear regression: empty arrays --- */
+    {
+        F64Array empty = { NULL, 0 };
+        LinRegResult lr = math_linreg(empty, empty);
+        ASSERT(isnan(lr.slope),     "linreg empty: slope is NaN");
+        ASSERT(isnan(lr.intercept), "linreg empty: intercept is NaN");
+        ASSERT(isnan(lr.r_squared), "linreg empty: r_squared is NaN");
+    }
+
+    /* --- Very large array (1000+ elements) --- */
+    {
+        double big[2000];
+        for (int i = 0; i < 2000; i++) big[i] = (double)(i + 1);
+        F64Array fa = { big, 2000 };
+        /* sum = n*(n+1)/2 = 2000*2001/2 = 2001000 */
+        ASSERT_DBL_EQ(math_sum(fa), 2001000.0, 1e-6,
+                      "sum(1..2000) == 2001000");
+        ASSERT_DBL_EQ(math_mean(fa), 1000.5, 1e-9,
+                      "mean(1..2000) == 1000.5");
+        /* median of 1..2000 (even count) = (1000+1001)/2 = 1000.5 */
+        ASSERT_DBL_EQ(math_median(fa), 1000.5, 1e-9,
+                      "median(1..2000) == 1000.5");
+        ASSERT_DBL_EQ(math_min(fa), 1.0, 1e-12,
+                      "min(1..2000) == 1.0");
+        ASSERT_DBL_EQ(math_max(fa), 2000.0, 1e-12,
+                      "max(1..2000) == 2000.0");
+        ASSERT_DBL_EQ(math_percentile(fa, 50.0), 1000.5, 1e-6,
+                      "percentile(1..2000, 50) == 1000.5");
+    }
+
+    /* --- Floating point precision: catastrophic cancellation test --- */
+    {
+        /* Values near a large offset: stddev should reflect small spread. */
+        double xs[] = {1e15 + 1.0, 1e15 + 2.0, 1e15 + 3.0};
+        double var = math_variance(FA(xs));
+        /* Population variance of {1,2,3} offset = 2/3 ≈ 0.6667 */
+        /* With naive algorithm on doubles, this may lose precision. */
+        /* We allow a generous tolerance to verify it doesn't blow up. */
+        ASSERT(var >= 0.0 && var < 2.0,
+               "variance near 1e15 offset is non-negative and reasonable");
+    }
+
+    /* --- Scalar edge cases --- */
+    ASSERT_DBL_EQ(math_abs(0.0), 0.0, 1e-12, "abs(0.0) == 0.0");
+    ASSERT_DBL_EQ(math_abs(-0.0), 0.0, 1e-12, "abs(-0.0) == 0.0");
+    ASSERT(isnan(math_sqrt(-1.0)), "sqrt(-1.0) is NaN");
+    ASSERT_DBL_EQ(math_sqrt(0.0), 0.0, 1e-12, "sqrt(0.0) == 0.0");
+    ASSERT(math_pow(2.0, -1.0) == 0.5, "pow(2, -1) == 0.5");
+    ASSERT_DBL_EQ(math_floor(-3.7), -4.0, 1e-12, "floor(-3.7) == -4.0");
+    ASSERT_DBL_EQ(math_ceil(-3.2), -3.0, 1e-12, "ceil(-3.2) == -3.0");
 
     /* --- summary --- */
     if (failures == 0) {

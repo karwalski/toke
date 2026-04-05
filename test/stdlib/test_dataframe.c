@@ -24,6 +24,26 @@
  *   T18  df_columnstr returns NULL for an f64 column
  *   T19  df_tocsv round-trips: fromcsv → tocsv produces header + data rows
  *   T20  df_schema returns correct column names and dtypes
+ *   T21  Large dataframe (1000+ rows) handles scale
+ *   T22  Empty dataframe operations (0 data rows)
+ *   T23  Single row/column dataframe
+ *   T24  Filter on nonexistent column returns NULL
+ *   T25  Filter on str column returns NULL
+ *   T26  Filter with no matches returns 0-row frame
+ *   T27  Filter equality (op==2) returns exact matches
+ *   T28  Join on missing column returns error
+ *   T29  GroupBy mean aggregation
+ *   T30  GroupBy on missing columns returns empty result
+ *   T31  Column access out of bounds (NULL name, empty name)
+ *   T32  Duplicate column names: df_column returns the first match
+ *   T33  df_fromrows with zero rows
+ *   T34  df_fromrows with NULL headers returns NULL
+ *   T35  tocsv round-trip consistency (parse back produces same shape/values)
+ *   T36  Schema on mixed column types
+ *   T37  df_head with n > nrows returns all rows
+ *   T38  df_head with n == 0 returns 0 rows
+ *   T39  df_tojson on empty frame
+ *   T40  df_shape on NULL frame
  */
 
 #include <stdio.h>
@@ -406,6 +426,368 @@ static void t20_schema(void)
 }
 
 /* -------------------------------------------------------------------------
+ * Hardening tests (Story 20.1.6)
+ * ------------------------------------------------------------------------- */
+
+static void t21_large_dataframe(void)
+{
+    /* Build a CSV with 1000+ rows programmatically. */
+    /* Header: idx,val  —  1002 rows of data */
+    size_t buf_cap = 64 * 1024;
+    char *csv_buf = malloc(buf_cap);
+    ASSERT(csv_buf != NULL, "T21: alloc csv buffer");
+    if (!csv_buf) return;
+
+    size_t pos = 0;
+    pos += (size_t)snprintf(csv_buf + pos, buf_cap - pos, "idx,val\r\n");
+    for (int i = 0; i < 1002; i++) {
+        pos += (size_t)snprintf(csv_buf + pos, buf_cap - pos, "%d,%d\r\n", i, i * 10);
+    }
+
+    DfResult r = df_fromcsv(csv_buf, (uint64_t)pos, 1);
+    ASSERT(!r.is_err,           "T21: large CSV parses without error");
+    ASSERT(r.ok != NULL,        "T21: large CSV frame non-NULL");
+    ASSERT(r.ok->nrows == 1002, "T21: 1002 data rows");
+    ASSERT(r.ok->ncols == 2,    "T21: 2 columns");
+
+    /* Verify last row */
+    DfCol *idx = df_column(r.ok, "idx");
+    ASSERT(idx != NULL && idx->type == DF_COL_F64, "T21: idx is f64");
+    if (idx && idx->type == DF_COL_F64) {
+        ASSERT(idx->f64_data[1001] == 1001.0, "T21: last row idx == 1001");
+    }
+
+    /* Filter on large frame */
+    TkDataframe *filtered = df_filter(r.ok, "idx", 999.0, 3 /* >= */);
+    ASSERT(filtered != NULL,       "T21: filter on large frame non-NULL");
+    ASSERT(filtered->nrows == 3,   "T21: filter >= 999 yields 3 rows (999,1000,1001)");
+    df_free(filtered);
+
+    /* Head on large frame */
+    TkDataframe *h = df_head(r.ok, 5);
+    ASSERT(h != NULL && h->nrows == 5, "T21: head(5) on large frame");
+    df_free(h);
+
+    df_free(r.ok);
+    free(csv_buf);
+}
+
+static void t22_empty_dataframe(void)
+{
+    /* CSV with header only, no data rows. */
+    const char *csv = "a,b,c\r\n";
+    DfResult r = df_fromcsv(csv, (uint64_t)strlen(csv), 1);
+    ASSERT(!r.is_err,        "T22: header-only CSV parses");
+    ASSERT(r.ok != NULL,     "T22: frame non-NULL");
+    ASSERT(r.ok->ncols == 3, "T22: 3 columns");
+    ASSERT(r.ok->nrows == 0, "T22: 0 data rows");
+
+    /* Operations on empty frame should not crash. */
+    uint64_t nr, nc;
+    df_shape(r.ok, &nr, &nc);
+    ASSERT(nr == 0 && nc == 3, "T22: shape is 0x3");
+
+    TkDataframe *h = df_head(r.ok, 10);
+    ASSERT(h != NULL && h->nrows == 0, "T22: head on empty frame returns 0 rows");
+    df_free(h);
+
+    const char *json = df_tojson(r.ok);
+    ASSERT(json != NULL, "T22: tojson on empty frame non-NULL");
+    ASSERT_STREQ(json, "[]", "T22: tojson on empty frame is '[]'");
+    free((char *)json);
+
+    const char *csv_out = df_tocsv(r.ok);
+    ASSERT(csv_out != NULL, "T22: tocsv on empty frame non-NULL");
+    free((char *)csv_out);
+
+    df_free(r.ok);
+}
+
+static void t23_single_row_col(void)
+{
+    /* Single column, single row. */
+    const char *csv = "x\r\n42\r\n";
+    DfResult r = df_fromcsv(csv, (uint64_t)strlen(csv), 1);
+    ASSERT(!r.is_err,        "T23: single-cell CSV parses");
+    ASSERT(r.ok != NULL,     "T23: frame non-NULL");
+    ASSERT(r.ok->ncols == 1, "T23: 1 column");
+    ASSERT(r.ok->nrows == 1, "T23: 1 row");
+    DfCol *x = df_column(r.ok, "x");
+    ASSERT(x != NULL && x->type == DF_COL_F64, "T23: x is f64");
+    if (x) ASSERT(x->f64_data[0] == 42.0, "T23: x[0] == 42");
+    df_free(r.ok);
+}
+
+static void t24_filter_nonexistent_col(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+    TkDataframe *filtered = df_filter(df, "no_such_column", 0.0, 4);
+    ASSERT(filtered == NULL, "T24: filter on nonexistent column returns NULL");
+    df_free(df);
+}
+
+static void t25_filter_str_col(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+    TkDataframe *filtered = df_filter(df, "name", 0.0, 4);
+    ASSERT(filtered == NULL, "T25: filter on str column returns NULL");
+    df_free(df);
+}
+
+static void t26_filter_no_matches(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+    /* age > 1000 — nobody qualifies */
+    TkDataframe *filtered = df_filter(df, "age", 1000.0, 4 /* > */);
+    ASSERT(filtered != NULL,      "T26: filter returns non-NULL even with 0 matches");
+    ASSERT(filtered->nrows == 0,  "T26: 0 rows match age > 1000");
+    ASSERT(filtered->ncols == df->ncols, "T26: column count preserved");
+    df_free(filtered);
+    df_free(df);
+}
+
+static void t27_filter_equality(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+    /* age == 30 → Alice and Carol */
+    TkDataframe *filtered = df_filter(df, "age", 30.0, 2 /* == */);
+    ASSERT(filtered != NULL,      "T27: filter == returns non-NULL");
+    ASSERT(filtered->nrows == 2,  "T27: age == 30 yields 2 rows");
+    df_free(filtered);
+    df_free(df);
+}
+
+static void t28_join_missing_col(void)
+{
+    uint64_t ll = (uint64_t)strlen(CSV_LEFT);
+    uint64_t rl = (uint64_t)strlen(CSV_RIGHT);
+    DfResult lr = df_fromcsv(CSV_LEFT,  ll, 1);
+    DfResult rr = df_fromcsv(CSV_RIGHT, rl, 1);
+    if (lr.is_err || !lr.ok || rr.is_err || !rr.ok) {
+        ASSERT(0, "T28: parsing join CSVs");
+        df_free(lr.ok); df_free(rr.ok);
+        return;
+    }
+    DfResult jr = df_join(lr.ok, rr.ok, "nonexistent_key");
+    ASSERT(jr.is_err,      "T28: join on missing column returns error");
+    ASSERT(jr.ok == NULL,  "T28: join on missing column has NULL ok");
+    ASSERT(jr.err_msg != NULL, "T28: join error has message");
+    df_free(lr.ok);
+    df_free(rr.ok);
+}
+
+static void t29_groupby_mean(void)
+{
+    uint64_t len    = (uint64_t)strlen(CSV_GROUP);
+    DfResult r      = df_fromcsv(CSV_GROUP, len, 1);
+    if (r.is_err || !r.ok) { ASSERT(0, "T29: df_fromcsv group csv"); return; }
+    TkDataframe *df = r.ok;
+    DfGroupResult gr = df_groupby(df, "cat", "val", 2 /* mean */);
+    ASSERT(gr.nrows == 3, "T29: groupby mean has 3 groups");
+
+    /* Find group X: values 1,3 → mean 2.0 */
+    int found_x = 0;
+    for (uint64_t i = 0; i < gr.nrows; i++) {
+        if (strcmp(gr.rows[i].group_val, "X") == 0) {
+            ASSERT(gr.rows[i].agg_result == 2.0, "T29: mean(X) == 2.0");
+            found_x = 1;
+        }
+    }
+    ASSERT(found_x, "T29: group X found");
+
+    for (uint64_t i = 0; i < gr.nrows; i++) free((char *)gr.rows[i].group_val);
+    free(gr.rows);
+    df_free(df);
+}
+
+static void t30_groupby_missing_cols(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+
+    /* Group column doesn't exist */
+    DfGroupResult gr1 = df_groupby(df, "nope", "age", 0);
+    ASSERT(gr1.nrows == 0, "T30: groupby missing group_col returns 0 groups");
+    ASSERT(gr1.rows == NULL, "T30: groupby missing group_col rows is NULL");
+
+    /* Agg column doesn't exist */
+    DfGroupResult gr2 = df_groupby(df, "name", "nope", 1);
+    ASSERT(gr2.nrows == 0, "T30: groupby missing agg_col returns 0 groups");
+
+    /* Group col is f64 (not str) — should fail */
+    DfGroupResult gr3 = df_groupby(df, "age", "score", 0);
+    ASSERT(gr3.nrows == 0, "T30: groupby on f64 group_col returns 0 groups");
+
+    df_free(df);
+}
+
+static void t31_column_null_and_empty(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+
+    DfCol *c1 = df_column(df, NULL);
+    ASSERT(c1 == NULL, "T31: df_column(NULL name) returns NULL");
+
+    DfCol *c2 = df_column(df, "");
+    ASSERT(c2 == NULL, "T31: df_column(empty name) returns NULL");
+
+    DfCol *c3 = df_column(NULL, "age");
+    ASSERT(c3 == NULL, "T31: df_column(NULL df) returns NULL");
+
+    df_free(df);
+}
+
+static void t32_duplicate_column_names(void)
+{
+    /* CSV with duplicate column name: two "x" columns. */
+    const char *csv = "x,x\r\n1,hello\r\n";
+    DfResult r = df_fromcsv(csv, (uint64_t)strlen(csv), 1);
+    ASSERT(!r.is_err, "T32: duplicate col name CSV parses");
+    ASSERT(r.ok != NULL, "T32: frame non-NULL");
+    if (r.ok) {
+        ASSERT(r.ok->ncols == 2, "T32: 2 columns");
+        /* df_column returns first match */
+        DfCol *c = df_column(r.ok, "x");
+        ASSERT(c != NULL, "T32: df_column finds 'x'");
+        /* The first 'x' column has value "1" which is f64 */
+        if (c) ASSERT(c->type == DF_COL_F64, "T32: first 'x' is f64 (value 1)");
+    }
+    df_free(r.ok);
+}
+
+static void t33_fromrows_zero_rows(void)
+{
+    const char *headers[] = {"a", "b"};
+    TkDataframe *df = df_fromrows(headers, 2, NULL, 0);
+    ASSERT(df != NULL,     "T33: fromrows with 0 rows returns non-NULL");
+    if (df) {
+        ASSERT(df->ncols == 2, "T33: 2 columns");
+        ASSERT(df->nrows == 0, "T33: 0 rows");
+    }
+    df_free(df);
+}
+
+static void t34_fromrows_null_headers(void)
+{
+    TkDataframe *df = df_fromrows(NULL, 0, NULL, 0);
+    ASSERT(df == NULL, "T34: fromrows with NULL headers returns NULL");
+}
+
+static void t35_tocsv_roundtrip(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+
+    /* Serialize to CSV */
+    const char *csv1 = df_tocsv(df);
+    ASSERT(csv1 != NULL, "T35: first tocsv non-NULL");
+    if (!csv1) { df_free(df); return; }
+
+    /* Parse it back */
+    DfResult r2 = df_fromcsv(csv1, (uint64_t)strlen(csv1), 1);
+    ASSERT(!r2.is_err, "T35: round-trip parse succeeds");
+    ASSERT(r2.ok != NULL, "T35: round-trip frame non-NULL");
+    if (!r2.ok) { free((char *)csv1); df_free(df); return; }
+
+    /* Same shape */
+    ASSERT(r2.ok->ncols == df->ncols, "T35: round-trip ncols match");
+    ASSERT(r2.ok->nrows == df->nrows, "T35: round-trip nrows match");
+
+    /* Spot-check: name column still has Alice */
+    DfCol *name = df_column(r2.ok, "name");
+    ASSERT(name != NULL && name->type == DF_COL_STR, "T35: name col preserved");
+    if (name && name->str_data) {
+        ASSERT_STREQ(name->str_data[0], "Alice", "T35: name[0] still Alice");
+    }
+
+    /* Spot-check: age column still has 30 */
+    DfCol *age = df_column(r2.ok, "age");
+    ASSERT(age != NULL && age->type == DF_COL_F64, "T35: age col preserved as f64");
+    if (age && age->f64_data) {
+        ASSERT(age->f64_data[0] == 30.0, "T35: age[0] still 30");
+    }
+
+    df_free(r2.ok);
+    free((char *)csv1);
+    df_free(df);
+}
+
+static void t36_schema_mixed_types(void)
+{
+    /* Build a frame with str, f64, str columns */
+    const char *headers[] = {"label", "count", "note"};
+    const char *row0[] = {"a", "10", "ok"};
+    const char *row1[] = {"b", "20", "fine"};
+    const char **rows[] = {row0, row1};
+    TkDataframe *df = df_fromrows(headers, 3, (const char ***)rows, 2);
+    ASSERT(df != NULL, "T36: mixed-type frame created");
+    if (!df) return;
+
+    uint64_t len = 0;
+    DfSeries *s = df_schema(df, &len);
+    ASSERT(s != NULL, "T36: schema non-NULL");
+    ASSERT(len == 3, "T36: 3 columns in schema");
+    if (s && len == 3) {
+        ASSERT_STREQ(s[0].dtype, "str", "T36: label is str");
+        ASSERT_STREQ(s[1].dtype, "f64", "T36: count is f64");
+        ASSERT_STREQ(s[2].dtype, "str", "T36: note is str");
+        ASSERT(s[0].len == 2, "T36: label len == 2");
+        ASSERT(s[1].len == 2, "T36: count len == 2");
+    }
+    if (s) {
+        for (uint64_t i = 0; i < len; i++) { free(s[i].name); free(s[i].dtype); }
+        free(s);
+    }
+    df_free(df);
+}
+
+static void t37_head_exceeds_nrows(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+    TkDataframe *h = df_head(df, 100);
+    ASSERT(h != NULL, "T37: head(100) on 4-row frame non-NULL");
+    ASSERT(h->nrows == 4, "T37: head(100) returns all 4 rows");
+    df_free(h);
+    df_free(df);
+}
+
+static void t38_head_zero(void)
+{
+    TkDataframe *df = parse_hdr(CSV_WITH_HEADER);
+    if (!df) return;
+    TkDataframe *h = df_head(df, 0);
+    ASSERT(h != NULL, "T38: head(0) returns non-NULL");
+    ASSERT(h->nrows == 0, "T38: head(0) returns 0 rows");
+    df_free(h);
+    df_free(df);
+}
+
+static void t39_tojson_empty(void)
+{
+    TkDataframe *df = df_new();
+    ASSERT(df != NULL, "T39: df_new non-NULL");
+    const char *json = df_tojson(df);
+    ASSERT(json != NULL, "T39: tojson on brand-new frame non-NULL");
+    ASSERT_STREQ(json, "[]", "T39: tojson on empty df_new is '[]'");
+    free((char *)json);
+    df_free(df);
+}
+
+static void t40_shape_null(void)
+{
+    uint64_t nr = 999, nc = 999;
+    df_shape(NULL, &nr, &nc);
+    ASSERT(nr == 0, "T40: shape(NULL) sets nrows to 0");
+    ASSERT(nc == 0, "T40: shape(NULL) sets ncols to 0");
+}
+
+/* -------------------------------------------------------------------------
  * main
  * ------------------------------------------------------------------------- */
 
@@ -431,6 +813,26 @@ int main(void)
     t18_columnstr_f64_returns_null();
     t19_tocsv();
     t20_schema();
+    t21_large_dataframe();
+    t22_empty_dataframe();
+    t23_single_row_col();
+    t24_filter_nonexistent_col();
+    t25_filter_str_col();
+    t26_filter_no_matches();
+    t27_filter_equality();
+    t28_join_missing_col();
+    t29_groupby_mean();
+    t30_groupby_missing_cols();
+    t31_column_null_and_empty();
+    t32_duplicate_column_names();
+    t33_fromrows_zero_rows();
+    t34_fromrows_null_headers();
+    t35_tocsv_roundtrip();
+    t36_schema_mixed_types();
+    t37_head_exceeds_nrows();
+    t38_head_zero();
+    t39_tojson_empty();
+    t40_shape_null();
 
     printf("\n%s — %d failure(s)\n", failures == 0 ? "ALL PASS" : "FAILED", failures);
     return failures == 0 ? 0 : 1;

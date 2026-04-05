@@ -165,7 +165,7 @@ const char *llm_tool_build_tools_json(TkToolDecl *tools, uint64_t ntools)
 /* find_key — find the first occurrence of "key": in json starting at *pos.
  * Returns a pointer to the start of the value (after ": "), or NULL if not found.
  * Updates *pos to point past the key. */
-static const char *find_key(const char *json, const char *key, size_t *pos)
+static const char __attribute__((unused)) *find_key(const char *json, const char *key, size_t *pos)
 {
     size_t klen = strlen(key);
     const char *p = json + *pos;
@@ -240,7 +240,7 @@ static char *extract_object(const char **ptr)
 
 /* extract_array_start — advance *ptr past the '[' of an array; return pointer to
  * the char after '[', or NULL if not found. */
-static const char *skip_to_array(const char *p)
+static const char __attribute__((unused)) *skip_to_array(const char *p)
 {
     while (*p && *p != '[') p++;
     if (*p == '[') return p + 1;

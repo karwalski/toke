@@ -23,7 +23,10 @@ typedef enum {
 
 typedef struct { FileErrKind kind; const char *msg; } FileErr;
 
+#ifndef TK_STRARRAY_DEFINED
+#define TK_STRARRAY_DEFINED
 typedef struct { const char **data; uint64_t len; } StrArray;
+#endif
 
 typedef struct { const char *ok; int is_err; FileErr err; } StrFileResult;
 typedef struct { int ok;         int is_err; FileErr err; } BoolFileResult;

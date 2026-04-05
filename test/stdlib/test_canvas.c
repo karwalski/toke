@@ -111,6 +111,55 @@ int main(void)
     ASSERT(canvas_set_alpha(c6, 1.0)                == c6, "set_alpha returns same pointer");
     canvas_free(c6);
 
+    /* --- Test 15: canvas op_count tracks many ops (Story 20.1.8) --- */
+    {
+        TkCanvas *cm = canvas_new("many", 100, 100);
+        int i;
+        for (i = 0; i < 50; i++) {
+            canvas_fill_rect(cm, 0, 0, 1, 1, "red");
+        }
+        ASSERT(canvas_op_count(cm) == 50,
+               "op-count-limit: 50 ops tracked correctly");
+        const char *js_m = canvas_to_js(cm);
+        ASSERT(js_m != NULL, "op-count-limit: to_js non-NULL after 50 ops");
+        canvas_free(cm);
+    }
+
+    /* --- Test 16: empty canvas render (Story 20.1.8) --- */
+    {
+        TkCanvas *ce = canvas_new("empty", 320, 240);
+        ASSERT(canvas_op_count(ce) == 0,
+               "empty-canvas: op_count is 0");
+
+        const char *js_e = canvas_to_js(ce);
+        ASSERT(js_e != NULL, "empty-canvas: to_js returns non-NULL");
+        ASSERT_CONTAINS(js_e, "getElementById('empty')",
+                        "empty-canvas: to_js contains getElementById");
+
+        const char *html_e = canvas_to_html(ce);
+        ASSERT(html_e != NULL, "empty-canvas: to_html returns non-NULL");
+        ASSERT_CONTAINS(html_e, "<canvas",
+                        "empty-canvas: to_html contains <canvas");
+        ASSERT_CONTAINS(html_e, "width=\"320\"",
+                        "empty-canvas: to_html contains width");
+        canvas_free(ce);
+    }
+
+    /* --- Test 17: very large canvas dimensions (Story 20.1.8) --- */
+    {
+        TkCanvas *cl = canvas_new("big", 65535, 65535);
+        ASSERT(cl != NULL, "large-canvas: canvas_new returns non-NULL");
+        canvas_fill_rect(cl, 0, 0, 65535, 65535, "white");
+
+        const char *html_l = canvas_to_html(cl);
+        ASSERT(html_l != NULL, "large-canvas: to_html returns non-NULL");
+        ASSERT_CONTAINS(html_l, "width=\"65535\"",
+                        "large-canvas: width=65535 in HTML");
+        ASSERT_CONTAINS(html_l, "height=\"65535\"",
+                        "large-canvas: height=65535 in HTML");
+        canvas_free(cl);
+    }
+
     /* --- Summary --- */
     if (failures == 0) {
         printf("All canvas tests passed.\n");

@@ -16,7 +16,10 @@
 
 #include <stdint.h>
 
+#ifndef TK_F64ARRAY_DEFINED
+#define TK_F64ARRAY_DEFINED
 typedef struct { const double *data; uint64_t len; } F64Array;
+#endif
 
 typedef struct {
     double slope;

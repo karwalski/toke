@@ -250,6 +250,86 @@ static void test_multiple_elements(void)
 }
 
 /* -----------------------------------------------------------------------
+ * Test 14: SVG coordinate precision — very small values (Story 20.1.8)
+ * ----------------------------------------------------------------------- */
+static void test_small_coordinates(void)
+{
+    TkSvgDoc  *doc  = svg_doc(10.0, 10.0);
+    TkSvgStyle s    = svg_style("red", "none", 0.0);
+    TkSvgElem *elem = svg_circle(0.001, 0.002, 0.0005, s);
+    svg_append(doc, elem);
+    const char *out = svg_render(doc);
+
+    ASSERT_CONTAINS(out, "cx=\"0.00\"",  "small-coords: cx renders for tiny value");
+    ASSERT_CONTAINS(out, "<circle",      "small-coords: circle element present");
+    svg_free(doc);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 15: SVG coordinate precision — very large values (Story 20.1.8)
+ * ----------------------------------------------------------------------- */
+static void test_large_coordinates(void)
+{
+    TkSvgDoc  *doc  = svg_doc(100000.0, 100000.0);
+    TkSvgStyle s    = svg_style("blue", "none", 0.0);
+    TkSvgElem *elem = svg_rect(99999.0, 99999.0, 50000.0, 50000.0, s);
+    svg_append(doc, elem);
+    const char *out = svg_render(doc);
+
+    ASSERT_CONTAINS(out, "99999",  "large-coords: large coordinate value present");
+    ASSERT_CONTAINS(out, "50000",  "large-coords: large dimension value present");
+    svg_free(doc);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 16: SVG with many elements (120+) (Story 20.1.8)
+ * ----------------------------------------------------------------------- */
+static void test_many_elements(void)
+{
+    TkSvgDoc  *doc = svg_doc(1000.0, 1000.0);
+    TkSvgStyle s   = svg_style("green", "none", 0.0);
+    int i;
+
+    for (i = 0; i < 120; i++) {
+        svg_append(doc, svg_rect((double)i, (double)i, 5.0, 5.0, s));
+    }
+
+    const char *out = svg_render(doc);
+    ASSERT(out != NULL, "many-elements: render returns non-NULL for 120 elements");
+    ASSERT_CONTAINS(out, "<svg", "many-elements: opening <svg present");
+    ASSERT_CONTAINS(out, "</svg>", "many-elements: closing </svg> present");
+
+    /* Count <rect occurrences */
+    int rect_count = 0;
+    const char *p = out;
+    while ((p = strstr(p, "<rect")) != NULL) {
+        rect_count++;
+        p += 5;
+    }
+    ASSERT(rect_count == 120, "many-elements: exactly 120 rect elements rendered");
+
+    svg_free(doc);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 17: Empty SVG document (Story 20.1.8)
+ * ----------------------------------------------------------------------- */
+static void test_empty_svg_document(void)
+{
+    TkSvgDoc   *doc = svg_doc(0.0, 0.0);
+    const char *out = svg_render(doc);
+
+    ASSERT(out != NULL,          "empty-svg: render returns non-NULL");
+    ASSERT_CONTAINS(out, "<svg", "empty-svg: contains <svg");
+    ASSERT_CONTAINS(out, "</svg>", "empty-svg: contains </svg>");
+    /* No element tags between <svg> and </svg> */
+    ASSERT(strstr(out, "<rect") == NULL,   "empty-svg: no rect elements");
+    ASSERT(strstr(out, "<circle") == NULL, "empty-svg: no circle elements");
+
+    svg_free(doc);
+}
+
+/* -----------------------------------------------------------------------
  * main
  * ----------------------------------------------------------------------- */
 
@@ -268,6 +348,10 @@ int main(void)
     test_arrow();
     test_style_attrs();
     test_multiple_elements();
+    test_small_coordinates();
+    test_large_coordinates();
+    test_many_elements();
+    test_empty_svg_document();
 
     if (failures == 0) {
         printf("All tests passed.\n");

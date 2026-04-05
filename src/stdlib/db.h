@@ -23,7 +23,10 @@
 
 /* ── basic aggregates ─────────────────────────────────────────────────────── */
 
+#ifndef TK_STRARRAY_DEFINED
+#define TK_STRARRAY_DEFINED
 typedef struct { const char **data; uint64_t len; } StrArray;
+#endif
 
 typedef struct {
     const char **col_names;

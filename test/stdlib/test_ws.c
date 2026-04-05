@@ -450,6 +450,152 @@ static void test_send_null_text(void)
 }
 
 /* -----------------------------------------------------------------------
+ * Test 27: 0-byte payload encode/decode round-trip (Story 20.1.7)
+ * ----------------------------------------------------------------------- */
+static void test_zero_byte_payload(void)
+{
+    WsEncodeResult enc = ws_encode_frame(WS_TEXT, NULL, 0, 0);
+    uint64_t consumed = 0;
+    WsFrameResult dec;
+
+    ASSERT(!enc.is_err, "0-byte payload: encode no error");
+    ASSERT(enc.data != NULL, "0-byte payload: data not NULL");
+    /* Unmasked: 2-byte header, 0 payload */
+    ASSERT(enc.len == 2, "0-byte payload: total encoded length == 2");
+
+    dec = ws_decode_frame(enc.data, enc.len, &consumed);
+    ASSERT(!dec.is_err, "0-byte payload: decode no error");
+    ASSERT(dec.frame != NULL, "0-byte payload: frame not NULL");
+    ASSERT(dec.frame->opcode == WS_TEXT, "0-byte payload: opcode == WS_TEXT");
+    ASSERT(dec.frame->payload_len == 0, "0-byte payload: payload_len == 0");
+
+    ws_frame_free(dec.frame);
+    ws_encode_result_free(&enc);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 28: 125-byte payload — max single-byte length field (Story 20.1.7)
+ * ----------------------------------------------------------------------- */
+static void test_125_byte_payload_max_7bit(void)
+{
+    uint8_t payload[125];
+    memset(payload, 0x43, sizeof(payload));
+    WsEncodeResult enc = ws_encode_frame(WS_BINARY, payload, 125, 0);
+    uint64_t consumed = 0;
+    WsFrameResult dec;
+
+    ASSERT(!enc.is_err, "125-byte payload: encode no error");
+    /* Byte 1 lower 7 bits must be 125 (still fits in 7-bit field) */
+    ASSERT((enc.data[1] & 0x7F) == 125,
+           "125-byte payload: byte[1]&0x7F == 125 (7-bit max)");
+    /* Total wire size: 2-byte header + 125 payload = 127 */
+    ASSERT(enc.len == 127, "125-byte payload: total encoded length == 127");
+
+    dec = ws_decode_frame(enc.data, enc.len, &consumed);
+    ASSERT(!dec.is_err, "125-byte payload: decode no error");
+    ASSERT(dec.frame->payload_len == 125,
+           "125-byte payload: decoded payload_len == 125");
+
+    ws_frame_free(dec.frame);
+    ws_encode_result_free(&enc);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 29: 65536-byte payload — triggers 64-bit extended length (Story 20.1.7)
+ * ----------------------------------------------------------------------- */
+static void test_65536_byte_payload_64bit_length(void)
+{
+    uint64_t plen = 65536;
+    uint8_t *payload = (uint8_t *)malloc(plen);
+    ASSERT(payload != NULL, "64-bit length: alloc payload");
+    memset(payload, 0x44, plen);
+
+    WsEncodeResult enc = ws_encode_frame(WS_BINARY, payload, plen, 0);
+    ASSERT(!enc.is_err, "64-bit length: encode no error");
+    /* Byte 1 lower 7 bits must be 127 (signals 64-bit extended length) */
+    ASSERT((enc.data[1] & 0x7F) == 127,
+           "64-bit length: byte[1]&0x7F == 127");
+    /* Total wire size: 2 + 8 (extended) + 65536 = 65546 */
+    ASSERT(enc.len == 65546, "64-bit length: total encoded length == 65546");
+
+    uint64_t consumed = 0;
+    WsFrameResult dec = ws_decode_frame(enc.data, enc.len, &consumed);
+    ASSERT(!dec.is_err, "64-bit length: decode no error");
+    ASSERT(dec.frame != NULL, "64-bit length: frame not NULL");
+    ASSERT(dec.frame->payload_len == 65536,
+           "64-bit length: decoded payload_len == 65536");
+
+    ws_frame_free(dec.frame);
+    ws_encode_result_free(&enc);
+    free(payload);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 30: masked 0-byte payload round-trip (Story 20.1.7)
+ * ----------------------------------------------------------------------- */
+static void test_masked_zero_payload(void)
+{
+    WsEncodeResult enc = ws_encode_frame(WS_TEXT, NULL, 0, 1);
+    ASSERT(!enc.is_err, "masked 0-byte: encode no error");
+    ASSERT((enc.data[1] & 0x80) != 0, "masked 0-byte: MASK bit is set");
+    /* 2-byte header + 4-byte mask key + 0 payload = 6 */
+    ASSERT(enc.len == 6, "masked 0-byte: total encoded length == 6");
+
+    uint64_t consumed = 0;
+    WsFrameResult dec = ws_decode_frame(enc.data, enc.len, &consumed);
+    ASSERT(!dec.is_err, "masked 0-byte: decode no error");
+    ASSERT(dec.frame->payload_len == 0, "masked 0-byte: payload_len == 0");
+
+    ws_frame_free(dec.frame);
+    ws_encode_result_free(&enc);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 31: close frame with status code payload (Story 20.1.7)
+ * ----------------------------------------------------------------------- */
+static void test_close_frame_with_status(void)
+{
+    /* RFC 6455: close frame may carry a 2-byte status code */
+    uint8_t status_payload[2];
+    status_payload[0] = 0x03; /* 1000 = normal closure: 0x03E8 */
+    status_payload[1] = 0xE8;
+    WsEncodeResult enc = ws_encode_frame(WS_CLOSE, status_payload, 2, 0);
+    ASSERT(!enc.is_err, "close+status: encode no error");
+
+    uint64_t consumed = 0;
+    WsFrameResult dec = ws_decode_frame(enc.data, enc.len, &consumed);
+    ASSERT(!dec.is_err, "close+status: decode no error");
+    ASSERT(dec.frame->opcode == WS_CLOSE, "close+status: opcode == WS_CLOSE");
+    ASSERT(dec.frame->payload_len == 2, "close+status: payload_len == 2");
+    ASSERT(dec.frame->payload[0] == 0x03 && dec.frame->payload[1] == 0xE8,
+           "close+status: payload == 0x03E8 (1000)");
+
+    ws_frame_free(dec.frame);
+    ws_encode_result_free(&enc);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 32: pong frame encode/decode round-trip (Story 20.1.7)
+ * ----------------------------------------------------------------------- */
+static void test_pong_frame_roundtrip(void)
+{
+    const uint8_t *payload = (const uint8_t *)"pong!";
+    WsEncodeResult enc = ws_encode_frame(WS_PONG, payload, 5, 0);
+    ASSERT(!enc.is_err, "pong frame: encode no error");
+
+    uint64_t consumed = 0;
+    WsFrameResult dec = ws_decode_frame(enc.data, enc.len, &consumed);
+    ASSERT(!dec.is_err, "pong frame: decode no error");
+    ASSERT(dec.frame->opcode == WS_PONG, "pong frame: opcode == WS_PONG");
+    ASSERT(dec.frame->payload_len == 5, "pong frame: payload_len == 5");
+    ASSERT(memcmp(dec.frame->payload, "pong!", 5) == 0,
+           "pong frame: payload == 'pong!'");
+
+    ws_frame_free(dec.frame);
+    ws_encode_result_free(&enc);
+}
+
+/* -----------------------------------------------------------------------
  * main
  * ----------------------------------------------------------------------- */
 int main(void)
@@ -485,6 +631,14 @@ int main(void)
     test_broadcast_null();
     test_conn_free_null();
     test_send_null_text();
+
+    /* Edge-case frame tests (Story 20.1.7) */
+    test_zero_byte_payload();
+    test_125_byte_payload_max_7bit();
+    test_65536_byte_payload_64bit_length();
+    test_masked_zero_payload();
+    test_close_frame_with_status();
+    test_pong_frame_roundtrip();
 
     printf("=== %s ===\n", failures == 0 ? "ALL PASS" : "FAILURES");
     return failures == 0 ? 0 : 1;

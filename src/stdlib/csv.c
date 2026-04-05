@@ -117,7 +117,7 @@ static StrArray rowbuf_to_strarray(RowBuf *r)
     return sa;
 }
 
-static void rowbuf_free_fields(RowBuf *r)
+static void __attribute__((unused)) rowbuf_free_fields(RowBuf *r)
 {
     for (uint64_t i = 0; i < r->len; i++) free(r->fields[i]);
     free(r->fields);

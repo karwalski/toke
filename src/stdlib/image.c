@@ -150,7 +150,7 @@ static void bs_align(BitStream *bs)
 }
 
 /* Read a byte directly from the stream (byte-aligned) */
-static uint8_t bs_read_byte(BitStream *bs)
+static uint8_t __attribute__((unused)) bs_read_byte(BitStream *bs)
 {
     if (bs->bits_avail == 0 && bs->byte_pos < bs->src_len)
         return bs->src[bs->byte_pos++];

@@ -24,7 +24,14 @@ REPRO_FLAGS = -frandom-seed=tkc \
 
 export SOURCE_DATE_EPOCH ?= 0
 
-.PHONY: all clean lint conform conform-check build-all ci test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema
+.PHONY: all clean lint conform conform-check build-all ci test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
+	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
+	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
+	test-stdlib-image test-stdlib-ml \
+	test-stdlib-all-new \
+	test-stdlib-security-integration test-stdlib-network-integration \
+	test-stdlib-viz-integration test-stdlib-data-pipeline test-stdlib-llm-live
 
 all: $(BIN)
 
@@ -123,39 +130,171 @@ test-stdlib-log:
 	./test/stdlib/test_log
 
 test-stdlib-toon:
-	$(CC) $(CFLAGS) -Isrc/stdlib -o test/stdlib/test_toon \
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_toon \
 	    test/stdlib/test_toon.c src/stdlib/toon.c
 	./test/stdlib/test_toon
 
 test-stdlib-yaml:
-	$(CC) $(CFLAGS) -Isrc/stdlib -o test/stdlib/test_yaml \
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_yaml \
 	    test/stdlib/test_yaml.c src/stdlib/yaml.c
 	./test/stdlib/test_yaml
 
 test-stdlib-i18n:
-	$(CC) $(CFLAGS) -Isrc/stdlib -o test/stdlib/test_i18n \
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_i18n \
 	    test/stdlib/test_i18n.c src/stdlib/i18n.c
 	./test/stdlib/test_i18n
 
 test-stdlib-dataframe:
-	$(CC) $(CFLAGS) -Wno-unused-function -Isrc/stdlib -o test/stdlib/test_dataframe \
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_dataframe \
 	    test/stdlib/test_dataframe.c src/stdlib/dataframe.c src/stdlib/csv.c src/stdlib/str.c
 	./test/stdlib/test_dataframe
 
 test-stdlib-analytics:
-	$(CC) $(CFLAGS) -Wno-unused-function -iquote src/stdlib -o test/stdlib/test_analytics \
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_analytics \
 	    test/stdlib/test_analytics.c src/stdlib/analytics.c src/stdlib/dataframe.c src/stdlib/csv.c src/stdlib/str.c src/stdlib/math.c -lm
 	./test/stdlib/test_analytics
 
+# ── Story 19.1.1: Unit test targets for new stdlib modules ──────────────────
+
+test-stdlib-encoding:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_encoding \
+	    test/stdlib/test_encoding.c src/stdlib/encoding.c
+	./test/stdlib/test_encoding
+
+test-stdlib-encrypt:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_encrypt \
+	    test/stdlib/test_encrypt.c src/stdlib/encrypt.c src/stdlib/crypto.c src/stdlib/encoding.c src/stdlib/str.c
+	./test/stdlib/test_encrypt
+
+test-stdlib-ws:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_ws \
+	    test/stdlib/test_ws.c src/stdlib/ws.c
+	./test/stdlib/test_ws
+
+test-stdlib-sse:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_sse \
+	    test/stdlib/test_sse.c src/stdlib/sse.c
+	./test/stdlib/test_sse
+
+test-stdlib-router:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_router \
+	    test/stdlib/test_router.c src/stdlib/router.c
+	./test/stdlib/test_router
+
+test-stdlib-template:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_template \
+	    test/stdlib/test_template.c src/stdlib/template.c
+	./test/stdlib/test_template
+
+test-stdlib-csv:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_csv \
+	    test/stdlib/test_csv.c src/stdlib/csv.c
+	./test/stdlib/test_csv
+
+test-stdlib-math:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_math \
+	    test/stdlib/test_math.c src/stdlib/math.c -lm
+	./test/stdlib/test_math
+
+test-stdlib-llm:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_llm \
+	    test/stdlib/test_llm.c src/stdlib/llm.c
+	./test/stdlib/test_llm
+
+test-stdlib-llm-tool:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_llm_tool \
+	    test/stdlib/test_llm_tool.c src/stdlib/llm_tool.c src/stdlib/llm.c
+	./test/stdlib/test_llm_tool
+
+test-stdlib-chart:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_chart \
+	    test/stdlib/test_chart.c src/stdlib/chart.c
+	./test/stdlib/test_chart
+
+test-stdlib-html:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_html \
+	    test/stdlib/test_html.c src/stdlib/html.c
+	./test/stdlib/test_html
+
+test-stdlib-dashboard:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_dashboard \
+	    test/stdlib/test_dashboard.c src/stdlib/dashboard.c src/stdlib/chart.c src/stdlib/html.c src/stdlib/router.c
+	./test/stdlib/test_dashboard
+
+test-stdlib-svg:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_svg \
+	    test/stdlib/test_svg.c src/stdlib/svg.c -lm
+	./test/stdlib/test_svg
+
+test-stdlib-canvas:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_canvas \
+	    test/stdlib/test_canvas.c src/stdlib/canvas.c
+	./test/stdlib/test_canvas
+
+test-stdlib-image:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_image \
+	    test/stdlib/test_image.c src/stdlib/image.c
+	./test/stdlib/test_image
+
+test-stdlib-ml:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_ml \
+	    test/stdlib/test_ml.c src/stdlib/ml.c -lm
+	./test/stdlib/test_ml
+
+# ── Aggregate: all 20 new stdlib module tests ───────────────────────────────
+
+test-stdlib-all-new: test-stdlib-encoding test-stdlib-encrypt test-stdlib-auth \
+	test-stdlib-ws test-stdlib-sse test-stdlib-router test-stdlib-template \
+	test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
+	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg \
+	test-stdlib-canvas test-stdlib-image test-stdlib-dataframe test-stdlib-analytics \
+	test-stdlib-ml
+	@echo "ALL 20 new stdlib module tests PASSED"
+
+# ── Story 19.1.2: Integration test targets ─────────────────────────────────
+
+test-stdlib-security-integration:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_security_integration \
+	    test/stdlib/test_security_integration.c \
+	    src/stdlib/auth.c src/stdlib/encrypt.c src/stdlib/crypto.c src/stdlib/encoding.c src/stdlib/str.c
+	./test/stdlib/test_security_integration
+
+test-stdlib-network-integration:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_network_integration \
+	    test/stdlib/test_network_integration.c \
+	    src/stdlib/router.c src/stdlib/ws.c src/stdlib/sse.c
+	./test/stdlib/test_network_integration
+
+test-stdlib-viz-integration:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_viz_integration \
+	    test/stdlib/test_viz_integration.c \
+	    src/stdlib/chart.c src/stdlib/html.c src/stdlib/svg.c src/stdlib/canvas.c \
+	    src/stdlib/dashboard.c src/stdlib/router.c \
+	    src/stdlib/dataframe.c src/stdlib/csv.c src/stdlib/math.c src/stdlib/str.c -lm
+	./test/stdlib/test_viz_integration
+
+test-stdlib-data-pipeline:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_data_pipeline \
+	    test/stdlib/test_data_pipeline.c \
+	    src/stdlib/csv.c src/stdlib/math.c src/stdlib/dataframe.c \
+	    src/stdlib/analytics.c src/stdlib/chart.c src/stdlib/str.c -lm
+	./test/stdlib/test_data_pipeline
+
+test-stdlib-llm-live:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_llm_live \
+	    test/stdlib/test_llm_live.c \
+	    src/stdlib/llm.c src/stdlib/llm_tool.c src/stdlib/json.c
+	./test/stdlib/test_llm_live
+
 test-stdlib-coverage:
-	$(CC) $(CFLAGS) -Isrc/stdlib -o test/stdlib/test_stdlib_coverage \
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_stdlib_coverage \
 	    test/stdlib/test_stdlib_coverage.c \
 	    src/stdlib/json.c src/stdlib/file.c src/stdlib/str.c \
 	    src/stdlib/db.c -lsqlite3
 	./test/stdlib/test_stdlib_coverage
 
 bench:
-	$(CC) -O2 -Isrc/stdlib -o test/stdlib/bench_stdlib \
+	$(CC) -O2 -iquote src/stdlib -o test/stdlib/bench_stdlib \
 	    test/stdlib/bench_stdlib.c \
 	    src/stdlib/str.c src/stdlib/json.c src/stdlib/file.c \
 	    src/stdlib/crypto.c src/stdlib/tk_time.c src/stdlib/process.c \
@@ -212,6 +351,16 @@ clean:
 	    test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto \
 	    test/stdlib/test_time test/stdlib/test_tktest test/stdlib/test_log \
 	    test/stdlib/test_stdlib_coverage test/stdlib/bench_stdlib \
+	    test/stdlib/test_encoding test/stdlib/test_encrypt \
+	    test/stdlib/test_ws test/stdlib/test_sse test/stdlib/test_router \
+	    test/stdlib/test_template test/stdlib/test_csv test/stdlib/test_math \
+	    test/stdlib/test_llm test/stdlib/test_llm_tool \
+	    test/stdlib/test_chart test/stdlib/test_html test/stdlib/test_dashboard \
+	    test/stdlib/test_svg test/stdlib/test_canvas test/stdlib/test_image \
+	    test/stdlib/test_ml \
+	    test/stdlib/test_security_integration test/stdlib/test_network_integration \
+	    test/stdlib/test_viz_integration test/stdlib/test_data_pipeline \
+	    test/stdlib/test_llm_live \
 	    fuzz-lexer fuzz-parser
 
 FUZZ_FLAGS = -fsanitize=address,undefined,fuzzer -g

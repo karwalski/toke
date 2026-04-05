@@ -22,6 +22,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "../../src/stdlib/html.h"
 
@@ -237,6 +238,92 @@ int main(void)
         free((void *)out);
         html_node_free(parent);
         /* child is owned by parent and freed with it */
+    }
+
+    /* -------------------------------------------------------------------
+     * 17. html_escape: special chars in tag content (Story 20.1.8)
+     * ------------------------------------------------------------------- */
+    {
+        TkHtmlNode *node = html_p("<script>alert('xss')</script>");
+        const char *out  = html_node_render(node);
+        /* content is NOT auto-escaped by the node constructor */
+        ASSERT_CONTAINS(out, "<script>", "html_p preserves unescaped content as-is");
+        free((void *)out);
+        html_node_free(node);
+
+        /* But html_escape handles it correctly */
+        const char *esc = html_escape("<script>alert('xss')</script>");
+        ASSERT(strstr(esc, "<") == NULL,  "html_escape: no raw < remains");
+        ASSERT(strstr(esc, ">") == NULL,  "html_escape: no raw > remains");
+        ASSERT_CONTAINS(esc, "&lt;script&gt;", "html_escape: script tag is escaped");
+        free((void *)esc);
+    }
+
+    /* -------------------------------------------------------------------
+     * 18. html_escape: special chars in attribute positions
+     * ------------------------------------------------------------------- */
+    {
+        const char *esc = html_escape("val=\"x\"&y='z'");
+        ASSERT_CONTAINS(esc, "&quot;", "html_escape: double quote escaped in attr context");
+        ASSERT_CONTAINS(esc, "&#39;",  "html_escape: single quote escaped in attr context");
+        ASSERT_CONTAINS(esc, "&amp;",  "html_escape: ampersand escaped in attr context");
+        free((void *)esc);
+    }
+
+    /* -------------------------------------------------------------------
+     * 19. Deeply nested HTML nodes (12 levels)
+     * ------------------------------------------------------------------- */
+    {
+        TkHtmlNode *root = html_div("level-0", NULL);
+        TkHtmlNode *cur  = root;
+        int i;
+        for (i = 1; i <= 11; i++) {
+            TkHtmlNode *child = html_div(NULL, NULL);
+            html_append_child(cur, child);
+            cur = child;
+        }
+        /* Put content at the deepest level */
+        TkHtmlNode *leaf = html_p("deep-leaf");
+        html_append_child(cur, leaf);
+
+        const char *out = html_node_render(root);
+        ASSERT_CONTAINS(out, "deep-leaf",
+                        "deeply nested (12 levels): leaf content appears in render");
+        /* Count nesting depth by counting </div> occurrences */
+        int div_count = 0;
+        const char *search = out;
+        while ((search = strstr(search, "</div>")) != NULL) {
+            div_count++;
+            search += 6;
+        }
+        ASSERT(div_count == 12, "deeply nested: 12 closing </div> tags");
+        free((void *)out);
+        html_node_free(root);
+    }
+
+    /* -------------------------------------------------------------------
+     * 20. Empty element (no children, no attrs, no content)
+     * ------------------------------------------------------------------- */
+    {
+        TkHtmlNode *node = html_div(NULL, NULL);
+        const char *out  = html_node_render(node);
+        ASSERT_CONTAINS(out, "<div></div>",
+                        "empty div renders as <div></div>");
+        free((void *)out);
+        html_node_free(node);
+    }
+
+    /* -------------------------------------------------------------------
+     * 21. Self-closing (void) element: html_img with no attrs
+     * ------------------------------------------------------------------- */
+    {
+        TkHtmlNode *node = html_img(NULL, NULL);
+        const char *out  = html_node_render(node);
+        ASSERT_CONTAINS(out, "<img>", "void element img with NULL attrs renders <img>");
+        ASSERT(strstr(out, "</img>") == NULL,
+               "void element img: no closing tag");
+        free((void *)out);
+        html_node_free(node);
     }
 
     /* -------------------------------------------------------------------

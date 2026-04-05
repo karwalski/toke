@@ -11,10 +11,15 @@
  */
 
 #include "svg.h"
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <math.h>
+
+/* System <math.h> is shadowed by the local stdlib/math.h when compiling
+ * with -Isrc/stdlib.  Declare what we need directly. */
+extern double sqrt(double);
+
 
 /* -----------------------------------------------------------------------
  * Internal buffer helpers

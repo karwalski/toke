@@ -299,15 +299,16 @@ const char *llm_build_request(TkLlmMsg *msgs, uint64_t nmsgs, const char *model,
     int pos = 0;
 
 #define APPEND(fmt, ...) \
-    do { int _n = snprintf(buf + pos, cap - (size_t)pos, fmt, ##__VA_ARGS__); \
+    do { int _n = snprintf(buf + pos, cap - (size_t)pos, fmt, __VA_ARGS__); \
          if (_n < 0 || (size_t)_n >= cap - (size_t)pos) { free(buf); return NULL; } \
          pos += _n; } while (0)
+#define APPENDS(s) APPEND("%s", s)
 
     APPEND("{\"model\":\"%s\",\"messages\":[", model ? model : "");
 
     for (uint64_t i = 0; i < nmsgs; i++) {
-        if (i > 0) APPEND(",");
-        APPEND("{\"role\":\"");
+        if (i > 0) APPENDS(",");
+        APPENDS("{\"role\":\"");
 
         if (msgs[i].role) {
             /* role shouldn't need escaping but be safe */
@@ -315,7 +316,7 @@ const char *llm_build_request(TkLlmMsg *msgs, uint64_t nmsgs, const char *model,
             if (json_escape(msgs[i].role, esc, sizeof(esc)) < 0) { free(buf); return NULL; }
             APPEND("%s", esc);
         }
-        APPEND("\",\"content\":\"");
+        APPENDS("\",\"content\":\"");
 
         if (msgs[i].content) {
             /* content may be large — escape into a separate heap buffer */
@@ -337,13 +338,14 @@ const char *llm_build_request(TkLlmMsg *msgs, uint64_t nmsgs, const char *model,
             buf[pos] = '\0';
             free(esc);
         }
-        APPEND("\"}");
+        APPENDS("\"}");
     }
 
     APPEND("],\"temperature\":%.2f,\"stream\":%s}",
            temperature,
            stream ? "true" : "false");
 
+#undef APPENDS
 #undef APPEND
 
     return buf;

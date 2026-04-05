@@ -34,7 +34,7 @@ struct TkSseCtx {
  * count_lines — count the number of '\n'-delimited lines in s.
  * A string with no '\n' is 1 line.  An empty string is 1 line.
  */
-static int count_lines(const char *s)
+static int __attribute__((unused)) count_lines(const char *s)
 {
     int n = 1;
     for (; *s; s++) {

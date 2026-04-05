@@ -309,6 +309,83 @@ static void test_tovega_valid_prefix(void)
 }
 
 /* -----------------------------------------------------------------------
+ * Test 16: Chart with 0 datasets (Story 20.1.8)
+ * ----------------------------------------------------------------------- */
+static void test_zero_datasets(void)
+{
+    static const char *lab[] = {"A", "B"};
+    StrArray labels = make_str_array(lab, 2);
+
+    TkChartSpec *spec = chart_bar(labels, NULL, 0, "Empty");
+    ASSERT_NOT_NULL(spec, "chart_bar with 0 datasets returns non-NULL spec");
+
+    const char *json = chart_tojson(spec);
+    ASSERT_NOT_NULL(json, "chart_tojson with 0 datasets returns non-NULL");
+    ASSERT_CONTAINS(json, "\"datasets\":[]", "0-datasets: datasets is empty array");
+    free((void *)json);
+    chart_free(spec);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 17: Chart with many labels (1000) (Story 20.1.8)
+ * ----------------------------------------------------------------------- */
+static void test_many_labels(void)
+{
+    const char *lab[1000];
+    int i;
+    for (i = 0; i < 1000; i++) {
+        lab[i] = "L";
+    }
+    StrArray labels = make_str_array(lab, 1000);
+
+    static const double vals[] = {1.0};
+    TkDataset ds = {"S", vals, 1, NULL};
+
+    TkChartSpec *spec = chart_bar(labels, &ds, 1, "BigLabels");
+    const char *json = chart_tojson(spec);
+    ASSERT_NOT_NULL(json, "chart_tojson with 1000 labels returns non-NULL");
+    ASSERT_CONTAINS(json, "\"labels\":[", "many-labels: labels key present");
+
+    /* Count label occurrences — each label "L" becomes "\"L\"" */
+    int lcount = 0;
+    const char *p = json;
+    while ((p = strstr(p, "\"L\"")) != NULL) {
+        lcount++;
+        p += 3;
+    }
+    /* At least 1000 from labels array (dataset label "S" is separate) */
+    ASSERT(lcount >= 1000, "many-labels: at least 1000 label entries in JSON");
+
+    free((void *)json);
+    chart_free(spec);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 18: Chart with negative values (Story 20.1.8)
+ * ----------------------------------------------------------------------- */
+static void test_negative_values(void)
+{
+    static const double vals[] = {-10.5, -0.001, -9999.0};
+    TkDataset ds = {"Neg", vals, 3, NULL};
+    static const char *lab[] = {"A", "B", "C"};
+    StrArray labels = make_str_array(lab, 3);
+
+    TkChartSpec *spec = chart_bar(labels, &ds, 1, "Negatives");
+    const char *json = chart_tojson(spec);
+    ASSERT_NOT_NULL(json, "chart_tojson with negative values returns non-NULL");
+    ASSERT_CONTAINS(json, "-10.5",  "negative: -10.5 appears in JSON");
+    ASSERT_CONTAINS(json, "-9999",  "negative: -9999 appears in JSON");
+    ASSERT_CONTAINS(json, "-0.001", "negative: -0.001 appears in JSON");
+    free((void *)json);
+
+    const char *vega = chart_tovega(spec);
+    ASSERT_NOT_NULL(vega, "chart_tovega with negative values returns non-NULL");
+    ASSERT_CONTAINS(vega, "-10.5", "negative vega: -10.5 appears");
+    free((void *)vega);
+    chart_free(spec);
+}
+
+/* -----------------------------------------------------------------------
  * main
  * ----------------------------------------------------------------------- */
 int main(void)
@@ -328,6 +405,9 @@ int main(void)
     test_explicit_color_in_json();
     test_scatter_tojson_type();
     test_tovega_valid_prefix();
+    test_zero_datasets();
+    test_many_labels();
+    test_negative_values();
 
     if (failures == 0) {
         printf("\nAll tests passed.\n");

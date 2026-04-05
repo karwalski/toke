@@ -108,6 +108,97 @@ int main(void)
 
     sse_free(ctx);
 
+    /* --- Edge-case tests (Story 20.1.7) --- */
+
+    /* --- Test 11: empty data field --- */
+    {
+        TkSseCtx *c = sse_new();
+        const char *out = sse_emitdata(c, "");
+        ASSERT_CONTAINS(out, "data: \n\n", "sse_emitdata('') contains 'data: \\n\\n'");
+        free((void *)out);
+        sse_free(c);
+    }
+
+    /* --- Test 12: data with \\r\\n line endings --- */
+    {
+        TkSseCtx *c = sse_new();
+        /* SSE splits on \n; \r before \n becomes part of the data line content.
+         * The implementation splits on '\n' only, so "a\r\nb" → "data: a\r\n" + "data: b\n" */
+        const char *out = sse_emitdata(c, "a\r\nb");
+        ASSERT(out != NULL, "sse_emitdata(a\\r\\nb): not NULL");
+        /* The output should contain both data lines */
+        ASSERT_CONTAINS(out, "data: a\r\n", "sse \\r\\n: first line includes \\r");
+        ASSERT_CONTAINS(out, "data: b\n", "sse \\r\\n: second line is 'data: b\\n'");
+        free((void *)out);
+        sse_free(c);
+    }
+
+    /* --- Test 13: three-line data split --- */
+    {
+        TkSseCtx *c = sse_new();
+        const char *out = sse_emitdata(c, "x\ny\nz");
+        ASSERT_CONTAINS(out, "data: x\ndata: y\ndata: z\n\n",
+                        "sse three-line data splits into three data: lines");
+        free((void *)out);
+        sse_free(c);
+    }
+
+    /* --- Test 14: event with both id and retry fields --- */
+    {
+        TkSseCtx *c = sse_new();
+        TkSseEvent ev14;
+        ev14.event = NULL;
+        ev14.data  = "payload";
+        ev14.id    = "7";
+        ev14.retry = 3000;
+        const char *out = sse_emit(c, ev14);
+        ASSERT_CONTAINS(out, "id: 7\n", "sse id+retry: contains 'id: 7\\n'");
+        ASSERT_CONTAINS(out, "retry: 3000\n", "sse id+retry: contains 'retry: 3000\\n'");
+        ASSERT_CONTAINS(out, "data: payload\n", "sse id+retry: contains data field");
+        free((void *)out);
+        sse_free(c);
+    }
+
+    /* --- Test 15: keepalive is a comment line --- */
+    {
+        TkSseCtx *c = sse_new();
+        const char *out = sse_keepalive(c);
+        /* SSE comments start with ':' */
+        ASSERT(out != NULL && out[0] == ':', "sse keepalive: starts with ':'");
+        ASSERT_STREQ(out, ": keepalive\n\n", "sse keepalive: exact format");
+        free((void *)out);
+        sse_free(c);
+    }
+
+    /* --- Test 16: NULL data in sse_emit produces empty data line --- */
+    {
+        TkSseCtx *c = sse_new();
+        TkSseEvent ev16;
+        ev16.event = "ping";
+        ev16.data  = NULL;
+        ev16.id    = NULL;
+        ev16.retry = -1;
+        const char *out = sse_emit(c, ev16);
+        ASSERT_CONTAINS(out, "event: ping\n", "sse NULL data: has event field");
+        ASSERT_CONTAINS(out, "data: \n", "sse NULL data: has empty data line");
+        free((void *)out);
+        sse_free(c);
+    }
+
+    /* --- Test 17: retry=0 is valid --- */
+    {
+        TkSseCtx *c = sse_new();
+        TkSseEvent ev17;
+        ev17.event = NULL;
+        ev17.data  = "d";
+        ev17.id    = NULL;
+        ev17.retry = 0;
+        const char *out = sse_emit(c, ev17);
+        ASSERT_CONTAINS(out, "retry: 0\n", "sse retry=0: contains 'retry: 0\\n'");
+        free((void *)out);
+        sse_free(c);
+    }
+
     if (failures == 0) {
         printf("All tests passed.\n");
         return 0;

@@ -304,6 +304,285 @@ static void test_csv_parse_empty(void)
 }
 
 /* -----------------------------------------------------------------------
+ * Test 13: Field containing only quotes — """" → single "
+ * ----------------------------------------------------------------------- */
+static void test_field_only_quotes(void)
+{
+    /* CSV: """""" which is quoted field containing "" → one literal " */
+    const char raw[] = {'"','"','"','"','"','"','\0'};
+    TkCsvReader *r = csv_reader_new(raw, (uint64_t)(sizeof(raw) - 1));
+    StrArray row = csv_reader_next(r);
+    ASSERT_INTEQ((int)row.len, 1,         "only_quotes: 1 field");
+    ASSERT_STREQ(row.data[0], "\"\"",      "only_quotes: value is two quotes");
+    free_row(row);
+    csv_reader_free(r);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 14: Field containing only newlines — quoted "\n\n"
+ * ----------------------------------------------------------------------- */
+static void test_field_only_newlines(void)
+{
+    const char csv[] = "\"\n\n\"";
+    TkCsvReader *r = csv_reader_new(csv, (uint64_t)(sizeof(csv) - 1));
+    StrArray row = csv_reader_next(r);
+    ASSERT_INTEQ((int)row.len, 1,           "only_newlines: 1 field");
+    ASSERT_STREQ(row.data[0], "\n\n",       "only_newlines: value is two newlines");
+    free_row(row);
+    csv_reader_free(r);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 15: Zero-column row — empty string before newline yields 1 empty field
+ * ----------------------------------------------------------------------- */
+static void test_zero_column_row(void)
+{
+    /* A line with no commas produces one (empty) field. */
+    const char *csv = "\n";
+    TkCsvReader *r = csv_reader_new(csv, (uint64_t)strlen(csv));
+    StrArray row = csv_reader_next(r);
+    ASSERT_INTEQ((int)row.len, 1,  "zero_col: 1 field");
+    ASSERT_STREQ(row.data[0], "",  "zero_col: field is empty");
+    free_row(row);
+    csv_reader_free(r);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 16: Many-column row (100+ columns)
+ * ----------------------------------------------------------------------- */
+static void test_many_columns(void)
+{
+    /* Build a CSV row with 150 columns: "0,1,2,...,149" */
+    char buf[1024];
+    int offset = 0;
+    for (int i = 0; i < 150; i++) {
+        if (i > 0) buf[offset++] = ',';
+        offset += sprintf(buf + offset, "%d", i);
+    }
+    TkCsvReader *r = csv_reader_new(buf, (uint64_t)offset);
+    StrArray row = csv_reader_next(r);
+    ASSERT_INTEQ((int)row.len, 150,   "many_cols: 150 fields");
+    ASSERT_STREQ(row.data[0], "0",    "many_cols: first field");
+    ASSERT_STREQ(row.data[149], "149", "many_cols: last field");
+    free_row(row);
+    csv_reader_free(r);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 17: Large streaming read (100KB+)
+ * ----------------------------------------------------------------------- */
+static void test_large_streaming(void)
+{
+    /* Build a CSV buffer > 100KB: many rows of "aaa,bbb,ccc\n" (12 bytes each) */
+    uint64_t target = 102400;
+    const char *line = "aaa,bbb,ccc\n";
+    uint64_t linelen = (uint64_t)strlen(line);
+    uint64_t nlines = (target / linelen) + 1;
+    uint64_t buflen = nlines * linelen;
+    char *buf = (char *)malloc(buflen);
+    for (uint64_t i = 0; i < nlines; i++)
+        memcpy(buf + i * linelen, line, linelen);
+
+    ASSERT(buflen >= 102400, "large_stream: buffer >= 100KB");
+
+    TkCsvReader *r = csv_reader_new(buf, buflen);
+    uint64_t count = 0;
+    while (csv_reader_has_next(r)) {
+        StrArray row = csv_reader_next(r);
+        ASSERT_INTEQ((int)row.len, 3, "large_stream: each row has 3 fields");
+        free_row(row);
+        count++;
+        if ((int)row.len != 3) break; /* stop on unexpected to avoid spam */
+    }
+    ASSERT_INTEQ((int)count, (int)nlines, "large_stream: correct row count");
+
+    csv_reader_free(r);
+    free(buf);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 18: UTF-8 BOM handling — BOM bytes appear in first field
+ * (RFC 4180 does not define BOM handling; we verify the parser does not
+ *  crash and the bytes are preserved in the field value.)
+ * ----------------------------------------------------------------------- */
+static void test_bom_handling(void)
+{
+    /* UTF-8 BOM: EF BB BF, then "a,b" */
+    const char csv[] = "\xEF\xBB\xBF" "a,b";
+    TkCsvReader *r = csv_reader_new(csv, (uint64_t)(sizeof(csv) - 1));
+    StrArray row = csv_reader_next(r);
+    ASSERT_INTEQ((int)row.len, 2,                    "bom: 2 fields");
+    /* BOM bytes are part of the first field value */
+    ASSERT_STREQ(row.data[0], "\xEF\xBB\xBF" "a",   "bom: field0 contains BOM + 'a'");
+    ASSERT_STREQ(row.data[1], "b",                    "bom: field1 == 'b'");
+    free_row(row);
+    csv_reader_free(r);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 19: Trailing CRLF variations
+ * ----------------------------------------------------------------------- */
+static void test_trailing_crlf_variations(void)
+{
+    /* CR only: "a\r" → one row with field "a", then EOF */
+    {
+        const char *csv = "a\r";
+        TkCsvReader *r = csv_reader_new(csv, (uint64_t)strlen(csv));
+        StrArray row = csv_reader_next(r);
+        ASSERT_INTEQ((int)row.len, 1,   "trailing_cr: 1 field");
+        ASSERT_STREQ(row.data[0], "a",  "trailing_cr: field == 'a'");
+        ASSERT(!csv_reader_has_next(r),  "trailing_cr: EOF");
+        free_row(row);
+        csv_reader_free(r);
+    }
+    /* LF only: "a\n" */
+    {
+        const char *csv = "a\n";
+        TkCsvReader *r = csv_reader_new(csv, (uint64_t)strlen(csv));
+        StrArray row = csv_reader_next(r);
+        ASSERT_INTEQ((int)row.len, 1,   "trailing_lf: 1 field");
+        ASSERT_STREQ(row.data[0], "a",  "trailing_lf: field == 'a'");
+        ASSERT(!csv_reader_has_next(r),  "trailing_lf: EOF");
+        free_row(row);
+        csv_reader_free(r);
+    }
+    /* CRLF: "a\r\n" */
+    {
+        const char *csv = "a\r\n";
+        TkCsvReader *r = csv_reader_new(csv, (uint64_t)strlen(csv));
+        StrArray row = csv_reader_next(r);
+        ASSERT_INTEQ((int)row.len, 1,     "trailing_crlf: 1 field");
+        ASSERT_STREQ(row.data[0], "a",    "trailing_crlf: field == 'a'");
+        ASSERT(!csv_reader_has_next(r),    "trailing_crlf: EOF");
+        free_row(row);
+        csv_reader_free(r);
+    }
+    /* No trailing newline: "a" */
+    {
+        const char *csv = "a";
+        TkCsvReader *r = csv_reader_new(csv, (uint64_t)strlen(csv));
+        StrArray row = csv_reader_next(r);
+        ASSERT_INTEQ((int)row.len, 1,     "trailing_none: 1 field");
+        ASSERT_STREQ(row.data[0], "a",    "trailing_none: field == 'a'");
+        ASSERT(!csv_reader_has_next(r),    "trailing_none: EOF");
+        free_row(row);
+        csv_reader_free(r);
+    }
+}
+
+/* -----------------------------------------------------------------------
+ * Test 20: Empty fields in various positions
+ * ----------------------------------------------------------------------- */
+static void test_empty_fields_positions(void)
+{
+    /* Leading empty, middle value, trailing empty: ",val," */
+    const char *csv = ",val,";
+    TkCsvReader *r = csv_reader_new(csv, (uint64_t)strlen(csv));
+    StrArray row = csv_reader_next(r);
+    ASSERT_INTEQ((int)row.len, 3,        "empty_pos: 3 fields");
+    ASSERT_STREQ(row.data[0], "",         "empty_pos: leading empty");
+    ASSERT_STREQ(row.data[1], "val",      "empty_pos: middle value");
+    ASSERT_STREQ(row.data[2], "",         "empty_pos: trailing empty");
+    free_row(row);
+    csv_reader_free(r);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 21: Fields with embedded commas (multiple)
+ * ----------------------------------------------------------------------- */
+static void test_embedded_commas(void)
+{
+    /* "a,b,c" as a single quoted field, then plain d */
+    const char *csv = "\"a,b,c\",d";
+    TkCsvReader *r = csv_reader_new(csv, (uint64_t)strlen(csv));
+    StrArray row = csv_reader_next(r);
+    ASSERT_INTEQ((int)row.len, 2,           "embed_comma: 2 fields");
+    ASSERT_STREQ(row.data[0], "a,b,c",      "embed_comma: field0 has commas");
+    ASSERT_STREQ(row.data[1], "d",           "embed_comma: field1 == 'd'");
+    free_row(row);
+    csv_reader_free(r);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 22: Fields with embedded escaped quotes
+ * ----------------------------------------------------------------------- */
+static void test_embedded_escaped_quotes(void)
+{
+    /* CSV: "she said ""hello""",ok */
+    const char raw[] = {'"','s','h','e',' ','s','a','i','d',' ',
+                        '"','"','h','e','l','l','o','"','"','"',
+                        ',','o','k','\0'};
+    TkCsvReader *r = csv_reader_new(raw, (uint64_t)(sizeof(raw) - 1));
+    StrArray row = csv_reader_next(r);
+    ASSERT_INTEQ((int)row.len, 2,                          "embed_esc_q: 2 fields");
+    ASSERT_STREQ(row.data[0], "she said \"hello\"",        "embed_esc_q: field0");
+    ASSERT_STREQ(row.data[1], "ok",                        "embed_esc_q: field1");
+    free_row(row);
+    csv_reader_free(r);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 23: Full round-trip — write then read returns original data
+ * ----------------------------------------------------------------------- */
+static void test_full_roundtrip(void)
+{
+    /* Tricky fields: empty, has comma, has quote, has newline, has CR */
+    const char *fields[5] = {"", "a,b", "say \"hi\"", "line1\nline2", "cr\rhere"};
+    StrArray row_in;
+    row_in.data = fields;
+    row_in.len  = 5;
+
+    TkCsvWriter *w = csv_writer_new();
+    csv_writer_writerow(w, row_in);
+    const char *out = csv_writer_flush(w);
+
+    uint64_t nrows = 0;
+    StrArray *rows = csv_parse(out, (uint64_t)strlen(out), &nrows);
+    ASSERT_INTEQ((int)nrows, 1,                          "full_rt: 1 row");
+    ASSERT_INTEQ((int)rows[0].len, 5,                    "full_rt: 5 fields");
+    ASSERT_STREQ(rows[0].data[0], "",                     "full_rt: empty field");
+    ASSERT_STREQ(rows[0].data[1], "a,b",                  "full_rt: comma field");
+    ASSERT_STREQ(rows[0].data[2], "say \"hi\"",           "full_rt: quote field");
+    ASSERT_STREQ(rows[0].data[3], "line1\nline2",         "full_rt: newline field");
+    ASSERT_STREQ(rows[0].data[4], "cr\rhere",             "full_rt: CR field");
+
+    free_rows(rows, nrows);
+    csv_writer_free(w);
+    free((void *)out);
+}
+
+/* -----------------------------------------------------------------------
+ * Test 24: Multi-row round-trip preserves all data
+ * ----------------------------------------------------------------------- */
+static void test_multirow_roundtrip(void)
+{
+    const char *h[2]  = {"key", "value"};
+    const char *r1[2] = {"greeting", "hello, world"};
+    const char *r2[2] = {"quote", "she said \"yes\""};
+    const char *r3[2] = {"multi", "line1\nline2\nline3"};
+
+    StrArray rows_in[4] = {
+        {h,  2}, {r1, 2}, {r2, 2}, {r3, 2}
+    };
+
+    TkCsvWriter *w = csv_writer_new();
+    for (int i = 0; i < 4; i++) csv_writer_writerow(w, rows_in[i]);
+    const char *out = csv_writer_flush(w);
+
+    uint64_t nrows = 0;
+    StrArray *rows = csv_parse(out, (uint64_t)strlen(out), &nrows);
+    ASSERT_INTEQ((int)nrows, 4,                             "multi_rt: 4 rows");
+    ASSERT_STREQ(rows[0].data[0], "key",                    "multi_rt: header[0]");
+    ASSERT_STREQ(rows[1].data[1], "hello, world",           "multi_rt: row1 comma");
+    ASSERT_STREQ(rows[2].data[1], "she said \"yes\"",       "multi_rt: row2 quote");
+    ASSERT_STREQ(rows[3].data[1], "line1\nline2\nline3",    "multi_rt: row3 newlines");
+
+    free_rows(rows, nrows);
+    csv_writer_free(w);
+    free((void *)out);
+}
+
+/* -----------------------------------------------------------------------
  * main
  * ----------------------------------------------------------------------- */
 int main(void)
@@ -320,6 +599,18 @@ int main(void)
     test_csv_parse_nrows();
     test_csv_parse_single_row();
     test_csv_parse_empty();
+    test_field_only_quotes();
+    test_field_only_newlines();
+    test_zero_column_row();
+    test_many_columns();
+    test_large_streaming();
+    test_bom_handling();
+    test_trailing_crlf_variations();
+    test_empty_fields_positions();
+    test_embedded_commas();
+    test_embedded_escaped_quotes();
+    test_full_roundtrip();
+    test_multirow_roundtrip();
 
     if (failures == 0) {
         printf("\nAll tests passed.\n");

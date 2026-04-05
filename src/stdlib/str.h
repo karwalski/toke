@@ -22,7 +22,10 @@
 
 #include <stdint.h>
 
+#ifndef TK_STRARRAY_DEFINED
+#define TK_STRARRAY_DEFINED
 typedef struct { const char **data; uint64_t len; } StrArray;
+#endif
 typedef struct { const uint8_t *data; uint64_t len; } ByteArray;
 
 typedef struct { const char *ok; int is_err; const char *err_msg; } StrSliceResult;

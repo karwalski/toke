@@ -1,13 +1,22 @@
 /*
- * test_ml.c — Unit tests for the std.ml C library (Story 16.1.5).
+ * test_ml.c — Unit tests for the std.ml C library (Story 16.1.5, 20.1.9).
  *
  * Build and run: make test-stdlib-ml
  *
  * Synthetic datasets used:
- *   - Linear regression: xs=[1,2,3], ys=[2,4,6]  → slope=2, intercept=0
+ *   - Linear regression: xs=[1,2,3], ys=[2,4,6]  -> slope=2, intercept=0
  *   - K-means (1D):      [0, 0.1, 0.2, 10, 10.1, 10.2], k=2
- *   - Decision tree:     XOR-like (0,0)→0 (0,1)→1 (1,0)→1 (1,1)→0, max_depth=3
+ *   - Decision tree:     XOR-like (0,0)->0 (0,1)->1 (1,0)->1 (1,1)->0, max_depth=3
  *   - KNN:               4 well-separated 2D points
+ *
+ * Story 20.1.9 additions:
+ *   - Convergence tests on well-separated clusters
+ *   - Degenerate inputs: k>n, k=1, single-point clusters, empty sets
+ *   - Decision tree stumps (max_depth=1), identical features
+ *   - KNN with k=n_train, k=1 (nearest neighbour)
+ *   - Linear regression: single point, collinear/duplicate points
+ *   - Iris-like synthetic 3-class dataset for KNN
+ *   - NULL / empty input handling
  */
 
 #include <stdio.h>
@@ -37,20 +46,60 @@ static void test_linreg(void)
 
     LinearModel m = ml_linregfit(xs, ys);
 
-    /* Test 1: slope == 2.0 */
     ASSERT_NEAR(m.slope, 2.0, 1e-10, "linregfit slope=2.0 for y=2x");
-
-    /* Test 2: intercept == 0.0 */
     ASSERT_NEAR(m.intercept, 0.0, 1e-10, "linregfit intercept=0.0 for y=2x");
 
-    /* Test 3: predict at x=4 returns 8.0 */
     double pred = ml_linregpredict(m, 4.0);
     ASSERT_NEAR(pred, 8.0, 1e-10, "linregpredict(m,4.0)==8.0");
 
-    /* Test 4: perfect correlation — predict training points exactly */
     ASSERT_NEAR(ml_linregpredict(m, 1.0), 2.0, 1e-10, "linregpredict recovers training point y(1)=2");
     ASSERT_NEAR(ml_linregpredict(m, 2.0), 4.0, 1e-10, "linregpredict recovers training point y(2)=4");
     ASSERT_NEAR(ml_linregpredict(m, 3.0), 6.0, 1e-10, "linregpredict recovers training point y(3)=6");
+}
+
+/* =========================================================================
+ * 1b. Linear regression — degenerate inputs (Story 20.1.9)
+ * ========================================================================= */
+
+static void test_linreg_single_point(void)
+{
+    /* Single point: n < 2, returns zero model. */
+    double xs_data[] = {5.0};
+    double ys_data[] = {10.0};
+    F64Array xs = { xs_data, 1 };
+    F64Array ys = { ys_data, 1 };
+
+    LinearModel m = ml_linregfit(xs, ys);
+    ASSERT_NEAR(m.slope, 0.0, 1e-10, "linreg single point: slope=0");
+    ASSERT_NEAR(m.intercept, 0.0, 1e-10, "linreg single point: intercept=0");
+}
+
+static void test_linreg_collinear(void)
+{
+    /* Duplicate/collinear x-values: all x=3.0, denom is zero -> zero model. */
+    double xs_data[] = {3.0, 3.0, 3.0};
+    double ys_data[] = {1.0, 2.0, 3.0};
+    F64Array xs = { xs_data, 3 };
+    F64Array ys = { ys_data, 3 };
+
+    LinearModel m = ml_linregfit(xs, ys);
+    ASSERT_NEAR(m.slope, 0.0, 1e-10, "linreg collinear x: slope=0 (zero denom)");
+    ASSERT_NEAR(m.intercept, 0.0, 1e-10, "linreg collinear x: intercept=0 (zero denom)");
+}
+
+static void test_linreg_duplicate_points(void)
+{
+    /* Two identical points plus one different: y = 3x + 1, with duplicate. */
+    double xs_data[] = {1.0, 1.0, 2.0};
+    double ys_data[] = {4.0, 4.0, 7.0};
+    F64Array xs = { xs_data, 3 };
+    F64Array ys = { ys_data, 3 };
+
+    LinearModel m = ml_linregfit(xs, ys);
+    /* With duplicate (1,4) and point (2,7), slope should be 3.0. */
+    ASSERT_NEAR(m.slope, 3.0, 1e-10, "linreg duplicate points: slope=3.0");
+    double pred = ml_linregpredict(m, 1.0);
+    ASSERT_NEAR(pred, 4.0, 1e-10, "linreg duplicate points: predict(1)=4.0");
 }
 
 /* =========================================================================
@@ -59,7 +108,6 @@ static void test_linreg(void)
 
 static void test_kmeans(void)
 {
-    /* Six points in 1-D: three near 0, three near 10. */
     double col_data[] = {0.0, 0.1, 0.2, 10.0, 10.1, 10.2};
     F64Array cols[1];
     cols[0].data = col_data;
@@ -67,11 +115,9 @@ static void test_kmeans(void)
 
     KMeansModel model = ml_kmeanstrain(cols, 1, 6, 2, 100);
 
-    /* Test 5: centroids should be near 0.1 and 10.1 (in some order). */
-    double c0 = model.centroids[0]; /* centroid 0 */
-    double c1 = model.centroids[1]; /* centroid 1 */
+    double c0 = model.centroids[0];
+    double c1 = model.centroids[1];
 
-    /* One centroid near 0.1, the other near 10.1. */
     int c0_low = fabs(c0 - 0.1) < 1.0;
     int c1_high = fabs(c1 - 10.1) < 1.0;
     int c0_high = fabs(c0 - 10.1) < 1.0;
@@ -79,17 +125,127 @@ static void test_kmeans(void)
     ASSERT((c0_low && c1_high) || (c0_high && c1_low),
            "kmeans: centroids near 0.1 and 10.1");
 
-    /* Test 6: assign point near 0 and point near 10 to different clusters. */
     double pt_low[]  = {0.05};
     double pt_high[] = {10.05};
     uint64_t cl_low  = ml_kmeansassign(model, pt_low);
     uint64_t cl_high = ml_kmeansassign(model, pt_high);
     ASSERT(cl_low != cl_high, "kmeansassign: point near 0 and point near 10 in different clusters");
 
-    /* Test 7: the cluster of the low point contains c0 or c1 correctly. */
     double assigned_centroid = model.centroids[cl_low];
     ASSERT(fabs(assigned_centroid - 0.1) < 1.0,
            "kmeansassign: low point assigned to low centroid");
+
+    ml_kmeans_free(&model);
+}
+
+/* =========================================================================
+ * 2b. K-means — degenerate and convergence tests (Story 20.1.9)
+ * ========================================================================= */
+
+static void test_kmeans_k_greater_than_n(void)
+{
+    /* k=5 but only 3 points. Should not crash; init_k is clamped to nrows. */
+    double col_data[] = {1.0, 2.0, 3.0};
+    F64Array cols[1];
+    cols[0].data = col_data;
+    cols[0].len  = 3;
+
+    KMeansModel model = ml_kmeanstrain(cols, 1, 3, 5, 100);
+    ASSERT(model.centroids != NULL, "kmeans k>n: does not crash, returns model");
+    ASSERT(model.k == 5, "kmeans k>n: model.k preserved as requested k");
+
+    /* Assignment should still work (extra centroids are zero-initialised). */
+    double pt[] = {2.0};
+    uint64_t cl = ml_kmeansassign(model, pt);
+    ASSERT(cl < model.k, "kmeans k>n: assign returns valid cluster index");
+
+    ml_kmeans_free(&model);
+}
+
+static void test_kmeans_k_equals_1(void)
+{
+    /* k=1: all points belong to one cluster, centroid = mean. */
+    double col_data[] = {1.0, 3.0, 5.0};
+    F64Array cols[1];
+    cols[0].data = col_data;
+    cols[0].len  = 3;
+
+    KMeansModel model = ml_kmeanstrain(cols, 1, 3, 1, 100);
+    ASSERT(model.k == 1, "kmeans k=1: model has 1 cluster");
+    /* Centroid should converge to mean = 3.0. */
+    ASSERT_NEAR(model.centroids[0], 3.0, 1e-10, "kmeans k=1: centroid = mean of all points");
+
+    /* All points assigned to cluster 0. */
+    double pt1[] = {1.0};
+    double pt2[] = {5.0};
+    ASSERT(ml_kmeansassign(model, pt1) == 0, "kmeans k=1: point assigned to cluster 0");
+    ASSERT(ml_kmeansassign(model, pt2) == 0, "kmeans k=1: all points in cluster 0");
+
+    ml_kmeans_free(&model);
+}
+
+static void test_kmeans_single_point_clusters(void)
+{
+    /* 3 points, k=3: each point is its own cluster. */
+    double col_data[] = {0.0, 50.0, 100.0};
+    F64Array cols[1];
+    cols[0].data = col_data;
+    cols[0].len  = 3;
+
+    KMeansModel model = ml_kmeanstrain(cols, 1, 3, 3, 100);
+    /* Each centroid should be exactly one of the data points. */
+    double c0 = model.centroids[0];
+    double c1 = model.centroids[1];
+    double c2 = model.centroids[2];
+
+    /* Check that the set {c0, c1, c2} is a permutation of {0, 50, 100}. */
+    int found0 = (fabs(c0) < 1e-10) || (fabs(c1) < 1e-10) || (fabs(c2) < 1e-10);
+    int found50 = (fabs(c0 - 50.0) < 1e-10) || (fabs(c1 - 50.0) < 1e-10) || (fabs(c2 - 50.0) < 1e-10);
+    int found100 = (fabs(c0 - 100.0) < 1e-10) || (fabs(c1 - 100.0) < 1e-10) || (fabs(c2 - 100.0) < 1e-10);
+    ASSERT(found0 && found50 && found100,
+           "kmeans k=n: each point is its own centroid");
+
+    ml_kmeans_free(&model);
+}
+
+static void test_kmeans_convergence_well_separated(void)
+{
+    /*
+     * 2D dataset with 3 well-separated clusters:
+     *   Cluster A: (0,0), (0.1,0.1), (-0.1,0.1)
+     *   Cluster B: (10,10), (10.1,10.1), (9.9,10.1)
+     *   Cluster C: (20,0), (20.1,0.1), (19.9,0.1)
+     */
+    double c0_data[] = {0.0, 0.1, -0.1, 10.0, 10.1, 9.9, 20.0, 20.1, 19.9};
+    double c1_data[] = {0.0, 0.1,  0.1, 10.0, 10.1, 10.1, 0.0,  0.1,  0.1};
+    F64Array cols[2];
+    cols[0].data = c0_data; cols[0].len = 9;
+    cols[1].data = c1_data; cols[1].len = 9;
+
+    KMeansModel model = ml_kmeanstrain(cols, 2, 9, 3, 200);
+
+    /* Verify that each of the 9 points assigns to the correct cluster group.
+     * Points 0-2 should share a cluster, 3-5 should share, 6-8 should share. */
+    double pts[9][2] = {
+        {0.0, 0.0}, {0.1, 0.1}, {-0.1, 0.1},
+        {10.0, 10.0}, {10.1, 10.1}, {9.9, 10.1},
+        {20.0, 0.0}, {20.1, 0.1}, {19.9, 0.1}
+    };
+    uint64_t clusters[9];
+    for (int i = 0; i < 9; i++) {
+        clusters[i] = ml_kmeansassign(model, pts[i]);
+    }
+
+    /* Within each group, all assignments must be the same. */
+    ASSERT(clusters[0] == clusters[1] && clusters[1] == clusters[2],
+           "kmeans convergence: cluster A points grouped together");
+    ASSERT(clusters[3] == clusters[4] && clusters[4] == clusters[5],
+           "kmeans convergence: cluster B points grouped together");
+    ASSERT(clusters[6] == clusters[7] && clusters[7] == clusters[8],
+           "kmeans convergence: cluster C points grouped together");
+    /* Different groups must have different cluster IDs. */
+    ASSERT(clusters[0] != clusters[3] && clusters[3] != clusters[6] && clusters[0] != clusters[6],
+           "kmeans convergence: three distinct clusters found");
 
     ml_kmeans_free(&model);
 }
@@ -100,14 +256,6 @@ static void test_kmeans(void)
 
 static void test_dtree(void)
 {
-    /*
-     * XOR training data:
-     *   (x0, x1) → label
-     *   (0,  0)  → 0
-     *   (0,  1)  → 1
-     *   (1,  0)  → 1
-     *   (1,  1)  → 0
-     */
     double f0_data[] = {0.0, 0.0, 1.0, 1.0};
     double f1_data[] = {0.0, 1.0, 0.0, 1.0};
     double labels[]  = {0.0, 1.0, 1.0, 0.0};
@@ -118,7 +266,6 @@ static void test_dtree(void)
 
     DTreeModel tree = ml_dtreefit(feat_cols, 2, labels, 4, 3);
 
-    /* Test 8: predict all four training points correctly. */
     double p00[] = {0.0, 0.0};
     double p01[] = {0.0, 1.0};
     double p10[] = {1.0, 0.0};
@@ -129,8 +276,63 @@ static void test_dtree(void)
     ASSERT_NEAR(ml_dtreepredict(&tree, p10), 1.0, 1e-10, "dtree XOR (1,0)->1");
     ASSERT_NEAR(ml_dtreepredict(&tree, p11), 0.0, 1e-10, "dtree XOR (1,1)->0");
 
-    /* Test 9: leaf values come from majority class — pure nodes have exact label. */
     ASSERT(tree.nnodes > 1, "dtree produced more than one node for XOR data");
+
+    ml_dtree_free(&tree);
+}
+
+/* =========================================================================
+ * 3b. Decision tree — degenerate inputs (Story 20.1.9)
+ * ========================================================================= */
+
+static void test_dtree_stump(void)
+{
+    /*
+     * max_depth=1 (stump): linearly separable data.
+     *   x0 < 5 -> class 0, x0 >= 5 -> class 1
+     */
+    double f0_data[] = {1.0, 2.0, 3.0, 7.0, 8.0, 9.0};
+    double labels[]  = {0.0, 0.0, 0.0, 1.0, 1.0, 1.0};
+
+    F64Array feat_cols[1];
+    feat_cols[0].data = f0_data; feat_cols[0].len = 6;
+
+    DTreeModel tree = ml_dtreefit(feat_cols, 1, labels, 6, 1);
+
+    /* A stump should have exactly 3 nodes: root + 2 leaves. */
+    ASSERT(tree.nnodes == 3, "dtree stump: exactly 3 nodes (root + 2 leaves)");
+
+    /* Predict: low value -> 0, high value -> 1. */
+    double pt_low[]  = {2.0};
+    double pt_high[] = {8.0};
+    ASSERT_NEAR(ml_dtreepredict(&tree, pt_low), 0.0, 1e-10,
+                "dtree stump: low value -> class 0");
+    ASSERT_NEAR(ml_dtreepredict(&tree, pt_high), 1.0, 1e-10,
+                "dtree stump: high value -> class 1");
+
+    ml_dtree_free(&tree);
+}
+
+static void test_dtree_identical_features(void)
+{
+    /*
+     * All feature values identical: no valid split possible.
+     * Tree should be a single leaf (majority class).
+     */
+    double f0_data[] = {5.0, 5.0, 5.0, 5.0};
+    double labels[]  = {0.0, 0.0, 1.0, 0.0}; /* majority class 0 */
+
+    F64Array feat_cols[1];
+    feat_cols[0].data = f0_data; feat_cols[0].len = 4;
+
+    DTreeModel tree = ml_dtreefit(feat_cols, 1, labels, 4, 10);
+
+    /* No split possible, so tree is a single leaf. */
+    ASSERT(tree.nnodes == 1, "dtree identical features: single leaf node");
+    /* Leaf should predict majority class = 0. */
+    double pt[] = {5.0};
+    ASSERT_NEAR(ml_dtreepredict(&tree, pt), 0.0, 1e-10,
+                "dtree identical features: predicts majority class 0");
 
     ml_dtree_free(&tree);
 }
@@ -141,13 +343,6 @@ static void test_dtree(void)
 
 static void test_knn(void)
 {
-    /*
-     * Four training points in 2-D:
-     *   (0,0) → class 0
-     *   (0,1) → class 1
-     *   (5,5) → class 2
-     *   (5,6) → class 3
-     */
     double tc0_data[] = {0.0, 0.0, 5.0, 5.0};
     double tc1_data[] = {0.0, 1.0, 5.0, 6.0};
     double tlabels[]  = {0.0, 1.0, 2.0, 3.0};
@@ -156,10 +351,9 @@ static void test_knn(void)
     tcols[0].data = tc0_data; tcols[0].len = 4;
     tcols[1].data = tc1_data; tcols[1].len = 4;
 
-    /* Test 10: 1-NN — nearest neighbour should be exact. */
-    double q0[] = {0.1, 0.1};   /* closest to (0,0) → 0 */
-    double q1[] = {0.1, 0.9};   /* closest to (0,1) → 1 */
-    double q2[] = {4.9, 4.9};   /* closest to (5,5) → 2 */
+    double q0[] = {0.1, 0.1};
+    double q1[] = {0.1, 0.9};
+    double q2[] = {4.9, 4.9};
 
     ASSERT_NEAR(ml_knnpredict(tcols, 2, tlabels, 4, q0, 1), 0.0, 1e-10,
                 "knn 1-NN: query near (0,0) -> class 0");
@@ -168,25 +362,6 @@ static void test_knn(void)
     ASSERT_NEAR(ml_knnpredict(tcols, 2, tlabels, 4, q2, 1), 2.0, 1e-10,
                 "knn 1-NN: query near (5,5) -> class 2");
 
-    /* Test 11: 3-NN majority vote.
-     * Query at (0.1, 0.5): three nearest are (0,0), (0,1), and (5,5)/(5,6).
-     * Both low points are very close; the third nearest is far away.
-     * With k=2 the two nearest are (0,0) and (0,1) (both different classes),
-     * tie-broken by insertion order. With k=3 the third point is (5,5).
-     * Use a query clearly closest to the cluster [0,0], [0,1] so 2 of 3 are class 0/1.
-     *
-     * Simpler: use k=2 on (0.05, 0.05) — nearest 2 are (0,0) class 0 and (0,1) class 1,
-     * tie.  Instead verify k=3 for (0.05, 0.05): neighbours are class 0, class 1, class 0
-     * if we had duplicates.  Use a dataset designed for a clear majority.
-     */
-
-    /*
-     * Cleaner 3-NN test: 5 training points where 3 of the nearest to a query
-     * are the same class.
-     *
-     *   (0,0)→A  (0.1,0)→A  (0,0.1)→A   (10,10)→B  (10,11)→B
-     * Query at (0.05, 0.05), k=3 → three nearest all class A=0.
-     */
     double knn3_c0[] = {0.0, 0.1, 0.0, 10.0, 10.0};
     double knn3_c1[] = {0.0, 0.0, 0.1, 10.0, 11.0};
     double knn3_lb[] = {0.0, 0.0, 0.0,  1.0,  1.0};
@@ -201,15 +376,151 @@ static void test_knn(void)
 }
 
 /* =========================================================================
+ * 4b. KNN — degenerate and extended tests (Story 20.1.9)
+ * ========================================================================= */
+
+static void test_knn_k_equals_ntrain(void)
+{
+    /*
+     * k = n_train: use all training points for majority vote.
+     * 3 of class A, 2 of class B -> majority is A.
+     */
+    double c0_data[] = {0.0, 1.0, 2.0, 100.0, 101.0};
+    double c1_data[] = {0.0, 0.0, 0.0,   0.0,   0.0};
+    double labels[]  = {0.0, 0.0, 0.0,   1.0,   1.0};
+
+    F64Array cols[2];
+    cols[0].data = c0_data; cols[0].len = 5;
+    cols[1].data = c1_data; cols[1].len = 5;
+
+    double query[] = {50.0, 0.0};
+    double pred = ml_knnpredict(cols, 2, labels, 5, query, 5);
+    ASSERT_NEAR(pred, 0.0, 1e-10, "knn k=n_train: majority vote over all points -> class 0");
+}
+
+static void test_knn_k1_nearest_neighbour(void)
+{
+    /*
+     * k=1 on a 1D dataset: should return the label of the nearest point.
+     */
+    double c0_data[] = {0.0, 10.0, 20.0};
+    F64Array cols[1];
+    cols[0].data = c0_data; cols[0].len = 3;
+
+    double labels[] = {0.0, 1.0, 2.0};
+
+    double q_near0[]  = {0.5};
+    double q_near10[] = {9.5};
+    double q_near20[] = {19.5};
+
+    ASSERT_NEAR(ml_knnpredict(cols, 1, labels, 3, q_near0, 1), 0.0, 1e-10,
+                "knn k=1: nearest to 0 -> class 0");
+    ASSERT_NEAR(ml_knnpredict(cols, 1, labels, 3, q_near10, 1), 1.0, 1e-10,
+                "knn k=1: nearest to 10 -> class 1");
+    ASSERT_NEAR(ml_knnpredict(cols, 1, labels, 3, q_near20, 1), 2.0, 1e-10,
+                "knn k=1: nearest to 20 -> class 2");
+}
+
+static void test_knn_iris_like_3class(void)
+{
+    /*
+     * Synthetic iris-like 3-class dataset (2D, linearly separable):
+     *   Class 0 (setosa):     cluster around (1, 1)
+     *   Class 1 (versicolor): cluster around (5, 5)
+     *   Class 2 (virginica):  cluster around (9, 9)
+     * 4 points per class = 12 training points.
+     */
+    double f0_data[] = {0.8, 1.0, 1.2, 1.1,   4.8, 5.0, 5.2, 5.1,   8.8, 9.0, 9.2, 9.1};
+    double f1_data[] = {0.9, 1.1, 0.8, 1.2,   4.9, 5.1, 4.8, 5.2,   8.9, 9.1, 8.8, 9.2};
+    double labels[]  = {0.0, 0.0, 0.0, 0.0,   1.0, 1.0, 1.0, 1.0,   2.0, 2.0, 2.0, 2.0};
+
+    F64Array cols[2];
+    cols[0].data = f0_data; cols[0].len = 12;
+    cols[1].data = f1_data; cols[1].len = 12;
+
+    /* Query points near each cluster centre. */
+    double q_class0[] = {1.05, 1.05};
+    double q_class1[] = {5.05, 5.05};
+    double q_class2[] = {9.05, 9.05};
+
+    /* k=3: all 3 nearest neighbours should be from the correct class. */
+    ASSERT_NEAR(ml_knnpredict(cols, 2, labels, 12, q_class0, 3), 0.0, 1e-10,
+                "knn iris-like: query near class 0 -> class 0");
+    ASSERT_NEAR(ml_knnpredict(cols, 2, labels, 12, q_class1, 3), 1.0, 1e-10,
+                "knn iris-like: query near class 1 -> class 1");
+    ASSERT_NEAR(ml_knnpredict(cols, 2, labels, 12, q_class2, 3), 2.0, 1e-10,
+                "knn iris-like: query near class 2 -> class 2");
+}
+
+/* =========================================================================
+ * 5. Empty and edge-case inputs (Story 20.1.9)
+ * ========================================================================= */
+
+static void test_knn_empty_training_set(void)
+{
+    /* ntrain=0: should return 0.0 gracefully. */
+    F64Array cols[1];
+    double dummy_data[] = {0.0};
+    cols[0].data = dummy_data;
+    cols[0].len = 0;
+
+    double query[] = {1.0};
+    double pred = ml_knnpredict(cols, 1, NULL, 0, query, 3);
+    ASSERT_NEAR(pred, 0.0, 1e-10, "knn empty training set: returns 0.0");
+}
+
+static void test_knn_k_greater_than_ntrain(void)
+{
+    /* k > ntrain: implementation clamps k to ntrain. */
+    double c0_data[] = {1.0, 2.0};
+    double labels[]  = {0.0, 0.0};
+    F64Array cols[1];
+    cols[0].data = c0_data; cols[0].len = 2;
+
+    double query[] = {1.5};
+    double pred = ml_knnpredict(cols, 1, labels, 2, query, 10);
+    ASSERT_NEAR(pred, 0.0, 1e-10, "knn k>ntrain: clamped k, returns class 0");
+}
+
+static void test_linreg_empty(void)
+{
+    /* Empty arrays: n < 2, returns zero model. */
+    F64Array xs = { NULL, 0 };
+    F64Array ys = { NULL, 0 };
+
+    LinearModel m = ml_linregfit(xs, ys);
+    ASSERT_NEAR(m.slope, 0.0, 1e-10, "linreg empty: slope=0");
+    ASSERT_NEAR(m.intercept, 0.0, 1e-10, "linreg empty: intercept=0");
+}
+
+/* =========================================================================
  * main
  * ========================================================================= */
 
 int main(void)
 {
+    /* Original tests */
     test_linreg();
     test_kmeans();
     test_dtree();
     test_knn();
+
+    /* Story 20.1.9: hardened tests */
+    test_linreg_single_point();
+    test_linreg_collinear();
+    test_linreg_duplicate_points();
+    test_linreg_empty();
+    test_kmeans_k_greater_than_n();
+    test_kmeans_k_equals_1();
+    test_kmeans_single_point_clusters();
+    test_kmeans_convergence_well_separated();
+    test_dtree_stump();
+    test_dtree_identical_features();
+    test_knn_k_equals_ntrain();
+    test_knn_k1_nearest_neighbour();
+    test_knn_iris_like_3class();
+    test_knn_empty_training_set();
+    test_knn_k_greater_than_ntrain();
 
     if (failures == 0) {
         printf("All ml tests passed.\n");
