@@ -895,9 +895,9 @@ Stories: 10.2.9, 10.3.3, 10.3.4, 10.3.7, 10.3.8, 10.3.9, 10.5.2, 10.5.3, 10.5.5,
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 12.1.1 | std.json: streaming encode/decode | done | — | **P1** Add streaming JSON encoder/decoder for large payloads. JSON Pointer (RFC 6901) read/write. JSON Patch (RFC 6902) apply. Schema validation against type defs. Extends existing 8-function json module. 200+ corpus examples. |
-| 12.1.2 | std.http: client and connection pooling | done | — | **P1** HTTP client (GET/POST/PUT/DELETE/PATCH), connection pooling, request/response streaming, middleware chain pattern, timeout/retry. Extends existing server-only http module. 200+ corpus examples. |
-| 12.1.3 | std.crypto: extended hashing and HMAC | done | — | **P1** Add SHA-512, BLAKE3 hashing. Extend HMAC beyond SHA-256. Constant-time compare utility. Extends existing SHA-256 + HMAC-SHA-256 module. 200+ corpus examples. Prerequisite for auth, API keys, token signing. |
+| 12.1.1 | std.json: streaming encode/decode | done | — | **P1** Add streaming JSON encoder/decoder for large payloads. JSON Pointer (RFC 6901) read/write. JSON Patch (RFC 6902) apply. Schema validation against type defs. Extends existing 8-function json module. 200+ corpus examples. **⚠ .tki declares streaming API (streamparser/streamnext/streamemit/newwriter/writerbytes) but C impl missing — see 35.1.3.** |
+| 12.1.2 | std.http: client and connection pooling | done | — | **P1** HTTP client (GET/POST/PUT/DELETE/PATCH), connection pooling, request/response streaming, middleware chain pattern, timeout/retry. Extends existing server-only http module. 200+ corpus examples. **⚠ .tki declares client API (client/get/post/put/delete/stream/streamnext) but C impl missing — see 35.1.2.** |
+| 12.1.3 | std.crypto: extended hashing and HMAC | done | — | **P1** Add SHA-512, BLAKE3 hashing. Extend HMAC beyond SHA-256. Constant-time compare utility. Extends existing SHA-256 + HMAC-SHA-256 module. 200+ corpus examples. **⚠ .tki declares sha512/hmacsha512/constanteq/randombytes but C impl missing — see 35.1.1.** |
 
 ### Epic 12.2 — Standard Library Tier 1: Web & API Platform
 
@@ -906,10 +906,10 @@ Stories: 10.2.9, 10.3.3, 10.3.4, 10.3.7, 10.3.8, 10.3.9, 10.5.2, 10.5.3, 10.5.5,
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
 | 12.2.1 | std.encoding | done | — | **P1** Base64 encode/decode, hex encode/decode, URL percent-encoding/decoding. Prerequisite for auth headers, cookie values, data URIs. .tki interface + C impl. 200+ corpus examples. |
-| 12.2.2 | std.auth | done | — | **P1** JWT sign/verify (HS256, RS256), API key validation, OAuth2 client credentials flow, bearer token extraction middleware. Depends on std.crypto + std.encoding + std.json. 200+ corpus examples. |
-| 12.2.3 | std.router | done | — | **P1** Path parameters (`/users/:id`), query string parsing, middleware composition, CORS handling, rate limiting, request body validation against `t=` type schemas. Builds API framework on raw std.http. 200+ corpus examples. |
-| 12.2.4 | std.ws | done | — | **P1** WebSocket upgrade from HTTP connection, message framing (text/binary), ping/pong, connection lifecycle management, broadcast to multiple clients. Needed for dashboards and streaming LLM output. 200+ corpus examples. |
-| 12.2.5 | std.template | done | — | **P2** HTML/JS/CSS generation from toke types. Typed template fragments, HTML escaping, component composition, `<script>` and `<style>` inline embedding. Structural generation from data, not a full templating engine. 200+ corpus examples. |
+| 12.2.2 | std.auth | done | — | **P1** JWT sign/verify (HS256, RS256), API key validation, OAuth2 client credentials flow, bearer token extraction middleware. Depends on std.crypto + std.encoding + std.json. 200+ corpus examples. **⚠ .tki declares bearerextract but C impl missing; apikeygenerate/apikeygen naming mismatch — see 35.1.7.** |
+| 12.2.3 | std.router | done | — | **P1** Path parameters (`/users/:id`), query string parsing, middleware composition, CORS handling, rate limiting, request body validation against `t=` type schemas. Builds API framework on raw std.http. 200+ corpus examples. **⚠ .tki declares use (middleware) and serve but C impl missing — see 35.1.9.** |
+| 12.2.4 | std.ws | done | — | **P1** WebSocket upgrade from HTTP connection, message framing (text/binary), ping/pong, connection lifecycle management, broadcast to multiple clients. Needed for dashboards and streaming LLM output. 200+ corpus examples. **⚠ .tki declares high-level API (connect/send/recv/close/broadcast) but C only has low-level frame codec — see 35.1.4.** |
+| 12.2.5 | std.template | done | — | **P2** HTML/JS/CSS generation from toke types. Typed template fragments, HTML escaping, component composition, `<script>` and `<style>` inline embedding. Structural generation from data, not a full templating engine. 200+ corpus examples. **⚠ .tki declares vars/html/renderfile but C impl missing — see 35.1.8.** |
 
 ### Epic 12.3 — Standard Library Tier 2: Data & LLM Integration
 
@@ -917,10 +917,10 @@ Stories: 10.2.9, 10.3.3, 10.3.4, 10.3.7, 10.3.8, 10.3.9, 10.5.2, 10.5.3, 10.5.5,
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 12.3.1 | std.csv | done | — | **P1** Parse/emit CSV and TSV with typed column mapping. Quote handling, header detection, streaming read for large files. Fast path for analytics data ingest. 200+ corpus examples. |
+| 12.3.1 | std.csv | done | — | **P1** Parse/emit CSV and TSV with typed column mapping. Quote handling, header detection, streaming read for large files. Fast path for analytics data ingest. 200+ corpus examples. **⚠ .tki/.h naming mismatches (csv.reader vs csv_reader_new etc.) — see 35.1.11.** |
 | 12.3.2 | std.math | done | — | **P1** Statistics: mean, median, stddev, percentiles, histograms, linear regression. Matrix/vector ops for small dimensions (up to 4x4). Foundation for analytics and ML modules. 200+ corpus examples. |
 | 12.3.3 | std.llm | done | — | **P0** HTTP client wrapper for OpenAI/Anthropic/local model APIs. Streaming token consumption via SSE, structured output parsing (JSON mode), prompt construction helpers, token counting, retry with exponential backoff, multi-provider abstraction. Highest-value differentiator: a language for LLM code gen with first-class LLM client support. Depends on std.http client (12.1.2) + std.json (12.1.1). 200+ corpus examples. |
-| 12.3.4 | std.llm.tool | done | — | **P1** Tool-use/function-calling protocol. Type-safe tool definitions generated from toke function signatures. Automatic JSON schema emission from `t=` type defs. Tool result parsing. Lets toke programs act as both LLM-generated code and LLM-consuming agents. Depends on std.llm (12.3.3). 200+ corpus examples. |
+| 12.3.4 | std.llm.tool | done | — | **P1** Tool-use/function-calling protocol. Type-safe tool definitions generated from toke function signatures. Automatic JSON schema emission from `t=` type defs. Tool result parsing. Lets toke programs act as both LLM-generated code and LLM-consuming agents. Depends on std.llm (12.3.3). 200+ corpus examples. **⚠ .tki/.h naming mismatch (withtools vs tool_build_tools_json) — see 35.1.12.** |
 
 ### Epic 12.4 — Standard Library Tier 3: Visualization & Dashboards
 
@@ -930,7 +930,7 @@ Stories: 10.2.9, 10.3.3, 10.3.4, 10.3.7, 10.3.8, 10.3.9, 10.5.2, 10.5.3, 10.5.5,
 |----|-------|--------|--------|-------|
 | 12.4.1 | std.chart | done | — | **P1** Data-to-JSON serialisation targeting Chart.js/Vega-Lite/minimal custom spec. Line, bar, scatter, histogram, heatmap chart types. Output is a JSON descriptor — rendering is client-side. 200+ corpus examples. |
 | 12.4.2 | std.html | done | — | **P1** Structured HTML document builder. DOM-like tree construction, CSS class composition, JS snippet embedding, `<canvas>` and `<svg>` element support. Full document generation (more structured than std.template). 200+ corpus examples. |
-| 12.4.3 | std.dashboard | done | — | **P1** Composition layer combining std.chart + std.html + std.ws. Layout grid, auto-refresh intervals, WebSocket push for real-time data. Single toke program → self-contained monitoring dashboard served by std.router. 200+ corpus examples. Depends on 12.4.1, 12.4.2, 12.2.4, 12.2.3. |
+| 12.4.3 | std.dashboard | done | — | **P1** Composition layer combining std.chart + std.html + std.ws. Layout grid, auto-refresh intervals, WebSocket push for real-time data. Single toke program → self-contained monitoring dashboard served by std.router. 200+ corpus examples. Depends on 12.4.1, 12.4.2, 12.2.4, 12.2.3. **⚠ .tki declares serve but C impl has render only — see 35.1.10.** |
 | 12.4.4 | std.sse | done | — | **P1** Server-Sent Events endpoint helper. Simpler than WebSocket for one-way streaming: LLM token streams, live chart updates, log tailing. Connection management, event naming, retry hints. 200+ corpus examples. |
 
 ### Epic 12.5 — Standard Library Tier 4: Analytics & ML
@@ -939,8 +939,8 @@ Stories: 10.2.9, 10.3.3, 10.3.4, 10.3.7, 10.3.8, 10.3.9, 10.5.2, 10.5.3, 10.5.5,
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 12.5.1 | std.dataframe | done | — | **P1** Columnar typed data structure. Filter, group-by, join, pivot, window functions. Arena-friendly design (column arrays allocated in bulk). Import from CSV (std.csv), JSON (std.json), and std.db query results. 200+ corpus examples. |
-| 12.5.2 | std.analytics | done | — | **P1** Aggregation pipelines on dataframes. Time-series bucketing, moving averages, anomaly detection (z-score), correlation matrices. Outputs feed directly into std.chart. Depends on std.dataframe (12.5.1) + std.math (12.3.2). 200+ corpus examples. |
+| 12.5.1 | std.dataframe | done | — | **P1** Columnar typed data structure. Filter, group-by, join, pivot, window functions. Arena-friendly design (column arrays allocated in bulk). Import from CSV (std.csv), JSON (std.json), and std.db query results. 200+ corpus examples. **⚠ .tki declares fromrows/columnstr/tocsv/schema but C impl missing — see 35.1.5.** |
+| 12.5.2 | std.analytics | done | — | **P1** Aggregation pipelines on dataframes. Time-series bucketing, moving averages, anomaly detection (z-score), correlation matrices. Outputs feed directly into std.chart. Depends on std.dataframe (12.5.1) + std.math (12.3.2). 200+ corpus examples. **⚠ .tki declares groupstats/pivot but C impl missing — see 35.1.6.** |
 | 12.5.3 | std.ml | done | — | **P2** Inference-only ML primitives. Linear/logistic regression, k-means, decision trees, k-nearest neighbours. Train on std.dataframe columns. No GPU, no backprop — small-data, in-process models for classification/prediction. Depends on std.dataframe (12.5.1) + std.math (12.3.2). 200+ corpus examples. |
 | 12.5.4 | std.encrypt | done | — | **P1** Symmetric encryption (AES-256-GCM), asymmetric (X25519 key exchange, Ed25519 signing), TLS client certificate handling. Deferred from Tier 0 because hashing covers 90% of early needs; full encryption needed for data-at-rest and E2E security in production APIs. 200+ corpus examples. |
 
@@ -1371,4 +1371,28 @@ The visualization modules (html, svg, canvas, chart, dashboard, image) cover bas
 | 34.5.1 | std.svg: gradients, animation, and file output | backlog | — | **P2** Add: `svg_ellipse(cx;cy;rx;ry;style)`, `svg_gradient_linear(id;stops)`, `svg_gradient_radial(id;stops)`, `svg_animate(target;attr;from;to;duration)`, `svg_defs(elements)`, `svg_save_file(doc;path)→bool`. |
 | 34.5.2 | std.canvas: transforms, gradients, and state management | backlog | — | **P2** Add: `canvas_translate(c;dx;dy)`, `canvas_rotate(c;angle)`, `canvas_scale(c;sx;sy)`, `canvas_save(c)`, `canvas_restore(c)`, `canvas_fill_style(c;color)`, `canvas_stroke_style(c;color)`, `canvas_line_width(c;width)`, `canvas_quadratic_to(c;cpx;cpy;x;y)`, `canvas_bezier_to(c;cp1x;cp1y;cp2x;cp2y;x;y)`, `canvas_gradient_linear(c;x0;y0;x1;y1)`. |
 | 34.6.1 | std.ws: close frame handling and upgrade helpers | backlog | — | **P1** Add: `ws_handle_close_frame(payload)→{code;reason}`, `ws_build_close_frame(code;reason)→ByteArray`, `ws_parse_upgrade_headers(headers)→{sec_key;protocol;extensions}`, `ws_build_upgrade_response(accept_key;protocols)→Str`, `ws_validate_utf8(payload)→bool` (RFC 6455 §3.4 compliance). |
+
+---
+
+### Epic 35 — .tki Contract Reconciliation
+
+**BLOCKING.** The .tki interface files are the compiler contract — toke programs import against them. 13 modules have .tki files that declare functions with no corresponding C implementation. Programs using these functions will compile but fail at link time. Either implement the missing C functions or trim the .tki to match reality. The .tki is the authoritative contract; prefer adding implementations.
+
+**Note:** Stories 12.1.1, 12.1.2, 12.1.3, 12.2.2, 12.2.3, 12.2.4, 12.2.5, 12.4.3, 12.5.1, 12.5.2 are marked "done" but their .tki-promised functions were never fully implemented in C. These stories described the interface design + corpus examples, not the C implementation. The C implementation stories (Epics 14-18) implemented a subset. This epic closes the gap.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 35.1.1 | std.crypto: implement sha512, hmacsha512, constanteq, randombytes | backlog | — | **P0** 4 functions declared in crypto.tki but missing from crypto.h/.c. `crypto_sha512`: SHA-512 hash (FIPS 180-4). `crypto_hmac_sha512`: HMAC-SHA-512. `crypto_constanteq`: constant-time byte comparison (anti-timing-attack). `crypto_randombytes`: wraps arc4random_buf. Update crypto.h, crypto.c, tests. |
+| 35.1.2 | std.http: implement client API (client, get, post, put, delete, stream, streamnext) | backlog | — | **P0** 7 functions declared in http.tki but missing from http.h/.c. The http module currently only has the server-side API. Add: `http_client(baseurl)` (connection pool), `http_get/post/put/delete(client;path;body)→HttpResult`, `http_stream/streamnext` for streaming responses. POSIX sockets, reuse patterns from llm.c. Update http.h, http.c, tests. |
+| 35.1.3 | std.json: implement streaming API (streamparser, streamnext, streamemit, newwriter, writerbytes) | backlog | — | **P0** 5 functions declared in json.tki but missing from json.h/.c. Streaming JSON parser for large payloads (SAX-style events), streaming writer. Update json.h, json.c, tests. |
+| 35.1.4 | std.ws: implement high-level API (connect, send, sendbytes, recv, close, broadcast) | backlog | — | **P0** 6 functions declared in ws.tki but ws.h/.c only has low-level frame encode/decode. Add: `ws_connect(url)→WsConn`, `ws_send(conn;text)`, `ws_sendbytes(conn;data)`, `ws_recv(conn)→WsFrame`, `ws_close(conn)`, `ws_broadcast(conns;text)`. Build on existing frame codec + POSIX sockets. |
+| 35.1.5 | std.dataframe: implement fromrows, columnstr, tocsv, schema | backlog | — | **P1** 4 functions declared in dataframe.tki but missing from dataframe.h/.c. `df_fromrows`: create from row-major data. `df_columnstr`: extract string column. `df_tocsv`: serialize to CSV string. `df_schema`: return column names and types. |
+| 35.1.6 | std.analytics: implement groupstats, pivot | backlog | — | **P1** 2 functions declared in analytics.tki but missing from analytics.h/.c. `analytics_groupstats`: per-group descriptive statistics. `analytics_pivot`: pivot table (row key, column key, aggregate values). |
+| 35.1.7 | std.auth: implement bearerextract, fix apikeygenerate naming | backlog | — | **P1** `auth.bearerextract` declared in auth.tki but not in auth.h/.c — extract Bearer token from Authorization header. Also fix naming: .tki says `apikeygenerate`, .h says `apikeygen` — align to one name. |
+| 35.1.8 | std.template: implement vars, renderfile; resolve html alias | backlog | — | **P1** 3 functions declared in template.tki but missing from template.h/.c. `tmpl_vars`: list slot names from compiled template. `tmpl_renderfile`: render directly to file. Resolve whether `tpl.html` is an alias for `tmpl_renderhtml` or a separate function. |
+| 35.1.9 | std.router: implement use (middleware) and serve | backlog | — | **P1** 2 functions declared in router.tki but missing from router.h/.c. `router_use(router;middleware_fn)`: add middleware to chain. `router_serve(router;port)`: start HTTP server with router dispatch (wrapper around http_serve). |
+| 35.1.10 | std.dashboard: implement serve | backlog | — | **P2** `dashboard.serve` declared in dashboard.tki but only `dashboard_render` exists in .h/.c. Either implement `dashboard_serve(d;port)` (start server serving rendered HTML) or align .tki to use `render` instead. |
+| 35.1.11 | std.csv: fix naming mismatches between .tki and .h | backlog | — | **P1** csv.tki uses `csv.reader`/`csv.next` but csv.h uses `csv_reader_new`/`csv_reader_next`. Align the names so the compiler-generated calls match the C symbols. Either update .tki or add aliases in .h. |
+| 35.1.12 | std.llm_tool: fix naming mismatch (withtools vs tool_build_tools_json) | backlog | — | **P1** llm_tool.tki uses `llm.withtools` but llm_tool.h uses `llm_tool_build_tools_json`. Align names. Also add `llm_parse_tool_calls` and `llm_tool_result_msgs` to .tki if they should be public. |
+| 35.1.13 | Reconciliation verification: all .tki match all .h exactly | backlog | — | **P0** After 35.1.1–35.1.12, run automated check: for every function in every .tki, verify a matching symbol exists in the corresponding .h. For every public function in .h, verify it appears in .tki. Zero mismatches. Supersedes story 26.1.3. Depends on 35.1.1–35.1.12. |
 
