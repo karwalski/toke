@@ -594,6 +594,98 @@ int main(void)
         free(decoded);
     }
 
+    /* ── ETag generation and conditional requests (Story 27.1.13) ─────── */
+
+    /* http_etag_fnv: consistent result for same input */
+    {
+        const char *body = "hello, world";
+        const char *e1 = http_etag_fnv(body, strlen(body));
+        const char *e2 = http_etag_fnv(body, strlen(body));
+        ASSERT(e1 != NULL,                   "http_etag_fnv returns non-NULL");
+        ASSERT(e2 != NULL,                   "http_etag_fnv second call non-NULL");
+        ASSERT(e1 && e2 && strcmp(e1, e2) == 0,
+               "http_etag_fnv same input produces same ETag");
+        /* Must start with W/" (weak ETag) */
+        ASSERT(e1 && strncmp(e1, "W/\"", 3) == 0,
+               "http_etag_fnv result starts with W/\"");
+        free((char *)e1);
+        free((char *)e2);
+    }
+
+    /* http_etag_fnv: different inputs produce different ETags */
+    {
+        const char *b1 = "foo";
+        const char *b2 = "bar";
+        const char *e1 = http_etag_fnv(b1, strlen(b1));
+        const char *e2 = http_etag_fnv(b2, strlen(b2));
+        ASSERT(e1 && e2 && strcmp(e1, e2) != 0,
+               "http_etag_fnv different inputs produce different ETags");
+        free((char *)e1);
+        free((char *)e2);
+    }
+
+    /* http_etag_fnv: empty body produces a valid ETag */
+    {
+        const char *e = http_etag_fnv("", 0);
+        ASSERT(e != NULL,                    "http_etag_fnv empty body non-NULL");
+        ASSERT(e && strncmp(e, "W/\"", 3) == 0,
+               "http_etag_fnv empty body starts with W/\"");
+        free((char *)e);
+    }
+
+    /* http_etag_matches: exact match returns 1 */
+    {
+        const char *etag = "W/\"abc123\"";
+        ASSERT(http_etag_matches(etag, "W/\"abc123\"") == 1,
+               "http_etag_matches exact match returns 1");
+    }
+
+    /* http_etag_matches: wildcard "*" always matches */
+    {
+        const char *etag = "W/\"abc123\"";
+        ASSERT(http_etag_matches(etag, "*") == 1,
+               "http_etag_matches wildcard * returns 1");
+    }
+
+    /* http_etag_matches: mismatch returns 0 */
+    {
+        const char *etag = "W/\"abc123\"";
+        ASSERT(http_etag_matches(etag, "W/\"different\"") == 0,
+               "http_etag_matches mismatch returns 0");
+    }
+
+    /* http_etag_matches: NULL etag returns 0 */
+    {
+        ASSERT(http_etag_matches(NULL, "W/\"abc\"") == 0,
+               "http_etag_matches NULL etag returns 0");
+    }
+
+    /* http_etag_matches: NULL if_none_match returns 0 */
+    {
+        ASSERT(http_etag_matches("W/\"abc\"", NULL) == 0,
+               "http_etag_matches NULL if_none_match returns 0");
+    }
+
+    /* http_etag_matches: both NULL returns 0 */
+    {
+        ASSERT(http_etag_matches(NULL, NULL) == 0,
+               "http_etag_matches both NULL returns 0");
+    }
+
+    /* http_etag_matches: match in comma-separated list */
+    {
+        const char *etag = "W/\"v2\"";
+        ASSERT(http_etag_matches(etag, "W/\"v1\", W/\"v2\", W/\"v3\"") == 1,
+               "http_etag_matches finds match in list");
+    }
+
+    /* http_etag_matches: no match in list */
+    {
+        const char *etag = "W/\"v4\"";
+        ASSERT(http_etag_matches(etag, "W/\"v1\", W/\"v2\", W/\"v3\"") == 0,
+               "http_etag_matches no match in list returns 0");
+    }
+
     if (failures == 0) { printf("All tests passed.\n"); return 0; }
     fprintf(stderr, "%d test(s) failed.\n", failures);
     return 1;

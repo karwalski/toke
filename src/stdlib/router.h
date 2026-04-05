@@ -25,6 +25,11 @@ typedef struct {
     const char **param_names;  /* extracted :param names */
     const char **param_values; /* extracted :param values */
     uint64_t     nparam;
+    /* Optional request headers (may be NULL/0 if not provided) */
+    const char **req_header_names;
+    const char **req_header_values;
+    uint64_t     nreq_headers;
+    const char  *ip;           /* client IP string, or NULL if unavailable */
 } TkRouteCtx;
 
 typedef struct {
@@ -61,9 +66,38 @@ void        router_delete(TkRouter *r, const char *pattern, TkRouteHandler h);
 /* Add middleware to the router's chain (called before route handlers) */
 void        router_use(TkRouter *r, TkMiddleware mw);
 
+/* CORS configuration (Story 27.1.12).
+ * All array fields are NULL-terminated arrays of C strings.
+ * Pass allowed_origins={"*",NULL} to allow any origin.
+ * Set max_age=-1 to omit Access-Control-Max-Age.
+ * Set allow_credentials=1 to send Access-Control-Allow-Credentials: true
+ * (incompatible with wildcard origin — per RFC 6454 / Fetch spec). */
+typedef struct {
+    const char **allowed_origins;  /* NULL-terminated; {"*",NULL} for all  */
+    const char **allowed_methods;  /* e.g. {"GET","POST","PUT","DELETE",NULL} */
+    const char **allowed_headers;  /* e.g. {"Content-Type","Authorization",NULL} */
+    const char **expose_headers;   /* headers to expose to browser, or NULL */
+    int          max_age;          /* preflight cache seconds; -1 to omit   */
+    int          allow_credentials;/* 1 = send Allow-Credentials: true      */
+} TkCorsOpts;
+
+/* Register CORS middleware on the router.
+ * opts is copied by value; the caller's string arrays must remain valid
+ * for the lifetime of the router. */
+void router_use_cors(TkRouter *r, TkCorsOpts opts);
+
 /* Match a request — returns handler result or 404 response */
 TkRouteResp router_dispatch(TkRouter *r, const char *method, const char *path,
                              const char *query, const char *body);
+
+/* Extended dispatch — also accepts request headers (NULL-terminated parallel
+ * arrays of length nhdrs).  Use this when CORS middleware needs the Origin
+ * header.  Either hnames or hvals may be NULL (treated as nhdrs==0). */
+TkRouteResp router_dispatch_ex(TkRouter *r,
+                                const char *method, const char *path,
+                                const char *query,  const char *body,
+                                const char **hnames, const char **hvals,
+                                uint64_t nhdrs);
 
 /* Start an HTTP server using this router for dispatch.
  * Binds to the given host:port and blocks, serving requests.
@@ -89,10 +123,32 @@ void router_static(TkRouter *r, const char *url_prefix, const char *dir_path);
 TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
                                  const char *if_none_match);
 
+/* ── ETag middleware (Story 27.1.13) ────────────────────────────────── */
+
+/* router_use_etag — middleware that auto-generates ETags for all responses.
+ * Computes FNV-1a of response body, sets ETag header.
+ * If request has If-None-Match matching the ETag, returns 304. */
+void router_use_etag(TkRouter *r);
+
 /* Convenience response constructors */
 TkRouteResp router_resp_ok(const char *body, const char *ct);
 TkRouteResp router_resp_json(const char *json_body);
 TkRouteResp router_resp_status(int status, const char *body);
 TkRouteResp router_resp_404(void);
+
+/* ── Access logging middleware (Story 27.1.11) ──────────────────────── */
+
+#define ROUTER_LOG_COMMON 0  /* Common Log Format */
+#define ROUTER_LOG_JSON   1  /* JSON format        */
+
+/* router_use_log — add access logging middleware.
+ * format: ROUTER_LOG_COMMON or ROUTER_LOG_JSON
+ * path:   file path for log output, or NULL for stderr
+ * Log lines are written AFTER the response is produced.
+ * Common Log Format:
+ *   {ip} - - [{timestamp}] "{method} {path} HTTP/1.1" {status} {bytes}
+ * JSON format:
+ *   {"ts":"...","ip":"...","method":"...","path":"...","status":N,"bytes":N,"ms":N} */
+void router_use_log(TkRouter *r, int format, const char *path);
 
 #endif /* TK_STDLIB_ROUTER_H */

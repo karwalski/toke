@@ -72,6 +72,29 @@ HttpResult http_header(Req req, const char *name);
 /* Route count (for testing) */
 int http_route_count(void);
 
+/* ── URL-encoded form body parsing (Story 27.1.14) ──────────────────── */
+
+typedef struct {
+    const char *key;
+    const char *value; /* URL-decoded */
+} TkFormField;
+
+typedef struct {
+    TkFormField *fields;
+    size_t       nfields;
+} TkFormResult;
+
+/* http_form_parse — parse application/x-www-form-urlencoded body.
+ * body is the raw request body string.
+ * Returns TkFormResult; caller must call http_form_free(). */
+TkFormResult http_form_parse(const char *body);
+
+/* http_form_get — look up a field by key. Returns value or NULL. */
+const char  *http_form_get(TkFormResult form, const char *key);
+
+/* http_form_free — release all resources. */
+void         http_form_free(TkFormResult form);
+
 /* ── Multipart/form-data parsing (Story 27.1.8) ─────────────────────── */
 
 typedef struct {
@@ -163,6 +186,16 @@ void http_set_limits(uint32_t max_header, uint32_t max_body,
 void http_shutdown(void);
 
 #define HTTP_DRAIN_TIMEOUT_SECS 10
+
+/* ── ETag generation and conditional requests (Story 27.1.13) ────────── */
+
+/* http_etag_fnv — compute weak ETag (FNV-1a) of body, return as W/"hex" string.
+ * Returns heap-allocated string; caller owns. */
+const char *http_etag_fnv(const char *body, size_t len);
+
+/* http_etag_matches — check if ETag matches If-None-Match header value.
+ * Returns 1 if they match (should return 304), 0 otherwise. */
+int http_etag_matches(const char *etag, const char *if_none_match);
 
 /* Server — blocks; dispatches to registered routes */
 int http_serve(uint16_t port);

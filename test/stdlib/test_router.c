@@ -594,6 +594,465 @@ int main(void)
     }
 
     /* ------------------------------------------------------------------ */
+    /* CORS middleware tests (Story 27.1.12)                                 */
+    /* ------------------------------------------------------------------ */
+
+    /* ------------------------------------------------------------------ */
+    /* Test 33: OPTIONS preflight returns 204 with CORS headers              */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        const char *origins[]  = {"https://example.com", NULL};
+        const char *methods[]  = {"GET", "POST", NULL};
+        const char *headers[]  = {"Content-Type", "Authorization", NULL};
+        TkCorsOpts opts;
+        opts.allowed_origins   = origins;
+        opts.allowed_methods   = methods;
+        opts.allowed_headers   = headers;
+        opts.expose_headers    = NULL;
+        opts.max_age           = 86400;
+        opts.allow_credentials = 0;
+        router_use_cors(r, opts);
+        router_get(r, "/api", handler_hello);
+
+        const char *hnames[] = {"Origin", NULL};
+        const char *hvals[]  = {"https://example.com", NULL};
+        TkRouteResp resp = router_dispatch_ex(r, "OPTIONS", "/api", NULL, NULL,
+                                              hnames, hvals, 1);
+        ASSERT_INTEQ(resp.status, 204, "T33: OPTIONS preflight status=204");
+
+        /* Check for ACAO header */
+        int found_acao = 0, found_acam = 0, found_acah = 0, found_max_age = 0;
+        for (uint64_t i = 0; i < resp.nheaders; i++) {
+            if (resp.header_names[i]) {
+                if (strcmp(resp.header_names[i], "Access-Control-Allow-Origin") == 0 &&
+                    resp.header_values[i] &&
+                    strcmp(resp.header_values[i], "https://example.com") == 0)
+                    found_acao = 1;
+                if (strcmp(resp.header_names[i], "Access-Control-Allow-Methods") == 0)
+                    found_acam = 1;
+                if (strcmp(resp.header_names[i], "Access-Control-Allow-Headers") == 0)
+                    found_acah = 1;
+                if (strcmp(resp.header_names[i], "Access-Control-Max-Age") == 0 &&
+                    resp.header_values[i] &&
+                    strcmp(resp.header_values[i], "86400") == 0)
+                    found_max_age = 1;
+            }
+        }
+        ASSERT(found_acao,    "T33: ACAO header echoes back origin");
+        ASSERT(found_acam,    "T33: ACAM header present");
+        ASSERT(found_acah,    "T33: ACAH header present");
+        ASSERT(found_max_age, "T33: ACMA header = 86400");
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 34: Non-matching origin gets no CORS headers                    */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        const char *origins[] = {"https://allowed.com", NULL};
+        const char *methods[] = {"GET", NULL};
+        TkCorsOpts opts;
+        opts.allowed_origins   = origins;
+        opts.allowed_methods   = methods;
+        opts.allowed_headers   = NULL;
+        opts.expose_headers    = NULL;
+        opts.max_age           = -1;
+        opts.allow_credentials = 0;
+        router_use_cors(r, opts);
+        router_get(r, "/api", handler_hello);
+
+        const char *hnames[] = {"Origin", NULL};
+        const char *hvals[]  = {"https://evil.com", NULL};
+        TkRouteResp resp = router_dispatch_ex(r, "GET", "/api", NULL, NULL,
+                                              hnames, hvals, 1);
+        ASSERT_INTEQ(resp.status, 200, "T34: non-matching origin still returns 200");
+        int found_acao = 0;
+        for (uint64_t i = 0; i < resp.nheaders; i++) {
+            if (resp.header_names[i] &&
+                strcmp(resp.header_names[i], "Access-Control-Allow-Origin") == 0)
+                found_acao = 1;
+        }
+        ASSERT(!found_acao, "T34: no ACAO header for disallowed origin");
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 35: Wildcard origin responds with Access-Control-Allow-Origin: * */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        const char *origins[] = {"*", NULL};
+        const char *methods[] = {"GET", "POST", NULL};
+        TkCorsOpts opts;
+        opts.allowed_origins   = origins;
+        opts.allowed_methods   = methods;
+        opts.allowed_headers   = NULL;
+        opts.expose_headers    = NULL;
+        opts.max_age           = -1;
+        opts.allow_credentials = 0;
+        router_use_cors(r, opts);
+        router_get(r, "/public", handler_hello);
+
+        const char *hnames[] = {"Origin", NULL};
+        const char *hvals[]  = {"https://anywhere.com", NULL};
+        TkRouteResp resp = router_dispatch_ex(r, "GET", "/public", NULL, NULL,
+                                              hnames, hvals, 1);
+        ASSERT_INTEQ(resp.status, 200, "T35: wildcard CORS GET status=200");
+        int found_star = 0;
+        for (uint64_t i = 0; i < resp.nheaders; i++) {
+            if (resp.header_names[i] &&
+                strcmp(resp.header_names[i], "Access-Control-Allow-Origin") == 0 &&
+                resp.header_values[i] &&
+                strcmp(resp.header_values[i], "*") == 0)
+                found_star = 1;
+        }
+        ASSERT(found_star, "T35: ACAO: * for wildcard origin");
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 36: Credentials mode includes Allow-Credentials header           */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        const char *origins[] = {"https://trusted.com", NULL};
+        const char *methods[] = {"GET", NULL};
+        TkCorsOpts opts;
+        opts.allowed_origins   = origins;
+        opts.allowed_methods   = methods;
+        opts.allowed_headers   = NULL;
+        opts.expose_headers    = NULL;
+        opts.max_age           = -1;
+        opts.allow_credentials = 1;
+        router_use_cors(r, opts);
+        router_get(r, "/secure", handler_hello);
+
+        /* Test on a GET request (non-preflight) */
+        const char *hnames[] = {"Origin", NULL};
+        const char *hvals[]  = {"https://trusted.com", NULL};
+        TkRouteResp resp = router_dispatch_ex(r, "GET", "/secure", NULL, NULL,
+                                              hnames, hvals, 1);
+        ASSERT_INTEQ(resp.status, 200, "T36: credentials CORS GET status=200");
+        int found_creds = 0, found_acao = 0;
+        for (uint64_t i = 0; i < resp.nheaders; i++) {
+            if (resp.header_names[i] &&
+                strcmp(resp.header_names[i], "Access-Control-Allow-Credentials") == 0 &&
+                resp.header_values[i] &&
+                strcmp(resp.header_values[i], "true") == 0)
+                found_creds = 1;
+            if (resp.header_names[i] &&
+                strcmp(resp.header_names[i], "Access-Control-Allow-Origin") == 0 &&
+                resp.header_values[i] &&
+                strcmp(resp.header_values[i], "https://trusted.com") == 0)
+                found_acao = 1;
+        }
+        ASSERT(found_creds, "T36: Access-Control-Allow-Credentials: true present");
+        ASSERT(found_acao,  "T36: ACAO echoes specific origin with credentials");
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 37: Specific origin echoes back matched origin + Vary: Origin    */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        const char *origins[] = {"https://a.com", "https://b.com", NULL};
+        const char *methods[] = {"GET", NULL};
+        TkCorsOpts opts;
+        opts.allowed_origins   = origins;
+        opts.allowed_methods   = methods;
+        opts.allowed_headers   = NULL;
+        opts.expose_headers    = NULL;
+        opts.max_age           = -1;
+        opts.allow_credentials = 0;
+        router_use_cors(r, opts);
+        router_get(r, "/api", handler_hello);
+
+        const char *hnames[] = {"Origin", NULL};
+        const char *hvals[]  = {"https://b.com", NULL};
+        TkRouteResp resp = router_dispatch_ex(r, "OPTIONS", "/api", NULL, NULL,
+                                              hnames, hvals, 1);
+        ASSERT_INTEQ(resp.status, 204, "T37: OPTIONS specific origin status=204");
+        int found_acao = 0, found_vary = 0;
+        for (uint64_t i = 0; i < resp.nheaders; i++) {
+            if (resp.header_names[i] &&
+                strcmp(resp.header_names[i], "Access-Control-Allow-Origin") == 0 &&
+                resp.header_values[i] &&
+                strcmp(resp.header_values[i], "https://b.com") == 0)
+                found_acao = 1;
+            if (resp.header_names[i] &&
+                strcmp(resp.header_names[i], "Vary") == 0 &&
+                resp.header_values[i] &&
+                strcmp(resp.header_values[i], "Origin") == 0)
+                found_vary = 1;
+        }
+        ASSERT(found_acao, "T37: ACAO echoes back https://b.com");
+        ASSERT(found_vary, "T37: Vary: Origin present for specific origin match");
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 38: OPTIONS preflight on path with no explicit route still 204  */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        const char *origins[] = {"https://example.com", NULL};
+        const char *methods[] = {"GET", "POST", NULL};
+        TkCorsOpts opts;
+        opts.allowed_origins   = origins;
+        opts.allowed_methods   = methods;
+        opts.allowed_headers   = NULL;
+        opts.expose_headers    = NULL;
+        opts.max_age           = 3600;
+        opts.allow_credentials = 0;
+        router_use_cors(r, opts);
+        /* No explicit route registered — CORS still handles OPTIONS */
+
+        const char *hnames[] = {"Origin", NULL};
+        const char *hvals[]  = {"https://example.com", NULL};
+        TkRouteResp resp = router_dispatch_ex(r, "OPTIONS", "/any/path", NULL, NULL,
+                                              hnames, hvals, 1);
+        ASSERT_INTEQ(resp.status, 204, "T38: OPTIONS no-route preflight status=204");
+        int found_acao = 0;
+        for (uint64_t i = 0; i < resp.nheaders; i++) {
+            if (resp.header_names[i] &&
+                strcmp(resp.header_names[i], "Access-Control-Allow-Origin") == 0)
+                found_acao = 1;
+        }
+        ASSERT(found_acao, "T38: ACAO header present even without explicit route");
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Access logging middleware tests (Story 27.1.11)                       */
+    /* ------------------------------------------------------------------ */
+
+    /* ------------------------------------------------------------------ */
+    /* Test 39: Common Log Format — output contains method, path, status     */
+    /* ------------------------------------------------------------------ */
+    {
+        char log_path[256];
+        snprintf(log_path, sizeof(log_path), "/tmp/test_router_log_common_%d.log",
+                 (int)getpid());
+        remove(log_path); /* ensure clean start */
+
+        TkRouter *r = router_new();
+        router_use_log(r, ROUTER_LOG_COMMON, log_path);
+        router_get(r, "/ping", handler_hello);
+        TkRouteResp resp = router_dispatch(r, "GET", "/ping", NULL, NULL);
+        ASSERT_INTEQ(resp.status, 200, "T39: common log dispatch status=200");
+        router_free(r);
+
+        /* Read the log file and verify content */
+        FILE *f = fopen(log_path, "r");
+        ASSERT(f != NULL, "T39: log file created");
+        if (f) {
+            char line[1024];
+            memset(line, 0, sizeof(line));
+            (void)fgets(line, sizeof(line), f);
+            fclose(f);
+            ASSERT(strstr(line, "GET")  != NULL, "T39: common log contains method 'GET'");
+            ASSERT(strstr(line, "/ping") != NULL, "T39: common log contains path '/ping'");
+            ASSERT(strstr(line, "200")  != NULL, "T39: common log contains status '200'");
+        }
+        remove(log_path);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 40: JSON format — output is JSON with expected keys               */
+    /* ------------------------------------------------------------------ */
+    {
+        char log_path[256];
+        snprintf(log_path, sizeof(log_path), "/tmp/test_router_log_json_%d.log",
+                 (int)getpid());
+        remove(log_path);
+
+        TkRouter *r = router_new();
+        router_use_log(r, ROUTER_LOG_JSON, log_path);
+        router_post(r, "/items", handler_hello);
+        TkRouteResp resp = router_dispatch(r, "POST", "/items", NULL, NULL);
+        ASSERT_INTEQ(resp.status, 200, "T40: JSON log dispatch status=200");
+        router_free(r);
+
+        FILE *f = fopen(log_path, "r");
+        ASSERT(f != NULL, "T40: JSON log file created");
+        if (f) {
+            char line[1024];
+            memset(line, 0, sizeof(line));
+            (void)fgets(line, sizeof(line), f);
+            fclose(f);
+            /* Verify JSON structure — look for mandatory keys */
+            ASSERT(line[0] == '{', "T40: JSON log line starts with '{'");
+            ASSERT(strstr(line, "\"ts\"")     != NULL, "T40: JSON log has 'ts' key");
+            ASSERT(strstr(line, "\"ip\"")     != NULL, "T40: JSON log has 'ip' key");
+            ASSERT(strstr(line, "\"method\"") != NULL, "T40: JSON log has 'method' key");
+            ASSERT(strstr(line, "\"path\"")   != NULL, "T40: JSON log has 'path' key");
+            ASSERT(strstr(line, "\"status\"") != NULL, "T40: JSON log has 'status' key");
+            ASSERT(strstr(line, "\"bytes\"")  != NULL, "T40: JSON log has 'bytes' key");
+            ASSERT(strstr(line, "\"ms\"")     != NULL, "T40: JSON log has 'ms' key");
+            ASSERT(strstr(line, "POST")       != NULL, "T40: JSON log contains method");
+            ASSERT(strstr(line, "/items")     != NULL, "T40: JSON log contains path");
+        }
+        remove(log_path);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 41: NULL path — logs to stderr, no crash                         */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        router_use_log(r, ROUTER_LOG_COMMON, NULL); /* NULL → stderr */
+        router_get(r, "/health", handler_hello);
+        TkRouteResp resp = router_dispatch(r, "GET", "/health", NULL, NULL);
+        /* Just verify it doesn't crash and returns a valid response */
+        ASSERT_INTEQ(resp.status, 200, "T41: stderr log no crash, status=200");
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* ETag middleware tests (Story 27.1.13)                                 */
+    /* ------------------------------------------------------------------ */
+
+    /* ------------------------------------------------------------------ */
+    /* Test 42: 200 response includes ETag header when no If-None-Match      */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        router_use_etag(r);
+        router_get(r, "/data", handler_hello);
+
+        TkRouteResp resp = router_dispatch(r, "GET", "/data", NULL, NULL);
+        ASSERT_INTEQ(resp.status, 200, "T42: etag mw — status=200 without INM");
+
+        int etag_found = 0;
+        for (uint64_t i = 0; i < resp.nheaders; i++) {
+            if (resp.header_names[i] &&
+                strcmp(resp.header_names[i], "ETag") == 0 &&
+                resp.header_values[i] &&
+                strncmp(resp.header_values[i], "W/\"", 3) == 0) {
+                etag_found = 1;
+            }
+        }
+        ASSERT(etag_found, "T42: etag mw — ETag header present and weak");
+
+        /* Clean up heap-allocated header arrays from middleware */
+        free(resp.header_names);
+        free((char *)resp.header_values[resp.nheaders - 1]); /* etag string */
+        free(resp.header_values);
+
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 43: 304 when If-None-Match matches generated ETag                */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        router_use_etag(r);
+        router_get(r, "/data", handler_hello);
+
+        /* First request — no If-None-Match — get the ETag */
+        TkRouteResp r1 = router_dispatch(r, "GET", "/data", NULL, NULL);
+        ASSERT_INTEQ(r1.status, 200, "T43: etag mw — first request status=200");
+
+        /* Extract the ETag value */
+        char etag_buf[64];
+        etag_buf[0] = '\0';
+        for (uint64_t i = 0; i < r1.nheaders; i++) {
+            if (r1.header_names[i] &&
+                strcmp(r1.header_names[i], "ETag") == 0 &&
+                r1.header_values[i]) {
+                strncpy(etag_buf, r1.header_values[i], sizeof(etag_buf) - 1);
+                etag_buf[sizeof(etag_buf) - 1] = '\0';
+            }
+        }
+        ASSERT(etag_buf[0] != '\0', "T43: etag mw — ETag extracted from first response");
+
+        /* Clean up first response headers */
+        if (r1.nheaders > 0) {
+            free((char *)r1.header_values[r1.nheaders - 1]);
+            free(r1.header_names);
+            free(r1.header_values);
+        }
+
+        /* Second request with matching If-None-Match → expect 304 */
+        const char *hnames[] = { "If-None-Match" };
+        const char *hvals[]  = { etag_buf };
+        TkRouteResp r2 = router_dispatch_ex(r, "GET", "/data",
+                                            NULL, NULL,
+                                            hnames, hvals, 1);
+        ASSERT_INTEQ(r2.status, 304, "T43: etag mw — matching INM → 304");
+
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 44: 200 when If-None-Match does NOT match                        */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        router_use_etag(r);
+        router_get(r, "/data", handler_hello);
+
+        const char *hnames[] = { "If-None-Match" };
+        const char *hvals[]  = { "W/\"does-not-match\"" };
+        TkRouteResp resp = router_dispatch_ex(r, "GET", "/data",
+                                              NULL, NULL,
+                                              hnames, hvals, 1);
+        ASSERT_INTEQ(resp.status, 200, "T44: etag mw — non-matching INM → 200");
+
+        /* Clean up */
+        if (resp.nheaders > 0) {
+            free((char *)resp.header_values[resp.nheaders - 1]);
+            free(resp.header_names);
+            free(resp.header_values);
+        }
+
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 45: wildcard "*" If-None-Match → 304                             */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        router_use_etag(r);
+        router_get(r, "/data", handler_hello);
+
+        const char *hnames[] = { "If-None-Match" };
+        const char *hvals[]  = { "*" };
+        TkRouteResp resp = router_dispatch_ex(r, "GET", "/data",
+                                              NULL, NULL,
+                                              hnames, hvals, 1);
+        ASSERT_INTEQ(resp.status, 304, "T45: etag mw — wildcard * INM → 304");
+
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Test 46: non-2xx responses pass through without ETag header           */
+    /* ------------------------------------------------------------------ */
+    {
+        TkRouter *r = router_new();
+        router_use_etag(r);
+        /* No routes registered — dispatch returns 404 */
+        TkRouteResp resp = router_dispatch(r, "GET", "/nothing", NULL, NULL);
+        ASSERT_INTEQ(resp.status, 404, "T46: etag mw — 404 passes through");
+        /* ETag middleware must not add a header to non-2xx */
+        int etag_found = 0;
+        for (uint64_t i = 0; i < resp.nheaders; i++) {
+            if (resp.header_names && resp.header_names[i] &&
+                strcmp(resp.header_names[i], "ETag") == 0) {
+                etag_found = 1;
+            }
+        }
+        ASSERT(!etag_found, "T46: etag mw — no ETag header on 404 response");
+        router_free(r);
+    }
+
+    /* ------------------------------------------------------------------ */
     /* Summary                                                               */
     /* ------------------------------------------------------------------ */
     if (failures == 0) {

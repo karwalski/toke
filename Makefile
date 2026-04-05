@@ -46,7 +46,8 @@ export SOURCE_DATE_EPOCH ?= 0
 	test-stdlib-all-new \
 	test-stdlib-security-integration test-stdlib-network-integration \
 	test-stdlib-viz-integration test-stdlib-data-pipeline test-stdlib-llm-live \
-	test-stdlib-http test-stdlib-http-cookies test-stdlib-http-multipart
+	test-stdlib-http test-stdlib-http-cookies test-stdlib-http-multipart \
+	test-stdlib-http-form
 
 all: $(BIN)
 
@@ -111,18 +112,27 @@ test-stdlib-db:
 
 test-stdlib-http:
 	$(CC) $(CFLAGS) -o test/stdlib/test_http \
-	    test/stdlib/test_http.c src/stdlib/http.c
+	    test/stdlib/test_http.c src/stdlib/http.c \
+	    src/stdlib/encoding.c src/stdlib/str.c
 	./test/stdlib/test_http
 
 test-stdlib-http-cookies:
 	$(CC) $(CFLAGS) -o test/stdlib/test_http_cookies \
-	    test/stdlib/test_http_cookies.c src/stdlib/http.c
+	    test/stdlib/test_http_cookies.c src/stdlib/http.c \
+	    src/stdlib/encoding.c src/stdlib/str.c
 	./test/stdlib/test_http_cookies
 
 test-stdlib-http-multipart:
 	$(CC) $(CFLAGS) -o test/stdlib/test_http_multipart \
-	    test/stdlib/test_http_multipart.c src/stdlib/http.c
+	    test/stdlib/test_http_multipart.c src/stdlib/http.c \
+	    src/stdlib/encoding.c src/stdlib/str.c
 	./test/stdlib/test_http_multipart
+
+test-stdlib-http-form:
+	$(CC) $(CFLAGS) -o test/stdlib/test_http_form \
+	    test/stdlib/test_http_form.c src/stdlib/http.c \
+	    src/stdlib/encoding.c src/stdlib/str.c
+	./test/stdlib/test_http_form
 
 test-stdlib-process:
 	$(CC) $(CFLAGS) -o test/stdlib/test_process \

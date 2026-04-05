@@ -8,6 +8,7 @@
  */
 
 #include "http.h"
+#include "encoding.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -953,6 +954,107 @@ const char *http_set_cookie_header(const char *name, const char *value,
     return buf;
 }
 
+/* ── URL-encoded form body parsing (Story 27.1.14) ──────────────────── */
+
+TkFormResult http_form_parse(const char *body)
+{
+    TkFormResult result;
+    result.fields  = NULL;
+    result.nfields = 0;
+
+    if (!body) return result;
+
+    size_t cap = 16;
+    TkFormField *fields = malloc(cap * sizeof(TkFormField));
+    if (!fields) return result;
+
+    const char *p = body;
+
+    while (*p != '\0') {
+        /* Find end of this pair: '&' or ';' or end-of-string */
+        const char *amp = p;
+        while (*amp != '\0' && *amp != '&' && *amp != ';') amp++;
+
+        size_t pair_len = (size_t)(amp - p);
+
+        /* Split on first '=' */
+        const char *eq = p;
+        while (eq < amp && *eq != '=') eq++;
+
+        /* Build NUL-terminated raw key and value strings */
+        size_t key_raw_len = (size_t)(eq - p);
+        char *key_raw = malloc(key_raw_len + 1);
+        if (!key_raw) break;
+        memcpy(key_raw, p, key_raw_len);
+        key_raw[key_raw_len] = '\0';
+
+        const char *val_start = (eq < amp) ? eq + 1 : eq;
+        size_t val_raw_len = (size_t)(amp - val_start);
+        char *val_raw = malloc(val_raw_len + 1);
+        if (!val_raw) { free(key_raw); break; }
+        memcpy(val_raw, val_start, val_raw_len);
+        val_raw[val_raw_len] = '\0';
+
+        /* URL-decode both key and value */
+        const char *key_dec = encoding_urldecode(key_raw);
+        const char *val_dec = encoding_urldecode(val_raw);
+        free(key_raw);
+        free(val_raw);
+
+        if (!key_dec || !val_dec) {
+            free((void *)(uintptr_t)key_dec);
+            free((void *)(uintptr_t)val_dec);
+            /* skip malformed pair */
+            p = (*amp != '\0') ? amp + 1 : amp;
+            continue;
+        }
+
+        /* Grow array if needed */
+        if (result.nfields >= cap) {
+            size_t new_cap = cap * 2;
+            TkFormField *tmp = realloc(fields, new_cap * sizeof(TkFormField));
+            if (!tmp) {
+                free((void *)(uintptr_t)key_dec);
+                free((void *)(uintptr_t)val_dec);
+                break;
+            }
+            fields = tmp;
+            cap = new_cap;
+        }
+
+        fields[result.nfields].key   = key_dec;
+        fields[result.nfields].value = val_dec;
+        result.nfields++;
+
+        /* Advance past separator */
+        p = (*amp != '\0') ? amp + 1 : amp;
+
+        (void)pair_len; /* suppress unused-variable warning */
+    }
+
+    result.fields = fields;
+    return result;
+}
+
+const char *http_form_get(TkFormResult form, const char *key)
+{
+    if (!key) return NULL;
+    for (size_t i = 0; i < form.nfields; i++) {
+        if (form.fields[i].key && strcmp(form.fields[i].key, key) == 0)
+            return form.fields[i].value;
+    }
+    return NULL;
+}
+
+void http_form_free(TkFormResult form)
+{
+    for (size_t i = 0; i < form.nfields; i++) {
+        free((void *)(uintptr_t)form.fields[i].key);
+        free((void *)(uintptr_t)form.fields[i].value);
+    }
+    free(form.fields);
+}
+
 /* ── Multipart/form-data parsing (Story 27.1.8) ─────────────────────── */
 
 #define MP_MAX_BODY_BYTES  (50UL * 1024UL * 1024UL)   /* 50 MiB */
@@ -1740,4 +1842,76 @@ HttpChunkResult http_streamnext(HttpStream *s)
     result.len = s->buf_len;
     s->buf_len = 0;
     return result;
+}
+
+/* ── ETag generation and conditional requests (Story 27.1.13) ─────────── */
+
+/*
+ * http_etag_fnv — compute a weak ETag for a response body using FNV-1a.
+ *
+ * FNV-1a 64-bit:
+ *   offset_basis = 14695981039346656037ULL
+ *   prime        = 1099511628211ULL
+ *   for each byte b: hash = (hash ^ b) * prime
+ *
+ * The result is formatted as W/"<16 hex digits>" and returned as a
+ * heap-allocated, NUL-terminated string.  The caller owns the string.
+ */
+const char *http_etag_fnv(const char *body, size_t len)
+{
+    uint64_t hash = 14695981039346656037ULL;
+    const uint64_t prime = 1099511628211ULL;
+    const unsigned char *p = (const unsigned char *)body;
+
+    for (size_t i = 0; i < len; i++) {
+        hash ^= (uint64_t)p[i];
+        hash *= prime;
+    }
+
+    /* Format: W/"<16 hex chars>" — 3 + 16 + 1 + 1 = 21 chars + NUL */
+    char *out = malloc(24);
+    if (!out) return NULL;
+    snprintf(out, 24, "W/\"%016llx\"", (unsigned long long)hash);
+    return out;
+}
+
+/*
+ * http_etag_matches — return 1 if etag matches the If-None-Match header value.
+ *
+ * Handles:
+ *   - NULL in either argument: returns 0 (no match / cannot tell)
+ *   - Wildcard "*": always matches (returns 1)
+ *   - Exact string comparison of the ETag token within a comma-separated list.
+ *     Surrounding whitespace is trimmed; each token is compared verbatim.
+ */
+int http_etag_matches(const char *etag, const char *if_none_match)
+{
+    if (!etag || !if_none_match) return 0;
+
+    /* Wildcard */
+    if (strcmp(if_none_match, "*") == 0) return 1;
+
+    /* Walk the comma-separated list */
+    const char *p = if_none_match;
+    while (*p) {
+        /* skip leading whitespace / commas */
+        while (*p == ' ' || *p == '\t' || *p == ',') p++;
+        if (*p == '\0') break;
+
+        /* find end of this token (next comma or end) */
+        const char *tok_start = p;
+        while (*p && *p != ',') p++;
+        const char *tok_end = p;
+
+        /* trim trailing whitespace */
+        while (tok_end > tok_start &&
+               (*(tok_end - 1) == ' ' || *(tok_end - 1) == '\t'))
+            tok_end--;
+
+        size_t tok_len = (size_t)(tok_end - tok_start);
+        if (tok_len == strlen(etag) &&
+            memcmp(tok_start, etag, tok_len) == 0)
+            return 1;
+    }
+    return 0;
 }
