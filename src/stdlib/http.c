@@ -1844,6 +1844,350 @@ HttpChunkResult http_streamnext(HttpStream *s)
     return result;
 }
 
+/* ── TLS/HTTPS support (Story 27.1.2) ───────────────────────────────── */
+
+#ifdef TK_HAVE_OPENSSL
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
+struct TkTlsCtx {
+    SSL_CTX *ssl_ctx;
+};
+
+TkTlsCtx *http_tls_ctx_new(const char *cert_path, const char *key_path)
+{
+    if (!cert_path || !key_path) {
+        fprintf(stderr, "http_tls_ctx_new: cert_path and key_path required\n");
+        return NULL;
+    }
+
+    SSL_CTX *ctx = SSL_CTX_new(TLS_server_method());
+    if (!ctx) {
+        fprintf(stderr, "http_tls_ctx_new: SSL_CTX_new failed\n");
+        return NULL;
+    }
+
+    if (SSL_CTX_use_certificate_file(ctx, cert_path, SSL_FILETYPE_PEM) != 1) {
+        fprintf(stderr, "http_tls_ctx_new: failed to load cert: %s\n",
+                cert_path);
+        SSL_CTX_free(ctx);
+        return NULL;
+    }
+
+    if (SSL_CTX_use_PrivateKey_file(ctx, key_path, SSL_FILETYPE_PEM) != 1) {
+        fprintf(stderr, "http_tls_ctx_new: failed to load key: %s\n",
+                key_path);
+        SSL_CTX_free(ctx);
+        return NULL;
+    }
+
+    if (SSL_CTX_check_private_key(ctx) != 1) {
+        fprintf(stderr, "http_tls_ctx_new: cert/key mismatch\n");
+        SSL_CTX_free(ctx);
+        return NULL;
+    }
+
+    TkTlsCtx *tls = malloc(sizeof(TkTlsCtx));
+    if (!tls) {
+        SSL_CTX_free(ctx);
+        return NULL;
+    }
+    tls->ssl_ctx = ctx;
+    return tls;
+}
+
+void http_tls_ctx_free(TkTlsCtx *ctx)
+{
+    if (!ctx) return;
+    SSL_CTX_free(ctx->ssl_ctx);
+    free(ctx);
+}
+
+/*
+ * handle_tls_connection — accept a TLS handshake on fd, then process
+ * HTTP keep-alive requests over the TLS session.  Mirrors handle_connection
+ * but uses SSL_read/SSL_write instead of read/write.
+ */
+static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
+{
+    SSL *ssl = SSL_new(ssl_ctx);
+    if (!ssl) { close(fd); return; }
+
+    SSL_set_fd(ssl, fd);
+
+    if (SSL_accept(ssl) != 1) {
+        SSL_free(ssl);
+        close(fd);
+        return;
+    }
+
+    struct timeval tv;
+    tv.tv_sec  = (long)srv_limits.timeout_secs;
+    tv.tv_usec = 0;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    size_t buf_cap = (size_t)srv_limits.max_header
+                   + (size_t)srv_limits.max_body + 8;
+    char *raw = malloc(buf_cap);
+    if (!raw) { SSL_free(ssl); close(fd); return; }
+
+    int requests = 0;
+
+    for (;;) {
+        memset(raw, 0, buf_cap);
+
+        /* Phase 1: read headers over TLS */
+        size_t hdr_used = 0;
+        int    hdr_ok   = 0;
+
+        while (hdr_used < (size_t)srv_limits.max_header) {
+            size_t space = (size_t)srv_limits.max_header - hdr_used;
+            int n = SSL_read(ssl, raw + hdr_used, (int)space);
+            if (n <= 0) {
+                free(raw);
+                SSL_shutdown(ssl);
+                SSL_free(ssl);
+                close(fd);
+                return;
+            }
+            hdr_used += (size_t)n;
+            raw[hdr_used] = '\0';
+            if (strstr(raw, "\r\n\r\n")) { hdr_ok = 1; break; }
+        }
+
+        if (!hdr_ok) {
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+            free(raw);
+            close(fd);
+            return;
+        }
+
+        /* Phase 2: Content-Length check */
+        const char *cl_hdr = NULL;
+        {
+            char *p = raw;
+            while (p && (size_t)(p - raw) < hdr_used) {
+                if (strncasecmp(p, "Content-Length:", 15) == 0) {
+                    cl_hdr = p + 15;
+                    break;
+                }
+                p = strstr(p, "\r\n");
+                if (p) p += 2;
+            }
+        }
+
+        if (cl_hdr) {
+            long long cl = atoll(cl_hdr);
+            if (cl < 0 ||
+                (unsigned long long)cl >
+                (unsigned long long)srv_limits.max_body) {
+                SSL_shutdown(ssl);
+                SSL_free(ssl);
+                free(raw);
+                close(fd);
+                return;
+            }
+
+            const char *sep = strstr(raw, "\r\n\r\n");
+            if (sep) {
+                size_t hlen      = (size_t)(sep - raw) + 4;
+                size_t body_have = hdr_used - hlen;
+                size_t content_len = (size_t)cl;
+
+                while (body_have < content_len) {
+                    size_t need  = content_len - body_have;
+                    size_t space = buf_cap - hdr_used - 1;
+                    if (space == 0) break;
+                    int n = SSL_read(ssl, raw + hdr_used,
+                                     (int)(need < space ? need : space));
+                    if (n <= 0) {
+                        SSL_shutdown(ssl);
+                        SSL_free(ssl);
+                        free(raw);
+                        close(fd);
+                        return;
+                    }
+                    hdr_used   += (size_t)n;
+                    body_have  += (size_t)n;
+                    raw[hdr_used] = '\0';
+                }
+            }
+        }
+
+        requests++;
+        int client_wants_close = req_wants_close(raw);
+        int max_reached        = (requests >= KEEPALIVE_MAX_REQUESTS);
+        int keep_alive         = (!client_wants_close && !max_reached);
+
+        Req req = parse_request(raw);
+
+        /* Dispatch to route table */
+        Res res = make_res(404, "Not Found");
+        StrPair params[32]; int pc = 0;
+        for (int i = 0; i < route_count; i++) {
+            if (req.method && strcmp(route_table[i].method, req.method) != 0)
+                continue;
+            if (match_pattern(route_table[i].pattern,
+                              req.path ? req.path : "", params, &pc)) {
+                req.params.data = params; req.params.len = (uint64_t)pc;
+                res = route_table[i].h(req); break;
+            }
+        }
+
+        /* Serialise response to a buffer and write via SSL_write */
+        {
+            const char *conn_hdr = keep_alive ? "keep-alive" : "close";
+            size_t body_len = res.body ? strlen(res.body) : 0;
+            char hdr_buf[320];
+            int hl = snprintf(hdr_buf, sizeof(hdr_buf),
+                "HTTP/1.1 %u %s\r\n"
+                "Content-Length: %zu\r\n"
+                "Connection: %s\r\n"
+                "\r\n",
+                res.status, reason(res.status), body_len, conn_hdr);
+            if (hl > 0) SSL_write(ssl, hdr_buf, hl);
+            if (body_len) SSL_write(ssl, res.body, (int)body_len);
+        }
+
+        if (!keep_alive) break;
+    }
+
+    free(raw);
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
+    close(fd);
+}
+
+/*
+ * tls_worker_loop — accept connections and handle them over TLS.
+ * Mirrors worker_loop but uses handle_tls_connection.
+ */
+static void tls_worker_loop(int srv_fd, TkHttpRouter *r, SSL_CTX *ssl_ctx)
+{
+    route_count = r->count;
+    memcpy(route_table, r->routes, (size_t)r->count * sizeof(Route));
+
+    for (;;) {
+        int fd = accept(srv_fd, NULL, NULL);
+        if (fd < 0) {
+            if (errno == EINTR) {
+                if (g_shutdown_requested) break;
+                continue;
+            }
+            continue;
+        }
+        if (g_shutdown_requested) { close(fd); break; }
+        handle_tls_connection(fd, ssl_ctx);
+    }
+}
+
+TkHttpErr http_serve_tls(TkHttpRouter *r, const char *host,
+                          uint64_t port, TkTlsCtx *tls)
+{
+    return http_serve_tls_workers(r, host, port, tls, 1);
+}
+
+TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
+                                  uint64_t port, TkTlsCtx *tls,
+                                  uint64_t nworkers)
+{
+    if (!r)   return TK_HTTP_ERR_SOCKET;
+    if (!tls) return TK_HTTP_ERR_BIND;
+
+    if (nworkers <= 1) {
+        int srv = bind_listen(host, port);
+        if (srv < 0) return TK_HTTP_ERR_BIND;
+        tls_worker_loop(srv, r, tls->ssl_ctx);
+        close(srv);
+        return TK_HTTP_OK;
+    }
+
+    if (nworkers > TK_MAX_WORKERS) nworkers = TK_MAX_WORKERS;
+
+    int srv = bind_listen(host, port);
+    if (srv < 0) return TK_HTTP_ERR_BIND;
+
+    signal(SIGTERM, workers_parent_sighandler);
+    signal(SIGINT,  workers_parent_sighandler);
+
+    pid_t tls_pids[TK_MAX_WORKERS];
+    for (uint64_t i = 0; i < nworkers; i++) {
+        pid_t pid = fork();
+        if (pid < 0) {
+            for (uint64_t j = 0; j < i; j++) kill(tls_pids[j], SIGTERM);
+            close(srv);
+            return TK_HTTP_ERR_FORK;
+        }
+        if (pid == 0) {
+            tls_worker_loop(srv, r, tls->ssl_ctx);
+            _exit(0);
+        }
+        tls_pids[i] = pid;
+    }
+
+    close(srv);
+
+    /* Parent: wait for all workers */
+    for (;;) {
+        if (g_shutdown_requested) {
+            for (uint64_t i = 0; i < nworkers; i++) {
+                if (tls_pids[i] > 0) kill(tls_pids[i], SIGTERM);
+            }
+            for (uint64_t i = 0; i < nworkers; i++) {
+                if (tls_pids[i] > 0) waitpid(tls_pids[i], NULL, 0);
+            }
+            break;
+        }
+        {
+            struct timespec ts;
+            ts.tv_sec  = 0;
+            ts.tv_nsec = 10000000; /* 10 ms */
+            nanosleep(&ts, NULL);
+        }
+    }
+
+    return TK_HTTP_OK;
+}
+
+#else /* TK_HAVE_OPENSSL not defined — stub implementation */
+
+struct TkTlsCtx { int _unused; };
+
+TkTlsCtx *http_tls_ctx_new(const char *cert_path, const char *key_path)
+{
+    (void)cert_path; (void)key_path;
+    fprintf(stderr,
+            "http_tls_ctx_new: TLS not available: rebuild with OpenSSL\n");
+    return NULL;
+}
+
+void http_tls_ctx_free(TkTlsCtx *ctx)
+{
+    free(ctx);
+}
+
+TkHttpErr http_serve_tls(TkHttpRouter *r, const char *host,
+                          uint64_t port, TkTlsCtx *tls)
+{
+    (void)r; (void)host; (void)port; (void)tls;
+    fprintf(stderr,
+            "http_serve_tls: TLS not available: rebuild with OpenSSL\n");
+    return TK_HTTP_ERR_BIND;
+}
+
+TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
+                                  uint64_t port, TkTlsCtx *tls,
+                                  uint64_t nworkers)
+{
+    (void)r; (void)host; (void)port; (void)tls; (void)nworkers;
+    fprintf(stderr,
+            "http_serve_tls_workers: TLS not available: rebuild with OpenSSL\n");
+    return TK_HTTP_ERR_BIND;
+}
+
+#endif /* TK_HAVE_OPENSSL */
+
 /* ── ETag generation and conditional requests (Story 27.1.13) ─────────── */
 
 /*

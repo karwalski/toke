@@ -95,6 +95,8 @@
     {"kind": "func", "name": "http.stream",        "params": ["httpclient", "httpreq"],               "return": "httpstream!httperr"},
     {"kind": "func", "name": "http.streamnext",    "params": ["httpstream"],                          "return": "[byte]!httperr"},
     {"kind": "func", "name": "http.serve_workers", "params": ["u64", "u64"],                          "return": "void",
-     "note": "port; workers — starts pre-fork worker pool; workers=1 is single-process"}
+     "note": "port; workers — starts pre-fork worker pool; workers=1 is single-process"},
+    {"kind": "func", "name": "http.serve_tls",     "params": ["u64", "str", "str"],                   "return": "void",
+     "note": "port; cert_path; key_path — start HTTPS server with TLS termination"}
   ]
 }

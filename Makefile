@@ -47,7 +47,7 @@ export SOURCE_DATE_EPOCH ?= 0
 	test-stdlib-security-integration test-stdlib-network-integration \
 	test-stdlib-viz-integration test-stdlib-data-pipeline test-stdlib-llm-live \
 	test-stdlib-http test-stdlib-http-cookies test-stdlib-http-multipart \
-	test-stdlib-http-form
+	test-stdlib-http-form test-stdlib-http-tls
 
 all: $(BIN)
 
@@ -133,6 +133,26 @@ test-stdlib-http-form:
 	    test/stdlib/test_http_form.c src/stdlib/http.c \
 	    src/stdlib/encoding.c src/stdlib/str.c
 	./test/stdlib/test_http_form
+
+# Story 27.1.2 — TLS/HTTPS support.
+# Compiles the stub (no OpenSSL) so the test binary is always buildable.
+# To test with real TLS, rebuild with:
+#   make test-stdlib-http-tls TK_OPENSSL=1
+ifdef TK_OPENSSL
+TLS_CFLAGS  = -I/opt/homebrew/include -DTK_HAVE_OPENSSL \
+              -Wno-deprecated-declarations
+TLS_LDFLAGS = -L/opt/homebrew/Cellar/openssl@3/3.6.1/lib -lssl -lcrypto
+else
+TLS_CFLAGS  =
+TLS_LDFLAGS =
+endif
+
+test-stdlib-http-tls:
+	$(CC) $(CFLAGS) $(TLS_CFLAGS) -o test/stdlib/test_http_tls \
+	    test/stdlib/test_http_tls.c src/stdlib/http.c \
+	    src/stdlib/encoding.c src/stdlib/str.c \
+	    $(TLS_LDFLAGS)
+	./test/stdlib/test_http_tls
 
 test-stdlib-process:
 	$(CC) $(CFLAGS) -o test/stdlib/test_process \

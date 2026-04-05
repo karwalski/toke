@@ -237,6 +237,29 @@ void http_router_free(TkHttpRouter *r);
 TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
                               uint64_t port, uint64_t nworkers);
 
+/* ── TLS/HTTPS support (Story 27.1.2) ───────────────────────────────── */
+
+typedef struct TkTlsCtx TkTlsCtx;
+
+/* http_tls_ctx_new — load cert and key PEM files, return TLS context.
+ * Returns NULL on error (prints reason to stderr). */
+TkTlsCtx *http_tls_ctx_new(const char *cert_path, const char *key_path);
+
+/* http_tls_ctx_free — release a TkTlsCtx. */
+void       http_tls_ctx_free(TkTlsCtx *ctx);
+
+/* http_serve_tls — start HTTPS server (TLS termination).
+ * Same as http_serve_workers but with TLS wrapping each connection.
+ * host may be NULL for all interfaces. */
+TkHttpErr http_serve_tls(TkHttpRouter *r, const char *host,
+                          uint64_t port, TkTlsCtx *tls);
+
+/* http_serve_tls_workers — TLS + pre-fork worker pool.
+ * nworkers=1 is single-process. */
+TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
+                                  uint64_t port, TkTlsCtx *tls,
+                                  uint64_t nworkers);
+
 /* ── Client types (Story 35.1.2) ──────────────────────────────────── */
 
 typedef struct {
