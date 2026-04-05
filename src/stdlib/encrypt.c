@@ -1663,3 +1663,495 @@ ByteArray encrypt_tls_cert_fingerprint(const char *pem_cert)
 
     return fingerprint;
 }
+
+/* =========================================================================
+ * ChaCha20-Poly1305 AEAD (RFC 8439)
+ * Story: 30.1.1
+ * ========================================================================= */
+
+/* -------------------------------------------------------------------------
+ * ChaCha20 stream cipher (RFC 8439 §2.1)
+ * ------------------------------------------------------------------------- */
+
+#define ROTL32(v, n) (((v) << (n)) | ((v) >> (32 - (n))))
+
+static void chacha20_quarter_round(uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d)
+{
+    *a += *b; *d ^= *a; *d = ROTL32(*d, 16);
+    *c += *d; *b ^= *c; *b = ROTL32(*b, 12);
+    *a += *b; *d ^= *a; *d = ROTL32(*d,  8);
+    *c += *d; *b ^= *c; *b = ROTL32(*b,  7);
+}
+
+/* Produce one 64-byte ChaCha20 keystream block.
+ * key: 32 bytes, nonce: 12 bytes, counter: block counter */
+static void chacha20_block(const uint8_t key[32], const uint8_t nonce[12],
+                            uint32_t counter, uint8_t out[64])
+{
+    /* Constants: "expa", "nd 3", "2-by", "te k" in little-endian */
+    uint32_t s[16];
+    s[0]  = 0x61707865u;
+    s[1]  = 0x3320646eu;
+    s[2]  = 0x79622d32u;
+    s[3]  = 0x6b206574u;
+
+    /* Key words (little-endian) */
+    int i;
+    for (i = 0; i < 8; i++) {
+        s[4 + i] = (uint32_t)key[4*i]
+                 | ((uint32_t)key[4*i+1] << 8)
+                 | ((uint32_t)key[4*i+2] << 16)
+                 | ((uint32_t)key[4*i+3] << 24);
+    }
+
+    /* Counter and nonce */
+    s[12] = counter;
+    s[13] = (uint32_t)nonce[0] | ((uint32_t)nonce[1] << 8)
+          | ((uint32_t)nonce[2] << 16) | ((uint32_t)nonce[3] << 24);
+    s[14] = (uint32_t)nonce[4] | ((uint32_t)nonce[5] << 8)
+          | ((uint32_t)nonce[6] << 16) | ((uint32_t)nonce[7] << 24);
+    s[15] = (uint32_t)nonce[8] | ((uint32_t)nonce[9] << 8)
+          | ((uint32_t)nonce[10] << 16) | ((uint32_t)nonce[11] << 24);
+
+    uint32_t w[16];
+    for (i = 0; i < 16; i++) w[i] = s[i];
+
+    /* 20 rounds: 10 column rounds + 10 diagonal rounds */
+    for (i = 0; i < 10; i++) {
+        /* Column rounds */
+        chacha20_quarter_round(&w[0], &w[4], &w[8],  &w[12]);
+        chacha20_quarter_round(&w[1], &w[5], &w[9],  &w[13]);
+        chacha20_quarter_round(&w[2], &w[6], &w[10], &w[14]);
+        chacha20_quarter_round(&w[3], &w[7], &w[11], &w[15]);
+        /* Diagonal rounds */
+        chacha20_quarter_round(&w[0], &w[5], &w[10], &w[15]);
+        chacha20_quarter_round(&w[1], &w[6], &w[11], &w[12]);
+        chacha20_quarter_round(&w[2], &w[7], &w[8],  &w[13]);
+        chacha20_quarter_round(&w[3], &w[4], &w[9],  &w[14]);
+    }
+
+    /* Add initial state */
+    for (i = 0; i < 16; i++) w[i] += s[i];
+
+    /* Serialise little-endian */
+    for (i = 0; i < 16; i++) {
+        out[4*i]   = (uint8_t)(w[i]      );
+        out[4*i+1] = (uint8_t)(w[i] >>  8);
+        out[4*i+2] = (uint8_t)(w[i] >> 16);
+        out[4*i+3] = (uint8_t)(w[i] >> 24);
+    }
+}
+
+/* XOR plaintext with ChaCha20 keystream starting at the given block counter. */
+static void chacha20_xor(const uint8_t key[32], const uint8_t nonce[12],
+                          uint32_t start_counter,
+                          const uint8_t *in, uint8_t *out, uint64_t len)
+{
+    uint8_t block[64];
+    uint64_t pos = 0;
+    uint32_t ctr = start_counter;
+
+    while (pos < len) {
+        chacha20_block(key, nonce, ctr, block);
+        ctr++;
+        uint64_t take = len - pos;
+        if (take > 64) take = 64;
+        uint64_t j;
+        for (j = 0; j < take; j++) out[pos + j] = in[pos + j] ^ block[j];
+        pos += take;
+    }
+}
+
+/* -------------------------------------------------------------------------
+ * Poly1305 MAC (RFC 8439 §2.5)
+ * ------------------------------------------------------------------------- */
+
+/*
+ * We need 130-bit arithmetic.  We represent the accumulator as five
+ * 26-bit limbs (acc[0..4]) so that intermediate products fit in 64-bit
+ * integers without overflow.
+ */
+
+/* Clamp r as per RFC 8439 §2.5.1 */
+static void poly1305_clamp(uint8_t r[16])
+{
+    r[3]  &= 0x0fu;
+    r[7]  &= 0x0fu;
+    r[11] &= 0x0fu;
+    r[15] &= 0x0fu;
+    r[4]  &= 0xfcu;
+    r[8]  &= 0xfcu;
+    r[12] &= 0xfcu;
+}
+
+/* Load a little-endian 32-bit word from 4 bytes */
+static uint32_t load32le(const uint8_t *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8)
+         | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+/* Store a little-endian 32-bit word */
+static void store32le(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16);
+    p[3] = (uint8_t)(v >> 24);
+}
+
+/*
+ * poly1305_auth: compute tag over msg using (r, s) from a 32-byte key.
+ * key[0..15] = r (will be clamped), key[16..31] = s.
+ * Output: 16-byte tag in 'tag'.
+ */
+static void poly1305_auth(const uint8_t key[32],
+                           const uint8_t *msg, uint64_t msg_len,
+                           uint8_t tag[16])
+{
+    /* Copy and clamp r */
+    uint8_t r_bytes[16];
+    memcpy(r_bytes, key, 16);
+    poly1305_clamp(r_bytes);
+
+    /* Load r into five 26-bit limbs */
+    uint64_t r0, r1, r2, r3, r4;
+    r0 = ((uint64_t)load32le(r_bytes +  0)     ) & 0x3ffffffu;
+    r1 = ((uint64_t)load32le(r_bytes +  3) >> 2) & 0x3ffff03u;
+    r2 = ((uint64_t)load32le(r_bytes +  6) >> 4) & 0x3ffc0ffu;
+    r3 = ((uint64_t)load32le(r_bytes +  9) >> 6) & 0x3f03fffu;
+    r4 = ((uint64_t)load32le(r_bytes + 12) >> 8) & 0x00fffffu;
+
+    /* s values */
+    uint64_t s1 = r1 * 5u;
+    uint64_t s2 = r2 * 5u;
+    uint64_t s3 = r3 * 5u;
+    uint64_t s4 = r4 * 5u;
+
+    /* Accumulator */
+    uint64_t h0 = 0, h1 = 0, h2 = 0, h3 = 0, h4 = 0;
+
+    uint64_t pos = 0;
+    while (pos < msg_len) {
+        /* Build a 17-byte block (pad with 0x01 after the message bytes) */
+        uint8_t block[17];
+        uint64_t take = msg_len - pos;
+        if (take > 16) take = 16;
+        memcpy(block, msg + pos, (size_t)take);
+        block[take] = 0x01;
+        if (take < 16) memset(block + take + 1, 0, 16 - take);
+        pos += take;
+
+        /* Load block as five 26-bit limbs */
+        uint64_t t0, t1, t2, t3, t4;
+        t0 = ((uint64_t)load32le(block +  0)     ) & 0x3ffffffu;
+        t1 = ((uint64_t)load32le(block +  3) >> 2) & 0x3ffffffu;
+        t2 = ((uint64_t)load32le(block +  6) >> 4) & 0x3ffffffu;
+        t3 = ((uint64_t)load32le(block +  9) >> 6) & 0x3ffffffu;
+        t4 = ((uint64_t)load32le(block + 12) >> 8) & 0x3ffffffu;
+        /* The high bit from block[16] */
+        t4 |= (uint64_t)block[16] << 24;
+
+        h0 += t0; h1 += t1; h2 += t2; h3 += t3; h4 += t4;
+
+        /* Multiply h by r (mod 2^130-5) */
+        uint64_t d0 = h0*r0 + h1*s4 + h2*s3 + h3*s2 + h4*s1;
+        uint64_t d1 = h0*r1 + h1*r0 + h2*s4 + h3*s3 + h4*s2;
+        uint64_t d2 = h0*r2 + h1*r1 + h2*r0 + h3*s4 + h4*s3;
+        uint64_t d3 = h0*r3 + h1*r2 + h2*r1 + h3*r0 + h4*s4;
+        uint64_t d4 = h0*r4 + h1*r3 + h2*r2 + h3*r1 + h4*r0;
+
+        /* Propagate carries */
+        d1 += d0 >> 26; h0 = d0 & 0x3ffffffu;
+        d2 += d1 >> 26; h1 = d1 & 0x3ffffffu;
+        d3 += d2 >> 26; h2 = d2 & 0x3ffffffu;
+        d4 += d3 >> 26; h3 = d3 & 0x3ffffffu;
+        h4 = d4 & 0x3ffffffu;
+        h0 += (d4 >> 26) * 5u;
+        h1 += h0 >> 26; h0 &= 0x3ffffffu;
+    }
+
+    /* Fully reduce mod 2^130-5 */
+    h2 += h1 >> 26; h1 &= 0x3ffffffu;
+    h3 += h2 >> 26; h2 &= 0x3ffffffu;
+    h4 += h3 >> 26; h3 &= 0x3ffffffu;
+    h0 += (h4 >> 2) * 5u; h4 &= 3u;
+    h1 += h0 >> 26; h0 &= 0x3ffffffu;
+
+    /* Check if h >= p = 2^130-5; if so subtract p */
+    uint64_t g0 = h0 + 5u;
+    uint64_t g1 = h1 + (g0 >> 26); g0 &= 0x3ffffffu;
+    uint64_t g2 = h2 + (g1 >> 26); g1 &= 0x3ffffffu;
+    uint64_t g3 = h3 + (g2 >> 26); g2 &= 0x3ffffffu;
+    uint64_t g4 = h4 + (g3 >> 26); g3 &= 0x3ffffffu;
+    /* If g4 >> 2 is nonzero then h >= p, select g */
+    uint64_t mask = (uint64_t)(-(int64_t)((g4 >> 2) & 1u));
+    h0 = (h0 & ~mask) | (g0 & mask);
+    h1 = (h1 & ~mask) | (g1 & mask);
+    h2 = (h2 & ~mask) | (g2 & mask);
+    h3 = (h3 & ~mask) | (g3 & mask);
+    h4 = (h4 & ~mask) | (g4 & mask);
+
+    /* Pack h into 128 bits */
+    h0 |= h1 << 26;
+    h1  = (h1 >> 6) | (h2 << 20);
+    h2  = (h2 >> 12) | (h3 << 14);
+    h3  = (h3 >> 18) | (h4 << 8);
+
+    /* Add s (little-endian) */
+    uint64_t f;
+    f = h0 + (uint64_t)load32le(key + 16); store32le(tag,      (uint32_t)f); f >>= 32;
+    f += h1 + (uint64_t)load32le(key + 20); store32le(tag + 4,  (uint32_t)f); f >>= 32;
+    f += h2 + (uint64_t)load32le(key + 24); store32le(tag + 8,  (uint32_t)f); f >>= 32;
+    f += h3 + (uint64_t)load32le(key + 28); store32le(tag + 12, (uint32_t)f);
+}
+
+/* -------------------------------------------------------------------------
+ * RFC 8439 §2.8: ChaCha20-Poly1305 AEAD construction
+ * ------------------------------------------------------------------------- */
+
+/* Write a 64-bit little-endian integer into buf */
+static void put64le(uint8_t *buf, uint64_t v)
+{
+    int i;
+    for (i = 0; i < 8; i++) {
+        buf[i] = (uint8_t)(v & 0xffu);
+        v >>= 8;
+    }
+}
+
+/*
+ * Build the Poly1305 MAC input per RFC 8439 §2.8:
+ *   aad || pad16(aad) || ciphertext || pad16(ct) || len64(aad) || len64(ct)
+ */
+static void build_poly1305_input(const uint8_t *aad,   uint64_t aad_len,
+                                  const uint8_t *ct,    uint64_t ct_len,
+                                  uint8_t **out_buf, uint64_t *out_len)
+{
+    static const uint8_t zeros[16] = {0};
+    uint64_t aad_pad = (16 - (aad_len % 16)) % 16;
+    uint64_t ct_pad  = (16 - (ct_len  % 16)) % 16;
+    uint64_t total   = aad_len + aad_pad + ct_len + ct_pad + 16;
+
+    uint8_t *buf = (uint8_t *)malloc((size_t)total);
+    if (!buf) { *out_buf = NULL; *out_len = 0; return; }
+
+    uint64_t pos = 0;
+    if (aad_len) { memcpy(buf + pos, aad, (size_t)aad_len); pos += aad_len; }
+    if (aad_pad) { memcpy(buf + pos, zeros, (size_t)aad_pad); pos += aad_pad; }
+    if (ct_len)  { memcpy(buf + pos, ct,  (size_t)ct_len);  pos += ct_len;  }
+    if (ct_pad)  { memcpy(buf + pos, zeros, (size_t)ct_pad);  pos += ct_pad;  }
+    put64le(buf + pos, aad_len); pos += 8;
+    put64le(buf + pos, ct_len);
+    *out_buf = buf;
+    *out_len = total;
+}
+
+ByteArray encrypt_chacha20poly1305_keygen(void)
+{
+    ByteArray out;
+    uint8_t *buf = (uint8_t *)malloc(32);
+    if (!buf) { out.data = NULL; out.len = 0; return out; }
+    random_bytes(buf, 32);
+    out.data = buf;
+    out.len  = 32;
+    return out;
+}
+
+ByteArray encrypt_chacha20poly1305_noncegen(void)
+{
+    ByteArray out;
+    uint8_t *buf = (uint8_t *)malloc(12);
+    if (!buf) { out.data = NULL; out.len = 0; return out; }
+    random_bytes(buf, 12);
+    out.data = buf;
+    out.len  = 12;
+    return out;
+}
+
+ChaChaEncResult encrypt_chacha20poly1305_encrypt(ByteArray key, ByteArray nonce,
+                                                  ByteArray plaintext, ByteArray aad)
+{
+    ChaChaEncResult err_result;
+    err_result.ciphertext.data = NULL;
+    err_result.ciphertext.len  = 0;
+    err_result.is_err  = 1;
+    err_result.err_msg = "invalid input";
+
+    if (key.len != 32)  return err_result;
+    if (nonce.len != 12) return err_result;
+
+    /* Generate Poly1305 key from counter=0 block */
+    uint8_t poly_block[64];
+    chacha20_block(key.data, nonce.data, 0, poly_block);
+
+    /* Allocate output: ciphertext || tag */
+    uint64_t ct_len = plaintext.len;
+    uint8_t *out = (uint8_t *)malloc((size_t)(ct_len + 16));
+    if (!out) { err_result.err_msg = "out of memory"; return err_result; }
+
+    /* Encrypt with counter starting at 1 */
+    if (ct_len > 0)
+        chacha20_xor(key.data, nonce.data, 1, plaintext.data, out, ct_len);
+
+    /* Build Poly1305 input and compute tag */
+    uint8_t *mac_input = NULL;
+    uint64_t mac_len   = 0;
+    const uint8_t *aad_ptr = aad.data ? aad.data : (const uint8_t *)"";
+    build_poly1305_input(aad_ptr, aad.len, out, ct_len, &mac_input, &mac_len);
+    if (!mac_input) { free(out); err_result.err_msg = "out of memory"; return err_result; }
+
+    poly1305_auth(poly_block, mac_input, mac_len, out + ct_len);
+    free(mac_input);
+
+    ChaChaEncResult result;
+    result.ciphertext.data = out;
+    result.ciphertext.len  = ct_len + 16;
+    result.is_err  = 0;
+    result.err_msg = NULL;
+    return result;
+}
+
+ChaChaDecResult encrypt_chacha20poly1305_decrypt(ByteArray key, ByteArray nonce,
+                                                  ByteArray ciphertext, ByteArray aad)
+{
+    ChaChaDecResult err_result;
+    err_result.plaintext.data = NULL;
+    err_result.plaintext.len  = 0;
+    err_result.is_err  = 1;
+    err_result.err_msg = "invalid input";
+
+    if (key.len != 32)               return err_result;
+    if (nonce.len != 12)             return err_result;
+    if (ciphertext.len < 16)         return err_result;
+
+    uint64_t ct_body_len = ciphertext.len - 16;
+    const uint8_t *ct_body = ciphertext.data;
+    const uint8_t *received_tag = ciphertext.data + ct_body_len;
+
+    /* Generate Poly1305 key from counter=0 block */
+    uint8_t poly_block[64];
+    chacha20_block(key.data, nonce.data, 0, poly_block);
+
+    /* Compute expected tag */
+    uint8_t *mac_input = NULL;
+    uint64_t mac_len   = 0;
+    const uint8_t *aad_ptr = aad.data ? aad.data : (const uint8_t *)"";
+    build_poly1305_input(aad_ptr, aad.len, ct_body, ct_body_len, &mac_input, &mac_len);
+    if (!mac_input) { err_result.err_msg = "out of memory"; return err_result; }
+
+    uint8_t expected_tag[16];
+    poly1305_auth(poly_block, mac_input, mac_len, expected_tag);
+    free(mac_input);
+
+    /* Constant-time tag comparison */
+    ByteArray exp_ba; exp_ba.data = expected_tag;  exp_ba.len = 16;
+    ByteArray got_ba; got_ba.data = received_tag;  got_ba.len = 16;
+    if (!crypto_constanteq(exp_ba, got_ba)) {
+        err_result.err_msg = "authentication failure";
+        return err_result;
+    }
+
+    /* Decrypt */
+    uint8_t *plain = (uint8_t *)malloc((size_t)(ct_body_len + 1));
+    if (!plain) { err_result.err_msg = "out of memory"; return err_result; }
+
+    if (ct_body_len > 0)
+        chacha20_xor(key.data, nonce.data, 1, ct_body, plain, ct_body_len);
+    plain[ct_body_len] = '\0'; /* convenience NUL, not included in len */
+
+    ChaChaDecResult result;
+    result.plaintext.data = plain;
+    result.plaintext.len  = ct_body_len;
+    result.is_err  = 0;
+    result.err_msg = NULL;
+    return result;
+}
+
+/* =========================================================================
+ * PBKDF2 (RFC 2898 §5.2)
+ * Story: 30.1.1
+ * ========================================================================= */
+
+ByteArray encrypt_pbkdf2(const char *password, ByteArray salt,
+                          uint32_t iterations, uint32_t dklen,
+                          const char *hash)
+{
+    ByteArray empty; empty.data = NULL; empty.len = 0;
+
+    if (!password || !hash || iterations == 0 || dklen == 0) return empty;
+
+    int use_sha256 = (strcmp(hash, "sha256") == 0);
+    int use_sha512 = (strcmp(hash, "sha512") == 0);
+    if (!use_sha256 && !use_sha512) return empty;
+
+    uint32_t hlen = use_sha256 ? 32u : 64u;
+
+    /* Number of PRF output blocks needed */
+    uint32_t l = (dklen + hlen - 1) / hlen;
+
+    uint8_t *dk = (uint8_t *)malloc((size_t)(l * hlen));
+    if (!dk) return empty;
+
+    /* Password as ByteArray key for HMAC */
+    ByteArray pw_ba;
+    pw_ba.data = (const uint8_t *)password;
+    pw_ba.len  = strlen(password);
+
+    /* Build salt || INT(i) buffer once; INT(i) occupies last 4 bytes */
+    uint64_t salt_block_len = salt.len + 4;
+    uint8_t *salt_block = (uint8_t *)malloc((size_t)salt_block_len);
+    if (!salt_block) { free(dk); return empty; }
+    if (salt.len > 0 && salt.data) memcpy(salt_block, salt.data, (size_t)salt.len);
+
+    uint32_t i;
+    for (i = 1; i <= l; i++) {
+        /* Encode block index as big-endian 32-bit */
+        salt_block[salt.len]     = (uint8_t)(i >> 24);
+        salt_block[salt.len + 1] = (uint8_t)(i >> 16);
+        salt_block[salt.len + 2] = (uint8_t)(i >> 8);
+        salt_block[salt.len + 3] = (uint8_t)i;
+
+        ByteArray sb_ba; sb_ba.data = salt_block; sb_ba.len = salt_block_len;
+
+        /* U_1 = HMAC(password, salt || INT(i)) */
+        ByteArray u;
+        if (use_sha256)
+            u = crypto_hmac_sha256(pw_ba, sb_ba);
+        else
+            u = crypto_hmac_sha512(pw_ba, sb_ba);
+
+        if (!u.data) { free(salt_block); free(dk); return empty; }
+
+        uint8_t t[64]; /* T_i accumulator, max hlen = 64 */
+        memcpy(t, u.data, (size_t)hlen);
+        free((void *)u.data);
+
+        /* U_2 ... U_c */
+        uint32_t j;
+        for (j = 1; j < iterations; j++) {
+            ByteArray prev_ba; prev_ba.data = t; prev_ba.len = hlen;
+            ByteArray u_next;
+            if (use_sha256)
+                u_next = crypto_hmac_sha256(pw_ba, prev_ba);
+            else
+                u_next = crypto_hmac_sha512(pw_ba, prev_ba);
+
+            if (!u_next.data) { free(salt_block); free(dk); return empty; }
+
+            /* XOR into t */
+            uint32_t k;
+            for (k = 0; k < hlen; k++) t[k] ^= u_next.data[k];
+            free((void *)u_next.data);
+        }
+
+        memcpy(dk + (i - 1) * hlen, t, (size_t)hlen);
+    }
+    free(salt_block);
+
+    /* Truncate to dklen */
+    ByteArray result;
+    result.data = dk;
+    result.len  = dklen;
+    return result;
+}

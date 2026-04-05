@@ -259,6 +259,278 @@ static void test_jpeg_encode_stub(void)
 }
 
 /* =========================================================================
+ * Story 34.3.1 — transforms and filters test cases
+ * ========================================================================= */
+
+/* Helper: make a flat gray image (all pixels set to `val`) */
+static TkImgBuf make_gray_rgb(uint32_t w, uint32_t h, uint8_t val)
+{
+    uint64_t len = (uint64_t)w * h * 3;
+    uint8_t *raw = (uint8_t *)malloc(len);
+    memset(raw, val, len);
+    TkImgBuf b = image_from_raw(raw, w, h, 3);
+    free(raw);
+    return b;
+}
+
+/* Test: image_brightness — brighten a gray image */
+static void test_brightness_brighter(void)
+{
+    /* All pixels = 100 (RGB) */
+    TkImgBuf src = make_gray_rgb(4, 4, 100);
+    TkImgBuf out = image_brightness(src, 2.0);
+
+    ASSERT(out.data != NULL, "brightness(2.0): data non-null");
+    ASSERT(out.width == 4 && out.height == 4, "brightness(2.0): dims preserved");
+    /* 100 * 2.0 = 200, expect 200 */
+    ASSERT(out.data[0] == 200, "brightness(2.0): pixel value doubled");
+
+    image_buf_free(&out);
+    image_buf_free(&src);
+}
+
+/* Test: image_brightness factor=0.0 → all pixels are 0 */
+static void test_brightness_zero(void)
+{
+    TkImgBuf src = make_gray_rgb(4, 4, 128);
+    TkImgBuf out = image_brightness(src, 0.0);
+
+    ASSERT(out.data != NULL, "brightness(0.0): data non-null");
+    ASSERT(out.data[0] == 0, "brightness(0.0): pixels are 0");
+    ASSERT(out.data[5] == 0, "brightness(0.0): pixels are 0 (mid-buffer)");
+
+    image_buf_free(&out);
+    image_buf_free(&src);
+}
+
+/* Test: image_contrast(buf, 2.0) → pixels move away from 128 */
+static void test_contrast(void)
+{
+    /* Pixel value 200: should become 128 + (200-128)*2 = 272 → clamped to 255 */
+    TkImgBuf src = make_gray_rgb(4, 4, 200);
+    TkImgBuf out = image_contrast(src, 2.0);
+
+    ASSERT(out.data != NULL, "contrast(2.0): data non-null");
+    ASSERT(out.data[0] == 255, "contrast(2.0): high pixel clamped to 255");
+
+    image_buf_free(&out);
+    image_buf_free(&src);
+
+    /* Pixel value 64: 128 + (64-128)*2 = 0 (or below → clamped to 0) */
+    TkImgBuf src2 = make_gray_rgb(4, 4, 64);
+    TkImgBuf out2 = image_contrast(src2, 2.0);
+
+    ASSERT(out2.data != NULL, "contrast(2.0) low: data non-null");
+    ASSERT(out2.data[0] == 0, "contrast(2.0): low pixel clamped to 0");
+
+    image_buf_free(&out2);
+    image_buf_free(&src2);
+}
+
+/* Test: image_sharpen — non-null result, same dimensions */
+static void test_sharpen(void)
+{
+    TkImgBuf src = make_test_rgba(8, 8);
+    TkImgBuf out = image_sharpen(src);
+
+    ASSERT(out.data     != NULL, "sharpen: data non-null");
+    ASSERT(out.width    == 8,    "sharpen: width preserved");
+    ASSERT(out.height   == 8,    "sharpen: height preserved");
+    ASSERT(out.channels == 4,    "sharpen: channels preserved");
+
+    image_buf_free(&out);
+    image_buf_free(&src);
+}
+
+/* Test: image_blur(buf, 1) — non-null result, same dimensions */
+static void test_blur(void)
+{
+    TkImgBuf src = make_test_rgba(8, 8);
+    TkImgBuf out = image_blur(src, 1);
+
+    ASSERT(out.data     != NULL, "blur(1): data non-null");
+    ASSERT(out.width    == 8,    "blur(1): width preserved");
+    ASSERT(out.height   == 8,    "blur(1): height preserved");
+    ASSERT(out.channels == 4,    "blur(1): channels preserved");
+
+    image_buf_free(&out);
+    image_buf_free(&src);
+}
+
+/* Test: image_rotate(buf, 90.0) — same dimensions */
+static void test_rotate(void)
+{
+    TkImgBuf src = make_test_rgba(8, 8);
+    TkImgBuf out = image_rotate(src, 90.0);
+
+    ASSERT(out.data     != NULL, "rotate(90): data non-null");
+    ASSERT(out.width    == 8,    "rotate(90): width preserved");
+    ASSERT(out.height   == 8,    "rotate(90): height preserved");
+    ASSERT(out.channels == 4,    "rotate(90): channels preserved");
+
+    image_buf_free(&out);
+    image_buf_free(&src);
+}
+
+/* Test: image_paste — paste 2x2 src at (1,1) on 4x4 dst */
+static void test_paste(void)
+{
+    /* dst: 4x4 RGBA all zeros */
+    uint64_t dst_len = (uint64_t)4 * 4 * 4;
+    uint8_t *dst_raw = (uint8_t *)malloc(dst_len);
+    memset(dst_raw, 0, dst_len);
+    TkImgBuf dst = image_from_raw(dst_raw, 4, 4, 4);
+    free(dst_raw);
+
+    /* src: 2x2 RGBA, all pixels = {50, 100, 150, 255} */
+    uint64_t src_len = (uint64_t)2 * 2 * 4;
+    uint8_t *src_raw = (uint8_t *)malloc(src_len);
+    for (int i = 0; i < 4; i++) {
+        src_raw[i*4+0] = 50;
+        src_raw[i*4+1] = 100;
+        src_raw[i*4+2] = 150;
+        src_raw[i*4+3] = 255;
+    }
+    TkImgBuf src = image_from_raw(src_raw, 2, 2, 4);
+    free(src_raw);
+
+    TkImgBuf out = image_paste(dst, src, 1, 1);
+
+    ASSERT(out.data  != NULL, "paste: data non-null");
+    ASSERT(out.width == 4,    "paste: dst width preserved");
+    ASSERT(out.height== 4,    "paste: dst height preserved");
+
+    /* Pixel at (1,1) in out should be src pixel: {50,100,150,255}
+     * Alpha=255 so out = 1*src + 0*dst = src */
+    uint64_t idx = ((uint64_t)1 * 4 + 1) * 4; /* y=1, x=1, stride=4*4=16 */
+    ASSERT(out.data[idx+0] == 50,  "paste: pixel(1,1) R == 50");
+    ASSERT(out.data[idx+1] == 100, "paste: pixel(1,1) G == 100");
+    ASSERT(out.data[idx+2] == 150, "paste: pixel(1,1) B == 150");
+
+    /* Pixel at (0,0) should still be 0 (outside paste area) */
+    ASSERT(out.data[0] == 0, "paste: pixel(0,0) unchanged (R==0)");
+
+    image_buf_free(&out);
+    image_buf_free(&src);
+    image_buf_free(&dst);
+}
+
+/* =========================================================================
+ * Story 34.3.2 tests: histogram, quantize, text_draw
+ * ========================================================================= */
+
+/* Test histogram: 2x2 RGBA image with 4 known pixel colors.
+ * Pixels: (255,0,0,255), (0,255,0,255), (0,0,255,255), (128,128,128,255) */
+static void test_histogram(void)
+{
+    uint8_t raw[16] = {
+        255,   0,   0, 255,   /* pixel (0,0): red */
+          0, 255,   0, 255,   /* pixel (1,0): green */
+          0,   0, 255, 255,   /* pixel (0,1): blue */
+        128, 128, 128, 255    /* pixel (1,1): grey */
+    };
+    TkImgBuf buf = image_from_raw(raw, 2, 2, 4);
+    ImgHistogram h = image_histogram(buf);
+
+    /* Red channel: one pixel at 255, one at 128, two at 0 */
+    ASSERT(h.r[255] == 1, "histogram: r[255]==1 (red pixel)");
+    ASSERT(h.r[128] == 1, "histogram: r[128]==1 (grey pixel)");
+    ASSERT(h.r[0]   == 2, "histogram: r[0]==2 (green+blue pixels)");
+
+    /* Green channel: one pixel at 255, one at 128, two at 0 */
+    ASSERT(h.g[255] == 1, "histogram: g[255]==1 (green pixel)");
+    ASSERT(h.g[128] == 1, "histogram: g[128]==1 (grey pixel)");
+    ASSERT(h.g[0]   == 2, "histogram: g[0]==2 (red+blue pixels)");
+
+    /* Blue channel: one pixel at 255, one at 128, two at 0 */
+    ASSERT(h.b[255] == 1, "histogram: b[255]==1 (blue pixel)");
+    ASSERT(h.b[128] == 1, "histogram: b[128]==1 (grey pixel)");
+    ASSERT(h.b[0]   == 2, "histogram: b[0]==2 (red+green pixels)");
+
+    /* Alpha channel: all four pixels have alpha=255 */
+    ASSERT(h.a[255] == 4, "histogram: a[255]==4 (all opaque)");
+
+    image_buf_free(&buf);
+}
+
+/* Test quantize: 8x8 image with exactly 2 alternating colors.
+ * Quantize to 2 → every output pixel must map to one of those 2 colors. */
+static void test_quantize(void)
+{
+    uint8_t color_a[4] = {200,  50,  50, 255};
+    uint8_t color_b[4] = { 50, 200,  50, 255};
+    uint32_t w = 8, h = 8;
+    uint8_t raw[8 * 8 * 4];
+    uint32_t i;
+    for (i = 0; i < w * h; i++) {
+        uint8_t *p = raw + i * 4;
+        const uint8_t *src = (i % 2 == 0) ? color_a : color_b;
+        p[0] = src[0]; p[1] = src[1]; p[2] = src[2]; p[3] = src[3];
+    }
+    TkImgBuf src = image_from_raw(raw, w, h, 4);
+    TkImgBuf out = image_quantize(src, 2);
+
+    ASSERT(out.data     != NULL, "quantize 2colors->2: data non-null");
+    ASSERT(out.width    == w,    "quantize 2colors->2: width preserved");
+    ASSERT(out.height   == h,    "quantize 2colors->2: height preserved");
+    ASSERT(out.channels == 4,    "quantize 2colors->2: channels preserved");
+
+    /* Every pixel must be close to one of the two original colors. */
+    int bad = 0;
+    if (out.data) {
+        for (i = 0; i < w * h; i++) {
+            const uint8_t *p = out.data + i * 4;
+            int da0 = (int)p[0]-200; int da1 = (int)p[1]-50;  int da2 = (int)p[2]-50;
+            int db0 = (int)p[0]-50;  int db1 = (int)p[1]-200; int db2 = (int)p[2]-50;
+            int is_a = (da0*da0 + da1*da1 + da2*da2) < (30*30*3);
+            int is_b = (db0*db0 + db1*db1 + db2*db2) < (30*30*3);
+            if (!is_a && !is_b) bad++;
+        }
+    }
+    ASSERT(bad == 0, "quantize 2colors->2: all pixels near one of 2 colors");
+
+    image_buf_free(&out);
+    image_buf_free(&src);
+}
+
+/* Test text_draw: draw "A" on an 80x16 white RGBA image.
+ * Result must have same dimensions and contain at least one non-white pixel. */
+static void test_text_draw(void)
+{
+    uint32_t w = 80, h = 16;
+    uint64_t len = (uint64_t)w * h * 4;
+    uint8_t *raw = (uint8_t *)malloc(len);
+    memset(raw, 255, len);
+    TkImgBuf src = image_from_raw(raw, w, h, 4);
+    free(raw);
+
+    /* Draw black "A" at (2,2) size=1 color=0x000000FF */
+    TkImgBuf out = image_text_draw(src, "A", 2, 2, 1, 0x000000FFu);
+
+    ASSERT(out.data     != NULL, "text_draw 'A': result non-null");
+    ASSERT(out.width    == w,    "text_draw 'A': width preserved");
+    ASSERT(out.height   == h,    "text_draw 'A': height preserved");
+    ASSERT(out.channels == 4,    "text_draw 'A': channels preserved");
+
+    /* At least one pixel must be non-white (drawing happened). */
+    int found_nonwhite = 0;
+    if (out.data) {
+        uint64_t idx;
+        for (idx = 0; idx < (uint64_t)w * h * 4; idx += 4) {
+            if (out.data[idx] != 255 || out.data[idx+1] != 255 ||
+                out.data[idx+2] != 255) {
+                found_nonwhite = 1;
+                break;
+            }
+        }
+    }
+    ASSERT(found_nonwhite == 1, "text_draw 'A': at least one non-white pixel drawn");
+
+    image_buf_free(&out);
+    image_buf_free(&src);
+}
+
+/* =========================================================================
  * main
  * ========================================================================= */
 
@@ -276,6 +548,22 @@ int main(void)
     test_png_roundtrip();
     test_png_decode_invalid();
     test_jpeg_encode_stub();
+
+    printf("\n=== Story 34.3.1: transforms and filters ===\n\n");
+
+    test_brightness_brighter();
+    test_brightness_zero();
+    test_contrast();
+    test_sharpen();
+    test_blur();
+    test_rotate();
+    test_paste();
+
+    printf("\n=== Story 34.3.2: histogram, quantize, text_draw ===\n\n");
+
+    test_histogram();
+    test_quantize();
+    test_text_draw();
 
     printf("\n=== Results: %d passed, %d failed ===\n", passes, failures);
     return failures ? 1 : 0;

@@ -706,3 +706,241 @@ void ml_split_free(SplitResult *s)
     free(s->train_idx); s->train_idx = NULL; s->ntrain = 0;
     free(s->test_idx);  s->test_idx  = NULL; s->ntest  = 0;
 }
+
+/* =========================================================================
+ * Cross-validation split (Story 31.3.2)
+ * ========================================================================= */
+
+/*
+ * ml_cross_validation_split — shuffle n indices with Fisher-Yates + LCG,
+ * then divide into k approximately equal folds.
+ *
+ *   fold_sizes[i] = n/k + (i < n%k ? 1 : 0)
+ */
+CrossValSplit ml_cross_validation_split(uint64_t n, uint64_t k, uint64_t seed)
+{
+    CrossValSplit s;
+    s.folds      = NULL;
+    s.fold_sizes = NULL;
+    s.k          = 0;
+
+    if (n == 0 || k == 0) return s;
+
+    /* Build index array [0..n-1]. */
+    uint64_t *idx = (uint64_t *)malloc(n * sizeof(uint64_t));
+    if (!idx) return s;
+    for (uint64_t i = 0; i < n; i++) idx[i] = i;
+
+    /* Fisher-Yates shuffle with LCG (same constants as ml_train_test_split). */
+    uint64_t rng = seed;
+    for (uint64_t i = n - 1; i > 0; i--) {
+        rng = rng * 6364136223846793005ULL + 1442695040888963407ULL;
+        uint64_t j = rng % (i + 1);
+        uint64_t tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
+    }
+
+    /* Allocate fold_sizes and folds arrays. */
+    s.fold_sizes = (uint64_t *)malloc(k * sizeof(uint64_t));
+    s.folds      = (uint64_t **)malloc(k * sizeof(uint64_t *));
+    if (!s.fold_sizes || !s.folds) {
+        free(idx); free(s.fold_sizes); free(s.folds);
+        s.fold_sizes = NULL; s.folds = NULL;
+        return s;
+    }
+
+    uint64_t base = n / k;
+    uint64_t rem  = n % k;
+    for (uint64_t fi = 0; fi < k; fi++) {
+        s.fold_sizes[fi] = base + (fi < rem ? 1 : 0);
+        s.folds[fi] = NULL;
+    }
+
+    /* Fill each fold from the shuffled index array. */
+    uint64_t offset = 0;
+    for (uint64_t fi = 0; fi < k; fi++) {
+        uint64_t sz = s.fold_sizes[fi];
+        s.folds[fi] = (uint64_t *)malloc(sz * sizeof(uint64_t));
+        if (!s.folds[fi]) {
+            /* Free what has been allocated so far. */
+            for (uint64_t fj = 0; fj < fi; fj++) free(s.folds[fj]);
+            free(s.folds); free(s.fold_sizes); free(idx);
+            s.folds = NULL; s.fold_sizes = NULL; s.k = 0;
+            return s;
+        }
+        for (uint64_t j = 0; j < sz; j++) {
+            s.folds[fi][j] = idx[offset + j];
+        }
+        offset += sz;
+    }
+
+    s.k = k;
+    free(idx);
+    return s;
+}
+
+/* ml_cross_validation_free — release all heap memory inside *s. */
+void ml_cross_validation_free(CrossValSplit *s)
+{
+    if (!s) return;
+    if (s->folds) {
+        for (uint64_t fi = 0; fi < s->k; fi++) {
+            free(s->folds[fi]);
+            s->folds[fi] = NULL;
+        }
+        free(s->folds);
+        s->folds = NULL;
+    }
+    free(s->fold_sizes);
+    s->fold_sizes = NULL;
+    s->k = 0;
+}
+
+/* =========================================================================
+ * Random forest (Story 31.3.2)
+ * ========================================================================= */
+
+struct TkRandomForest {
+    DTreeModel **trees;
+    uint64_t     n_estimators;
+};
+
+/*
+ * ml_random_forest_fit — train n_estimators CART trees on bootstrap samples.
+ *
+ * Bootstrap: for each tree, draw n indices with replacement from [0..n-1]
+ * using the LCG PRNG.  The seed is advanced per-draw.
+ */
+TkRandomForest *ml_random_forest_fit(F64Array *feature_cols, uint64_t nfeatures,
+                                      F64Array labels, uint64_t n_estimators,
+                                      uint64_t max_depth, uint64_t seed)
+{
+    uint64_t n = labels.len;
+
+    TkRandomForest *forest = (TkRandomForest *)malloc(sizeof(TkRandomForest));
+    if (!forest) return NULL;
+
+    forest->n_estimators = n_estimators;
+    forest->trees = (DTreeModel **)calloc(n_estimators, sizeof(DTreeModel *));
+    if (!forest->trees) { free(forest); return NULL; }
+
+    /* Temporary arrays for bootstrap labels and feature columns. */
+    double    *boot_labels = (double    *)malloc(n * sizeof(double));
+    double   **boot_feat   = (double   **)malloc(nfeatures * sizeof(double *));
+    F64Array  *boot_cols   = (F64Array  *)malloc(nfeatures * sizeof(F64Array));
+
+    if (!boot_labels || !boot_feat || !boot_cols) {
+        free(boot_labels); free(boot_feat); free(boot_cols);
+        free(forest->trees); free(forest);
+        return NULL;
+    }
+
+    for (uint64_t f = 0; f < nfeatures; f++) {
+        boot_feat[f] = (double *)malloc(n * sizeof(double));
+        if (!boot_feat[f]) {
+            for (uint64_t ff = 0; ff < f; ff++) free(boot_feat[ff]);
+            free(boot_labels); free(boot_feat); free(boot_cols);
+            free(forest->trees); free(forest);
+            return NULL;
+        }
+        boot_cols[f].data = boot_feat[f];
+        boot_cols[f].len  = n;
+    }
+
+    uint64_t rng = seed;
+
+    for (uint64_t t = 0; t < n_estimators; t++) {
+        /* Bootstrap sample: pick n indices with replacement. */
+        for (uint64_t i = 0; i < n; i++) {
+            rng = rng * 6364136223846793005ULL + 1442695040888963407ULL;
+            uint64_t pick = rng % n;
+            boot_labels[i] = labels.data[pick];
+            for (uint64_t f = 0; f < nfeatures; f++) {
+                boot_feat[f][i] = feature_cols[f].data[pick];
+            }
+        }
+
+        DTreeModel *tree = (DTreeModel *)malloc(sizeof(DTreeModel));
+        if (!tree) {
+            /* Clean up trees already built. */
+            for (uint64_t tt = 0; tt < t; tt++) {
+                if (forest->trees[tt]) {
+                    ml_dtree_free(forest->trees[tt]);
+                    free(forest->trees[tt]);
+                }
+            }
+            for (uint64_t f = 0; f < nfeatures; f++) free(boot_feat[f]);
+            free(boot_labels); free(boot_feat); free(boot_cols);
+            free(forest->trees); free(forest);
+            return NULL;
+        }
+
+        *tree = ml_dtreefit(boot_cols, nfeatures, boot_labels, n, max_depth);
+        forest->trees[t] = tree;
+    }
+
+    for (uint64_t f = 0; f < nfeatures; f++) free(boot_feat[f]);
+    free(boot_labels); free(boot_feat); free(boot_cols);
+    return forest;
+}
+
+/*
+ * ml_random_forest_predict — collect one prediction per tree, then return
+ * the majority vote (mode of rounded integer class labels).
+ */
+double ml_random_forest_predict(TkRandomForest *m, double *point)
+{
+    if (!m || m->n_estimators == 0) return 0.0;
+
+    /* Collect predictions into a stack-allocated buffer when possible, else
+     * heap-allocate.  For typical forest sizes (<= 1024) this is fine. */
+    double *preds = (double *)malloc(m->n_estimators * sizeof(double));
+    if (!preds) return 0.0;
+
+    for (uint64_t t = 0; t < m->n_estimators; t++) {
+        preds[t] = ml_dtreepredict(m->trees[t], point);
+    }
+
+    /* Majority vote: round each prediction to nearest integer class,
+     * then find the mode using the same inline counter as gini(). */
+    double  cls_buf[256];
+    uint64_t cnt_buf[256];
+    uint64_t ncls = 0;
+
+    for (uint64_t t = 0; t < m->n_estimators; t++) {
+        double lbl = floor(preds[t] + 0.5); /* round to nearest integer */
+        int found = 0;
+        for (uint64_t c = 0; c < ncls; c++) {
+            if (cls_buf[c] == lbl) { cnt_buf[c]++; found = 1; break; }
+        }
+        if (!found && ncls < 256) {
+            cls_buf[ncls] = lbl;
+            cnt_buf[ncls] = 1;
+            ncls++;
+        }
+    }
+
+    double best_lbl = 0.0;
+    uint64_t best_cnt = 0;
+    for (uint64_t c = 0; c < ncls; c++) {
+        if (cnt_buf[c] > best_cnt) { best_cnt = cnt_buf[c]; best_lbl = cls_buf[c]; }
+    }
+
+    free(preds);
+    return best_lbl;
+}
+
+/* ml_random_forest_free — free all trees and the forest struct itself. */
+void ml_random_forest_free(TkRandomForest *m)
+{
+    if (!m) return;
+    if (m->trees) {
+        for (uint64_t t = 0; t < m->n_estimators; t++) {
+            if (m->trees[t]) {
+                ml_dtree_free(m->trees[t]);
+                free(m->trees[t]);
+            }
+        }
+        free(m->trees);
+    }
+    free(m);
+}

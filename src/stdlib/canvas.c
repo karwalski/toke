@@ -299,3 +299,103 @@ uint64_t canvas_op_count(TkCanvas *c)
     if (!c) return 0;
     return c->op_count;
 }
+
+/* -----------------------------------------------------------------------
+ * Transforms, state stack, style setters, curves, gradients (Story 34.5.2)
+ * ----------------------------------------------------------------------- */
+
+void canvas_translate(TkCanvas *c, double dx, double dy)
+{
+    if (!c) return;
+    char buf[128];
+    snprintf(buf, sizeof(buf), "_c.translate(%g,%g);\n", dx, dy);
+    append_op(c, buf);
+}
+
+void canvas_rotate(TkCanvas *c, double angle)
+{
+    if (!c) return;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "_c.rotate(%g);\n", angle);
+    append_op(c, buf);
+}
+
+void canvas_scale(TkCanvas *c, double sx, double sy)
+{
+    if (!c) return;
+    char buf[128];
+    snprintf(buf, sizeof(buf), "_c.scale(%g,%g);\n", sx, sy);
+    append_op(c, buf);
+}
+
+void canvas_save(TkCanvas *c)
+{
+    if (!c) return;
+    append_op(c, "_c.save();\n");
+}
+
+void canvas_restore(TkCanvas *c)
+{
+    if (!c) return;
+    append_op(c, "_c.restore();\n");
+}
+
+void canvas_fill_style(TkCanvas *c, const char *color)
+{
+    if (!c || !color) return;
+    char buf[256];
+    snprintf(buf, sizeof(buf), "_c.fillStyle='%s';\n", color);
+    append_op(c, buf);
+}
+
+void canvas_stroke_style(TkCanvas *c, const char *color)
+{
+    if (!c || !color) return;
+    char buf[256];
+    snprintf(buf, sizeof(buf), "_c.strokeStyle='%s';\n", color);
+    append_op(c, buf);
+}
+
+void canvas_line_width(TkCanvas *c, double width)
+{
+    if (!c) return;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "_c.lineWidth=%g;\n", width);
+    append_op(c, buf);
+}
+
+void canvas_quadratic_to(TkCanvas *c, double cpx, double cpy, double x, double y)
+{
+    if (!c) return;
+    char buf[256];
+    snprintf(buf, sizeof(buf), "_c.quadraticCurveTo(%g,%g,%g,%g);\n", cpx, cpy, x, y);
+    append_op(c, buf);
+}
+
+void canvas_bezier_to(TkCanvas *c, double cp1x, double cp1y,
+                       double cp2x, double cp2y, double x, double y)
+{
+    if (!c) return;
+    char buf[256];
+    snprintf(buf, sizeof(buf), "_c.bezierCurveTo(%g,%g,%g,%g,%g,%g);\n",
+             cp1x, cp1y, cp2x, cp2y, x, y);
+    append_op(c, buf);
+}
+
+const char *canvas_gradient_linear(TkCanvas *c, double x0, double y0,
+                                    double x1, double y1)
+{
+    if (!c) return NULL;
+
+    /* Build a unique gradient ID using the current op count */
+    char id[32];
+    snprintf(id, sizeof(id), "grad_%llu", (unsigned long long)c->op_count);
+
+    char buf[256];
+    snprintf(buf, sizeof(buf),
+             "var %s=_c.createLinearGradient(%g,%g,%g,%g);\n",
+             id, x0, y0, x1, y1);
+    append_op(c, buf);
+
+    return strdup(id);
+}

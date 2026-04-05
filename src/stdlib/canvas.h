@@ -39,4 +39,27 @@ const char *canvas_to_js(TkCanvas *c);    /* JS commands string */
 const char *canvas_to_html(TkCanvas *c);  /* <canvas> + <script> block */
 uint64_t    canvas_op_count(TkCanvas *c); /* number of drawing ops accumulated */
 
+/* Transform operations (Story 34.5.2) */
+void        canvas_translate(TkCanvas *c, double dx, double dy);
+void        canvas_rotate(TkCanvas *c, double angle);    /* radians */
+void        canvas_scale(TkCanvas *c, double sx, double sy);
+
+/* State stack (Story 34.5.2) */
+void        canvas_save(TkCanvas *c);
+void        canvas_restore(TkCanvas *c);
+
+/* Style setters (Story 34.5.2) */
+void        canvas_fill_style(TkCanvas *c, const char *color);
+void        canvas_stroke_style(TkCanvas *c, const char *color);
+void        canvas_line_width(TkCanvas *c, double width);
+
+/* Curve commands (Story 34.5.2) */
+void        canvas_quadratic_to(TkCanvas *c, double cpx, double cpy, double x, double y);
+void        canvas_bezier_to(TkCanvas *c, double cp1x, double cp1y,
+                              double cp2x, double cp2y, double x, double y);
+
+/* Gradient (Story 34.5.2) */
+const char *canvas_gradient_linear(TkCanvas *c, double x0, double y0,
+                                    double x1, double y1); /* returns heap-alloc'd gradient ID */
+
 #endif /* TK_STDLIB_CANVAS_H */

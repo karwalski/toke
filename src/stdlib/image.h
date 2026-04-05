@@ -129,4 +129,75 @@ TkImgBuf     image_from_raw(const uint8_t *data, uint32_t width,
 /* Free the data pointer inside a TkImgBuf (sets pointer to NULL). */
 void         image_buf_free(TkImgBuf *buf);
 
+/* -----------------------------------------------------------------------
+ * Transforms and filters (Story 34.3.1)
+ * ----------------------------------------------------------------------- */
+
+/* image.rotate(imgbuf, f64) imgbuf
+ * Return a new image (same size) rotated by angle_deg degrees around the
+ * centre using inverse-mapping bilinear interpolation.  Out-of-bounds
+ * source samples are filled with 0. */
+TkImgBuf     image_rotate(TkImgBuf buf, double angle_deg);
+
+/* image.blur(imgbuf, int) imgbuf
+ * Box-approximate Gaussian blur.  The 3×3 kernel [1,2,1;2,4,2;1,2,1]/16 is
+ * applied `radius` times.  Returns a zero TkImgBuf on OOM. */
+TkImgBuf     image_blur(TkImgBuf buf, int radius);
+
+/* image.sharpen(imgbuf) imgbuf
+ * Apply a 3×3 sharpening kernel (centre weight 5, cardinal neighbours -1).
+ * Each channel is clamped to [0,255]. */
+TkImgBuf     image_sharpen(TkImgBuf buf);
+
+/* image.brightness(imgbuf, f64) imgbuf
+ * Multiply every non-alpha channel by factor and clamp to [0,255].
+ * factor > 1.0 brightens, < 1.0 darkens. */
+TkImgBuf     image_brightness(TkImgBuf buf, double factor);
+
+/* image.contrast(imgbuf, f64) imgbuf
+ * Apply contrast adjustment: new = 128 + (old - 128) * factor, clamped to
+ * [0,255] per channel (not applied to the alpha channel). */
+TkImgBuf     image_contrast(TkImgBuf buf, double factor);
+
+/* image.paste(dst, src, int, int) imgbuf
+ * Composite src onto a copy of dst with src's top-left at (x, y).
+ * Src pixels that fall outside dst are silently clipped.
+ * If channels == 4, alpha blending is applied: out = a*src + (1-a)*dst. */
+TkImgBuf     image_paste(TkImgBuf dst, TkImgBuf src, int x, int y);
+
+/* -----------------------------------------------------------------------
+ * Histogram, quantization, and text drawing (Story 34.3.2)
+ * ----------------------------------------------------------------------- */
+
+/* Pixel histogram: 256-bin per channel. */
+typedef struct {
+    uint64_t r[256];
+    uint64_t g[256];
+    uint64_t b[256];
+    uint64_t a[256];
+} ImgHistogram;
+
+/* image.histogram(imgbuf) ImgHistogram
+ * Walk all pixels and count per-channel values [0..255].
+ * For RGB images (channels==3), a[] is left zeroed.
+ * For grayscale images (channels==1), only r[] is filled. */
+ImgHistogram image_histogram(TkImgBuf buf);
+
+/* image.quantize(imgbuf, u64) imgbuf
+ * Reduce the image palette to at most ncolors distinct colors using the
+ * median-cut algorithm.  Returns a new TkImgBuf (same dimensions, same
+ * channel count) with quantized colors.  Returns a zero TkImgBuf (data==NULL)
+ * on OOM or invalid input. */
+TkImgBuf     image_quantize(TkImgBuf buf, uint64_t ncolors);
+
+/* image.text_draw(imgbuf, str, int, int, int, u32) imgbuf
+ * Draw text onto a copy of buf using a built-in 5×7 bitmap font.
+ * x, y    — top-left origin of the first character (may be negative)
+ * size    — pixel scale factor (1 = native 5×7, 2 = 10×14, …)
+ * color   — 0xRRGGBBAA for RGBA images, 0xRRGGBB__ for RGB images
+ * Only ASCII printable characters (32–126) are rendered; others are skipped.
+ * Returns a new TkImgBuf (caller must free); returns zero buf on OOM. */
+TkImgBuf     image_text_draw(TkImgBuf buf, const char *text,
+                              int x, int y, int size, uint32_t color);
+
 #endif /* TK_STDLIB_IMAGE_H */

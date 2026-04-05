@@ -106,4 +106,47 @@ ByteArray encrypt_hkdf_sha256(ByteArray ikm, ByteArray salt,
  * Caller owns .data. */
 ByteArray encrypt_tls_cert_fingerprint(const char *pem_cert);
 
+/* -----------------------------------------------------------------------
+ * ChaCha20-Poly1305 AEAD (RFC 8439)
+ * Story: 30.1.1
+ * ----------------------------------------------------------------------- */
+
+/* encrypt.chacha20poly1305_keygen():[Byte]
+ * Returns 32 cryptographically random bytes. Caller owns .data. */
+ByteArray encrypt_chacha20poly1305_keygen(void);
+
+/* encrypt.chacha20poly1305_noncegen():[Byte]
+ * Returns 12 cryptographically random bytes. Caller owns .data. */
+ByteArray encrypt_chacha20poly1305_noncegen(void);
+
+typedef struct {
+    ByteArray ciphertext; /* ciphertext + 16-byte Poly1305 tag appended */
+    int is_err;
+    const char *err_msg;
+} ChaChaEncResult;
+
+typedef struct {
+    ByteArray plaintext;
+    int is_err;
+    const char *err_msg;
+} ChaChaDecResult;
+
+/* key: 32 bytes, nonce: 12 bytes, aad: associated data (may be NULL/0) */
+ChaChaEncResult encrypt_chacha20poly1305_encrypt(ByteArray key, ByteArray nonce,
+                                                  ByteArray plaintext, ByteArray aad);
+ChaChaDecResult encrypt_chacha20poly1305_decrypt(ByteArray key, ByteArray nonce,
+                                                  ByteArray ciphertext, ByteArray aad);
+
+/* -----------------------------------------------------------------------
+ * PBKDF2 (RFC 2898)
+ * Story: 30.1.1
+ * ----------------------------------------------------------------------- */
+
+/* encrypt.pbkdf2(password:Str; salt:[Byte]; iterations:u32; dklen:u32; hash:Str):[Byte]
+ * hash: "sha256" or "sha512".
+ * Caller owns .data. Returns empty ByteArray on bad input. */
+ByteArray encrypt_pbkdf2(const char *password, ByteArray salt,
+                          uint32_t iterations, uint32_t dklen,
+                          const char *hash);
+
 #endif /* TK_STDLIB_ENCRYPT_H */

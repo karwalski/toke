@@ -330,6 +330,130 @@ static void test_empty_svg_document(void)
 }
 
 /* -----------------------------------------------------------------------
+ * Story 34.5.1 — Test 18: svg_ellipse
+ * ----------------------------------------------------------------------- */
+static void test_ellipse(void)
+{
+    TkSvgDoc   *doc = svg_doc(200.0, 200.0);
+    const char *el  = svg_ellipse(doc, 100.0, 80.0, 50.0, 30.0,
+                                  "fill:blue;stroke:none");
+    const char *out = svg_render(doc);
+
+    ASSERT(el != NULL,                       "ellipse: constructor returns non-NULL");
+    ASSERT_CONTAINS(out, "ellipse",          "ellipse: output contains 'ellipse'");
+    ASSERT_CONTAINS(out, "cx=",             "ellipse: output contains 'cx='");
+    ASSERT_CONTAINS(out, "rx=",             "ellipse: output contains 'rx='");
+
+    svg_free(doc);
+}
+
+/* -----------------------------------------------------------------------
+ * Story 34.5.1 — Test 19: svg_gradient_linear
+ * ----------------------------------------------------------------------- */
+static void test_gradient_linear(void)
+{
+    TkSvgDoc *doc = svg_doc(200.0, 200.0);
+    SvgStop stops[2];
+    stops[0].offset  = 0.0; stops[0].color = "#ff0000"; stops[0].opacity = 1.0;
+    stops[1].offset  = 1.0; stops[1].color = "#0000ff"; stops[1].opacity = 1.0;
+
+    const char *ref = svg_gradient_linear(doc, "grad1", stops, 2,
+                                          0.0, 0.0, 1.0, 0.0);
+    const char *out = svg_render(doc);
+
+    ASSERT(ref != NULL,                          "linear-grad: ref non-NULL");
+    ASSERT_CONTAINS(ref, "url(#grad1)",          "linear-grad: ref is url(#grad1)");
+    ASSERT_CONTAINS(out, "linearGradient",       "linear-grad: output contains linearGradient");
+    ASSERT_CONTAINS(out, "grad1",                "linear-grad: output contains id 'grad1'");
+    ASSERT_CONTAINS(out, "<defs>",               "linear-grad: output contains <defs>");
+
+    svg_free(doc);
+}
+
+/* -----------------------------------------------------------------------
+ * Story 34.5.1 — Test 20: svg_gradient_radial
+ * ----------------------------------------------------------------------- */
+static void test_gradient_radial(void)
+{
+    TkSvgDoc *doc = svg_doc(200.0, 200.0);
+    SvgStop stops[2];
+    stops[0].offset  = 0.0; stops[0].color = "white"; stops[0].opacity = 1.0;
+    stops[1].offset  = 1.0; stops[1].color = "black"; stops[1].opacity = 0.0;
+
+    const char *ref = svg_gradient_radial(doc, "rgrad1", stops, 2,
+                                          0.5, 0.5, 0.5);
+    const char *out = svg_render(doc);
+
+    ASSERT(ref != NULL,                    "radial-grad: ref non-NULL");
+    ASSERT_CONTAINS(out, "radialGradient", "radial-grad: output contains radialGradient");
+    ASSERT_CONTAINS(out, "rgrad1",         "radial-grad: output contains id 'rgrad1'");
+
+    svg_free(doc);
+}
+
+/* -----------------------------------------------------------------------
+ * Story 34.5.1 — Test 21: svg_defs
+ * ----------------------------------------------------------------------- */
+static void test_defs(void)
+{
+    TkSvgDoc *doc = svg_doc(200.0, 200.0);
+    svg_defs(doc, "<marker id=\"arrow\" markerWidth=\"10\" markerHeight=\"10\"/>");
+    const char *out = svg_render(doc);
+
+    ASSERT_CONTAINS(out, "<defs>",  "defs: output contains <defs>");
+    ASSERT_CONTAINS(out, "marker",  "defs: output contains defs content");
+    ASSERT_CONTAINS(out, "</defs>", "defs: output contains </defs>");
+
+    svg_free(doc);
+}
+
+/* -----------------------------------------------------------------------
+ * Story 34.5.1 — Test 22: svg_save_file
+ * ----------------------------------------------------------------------- */
+static void test_save_file(void)
+{
+    TkSvgDoc *doc  = svg_doc(100.0, 100.0);
+    TkSvgStyle s   = svg_style("green", "none", 0.0);
+    svg_append(doc, svg_rect(10.0, 10.0, 80.0, 80.0, s));
+
+    const char *path = "/tmp/test_svg_save_34_5_1.svg";
+    int ok = svg_save_file(doc, path);
+
+    ASSERT(ok == 1, "save-file: svg_save_file returns 1 on success");
+
+    /* Verify file exists and contains <svg */
+    FILE *f = fopen(path, "r");
+    ASSERT(f != NULL, "save-file: file exists after save");
+    if (f) {
+        char buf[64];
+        size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+        buf[n] = '\0';
+        fclose(f);
+        ASSERT(strstr(buf, "<svg") != NULL, "save-file: file starts with <svg");
+    }
+
+    svg_free(doc);
+}
+
+/* -----------------------------------------------------------------------
+ * Story 34.5.1 — Test 23: svg_animate
+ * ----------------------------------------------------------------------- */
+static void test_animate(void)
+{
+    TkSvgDoc *doc = svg_doc(200.0, 200.0);
+
+    /* Register an animation (no matching element — animate appended before </svg>) */
+    svg_animate(doc, "box1", "opacity", "1", "0", 2.0);
+    const char *out = svg_render(doc);
+
+    ASSERT_CONTAINS(out, "animate",     "animate: output contains 'animate'");
+    ASSERT_CONTAINS(out, "opacity",     "animate: output contains attribute name");
+    ASSERT_CONTAINS(out, "dur=",        "animate: output contains dur=");
+
+    svg_free(doc);
+}
+
+/* -----------------------------------------------------------------------
  * main
  * ----------------------------------------------------------------------- */
 
@@ -352,6 +476,13 @@ int main(void)
     test_large_coordinates();
     test_many_elements();
     test_empty_svg_document();
+    /* Story 34.5.1 */
+    test_ellipse();
+    test_gradient_linear();
+    test_gradient_radial();
+    test_defs();
+    test_save_file();
+    test_animate();
 
     if (failures == 0) {
         printf("All tests passed.\n");

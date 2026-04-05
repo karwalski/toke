@@ -19,9 +19,23 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include "../../src/stdlib/template.h"
 
 static int failures = 0;
+
+/* Helper used in test 31: uppercases its input. */
+static const char *helper_shout(const char *value)
+{
+    if (!value) return "";
+    size_t len = strlen(value);
+    char  *out = (char *)malloc(len + 1);
+    if (!out) return value;
+    for (size_t i = 0; i < len; i++)
+        out[i] = (char)toupper((unsigned char)value[i]);
+    out[len] = '\0';
+    return out;
+}
 
 #define ASSERT(cond, msg) \
     do { if (!(cond)) { fprintf(stderr, "FAIL: %s\n", msg); failures++; } \
@@ -318,6 +332,64 @@ int main(void)
         const char *got = tmpl_renderhtml(t, vars, 1);
         ASSERT_STREQ(got, "&lt;b&gt;",
                      "each: renderhtml escapes {{.}}");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
+    /* ---- Story 33.1.2: partials and helpers ---- */
+
+    /* ---- 29. Partial: {{>greeting}} renders registered partial ---- */
+    {
+        tmpl_register_partial("greeting", "Hello, {{name}}!");
+        TkTmpl *t = tmpl_compile("{{>greeting}}");
+        TkTmplVar vars[] = {{"name", "World"}};
+        const char *got = tmpl_render(t, vars, 1);
+        ASSERT_STREQ(got, "Hello, World!",
+                     "partial: {{>greeting}} with name=World");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
+    /* ---- 30. Partial: used inside outer template with HTML tag ---- */
+    {
+        tmpl_register_partial("header", "<h1>{{title}}</h1>");
+        TkTmpl *t = tmpl_compile("{{>header}}<p>body</p>");
+        TkTmplVar vars[] = {{"title", "Welcome"}};
+        const char *got = tmpl_render(t, vars, 1);
+        ASSERT_STREQ(got, "<h1>Welcome</h1><p>body</p>",
+                     "partial: outer template with header partial");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
+    /* ---- 31. Helper: {{message|shout}} uppercases value ---- */
+    {
+        tmpl_register_helper("shout", helper_shout);
+        TkTmpl *t = tmpl_compile("{{message|shout}}");
+        TkTmplVar vars[] = {{"message", "hello"}};
+        const char *got = tmpl_render(t, vars, 1);
+        ASSERT_STREQ(got, "HELLO", "helper: {{message|shout}} -> HELLO");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
+    /* ---- 32. Unregistered partial renders as empty string ---- */
+    {
+        TkTmpl *t = tmpl_compile("{{>no_such_partial}}");
+        const char *got = tmpl_render(t, NULL, 0);
+        ASSERT_STREQ(got, "",
+                     "partial: unregistered partial renders as empty string");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
+    /* ---- 33. Unregistered helper passes through original value ---- */
+    {
+        TkTmpl *t = tmpl_compile("{{value|no_such_helper}}");
+        TkTmplVar vars[] = {{"value", "original"}};
+        const char *got = tmpl_render(t, vars, 1);
+        ASSERT_STREQ(got, "original",
+                     "helper: unregistered helper passes through value");
         free((void *)got);
         tmpl_free(t);
     }

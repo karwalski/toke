@@ -782,6 +782,162 @@ static void test_tls_fingerprint_null(void)
 }
 
 /* -------------------------------------------------------------------------
+ * ChaCha20-Poly1305 tests (Story 30.1.1)
+ * ------------------------------------------------------------------------- */
+
+static void test_chacha_keygen_len(void)
+{
+    ByteArray key = encrypt_chacha20poly1305_keygen();
+    ASSERT(key.len == 32, "chacha20poly1305_keygen: len == 32");
+    ASSERT(key.data != NULL, "chacha20poly1305_keygen: data != NULL");
+    free((void *)key.data);
+}
+
+static void test_chacha_noncegen_len(void)
+{
+    ByteArray nonce = encrypt_chacha20poly1305_noncegen();
+    ASSERT(nonce.len == 12, "chacha20poly1305_noncegen: len == 12");
+    ASSERT(nonce.data != NULL, "chacha20poly1305_noncegen: data != NULL");
+    free((void *)nonce.data);
+}
+
+static void test_chacha_roundtrip_with_aad(void)
+{
+    const char *plaintext_str = "hello chacha world";
+    ByteArray key   = encrypt_chacha20poly1305_keygen();
+    ByteArray nonce = encrypt_chacha20poly1305_noncegen();
+    ByteArray plain = ba_str(plaintext_str);
+    ByteArray aad   = ba_str("additional data");
+
+    ChaChaEncResult enc = encrypt_chacha20poly1305_encrypt(key, nonce, plain, aad);
+    ASSERT(enc.is_err == 0, "chacha20poly1305_encrypt: roundtrip with AAD no error");
+    ASSERT(enc.ciphertext.len == plain.len + 16,
+           "chacha20poly1305_encrypt: output len == plaintext + 16-byte tag");
+
+    if (!enc.is_err && enc.ciphertext.data != NULL) {
+        ChaChaDecResult dec = encrypt_chacha20poly1305_decrypt(key, nonce,
+                                                               enc.ciphertext, aad);
+        ASSERT(dec.is_err == 0, "chacha20poly1305_decrypt: roundtrip with AAD no error");
+        ASSERT(dec.plaintext.len == plain.len,
+               "chacha20poly1305_decrypt: recovered plaintext length matches");
+        if (!dec.is_err && dec.plaintext.data != NULL) {
+            ASSERT(memcmp(dec.plaintext.data, plaintext_str, plain.len) == 0,
+                   "chacha20poly1305_decrypt: recovered plaintext content matches");
+        }
+        free((void *)dec.plaintext.data);
+    }
+    free((void *)enc.ciphertext.data);
+    free((void *)key.data);
+    free((void *)nonce.data);
+}
+
+static void test_chacha_roundtrip_empty_aad(void)
+{
+    const char *plaintext_str = "no aad here";
+    ByteArray key   = encrypt_chacha20poly1305_keygen();
+    ByteArray nonce = encrypt_chacha20poly1305_noncegen();
+    ByteArray plain = ba_str(plaintext_str);
+    ByteArray aad   = ba_raw(NULL, 0);
+
+    ChaChaEncResult enc = encrypt_chacha20poly1305_encrypt(key, nonce, plain, aad);
+    ASSERT(enc.is_err == 0, "chacha20poly1305_encrypt: empty AAD no error");
+
+    if (!enc.is_err && enc.ciphertext.data != NULL) {
+        ChaChaDecResult dec = encrypt_chacha20poly1305_decrypt(key, nonce,
+                                                               enc.ciphertext, aad);
+        ASSERT(dec.is_err == 0, "chacha20poly1305_decrypt: empty AAD no error");
+        ASSERT(dec.plaintext.len == plain.len,
+               "chacha20poly1305_decrypt: empty AAD plaintext length matches");
+        if (!dec.is_err && dec.plaintext.data != NULL) {
+            ASSERT(memcmp(dec.plaintext.data, plaintext_str, plain.len) == 0,
+                   "chacha20poly1305_decrypt: empty AAD plaintext content matches");
+        }
+        free((void *)dec.plaintext.data);
+    }
+    free((void *)enc.ciphertext.data);
+    free((void *)key.data);
+    free((void *)nonce.data);
+}
+
+static void test_chacha_wrong_key(void)
+{
+    ByteArray key   = encrypt_chacha20poly1305_keygen();
+    ByteArray nonce = encrypt_chacha20poly1305_noncegen();
+    ByteArray plain = ba_str("secret chacha message");
+    ByteArray aad   = ba_raw(NULL, 0);
+
+    ChaChaEncResult enc = encrypt_chacha20poly1305_encrypt(key, nonce, plain, aad);
+    ByteArray wrong_key = encrypt_chacha20poly1305_keygen();
+
+    if (!enc.is_err && enc.ciphertext.data != NULL) {
+        ChaChaDecResult dec = encrypt_chacha20poly1305_decrypt(wrong_key, nonce,
+                                                               enc.ciphertext, aad);
+        ASSERT(dec.is_err == 1, "chacha20poly1305_decrypt: wrong key → is_err=1");
+        free((void *)dec.plaintext.data);
+    }
+    free((void *)enc.ciphertext.data);
+    free((void *)key.data);
+    free((void *)wrong_key.data);
+    free((void *)nonce.data);
+}
+
+static void test_chacha_tampered_ciphertext(void)
+{
+    ByteArray key   = encrypt_chacha20poly1305_keygen();
+    ByteArray nonce = encrypt_chacha20poly1305_noncegen();
+    ByteArray plain = ba_str("tamper me chacha");
+    ByteArray aad   = ba_raw(NULL, 0);
+
+    ChaChaEncResult enc = encrypt_chacha20poly1305_encrypt(key, nonce, plain, aad);
+
+    if (!enc.is_err && enc.ciphertext.data != NULL && enc.ciphertext.len > 0) {
+        /* Flip the first byte of the ciphertext body */
+        uint8_t *mutable_ct = (uint8_t *)enc.ciphertext.data;
+        mutable_ct[0] ^= 0xff;
+        ChaChaDecResult dec = encrypt_chacha20poly1305_decrypt(key, nonce,
+                                                               enc.ciphertext, aad);
+        ASSERT(dec.is_err == 1,
+               "chacha20poly1305_decrypt: tampered ciphertext → is_err=1");
+        free((void *)dec.plaintext.data);
+    }
+    free((void *)enc.ciphertext.data);
+    free((void *)key.data);
+    free((void *)nonce.data);
+}
+
+/* -------------------------------------------------------------------------
+ * PBKDF2 tests (Story 30.1.1)
+ * ------------------------------------------------------------------------- */
+
+/*
+ * PBKDF2-SHA256 known vector (same parameters as RFC 6070 Test Vector 1
+ * but using HMAC-SHA256 rather than HMAC-SHA1):
+ *   Password: "password"
+ *   Salt:     "salt"
+ *   c:        1
+ *   dkLen:    20
+ *   DK (sha256): 120fb6cffcf8b32c43e7225256c4f837a86548c9
+ *
+ * Verified with Python: hashlib.pbkdf2_hmac('sha256', b'password', b'salt', 1, 20)
+ */
+static void test_pbkdf2_rfc6070_vector1(void)
+{
+    const char *password = "password";
+    const char *salt_str = "salt";
+    uint8_t expected[20];
+    hex_decode("120fb6cffcf8b32c43e7225256c4f837a86548c9", expected, 20);
+
+    ByteArray salt = ba_str(salt_str);
+    ByteArray dk = encrypt_pbkdf2(password, salt, 1, 20, "sha256");
+
+    ASSERT(dk.len == 20, "pbkdf2 RFC6070 v1: output len == 20");
+    ASSERT(dk.data != NULL &&
+           memcmp(dk.data, expected, 20) == 0,
+           "pbkdf2 RFC6070 v1 (sha256, c=1): matches known vector");
+    free((void *)dk.data);
+}
+
+/* -------------------------------------------------------------------------
  * main
  * ------------------------------------------------------------------------- */
 
@@ -834,6 +990,17 @@ int main(void)
     test_tls_fingerprint_determinism();
     test_tls_fingerprint_invalid_pem();
     test_tls_fingerprint_null();
+
+    /* ChaCha20-Poly1305 (Story 30.1.1) */
+    test_chacha_keygen_len();
+    test_chacha_noncegen_len();
+    test_chacha_roundtrip_with_aad();
+    test_chacha_roundtrip_empty_aad();
+    test_chacha_wrong_key();
+    test_chacha_tampered_ciphertext();
+
+    /* PBKDF2 (Story 30.1.1) */
+    test_pbkdf2_rfc6070_vector1();
 
     printf("=== %d failure(s) ===\n", failures);
     return (failures > 0) ? 1 : 0;

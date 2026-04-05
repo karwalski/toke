@@ -386,6 +386,112 @@ static void test_negative_values(void)
 }
 
 /* -----------------------------------------------------------------------
+ * Story 34.2.1 tests
+ * ----------------------------------------------------------------------- */
+
+/* Test 19: chart_horizontal_bar contains indexAxis and "y" */
+static void test_horizontal_bar(void)
+{
+    static const char *lab[] = {"a", "b"};
+    static const double vals[] = {1.0, 2.0};
+
+    const char *json = chart_horizontal_bar(lab, 2, vals, "Test");
+    ASSERT_NOT_NULL(json, "chart_horizontal_bar returns non-NULL");
+    ASSERT_CONTAINS(json, "indexAxis", "horizontal_bar: contains indexAxis");
+    ASSERT_CONTAINS(json, "\"y\"", "horizontal_bar: indexAxis value is y");
+    free((void *)json);
+}
+
+/* Test 20: chart_area contains fill and true */
+static void test_area(void)
+{
+    static const double xs[] = {0.0, 1.0, 2.0};
+    static const double ys[] = {1.0, 4.0, 9.0};
+
+    const char *json = chart_area(xs, ys, 3, "Growth");
+    ASSERT_NOT_NULL(json, "chart_area returns non-NULL");
+    ASSERT_CONTAINS(json, "fill", "area: contains fill key");
+    ASSERT_CONTAINS(json, "true", "area: fill is true");
+    free((void *)json);
+}
+
+/* Test 21: chart_stacked_bar contains stacked */
+static void test_stacked_bar(void)
+{
+    static const char *lab[] = {"Q1", "Q2"};
+    static const char *series[] = {"A", "B"};
+    static const double rowA[] = {10.0, 20.0};
+    static const double rowB[] = {5.0, 15.0};
+    const double *data[] = {rowA, rowB};
+
+    const char *json = chart_stacked_bar(lab, 2, series, 2, data, "Sales");
+    ASSERT_NOT_NULL(json, "chart_stacked_bar returns non-NULL");
+    ASSERT_CONTAINS(json, "stacked", "stacked_bar: contains stacked");
+    free((void *)json);
+}
+
+/* Test 22: chart_radar type is "radar" */
+static void test_radar(void)
+{
+    static const char *axes[] = {"speed", "power"};
+    static const double vals[] = {0.8, 0.9};
+
+    const char *json = chart_radar(axes, 2, vals, "Radar");
+    ASSERT_NOT_NULL(json, "chart_radar returns non-NULL");
+    ASSERT_CONTAINS(json, "\"type\":\"radar\"", "radar: type is radar");
+    free((void *)json);
+}
+
+/* Test 23: chart_histogram contains bin data */
+static void test_histogram(void)
+{
+    static const double vals[] = {1.0, 2.0, 2.0, 3.0, 3.0, 3.0};
+
+    const char *json = chart_histogram(vals, 6, 3, "Hist");
+    ASSERT_NOT_NULL(json, "chart_histogram returns non-NULL");
+    /* Should contain at least one numeric data value */
+    ASSERT_CONTAINS(json, "\"data\":", "histogram: contains data key");
+    /* The bin counts should include 1, 2, 3 */
+    ASSERT_CONTAINS(json, "\"type\":\"bar\"", "histogram: type is bar");
+    free((void *)json);
+}
+
+/* Test 24: chart_heatmap returns non-NULL, non-empty string */
+static void test_heatmap(void)
+{
+    static const char *rows[] = {"r1"};
+    static const char *cols[] = {"c1", "c2"};
+    static const double matrix[] = {1.0, 2.0};
+
+    const char *svg = chart_heatmap(rows, 1, cols, 2, matrix, "Heat");
+    ASSERT_NOT_NULL(svg, "chart_heatmap returns non-NULL");
+    ASSERT(svg[0] != '\0', "chart_heatmap returns non-empty string");
+    /* Should be an SVG */
+    ASSERT_CONTAINS(svg, "<svg", "heatmap: output is SVG");
+    free((void *)svg);
+}
+
+/* Test 25: chart_set_theme dark → contains "white" */
+static void test_set_theme_dark(void)
+{
+    /* Build a minimal spec to pass in */
+    static const double vals[] = {1.0};
+    TkDataset ds = {"S", vals, 1, NULL};
+    static const char *lab[] = {"X"};
+    StrArray labels = make_str_array(lab, 1);
+    TkChartSpec *spec = chart_bar(labels, &ds, 1, "ThemeTest");
+    const char *base = chart_tojson(spec);
+    chart_free(spec);
+    ASSERT_NOT_NULL(base, "base spec for theme test is non-NULL");
+
+    const char *themed = chart_set_theme(base, "dark");
+    ASSERT_NOT_NULL(themed, "chart_set_theme(dark) returns non-NULL");
+    ASSERT_CONTAINS(themed, "white", "theme dark: contains white color");
+    free((void *)base);
+    free((void *)themed);
+}
+
+/* -----------------------------------------------------------------------
  * main
  * ----------------------------------------------------------------------- */
 int main(void)
@@ -408,6 +514,15 @@ int main(void)
     test_zero_datasets();
     test_many_labels();
     test_negative_values();
+
+    /* Story 34.2.1 */
+    test_horizontal_bar();
+    test_area();
+    test_stacked_bar();
+    test_radar();
+    test_histogram();
+    test_heatmap();
+    test_set_theme_dark();
 
     if (failures == 0) {
         printf("\nAll tests passed.\n");

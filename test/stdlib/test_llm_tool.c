@@ -410,6 +410,148 @@ static void test_tool_result_msgs_content_contains_result_json(void)
 }
 
 /* -----------------------------------------------------------------------
+ * Story 32.2.1 — llm_tool_validate_args tests
+ * ----------------------------------------------------------------------- */
+
+/* A simple tool with a required "city" field */
+static TkTool make_city_tool(void)
+{
+    TkTool t;
+    t.name             = "get_weather";
+    t.description      = "Get weather for a city";
+    t.parameters_json  = "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},"
+                         "\"required\":[\"city\"]}";
+    t.handler          = NULL;
+    return t;
+}
+
+static void test_validate_args_required_field_present(void)
+{
+    TkTool tool = make_city_tool();
+    ToolValidResult r = llm_tool_validate_args(&tool, "{\"city\":\"NYC\"}");
+    ASSERT(r.ok == 1,      "validate_args required present: ok == 1");
+    ASSERT(r.is_err == 0,  "validate_args required present: is_err == 0");
+}
+
+static void test_validate_args_required_field_missing(void)
+{
+    TkTool tool = make_city_tool();
+    ToolValidResult r = llm_tool_validate_args(&tool, "{\"country\":\"US\"}");
+    ASSERT(r.is_err == 1,  "validate_args required missing: is_err == 1");
+    ASSERT(r.ok == 0,      "validate_args required missing: ok == 0");
+    ASSERT(r.err_msg != NULL, "validate_args required missing: err_msg set");
+    if (r.err_msg) {
+        ASSERT_CONTAINS(r.err_msg, "city",
+                        "validate_args required missing: err_msg mentions field name");
+        free((char *)r.err_msg);
+    }
+}
+
+static void test_validate_args_no_schema_always_ok(void)
+{
+    TkTool t;
+    t.name            = "noop";
+    t.description     = "No schema";
+    t.parameters_json = NULL;
+    t.handler         = NULL;
+    ToolValidResult r = llm_tool_validate_args(&t, "{\"anything\":42}");
+    ASSERT(r.ok == 1,     "validate_args no schema: ok == 1");
+    ASSERT(r.is_err == 0, "validate_args no schema: is_err == 0");
+}
+
+static void test_validate_args_multiple_required_all_present(void)
+{
+    TkTool t;
+    t.name            = "find";
+    t.description     = "Find";
+    t.parameters_json = "{\"type\":\"object\",\"properties\":{},"
+                        "\"required\":[\"a\",\"b\"]}";
+    t.handler         = NULL;
+    ToolValidResult r = llm_tool_validate_args(&t, "{\"a\":1,\"b\":2}");
+    ASSERT(r.ok == 1,     "validate_args multi-required all present: ok == 1");
+    ASSERT(r.is_err == 0, "validate_args multi-required all present: is_err == 0");
+}
+
+static void test_validate_args_multiple_required_one_missing(void)
+{
+    TkTool t;
+    t.name            = "find";
+    t.description     = "Find";
+    t.parameters_json = "{\"type\":\"object\",\"properties\":{},"
+                        "\"required\":[\"a\",\"b\"]}";
+    t.handler         = NULL;
+    ToolValidResult r = llm_tool_validate_args(&t, "{\"a\":1}");
+    ASSERT(r.is_err == 1, "validate_args multi-required one missing: is_err == 1");
+    if (r.err_msg) free((char *)r.err_msg);
+}
+
+/* -----------------------------------------------------------------------
+ * Story 32.2.1 — llm_agentic_loop tests (offline/stub — no URL)
+ * ----------------------------------------------------------------------- */
+
+static void test_agentic_loop_no_url_returns_gracefully(void)
+{
+    /* A client with no base_url — the loop must return an error string. */
+    TkLlmClient c;
+    c.base_url    = NULL;
+    c.api_key     = NULL;
+    c.model       = "test-model";
+    c.timeout_ms  = 100;
+    c.max_retries = 0;
+
+    const char *result = llm_agentic_loop(&c, "sys", "user", NULL, 0, 1);
+    ASSERT(result != NULL, "agentic_loop no-url: returns non-NULL");
+    /* Should be an error or max-iterations string, not a crash */
+    if (result) free((char *)result);
+}
+
+static void test_agentic_loop_null_client_returns_error(void)
+{
+    const char *result = llm_agentic_loop(NULL, "sys", "user", NULL, 0, 1);
+    ASSERT(result != NULL, "agentic_loop null client: returns non-NULL");
+    if (result) {
+        ASSERT_CONTAINS(result, "error",
+                        "agentic_loop null client: contains 'error'");
+        free((char *)result);
+    }
+}
+
+/* -----------------------------------------------------------------------
+ * Story 32.2.1 — llm_parallel_tool_calls tests (offline/stub — no URL)
+ * ----------------------------------------------------------------------- */
+
+static void test_parallel_tool_calls_no_url_returns_gracefully(void)
+{
+    TkLlmClient c;
+    c.base_url    = NULL;
+    c.api_key     = NULL;
+    c.model       = "test-model";
+    c.timeout_ms  = 100;
+    c.max_retries = 0;
+
+    TkLlmMsg msg;
+    msg.role    = "user";
+    msg.content = "hello";
+
+    ToolCallResultArray r = llm_parallel_tool_calls(&c, &msg, 1, NULL, 0);
+    /* Must not crash; empty or error result is acceptable */
+    ASSERT(r.len == 0 || r.data != NULL,
+           "parallel_tool_calls no-url: returns without crash");
+    if (r.data) free(r.data);
+}
+
+static void test_parallel_tool_calls_null_client_returns_empty(void)
+{
+    TkLlmMsg msg;
+    msg.role    = "user";
+    msg.content = "hello";
+
+    ToolCallResultArray r = llm_parallel_tool_calls(NULL, &msg, 1, NULL, 0);
+    ASSERT(r.len == 0, "parallel_tool_calls null client: len == 0");
+    ASSERT(r.data == NULL, "parallel_tool_calls null client: data == NULL");
+}
+
+/* -----------------------------------------------------------------------
  * main
  * ----------------------------------------------------------------------- */
 
@@ -446,6 +588,21 @@ int main(void)
     test_tool_result_msgs_one_result_role_is_tool();
     test_tool_result_msgs_content_contains_result_json();
 
-    printf("\n%s — %d failure(s)\n", failures == 0 ? "OK" : "FAILED", failures);
+    /* Story 32.2.1: llm_tool_validate_args */
+    test_validate_args_required_field_present();
+    test_validate_args_required_field_missing();
+    test_validate_args_no_schema_always_ok();
+    test_validate_args_multiple_required_all_present();
+    test_validate_args_multiple_required_one_missing();
+
+    /* Story 32.2.1: llm_agentic_loop (offline/stub) */
+    test_agentic_loop_no_url_returns_gracefully();
+    test_agentic_loop_null_client_returns_error();
+
+    /* Story 32.2.1: llm_parallel_tool_calls (offline/stub) */
+    test_parallel_tool_calls_no_url_returns_gracefully();
+    test_parallel_tool_calls_null_client_returns_empty();
+
+    printf("\n%s -- %d failure(s)\n", failures == 0 ? "OK" : "FAILED", failures);
     return failures ? 1 : 0;
 }

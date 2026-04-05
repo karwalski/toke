@@ -79,14 +79,41 @@ const char *tmpl_html(const char *tag,
 const char *tmpl_renderfile(const char *path, const TkTmplVar *vars,
                             uint64_t nvar);
 
+/* -----------------------------------------------------------------------
+ * Partials — Story 33.1.2
+ * ----------------------------------------------------------------------- */
+
+/* tmpl_register_partial — compile source and store it in the global partial
+ * registry under name.  A subsequent call with the same name replaces the
+ * previous entry.  At most 64 partials may be registered. */
+void tmpl_register_partial(const char *name, const char *source);
+
+/* -----------------------------------------------------------------------
+ * Helpers — Story 33.1.2
+ * ----------------------------------------------------------------------- */
+
+/* Helper function type: receives a variable value string and returns a
+ * transformed string.  The returned pointer must remain valid until the
+ * render call that produced it completes; returning a heap-allocated string
+ * is the safe choice.  Returning the same pointer (no transform) is also
+ * valid. */
+typedef const char *(*TkTmplHelperFn)(const char *value);
+
+/* tmpl_register_helper — register a helper function under name.
+ * A subsequent call with the same name replaces the previous entry.
+ * At most 64 helpers may be registered. */
+void tmpl_register_helper(const char *name, TkTmplHelperFn fn);
+
 /* .tki compatibility aliases (tpl.* → tpl_*) */
-#define tpl_compile   tmpl_compile
-#define tpl_free      tmpl_free
-#define tpl_render    tmpl_render
-#define tpl_renderhtml tmpl_renderhtml
-#define tpl_vars      tmpl_vars
-#define tpl_html      tmpl_html
-#define tpl_escape    tmpl_escape
-#define tpl_renderfile tmpl_renderfile
+#define tpl_compile            tmpl_compile
+#define tpl_free               tmpl_free
+#define tpl_render             tmpl_render
+#define tpl_renderhtml         tmpl_renderhtml
+#define tpl_vars               tmpl_vars
+#define tpl_html               tmpl_html
+#define tpl_escape             tmpl_escape
+#define tpl_renderfile         tmpl_renderfile
+#define tpl_register_partial   tmpl_register_partial
+#define tpl_register_helper    tmpl_register_helper
 
 #endif /* TK_STDLIB_TEMPLATE_H */

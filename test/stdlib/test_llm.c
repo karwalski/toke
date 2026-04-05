@@ -207,6 +207,141 @@ int main(void)
     }
 
     /* ------------------------------------------------------------------ */
+    /* Story 32.1.1 — llm_retry_backoff                                   */
+    /* ------------------------------------------------------------------ */
+
+    /* Test 21: llm_retry_backoff stores values in client struct */
+    {
+        TkLlmClient *c = llm_client("http://localhost:11434/v1", NULL, "llama3");
+        ASSERT_NOTNULL(c, "retry_backoff: client non-null");
+        /* fields start at 0 */
+        ASSERT(c->retry_base_delay_ms == 0, "retry_backoff: base_delay_ms default 0");
+        ASSERT(c->retry_max_retries   == 0, "retry_backoff: max_retries default 0");
+        /* after call, fields are updated */
+        llm_retry_backoff(c, 200, 5);
+        ASSERT(c->retry_base_delay_ms == 200, "retry_backoff: base_delay_ms set to 200");
+        ASSERT(c->retry_max_retries   == 5,   "retry_backoff: max_retries set to 5");
+        llm_client_free(c);
+    }
+
+    /* Test 22: llm_retry_backoff with NULL client does not crash */
+    {
+        llm_retry_backoff(NULL, 100, 3); /* must not crash */
+        ASSERT(1, "retry_backoff: NULL client safe (no crash)");
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Story 32.1.2 — llm_usage                                           */
+    /* ------------------------------------------------------------------ */
+
+    /* Test 23: fresh client has zero usage */
+    {
+        TkLlmClient *c = llm_client("http://localhost:11434/v1", NULL, "llama3");
+        ASSERT_NOTNULL(c, "llm_usage: client non-null");
+        LlmUsage u = llm_usage(c);
+        ASSERT(u.input_tokens  == 0, "llm_usage: fresh client input_tokens == 0");
+        ASSERT(u.output_tokens == 0, "llm_usage: fresh client output_tokens == 0");
+        llm_client_free(c);
+    }
+
+    /* Test 24: llm_usage with NULL client returns zeros */
+    {
+        LlmUsage u = llm_usage(NULL);
+        ASSERT(u.input_tokens  == 0, "llm_usage: NULL client input_tokens == 0");
+        ASSERT(u.output_tokens == 0, "llm_usage: NULL client output_tokens == 0");
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Story 32.1.1 — llm_embedding: offline / empty-URL error path       */
+    /* ------------------------------------------------------------------ */
+
+    /* Test 25: llm_embedding with empty base_url returns is_err=1 (not crash) */
+    {
+        TkLlmClient *c = llm_client("", NULL, "text-embedding-3-small");
+        ASSERT_NOTNULL(c, "llm_embedding offline: client non-null");
+        F64ArrayLlmResult r = llm_embedding(c, "hello");
+        ASSERT(r.is_err == 1, "llm_embedding offline: is_err == 1 for invalid URL");
+        if (r.err_msg) free((void *)r.err_msg);
+        llm_client_free(c);
+    }
+
+    /* Test 26: llm_embeddings_batch with empty base_url returns is_err=1 */
+    {
+        TkLlmClient *c = llm_client("", NULL, "text-embedding-3-small");
+        ASSERT_NOTNULL(c, "llm_embeddings_batch offline: client non-null");
+        const char *texts[] = { "alpha", "beta" };
+        F64ArraysLlmResult r = llm_embeddings_batch(c, texts, 2);
+        ASSERT(r.is_err == 1, "llm_embeddings_batch offline: is_err == 1 for invalid URL");
+        if (r.err_msg) free((void *)r.err_msg);
+        llm_client_free(c);
+    }
+
+    /* Test 27: llm_embedding with NULL client returns is_err=1 */
+    {
+        F64ArrayLlmResult r = llm_embedding(NULL, "hello");
+        ASSERT(r.is_err == 1, "llm_embedding: NULL client -> is_err == 1");
+        if (r.err_msg) free((void *)r.err_msg);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Story 32.1.2 — llm_json_mode: offline / empty-URL error path       */
+    /* ------------------------------------------------------------------ */
+
+    /* Test 28: llm_json_mode with empty base_url returns is_err=1 */
+    {
+        TkLlmClient *c = llm_client("", NULL, "gpt-4o");
+        ASSERT_NOTNULL(c, "llm_json_mode offline: client non-null");
+        TkLlmMsg msg;
+        msg.role    = "user";
+        msg.content = "Return JSON";
+        TkLlmResp r = llm_json_mode(c, &msg, 1);
+        ASSERT(r.is_err == 1, "llm_json_mode offline: is_err == 1 for invalid URL");
+        if (r.err_msg)  free((void *)r.err_msg);
+        if (r.content)  free((void *)r.content);
+        llm_client_free(c);
+    }
+
+    /* Test 29: llm_json_mode with NULL client returns is_err=1 */
+    {
+        TkLlmMsg msg;
+        msg.role    = "user";
+        msg.content = "{}";
+        TkLlmResp r = llm_json_mode(NULL, &msg, 1);
+        ASSERT(r.is_err == 1, "llm_json_mode: NULL client -> is_err == 1");
+        if (r.err_msg) free((void *)r.err_msg);
+        if (r.content) free((void *)r.content);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Story 32.1.2 — llm_vision: offline / empty-URL error path          */
+    /* ------------------------------------------------------------------ */
+
+    /* Test 30: llm_vision with empty base_url returns is_err=1 */
+    {
+        TkLlmClient *c = llm_client("", NULL, "gpt-4o");
+        ASSERT_NOTNULL(c, "llm_vision offline: client non-null");
+        TkLlmMsg msg;
+        msg.role    = "user";
+        msg.content = "https://example.com/image.jpg";
+        TkLlmResp r = llm_vision(c, &msg, 1);
+        ASSERT(r.is_err == 1, "llm_vision offline: is_err == 1 for invalid URL");
+        if (r.err_msg)  free((void *)r.err_msg);
+        if (r.content)  free((void *)r.content);
+        llm_client_free(c);
+    }
+
+    /* Test 31: llm_vision with NULL client returns is_err=1 */
+    {
+        TkLlmMsg msg;
+        msg.role    = "user";
+        msg.content = "https://example.com/image.jpg";
+        TkLlmResp r = llm_vision(NULL, &msg, 1);
+        ASSERT(r.is_err == 1, "llm_vision: NULL client -> is_err == 1");
+        if (r.err_msg) free((void *)r.err_msg);
+        if (r.content) free((void *)r.content);
+    }
+
+    /* ------------------------------------------------------------------ */
     /* Summary                                                             */
     /* ------------------------------------------------------------------ */
 

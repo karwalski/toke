@@ -11,6 +11,7 @@
  * compiler code.  Callers own the returned strings.
  *
  * Story: 18.1.1
+ * Story: 34.2.1 — additional chart types and configuration helpers
  */
 
 #include "chart.h"
@@ -350,3 +351,475 @@ const char *chart_tovega(TkChartSpec *spec)
 
     return sb.buf;
 }
+
+/* =======================================================================
+ * Story 34.2.1 — Additional chart types and configuration helpers.
+ * ======================================================================= */
+
+/* Convenience macros used throughout this section; undefined at section end. */
+#define A(s)   do { if (!sb_append(&sb, (s)))             { free(sb.buf); return NULL; } } while(0)
+#define AJ(s)  do { if (!sb_append_json_str(&sb, (s)))    { free(sb.buf); return NULL; } } while(0)
+#define AD(v)  do { if (!sb_append_double(&sb, (v)))      { free(sb.buf); return NULL; } } while(0)
+
+/* -----------------------------------------------------------------------
+ * chart_stacked_bar
+ * ----------------------------------------------------------------------- */
+const char *chart_stacked_bar(const char *const *labels, uint64_t nlabels,
+                               const char *const *series_names, uint64_t nseries,
+                               const double *const *data,
+                               const char *title)
+{
+    SB sb;
+    if (!sb_init(&sb)) return NULL;
+
+    A("{\"type\":\"bar\"");
+
+    /* data */
+    A(",\"data\":{\"labels\":[");
+    for (uint64_t i = 0; i < nlabels; i++) {
+        if (i > 0) A(",");
+        AJ(labels[i]);
+    }
+    A("],\"datasets\":[");
+    for (uint64_t s = 0; s < nseries; s++) {
+        if (s > 0) A(",");
+        A("{\"label\":");
+        AJ(series_names[s]);
+        A(",\"data\":[");
+        for (uint64_t j = 0; j < nlabels; j++) {
+            if (j > 0) A(",");
+            AD(data[s][j]);
+        }
+        A("],\"backgroundColor\":");
+        AJ(DEFAULT_COLORS[s % NDEFAULT_COLORS]);
+        A("}");
+    }
+    A("]}");  /* end datasets / data */
+
+    /* options with stacked scales */
+    A(",\"options\":{");
+    A("\"scales\":{");
+    A("\"x\":{\"stacked\":true}");
+    A(",\"y\":{\"stacked\":true}");
+    A("}");
+    A(",\"plugins\":{\"title\":{");
+    if (title) {
+        A("\"display\":true,\"text\":");
+        AJ(title);
+    } else {
+        A("\"display\":false");
+    }
+    A("}}}");  /* end title / plugins / options */
+
+    A("}");
+    return sb.buf;
+}
+
+/* -----------------------------------------------------------------------
+ * chart_horizontal_bar
+ * ----------------------------------------------------------------------- */
+const char *chart_horizontal_bar(const char *const *labels, uint64_t n,
+                                  const double *values, const char *title)
+{
+    SB sb;
+    if (!sb_init(&sb)) return NULL;
+
+    A("{\"type\":\"bar\"");
+    A(",\"data\":{\"labels\":[");
+    for (uint64_t i = 0; i < n; i++) {
+        if (i > 0) A(",");
+        AJ(labels[i]);
+    }
+    A("],\"datasets\":[{\"label\":");
+    AJ(title ? title : "");
+    A(",\"data\":[");
+    for (uint64_t i = 0; i < n; i++) {
+        if (i > 0) A(",");
+        AD(values[i]);
+    }
+    A("],\"backgroundColor\":");
+    AJ(DEFAULT_COLORS[0]);
+    A("}]}");  /* end dataset / datasets / data */
+
+    A(",\"options\":{\"indexAxis\":\"y\"");
+    A(",\"plugins\":{\"title\":{");
+    if (title) {
+        A("\"display\":true,\"text\":");
+        AJ(title);
+    } else {
+        A("\"display\":false");
+    }
+    A("}}}");  /* end title / plugins / options */
+
+    A("}");
+    return sb.buf;
+}
+
+/* -----------------------------------------------------------------------
+ * chart_area
+ * ----------------------------------------------------------------------- */
+const char *chart_area(const double *xs, const double *ys, uint64_t n,
+                        const char *title)
+{
+    SB sb;
+    if (!sb_init(&sb)) return NULL;
+
+    A("{\"type\":\"line\"");
+
+    /* labels = x values */
+    A(",\"data\":{\"labels\":[");
+    for (uint64_t i = 0; i < n; i++) {
+        if (i > 0) A(",");
+        AD(xs[i]);
+    }
+    A("],\"datasets\":[{\"label\":");
+    AJ(title ? title : "");
+    A(",\"data\":[");
+    for (uint64_t i = 0; i < n; i++) {
+        if (i > 0) A(",");
+        AD(ys[i]);
+    }
+    A("],\"fill\":true");
+    A(",\"backgroundColor\":");
+    AJ(DEFAULT_COLORS[0]);
+    A("}]}");  /* end dataset / datasets / data */
+
+    A(",\"options\":{\"plugins\":{\"title\":{");
+    if (title) {
+        A("\"display\":true,\"text\":");
+        AJ(title);
+    } else {
+        A("\"display\":false");
+    }
+    A("}}}");
+
+    A("}");
+    return sb.buf;
+}
+
+/* -----------------------------------------------------------------------
+ * chart_radar
+ * ----------------------------------------------------------------------- */
+const char *chart_radar(const char *const *axes, uint64_t naxes,
+                         const double *values, const char *title)
+{
+    SB sb;
+    if (!sb_init(&sb)) return NULL;
+
+    A("{\"type\":\"radar\"");
+
+    A(",\"data\":{\"labels\":[");
+    for (uint64_t i = 0; i < naxes; i++) {
+        if (i > 0) A(",");
+        AJ(axes[i]);
+    }
+    A("],\"datasets\":[{\"label\":");
+    AJ(title ? title : "");
+    A(",\"data\":[");
+    for (uint64_t i = 0; i < naxes; i++) {
+        if (i > 0) A(",");
+        AD(values[i]);
+    }
+    A("],\"backgroundColor\":");
+    AJ(DEFAULT_COLORS[0]);
+    A("}]}");
+
+    A(",\"options\":{\"plugins\":{\"title\":{");
+    if (title) {
+        A("\"display\":true,\"text\":");
+        AJ(title);
+    } else {
+        A("\"display\":false");
+    }
+    A("}}}");
+
+    A("}");
+    return sb.buf;
+}
+
+/* -----------------------------------------------------------------------
+ * chart_histogram — compute equal-width bins, then emit as bar chart.
+ * ----------------------------------------------------------------------- */
+const char *chart_histogram(const double *values, uint64_t n,
+                              uint64_t nbins, const char *title)
+{
+    if (nbins == 0 || n == 0) nbins = 1;
+
+    /* Find min / max */
+    double vmin = values[0], vmax = values[0];
+    for (uint64_t i = 1; i < n; i++) {
+        if (values[i] < vmin) vmin = values[i];
+        if (values[i] > vmax) vmax = values[i];
+    }
+    /* Guard against zero range */
+    double range = vmax - vmin;
+    if (range == 0.0) range = 1.0;
+
+    double bin_width = range / (double)nbins;
+
+    /* Count per bin (heap-allocated) */
+    uint64_t *counts = (uint64_t *)calloc(nbins, sizeof(uint64_t));
+    if (!counts) return NULL;
+
+    for (uint64_t i = 0; i < n; i++) {
+        uint64_t idx = (uint64_t)((values[i] - vmin) / bin_width);
+        if (idx >= nbins) idx = nbins - 1;
+        counts[idx]++;
+    }
+
+    SB sb;
+    if (!sb_init(&sb)) { free(counts); return NULL; }
+
+    A("{\"type\":\"bar\"");
+
+    /* labels = bin midpoints */
+    A(",\"data\":{\"labels\":[");
+    for (uint64_t b = 0; b < nbins; b++) {
+        if (b > 0) A(",");
+        double mid = vmin + bin_width * (double)b + bin_width * 0.5;
+        AD(mid);
+    }
+    A("],\"datasets\":[{\"label\":");
+    AJ(title ? title : "");
+    A(",\"data\":[");
+    for (uint64_t b = 0; b < nbins; b++) {
+        char tmp[32];
+        if (b > 0) A(",");
+        snprintf(tmp, sizeof(tmp), "%llu", (unsigned long long)counts[b]);
+        A(tmp);
+    }
+    free(counts);
+    A("],\"backgroundColor\":");
+    AJ(DEFAULT_COLORS[0]);
+    A("}]}");
+
+    A(",\"options\":{\"plugins\":{\"title\":{");
+    if (title) {
+        A("\"display\":true,\"text\":");
+        AJ(title);
+    } else {
+        A("\"display\":false");
+    }
+    A("}}}");
+
+    A("}");
+    return sb.buf;
+}
+
+/* -----------------------------------------------------------------------
+ * chart_heatmap — SVG-based matrix visualisation (no native CJS heatmap).
+ *
+ * Layout:
+ *   - Each cell is CELL_W x CELL_H pixels.
+ *   - Colour interpolates from white (min) to steelblue (max).
+ *   - Row/column labels sit outside the grid.
+ * ----------------------------------------------------------------------- */
+const char *chart_heatmap(const char *const *rows, uint64_t nrows,
+                            const char *const *cols, uint64_t ncols,
+                            const double *matrix,
+                            const char *title)
+{
+    if (nrows == 0 || ncols == 0) return NULL;
+
+    /* Find min / max for colour normalisation */
+    double vmin = matrix[0], vmax = matrix[0];
+    for (uint64_t i = 1; i < nrows * ncols; i++) {
+        if (matrix[i] < vmin) vmin = matrix[i];
+        if (matrix[i] > vmax) vmax = matrix[i];
+    }
+    double range = vmax - vmin;
+    if (range == 0.0) range = 1.0;
+
+    const int CELL_W  = 60;
+    const int CELL_H  = 40;
+    const int LPAD    = 80;   /* left padding for row labels */
+    const int TPAD    = 60;   /* top padding for col labels + title */
+
+    int svg_w = LPAD + (int)ncols * CELL_W + 10;
+    int svg_h = TPAD + (int)nrows * CELL_H + 10;
+
+    SB sb;
+    if (!sb_init(&sb)) return NULL;
+
+    /* SVG open */
+    {
+        char hdr[256];
+        snprintf(hdr, sizeof(hdr),
+                 "<svg xmlns=\"http://www.w3.org/2000/svg\" "
+                 "width=\"%d\" height=\"%d\">", svg_w, svg_h);
+        A(hdr);
+    }
+
+    /* Title text */
+    if (title) {
+        char ttl[512];
+        snprintf(ttl, sizeof(ttl),
+                 "<text x=\"%d\" y=\"20\" text-anchor=\"middle\" "
+                 "font-size=\"14\" font-weight=\"bold\">%s</text>",
+                 svg_w / 2, title);
+        A(ttl);
+    }
+
+    /* Column labels */
+    for (uint64_t c = 0; c < ncols; c++) {
+        int cx = LPAD + (int)c * CELL_W + CELL_W / 2;
+        char lbl[256];
+        snprintf(lbl, sizeof(lbl),
+                 "<text x=\"%d\" y=\"%d\" text-anchor=\"middle\" "
+                 "font-size=\"11\">%s</text>",
+                 cx, TPAD - 5, cols[c]);
+        A(lbl);
+    }
+
+    /* Row labels + cells */
+    for (uint64_t r = 0; r < nrows; r++) {
+        int cy = TPAD + (int)r * CELL_H;
+
+        /* Row label */
+        {
+            char lbl[256];
+            snprintf(lbl, sizeof(lbl),
+                     "<text x=\"%d\" y=\"%d\" text-anchor=\"end\" "
+                     "font-size=\"11\">%s</text>",
+                     LPAD - 5, cy + CELL_H / 2 + 4, rows[r]);
+            A(lbl);
+        }
+
+        for (uint64_t c = 0; c < ncols; c++) {
+            double v   = matrix[r * ncols + c];
+            double t   = (v - vmin) / range;   /* 0..1 */
+            /* Interpolate white->steelblue (70,130,180) */
+            int red   = (int)(255.0 * (1.0 - t) + 70.0  * t);
+            int green = (int)(255.0 * (1.0 - t) + 130.0 * t);
+            int blue  = (int)(255.0 * (1.0 - t) + 180.0 * t);
+
+            int cx = LPAD + (int)c * CELL_W;
+
+            char cell[512];
+            snprintf(cell, sizeof(cell),
+                     "<rect x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" "
+                     "fill=\"rgb(%d,%d,%d)\" stroke=\"#ccc\"/>"
+                     "<text x=\"%d\" y=\"%d\" text-anchor=\"middle\" "
+                     "font-size=\"10\">%.2f</text>",
+                     cx, cy, CELL_W, CELL_H,
+                     red, green, blue,
+                     cx + CELL_W / 2, cy + CELL_H / 2 + 4,
+                     v);
+            A(cell);
+        }
+    }
+
+    A("</svg>");
+    return sb.buf;
+}
+
+/* -----------------------------------------------------------------------
+ * chart_set_theme — inject dark/light colour overrides into an existing
+ *                   Chart.js JSON spec string.
+ *
+ * Appends a "theme_meta" sibling key before the final closing brace,
+ * recording the chosen colour values so the Chart.js runtime and test
+ * code can read them back.
+ * ----------------------------------------------------------------------- */
+const char *chart_set_theme(const char *spec, const char *theme)
+{
+    if (!spec || !theme) return NULL;
+
+    int is_dark = (strcmp(theme, "dark") == 0);
+    const char *color    = is_dark ? "white" : "black";
+    const char *bg_color = is_dark ? "#1a1a1a" : "#ffffff";
+
+    /* Find the last '}' in the spec */
+    size_t slen = strlen(spec);
+    size_t last = slen;
+    while (last > 0 && spec[last - 1] != '}') last--;
+    if (last == 0) return NULL;
+
+    SB sb;
+    if (!sb_init(&sb)) return NULL;
+
+    /* Copy everything up to (but not including) the last '}' */
+    if (!sb_grow(&sb, slen + 512)) { free(sb.buf); return NULL; }
+    memcpy(sb.buf, spec, last - 1);
+    sb.len = last - 1;
+    sb.buf[sb.len] = '\0';
+
+    /* Append theme meta block and close */
+    char block[512];
+    snprintf(block, sizeof(block),
+             ",\"theme_meta\":{"
+             "\"theme\":\"%s\","
+             "\"label_color\":\"%s\","
+             "\"backgroundColor\":\"%s\","
+             "\"scales_x_ticks_color\":\"%s\","
+             "\"scales_y_ticks_color\":\"%s\""
+             "}}",
+             theme, color, bg_color, color, color);
+    A(block);
+
+    return sb.buf;
+}
+
+/* -----------------------------------------------------------------------
+ * chart_set_legend — append legend configuration before the final '}'.
+ * ----------------------------------------------------------------------- */
+const char *chart_set_legend(const char *spec, const char *position, int display)
+{
+    if (!spec) return NULL;
+
+    size_t slen = strlen(spec);
+    size_t last = slen;
+    while (last > 0 && spec[last - 1] != '}') last--;
+    if (last == 0) return NULL;
+
+    SB sb;
+    if (!sb_init(&sb)) return NULL;
+
+    if (!sb_grow(&sb, slen + 256)) { free(sb.buf); return NULL; }
+    memcpy(sb.buf, spec, last - 1);
+    sb.len = last - 1;
+    sb.buf[sb.len] = '\0';
+
+    A(",\"legend_meta\":{\"position\":");
+    if (position) { AJ(position); } else { A("\"top\""); }
+    A(",\"display\":");
+    A(display ? "true" : "false");
+    A("}}");
+
+    return sb.buf;
+}
+
+/* -----------------------------------------------------------------------
+ * chart_set_tooltip — append tooltip field list before the final '}'.
+ * ----------------------------------------------------------------------- */
+const char *chart_set_tooltip(const char *spec, const char *const *fields,
+                               uint64_t n)
+{
+    if (!spec) return NULL;
+
+    size_t slen = strlen(spec);
+    size_t last = slen;
+    while (last > 0 && spec[last - 1] != '}') last--;
+    if (last == 0) return NULL;
+
+    SB sb;
+    if (!sb_init(&sb)) return NULL;
+
+    if (!sb_grow(&sb, slen + 256 + (size_t)n * 64)) { free(sb.buf); return NULL; }
+    memcpy(sb.buf, spec, last - 1);
+    sb.len = last - 1;
+    sb.buf[sb.len] = '\0';
+
+    A(",\"tooltip_meta\":{\"fields\":[");
+    for (uint64_t i = 0; i < n; i++) {
+        if (i > 0) A(",");
+        if (fields && fields[i]) { AJ(fields[i]); } else { A("null"); }
+    }
+    A("]}}");
+
+    return sb.buf;
+}
+
+#undef A
+#undef AJ
+#undef AD

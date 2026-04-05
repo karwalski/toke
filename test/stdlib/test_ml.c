@@ -641,6 +641,155 @@ static void test_normalize_constant(void)
 }
 
 /* =========================================================================
+ * 12. Cross-validation split (Story 31.3.2)
+ * ========================================================================= */
+
+static void test_cross_val_split_10_5(void)
+{
+    /*
+     * 10 samples, 5 folds, seed=42.
+     * Each fold should have exactly 2 indices.
+     * All indices 0-9 should appear exactly once across all folds.
+     */
+    CrossValSplit s = ml_cross_validation_split(10, 5, 42);
+
+    ASSERT(s.k == 5, "crossval(10,5,42): s.k == 5");
+    ASSERT(s.folds != NULL, "crossval(10,5,42): folds != NULL");
+    ASSERT(s.fold_sizes != NULL, "crossval(10,5,42): fold_sizes != NULL");
+
+    /* Each fold size = 10/5 = 2. */
+    int sizes_ok = 1;
+    for (uint64_t fi = 0; fi < 5; fi++) {
+        if (s.fold_sizes[fi] != 2) { sizes_ok = 0; break; }
+    }
+    ASSERT(sizes_ok, "crossval(10,5,42): each fold has size 2");
+
+    /* Count how many times each index [0..9] appears. */
+    int seen[10];
+    for (int i = 0; i < 10; i++) seen[i] = 0;
+    for (uint64_t fi = 0; fi < 5; fi++) {
+        for (uint64_t j = 0; j < s.fold_sizes[fi]; j++) {
+            uint64_t idx = s.folds[fi][j];
+            if (idx < 10) seen[idx]++;
+        }
+    }
+    int all_once = 1;
+    for (int i = 0; i < 10; i++) {
+        if (seen[i] != 1) { all_once = 0; break; }
+    }
+    ASSERT(all_once, "crossval(10,5,42): all indices appear exactly once");
+
+    ml_cross_validation_free(&s);
+}
+
+static void test_cross_val_split_7_3(void)
+{
+    /*
+     * 7 samples, 3 folds, seed=1.
+     * fold_sizes: 7/3 = 2 rem 1 -> [3, 2, 2] (first fold gets the extra).
+     * Total must equal 7.
+     */
+    CrossValSplit s = ml_cross_validation_split(7, 3, 1);
+
+    ASSERT(s.k == 3, "crossval(7,3,1): s.k == 3");
+
+    uint64_t total = 0;
+    for (uint64_t fi = 0; fi < 3; fi++) {
+        total += s.fold_sizes[fi];
+    }
+    ASSERT(total == 7, "crossval(7,3,1): fold sizes sum to 7");
+
+    /* Fold 0 has the extra element (3), rest have 2. */
+    ASSERT(s.fold_sizes[0] == 3, "crossval(7,3,1): fold 0 size == 3");
+    ASSERT(s.fold_sizes[1] == 2, "crossval(7,3,1): fold 1 size == 2");
+    ASSERT(s.fold_sizes[2] == 2, "crossval(7,3,1): fold 2 size == 2");
+
+    ml_cross_validation_free(&s);
+}
+
+/* =========================================================================
+ * 13. Random forest (Story 31.3.2)
+ * ========================================================================= */
+
+static void test_random_forest_fit_predict(void)
+{
+    /*
+     * Linearly separable 2D data (same structure as the dtree stump test):
+     *   x0 < 5 -> class 0, x0 >= 5 -> class 1
+     * Use 12 training points so bootstrap sampling has enough variety.
+     */
+    double f0_data[] = {1.0, 1.5, 2.0, 2.5, 3.0, 3.5,
+                        6.0, 6.5, 7.0, 7.5, 8.0, 8.5};
+    double f1_data[] = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6,
+                        0.7, 0.8, 0.9, 1.0, 1.1, 1.2};
+    double lbl_data[]= {0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                        1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+
+    F64Array feat_cols[2];
+    feat_cols[0].data = f0_data; feat_cols[0].len = 12;
+    feat_cols[1].data = f1_data; feat_cols[1].len = 12;
+
+    F64Array labels;
+    labels.data = lbl_data;
+    labels.len  = 12;
+
+    TkRandomForest *forest = ml_random_forest_fit(feat_cols, 2, labels,
+                                                   10, 3, 99);
+    ASSERT(forest != NULL, "random_forest_fit: returns non-NULL");
+
+    /* Predict on the training points and count correct. */
+    double test_pts[12][2] = {
+        {1.0,0.1},{1.5,0.2},{2.0,0.3},{2.5,0.4},{3.0,0.5},{3.5,0.6},
+        {6.0,0.7},{6.5,0.8},{7.0,0.9},{7.5,1.0},{8.0,1.1},{8.5,1.2}
+    };
+    double expected[] = {0,0,0,0,0,0, 1,1,1,1,1,1};
+    int correct = 0;
+    for (int i = 0; i < 12; i++) {
+        double pred = ml_random_forest_predict(forest, test_pts[i]);
+        if (fabs(pred - expected[i]) < 0.5) correct++;
+    }
+    /* Require >= 80% accuracy (>=10/12). */
+    ASSERT(correct >= 10, "random_forest_predict: accuracy >= 80% on linearly separable data");
+
+    ml_random_forest_free(forest);
+}
+
+static void test_random_forest_no_crash(void)
+{
+    /* Minimal: 4-point XOR dataset, single tree.  Just verifies no crash. */
+    double f0_data[] = {0.0, 0.0, 1.0, 1.0};
+    double f1_data[] = {0.0, 1.0, 0.0, 1.0};
+    double lbl_data[] = {0.0, 1.0, 1.0, 0.0};
+
+    F64Array feat_cols[2];
+    feat_cols[0].data = f0_data; feat_cols[0].len = 4;
+    feat_cols[1].data = f1_data; feat_cols[1].len = 4;
+
+    F64Array labels;
+    labels.data = lbl_data;
+    labels.len  = 4;
+
+    TkRandomForest *forest = ml_random_forest_fit(feat_cols, 2, labels,
+                                                   1, 3, 7);
+    ASSERT(forest != NULL, "random_forest no_crash: fit returns non-NULL");
+
+    double pt[] = {0.0, 1.0};
+    double pred = ml_random_forest_predict(forest, pt);
+    (void)pred; /* result value not asserted — just must not crash */
+    ASSERT(1, "random_forest no_crash: predict does not crash");
+
+    ml_random_forest_free(forest);
+    ASSERT(1, "random_forest no_crash: free does not crash");
+}
+
+static void test_random_forest_free_null(void)
+{
+    /* Calling free on NULL must not crash. */
+    ml_random_forest_free(NULL);
+    ASSERT(1, "random_forest_free(NULL): does not crash");
+}
+
+/* =========================================================================
  * main
  * ========================================================================= */
 
@@ -679,6 +828,13 @@ int main(void)
     test_standardize_constant();
     test_normalize();
     test_normalize_constant();
+
+    /* Story 31.3.2: cross-validation and random forest */
+    test_cross_val_split_10_5();
+    test_cross_val_split_7_3();
+    test_random_forest_fit_predict();
+    test_random_forest_no_crash();
+    test_random_forest_free_null();
 
     if (failures == 0) {
         printf("All ml tests passed.\n");

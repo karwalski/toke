@@ -5,6 +5,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include "../../src/stdlib/canvas.h"
@@ -158,6 +159,103 @@ int main(void)
         ASSERT_CONTAINS(html_l, "height=\"65535\"",
                         "large-canvas: height=65535 in HTML");
         canvas_free(cl);
+    }
+
+    /* --- Story 34.5.2: transforms, state stack, style setters, curves, gradients --- */
+
+    /* --- Test 18: canvas_translate --- */
+    {
+        TkCanvas *ct = canvas_new("tr", 200, 200);
+        canvas_translate(ct, 10, 20);
+        const char *js_t = canvas_to_js(ct);
+        ASSERT_CONTAINS(js_t, "translate(10", "translate: to_js contains translate(10");
+        canvas_free(ct);
+    }
+
+    /* --- Test 19: canvas_rotate --- */
+    {
+        TkCanvas *cr = canvas_new("rot", 200, 200);
+        canvas_rotate(cr, 1.57);
+        const char *js_r = canvas_to_js(cr);
+        ASSERT_CONTAINS(js_r, "rotate(1.57", "rotate: to_js contains rotate(1.57");
+        canvas_free(cr);
+    }
+
+    /* --- Test 20: canvas_scale --- */
+    {
+        TkCanvas *cs = canvas_new("sc", 200, 200);
+        canvas_scale(cs, 2.0, 3.0);
+        const char *js_s = canvas_to_js(cs);
+        ASSERT_CONTAINS(js_s, "scale(2", "scale: to_js contains scale(2");
+        canvas_free(cs);
+    }
+
+    /* --- Test 21: canvas_save and canvas_restore --- */
+    {
+        TkCanvas *csr = canvas_new("sr", 200, 200);
+        canvas_save(csr);
+        canvas_restore(csr);
+        const char *js_sr = canvas_to_js(csr);
+        ASSERT_CONTAINS(js_sr, "save()", "save: to_js contains save()");
+        ASSERT_CONTAINS(js_sr, "restore()", "restore: to_js contains restore()");
+        canvas_free(csr);
+    }
+
+    /* --- Test 22: canvas_fill_style --- */
+    {
+        TkCanvas *cfs = canvas_new("fs", 200, 200);
+        canvas_fill_style(cfs, "#ff0000");
+        const char *js_fs = canvas_to_js(cfs);
+        ASSERT_CONTAINS(js_fs, "fillStyle", "fill_style: to_js contains fillStyle");
+        ASSERT_CONTAINS(js_fs, "#ff0000", "fill_style: to_js contains color value");
+        canvas_free(cfs);
+    }
+
+    /* --- Test 23: canvas_stroke_style --- */
+    {
+        TkCanvas *css = canvas_new("ss", 200, 200);
+        canvas_stroke_style(css, "#0000ff");
+        const char *js_ss = canvas_to_js(css);
+        ASSERT_CONTAINS(js_ss, "strokeStyle", "stroke_style: to_js contains strokeStyle");
+        canvas_free(css);
+    }
+
+    /* --- Test 24: canvas_line_width --- */
+    {
+        TkCanvas *clw = canvas_new("lw", 200, 200);
+        canvas_line_width(clw, 3.5);
+        const char *js_lw = canvas_to_js(clw);
+        ASSERT_CONTAINS(js_lw, "lineWidth=3.5", "line_width: to_js contains lineWidth=3.5");
+        canvas_free(clw);
+    }
+
+    /* --- Test 25: canvas_quadratic_to --- */
+    {
+        TkCanvas *cq = canvas_new("qc", 200, 200);
+        canvas_quadratic_to(cq, 50, 50, 100, 0);
+        const char *js_q = canvas_to_js(cq);
+        ASSERT_CONTAINS(js_q, "quadraticCurveTo", "quadratic_to: to_js contains quadraticCurveTo");
+        canvas_free(cq);
+    }
+
+    /* --- Test 26: canvas_bezier_to --- */
+    {
+        TkCanvas *cb = canvas_new("bc", 200, 200);
+        canvas_bezier_to(cb, 10, 20, 30, 40, 50, 60);
+        const char *js_b = canvas_to_js(cb);
+        ASSERT_CONTAINS(js_b, "bezierCurveTo", "bezier_to: to_js contains bezierCurveTo");
+        canvas_free(cb);
+    }
+
+    /* --- Test 27: canvas_gradient_linear --- */
+    {
+        TkCanvas *cg = canvas_new("gl", 200, 200);
+        const char *gid = canvas_gradient_linear(cg, 0, 0, 200, 0);
+        ASSERT(gid != NULL, "gradient_linear: returns non-NULL ID");
+        const char *js_g = canvas_to_js(cg);
+        ASSERT_CONTAINS(js_g, "createLinearGradient", "gradient_linear: to_js contains createLinearGradient");
+        free((void *)gid);
+        canvas_free(cg);
     }
 
     /* --- Summary --- */

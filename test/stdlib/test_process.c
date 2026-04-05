@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <signal.h>
 #include "../../src/stdlib/process.h"
 
 static int failures = 0;
@@ -151,6 +152,88 @@ int main(void)
             ASSERT(!or2.is_err, "second stdout() call not error");
             ASSERT(or2.ok != NULL, "second stdout() call returns non-NULL");
             process_wait(sr.ok);
+            process_handle_free(sr.ok);
+        }
+    }
+
+    /* === Story 28.5.2 tests ============================================== */
+
+    /* --- Test 11: process_stdin_write + read stdout (cat) ---------------- */
+    {
+        const char *cmd[] = {"cat", NULL};
+        SpawnResult sr = process_spawn(cmd);
+        ASSERT(!sr.is_err, "28.5.2 spawn(cat) succeeds");
+        if (!sr.is_err) {
+            ProcessHandle *h = sr.ok;
+            U64ProcessResult wr = process_stdin_write(h, "hello", 5);
+            ASSERT(!wr.is_err, "28.5.2 stdin_write no error");
+            ASSERT(wr.ok == 5, "28.5.2 stdin_write returns 5");
+            /* Close stdin so cat knows to stop */
+            close(h->stdin_fd);
+            h->stdin_fd = -1;
+            StdoutResult or_ = process_stdout(h);
+            ASSERT(!or_.is_err, "28.5.2 cat stdout no error");
+            ASSERT(or_.ok && strstr(or_.ok, "hello") != NULL,
+                   "28.5.2 cat stdout contains 'hello'");
+            process_wait(h);
+            process_handle_free(h);
+        }
+    }
+
+    /* --- Test 12: process_stderr reads stderr output --------------------- */
+    {
+        const char *cmd[] = {"sh", "-c", "echo err >&2", NULL};
+        SpawnResult sr = process_spawn(cmd);
+        ASSERT(!sr.is_err, "28.5.2 spawn(sh echo err >&2) succeeds");
+        if (!sr.is_err) {
+            StrProcessResult er = process_stderr(sr.ok);
+            ASSERT(!er.is_err, "28.5.2 stderr no error");
+            ASSERT(er.ok && strstr(er.ok, "err") != NULL,
+                   "28.5.2 stderr contains 'err'");
+            process_wait(sr.ok);
+            process_handle_free(sr.ok);
+        }
+    }
+
+    /* --- Test 13: process_exit_code returns the correct code ------------- */
+    {
+        const char *cmd[] = {"sh", "-c", "exit 42", NULL};
+        SpawnResult sr = process_spawn(cmd);
+        ASSERT(!sr.is_err, "28.5.2 spawn(sh exit 42) succeeds");
+        if (!sr.is_err) {
+            I32ProcessResult er = process_exit_code(sr.ok);
+            ASSERT(!er.is_err, "28.5.2 exit_code no error");
+            ASSERT(er.ok == 42, "28.5.2 exit_code == 42");
+            process_handle_free(sr.ok);
+        }
+    }
+
+    /* --- Test 14: process_is_running ------------------------------------ */
+    {
+        const char *cmd[] = {"sleep", "10", NULL};
+        SpawnResult sr = process_spawn(cmd);
+        ASSERT(!sr.is_err, "28.5.2 spawn(sleep 10) succeeds");
+        if (!sr.is_err) {
+            ProcessHandle *h = sr.ok;
+            ASSERT(process_is_running(h) == 1, "28.5.2 is_running=1 before kill");
+            kill(h->pid, SIGKILL);
+            /* Wait for signal to be delivered */
+            process_wait(h);
+            ASSERT(process_is_running(h) == 0, "28.5.2 is_running=0 after kill");
+            process_handle_free(h);
+        }
+    }
+
+    /* --- Test 15: process_timeout kills long-running process ------------- */
+    {
+        const char *cmd[] = {"sleep", "10", NULL};
+        SpawnResult sr = process_spawn(cmd);
+        ASSERT(!sr.is_err, "28.5.2 spawn(sleep 10) for timeout");
+        if (!sr.is_err) {
+            I32ProcessResult tr = process_timeout(sr.ok, 50);
+            ASSERT(!tr.is_err, "28.5.2 timeout no error");
+            /* Process was killed — exit code should be non-zero (negative = signal) */
+            ASSERT(tr.ok != 0, "28.5.2 timeout exit code non-zero after kill");
             process_handle_free(sr.ok);
         }
     }

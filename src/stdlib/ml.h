@@ -170,4 +170,47 @@ double *ml_normalize(const double *xs, uint64_t n);
 /* ml_split_free: free the arrays inside a SplitResult. */
 void ml_split_free(SplitResult *s);
 
+/* -------------------------------------------------------------------------
+ * Cross-validation and random forest (Story 31.3.2)
+ * ------------------------------------------------------------------------- */
+
+/* k-fold cross-validation index split */
+typedef struct {
+    uint64_t **folds;      /* folds[k] = array of indices for fold k */
+    uint64_t  *fold_sizes; /* number of indices in each fold          */
+    uint64_t   k;
+} CrossValSplit;
+
+/* ml_cross_validation_split: shuffle n indices and split into k folds.
+ *   n    – total number of samples
+ *   k    – number of folds
+ *   seed – LCG random seed (same LCG as ml_train_test_split)
+ * fold_sizes[i] = n/k + (i < n%k ? 1 : 0)
+ * Caller must call ml_cross_validation_free() when done. */
+CrossValSplit ml_cross_validation_split(uint64_t n, uint64_t k, uint64_t seed);
+
+/* ml_cross_validation_free: release all memory inside *s (not s itself). */
+void ml_cross_validation_free(CrossValSplit *s);
+
+/* Random forest (ensemble of DTreeModel via bootstrap sampling) */
+typedef struct TkRandomForest TkRandomForest;
+
+/* ml_random_forest_fit: train a random forest classifier.
+ *   feature_cols  – array of nfeatures F64Arrays, each of length nrows
+ *   nfeatures     – number of feature columns
+ *   labels        – class labels for each row (integer-valued doubles)
+ *   n_estimators  – number of trees
+ *   max_depth     – maximum depth per tree
+ *   seed          – LCG seed for bootstrap sampling
+ * Caller must call ml_random_forest_free() when done. */
+TkRandomForest *ml_random_forest_fit(F64Array *feature_cols, uint64_t nfeatures,
+                                      F64Array labels, uint64_t n_estimators,
+                                      uint64_t max_depth, uint64_t seed);
+
+/* ml_random_forest_predict: majority-vote prediction for a single point. */
+double ml_random_forest_predict(TkRandomForest *m, double *point);
+
+/* ml_random_forest_free: free all memory owned by the forest (including *m). */
+void ml_random_forest_free(TkRandomForest *m);
+
 #endif /* TK_STDLIB_ML_H */

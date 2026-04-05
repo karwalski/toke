@@ -289,7 +289,7 @@ test-stdlib-html:
 
 test-stdlib-dashboard:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_dashboard \
-	    test/stdlib/test_dashboard.c src/stdlib/dashboard.c src/stdlib/chart.c src/stdlib/html.c src/stdlib/router.c -lz
+	    test/stdlib/test_dashboard.c src/stdlib/dashboard.c src/stdlib/chart.c src/stdlib/html.c src/stdlib/router.c src/stdlib/ws.c -lz
 	./test/stdlib/test_dashboard
 
 test-stdlib-svg:

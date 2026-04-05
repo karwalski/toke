@@ -41,14 +41,14 @@ static int failures = 0;
 
 static TkChartSpec *make_bar_chart(const char *title)
 {
-    static const char *labels_data[] = {"A", "B", "C"};
-    static const double vals[]       = {1.0, 2.0, 3.0};
+    static const char  *labels_data[] = {"A", "B", "C"};
+    static const double vals[]        = {1.0, 2.0, 3.0};
+    static TkDataset    ds;
 
     StrArray labels;
     labels.data = labels_data;
     labels.len  = 3;
 
-    TkDataset ds;
     ds.label   = "series1";
     ds.values  = vals;
     ds.nvalues = 3;
@@ -59,14 +59,14 @@ static TkChartSpec *make_bar_chart(const char *title)
 
 static TkChartSpec *make_line_chart(const char *title)
 {
-    static const char *labels_data[] = {"X", "Y"};
-    static const double vals[]       = {10.0, 20.0};
+    static const char  *labels_data[] = {"X", "Y"};
+    static const double vals[]        = {10.0, 20.0};
+    static TkDataset    ds;
 
     StrArray labels;
     labels.data = labels_data;
     labels.len  = 2;
 
-    TkDataset ds;
     ds.label   = "line1";
     ds.values  = vals;
     ds.nvalues = 2;
@@ -328,29 +328,105 @@ static void test_render_valid_html_structure(void)
 }
 
 /* -----------------------------------------------------------------------
+ * Story 34.4.1: stat/gauge/markdown widgets, theming, JSON export
+ * ----------------------------------------------------------------------- */
+
+static void test_stat_widget_render_nonnull(void)
+{
+    TkDashboard *d = dashboard_new("StatDash", 2);
+    dashboard_add_stat(d, "stat1", "Users", "42", "");
+    const char *html = dashboard_render(d);
+    ASSERT(html != NULL, "stat widget: render returns non-NULL");
+    dashboard_free(d);
+}
+
+static void test_gauge_widget_export_json_contains_gauge(void)
+{
+    TkDashboard *d = dashboard_new("GaugeDash", 2);
+    dashboard_add_gauge(d, "g1", "CPU", 75.0, 0.0, 100.0);
+    const char *json = dashboard_export_json(d);
+    ASSERT_CONTAINS(json, "gauge",
+                    "gauge widget: export_json contains \"gauge\"");
+    dashboard_free(d);
+}
+
+static void test_markdown_widget_export_json_contains_content(void)
+{
+    TkDashboard *d = dashboard_new("MdDash", 2);
+    dashboard_add_markdown(d, "md1", "## Hello world");
+    const char *json = dashboard_export_json(d);
+    ASSERT_CONTAINS(json, "Hello world",
+                    "markdown widget: export_json contains markdown content");
+    dashboard_free(d);
+}
+
+static void test_set_theme_dark_in_export_json(void)
+{
+    TkDashboard *d = dashboard_new("ThemeDash", 2);
+    dashboard_set_theme(d, "dark");
+    const char *json = dashboard_export_json(d);
+    ASSERT_CONTAINS(json, "dark",
+                    "set_theme(dark): export_json contains \"dark\"");
+    dashboard_free(d);
+}
+
+static void test_set_refresh_interval_in_export_json(void)
+{
+    TkDashboard *d = dashboard_new("RefreshDash", 2);
+    dashboard_set_refresh_interval(d, 5000);
+    const char *json = dashboard_export_json(d);
+    ASSERT_CONTAINS(json, "5000",
+                    "set_refresh_interval(5000): export_json contains 5000");
+    dashboard_free(d);
+}
+
+static void test_export_json_widgets_array(void)
+{
+    TkDashboard *d = dashboard_new("JsonDash", 2);
+    dashboard_add_stat(d, "s1", "Requests", "1234", "req/s");
+    dashboard_add_gauge(d, "g1", "Disk", 60.0, 0.0, 100.0);
+    const char *json = dashboard_export_json(d);
+    ASSERT(json != NULL, "export_json: returns non-NULL");
+    ASSERT_CONTAINS(json, "\"widgets\"",
+                    "export_json: output contains \"widgets\" array key");
+    ASSERT_CONTAINS(json, "\"theme\"",
+                    "export_json: output contains \"theme\" key");
+    dashboard_free(d);
+}
+
+/* -----------------------------------------------------------------------
  * Main
  * ----------------------------------------------------------------------- */
 
 int main(void)
 {
-    test_new_returns_nonnull();
-    test_empty_render_doctype();
-    test_empty_render_title();
-    test_empty_render_css_grid();
-    test_chart_render_canvas();
-    test_chart_render_cdn_url();
-    test_chart_id_in_canvas();
-    test_chart_title_in_h2();
-    test_table_render_elements();
-    test_table_title_in_h2();
-    test_two_widgets_both_ids();
-    test_update_changes_chart();
-    test_render_always_nonnull();
-    test_serve_function_exists();
-    test_serve_null_dashboard();
-    test_zero_widgets_render();
-    test_render_valid_html_structure();
-
+#define RUN(fn) do { fn(); fflush(stdout); } while (0)
+    RUN(test_new_returns_nonnull);
+    RUN(test_empty_render_doctype);
+    RUN(test_empty_render_title);
+    RUN(test_empty_render_css_grid);
+    RUN(test_chart_render_canvas);
+    RUN(test_chart_render_cdn_url);
+    RUN(test_chart_id_in_canvas);
+    RUN(test_chart_title_in_h2);
+    RUN(test_table_render_elements);
+    RUN(test_table_title_in_h2);
+    RUN(test_two_widgets_both_ids);
+    RUN(test_update_changes_chart);
+    RUN(test_render_always_nonnull);
+    RUN(test_serve_function_exists);
+    RUN(test_serve_null_dashboard);
+    RUN(test_zero_widgets_render);
+    RUN(test_render_valid_html_structure);
+    /* Story 34.4.1 */
+    RUN(test_stat_widget_render_nonnull);
+    RUN(test_gauge_widget_export_json_contains_gauge);
+    RUN(test_markdown_widget_export_json_contains_content);
+    RUN(test_set_theme_dark_in_export_json);
+    RUN(test_set_refresh_interval_in_export_json);
+    RUN(test_export_json_widgets_array);
+#undef RUN
+    fflush(stdout);
     if (failures == 0) {
         printf("\nAll tests passed.\n");
         return 0;

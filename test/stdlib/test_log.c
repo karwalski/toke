@@ -132,6 +132,137 @@ int main(void)
         free(out4);
     }
 
+    /* ---- Story 28.5.3 tests -------------------------------------------- */
+
+    /* Reset level to DEBUG so debug messages pass through. */
+    tk_log_set_level("DEBUG");
+    /* Reset format to JSON (default) for a clean slate. */
+    tk_log_set_format("json");
+
+    /* ---- Test 5: tk_log_debug — emitted when level == DEBUG ------------ */
+    redirect_stderr_to(tmp);
+    const char *fields5[] = {"component", "parser"};
+    int r5 = tk_log_debug("entering parse loop", fields5, 2);
+    fflush(stderr);
+    restore_stderr();
+
+    ASSERT(r5 == 1, "log.debug returns 1 when level == DEBUG");
+
+    char *out5 = read_file(tmp);
+    ASSERT(out5 != NULL, "captured log.debug output");
+    if (out5) {
+        ASSERT(strstr(out5, "debug") != NULL, "log.debug output contains \"debug\"");
+        free(out5);
+    }
+
+    /* ---- Test 6: tk_log_debug — filtered when level == INFO ------------ */
+    tk_log_set_level("INFO");
+
+    redirect_stderr_to(tmp);
+    int r6 = tk_log_debug("should be filtered", NULL, 0);
+    fflush(stderr);
+    restore_stderr();
+
+    ASSERT(r6 == 0, "log.debug returns 0 when level == INFO (filtered)");
+
+    /* ---- Test 7: tk_log_set_format("json") — output is JSON line ------- */
+    tk_log_set_level("INFO");
+    tk_log_set_format("json");
+
+    const char *out7_path = "/tmp/test_log_json.txt";
+    ASSERT(tk_log_set_output(out7_path) == 1, "tk_log_set_output to JSON test file succeeds");
+
+    const char *fields7[] = {"key", "val"};
+    tk_log_info("json format test", fields7, 2);
+
+    /* Reset output back to stderr before reading the file. */
+    tk_log_set_output(NULL);
+
+    char *out7 = read_file(out7_path);
+    ASSERT(out7 != NULL, "captured JSON format output");
+    if (out7) {
+        ASSERT(strstr(out7, "{")        != NULL, "json format: line starts with {");
+        ASSERT(strstr(out7, "\"level\"") != NULL, "json format: contains \"level\" key");
+        ASSERT(strstr(out7, "\"info\"")  != NULL, "json format: contains \"info\" value");
+        ASSERT(strstr(out7, "\"msg\"")   != NULL, "json format: contains \"msg\" key");
+        ASSERT(strstr(out7, "\"ts\"")    != NULL, "json format: contains \"ts\" key");
+        free(out7);
+    }
+
+    /* ---- Test 8: tk_log_set_format("text") — output contains [INFO] ---- */
+    tk_log_set_format("text");
+
+    const char *out8_path = "/tmp/test_log_text.txt";
+    ASSERT(tk_log_set_output(out8_path) == 1, "tk_log_set_output to text test file succeeds");
+
+    const char *fields8[] = {"x", "1"};
+    tk_log_info("text format test", fields8, 2);
+
+    tk_log_set_output(NULL);
+    tk_log_set_format("json"); /* restore default */
+
+    char *out8 = read_file(out8_path);
+    ASSERT(out8 != NULL, "captured text format output");
+    if (out8) {
+        ASSERT(strstr(out8, "[INFO]") != NULL, "text format: contains [INFO]");
+        ASSERT(strstr(out8, "text format test") != NULL, "text format: contains message");
+        ASSERT(strstr(out8, "x=1") != NULL, "text format: contains key=val pair");
+        free(out8);
+    }
+
+    /* ---- Test 9: tk_log_set_output — redirects to file ----------------- */
+    const char *out9_path = "/tmp/test_log_redirect.txt";
+    ASSERT(tk_log_set_output(out9_path) == 1, "tk_log_set_output returns 1 on success");
+
+    tk_log_info("redirected message", NULL, 0);
+    tk_log_set_output(NULL); /* back to stderr */
+
+    char *out9 = read_file(out9_path);
+    ASSERT(out9 != NULL, "redirected output file is readable");
+    if (out9) {
+        ASSERT(strstr(out9, "redirected message") != NULL,
+               "redirected file contains the logged message");
+        free(out9);
+    }
+
+    /* ---- Test 10: tk_log_set_output(NULL) — reset to stderr ------------ */
+    /* Just verify it doesn't crash and subsequent log calls still work. */
+    tk_log_set_output(NULL);
+    redirect_stderr_to(tmp);
+    int r10 = tk_log_info("back to stderr", NULL, 0);
+    fflush(stderr);
+    restore_stderr();
+    ASSERT(r10 == 1, "log.info returns 1 after resetting output to stderr");
+
+    /* ---- Test 11: tk_log_with_context — fields from JSON --------------- */
+    tk_log_set_format("json");
+    const char *out11_path = "/tmp/test_log_ctx.txt";
+    ASSERT(tk_log_set_output(out11_path) == 1, "tk_log_set_output for context test");
+
+    int r11 = tk_log_with_context("context log",
+                                  "{\"request_id\":\"xyz\",\"user\":\"carol\"}");
+    tk_log_set_output(NULL);
+
+    ASSERT(r11 == 1, "tk_log_with_context returns 1 when level >= INFO");
+
+    char *out11 = read_file(out11_path);
+    ASSERT(out11 != NULL, "captured tk_log_with_context output");
+    if (out11) {
+        ASSERT(strstr(out11, "context log")  != NULL, "with_context: message present");
+        ASSERT(strstr(out11, "request_id")   != NULL, "with_context: request_id key present");
+        ASSERT(strstr(out11, "xyz")          != NULL, "with_context: request_id value present");
+        ASSERT(strstr(out11, "user")         != NULL, "with_context: user key present");
+        ASSERT(strstr(out11, "carol")        != NULL, "with_context: user value present");
+        free(out11);
+    }
+
+    /* ---- Test 12: tk_log_with_context — NULL context is safe ----------- */
+    redirect_stderr_to(tmp);
+    int r12 = tk_log_with_context("no context", NULL);
+    fflush(stderr);
+    restore_stderr();
+    ASSERT(r12 == 1, "tk_log_with_context with NULL context doesn't crash");
+
     /* ---- Summary ------------------------------------------------------- */
     if (failures == 0) { printf("All log tests passed.\n"); return 0; }
     fprintf(stderr, "%d test(s) failed.\n", failures);

@@ -28,6 +28,7 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <errno.h>
+#include <time.h>
 
 /* -----------------------------------------------------------------------
  * Internal helpers
@@ -476,11 +477,15 @@ TkLlmClient *llm_client(const char *base_url, const char *api_key, const char *m
 {
     TkLlmClient *c = malloc(sizeof(TkLlmClient));
     if (!c) return NULL;
-    c->base_url    = strdup_safe(base_url);
-    c->api_key     = strdup_safe(api_key);
-    c->model       = strdup_safe(model);
-    c->timeout_ms  = 0;
-    c->max_retries = 0;
+    c->base_url               = strdup_safe(base_url);
+    c->api_key                = strdup_safe(api_key);
+    c->model                  = strdup_safe(model);
+    c->timeout_ms             = 0;
+    c->max_retries            = 0;
+    c->retry_base_delay_ms    = 0;
+    c->retry_max_retries      = 0;
+    c->total_input_tokens     = 0;
+    c->total_output_tokens    = 0;
     return c;
 }
 
@@ -564,6 +569,10 @@ TkLlmResp llm_chat(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs, double temper
     uint64_t completion_tokens = find_json_uint64(resp_body, "completion_tokens");
 
     free(resp_body);
+
+    /* accumulate usage into client */
+    c->total_input_tokens  += prompt_tokens;
+    c->total_output_tokens += completion_tokens;
 
     TkLlmResp r;
     memset(&r, 0, sizeof(r));
@@ -745,4 +754,635 @@ uint64_t llm_countokens(TkLlmClient *c, const char *text)
     (void)c; /* client unused; approximation is model-independent */
     if (!text) return 0;
     return (uint64_t)(strlen(text) / 4);
+}
+
+/* -----------------------------------------------------------------------
+ * Story 32.1.1 — Retry backoff
+ * ----------------------------------------------------------------------- */
+
+void llm_retry_backoff(TkLlmClient *client, uint64_t base_delay_ms, uint64_t max_retries)
+{
+    if (!client) return;
+    client->retry_base_delay_ms = base_delay_ms;
+    client->retry_max_retries   = max_retries;
+}
+
+/* backoff_sleep_ms — sleep for ms milliseconds using nanosleep. */
+static void backoff_sleep_ms(uint64_t ms)
+{
+    struct timespec ts;
+    ts.tv_sec  = (time_t)(ms / 1000u);
+    ts.tv_nsec = (long)((ms % 1000u) * 1000000L);
+    nanosleep(&ts, NULL);
+}
+
+/* http_post_with_backoff — like http_post but honours the client's
+ * retry_base_delay_ms / retry_max_retries fields.  Also retries on
+ * HTTP 429 in addition to 5xx.
+ * Returns the response body (caller frees) or NULL on permanent failure.
+ * Sets *http_status_out to the final HTTP status code. */
+static char *http_post_with_backoff(TkLlmClient *c,
+                                     const char *host, const char *port,
+                                     const char *path,  const char *body,
+                                     int *http_status_out)
+{
+    uint32_t timeout = c->timeout_ms ? c->timeout_ms : 30000;
+
+    /* determine retry parameters */
+    uint64_t base_delay  = c->retry_base_delay_ms;
+    uint64_t max_retries = c->retry_max_retries
+                             ? c->retry_max_retries
+                             : (c->max_retries ? (uint64_t)c->max_retries : 3u);
+
+    char *resp_body  = NULL;
+    int   http_status = 0;
+
+    for (uint64_t attempt = 0; attempt <= max_retries; attempt++) {
+        if (attempt > 0 && base_delay > 0) {
+            /* exponential backoff: delay = base * 2^(attempt-1), cap 30 000 ms */
+            uint64_t delay = base_delay;
+            uint64_t shift = attempt - 1u;
+            /* avoid overflow: cap shift at 14 (2^14 = 16384) */
+            if (shift > 14u) shift = 14u;
+            delay = base_delay << shift;
+            if (delay > 30000u) delay = 30000u;
+            backoff_sleep_ms(delay);
+        } else if (attempt > 0) {
+            /* no backoff configured — keep the original 1-second pause */
+            backoff_sleep_ms(1000);
+        }
+
+        free(resp_body);
+        resp_body = http_post(host, port, path, c->api_key, body, timeout, &http_status);
+        if (!resp_body) continue;
+
+        /* retry on 429 (rate-limit) and 5xx server errors */
+        if (http_status == 429) continue;
+        if (http_status >= 500 && http_status < 600) continue;
+        break;
+    }
+
+    if (http_status_out) *http_status_out = http_status;
+    return resp_body;
+}
+
+/* -----------------------------------------------------------------------
+ * Story 32.1.1 — Embeddings
+ * ----------------------------------------------------------------------- */
+
+/* err_f64 — build a failed F64ArrayLlmResult. */
+static F64ArrayLlmResult err_f64(const char *msg)
+{
+    F64ArrayLlmResult r;
+    memset(&r, 0, sizeof(r));
+    r.is_err  = 1;
+    r.err_msg = strdup_safe(msg);
+    return r;
+}
+
+/* err_f64s — build a failed F64ArraysLlmResult. */
+static F64ArraysLlmResult err_f64s(const char *msg)
+{
+    F64ArraysLlmResult r;
+    memset(&r, 0, sizeof(r));
+    r.is_err  = 1;
+    r.err_msg = strdup_safe(msg);
+    return r;
+}
+
+/*
+ * build_embedding_request — produce JSON for an /embeddings POST.
+ * input_json must be a pre-built JSON value (quoted string or array).
+ * Returns heap-allocated string (caller frees) or NULL on error.
+ */
+static char *build_embedding_request(const char *model, const char *input_json)
+{
+    /* {"model":"...","input":...} */
+    size_t model_len = model ? strlen(model) : 0;
+    size_t input_len = input_json ? strlen(input_json) : 2; /* "null" fallback */
+    size_t cap = model_len * 2 + input_len + 64;
+    char *buf = malloc(cap);
+    if (!buf) return NULL;
+
+    int n = snprintf(buf, cap, "{\"model\":\"%s\",\"input\":%s}",
+                     model ? model : "", input_json ? input_json : "null");
+    if (n < 0 || (size_t)n >= cap) { free(buf); return NULL; }
+    return buf;
+}
+
+/*
+ * parse_embedding_array — parse the float array starting at *pp (after '[').
+ * Advances *pp past the closing ']'.
+ * Returns heap-allocated double array via out_data/out_len; caller frees.
+ * Returns 0 on success, -1 on error.
+ */
+static int parse_embedding_array(const char *p, double **out_data, uint64_t *out_len)
+{
+    /* skip to '[' */
+    while (*p && *p != '[') p++;
+    if (*p != '[') return -1;
+    p++; /* skip '[' */
+
+    size_t cap = 512;
+    double *arr = malloc(cap * sizeof(double));
+    if (!arr) return -1;
+    uint64_t count = 0;
+
+    while (*p) {
+        /* skip whitespace and commas */
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',') p++;
+        if (*p == ']') break;
+        if (*p == '\0') break;
+
+        /* read a number */
+        char *end = NULL;
+        double val = strtod(p, &end);
+        if (end == p) break; /* not a number */
+        p = end;
+
+        if (count >= cap) {
+            cap *= 2;
+            double *tmp = realloc(arr, cap * sizeof(double));
+            if (!tmp) { free(arr); return -1; }
+            arr = tmp;
+        }
+        arr[count++] = val;
+    }
+
+    *out_data = arr;
+    *out_len  = count;
+    return 0;
+}
+
+/*
+ * find_nth_embedding — locate the nth object in response["data"] array and
+ * extract its "embedding" float array.
+ * Returns 0 on success (caller frees *out_data), -1 on error.
+ */
+static int find_nth_embedding(const char *json, uint64_t n,
+                               double **out_data, uint64_t *out_len)
+{
+    /* find "data": [ */
+    const char *data_key = strstr(json, "\"data\":");
+    if (!data_key) return -1;
+    const char *arr_start = strchr(data_key, '[');
+    if (!arr_start) return -1;
+    arr_start++; /* skip '[' */
+
+    /* walk through n objects to find the nth */
+    const char *p = arr_start;
+    uint64_t obj_idx = 0;
+    while (*p) {
+        /* skip whitespace and commas */
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',') p++;
+        if (*p != '{') break;
+
+        if (obj_idx == n) {
+            /* found our object — search for "embedding": within it */
+            const char *emb_key = strstr(p, "\"embedding\":");
+            if (!emb_key) return -1;
+            emb_key += strlen("\"embedding\":");
+            while (*emb_key == ' ' || *emb_key == '\t') emb_key++;
+            return parse_embedding_array(emb_key, out_data, out_len);
+        }
+
+        /* skip over this object: find matching closing brace */
+        int depth = 0;
+        while (*p) {
+            if (*p == '{') depth++;
+            else if (*p == '}') { depth--; if (depth == 0) { p++; break; } }
+            p++;
+        }
+        obj_idx++;
+    }
+    return -1;
+}
+
+F64ArrayLlmResult llm_embedding(TkLlmClient *client, const char *text)
+{
+    if (!client) return err_f64("null client");
+    if (!text)   return err_f64("null text");
+
+    /* reject HTTPS */
+    if (client->base_url && strncmp(client->base_url, "https://", 8) == 0)
+        return err_f64("HTTPS requires TLS support (not compiled in)");
+
+    char host[256], port[16], path[512];
+    int is_https = 0;
+    if (parse_url(client->base_url, "/embeddings", host, sizeof(host),
+                  port, sizeof(port), path, sizeof(path), &is_https) != 0)
+        return err_f64("failed to parse base_url");
+
+    /* build JSON input: a quoted escaped string */
+    size_t text_len = strlen(text);
+    size_t esc_cap  = text_len * 6 + 4;
+    char *esc_text  = malloc(esc_cap);
+    if (!esc_text) return err_f64("out of memory");
+    if (json_escape(text, esc_text, esc_cap) < 0) {
+        free(esc_text);
+        return err_f64("json_escape failed");
+    }
+
+    /* wrap in quotes: "\"<escaped>\"" */
+    size_t quoted_cap = strlen(esc_text) + 4;
+    char *quoted = malloc(quoted_cap);
+    if (!quoted) { free(esc_text); return err_f64("out of memory"); }
+    snprintf(quoted, quoted_cap, "\"%s\"", esc_text);
+    free(esc_text);
+
+    char *body = build_embedding_request(client->model, quoted);
+    free(quoted);
+    if (!body) return err_f64("failed to build embedding request");
+
+    int http_status = 0;
+    char *resp_body = http_post_with_backoff(client, host, port, path, body, &http_status);
+    free(body);
+
+    if (!resp_body)
+        return err_f64("HTTP request failed");
+
+    if (http_status >= 400) {
+        char errbuf[256];
+        snprintf(errbuf, sizeof(errbuf), "HTTP error %d", http_status);
+        free(resp_body);
+        return err_f64(errbuf);
+    }
+
+    double   *arr = NULL;
+    uint64_t  arr_len = 0;
+    if (find_nth_embedding(resp_body, 0, &arr, &arr_len) != 0) {
+        free(resp_body);
+        return err_f64("failed to parse embedding from response");
+    }
+    free(resp_body);
+
+    F64ArrayLlmResult r;
+    memset(&r, 0, sizeof(r));
+    r.ok.data = arr;
+    r.ok.len  = arr_len;
+    r.is_err  = 0;
+    return r;
+}
+
+F64ArraysLlmResult llm_embeddings_batch(TkLlmClient *client,
+                                          const char *const *texts, uint64_t n)
+{
+    if (!client) return err_f64s("null client");
+    if (!texts || n == 0) return err_f64s("empty texts array");
+
+    /* reject HTTPS */
+    if (client->base_url && strncmp(client->base_url, "https://", 8) == 0)
+        return err_f64s("HTTPS requires TLS support (not compiled in)");
+
+    char host[256], port[16], path[512];
+    int is_https = 0;
+    if (parse_url(client->base_url, "/embeddings", host, sizeof(host),
+                  port, sizeof(port), path, sizeof(path), &is_https) != 0)
+        return err_f64s("failed to parse base_url");
+
+    /* build JSON array of escaped strings */
+    /* estimate size: sum of (len*6+4) per text + brackets + commas */
+    size_t arr_cap = 4;
+    for (uint64_t i = 0; i < n; i++) {
+        arr_cap += texts[i] ? (strlen(texts[i]) * 6 + 4) : 6;
+    }
+    char *arr_json = malloc(arr_cap);
+    if (!arr_json) return err_f64s("out of memory");
+
+    int pos = 0;
+    arr_json[pos++] = '[';
+
+    for (uint64_t i = 0; i < n; i++) {
+        if (i > 0) arr_json[pos++] = ',';
+        arr_json[pos++] = '"';
+
+        const char *src = texts[i] ? texts[i] : "";
+        size_t src_len  = strlen(src);
+        size_t esc_cap2 = src_len * 6 + 4;
+        char *esc = malloc(esc_cap2);
+        if (!esc) { free(arr_json); return err_f64s("out of memory"); }
+        int esc_len = json_escape(src, esc, esc_cap2);
+        if (esc_len < 0) { free(esc); free(arr_json); return err_f64s("json_escape failed"); }
+
+        /* ensure arr_json has room */
+        if ((size_t)pos + (size_t)esc_len + 4 >= arr_cap) {
+            arr_cap = (size_t)pos + (size_t)esc_len + 64;
+            char *tmp = realloc(arr_json, arr_cap);
+            if (!tmp) { free(esc); free(arr_json); return err_f64s("out of memory"); }
+            arr_json = tmp;
+        }
+        memcpy(arr_json + pos, esc, (size_t)esc_len);
+        pos += esc_len;
+        free(esc);
+
+        arr_json[pos++] = '"';
+    }
+    arr_json[pos++] = ']';
+    arr_json[pos]   = '\0';
+
+    char *body = build_embedding_request(client->model, arr_json);
+    free(arr_json);
+    if (!body) return err_f64s("failed to build embedding request");
+
+    int http_status = 0;
+    char *resp_body = http_post_with_backoff(client, host, port, path, body, &http_status);
+    free(body);
+
+    if (!resp_body) return err_f64s("HTTP request failed");
+
+    if (http_status >= 400) {
+        char errbuf[256];
+        snprintf(errbuf, sizeof(errbuf), "HTTP error %d", http_status);
+        free(resp_body);
+        return err_f64s(errbuf);
+    }
+
+    F64Array *results = malloc(n * sizeof(F64Array));
+    if (!results) { free(resp_body); return err_f64s("out of memory"); }
+
+    for (uint64_t i = 0; i < n; i++) {
+        double   *arr = NULL;
+        uint64_t  arr_len = 0;
+        if (find_nth_embedding(resp_body, i, &arr, &arr_len) != 0) {
+            /* free previously allocated entries */
+            for (uint64_t j = 0; j < i; j++) free((void *)results[j].data);
+            free(results);
+            free(resp_body);
+            return err_f64s("failed to parse embedding from response");
+        }
+        results[i].data = arr;
+        results[i].len  = arr_len;
+    }
+    free(resp_body);
+
+    F64ArraysLlmResult r;
+    memset(&r, 0, sizeof(r));
+    r.data   = results;
+    r.len    = n;
+    r.is_err = 0;
+    return r;
+}
+
+/* -----------------------------------------------------------------------
+ * Story 32.1.2 — JSON mode, usage tracking, vision
+ * ----------------------------------------------------------------------- */
+
+LlmUsage llm_usage(TkLlmClient *client)
+{
+    LlmUsage u;
+    memset(&u, 0, sizeof(u));
+    if (!client) return u;
+    u.input_tokens  = client->total_input_tokens;
+    u.output_tokens = client->total_output_tokens;
+    return u;
+}
+
+/*
+ * build_request_extra — like llm_build_request but appends extra_json
+ * (a JSON fragment such as "\"response_format\":{\"type\":\"json_object\"}") to the
+ * top-level object before the closing brace.
+ * Returns heap-allocated string (caller frees) or NULL on error.
+ */
+static const char *build_request_extra(TkLlmMsg *msgs, uint64_t nmsgs,
+                                        const char *model, double temperature,
+                                        const char *extra_json)
+{
+    const char *base = llm_build_request(msgs, nmsgs, model, temperature, 0);
+    if (!base) return NULL;
+    if (!extra_json || extra_json[0] == '\0') return base;
+
+    /* base ends with '}'; we want to insert ,extra_json before it */
+    size_t base_len  = strlen(base);
+    size_t extra_len = strlen(extra_json);
+    size_t new_cap   = base_len + extra_len + 4;
+    char *buf = malloc(new_cap);
+    if (!buf) { free((void *)base); return NULL; }
+
+    /* copy everything except the trailing '}' */
+    memcpy(buf, base, base_len - 1);
+    free((void *)base);
+
+    int n = snprintf(buf + base_len - 1, new_cap - (base_len - 1),
+                     ",%s}", extra_json);
+    if (n < 0 || (size_t)n >= new_cap - (base_len - 1)) {
+        free(buf); return NULL;
+    }
+    return buf;
+}
+
+TkLlmResp llm_json_mode(TkLlmClient *client, TkLlmMsg *messages, uint64_t n)
+{
+    if (!client) return err_resp("null client");
+
+    /* reject HTTPS */
+    if (client->base_url && strncmp(client->base_url, "https://", 8) == 0)
+        return err_resp("HTTPS requires TLS support (not compiled in)");
+
+    char host[256], port[16], path[512];
+    int is_https = 0;
+    if (parse_url(client->base_url, "/chat/completions", host, sizeof(host),
+                  port, sizeof(port), path, sizeof(path), &is_https) != 0)
+        return err_resp("failed to parse base_url");
+
+    /*
+     * Detect provider: if base_url contains "ollama" or "11434" use Ollama
+     * format ("format":"json"), otherwise use OpenAI format.
+     */
+    int is_ollama = (client->base_url &&
+                     (strstr(client->base_url, "11434") != NULL ||
+                      strstr(client->base_url, "ollama") != NULL));
+
+    const char *extra = is_ollama
+        ? "\"format\":\"json\""
+        : "\"response_format\":{\"type\":\"json_object\"}";
+
+    const char *body = build_request_extra(messages, n, client->model, 0.7, extra);
+    if (!body) return err_resp("failed to build request JSON");
+
+    int http_status = 0;
+    char *resp_body = http_post_with_backoff(client, host, port, path, body, &http_status);
+    free((void *)body);
+
+    if (!resp_body) return err_resp("HTTP request failed after retries");
+
+    if (http_status >= 400) {
+        char errbuf[256];
+        snprintf(errbuf, sizeof(errbuf), "HTTP error %d", http_status);
+        free(resp_body);
+        return err_resp(errbuf);
+    }
+
+    const char *msg_start = strstr(resp_body, "\"message\":");
+    char *content = NULL;
+    if (msg_start) content = find_json_string(msg_start, "content");
+    if (!content)  content = find_json_string(resp_body, "content");
+
+    uint64_t prompt_tokens     = find_json_uint64(resp_body, "prompt_tokens");
+    uint64_t completion_tokens = find_json_uint64(resp_body, "completion_tokens");
+    free(resp_body);
+
+    client->total_input_tokens  += prompt_tokens;
+    client->total_output_tokens += completion_tokens;
+
+    TkLlmResp r;
+    memset(&r, 0, sizeof(r));
+    r.content       = content ? content : strdup_safe("");
+    r.input_tokens  = prompt_tokens;
+    r.output_tokens = completion_tokens;
+    r.is_err        = 0;
+    r.err_msg       = NULL;
+    return r;
+}
+
+/*
+ * build_vision_request — build a chat completion request where the user
+ * message content may contain an image URL.
+ *
+ * If a message's content begins with "http" or "data:", the content is
+ * treated as an image URL/data URI and the user message is encoded as:
+ *   {"role":"user","content":[{"type":"image_url","image_url":{"url":"..."}},
+ *                              {"type":"text","text":""}]}
+ * All other messages use the standard string content format.
+ *
+ * Returns heap-allocated JSON string (caller frees) or NULL on error.
+ */
+static const char *build_vision_request(TkLlmMsg *msgs, uint64_t nmsgs,
+                                          const char *model)
+{
+    /* estimate generous upper bound */
+    size_t cap = 256 + (model ? strlen(model) : 0);
+    for (uint64_t i = 0; i < nmsgs; i++) {
+        cap += 64;
+        if (msgs[i].role)    cap += strlen(msgs[i].role)    * 2 + 4;
+        if (msgs[i].content) cap += strlen(msgs[i].content) * 6 + 128;
+    }
+
+    char *buf = malloc(cap);
+    if (!buf) return NULL;
+
+    int pos = 0;
+
+#define VAPPEND(fmt, ...) \
+    do { int _n = snprintf(buf + pos, cap - (size_t)pos, fmt, __VA_ARGS__); \
+         if (_n < 0 || (size_t)_n >= cap - (size_t)pos) { free(buf); return NULL; } \
+         pos += _n; } while (0)
+#define VAPPENDC(c) \
+    do { if ((size_t)pos + 2 >= cap) { free(buf); return NULL; } \
+         buf[pos++] = (c); buf[pos] = '\0'; } while (0)
+
+    VAPPEND("{\"model\":\"%s\",\"messages\":[", model ? model : "");
+
+    for (uint64_t i = 0; i < nmsgs; i++) {
+        if (i > 0) VAPPENDC(',');
+        VAPPEND("{\"role\":\"%s\",\"content\":", msgs[i].role ? msgs[i].role : "user");
+
+        const char *content = msgs[i].content ? msgs[i].content : "";
+        int is_image = (strncmp(content, "http", 4) == 0 ||
+                        strncmp(content, "data:", 5) == 0);
+
+        if (is_image) {
+            /* vision array format */
+            size_t clen     = strlen(content);
+            size_t esc_cap2 = clen * 6 + 4;
+            char *esc = malloc(esc_cap2);
+            if (!esc) { free(buf); return NULL; }
+            if (json_escape(content, esc, esc_cap2) < 0) { free(esc); free(buf); return NULL; }
+
+            /* ensure buf has room */
+            size_t needed = strlen(esc) + 128;
+            if ((size_t)pos + needed >= cap) {
+                cap = (size_t)pos + needed + 256;
+                char *tmp = realloc(buf, cap);
+                if (!tmp) { free(esc); free(buf); return NULL; }
+                buf = tmp;
+            }
+            int n2 = snprintf(buf + pos, cap - (size_t)pos,
+                "[{\"type\":\"image_url\",\"image_url\":{\"url\":\"%s\"}},"
+                "{\"type\":\"text\",\"text\":\"\"}]", esc);
+            free(esc);
+            if (n2 < 0 || (size_t)n2 >= cap - (size_t)pos) { free(buf); return NULL; }
+            pos += n2;
+        } else {
+            /* standard string content */
+            size_t clen     = strlen(content);
+            size_t esc_cap2 = clen * 6 + 4;
+            char *esc = malloc(esc_cap2);
+            if (!esc) { free(buf); return NULL; }
+            if (json_escape(content, esc, esc_cap2) < 0) { free(esc); free(buf); return NULL; }
+
+            size_t esc_len = strlen(esc);
+            if ((size_t)pos + esc_len + 4 >= cap) {
+                cap = (size_t)pos + esc_len + 64;
+                char *tmp = realloc(buf, cap);
+                if (!tmp) { free(esc); free(buf); return NULL; }
+                buf = tmp;
+            }
+            buf[pos++] = '"';
+            memcpy(buf + pos, esc, esc_len);
+            pos += (int)esc_len;
+            buf[pos++] = '"';
+            buf[pos]   = '\0';
+            free(esc);
+        }
+        VAPPENDC('}');
+    }
+
+    VAPPEND("],\"temperature\":%.2f,\"stream\":false}", 0.7);
+
+#undef VAPPEND
+#undef VAPPENDC
+
+    return buf;
+}
+
+TkLlmResp llm_vision(TkLlmClient *client, TkLlmMsg *messages, uint64_t n)
+{
+    if (!client) return err_resp("null client");
+
+    /* reject HTTPS */
+    if (client->base_url && strncmp(client->base_url, "https://", 8) == 0)
+        return err_resp("HTTPS requires TLS support (not compiled in)");
+
+    char host[256], port[16], path[512];
+    int is_https = 0;
+    if (parse_url(client->base_url, "/chat/completions", host, sizeof(host),
+                  port, sizeof(port), path, sizeof(path), &is_https) != 0)
+        return err_resp("failed to parse base_url");
+
+    const char *body = build_vision_request(messages, n, client->model);
+    if (!body) return err_resp("failed to build vision request JSON");
+
+    int http_status = 0;
+    char *resp_body = http_post_with_backoff(client, host, port, path, body, &http_status);
+    free((void *)body);
+
+    if (!resp_body) return err_resp("HTTP request failed after retries");
+
+    if (http_status >= 400) {
+        char errbuf[256];
+        snprintf(errbuf, sizeof(errbuf), "HTTP error %d", http_status);
+        free(resp_body);
+        return err_resp(errbuf);
+    }
+
+    const char *msg_start = strstr(resp_body, "\"message\":");
+    char *content = NULL;
+    if (msg_start) content = find_json_string(msg_start, "content");
+    if (!content)  content = find_json_string(resp_body, "content");
+
+    uint64_t prompt_tokens     = find_json_uint64(resp_body, "prompt_tokens");
+    uint64_t completion_tokens = find_json_uint64(resp_body, "completion_tokens");
+    free(resp_body);
+
+    client->total_input_tokens  += prompt_tokens;
+    client->total_output_tokens += completion_tokens;
+
+    TkLlmResp r;
+    memset(&r, 0, sizeof(r));
+    r.content       = content ? content : strdup_safe("");
+    r.input_tokens  = prompt_tokens;
+    r.output_tokens = completion_tokens;
+    r.is_err        = 0;
+    r.err_msg       = NULL;
+    return r;
 }

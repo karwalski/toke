@@ -86,6 +86,65 @@ TkLlmMsg      *llm_tool_result_msgs(TkToolResult *results, uint64_t nresults,
                                      uint64_t *nmsgs_out);
 
 /* -----------------------------------------------------------------------
+ * Story 32.2.1 — parallel tool calls, arg validation, agentic loop
+ * ----------------------------------------------------------------------- */
+
+/* TkTool — a callable tool with a handler function pointer. */
+typedef struct {
+    const char  *name;
+    const char  *description;
+    const char  *parameters_json; /* JSON schema object for parameters, may be NULL */
+    /* handler: called with args_json; returns heap-allocated result JSON string */
+    const char *(*handler)(const char *args_json);
+} TkTool;
+
+/* TkToolCallResult — result of a single tool invocation. */
+typedef struct {
+    const char *call_id;
+    const char *tool_name;
+    const char *result_json; /* heap-allocated, caller must free */
+    int         is_err;
+    const char *err_msg;
+} TkToolCallResult;
+
+/* ToolCallResultArray — array of TkToolCallResult returned by llm_parallel_tool_calls. */
+typedef struct {
+    TkToolCallResult *data;
+    uint64_t          len;
+} ToolCallResultArray;
+
+/* ToolValidResult — return type from llm_tool_validate_args. */
+typedef struct {
+    int         ok;
+    int         is_err;
+    const char *err_msg;
+} ToolValidResult;
+
+/* llm_parallel_tool_calls — call llm_chat with the given messages, then for each
+ * tool_call in the response, dispatch to the matching TkTool handler.
+ * Returns a heap-allocated ToolCallResultArray; caller owns data and must free
+ * each result_json as well as data itself. */
+ToolCallResultArray llm_parallel_tool_calls(TkLlmClient *client,
+                                             TkLlmMsg *messages, uint64_t nmsg,
+                                             TkTool *tools, uint64_t ntools);
+
+/* llm_tool_validate_args — validate args_json against tool->parameters_json schema.
+ * Checks that all fields listed in parameters.required are present in args_json.
+ * Returns ok=1 on success, is_err=1 with err_msg on failure. */
+ToolValidResult llm_tool_validate_args(TkTool *tool, const char *args_json);
+
+/* llm_agentic_loop — ReAct-style agentic loop.
+ * Sends system+user messages to the model; if the model requests tool calls,
+ * executes them and continues; repeats up to max_iterations times.
+ * Returns heap-allocated final text content, or "[max iterations reached]",
+ * or an error string prefixed with "[error]". Caller must free. */
+const char *llm_agentic_loop(TkLlmClient *client,
+                              const char *system,
+                              const char *user,
+                              TkTool *tools, uint64_t ntools,
+                              uint64_t max_iterations);
+
+/* -----------------------------------------------------------------------
  * .tki-aligned aliases (Story 35.1.12)
  *
  * The std.llm.tool .tki contract exports names like llm.withtools,

@@ -550,3 +550,405 @@ TkLlmResp llm_submitresult(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs,
 
     return resp;
 }
+
+/* -----------------------------------------------------------------------
+ * Story 32.2.1 — parallel tool calls, arg validation, agentic loop
+ * ----------------------------------------------------------------------- */
+
+/* json_has — return 1 if key (bare identifier, no quotes) is present as a
+ * top-level key in json_obj.  Simple scan: look for "key" followed by ':'.
+ * Only inspects the top-level object; does not recurse. */
+static int json_has(const char *json_obj, const char *key)
+{
+    if (!json_obj || !key) return 0;
+    /* Build search token: "key" */
+    size_t klen = strlen(key);
+    /* We walk char by char to avoid matching keys inside string values. */
+    const char *p = json_obj;
+    int depth = 0;
+    while (*p) {
+        if (*p == '{' || *p == '[') { depth++; p++; continue; }
+        if (*p == '}' || *p == ']') { depth--; p++; continue; }
+        /* Only match top-level keys (depth == 1 = inside root object) */
+        if (*p == '"' && depth == 1) {
+            const char *q = p + 1;
+            /* check if this string equals key */
+            if (strncmp(q, key, klen) == 0 && q[klen] == '"') {
+                /* check that after the closing quote comes optional whitespace and ':' */
+                const char *after = q + klen + 1;
+                while (*after == ' ' || *after == '\t') after++;
+                if (*after == ':') return 1;
+            }
+            /* skip over the string */
+            p++;
+            while (*p && !(*p == '"' && *(p - 1) != '\\')) p++;
+            if (*p) p++; /* past closing quote */
+            continue;
+        }
+        p++;
+    }
+    return 0;
+}
+
+/* -----------------------------------------------------------------------
+ * llm_tool_validate_args
+ * ----------------------------------------------------------------------- */
+ToolValidResult llm_tool_validate_args(TkTool *tool, const char *args_json)
+{
+    ToolValidResult res;
+    res.ok     = 0;
+    res.is_err = 0;
+    res.err_msg = NULL;
+
+    if (!tool) {
+        res.is_err  = 1;
+        res.err_msg = "tool is NULL";
+        return res;
+    }
+    if (!args_json) {
+        res.is_err  = 1;
+        res.err_msg = "args_json is NULL";
+        return res;
+    }
+
+    /* Basic JSON validity: must start with '{' */
+    const char *p = args_json;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    if (*p != '{') {
+        res.is_err  = 1;
+        res.err_msg = "args_json is not a JSON object";
+        return res;
+    }
+
+    /* If no schema, nothing to validate */
+    if (!tool->parameters_json) {
+        res.ok = 1;
+        return res;
+    }
+
+    /* Find "required" array in parameters_json */
+    const char *req = strstr(tool->parameters_json, "\"required\"");
+    if (!req) {
+        /* No required fields — always valid */
+        res.ok = 1;
+        return res;
+    }
+
+    /* Advance to the '[' */
+    req += strlen("\"required\"");
+    while (*req && *req != '[') req++;
+    if (*req != '[') {
+        res.ok = 1;
+        return res;
+    }
+    req++; /* past '[' */
+
+    /* Iterate over string entries in the required array */
+    const char *rp = req;
+    while (*rp) {
+        while (*rp == ' ' || *rp == '\t' || *rp == '\n' || *rp == '\r' || *rp == ',') rp++;
+        if (*rp == ']' || *rp == '\0') break;
+        if (*rp != '"') { rp++; continue; }
+        /* extract the required field name */
+        const char *name_start = rp + 1;
+        const char *name_end   = name_start;
+        while (*name_end && !(*name_end == '"' && *(name_end - 1) != '\\')) name_end++;
+        size_t name_len = (size_t)(name_end - name_start);
+        char  *field    = malloc(name_len + 1);
+        if (!field) {
+            res.is_err  = 1;
+            res.err_msg = "out of memory";
+            return res;
+        }
+        memcpy(field, name_start, name_len);
+        field[name_len] = '\0';
+
+        if (!json_has(args_json, field)) {
+            /* Build error message */
+            size_t msglen = name_len + 64;
+            char  *msg    = malloc(msglen);
+            if (msg) {
+                snprintf(msg, msglen, "missing required field: %s", field);
+            }
+            free(field);
+            res.is_err  = 1;
+            res.err_msg = msg ? msg : "missing required field";
+            return res;
+        }
+        free(field);
+        rp = name_end + 1; /* past closing quote */
+    }
+
+    res.ok = 1;
+    return res;
+}
+
+/* -----------------------------------------------------------------------
+ * llm_parallel_tool_calls
+ * ----------------------------------------------------------------------- */
+ToolCallResultArray llm_parallel_tool_calls(TkLlmClient *client,
+                                             TkLlmMsg *messages, uint64_t nmsg,
+                                             TkTool *tools, uint64_t ntools)
+{
+    ToolCallResultArray out;
+    out.data = NULL;
+    out.len  = 0;
+
+    if (!client || !messages || nmsg == 0) return out;
+    if (!client->base_url || client->base_url[0] == '\0') return out;
+
+    /* Call llm_chat to get a response */
+    TkLlmResp resp = llm_chat(client, messages, nmsg, 0.7);
+    if (resp.is_err || !resp.content) {
+        return out; /* network/config error — return empty */
+    }
+
+    /* Parse tool_calls from the response */
+    ToolCallResult tc = llm_parse_tool_calls(resp.content);
+    if (tc.is_err || tc.ncalls == 0) {
+        /* No tool calls — return empty array */
+        if (tc.calls) free(tc.calls);
+        return out;
+    }
+
+    /* Allocate result array */
+    TkToolCallResult *results = malloc(tc.ncalls * sizeof(TkToolCallResult));
+    if (!results) {
+        free(tc.calls);
+        return out;
+    }
+
+    for (uint64_t i = 0; i < tc.ncalls; i++) {
+        TkToolCall *call = &tc.calls[i];
+        results[i].call_id   = call->call_id   ? strdup(call->call_id)   : strdup("");
+        results[i].tool_name = call->tool_name ? strdup(call->tool_name) : strdup("");
+        results[i].is_err    = 0;
+        results[i].err_msg   = NULL;
+        results[i].result_json = NULL;
+
+        /* Find matching tool by name */
+        TkTool *matched = NULL;
+        if (tools && ntools > 0) {
+            for (uint64_t t = 0; t < ntools; t++) {
+                if (tools[t].name && call->tool_name &&
+                    strcmp(tools[t].name, call->tool_name) == 0) {
+                    matched = &tools[t];
+                    break;
+                }
+            }
+        }
+
+        if (!matched) {
+            results[i].is_err    = 1;
+            results[i].err_msg   = "tool not found";
+            results[i].result_json = strdup("null");
+        } else if (!matched->handler) {
+            results[i].is_err    = 1;
+            results[i].err_msg   = "tool has no handler";
+            results[i].result_json = strdup("null");
+        } else {
+            const char *r = matched->handler(call->args_json ? call->args_json : "{}");
+            results[i].result_json = r ? r : strdup("null");
+        }
+    }
+
+    /* Free parsed tool calls (names/ids were strdup'd above) */
+    for (uint64_t i = 0; i < tc.ncalls; i++) {
+        free((char *)tc.calls[i].call_id);
+        free((char *)tc.calls[i].tool_name);
+        free((char *)tc.calls[i].args_json);
+    }
+    free(tc.calls);
+
+    out.data = results;
+    out.len  = tc.ncalls;
+    return out;
+}
+
+/* -----------------------------------------------------------------------
+ * llm_agentic_loop
+ *
+ * Implements a ReAct-style agentic loop:
+ *   messages = [{system}, {user}]
+ *   for i in range(max_iterations):
+ *       response = llm_chat(client, messages, tools)
+ *       if no tool_calls: return response.content
+ *       for each tool_call: execute tool, build tool result messages
+ *       append assistant message and tool result messages
+ *   return "[max iterations reached]"
+ * ----------------------------------------------------------------------- */
+const char *llm_agentic_loop(TkLlmClient *client,
+                              const char *system,
+                              const char *user,
+                              TkTool *tools, uint64_t ntools,
+                              uint64_t max_iterations)
+{
+    if (!client || !user) return strdup("[error: invalid arguments]");
+    if (!client->base_url || client->base_url[0] == '\0')
+        return strdup("[error: no base_url configured]");
+    if (max_iterations == 0) max_iterations = 10;
+
+    /* Build initial message array: [system?, user] */
+    uint64_t  init_count = system ? 2 : 1;
+    TkLlmMsg  init_msgs[2];
+    uint64_t  idx = 0;
+    if (system) {
+        init_msgs[idx].role    = "system";
+        init_msgs[idx].content = system;
+        idx++;
+    }
+    init_msgs[idx].role    = "user";
+    init_msgs[idx].content = user;
+
+    /* Dynamic conversation buffer */
+    uint64_t  cap  = init_count + max_iterations * 4 + 8;
+    TkLlmMsg *conv = malloc(cap * sizeof(TkLlmMsg));
+    if (!conv) return strdup("[error: out of memory]");
+
+    /* Copy initial messages (these are static strings — no need to strdup) */
+    for (uint64_t i = 0; i < init_count; i++) {
+        conv[i].role    = init_msgs[i].role;
+        conv[i].content = init_msgs[i].content;
+    }
+    uint64_t conv_len = init_count;
+
+    /* Track heap-allocated messages so we can free them */
+    /* We store pointers to heap-allocated content (role is always a literal) */
+    char **heap_contents = malloc((cap * 2) * sizeof(char *));
+    uint64_t heap_count  = 0;
+    if (!heap_contents) {
+        free(conv);
+        return strdup("[error: out of memory]");
+    }
+
+    const char *final_answer = NULL;
+
+    for (uint64_t iter = 0; iter < max_iterations; iter++) {
+        TkLlmResp resp = llm_chat(client, conv, conv_len, 0.7);
+        if (resp.is_err || !resp.content) {
+            /* Error from LLM — return error string */
+            const char *msg = resp.err_msg ? resp.err_msg : "llm_chat failed";
+            size_t mlen = strlen(msg) + 32;
+            char  *err  = malloc(mlen);
+            if (err) snprintf(err, mlen, "[error: %s]", msg);
+            /* cleanup */
+            for (uint64_t h = 0; h < heap_count; h++) free(heap_contents[h]);
+            free(heap_contents);
+            free(conv);
+            return err ? err : strdup("[error]");
+        }
+
+        /* Parse tool_calls from response */
+        ToolCallResult tc = llm_parse_tool_calls(resp.content);
+
+        if (tc.ncalls == 0 || tc.is_err) {
+            /* No tool calls — this is the final answer */
+            final_answer = strdup(resp.content);
+            if (tc.calls) free(tc.calls);
+            break;
+        }
+
+        /* Append assistant message to conversation */
+        if (conv_len >= cap - 4) {
+            /* grow conv */
+            cap *= 2;
+            TkLlmMsg *nb = realloc(conv, cap * sizeof(TkLlmMsg));
+            if (!nb) {
+                for (uint64_t h = 0; h < heap_count; h++) free(heap_contents[h]);
+                free(heap_contents);
+                free(conv);
+                if (tc.calls) free(tc.calls);
+                return strdup("[error: out of memory]");
+            }
+            conv = nb;
+        }
+        char *asst_content = strdup(resp.content);
+        if (asst_content) heap_contents[heap_count++] = asst_content;
+        conv[conv_len].role    = "assistant";
+        conv[conv_len].content = asst_content ? asst_content : "";
+        conv_len++;
+
+        /* Execute each tool call and append tool result messages */
+        for (uint64_t c = 0; c < tc.ncalls; c++) {
+            TkToolCall *call = &tc.calls[c];
+            const char *result_content = NULL;
+
+            /* Find matching tool */
+            TkTool *matched = NULL;
+            if (tools && ntools > 0) {
+                for (uint64_t t = 0; t < ntools; t++) {
+                    if (tools[t].name && call->tool_name &&
+                        strcmp(tools[t].name, call->tool_name) == 0) {
+                        matched = &tools[t];
+                        break;
+                    }
+                }
+            }
+
+            if (matched && matched->handler) {
+                result_content = matched->handler(call->args_json ? call->args_json : "{}");
+            } else {
+                result_content = strdup("{\"error\":\"tool not found\"}");
+            }
+
+            /* Build tool result message content:
+             * {"tool_call_id":"...","content":...} */
+            const char *cid = call->call_id ? call->call_id : "";
+            const char *rc  = result_content ? result_content : "null";
+            size_t msglen   = strlen(cid) + strlen(rc) + 64;
+            char  *msg_cont = malloc(msglen);
+            if (msg_cont) {
+                char *esc = json_escape(cid);
+                if (esc) {
+                    snprintf(msg_cont, msglen,
+                             "{\"tool_call_id\":\"%s\",\"content\":%s}",
+                             esc, rc);
+                    free(esc);
+                } else {
+                    snprintf(msg_cont, msglen,
+                             "{\"tool_call_id\":\"%s\",\"content\":%s}",
+                             cid, rc);
+                }
+                heap_contents[heap_count++] = msg_cont;
+            }
+            free((char *)result_content);
+
+            if (conv_len >= cap - 2) {
+                cap *= 2;
+                TkLlmMsg *nb = realloc(conv, cap * sizeof(TkLlmMsg));
+                if (!nb) {
+                    for (uint64_t h = 0; h < heap_count; h++) free(heap_contents[h]);
+                    free(heap_contents);
+                    free(conv);
+                    for (uint64_t cc = 0; cc < tc.ncalls; cc++) {
+                        free((char *)tc.calls[cc].call_id);
+                        free((char *)tc.calls[cc].tool_name);
+                        free((char *)tc.calls[cc].args_json);
+                    }
+                    free(tc.calls);
+                    return strdup("[error: out of memory]");
+                }
+                conv = nb;
+            }
+            conv[conv_len].role    = "tool";
+            conv[conv_len].content = msg_cont ? msg_cont : "{}";
+            conv_len++;
+        }
+
+        /* Free tool calls for this iteration */
+        for (uint64_t c = 0; c < tc.ncalls; c++) {
+            free((char *)tc.calls[c].call_id);
+            free((char *)tc.calls[c].tool_name);
+            free((char *)tc.calls[c].args_json);
+        }
+        free(tc.calls);
+    }
+
+    /* Cleanup */
+    for (uint64_t h = 0; h < heap_count; h++) free(heap_contents[h]);
+    free(heap_contents);
+    free(conv);
+
+    if (final_answer) return final_answer;
+    return strdup("[max iterations reached]");
+}

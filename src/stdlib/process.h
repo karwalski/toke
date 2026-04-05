@@ -35,15 +35,25 @@ typedef enum {
 typedef struct {
     pid_t   pid;
     int     stdout_fd;   /* read end of stdout pipe; -1 if already drained */
+    int     stderr_fd;   /* read end of stderr pipe; -1 if already drained */
     int     stdin_fd;    /* write end of stdin pipe; -1 if closed */
     int     exited;      /* 1 once waitpid has been called */
     int32_t exit_code;
+    char   *cwd;         /* working directory for spawn; NULL = inherit */
 } ProcessHandle;
 
 /* Result types */
 typedef struct { ProcessHandle *ok; int is_err; ProcessErrKind err_kind; const char *err_msg; } SpawnResult;
 typedef struct { int32_t        ok; int is_err; ProcessErrKind err_kind; const char *err_msg; } WaitResult;
 typedef struct { const char    *ok; int is_err; ProcessErrKind err_kind; const char *err_msg; } StdoutResult;
+
+/* Additional result types for story 28.5.2 */
+typedef struct { uint64_t ok; int is_err; ProcessErrKind err_kind; const char *err_msg; } U64ProcessResult;
+typedef struct { int32_t  ok; int is_err; ProcessErrKind err_kind; const char *err_msg; } I32ProcessResult;
+typedef struct { int      ok; int is_err; ProcessErrKind err_kind; const char *err_msg; } BoolProcessResult;
+
+/* StdoutResult is also used for stderr reads */
+typedef StdoutResult StrProcessResult;
 
 /*
  * process_spawn — fork+exec cmd[0] with cmd[1..] as arguments.
@@ -73,5 +83,47 @@ int           process_kill(ProcessHandle *h);
  * process_handle_free — release all resources owned by the handle.
  */
 void          process_handle_free(ProcessHandle *h);
+
+/*
+ * process_stdin_write — write len bytes of data to the child's stdin.
+ * Returns number of bytes written, or error.
+ * Story: 28.5.2
+ */
+U64ProcessResult   process_stdin_write(ProcessHandle *h, const char *data, uint64_t len);
+
+/*
+ * process_stderr — read all stderr output from the process.
+ * Drains the pipe; returned string is heap-allocated.
+ * Story: 28.5.2
+ */
+StrProcessResult   process_stderr(ProcessHandle *h);
+
+/*
+ * process_exit_code — wait for the process and return its exit code.
+ * Caches the result on the handle.
+ * Story: 28.5.2
+ */
+I32ProcessResult   process_exit_code(ProcessHandle *h);
+
+/*
+ * process_is_running — non-blocking check; returns 1 if still running.
+ * Story: 28.5.2
+ */
+int                process_is_running(ProcessHandle *h);
+
+/*
+ * process_set_cwd — set working directory for spawn.
+ * No-op if the process has already been spawned.
+ * Story: 28.5.2
+ */
+void               process_set_cwd(ProcessHandle *h, const char *cwd);
+
+/*
+ * process_timeout — wait up to timeout_ms for the process to exit.
+ * If the timeout expires, sends SIGKILL and waits for the process.
+ * Returns the exit code (may be negative if killed by signal).
+ * Story: 28.5.2
+ */
+I32ProcessResult   process_timeout(ProcessHandle *h, uint64_t timeout_ms);
 
 #endif /* TK_STDLIB_PROCESS_H */

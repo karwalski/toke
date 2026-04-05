@@ -74,4 +74,57 @@ const char  *chart_tovega(TkChartSpec *spec);
 /* chart_free(spec) — release a TkChartSpec and its owned sub-allocations. */
 void         chart_free(TkChartSpec *spec);
 
+/* -----------------------------------------------------------------------
+ * Story 34.2.1: Additional chart types and configuration helpers.
+ * All functions return heap-allocated Chart.js JSON strings (or SVG/HTML
+ * for heatmap).  Callers own the returned pointer and must free() it.
+ * ----------------------------------------------------------------------- */
+
+/* chart_stacked_bar — type="bar" with stacked scales.
+ *   labels[nlabels]          x-axis category labels
+ *   series_names[nseries]    one name per dataset row
+ *   data[nseries][nlabels]   values; row-major via pointer-to-pointer
+ *   title                    chart title (may be NULL)
+ */
+const char *chart_stacked_bar(const char *const *labels, uint64_t nlabels,
+                               const char *const *series_names, uint64_t nseries,
+                               const double *const *data,
+                               const char *title);
+
+/* chart_horizontal_bar — type="bar" with indexAxis="y". */
+const char *chart_horizontal_bar(const char *const *labels, uint64_t n,
+                                  const double *values, const char *title);
+
+/* chart_area — type="line" with fill=true. */
+const char *chart_area(const double *xs, const double *ys, uint64_t n,
+                        const char *title);
+
+/* chart_radar — type="radar". */
+const char *chart_radar(const char *const *axes, uint64_t naxes,
+                         const double *values, const char *title);
+
+/* chart_histogram — compute nbins equal-width bins from values[n], render
+ *                   as a bar chart with bin-midpoint labels. */
+const char *chart_histogram(const double *values, uint64_t n,
+                              uint64_t nbins, const char *title);
+
+/* chart_heatmap — returns an SVG string (no native Chart.js heatmap).
+ *   matrix is row-major: element [r][c] = matrix[r * ncols + c]. */
+const char *chart_heatmap(const char *const *rows, uint64_t nrows,
+                            const char *const *cols, uint64_t ncols,
+                            const double *matrix,
+                            const char *title);
+
+/* chart_set_theme — parse existing Chart.js JSON spec and inject dark/light
+ *                   theme colours into options.  Returns a new heap string. */
+const char *chart_set_theme(const char *spec, const char *theme);
+
+/* chart_set_legend — add/modify options.plugins.legend in the spec JSON. */
+const char *chart_set_legend(const char *spec, const char *position, int display);
+
+/* chart_set_tooltip — add/modify options.plugins.tooltip.callbacks with the
+ *                     given field names.  Returns a new heap string. */
+const char *chart_set_tooltip(const char *spec, const char *const *fields,
+                               uint64_t n);
+
 #endif /* TK_STDLIB_CHART_H */
