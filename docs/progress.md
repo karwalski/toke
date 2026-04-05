@@ -1239,3 +1239,136 @@ Update toke-spec to reflect all new stdlib modules and ensure the specification 
 | 26.1.3 | Verify .tki interface files match C implementations exactly | backlog | — | **P0** For each module, compare the function names and parameter types in the .tki file against the actual C header (.h) file. Fix any mismatches. The .tki is the contract; the .h must conform. |
 | 26.1.4 | Push spec updates to GitHub and update website API browser | backlog | — | **P1** Push toke-spec changes. Verify the website API specification browser at `/reference/` reflects the new modules. Depends on 26.1.1-26.1.3, 25.1.5. |
 
+---
+
+### Epic 27 — Production Web Server Runtime
+
+Harden the std.http + std.router stack into a production-quality web server. The primitives exist (route registration, TCP listener, request/response types, WebSocket framing, SSE) but the server is single-threaded and blocking with no TLS, no static files, no compression, and no connection management. These stories bring it to parity with what a modern web framework provides.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 27.1.1 | Multi-connection server: pre-fork worker pool | backlog | — | **P0** Replace the single-threaded accept loop in `http.c` with a pre-fork model (N worker processes, configurable via `http.serve(port;workers)`). Each worker independently accepts and handles connections. No shared mutable state — each worker has its own route table copy. Falls back to single-process when workers=1. Must not require pthreads (fork only). Update http.h, http.c, http.tki. |
+| 27.1.2 | TLS/HTTPS support via BearSSL (bundled) | backlog | — | **P0** Add `http.serve_tls(port;cert_path;key_path)` and `http.serve_tls(port;cert_path;key_path;workers)`. Bundle BearSSL (small, no-malloc, C99, permissive license) for TLS 1.2/1.3. PEM cert+key loading. No OpenSSL dependency. Update http.h, http.tki. Conformance: self-signed cert handshake, cert rotation without restart. |
+| 27.1.3 | HTTP/1.1 keep-alive and connection reuse | backlog | — | **P1** Implement persistent connections per RFC 7230. Parse `Connection: keep-alive` / `close` headers. Maintain connection with configurable idle timeout (default 30s) and max requests per connection (default 1000). Properly handle `Content-Length` and chunked boundaries between pipelined requests. |
+| 27.1.4 | Chunked transfer encoding | backlog | — | **P1** Support `Transfer-Encoding: chunked` for both request reading and response writing. Enable streaming responses without knowing content length upfront. Required for SSE and large response bodies. Wire into SSE module's `sse_emit()`. |
+| 27.1.5 | Static file serving middleware | backlog | — | **P1** Add `router_static(router;url_prefix;dir_path)` that serves files from a directory. MIME type detection (by extension, ~30 common types). Directory index (index.html). Path traversal protection (reject `..`). ETag based on mtime+size. Conditional GET (If-None-Match → 304). |
+| 27.1.6 | Gzip response compression | backlog | — | **P1** Add `router_use_gzip(router;min_size)` middleware. Compress responses when `Accept-Encoding: gzip` is present and body exceeds min_size (default 1KB). Use bundled miniz (single-file, public domain). Skip for already-compressed MIME types (images, video). Set `Content-Encoding: gzip` and `Vary: Accept-Encoding`. |
+| 27.1.7 | Cookie parsing and Set-Cookie response headers | backlog | — | **P1** Add `http_cookie(req;name)` to extract cookie values from `Cookie:` header. Add `http_Res_set_cookie(res;name;value;opts)` where opts includes `path`, `domain`, `max_age`, `secure`, `httponly`, `samesite`. RFC 6265 compliant parsing. Update http.h, http.tki. |
+| 27.1.8 | Multipart/form-data request body parsing | backlog | — | **P1** Add `http_multipart(req)` returning an array of parts, each with `name`, `filename` (optional), `content_type`, and `data` (bytes). Stream-parse without buffering entire body. Enforce per-part size limit (configurable, default 10MB) and total body limit (default 50MB). |
+| 27.1.9 | Request size limits and timeout protection | backlog | — | **P0** Enforce maximum request header size (default 8KB), maximum body size (default 1MB, overridable per route), and per-request timeout (default 30s). Return 413 Payload Too Large or 408 Request Timeout. Protects against slowloris and large-payload DoS. Configurable via `http.serve` options. |
+| 27.1.10 | Graceful shutdown and signal handling | backlog | — | **P1** Trap SIGTERM and SIGINT. On signal: stop accepting new connections, finish in-flight requests (with timeout, default 10s), then exit cleanly. Workers drain independently. Add `http.shutdown()` for programmatic stop. |
+| 27.1.11 | Access logging middleware | backlog | — | **P2** Add `router_use_log(router;format)` middleware. Common Log Format and JSON format options. Logs: timestamp, client IP, method, path, status, response size, duration_ms. Writes to stderr by default, configurable to file path. |
+| 27.1.12 | CORS middleware (full implementation) | backlog | — | **P1** Add `router_use_cors(router;opts)` with: `allowed_origins` (list or `*`), `allowed_methods`, `allowed_headers`, `expose_headers`, `max_age`, `allow_credentials`. Handle preflight OPTIONS requests automatically. Current router has a CORS stub — replace with full RFC 6454/Fetch spec implementation. |
+| 27.1.13 | ETag generation and conditional request handling | backlog | — | **P2** Auto-generate weak ETags for responses (FNV-1a hash of body). Handle `If-None-Match` → 304 Not Modified. Handle `If-Match` → 412 Precondition Failed. Works with both static files (27.1.5) and dynamic responses. |
+| 27.1.14 | URL-encoded form body parsing | backlog | — | **P1** Add `http_form(req)` that parses `application/x-www-form-urlencoded` bodies into key-value pairs. Uses existing URL decode from std.encoding. Handles `+` as space, multiple values per key. |
+| 27.1.15 | WebSocket upgrade integration with HTTP server | backlog | — | **P1** Wire `std.ws` frame codec into the HTTP server's connection loop. Add `router_ws(router;pattern;on_open;on_message;on_close)` that upgrades HTTP connections to WebSocket when `Upgrade: websocket` is present. Handle the Sec-WebSocket-Accept handshake automatically. Connection lifecycle management (ping/pong keepalive, clean close). Depends on 27.1.3 (keep-alive). |
+| 27.1.16 | Production web server integration test | backlog | — | **P0** Single test program that starts a server with: static files, JSON API routes, WebSocket endpoint, SSE stream, CORS, gzip, cookies, form parsing, graceful shutdown. Verified by a shell script using curl, checking: 200 on static file, correct MIME type, gzip encoding, cookie round-trip, JSON POST→response, WebSocket handshake, SSE event receipt, graceful shutdown on SIGTERM. Depends on 27.1.1–27.1.15. |
+
+---
+
+### Epic 28 — Foundation Libraries: Production Completeness
+
+The foundation modules (str, file, time, test, env, process, log) are missing essential functions that any real program needs. str has no `replace` or `join`. file can't create directories or copy files. time can't parse strings. test has only 3 assert functions. These gaps make it impossible to write non-trivial programs without workarounds.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 28.1.1 | std.str: search and transform functions | backlog | — | **P0** Add: `str_index(s;sub)→i64` (first occurrence, -1 if not found), `str_rindex(s;sub)→i64` (last occurrence), `str_replace(s;old;new)→Str` (all occurrences), `str_replace_first(s;old;new)→Str`, `str_join(sep;parts)→Str`, `str_repeat(s;n)→Str`. Update str.h, str.c, str.tki. Tests for each. |
+| 28.1.2 | std.str: prefix/suffix and line operations | backlog | — | **P0** Add: `str_starts_with(s;prefix)→bool`, `str_ends_with(s;suffix)→bool`, `str_split_lines(s)→StrArray`, `str_count(s;sub)→u64` (non-overlapping). Update str.h, str.c, str.tki. |
+| 28.1.3 | std.str: padding, reverse, and character class tests | backlog | — | **P1** Add: `str_pad_left(s;width;ch)→Str`, `str_pad_right(s;width;ch)→Str`, `str_reverse(s)→Str`, `str_is_alpha(s)→bool`, `str_is_digit(s)→bool`, `str_is_alnum(s)→bool`, `str_is_space(s)→bool`. |
+| 28.2.1 | std.file: directory operations | backlog | — | **P0** Add: `file_mkdir(path)→bool!FileErr`, `file_mkdir_p(path)→bool!FileErr` (recursive), `file_rmdir(path)→bool!FileErr`, `file_rmdir_r(path)→bool!FileErr` (recursive tree removal). `file_is_dir(path)→bool`, `file_is_file(path)→bool`. Update file.h, file.c, file.tki. |
+| 28.2.2 | std.file: copy, move, and metadata | backlog | — | **P0** Add: `file_copy(src;dst)→bool!FileErr`, `file_move(src;dst)→bool!FileErr`, `file_size(path)→u64!FileErr`, `file_mtime(path)→u64!FileErr`. Uses POSIX `stat()`, `rename()`, read+write fallback for cross-device copy. |
+| 28.2.3 | std.file: path utilities | backlog | — | **P1** Add: `file_join(a;b)→Str` (path join with separator), `file_basename(path)→Str`, `file_dirname(path)→Str`, `file_absolute(path)→Str` (resolve via `realpath()`), `file_ext(path)→Str` (extension including dot). `file_readlines(path)→StrArray!FileErr`, `file_glob(pattern)→StrArray` (uses POSIX `glob()`). |
+| 28.3.1 | std.time: parsing and arithmetic | backlog | — | **P0** Add: `tk_time_parse(s;fmt)→u64!TimeErr` (strptime wrapper), `tk_time_add(ts;duration_ms)→u64`, `tk_time_diff(ts1;ts2)→i64` (milliseconds between). |
+| 28.3.2 | std.time: date breakdown and calendar | backlog | — | **P1** Add: `tk_time_to_parts(ts)→{year;month;day;hour;min;sec}`, `tk_time_from_parts(year;month;day;hour;min;sec)→u64`, `tk_time_weekday(ts)→u8` (0=Sun..6=Sat), `tk_time_is_leap_year(year)→bool`, `tk_time_days_in_month(year;month)→u8`. |
+| 28.4.1 | std.test: comparison and containment assertions | backlog | — | **P0** Add: `tk_test_assert_true(cond;msg)→bool`, `tk_test_assert_false(cond;msg)→bool`, `tk_test_assert_gt(a;b;msg)→bool`, `tk_test_assert_lt(a;b;msg)→bool`, `tk_test_assert_gte(a;b;msg)→bool`, `tk_test_assert_lte(a;b;msg)→bool`, `tk_test_assert_contains(haystack;needle;msg)→bool`, `tk_test_assert_not_contains(haystack;needle;msg)→bool`, `tk_test_assert_nil(ptr;msg)→bool`, `tk_test_assert_not_nil(ptr;msg)→bool`. |
+| 28.4.2 | std.test: test runner and lifecycle hooks | backlog | — | **P1** Add: `tk_test_run(name;test_fn)→int` (named test with pass/fail tracking), `tk_test_setup(fn)→void` (before-each hook), `tk_test_teardown(fn)→void` (after-each hook), `tk_test_summary()→{passed;failed;skipped}` (print results). Enables structured test suites instead of ad-hoc main(). |
+| 28.5.1 | std.env: list, delete, and .env file loading | backlog | — | **P1** Add: `env_list()→StrArray`, `env_delete(key)→bool`, `env_expand(template)→Str` (substitute `$VAR` in string), `env_file_load(path)→bool` (parse KEY=VALUE lines, skip comments). |
+| 28.5.2 | std.process: stdin, stderr, and timeout | backlog | — | **P1** Add: `process_stdin_write(h;data)→u64!ProcessErr`, `process_stderr(h)→Str!ProcessErr`, `process_exit_code(h)→i32!ProcessErr`, `process_is_running(h)→bool`, `process_set_cwd(h;cwd)→void`, `process_timeout(h;timeout_ms)→i32!ProcessErr` (kill if exceeded). |
+| 28.5.3 | std.log: debug level, JSON format, file output | backlog | — | **P1** Add: `tk_log_debug(msg;fields;n)→int`, `tk_log_set_format(fmt)→void` ("json" or "text"), `tk_log_set_output(path)→bool` (redirect to file), `tk_log_with_context(msg;context_json)→int` (attach request ID, trace ID). |
+
+---
+
+### Epic 29 — Data & Encoding Libraries: Production Completeness
+
+The data processing modules (json, csv, math, db, encoding, crypto) are missing functions required for common workflows. json can't list keys or check types. db has no transactions or prepared statements. math has no trig or logarithms. These gaps block realistic application development.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 29.1.1 | std.json: object inspection and manipulation | backlog | — | **P0** Add: `json_keys(j;key)→StrArray!JsonErr`, `json_has(j;key)→bool`, `json_len(j)→u64!JsonErr` (array length), `json_type(j)→Str` ("null"/"object"/"array"/"string"/"number"/"bool"), `json_pretty(j)→Str` (indented output), `json_is_null(j;key)→bool`. |
+| 29.1.2 | std.json: path access and construction | backlog | — | **P1** Add: `json_at(j;path)→Json!JsonErr` (dotted path like "user.address.city"), `json_index(j;i)→Json!JsonErr` (array indexing), `json_merge(j1;j2)→Json!JsonErr` (shallow merge), `json_from_pairs(keys;values)→Json` (build object). |
+| 29.2.1 | std.db: prepared statements and transactions | backlog | — | **P0** Add: `db_prepare(conn;sql)→Stmt!DbErr`, `db_bind(stmt;params)→bool!DbErr`, `db_step(stmt)→Row!DbErr` (fetch next), `db_finalize(stmt)→void`, `db_begin(conn)→bool!DbErr`, `db_commit(conn)→bool!DbErr`, `db_rollback(conn)→bool!DbErr`. Prepared statements prevent SQL injection and improve performance for repeated queries. |
+| 29.2.2 | std.db: metadata and result inspection | backlog | — | **P1** Add: `db_last_insert_id(conn)→u64!DbErr`, `db_affected_rows(conn)→u64`, `db_columns(row)→StrArray` (column names), `db_is_null(row;col)→bool`, `db_table_exists(conn;name)→bool`. |
+| 29.3.1 | std.math: trigonometry and transcendental functions | backlog | — | **P0** Add wrappers around `<math.h>`: `math_sin(x)`, `math_cos(x)`, `math_tan(x)`, `math_asin(x)`, `math_acos(x)`, `math_atan(x)`, `math_atan2(y;x)`, `math_log(x)` (natural), `math_log10(x)`, `math_exp(x)`, `math_hypot(x;y)`. All `f64→f64`. |
+| 29.3.2 | std.math: rounding, NaN handling, and combinatorics | backlog | — | **P1** Add: `math_round(x;digits)→f64`, `math_trunc(x)→f64`, `math_fmod(x;y)→f64`, `math_isnan(x)→bool`, `math_isinf(x)→bool`, `math_copysign(x;y)→f64`, `math_gcd(a;b)→i64`, `math_lcm(a;b)→i64`, `math_factorial(n)→i64`, `math_mode(xs)→f64`. Constants: `MATH_E`, `MATH_TAU`. |
+| 29.4.1 | std.csv: configuration and dialects | backlog | — | **P1** Add: `csv_reader_set_separator(r;sep)`, `csv_reader_set_quote(r;ch)`, `csv_reader_lazyquotes(r;enabled)`, `csv_writer_set_separator(w;sep)`, `csv_writer_use_crlf(w;enabled)`, `csv_reader_line_number(r)→u64`. Enable TSV and other delimited formats. |
+| 29.5.1 | std.encoding: UTF-8 validation and base32 | backlog | — | **P1** Add: `encoding_utf8_validate(data)→bool`, `encoding_utf8_rune_count(s)→u64`, `encoding_base32_encode(data)→Str`, `encoding_base32_decode(s)→ByteArray!EncodingErr`. UTF-8 validation is critical for any text processing pipeline. |
+| 29.6.1 | std.crypto: SHA-512, bcrypt, and random bytes | backlog | — | **P0** Add: `crypto_sha512(data)→Str` (hex), `crypto_bcrypt_hash(password;cost)→Str!CryptoErr`, `crypto_bcrypt_verify(password;hash)→bool`, `crypto_random_bytes(n)→ByteArray`, `crypto_from_hex(hex)→ByteArray!CryptoErr`. Bcrypt is the standard for password storage. |
+
+---
+
+### Epic 30 — Security Libraries: Production Completeness
+
+The encrypt and auth modules cover the basics but are missing key algorithms (ChaCha20, PBKDF2) and auth patterns (JWT decode, OAuth2 client, TOTP) that production systems need.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 30.1.1 | std.encrypt: ChaCha20-Poly1305 and PBKDF2 | backlog | — | **P1** Add: `encrypt_chacha20poly1305_encrypt/decrypt/keygen/noncegen` (modern alternative to AES-GCM, used by WireGuard/TLS 1.3), `encrypt_pbkdf2(password;salt;iterations;dklen;hash)→ByteArray` (key derivation from passwords). Pure C99 implementation. |
+| 30.1.2 | std.encrypt: RSA key operations | backlog | — | **P2** Add: `encrypt_rsa_generate_keypair(bits)→{pub;priv}`, `encrypt_rsa_encrypt/decrypt`, `encrypt_rsa_sign/verify`. RSA-OAEP for encryption, RSA-PSS for signatures. Large implementation — consider bundling libtomcrypt subset. |
+| 30.2.1 | std.auth: JWT decode and OAuth2 client | backlog | — | **P1** Add: `auth_jwtdecode_claims(token)→JwtClaims!AuthErr` (decode without verification for inspection), `auth_oauth2_authorize_url(provider;client_id;redirect_uri;scopes)→Str`, `auth_oauth2_token_exchange(code;client_id;client_secret;redirect_uri)→{access_token;refresh_token;expires_in}!AuthErr`. OAuth2 authorization code flow is baseline for any API integration. |
+| 30.2.2 | std.auth: TOTP (2FA) and bcrypt integration | backlog | — | **P2** Add: `auth_totp_generate(secret)→{uri;secret_b32}` (RFC 6238, compatible with Google Authenticator), `auth_totp_verify(secret;token;window)→bool`, `auth_password_hash(password)→Str!AuthErr` (delegates to crypto_bcrypt), `auth_password_verify(password;hash)→bool`. |
+
+---
+
+### Epic 31 — Data Science Libraries: Production Completeness
+
+The dataframe, analytics, and ml modules provide basic functionality but are missing sort, concat, train/test split, and evaluation metrics — all essential for any data pipeline.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 31.1.1 | std.dataframe: sort, unique, and column operations | backlog | — | **P0** Add: `df_sort(df;col;ascending)→TkDataframe`, `df_unique(df;col)→TkDataframe`, `df_drop_column(df;col)→TkDataframe`, `df_rename_column(df;old;new)→TkDataframe`, `df_select_columns(df;cols)→TkDataframe`, `df_value_counts(df;col)→DfGroupResult`. |
+| 31.1.2 | std.dataframe: concat, merge, missing data, and export | backlog | — | **P1** Add: `df_concat(left;right)→TkDataframe` (stack rows), `df_fillna(df;col;value)→TkDataframe`, `df_dropna(df;col)→TkDataframe`, `df_sample(df;n)→TkDataframe` (random without replacement), `df_get_row(df;idx)→Row!DfErr`, `df_to_csv(df)→Str`, `df_to_html(df)→Str`. |
+| 31.2.1 | std.analytics: statistical tests and moving averages | backlog | — | **P1** Add: `analytics_ttest(g1;g2)→{t_stat;p_value}`, `analytics_histogram(xs;nbins)→{bins;counts}`, `analytics_moving_average(xs;window)→[f64]`, `analytics_exponential_smoothing(xs;alpha)→[f64]`, `analytics_trend(ts)→{slope;intercept;r2}`, `analytics_covariance(xs;ys)→f64`. |
+| 31.3.1 | std.ml: train/test split and evaluation metrics | backlog | — | **P0** Add: `ml_train_test_split(n;test_size;seed)→{train_idx;test_idx}`, `ml_confusion_matrix(y_true;y_pred)→ConfusionMatrix`, `ml_precision_recall_f1(y_true;y_pred)→{precision;recall;f1}`, `ml_accuracy(y_true;y_pred)→f64`, `ml_standardize(xs)→[f64]`, `ml_normalize(xs)→[f64]` (min-max to [0,1]). Without metrics, trained models can't be evaluated. |
+| 31.3.2 | std.ml: random forest and cross-validation | backlog | — | **P2** Add: `ml_random_forest_fit/predict/free` (ensemble of decision trees with bagging), `ml_cross_validation_split(n;k;seed)→[[u64]]` (k-fold indices). Random forest is the most commonly used ensemble method and often outperforms single decision trees. |
+
+---
+
+### Epic 32 — LLM Integration: Production Completeness
+
+The llm and llm_tool modules handle basic chat completions but are missing embeddings, retry logic, and agentic loop support — features that any serious LLM application needs.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 32.1.1 | std.llm: embeddings and retry backoff | backlog | — | **P0** Add: `llm_embedding(client;text)→[f64]!LlmErr` (OpenAI text-embedding-3-small / Ollama), `llm_embeddings_batch(client;texts)→[[f64]]!LlmErr`, `llm_retry_backoff(client;base_delay_ms;max_retries)→void` (exponential backoff on 429/500/503). Embeddings are required for RAG, semantic search, and clustering. |
+| 32.1.2 | std.llm: JSON mode and usage tracking | backlog | — | **P1** Add: `llm_json_mode(client;messages)→TkLlmResp!LlmErr` (set response_format to json_object), `llm_usage()→{input_tokens;output_tokens}` (cumulative tracking), `llm_vision(client;messages_with_images)→TkLlmResp!LlmErr` (image input for GPT-4V/Claude). |
+| 32.2.1 | std.llm_tool: parallel tool calls and agentic loop | backlog | — | **P1** Add: `llm_parallel_tool_calls(client;messages;tools)→[ToolCallResult]` (handle multiple tool_calls in single response), `llm_tool_validate_args(tool;args_json)→bool!Str` (validate against schema), `llm_agentic_loop(client;system;user;tools;max_iterations)→Str` (ReAct-style agent loop with tool execution). The agentic loop is the most common LLM application pattern. |
+
+---
+
+### Epic 33 — Template Engine: Production Completeness
+
+The template module only supports `{{slot}}` substitution. Without conditionals and loops, it can't render lists, optional sections, or any dynamic content — making it unusable for real HTML generation.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 33.1.1 | std.template: conditionals and loops | backlog | — | **P0** Add: `{{#if key}}...{{/if}}` (truthy check — non-empty string, non-zero number), `{{#unless key}}...{{/unless}}` (inverse), `{{#each key}}...{{/each}}` (iterate array, `{{.}}` for current item, `{{@index}}` for index). Update compiler to handle block tags. This is the minimum for generating HTML lists, tables, and conditional sections. |
+| 33.1.2 | std.template: partials and helpers | backlog | — | **P2** Add: `{{>partial_name}}` (include sub-templates), `tmpl_register_partial(name;source)→void`, `tmpl_register_helper(name;fn)→void` (user-defined transform). Enables component-based template composition. |
+
+---
+
+### Epic 34 — Visualization Libraries: Production Completeness
+
+The visualization modules (html, svg, canvas, chart, dashboard, image) cover basic output but are missing form elements, chart variants, image filters, and dashboard widgets needed for real applications.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 34.1.1 | std.html: form elements and lists | backlog | — | **P1** Add: `html_form(action;method)`, `html_input(type;name;value)`, `html_select(name;options)`, `html_textarea(name;content)`, `html_button(text;onclick)`, `html_label(for_id;text)`, `html_ul(items)`, `html_ol(items)`, `html_br()`, `html_hr()`, `html_pre(content)`, `html_code(content)`. HTML without forms is read-only. |
+| 34.1.2 | std.html: attributes and metadata | backlog | — | **P1** Add: `html_attr(node;name;value)→TkHtmlNode` (arbitrary attributes), `html_class_add(node;class)→TkHtmlNode`, `html_id(node;id)→TkHtmlNode`, `html_meta(name;content)→void` (head metadata), `html_link_stylesheet(href)→void`. |
+| 34.2.1 | std.chart: additional chart types and configuration | backlog | — | **P1** Add: `chart_stacked_bar(...)`, `chart_horizontal_bar(...)`, `chart_area(...)`, `chart_radar(...)`, `chart_histogram(values;nbins;title)`, `chart_heatmap(rows;cols;matrix;title)`. Config: `chart_set_theme(spec;theme)`, `chart_set_legend(spec;position;display)`, `chart_set_tooltip(spec;fields)`. |
+| 34.3.1 | std.image: transforms and filters | backlog | — | **P1** Add: `image_rotate(buf;angle_deg)→TkImgBuf`, `image_blur(buf;radius)→TkImgBuf` (Gaussian, 3x3 kernel), `image_sharpen(buf)→TkImgBuf`, `image_brightness(buf;factor)→TkImgBuf`, `image_contrast(buf;factor)→TkImgBuf`, `image_paste(dst;src;x;y)→TkImgBuf` (composite). |
+| 34.3.2 | std.image: text drawing and histogram | backlog | — | **P2** Add: `image_text_draw(buf;text;x;y;size;color)→TkImgBuf` (bitmap font renderer, no external deps), `image_histogram(buf)→{r;g;b;a}` (256-bin per channel), `image_quantize(buf;ncolors)→TkImgBuf` (color reduction). |
+| 34.4.1 | std.dashboard: stat/gauge widgets and theming | backlog | — | **P2** Add: `dashboard_add_stat(d;id;title;value;unit)` (big number widget), `dashboard_add_gauge(d;id;title;value;min;max)`, `dashboard_add_markdown(d;id;content)`, `dashboard_set_theme(d;"dark"/"light")`, `dashboard_set_refresh_interval(d;interval_ms)`, `dashboard_export_json(d)→Str`. |
+| 34.5.1 | std.svg: gradients, animation, and file output | backlog | — | **P2** Add: `svg_ellipse(cx;cy;rx;ry;style)`, `svg_gradient_linear(id;stops)`, `svg_gradient_radial(id;stops)`, `svg_animate(target;attr;from;to;duration)`, `svg_defs(elements)`, `svg_save_file(doc;path)→bool`. |
+| 34.5.2 | std.canvas: transforms, gradients, and state management | backlog | — | **P2** Add: `canvas_translate(c;dx;dy)`, `canvas_rotate(c;angle)`, `canvas_scale(c;sx;sy)`, `canvas_save(c)`, `canvas_restore(c)`, `canvas_fill_style(c;color)`, `canvas_stroke_style(c;color)`, `canvas_line_width(c;width)`, `canvas_quadratic_to(c;cpx;cpy;x;y)`, `canvas_bezier_to(c;cp1x;cp1y;cp2x;cp2y;x;y)`, `canvas_gradient_linear(c;x0;y0;x1;y1)`. |
+| 34.6.1 | std.ws: close frame handling and upgrade helpers | backlog | — | **P1** Add: `ws_handle_close_frame(payload)→{code;reason}`, `ws_build_close_frame(code;reason)→ByteArray`, `ws_parse_upgrade_headers(headers)→{sec_key;protocol;extensions}`, `ws_build_upgrade_response(accept_key;protocols)→Str`, `ws_validate_utf8(payload)→bool` (RFC 6455 §3.4 compliance). |
+
