@@ -562,13 +562,32 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
     }
     /* std.str functions */
     if (!strcmp(mod, "str")) {
-        if (!strcmp(method, "argv"))   return "tk_str_argv";
-        if (!strcmp(method, "len"))    return "str_len";
-        if (!strcmp(method, "concat")) return "str_concat";
-        if (!strcmp(method, "split"))  return "str_split";
-        if (!strcmp(method, "trim"))   return "str_trim";
-        if (!strcmp(method, "upper"))  return "str_upper";
-        if (!strcmp(method, "lower"))  return "str_lower";
+        if (!strcmp(method, "argv"))     return "tk_str_argv";
+        if (!strcmp(method, "len"))      return "tk_str_len_w";
+        if (!strcmp(method, "concat"))   return "tk_str_concat_w";
+        if (!strcmp(method, "split"))    return "tk_str_split_w";
+        if (!strcmp(method, "trim"))     return "tk_str_trim_w";
+        if (!strcmp(method, "upper"))    return "tk_str_upper_w";
+        if (!strcmp(method, "lower"))    return "tk_str_lower_w";
+        if (!strcmp(method, "from_int")) return "tk_str_from_int";
+        if (!strcmp(method, "to_int"))   return "tk_str_to_int";
+    }
+    /* std.env functions */
+    if (!strcmp(mod, "env")) {
+        if (!strcmp(method, "get_or")) return "tk_env_get_or";
+    }
+    /* std.http functions */
+    if (!strcmp(mod, "http")) {
+        if (!strcmp(method, "getstatic"))      return "tk_http_get_static";
+        if (!strcmp(method, "serve"))          return "tk_http_serve";
+        if (!strcmp(method, "servetls"))       return "tk_http_servetls";
+        if (!strcmp(method, "vhost"))          return "tk_http_vhost";
+        if (!strcmp(method, "servevhosts"))    return "tk_http_servevhosts";
+        if (!strcmp(method, "servevhoststls")) return "tk_http_servevhoststls";
+    }
+    /* std.log functions */
+    if (!strcmp(mod, "log")) {
+        if (!strcmp(method, "openaccess")) return "tk_log_open_access_w";
     }
     return NULL;
 }
@@ -2096,7 +2115,27 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare {i64, i1} @llvm.sadd.with.overflow.i64(i64, i64)\n", f);
     fputs("declare {i64, i1} @llvm.ssub.with.overflow.i64(i64, i64)\n", f);
     fputs("declare {i64, i1} @llvm.smul.with.overflow.i64(i64, i64)\n", f);
-    fputs("declare void @tk_overflow_trap(i32)\n\n", f);
+    fputs("declare void @tk_overflow_trap(i32)\n", f);
+    /* std.str module wrappers (tk_web_glue.c) */
+    fputs("declare i64 @tk_str_concat_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_str_len_w(i64)\n", f);
+    fputs("declare i64 @tk_str_trim_w(i64)\n", f);
+    fputs("declare i64 @tk_str_upper_w(i64)\n", f);
+    fputs("declare i64 @tk_str_lower_w(i64)\n", f);
+    fputs("declare i64 @tk_str_from_int(i64)\n", f);
+    fputs("declare i64 @tk_str_to_int(i64)\n", f);
+    fputs("declare i64 @tk_str_split_w(i64, i64)\n", f);
+    /* std.env module wrappers (tk_web_glue.c) */
+    fputs("declare i64 @tk_env_get_or(i64, i64)\n", f);
+    /* std.http module wrappers (tk_web_glue.c) */
+    fputs("declare i64 @tk_http_get_static(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_serve(i64)\n", f);
+    fputs("declare i64 @tk_http_servetls(i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_http_vhost(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_servevhosts(i64)\n", f);
+    fputs("declare i64 @tk_http_servevhoststls(i64, i64, i64)\n", f);
+    /* std.log module wrappers (tk_web_glue.c) */
+    fputs("declare i64 @tk_log_open_access_w(i64, i64, i64, i64)\n\n", f);
 
     prepass_structs(&ctx, ast);
     prepass_funcs(&ctx, ast);
@@ -2172,35 +2211,90 @@ static const char *find_runtime_source(void) {
 }
 
 /*
+ * find_stdlib_sources — Build a space-separated list of stdlib C sources to
+ * link when compiling user programs.
+ *
+ * Returns a static string containing paths to str.c, http.c, env.c,
+ * encoding.c, and tk_web_glue.c relative to the stdlib directory found via
+ * TKC_STDLIB_DIR or the compile-time macro.  Returns empty string if the
+ * stdlib directory cannot be found.
+ */
+static const char *find_stdlib_sources(void) {
+    static char buf[2048];
+    const char *dir = NULL;
+    /* Search order: env var, compile-time macro, cwd-relative */
+    const char *env_dir = getenv("TKC_STDLIB_DIR");
+    if (env_dir) {
+        /* Verify it exists by probing str.c */
+        char probe[512];
+        snprintf(probe, sizeof probe, "%s/str.c", env_dir);
+        FILE *f = fopen(probe, "r");
+        if (f) { fclose(f); dir = env_dir; }
+    }
+    if (!dir) {
+        const char *candidates[] = { TKC_STDLIB_DIR, "src/stdlib", NULL };
+        for (int i = 0; candidates[i] && !dir; i++) {
+            char probe[512];
+            snprintf(probe, sizeof probe, "%s/str.c", candidates[i]);
+            FILE *f = fopen(probe, "r");
+            if (f) { fclose(f); dir = candidates[i]; }
+        }
+    }
+    if (!dir) { buf[0] = '\0'; return buf; }
+    snprintf(buf, sizeof buf,
+        "%s/str.c %s/encoding.c %s/env.c %s/http.c %s/ws.c %s/router.c %s/log.c %s/tk_web_glue.c",
+        dir, dir, dir, dir, dir, dir, dir, dir);
+    return buf;
+}
+
+/*
  * compile_binary — Invoke clang to compile the emitted .ll file into a
  * native binary.
  *
  * Builds a clang command line with:
- *   -O<level>   — optimisation level (clamped to 0..3).
- *   -target     — cross-compilation target triple (if provided).
+ *   -O<level>    — optimisation level (clamped to 0..3).
+ *   -target      — cross-compilation target triple (if provided).
  *   -o <out_bin> — output binary path.
- *   <out_ll>    — the LLVM IR file emitted by emit_llvm_ir.
- *   <runtime>   — tk_runtime.c (if found by find_runtime_source), which
- *                 provides C implementations of the toke stdlib functions.
+ *   <out_ll>     — the LLVM IR file emitted by emit_llvm_ir.
+ *   <runtime>    — tk_runtime.c (if found by find_runtime_source), which
+ *                  provides core runtime functions (tk_json_parse, etc.).
+ *   <stdlib>     — str.c, http.c, env.c, encoding.c, tk_web_glue.c
+ *                  (if found by find_stdlib_sources), which provide the
+ *                  stdlib module implementations for i= imports.
  *
  * Returns 0 on success, -1 if clang fails (with E9003 diagnostic).
  */
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
                    int opt_level)
 {
-    char cmd[2048];
+    char cmd[4096];
     int ol = (opt_level < 0) ? 0 : (opt_level > 3) ? 3 : opt_level;
-    const char *rt = find_runtime_source();
+    const char *rt  = find_runtime_source();
+    const char *std = find_stdlib_sources();
+    /* TLS flags — always include when OpenSSL is present on macOS/homebrew */
+    const char *tls_flags = "-DTK_HAVE_OPENSSL";
+    const char *tls_libs  = "-lssl -lcrypto -lz -lm";
+#if defined(__APPLE__)
+    tls_flags = "-I/opt/homebrew/include -DTK_HAVE_OPENSSL";
+    tls_libs  = "-L/opt/homebrew/lib -lssl -lcrypto -lz -lm";
+#endif
+    /* Build sources string: runtime + stdlib bundle */
+    char sources[3072];
+    sources[0] = '\0';
+    if (rt  && rt[0])  { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
+                         strncat(sources, rt,  sizeof sources - strlen(sources) - 1); }
+    if (std && std[0]) { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
+                         strncat(sources, std, sizeof sources - strlen(sources) - 1); }
     if (rt) {
         if(target&&target[0])
-            snprintf(cmd,sizeof cmd,"clang -O%d -target %s -o %s %s %s",ol,target,out_bin,out_ll,rt);
+            snprintf(cmd,sizeof cmd,"clang -O%d %s -target %s -o %s %s%s %s",ol,tls_flags,target,out_bin,out_ll,sources,tls_libs);
         else
-            snprintf(cmd,sizeof cmd,"clang -O%d -o %s %s %s",ol,out_bin,out_ll,rt);
+            snprintf(cmd,sizeof cmd,"clang -O%d %s -o %s %s%s %s",ol,tls_flags,out_bin,out_ll,sources,tls_libs);
     } else {
         if(target&&target[0])
-            snprintf(cmd,sizeof cmd,"clang -O%d -target %s -o %s %s",ol,target,out_bin,out_ll);
+            snprintf(cmd,sizeof cmd,"clang -O%d %s -target %s -o %s %s%s %s",ol,tls_flags,target,out_bin,out_ll,sources,tls_libs);
         else
-            snprintf(cmd,sizeof cmd,"clang -O%d -o %s %s",ol,out_bin,out_ll);
+            snprintf(cmd,sizeof cmd,"clang -O%d %s -o %s %s%s %s",ol,tls_flags,out_bin,out_ll,sources,tls_libs);
     }
     int rc = system(cmd);
     if(rc!=0){char msg[256];snprintf(msg,sizeof msg,"clang invocation failed with exit code %d",rc);

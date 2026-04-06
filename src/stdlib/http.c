@@ -8,6 +8,7 @@
  */
 
 #include "http.h"
+#include "log.h"
 #include "encoding.h"
 #include <string.h>
 #include <stdlib.h>
@@ -115,6 +116,8 @@ HttpResult http_header(Req req, const char *name) {
 static int match_pattern(const char *pat, const char *path,
                          StrPair *out, int *cnt)
 {
+    /* Wildcard catch-all: pattern "*" matches any path */
+    if (strcmp(pat, "*") == 0) { *cnt = 0; return 1; }
     *cnt = 0;
     while (*pat && *path) {
         if (*pat == ':') {
@@ -375,6 +378,52 @@ static void send_response(int fd, Res res, int keep_alive) {
 #define KEEPALIVE_IDLE_TIMEOUT_S 30
 #define KEEPALIVE_MAX_REQUESTS   1000
 
+/* ── Access log helpers ──────────────────────────────────────────────── */
+
+/*
+ * fd_peer_ip — write the remote IP of fd into buf (at least INET6_ADDRSTRLEN).
+ * Falls back to "-" on any error.
+ */
+static void fd_peer_ip(int fd, char *buf, size_t bufsz)
+{
+    struct sockaddr_storage ss;
+    socklen_t sslen = sizeof ss;
+    if (getpeername(fd, (struct sockaddr *)&ss, &sslen) != 0) {
+        snprintf(buf, bufsz, "-"); return;
+    }
+    if (ss.ss_family == AF_INET)
+        inet_ntop(AF_INET,  &((struct sockaddr_in  *)&ss)->sin_addr,  buf, (socklen_t)bufsz);
+    else if (ss.ss_family == AF_INET6)
+        inet_ntop(AF_INET6, &((struct sockaddr_in6 *)&ss)->sin6_addr, buf, (socklen_t)bufsz);
+    else
+        snprintf(buf, bufsz, "-");
+}
+
+/*
+ * log_request — write one Combined Log Format line for the given request/response.
+ * No-op when no global access log is configured.
+ */
+static void log_request(const char *client_ip, const Req *req,
+                        uint16_t status, size_t body_len)
+{
+    TkAccessLog *al = tk_access_log_get_global();
+    if (!al) return;
+
+    const char *referer = "-", *ua = "-";
+    for (uint64_t i = 0; i < req->headers.len; i++) {
+        if (req->headers.data[i].key) {
+            if (strcasecmp(req->headers.data[i].key, "referer")    == 0) referer = req->headers.data[i].val;
+            if (strcasecmp(req->headers.data[i].key, "user-agent") == 0) ua      = req->headers.data[i].val;
+        }
+    }
+    tk_access_log_write(al,
+        client_ip,
+        req->method ? req->method : "-",
+        req->path   ? req->path   : "-",
+        (int)status, body_len,
+        referer, ua);
+}
+
 /* ── Connection handler (single accepted socket) ────────────────────── */
 
 /*
@@ -413,6 +462,9 @@ static void send_error(int fd, uint16_t status)
 
 static void handle_connection(int fd)
 {
+    char client_ip[64];
+    fd_peer_ip(fd, client_ip, sizeof client_ip);
+
     /* Apply the (possibly user-overridden) receive timeout. */
     struct timeval tv;
     tv.tv_sec  = (long)srv_limits.timeout_secs;
@@ -553,6 +605,8 @@ static void handle_connection(int fd)
         }
 
         send_response(fd, res, keep_alive);
+        log_request(client_ip, &req,
+                    res.status, res.body ? strlen(res.body) : 0);
 
         if (!keep_alive) break;
     }
@@ -1910,6 +1964,9 @@ void http_tls_ctx_free(TkTlsCtx *ctx)
  */
 static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
 {
+    char client_ip[64];
+    fd_peer_ip(fd, client_ip, sizeof client_ip);
+
     SSL *ssl = SSL_new(ssl_ctx);
     if (!ssl) { close(fd); return; }
 
@@ -2048,6 +2105,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 res.status, reason(res.status), body_len, conn_hdr);
             if (hl > 0) SSL_write(ssl, hdr_buf, hl);
             if (body_len) SSL_write(ssl, res.body, (int)body_len);
+            log_request(client_ip, &req, res.status, body_len);
         }
 
         if (!keep_alive) break;

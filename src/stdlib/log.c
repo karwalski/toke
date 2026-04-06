@@ -433,3 +433,279 @@ int tk_log_with_context(const char *msg, const char *context_json)
 
     return emit(TK_LOG_INFO, "info", msg, flat, pair_count * 2);
 }
+
+/* ==========================================================================
+ * Access log with rotation (Story 47.1.1)
+ * ========================================================================== */
+
+#include <zlib.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <errno.h>
+
+static const char *k_month_names[] = {
+    "Jan","Feb","Mar","Apr","May","Jun",
+    "Jul","Aug","Sep","Oct","Nov","Dec"
+};
+
+struct TkAccessLog {
+    char *path;          /* full path to live log file */
+    char *dir;           /* directory component          */
+    char *stem;          /* filename stem (no extension) */
+    char *ext;           /* extension incl. dot, or ""   */
+    FILE *fp;
+    int   line_count;
+    int   max_lines;     /* 0 = no rotation              */
+    int   max_files;     /* 0 = no limit                 */
+    int   max_age_days;  /* 0 = disabled; >0 wins over max_files */
+};
+
+static TkAccessLog *g_access_log = NULL;
+
+void tk_access_log_set_global(TkAccessLog *log) { g_access_log = log; }
+TkAccessLog *tk_access_log_get_global(void)     { return g_access_log; }
+
+/* ── Path splitting ───────────────────────────────────────────────────── */
+
+static void split_path(const char *path,
+                        char **dir_out, char **stem_out, char **ext_out)
+{
+    const char *slash = strrchr(path, '/');
+    const char *filename = slash ? slash + 1 : path;
+
+    if (slash) {
+        size_t dlen = (size_t)(slash - path);
+        *dir_out = malloc(dlen + 1);
+        if (*dir_out) { memcpy(*dir_out, path, dlen); (*dir_out)[dlen] = '\0'; }
+    } else {
+        *dir_out = strdup(".");
+    }
+
+    const char *dot = strrchr(filename, '.');
+    if (dot && dot != filename) {
+        size_t slen = (size_t)(dot - filename);
+        *stem_out = malloc(slen + 1);
+        if (*stem_out) { memcpy(*stem_out, filename, slen); (*stem_out)[slen] = '\0'; }
+        *ext_out = strdup(dot);
+    } else {
+        *stem_out = strdup(filename);
+        *ext_out  = strdup("");
+    }
+}
+
+/* ── Create directory (single level, ignore EEXIST) ───────────────────── */
+
+static void mkdir_single(const char *dir)
+{
+    if (!dir || !dir[0] || strcmp(dir, ".") == 0) return;
+#if defined(_WIN32)
+    (void)mkdir(dir);
+#else
+    mkdir(dir, 0755);
+#endif
+}
+
+/* ── gzip compress src_path → dst_path, unlink src on success ─────────── */
+
+static int compress_to_gz(const char *src_path, const char *dst_path)
+{
+    FILE *src = fopen(src_path, "rb");
+    if (!src) return -1;
+
+    gzFile gz = gzopen(dst_path, "wb9");
+    if (!gz) { fclose(src); return -1; }
+
+    char buf[65536];
+    int ok = 1;
+    size_t n;
+    while ((n = fread(buf, 1, sizeof buf, src)) > 0) {
+        if (gzwrite(gz, buf, (unsigned)n) == 0) { ok = 0; break; }
+    }
+    if (ferror(src)) ok = 0;
+
+    fclose(src);
+    gzclose(gz);
+
+    if (ok) {
+        unlink(src_path);
+    } else {
+        unlink(dst_path);
+    }
+    return ok ? 0 : -1;
+}
+
+/* ── Retention: delete old rotated .gz files based on policy ───────────── */
+
+static int str_ends_with(const char *s, const char *suffix)
+{
+    size_t slen   = strlen(s);
+    size_t sflen  = strlen(suffix);
+    if (sflen > slen) return 0;
+    return strcmp(s + slen - sflen, suffix) == 0;
+}
+
+#define TK_ALOG_MAX_SCAN 4096
+
+typedef struct { char path[1024]; time_t mtime; } AlogEntry;
+
+static int alog_mtime_cmp(const void *a, const void *b)
+{
+    const AlogEntry *ea = (const AlogEntry *)a;
+    const AlogEntry *eb = (const AlogEntry *)b;
+    /* descending: newest first */
+    if (eb->mtime > ea->mtime) return  1;
+    if (eb->mtime < ea->mtime) return -1;
+    return 0;
+}
+
+static void apply_retention(TkAccessLog *log)
+{
+    /* Build match prefix/suffix: "stem." and "ext.gz" */
+    char prefix[512], suffix[128];
+    snprintf(prefix, sizeof prefix, "%s.", log->stem);
+    snprintf(suffix, sizeof suffix, "%s.gz", log->ext);
+
+    AlogEntry *files = malloc(TK_ALOG_MAX_SCAN * sizeof *files);
+    if (!files) return;
+    int nfiles = 0;
+
+    DIR *d = opendir(log->dir);
+    if (d) {
+        struct dirent *ent;
+        while ((ent = readdir(d)) != NULL && nfiles < TK_ALOG_MAX_SCAN) {
+            const char *name = ent->d_name;
+            if (strncmp(name, prefix, strlen(prefix)) != 0) continue;
+            if (!str_ends_with(name, suffix))               continue;
+            snprintf(files[nfiles].path, sizeof files[nfiles].path,
+                     "%s/%s", log->dir, name);
+            struct stat st;
+            if (stat(files[nfiles].path, &st) != 0) continue;
+            files[nfiles].mtime = st.st_mtime;
+            nfiles++;
+        }
+        closedir(d);
+    }
+
+    if (log->max_age_days > 0) {
+        time_t cutoff = time(NULL) - (time_t)log->max_age_days * 86400;
+        for (int i = 0; i < nfiles; i++) {
+            if (files[i].mtime < cutoff) unlink(files[i].path);
+        }
+    } else if (log->max_files > 0 && nfiles > log->max_files) {
+        qsort(files, (size_t)nfiles, sizeof *files, alog_mtime_cmp);
+        for (int i = log->max_files; i < nfiles; i++) {
+            unlink(files[i].path);
+        }
+    }
+
+    free(files);
+}
+
+/* ── Rotate: rename → gz → retention → reopen ─────────────────────────── */
+
+static void rotate_access_log(TkAccessLog *log)
+{
+    if (log->fp) { fflush(log->fp); fclose(log->fp); log->fp = NULL; }
+    log->line_count = 0;
+
+    time_t now = time(NULL);
+    struct tm *tm = gmtime(&now);
+    char ts[20];
+    strftime(ts, sizeof ts, "%Y%m%d-%H%M%S", tm);
+
+    /* rotated path: dir/stem.YYYYMMDD-HHMMSS.ext */
+    char rotated[1024];
+    snprintf(rotated, sizeof rotated,
+             "%s/%s.%s%s", log->dir, log->stem, ts, log->ext);
+
+    if (rename(log->path, rotated) == 0) {
+        char gzpath[1024];
+        snprintf(gzpath, sizeof gzpath, "%s.gz", rotated);
+        compress_to_gz(rotated, gzpath);
+        apply_retention(log);
+    }
+    /* If rename fails (ENOENT), another worker already rotated — that's fine */
+
+    log->fp = fopen(log->path, "a");
+}
+
+/* ── Public API ───────────────────────────────────────────────────────── */
+
+TkAccessLog *tk_access_log_open(const char *path,
+                                 int max_lines,
+                                 int max_files,
+                                 int max_age_days)
+{
+    if (!path || !path[0]) return NULL;
+
+    TkAccessLog *log = calloc(1, sizeof *log);
+    if (!log) return NULL;
+
+    log->path         = strdup(path);
+    log->max_lines    = max_lines;
+    log->max_files    = max_files;
+    log->max_age_days = max_age_days;
+
+    split_path(path, &log->dir, &log->stem, &log->ext);
+    mkdir_single(log->dir);
+
+    log->fp = fopen(path, "a");
+    if (!log->fp) { tk_access_log_close(log); return NULL; }
+
+    return log;
+}
+
+void tk_access_log_write(TkAccessLog *log,
+                          const char *ip,
+                          const char *method,
+                          const char *path,
+                          int         status,
+                          size_t      bytes,
+                          const char *referer,
+                          const char *ua)
+{
+    if (!log) return;
+    if (!log->fp) {
+        log->fp = fopen(log->path, "a");
+        if (!log->fp) return;
+    }
+
+    /* Combined Log Format timestamp: [06/Apr/2026:15:23:01 +0000] */
+    time_t now = time(NULL);
+    struct tm *tm = gmtime(&now);
+    char ts[40];
+    snprintf(ts, sizeof ts, "%02d/%s/%04d:%02d:%02d:%02d +0000",
+             tm->tm_mday, k_month_names[tm->tm_mon], 1900 + tm->tm_year,
+             tm->tm_hour, tm->tm_min, tm->tm_sec);
+
+    char bytes_str[24];
+    if (bytes > 0) snprintf(bytes_str, sizeof bytes_str, "%zu", bytes);
+    else           strcpy(bytes_str, "-");
+
+    fprintf(log->fp,
+            "%s - - [%s] \"%s %s HTTP/1.1\" %d %s \"%s\" \"%s\"\n",
+            ip      ? ip      : "-",
+            ts,
+            method  ? method  : "-",
+            path    ? path    : "-",
+            status,
+            bytes_str,
+            referer ? referer : "-",
+            ua      ? ua      : "-");
+    fflush(log->fp);
+
+    log->line_count++;
+    if (log->max_lines > 0 && log->line_count >= log->max_lines)
+        rotate_access_log(log);
+}
+
+void tk_access_log_close(TkAccessLog *log)
+{
+    if (!log) return;
+    if (log->fp) { fflush(log->fp); fclose(log->fp); }
+    free(log->path);
+    free(log->dir);
+    free(log->stem);
+    free(log->ext);
+    free(log);
+}

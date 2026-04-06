@@ -1405,11 +1405,202 @@ Bugs found by Epic 20 test hardening. All 24 targets compile clean but 9 have ru
 
 | Story | Description | Status | Date | Notes |
 |---|---|---|---|---|
-| 36.1.1 | Fix encrypt X25519 key exchange — shared secrets not symmetric | backlog | — | **P1** `encrypt_x25519_dh` does not produce symmetric shared secrets (Alice DH ≠ Bob DH). RFC 7748 §6.1 known-answer test fails. Root cause likely in scalar multiplication or field arithmetic. |
-| 36.1.2 | Fix encrypt Ed25519 sign/verify — rejects valid signatures | backlog | — | **P1** `encrypt_ed25519_sign` produces signatures that `encrypt_ed25519_verify` rejects. RFC 8032 §7.1 TEST 1 known-answer test fails. Signature bytes don't match expected vector. |
-| 36.1.3 | Fix encrypt GCM auth tag computation | backlog | — | **P2** AES-256-GCM ciphertext matches NIST SP 800-38D Test Case 16 but auth tag diverges. GHASH or final XOR step has a bug. Ciphertext-only use works; authenticated decryption may silently accept tampered data. |
+| 36.1.1 | Fix encrypt X25519 key exchange — shared secrets not symmetric | done | 2026-04-05 | **P1** Fixed: 3 incorrect uses of `MASK51 >> 4` instead of `MASK51` for limb 4 in GF(2^255-19) field ops (`fe_from_bytes`, `fe_to_bytes`, `fe_sub`). RFC 7748 §6.1 known-answer passes. |
+| 36.1.2 | Fix encrypt Ed25519 sign/verify — rejects valid signatures | done | 2026-04-06 | **P1** Fixed: `int64_t` accumulators in `sc_reduce64` and `sc_muladd` overflowed for SHA-512 outputs with large high limbs (s23*MU1 ≈ 45×10¹² then s12*MU0 ≈ 30×10¹⁸ > INT64_MAX). Changed all `s0..s23` and `s0..s22` accumulator declarations from `int64_t` to `__int128`; updated CARRY macros accordingly. Also corrected RFC 8032 TEST 1 expected pubkey in test_encrypt.c (was wrong in test; correct value verified against Go crypto/ed25519, OpenSSL 3, and back-computed from the known-good RFC signature). All Ed25519 tests pass. |
+| 36.1.3 | Fix encrypt GCM auth tag computation | done | 2026-04-06 | **P2** On audit, all NIST SP 800-38D vectors (TC13, TC14, TC15, TC16) pass including auth tag and tamper-detection. Bug was already resolved; story closed after verification. |
 | 36.1.4 | Fix dashboard render segfault — TkHtmlDoc leak causes heap corruption | done | 2026-04-05 | **P1** `dashboard_render` leaks the internal `TkHtmlDoc` on every call. Accumulated leaks cause heap corruption and segfault. Need to free doc after rendering or restructure to reuse. |
-| 36.1.5 | Fix image PNG decode edge cases — 5 runtime failures | backlog | — | **P2** PNG decode fails on certain edge cases discovered during test hardening. Need to investigate specific failure modes and fix decoder. |
-| 36.1.6 | Fix ml decision tree XOR and k-means convergence | backlog | — | **P2** Decision tree fails on XOR-like non-linearly-separable data (expected for single tree, may need ensemble). K-means convergence test fails — likely centroid update or assignment bug. 5 total runtime failures. |
-| 36.1.7 | Fix analytics pivot edge cases | backlog | — | **P2** `analytics_pivot` has runtime failures on edge case inputs discovered during test hardening. Need to investigate specific failure modes. |
+| 36.1.5 | Fix image PNG decode edge cases — 5 runtime failures | done | 2026-04-05 | **P2** Fixed: `inflate_stored` was reading LEN/NLEN directly from `byte_pos` after bit-buffer pre-fetch had advanced it by 3. Now reads LEN, NLEN and stored bytes via `bs_read(bs,8)`. 94/94 tests pass. |
+| 36.1.6 | Fix ml decision tree XOR and k-means convergence | done | 2026-04-05 | **P2** Fixed: (1) dtree zero-gain split guard `<= 0.0` → `< -1e-12` allows XOR splits; (2) k-means max-spread init instead of sequential init ensures distinct initial centroids. All tests pass. |
+| 36.1.7 | Fix analytics pivot edge cases | done | 2026-04-05 | **P2** Fixed: bug was in `analytics_anomalies`, not pivot. Strict `z > threshold` → `z >= threshold`. All 24 analytics tests pass. |
+| 36.1.8 | Add test_tk_runtime.c — unit tests for tk_runtime | done | 2026-04-06 | **P2** Created `test/stdlib/test_tk_runtime.c` with 18 test groups covering: `tk_runtime_init`/`tk_str_argv` (5 assertions), `tk_json_parse` int/bool/str/array/whitespace (13), `tk_json_print_*` stdout capture via pipe (12), `tk_str_concat`/`tk_str_len`/`tk_str_char_at` (11), `tk_array_concat` incl. NULL (9), `tk_overflow_trap` exit-code via fork (4). Added `test-stdlib-runtime` Makefile target. All 63 assertions pass. |
 
+---
+
+### Epic 37 — Website Quality: Code Example Standards
+
+Audit and enforce consistent code example standards across all stdlib module documentation pages. Standards: all library names lowercase; no inline comments in code blocks; plain-English explanation immediately before each code block; all public functions documented with function/parameters/returns format.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 37.1.1 | Audit all docs for uppercase library references; fix to lowercase | backlog | — | **P2** Scan every page under `docs/` and the toke-web repo for any capitalised library names (e.g. `Std.Http`, `STD.LLM`, `Http`, `Llm`). Replace with canonical lowercase form. Includes tutorial pages, API reference, and quick-start guide. |
+| 37.1.2 | Remove inline comments from all website code examples | backlog | — | **P2** Code blocks on the public site must contain only toke code — no `# comment` or `// comment` lines. Move explanatory text into the prose paragraph that precedes the block. Audit all 30+ module pages. |
+| 37.1.3 | Enforce explanation-before-code structure across all module pages | backlog | — | **P2** Every code block must be preceded by at least one plain-English sentence explaining what the snippet does. Pages that open with a code block or place prose after the block are non-conforming. |
+| 37.1.4 | Create function/parameters/returns documentation template | backlog | — | **P2** Define a standard section template for each public stdlib function: function name (code), one-line description, Parameters table (name, type, description), Returns row (type, description), a minimal code example. Commit template to `docs/TEMPLATE_FUNCTION.md`. |
+| 37.1.5 | Apply function/parameters/returns template to all 30+ stdlib module pages | backlog | — | **P2** Using the template from 37.1.4, rewrite or augment every public function entry across all stdlib module documentation pages. Depends on 37.1.4. |
+
+---
+
+### Epic 38 — Compiler: Input Normalization
+
+Pre-parse normalisation so human or LLM-generated code using CamelCase or snake_case library/function names is accepted and converted to canonical lowercase toke identifiers before the lexer sees them.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 38.1.1 | Lex-level normalization of CamelCase/snake_case library names to lowercase | done | 2026-04-06 | **P1** Implemented in `src/names.c` `resolve_imports()`: after extracting `mpath`, calls `normalise_module_path()` which lowercases each dotted segment that matches a known stdlib module name (case-insensitive). Emits W2038 warning (non-fatal) with original and normalised path. Added `W2038` to `src/names.h`. 37 known modules listed. Compile succeeds with hint; already-lowercase paths produce no diagnostic. |
+| 38.1.2 | Friendly "did you mean?" error messages for unrecognised library names | backlog | — | **P2** When an unknown library name is used, compute edit distance against all known stdlib module names. If distance ≤ 2, emit: `error: unknown module 'Std.Htpp' — did you mean 'std.http'?`. Depends on 38.1.1 for normalisation pass. |
+
+---
+
+### Epic 39 — Toolchain: Single-Command Runner and Runtime Limits
+
+`toke hello.tk` compiles and immediately runs the program without a separate compile step. Default execution timeout and max-loop-iteration guards prevent runaway programs in both the runner and generated code.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 39.1.1 | `toke` binary: compile-and-run in one command | done | 2026-04-06 | **P1** `toke <file.tk>` compiles `file.tk` to a temp binary and exec's it, passing remaining args. `toke --compile <file.tk>` preserves current compile-only behaviour. Update CLI help and man page. |
+| 39.1.2 | Default 30-second execution timeout in the runner | backlog | — | **P2** When the runner execs the compiled binary, set a `SIGALRM` watchdog of 30 s. If the process exceeds the limit, kill it and print `toke: execution timeout (30s)` to stderr with exit code 124. `--timeout=N` overrides. |
+| 39.1.3 | Compiler option to inject max-loop-iteration guards | backlog | — | **P2** `--max-iters=N` (default off) injects a counter into every compiled loop body. If a loop exceeds N iterations, the runtime raises `LoopLimit` and terminates. Intended for sandbox/educational use where infinite-loop prevention is required. |
+| 39.1.4 | Enforce default timeouts across stdlib iteration functions | backlog | — | **P2** stdlib functions that iterate (e.g. `std.list.each`, `std.map.each`, `std.net.fetch` retries) must honour a per-call timeout parameter (default 0 = no limit). Document default behaviour and how to set limits. Audit all stdlib modules. |
+
+---
+
+### Epic 40 — Benchmarking Expansion
+
+Extend the benchmark suite from the current Rosetta Code subset to 100 tasks (Alderson set) with toke reference solutions, and add J, Ruby, JavaScript, C#, and Java reference solutions alongside existing Python and C.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 40.1.1 | Add 100 Rosetta Code tasks (Alderson set) with toke reference solutions | backlog | — | **P2** Select the Alderson benchmark set of 100 Rosetta Code tasks covering algorithms, data structures, strings, math, I/O, and concurrency. Write a toke reference solution for each. Store under `bench/rosetta/`. Integrate with existing `make bench` target. |
+| 40.1.2 | Add J, Ruby, JavaScript, C#, Java reference solutions to benchmark suite | backlog | — | **P2** For each of the 100 Rosetta Code tasks (40.1.1), add reference solutions in J, Ruby, JavaScript, C#, and Java alongside existing Python and C solutions. Store under `bench/rosetta/<task>/{solution.j,solution.rb,solution.js,solution.cs,solution.java}`. Update benchmark runner to invoke each language where its runtime is present. Depends on 40.1.1. |
+
+---
+
+### Epic 41 — GPU Processing Support
+
+Native toke support for GPU compute via a `std.gpu` module. Primary backend: Apple Metal/MPS (macOS). Secondary: CUDA/ROCm (Linux, third-party). GPU-accelerated operations in `std.ml` and `std.analytics`.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 41.1.1 | std.gpu module design and base API | backlog | — | **P1** Design the `std.gpu` module API: device enumeration (`gpu.devices`), tensor allocation (`gpu.tensor`), data transfer (`gpu.upload`/`gpu.download`), kernel dispatch (`gpu.run`), synchronisation (`gpu.sync`), and error handling. Write `gpu.tki` and `gpu.h`. Document design in `docs/std/gpu.md`. |
+| 41.1.2 | Metal/MPS backend for std.gpu (macOS primary) | backlog | — | **P1** Implement `gpu.c` Metal/MPS backend using Objective-C bridging or the Metal C API. Targets Apple Silicon and Intel + AMD Macs. Support float32 tensor ops, matrix multiply, and element-wise ops. Depends on 41.1.1. |
+| 41.1.3 | GPU-accelerated matrix operations in std.ml | backlog | — | **P2** When `std.gpu` is available and a GPU device is present, `ml.matmul`, `ml.train`, and `ml.infer` dispatch to GPU automatically. Fallback to CPU if no GPU. Add `ml.usedevice(device)` to pin computation. Depends on 41.1.2. |
+| 41.1.4 | CUDA/ROCm backend for std.gpu (Linux, third-party) | backlog | — | **P3** Implement optional CUDA (NVIDIA) and ROCm (AMD) backends for Linux. Compile-time feature flags `TOKE_GPU_CUDA` / `TOKE_GPU_ROCM`. Not bundled in default build; documented as third-party extension. Depends on 41.1.1. |
+| 41.1.5 | GPU support in std.analytics | backlog | — | **P3** Accelerate `analytics.pca`, `analytics.cluster`, and `analytics.corr` via `std.gpu` when available. Auto-detect and fallback gracefully. Depends on 41.1.3. |
+
+---
+
+### Epic 42 — Library: Desktop Application Support
+
+Stdlib primitives needed by the Loke desktop distribution (identified from `read-only-research/desktop-distribution-epics.md`). Covers port availability, user directory resolution, HTTP proxy configuration, download progress, and file checksum verification.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 42.1.1 | std.net: port availability check (`net.portavailable`) | backlog | — | **P1** `net.portavailable(port)` → `bool`: attempts to bind a TCP socket on `127.0.0.1:<port>` and immediately releases it. Returns `true` if the port is free, `false` if already in use. Required by Loke installer to detect port conflicts before starting the local server. |
+| 42.1.2 | std.sys: user config and data directory resolution (`sys.configdir`, `sys.datadir`) | backlog | — | **P1** `sys.configdir(appname)` → `str`: returns the platform config directory (`~/Library/Application Support/<appname>` on macOS, `~/.config/<appname>` on Linux, `%APPDATA%\<appname>` on Windows). `sys.datadir(appname)` → `str`: same for data. Creates the directory if it does not exist. Required by Loke for per-user proxy and preference storage. |
+| 42.1.3 | std.http: per-request proxy configuration (`http.withproxy`) | backlog | — | **P2** `http.withproxy(client; proxy_url)` → `HttpClient`: returns a new client configured to route requests through the given HTTP/HTTPS/SOCKS5 proxy URL. Respects `HTTP_PROXY` / `HTTPS_PROXY` environment variables if proxy_url is empty string. Required by Loke for corporate network environments. |
+| 42.1.4 | std.http: download with progress callback (`http.downloadfile`) | backlog | — | **P2** `http.downloadfile(client; url; dest_path; progress_fn)` → `Result`: streams a GET response to `dest_path`, calling `progress_fn(bytes_received, total_bytes)` periodically (every 64 KB or on Content-Length tick). Returns error on HTTP 4xx/5xx or I/O failure. Required by Loke auto-updater to show a progress bar. |
+| 42.1.5 | std.crypto: file checksum verification (`crypto.sha256file`, `crypto.sha256verify`) | backlog | — | **P2** `crypto.sha256file(path)` → `str`: returns the hex SHA-256 digest of the file at `path`. `crypto.sha256verify(path; expected_hex)` → `bool`: returns true if the file digest matches. Required by Loke installer to verify downloaded update packages before applying them. |
+
+---
+
+### Epic 43 — Stdlib Documentation Expansion
+
+Expand all 35 stdlib reference pages in toke-web from "summary table + one example" to the str.md quality standard: per-function section heading with full signature, prose description, parameter semantics, return value and error cases, and 1–2 concrete code examples per function. Goal: model-quality documentation for corpus generation.
+
+**Quality standard (str.md pattern):**
+```
+### func.name(param: type): returntype!errtype
+
+Prose description of what the function does, including edge cases and error conditions.
+
+```toke
+let ok = func.name(val);   (* common case *)
+let e  = func.name(bad);   (* error case *)
+```
+```
+
+Expand in priority order: corpus-critical modules first, utilities last.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 43.1.1 | Expand std.json docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 115 → 326 lines. Per-function sections for all public functions. Types, error types, and parse→get→stringify round-trip example. |
+| 43.1.2 | Expand std.file docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 96 → 259 lines. Per-function sections, $ioerr/$notfounderr error types, read→transform→write pipeline example. |
+| 43.1.3 | Expand std.http docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 142 → 309 lines. Server and client functions, $req/$res/$httpclient/$httpresp/$httpstream types, $httperr variants, fetch→parse→respond example. |
+| 43.1.4 | Expand std.process docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 85 → 156 lines. All 9 functions, $handle type, SpawnResult/WaitResult/StdoutResult, stdin pipeline and timeout examples. |
+| 43.1.5 | Expand std.env docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 68 → 148 lines. Per-function sections for get/set/unset/all/args, $notseterr, config-from-environment pattern. |
+| 43.1.6 | Expand std.time docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 66 → 171 lines. All time functions, $Timestamp/$Duration types, timestamp arithmetic and formatting examples. |
+| 43.1.7 | Expand std.log docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 81 → 179 lines. All log functions, level hierarchy explained, structured logging and production config examples. |
+| 43.1.8 | Expand std.math docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 55 → 182 lines. All 14 functions with individual sections, $linregresult type, descriptive stats and regression examples. |
+| 43.1.9 | Expand std.csv docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 60 → 189 lines. parse vs streaming reader pattern explained, header handling, file→parse→transform→write pipeline. |
+| 43.1.10 | Expand std.dataframe docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 71 → 210 lines. All 9 functions, $DataFrame/$Row types, CSV ingest→filter→group→output pipeline. |
+| 43.1.11 | Expand std.analytics docs to str.md standard | done | 2026-04-06 | **P1** Expanded from ~60 → 180 lines. All 7 functions, result types, anomaly detection and clustering examples. |
+| 43.1.12 | Expand std.ml docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 82 → 178 lines. All functions, $Model/$TrainConfig types, train→predict pipeline and embedding example. |
+| 43.1.13 | Expand std.llm docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 77 → 246 lines. All functions, all types, three usage examples: chat, streaming loop, json_mode. |
+| 43.1.14 | Expand std.llm_tool docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 81 → 185 lines. Tool-call flow documented end-to-end, complete weather-query tool example. |
+| 43.1.15 | Expand std.crypto docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 61 → 166 lines. All functions, md5 security warning in prose, bcrypt cost explanation, HMAC usage. |
+| 43.1.16 | Expand std.encrypt docs to str.md standard | done | 2026-04-06 | **P1** Expanded from 58 → 212 lines. All 11 functions, $DecryptResult/$Keypair types, three examples: AES-GCM, X25519 key exchange, Ed25519 sign/verify. Nonce reuse warning. |
+| 43.1.17 | Expand std.auth docs to str.md standard | backlog | — | **P2** Per-function sections for: `auth.jwt_sign`, `auth.jwt_verify`, `auth.jwt_claims`, `auth.bcrypt_hash`, `auth.bcrypt_check`, `auth.apikey_generate`, `auth.bearer_extract`. Include `$JwtPayload`, `$autherr` type. Show JWT issue→verify flow and API key middleware pattern. |
+| 43.1.18 | Expand std.router docs to str.md standard | backlog | — | **P2** Per-function sections for: `router.new`, `router.get`, `router.post`, `router.put`, `router.delete`, `router.use`, `router.serve`. Include `$Router`, `$Handler` types. Show full REST API example with middleware chain. |
+| 43.1.19 | Expand std.ws docs to str.md standard | backlog | — | **P2** Per-function sections for: `ws.server`, `ws.connect`, `ws.send`, `ws.recv`, `ws.close`, `ws.on_message`, `ws.on_close`. Include `$WsConn`, `$WsMsg` types. Show echo server and client connect→send→recv→close pattern. |
+| 43.1.20 | Expand std.sse docs to str.md standard | backlog | — | **P2** Per-function sections for: `sse.serve`, `sse.emit`, `sse.close`. Include event format, retry semantics, and show a real-time event stream example integrated with `std.router`. |
+| 43.1.21 | Expand std.db docs to str.md standard | backlog | — | **P2** Per-function sections for: `db.open`, `db.query`, `db.exec`, `db.close`, `db.begin`, `db.commit`, `db.rollback`, `db.prepare`. Include `$DbConn`, `$DbRow`, `$dberr` types. Show transaction pattern and parameterised query example. |
+| 43.1.22 | Expand std.chart docs to str.md standard | backlog | — | **P2** Per-function sections for: `chart.bar`, `chart.line`, `chart.scatter`, `chart.pie`, `chart.tojson`, `chart.tosvg`. Include `$Chart`, `$Series` types. Show data→chart→export pipeline. |
+| 43.1.23 | Expand std.svg docs to str.md standard | backlog | — | **P2** Per-function sections for: `svg.new`, `svg.rect`, `svg.circle`, `svg.line`, `svg.text`, `svg.path`, `svg.render`. Include `$Svg`, `$SvgElement` types. Show building a simple diagram programmatically. |
+| 43.1.24 | Expand std.canvas docs to str.md standard | backlog | — | **P2** Per-function sections for: `canvas.new`, `canvas.fill`, `canvas.stroke`, `canvas.text`, `canvas.image`, `canvas.topng`. Include `$Canvas`, `$Color` types. Show drawing and export pattern. |
+| 43.1.25 | Expand std.html docs to str.md standard | backlog | — | **P2** Per-function sections for: `html.parse`, `html.select`, `html.text`, `html.attr`, `html.render`, `html.escape`. Include `$HtmlDoc`, `$HtmlNode` types. Show scraping and template-free rendering patterns. |
+| 43.1.26 | Expand std.template docs to str.md standard | backlog | — | **P2** Per-function sections for: `tmpl.compile`, `tmpl.render`, `tmpl.renderfile`, `tmpl.renderhtml`, `tmpl.vars`. Include `$Template` type. Show compile→render pattern and slot/variable substitution. |
+| 43.1.27 | Expand std.dashboard docs to str.md standard | backlog | — | **P2** Per-function sections for: `dashboard.new`, `dashboard.add`, `dashboard.render`, `dashboard.serve`. Include `$Dashboard`, `$Widget` types. Show building a metrics dashboard with chart and table widgets. |
+| 43.1.28 | Expand std.image docs to str.md standard | backlog | — | **P2** Per-function sections for: `image.load`, `image.save`, `image.resize`, `image.crop`, `image.rotate`, `image.grayscale`, `image.pixel`. Include `$Image`, `$PixelFormat` types. Show load→transform→save pipeline. |
+| 43.1.29 | Expand std.encoding docs to str.md standard | backlog | — | **P2** Per-function sections for: `encoding.base64_encode`, `encoding.base64_decode`, `encoding.hex_encode`, `encoding.hex_decode`, `encoding.url_encode`, `encoding.url_decode`. Include `$decoderr` type and round-trip examples. |
+| 43.1.30 | Expand std.yaml docs to str.md standard | backlog | — | **P2** Per-function sections for: `yaml.parse`, `yaml.stringify`. Include `$parseerr`. Show config-file read and write patterns with nested types. |
+| 43.1.31 | Expand std.toon docs to str.md standard | backlog | — | **P2** Per-function sections for the full TOON serialisation API. Include type annotations, schema registration, and round-trip encode/decode examples. |
+| 43.1.32 | Expand std.i18n docs to str.md standard | backlog | — | **P2** Per-function sections for: `i18n.load`, `i18n.t`, `i18n.setlocale`, `i18n.locale`. Include `$I18n`, `$Locale` types. Show locale-file loading and key-based translation pattern. |
+| 43.1.33 | Expand std.encrypt docs: add tls_cert_fingerprint section | backlog | — | **P2** Add dedicated section for `encrypt.tls_cert_fingerprint` documenting: usage, expected return format (32-byte SHA-256 digest), error cases (connection refused, invalid host). Separate from 43.1.16 to allow independent completion. |
+| 43.1.34 | Audit str.md for compliance with Epic 37 standards | backlog | — | **P2** str.md is the quality template but may itself violate Epic 37 rules: check for inline comments in code blocks, ensure no uppercase library references, confirm explanation-before-code throughout. Fix any violations found. |
+| 43.1.35 | Cross-module usage examples: compose 3+ modules in one doc page | backlog | — | **P2** Add a `docs/reference/cookbook/` section with 10 pages each combining 3+ stdlib modules (e.g., http+json+db, llm+file+template, csv+dataframe+chart). These composite examples are the highest-value corpus training material. |
+
+---
+
+### Epic 44 — Whitespace Semantics: Specification Clarification and Conformance
+
+The toke website states "whitespace is structurally meaningless" but the lexer uses longest-match tokenisation, which means whitespace IS the token separator. `letx` lexes as identifier `letx`, not keyword `let` + identifier `x`. The claim must be corrected before it misleads corpus generation, documentation writers, or language learners.
+
+**Design decision to lock in:** Whitespace separates tokens but has no other structural role. Any amount of whitespace (spaces, tabs, newlines) between tokens is equivalent. Whitespace is NOT required where adjacent token boundaries are unambiguous (e.g., `x+y` == `x + y`). Whitespace IS required between adjacent alphanumeric tokens (e.g., `let x` cannot be written `letx`). Identifiers that begin with a keyword prefix are valid and unambiguous: `mutantninjaturtles` is always one identifier; `mut antninjaturtles` is always keyword `mut` + identifier `antninjaturtles`. No "starts-with" bans are needed or wanted.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 44.1.1 | Fix website: correct "whitespace is structurally meaningless" claim | done | 2026-04-06 | **P1** The about/design page at `console.tokelang.dev/about/design/` states whitespace is structurally meaningless. This is wrong: whitespace is the token separator and is required between adjacent alphanumeric tokens (e.g., `let x` ≠ `letx`). Replace with accurate statement: "Whitespace separates tokens but has no other structural role — indentation, line breaks, and spacing between tokens are all equivalent." Update any other docs making the same claim. |
+| 44.1.2 | Spec: add formal whitespace and token-separation section | done | 2026-04-06 | **P1** Added §8.9 "Whitespace and Token Separation" to `spec/spec/toke-spec-v02.md`. Covers: whitespace chars (U+0020/0009/000D/000A); required between adjacent alphanumeric tokens; not required at symbol boundaries; any amount equivalent; longest-match — identifier starting with keyword prefix is an identifier. Annotated examples table included. [x] All five normative rules stated [x] Examples: `letx` (ident), `let x` (kw+ident), `mutantninjaturtles` (ident), `mut antninjaturtles` (kw+ident), `letmutantninjaturtles=5` (ident assignment) |
+| 44.1.3 | Conformance tests: keyword–identifier boundary behaviour | done | 2026-04-06 | **P1** Added `test/conform/L001_keyword_ident_boundary.sh` (6 tests) and 4 e2e test pairs in `test/e2e/`: `e2e_kw_bound_letx`, `e2e_kw_bound_letmut`, `e2e_kw_bound_fnprefix`, `e2e_kw_bound_mutident`. Covers: letx as identifier (not let+x); let x as let-binding; letmut as identifier; mutantninjaturtles as one identifier; function named letx compiles and runs; let mutantninjaturtles as let-binding. |
+| 44.1.4 | Compiler diagnostic: "did you mean 'let x'?" for `letx = ...` at statement level | backlog | — | **P2** When the compiler sees a bare identifier assignment at statement level where the identifier starts with a keyword prefix followed by a valid identifier suffix (e.g., `letfoo = 5`, `fnbar`, `usestd`), emit a hint: `hint: 'letfoo' is an identifier — did you mean 'let foo'?`. Only emit when the remainder after stripping the prefix is a valid identifier. Never a hard error. |
+
+---
+
+### Epic 45 — Toke Linter
+
+A human-facing lint tool distinct from the compiler's `--check` flag and the LSP's error diagnostics (10.12.20/21). The linter targets code style, conventions, and anti-patterns — warnings a compiler would not emit. Includes a standalone CLI (`toke lint`), a VS Code integration showing lint warnings as squiggles separate from compiler errors, and an auto-fix pass for mechanical issues.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 45.1.1 | Define toke lint rule set v1 | done | 2026-04-06 | **P1** Defined 11 lint rules across all three categories in `docs/lint-rules-v1.md`. Mandatory 8: `unused-let`, `unused-import`, `redundant-bind`, `unreachable-code`, `fn-name-convention`, `type-name-convention`, `keyword-prefix-ident`, `empty-fn-body`. Additional 3 from real toke patterns: `mutable-never-mutated`, `error-result-ignored`, `struct-field-shadow`. Each rule documented with: id, category, fixable flag, rationale, violation example, fix example, and edge cases. |
+| 45.1.2 | Implement `toke lint` CLI command | backlog | — | **P1** Add `toke lint <file.tk>` subcommand. Output: one line per warning, format `file.tk:line:col: [rule-id] message`. `--format=json` emits machine-readable array. `--rules=rule1,rule2` limits to named rules. `--ignore=rule1` suppresses a rule. Exit code 0 = no warnings, 1 = warnings found, 2 = parse error. Integrates with `tkc --check` for the parse/type-check pass; lint rules run on the AST. Depends on 45.1.1. |
+| 45.1.3 | `toke lint --fix`: auto-fix pass for mechanical violations | backlog | — | **P2** For rules where the fix is unambiguous (unused import removal, redundant `let x = x` removal), implement `--fix` to rewrite the source file in-place with a `.bak` backup. List which rules support `--fix` in help output. Depends on 45.1.2. |
+| 45.1.4 | VS Code extension: integrate lint warnings as separate diagnostic source | backlog | — | **P1** Extend the toke-vscode extension (10.12.21) to run `toke lint` alongside the LSP. Lint warnings appear as yellow squiggles (compiler errors remain red). Lint source label: `toke-lint`. Configurable: `toke.lint.enable` (default true), `toke.lint.onSave` (default true), `toke.lint.ignoredRules` (array). Depends on 45.1.2 and 10.12.21. |
+| 45.1.5 | Lint rule: flag identifiers that collide with keyword prefixes ambiguously in human reading | backlog | — | **P2** Emit a `hint` (not error) when an identifier begins with a keyword prefix followed immediately by a valid identifier — e.g., `letfoo`, `mutbar`, `fnbaz`. The code is legal and unambiguous to the compiler, but confusing to human readers. Hint: `identifier 'letfoo' starts with keyword 'let' — consider renaming to avoid visual confusion`. Suppressible with `-- toke:ignore let-prefix`. Connects to Epic 44 whitespace clarification. Depends on 45.1.1. |
+
+## Epic 46: Stdlib Linking for Compiled Programs
+
+**Goal:** Fix compilation of toke programs that use stdlib imports (`i=`). Programs compiled with `tkc --out` should produce working binaries when stdlib modules are used.
+
+**Root cause found (2026-04-06):** When `tkc --out` compiles a toke program to a native binary, `compile_binary()` in `llvm.c` only linked `tk_runtime.c`. Programs using stdlib imports (str, http, env, etc.) failed with LLVM IR "undefined value" errors because: (1) no `declare` statements existed in the emitted IR for stdlib functions like `@str_concat`; (2) the C implementations were not passed to clang. Additionally, `str_concat` was mapped in `resolve_stdlib_call()` but the C function takes `const char *` (pointer), while the codegen emits `i64` (pointer-as-integer) for all stdlib args.
+
+**Resolution implemented (2026-04-06, 46.1.1):** Created `src/stdlib/tk_web_glue.c` providing i64-ABI wrappers for str, http, and env module functions. Updated `llvm.c` to: declare wrapper functions in emitted IR preamble; add env and http module mappings to `resolve_stdlib_call()`; add `find_stdlib_sources()` to locate stdlib C files; link str.c + http.c + encoding.c + env.c + tk_web_glue.c in every `compile_binary()` invocation. First confirmed working demo: `toke-demo/hello_world.tk` serving `Hello, World!` from toke-compiled binary on port 8181.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 46.1.1 | Fix stdlib linking for compiled programs | done | 2026-04-06 | **P0** `compile_binary()` only linked `tk_runtime.c`; stdlib modules not linked. Created `tk_web_glue.c` with i64 ABI wrappers, updated IR preamble declarations, updated `resolve_stdlib_call()` for env/http modules and full str module, added `find_stdlib_sources()` to always link str+http+encoding+env+glue. Verified: `hello_world.tk` compiles and serves HTTP on port 8181. |
+| 46.1.2 | Selective stdlib linking based on imports | backlog | — | **P1** Currently all stdlib files (str, http, encoding, env, tk_web_glue) are linked into every compiled program regardless of which modules are imported. Add import tracking to `compile_binary()` so only the modules actually imported are linked. Reduces binary size for programs that don't use http/env. |
+| 46.1.3 | Extend http module: full route handler support | backlog | — | **P1** `tk_web_glue.c` currently only supports static GET responses (`http.getstatic`). Full `http.GET(path; handler)` requires passing a toke function as a C callback — needs codegen support for function pointer emission and struct (Req/Res) ABI bridging. |
+| 46.1.4 | Add env.set, env.expand, str.split to stdlib wrappers | backlog | — | **P2** Extend `tk_web_glue.c` and IR preamble declarations to cover `env_set`, `env_expand`, full str module (str_split returns StrArray — needs design for toke array representation). |
+| 46.1.5 | Extend http module: env-based port selection | backlog | — | **P2** Allow `http.serve(env.getint("PORT"; 8080))` — requires `str.toint` wrapper and env module returning integers. `tk_env_get_or` already wraps `env_get_or`; need `tk_env_get_int(key, default_int)` for direct integer env reads. |
+| 46.1.6 | Emit typed LLVM IR for LLVM <15 compatibility | backlog | — | **P2** The IR emitter in `llvm.c` uses opaque-pointer `ptr` type (LLVM 15+ default). Servers running LLVM 14 (e.g. Debian 12 default) reject this IR. Fix: update all ~45 `fprintf` IR-emit lines to use typed pointers (`i8*`, `i64*`, `[N x i8]*` etc.) so generated `.ll` files are compatible with LLVM 13–22. Workaround: install `clang-15` on target and use `-DTK_HAVE_OPENSSL`. |
+
+## Epic 47: HTTP Access Logging with Rotation
+
+**Goal:** Add structured access logging to the toke HTTP server. Every inbound request is logged in Combined Log Format (Apache/Nginx compatible). Log files rotate at a configurable line limit, old files are gzip-compressed, and retention is enforced by age (priority) or file count.
+
+| Story | Description | Status | Date | Notes |
+|---|---|---|---|---|
+| 47.1.1 | HTTP access log with rotation (std.log extension) | done | 2026-04-06 | Extended `log.h`/`log.c` with `TkAccessLog` type: Combined Log Format, configurable `max_lines` rotation, gzip compression via zlib, retention by `max_age_days` (priority) or `max_files`. Integrated into `http.c` (`handle_connection` + `handle_tls_connection`) via `log_request()` helper using `getpeername()` for client IP. Added `tk_log_open_access_w()` wrapper in `tk_web_glue.c`. Added `log` module mapping in `llvm.c` (`log.openaccess` → wrapper). Added `log.c` to `find_stdlib_sources()`. Toke API: `log.openaccess(path; max_lines; max_files; max_age_days)`. Deployed to staging: `logs/access.log` written per request. |
+| 47.1.2 | Error log (separate file for 4xx/5xx and server errors) | backlog | — | **P2** Separate `logs/error.log` for 4xx/5xx responses and server-level errors (bind failure, TLS handshake failure). Same rotation/retention config. New `log.openerror(path; max_lines; max_files; max_age_days)` toke API. |
+| 47.1.3 | Structured JSON access log option | backlog | — | **P3** Optional JSON-per-line format alongside Combined Log Format, switchable via `log.accessformat("json")`. Enables log ingestion by tools like Loki or Datadog. |
