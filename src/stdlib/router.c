@@ -1272,22 +1272,30 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
     buf[total] = '\0';
     close(fd);
 
-    /* Build ETag header (heap-allocated so caller can inspect) */
-    const char **hnames = malloc(sizeof(char *));
-    const char **hvals  = malloc(sizeof(char *));
+    const char *mime = mime_for_path(full);
+
+    /* Cache lifetime: 1 hour for HTML, 7 days for assets */
+    int cache_secs = (strstr(mime, "text/html") != NULL) ? 3600 : 604800;
+    char cache_ctrl[48];
+    snprintf(cache_ctrl, sizeof cache_ctrl, "public, max-age=%d", cache_secs);
+
+    /* Build response headers: ETag, Content-Type, Cache-Control */
+    const char **hnames = malloc(3 * sizeof(char *));
+    const char **hvals  = malloc(3 * sizeof(char *));
     if (!hnames || !hvals) {
         free(hnames); free(hvals); free(buf);
         return router_resp_status(500, "Internal Error");
     }
-    hnames[0] = "ETag";
-    hvals[0]  = strdup(etag);
-    if (!hvals[0]) {
+    hnames[0] = "ETag";        hvals[0] = strdup(etag);
+    hnames[1] = "Content-Type"; hvals[1] = strdup(mime);
+    hnames[2] = "Cache-Control"; hvals[2] = strdup(cache_ctrl);
+    if (!hvals[0] || !hvals[1] || !hvals[2]) {
+        for (int i = 0; i < 3; i++) free((void *)hvals[i]);
         free(hnames); free(hvals); free(buf);
         return router_resp_status(500, "Internal Error");
     }
 
-    const char *mime = mime_for_path(full);
-    return static_resp_with_body(200, buf, mime, hnames, hvals, 1);
+    return static_resp_with_body(200, buf, mime, hnames, hvals, 3);
 }
 
 /* Per-prefix handler: the StaticCtx is embedded in a heap allocation

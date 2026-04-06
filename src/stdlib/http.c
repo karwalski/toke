@@ -343,32 +343,47 @@ static int res_has_content_length(Res res)
  * If Res.headers already carries Content-Length (set by the handler), the
  * body is sent with that fixed length instead.
  */
+/* write_res_headers — emit all custom headers from res.headers to fd. */
+static void write_res_headers(int fd, Res res)
+{
+    for (uint64_t i = 0; i < res.headers.len; i++) {
+        const char *k = res.headers.data[i].key;
+        const char *v = res.headers.data[i].val;
+        if (!k || !v) continue;
+        char line[512];
+        int ln = snprintf(line, sizeof(line), "%s: %s\r\n", k, v);
+        if (ln > 0) write(fd, line, (size_t)ln);
+    }
+}
+
 static void send_response(int fd, Res res, int keep_alive) {
     const char *conn_hdr = keep_alive ? "keep-alive" : "close";
 
     if (res.body != NULL && !res_has_content_length(res)) {
         /* Chunked path */
-        char hdr[320];
+        char hdr[256];
         int hl = snprintf(hdr, sizeof(hdr),
             "HTTP/1.1 %u %s\r\n"
             "Transfer-Encoding: chunked\r\n"
-            "Connection: %s\r\n"
-            "\r\n",
+            "Connection: %s\r\n",
             res.status, reason(res.status), conn_hdr);
         write(fd, hdr, (size_t)hl);
+        write_res_headers(fd, res);
+        write(fd, "\r\n", 2);
         /* Default chunk size: 4096 bytes */
         http_chunked_write(fd, res.body, strlen(res.body), 4096);
     } else {
         /* Fixed Content-Length path (body may be NULL for empty responses) */
         size_t bl = res.body ? strlen(res.body) : 0;
-        char hdr[320];
+        char hdr[256];
         int hl = snprintf(hdr, sizeof(hdr),
             "HTTP/1.1 %u %s\r\n"
             "Content-Length: %zu\r\n"
-            "Connection: %s\r\n"
-            "\r\n",
+            "Connection: %s\r\n",
             res.status, reason(res.status), bl, conn_hdr);
         write(fd, hdr, (size_t)hl);
+        write_res_headers(fd, res);
+        write(fd, "\r\n", 2);
         if (bl) write(fd, res.body, bl);
     }
 }
@@ -2096,14 +2111,22 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         {
             const char *conn_hdr = keep_alive ? "keep-alive" : "close";
             size_t body_len = res.body ? strlen(res.body) : 0;
-            char hdr_buf[320];
+            char hdr_buf[256];
             int hl = snprintf(hdr_buf, sizeof(hdr_buf),
                 "HTTP/1.1 %u %s\r\n"
                 "Content-Length: %zu\r\n"
-                "Connection: %s\r\n"
-                "\r\n",
+                "Connection: %s\r\n",
                 res.status, reason(res.status), body_len, conn_hdr);
             if (hl > 0) SSL_write(ssl, hdr_buf, hl);
+            for (uint64_t hi = 0; hi < res.headers.len; hi++) {
+                const char *hk = res.headers.data[hi].key;
+                const char *hv = res.headers.data[hi].val;
+                if (!hk || !hv) continue;
+                char hline[512];
+                int ln = snprintf(hline, sizeof(hline), "%s: %s\r\n", hk, hv);
+                if (ln > 0) SSL_write(ssl, hline, ln);
+            }
+            SSL_write(ssl, "\r\n", 2);
             if (body_len) SSL_write(ssl, res.body, (int)body_len);
             log_request(client_ip, &req, res.status, body_len);
         }
@@ -2143,7 +2166,12 @@ static void tls_worker_loop(int srv_fd, TkHttpRouter *r, SSL_CTX *ssl_ctx)
 TkHttpErr http_serve_tls(TkHttpRouter *r, const char *host,
                           uint64_t port, TkTlsCtx *tls)
 {
-    return http_serve_tls_workers(r, host, port, tls, 1);
+    /* Default workers = CPU count; override with TK_HTTP_WORKERS env var */
+    long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    uint64_t nw = (ncpu > 1) ? (uint64_t)ncpu : 1;
+    const char *env_w = getenv("TK_HTTP_WORKERS");
+    if (env_w) { long v = atol(env_w); if (v > 0) nw = (uint64_t)v; }
+    return http_serve_tls_workers(r, host, port, tls, nw);
 }
 
 TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,

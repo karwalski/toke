@@ -627,6 +627,7 @@ static void rotate_access_log(TkAccessLog *log)
     /* If rename fails (ENOENT), another worker already rotated — that's fine */
 
     log->fp = fopen(log->path, "a");
+    if (log->fp) setvbuf(log->fp, NULL, _IOLBF, 0);
 }
 
 /* ── Public API ───────────────────────────────────────────────────────── */
@@ -651,6 +652,8 @@ TkAccessLog *tk_access_log_open(const char *path,
 
     log->fp = fopen(path, "a");
     if (!log->fp) { tk_access_log_close(log); return NULL; }
+    /* Line-buffered: flush at each newline rather than on every fflush() call */
+    setvbuf(log->fp, NULL, _IOLBF, 0);
 
     return log;
 }
@@ -692,7 +695,7 @@ void tk_access_log_write(TkAccessLog *log,
             bytes_str,
             referer ? referer : "-",
             ua      ? ua      : "-");
-    fflush(log->fp);
+    /* Line-buffered: stdio flushes automatically at the newline above */
 
     log->line_count++;
     if (log->max_lines > 0 && log->line_count >= log->max_lines)
