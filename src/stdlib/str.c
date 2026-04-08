@@ -540,3 +540,120 @@ int str_is_space(const char *s)
     }
     return 1;
 }
+
+/* --- Story 56.8.5: trimprefix, trimsuffix, lastindex, matchbracket -------- */
+
+const char *str_trimprefix(const char *s, const char *prefix)
+{
+    if (!s) return strdup("");
+    if (!prefix || prefix[0] == '\0') return strdup(s);
+    size_t plen = strlen(prefix);
+    if (strncmp(s, prefix, plen) == 0)
+        return strdup(s + plen);
+    return strdup(s);
+}
+
+const char *str_trimsuffix(const char *s, const char *suffix)
+{
+    if (!s) return strdup("");
+    if (!suffix || suffix[0] == '\0') return strdup(s);
+    size_t slen   = strlen(s);
+    size_t suflen = strlen(suffix);
+    if (slen >= suflen && memcmp(s + slen - suflen, suffix, suflen) == 0) {
+        char *r = malloc(slen - suflen + 1);
+        if (!r) return strdup(s);
+        memcpy(r, s, slen - suflen);
+        r[slen - suflen] = '\0';
+        return r;
+    }
+    return strdup(s);
+}
+
+int64_t str_lastindex(const char *s, const char *sub)
+{
+    if (!s || !sub) return -1;
+    size_t slen   = strlen(s);
+    size_t sublen = strlen(sub);
+    if (sublen == 0) return (int64_t)slen;
+    if (sublen > slen) return -1;
+    for (size_t i = slen - sublen + 1; i-- > 0; ) {
+        if (memcmp(s + i, sub, sublen) == 0)
+            return (int64_t)i;
+    }
+    return -1;
+}
+
+StrBracketResult str_matchbracket(const char *s)
+{
+    StrBracketResult r = {NULL, 0, NULL};
+    if (!s || s[0] != '[') {
+        r.is_err = 1; r.err_msg = "not a bracket segment"; return r;
+    }
+    size_t slen = strlen(s);
+    if (slen < 3 || s[slen - 1] != ']') {
+        /* need at least '[', one char of name, ']' */
+        r.is_err = 1; r.err_msg = "not a bracket segment"; return r;
+    }
+    /* extract content between brackets */
+    size_t namelen = slen - 2;  /* strip leading '[' and trailing ']' */
+    char *name = malloc(namelen + 1);
+    if (!name) { r.is_err = 1; r.err_msg = "allocation failed"; return r; }
+    memcpy(name, s + 1, namelen);
+    name[namelen] = '\0';
+    r.ok = name;
+    return r;
+}
+
+/* --- Story 55.4.6: string builder ---*/
+
+StrBuf str_buf_new(void)
+{
+    StrBuf b = {NULL, 0, 0};
+    b.cap  = 256;
+    b.data = malloc(b.cap);
+    if (b.data) b.data[0] = '\0';
+    return b;
+}
+
+void str_buf_add(StrBuf *b, const char *s)
+{
+    if (!b || !s || !b->data) return;
+    size_t slen = strlen(s);
+    if (b->len + slen + 1 > b->cap) {
+        uint64_t newcap = b->cap;
+        while (newcap < b->len + slen + 1) newcap *= 2;
+        char *tmp = realloc(b->data, newcap);
+        if (!tmp) return;
+        b->data = tmp;
+        b->cap  = newcap;
+    }
+    memcpy(b->data + b->len, s, slen);
+    b->len += slen;
+    b->data[b->len] = '\0';
+}
+
+void str_buf_addbyte(StrBuf *b, unsigned char c)
+{
+    if (!b || !b->data) return;
+    if (b->len + 2 > b->cap) {
+        uint64_t newcap = b->cap * 2;
+        char *tmp = realloc(b->data, newcap);
+        if (!tmp) return;
+        b->data = tmp;
+        b->cap  = newcap;
+    }
+    b->data[b->len++] = (char)c;
+    b->data[b->len]   = '\0';
+}
+
+const char *str_buf_done(StrBuf *b)
+{
+    if (!b || !b->data) return NULL;
+    /* Shrink to fit (optional but polite). */
+    char *result = realloc(b->data, b->len + 1);
+    if (!result) result = b->data;
+    b->data = NULL;
+    b->len  = 0;
+    b->cap  = 0;
+    return result;
+}

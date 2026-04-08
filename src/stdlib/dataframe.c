@@ -352,9 +352,9 @@ typedef struct {
     char    *buf;
     size_t   len;
     size_t   cap;
-} StrBuf;
+} DfBuf;
 
-static int sb_init(StrBuf *sb)
+static int sb_init(DfBuf *sb)
 {
     sb->cap = 256;
     sb->len = 0;
@@ -362,7 +362,7 @@ static int sb_init(StrBuf *sb)
     return sb->buf ? 0 : -1;
 }
 
-static int sb_grow(StrBuf *sb, size_t needed)
+static int sb_grow(DfBuf *sb, size_t needed)
 {
     while (sb->len + needed + 1 > sb->cap) {
         sb->cap *= 2;
@@ -373,7 +373,7 @@ static int sb_grow(StrBuf *sb, size_t needed)
     return 0;
 }
 
-static void sb_append(StrBuf *sb, const char *s)
+static void sb_append(DfBuf *sb, const char *s)
 {
     size_t n = strlen(s);
     if (sb_grow(sb, n) == 0) {
@@ -383,7 +383,7 @@ static void sb_append(StrBuf *sb, const char *s)
     }
 }
 
-static void sb_append_f64(StrBuf *sb, double v)
+static void sb_append_f64(DfBuf *sb, double v)
 {
     char tmp[64];
     /* Use %g to produce compact output; fall back to full precision. */
@@ -392,7 +392,7 @@ static void sb_append_f64(StrBuf *sb, double v)
 }
 
 /* Append a JSON-escaped quoted string. */
-static void sb_append_json_str(StrBuf *sb, const char *s)
+static void sb_append_json_str(DfBuf *sb, const char *s)
 {
     sb_append(sb, "\"");
     for (; *s; s++) {
@@ -414,7 +414,7 @@ const char *df_tojson(TkDataframe *df)
 {
     if (!df) return NULL;
 
-    StrBuf sb;
+    DfBuf sb;
     if (sb_init(&sb) != 0) return NULL;
 
     sb_append(&sb, "[");
@@ -1527,7 +1527,7 @@ DfResult df_get_row(TkDataframe *df, uint64_t idx)
  * ------------------------------------------------------------------------- */
 
 /* Append s to sb with HTML escaping of <, >, &, ", '. */
-static void sb_append_html(StrBuf *sb, const char *s)
+static void sb_append_html(DfBuf *sb, const char *s)
 {
     if (!s) return;
     for (; *s; s++) {
@@ -1550,7 +1550,7 @@ const char *df_to_html(TkDataframe *df)
 {
     if (!df) return NULL;
 
-    StrBuf sb;
+    DfBuf sb;
     if (sb_init(&sb) != 0) return NULL;
 
     sb_append(&sb, "<table>\n<thead>\n<tr>");

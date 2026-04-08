@@ -27,6 +27,7 @@
  */
 #include "names.h"
 #include "tkc_limits.h"
+#include <ctype.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -278,6 +279,71 @@ static int version_major(const char *v) {
     return maj;
 }
 
+/* ── Module name normalisation ────────────────────────────────────────── */
+
+/*
+ * Known standard-library module names (all lowercase).
+ * Used by normalise_module_path() to detect wrongly-cased segments.
+ */
+static const char * const s_known_modules[] = {
+    "json", "str", "http", "file", "env", "log", "time", "process",
+    "db", "crypto", "encrypt", "auth", "ws", "sse", "router", "template",
+    "csv", "math", "llm", "tool", "chart", "html", "dashboard", "svg",
+    "canvas", "image", "dataframe", "analytics", "ml", "toon", "yaml",
+    "i18n", "encoding", "gpu", "net", "sys", "std",
+    NULL
+};
+
+/*
+ * is_known_module — return 1 if the lowercase form of seg (length slen)
+ * matches one of the known stdlib module names.
+ */
+static int is_known_module(const char *seg, int slen) {
+    char lower[128];
+    if (slen <= 0 || slen >= (int)sizeof(lower)) return 0;
+    for (int i = 0; i < slen; i++) lower[i] = (char)tolower((unsigned char)seg[i]);
+    lower[slen] = '\0';
+    for (int i = 0; s_known_modules[i] != NULL; i++) {
+        if (strcmp(lower, s_known_modules[i]) == 0) return 1;
+    }
+    return 0;
+}
+
+/*
+ * normalise_module_path — lowercase each segment of a dotted module path
+ * if the segment is a known stdlib module name written with wrong casing.
+ *
+ * Operates in-place on mpath (a mutable heap string).
+ * Returns 1 if any change was made, 0 if the path was already correct.
+ *
+ * Only segments that match a known module name case-insensitively are
+ * lowercased; arbitrary user-defined identifiers are left untouched.
+ */
+static int normalise_module_path(char *mpath) {
+    int changed = 0;
+    char *p = mpath;
+    while (*p) {
+        char *seg_start = p;
+        while (*p && *p != '.') p++;
+        int slen = (int)(p - seg_start);
+        if (is_known_module(seg_start, slen)) {
+            int already_lower = 1;
+            for (int i = 0; i < slen; i++) {
+                if (seg_start[i] != tolower((unsigned char)seg_start[i])) {
+                    already_lower = 0; break;
+                }
+            }
+            if (!already_lower) {
+                for (int i = 0; i < slen; i++)
+                    seg_start[i] = (char)tolower((unsigned char)seg_start[i]);
+                changed = 1;
+            }
+        }
+        if (*p == '.') p++;
+    }
+    return changed;
+}
+
 /* ── Public API ───────────────────────────────────────────────────────── */
 
 /*
@@ -337,6 +403,24 @@ int resolve_imports(const Node *ast, const char *src,
         char *alias = span_dup(src, an->tok_start, an->tok_len);
         char *mpath = strdup(pbuf);
         if (!alias || !mpath) { free(alias); free(mpath); err = 1; continue; }
+
+        /* Normalise wrong-cased stdlib module names (Story 38.1.1).
+         * If any segment of the dotted path is a known module name written
+         * with wrong capitalisation (e.g. "Http", "STD"), lowercase it
+         * in-place and emit a W2038 hint so the user can fix the source. */
+        {
+            char orig[TKC_MAX_PATH];
+            strncpy(orig, mpath, TKC_MAX_PATH - 1); orig[TKC_MAX_PATH - 1] = '\0';
+            if (normalise_module_path(mpath)) {
+                char msg[TKC_MAX_PATH * 2 + 64];
+                snprintf(msg, sizeof(msg),
+                         "module name '%s' normalised to '%s'", orig, mpath);
+                diag_emit(DIAG_WARNING, W2038, d->start, d->line, d->col,
+                          msg, "fix",
+                          "use all-lowercase module names in import paths",
+                          NULL);
+            }
+        }
 
         /* Extract optional version string (child[2] == NODE_STR_LIT) */
         char *ver = NULL;

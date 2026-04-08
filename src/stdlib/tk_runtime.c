@@ -8,6 +8,7 @@
  */
 
 #include "tk_runtime.h"
+#include "args.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,6 +22,7 @@ static char **g_argv;
 void tk_runtime_init(int argc, char **argv) {
     g_argc = argc;
     g_argv = argv;
+    args_init(argc, argv);
 }
 
 const char *tk_str_argv(int64_t index) {

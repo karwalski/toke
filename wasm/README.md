@@ -23,7 +23,7 @@ emcc --version
 
 ## Build
 
-From the tkc root directory:
+From the toke root directory:
 
 ```bash
 make -f Makefile.wasm

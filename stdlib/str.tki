@@ -18,6 +18,22 @@
     {"kind": "func", "name": "str.from_bytes", "params": ["[byte]"], "return": "str!EncodingErr"},
     {"kind": "type", "name": "SliceErr", "fields": [{"name": "msg", "type": "str"}]},
     {"kind": "type", "name": "ParseErr", "fields": [{"name": "msg", "type": "str"}]},
-    {"kind": "type", "name": "EncodingErr", "fields": [{"name": "msg", "type": "str"}]}
+    {"kind": "type", "name": "EncodingErr", "fields": [{"name": "msg", "type": "str"}]},
+    {"kind": "func", "name": "str.startswith", "params": ["str", "str"], "return": "bool"},
+    {"kind": "func", "name": "str.endswith",   "params": ["str", "str"], "return": "bool"},
+    {"kind": "func", "name": "str.replace",    "params": ["str", "str", "str"], "return": "str"},
+    {"kind": "func", "name": "str.indexof",    "params": ["str", "str"], "return": "i64"},
+    {"kind": "func", "name": "str.repeat",     "params": ["str", "u64"], "return": "str"},
+    {"kind": "func", "name": "str.join",       "params": ["str", "[str]"], "return": "str"},
+    {"kind": "type", "name": "StrBuf", "fields": []},
+    {"kind": "func", "name": "str.buf",        "params": [], "return": "StrBuf"},
+    {"kind": "func", "name": "str.add",        "params": ["StrBuf", "str"], "return": "void"},
+    {"kind": "func", "name": "str.addbyte",    "params": ["StrBuf", "byte"], "return": "void"},
+    {"kind": "func", "name": "str.done",       "params": ["StrBuf"], "return": "str"},
+    {"kind": "func", "name": "str.trimprefix", "params": ["str", "str"], "return": "str"},
+    {"kind": "func", "name": "str.trimsuffix", "params": ["str", "str"], "return": "str"},
+    {"kind": "func", "name": "str.lastindex",  "params": ["str", "str"], "return": "i64"},
+    {"kind": "func", "name": "str.matchbracket", "params": ["str"], "return": "str!BracketErr"},
+    {"kind": "type", "name": "BracketErr", "fields": [{"name": "msg", "type": "str"}]}
   ]
 }

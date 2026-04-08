@@ -350,6 +350,26 @@ File placement rules:
 
 ## 9. Coding Standards
 
+### 9.0 Language choice — toke-first rule
+
+**When instructed to implement any component, module, tool, framework, or application as part of the toke ecosystem, implement it in toke. No exceptions.**
+
+This applies to: ooke, loke, any new `*oke` project, any stdlib module, any tooling, any CLI, any web service. The constraint is absolute — "it would be hard in toke" or "it is faster in C" are not grounds for deviation.
+
+**If toke's stdlib is missing a required capability:**
+
+1. Do not implement the capability in C, shell scripts, Python, or any other language as a substitute.
+2. Identify the specific missing capability and create a story in the toke stdlib backlog (`toke/docs/progress.md`) to add it.
+3. Pause the toke component's implementation and consult the user about one of:
+   - Integrating an open source C library via FFI into the toke stdlib (the C binding lives in toke's stdlib, not in the target project).
+   - Taking on the larger toke stdlib story as the next priority before continuing.
+   - An alternative approach that uses existing toke capabilities.
+4. Do not proceed with a language-switching workaround while waiting — mark the story as `blocked`, document the blocker, and move to another unblocked story.
+
+**Rationale:** ooke is documented in the ooke specification as being "built entirely on the toke programming language." The toke ecosystem is itself the product. Every time a component is written in C instead of toke, the product fails to demonstrate what it claims. More practically: LLM-generated toke sites will require a toke runtime, not a C runtime, so every C shortcut creates a gap that must eventually be closed.
+
+**Scope:** This rule applies to all code in `toke-ooke/`, `loke/`, `moke/`, and any other `*oke` project repositories. It does not apply to `toke/src/` (the compiler frontend, which is explicitly C99) or `toke/stdlib/` C backing implementations (which are C by design, providing the FFI layer that toke stdlib modules call into).
+
 ### 9.1 C code (compiler)
 
 The compiler frontend is written in C99. No C++ allowed. No POSIX extensions beyond the required set (stdio.h, stdlib.h, string.h, unistd.h).

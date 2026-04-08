@@ -30,6 +30,8 @@ static Res dummy_handler(Req req) { (void)req; return http_Res_ok("ok"); }
 
 int main(void)
 {
+    alarm(120); /* safety net: HTTP client has 30s connect timeout per call */
+
     /* ── Response constructors ─────────────────────────────────────── */
 
     Res r200 = http_Res_ok("hello");

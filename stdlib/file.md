@@ -69,6 +69,47 @@ let entries = file.list("/tmp");
 (* entries = ok(["file1.txt"; "file2.txt"; ...]) *)
 ```
 
+### file.isdir(path: Str): bool
+
+Returns `true` if `path` exists and is a directory, `false` otherwise. This function is infallible.
+
+**Example:**
+```toke
+let y = file.isdir("/tmp");   (* y = true *)
+let n = file.isdir("/tmp/data.txt");  (* n = false *)
+```
+
+### file.mkdir(path: Str): bool!FileErr
+
+Creates `path` and all missing parent directories (equivalent to `mkdir -p`). Returns `true` on success. Returns `FileErr` if any component cannot be created due to a permissions or I/O error.
+
+**Example:**
+```toke
+let ok = file.mkdir("/tmp/a/b/c");
+(* ok = ok(true) *)
+```
+
+### file.copy(src: Str; dst: Str): bool!FileErr
+
+Copies the file at `src` to `dst`, creating or truncating `dst`. Returns `true` on success. Returns `FileErr` if `src` cannot be read or `dst` cannot be written.
+
+**Example:**
+```toke
+file.write("/tmp/src.txt"; "hello");
+let ok = file.copy("/tmp/src.txt"; "/tmp/dst.txt");
+(* ok = ok(true) *)
+```
+
+### file.listall(dir: Str): [Str]!FileErr
+
+Recursively lists all files under `dir`. Returns an array of file paths relative to `dir`. Directories are not included in the result. Symbolic links are not followed. Returns `FileErr` if `dir` does not exist or cannot be traversed.
+
+**Example:**
+```toke
+let files = file.listall("/tmp/project");
+(* files = ok(["src/main.toke"; "src/util.toke"; "README.md"]) *)
+```
+
 ## Error Types
 
 ### FileErr

@@ -8,14 +8,10 @@ users and contributors.
 
 | Repository | Licence | Purpose |
 |---|---|---|
-| `toke` | MIT | Meta landing repo, project overview |
-| `toke-spec` | MIT | Language specification, RFC, grammar |
-| `toke-stdlib` | MIT | Standard library (.toke source) |
-| `tkc` | Apache 2.0 | Reference compiler (C) |
-| `toke-corpus` | Apache 2.0 | Corpus generation pipeline |
-| `toke-tokenizer` | Apache 2.0 | BPE tokenizer (default syntax) |
-| `toke-models` | Apache 2.0 | QLoRA fine-tuning and evaluation |
-| `toke-benchmark` | Apache 2.0 | Benchmark tasks and harness |
+| `toke` | MIT (spec, stdlib) / Apache 2.0 (compiler) | Compiler, specification, standard library |
+| `toke-model` | Apache 2.0 | Corpus generation, BPE tokenizer, fine-tuning |
+| `toke-eval` | Apache 2.0 | Benchmark tasks and harness |
+| `toke-web` | MIT | Website |
 
 ## Why dual licensing
 
@@ -80,12 +76,12 @@ commercially. You must retain the copyright and licence notices, state
 any changes you made, and include the NOTICE file if one exists.
 
 **What about the trained model weights?**
-Model weights produced by the `toke-models` pipeline are covered by the
+Model weights produced by the `toke-model` pipeline are covered by the
 Apache 2.0 licence of that repository. You can use, redistribute, and
 fine-tune them commercially. The Apache 2.0 patent grant applies.
 
 **Can I write my own toke compiler from the spec?**
-Yes. The spec (`toke-spec`) is MIT-licensed. You can implement a
+Yes. The spec (`toke/spec/`) is MIT-licensed. You can implement a
 conforming compiler under any licence you choose, including proprietary.
 
 **Do I need a CLA to contribute?**

@@ -238,7 +238,7 @@ AnomalyResult analytics_anomalies(TkDataframe *df, const char *col,
     uint64_t count = 0;
     for (uint64_t i = 0; i < c->nrows; i++) {
         double z = fabs((c->f64_data[i] - mean) / stddev);
-        if (z > z_threshold) {
+        if (z >= z_threshold) {
             count++;
         }
     }
@@ -256,7 +256,7 @@ AnomalyResult analytics_anomalies(TkDataframe *df, const char *col,
     uint64_t out = 0;
     for (uint64_t i = 0; i < c->nrows; i++) {
         double z = fabs((c->f64_data[i] - mean) / stddev);
-        if (z > z_threshold) {
+        if (z >= z_threshold) {
             result.outlier_indices[out++] = i;
         }
     }

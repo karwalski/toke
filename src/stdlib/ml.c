@@ -109,11 +109,28 @@ KMeansModel ml_kmeanstrain(F64Array *cols, uint64_t ncols, uint64_t nrows,
         }
     }
 
-    /* Initialise centroids to first k points. */
+    /* Initialise centroids using max-spread selection (deterministic k-means++):
+     * pick the first point as centroid 0, then each subsequent centroid is the
+     * data point farthest from all already-chosen centroids.  This avoids the
+     * degenerate case where the first k data points all belong to the same true
+     * cluster and produce poor initial partitions. */
     uint64_t init_k = k < nrows ? k : nrows;
-    for (uint64_t ci = 0; ci < init_k; ci++) {
+    memcpy(&model.centroids[0], &points[0], ncols * sizeof(double));
+    for (uint64_t ci = 1; ci < init_k; ci++) {
+        double best_dist = -1.0;
+        uint64_t best_row = 0;
+        for (uint64_t row = 0; row < nrows; row++) {
+            /* Distance from this point to its nearest already-chosen centroid. */
+            double min_d = DBL_MAX;
+            for (uint64_t cj = 0; cj < ci; cj++) {
+                double d = l2sq(&points[row * ncols],
+                                &model.centroids[cj * ncols], ncols);
+                if (d < min_d) min_d = d;
+            }
+            if (min_d > best_dist) { best_dist = min_d; best_row = row; }
+        }
         memcpy(&model.centroids[ci * ncols],
-               &points[ci * ncols],
+               &points[best_row * ncols],
                ncols * sizeof(double));
     }
 
@@ -370,7 +387,7 @@ static int build_node(TreeBuilder *tb,
         free(vals);
     }
 
-    if (best_gain <= 0.0) {
+    if (best_gain < -1e-12) {
         /* No useful split found; remain a leaf. */
         free(left_idx); free(right_idx);
         return nid;

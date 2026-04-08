@@ -96,7 +96,7 @@ Acceptance criteria:
 - Every default syntax transformation in phase2-transform.md references valid grammar non-terminals from grammar.ebnf
 - No contradictions between any two spec documents
 - Any gap, ambiguity, or risk item that would require a compiler change post-implementation is documented
-- A review report is committed to toke-spec/docs/spec-review-m0.md
+- A review report is committed to spec/docs/spec-review-m0.md
 - Any identified issues are either resolved in the spec or logged as a numbered risk item in the report
 
 ---
@@ -658,7 +658,7 @@ Acceptance criteria:
 
 *Provide a web-based monitoring and control interface for the Mac Studio's long-running operations — corpus generation, model training, and benchmark runs — accessible remotely over VPN or port-forwarding.*
 
-**Sequencing note:** Stories 1.9.1 and 1.9.2 have no hardware dependency and can be developed and tested on any machine. Full integration testing against live corpus/training jobs requires Epic 1.4 (Mac Studio) to be complete. The service lives in `toke-corpus/monitor/`.
+**Sequencing note:** Stories 1.9.1 and 1.9.2 have no hardware dependency and can be developed and tested on any machine. Full integration testing against live corpus/training jobs requires Epic 1.4 (Mac Studio) to be complete. The service lives in `toke-model/corpus/monitor/`.
 
 ---
 
@@ -669,7 +669,7 @@ As a project operator, I want a lightweight background service running on the Ma
 Dependencies: none (can develop on any machine; integration requires 1.4.1)
 
 Acceptance criteria:
-- Service is implemented in Python (Flask + psutil), lives at toke-corpus/monitor/server.py and monitor/jobs.py
+- Service is implemented in Python (Flask + psutil), lives at toke-model/corpus/monitor/server.py and monitor/jobs.py
 - GET /api/jobs returns all jobs with id, name, state, start time, duration, and last 5 log lines
 - POST /api/jobs enqueues a new job with name and shell command; job runs as a subprocess
 - GET /api/jobs/{id} returns full job detail including last 200 log lines from monitor/logs/{id}.log
@@ -1167,7 +1167,7 @@ Dependencies: 2.9.2
 Acceptance criteria:
 - `eval.py` loads a trained tokenizer and cl100k_base, tokenises the benchmark task set, and computes token count ratios
 - Output is JSON: per-task token counts, mean/median improvement, summary statistics
-- Loads benchmark tasks from toke-benchmark hidden_tests/ directory
+- Loads benchmark tasks from toke-eval/benchmark hidden_tests/ directory
 - Unit tests cover: metric computation, JSON output schema, edge cases (empty programs, single-token programs)
 - Script runs successfully using the synthetic tokenizer from 2.9.2 tests
 
@@ -1196,7 +1196,7 @@ Acceptance criteria:
 
 As a validation engineer, I want Python reference implementations for at least 50 Phase A benchmark tasks, so that differential testing can begin as soon as corpus generation starts.
 
-Dependencies: None (tasks already exist in toke-benchmark/hidden_tests/)
+Dependencies: None (tasks already exist in toke-eval/benchmark/hidden_tests/)
 
 Acceptance criteria:
 - At least 50 Python functions in `baselines/python/` corresponding to Phase A tasks
@@ -1280,7 +1280,7 @@ Acceptance criteria:
 - All E-series, W-series codes documented with: code, meaning, stage, example trigger, fix field value
 - Extracted mechanically from tkc src/ (diag.h, parser.h, types.h, names.h, ir.h, llvm.h)
 - Cross-referenced with conformance test IDs where applicable
-- Published in toke-spec/spec/errors.md
+- Published in spec/spec/errors.md
 
 ---
 
@@ -1295,7 +1295,7 @@ Acceptance criteria:
 - Scope chain rules documented: module, function, block, loop, match arm
 - Predefined identifiers listed with their types
 - Arena escape rules documented with examples
-- Published in toke-spec/spec/semantics.md
+- Published in spec/spec/semantics.md
 
 ---
 
@@ -1309,7 +1309,7 @@ Acceptance criteria:
 - All 9 modules documented: str, json, file, process, env, crypto, time, test, log
 - Each function: name, parameter types, return type, error type
 - Each error sum type: variant names and meanings
-- Published in toke-spec/spec/stdlib-signatures.md
+- Published in spec/spec/stdlib-signatures.md
 
 ---
 
@@ -1319,12 +1319,12 @@ Acceptance criteria:
 
 **Story 2.13.1 — Complete stdlib module documentation**
 
-As a toke developer, I want each stdlib module fully documented with function signatures, examples, and error handling guidance in toke-stdlib.
+As a toke developer, I want each stdlib module fully documented with function signatures, examples, and error handling guidance in stdlib/.
 
 Dependencies: None
 
 Acceptance criteria:
-- All 12 .md files in toke-stdlib/std/ completed (currently stubs)
+- All 12 .md files in stdlib/std/ completed (currently stubs)
 - Each documents: module purpose, all function signatures, parameter descriptions, return values, error types and when they occur
 - At least one usage example per function
 - Cross-references to the .tki interface file
@@ -2286,7 +2286,7 @@ Acceptance criteria:
 
 ### EPIC 8.1 — Cloud Corpus Phase A Generation
 
-*Build and run the corpus generation pipeline on cloud compute using multi-provider LLM APIs. Generates 50,000 Phase A programs with differential testing across 4 languages, multi-model capability trials, and tiered workload allocation. See `toke-corpus/docs/cloud-corpus-proposal.md` for the full proposal.*
+*Build and run the corpus generation pipeline on cloud compute using multi-provider LLM APIs. Generates 50,000 Phase A programs with differential testing across 4 languages, multi-model capability trials, and tiered workload allocation. See `toke-model/corpus/docs/cloud-corpus-proposal.md` for the full proposal.*
 
 ---
 

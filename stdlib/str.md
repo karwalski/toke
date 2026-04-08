@@ -165,3 +165,138 @@ Returned by `str.from_bytes` when the byte array is not valid UTF-8.
 | Field | Type | Meaning |
 |-------|------|---------|
 | msg | Str | Human-readable description of the encoding error |
+
+---
+
+## Story 55.4 — Search, Transform, and String Builder
+
+### str.startswith(s: Str; prefix: Str): bool
+
+Returns `true` if `s` begins with `prefix`, `false` otherwise.
+
+**Example:**
+```toke
+let y = str.startswith("foobar"; "foo");  (* y = true *)
+let n = str.startswith("foobar"; "bar");  (* n = false *)
+```
+
+### str.endswith(s: Str; suffix: Str): bool
+
+Returns `true` if `s` ends with `suffix`, `false` otherwise.
+
+**Example:**
+```toke
+let y = str.endswith("foobar"; "bar");  (* y = true *)
+let n = str.endswith("foobar"; "foo");  (* n = false *)
+```
+
+### str.replace(s: Str; old: Str; new: Str): Str
+
+Returns a new string with every occurrence of `old` replaced by `new`. If `old` is not found the original string is returned as a new copy.
+
+**Example:**
+```toke
+let r = str.replace("aabbaa"; "aa"; "x");  (* r = "xbbx" *)
+let u = str.replace("hello"; "z"; "y");    (* u = "hello" *)
+```
+
+### str.indexof(s: Str; sub: Str): i64
+
+Returns the byte offset of the first occurrence of `sub` in `s`, or `-1` if not found.
+
+**Example:**
+```toke
+let i = str.indexof("foobar"; "bar");  (* i = 3 *)
+let m = str.indexof("foobar"; "xyz");  (* m = -1 *)
+```
+
+### str.repeat(s: Str; n: u64): Str
+
+Returns a new string consisting of `s` repeated `n` times. Returns an empty string when `n` is zero.
+
+**Example:**
+```toke
+let r = str.repeat("ab"; 3);  (* r = "ababab" *)
+let z = str.repeat("x"; 0);   (* z = "" *)
+```
+
+### str.join(sep: Str; parts: [Str]): Str
+
+Joins the elements of `parts` into a single string, placing `sep` between each adjacent pair. Returns an empty string when `parts` is empty.
+
+**Example:**
+```toke
+let s = str.join(", "; ["a"; "b"; "c"]);  (* s = "a, b, c" *)
+let e = str.join("-"; []);                (* e = "" *)
+```
+
+---
+
+## String Builder — `$strbuf`
+
+The `StrBuf` type is a mutable, growable buffer for building strings incrementally. Use it instead of repeated `str.concat` calls when assembling many pieces; `str.concat` is O(n) per call, making a loop O(n²) overall. `StrBuf` amortises allocation with doubling, giving O(n) total.
+
+### str.buf(): StrBuf
+
+Allocates a new, empty string builder with an initial internal capacity of 256 bytes.
+
+```toke
+let b = str.buf();
+```
+
+### str.add(b: StrBuf; s: Str): void
+
+Appends the string `s` to the builder `b`, growing the buffer if needed.
+
+```toke
+str.add(b; "hello");
+str.add(b; ", ");
+str.add(b; "world");
+```
+
+### str.addbyte(b: StrBuf; c: byte): void
+
+Appends a single byte `c` to the builder `b`. Useful when emitting control characters or building binary-safe payloads one byte at a time.
+
+```toke
+str.addbyte(b; 10);  (* append newline 0x0A *)
+```
+
+### str.done(b: StrBuf): Str
+
+Finalises the builder: shrinks the internal allocation to fit, returns the completed heap string, and resets `b` to an empty/invalid state. The returned string is owned by the caller.
+
+```toke
+let result = str.done(b);
+```
+
+### Full example — building an HTML snippet
+
+```toke
+let b    = str.buf();
+let tags = ["h1"; "p"; "footer"];
+let i    = 0u64;
+loop {
+    if i >= str.len(str.from_int(cast(i64; i))) { break; }
+    str.add(b; "<");
+    str.add(b; tags[i]);
+    str.add(b; ">");
+    i = i + 1u64;
+    if i >= 3u64 { break; }
+};
+let html = str.done(b);
+(* html = "<h1><p><footer>" *)
+```
+
+A more direct example using a known list:
+
+```toke
+let b = str.buf();
+str.add(b; "<div class=\"");
+str.add(b; "container");
+str.add(b; "\">");
+str.add(b; "Hello, toke!");
+str.add(b; "</div>");
+let html = str.done(b);
+(* html = "<div class=\"container\">Hello, toke!</div>" *)
+```

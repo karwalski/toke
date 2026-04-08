@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "module": "std.args",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "ArgsErr",
+      "fields": [
+        {"name": "msg", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "args.all",   "params": [],      "return": "[str]"},
+    {"kind": "func", "name": "args.get",   "params": ["u64"], "return": "str!ArgsErr"},
+    {"kind": "func", "name": "args.count", "params": [],      "return": "u64"}
+  ]
+}

@@ -1,0 +1,16 @@
+(* std.md — stub; implemented in the C layer (src/stdlib/md.c).
+ *
+ * The reference compiler resolves std.md imports via stdlib/md.tki
+ * and links against the C implementation directly.  This file exists to
+ * satisfy source-level tooling that expects a .tk file for every module.
+ *
+ * The C implementation uses FFI to cmark (CommonMark reference library),
+ * vendored at stdlib/vendor/cmark/ (MIT licence).
+ *
+ * Exported interface (see stdlib/md.tki):
+ *   md.render(src:Str):Str
+ *   md.renderfile(path:Str):Str!MdErr
+ *   record MdErr             -- { msg: Str }
+ *
+ * Story: 55.5.2  Branch: feature/stdlib-55.5-md
+ *)

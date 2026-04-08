@@ -149,4 +149,52 @@ ByteArray encrypt_pbkdf2(const char *password, ByteArray salt,
                           uint32_t iterations, uint32_t dklen,
                           const char *hash);
 
+/* -----------------------------------------------------------------------
+ * RSA (PKCS#1-style, custom binary key format)
+ * Story: 30.1.2
+ *
+ * Key format (not standard DER/ASN.1 — self-contained binary):
+ *   pub:  [4-byte n_len][n bytes big-endian][4-byte e_len][e bytes big-endian]
+ *   priv: [same pub prefix][4-byte d_len][d bytes][4-byte p_len][p bytes]
+ *         [4-byte q_len][q bytes]
+ *
+ * Encrypt/decrypt: OAEP-SHA256 padding.
+ * Sign/verify:     PSS-SHA256 with salt length == 32.
+ *
+ * 2048-bit key generation takes a few seconds (Miller-Rabin primality test
+ * over 1024-bit primes). 4096-bit generation will be significantly slower.
+ * ----------------------------------------------------------------------- */
+
+typedef struct {
+    uint8_t *pub_data;   uint64_t pub_len;   /* binary-encoded public key  */
+    uint8_t *priv_data;  uint64_t priv_len;  /* binary-encoded private key */
+} RsaKeyPair;
+
+typedef struct { RsaKeyPair ok; int is_err; const char *err_msg; } RsaKeyPairResult;
+typedef struct { ByteArray  ok; int is_err; const char *err_msg; } RsaBytesResult;
+
+/* Generate an RSA keypair. bits must be 2048 or 4096. */
+RsaKeyPairResult encrypt_rsa_generate_keypair(uint32_t bits);
+
+/* Encrypt plaintext with the public key using OAEP-SHA256.
+ * pub/pub_len: key produced by encrypt_rsa_generate_keypair.
+ * Caller owns ok.data on success. */
+RsaBytesResult   encrypt_rsa_encrypt(const uint8_t *pub, uint64_t pub_len,
+                                      ByteArray plaintext);
+
+/* Decrypt ciphertext with the private key using OAEP-SHA256.
+ * Caller owns ok.data on success. */
+RsaBytesResult   encrypt_rsa_decrypt(const uint8_t *priv, uint64_t priv_len,
+                                      ByteArray ciphertext);
+
+/* Sign msg with the private key using PSS-SHA256 (salt len = 32).
+ * Caller owns ok.data on success. */
+RsaBytesResult   encrypt_rsa_sign(const uint8_t *priv, uint64_t priv_len,
+                                   ByteArray msg);
+
+/* Verify signature with the public key using PSS-SHA256.
+ * Returns 1 on success, 0 on failure. */
+int              encrypt_rsa_verify(const uint8_t *pub, uint64_t pub_len,
+                                    ByteArray msg, ByteArray sig);
+
 #endif /* TK_STDLIB_ENCRYPT_H */

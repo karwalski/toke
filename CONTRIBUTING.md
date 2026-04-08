@@ -1,10 +1,10 @@
-# Contributing to tkc
+# Contributing to toke
 
 ## Before you start
 
 - Read AGENTS.md — this is the operating specification for all development,
   including AI coding agents
-- Read the language specification at github.com/karwalski/toke-spec
+- Read the language specification at spec/ (or github.com/karwalski/toke)
 - Run `make conform` to confirm the baseline conformance suite is green
   on your machine before making any change
 

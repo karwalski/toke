@@ -17,6 +17,10 @@
     {"kind": "func", "name": "file.append", "params": ["str", "str"],  "return": "bool!FileErr"},
     {"kind": "func", "name": "file.exists", "params": ["str"],         "return": "bool"},
     {"kind": "func", "name": "file.delete", "params": ["str"],         "return": "bool!FileErr"},
-    {"kind": "func", "name": "file.list",   "params": ["str"],         "return": "[str]!FileErr"}
+    {"kind": "func", "name": "file.list",    "params": ["str"],         "return": "[str]!FileErr"},
+    {"kind": "func", "name": "file.isdir",   "params": ["str"],         "return": "bool"},
+    {"kind": "func", "name": "file.mkdir",   "params": ["str"],         "return": "bool!FileErr"},
+    {"kind": "func", "name": "file.copy",    "params": ["str", "str"],  "return": "bool!FileErr"},
+    {"kind": "func", "name": "file.listall", "params": ["str"],         "return": "[str]!FileErr"}
   ]
 }

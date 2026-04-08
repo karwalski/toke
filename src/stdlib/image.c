@@ -316,19 +316,31 @@ static void outbuf_push_backref(OutBuf *ob, uint32_t dist, uint32_t length)
 
 static int inflate_stored(BitStream *bs, OutBuf *ob)
 {
+    /* Discard partial byte bits to byte-align the bit stream. */
     bs_align(bs);
-    if (bs->byte_pos + 4 > bs->src_len) return -1;
 
-    uint16_t len  = (uint16_t)(bs->src[bs->byte_pos] | ((uint16_t)bs->src[bs->byte_pos+1] << 8));
-    uint16_t nlen = (uint16_t)(bs->src[bs->byte_pos+2] | ((uint16_t)bs->src[bs->byte_pos+3] << 8));
-    bs->byte_pos += 4;
-    bs->bits_avail = 0; bs->bits = 0; /* stream is now byte-aligned */
+    /* Read LEN and NLEN through the bit-stream interface so that any bytes
+     * already pre-fetched into the bit buffer are consumed correctly.
+     * After bs_align the buffer is byte-aligned, so bs_read(bs, 8) yields
+     * the next logical byte in the correct order. */
+    uint32_t len_lo  = bs_read(bs, 8);
+    uint32_t len_hi  = bs_read(bs, 8);
+    uint32_t nlen_lo = bs_read(bs, 8);
+    uint32_t nlen_hi = bs_read(bs, 8);
+    if (bs->error) return -1;
+
+    uint16_t len  = (uint16_t)(len_lo  | (len_hi  << 8));
+    uint16_t nlen = (uint16_t)(nlen_lo | (nlen_hi << 8));
 
     if ((uint16_t)(len ^ nlen) != 0xFFFF) return -1;
-    if (bs->byte_pos + len > bs->src_len) return -1;
 
-    for (uint16_t i = 0; i < len; i++)
-        outbuf_push(ob, bs->src[bs->byte_pos++]);
+    /* The stored data bytes may still be partially in the bit buffer.
+     * Read them through bs_read(bs, 8) to keep the stream consistent. */
+    for (uint16_t i = 0; i < len; i++) {
+        uint32_t byte_val = bs_read(bs, 8);
+        if (bs->error) return -1;
+        outbuf_push(ob, (uint8_t)byte_val);
+    }
 
     return ob->error ? -1 : 0;
 }

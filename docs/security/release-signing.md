@@ -45,7 +45,7 @@ sign-time, which Rekor proves.
 **Signer OIDC identity:**
 
 ```
-https://github.com/karwalski/tkc/.github/workflows/release.yml
+https://github.com/karwalski/toke/.github/workflows/release.yml
 ```
 
 **OIDC issuer:**
@@ -83,7 +83,7 @@ Replace `<tag>` with the release tag you downloaded (e.g. `v1.0.0`) and
 ```sh
 cosign verify-blob \
   --bundle tkc.sig \
-  --certificate-identity "https://github.com/karwalski/tkc/.github/workflows/release.yml@refs/tags/<tag>" \
+  --certificate-identity "https://github.com/karwalski/toke/.github/workflows/release.yml@refs/tags/<tag>" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   <binary>
 ```
@@ -195,6 +195,6 @@ a user would run.  A pass here means the verify command works as documented.
 | Certificate authority | Fulcio (sigstore public instance) |
 | Transparency log | Rekor (sigstore public instance) |
 | OIDC issuer | `https://token.actions.githubusercontent.com` |
-| Signer identity | `https://github.com/karwalski/tkc/.github/workflows/release.yml` |
+| Signer identity | `https://github.com/karwalski/toke/.github/workflows/release.yml` |
 | Private key stored | No — ephemeral per-run key, certificate expires in 10 minutes |
 | Key rotation required | No |

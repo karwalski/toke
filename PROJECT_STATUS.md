@@ -66,8 +66,8 @@ Epics 1.2, 1.3, 1.7, 1.8 complete.
 All of 1.4.x, 1.5.x, and 1.6.2–1.6.4 are blocked until 1.4.1 is done.
 
 Epic 2.6 (Responsible Disclosure and CVE Process) complete (feature/security-disclosure).
-GitHub UI actions still required: enable private vulnerability reporting on karwalski/tkc, karwalski/toke-corpus, karwalski/toke-model; establish Advisory Database point of contact.
+GitHub UI actions still required: enable private vulnerability reporting on karwalski/toke, karwalski/toke-model; establish Advisory Database point of contact.
 
 Epics 2.7 (Standard Library Expansion) and 3.8 (Standard Library Production Hardening) added to backlog.
 
-Epic 1.9 (Remote Monitoring Console) started: stories 1.9.1 (job manager daemon) and 1.9.2 (web dashboard) implemented at toke-corpus/monitor/. Stories 1.9.3 (log streaming) and 1.9.4 (auth/HTTPS) remain.
+Epic 1.9 (Remote Monitoring Console) started: stories 1.9.1 (job manager daemon) and 1.9.2 (web dashboard) implemented at toke-model/corpus/monitor/. Stories 1.9.3 (log streaming) and 1.9.4 (auth/HTTPS) remain.

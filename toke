@@ -1,0 +1,64 @@
+#!/bin/sh
+# toke — compile-and-run wrapper for the toke compiler (tkc).
+#
+# Usage:
+#   toke <file.tk> [args...]        compile file.tk and run it immediately
+#   toke --compile <file.tk>        compile only (passes through to tkc)
+#
+# Story: 39.1.1
+#
+# All args after <file.tk> are forwarded to the compiled binary.
+# The temp binary is cleaned up after exec via a trap.
+# Exit code matches the compiled program's exit code.
+
+set -e
+
+# Find tkc relative to this script's own location.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TKC="$SCRIPT_DIR/tkc"
+
+if [ ! -x "$TKC" ]; then
+    printf 'toke: cannot find tkc at %s\n' "$TKC" >&2
+    exit 1
+fi
+
+# If called with no arguments, print usage.
+if [ $# -eq 0 ]; then
+    printf 'Usage: toke <file.tk> [args...]\n' >&2
+    printf '       toke --compile <file.tk> [tkc-flags...]\n' >&2
+    exit 64
+fi
+
+# --compile: pass everything through to tkc and exit.
+if [ "$1" = "--compile" ]; then
+    shift
+    exec "$TKC" "$@"
+fi
+
+# First argument is the .tk source file; remaining args go to the binary.
+TK_FILE="$1"
+shift
+
+if [ ! -f "$TK_FILE" ]; then
+    printf 'toke: no such file: %s\n' "$TK_FILE" >&2
+    exit 64
+fi
+
+# Create a temp file for the compiled binary.
+TMP_BIN="$(mktemp /tmp/toke_XXXXXX)"
+
+# Ensure the temp binary is removed on exit (normal or error).
+trap 'rm -f "$TMP_BIN"' EXIT
+
+# Compile the source to the temp binary.
+if ! "$TKC" --out "$TMP_BIN" "$TK_FILE"; then
+    printf 'toke: compilation failed\n' >&2
+    exit 65
+fi
+
+# Make it executable (mktemp may not set +x).
+chmod +x "$TMP_BIN"
+
+# Exec the binary, forwarding remaining args.
+# exec replaces the shell process so the exit code is the binary's exit code.
+exec "$TMP_BIN" "$@"

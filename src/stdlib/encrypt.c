@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* =========================================================================
  * Random bytes
@@ -223,33 +224,32 @@ static void aes256_encrypt_block(const AES256Ctx *ctx,
  * ========================================================================= */
 
 /* GF(2^128) multiply: a = a * b  (GHASH field, reduction poly x^128+x^7+x^2+x+1) */
+/* NIST SP 800-38D Algorithm 1 */
 static void gcm_gf_mult(uint8_t a[16], const uint8_t b[16])
 {
-    uint8_t v[16], z[16];
-    int i, j;
-    memcpy(v, b, 16);
-    memset(z, 0, 16);
+    uint8_t Z[16] = {0};
+    uint8_t V[16];
+    int i, bit;
+    memcpy(V, b, 16);
     for (i = 0; i < 16; i++) {
-        for (j = 7; j >= 0; j--) {
-            if ((a[i] >> j) & 1) {
-                /* z ^= v */
-                int k;
-                for (k = 0; k < 16; k++) z[k] ^= v[k];
+        for (bit = 7; bit >= 0; bit--) {
+            if ((a[i] >> bit) & 1) {
+                int k; for (k = 0; k < 16; k++) Z[k] ^= V[k];
             }
-            /* v = v >> 1 in GF(2^128) */
+            /* V = V >> 1, XOR R=0xe1... if V[127] (rightmost bit of V) was 1 */
             {
-                uint8_t carry = 0, next_carry;
+                uint8_t carry = V[15] & 1; /* V127 = rightmost bit = LSB of byte 15 */
                 int k;
-                for (k = 0; k < 16; k++) {
-                    next_carry = (uint8_t)(v[k] & 1);
-                    v[k] = (uint8_t)((v[k] >> 1) | (carry << 7));
-                    carry = next_carry;
-                }
-                if (carry) v[0] ^= 0xe1; /* reduction: x^128 = x^7+x^2+x+1 -> 0xe1000...0 */
+                /* Right-shift as 128-bit string: byte 15's LSB -> gone,
+                   byte 15 >>= 1, byte 14's LSB -> byte 15's MSB, etc. */
+                for (k = 15; k > 0; k--)
+                    V[k] = (uint8_t)((V[k] >> 1) | ((V[k-1] & 1) << 7));
+                V[0] >>= 1;
+                if (carry) V[0] ^= 0xe1;
             }
         }
     }
-    memcpy(a, z, 16);
+    memcpy(a, Z, 16);
 }
 
 /* GHASH: process len bytes of data, updating accumulator X using key H */
@@ -337,7 +337,6 @@ EncryptResult encrypt_aes256gcm_encrypt(ByteArray key, ByteArray nonce,
     uint8_t zero16[16];
     memset(zero16, 0, 16);
     aes256_encrypt_block(&aes, zero16, H);
-
     /* J0: nonce || 0x00000001 (96-bit nonce case) */
     uint8_t J0[16];
     memcpy(J0, nonce.data, 12);
@@ -497,32 +496,49 @@ static fe25519 fe_from_bytes(const uint8_t b[32])
     h.v[2] = (t[1] >> 38 | t[2] << 26) & MASK51;
     h.v[3] = (t[2] >> 25 | t[3] << 39) & MASK51;
     h.v[4] =  t[3] >> 12;
-    /* Clear high bit (bit 255) */
-    h.v[4] &= MASK51 >> 4; /* top limb holds bits 204..255; bit 255 = limb4 bit 51 */
+    /* Clear high bit (bit 255): MASK51 = (1<<51)-1 clears bit 51 of limb4 = bit 255 */
+    h.v[4] &= MASK51; /* top limb covers bits 204..254 (51 bits); MASK51 is correct */
     return h;
 }
 
 static void fe_to_bytes(uint8_t b[32], fe25519 h)
 {
-    /* Reduce fully */
+    /* Reduce fully to canonical [0, p-1] */
     int i;
     uint64_t c;
+    /* First carry pass: normalize limbs */
     for (i = 0; i < 4; i++) {
         c = h.v[i] >> 51;
         h.v[i] &= MASK51;
         h.v[i+1] += c;
     }
-    /* Conditional subtraction of p = 2^255 - 19 */
-    /* Final reduce: if h >= p, subtract p */
-    c = (h.v[4] >> 51);
-    h.v[4] &= MASK51 >> 4;  /* top limb is 47 bits */
+    /* Fold top overflow back: 2^255 ≡ 19 mod p */
+    c = h.v[4] >> 51;
+    h.v[4] &= MASK51;
     h.v[0] += 19 * c;
+    /* Second carry pass */
     for (i = 0; i < 4; i++) {
         c = h.v[i] >> 51;
         h.v[i] &= MASK51;
         h.v[i+1] += c;
     }
-    h.v[4] &= MASK51 >> 4;
+    h.v[4] &= MASK51;
+    /* Conditional subtraction: if h >= p, subtract p (handles h == p exactly) */
+    /* Compute t = h - p using signed arithmetic to detect borrow */
+    {
+        int64_t t0 = (int64_t)h.v[0] - (int64_t)(MASK51 - 18); /* p[0] = MASK51 - 18 */
+        int64_t t1 = (int64_t)h.v[1] - (int64_t)MASK51 + (t0 >> 51);
+        int64_t t2 = (int64_t)h.v[2] - (int64_t)MASK51 + (t1 >> 51);
+        int64_t t3 = (int64_t)h.v[3] - (int64_t)MASK51 + (t2 >> 51);
+        int64_t t4 = (int64_t)h.v[4] - (int64_t)MASK51 + (t3 >> 51);
+        /* t4 >= 0 means h >= p (no final borrow); mask = all-ones to select t */
+        uint64_t mask = ~(uint64_t)(t4 >> 63); /* all-ones if h >= p, 0 if h < p */
+        h.v[0] = (h.v[0] & ~mask) | ((uint64_t)t0 & MASK51 & mask);
+        h.v[1] = (h.v[1] & ~mask) | ((uint64_t)t1 & MASK51 & mask);
+        h.v[2] = (h.v[2] & ~mask) | ((uint64_t)t2 & MASK51 & mask);
+        h.v[3] = (h.v[3] & ~mask) | ((uint64_t)t3 & MASK51 & mask);
+        h.v[4] = (h.v[4] & ~mask) | ((uint64_t)t4 & MASK51 & mask);
+    }
 
     /* Pack back to 64-bit words */
     uint64_t t0 =  h.v[0]        | (h.v[1] << 51);
@@ -549,7 +565,7 @@ static fe25519 fe_sub(fe25519 a, fe25519 b)
     fe25519 r;
     /* Add 2p to avoid underflow before subtracting */
     static const uint64_t two_p[5] = {
-        2*(MASK51 - 18), 2*MASK51, 2*MASK51, 2*MASK51, 2*(MASK51 >> 4)
+        2*(MASK51 - 18), 2*MASK51, 2*MASK51, 2*MASK51, 2*MASK51
     };
     int i;
     for (i = 0; i < 5; i++) r.v[i] = a.v[i] + two_p[i] - b.v[i];
@@ -573,20 +589,26 @@ static fe25519 fe_mul(fe25519 a, fe25519 b)
                 d[k-5] += (__uint128_t)a.v[i] * b.v[j] * 19;
         }
     }
+    /* First carry pass using __uint128_t to avoid overflow */
+    __uint128_t carry128 = 0;
     fe25519 r;
-    uint64_t carry = 0;
     for (i = 0; i < 5; i++) {
-        d[i] += carry;
+        d[i] += carry128;
         r.v[i] = (uint64_t)(d[i] & MASK51);
-        carry = (uint64_t)(d[i] >> 51);
+        carry128 = d[i] >> 51;
     }
-    r.v[0] += carry * 19;
-    /* One more carry propagation */
-    for (i = 0; i < 4; i++) {
-        carry = r.v[i] >> 51;
-        r.v[i] &= MASK51;
-        r.v[i+1] += carry;
+    /* carry128 * 19 folds the top limb back using 2^255 == 19 mod p */
+    d[0] = (__uint128_t)r.v[0] + carry128 * 19;
+    r.v[0] = (uint64_t)(d[0] & MASK51);
+    carry128 = d[0] >> 51;
+    /* Propagate remaining carry through limbs 1..4 */
+    for (i = 1; i < 5; i++) {
+        d[i] = (__uint128_t)r.v[i] + carry128;
+        r.v[i] = (uint64_t)(d[i] & MASK51);
+        carry128 = d[i] >> 51;
     }
+    /* carry128 is now negligibly small (0 or 1); fold it back */
+    r.v[0] += (uint64_t)(carry128 * 19);
     return r;
 }
 
@@ -916,13 +938,13 @@ static void sha512(const uint8_t *data, uint64_t len, uint8_t digest[64])
  * ========================================================================= */
 
 /* Curve constants */
-/* d = -121665/121666 mod p */
-/* We use the precomputed value from RFC 8032: */
+/* d = -121665/121666 mod p = 37095705934669439343138083508754565189542113879843219016388785533085940283555 */
+/* Little-endian bytes, verified against TweetNaCl D = {0x78a3,0x1359,0x4dca,0x75eb,0xd8ab,0x4141,0x0a4d,0x0070,0xe898,0x7779,0x4079,0x8cc7,0xfe73,0x2b6f,0x6cee,0x5203} */
 static const uint8_t ED25519_D_BYTES[32] = {
-    0xa3,0x78,0x59,0x10,0x37,0x52,0x6f,0xa0,
-    0x71,0x10,0x8b,0x85,0xb1,0xf7,0x74,0xa4,
-    0x63,0x82,0x35,0xa3,0x49,0x27,0x18,0x6c,
-    0xa1,0x65,0x5f,0xd7,0x26,0x82,0x73,0x52
+    0xa3,0x78,0x59,0x13,0xca,0x4d,0xeb,0x75,
+    0xab,0xd8,0x41,0x41,0x4d,0x0a,0x70,0x00,
+    0x98,0xe8,0x79,0x77,0x79,0x40,0xc7,0x8c,
+    0x73,0xfe,0x6f,0x2b,0xee,0x6c,0x03,0x52
 };
 
 /* sqrt(-1) = 2^((p-1)/4) mod p */
@@ -1135,10 +1157,11 @@ static const uint8_t ED25519_BASE_Y[32] = {
 
 static EdPoint ed_get_base(void)
 {
-    /* Encoded base point: sign=0 for x, y = 4/5 mod p */
+    /* Encoded base point: sign=0 for x (x is even), y = 4/5 mod p */
+    /* RFC 8032 §5.1: Bx = 1ad5258f602d56c9b2a7259560c72c695cdcd6fd31e2a4c0fe536ecdd3366189 (even) */
     uint8_t enc[32];
     memcpy(enc, ED25519_BASE_Y, 32);
-    enc[31] &= 0x7f; /* sign bit = 0 */
+    enc[31] &= 0x7f; /* sign bit = 0: base point x is even (low bit 0) */
     EdPoint B;
     ed_decode_point(&B, enc);
     return B;
@@ -1157,43 +1180,44 @@ static const uint8_t ED25519_L[32] __attribute__((unused)) = {
 /* We implement the standard "sc_reduce" for 64-byte inputs */
 static void sc_reduce64(uint8_t out[32], const uint8_t s[64])
 {
-    /* Decompose s into 21 integers of ~21 bits each */
-    /* This is the standard implementation from SUPERCOP/ref10 */
-    int64_t s0  = 2097151 & ( (int64_t)s[ 0]        | ((int64_t)s[ 1] << 8) | ((int64_t)s[ 2] << 16));
-    int64_t s1  = 2097151 & (((int64_t)s[ 2] >> 5)  | ((int64_t)s[ 3] << 3) | ((int64_t)s[ 4] << 11) | ((int64_t)s[ 5] << 19));
-    int64_t s2  = 2097151 & (((int64_t)s[ 5] >> 2)  | ((int64_t)s[ 6] << 6) | ((int64_t)s[ 7] << 14));
-    int64_t s3  = 2097151 & (((int64_t)s[ 7] >> 7)  | ((int64_t)s[ 8] << 1) | ((int64_t)s[ 9] << 9)  | ((int64_t)s[10] << 17));
-    int64_t s4  = 2097151 & (((int64_t)s[10] >> 4)  | ((int64_t)s[11] << 4) | ((int64_t)s[12] << 12));
-    int64_t s5  = 2097151 & (((int64_t)s[12] >> 1)  | ((int64_t)s[13] << 7) | ((int64_t)s[14] << 15));
-    int64_t s6  = 2097151 & (((int64_t)s[14] >> 6)  | ((int64_t)s[15] << 2) | ((int64_t)s[16] << 10));
-    int64_t s7  = 2097151 & (((int64_t)s[16] >> 3)  | ((int64_t)s[17] << 5) | ((int64_t)s[18] << 13));
-    int64_t s8  = 2097151 & ( (int64_t)s[19]        | ((int64_t)s[20] << 8) | ((int64_t)s[21] << 16));
-    int64_t s9  = 2097151 & (((int64_t)s[21] >> 5)  | ((int64_t)s[22] << 3) | ((int64_t)s[23] << 11));
-    int64_t s10 = 2097151 & (((int64_t)s[23] >> 2)  | ((int64_t)s[24] << 6) | ((int64_t)s[25] << 14));
-    int64_t s11 = 2097151 & (((int64_t)s[25] >> 7)  | ((int64_t)s[26] << 1) | ((int64_t)s[27] << 9)  | ((int64_t)s[28] << 17));
-    int64_t s12 = 2097151 & (((int64_t)s[28] >> 4)  | ((int64_t)s[29] << 4) | ((int64_t)s[30] << 12));
-    int64_t s13 = 2097151 & (((int64_t)s[30] >> 1)  | ((int64_t)s[31] << 7));
-    int64_t s14 = 2097151 & (((int64_t)s[31] >> 6)  | ((int64_t)s[32] << 2) | ((int64_t)s[33] << 10));
-    int64_t s15 = 2097151 & (((int64_t)s[33] >> 3)  | ((int64_t)s[34] << 5) | ((int64_t)s[35] << 13));
-    int64_t s16 = 2097151 & ( (int64_t)s[36]        | ((int64_t)s[37] << 8) | ((int64_t)s[38] << 16));
-    int64_t s17 = 2097151 & (((int64_t)s[38] >> 5)  | ((int64_t)s[39] << 3) | ((int64_t)s[40] << 11));
-    int64_t s18 = 2097151 & (((int64_t)s[40] >> 2)  | ((int64_t)s[41] << 6) | ((int64_t)s[42] << 14));
-    int64_t s19 = 2097151 & (((int64_t)s[42] >> 7)  | ((int64_t)s[43] << 1) | ((int64_t)s[44] << 9)  | ((int64_t)s[45] << 17));
-    int64_t s20 = 2097151 & (((int64_t)s[45] >> 4)  | ((int64_t)s[46] << 4) | ((int64_t)s[47] << 12));
-    int64_t s21 = 2097151 & (((int64_t)s[47] >> 1)  | ((int64_t)s[48] << 7) | ((int64_t)s[49] << 15));
-    int64_t s22 = 2097151 & (((int64_t)s[49] >> 6)  | ((int64_t)s[50] << 2) | ((int64_t)s[51] << 10));
-    int64_t s23 =            ((int64_t)s[51] >> 3)   | ((int64_t)s[52] << 5) | ((int64_t)s[53] << 13)
-                           | ((int64_t)s[54] << 21)  | ((int64_t)s[55] << 29) | ((int64_t)s[56] << 37)
-                           | ((int64_t)s[57] << 45)  | ((int64_t)s[58] << 53);
+    /* Decompose s into 21 integers of ~21 bits each.
+     * Use __int128 for accumulators to prevent int64_t overflow when the
+     * reduction products (e.g. s23 * MU1 ≈ 45e12) are later multiplied
+     * by MU0 (≈ 667e3), yielding values up to ~30e18 > INT64_MAX. */
+    __int128 s0  = 2097151 & ( (int64_t)s[ 0]        | ((int64_t)s[ 1] << 8) | ((int64_t)s[ 2] << 16));
+    __int128 s1  = 2097151 & (((int64_t)s[ 2] >> 5)  | ((int64_t)s[ 3] << 3) | ((int64_t)s[ 4] << 11) | ((int64_t)s[ 5] << 19));
+    __int128 s2  = 2097151 & (((int64_t)s[ 5] >> 2)  | ((int64_t)s[ 6] << 6) | ((int64_t)s[ 7] << 14));
+    __int128 s3  = 2097151 & (((int64_t)s[ 7] >> 7)  | ((int64_t)s[ 8] << 1) | ((int64_t)s[ 9] << 9)  | ((int64_t)s[10] << 17));
+    __int128 s4  = 2097151 & (((int64_t)s[10] >> 4)  | ((int64_t)s[11] << 4) | ((int64_t)s[12] << 12) | ((int64_t)s[13] << 20));
+    __int128 s5  = 2097151 & (((int64_t)s[13] >> 1)  | ((int64_t)s[14] << 7) | ((int64_t)s[15] << 15));
+    __int128 s6  = 2097151 & (((int64_t)s[15] >> 6)  | ((int64_t)s[16] << 2) | ((int64_t)s[17] << 10) | ((int64_t)s[18] << 18));
+    __int128 s7  = 2097151 & (((int64_t)s[18] >> 3)  | ((int64_t)s[19] << 5) | ((int64_t)s[20] << 13));
+    __int128 s8  = 2097151 & ( (int64_t)s[21]        | ((int64_t)s[22] << 8) | ((int64_t)s[23] << 16));
+    __int128 s9  = 2097151 & (((int64_t)s[23] >> 5)  | ((int64_t)s[24] << 3) | ((int64_t)s[25] << 11) | ((int64_t)s[26] << 19));
+    __int128 s10 = 2097151 & (((int64_t)s[26] >> 2)  | ((int64_t)s[27] << 6) | ((int64_t)s[28] << 14));
+    __int128 s11 = 2097151 & (((int64_t)s[28] >> 7)  | ((int64_t)s[29] << 1) | ((int64_t)s[30] << 9)  | ((int64_t)s[31] << 17));
+    __int128 s12 = 2097151 & (((int64_t)s[31] >> 4)  | ((int64_t)s[32] << 4) | ((int64_t)s[33] << 12) | ((int64_t)s[34] << 20));
+    __int128 s13 = 2097151 & (((int64_t)s[34] >> 1)  | ((int64_t)s[35] << 7) | ((int64_t)s[36] << 15));
+    __int128 s14 = 2097151 & (((int64_t)s[36] >> 6)  | ((int64_t)s[37] << 2) | ((int64_t)s[38] << 10) | ((int64_t)s[39] << 18));
+    __int128 s15 = 2097151 & (((int64_t)s[39] >> 3)  | ((int64_t)s[40] << 5) | ((int64_t)s[41] << 13));
+    __int128 s16 = 2097151 & ( (int64_t)s[42]        | ((int64_t)s[43] << 8) | ((int64_t)s[44] << 16));
+    __int128 s17 = 2097151 & (((int64_t)s[44] >> 5)  | ((int64_t)s[45] << 3) | ((int64_t)s[46] << 11) | ((int64_t)s[47] << 19));
+    __int128 s18 = 2097151 & (((int64_t)s[47] >> 2)  | ((int64_t)s[48] << 6) | ((int64_t)s[49] << 14));
+    __int128 s19 = 2097151 & (((int64_t)s[49] >> 7)  | ((int64_t)s[50] << 1) | ((int64_t)s[51] << 9)  | ((int64_t)s[52] << 17));
+    __int128 s20 = 2097151 & (((int64_t)s[52] >> 4)  | ((int64_t)s[53] << 4) | ((int64_t)s[54] << 12) | ((int64_t)s[55] << 20));
+    __int128 s21 = 2097151 & (((int64_t)s[55] >> 1)  | ((int64_t)s[56] << 7) | ((int64_t)s[57] << 15));
+    __int128 s22 = 2097151 & (((int64_t)s[57] >> 6)  | ((int64_t)s[58] << 2) | ((int64_t)s[59] << 10) | ((int64_t)s[60] << 18));
+    __int128 s23 =            ((int64_t)s[60] >> 3)   | ((int64_t)s[61] << 5) | ((int64_t)s[62] << 13) | ((int64_t)s[63] << 21);
     /* Modular reduction using l = 2^252 + c where c is small */
-    /* mu = floor(2^504 / l) precomputed constants (same as ref10): */
-    /* l[0..3] in 21-bit limbs: 666643, 470296, 654183, 997805 (IETF values) */
-#define MU0  666643LL
-#define MU1  470296LL
-#define MU2  654183LL
-#define MU3  997805LL
-#define MU4  136657LL
-#define MU5  683901LL
+    /* Signed 21-bit limb decomposition of -c where l = 2^252 + c:
+     * -c = +mu0 + mu1*2^21 + mu2*2^42 - mu3*2^63 + mu4*2^84 - mu5*2^105
+     * Signs: +, +, +, -, +, - (MU3 and MU5 subtract) */
+#define MU0   666643LL
+#define MU1   470296LL
+#define MU2   654183LL
+#define MU3  (-997805LL)
+#define MU4   136657LL
+#define MU5  (-683901LL)
     s11 += s23 * MU0; s12 += s23 * MU1; s13 += s23 * MU2;
     s14 += s23 * MU3; s15 += s23 * MU4; s16 += s23 * MU5; s23 = 0;
     s10 += s22 * MU0; s11 += s22 * MU1; s12 += s22 * MU2;
@@ -1219,8 +1243,7 @@ static void sc_reduce64(uint8_t out[32], const uint8_t s[64])
     s0  += s12 * MU0; s1  += s12 * MU1; s2  += s12 * MU2;
     s3  += s12 * MU3; s4  += s12 * MU4; s5  += s12 * MU5; s12 = 0;
     /* Carry propagation */
-    int64_t carry;
-#define CARRY(i,j) carry = (s##i + (int64_t)(1 << 20)) >> 21; s##j += carry; s##i -= carry * (1 << 21)
+#define CARRY(i,j) { __int128 _c = (s##i) >> 21; s##j += _c; s##i -= _c * (1<<21); }
     CARRY(0,1); CARRY(1,2); CARRY(2,3); CARRY(3,4); CARRY(4,5); CARRY(5,6);
     CARRY(6,7); CARRY(7,8); CARRY(8,9); CARRY(9,10); CARRY(10,11); CARRY(11,12);
     s0 += s12 * MU0; s1 += s12 * MU1; s2 += s12 * MU2;
@@ -1277,48 +1300,44 @@ static void sc_muladd(uint8_t out[32],
     int64_t a1  = 2097151 & (((int64_t)a[2] >> 5)  | ((int64_t)a[3] << 3) | ((int64_t)a[4] << 11) | ((int64_t)a[5] << 19));
     int64_t a2  = 2097151 & (((int64_t)a[5] >> 2)  | ((int64_t)a[6] << 6) | ((int64_t)a[7] << 14));
     int64_t a3  = 2097151 & (((int64_t)a[7] >> 7)  | ((int64_t)a[8] << 1) | ((int64_t)a[9] << 9)  | ((int64_t)a[10] << 17));
-    int64_t a4  = 2097151 & (((int64_t)a[10] >> 4) | ((int64_t)a[11] << 4) | ((int64_t)a[12] << 12));
-    int64_t a5  = 2097151 & (((int64_t)a[12] >> 1) | ((int64_t)a[13] << 7) | ((int64_t)a[14] << 15));
-    int64_t a6  = 2097151 & (((int64_t)a[14] >> 6) | ((int64_t)a[15] << 2) | ((int64_t)a[16] << 10));
-    int64_t a7  = 2097151 & (((int64_t)a[16] >> 3) | ((int64_t)a[17] << 5) | ((int64_t)a[18] << 13));
-    int64_t a8  = 2097151 & ( (int64_t)a[19] | ((int64_t)a[20] << 8) | ((int64_t)a[21] << 16));
-    int64_t a9  = 2097151 & (((int64_t)a[21] >> 5) | ((int64_t)a[22] << 3) | ((int64_t)a[23] << 11));
-    int64_t a10 = 2097151 & (((int64_t)a[23] >> 2) | ((int64_t)a[24] << 6) | ((int64_t)a[25] << 14));
-    int64_t a11 =            ((int64_t)a[25] >> 7)  | ((int64_t)a[26] << 1) | ((int64_t)a[27] << 9) | ((int64_t)a[28] << 17) | ((int64_t)(a[28]>>4) << 21);
-    /* clamp a11 to 21 bits */
-    a11 &= 2097151;
+    int64_t a4  = 2097151 & (((int64_t)a[10] >> 4) | ((int64_t)a[11] << 4) | ((int64_t)a[12] << 12) | ((int64_t)a[13] << 20));
+    int64_t a5  = 2097151 & (((int64_t)a[13] >> 1) | ((int64_t)a[14] << 7) | ((int64_t)a[15] << 15));
+    int64_t a6  = 2097151 & (((int64_t)a[15] >> 6) | ((int64_t)a[16] << 2) | ((int64_t)a[17] << 10) | ((int64_t)a[18] << 18));
+    int64_t a7  = 2097151 & (((int64_t)a[18] >> 3) | ((int64_t)a[19] << 5) | ((int64_t)a[20] << 13));
+    int64_t a8  = 2097151 & ( (int64_t)a[21] | ((int64_t)a[22] << 8) | ((int64_t)a[23] << 16));
+    int64_t a9  = 2097151 & (((int64_t)a[23] >> 5) | ((int64_t)a[24] << 3) | ((int64_t)a[25] << 11) | ((int64_t)a[26] << 19));
+    int64_t a10 = 2097151 & (((int64_t)a[26] >> 2) | ((int64_t)a[27] << 6) | ((int64_t)a[28] << 14));
+    int64_t a11 =             ((int64_t)a[28] >> 7) | ((int64_t)a[29] << 1) | ((int64_t)a[30] << 9) | ((int64_t)a[31] << 17);
 
     int64_t b0  = 2097151 & ( (int64_t)b[0] | ((int64_t)b[1] << 8) | ((int64_t)b[2] << 16));
     int64_t b1  = 2097151 & (((int64_t)b[2] >> 5)  | ((int64_t)b[3] << 3) | ((int64_t)b[4] << 11) | ((int64_t)b[5] << 19));
     int64_t b2  = 2097151 & (((int64_t)b[5] >> 2)  | ((int64_t)b[6] << 6) | ((int64_t)b[7] << 14));
     int64_t b3  = 2097151 & (((int64_t)b[7] >> 7)  | ((int64_t)b[8] << 1) | ((int64_t)b[9] << 9)  | ((int64_t)b[10] << 17));
-    int64_t b4  = 2097151 & (((int64_t)b[10] >> 4) | ((int64_t)b[11] << 4) | ((int64_t)b[12] << 12));
-    int64_t b5  = 2097151 & (((int64_t)b[12] >> 1) | ((int64_t)b[13] << 7) | ((int64_t)b[14] << 15));
-    int64_t b6  = 2097151 & (((int64_t)b[14] >> 6) | ((int64_t)b[15] << 2) | ((int64_t)b[16] << 10));
-    int64_t b7  = 2097151 & (((int64_t)b[16] >> 3) | ((int64_t)b[17] << 5) | ((int64_t)b[18] << 13));
-    int64_t b8  = 2097151 & ( (int64_t)b[19] | ((int64_t)b[20] << 8) | ((int64_t)b[21] << 16));
-    int64_t b9  = 2097151 & (((int64_t)b[21] >> 5) | ((int64_t)b[22] << 3) | ((int64_t)b[23] << 11));
-    int64_t b10 = 2097151 & (((int64_t)b[23] >> 2) | ((int64_t)b[24] << 6) | ((int64_t)b[25] << 14));
-    int64_t b11 =            ((int64_t)b[25] >> 7)  | ((int64_t)b[26] << 1) | ((int64_t)b[27] << 9) | ((int64_t)b[28] << 17);
-    b11 &= 2097151;
+    int64_t b4  = 2097151 & (((int64_t)b[10] >> 4) | ((int64_t)b[11] << 4) | ((int64_t)b[12] << 12) | ((int64_t)b[13] << 20));
+    int64_t b5  = 2097151 & (((int64_t)b[13] >> 1) | ((int64_t)b[14] << 7) | ((int64_t)b[15] << 15));
+    int64_t b6  = 2097151 & (((int64_t)b[15] >> 6) | ((int64_t)b[16] << 2) | ((int64_t)b[17] << 10) | ((int64_t)b[18] << 18));
+    int64_t b7  = 2097151 & (((int64_t)b[18] >> 3) | ((int64_t)b[19] << 5) | ((int64_t)b[20] << 13));
+    int64_t b8  = 2097151 & ( (int64_t)b[21] | ((int64_t)b[22] << 8) | ((int64_t)b[23] << 16));
+    int64_t b9  = 2097151 & (((int64_t)b[23] >> 5) | ((int64_t)b[24] << 3) | ((int64_t)b[25] << 11) | ((int64_t)b[26] << 19));
+    int64_t b10 = 2097151 & (((int64_t)b[26] >> 2) | ((int64_t)b[27] << 6) | ((int64_t)b[28] << 14));
+    int64_t b11 =             ((int64_t)b[28] >> 7) | ((int64_t)b[29] << 1) | ((int64_t)b[30] << 9) | ((int64_t)b[31] << 17);
 
     int64_t c0  = 2097151 & ( (int64_t)c[0] | ((int64_t)c[1] << 8) | ((int64_t)c[2] << 16));
     int64_t c1  = 2097151 & (((int64_t)c[2] >> 5)  | ((int64_t)c[3] << 3) | ((int64_t)c[4] << 11) | ((int64_t)c[5] << 19));
     int64_t c2  = 2097151 & (((int64_t)c[5] >> 2)  | ((int64_t)c[6] << 6) | ((int64_t)c[7] << 14));
     int64_t c3  = 2097151 & (((int64_t)c[7] >> 7)  | ((int64_t)c[8] << 1) | ((int64_t)c[9] << 9)  | ((int64_t)c[10] << 17));
-    int64_t c4  = 2097151 & (((int64_t)c[10] >> 4) | ((int64_t)c[11] << 4) | ((int64_t)c[12] << 12));
-    int64_t c5  = 2097151 & (((int64_t)c[12] >> 1) | ((int64_t)c[13] << 7) | ((int64_t)c[14] << 15));
-    int64_t c6  = 2097151 & (((int64_t)c[14] >> 6) | ((int64_t)c[15] << 2) | ((int64_t)c[16] << 10));
-    int64_t c7  = 2097151 & (((int64_t)c[16] >> 3) | ((int64_t)c[17] << 5) | ((int64_t)c[18] << 13));
-    int64_t c8  = 2097151 & ( (int64_t)c[19] | ((int64_t)c[20] << 8) | ((int64_t)c[21] << 16));
-    int64_t c9  = 2097151 & (((int64_t)c[21] >> 5) | ((int64_t)c[22] << 3) | ((int64_t)c[23] << 11));
-    int64_t c10 = 2097151 & (((int64_t)c[23] >> 2) | ((int64_t)c[24] << 6) | ((int64_t)c[25] << 14));
-    int64_t c11 =            ((int64_t)c[25] >> 7)  | ((int64_t)c[26] << 1) | ((int64_t)c[27] << 9) | ((int64_t)c[28] << 17);
-    c11 &= 2097151;
+    int64_t c4  = 2097151 & (((int64_t)c[10] >> 4) | ((int64_t)c[11] << 4) | ((int64_t)c[12] << 12) | ((int64_t)c[13] << 20));
+    int64_t c5  = 2097151 & (((int64_t)c[13] >> 1) | ((int64_t)c[14] << 7) | ((int64_t)c[15] << 15));
+    int64_t c6  = 2097151 & (((int64_t)c[15] >> 6) | ((int64_t)c[16] << 2) | ((int64_t)c[17] << 10) | ((int64_t)c[18] << 18));
+    int64_t c7  = 2097151 & (((int64_t)c[18] >> 3) | ((int64_t)c[19] << 5) | ((int64_t)c[20] << 13));
+    int64_t c8  = 2097151 & ( (int64_t)c[21] | ((int64_t)c[22] << 8) | ((int64_t)c[23] << 16));
+    int64_t c9  = 2097151 & (((int64_t)c[23] >> 5) | ((int64_t)c[24] << 3) | ((int64_t)c[25] << 11) | ((int64_t)c[26] << 19));
+    int64_t c10 = 2097151 & (((int64_t)c[26] >> 2) | ((int64_t)c[27] << 6) | ((int64_t)c[28] << 14));
+    int64_t c11 =             ((int64_t)c[28] >> 7) | ((int64_t)c[29] << 1) | ((int64_t)c[30] << 9) | ((int64_t)c[31] << 17);
 
     /* s = a*b + c */
-    int64_t s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11;
-    int64_t s12, s13, s14, s15, s16, s17, s18, s19, s20, s21, s22;
+    __int128 s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11;
+    __int128 s12, s13, s14, s15, s16, s17, s18, s19, s20, s21, s22;
 
     s0  = c0  + a0*b0;
     s1  = c1  + a0*b1 + a1*b0;
@@ -1344,41 +1363,34 @@ static void sc_muladd(uint8_t out[32],
     s21 =       a10*b11+a11*b10;
     s22 =       a11*b11;
 
-    /* Reduce s22..s12 */
-#define MU0  666643LL
-#define MU1  470296LL
-#define MU2  654183LL
-#define MU3  997805LL
-#define MU4  136657LL
-#define MU5  683901LL
-    s11 += s22 * MU0; s12 += s22 * MU1; s13 += s22 * MU2; s14 += s22 * MU3; s15 += s22 * MU4; s16 += s22 * MU5; s22 = 0;
-    s10 += s21 * MU0; s11 += s21 * MU1; s12 += s21 * MU2; s13 += s21 * MU3; s14 += s21 * MU4; s15 += s21 * MU5; s21 = 0;
-    s9  += s20 * MU0; s10 += s20 * MU1; s11 += s20 * MU2; s12 += s20 * MU3; s13 += s20 * MU4; s14 += s20 * MU5; s20 = 0;
-    s8  += s19 * MU0; s9  += s19 * MU1; s10 += s19 * MU2; s11 += s19 * MU3; s12 += s19 * MU4; s13 += s19 * MU5; s19 = 0;
-    s7  += s18 * MU0; s8  += s18 * MU1; s9  += s18 * MU2; s10 += s18 * MU3; s11 += s18 * MU4; s12 += s18 * MU5; s18 = 0;
-    s6  += s17 * MU0; s7  += s17 * MU1; s8  += s17 * MU2; s9  += s17 * MU3; s10 += s17 * MU4; s11 += s17 * MU5; s17 = 0;
-    s5  += s16 * MU0; s6  += s16 * MU1; s7  += s16 * MU2; s8  += s16 * MU3; s9  += s16 * MU4; s10 += s16 * MU5; s16 = 0;
-    s4  += s15 * MU0; s5  += s15 * MU1; s6  += s15 * MU2; s7  += s15 * MU3; s8  += s15 * MU4; s9  += s15 * MU5; s15 = 0;
-    s3  += s14 * MU0; s4  += s14 * MU1; s5  += s14 * MU2; s6  += s14 * MU3; s7  += s14 * MU4; s8  += s14 * MU5; s14 = 0;
-    s2  += s13 * MU0; s3  += s13 * MU1; s4  += s13 * MU2; s5  += s13 * MU3; s6  += s13 * MU4; s7  += s13 * MU5; s13 = 0;
-    s1  += s12 * MU0; s2  += s12 * MU1; s3  += s12 * MU2; s4  += s12 * MU3; s5  += s12 * MU4; s6  += s12 * MU5; s12 = 0;
-    s0  += s11 * MU0; s1  += s11 * MU1; s2  += s11 * MU2; s3  += s11 * MU3; s4  += s11 * MU4; s5  += s11 * MU5; s11 = 0;
-    /* Unused variable needed for carry chain — suppress warning */
-    (void)s11;
+    /* Reduce s22..s12 (leave s0..s11 as the unreduced 252-bit result) */
+#define MU0   666643LL
+#define MU1   470296LL
+#define MU2   654183LL
+#define MU3  (-997805LL)
+#define MU4   136657LL
+#define MU5  (-683901LL)
+    s10 += s22 * MU0; s11 += s22 * MU1; s12 += s22 * MU2; s13 += s22 * MU3; s14 += s22 * MU4; s15 += s22 * MU5; s22 = 0;
+    s9  += s21 * MU0; s10 += s21 * MU1; s11 += s21 * MU2; s12 += s21 * MU3; s13 += s21 * MU4; s14 += s21 * MU5; s21 = 0;
+    s8  += s20 * MU0; s9  += s20 * MU1; s10 += s20 * MU2; s11 += s20 * MU3; s12 += s20 * MU4; s13 += s20 * MU5; s20 = 0;
+    s7  += s19 * MU0; s8  += s19 * MU1; s9  += s19 * MU2; s10 += s19 * MU3; s11 += s19 * MU4; s12 += s19 * MU5; s19 = 0;
+    s6  += s18 * MU0; s7  += s18 * MU1; s8  += s18 * MU2; s9  += s18 * MU3; s10 += s18 * MU4; s11 += s18 * MU5; s18 = 0;
+    s5  += s17 * MU0; s6  += s17 * MU1; s7  += s17 * MU2; s8  += s17 * MU3; s9  += s17 * MU4; s10 += s17 * MU5; s17 = 0;
+    s4  += s16 * MU0; s5  += s16 * MU1; s6  += s16 * MU2; s7  += s16 * MU3; s8  += s16 * MU4; s9  += s16 * MU5; s16 = 0;
+    s3  += s15 * MU0; s4  += s15 * MU1; s5  += s15 * MU2; s6  += s15 * MU3; s7  += s15 * MU4; s8  += s15 * MU5; s15 = 0;
+    s2  += s14 * MU0; s3  += s14 * MU1; s4  += s14 * MU2; s5  += s14 * MU3; s6  += s14 * MU4; s7  += s14 * MU5; s14 = 0;
+    s1  += s13 * MU0; s2  += s13 * MU1; s3  += s13 * MU2; s4  += s13 * MU3; s5  += s13 * MU4; s6  += s13 * MU5; s13 = 0;
+    s0  += s12 * MU0; s1  += s12 * MU1; s2  += s12 * MU2; s3  += s12 * MU3; s4  += s12 * MU4; s5  += s12 * MU5; s12 = 0;
+    /* s0..s11 now hold the product mod l (each limb may exceed 21 bits) */
 
-    int64_t carry;
-#define CARRY(i,j) carry = (s##i + (int64_t)(1 << 20)) >> 21; s##j += carry; s##i -= carry * (int64_t)(1 << 21)
+#define CARRY(i,j) { __int128 _c = (s##i) >> 21; s##j += _c; s##i -= _c * (1<<21); }
     CARRY(0,1); CARRY(1,2); CARRY(2,3); CARRY(3,4); CARRY(4,5); CARRY(5,6);
-    CARRY(6,7); CARRY(7,8); CARRY(8,9); CARRY(9,10);
-    /* s10 overflows into s11 which we zeroed */
-    {
-        int64_t s11b = 0;
-        carry = (s10 + (int64_t)(1<<20)) >> 21; s11b += carry; s10 -= carry*(int64_t)(1<<21);
-        s0  += s11b * MU0; s1  += s11b * MU1; s2  += s11b * MU2;
-        s3  += s11b * MU3; s4  += s11b * MU4; s5  += s11b * MU5;
-    }
+    CARRY(6,7); CARRY(7,8); CARRY(8,9); CARRY(9,10); CARRY(10,11);
+    { __int128 _c = (s11) >> 21; s12 = _c; s11 -= _c * (1<<21); }
+    s0  += s12 * MU0; s1  += s12 * MU1; s2  += s12 * MU2;
+    s3  += s12 * MU3; s4  += s12 * MU4; s5  += s12 * MU5; s12 = 0;
     CARRY(0,1); CARRY(1,2); CARRY(2,3); CARRY(3,4); CARRY(4,5); CARRY(5,6);
-    CARRY(6,7); CARRY(7,8); CARRY(8,9); CARRY(9,10);
+    CARRY(6,7); CARRY(7,8); CARRY(8,9); CARRY(9,10); CARRY(10,11);
 #undef CARRY
 #undef MU0
 #undef MU1
@@ -1387,38 +1399,38 @@ static void sc_muladd(uint8_t out[32],
 #undef MU4
 #undef MU5
 
-    out[ 0] = (uint8_t)(s0 >> 0);
-    out[ 1] = (uint8_t)(s0 >> 8);
-    out[ 2] = (uint8_t)((s0 >> 16) | (s1 << 5));
-    out[ 3] = (uint8_t)(s1 >> 3);
-    out[ 4] = (uint8_t)(s1 >> 11);
-    out[ 5] = (uint8_t)((s1 >> 19) | (s2 << 2));
-    out[ 6] = (uint8_t)(s2 >> 6);
-    out[ 7] = (uint8_t)((s2 >> 14) | (s3 << 7));
-    out[ 8] = (uint8_t)(s3 >> 1);
-    out[ 9] = (uint8_t)(s3 >> 9);
-    out[10] = (uint8_t)((s3 >> 17) | (s4 << 4));
-    out[11] = (uint8_t)(s4 >> 4);
-    out[12] = (uint8_t)(s4 >> 12);
-    out[13] = (uint8_t)((s4 >> 20) | (s5 << 1));
-    out[14] = (uint8_t)(s5 >> 7);
-    out[15] = (uint8_t)((s5 >> 15) | (s6 << 6));
-    out[16] = (uint8_t)(s6 >> 2);
-    out[17] = (uint8_t)(s6 >> 10);
-    out[18] = (uint8_t)((s6 >> 18) | (s7 << 3));
-    out[19] = (uint8_t)(s7 >> 5);
-    out[20] = (uint8_t)(s7 >> 13);
-    out[21] = (uint8_t)(s8 >> 0);
-    out[22] = (uint8_t)(s8 >> 8);
-    out[23] = (uint8_t)((s8 >> 16) | (s9 << 5));
-    out[24] = (uint8_t)(s9 >> 3);
-    out[25] = (uint8_t)(s9 >> 11);
+    out[ 0] = (uint8_t)(s0  >> 0);
+    out[ 1] = (uint8_t)(s0  >> 8);
+    out[ 2] = (uint8_t)((s0 >> 16) | (s1  << 5));
+    out[ 3] = (uint8_t)(s1  >> 3);
+    out[ 4] = (uint8_t)(s1  >> 11);
+    out[ 5] = (uint8_t)((s1 >> 19) | (s2  << 2));
+    out[ 6] = (uint8_t)(s2  >> 6);
+    out[ 7] = (uint8_t)((s2 >> 14) | (s3  << 7));
+    out[ 8] = (uint8_t)(s3  >> 1);
+    out[ 9] = (uint8_t)(s3  >> 9);
+    out[10] = (uint8_t)((s3 >> 17) | (s4  << 4));
+    out[11] = (uint8_t)(s4  >> 4);
+    out[12] = (uint8_t)(s4  >> 12);
+    out[13] = (uint8_t)((s4 >> 20) | (s5  << 1));
+    out[14] = (uint8_t)(s5  >> 7);
+    out[15] = (uint8_t)((s5 >> 15) | (s6  << 6));
+    out[16] = (uint8_t)(s6  >> 2);
+    out[17] = (uint8_t)(s6  >> 10);
+    out[18] = (uint8_t)((s6 >> 18) | (s7  << 3));
+    out[19] = (uint8_t)(s7  >> 5);
+    out[20] = (uint8_t)(s7  >> 13);
+    out[21] = (uint8_t)(s8  >> 0);
+    out[22] = (uint8_t)(s8  >> 8);
+    out[23] = (uint8_t)((s8 >> 16) | (s9  << 5));
+    out[24] = (uint8_t)(s9  >> 3);
+    out[25] = (uint8_t)(s9  >> 11);
     out[26] = (uint8_t)((s9 >> 19) | (s10 << 2));
     out[27] = (uint8_t)(s10 >> 6);
-    out[28] = (uint8_t)((s10 >> 14) | (0 << 7)); /* s11 = 0 */
-    out[29] = 0;
-    out[30] = 0;
-    out[31] = 0;
+    out[28] = (uint8_t)((s10 >> 14) | (s11 << 7));
+    out[29] = (uint8_t)(s11 >> 1);
+    out[30] = (uint8_t)(s11 >> 9);
+    out[31] = (uint8_t)(s11 >> 17);
 }
 
 /* -------------------------------------------------------------------------
@@ -1497,9 +1509,22 @@ ByteArray encrypt_ed25519_sign(ByteArray privkey, ByteArray msg)
     uint8_t k_scalar[32];
     sc_reduce64(k_scalar, k_hash);
 
-    /* S = (r + k * a) mod l */
+    /* S = (r + k * a) mod l
+     * The private scalar az[0..31] may be larger than l (its high bits are
+     * set by the Ed25519 clamping step).  sc_muladd uses 21-bit limb
+     * arithmetic where the top limb product can overflow int64_t when the
+     * input exceeds ~2^252.  Reduce az[0..31] mod l first so that all three
+     * inputs to sc_muladd are in [0, l).
+     * NOTE: reducing a mod l is safe because a ≡ az mod l and the group
+     *       equation S = r + k*a (mod l) is unchanged. */
+    uint8_t az_ext[64];
+    memcpy(az_ext, az, 32);
+    memset(az_ext + 32, 0, 32);
+    uint8_t az_reduced[32];
+    sc_reduce64(az_reduced, az_ext);
+
     uint8_t S[32];
-    sc_muladd(S, k_scalar, az, r_scalar);
+    sc_muladd(S, k_scalar, az_reduced, r_scalar);
 
     uint8_t *sig = (uint8_t *)malloc(64);
     if (!sig) return r_ba;
@@ -2154,4 +2179,570 @@ ByteArray encrypt_pbkdf2(const char *password, ByteArray salt,
     result.data = dk;
     result.len  = dklen;
     return result;
+}
+
+/* =========================================================================
+ * RSA big-integer arithmetic, key generation, OAEP-SHA256, PSS-SHA256
+ * Story: 30.1.2
+ *
+ * Key format (self-contained binary, not standard DER/ASN.1):
+ *   pub:  [4-byte n_len][n bytes][4-byte e_len][e bytes]
+ *   priv: [pub prefix][4-byte d_len][d bytes][4-byte p_len][p bytes]
+ *         [4-byte q_len][q bytes]
+ * All multi-byte length fields are big-endian uint32.
+ * All integer byte strings are big-endian (MSB first).
+ *
+ * Limitation: 4096-bit key generation is substantially slower than 2048.
+ * ========================================================================= */
+
+#define RSA_MAX_LIMBS   128    /* 128 * 32 bits = 4096 bits max */
+#define RSA_MAX_BYTES   512
+
+typedef struct { uint32_t d[RSA_MAX_LIMBS]; uint32_t n; } BigInt;
+
+/* ---- primitive BigInt operations ---- */
+static void bi_zero(BigInt *a)
+    { memset(a->d, 0, sizeof(a->d)); a->n = 0; }
+
+static void bi_norm(BigInt *a)
+    { while (a->n > 0 && a->d[a->n-1] == 0) a->n--; }
+
+static int bi_is_zero(const BigInt *a) { return a->n == 0; }
+
+static int bi_cmp(const BigInt *a, const BigInt *b)
+{
+    uint32_t an=a->n, bn=b->n;
+    while (an>0 && a->d[an-1]==0) an--;
+    while (bn>0 && b->d[bn-1]==0) bn--;
+    if (an!=bn) return (an>bn)?1:-1;
+    int32_t i; for (i=(int32_t)an-1; i>=0; i--) {
+        if (a->d[i]>b->d[i]) return  1;
+        if (a->d[i]<b->d[i]) return -1;
+    } return 0;
+}
+
+static void bi_from_u32(BigInt *a, uint32_t u)
+    { bi_zero(a); if(u){a->d[0]=u; a->n=1;} }
+
+static void bi_from_bytes(BigInt *a, const uint8_t *buf, uint64_t len)
+{
+    bi_zero(a); if(!len) return;
+    while (len>0 && *buf==0) { buf++; len--; }
+    if (!len) return;
+    uint64_t limbs=(len+3)/4; if(limbs>RSA_MAX_LIMBS) limbs=RSA_MAX_LIMBS;
+    a->n=(uint32_t)limbs;
+    uint64_t i; for (i=0; i<len; i++) {
+        uint64_t bi2=len-1-i, li=bi2/4, sh=(bi2%4)*8;
+        if (li<RSA_MAX_LIMBS) a->d[li]|=(uint32_t)buf[i]<<sh;
+    } bi_norm(a);
+}
+
+static void bi_to_bytes(const BigInt *a, uint8_t *out, uint64_t out_len)
+{
+    memset(out, 0, (size_t)out_len);
+    uint64_t i; for (i=0; i<out_len; i++) {
+        uint64_t bi2=out_len-1-i, li=bi2/4, sh=(bi2%4)*8;
+        if (li<RSA_MAX_LIMBS) out[i]=(uint8_t)((a->d[li]>>sh)&0xFF);
+    }
+}
+
+static void bi_add(BigInt *c, const BigInt *a, const BigInt *b)
+{
+    uint64_t carry=0; uint32_t i, len=(a->n>b->n)?a->n:b->n;
+    if (len<RSA_MAX_LIMBS) len++;
+    for (i=0; i<len&&i<RSA_MAX_LIMBS; i++) {
+        uint64_t s=carry+(i<a->n?(uint64_t)a->d[i]:0ULL)+(i<b->n?(uint64_t)b->d[i]:0ULL);
+        c->d[i]=(uint32_t)s; carry=s>>32;
+    } c->n=len; bi_norm(c);
+}
+
+static void bi_sub(BigInt *c, const BigInt *a, const BigInt *b)
+{
+    int64_t borrow=0; uint32_t i;
+    for (i=0; i<a->n; i++) {
+        int64_t diff=(int64_t)a->d[i]-(i<b->n?(int64_t)b->d[i]:0LL)-borrow;
+        if (diff<0) { c->d[i]=(uint32_t)(diff+(int64_t)0x100000000LL); borrow=1; }
+        else        { c->d[i]=(uint32_t)diff; borrow=0; }
+    }
+    for (i=a->n; i<RSA_MAX_LIMBS; i++) c->d[i]=0;
+    c->n=a->n; bi_norm(c);
+}
+
+static void bi_mul(BigInt *c, const BigInt *a, const BigInt *b)
+{
+    uint64_t tmp[RSA_MAX_LIMBS*2]; memset(tmp,0,sizeof(tmp));
+    uint32_t i,j;
+    for (i=0; i<a->n; i++) {
+        uint64_t carry=0;
+        for (j=0; j<b->n; j++) {
+            uint64_t prod=(uint64_t)a->d[i]*b->d[j]+tmp[i+j]+carry;
+            tmp[i+j]=prod&0xFFFFFFFFULL; carry=prod>>32;
+        }
+        if (i+b->n<RSA_MAX_LIMBS*2) tmp[i+b->n]+=carry;
+    }
+    for (i=0; i<RSA_MAX_LIMBS; i++) c->d[i]=(uint32_t)tmp[i];
+    c->n=a->n+b->n; if(c->n>RSA_MAX_LIMBS) c->n=RSA_MAX_LIMBS; bi_norm(c);
+}
+
+static void bi_shl1(BigInt *a)
+{
+    uint32_t carry=0, i;
+    for (i=0; i<a->n; i++) { uint32_t nc=a->d[i]>>31; a->d[i]=(a->d[i]<<1)|carry; carry=nc; }
+    if (carry&&a->n<RSA_MAX_LIMBS) { a->d[a->n]=carry; a->n++; }
+}
+
+static void bi_shr1(BigInt *a)
+{
+    if (!a->n) return;
+    uint32_t i; for (i=0; i+1<a->n; i++) a->d[i]=(a->d[i]>>1)|(a->d[i+1]<<31);
+    a->d[a->n-1]>>=1; bi_norm(a);
+}
+
+static uint32_t bi_bits(const BigInt *a)
+{
+    if (!a->n) return 0;
+    uint32_t top=a->d[a->n-1], bits=(a->n-1)*32;
+    while (top) { bits++; top>>=1; } return bits;
+}
+
+static int bi_bit(const BigInt *a, uint32_t k)
+    { uint32_t l=k/32,s=k%32; if(l>=a->n) return 0; return (a->d[l]>>s)&1; }
+
+static void bi_divmod(BigInt *q, BigInt *r, const BigInt *a_in, const BigInt *b)
+{
+    BigInt a; memcpy(&a,a_in,sizeof(BigInt));
+    bi_zero(q); bi_zero(r);
+    if (bi_cmp(&a,b)<0) { memcpy(r,&a,sizeof(BigInt)); return; }
+    BigInt ba; memcpy(&ba,b,sizeof(BigInt));
+    int32_t bits_a=(int32_t)bi_bits(&a), shift=bits_a-(int32_t)bi_bits(&ba);
+    int32_t s; for (s=0; s<shift; s++) bi_shl1(&ba);
+    int32_t i;
+    for (i=shift; i>=0; i--) {
+        bi_shl1(q);
+        if (bi_cmp(&a,&ba)>=0) {
+            BigInt t2; bi_sub(&t2,&a,&ba); memcpy(&a,&t2,sizeof(BigInt));
+            q->d[0]|=1; if(!q->n) q->n=1;
+        }
+        bi_shr1(&ba);
+    }
+    memcpy(r,&a,sizeof(BigInt));
+}
+
+static void bi_mod(BigInt *r, const BigInt *a, const BigInt *m)
+    { BigInt q; bi_divmod(&q,r,a,m); }
+
+static void bi_modpow(BigInt *res, const BigInt *base, const BigInt *exp, const BigInt *m)
+{
+    BigInt r,b,e,t1,t2;
+    bi_from_u32(&r,1); memcpy(&b,base,sizeof(BigInt)); memcpy(&e,exp,sizeof(BigInt));
+    bi_mod(&t1,&b,m); memcpy(&b,&t1,sizeof(BigInt));
+    while (!bi_is_zero(&e)) {
+        if (bi_bit(&e,0)) { bi_mul(&t1,&r,&b); bi_mod(&t2,&t1,m); memcpy(&r,&t2,sizeof(BigInt)); }
+        bi_mul(&t1,&b,&b); bi_mod(&t2,&t1,m); memcpy(&b,&t2,sizeof(BigInt));
+        bi_shr1(&e);
+    }
+    memcpy(res,&r,sizeof(BigInt));
+}
+
+static void bi_gcd(BigInt *g, const BigInt *a, const BigInt *b)
+{
+    BigInt u,v,t; memcpy(&u,a,sizeof(BigInt)); memcpy(&v,b,sizeof(BigInt));
+    while (!bi_is_zero(&v)) { bi_mod(&t,&u,&v); memcpy(&u,&v,sizeof(BigInt)); memcpy(&v,&t,sizeof(BigInt)); }
+    memcpy(g,&u,sizeof(BigInt));
+}
+
+static int bi_modinv(BigInt *inv, const BigInt *a, const BigInt *m)
+{
+    BigInt or2,r,ot,t,q,qt,t1,t2;
+    int o_neg=0, t_neg=1;
+    memcpy(&or2,a,sizeof(BigInt)); memcpy(&r,m,sizeof(BigInt));
+    bi_from_u32(&ot,0); bi_from_u32(&t,1);
+    while (!bi_is_zero(&r)) {
+        BigInt rem; memcpy(&t1,&or2,sizeof(BigInt));
+        bi_divmod(&q,&rem,&t1,&r);
+        memcpy(&or2,&r,sizeof(BigInt)); memcpy(&r,&rem,sizeof(BigInt));
+        bi_mul(&qt,&q,&t);
+        int n_neg;
+        if (o_neg==t_neg) {
+            if (bi_cmp(&ot,&qt)>=0) { bi_sub(&t2,&ot,&qt); n_neg=o_neg; }
+            else                    { bi_sub(&t2,&qt,&ot); n_neg=!o_neg; }
+        } else { bi_add(&t2,&ot,&qt); n_neg=o_neg; }
+        memcpy(&ot,&t,sizeof(BigInt)); o_neg=t_neg;
+        memcpy(&t,&t2,sizeof(BigInt)); t_neg=n_neg;
+    }
+    BigInt one; bi_from_u32(&one,1);
+    if (bi_cmp(&or2,&one)!=0) return -1;
+    if (o_neg) bi_sub(inv,m,&ot); else memcpy(inv,&ot,sizeof(BigInt));
+    bi_mod(&t1,inv,m); memcpy(inv,&t1,sizeof(BigInt));
+    return 0;
+}
+
+/* Miller-Rabin.  Returns 1 = probably prime, 0 = composite. */
+static int bi_miller_rabin(const BigInt *n, int rounds)
+{
+    BigInt one,two,nm1,d,t1,t2,x;
+    bi_from_u32(&one,1); bi_from_u32(&two,2);
+    if (bi_cmp(n,&two)==0) return 1;
+    if (!bi_bit(n,0)) return 0;
+    bi_sub(&nm1,n,&one);
+    memcpy(&d,&nm1,sizeof(BigInt)); uint32_t rv=0;
+    while (!bi_bit(&d,0)) { bi_shr1(&d); rv++; }
+    uint32_t nb=(bi_bits(n)+7)/8;
+    uint8_t *rb=(uint8_t*)malloc((size_t)nb); if (!rb) return 0;
+    int result=1, i;
+    for (i=0; i<rounds; i++) {
+        BigInt a;
+        do {
+            random_bytes(rb,nb); rb[0]&=0x7F;
+            bi_from_bytes(&a,rb,nb);
+            if (bi_cmp(&a,&two)<0) bi_from_u32(&a,2);
+            bi_mod(&t1,&a,n); memcpy(&a,&t1,sizeof(BigInt));
+        } while (bi_cmp(&a,&two)<0||bi_cmp(&a,&nm1)>=0);
+        bi_modpow(&x,&a,&d,n);
+        if (bi_cmp(&x,&one)==0||bi_cmp(&x,&nm1)==0) continue;
+        uint32_t j; int co=0;
+        for (j=0; j+1<rv; j++) {
+            bi_mul(&t1,&x,&x); bi_mod(&t2,&t1,n); memcpy(&x,&t2,sizeof(BigInt));
+            if (bi_cmp(&x,&nm1)==0) { co=1; break; }
+        }
+        if (co) continue;
+        result=0; break;
+    }
+    free(rb); return result;
+}
+
+/* Generate random probable prime of exactly `bits` bits. */
+static void bi_random_prime(BigInt *p, uint32_t bits)
+{
+    uint32_t nb=(bits+7)/8; uint8_t *buf=(uint8_t*)malloc((size_t)nb);
+    if (!buf) { bi_zero(p); return; }
+    static const uint16_t sp[]={3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59,
+        61,67,71,73,79,83,89,97,101,103,107,109,113,127,131,137,139,149,151,
+        157,163,167,173,179,181,191,193,197,199,211,223,227,229,233,239,241,251,0};
+    for (;;) {
+        random_bytes(buf,nb); buf[nb-1]|=0x01;
+        if (bits%8!=0) {
+            uint8_t mask=(uint8_t)((1u<<(bits%8))-1u);
+            buf[0]=(uint8_t)((buf[0]&mask)|(1u<<((bits%8)-1)));
+        } else { buf[0]|=0x80; }
+        bi_from_bytes(p,buf,nb);
+        if (bi_bits(p)!=bits) continue;
+        int ok=1, k; for (k=0; sp[k]; k++) {
+            uint32_t s=(uint32_t)sp[k]; uint64_t r2=0; int32_t li;
+            for (li=(int32_t)p->n-1; li>=0; li--)
+                r2=(uint64_t)(((r2<<32)|p->d[li])%s);
+            if (!r2) { ok=0; break; }
+        }
+        if (!ok) continue;
+        if (bi_miller_rabin(p,5)) break;
+    }
+    free(buf);
+}
+
+/* ---- key field I/O ---- */
+static uint8_t *rsa_write_field(uint8_t *ptr, const uint8_t *data, uint32_t len)
+{
+    ptr[0]=(uint8_t)(len>>24); ptr[1]=(uint8_t)(len>>16);
+    ptr[2]=(uint8_t)(len>> 8); ptr[3]=(uint8_t)len;
+    memcpy(ptr+4,data,len); return ptr+4+len;
+}
+
+static const uint8_t *rsa_read_field(const uint8_t **pp, uint64_t *rem, uint32_t *fl)
+{
+    if (*rem<4) return NULL;
+    uint32_t len=((uint32_t)(*pp)[0]<<24)|((uint32_t)(*pp)[1]<<16)
+               |((uint32_t)(*pp)[2]<<8)|(uint32_t)(*pp)[3];
+    *pp+=4; *rem-=4;
+    if (*rem<len) return NULL;
+    const uint8_t *d=*pp; *pp+=len; *rem-=len; *fl=len; return d;
+}
+
+/* ---- MGF1-SHA256 ---- */
+static void mgf1_sha256(uint8_t *out, uint64_t olen,
+                         const uint8_t *seed, uint64_t slen)
+{
+    uint64_t done=0; uint32_t ctr=0;
+    while (done<olen) {
+        uint8_t *buf=(uint8_t*)malloc(slen+4); if(!buf) break;
+        memcpy(buf,seed,slen);
+        buf[slen+0]=(uint8_t)(ctr>>24); buf[slen+1]=(uint8_t)(ctr>>16);
+        buf[slen+2]=(uint8_t)(ctr>>8);  buf[slen+3]=(uint8_t)ctr;
+        ByteArray ba; ba.data=buf; ba.len=slen+4;
+        ByteArray h=crypto_sha256(ba); free(buf); if(!h.data) break;
+        uint64_t take=olen-done; if(take>32) take=32;
+        memcpy(out+done,h.data,(size_t)take); free((void*)h.data);
+        done+=take; ctr++;
+    }
+}
+
+/* ---- OAEP-SHA256 ---- */
+static int oaep_encode(uint8_t *em, uint64_t em_len,
+                        const uint8_t *msg, uint64_t mlen,
+                        const uint8_t *label, uint64_t llen)
+{
+    uint64_t hlen=32;
+    if (em_len<2*hlen+2||mlen>em_len-2*hlen-2) return 0;
+    uint8_t lhash[32];
+    ByteArray lba; lba.data=label; lba.len=llen;
+    ByteArray lh=crypto_sha256(lba); if(!lh.data) return 0;
+    memcpy(lhash,lh.data,32); free((void*)lh.data);
+    uint64_t db_len=em_len-hlen-1;
+    uint8_t *db=em+hlen+1, *seed=em+1;
+    memcpy(db,lhash,hlen);
+    uint64_t ps_len=em_len-mlen-2*hlen-2;
+    memset(db+hlen,0,(size_t)ps_len); db[hlen+ps_len]=0x01;
+    memcpy(db+hlen+ps_len+1,msg,mlen);
+    random_bytes(seed,hlen);
+    uint8_t *dbm=(uint8_t*)malloc((size_t)db_len); if(!dbm) return 0;
+    mgf1_sha256(dbm,db_len,seed,hlen);
+    uint64_t i; for (i=0;i<db_len;i++) db[i]^=dbm[i]; free(dbm);
+    uint8_t sm[32]; mgf1_sha256(sm,hlen,db,db_len);
+    for (i=0;i<hlen;i++) seed[i]^=sm[i];
+    em[0]=0x00; return 1;
+}
+
+static uint64_t oaep_decode(const uint8_t *em, uint64_t em_len,
+                             uint8_t *out, uint64_t out_max,
+                             const uint8_t *label, uint64_t llen)
+{
+    uint64_t hlen=32;
+    if (em_len<2*hlen+2||em[0]!=0x00) return 0;
+    const uint8_t *seed=em+1, *db=em+hlen+1;
+    uint64_t db_len=em_len-hlen-1;
+    uint8_t rs[32]; memcpy(rs,seed,hlen);
+    uint8_t sm[32]; mgf1_sha256(sm,hlen,db,db_len);
+    uint64_t i; for (i=0;i<hlen;i++) rs[i]^=sm[i];
+    uint8_t *rdb=(uint8_t*)malloc((size_t)db_len); if(!rdb) return 0;
+    memcpy(rdb,db,(size_t)db_len);
+    uint8_t *dbm=(uint8_t*)malloc((size_t)db_len);
+    if (!dbm) { free(rdb); return 0; }
+    mgf1_sha256(dbm,db_len,rs,hlen);
+    for (i=0;i<db_len;i++) rdb[i]^=dbm[i]; free(dbm);
+    uint8_t lhash[32];
+    ByteArray lba; lba.data=label; lba.len=llen;
+    ByteArray lh=crypto_sha256(lba);
+    if (!lh.data) { free(rdb); return 0; }
+    memcpy(lhash,lh.data,32); free((void*)lh.data);
+    int bad=0; for (i=0;i<hlen;i++) bad|=(rdb[i]^lhash[i]);
+    uint64_t pos=hlen; while (pos<db_len&&rdb[pos]==0x00) pos++;
+    if (pos>=db_len||rdb[pos]!=0x01) { free(rdb); return 0; }
+    if (bad) { free(rdb); return 0; }
+    uint64_t ml=db_len-pos-1;
+    if (ml>out_max) { free(rdb); return 0; }
+    memcpy(out,rdb+pos+1,(size_t)ml); free(rdb); return ml;
+}
+
+/* ---- PSS-SHA256 (sLen = hLen = 32) ---- */
+static int pss_encode(uint8_t *em, uint64_t em_len, uint64_t em_bits,
+                       const uint8_t *mhash, uint64_t hlen)
+{
+    uint64_t slen=hlen;
+    if (em_len<hlen+slen+2) return 0;
+    uint8_t salt[32]; random_bytes(salt,slen);
+    uint8_t mp[72]; memset(mp,0,8); memcpy(mp+8,mhash,hlen); memcpy(mp+8+hlen,salt,slen);
+    uint8_t H[32];
+    ByteArray mba; mba.data=mp; mba.len=8+hlen+slen;
+    ByteArray hv=crypto_sha256(mba); if(!hv.data) return 0;
+    memcpy(H,hv.data,hlen); free((void*)hv.data);
+    uint64_t db_len=em_len-hlen-1; uint8_t *db=em;
+    uint64_t ps_len=db_len-slen-1;
+    memset(db,0,(size_t)ps_len); db[ps_len]=0x01; memcpy(db+ps_len+1,salt,slen);
+    uint8_t *dbm=(uint8_t*)malloc((size_t)db_len); if(!dbm) return 0;
+    mgf1_sha256(dbm,db_len,H,hlen);
+    uint64_t i; for (i=0;i<db_len;i++) db[i]^=dbm[i]; free(dbm);
+    if (em_bits%8!=0) db[0]&=(uint8_t)((1u<<(em_bits%8))-1u);
+    memcpy(em+db_len,H,hlen); em[em_len-1]=0xbc; return 1;
+}
+
+static int pss_verify(const uint8_t *em, uint64_t em_len, uint64_t em_bits,
+                       const uint8_t *mhash, uint64_t hlen)
+{
+    uint64_t slen=hlen;
+    if (em_len<hlen+slen+2||em[em_len-1]!=0xbc) return 0;
+    uint64_t db_len=em_len-hlen-1; const uint8_t *H=em+db_len;
+    uint8_t *db=(uint8_t*)malloc((size_t)db_len); if(!db) return 0;
+    memcpy(db,em,(size_t)db_len);
+    uint8_t *dbm=(uint8_t*)malloc((size_t)db_len);
+    if (!dbm) { free(db); return 0; }
+    mgf1_sha256(dbm,db_len,H,hlen);
+    uint64_t i; for (i=0;i<db_len;i++) db[i]^=dbm[i]; free(dbm);
+    if (em_bits%8!=0) db[0]&=(uint8_t)((1u<<(em_bits%8))-1u);
+    uint64_t ps_len=db_len-slen-1;
+    int bad=0; for (i=0;i<ps_len;i++) bad|=db[i]; bad|=(db[ps_len]!=0x01);
+    uint8_t *salt=db+ps_len+1;
+    uint8_t mp[72]; memset(mp,0,8); memcpy(mp+8,mhash,hlen); memcpy(mp+8+hlen,salt,slen);
+    ByteArray mba; mba.data=mp; mba.len=8+hlen+slen;
+    ByteArray hv=crypto_sha256(mba); free(db); if(!hv.data) return 0;
+    int eq=1; for (i=0;i<hlen;i++) eq&=(hv.data[i]==H[i]);
+    free((void*)hv.data); return (!bad)&&eq;
+}
+
+/* Parse public key.  Returns key byte length on success, 0 on error. */
+static uint64_t rsa_parse_pub(const uint8_t *pub, uint64_t pub_len,
+                               BigInt *n_out, BigInt *e_out)
+{
+    const uint8_t *p=pub; uint64_t rem=pub_len; uint32_t fl;
+    const uint8_t *nd=rsa_read_field(&p,&rem,&fl); if(!nd) return 0;
+    bi_from_bytes(n_out,nd,fl);
+    const uint8_t *ed=rsa_read_field(&p,&rem,&fl); if(!ed) return 0;
+    bi_from_bytes(e_out,ed,fl);
+    return (bi_bits(n_out)+7)/8;
+}
+
+/* =====================================================================
+ * Public RSA API (Story 30.1.2)
+ * ===================================================================== */
+
+RsaKeyPairResult encrypt_rsa_generate_keypair(uint32_t bits)
+{
+    RsaKeyPairResult res; memset(&res,0,sizeof(res));
+    if (bits!=2048&&bits!=4096) {
+        res.is_err=1; res.err_msg="bits must be 2048 or 4096"; return res;
+    }
+    uint32_t half=bits/2;
+    BigInt p,q,n,p1,q1,phi,ebi,d,g,one,t1,t2;
+    bi_from_u32(&ebi,65537); bi_from_u32(&one,1);
+    for (;;) {
+        bi_random_prime(&p,half);
+        if (bi_is_zero(&p)) { res.is_err=1; res.err_msg="prime gen failed"; return res; }
+        bi_sub(&p1,&p,&one); bi_gcd(&g,&p1,&ebi);
+        if (bi_cmp(&g,&one)!=0) continue;
+        bi_random_prime(&q,half);
+        if (bi_is_zero(&q)) { res.is_err=1; res.err_msg="prime gen failed"; return res; }
+        if (bi_cmp(&p,&q)==0) continue;
+        bi_sub(&q1,&q,&one); bi_gcd(&g,&q1,&ebi);
+        if (bi_cmp(&g,&one)!=0) continue;
+        bi_mul(&n,&p,&q); if(bi_bits(&n)!=bits) continue;
+        bi_mul(&phi,&p1,&q1);
+        if (bi_modinv(&d,&ebi,&phi)!=0) continue;
+        bi_mul(&t1,&ebi,&d); bi_mod(&t2,&t1,&phi);
+        if (bi_cmp(&t2,&one)!=0) continue;
+        break;
+    }
+    uint32_t nb=(bits+7)/8, hb=(half+7)/8, eb=3;
+    uint8_t *nbu=(uint8_t*)malloc(nb), *ebu=(uint8_t*)malloc(eb);
+    uint8_t *dbu=(uint8_t*)malloc(nb), *pbu=(uint8_t*)malloc(hb);
+    uint8_t *qbu=(uint8_t*)malloc(hb);
+    if (!nbu||!ebu||!dbu||!pbu||!qbu) {
+        free(nbu);free(ebu);free(dbu);free(pbu);free(qbu);
+        res.is_err=1; res.err_msg="malloc failed"; return res;
+    }
+    bi_to_bytes(&n,  nbu,nb); bi_to_bytes(&ebi,ebu,eb);
+    bi_to_bytes(&d,  dbu,nb); bi_to_bytes(&p,  pbu,hb); bi_to_bytes(&q,qbu,hb);
+    uint64_t pub_sz=4+nb+4+eb, priv_sz=pub_sz+4+nb+4+hb+4+hb;
+    uint8_t *pub_buf=(uint8_t*)malloc((size_t)pub_sz);
+    if (!pub_buf) {
+        free(nbu);free(ebu);free(dbu);free(pbu);free(qbu);
+        res.is_err=1; res.err_msg="malloc failed"; return res;
+    }
+    uint8_t *wp=pub_buf;
+    wp=rsa_write_field(wp,nbu,nb); wp=rsa_write_field(wp,ebu,eb);
+    uint8_t *priv_buf=(uint8_t*)malloc((size_t)priv_sz);
+    if (!priv_buf) {
+        free(pub_buf);free(nbu);free(ebu);free(dbu);free(pbu);free(qbu);
+        res.is_err=1; res.err_msg="malloc failed"; return res;
+    }
+    wp=priv_buf;
+    wp=rsa_write_field(wp,nbu,nb); wp=rsa_write_field(wp,ebu,eb);
+    wp=rsa_write_field(wp,dbu,nb); wp=rsa_write_field(wp,pbu,hb);
+    wp=rsa_write_field(wp,qbu,hb);
+    free(nbu);free(ebu);free(dbu);free(pbu);free(qbu);
+    res.ok.pub_data=pub_buf; res.ok.pub_len=pub_sz;
+    res.ok.priv_data=priv_buf; res.ok.priv_len=priv_sz;
+    res.is_err=0; (void)t2; return res;
+}
+
+RsaBytesResult encrypt_rsa_encrypt(const uint8_t *pub, uint64_t pub_len,
+                                    ByteArray plaintext)
+{
+    RsaBytesResult res; memset(&res,0,sizeof(res));
+    BigInt n,e; uint64_t kb=rsa_parse_pub(pub,pub_len,&n,&e);
+    if (!kb) { res.is_err=1; res.err_msg="invalid public key"; return res; }
+    if (plaintext.len>kb-66) { res.is_err=1; res.err_msg="plaintext too long"; return res; }
+    uint8_t *em=(uint8_t*)malloc((size_t)kb);
+    if (!em) { res.is_err=1; res.err_msg="malloc failed"; return res; }
+    if (!oaep_encode(em,kb,plaintext.data,plaintext.len,NULL,0)) {
+        free(em); res.is_err=1; res.err_msg="OAEP encode failed"; return res;
+    }
+    BigInt mi,ci; bi_from_bytes(&mi,em,kb); bi_modpow(&ci,&mi,&e,&n);
+    uint8_t *ct=(uint8_t*)malloc((size_t)kb);
+    if (!ct) { free(em); res.is_err=1; res.err_msg="malloc failed"; return res; }
+    bi_to_bytes(&ci,ct,kb); free(em);
+    res.ok.data=ct; res.ok.len=kb; return res;
+}
+
+RsaBytesResult encrypt_rsa_decrypt(const uint8_t *priv, uint64_t priv_len,
+                                    ByteArray ciphertext)
+{
+    RsaBytesResult res; memset(&res,0,sizeof(res));
+    const uint8_t *p=priv; uint64_t rem=priv_len; uint32_t fl;
+    const uint8_t *nd=rsa_read_field(&p,&rem,&fl);
+    if (!nd) { res.is_err=1; res.err_msg="invalid private key"; return res; }
+    BigInt n; bi_from_bytes(&n,nd,fl);
+    if (!rsa_read_field(&p,&rem,&fl)) { res.is_err=1; res.err_msg="invalid private key (e)"; return res; }
+    const uint8_t *dd=rsa_read_field(&p,&rem,&fl);
+    if (!dd) { res.is_err=1; res.err_msg="invalid private key (d)"; return res; }
+    BigInt d; bi_from_bytes(&d,dd,fl);
+    uint64_t kb=(bi_bits(&n)+7)/8;
+    if (ciphertext.len!=kb) { res.is_err=1; res.err_msg="ciphertext length mismatch"; return res; }
+    BigInt ci,mi; bi_from_bytes(&ci,ciphertext.data,ciphertext.len);
+    bi_modpow(&mi,&ci,&d,&n);
+    uint8_t *em=(uint8_t*)malloc((size_t)kb);
+    if (!em) { res.is_err=1; res.err_msg="malloc failed"; return res; }
+    bi_to_bytes(&mi,em,kb);
+    uint8_t *out=(uint8_t*)malloc((size_t)kb);
+    if (!out) { free(em); res.is_err=1; res.err_msg="malloc failed"; return res; }
+    uint64_t ml=oaep_decode(em,kb,out,kb,NULL,0); free(em);
+    if (!ml) { free(out); res.is_err=1; res.err_msg="decryption failed"; return res; }
+    res.ok.data=out; res.ok.len=ml; return res;
+}
+
+RsaBytesResult encrypt_rsa_sign(const uint8_t *priv, uint64_t priv_len,
+                                 ByteArray msg)
+{
+    RsaBytesResult res; memset(&res,0,sizeof(res));
+    const uint8_t *p=priv; uint64_t rem=priv_len; uint32_t fl;
+    const uint8_t *nd=rsa_read_field(&p,&rem,&fl);
+    if (!nd) { res.is_err=1; res.err_msg="invalid private key"; return res; }
+    BigInt n; bi_from_bytes(&n,nd,fl);
+    if (!rsa_read_field(&p,&rem,&fl)) { res.is_err=1; res.err_msg="invalid private key (e)"; return res; }
+    const uint8_t *dd=rsa_read_field(&p,&rem,&fl);
+    if (!dd) { res.is_err=1; res.err_msg="invalid private key (d)"; return res; }
+    BigInt d; bi_from_bytes(&d,dd,fl);
+    uint64_t kb=(bi_bits(&n)+7)/8, emb=bi_bits(&n)-1, eml=(emb+7)/8;
+    ByteArray mh=crypto_sha256(msg);
+    if (!mh.data) { res.is_err=1; res.err_msg="sha256 failed"; return res; }
+    uint8_t *em=(uint8_t*)calloc(1,(size_t)eml);
+    if (!em) { free((void*)mh.data); res.is_err=1; res.err_msg="malloc failed"; return res; }
+    if (!pss_encode(em,eml,emb,mh.data,32)) {
+        free(em); free((void*)mh.data);
+        res.is_err=1; res.err_msg="PSS encode failed"; return res;
+    }
+    free((void*)mh.data);
+    uint8_t *emp=(uint8_t*)calloc(1,(size_t)kb);
+    if (!emp) { free(em); res.is_err=1; res.err_msg="malloc failed"; return res; }
+    memcpy(emp+(kb-eml),em,(size_t)eml); free(em);
+    BigInt mi,si; bi_from_bytes(&mi,emp,kb); free(emp);
+    bi_modpow(&si,&mi,&d,&n);
+    uint8_t *sig=(uint8_t*)malloc((size_t)kb);
+    if (!sig) { res.is_err=1; res.err_msg="malloc failed"; return res; }
+    bi_to_bytes(&si,sig,kb);
+    res.ok.data=sig; res.ok.len=kb; return res;
+}
+
+int encrypt_rsa_verify(const uint8_t *pub, uint64_t pub_len,
+                        ByteArray msg, ByteArray sig)
+{
+    BigInt n,e; uint64_t kb=rsa_parse_pub(pub,pub_len,&n,&e);
+    if (!kb||sig.len!=kb) return 0;
+    BigInt si,mi; bi_from_bytes(&si,sig.data,sig.len);
+    bi_modpow(&mi,&si,&e,&n);
+    uint64_t emb=bi_bits(&n)-1, eml=(emb+7)/8;
+    uint8_t *em=(uint8_t*)calloc(1,(size_t)kb); if(!em) return 0;
+    bi_to_bytes(&mi,em,kb);
+    uint8_t *ems=em+(kb-eml);
+    ByteArray mh=crypto_sha256(msg);
+    if (!mh.data) { free(em); return 0; }
+    int ok=pss_verify(ems,eml,emb,mh.data,32);
+    free((void*)mh.data); free(em); return ok;
 }

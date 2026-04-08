@@ -930,10 +930,16 @@ static Node *parse_stmt_list(Parser *p, Token *ref) {
  * Error recovery: breaks the loop on missing identifier after '.'.
  */
 /* ModulePath = IDENT ('.' IDENT)* */
+/* Accept TK_IDENT or TK_TYPE_IDENT as a module path segment — the latter
+ * allows uppercase module names like std.Http; names.c normalises them. */
+static Token *xp_seg(Parser *p) {
+    if (peek(p)==TK_IDENT || peek(p)==TK_TYPE_IDENT) return adv(p);
+    eerr(p, peek(p)==TK_EOF?E2004:E2002, cur(p), "unexpected token"); return NULL;
+}
 static Node *parse_module_path(Parser *p) {
-    Token *t=cur(p); if(!xp(p,TK_IDENT,"module path segment")) return NULL;
+    Token *t=cur(p); if(!xp_seg(p)) return NULL;
     Node *n=mk(p,NODE_MODULE_PATH,t); ch(p,n,mk(p,NODE_IDENT,t));
-    while(peek(p)==TK_DOT){adv(p);Token *s=cur(p);if(!xp(p,TK_IDENT,"segment"))break;ch(p,n,mk(p,NODE_IDENT,s));}
+    while(peek(p)==TK_DOT){adv(p);Token *s=cur(p);if(!xp_seg(p))break;ch(p,n,mk(p,NODE_IDENT,s));}
     return n;
 }
 

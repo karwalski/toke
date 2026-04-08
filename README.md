@@ -1,9 +1,9 @@
-# tkc — the toke reference compiler
+# toke — the toke programming language
 
 See [SECURITY.md](SECURITY.md) for the vulnerability disclosure policy.
 
-tkc is the reference compiler for [toke](https://github.com/karwalski/toke-spec),
-a machine-native programming language designed for LLM code generation.
+toke is a compiled, statically typed programming language designed for LLM code generation.
+This repository contains the reference compiler (tkc), language specification, and standard library.
 
 ## Status
 
@@ -18,8 +18,8 @@ All contributions require a `Signed-off-by` trailer in every commit
 
 Requirements: C99 compiler, LLVM (for the backend), Make.
 
-    git clone https://github.com/karwalski/tkc
-    cd tkc
+    git clone https://github.com/karwalski/toke
+    cd toke
     make
 
 Produces `./tkc` binary.
@@ -62,7 +62,7 @@ tkc includes a growing standard library with C runtime backing:
 | `std.log` | Structured logging |
 | `std.test` | Test assertions |
 
-toke uses a **TOON-first serialization strategy**: TOON for tabular data, YAML and JSON as secondary formats. See [ADR-0003](https://github.com/karwalski/toke-spec/blob/main/docs/architecture/ADR-0003.md) for the design rationale.
+toke uses a **TOON-first serialization strategy**: TOON for tabular data, YAML and JSON as secondary formats. See [ADR-0003](spec/docs/architecture/ADR-0003.md) for the design rationale.
 
 ## Supported targets
 
@@ -72,8 +72,7 @@ toke uses a **TOON-first serialization strategy**: TOON for tabular data, YAML a
 
 ## Language specification
 
-See [toke-spec](https://github.com/karwalski/toke-spec) for the normative
-language specification and formal grammar.
+See [spec/](spec/) for the normative language specification and formal grammar.
 
 ## Licence
 

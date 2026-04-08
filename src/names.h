@@ -25,6 +25,7 @@
 #define E2035 2035  /* malformed version string in import                */
 #define E2036 2036  /* no compatible version found                       */
 #define E2037 2037  /* version conflict between imports                  */
+#define W2038 2038  /* module name normalised from wrong capitalisation   */
 
 /* ── ImportEntry ──────────────────────────────────────────────────────── */
 

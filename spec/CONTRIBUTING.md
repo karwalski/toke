@@ -1,4 +1,4 @@
-# Contributing to toke-spec
+# Contributing to the toke specification
 
 ## How specification changes work
 
@@ -10,7 +10,7 @@ The toke specification uses a structured amendment process.
 
 **For normative changes** (grammar rules, type rules, error codes,
 stdlib signatures):
-- Open a Spec Amendment issue first
+- Open a spec amendment issue first
 - Describe the problem the change solves
 - Propose the change and its impact on existing implementations
 - Allow 30 days for community comment before a PR is raised
@@ -28,7 +28,7 @@ stdlib signatures):
 - Changes to `spec/errors.md` must include at least one example
   program that triggers the new or changed diagnostic
 - Changes to `spec/stdlib-signatures.md` must be reflected in
-  toke-stdlib and toke-benchmark in the same release
+  the stdlib and toke-eval/benchmark in the same release
 
 ## Developer Certificate of Origin
 

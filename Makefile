@@ -1,6 +1,13 @@
 CC      = cc
 CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -g \
           -DTKC_STDLIB_DIR='"$(CURDIR)/src/stdlib"'
+# ── Epic 55: vendor library flags ────────────────────────────────────────────
+CMARK_SRCS  = $(filter-out stdlib/vendor/cmark/src/main.c, \
+                $(wildcard stdlib/vendor/cmark/src/*.c))
+CMARK_FLAGS = -Istdlib/vendor/cmark/src -Wno-pedantic
+TOML_SRCS   = stdlib/vendor/tomlc99/toml.c
+TOML_FLAGS  = -Istdlib/vendor/tomlc99
+
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/config.c src/fmt.c src/progress.c \
           src/sourcemap.c src/ast_json.c src/migrate.c src/companion.c src/compress.c \
@@ -38,6 +45,12 @@ REPRO_FLAGS = -frandom-seed=tkc \
 
 export SOURCE_DATE_EPOCH ?= 0
 
+# Portable wall-clock timeout for test binaries (no GNU coreutils needed).
+# Uses perl alarm() which survives exec; SIGALRM default action kills the process.
+# Override with e.g.  make RUN_TEST_TIMEOUT=60 test-stdlib-encrypt
+RUN_TEST_TIMEOUT ?= 180
+RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
+
 .PHONY: all clean lint conform conform-check build-all ci test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
@@ -48,7 +61,8 @@ export SOURCE_DATE_EPOCH ?= 0
 	test-stdlib-viz-integration test-stdlib-data-pipeline test-stdlib-llm-live \
 	test-stdlib-http test-stdlib-http-cookies test-stdlib-http-multipart \
 	test-stdlib-http-form test-stdlib-http-tls \
-	test-stdlib-file
+	test-stdlib-file test-stdlib-runtime \
+	test-stdlib-path test-stdlib-args test-stdlib-md test-stdlib-toml
 
 all: $(BIN)
 
@@ -104,41 +118,46 @@ ci: lint conform conform-check
 test-stdlib:
 	$(CC) $(CFLAGS) -o test/stdlib/test_str \
 	    test/stdlib/test_str.c src/stdlib/str.c
-	./test/stdlib/test_str
+	$(RUN_TEST) ./test/stdlib/test_str
 
 test-stdlib-db:
 	$(CC) $(CFLAGS) -o test/stdlib/test_db \
 	    test/stdlib/test_db.c src/stdlib/db.c -lsqlite3
-	./test/stdlib/test_db
+	$(RUN_TEST) ./test/stdlib/test_db
 
 test-stdlib-file:
 	$(CC) $(CFLAGS) -o test/stdlib/test_file \
 	    test/stdlib/test_file.c src/stdlib/file.c
-	./test/stdlib/test_file
+	$(RUN_TEST) ./test/stdlib/test_file
+
+test-stdlib-runtime:
+	$(CC) $(CFLAGS) -o test/stdlib/test_tk_runtime \
+	    test/stdlib/test_tk_runtime.c src/stdlib/tk_runtime.c
+	$(RUN_TEST) ./test/stdlib/test_tk_runtime
 
 test-stdlib-http:
 	$(CC) $(CFLAGS) -o test/stdlib/test_http \
 	    test/stdlib/test_http.c src/stdlib/http.c \
 	    src/stdlib/encoding.c src/stdlib/str.c
-	./test/stdlib/test_http
+	$(RUN_TEST) ./test/stdlib/test_http
 
 test-stdlib-http-cookies:
 	$(CC) $(CFLAGS) -o test/stdlib/test_http_cookies \
 	    test/stdlib/test_http_cookies.c src/stdlib/http.c \
 	    src/stdlib/encoding.c src/stdlib/str.c
-	./test/stdlib/test_http_cookies
+	$(RUN_TEST) ./test/stdlib/test_http_cookies
 
 test-stdlib-http-multipart:
 	$(CC) $(CFLAGS) -o test/stdlib/test_http_multipart \
 	    test/stdlib/test_http_multipart.c src/stdlib/http.c \
 	    src/stdlib/encoding.c src/stdlib/str.c
-	./test/stdlib/test_http_multipart
+	$(RUN_TEST) ./test/stdlib/test_http_multipart
 
 test-stdlib-http-form:
 	$(CC) $(CFLAGS) -o test/stdlib/test_http_form \
 	    test/stdlib/test_http_form.c src/stdlib/http.c \
 	    src/stdlib/encoding.c src/stdlib/str.c
-	./test/stdlib/test_http_form
+	$(RUN_TEST) ./test/stdlib/test_http_form
 
 # Story 27.1.2 — TLS/HTTPS support.
 # Compiles the stub (no OpenSSL) so the test binary is always buildable.
@@ -158,159 +177,159 @@ test-stdlib-http-tls:
 	    test/stdlib/test_http_tls.c src/stdlib/http.c \
 	    src/stdlib/encoding.c src/stdlib/str.c \
 	    $(TLS_LDFLAGS)
-	./test/stdlib/test_http_tls
+	$(RUN_TEST) ./test/stdlib/test_http_tls
 
 test-stdlib-process:
 	$(CC) $(CFLAGS) -o test/stdlib/test_process \
 	    test/stdlib/test_process.c src/stdlib/process.c
-	./test/stdlib/test_process
+	$(RUN_TEST) ./test/stdlib/test_process
 
 test-stdlib-env:
 	$(CC) $(CFLAGS) -o test/stdlib/test_env \
 	    test/stdlib/test_env.c src/stdlib/env.c
-	./test/stdlib/test_env
+	$(RUN_TEST) ./test/stdlib/test_env
 
 test-stdlib-crypto:
 	$(CC) $(CFLAGS) -o test/stdlib/test_crypto \
 	    test/stdlib/test_crypto.c src/stdlib/crypto.c src/stdlib/str.c
-	./test/stdlib/test_crypto
+	$(RUN_TEST) ./test/stdlib/test_crypto
 
 test-stdlib-auth:
 	$(CC) $(CFLAGS) -o test/stdlib/test_auth \
 	    test/stdlib/test_auth.c src/stdlib/auth.c src/stdlib/encoding.c src/stdlib/crypto.c src/stdlib/str.c
-	./test/stdlib/test_auth
+	$(RUN_TEST) ./test/stdlib/test_auth
 
 test-stdlib-time:
 	$(CC) $(CFLAGS) -o test/stdlib/test_time \
 	    test/stdlib/test_time.c src/stdlib/tk_time.c
-	./test/stdlib/test_time
+	$(RUN_TEST) ./test/stdlib/test_time
 
 test-stdlib-test:
 	$(CC) $(CFLAGS) -o test/stdlib/test_tktest \
 	    test/stdlib/test_tktest.c src/stdlib/tk_test.c
-	./test/stdlib/test_tktest
+	$(RUN_TEST) ./test/stdlib/test_tktest
 
 test-stdlib-log:
 	$(CC) $(CFLAGS) -o test/stdlib/test_log \
 	    test/stdlib/test_log.c src/stdlib/log.c src/stdlib/tk_time.c
-	./test/stdlib/test_log
+	$(RUN_TEST) ./test/stdlib/test_log
 
 test-stdlib-toon:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_toon \
 	    test/stdlib/test_toon.c src/stdlib/toon.c
-	./test/stdlib/test_toon
+	$(RUN_TEST) ./test/stdlib/test_toon
 
 test-stdlib-json:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_json \
 	    test/stdlib/test_json.c src/stdlib/json.c
-	./test/stdlib/test_json
+	$(RUN_TEST) ./test/stdlib/test_json
 
 test-stdlib-yaml:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_yaml \
 	    test/stdlib/test_yaml.c src/stdlib/yaml.c
-	./test/stdlib/test_yaml
+	$(RUN_TEST) ./test/stdlib/test_yaml
 
 test-stdlib-i18n:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_i18n \
 	    test/stdlib/test_i18n.c src/stdlib/i18n.c
-	./test/stdlib/test_i18n
+	$(RUN_TEST) ./test/stdlib/test_i18n
 
 test-stdlib-dataframe:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_dataframe \
 	    test/stdlib/test_dataframe.c src/stdlib/dataframe.c src/stdlib/csv.c src/stdlib/str.c
-	./test/stdlib/test_dataframe
+	$(RUN_TEST) ./test/stdlib/test_dataframe
 
 test-stdlib-analytics:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_analytics \
 	    test/stdlib/test_analytics.c src/stdlib/analytics.c src/stdlib/dataframe.c src/stdlib/csv.c src/stdlib/str.c src/stdlib/math.c -lm
-	./test/stdlib/test_analytics
+	$(RUN_TEST) ./test/stdlib/test_analytics
 
 # ── Story 19.1.1: Unit test targets for new stdlib modules ──────────────────
 
 test-stdlib-encoding:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_encoding \
 	    test/stdlib/test_encoding.c src/stdlib/encoding.c
-	./test/stdlib/test_encoding
+	$(RUN_TEST) ./test/stdlib/test_encoding
 
 test-stdlib-encrypt:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_encrypt \
 	    test/stdlib/test_encrypt.c src/stdlib/encrypt.c src/stdlib/crypto.c src/stdlib/encoding.c src/stdlib/str.c
-	./test/stdlib/test_encrypt
+	$(RUN_TEST) ./test/stdlib/test_encrypt
 
 test-stdlib-ws:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_ws \
 	    test/stdlib/test_ws.c src/stdlib/ws.c
-	./test/stdlib/test_ws
+	$(RUN_TEST) ./test/stdlib/test_ws
 
 test-stdlib-sse:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_sse \
 	    test/stdlib/test_sse.c src/stdlib/sse.c
-	./test/stdlib/test_sse
+	$(RUN_TEST) ./test/stdlib/test_sse
 
 test-stdlib-router:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_router \
 	    test/stdlib/test_router.c src/stdlib/router.c src/stdlib/ws.c -lz
-	./test/stdlib/test_router
+	$(RUN_TEST) ./test/stdlib/test_router
 
 test-stdlib-template:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_template \
 	    test/stdlib/test_template.c src/stdlib/template.c
-	./test/stdlib/test_template
+	$(RUN_TEST) ./test/stdlib/test_template
 
 test-stdlib-csv:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_csv \
 	    test/stdlib/test_csv.c src/stdlib/csv.c
-	./test/stdlib/test_csv
+	$(RUN_TEST) ./test/stdlib/test_csv
 
 test-stdlib-math:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_math \
 	    test/stdlib/test_math.c src/stdlib/math.c -lm
-	./test/stdlib/test_math
+	$(RUN_TEST) ./test/stdlib/test_math
 
 test-stdlib-llm:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_llm \
 	    test/stdlib/test_llm.c src/stdlib/llm.c
-	./test/stdlib/test_llm
+	$(RUN_TEST) ./test/stdlib/test_llm
 
 test-stdlib-llm-tool:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_llm_tool \
 	    test/stdlib/test_llm_tool.c src/stdlib/llm_tool.c src/stdlib/llm.c
-	./test/stdlib/test_llm_tool
+	$(RUN_TEST) ./test/stdlib/test_llm_tool
 
 test-stdlib-chart:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_chart \
 	    test/stdlib/test_chart.c src/stdlib/chart.c
-	./test/stdlib/test_chart
+	$(RUN_TEST) ./test/stdlib/test_chart
 
 test-stdlib-html:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_html \
 	    test/stdlib/test_html.c src/stdlib/html.c
-	./test/stdlib/test_html
+	$(RUN_TEST) ./test/stdlib/test_html
 
 test-stdlib-dashboard:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_dashboard \
 	    test/stdlib/test_dashboard.c src/stdlib/dashboard.c src/stdlib/chart.c src/stdlib/html.c src/stdlib/router.c src/stdlib/ws.c -lz
-	./test/stdlib/test_dashboard
+	$(RUN_TEST) ./test/stdlib/test_dashboard
 
 test-stdlib-svg:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_svg \
 	    test/stdlib/test_svg.c src/stdlib/svg.c -lm
-	./test/stdlib/test_svg
+	$(RUN_TEST) ./test/stdlib/test_svg
 
 test-stdlib-canvas:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_canvas \
 	    test/stdlib/test_canvas.c src/stdlib/canvas.c
-	./test/stdlib/test_canvas
+	$(RUN_TEST) ./test/stdlib/test_canvas
 
 test-stdlib-image:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_image \
 	    test/stdlib/test_image.c src/stdlib/image.c
-	./test/stdlib/test_image
+	$(RUN_TEST) ./test/stdlib/test_image
 
 test-stdlib-ml:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_ml \
 	    test/stdlib/test_ml.c src/stdlib/ml.c -lm
-	./test/stdlib/test_ml
+	$(RUN_TEST) ./test/stdlib/test_ml
 
 # ── Aggregate: all 20 new stdlib module tests ───────────────────────────────
 
@@ -328,13 +347,13 @@ test-stdlib-security-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_security_integration \
 	    test/stdlib/test_security_integration.c \
 	    src/stdlib/auth.c src/stdlib/encrypt.c src/stdlib/crypto.c src/stdlib/encoding.c src/stdlib/str.c
-	./test/stdlib/test_security_integration
+	$(RUN_TEST) ./test/stdlib/test_security_integration
 
 test-stdlib-network-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_network_integration \
 	    test/stdlib/test_network_integration.c \
 	    src/stdlib/router.c src/stdlib/ws.c src/stdlib/sse.c -lz
-	./test/stdlib/test_network_integration
+	$(RUN_TEST) ./test/stdlib/test_network_integration
 
 test-stdlib-viz-integration:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_viz_integration \
@@ -342,27 +361,27 @@ test-stdlib-viz-integration:
 	    src/stdlib/chart.c src/stdlib/html.c src/stdlib/svg.c src/stdlib/canvas.c \
 	    src/stdlib/dashboard.c src/stdlib/router.c \
 	    src/stdlib/dataframe.c src/stdlib/csv.c src/stdlib/math.c src/stdlib/str.c -lm -lz
-	./test/stdlib/test_viz_integration
+	$(RUN_TEST) ./test/stdlib/test_viz_integration
 
 test-stdlib-data-pipeline:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_data_pipeline \
 	    test/stdlib/test_data_pipeline.c \
 	    src/stdlib/csv.c src/stdlib/math.c src/stdlib/dataframe.c \
 	    src/stdlib/analytics.c src/stdlib/chart.c src/stdlib/str.c -lm
-	./test/stdlib/test_data_pipeline
+	$(RUN_TEST) ./test/stdlib/test_data_pipeline
 
 test-stdlib-llm-live:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_llm_live \
 	    test/stdlib/test_llm_live.c \
 	    src/stdlib/llm.c src/stdlib/llm_tool.c src/stdlib/json.c
-	./test/stdlib/test_llm_live
+	$(RUN_TEST) ./test/stdlib/test_llm_live
 
 test-stdlib-coverage:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_stdlib_coverage \
 	    test/stdlib/test_stdlib_coverage.c \
 	    src/stdlib/json.c src/stdlib/file.c src/stdlib/str.c \
 	    src/stdlib/db.c -lsqlite3
-	./test/stdlib/test_stdlib_coverage
+	$(RUN_TEST) ./test/stdlib/test_stdlib_coverage
 
 bench:
 	$(CC) -O2 -iquote src/stdlib -o test/stdlib/bench_stdlib \
@@ -417,6 +436,28 @@ repro-check:
 	 fi
 	@rm -rf .repro-a .repro-b
 
+# ── Epic 55: new stdlib test targets ─────────────────────────────────────────
+
+test-stdlib-path:
+	$(CC) $(CFLAGS) -o test/stdlib/test_path \
+	    test/stdlib/test_path.c src/stdlib/path.c
+	$(RUN_TEST) ./test/stdlib/test_path
+
+test-stdlib-args:
+	$(CC) $(CFLAGS) -o test/stdlib/test_args \
+	    test/stdlib/test_args.c src/stdlib/args.c
+	$(RUN_TEST) ./test/stdlib/test_args
+
+test-stdlib-md:
+	$(CC) $(CFLAGS) $(CMARK_FLAGS) -o test/stdlib/test_md \
+	    test/stdlib/test_md.c src/stdlib/md.c $(CMARK_SRCS)
+	$(RUN_TEST) ./test/stdlib/test_md
+
+test-stdlib-toml:
+	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml \
+	    test/stdlib/test_toml.c src/stdlib/toml.c $(TOML_SRCS)
+	$(RUN_TEST) ./test/stdlib/test_toml
+
 clean:
 	rm -f $(OBJS) $(BIN) test/stdlib/test_str test/stdlib/test_db \
 	    test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto \
@@ -431,6 +472,8 @@ clean:
 	    test/stdlib/test_ml \
 	    test/stdlib/test_security_integration test/stdlib/test_network_integration \
 	    test/stdlib/test_viz_integration test/stdlib/test_data_pipeline \
+	    test/stdlib/test_path test/stdlib/test_args \
+	    test/stdlib/test_md test/stdlib/test_toml \
 	    test/stdlib/test_llm_live \
 	    fuzz-lexer fuzz-parser
 

@@ -700,7 +700,7 @@ TkRouteResp router_resp_status(int status, const char *body)
     memset(&resp, 0, sizeof(resp));
     resp.status       = status;
     resp.body         = body;
-    resp.content_type = "text/plain";
+    resp.content_type = (body && body[0] == '<') ? "text/html" : "text/plain";
     return resp;
 }
 
@@ -709,8 +709,8 @@ TkRouteResp router_resp_404(void)
     TkRouteResp resp;
     memset(&resp, 0, sizeof(resp));
     resp.status       = 404;
-    resp.body         = "Not Found";
-    resp.content_type = "text/plain";
+    resp.body         = "<!DOCTYPE html><html><body><h1>404 Not Found</h1></body></html>";
+    resp.content_type = "text/html";
     return resp;
 }
 

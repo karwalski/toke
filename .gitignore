@@ -33,3 +33,5 @@ test/stdlib/test_i18n
 # macOS
 .DS_Store
 **/.DS_Store
+stdlib/vendor/cmark/
+stdlib/vendor/tomlc99/

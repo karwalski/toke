@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "../../src/stdlib/llm.h"
 
 static int failures = 0;
@@ -36,6 +37,8 @@ static int contains(const char *haystack, const char *needle)
 
 int main(void)
 {
+    alarm(60); /* safety net: llm tests connect to localhost (ECONNREFUSED is fast) */
+
     /* ------------------------------------------------------------------ */
     /* llm_build_request tests                                             */
     /* ------------------------------------------------------------------ */

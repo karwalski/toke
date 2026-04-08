@@ -392,6 +392,70 @@ The lexer shall emit a structured diagnostic (Section 18) and halt on:
 - a character outside the character set in a structural position (E1003)
 - an identifier beginning with a digit (E1004)
 
+### 8.9 Whitespace and Token Separation [N]
+
+#### 8.9.1 Whitespace Characters
+
+The following characters are whitespace in toke:
+
+| Character | Unicode | Name |
+|-----------|---------|------|
+| ` ` | U+0020 | Space |
+| `\t` | U+0009 | Horizontal tab |
+| `\r` | U+000D | Carriage return |
+| `\n` | U+000A | Line feed |
+
+Whitespace is not a structural element of toke source. It carries no syntactic meaning beyond its role as a token separator. The lexer discards all whitespace outside string literals after using it to determine token boundaries.
+
+#### 8.9.2 When Whitespace Is Required
+
+Whitespace is **required** between two adjacent tokens when both tokens consist entirely of alphanumeric characters (letters `a`–`z` or digits `0`–`9`). Without whitespace, the lexer applies longest-match and produces a single token, not two.
+
+**Normative rule:** If token A ends with an alphanumeric character and token B begins with an alphanumeric character, at least one whitespace character shall appear between them. Omitting this whitespace does not produce a syntax error at the token boundary; instead, A and B merge into a single token under longest-match, which is then classified as an identifier or rejected by the parser as an unexpected token.
+
+#### 8.9.3 When Whitespace Is Not Required
+
+Whitespace is **not required** at a token boundary where at least one adjacent token consists of a symbol character (operators, brackets, punctuation). The lexer can unambiguously determine the boundary without whitespace.
+
+Examples where whitespace is optional:
+
+| Written | Tokens produced | Equivalent to |
+|---------|-----------------|---------------|
+| `x+y` | `x` `+` `y` | `x + y` |
+| `a=b` | `a` `=` `b` | `a = b` |
+| `f(x)` | `f` `(` `x` `)` | `f ( x )` |
+| `a:i64` | `a` `:` `i64` | `a : i64` |
+| `<x` | `<` `x` | `< x` |
+
+#### 8.9.4 Whitespace Equivalence
+
+Any amount of whitespace between two tokens is equivalent. A single space, multiple spaces, a tab, a newline, or any combination of whitespace characters between two tokens produces the same token stream. Two programs that differ only in the whitespace between tokens are semantically identical.
+
+**Normative rule:** The compiler shall treat any non-empty sequence of whitespace characters as equivalent to a single space for all purposes of parsing and semantic analysis.
+
+#### 8.9.5 Longest-Match Lexing and Keyword Prefixes
+
+The lexer uses longest-match (maximal munch): at each position it consumes the longest sequence of characters that forms a valid token. This rule applies uniformly and has the following consequence for keyword recognition:
+
+A token that begins with a keyword string but continues with additional alphanumeric characters is classified as an **identifier**, not as a keyword followed by additional characters. The lexer does not split an alphanumeric run at keyword boundaries.
+
+**Normative rule:** An identifier whose spelling begins with a reserved keyword prefix is a valid identifier, not an error. The keyword is recognised only when it appears as a complete token — that is, when it is followed by a non-alphanumeric character or end of input.
+
+#### 8.9.6 Annotated Examples
+
+| Source text | Tokens produced | Classification |
+|-------------|-----------------|----------------|
+| `letx` | `letx` | identifier `letx` |
+| `let x` | `let` `x` | keyword `let` + identifier `x` |
+| `letmut` | `letmut` | identifier `letmut` |
+| `let mut` | `let` `mut` | keyword `let` + keyword `mut` |
+| `mutantninjaturtles` | `mutantninjaturtles` | identifier `mutantninjaturtles` |
+| `mut antninjaturtles` | `mut` `antninjaturtles` | keyword `mut` + identifier `antninjaturtles` |
+| `letmutantninjaturtles=5` | `letmutantninjaturtles` `=` `5` | identifier assigned, not a let-binding |
+| `let mutantninjaturtles=5` | `let` `mutantninjaturtles` `=` `5` | let-binding of identifier `mutantninjaturtles` |
+
+The rule is mechanical and context-free: the lexer does not consult surrounding syntax or parser state when deciding token boundaries. Longest-match is applied unconditionally.
+
 ---
 
 ## 9. Source Model [N]

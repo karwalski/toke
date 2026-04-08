@@ -71,4 +71,20 @@ int             str_is_digit(const char *s);
 int             str_is_alnum(const char *s);
 int             str_is_space(const char *s);
 
+/* Story 55.4.6 — string builder */
+typedef struct { char *data; uint64_t len; uint64_t cap; } StrBuf;
+
+StrBuf      str_buf_new(void);
+void        str_buf_add(StrBuf *b, const char *s);
+void        str_buf_addbyte(StrBuf *b, unsigned char c);
+const char *str_buf_done(StrBuf *b);   /* returns heap string, resets b */
+
+/* Story 56.8.5 — trimprefix, trimsuffix, lastindex, matchbracket */
+typedef struct { const char *ok; int is_err; const char *err_msg; } StrBracketResult;
+
+const char       *str_trimprefix(const char *s, const char *prefix);
+const char       *str_trimsuffix(const char *s, const char *suffix);
+int64_t           str_lastindex(const char *s, const char *sub);
+StrBracketResult  str_matchbracket(const char *s);
+
 #endif /* TK_STDLIB_STR_H */

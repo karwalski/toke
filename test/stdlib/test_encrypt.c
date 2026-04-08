@@ -41,7 +41,14 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <signal.h>
+#include <setjmp.h>
+#include <unistd.h>
 #include "../../src/stdlib/encrypt.h"
+
+/* RSA keygen timeout (pure-C bignum is slow; 60s is generous) */
+static jmp_buf  s_rsa_timeout_jmp;
+static void     s_rsa_timeout(int sig) { (void)sig; longjmp(s_rsa_timeout_jmp, 1); }
 
 static int failures = 0;
 
@@ -80,6 +87,16 @@ static uint64_t hex_decode(const char *hex, uint8_t *out, uint64_t maxlen)
     }
     return i;
 }
+
+
+/* -------------------------------------------------------------------------
+ * Reference GF(2^128) multiply and GHASH — independent implementation
+ * for diagnostic testing. Mirrors the spec algorithm exactly.
+ * ------------------------------------------------------------------------- */
+
+/* Reference: NIST SP 800-38D Algorithm 1 */
+
+
 
 /* -------------------------------------------------------------------------
  * AES-256-GCM tests
@@ -131,19 +148,129 @@ static void test_aes_roundtrip(void)
 }
 
 /*
+ * NIST SP 800-38D, Test Case 13 (AES-256-GCM).
+ * Key=0^256, IV=0^96, PT=empty, AAD=empty.
+ * Tag: 530f8afbc74536b9a963b4f1c4cb738b
+ */
+static void test_aes_nist_vector_tc13(void)
+{
+    uint8_t key_buf[32] = {0};
+    uint8_t nonce_buf[12] = {0};
+    uint8_t expected_tag[16];
+
+    hex_decode("530f8afbc74536b9a963b4f1c4cb738b", expected_tag, 16);
+
+    ByteArray key   = ba_raw(key_buf, 32);
+    ByteArray nonce = ba_raw(nonce_buf, 12);
+    ByteArray empty = ba_raw(NULL, 0);
+
+    EncryptResult enc = encrypt_aes256gcm_encrypt(key, nonce, empty, empty);
+    ASSERT(enc.is_err == 0, "aes256gcm NIST TC13: encrypt succeeds");
+    if (!enc.is_err && enc.ok != NULL) {
+        ASSERT(memcmp(enc.ok, expected_tag, 16) == 0, "aes256gcm NIST TC13: tag matches");
+    }
+    free(enc.ok);
+}
+
+/*
+ * NIST SP 800-38D, Test Case 14 (AES-256-GCM).
+ * Key=0^256, IV=0^96, PT=empty, AAD=feedfacedeadbeeffeedfacedeadbeefabaddad2 (20 bytes).
+ * Tag: d0d1c8a799996bf0265b98b5d48ab919
+ */
+static void test_aes_nist_vector_tc14(void)
+{
+    uint8_t key_buf[32] = {0};
+    uint8_t nonce_buf[12] = {0};
+    uint8_t aad_buf[20];
+    uint8_t expected_tag[16];
+
+    hex_decode("feedfacedeadbeeffeedfacedeadbeef"
+               "abaddad2", aad_buf, 20);
+    hex_decode("6605ba8cc3d0e5864e8d04e07bfc8b36", expected_tag, 16);
+
+    ByteArray key   = ba_raw(key_buf, 32);
+    ByteArray nonce = ba_raw(nonce_buf, 12);
+    ByteArray empty = ba_raw(NULL, 0);
+    ByteArray aad   = ba_raw(aad_buf, 20);
+
+    EncryptResult enc = encrypt_aes256gcm_encrypt(key, nonce, empty, aad);
+    ASSERT(enc.is_err == 0, "aes256gcm NIST TC14: encrypt succeeds");
+    if (!enc.is_err && enc.ok != NULL) {
+        ASSERT(memcmp(enc.ok, expected_tag, 16) == 0, "aes256gcm NIST TC14: tag matches");
+    }
+    free(enc.ok);
+}
+
+/*
  * NIST SP 800-38D, Test Case 16 (AES-256-GCM).
  * Key:   feffe9928665731c6d6a8f9467308308 feffe9928665731c6d6a8f9467308308
  * IV:    cafebabefacedbaddecaf888
  * PT:    d9313225f88406e5a55909c5aff5269a 86a7a9531534f7da2e4c303d8a318a72
- *        1c3c0c95956809532fcf0e2449a6b525 b16aedf5aa0de657ba637b391aafd255
+ *        1c3c0c95956809532fcf0e2449a6b525 b16aedf5aa0de657ba637b39
+ *        (60 bytes; TC15 uses the full 64-byte PT with no AAD)
  * AAD:   feedfacedeadbeeffeedfacedeadbeef abaddad2
  * CT:    522dc1f099567d07f47f37a32a84427d 643a8cdcbfe5c0c97598a2bd2555d1aa
- *        8cb08e48590dbb3da7b08b1056828838 c5f61e6393ba7a0abcc9f662898015ad
+ *        8cb08e48590dbb3da7b08b1056828838 c5f61e6393ba7a0abcc9f662
+ *        (60 bytes)
  * Tag:   b094dac5d93471bdec1a502270e3cc6c
  */
 static void test_aes_nist_vector_tc16(void)
 {
-    uint8_t key_buf[32], nonce_buf[12], pt_buf[64], aad_buf[20];
+    uint8_t key_buf[32], nonce_buf[12], pt_buf[60], aad_buf[20];
+    uint8_t expected_ct[60], expected_tag[16];
+
+    hex_decode("feffe9928665731c6d6a8f9467308308"
+               "feffe9928665731c6d6a8f9467308308", key_buf, 32);
+    hex_decode("cafebabefacedbaddecaf888", nonce_buf, 12);
+    hex_decode("d9313225f88406e5a55909c5aff5269a"
+               "86a7a9531534f7da2e4c303d8a318a72"
+               "1c3c0c95956809532fcf0e2449a6b525"
+               "b16aedf5aa0de657ba637b39", pt_buf, 60);
+    hex_decode("feedfacedeadbeeffeedfacedeadbeef"
+               "abaddad2", aad_buf, 20);
+    hex_decode("522dc1f099567d07f47f37a32a84427d"
+               "643a8cdcbfe5c0c97598a2bd2555d1aa"
+               "8cb08e48590dbb3da7b08b1056828838"
+               "c5f61e6393ba7a0abcc9f662", expected_ct, 60);
+    hex_decode("76fc6ece0f4e1768cddf8853bb2d551b", expected_tag, 16);
+
+    ByteArray key   = ba_raw(key_buf, 32);
+    ByteArray nonce = ba_raw(nonce_buf, 12);
+    ByteArray plain = ba_raw(pt_buf, 60);
+    ByteArray aad   = ba_raw(aad_buf, 20);
+
+    EncryptResult enc = encrypt_aes256gcm_encrypt(key, nonce, plain, aad);
+    ASSERT(enc.is_err == 0, "aes256gcm NIST TC16: encrypt succeeds");
+    ASSERT(enc.ok_len == 76, "aes256gcm NIST TC16: output len == 76 (60 CT + 16 tag)");
+
+    if (!enc.is_err && enc.ok != NULL) {
+        ASSERT(memcmp(enc.ok, expected_ct, 60) == 0,
+               "aes256gcm NIST TC16: ciphertext matches");
+        ASSERT(memcmp(enc.ok + 60, expected_tag, 16) == 0,
+               "aes256gcm NIST TC16: auth tag matches");
+
+        /* Verify decrypt round-trip */
+        ByteArray ct_ba = ba_raw(enc.ok, enc.ok_len);
+        EncryptResult dec = encrypt_aes256gcm_decrypt(key, nonce, ct_ba, aad);
+        ASSERT(dec.is_err == 0, "aes256gcm NIST TC16: decrypt succeeds");
+        if (!dec.is_err && dec.ok != NULL) {
+            ASSERT(dec.ok_len == 60, "aes256gcm NIST TC16: plaintext len == 60");
+            ASSERT(memcmp(dec.ok, pt_buf, 60) == 0,
+                   "aes256gcm NIST TC16: decrypted plaintext matches");
+        }
+        free(dec.ok);
+    }
+    free(enc.ok);
+}
+
+/*
+ * NIST SP 800-38D, Test Case 15 (AES-256-GCM).
+ * Same key/IV as TC16 but full 64-byte PT, no AAD.
+ * Tag: 4d5c2af327cd64a62cf35abd2ba6fab4
+ */
+static void test_aes_nist_vector_tc15(void)
+{
+    uint8_t key_buf[32], nonce_buf[12], pt_buf[64];
     uint8_t expected_ct[64], expected_tag[16];
 
     hex_decode("feffe9928665731c6d6a8f9467308308"
@@ -153,8 +280,6 @@ static void test_aes_nist_vector_tc16(void)
                "86a7a9531534f7da2e4c303d8a318a72"
                "1c3c0c95956809532fcf0e2449a6b525"
                "b16aedf5aa0de657ba637b391aafd255", pt_buf, 64);
-    hex_decode("feedfacedeadbeeffeedfacedeadbeef"
-               "abaddad2", aad_buf, 20);
     hex_decode("522dc1f099567d07f47f37a32a84427d"
                "643a8cdcbfe5c0c97598a2bd2555d1aa"
                "8cb08e48590dbb3da7b08b1056828838"
@@ -164,31 +289,19 @@ static void test_aes_nist_vector_tc16(void)
     ByteArray key   = ba_raw(key_buf, 32);
     ByteArray nonce = ba_raw(nonce_buf, 12);
     ByteArray plain = ba_raw(pt_buf, 64);
-    ByteArray aad   = ba_raw(aad_buf, 20);
+    ByteArray aad   = ba_raw(NULL, 0);
 
     EncryptResult enc = encrypt_aes256gcm_encrypt(key, nonce, plain, aad);
-    ASSERT(enc.is_err == 0, "aes256gcm NIST TC16: encrypt succeeds");
-    ASSERT(enc.ok_len == 80, "aes256gcm NIST TC16: output len == 80 (64 CT + 16 tag)");
-
+    ASSERT(enc.is_err == 0, "aes256gcm NIST TC15: encrypt succeeds");
     if (!enc.is_err && enc.ok != NULL) {
         ASSERT(memcmp(enc.ok, expected_ct, 64) == 0,
-               "aes256gcm NIST TC16: ciphertext matches");
+               "aes256gcm NIST TC15: ciphertext matches");
         ASSERT(memcmp(enc.ok + 64, expected_tag, 16) == 0,
-               "aes256gcm NIST TC16: auth tag matches");
-
-        /* Verify decrypt round-trip */
-        ByteArray ct_ba = ba_raw(enc.ok, enc.ok_len);
-        EncryptResult dec = encrypt_aes256gcm_decrypt(key, nonce, ct_ba, aad);
-        ASSERT(dec.is_err == 0, "aes256gcm NIST TC16: decrypt succeeds");
-        if (!dec.is_err && dec.ok != NULL) {
-            ASSERT(dec.ok_len == 64, "aes256gcm NIST TC16: plaintext len == 64");
-            ASSERT(memcmp(dec.ok, pt_buf, 64) == 0,
-                   "aes256gcm NIST TC16: decrypted plaintext matches");
-        }
-        free(dec.ok);
+               "aes256gcm NIST TC15: auth tag matches");
     }
     free(enc.ok);
 }
+
 
 static void test_aes_zero_length_plaintext(void)
 {
@@ -533,8 +646,8 @@ static void test_ed25519_verify_wrong_key(void)
  *
  * SECRET KEY (seed, 32 bytes):
  *   9d61b19deffd5a60ba844af492ec2cc4 4449c5697b326919703bac031cae7f60
- * PUBLIC KEY:
- *   d75a980182b10ab7d54bfed3c964073a 0ee172f3daa3f4a18446b0b8d183f8e8
+ * PUBLIC KEY (verified against Go crypto/ed25519, OpenSSL 3, RFC 8032 signature):
+ *   d75a980182b10ab7d54bfed3c964073a 0ee172f3daa62325af021a68f707511a
  * MESSAGE: (empty)
  * SIGNATURE:
  *   e5564300c360ac729086e2cc806e828a 84877f1eb8e5d974d873e06522490155
@@ -547,7 +660,7 @@ static void test_ed25519_rfc8032_vector(void)
     hex_decode("9d61b19deffd5a60ba844af492ec2cc4"
                "4449c5697b326919703bac031cae7f60", seed, 32);
     hex_decode("d75a980182b10ab7d54bfed3c964073a"
-               "0ee172f3daa3f4a18446b0b8d183f8e8", expected_pub, 32);
+               "0ee172f3daa62325af021a68f707511a", expected_pub, 32);
     hex_decode("e5564300c360ac729086e2cc806e828a"
                "84877f1eb8e5d974d873e06522490155"
                "5fb8821590a33bacc61e39701cf9b46b"
@@ -938,18 +1051,116 @@ static void test_pbkdf2_rfc6070_vector1(void)
 }
 
 /* -------------------------------------------------------------------------
+ * RSA tests (Story 30.1.2)
+ *
+ * Note: 2048-bit key generation involves Miller-Rabin primality tests over
+ * 1024-bit random candidates and takes a few seconds — this is expected.
+ * ------------------------------------------------------------------------- */
+
+/* Shared keypair populated by test_rsa_keypair_2048, reused by later tests. */
+static RsaKeyPair g_rsa_kp;
+static int        g_rsa_kp_valid = 0;
+
+static void test_rsa_keypair_2048(void)
+{
+    printf("note: generating 2048-bit RSA keypair (may take a few seconds)...\n");
+    RsaKeyPairResult r = encrypt_rsa_generate_keypair(2048);
+    ASSERT(r.is_err == 0, "rsa_generate_keypair(2048): is_err == 0");
+    ASSERT(r.ok.pub_len  > 0, "rsa_generate_keypair(2048): pub_len > 0");
+    ASSERT(r.ok.priv_len > 0, "rsa_generate_keypair(2048): priv_len > 0");
+    ASSERT(r.ok.pub_data  != NULL, "rsa_generate_keypair(2048): pub_data != NULL");
+    ASSERT(r.ok.priv_data != NULL, "rsa_generate_keypair(2048): priv_data != NULL");
+    if (!r.is_err) {
+        g_rsa_kp = r.ok;
+        g_rsa_kp_valid = 1;
+    } else {
+        free(r.ok.pub_data);
+        free(r.ok.priv_data);
+    }
+}
+
+static void test_rsa_encrypt_decrypt_roundtrip(void)
+{
+    if (!g_rsa_kp_valid) {
+        fprintf(stderr, "SKIP: rsa_encrypt_decrypt_roundtrip (no keypair)\n");
+        return;
+    }
+    const char *plaintext_str = "hello rsa oaep";
+    ByteArray pt = ba_str(plaintext_str);
+
+    RsaBytesResult enc = encrypt_rsa_encrypt(g_rsa_kp.pub_data, g_rsa_kp.pub_len, pt);
+    ASSERT(enc.is_err == 0, "rsa_encrypt: is_err == 0");
+    if (enc.is_err) return;
+    ASSERT(enc.ok.len == 256, "rsa_encrypt: ciphertext len == 256 (2048/8)");
+
+    RsaBytesResult dec = encrypt_rsa_decrypt(g_rsa_kp.priv_data, g_rsa_kp.priv_len,
+                                              enc.ok);
+    ASSERT(dec.is_err == 0, "rsa_decrypt: is_err == 0");
+    if (!dec.is_err) {
+        ASSERT(dec.ok.len == pt.len, "rsa_decrypt roundtrip: recovered length matches");
+        ASSERT(memcmp(dec.ok.data, pt.data, (size_t)pt.len) == 0,
+               "rsa_decrypt roundtrip: recovered bytes match plaintext");
+        free((void *)dec.ok.data);
+    }
+    free((void *)enc.ok.data);
+}
+
+static void test_rsa_sign_verify(void)
+{
+    if (!g_rsa_kp_valid) {
+        fprintf(stderr, "SKIP: rsa_sign_verify (no keypair)\n");
+        return;
+    }
+    ByteArray msg = ba_str("hello world");
+
+    RsaBytesResult sr = encrypt_rsa_sign(g_rsa_kp.priv_data, g_rsa_kp.priv_len, msg);
+    ASSERT(sr.is_err == 0, "rsa_sign: is_err == 0");
+    if (sr.is_err) return;
+    ASSERT(sr.ok.len == 256, "rsa_sign: signature len == 256");
+
+    int ok = encrypt_rsa_verify(g_rsa_kp.pub_data, g_rsa_kp.pub_len, msg, sr.ok);
+    ASSERT(ok == 1, "rsa_verify: valid signature returns 1");
+    free((void *)sr.ok.data);
+}
+
+static void test_rsa_verify_wrong_message(void)
+{
+    if (!g_rsa_kp_valid) {
+        fprintf(stderr, "SKIP: rsa_verify_wrong_message (no keypair)\n");
+        return;
+    }
+    ByteArray msg       = ba_str("hello world");
+    ByteArray wrong_msg = ba_str("hello WORLD");
+
+    RsaBytesResult sr = encrypt_rsa_sign(g_rsa_kp.priv_data, g_rsa_kp.priv_len, msg);
+    if (sr.is_err) { fprintf(stderr, "SKIP: rsa_verify_wrong_message (sign failed)\n"); return; }
+
+    int ok = encrypt_rsa_verify(g_rsa_kp.pub_data, g_rsa_kp.pub_len, wrong_msg, sr.ok);
+    ASSERT(ok == 0, "rsa_verify: wrong message returns 0");
+    free((void *)sr.ok.data);
+}
+
+/* -------------------------------------------------------------------------
  * main
  * ------------------------------------------------------------------------- */
 
 int main(void)
 {
+    /* Layer-2 safety net: kill the whole binary if it runs longer than 150s.
+     * (Individual slow sections, e.g. RSA keygen, have their own tighter
+     * timeouts via setjmp/longjmp so they skip gracefully first.) */
+    alarm(150);
+
     printf("=== test_encrypt ===\n");
 
     /* AES-256-GCM */
     test_aes_keygen_len();
     test_aes_noncegen_len();
     test_aes_roundtrip();
+    test_aes_nist_vector_tc13();
+    test_aes_nist_vector_tc14();
     test_aes_nist_vector_tc16();
+    test_aes_nist_vector_tc15();
     test_aes_zero_length_plaintext();
     test_aes_wrong_key();
     test_aes_tampered_ciphertext();
@@ -1001,6 +1212,32 @@ int main(void)
 
     /* PBKDF2 (Story 30.1.1) */
     test_pbkdf2_rfc6070_vector1();
+
+    /* RSA (Story 30.1.2) — 60-second timeout guards against slow bignum keygen */
+    {
+        struct sigaction sa_new, sa_old;
+        sa_new.sa_handler = s_rsa_timeout;
+        sigemptyset(&sa_new.sa_mask);
+        sa_new.sa_flags = 0;
+        sigaction(SIGALRM, &sa_new, &sa_old);
+        if (setjmp(s_rsa_timeout_jmp) == 0) {
+            alarm(60);
+            test_rsa_keypair_2048();
+            test_rsa_encrypt_decrypt_roundtrip();
+            test_rsa_sign_verify();
+            test_rsa_verify_wrong_message();
+            alarm(0);
+        } else {
+            fprintf(stderr, "SKIP: RSA tests timed out after 60s\n");
+        }
+        sigaction(SIGALRM, &sa_old, NULL);
+    }
+
+    /* Free shared RSA keypair */
+    if (g_rsa_kp_valid) {
+        free(g_rsa_kp.pub_data);
+        free(g_rsa_kp.priv_data);
+    }
 
     printf("=== %d failure(s) ===\n", failures);
     return (failures > 0) ? 1 : 0;

@@ -1,0 +1,5 @@
+m=test;
+f=main():i64{
+  let letmut=7;
+  <letmut
+};

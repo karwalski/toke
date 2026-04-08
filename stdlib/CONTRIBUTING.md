@@ -1,9 +1,9 @@
-# Contributing to toke-stdlib
+# Contributing to the toke standard library
 
 ## Rules
 
 - Every stdlib function signature is normative. Do not change a signature
-  without first raising a spec amendment issue in toke-spec.
+  without first raising a spec amendment issue (see spec/).
 - All .tk source files must compile cleanly with `tkc --check` before commit.
 - Each module file has a companion .md documentation file. Keep them in sync.
 - Stdlib implementations may use C FFI internally. FFI calls must be
@@ -11,8 +11,8 @@
 
 ## Adding a new module
 
-1. Raise a spec amendment issue in toke-spec defining the module's
-   normative interface
+1. Raise a spec amendment issue defining the module's
+   normative interface (see spec/)
 2. Wait for the spec amendment to be accepted
 3. Implement the module in `std/<name>.tk`
 4. Write the documentation in `std/<name>.md`

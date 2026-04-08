@@ -1,6 +1,6 @@
-# toke-stdlib
+# toke standard library
 
-The standard library for [toke](https://github.com/karwalski/toke-spec).
+The standard library for [toke](https://github.com/karwalski/toke).
 
 ## Modules
 
@@ -23,10 +23,10 @@ Import any module by its path:
 ## Normative signatures
 
 The function signatures in this library are normative per the
-[toke specification](https://github.com/karwalski/toke-spec).
+[toke specification](../spec/).
 Changes to signatures require a spec amendment before being made here.
 
 ## Licence
 
-MIT. Compiled binaries that link against toke-stdlib carry no
+MIT. Compiled binaries that link against the toke stdlib carry no
 licence obligations.

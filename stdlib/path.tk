@@ -1,0 +1,16 @@
+(* std.path — stub; implemented in the C layer (src/stdlib/path.c).
+ *
+ * The reference compiler resolves std.path imports via stdlib/path.tki
+ * and links against the C implementation directly.  This file exists to
+ * satisfy source-level tooling that expects a .tk file for every module.
+ *
+ * Exported interface (see stdlib/path.tki):
+ *   path.join(a:Str;b:Str):Str
+ *   path.ext(p:Str):Str
+ *   path.stem(p:Str):Str
+ *   path.dir(p:Str):Str
+ *   path.base(p:Str):Str
+ *   path.isabs(p:Str):bool
+ *
+ * Story: 55.1  Branch: feature/stdlib-55.1-path
+ *)

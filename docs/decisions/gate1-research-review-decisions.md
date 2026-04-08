@@ -271,14 +271,14 @@ Each decision lists the conflicting recommendations, which teams raised it, and 
 **Raised by:** T6
 
 **Options:**
-- A) Keep 10-repo structure (toke, tkc, toke-spec, toke-stdlib, toke-corpus, toke-tokenizer, toke-models, toke-benchmark, toke-eval, toke-web). Add automated cross-repo consistency checks.
-- B) Consolidate to 4 repos: core (spec + compiler + stdlib), ml (corpus + tokenizer + models), eval (benchmark + eval), web.
+- A) Keep 10-repo structure. Add automated cross-repo consistency checks.
+- B) Consolidate to 4 repos: toke (spec + compiler + stdlib), toke-model (corpus + tokenizer + models), toke-eval (benchmark + eval), toke-web.
 - C) Consolidate to 5 repos: core, ml, benchmark, eval, web.
 - D) Keep current structure but add toke-audit repo with weekly coherence checks.
 
 **Recommendation:** Option D for now — consolidation is high-effort and disruptive. Add consistency automation instead.
 
-**Decision:** B. toke, toke-model, toke-eval, toke-web
+**Decision:** B. toke, toke-model, toke-eval, toke-web (DONE — consolidated April 2026)
 
 ---
 

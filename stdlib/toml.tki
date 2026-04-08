@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "module": "std.toml",
+  "exports": [
+    {"kind": "opaque", "name": "tomlval"},
+    {"kind": "record", "name": "tomlerr",  "fields": [{"name": "msg", "type": "str"}]},
+    {"kind": "func",   "name": "toml.load",     "params": ["str"],              "return": "tomlval!tomlerr"},
+    {"kind": "func",   "name": "toml.loadfile",  "params": ["str"],              "return": "tomlval!tomlerr"},
+    {"kind": "func",   "name": "toml.str",       "params": ["tomlval", "str"],   "return": "str!tomlerr"},
+    {"kind": "func",   "name": "toml.i64",       "params": ["tomlval", "str"],   "return": "i64!tomlerr"},
+    {"kind": "func",   "name": "toml.bool",      "params": ["tomlval", "str"],   "return": "bool!tomlerr"},
+    {"kind": "func",   "name": "toml.section",   "params": ["tomlval", "str"],   "return": "tomlval!tomlerr"}
+  ]
+}

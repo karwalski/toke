@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "../../src/stdlib/ws.h"
 
 static int failures = 0;
@@ -685,6 +686,8 @@ static void test_validate_utf8_invalid_byte(void)
  * ----------------------------------------------------------------------- */
 int main(void)
 {
+    alarm(60); /* safety net: ws_connect has 3s poll timeout per call */
+
     printf("=== test_ws ===\n");
 
     /* Low-level frame tests (Story 15.1.1) */

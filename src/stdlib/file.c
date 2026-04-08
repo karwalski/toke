@@ -18,6 +18,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <glob.h>
+#include <ftw.h>
 
 /* Map errno to a FileErrKind after a failed POSIX call. */
 static FileErr make_err(int err_no, const char *fallback)
@@ -609,5 +610,47 @@ StrArrayFileResult file_glob(const char *pattern)
     globfree(&g);
     r.ok.data = out;
     r.ok.len  = (uint64_t)n;
+    return r;
+}
+
+/* ── 55.3.4: recursive directory listing ─ */
+
+/* thread-local accumulator for file_listall */
+static struct { const char **data; uint64_t len; uint64_t cap; const char *base_dir; size_t base_len; } _listall_acc;
+
+static int _listall_cb(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
+    (void)sb; (void)ftwbuf;
+    if (typeflag == FTW_F) {
+        /* store path relative to base_dir, skip leading slash */
+        const char *rel = fpath + _listall_acc.base_len;
+        while (*rel == '/') rel++;
+        if (_listall_acc.len == _listall_acc.cap) {
+            _listall_acc.cap *= 2;
+            const char **tmp = realloc(_listall_acc.data, _listall_acc.cap * sizeof(const char *));
+            if (!tmp) return -1;
+            _listall_acc.data = tmp;
+        }
+        _listall_acc.data[_listall_acc.len++] = strdup(rel);
+    }
+    return 0;
+}
+
+StrArrayFileResult file_listall(const char *dir) {
+    StrArrayFileResult r = {{NULL, 0}, 0, {0, NULL}};
+    _listall_acc.cap = 64;
+    _listall_acc.len = 0;
+    _listall_acc.base_dir = dir;
+    _listall_acc.base_len = strlen(dir);
+    _listall_acc.data = malloc(_listall_acc.cap * sizeof(const char *));
+    if (!_listall_acc.data) {
+        r.is_err = 1; r.err.kind = FILE_ERR_IO; r.err.msg = "allocation failed"; return r;
+    }
+    if (nftw(dir, _listall_cb, 64, FTW_PHYS) != 0) {
+        for (uint64_t i = 0; i < _listall_acc.len; i++) free((void *)_listall_acc.data[i]);
+        free(_listall_acc.data);
+        r.is_err = 1; r.err.kind = FILE_ERR_IO; r.err.msg = "nftw failed"; return r;
+    }
+    r.ok.data = _listall_acc.data;
+    r.ok.len  = _listall_acc.len;
     return r;
 }

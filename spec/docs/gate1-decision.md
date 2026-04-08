@@ -157,9 +157,9 @@ With Gate 1 passed, the project proceeds to:
 
 ## References
 
-- Language specification: [toke-spec](https://github.com/karwalski/toke-spec)
-- Reference compiler: [tkc](https://github.com/karwalski/tkc)
-- Benchmark results: `toke-benchmark/results/gate1_v5_1000.json`
-- Tokenizer evaluation: `toke-spec/docs/research-review-request.md` Section 5.1
-- Serialization strategy: `toke-spec/docs/architecture/ADR-0003.md`
-- Story tracker: `tkc/docs/progress.md`
+- Language specification: [toke/spec/](https://github.com/karwalski/toke/tree/main/spec)
+- Reference compiler: [toke/src/](https://github.com/karwalski/toke/tree/main/src)
+- Benchmark results: `toke-eval/benchmark/results/gate1_v5_1000.json`
+- Tokenizer evaluation: `toke/spec/docs/research-review-request.md` Section 5.1
+- Serialization strategy: `toke/spec/docs/architecture/ADR-0003.md`
+- Story tracker: `toke/docs/progress.md`

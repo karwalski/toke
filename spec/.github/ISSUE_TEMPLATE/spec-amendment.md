@@ -18,7 +18,7 @@ The exact change to grammar, type rules, error codes, or stdlib signatures.
 
 ## Impact on implementations
 
-What must tkc, toke-stdlib, and toke-benchmark change if this is accepted?
+What must the compiler (tkc), stdlib, and toke-eval/benchmark change if this is accepted?
 
 ## Alternatives considered
 

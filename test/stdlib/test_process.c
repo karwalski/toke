@@ -22,6 +22,8 @@ static int failures = 0;
 
 int main(void)
 {
+    alarm(60); /* safety net: process tests spawn short-lived subprocesses */
+
     /* --- Test 1: spawn a known command (true) ----------------------------- */
     {
         const char *cmd[] = {"true", NULL};

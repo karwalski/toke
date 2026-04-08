@@ -378,6 +378,51 @@ int main(void)
         }
     }
 
+    /* ── 55.3.4: recursive listing (file_listall) ──────────────────────── */
+
+    {
+        char la_dir[] = "/tmp/toke_la_XXXXXX";
+        char *la_base = mkdtemp(la_dir);
+        ASSERT(la_base != NULL, "file_listall: mkdtemp ok");
+
+        if (la_base) {
+            /* Build directory tree: base/a.txt, base/sub/b.txt, base/sub/c.txt */
+            char la_sub[256];
+            snprintf(la_sub, sizeof(la_sub), "%s/sub", la_base);
+            BoolFileResult la_md = file_mkdir(la_sub);
+            ASSERT(!la_md.is_err && la_md.ok, "file_listall: mkdir sub");
+
+            char la_a[256], la_b[256], la_c[256];
+            snprintf(la_a, sizeof(la_a), "%s/a.txt", la_base);
+            snprintf(la_b, sizeof(la_b), "%s/sub/b.txt", la_sub);
+            snprintf(la_c, sizeof(la_c), "%s/sub/c.txt", la_sub);
+            file_write(la_a, "a");
+            file_write(la_b, "b");
+            file_write(la_c, "c");
+
+            /* file_listall should return 3 entries */
+            StrArrayFileResult la = file_listall(la_base);
+            ASSERT(!la.is_err, "file_listall(base) not is_err");
+            ASSERT(la.ok.len == 3, "file_listall(base) len == 3");
+
+            /* Verify entries are relative paths (do not start with '/') */
+            for (uint64_t i = 0; i < la.ok.len; i++) {
+                ASSERT(la.ok.data[i] != NULL && la.ok.data[i][0] != '/',
+                       "file_listall: entry is a relative path");
+            }
+            for (uint64_t i = 0; i < la.ok.len; i++) free((void *)la.ok.data[i]);
+            free((void *)la.ok.data);
+
+            /* file_listall on nonexistent directory → error */
+            StrArrayFileResult la_bad = file_listall("/nonexistent_dir_xyz");
+            ASSERT(la_bad.is_err, "file_listall('/nonexistent_dir_xyz') is_err");
+
+            /* Cleanup */
+            BoolFileResult la_rm = file_rmdir_r(la_base);
+            ASSERT(!la_rm.is_err && la_rm.ok, "file_listall: cleaned up sandbox");
+        }
+    }
+
     if (failures == 0) { printf("All tests passed.\n"); return 0; }
     fprintf(stderr, "%d test(s) failed.\n", failures);
     return 1;

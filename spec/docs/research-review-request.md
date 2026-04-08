@@ -73,7 +73,7 @@ The return statement uses `<` (one character vs six for `return`).
 
 LL(1) — deterministic parsing with exactly one token of lookahead. No backtracking, no ambiguity. Every syntactic position has exactly one valid interpretation.
 
-Full EBNF: [toke-spec/spec/grammar.ebnf](https://github.com/karwalski/toke-spec/blob/main/spec/grammar.ebnf)
+Full EBNF: [spec/grammar.ebnf](https://github.com/karwalski/toke/blob/main/spec/spec/grammar.ebnf)
 
 ### 3.4 Type System
 
@@ -134,14 +134,14 @@ The compiler emits JSON diagnostics with stable error codes, machine-parseable s
 
 | Component | Status | Repository |
 |-----------|--------|------------|
-| Language specification (v0.1) | Complete | [toke-spec](https://github.com/karwalski/toke-spec) |
-| Reference compiler (C99, LLVM backend) | Complete | [tkc](https://github.com/karwalski/tkc) |
-| Standard library (14 modules) | Complete | [toke-stdlib](https://github.com/karwalski/toke-stdlib) |
-| Training corpus (46,754 programs) | Complete | [toke-corpus](https://github.com/karwalski/toke-corpus) |
-| BPE tokenizer (8K/32K vocab) | Complete | [toke-tokenizer](https://github.com/karwalski/toke-tokenizer) |
-| Fine-tuned model (Qwen 2.5 Coder 7B + LoRA) | Complete | [toke-models](https://github.com/karwalski/toke-models) |
-| Benchmark harness (1,000 held-out tasks) | Complete | [toke-benchmark](https://github.com/karwalski/toke-benchmark) |
-| Gate 1 evaluation | **PASS** | [gate1-decision.md](https://github.com/karwalski/toke-spec/blob/main/docs/gate1-decision.md) |
+| Language specification (v0.1) | Complete | [toke/spec/](https://github.com/karwalski/toke/tree/main/spec) |
+| Reference compiler (C99, LLVM backend) | Complete | [toke/src/](https://github.com/karwalski/toke/tree/main/src) |
+| Standard library (14 modules) | Complete | [toke/stdlib/](https://github.com/karwalski/toke/tree/main/stdlib) |
+| Training corpus (46,754 programs) | Complete | [toke-model/corpus/](https://github.com/karwalski/toke-model/tree/main/corpus) |
+| BPE tokenizer (8K/32K vocab) | Complete | [toke-model/tokenizer/](https://github.com/karwalski/toke-model/tree/main/tokenizer) |
+| Fine-tuned model (Qwen 2.5 Coder 7B + LoRA) | Complete | [toke-model](https://github.com/karwalski/toke-model) |
+| Benchmark harness (1,000 held-out tasks) | Complete | [toke-eval/benchmark/](https://github.com/karwalski/toke-eval/tree/main/benchmark) |
+| Gate 1 evaluation | **PASS** | [gate1-decision.md](https://github.com/karwalski/toke/blob/main/spec/docs/gate1-decision.md) |
 
 ### 4.1 Compiler
 
@@ -168,7 +168,7 @@ Single-pass C99 compiler: lexer, LL(1) parser, name resolution, type inference, 
 
 `std.str`, `std.json`, `std.toon`, `std.yaml`, `std.i18n`, `std.http`, `std.db`, `std.file`, `std.env`, `std.process`, `std.crypto`, `std.time`, `std.log`, `std.test`
 
-toke uses a **TOON-first serialization strategy**: TOON (Token-Oriented Object Notation) as the default format for tabular data (30-60% fewer tokens than JSON), with YAML and JSON as secondary formats. String externalisation for internationalisation is handled via `std.i18n` with locale-aware bundle loading across all three formats. See [ADR-0003](https://github.com/karwalski/toke-spec/blob/main/docs/architecture/ADR-0003.md).
+toke uses a **TOON-first serialization strategy**: TOON (Token-Oriented Object Notation) as the default format for tabular data (30-60% fewer tokens than JSON), with YAML and JSON as secondary formats. String externalisation for internationalisation is handled via `std.i18n` with locale-aware bundle loading across all three formats. See [ADR-0003](https://github.com/karwalski/toke/blob/main/spec/docs/architecture/ADR-0003.md).
 
 ---
 
@@ -220,7 +220,7 @@ With the purpose-built tokenizer, toke's complete program drops to ~19 tokens fo
 | C | 168 | 3.2x more |
 | Java | 127 | 2.4x more |
 
-Full Gate 1 decision document: [gate1-decision.md](https://github.com/karwalski/toke-spec/blob/main/docs/gate1-decision.md)
+Full Gate 1 decision document: [gate1-decision.md](https://github.com/karwalski/toke/blob/main/spec/docs/gate1-decision.md)
 
 ---
 
@@ -339,14 +339,14 @@ These questions from the RFC (Section 23) remain unresolved:
 
 | Document | Location |
 |----------|----------|
-| RFC draft | [toke-spec/rfc/draft-karwalski-toke-lang-00.md](https://github.com/karwalski/toke-spec/blob/main/rfc/draft-karwalski-toke-lang-00.md) |
-| Language specification v0.1 | [toke-spec/spec/toke-spec-v02.md](https://github.com/karwalski/toke-spec/blob/main/spec/toke-spec-v02.md) |
-| Formal grammar (EBNF) | [toke-spec/spec/grammar.ebnf](https://github.com/karwalski/toke-spec/blob/main/spec/grammar.ebnf) |
-| Error code registry | [toke-spec/spec/errors.md](https://github.com/karwalski/toke-spec/blob/main/spec/errors.md) |
-| Type system semantics | [toke-spec/spec/semantics.md](https://github.com/karwalski/toke-spec/blob/main/spec/semantics.md) |
-| Architecture decisions | [ADR-0001](https://github.com/karwalski/toke-spec/blob/main/docs/architecture/ADR-0001.md), [ADR-0003](https://github.com/karwalski/toke-spec/blob/main/docs/architecture/ADR-0003.md) |
-| Gate 1 decision | [gate1-decision.md](https://github.com/karwalski/toke-spec/blob/main/docs/gate1-decision.md) |
-| Benchmark methodology | [toke-benchmark/docs/benchmark-design.md](https://github.com/karwalski/toke-benchmark/blob/main/docs/benchmark-design.md) |
+| RFC draft | [spec/rfc/draft-karwalski-toke-lang-00.md](https://github.com/karwalski/toke/blob/main/spec/rfc/draft-karwalski-toke-lang-00.md) |
+| Language specification v0.1 | [spec/spec/toke-spec-v02.md](https://github.com/karwalski/toke/blob/main/spec/spec/toke-spec-v02.md) |
+| Formal grammar (EBNF) | [spec/spec/grammar.ebnf](https://github.com/karwalski/toke/blob/main/spec/spec/grammar.ebnf) |
+| Error code registry | [spec/spec/errors.md](https://github.com/karwalski/toke/blob/main/spec/spec/errors.md) |
+| Type system semantics | [spec/spec/semantics.md](https://github.com/karwalski/toke/blob/main/spec/spec/semantics.md) |
+| Architecture decisions | [ADR-0001](https://github.com/karwalski/toke/blob/main/spec/docs/architecture/ADR-0001.md), [ADR-0003](https://github.com/karwalski/toke/blob/main/spec/docs/architecture/ADR-0003.md) |
+| Gate 1 decision | [gate1-decision.md](https://github.com/karwalski/toke/blob/main/spec/docs/gate1-decision.md) |
+| Benchmark methodology | [toke-eval/benchmark/docs/benchmark-design.md](https://github.com/karwalski/toke-eval/blob/main/benchmark/docs/benchmark-design.md) |
 | Website | [tokelang.dev](https://tokelang.dev) |
 
 ### What We Want
@@ -359,7 +359,7 @@ These questions from the RFC (Section 23) remain unresolved:
 
 ### How to Provide Feedback
 
-- Open issues on [github.com/karwalski/toke-spec](https://github.com/karwalski/toke-spec/issues)
+- Open issues on [github.com/karwalski/toke](https://github.com/karwalski/toke/issues)
 - Comment on the RFC draft via pull request
 - Email: toke@karwalski.dev
 

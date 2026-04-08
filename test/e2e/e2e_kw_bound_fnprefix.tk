@@ -1,0 +1,7 @@
+m=test;
+f=letx(a:i64):i64{
+  <a
+};
+f=main():i64{
+  <letx(9)
+};

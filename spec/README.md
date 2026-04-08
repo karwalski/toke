@@ -22,14 +22,14 @@ Programs compile to native machine code via LLVM. No runtime. No GC.
 - `spec/errors.md` — error code registry
 - `examples/` — example programs in legacy and default syntax
 
-## Related repositories
+## Related
 
-| Repository | Description |
-|------------|-------------|
-| [tkc](https://github.com/karwalski/tkc) | Reference compiler |
-| [toke-stdlib](https://github.com/karwalski/toke-stdlib) | Standard library |
-| [toke-corpus](https://github.com/karwalski/toke-corpus) | Corpus generation |
-| [toke-benchmark](https://github.com/karwalski/toke-benchmark) | Benchmarks |
+| Location | Description |
+|----------|-------------|
+| [../src/](../src/) | Reference compiler (tkc) |
+| [../stdlib/](../stdlib/) | Standard library |
+| [toke-model](https://github.com/karwalski/toke-model) | Corpus generation, tokenizer, model training |
+| [toke-eval](https://github.com/karwalski/toke-eval) | Benchmarks and evaluation |
 
 ## Licence
 

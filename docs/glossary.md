@@ -46,10 +46,10 @@ The default syntax eliminates all 26 uppercase letters. Type names use a `$`-pre
 
 **CLI flags:** `--profile1` (legacy), `--profile2` (default). The deprecated aliases `--phase1` and `--phase2` are accepted with a warning.
 
-**Authoritative spec files (in toke-spec repo):**
-- `spec/character-set.md`
-- `spec/phase2-transform.md`
-- `spec/grammar.ebnf`
+**Authoritative spec files (in toke repo, spec/ directory):**
+- `spec/spec/character-set.md`
+- `spec/spec/phase2-transform.md`
+- `spec/spec/grammar.ebnf`
 
 ---
 

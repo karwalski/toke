@@ -64,4 +64,7 @@ const char      *file_ext(const char *path);
 StrArrayFileResult file_readlines(const char *path);
 StrArrayFileResult file_glob(const char *pattern);
 
+/* 55.3.4 — recursive listing */
+StrArrayFileResult file_listall(const char *dir);
+
 #endif /* TK_STDLIB_FILE_H */

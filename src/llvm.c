@@ -141,7 +141,10 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
  *                    global constants at module scope but we encounter string
  *                    literals while emitting function bodies.
  */
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; } Ctx;
+/* Buffer size for forward-declare stubs of user-module cross-module calls */
+#define TKC_FWD_DECL_SIZE (8*1024)
+
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; } Ctx;
 
 /* ── SSA counter helpers ───────────────────────────────────────────── */
 /* next_tmp: allocate the next SSA temporary (%tN).
@@ -193,6 +196,17 @@ static void mark_ptr_with_type(Ctx *c, const char *name, const char *stype) {
 static int is_ptr_local(Ctx *c, const char *name) {
     for (int i = 0; i < c->ptr_count; i++)
         if (!strcmp(c->ptrs[i].name, name)) return 1;
+    return 0;
+}
+/*
+ * is_map_var — Return 1 if `name` was registered as a map-type local
+ * (created from a NODE_MAP_LIT or a @($k:$v) parameter).
+ * Map locals use the sentinel struct_type "__map__".
+ */
+static int is_map_var(Ctx *c, const char *name) {
+    for (int i = 0; i < c->ptr_count; i++)
+        if (!strcmp(c->ptrs[i].name, name) &&
+            !strcmp(c->ptrs[i].struct_type, "__map__")) return 1;
     return 0;
 }
 /*
@@ -562,25 +576,67 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
     }
     /* std.str functions */
     if (!strcmp(mod, "str")) {
-        if (!strcmp(method, "argv"))     return "tk_str_argv";
-        if (!strcmp(method, "len"))      return "tk_str_len_w";
-        if (!strcmp(method, "concat"))   return "tk_str_concat_w";
-        if (!strcmp(method, "split"))    return "tk_str_split_w";
-        if (!strcmp(method, "trim"))     return "tk_str_trim_w";
-        if (!strcmp(method, "upper"))    return "tk_str_upper_w";
-        if (!strcmp(method, "lower"))    return "tk_str_lower_w";
-        if (!strcmp(method, "from_int")) return "tk_str_from_int";
-        if (!strcmp(method, "to_int"))   return "tk_str_to_int";
+        if (!strcmp(method, "argv"))         return "tk_str_argv";
+        if (!strcmp(method, "len"))          return "tk_str_len_w";
+        if (!strcmp(method, "concat"))       return "tk_str_concat_w";
+        if (!strcmp(method, "split"))        return "tk_str_split_w";
+        if (!strcmp(method, "trim"))         return "tk_str_trim_w";
+        if (!strcmp(method, "upper"))        return "tk_str_upper_w";
+        if (!strcmp(method, "lower"))        return "tk_str_lower_w";
+        if (!strcmp(method, "from_int"))     return "tk_str_from_int";
+        if (!strcmp(method, "fromint"))      return "tk_str_from_int";
+        if (!strcmp(method, "to_int"))       return "tk_str_to_int";
+        if (!strcmp(method, "indexof"))      return "tk_str_indexof_w";
+        if (!strcmp(method, "slice"))        return "tk_str_slice_w";
+        if (!strcmp(method, "replace"))      return "tk_str_replace_w";
+        if (!strcmp(method, "startswith"))   return "tk_str_startswith_w";
+        if (!strcmp(method, "endswith"))     return "tk_str_endswith_w";
+        if (!strcmp(method, "trimprefix"))   return "tk_str_trimprefix_w";
+        if (!strcmp(method, "trimsuffix"))   return "tk_str_trimsuffix_w";
+        if (!strcmp(method, "lastindex"))    return "tk_str_lastindex_w";
+        if (!strcmp(method, "matchbracket")) return "tk_str_matchbracket_w";
+        if (!strcmp(method, "contains"))     return "tk_str_contains_w";
     }
     /* std.env functions */
     if (!strcmp(mod, "env")) {
         if (!strcmp(method, "get_or")) return "tk_env_get_or";
     }
+    /* std.file functions */
+    if (!strcmp(mod, "file")) {
+        if (!strcmp(method, "read"))    return "tk_file_read_w";
+        if (!strcmp(method, "write"))   return "tk_file_write_w";
+        if (!strcmp(method, "isdir"))   return "tk_file_isdir_w";
+        if (!strcmp(method, "mkdir"))   return "tk_file_mkdir_w";
+        if (!strcmp(method, "copy"))    return "tk_file_copy_w";
+        if (!strcmp(method, "listall")) return "tk_file_listall_w";
+        if (!strcmp(method, "exists"))  return "tk_file_exists_w";
+    }
+    /* std.path functions */
+    if (!strcmp(mod, "path")) {
+        if (!strcmp(method, "join")) return "tk_path_join_w";
+        if (!strcmp(method, "dir"))  return "tk_path_dir_w";
+        if (!strcmp(method, "ext"))  return "tk_path_ext_w";
+    }
+    /* std.toml functions */
+    if (!strcmp(mod, "toml")) {
+        if (!strcmp(method, "load"))    return "tk_toml_load_w";
+        if (!strcmp(method, "section")) return "tk_toml_section_w";
+        if (!strcmp(method, "str"))     return "tk_toml_str_w";
+        if (!strcmp(method, "i64"))     return "tk_toml_i64_w";
+        if (!strcmp(method, "bool"))    return "tk_toml_bool_w";
+    }
+    /* std.args functions */
+    if (!strcmp(mod, "args")) {
+        if (!strcmp(method, "count")) return "tk_args_count_w";
+        if (!strcmp(method, "get"))   return "tk_args_get_w";
+    }
     /* std.http functions */
     if (!strcmp(mod, "http")) {
         if (!strcmp(method, "getstatic"))      return "tk_http_get_static";
+        if (!strcmp(method, "servedir"))       return "tk_http_serve_staticdir_w";
         if (!strcmp(method, "serve"))          return "tk_http_serve";
         if (!strcmp(method, "servetls"))       return "tk_http_servetls";
+        if (!strcmp(method, "serveworkers"))   return "tk_http_serveworkers_w";
         if (!strcmp(method, "vhost"))          return "tk_http_vhost";
         if (!strcmp(method, "servevhosts"))    return "tk_http_servevhosts";
         if (!strcmp(method, "servevhoststls")) return "tk_http_servevhoststls";
@@ -588,6 +644,16 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
     /* std.log functions */
     if (!strcmp(mod, "log")) {
         if (!strcmp(method, "openaccess")) return "tk_log_open_access_w";
+        if (!strcmp(method, "info"))       return "tk_log_info_w";
+        if (!strcmp(method, "error"))      return "tk_log_error_w";
+    }
+    /* std.md functions */
+    if (!strcmp(mod, "md")) {
+        if (!strcmp(method, "render")) return "tk_md_render_w";
+    }
+    /* std.router functions */
+    if (!strcmp(mod, "router")) {
+        if (!strcmp(method, "new")) return "tk_router_new_w";
     }
     return NULL;
 }
@@ -632,8 +698,18 @@ static void str_buf_append(Ctx *c, const char *fmt, ...) {
 static int emit_str_global(Ctx *c, const char *raw, int rlen)
 {
     const char *inner = raw + 1; int ilen = rlen-2; if(ilen<0)ilen=0;
+    /* Pre-scan to compute actual byte count (escape sequences reduce raw char count) */
+    int byte_count = 0;
+    for(int i=0;i<ilen;i++){
+        unsigned char ch=(unsigned char)inner[i];
+        if(ch=='\\'&&i+1<ilen){
+            char nx=inner[i+1];
+            if(nx=='n'||nx=='t'||nx=='\\'||nx=='"'){i++;} /* 2 raw chars = 1 byte */
+        }
+        byte_count++;
+    }
     int idx = next_str(c);
-    str_buf_append(c, "@.str.%d = private unnamed_addr constant [%d x i8] c\"",idx,ilen+1);
+    str_buf_append(c, "@.str.%d = private unnamed_addr constant [%d x i8] c\"",idx,byte_count+1);
     for(int i=0;i<ilen;i++){
         unsigned char ch=(unsigned char)inner[i];
         if(ch=='\\'&&i+1<ilen){char nx=inner[i+1];
@@ -776,6 +852,18 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  store i1 %s, ptr %%t%d\n",
                     n->op == TK_AND ? "false" : "true", res_alloca);
             int lhs = emit_expr(c, n->children[0]);
+            /* Coerce lhs to i1 if needed */
+            const char *lhsty = expr_llvm_type(c, n->children[0]);
+            if (!strcmp(lhsty, "i64")) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", z, lhs);
+                lhs = z;
+            } else if (!strcmp(lhsty, "ptr")) {
+                int p = next_tmp(c); int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", p, lhs);
+                fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", z, p);
+                lhs = z;
+            }
             int lbl_rhs = next_lbl(c);
             int lbl_end = next_lbl(c);
             if (n->op == TK_AND)
@@ -787,6 +875,18 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "logic_rhs%d:\n", lbl_rhs);
             c->term = 0;
             int rhs = emit_expr(c, n->children[1]);
+            /* Coerce rhs to i1 if needed */
+            const char *rhsty = expr_llvm_type(c, n->children[1]);
+            if (!strcmp(rhsty, "i64")) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", z, rhs);
+                rhs = z;
+            } else if (!strcmp(rhsty, "ptr")) {
+                int p = next_tmp(c); int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", p, rhs);
+                fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", z, p);
+                rhs = z;
+            }
             fprintf(c->out, "  store i1 %%t%d, ptr %%t%d\n", rhs, res_alloca);
             fprintf(c->out, "  br label %%logic_end%d\n", lbl_end);
             fprintf(c->out, "logic_end%d:\n", lbl_end);
@@ -821,19 +921,46 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = call ptr @tk_array_concat(ptr %%t%d, ptr %%t%d)\n", t, lhs, rhs);
             return t;
         }
-        /* ptr == ptr, ptr < ptr, ptr > ptr: compare pointers directly
-         * without ptrtoint, preserving alias analysis information */
-        if (!strcmp(lty, "ptr") && !strcmp(rty, "ptr") &&
-            (n->op == TK_EQ || n->op == TK_LT || n->op == TK_GT)) {
-            t = next_tmp(c);
-            const char *cmp;
-            switch (n->op) {
-            case TK_LT: cmp = "ult"; break;
-            case TK_GT: cmp = "ugt"; break;
-            default:    cmp = "eq";   break;
+        /* String equality: when TK_EQ and at least one side is a str/ptr,
+         * use strcmp instead of pointer comparison. */
+        if (n->op == TK_EQ &&
+            (!strcmp(lty, "ptr") || !strcmp(rty, "ptr"))) {
+            /* Normalize both sides to ptr */
+            int lhs_p = lhs, rhs_p = rhs;
+            if (!strcmp(lty, "i64")) {
+                lhs_p = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to ptr\n", lhs_p, lhs);
+            } else if (!strcmp(lty, "i1")) {
+                lhs_p = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 0 to ptr ; i1->ptr fallback\n", lhs_p);
             }
-            fprintf(c->out, "  %%t%d = icmp %s ptr %%t%d, %%t%d\n", t, cmp, lhs, rhs);
+            if (!strcmp(rty, "i64")) {
+                rhs_p = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to ptr\n", rhs_p, rhs);
+            } else if (!strcmp(rty, "i1")) {
+                rhs_p = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 0 to ptr ; i1->ptr fallback\n", rhs_p);
+            }
+            int cmpres = next_tmp(c);
+            fprintf(c->out, "  %%t%d = call i32 @strcmp(ptr %%t%d, ptr %%t%d)\n", cmpres, lhs_p, rhs_p);
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = icmp eq i32 %%t%d, 0\n", t, cmpres);
             return t;
+        }
+        /* ptr < ptr, ptr > ptr: compare pointers directly */
+        if ((!strcmp(lty, "ptr") || !strcmp(rty, "ptr")) &&
+            (n->op == TK_LT || n->op == TK_GT)) {
+            /* Normalize both to i64 for unsigned comparison */
+            if (!strcmp(lty, "ptr")) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, lhs);
+                lhs = z; lty = "i64";
+            }
+            if (!strcmp(rty, "ptr")) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, rhs);
+                rhs = z; rty = "i64";
+            }
         }
         /* Determine the operand LLVM type for binary ops.
          * For narrow int/float types, use the actual type; for i1/ptr, coerce. */
@@ -945,24 +1072,94 @@ static int emit_expr(Ctx *c, const Node *n)
             else
                 fprintf(c->out, "  %%t%d = sub %s 0, %%t%d\n", t, uty, v);
         }
-        else if (n->op == TK_BANG)
-            fprintf(c->out, "  %%t%d = xor i1 %%t%d, 1\n", t, v);
+        else if (n->op == TK_BANG) {
+            /* If operand is i64 (integer), convert to i1 first via icmp ne 0 */
+            const char *uty2 = expr_llvm_type(c, n->children[0]);
+            if (!strcmp(uty2, "i64")) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", z, v);
+                fprintf(c->out, "  %%t%d = xor i1 %%t%d, 1\n", t, z);
+            } else if (!strcmp(uty2, "ptr")) {
+                int z = next_tmp(c);
+                int p = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", p, v);
+                fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", z, p);
+                fprintf(c->out, "  %%t%d = xor i1 %%t%d, 1\n", t, z);
+            } else {
+                fprintf(c->out, "  %%t%d = xor i1 %%t%d, 1\n", t, v);
+            }
+        }
         else
             fprintf(c->out, "  %%t%d = add i64 0, %%t%d ; unary stub\n", t, v);
         return t;
     }
     case NODE_CALL_EXPR: {
-        /* Check for qualified call: children[0] is NODE_FIELD_EXPR for j.parse(...) */
+        /* --- Instance method calls on local variables (array.append / map.set) --- */
+        if (n->children[0]->kind == NODE_FIELD_EXPR &&
+            n->children[0]->child_count >= 2) {
+            char alias_im[128], method_im[128];
+            tok_cp(c->src, n->children[0]->children[0], alias_im, sizeof alias_im);
+            tok_cp(c->src, n->children[0]->children[1], method_im, sizeof method_im);
+            int is_mod_im = 0;
+            for (int ii = 0; ii < c->import_count; ii++)
+                if (!strcmp(c->imports[ii].alias, alias_im)) { is_mod_im = 1; break; }
+            if (!is_mod_im &&
+                (!strcmp(method_im, "append") || !strcmp(method_im, "set"))) {
+                const char *fn_im = !strcmp(method_im, "append")
+                                    ? "tk_array_append_w" : "tk_map_set_w";
+                /* Emit base object as first arg (coerce ptr→i64) */
+                int obj_v = emit_expr(c, n->children[0]->children[0]);
+                const char *obj_ty = expr_llvm_type(c, n->children[0]->children[0]);
+                if (!strcmp(obj_ty, "ptr")) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, obj_v);
+                    obj_v = z;
+                }
+                int na_im = n->child_count - 1;
+                int coa[TKC_MAX_PARAMS + 1]; coa[0] = obj_v;
+                for (int i = 0; i < na_im && i + 1 < TKC_MAX_PARAMS; i++) {
+                    int av = emit_expr(c, n->children[i+1]);
+                    const char *aty = expr_llvm_type(c, n->children[i+1]);
+                    if (!strcmp(aty, "ptr")) {
+                        int z = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, av);
+                        av = z;
+                    } else if (!strcmp(aty, "i1")) {
+                        int z = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, av);
+                        av = z;
+                    }
+                    coa[i+1] = av;
+                }
+                int tot = na_im + 1;
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i64 @%s(", t, fn_im);
+                for (int i = 0; i < tot; i++) {
+                    if (i) fputc(',', c->out);
+                    fprintf(c->out, " i64 %%t%d", coa[i]);
+                }
+                fputs(")\n", c->out);
+                return t;
+            }
+        }
+
+        /* --- Qualified module.method and direct function calls --- */
         const char *resolved_fn = NULL;
         char fn_buf[256];
-        if (n->children[0]->kind == NODE_FIELD_EXPR) {
+        int is_cross_module_user = 0; /* cross-module call to user-defined fn */
+        if (n->children[0]->kind == NODE_FIELD_EXPR &&
+            n->children[0]->child_count >= 2) {
             char alias[128], method[128];
             tok_cp(c->src, n->children[0]->children[0], alias, sizeof alias);
             tok_cp(c->src, n->children[0]->children[1], method, sizeof method);
             resolved_fn = resolve_stdlib_call(c, alias, method);
             if (!resolved_fn) {
-                /* Not a known stdlib call — build a mangled name */
-                snprintf(fn_buf, sizeof fn_buf, "%s_%s", alias, method);
+                /* Check if alias is a module import */
+                for (int ii = 0; ii < c->import_count; ii++)
+                    if (!strcmp(c->imports[ii].alias, alias)) {
+                        is_cross_module_user = 1; break;
+                    }
+                snprintf(fn_buf, sizeof fn_buf, "%s", method);
                 resolved_fn = fn_buf;
             }
         }
@@ -982,10 +1179,30 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         const FnSig *callee = lookup_fn(c, tb);
 
-        /* For stdlib calls, determine return/param types by convention */
+        /* Determine return type */
         const char *callee_ret = callee ? callee->ret : "i64";
-        if (!callee && resolved_fn) {
-            /* stdlib return types: tk_str_argv returns ptr, tk_json_parse returns i64, tk_json_print is void */
+        if (!callee && is_cross_module_user) {
+            /* Cross-module user calls always return ptr (struct/array result) */
+            callee_ret = "ptr";
+            /* Record forward declaration — dedup by function name, all args are ptr */
+            char name_check[256];
+            snprintf(name_check, sizeof name_check, "@%s(", tb);
+            if (!strstr(c->fwd_decls, name_check)) {
+                char decl[512];
+                int dlen = snprintf(decl, sizeof decl, "declare fastcc ptr @%s(", tb);
+                for (int i = 0; i < na && dlen < (int)sizeof(decl) - 16; i++) {
+                    if (i) dlen += snprintf(decl + dlen, sizeof(decl) - (size_t)dlen, ", ");
+                    dlen += snprintf(decl + dlen, sizeof(decl) - (size_t)dlen, "ptr");
+                }
+                dlen += snprintf(decl + dlen, sizeof(decl) - (size_t)dlen, ")\n");
+                if (c->fwd_decls_len + dlen < TKC_FWD_DECL_SIZE) {
+                    memcpy(c->fwd_decls + c->fwd_decls_len, decl, (size_t)dlen);
+                    c->fwd_decls_len += dlen;
+                    c->fwd_decls[c->fwd_decls_len] = '\0';
+                }
+            }
+        } else if (!callee && resolved_fn && !is_cross_module_user) {
+            /* stdlib return type by convention */
             if (!strcmp(tb, "tk_str_argv")) callee_ret = "ptr";
             else if (!strcmp(tb, "tk_json_print")) callee_ret = "void";
             else callee_ret = "i64";
@@ -995,7 +1212,6 @@ static int emit_expr(Ctx *c, const Node *n)
         if (!strcmp(tb, "tk_json_print") && na >= 1) {
             const char *aty0 = arg_tys[0];
             if (!strcmp(aty0, "i1")) {
-                /* bool: zext to i64 and call tk_json_print_bool */
                 int z = next_tmp(c);
                 fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, args[0]);
                 fprintf(c->out, "  call void @tk_json_print_bool(i64 %%t%d)\n", z);
@@ -1003,7 +1219,6 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
                 return t;
             } else if (!strcmp(aty0, "ptr")) {
-                /* ptr: call tk_json_print_arr */
                 fprintf(c->out, "  call void @tk_json_print_arr(ptr %%t%d)\n", args[0]);
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
@@ -1014,46 +1229,54 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
                 return t;
             }
-            /* else: fall through to default i64 print */
         }
 
-        /* Coerce each argument to its expected type if needed */
+        /* Coerce each argument to its expected type */
         for (int i = 0; i < na; i++) {
-            const char *aty = (callee && i < callee->param_count) ? callee->param_tys[i] : "i64";
-            if (!callee && resolved_fn) aty = "i64";
-            if (!callee && resolved_fn && !strcmp(tb, "tk_json_parse")) aty = "ptr";
-            if (!callee && resolved_fn && !strcmp(tb, "tk_str_argv")) aty = "i64";
+            const char *aty;
+            if (callee && i < callee->param_count) {
+                aty = callee->param_tys[i];
+            } else if (is_cross_module_user) {
+                /* All cross-module user args normalised to ptr; coerce at call site */
+                aty = "ptr";
+            } else {
+                /* stdlib: all i64 unless special */
+                aty = "i64";
+                if (!strcmp(tb, "tk_json_parse")) aty = "ptr";
+                if (!strcmp(tb, "tk_str_argv")) aty = "i64";
+            }
             if (strcmp(aty, arg_tys[i])) {
                 int z = next_tmp(c);
-                if (!strcmp(arg_tys[i], "i1") && !strcmp(aty, "i64")) {
+                if (!strcmp(arg_tys[i], "i1") && !strcmp(aty, "i64"))
                     fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, args[i]);
-                } else if (!strcmp(arg_tys[i], "ptr") && !strcmp(aty, "i64")) {
+                else if (!strcmp(arg_tys[i], "ptr") && !strcmp(aty, "i64"))
                     fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, args[i]);
-                } else if (!strcmp(arg_tys[i], "i64") && !strcmp(aty, "ptr")) {
+                else if (!strcmp(arg_tys[i], "i64") && !strcmp(aty, "ptr"))
                     fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to ptr\n", z, args[i]);
-                } else if (!strcmp(arg_tys[i], "i64") && !strcmp(aty, "i1")) {
+                else if (!strcmp(arg_tys[i], "i64") && !strcmp(aty, "i1"))
                     fprintf(c->out, "  %%t%d = trunc i64 %%t%d to i1\n", z, args[i]);
-                } else if (!strcmp(arg_tys[i], "i64") && !strcmp(aty, "double")) {
+                else if (!strcmp(arg_tys[i], "i64") && !strcmp(aty, "double"))
                     fprintf(c->out, "  %%t%d = sitofp i64 %%t%d to double\n", z, args[i]);
-                } else if (!strcmp(arg_tys[i], "double") && !strcmp(aty, "i64")) {
+                else if (!strcmp(arg_tys[i], "double") && !strcmp(aty, "i64"))
                     fprintf(c->out, "  %%t%d = fptosi double %%t%d to i64\n", z, args[i]);
-                } else {
+                else
                     fprintf(c->out, "  %%t%d = add i64 0, %%t%d ; type coerce fallback\n", z, args[i]);
-                }
                 args[i] = z;
             }
         }
 
         {
-        const char *cc = (callee && callee->is_internal) ? " fastcc" : "";
+        /* Use fastcc for internal functions and cross-module user calls */
+        const char *cc = (callee && callee->is_internal) ? " fastcc"
+                       : (is_cross_module_user ? " fastcc" : "");
         if (!strcmp(callee_ret, "void")) {
             fprintf(c->out, "  call%s void @%s(", cc, tb);
             for (int i = 0; i < na; i++) {
                 if (i) fputc(',', c->out);
-                const char *aty = (callee && i < callee->param_count) ? callee->param_tys[i] : "i64";
-                if (!callee && resolved_fn) aty = "i64";
-                if (!callee && resolved_fn && !strcmp(tb, "tk_json_parse")) aty = "ptr";
-                if (!callee && resolved_fn && !strcmp(tb, "tk_str_argv")) aty = "i64";
+                const char *aty;
+                if (callee && i < callee->param_count) aty = callee->param_tys[i];
+                else if (is_cross_module_user) { aty = "ptr"; }
+                else { aty = "i64"; if (!strcmp(tb,"tk_json_parse")) aty="ptr"; }
                 fprintf(c->out, " %s %%t%d", aty, args[i]);
             }
             fputs(")\n", c->out);
@@ -1065,10 +1288,10 @@ static int emit_expr(Ctx *c, const Node *n)
         fprintf(c->out, "  %%t%d = call%s %s @%s(", t, cc, callee_ret, tb);
         for (int i = 0; i < na; i++) {
             if (i) fputc(',', c->out);
-            const char *aty = (callee && i < callee->param_count) ? callee->param_tys[i] : "i64";
-            if (!callee && resolved_fn) aty = "i64";
-            if (!callee && resolved_fn && !strcmp(tb, "tk_json_parse")) aty = "ptr";
-            if (!callee && resolved_fn && !strcmp(tb, "tk_str_argv")) aty = "i64";
+            const char *aty;
+            if (callee && i < callee->param_count) aty = callee->param_tys[i];
+            else if (is_cross_module_user) { aty = "ptr"; }
+            else { aty = "i64"; if (!strcmp(tb,"tk_json_parse")) aty="ptr"; }
             fprintf(c->out, " %s %%t%d", aty, args[i]);
         }
         fputs(")\n", c->out);
@@ -1186,6 +1409,22 @@ static int emit_expr(Ctx *c, const Node *n)
         int fidx = 0;
         const StructInfo *si = resolve_base_struct(c, n->children[0]);
         if (si) fidx = struct_field_index(si, fn);
+        /* Heuristic fallback: when struct type is unknown (base is an array
+         * subscript, a chained field access, or an ident whose type wasn't
+         * tracked), search all registered structs for the field name.
+         * Correct when field names are unique across the module's structs. */
+        if (!si) {
+            for (int _si = 0; _si < c->struct_count; _si++) {
+                int _found = 0;
+                for (int _fi = 0; _fi < c->structs[_si].field_count; _fi++)
+                    if (!strcmp(c->structs[_si].field_names[_fi], fn)) { _found = 1; break; }
+                if (_found) {
+                    si = &c->structs[_si];
+                    fidx = struct_field_index(si, fn);
+                    break;
+                }
+            }
+        }
         {
             const char *bty = expr_llvm_type(c, n->children[0]);
             if (!strcmp(bty, "i64")) {
@@ -1200,6 +1439,45 @@ static int emit_expr(Ctx *c, const Node *n)
         return t;
     }
     case NODE_INDEX_EXPR: {
+        /* If base is a stdlib module alias, route .get(i) to the stdlib wrapper */
+        if (n->children[0]->kind == NODE_IDENT && n->child_count >= 2) {
+            char base_alias[128]; tok_cp(c->src, n->children[0], base_alias, sizeof base_alias);
+            /* Map variable: emit tk_map_get(map_ptr, key_i64) */
+            if (is_map_var(c, base_alias)) {
+                int base_map = emit_expr(c, n->children[0]);
+                /* base is a ptr local — emit as ptr */
+                int idx = emit_expr(c, n->children[1]);
+                const char *ity = expr_llvm_type(c, n->children[1]);
+                if (strcmp(ity, "i64")) {
+                    int z = next_tmp(c);
+                    if (!strcmp(ity, "ptr"))
+                        fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, idx);
+                    else
+                        fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, idx);
+                    idx = z;
+                }
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i64 @tk_map_get(ptr %%t%d, i64 %%t%d)\n",
+                        t, base_map, idx);
+                return t;
+            }
+            const char *resolved_get = resolve_stdlib_call(c, base_alias, "get");
+            if (resolved_get) {
+                int idx = emit_expr(c, n->children[1]);
+                const char *ity = expr_llvm_type(c, n->children[1]);
+                if (strcmp(ity, "i64")) {
+                    int z = next_tmp(c);
+                    if (!strcmp(ity, "i1"))
+                        fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, idx);
+                    else
+                        fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, idx);
+                    idx = z;
+                }
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i64 @%s( i64 %%t%d)\n", t, resolved_get, idx);
+                return t;
+            }
+        }
         int base = emit_expr(c, n->children[0]);
         const char *bty = expr_llvm_type(c, n->children[0]);
         /* If base is i64 (e.g. from j.parse), inttoptr to ptr first */
@@ -1209,6 +1487,16 @@ static int emit_expr(Ctx *c, const Node *n)
             base = conv;
         }
         int idx  = emit_expr(c, n->children[1]);
+        { const char *ity = expr_llvm_type(c, n->children[1]);
+          if (strcmp(ity, "i64")) {
+            int z = next_tmp(c);
+            if (!strcmp(ity, "ptr"))
+                fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, idx);
+            else
+                fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, idx);
+            idx = z;
+          }
+        }
         t2 = next_tmp(c); t = next_tmp(c);
         fprintf(c->out, "  %%t%d = getelementptr i64, ptr %%t%d, i64 %%t%d\n", t2, base, idx);
         fprintf(c->out, "  %%t%d = load i64, ptr %%t%d\n", t, t2);
@@ -1221,7 +1509,7 @@ static int emit_expr(Ctx *c, const Node *n)
         const StructInfo *si = lookup_struct(c, sn);
         int nfields = si ? si->field_count : (n->child_count > 0 ? n->child_count : 1);
         t = next_tmp(c);
-        fprintf(c->out, "  %%t%d = alloca i64, i32 %d ; struct_lit %s\n", t, nfields, sn);
+        fprintf(c->out, "  %%t%d = call ptr @malloc(i64 %d) ; struct_lit %s\n", t, nfields * 8, sn);
         for (int i = 0; i < n->child_count; i++) {
             const Node *fi = n->children[i];
             if (!fi || fi->kind != NODE_FIELD_INIT) continue;
@@ -1234,6 +1522,17 @@ static int emit_expr(Ctx *c, const Node *n)
             }
             if (fi->child_count >= 1) {
                 t3 = emit_expr(c, fi->children[0]);
+                /* Struct fields always stored as i64 — coerce if needed */
+                const char *fety = expr_llvm_type(c, fi->children[0]);
+                if (!strcmp(fety, "ptr")) {
+                    int zf = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", zf, t3);
+                    t3 = zf;
+                } else if (!strcmp(fety, "i1")) {
+                    int zf = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", zf, t3);
+                    t3 = zf;
+                }
                 t2 = next_tmp(c);
                 fprintf(c->out, "  %%t%d = getelementptr inbounds i64, ptr %%t%d, i32 %d ; .%s\n",
                         t2, t, fidx, si ? si->field_names[fidx] : "?");
@@ -1243,23 +1542,51 @@ static int emit_expr(Ctx *c, const Node *n)
         return t;
     }
     case NODE_ARRAY_LIT: {
+        /* Count actual value elements — skip type-annotation children like
+         * NODE_TYPE_IDENT (e.g. the $route in @($route) typed empty arrays). */
+        int elem_count = 0;
+        for (int i = 0; i < n->child_count; i++) {
+            NodeKind ck = n->children[i]->kind;
+            if (ck != NODE_TYPE_IDENT && ck != NODE_TYPE_EXPR &&
+                ck != NODE_ARRAY_TYPE && ck != NODE_MAP_TYPE &&
+                ck != NODE_FUNC_TYPE  && ck != NODE_PTR_TYPE)
+                elem_count++;
+        }
         /* Allocate len+1 slots: [length | data[0] | data[1] | ...].
          * Return pointer to data[0] so that ptr[-1] == length. */
         int block = next_tmp(c);
-        fprintf(c->out, "  %%t%d = alloca i64, i64 %d ; array block (len + %d elems)\n",
-                block, n->child_count + 1, n->child_count);
+        fprintf(c->out, "  %%t%d = call ptr @malloc(i64 %d) ; array block (len + %d elems)\n",
+                block, (elem_count + 1) * 8, elem_count);
         /* Store length at index 0 of the block */
         t2 = next_tmp(c);
         fprintf(c->out, "  %%t%d = getelementptr inbounds i64, ptr %%t%d, i64 0\n", t2, block);
-        fprintf(c->out, "  store i64 %d, ptr %%t%d ; .len\n", n->child_count, t2);
+        fprintf(c->out, "  store i64 %d, ptr %%t%d ; .len\n", elem_count, t2);
         /* Data pointer = block + 1 */
         t = next_tmp(c);
         fprintf(c->out, "  %%t%d = getelementptr inbounds i64, ptr %%t%d, i64 1 ; data start\n", t, block);
+        int elem_idx = 0;
         for (int i = 0; i < n->child_count; i++) {
+            NodeKind ck = n->children[i]->kind;
+            if (ck == NODE_TYPE_IDENT || ck == NODE_TYPE_EXPR ||
+                ck == NODE_ARRAY_TYPE || ck == NODE_MAP_TYPE ||
+                ck == NODE_FUNC_TYPE  || ck == NODE_PTR_TYPE)
+                continue; /* skip type annotations */
             int ev = emit_expr(c, n->children[i]);
+            /* Array elements stored as i64 — coerce if needed */
+            const char *aety = expr_llvm_type(c, n->children[i]);
+            if (!strcmp(aety, "ptr")) {
+                int za = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", za, ev);
+                ev = za;
+            } else if (!strcmp(aety, "i1")) {
+                int za = next_tmp(c);
+                fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", za, ev);
+                ev = za;
+            }
             t3 = next_tmp(c);
-            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, ptr %%t%d, i64 %d\n", t3, t, i);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, ptr %%t%d, i64 %d\n", t3, t, elem_idx);
             fprintf(c->out, "  store i64 %%t%d, ptr %%t%d\n", ev, t3);
+            elem_idx++;
         }
         return t;
     }
@@ -1272,14 +1599,178 @@ static int emit_expr(Ctx *c, const Node *n)
             if (entry->child_count >= 2) {
                 int kv = emit_expr(c, entry->children[0]);
                 int vv = emit_expr(c, entry->children[1]);
+                /* tk_map_put takes (ptr map, i64 key, i64 val) — coerce if needed */
+                const char *kety = expr_llvm_type(c, entry->children[0]);
+                const char *vety = expr_llvm_type(c, entry->children[1]);
+                if (!strcmp(kety, "ptr")) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, kv);
+                    kv = z;
+                }
+                if (!strcmp(vety, "ptr")) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, vv);
+                    vv = z;
+                }
                 fprintf(c->out, "  call void @tk_map_put(ptr %%t%d, i64 %%t%d, i64 %%t%d)\n", t, kv, vv);
             }
         }
         return t;
     }
-    case NODE_PROPAGATE_EXPR:
-        fprintf(c->out, "  ; propagate expr stub\n");
-        return emit_expr(c, n->children[0]);
+    case NODE_PROPAGATE_EXPR: {
+        /* expr!$ErrType — evaluate inner expr; if null/zero (Err), early-return
+         * null/0 from the current function, propagating the error to the caller.
+         * If non-null/non-zero (Ok), continue with the unwrapped value.
+         * Exception: void-returning calls can't signal error via return value;
+         * treat them as always-Ok (no check emitted). */
+        int sv = emit_expr(c, n->children[0]);
+        const char *sty = expr_llvm_type(c, n->children[0]);
+        if (!strcmp(sty, "void")) return sv; /* void fn → always Ok, no check */
+        int prop_lbl = next_lbl(c);
+        int prop_cond = next_tmp(c);
+        if (!strcmp(sty, "ptr"))
+            fprintf(c->out, "  %%t%d = icmp ne ptr %%t%d, null\n", prop_cond, sv);
+        else
+            fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", prop_cond, sv);
+        fprintf(c->out, "  br i1 %%t%d, label %%prop_ok%d, label %%prop_err%d\n",
+                prop_cond, prop_lbl, prop_lbl);
+        fprintf(c->out, "prop_err%d:\n", prop_lbl);
+        { const char *rt = c->cur_fn_ret ? c->cur_fn_ret : "ptr";
+          if (!strcmp(rt, "i64"))
+              fprintf(c->out, "  ret i64 0\n");
+          else if (!strcmp(rt, "i1"))
+              fprintf(c->out, "  ret i1 0\n");
+          else if (!strcmp(rt, "void"))
+              fprintf(c->out, "  ret void\n");
+          else
+              fprintf(c->out, "  ret ptr null\n");
+        }
+        fprintf(c->out, "prop_ok%d:\n", prop_lbl);
+        return sv;
+    }
+    case NODE_MATCH_STMT: {
+        /*
+         * Result-match expression: expr|{Ok:v body_ok; Err:e body_err}
+         *
+         * Convention: non-zero i64 = Ok, zero i64 = Err.
+         * Infer result type from the Ok arm's body expression.
+         *
+         * Algorithm:
+         *   1. Alloca result slot (type inferred from Ok arm body).
+         *   2. Emit scrutinee → sv (i64).
+         *   3. icmp ne i64 sv, 0 → cond (i1).
+         *   4. Branch to ok_arm / err_arm labels.
+         *   5. In each arm: bind variable, emit body, store to result, br merge.
+         *   6. Merge label: load result slot, return loaded value.
+         */
+        int L = next_lbl(c);
+
+        /* Infer result type from Ok arm body (children[1] is first arm) */
+        const char *res_ty = "i64";
+        for (int i = 1; i < n->child_count; i++) {
+            const Node *arm = n->children[i];
+            if (arm->child_count >= 1) {
+                char tag[64]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
+                if (!strcmp(tag, "Ok") && arm->child_count >= 3) {
+                    res_ty = expr_llvm_type(c, arm->children[2]);
+                    break;
+                }
+            }
+        }
+        /* Normalize: never use i1 as result slot type */
+        if (!strcmp(res_ty, "i1")) res_ty = "i64";
+
+        /* Allocate result slot */
+        int res_slot = next_tmp(c);
+        fprintf(c->out, "  %%t%d = alloca %s\n", res_slot, res_ty);
+
+        /* Emit scrutinee and get its type */
+        int sv = emit_expr(c, n->children[0]);
+        const char *scr_ty = expr_llvm_type(c, n->children[0]);
+
+        /* icmp ne sv, 0/null → cond */
+        int cond = next_tmp(c);
+        if (!strcmp(scr_ty, "ptr"))
+            fprintf(c->out, "  %%t%d = icmp ne ptr %%t%d, null\n", cond, sv);
+        else
+            fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", cond, sv);
+
+        /* Branch to ok or err arm */
+        fprintf(c->out, "  br i1 %%t%d, label %%rm_ok%d, label %%rm_err%d\n", cond, L, L);
+
+        /* Emit each arm */
+        for (int i = 1; i < n->child_count; i++) {
+            const Node *arm = n->children[i];
+            if (arm->child_count < 1) continue;
+            char tag[64]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
+            int is_ok = !strcmp(tag, "Ok");
+            if (is_ok)
+                fprintf(c->out, "rm_ok%d:\n", L);
+            else
+                fprintf(c->out, "rm_err%d:\n", L);
+
+            /* Bind the arm variable: Ok arm gets sv, Err arm gets 0/null */
+            if (arm->child_count >= 2 && arm->children[1]) {
+                char vname[NAME_BUF]; tok_cp(c->src, arm->children[1], vname, sizeof vname);
+                const char *uname = make_unique_name(c, vname);
+                if (uname != vname) {
+                    /* unique name already recorded; copy into vname for use below */
+                    strncpy(vname, uname, sizeof vname - 1);
+                    vname[sizeof vname - 1] = '\0';
+                }
+                set_local_type(c, vname, scr_ty);
+                fprintf(c->out, "  %%%s = alloca %s\n", vname, scr_ty);
+                if (is_ok)
+                    fprintf(c->out, "  store %s %%t%d, ptr %%%s\n", scr_ty, sv, vname);
+                else {
+                    if (!strcmp(scr_ty, "ptr"))
+                        fprintf(c->out, "  store ptr null, ptr %%%s\n", vname);
+                    else
+                        fprintf(c->out, "  store i64 0, ptr %%%s\n", vname);
+                }
+            }
+
+            /* Emit arm body expression */
+            int body_val = -1;
+            if (arm->child_count >= 3 && arm->children[2]) {
+                body_val = emit_expr(c, arm->children[2]);
+            } else if (arm->child_count >= 2 && arm->children[1]) {
+                /* Fallback: no body; use binding value */
+                char vname[NAME_BUF]; tok_cp(c->src, arm->children[1], vname, sizeof vname);
+                const char *ln = get_llvm_name(c, vname);
+                body_val = next_tmp(c);
+                fprintf(c->out, "  %%t%d = load %s, ptr %%%s\n", body_val, scr_ty, ln);
+            }
+
+            /* Coerce and store body value to result slot */
+            if (body_val >= 0) {
+                const Node *body_node = (arm->child_count >= 3) ? arm->children[2] : NULL;
+                const char *bty = body_node ? expr_llvm_type(c, body_node) : "i64";
+                if (strcmp(bty, res_ty)) {
+                    int z = next_tmp(c);
+                    if (!strcmp(bty, "ptr") && !strcmp(res_ty, "i64")) {
+                        fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, body_val);
+                    } else if (!strcmp(bty, "i64") && !strcmp(res_ty, "ptr")) {
+                        fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to ptr\n", z, body_val);
+                    } else if (!strcmp(bty, "i1") && !strcmp(res_ty, "i64")) {
+                        fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, body_val);
+                    } else {
+                        fprintf(c->out, "  %%t%d = add i64 0, 0 ; type coercion fallback\n", z);
+                    }
+                    body_val = z;
+                }
+                fprintf(c->out, "  store %s %%t%d, ptr %%t%d\n", res_ty, body_val, res_slot);
+            }
+
+            fprintf(c->out, "  br label %%rm_end%d\n", L);
+        }
+
+        /* Merge label: load and return result */
+        fprintf(c->out, "rm_end%d:\n", L);
+        t = next_tmp(c);
+        fprintf(c->out, "  %%t%d = load %s, ptr %%t%d\n", t, res_ty, res_slot);
+        return t;
+    }
     default:
         t = next_tmp(c);
         fprintf(c->out, "  %%t%d = add i64 0, 0 ; unhandled expr %d\n", t, (int)n->kind);
@@ -1471,6 +1962,10 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         if (n->op == TK_BANG) return "i1";
         if (n->op == TK_MINUS) return expr_llvm_type(c, n->children[0]);
         return "i64";
+    case NODE_PROPAGATE_EXPR:
+        /* Error-propagation wrapper: type is the type of the inner expression */
+        if (n->child_count > 0 && n->children[0]) return expr_llvm_type(c, n->children[0]);
+        return "i64";
     case NODE_CALL_EXPR: {
         if (n->child_count < 1) return "i64";
         /* Check for resolved stdlib calls */
@@ -1484,6 +1979,11 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
                 if (!strcmp(resolved, "tk_json_print")) return "i64"; /* void, but wrapped */
                 return "i64"; /* tk_json_parse returns i64 */
             }
+            /* Cross-module user call: return ptr (structs/arrays are ptr) */
+            int is_mod = 0;
+            for (int ii = 0; ii < c->import_count; ii++)
+                if (!strcmp(c->imports[ii].alias, alias)) { is_mod = 1; break; }
+            if (is_mod) return "ptr";
         }
         char fn[128]; tok_cp(c->src, n->children[0], fn, sizeof fn);
         const FnSig *sig = lookup_fn(c, fn);
@@ -1502,6 +2002,20 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             if (!strcmp(tn, "bool")) return "i1";
         }
         return "ptr"; /* array / unknown cast → inttoptr */
+    }
+    case NODE_MATCH_STMT: {
+        /* Result-match expr: type comes from the Ok arm body */
+        for (int i = 1; i < n->child_count; i++) {
+            const Node *arm = n->children[i];
+            if (arm->child_count >= 1) {
+                char tag[64]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
+                if (!strcmp(tag, "Ok") && arm->child_count >= 3) {
+                    const char *ty = expr_llvm_type(c, arm->children[2]);
+                    return (!strcmp(ty, "i1")) ? "i64" : ty;
+                }
+            }
+        }
+        return "i64";
     }
     case NODE_INDEX_EXPR:
         return "i64"; /* array element load */
@@ -1599,9 +2113,14 @@ static void emit_stmt(Ctx *c, const Node *n)
                 vty = resolve_llvm_type(c, n->children[1]);
             else
                 vty = expr_llvm_type(c, init_node);
+            if (!strcmp(vty, "void")) vty = "i64"; /* void fn result → store 0 */
             if (!strcmp(vty, "ptr")) {
-                const char *stype = expr_struct_type(c, init_node);
-                mark_ptr_with_type(c, tb, stype);
+                if (init_node->kind == NODE_MAP_LIT)
+                    mark_ptr_with_type(c, tb, "__map__");
+                else {
+                    const char *stype = expr_struct_type(c, init_node);
+                    mark_ptr_with_type(c, tb, stype);
+                }
             }
             set_local_type(c, tb, vty);
             fprintf(c->out, "  %%%s = alloca %s\n", tb, vty);
@@ -1619,6 +2138,24 @@ static void emit_stmt(Ctx *c, const Node *n)
             const char *ln = get_llvm_name(c, tb);
             const char *lty = get_local_type(c, ln);
             int v = emit_expr(c, n->children[1]);
+            const char *ety2 = expr_llvm_type(c, n->children[1]);
+            /* Coerce value to match the variable's declared type */
+            if (strcmp(ety2, lty)) {
+                int z = next_tmp(c);
+                if (!strcmp(ety2, "i64") && !strcmp(lty, "ptr")) {
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to ptr\n", z, v);
+                    v = z;
+                } else if (!strcmp(ety2, "ptr") && !strcmp(lty, "i64")) {
+                    fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, v);
+                    v = z;
+                } else if (!strcmp(ety2, "i1") && !strcmp(lty, "i64")) {
+                    fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, v);
+                    v = z;
+                } else if (!strcmp(ety2, "i64") && !strcmp(lty, "i1")) {
+                    fprintf(c->out, "  %%t%d = trunc i64 %%t%d to i1\n", z, v);
+                    v = z;
+                }
+            }
             fprintf(c->out, "  store %s %%t%d, ptr %%%s\n", lty, v, ln);
         }
         break;
@@ -1718,6 +2255,20 @@ static void emit_stmt(Ctx *c, const Node *n)
                     int z = next_tmp(c);
                     fprintf(c->out, "  %%t%d = fptrunc double %%t%d to float\n", z, v);
                     fprintf(c->out, "  ret float %%t%d\n", z);
+                } else if (!strcmp(ety, "i64") && !strcmp(rt, "ptr")) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to ptr\n", z, v);
+                    fprintf(c->out, "  ret ptr %%t%d\n", z);
+                } else if (!strcmp(ety, "ptr") && !strcmp(rt, "i64")) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = ptrtoint ptr %%t%d to i64\n", z, v);
+                    fprintf(c->out, "  ret i64 %%t%d\n", z);
+                } else if (!strcmp(ety, "i1") && !strcmp(rt, "ptr")) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, v);
+                    int p = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to ptr\n", p, z);
+                    fprintf(c->out, "  ret ptr %%t%d\n", p);
                 } else {
                     fprintf(c->out, "  ret %s %%t%d\n", rt, v);
                 }
@@ -1737,7 +2288,10 @@ static void emit_stmt(Ctx *c, const Node *n)
         { const char *ct = expr_llvm_type(c, n->children[0]);
           if (strcmp(ct, "i1")) {
             int z = next_tmp(c);
-            fprintf(c->out, "  %%t%d = icmp ne %s %%t%d, 0\n", z, ct, cv);
+            if (!strcmp(ct, "ptr"))
+                fprintf(c->out, "  %%t%d = icmp ne ptr %%t%d, null\n", z, cv);
+            else
+                fprintf(c->out, "  %%t%d = icmp ne %s %%t%d, 0\n", z, ct, cv);
             cv = z;
           }
         }
@@ -1795,7 +2349,10 @@ static void emit_stmt(Ctx *c, const Node *n)
                 { const char *ct = expr_llvm_type(c, maybe_cond);
                   if (strcmp(ct, "i1")) {
                     int z = next_tmp(c);
-                    fprintf(c->out, "  %%t%d = icmp ne %s %%t%d, 0\n", z, ct, cv);
+                    if (!strcmp(ct, "ptr"))
+                        fprintf(c->out, "  %%t%d = icmp ne ptr %%t%d, null\n", z, cv);
+                    else
+                        fprintf(c->out, "  %%t%d = icmp ne %s %%t%d, 0\n", z, ct, cv);
                     cv = z;
                   }
                 }
@@ -1980,11 +2537,15 @@ static void emit_toplevel(Ctx *c, const Node *n)
             if (n->children[i]->child_count > 1 && n->children[i]->children[1])
                 pty = resolve_llvm_type(c, n->children[i]->children[1]);
             if (!strcmp(pty, "ptr")) {
-                char pty_name[128] = "";
-                if (n->children[i]->child_count > 1 && n->children[i]->children[1])
-                    tok_cp(c->src, n->children[i]->children[1], pty_name, sizeof pty_name);
-                const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
-                mark_ptr_with_type(c, pn, stype);
+                const Node *tyn = (n->children[i]->child_count > 1) ? n->children[i]->children[1] : NULL;
+                if (tyn && tyn->kind == NODE_MAP_TYPE) {
+                    mark_ptr_with_type(c, pn, "__map__");
+                } else {
+                    char pty_name[128] = "";
+                    if (tyn) tok_cp(c->src, tyn, pty_name, sizeof pty_name);
+                    const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
+                    mark_ptr_with_type(c, pn, stype);
+                }
             }
             set_local_type(c, pn, pty);
             fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, ptr %%%s\n", pn, pty, pty, pn, pn);
@@ -1993,6 +2554,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
         if (body_i >= 0) emit_stmt(c, n->children[body_i]);
         if (!c->term) {
             if (!strcmp(ret, "void")) fputs("  ret void\n", c->out);
+            else if (!strcmp(ret, "ptr")) fputs("  ret ptr null ; implicit return\n", c->out);
             else fprintf(c->out, "  ret %s 0 ; implicit return\n", ret);
         }
         fputs("}\n", c->out);
@@ -2099,6 +2661,8 @@ int emit_llvm_ir(const Node *ast, const char *src,
 #endif
     }
     fputs("\ndeclare i32 @printf(ptr, ...)\ndeclare i32 @puts(ptr)\n", f);
+    fputs("declare i32 @strcmp(ptr, ptr)\n", f);
+    fputs("declare ptr @malloc(i64)\n", f);
     /* Runtime declarations for std.json and std.str */
     fputs("declare i64 @tk_json_parse(ptr)\n", f);
     fputs("declare void @tk_json_print(i64)\n", f);
@@ -2125,44 +2689,94 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_str_from_int(i64)\n", f);
     fputs("declare i64 @tk_str_to_int(i64)\n", f);
     fputs("declare i64 @tk_str_split_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_str_indexof_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_str_slice_w(i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_str_replace_w(i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_str_startswith_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_str_endswith_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_str_trimprefix_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_str_trimsuffix_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_str_lastindex_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_str_matchbracket_w(i64)\n", f);
+    fputs("declare i64 @tk_str_contains_w(i64, i64)\n", f);
     /* std.env module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_env_get_or(i64, i64)\n", f);
+    /* std.file module wrappers (tk_web_glue.c) */
+    fputs("declare i64 @tk_file_read_w(i64)\n", f);
+    fputs("declare i64 @tk_file_write_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_file_isdir_w(i64)\n", f);
+    fputs("declare i64 @tk_file_mkdir_w(i64)\n", f);
+    fputs("declare i64 @tk_file_copy_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_file_listall_w(i64)\n", f);
+    fputs("declare i64 @tk_file_exists_w(i64)\n", f);
+    /* std.path module wrappers (tk_web_glue.c) */
+    fputs("declare i64 @tk_path_join_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_path_dir_w(i64)\n", f);
+    fputs("declare i64 @tk_path_ext_w(i64)\n", f);
+    /* std.md module wrappers (tk_web_glue.c) */
+    fputs("declare i64 @tk_md_render_w(i64)\n", f);
+    /* std.toml module wrappers (tk_web_glue.c) */
+    fputs("declare i64 @tk_toml_load_w(i64)\n", f);
+    fputs("declare i64 @tk_toml_section_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_toml_str_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_toml_i64_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_toml_bool_w(i64, i64)\n", f);
+    /* std.args module wrappers (tk_web_glue.c) */
+    fputs("declare i64 @tk_args_count_w()\n", f);
+    fputs("declare i64 @tk_args_get_w(i64)\n", f);
     /* std.http module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_http_get_static(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_serve_staticdir_w(i64, i64)\n", f);
     fputs("declare i64 @tk_http_serve(i64)\n", f);
     fputs("declare i64 @tk_http_servetls(i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_http_serveworkers_w(i64, i64)\n", f);
     fputs("declare i64 @tk_http_vhost(i64, i64)\n", f);
     fputs("declare i64 @tk_http_servevhosts(i64)\n", f);
     fputs("declare i64 @tk_http_servevhoststls(i64, i64, i64)\n", f);
     /* std.log module wrappers (tk_web_glue.c) */
-    fputs("declare i64 @tk_log_open_access_w(i64, i64, i64, i64)\n\n", f);
+    fputs("declare i64 @tk_log_open_access_w(i64, i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_log_info_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_log_error_w(i64, i64)\n", f);
+    /* std.router module wrappers (tk_web_glue.c) */
+    fputs("declare i64 @tk_router_new_w()\n", f);
+    /* Array/map runtime and instance method wrappers (tk_web_glue.c) */
+    fputs("declare ptr @tk_map_new()\n", f);
+    fputs("declare void @tk_map_put(ptr, i64, i64)\n", f);
+    fputs("declare i64 @tk_map_get(ptr, i64)\n", f);
+    fputs("declare i64 @tk_array_append_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_map_set_w(i64, i64, i64)\n\n", f);
 
     prepass_structs(&ctx, ast);
     prepass_funcs(&ctx, ast);
     prepass_imports(&ctx, ast);
     emit_toplevel(&ctx, ast);
 
+    /* Flush forward declarations for cross-module user function calls */
+    if (ctx.fwd_decls_len > 0)
+        fwrite(ctx.fwd_decls, 1, (size_t)ctx.fwd_decls_len, f);
+
     /* Flush buffered string globals (must appear at module scope, before main) */
     if (ctx.str_globals_len > 0)
         fwrite(ctx.str_globals, 1, (size_t)ctx.str_globals_len, f);
 
-    /* Emit C-compatible main wrapper that inits runtime and calls tk_main */
-    fputs("\ndefine i32 @main(i32 %argc, ptr %argv) #0 {\n", f);
-    fputs("  call void @tk_runtime_init(i32 %argc, ptr %argv)\n", f);
-    /* Check if toke main returns void or i64 */
+    /* Emit C-compatible main wrapper only when this module defines main */
     const FnSig *tkmain = lookup_fn(&ctx, "tk_main");
-    if (tkmain && !strcmp(tkmain->ret, "void")) {
-        fputs("  call fastcc void @tk_main()\n", f);
-        fputs("  ret i32 0\n", f);
-    } else {
-        fputs("  %r = call fastcc i64 @tk_main()\n", f);
-        fputs("  %rc = trunc i64 %r to i32\n", f);
-        fputs("  ret i32 %rc\n", f);
+    if (tkmain) {
+        fputs("\ndefine i32 @main(i32 %argc, ptr %argv) #0 {\n", f);
+        fputs("  call void @tk_runtime_init(i32 %argc, ptr %argv)\n", f);
+        if (!strcmp(tkmain->ret, "void")) {
+            fputs("  call fastcc void @tk_main()\n", f);
+            fputs("  ret i32 0\n", f);
+        } else {
+            fputs("  %r = call fastcc i64 @tk_main()\n", f);
+            fputs("  %rc = trunc i64 %r to i32\n", f);
+            fputs("  ret i32 %rc\n", f);
+        }
+        fputs("}\n", f);
     }
-    fputs("}\n", f);
 
     /* Stack probe and stack-protector attributes for recursion safety */
-    fputs("\nattributes #0 = { \"probe-stack\"=\"inline-asm\" \"stack-protector-buffer-size\"=\"8\" }\n", f);
+    fputs("\nattributes #0 = { \"stack-protector-buffer-size\"=\"8\" }\n", f);
 
     if (fflush(f) || ferror(f)) {
         fclose(f);

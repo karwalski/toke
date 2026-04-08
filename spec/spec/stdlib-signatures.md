@@ -3,7 +3,7 @@
 **Status:** Complete — 17 modules with C runtime backing
 
 This file is the normative interface for the toke standard library.
-Changes here require coordinated updates to toke-stdlib and toke-benchmark.
+Changes here require coordinated updates to the stdlib and toke-eval/benchmark.
 
 ## Modules
 

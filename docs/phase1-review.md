@@ -292,7 +292,7 @@ integrated into CI via the `ci` Makefile target alongside `lint` and `conform`.
 
 **Status: verified — all story 1.9.x criteria met**
 
-The monitoring console lives in `toke-corpus/monitor/` and consists of three files:
+The monitoring console lives in `toke-model/corpus/monitor/` and consists of three files:
 `server.py` (Flask REST API + SSE), `jobs.py` (job manager, subprocess lifecycle,
 `jobs.json` persistence), and `dashboard.html` (dark-theme SPA with auto-refresh and
 log panel).
@@ -458,4 +458,4 @@ the Mac Studio is configured (Epic 1.4).
 | Monitoring console endpoints verified | done — see §4 |
 | All known tech-debt items documented with Phase 2 priority | done — see §6, TD-001 through TD-006 |
 | Corpus pipeline readiness assessed | done — see §5 |
-| Review report committed to `tkc/docs/phase1-review.md` | this document |
+| Review report committed to `toke/docs/phase1-review.md` | this document |

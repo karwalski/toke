@@ -58,7 +58,7 @@ void http_set_limits(uint32_t max_header, uint32_t max_body,
 
 /* ── Route table ─────────────────────────────────────────────────────── */
 
-#define MAX_ROUTES 64
+#define MAX_ROUTES 512
 
 typedef struct { const char *method; const char *pattern; RouteHandler h; } Route;
 
