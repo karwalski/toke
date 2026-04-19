@@ -13,25 +13,54 @@ build/
 cmake-build-*/
 
 # Editor
-.DS_Store
 .vscode/
 .idea/
 *.swp
 
-# Test outputs
-test/output/
-test/*.out
-test/stdlib/test_toon
-test/stdlib/test_yaml
-test/stdlib/test_i18n
-**/*.dSYM/
+# macOS
+.DS_Store
+**/.DS_Store
 
 # Xcode / Instruments
 *.plist
 .claude/
 
-# macOS
-.DS_Store
-**/.DS_Store
+# Test outputs
+test/output/
+test/*.out
+
+# Compiled test binaries (but NOT test source .c/.tk/.sh files)
+test/stdlib/test_toon
+test/stdlib/test_yaml
+test/stdlib/test_i18n
+test/stdlib/test_analytics
+test/stdlib/test_auth
+test/stdlib/test_auth_flow_integration
+test/stdlib/test_dataframe
+test/stdlib/test_file
+test/stdlib/test_http
+test/stdlib/test_http_cookies
+test/stdlib/test_http_form
+test/stdlib/test_http_json_integration
+test/stdlib/test_http_multipart
+test/stdlib/test_http_tls
+test/stdlib/test_http2
+test/stdlib/test_json
+test/stdlib/test_ml_pipeline_integration
+test/stdlib/test_svg_diagram_integration
+test/stdlib/test_template_email_integration
+test/stdlib/test_tk_runtime
+**/*.dSYM/
+
+# Temporary / generated files
+tmp*.ll
+out.txt
+output.txt
+stress_chained_functions
+
+# Vendor submodule build artifacts (source is tracked)
 stdlib/vendor/cmark/
 stdlib/vendor/tomlc99/
+
+# Logs
+logs/

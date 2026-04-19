@@ -11,8 +11,8 @@
 
 | Gate | Month | Criterion | Status |
 |------|-------|-----------|--------|
-| Gate 1 | 8 | >10% token reduction AND Pass@1 ≥ 60% | not reached |
-| Gate 2 | 14 | Extended features retain efficiency AND 7B model beats baseline | not reached |
+| Gate 1 | 8 | >10% token reduction AND Pass@1 ≥ 60% | PASS (2026-04-03: 12.5% reduction, 63.7% Pass@1) |
+| Gate 2 | 14 | Extended features retain efficiency AND 7B model beats baseline | ON HOLD (waiting for local compute) |
 | Gate 3 | 26 | Two+ model families ≥70% Pass@1 AND self-improvement loop running | not reached |
 | Gate 4 | 32 | All benchmarks met, spec complete, consortium proposal ready | not reached |
 
