@@ -203,6 +203,9 @@ typedef struct {
 static TkStaticRoute g_static_routes[TK_MAX_STATIC_ROUTES];
 static int           g_static_route_count = 0;
 
+static StrPair g_html_ct_hdr = { "Content-Type", "text/html; charset=utf-8" };
+static StrPair g_text_ct_hdr = { "Content-Type", "text/plain" };
+
 static Res tk_static_dispatch(Req req) {
     const char *rpath = req.path ? req.path : "/";
     for (int i = 0; i < g_static_route_count; i++) {
@@ -211,16 +214,16 @@ static Res tk_static_dispatch(Req req) {
             Res r;
             r.status       = g_static_routes[i].status;
             r.body         = g_static_routes[i].body;
-            r.headers.data = NULL;
-            r.headers.len  = 0;
+            r.headers.data = &g_html_ct_hdr;
+            r.headers.len  = 1;
             return r;
         }
     }
     Res r;
     r.status       = 404;
     r.body         = "Not Found";
-    r.headers.data = NULL;
-    r.headers.len  = 0;
+    r.headers.data = &g_text_ct_hdr;
+    r.headers.len  = 1;
     return r;
 }
 
