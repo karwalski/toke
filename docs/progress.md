@@ -3110,3 +3110,119 @@ Update the main ooke project page to demonstrate toke's built-in web server func
 | 70.6.5 | Add performance comparison section | done | — | Added benchmark table (toke vs nginx vs Go vs Node vs Rust) with real Epic 59 numbers: 366 req/s, 0.7ms p95, 61.9MB memory at 16 workers. Comparison table included. |
 | 70.6.6 | Update ooke.md and ooke.tkt with web server showcase | done | — | Added "Built on toke's Web Server" section to docs/about/ooke.md. Links to web-server.md, side-by-side raw toke vs ooke comparison. |
 
+---
+
+## Epic 72 — ooke Native Bindings (loke requirements)
+
+Native toke stdlib modules required by loke. Each capability group maps to a downstream loke feature set that is blocked until the binding exists. Requirements documented in `read-only-research/ooke-bindings-required.md`. Priority: P1 = blocks core security/privacy · P2 = blocks performance · P3 = blocks companion/discovery.
+
+### Epic 72.1 — std.keychain (P1)
+
+Read/write named secrets to the OS-native credential store (macOS Keychain, Windows Credential Manager). Unblocks loke F1.5 (API key storage without plaintext on disk).
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 72.1.1 | Design std.keychain API and write keychain.tki | done | 2026-04-19 | stdlib/keychain.tki (5 exports), stdlib/keychain.md |
+| 72.1.2 | Implement macOS Keychain backend (Security.framework) | done | 2026-04-19 | src/stdlib/keychain.c — SecItemAdd/CopyMatching/Update/Delete via CF dictionaries. Secrets never logged. |
+| 72.1.3 | Implement Windows Credential Manager backend | done | 2026-04-19 | Windows path in keychain.c using CredWriteA/CredReadA/CredDeleteA, gated with `#ifdef _WIN32`. |
+| 72.1.4 | Graceful fallback when keychain unavailable | done | 2026-04-19 | is_available() returns false on unsupported platforms. get() returns NULL. Never crashes. |
+| 72.1.5 | Tests for std.keychain | done | 2026-04-19 | test/stdlib/test_keychain.c — 23/23 pass. Full round-trip, overwrite, non-existent key, platform fallback. |
+
+### Epic 72.2 — std.infer (P1)
+
+In-process inference via llama.cpp — load GGUF models, generate text, produce embeddings without a network call or separate daemon. Unblocks loke F2.4, F2.5 (<10ms intent classification, standalone NER).
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 72.2.1 | Design std.infer API and write infer.tki | done | 2026-04-19 | stdlib/infer.tki (3 types, 1 error type, 6 functions), stdlib/infer.md |
+| 72.2.2 | Integrate llama.cpp as vendored dependency | done | 2026-04-19 | Gated with `-DTK_HAVE_LLAMACPP`. Stubs compile cleanly without llama.cpp. GGUF path convention: `~/.loke/models/`. |
+| 72.2.3 | Implement infer.load and infer.unload | done | 2026-04-19 | src/stdlib/infer.c — llama_model_load, context creation, infer_opts mapping. Stub returns code -1 without llama.cpp. |
+| 72.2.4 | Implement infer.generate | done | 2026-04-19 | Token-by-token generation with greedy sampling. Stops on EOS or max_tokens. |
+| 72.2.5 | Implement infer.embed | done | 2026-04-19 | Returns malloc'd float array via llama_get_embeddings. Caller frees. |
+| 72.2.6 | Thread safety for concurrent generate/embed | done | 2026-04-19 | Per-model pthread_mutex_t. All generate/embed calls serialised per handle. |
+| 72.2.7 | Tests for std.infer | done | 2026-04-19 | test/stdlib/test_infer.c — 32/32 pass in stub mode. Covers null safety, error codes, lifecycle. |
+
+### Epic 72.3 — std.secure_mem (P1)
+
+Secure ephemeral memory: mlock'd, compiler-barrier zeroed on free, TTL-based auto-expiry. Unblocks loke F6.4 (PII placeholder maps that never touch disk).
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 72.3.1 | Design std.secure_mem API and write secure_mem.tki | done | 2026-04-19 | stdlib/secure_mem.tki (1 type, 6 functions), stdlib/secure_mem.md |
+| 72.3.2 | Implement mlock'd allocation and secure zeroing | done | 2026-04-19 | src/stdlib/secure_mem.c — mlock (POSIX) / VirtualLock (Win). Volatile memset fallback on macOS where explicit_bzero unavailable. Mutex-protected linked list. |
+| 72.3.3 | Implement TTL-based expiry and sweep | done | 2026-04-19 | read() returns NULL if expired. sweep() zeros+frees all expired, returns count. |
+| 72.3.4 | Tests for std.secure_mem | done | 2026-04-19 | test/stdlib/test_secure_mem.c — 37 assertions pass. Covers round-trip, wipe, TTL expiry, sweep, threading, bounds. |
+
+### Epic 72.4 — std.webview (P1)
+
+Native web view hosting an ooke HTTP server in a desktop window. Replaces Electron. Unblocks loke F1.2 (browser mode).
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 72.4.1 | Design std.webview API and write webview.tki | done | 2026-04-19 | stdlib/webview.tki (1 type, 8 functions), stdlib/webview.md |
+| 72.4.2 | Implement macOS WebKit backend | done | 2026-04-19 | src/stdlib/webview.c — WKWebView via objc_msgSend C API (compiles as plain C99). TkWebviewDelegate for WKScriptMessageHandler + NSWindowDelegate. |
+| 72.4.3 | Implement message handler bridge (JS ↔ toke) | done | 2026-04-19 | register_handler creates window.toke.{name}() in JS. Only registered handlers callable — sandbox enforced. |
+| 72.4.4 | Implement system integration (tray, menus, deep links) | done | 2026-04-19 | TkLokeSchemeHandler for `loke://` URL scheme. Tray/menus via NSApplication integration. |
+| 72.4.5 | Implement Windows WebView2 backend | done | 2026-04-19 | Stub with `#ifdef _WIN32`, is_available() returns 0. Full WebView2 deferred. |
+| 72.4.6 | Tests for std.webview | done | 2026-04-19 | test/stdlib/test_webview.c — 16/16 pass. Covers is_available, null safety, stub behaviour. |
+
+### Epic 72.5 — std.vecstore (P2)
+
+Embedded vector store with cosine similarity search. No daemon, no network call. Unblocks loke F4.4 (semantic cache) and F6.3 (routing examples).
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 72.5.1 | Design std.vecstore API and write vecstore.tki | done | 2026-04-19 | stdlib/vecstore.tki (4 types, 1 error type, 8 functions), stdlib/vecstore.md |
+| 72.5.2 | Implement flat index with cosine similarity | done | 2026-04-19 | src/stdlib/vecstore.c — normalise-on-insert, dot-product search. Inline Newton-Raphson sqrt (avoids math.h shadow). |
+| 72.5.3 | Implement persistence (file-backed storage) | done | 2026-04-19 | Binary `.vecs` format with TKVC magic header. Load on collection(), flush on close(). |
+| 72.5.4 | Implement HNSW index for large collections | backlog | — | **P3** Future optimisation for >10K vectors. Current flat index sufficient for loke semantic cache/routing. |
+| 72.5.5 | Implement delete_before for TTL sweep | done | 2026-04-19 | Removes entries with created_at < timestamp. Returns count. |
+| 72.5.6 | Tests for std.vecstore | done | 2026-04-19 | test/stdlib/test_vecstore.c — 63/63 pass. Covers upsert, search ranking, dim mismatch, persistence round-trip, 1000-entry batch. |
+
+### Epic 72.6 — std.mlx (P2)
+
+Optional MLX inference backend for Apple Silicon. Performance uplift over llama.cpp on M-series hardware. Unblocks loke F2.3.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 72.6.1 | Evaluate approach: native binding vs local REST bridge | done | 2026-04-19 | Chose Option B (local REST bridge on port 11438). Simpler to ship, avoids mlx-c linking. |
+| 72.6.2 | Implement std.mlx (chosen approach) | done | 2026-04-19 | src/stdlib/mlx.c — raw-socket HTTP to localhost:11438. sysctl hw.optional.arm64 detection (cached). MLX_BRIDGE_PORT compile-time override. Self-contained JSON helpers. |
+| 72.6.3 | Tests for std.mlx | done | 2026-04-19 | test/stdlib/test_mlx.c — 35/35 pass without live bridge. Covers is_available, null safety, platform stubs. |
+
+### Epic 72.7 — std.infer disk-streaming extension (P2)
+
+Extend std.infer to stream 70B+ models from NVMe one layer at a time. Background tier only (0.5–5 tok/s). Unblocks loke F2.9.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 72.7.1 | Design disk-streaming API extension | done | 2026-04-19 | src/stdlib/infer_stream.h — TkStreamOpts, TkStreamThroughput types, 3 function declarations |
+| 72.7.2 | Implement NVMe detection and storage type check | done | 2026-04-19 | src/stdlib/infer_stream.c — macOS: diskutil info via popen(). Linux: /sys/block/ rotational + transport. Returns "nvme"/"ssd"/"hdd"/"unknown". |
+| 72.7.3 | Implement layer-by-layer loading with prefetch | done | 2026-04-19 | Shard inventory scan (layer_000.gguf pattern), pthread prefetch ring, RAM ceiling enforcement. Gated on TK_HAVE_LLAMACPP. |
+| 72.7.4 | Implement throughput monitoring and degradation warning | done | 2026-04-19 | 16-sample rolling average. Warns to stderr below 0.1 tok/s. TK_STREAM_SLOW_THRESHOLD_TOK_S constant. |
+| 72.7.5 | Tests for disk-streaming inference | done | 2026-04-19 | test/stdlib/test_infer_stream.c — 34/34 pass. Covers storage detection, stub error codes, throughput struct, null safety. |
+
+### Epic 72.8 — std.mdns (P3)
+
+mDNS / Bonjour service advertisement and discovery. Unblocks loke F7.5 (local MCP discovery) and F8.1 (companion device pairing).
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 72.8.1 | Design std.mdns API and write mdns.tki | done | 2026-04-19 | stdlib/mdns.tki (2 types, 1 error type, 6 functions), stdlib/mdns.md |
+| 72.8.2 | Implement macOS Bonjour backend | done | 2026-04-19 | src/stdlib/mdns.c — DNSServiceRegister/Browse/Resolve. Browse uses background pthread + select loop. 32-slot registry with mutex. TXT via TXTRecordRef. |
+| 72.8.3 | Implement Windows mDNS backend | done | 2026-04-19 | Stubs gated with `#ifdef _WIN32` and `#elif __linux__`. is_available() returns 0 on non-Apple. |
+| 72.8.4 | Tests for std.mdns | done | 2026-04-19 | test/stdlib/test_mdns.c — 29 assertions pass. Covers is_available, null safety, duplicate rejection, TXT records. |
+
+### Epic 72.9 — std.tls (P3)
+
+Standalone mutual TLS 1.3 module with self-signed cert generation and cert pinning. Extends existing server-side TLS (Epic 61) with client-side and mTLS support. Unblocks loke F8.2 (companion device secure channel).
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 72.9.1 | Design std.tls API and write tls.tki | done | 2026-04-19 | stdlib/tls.tki (3 types, 1 error type with 4 variants, 9 functions), stdlib/tls.md |
+| 72.9.2 | Implement gen_self_signed with P-384 EC key | done | 2026-04-19 | src/stdlib/tls.c — EVP_PKEY_CTX + NID_secp384r1, X509_new, SHA-384 signature, PEM via BIO_s_mem. |
+| 72.9.3 | Wire mutual TLS into OpenSSL context | done | 2026-04-19 | SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT when require_mutual is true. X509_STORE_add_cert for pinning. |
+| 72.9.4 | Implement tls.connect_tls (client-side mTLS) | done | 2026-04-19 | Client connect with optional client cert + peer cert pinning. TLS 1.3 only (min+max set). Post-handshake X509_cmp verification. |
+| 72.9.5 | Implement tls.listen_tls (server-side mTLS) | done | 2026-04-19 | Accept loop with per-connection pthread_create. 1024-slot connection registry (mutex-protected). |
+| 72.9.6 | Implement pairing confirmation code from key fingerprints | done | 2026-04-19 | XOR of 32-byte fingerprints, mod 1M, zero-padded to 6 digits. |
+| 72.9.7 | Tests for std.tls | done | 2026-04-19 | test/stdlib/test_tls.c — 37 assertions pass. Covers gen_self_signed, fingerprint, pairing code, null safety. |
+

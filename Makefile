@@ -68,6 +68,7 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-stdlib-http-form test-stdlib-http-tls \
 	test-stdlib-file test-stdlib-runtime \
 	test-stdlib-path test-stdlib-args test-stdlib-md test-stdlib-toml \
+	test-stdlib-vecstore \
 	install-man
 
 all: $(BIN)
@@ -468,6 +469,12 @@ test-stdlib-toml:
 	    test/stdlib/test_toml.c src/stdlib/toml.c $(TOML_SRCS)
 	$(RUN_TEST) ./test/stdlib/test_toml
 
+# ── Epic 72.5: std.vecstore ──────────────────────────────────────────────────
+test-stdlib-vecstore:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_vecstore \
+	    test/stdlib/test_vecstore.c src/stdlib/vecstore.c -lpthread
+	$(RUN_TEST) ./test/stdlib/test_vecstore
+
 clean:
 	rm -f $(OBJS) $(BIN) test/stdlib/test_str test/stdlib/test_db \
 	    test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto \
@@ -484,6 +491,7 @@ clean:
 	    test/stdlib/test_viz_integration test/stdlib/test_data_pipeline \
 	    test/stdlib/test_path test/stdlib/test_args \
 	    test/stdlib/test_md test/stdlib/test_toml \
+	    test/stdlib/test_vecstore \
 	    test/stdlib/test_llm_live \
 	    fuzz-lexer fuzz-parser
 

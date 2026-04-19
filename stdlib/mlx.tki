@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "module": "std.mlx",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "mlx_model",
+      "fields": [
+        {"name": "id",   "type": "str"},
+        {"name": "path", "type": "str"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "mlxerr",
+      "fields": [
+        {"name": "msg", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "mlx.is_available", "params": [],                                    "return": "bool"},
+    {"kind": "func", "name": "mlx.load",          "params": ["str"],                              "return": "mlx_model!mlxerr"},
+    {"kind": "func", "name": "mlx.unload",        "params": ["mlx_model"],                       "return": "bool"},
+    {"kind": "func", "name": "mlx.generate",      "params": ["mlx_model", "str", "i32"],         "return": "str!mlxerr"},
+    {"kind": "func", "name": "mlx.embed",         "params": ["mlx_model", "str"],                "return": "@(f32)!mlxerr"}
+  ]
+}

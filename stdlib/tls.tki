@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "module": "std.tls",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "TlsConfig",
+      "fields": [
+        {"name": "cert_pem",       "type": "str"},
+        {"name": "key_pem",        "type": "str"},
+        {"name": "peer_cert_pem",  "type": "str"},
+        {"name": "require_mutual", "type": "bool"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "TlsConn",
+      "fields": [
+        {"name": "id", "type": "str"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "TlsKeypair",
+      "fields": [
+        {"name": "cert_pem", "type": "str"},
+        {"name": "key_pem",  "type": "str"}
+      ]
+    },
+    {
+      "kind": "sum_type",
+      "name": "TlsErr",
+      "variants": [
+        {"name": "CertErr",    "type": "str"},
+        {"name": "ConnErr",    "type": "str"},
+        {"name": "PinErr",     "type": "str"},
+        {"name": "IoErr",      "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "tls.gen_self_signed", "params": ["str", "i32"],               "return": "TlsKeypair!TlsErr"},
+    {"kind": "func", "name": "tls.listen",           "params": ["i32", "TlsConfig", "fn"],   "return": "bool"},
+    {"kind": "func", "name": "tls.connect",          "params": ["str", "i32", "TlsConfig"],  "return": "?(TlsConn)"},
+    {"kind": "func", "name": "tls.read",             "params": ["TlsConn"],                  "return": "?(str)"},
+    {"kind": "func", "name": "tls.write",            "params": ["TlsConn", "str"],            "return": "bool"},
+    {"kind": "func", "name": "tls.close",            "params": ["TlsConn"],                  "return": "bool"},
+    {"kind": "func", "name": "tls.peer_cert",        "params": ["TlsConn"],                  "return": "?(str)"},
+    {"kind": "func", "name": "tls.fingerprint",      "params": ["str"],                       "return": "str"},
+    {"kind": "func", "name": "tls.pairing_code",     "params": ["TlsConn"],                  "return": "str"}
+  ]
+}

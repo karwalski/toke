@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "module": "std.mdns",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "service_record",
+      "fields": [
+        {"name": "name", "type": "str"},
+        {"name": "type", "type": "str"},
+        {"name": "port", "type": "i32"},
+        {"name": "txt",  "type": "@(str)"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "discovered",
+      "fields": [
+        {"name": "name", "type": "str"},
+        {"name": "host", "type": "str"},
+        {"name": "port", "type": "i32"},
+        {"name": "txt",  "type": "@(str)"}
+      ]
+    },
+    {
+      "kind": "sum_type",
+      "name": "MdnsErr",
+      "variants": [
+        {"name": "NotAvailable", "type": "str"},
+        {"name": "AlreadyAdvertising", "type": "str"},
+        {"name": "NotFound", "type": "str"},
+        {"name": "Timeout", "type": "str"},
+        {"name": "Internal", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "mdns.advertise",      "params": ["$service_record"],      "return": "bool"},
+    {"kind": "func", "name": "mdns.stop_advertise", "params": ["str"],                   "return": "bool"},
+    {"kind": "func", "name": "mdns.browse",         "params": ["str", "fn($discovered):void"], "return": "bool"},
+    {"kind": "func", "name": "mdns.stop_browse",    "params": ["str"],                   "return": "bool"},
+    {"kind": "func", "name": "mdns.resolve",        "params": ["str", "str"],            "return": "?($discovered)"},
+    {"kind": "func", "name": "mdns.is_available",   "params": [],                        "return": "bool"}
+  ]
+}

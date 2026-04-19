@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "module": "std.webview",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "webview_handle",
+      "fields": [
+        {"name": "id", "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "webview.open",             "params": ["str", "str", "i32", "i32"], "return": "webview_handle"},
+    {"kind": "func", "name": "webview.close",            "params": ["webview_handle"],            "return": "bool"},
+    {"kind": "func", "name": "webview.set_title",        "params": ["webview_handle", "str"],     "return": "bool"},
+    {"kind": "func", "name": "webview.on_close",         "params": ["webview_handle", "fn():void"], "return": "void"},
+    {"kind": "func", "name": "webview.register_handler", "params": ["webview_handle", "str", "fn(str):str"], "return": "bool"},
+    {"kind": "func", "name": "webview.eval_js",          "params": ["webview_handle", "str"],     "return": "bool"},
+    {"kind": "func", "name": "webview.run_event_loop",   "params": [],                            "return": "void"},
+    {"kind": "func", "name": "webview.is_available",     "params": [],                            "return": "bool"}
+  ]
+}

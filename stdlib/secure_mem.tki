@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "module": "std.secure_mem",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "SecureBuf",
+      "fields": [
+        {"name": "id",         "type": "str"},
+        {"name": "size",       "type": "i32"},
+        {"name": "expires_at", "type": "i64"}
+      ]
+    },
+    {"kind": "func", "name": "secure_mem.alloc",        "params": ["i32", "i32"],    "return": "SecureBuf"},
+    {"kind": "func", "name": "secure_mem.write",        "params": ["SecureBuf", "str"], "return": "bool"},
+    {"kind": "func", "name": "secure_mem.read",         "params": ["SecureBuf"],     "return": "?(str)"},
+    {"kind": "func", "name": "secure_mem.wipe",         "params": ["SecureBuf"],     "return": "bool"},
+    {"kind": "func", "name": "secure_mem.sweep",        "params": [],                "return": "i32"},
+    {"kind": "func", "name": "secure_mem.is_available", "params": [],                "return": "bool"}
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "module": "std.infer",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "model_handle",
+      "opaque": true,
+      "fields": [
+        {"name": "id", "type": "str"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "infer_opts",
+      "fields": [
+        {"name": "n_gpu_layers", "type": "i32"},
+        {"name": "n_threads",    "type": "i32"},
+        {"name": "seed",         "type": "i32"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "stream_opts",
+      "fields": [
+        {"name": "ram_ceiling_gb",  "type": "f32"},
+        {"name": "prefetch_layers", "type": "i32"},
+        {"name": "requires_nvme",   "type": "bool"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "infererr",
+      "fields": [
+        {"name": "msg",  "type": "str"},
+        {"name": "code", "type": "i32"}
+      ]
+    },
+    {"kind": "func", "name": "infer.load",           "params": ["str", "infer_opts"],  "return": "model_handle!infererr"},
+    {"kind": "func", "name": "infer.unload",          "params": ["model_handle"],       "return": "bool"},
+    {"kind": "func", "name": "infer.generate",        "params": ["model_handle", "str", "i32"], "return": "str!infererr"},
+    {"kind": "func", "name": "infer.embed",           "params": ["model_handle", "str"], "return": "@(f32)!infererr"},
+    {"kind": "func", "name": "infer.is_loaded",       "params": ["model_handle"],       "return": "bool"},
+    {"kind": "func", "name": "infer.load_streaming",  "params": ["str", "stream_opts"], "return": "model_handle!infererr"}
+  ]
+}

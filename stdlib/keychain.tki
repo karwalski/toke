@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "module": "std.keychain",
+  "exports": [
+    {"kind": "func", "name": "keychain.set",          "params": ["str", "str", "str"], "return": "bool"},
+    {"kind": "func", "name": "keychain.get",          "params": ["str", "str"],        "return": "?(str)"},
+    {"kind": "func", "name": "keychain.delete",       "params": ["str", "str"],        "return": "bool"},
+    {"kind": "func", "name": "keychain.exists",       "params": ["str", "str"],        "return": "bool"},
+    {"kind": "func", "name": "keychain.is_available", "params": [],                    "return": "bool"}
+  ]
+}
