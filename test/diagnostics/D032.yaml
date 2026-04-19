@@ -2,8 +2,8 @@ id: D032
 series: D
 description: "Unreachable code after return emits E5002"
 input: |
-  M=test;
-  F=bad():i64{
+  m=test;
+  f=bad():i64{
     <1;
     let x = 2
   };

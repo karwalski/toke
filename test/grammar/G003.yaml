@@ -2,8 +2,8 @@ id: G003
 series: G
 description: "Valid function declaration with multiple parameters"
 input: |
-  M=test;
-  F=add(a:i64;b:i64;c:i64):i64{<a+b+c};
+  m=test;
+  f=add(a:i64;b:i64;c:i64):i64{<a+b+c};
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

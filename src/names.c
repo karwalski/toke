@@ -309,6 +309,44 @@ static int is_known_module(const char *seg, int slen) {
     return 0;
 }
 
+static int levenshtein(const char *a, const char *b) {
+    int la = (int)strlen(a);
+    int lb = (int)strlen(b);
+    if (la == 0) return lb;
+    if (lb == 0) return la;
+    int prev[128], curr[128];
+    if (lb + 1 > (int)(sizeof(prev) / sizeof(prev[0]))) return 99;
+    for (int j = 0; j <= lb; j++) prev[j] = j;
+    for (int i = 1; i <= la; i++) {
+        curr[0] = i;
+        char ca = (char)tolower((unsigned char)a[i - 1]);
+        for (int j = 1; j <= lb; j++) {
+            char cb = (char)tolower((unsigned char)b[j - 1]);
+            int cost = (ca == cb) ? 0 : 1;
+            int del = prev[j] + 1;
+            int ins = curr[j - 1] + 1;
+            int sub = prev[j - 1] + cost;
+            int mn = del < ins ? del : ins;
+            curr[j] = mn < sub ? mn : sub;
+        }
+        for (int j = 0; j <= lb; j++) prev[j] = curr[j];
+    }
+    return prev[lb];
+}
+
+static const char *find_closest_module(const char *seg) {
+    const char *best = NULL;
+    int best_dist = 3;
+    for (int i = 0; s_known_modules[i] != NULL; i++) {
+        int d = levenshtein(seg, s_known_modules[i]);
+        if (d < best_dist) {
+            best_dist = d;
+            best = s_known_modules[i];
+        }
+    }
+    return best;
+}
+
 /*
  * normalise_module_path — lowercase each segment of a dotted module path
  * if the segment is a known stdlib module name written with wrong casing.
@@ -504,7 +542,16 @@ int resolve_imports(const Node *ast, const char *src,
             snprintf(msg, sizeof(msg),
                      "module '%s' not found; available: %s", mpath, avail ? avail : "");
             free(avail);
-            diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col, msg, "fix", NULL);
+            const char *last_seg = strrchr(mpath, '.');
+            last_seg = last_seg ? last_seg + 1 : mpath;
+            const char *suggestion = find_closest_module(last_seg);
+            if (suggestion) {
+                char fix[256];
+                snprintf(fix, sizeof(fix), "did you mean 'std.%s'?", suggestion);
+                diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col, msg, "fix", fix, NULL);
+            } else {
+                diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col, msg, "fix", NULL);
+            }
             err = 1; st_push(out, alias, mpath, ver, 0);
         }
 

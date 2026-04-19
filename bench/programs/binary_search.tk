@@ -1,5 +1,5 @@
-M=bench;
-F=bsearch(arr:[i64];target:i64):i64{
+m=bench;
+f=bsearch(arr:[i64];target:i64):i64{
   let lo=mut.0;
   let hi=mut.arr.len-1;
   lp(let dummy=0;lo<hi+1;dummy=0){
@@ -16,7 +16,7 @@ F=bsearch(arr:[i64];target:i64):i64{
   };
   <0-1
 };
-F=main():i64{
+f=main():i64{
   let a=[2;4;6;8;10;12;14;16;18;20;22;24;26;28;30;32;34;36;38;40;42;44;46;48;50];
   let found=mut.0;
   lp(let r=0;r<1000000;r=r+1){

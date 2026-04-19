@@ -1,0 +1,161 @@
+m=tkgrep.main;
+i=io:std.io;
+i=file:std.file;
+i=str:std.str;
+i=args:std.args;
+
+(* greperr — error sum type *)
+t=$greperr{$usage:$str;$fileerr:$str;$nopattern:void};
+
+(* print_usage — show usage information *)
+f=print_usage():void{
+  io.println("usage: tkgrep <pattern> <file>");
+  io.println("");
+  io.println("search for lines matching <pattern> in <file>");
+  io.println("prints matching lines with line numbers.");
+  io.println("");
+  io.println("options:");
+  io.println("  -i    case-insensitive matching");
+  io.println("  -c    count matches only");
+  io.println("  -n    suppress line numbers");
+  io.println("  -v    invert match (print non-matching lines)")
+};
+
+(* opts — parsed command line options *)
+t=$opts{pattern:$str;path:$str;ignorecase:bool;countonly:bool;nolinenum:bool;invert:bool};
+
+(* parse_args — extract options, pattern, and file path from argv *)
+f=parse_args():$opts!$greperr{
+  let argc=args.count();
+  if(argc<3){
+    <$err($greperr.$usage("too few arguments"))
+  };
+  let ignorecase=mut.false;
+  let countonly=mut.false;
+  let nolinenum=mut.false;
+  let invert=mut.false;
+  let positional=mut.@();
+
+  lp(let i=1;i<(argc as i64);i=i+1){
+    let arg=args.get(i);
+    if(str.startswith(arg;"-")){
+      if(str.contains(arg;"i")){
+        ignorecase=true
+      };
+      if(str.contains(arg;"c")){
+        countonly=true
+      };
+      if(str.contains(arg;"n")){
+        nolinenum=true
+      };
+      if(str.contains(arg;"v")){
+        invert=true
+      }
+    };
+    if(str.startswith(arg;"-")==false){
+      positional=positional.push(arg)
+    }
+  };
+  if(positional.len<2){
+    <$err($greperr.$usage("need <pattern> and <file>"))
+  };
+  <$ok($opts{
+    pattern:positional.get(0);
+    path:positional.get(1);
+    ignorecase:ignorecase;
+    countonly:countonly;
+    nolinenum:nolinenum;
+    invert:invert
+  })
+};
+
+(* matches — check if a line contains the pattern *)
+f=matches(line:$str;pattern:$str;ignorecase:bool):bool{
+  if(ignorecase){
+    <str.contains(str.lower(line);str.lower(pattern))
+  };
+  <str.contains(line;pattern)
+};
+
+(* format_line — build output string for a matching line *)
+f=format_line(linenum:u64;line:$str;shownum:bool):$str{
+  if(shownum){
+    let buf=str.buf();
+    str.add(buf;str.from_int(linenum as i64));
+    str.add(buf;":");
+    str.add(buf;line);
+    <str.done(buf)
+  };
+  <line
+};
+
+(* search — read file and search line by line *)
+f=search(opts:$opts):u64!$greperr{
+  let content=file.read(opts.path)|{
+    $ok:v v;
+    $err:e <$err($greperr.$fileerr(
+      str.concat("cannot read file: ";opts.path)
+    ))
+  };
+  let lines=str.split(content;"\n");
+  let count=mut.0;
+  let shownum=opts.nolinenum==false;
+
+  lp(let i=0;i<(lines.len as i64);i=i+1){
+    let line=lines.get(i);
+    let hit=matches(line;opts.pattern;opts.ignorecase);
+    let show=hit;
+    if(opts.invert){
+      show=hit==false
+    };
+    if(show){
+      count=count+1;
+      if(opts.countonly==false){
+        let linenum=(i+1) as u64;
+        io.println(format_line(linenum;line;shownum))
+      }
+    }
+  };
+  if(opts.countonly){
+    io.println(str.from_int(count as i64))
+  };
+  <$ok(count as u64)
+};
+
+(* main — entry point *)
+f=main():i64{
+  parse_args()|{
+    $ok:opts {
+      search(opts)|{
+        $ok:count {
+          if(count==0){
+            <1
+          };
+          <0
+        };
+        $err:e {
+          e|{
+            $usage:msg {
+              io.eprintln(msg);
+              print_usage()
+            };
+            $fileerr:msg io.eprintln(msg);
+            $nopattern:_ io.eprintln("no pattern given")
+          };
+          <2
+        }
+      }
+    };
+    $err:e {
+      e|{
+        $usage:msg {
+          io.eprintln(msg);
+          print_usage()
+        };
+        $fileerr:msg io.eprintln(msg);
+        $nopattern:_ io.eprintln("no pattern given")
+      };
+      <2
+    }
+  }
+};

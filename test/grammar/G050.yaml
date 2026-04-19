@@ -2,8 +2,8 @@ id: G050
 series: G
 description: "logical OR (||) with bool operands"
 input: |
-  M=test;
-  F=main():i64{
+  m=test;
+  f=main():i64{
     let a = true || false;
     <0
   };

@@ -1,0 +1,19 @@
+m=mortgage.web.index;
+i=http:std.http;
+i=tpl:std.template;
+i=str:std.str;
+
+(* handler — serve the mortgage input form *)
+f=handler(req:http.$req):http.$res{
+  let vars=tpl.vars(@("title":"Mortgage Calculator"));
+  let layout=tpl.renderfile("templates/layout.tkt";vars)|{
+    $ok:v v;
+    $err:e <http.res.err("template error")
+  };
+  let body=tpl.renderfile("templates/index.tkt";tpl.vars(@()))|{
+    $ok:v v;
+    $err:e <http.res.err("template error")
+  };
+  let page=str.replace(layout;"{{content}}";body);
+  <http.res.ok(page)
+};

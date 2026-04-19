@@ -1,0 +1,8 @@
+m=test;
+f=half(x:f64):f64{
+  <x/2.0
+};
+f=main():i64{
+  let r=half(10.0);
+  if(r>4.9){<5}el{<0}
+};

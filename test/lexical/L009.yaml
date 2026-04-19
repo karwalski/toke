@@ -2,8 +2,8 @@ id: L009
 series: L
 description: "String interpolation \\( emits W1010 warning"
 input: |
-  M=test;
-  F=interp():Str{<"hello \(name)"};
+  m=test;
+  f=interp():Str{<"hello \(name)"};
 expected_exit_code: 0
 expected_error_codes: ["W1010"]
 expected_output: ""

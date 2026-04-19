@@ -48,12 +48,12 @@ echo "--------------------------------------"
 
 T1=$(mktemp /tmp/tkc_pretty_t1_XXXXXX.tk)
 cat > "${T1}" <<'EOF'
-M=test;
-F=add(a:i64;b:i64):i64{<a+b}
+m=test;
+f=add(a:i64;b:i64):i64{<a+b}
 EOF
 
-T1_EXPECTED='M=test;
-F=add(a:i64; b:i64):i64 {
+T1_EXPECTED='m=test;
+f=add(a:i64; b:i64):i64 {
   <a + b
 }
 '
@@ -65,12 +65,12 @@ check "pretty: spaces around binary ops" "${T1_EXPECTED}" "${T1_ACTUAL}"
 
 T2=$(mktemp /tmp/tkc_pretty_t2_XXXXXX.tk)
 cat > "${T2}" <<'EOF'
-M=test;
-F=sum(n:i64):i64{let s=0;lp(let i=0;i<n;i=i+1){s=s+i};<s}
+m=test;
+f=sum(n:i64):i64{let s=0;lp(let i=0;i<n;i=i+1){s=s+i};<s}
 EOF
 
-T2_EXPECTED='M=test;
-F=sum(n:i64):i64 {
+T2_EXPECTED='m=test;
+f=sum(n:i64):i64 {
   let s=0;
 
   lp (let i = 0; i < n; i = i + 1) {
@@ -88,12 +88,12 @@ check "pretty: blank lines before loop and return" "${T2_EXPECTED}" "${T2_ACTUAL
 
 T3=$(mktemp /tmp/tkc_expand_t3_XXXXXX.tk)
 cat > "${T3}" <<'EOF'
-M=test;
-F=sum(n:i64):i64{let s=0;let res=1;<res}
+m=test;
+f=sum(n:i64):i64{let s=0;let res=1;<res}
 EOF
 
-T3_EXPECTED='M=test;
-F=sum(n:i64):i64 {
+T3_EXPECTED='m=test;
+f=sum(n:i64):i64 {
   let s=0 /* sum:i64 */;
   let res=1 /* result:i64 */;
   <res /* result */
@@ -107,12 +107,12 @@ check "expand: identifier expansion comments" "${T3_EXPECTED}" "${T3_ACTUAL}"
 
 T4=$(mktemp /tmp/tkc_both_t4_XXXXXX.tk)
 cat > "${T4}" <<'EOF'
-M=test;
-F=calc(n:i64):i64{let s=0;lp(let i=0;i<n;i=i+1){s=s+i};<s}
+m=test;
+f=calc(n:i64):i64{let s=0;lp(let i=0;i<n;i=i+1){s=s+i};<s}
 EOF
 
-T4_EXPECTED='M=test;
-F=calc(n:i64):i64 {
+T4_EXPECTED='m=test;
+f=calc(n:i64):i64 {
   let s=0 /* sum:i64 */;
 
   lp (let i = 0; i /* index */ < n /* count */; i = i /* index */ + 1) {
@@ -140,8 +140,8 @@ check "expand: exit code 0" "0" "${RC}"
 
 # ── Test 7: --fmt still works (regression) ───────────────────────────────────
 
-T7_EXPECTED='M=test;
-F=add(a:i64; b:i64):i64 {
+T7_EXPECTED='m=test;
+f=add(a:i64; b:i64):i64 {
   <a+b
 }
 '

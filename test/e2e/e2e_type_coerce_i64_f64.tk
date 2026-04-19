@@ -1,0 +1,8 @@
+m=test;
+f=idf64(x:f64):f64{<x};
+f=main():i64{
+  let i=42;
+  let f=i as f64;
+  let r=idf64(f);
+  if(r>41.9){<42}el{<0}
+};

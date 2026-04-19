@@ -1,11 +1,11 @@
-M=bench;
-F=fib(n:i64):i64{
+m=bench;
+f=fib(n:i64):i64{
   if(n<2){
     <n
   }el{
     <fib(n-1)+fib(n-2)
   }
 };
-F=main():i64{
+f=main():i64{
   <fib(35)
 };

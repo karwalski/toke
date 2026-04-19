@@ -1,0 +1,81 @@
+m=mortgage.calc;
+i=m:mortgage.model;
+i=math:std.math;
+
+(* validate — reject nonsensical inputs *)
+f=validate(s:m.$scenario):bool!m.$calcerr{
+  if(s.rate<0.0||s.rate>1.0){
+    <$err(m.$calcerr.$invalidrate(s.rate))
+  };
+  if(s.term<1){
+    <$err(m.$calcerr.$invalidterm(s.term))
+  };
+  <$ok(true)
+};
+
+(* monthly — M = P * [r(1+r)^n] / [(1+r)^n - 1]
+ * r = annual rate / 12,  n = term * 12
+ * When rate is 0 the formula degenerates to P / n *)
+f=monthly(s:m.$scenario):f64{
+  let n=s.term*12;
+  let r=s.rate/12.0;
+  if(r<0.000000001){
+    <s.principal/(n as f64)
+  };
+  let rn=math.pow(1.0+r;(n as f64));
+  <s.principal*(r*rn)/(rn-1.0)
+};
+
+(* amortise — build full schedule as @($payment) *)
+f=amortise(s:m.$scenario):@(m.$payment){
+  let pmt=monthly(s);
+  let n=s.term*12;
+  let bal=mut.s.principal;
+  let sched=mut.@();
+  lp(let i=1;i<(n as i64)+1;i=i+1){
+    let mi=bal*(s.rate/12.0);
+    let mp=pmt-mi+s.extra;
+    if(mp>bal){
+      mp=bal+mi
+    };
+    let princ=mp-mi;
+    bal=bal-princ;
+    if(bal<0.0){bal=0.0};
+    let row=m.$payment{
+      month:(i as u64);
+      payment:mp;
+      principal:princ;
+      interest:mi;
+      balance:bal
+    };
+    sched=sched.push(row);
+    if(bal<0.01){
+      <sched
+    }
+  };
+  <sched
+};
+
+(* calculate — produce the complete result *)
+f=calculate(s:m.$scenario):m.$result!m.$calcerr{
+  validate(s)|{
+    $ok:_ ();
+    $err:e <$err(e)
+  };
+  let pmt=monthly(s);
+  let sched=amortise(s);
+  let n=sched.len;
+  let totalcost=mut.0.0;
+  let totalinterest=mut.0.0;
+  lp(let i=0;i<(n as i64);i=i+1){
+    let row=sched.get(i);
+    totalcost=totalcost+row.payment;
+    totalinterest=totalinterest+row.interest
+  };
+  <$ok(m.$result{
+    monthly:pmt;
+    totalinterest:totalinterest;
+    totalcost:totalcost;
+    schedule:sched
+  })
+};

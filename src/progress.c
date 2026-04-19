@@ -25,12 +25,14 @@
 
 #include <stdio.h>
 #include <unistd.h>
+#include <time.h>
 
 /* ── State ─────────────────────────────────────────────────────────── */
 
 static int g_quiet   = 0;   /* --quiet suppresses all output          */
 static int g_active  = 0;   /* 1 once we have printed at least once   */
 static int g_is_tty  = 0;   /* stderr is a TTY                        */
+static struct timespec g_start;  /* wall-clock time at init            */
 
 /* ── Animation frames (11 frames, 0-100 in steps of 10) ───────────── */
 
@@ -108,6 +110,7 @@ void progress_init(int quiet)
     g_quiet  = quiet;
     g_active = 0;
     g_is_tty = isatty(STDERR_FILENO);
+    clock_gettime(CLOCK_MONOTONIC, &g_start);
 }
 
 /*
@@ -120,6 +123,14 @@ void progress_init(int quiet)
 void progress_update(int pct)
 {
     if (g_quiet || !g_is_tty) return;
+
+    /* Suppress display for the first second — avoids flashing on quick builds */
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    long elapsed_ms = (now.tv_sec - g_start.tv_sec) * 1000
+                    + (now.tv_nsec - g_start.tv_nsec) / 1000000;
+    if (elapsed_ms < 1000) return;
+
     if (pct < 0)   pct = 0;
     if (pct > 100) pct = 100;
 

@@ -1,0 +1,7 @@
+m=test;
+f=main():i64{
+  let i=5;
+  let f=2.0;
+  let r=i as f64+f;
+  if(r>6.9){<7}el{<0}
+};

@@ -42,7 +42,7 @@ cp "$SRC" "${TMP}/new_func.tk"
 "$TKC" --companion-out "${TMP}/new_func.tkc.md" "${TMP}/new_func.tk" 2>/dev/null
 # Now add a function to the source
 cat >> "${TMP}/new_func.tk" <<'TK'
-F=added():i64{<42};
+f=added():i64{<42};
 TK
 OUT=$("$TKC" --companion-diff "${TMP}/new_func.tkc.md" "${TMP}/new_func.tk" 2>&1); rc=$?
 if [ $rc -eq 1 ] && echo "$OUT" | grep -q "^NEW.*function.*added"; then
@@ -71,15 +71,15 @@ fi
 echo "==> Test 5: CHANGED signature (parameter change)"
 # Create source with isprime(n:i64;x:i64) — different from companion's isprime(n:i64)
 cat > "${TMP}/changed.tk" <<'TK'
-M=bench;
-F=isprime(n:i64;x:i64):i64{<0};
-F=main():i64{<0};
+m=bench;
+f=isprime(n:i64;x:i64):i64{<0};
+f=main():i64{<0};
 TK
 # Generate companion from original (single param)
 cat > "${TMP}/changed_orig.tk" <<'TK'
-M=bench;
-F=isprime(n:i64):i64{<0};
-F=main():i64{<0};
+m=bench;
+f=isprime(n:i64):i64{<0};
+f=main():i64{<0};
 TK
 "$TKC" --companion-out "${TMP}/changed.tkc.md" "${TMP}/changed_orig.tk" 2>/dev/null
 OUT=$("$TKC" --companion-diff "${TMP}/changed.tkc.md" "${TMP}/changed.tk" 2>&1); rc=$?

@@ -85,4 +85,87 @@ int tk_time_is_leap_year(int year);
  * Returns the number of days in the given month (1-12) of the given year. */
 uint8_t tk_time_days_in_month(int year, int month);
 
+/* Story: 57.11.2 — timezone-aware time operations */
+
+/* time.with_tz(ts:u64;tz_name:Str):Str
+ * Formats a timestamp in the given IANA timezone (e.g. "America/New_York").
+ * Returns ISO 8601 string in that timezone. Caller owns the returned string. */
+const char *tk_time_with_tz(uint64_t ts_ms, const char *tz_name);
+
+/* time.utc_offset(tz_name:Str):i64
+ * Returns the current UTC offset in seconds for the given IANA timezone.
+ * Returns 0 if the timezone is unknown. */
+int64_t tk_time_utc_offset(const char *tz_name);
+
+/* time.convert(ts:u64;from_tz:Str;to_tz:Str):Str
+ * Converts a display time from one timezone to another.
+ * Returns ISO 8601 string in the target timezone. */
+const char *tk_time_convert(uint64_t ts_ms, const char *from_tz, const char *to_tz);
+
+/* Story: 57.11.3 — calendar arithmetic */
+
+/* time.add_days(ts:u64;n:i64):u64 — add n days to timestamp */
+uint64_t tk_time_add_days(uint64_t ts_ms, int64_t n);
+
+/* time.add_months(ts:u64;n:i64):u64 — add n months with month-end clamping */
+uint64_t tk_time_add_months(uint64_t ts_ms, int64_t n);
+
+/* time.add_years(ts:u64;n:i64):u64 — add n years with leap year handling */
+uint64_t tk_time_add_years(uint64_t ts_ms, int64_t n);
+
+/* time.start_of_day(ts:u64):u64 — truncate to midnight UTC */
+uint64_t tk_time_start_of_day(uint64_t ts_ms);
+
+/* time.start_of_month(ts:u64):u64 — first day of month, midnight UTC */
+uint64_t tk_time_start_of_month(uint64_t ts_ms);
+
+/* time.start_of_year(ts:u64):u64 — January 1, midnight UTC */
+uint64_t tk_time_start_of_year(uint64_t ts_ms);
+
+/* Story: 57.11.4 — duration parsing and formatting */
+
+typedef struct {
+    int years;
+    int months;
+    int days;
+    int hours;
+    int minutes;
+    int seconds;
+} TkDuration;
+
+/* Parse ISO 8601 duration string (e.g. "P1Y2M3DT4H5M6S"). */
+typedef struct {
+    TkDuration ok;
+    int        is_err;
+    const char *err_msg;
+} TkDurationParseResult;
+
+TkDurationParseResult tk_time_parse_duration(const char *s);
+
+/* Format a duration as human-readable string (e.g. "1y 2mo 3d 4h 5m 6s"). */
+const char *tk_time_format_duration(TkDuration d);
+
+/* Compute structured duration between two timestamps. */
+TkDuration tk_time_duration(uint64_t from_ms, uint64_t to_ms);
+
+/* Story: 57.11.5-57.11.7 — interplanetary time */
+
+/* time.julian_date(ts:u64):f64
+ * Convert Unix timestamp to Julian Date. */
+double tk_time_julian_date(uint64_t ts_ms);
+
+/* time.mars_sol(ts:u64):f64
+ * Convert Unix timestamp to Mars Sol Date (MSD). */
+double tk_time_mars_sol(uint64_t ts_ms);
+
+/* time.format_mars(sol:f64;fmt:Str):Str
+ * Format a Mars sol as a string (e.g. "Sol 3042 14:23:07 MTC"). */
+const char *tk_time_format_mars(double sol, const char *fmt);
+
+/* time.light_delay(from_body:Str;to_body:Str;ts:u64):f64
+ * Approximate one-way light-time delay in seconds between two bodies.
+ * Uses mean orbital distances. Bodies: "earth", "mars", "moon", "sun". */
+double tk_time_light_delay(const char *from_body, const char *to_body,
+                           uint64_t ts_ms);
+
 #endif /* TK_STDLIB_TK_TIME_H */

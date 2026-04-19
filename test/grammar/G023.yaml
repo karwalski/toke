@@ -2,9 +2,9 @@ id: G023
 series: G
 description: "Valid function call expression with multiple arguments (ArgList)"
 input: |
-  M=test;
-  F=add(a:i64;b:i64):i64{<a+b};
-  F=main():i64{<add(1;2)};
+  m=test;
+  f=add(a:i64;b:i64):i64{<a+b};
+  f=main():i64{<add(1;2)};
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

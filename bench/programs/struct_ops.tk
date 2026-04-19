@@ -1,15 +1,15 @@
-M=bench;
-T=Vec3{x:i64;y:i64;z:i64};
-F=add(a:Vec3;b:Vec3):Vec3{
+m=bench;
+t=Vec3{x:i64;y:i64;z:i64};
+f=add(a:Vec3;b:Vec3):Vec3{
   <Vec3{x:a.x+b.x;y:a.y+b.y;z:a.z+b.z}
 };
-F=dot(a:Vec3;b:Vec3):i64{
+f=dot(a:Vec3;b:Vec3):i64{
   <a.x*b.x+a.y*b.y+a.z*b.z
 };
-F=scale(v:Vec3;s:i64):Vec3{
+f=scale(v:Vec3;s:i64):Vec3{
   <Vec3{x:v.x*s;y:v.y*s;z:v.z*s}
 };
-F=main():i64{
+f=main():i64{
   let v=mut.Vec3{x:1;y:2;z:3};
   let s=mut.0;
   lp(let i=0;i<1000000;i=i+1){

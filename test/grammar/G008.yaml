@@ -2,8 +2,8 @@ id: G008
 series: G
 description: "Valid if statement without else branch"
 input: |
-  M=test;
-  F=clamp(x:i64):i64{
+  m=test;
+  f=clamp(x:i64):i64{
     if(x<0){<0};
     <x
   };

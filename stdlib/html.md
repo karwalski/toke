@@ -2,29 +2,33 @@
 
 ## Overview
 
-The `std.html` module provides a structured DOM-like API for building complete HTML documents in toke programs. Functions construct `htmlnode` values that are appended to an `htmldoc` handle. `html.render()` emits a complete HTML5 string. Use `std.dashboard` for a higher-level dashboard composition layer.
+The `std.html` module provides a structured DOM-like API for building complete HTML5 documents in toke programs. An `htmldoc` handle accumulates head metadata (title, styles, scripts) and body content (`htmlnode` values). Calling `html.render()` emits the final HTML string including `<!DOCTYPE html>`. The module favours template-free rendering: programs compose documents with function calls rather than string interpolation. Use `html.escape()` to sanitise any user-supplied text before embedding. For higher-level dashboard composition, see `std.dashboard`.
 
 ## Types
 
 ### htmldoc
 
-An opaque document builder handle. Created by `html.doc()`.
-
-### htmlnode
-
-A single HTML element.
+An opaque document builder handle. Created by `html.doc()` and threaded through `html.title()`, `html.style()`, `html.script()`, and `html.append()`. Programs cannot inspect or copy this value; it exists solely to accumulate document state until `html.render()` finalises the output.
 
 | Field | Type | Meaning |
 |-------|------|---------|
-| tag | Str | Element tag name (e.g., `"div"`, `"p"`) |
-| attrs | @(@Str) | Key-value attribute pairs |
-| content | Str | Inner content (text or serialised child nodes) |
+| id | u64 | Internal handle identifier (opaque) |
+
+### htmlnode
+
+A single HTML element that can be appended to an `htmldoc` body or nested inside other nodes.
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| tag | Str | Element tag name (e.g., `"div"`, `"p"`, `"table"`) |
+| attrs | @(@Str) | Key-value attribute pairs (e.g., `@("class"; "card")`) |
+| content | Str | Inner content -- text or serialised child nodes |
 
 ## Functions
 
 ### html.doc(): htmldoc
 
-Creates an empty HTML document builder.
+Creates an empty HTML document builder. The returned handle has no title, no styles, no scripts, and an empty body.
 
 **Example:**
 ```toke
@@ -33,19 +37,41 @@ let d = html.doc();
 
 ### html.title(d: htmldoc; t: Str): void
 
-Sets the document `<title>`.
+Sets the document `<title>`. Calling this more than once overwrites the previous title.
+
+**Example:**
+```toke
+let d = html.doc();
+html.title(d; "My Report");
+```
 
 ### html.style(d: htmldoc; css: Str): void
 
-Appends a `<style>` block with the given CSS to the document `<head>`.
+Appends a `<style>` block with the given CSS text to the document `<head>`. Multiple calls append multiple `<style>` blocks in order.
+
+**Example:**
+```toke
+html.style(d; "body { font-family: sans-serif; margin: 2em; }");
+html.style(d; ".card { border: 1px solid #ccc; padding: 1em; }");
+```
 
 ### html.script(d: htmldoc; js: Str): void
 
-Appends a `<script>` block with the given JavaScript to the document `<head>`.
+Appends a `<script>` block with the given JavaScript to the document `<head>`. Useful for embedding `canvas.to_js()` output or custom interactivity.
+
+**Example:**
+```toke
+html.script(d; "console.log('page loaded');");
+
+(* Embed a canvas drawing *)
+let c = canvas.new("chart"; 400; 300);
+let c = canvas.fill_rect(c; 0.0; 0.0; 400.0; 300.0; "#fff");
+html.script(d; canvas.to_js(c));
+```
 
 ### html.div(attrs: @(@Str); children: @htmlnode): htmlnode
 
-Creates a `<div>` element with the given attributes and child nodes.
+Creates a `<div>` element with the given attributes and child nodes. Attributes are key-value pairs; pass an empty array `@()` for no attributes.
 
 **Example:**
 ```toke
@@ -53,55 +79,161 @@ let section = html.div(
   @(@("class"; "card"); @("id"; "main"));
   @(html.h2("Title"); html.p("Body text."))
 );
+
+(* Div with no attributes *)
+let wrapper = html.div(@(); @(html.p("Simple content.")));
 ```
 
 ### html.p(text: Str): htmlnode
 
-Creates a `<p>` paragraph element.
+Creates a `<p>` paragraph element containing `text`.
+
+**Example:**
+```toke
+let node = html.p("This is a paragraph.");
+html.append(d; node);
+```
 
 ### html.h1(text: Str): htmlnode
 
 Creates an `<h1>` heading element.
 
+**Example:**
+```toke
+let heading = html.h1("Welcome");
+html.append(d; heading);
+```
+
 ### html.h2(text: Str): htmlnode
 
 Creates an `<h2>` heading element.
 
+**Example:**
+```toke
+let sub = html.h2("Section Two");
+html.append(d; sub);
+```
+
 ### html.table(headers: @Str; rows: @(@Str)): htmlnode
 
-Creates a `<table>` element with a `<thead>` row and `<tbody>` rows.
+Creates a `<table>` element with a `<thead>` row built from `headers` and `<tbody>` rows built from `rows`. Each inner array in `rows` must have the same length as `headers`.
 
 **Example:**
 ```toke
 let tbl = html.table(
-  @("Name"; "Score");
-  @(@("Alice"; "42"); @("Bob"; "37"))
+  @("Name"; "Score"; "Grade");
+  @(
+    @("Alice"; "95"; "A");
+    @("Bob"; "82"; "B");
+    @("Carol"; "71"; "C")
+  )
 );
+html.append(d; tbl);
 ```
 
 ### html.append(d: htmldoc; node: htmlnode): void
 
-Appends `node` to the document `<body>`.
+Appends `node` to the document `<body>`. Nodes appear in the rendered output in the order they are appended.
+
+**Example:**
+```toke
+html.append(d; html.h1("Report Title"));
+html.append(d; html.p("Generated by toke."));
+```
 
 ### html.render(d: htmldoc): Str
 
-Emits the complete HTML5 document as a string, including `<!DOCTYPE html>`, `<head>`, and `<body>`.
+Emits the complete HTML5 document as a string, including `<!DOCTYPE html>`, `<html>`, `<head>` (with title, styles, scripts), and `<body>` (with all appended nodes). After rendering, the document handle should not be reused.
 
 **Example:**
 ```toke
 let d = html.doc();
-html.title(d; "My Report");
-html.append(d; html.h1("Hello"));
+html.title(d; "Status Page");
+html.append(d; html.h1("All Systems Operational"));
+html.append(d; html.p("Last checked: 2026-04-19"));
 let out = html.render(d);
-file.write("/tmp/report.html"; out);
+file.write("/tmp/status.html"; out);
 ```
 
 ### html.escape(s: Str): Str
 
-HTML-escapes `s`, replacing `&`, `<`, `>`, `"`, and `'` with their entity equivalents.
+HTML-escapes `s`, replacing `&`, `<`, `>`, `"`, and `'` with their entity equivalents (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&#39;`). Always escape user-supplied strings before embedding them in HTML content to prevent XSS.
 
 **Example:**
 ```toke
 let safe = html.escape("<script>alert('xss')</script>");
 (* safe = "&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;" *)
+
+let user_input = html.escape(name);
+html.append(d; html.p(user_input));
+```
+
+## Template-Free Rendering
+
+The `std.html` module is designed so programs never need string interpolation or template files to produce HTML. Documents are assembled entirely through function calls:
+
+```toke
+let d = html.doc();
+html.title(d; "Product Catalogue");
+html.style(d; "
+  body { font-family: Georgia, serif; margin: 2em; }
+  .item { border-bottom: 1px solid #eee; padding: 1em 0; }
+");
+
+html.append(d; html.h1("Our Products"));
+
+(* Build a product card *)
+let card = html.div(
+  @(@("class"; "item"));
+  @(
+    html.h2("Widget Pro");
+    html.p("A versatile widget for everyday use.");
+    html.p("Price: $29.99")
+  )
+);
+html.append(d; card);
+
+let card2 = html.div(
+  @(@("class"; "item"));
+  @(
+    html.h2("Gadget Lite");
+    html.p("Lightweight and portable.");
+    html.p("Price: $14.99")
+  )
+);
+html.append(d; card2);
+
+let out = html.render(d);
+file.write("/tmp/catalogue.html"; out);
+```
+
+## Data Report Pattern
+
+A common pattern combines `html.table()` with styled headings to produce data reports without any templating:
+
+```toke
+let d = html.doc();
+html.title(d; "Monthly Metrics");
+html.style(d; "
+  table { border-collapse: collapse; width: 100%; }
+  th; td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+  th { background: #4a90d9; color: white; }
+  tr:nth-child(even) { background: #f2f2f2; }
+");
+
+html.append(d; html.h1("April 2026 Metrics"));
+html.append(d; html.p("Automated report generated by toke."));
+
+let tbl = html.table(
+  @("Metric"; "Value"; "Change");
+  @(
+    @("Users"; "12,450"; "+8%");
+    @("Revenue"; "$34,200"; "+12%");
+    @("Errors"; "23"; "-40%")
+  )
+);
+html.append(d; tbl);
+
+let out = html.render(d);
+file.write("/tmp/metrics.html"; out);
 ```

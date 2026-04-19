@@ -631,15 +631,16 @@ TkLlmStream llm_chatstream(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs, doubl
             "\r\n",
             path, host, body_len);
     }
-    free((void *)body);
-
     if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
+        free((void *)body);
         close(fd); return err_stream("request header too large");
     }
     if (send(fd, req_buf, (size_t)req_len, 0) < 0 ||
         send(fd, body_len > 0 ? (char *)body : "", body_len, 0) < 0) {
+        free((void *)body);
         close(fd); return err_stream("send failed");
     }
+    free((void *)body);
 
     /* read full response */
     size_t cap = 65536, used = 0;

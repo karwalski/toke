@@ -239,6 +239,61 @@ f=unseal(recipient_priv:@byte;sealed:@byte):@byte{
 };
 ```
 
+## TLS Certificate Fingerprinting
+
+### encrypt.tls_cert_fingerprint(pem_cert: $str): @byte
+
+Parses a PEM-encoded X.509 certificate and returns its SHA-256 fingerprint as
+a 32-byte `@byte` slice. The fingerprint is computed over the raw DER-encoded
+certificate bytes, matching the output of `openssl x509 -fingerprint -sha256`.
+
+#### Return format
+
+The return value is always exactly 32 bytes (256 bits). To produce the
+conventional colon-separated hex display string (e.g.
+`3A:F1:2B:...`), pass the result through `crypto.to_hex`.
+
+```toke
+let pem = "-----BEGIN CERTIFICATE-----\n...base64...\n-----END CERTIFICATE-----";
+let fp = encrypt.tls_cert_fingerprint(pem);
+(test.eq(fp.len; 32));
+
+let hex = crypto.to_hex(fp);
+(* hex is a 64-character lowercase hex string *)
+```
+
+#### Usage — certificate pinning
+
+Compare a server's live certificate fingerprint against a known-good value to
+detect MITM or certificate rotation:
+
+```toke
+i=enc:std.encrypt;
+i=cry:std.crypto;
+i=net:std.net;
+
+f=check_pin(host: str; expected_hex: str): bool{
+  let pem = net.tls_peer_cert(host; 443);
+  let fp = enc.tls_cert_fingerprint(pem);
+  let hex = cry.to_hex(fp);
+  <hex == expected_hex
+};
+```
+
+#### Error cases
+
+| Condition                  | Behaviour                                              |
+|----------------------------|--------------------------------------------------------|
+| Invalid PEM encoding       | Panics. The input must begin with `-----BEGIN CERTIFICATE-----` and end with `-----END CERTIFICATE-----`. |
+| Truncated or corrupt DER   | Panics. The base64 payload must decode to a valid DER-encoded X.509 certificate. |
+| Connection refused         | Not raised by this function. `tls_cert_fingerprint` operates on an already-obtained PEM string, not on a network connection. Obtain the PEM first via `net.tls_peer_cert`; connection errors surface there. |
+| Invalid host               | Not raised by this function for the same reason: host resolution and TLS handshake occur in `net.tls_peer_cert`, not here. |
+
+If a PEM string cannot be parsed, the function panics rather than returning an
+error union — callers should validate input before calling. When fingerprinting
+a remote server, wrap the `net.tls_peer_cert` call in error handling to catch
+network-level failures before reaching `tls_cert_fingerprint`.
+
 ## Notes
 
 - `encrypt.aes256gcm_keygen` and `encrypt.aes256gcm_noncegen` delegate to

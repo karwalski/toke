@@ -166,7 +166,7 @@ char *http_chunked_read(int fd, size_t *out_len);
 /* Default limits applied to every incoming server request. */
 #define HTTP_DEFAULT_MAX_HEADER_SIZE  8192U      /* 8 KiB  */
 #define HTTP_DEFAULT_MAX_BODY_SIZE    1048576U   /* 1 MiB  */
-#define HTTP_DEFAULT_TIMEOUT_SECS     30U
+#define HTTP_DEFAULT_TIMEOUT_SECS     10U
 
 /*
  * Override the server request-size limits before calling http_serve().
@@ -241,9 +241,46 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
 
 typedef struct TkTlsCtx TkTlsCtx;
 
+/* TLS configuration (Epic 61.2) */
+typedef struct {
+    const char *cert_path;       /* PEM certificate file (required) */
+    const char *key_path;        /* PEM private key file (required) */
+    const char *min_version;     /* "1.2" or "1.3" (default: "1.2") */
+    const char *ciphers;         /* OpenSSL cipher string (NULL=default) */
+    const char *curves;          /* e.g. "X25519:P-256" (NULL=default) */
+    int         session_tickets; /* 1=enable, 0=disable (default: 1) */
+    uint64_t    ticket_lifetime; /* seconds (default: 7200) */
+} TkTlsConfig;
+
+/* SNI virtual host entry (Story 61.2.4) */
+typedef struct {
+    const char *hostname;   /* server name (e.g. "example.com") */
+    const char *cert_path;  /* PEM certificate */
+    const char *key_path;   /* PEM private key */
+} TkTlsSniEntry;
+
 /* http_tls_ctx_new — load cert and key PEM files, return TLS context.
  * Returns NULL on error (prints reason to stderr). */
 TkTlsCtx *http_tls_ctx_new(const char *cert_path, const char *key_path);
+
+/* http_tls_ctx_new_config — create TLS context with advanced configuration.
+ * Supports cipher suite selection, TLS version, session tickets. */
+TkTlsCtx *http_tls_ctx_new_config(const TkTlsConfig *config);
+
+/* http_tls_add_sni — add SNI-based virtual host cert/key pair.
+ * Hostname matching is case-insensitive. Returns 0 on success. */
+int http_tls_add_sni(TkTlsCtx *ctx, const char *hostname,
+                     const char *cert_path, const char *key_path);
+
+/* http_tls_set_ocsp_response — set cached OCSP response for stapling.
+ * Data is copied. Call periodically to refresh. */
+int http_tls_set_ocsp_response(TkTlsCtx *ctx,
+                                const uint8_t *data, size_t len);
+
+/* http_tls_reload_cert — hot-swap cert+key in a running TLS context.
+ * Returns 0 on success. Used by ACME auto-renewal. */
+int http_tls_reload_cert(TkTlsCtx *ctx, const char *cert_path,
+                          const char *key_path);
 
 /* http_tls_ctx_free — release a TkTlsCtx. */
 void       http_tls_ctx_free(TkTlsCtx *ctx);

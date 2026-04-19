@@ -1,5 +1,5 @@
-M=bench;
-F=gcd(a:i64;b:i64):i64{
+m=bench;
+f=gcd(a:i64;b:i64):i64{
   let x=mut.a;
   let y=mut.b;
   lp(let dummy=0;y>0;dummy=0){
@@ -9,7 +9,7 @@ F=gcd(a:i64;b:i64):i64{
   };
   <x
 };
-F=eulertot(n:i64):i64{
+f=eulertot(n:i64):i64{
   let count=mut.0;
   lp(let i=1;i<n;i=i+1){
     if(gcd(i;n)=1){
@@ -20,7 +20,7 @@ F=eulertot(n:i64):i64{
   };
   <count
 };
-F=main():i64{
+f=main():i64{
   let s=mut.0;
   lp(let i=2;i<10000;i=i+1){
     s=s+eulertot(i)

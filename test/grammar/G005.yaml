@@ -4,6 +4,7 @@ description: "Valid sum type declaration with TYPE_IDENT variant names"
 input: |
   M=test;
   T=Shape{Circle:f64;Rect:f64;Triangle:f64};
+flags: --legacy
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

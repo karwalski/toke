@@ -2,8 +2,8 @@ id: D007
 series: D
 description: "Diagnostic record contains pos.line and pos.col fields"
 input: |
-  M=test;
-  F=bad():Str{<"\q"};
+  m=test;
+  f=bad():Str{<"\q"};
 expected_exit_code: 1
 expected_error_codes: ["E1001"]
 expected_diag_has_pos: true

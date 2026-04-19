@@ -282,6 +282,7 @@ typedef struct {
     int max_imports_in_flight;
     int max_avail_modules;
     int arena_block_size;
+    int max_iters;       /* --max-iters=N: loop iteration guard (0 = off) */
 } TkcLimits;
 
 static inline void tkc_limits_defaults(TkcLimits *lim)
@@ -294,6 +295,7 @@ static inline void tkc_limits_defaults(TkcLimits *lim)
     lim->max_imports_in_flight = TKC_MAX_IMPORTS_IN_FLIGHT;
     lim->max_avail_modules     = TKC_MAX_AVAIL_MODULES;
     lim->arena_block_size = TKC_ARENA_BLOCK_SIZE;
+    lim->max_iters        = 0;  /* 0 = no limit (off by default) */
 }
 
 #endif /* TKC_LIMITS_H */

@@ -1,6 +1,11 @@
 CC      = cc
 CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -g \
           -DTKC_STDLIB_DIR='"$(CURDIR)/src/stdlib"'
+# GCC-specific: suppress format-truncation warnings (snprintf truncation is by design)
+GCC_CHECK := $(shell $(CC) -Wno-format-truncation -x c -c /dev/null -o /dev/null 2>/dev/null && echo yes)
+ifeq ($(GCC_CHECK),yes)
+CFLAGS += -Wno-format-truncation
+endif
 # ── Epic 55: vendor library flags ────────────────────────────────────────────
 CMARK_SRCS  = $(filter-out stdlib/vendor/cmark/src/main.c, \
                 $(wildcard stdlib/vendor/cmark/src/*.c))
@@ -62,7 +67,8 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-stdlib-http test-stdlib-http-cookies test-stdlib-http-multipart \
 	test-stdlib-http-form test-stdlib-http-tls \
 	test-stdlib-file test-stdlib-runtime \
-	test-stdlib-path test-stdlib-args test-stdlib-md test-stdlib-toml
+	test-stdlib-path test-stdlib-args test-stdlib-md test-stdlib-toml \
+	install-man
 
 all: $(BIN)
 
@@ -71,6 +77,10 @@ $(BIN): $(OBJS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) $(REPRO_FLAGS) -c -o $@ $<
+
+# encrypt.c uses __int128 for Ed25519 arithmetic — allowed under GCC but rejected by -Wpedantic
+src/stdlib/encrypt.o: src/stdlib/encrypt.c
+	$(CC) $(CFLAGS) $(REPRO_FLAGS) -Wno-pedantic -c -o $@ $<
 
 lint:
 	$(CC) $(CFLAGS) --analyze $(SRCS)
@@ -485,8 +495,27 @@ fuzz-lexer: test/fuzz/fuzz_lexer.c src/lexer.o src/diag.o src/arena.o
 fuzz-parser: test/fuzz/fuzz_parser.c src/lexer.o src/parser.o src/diag.o src/arena.o src/names.o src/types.o
 	$(CC) $(FUZZ_FLAGS) -o fuzz-parser $^
 
+fuzz-http-parse: test/fuzz/fuzz_http_parse.c
+	$(CC) $(FUZZ_FLAGS) -o fuzz-http-parse $^
+
+fuzz-url-route: test/fuzz/fuzz_url_route.c src/stdlib/router.o src/stdlib/str.o
+	$(CC) $(FUZZ_FLAGS) -I src/stdlib -o fuzz-url-route $^ -lz
+
 fuzz: fuzz-lexer fuzz-parser
 	./fuzz-lexer -max_total_time=60 test/fuzz/corpus/
 	./fuzz-parser -max_total_time=60 test/fuzz/corpus/
 
-.PHONY: fuzz fuzz-lexer fuzz-parser
+fuzz-http: fuzz-http-parse fuzz-url-route
+	./fuzz-http-parse -max_total_time=120
+	./fuzz-url-route -max_total_time=120
+
+# ── Man page ────────────────────────────────────────────────────────────
+MANDIR ?= /usr/local/share/man/man1
+
+install-man: doc/toke.1
+	@mkdir -p $(MANDIR)
+	install -m 644 doc/toke.1 $(MANDIR)/toke.1
+	@ln -sf $(MANDIR)/toke.1 $(MANDIR)/tkc.1 2>/dev/null || true
+	@echo "Installed toke.1 and tkc.1 symlink to $(MANDIR)"
+
+.PHONY: fuzz fuzz-lexer fuzz-parser fuzz-http fuzz-http-parse fuzz-url-route

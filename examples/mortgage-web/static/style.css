@@ -1,0 +1,268 @@
+/* Mortgage Calculator — ooke web app styles */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+  color: #333;
+  background: #f5f7fa;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Navigation */
+.navbar {
+  background: #2c3e50;
+  padding: 1rem 2rem;
+}
+
+.nav-brand {
+  color: #ecf0f1;
+  text-decoration: none;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.nav-brand:hover {
+  color: #3498db;
+}
+
+/* Layout */
+.container {
+  max-width: 900px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  flex: 1;
+}
+
+/* Cards */
+.card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+.card h1 {
+  font-size: 1.75rem;
+  margin-bottom: 0.5rem;
+  color: #2c3e50;
+}
+
+.card h2 {
+  font-size: 1.35rem;
+  margin-bottom: 1rem;
+  color: #2c3e50;
+}
+
+.subtitle {
+  color: #7f8c8d;
+  margin-bottom: 1.5rem;
+}
+
+/* Form */
+.mortgage-form {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group label {
+  font-weight: 500;
+  margin-bottom: 0.35rem;
+  color: #555;
+  font-size: 0.9rem;
+}
+
+.form-group input {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
+}
+
+/* Buttons */
+.btn {
+  display: inline-block;
+  padding: 0.7rem 2rem;
+  background: #3498db;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: center;
+  transition: background 0.2s;
+}
+
+.btn:hover {
+  background: #2980b9;
+}
+
+.btn-secondary {
+  background: #95a5a6;
+}
+
+.btn-secondary:hover {
+  background: #7f8c8d;
+}
+
+/* Summary */
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.summary-item {
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  text-align: center;
+}
+
+.summary-label {
+  display: block;
+  font-size: 0.85rem;
+  color: #7f8c8d;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.summary-value {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2c3e50;
+}
+
+.input-recap {
+  color: #7f8c8d;
+  font-size: 0.9rem;
+  text-align: center;
+  padding-top: 0.5rem;
+}
+
+/* Chart */
+.chart-container {
+  overflow-x: auto;
+  text-align: center;
+}
+
+.chart-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Table */
+.table-wrap {
+  overflow-x: auto;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.schedule-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.schedule-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.schedule-table th {
+  background: #2c3e50;
+  color: #ecf0f1;
+  padding: 0.6rem 0.75rem;
+  text-align: right;
+  font-weight: 500;
+}
+
+.schedule-table th:first-child {
+  text-align: center;
+}
+
+.schedule-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: right;
+  border-bottom: 1px solid #eee;
+}
+
+.schedule-table td:first-child {
+  text-align: center;
+  color: #7f8c8d;
+}
+
+.schedule-table tbody tr:hover {
+  background: #f0f7ff;
+}
+
+.schedule-table tbody tr:nth-child(12n) {
+  border-bottom: 2px solid #3498db;
+}
+
+/* Actions */
+.actions {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+/* Footer */
+.footer {
+  background: #2c3e50;
+  color: #95a5a6;
+  text-align: center;
+  padding: 1rem;
+  font-size: 0.85rem;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .container {
+    padding: 0 0.5rem;
+  }
+
+  .card {
+    padding: 1.25rem;
+  }
+
+  .summary {
+    grid-template-columns: 1fr;
+  }
+
+  .schedule-table {
+    font-size: 0.8rem;
+  }
+
+  .schedule-table th,
+  .schedule-table td {
+    padding: 0.4rem;
+  }
+}

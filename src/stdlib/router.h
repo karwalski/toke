@@ -122,12 +122,13 @@ void router_static(TkRouter *r, const char *url_prefix, const char *dir_path);
 
 /* router_static_serve — directly serve a single request for a file under
  * dir_path.  rel_path is the URL path component after stripping the prefix
- * (e.g. "style.css").  if_none_match may be NULL.
- * Returns a TkRouteResp with status 200/304/403/404.
- * When status==200, resp.body is a heap-allocated buffer the caller must free.
+ * (e.g. "style.css").  if_none_match and range_header may be NULL.
+ * Returns a TkRouteResp with status 200/206/304/403/404/416.
+ * When status==200/206, resp.body is a heap-allocated buffer the caller must free.
  * resp.header_values[0] (the ETag string) is also heap-allocated. */
 TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
-                                 const char *if_none_match);
+                                 const char *if_none_match,
+                                 const char *range_header);
 
 /* ── ETag middleware (Story 27.1.13) ────────────────────────────────── */
 

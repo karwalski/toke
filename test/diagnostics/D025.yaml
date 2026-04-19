@@ -2,8 +2,8 @@ id: D025
 series: D
 description: "Assignment to mutable binding succeeds without error"
 input: |
-  M=test;
-  F=ok():i64{
+  m=test;
+  f=ok():i64{
     let x=mut.1;
     x=2;
     <x

@@ -1,7 +1,7 @@
 id: L002
 series: L
 description: "Tabs and carriage returns between tokens are silently consumed"
-input: "M=test;\r\nF=noop():\tbool{\t<\ttrue\t}\t;"
+input: "m=test;\r\nf=noop():\tbool{\t<\ttrue\t}\t;"
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

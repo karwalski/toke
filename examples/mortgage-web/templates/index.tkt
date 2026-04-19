@@ -1,0 +1,28 @@
+<div class="card">
+  <h1>Mortgage Calculator</h1>
+  <p class="subtitle">Calculate your monthly payment and view the full amortisation schedule.</p>
+
+  <form method="post" action="/calculate" class="mortgage-form">
+    <div class="form-group">
+      <label for="principal">Loan Amount ($)</label>
+      <input type="number" id="principal" name="principal" value="500000" min="1" step="1000" required>
+    </div>
+
+    <div class="form-group">
+      <label for="rate">Annual Interest Rate (decimal, e.g. 0.065 for 6.5%)</label>
+      <input type="number" id="rate" name="rate" value="0.065" min="0" max="1" step="0.001" required>
+    </div>
+
+    <div class="form-group">
+      <label for="term">Loan Term (years)</label>
+      <input type="number" id="term" name="term" value="30" min="1" max="50" required>
+    </div>
+
+    <div class="form-group">
+      <label for="extra">Extra Monthly Payment ($)</label>
+      <input type="number" id="extra" name="extra" value="0" min="0" step="50">
+    </div>
+
+    <button type="submit" class="btn">Calculate</button>
+  </form>
+</div>

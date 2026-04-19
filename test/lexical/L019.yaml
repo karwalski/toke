@@ -5,6 +5,7 @@ input: |
   M=test;
   T=FuncHelper{val:i64};
   F=make():FuncHelper{<FuncHelper{val:1}};
+flags: --legacy
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

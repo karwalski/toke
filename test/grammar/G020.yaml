@@ -6,6 +6,7 @@ input: |
   T=Inner{val:i64};
   T=Outer{inner:Inner};
   F=getval(o:Outer):i64{<o.inner.val};
+flags: --legacy
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

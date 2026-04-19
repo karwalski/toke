@@ -1,0 +1,7 @@
+id: D046
+series: D
+description: "E1006 uppercase keyword M= rejected in default syntax mode"
+input: |
+  M=test;
+expected_exit_code: 1
+expected_error_codes: ["E1006"]

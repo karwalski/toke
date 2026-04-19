@@ -4,6 +4,62 @@
   "exports": [
     {"kind": "func", "name": "time.now",    "params": [],             "return": "u64"},
     {"kind": "func", "name": "time.format", "params": ["u64", "str"], "return": "str"},
-    {"kind": "func", "name": "time.since",  "params": ["u64"],        "return": "u64"}
+    {"kind": "func", "name": "time.since",  "params": ["u64"],        "return": "u64"},
+    {"kind": "func", "name": "time.parse",  "params": ["str", "str"], "return": "u64!TimeErr"},
+    {"kind": "func", "name": "time.add",    "params": ["u64", "i64"], "return": "u64"},
+    {"kind": "func", "name": "time.diff",   "params": ["u64", "u64"], "return": "i64"},
+    {
+      "kind": "type",
+      "name": "TimeParts",
+      "fields": [
+        {"name": "year",  "type": "i64"},
+        {"name": "month", "type": "i64"},
+        {"name": "day",   "type": "i64"},
+        {"name": "hour",  "type": "i64"},
+        {"name": "min",   "type": "i64"},
+        {"name": "sec",   "type": "i64"}
+      ]
+    },
+    {"kind": "func", "name": "time.to_parts",   "params": ["u64"],         "return": "TimeParts"},
+    {"kind": "func", "name": "time.from_parts", "params": ["TimeParts"],   "return": "u64"},
+    {"kind": "func", "name": "time.weekday",    "params": ["u64"],         "return": "u64"},
+    {"kind": "func", "name": "time.is_leap_year", "params": ["i64"],       "return": "bool"},
+    {"kind": "func", "name": "time.days_in_month", "params": ["i64","i64"], "return": "u64"},
+    {"kind": "func", "name": "time.with_tz",    "params": ["u64", "str"],  "return": "str"},
+    {"kind": "func", "name": "time.utc_offset", "params": ["str"],         "return": "i64"},
+    {"kind": "func", "name": "time.convert",    "params": ["u64","str","str"], "return": "str"},
+    {"kind": "func", "name": "time.add_days",   "params": ["u64", "i64"],  "return": "u64"},
+    {"kind": "func", "name": "time.add_months", "params": ["u64", "i64"],  "return": "u64"},
+    {"kind": "func", "name": "time.add_years",  "params": ["u64", "i64"],  "return": "u64"},
+    {"kind": "func", "name": "time.start_of_day",   "params": ["u64"],     "return": "u64"},
+    {"kind": "func", "name": "time.start_of_month", "params": ["u64"],     "return": "u64"},
+    {"kind": "func", "name": "time.start_of_year",  "params": ["u64"],     "return": "u64"},
+    {
+      "kind": "type",
+      "name": "Duration",
+      "fields": [
+        {"name": "years",   "type": "i64"},
+        {"name": "months",  "type": "i64"},
+        {"name": "days",    "type": "i64"},
+        {"name": "hours",   "type": "i64"},
+        {"name": "minutes", "type": "i64"},
+        {"name": "seconds", "type": "i64"}
+      ]
+    },
+    {"kind": "func", "name": "time.parse_duration",  "params": ["str"],         "return": "Duration!TimeErr"},
+    {"kind": "func", "name": "time.format_duration", "params": ["Duration"],    "return": "str"},
+    {"kind": "func", "name": "time.duration",        "params": ["u64", "u64"],  "return": "Duration"},
+    {"kind": "func", "name": "time.julian_date",  "params": ["u64"],           "return": "f64"},
+    {"kind": "func", "name": "time.mars_sol",     "params": ["u64"],           "return": "f64"},
+    {"kind": "func", "name": "time.format_mars",  "params": ["f64", "str"],    "return": "str"},
+    {"kind": "func", "name": "time.light_delay",  "params": ["str","str","u64"], "return": "f64"},
+    {
+      "kind": "sum_type",
+      "name": "TimeErr",
+      "variants": [
+        {"name": "ParseErr",  "type": "str"},
+        {"name": "RangeErr",  "type": "str"}
+      ]
+    }
   ]
 }

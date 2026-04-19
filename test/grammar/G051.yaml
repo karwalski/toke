@@ -2,8 +2,8 @@ id: G051
 series: G
 description: "logical operator precedence: && binds tighter than ||"
 input: |
-  M=test;
-  F=main():i64{
+  m=test;
+  f=main():i64{
     let a = true || false && false;
     <0
   };

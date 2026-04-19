@@ -3,9 +3,9 @@ series: G
 description: "Exhaustive match on sum type with all variants in default mode"
 input: |
   m=test;
-  t=$color{Red:i64;Green:i64;Blue:i64};
+  t=$color{$red:i64;$green:i64;$blue:i64};
   f=name(c:$color):i64{
-    <c|{Red:r r;Green:g g;Blue:b b}
+    <c|{$red:r r;$green:g g;$blue:b b}
   };
 expected_exit_code: 0
 expected_error_codes: []

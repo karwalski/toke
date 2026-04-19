@@ -2,8 +2,8 @@ id: L022
 series: L
 description: "Underscore is not in Profile 1 character set; emits E1003 in structural position"
 input: |
-  M=test;
-  F=bad():i64{let my_var=1;<my_var};
+  m=test;
+  f=bad():i64{let my_var=1;<my_var};
 expected_exit_code: 1
 expected_error_codes: ["E1003"]
 expected_fix: ""

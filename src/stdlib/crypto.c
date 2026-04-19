@@ -15,8 +15,19 @@
  */
 
 #include "crypto.h"
-#include <stdlib.h>   /* malloc, arc4random_buf (macOS/BSD) */
+#include <stdlib.h>   /* malloc */
 #include <string.h>
+
+/* Portable arc4random_buf — macOS/BSD and glibc ≥2.36 have it natively.
+ * Older Linux uses /dev/urandom fallback. */
+#if defined(__linux__) && !defined(__GLIBC__) || \
+    (defined(__GLIBC__) && (__GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ < 36)))
+#include <stdio.h>
+static void arc4random_buf(void *buf, size_t n) {
+    FILE *f = fopen("/dev/urandom", "rb");
+    if (f) { fread(buf, 1, n, f); fclose(f); }
+}
+#endif
 
 /* -----------------------------------------------------------------------
  * SHA-256 core (FIPS 180-4)

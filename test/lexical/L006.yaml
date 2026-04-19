@@ -2,8 +2,8 @@ id: L006
 series: L
 description: "Unrecognised escape sequence in string literal emits E1001"
 input: |
-  M=test;
-  F=bad():Str{<"\q"};
+  m=test;
+  f=bad():Str{<"\q"};
 expected_exit_code: 1
 expected_error_codes: ["E1001"]
 expected_fix: ""

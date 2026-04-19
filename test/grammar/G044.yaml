@@ -2,11 +2,11 @@ id: G044
 series: G
 description: "Void function called from another function parses correctly"
 input: |
-  M=test;
-  F=setup():void{
+  m=test;
+  f=setup():void{
     let x=1;
   };
-  F=main():i64{
+  f=main():i64{
     setup();
     <0
   };

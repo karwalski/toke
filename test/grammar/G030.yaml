@@ -2,9 +2,9 @@ id: G030
 series: G
 description: "Versioned import with string literal parses correctly"
 input: |
-  M=test;
-  I=io:std.io "1.2";
-  F=noop():bool{<true};
+  m=test;
+  i=io:std.io "1.2";
+  f=noop():bool{<true};
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

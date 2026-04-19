@@ -1,0 +1,6 @@
+m=test;
+t=$point{x:f64;y:f64};
+f=main():i64{
+  let p=$point{x:1.5;y:2.5};
+  <4
+};

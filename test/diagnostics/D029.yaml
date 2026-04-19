@@ -2,7 +2,7 @@ id: D029
 series: D
 description: "Unexpected token in type position emits E2005"
 input: |
-  M=test;
-  F=bad(x: 42):void{};
+  m=test;
+  f=bad(x: 42):void{};
 expected_exit_code: 1
 expected_error_codes: ["E2005"]

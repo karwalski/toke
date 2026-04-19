@@ -1,0 +1,248 @@
+.TH TOKE 1 "2026-04-19" "toke 0.1.0" "toke Manual"
+.SH NAME
+toke \- compile toke source files to native binaries
+.SH SYNOPSIS
+.B toke
+.RI [ flags ]
+.I source\-file
+.SH DESCRIPTION
+.B toke
+(also available as
+.BR tkc )
+is the reference compiler for the toke programming language, a statically
+typed, compiled language designed for LLM code generation.  It reads a
+single
+.I .tk
+source file, type-checks it, and either compiles it to a native binary
+via LLVM, emits LLVM IR, or performs one of several auxiliary operations
+(formatting, checking, migration, compression).
+.PP
+The default syntax uses a 56-character set with 12 keywords.  Legacy
+80-character syntax is available via
+.BR \-\-legacy .
+.SH FLAGS
+.SS "Compilation"
+.TP
+.BI \-\-target\  triple
+LLVM target triple (default: host native).
+.TP
+.BI \-\-out\  path
+Output binary path.  Defaults to the source file stem (e.g.,
+.I main.tk
+produces
+.IR main ).
+.TP
+.B \-\-emit\-interface
+Also emit a
+.I .tki
+interface file (JSON) alongside the output.
+.TP
+.B \-\-emit\-llvm
+Emit LLVM IR
+.RI ( .ll )
+to the output path instead of compiling to a binary.
+.TP
+.B \-\-emit\-asm
+Emit assembly
+.RI ( .s )
+instead of compiling to a binary.
+.TP
+.BR \-O0 ", " \-O1 ", " \-O2 ", " \-O3
+Optimisation level (default:
+.BR \-O1 ).
+.SS "Analysis"
+.TP
+.B \-\-check
+Type-check only; no code generation.  Exits 0 if the source is valid.
+.TP
+.B \-\-dump\-ast
+Dump the parsed AST as JSON to stdout and exit.
+.SS "Formatting"
+.TP
+.B \-\-fmt
+Format source to canonical compact form and print to stdout.
+.TP
+.B \-\-pretty
+Pretty-print with whitespace for human readability.
+.TP
+.B \-\-expand
+Expand abbreviated identifiers as inline comments.
+.TP
+.B \-\-sourcemap
+Emit a
+.I .map
+source map alongside
+.B \-\-fmt
+or
+.B \-\-pretty
+output.
+.SS "Companion files"
+.TP
+.B \-\-companion
+Generate a
+.I .tkc.md
+companion file skeleton to stdout.
+.TP
+.BI \-\-companion\-out\  path
+Write companion file to
+.I path
+instead of stdout.
+.TP
+.BI \-\-verify\-companion\  file
+Verify companion file hash against source.
+.TP
+.BI \-\-companion\-diff\  file
+Compare source against companion, report divergences.
+.SS "Compression"
+.TP
+.B \-\-compress
+Compress text from stdin to reduced-token form (stdout).
+.TP
+.B \-\-decompress
+Decompress text from stdin back to original form (stdout).
+.TP
+.B \-\-compress\-stream
+Stream-compress stdin line-by-line, emitting chunks.
+.SS "Migration"
+.TP
+.B \-\-migrate
+Migrate a legacy
+.I .tk
+file to default syntax (stdout).
+.SS "Syntax mode"
+.TP
+.B \-\-legacy
+Use legacy mode (80-character set, uppercase type identifiers).
+.TP
+.B \-\-profile1
+Deprecated alias for
+.BR \-\-legacy .
+.TP
+.B \-\-profile2
+Deprecated alias for default mode (no-op).
+.SS "Diagnostics"
+.TP
+.B \-\-diag\-json
+Emit diagnostics as JSON (default when stdout is not a terminal).
+.TP
+.B \-\-diag\-text
+Emit diagnostics as human-readable text (default when stdout is a terminal).
+.TP
+.B \-\-diag\-sarif
+Emit diagnostics as SARIF v2.1.0 JSON to stdout.
+.SS "Limit overrides"
+.TP
+.BI \-\-max\-funcs= N
+Maximum function signatures (default: 128).
+.TP
+.BI \-\-max\-locals= N
+Maximum locals per function (default: 128).
+.TP
+.BI \-\-max\-params= N
+Maximum params per function or fields per struct (default: 16).
+.TP
+.BI \-\-max\-structs= N
+Maximum struct type definitions (default: 64).
+.TP
+.BI \-\-max\-imports= N
+Maximum import alias mappings (default: 32).
+.TP
+.BI \-\-max\-in\-flight= N
+Maximum concurrent imports in flight (default: 64).
+.TP
+.BI \-\-max\-avail= N
+Maximum available modules in directory (default: 256).
+.TP
+.BI \-\-arena\-block= N
+Arena block size in bytes (default: 65536).
+.TP
+.BI \-\-max\-iters= N
+Maximum loop iterations at runtime (default: 0 = unlimited).
+.TP
+.B \-\-show\-limits
+Print effective limits and exit.
+.SS "Configuration"
+.TP
+.BI \-\-config= PATH
+Load configuration from
+.IR PATH .
+Default:
+.IR ./tkc.toml .
+.SS "Informational"
+.TP
+.B \-\-version
+Print version string and exit.
+.TP
+.B \-\-help
+Print usage summary and exit.
+.SH ENVIRONMENT
+.TP
+.B TK_LOG_LEVEL
+Set the logging verbosity for the runtime.  Values: 0 (off), 1 (error),
+2 (warn), 3 (info), 4 (debug).  Default: 1.
+.SH EXIT CODES
+.TP
+.B 0
+Success.
+.TP
+.B 64
+Usage error: bad command-line arguments, missing source file, or invalid
+option combination.
+.TP
+.B 65
+Compilation error: lexer, parser, or type-checker reported one or more
+diagnostics.
+.TP
+.B 70
+Internal error: out of memory, LLVM failure, or linker failure.
+.SH EXAMPLES
+Compile a source file to a native binary:
+.PP
+.RS
+.B toke main.tk
+.RE
+.PP
+Type-check without compiling:
+.PP
+.RS
+.B toke \-\-check main.tk
+.RE
+.PP
+Emit LLVM IR:
+.PP
+.RS
+.B toke \-\-emit\-llvm \-\-out main.ll main.tk
+.RE
+.PP
+Format source to canonical form:
+.PP
+.RS
+.B toke \-\-fmt main.tk
+.RE
+.PP
+Migrate legacy syntax to default:
+.PP
+.RS
+.B toke \-\-migrate old.tk > new.tk
+.RE
+.PP
+Compile with a specific output name and optimisation level:
+.PP
+.RS
+.B toke \-O2 \-\-out myapp main.tk
+.RE
+.SH SEE ALSO
+.BR clang (1),
+.BR llc (1)
+.PP
+Project homepage:
+.UR https://tokelang.dev
+.UE
+.br
+Source code:
+.UR https://github.com/karwalski/toke
+.UE
+.SH AUTHORS
+Matthew Watt
+.UR https://github.com/karwalski
+.UE

@@ -2,8 +2,8 @@ id: G043
 series: G
 description: "Void function with implicit return (no return statement) parses correctly"
 input: |
-  M=test;
-  F=greet():void{
+  m=test;
+  f=greet():void{
     let x=42;
   };
 expected_exit_code: 0

@@ -1,0 +1,9 @@
+id: D048
+series: D
+description: "Uppercase M= accepted in legacy mode (no error)"
+input: |
+  M=test;
+  F=ok():i64{<0};
+flags: --legacy
+expected_exit_code: 0
+expected_error_codes: []

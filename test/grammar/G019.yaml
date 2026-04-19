@@ -2,9 +2,9 @@ id: G019
 series: G
 description: "Valid constant declaration at module scope (ConstDecl)"
 input: |
-  M=test;
+  m=test;
   maxval=100:i64;
-  F=limit():i64{<maxval};
+  f=limit():i64{<maxval};
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

@@ -2,8 +2,8 @@ id: G026
 series: G
 description: "Bodyless extern function declaration parses correctly"
 input: |
-  M=test;
-  F=puts(s:i64):i32;
+  m=test;
+  f=puts(s:i64):i32;
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

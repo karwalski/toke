@@ -2,8 +2,8 @@ id: D003
 series: D
 description: "E1003 fix field is absent (out-of-set character — no mechanical fix)"
 input: |
-  M=test;
-  F=bad():i64{<1£};
+  m=test;
+  f=bad():i64{<1£};
 expected_exit_code: 1
 expected_error_codes: ["E1003"]
 expected_fix_absent: true

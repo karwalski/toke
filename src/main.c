@@ -101,6 +101,7 @@ static const char HELP[] =
     "  --max-in-flight=N   Max concurrent imports in flight (default: 64)\n"
     "  --max-avail=N       Max available modules in directory (default: 256)\n"
     "  --arena-block=N     Arena block size in bytes (default: 65536)\n"
+    "  --max-iters=N       Max loop iterations at runtime (default: 0 = unlimited)\n"
     "  --show-limits       Print effective limits and exit\n"
     "\n"
     "Configuration:\n"
@@ -292,6 +293,7 @@ int main(int argc, char **argv)
         else if (!strncmp(argv[i], "--max-in-flight=", 16)) limits.max_imports_in_flight = atoi(argv[i] + 16);
         else if (!strncmp(argv[i], "--max-avail=", 12)) limits.max_avail_modules = atoi(argv[i] + 12);
         else if (!strncmp(argv[i], "--arena-block=", 14)) limits.arena_block_size = atoi(argv[i] + 14);
+        else if (!strncmp(argv[i], "--max-iters=", 12))  limits.max_iters = atoi(argv[i] + 12);
         else if (!strncmp(argv[i], "--config=", 9)) { /* already handled */ }
         else if (!strcmp(argv[i], "--target")) {
             if (++i >= argc) { fputs("tkc: --target requires an argument\n", stderr); return EUSAGE; }
@@ -318,6 +320,7 @@ int main(int argc, char **argv)
         printf("  max-in-flight= %d\n", limits.max_imports_in_flight);
         printf("  max-avail    = %d\n", limits.max_avail_modules);
         printf("  arena-block  = %d\n", limits.arena_block_size);
+        printf("  max-iters    = %d%s\n", limits.max_iters, limits.max_iters ? "" : " (unlimited)");
         return 0;
     }
     /* --compress / --decompress / --compress-stream: standalone stdin modes */
@@ -590,9 +593,9 @@ int main(int argc, char **argv)
         }
         char cmd[CMD_BUF];
         if (tgt && tgt[0])
-            snprintf(cmd, sizeof cmd, "clang -O%d -S -x ir %s -o %s --target=%s 2>&1", opt_level, tmp, asm_path, tgt);
+            snprintf(cmd, sizeof cmd, "clang -O%d -Wno-override-module -S -x ir %s -o %s --target=%s 2>&1", opt_level, tmp, asm_path, tgt);
         else
-            snprintf(cmd, sizeof cmd, "clang -O%d -S -x ir %s -o %s 2>&1", opt_level, tmp, asm_path);
+            snprintf(cmd, sizeof cmd, "clang -O%d -Wno-override-module -S -x ir %s -o %s 2>&1", opt_level, tmp, asm_path);
         int r = system(cmd);
         unlink(tmp);
         symtab_free(&st);

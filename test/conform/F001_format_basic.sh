@@ -11,7 +11,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOt="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${REPO_ROOT}/tkc"
 
 PASS=0
@@ -45,29 +45,29 @@ echo "--------------------------------------"
 
 MESSY=$(mktemp /tmp/tkc_fmt_messy_XXXXXX.tk)
 cat > "${MESSY}" <<'EOF'
-M=example;
-I=str:std.str;
+m=example;
+i=str:std.str;
 
-T=Point{x:i64;y:i64};
+t=Point{x:i64;y:i64};
 
-F=add( a : i64 ;  b : i64 ) : i64 {  rt a+b  }
+f=add( a : i64 ;  b : i64 ) : i64 {  rt a+b  }
 
-F=main():void{let r=add(1;2);rt r}
+f=main():void{let r=add(1;2);rt r}
 EOF
 
-EXPECTED='M=example;
-I=str:std.str;
+EXPECTED='m=example;
+i=str:std.str;
 
-T=Point {
+t=Point {
   x:i64;
   y:i64
 };
 
-F=add(a:i64; b:i64):i64 {
+f=add(a:i64; b:i64):i64 {
   rt a+b
 };
 
-F=main():void {
+f=main():void {
   let r=add(1; 2);
   rt r
 }
@@ -87,8 +87,8 @@ check "idempotent (fmt|fmt = fmt)" "${ACTUAL}" "${SECOND}"
 
 VALID=$(mktemp /tmp/tkc_fmt_valid_XXXXXX.tk)
 cat > "${VALID}" <<'EOF'
-M=test;
-F=noop():void{rt}
+m=test;
+f=noop():void{rt}
 EOF
 
 RC=0
@@ -114,14 +114,14 @@ fi
 
 # ── Test 5: If/else formatting ───────────────────────────────────────────────
 
-IFTEST=$(mktemp /tmp/tkc_fmt_if_XXXXXX.tk)
+IFTESt=$(mktemp /tmp/tkc_fmt_if_XXXXXX.tk)
 cat > "${IFTEST}" <<'EOF'
-M=test;
-F=abs(x:i64):i64{if(x<0){rt 0-x}el{rt x}}
+m=test;
+f=abs(x:i64):i64{if(x<0){rt 0-x}el{rt x}}
 EOF
 
-IF_EXPECTED='M=test;
-F=abs(x:i64):i64 {
+IF_EXPECTED='m=test;
+f=abs(x:i64):i64 {
   if (x<0) {
     rt 0-x
   } el {
@@ -135,14 +135,14 @@ check "if/else formatting" "${IF_EXPECTED}" "${IF_ACTUAL}"
 
 # ── Test 6: Loop formatting ─────────────────────────────────────────────────
 
-LPTEST=$(mktemp /tmp/tkc_fmt_lp_XXXXXX.tk)
+LPTESt=$(mktemp /tmp/tkc_fmt_lp_XXXXXX.tk)
 cat > "${LPTEST}" <<'EOF'
-M=test;
-F=sum(n:i64):i64{let s=0;lp(let i=0;i<n;i=i+1){s=s+i};rt s}
+m=test;
+f=sum(n:i64):i64{let s=0;lp(let i=0;i<n;i=i+1){s=s+i};rt s}
 EOF
 
-LP_EXPECTED='M=test;
-F=sum(n:i64):i64 {
+LP_EXPECTED='m=test;
+f=sum(n:i64):i64 {
   let s=0;
   lp (let i=0; i<n; i=i+1) {
     s=s+i

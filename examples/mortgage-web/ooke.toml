@@ -1,0 +1,7 @@
+[site]
+name = "Mortgage Calculator"
+url = "http://localhost:8080"
+language = "en"
+
+[build]
+output = "build"

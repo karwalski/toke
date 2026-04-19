@@ -1,5 +1,5 @@
-M=bench;
-F=isprime(n:i64):i64{
+m=bench;
+f=isprime(n:i64):i64{
   if(n<2){<0}el{
     let d=mut.2;
     let found=mut.1;
@@ -14,7 +14,7 @@ F=isprime(n:i64):i64{
     <found
   }
 };
-F=main():i64{
+f=main():i64{
   let count=mut.0;
   lp(let i=2;i<50000;i=i+1){
     count=count+isprime(i)

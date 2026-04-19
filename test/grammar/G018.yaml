@@ -2,8 +2,8 @@ id: G018
 series: G
 description: "Valid cast expression (CastExpr with as)"
 input: |
-  M=test;
-  F=widen(x:i32):i64{<x as i64};
+  m=test;
+  f=widen(x:i32):i64{<x as i64};
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

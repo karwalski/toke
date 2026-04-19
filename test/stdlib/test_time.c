@@ -5,6 +5,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include "../../src/stdlib/tk_time.h"
@@ -179,6 +180,104 @@ int main(void)
     ASSERT(tk_time_days_in_month(2024, 2) == 29, "days_in_month(2024, 2) == 29 (leap Feb)");
     ASSERT(tk_time_days_in_month(2023, 2) == 28, "days_in_month(2023, 2) == 28 (non-leap Feb)");
     ASSERT(tk_time_days_in_month(2024, 1) == 31, "days_in_month(2024, 1) == 31 (January)");
+
+    /* === Story 57.11.1: Y2038 and 64-bit correctness === */
+
+    /* 2038-01-19 03:14:08 UTC = 2147483648000 ms (32-bit overflow point) */
+    uint64_t ts_2038 = 2147483648000ULL;
+    TkTimeParts p2038 = tk_time_to_parts(ts_2038);
+    ASSERT(p2038.year == 2038, "Y2038 year correct");
+    ASSERT(p2038.month == 1 && p2038.day == 19, "Y2038 date correct");
+
+    uint64_t rt2038 = tk_time_from_parts(p2038);
+    ASSERT(rt2038 == ts_2038, "Y2038 round-trip");
+
+    /* Year 9999 */
+    uint64_t ts_9999 = 253402300799000ULL;
+    TkTimeParts p9999 = tk_time_to_parts(ts_9999);
+    ASSERT(p9999.year == 9999, "Y9999 correct");
+
+    /* === Story 57.11.3: Calendar arithmetic === */
+
+    /* Add 30 days */
+    uint64_t cal_base = 1705320000000ULL; /* 2024-01-15 ~12:00 UTC */
+    uint64_t plus30d = tk_time_add_days(cal_base, 30);
+    TkTimeParts p30d = tk_time_to_parts(plus30d);
+    ASSERT(p30d.month == 2 && p30d.day == 14, "add_days(30): Feb 14");
+
+    /* Add 1 month from Jan 31 → Feb 29 (2024 leap) */
+    TkTimeParts jan31p = {2024, 1, 31, 0, 0, 0};
+    uint64_t jan31ts = tk_time_from_parts(jan31p);
+    uint64_t feb_ts = tk_time_add_months(jan31ts, 1);
+    TkTimeParts feb_p = tk_time_to_parts(feb_ts);
+    ASSERT(feb_p.month == 2 && feb_p.day == 29, "Jan31 + 1mo = Feb29 (leap)");
+
+    /* Add 1 month from Jan 31 → Feb 28 (2023 non-leap) */
+    TkTimeParts jan31_23p = {2023, 1, 31, 0, 0, 0};
+    uint64_t jan31_23ts = tk_time_from_parts(jan31_23p);
+    uint64_t feb23_ts = tk_time_add_months(jan31_23ts, 1);
+    TkTimeParts feb23_p = tk_time_to_parts(feb23_ts);
+    ASSERT(feb23_p.month == 2 && feb23_p.day == 28, "Jan31 + 1mo = Feb28 (non-leap)");
+
+    /* start_of_day */
+    uint64_t sod = tk_time_start_of_day(cal_base);
+    TkTimeParts sod_p = tk_time_to_parts(sod);
+    ASSERT(sod_p.hour == 0 && sod_p.min == 0 && sod_p.sec == 0, "start_of_day midnight");
+
+    /* start_of_month */
+    uint64_t som = tk_time_start_of_month(cal_base);
+    TkTimeParts som_p = tk_time_to_parts(som);
+    ASSERT(som_p.day == 1 && som_p.hour == 0, "start_of_month day=1");
+
+    /* start_of_year */
+    uint64_t soy = tk_time_start_of_year(cal_base);
+    TkTimeParts soy_p = tk_time_to_parts(soy);
+    ASSERT(soy_p.month == 1 && soy_p.day == 1, "start_of_year Jan 1");
+
+    /* === Story 57.11.4: Duration parsing and formatting === */
+
+    TkDurationParseResult dr = tk_time_parse_duration("P1Y2M3DT4H5M6S");
+    ASSERT(dr.is_err == 0, "parse P1Y2M3DT4H5M6S");
+    ASSERT(dr.ok.years == 1 && dr.ok.months == 2 && dr.ok.days == 3,
+           "P1Y2M3D date parts");
+    ASSERT(dr.ok.hours == 4 && dr.ok.minutes == 5 && dr.ok.seconds == 6,
+           "T4H5M6S time parts");
+
+    TkDurationParseResult dr2 = tk_time_parse_duration("PT30S");
+    ASSERT(dr2.is_err == 0 && dr2.ok.seconds == 30, "parse PT30S = 30s");
+
+    TkDurationParseResult dr3 = tk_time_parse_duration("invalid");
+    ASSERT(dr3.is_err == 1, "reject invalid duration");
+
+    const char *dfmt = tk_time_format_duration(dr.ok);
+    ASSERT(dfmt != NULL && dfmt[0] != '\0', "format_duration non-empty");
+    if (dfmt) free((void *)dfmt);
+
+    /* === Story 57.11.5-57.11.7: Interplanetary time === */
+
+    /* J2000 epoch: 2000-01-01 12:00:00 UTC ≈ JD 2451545.0 */
+    uint64_t j2000 = 946728000000ULL;
+    double jd = tk_time_julian_date(j2000);
+    ASSERT(jd > 2451544.9 && jd < 2451545.1, "JD at J2000 epoch");
+
+    double sol = tk_time_mars_sol(j2000);
+    ASSERT(sol > 44789.0 && sol < 44797.0, "Mars Sol Date at J2000");
+
+    const char *mars = tk_time_format_mars(sol, NULL);
+    ASSERT(mars != NULL && mars[0] == 'S', "format_mars starts with Sol");
+    if (mars) free((void *)mars);
+
+    /* Earth-Mars light delay ≈ 261s mean */
+    double delay_em = tk_time_light_delay("earth", "mars", j2000);
+    ASSERT(delay_em > 200.0 && delay_em < 350.0, "Earth-Mars delay reasonable");
+
+    /* Earth-Moon ≈ 1.28s */
+    double delay_moon = tk_time_light_delay("earth", "moon", j2000);
+    ASSERT(delay_moon > 1.0 && delay_moon < 2.0, "Earth-Moon delay ~1.3s");
+
+    /* Same body → 0 */
+    double delay_same = tk_time_light_delay("earth", "earth", j2000);
+    ASSERT(delay_same < 0.001, "Same body delay = 0");
 
     if (failures == 0) { printf("All time tests passed.\n"); return 0; }
     fprintf(stderr, "%d test(s) failed.\n", failures);

@@ -2,8 +2,8 @@ id: L025
 series: L
 description: "Invalid \\x escape with fewer than two hex digits emits E1001"
 input: |
-  M=test;
-  F=bad():Str{<"\xG1"};
+  m=test;
+  f=bad():Str{<"\xG1"};
 expected_exit_code: 1
 expected_error_codes: ["E1001"]
 expected_fix: ""

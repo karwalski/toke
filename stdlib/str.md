@@ -240,6 +240,7 @@ The `StrBuf` type is a mutable, growable buffer for building strings incremental
 
 Allocates a new, empty string builder with an initial internal capacity of 256 bytes.
 
+**Example:**
 ```toke
 let b = str.buf();
 ```
@@ -248,6 +249,7 @@ let b = str.buf();
 
 Appends the string `s` to the builder `b`, growing the buffer if needed.
 
+**Example:**
 ```toke
 str.add(b; "hello");
 str.add(b; ", ");
@@ -258,6 +260,7 @@ str.add(b; "world");
 
 Appends a single byte `c` to the builder `b`. Useful when emitting control characters or building binary-safe payloads one byte at a time.
 
+**Example:**
 ```toke
 str.addbyte(b; 10);  (* append newline 0x0A *)
 ```
@@ -266,6 +269,7 @@ str.addbyte(b; 10);  (* append newline 0x0A *)
 
 Finalises the builder: shrinks the internal allocation to fit, returns the completed heap string, and resets `b` to an empty/invalid state. The returned string is owned by the caller.
 
+**Example:**
 ```toke
 let result = str.done(b);
 ```

@@ -2,8 +2,8 @@ id: L001
 series: L
 description: "Whitespace between tokens is silently consumed — spaces and newlines"
 input: |
-  M = test ;
-  F = add( a : i64 ; b : i64 ) : i64 { < a + b } ;
+  m = test ;
+  f = add( a : i64 ; b : i64 ) : i64 { < a + b } ;
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

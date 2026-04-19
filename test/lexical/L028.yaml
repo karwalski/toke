@@ -2,8 +2,8 @@ id: L028
 series: L
 description: "Hex literal 0x followed by non-hex char emits E1005"
 input: |
-  M=test;
-  F=bad():i64{<0xZZ};
+  m=test;
+  f=bad():i64{<0xZZ};
 expected_exit_code: 1
 expected_error_codes: ["E1005"]
 expected_fix: ""

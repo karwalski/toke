@@ -2,11 +2,11 @@ id: G025
 series: G
 description: "Multiple import declarations are all parsed (ImportDecl*)"
 input: |
-  M=test;
-  I=s:std.str;
-  I=h:std.http;
-  I=d:std.db;
-  F=noop():bool{<true};
+  m=test;
+  i=s:std.str;
+  i=h:std.http;
+  i=d:std.db;
+  f=noop():bool{<true};
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

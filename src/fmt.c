@@ -10,7 +10,7 @@
  *   - Semicolons as statement separators (not terminators)
  *   - No trailing whitespace, no blank lines within functions
  *   - One blank line between top-level declarations
- *   - No spaces around '=' in declarations (M=, F=, I=, T=)
+ *   - No spaces around '=' in declarations (m=, f=, i=, t=)
  *   - No spaces around operators within expressions
  *   - Spaces after ';' in parameter lists
  *
@@ -552,7 +552,7 @@ static void fmt_return_spec(Buf *b, const Node *n, const char *src)
 /*
  * fmt_decl — Emit a top-level declaration in canonical form.
  *
- * Handles M= (module), I= (import), T= (type), F= (function), and
+ * Handles m= (module), i= (import), t= (type), f= (function), and
  * bare constant declarations.  Function bodies are recursively
  * formatted via fmt_stmt_list.
  */
@@ -561,12 +561,12 @@ static void fmt_decl(Buf *b, const Node *n, const char *src)
     if (!n) return;
     switch (n->kind) {
     case NODE_MODULE:
-        buf_puts(b, "M=");
+        buf_puts(b, "m=");
         if (n->child_count > 0)
             fmt_module_path(b, n->children[0], src);
         break;
     case NODE_IMPORT: {
-        buf_puts(b, "I=");
+        buf_puts(b, "i=");
         /* child[0]=alias(IDENT), child[1]=module path, child[2]=optional version */
         if (n->child_count > 0) {
             char *alias = tok_text(n->children[0], src);
@@ -585,7 +585,7 @@ static void fmt_decl(Buf *b, const Node *n, const char *src)
         break;
     }
     case NODE_TYPE_DECL: {
-        buf_puts(b, "T=");
+        buf_puts(b, "t=");
         /* child[0]=type name, child[1]=field list */
         if (n->child_count > 0) {
             char *name = tok_text(n->children[0], src);
@@ -628,7 +628,7 @@ static void fmt_decl(Buf *b, const Node *n, const char *src)
         break;
     }
     case NODE_FUNC_DECL: {
-        buf_puts(b, "F=");
+        buf_puts(b, "f=");
         /* child layout: [0]=name, then params, then return_spec, then optional body */
         if (n->child_count < 1) break;
         char *name = tok_text(n->children[0], src);
@@ -1199,12 +1199,12 @@ static void pfmt_decl(Buf *b, const Node *n, const char *src,
     if (!n) return;
     switch (n->kind) {
     case NODE_MODULE:
-        buf_puts(b, "M=");
+        buf_puts(b, "m=");
         if (n->child_count > 0)
             fmt_module_path(b, n->children[0], src);
         break;
     case NODE_IMPORT: {
-        buf_puts(b, "I=");
+        buf_puts(b, "i=");
         if (n->child_count > 0) {
             char *alias = tok_text(n->children[0], src);
             buf_puts(b, alias);
@@ -1222,7 +1222,7 @@ static void pfmt_decl(Buf *b, const Node *n, const char *src,
         break;
     }
     case NODE_TYPE_DECL: {
-        buf_puts(b, "T=");
+        buf_puts(b, "t=");
         if (n->child_count > 0) {
             char *name = tok_text(n->children[0], src);
             buf_puts(b, name);
@@ -1263,7 +1263,7 @@ static void pfmt_decl(Buf *b, const Node *n, const char *src,
         break;
     }
     case NODE_FUNC_DECL: {
-        buf_puts(b, "F=");
+        buf_puts(b, "f=");
         if (n->child_count < 1) break;
         char *name = tok_text(n->children[0], src);
         buf_puts(b, name);

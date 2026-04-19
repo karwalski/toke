@@ -2,8 +2,8 @@ id: L016
 series: L
 description: "Floating-point literal is classified as FLOAT_LIT"
 input: |
-  M=test;
-  F=floatnum():f64{<3.14};
+  m=test;
+  f=floatnum():f64{<3.14};
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

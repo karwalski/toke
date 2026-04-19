@@ -2,8 +2,8 @@ id: D033
 series: D
 description: "Lossy cast from f64 to i64 emits W1001 warning"
 input: |
-  M=test;
-  F=main():i64{
+  m=test;
+  f=main():i64{
     <3.14 as i64
   };
 expected_exit_code: 0

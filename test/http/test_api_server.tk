@@ -1,0 +1,91 @@
+m=testapi;
+i=http:std.http;
+i=json:std.json;
+i=str:std.str;
+i=io:std.io;
+
+(* Test API server for outbound HTTP testing (Story 57.6.1)
+   Provides GET/POST/PUT/DELETE endpoints with JSON request/response.
+   Run: toke test/http/test_api_server.tk
+   Endpoints:
+     GET  /api/ping          -> {"status":"ok"}
+     GET  /api/echo?msg=X    -> {"echo":"X"}
+     POST /api/echo          -> {"echo":<body>}
+     PUT  /api/data          -> {"method":"PUT","body":<body>}
+     DELETE /api/data        -> {"method":"DELETE","deleted":true}
+     GET  /api/headers       -> returns all request headers as JSON
+     POST /api/form          -> echo form fields as JSON
+     GET  /api/stream        -> chunked response (5 lines)
+     GET  /api/auth          -> 401 unless Authorization header present
+     GET  /api/status/:code  -> returns that HTTP status code
+*)
+
+f=main():i64{
+  http.getstatic("/api/ping"; "{\"status\":\"ok\"}");
+
+  http.get("/api/echo"; f=handler_echo);
+  http.post("/api/echo"; f=handler_echo_post);
+  http.put("/api/data"; f=handler_put);
+  http.delete("/api/data"; f=handler_delete);
+  http.get("/api/headers"; f=handler_headers);
+  http.post("/api/form"; f=handler_form);
+  http.get("/api/stream"; f=handler_stream);
+  http.get("/api/auth"; f=handler_auth);
+  http.get("/api/status/:code"; f=handler_status);
+
+  io.println("Test API server listening on :8099");
+  http.serve(8099);
+  <0
+};
+
+f=handler_echo(req:$req):$res{
+  let msg=http.queryparam(req; "msg");
+  let body=str.concat("{\"echo\":\""; str.concat(msg; "\"}"));
+  <http.jsonresp(200; body)
+};
+
+f=handler_echo_post(req:$req):$res{
+  let body=http.body(req);
+  let resp=str.concat("{\"echo\":"; str.concat(json.stringify(body); "}"));
+  <http.jsonresp(200; resp)
+};
+
+f=handler_put(req:$req):$res{
+  let body=http.body(req);
+  let resp=str.concat("{\"method\":\"PUT\",\"body\":"; str.concat(json.stringify(body); "}"));
+  <http.jsonresp(200; resp)
+};
+
+f=handler_delete(req:$req):$res{
+  <http.jsonresp(200; "{\"method\":\"DELETE\",\"deleted\":true}")
+};
+
+f=handler_headers(req:$req):$res{
+  let hdrs=http.headers(req);
+  <http.jsonresp(200; json.stringify(hdrs))
+};
+
+f=handler_form(req:$req):$res{
+  let body=http.body(req);
+  <http.jsonresp(200; str.concat("{\"form_data\":"; str.concat(json.stringify(body); "}")))
+};
+
+f=handler_stream(req:$req):$res{
+  let lines=@("line 1\n"; "line 2\n"; "line 3\n"; "line 4\n"; "line 5\n");
+  let body=str.join(lines; "");
+  <http.resp(200; body; "text/plain")
+};
+
+f=handler_auth(req:$req):$res{
+  let auth=http.header(req; "authorization");
+  if str.len(auth) == 0 {
+    <http.resp(401; "{\"error\":\"unauthorized\"}"; "application/json")
+  };
+  <http.jsonresp(200; str.concat("{\"auth\":"; str.concat(json.stringify(auth); "}")))
+};
+
+f=handler_status(req:$req):$res{
+  let code=http.param(req; "code");
+  let status=str.toint(code);
+  <http.resp(status; str.concat("{\"status\":"; str.concat(code; "}")); "application/json")
+};

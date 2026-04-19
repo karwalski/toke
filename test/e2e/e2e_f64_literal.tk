@@ -1,0 +1,7 @@
+m=test;
+f=main():i64{
+  let x=1.5;
+  let y=2.5;
+  let z=x+y;
+  if(z>3.9){<4}el{<0}
+};

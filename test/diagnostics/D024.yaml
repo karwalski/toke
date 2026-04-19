@@ -2,8 +2,8 @@ id: D024
 series: D
 description: "Assignment to immutable let binding emits E4070"
 input: |
-  M=test;
-  F=bad():i64{
+  m=test;
+  f=bad():i64{
     let x=1;
     x=2;
     <x

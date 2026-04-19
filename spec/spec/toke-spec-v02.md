@@ -696,8 +696,8 @@ t=$typename{field1:$type1;field2:$type2};
 ```
 
 A type declaration defines either a **struct type** or a **sum type** (tagged union). The distinction is lexical:
-- Struct: all field names are lowercase identifiers
-- Sum type: all field names begin with uppercase (variant tags)
+- Struct: all field names are plain lowercase identifiers
+- Sum type: all field names use the `$` sigil prefix (variant tags)
 - Mixing is a compile error (E2011)
 
 **Struct example:**
@@ -708,13 +708,13 @@ t=$user{id:u64;name:str;email:str};
 **Sum type (error variants) example:**
 ```
 t=$usererr{
-  NotFound:u64;
-  BadInput:str;
-  DbErr:str
+  $notfound:u64;
+  $badinput:str;
+  $dberr:str
 };
 ```
 
-In a sum type, each field name is a variant tag and its type is the payload. The zero-payload variant is expressed with type `bool` and the value `true` is implicit.
+In a sum type, each field name is a `$`-prefixed variant tag and its type is the payload. The zero-payload variant is expressed with type `bool` and the value `true` is implicit.
 
 ### 11.6 Function Declarations
 
@@ -863,12 +863,12 @@ if(a>0 && b>0){
 
 ```
 expr|{
-  Variant1:binding1 result_expr;
-  Variant2:binding2 result_expr
+  $variant1:binding1 result_expr;
+  $variant2:binding2 result_expr
 }
 ```
 
-The match expression applies to a sum type or to a `$result` type. Each arm names a variant, binds its payload to a local name, and provides a result expression.
+The match expression applies to a sum type or to a `$result` type. Each arm names a `$`-prefixed variant, binds its payload to a local name, and provides a result expression.
 
 Match is **exhaustive**: the compiler rejects any match that does not cover all variants (E4010). When a variant is added to a sum type, all match expressions on that type fail to compile until they are updated.
 
@@ -877,8 +877,8 @@ The match expression is an expression, not a statement. Its result type is the c
 **Example:**
 ```
 getuser(id)|{
-  Ok:u   <$res.ok(json.enc(u));
-  Err:e  <$res.err(json.enc(e))
+  $ok:u   <$res.ok(json.enc(u));
+  $err:e  <$res.err(json.enc(e))
 }
 ```
 
@@ -971,10 +971,10 @@ let p = $point{x: 1; y: 2};
 
 ### 12.5 Sum Types
 
-Declared with `t=$name{Variant1:$payloadtype;...}`. Sum types are the mechanism for error types and tagged unions. The `$result` type is a built-in sum type:
+Declared with `t=$name{$variant1:$payloadtype;...}`. Sum types are the mechanism for error types and tagged unions. The `$result` type is a built-in sum type:
 
 ```
-t=$result{Ok:$t;Err:$e}
+t=$result{$ok:$t;$err:$e}
 ```
 
 All partial functions return `$result` implicitly, expressed in the signature as `:$t!$e`.
@@ -1052,8 +1052,8 @@ When propagation is not appropriate, errors are matched explicitly:
 
 ```
 result|{
-  Ok:v  handlesuccess(v);
-  Err:e handleerror(e)
+  $ok:v  handlesuccess(v);
+  $err:e handleerror(e)
 }
 ```
 

@@ -1,0 +1,189 @@
+m=mortgage.main;
+i=io:std.io;
+i=json:std.json;
+i=file:std.file;
+i=str:std.str;
+i=calc:mortgage.calc;
+i=m:mortgage.model;
+
+(* format_currency — "  123456.78" right-aligned display *)
+f=format_currency(v:f64):str{
+  let s=str.from_float(v);
+  <s
+};
+
+(* print_header — column titles for schedule table *)
+f=print_header():void{
+  io.println("Month    Payment    Principal  Interest   Balance");
+  io.println("-----  ----------  ----------  ---------  ----------")
+};
+
+(* print_row — one line of the amortisation table *)
+f=print_row(p:m.$payment):void{
+  let line=str.buf();
+  str.add(line;str.from_int(p.month as i64));
+  str.add(line;"      ");
+  str.add(line;format_currency(p.payment));
+  str.add(line;"    ");
+  str.add(line;format_currency(p.principal));
+  str.add(line;"    ");
+  str.add(line;format_currency(p.interest));
+  str.add(line;"    ");
+  str.add(line;format_currency(p.balance));
+  io.println(str.done(line))
+};
+
+(* print_summary — headline numbers before the schedule *)
+f=print_summary(r:m.$result):void{
+  io.println("");
+  io.println(str.concat("Monthly payment:  ";format_currency(r.monthly)));
+  io.println(str.concat("Total interest:   ";format_currency(r.totalinterest)));
+  io.println(str.concat("Total cost:       ";format_currency(r.totalcost)));
+  io.println("")
+};
+
+(* print_schedule — full amortisation table *)
+f=print_schedule(sched:@(m.$payment)):void{
+  print_header();
+  lp(let i=0;i<(sched.len as i64);i=i+1){
+    let row=sched.get(i);
+    print_row(row)
+  }
+};
+
+(* scenario_to_json — serialise a scenario to JSON string *)
+f=scenario_to_json(s:m.$scenario):str{
+  let b=str.buf();
+  str.add(b;"{");
+  str.add(b;"\"principal\":");
+  str.add(b;str.from_float(s.principal));
+  str.add(b;",\"rate\":");
+  str.add(b;str.from_float(s.rate));
+  str.add(b;",\"term\":");
+  str.add(b;str.from_int(s.term as i64));
+  str.add(b;",\"extra\":");
+  str.add(b;str.from_float(s.extra));
+  str.add(b;"}");
+  <str.done(b)
+};
+
+(* json_to_scenario — parse a JSON string back to a scenario *)
+f=json_to_scenario(raw:str):m.$scenario!m.$calcerr{
+  let doc=json.dec(raw)|{
+    $ok:d d;
+    $err:e <$err(m.$calcerr.$fileerr("invalid json"))
+  };
+  let principal=json.f64(doc;"principal")|{
+    $ok:v v;
+    $err:e <$err(m.$calcerr.$fileerr("missing principal"))
+  };
+  let rate=json.f64(doc;"rate")|{
+    $ok:v v;
+    $err:e <$err(m.$calcerr.$fileerr("missing rate"))
+  };
+  let term=json.u64(doc;"term")|{
+    $ok:v v;
+    $err:e <$err(m.$calcerr.$fileerr("missing term"))
+  };
+  let extra=json.f64(doc;"extra")|{
+    $ok:v v;
+    $err:e <$err(m.$calcerr.$fileerr("missing extra"))
+  };
+  <$ok(m.$scenario{
+    principal:principal;
+    rate:rate;
+    term:(term as u64);
+    extra:extra
+  })
+};
+
+(* save_scenario — write scenario to a JSON file *)
+f=save_scenario(s:m.$scenario;path:str):bool!m.$calcerr{
+  let data=scenario_to_json(s);
+  file.write(path;data)|{
+    $ok:v <$ok(true);
+    $err:e <$err(m.$calcerr.$fileerr("could not write file"))
+  }
+};
+
+(* load_scenario — read scenario from a JSON file *)
+f=load_scenario(path:str):m.$scenario!m.$calcerr{
+  let raw=file.read(path)|{
+    $ok:v v;
+    $err:e <$err(m.$calcerr.$fileerr("could not read file"))
+  };
+  <json_to_scenario(raw)
+};
+
+(* prompt_float — read a floating-point value from stdin *)
+f=prompt_float(msg:str):f64{
+  io.print(msg);
+  let line=io.readln();
+  let v=str.to_float(str.trim(line))|{
+    $ok:v v;
+    $err:e 0.0
+  };
+  <v
+};
+
+(* prompt_int — read an integer value from stdin *)
+f=prompt_int(msg:str):u64{
+  io.print(msg);
+  let line=io.readln();
+  let v=str.to_int(str.trim(line))|{
+    $ok:v v;
+    $err:e 0
+  };
+  <(v as u64)
+};
+
+(* run — interactive main loop *)
+f=run():void{
+  io.println("=== Toke Mortgage Calculator ===");
+  io.println("");
+
+  let principal=prompt_float("Principal amount: ");
+  let rate=prompt_float("Annual interest rate (e.g. 0.065 for 6.5%): ");
+  let term=prompt_int("Loan term in years: ");
+  let extra=prompt_float("Extra monthly payment (0 for none): ");
+
+  let s=m.$scenario{
+    principal:principal;
+    rate:rate;
+    term:term;
+    extra:extra
+  };
+
+  calc.calculate(s)|{
+    $ok:r {
+      print_summary(r);
+      print_schedule(r.schedule);
+
+      io.println("");
+      io.print("Save scenario to file? (y/n): ");
+      let ans=str.trim(io.readln());
+      if(str.startswith(ans;"y")){
+        io.print("File path: ");
+        let path=str.trim(io.readln());
+        save_scenario(s;path)|{
+          $ok:_ io.println("Scenario saved.");
+          $err:e io.println("Error saving scenario.")
+        }
+      }
+    };
+    $err:e {
+      io.println("Calculation error:");
+      e|{
+        $invalidrate:v io.println(str.concat("  Invalid rate: ";str.from_float(v)));
+        $invalidterm:v io.println(str.concat("  Invalid term: ";str.from_int(v as i64)));
+        $fileerr:v     io.println(str.concat("  File error: ";v))
+      }
+    }
+  }
+};
+
+(* main — entry point *)
+f=main():i64{
+  run();
+  <0
+};

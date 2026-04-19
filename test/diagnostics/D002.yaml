@@ -2,8 +2,8 @@ id: D002
 series: D
 description: "E1004 fix field is absent (unterminated string at EOF — no mechanical fix)"
 input: |
-  M=test;
-  F=bad():Str{<"unterminated};
+  m=test;
+  f=bad():Str{<"unterminated};
 expected_exit_code: 1
 expected_error_codes: ["E1004"]
 expected_fix_absent: true

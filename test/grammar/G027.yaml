@@ -2,8 +2,8 @@ id: G027
 series: G
 description: "Pointer type *u8 in extern function parameter"
 input: |
-  M=test;
-  F=puts(s:*u8):i32;
+  m=test;
+  f=puts(s:*u8):i32;
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

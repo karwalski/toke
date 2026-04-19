@@ -2,7 +2,7 @@ id: G024
 series: G
 description: "Missing module declaration produces parse error (exit code 1)"
 input: |
-  F=bad():i64{<0};
+  f=bad():i64{<0};
 expected_exit_code: 1
 expected_error_codes: ["E2001"]
 expected_fix: ""

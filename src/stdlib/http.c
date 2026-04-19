@@ -24,6 +24,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <time.h>
+#include <zlib.h>
 
 /* ── Graceful shutdown flag (Story 27.1.10) ─────────────────────────── */
 
@@ -171,6 +172,82 @@ static Req parse_request(const char *raw) {
     free(buf); return req;
 }
 
+/* ── Gzip response compression (Story 59.4.5) ────────────────────────── */
+
+#define GZIP_MIN_SIZE 256
+
+/*
+ * http_gzip_compress — gzip-compress src into a malloc'd buffer.
+ * Returns 0 on success and sets *dst / *dst_len; -1 on failure.
+ */
+static int http_gzip_compress(const char *src, size_t srclen,
+                               char **dst, size_t *dst_len)
+{
+    uLong bound = compressBound((uLong)srclen) + 32UL;
+    char *buf = malloc(bound);
+    if (!buf) return -1;
+
+    z_stream zs;
+    memset(&zs, 0, sizeof(zs));
+    if (deflateInit2(&zs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+                     15 | 16, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+        free(buf); return -1;
+    }
+    zs.next_in   = (Bytef *)(uintptr_t)src;
+    zs.avail_in  = (uInt)srclen;
+    zs.next_out  = (Bytef *)buf;
+    zs.avail_out = (uInt)bound;
+
+    if (deflate(&zs, Z_FINISH) != Z_STREAM_END) {
+        deflateEnd(&zs); free(buf); return -1;
+    }
+    *dst_len = (size_t)zs.total_out;
+    deflateEnd(&zs);
+    *dst = buf;
+    return 0;
+}
+
+/* req_accepts_gzip — return 1 if the parsed request has Accept-Encoding: gzip */
+static int req_accepts_gzip(Req req)
+{
+    for (uint64_t i = 0; i < req.headers.len; i++) {
+        if (req.headers.data[i].key &&
+            strcasecmp(req.headers.data[i].key, "Accept-Encoding") == 0) {
+            return req.headers.data[i].val &&
+                   strstr(req.headers.data[i].val, "gzip") != NULL;
+        }
+    }
+    return 0;
+}
+
+/*
+ * maybe_gzip_body — if the response body is eligible, replace it with
+ * gzip-compressed version and add Content-Encoding + Vary headers.
+ * Returns 1 if compressed (caller must free compressed_buf), 0 if not.
+ */
+static int maybe_gzip_body(Req req, Res *res,
+                            char **compressed_buf, size_t *compressed_len)
+{
+    *compressed_buf = NULL;
+    *compressed_len = 0;
+    if (!res->body) return 0;
+    size_t bodylen = strlen(res->body);
+    if (bodylen < GZIP_MIN_SIZE) return 0;
+    if (res->status < 200 || res->status >= 300) return 0;
+    if (!req_accepts_gzip(req)) return 0;
+
+    /* Skip if Content-Encoding already set */
+    for (uint64_t i = 0; i < res->headers.len; i++) {
+        if (res->headers.data[i].key &&
+            strcasecmp(res->headers.data[i].key, "Content-Encoding") == 0)
+            return 0;
+    }
+
+    if (http_gzip_compress(res->body, bodylen, compressed_buf, compressed_len) != 0)
+        return 0;
+    return 1;
+}
+
 /* ── Chunked transfer encoding (Story 27.1.4) ───────────────────────── */
 
 /*
@@ -313,11 +390,20 @@ char *http_chunked_read(int fd, size_t *out_len)
 static const char *reason(uint16_t s) {
     switch (s) {
         case 200: return "OK"; case 201: return "Created";
-        case 400: return "Bad Request"; case 404: return "Not Found";
+        case 204: return "No Content"; case 206: return "Partial Content";
+        case 301: return "Moved Permanently"; case 302: return "Found";
+        case 304: return "Not Modified";
+        case 400: return "Bad Request"; case 403: return "Forbidden";
+        case 404: return "Not Found"; case 405: return "Method Not Allowed";
         case 408: return "Request Timeout";
         case 413: return "Payload Too Large";
+        case 416: return "Range Not Satisfiable";
+        case 429: return "Too Many Requests";
         case 431: return "Request Header Fields Too Large";
-        default:  return "Internal Server Error";
+        case 500: return "Internal Server Error";
+        case 502: return "Bad Gateway"; case 503: return "Service Unavailable";
+        case 504: return "Gateway Timeout";
+        default:  return "Unknown";
     }
 }
 
@@ -356,6 +442,16 @@ static void write_res_headers(int fd, Res res)
     }
 }
 
+/* write_security_headers — emit hardened security headers on every response. */
+static void write_security_headers(int fd)
+{
+    static const char hdrs[] =
+        "X-Content-Type-Options: nosniff\r\n"
+        "X-Frame-Options: DENY\r\n"
+        "Referrer-Policy: strict-origin-when-cross-origin\r\n";
+    write(fd, hdrs, sizeof(hdrs) - 1);
+}
+
 static void send_response(int fd, Res res, int keep_alive) {
     const char *conn_hdr = keep_alive ? "keep-alive" : "close";
 
@@ -369,6 +465,7 @@ static void send_response(int fd, Res res, int keep_alive) {
             res.status, reason(res.status), conn_hdr);
         write(fd, hdr, (size_t)hl);
         write_res_headers(fd, res);
+        write_security_headers(fd);
         write(fd, "\r\n", 2);
         /* Default chunk size: 4096 bytes */
         http_chunked_write(fd, res.body, strlen(res.body), 4096);
@@ -383,6 +480,7 @@ static void send_response(int fd, Res res, int keep_alive) {
             res.status, reason(res.status), bl, conn_hdr);
         write(fd, hdr, (size_t)hl);
         write_res_headers(fd, res);
+        write_security_headers(fd);
         write(fd, "\r\n", 2);
         if (bl) write(fd, res.body, bl);
     }
@@ -390,7 +488,7 @@ static void send_response(int fd, Res res, int keep_alive) {
 
 /* ── Keep-alive connection constants ────────────────────────────────── */
 
-#define KEEPALIVE_IDLE_TIMEOUT_S 30
+#define KEEPALIVE_IDLE_TIMEOUT_S 2
 #define KEEPALIVE_MAX_REQUESTS   1000
 
 /* ── Access log helpers ──────────────────────────────────────────────── */
@@ -475,10 +573,64 @@ static void send_error(int fd, uint16_t status)
     send_response(fd, r, 0 /* Connection: close */);
 }
 
+/* ── Per-IP rate limiting (Story 59.4.4) ──────────────────────────────── */
+
+#define RATE_LIMIT_BUCKETS 1024
+#define RATE_LIMIT_WINDOW  60     /* seconds */
+#define RATE_LIMIT_MAX     200    /* requests per window per IP */
+
+typedef struct {
+    char     ip[64];
+    uint32_t count;
+    time_t   window_start;
+} RateBucket;
+
+static RateBucket g_rate_table[RATE_LIMIT_BUCKETS];
+
+static uint32_t rate_hash(const char *ip)
+{
+    uint32_t h = 2166136261u;
+    for (const char *p = ip; *p; p++)
+        h = (h ^ (uint8_t)*p) * 16777619u;
+    return h % RATE_LIMIT_BUCKETS;
+}
+
+/* rate_check — return 1 if request is allowed, 0 if rate-limited */
+static int rate_check(const char *ip)
+{
+    uint32_t idx = rate_hash(ip);
+    RateBucket *b = &g_rate_table[idx];
+    time_t now = time(NULL);
+
+    if (strcmp(b->ip, ip) != 0 || (now - b->window_start) >= RATE_LIMIT_WINDOW) {
+        /* New IP in this bucket or window expired: reset */
+        strncpy(b->ip, ip, sizeof(b->ip) - 1);
+        b->ip[sizeof(b->ip) - 1] = '\0';
+        b->count = 1;
+        b->window_start = now;
+        return 1;
+    }
+
+    b->count++;
+    return b->count <= RATE_LIMIT_MAX;
+}
+
+#ifdef TK_HAVE_OPENSSL
+/* Forward declaration for h2c upgrade path (60.1.7) */
+static void handle_h2_connection(int fd, void *ssl, const char *client_ip);
+#endif
+
 static void handle_connection(int fd)
 {
     char client_ip[64];
     fd_peer_ip(fd, client_ip, sizeof client_ip);
+
+    /* Rate limiting: reject with 429 if threshold exceeded */
+    if (!rate_check(client_ip)) {
+        send_error(fd, 429);
+        close(fd);
+        return;
+    }
 
     /* Apply the (possibly user-overridden) receive timeout. */
     struct timeval tv;
@@ -500,6 +652,15 @@ static void handle_connection(int fd)
     for (;;) {
         memset(raw, 0, buf_cap);
 
+        /* Use a short timeout while waiting for keep-alive requests
+         * so idle connections don't block workers from accepting new ones */
+        if (requests > 0) {
+            struct timeval ka_tv;
+            ka_tv.tv_sec  = KEEPALIVE_IDLE_TIMEOUT_S;
+            ka_tv.tv_usec = 0;
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &ka_tv, sizeof(ka_tv));
+        }
+
         /* ── Phase 1: read headers, enforcing max_header ── */
         size_t hdr_used = 0;
         int    hdr_ok   = 0; /* set to 1 when \r\n\r\n is found */
@@ -508,9 +669,19 @@ static void handle_connection(int fd)
             size_t space = (size_t)srv_limits.max_header - hdr_used;
             ssize_t n = read(fd, raw + hdr_used, space);
             if (n <= 0) {
-                if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    /* Keep-alive idle timeout: silently close, not an error */
+                    if (requests > 0) { free(raw); close(fd); return; }
                     send_error(fd, 408);
+                }
                 free(raw); close(fd); return;
+            }
+            /* Restore full timeout once data is flowing */
+            if (hdr_used == 0 && requests > 0) {
+                struct timeval full_tv;
+                full_tv.tv_sec  = (long)srv_limits.timeout_secs;
+                full_tv.tv_usec = 0;
+                setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &full_tv, sizeof(full_tv));
             }
             hdr_used += (size_t)n;
             raw[hdr_used] = '\0';
@@ -552,6 +723,12 @@ static void handle_connection(int fd)
                 p2 = strstr(p2, "\r\n");
                 if (p2) p2 += 2;
             }
+        }
+
+        /* Reject ambiguous CL + TE: chunked (request-smuggling defence) */
+        if (cl_hdr && req_is_chunked) {
+            send_error(fd, 400);
+            free(raw); close(fd); return;
         }
 
         if (cl_hdr && !req_is_chunked) {
@@ -596,6 +773,30 @@ static void handle_connection(int fd)
 
         Req req = parse_request(raw);
 
+        /* ── h2c cleartext upgrade (60.1.7) ── */
+#ifdef TK_HAVE_OPENSSL
+        {
+            const char *upgrade = NULL;
+            for (uint64_t i = 0; i < req.headers.len; i++) {
+                if (strcasecmp(req.headers.data[i].key, "Upgrade") == 0) {
+                    upgrade = req.headers.data[i].val;
+                    break;
+                }
+            }
+            if (upgrade && strcasecmp(upgrade, "h2c") == 0) {
+                const char *resp101 =
+                    "HTTP/1.1 101 Switching Protocols\r\n"
+                    "Connection: Upgrade\r\n"
+                    "Upgrade: h2c\r\n\r\n";
+                write(fd, resp101, strlen(resp101));
+                handle_h2_connection(fd, NULL, client_ip);
+                free(raw);
+                close(fd);
+                return;
+            }
+        }
+#endif
+
         /* ── Phase 4: reassemble chunked request body ── */
         if (req_is_chunked) {
             size_t decoded_len = 0;
@@ -607,21 +808,77 @@ static void handle_connection(int fd)
             }
         }
 
-        Res res = make_res(404, "Not Found");
-        StrPair params[32]; int pc = 0;
-        for (int i = 0; i < route_count; i++) {
-            if (req.method && strcmp(route_table[i].method, req.method) != 0)
-                continue;
-            if (match_pattern(route_table[i].pattern,
-                              req.path ? req.path : "", params, &pc)) {
-                req.params.data = params; req.params.len = (uint64_t)pc;
-                res = route_table[i].h(req); break;
-            }
+        /* ── Reject disallowed methods early ── */
+        int is_head = (req.method && strcmp(req.method, "HEAD") == 0);
+        if (req.method &&
+            strcmp(req.method, "GET")    != 0 &&
+            strcmp(req.method, "POST")   != 0 &&
+            strcmp(req.method, "PUT")    != 0 &&
+            strcmp(req.method, "DELETE") != 0 &&
+            strcmp(req.method, "PATCH")  != 0 &&
+            !is_head) {
+            Res res = make_res(405, "Method Not Allowed");
+            send_response(fd, res, keep_alive);
+            log_request(client_ip, &req, res.status, 0);
+            if (!keep_alive) break;
+            continue;
         }
 
-        send_response(fd, res, keep_alive);
-        log_request(client_ip, &req,
-                    res.status, res.body ? strlen(res.body) : 0);
+        /* ── Route dispatch (HEAD falls back to GET handler) ── */
+        Res res = make_res(404, "Not Found");
+        StrPair params[32]; int pc = 0;
+        int path_matched = 0;
+        int handler_called = 0;
+        for (int i = 0; i < route_count; i++) {
+            if (match_pattern(route_table[i].pattern,
+                              req.path ? req.path : "", params, &pc)) {
+                path_matched = 1;
+                const char *check_method = is_head ? "GET" : req.method;
+                if (check_method &&
+                    strcmp(route_table[i].method, check_method) == 0) {
+                    req.params.data = params; req.params.len = (uint64_t)pc;
+                    res = route_table[i].h(req);
+                    handler_called = 1;
+                    if (is_head) {
+                        /* HEAD: send headers only, suppress body */
+                        res.body = NULL;
+                    }
+                    break;
+                }
+                pc = 0; /* reset params for next pattern attempt */
+            }
+        }
+        /* Path existed but no method matched → 405 (only if handler wasn't called) */
+        if (path_matched && !handler_called && res.status == 404) {
+            res = make_res(405, "Method Not Allowed");
+        }
+
+        /* Gzip compress if eligible — write directly (binary-safe) */
+        char  *gz_buf = NULL;
+        size_t gz_len = 0;
+        int    did_gz = maybe_gzip_body(req, &res, &gz_buf, &gz_len);
+        if (did_gz) {
+            const char *conn_hdr = keep_alive ? "keep-alive" : "close";
+            char hdr[256];
+            int hl = snprintf(hdr, sizeof(hdr),
+                "HTTP/1.1 %u %s\r\n"
+                "Content-Length: %zu\r\n"
+                "Content-Encoding: gzip\r\n"
+                "Vary: Accept-Encoding\r\n"
+                "Connection: %s\r\n",
+                res.status, reason(res.status), gz_len, conn_hdr);
+            write(fd, hdr, (size_t)hl);
+            write_res_headers(fd, res);
+            write_security_headers(fd);
+            write(fd, "\r\n", 2);
+            write(fd, gz_buf, gz_len);
+            log_request(client_ip, &req, res.status, gz_len);
+            free(gz_buf);
+        } else {
+            send_response(fd, res, keep_alive);
+            log_request(client_ip, &req,
+                        res.status, res.body ? strlen(res.body) : 0);
+        }
 
         if (!keep_alive) break;
     }
@@ -705,10 +962,14 @@ void http_router_free(TkHttpRouter *r)
 static pid_t    g_worker_pids[TK_MAX_WORKERS];
 static uint64_t g_nworkers_global = 0;
 
+static volatile sig_atomic_t g_reload_requested = 0;
+
 static void workers_parent_sighandler(int sig)
 {
-    (void)sig;
-    g_shutdown_requested = 1;
+    if (sig == SIGHUP)
+        g_reload_requested = 1;
+    else
+        g_shutdown_requested = 1;
 }
 
 /* bind_listen — create, bind, and listen a TCP socket.
@@ -789,6 +1050,7 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
     g_nworkers_global = nworkers;
     signal(SIGTERM, workers_parent_sighandler);
     signal(SIGINT,  workers_parent_sighandler);
+    signal(SIGHUP,  workers_parent_sighandler);
 
     for (uint64_t i = 0; i < nworkers; i++) {
         pid_t pid = fork();
@@ -805,7 +1067,7 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
         g_worker_pids[i] = pid;
     }
 
-    close(srv); /* parent closes; workers hold their inherited copies */
+    /* Parent keeps srv open so respawned workers can inherit it. */
 
     /* Parent: supervise, restart workers that die abnormally */
     for (;;) {
@@ -818,6 +1080,52 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
             } else {
                 break;
             }
+        }
+
+        /* ── SIGHUP graceful reload (Story 59.4.8) ── */
+        if (g_reload_requested) {
+            g_reload_requested = 0;
+            /* Send SIGTERM to old workers, then fork fresh ones */
+            for (uint64_t i = 0; i < nworkers; i++) {
+                if (g_worker_pids[i] > 0)
+                    kill(g_worker_pids[i], SIGTERM);
+            }
+            /* Wait for old workers to drain (up to drain timeout) */
+            time_t rd = time(NULL) + HTTP_DRAIN_TIMEOUT_SECS;
+            for (;;) {
+                int all = 1;
+                for (uint64_t i = 0; i < nworkers; i++) {
+                    if (g_worker_pids[i] <= 0) continue;
+                    int ws2 = 0;
+                    pid_t p2 = waitpid(g_worker_pids[i], &ws2, WNOHANG);
+                    if (p2 == g_worker_pids[i])
+                        g_worker_pids[i] = -1;
+                    else
+                        all = 0;
+                }
+                if (all) break;
+                if (time(NULL) >= rd) {
+                    for (uint64_t i = 0; i < nworkers; i++) {
+                        if (g_worker_pids[i] > 0) {
+                            kill(g_worker_pids[i], SIGKILL);
+                            waitpid(g_worker_pids[i], NULL, 0);
+                            g_worker_pids[i] = -1;
+                        }
+                    }
+                    break;
+                }
+                struct timespec rts;
+                rts.tv_sec = 0; rts.tv_nsec = 10000000;
+                nanosleep(&rts, NULL);
+            }
+            /* Fork new workers */
+            for (uint64_t i = 0; i < nworkers; i++) {
+                pid_t pid = fork();
+                if (pid < 0) { g_worker_pids[i] = -1; continue; }
+                if (pid == 0) { worker_loop(srv, r); _exit(0); }
+                g_worker_pids[i] = pid;
+            }
+            continue;
         }
 
         if (g_shutdown_requested) {
@@ -881,25 +1189,23 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
 
         if (WIFSIGNALED(wstatus) ||
             (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) != 0)) {
-            int new_srv = bind_listen(host, port);
-            if (new_srv < 0) { g_worker_pids[slot] = -1; continue; }
+            /* Respawn worker using the shared listen socket */
             pid_t pid = fork();
             if (pid < 0) {
-                close(new_srv);
                 g_worker_pids[slot] = -1;
                 continue;
             }
             if (pid == 0) {
-                worker_loop(new_srv, r);
+                worker_loop(srv, r);
                 _exit(0);
             }
-            close(new_srv);
             g_worker_pids[slot] = pid;
         } else {
             g_worker_pids[slot] = -1;
         }
     }
 
+    close(srv);
     return TK_HTTP_OK;
 }
 
@@ -931,7 +1237,8 @@ static char *url_decode(const char *s, size_t len)
     for (size_t ri = 0; ri < len; ri++) {
         if (s[ri] == '%' && ri + 2 < len) {
             int c = url_decode_char(s + ri + 1);
-            if (c >= 0) { out[wi++] = (char)c; ri += 2; continue; }
+            if (c > 0) { out[wi++] = (char)c; ri += 2; continue; }
+            if (c == 0) { ri += 2; continue; } /* reject %00 null bytes */
         }
         out[wi++] = s[ri];
     }
@@ -1918,10 +2225,52 @@ HttpChunkResult http_streamnext(HttpStream *s)
 #ifdef TK_HAVE_OPENSSL
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/ocsp.h>
+#include <openssl/x509v3.h>
+
+/* SNI entry for per-vhost certificate selection (61.2.4) */
+typedef struct {
+    char    *hostname;
+    SSL_CTX *ssl_ctx;
+} TlsSniHost;
+
+#define TLS_MAX_SNI_HOSTS 32
 
 struct TkTlsCtx {
-    SSL_CTX *ssl_ctx;
+    SSL_CTX    *ssl_ctx;
+    TlsSniHost  sni_hosts[TLS_MAX_SNI_HOSTS];
+    int         sni_count;
+    /* OCSP stapling (61.2.1) */
+    uint8_t    *ocsp_response;
+    size_t      ocsp_response_len;
 };
+
+/* ── ALPN callback (Story 60.1.5) ─────────────────────────────────────── */
+
+/* Preferred protocols: h2 first, then http/1.1 */
+static const uint8_t alpn_protos[] = {
+    2, 'h', '2',
+    8, 'h', 't', 't', 'p', '/', '1', '.', '1',
+};
+
+static int alpn_select_cb(SSL *ssl, const unsigned char **out,
+                          unsigned char *outlen,
+                          const unsigned char *in, unsigned int inlen,
+                          void *arg)
+{
+    (void)ssl; (void)arg;
+    if (SSL_select_next_proto((unsigned char **)out, outlen,
+                              alpn_protos, sizeof(alpn_protos),
+                              in, inlen) == OPENSSL_NPN_NEGOTIATED) {
+        return SSL_TLSEXT_ERR_OK;
+    }
+    /* Fallback: accept whatever the client offers (http/1.1) */
+    return SSL_TLSEXT_ERR_NOACK;
+}
+
+/* Forward declarations for OCSP stapling (61.2.1) */
+static int  ocsp_staple_cb(SSL *ssl, void *arg);
+static void tls_enable_ocsp_stapling(TkTlsCtx *tls);
 
 TkTlsCtx *http_tls_ctx_new(const char *cert_path, const char *key_path)
 {
@@ -1956,20 +2305,250 @@ TkTlsCtx *http_tls_ctx_new(const char *cert_path, const char *key_path)
         return NULL;
     }
 
+    /* TLS hardening (Story 57.4.4) */
+    /* Minimum TLS 1.2 — disable SSLv3, TLS 1.0, TLS 1.1 */
+    SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+
+    /* Strong cipher suites: ECDHE + AEAD only, no CBC, no RC4 */
+    SSL_CTX_set_cipher_list(ctx,
+        "ECDHE-ECDSA-AES256-GCM-SHA384:"
+        "ECDHE-RSA-AES256-GCM-SHA384:"
+        "ECDHE-ECDSA-AES128-GCM-SHA256:"
+        "ECDHE-RSA-AES128-GCM-SHA256:"
+        "ECDHE-ECDSA-CHACHA20-POLY1305:"
+        "ECDHE-RSA-CHACHA20-POLY1305");
+
+    /* TLS 1.3 cipher suites (if available) */
+#ifdef TLS1_3_VERSION
+    SSL_CTX_set_ciphersuites(ctx,
+        "TLS_AES_256_GCM_SHA384:"
+        "TLS_AES_128_GCM_SHA256:"
+        "TLS_CHACHA20_POLY1305_SHA256");
+#endif
+
+    /* Prefer server cipher order */
+    SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
+
+    /* ALPN negotiation (Story 60.1.5): advertise h2 and http/1.1.
+     * During TLS handshake, the callback selects h2 if the client
+     * offers it; otherwise falls back to http/1.1. */
+    SSL_CTX_set_alpn_select_cb(ctx, alpn_select_cb, NULL);
+
+    /* Enable session tickets by default (61.2.2) */
+    SSL_CTX_set_num_tickets(ctx, 2);
+
     TkTlsCtx *tls = malloc(sizeof(TkTlsCtx));
     if (!tls) {
         SSL_CTX_free(ctx);
         return NULL;
     }
     tls->ssl_ctx = ctx;
+    tls->sni_count = 0;
+    tls->ocsp_response = NULL;
+    tls->ocsp_response_len = 0;
+    tls_enable_ocsp_stapling(tls);
+    return tls;
+}
+
+/* ── OCSP stapling callback (Story 61.2.1) ────────────────────────────── */
+
+static int ocsp_staple_cb(SSL *ssl, void *arg)
+{
+    TkTlsCtx *tls = (TkTlsCtx *)arg;
+    if (!tls->ocsp_response || tls->ocsp_response_len == 0)
+        return SSL_TLSEXT_ERR_NOACK;
+
+    /* OpenSSL takes ownership of this copy */
+    uint8_t *copy = OPENSSL_malloc(tls->ocsp_response_len);
+    if (!copy) return SSL_TLSEXT_ERR_NOACK;
+    memcpy(copy, tls->ocsp_response, tls->ocsp_response_len);
+    SSL_set_tlsext_status_ocsp_resp(ssl, copy, (int)tls->ocsp_response_len);
+    return SSL_TLSEXT_ERR_OK;
+}
+
+/* http_tls_set_ocsp_response — set the cached OCSP response for stapling.
+ * The data is copied. Call this periodically to refresh. */
+int http_tls_set_ocsp_response(TkTlsCtx *ctx,
+                                const uint8_t *data, size_t len)
+{
+    if (!ctx) return -1;
+    free(ctx->ocsp_response);
+    ctx->ocsp_response = NULL;
+    ctx->ocsp_response_len = 0;
+    if (data && len > 0) {
+        ctx->ocsp_response = malloc(len);
+        if (!ctx->ocsp_response) return -1;
+        memcpy(ctx->ocsp_response, data, len);
+        ctx->ocsp_response_len = len;
+    }
+    return 0;
+}
+
+/* Enable OCSP stapling on a TLS context */
+static void tls_enable_ocsp_stapling(TkTlsCtx *tls)
+{
+    SSL_CTX_set_tlsext_status_cb(tls->ssl_ctx, ocsp_staple_cb);
+    SSL_CTX_set_tlsext_status_arg(tls->ssl_ctx, tls);
+}
+
+/* ── SNI callback (Story 61.2.4) ──────────────────────────────────────── */
+
+static int sni_callback(SSL *ssl, int *al, void *arg)
+{
+    (void)al;
+    TkTlsCtx *tls = (TkTlsCtx *)arg;
+    const char *name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+    if (!name) return SSL_TLSEXT_ERR_OK; /* no SNI — use default */
+
+    for (int i = 0; i < tls->sni_count; i++) {
+        if (strcasecmp(tls->sni_hosts[i].hostname, name) == 0) {
+            SSL_set_SSL_CTX(ssl, tls->sni_hosts[i].ssl_ctx);
+            return SSL_TLSEXT_ERR_OK;
+        }
+    }
+    return SSL_TLSEXT_ERR_OK; /* unknown host — use default cert */
+}
+
+int http_tls_add_sni(TkTlsCtx *ctx, const char *hostname,
+                     const char *cert_path, const char *key_path)
+{
+    if (!ctx || !hostname || !cert_path || !key_path) return -1;
+    if (ctx->sni_count >= TLS_MAX_SNI_HOSTS) return -1;
+
+    SSL_CTX *sctx = SSL_CTX_new(TLS_server_method());
+    if (!sctx) return -1;
+
+    if (SSL_CTX_use_certificate_file(sctx, cert_path, SSL_FILETYPE_PEM) != 1 ||
+        SSL_CTX_use_PrivateKey_file(sctx, key_path, SSL_FILETYPE_PEM) != 1 ||
+        SSL_CTX_check_private_key(sctx) != 1) {
+        SSL_CTX_free(sctx);
+        return -1;
+    }
+
+    /* Copy ALPN callback from primary context */
+    SSL_CTX_set_alpn_select_cb(sctx, alpn_select_cb, NULL);
+
+    int idx = ctx->sni_count;
+    ctx->sni_hosts[idx].hostname = strdup(hostname);
+    ctx->sni_hosts[idx].ssl_ctx  = sctx;
+    ctx->sni_count++;
+
+    /* Register SNI callback on the primary context (once) */
+    if (ctx->sni_count == 1) {
+        SSL_CTX_set_tlsext_servername_callback(ctx->ssl_ctx, sni_callback);
+        SSL_CTX_set_tlsext_servername_arg(ctx->ssl_ctx, ctx);
+    }
+    return 0;
+}
+
+/* ── http_tls_ctx_new_config (Story 61.2.3) ───────────────────────────── */
+
+static int tls_version_from_str(const char *s)
+{
+    if (!s || strcmp(s, "1.2") == 0) return TLS1_2_VERSION;
+    if (strcmp(s, "1.3") == 0) return TLS1_3_VERSION;
+    return TLS1_2_VERSION;
+}
+
+TkTlsCtx *http_tls_ctx_new_config(const TkTlsConfig *config)
+{
+    if (!config || !config->cert_path || !config->key_path) {
+        fprintf(stderr, "http_tls_ctx_new_config: cert/key required\n");
+        return NULL;
+    }
+
+    SSL_CTX *ctx = SSL_CTX_new(TLS_server_method());
+    if (!ctx) return NULL;
+
+    /* Set minimum TLS version (61.2.3) */
+    SSL_CTX_set_min_proto_version(ctx, tls_version_from_str(config->min_version));
+
+    /* Cipher suites (61.2.3) */
+    if (config->ciphers) {
+        /* TLS 1.2 ciphers */
+        SSL_CTX_set_cipher_list(ctx, config->ciphers);
+        /* TLS 1.3 ciphersuites */
+        SSL_CTX_set_ciphersuites(ctx, config->ciphers);
+    }
+
+    /* Elliptic curves (61.2.3) */
+    if (config->curves) {
+        SSL_CTX_set1_curves_list(ctx, config->curves);
+    }
+
+    /* Session tickets (61.2.2) */
+    if (config->session_tickets) {
+        SSL_CTX_set_num_tickets(ctx, 2);
+        long lifetime = config->ticket_lifetime > 0
+                        ? (long)config->ticket_lifetime : 7200L;
+        SSL_CTX_set_timeout(ctx, lifetime);
+    } else {
+        SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
+    }
+
+    /* Load cert + key */
+    if (SSL_CTX_use_certificate_file(ctx, config->cert_path,
+                                     SSL_FILETYPE_PEM) != 1 ||
+        SSL_CTX_use_PrivateKey_file(ctx, config->key_path,
+                                    SSL_FILETYPE_PEM) != 1 ||
+        SSL_CTX_check_private_key(ctx) != 1) {
+        fprintf(stderr, "http_tls_ctx_new_config: cert/key error\n");
+        SSL_CTX_free(ctx);
+        return NULL;
+    }
+
+    /* ALPN */
+    SSL_CTX_set_alpn_select_cb(ctx, alpn_select_cb, NULL);
+
+    TkTlsCtx *tls = malloc(sizeof(TkTlsCtx));
+    if (!tls) { SSL_CTX_free(ctx); return NULL; }
+    tls->ssl_ctx = ctx;
+    tls->sni_count = 0;
+    tls->ocsp_response = NULL;
+    tls->ocsp_response_len = 0;
+    tls_enable_ocsp_stapling(tls);
     return tls;
 }
 
 void http_tls_ctx_free(TkTlsCtx *ctx)
 {
     if (!ctx) return;
+    free(ctx->ocsp_response);
+    for (int i = 0; i < ctx->sni_count; i++) {
+        SSL_CTX_free(ctx->sni_hosts[i].ssl_ctx);
+        free(ctx->sni_hosts[i].hostname);
+    }
     SSL_CTX_free(ctx->ssl_ctx);
     free(ctx);
+}
+
+/* http_tls_reload_cert — hot-swap cert+key in a running TLS context. */
+int http_tls_reload_cert(TkTlsCtx *ctx, const char *cert_path,
+                          const char *key_path)
+{
+    if (!ctx || !cert_path || !key_path) return -1;
+    if (SSL_CTX_use_certificate_file(ctx->ssl_ctx, cert_path,
+                                      SSL_FILETYPE_PEM) != 1)
+        return -1;
+    if (SSL_CTX_use_PrivateKey_file(ctx->ssl_ctx, key_path,
+                                     SSL_FILETYPE_PEM) != 1)
+        return -1;
+    if (SSL_CTX_check_private_key(ctx->ssl_ctx) != 1)
+        return -1;
+    return 0;
+}
+
+/*
+ * write_security_headers_ssl — emit hardened headers via SSL_write.
+ */
+static void write_security_headers_ssl(SSL *ssl)
+{
+    static const char hdrs[] =
+        "X-Content-Type-Options: nosniff\r\n"
+        "X-Frame-Options: DENY\r\n"
+        "Referrer-Policy: strict-origin-when-cross-origin\r\n"
+        "Strict-Transport-Security: max-age=63072000; includeSubDomains; preload\r\n";
+    SSL_write(ssl, hdrs, (int)(sizeof(hdrs) - 1));
 }
 
 /*
@@ -1977,10 +2556,447 @@ void http_tls_ctx_free(TkTlsCtx *ctx)
  * HTTP keep-alive requests over the TLS session.  Mirrors handle_connection
  * but uses SSL_read/SSL_write instead of read/write.
  */
+/* ssl_shutdown_quick — shut down TLS with a short timeout to avoid
+ * blocking the worker while waiting for the peer's close_notify. */
+/* ── HTTP/2 connection handler (Story 60.2.1) ────────────────────────── */
+
+#include "http2.h"
+
+/*
+ * handle_h2_connection — process an HTTP/2 connection.
+ * Validates connection preface, exchanges SETTINGS, then loops
+ * reading frames. HEADERS frames are decoded via HPACK into Req
+ * structs and dispatched through the existing route table.
+ */
+static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
+{
+    H2Conn *conn = h2_conn_new();
+    if (!conn) return;
+
+    /* Read and validate the 24-byte client connection preface */
+    uint8_t preface[H2_CONNECTION_PREFACE_LEN];
+    {
+        size_t done = 0;
+        while (done < H2_CONNECTION_PREFACE_LEN) {
+            int r = SSL_read(ssl, preface + done,
+                             (int)(H2_CONNECTION_PREFACE_LEN - done));
+            if (r <= 0) { h2_conn_free(conn); return; }
+            done += (size_t)r;
+        }
+    }
+    if (h2_validate_preface(preface, H2_CONNECTION_PREFACE_LEN) != 0) {
+        h2_conn_free(conn);
+        return;
+    }
+
+    /* Send our SETTINGS frame */
+    if (h2_send_settings(conn, fd, ssl) < 0) {
+        h2_conn_free(conn);
+        return;
+    }
+
+    /* Set idle timeout for HTTP/2 connection (60.2.3) */
+#define H2_IDLE_TIMEOUT_S       30
+#define H2_MAX_STREAMS_TOTAL   1000
+#define H2_PING_INTERVAL_S      15
+    {
+        struct timeval tv;
+        tv.tv_sec  = H2_IDLE_TIMEOUT_S;
+        tv.tv_usec = 0;
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    }
+
+    uint32_t total_streams = 0;
+    time_t last_activity = time(NULL);
+    int ping_outstanding = 0;
+
+    /* Main frame processing loop */
+    for (;;) {
+        H2FrameHeader hdr;
+        memset(&hdr, 0, sizeof(hdr));
+        uint8_t *payload = h2_frame_recv(conn, fd, ssl, &hdr);
+        if (!payload && hdr.length == 0 && hdr.type == 0) {
+            /* Timeout or connection closed — check if we should ping or close */
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                time_t now = time(NULL);
+                if (ping_outstanding) {
+                    /* No response to PING — peer is dead */
+                    break;
+                }
+                if (now - last_activity >= H2_IDLE_TIMEOUT_S) {
+                    /* Idle too long — send PING keepalive */
+                    uint8_t ping_data[8] = {0};
+                    h2_send_ping(conn, fd, ssl, ping_data, 0);
+                    ping_outstanding = 1;
+                    last_activity = now;
+                    continue;
+                }
+                continue;
+            }
+            /* Real read error or connection closed */
+            break;
+        }
+
+        last_activity = time(NULL);
+        ping_outstanding = 0;
+
+        /* Frame size validation (60.2.4) — reject oversized frames */
+        if (hdr.length > conn->local_settings.max_frame_size) {
+            h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                           H2_ERR_FRAME_SIZE);
+            goto done;
+        }
+
+        switch (hdr.type) {
+        case H2_FRAME_SETTINGS:
+            if (hdr.flags & H2_FLAG_ACK) {
+                /* SETTINGS ACK — nothing to do */
+                break;
+            }
+            if (hdr.stream_id != 0) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_PROTOCOL);
+                goto done;
+            }
+            if (h2_apply_settings(conn, payload, hdr.length) < 0) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_PROTOCOL);
+                goto done;
+            }
+            h2_send_settings_ack(conn, fd, ssl);
+            break;
+
+        case H2_FRAME_HEADERS: {
+            if (hdr.stream_id == 0) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_PROTOCOL);
+                goto done;
+            }
+
+            /* Enforce max total streams (60.2.3) */
+            total_streams++;
+            if (total_streams > H2_MAX_STREAMS_TOTAL) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_ENHANCE_YOUR_CALM);
+                goto done;
+            }
+
+            H2Stream *stream = h2_stream_get(conn, hdr.stream_id);
+            if (!stream) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_REFUSED_STREAM);
+                goto done;
+            }
+            h2_stream_transition(stream, H2_FRAME_HEADERS, hdr.flags, 0);
+
+            /* Skip padding and priority if present */
+            uint8_t *hblock = payload;
+            uint32_t hblock_len = hdr.length;
+            uint8_t pad_len = 0;
+
+            if (hdr.flags & H2_FLAG_PADDED) {
+                if (hblock_len < 1) goto done;
+                pad_len = hblock[0];
+                hblock++;
+                hblock_len--;
+                if (pad_len >= hblock_len) goto done;
+                hblock_len -= pad_len;
+            }
+            if (hdr.flags & H2_FLAG_PRIORITY) {
+                if (hblock_len < 5) goto done;
+                hblock += 5; /* skip 4-byte dep + 1-byte weight */
+                hblock_len -= 5;
+            }
+
+            /* Accumulate header block fragments */
+            if (stream->header_block == NULL) {
+                stream->header_block = malloc(hblock_len);
+                if (!stream->header_block) goto done;
+                memcpy(stream->header_block, hblock, hblock_len);
+                stream->header_block_len = hblock_len;
+                stream->header_block_cap = hblock_len;
+            } else {
+                size_t newlen = stream->header_block_len + hblock_len;
+                if (newlen > stream->header_block_cap) {
+                    uint8_t *nb = realloc(stream->header_block, newlen);
+                    if (!nb) goto done;
+                    stream->header_block = nb;
+                    stream->header_block_cap = newlen;
+                }
+                memcpy(stream->header_block + stream->header_block_len,
+                       hblock, hblock_len);
+                stream->header_block_len = newlen;
+            }
+
+            if (!(hdr.flags & H2_FLAG_END_HEADERS)) {
+                /* Wait for CONTINUATION frames */
+                break;
+            }
+
+            /* Decode HPACK header block into request */
+            char **names = NULL, **values = NULL;
+            int nheaders = hpack_decode(&conn->hpack_decode,
+                                        stream->header_block,
+                                        stream->header_block_len,
+                                        &names, &values);
+            free(stream->header_block);
+            stream->header_block = NULL;
+            stream->header_block_len = 0;
+
+            if (nheaders < 0) {
+                h2_send_rst_stream(conn, fd, ssl, hdr.stream_id,
+                                   H2_ERR_COMPRESSION);
+                break;
+            }
+
+            /* Build Req from pseudo-headers */
+            const char *method = "GET";
+            const char *path   = "/";
+            StrPair req_headers[64];
+            int req_hcount = 0;
+
+            for (int i = 0; i < nheaders; i++) {
+                if (names[i][0] == ':') {
+                    if (strcmp(names[i], ":method") == 0) method = values[i];
+                    else if (strcmp(names[i], ":path") == 0) path = values[i];
+                } else if (req_hcount < 64) {
+                    req_headers[req_hcount].key = names[i];
+                    req_headers[req_hcount].val = values[i];
+                    req_hcount++;
+                }
+            }
+
+            Req req;
+            memset(&req, 0, sizeof(req));
+            req.method  = method;
+            req.path    = path;
+            req.body    = "";
+            req.headers.data = req_headers;
+            req.headers.len  = (uint64_t)req_hcount;
+
+            /* Dispatch through route table */
+            Res res = {0};
+            int matched = 0;
+            for (int r = 0; r < route_count; r++) {
+                if (strcmp(route_table[r].method, method) == 0 ||
+                    strcmp(route_table[r].method, "*") == 0) {
+                    /* Simple path matching (TODO: use router.c scoring) */
+                    if (strcmp(route_table[r].pattern, path) == 0 ||
+                        strcmp(route_table[r].pattern, "*") == 0) {
+                        res = route_table[r].h(req);
+                        matched = 1;
+                        break;
+                    }
+                }
+            }
+            if (!matched) {
+                res.status = 404;
+                res.body   = "Not Found";
+            }
+
+            /* Send response as HEADERS + DATA frames */
+            char status_str[4];
+            snprintf(status_str, sizeof(status_str), "%u", res.status);
+            size_t body_len = res.body ? strlen(res.body) : 0;
+            char cl_str[32];
+            snprintf(cl_str, sizeof(cl_str), "%zu", body_len);
+
+            const char *resp_names[]  = { ":status", "content-length",
+                                          "content-type" };
+            const char *resp_values[] = { status_str, cl_str,
+                                          "text/html; charset=utf-8" };
+            uint8_t hbuf[4096];
+            int hlen = hpack_encode(&conn->hpack_encode,
+                                    resp_names, resp_values, 3,
+                                    hbuf, sizeof(hbuf));
+
+            if (hlen > 0) {
+                uint8_t flags = H2_FLAG_END_HEADERS;
+                if (body_len == 0) flags |= H2_FLAG_END_STREAM;
+                h2_frame_send(conn, fd, ssl, H2_FRAME_HEADERS, flags,
+                              hdr.stream_id, hbuf, (uint32_t)hlen);
+            }
+
+            /* Send body as DATA frame(s) */
+            if (body_len > 0) {
+                uint32_t max_data = conn->peer_settings.max_frame_size;
+                size_t sent = 0;
+                while (sent < body_len) {
+                    uint32_t chunk = (uint32_t)(body_len - sent);
+                    if (chunk > max_data) chunk = max_data;
+                    uint8_t dflags = (sent + chunk >= body_len)
+                                     ? H2_FLAG_END_STREAM : 0;
+                    h2_frame_send(conn, fd, ssl, H2_FRAME_DATA, dflags,
+                                  hdr.stream_id,
+                                  (const uint8_t *)res.body + sent, chunk);
+                    sent += chunk;
+                }
+            }
+
+            log_request(client_ip, &req, res.status, body_len);
+
+            /* Clean up decoded headers */
+            for (int i = 0; i < nheaders; i++) {
+                free(names[i]);
+                free(values[i]);
+            }
+            free(names);
+            free(values);
+            break;
+        }
+
+        case H2_FRAME_CONTINUATION: {
+            if (hdr.stream_id == 0) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_PROTOCOL);
+                goto done;
+            }
+            H2Stream *stream = h2_stream_get(conn, hdr.stream_id);
+            if (!stream || !stream->header_block) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_PROTOCOL);
+                goto done;
+            }
+            /* Append to header block */
+            size_t newlen = stream->header_block_len + hdr.length;
+            if (newlen > stream->header_block_cap) {
+                uint8_t *nb = realloc(stream->header_block, newlen);
+                if (!nb) goto done;
+                stream->header_block = nb;
+                stream->header_block_cap = newlen;
+            }
+            memcpy(stream->header_block + stream->header_block_len,
+                   payload, hdr.length);
+            stream->header_block_len = newlen;
+
+            /* If END_HEADERS, process as if we just got the full HEADERS */
+            /* (would need to refactor — for now, only single-frame headers) */
+            break;
+        }
+
+        case H2_FRAME_DATA: {
+            if (hdr.stream_id == 0) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_PROTOCOL);
+                goto done;
+            }
+            /* Update flow control window */
+            conn->conn_window_recv -= (int32_t)hdr.length;
+            H2Stream *stream = h2_stream_get(conn, hdr.stream_id);
+            if (stream) {
+                stream->window -= (int32_t)hdr.length;
+                h2_stream_transition(stream, H2_FRAME_DATA, hdr.flags, 0);
+            }
+            /* Send WINDOW_UPDATE to replenish */
+            if (hdr.length > 0) {
+                h2_send_window_update(conn, fd, ssl, 0, hdr.length);
+                h2_send_window_update(conn, fd, ssl, hdr.stream_id,
+                                      hdr.length);
+            }
+            break;
+        }
+
+        case H2_FRAME_PING:
+            if (hdr.stream_id != 0 || hdr.length != 8) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_PROTOCOL);
+                goto done;
+            }
+            if (!(hdr.flags & H2_FLAG_ACK)) {
+                h2_send_ping(conn, fd, ssl, payload, 1);
+            }
+            break;
+
+        case H2_FRAME_WINDOW_UPDATE: {
+            if (hdr.length != 4) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_FRAME_SIZE);
+                goto done;
+            }
+            uint32_t increment = ((uint32_t)payload[0] << 24)
+                               | ((uint32_t)payload[1] << 16)
+                               | ((uint32_t)payload[2] << 8)
+                               |  (uint32_t)payload[3];
+            increment &= 0x7FFFFFFF;
+            if (increment == 0) {
+                if (hdr.stream_id == 0) {
+                    h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                                   H2_ERR_PROTOCOL);
+                } else {
+                    h2_send_rst_stream(conn, fd, ssl, hdr.stream_id,
+                                       H2_ERR_PROTOCOL);
+                }
+                break;
+            }
+            if (hdr.stream_id == 0) {
+                conn->conn_window_send += (int32_t)increment;
+            } else {
+                H2Stream *stream = h2_stream_get(conn, hdr.stream_id);
+                if (stream) stream->window += (int32_t)increment;
+            }
+            break;
+        }
+
+        case H2_FRAME_RST_STREAM: {
+            if (hdr.stream_id == 0 || hdr.length != 4) {
+                h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                               H2_ERR_PROTOCOL);
+                goto done;
+            }
+            H2Stream *stream = h2_stream_get(conn, hdr.stream_id);
+            if (stream) stream->state = H2_STREAM_CLOSED;
+            break;
+        }
+
+        case H2_FRAME_GOAWAY:
+            /* Peer is shutting down — stop sending new streams */
+            goto done;
+
+        case H2_FRAME_PRIORITY:
+            /* Advisory only — ignore */
+            break;
+
+        case H2_FRAME_PUSH_PROMISE:
+            /* Server never accepts PUSH_PROMISE from clients */
+            h2_send_goaway(conn, fd, ssl, conn->last_stream_id,
+                           H2_ERR_PROTOCOL);
+            goto done;
+
+        default:
+            /* Unknown frame types MUST be ignored (RFC 9113 §4.1) */
+            break;
+        }
+
+        if (conn->goaway_sent) break;
+    }
+
+done:
+    h2_conn_free(conn);
+}
+
+static void ssl_shutdown_quick(SSL *ssl, int fd)
+{
+    struct timeval tv;
+    tv.tv_sec  = 1;
+    tv.tv_usec = 0;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
+}
+
 static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
 {
     char client_ip[64];
     fd_peer_ip(fd, client_ip, sizeof client_ip);
+
+    /* Set socket timeouts BEFORE SSL_accept to prevent workers from
+     * blocking indefinitely on incomplete TLS handshakes (e.g., port
+     * scanners, bots sending plaintext to TLS port). */
+    struct timeval tv;
+    tv.tv_sec  = 5;   /* 5s handshake timeout */
+    tv.tv_usec = 0;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
     SSL *ssl = SSL_new(ssl_ctx);
     if (!ssl) { close(fd); return; }
@@ -1993,10 +3009,33 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         return;
     }
 
-    struct timeval tv;
+    /* Check ALPN result — if h2 was negotiated, handle as HTTP/2
+     * (Story 60.1.5 / 60.2.1) */
+    {
+        const unsigned char *alpn = NULL;
+        unsigned int alpn_len = 0;
+        SSL_get0_alpn_selected(ssl, &alpn, &alpn_len);
+        if (alpn_len == 2 && alpn[0] == 'h' && alpn[1] == '2') {
+            handle_h2_connection(fd, ssl, client_ip);
+            ssl_shutdown_quick(ssl, fd);
+            close(fd);
+            return;
+        }
+    }
+
+    if (!rate_check(client_ip)) {
+        const char *r429 = "HTTP/1.1 429 Too Many Requests\r\n"
+                           "Content-Length: 0\r\nConnection: close\r\n\r\n";
+        SSL_write(ssl, r429, (int)strlen(r429));
+        ssl_shutdown_quick(ssl, fd);
+        close(fd);
+        return;
+    }
+
+    /* Extend timeout for request/response processing */
     tv.tv_sec  = (long)srv_limits.timeout_secs;
-    tv.tv_usec = 0;
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
     size_t buf_cap = (size_t)srv_limits.max_header
                    + (size_t)srv_limits.max_body + 8;
@@ -2008,6 +3047,15 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
     for (;;) {
         memset(raw, 0, buf_cap);
 
+        /* Use a short timeout while waiting for keep-alive requests
+         * so idle connections don't block workers from accepting new ones */
+        if (requests > 0) {
+            struct timeval ka_tv;
+            ka_tv.tv_sec  = KEEPALIVE_IDLE_TIMEOUT_S;
+            ka_tv.tv_usec = 0;
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &ka_tv, sizeof(ka_tv));
+        }
+
         /* Phase 1: read headers over TLS */
         size_t hdr_used = 0;
         int    hdr_ok   = 0;
@@ -2017,10 +3065,17 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
             int n = SSL_read(ssl, raw + hdr_used, (int)space);
             if (n <= 0) {
                 free(raw);
-                SSL_shutdown(ssl);
-                SSL_free(ssl);
+                ssl_shutdown_quick(ssl, fd);
                 close(fd);
                 return;
+            }
+            /* Restore full timeout once data is flowing */
+            if (hdr_used == 0 && requests > 0) {
+                struct timeval full_tv;
+                full_tv.tv_sec  = (long)srv_limits.timeout_secs;
+                full_tv.tv_usec = 0;
+                setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &full_tv, sizeof(full_tv));
+                setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &full_tv, sizeof(full_tv));
             }
             hdr_used += (size_t)n;
             raw[hdr_used] = '\0';
@@ -2028,8 +3083,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         }
 
         if (!hdr_ok) {
-            SSL_shutdown(ssl);
-            SSL_free(ssl);
+            ssl_shutdown_quick(ssl, fd);
             free(raw);
             close(fd);
             return;
@@ -2049,13 +3103,35 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
             }
         }
 
+        /* Phase 2b: detect Transfer-Encoding: chunked */
+        int tls_req_chunked = 0;
+        {
+            const char *p2 = raw;
+            while (p2 && (size_t)(p2 - raw) < hdr_used) {
+                if (strncasecmp(p2, "Transfer-Encoding:", 18) == 0) {
+                    const char *v = p2 + 18;
+                    while (*v == ' ') v++;
+                    if (strncasecmp(v, "chunked", 7) == 0)
+                        tls_req_chunked = 1;
+                    break;
+                }
+                p2 = strstr(p2, "\r\n");
+                if (p2) p2 += 2;
+            }
+        }
+
+        /* Reject ambiguous CL + TE: chunked (request-smuggling defence) */
+        if (cl_hdr && tls_req_chunked) {
+            ssl_shutdown_quick(ssl, fd);
+            free(raw); close(fd); return;
+        }
+
         if (cl_hdr) {
             long long cl = atoll(cl_hdr);
             if (cl < 0 ||
                 (unsigned long long)cl >
                 (unsigned long long)srv_limits.max_body) {
-                SSL_shutdown(ssl);
-                SSL_free(ssl);
+                ssl_shutdown_quick(ssl, fd);
                 free(raw);
                 close(fd);
                 return;
@@ -2074,8 +3150,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                     int n = SSL_read(ssl, raw + hdr_used,
                                      (int)(need < space ? need : space));
                     if (n <= 0) {
-                        SSL_shutdown(ssl);
-                        SSL_free(ssl);
+                        ssl_shutdown_quick(ssl, fd);
                         free(raw);
                         close(fd);
                         return;
@@ -2094,21 +3169,89 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
 
         Req req = parse_request(raw);
 
-        /* Dispatch to route table */
-        Res res = make_res(404, "Not Found");
-        StrPair params[32]; int pc = 0;
-        for (int i = 0; i < route_count; i++) {
-            if (req.method && strcmp(route_table[i].method, req.method) != 0)
-                continue;
-            if (match_pattern(route_table[i].pattern,
-                              req.path ? req.path : "", params, &pc)) {
-                req.params.data = params; req.params.len = (uint64_t)pc;
-                res = route_table[i].h(req); break;
+        /* ── Reject disallowed methods early ── */
+        int tls_is_head = (req.method && strcmp(req.method, "HEAD") == 0);
+        if (req.method &&
+            strcmp(req.method, "GET")    != 0 &&
+            strcmp(req.method, "POST")   != 0 &&
+            strcmp(req.method, "PUT")    != 0 &&
+            strcmp(req.method, "DELETE") != 0 &&
+            strcmp(req.method, "PATCH")  != 0 &&
+            !tls_is_head) {
+            Res bad = make_res(405, "Method Not Allowed");
+            /* inline TLS send for 405 */
+            {
+                const char *ch = keep_alive ? "keep-alive" : "close";
+                size_t bl = bad.body ? strlen(bad.body) : 0;
+                char hb[256];
+                int hl2 = snprintf(hb, sizeof(hb),
+                    "HTTP/1.1 405 Method Not Allowed\r\n"
+                    "Content-Length: %zu\r\nConnection: %s\r\n", bl, ch);
+                if (hl2 > 0) SSL_write(ssl, hb, hl2);
+                write_security_headers_ssl(ssl);
+                SSL_write(ssl, "\r\n", 2);
+                if (bl) SSL_write(ssl, bad.body, (int)bl);
+                log_request(client_ip, &req, 405, bl);
             }
+            if (!keep_alive) break;
+            continue;
         }
 
-        /* Serialise response to a buffer and write via SSL_write */
-        {
+        /* Dispatch to route table (HEAD falls back to GET handler) */
+        Res res = make_res(404, "Not Found");
+        StrPair params[32]; int pc = 0;
+        int tls_path_matched = 0;
+        int tls_handler_called = 0;
+        for (int i = 0; i < route_count; i++) {
+            if (match_pattern(route_table[i].pattern,
+                              req.path ? req.path : "", params, &pc)) {
+                tls_path_matched = 1;
+                const char *check_method = tls_is_head ? "GET" : req.method;
+                if (check_method &&
+                    strcmp(route_table[i].method, check_method) == 0) {
+                    req.params.data = params; req.params.len = (uint64_t)pc;
+                    res = route_table[i].h(req);
+                    tls_handler_called = 1;
+                    if (tls_is_head) res.body = NULL;
+                    break;
+                }
+                pc = 0;
+            }
+        }
+        if (tls_path_matched && !tls_handler_called && res.status == 404) {
+            res = make_res(405, "Method Not Allowed");
+        }
+
+        /* Gzip compress if eligible — write directly (binary-safe) */
+        char  *tls_gz_buf = NULL;
+        size_t tls_gz_len = 0;
+        int    tls_did_gz = maybe_gzip_body(req, &res, &tls_gz_buf, &tls_gz_len);
+        if (tls_did_gz) {
+            const char *conn_hdr = keep_alive ? "keep-alive" : "close";
+            char hdr_buf[256];
+            int hl = snprintf(hdr_buf, sizeof(hdr_buf),
+                "HTTP/1.1 %u %s\r\n"
+                "Content-Length: %zu\r\n"
+                "Content-Encoding: gzip\r\n"
+                "Vary: Accept-Encoding\r\n"
+                "Connection: %s\r\n",
+                res.status, reason(res.status), tls_gz_len, conn_hdr);
+            if (hl > 0) SSL_write(ssl, hdr_buf, hl);
+            for (uint64_t hi = 0; hi < res.headers.len; hi++) {
+                const char *hk = res.headers.data[hi].key;
+                const char *hv = res.headers.data[hi].val;
+                if (!hk || !hv) continue;
+                char hline[512];
+                int ln = snprintf(hline, sizeof(hline), "%s: %s\r\n", hk, hv);
+                if (ln > 0) SSL_write(ssl, hline, ln);
+            }
+            write_security_headers_ssl(ssl);
+            SSL_write(ssl, "\r\n", 2);
+            SSL_write(ssl, tls_gz_buf, (int)tls_gz_len);
+            log_request(client_ip, &req, res.status, tls_gz_len);
+            free(tls_gz_buf);
+        } else {
+            /* Serialise response to a buffer and write via SSL_write */
             const char *conn_hdr = keep_alive ? "keep-alive" : "close";
             size_t body_len = res.body ? strlen(res.body) : 0;
             char hdr_buf[256];
@@ -2126,6 +3269,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 int ln = snprintf(hline, sizeof(hline), "%s: %s\r\n", hk, hv);
                 if (ln > 0) SSL_write(ssl, hline, ln);
             }
+            write_security_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
             if (body_len) SSL_write(ssl, res.body, (int)body_len);
             log_request(client_ip, &req, res.status, body_len);
@@ -2135,8 +3279,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
     }
 
     free(raw);
-    SSL_shutdown(ssl);
-    SSL_free(ssl);
+    ssl_shutdown_quick(ssl, fd);
     close(fd);
 }
 
@@ -2212,27 +3355,89 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
         tls_pids[i] = pid;
     }
 
-    close(srv);
+    /* Parent keeps srv open so respawned workers can inherit it. */
 
-    /* Parent: wait for all workers */
+    /* Parent: supervise, restart workers that die abnormally */
     for (;;) {
+        int   wstatus = 0;
+        pid_t died    = waitpid(-1, &wstatus, WNOHANG);
+
+        if (died < 0) {
+            if (errno == EINTR) {
+                /* Check shutdown flag below */
+            } else {
+                break;
+            }
+        }
+
         if (g_shutdown_requested) {
             for (uint64_t i = 0; i < nworkers; i++) {
                 if (tls_pids[i] > 0) kill(tls_pids[i], SIGTERM);
             }
-            for (uint64_t i = 0; i < nworkers; i++) {
-                if (tls_pids[i] > 0) waitpid(tls_pids[i], NULL, 0);
+            time_t deadline = time(NULL) + HTTP_DRAIN_TIMEOUT_SECS;
+            for (;;) {
+                int all_done = 1;
+                for (uint64_t i = 0; i < nworkers; i++) {
+                    if (tls_pids[i] <= 0) continue;
+                    int ws = 0;
+                    pid_t p = waitpid(tls_pids[i], &ws, WNOHANG);
+                    if (p == tls_pids[i])
+                        tls_pids[i] = -1;
+                    else
+                        all_done = 0;
+                }
+                if (all_done) break;
+                if (time(NULL) >= deadline) {
+                    for (uint64_t i = 0; i < nworkers; i++) {
+                        if (tls_pids[i] > 0) {
+                            kill(tls_pids[i], SIGKILL);
+                            waitpid(tls_pids[i], NULL, 0);
+                            tls_pids[i] = -1;
+                        }
+                    }
+                    break;
+                }
+                struct timespec ts2;
+                ts2.tv_sec = 0; ts2.tv_nsec = 10000000;
+                nanosleep(&ts2, NULL);
             }
             break;
         }
-        {
+
+        if (died <= 0) {
             struct timespec ts;
             ts.tv_sec  = 0;
             ts.tv_nsec = 10000000; /* 10 ms */
             nanosleep(&ts, NULL);
+            continue;
+        }
+
+        /* A worker exited — find its slot */
+        uint64_t slot = nworkers;
+        for (uint64_t i = 0; i < nworkers; i++) {
+            if (tls_pids[i] == died) { slot = i; break; }
+        }
+        if (slot >= nworkers) continue;
+
+        if (WIFSIGNALED(wstatus) ||
+            (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) != 0)) {
+            /* Respawn worker using the shared listen socket */
+            pid_t pid = fork();
+            if (pid < 0) {
+                tls_pids[slot] = -1;
+                continue;
+            }
+            if (pid == 0) {
+                tls_worker_loop(srv, r, tls->ssl_ctx);
+                _exit(0);
+            }
+            tls_pids[slot] = pid;
+        } else {
+            tls_pids[slot] = -1;
         }
     }
 
+    close(srv);
     return TK_HTTP_OK;
 }
 
@@ -2246,6 +3451,35 @@ TkTlsCtx *http_tls_ctx_new(const char *cert_path, const char *key_path)
     fprintf(stderr,
             "http_tls_ctx_new: TLS not available: rebuild with OpenSSL\n");
     return NULL;
+}
+
+TkTlsCtx *http_tls_ctx_new_config(const TkTlsConfig *config)
+{
+    (void)config;
+    fprintf(stderr,
+            "http_tls_ctx_new_config: TLS not available\n");
+    return NULL;
+}
+
+int http_tls_add_sni(TkTlsCtx *ctx, const char *hostname,
+                     const char *cert_path, const char *key_path)
+{
+    (void)ctx; (void)hostname; (void)cert_path; (void)key_path;
+    return -1;
+}
+
+int http_tls_set_ocsp_response(TkTlsCtx *ctx,
+                                const uint8_t *data, size_t len)
+{
+    (void)ctx; (void)data; (void)len;
+    return -1;
+}
+
+int http_tls_reload_cert(TkTlsCtx *ctx, const char *cert_path,
+                          const char *key_path)
+{
+    (void)ctx; (void)cert_path; (void)key_path;
+    return -1;
 }
 
 void http_tls_ctx_free(TkTlsCtx *ctx)

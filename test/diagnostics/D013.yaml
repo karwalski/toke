@@ -2,8 +2,8 @@ id: D013
 series: D
 description: "Pointer type in non-extern function emits E2010"
 input: |
-  M=test;
-  F=bad(s:*u8):i64{<42};
+  m=test;
+  f=bad(s:*u8):i64{<42};
 expected_exit_code: 1
 expected_error_codes: ["E2010"]
 expected_output: ""

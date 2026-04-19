@@ -408,7 +408,10 @@ static Node *parse_primary(Parser *p) {
         if(peek(p)==TK_LBRACE){ /* $Name{field:val; ...} */
             Node *n=mk(p,NODE_STRUCT_LIT,nt); xp(p,TK_LBRACE,"'{'");
             while(peek(p)!=TK_RBRACE&&peek(p)!=TK_EOF){
-                Token *ft=cur(p); if(peek(p)==TK_IDENT||peek(p)==TK_TYPE_IDENT){adv(p);}else{xp(p,TK_IDENT,"field name");sync(p);break;}
+                Token *ft=cur(p);
+                /* Field name: ident, TYPE_IDENT (legacy), or $ident (sum variant) */
+                if(peek(p)==TK_DOLLAR){adv(p);ft=cur(p);}
+                if(peek(p)==TK_IDENT||peek(p)==TK_TYPE_IDENT){adv(p);}else{xp(p,TK_IDENT,"field name");sync(p);break;}
                 Node *fi=mk(p,NODE_FIELD_INIT,ft); if(!xp(p,TK_COLON,"':'")){ sync(p);break;}
                 ch(p,fi,parse_expr(p)); ch(p,n,fi); if(peek(p)==TK_SEMICOLON)adv(p);else break;
             }
@@ -672,9 +675,25 @@ static Node *parse_or(Parser *p) {
  * Error recovery: calls sync() on missing ':' or binding name, returning
  * a partial NODE_MATCH_ARM.
  */
-/* MatchArm = TYPE_IDENT ':' IDENT Expr  /  MatchExpr = CompareExpr ('|' '{' MatchArmList '}')? */
+/* MatchArm = TypeExpr ':' IDENT Expr
+ * Legacy: TYPE_IDENT ':' IDENT Expr   (e.g. Ok:v ...)
+ * Default: '$' IDENT ':' IDENT Expr   (e.g. $ok:v ...) */
 static Node *parse_match_arm(Parser *p) {
-    Token *pt=cur(p); if(!xp(p,TK_TYPE_IDENT,"match pattern")) return NULL;
+    Token *pt=cur(p);
+    if(peek(p)==TK_DOLLAR){
+        /* Default mode: $variant match arm head */
+        adv(p); /* consume $ */
+        Token *nt=cur(p);
+        if(!xp(p,TK_IDENT,"variant name after '$'")) return NULL;
+        Node *arm=mk(p,NODE_MATCH_ARM,pt); ch(p,arm,mk(p,NODE_TYPE_IDENT,nt));
+        if(!xp(p,TK_COLON,"':'")){ sync(p);return arm;}
+        Token *bt=cur(p); if(!xp(p,TK_IDENT,"binding name")){sync(p);return arm;}
+        ch(p,arm,mk(p,NODE_IDENT,bt)); ch(p,arm,parse_expr(p)); return arm;
+    }
+    /* Accept both TK_TYPE_IDENT (legacy Ok/Err) and TK_IDENT (default mode
+     * where uppercase-initial tokens are lexed as plain idents) */
+    if(peek(p)!=TK_TYPE_IDENT&&peek(p)!=TK_IDENT){xp(p,TK_TYPE_IDENT,"match pattern");return NULL;}
+    adv(p);
     Node *arm=mk(p,NODE_MATCH_ARM,pt); ch(p,arm,mk(p,NODE_TYPE_IDENT,pt));
     if(!xp(p,TK_COLON,"':'")){ sync(p);return arm;}
     Token *bt=cur(p); if(!xp(p,TK_IDENT,"binding name")){sync(p);return arm;}
@@ -1020,8 +1039,8 @@ static Node *parse_import_decl(Parser *p) {
  *     children[0]       = TypeExpr for the field's type
  *
  * Used exclusively within parse_type_decl to parse struct body fields.
- * Field names may be TK_IDENT or TK_TYPE_IDENT (to allow uppercase field
- * names that happen to match type-identifier casing).
+ * Field names may be TK_IDENT, TK_TYPE_IDENT (legacy uppercase variants),
+ * or TK_DOLLAR + TK_IDENT (default mode $variant fields in sum types).
  *
  * Semicolons separate fields; a trailing semicolon before '}' is allowed
  * (the loop peeks ahead to avoid consuming a ';' that precedes '}').
@@ -1033,9 +1052,11 @@ static Node *parse_import_decl(Parser *p) {
 static Node *parse_field_list(Parser *p) {
     Node *n=mk(p,NODE_STMT_LIST,cur(p));
     /* Track field names for duplicate detection (E2015). */
-    const char *seen_names[64]; int seen_starts[64]; int seen_lens[64]; int seen_count=0;
+    int seen_starts[64]; int seen_lens[64]; int seen_count=0;
     do {
         Token *ft=cur(p); TokenKind fk=peek(p);
+        /* Default mode: $variant field name in sum type (e.g. $notfound:u64) */
+        if(fk==TK_DOLLAR){adv(p);ft=cur(p);fk=peek(p);}
         if(fk!=TK_IDENT&&fk!=TK_TYPE_IDENT){ eerr(p,E2002,ft,"unexpected token");break;}
         /* Check for duplicate field name */
         for(int i=0;i<seen_count;i++){
@@ -1044,7 +1065,7 @@ static Node *parse_field_list(Parser *p) {
                 break;
             }
         }
-        if(seen_count<64){seen_names[seen_count]=p->src+ft->start;seen_starts[seen_count]=ft->start;seen_lens[seen_count]=ft->len;seen_count++;}
+        if(seen_count<64){seen_starts[seen_count]=ft->start;seen_lens[seen_count]=ft->len;seen_count++;}
         adv(p); Node *f=mk(p,NODE_FIELD,ft);
         if(!xp(p,TK_COLON,"':'")){ sync(p);break;}
         ch(p,f,parse_type_expr(p)); ch(p,n,f);

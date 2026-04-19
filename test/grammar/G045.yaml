@@ -7,5 +7,6 @@ input: |
   F=name(c:Color):i64{
     <c|{Red:r r;Green:g g;Blue:b b}
   };
+flags: --legacy
 expected_exit_code: 0
 expected_error_codes: []

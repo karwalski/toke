@@ -1,0 +1,10 @@
+m=bookmarks.model;
+
+(* bookmark — a single saved bookmark *)
+t=$bookmark{id:u64;url:$str;title:$str;tags:@$str};
+
+(* bookmarks — in-memory store with auto-incrementing id *)
+t=$bookmarks{items:@$bookmark;nextid:u64};
+
+(* apierr — error sum type for api responses *)
+t=$apierr{$notfound:u64;$badrequest:$str};

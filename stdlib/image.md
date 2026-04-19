@@ -17,9 +17,9 @@ An in-memory pixel buffer.
 | channels | u8 | Bytes per pixel (1 = grayscale, 3 = RGB, 4 = RGBA) |
 | data | [byte] | Raw interleaved pixel bytes, row-major order |
 
-The length of `data` is always `width * height * channels`.
+The length of `data` is always `width * height * channels`. Also referred to as `Image` in higher-level documentation.
 
-### imgfmt
+### imgfmt (PixelFormat)
 
 A sum type representing the target container format for encoding.
 
@@ -165,3 +165,45 @@ let frame_bytes=device.capture_raw();
 let buf=image.from_raw(frame_bytes; w; h; ch);
 let thumb=image.resize(buf; 320; 180);
 ```
+
+## Pipeline: Load, Transform, Save
+
+A typical image processing workflow reads a file from disk, applies one or more transforms, and writes the result back. All transforms produce new buffers, so the original is never mutated.
+
+```toke
+i=fs:std.file;
+i=image:std.image;
+i=log:std.log;
+
+(* 1. Load *)
+let raw=fs.read_bytes("input.png");
+let buf=image.decode(raw);
+
+(match buf{
+  ok(src){
+    (* 2. Transform: resize, crop, convert to grayscale *)
+    let resized=image.resize(src; 640; 480);
+    let cropped=image.crop(resized; 20; 20; 600; 440);
+    (match cropped{
+      ok(region){
+        let gray=image.to_grayscale(region);
+
+        (* 3. Save as WebP *)
+        let out=image.encode(gray; $imgfmt.Webp; 90);
+        (match out{
+          ok(bytes){ (fs.write_bytes("output.webp"; bytes)); };
+          err(msg){ (log.error("encode: " ++ msg)); };
+        });
+      };
+      err(msg){ (log.error("crop: " ++ msg)); };
+    });
+  };
+  err(msg){ (log.error("decode: " ++ msg)); };
+});
+```
+
+## Notes
+
+- All transform functions (`resize`, `crop`, `to_grayscale`, `flip_h`, `flip_v`) return new buffers; the source buffer is never modified.
+- Encoding quality is only meaningful for lossy formats (`Jpeg`, `Webp`). For `Png` and `Bmp` the quality parameter is ignored.
+- `from_raw` does not copy the pixel data. If the backing memory is freed externally, subsequent operations on the `imgbuf` are undefined.

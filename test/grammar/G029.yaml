@@ -2,8 +2,8 @@ id: G029
 series: G
 description: "Extern function with multiple params and pointer return type"
 input: |
-  M=test;
-  F=memcpy(dst:*u8;src:*u8;n:i64):*u8;
+  m=test;
+  f=memcpy(dst:*u8;src:*u8;n:i64):*u8;
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

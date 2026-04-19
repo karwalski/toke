@@ -1,0 +1,53 @@
+<div class="card">
+  <h1>Mortgage Results</h1>
+
+  <div class="summary">
+    <div class="summary-item">
+      <span class="summary-label">Monthly Payment</span>
+      <span class="summary-value">{{monthly}}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Total Interest</span>
+      <span class="summary-value">{{total_interest}}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Total Cost</span>
+      <span class="summary-value">{{total_cost}}</span>
+    </div>
+  </div>
+
+  <div class="input-recap">
+    <p>Principal: ${{principal}} | Rate: {{rate}} | Term: {{term}} years | Extra: ${{extra}}/mo</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Payment Breakdown by Year</h2>
+  <div class="chart-container">
+    {{chart_svg}}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Amortisation Schedule</h2>
+  <div class="table-wrap">
+    <table class="schedule-table">
+      <thead>
+        <tr>
+          <th>Month</th>
+          <th>Payment</th>
+          <th>Principal</th>
+          <th>Interest</th>
+          <th>Balance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{schedule_rows}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="actions">
+  <a href="/" class="btn btn-secondary">Recalculate</a>
+</div>

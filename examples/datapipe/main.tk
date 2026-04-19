@@ -1,0 +1,263 @@
+m=datapipe.main;
+i=io:std.io;
+i=file:std.file;
+i=csv:std.csv;
+i=json:std.json;
+i=str:std.str;
+i=math:std.math;
+i=args:std.args;
+
+(* pipeerr — error sum type *)
+t=$pipeerr{$fileerr:$str;$csverr:$str;$usage:$str};
+
+(* colstats — statistics for a single numeric column *)
+t=$colstats{name:$str;count:u64;sum:f64;avg:f64;min:f64;max:f64};
+
+(* report — full statistics report *)
+t=$report{filename:$str;rows:u64;columns:u64;stats:@$colstats};
+
+(* parse_args — get input csv and output json paths *)
+f=parse_args():@$str!$pipeerr{
+  let argc=args.count();
+  if(argc<3){
+    <$err($pipeerr.$usage("usage: datapipe <input.csv> <output.json>"))
+  };
+  let input=args.get(1);
+  let output=args.get(2);
+  <$ok(@(input;output))
+};
+
+(* read_csv — load csv file and return parsed rows *)
+f=read_csv(path:$str):csv.$doc!$pipeerr{
+  let raw=file.read(path)|{
+    $ok:v v;
+    $err:e <$err($pipeerr.$fileerr(
+      str.concat("cannot read file: ";path)
+    ))
+  };
+  let doc=csv.parse(raw)|{
+    $ok:d d;
+    $err:e <$err($pipeerr.$csverr("failed to parse csv"))
+  };
+  <$ok(doc)
+};
+
+(* is_numeric — check if a string looks like a number *)
+f=is_numeric(s:$str):bool{
+  let v=str.to_float(str.trim(s))|{
+    $ok:v true;
+    $err:e false
+  };
+  <v
+};
+
+(* detect_numeric_cols — find which columns contain numeric data *)
+f=detect_numeric_cols(doc:csv.$doc):@bool{
+  let headers=csv.headers(doc);
+  let ncols=headers.len;
+  let result=mut.@();
+
+  lp(let c=0;c<(ncols as i64);c=c+1){
+    let numeric=mut.true;
+    let nrows=csv.rowcount(doc);
+    let checked=mut.0;
+    lp(let r=0;r<(nrows as i64);r=r+1){
+      let val=csv.cell(doc;r;c);
+      if(str.len(str.trim(val))>0){
+        if(is_numeric(val)==false){
+          numeric=false
+        };
+        checked=checked+1
+      }
+    };
+    if(checked==0){
+      numeric=false
+    };
+    result=result.push(numeric)
+  };
+  <result
+};
+
+(* compute_col_stats — calculate statistics for one numeric column *)
+f=compute_col_stats(doc:csv.$doc;col:i64;name:$str):$colstats{
+  let nrows=csv.rowcount(doc);
+  let count=mut.0;
+  let sum=mut.0.0;
+  let mn=mut.999999999.0;
+  let mx=mut.(0.0-999999999.0);
+
+  lp(let r=0;r<(nrows as i64);r=r+1){
+    let val=csv.cell(doc;r;col);
+    if(str.len(str.trim(val))>0){
+      let num=str.to_float(str.trim(val))|{
+        $ok:v v;
+        $err:e 0.0
+      };
+      count=count+1;
+      sum=sum+num;
+      if(num<mn){mn=num};
+      if(num>mx){mx=num}
+    }
+  };
+  let avg=0.0;
+  if(count>0){
+    avg=sum/((count) as f64)
+  };
+  <$colstats{
+    name:name;
+    count:(count as u64);
+    sum:sum;
+    avg:avg;
+    min:mn;
+    max:mx
+  }
+};
+
+(* compute_all_stats — gather stats for every numeric column *)
+f=compute_all_stats(doc:csv.$doc):@$colstats{
+  let headers=csv.headers(doc);
+  let numeric=detect_numeric_cols(doc);
+  let result=mut.@();
+
+  lp(let c=0;c<(headers.len as i64);c=c+1){
+    if(numeric.get(c)){
+      let stats=compute_col_stats(doc;c;headers.get(c));
+      result=result.push(stats)
+    }
+  };
+  <result
+};
+
+(* colstats_to_json — serialise one column's stats *)
+f=colstats_to_json(s:$colstats):$str{
+  let buf=str.buf();
+  str.add(buf;"{\"name\":\"");
+  str.add(buf;s.name);
+  str.add(buf;"\",\"count\":");
+  str.add(buf;str.from_int(s.count as i64));
+  str.add(buf;",\"sum\":");
+  str.add(buf;str.from_float(s.sum));
+  str.add(buf;",\"avg\":");
+  str.add(buf;str.from_float(s.avg));
+  str.add(buf;",\"min\":");
+  str.add(buf;str.from_float(s.min));
+  str.add(buf;",\"max\":");
+  str.add(buf;str.from_float(s.max));
+  str.add(buf;"}");
+  <str.done(buf)
+};
+
+(* report_to_json — serialise the full report *)
+f=report_to_json(r:$report):$str{
+  let buf=str.buf();
+  str.add(buf;"{\n");
+  str.add(buf;"  \"filename\": \"");
+  str.add(buf;r.filename);
+  str.add(buf;"\",\n");
+  str.add(buf;"  \"rows\": ");
+  str.add(buf;str.from_int(r.rows as i64));
+  str.add(buf;",\n");
+  str.add(buf;"  \"columns\": ");
+  str.add(buf;str.from_int(r.columns as i64));
+  str.add(buf;",\n");
+  str.add(buf;"  \"stats\": [\n");
+
+  lp(let i=0;i<(r.stats.len as i64);i=i+1){
+    if(i>0){
+      str.add(buf;",\n")
+    };
+    str.add(buf;"    ");
+    str.add(buf;colstats_to_json(r.stats.get(i)))
+  };
+  str.add(buf;"\n  ]\n");
+  str.add(buf;"}");
+  <str.done(buf)
+};
+
+(* print_summary — display stats to stdout *)
+f=print_summary(r:$report):void{
+  io.println(str.concat("file:    ";r.filename));
+  io.println(str.concat("rows:    ";str.from_int(r.rows as i64)));
+  io.println(str.concat("columns: ";str.from_int(r.columns as i64)));
+  io.println("");
+  io.println("numeric column statistics:");
+  io.println("  column          count       sum       avg       min       max");
+  io.println("  --------------- -----  --------  --------  --------  --------");
+
+  lp(let i=0;i<(r.stats.len as i64);i=i+1){
+    let s=r.stats.get(i);
+    let line=str.buf();
+    str.add(line;"  ");
+    str.add(line;s.name);
+    str.add(line;"  ");
+    str.add(line;str.from_int(s.count as i64));
+    str.add(line;"  ");
+    str.add(line;str.from_float(s.sum));
+    str.add(line;"  ");
+    str.add(line;str.from_float(s.avg));
+    str.add(line;"  ");
+    str.add(line;str.from_float(s.min));
+    str.add(line;"  ");
+    str.add(line;str.from_float(s.max));
+    io.println(str.done(line))
+  }
+};
+
+(* run — main pipeline: read csv, compute stats, write json *)
+f=run():i64{
+  let paths=parse_args()|{
+    $ok:v v;
+    $err:e {
+      e|{
+        $usage:msg io.eprintln(msg);
+        $fileerr:msg io.eprintln(msg);
+        $csverr:msg io.eprintln(msg)
+      };
+      <1
+    }
+  };
+  let input=paths.get(0);
+  let output=paths.get(1);
+
+  io.println(str.concat("reading: ";input));
+  let doc=read_csv(input)|{
+    $ok:d d;
+    $err:e {
+      e|{
+        $fileerr:msg io.eprintln(msg);
+        $csverr:msg io.eprintln(msg);
+        $usage:msg io.eprintln(msg)
+      };
+      <1
+    }
+  };
+
+  let headers=csv.headers(doc);
+  let stats=compute_all_stats(doc);
+  let r=$report{
+    filename:input;
+    rows:(csv.rowcount(doc) as u64);
+    columns:(headers.len as u64);
+    stats:stats
+  };
+
+  print_summary(r);
+  io.println("");
+
+  let jsonstr=report_to_json(r);
+  file.write(output;jsonstr)|{
+    $ok:v {
+      io.println(str.concat("report written to: ";output))
+    };
+    $err:e {
+      io.eprintln(str.concat("error writing report: ";output));
+      <1
+    }
+  };
+  <0
+};
+
+(* main — entry point *)
+f=main():i64{
+  <run()
+};

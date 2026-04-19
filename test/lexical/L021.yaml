@@ -2,8 +2,8 @@ id: L021
 series: L
 description: "Using false as an identifier emits E1010"
 input: |
-  M=test;
-  F=bad():i64{let false=0;<false};
+  m=test;
+  f=bad():i64{let false=0;<false};
 expected_exit_code: 1
 expected_error_codes: ["E1010"]
 expected_fix: ""

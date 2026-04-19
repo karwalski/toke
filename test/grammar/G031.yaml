@@ -2,9 +2,9 @@ id: G031
 series: G
 description: "Unversioned import still works (backward compatibility)"
 input: |
-  M=test;
-  I=io:std.io;
-  F=noop():bool{<true};
+  m=test;
+  i=io:std.io;
+  f=noop():bool{<true};
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

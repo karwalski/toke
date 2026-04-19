@@ -2,7 +2,7 @@ id: D018
 series: D
 description: "Void function returning a value emits E4031"
 input: |
-  M=test;
-  F=bad():void{<42};
+  m=test;
+  f=bad():void{<42};
 expected_exit_code: 1
 expected_error_codes: ["E4031"]

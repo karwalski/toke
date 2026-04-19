@@ -2,8 +2,8 @@ id: G017
 series: G
 description: "Valid break statement (BreakStmt) inside loop"
 input: |
-  M=test;
-  F=findfive():i64{
+  m=test;
+  f=findfive():i64{
     lp(let i=0;i<100;i=i+1){
       if(i=5){br};
     };

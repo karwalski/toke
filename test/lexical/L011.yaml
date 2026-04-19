@@ -2,8 +2,8 @@ id: L011
 series: L
 description: "false is classified as BOOL_LIT, not IDENT"
 input: |
-  M=test;
-  F=bools():bool{<false};
+  m=test;
+  f=bools():bool{<false};
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

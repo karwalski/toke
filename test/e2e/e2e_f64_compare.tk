@@ -1,0 +1,10 @@
+m=test;
+f=main():i64{
+  let a=3.14;
+  let b=2.71;
+  let r=mut.0;
+  if(a>b){r=r+1};
+  if(b<a){r=r+1};
+  if(a>3.0){r=r+1};
+  <r
+};

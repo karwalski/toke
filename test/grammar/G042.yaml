@@ -5,6 +5,7 @@ input: |
   M=test;
   T=Vec2{x:i64;y:i64};
   F=add(a:Vec2;b:Vec2):Vec2{<Vec2{x:a.x+b.x;y:a.y+b.y}};
+flags: --legacy
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

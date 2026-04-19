@@ -2,8 +2,8 @@ id: G007
 series: G
 description: "Valid if/else statement (IfStmt with el branch)"
 input: |
-  M=test;
-  F=sign(x:i64):i64{
+  m=test;
+  f=sign(x:i64):i64{
     if(x>0){<1}el{<0}
   };
 expected_exit_code: 0

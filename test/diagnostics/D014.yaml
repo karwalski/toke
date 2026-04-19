@@ -2,9 +2,9 @@ id: D014
 series: D
 description: "Malformed version string in import emits E2035"
 input: |
-  M=test;
-  I=io:std.io "abc";
-  F=noop():bool{<true};
+  m=test;
+  i=io:std.io "abc";
+  f=noop():bool{<true};
 expected_exit_code: 1
 expected_error_codes: ["E2035"]
 expected_fix_absent: true

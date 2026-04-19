@@ -1,0 +1,280 @@
+m=mortgage.web.calculate;
+i=http:std.http;
+i=tpl:std.template;
+i=str:std.str;
+i=math:std.math;
+i=svg:std.svg;
+
+(* parse_form — extract key=value pairs from urlencoded body *)
+f=parse_form(body:str):@(str:str){
+  let pairs=str.split(body;"&");
+  let result=mut.@();
+  lp(let i=0;i<(pairs.len as i64);i=i+1){
+    let pair=pairs.get(i);
+    let kv=str.split(pair;"=");
+    if(kv.len>1){
+      let k=kv.get(0);
+      let v=kv.get(1);
+      result=result.push(@(k:v))
+    }
+  };
+  <result
+};
+
+(* form_val — get a value from parsed form data *)
+f=form_val(form:@(str:str);key:str):str{
+  lp(let i=0;i<(form.len as i64);i=i+1){
+    let entry=form.get(i);
+    if(entry.key==key){
+      <entry.val
+    }
+  };
+  <"0"
+};
+
+(* monthly_payment — M = P * [r(1+r)^n] / [(1+r)^n - 1] *)
+f=monthly_payment(principal:f64;rate:f64;months:u64):f64{
+  let r=rate/12.0;
+  if(r<0.000000001){
+    <principal/(months as f64)
+  };
+  let rn=math.pow(1.0+r;(months as f64));
+  <principal*(r*rn)/(rn-1.0)
+};
+
+(* format_money — format f64 to 2 decimal places *)
+f=format_money(v:f64):str{
+  let whole=(v as i64);
+  let frac=((v-(whole as f64))*100.0+0.5 as i64);
+  if(frac>99){
+    whole=whole+1;
+    frac=0
+  };
+  let b=str.buf();
+  str.add(b;str.from_int(whole));
+  str.add(b;".");
+  if(frac<10){
+    str.add(b;"0")
+  };
+  str.add(b;str.from_int(frac));
+  <str.done(b)
+};
+
+(* build_schedule_rows — generate amortisation table html *)
+f=build_schedule_rows(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):str{
+  let n=term*12;
+  let bal=mut.principal;
+  let b=str.buf();
+  let total_interest=mut.0.0;
+  let total_paid=mut.0.0;
+  lp(let i=1;i<(n as i64)+1;i=i+1){
+    let mi=bal*(rate/12.0);
+    let mp=pmt+extra;
+    if(mp>bal+mi){
+      mp=bal+mi
+    };
+    let princ=mp-mi;
+    bal=bal-princ;
+    if(bal<0.0){bal=0.0};
+    total_interest=total_interest+mi;
+    total_paid=total_paid+mp;
+    str.add(b;"<tr><td>");
+    str.add(b;str.from_int(i));
+    str.add(b;"</td><td>$");
+    str.add(b;format_money(mp));
+    str.add(b;"</td><td>$");
+    str.add(b;format_money(princ));
+    str.add(b;"</td><td>$");
+    str.add(b;format_money(mi));
+    str.add(b;"</td><td>$");
+    str.add(b;format_money(bal));
+    str.add(b;"</td></tr>");
+    if(bal<0.01){
+      <str.done(b)
+    }
+  };
+  <str.done(b)
+};
+
+(* build_svg_chart — stacked bar chart: principal vs interest per year *)
+f=build_svg_chart(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):str{
+  let n=term*12;
+  let bal=mut.principal;
+  let years=(term as i64);
+  let chart_w=700.0;
+  let chart_h=300.0;
+  let margin_l=60.0;
+  let margin_b=40.0;
+  let bar_w=chart_w/(years as f64)-4.0;
+  if(bar_w>40.0){bar_w=40.0};
+  if(bar_w<4.0){bar_w=4.0};
+
+  (* first pass: find yearly totals and max *)
+  let yearly_princ=mut.@();
+  let yearly_int=mut.@();
+  let max_annual=mut.0.0;
+  let yr_princ=mut.0.0;
+  let yr_int=mut.0.0;
+  lp(let i=1;i<(n as i64)+1;i=i+1){
+    let mi=bal*(rate/12.0);
+    let mp=pmt+extra;
+    if(mp>bal+mi){mp=bal+mi};
+    let princ=mp-mi;
+    bal=bal-princ;
+    if(bal<0.0){bal=0.0};
+    yr_princ=yr_princ+princ;
+    yr_int=yr_int+mi;
+    if(i>(0 as i64)&&(i as u64)%12==0||bal<0.01){
+      let total=yr_princ+yr_int;
+      if(total>max_annual){max_annual=total};
+      yearly_princ=yearly_princ.push(yr_princ);
+      yearly_int=yearly_int.push(yr_int);
+      yr_princ=0.0;
+      yr_int=0.0;
+      if(bal<0.01){
+        lp(let j=(yearly_princ.len as i64);j<years;j=j+1){
+          yearly_princ=yearly_princ.push(0.0);
+          yearly_int=yearly_int.push(0.0)
+        };
+        i=(n as i64)+1
+      }
+    }
+  };
+
+  (* build svg *)
+  let d=svg.doc(chart_w+margin_l+20.0;chart_h+margin_b+40.0);
+  let princ_style=svg.style("#4caf50";"none";0.0);
+  let int_style=svg.style("#f44336";"none";0.0);
+  let axis_style=svg.style("none";"#333";1.0);
+  let txt_style=$svgstyle{fill:"#555";stroke:"none";stroke_width:0.0;opacity:1.0;font_size:10.0;font_family:"sans-serif"};
+  let title_style=$svgstyle{fill:"#333";stroke:"none";stroke_width:0.0;opacity:1.0;font_size:14.0;font_family:"sans-serif"};
+
+  (* title *)
+  let d=svg.append(d;svg.text(margin_l+chart_w/2.0-80.0;16.0;"principal vs interest by year";title_style));
+
+  (* y axis *)
+  let d=svg.append(d;svg.line(margin_l;30.0;margin_l;chart_h+30.0;axis_style));
+  (* x axis *)
+  let d=svg.append(d;svg.line(margin_l;chart_h+30.0;margin_l+chart_w;chart_h+30.0;axis_style));
+
+  if(max_annual<1.0){max_annual=1.0};
+  let scale=chart_h/max_annual;
+  let actual_years=(yearly_princ.len as i64);
+  let spacing=chart_w/(actual_years as f64);
+
+  lp(let y=0;y<actual_years;y=y+1){
+    let yp=yearly_princ.get(y);
+    let yi=yearly_int.get(y);
+    let x=margin_l+(y as f64)*spacing+spacing/2.0-bar_w/2.0;
+
+    (* interest bar — bottom *)
+    let ih=yi*scale;
+    let iy=chart_h+30.0-ih;
+    let d=svg.append(d;svg.rect(x;iy;bar_w;ih;int_style));
+
+    (* principal bar — stacked on top *)
+    let ph=yp*scale;
+    let py=iy-ph;
+    let d=svg.append(d;svg.rect(x;py;bar_w;ph;princ_style));
+
+    (* year label *)
+    let lx=margin_l+(y as f64)*spacing+spacing/2.0-4.0;
+    let d=svg.append(d;svg.text(lx;chart_h+44.0;str.from_int(y+1);txt_style))
+  };
+
+  (* legend *)
+  let leg_y=chart_h+60.0;
+  let d=svg.append(d;svg.rect(margin_l;leg_y;12.0;12.0;princ_style));
+  let d=svg.append(d;svg.text(margin_l+16.0;leg_y+10.0;"principal";txt_style));
+  let d=svg.append(d;svg.rect(margin_l+100.0;leg_y;12.0;12.0;int_style));
+  let d=svg.append(d;svg.text(margin_l+116.0;leg_y+10.0;"interest";txt_style));
+
+  <svg.render(d)
+};
+
+(* calc_totals — compute total interest and total cost *)
+f=calc_totals(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):@f64{
+  let n=term*12;
+  let bal=mut.principal;
+  let total_interest=mut.0.0;
+  let total_paid=mut.0.0;
+  lp(let i=1;i<(n as i64)+1;i=i+1){
+    let mi=bal*(rate/12.0);
+    let mp=pmt+extra;
+    if(mp>bal+mi){mp=bal+mi};
+    let princ=mp-mi;
+    bal=bal-princ;
+    if(bal<0.0){bal=0.0};
+    total_interest=total_interest+mi;
+    total_paid=total_paid+mp;
+    if(bal<0.01){
+      <@(total_interest;total_paid)
+    }
+  };
+  <@(total_interest;total_paid)
+};
+
+(* handler — process mortgage calculation form *)
+f=handler(req:http.$req):http.$res{
+  let form=parse_form(req.body);
+  let principal_s=form_val(form;"principal");
+  let rate_s=form_val(form;"rate");
+  let term_s=form_val(form;"term");
+  let extra_s=form_val(form;"extra");
+
+  let principal=str.to_float(principal_s)|{
+    $ok:v v;
+    $err:e <http.res.bad("invalid principal")
+  };
+  let annual_rate=str.to_float(rate_s)|{
+    $ok:v v;
+    $err:e <http.res.bad("invalid rate")
+  };
+  let term=str.to_int(term_s)|{
+    $ok:v (v as u64);
+    $err:e <http.res.bad("invalid term")
+  };
+  let extra=str.to_float(extra_s)|{
+    $ok:v v;
+    $err:e 0.0
+  };
+
+  if(annual_rate<0.0||annual_rate>1.0){
+    <http.res.bad("rate must be between 0 and 1 (e.g. 0.065 for 6.5%)")
+  };
+  if(term<1){
+    <http.res.bad("term must be at least 1 year")
+  };
+
+  let pmt=monthly_payment(principal;annual_rate;term*12);
+  let totals=calc_totals(principal;annual_rate;term;extra;pmt);
+  let total_interest=totals.get(0);
+  let total_cost=totals.get(1);
+
+  let schedule_html=build_schedule_rows(principal;annual_rate;term;extra;pmt);
+  let chart_svg=build_svg_chart(principal;annual_rate;term;extra;pmt);
+
+  let vars=tpl.vars(@(
+    "monthly":str.concat("$";format_money(pmt+extra));
+    "total_interest":str.concat("$";format_money(total_interest));
+    "total_cost":str.concat("$";format_money(total_cost));
+    "principal":format_money(principal);
+    "rate":rate_s;
+    "term":str.from_int(term as i64);
+    "extra":format_money(extra);
+    "schedule_rows":schedule_html;
+    "chart_svg":chart_svg
+  ));
+
+  let body=tpl.renderfile("templates/results.tkt";vars)|{
+    $ok:v v;
+    $err:e <http.res.err("template error")
+  };
+  let layout_vars=tpl.vars(@("title":"Mortgage Results"));
+  let layout=tpl.renderfile("templates/layout.tkt";layout_vars)|{
+    $ok:v v;
+    $err:e <http.res.err("template error")
+  };
+  let page=str.replace(layout;"{{content}}";body);
+  <http.res.ok(page)
+};

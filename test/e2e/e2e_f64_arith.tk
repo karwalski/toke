@@ -1,0 +1,16 @@
+m=test;
+f=main():i64{
+  let a=10.0;
+  let b=3.0;
+  let sum=a+b;
+  let diff=a-b;
+  let prod=a*b;
+  let quot=a/b;
+  if(sum>12.9){
+    if(diff>6.9){
+      if(prod>29.9){
+        if(quot>3.3){<42}el{<0}
+      }el{<0}
+    }el{<0}
+  }el{<0}
+};

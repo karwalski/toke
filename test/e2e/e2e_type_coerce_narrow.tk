@@ -1,0 +1,8 @@
+m=test;
+f=add8(a:i8;b:i8):i8{<a+b};
+f=main():i64{
+  let x=10 as i8;
+  let y=20 as i8;
+  let z=add8(x;y);
+  <z as i64
+};

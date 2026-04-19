@@ -16,7 +16,7 @@
  *   - Letters        a-z  A-Z                (52)
  *   - Digits         0-9                     (10)
  *   - Symbols        ( ) { } [ ] = : . ; + - * / < > ! | " \ $ @   (20)
- *   Keywords are lowercase (m=, f=, t=, i=); uppercase also accepted.
+ *   Keywords are lowercase (m=, f=, t=, i=); uppercase produces E1006.
  *   $ prefixes type references; @ is a valid token.
  *   Uppercase-initial identifiers are plain TK_IDENT (not TK_TYPE_IDENT).
  *
@@ -50,14 +50,17 @@
  *   E1003 — Character outside the allowed character set.
  *   E1004 — Unterminated string at EOF (distinct from mid-file E1002).
  *   E1005 — Invalid numeric literal (0x/0b with no digits, etc.).
+ *   E1006 — Uppercase keyword in default syntax mode.
  *   W1010 — String interpolation \( attempted (not supported).
+ *   W1011 — Identifier starts with a keyword prefix (hint).
  *
  * Errors cause lex() to return -1 immediately after emitting the
- * diagnostic via diag_emit().  The W1010 warning is non-fatal; lexing
- * continues after skipping the interpolation expression.
+ * diagnostic via diag_emit().  Warnings (W1010, W1011) are non-fatal;
+ * lexing continues normally.
  * =========================================================================
  */
 
+#include <stdio.h>
 #include <string.h>
 
 #include "diag.h"
@@ -69,7 +72,9 @@
 #define LEX_E1003 1003   /* character outside Profile 1 set               */
 #define LEX_E1004 1004   /* unterminated string at EOF                    */
 #define LEX_E1005 1005   /* invalid numeric literal                       */
+#define LEX_E1006 1006   /* uppercase keyword in default syntax mode      */
 #define LEX_W1010 1010   /* string interpolation not supported (warning)  */
+#define LEX_W1011 1011   /* identifier starts with keyword prefix (hint)  */
 
 /*
  * Lexer — private scanner state.
@@ -177,14 +182,12 @@ static const KwEntry KEYWORDS_LEGACY[] = {
 };
 #define KW_LEGACY_COUNT ((int)(sizeof(KEYWORDS_LEGACY) / sizeof(KEYWORDS_LEGACY[0])))
 
-/* Default-mode keywords: uppercase single-letter keywords (F/T/I/M) are
- * still recognized so existing code using uppercase declarations continues
- * to work.  Lowercase single-letter forms (m/f/i/t) are NOT in the keyword
- * table — the parser handles them via lookahead (is_decl_ident), keeping
- * them as TK_IDENT so that e.g. `i` inside a function body is a variable. */
+/* Default-mode keywords: single-letter declarations (m/f/i/t) are NOT in
+ * the keyword table — the parser handles them via lookahead (is_decl_ident),
+ * keeping them as TK_IDENT so that e.g. `i` inside a function body is a
+ * variable.  Uppercase single-letter forms (M/F/T/I) are rejected by
+ * lex_ident() with E1006 when followed by '='. */
 static const KwEntry KEYWORDS_DEFAULT[] = {
-    { "F",     TK_KW_F   }, { "T",     TK_KW_T   },
-    { "I",     TK_KW_I   }, { "M",     TK_KW_M   },
     { "if",    TK_KW_IF  }, { "el",    TK_KW_EL  },
     { "lp",    TK_KW_LP  }, { "br",    TK_KW_BR  },
     { "let",   TK_KW_LET }, { "mut",   TK_KW_MUT },
@@ -466,12 +469,89 @@ static int lex_string(Lexer *l, int start, int line, int col)
  * which decides whether it is a keyword, boolean literal, type
  * identifier, or plain identifier.
  */
+/*
+ * Keyword prefixes that commonly cause confusion when run together with
+ * an identifier (e.g. "letfoo" instead of "let foo").  Single-character
+ * keywords (f, t, i, m) are excluded — they would trigger too many
+ * false positives on ordinary identifiers.
+ */
+static const char *const KW_HINT_PREFIXES[] = {
+    "let", "if", "el", "lp", "br", "mut", "rt", "as"
+};
+#define KW_HINT_COUNT ((int)(sizeof(KW_HINT_PREFIXES) / sizeof(KW_HINT_PREFIXES[0])))
+
+/*
+ * check_keyword_prefix — Emit W1011 if a plain identifier starts with a
+ *                         keyword followed by more identifier characters.
+ *
+ * Only fires when classify_ident() has already determined the token is
+ * TK_IDENT (not a keyword or type identifier), so there is no risk of
+ * warning on actual keywords.
+ */
+static void check_keyword_prefix(const char *src, int start, int len,
+                                 int line, int col)
+{
+    for (int i = 0; i < KW_HINT_COUNT; i++) {
+        int kwlen = (int)strlen(KW_HINT_PREFIXES[i]);
+        if (len > kwlen && memcmp(src + start, KW_HINT_PREFIXES[i],
+                                  (size_t)kwlen) == 0) {
+            char msg[128];
+            snprintf(msg, sizeof(msg),
+                     "identifier '%.*s' starts with keyword '%s' "
+                     "— did you mean '%s %.*s'?",
+                     len, src + start, KW_HINT_PREFIXES[i],
+                     KW_HINT_PREFIXES[i], len - kwlen, src + start + kwlen);
+            diag_emit(DIAG_WARNING, LEX_W1011, start, line, col,
+                      msg,
+                      "fix", "insert a space after the keyword", NULL);
+            return;  /* one warning per identifier is enough */
+        }
+    }
+}
+
+/*
+ * Uppercase keyword letters that are valid in legacy mode but must be
+ * rejected in default mode.  Maps each uppercase letter to its lowercase
+ * equivalent for the error message.
+ */
+typedef struct { char upper; const char *lower; } UpperKwEntry;
+static const UpperKwEntry UPPER_KW_MAP[] = {
+    { 'M', "m=" }, { 'F', "f=" }, { 'T', "t=" },
+    { 'I', "i=" }, { 'C', "c=" },
+};
+#define UPPER_KW_COUNT ((int)(sizeof(UPPER_KW_MAP) / sizeof(UPPER_KW_MAP[0])))
+
 static int lex_ident(Lexer *l, int start, int line, int col)
 {
     while (l->pos < l->len && is_ident_cont(l->src[l->pos])) advance(l);
     int len = l->pos - start;
-    return emit(l, classify_ident(l->src, start, len, l->profile),
-                start, len, line, col);
+    TokenKind kind = classify_ident(l->src, start, len, l->profile);
+
+    /* In default mode, reject uppercase single-letter declaration keywords
+     * (M, F, T, I, C) when followed by '='.  These are only valid in
+     * --legacy mode; default syntax uses lowercase (m=, f=, t=, i=, c=). */
+    if (l->profile == PROFILE_DEFAULT && len == 1) {
+        char ch = l->src[start];
+        if (ch >= 'A' && ch <= 'Z' && l->pos < l->len && l->src[l->pos] == '=') {
+            for (int i = 0; i < UPPER_KW_COUNT; i++) {
+                if (ch == UPPER_KW_MAP[i].upper) {
+                    char msg[128];
+                    snprintf(msg, sizeof(msg),
+                             "uppercase keyword `%c=` is not valid in default "
+                             "syntax mode — use `%s` instead",
+                             ch, UPPER_KW_MAP[i].lower);
+                    diag_emit(DIAG_ERROR, LEX_E1006, start, line, col,
+                              msg, "fix",
+                              "use lowercase declaration keyword", NULL);
+                    return -1;
+                }
+            }
+        }
+    }
+
+    if (kind == TK_IDENT)
+        check_keyword_prefix(l->src, start, len, line, col);
+    return emit(l, kind, start, len, line, col);
 }
 
 /*

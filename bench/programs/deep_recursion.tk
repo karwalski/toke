@@ -1,5 +1,5 @@
-M=bench;
-F=ack(m:i64;n:i64):i64{
+m=bench;
+f=ack(m:i64;n:i64):i64{
   if(m=0){
     <n+1
   }el{
@@ -10,6 +10,6 @@ F=ack(m:i64;n:i64):i64{
     }
   }
 };
-F=main():i64{
+f=main():i64{
   <ack(3;10)
 };

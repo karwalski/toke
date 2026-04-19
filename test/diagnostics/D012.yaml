@@ -2,8 +2,8 @@ id: D012
 series: D
 description: "Multiple errors in one file produce one diagnostic record per error"
 input: |
-  M=test;
-  F=bad():Str{<"\q\p"};
+  m=test;
+  f=bad():Str{<"\q\p"};
 expected_exit_code: 1
 expected_error_codes: ["E1001", "E1001"]
 expected_fix_absent: true

@@ -7,6 +7,7 @@ input: |
   F=unwrap(v:Opt):i64{
     <v|{Some:x x;None:n 0}
   };
+flags: --legacy
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

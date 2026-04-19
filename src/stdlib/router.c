@@ -30,6 +30,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <limits.h>
 #include <zlib.h>
 
 /* ----------------------------------------------------------------------- */
@@ -1198,12 +1199,14 @@ static TkRouteResp static_resp_with_body(int status, char *body,
  * dir_path: filesystem directory root (e.g. "/var/www/static")
  * rel_path: relative URL path after the prefix (e.g. "style.css" or "")
  * if_none_match: value of the If-None-Match request header, or NULL
+ * range_header: value of the Range request header, or NULL
  *
- * On status 200: resp.body and resp.header_values[0] (ETag) are heap-allocated;
+ * On status 200/206: resp.body and resp.header_values[0] (ETag) are heap-allocated;
  * callers are responsible for freeing them.
  */
 TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
-                                 const char *if_none_match)
+                                 const char *if_none_match,
+                                 const char *range_header)
 {
     if (!dir_path || !rel_path) return router_resp_status(403, "Forbidden");
 
@@ -1224,6 +1227,30 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
     }
     if (n < 0 || (size_t)n >= sizeof(full))
         return router_resp_status(403, "Forbidden");
+
+    /* Reject null bytes in path (prevents truncation attacks) */
+    if (memchr(full, '\0', (size_t)n) != (full + n))
+        return router_resp_status(403, "Forbidden");
+
+    /* Resolve symlinks and validate the path stays under dir_path */
+    {
+        char resolved_root[PATH_MAX];
+        char resolved_full[PATH_MAX];
+        if (!realpath(dir_path, resolved_root))
+            return router_resp_status(403, "Forbidden");
+        if (!realpath(full, resolved_full))
+            return (errno == ENOENT || errno == ENOTDIR)
+                ? router_resp_404()
+                : router_resp_status(403, "Forbidden");
+        size_t root_len = strlen(resolved_root);
+        if (strncmp(resolved_full, resolved_root, root_len) != 0 ||
+            (resolved_full[root_len] != '\0' && resolved_full[root_len] != '/'))
+            return router_resp_status(403, "Forbidden");
+        /* Use the resolved path for all subsequent operations */
+        n = snprintf(full, sizeof(full), "%s", resolved_full);
+        if (n < 0 || (size_t)n >= sizeof(full))
+            return router_resp_status(403, "Forbidden");
+    }
 
     /* stat the path */
     struct stat st;
@@ -1274,28 +1301,104 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
 
     const char *mime = mime_for_path(full);
 
+    /* ── Range request support (Story 59.4.7) ── */
+    if (range_header && total > 0) {
+        /* Parse "bytes=start-end" (single range only) */
+        const char *eq = strchr(range_header, '=');
+        if (eq && strncmp(range_header, "bytes", 5) == 0) {
+            eq++;
+            size_t rstart = 0, rend = total - 1;
+            int valid = 1;
+
+            if (*eq == '-') {
+                /* bytes=-N  → last N bytes */
+                size_t suffix = (size_t)atoll(eq + 1);
+                if (suffix == 0 || suffix > total) { valid = 0; }
+                else { rstart = total - suffix; }
+            } else {
+                rstart = (size_t)atoll(eq);
+                const char *dash = strchr(eq, '-');
+                if (dash && *(dash + 1) != '\0')
+                    rend = (size_t)atoll(dash + 1);
+                if (rstart > rend || rstart >= total) valid = 0;
+                if (rend >= total) rend = total - 1;
+            }
+
+            if (!valid) {
+                free(buf);
+                /* 416 Range Not Satisfiable */
+                char cr_hdr[64];
+                snprintf(cr_hdr, sizeof cr_hdr, "bytes */%zu", total);
+                const char **h416n = malloc(sizeof(char *));
+                const char **h416v = malloc(sizeof(char *));
+                if (h416n && h416v) {
+                    h416n[0] = "Content-Range"; h416v[0] = strdup(cr_hdr);
+                    TkRouteResp r416;
+                    memset(&r416, 0, sizeof(r416));
+                    r416.status = 416;
+                    r416.body = "Range Not Satisfiable";
+                    r416.header_names = h416n; r416.header_values = h416v;
+                    r416.nheaders = 1;
+                    return r416;
+                }
+                return router_resp_status(416, "Range Not Satisfiable");
+            }
+
+            /* Extract the requested range */
+            size_t part_len = rend - rstart + 1;
+            char *part = malloc(part_len + 1);
+            if (!part) { free(buf); return router_resp_status(500, "Internal Error"); }
+            memcpy(part, buf + rstart, part_len);
+            part[part_len] = '\0';
+            free(buf);
+
+            /* Build Content-Range header */
+            char cr_val[128];
+            snprintf(cr_val, sizeof cr_val, "bytes %zu-%zu/%zu", rstart, rend, total);
+
+            int cache_secs = (strstr(mime, "text/html") != NULL) ? 3600 : 604800;
+            char cache_ctrl[48];
+            snprintf(cache_ctrl, sizeof cache_ctrl, "public, max-age=%d", cache_secs);
+
+            const char **hnames = malloc(5 * sizeof(char *));
+            const char **hvals  = malloc(5 * sizeof(char *));
+            if (!hnames || !hvals) {
+                free(hnames); free(hvals); free(part);
+                return router_resp_status(500, "Internal Error");
+            }
+            hnames[0] = "ETag";           hvals[0] = strdup(etag);
+            hnames[1] = "Content-Type";   hvals[1] = strdup(mime);
+            hnames[2] = "Cache-Control";  hvals[2] = strdup(cache_ctrl);
+            hnames[3] = "Content-Range";  hvals[3] = strdup(cr_val);
+            hnames[4] = "Accept-Ranges";  hvals[4] = strdup("bytes");
+
+            return static_resp_with_body(206, part, mime, hnames, hvals, 5);
+        }
+    }
+
     /* Cache lifetime: 1 hour for HTML, 7 days for assets */
     int cache_secs = (strstr(mime, "text/html") != NULL) ? 3600 : 604800;
     char cache_ctrl[48];
     snprintf(cache_ctrl, sizeof cache_ctrl, "public, max-age=%d", cache_secs);
 
-    /* Build response headers: ETag, Content-Type, Cache-Control */
-    const char **hnames = malloc(3 * sizeof(char *));
-    const char **hvals  = malloc(3 * sizeof(char *));
+    /* Build response headers: ETag, Content-Type, Cache-Control, Accept-Ranges */
+    const char **hnames = malloc(4 * sizeof(char *));
+    const char **hvals  = malloc(4 * sizeof(char *));
     if (!hnames || !hvals) {
         free(hnames); free(hvals); free(buf);
         return router_resp_status(500, "Internal Error");
     }
-    hnames[0] = "ETag";        hvals[0] = strdup(etag);
-    hnames[1] = "Content-Type"; hvals[1] = strdup(mime);
+    hnames[0] = "ETag";          hvals[0] = strdup(etag);
+    hnames[1] = "Content-Type";  hvals[1] = strdup(mime);
     hnames[2] = "Cache-Control"; hvals[2] = strdup(cache_ctrl);
-    if (!hvals[0] || !hvals[1] || !hvals[2]) {
-        for (int i = 0; i < 3; i++) free((void *)hvals[i]);
+    hnames[3] = "Accept-Ranges"; hvals[3] = strdup("bytes");
+    if (!hvals[0] || !hvals[1] || !hvals[2] || !hvals[3]) {
+        for (int i = 0; i < 4; i++) free((void *)hvals[i]);
         free(hnames); free(hvals); free(buf);
         return router_resp_status(500, "Internal Error");
     }
 
-    return static_resp_with_body(200, buf, mime, hnames, hvals, 3);
+    return static_resp_with_body(200, buf, mime, hnames, hvals, 4);
 }
 
 /* Per-prefix handler: the StaticCtx is embedded in a heap allocation
@@ -1327,7 +1430,7 @@ static TkRouteResp static_handler_##N(TkRouteCtx ctx)                      \
     const char *rel = ctx.path;                                             \
     size_t plen = strlen(se->url_prefix);                                   \
     if (strncmp(rel, se->url_prefix, plen) == 0) rel += plen;              \
-    return router_static_serve(se->dir_path, rel, NULL);                   \
+    return router_static_serve(se->dir_path, rel, NULL, NULL);              \
 }
 
 DEFINE_STATIC_TRAMPOLINE(0)

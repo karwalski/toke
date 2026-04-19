@@ -2,9 +2,9 @@ id: G006
 series: G
 description: "Valid import declaration"
 input: |
-  M=test;
-  I=s:std.str;
-  F=greet():Str{<"hi"};
+  m=test;
+  i=s:std.str;
+  f=greet():Str{<"hi"};
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

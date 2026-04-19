@@ -139,3 +139,84 @@ A sum type representing HTTP operation failures.
 | NotFound | Str | The requested parameter or header was not found |
 | Internal | Str | An internal server error occurred |
 | Timeout | u32 | The operation timed out (value is timeout in milliseconds) |
+
+---
+
+## HTTP Client Functions
+
+### `http.fetch(url:$str):$str!$httperr`
+
+Send a GET request and return the response body.
+
+**Example:**
+
+```
+let body=http.fetch("https://api.example.com/data");
+io.println(body);
+```
+
+### `http.post(url:$str;body:$str):$str!$httperr`
+
+Send a POST request with the given body. Returns the response body.
+
+**Example:**
+
+```
+let resp=http.post("https://api.example.com/items"; "{\"name\":\"widget\"}");
+```
+
+### `http.put(url:$str;body:$str):$str!$httperr`
+
+Send a PUT request with the given body.
+
+### `http.delete(url:$str):$str!$httperr`
+
+Send a DELETE request.
+
+---
+
+## Client Patterns
+
+### REST API consumer
+
+```
+i=http:std.http;
+i=json:std.json;
+
+f=get_user(id:i64):$str!$httperr{
+  let url=str.concat("https://api.example.com/users/"; str.fromint(id));
+  let body=http.fetch(url);
+  <body
+};
+```
+
+### Error handling with retry
+
+```
+f=fetch_with_retry(url:$str;max:i64):$str!$httperr{
+  let i=mut.0;
+  lp(i < max){
+    let result=http.fetch(url);
+    match result {
+      $ok:body { <body };
+      $err:e {
+        i=i+1;
+        if i == max { <result };
+      };
+    };
+  };
+  <http.fetch(url)
+};
+```
+
+### Bearer token authentication
+
+```
+f=authed_get(url:$str;token:$str):$str!$httperr{
+  let headers=@(
+    @("authorization"; str.concat("Bearer "; token));
+    @("accept"; "application/json")
+  );
+  <http.fetchh(url; headers)
+};
+```

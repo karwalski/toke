@@ -2,8 +2,8 @@ id: L026
 series: L
 description: "Hex literal 0x with no digits emits E1005"
 input: |
-  M=test;
-  F=bad():i64{<0x};
+  m=test;
+  f=bad():i64{<0x};
 expected_exit_code: 1
 expected_error_codes: ["E1005"]
 expected_fix: ""

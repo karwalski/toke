@@ -1,0 +1,8 @@
+id: D047
+series: D
+description: "E1006 uppercase keyword F= rejected in default syntax mode"
+input: |
+  m=test;
+  F=bad():i64{<0};
+expected_exit_code: 1
+expected_error_codes: ["E1006"]

@@ -1,0 +1,13 @@
+m=mortgage.model;
+
+(* Mortgage scenario: inputs for calculation *)
+t=$scenario{principal:f64;rate:f64;term:u64;extra:f64};
+
+(* Single month in amortisation schedule *)
+t=$payment{month:u64;payment:f64;principal:f64;interest:f64;balance:f64};
+
+(* Full calculation result *)
+t=$result{monthly:f64;totalinterest:f64;totalcost:f64;schedule:@$payment};
+
+(* Error sum type for validation and file operations *)
+t=$calcerr{$invalidrate:f64;$invalidterm:u64;$fileerr:$str};

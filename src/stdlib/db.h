@@ -105,4 +105,33 @@ BoolResult db_begin(int conn_id);
 BoolResult db_commit(int conn_id);
 BoolResult db_rollback(int conn_id);
 
+/* ── multi-backend vtable (Story 57.10) ──────────────────────────────────── */
+
+typedef struct DbBackend {
+    const char *name;
+    int  (*open)(const char *dsn);
+    void (*close)(void);
+    RowResult      (*one)(const char *sql, StrArray params);
+    RowArrayResult (*many)(const char *sql, StrArray params);
+    U64Result      (*exec)(const char *sql, StrArray params);
+    StmtResult     (*prepare)(int conn_id, const char *sql);
+    BoolResult     (*bind)(TkStmt *stmt, StrArray params);
+    RowResult      (*step)(TkStmt *stmt);
+    void           (*finalize)(TkStmt *stmt);
+    BoolResult     (*begin)(int conn_id);
+    BoolResult     (*commit)(int conn_id);
+    BoolResult     (*rollback)(int conn_id);
+    U64Result      (*last_insert_id)(int conn_id);
+    U64Result      (*affected_rows)(int conn_id);
+    int            (*table_exists)(int conn_id, const char *name);
+} DbBackend;
+
+/* Backend declarations — available when compiled with the corresponding flag */
+#ifdef TK_HAVE_LIBPQ
+extern const DbBackend db_postgres_backend;
+#endif
+#ifdef TK_HAVE_MYSQL
+extern const DbBackend db_mysql_backend;
+#endif
+
 #endif /* TK_STDLIB_DB_H */

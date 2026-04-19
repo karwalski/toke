@@ -2,8 +2,8 @@ id: G022
 series: G
 description: "Valid logical not (unary !) expression"
 input: |
-  M=test;
-  F=flip(b:bool):bool{<!b};
+  m=test;
+  f=flip(b:bool):bool{<!b};
 expected_exit_code: 0
 expected_error_codes: []
 expected_output: ""

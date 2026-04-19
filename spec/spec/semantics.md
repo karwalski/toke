@@ -379,7 +379,7 @@ error union type. Its semantics are:
 
 ### 5.3 Match on Error Types
 
-STUB: Matching on error union variants (e.g., `result|{ Ok:v expr; Err:e expr }`)
+STUB: Matching on error union variants (e.g., `result|{ $ok:v expr; $err:e expr }`)
 is planned but not yet formalized. The current type checker validates match
 exhaustiveness only for `bool` scrutinees.
 
@@ -500,8 +500,8 @@ A match expression has a scrutinee expression and one or more arms, written
 in spec-canonical postfix-pipe form `[grammar.ebnf MatchExpr]`:
 ```
 scrutinee|{
-    Variant1:binding1 body1;
-    Variant2:binding2 body2
+    $variant1:binding1 body1;
+    $variant2:binding2 body2
 }
 ```
 

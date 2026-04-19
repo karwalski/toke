@@ -2,8 +2,8 @@ id: D019
 series: D
 description: "Void function with return of string literal emits E4031 with fix"
 input: |
-  M=test;
-  F=bad():void{
+  m=test;
+  f=bad():void{
     <"hello"
   };
 expected_exit_code: 1

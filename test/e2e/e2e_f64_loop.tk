@@ -1,0 +1,8 @@
+m=test;
+f=main():i64{
+  let sum=mut.0.0;
+  lp(let i=0;i<5;i=i+1){
+    sum=sum+1.5
+  };
+  if(sum>7.4){<7}el{<0}
+};

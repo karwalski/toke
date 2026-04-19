@@ -2,8 +2,8 @@ id: L027
 series: L
 description: "Binary literal 0b with no digits emits E1005"
 input: |
-  M=test;
-  F=bad():i64{<0b};
+  m=test;
+  f=bad():i64{<0b};
 expected_exit_code: 1
 expected_error_codes: ["E1005"]
 expected_fix: ""

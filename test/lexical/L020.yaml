@@ -2,8 +2,8 @@ id: L020
 series: L
 description: "Using true as an identifier emits E1010"
 input: |
-  M=test;
-  F=bad():i64{let true=1;<true};
+  m=test;
+  f=bad():i64{let true=1;<true};
 expected_exit_code: 1
 expected_error_codes: ["E1010"]
 expected_fix: ""

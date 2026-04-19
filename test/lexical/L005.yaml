@@ -2,8 +2,8 @@ id: L005
 series: L
 description: "Unterminated string literal at end of file emits E1004"
 input: |
-  M=test;
-  F=bad():Str{<"unterminated};
+  m=test;
+  f=bad():Str{<"unterminated};
 expected_exit_code: 1
 expected_error_codes: ["E1004"]
 expected_fix: ""

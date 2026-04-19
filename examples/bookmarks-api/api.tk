@@ -1,0 +1,228 @@
+m=bookmarks.api;
+i=m:bookmarks.model;
+i=http:std.http;
+i=json:std.json;
+i=str:std.str;
+i=io:std.io;
+
+(* store — global mutable bookmark store *)
+let store=mut.m.$bookmarks{items:@();nextid:1};
+
+(* bookmark_to_json — serialise a single bookmark to json string *)
+f=bookmark_to_json(b:m.$bookmark):str{
+  let buf=str.buf();
+  str.add(buf;"{\"id\":");
+  str.add(buf;str.from_int(b.id as i64));
+  str.add(buf;",\"url\":\"");
+  str.add(buf;b.url);
+  str.add(buf;"\",\"title\":\"");
+  str.add(buf;b.title);
+  str.add(buf;"\",\"tags\":");
+  str.add(buf;tags_to_json(b.tags));
+  str.add(buf;"}");
+  <str.done(buf)
+};
+
+(* tags_to_json — serialise a tag array to json *)
+f=tags_to_json(tags:@$str):str{
+  let buf=str.buf();
+  str.add(buf;"[");
+  lp(let i=0;i<(tags.len as i64);i=i+1){
+    if(i>0){
+      str.add(buf;",")
+    };
+    str.add(buf;"\"");
+    str.add(buf;tags.get(i));
+    str.add(buf;"\"")
+  };
+  str.add(buf;"]");
+  <str.done(buf)
+};
+
+(* bookmarks_to_json — serialise the full list *)
+f=bookmarks_to_json(items:@(m.$bookmark)):str{
+  let buf=str.buf();
+  str.add(buf;"[");
+  lp(let i=0;i<(items.len as i64);i=i+1){
+    if(i>0){
+      str.add(buf;",")
+    };
+    str.add(buf;bookmark_to_json(items.get(i)))
+  };
+  str.add(buf;"]");
+  <str.done(buf)
+};
+
+(* error_to_json — serialise an api error *)
+f=error_to_json(e:m.$apierr):str{
+  e|{
+    $notfound:id {
+      let buf=str.buf();
+      str.add(buf;"{\"error\":\"not found\",\"id\":");
+      str.add(buf;str.from_int(id as i64));
+      str.add(buf;"}");
+      <str.done(buf)
+    };
+    $badrequest:msg {
+      let buf=str.buf();
+      str.add(buf;"{\"error\":\"bad request\",\"message\":\"");
+      str.add(buf;msg);
+      str.add(buf;"\"}");
+      <str.done(buf)
+    }
+  }
+};
+
+(* parse_bookmark — extract bookmark fields from json body *)
+f=parse_bookmark(body:str):m.$bookmark!m.$apierr{
+  let doc=json.dec(body)|{
+    $ok:d d;
+    $err:e <$err(m.$apierr.$badrequest("invalid json"))
+  };
+  let url=json.str(doc;"url")|{
+    $ok:v v;
+    $err:e <$err(m.$apierr.$badrequest("missing url"))
+  };
+  let title=json.str(doc;"title")|{
+    $ok:v v;
+    $err:e <$err(m.$apierr.$badrequest("missing title"))
+  };
+  let tags=json.arr(doc;"tags")|{
+    $ok:v v;
+    $err:e @()
+  };
+  let taglist=mut.@();
+  lp(let i=0;i<(tags.len as i64);i=i+1){
+    let tag=json.str_at(tags;i)|{
+      $ok:v v;
+      $err:e ""
+    };
+    if(str.len(tag)>0){
+      taglist=taglist.push(tag)
+    }
+  };
+  <$ok(m.$bookmark{id:0;url:url;title:title;tags:taglist})
+};
+
+(* find_bookmark — look up a bookmark by id *)
+f=find_bookmark(id:u64):m.$bookmark!m.$apierr{
+  lp(let i=0;i<(store.items.len as i64);i=i+1){
+    let b=store.items.get(i);
+    if(b.id==id){
+      <$ok(b)
+    }
+  };
+  <$err(m.$apierr.$notfound(id))
+};
+
+(* find_index — return index of bookmark with given id, or -1 *)
+f=find_index(id:u64):i64{
+  lp(let i=0;i<(store.items.len as i64);i=i+1){
+    let b=store.items.get(i);
+    if(b.id==id){
+      <i
+    }
+  };
+  <(0-1)
+};
+
+(* handle_list — GET /api/bookmarks *)
+f=handle_list(req:http.$request):http.$response{
+  let body=bookmarks_to_json(store.items);
+  <http.$response{
+    status:200;
+    headers:@("content-type":"application/json");
+    body:body
+  }
+};
+
+(* handle_create — POST /api/bookmarks *)
+f=handle_create(req:http.$request):http.$response{
+  parse_bookmark(req.body)|{
+    $ok:b {
+      let newb=m.$bookmark{
+        id:store.nextid;
+        url:b.url;
+        title:b.title;
+        tags:b.tags
+      };
+      store=m.$bookmarks{
+        items:store.items.push(newb);
+        nextid:store.nextid+1
+      };
+      <http.$response{
+        status:201;
+        headers:@("content-type":"application/json");
+        body:bookmark_to_json(newb)
+      }
+    };
+    $err:e {
+      <http.$response{
+        status:400;
+        headers:@("content-type":"application/json");
+        body:error_to_json(e)
+      }
+    }
+  }
+};
+
+(* handle_get — GET /api/bookmarks/:id *)
+f=handle_get(req:http.$request):http.$response{
+  let id=http.param_u64(req;"id")|{
+    $ok:v v;
+    $err:e {
+      <http.$response{
+        status:400;
+        headers:@("content-type":"application/json");
+        body:error_to_json(m.$apierr.$badrequest("invalid id"))
+      }
+    }
+  };
+  find_bookmark(id)|{
+    $ok:b {
+      <http.$response{
+        status:200;
+        headers:@("content-type":"application/json");
+        body:bookmark_to_json(b)
+      }
+    };
+    $err:e {
+      <http.$response{
+        status:404;
+        headers:@("content-type":"application/json");
+        body:error_to_json(e)
+      }
+    }
+  }
+};
+
+(* handle_delete — DELETE /api/bookmarks/:id *)
+f=handle_delete(req:http.$request):http.$response{
+  let id=http.param_u64(req;"id")|{
+    $ok:v v;
+    $err:e {
+      <http.$response{
+        status:400;
+        headers:@("content-type":"application/json");
+        body:error_to_json(m.$apierr.$badrequest("invalid id"))
+      }
+    }
+  };
+  let idx=find_index(id);
+  if(idx<0){
+    <http.$response{
+      status:404;
+      headers:@("content-type":"application/json");
+      body:error_to_json(m.$apierr.$notfound(id))
+    }
+  };
+  store=m.$bookmarks{
+    items:store.items.remove(idx);
+    nextid:store.nextid
+  };
+  <http.$response{
+    status:200;
+    headers:@("content-type":"application/json");
+    body:"{\"deleted\":true}"
+  }
+};

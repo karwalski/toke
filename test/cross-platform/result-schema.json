@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cross-Platform Test Result",
+  "type": "object",
+  "required": ["platform", "arch", "timestamp", "toke_build", "tests"],
+  "properties": {
+    "platform": { "type": "string", "description": "OS name and version" },
+    "arch": { "type": "string", "enum": ["x86_64", "aarch64"] },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "compiler": { "type": "string", "description": "clang version" },
+    "llvm_version": { "type": "string" },
+    "libc": { "type": "string", "description": "glibc version or libc variant" },
+    "toke_build": {
+      "type": "object",
+      "properties": {
+        "success": { "type": "boolean" },
+        "time_secs": { "type": "number" },
+        "binary_size_bytes": { "type": "integer" },
+        "warnings": { "type": "integer" },
+        "errors": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "tests": {
+      "type": "object",
+      "properties": {
+        "conformance": { "type": "object", "properties": { "pass": {"type":"integer"}, "fail": {"type":"integer"}, "skip": {"type":"integer"} }},
+        "e2e": { "type": "object", "properties": { "pass": {"type":"integer"}, "fail": {"type":"integer"}, "skip": {"type":"integer"} }},
+        "stdlib": { "type": "object", "properties": { "pass": {"type":"integer"}, "fail": {"type":"integer"}, "skip": {"type":"integer"} }}
+      }
+    },
+    "ooke_build": {
+      "type": "object",
+      "properties": {
+        "success": { "type": "boolean" },
+        "time_secs": { "type": "number" },
+        "binary_size_bytes": { "type": "integer" }
+      }
+    },
+    "notes": { "type": "array", "items": { "type": "string" } }
+  }
+}

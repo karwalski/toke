@@ -1,0 +1,5 @@
+m=test;
+f=main():i64{
+  let arr=@(1.0;2.0;3.0);
+  <arr.len
+};

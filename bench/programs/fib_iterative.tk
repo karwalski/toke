@@ -1,5 +1,5 @@
-M=bench;
-F=fib(n:i64):i64{
+m=bench;
+f=fib(n:i64):i64{
   let a=mut.0;
   let b=mut.1;
   lp(let i=0;i<n;i=i+1){
@@ -9,7 +9,7 @@ F=fib(n:i64):i64{
   };
   <a
 };
-F=main():i64{
+f=main():i64{
   let s=mut.0;
   lp(let i=0;i<1000000;i=i+1){
     s=s+fib(50)

@@ -469,7 +469,9 @@ const char *encoding_urldecode(const char *s)
             int hi = hex_val(s[i + 1]);
             int lo = hex_val(s[i + 2]);
             if (hi != -1 && lo != -1) {
-                out[j++] = (char)((hi << 4) | lo);
+                int byte = (hi << 4) | lo;
+                if (byte == 0) { i += 3; continue; } /* reject %00 null bytes */
+                out[j++] = (char)byte;
                 i += 3;
                 continue;
             }
