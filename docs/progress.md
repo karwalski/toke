@@ -3226,3 +3226,28 @@ Standalone mutual TLS 1.3 module with self-signed cert generation and cert pinni
 | 72.9.6 | Implement pairing confirmation code from key fingerprints | done | 2026-04-19 | XOR of 32-byte fingerprints, mod 1M, zero-padded to 6 digits. |
 | 72.9.7 | Tests for std.tls | done | 2026-04-19 | test/stdlib/test_tls.c — 37 assertions pass. Covers gen_self_signed, fingerprint, pairing code, null safety. |
 
+---
+
+## Epic 73 — ooke Dynamic POST Handler Support
+
+Enables ooke API routes (`pages/api/*.tk`) to accept POST requests.
+Infrastructure for all HTTP method handlers (POST/PUT/DELETE/PATCH) on API routes.
+
+### Epic 73.1 — POST Route Infrastructure
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 73.1.1 | POST dispatch table + registration in tk_web_glue.c | done | 2026-04-19 | POST route table (256 slots), 3 modes: echo/static/json. C-ABI dispatch with Content-Type headers. |
+| 73.1.2 | Compiler symbol mappings for POST registration | done | 2026-04-19 | llvm.c: postecho/poststatic/postjson mapped + preamble declares. |
+| 73.1.3 | serve.tk API route registration loop | done | 2026-04-19 | Third loop for isapi==true. Also fixed router.tk isapi detection for relative paths (startswith "api/"). |
+| 73.1.4 | Test API endpoint (pages/api/hello.tk) | done | 2026-04-19 | Echo POST endpoint verified: curl POST returns body, GET→404, correct headers. |
+| 73.1.5 | PUT/DELETE/PATCH registration glue | backlog | — | Extend pattern to other HTTP methods. Same dispatch table approach. |
+
+### Epic 73.2 — Dynamic toke Handler Functions (future)
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 73.2.1 | Compiler: fastcc→C ABI bridge for handler functions | backlog | — | Emit C-ABI wrapper for functions in api modules so they can serve as RouteHandler callbacks. |
+| 73.2.2 | serve.tk: register toke handler function pointers | backlog | — | Pass compiled handler fn ptr to http_POST via ABI-safe wrapper. |
+| 73.2.3 | Request body access in toke handlers | backlog | — | req.body populated from POST body, accessible in toke handler code. |
+

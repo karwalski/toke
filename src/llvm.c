@@ -609,6 +609,9 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
     /* std.http functions */
     if (!strcmp(mod, "http")) {
         if (!strcmp(method, "getstatic"))      return "tk_http_get_static";
+        if (!strcmp(method, "postecho"))       return "tk_http_post_echo";
+        if (!strcmp(method, "poststatic"))     return "tk_http_post_static";
+        if (!strcmp(method, "postjson"))       return "tk_http_post_json";
         if (!strcmp(method, "servedir"))       return "tk_http_serve_staticdir_w";
         if (!strcmp(method, "serve"))          return "tk_http_serve";
         if (!strcmp(method, "servetls"))       return "tk_http_servetls";
@@ -1242,6 +1245,7 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_map_new", "tk_map_put", "tk_map_get",
                         "tk_array_append_w", "tk_map_set_w",
                         "tk_str_from_float",
+                        "tk_http_post_echo", "tk_http_post_static", "tk_http_post_json",
                         "tk_http_client_w", "tk_http_get_w", "tk_http_post_w",
                         "tk_http_put_w", "tk_http_delete_w", "tk_http_stream_w",
                         "tk_http_streamnext_w", "tk_http_listen_w", "tk_http_print_w",
@@ -2852,6 +2856,9 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_args_get_w(i64)\n", f);
     /* std.http module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_http_get_static(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_post_echo(i64)\n", f);
+    fputs("declare i64 @tk_http_post_static(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_post_json(i64, i64)\n", f);
     fputs("declare i64 @tk_http_serve_staticdir_w(i64, i64)\n", f);
     fputs("declare i64 @tk_http_serve(i64)\n", f);
     fputs("declare i64 @tk_http_servetls(i64, i64, i64)\n", f);

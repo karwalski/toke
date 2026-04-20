@@ -244,6 +244,112 @@ int64_t tk_http_get_static(int64_t path_ptr, int64_t body_ptr) {
     return 0;
 }
 
+/* ── POST handler dispatch ────────────────────────────────────────────── */
+
+#define TK_MAX_POST_ROUTES 256
+
+typedef enum {
+    TK_POST_ECHO,    /* return request body as-is */
+    TK_POST_STATIC,  /* return fixed response body */
+    TK_POST_JSON     /* return fixed JSON response */
+} TkPostMode;
+
+typedef struct {
+    const char *path;
+    const char *body;      /* static/json response body (NULL for echo) */
+    TkPostMode  mode;
+} TkPostRoute;
+
+static TkPostRoute g_post_routes[TK_MAX_POST_ROUTES];
+static int          g_post_route_count = 0;
+
+static StrPair g_json_ct_hdr = { "Content-Type", "application/json; charset=utf-8" };
+
+static Res tk_post_dispatch(Req req) {
+    const char *rpath = req.path ? req.path : "/";
+    for (int i = 0; i < g_post_route_count; i++) {
+        if (g_post_routes[i].path &&
+            strcmp(g_post_routes[i].path, rpath) == 0) {
+            Res r;
+            r.status = 200;
+            switch (g_post_routes[i].mode) {
+            case TK_POST_ECHO:
+                r.body         = req.body ? req.body : "";
+                r.headers.data = &g_text_ct_hdr;
+                r.headers.len  = 1;
+                break;
+            case TK_POST_STATIC:
+                r.body         = g_post_routes[i].body ? g_post_routes[i].body : "";
+                r.headers.data = &g_html_ct_hdr;
+                r.headers.len  = 1;
+                break;
+            case TK_POST_JSON:
+                r.body         = g_post_routes[i].body ? g_post_routes[i].body : "{}";
+                r.headers.data = &g_json_ct_hdr;
+                r.headers.len  = 1;
+                break;
+            }
+            return r;
+        }
+    }
+    Res r;
+    r.status       = 404;
+    r.body         = "{\"error\":\"Not Found\"}";
+    r.headers.data = &g_json_ct_hdr;
+    r.headers.len  = 1;
+    return r;
+}
+
+/*
+ * tk_http_post_echo — Register a POST handler that echoes the request body.
+ *
+ * path_ptr: i64 (const char *) — URL path pattern e.g. "/api/echo"
+ * Returns:  0 (i64)
+ */
+int64_t tk_http_post_echo(int64_t path_ptr) {
+    if (g_post_route_count >= TK_MAX_POST_ROUTES) return -1;
+    int i = g_post_route_count++;
+    g_post_routes[i].path = (const char *)(intptr_t)path_ptr;
+    g_post_routes[i].body = NULL;
+    g_post_routes[i].mode = TK_POST_ECHO;
+    http_POST((const char *)(intptr_t)path_ptr, tk_post_dispatch);
+    return 0;
+}
+
+/*
+ * tk_http_post_static — Register a POST handler returning a fixed body.
+ *
+ * path_ptr: i64 (const char *) — URL path pattern
+ * body_ptr: i64 (const char *) — response body string
+ * Returns:  0 (i64)
+ */
+int64_t tk_http_post_static(int64_t path_ptr, int64_t body_ptr) {
+    if (g_post_route_count >= TK_MAX_POST_ROUTES) return -1;
+    int i = g_post_route_count++;
+    g_post_routes[i].path = (const char *)(intptr_t)path_ptr;
+    g_post_routes[i].body = (const char *)(intptr_t)body_ptr;
+    g_post_routes[i].mode = TK_POST_STATIC;
+    http_POST((const char *)(intptr_t)path_ptr, tk_post_dispatch);
+    return 0;
+}
+
+/*
+ * tk_http_post_json — Register a POST handler returning a JSON response.
+ *
+ * path_ptr: i64 (const char *) — URL path pattern
+ * body_ptr: i64 (const char *) — JSON response body string
+ * Returns:  0 (i64)
+ */
+int64_t tk_http_post_json(int64_t path_ptr, int64_t body_ptr) {
+    if (g_post_route_count >= TK_MAX_POST_ROUTES) return -1;
+    int i = g_post_route_count++;
+    g_post_routes[i].path = (const char *)(intptr_t)path_ptr;
+    g_post_routes[i].body = (const char *)(intptr_t)body_ptr;
+    g_post_routes[i].mode = TK_POST_JSON;
+    http_POST((const char *)(intptr_t)path_ptr, tk_post_dispatch);
+    return 0;
+}
+
 /*
  * tk_http_serve — Start the HTTP server on the given port (blocks until SIGINT/SIGTERM).
  *
