@@ -3259,3 +3259,96 @@ Infrastructure for all HTTP method handlers (POST/PUT/DELETE/PATCH) on API route
 | 73.2.2 | serve.tk: register toke handler function pointers | backlog | — | Pass compiled handler fn ptr to http_POST via ABI-safe wrapper. |
 | 73.2.3 | Request body access in toke handlers | backlog | — | req.body populated from POST body, accessible in toke handler code. |
 
+---
+
+## Epic 74 — Pure Toke Stdlib (Eliminate C Runtime)
+
+Long-term goal: rewrite the toke standard library in toke itself, eliminating the C runtime dependency. This enables toke programs (including ooke) to compile without linking any C code beyond the LLVM-generated binary. Ordered by dependency chain — each tier depends on the one above.
+
+### Epic 74.1 — Tier 1: String and Runtime Primitives
+
+Foundation layer. Everything depends on this. Currently: str.c (659 LOC), tk_runtime.c (263 LOC), encoding.c (488 LOC), json.c (1,377 LOC).
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 74.1.1 | Audit str.c: identify functions implementable in toke vs requiring C intrinsics | backlog | — | **P0** Categorise each of 28 str functions. String concat/slice/split can be toke. Memory allocation needs compiler support (arena or malloc intrinsic). |
+| 74.1.2 | Compiler intrinsic: memory allocation (arena_alloc, malloc) | backlog | — | **P0** Add compiler built-in for heap allocation so toke code can allocate without C. Prerequisite for all pure-toke stdlib. |
+| 74.1.3 | Compiler intrinsic: raw memory operations (memcpy, memset, memcmp) | backlog | — | **P0** LLVM already has these as intrinsics. Expose them as toke built-ins. |
+| 74.1.4 | Rewrite str module in toke | backlog | — | **P1** Implement all 28 str functions in toke using arena allocation and memory intrinsics. C str.c becomes fallback/reference. |
+| 74.1.5 | Rewrite encoding module in toke (base64, hex, url) | backlog | — | **P1** Pure algorithmic — no OS calls needed. Depends on 74.1.4. |
+| 74.1.6 | Rewrite json module in toke | backlog | — | **P2** Parser + emitter. Depends on 74.1.4. |
+| 74.1.7 | Rewrite tk_runtime.c in toke | backlog | — | **P1** Runtime init, overflow trap, argv setup. Needs compiler intrinsics for program entry. |
+
+### Epic 74.2 — Tier 2: I/O Layer
+
+OS-level operations. Currently: file.c (656 LOC), env.c (341 LOC), path.c (214 LOC), args.c (70 LOC), process.c (559 LOC), sys.c (new).
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 74.2.1 | Compiler intrinsic: syscall bridge | backlog | — | **P0** Expose POSIX syscalls (open, read, write, close, stat, mkdir, rename, unlink, getenv, fork, exec) as toke built-ins via LLVM inline assembly or libc FFI. |
+| 74.2.2 | Rewrite file module in toke | backlog | — | **P1** File I/O using syscall intrinsics. Depends on 74.1.4, 74.2.1. |
+| 74.2.3 | Rewrite path module in toke | backlog | — | **P1** Pure string manipulation — no OS calls needed. Depends on 74.1.4. |
+| 74.2.4 | Rewrite env module in toke | backlog | — | **P1** getenv/setenv via syscall bridge. Depends on 74.2.1. |
+| 74.2.5 | Rewrite args module in toke | backlog | — | **P1** Access argc/argv from runtime init. Depends on 74.1.7. |
+| 74.2.6 | Rewrite process module in toke | backlog | — | **P2** fork/exec/waitpid via syscall bridge. Depends on 74.2.1. |
+
+### Epic 74.3 — Tier 3: Network Stack
+
+The full HTTP/WS/TLS stack. Currently: http.c (3,993 LOC), http2.c (885 LOC), ws.c (1,258 LOC), tls.c, net.c, proxy.c, sse.c, acme.c — ~12,000 LOC total.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 74.3.1 | Compiler intrinsic: socket operations (socket, bind, listen, accept, connect, send, recv) | backlog | — | **P0** Expose BSD socket API as toke built-ins. Depends on 74.2.1. |
+| 74.3.2 | Rewrite net module in toke (TCP connect, listen, portavailable) | backlog | — | **P1** Basic TCP using socket intrinsics. Depends on 74.3.1. |
+| 74.3.3 | Rewrite HTTP/1.1 client and server in toke | backlog | — | **P1** Request parsing, response building, chunked encoding, keep-alive. Depends on 74.1.4, 74.3.2. |
+| 74.3.4 | Rewrite WebSocket module in toke | backlog | — | **P2** Frame encoding/decoding, masking, upgrade handshake. Depends on 74.3.3. |
+| 74.3.5 | TLS integration strategy (OpenSSL FFI vs pure toke) | backlog | — | **P2** Decision: keep OpenSSL as external dep or implement TLS in toke (massive effort). Likely keep as optional C dep. |
+| 74.3.6 | Rewrite SSE, proxy, router, ACME in toke | backlog | — | **P3** Higher-level protocols built on HTTP. Depends on 74.3.3. |
+
+### Epic 74.4 — Tier 4: Storage and Parsing
+
+Data persistence and format parsing. Currently: db.c, csv.c, toml.c, yaml.c, toon.c, vecstore.c, cache.c — ~5,000 LOC total.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 74.4.1 | Rewrite csv module in toke | backlog | — | **P1** Pure parsing — no OS calls. Depends on 74.1.4. |
+| 74.4.2 | Rewrite toon module in toke | backlog | — | **P1** toke's native format should be in toke. Depends on 74.1.4. |
+| 74.4.3 | Rewrite toml parser in toke (replace tomlc99 vendor) | backlog | — | **P2** Eliminates vendor dependency. Depends on 74.1.4. |
+| 74.4.4 | Rewrite yaml parser in toke | backlog | — | **P2** Depends on 74.1.4. |
+| 74.4.5 | Database strategy (SQLite FFI vs pure toke) | backlog | — | **P3** Decision: keep SQLite as external dep or implement embedded DB. Likely keep as optional C dep. |
+| 74.4.6 | Rewrite cache and vecstore in toke | backlog | — | **P3** In-memory data structures. Depends on 74.1.2. |
+
+### Epic 74.5 — Tier 5: Security and Crypto
+
+Crypto primitives and secure memory. Currently: crypto.c (4,121 LOC), encrypt.c, secure_mem.c, auth.c, keychain.c.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 74.5.1 | Rewrite SHA-256, HMAC, PBKDF2 in toke | backlog | — | **P1** Pure algorithmic — already self-contained in crypto.c. Depends on 74.1.3. |
+| 74.5.2 | Rewrite base64/hex encoding in toke | backlog | — | **P1** Already covered by 74.1.5. |
+| 74.5.3 | Ed25519/X25519 in toke or keep as C | backlog | — | **P2** Decision: these use __int128 and careful constant-time code. May be safer to keep as C. |
+| 74.5.4 | Rewrite JWT/auth module in toke | backlog | — | **P2** Built on crypto primitives. Depends on 74.5.1, 74.1.6. |
+
+### Epic 74.6 — Tiers 6-10: Specialist Modules
+
+AI/ML, UI, content, networking services, observability. These can remain as C longer without impacting the "no glue" goal for typical applications.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 74.6.1 | Rewrite markdown renderer in toke (replace cmark vendor) | backlog | — | **P2** Eliminates largest vendor dependency (21K LOC). Depends on 74.1.4. |
+| 74.6.2 | Rewrite html, svg, canvas, chart, dashboard in toke | backlog | — | **P3** String-building modules — mostly template expansion. Depends on 74.1.4. |
+| 74.6.3 | Rewrite log and analytics in toke | backlog | — | **P2** Structured logging with file I/O. Depends on 74.2.2. |
+| 74.6.4 | Rewrite template engine in toke | backlog | — | **P2** Parser + renderer. Depends on 74.1.4. |
+| 74.6.5 | AI/ML modules: keep as C FFI (llama.cpp, MLX, OpenAI HTTP) | backlog | — | **P3** These wrap external C/C++ libraries. Keep as optional C deps. Decision doc. |
+| 74.6.6 | Rewrite i18n, metrics, hooks in toke | backlog | — | **P3** Small modules, low priority. |
+
+### Epic 74.7 — Compiler: Eliminate tk_web_glue.c
+
+The ABI wrapper layer. Directly blocked by story 7.5.5 (auto-generated wrappers).
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 74.7.1 | Implement auto-generated _w wrappers from .tki (7.5.5) | backlog | — | **P0** Compiler reads .tki, generates ABI bridge automatically. Eliminates 1,523 LOC of hand-written glue. Design doc in progress. |
+| 74.7.2 | Remove tk_web_glue.c from build | backlog | — | **P1** After 74.7.1 is complete and verified, delete the manual glue file. Depends on 74.7.1. |
+| 74.7.3 | Verify ooke builds without any manual C glue | backlog | — | **P1** End-to-end test: ooke compiles and serves correctly using only auto-generated wrappers. Depends on 74.7.2. |
+
