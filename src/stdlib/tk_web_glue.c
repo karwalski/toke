@@ -21,11 +21,33 @@
 #include "args.h"
 #include "toml.h"
 #include "md.h"
+#include "crypto.h"
+#include "math.h"
+#include "tk_time.h"
+#include "net.h"
+#include "sys.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <string.h>
+
+/* ── f64↔i64 bitcast helpers (Story 7.5.2) ───────────────────────────── */
+/*
+ * The toke compiler passes all values as i64, even f64 floats.
+ * f64 values are bitwise-encoded as i64 using memcpy (not a C cast).
+ * These helpers convert between the two representations.
+ */
+static double i64_to_f64(int64_t i) {
+    double d;
+    memcpy(&d, &i, sizeof(d));
+    return d;
+}
+static int64_t f64_to_i64(double d) {
+    int64_t i;
+    memcpy(&i, &d, sizeof(i));
+    return i;
+}
 
 /* ── str wrappers ─────────────────────────────────────────────────────── */
 
@@ -924,6 +946,19 @@ int64_t tk_crypto_sha256_w(int64_t data) { (void)data; return 0; }
 int64_t tk_crypto_randombytes_w(int64_t n) { (void)n; return 0; }
 int64_t tk_crypto_hmacsha256_w(int64_t key, int64_t data) { (void)key; (void)data; return 0; }
 
+/* ---- Story 42.1.5: crypto.sha256file / crypto.sha256verify wrappers ---- */
+int64_t tk_crypto_sha256file_w(int64_t path) {
+    if (!path) return 0;
+    const char *hex = crypto_sha256file((const char *)(intptr_t)path);
+    return hex ? (int64_t)(intptr_t)hex : 0;
+}
+int64_t tk_crypto_sha256verify_w(int64_t path, int64_t expected) {
+    if (!path || !expected) return 0;
+    return (int64_t)crypto_sha256verify(
+        (const char *)(intptr_t)path,
+        (const char *)(intptr_t)expected);
+}
+
 /* ---- Story 57.12.1: encrypt module stubs ---- */
 int64_t tk_encrypt_aes256gcmencrypt_w(int64_t key, int64_t plaintext) { (void)key; (void)plaintext; return 0; }
 int64_t tk_encrypt_aes256gcmdecrypt_w(int64_t key, int64_t ciphertext) { (void)key; (void)ciphertext; return 0; }
@@ -1052,19 +1087,19 @@ int64_t tk_str_print_w(int64_t s) {
     return 0;
 }
 
-/* ---- Story 57.12.1: math module stubs ---- */
-int64_t tk_math_abs_w(int64_t x) { return x < 0 ? -x : x; }
+/* ---- Story 7.5.2: math module — f64 bitcast wrappers ---- */
+int64_t tk_math_abs_w(int64_t x) { return f64_to_i64(math_abs(i64_to_f64(x))); }
 int64_t tk_math_max_w(int64_t a, int64_t b) { return a > b ? a : b; }
 int64_t tk_math_min_w(int64_t a, int64_t b) { return a < b ? a : b; }
 int64_t tk_math_pow_w(int64_t base, int64_t exp) {
-    int64_t r = 1; for (int64_t i = 0; i < exp; i++) r *= base; return r;
+    return f64_to_i64(math_pow(i64_to_f64(base), i64_to_f64(exp)));
 }
-int64_t tk_math_floor_w(int64_t x) { return x; /* already int */ }
+int64_t tk_math_floor_w(int64_t x) { return f64_to_i64(math_floor(i64_to_f64(x))); }
 int64_t tk_math_mean_w(int64_t arr) { (void)arr; return 0; }
 int64_t tk_math_median_w(int64_t arr) { (void)arr; return 0; }
 int64_t tk_math_percentile_w(int64_t arr, int64_t p) { (void)arr; (void)p; return 0; }
 int64_t tk_math_linreg_w(int64_t xs, int64_t ys) { (void)xs; (void)ys; return 0; }
-int64_t tk_math_sqrt_w(int64_t x) { (void)x; return 0; }
+int64_t tk_math_sqrt_w(int64_t x) { return f64_to_i64(math_sqrt(i64_to_f64(x))); }
 int64_t tk_math_sum_w(int64_t arr) { (void)arr; return 0; }
 int64_t tk_math_stddev_w(int64_t arr) { (void)arr; return 0; }
 
@@ -1139,12 +1174,56 @@ int64_t tk_str_repeat_w(int64_t s, int64_t n) { (void)s; (void)n; return 0; }
 int64_t tk_str_reverse_w(int64_t s) { (void)s; return 0; }
 int64_t tk_str_format_w(int64_t fmt, int64_t args) { (void)fmt; (void)args; return 0; }
 
-/* time module */
-int64_t tk_time_now_w(void) { return 0; }
-int64_t tk_time_format_w(int64_t ts, int64_t fmt) { (void)ts; (void)fmt; return 0; }
+/* time module (Story 7.5.1: fix dead stubs, add missing wrappers) */
+int64_t tk_time_now_w(void) {
+    return (int64_t)tk_time_now();
+}
+int64_t tk_time_format_w(int64_t ts, int64_t fmt) {
+    const char *result = tk_time_format(
+        (uint64_t)ts,
+        (const char *)(intptr_t)fmt);
+    return (int64_t)(intptr_t)result;
+}
 int64_t tk_time_parse_w(int64_t s, int64_t fmt) { (void)s; (void)fmt; return 0; }
 int64_t tk_time_elapsed_w(int64_t start) { (void)start; return 0; }
 int64_t tk_time_sleep_w(int64_t ms) { (void)ms; return 0; }
+
+/*
+ * tk_time_toparts_w — convert a millisecond Unix timestamp to a toke-format
+ * struct containing year/month/day/hour/min/sec fields.
+ *
+ * Allocates a block of 7 i64 slots:
+ *   block[0] = element count (6)
+ *   block[1] = year
+ *   block[2] = month (1-12)
+ *   block[3] = day   (1-31)
+ *   block[4] = hour  (0-23)
+ *   block[5] = min   (0-59)
+ *   block[6] = sec   (0-59)
+ * Returns (block+1) so that ptr[-1] == length and ptr[i] == field i,
+ * matching the toke runtime array/struct layout.
+ */
+int64_t tk_time_toparts_w(int64_t ts) {
+    TkTimeParts parts = tk_time_to_parts((uint64_t)ts);
+    int64_t *block = (int64_t *)malloc(7 * sizeof(int64_t));
+    if (!block) return 0;
+    block[0] = 6;
+    block[1] = (int64_t)parts.year;
+    block[2] = (int64_t)parts.month;
+    block[3] = (int64_t)parts.day;
+    block[4] = (int64_t)parts.hour;
+    block[5] = (int64_t)parts.min;
+    block[6] = (int64_t)parts.sec;
+    return (int64_t)(intptr_t)(block + 1);
+}
+
+/*
+ * tk_time_weekday_w — return the day of the week for a timestamp.
+ * Returns 0=Sun, 1=Mon, ..., 6=Sat.
+ */
+int64_t tk_time_weekday_w(int64_t ts) {
+    return (int64_t)tk_time_weekday((uint64_t)ts);
+}
 
 /* db extras (connect/newquery/settable already defined above) */
 int64_t tk_db_execute_w(int64_t conn, int64_t q) { (void)conn; (void)q; return 0; }
@@ -1153,6 +1232,9 @@ int64_t tk_db_getrow_w(int64_t result, int64_t idx) { (void)result; (void)idx; r
 int64_t tk_db_getfield_w(int64_t row, int64_t name) { (void)row; (void)name; return 0; }
 
 /* net/tcp */
+int64_t tk_net_portavailable_w(int64_t port) {
+    return (int64_t)net_portavailable((uint64_t)port);
+}
 int64_t tk_net_listen_w(int64_t addr) { (void)addr; return 0; }
 int64_t tk_net_accept_w(int64_t listener) { (void)listener; return 0; }
 int64_t tk_net_read_w(int64_t conn) { (void)conn; return 0; }
@@ -1360,11 +1442,19 @@ int64_t tk_test_report_w(int64_t suite) { (void)suite; return 0; }
 int64_t tk_html_docr_w(int64_t body) { (void)body; return 0; }
 
 /* math extras */
-int64_t tk_math_ceil_w(int64_t v) { (void)v; return 0; }
-int64_t tk_math_round_w(int64_t v) { (void)v; return 0; }
+int64_t tk_math_ceil_w(int64_t v) { return f64_to_i64(math_ceil(i64_to_f64(v))); }
+int64_t tk_math_round_w(int64_t v) { return f64_to_i64(math_round(i64_to_f64(v), 0)); }
 
 /* env */
 int64_t tk_env_get_w(int64_t key) { (void)key; return 0; }
 
 /* file_exists already declared in preamble but stub missing */
 int64_t tk_file_exists_w(int64_t path) { (void)path; return 0; }
+
+/* ---- Story 42.1.2: sys module wrappers ---- */
+int64_t tk_sys_configdir_w(int64_t appname) {
+    return (int64_t)(intptr_t)sys_configdir((const char *)(intptr_t)appname);
+}
+int64_t tk_sys_datadir_w(int64_t appname) {
+    return (int64_t)(intptr_t)sys_datadir((const char *)(intptr_t)appname);
+}

@@ -8,6 +8,8 @@
     {"kind": "func", "name": "crypto.hmacsha512",  "params": ["[byte]", "[byte]"],  "return": "[byte]"},
     {"kind": "func", "name": "crypto.constanteq",  "params": ["[byte]", "[byte]"],  "return": "bool"},
     {"kind": "func", "name": "crypto.randombytes", "params": ["u64"],               "return": "[byte]"},
-    {"kind": "func", "name": "crypto.to_hex",      "params": ["[byte]"],            "return": "str"}
+    {"kind": "func", "name": "crypto.to_hex",      "params": ["[byte]"],            "return": "str"},
+    {"kind": "func", "name": "crypto.sha256file",   "params": ["str"],               "return": "str"},
+    {"kind": "func", "name": "crypto.sha256verify", "params": ["str", "str"],        "return": "bool"}
   ]
 }

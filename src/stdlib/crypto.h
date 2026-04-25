@@ -77,6 +77,19 @@ CryptoStrResult crypto_bcrypt_hash(const char *password, int cost);
  * Story: 29.6.1 */
 int crypto_bcrypt_verify(const char *password, const char *hash);
 
+/* crypto.sha256file(path:Str):Str
+ * Returns a heap-allocated lowercase hex string of the SHA-256 digest of
+ * the file at path.  Returns NULL if the file cannot be opened.
+ * Caller owns the returned pointer.
+ * Story: 42.1.5 */
+const char *crypto_sha256file(const char *path);
+
+/* crypto.sha256verify(path:Str;expected:Str):bool
+ * Compute SHA-256 of the file at path and compare (case-insensitive) with
+ * expected_hex.  Returns 1 on match, 0 on mismatch or error.
+ * Story: 42.1.5 */
+int crypto_sha256verify(const char *path, const char *expected_hex);
+
 /* .tki compatibility aliases (crypto.hmacsha256 → crypto_hmacsha256) */
 #define crypto_hmacsha256 crypto_hmac_sha256
 #define crypto_hmacsha512 crypto_hmac_sha512

@@ -27,7 +27,8 @@ STDLIB_SRCS = \
           src/stdlib/llm.c src/stdlib/llm_tool.c \
           src/stdlib/chart.c src/stdlib/html.c src/stdlib/dashboard.c \
           src/stdlib/svg.c src/stdlib/canvas.c src/stdlib/image.c \
-          src/stdlib/dataframe.c src/stdlib/analytics.c src/stdlib/ml.c
+          src/stdlib/dataframe.c src/stdlib/analytics.c src/stdlib/ml.c \
+          src/stdlib/net.c src/stdlib/sys.c
 
 SRCS    += $(STDLIB_SRCS)
 OBJS    = $(SRCS:.c=.o)

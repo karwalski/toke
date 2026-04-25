@@ -469,45 +469,8 @@ static int lex_string(Lexer *l, int start, int line, int col)
  * which decides whether it is a keyword, boolean literal, type
  * identifier, or plain identifier.
  */
-/*
- * Keyword prefixes that commonly cause confusion when run together with
- * an identifier (e.g. "letfoo" instead of "let foo").  Single-character
- * keywords (f, t, i, m) are excluded — they would trigger too many
- * false positives on ordinary identifiers.
- */
-static const char *const KW_HINT_PREFIXES[] = {
-    "let", "if", "el", "lp", "br", "mut", "rt", "as"
-};
-#define KW_HINT_COUNT ((int)(sizeof(KW_HINT_PREFIXES) / sizeof(KW_HINT_PREFIXES[0])))
-
-/*
- * check_keyword_prefix — Emit W1011 if a plain identifier starts with a
- *                         keyword followed by more identifier characters.
- *
- * Only fires when classify_ident() has already determined the token is
- * TK_IDENT (not a keyword or type identifier), so there is no risk of
- * warning on actual keywords.
- */
-static void check_keyword_prefix(const char *src, int start, int len,
-                                 int line, int col)
-{
-    for (int i = 0; i < KW_HINT_COUNT; i++) {
-        int kwlen = (int)strlen(KW_HINT_PREFIXES[i]);
-        if (len > kwlen && memcmp(src + start, KW_HINT_PREFIXES[i],
-                                  (size_t)kwlen) == 0) {
-            char msg[128];
-            snprintf(msg, sizeof(msg),
-                     "identifier '%.*s' starts with keyword '%s' "
-                     "— did you mean '%s %.*s'?",
-                     len, src + start, KW_HINT_PREFIXES[i],
-                     KW_HINT_PREFIXES[i], len - kwlen, src + start + kwlen);
-            diag_emit(DIAG_WARNING, LEX_W1011, start, line, col,
-                      msg,
-                      "fix", "insert a space after the keyword", NULL);
-            return;  /* one warning per identifier is enough */
-        }
-    }
-}
+/* W1011 keyword-prefix check (KW_HINT_PREFIXES, check_keyword_prefix) removed
+ * — replaced by W2020 in the parser at statement level (story 44.1.4). */
 
 /*
  * Uppercase keyword letters that are valid in legacy mode but must be
@@ -549,8 +512,9 @@ static int lex_ident(Lexer *l, int start, int line, int col)
         }
     }
 
-    if (kind == TK_IDENT)
-        check_keyword_prefix(l->src, start, len, line, col);
+    /* W1011 keyword-prefix check removed — replaced by W2020 in the parser
+     * (story 44.1.4), which fires only at statement level to reduce false
+     * positives inside expressions. */
     return emit(l, kind, start, len, line, col);
 }
 

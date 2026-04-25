@@ -17,6 +17,8 @@
 #include "crypto.h"
 #include <stdlib.h>   /* malloc */
 #include <string.h>
+#include <stdio.h>    /* fopen, fread, fclose */
+#include <ctype.h>    /* tolower */
 
 /* Portable arc4random_buf — macOS/BSD and glibc ≥2.36 have it natively.
  * Older Linux uses /dev/urandom fallback. */
@@ -1370,4 +1372,57 @@ int crypto_bcrypt_verify(const char *password, const char *hash)
                         ^ (unsigned char)hash[i]);
     }
     return diff == 0 ? 1 : 0;
+}
+
+/* -----------------------------------------------------------------------
+ * crypto.sha256file / crypto.sha256verify  (Story 42.1.5)
+ * ----------------------------------------------------------------------- */
+
+const char *crypto_sha256file(const char *path)
+{
+    if (!path) return NULL;
+
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+
+    Sha256State s;
+    sha256_init_state(&s);
+
+    uint8_t buf[8192];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof buf, f)) > 0) {
+        sha256_update_state(&s, buf, (uint64_t)n);
+    }
+    fclose(f);
+
+    uint8_t digest[SHA256_DIGEST_SIZE];
+    sha256_finish(&s, digest);
+
+    ByteArray ba;
+    ba.data = digest;
+    ba.len  = SHA256_DIGEST_SIZE;
+    return crypto_to_hex(ba);
+}
+
+int crypto_sha256verify(const char *path, const char *expected_hex)
+{
+    if (!path || !expected_hex) return 0;
+
+    const char *actual = crypto_sha256file(path);
+    if (!actual) return 0;
+
+    /* Case-insensitive comparison */
+    const char *a = actual;
+    const char *e = expected_hex;
+    while (*a && *e) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*e)) {
+            free((void *)actual);
+            return 0;
+        }
+        a++;
+        e++;
+    }
+    int match = (*a == '\0' && *e == '\0') ? 1 : 0;
+    free((void *)actual);
+    return match;
 }

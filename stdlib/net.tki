@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "module": "std.net",
+  "exports": [
+    {"kind": "func", "name": "net.portavailable", "params": ["int"], "return": "int"}
+  ]
+}

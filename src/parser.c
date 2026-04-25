@@ -64,6 +64,7 @@
  */
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include "parser.h"
 
@@ -173,6 +174,16 @@ static int  teq(Parser *p, Token *t, const char *s) { int l=(int)strlen(s); retu
  * is always NULL (no automated fix suggestion from the parser).
  */
 static void eerr(Parser *p, int code, Token *t, const char *msg) { p->errs++; diag_emit(DIAG_ERROR,code,t->start,t->line,t->col,msg,"fix",NULL); }
+
+/*
+ * ewarn — emit a warning diagnostic (does not increment error counter).
+ *
+ * Wraps diag_emit() with DIAG_WARNING severity and a caller-supplied fix hint.
+ */
+static void ewarn(Parser *p, int code, Token *t, const char *msg, const char *fix) {
+    (void)p;
+    diag_emit(DIAG_WARNING, code, t->start, t->line, t->col, msg, "fix", fix, NULL);
+}
 
 /*
  * sync — panic-mode error recovery.
@@ -863,6 +874,37 @@ static Node *parse_if_stmt(Parser *p) {
  * Error recovery: each case calls sync() on structural errors and
  * returns NULL or a partial node.  opt_semi() handles semicolons.
  */
+/*
+ * check_stmt_keyword_prefix — emit W2020 if a TK_IDENT at statement level
+ * starts with a multi-char keyword prefix (let, if, el, lp, br, mut, rt, as)
+ * followed by a lowercase letter.  Single-char keywords (m, f, t, i) are
+ * excluded to avoid false positives.
+ */
+static const char *const STMT_KW_PREFIXES[] = {
+    "let", "if", "el", "lp", "br", "mut", "rt", "as"
+};
+#define STMT_KW_PREFIX_COUNT ((int)(sizeof(STMT_KW_PREFIXES) / sizeof(STMT_KW_PREFIXES[0])))
+
+static void check_stmt_keyword_prefix(Parser *p, Token *t) {
+    const char *text = p->src + t->start;
+    int len = t->len;
+    for (int i = 0; i < STMT_KW_PREFIX_COUNT; i++) {
+        int kwlen = (int)strlen(STMT_KW_PREFIXES[i]);
+        if (len > kwlen &&
+            memcmp(text, STMT_KW_PREFIXES[i], (size_t)kwlen) == 0 &&
+            text[kwlen] >= 'a' && text[kwlen] <= 'z') {
+            char msg[128];
+            snprintf(msg, sizeof(msg),
+                     "identifier '%.*s' starts with keyword '%s' "
+                     "-- did you mean '%s %.*s'?",
+                     len, text, STMT_KW_PREFIXES[i],
+                     STMT_KW_PREFIXES[i], len - kwlen, text + kwlen);
+            ewarn(p, W2020, t, msg, "insert a space after the keyword");
+            return;
+        }
+    }
+}
+
 /* parse_stmt — dispatches by lookahead */
 static Node *parse_stmt(Parser *p) {
     Token *t=cur(p);
@@ -901,6 +943,7 @@ static Node *parse_stmt(Parser *p) {
             return n;}
         eerr(p,E2002,t,"unexpected token");sync(p);return NULL;
     case TK_IDENT:
+        check_stmt_keyword_prefix(p, t);
         /* AssignStmt: IDENT '=' Expr ';' — one-token ahead check on '=' */
         if(p->pos+1<p->n&&p->toks[p->pos+1].kind==TK_EQ){
             adv(p);adv(p);Node *n=mk(p,NODE_ASSIGN_STMT,t);ch(p,n,mk(p,NODE_IDENT,t));
