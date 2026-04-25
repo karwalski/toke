@@ -88,6 +88,7 @@
     {"kind": "route", "name": "http.DELETE",    "params": ["str", "FuncDecl"]},
     {"kind": "route", "name": "http.PATCH",     "params": ["str", "FuncDecl"]},
     {"kind": "func", "name": "http.client",     "params": ["str"],                                 "return": "httpclient"},
+    {"kind": "func", "name": "http.withproxy", "params": ["httpclient", "str"],                   "return": "httpclient"},
     {"kind": "func", "name": "http.get",        "params": ["httpclient", "str"],                   "return": "httpresp!httperr"},
     {"kind": "func", "name": "http.post",       "params": ["httpclient", "str", "[byte]", "str"],  "return": "httpresp!httperr"},
     {"kind": "func", "name": "http.put",        "params": ["httpclient", "str", "[byte]", "str"],  "return": "httpresp!httperr"},
@@ -97,6 +98,8 @@
     {"kind": "func", "name": "http.serve_workers", "params": ["u64", "u64"],                          "return": "void",
      "note": "port; workers — starts pre-fork worker pool; workers=1 is single-process"},
     {"kind": "func", "name": "http.serve_tls",     "params": ["u64", "str", "str"],                   "return": "void",
-     "note": "port; cert_path; key_path — start HTTPS server with TLS termination"}
+     "note": "port; cert_path; key_path — start HTTPS server with TLS termination"},
+    {"kind": "func", "name": "http.downloadfile", "params": ["httpclient", "str", "str"],             "return": "i64",
+     "note": "client; url; dest_path — streaming file download, returns 0 on success, -1 on error"}
   ]
 }

@@ -1856,12 +1856,74 @@ static HttpClientResp client_do_request(HttpClient *c,
     }
 
     uint64_t timeout = c->timeout_ms ? c->timeout_ms : 30000;
-    int fd = client_tcp_connect(host, port, timeout);
+
+    /* ── Proxy support (Story 42.1.3) ──────────────────────────────── */
+    char proxy_host[256], proxy_port[16];
+    int  use_proxy = 0;
+    if (c->proxy_url && c->proxy_url[0]) {
+        /* Parse proxy URL — must be http:// */
+        char dummy_path[16];
+        int  dummy_https = 0;
+        if (client_parse_url(c->proxy_url, NULL,
+                             proxy_host, sizeof(proxy_host),
+                             proxy_port, sizeof(proxy_port),
+                             dummy_path, sizeof(dummy_path),
+                             &dummy_https) != 0) {
+            return err_resp_client("failed to parse proxy URL", 0);
+        }
+        use_proxy = 1;
+    }
+
+    int fd;
+    if (use_proxy) {
+        fd = client_tcp_connect(proxy_host, proxy_port, timeout);
+    } else {
+        fd = client_tcp_connect(host, port, timeout);
+    }
     if (fd < 0) return err_resp_client("TCP connect failed", 0);
+
+    /* For HTTPS through proxy: send CONNECT tunnel request */
+    if (use_proxy && is_https) {
+        char connect_buf[512];
+        int clen = snprintf(connect_buf, sizeof(connect_buf),
+            "CONNECT %s:%s HTTP/1.1\r\n"
+            "Host: %s:%s\r\n"
+            "\r\n",
+            host, port, host, port);
+        if (clen < 0 || (size_t)clen >= sizeof(connect_buf) ||
+            send(fd, connect_buf, (size_t)clen, 0) < 0) {
+            close(fd);
+            return err_resp_client("proxy CONNECT send failed", 0);
+        }
+        /* Read proxy 200 response */
+        char cbuf[1024];
+        ssize_t cn = recv(fd, cbuf, sizeof(cbuf) - 1, 0);
+        if (cn <= 0) {
+            close(fd);
+            return err_resp_client("proxy CONNECT recv failed", 0);
+        }
+        cbuf[cn] = '\0';
+        if (strncmp(cbuf, "HTTP/1.1 200", 12) != 0 &&
+            strncmp(cbuf, "HTTP/1.0 200", 12) != 0) {
+            close(fd);
+            return err_resp_client("proxy CONNECT rejected", 0);
+        }
+        /* Tunnel established — subsequent I/O goes direct to target */
+    }
 
     /* build request header */
     char req_buf[4096];
     int req_len;
+
+    /* For HTTP through proxy: use absolute URI in request line */
+    char request_uri[2048];
+    if (use_proxy && !is_https) {
+        snprintf(request_uri, sizeof(request_uri),
+                 "http://%s:%s%s", host, port, full_path);
+    } else {
+        snprintf(request_uri, sizeof(request_uri), "%s", full_path);
+    }
+
     if (body && body_len > 0) {
         req_len = snprintf(req_buf, sizeof(req_buf),
             "%s %s HTTP/1.1\r\n"
@@ -1870,7 +1932,7 @@ static HttpClientResp client_do_request(HttpClient *c,
             "Content-Length: %llu\r\n"
             "Connection: close\r\n"
             "\r\n",
-            method, full_path, host,
+            method, request_uri, host,
             content_type ? content_type : "application/octet-stream",
             (unsigned long long)body_len);
     } else {
@@ -1879,7 +1941,7 @@ static HttpClientResp client_do_request(HttpClient *c,
             "Host: %s\r\n"
             "Connection: close\r\n"
             "\r\n",
-            method, full_path, host);
+            method, request_uri, host);
     }
 
     if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
@@ -1997,6 +2059,7 @@ HttpClient *http_client(const char *base_url)
     c->base_url   = hstrdup(base_url);
     c->pool_size  = 4;
     c->timeout_ms = 30000;
+    c->proxy_url  = NULL;
     return c;
 }
 
@@ -2004,7 +2067,22 @@ void http_client_free(HttpClient *c)
 {
     if (!c) return;
     free(c->base_url);
+    free(c->proxy_url);
     free(c);
+}
+
+/* ── http_withproxy (Story 42.1.3) ─────────────────────────────────── */
+
+HttpClient *http_withproxy(HttpClient *c, const char *proxy_url)
+{
+    if (!c) return NULL;
+    HttpClient *n = malloc(sizeof(HttpClient));
+    if (!n) return NULL;
+    n->base_url   = hstrdup(c->base_url);
+    n->pool_size  = c->pool_size;
+    n->timeout_ms = c->timeout_ms;
+    n->proxy_url  = proxy_url ? hstrdup(proxy_url) : NULL;
+    return n;
 }
 
 HttpClientResp http_get(HttpClient *c, const char *path)
@@ -2062,17 +2140,80 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
     }
 
     uint64_t timeout = c->timeout_ms ? c->timeout_ms : 30000;
-    int fd = client_tcp_connect(host, port, timeout);
+
+    /* ── Proxy support for streaming (Story 42.1.3) ──────────────── */
+    char proxy_host[256], proxy_port[16];
+    int  use_proxy = 0;
+    if (c->proxy_url && c->proxy_url[0]) {
+        char dummy_path[16];
+        int  dummy_https = 0;
+        if (client_parse_url(c->proxy_url, NULL,
+                             proxy_host, sizeof(proxy_host),
+                             proxy_port, sizeof(proxy_port),
+                             dummy_path, sizeof(dummy_path),
+                             &dummy_https) != 0) {
+            result.is_err  = 1;
+            result.err_msg = hstrdup("failed to parse proxy URL");
+            return result;
+        }
+        use_proxy = 1;
+    }
+
+    int fd;
+    if (use_proxy) {
+        fd = client_tcp_connect(proxy_host, proxy_port, timeout);
+    } else {
+        fd = client_tcp_connect(host, port, timeout);
+    }
     if (fd < 0) {
         result.is_err  = 1;
         result.err_msg = hstrdup("TCP connect failed");
         return result;
     }
 
+    if (use_proxy && is_https) {
+        char connect_buf[512];
+        int clen = snprintf(connect_buf, sizeof(connect_buf),
+            "CONNECT %s:%s HTTP/1.1\r\nHost: %s:%s\r\n\r\n",
+            host, port, host, port);
+        if (clen < 0 || (size_t)clen >= sizeof(connect_buf) ||
+            send(fd, connect_buf, (size_t)clen, 0) < 0) {
+            close(fd);
+            result.is_err  = 1;
+            result.err_msg = hstrdup("proxy CONNECT send failed");
+            return result;
+        }
+        char cbuf[1024];
+        ssize_t cn = recv(fd, cbuf, sizeof(cbuf) - 1, 0);
+        if (cn <= 0) {
+            close(fd);
+            result.is_err  = 1;
+            result.err_msg = hstrdup("proxy CONNECT recv failed");
+            return result;
+        }
+        cbuf[cn] = '\0';
+        if (strncmp(cbuf, "HTTP/1.1 200", 12) != 0 &&
+            strncmp(cbuf, "HTTP/1.0 200", 12) != 0) {
+            close(fd);
+            result.is_err  = 1;
+            result.err_msg = hstrdup("proxy CONNECT rejected");
+            return result;
+        }
+    }
+
     /* build + send request */
     const char *method = req.method ? req.method : "GET";
     char req_buf[4096];
     int req_len;
+
+    char request_uri[2048];
+    if (use_proxy && !is_https) {
+        snprintf(request_uri, sizeof(request_uri),
+                 "http://%s:%s%s", host, port, full_path);
+    } else {
+        snprintf(request_uri, sizeof(request_uri), "%s", full_path);
+    }
+
     if (req.body && req.body_len > 0) {
         req_len = snprintf(req_buf, sizeof(req_buf),
             "%s %s HTTP/1.1\r\n"
@@ -2080,7 +2221,7 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
             "Content-Length: %llu\r\n"
             "Connection: keep-alive\r\n"
             "\r\n",
-            method, full_path, host,
+            method, request_uri, host,
             (unsigned long long)req.body_len);
     } else {
         req_len = snprintf(req_buf, sizeof(req_buf),
@@ -2088,7 +2229,7 @@ HttpStreamResult http_stream(HttpClient *c, HttpClientReq req)
             "Host: %s\r\n"
             "Connection: keep-alive\r\n"
             "\r\n",
-            method, full_path, host);
+            method, request_uri, host);
     }
 
     if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
@@ -2218,6 +2359,277 @@ HttpChunkResult http_streamnext(HttpStream *s)
     result.len = s->buf_len;
     s->buf_len = 0;
     return result;
+}
+
+/* ── File download (Story 42.1.4) ────────────────────────────────────── */
+
+#define DL_CHUNK_SIZE 8192
+
+/*
+ * parse_content_length — scan raw header block for Content-Length value.
+ * Returns 0 if not found or unparseable (caller treats as chunked/unknown).
+ */
+static uint64_t parse_content_length(const char *hdrs, size_t hdr_len)
+{
+    const char *p = hdrs;
+    const char *end = hdrs + hdr_len;
+    while (p < end) {
+        const char *eol = strstr(p, "\r\n");
+        if (!eol || eol > end) break;
+        if ((size_t)(eol - p) > 15 &&
+            strncasecmp(p, "Content-Length:", 15) == 0)
+        {
+            const char *vs = p + 15;
+            while (vs < eol && *vs == ' ') vs++;
+            return (uint64_t)strtoull(vs, NULL, 10);
+        }
+        p = eol + 2;
+    }
+    return 0;
+}
+
+/*
+ * is_chunked_encoding — check if Transfer-Encoding: chunked is present.
+ */
+static int is_chunked_encoding(const char *hdrs, size_t hdr_len)
+{
+    const char *p = hdrs;
+    const char *end = hdrs + hdr_len;
+    while (p < end) {
+        const char *eol = strstr(p, "\r\n");
+        if (!eol || eol > end) break;
+        if ((size_t)(eol - p) > 18 &&
+            strncasecmp(p, "Transfer-Encoding:", 18) == 0)
+        {
+            const char *vs = p + 18;
+            while (vs < eol && *vs == ' ') vs++;
+            size_t vlen = (size_t)(eol - vs);
+            if (vlen >= 7 && strncasecmp(vs, "chunked", 7) == 0)
+                return 1;
+        }
+        p = eol + 2;
+    }
+    return 0;
+}
+
+/*
+ * read_chunked_to_file — decode chunked transfer-encoding directly to file.
+ * fd = socket, fp = output file, leftover/leftover_len = data already read
+ * past the header boundary.  Calls progress_fn after each decoded chunk.
+ * Returns total bytes written on success, (uint64_t)-1 on error.
+ */
+static uint64_t read_chunked_to_file(int fd, FILE *fp,
+                                     const char *leftover,
+                                     size_t leftover_len,
+                                     HttpProgressFn progress_fn)
+{
+    size_t cap = leftover_len + DL_CHUNK_SIZE + 1;
+    char *buf = malloc(cap);
+    if (!buf) return (uint64_t)-1;
+    if (leftover_len > 0) memcpy(buf, leftover, leftover_len);
+    size_t used = leftover_len;
+    uint64_t total_written = 0;
+
+    while (1) {
+        buf[used] = '\0';
+
+        /* find chunk-size line ending in \r\n */
+        char *crlf = strstr(buf, "\r\n");
+        if (!crlf) {
+            if (used + DL_CHUNK_SIZE + 1 > cap) {
+                cap = used + DL_CHUNK_SIZE + 1;
+                char *tmp = realloc(buf, cap);
+                if (!tmp) { free(buf); return (uint64_t)-1; }
+                buf = tmp;
+            }
+            ssize_t n = recv(fd, buf + used, DL_CHUNK_SIZE, 0);
+            if (n <= 0) { free(buf); return (uint64_t)-1; }
+            used += (size_t)n;
+            continue;
+        }
+
+        /* parse hex chunk size */
+        unsigned long chunk_sz = strtoul(buf, NULL, 16);
+        size_t hdr_bytes = (size_t)(crlf - buf) + 2;
+
+        if (chunk_sz == 0) {
+            /* final chunk */
+            free(buf);
+            return total_written;
+        }
+
+        /* need hdr_bytes + chunk_sz + 2 (trailing \r\n) in buffer */
+        size_t need = hdr_bytes + (size_t)chunk_sz + 2;
+        while (used < need) {
+            if (need + 1 > cap) {
+                cap = need + 1;
+                char *tmp = realloc(buf, cap);
+                if (!tmp) { free(buf); return (uint64_t)-1; }
+                buf = tmp;
+            }
+            ssize_t n = recv(fd, buf + used, need - used, 0);
+            if (n <= 0) { free(buf); return (uint64_t)-1; }
+            used += (size_t)n;
+        }
+
+        if (fwrite(buf + hdr_bytes, 1, (size_t)chunk_sz, fp) !=
+            (size_t)chunk_sz)
+        {
+            free(buf);
+            return (uint64_t)-1;
+        }
+        total_written += chunk_sz;
+
+        if (progress_fn) progress_fn(total_written, 0);
+
+        size_t consumed = need;
+        if (used > consumed)
+            memmove(buf, buf + consumed, used - consumed);
+        used -= consumed;
+    }
+}
+
+int http_downloadfile(HttpClient *c, const char *url,
+                      const char *dest_path, HttpProgressFn progress_fn)
+{
+    if (!c || !c->base_url || !url || !dest_path) return -1;
+
+    if (strncmp(c->base_url, "https://", 8) == 0) return -1;
+
+    char host[256], port[16], full_path[1024];
+    int is_https = 0;
+    if (client_parse_url(c->base_url, url,
+                         host, sizeof(host), port, sizeof(port),
+                         full_path, sizeof(full_path), &is_https) != 0)
+        return -1;
+
+    uint64_t timeout = c->timeout_ms ? c->timeout_ms : 30000;
+    int fd = client_tcp_connect(host, port, timeout);
+    if (fd < 0) return -1;
+
+    /* send GET request */
+    char req_buf[4096];
+    int req_len = snprintf(req_buf, sizeof(req_buf),
+        "GET %s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Connection: close\r\n"
+        "\r\n",
+        full_path, host);
+
+    if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
+        close(fd); return -1;
+    }
+    if (send(fd, req_buf, (size_t)req_len, 0) < 0) {
+        close(fd); return -1;
+    }
+
+    /* read response headers */
+    size_t hdr_cap = DL_CHUNK_SIZE;
+    char *hdr_buf = malloc(hdr_cap);
+    if (!hdr_buf) { close(fd); return -1; }
+    size_t hdr_used = 0;
+
+    while (1) {
+        if (hdr_used + 1 >= hdr_cap) {
+            hdr_cap *= 2;
+            char *tmp = realloc(hdr_buf, hdr_cap);
+            if (!tmp) { free(hdr_buf); close(fd); return -1; }
+            hdr_buf = tmp;
+        }
+        ssize_t n = recv(fd, hdr_buf + hdr_used,
+                         hdr_cap - hdr_used - 1, 0);
+        if (n <= 0) { free(hdr_buf); close(fd); return -1; }
+        hdr_used += (size_t)n;
+        hdr_buf[hdr_used] = '\0';
+        if (strstr(hdr_buf, "\r\n\r\n")) break;
+    }
+
+    /* locate header/body boundary */
+    char *sep = strstr(hdr_buf, "\r\n\r\n");
+    size_t headers_len = (size_t)(sep - hdr_buf) + 4;
+    size_t leftover_len = hdr_used - headers_len;
+
+    /* check HTTP status (must be 2xx) */
+    {
+        const char *sp = strchr(hdr_buf, ' ');
+        if (!sp) { free(hdr_buf); close(fd); return -1; }
+        int status = atoi(sp + 1);
+        if (status < 200 || status >= 300) {
+            free(hdr_buf); close(fd); return -1;
+        }
+    }
+
+    uint64_t content_length = parse_content_length(hdr_buf, headers_len);
+    int chunked = is_chunked_encoding(hdr_buf, headers_len);
+
+    /* open tmp file */
+    size_t tmp_path_len = strlen(dest_path) + 5;
+    char *tmp_path = malloc(tmp_path_len);
+    if (!tmp_path) { free(hdr_buf); close(fd); return -1; }
+    snprintf(tmp_path, tmp_path_len, "%s.tmp", dest_path);
+
+    FILE *fp = fopen(tmp_path, "wb");
+    if (!fp) { free(tmp_path); free(hdr_buf); close(fd); return -1; }
+
+    int ok = 0;
+
+    if (chunked) {
+        uint64_t written = read_chunked_to_file(
+            fd, fp, hdr_buf + headers_len, leftover_len, progress_fn);
+        ok = (written != (uint64_t)-1) ? 0 : -1;
+    } else {
+        uint64_t bytes_total = content_length;
+        uint64_t bytes_done = 0;
+
+        /* write any leftover data from header read */
+        if (leftover_len > 0) {
+            if (fwrite(hdr_buf + headers_len, 1, leftover_len, fp) !=
+                leftover_len)
+            {
+                ok = -1;
+                goto dl_cleanup;
+            }
+            bytes_done += (uint64_t)leftover_len;
+            if (progress_fn) progress_fn(bytes_done, bytes_total);
+        }
+
+        /* stream remaining body in chunks */
+        char chunk[DL_CHUNK_SIZE];
+        while (1) {
+            if (bytes_total > 0 && bytes_done >= bytes_total) break;
+
+            size_t to_read = DL_CHUNK_SIZE;
+            if (bytes_total > 0 && (bytes_total - bytes_done) < to_read)
+                to_read = (size_t)(bytes_total - bytes_done);
+
+            ssize_t n = recv(fd, chunk, to_read, 0);
+            if (n <= 0) break;
+
+            if (fwrite(chunk, 1, (size_t)n, fp) != (size_t)n) {
+                ok = -1;
+                goto dl_cleanup;
+            }
+            bytes_done += (uint64_t)n;
+            if (progress_fn) progress_fn(bytes_done, bytes_total);
+        }
+
+        if (bytes_total > 0 && bytes_done < bytes_total)
+            ok = -1;
+    }
+
+dl_cleanup:
+    free(hdr_buf);
+    fclose(fp);
+    close(fd);
+
+    if (ok == 0) {
+        if (rename(tmp_path, dest_path) != 0) ok = -1;
+    }
+
+    if (ok != 0) remove(tmp_path);
+
+    free(tmp_path);
+    return ok;
 }
 
 /* ── TLS/HTTPS support (Story 27.1.2) ───────────────────────────────── */

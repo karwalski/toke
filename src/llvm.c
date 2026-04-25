@@ -73,7 +73,7 @@ typedef struct { char name[NAME_BUF]; char struct_type[NAME_BUF]; } PtrLocal;
  * All struct fields are represented as i64 at the LLVM level; the struct
  * is laid out as { i64, i64, ... } with one slot per field.
  */
-typedef struct { char name[NAME_BUF]; int field_count; char field_names[TKC_MAX_PARAMS][NAME_BUF]; } StructInfo;
+typedef struct { char name[NAME_BUF]; int field_count; char field_names[TKC_MAX_PARAMS][NAME_BUF]; char field_types[TKC_MAX_PARAMS][NAME_BUF]; } StructInfo;
 
 /*
  * ImportAlias — Maps a toke import alias to its module name.
@@ -255,12 +255,21 @@ static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, 
         const Node *ch = decl->children[i];
         if (!ch) continue;
         if (ch->kind == NODE_FIELD) {
-            tok_cp(src, ch, si->field_names[fi++], 128);
+            tok_cp(src, ch, si->field_names[fi], 128);
+            si->field_types[fi][0] = '\0';
+            if (ch->child_count >= 1 && ch->children[0])
+                tok_cp(src, ch->children[0], si->field_types[fi], 128);
+            fi++;
         } else if (ch->kind == NODE_STMT_LIST) {
             for (int j = 0; j < ch->child_count && fi < TKC_MAX_PARAMS; j++) {
                 const Node *fj = ch->children[j];
-                if (fj && fj->kind == NODE_FIELD)
-                    tok_cp(src, fj, si->field_names[fi++], 128);
+                if (fj && fj->kind == NODE_FIELD) {
+                    tok_cp(src, fj, si->field_names[fi], 128);
+                    si->field_types[fi][0] = '\0';
+                    if (fj->child_count >= 1 && fj->children[0])
+                        tok_cp(src, fj->children[0], si->field_types[fi], 128);
+                    fi++;
+                }
             }
         }
     }
@@ -275,6 +284,12 @@ static const StructInfo *lookup_struct(Ctx *c, const char *name) {
     for (int i = 0; i < c->struct_count; i++)
         if (!strcmp(c->structs[i].name, name)) return &c->structs[i];
     return NULL;
+}
+
+/* Return 1 if the field at the given index is an f64/f32 type. */
+static int struct_field_is_float(const StructInfo *si, int fidx) {
+    if (!si || fidx < 0 || fidx >= si->field_count) return 0;
+    return !strcmp(si->field_types[fidx], "f64") || !strcmp(si->field_types[fidx], "f32");
 }
 
 /* Return the field index for a given field name in a struct, or 0 if not found. */
@@ -507,6 +522,272 @@ static void prepass_imports(Ctx *c, const Node *n) {
 }
 
 /*
+ * tki_type_to_llvm — map a toke type name from .tki to an LLVM IR type string.
+ */
+static const char *tki_type_to_llvm(const char *toke_type) {
+    if (!strcmp(toke_type, "f64"))  return "double";
+    if (!strcmp(toke_type, "f32"))  return "float";
+    if (!strcmp(toke_type, "i64"))  return "i64";
+    if (!strcmp(toke_type, "u64"))  return "i64";
+    if (!strcmp(toke_type, "i32"))  return "i32";
+    if (!strcmp(toke_type, "u32"))  return "i32";
+    if (!strcmp(toke_type, "bool")) return "i1";
+    if (!strcmp(toke_type, "void")) return "void";
+    return "i8*"; /* str, arrays, structs — all pointers */
+}
+
+/*
+ * load_tki_funcs — Load function signatures from a .tki interface file
+ * and register them in the Ctx so cross-module calls use correct types.
+ *
+ * Minimal JSON parsing: scans for "kind":"func" entries and extracts
+ * name, params, and return fields.
+ */
+static void load_tki_funcs(Ctx *c, const char *tki_path) {
+    FILE *f = fopen(tki_path, "r");
+    if (!f) { fprintf(stderr, "[tki] FAIL open: %s\n", tki_path); return; }
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    if (sz <= 0 || sz > 1000000) { fclose(f); return; }
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc((size_t)sz + 1);
+    if (!buf) { fclose(f); return; }
+    size_t rd = fread(buf, 1, (size_t)sz, f);
+    fclose(f);
+    buf[rd] = '\0';
+
+    /* Scan for each "kind":"func" entry */
+    char *p = buf;
+    while ((p = strstr(p, "\"kind\"")) != NULL) {
+        /* Check if this is a func entry */
+        char *kv = strstr(p, "\"func\"");
+        char *next_kind = strstr(p + 6, "\"kind\"");
+        if (!kv || (next_kind && kv > next_kind)) { p = next_kind ? next_kind : p + 6; continue; }
+
+        /* Extract name */
+        char *nk = strstr(p, "\"name\"");
+        if (!nk || (next_kind && nk > next_kind)) { p += 6; continue; }
+        char *nq1 = strchr(nk + 6, '"');
+        if (!nq1) break;
+        char *nq2 = strchr(nq1 + 1, '"');
+        if (!nq2) break;
+        char fname[128];
+        int nlen = (int)(nq2 - nq1 - 1);
+        if (nlen >= (int)sizeof(fname)) nlen = (int)sizeof(fname) - 1;
+        memcpy(fname, nq1 + 1, (size_t)nlen);
+        fname[nlen] = '\0';
+        /* Strip module prefix: "planettime.getplanettime" → "getplanettime" */
+        char *dot = strrchr(fname, '.');
+        char *fn_name = dot ? dot + 1 : fname;
+
+        /* Extract return type */
+        char *rk = strstr(nk, "\"return\"");
+        char ret_type[64] = "i8*";
+        char ret_toke_type[64] = "";
+        if (rk && (!next_kind || rk < next_kind)) {
+            char *rq1 = strchr(rk + 8, '"');
+            if (rq1) { char *rq2 = strchr(rq1 + 1, '"');
+                if (rq2) { int rlen = (int)(rq2 - rq1 - 1);
+                    if (rlen < (int)sizeof(ret_type)) {
+                        memcpy(ret_toke_type, rq1 + 1, (size_t)rlen); ret_toke_type[rlen] = '\0';
+                        strncpy(ret_type, tki_type_to_llvm(ret_toke_type), sizeof(ret_type) - 1);
+                    }}}
+        }
+
+        /* Register the function */
+        FnSig *sig = register_fn(c, fn_name, !strcmp(ret_type, "i8*") ? "i8*"
+                                  : !strcmp(ret_type, "double") ? "double"
+                                  : !strcmp(ret_type, "i1") ? "i1"
+                                  : !strcmp(ret_type, "void") ? "void"
+                                  : "i64");
+        if (sig) {
+            sig->is_internal = 1; /* use fastcc */
+            /* Store toke return type name for struct type propagation */
+            if (ret_toke_type[0])
+                strncpy(sig->ret_type_name, ret_toke_type, NAME_BUF - 1);
+            /* Extract param types */
+            char *pk = strstr(nk, "\"params\"");
+            if (pk && (!next_kind || pk < next_kind)) {
+                char *arr = strchr(pk, '[');
+                if (arr) {
+                    char *end = strchr(arr, ']');
+                    if (end) {
+                        char *cp = arr + 1;
+                        while (cp < end && sig->param_count < TKC_MAX_PARAMS) {
+                            char *q1 = strchr(cp, '"');
+                            if (!q1 || q1 >= end) break;
+                            char *q2 = strchr(q1 + 1, '"');
+                            if (!q2 || q2 >= end) break;
+                            char pt[64]; int plen = (int)(q2 - q1 - 1);
+                            if (plen >= (int)sizeof(pt)) plen = (int)sizeof(pt) - 1;
+                            memcpy(pt, q1 + 1, (size_t)plen); pt[plen] = '\0';
+                            sig->param_tys[sig->param_count] = tki_type_to_llvm(pt);
+                            strncpy(sig->param_type_names[sig->param_count], pt, NAME_BUF - 1);
+                            sig->param_count++;
+                            cp = q2 + 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        p = next_kind ? next_kind : p + 6;
+    }
+    free(buf);
+}
+
+/*
+ * load_tki_structs — Load struct type info from a .tki interface file
+ * and register them in the Ctx StructInfo registry.
+ */
+static void load_tki_structs(Ctx *c, const char *tki_path) {
+    FILE *f = fopen(tki_path, "r");
+    if (!f) return;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    if (sz <= 0 || sz > 1000000) { fclose(f); return; }
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc((size_t)sz + 1);
+    if (!buf) { fclose(f); return; }
+    size_t rd = fread(buf, 1, (size_t)sz, f);
+    fclose(f);
+    buf[rd] = '\0';
+
+    char *p = buf;
+    while ((p = strstr(p, "\"kind\"")) != NULL) {
+        char *kv = strstr(p, "\"type\"");
+        char *next_kind = strstr(p + 6, "\"kind\"");
+        if (!kv || (next_kind && kv > next_kind)) { p = next_kind ? next_kind : p + 6; continue; }
+
+        /* Extract name */
+        char *nk = strstr(p, "\"name\"");
+        if (!nk || (next_kind && nk > next_kind)) { p += 6; continue; }
+        char *nq1 = strchr(nk + 6, '"');
+        if (!nq1) break;
+        char *nq2 = strchr(nq1 + 1, '"');
+        if (!nq2) break;
+        char sname[128];
+        int nlen = (int)(nq2 - nq1 - 1);
+        if (nlen >= (int)sizeof(sname)) nlen = (int)sizeof(sname) - 1;
+        memcpy(sname, nq1 + 1, (size_t)nlen);
+        sname[nlen] = '\0';
+
+        /* Extract fields array */
+        char *fk = strstr(nk, "\"fields\"");
+        if (fk && (!next_kind || fk < next_kind)) {
+            char *arr = strchr(fk, '[');
+            if (arr) {
+                char *end = strchr(arr, ']');
+                if (end) {
+                    /* Count fields and extract names */
+                    char field_names[TKC_MAX_PARAMS][128];
+                    char field_types[TKC_MAX_PARAMS][128];
+                    int fc = 0;
+                    char *cp = arr + 1;
+                    while (cp < end && fc < TKC_MAX_PARAMS) {
+                        /* Find "name":"xxx" */
+                        char *nm = strstr(cp, "\"name\"");
+                        if (!nm || nm >= end) break;
+                        char *q1 = strchr(nm + 6, '"');
+                        if (!q1 || q1 >= end) break;
+                        char *q2 = strchr(q1 + 1, '"');
+                        if (!q2 || q2 > end) break;
+                        int flen = (int)(q2 - q1 - 1);
+                        if (flen >= 128) flen = 127;
+                        memcpy(field_names[fc], q1 + 1, (size_t)flen);
+                        field_names[fc][flen] = '\0';
+                        /* Find "type":"xxx" after this name */
+                        field_types[fc][0] = '\0';
+                        char *tp = strstr(q2, "\"type\"");
+                        if (tp && tp < end) {
+                            char *tq1 = strchr(tp + 6, '"');
+                            if (tq1 && tq1 < end) {
+                                char *tq2 = strchr(tq1 + 1, '"');
+                                if (tq2 && tq2 <= end) {
+                                    int tlen = (int)(tq2 - tq1 - 1);
+                                    if (tlen >= 128) tlen = 127;
+                                    memcpy(field_types[fc], tq1 + 1, (size_t)tlen);
+                                    field_types[fc][tlen] = '\0';
+                                }
+                            }
+                        }
+                        fc++;
+                        cp = q2 + 1;
+                    }
+
+                    if (fc > 0 && c->struct_count < c->struct_cap) {
+                        StructInfo *si = &c->structs[c->struct_count];
+                        int sl = (int)strlen(sname);
+                        if (sl >= 128) sl = 127;
+                        memcpy(si->name, sname, (size_t)sl);
+                        si->name[sl] = '\0';
+                        si->field_count = fc;
+                        for (int i = 0; i < fc; i++) {
+                            memcpy(si->field_names[i], field_names[i], 128);
+                            memcpy(si->field_types[i], field_types[i], 128);
+                        }
+                        c->struct_count++;
+                    }
+                }
+            }
+        }
+
+        p = next_kind ? next_kind : p + 6;
+    }
+    free(buf);
+}
+
+/*
+ * prepass_load_tki — For each non-stdlib import, load the .tki interface
+ * file and register function signatures and struct types for cross-module codegen.
+ */
+static void prepass_load_tki(Ctx *c, const Node *ast) {
+    if (!ast) return;
+    /* Find the container that holds import nodes — could be ast itself or a child */
+    const Node *containers[16];
+    int nc = 0;
+    if (ast->kind == NODE_MODULE || ast->kind == NODE_PROGRAM) {
+        containers[nc++] = ast;
+    }
+    for (int j = 0; j < ast->child_count && nc < 16; j++) {
+        const Node *ch = ast->children[j];
+        if (ch && (ch->kind == NODE_MODULE || ch->kind == NODE_PROGRAM))
+            containers[nc++] = ch;
+    }
+    for (int i = 0; i < c->import_count; i++) {
+        if (c->imports[i].is_std) continue;
+        char tki_path[512];
+        tki_path[0] = '\0';
+        int found = 0;
+        for (int ci = 0; ci < nc && !found; ci++) {
+            const Node *mod = containers[ci];
+            for (int k = 0; k < mod->child_count; k++) {
+                const Node *imp = mod->children[k];
+                if (!imp || imp->kind != NODE_IMPORT || imp->child_count < 2) continue;
+                char alias[128]; tok_cp(c->src, imp->children[0], alias, sizeof alias);
+                if (strcmp(alias, c->imports[i].alias)) continue;
+                const Node *mp = imp->children[1];
+                if (mp->kind != NODE_MODULE_PATH) continue;
+                tki_path[0] = '\0';
+                for (int s = 0; s < mp->child_count; s++) {
+                    char seg[128]; tok_cp(c->src, mp->children[s], seg, sizeof seg);
+                    if (s > 0) strncat(tki_path, "/", sizeof(tki_path) - strlen(tki_path) - 1);
+                    strncat(tki_path, seg, sizeof(tki_path) - strlen(tki_path) - 1);
+                }
+                strncat(tki_path, ".tki", sizeof(tki_path) - strlen(tki_path) - 1);
+                found = 1;
+                break;
+            }
+        }
+        if (found && tki_path[0]) {
+            load_tki_funcs(c, tki_path);
+            load_tki_structs(c, tki_path);
+        } else
+            fprintf(stderr, "[tki] no AST import found for alias '%s'\n", c->imports[i].alias);
+    }
+}
+
+/*
  * resolve_stdlib_call — Translate a qualified method call into a C runtime
  * function name.
  *
@@ -600,6 +881,26 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         if (!strcmp(method, "str"))     return "tk_toml_str_w";
         if (!strcmp(method, "i64"))     return "tk_toml_i64_w";
         if (!strcmp(method, "bool"))    return "tk_toml_bool_w";
+    }
+    /* std.math scalar functions — map directly to libc (linked via -lm) */
+    if (!strcmp(mod, "math")) {
+        if (!strcmp(method, "sin"))   return "sin";
+        if (!strcmp(method, "cos"))   return "cos";
+        if (!strcmp(method, "tan"))   return "tan";
+        if (!strcmp(method, "asin"))  return "asin";
+        if (!strcmp(method, "acos"))  return "acos";
+        if (!strcmp(method, "atan"))  return "atan";
+        if (!strcmp(method, "atan2")) return "atan2";
+        if (!strcmp(method, "fmod"))  return "fmod";
+        if (!strcmp(method, "fabs"))  return "fabs";
+        if (!strcmp(method, "log"))   return "log";
+        if (!strcmp(method, "log10")) return "log10";
+        if (!strcmp(method, "exp"))   return "exp";
+        if (!strcmp(method, "round")) return "round";
+        if (!strcmp(method, "sqrt"))  return "sqrt";
+        if (!strcmp(method, "floor")) return "floor";
+        if (!strcmp(method, "ceil"))  return "ceil";
+        if (!strcmp(method, "pow"))   return "pow";
     }
     /* std.args functions */
     if (!strcmp(mod, "args")) {
@@ -1180,18 +1481,18 @@ static int emit_expr(Ctx *c, const Node *n)
 
         /* Determine return type */
         const char *callee_ret = callee ? callee->ret : "i64";
-        if (!callee && is_cross_module_user) {
-            /* Cross-module user calls always return ptr (struct/array result) */
-            callee_ret = "i8*";
-            /* Record forward declaration — dedup by function name, all args are ptr */
+        if (is_cross_module_user) {
+            if (!callee) callee_ret = "i8*";
+            /* Record forward declaration with correct types */
             char name_check[256];
             snprintf(name_check, sizeof name_check, "@%s(", tb);
             if (!strstr(c->fwd_decls, name_check)) {
                 char decl[512];
-                int dlen = snprintf(decl, sizeof decl, "declare fastcc i8* @%s(", tb);
+                int dlen = snprintf(decl, sizeof decl, "declare fastcc %s @%s(", callee_ret, tb);
                 for (int i = 0; i < na && dlen < (int)sizeof(decl) - 16; i++) {
                     if (i) dlen += snprintf(decl + dlen, sizeof(decl) - (size_t)dlen, ", ");
-                    dlen += snprintf(decl + dlen, sizeof(decl) - (size_t)dlen, "i8*");
+                    const char *pty = (callee && i < callee->param_count) ? callee->param_tys[i] : arg_tys[i];
+                    dlen += snprintf(decl + dlen, sizeof(decl) - (size_t)dlen, "%s", pty);
                 }
                 dlen += snprintf(decl + dlen, sizeof(decl) - (size_t)dlen, ")\n");
                 if (c->fwd_decls_len + dlen < TKC_FWD_DECL_SIZE) {
@@ -1204,6 +1505,35 @@ static int emit_expr(Ctx *c, const Node *n)
             /* stdlib return type by convention */
             if (!strcmp(tb, "tk_str_argv")) callee_ret = "i8*";
             else if (!strcmp(tb, "tk_json_print")) callee_ret = "void";
+            else if (!strcmp(tb, "sin") || !strcmp(tb, "cos") || !strcmp(tb, "tan") ||
+                     !strcmp(tb, "asin") || !strcmp(tb, "acos") || !strcmp(tb, "atan") ||
+                     !strcmp(tb, "atan2") || !strcmp(tb, "fmod") || !strcmp(tb, "fabs") ||
+                     !strcmp(tb, "log") || !strcmp(tb, "log10") || !strcmp(tb, "exp") ||
+                     !strcmp(tb, "round") || !strcmp(tb, "sqrt") || !strcmp(tb, "floor") ||
+                     !strcmp(tb, "ceil") || !strcmp(tb, "pow"))
+                callee_ret = "double";
+            else if (strstr(tb, "tk_str_") && strcmp(tb, "tk_str_len_w") &&
+                     strcmp(tb, "tk_str_to_int") && strcmp(tb, "tk_str_toint_w") &&
+                     strcmp(tb, "tk_str_indexof_w") && strcmp(tb, "tk_str_lastindex_w") &&
+                     strcmp(tb, "tk_str_startswith_w") && strcmp(tb, "tk_str_endswith_w") &&
+                     strcmp(tb, "tk_str_contains_w") && strcmp(tb, "tk_str_matchbracket_w"))
+                callee_ret = "i8*";
+            else if (!strcmp(tb, "tk_args_get_w")) callee_ret = "i8*";
+            else if (!strcmp(tb, "tk_time_format_w") || !strcmp(tb, "tk_time_toparts_w"))
+                callee_ret = "i8*";
+            else if (!strcmp(tb, "tk_env_get_or") || !strcmp(tb, "tk_env_expand_w") ||
+                     !strcmp(tb, "tk_file_read_w") || !strcmp(tb, "tk_path_join_w") ||
+                     !strcmp(tb, "tk_path_dir_w") || !strcmp(tb, "tk_path_ext_w") ||
+                     !strcmp(tb, "tk_md_render_w") || !strcmp(tb, "tk_toml_str_w") ||
+                     !strcmp(tb, "tk_http_client_w") || !strcmp(tb, "tk_http_get_w") ||
+                     !strcmp(tb, "tk_http_post_w") || !strcmp(tb, "tk_http_put_w") ||
+                     !strcmp(tb, "tk_http_delete_w") || !strcmp(tb, "tk_http_stream_w") ||
+                     !strcmp(tb, "tk_http_withproxy_w") ||
+                     !strcmp(tb, "tk_http_streamnext_w") || !strcmp(tb, "tk_str_from_float") ||
+                     !strcmp(tb, "tk_file_listall_w") || !strcmp(tb, "tk_array_append_w") ||
+                     !strcmp(tb, "tk_map_get") || !strcmp(tb, "tk_router_new_w") ||
+                     !strcmp(tb, "tk_map_new"))
+                callee_ret = "i8*";
             else callee_ret = "i64";
             /* Auto-declare stdlib wrappers not in the hardcoded preamble.
              * Check fwd_decls to avoid duplicates; skip functions that are
@@ -1245,10 +1575,14 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_map_new", "tk_map_put", "tk_map_get",
                         "tk_array_append_w", "tk_map_set_w",
                         "tk_str_from_float",
+                        "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+                        "fmod", "fabs", "log", "log10", "exp", "round",
+                        "sqrt", "floor", "ceil", "pow",
                         "tk_http_post_echo", "tk_http_post_static", "tk_http_post_json",
                         "tk_http_client_w", "tk_http_get_w", "tk_http_post_w",
                         "tk_http_put_w", "tk_http_delete_w", "tk_http_stream_w",
                         "tk_http_streamnext_w", "tk_http_listen_w", "tk_http_print_w",
+                        "tk_http_withproxy_w",
                         NULL
                     };
                     int in_preamble = 0;
@@ -1302,13 +1636,20 @@ static int emit_expr(Ctx *c, const Node *n)
             if (callee && i < callee->param_count) {
                 aty = callee->param_tys[i];
             } else if (is_cross_module_user) {
-                /* All cross-module user args normalised to ptr; coerce at call site */
-                aty = "i8*";
+                /* Use actual arg type for cross-module user calls */
+                aty = arg_tys[i];
             } else {
                 /* stdlib: all i64 unless special */
                 aty = "i64";
                 if (!strcmp(tb, "tk_json_parse")) aty = "i8*";
                 if (!strcmp(tb, "tk_str_argv")) aty = "i64";
+                if (!strcmp(tb, "sin") || !strcmp(tb, "cos") || !strcmp(tb, "tan") ||
+                    !strcmp(tb, "asin") || !strcmp(tb, "acos") || !strcmp(tb, "atan") ||
+                    !strcmp(tb, "fmod") || !strcmp(tb, "fabs") || !strcmp(tb, "log") ||
+                    !strcmp(tb, "log10") || !strcmp(tb, "exp") || !strcmp(tb, "round") ||
+                    !strcmp(tb, "sqrt") || !strcmp(tb, "floor") || !strcmp(tb, "ceil") ||
+                    !strcmp(tb, "pow") || !strcmp(tb, "atan2"))
+                    aty = "double";
             }
             args[i] = coerce_value(c, args[i], arg_tys[i], aty);
         }
@@ -1323,8 +1664,14 @@ static int emit_expr(Ctx *c, const Node *n)
                 if (i) fputc(',', c->out);
                 const char *aty;
                 if (callee && i < callee->param_count) aty = callee->param_tys[i];
-                else if (is_cross_module_user) { aty = "i8*"; }
-                else { aty = "i64"; if (!strcmp(tb,"tk_json_parse")) aty="i8*"; }
+                else if (is_cross_module_user) { aty = arg_tys[i]; }
+                else { aty = "i64"; if (!strcmp(tb,"tk_json_parse")) aty="i8*";
+                    if (!strcmp(tb,"sin")||!strcmp(tb,"cos")||!strcmp(tb,"tan")||
+                        !strcmp(tb,"asin")||!strcmp(tb,"acos")||!strcmp(tb,"atan")||
+                        !strcmp(tb,"fmod")||!strcmp(tb,"fabs")||!strcmp(tb,"log")||
+                        !strcmp(tb,"log10")||!strcmp(tb,"exp")||!strcmp(tb,"round")||
+                        !strcmp(tb,"sqrt")||!strcmp(tb,"floor")||!strcmp(tb,"ceil")||
+                        !strcmp(tb,"pow")||!strcmp(tb,"atan2")) aty="double"; }
                 fprintf(c->out, " %s %%t%d", aty, args[i]);
             }
             fputs(")\n", c->out);
@@ -1338,8 +1685,14 @@ static int emit_expr(Ctx *c, const Node *n)
             if (i) fputc(',', c->out);
             const char *aty;
             if (callee && i < callee->param_count) aty = callee->param_tys[i];
-            else if (is_cross_module_user) { aty = "i8*"; }
-            else { aty = "i64"; if (!strcmp(tb,"tk_json_parse")) aty="i8*"; }
+            else if (is_cross_module_user) { aty = arg_tys[i]; }
+            else { aty = "i64"; if (!strcmp(tb,"tk_json_parse")) aty="i8*";
+                if (!strcmp(tb,"sin")||!strcmp(tb,"cos")||!strcmp(tb,"tan")||
+                    !strcmp(tb,"asin")||!strcmp(tb,"acos")||!strcmp(tb,"atan")||
+                    !strcmp(tb,"fmod")||!strcmp(tb,"fabs")||!strcmp(tb,"log")||
+                    !strcmp(tb,"log10")||!strcmp(tb,"exp")||!strcmp(tb,"round")||
+                    !strcmp(tb,"sqrt")||!strcmp(tb,"floor")||!strcmp(tb,"ceil")||
+                    !strcmp(tb,"pow")||!strcmp(tb,"atan2")) aty="double"; }
             fprintf(c->out, " %s %%t%d", aty, args[i]);
         }
         fputs(")\n", c->out);
@@ -1484,6 +1837,12 @@ static int emit_expr(Ctx *c, const Node *n)
         t2 = next_tmp(c); t = next_tmp(c);
         fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 %d ; .%s\n", t2, base, fidx, fn);
         fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", t, t2);
+        /* If field is f64, bitcast the loaded i64 to double to preserve bit pattern */
+        if (struct_field_is_float(si, fidx)) {
+            int bc = next_tmp(c);
+            fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double\n", bc, t);
+            t = bc;
+        }
         return t;
     }
     case NODE_INDEX_EXPR: {
@@ -1572,7 +1931,14 @@ static int emit_expr(Ctx *c, const Node *n)
                 t3 = emit_expr(c, fi->children[0]);
                 /* Struct fields always stored as i64 — coerce if needed (Story 57.13.2) */
                 const char *fety = expr_llvm_type(c, fi->children[0]);
-                t3 = coerce_value(c, t3, fety, "i64");
+                if (!strcmp(fety, "double")) {
+                    /* Bitcast double to i64 to preserve bit pattern in struct slot */
+                    int bc = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, t3);
+                    t3 = bc;
+                } else {
+                    t3 = coerce_value(c, t3, fety, "i64");
+                }
                 t2 = next_tmp(c);
                 fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 %d ; .%s\n",
                         t2, t, fidx, si ? si->field_names[fidx] : "?");
@@ -1844,6 +2210,20 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         return ptr_local_struct_type(c, nb);
     }
     if (n->kind == NODE_CALL_EXPR && n->child_count >= 1) {
+        /* Check for qualified module.method calls (e.g. time.toparts) */
+        if (n->children[0]->kind == NODE_FIELD_EXPR && n->children[0]->child_count >= 2) {
+            char alias[128], method[128];
+            tok_cp(c->src, n->children[0]->children[0], alias, sizeof alias);
+            tok_cp(c->src, n->children[0]->children[1], method, sizeof method);
+            /* Well-known stdlib struct returns */
+            const char *resolved = resolve_stdlib_call(c, alias, method);
+            if (resolved && !strcmp(resolved, "tk_time_toparts_w"))
+                return "timeparts";
+            /* Cross-module user calls: check FnSig by method name */
+            const FnSig *sig2 = lookup_fn(c, method);
+            if (sig2 && sig2->ret_type_name[0] && lookup_struct(c, sig2->ret_type_name))
+                return sig2->ret_type_name;
+        }
         char fn[128]; tok_cp(c->src, n->children[0], fn, sizeof fn);
         const FnSig *sig = lookup_fn(c, fn);
         if (sig && sig->ret_type_name[0] && lookup_struct(c, sig->ret_type_name))
@@ -2016,13 +2396,38 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             if (resolved) {
                 if (!strcmp(resolved, "tk_str_argv")) return "i8*";
                 if (!strcmp(resolved, "tk_json_print")) return "i64"; /* void, but wrapped */
-                return "i64"; /* tk_json_parse returns i64 */
+                /* Stdlib calls returning strings (i8*) */
+                if (strstr(resolved, "tk_str_") && strcmp(resolved, "tk_str_len_w") &&
+                    strcmp(resolved, "tk_str_to_int") && strcmp(resolved, "tk_str_toint_w") &&
+                    strcmp(resolved, "tk_str_startswith_w") && strcmp(resolved, "tk_str_endswith_w") &&
+                    strcmp(resolved, "tk_str_contains_w") && strcmp(resolved, "tk_str_indexof_w") &&
+                    strcmp(resolved, "tk_str_lastindex_w") && strcmp(resolved, "tk_str_matchbracket_w"))
+                    return "i8*";
+                /* Stdlib calls returning structs/arrays (i8*) */
+                if (!strcmp(resolved, "tk_time_toparts_w")) return "i8*";
+                if (!strcmp(resolved, "tk_time_format_w")) return "i8*";
+                /* Math functions that take/return double */
+                if (!strcmp(resolved, "sin") || !strcmp(resolved, "cos") ||
+                    !strcmp(resolved, "tan") || !strcmp(resolved, "asin") ||
+                    !strcmp(resolved, "acos") || !strcmp(resolved, "atan") ||
+                    !strcmp(resolved, "atan2") || !strcmp(resolved, "fmod") ||
+                    !strcmp(resolved, "fabs") || !strcmp(resolved, "log") ||
+                    !strcmp(resolved, "log10") || !strcmp(resolved, "exp") ||
+                    !strcmp(resolved, "round") || !strcmp(resolved, "floor") ||
+                    !strcmp(resolved, "sqrt") || !strcmp(resolved, "ceil") ||
+                    !strcmp(resolved, "pow"))
+                    return "double";
+                return "i64";
             }
-            /* Cross-module user call: return ptr (structs/arrays are ptr) */
+            /* Cross-module user call: check FnSig registry first */
             int is_mod = 0;
             for (int ii = 0; ii < c->import_count; ii++)
                 if (!strcmp(c->imports[ii].alias, alias)) { is_mod = 1; break; }
-            if (is_mod) return "i8*";
+            if (is_mod) {
+                const FnSig *msig = lookup_fn(c, method);
+                if (msig) return msig->ret;
+                return "i8*";
+            }
         }
         char fn[128]; tok_cp(c->src, n->children[0], fn, sizeof fn);
         const FnSig *sig = lookup_fn(c, fn);
@@ -2064,6 +2469,22 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
     case NODE_FIELD_EXPR: {
         char fn[128]; tok_cp(c->src, n->children[1], fn, sizeof fn);
         if (!strcmp(fn, "len")) return "i64";
+        /* Check if the field has a known f64 type */
+        {
+            const StructInfo *si = resolve_base_struct(c, n->children[0]);
+            if (!si) {
+                /* Heuristic: search all structs */
+                for (int _si = 0; _si < c->struct_count; _si++) {
+                    for (int _fi = 0; _fi < c->structs[_si].field_count; _fi++)
+                        if (!strcmp(c->structs[_si].field_names[_fi], fn)) { si = &c->structs[_si]; break; }
+                    if (si) break;
+                }
+            }
+            if (si) {
+                int fidx = struct_field_index(si, fn);
+                if (struct_field_is_float(si, fidx)) return "double";
+            }
+        }
         return "i64";
     }
     default:
@@ -2851,6 +3272,24 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_toml_str_w(i64, i64)\n", f);
     fputs("declare i64 @tk_toml_i64_w(i64, i64)\n", f);
     fputs("declare i64 @tk_toml_bool_w(i64, i64)\n", f);
+    /* libc math functions (linked via -lm) */
+    fputs("declare double @sin(double)\n", f);
+    fputs("declare double @cos(double)\n", f);
+    fputs("declare double @tan(double)\n", f);
+    fputs("declare double @asin(double)\n", f);
+    fputs("declare double @acos(double)\n", f);
+    fputs("declare double @atan(double)\n", f);
+    fputs("declare double @atan2(double, double)\n", f);
+    fputs("declare double @fmod(double, double)\n", f);
+    fputs("declare double @fabs(double)\n", f);
+    fputs("declare double @log(double)\n", f);
+    fputs("declare double @log10(double)\n", f);
+    fputs("declare double @exp(double)\n", f);
+    fputs("declare double @round(double)\n", f);
+    fputs("declare double @sqrt(double)\n", f);
+    fputs("declare double @floor(double)\n", f);
+    fputs("declare double @ceil(double)\n", f);
+    fputs("declare double @pow(double, double)\n", f);
     /* std.args module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_args_count_w()\n", f);
     fputs("declare i64 @tk_args_get_w(i64)\n", f);
@@ -2872,6 +3311,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_http_post_w(i64, i64, i64)\n", f);
     fputs("declare i64 @tk_http_put_w(i64, i64, i64)\n", f);
     fputs("declare i64 @tk_http_delete_w(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_withproxy_w(i64, i64)\n", f);
     fputs("declare i64 @tk_http_stream_w(i64)\n", f);
     fputs("declare i64 @tk_http_streamnext_w(i64)\n", f);
     fputs("declare i64 @tk_http_listen_w(i64, i64)\n", f);
@@ -2908,6 +3348,22 @@ int emit_llvm_ir(const Node *ast, const char *src,
     prepass_structs(&ctx, ast);
     prepass_funcs(&ctx, ast);
     prepass_imports(&ctx, ast);
+    prepass_load_tki(&ctx, ast);
+
+    /* Register well-known stdlib struct types for field-index resolution */
+    if (ctx.struct_count < ctx.struct_cap && !lookup_struct(&ctx, "timeparts")) {
+        StructInfo *si = &ctx.structs[ctx.struct_count];
+        strcpy(si->name, "timeparts");
+        si->field_count = 6;
+        strcpy(si->field_names[0], "year");
+        strcpy(si->field_names[1], "month");
+        strcpy(si->field_names[2], "day");
+        strcpy(si->field_names[3], "hour");
+        strcpy(si->field_names[4], "min");
+        strcpy(si->field_names[5], "sec");
+        ctx.struct_count++;
+    }
+
     emit_toplevel(&ctx, ast);
 
     /* Flush forward declarations for cross-module user function calls */

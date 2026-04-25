@@ -303,6 +303,7 @@ typedef struct {
     char    *base_url;
     uint64_t pool_size;
     uint64_t timeout_ms;
+    char    *proxy_url;     /* NULL = direct connect (Story 42.1.3) */
 } HttpClient;
 
 typedef struct {
@@ -353,6 +354,10 @@ HttpClient *http_client(const char *base_url);
 /* Client destructor */
 void http_client_free(HttpClient *c);
 
+/* http_withproxy — return a new HttpClient with proxy_url set (Story 42.1.3).
+ * Does NOT mutate the original. */
+HttpClient *http_withproxy(HttpClient *c, const char *proxy_url);
+
 /* HTTP methods */
 HttpClientResp http_get   (HttpClient *c, const char *path);
 HttpClientResp http_post  (HttpClient *c, const char *path,
@@ -366,5 +371,16 @@ HttpClientResp http_delete(HttpClient *c, const char *path);
 /* Streaming */
 HttpStreamResult http_stream    (HttpClient *c, HttpClientReq req);
 HttpChunkResult  http_streamnext(HttpStream *s);
+
+/* ── File download (Story 42.1.4) ────────────────────────────────────── */
+
+typedef void (*HttpProgressFn)(uint64_t bytes_done, uint64_t bytes_total);
+
+/* http_downloadfile — download URL to dest_path via streaming GET.
+ * Writes to dest_path.tmp then renames on success.
+ * progress_fn may be NULL; called after each 8 KiB chunk.
+ * Returns 0 on success, -1 on error. */
+int http_downloadfile(HttpClient *c, const char *url,
+                      const char *dest_path, HttpProgressFn progress_fn);
 
 #endif /* TK_STDLIB_HTTP_H */

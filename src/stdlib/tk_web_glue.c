@@ -768,17 +768,63 @@ int64_t tk_args_get_w(int64_t n) {
     return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
 }
 
-/* ── additional log wrappers (Story 56.8.7) ──────────────────────────── */
+/* ── log field decoding helper (Story 7.5.3) ─────────────────────────── */
+/*
+ * Decode a toke-format array of strings into a flat const char ** array
+ * suitable for tk_log_info / tk_log_error / tk_log_warn / tk_log_debug.
+ *
+ * Toke array layout:  ptr[-1] = element count (i64)
+ *                     ptr[0..count-1] = elements as i64 (char * as integer)
+ *
+ * The fields_map from toke is a flat array: [key1, val1, key2, val2, ...].
+ * This matches the (const char **fields, int field_count) signature directly.
+ *
+ * On return, *out_fields points to a malloc'd array (caller must free),
+ * and *out_count is the total element count (must be even for valid pairs).
+ * When fields_map is 0/NULL, sets *out_fields = NULL, *out_count = 0.
+ */
+static void decode_log_fields(int64_t fields_map,
+                               const char ***out_fields, int *out_count)
+{
+    *out_fields = NULL;
+    *out_count  = 0;
+    if (fields_map == 0) return;
+
+    int64_t *ptr = (int64_t *)(intptr_t)fields_map;
+    int64_t len  = ptr[-1];
+    if (len <= 0) return;
+
+    /* Odd count would mean a dangling key — truncate to even. */
+    int count = (int)(len & ~(int64_t)1);
+    if (count == 0) return;
+
+    const char **arr = (const char **)malloc((size_t)count * sizeof(const char *));
+    if (!arr) return;
+
+    for (int i = 0; i < count; i++) {
+        arr[i] = (const char *)(intptr_t)ptr[i];
+    }
+    *out_fields = arr;
+    *out_count  = count;
+}
+
+/* ── additional log wrappers (Story 56.8.7, fixed Story 7.5.3) ──────── */
 
 int64_t tk_log_info_w(int64_t msg, int64_t fields_map) {
-    (void)fields_map;
-    tk_log_info((const char *)(intptr_t)msg, NULL, 0);
+    const char **fields = NULL;
+    int field_count = 0;
+    decode_log_fields(fields_map, &fields, &field_count);
+    tk_log_info((const char *)(intptr_t)msg, fields, field_count);
+    free(fields);
     return 0;
 }
 
 int64_t tk_log_error_w(int64_t msg, int64_t fields_map) {
-    (void)fields_map;
-    tk_log_error((const char *)(intptr_t)msg, NULL, 0);
+    const char **fields = NULL;
+    int field_count = 0;
+    decode_log_fields(fields_map, &fields, &field_count);
+    tk_log_error((const char *)(intptr_t)msg, fields, field_count);
+    free(fields);
     return 0;
 }
 
@@ -882,17 +928,21 @@ int64_t tk_md_render_w(int64_t src) {
     return (int64_t)(intptr_t)md_render((const char *)(intptr_t)src);
 }
 
-/* ---- Story 57.12.1: log.warn + log.debug wrappers ---- */
+/* ---- Story 57.12.1: log.warn + log.debug wrappers (fixed Story 7.5.3) ---- */
 int64_t tk_log_warn_w(int64_t msg, int64_t fields_map) {
-    (void)fields_map;
-    const char *s = msg ? (const char *)(intptr_t)msg : "(null)";
-    fprintf(stderr, "[WARN] %s\n", s);
+    const char **fields = NULL;
+    int field_count = 0;
+    decode_log_fields(fields_map, &fields, &field_count);
+    tk_log_warn((const char *)(intptr_t)msg, fields, field_count);
+    free(fields);
     return 0;
 }
 int64_t tk_log_debug_w(int64_t msg, int64_t fields_map) {
-    (void)fields_map;
-    const char *s = msg ? (const char *)(intptr_t)msg : "(null)";
-    fprintf(stderr, "[DEBUG] %s\n", s);
+    const char **fields = NULL;
+    int field_count = 0;
+    decode_log_fields(fields_map, &fields, &field_count);
+    tk_log_debug((const char *)(intptr_t)msg, fields, field_count);
+    free(fields);
     return 0;
 }
 
@@ -1019,8 +1069,9 @@ int64_t tk_str_join_w(int64_t arr, int64_t sep) {
     (void)arr; (void)sep; return 0;
 }
 int64_t tk_str_toint_w(int64_t s) {
-    const char *p = s ? (const char *)(intptr_t)s : "0";
-    return (int64_t)strtoll(p, NULL, 10);
+    const char *p = s ? (const char *)(intptr_t)s : "";
+    IntParseResult r = str_to_int(p);
+    return r.is_err ? 0 : r.ok;
 }
 
 /* ---- Story 57.12.1: dataframe module stubs ---- */
@@ -1363,9 +1414,21 @@ int64_t tk_log_setformat_w(int64_t fmt) { (void)fmt; return 0; }
 int64_t tk_log_setlevel_w(int64_t lvl) { (void)lvl; return 0; }
 
 /* http extras */
+int64_t tk_http_downloadfile_w(int64_t client, int64_t url, int64_t dest) {
+    return (int64_t)http_downloadfile(
+        (HttpClient *)(intptr_t)client,
+        (const char *)(intptr_t)url,
+        (const char *)(intptr_t)dest,
+        NULL);
+}
 int64_t tk_http_put_w(int64_t client, int64_t path, int64_t body) { (void)client; (void)path; (void)body; return 0; }
 int64_t tk_http_print_w(int64_t resp) { (void)resp; return 0; }
 int64_t tk_http_listen_w(int64_t addr, int64_t handler) { (void)addr; (void)handler; return 0; }
+
+/* ---- Story 42.1.3: http.withproxy ---- */
+int64_t tk_http_withproxy_w(int64_t client, int64_t proxy_url) {
+    return (int64_t)(intptr_t)http_withproxy((HttpClient *)(intptr_t)client, (const char *)(intptr_t)proxy_url);
+}
 
 /* chart */
 int64_t tk_chart_tojson_w(int64_t chart) { (void)chart; return 0; }
