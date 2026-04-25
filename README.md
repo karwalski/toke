@@ -6,7 +6,7 @@ toke is a compiled programming language designed so that AI can write better cod
 
 - **Compiled to native code** via LLVM -- produces standalone binaries for x86-64 and ARM64
 - **56-character alphabet** -- programs use only lowercase letters, digits, and a small set of punctuation, eliminating an entire class of tokenisation ambiguity
-- **12 keywords** -- the entire language control flow fits in a short list: `fn`, `let`, `mut`, `if`, `else`, `for`, `in`, `ret`, `type`, `match`, `use`, `pub`
+- **12 keywords** -- the entire language control flow fits in a short list: `m`, `f`, `t`, `i`, `if`, `el`, `lp`, `br`, `let`, `mut`, `as`, `rt`
 - **LL(1) grammar** -- every parse decision is determined by a single token of lookahead, making the language simple for both humans and machines to parse
 - **Error handling with result types** -- no exceptions; errors are values returned from functions and handled explicitly with `match`
 - **38 standard library modules** with C runtime backing -- from strings and JSON to HTTP servers, database access, cryptography, and machine learning
@@ -21,9 +21,12 @@ make
 
 # Write a program
 cat > hello.tk << 'EOF'
-fn main() {
-  print("hello world")
-}
+m=hello;
+i=io:std.io;
+f=main():i64{
+  io.println("hello world");
+  <0
+};
 EOF
 
 # Compile and run

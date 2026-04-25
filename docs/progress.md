@@ -248,7 +248,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done` 
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 2.2.1 | Train custom BPE tokenizer on toke corpus | done | — | SentencePiece BPE on 46,730 programs. 8K vocab. 15.2% token reduction vs cl100k_base. Common patterns (`lp(`, `let`, `arr.len`) as single tokens. 100% round-trip fidelity. Work tracked in Epic 9.8. |
+| 2.2.1 | Train custom BPE tokenizer on toke corpus | done (Phase 1 only) | — | SentencePiece BPE on 46,730 programs. 8K vocab. 13.1% token reduction vs cl100k_base (32K vocab). Trained on **legacy syntax** — declaration prefixes (`m=`, `f=`, `i=`) are NOT single tokens. Phase 2 retrain on default syntax tracked in Epic 23. 100% round-trip fidelity. |
 | 2.2.2 | Tokenizer benchmark across vocab sizes | done | — | Benchmarked 1K/2K/4K/8K vocab sizes. Char-to-token ratio ≤1.8. Script: `toke-model/tokenizer/scripts/retrain_bpe.py`. |
 
 ### Epic 2.3 — First Fine-Tuned Model
@@ -401,6 +401,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done` 
 | 7.1.9 | Website code example conformance test suite | done | 2026-04-04 | **[local]** [x] test/check_examples.sh: extracts toke blocks from 45 docs, runs tkc --check [x] Skips fragments (no m=), non-toke blocks, skip-check annotated [x] Baseline: 48 checked, 24 pass, 24 fail (50%), threshold set at 50% [x] Failures mostly cross-module imports (E2030) and unimplemented features [x] npm run test:examples wired in package.json |
 | 7.1.10 | Add loke showcase to website homepage | done | 2026-04-04 | **[local]** [x] "Built with toke" section added to index.mdx between Development Timeline and Ready to Start [x] loke card with description and link to loke.tokelang.dev [x] Single mention, no other pages affected |
 | 7.2.1 | Review `.tk` file extension decision | done | — | [x] ADR-0002 in spec/ [x] Linguist conflict documented [x] .gitattributes mitigation [x] Decision: keep .tk |
+| 7.4.1 | Token claims audit and remediation | done | 2026-04-25 | **[local]** Audit of all token efficiency claims across website, docs, READMEs. [x] Verified fibonacci token counts with cl100k_base (toke 59, Python 41, C 59, Java 62 — complete programs) [x] Found Phase 1 tokenizer never retrained on default syntax — m=, f=, i= are 2 tokens, not 1 [x] Found fabricated numbers in guide (claimed 156 tokens for Python fib, actual 35) [x] Replaced homepage example with fibonacci, honest cl100k counts, Phase 2 projections clearly labelled [x] Fixed why.md, enterprise.md, design.md, competitive-matrix.md, guide/01-why-toke.md [x] Fixed toke/README.md keyword list and hello world to use default syntax |
 | 7.3.1 | Audit empty stub files across all repos | done | — | 12 empty files found, 3 stories with false done status, 1 missing from tracking |
 ### Epic 8.1 — Cloud Corpus Generation Infrastructure
 
@@ -499,7 +500,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done` 
  |
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------| |
-| 9.8.1 | Retrain BPE on production corpus | done | — | **P0** Retrain SentencePiece on full 47K corpus. Benchmark 1K/2K/4K/8K vocab sizes. Char-to-token ratio ≤1.8. Common patterns (m=, f=, i=, t=, let, <, :$) as single tokens. Round-trip fidelity. Extends 2.9.x pipeline. Done 2026-04-04. Script: `toke-model/tokenizer/scripts/retrain_bpe.py`. |
+| 9.8.1 | Retrain BPE on production corpus | done (legacy only) | — | **P0** Trained on Phase 1 (legacy) corpus only. 8K vocab achieves 12.5% reduction vs cl100k_base. **Audit finding (2026-04-25):** `m=`, `f=`, `i=` are NOT single tokens in current model — tokenizer was never retrained on default syntax. `retrain_bpe.py` script referenced but not present on disk. Phase 2 retrain tracked in Epic 23.1.2. |
 | 9.8.2 | Tokenizer alignment with base model vocabulary | done | — | **P1** Overlap analysis: toke BPE vs Qwen tokenizer. If >30% novel tokens → prototype vocab extension. If ≤30% → document feasibility of Qwen tokenizer directly. Recommendation with data. Done 2026-04-04. Script: `toke-model/tokenizer/scripts/tokenizer_alignment.py`. |
  |
 ### Story Dependency Graph (Gate 2 Critical Path) |
@@ -1300,10 +1301,11 @@ Retrain the BPE tokenizer on the expanded default-syntax corpus and evaluate aga
  |
 | Story | Description | Status | Date | Notes |
 |---|---|---|---|---| |
-| 23.1.1 | Verify current tokenizer was trained on default syntax | backlog | — | **P0** Run `eval.py` with the current 8K and 32K tokenizer models against a sample of default-syntax programs. Check that `$`, `@()`, lowercase keywords are single tokens or efficiently tokenized. Report results. If not trained on default syntax, proceed to 23.1.2. |
-| 23.1.2 | Retrain 8K BPE tokenizer on expanded default-syntax corpus | backlog | — | **P0** Run `train.py` with the full expanded corpus (70K+ programs). 8K vocabulary. Evaluate: token count reduction vs cl100k_base and o200k_base. Target: ≥15% reduction vs cl100k_base. Depends on 22.1.5. |
+| 23.1.1 | Verify current tokenizer was trained on default syntax | done | 2026-04-25 | **P0** RESULT: current tokenizer is Phase 1 (legacy syntax). `m=`, `f=`, `i=` are all 2 tokens. `:i64` is 3 tokens (`:` + `i` + `64`). `$` and `@(` patterns partially present but declaration prefixes missing. Proceed to 23.1.2. |
+| 23.1.2 | Retrain 8K BPE tokenizer on expanded default-syntax corpus | backlog | — | **P0** Run `train.py` with the full expanded corpus (70K+ programs). 8K vocabulary. **Required single-token merges (from audit 7.4.1):** `m=`, `f=`, `i=`, `t=`, `:i64`, `:i64):i64{`, `:str`, `:bool`, `std.io;`, `std.str;`, `std.json;`, `std.http;`, `if(`, `el{`, `<0};`, `main():i64{`, `io.println(`. Evaluate: token count reduction vs cl100k_base. Target: fibonacci complete program ≤25 tokens (current estimate ~23). Training must use one-line canonical form (no whitespace). Depends on 22.1.5. |
 | 23.1.3 | Retrain 32K BPE tokenizer and evaluate vocab utilization | backlog | — | **P1** Retrain at 32K vocabulary. Evaluate vocab utilization (was 23.5% — should improve with larger corpus). Compare token counts against 8K model. Determine if 32K is worth the complexity or if 8K suffices. |
-| 23.1.4 | Tokenizer regression tests: ensure all stdlib identifiers tokenize cleanly | backlog | — | **P1** For each of the 30+ stdlib module names and common function names (e.g., `crypto.sha256`, `df_fromcsv`, `chart_tojson`), verify the tokenizer does not split them badly (no mid-word breaks). Report any problematic tokenizations. |
+| 23.1.4 | Tokenizer regression tests: ensure all stdlib identifiers tokenize cleanly | backlog | — | **P1** For each of the 30+ stdlib module names and common function names (e.g., `crypto.sha256`, `df_fromcsv`, `chart_tojson`), verify the tokenizer does not split them badly (no mid-word breaks). Additionally verify: all `std.*` imports with trailing semicolons merge as single tokens. Report any problematic tokenizations. |
+| 23.1.5 | Verify website fibonacci benchmark against retrained tokenizer | backlog | — | **P1** Run the retrained tokenizer against the canonical fibonacci program from the homepage (`m=fib;i=io:std.io;f=fib(n:i64):i64{if(n<2){<n}el{<fib(n-1)+fib(n-2)}};f=main():i64{io.println(fib(10));<0};`). Compare actual token count against the ~23 estimate published on the website. Update website if actual count differs. Depends on 23.1.2. |
  |
 --- |
  |
