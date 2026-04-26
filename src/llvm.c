@@ -538,6 +538,18 @@ static const char *tki_type_to_llvm(const char *toke_type) {
     return "i8*"; /* str, arrays, structs — all pointers */
 }
 
+/*
+ * tki_type_to_llvm_abi — Same as tki_type_to_llvm but for stdlib _w wrappers
+ * which use the uniform i64 ABI. Str→i64 (not i8*), bool→i64 (not i1).
+ * Only f64/f32→double/float and void→void differ from i64.
+ */
+static const char *tki_type_to_llvm_abi(const char *toke_type) {
+    if (!strcmp(toke_type, "f64"))  return "double";
+    if (!strcmp(toke_type, "f32"))  return "float";
+    if (!strcmp(toke_type, "void")) return "void";
+    return "i64"; /* everything else is i64 in the _w wrapper ABI */
+}
+
 /* ── Story 7.5.5: Stdlib .tki cache for ABI return-type inference ──── */
 
 /*
@@ -649,7 +661,7 @@ static void load_stdlib_tki(const char *module) {
 
         char base_ret[64];
         tki_base_return_type(toke_ret, base_ret, sizeof base_ret);
-        e->llvm_ret = tki_type_to_llvm(base_ret);
+        e->llvm_ret = tki_type_to_llvm_abi(base_ret);
         g_tki_cache_count++;
 
         p = next_kind ? next_kind : p + 6;
