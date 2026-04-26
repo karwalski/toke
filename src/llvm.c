@@ -969,6 +969,8 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         }
     }
     if (!mod) return NULL;
+    /* Strip "std." prefix for stdlib imports (Story 49.4.5) */
+    if (!strncmp(mod, "std.", 4)) mod = mod + 4;
 
     /* std.json functions */
     if (!strcmp(mod, "json")) {
@@ -2623,16 +2625,6 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             if (resolved) {
                 if (!strcmp(resolved, "tk_str_argv")) return "i8*";
                 if (!strcmp(resolved, "tk_json_print")) return "i64"; /* void, but wrapped */
-                /* Stdlib calls returning strings (i8*) */
-                if (strstr(resolved, "tk_str_") && strcmp(resolved, "tk_str_len_w") &&
-                    strcmp(resolved, "tk_str_to_int") && strcmp(resolved, "tk_str_toint_w") &&
-                    strcmp(resolved, "tk_str_startswith_w") && strcmp(resolved, "tk_str_endswith_w") &&
-                    strcmp(resolved, "tk_str_contains_w") && strcmp(resolved, "tk_str_indexof_w") &&
-                    strcmp(resolved, "tk_str_lastindex_w") && strcmp(resolved, "tk_str_matchbracket_w"))
-                    return "i8*";
-                /* Stdlib calls returning structs/arrays (i8*) */
-                if (!strcmp(resolved, "tk_time_toparts_w")) return "i8*";
-                if (!strcmp(resolved, "tk_time_format_w")) return "i8*";
                 /* Math functions that take/return double */
                 if (!strcmp(resolved, "sin") || !strcmp(resolved, "cos") ||
                     !strcmp(resolved, "tan") || !strcmp(resolved, "asin") ||
@@ -2644,6 +2636,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
                     !strcmp(resolved, "sqrt") || !strcmp(resolved, "ceil") ||
                     !strcmp(resolved, "pow"))
                     return "double";
+                /* Story 49.4.5: all _w wrappers use i64 ABI uniformly */
                 return "i64";
             }
             /* Cross-module user call: check FnSig registry first */
@@ -3457,6 +3450,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare {i64, i1} @llvm.smul.with.overflow.i64(i64, i64)\n", f);
     fputs("declare void @tk_overflow_trap(i32)\n", f);
     /* std.str module wrappers (tk_web_glue.c) */
+    /* Story 49.4.5: all _w wrappers use i64 ABI uniformly */
     fputs("declare i64 @tk_str_concat_w(i64, i64)\n", f);
     fputs("declare i64 @tk_str_len_w(i64)\n", f);
     fputs("declare i64 @tk_str_trim_w(i64)\n", f);
@@ -3475,11 +3469,9 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_str_lastindex_w(i64, i64)\n", f);
     fputs("declare i64 @tk_str_matchbracket_w(i64)\n", f);
     fputs("declare i64 @tk_str_contains_w(i64, i64)\n", f);
-    /* std.env module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_env_get_or(i64, i64)\n", f);
     fputs("declare i64 @tk_env_set_w(i64, i64)\n", f);
     fputs("declare i64 @tk_env_expand_w(i64)\n", f);
-    /* std.file module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_file_read_w(i64)\n", f);
     fputs("declare i64 @tk_file_write_w(i64, i64)\n", f);
     fputs("declare i64 @tk_file_isdir_w(i64)\n", f);
@@ -3487,13 +3479,10 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_file_copy_w(i64, i64)\n", f);
     fputs("declare i64 @tk_file_listall_w(i64)\n", f);
     fputs("declare i64 @tk_file_exists_w(i64)\n", f);
-    /* std.path module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_path_join_w(i64, i64)\n", f);
     fputs("declare i64 @tk_path_dir_w(i64)\n", f);
     fputs("declare i64 @tk_path_ext_w(i64)\n", f);
-    /* std.md module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_md_render_w(i64)\n", f);
-    /* std.toml module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_toml_load_w(i64)\n", f);
     fputs("declare i64 @tk_toml_section_w(i64, i64)\n", f);
     fputs("declare i64 @tk_toml_str_w(i64, i64)\n", f);
@@ -3526,10 +3515,8 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_mem_cmp(i64, i64, i64)\n", f);
     fputs("declare i64 @tk_mem_load8(i64, i64)\n", f);
     fputs("declare void @tk_mem_store8(i64, i64, i64)\n", f);
-    /* std.args module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_args_count_w()\n", f);
     fputs("declare i64 @tk_args_get_w(i64)\n", f);
-    /* std.http module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_http_get_static(i64, i64)\n", f);
     fputs("declare i64 @tk_http_get_handler(i64, i64)\n", f);
     fputs("declare i64 @tk_http_req_path(i64)\n", f);
@@ -3548,7 +3535,6 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_http_servevhosts(i64)\n", f);
     fputs("declare i64 @tk_http_servevhoststls(i64, i64, i64)\n", f);
     fputs("declare i64 @tk_http_set_notfound(i64)\n", f);
-    /* std.http client wrappers (Story 57.13.9) */
     fputs("declare i64 @tk_http_client_w(i64)\n", f);
     fputs("declare i64 @tk_http_get_w(i64)\n", f);
     fputs("declare i64 @tk_http_post_w(i64, i64, i64)\n", f);
@@ -3559,14 +3545,12 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_http_streamnext_w(i64)\n", f);
     fputs("declare i64 @tk_http_listen_w(i64, i64)\n", f);
     fputs("declare i64 @tk_http_print_w(i64)\n", f);
-    /* std.log module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_log_open_access_w(i64, i64, i64, i64)\n", f);
     fputs("declare i64 @tk_log_open_error_w(i64, i64, i64, i64)\n", f);
     fputs("declare i64 @tk_log_info_w(i64, i64)\n", f);
     fputs("declare i64 @tk_log_error_w(i64, i64)\n", f);
     fputs("declare i64 @tk_log_warn_w(i64, i64)\n", f);
     fputs("declare i64 @tk_log_debug_w(i64, i64)\n", f);
-    /* std.router module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_router_new_w()\n", f);
     /* Array/map runtime and instance method wrappers (tk_web_glue.c) */
     fputs("declare i8* @tk_map_new()\n", f);
