@@ -3271,7 +3271,8 @@ Foundation layer. Everything depends on this. Currently: str.c (659 LOC), tk_run
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 74.1.1 | Audit str.c: identify functions implementable in toke vs requiring C intrinsics | backlog | — | **P0** Categorise each of 28 str functions. String concat/slice/split can be toke. Memory allocation needs compiler support (arena or malloc intrinsic). |
+| 74.1.0 | Add bitwise operators to toke (&, \|, ^, ~, >>, <<, %) | backlog | — | **P0** Prerequisite for encoding (74.1.5), crypto (74.5.1), and any bit manipulation. ~200 lines across lexer.h (new tokens), lexer.c (scanning), parser.c (precedence), types.c (integer-only check), llvm.c (emit and/or/xor/shl/lshr/srem). Discovered during 74.1.5 feasibility audit. |
+| 74.1.1 | Audit str.c: identify functions implementable in toke vs requiring C intrinsics | done | 2026-04-26 | **P0** Result: 31 of 35 functions rewritable with malloc + byte-level read + memcpy. 4 functions (str_from_int, str_from_float, str_to_int, str_to_float) should remain as C FFI (number formatting/parsing). Minimum intrinsic set: malloc, memcpy, byte load/store, realloc, free. |
 | 74.1.2 | Compiler intrinsic: memory allocation (arena_alloc, malloc) | backlog | — | **P0** Add compiler built-in for heap allocation so toke code can allocate without C. Prerequisite for all pure-toke stdlib. |
 | 74.1.3 | Compiler intrinsic: raw memory operations (memcpy, memset, memcmp) | backlog | — | **P0** LLVM already has these as intrinsics. Expose them as toke built-ins. |
 | 74.1.4 | Rewrite str module in toke | backlog | — | **P1** Implement all 28 str functions in toke using arena allocation and memory intrinsics. C str.c becomes fallback/reference. |
