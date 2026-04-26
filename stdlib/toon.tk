@@ -1,0 +1,630 @@
+m=toon;
+i=s:std.str;
+
+f=hparsefields(raw:$str):@$str{
+  let bracepos=s.indexof(raw;"{");
+  if(bracepos<0){
+    <@()
+  }el{
+    let afterbrace=s.slice(raw;bracepos+1;s.len(raw))|{Ok:v v;Err:e ""};
+    let closepos=s.indexof(afterbrace;"}");
+    if(closepos<0){
+      <@()
+    }el{
+      let fieldstr=s.slice(afterbrace;0;closepos)|{Ok:v v;Err:e ""};
+      <s.split(fieldstr;",")
+    }
+  }
+};
+
+f=hdatapart(raw:$str):$str{
+  let bracepos=s.indexof(raw;"{");
+  if(bracepos<0){
+    <""
+  }el{
+    let afterbrace=s.slice(raw;bracepos;s.len(raw))|{Ok:v v;Err:e ""};
+    let closepos=s.indexof(afterbrace;"}");
+    if(closepos<0){
+      <""
+    }el{
+      let afterclose=s.slice(afterbrace;closepos+1;s.len(afterbrace))|{Ok:v v;Err:e ""};
+      let alen=s.len(afterclose);
+      if(alen>0){
+        let first=s.slice(afterclose;0;1)|{Ok:v v;Err:e ""};
+        if(first=":"){
+          let rest=s.slice(afterclose;1;alen)|{Ok:v v;Err:e ""};
+          let rlen=s.len(rest);
+          if(rlen>0){
+            let rfirst=s.slice(rest;0;1)|{Ok:v v;Err:e ""};
+            if(rfirst="\n"){
+              <s.slice(rest;1;rlen)|{Ok:v v;Err:e rest}
+            }el{
+              <rest
+            }
+          }el{
+            <""
+          }
+        }el{
+          <afterclose
+        }
+      }el{
+        <""
+      }
+    }
+  }
+};
+
+f=hfieldindex(fields:@$str;key:$str):$i64{
+  lp(let i=0;i<fields.len;i=i+1){
+    let f=fields.get(i);
+    if(f=key){
+      <i
+    }el{}
+  };
+  <-1
+};
+
+f=hcolval(row:$str;idx:$i64):$str{
+  let parts=s.split(row;"|");
+  if(idx<parts.len){
+    <parts.get(idx)
+  }el{
+    <""
+  }
+};
+
+f=hdatalines(data:$str):@$str{
+  let lines=s.split(data;"\n");
+  let result=mut.@();
+  lp(let i=0;i<lines.len;i=i+1){
+    let line=lines.get(i);
+    if(s.len(line)>0){
+      result=result.append(line)
+    }el{}
+  };
+  <result
+};
+
+f=enc(v:$str):$str{
+  <v
+};
+
+f=dec(input:$str):$str{
+  if(s.len(input)=0){
+    <""
+  }el{
+    let hasopen=s.contains(input;"{");
+    if(!hasopen){
+      <""
+    }el{
+      let hasclose=s.contains(input;"}");
+      if(!hasclose){
+        <""
+      }el{
+        <input
+      }
+    }
+  }
+};
+
+f=str(t:$str;key:$str):$str{
+  let fields=hparsefields(t);
+  let idx=hfieldindex(fields;key);
+  if(idx<0){
+    <""
+  }el{
+    let data=hdatapart(t);
+    let lines=hdatalines(data);
+    if(lines.len>0){
+      let row=lines.get(0);
+      <hcolval(row;idx)
+    }el{
+      <""
+    }
+  }
+};
+
+f=i64(t:$str;key:$str):$i64{
+  let val=str(t;key);
+  let trimmed=s.trim(val);
+  <s.to_int(trimmed)|{Ok:v v;Err:e 0}
+};
+
+f=f64(t:$str;key:$str):$f64{
+  let val=str(t;key);
+  let trimmed=s.trim(val);
+  <s.to_float(trimmed)|{Ok:v v;Err:e 0.0}
+};
+
+f=bool(t:$str;key:$str):$bool{
+  let val=str(t;key);
+  let trimmed=s.trim(val);
+  if(trimmed="true"){
+    <true
+  }el{
+    <false
+  }
+};
+
+f=arr(t:$str;key:$str):@$str{
+  let fields=hparsefields(t);
+  let idx=hfieldindex(fields;key);
+  if(idx<0){
+    <@()
+  }el{
+    let data=hdatapart(t);
+    let lines=hdatalines(data);
+    let result=mut.@();
+    lp(let i=0;i<lines.len;i=i+1){
+      let row=lines.get(i);
+      let val=hcolval(row;idx);
+      result=result.append(val)
+    };
+    <result
+  }
+};
+
+f=hisdigitchar(c:$str):$bool{
+  if(c="0"){<true}el{
+  if(c="1"){<true}el{
+  if(c="2"){<true}el{
+  if(c="3"){<true}el{
+  if(c="4"){<true}el{
+  if(c="5"){<true}el{
+  if(c="6"){<true}el{
+  if(c="7"){<true}el{
+  if(c="8"){<true}el{
+  if(c="9"){<true}el{
+  <false
+  }}}}}}}}}}
+};
+
+f=hisnumeric(val:$str):$bool{
+  let vlen=s.len(val);
+  if(vlen=0){<false}el{
+    let start=mut.0;
+    let first=s.slice(val;0;1)|{Ok:v v;Err:e ""};
+    if(first="-"){
+      start=1
+    }el{};
+    if(start>=vlen){<false}el{
+      let alldig=mut.true;
+      lp(let i=start;i<vlen;i=i+1){
+        let c=s.slice(val;i;i+1)|{Ok:v v;Err:e ""};
+        if(c="."){
+        }el{
+          if(!hisdigitchar(c)){
+            alldig=false
+          }el{}
+        }
+      };
+      <alldig
+    }
+  }
+};
+
+f=hjsonesc(val:$str):$str{
+  let r1=s.replace(val;"\\";"\\\\");
+  let r2=s.replace(r1;"\"";"\\\"");
+  let r3=s.replace(r2;"\n";"\\n");
+  let r4=s.replace(r3;"\t";"\\t");
+  <r4
+};
+
+f=tojson(t:$str):$str{
+  let fields=hparsefields(t);
+  let nfields=fields.len;
+  if(nfields=0){
+    <"[]"
+  }el{
+    let data=hdatapart(t);
+    let lines=hdatalines(data);
+    let nlines=lines.len;
+    if(nlines=0){
+      <"[]"
+    }el{
+      let buf=mut."[";
+      lp(let ri=0;ri<nlines;ri=ri+1){
+        if(ri>0){
+          buf=s.concat(buf;",")
+        }el{};
+        buf=s.concat(buf;"{");
+        let row=lines.get(ri);
+        let parts=s.split(row;"|");
+        lp(let fi=0;fi<nfields;fi=fi+1){
+          if(fi>0){
+            buf=s.concat(buf;",")
+          }el{};
+          let fname=fields.get(fi);
+          buf=s.concat(buf;"\"");
+          buf=s.concat(buf;fname);
+          buf=s.concat(buf;"\":");
+          let val=mut."";
+          if(fi<parts.len){
+            val=parts.get(fi)
+          }el{};
+          let trimval=s.trim(val);
+          if(trimval="true"||trimval="false"||trimval="null"){
+            buf=s.concat(buf;trimval)
+          }el{
+            if(hisnumeric(trimval)){
+              buf=s.concat(buf;trimval)
+            }el{
+              buf=s.concat(buf;"\"");
+              buf=s.concat(buf;hjsonesc(trimval));
+              buf=s.concat(buf;"\"")
+            }
+          }
+        };
+        buf=s.concat(buf;"}")
+      };
+      buf=s.concat(buf;"]");
+      <buf
+    }
+  }
+};
+
+f=hskipws(src:$str;pos:$i64):$i64{
+  let slen=s.len(src);
+  let p=mut.pos;
+  let running=mut.true;
+  lp(let ii=0;running;ii=ii+1){
+    if(p>=slen){
+      running=false
+    }el{
+      let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
+      if(c=" "||c="\t"||c="\n"||c="\r"){
+        p=p+1
+      }el{
+        running=false
+      }
+    }
+  };
+  <p
+};
+
+f=hjsonstring(src:$str;pos:$i64):$str{
+  let slen=s.len(src);
+  let start=pos+1;
+  let p=mut.start;
+  let result=mut."";
+  let running=mut.true;
+  lp(let ii=0;running;ii=ii+1){
+    if(p>=slen){
+      running=false
+    }el{
+      let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
+      if(c="\\"){
+        let next=s.slice(src;p+1;p+2)|{Ok:v v;Err:e ""};
+        if(next="\""){
+          result=s.concat(result;"\"");
+          p=p+2
+        }el{
+          if(next="\\"){
+            result=s.concat(result;"\\");
+            p=p+2
+          }el{
+            if(next="n"){
+              result=s.concat(result;"\n");
+              p=p+2
+            }el{
+              if(next="t"){
+                result=s.concat(result;"\t");
+                p=p+2
+              }el{
+                result=s.concat(result;c);
+                p=p+1
+              }
+            }
+          }
+        }
+      }el{
+        if(c="\""){
+          running=false
+        }el{
+          result=s.concat(result;c);
+          p=p+1
+        }
+      }
+    }
+  };
+  <result
+};
+
+f=hjsonstringend(src:$str;pos:$i64):$i64{
+  let slen=s.len(src);
+  let p=mut.pos+1;
+  let running=mut.true;
+  lp(let ii=0;running;ii=ii+1){
+    if(p>=slen){
+      running=false
+    }el{
+      let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
+      if(c="\\"){
+        p=p+2
+      }el{
+        if(c="\""){
+          running=false;
+          p=p+1
+        }el{
+          p=p+1
+        }
+      }
+    }
+  };
+  <p
+};
+
+f=hskipjsonval(src:$str;pos:$i64):$i64{
+  let slen=s.len(src);
+  let p=hskipws(src;pos);
+  if(p>=slen){
+    <p
+  }el{
+    let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
+    if(c="\""){
+      <hjsonstringend(src;p)
+    }el{
+      if(c="{"||c="["){
+        let open=c;
+        let close=mut."}";
+        if(c="["){close="]"}el{};
+        let depth=mut.1;
+        let q=mut.p+1;
+        let running=mut.true;
+        lp(let ii=0;running;ii=ii+1){
+          if(q>=slen||depth=0){
+            running=false
+          }el{
+            let ch=s.slice(src;q;q+1)|{Ok:v v;Err:e ""};
+            if(ch="\""){
+              q=hjsonstringend(src;q)
+            }el{
+              if(ch=open){
+                depth=depth+1;
+                q=q+1
+              }el{
+                if(ch=close){
+                  depth=depth-1;
+                  q=q+1
+                }el{
+                  q=q+1
+                }
+              }
+            }
+          }
+        };
+        <q
+      }el{
+        
+        let q=mut.p;
+        let running=mut.true;
+        lp(let ii=0;running;ii=ii+1){
+          if(q>=slen){
+            running=false
+          }el{
+            let ch=s.slice(src;q;q+1)|{Ok:v v;Err:e ""};
+            if(ch=","||ch="}"||ch="]"||ch=" "||ch="\n"||ch="\t"||ch="\r"){
+              running=false
+            }el{
+              q=q+1
+            }
+          }
+        };
+        <q
+      }
+    }
+  }
+};
+
+f=hjsonvalraw(src:$str;pos:$i64):$str{
+  let p=hskipws(src;pos);
+  let slen=s.len(src);
+  if(p>=slen){
+    <""
+  }el{
+    let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
+    if(c="\""){
+      <hjsonstring(src;p)
+    }el{
+      let endp=hskipjsonval(src;p);
+      <s.trim(s.slice(src;p;endp)|{Ok:v v;Err:e ""})
+    }
+  }
+};
+
+f=hjsonkeys(src:$str;pos:$i64):@$str{
+  let slen=s.len(src);
+  let p=hskipws(src;pos+1);
+  let keys=mut.@();
+  let running=mut.true;
+  lp(let ii=0;running;ii=ii+1){
+    if(p>=slen){
+      running=false
+    }el{
+      let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
+      if(c="}"){
+        running=false
+      }el{
+        if(c="\""){
+          let key=hjsonstring(src;p);
+          keys=keys.append(key);
+          let afterkey=hjsonstringend(src;p);
+          let colonpos=hskipws(src;afterkey);
+          let aftercolon=colonpos+1;
+          let afterval=hskipjsonval(src;aftercolon);
+          let np=hskipws(src;afterval);
+          let nc=s.slice(src;np;np+1)|{Ok:v v;Err:e ""};
+          if(nc=","){
+            p=hskipws(src;np+1)
+          }el{
+            p=np
+          }
+        }el{
+          p=p+1
+        }
+      }
+    }
+  };
+  <keys
+};
+
+f=hjsonobjrow(src:$str;pos:$i64;keys:@$str):$str{
+  let slen=s.len(src);
+  let p=hskipws(src;pos+1);
+  let kvkeys=mut.@();
+  let kvvals=mut.@();
+  let running=mut.true;
+  lp(let ii=0;running;ii=ii+1){
+    if(p>=slen){
+      running=false
+    }el{
+      let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
+      if(c="}"){
+        running=false
+      }el{
+        if(c="\""){
+          let key=hjsonstring(src;p);
+          let afterkey=hjsonstringend(src;p);
+          let colonpos=hskipws(src;afterkey);
+          let valstart=colonpos+1;
+          let rawval=hjsonvalraw(src;valstart);
+          kvkeys=kvkeys.append(key);
+          kvvals=kvvals.append(rawval);
+          let afterval=hskipjsonval(src;valstart);
+          let np=hskipws(src;afterval);
+          let nc=s.slice(src;np;np+1)|{Ok:v v;Err:e ""};
+          if(nc=","){
+            p=hskipws(src;np+1)
+          }el{
+            p=np
+          }
+        }el{
+          p=p+1
+        }
+      }
+    }
+  };
+  
+  let row=mut."";
+  lp(let ki=0;ki<keys.len;ki=ki+1){
+    if(ki>0){
+      row=s.concat(row;"|")
+    }el{};
+    let wantkey=keys.get(ki);
+    let found=mut.false;
+    lp(let vi=0;vi<kvkeys.len;vi=vi+1){
+      let k=kvkeys.get(vi);
+      if(k=wantkey){
+        row=s.concat(row;kvvals.get(vi));
+        found=true
+      }el{}
+    };
+    if(!found){
+    }el{}
+  };
+  <row
+};
+
+f=fromjson(j:$str):$str{
+  let slen=s.len(j);
+  if(slen=0){<""}el{
+    let p=hskipws(j;0);
+    let c=s.slice(j;p;p+1)|{Ok:v v;Err:e ""};
+    if(c="{"){
+      
+      let keys=hjsonkeys(j;p);
+      if(keys.len=0){<""}el{
+        let header=mut."{";
+        lp(let i=0;i<keys.len;i=i+1){
+          if(i>0){header=s.concat(header;",")}el{};
+          header=s.concat(header;keys.get(i))
+        };
+        header=s.concat(header;"}:\n");
+        let row=hjsonobjrow(j;p;keys);
+        let result=s.concat(header;row);
+        <s.concat(result;"\n")
+      }
+    }el{
+      if(c="["){
+        
+        let ap=hskipws(j;p+1);
+        let ac=s.slice(j;ap;ap+1)|{Ok:v v;Err:e ""};
+        if(ac="]"){
+          <"data[0]{}:\n"
+        }el{
+          if(ac="{"){
+            let keys=hjsonkeys(j;ap);
+            if(keys.len=0){<""}el{
+              
+              let objcount=mut.0;
+              let cp=mut.ap;
+              let counting=mut.true;
+              lp(let ii=0;counting;ii=ii+1){
+                let wp=hskipws(j;cp);
+                if(wp>=slen){
+                  counting=false
+                }el{
+                  let wc=s.slice(j;wp;wp+1)|{Ok:v v;Err:e ""};
+                  if(wc="{"){
+                    objcount=objcount+1;
+                    let endobj=hskipjsonval(j;wp);
+                    let np=hskipws(j;endobj);
+                    let nc=s.slice(j;np;np+1)|{Ok:v v;Err:e ""};
+                    if(nc=","){
+                      cp=np+1
+                    }el{
+                      counting=false
+                    }
+                  }el{
+                    counting=false
+                  }
+                }
+              };
+              
+              let header=mut.s.concat("data[";s.from_int(objcount));
+              header=s.concat(header;"]{");
+              lp(let i=0;i<keys.len;i=i+1){
+                if(i>0){header=s.concat(header;",")}el{};
+                header=s.concat(header;keys.get(i))
+              };
+              header=s.concat(header;"}:\n");
+              
+              let buf=mut.header;
+              let rp=mut.ap;
+              let rowrunning=mut.true;
+              lp(let ii=0;rowrunning;ii=ii+1){
+                let wp=hskipws(j;rp);
+                if(wp>=slen){
+                  rowrunning=false
+                }el{
+                  let wc=s.slice(j;wp;wp+1)|{Ok:v v;Err:e ""};
+                  if(wc="{"){
+                    let row=hjsonobjrow(j;wp;keys);
+                    buf=s.concat(buf;row);
+                    buf=s.concat(buf;"\n");
+                    let endobj=hskipjsonval(j;wp);
+                    let np=hskipws(j;endobj);
+                    let nc=s.slice(j;np;np+1)|{Ok:v v;Err:e ""};
+                    if(nc=","){
+                      rp=np+1
+                    }el{
+                      rowrunning=false
+                    }
+                  }el{
+                    rowrunning=false
+                  }
+                }
+              };
+              <buf
+            }
+          }el{
+            <""
+          }
+        }
+      }el{
+        <""
+      }
+    }
+  }
+};

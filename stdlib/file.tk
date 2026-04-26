@@ -1,1 +1,196 @@
-(* std.file — stub, not yet implemented *)
+m=file;
+i=os:std.os;
+i=mem:std.mem;
+i=s:std.str;
+
+t=$fileerr{$notfound:$str;$permission:$str;$io:$str};
+
+(* makerr — map os.errno to a FileErr variant *)
+f=makerr(fallback:$str):$fileerr{
+  let e=os.errno();
+  if(e==2){
+    <$fileerr.$notfound(s.concat("file not found: ";fallback))
+  };
+  if(e==13){
+    <$fileerr.$permission(s.concat("permission denied: ";fallback))
+  };
+  if(e==1){
+    <$fileerr.$permission(s.concat("operation not permitted: ";fallback))
+  };
+  <$fileerr.$io(s.concat(os.strerror(e);s.concat(": ";fallback)))
+};
+
+(* file.read — open file, read contents, close, return string *)
+f=read(path:$str):$str!$fileerr{
+  let sz=os.stat(path);
+  if(sz<0){
+    <$err(makerr(path))
+  };
+  let fd=os.open(path;os.o_rdonly();0);
+  if(fd<0){
+    <$err(makerr(path))
+  };
+  let bufsz=(sz as u64)+1;
+  let buf=mem.alloc(bufsz);
+  if(buf==0){
+    os.close(fd);
+    <$err($fileerr.$io("allocation failed"))
+  };
+  let total=mut.0 as i64;
+  let ok=mut.true;
+  loop{
+    if(total>=sz){<()};
+    let n=os.read(fd;(buf as i64)+total;sz-total);
+    if(n<0){
+      ok=false;
+      <()
+    };
+    if(n==0){<()};
+    total=total+n
+  };
+  os.close(fd);
+  if(ok==false){
+    mem.free(buf);
+    <$err(makerr(path))
+  };
+  mem.store8(buf;total as u64;0);
+  <$ok(buf as str)
+};
+
+(* file.write — write content to file, truncating *)
+f=write(path:$str;content:$str):bool!$fileerr{
+  let flags=os.o_wronly()+os.o_creat()+os.o_trunc();
+  let fd=os.open(path;flags;438);
+  if(fd<0){
+    <$err(makerr(path))
+  };
+  let ptr=content as i64;
+  let len=s.len(content) as i64;
+  let written=mut.0 as i64;
+  let ok=mut.true;
+  loop{
+    if(written>=len){<()};
+    let n=os.write(fd;ptr+written;len-written);
+    if(n<0){
+      ok=false;
+      <()
+    };
+    written=written+n
+  };
+  os.close(fd);
+  if(ok==false){
+    <$err(makerr(path))
+  };
+  <$ok(true)
+};
+
+(* file.append — append content to file *)
+f=append(path:$str;content:$str):bool!$fileerr{
+  let flags=os.o_wronly()+os.o_creat()+os.o_append();
+  let fd=os.open(path;flags;438);
+  if(fd<0){
+    <$err(makerr(path))
+  };
+  let ptr=content as i64;
+  let len=s.len(content) as i64;
+  let written=mut.0 as i64;
+  let ok=mut.true;
+  loop{
+    if(written>=len){<()};
+    let n=os.write(fd;ptr+written;len-written);
+    if(n<0){
+      ok=false;
+      <()
+    };
+    written=written+n
+  };
+  os.close(fd);
+  if(ok==false){
+    <$err(makerr(path))
+  };
+  <$ok(true)
+};
+
+(* file.exists — check if file exists using os.access with F_OK=0 *)
+f=exists(path:$str):bool{
+  <os.access(path;0)==0
+};
+
+(* file.mkdir — create directory with mode 0755 *)
+f=mkdir(path:$str):bool!$fileerr{
+  let rc=os.mkdir(path;493);
+  if(rc<0){
+    <$err(makerr(path))
+  };
+  <$ok(true)
+};
+
+(* file.isdir — check if path is a directory.
+   BLOCKER: os.stat only returns file size, not st_mode.
+   Workaround: check that path exists and is NOT a regular file.
+   We attempt os.open with O_RDONLY on the path; if it's a directory
+   the open may succeed on some systems. This is an approximation.
+   A proper implementation requires os.stat returning mode bits.
+*)
+f=isdir(path:$str):bool{
+  if(os.access(path;0)<0){
+    <false
+  };
+  let sz=os.stat(path);
+  if(sz<0){
+    <false
+  };
+  let fd=os.open(path;os.o_rdonly();0);
+  if(fd<0){
+    <true
+  };
+  let buf=mem.alloc(1);
+  let n=os.read(fd;buf as i64;1);
+  os.close(fd);
+  mem.free(buf);
+  if(sz==0){
+    if(n<0){
+      <true
+    };
+    <false
+  };
+  <false
+};
+
+(* file.remove — delete file using os.unlink *)
+f=delete(path:$str):bool!$fileerr{
+  let rc=os.unlink(path);
+  if(rc<0){
+    <$err(makerr(path))
+  };
+  <$ok(true)
+};
+
+(* file.copy — copy src to dst by reading entire source and writing to dest *)
+f=copy(src:$str;dst:$str):bool!$fileerr{
+  let content=read(src)|{
+    $ok:v v;
+    $err:e <$err(e)
+  };
+  write(dst;content)|{
+    $ok:v <$ok(true);
+    $err:e <$err(e)
+  }
+};
+
+(* file.list — list directory entries.
+   BLOCKER: std.os does not expose opendir/readdir/closedir.
+   This function cannot be implemented without those syscalls.
+   Returns an IO error explaining the limitation.
+*)
+f=list(path:$str):@$str!$fileerr{
+  <$err($fileerr.$io("file.list requires opendir/readdir not yet in std.os"))
+};
+
+(* file.listall — list all files recursively.
+   BLOCKER: same as file.list — requires opendir/readdir plus nftw/fts.
+   Returns an IO error explaining the limitation.
+*)
+f=listall(path:$str):@$str!$fileerr{
+  <$err($fileerr.$io("file.listall requires opendir/readdir not yet in std.os"))
+};

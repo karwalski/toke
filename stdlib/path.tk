@@ -1,16 +1,187 @@
-(* std.path — stub; implemented in the C layer (src/stdlib/path.c).
+(* std.path — pure-toke implementation using std.str operations.
  *
- * The reference compiler resolves std.path imports via stdlib/path.tki
- * and links against the C implementation directly.  This file exists to
- * satisfy source-level tooling that expects a .tk file for every module.
+ * Replaces the C implementation (src/stdlib/path.c) with equivalent
+ * logic written entirely in toke.  No OS calls, no direct memory
+ * allocation — all string building delegated to std.str.
  *
  * Exported interface (see stdlib/path.tki):
- *   path.join(a:Str;b:Str):Str
- *   path.ext(p:Str):Str
- *   path.stem(p:Str):Str
- *   path.dir(p:Str):Str
- *   path.base(p:Str):Str
- *   path.isabs(p:Str):bool
+ *   path.join(a:$str;b:$str):$str
+ *   path.ext(p:$str):$str
+ *   path.stem(p:$str):$str
+ *   path.dir(p:$str):$str
+ *   path.base(p:$str):$str
+ *   path.isabs(p:$str):bool
  *
- * Story: 55.1  Branch: feature/stdlib-55.1-path
+ * Story: 74.2.3  Branch: feature/stdlib-74.2.3-path-toke
  *)
+m=path;
+i=str:std.str;
+
+(* striptrailingslashes — helper: return length after stripping trailing '/' chars.
+ * Keeps at least mincap characters (use 0 to strip all, 1 to keep root "/").
+ *)
+f=striptrailingslashes(s:$str;mincap:i64):i64{
+  let slen=str.len(s);
+  let pos=mut.slen;
+  let running=mut.true;
+  lp(let i=0;running;i=i+1){
+    if(pos<mincap+1){
+      running=false
+    }el{
+      let ch=str.slice(s;pos-1;pos)|{Ok:v v;Err:e ""};
+      if(ch="/"){
+        pos=pos-1
+      }el{
+        running=false
+      }
+    }
+  };
+  <pos
+};
+
+(* stripleadingslashes — helper: return start offset after stripping leading '/' chars. *)
+f=stripleadingslashes(s:$str):i64{
+  let slen=str.len(s);
+  let pos=mut.0;
+  let running=mut.true;
+  lp(let i=0;running;i=i+1){
+    if(pos>slen-1){
+      running=false
+    }el{
+      let ch=str.slice(s;pos;pos+1)|{Ok:v v;Err:e ""};
+      if(ch="/"){
+        pos=pos+1
+      }el{
+        running=false
+      }
+    }
+  };
+  <pos
+};
+
+(* basename — helper: return the part of s after the last '/'. If no '/', return s. *)
+f=basename(s:$str):$str{
+  let slen=str.len(s);
+  let slashpos=str.lastindex(s;"/");
+  if(slashpos<0){<s}el{
+    <str.slice(s;slashpos+1;slen)|{Ok:v v;Err:e s}
+  }
+};
+
+(* path.join — concatenate two path segments with exactly one '/' between them.
+ * "a" + "b"  -> "a/b"
+ * "a/" + "b" -> "a/b"
+ * "a" + "/b" -> "a/b"
+ *)
+f=join(a:$str;b:$str):$str{
+  let alen=str.len(a);
+  let blen=str.len(b);
+  let aend=striptrailingslashes(a;0);
+  let bstart=stripleadingslashes(b);
+  let lhs=str.slice(a;0;aend)|{Ok:v v;Err:e ""};
+  let rhs=str.slice(b;bstart;blen)|{Ok:v v;Err:e ""};
+  <str.concat(str.concat(lhs;"/");rhs)
+};
+
+(* path.ext — return the file extension including the leading dot.
+ * "foo.tar.gz" -> ".gz"
+ * "foo"        -> ""
+ * ".hidden"    -> ".hidden"  (pure dotfile: entire basename is extension)
+ * "foo."       -> "."
+ *)
+f=ext(p:$str):$str{
+  let plen=str.len(p);
+  if(plen=0){<""}el{};
+  let base=basename(p);
+  let baselen=str.len(base);
+  if(baselen=0){<""}el{};
+  (* Pure dotfile check: starts with '.' and has no further dot *)
+  let first=str.slice(base;0;1)|{Ok:v v;Err:e ""};
+  if(first="."){
+    let rest=str.slice(base;1;baselen)|{Ok:v v;Err:e ""};
+    let dot2=str.indexof(rest;".");
+    if(dot2<0){
+      <base
+    }el{}
+  }el{};
+  (* General case: find the last dot *)
+  let dotpos=str.lastindex(base;".");
+  if(dotpos<0){<""}el{};
+  <str.slice(base;dotpos;baselen)|{Ok:v v;Err:e ""}
+};
+
+(* path.stem — return the filename without its extension.
+ * "pages/foo.tk" -> "foo"
+ * "foo.tar.gz"   -> "foo.tar"
+ * ".hidden"      -> ""   (stem of a pure dotfile is empty)
+ * "foo"          -> "foo"
+ *)
+f=stem(p:$str):$str{
+  let plen=str.len(p);
+  if(plen=0){<""}el{};
+  let base=basename(p);
+  let baselen=str.len(base);
+  if(baselen=0){<""}el{};
+  (* Pure dotfile check *)
+  let first=str.slice(base;0;1)|{Ok:v v;Err:e ""};
+  if(first="."){
+    let rest=str.slice(base;1;baselen)|{Ok:v v;Err:e ""};
+    let dot2=str.indexof(rest;".");
+    if(dot2<0){
+      <""
+    }el{
+      let dotpos=str.lastindex(base;".");
+      <str.slice(base;0;dotpos)|{Ok:v v;Err:e ""}
+    }
+  }el{};
+  (* General case *)
+  let dotpos=str.lastindex(base;".");
+  if(dotpos<0){<base}el{};
+  <str.slice(base;0;dotpos)|{Ok:v v;Err:e base}
+};
+
+(* path.dir — return the parent directory.
+ * "foo"    -> "."
+ * "/"      -> "/"
+ * "/foo"   -> "/"
+ * "a/b/c"  -> "a/b"
+ *)
+f=dir(p:$str):$str{
+  let plen=str.len(p);
+  if(plen=0){<"."}el{};
+  (* Strip trailing slashes, keep at least 1 char *)
+  let end=striptrailingslashes(p;1);
+  let trimmed=str.slice(p;0;end)|{Ok:v v;Err:e p};
+  (* Find last '/' *)
+  let slashpos=str.lastindex(trimmed;"/");
+  if(slashpos<0){<"."}el{};
+  (* Trim trailing slashes from dir portion, keep at least 1 char *)
+  let dirportion=str.slice(p;0;slashpos)|{Ok:v v;Err:e ""};
+  let dirend=striptrailingslashes(dirportion;1);
+  if(dirend=0){<"/"}el{};
+  <str.slice(p;0;dirend)|{Ok:v v;Err:e "."}
+};
+
+(* path.base — return the last path component.
+ * "/"  -> "/"
+ * ""   -> ""
+ * "a/b/c" -> "c"
+ *)
+f=base(p:$str):$str{
+  let plen=str.len(p);
+  if(plen=0){<""}el{};
+  if(plen=1){
+    <p
+  }el{};
+  (* Strip trailing slashes but keep at least 1 char *)
+  let end=striptrailingslashes(p;1);
+  let trimmed=str.slice(p;0;end)|{Ok:v v;Err:e p};
+  let slashpos=str.lastindex(trimmed;"/");
+  if(slashpos<0){<trimmed}el{};
+  <str.slice(trimmed;slashpos+1;end)|{Ok:v v;Err:e ""}
+};
+
+(* path.isabs — return true if path starts with '/' *)
+f=isabs(p:$str):bool{
+  <str.startswith(p;"/")
+};
