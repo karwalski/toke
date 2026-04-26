@@ -1857,7 +1857,7 @@ Port the 10 toke-web learn/ lessons to current syntax. Each lesson adds one work
 | 48.7.2 | Performance baseline: 72-hour soak test | done | 2026-04-25 | — | **P1** Soak test from old Lightsail to new server. 33,632 requests, 98.4% availability. Two OOM kills resolved by reducing workers 16→8. Documented in toke-website/specs/production-config.md. |
 | 48.7.3 | TLS: Cloudflare Full mode with self-signed origin cert | done | 2026-04-25 | — | **P0** Superseded by Cloudflare proxy architecture. Self-signed cert on origin, Cloudflare handles public TLS in Full mode. No Let's Encrypt needed. Firewall restricts port 443 to Cloudflare IPs only (15 IPv4 CIDRs). |
 | 48.7.4 | Retire nginx: toke server owns port 443 | done | 2026-04-17 | — | **P0** New server (Amazon Linux 2023) has no nginx. toke binary serves on port 443 via systemd (AmbientCapabilities=CAP_NET_BIND_SERVICE, Restart=always, RestartSec=3). 8 workers. Old Bitnami/nginx server superseded. |
-| 48.7.5 | DNS cutover: Cloudflare A record → new server | in_progress | 2026-04-25 | — | **P0** New server soak-tested and content deployed. Awaiting user to update Cloudflare DNS A record. Old Lightsail to be decommissioned after cutover confirmed. |
+| 48.7.5 | DNS cutover: Cloudflare A record → new server | done | 2026-04-26 | — | **P0** New server soak-tested and content deployed. Awaiting user to update Cloudflare DNS A record. Old Lightsail to be decommissioned after cutover confirmed. |
 | 48.7.6 | Post-launch: 30-day monitoring | backlog | — | **P1** After DNS cutover, monitor access.log for 404s, slow requests, errors. Decommission old Lightsail at 30 days. |
  |
 --- |
