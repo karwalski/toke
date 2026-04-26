@@ -304,7 +304,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done` 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
 | 4.5.1 | Governance document and versioning policy | done | 2026-04-26 | — | Change process, backwards compatibility rules, release cadence. |
-| 4.5.2 | Consortium proposal for standardisation | planned | — | Enterprise adoption strategy, multi-stakeholder governance. |
+| 4.5.2 | Consortium proposal for standardisation | done | 2026-04-26 | — | Enterprise adoption strategy, multi-stakeholder governance. |
 
 ### Epic 4.6 — Security Audit and Hosted Service Readiness |
  |
