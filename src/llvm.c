@@ -32,6 +32,8 @@
 #include "parser.h"
 #include "diag.h"
 #include "tkc_limits.h"
+#include "stdlib_deps.h"
+#include "glue_gen.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -534,6 +536,155 @@ static const char *tki_type_to_llvm(const char *toke_type) {
     if (!strcmp(toke_type, "bool")) return "i1";
     if (!strcmp(toke_type, "void")) return "void";
     return "i8*"; /* str, arrays, structs — all pointers */
+}
+
+/* ── Story 7.5.5: Stdlib .tki cache for ABI return-type inference ──── */
+
+/*
+ * TkiCacheEntry — Cached function metadata from a stdlib .tki file.
+ *   wrapper_name:  the tk_<module>_<method>_w symbol name.
+ *   llvm_ret:      corresponding LLVM type ("i8*", "i64", "double", "void").
+ */
+#define TKI_CACHE_MAX 512
+
+typedef struct {
+    char wrapper_name[128]; /* e.g. "tk_str_concat_w" */
+    char module[64];
+    char method[64];
+    char toke_ret[64];
+    const char *llvm_ret;   /* e.g. "i8*", "i64", "double", "void" */
+} TkiCacheEntry;
+
+static TkiCacheEntry g_tki_cache[TKI_CACHE_MAX];
+static int g_tki_cache_count = 0;
+static int g_tki_cache_loaded = 0;
+
+/*
+ * tki_base_return_type — Strip error union suffix from a toke return type.
+ * "str!FileErr" -> "str", "u64" -> "u64".
+ */
+static void tki_base_return_type(const char *toke_ret, char *out, int out_sz) {
+    const char *bang = strchr(toke_ret, '!');
+    if (bang) {
+        int len = (int)(bang - toke_ret);
+        if (len >= out_sz) len = out_sz - 1;
+        memcpy(out, toke_ret, (size_t)len);
+        out[len] = '\0';
+    } else {
+        strncpy(out, toke_ret, (size_t)(out_sz - 1));
+        out[out_sz - 1] = '\0';
+    }
+}
+
+/*
+ * load_stdlib_tki — Load a single stdlib .tki file into the global cache.
+ */
+static void load_stdlib_tki(const char *module) {
+    char tki_path[512];
+    const char *env_dir = getenv("TKC_STDLIB_DIR");
+    const char *base = env_dir ? env_dir : TKC_STDLIB_DIR;
+    snprintf(tki_path, sizeof tki_path, "%s/../../stdlib/%s.tki", base, module);
+
+    FILE *f = fopen(tki_path, "r");
+    if (!f) return;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    if (sz <= 0 || sz > 1000000) { fclose(f); return; }
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc((size_t)sz + 1);
+    if (!buf) { fclose(f); return; }
+    size_t rd = fread(buf, 1, (size_t)sz, f);
+    fclose(f);
+    buf[rd] = '\0';
+
+    char *p = buf;
+    while ((p = strstr(p, "\"kind\"")) != NULL) {
+        char *kv = strstr(p, "\"func\"");
+        char *next_kind = strstr(p + 6, "\"kind\"");
+        if (!kv || (next_kind && kv > next_kind)) { p = next_kind ? next_kind : p + 6; continue; }
+        if (g_tki_cache_count >= TKI_CACHE_MAX) break;
+
+        char *nk = strstr(p, "\"name\"");
+        if (!nk || (next_kind && nk > next_kind)) { p += 6; continue; }
+        char *nq1 = strchr(nk + 6, '"');
+        if (!nq1) break;
+        char *nq2 = strchr(nq1 + 1, '"');
+        if (!nq2) break;
+        char fname[128];
+        int nlen = (int)(nq2 - nq1 - 1);
+        if (nlen >= (int)sizeof(fname)) nlen = (int)sizeof(fname) - 1;
+        memcpy(fname, nq1 + 1, (size_t)nlen);
+        fname[nlen] = '\0';
+
+        char *dot = strchr(fname, '.');
+        if (!dot) { p = next_kind ? next_kind : p + 6; continue; }
+        char mod_part[64], meth_part[64];
+        int mlen = (int)(dot - fname);
+        if (mlen >= (int)sizeof(mod_part)) mlen = (int)sizeof(mod_part) - 1;
+        memcpy(mod_part, fname, (size_t)mlen);
+        mod_part[mlen] = '\0';
+        strncpy(meth_part, dot + 1, sizeof(meth_part) - 1);
+        meth_part[sizeof(meth_part) - 1] = '\0';
+
+        char *rk = strstr(nk, "\"return\"");
+        char toke_ret[64] = "void";
+        if (rk && (!next_kind || rk < next_kind)) {
+            char *rq1 = strchr(rk + 8, '"');
+            if (rq1) {
+                char *rq2 = strchr(rq1 + 1, '"');
+                if (rq2) {
+                    int rlen = (int)(rq2 - rq1 - 1);
+                    if (rlen >= (int)sizeof(toke_ret)) rlen = (int)sizeof(toke_ret) - 1;
+                    memcpy(toke_ret, rq1 + 1, (size_t)rlen);
+                    toke_ret[rlen] = '\0';
+                }
+            }
+        }
+
+        TkiCacheEntry *e = &g_tki_cache[g_tki_cache_count];
+        strncpy(e->module, mod_part, sizeof(e->module) - 1);
+        strncpy(e->method, meth_part, sizeof(e->method) - 1);
+        snprintf(e->wrapper_name, sizeof e->wrapper_name, "tk_%s_%s_w", mod_part, meth_part);
+        strncpy(e->toke_ret, toke_ret, sizeof(e->toke_ret) - 1);
+
+        char base_ret[64];
+        tki_base_return_type(toke_ret, base_ret, sizeof base_ret);
+        e->llvm_ret = tki_type_to_llvm(base_ret);
+        g_tki_cache_count++;
+
+        p = next_kind ? next_kind : p + 6;
+    }
+    free(buf);
+}
+
+/*
+ * ensure_tki_cache_loaded — Lazily load all stdlib .tki files into the cache.
+ */
+static void ensure_tki_cache_loaded(void) {
+    if (g_tki_cache_loaded) return;
+    g_tki_cache_loaded = 1;
+    static const char *stdlib_modules[] = {
+        "str", "env", "file", "path", "args", "toml", "md", "log",
+        "http", "router", "json", "toon", "yaml", "i18n", "math",
+        "time", "crypto", "net", "sys", "ws",
+        NULL
+    };
+    for (int i = 0; stdlib_modules[i]; i++)
+        load_stdlib_tki(stdlib_modules[i]);
+}
+
+/*
+ * tki_lookup_return_type — Look up the LLVM return type for a resolved
+ * stdlib wrapper function name from the .tki cache.
+ * Returns the LLVM type string or NULL if not found.
+ */
+static const char *tki_lookup_return_type(const char *wrapper_name) {
+    ensure_tki_cache_loaded();
+    for (int i = 0; i < g_tki_cache_count; i++) {
+        if (!strcmp(g_tki_cache[i].wrapper_name, wrapper_name))
+            return g_tki_cache[i].llvm_ret;
+    }
+    return NULL;
 }
 
 /*
@@ -1502,39 +1653,38 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
             }
         } else if (!callee && resolved_fn && !is_cross_module_user) {
-            /* stdlib return type by convention */
-            if (!strcmp(tb, "tk_str_argv")) callee_ret = "i8*";
-            else if (!strcmp(tb, "tk_json_print")) callee_ret = "void";
-            else if (!strcmp(tb, "sin") || !strcmp(tb, "cos") || !strcmp(tb, "tan") ||
+            /* Story 7.5.5 Phase 1: resolve return type from .tki cache first,
+             * then fall back to hardcoded mappings for special cases (libc math,
+             * json print, str.argv) that don't follow the tk_<mod>_<meth>_w
+             * naming or aren't in any .tki file. */
+            {
+            const char *tki_ret = tki_lookup_return_type(tb);
+            if (tki_ret) {
+                callee_ret = tki_ret;
+            } else if (!strcmp(tb, "tk_str_argv")) {
+                callee_ret = "i8*";
+            } else if (!strcmp(tb, "tk_json_print")) {
+                callee_ret = "void";
+            } else if (!strcmp(tb, "sin") || !strcmp(tb, "cos") || !strcmp(tb, "tan") ||
                      !strcmp(tb, "asin") || !strcmp(tb, "acos") || !strcmp(tb, "atan") ||
                      !strcmp(tb, "atan2") || !strcmp(tb, "fmod") || !strcmp(tb, "fabs") ||
                      !strcmp(tb, "log") || !strcmp(tb, "log10") || !strcmp(tb, "exp") ||
                      !strcmp(tb, "round") || !strcmp(tb, "sqrt") || !strcmp(tb, "floor") ||
-                     !strcmp(tb, "ceil") || !strcmp(tb, "pow"))
+                     !strcmp(tb, "ceil") || !strcmp(tb, "pow")) {
                 callee_ret = "double";
-            else if (strstr(tb, "tk_str_") && strcmp(tb, "tk_str_len_w") &&
-                     strcmp(tb, "tk_str_to_int") && strcmp(tb, "tk_str_toint_w") &&
-                     strcmp(tb, "tk_str_indexof_w") && strcmp(tb, "tk_str_lastindex_w") &&
-                     strcmp(tb, "tk_str_startswith_w") && strcmp(tb, "tk_str_endswith_w") &&
-                     strcmp(tb, "tk_str_contains_w") && strcmp(tb, "tk_str_matchbracket_w"))
-                callee_ret = "i8*";
-            else if (!strcmp(tb, "tk_args_get_w")) callee_ret = "i8*";
-            else if (!strcmp(tb, "tk_time_format_w") || !strcmp(tb, "tk_time_toparts_w"))
-                callee_ret = "i8*";
-            else if (!strcmp(tb, "tk_env_get_or") || !strcmp(tb, "tk_env_expand_w") ||
-                     !strcmp(tb, "tk_file_read_w") || !strcmp(tb, "tk_path_join_w") ||
-                     !strcmp(tb, "tk_path_dir_w") || !strcmp(tb, "tk_path_ext_w") ||
-                     !strcmp(tb, "tk_md_render_w") || !strcmp(tb, "tk_toml_str_w") ||
+            } else if (!strcmp(tb, "tk_map_get") || !strcmp(tb, "tk_map_new") ||
+                     !strcmp(tb, "tk_array_append_w") ||
+                     !strcmp(tb, "tk_str_from_float") ||
                      !strcmp(tb, "tk_http_client_w") || !strcmp(tb, "tk_http_get_w") ||
                      !strcmp(tb, "tk_http_post_w") || !strcmp(tb, "tk_http_put_w") ||
                      !strcmp(tb, "tk_http_delete_w") || !strcmp(tb, "tk_http_stream_w") ||
                      !strcmp(tb, "tk_http_withproxy_w") ||
-                     !strcmp(tb, "tk_http_streamnext_w") || !strcmp(tb, "tk_str_from_float") ||
-                     !strcmp(tb, "tk_file_listall_w") || !strcmp(tb, "tk_array_append_w") ||
-                     !strcmp(tb, "tk_map_get") || !strcmp(tb, "tk_router_new_w") ||
-                     !strcmp(tb, "tk_map_new"))
+                     !strcmp(tb, "tk_http_streamnext_w")) {
                 callee_ret = "i8*";
-            else callee_ret = "i64";
+            } else {
+                callee_ret = "i64";
+            }
+            }
             /* Auto-declare stdlib wrappers not in the hardcoded preamble.
              * Check fwd_decls to avoid duplicates; skip functions that are
              * already emitted by emit_ir_preamble(). */
@@ -3584,13 +3734,67 @@ static const char *find_stdlib_vendor_includes(void) {
  * Returns 0 on success, -1 if clang fails (with E9003 diagnostic).
  */
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
-                   int opt_level)
+                   int opt_level, const SymbolTable *st)
 {
     char cmd[8192];
     int ol = (opt_level < 0) ? 0 : (opt_level > 3) ? 3 : opt_level;
-    const char *rt  = find_runtime_source();
-    const char *std = find_stdlib_sources();
+
+    /* Story 46.1.2: selective stdlib linking.
+     * If st is provided and TKC_LINK_ALL is not set, resolve only the
+     * stdlib modules actually imported.  Otherwise fall back to linking
+     * everything (the old behaviour). */
+    int link_all = 0;
+    const char *env_link_all = getenv("TKC_LINK_ALL");
+    if (env_link_all && env_link_all[0] == '1') link_all = 1;
+
+    char sources[8192];
+    sources[0] = '\0';
+    char extra_flags[512];
+    extra_flags[0] = '\0';
+
+    if (!link_all && st) {
+        /* Selective linking: resolve only needed modules */
+        const char *stdlib_dir = NULL;
+        const char *env_dir = getenv("TKC_STDLIB_DIR");
+        if (env_dir) {
+            char probe[512];
+            snprintf(probe, sizeof probe, "%s/str.c", env_dir);
+            FILE *f = fopen(probe, "r");
+            if (f) { fclose(f); stdlib_dir = env_dir; }
+        }
+        if (!stdlib_dir) {
+            const char *candidates[] = { TKC_STDLIB_DIR, "src/stdlib", NULL };
+            for (int i = 0; candidates[i] && !stdlib_dir; i++) {
+                char probe[512];
+                snprintf(probe, sizeof probe, "%s/str.c", candidates[i]);
+                FILE *f = fopen(probe, "r");
+                if (f) { fclose(f); stdlib_dir = candidates[i]; }
+            }
+        }
+        ResolvedDeps deps;
+        if (stdlib_dir && resolve_stdlib_deps(stdlib_dir, st, &deps) == 0) {
+            snprintf(sources, sizeof sources, " %s", deps.sources);
+            if (deps.flags[0])
+                snprintf(extra_flags, sizeof extra_flags, "%s", deps.flags);
+        } else {
+            /* Fallback: link everything */
+            link_all = 1;
+        }
+    }
+
+    if (link_all || !st) {
+        /* Original behaviour: link all stdlib sources */
+        const char *rt  = find_runtime_source();
+        const char *std = find_stdlib_sources();
+        if (rt  && rt[0])  { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
+                             strncat(sources, rt,  sizeof sources - strlen(sources) - 1); }
+        if (std && std[0]) { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
+                             strncat(sources, std, sizeof sources - strlen(sources) - 1); }
+    }
+
     const char *vendor_inc = find_stdlib_vendor_includes();
+    const char *vi = (vendor_inc && vendor_inc[0]) ? vendor_inc : "";
+
     /* TLS flags — always include when OpenSSL is present on macOS/homebrew */
     const char *tls_flags = "-D_GNU_SOURCE -DTK_HAVE_OPENSSL";
     const char *tls_libs  = "-lssl -lcrypto -lz -lm";
@@ -3598,29 +3802,42 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
     tls_flags = "-I/opt/homebrew/include -DTK_HAVE_OPENSSL";
     tls_libs  = "-L/opt/homebrew/lib -lssl -lcrypto -lz -lm";
 #endif
-    /* Build sources string: runtime + stdlib bundle */
-    char sources[6144];
-    sources[0] = '\0';
-    if (rt  && rt[0])  { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
-                         strncat(sources, rt,  sizeof sources - strlen(sources) - 1); }
-    if (std && std[0]) { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
-                         strncat(sources, std, sizeof sources - strlen(sources) - 1); }
-    const char *vi = (vendor_inc && vendor_inc[0]) ? vendor_inc : "";
+
+    /* Merge extra_flags from selective linking into tls_libs */
+    char all_libs[1024];
+    if (extra_flags[0])
+        snprintf(all_libs, sizeof all_libs, "%s %s", tls_libs, extra_flags);
+    else
+        snprintf(all_libs, sizeof all_libs, "%s", tls_libs);
+
+    /* Story 7.5.5 Phase 2: generate auto-glue wrappers from .tki files.
+     * Produces a temp C file with simple _w wrappers and appends it to
+     * the clang sources list. */
+    char glue_path[512];
+    glue_path[0] = '\0';
+    {
+        char tki_dir[512];
+        const char *sdir = getenv("TKC_STDLIB_DIR");
+        if (!sdir) sdir = TKC_STDLIB_DIR;
+        snprintf(tki_dir, sizeof tki_dir, "%s/../../stdlib", sdir);
+        if (glue_gen_write_temp(tki_dir, glue_path, (int)sizeof glue_path) == 0
+            && glue_path[0]) {
+            strncat(sources, " ", sizeof sources - strlen(sources) - 1);
+            strncat(sources, glue_path, sizeof sources - strlen(sources) - 1);
+        }
+    }
+
     /* -Wno-override-module suppresses "overriding the module target triple"
      * warnings when clang's host triple doesn't exactly match the IR's
      * embedded triple (Story 58.35). */
-    if (rt) {
-        if(target&&target[0])
-            snprintf(cmd,sizeof cmd,"clang -O%d -Wno-override-module %s %s -target %s -o %s %s%s %s",ol,tls_flags,vi,target,out_bin,out_ll,sources,tls_libs);
-        else
-            snprintf(cmd,sizeof cmd,"clang -O%d -Wno-override-module %s %s -o %s %s%s %s",ol,tls_flags,vi,out_bin,out_ll,sources,tls_libs);
-    } else {
-        if(target&&target[0])
-            snprintf(cmd,sizeof cmd,"clang -O%d -Wno-override-module %s %s -target %s -o %s %s%s %s",ol,tls_flags,vi,target,out_bin,out_ll,sources,tls_libs);
-        else
-            snprintf(cmd,sizeof cmd,"clang -O%d -Wno-override-module %s %s -o %s %s%s %s",ol,tls_flags,vi,out_bin,out_ll,sources,tls_libs);
-    }
+    if(target&&target[0])
+        snprintf(cmd,sizeof cmd,"clang -O%d -Wno-override-module %s %s -target %s -o %s %s%s %s",ol,tls_flags,vi,target,out_bin,out_ll,sources,all_libs);
+    else
+        snprintf(cmd,sizeof cmd,"clang -O%d -Wno-override-module %s %s -o %s %s%s %s",ol,tls_flags,vi,out_bin,out_ll,sources,all_libs);
+
     int rc = system(cmd);
+    /* Clean up temp glue file */
+    if (glue_path[0]) remove(glue_path);
     if(rc!=0){char msg[256];snprintf(msg,sizeof msg,"clang invocation failed with exit code %d",rc);
         diag_emit(DIAG_ERROR,E9003,0,0,0,msg,(void*)0);return -1;}
     return 0;

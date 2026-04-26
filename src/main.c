@@ -612,7 +612,7 @@ int main(int argc, char **argv)
         CodegenEnv cg = { &te, &ne, arena, tgt, limits };
         if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
         progress_update(90);
-        if (compile_binary(tmp, obin, tgt, opt_level) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
+        if (compile_binary(tmp, obin, tgt, opt_level, &st) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
         progress_update(100);
         unlink(tmp);
         symtab_free(&st);

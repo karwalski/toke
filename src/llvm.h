@@ -13,6 +13,7 @@
 
 #include "types.h"
 #include "tkc_limits.h"
+#include "names.h"  /* SymbolTable — for selective stdlib linking (46.1.2) */
 
 /* ── Error codes ─────────────────────────────────────────────────────── */
 
@@ -39,8 +40,10 @@ int emit_llvm_ir(const Node *ast, const char *src,
 /* compile_binary: invoke clang to compile out_ll to a native binary at out_bin.
  * target: LLVM triple string (NULL = native target).
  * opt_level: optimization level 0-3 (passed as -O0..-O3 to clang).
+ * st: symbol table from resolve_imports() — used for selective stdlib linking
+ *     (Story 46.1.2).  If NULL or TKC_LINK_ALL=1, all stdlib sources are linked.
  * Returns 0 on success, -1 if clang invocation fails (E9003 emitted). */
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
-                   int opt_level);
+                   int opt_level, const SymbolTable *st);
 
 #endif /* TK_LLVM_H */
