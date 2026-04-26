@@ -515,12 +515,14 @@ static void fd_peer_ip(int fd, char *buf, size_t bufsz)
 /*
  * log_request — write one Combined Log Format line for the given request/response.
  * No-op when no global access log is configured.
+ * Also writes to the error log when status >= 400 (Story 47.1.2).
  */
 static void log_request(const char *client_ip, const Req *req,
                         uint16_t status, size_t body_len)
 {
     TkAccessLog *al = tk_access_log_get_global();
-    if (!al) return;
+    TkAccessLog *el = tk_error_log_get_global();
+    if (!al && !el) return;
 
     const char *referer = "-", *ua = "-";
     for (uint64_t i = 0; i < req->headers.len; i++) {
@@ -529,12 +531,19 @@ static void log_request(const char *client_ip, const Req *req,
             if (strcasecmp(req->headers.data[i].key, "user-agent") == 0) ua      = req->headers.data[i].val;
         }
     }
-    tk_access_log_write(al,
-        client_ip,
-        req->method ? req->method : "-",
-        req->path   ? req->path   : "-",
-        (int)status, body_len,
-        referer, ua);
+
+    const char *method = req->method ? req->method : "-";
+    const char *path   = req->path   ? req->path   : "-";
+
+    if (al) {
+        tk_access_log_write(al, client_ip, method, path,
+                            (int)status, body_len, referer, ua);
+    }
+    /* 4xx/5xx → also write to the error log */
+    if (el && status >= 400) {
+        tk_error_log_write(el, client_ip, method, path,
+                           (int)status, body_len, referer, ua);
+    }
 }
 
 /* ── Connection handler (single accepted socket) ────────────────────── */
@@ -566,11 +575,19 @@ static int req_wants_close(const char *raw)
 /*
  * send_error — write a minimal error response and close.
  * Used for limit violations detected before a full Req is parsed.
+ * Also writes to the global error log when configured (Story 47.1.2).
  */
-static void send_error(int fd, uint16_t status)
+static void send_error(int fd, uint16_t status, const char *client_ip)
 {
     Res r = make_res(status, reason(status));
     send_response(fd, r, 0 /* Connection: close */);
+
+    /* Write to error log if configured */
+    TkAccessLog *el = tk_error_log_get_global();
+    if (el) {
+        tk_error_log_write(el, client_ip ? client_ip : "-",
+                           "-", "-", (int)status, 0, "-", "-");
+    }
 }
 
 /* ── Per-IP rate limiting (Story 59.4.4) ──────────────────────────────── */
@@ -627,7 +644,7 @@ static void handle_connection(int fd)
 
     /* Rate limiting: reject with 429 if threshold exceeded */
     if (!rate_check(client_ip)) {
-        send_error(fd, 429);
+        send_error(fd, 429, client_ip);
         close(fd);
         return;
     }
@@ -672,7 +689,7 @@ static void handle_connection(int fd)
                 if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
                     /* Keep-alive idle timeout: silently close, not an error */
                     if (requests > 0) { free(raw); close(fd); return; }
-                    send_error(fd, 408);
+                    send_error(fd, 408, client_ip);
                 }
                 free(raw); close(fd); return;
             }
@@ -690,7 +707,7 @@ static void handle_connection(int fd)
 
         if (!hdr_ok) {
             /* Filled max_header bytes without finding end-of-headers */
-            send_error(fd, 431);
+            send_error(fd, 431, client_ip);
             free(raw); close(fd); return;
         }
 
@@ -727,7 +744,7 @@ static void handle_connection(int fd)
 
         /* Reject ambiguous CL + TE: chunked (request-smuggling defence) */
         if (cl_hdr && req_is_chunked) {
-            send_error(fd, 400);
+            send_error(fd, 400, client_ip);
             free(raw); close(fd); return;
         }
 
@@ -736,7 +753,7 @@ static void handle_connection(int fd)
             if (cl < 0 ||
                 (unsigned long long)cl >
                 (unsigned long long)srv_limits.max_body) {
-                send_error(fd, 413);
+                send_error(fd, 413, client_ip);
                 free(raw); close(fd); return;
             }
 
@@ -755,7 +772,7 @@ static void handle_connection(int fd)
                                      need < space ? need : space);
                     if (n <= 0) {
                         if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
-                            send_error(fd, 408);
+                            send_error(fd, 408, client_ip);
                         free(raw); close(fd); return;
                     }
                     hdr_used   += (size_t)n;
@@ -1031,6 +1048,14 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
                               uint64_t port, uint64_t nworkers)
 {
     if (!r) return TK_HTTP_ERR_SOCKET;
+
+    /* nworkers == 0: auto-detect CPU count (Story 49.6.5) */
+    if (nworkers == 0) {
+        long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+        nworkers = (ncpu > 1) ? (uint64_t)ncpu : 1;
+        const char *env_w = getenv("TK_HTTP_WORKERS");
+        if (env_w) { long v = atol(env_w); if (v > 0) nworkers = (uint64_t)v; }
+    }
 
     /* nworkers == 1: single-process path, no fork */
     if (nworkers <= 1) {

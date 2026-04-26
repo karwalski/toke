@@ -172,4 +172,39 @@ void tk_access_log_close(TkAccessLog *log);
 void         tk_access_log_set_global(TkAccessLog *log);
 TkAccessLog *tk_access_log_get_global(void);
 
+/* ── Error log with rotation (Story 47.1.2) ──────────────────────────── */
+
+/*
+ * Separate error log for 4xx/5xx HTTP responses and server-level errors.
+ * Uses the same TkAccessLog infrastructure (rotation, gzip, retention).
+ *
+ * tk_error_log_open — open (or create) a rotating error log at path.
+ *   Same parameters and semantics as tk_access_log_open.
+ *
+ * tk_error_log_write — append one error line (Combined Log Format).
+ *   Same signature as tk_access_log_write; called automatically by http.c
+ *   when a 4xx/5xx response is sent.
+ *
+ * tk_error_log_close — flush, close, and free the error log handle.
+ *
+ * tk_error_log_set_global / tk_error_log_get_global — register/retrieve
+ *   the process-global error log.  http.c calls get_global() on every
+ *   4xx/5xx response; if non-NULL it writes the error-log entry.
+ */
+TkAccessLog *tk_error_log_open(const char *path,
+                                int max_lines,
+                                int max_files,
+                                int max_age_days);
+void tk_error_log_write(TkAccessLog *log,
+                         const char *ip,
+                         const char *method,
+                         const char *path,
+                         int         status,
+                         size_t      bytes,
+                         const char *referer,
+                         const char *ua);
+void tk_error_log_close(TkAccessLog *log);
+void         tk_error_log_set_global(TkAccessLog *log);
+TkAccessLog *tk_error_log_get_global(void);
+
 #endif /* TK_STDLIB_LOG_H */

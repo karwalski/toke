@@ -4,6 +4,7 @@
   "exports": [
     {"kind": "func", "name": "log.info",  "params": ["str", "[[str]]"], "return": "bool"},
     {"kind": "func", "name": "log.warn",  "params": ["str", "[[str]]"], "return": "bool"},
-    {"kind": "func", "name": "log.error", "params": ["str", "[[str]]"], "return": "bool"}
+    {"kind": "func", "name": "log.error", "params": ["str", "[[str]]"], "return": "bool"},
+    {"kind": "func", "name": "log.openerror", "params": ["str", "i64", "i64", "i64"], "return": "i64"}
   ]
 }

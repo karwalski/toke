@@ -461,9 +461,13 @@ struct TkAccessLog {
 };
 
 static TkAccessLog *g_access_log = NULL;
+static TkAccessLog *g_error_log  = NULL;
 
 void tk_access_log_set_global(TkAccessLog *log) { g_access_log = log; }
 TkAccessLog *tk_access_log_get_global(void)     { return g_access_log; }
+
+void tk_error_log_set_global(TkAccessLog *log)  { g_error_log = log; }
+TkAccessLog *tk_error_log_get_global(void)      { return g_error_log; }
 
 /* ── Path splitting ───────────────────────────────────────────────────── */
 
@@ -711,4 +715,39 @@ void tk_access_log_close(TkAccessLog *log)
     free(log->stem);
     free(log->ext);
     free(log);
+}
+
+/* ==========================================================================
+ * Error log with rotation (Story 47.1.2)
+ *
+ * Reuses the TkAccessLog infrastructure — same struct, rotation, gzip,
+ * and retention logic.  A separate global pointer (g_error_log) keeps
+ * access and error streams independent.
+ * ========================================================================== */
+
+TkAccessLog *tk_error_log_open(const char *path,
+                                int max_lines,
+                                int max_files,
+                                int max_age_days)
+{
+    /* Delegate to the same open logic used for access logs. */
+    return tk_access_log_open(path, max_lines, max_files, max_age_days);
+}
+
+void tk_error_log_write(TkAccessLog *log,
+                         const char *ip,
+                         const char *method,
+                         const char *path,
+                         int         status,
+                         size_t      bytes,
+                         const char *referer,
+                         const char *ua)
+{
+    /* Same Combined Log Format line, reusing the access-log writer. */
+    tk_access_log_write(log, ip, method, path, status, bytes, referer, ua);
+}
+
+void tk_error_log_close(TkAccessLog *log)
+{
+    tk_access_log_close(log);
 }

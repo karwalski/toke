@@ -187,6 +187,26 @@ int64_t tk_log_open_access_w(int64_t path_ptr, int64_t max_lines,
     return 0;
 }
 
+/*
+ * tk_log_open_error_w — open a rotating HTTP error log and register it as
+ * the global error log used by http.c for 4xx/5xx responses.
+ *
+ * Same parameter convention as tk_log_open_access_w.
+ * Returns: 0 on success, -1 if the log file could not be opened.
+ *
+ * Story: 47.1.2
+ */
+int64_t tk_log_open_error_w(int64_t path_ptr, int64_t max_lines,
+                              int64_t max_files, int64_t max_age_days)
+{
+    const char *path = (const char *)(intptr_t)path_ptr;
+    TkAccessLog *el = tk_error_log_open(path, (int)max_lines,
+                                         (int)max_files, (int)max_age_days);
+    if (!el) return -1;
+    tk_error_log_set_global(el);
+    return 0;
+}
+
 /* ── env wrappers ─────────────────────────────────────────────────────── */
 
 int64_t tk_env_get_or(int64_t key, int64_t def) {
@@ -227,6 +247,21 @@ static int           g_static_route_count = 0;
 
 static StrPair g_html_ct_hdr = { "Content-Type", "text/html; charset=utf-8" };
 static StrPair g_text_ct_hdr = { "Content-Type", "text/plain" };
+static StrPair g_json_ct_hdr = { "Content-Type", "application/json; charset=utf-8" };
+
+/* Custom 404 body set via http.setnotfound (Story 49.4.5) */
+static const char *g_notfound_body = NULL;
+
+static const char *g_default_404 =
+    "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+    "<title>404 - Not Found</title>"
+    "<style>body{font-family:system-ui,sans-serif;display:flex;"
+    "justify-content:center;align-items:center;min-height:100vh;"
+    "margin:0;background:#111;color:#ccc}"
+    ".c{text-align:center}h1{font-size:4rem;margin:0;color:#e2b714}"
+    "p{color:#9ca3af}a{color:#e2b714}</style></head>"
+    "<body><div class=\"c\"><h1>404</h1>"
+    "<p>Page not found.</p><a href=\"/\">Home</a></div></body></html>";
 
 static Res tk_static_dispatch(Req req) {
     const char *rpath = req.path ? req.path : "/";
@@ -243,8 +278,8 @@ static Res tk_static_dispatch(Req req) {
     }
     Res r;
     r.status       = 404;
-    r.body         = "Not Found";
-    r.headers.data = &g_text_ct_hdr;
+    r.body         = g_notfound_body ? g_notfound_body : g_default_404;
+    r.headers.data = &g_html_ct_hdr;
     r.headers.len  = 1;
     return r;
 }
@@ -266,6 +301,151 @@ int64_t tk_http_get_static(int64_t path_ptr, int64_t body_ptr) {
     return 0;
 }
 
+/*
+ * tk_http_set_notfound — Set a custom HTML body for 404 responses (Story 49.4.5).
+ *
+ * body_ptr: i64 (const char * as integer) — HTML body to return for unmatched routes
+ * Returns:  0 (i64)
+ */
+int64_t tk_http_set_notfound(int64_t body_ptr) {
+    g_notfound_body = (const char *)(intptr_t)body_ptr;
+    return 0;
+}
+
+/* ── Dynamic GET handler dispatch (Story 46.1.3) ─────────────────────── */
+/*
+ * Stores up to TK_MAX_GET_HANDLERS path→function_pointer mappings registered
+ * via http.get(path, handler).  The toke handler signature is:
+ *   f=handler(req:i64):i64
+ * where req is a pointer to a heap-allocated Req struct (as i64) and the
+ * return value is a pointer to a heap-allocated Res struct (as i64).
+ */
+#define TK_MAX_GET_HANDLERS 256
+
+typedef int64_t (*TkGetHandlerFn)(int64_t);
+
+typedef struct {
+    const char     *path;
+    TkGetHandlerFn  handler;
+} TkGetHandlerRoute;
+
+static TkGetHandlerRoute g_get_handler_routes[TK_MAX_GET_HANDLERS];
+static int               g_get_handler_count = 0;
+
+static Res tk_get_handler_dispatch(Req req) {
+    const char *rpath = req.path ? req.path : "/";
+    for (int i = 0; i < g_get_handler_count; i++) {
+        if (g_get_handler_routes[i].path &&
+            strcmp(g_get_handler_routes[i].path, rpath) == 0) {
+            /* Heap-allocate a copy of the Req so the toke function can access it
+             * via pointer.  The toke function is responsible for the returned Res. */
+            Req *heap_req = (Req *)malloc(sizeof(Req));
+            if (!heap_req) {
+                Res r;
+                r.status       = 500;
+                r.body         = "Internal Server Error";
+                r.headers.data = &g_text_ct_hdr;
+                r.headers.len  = 1;
+                return r;
+            }
+            *heap_req = req;
+            int64_t res_ptr = g_get_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
+            free(heap_req);
+            if (res_ptr) {
+                Res *rp = (Res *)(intptr_t)res_ptr;
+                Res r = *rp;
+                free(rp);
+                return r;
+            }
+            /* Handler returned NULL — 500 */
+            Res r;
+            r.status       = 500;
+            r.body         = "Handler returned null";
+            r.headers.data = &g_text_ct_hdr;
+            r.headers.len  = 1;
+            return r;
+        }
+    }
+    /* No matching handler — fall through to static dispatch */
+    return tk_static_dispatch(req);
+}
+
+/*
+ * tk_http_get_handler — Register a dynamic GET handler backed by a toke function.
+ *
+ * path_ptr:    i64 (const char *) — URL path pattern e.g. "/api/hello"
+ * handler_ptr: i64 — toke function pointer (f(i64):i64)
+ * Returns:     0 (i64)
+ */
+int64_t tk_http_get_handler(int64_t path_ptr, int64_t handler_ptr) {
+    if (g_get_handler_count >= TK_MAX_GET_HANDLERS) return -1;
+    int i = g_get_handler_count++;
+    g_get_handler_routes[i].path    = (const char *)(intptr_t)path_ptr;
+    g_get_handler_routes[i].handler = (TkGetHandlerFn)(intptr_t)handler_ptr;
+    http_GET((const char *)(intptr_t)path_ptr, tk_get_handler_dispatch);
+    return 0;
+}
+
+/* ── Request/Response accessor helpers for toke handlers (Story 46.1.3) ── */
+
+/*
+ * tk_http_req_path — extract path from a Req pointer.
+ * Returns const char * as i64.
+ */
+int64_t tk_http_req_path(int64_t req_ptr) {
+    if (!req_ptr) return 0;
+    Req *r = (Req *)(intptr_t)req_ptr;
+    return (int64_t)(intptr_t)(r->path ? r->path : "/");
+}
+
+/*
+ * tk_http_req_method — extract method from a Req pointer.
+ * Returns const char * as i64.
+ */
+int64_t tk_http_req_method(int64_t req_ptr) {
+    if (!req_ptr) return 0;
+    Req *r = (Req *)(intptr_t)req_ptr;
+    return (int64_t)(intptr_t)(r->method ? r->method : "GET");
+}
+
+/*
+ * tk_http_req_body — extract body from a Req pointer.
+ * Returns const char * as i64.
+ */
+int64_t tk_http_req_body(int64_t req_ptr) {
+    if (!req_ptr) return 0;
+    Req *r = (Req *)(intptr_t)req_ptr;
+    return (int64_t)(intptr_t)(r->body ? r->body : "");
+}
+
+/*
+ * tk_http_res_new — create a new Res on the heap with given status and body.
+ * Returns Res pointer as i64 (caller/dispatch owns the allocation).
+ */
+int64_t tk_http_res_new(int64_t status, int64_t body_ptr) {
+    Res *r = (Res *)malloc(sizeof(Res));
+    if (!r) return 0;
+    r->status       = (uint16_t)status;
+    r->body         = (const char *)(intptr_t)body_ptr;
+    r->headers.data = &g_html_ct_hdr;
+    r->headers.len  = 1;
+    return (int64_t)(intptr_t)r;
+}
+
+/*
+ * tk_http_res_json_new — create a new JSON Res on the heap.
+ * Returns Res pointer as i64.
+ */
+int64_t tk_http_res_json_new(int64_t status, int64_t body_ptr) {
+    Res *r = (Res *)malloc(sizeof(Res));
+    if (!r) return 0;
+    r->status       = (uint16_t)status;
+    r->body         = (const char *)(intptr_t)body_ptr;
+    r->headers.data = &g_json_ct_hdr;
+    r->headers.len  = 1;
+    return (int64_t)(intptr_t)r;
+}
+
 /* ── POST handler dispatch ────────────────────────────────────────────── */
 
 #define TK_MAX_POST_ROUTES 256
@@ -284,8 +464,6 @@ typedef struct {
 
 static TkPostRoute g_post_routes[TK_MAX_POST_ROUTES];
 static int          g_post_route_count = 0;
-
-static StrPair g_json_ct_hdr = { "Content-Type", "application/json; charset=utf-8" };
 
 static Res tk_post_dispatch(Req req) {
     const char *rpath = req.path ? req.path : "/";
@@ -1511,8 +1689,11 @@ int64_t tk_math_round_w(int64_t v) { return f64_to_i64(math_round(i64_to_f64(v),
 /* env */
 int64_t tk_env_get_w(int64_t key) { (void)key; return 0; }
 
-/* file_exists already declared in preamble but stub missing */
-int64_t tk_file_exists_w(int64_t path) { (void)path; return 0; }
+/* file_exists — Story 49.4.5: implement properly using file.h */
+int64_t tk_file_exists_w(int64_t path) {
+    if (!path) return 0;
+    return (int64_t)file_exists((const char *)(intptr_t)path);
+}
 
 /* ---- Story 42.1.2: sys module wrappers ---- */
 int64_t tk_sys_configdir_w(int64_t appname) {

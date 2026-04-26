@@ -1067,6 +1067,12 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
     /* std.http functions */
     if (!strcmp(mod, "http")) {
         if (!strcmp(method, "getstatic"))      return "tk_http_get_static";
+        if (!strcmp(method, "get"))            return "tk_http_get_handler";
+        if (!strcmp(method, "reqpath"))        return "tk_http_req_path";
+        if (!strcmp(method, "reqmethod"))      return "tk_http_req_method";
+        if (!strcmp(method, "reqbody"))        return "tk_http_req_body";
+        if (!strcmp(method, "resnew"))         return "tk_http_res_new";
+        if (!strcmp(method, "resjson"))        return "tk_http_res_json_new";
         if (!strcmp(method, "postecho"))       return "tk_http_post_echo";
         if (!strcmp(method, "poststatic"))     return "tk_http_post_static";
         if (!strcmp(method, "postjson"))       return "tk_http_post_json";
@@ -1077,10 +1083,12 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         if (!strcmp(method, "vhost"))          return "tk_http_vhost";
         if (!strcmp(method, "servevhosts"))    return "tk_http_servevhosts";
         if (!strcmp(method, "servevhoststls")) return "tk_http_servevhoststls";
+        if (!strcmp(method, "setnotfound"))    return "tk_http_set_notfound";
     }
     /* std.log functions */
     if (!strcmp(mod, "log")) {
         if (!strcmp(method, "openaccess")) return "tk_log_open_access_w";
+        if (!strcmp(method, "openerror"))  return "tk_log_open_error_w";
         if (!strcmp(method, "info"))       return "tk_log_info_w";
         if (!strcmp(method, "error"))      return "tk_log_error_w";
         if (!strcmp(method, "warn"))       return "tk_log_warn_w";
@@ -1763,10 +1771,14 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_path_dir_w", "tk_path_ext_w", "tk_md_render_w",
                         "tk_toml_load_w", "tk_toml_section_w", "tk_toml_str_w",
                         "tk_toml_i64_w", "tk_toml_bool_w", "tk_args_count_w",
-                        "tk_args_get_w", "tk_http_get_static", "tk_http_serve_staticdir_w",
+                        "tk_args_get_w", "tk_http_get_static", "tk_http_get_handler",
+                        "tk_http_req_path", "tk_http_req_method", "tk_http_req_body",
+                        "tk_http_res_new", "tk_http_res_json_new",
+                        "tk_http_serve_staticdir_w",
                         "tk_http_serve", "tk_http_servetls", "tk_http_serveworkers_w",
                         "tk_http_vhost", "tk_http_servevhosts", "tk_http_servevhoststls",
-                        "tk_log_open_access_w", "tk_log_info_w", "tk_log_error_w",
+                        "tk_http_set_notfound",
+                        "tk_log_open_access_w", "tk_log_open_error_w", "tk_log_info_w", "tk_log_error_w",
                         "tk_log_warn_w", "tk_log_debug_w", "tk_router_new_w",
                         "tk_map_new", "tk_map_put", "tk_map_get",
                         "tk_array_append_w", "tk_map_set_w",
@@ -3519,6 +3531,12 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_args_get_w(i64)\n", f);
     /* std.http module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_http_get_static(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_get_handler(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_req_path(i64)\n", f);
+    fputs("declare i64 @tk_http_req_method(i64)\n", f);
+    fputs("declare i64 @tk_http_req_body(i64)\n", f);
+    fputs("declare i64 @tk_http_res_new(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_res_json_new(i64, i64)\n", f);
     fputs("declare i64 @tk_http_post_echo(i64)\n", f);
     fputs("declare i64 @tk_http_post_static(i64, i64)\n", f);
     fputs("declare i64 @tk_http_post_json(i64, i64)\n", f);
@@ -3529,6 +3547,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_http_vhost(i64, i64)\n", f);
     fputs("declare i64 @tk_http_servevhosts(i64)\n", f);
     fputs("declare i64 @tk_http_servevhoststls(i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_http_set_notfound(i64)\n", f);
     /* std.http client wrappers (Story 57.13.9) */
     fputs("declare i64 @tk_http_client_w(i64)\n", f);
     fputs("declare i64 @tk_http_get_w(i64)\n", f);
@@ -3542,6 +3561,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_http_print_w(i64)\n", f);
     /* std.log module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_log_open_access_w(i64, i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_log_open_error_w(i64, i64, i64, i64)\n", f);
     fputs("declare i64 @tk_log_info_w(i64, i64)\n", f);
     fputs("declare i64 @tk_log_error_w(i64, i64)\n", f);
     fputs("declare i64 @tk_log_warn_w(i64, i64)\n", f);
