@@ -16,7 +16,7 @@ TOML_FLAGS  = -Istdlib/vendor/tomlc99
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/config.c src/fmt.c src/progress.c \
           src/sourcemap.c src/ast_json.c src/migrate.c src/companion.c src/compress.c \
-          src/stdlib_deps.c src/glue_gen.c \
+          src/stdlib_deps.c src/glue_gen.c src/lint.c \
           src/main.c src/stdlib/str.c
 
 # ── Story 19.1.4: stdlib modules linked into tkc for i= imports ──────────

@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <limits.h>
 
 /* POSIX: all environment strings are accessible via environ */
 extern char **environ;
@@ -61,6 +62,16 @@ const char *env_get_or(const char *key, const char *default_val)
     if (!key_is_valid(key)) return default_val;
     const char *val = getenv(key);
     return val ? val : default_val;
+}
+
+int64_t env_getint(const char *key, int64_t default_val)
+{
+    const char *val = getenv(key);
+    if (!val || !*val) return default_val;
+    char *end;
+    long long result = strtoll(val, &end, 10);
+    if (*end != '\0') return default_val;
+    return (int64_t)result;
 }
 
 int env_set(const char *key, const char *val)

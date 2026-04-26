@@ -45,6 +45,12 @@ EnvGetResult env_get(const char *key);
 const char  *env_get_or(const char *key, const char *default_val);
 
 /*
+ * env_getint — look up a key, parse as integer; return default_val if the
+ * key is absent, empty, or not a valid integer.
+ */
+int64_t      env_getint(const char *key, int64_t default_val);
+
+/*
  * env_set — set key=val in the process environment using setenv(3).
  * Returns 1 on success, 0 on failure (invalid key/value or OS error).
  */

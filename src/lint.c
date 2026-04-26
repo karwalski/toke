@@ -21,7 +21,8 @@
 /* ── Result helpers ───────────────────────────────────────────────────── */
 
 static int lint_push(LintResult *r, const char *rule_id, const char *message,
-                     int line, int col, int severity)
+                     int line, int col, int severity,
+                     int fixable, int span_start, int span_end)
 {
     if (r->count >= r->cap) {
         int newcap = r->cap == 0 ? 16 : r->cap * 2;
@@ -31,11 +32,14 @@ static int lint_push(LintResult *r, const char *rule_id, const char *message,
         r->cap   = newcap;
     }
     LintDiag *d = &r->items[r->count++];
-    d->rule_id  = rule_id;
-    d->message  = message;
-    d->line     = line;
-    d->col      = col;
-    d->severity = severity;
+    d->rule_id    = rule_id;
+    d->message    = message;
+    d->line       = line;
+    d->col        = col;
+    d->severity   = severity;
+    d->fixable    = fixable;
+    d->span_start = span_start;
+    d->span_end   = span_end;
     return 0;
 }
 
@@ -124,7 +128,8 @@ static int rule_unreachable_code(const Node *node, const char *src,
                     if (unreachable && rule_enabled("unreachable-code", opts)) {
                         if (lint_push(out, "unreachable-code",
                                       "statement is unreachable after return",
-                                      unreachable->line, unreachable->col, 1) < 0)
+                                      unreachable->line, unreachable->col, 1,
+                                      0, 0, 0) < 0)
                             return -1;
                     }
                 }
@@ -160,7 +165,8 @@ static int rule_empty_fn_body(const Node *node, const char *src,
             if (rule_enabled("empty-fn-body", opts)) {
                 if (lint_push(out, "empty-fn-body",
                               "function has an empty body",
-                              node->line, node->col, 1) < 0)
+                              node->line, node->col, 1,
+                              0, 0, 0) < 0)
                     return -1;
             }
         }
@@ -184,7 +190,31 @@ static int rule_empty_fn_body(const Node *node, const char *src,
  * last child being the alias (NODE_IDENT).  We search the entire AST
  * excluding the import node itself.
  */
+/*
+ * span_end_of_stmt — find the byte offset just past a statement's trailing
+ * semicolon and newline.  Scans forward from the last token in the node.
+ */
+static int span_end_of_stmt(const Node *node, const char *src, int src_len)
+{
+    /* Find the rightmost byte covered by any leaf in the subtree */
+    int end = node->start;
+    if (node->tok_len > 0 && node->tok_start + node->tok_len > end)
+        end = node->tok_start + node->tok_len;
+    for (int i = 0; i < node->child_count; i++) {
+        if (!node->children[i]) continue;
+        int ce = span_end_of_stmt(node->children[i], src, src_len);
+        if (ce > end) end = ce;
+    }
+    /* Advance past any trailing semicolons and whitespace up to (including) newline */
+    while (end < src_len && (src[end] == ';' || src[end] == ' ' || src[end] == '\t'))
+        end++;
+    if (end < src_len && src[end] == '\r') end++;
+    if (end < src_len && src[end] == '\n') end++;
+    return end;
+}
+
 static int rule_unused_import(const Node *root, const char *src,
+                              int src_len,
                               const LintOptions *opts, LintResult *out)
 {
     if (!root || root->kind != NODE_PROGRAM) return 0;
@@ -215,9 +245,12 @@ static int rule_unused_import(const Node *root, const char *src,
         }
 
         if (!used && rule_enabled("unused-import", opts)) {
+            int sp_start = imp->start;
+            int sp_end   = span_end_of_stmt(imp, src, src_len);
             if (lint_push(out, "unused-import",
                           "imported module is never used",
-                          imp->line, imp->col, 1) < 0)
+                          imp->line, imp->col, 1,
+                          1, sp_start, sp_end) < 0)
                 return -1;
         }
     }
@@ -231,6 +264,7 @@ static int rule_unused_import(const Node *root, const char *src,
  * child[1] (the initialiser) are both NODE_IDENT with the same text.
  */
 static int rule_redundant_bind(const Node *node, const char *src,
+                               int src_len,
                                const LintOptions *opts, LintResult *out)
 {
     if (!node) return 0;
@@ -243,15 +277,18 @@ static int rule_redundant_bind(const Node *node, const char *src,
             rhs = node->children[node->child_count - 1];
         }
         if (ident_eq(lhs, rhs, src) && rule_enabled("redundant-bind", opts)) {
+            int sp_start = node->start;
+            int sp_end   = span_end_of_stmt(node, src, src_len);
             if (lint_push(out, "redundant-bind",
                           "binding assigns a variable to itself",
-                          node->line, node->col, 1) < 0)
+                          node->line, node->col, 1,
+                          1, sp_start, sp_end) < 0)
                 return -1;
         }
     }
 
     for (int i = 0; i < node->child_count; i++) {
-        if (rule_redundant_bind(node->children[i], src, opts, out) < 0)
+        if (rule_redundant_bind(node->children[i], src, src_len, opts, out) < 0)
             return -1;
     }
     return 0;
@@ -262,8 +299,6 @@ static int rule_redundant_bind(const Node *node, const char *src,
 int tkc_lint(const Node *ast, const char *src, int src_len,
              const LintOptions *opts, LintResult *out)
 {
-    (void)src_len;
-
     if (!ast || !src || !out) return -1;
 
     out->items = NULL;
@@ -272,8 +307,8 @@ int tkc_lint(const Node *ast, const char *src, int src_len,
 
     if (rule_unreachable_code(ast, src, opts, out) < 0) return -1;
     if (rule_empty_fn_body(ast, src, opts, out) < 0)    return -1;
-    if (rule_unused_import(ast, src, opts, out) < 0)    return -1;
-    if (rule_redundant_bind(ast, src, opts, out) < 0)   return -1;
+    if (rule_unused_import(ast, src, src_len, opts, out) < 0) return -1;
+    if (rule_redundant_bind(ast, src, src_len, opts, out) < 0) return -1;
 
     return 0;
 }

@@ -163,6 +163,19 @@ void tk_access_log_write(TkAccessLog *log,
 void tk_access_log_close(TkAccessLog *log);
 
 /*
+ * tk_access_log_set_format — select output format for access log lines.
+ *
+ * fmt == "combined" (default): Apache/Nginx Combined Log Format.
+ * fmt == "json": newline-delimited JSON (NDJSON), one object per request.
+ *
+ * Applies to both access and error logs (they share the write path).
+ * Unknown fmt strings are silently ignored.
+ *
+ * Story: 47.1.3
+ */
+void tk_access_log_set_format(const char *fmt);
+
+/*
  * tk_access_log_set_global / tk_access_log_get_global
  *
  * Register a TkAccessLog* as the process-global access log.  http.c

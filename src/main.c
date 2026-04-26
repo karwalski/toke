@@ -39,6 +39,7 @@
 #include "config.h"
 #include "progress.h"
 #include "migrate.h"
+#include "lint.h"
 
 /* Forward declarations for stubs not yet exported by their headers */
 #ifndef TK_ARENA_TYPES_DEFINED
@@ -84,6 +85,8 @@ static const char HELP[] =
     "  --compress          Compress text from stdin to reduced-token form (stdout)\n"
     "  --decompress        Decompress text from stdin back to original form (stdout)\n"
     "  --compress-stream   Stream-compress stdin line-by-line, emitting chunks\n"
+    "  --lint              Run lint rules and report diagnostics\n"
+    "  --fix               With --lint, auto-fix mechanical violations in-place\n"
     "  --migrate           Migrate legacy .tk file to default syntax (stdout)\n"
     "  --legacy            Legacy mode (80-char syntax, uppercase keywords)\n"
     "  --profile1          Deprecated alias for --legacy\n"
@@ -209,6 +212,7 @@ int main(int argc, char **argv)
     int pretty = 0, expand = 0, sourcemap = 0;
     int dump_ast = 0;
     int migrate = 0;
+    int do_lint = 0, do_fix = 0;
     int do_compress = 0, do_decompress = 0, do_compress_stream = 0;
     int companion = 0;
     const char *companion_out = NULL;
@@ -253,6 +257,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--sourcemap"))      sourcemap = 1;
         else if (!strcmp(argv[i], "--check"))          check_only = 1;
         else if (!strcmp(argv[i], "--dump-ast"))       dump_ast = 1;
+        else if (!strcmp(argv[i], "--lint"))             do_lint = 1;
+        else if (!strcmp(argv[i], "--fix"))              do_fix = 1;
         else if (!strcmp(argv[i], "--migrate"))         migrate = 1;
         else if (!strcmp(argv[i], "--compress"))        do_compress = 1;
         else if (!strcmp(argv[i], "--decompress"))      do_decompress = 1;
@@ -405,7 +411,7 @@ int main(int argc, char **argv)
     if (migrate) profile = PROFILE_LEGACY;
 
     /* Progress bar: skip for fast-path modes */
-    int fast_path = fmt_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp || do_compress || do_decompress || do_compress_stream;
+    int fast_path = fmt_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp || do_compress || do_decompress || do_compress_stream || do_lint;
     progress_init(fast_path);
 
     /* Read source file — only malloc in the pipeline */
@@ -458,6 +464,87 @@ int main(int argc, char **argv)
     /* --dump-ast: serialise AST as JSON to stdout, then exit */
     if (dump_ast) {
         ast_dump_json(ast, sbuf, stdout);
+        goto done;
+    }
+
+    /* --lint (and optionally --fix): run lint rules, report/fix, then exit */
+    if (do_lint) {
+        LintResult lr;
+        if (tkc_lint(ast, sbuf, (int)slen, NULL, &lr) < 0) {
+            rc = EINTERNAL; goto done;
+        }
+        if (lr.count == 0) {
+            fprintf(stderr, "tkc: no lint warnings\n");
+            lint_result_free(&lr);
+            goto done;
+        }
+
+        /* Print all diagnostics */
+        for (int li = 0; li < lr.count; li++) {
+            LintDiag *d = &lr.items[li];
+            fprintf(stderr, "%s:%d:%d: warning: [%s] %s",
+                    src, d->line, d->col, d->rule_id, d->message);
+            if (do_fix && d->fixable)
+                fprintf(stderr, " [auto-fixed]");
+            fprintf(stderr, "\n");
+        }
+
+        /* --fix: apply fixable removals in reverse offset order */
+        if (do_fix) {
+            /* Collect fixable indices */
+            int fix_count = 0;
+            for (int li = 0; li < lr.count; li++) {
+                if (lr.items[li].fixable) fix_count++;
+            }
+            if (fix_count > 0) {
+                /* Sort fixable diags by span_start descending (simple selection sort) */
+                int *fix_idx = malloc((size_t)fix_count * sizeof(int));
+                if (!fix_idx) { lint_result_free(&lr); rc = EINTERNAL; goto done; }
+                int fi = 0;
+                for (int li = 0; li < lr.count; li++) {
+                    if (lr.items[li].fixable) fix_idx[fi++] = li;
+                }
+                /* Sort descending by span_start */
+                for (int a = 0; a < fix_count - 1; a++) {
+                    for (int b = a + 1; b < fix_count; b++) {
+                        if (lr.items[fix_idx[a]].span_start < lr.items[fix_idx[b]].span_start) {
+                            int tmp = fix_idx[a]; fix_idx[a] = fix_idx[b]; fix_idx[b] = tmp;
+                        }
+                    }
+                }
+
+                /* Apply removals in reverse order to preserve earlier offsets */
+                char *buf = malloc((size_t)slen + 1);
+                if (!buf) { free(fix_idx); lint_result_free(&lr); rc = EINTERNAL; goto done; }
+                memcpy(buf, sbuf, (size_t)slen + 1);
+                int cur_len = (int)slen;
+
+                for (int k = 0; k < fix_count; k++) {
+                    LintDiag *d = &lr.items[fix_idx[k]];
+                    int rm_start = d->span_start;
+                    int rm_end   = d->span_end;
+                    if (rm_start < 0 || rm_end > cur_len || rm_start >= rm_end) continue;
+                    int rm_len = rm_end - rm_start;
+                    memmove(buf + rm_start, buf + rm_end, (size_t)(cur_len - rm_end));
+                    cur_len -= rm_len;
+                    buf[cur_len] = '\0';
+                }
+
+                /* Write modified source back to the file */
+                FILE *wf = fopen(src, "wb");
+                if (!wf) {
+                    fprintf(stderr, "tkc: cannot write '%s'\n", src);
+                    free(buf); free(fix_idx); lint_result_free(&lr);
+                    rc = EUSAGE; goto done;
+                }
+                fwrite(buf, 1, (size_t)cur_len, wf);
+                fclose(wf);
+                fprintf(stderr, "tkc: fixed %d violation(s) in %s\n", fix_count, src);
+                free(buf);
+                free(fix_idx);
+            }
+        }
+        lint_result_free(&lr);
         goto done;
     }
 

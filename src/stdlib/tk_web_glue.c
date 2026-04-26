@@ -207,6 +207,19 @@ int64_t tk_log_open_error_w(int64_t path_ptr, int64_t max_lines,
     return 0;
 }
 
+/*
+ * tk_log_accessformat_w — set access log output format ("combined" or "json").
+ * Returns 0 unconditionally.
+ *
+ * Story: 47.1.3
+ */
+int64_t tk_log_accessformat_w(int64_t fmt_ptr)
+{
+    const char *fmt = (const char *)(intptr_t)fmt_ptr;
+    tk_access_log_set_format(fmt);
+    return 0;
+}
+
 /* ── env wrappers ─────────────────────────────────────────────────────── */
 
 int64_t tk_env_get_or(int64_t key, int64_t def) {
@@ -219,6 +232,10 @@ int64_t tk_env_set_w(int64_t key, int64_t val) {
     return (int64_t)env_set(
         (const char *)(intptr_t)key,
         (const char *)(intptr_t)val);
+}
+
+int64_t tk_env_getint_w(int64_t key, int64_t def) {
+    return env_getint((const char *)(intptr_t)key, def);
 }
 
 int64_t tk_env_expand_w(int64_t tmpl) {

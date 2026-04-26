@@ -463,6 +463,13 @@ struct TkAccessLog {
 static TkAccessLog *g_access_log = NULL;
 static TkAccessLog *g_error_log  = NULL;
 
+/* ── Access log format flag (Story 47.1.3) ────────────────────────────── */
+
+#define TK_ACCESS_FMT_COMBINED 0
+#define TK_ACCESS_FMT_JSON     1
+
+static int g_access_format = TK_ACCESS_FMT_COMBINED;
+
 void tk_access_log_set_global(TkAccessLog *log) { g_access_log = log; }
 TkAccessLog *tk_access_log_get_global(void)     { return g_access_log; }
 
@@ -662,6 +669,39 @@ TkAccessLog *tk_access_log_open(const char *path,
     return log;
 }
 
+/* ── Access log format selection (Story 47.1.3) ───────────────────────── */
+
+void tk_access_log_set_format(const char *fmt)
+{
+    if (!fmt) return;
+    if (strcmp(fmt, "json") == 0) {
+        g_access_format = TK_ACCESS_FMT_JSON;
+    } else if (strcmp(fmt, "combined") == 0) {
+        g_access_format = TK_ACCESS_FMT_COMBINED;
+    }
+    /* Unknown fmt strings are silently ignored. */
+}
+
+/*
+ * access_json_escape — minimal JSON escaping for access log string fields.
+ * Escapes only " and \.  dst must be at least dst_size bytes.
+ * Returns number of bytes written (excluding NUL).
+ *
+ * Story: 47.1.3
+ */
+static int access_json_escape(char *dst, size_t dst_size, const char *src)
+{
+    int w = 0;
+    if (!src) { dst[0] = '\0'; return 0; }
+    for (const char *p = src; *p && (size_t)(w + 3) < dst_size; p++) {
+        if (*p == '"')       { dst[w++] = '\\'; dst[w++] = '"'; }
+        else if (*p == '\\') { dst[w++] = '\\'; dst[w++] = '\\'; }
+        else                 { dst[w++] = *p; }
+    }
+    dst[w] = '\0';
+    return w;
+}
+
 void tk_access_log_write(TkAccessLog *log,
                           const char *ip,
                           const char *method,
@@ -677,28 +717,53 @@ void tk_access_log_write(TkAccessLog *log,
         if (!log->fp) return;
     }
 
-    /* Combined Log Format timestamp: [06/Apr/2026:15:23:01 +0000] */
-    time_t now = time(NULL);
-    struct tm *tm = gmtime(&now);
-    char ts[40];
-    snprintf(ts, sizeof ts, "%02d/%s/%04d:%02d:%02d:%02d +0000",
-             tm->tm_mday, k_month_names[tm->tm_mon], 1900 + tm->tm_year,
-             tm->tm_hour, tm->tm_min, tm->tm_sec);
+    if (g_access_format == TK_ACCESS_FMT_JSON) {
+        /* NDJSON format (Story 47.1.3) */
+        char ts[32];
+        current_iso8601(ts, sizeof ts);
 
-    char bytes_str[24];
-    if (bytes > 0) snprintf(bytes_str, sizeof bytes_str, "%zu", bytes);
-    else           strcpy(bytes_str, "-");
+        char ip_esc[256], path_esc[2048], ua_esc[1024], ref_esc[2048];
+        access_json_escape(ip_esc,   sizeof ip_esc,   ip);
+        access_json_escape(path_esc, sizeof path_esc, path);
+        access_json_escape(ua_esc,   sizeof ua_esc,   ua);
+        access_json_escape(ref_esc,  sizeof ref_esc,  referer);
 
-    fprintf(log->fp,
-            "%s - - [%s] \"%s %s HTTP/1.1\" %d %s \"%s\" \"%s\"\n",
-            ip      ? ip      : "-",
-            ts,
-            method  ? method  : "-",
-            path    ? path    : "-",
-            status,
-            bytes_str,
-            referer ? referer : "-",
-            ua      ? ua      : "-");
+        fprintf(log->fp,
+                "{\"ts\":\"%s\",\"ip\":\"%s\",\"method\":\"%s\","
+                "\"path\":\"%s\",\"status\":%d,\"size\":%zu,"
+                "\"ua\":\"%s\",\"ref\":\"%s\"}\n",
+                ts,
+                ip      ? ip_esc   : "-",
+                method  ? method   : "-",
+                path    ? path_esc : "-",
+                status,
+                bytes,
+                ua      ? ua_esc   : "-",
+                referer ? ref_esc  : "-");
+    } else {
+        /* Combined Log Format timestamp: [06/Apr/2026:15:23:01 +0000] */
+        time_t now = time(NULL);
+        struct tm *tm = gmtime(&now);
+        char ts[40];
+        snprintf(ts, sizeof ts, "%02d/%s/%04d:%02d:%02d:%02d +0000",
+                 tm->tm_mday, k_month_names[tm->tm_mon], 1900 + tm->tm_year,
+                 tm->tm_hour, tm->tm_min, tm->tm_sec);
+
+        char bytes_str[24];
+        if (bytes > 0) snprintf(bytes_str, sizeof bytes_str, "%zu", bytes);
+        else           strcpy(bytes_str, "-");
+
+        fprintf(log->fp,
+                "%s - - [%s] \"%s %s HTTP/1.1\" %d %s \"%s\" \"%s\"\n",
+                ip      ? ip      : "-",
+                ts,
+                method  ? method  : "-",
+                path    ? path    : "-",
+                status,
+                bytes_str,
+                referer ? referer : "-",
+                ua      ? ua      : "-");
+    }
     /* Line-buffered: stdio flushes automatically at the newline above */
 
     log->line_count++;

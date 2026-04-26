@@ -1019,7 +1019,8 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
     }
     /* std.env functions */
     if (!strcmp(mod, "env")) {
-        if (!strcmp(method, "get_or")) return "tk_env_get_or";
+        if (!strcmp(method, "get_or"))  return "tk_env_get_or";
+        if (!strcmp(method, "getint")) return "tk_env_getint_w";
         if (!strcmp(method, "set"))    return "tk_env_set_w";
         if (!strcmp(method, "expand")) return "tk_env_expand_w";
     }
@@ -1101,8 +1102,9 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
     }
     /* std.log functions */
     if (!strcmp(mod, "log")) {
-        if (!strcmp(method, "openaccess")) return "tk_log_open_access_w";
-        if (!strcmp(method, "openerror"))  return "tk_log_open_error_w";
+        if (!strcmp(method, "openaccess"))   return "tk_log_open_access_w";
+        if (!strcmp(method, "openerror"))    return "tk_log_open_error_w";
+        if (!strcmp(method, "accessformat")) return "tk_log_accessformat_w";
         if (!strcmp(method, "info"))       return "tk_log_info_w";
         if (!strcmp(method, "error"))      return "tk_log_error_w";
         if (!strcmp(method, "warn"))       return "tk_log_warn_w";
@@ -1778,7 +1780,7 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_str_slice_w", "tk_str_replace_w", "tk_str_startswith_w",
                         "tk_str_endswith_w", "tk_str_trimprefix_w", "tk_str_trimsuffix_w",
                         "tk_str_lastindex_w", "tk_str_matchbracket_w", "tk_str_contains_w",
-                        "tk_env_get_or", "tk_env_set_w", "tk_env_expand_w",
+                        "tk_env_get_or", "tk_env_getint_w", "tk_env_set_w", "tk_env_expand_w",
                         "tk_file_read_w", "tk_file_write_w",
                         "tk_file_isdir_w", "tk_file_mkdir_w", "tk_file_copy_w",
                         "tk_file_listall_w", "tk_file_exists_w", "tk_path_join_w",
@@ -1792,7 +1794,8 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_http_serve", "tk_http_servetls", "tk_http_serveworkers_w",
                         "tk_http_vhost", "tk_http_servevhosts", "tk_http_servevhoststls",
                         "tk_http_set_notfound",
-                        "tk_log_open_access_w", "tk_log_open_error_w", "tk_log_info_w", "tk_log_error_w",
+                        "tk_log_open_access_w", "tk_log_open_error_w", "tk_log_accessformat_w",
+                        "tk_log_info_w", "tk_log_error_w",
                         "tk_log_warn_w", "tk_log_debug_w", "tk_router_new_w",
                         "tk_map_new", "tk_map_put", "tk_map_get",
                         "tk_array_append_w", "tk_map_set_w",
@@ -3482,6 +3485,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_str_matchbracket_w(i64)\n", f);
     fputs("declare i64 @tk_str_contains_w(i64, i64)\n", f);
     fputs("declare i64 @tk_env_get_or(i64, i64)\n", f);
+    fputs("declare i64 @tk_env_getint_w(i64, i64)\n", f);
     fputs("declare i64 @tk_env_set_w(i64, i64)\n", f);
     fputs("declare i64 @tk_env_expand_w(i64)\n", f);
     fputs("declare i64 @tk_file_read_w(i64)\n", f);
@@ -3559,6 +3563,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_http_print_w(i64)\n", f);
     fputs("declare i64 @tk_log_open_access_w(i64, i64, i64, i64)\n", f);
     fputs("declare i64 @tk_log_open_error_w(i64, i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_log_accessformat_w(i64)\n", f);
     fputs("declare i64 @tk_log_info_w(i64, i64)\n", f);
     fputs("declare i64 @tk_log_error_w(i64, i64)\n", f);
     fputs("declare i64 @tk_log_warn_w(i64, i64)\n", f);

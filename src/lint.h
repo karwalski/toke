@@ -20,6 +20,9 @@ typedef struct {
     int         line;       /* 1-based line              */
     int         col;        /* 1-based column            */
     int         severity;   /* 0 = hint, 1 = warning     */
+    int         fixable;    /* 1 if --fix can auto-remove */
+    int         span_start; /* byte offset: start of fixable region */
+    int         span_end;   /* byte offset: end of fixable region   */
 } LintDiag;
 
 /* ── Result container ─────────────────────────────────────────────────── */
