@@ -678,7 +678,7 @@ static void ensure_tki_cache_loaded(void) {
     static const char *stdlib_modules[] = {
         "str", "env", "file", "path", "args", "toml", "md", "log",
         "http", "router", "json", "toon", "yaml", "i18n", "math",
-        "time", "crypto", "net", "sys", "ws", "os", "mem",
+        "time", "crypto", "net", "sys", "ws", "os", "mem", "process",
         NULL
     };
     for (int i = 0; stdlib_modules[i]; i++)
@@ -1082,12 +1082,17 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
     /* std.http functions */
     if (!strcmp(mod, "http")) {
         if (!strcmp(method, "getstatic"))      return "tk_http_get_static";
+        if (!strcmp(method, "getstaticmime"))  return "tk_http_get_static_mime";
         if (!strcmp(method, "get"))            return "tk_http_get_handler";
         if (!strcmp(method, "reqpath"))        return "tk_http_req_path";
         if (!strcmp(method, "reqmethod"))      return "tk_http_req_method";
         if (!strcmp(method, "reqbody"))        return "tk_http_req_body";
         if (!strcmp(method, "resnew"))         return "tk_http_res_new";
         if (!strcmp(method, "resjson"))        return "tk_http_res_json_new";
+        if (!strcmp(method, "post"))           return "tk_http_post_handler";
+        if (!strcmp(method, "put"))            return "tk_http_put_handler";
+        if (!strcmp(method, "delete"))         return "tk_http_delete_handler";
+        if (!strcmp(method, "patch"))          return "tk_http_patch_handler";
         if (!strcmp(method, "postecho"))       return "tk_http_post_echo";
         if (!strcmp(method, "poststatic"))     return "tk_http_post_static";
         if (!strcmp(method, "postjson"))       return "tk_http_post_json";
@@ -1787,7 +1792,9 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_path_dir_w", "tk_path_ext_w", "tk_md_render_w",
                         "tk_toml_load_w", "tk_toml_section_w", "tk_toml_str_w",
                         "tk_toml_i64_w", "tk_toml_bool_w", "tk_args_count_w",
-                        "tk_args_get_w", "tk_http_get_static", "tk_http_get_handler",
+                        "tk_args_get_w", "tk_http_get_static", "tk_http_get_static_mime", "tk_http_get_handler",
+                        "tk_http_post_handler", "tk_http_put_handler",
+                        "tk_http_delete_handler", "tk_http_patch_handler",
                         "tk_http_req_path", "tk_http_req_method", "tk_http_req_body",
                         "tk_http_res_new", "tk_http_res_json_new",
                         "tk_http_serve_staticdir_w",
@@ -3534,7 +3541,12 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_args_count_w()\n", f);
     fputs("declare i64 @tk_args_get_w(i64)\n", f);
     fputs("declare i64 @tk_http_get_static(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_get_static_mime(i64, i64, i64)\n", f);
     fputs("declare i64 @tk_http_get_handler(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_post_handler(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_put_handler(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_delete_handler(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_patch_handler(i64, i64)\n", f);
     fputs("declare i64 @tk_http_req_path(i64)\n", f);
     fputs("declare i64 @tk_http_req_method(i64)\n", f);
     fputs("declare i64 @tk_http_req_body(i64)\n", f);

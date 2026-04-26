@@ -35,81 +35,81 @@ f=maj(x:i64;y:i64;z:i64):i64{
 };
 
 f=kval(idx:i64):i64{
-  if(idx==0){<0x428a2f98};
-  if(idx==1){<0x71374491};
-  if(idx==2){<0xb5c0fbcf};
-  if(idx==3){<0xe9b5dba5};
-  if(idx==4){<0x3956c25b};
-  if(idx==5){<0x59f111f1};
-  if(idx==6){<0x923f82a4};
-  if(idx==7){<0xab1c5ed5};
-  if(idx==8){<0xd807aa98};
-  if(idx==9){<0x12835b01};
-  if(idx==10){<0x243185be};
-  if(idx==11){<0x550c7dc3};
-  if(idx==12){<0x72be5d74};
-  if(idx==13){<0x80deb1fe};
-  if(idx==14){<0x9bdc06a7};
-  if(idx==15){<0xc19bf174};
-  if(idx==16){<0xe49b69c1};
-  if(idx==17){<0xefbe4786};
-  if(idx==18){<0x0fc19dc6};
-  if(idx==19){<0x240ca1cc};
-  if(idx==20){<0x2de92c6f};
-  if(idx==21){<0x4a7484aa};
-  if(idx==22){<0x5cb0a9dc};
-  if(idx==23){<0x76f988da};
-  if(idx==24){<0x983e5152};
-  if(idx==25){<0xa831c66d};
-  if(idx==26){<0xb00327c8};
-  if(idx==27){<0xbf597fc7};
-  if(idx==28){<0xc6e00bf3};
-  if(idx==29){<0xd5a79147};
-  if(idx==30){<0x06ca6351};
-  if(idx==31){<0x14292967};
-  if(idx==32){<0x27b70a85};
-  if(idx==33){<0x2e1b2138};
-  if(idx==34){<0x4d2c6dfc};
-  if(idx==35){<0x53380d13};
-  if(idx==36){<0x650a7354};
-  if(idx==37){<0x766a0abb};
-  if(idx==38){<0x81c2c92e};
-  if(idx==39){<0x92722c85};
-  if(idx==40){<0xa2bfe8a1};
-  if(idx==41){<0xa81a664b};
-  if(idx==42){<0xc24b8b70};
-  if(idx==43){<0xc76c51a3};
-  if(idx==44){<0xd192e819};
-  if(idx==45){<0xd6990624};
-  if(idx==46){<0xf40e3585};
-  if(idx==47){<0x106aa070};
-  if(idx==48){<0x19a4c116};
-  if(idx==49){<0x1e376c08};
-  if(idx==50){<0x2748774c};
-  if(idx==51){<0x34b0bcb5};
-  if(idx==52){<0x391c0cb3};
-  if(idx==53){<0x4ed8aa4a};
-  if(idx==54){<0x5b9cca4f};
-  if(idx==55){<0x682e6ff3};
-  if(idx==56){<0x748f82ee};
-  if(idx==57){<0x78a5636f};
-  if(idx==58){<0x84c87814};
-  if(idx==59){<0x8cc70208};
-  if(idx==60){<0x90befffa};
-  if(idx==61){<0xa4506ceb};
-  if(idx==62){<0xbef9a3f7};
+  if(idx=0){<0x428a2f98};
+  if(idx=1){<0x71374491};
+  if(idx=2){<0xb5c0fbcf};
+  if(idx=3){<0xe9b5dba5};
+  if(idx=4){<0x3956c25b};
+  if(idx=5){<0x59f111f1};
+  if(idx=6){<0x923f82a4};
+  if(idx=7){<0xab1c5ed5};
+  if(idx=8){<0xd807aa98};
+  if(idx=9){<0x12835b01};
+  if(idx=10){<0x243185be};
+  if(idx=11){<0x550c7dc3};
+  if(idx=12){<0x72be5d74};
+  if(idx=13){<0x80deb1fe};
+  if(idx=14){<0x9bdc06a7};
+  if(idx=15){<0xc19bf174};
+  if(idx=16){<0xe49b69c1};
+  if(idx=17){<0xefbe4786};
+  if(idx=18){<0x0fc19dc6};
+  if(idx=19){<0x240ca1cc};
+  if(idx=20){<0x2de92c6f};
+  if(idx=21){<0x4a7484aa};
+  if(idx=22){<0x5cb0a9dc};
+  if(idx=23){<0x76f988da};
+  if(idx=24){<0x983e5152};
+  if(idx=25){<0xa831c66d};
+  if(idx=26){<0xb00327c8};
+  if(idx=27){<0xbf597fc7};
+  if(idx=28){<0xc6e00bf3};
+  if(idx=29){<0xd5a79147};
+  if(idx=30){<0x06ca6351};
+  if(idx=31){<0x14292967};
+  if(idx=32){<0x27b70a85};
+  if(idx=33){<0x2e1b2138};
+  if(idx=34){<0x4d2c6dfc};
+  if(idx=35){<0x53380d13};
+  if(idx=36){<0x650a7354};
+  if(idx=37){<0x766a0abb};
+  if(idx=38){<0x81c2c92e};
+  if(idx=39){<0x92722c85};
+  if(idx=40){<0xa2bfe8a1};
+  if(idx=41){<0xa81a664b};
+  if(idx=42){<0xc24b8b70};
+  if(idx=43){<0xc76c51a3};
+  if(idx=44){<0xd192e819};
+  if(idx=45){<0xd6990624};
+  if(idx=46){<0xf40e3585};
+  if(idx=47){<0x106aa070};
+  if(idx=48){<0x19a4c116};
+  if(idx=49){<0x1e376c08};
+  if(idx=50){<0x2748774c};
+  if(idx=51){<0x34b0bcb5};
+  if(idx=52){<0x391c0cb3};
+  if(idx=53){<0x4ed8aa4a};
+  if(idx=54){<0x5b9cca4f};
+  if(idx=55){<0x682e6ff3};
+  if(idx=56){<0x748f82ee};
+  if(idx=57){<0x78a5636f};
+  if(idx=58){<0x84c87814};
+  if(idx=59){<0x8cc70208};
+  if(idx=60){<0x90befffa};
+  if(idx=61){<0xa4506ceb};
+  if(idx=62){<0xbef9a3f7};
   <0xc67178f2
 };
 
-f=ld8(buf:u64;off:i64):i64{
-  <mem.load8(buf;off as u64) as i64
+f=ld8(buf:i64;off:i64):i64{
+  <mem.load8(buf;off)
 };
 
-f=st8(buf:u64;off:i64;val:i64):void{
-  mem.store8(buf;off as u64;val as u64)
+f=st8(buf:i64;off:i64;val:i64):void{
+  mem.store8(buf;off;val)
 };
 
-f=load32be(buf:u64;off:i64):i64{
+f=load32be(buf:i64;off:i64):i64{
   let b0=ld8(buf;off);
   let b1=ld8(buf;off+1);
   let b2=ld8(buf;off+2);
@@ -117,22 +117,22 @@ f=load32be(buf:u64;off:i64):i64{
   <mask((b0 << 24) | (b1 << 16) | (b2 << 8) | b3)
 };
 
-f=store32be(buf:u64;off:i64;val:i64):void{
+f=store32be(buf:i64;off:i64;val:i64):void{
   st8(buf;off;(val >> 24) & 0xFF);
   st8(buf;off+1;(val >> 16) & 0xFF);
   st8(buf;off+2;(val >> 8) & 0xFF);
   st8(buf;off+3;val & 0xFF)
 };
 
-f=wget(wbuf:u64;idx:i64):i64{
+f=wget(wbuf:i64;idx:i64):i64{
   <load32be(wbuf;idx*4)
 };
 
-f=wset(wbuf:u64;idx:i64;v:i64):void{
+f=wset(wbuf:i64;idx:i64;v:i64):void{
   store32be(wbuf;idx*4;v)
 };
 
-f=initstate(hbuf:u64):void{
+f=initstate(hbuf:i64):void{
   store32be(hbuf;0;0x6a09e667);
   store32be(hbuf;4;0xbb67ae85);
   store32be(hbuf;8;0x3c6ef372);
@@ -143,8 +143,8 @@ f=initstate(hbuf:u64):void{
   store32be(hbuf;28;0x5be0cd19)
 };
 
-f=processblock(hbuf:u64;block:u64):void{
-  let wbuf=mem.alloc(256 as u64);
+f=processblock(hbuf:i64;block:i64):void{
+  let wbuf=mem.alloc(256);
   lp(let i=0;i<16;i=i+1){
     wset(wbuf;i;load32be(block;i*4))
   };
@@ -153,14 +153,22 @@ f=processblock(hbuf:u64;block:u64):void{
     let s1=sig1(wget(wbuf;i-2));
     wset(wbuf;i;mask(wget(wbuf;i-16)+s0+wget(wbuf;i-7)+s1))
   };
-  let a=mut.load32be(hbuf;0);
-  let b=mut.load32be(hbuf;4);
-  let c=mut.load32be(hbuf;8);
-  let d=mut.load32be(hbuf;12);
-  let e=mut.load32be(hbuf;16);
-  let ff=mut.load32be(hbuf;20);
-  let g=mut.load32be(hbuf;24);
-  let hh=mut.load32be(hbuf;28);
+  let a=mut.0;
+  a=load32be(hbuf;0);
+  let b=mut.0;
+  b=load32be(hbuf;4);
+  let c=mut.0;
+  c=load32be(hbuf;8);
+  let d=mut.0;
+  d=load32be(hbuf;12);
+  let e=mut.0;
+  e=load32be(hbuf;16);
+  let ff=mut.0;
+  ff=load32be(hbuf;20);
+  let g=mut.0;
+  g=load32be(hbuf;24);
+  let hh=mut.0;
+  hh=load32be(hbuf;28);
   lp(let i=0;i<64;i=i+1){
     let t1=mask(hh+ep1(e)+ch(e;ff;g)+kval(i)+wget(wbuf;i));
     let t2=mask(ep0(a)+maj(a;b;c));
@@ -184,13 +192,13 @@ f=processblock(hbuf:u64;block:u64):void{
   mem.free(wbuf)
 };
 
-f=zeropad(block:u64;start:i64;end:i64):void{
+f=zeropad(block:i64;start:i64;end:i64):void{
   lp(let i=start;i<end;i=i+1){
     st8(block;i;0)
   }
 };
 
-f=padandfinish(hbuf:u64;block:u64;blocklen:i64;totallen:i64):void{
+f=padandfinish(hbuf:i64;block:i64;blocklen:i64;totallen:i64):void{
   let blen=mut.blocklen;
   st8(block;blen;0x80);
   blen=blen+1;
@@ -212,7 +220,7 @@ f=padandfinish(hbuf:u64;block:u64;blocklen:i64;totallen:i64):void{
   processblock(hbuf;block)
 };
 
-f=writeresult(hbuf:u64;digest:u64):void{
+f=writeresult(hbuf:i64;digest:i64):void{
   lp(let i=0;i<8;i=i+1){
     let v=load32be(hbuf;i*4);
     st8(digest;i*4;(v >> 24) & 0xFF);
@@ -227,26 +235,26 @@ f=hexchar(v:i64):i64{
   <(97+v-10)
 };
 
-f=tohex(buf:u64;nbytes:i64):str{
+f=tohex(buf:i64;nbytes:i64):$str{
   let out=s.buf();
   lp(let i=0;i<nbytes;i=i+1){
     let b=ld8(buf;i);
-    s.addbyte(out;hexchar((b >> 4) & 0xF) as u8);
-    s.addbyte(out;hexchar(b & 0xF) as u8)
+    s.addbyte(out;hexchar((b >> 4) & 0xF));
+    s.addbyte(out;hexchar(b & 0xF))
   };
   <s.done(out)
 };
 
-f=sha256raw(data:str;datalen:i64;digest:u64):void{
-  let hbuf=mem.alloc(32 as u64);
+f=sha256raw(data:$str;datalen:i64;digest:i64):void{
+  let hbuf=mem.alloc(32);
   initstate(hbuf);
-  let block=mem.alloc(64 as u64);
+  let block=mem.alloc(64);
   let blen=mut.0;
   let bytes=s.bytes(data);
   lp(let pos=0;pos<datalen;pos=pos+1){
-    st8(block;blen;bytes.get(pos) as i64);
+    st8(block;blen;bytes.get(pos));
     blen=blen+1;
-    if(blen==64){
+    if(blen=64){
       processblock(hbuf;block);
       blen=0
     }
@@ -257,24 +265,24 @@ f=sha256raw(data:str;datalen:i64;digest:u64):void{
   mem.free(hbuf)
 };
 
-f=sha256(data:str):str{
-  let datalen=s.len(data) as i64;
-  let digest=mem.alloc(32 as u64);
+f=sha256(data:$str):$str{
+  let datalen=s.len(data);
+  let digest=mem.alloc(32);
   sha256raw(data;datalen;digest);
   let result=tohex(digest;32);
   mem.free(digest);
   <result
 };
 
-f=sha256mem(buf:u64;buflen:i64;digest:u64):void{
-  let hbuf=mem.alloc(32 as u64);
+f=sha256mem(buf:i64;buflen:i64;digest:i64):void{
+  let hbuf=mem.alloc(32);
   initstate(hbuf);
-  let block=mem.alloc(64 as u64);
+  let block=mem.alloc(64);
   let blen=mut.0;
   lp(let pos=0;pos<buflen;pos=pos+1){
     st8(block;blen;ld8(buf;pos));
     blen=blen+1;
-    if(blen==64){
+    if(blen=64){
       processblock(hbuf;block);
       blen=0
     }
@@ -285,46 +293,46 @@ f=sha256mem(buf:u64;buflen:i64;digest:u64):void{
   mem.free(hbuf)
 };
 
-f=hmacsha256(key:str;data:str):str{
-  let keylen=s.len(key) as i64;
-  let kblock=mem.alloc(64 as u64);
-  mem.set(kblock;0 as u64;64 as u64);
+f=hmacsha256(key:$str;data:$str):$str{
+  let keylen=s.len(key);
+  let kblock=mem.alloc(64);
+  mem.set(kblock;0;64);
   if(keylen>64){
-    let kdigest=mem.alloc(32 as u64);
+    let kdigest=mem.alloc(32);
     sha256raw(key;keylen;kdigest);
-    mem.copy(kblock;kdigest;32 as u64);
+    mem.copy(kblock;kdigest;32);
     mem.free(kdigest)
   }el{
     let keybytes=s.bytes(key);
     lp(let i=0;i<keylen;i=i+1){
-      st8(kblock;i;keybytes.get(i) as i64)
+      st8(kblock;i;keybytes.get(i))
     }
   };
-  let ipad=mem.alloc(64 as u64);
+  let ipad=mem.alloc(64);
   lp(let i=0;i<64;i=i+1){
     st8(ipad;i;ld8(kblock;i) ^ 0x36)
   };
-  let datalen=s.len(data) as i64;
+  let datalen=s.len(data);
   let innerlen=64+datalen;
-  let innerbuf=mem.alloc(innerlen as u64);
-  mem.copy(innerbuf;ipad;64 as u64);
+  let innerbuf=mem.alloc(innerlen);
+  mem.copy(innerbuf;ipad;64);
   let databytes=s.bytes(data);
   lp(let i=0;i<datalen;i=i+1){
-    st8(innerbuf;64+i;databytes.get(i) as i64)
+    st8(innerbuf;64+i;databytes.get(i))
   };
-  let innerhash=mem.alloc(32 as u64);
+  let innerhash=mem.alloc(32);
   sha256mem(innerbuf;innerlen;innerhash);
   mem.free(innerbuf);
   mem.free(ipad);
-  let opad=mem.alloc(64 as u64);
+  let opad=mem.alloc(64);
   lp(let i=0;i<64;i=i+1){
     st8(opad;i;ld8(kblock;i) ^ 0x5c)
   };
   let outerlen=64+32;
-  let outerbuf=mem.alloc(outerlen as u64);
-  mem.copy(outerbuf;opad;64 as u64);
-  mem.copy(outerbuf+(64 as u64);innerhash;32 as u64);
-  let outerhash=mem.alloc(32 as u64);
+  let outerbuf=mem.alloc(outerlen);
+  mem.copy(outerbuf;opad;64);
+  mem.copy(outerbuf+64;innerhash;32);
+  let outerhash=mem.alloc(32);
   sha256mem(outerbuf;outerlen;outerhash);
   mem.free(outerbuf);
   mem.free(opad);

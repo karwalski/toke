@@ -256,6 +256,7 @@ int64_t tk_env_expand_w(int64_t tmpl) {
 typedef struct {
     const char *path;
     const char *body;
+    const char *content_type;   /* NULL → default text/html */
     int         status;
 } TkStaticRoute;
 
@@ -280,6 +281,8 @@ static const char *g_default_404 =
     "<body><div class=\"c\"><h1>404</h1>"
     "<p>Page not found.</p><a href=\"/\">Home</a></div></body></html>";
 
+static StrPair g_mime_ct_hdr;  /* reusable header for per-route MIME types */
+
 static Res tk_static_dispatch(Req req) {
     const char *rpath = req.path ? req.path : "/";
     for (int i = 0; i < g_static_route_count; i++) {
@@ -288,7 +291,13 @@ static Res tk_static_dispatch(Req req) {
             Res r;
             r.status       = g_static_routes[i].status;
             r.body         = g_static_routes[i].body;
-            r.headers.data = &g_html_ct_hdr;
+            if (g_static_routes[i].content_type) {
+                g_mime_ct_hdr.key   = "Content-Type";
+                g_mime_ct_hdr.value = g_static_routes[i].content_type;
+                r.headers.data = &g_mime_ct_hdr;
+            } else {
+                r.headers.data = &g_html_ct_hdr;
+            }
             r.headers.len  = 1;
             return r;
         }
@@ -314,6 +323,25 @@ int64_t tk_http_get_static(int64_t path_ptr, int64_t body_ptr) {
     g_static_routes[i].path   = (const char *)(intptr_t)path_ptr;
     g_static_routes[i].body   = (const char *)(intptr_t)body_ptr;
     g_static_routes[i].status = 200;
+    http_GET((const char *)(intptr_t)path_ptr, tk_static_dispatch);
+    return 0;
+}
+
+/*
+ * tk_http_get_static_mime — Register a static GET handler with explicit MIME type.
+ *
+ * path_ptr: i64 (const char * as integer) — URL path pattern e.g. "/style.css"
+ * body_ptr: i64 (const char * as integer) — response body string
+ * mime_ptr: i64 (const char * as integer) — MIME type e.g. "text/css"
+ * Returns:  0 (i64)
+ */
+int64_t tk_http_get_static_mime(int64_t path_ptr, int64_t body_ptr, int64_t mime_ptr) {
+    if (g_static_route_count >= TK_MAX_STATIC_ROUTES) return -1;
+    int i = g_static_route_count++;
+    g_static_routes[i].path         = (const char *)(intptr_t)path_ptr;
+    g_static_routes[i].body         = (const char *)(intptr_t)body_ptr;
+    g_static_routes[i].content_type = (const char *)(intptr_t)mime_ptr;
+    g_static_routes[i].status       = 200;
     http_GET((const char *)(intptr_t)path_ptr, tk_static_dispatch);
     return 0;
 }
@@ -564,6 +592,256 @@ int64_t tk_http_post_json(int64_t path_ptr, int64_t body_ptr) {
     g_post_routes[i].body = (const char *)(intptr_t)body_ptr;
     g_post_routes[i].mode = TK_POST_JSON;
     http_POST((const char *)(intptr_t)path_ptr, tk_post_dispatch);
+    return 0;
+}
+
+/* ── Dynamic POST handler dispatch (Story 73.1.5) ────────────────────── */
+/*
+ * Stores up to TK_MAX_POST_HANDLERS path->function_pointer mappings registered
+ * via http.post(path, handler).  Same pattern as GET handler (Story 46.1.3).
+ */
+#define TK_MAX_POST_HANDLERS 256
+
+typedef struct {
+    const char         *path;
+    TkGetHandlerFn      handler;
+} TkPostHandlerRoute;
+
+static TkPostHandlerRoute g_post_handler_routes[TK_MAX_POST_HANDLERS];
+static int                 g_post_handler_count = 0;
+
+static Res tk_post_handler_dispatch(Req req) {
+    const char *rpath = req.path ? req.path : "/";
+    for (int i = 0; i < g_post_handler_count; i++) {
+        if (g_post_handler_routes[i].path &&
+            strcmp(g_post_handler_routes[i].path, rpath) == 0) {
+            Req *heap_req = (Req *)malloc(sizeof(Req));
+            if (!heap_req) {
+                Res r;
+                r.status       = 500;
+                r.body         = "Internal Server Error";
+                r.headers.data = &g_text_ct_hdr;
+                r.headers.len  = 1;
+                return r;
+            }
+            *heap_req = req;
+            int64_t res_ptr = g_post_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
+            free(heap_req);
+            if (res_ptr) {
+                Res *rp = (Res *)(intptr_t)res_ptr;
+                Res r = *rp;
+                free(rp);
+                return r;
+            }
+            Res r;
+            r.status       = 500;
+            r.body         = "Handler returned null";
+            r.headers.data = &g_text_ct_hdr;
+            r.headers.len  = 1;
+            return r;
+        }
+    }
+    return tk_post_dispatch(req);
+}
+
+/*
+ * tk_http_post_handler — Register a dynamic POST handler backed by a toke function.
+ */
+int64_t tk_http_post_handler(int64_t path_ptr, int64_t handler_ptr) {
+    if (g_post_handler_count >= TK_MAX_POST_HANDLERS) return -1;
+    int i = g_post_handler_count++;
+    g_post_handler_routes[i].path    = (const char *)(intptr_t)path_ptr;
+    g_post_handler_routes[i].handler = (TkGetHandlerFn)(intptr_t)handler_ptr;
+    http_POST((const char *)(intptr_t)path_ptr, tk_post_handler_dispatch);
+    return 0;
+}
+
+/* ── Dynamic PUT handler dispatch (Story 73.1.5) ─────────────────────── */
+
+#define TK_MAX_PUT_HANDLERS 256
+
+typedef struct {
+    const char         *path;
+    TkGetHandlerFn      handler;
+} TkPutHandlerRoute;
+
+static TkPutHandlerRoute g_put_handler_routes[TK_MAX_PUT_HANDLERS];
+static int                g_put_handler_count = 0;
+
+static Res tk_put_handler_dispatch(Req req) {
+    const char *rpath = req.path ? req.path : "/";
+    for (int i = 0; i < g_put_handler_count; i++) {
+        if (g_put_handler_routes[i].path &&
+            strcmp(g_put_handler_routes[i].path, rpath) == 0) {
+            Req *heap_req = (Req *)malloc(sizeof(Req));
+            if (!heap_req) {
+                Res r;
+                r.status       = 500;
+                r.body         = "Internal Server Error";
+                r.headers.data = &g_text_ct_hdr;
+                r.headers.len  = 1;
+                return r;
+            }
+            *heap_req = req;
+            int64_t res_ptr = g_put_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
+            free(heap_req);
+            if (res_ptr) {
+                Res *rp = (Res *)(intptr_t)res_ptr;
+                Res r = *rp;
+                free(rp);
+                return r;
+            }
+            Res r;
+            r.status       = 500;
+            r.body         = "Handler returned null";
+            r.headers.data = &g_text_ct_hdr;
+            r.headers.len  = 1;
+            return r;
+        }
+    }
+    Res r;
+    r.status       = 404;
+    r.body         = "{\"error\":\"Not Found\"}";
+    r.headers.data = &g_json_ct_hdr;
+    r.headers.len  = 1;
+    return r;
+}
+
+/*
+ * tk_http_put_handler — Register a dynamic PUT handler backed by a toke function.
+ */
+int64_t tk_http_put_handler(int64_t path_ptr, int64_t handler_ptr) {
+    if (g_put_handler_count >= TK_MAX_PUT_HANDLERS) return -1;
+    int i = g_put_handler_count++;
+    g_put_handler_routes[i].path    = (const char *)(intptr_t)path_ptr;
+    g_put_handler_routes[i].handler = (TkGetHandlerFn)(intptr_t)handler_ptr;
+    http_PUT((const char *)(intptr_t)path_ptr, tk_put_handler_dispatch);
+    return 0;
+}
+
+/* ── Dynamic DELETE handler dispatch (Story 73.1.5) ───────────────────── */
+
+#define TK_MAX_DELETE_HANDLERS 256
+
+typedef struct {
+    const char         *path;
+    TkGetHandlerFn      handler;
+} TkDeleteHandlerRoute;
+
+static TkDeleteHandlerRoute g_delete_handler_routes[TK_MAX_DELETE_HANDLERS];
+static int                   g_delete_handler_count = 0;
+
+static Res tk_delete_handler_dispatch(Req req) {
+    const char *rpath = req.path ? req.path : "/";
+    for (int i = 0; i < g_delete_handler_count; i++) {
+        if (g_delete_handler_routes[i].path &&
+            strcmp(g_delete_handler_routes[i].path, rpath) == 0) {
+            Req *heap_req = (Req *)malloc(sizeof(Req));
+            if (!heap_req) {
+                Res r;
+                r.status       = 500;
+                r.body         = "Internal Server Error";
+                r.headers.data = &g_text_ct_hdr;
+                r.headers.len  = 1;
+                return r;
+            }
+            *heap_req = req;
+            int64_t res_ptr = g_delete_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
+            free(heap_req);
+            if (res_ptr) {
+                Res *rp = (Res *)(intptr_t)res_ptr;
+                Res r = *rp;
+                free(rp);
+                return r;
+            }
+            Res r;
+            r.status       = 500;
+            r.body         = "Handler returned null";
+            r.headers.data = &g_text_ct_hdr;
+            r.headers.len  = 1;
+            return r;
+        }
+    }
+    Res r;
+    r.status       = 404;
+    r.body         = "{\"error\":\"Not Found\"}";
+    r.headers.data = &g_json_ct_hdr;
+    r.headers.len  = 1;
+    return r;
+}
+
+/*
+ * tk_http_delete_handler — Register a dynamic DELETE handler backed by a toke function.
+ */
+int64_t tk_http_delete_handler(int64_t path_ptr, int64_t handler_ptr) {
+    if (g_delete_handler_count >= TK_MAX_DELETE_HANDLERS) return -1;
+    int i = g_delete_handler_count++;
+    g_delete_handler_routes[i].path    = (const char *)(intptr_t)path_ptr;
+    g_delete_handler_routes[i].handler = (TkGetHandlerFn)(intptr_t)handler_ptr;
+    http_DELETE((const char *)(intptr_t)path_ptr, tk_delete_handler_dispatch);
+    return 0;
+}
+
+/* ── Dynamic PATCH handler dispatch (Story 73.1.5) ────────────────────── */
+
+#define TK_MAX_PATCH_HANDLERS 256
+
+typedef struct {
+    const char         *path;
+    TkGetHandlerFn      handler;
+} TkPatchHandlerRoute;
+
+static TkPatchHandlerRoute g_patch_handler_routes[TK_MAX_PATCH_HANDLERS];
+static int                  g_patch_handler_count = 0;
+
+static Res tk_patch_handler_dispatch(Req req) {
+    const char *rpath = req.path ? req.path : "/";
+    for (int i = 0; i < g_patch_handler_count; i++) {
+        if (g_patch_handler_routes[i].path &&
+            strcmp(g_patch_handler_routes[i].path, rpath) == 0) {
+            Req *heap_req = (Req *)malloc(sizeof(Req));
+            if (!heap_req) {
+                Res r;
+                r.status       = 500;
+                r.body         = "Internal Server Error";
+                r.headers.data = &g_text_ct_hdr;
+                r.headers.len  = 1;
+                return r;
+            }
+            *heap_req = req;
+            int64_t res_ptr = g_patch_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
+            free(heap_req);
+            if (res_ptr) {
+                Res *rp = (Res *)(intptr_t)res_ptr;
+                Res r = *rp;
+                free(rp);
+                return r;
+            }
+            Res r;
+            r.status       = 500;
+            r.body         = "Handler returned null";
+            r.headers.data = &g_text_ct_hdr;
+            r.headers.len  = 1;
+            return r;
+        }
+    }
+    Res r;
+    r.status       = 404;
+    r.body         = "{\"error\":\"Not Found\"}";
+    r.headers.data = &g_json_ct_hdr;
+    r.headers.len  = 1;
+    return r;
+}
+
+/*
+ * tk_http_patch_handler — Register a dynamic PATCH handler backed by a toke function.
+ */
+int64_t tk_http_patch_handler(int64_t path_ptr, int64_t handler_ptr) {
+    if (g_patch_handler_count >= TK_MAX_PATCH_HANDLERS) return -1;
+    int i = g_patch_handler_count++;
+    g_patch_handler_routes[i].path    = (const char *)(intptr_t)path_ptr;
+    g_patch_handler_routes[i].handler = (TkGetHandlerFn)(intptr_t)handler_ptr;
+    http_PATCH((const char *)(intptr_t)path_ptr, tk_patch_handler_dispatch);
     return 0;
 }
 
@@ -1582,6 +1860,8 @@ int64_t tk_toon_f64_w(int64_t v) { (void)v; return 0; }
 int64_t tk_toon_str_w(int64_t v) { (void)v; return 0; }
 
 /* process extras */
+int64_t tk_process_stdout_w(int64_t p) { (void)p; return 0; }
+int64_t tk_process_stderr_w(int64_t p) { (void)p; return 0; }
 int64_t tk_process_kill_w(int64_t p) { (void)p; return 0; }
 int64_t tk_process_badhandle_w(void) { return 0; }
 int64_t tk_process_wait_w(int64_t p) { (void)p; return 0; }
