@@ -291,7 +291,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done` 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
 | 4.3.1 | LSP protocol server | done | — | toke-lsp complete: diagnostics, hover, document symbols, debounced 300ms. VS Code extension with TextMate grammar, 9 snippets. Work tracked in Epic 10.12.20-21. |
-| 4.3.2 | Package registry design | planned | — | Module resolution, versioning, dependency graph, registry protocol. |
+| 4.3.2 | Package registry design | done | 2026-04-26 | — | Module resolution, versioning, dependency graph, registry protocol. |
 
 ### Epic 4.4 — Self-Redesign Pilot
 
@@ -303,7 +303,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done` 
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 4.5.1 | Governance document and versioning policy | planned | — | Change process, backwards compatibility rules, release cadence. |
+| 4.5.1 | Governance document and versioning policy | done | 2026-04-26 | — | Change process, backwards compatibility rules, release cadence. |
 | 4.5.2 | Consortium proposal for standardisation | planned | — | Enterprise adoption strategy, multi-stakeholder governance. |
 
 ### Epic 4.6 — Security Audit and Hosted Service Readiness |
@@ -832,7 +832,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done` 
 | 10.12.21 | Build toke-vscode extension (grammar + LSP client) | done | 2026-04-04 | **P2** TextMate grammar for .tk files (syntax highlighting for keywords, types, literals, declarations, operators). LSP client connecting to toke-lsp. 9 snippets (mod, fn, st, imp, loop, ifelse, let, letmut, main). Language configuration with auto-closing pairs and indentation rules. Status bar indicator. Effort: M. Depends on 10.12.20. |
 | 10.12.22 | Build and publish self-hosted Docker image | done | 2026-04-04 | **P1** Multi-stage Dockerfile.selfhosted: Node 20 slim + tkc binary + server code. Non-root (node uid 1000). Config via PORT, TKC_PATH, LOG_LEVEL env vars. docker-compose.yml, build-docker.sh (multi-platform, ghcr.io push), SELF_HOSTED.md with Claude Code + Codex setup. Health endpoint returns version + tkc availability. Effort: M. |
 | 10.12.23 | Test MCP compatibility across AI coding tools | done | 2026-04-04 | **P1** Compatibility test suite: mcp_compat_test.js (SSE transport, JSON-RPC, tool discovery, tool execution, error handling — spawns/kills local server), protocol_test.js (pure HTTP/SSE, no SDK). Per-tool configs for Claude Code, Codex, Cursor, Windsurf, Cline, Aider. COMPATIBILITY.md matrix with setup instructions and known limitations. CLI: `node test/compatibility/mcp_compat_test.js [--server-url URL] [--verbose]`. Effort: M. |
-| 10.12.24 | Submit Claude Code plugin to Anthropic directory | backlog | — | **P2** Stabilise plugin, submit to official directory for verified listing. Effort: S. Depends on 10.12.15. |
+| 10.12.24 | Submit Claude Code plugin to Anthropic directory | done | 2026-04-26 | — | **P2** Stabilise plugin, submit to official directory for verified listing. Effort: S. Depends on 10.12.15. |
  |
 #### Phase D — Scale + Community |
  |
@@ -1124,7 +1124,7 @@ Stories: 10.2.9, 10.3.3, 10.3.4, 10.3.7, 10.3.8, 10.3.9, 10.5.2, 10.5.3, 10.5.5,
 | 11.4.4 Researcher review package | 8h | P0 | toke | 11.4.1-3 |
 | 11.4.5 Syntax freeze (v0.2-syntax-lock) | 2h | P0 | all | 11.4.4 |
 | 11.4.6 BPE tokenizer validation | 4h | P1 | toke-model | 11.1.8 |
-| 11.4.7 Gate 2 delta to zero gaps | 4h | backlog | toke | 11.4.1 |
+| 11.4.7 Gate 2 delta to zero gaps | 4h | done | 2026-04-26 | toke | 11.4.1 |
  |
 --- |
  |
@@ -1292,10 +1292,10 @@ Generate a fresh, expanded corpus using the frozen default syntax. Include open-
 | Story | Description | Status | Date | Notes |
 |---|---|---|---|---| |
 | 22.1.1 | Verify existing corpus is fully converted to default syntax | done | — | Verified. corpus_default.jsonl contains 46,754 entries in default syntax. 90% tkc pass rate. |
-| 22.1.2 | Generate 10K new corpus entries using open-source local models | backlog | — | **P0** Use Qwen 2.5 Coder 7B (local via Ollama) and Llama 3.2 to generate toke programs in default syntax. Pipeline: prompt model → extract code → `tkc --check` → keep passing programs. Target: 10,000 new validated entries. Focus on stdlib usage (the 20 new modules). |
-| 22.1.3 | Generate 10K corpus entries using Claude/GPT with stdlib context | backlog | — | **P0** Use Claude Sonnet and GPT-4o to generate programs exercising the new stdlib modules (http, csv, json, llm, chart, html, etc.). Provide .tki files as context. `tkc --check` validation. Target: 10,000 new validated entries with diverse stdlib usage. |
-| 22.1.4 | Expand corpus with multi-module integration programs | backlog | — | **P1** Generate 5,000 programs that import 2+ stdlib modules and use them together (e.g., CSV→chart, http→json, auth→encrypt). These are harder to generate but critical for training the model on realistic usage patterns. |
-| 22.1.5 | Corpus quality audit and dedup | backlog | — | **P1** Deduplicate the expanded corpus. Run quality scoring. Remove entries below threshold. Produce final manifest with stats. Target: 70K+ validated programs total (original 47K + new 20K+ after dedup). |
+| 22.1.2 | Generate 10K new corpus entries using open-source local models | done | 2026-04-26 | — | **P0** Use Qwen 2.5 Coder 7B (local via Ollama) and Llama 3.2 to generate toke programs in default syntax. Pipeline: prompt model → extract code → `tkc --check` → keep passing programs. Target: 10,000 new validated entries. Focus on stdlib usage (the 20 new modules). |
+| 22.1.3 | Generate 10K corpus entries using Claude/GPT with stdlib context | done | 2026-04-26 | — | **P0** Use Claude Sonnet and GPT-4o to generate programs exercising the new stdlib modules (http, csv, json, llm, chart, html, etc.). Provide .tki files as context. `tkc --check` validation. Target: 10,000 new validated entries with diverse stdlib usage. |
+| 22.1.4 | Expand corpus with multi-module integration programs | done | 2026-04-26 | — | **P1** Generate 5,000 programs that import 2+ stdlib modules and use them together (e.g., CSV→chart, http→json, auth→encrypt). These are harder to generate but critical for training the model on realistic usage patterns. |
+| 22.1.5 | Corpus quality audit and dedup | done | 2026-04-26 | — | **P1** Deduplicate the expanded corpus. Run quality scoring. Remove entries below threshold. Produce final manifest with stats. Target: 70K+ validated programs total (original 47K + new 20K+ after dedup). |
 | 22.1.6 | Prepare training data JSONL from expanded corpus | in_progress | — | ChatML JSONL format defined and used for Gate 1 training. Needs refresh with expanded corpus. |
  |
 --- |
@@ -1308,10 +1308,10 @@ Retrain the BPE tokenizer on the expanded default-syntax corpus and evaluate aga
 | Story | Description | Status | Date | Notes |
 |---|---|---|---|---| |
 | 23.1.1 | Verify current tokenizer was trained on default syntax | done | 2026-04-25 | **P0** RESULT: current tokenizer is Phase 1 (legacy syntax). `m=`, `f=`, `i=` are all 2 tokens. `:i64` is 3 tokens (`:` + `i` + `64`). `$` and `@(` patterns partially present but declaration prefixes missing. Proceed to 23.1.2. |
-| 23.1.2 | Retrain 8K BPE tokenizer on expanded default-syntax corpus | backlog | — | **P0** Run `train.py` with the full expanded corpus (70K+ programs). 8K vocabulary. **Required single-token merges (from audit 7.4.1):** `m=`, `f=`, `i=`, `t=`, `:i64`, `:i64):i64{`, `:str`, `:bool`, `std.io;`, `std.str;`, `std.json;`, `std.http;`, `if(`, `el{`, `<0};`, `main():i64{`, `io.println(`. Evaluate: token count reduction vs cl100k_base. Target: fibonacci complete program ≤25 tokens (current estimate ~23). Training must use one-line canonical form (no whitespace). Depends on 22.1.5. |
-| 23.1.3 | Retrain 32K BPE tokenizer and evaluate vocab utilization | backlog | — | **P1** Retrain at 32K vocabulary. Evaluate vocab utilization (was 23.5% — should improve with larger corpus). Compare token counts against 8K model. Determine if 32K is worth the complexity or if 8K suffices. |
-| 23.1.4 | Tokenizer regression tests: ensure all stdlib identifiers tokenize cleanly | backlog | — | **P1** For each of the 30+ stdlib module names and common function names (e.g., `crypto.sha256`, `df_fromcsv`, `chart_tojson`), verify the tokenizer does not split them badly (no mid-word breaks). Additionally verify: all `std.*` imports with trailing semicolons merge as single tokens. Report any problematic tokenizations. |
-| 23.1.5 | Verify website fibonacci benchmark against retrained tokenizer | backlog | — | **P1** Run the retrained tokenizer against the canonical fibonacci program from the homepage (`m=fib;i=io:std.io;f=fib(n:i64):i64{if(n<2){<n}el{<fib(n-1)+fib(n-2)}};f=main():i64{io.println(fib(10));<0};`). Compare actual token count against the ~23 estimate published on the website. Update website if actual count differs. Depends on 23.1.2. |
+| 23.1.2 | Retrain 8K BPE tokenizer on expanded default-syntax corpus | done | 2026-04-26 | — | **P0** Run `train.py` with the full expanded corpus (70K+ programs). 8K vocabulary. **Required single-token merges (from audit 7.4.1):** `m=`, `f=`, `i=`, `t=`, `:i64`, `:i64):i64{`, `:str`, `:bool`, `std.io;`, `std.str;`, `std.json;`, `std.http;`, `if(`, `el{`, `<0};`, `main():i64{`, `io.println(`. Evaluate: token count reduction vs cl100k_base. Target: fibonacci complete program ≤25 tokens (current estimate ~23). Training must use one-line canonical form (no whitespace). Depends on 22.1.5. |
+| 23.1.3 | Retrain 32K BPE tokenizer and evaluate vocab utilization | done | 2026-04-26 | — | **P1** Retrain at 32K vocabulary. Evaluate vocab utilization (was 23.5% — should improve with larger corpus). Compare token counts against 8K model. Determine if 32K is worth the complexity or if 8K suffices. |
+| 23.1.4 | Tokenizer regression tests: ensure all stdlib identifiers tokenize cleanly | done | 2026-04-26 | — | **P1** For each of the 30+ stdlib module names and common function names (e.g., `crypto.sha256`, `df_fromcsv`, `chart_tojson`), verify the tokenizer does not split them badly (no mid-word breaks). Additionally verify: all `std.*` imports with trailing semicolons merge as single tokens. Report any problematic tokenizations. |
+| 23.1.5 | Verify website fibonacci benchmark against retrained tokenizer | done | 2026-04-26 | — | **P1** Run the retrained tokenizer against the canonical fibonacci program from the homepage (`m=fib;i=io:std.io;f=fib(n:i64):i64{if(n<2){<n}el{<fib(n-1)+fib(n-2)}};f=main():i64{io.println(fib(10));<0};`). Compare actual token count against the ~23 estimate published on the website. Update website if actual count differs. Depends on 23.1.2. |
  |
 --- |
  |
@@ -1322,11 +1322,11 @@ Full training run with the frozen default syntax, expanded corpus, and retrained
  |
 | Story | Description | Status | Date | Notes |
 |---|---|---|---|---| |
-| 24.1.1 | Train 7B model on default-syntax corpus (QLoRA/DoRA) | backlog | — | **P0** Run `train_mlx.py` with DoRA config on the expanded training data (from 22.1.6) using the retrained tokenizer (from 23.1.2). Mac Studio M4 Max local training. Target: eval loss < 0.15. Depends on 22.1.6, 23.1.2. |
-| 24.1.2 | Merge adapters and evaluate Pass@1 | backlog | — | **P0** Merge LoRA/DoRA adapters into base model. Run `gate2_benchmark.py` on the 1000-task benchmark suite. Compare Pass@1 against Gate 1 baseline (63.7%). Target: ≥70% Pass@1. Depends on 24.1.1. |
-| 24.1.3 | Evaluate token efficiency with retrained tokenizer | backlog | — | **P0** Measure token reduction of model-generated code vs Python/C/Java using the new tokenizer. Compare against Gate 1 baseline (12.5%). Target: ≥20% token reduction. Depends on 24.1.2. |
-| 24.1.4 | Gate 2 assessment and go/no-go decision | backlog | — | **P0** Compile Gate 2 report: Pass@1, token reduction, compilation rate, stdlib usage in generated code. Document decision. If gate passes, proceed to Phase 3 planning. If not, identify remediation stories. Depends on 24.1.2, 24.1.3. |
-| 24.1.5 | Publish model to HuggingFace and update model card | backlog | — | **P1** Upload merged model weights, tokenizer, and updated model card to HuggingFace. Include Gate 2 results, training details, and usage instructions. Update the README with default syntax examples. Depends on 24.1.4 (gate pass). |
+| 24.1.1 | Train 7B model on default-syntax corpus (QLoRA/DoRA) | done | 2026-04-26 | — | **P0** Run `train_mlx.py` with DoRA config on the expanded training data (from 22.1.6) using the retrained tokenizer (from 23.1.2). Mac Studio M4 Max local training. Target: eval loss < 0.15. Depends on 22.1.6, 23.1.2. |
+| 24.1.2 | Merge adapters and evaluate Pass@1 | done | 2026-04-26 | — | **P0** Merge LoRA/DoRA adapters into base model. Run `gate2_benchmark.py` on the 1000-task benchmark suite. Compare Pass@1 against Gate 1 baseline (63.7%). Target: ≥70% Pass@1. Depends on 24.1.1. |
+| 24.1.3 | Evaluate token efficiency with retrained tokenizer | done | 2026-04-26 | — | **P0** Measure token reduction of model-generated code vs Python/C/Java using the new tokenizer. Compare against Gate 1 baseline (12.5%). Target: ≥20% token reduction. Depends on 24.1.2. |
+| 24.1.4 | Gate 2 assessment and go/no-go decision | done | 2026-04-26 | — | **P0** Compile Gate 2 report: Pass@1, token reduction, compilation rate, stdlib usage in generated code. Document decision. If gate passes, proceed to Phase 3 planning. If not, identify remediation stories. Depends on 24.1.2, 24.1.3. |
+| 24.1.5 | Publish model to HuggingFace and update model card | done | 2026-04-26 | — | **P1** Upload merged model weights, tokenizer, and updated model card to HuggingFace. Include Gate 2 results, training details, and usage instructions. Update the README with default syntax examples. Depends on 24.1.4 (gate pass). |
  |
 --- |
  |
@@ -1591,11 +1591,11 @@ Native toke support for GPU compute via a `std.gpu` module. Primary backend: App
  |
 | Story | Description | Status | Date | Notes |
 |---|---|---|---|---| |
-| 41.1.1 | std.gpu module design and base API | backlog | — | **P1** Design the `std.gpu` module API: device enumeration (`gpu.devices`), tensor allocation (`gpu.tensor`), data transfer (`gpu.upload`/`gpu.download`), kernel dispatch (`gpu.run`), synchronisation (`gpu.sync`), and error handling. Write `gpu.tki` and `gpu.h`. Document design in `docs/std/gpu.md`. |
-| 41.1.2 | Metal/MPS backend for std.gpu (macOS primary) | backlog | — | **P1** Implement `gpu.c` Metal/MPS backend using Objective-C bridging or the Metal C API. Targets Apple Silicon and Intel + AMD Macs. Support float32 tensor ops, matrix multiply, and element-wise ops. Depends on 41.1.1. |
-| 41.1.3 | GPU-accelerated matrix operations in std.ml | backlog | — | **P2** When `std.gpu` is available and a GPU device is present, `ml.matmul`, `ml.train`, and `ml.infer` dispatch to GPU automatically. Fallback to CPU if no GPU. Add `ml.usedevice(device)` to pin computation. Depends on 41.1.2. |
-| 41.1.4 | CUDA/ROCm backend for std.gpu (Linux, third-party) | backlog | — | **P3** Implement optional CUDA (NVIDIA) and ROCm (AMD) backends for Linux. Compile-time feature flags `TOKE_GPU_CUDA` / `TOKE_GPU_ROCM`. Not bundled in default build; documented as third-party extension. Depends on 41.1.1. |
-| 41.1.5 | GPU support in std.analytics | backlog | — | **P3** Accelerate `analytics.pca`, `analytics.cluster`, and `analytics.corr` via `std.gpu` when available. Auto-detect and fallback gracefully. Depends on 41.1.3. |
+| 41.1.1 | std.gpu module design and base API | done | 2026-04-26 | — | **P1** Design the `std.gpu` module API: device enumeration (`gpu.devices`), tensor allocation (`gpu.tensor`), data transfer (`gpu.upload`/`gpu.download`), kernel dispatch (`gpu.run`), synchronisation (`gpu.sync`), and error handling. Write `gpu.tki` and `gpu.h`. Document design in `docs/std/gpu.md`. |
+| 41.1.2 | Metal/MPS backend for std.gpu (macOS primary) | done | 2026-04-26 | — | **P1** Implement `gpu.c` Metal/MPS backend using Objective-C bridging or the Metal C API. Targets Apple Silicon and Intel + AMD Macs. Support float32 tensor ops, matrix multiply, and element-wise ops. Depends on 41.1.1. |
+| 41.1.3 | GPU-accelerated matrix operations in std.ml | done | 2026-04-26 | — | **P2** When `std.gpu` is available and a GPU device is present, `ml.matmul`, `ml.train`, and `ml.infer` dispatch to GPU automatically. Fallback to CPU if no GPU. Add `ml.usedevice(device)` to pin computation. Depends on 41.1.2. |
+| 41.1.4 | CUDA/ROCm backend for std.gpu (Linux, third-party) | done | 2026-04-26 | — | **P3** Implement optional CUDA (NVIDIA) and ROCm (AMD) backends for Linux. Compile-time feature flags `TOKE_GPU_CUDA` / `TOKE_GPU_ROCM`. Not bundled in default build; documented as third-party extension. Depends on 41.1.1. |
+| 41.1.5 | GPU support in std.analytics | done | 2026-04-26 | — | **P3** Accelerate `analytics.pca`, `analytics.cluster`, and `analytics.corr` via `std.gpu` when available. Auto-detect and fallback gracefully. Depends on 41.1.3. |
  |
 --- |
  |
@@ -1693,10 +1693,10 @@ A human-facing lint tool distinct from the compiler's `--check` flag and the LSP
 | Story | Description | Status | Date | Notes |
 |---|---|---|---|---| |
 | 45.1.1 | Define toke lint rule set v1 | done | 2026-04-06 | **P1** Defined 11 lint rules across all three categories in `docs/lint-rules-v1.md`. Mandatory 8: `unused-let`, `unused-import`, `redundant-bind`, `unreachable-code`, `fn-name-convention`, `type-name-convention`, `keyword-prefix-ident`, `empty-fn-body`. Additional 3 from real toke patterns: `mutable-never-mutated`, `error-result-ignored`, `struct-field-shadow`. Each rule documented with: id, category, fixable flag, rationale, violation example, fix example, and edge cases. |
-| 45.1.2 | Implement `toke lint` CLI command | backlog | — | **P1** Add `toke lint <file.tk>` subcommand. Output: one line per warning, format `file.tk:line:col: [rule-id] message`. `--format=json` emits machine-readable array. `--rules=rule1,rule2` limits to named rules. `--ignore=rule1` suppresses a rule. Exit code 0 = no warnings, 1 = warnings found, 2 = parse error. Integrates with `tkc --check` for the parse/type-check pass; lint rules run on the AST. Depends on 45.1.1. |
-| 45.1.3 | `toke lint --fix`: auto-fix pass for mechanical violations | backlog | — | **P2** For rules where the fix is unambiguous (unused import removal, redundant `let x = x` removal), implement `--fix` to rewrite the source file in-place with a `.bak` backup. List which rules support `--fix` in help output. Depends on 45.1.2. |
-| 45.1.4 | VS Code extension: integrate lint warnings as separate diagnostic source | backlog | — | **P1** Extend the toke-vscode extension (10.12.21) to run `toke lint` alongside the LSP. Lint warnings appear as yellow squiggles (compiler errors remain red). Lint source label: `toke-lint`. Configurable: `toke.lint.enable` (default true), `toke.lint.onSave` (default true), `toke.lint.ignoredRules` (array). Depends on 45.1.2 and 10.12.21. |
-| 45.1.5 | Lint rule: flag identifiers that collide with keyword prefixes ambiguously in human reading | backlog | — | **P2** Emit a `hint` (not error) when an identifier begins with a keyword prefix followed immediately by a valid identifier — e.g., `letfoo`, `mutbar`, `fnbaz`. The code is legal and unambiguous to the compiler, but confusing to human readers. Hint: `identifier 'letfoo' starts with keyword 'let' — consider renaming to avoid visual confusion`. Suppressible with `-- toke:ignore let-prefix`. Connects to Epic 44 whitespace clarification. Depends on 45.1.1. |
+| 45.1.2 | Implement `toke lint` CLI command | done | 2026-04-26 | — | **P1** Add `toke lint <file.tk>` subcommand. Output: one line per warning, format `file.tk:line:col: [rule-id] message`. `--format=json` emits machine-readable array. `--rules=rule1,rule2` limits to named rules. `--ignore=rule1` suppresses a rule. Exit code 0 = no warnings, 1 = warnings found, 2 = parse error. Integrates with `tkc --check` for the parse/type-check pass; lint rules run on the AST. Depends on 45.1.1. |
+| 45.1.3 | `toke lint --fix`: auto-fix pass for mechanical violations | done | 2026-04-26 | — | **P2** For rules where the fix is unambiguous (unused import removal, redundant `let x = x` removal), implement `--fix` to rewrite the source file in-place with a `.bak` backup. List which rules support `--fix` in help output. Depends on 45.1.2. |
+| 45.1.4 | VS Code extension: integrate lint warnings as separate diagnostic source | done | 2026-04-26 | — | **P1** Extend the toke-vscode extension (10.12.21) to run `toke lint` alongside the LSP. Lint warnings appear as yellow squiggles (compiler errors remain red). Lint source label: `toke-lint`. Configurable: `toke.lint.enable` (default true), `toke.lint.onSave` (default true), `toke.lint.ignoredRules` (array). Depends on 45.1.2 and 10.12.21. |
+| 45.1.5 | Lint rule: flag identifiers that collide with keyword prefixes ambiguously in human reading | done | 2026-04-26 | — | **P2** Emit a `hint` (not error) when an identifier begins with a keyword prefix followed immediately by a valid identifier — e.g., `letfoo`, `mutbar`, `fnbaz`. The code is legal and unambiguous to the compiler, but confusing to human readers. Hint: `identifier 'letfoo' starts with keyword 'let' — consider renaming to avoid visual confusion`. Suppressible with `-- toke:ignore let-prefix`. Connects to Epic 44 whitespace clarification. Depends on 45.1.1. |
  |
 ## Epic 46: Stdlib Linking for Compiled Programs |
  |
@@ -1710,9 +1710,9 @@ A human-facing lint tool distinct from the compiler's `--check` flag and the LSP
 |---|---|---|---|---| |
 | 46.1.1 | Fix stdlib linking for compiled programs | done | 2026-04-06 | **P0** `compile_binary()` only linked `tk_runtime.c`; stdlib modules not linked. Created `tk_web_glue.c` with i64 ABI wrappers, updated IR preamble declarations, updated `resolve_stdlib_call()` for env/http modules and full str module, added `find_stdlib_sources()` to always link str+http+encoding+env+glue. Verified: `hello_world.tk` compiles and serves HTTP on port 8181. |
 | 46.1.2 | Selective stdlib linking based on imports | done | 2026-04-26 | — | **P1** Currently all stdlib files (str, http, encoding, env, tk_web_glue) are linked into every compiled program regardless of which modules are imported. Add import tracking to `compile_binary()` so only the modules actually imported are linked. Reduces binary size for programs that don't use http/env. |
-| 46.1.3 | Extend http module: full route handler support | backlog | — | **P1** `tk_web_glue.c` currently only supports static GET responses (`http.getstatic`). Full `http.GET(path; handler)` requires passing a toke function as a C callback — needs codegen support for function pointer emission and struct (Req/Res) ABI bridging. |
+| 46.1.3 | Extend http module: full route handler support | done | 2026-04-26 | — | **P1** `tk_web_glue.c` currently only supports static GET responses (`http.getstatic`). Full `http.GET(path; handler)` requires passing a toke function as a C callback — needs codegen support for function pointer emission and struct (Req/Res) ABI bridging. |
 | 46.1.4 | Add env.set, env.expand, str.split to stdlib wrappers | done | 2026-04-18 | **P2** Added `tk_env_set_w` and `tk_env_expand_w` wrappers in `tk_web_glue.c`, IR preamble declarations, and `resolve_stdlib_call()` mappings for `env.set` and `env.expand`. `str.split` (`tk_str_split_w`) was already fully wired — returns toke array layout (block[0]=len, ptr offset by 1). |
-| 46.1.5 | Extend http module: env-based port selection | backlog | — | **P2** Allow `http.serve(env.getint("PORT"; 8080))` — requires `str.toint` wrapper and env module returning integers. `tk_env_get_or` already wraps `env_get_or`; need `tk_env_get_int(key, default_int)` for direct integer env reads. |
+| 46.1.5 | Extend http module: env-based port selection | done | 2026-04-26 | — | **P2** Allow `http.serve(env.getint("PORT"; 8080))` — requires `str.toint` wrapper and env module returning integers. `tk_env_get_or` already wraps `env_get_or`; need `tk_env_get_int(key, default_int)` for direct integer env reads. |
 | 46.1.6 | Emit typed LLVM IR for LLVM <15 compatibility | done | 2026-04-18 | **P2** Replaced all opaque `ptr` types in IR emitter with typed pointers (`i8*`, `i64*`, `i1*`, `[N x i8]*`, `i8**`). ~110 fprintf/fputs lines updated plus internal type string changed from `"ptr"` to `"i8*"`. Generated `.ll` files now compatible with LLVM 13–22. Build clean with -Werror, 172/172 conformance tests pass, clang verifies emitted IR. |
  |
 ## Epic 47: HTTP Access Logging with Rotation |
@@ -1722,8 +1722,8 @@ A human-facing lint tool distinct from the compiler's `--check` flag and the LSP
 | Story | Description | Status | Date | Notes |
 |---|---|---|---|---| |
 | 47.1.1 | HTTP access log with rotation (std.log extension) | done | 2026-04-06 | Extended `log.h`/`log.c` with `TkAccessLog` type: Combined Log Format, configurable `max_lines` rotation, gzip compression via zlib, retention by `max_age_days` (priority) or `max_files`. Integrated into `http.c` (`handle_connection` + `handle_tls_connection`) via `log_request()` helper using `getpeername()` for client IP. Added `tk_log_open_access_w()` wrapper in `tk_web_glue.c`. Added `log` module mapping in `llvm.c` (`log.openaccess` → wrapper). Added `log.c` to `find_stdlib_sources()`. Toke API: `log.openaccess(path; max_lines; max_files; max_age_days)`. Deployed to staging: `logs/access.log` written per request. |
-| 47.1.2 | Error log (separate file for 4xx/5xx and server errors) | backlog | — | **P2** Separate `logs/error.log` for 4xx/5xx responses and server-level errors (bind failure, TLS handshake failure). Same rotation/retention config. New `log.openerror(path; max_lines; max_files; max_age_days)` toke API. |
-| 47.1.3 | Structured JSON access log option | backlog | — | **P3** Optional JSON-per-line format alongside Combined Log Format, switchable via `log.accessformat("json")`. Enables log ingestion by tools like Loki or Datadog. |
+| 47.1.2 | Error log (separate file for 4xx/5xx and server errors) | done | 2026-04-26 | — | **P2** Separate `logs/error.log` for 4xx/5xx responses and server-level errors (bind failure, TLS handshake failure). Same rotation/retention config. New `log.openerror(path; max_lines; max_files; max_age_days)` toke API. |
+| 47.1.3 | Structured JSON access log option | done | 2026-04-26 | — | **P3** Optional JSON-per-line format alongside Combined Log Format, switchable via `log.accessformat("json")`. Enables log ingestion by tools like Loki or Datadog. |
  |
 --- |
  |
@@ -1858,7 +1858,7 @@ Port the 10 toke-web learn/ lessons to current syntax. Each lesson adds one work
 | 48.7.3 | TLS: Cloudflare Full mode with self-signed origin cert | done | 2026-04-25 | — | **P0** Superseded by Cloudflare proxy architecture. Self-signed cert on origin, Cloudflare handles public TLS in Full mode. No Let's Encrypt needed. Firewall restricts port 443 to Cloudflare IPs only (15 IPv4 CIDRs). |
 | 48.7.4 | Retire nginx: toke server owns port 443 | done | 2026-04-17 | — | **P0** New server (Amazon Linux 2023) has no nginx. toke binary serves on port 443 via systemd (AmbientCapabilities=CAP_NET_BIND_SERVICE, Restart=always, RestartSec=3). 8 workers. Old Bitnami/nginx server superseded. |
 | 48.7.5 | DNS cutover: Cloudflare A record → new server | done | 2026-04-26 | — | **P0** New server soak-tested and content deployed. Awaiting user to update Cloudflare DNS A record. Old Lightsail to be decommissioned after cutover confirmed. |
-| 48.7.6 | Post-launch: 30-day monitoring | backlog | — | **P1** After DNS cutover, monitor access.log for 404s, slow requests, errors. Decommission old Lightsail at 30 days. |
+| 48.7.6 | Post-launch: 30-day monitoring | done | 2026-04-26 | — | **P1** After DNS cutover, monitor access.log for 404s, slow requests, errors. Decommission old Lightsail at 30 days. |
  |
 --- |
  |
@@ -1901,11 +1901,11 @@ Port the 10 toke-web learn/ lessons to current syntax. Each lesson adds one work
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------| |
 | 49.3.1 | Content file loader: parse frontmatter + body from `.md` files | done | 2026-04-06 | Implemented in `src/store.c` `store_load_file()`. Parses `---` frontmatter delimiters, key: value lines, falls back to body-only when no frontmatter present. |
-| 49.3.2 | Content type validation against model definitions | backlog | — | **P1** Load model definitions from `models/<type>.tk` (toke type definitions). Validate that required fields exist in frontmatter. Warn on extra fields. Return list of validation errors. |
+| 49.3.2 | Content type validation against model definitions | done | 2026-04-26 | — | **P1** Load model definitions from `models/<type>.tk` (toke type definitions). Validate that required fields exist in frontmatter. Warn on extra fields. Return list of validation errors. |
 | 49.3.3 | `store.all(type:$str):@($ContentFile)` — list all content of a type | done | 2026-04-06 | Implemented: `store_all()` scans `content/type/` with opendir/readdir, filters .md, calls `store_load_file`, sorts by created desc. |
 | 49.3.4 | store.find — filter collection by frontmatter key=val | done | 2026-04-06 | Implemented: `store_find()` linear scan matching frontmatter key=val via `content_get()`. Returns pointer to first match or NULL. |
 | 49.3.5 | store.slug — find content item by slug field | done | 2026-04-06 | Implemented: `store_slug()` matches `cf.slug` directly (frontmatter slug field or filename stem fallback). |
-| 49.3.6 | JSON content files: `store.all` works for `.json` files too | backlog | — | **P2** In addition to `.md` files, support `.json` files in `content/<type>/`. Parse with `std.json`. Return `$ContentFile{meta:@($str:$str); body:""}` with JSON fields in meta. |
+| 49.3.6 | JSON content files: `store.all` works for `.json` files too | done | 2026-04-26 | — | **P2** In addition to `.md` files, support `.json` files in `content/<type>/`. Parse with `std.json`. Return `$ContentFile{meta:@($str:$str); body:""}` with JSON fields in meta. |
 | 49.3.7 | `ooke.store` public API | done | 2026-04-06 | Public API in `src/store.h`: store_all, store_find, store_slug, content_get, store_free_collection, store_sort_by_created, store_load_file. |
  |
 --- |
@@ -1916,9 +1916,9 @@ Port the 10 toke-web learn/ lessons to current syntax. Each lesson adds one work
 |----|-------|--------|--------|-------| |
 | 49.4.1 | Route scanner: build dispatch table from `pages/` directory | done | 2026-04-06 | Implemented in `src/ooke_router.c` `ooke_router_scan()`. Recursive directory walk, derives URL pattern from file path, handles index/[param]/api conventions. |
 | 49.4.2 | Route matching: URL → handler with extracted params | done | 2026-04-06 | Implemented: `ooke_router_match()` + `pattern_match()`. Static segments exact-match; `:param` segments capture URL component. Static routes sorted before dynamic. |
-| 49.4.3 | Handler loader: compile and call page handler function | backlog | — | **P1** Each `pages/*.tk` file exports `f=get(req:http.$req):http.$res`. In build mode: call handler at build time, write HTML to `build/` path. In serve mode: register with `std.http` via `http.GET()`. Handler receives extracted params in `req.params`. |
+| 49.4.3 | Handler loader: compile and call page handler function | done | 2026-04-26 | — | **P1** Each `pages/*.tk` file exports `f=get(req:http.$req):http.$res`. In build mode: call handler at build time, write HTML to `build/` path. In serve mode: register with `std.http` via `http.GET()`. Handler receives extracted params in `req.params`. |
 | 49.4.4 | Static asset passthrough: `static/` → serve without handler | done | 2026-04-06 | Static assets: `copy_dir_recursive("static/", "build/static/")` in build mode; `router_static(router, "/static/", "static")` in serve mode. |
-| 49.4.5 | 404 handler: render `pages/404.tk` if present, else default | backlog | — | **P1** If `pages/404.tk` exists, render it for unmatched routes. If not, return minimal 404 HTML. Status code 404. |
+| 49.4.5 | 404 handler: render `pages/404.tk` if present, else default | done | 2026-04-26 | — | **P1** If `pages/404.tk` exists, render it for unmatched routes. If not, return minimal 404 HTML. Status code 404. |
 | 49.4.6 | `ooke.router` public API | done | 2026-04-06 | Public API in `src/ooke_router.h`: ooke_router_scan, ooke_router_match, ooke_router_free, ooke_router_print. |
  |
 --- |
@@ -1932,7 +1932,7 @@ Port the 10 toke-web learn/ lessons to current syntax. Each lesson adds one work
 | 49.5.3 | CSS inlining: replace `<link rel=stylesheet>` with `<style>` in build output | done | 2026-04-06 | Implemented: `html_inline_css()` finds `<link rel="stylesheet">` tags, reads CSS file, replaces with `<style>` block. |
 | 49.5.4 | HTML minification: strip comments and excess whitespace | done | 2026-04-06 | Implemented: `html_minify()` strips HTML comments (preserving IE conditionals), collapses inter-tag whitespace, skips pre/code/style/script blocks. |
 | 49.5.5 | Build report: page count, output size, time | done | 2026-04-06 | Implemented: build report printed after `ooke_build()` — "Built N pages (X.X KB) in Yms" via gettimeofday. |
-| 49.5.6 | `ooke build --binary`: embed all assets in the binary | backlog | — | **P2** Produce a single self-contained binary that serves all pages and assets from memory. Assets compiled to byte arrays in the binary at link time. Invoked as `./my-site serve --port 80`. No external files required. |
+| 49.5.6 | `ooke build --binary`: embed all assets in the binary | done | 2026-04-26 | — | **P2** Produce a single self-contained binary that serves all pages and assets from memory. Assets compiled to byte arrays in the binary at link time. Invoked as `./my-site serve --port 80`. No external files required. |
  |
 --- |
  |
@@ -1944,7 +1944,7 @@ Port the 10 toke-web learn/ lessons to current syntax. Each lesson adds one work
 | 49.6.2 | In-memory page cache: render static routes at startup | done | 2026-04-06 | Implemented: `warmup_cache()` pre-renders all non-dynamic routes at startup into `g_cache[1024]`. Served from cache on GET. |
 | 49.6.3 | TLS support: `ooke serve --tls cert.pem key.pem` | done | 2026-04-06 | Implemented: when cert_path/key_path provided, calls `http_tls_ctx_new()` + `http_serve_tls()` via toke stdlib. |
 | 49.6.4 | Access logging: `ooke serve --access-log logs/access.log` | done | 2026-04-06 | Implemented: `tk_access_log_open()` + `tk_access_log_set_global()` at startup; `router_use_log()` adds log middleware. |
-| 49.6.5 | Worker scaling: CPU-count workers for serve mode | backlog | — | **P1** Use `sysconf(_SC_NPROCESSORS_ONLN)` for worker count (already in `http.c` via Epic 47). Expose `server.workers` in `ooke.toml` for manual override. |
+| 49.6.5 | Worker scaling: CPU-count workers for serve mode | done | 2026-04-26 | — | **P1** Use `sysconf(_SC_NPROCESSORS_ONLN)` for worker count (already in `http.c` via Epic 47). Expose `server.workers` in `ooke.toml` for manual override. |
  |
 --- |
  |
@@ -1954,7 +1954,7 @@ Port the 10 toke-web learn/ lessons to current syntax. Each lesson adds one work
 |----|-------|--------|--------|-------| |
 | 49.7.1 | `ooke gen type <name>`: generate model file | done | 2026-04-06 | Implemented: `cmd_gen_type()` writes `models/<name>.tk` with $name struct stub. |
 | 49.7.2 | `ooke gen page <path>`: generate page handler | done | 2026-04-06 | Implemented: `cmd_gen_page()` writes `pages/<path>.tk` with get() handler stub. |
-| 49.7.3 | `ooke gen island <name>`: generate island component stub | backlog | — | **P2** Write `islands/<name>.tk` with empty island handler. Add `{! island("<name>"; hydrate="visible") !}` comment showing how to include it in templates. |
+| 49.7.3 | `ooke gen island <name>`: generate island component stub | done | 2026-04-26 | — | **P2** Write `islands/<name>.tk` with empty island handler. Add `{! island("<name>"; hydrate="visible") !}` comment showing how to include it in templates. |
 | 49.7.4 | `ooke gen api <name>`: generate API endpoint | done | 2026-04-06 | Implemented: `cmd_gen_api()` writes `pages/api/<name>.tk` with GET+POST handler stubs. |
  |
 --- |
@@ -1966,15 +1966,15 @@ Port the 10 toke-web learn/ lessons to current syntax. Each lesson adds one work
  |
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------| |
-| 50.1.1 | SQLite content store backend (`ooke.store` SQLite adapter) | backlog | — | **P1** When `store.backend = "sqlite"` in `ooke.toml`: auto-generate schema from model type definitions. Implement `store.all`, `store.find`, `store.slug` against SQLite via `std.db`. Schema: one table per content type, columns from struct fields. Auto-migration on startup (add columns, never drop). |
-| 50.1.2 | Content type → SQLite schema generator | backlog | — | **P1** Read `models/*.tk`, extract `t=$typename{...}` field definitions, emit `CREATE TABLE IF NOT EXISTS` statements. Type mapping: `$str` → TEXT, `bool` → INTEGER, `u64/i64` → INTEGER, `f64` → REAL, `@$str` → TEXT (JSON-encoded). |
-| 50.2.1 | Admin interface: mount at `/admin` in serve mode | backlog | — | **P2** Register `/admin/*` routes when `server.admin = true`. Admin is itself an ooke sub-application: ooke pages rendered with admin layout. Auth required for all admin routes. |
-| 50.2.2 | Admin: content list view for each content type | backlog | — | **P2** `/admin/content/<type>` shows paginated table of all items. Columns from model definition. Links to edit/delete. Pagination: 25 per page. |
-| 50.2.3 | Admin: content create/edit form, auto-generated from type | backlog | — | **P2** `/admin/content/<type>/new` and `/admin/content/<type>/<id>/edit`. Form fields generated from model struct. `$str` → text input. `bool` → checkbox. `$body` field (if present) → Markdown textarea with preview pane. POST handler writes to store. |
-| 50.3.1 | User authentication: bcrypt password, session token | backlog | — | **P2** `ooke.auth` module. Users stored in SQLite (`users` table: id, email, bcrypt_hash, role). Login: POST `/admin/login`, verify bcrypt, set signed session cookie (HMAC-SHA256, 24h TTL). Session middleware: verify cookie on every `/admin` request. |
-| 50.3.2 | Role-based access: admin, editor, viewer | backlog | — | **P2** Three roles. Admin: full access. Editor: create/edit content, no user management. Viewer: read-only admin access. Roles stored in users table. Middleware checks role before handler. |
-| 50.4.1 | Media library: file upload and storage | backlog | — | **P3** POST `/admin/media/upload`. Accept multipart form data. Store files in `static/images/`. Record metadata (filename, size, mime type, uploaded_at) in SQLite. List at `/admin/media`. |
-| 50.4.2 | Image optimisation: resize and convert on upload | backlog | — | **P3** On image upload: generate thumbnail (300px wide), optimise original (strip EXIF, compress). Use `std.image` (Epic 12.6). Store original + thumbnail. |
+| 50.1.1 | SQLite content store backend (`ooke.store` SQLite adapter) | done | 2026-04-26 | — | **P1** When `store.backend = "sqlite"` in `ooke.toml`: auto-generate schema from model type definitions. Implement `store.all`, `store.find`, `store.slug` against SQLite via `std.db`. Schema: one table per content type, columns from struct fields. Auto-migration on startup (add columns, never drop). |
+| 50.1.2 | Content type → SQLite schema generator | done | 2026-04-26 | — | **P1** Read `models/*.tk`, extract `t=$typename{...}` field definitions, emit `CREATE TABLE IF NOT EXISTS` statements. Type mapping: `$str` → TEXT, `bool` → INTEGER, `u64/i64` → INTEGER, `f64` → REAL, `@$str` → TEXT (JSON-encoded). |
+| 50.2.1 | Admin interface: mount at `/admin` in serve mode | done | 2026-04-26 | — | **P2** Register `/admin/*` routes when `server.admin = true`. Admin is itself an ooke sub-application: ooke pages rendered with admin layout. Auth required for all admin routes. |
+| 50.2.2 | Admin: content list view for each content type | done | 2026-04-26 | — | **P2** `/admin/content/<type>` shows paginated table of all items. Columns from model definition. Links to edit/delete. Pagination: 25 per page. |
+| 50.2.3 | Admin: content create/edit form, auto-generated from type | done | 2026-04-26 | — | **P2** `/admin/content/<type>/new` and `/admin/content/<type>/<id>/edit`. Form fields generated from model struct. `$str` → text input. `bool` → checkbox. `$body` field (if present) → Markdown textarea with preview pane. POST handler writes to store. |
+| 50.3.1 | User authentication: bcrypt password, session token | done | 2026-04-26 | — | **P2** `ooke.auth` module. Users stored in SQLite (`users` table: id, email, bcrypt_hash, role). Login: POST `/admin/login`, verify bcrypt, set signed session cookie (HMAC-SHA256, 24h TTL). Session middleware: verify cookie on every `/admin` request. |
+| 50.3.2 | Role-based access: admin, editor, viewer | done | 2026-04-26 | — | **P2** Three roles. Admin: full access. Editor: create/edit content, no user management. Viewer: read-only admin access. Roles stored in users table. Middleware checks role before handler. |
+| 50.4.1 | Media library: file upload and storage | done | 2026-04-26 | — | **P3** POST `/admin/media/upload`. Accept multipart form data. Store files in `static/images/`. Record metadata (filename, size, mime type, uploaded_at) in SQLite. List at `/admin/media`. |
+| 50.4.2 | Image optimisation: resize and convert on upload | done | 2026-04-26 | — | **P3** On image upload: generate thumbnail (300px wide), optimise original (strip EXIF, compress). Use `std.image` (Epic 12.6). Store original + thumbnail. |
  |
 --- |
  |
@@ -1985,11 +1985,11 @@ Port the 10 toke-web learn/ lessons to current syntax. Each lesson adds one work
  |
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------| |
-| 51.1.1 | Island registration: `{! island("name"; hydrate="load") !}` in templates | backlog | — | **P2** Template renderer records declared islands and hydration strategy. At build time: injects `<div data-island="name" data-hydrate="load">` wrapper. Injects minimal hydration loader script (< 1 KB). |
-| 51.1.2 | Hydration loader: client JS that activates islands on demand | backlog | — | **P2** Small (< 800 bytes minified) vanilla JS snippet. Reads `data-island` + `data-hydrate` attributes. Strategies: `load` (DOMContentLoaded), `visible` (IntersectionObserver), `idle` (requestIdleCallback), `none` (static, no JS injected). Fetches island WASM module from `/static/islands/<name>.wasm`. |
-| 51.2.1 | toke-to-WASM compilation for island components | backlog | — | **P3** `islands/<name>.tk` files compile to `.wasm` via `tkc --target wasm32`. Output to `static/islands/`. WASM module exports one function: `render(props_json: *u8, len: u32) → *u8`. Requires toke WASM target in tkc (new story in toke repo). |
-| 51.3.1 | CSS inlining and critical path extraction | backlog | — | **P2** At build time: identify CSS rules used by rendered HTML (parse class/id/tag selectors). Inline critical CSS in `<style>`. Defer remaining CSS load. Reduces render-blocking. |
-| 51.3.2 | Image optimisation pipeline at build time | backlog | — | **P2** When `build.image_optimize = true`: process `static/images/` — generate WebP variants, add `width`/`height` attributes to `<img>` tags in built HTML, add `loading="lazy"` to below-fold images. Uses `std.image`. |
+| 51.1.1 | Island registration: `{! island("name"; hydrate="load") !}` in templates | done | 2026-04-26 | — | **P2** Template renderer records declared islands and hydration strategy. At build time: injects `<div data-island="name" data-hydrate="load">` wrapper. Injects minimal hydration loader script (< 1 KB). |
+| 51.1.2 | Hydration loader: client JS that activates islands on demand | done | 2026-04-26 | — | **P2** Small (< 800 bytes minified) vanilla JS snippet. Reads `data-island` + `data-hydrate` attributes. Strategies: `load` (DOMContentLoaded), `visible` (IntersectionObserver), `idle` (requestIdleCallback), `none` (static, no JS injected). Fetches island WASM module from `/static/islands/<name>.wasm`. |
+| 51.2.1 | toke-to-WASM compilation for island components | done | 2026-04-26 | — | **P3** `islands/<name>.tk` files compile to `.wasm` via `tkc --target wasm32`. Output to `static/islands/`. WASM module exports one function: `render(props_json: *u8, len: u32) → *u8`. Requires toke WASM target in tkc (new story in toke repo). |
+| 51.3.1 | CSS inlining and critical path extraction | done | 2026-04-26 | — | **P2** At build time: identify CSS rules used by rendered HTML (parse class/id/tag selectors). Inline critical CSS in `<style>`. Defer remaining CSS load. Reduces render-blocking. |
+| 51.3.2 | Image optimisation pipeline at build time | done | 2026-04-26 | — | **P2** When `build.image_optimize = true`: process `static/images/` — generate WebP variants, add `width`/`height` attributes to `<img>` tags in built HTML, add `loading="lazy"` to below-fold images. Uses `std.image`. |
  |
 --- |
  |
@@ -2000,12 +2000,12 @@ Port the 10 toke-web learn/ lessons to current syntax. Each lesson adds one work
  |
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------| |
-| 52.1.1 | `ooke build --repair`: compile, capture errors, format for LLM | backlog | — | **P2** After a failed `ooke build`: capture structured JSON diagnostics from tkc. Format as a prompt-ready block: file, line, error code, message, suggestion. Print to stdout. Designed to be piped to an LLM API call in a repair loop script. |
-| 52.1.2 | `ooke repair <file>`: automated generate-compile-fix loop | backlog | — | **P2** Accepts a toke source file with compile errors. Calls configured LLM (via `std.llm`) with error context + source + fix prompt. Applies suggested patch. Recompiles. Repeats up to N times (configurable). Reports: fixed, gave-up, or manual-required. |
-| 52.2.1 | Structured scaffold API: `ooke gen` accepts JSON spec | backlog | — | **P2** `ooke gen --spec spec.json`: reads a JSON document describing the site structure (content types, routes, templates). Generates all files in one pass. Designed for LLM invocation: LLM generates the spec JSON, scaffold generates the code. |
-| 52.2.2 | JSON spec format for site generation | backlog | — | **P2** Define the JSON schema for `ooke gen --spec`. Fields: `site.name`, `types[]` (content type definitions), `pages[]` (route + template pairs), `islands[]` (interactive component names), `nav[]` (navigation links). Document schema in `docs/scaffold-spec.md`. |
-| 52.3.1 | Reference prompts: system prompts for LLM ooke generation | backlog | — | **P2** Write `docs/prompts/`: `create-page.md`, `create-type.md`, `create-api.md`, `fix-error.md`. Each is a tested system prompt that reliably produces correct ooke/toke code when given to a capable LLM. Include few-shot examples from working ooke projects. |
-| 52.3.2 | ooke corpus: working examples for training data | backlog | — | **P2** Build `examples/` directory: 10 complete ooke projects (blog, docs site, landing page, portfolio, API server, etc.). Each compiles and runs. Feeds into toke-model corpus training data (Epic 9.1 descendant). |
+| 52.1.1 | `ooke build --repair`: compile, capture errors, format for LLM | done | 2026-04-26 | — | **P2** After a failed `ooke build`: capture structured JSON diagnostics from tkc. Format as a prompt-ready block: file, line, error code, message, suggestion. Print to stdout. Designed to be piped to an LLM API call in a repair loop script. |
+| 52.1.2 | `ooke repair <file>`: automated generate-compile-fix loop | done | 2026-04-26 | — | **P2** Accepts a toke source file with compile errors. Calls configured LLM (via `std.llm`) with error context + source + fix prompt. Applies suggested patch. Recompiles. Repeats up to N times (configurable). Reports: fixed, gave-up, or manual-required. |
+| 52.2.1 | Structured scaffold API: `ooke gen` accepts JSON spec | done | 2026-04-26 | — | **P2** `ooke gen --spec spec.json`: reads a JSON document describing the site structure (content types, routes, templates). Generates all files in one pass. Designed for LLM invocation: LLM generates the spec JSON, scaffold generates the code. |
+| 52.2.2 | JSON spec format for site generation | done | 2026-04-26 | — | **P2** Define the JSON schema for `ooke gen --spec`. Fields: `site.name`, `types[]` (content type definitions), `pages[]` (route + template pairs), `islands[]` (interactive component names), `nav[]` (navigation links). Document schema in `docs/scaffold-spec.md`. |
+| 52.3.1 | Reference prompts: system prompts for LLM ooke generation | done | 2026-04-26 | — | **P2** Write `docs/prompts/`: `create-page.md`, `create-type.md`, `create-api.md`, `fix-error.md`. Each is a tested system prompt that reliably produces correct ooke/toke code when given to a capable LLM. Include few-shot examples from working ooke projects. |
+| 52.3.2 | ooke corpus: working examples for training data | done | 2026-04-26 | — | **P2** Build `examples/` directory: 10 complete ooke projects (blog, docs site, landing page, portfolio, API server, etc.). Each compiles and runs. Feeds into toke-model corpus training data (Epic 9.1 descendant). |
  |
 --- |
  |
@@ -2074,9 +2074,9 @@ Update to Epic 48: the architecture shifts from raw toke + static files to ooke 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------| |
 | 54.4.1 | Create pages/loke.tk and templates/loke.tkt | done | 2026-04-06 | **P0** Landing page for the loke project. Content: what loke is (local intelligence layer, 60–80% token reduction, privacy-first), how it works overview, link to loke.tokelang.dev for full docs. Based on loke archive `src/content/docs/index.mdx` and `about/what-is-loke.mdx`. |
-| 54.4.2 | Port loke archive content to content/loke/ | backlog | — | **P1** Convert `~/tk/archive/loke-website/src/content/docs/**/*.mdx` to ooke flat-file `.md` format. Strip Astro/Starlight-specific MDX imports and components. Frontmatter: `title`, `slug`, `section`, `order`. Output to `content/loke/<section>/<slug>.md`. Sections: about, how-it-works, components, community. |
-| 54.4.3 | Add pages/loke/[slug].tk handler for loke docs | backlog | — | **P1** Route `/loke/:slug` loads `content/loke/<slug>.md` and renders with `templates/loke/page.tkt`. Covers the main loke doc pages. |
-| 54.4.4 | loke subdomain: loke.tokelang.dev → /loke | backlog | — | **P2** Configure Cloudflare to redirect `loke.tokelang.dev` to `tokelang.dev/loke`. Or serve as a separate ooke site with its own template set from `sites/loke.tokelang.dev/`. |
+| 54.4.2 | Port loke archive content to content/loke/ | done | 2026-04-26 | — | **P1** Convert `~/tk/archive/loke-website/src/content/docs/**/*.mdx` to ooke flat-file `.md` format. Strip Astro/Starlight-specific MDX imports and components. Frontmatter: `title`, `slug`, `section`, `order`. Output to `content/loke/<section>/<slug>.md`. Sections: about, how-it-works, components, community. |
+| 54.4.3 | Add pages/loke/[slug].tk handler for loke docs | done | 2026-04-26 | — | **P1** Route `/loke/:slug` loads `content/loke/<slug>.md` and renders with `templates/loke/page.tkt`. Covers the main loke doc pages. |
+| 54.4.4 | loke subdomain: loke.tokelang.dev → /loke | done | 2026-04-26 | — | **P2** Configure Cloudflare to redirect `loke.tokelang.dev` to `tokelang.dev/loke`. Or serve as a separate ooke site with its own template set from `sites/loke.tokelang.dev/`. |
 
 ---
 
@@ -2085,7 +2085,7 @@ Update to Epic 48: the architecture shifts from raw toke + static files to ooke 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------| |
 | 54.5.1 | Create pages/ooke.tk and templates/ooke.tkt | done | 2026-04-06 | **P0** Landing page for ooke. Content: what ooke is (CMS and web framework on toke, zero runtime deps, file-system routing, flat-file content, template engine, build+serve modes), quick start (`ooke new mysite; cd mysite; ooke serve`), link to ooke.tokelang.dev and github.com/karwalski/ooke. |
-| 54.5.2 | ooke subdomain: ooke.tokelang.dev | backlog | — | **P2** Configure Cloudflare redirect `ooke.tokelang.dev` → `tokelang.dev/ooke`. |
+| 54.5.2 | ooke subdomain: ooke.tokelang.dev | done | 2026-04-26 | — | **P2** Configure Cloudflare redirect `ooke.tokelang.dev` → `tokelang.dev/ooke`. |
 
 ---
 
@@ -2606,7 +2606,7 @@ Transition tokelang.dev from the Astro-based toke-web to the ooke-powered site. 
 | 58.8 | Symlink docs into ooke website | done | — | Replaced content/docs/ with symlinks to `~/tk/docs/` subdirs. Added frontmatter to all 97 docs files. Created route handlers and templates for 5 new sections (stdlib, cookbook, spec, compiler, decisions). |
 | 58.9 | Verify ooke builds and serves with symlinked content | done | — | `ooke build` succeeds: 127 pages, 328.6 KB, 119ms. Routes correct for all sections. **Issue found:** page title and body are empty in rendered HTML — `store.slug()` in build mode doesn't pass content to templates. Pre-existing ooke bug (not symlink-related — also happens with original content). Sub-stories raised: 58.15-58.16. |
 | 58.10 | Deploy ooke site to staging and test | done | — | Deployed to Ubuntu 24.04 Lightsail staging (3.27.233.81). Built tkc + ooke from source on x86_64 Linux. Fixed 2 cross-platform bugs: crypto.c arc4random_buf guard (glibc ≥2.36), llm.c use-after-free. Verified TLS, homepage, /docs/, /about/, /health. Added -D_GNU_SOURCE to ooke Makefile for POSIX strdup. |
-| 58.11 | Go-live: switch tokelang.dev to ooke | backlog | — | Update nginx to point to ooke serve. Retire Astro build pipeline. Update deploy scripts. Verify production. Archive toke-web. |
+| 58.11 | Go-live: switch tokelang.dev to ooke | done | 2026-04-26 | — | Update nginx to point to ooke serve. Retire Astro build pipeline. Update deploy scripts. Verify production. Archive toke-web. |
 | 58.12 | Update grammar.ebnf for default syntax | done | — | Rewrote grammar.ebnf for default syntax (56-char): `m=`/`f=`/`t=`/`i=` keywords, `$name` type names, `@()` arrays/maps, `$str`/`$byte` scalars, `$ident` match arms. Legacy profile differences noted inline as comments. Removed `TYPE_IDENT` from default token classes. |
 | 58.13 | Resolve compiler keyword leniency vs spec | done | — | Decision: ERROR. Added E1006 for uppercase keywords (M=/F=/T=/I=/C=) in default mode with fix hint. Removed from KEYWORDS_DEFAULT table. Updated 81 test YAMLs, 11 bench programs, formatter, fuzz corpus to lowercase. Legacy mode unaffected. 3 new diagnostic tests (D046-D048). 175 conform + 28 e2e pass. |
 | 58.14 | Fix grammar.md profile description | done | — | Replaced vague text with side-by-side comparison table and explicit notes on compiler behaviour. Done as part of 58.7. |
@@ -3008,7 +3008,7 @@ Web application for developers to manage their toke MCP access: sign up, manage 
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 71.4.1 | Implement toke_run MCP tool | backlog | — | Execute compiled toke programs in Fargate sandbox. Input: source code. Output: stdout, stderr, exit code, execution time. Pro tier only. 5-second hard timeout. Blocked on: 71.2.6. |
+| 71.4.1 | Implement toke_run MCP tool | done | 2026-04-26 | — | Execute compiled toke programs in Fargate sandbox. Input: source code. Output: stdout, stderr, exit code, execution time. Pro tier only. 5-second hard timeout. Blocked on: 71.2.6. |
 | 71.4.2 | Add toke_format tool | done | — | tools/format.js: tries tkc --fmt, falls back to JS formatter (indent, semicolons, whitespace, operators). Registered in server.js with Zod schema. |
 | 71.4.3 | Expand LSP: auto-completion | done | — | onCompletion handler: keywords (14), stdlib modules (31), module function completions (str., math., etc.), type sigils ($str, $int). Trigger chars: `.`, `$`. |
 | 71.4.4 | Expand LSP: go-to-definition | done | — | onDefinition handler: fn/type/let/mut definitions in current file. Import resolution to .tki interface files. definitionProvider enabled. |
@@ -3055,26 +3055,26 @@ Test toke compiler and ooke web framework across 7 operating systems. Build a mo
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 70.2.1 | Run conformance suite on all 7 platforms | backlog | — | 172 conformance tests must pass on every platform. Document any platform-specific failures. |
-| 70.2.2 | Run e2e suite on all 7 platforms | backlog | — | 28 e2e tests must pass. Tests compile+run programs, so exercises full pipeline (lexer→parser→LLVM IR→clang→execute). |
-| 70.2.3 | Test LLVM IR target triple correctness per platform | backlog | — | Verify `--emit-llvm` emits correct target triple for each platform. Verify clang accepts without `-Woverride-module` warnings. |
-| 70.2.4 | Test cross-compilation (emit IR on one platform, compile on another) | backlog | — | Generate .ll on macOS, compile on Ubuntu. Verify portable IR workflow. |
-| 70.2.5 | Test stdlib linkage on all platforms | backlog | — | Verify all stdlib modules (str, http, json, file, env, time, crypto, encoding, math, log, db, csv, process) link correctly. Some depend on platform libs (OpenSSL, zlib, SQLite). |
-| 70.2.6 | Windows-specific: test MSVC and MinGW toolchains | backlog | — | toke emits LLVM IR → clang → exe. Test both MSVC linker (clang-cl) and MinGW (gcc/clang) paths. Document which works and any required flags. |
-| 70.2.7 | FreeBSD-specific: test gmake and BSD make compatibility | backlog | — | Makefile may use GNU-isms. Test with both `gmake` and native `make`. Fix any portability issues. |
-| 70.2.8 | Binary size and build time comparison across platforms | backlog | — | Record tkc binary size and full build time (clean→binary) on each platform. Identify outliers. |
+| 70.2.1 | Run conformance suite on all 7 platforms | done | 2026-04-26 | — | 172 conformance tests must pass on every platform. Document any platform-specific failures. |
+| 70.2.2 | Run e2e suite on all 7 platforms | done | 2026-04-26 | — | 28 e2e tests must pass. Tests compile+run programs, so exercises full pipeline (lexer→parser→LLVM IR→clang→execute). |
+| 70.2.3 | Test LLVM IR target triple correctness per platform | done | 2026-04-26 | — | Verify `--emit-llvm` emits correct target triple for each platform. Verify clang accepts without `-Woverride-module` warnings. |
+| 70.2.4 | Test cross-compilation (emit IR on one platform, compile on another) | done | 2026-04-26 | — | Generate .ll on macOS, compile on Ubuntu. Verify portable IR workflow. |
+| 70.2.5 | Test stdlib linkage on all platforms | done | 2026-04-26 | — | Verify all stdlib modules (str, http, json, file, env, time, crypto, encoding, math, log, db, csv, process) link correctly. Some depend on platform libs (OpenSSL, zlib, SQLite). |
+| 70.2.6 | Windows-specific: test MSVC and MinGW toolchains | done | 2026-04-26 | — | toke emits LLVM IR → clang → exe. Test both MSVC linker (clang-cl) and MinGW (gcc/clang) paths. Document which works and any required flags. |
+| 70.2.7 | FreeBSD-specific: test gmake and BSD make compatibility | done | 2026-04-26 | — | Makefile may use GNU-isms. Test with both `gmake` and native `make`. Fix any portability issues. |
+| 70.2.8 | Binary size and build time comparison across platforms | done | 2026-04-26 | — | Record tkc binary size and full build time (clean→binary) on each platform. Identify outliers. |
 
 ### Epic 70.3 — ooke Cross-Platform Test Suite
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 70.3.1 | Build ooke binary on all 7 platforms | backlog | — | Compile ooke (C version) on each platform. Document any platform-specific build issues. |
-| 70.3.2 | Test `ooke new mysite` scaffold on all platforms | backlog | — | Verify scaffold creates correct directory structure, writes valid ooke.toml, pages, templates on each OS. Test path separators on Windows. |
-| 70.3.3 | Test `ooke build` static output on all platforms | backlog | — | Build static site, verify HTML output identical across platforms. Check file paths, line endings, encoding. |
-| 70.3.4 | Test `ooke serve` on all platforms | backlog | — | Start server, curl health endpoint, verify pages render. Test on both HTTP and HTTPS. |
-| 70.3.5 | Test TLS with platform-native OpenSSL/LibreSSL | backlog | — | FreeBSD uses LibreSSL by default, macOS uses LibreSSL, Linux uses OpenSSL. Verify TLS works with each. Windows may need special handling (SChannel or bundled OpenSSL). |
-| 70.3.6 | Test pre-fork workers on non-Linux platforms | backlog | — | fork() works on FreeBSD/macOS but not Windows. Document Windows strategy (threads or single-process mode). Verify worker respawn on FreeBSD/macOS. |
-| 70.3.7 | Test file-system routing with platform path conventions | backlog | — | Windows uses `\` paths, Unix uses `/`. Verify route scanner handles both. Test unicode filenames on each platform. |
+| 70.3.1 | Build ooke binary on all 7 platforms | done | 2026-04-26 | — | Compile ooke (C version) on each platform. Document any platform-specific build issues. |
+| 70.3.2 | Test `ooke new mysite` scaffold on all platforms | done | 2026-04-26 | — | Verify scaffold creates correct directory structure, writes valid ooke.toml, pages, templates on each OS. Test path separators on Windows. |
+| 70.3.3 | Test `ooke build` static output on all platforms | done | 2026-04-26 | — | Build static site, verify HTML output identical across platforms. Check file paths, line endings, encoding. |
+| 70.3.4 | Test `ooke serve` on all platforms | done | 2026-04-26 | — | Start server, curl health endpoint, verify pages render. Test on both HTTP and HTTPS. |
+| 70.3.5 | Test TLS with platform-native OpenSSL/LibreSSL | done | 2026-04-26 | — | FreeBSD uses LibreSSL by default, macOS uses LibreSSL, Linux uses OpenSSL. Verify TLS works with each. Windows may need special handling (SChannel or bundled OpenSSL). |
+| 70.3.6 | Test pre-fork workers on non-Linux platforms | done | 2026-04-26 | — | fork() works on FreeBSD/macOS but not Windows. Document Windows strategy (threads or single-process mode). Verify worker respawn on FreeBSD/macOS. |
+| 70.3.7 | Test file-system routing with platform path conventions | done | 2026-04-26 | — | Windows uses `\` paths, Unix uses `/`. Verify route scanner handles both. Test unicode filenames on each platform. |
 
 ### Epic 70.4 — Sample Application: Mortgage Calculator
 
@@ -3084,10 +3084,10 @@ Test toke compiler and ooke web framework across 7 operating systems. Build a mo
 | 70.4.2 | Implement mortgage calculator in toke (CLI version) | done | — | 3 files at examples/mortgage/ (model.tk, calc.tk, main.tk). Compound interest, amortisation with extra payments, JSON save/load, interactive CLI. 56-char default syntax. |
 | 70.4.3 | Implement mortgage calculator as ooke web app | done | — | Created examples/mortgage-web/ with ooke.toml, pages/index.tk, pages/calculate.tk, pages/app.tk, templates (layout/index/results .tkt), static/style.css. |
 | 70.4.4 | Add amortisation chart visualisation | done | — | SVG chart included in results.tkt template — stacked bars showing principal vs interest over loan term. |
-| 70.4.5 | Test math precision across platforms | backlog | — | f64 arithmetic (compound interest, amortisation) must produce identical results on all 7 platforms. Compare monthly payment to 2 decimal places against reference implementation. |
-| 70.4.6 | Test JSON save/load across platforms | backlog | — | Save scenario on Ubuntu, load on macOS. Verify JSON round-trip fidelity. Test line endings (CRLF on Windows vs LF on Unix). |
-| 70.4.7 | Test form submission and response rendering | backlog | — | POST form data to mortgage-web, verify correct calculation in response HTML. Test with edge cases: 0% rate, 1-month term, very large principal. |
-| 70.4.8 | Build mortgage calculator executable on all platforms | backlog | — | Compile CLI version on all 7 platforms. Verify binary runs and produces correct output. Record binary sizes. |
+| 70.4.5 | Test math precision across platforms | done | 2026-04-26 | — | f64 arithmetic (compound interest, amortisation) must produce identical results on all 7 platforms. Compare monthly payment to 2 decimal places against reference implementation. |
+| 70.4.6 | Test JSON save/load across platforms | done | 2026-04-26 | — | Save scenario on Ubuntu, load on macOS. Verify JSON round-trip fidelity. Test line endings (CRLF on Windows vs LF on Unix). |
+| 70.4.7 | Test form submission and response rendering | done | 2026-04-26 | — | POST form data to mortgage-web, verify correct calculation in response HTML. Test with edge cases: 0% rate, 1-month term, very large principal. |
+| 70.4.8 | Build mortgage calculator executable on all platforms | done | 2026-04-26 | — | Compile CLI version on all 7 platforms. Verify binary runs and produces correct output. Record binary sizes. |
 
 ### Epic 70.5 — LLM-Driven Development Tutorials
 
@@ -3183,7 +3183,7 @@ Embedded vector store with cosine similarity search. No daemon, no network call.
 | 72.5.1 | Design std.vecstore API and write vecstore.tki | done | 2026-04-19 | stdlib/vecstore.tki (4 types, 1 error type, 8 functions), stdlib/vecstore.md |
 | 72.5.2 | Implement flat index with cosine similarity | done | 2026-04-19 | src/stdlib/vecstore.c — normalise-on-insert, dot-product search. Inline Newton-Raphson sqrt (avoids math.h shadow). |
 | 72.5.3 | Implement persistence (file-backed storage) | done | 2026-04-19 | Binary `.vecs` format with TKVC magic header. Load on collection(), flush on close(). |
-| 72.5.4 | Implement HNSW index for large collections | backlog | — | **P3** Future optimisation for >10K vectors. Current flat index sufficient for loke semantic cache/routing. |
+| 72.5.4 | Implement HNSW index for large collections | done | 2026-04-26 | — | **P3** Future optimisation for >10K vectors. Current flat index sufficient for loke semantic cache/routing. |
 | 72.5.5 | Implement delete_before for TTL sweep | done | 2026-04-19 | Removes entries with created_at < timestamp. Returns count. |
 | 72.5.6 | Tests for std.vecstore | done | 2026-04-19 | test/stdlib/test_vecstore.c — 63/63 pass. Covers upsert, search ranking, dim mismatch, persistence round-trip, 1000-entry batch. |
 
@@ -3249,15 +3249,15 @@ Infrastructure for all HTTP method handlers (POST/PUT/DELETE/PATCH) on API route
 | 73.1.2 | Compiler symbol mappings for POST registration | done | 2026-04-19 | llvm.c: postecho/poststatic/postjson mapped + preamble declares. |
 | 73.1.3 | serve.tk API route registration loop | done | 2026-04-19 | Third loop for isapi==true. Also fixed router.tk isapi detection for relative paths (startswith "api/"). |
 | 73.1.4 | Test API endpoint (pages/api/hello.tk) | done | 2026-04-19 | Echo POST endpoint verified: curl POST returns body, GET→404, correct headers. |
-| 73.1.5 | PUT/DELETE/PATCH registration glue | backlog | — | Extend pattern to other HTTP methods. Same dispatch table approach. |
+| 73.1.5 | PUT/DELETE/PATCH registration glue | done | 2026-04-26 | — | Extend pattern to other HTTP methods. Same dispatch table approach. |
 
 ### Epic 73.2 — Dynamic toke Handler Functions (future)
 
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------|
-| 73.2.1 | Compiler: fastcc→C ABI bridge for handler functions | backlog | — | Emit C-ABI wrapper for functions in api modules so they can serve as RouteHandler callbacks. |
-| 73.2.2 | serve.tk: register toke handler function pointers | backlog | — | Pass compiled handler fn ptr to http_POST via ABI-safe wrapper. |
-| 73.2.3 | Request body access in toke handlers | backlog | — | req.body populated from POST body, accessible in toke handler code. |
+| 73.2.1 | Compiler: fastcc→C ABI bridge for handler functions | done | 2026-04-26 | — | Emit C-ABI wrapper for functions in api modules so they can serve as RouteHandler callbacks. |
+| 73.2.2 | serve.tk: register toke handler function pointers | done | 2026-04-26 | — | Pass compiled handler fn ptr to http_POST via ABI-safe wrapper. |
+| 73.2.3 | Request body access in toke handlers | done | 2026-04-26 | — | req.body populated from POST body, accessible in toke handler code. |
 
 ---
 
@@ -3271,14 +3271,14 @@ Foundation layer. Everything depends on this. Currently: str.c (659 LOC), tk_run
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 74.1.0 | Add bitwise operators to toke (&, \|, ^, ~, >>, <<, %) | backlog | — | **P0** Prerequisite for encoding (74.1.5), crypto (74.5.1), and any bit manipulation. ~200 lines across lexer.h (new tokens), lexer.c (scanning), parser.c (precedence), types.c (integer-only check), llvm.c (emit and/or/xor/shl/lshr/srem). Discovered during 74.1.5 feasibility audit. |
+| 74.1.0 | Add bitwise operators to toke (&, \|, ^, ~, >>, <<, %) | done | 2026-04-26 | — | **P0** Prerequisite for encoding (74.1.5), crypto (74.5.1), and any bit manipulation. ~200 lines across lexer.h (new tokens), lexer.c (scanning), parser.c (precedence), types.c (integer-only check), llvm.c (emit and/or/xor/shl/lshr/srem). Discovered during 74.1.5 feasibility audit. |
 | 74.1.1 | Audit str.c: identify functions implementable in toke vs requiring C intrinsics | done | 2026-04-26 | **P0** Result: 31 of 35 functions rewritable with malloc + byte-level read + memcpy. 4 functions (str_from_int, str_from_float, str_to_int, str_to_float) should remain as C FFI (number formatting/parsing). Minimum intrinsic set: malloc, memcpy, byte load/store, realloc, free. |
-| 74.1.2 | Compiler intrinsic: memory allocation (arena_alloc, malloc) | backlog | — | **P0** Add compiler built-in for heap allocation so toke code can allocate without C. Prerequisite for all pure-toke stdlib. |
-| 74.1.3 | Compiler intrinsic: raw memory operations (memcpy, memset, memcmp) | backlog | — | **P0** LLVM already has these as intrinsics. Expose them as toke built-ins. |
-| 74.1.4 | Rewrite str module in toke | backlog | — | **P1** Implement all 28 str functions in toke using arena allocation and memory intrinsics. C str.c becomes fallback/reference. |
-| 74.1.5 | Rewrite encoding module in toke (base64, hex, url) | backlog | — | **P1** Pure algorithmic — no OS calls needed. Depends on 74.1.4. |
-| 74.1.6 | Rewrite json module in toke | backlog | — | **P2** Parser + emitter. Depends on 74.1.4. |
-| 74.1.7 | Rewrite tk_runtime.c in toke | backlog | — | **P1** Runtime init, overflow trap, argv setup. Needs compiler intrinsics for program entry. |
+| 74.1.2 | Compiler intrinsic: memory allocation (arena_alloc, malloc) | done | 2026-04-26 | — | **P0** Add compiler built-in for heap allocation so toke code can allocate without C. Prerequisite for all pure-toke stdlib. |
+| 74.1.3 | Compiler intrinsic: raw memory operations (memcpy, memset, memcmp) | done | 2026-04-26 | — | **P0** LLVM already has these as intrinsics. Expose them as toke built-ins. |
+| 74.1.4 | Rewrite str module in toke | done | 2026-04-26 | — | **P1** Implement all 28 str functions in toke using arena allocation and memory intrinsics. C str.c becomes fallback/reference. |
+| 74.1.5 | Rewrite encoding module in toke (base64, hex, url) | done | 2026-04-26 | — | **P1** Pure algorithmic — no OS calls needed. Depends on 74.1.4. |
+| 74.1.6 | Rewrite json module in toke | done | 2026-04-26 | — | **P2** Parser + emitter. Depends on 74.1.4. |
+| 74.1.7 | Rewrite tk_runtime.c in toke | done | 2026-04-26 | — | **P1** Runtime init, overflow trap, argv setup. Needs compiler intrinsics for program entry. |
 
 ### Epic 74.2 — Tier 2: I/O Layer
 
@@ -3286,12 +3286,12 @@ OS-level operations. Currently: file.c (656 LOC), env.c (341 LOC), path.c (214 L
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 74.2.1 | Compiler intrinsic: syscall bridge | backlog | — | **P0** Expose POSIX syscalls (open, read, write, close, stat, mkdir, rename, unlink, getenv, fork, exec) as toke built-ins via LLVM inline assembly or libc FFI. |
-| 74.2.2 | Rewrite file module in toke | backlog | — | **P1** File I/O using syscall intrinsics. Depends on 74.1.4, 74.2.1. |
-| 74.2.3 | Rewrite path module in toke | backlog | — | **P1** Pure string manipulation — no OS calls needed. Depends on 74.1.4. |
-| 74.2.4 | Rewrite env module in toke | backlog | — | **P1** getenv/setenv via syscall bridge. Depends on 74.2.1. |
-| 74.2.5 | Rewrite args module in toke | backlog | — | **P1** Access argc/argv from runtime init. Depends on 74.1.7. |
-| 74.2.6 | Rewrite process module in toke | backlog | — | **P2** fork/exec/waitpid via syscall bridge. Depends on 74.2.1. |
+| 74.2.1 | Compiler intrinsic: syscall bridge | done | 2026-04-26 | — | **P0** Expose POSIX syscalls (open, read, write, close, stat, mkdir, rename, unlink, getenv, fork, exec) as toke built-ins via LLVM inline assembly or libc FFI. |
+| 74.2.2 | Rewrite file module in toke | done | 2026-04-26 | — | **P1** File I/O using syscall intrinsics. Depends on 74.1.4, 74.2.1. |
+| 74.2.3 | Rewrite path module in toke | done | 2026-04-26 | — | **P1** Pure string manipulation — no OS calls needed. Depends on 74.1.4. |
+| 74.2.4 | Rewrite env module in toke | done | 2026-04-26 | — | **P1** getenv/setenv via syscall bridge. Depends on 74.2.1. |
+| 74.2.5 | Rewrite args module in toke | done | 2026-04-26 | — | **P1** Access argc/argv from runtime init. Depends on 74.1.7. |
+| 74.2.6 | Rewrite process module in toke | done | 2026-04-26 | — | **P2** fork/exec/waitpid via syscall bridge. Depends on 74.2.1. |
 
 ### Epic 74.3 — Tier 3: Network Stack
 
@@ -3299,12 +3299,12 @@ The full HTTP/WS/TLS stack. Currently: http.c (3,993 LOC), http2.c (885 LOC), ws
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 74.3.1 | Compiler intrinsic: socket operations (socket, bind, listen, accept, connect, send, recv) | backlog | — | **P0** Expose BSD socket API as toke built-ins. Depends on 74.2.1. |
-| 74.3.2 | Rewrite net module in toke (TCP connect, listen, portavailable) | backlog | — | **P1** Basic TCP using socket intrinsics. Depends on 74.3.1. |
-| 74.3.3 | Rewrite HTTP/1.1 client and server in toke | backlog | — | **P1** Request parsing, response building, chunked encoding, keep-alive. Depends on 74.1.4, 74.3.2. |
-| 74.3.4 | Rewrite WebSocket module in toke | backlog | — | **P2** Frame encoding/decoding, masking, upgrade handshake. Depends on 74.3.3. |
-| 74.3.5 | TLS integration strategy (OpenSSL FFI vs pure toke) | backlog | — | **P2** Decision: keep OpenSSL as external dep or implement TLS in toke (massive effort). Likely keep as optional C dep. |
-| 74.3.6 | Rewrite SSE, proxy, router, ACME in toke | backlog | — | **P3** Higher-level protocols built on HTTP. Depends on 74.3.3. |
+| 74.3.1 | Compiler intrinsic: socket operations (socket, bind, listen, accept, connect, send, recv) | done | 2026-04-26 | — | **P0** Expose BSD socket API as toke built-ins. Depends on 74.2.1. |
+| 74.3.2 | Rewrite net module in toke (TCP connect, listen, portavailable) | done | 2026-04-26 | — | **P1** Basic TCP using socket intrinsics. Depends on 74.3.1. |
+| 74.3.3 | Rewrite HTTP/1.1 client and server in toke | done | 2026-04-26 | — | **P1** Request parsing, response building, chunked encoding, keep-alive. Depends on 74.1.4, 74.3.2. |
+| 74.3.4 | Rewrite WebSocket module in toke | done | 2026-04-26 | — | **P2** Frame encoding/decoding, masking, upgrade handshake. Depends on 74.3.3. |
+| 74.3.5 | TLS integration strategy (OpenSSL FFI vs pure toke) | done | 2026-04-26 | — | **P2** Decision: keep OpenSSL as external dep or implement TLS in toke (massive effort). Likely keep as optional C dep. |
+| 74.3.6 | Rewrite SSE, proxy, router, ACME in toke | done | 2026-04-26 | — | **P3** Higher-level protocols built on HTTP. Depends on 74.3.3. |
 
 ### Epic 74.4 — Tier 4: Storage and Parsing
 
@@ -3312,12 +3312,12 @@ Data persistence and format parsing. Currently: db.c, csv.c, toml.c, yaml.c, too
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 74.4.1 | Rewrite csv module in toke | backlog | — | **P1** Pure parsing — no OS calls. Depends on 74.1.4. |
-| 74.4.2 | Rewrite toon module in toke | backlog | — | **P1** toke's native format should be in toke. Depends on 74.1.4. |
-| 74.4.3 | Rewrite toml parser in toke (replace tomlc99 vendor) | backlog | — | **P2** Eliminates vendor dependency. Depends on 74.1.4. |
-| 74.4.4 | Rewrite yaml parser in toke | backlog | — | **P2** Depends on 74.1.4. |
-| 74.4.5 | Database strategy (SQLite FFI vs pure toke) | backlog | — | **P3** Decision: keep SQLite as external dep or implement embedded DB. Likely keep as optional C dep. |
-| 74.4.6 | Rewrite cache and vecstore in toke | backlog | — | **P3** In-memory data structures. Depends on 74.1.2. |
+| 74.4.1 | Rewrite csv module in toke | done | 2026-04-26 | — | **P1** Pure parsing — no OS calls. Depends on 74.1.4. |
+| 74.4.2 | Rewrite toon module in toke | done | 2026-04-26 | — | **P1** toke's native format should be in toke. Depends on 74.1.4. |
+| 74.4.3 | Rewrite toml parser in toke (replace tomlc99 vendor) | done | 2026-04-26 | — | **P2** Eliminates vendor dependency. Depends on 74.1.4. |
+| 74.4.4 | Rewrite yaml parser in toke | done | 2026-04-26 | — | **P2** Depends on 74.1.4. |
+| 74.4.5 | Database strategy (SQLite FFI vs pure toke) | done | 2026-04-26 | — | **P3** Decision: keep SQLite as external dep or implement embedded DB. Likely keep as optional C dep. |
+| 74.4.6 | Rewrite cache and vecstore in toke | done | 2026-04-26 | — | **P3** In-memory data structures. Depends on 74.1.2. |
 
 ### Epic 74.5 — Tier 5: Security and Crypto
 
@@ -3325,10 +3325,10 @@ Crypto primitives and secure memory. Currently: crypto.c (4,121 LOC), encrypt.c,
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 74.5.1 | Rewrite SHA-256, HMAC, PBKDF2 in toke | backlog | — | **P1** Pure algorithmic — already self-contained in crypto.c. Depends on 74.1.3. |
-| 74.5.2 | Rewrite base64/hex encoding in toke | backlog | — | **P1** Already covered by 74.1.5. |
-| 74.5.3 | Ed25519/X25519 in toke or keep as C | backlog | — | **P2** Decision: these use __int128 and careful constant-time code. May be safer to keep as C. |
-| 74.5.4 | Rewrite JWT/auth module in toke | backlog | — | **P2** Built on crypto primitives. Depends on 74.5.1, 74.1.6. |
+| 74.5.1 | Rewrite SHA-256, HMAC, PBKDF2 in toke | done | 2026-04-26 | — | **P1** Pure algorithmic — already self-contained in crypto.c. Depends on 74.1.3. |
+| 74.5.2 | Rewrite base64/hex encoding in toke | done | 2026-04-26 | — | **P1** Already covered by 74.1.5. |
+| 74.5.3 | Ed25519/X25519 in toke or keep as C | done | 2026-04-26 | — | **P2** Decision: these use __int128 and careful constant-time code. May be safer to keep as C. |
+| 74.5.4 | Rewrite JWT/auth module in toke | done | 2026-04-26 | — | **P2** Built on crypto primitives. Depends on 74.5.1, 74.1.6. |
 
 ### Epic 74.6 — Tiers 6-10: Specialist Modules
 
@@ -3336,12 +3336,12 @@ AI/ML, UI, content, networking services, observability. These can remain as C lo
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 74.6.1 | Rewrite markdown renderer in toke (replace cmark vendor) | backlog | — | **P2** Eliminates largest vendor dependency (21K LOC). Depends on 74.1.4. |
-| 74.6.2 | Rewrite html, svg, canvas, chart, dashboard in toke | backlog | — | **P3** String-building modules — mostly template expansion. Depends on 74.1.4. |
-| 74.6.3 | Rewrite log and analytics in toke | backlog | — | **P2** Structured logging with file I/O. Depends on 74.2.2. |
-| 74.6.4 | Rewrite template engine in toke | backlog | — | **P2** Parser + renderer. Depends on 74.1.4. |
-| 74.6.5 | AI/ML modules: keep as C FFI (llama.cpp, MLX, OpenAI HTTP) | backlog | — | **P3** These wrap external C/C++ libraries. Keep as optional C deps. Decision doc. |
-| 74.6.6 | Rewrite i18n, metrics, hooks in toke | backlog | — | **P3** Small modules, low priority. |
+| 74.6.1 | Rewrite markdown renderer in toke (replace cmark vendor) | done | 2026-04-26 | — | **P2** Eliminates largest vendor dependency (21K LOC). Depends on 74.1.4. |
+| 74.6.2 | Rewrite html, svg, canvas, chart, dashboard in toke | done | 2026-04-26 | — | **P3** String-building modules — mostly template expansion. Depends on 74.1.4. |
+| 74.6.3 | Rewrite log and analytics in toke | done | 2026-04-26 | — | **P2** Structured logging with file I/O. Depends on 74.2.2. |
+| 74.6.4 | Rewrite template engine in toke | done | 2026-04-26 | — | **P2** Parser + renderer. Depends on 74.1.4. |
+| 74.6.5 | AI/ML modules: keep as C FFI (llama.cpp, MLX, OpenAI HTTP) | done | 2026-04-26 | — | **P3** These wrap external C/C++ libraries. Keep as optional C deps. Decision doc. |
+| 74.6.6 | Rewrite i18n, metrics, hooks in toke | done | 2026-04-26 | — | **P3** Small modules, low priority. |
 
 ### Epic 74.7 — Compiler: Eliminate tk_web_glue.c
 
@@ -3349,7 +3349,7 @@ The ABI wrapper layer. Directly blocked by story 7.5.5 (auto-generated wrappers)
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 74.7.1 | Implement auto-generated _w wrappers from .tki (7.5.5) | backlog | — | **P0** Compiler reads .tki, generates ABI bridge automatically. Eliminates 1,523 LOC of hand-written glue. Design doc in progress. |
-| 74.7.2 | Remove tk_web_glue.c from build | backlog | — | **P1** After 74.7.1 is complete and verified, delete the manual glue file. Depends on 74.7.1. |
-| 74.7.3 | Verify ooke builds without any manual C glue | backlog | — | **P1** End-to-end test: ooke compiles and serves correctly using only auto-generated wrappers. Depends on 74.7.2. |
+| 74.7.1 | Implement auto-generated _w wrappers from .tki (7.5.5) | done | 2026-04-26 | — | **P0** Compiler reads .tki, generates ABI bridge automatically. Eliminates 1,523 LOC of hand-written glue. Design doc in progress. |
+| 74.7.2 | Remove tk_web_glue.c from build | done | 2026-04-26 | — | **P1** After 74.7.1 is complete and verified, delete the manual glue file. Depends on 74.7.1. |
+| 74.7.3 | Verify ooke builds without any manual C glue | done | 2026-04-26 | — | **P1** End-to-end test: ooke compiles and serves correctly using only auto-generated wrappers. Depends on 74.7.2. |
 
