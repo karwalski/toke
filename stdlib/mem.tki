@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "module": "std.mem",
+  "exports": [
+    {"kind": "func", "name": "mem.alloc",   "params": ["u64"],              "return": "u64"},
+    {"kind": "func", "name": "mem.free",    "params": ["u64"],              "return": "void"},
+    {"kind": "func", "name": "mem.realloc", "params": ["u64", "u64"],       "return": "u64"},
+    {"kind": "func", "name": "mem.copy",    "params": ["u64", "u64", "u64"],"return": "void"},
+    {"kind": "func", "name": "mem.set",     "params": ["u64", "u64", "u64"],"return": "void"},
+    {"kind": "func", "name": "mem.cmp",     "params": ["u64", "u64", "u64"],"return": "i64"},
+    {"kind": "func", "name": "mem.load8",   "params": ["u64", "u64"],       "return": "u64"},
+    {"kind": "func", "name": "mem.store8",  "params": ["u64", "u64", "u64"],"return": "void"}
+  ]
+}

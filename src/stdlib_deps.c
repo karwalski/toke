@@ -71,6 +71,8 @@ static const StdlibModule stdlib_table[] = {
     { "mlx",           "mlx.c",                                 "",                                                                 "" },
     { "mdns",          "mdns.c",                                "",                                                                 "" },
     { "webview",       "webview.c",                             "",                                                                 "" },
+    { "mem",           "mem.c",                                 "",                                                                 "" },
+    { "os",            "os.c",                                  "",                                                                 "" },
     { NULL, NULL, NULL, NULL }  /* sentinel */
 };
 

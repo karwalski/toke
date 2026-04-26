@@ -15,7 +15,7 @@
  * Default mode (56-char syntax):
  *   - Letters        a-z  A-Z                (52)
  *   - Digits         0-9                     (10)
- *   - Symbols        ( ) { } [ ] = : . ; + - * / < > ! | " \ $ @   (20)
+ *   - Symbols        ( ) { } [ ] = : . ; + - * / < > ! | " \ $ @ & ^ ~ %   (24)
  *   Keywords are lowercase (m=, f=, t=, i=); uppercase produces E1006.
  *   $ prefixes type references; @ is a valid token.
  *   Uppercase-initial identifiers are plain TK_IDENT (not TK_TYPE_IDENT).
@@ -632,8 +632,20 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
         case '-':  sym = TK_MINUS;    break;
         case '*':  sym = TK_STAR;     break;
         case '/':  sym = TK_SLASH;    break;
-        case '<':  sym = TK_LT;       break;
-        case '>':  sym = TK_GT;       break;
+        case '<':
+            if (l.pos + 1 < l.len && src[l.pos + 1] == '<') {
+                advance(&l); advance(&l);
+                if (emit(&l, TK_SHL, start, 2, line, col) < 0) return -1;
+                continue;
+            }
+            sym = TK_LT; break;
+        case '>':
+            if (l.pos + 1 < l.len && src[l.pos + 1] == '>') {
+                advance(&l); advance(&l);
+                if (emit(&l, TK_SHR, start, 2, line, col) < 0) return -1;
+                continue;
+            }
+            sym = TK_GT; break;
         case '!':  sym = TK_BANG;     break;
         case '|':
             if (l.pos + 1 < l.len && src[l.pos + 1] == '|') {
@@ -648,9 +660,10 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                 if (emit(&l, TK_AND, start, 2, line, col) < 0) return -1;
                 continue;
             }
-            diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
-                      "character outside allowed character set", NULL);
-            return -1;
+            sym = TK_AMP; break;
+        case '^':  sym = TK_CARET;   break;
+        case '~':  sym = TK_TILDE;   break;
+        case '%':  sym = TK_PERCENT;  break;
         case '$':
             if (l.profile == PROFILE_LEGACY) {
                 diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,

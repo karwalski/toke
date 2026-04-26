@@ -60,6 +60,12 @@ typedef enum {
     TK_AT,
     TK_AND,
     TK_OR,
+    TK_AMP,
+    TK_CARET,
+    TK_TILDE,
+    TK_SHR,
+    TK_SHL,
+    TK_PERCENT,
 
     /* Special */
     TK_EOF,

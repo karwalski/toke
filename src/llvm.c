@@ -666,7 +666,7 @@ static void ensure_tki_cache_loaded(void) {
     static const char *stdlib_modules[] = {
         "str", "env", "file", "path", "args", "toml", "md", "log",
         "http", "router", "json", "toon", "yaml", "i18n", "math",
-        "time", "crypto", "net", "sys", "ws",
+        "time", "crypto", "net", "sys", "ws", "os", "mem",
         NULL
     };
     for (int i = 0; stdlib_modules[i]; i++)
@@ -1033,6 +1033,12 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         if (!strcmp(method, "i64"))     return "tk_toml_i64_w";
         if (!strcmp(method, "bool"))    return "tk_toml_bool_w";
     }
+    /* std.mem functions — direct tk_mem_* naming (no _w suffix) */
+    if (!strcmp(mod, "mem")) {
+        static char mem_buf[128];
+        snprintf(mem_buf, sizeof mem_buf, "tk_mem_%s", method);
+        return mem_buf;
+    }
     /* std.math scalar functions — map directly to libc (linked via -lm) */
     if (!strcmp(mod, "math")) {
         if (!strcmp(method, "sin"))   return "sin";
@@ -1087,6 +1093,36 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
     /* std.router functions */
     if (!strcmp(mod, "router")) {
         if (!strcmp(method, "new")) return "tk_router_new_w";
+    }
+    /* std.os functions — thin POSIX syscall bridge (Story 74.2.1) */
+    if (!strcmp(mod, "os")) {
+        if (!strcmp(method, "open"))      return "tk_os_open";
+        if (!strcmp(method, "close"))     return "tk_os_close";
+        if (!strcmp(method, "read"))      return "tk_os_read";
+        if (!strcmp(method, "write"))     return "tk_os_write";
+        if (!strcmp(method, "lseek"))     return "tk_os_lseek";
+        if (!strcmp(method, "stat"))      return "tk_os_stat";
+        if (!strcmp(method, "unlink"))    return "tk_os_unlink";
+        if (!strcmp(method, "rename"))    return "tk_os_rename";
+        if (!strcmp(method, "mkdir"))     return "tk_os_mkdir";
+        if (!strcmp(method, "rmdir"))     return "tk_os_rmdir";
+        if (!strcmp(method, "access"))    return "tk_os_access";
+        if (!strcmp(method, "getcwd"))    return "tk_os_getcwd";
+        if (!strcmp(method, "getpid"))    return "tk_os_getpid";
+        if (!strcmp(method, "exit"))      return "tk_os_exit";
+        if (!strcmp(method, "getenv"))    return "tk_os_getenv";
+        if (!strcmp(method, "setenv"))    return "tk_os_setenv";
+        if (!strcmp(method, "errno"))     return "tk_os_errno";
+        if (!strcmp(method, "strerror"))  return "tk_os_strerror";
+        if (!strcmp(method, "o_rdonly"))   return "tk_os_o_rdonly";
+        if (!strcmp(method, "o_wronly"))   return "tk_os_o_wronly";
+        if (!strcmp(method, "o_rdwr"))     return "tk_os_o_rdwr";
+        if (!strcmp(method, "o_creat"))    return "tk_os_o_creat";
+        if (!strcmp(method, "o_trunc"))    return "tk_os_o_trunc";
+        if (!strcmp(method, "o_append"))   return "tk_os_o_append";
+        if (!strcmp(method, "stdin_fd"))   return "tk_os_stdin_fd";
+        if (!strcmp(method, "stdout_fd"))  return "tk_os_stdout_fd";
+        if (!strcmp(method, "stderr_fd"))  return "tk_os_stderr_fd";
     }
     /* Generic fallback for unmapped std.* modules (Story 57.12.1):
      * generate tk_<module>_<method>_w so all stdlib calls resolve to a
@@ -1502,10 +1538,16 @@ static int emit_expr(Ctx *c, const Node *n)
             t = next_tmp(c);
             char op_buf[32];
             switch (n->op) {
-            case TK_SLASH: snprintf(op_buf, sizeof op_buf, "sdiv %s", ity); break;
-            case TK_LT:    snprintf(op_buf, sizeof op_buf, "icmp slt %s", ity); break;
-            case TK_GT:    snprintf(op_buf, sizeof op_buf, "icmp sgt %s", ity); break;
-            case TK_EQ:    snprintf(op_buf, sizeof op_buf, "icmp eq %s", ity); break;
+            case TK_SLASH:   snprintf(op_buf, sizeof op_buf, "sdiv %s", ity); break;
+            case TK_LT:     snprintf(op_buf, sizeof op_buf, "icmp slt %s", ity); break;
+            case TK_GT:     snprintf(op_buf, sizeof op_buf, "icmp sgt %s", ity); break;
+            case TK_EQ:     snprintf(op_buf, sizeof op_buf, "icmp eq %s", ity); break;
+            case TK_AMP:    snprintf(op_buf, sizeof op_buf, "and %s", ity); break;
+            case TK_PIPE:   snprintf(op_buf, sizeof op_buf, "or %s", ity); break;
+            case TK_CARET:  snprintf(op_buf, sizeof op_buf, "xor %s", ity); break;
+            case TK_SHL:    snprintf(op_buf, sizeof op_buf, "shl %s", ity); break;
+            case TK_SHR:    snprintf(op_buf, sizeof op_buf, "ashr %s", ity); break;
+            case TK_PERCENT:snprintf(op_buf, sizeof op_buf, "srem %s", ity); break;
             default:       snprintf(op_buf, sizeof op_buf, "add %s", ity);
                 fprintf(c->out, "  ; unsupported binop %d\n", (int)n->op);
             }
@@ -1539,6 +1581,10 @@ static int emit_expr(Ctx *c, const Node *n)
             } else {
                 fprintf(c->out, "  %%t%d = xor i1 %%t%d, 1\n", t, v);
             }
+        }
+        else if (n->op == TK_TILDE) {
+            const char *uty3 = expr_llvm_type(c, n->children[0]);
+            fprintf(c->out, "  %%t%d = xor %s %%t%d, -1\n", t, uty3, v);
         }
         else
             fprintf(c->out, "  %%t%d = add i64 0, %%t%d ; unary stub\n", t, v);
@@ -1728,11 +1774,22 @@ static int emit_expr(Ctx *c, const Node *n)
                         "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
                         "fmod", "fabs", "log", "log10", "exp", "round",
                         "sqrt", "floor", "ceil", "pow",
+                        "tk_mem_alloc", "tk_mem_free", "tk_mem_realloc",
+                        "tk_mem_copy", "tk_mem_set", "tk_mem_cmp",
+                        "tk_mem_load8", "tk_mem_store8",
                         "tk_http_post_echo", "tk_http_post_static", "tk_http_post_json",
                         "tk_http_client_w", "tk_http_get_w", "tk_http_post_w",
                         "tk_http_put_w", "tk_http_delete_w", "tk_http_stream_w",
                         "tk_http_streamnext_w", "tk_http_listen_w", "tk_http_print_w",
                         "tk_http_withproxy_w",
+                        "tk_os_open", "tk_os_close", "tk_os_read", "tk_os_write",
+                        "tk_os_lseek", "tk_os_stat", "tk_os_unlink", "tk_os_rename",
+                        "tk_os_mkdir", "tk_os_rmdir", "tk_os_access", "tk_os_getcwd",
+                        "tk_os_getpid", "tk_os_exit", "tk_os_getenv", "tk_os_setenv",
+                        "tk_os_errno", "tk_os_strerror",
+                        "tk_os_o_rdonly", "tk_os_o_wronly", "tk_os_o_rdwr",
+                        "tk_os_o_creat", "tk_os_o_trunc", "tk_os_o_append",
+                        "tk_os_stdin_fd", "tk_os_stdout_fd", "tk_os_stderr_fd",
                         NULL
                     };
                     int in_preamble = 0;
@@ -2525,11 +2582,19 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
                 return rt;
             return "i64";
         }
+        case TK_AMP: case TK_PIPE: case TK_CARET:
+        case TK_SHL: case TK_SHR: case TK_PERCENT: {
+            const char *lt = expr_llvm_type(c, n->children[0]);
+            if (!strcmp(lt, "i32") || !strcmp(lt, "i16") || !strcmp(lt, "i8"))
+                return lt;
+            return "i64";
+        }
         default: return "i64";
         }
     case NODE_UNARY_EXPR:
         if (n->op == TK_BANG) return "i1";
         if (n->op == TK_MINUS) return expr_llvm_type(c, n->children[0]);
+        if (n->op == TK_TILDE) return expr_llvm_type(c, n->children[0]);
         return "i64";
     case NODE_PROPAGATE_EXPR:
         /* Error-propagation wrapper: type is the type of the inner expression */
@@ -3440,6 +3505,15 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare double @floor(double)\n", f);
     fputs("declare double @ceil(double)\n", f);
     fputs("declare double @pow(double, double)\n", f);
+    /* std.mem module functions (mem.c) */
+    fputs("declare i64 @tk_mem_alloc(i64)\n", f);
+    fputs("declare void @tk_mem_free(i64)\n", f);
+    fputs("declare i64 @tk_mem_realloc(i64, i64)\n", f);
+    fputs("declare void @tk_mem_copy(i64, i64, i64)\n", f);
+    fputs("declare void @tk_mem_set(i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_mem_cmp(i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_mem_load8(i64, i64)\n", f);
+    fputs("declare void @tk_mem_store8(i64, i64, i64)\n", f);
     /* std.args module wrappers (tk_web_glue.c) */
     fputs("declare i64 @tk_args_count_w()\n", f);
     fputs("declare i64 @tk_args_get_w(i64)\n", f);
@@ -3480,6 +3554,34 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_map_get(i8*, i64)\n", f);
     fputs("declare i64 @tk_array_append_w(i64, i64)\n", f);
     fputs("declare i64 @tk_map_set_w(i64, i64, i64)\n\n", f);
+    /* std.os module — POSIX syscall bridge (Story 74.2.1) */
+    fputs("declare i64 @tk_os_open(i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_os_close(i64)\n", f);
+    fputs("declare i64 @tk_os_read(i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_os_write(i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_os_lseek(i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_os_stat(i64)\n", f);
+    fputs("declare i64 @tk_os_unlink(i64)\n", f);
+    fputs("declare i64 @tk_os_rename(i64, i64)\n", f);
+    fputs("declare i64 @tk_os_mkdir(i64, i64)\n", f);
+    fputs("declare i64 @tk_os_rmdir(i64)\n", f);
+    fputs("declare i64 @tk_os_access(i64, i64)\n", f);
+    fputs("declare i64 @tk_os_getcwd()\n", f);
+    fputs("declare i64 @tk_os_getpid()\n", f);
+    fputs("declare i64 @tk_os_exit(i64)\n", f);
+    fputs("declare i64 @tk_os_getenv(i64)\n", f);
+    fputs("declare i64 @tk_os_setenv(i64, i64)\n", f);
+    fputs("declare i64 @tk_os_errno()\n", f);
+    fputs("declare i64 @tk_os_strerror(i64)\n", f);
+    fputs("declare i64 @tk_os_o_rdonly()\n", f);
+    fputs("declare i64 @tk_os_o_wronly()\n", f);
+    fputs("declare i64 @tk_os_o_rdwr()\n", f);
+    fputs("declare i64 @tk_os_o_creat()\n", f);
+    fputs("declare i64 @tk_os_o_trunc()\n", f);
+    fputs("declare i64 @tk_os_o_append()\n", f);
+    fputs("declare i64 @tk_os_stdin_fd()\n", f);
+    fputs("declare i64 @tk_os_stdout_fd()\n", f);
+    fputs("declare i64 @tk_os_stderr_fd()\n\n", f);
 
     /* Loop-iteration guard: declare fprintf, exit, stderr when enabled */
     if (ctx.max_iters > 0) {

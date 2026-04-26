@@ -191,6 +191,18 @@ static int is_numeric(const Type *t) {
 }
 
 /*
+ * is_integer — return 1 if `t` is an integer type (signed or unsigned).
+ *
+ * Used to validate operands of bitwise and modulo operators, which
+ * require integer operands (no floats, strings, or bools).
+ */
+static int is_integer(const Type *t) {
+    return t && (t->kind==TY_I64 || t->kind==TY_U64
+              || t->kind==TY_I8  || t->kind==TY_I16 || t->kind==TY_I32
+              || t->kind==TY_U8  || t->kind==TY_U16 || t->kind==TY_U32);
+}
+
+/*
  * tc_lookup — look up a name in the scope chain.
  *
  * Walks from the innermost scope `s` outward through parent scopes,
@@ -656,6 +668,12 @@ static Type *infer(Ctx *cx, const Node *node) {
             diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,"fix",(const char*)NULL);
             cx->had_error=1; return mk_type(A,TY_UNKNOWN);
         }
+        if (node->op==TK_TILDE&&op->kind!=TY_UNKNOWN&&!is_integer(op)) {
+            char msg[128];
+            snprintf(msg,sizeof(msg),"type mismatch: bitwise NOT requires integer type, got '%s'",type_name(op));
+            diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,"fix",(const char*)NULL);
+            cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+        }
         return op;
     }
 
@@ -679,6 +697,8 @@ static Type *infer(Ctx *cx, const Node *node) {
         int arith=(node->op==TK_PLUS||node->op==TK_MINUS||node->op==TK_STAR||node->op==TK_SLASH);
         int cmp  =(node->op==TK_LT  ||node->op==TK_GT  ||node->op==TK_EQ);
         int logic=(node->op==TK_AND  ||node->op==TK_OR);
+        int bitwise=(node->op==TK_AMP||node->op==TK_PIPE||node->op==TK_CARET
+                   ||node->op==TK_SHL||node->op==TK_SHR||node->op==TK_PERCENT);
         if (logic) {
             if (l->kind!=TY_BOOL) {
                 emit_mm(cx,node,mk_type(A,TY_BOOL),l,"operand of && / || must be bool");
@@ -689,6 +709,15 @@ static Type *infer(Ctx *cx, const Node *node) {
                 return mk_type(A,TY_BOOL);
             }
             return mk_type(A,TY_BOOL);
+        }
+        if (bitwise) {
+            if (!is_integer(l)||!is_integer(r)||!types_equal(l,r)) {
+                char fix[64];
+                snprintf(fix,sizeof(fix),"bitwise/modulo operators require matching integer types");
+                emit_mm(cx,node,l,r,fix);
+                return mk_type(A,TY_UNKNOWN);
+            }
+            return l;
         }
         if (arith||cmp) {
             if ((arith&&(!is_numeric(l)||!types_equal(l,r)))||(cmp&&!types_equal(l,r))) {

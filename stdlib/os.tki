@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "module": "std.os",
+  "exports": [
+    {"kind": "func", "name": "os.open",      "params": ["str", "i64", "i64"], "return": "i64"},
+    {"kind": "func", "name": "os.close",     "params": ["i64"],               "return": "i64"},
+    {"kind": "func", "name": "os.read",      "params": ["i64", "i64", "i64"], "return": "i64"},
+    {"kind": "func", "name": "os.write",     "params": ["i64", "i64", "i64"], "return": "i64"},
+    {"kind": "func", "name": "os.lseek",     "params": ["i64", "i64", "i64"], "return": "i64"},
+    {"kind": "func", "name": "os.stat",      "params": ["str"],               "return": "i64"},
+    {"kind": "func", "name": "os.unlink",    "params": ["str"],               "return": "i64"},
+    {"kind": "func", "name": "os.rename",    "params": ["str", "str"],        "return": "i64"},
+    {"kind": "func", "name": "os.mkdir",     "params": ["str", "i64"],        "return": "i64"},
+    {"kind": "func", "name": "os.rmdir",     "params": ["str"],               "return": "i64"},
+    {"kind": "func", "name": "os.access",    "params": ["str", "i64"],        "return": "i64"},
+    {"kind": "func", "name": "os.getcwd",    "params": [],                    "return": "str"},
+    {"kind": "func", "name": "os.getpid",    "params": [],                    "return": "i64"},
+    {"kind": "func", "name": "os.exit",      "params": ["i64"],               "return": "i64"},
+    {"kind": "func", "name": "os.getenv",    "params": ["str"],               "return": "str"},
+    {"kind": "func", "name": "os.setenv",    "params": ["str", "str"],        "return": "i64"},
+    {"kind": "func", "name": "os.errno",     "params": [],                    "return": "i64"},
+    {"kind": "func", "name": "os.strerror",  "params": ["i64"],               "return": "str"},
+    {"kind": "func", "name": "os.o_rdonly",   "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.o_wronly",   "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.o_rdwr",     "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.o_creat",    "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.o_trunc",    "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.o_append",   "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.stdin_fd",   "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.stdout_fd",  "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.stderr_fd",  "params": [],                   "return": "i64"}
+  ]
+}

@@ -60,6 +60,8 @@ static const char *g_skip_modules[] = {
     "yaml",     /* no bare C functions; hand-written wrappers */
     "i18n",     /* no bare C functions; hand-written wrappers */
     "ws",       /* complex WebSocket API */
+    "mem",      /* mapped directly to tk_mem_* in resolve_stdlib_call */
+    "os",       /* mapped directly to tk_os_* in resolve_stdlib_call */
     NULL
 };
 
