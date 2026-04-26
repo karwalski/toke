@@ -1,55 +1,60 @@
 m=strpure;
 i=mem:std.mem;
 
-f=len(s:str):u64{
-  let p=s as u64;
-  let n=mut.0 as u64;
-  loop{
+f=len(s:$str):i64{
+  let p=s as i64;
+  let n=mut.0 as i64;
+  let running=mut.true;
+  lp(let d=0;running;d=0){
     let b=mem.load8(p;n);
-    if(b==0){<n};
-    n=n+1
-  }
+    if(b=0){
+      running=false
+    }el{
+      n=n+1
+    }
+  };
+  <n
 };
 
-f=concat(a:str;b:str):str{
+f=concat(a:$str;b:$str):$str{
   let la=len(a);
   let lb=len(b);
   let out=mem.alloc(la+lb+1);
-  let pa=a as u64;
-  let pb=b as u64;
-  lp(let i=0 as u64;i<la;i=i+1){
+  let pa=a as i64;
+  let pb=b as i64;
+  lp(let i=0 as i64;i<la;i=i+1){
     mem.store8(out;i;mem.load8(pa;i))
   };
-  lp(let i=0 as u64;i<lb;i=i+1){
+  lp(let i=0 as i64;i<lb;i=i+1){
     mem.store8(out;la+i;mem.load8(pb;i))
   };
   mem.store8(out;la+lb;0);
-  <out as str
+  <out as $str
 };
 
-f=slice(s:str;start:u64;end:u64):str{
+f=slice(s:$str;start:i64;end:i64):$str{
   let n=end-start;
   let out=mem.alloc(n+1);
-  let p=s as u64;
-  lp(let i=0 as u64;i<n;i=i+1){
+  let p=s as i64;
+  lp(let i=0 as i64;i<n;i=i+1){
     mem.store8(out;i;mem.load8(p;start+i))
   };
   mem.store8(out;n;0);
-  <out as str
+  <out as $str
 };
 
-f=contains(s:str;sub:str):bool{
+f=contains(s:$str;sub:$str):bool{
   let slen=len(s);
   let sublen=len(sub);
-  if(sublen==0){<true};
+  if(sublen=0){<true};
   if(sublen>slen){<false};
   let limit=slen-sublen+1;
-  let ps=s as u64;
-  let psub=sub as u64;
-  lp(let i=0 as u64;i<limit;i=i+1){
+  let ps=s as i64;
+  let psub=sub as i64;
+  lp(let i=0 as i64;i<limit;i=i+1){
     let matched=mut.true;
-    lp(let j=0 as u64;j<sublen;j=j+1){
-      if(mem.load8(ps;i+j)!=mem.load8(psub;j)){
+    lp(let j=0 as i64;j<sublen;j=j+1){
+      if(!(mem.load8(ps;i+j)=mem.load8(psub;j))){
         matched=false
       }
     };
@@ -58,18 +63,18 @@ f=contains(s:str;sub:str):bool{
   <false
 };
 
-f=indexof(s:str;sub:str):i64{
+f=indexof(s:$str;sub:$str):i64{
   let slen=len(s);
   let sublen=len(sub);
-  if(sublen==0){<0 as i64};
+  if(sublen=0){<0 as i64};
   if(sublen>slen){<-1 as i64};
   let limit=slen-sublen+1;
-  let ps=s as u64;
-  let psub=sub as u64;
-  lp(let i=0 as u64;i<limit;i=i+1){
+  let ps=s as i64;
+  let psub=sub as i64;
+  lp(let i=0 as i64;i<limit;i=i+1){
     let matched=mut.true;
-    lp(let j=0 as u64;j<sublen;j=j+1){
-      if(mem.load8(ps;i+j)!=mem.load8(psub;j)){
+    lp(let j=0 as i64;j<sublen;j=j+1){
+      if(!(mem.load8(ps;i+j)=mem.load8(psub;j))){
         matched=false
       }
     };
@@ -78,70 +83,70 @@ f=indexof(s:str;sub:str):i64{
   <-1 as i64
 };
 
-f=startswith(s:str;prefix:str):bool{
+f=startswith(s:$str;prefix:$str):bool{
   let slen=len(s);
   let plen=len(prefix);
   if(plen>slen){<false};
-  let ps=s as u64;
-  let pp=prefix as u64;
-  lp(let i=0 as u64;i<plen;i=i+1){
-    if(mem.load8(ps;i)!=mem.load8(pp;i)){<false}
+  let ps=s as i64;
+  let pp=prefix as i64;
+  lp(let i=0 as i64;i<plen;i=i+1){
+    if(!(mem.load8(ps;i)=mem.load8(pp;i))){<false}
   };
   <true
 };
 
-f=endswith(s:str;suffix:str):bool{
+f=endswith(s:$str;suffix:$str):bool{
   let slen=len(s);
   let suflen=len(suffix);
   if(suflen>slen){<false};
   let offset=slen-suflen;
-  let ps=s as u64;
-  let psuf=suffix as u64;
-  lp(let i=0 as u64;i<suflen;i=i+1){
-    if(mem.load8(ps;offset+i)!=mem.load8(psuf;i)){<false}
+  let ps=s as i64;
+  let psuf=suffix as i64;
+  lp(let i=0 as i64;i<suflen;i=i+1){
+    if(!(mem.load8(ps;offset+i)=mem.load8(psuf;i))){<false}
   };
   <true
 };
 
-f=upper(s:str):str{
+f=upper(s:$str):$str{
   let slen=len(s);
   let out=mem.alloc(slen+1);
-  let p=s as u64;
-  lp(let i=0 as u64;i<slen;i=i+1){
+  let p=s as i64;
+  lp(let i=0 as i64;i<slen;i=i+1){
     let b=mem.load8(p;i);
-    if(b>=97&&b<=122){
+    if(!(b<97)&&!(b>122)){
       mem.store8(out;i;b-32)
     }el{
       mem.store8(out;i;b)
     }
   };
   mem.store8(out;slen;0);
-  <out as str
+  <out as $str
 };
 
-f=lower(s:str):str{
+f=lower(s:$str):$str{
   let slen=len(s);
   let out=mem.alloc(slen+1);
-  let p=s as u64;
-  lp(let i=0 as u64;i<slen;i=i+1){
+  let p=s as i64;
+  lp(let i=0 as i64;i<slen;i=i+1){
     let b=mem.load8(p;i);
-    if(b>=65&&b<=90){
+    if(!(b<65)&&!(b>90)){
       mem.store8(out;i;b+32)
     }el{
       mem.store8(out;i;b)
     }
   };
   mem.store8(out;slen;0);
-  <out as str
+  <out as $str
 };
 
-f=reverse(s:str):str{
+f=reverse(s:$str):$str{
   let slen=len(s);
   let out=mem.alloc(slen+1);
-  let p=s as u64;
-  lp(let i=0 as u64;i<slen;i=i+1){
+  let p=s as i64;
+  lp(let i=0 as i64;i<slen;i=i+1){
     mem.store8(out;i;mem.load8(p;slen-1-i))
   };
   mem.store8(out;slen;0);
-  <out as str
+  <out as $str
 };
