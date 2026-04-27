@@ -412,7 +412,7 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done` 
 | 7.6.2 | Fix E3012: let re-declaration in same scope | backlog | — | **P0** Name resolver disallows `let x=...; let x=...;` which was previously valid. ~719 instances across 209 loke files + 1 in ooke store.tk. Most impactful issue. |
 | 7.6.3 | Fix E1003: add (* ... *) block comment support to lexer | backlog | — | **P1** Lexer doesn't support multi-line block comments. Affects ooke repair.tk. |
 | 7.6.4 | Fix E1003: allow underscore in identifiers | backlog | — | **P1** Lexer rejects _ in identifiers (e.g. _mi, _exit). Affects ooke repair.tk. Also blocks toon.tk calling str.to_int etc. |
-| 7.6.5 | Fix E1003: double-hyphen in string literals causes lex error | backlog | — | **P0** Lexer incorrectly processes `--` inside quoted strings like "--check". Affects ooke repair.tk and any CLI string construction. |
+| 7.6.5 | Fix E1003: double-hyphen in string literals causes lex error | done | 2026-04-25 | **P0** Verified: lex_string() already consumes all non-quote non-backslash chars as literal content — `--` inside strings was never misinterpreted. Original E1003 was caused by underscore in `_mi` (fixed in 7.6.4). Added e2e_str_double_hyphen.tk conformance test. |
 | 7.6.6 | Fix StrPair.value vs StrPair.val field name mismatch | backlog | — | **P0** tk_web_glue.c line 296 references .value but http.h defines .val. Breaks linking. |
 | 7.6.7 | Add missing db.c and json.c to ooke Makefile | backlog | — | **P0** store.tk imports std.db and std.json but ooke Makefile doesn't link db.c/json.c. Ooke-side fix. |
 | 7.6.8 | Add repair module to ooke Makefile | backlog | — | **P0** main.tk imports ooke.repair but Makefile doesn't compile repair.tk. Ooke-side fix. |

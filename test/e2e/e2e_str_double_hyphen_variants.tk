@@ -1,0 +1,9 @@
+m=test;
+f=main():i64{
+  let a="--check";
+  let b="--";
+  let c="---";
+  let d="a--b";
+  let e="--check --verbose --dry-run";
+  <0
+};

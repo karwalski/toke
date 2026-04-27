@@ -397,6 +397,13 @@ static int lex_number(Lexer *l, int start, int line, int col)
  */
 static int lex_string(Lexer *l, int start, int line, int col)
 {
+    /* The string body loop consumes ALL characters between the opening and
+     * closing double-quote.  Only two characters receive special treatment:
+     *   '"'  — terminates the string
+     *   '\\' — starts an escape sequence
+     * Everything else — including operator-like sequences such as '--', '<',
+     * '>', '!', etc. — is literal string content.  No comment or operator
+     * recognition occurs inside string literals (story 7.6.5). */
     while (l->pos < l->len) {
         char c = l->src[l->pos];
         if (c == '"') {
