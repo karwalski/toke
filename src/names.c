@@ -1124,19 +1124,14 @@ int resolve_names(const Node *ast, const char *src,
         if (!ie->resolved) continue;
         if (strncmp(ie->module_path, "std.", 4) != 0) continue;
 
-        /* Build path to .tki file */
+        /* Build path to .tki file — mirror the logic in llvm.c
+         * load_stdlib_tki(): TKC_STDLIB_DIR points to src/stdlib, so
+         * ../../stdlib/<mod>.tki resolves to the repo-root stdlib dir. */
         const char *mod_tail = ie->module_path + 4; /* after "std." */
         const char *env_dir = getenv("TKC_STDLIB_DIR");
+        const char *base = env_dir ? env_dir : TKC_STDLIB_DIR;
         char tki_path[TKC_MAX_PATH * 2];
-        if (env_dir) {
-            snprintf(tki_path, sizeof tki_path, "%s/../../stdlib/%s.tki", env_dir, mod_tail);
-        } else {
-            /* Try relative to search_path, then fall back to ./stdlib */
-            if (symtab->search_path)
-                snprintf(tki_path, sizeof tki_path, "%s/%s.tki", symtab->search_path, mod_tail);
-            else
-                snprintf(tki_path, sizeof tki_path, "stdlib/%s.tki", mod_tail);
-        }
+        snprintf(tki_path, sizeof tki_path, "%s/../../stdlib/%s.tki", base, mod_tail);
 
         FILE *tkf = fopen(tki_path, "r");
         if (!tkf) continue;
