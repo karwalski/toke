@@ -691,7 +691,16 @@ static int scope_insert(Scope *s, Arena *arena, const char *src,
                         int tok_start, int tok_len __attribute__((unused)), int name_start, int name_len,
                         DeclKind kind, const Node *def_node,
                         int node_line, int node_col) {
-    if (scope_lookup_local(s, src + name_start, name_len)) {
+    Decl *existing = scope_lookup_local(s, src + name_start, name_len);
+    if (existing) {
+        /* let/mut re-declarations shadow the previous binding in the same
+         * scope — this is standard behaviour (cf. Rust, JS let).  Other
+         * kinds (func, type, const, param, import) still produce E3012. */
+        if (kind == DECL_LET || kind == DECL_MUT) {
+            existing->kind     = kind;
+            existing->def_node = def_node;
+            return 0;  /* silently replace */
+        }
         char msg[256];
         /* Copy name for message */
         int mlen = name_len < 200 ? name_len : 200;
@@ -1099,6 +1108,111 @@ int resolve_names(const Node *ast, const char *src,
         d->def_node = NULL;
         d->next     = mscope->head;
         mscope->head = d;
+    }
+
+    /* Register sub-namespace prefixes from .tki exports (Story 7.6.1).
+     *
+     * Some stdlib modules export functions whose dot-prefix differs from the
+     * module alias.  For example, std.db exports "row.str", "row.i64", etc.
+     * When the user writes `row.str(r;"col")`, the name resolver sees `row`
+     * as a NODE_IDENT and must find it in scope.  We scan each resolved
+     * import's .tki file for function names with a dot prefix that differs
+     * from the import alias and register those prefixes as DECL_IMPORT_ALIAS
+     * entries so they pass name resolution. */
+    for (int i = 0; i < symtab->count; i++) {
+        const ImportEntry *ie = &symtab->entries[i];
+        if (!ie->resolved) continue;
+        if (strncmp(ie->module_path, "std.", 4) != 0) continue;
+
+        /* Build path to .tki file */
+        const char *mod_tail = ie->module_path + 4; /* after "std." */
+        const char *env_dir = getenv("TKC_STDLIB_DIR");
+        char tki_path[TKC_MAX_PATH * 2];
+        if (env_dir) {
+            snprintf(tki_path, sizeof tki_path, "%s/../../stdlib/%s.tki", env_dir, mod_tail);
+        } else {
+            /* Try relative to search_path, then fall back to ./stdlib */
+            if (symtab->search_path)
+                snprintf(tki_path, sizeof tki_path, "%s/%s.tki", symtab->search_path, mod_tail);
+            else
+                snprintf(tki_path, sizeof tki_path, "stdlib/%s.tki", mod_tail);
+        }
+
+        FILE *tkf = fopen(tki_path, "r");
+        if (!tkf) continue;
+
+        /* Read entire file (tki files are small) */
+        fseek(tkf, 0, SEEK_END);
+        long fsz = ftell(tkf);
+        fseek(tkf, 0, SEEK_SET);
+        if (fsz <= 0 || fsz > 64 * 1024) { fclose(tkf); continue; }
+        char *tki_buf = (char *)malloc((size_t)(fsz + 1));
+        if (!tki_buf) { fclose(tkf); continue; }
+        size_t rd = fread(tki_buf, 1, (size_t)fsz, tkf);
+        fclose(tkf);
+        tki_buf[rd] = '\0';
+
+        /* Scan for "name": "prefix.method" patterns; collect unique prefixes
+         * that differ from the import alias. */
+        char sub_ns[16][64];
+        int  sub_count = 0;
+        const char *cursor = tki_buf;
+        while ((cursor = strstr(cursor, "\"name\"")) != NULL) {
+            /* Advance past "name" and find the value string */
+            cursor += 6; /* skip "name" */
+            const char *q1 = strchr(cursor, '"');
+            if (!q1) break;
+            q1++; /* opening quote of value */
+            const char *q2 = strchr(q1, '"');
+            if (!q2) break;
+            int vlen = (int)(q2 - q1);
+
+            /* Look for a dot in the value */
+            const char *dot = (const char *)memchr(q1, '.', (size_t)vlen);
+            if (dot) {
+                int plen = (int)(dot - q1);
+                if (plen > 0 && plen < 64) {
+                    /* Check if this prefix differs from the import alias */
+                    int alias_len = (int)strlen(ie->alias_name);
+                    if (plen != alias_len || memcmp(q1, ie->alias_name, (size_t)plen) != 0) {
+                        /* Check if prefix differs from the module tail too */
+                        int mtlen = (int)strlen(mod_tail);
+                        if (plen != mtlen || memcmp(q1, mod_tail, (size_t)plen) != 0) {
+                            /* Check uniqueness among collected sub-namespaces */
+                            int dup = 0;
+                            for (int s = 0; s < sub_count; s++) {
+                                if ((int)strlen(sub_ns[s]) == plen &&
+                                    memcmp(sub_ns[s], q1, (size_t)plen) == 0) {
+                                    dup = 1; break;
+                                }
+                            }
+                            if (!dup && sub_count < 16) {
+                                memcpy(sub_ns[sub_count], q1, (size_t)plen);
+                                sub_ns[sub_count][plen] = '\0';
+                                sub_count++;
+                            }
+                        }
+                    }
+                }
+            }
+            cursor = q2 + 1;
+        }
+        free(tki_buf);
+
+        /* Register each discovered sub-namespace as an import alias */
+        for (int s = 0; s < sub_count; s++) {
+            int slen = (int)strlen(sub_ns[s]);
+            /* Skip if already declared in scope */
+            if (scope_lookup(mscope, sub_ns[s], slen)) continue;
+            Decl *sd = (Decl *)arena_alloc(arena, (int)sizeof(Decl));
+            if (!sd) continue;
+            sd->name     = arena_intern(arena, sub_ns[s], slen);
+            sd->name_len = slen;
+            sd->kind     = DECL_IMPORT_ALIAS;
+            sd->def_node = NULL;
+            sd->next     = mscope->head;
+            mscope->head = sd;
+        }
     }
 
     /* First pass: register all module-scope declarations (forward-decl). */

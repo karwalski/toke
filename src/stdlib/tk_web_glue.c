@@ -293,7 +293,7 @@ static Res tk_static_dispatch(Req req) {
             r.body         = g_static_routes[i].body;
             if (g_static_routes[i].content_type) {
                 g_mime_ct_hdr.key   = "Content-Type";
-                g_mime_ct_hdr.value = g_static_routes[i].content_type;
+                g_mime_ct_hdr.val = g_static_routes[i].content_type;
                 r.headers.data = &g_mime_ct_hdr;
             } else {
                 r.headers.data = &g_html_ct_hdr;

@@ -132,11 +132,9 @@ static int is_digit(char c) { return c >= '0' && c <= '9'; }
 
 /*
  * is_ident_cont — Return non-zero if `c` may appear as the second or
- * subsequent character of an identifier (letter or digit).
- *
- * Note: toke identifiers may not contain underscores.
+ * subsequent character of an identifier (letter, digit, or underscore).
  */
-static int is_ident_cont(char c) { return is_letter(c) || is_digit(c); }
+static int is_ident_cont(char c) { return is_letter(c) || is_digit(c) || c == '_'; }
 
 /*
  * is_hex — Return non-zero if `c` is a valid hexadecimal digit
@@ -583,8 +581,8 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
         /* 1. Skip whitespace silently. */
         if (is_whitespace(c)) { advance(&l); continue; }
 
-        /* 2. Identifiers and keywords — starts with a letter. */
-        if (is_letter(c)) {
+        /* 2. Identifiers and keywords — starts with a letter or underscore. */
+        if (is_letter(c) || c == '_') {
             advance(&l);
             if (lex_ident(&l, start, line, col) < 0) return -1;
             continue;
@@ -604,7 +602,29 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
         /* 5. Single-character symbols. */
         TokenKind sym;
         switch (c) {
-        case '(':  sym = TK_LPAREN;   break;
+        case '(':
+            /* Block comment: (* ... *) — skip everything including newlines.
+             * Supports nested comments: (* outer (* inner *) outer *). */
+            if (l.pos + 1 < l.len && src[l.pos + 1] == '*') {
+                advance(&l); /* skip ( */
+                advance(&l); /* skip * */
+                int depth = 1;
+                while (l.pos < l.len && depth > 0) {
+                    if (l.pos + 1 < l.len &&
+                        src[l.pos] == '(' && src[l.pos + 1] == '*') {
+                        advance(&l); advance(&l);
+                        depth++;
+                    } else if (l.pos + 1 < l.len &&
+                               src[l.pos] == '*' && src[l.pos + 1] == ')') {
+                        advance(&l); advance(&l);
+                        depth--;
+                    } else {
+                        advance(&l);
+                    }
+                }
+                continue;
+            }
+            sym = TK_LPAREN; break;
         case ')':  sym = TK_RPAREN;   break;
         case '{':  sym = TK_LBRACE;   break;
         case '}':  sym = TK_RBRACE;   break;
