@@ -1,0 +1,5 @@
+m=test;
+f=main():i64{
+  let s="--check";
+  <0
+};
