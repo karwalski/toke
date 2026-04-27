@@ -679,6 +679,7 @@ static void ensure_tki_cache_loaded(void) {
         "str", "env", "file", "path", "args", "toml", "md", "log",
         "http", "router", "json", "toon", "yaml", "i18n", "math",
         "time", "crypto", "net", "sys", "ws", "os", "mem", "process",
+        "db",
         NULL
     };
     for (int i = 0; stdlib_modules[i]; i++)
@@ -1680,13 +1681,26 @@ static int emit_expr(Ctx *c, const Node *n)
             tok_cp(c->src, n->children[0]->children[1], method, sizeof method);
             resolved_fn = resolve_stdlib_call(c, alias, method);
             if (!resolved_fn) {
-                /* Check if alias is a module import */
-                for (int ii = 0; ii < c->import_count; ii++)
-                    if (!strcmp(c->imports[ii].alias, alias)) {
-                        is_cross_module_user = 1; break;
-                    }
-                snprintf(fn_buf, sizeof fn_buf, "%s", method);
-                resolved_fn = fn_buf;
+                /* Check if alias is a known sub-namespace (e.g. "row" from std.db).
+                 * Sub-namespaces are not in c->imports[] but should generate
+                 * tk_<alias>_<method>_w wrappers like regular stdlib modules. */
+                static const char *sub_namespaces[] = { "row", NULL };
+                int is_sub_ns = 0;
+                for (int si = 0; sub_namespaces[si]; si++)
+                    if (!strcmp(alias, sub_namespaces[si])) { is_sub_ns = 1; break; }
+                if (is_sub_ns) {
+                    static char sub_buf[256];
+                    snprintf(sub_buf, sizeof sub_buf, "tk_%s_%s_w", alias, method);
+                    resolved_fn = sub_buf;
+                } else {
+                    /* Check if alias is a module import */
+                    for (int ii = 0; ii < c->import_count; ii++)
+                        if (!strcmp(c->imports[ii].alias, alias)) {
+                            is_cross_module_user = 1; break;
+                        }
+                    snprintf(fn_buf, sizeof fn_buf, "%s", method);
+                    resolved_fn = fn_buf;
+                }
             }
         }
 
@@ -3788,9 +3802,12 @@ static const char *find_stdlib_sources(void) {
         "%s/cache.c %s/content.c %s/security.c %s/metrics.c %s/server_ops.c "
         "%s/ws_server.c %s/hooks.c %s/ws.c %s/router.c "
         "%s/log.c %s/file.c %s/path.c %s/args.c %s/toml.c %s/md.c "
+        "%s/db.c %s/json.c "
         "%s/tk_web_glue.c",
         dir, dir, dir, dir, dir, dir, dir, dir, dir, dir, dir, dir,
-        dir, dir, dir, dir, dir, dir, dir, dir, dir, dir, dir);
+        dir, dir, dir, dir, dir, dir, dir, dir, dir, dir,
+        dir, dir,
+        dir);
 
     /* Vendored tomlc99 — backs src/stdlib/toml.c. */
     n += snprintf(buf + n, sizeof buf - (size_t)n,
@@ -3932,10 +3949,10 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
 
     /* TLS flags — always include when OpenSSL is present on macOS/homebrew */
     const char *tls_flags = "-D_GNU_SOURCE -DTK_HAVE_OPENSSL";
-    const char *tls_libs  = "-lssl -lcrypto -lz -lm";
+    const char *tls_libs  = "-lssl -lcrypto -lz -lm -lsqlite3";
 #if defined(__APPLE__)
     tls_flags = "-I/opt/homebrew/include -DTK_HAVE_OPENSSL";
-    tls_libs  = "-L/opt/homebrew/lib -lssl -lcrypto -lz -lm";
+    tls_libs  = "-L/opt/homebrew/lib -lssl -lcrypto -lz -lm -lsqlite3";
 #endif
 
     /* Merge extra_flags from selective linking into tls_libs */

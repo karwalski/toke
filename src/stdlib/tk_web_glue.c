@@ -26,6 +26,8 @@
 #include "tk_time.h"
 #include "net.h"
 #include "sys.h"
+#include "db.h"
+#include "json.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -47,6 +49,25 @@ static int64_t f64_to_i64(double d) {
     int64_t i;
     memcpy(&i, &d, sizeof(i));
     return i;
+}
+
+/*
+ * Unpack a toke-format array of strings into a StrArray.
+ * Toke array layout: ptr[-1] = length, ptr[0..len-1] = elements as i64.
+ * If the array pointer is 0, returns an empty StrArray.
+ */
+static StrArray toke_arr_to_strarray(int64_t arr_i64) {
+    StrArray sa;
+    if (!arr_i64) { sa.data = NULL; sa.len = 0; return sa; }
+    int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
+    int64_t len = ptr[-1];
+    if (len <= 0) { sa.data = NULL; sa.len = 0; return sa; }
+    sa.data = (const char **)malloc((size_t)len * sizeof(const char *));
+    if (!sa.data) { sa.len = 0; return sa; }
+    for (int64_t i = 0; i < len; i++)
+        sa.data[i] = (const char *)(intptr_t)ptr[i];
+    sa.len = (uint64_t)len;
+    return sa;
 }
 
 /* ── str wrappers ─────────────────────────────────────────────────────── */
@@ -1496,9 +1517,9 @@ int64_t tk_http_get_w(int64_t url) { (void)url; return 0; }
 int64_t tk_http_post_w(int64_t client, int64_t path, int64_t body) { (void)client; (void)path; (void)body; return 0; }
 int64_t tk_http_delete_w(int64_t client, int64_t path) { (void)client; (void)path; return 0; }
 
-/* ---- Story 57.12.1: db module stubs ---- */
+/* ---- Story 57.12.1: db module legacy stubs (older API names) ---- */
 int64_t tk_db_query_w(int64_t conn, int64_t sql) { (void)conn; (void)sql; return 0; }
-int64_t tk_db_exec_w(int64_t conn, int64_t sql) { (void)conn; (void)sql; return 0; }
+/* tk_db_exec_w is defined below with real implementation */
 int64_t tk_db_insert_w(int64_t conn, int64_t sql) { (void)conn; (void)sql; return 0; }
 int64_t tk_db_delete_w(int64_t conn, int64_t sql) { (void)conn; (void)sql; return 0; }
 int64_t tk_db_lastinsertid_w(int64_t conn) { (void)conn; return 0; }
@@ -1627,11 +1648,173 @@ int64_t tk_math_sqrt_w(int64_t x) { return f64_to_i64(math_sqrt(i64_to_f64(x)));
 int64_t tk_math_sum_w(int64_t arr) { (void)arr; return 0; }
 int64_t tk_math_stddev_w(int64_t arr) { (void)arr; return 0; }
 
-/* ---- Story 57.12.1: db extras ---- */
-int64_t tk_db_open_w(int64_t dsn) { (void)dsn; return 0; }
-int64_t tk_db_close_w(int64_t conn) { (void)conn; return 0; }
+/* ---- Story 57.12.1: db extras (real implementations) ---- */
+
+/*
+ * tk_db_open_w — open a SQLite database.
+ * Returns 0 on success (matching db_open convention), -1 on error.
+ */
+int64_t tk_db_open_w(int64_t dsn) {
+    if (!dsn) return -1;
+    return (int64_t)db_open((const char *)(intptr_t)dsn);
+}
+
+/* tk_db_close_w — close the global database connection. */
+int64_t tk_db_close_w(int64_t conn) {
+    (void)conn;
+    db_close();
+    return 0;
+}
+
+/*
+ * tk_db_exec_w — execute a SQL statement (INSERT/UPDATE/DELETE/DDL).
+ * sql:    i64 (const char *)
+ * params: i64 (toke-format string array)
+ * Returns: affected row count on success (at least 1 for success with 0 changes),
+ *          0 on error (toke result convention: 0 = Err).
+ */
+int64_t tk_db_exec_w(int64_t sql, int64_t params) {
+    if (!sql) return 0;
+    StrArray sa = toke_arr_to_strarray(params);
+    U64Result res = db_exec((const char *)(intptr_t)sql, sa);
+    free((void *)sa.data);
+    if (res.is_err) return 0;
+    /* Ensure success returns non-zero (toke convention: 0 = Err) */
+    return res.ok > 0 ? (int64_t)res.ok : 1;
+}
+
+/*
+ * tk_db_one_w — execute a SQL query expecting exactly one row.
+ * sql:    i64 (const char *)
+ * params: i64 (toke-format string array)
+ * Returns: pointer to a heap-allocated Row as i64 (non-zero = Ok),
+ *          0 on error (toke result convention: 0 = Err).
+ */
+int64_t tk_db_one_w(int64_t sql, int64_t params) {
+    if (!sql) return 0;
+    StrArray sa = toke_arr_to_strarray(params);
+    RowResult res = db_one((const char *)(intptr_t)sql, sa);
+    free((void *)sa.data);
+    if (res.is_err) return 0;
+    Row *heap_row = (Row *)malloc(sizeof(Row));
+    if (!heap_row) return 0;
+    *heap_row = res.ok;
+    return (int64_t)(intptr_t)heap_row;
+}
+
+/*
+ * tk_db_many_w — execute a SQL query returning multiple rows.
+ * sql:    i64 (const char *)
+ * params: i64 (toke-format string array)
+ * Returns: toke-format array of Row pointers (non-zero = Ok),
+ *          0 on error (toke result convention: 0 = Err).
+ *
+ * The returned array uses toke layout: block[0]=len, block[1..N]=Row* as i64.
+ * Returns (block+1) so ptr[-1]=length, ptr[i]=element.
+ */
+int64_t tk_db_many_w(int64_t sql, int64_t params) {
+    if (!sql) return 0;
+    StrArray sa = toke_arr_to_strarray(params);
+    RowArrayResult res = db_many((const char *)(intptr_t)sql, sa);
+    free((void *)sa.data);
+    if (res.is_err) return 0;
+    uint64_t count = res.ok.len;
+    int64_t *block = (int64_t *)malloc((count + 1) * sizeof(int64_t));
+    if (!block) return 0;
+    block[0] = (int64_t)count;
+    for (uint64_t i = 0; i < count; i++) {
+        Row *heap_row = (Row *)malloc(sizeof(Row));
+        if (!heap_row) { /* partial failure — still return what we have */
+            block[0] = (int64_t)i;
+            break;
+        }
+        *heap_row = res.ok.data[i];
+        block[i + 1] = (int64_t)(intptr_t)heap_row;
+    }
+    free(res.ok.data); /* free the RowArray data (Rows are copied to heap) */
+    return (int64_t)(intptr_t)(block + 1);
+}
+
+/*
+ * tk_db_tableexists_w — check if a table exists in the database.
+ * conn:  i64 (conn_id, currently always 0)
+ * table: i64 (const char *)
+ * Returns: 1 if exists, 0 if not.
+ */
+int64_t tk_db_tableexists_w(int64_t conn, int64_t table) {
+    if (!table) return 0;
+    return (int64_t)db_table_exists((int)conn, (const char *)(intptr_t)table);
+}
+
+/* Legacy stubs for older API names that may still be referenced */
 int64_t tk_db_print_w(int64_t rows) { (void)rows; return 0; }
-int64_t tk_db_connect_w(int64_t dsn) { (void)dsn; return 0; }
+int64_t tk_db_connect_w(int64_t dsn) { return tk_db_open_w(dsn); }
+
+/* ── row accessor wrappers ────────────────────────────────────────────── */
+
+/*
+ * tk_row_str_w — extract a string column from a Row.
+ * row: i64 (Row * as integer)
+ * col: i64 (const char * column name)
+ * Returns: const char * as i64 (non-zero = Ok), 0 on error.
+ */
+int64_t tk_row_str_w(int64_t row, int64_t col) {
+    if (!row || !col) return 0;
+    Row *rp = (Row *)(intptr_t)row;
+    StrResult res = row_str(*rp, (const char *)(intptr_t)col);
+    if (res.is_err) return 0;
+    return (int64_t)(intptr_t)res.ok;
+}
+
+/*
+ * tk_row_i64_w — extract an i64 column from a Row.
+ * Returns: the i64 value on success, 0 on error.
+ * Note: a legitimate value of 0 will be treated as error by toke convention.
+ */
+int64_t tk_row_i64_w(int64_t row, int64_t col) {
+    if (!row || !col) return 0;
+    Row *rp = (Row *)(intptr_t)row;
+    I64Result res = row_i64(*rp, (const char *)(intptr_t)col);
+    if (res.is_err) return 0;
+    return res.ok;
+}
+
+/*
+ * tk_row_u64_w — extract a u64 column from a Row.
+ * Returns: the u64 value as i64 on success, 0 on error.
+ */
+int64_t tk_row_u64_w(int64_t row, int64_t col) {
+    if (!row || !col) return 0;
+    Row *rp = (Row *)(intptr_t)row;
+    U64Result res = row_u64(*rp, (const char *)(intptr_t)col);
+    if (res.is_err) return 0;
+    return (int64_t)res.ok;
+}
+
+/*
+ * tk_row_f64_w — extract an f64 column from a Row.
+ * Returns: the f64 value bitcast to i64 on success, 0 on error.
+ */
+int64_t tk_row_f64_w(int64_t row, int64_t col) {
+    if (!row || !col) return 0;
+    Row *rp = (Row *)(intptr_t)row;
+    F64Result res = row_f64(*rp, (const char *)(intptr_t)col);
+    if (res.is_err) return 0;
+    return f64_to_i64(res.ok);
+}
+
+/*
+ * tk_row_bool_w — extract a bool column from a Row.
+ * Returns: 1 for true, 0 for false/error.
+ * Note: false (0) is indistinguishable from error in toke convention.
+ */
+int64_t tk_row_bool_w(int64_t row, int64_t col) {
+    if (!row || !col) return 0;
+    Row *rp = (Row *)(intptr_t)row;
+    BoolResult res = row_bool(*rp, (const char *)(intptr_t)col);
+    if (res.is_err) return 0;
+    return (int64_t)res.ok;
+}
 
 /* ---- Story 57.12.1: env extras ---- */
 int64_t tk_env_getor_w(int64_t key, int64_t def) { return tk_env_get_or(key, def); }
@@ -1671,14 +1854,100 @@ int64_t tk_array_list_w(int64_t arr) { return arr; }
 
 /* ---- Story 57.13.9/12: additional missing stubs ---- */
 
-/* json extras */
-int64_t tk_json_enc_w(int64_t val) { (void)val; return 0; }
-int64_t tk_json_dec_w(int64_t s) { (void)s; return 0; }
-int64_t tk_json_parseobj_w(int64_t s) { (void)s; return 0; }
-int64_t tk_json_stringify_w(int64_t val) { (void)val; return 0; }
-int64_t tk_json_get_w(int64_t obj, int64_t key) { (void)obj; (void)key; return 0; }
+/* json wrappers (real implementations) */
+
+/*
+ * tk_json_enc_w — JSON-encode a string value.
+ * Returns: pointer to encoded JSON string as i64.
+ */
+int64_t tk_json_enc_w(int64_t val) {
+    if (!val) return (int64_t)(intptr_t)"\"\"";
+    return (int64_t)(intptr_t)json_enc((const char *)(intptr_t)val);
+}
+
+/*
+ * tk_json_dec_w — parse a JSON string into a Json object.
+ * Returns: pointer to a heap-allocated Json struct as i64 (non-zero = Ok),
+ *          0 on parse error (toke result convention: 0 = Err).
+ */
+int64_t tk_json_dec_w(int64_t s) {
+    if (!s) return 0;
+    JsonResult res = json_dec((const char *)(intptr_t)s);
+    if (res.is_err) return 0;
+    Json *heap_json = (Json *)malloc(sizeof(Json));
+    if (!heap_json) return 0;
+    *heap_json = res.ok;
+    return (int64_t)(intptr_t)heap_json;
+}
+
+/*
+ * tk_json_str_w — extract a string value from a Json object by key.
+ * obj: i64 (Json * as integer)
+ * key: i64 (const char * key name)
+ * Returns: const char * as i64 (non-zero = Ok), 0 on error.
+ */
+int64_t tk_json_str_w(int64_t obj, int64_t key) {
+    if (!obj || !key) return 0;
+    Json *jp = (Json *)(intptr_t)obj;
+    StrJsonResult res = json_str(*jp, (const char *)(intptr_t)key);
+    if (res.is_err) return 0;
+    return (int64_t)(intptr_t)res.ok;
+}
+
+/*
+ * tk_json_i64_w — extract an i64 value from a Json object by key.
+ * Returns: the i64 value on success, 0 on error.
+ */
+int64_t tk_json_i64_w(int64_t obj, int64_t key) {
+    if (!obj || !key) return 0;
+    Json *jp = (Json *)(intptr_t)obj;
+    I64JsonResult res = json_i64(*jp, (const char *)(intptr_t)key);
+    if (res.is_err) return 0;
+    return (int64_t)res.ok;
+}
+
+/*
+ * tk_json_u64_w — extract a u64 value from a Json object by key.
+ */
+int64_t tk_json_u64_w(int64_t obj, int64_t key) {
+    if (!obj || !key) return 0;
+    Json *jp = (Json *)(intptr_t)obj;
+    U64JsonResult res = json_u64(*jp, (const char *)(intptr_t)key);
+    if (res.is_err) return 0;
+    return (int64_t)res.ok;
+}
+
+/*
+ * tk_json_f64_w — extract an f64 value from a Json object by key.
+ */
+int64_t tk_json_f64_w(int64_t obj, int64_t key) {
+    if (!obj || !key) return 0;
+    Json *jp = (Json *)(intptr_t)obj;
+    F64JsonResult res = json_f64(*jp, (const char *)(intptr_t)key);
+    if (res.is_err) return 0;
+    return f64_to_i64(res.ok);
+}
+
+/*
+ * tk_json_bool_w — extract a bool value from a Json object by key.
+ */
+int64_t tk_json_bool_w(int64_t obj, int64_t key) {
+    if (!obj || !key) return 0;
+    Json *jp = (Json *)(intptr_t)obj;
+    BoolJsonResult res = json_bool(*jp, (const char *)(intptr_t)key);
+    if (res.is_err) return 0;
+    return (int64_t)res.ok;
+}
+
+int64_t tk_json_parseobj_w(int64_t s) { return tk_json_dec_w(s); }
+int64_t tk_json_stringify_w(int64_t val) { return tk_json_enc_w(val); }
+int64_t tk_json_get_w(int64_t obj, int64_t key) { return tk_json_str_w(obj, key); }
 int64_t tk_json_set_w(int64_t obj, int64_t key, int64_t val) { (void)obj; (void)key; (void)val; return 0; }
-int64_t tk_json_has_w(int64_t obj, int64_t key) { (void)obj; (void)key; return 0; }
+int64_t tk_json_has_w(int64_t obj, int64_t key) {
+    if (!obj || !key) return 0;
+    Json *jp = (Json *)(intptr_t)obj;
+    return (int64_t)json_has(*jp, (const char *)(intptr_t)key);
+}
 int64_t tk_json_keys_w(int64_t obj) { (void)obj; return 0; }
 int64_t tk_json_values_w(int64_t obj) { (void)obj; return 0; }
 

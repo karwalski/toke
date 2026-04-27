@@ -22,7 +22,11 @@
 
 typedef struct { const char *raw; } Json;
 typedef struct { Json *data; uint64_t len; } JsonArray;
+
+#ifndef TK_STRARRAY_DEFINED
+#define TK_STRARRAY_DEFINED
 typedef struct { const char **data; uint64_t len; } StrArray;
+#endif
 
 typedef enum {
     JSON_ERR_PARSE   = 0,
