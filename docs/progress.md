@@ -416,6 +416,9 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done` 
 | 7.6.6 | Fix StrPair.value vs StrPair.val field name mismatch | backlog | — | **P0** tk_web_glue.c line 296 references .value but http.h defines .val. Breaks linking. |
 | 7.6.7 | Add missing db.c and json.c to ooke Makefile | backlog | — | **P0** store.tk imports std.db and std.json but ooke Makefile doesn't link db.c/json.c. Ooke-side fix. |
 | 7.6.8 | Add repair module to ooke Makefile | backlog | — | **P0** main.tk imports ooke.repair but Makefile doesn't compile repair.tk. Ooke-side fix. |
+| 7.7.1 | ooke: custom API GET handlers | backlog | — | **P0** pages/api/*.tk get() functions never called — serve.tk only registers POST echo. Need cross-module function pointer passing to register compiled handler with http.get(path; handler). |
+| 7.7.2 | ooke: custom API POST handlers | backlog | — | **P0** pages/api/*.tk post() functions ignored — POST echoes body. Register with http.post(path; handler). Same mechanism as 7.7.1. |
+| 7.7.3 | ooke: JSON response without template | backlog | — | **P1** Page get() requires tpl.renderfile or route isn't registered. Support handlers returning JSON directly via http.resjson without a template. |
 | 7.3.1 | Audit empty stub files across all repos | done | — | 12 empty files found, 3 stories with false done status, 1 missing from tracking |
 ### Epic 8.1 — Cloud Corpus Generation Infrastructure
 
