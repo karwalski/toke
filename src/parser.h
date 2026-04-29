@@ -69,7 +69,8 @@ typedef enum {
     NODE_LOOP_INIT,
     NODE_MAP_TYPE,
     NODE_MAP_LIT,
-    NODE_MAP_ENTRY
+    NODE_MAP_ENTRY,
+    NODE_FUNC_REF
 } NodeKind;
 
 /* ────────────────────────────────────────────────────────────────────────── */

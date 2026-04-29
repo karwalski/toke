@@ -205,6 +205,13 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
         free(t);
         break;
     }
+    case NODE_FUNC_REF: {
+        buf_puts(b, "f=");
+        char *t = tok_text(n, src);
+        buf_puts(b, t);
+        free(t);
+        break;
+    }
     case NODE_BINARY_EXPR:
         if (n->child_count >= 2) {
             fmt_expr(b, n->children[0], src);
@@ -840,6 +847,13 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
         pfmt_ident(b, n, src, opts, root);
         break;
     case NODE_TYPE_IDENT: {
+        char *t = tok_text(n, src);
+        buf_puts(b, t);
+        free(t);
+        break;
+    }
+    case NODE_FUNC_REF: {
+        buf_puts(b, "f=");
         char *t = tok_text(n, src);
         buf_puts(b, t);
         free(t);

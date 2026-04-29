@@ -396,6 +396,20 @@ static Node *parse_literal(Parser *p) {
  */
 static Node *parse_primary(Parser *p) {
     Token *t=cur(p);
+    /* Function reference: f=name where name is an ident followed by ';' or ')'
+     * (i.e. inside a call argument list, not a function declaration which would
+     * have '(' after the name).  Only in default profile where 'f' is a
+     * single-char ident, not a keyword. */
+    if(p->profile==PROFILE_DEFAULT&&peek(p)==TK_IDENT&&t->len==1&&p->src[t->start]=='f'
+       &&peek_at(p,1)==TK_EQ&&peek_at(p,2)==TK_IDENT){
+        TokenKind after=peek_at(p,3);
+        if(after==TK_SEMICOLON||after==TK_RPAREN){
+            adv(p); /* consume 'f' */
+            adv(p); /* consume '=' */
+            Token *nt=cur(p); adv(p); /* consume function name */
+            return mk(p,NODE_FUNC_REF,nt);
+        }
+    }
     if(peek(p)==TK_IDENT){adv(p);return mk(p,NODE_IDENT,t);}
     if(peek(p)==TK_TYPE_IDENT){
         adv(p);
@@ -497,13 +511,27 @@ static Node *parse_postfix(Parser *p) {
     for(;;){
         if(peek(p)==TK_DOT){
             Token *d=adv(p);Token *f=cur(p);
-            /* .get(expr) → NODE_INDEX_EXPR (array/map indexing in default mode) */
+            /* .get(expr) → NODE_INDEX_EXPR (array/map indexing in default mode)
+             * Disambiguate: only treat as index when the arg list is a single
+             * expression (no ';' before ')').  Multi-arg .get(...;...) is a
+             * normal method call — fall through to field-access so parse_call
+             * picks up the '(' later. */
             if(peek(p)==TK_IDENT&&teq(p,f,"get")&&peek_at(p,1)==TK_LPAREN){
+                int save=p->pos;
                 adv(p); /* consume "get" */
                 adv(p); /* consume ( */
-                Node *n=mk(p,NODE_INDEX_EXPR,d);ch(p,n,l);ch(p,n,parse_expr(p));
-                if(!xp(p,TK_RPAREN,"')' after index"))eerr(p,E2004,cur(p),"unclosed delimiter");
-                l=n;
+                Node *idx=parse_expr(p);
+                if(peek(p)==TK_RPAREN){
+                    /* Single-arg .get(expr) — index expression */
+                    adv(p); /* consume ) */
+                    Node *n=mk(p,NODE_INDEX_EXPR,d);ch(p,n,l);ch(p,n,idx);
+                    l=n;
+                } else {
+                    /* Multi-arg: rewind and treat as field access + call */
+                    p->pos=save;
+                    if(!xp(p,TK_IDENT,"field"))break;
+                    Node *n=mk(p,NODE_FIELD_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_IDENT,f));l=n;
+                }
             } else {
                 if(!xp(p,TK_IDENT,"field"))break;
                 Node *n=mk(p,NODE_FIELD_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_IDENT,f));l=n;

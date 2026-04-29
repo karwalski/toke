@@ -1354,6 +1354,26 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = load %s, %s* %%%s\n", t, lty, lty, ln);
         }
         return t;
+    case NODE_FUNC_REF: {
+        /* f=name — emit ptrtoint of function pointer to i64 */
+        tok_cp(c->src, n, tb, sizeof tb);
+        if (!strcmp(tb, "main")) strcpy(tb, "tk_main");
+        const FnSig *ref = lookup_fn(c, tb);
+        t = next_tmp(c);
+        if (ref) {
+            /* Build function type: ret (param_tys...) */
+            fprintf(c->out, "  %%t%d = ptrtoint %s (", t, ref->ret);
+            for (int i = 0; i < ref->param_count; i++) {
+                if (i) fprintf(c->out, ", ");
+                fprintf(c->out, "%s", ref->param_tys[i]);
+            }
+            fprintf(c->out, ")* @%s to i64\n", ref->name);
+        } else {
+            /* Unknown function — assume i64(i64) as fallback */
+            fprintf(c->out, "  %%t%d = ptrtoint i64 (i64)* @%s to i64\n", t, tb);
+        }
+        return t;
+    }
     case NODE_BINARY_EXPR: {
         /* Short-circuit codegen for && and || */
         if (n->op == TK_AND || n->op == TK_OR) {

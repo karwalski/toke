@@ -78,7 +78,7 @@ f=handler_stream(req:$req):$res{
 
 f=handler_auth(req:$req):$res{
   let auth=http.header(req; "authorization");
-  if str.len(auth) == 0 {
+  if(str.len(auth) = 0){
     <http.resp(401; "{\"error\":\"unauthorized\"}"; "application/json")
   };
   <http.jsonresp(200; str.concat("{\"auth\":"; str.concat(json.stringify(auth); "}")))
