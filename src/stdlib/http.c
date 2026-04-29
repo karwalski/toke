@@ -35,6 +35,16 @@ void http_shutdown(void)
     g_shutdown_requested = 1;
 }
 
+/* ── CORS configuration (Story 7.7.4) ────────────────────────────────── */
+
+static char *g_cors_origins = NULL;  /* heap-allocated; NULL = disabled */
+
+void http_set_cors(const char *origins)
+{
+    free(g_cors_origins);
+    g_cors_origins = origins ? strdup(origins) : NULL;
+}
+
 /* ── Server request-size limits (Story 27.1.9) ───────────────────────── */
 
 typedef struct {
@@ -452,6 +462,19 @@ static void write_security_headers(int fd)
     write(fd, hdrs, sizeof(hdrs) - 1);
 }
 
+/* write_cors_headers — emit CORS headers when configured (Story 7.7.4). */
+static void write_cors_headers(int fd)
+{
+    if (!g_cors_origins) return;
+    char buf[512];
+    int n = snprintf(buf, sizeof(buf),
+        "Access-Control-Allow-Origin: %s\r\n"
+        "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS\r\n"
+        "Access-Control-Allow-Headers: Content-Type, Authorization\r\n",
+        g_cors_origins);
+    if (n > 0) write(fd, buf, (size_t)n);
+}
+
 static void send_response(int fd, Res res, int keep_alive) {
     const char *conn_hdr = keep_alive ? "keep-alive" : "close";
 
@@ -466,6 +489,7 @@ static void send_response(int fd, Res res, int keep_alive) {
         write(fd, hdr, (size_t)hl);
         write_res_headers(fd, res);
         write_security_headers(fd);
+        write_cors_headers(fd);
         write(fd, "\r\n", 2);
         /* Default chunk size: 4096 bytes */
         http_chunked_write(fd, res.body, strlen(res.body), 4096);
@@ -481,6 +505,7 @@ static void send_response(int fd, Res res, int keep_alive) {
         write(fd, hdr, (size_t)hl);
         write_res_headers(fd, res);
         write_security_headers(fd);
+        write_cors_headers(fd);
         write(fd, "\r\n", 2);
         if (bl) write(fd, res.body, bl);
     }
@@ -825,6 +850,19 @@ static void handle_connection(int fd)
             }
         }
 
+        /* ── CORS preflight: OPTIONS → 204 with CORS headers (Story 7.7.4) ── */
+        if (req.method && strcmp(req.method, "OPTIONS") == 0 && g_cors_origins) {
+            Res res;
+            res.status       = 204;
+            res.body         = NULL;
+            res.headers.data = NULL;
+            res.headers.len  = 0;
+            send_response(fd, res, keep_alive);
+            log_request(client_ip, &req, res.status, 0);
+            if (!keep_alive) break;
+            continue;
+        }
+
         /* ── Reject disallowed methods early ── */
         int is_head = (req.method && strcmp(req.method, "HEAD") == 0);
         if (req.method &&
@@ -833,6 +871,7 @@ static void handle_connection(int fd)
             strcmp(req.method, "PUT")    != 0 &&
             strcmp(req.method, "DELETE") != 0 &&
             strcmp(req.method, "PATCH")  != 0 &&
+            strcmp(req.method, "OPTIONS") != 0 &&
             !is_head) {
             Res res = make_res(405, "Method Not Allowed");
             send_response(fd, res, keep_alive);
@@ -887,6 +926,7 @@ static void handle_connection(int fd)
             write(fd, hdr, (size_t)hl);
             write_res_headers(fd, res);
             write_security_headers(fd);
+            write_cors_headers(fd);
             write(fd, "\r\n", 2);
             write(fd, gz_buf, gz_len);
             log_request(client_ip, &req, res.status, gz_len);
@@ -2988,6 +3028,19 @@ static void write_security_headers_ssl(SSL *ssl)
     SSL_write(ssl, hdrs, (int)(sizeof(hdrs) - 1));
 }
 
+/* write_cors_headers_ssl — emit CORS headers over TLS when configured (Story 7.7.4). */
+static void write_cors_headers_ssl(SSL *ssl)
+{
+    if (!g_cors_origins) return;
+    char buf[512];
+    int n = snprintf(buf, sizeof(buf),
+        "Access-Control-Allow-Origin: %s\r\n"
+        "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS\r\n"
+        "Access-Control-Allow-Headers: Content-Type, Authorization\r\n",
+        g_cors_origins);
+    if (n > 0) SSL_write(ssl, buf, n);
+}
+
 /*
  * handle_tls_connection — accept a TLS handshake on fd, then process
  * HTTP keep-alive requests over the TLS session.  Mirrors handle_connection
@@ -3606,6 +3659,22 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
 
         Req req = parse_request(raw);
 
+        /* ── CORS preflight: OPTIONS → 204 with CORS headers (Story 7.7.4) ── */
+        if (req.method && strcmp(req.method, "OPTIONS") == 0 && g_cors_origins) {
+            const char *ch = keep_alive ? "keep-alive" : "close";
+            char hb[256];
+            int hl2 = snprintf(hb, sizeof(hb),
+                "HTTP/1.1 204 No Content\r\n"
+                "Content-Length: 0\r\nConnection: %s\r\n", ch);
+            if (hl2 > 0) SSL_write(ssl, hb, hl2);
+            write_security_headers_ssl(ssl);
+            write_cors_headers_ssl(ssl);
+            SSL_write(ssl, "\r\n", 2);
+            log_request(client_ip, &req, 204, 0);
+            if (!keep_alive) break;
+            continue;
+        }
+
         /* ── Reject disallowed methods early ── */
         int tls_is_head = (req.method && strcmp(req.method, "HEAD") == 0);
         if (req.method &&
@@ -3614,6 +3683,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
             strcmp(req.method, "PUT")    != 0 &&
             strcmp(req.method, "DELETE") != 0 &&
             strcmp(req.method, "PATCH")  != 0 &&
+            strcmp(req.method, "OPTIONS") != 0 &&
             !tls_is_head) {
             Res bad = make_res(405, "Method Not Allowed");
             /* inline TLS send for 405 */
@@ -3626,6 +3696,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                     "Content-Length: %zu\r\nConnection: %s\r\n", bl, ch);
                 if (hl2 > 0) SSL_write(ssl, hb, hl2);
                 write_security_headers_ssl(ssl);
+                write_cors_headers_ssl(ssl);
                 SSL_write(ssl, "\r\n", 2);
                 if (bl) SSL_write(ssl, bad.body, (int)bl);
                 log_request(client_ip, &req, 405, bl);
@@ -3683,6 +3754,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 if (ln > 0) SSL_write(ssl, hline, ln);
             }
             write_security_headers_ssl(ssl);
+            write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
             SSL_write(ssl, tls_gz_buf, (int)tls_gz_len);
             log_request(client_ip, &req, res.status, tls_gz_len);
@@ -3707,6 +3779,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 if (ln > 0) SSL_write(ssl, hline, ln);
             }
             write_security_headers_ssl(ssl);
+            write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
             if (body_len) SSL_write(ssl, res.body, (int)body_len);
             log_request(client_ip, &req, res.status, body_len);

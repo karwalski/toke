@@ -378,6 +378,18 @@ int64_t tk_http_set_notfound(int64_t body_ptr) {
     return 0;
 }
 
+/*
+ * tk_http_set_cors — Configure CORS allowed origins (Story 7.7.4).
+ *
+ * origins_ptr: i64 (const char * as integer) — allowed origins value
+ *              e.g. "http://localhost:11432" or "*"
+ * Returns:     0 (i64)
+ */
+int64_t tk_http_set_cors(int64_t origins_ptr) {
+    http_set_cors((const char *)(intptr_t)origins_ptr);
+    return 0;
+}
+
 /* ── Dynamic GET handler dispatch (Story 46.1.3) ─────────────────────── */
 /*
  * Stores up to TK_MAX_GET_HANDLERS path→function_pointer mappings registered

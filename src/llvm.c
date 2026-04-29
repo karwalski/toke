@@ -1105,6 +1105,7 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         if (!strcmp(method, "servevhosts"))    return "tk_http_servevhosts";
         if (!strcmp(method, "servevhoststls")) return "tk_http_servevhoststls";
         if (!strcmp(method, "setnotfound"))    return "tk_http_set_notfound";
+        if (!strcmp(method, "setcors"))        return "tk_http_set_cors";
     }
     /* std.log functions */
     if (!strcmp(mod, "log")) {
@@ -1814,7 +1815,7 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_http_serve_staticdir_w",
                         "tk_http_serve", "tk_http_servetls", "tk_http_serveworkers_w",
                         "tk_http_vhost", "tk_http_servevhosts", "tk_http_servevhoststls",
-                        "tk_http_set_notfound",
+                        "tk_http_set_notfound", "tk_http_set_cors",
                         "tk_log_open_access_w", "tk_log_open_error_w", "tk_log_accessformat_w",
                         "tk_log_info_w", "tk_log_error_w",
                         "tk_log_warn_w", "tk_log_debug_w", "tk_router_new_w",
@@ -3577,6 +3578,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_http_servevhosts(i64)\n", f);
     fputs("declare i64 @tk_http_servevhoststls(i64, i64, i64)\n", f);
     fputs("declare i64 @tk_http_set_notfound(i64)\n", f);
+    fputs("declare i64 @tk_http_set_cors(i64)\n", f);
     fputs("declare i64 @tk_http_client_w(i64)\n", f);
     fputs("declare i64 @tk_http_get_w(i64)\n", f);
     fputs("declare i64 @tk_http_post_w(i64, i64, i64)\n", f);

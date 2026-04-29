@@ -185,6 +185,13 @@ void http_set_limits(uint32_t max_header, uint32_t max_body,
  * In-flight requests complete normally. */
 void http_shutdown(void);
 
+/* ── CORS configuration (Story 7.7.4) ────────────────────────────────── */
+
+/* http_set_cors — configure Access-Control-Allow-Origin for all responses.
+ * origins is the value for the header, e.g. "http://localhost:11432" or "*".
+ * Pass NULL to disable CORS headers.  The string is copied internally. */
+void http_set_cors(const char *origins);
+
 #define HTTP_DRAIN_TIMEOUT_SECS 10
 
 /* ── ETag generation and conditional requests (Story 27.1.13) ────────── */

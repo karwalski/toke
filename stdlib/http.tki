@@ -102,6 +102,8 @@
     {"kind": "func", "name": "http.downloadfile", "params": ["httpclient", "str", "str"],             "return": "i64",
      "note": "client; url; dest_path — streaming file download, returns 0 on success, -1 on error"},
     {"kind": "func", "name": "http.getstaticmime", "params": ["str", "str", "str"],                  "return": "i64",
-     "note": "path; body; mime_type — register static GET route with explicit Content-Type"}
+     "note": "path; body; mime_type — register static GET route with explicit Content-Type"},
+    {"kind": "func", "name": "http.setcors",       "params": ["str"],                                 "return": "i64",
+     "note": "origins — set Access-Control-Allow-Origin for all responses (e.g. \"*\" or \"http://localhost:11432\")"}
   ]
 }
