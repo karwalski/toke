@@ -396,19 +396,14 @@ static Node *parse_literal(Parser *p) {
  */
 static Node *parse_primary(Parser *p) {
     Token *t=cur(p);
-    /* Function reference: f=name where name is an ident followed by ';' or ')'
-     * (i.e. inside a call argument list, not a function declaration which would
-     * have '(' after the name).  Only in default profile where 'f' is a
-     * single-char ident, not a keyword. */
-    if(p->profile==PROFILE_DEFAULT&&peek(p)==TK_IDENT&&t->len==1&&p->src[t->start]=='f'
-       &&peek_at(p,1)==TK_EQ&&peek_at(p,2)==TK_IDENT){
-        TokenKind after=peek_at(p,3);
-        if(after==TK_SEMICOLON||after==TK_RPAREN){
-            adv(p); /* consume 'f' */
-            adv(p); /* consume '=' */
-            Token *nt=cur(p); adv(p); /* consume function name */
-            return mk(p,NODE_FUNC_REF,nt);
-        }
+    /* Function reference: &name — unary prefix & followed by ident.
+     * Disambiguated from binary & (bitwise AND) by position: at expression
+     * start (parse_primary), & is always a function reference.  Binary &
+     * is handled in parse_bitand between two expressions. */
+    if(peek(p)==TK_AMP&&peek_at(p,1)==TK_IDENT){
+        adv(p); /* consume '&' */
+        Token *nt=cur(p); adv(p); /* consume function name */
+        return mk(p,NODE_FUNC_REF,nt);
     }
     if(peek(p)==TK_IDENT){adv(p);return mk(p,NODE_IDENT,t);}
     if(peek(p)==TK_TYPE_IDENT){

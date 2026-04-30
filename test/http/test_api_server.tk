@@ -23,15 +23,15 @@ i=io:std.io;
 f=main():i64{
   http.getstatic("/api/ping"; "{\"status\":\"ok\"}");
 
-  http.get("/api/echo"; f=handler_echo);
-  http.post("/api/echo"; f=handler_echo_post);
-  http.put("/api/data"; f=handler_put);
-  http.delete("/api/data"; f=handler_delete);
-  http.get("/api/headers"; f=handler_headers);
-  http.post("/api/form"; f=handler_form);
-  http.get("/api/stream"; f=handler_stream);
-  http.get("/api/auth"; f=handler_auth);
-  http.get("/api/status/:code"; f=handler_status);
+  http.get("/api/echo"; &handler_echo);
+  http.post("/api/echo"; &handler_echo_post);
+  http.put("/api/data"; &handler_put);
+  http.delete("/api/data"; &handler_delete);
+  http.get("/api/headers"; &handler_headers);
+  http.post("/api/form"; &handler_form);
+  http.get("/api/stream"; &handler_stream);
+  http.get("/api/auth"; &handler_auth);
+  http.get("/api/status/:code"; &handler_status);
 
   io.println("Test API server listening on :8099");
   http.serve(8099);

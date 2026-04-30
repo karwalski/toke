@@ -1355,7 +1355,7 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         return t;
     case NODE_FUNC_REF: {
-        /* f=name — emit ptrtoint of function pointer to i64 */
+        /* &name — emit ptrtoint of function pointer to i64 */
         tok_cp(c->src, n, tb, sizeof tb);
         if (!strcmp(tb, "main")) strcpy(tb, "tk_main");
         const FnSig *ref = lookup_fn(c, tb);

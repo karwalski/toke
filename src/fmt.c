@@ -206,7 +206,7 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
         break;
     }
     case NODE_FUNC_REF: {
-        buf_puts(b, "f=");
+        buf_putc(b, '&');
         char *t = tok_text(n, src);
         buf_puts(b, t);
         free(t);
@@ -853,7 +853,7 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
         break;
     }
     case NODE_FUNC_REF: {
-        buf_puts(b, "f=");
+        buf_putc(b, '&');
         char *t = tok_text(n, src);
         buf_puts(b, t);
         free(t);
