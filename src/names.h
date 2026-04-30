@@ -90,7 +90,8 @@ typedef enum {
     DECL_LET,
     DECL_MUT,
     DECL_PREDEFINED,   /* true, false, built-in types */
-    DECL_IMPORT_ALIAS, /* alias introduced by an import */
+    DECL_IMPORT_ALIAS,  /* alias introduced by an import */
+    DECL_CLOSURE_PARAM, /* parameter of a closure expression */
 } DeclKind;
 
 typedef struct Decl {
@@ -106,9 +107,30 @@ typedef struct Scope {
     struct Scope *parent;
 } Scope;
 
+/* ── Closure capture info (story 76.1.9b) ──────────────────────────── */
+
+/*
+ * CaptureInfo — records which variables a closure captures from enclosing
+ * scopes.  One entry per NODE_CLOSURE encountered during name resolution.
+ * The codegen phase (76.1.9c) uses this to build closure environments.
+ *
+ *   closure_node — the NODE_CLOSURE AST node this info belongs to.
+ *   cap_names    — arena-allocated array of interned name pointers.
+ *   cap_count    — number of captured variables.
+ */
+typedef struct {
+    const Node   *closure_node;
+    const char  **cap_names;     /* arena-allocated array */
+    int           cap_count;
+} CaptureInfo;
+
 typedef struct {
     Scope        *module_scope;
     Arena        *arena;
+    /* Closure capture side-table (story 76.1.9b) */
+    CaptureInfo  *captures;      /* arena-allocated array */
+    int           capture_count;
+    int           capture_cap;
 } NameEnv;
 
 /* Error codes for name resolution */

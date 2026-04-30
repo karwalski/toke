@@ -1864,6 +1864,86 @@ int64_t tk_array_arrayappend_w(int64_t arr, int64_t elem) { return tk_array_appe
 int64_t tk_array_appendarray_w(int64_t arr, int64_t arr2) { (void)arr2; return arr; }
 int64_t tk_array_list_w(int64_t arr) { return arr; }
 
+/* ── Story 76.1.7a: Higher-order array functions (map/filter/reduce/sort) ── */
+
+/*
+ * tk_arr_map — Apply fn to each element, return new array.
+ * fn signature: int64_t fn(int64_t elem)
+ */
+int64_t tk_arr_map(int64_t arr_i64, int64_t fn_ptr) {
+    typedef int64_t (*map_fn)(int64_t);
+    int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
+    int64_t len = ptr[-1];
+    int64_t *block = (int64_t *)malloc((size_t)(len + 1) * sizeof(int64_t));
+    if (!block) return arr_i64;
+    block[0] = len;
+    map_fn f = (map_fn)(intptr_t)fn_ptr;
+    for (int64_t i = 0; i < len; i++)
+        block[i + 1] = f(ptr[i]);
+    return (int64_t)(intptr_t)(block + 1);
+}
+
+/*
+ * tk_arr_filter — Keep elements where fn returns nonzero, return new array.
+ * fn signature: int64_t fn(int64_t elem)
+ */
+int64_t tk_arr_filter(int64_t arr_i64, int64_t fn_ptr) {
+    typedef int64_t (*filter_fn)(int64_t);
+    int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
+    int64_t len = ptr[-1];
+    /* Worst case: all elements kept */
+    int64_t *block = (int64_t *)malloc((size_t)(len + 1) * sizeof(int64_t));
+    if (!block) return arr_i64;
+    filter_fn f = (filter_fn)(intptr_t)fn_ptr;
+    int64_t out_len = 0;
+    for (int64_t i = 0; i < len; i++) {
+        if (f(ptr[i]))
+            block[out_len + 1] = ptr[i], out_len++;
+    }
+    block[0] = out_len;
+    return (int64_t)(intptr_t)(block + 1);
+}
+
+/*
+ * tk_arr_reduce — Fold left: fn(fn(...fn(init, e0), e1), ..., eN)
+ * fn signature: int64_t fn(int64_t acc, int64_t elem)
+ */
+int64_t tk_arr_reduce(int64_t arr_i64, int64_t init, int64_t fn_ptr) {
+    typedef int64_t (*reduce_fn)(int64_t, int64_t);
+    int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
+    int64_t len = ptr[-1];
+    reduce_fn f = (reduce_fn)(intptr_t)fn_ptr;
+    int64_t acc = init;
+    for (int64_t i = 0; i < len; i++)
+        acc = f(acc, ptr[i]);
+    return acc;
+}
+
+/*
+ * tk_arr_sort — Sort array using comparator, return new array (non-mutating).
+ * cmp signature: int64_t cmp(int64_t a, int64_t b) — negative/zero/positive
+ */
+typedef int64_t (*tk_arr_cmp_fn_t)(int64_t, int64_t);
+static tk_arr_cmp_fn_t tk_arr_sort_cmp_global;
+static int tk_arr_sort_qsort_cmp(const void *a, const void *b) {
+    int64_t va = *(const int64_t *)a;
+    int64_t vb = *(const int64_t *)b;
+    int64_t r = tk_arr_sort_cmp_global(va, vb);
+    return (r > 0) - (r < 0);
+}
+
+int64_t tk_arr_sort(int64_t arr_i64, int64_t cmp_ptr) {
+    int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
+    int64_t len = ptr[-1];
+    int64_t *block = (int64_t *)malloc((size_t)(len + 1) * sizeof(int64_t));
+    if (!block) return arr_i64;
+    block[0] = len;
+    if (len > 0) memcpy(block + 1, ptr, (size_t)len * sizeof(int64_t));
+    tk_arr_sort_cmp_global = (tk_arr_cmp_fn_t)(intptr_t)cmp_ptr;
+    qsort(block + 1, (size_t)len, sizeof(int64_t), tk_arr_sort_qsort_cmp);
+    return (int64_t)(intptr_t)(block + 1);
+}
+
 /* ---- Story 57.13.9/12: additional missing stubs ---- */
 
 /* json wrappers (real implementations) */
@@ -2280,3 +2360,12 @@ int64_t tk_sys_configdir_w(int64_t appname) {
 int64_t tk_sys_datadir_w(int64_t appname) {
     return (int64_t)(intptr_t)sys_datadir((const char *)(intptr_t)appname);
 }
+
+/* ---- Story 76.1.1a: std.task stubs for web/WASM builds ---- */
+/* These are no-op stubs; the real implementation lives in task.c
+   and is linked directly (no _w suffix) for native builds. */
+int64_t tk_task_scope_w(void) { return 0; }
+int64_t tk_task_spawn_w(int64_t scope, int64_t fn) { (void)scope; (void)fn; return -1; }
+int64_t tk_task_awaitall_w(int64_t scope) { (void)scope; return -1; }
+int64_t tk_task_result_w(int64_t handle) { (void)handle; return -1; }
+int64_t tk_task_cancel_w(int64_t scope) { (void)scope; return -1; }

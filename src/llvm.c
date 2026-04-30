@@ -567,6 +567,7 @@ typedef struct {
     char module[64];
     char method[64];
     char toke_ret[64];
+    char c_name[128];       /* extern_c: raw C symbol name, empty if none */
     const char *llvm_ret;   /* e.g. "i8*", "i64", "double", "void" */
 } TkiCacheEntry;
 
@@ -614,9 +615,13 @@ static void load_stdlib_tki(const char *module) {
 
     char *p = buf;
     while ((p = strstr(p, "\"kind\"")) != NULL) {
-        char *kv = strstr(p, "\"func\"");
         char *next_kind = strstr(p + 6, "\"kind\"");
-        if (!kv || (next_kind && kv > next_kind)) { p = next_kind ? next_kind : p + 6; continue; }
+        /* Accept both "func" and "extern_c" kinds (Story 76.1.2b) */
+        char *kv_func = strstr(p, "\"func\"");
+        char *kv_extern = strstr(p, "\"extern_c\"");
+        int is_func = kv_func && (!next_kind || kv_func < next_kind);
+        int is_extern_c = kv_extern && (!next_kind || kv_extern < next_kind);
+        if (!is_func && !is_extern_c) { p = next_kind ? next_kind : p + 6; continue; }
         if (g_tki_cache_count >= TKI_CACHE_MAX) break;
 
         char *nk = strstr(p, "\"name\"");
@@ -659,8 +664,34 @@ static void load_stdlib_tki(const char *module) {
         TkiCacheEntry *e = &g_tki_cache[g_tki_cache_count];
         strncpy(e->module, mod_part, sizeof(e->module) - 1);
         strncpy(e->method, meth_part, sizeof(e->method) - 1);
-        snprintf(e->wrapper_name, sizeof e->wrapper_name, "tk_%s_%s_w", mod_part, meth_part);
         strncpy(e->toke_ret, toke_ret, sizeof(e->toke_ret) - 1);
+        e->c_name[0] = '\0';
+
+        if (is_extern_c) {
+            /* extern_c: extract "c_name" and use it as the wrapper name */
+            char *ck = strstr(p, "\"c_name\"");
+            if (ck && (!next_kind || ck < next_kind)) {
+                char *cq1 = strchr(ck + 8, '"');
+                if (cq1) {
+                    char *cq2 = strchr(cq1 + 1, '"');
+                    if (cq2) {
+                        int clen = (int)(cq2 - cq1 - 1);
+                        if (clen >= (int)sizeof(e->c_name)) clen = (int)sizeof(e->c_name) - 1;
+                        memcpy(e->c_name, cq1 + 1, (size_t)clen);
+                        e->c_name[clen] = '\0';
+                    }
+                }
+            }
+            /* Use c_name directly as wrapper_name so resolve hits it */
+            if (e->c_name[0]) {
+                strncpy(e->wrapper_name, e->c_name, sizeof(e->wrapper_name) - 1);
+                e->wrapper_name[sizeof(e->wrapper_name) - 1] = '\0';
+            } else {
+                snprintf(e->wrapper_name, sizeof e->wrapper_name, "tk_%s_%s_w", mod_part, meth_part);
+            }
+        } else {
+            snprintf(e->wrapper_name, sizeof e->wrapper_name, "tk_%s_%s_w", mod_part, meth_part);
+        }
 
         char base_ret[64];
         tki_base_return_type(toke_ret, base_ret, sizeof base_ret);
@@ -682,7 +713,7 @@ static void ensure_tki_cache_loaded(void) {
         "str", "env", "file", "path", "args", "toml", "md", "log",
         "http", "router", "json", "toon", "yaml", "i18n", "math",
         "time", "crypto", "net", "sys", "ws", "os", "mem", "process",
-        "db",
+        "db", "task",
         NULL
     };
     for (int i = 0; stdlib_modules[i]; i++)
@@ -723,13 +754,16 @@ static void load_tki_funcs(Ctx *c, const char *tki_path) {
     fclose(f);
     buf[rd] = '\0';
 
-    /* Scan for each "kind":"func" entry */
+    /* Scan for each "kind":"func" or "kind":"extern_c" entry (Story 76.1.2b) */
     char *p = buf;
     while ((p = strstr(p, "\"kind\"")) != NULL) {
-        /* Check if this is a func entry */
-        char *kv = strstr(p, "\"func\"");
+        /* Check if this is a func or extern_c entry */
         char *next_kind = strstr(p + 6, "\"kind\"");
-        if (!kv || (next_kind && kv > next_kind)) { p = next_kind ? next_kind : p + 6; continue; }
+        char *kv_func = strstr(p, "\"func\"");
+        char *kv_extern = strstr(p, "\"extern_c\"");
+        int is_func = kv_func && (!next_kind || kv_func < next_kind);
+        int is_extern_c = kv_extern && (!next_kind || kv_extern < next_kind);
+        if (!is_func && !is_extern_c) { p = next_kind ? next_kind : p + 6; continue; }
 
         /* Extract name */
         char *nk = strstr(p, "\"name\"");
@@ -1058,6 +1092,12 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         snprintf(mem_buf, sizeof mem_buf, "tk_mem_%s", method);
         return mem_buf;
     }
+    /* std.task functions — direct tk_task_* naming (Story 76.1.1a) */
+    if (!strcmp(mod, "task")) {
+        static char task_buf[128];
+        snprintf(task_buf, sizeof task_buf, "tk_task_%s", method);
+        return task_buf;
+    }
     /* std.math scalar functions — map directly to libc (linked via -lm) */
     if (!strcmp(mod, "math")) {
         if (!strcmp(method, "sin"))   return "sin";
@@ -1157,6 +1197,17 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         if (!strcmp(method, "stdin_fd"))   return "tk_os_stdin_fd";
         if (!strcmp(method, "stdout_fd"))  return "tk_os_stdout_fd";
         if (!strcmp(method, "stderr_fd"))  return "tk_os_stderr_fd";
+    }
+    /* Story 76.1.2b: check TKI cache for extern_c entries with c_name.
+     * If a .tki declares {"kind":"extern_c", "c_name":"open", ...} for
+     * this module+method, return the raw C symbol name directly. */
+    ensure_tki_cache_loaded();
+    for (int i = 0; i < g_tki_cache_count; i++) {
+        if (!strcmp(g_tki_cache[i].module, mod) &&
+            !strcmp(g_tki_cache[i].method, method) &&
+            g_tki_cache[i].c_name[0]) {
+            return g_tki_cache[i].wrapper_name; /* == c_name */
+        }
     }
     /* Generic fallback for unmapped std.* modules (Story 57.12.1):
      * generate tk_<module>_<method>_w so all stdlib calls resolve to a
@@ -1655,9 +1706,16 @@ static int emit_expr(Ctx *c, const Node *n)
             for (int ii = 0; ii < c->import_count; ii++)
                 if (!strcmp(c->imports[ii].alias, alias_im)) { is_mod_im = 1; break; }
             if (!is_mod_im &&
-                (!strcmp(method_im, "append") || !strcmp(method_im, "set"))) {
-                const char *fn_im = !strcmp(method_im, "append")
-                                    ? "tk_array_append_w" : "tk_map_set_w";
+                (!strcmp(method_im, "append") || !strcmp(method_im, "set") ||
+                 !strcmp(method_im, "map") || !strcmp(method_im, "filter") ||
+                 !strcmp(method_im, "reduce") || !strcmp(method_im, "sort"))) {
+                const char *fn_im;
+                if (!strcmp(method_im, "append"))      fn_im = "tk_array_append_w";
+                else if (!strcmp(method_im, "set"))     fn_im = "tk_map_set_w";
+                else if (!strcmp(method_im, "map"))     fn_im = "tk_arr_map";
+                else if (!strcmp(method_im, "filter"))  fn_im = "tk_arr_filter";
+                else if (!strcmp(method_im, "reduce"))  fn_im = "tk_arr_reduce";
+                else                                    fn_im = "tk_arr_sort";
                 /* Emit base object as first arg (coerce ptr→i64) */
                 int obj_v = emit_expr(c, n->children[0]->children[0]);
                 const char *obj_ty = expr_llvm_type(c, n->children[0]->children[0]);
@@ -1844,6 +1902,7 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_log_warn_w", "tk_log_debug_w", "tk_router_new_w",
                         "tk_map_new", "tk_map_put", "tk_map_get",
                         "tk_array_append_w", "tk_map_set_w",
+                        "tk_arr_map", "tk_arr_filter", "tk_arr_reduce", "tk_arr_sort",
                         "tk_str_from_float",
                         "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
                         "fmod", "fabs", "log", "log10", "exp", "round",
@@ -1864,6 +1923,8 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_os_o_rdonly", "tk_os_o_wronly", "tk_os_o_rdwr",
                         "tk_os_o_creat", "tk_os_o_trunc", "tk_os_o_append",
                         "tk_os_stdin_fd", "tk_os_stdout_fd", "tk_os_stderr_fd",
+                        "tk_task_scope", "tk_task_spawn",
+                        "tk_task_awaitall", "tk_task_result", "tk_task_cancel",
                         NULL
                     };
                     int in_preamble = 0;
@@ -3672,7 +3733,12 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare void @tk_map_put(i8*, i64, i64)\n", f);
     fputs("declare i64 @tk_map_get(i8*, i64)\n", f);
     fputs("declare i64 @tk_array_append_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_map_set_w(i64, i64, i64)\n\n", f);
+    fputs("declare i64 @tk_map_set_w(i64, i64, i64)\n", f);
+    /* Story 76.1.7a: higher-order array functions */
+    fputs("declare i64 @tk_arr_map(i64, i64)\n", f);
+    fputs("declare i64 @tk_arr_filter(i64, i64)\n", f);
+    fputs("declare i64 @tk_arr_reduce(i64, i64, i64)\n", f);
+    fputs("declare i64 @tk_arr_sort(i64, i64)\n\n", f);
     /* std.os module — POSIX syscall bridge (Story 74.2.1) */
     fputs("declare i64 @tk_os_open(i64, i64, i64)\n", f);
     fputs("declare i64 @tk_os_close(i64)\n", f);
@@ -3701,6 +3767,12 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_os_stdin_fd()\n", f);
     fputs("declare i64 @tk_os_stdout_fd()\n", f);
     fputs("declare i64 @tk_os_stderr_fd()\n\n", f);
+    /* std.task module functions (task.c) — Story 76.1.1a */
+    fputs("declare i64 @tk_task_scope()\n", f);
+    fputs("declare i64 @tk_task_spawn(i64, i64)\n", f);
+    fputs("declare i64 @tk_task_awaitall(i64)\n", f);
+    fputs("declare i64 @tk_task_result(i64)\n", f);
+    fputs("declare i64 @tk_task_cancel(i64)\n\n", f);
 
     /* Loop-iteration guard: declare fprintf, exit, stderr when enabled */
     if (ctx.max_iters > 0) {

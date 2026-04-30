@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "module": "std.task",
+  "exports": [
+    {"kind": "func", "name": "task.scope",    "params": [],              "return": "i64"},
+    {"kind": "func", "name": "task.spawn",    "params": ["i64", "i64"], "return": "i64"},
+    {"kind": "func", "name": "task.awaitall", "params": ["i64"],        "return": "i64"},
+    {"kind": "func", "name": "task.result",   "params": ["i64"],        "return": "i64"},
+    {"kind": "func", "name": "task.cancel",   "params": ["i64"],        "return": "i64"}
+  ]
+}

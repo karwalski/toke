@@ -100,6 +100,8 @@ static char *tok_text(const Node *n, const char *src)
 static void fmt_expr(Buf *b, const Node *n, const char *src);
 static void fmt_type_expr(Buf *b, const Node *n, const char *src);
 static void fmt_stmt(Buf *b, const Node *n, const char *src, int depth);
+static void fmt_stmt_list(Buf *b, const Node *n, const char *src, int depth);
+static void fmt_return_spec(Buf *b, const Node *n, const char *src);
 
 /* ── Operator to string ───────────────────────────────────────────── */
 
@@ -342,6 +344,43 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
             }
         }
         buf_putc(b, '}');
+        break;
+    }
+    case NODE_CLOSURE: {
+        /* fn(params):ReturnSpec{body} */
+        buf_puts(b, "fn(");
+        int ci = 0;
+        int first_param = 1;
+        while (ci < n->child_count && n->children[ci]->kind == NODE_PARAM) {
+            if (!first_param) buf_puts(b, "; ");
+            first_param = 0;
+            const Node *pm = n->children[ci];
+            if (pm->child_count > 0) {
+                char *pn = tok_text(pm->children[0], src);
+                buf_puts(b, pn);
+                free(pn);
+            }
+            buf_putc(b, ':');
+            if (pm->child_count > 1)
+                fmt_type_expr(b, pm->children[1], src);
+            ci++;
+        }
+        buf_putc(b, ')');
+        if (ci < n->child_count && n->children[ci]->kind == NODE_RETURN_SPEC) {
+            buf_putc(b, ':');
+            fmt_return_spec(b, n->children[ci], src);
+            ci++;
+        }
+        if (ci < n->child_count && n->children[ci]->kind == NODE_STMT_LIST) {
+            buf_putc(b, '{');
+            const Node *body = n->children[ci];
+            if (body->child_count > 0) {
+                buf_putc(b, '\n');
+                fmt_stmt_list(b, body, src, 1);
+                buf_putc(b, '\n');
+            }
+            buf_putc(b, '}');
+        }
         break;
     }
     case NODE_EXPR_STMT:
@@ -798,6 +837,8 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
 static void pfmt_type_expr(Buf *b, const Node *n, const char *src);
 static void pfmt_stmt(Buf *b, const Node *n, const char *src,
                        int depth, FmtOptions opts, const Node *root);
+static void pfmt_stmt_list(Buf *b, const Node *n, const char *src,
+                            int depth, FmtOptions opts, const Node *root);
 
 /* ── Pretty type expression (same as canonical — types don't expand) */
 
@@ -1001,6 +1042,45 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
             }
         }
         buf_putc(b, '}');
+        break;
+    }
+    case NODE_CLOSURE: {
+        buf_puts(b, "fn(");
+        int ci = 0;
+        int first_param = 1;
+        while (ci < n->child_count && n->children[ci]->kind == NODE_PARAM) {
+            if (!first_param) {
+                buf_putc(b, ';');
+                if (opts.pretty) buf_putc(b, ' ');
+            }
+            first_param = 0;
+            const Node *pm = n->children[ci];
+            if (pm->child_count > 0) {
+                char *pn = tok_text(pm->children[0], src);
+                buf_puts(b, pn);
+                free(pn);
+            }
+            buf_putc(b, ':');
+            if (pm->child_count > 1)
+                pfmt_type_expr(b, pm->children[1], src);
+            ci++;
+        }
+        buf_putc(b, ')');
+        if (ci < n->child_count && n->children[ci]->kind == NODE_RETURN_SPEC) {
+            buf_putc(b, ':');
+            fmt_return_spec(b, n->children[ci], src);
+            ci++;
+        }
+        if (ci < n->child_count && n->children[ci]->kind == NODE_STMT_LIST) {
+            buf_putc(b, '{');
+            const Node *body = n->children[ci];
+            if (body->child_count > 0) {
+                buf_putc(b, '\n');
+                pfmt_stmt_list(b, body, src, 1, opts, root);
+                buf_putc(b, '\n');
+            }
+            buf_putc(b, '}');
+        }
         break;
     }
     case NODE_EXPR_STMT:

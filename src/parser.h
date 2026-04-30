@@ -70,7 +70,8 @@ typedef enum {
     NODE_MAP_TYPE,
     NODE_MAP_LIT,
     NODE_MAP_ENTRY,
-    NODE_FUNC_REF
+    NODE_FUNC_REF,
+    NODE_CLOSURE          /* closure expression: params + body (story 76.1.9a) */
 } NodeKind;
 
 /* ────────────────────────────────────────────────────────────────────────── */

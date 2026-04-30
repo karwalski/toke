@@ -753,6 +753,12 @@ static void seed_predefined(Scope *s, Arena *arena, const char *name) {
     s->head     = d;
 }
 
+/* File-static pointer to the NameEnv being built.  Set at the start of
+ * resolve_names() and used by resolve_closure() for capture analysis
+ * without threading NameEnv through every resolve_node signature.
+ * Safe: the compiler is single-threaded. */
+static NameEnv *s_name_env = NULL;
+
 /* Forward declaration — resolve_node and resolve_func are mutually
  * recursive (resolve_node dispatches to resolve_func for NODE_FUNC_DECL,
  * and resolve_func calls resolve_node for sub-expressions). */
@@ -790,6 +796,196 @@ static void resolve_ident(const Node *node, const char *src,
                   msg, "fix", NULL);
         *had_error = 1;
     }
+}
+
+/* ── Closure free-variable analysis (story 76.1.9b) ───────────────── */
+
+/*
+ * scope_contains_decl — return 1 if the given Decl lives in exactly
+ * this scope (not a parent), 0 otherwise.
+ */
+static int scope_contains_decl(const Scope *s, const Decl *decl) {
+    for (const Decl *d = s->head; d; d = d->next) {
+        if (d == decl) return 1;
+    }
+    return 0;
+}
+
+/*
+ * collect_captures — walk the AST below a closure node and find every
+ * NODE_IDENT that resolves to a Decl in an ancestor scope (not the
+ * closure's own scope, not the module scope, and not a func/type/import
+ * declaration).  Captured names are collected into a temporary array
+ * and then stored into the NameEnv capture side-table.
+ *
+ * Parameters:
+ *   node          — subtree to scan (the closure body).
+ *   src           — source buffer.
+ *   closure_scope — the scope created for the closure's own params.
+ *   module_scope  — the top-level module scope.
+ *   names         — temporary name accumulator (arena-allocated pointers).
+ *   count         — in/out count of names collected so far.
+ *   cap           — capacity of the names array.
+ *   arena         — memory arena.
+ */
+static void collect_captures(const Node *node, const char *src,
+                             const Scope *closure_scope,
+                             const Scope *module_scope,
+                             const char **names, int *count, int cap,
+                             Arena *arena) {
+    if (!node) return;
+
+    if (node->kind == NODE_IDENT || node->kind == NODE_TYPE_IDENT) {
+        const char *name = src + node->tok_start;
+        int         len  = node->tok_len;
+
+        /* Look up in the full chain starting from closure_scope */
+        Decl *decl = scope_lookup(closure_scope, name, len);
+        if (!decl) return; /* unresolved — already reported by resolve_ident */
+
+        /* Skip if declared in the closure's own scope */
+        if (scope_contains_decl(closure_scope, decl)) return;
+
+        /* Skip if declared in the module scope */
+        if (scope_contains_decl(module_scope, decl)) return;
+
+        /* Skip func/type/import/predefined declarations — these are not
+         * runtime values that need to be captured in a closure env. */
+        if (decl->kind == DECL_FUNC || decl->kind == DECL_TYPE ||
+            decl->kind == DECL_IMPORT_ALIAS || decl->kind == DECL_PREDEFINED)
+            return;
+
+        /* Check for duplicates in collected list */
+        for (int i = 0; i < *count; i++) {
+            if (decl->name_len == len &&
+                memcmp(names[i], name, (size_t)len) == 0)
+                return; /* already collected */
+        }
+
+        /* Add to capture list */
+        if (*count < cap) {
+            names[*count] = arena_intern(arena, name, len);
+            (*count)++;
+        }
+        return;
+    }
+
+    /* For field expressions, only recurse into the base (child[0]),
+     * not the field name (child[1]). */
+    if (node->kind == NODE_FIELD_EXPR) {
+        if (node->child_count > 0)
+            collect_captures(node->children[0], src, closure_scope,
+                             module_scope, names, count, cap, arena);
+        return;
+    }
+
+    /* Generic: recurse into all children */
+    for (int i = 0; i < node->child_count; i++)
+        collect_captures(node->children[i], src, closure_scope,
+                         module_scope, names, count, cap, arena);
+}
+
+/*
+ * nameenv_add_capture — append a CaptureInfo entry to the NameEnv
+ * side-table.  Grows the arena-allocated captures array as needed.
+ */
+static void nameenv_add_capture(NameEnv *env, Arena *arena,
+                                const Node *closure_node,
+                                const char **cap_names, int cap_count) {
+    if (cap_count == 0) return;
+
+    /* Grow captures array if needed */
+    if (env->capture_count >= env->capture_cap) {
+        int new_cap = env->capture_cap == 0 ? 8 : env->capture_cap * 2;
+        CaptureInfo *new_arr = (CaptureInfo *)arena_alloc(
+            arena, new_cap * (int)sizeof(CaptureInfo));
+        if (!new_arr) return;
+        if (env->captures && env->capture_count > 0) {
+            memcpy(new_arr, env->captures,
+                   (size_t)env->capture_count * sizeof(CaptureInfo));
+        }
+        env->captures   = new_arr;
+        env->capture_cap = new_cap;
+    }
+
+    /* Copy the names array into the arena */
+    const char **stored = (const char **)arena_alloc(
+        arena, cap_count * (int)sizeof(const char *));
+    if (!stored) return;
+    memcpy(stored, cap_names, (size_t)cap_count * sizeof(const char *));
+
+    CaptureInfo *ci = &env->captures[env->capture_count++];
+    ci->closure_node = closure_node;
+    ci->cap_names    = stored;
+    ci->cap_count    = cap_count;
+}
+
+/*
+ * resolve_closure — resolve identifiers inside a closure expression and
+ *                   perform free-variable capture analysis.
+ *
+ * A NODE_CLOSURE has the same child layout as NODE_FUNC_DECL but without
+ * a name child:
+ *   children[0..N-2]: NODE_PARAM (closure parameters)
+ *   children[N-1]:    NODE_STMT_LIST (closure body)
+ *
+ * Steps:
+ *   1. Push a new scope whose parent is the enclosing scope (NOT the
+ *      module scope — closures can capture from any enclosing scope).
+ *   2. Insert closure parameters into the new scope.
+ *   3. Resolve the closure body.
+ *   4. Walk the body collecting identifiers that resolved to ancestor
+ *      scopes (not the closure's own scope and not module scope).
+ *   5. Store the capture list in the NameEnv side-table.
+ */
+static int resolve_closure(const Node *node, const char *src,
+                           Scope *enclosing_scope, Arena *arena,
+                           int *had_error) {
+    Scope *module_scope = s_name_env->module_scope;
+    Scope *cl_scope = push_scope(arena, enclosing_scope);
+    if (!cl_scope) return -1;
+
+    /* Insert closure parameters and resolve the body */
+    for (int i = 0; i < node->child_count; i++) {
+        const Node *ch = node->children[i];
+        if (!ch) continue;
+
+        if (ch->kind == NODE_PARAM) {
+            const Node *pname = ch->child_count > 0 ? ch->children[0] : NULL;
+            if (pname && (pname->kind == NODE_IDENT ||
+                          pname->kind == NODE_TYPE_IDENT)) {
+                scope_insert(cl_scope, arena, src,
+                             pname->start, pname->tok_len,
+                             pname->tok_start, pname->tok_len,
+                             DECL_CLOSURE_PARAM, ch,
+                             pname->line, pname->col);
+            }
+            /* Resolve type expression in param */
+            if (ch->child_count > 1)
+                resolve_node(ch->children[1], src, cl_scope, arena, had_error);
+        } else {
+            /* Body (NODE_STMT_LIST) or return-type annotations */
+            resolve_node(ch, src, cl_scope, arena, had_error);
+        }
+    }
+
+    /* Capture analysis: collect free variables from the closure body */
+    #define MAX_CLOSURE_CAPTURES 64
+    const char *cap_names[MAX_CLOSURE_CAPTURES];
+    int cap_count = 0;
+
+    for (int i = 0; i < node->child_count; i++) {
+        const Node *ch = node->children[i];
+        if (!ch) continue;
+        if (ch->kind == NODE_PARAM) continue; /* skip param subtrees */
+        collect_captures(ch, src, cl_scope, module_scope,
+                         cap_names, &cap_count, MAX_CLOSURE_CAPTURES, arena);
+    }
+
+    if (cap_count > 0)
+        nameenv_add_capture(s_name_env, arena, node, cap_names, cap_count);
+
+    return 0;
 }
 
 /*
@@ -938,6 +1134,12 @@ static int resolve_node(const Node *node, const char *src,
         resolve_func(node, src, scope, arena, had_error);
         break;
 
+    case NODE_CLOSURE:
+        /* Closure expression — push scope, insert params, resolve body,
+         * then perform free-variable capture analysis (story 76.1.9b). */
+        resolve_closure(node, src, scope, arena, had_error);
+        break;
+
     case NODE_BIND_STMT:
     case NODE_MUT_BIND_STMT: {
         /* child[0] = name, child[1] = type (optional), child[2] = init expr */
@@ -1084,8 +1286,14 @@ int resolve_names(const Node *ast, const char *src,
     Scope *mscope = push_scope(arena, NULL);
     if (!mscope) return -1;
 
-    out->module_scope = mscope;
-    out->arena        = arena;
+    out->module_scope  = mscope;
+    out->arena         = arena;
+    out->captures      = NULL;
+    out->capture_count = 0;
+    out->capture_cap   = 0;
+
+    /* Make NameEnv available to resolve_closure via file-static pointer */
+    s_name_env = out;
 
     /* Seed predefined identifiers */
     static const char *predefined[] = {

@@ -31,11 +31,12 @@ STDLIB_SRCS = \
           src/stdlib/dataframe.c src/stdlib/analytics.c src/stdlib/ml.c \
           src/stdlib/net.c src/stdlib/sys.c \
           src/stdlib/mem.c \
-          src/stdlib/os.c
+          src/stdlib/os.c \
+          src/stdlib/task.c
 
 SRCS    += $(STDLIB_SRCS)
 OBJS    = $(SRCS:.c=.o)
-LDLIBS  = -lm -lz
+LDLIBS  = -lm -lz -lpthread
 BIN     = tkc
 
 # ── Reproducible-build flags ──────────────────────────────────────────────────

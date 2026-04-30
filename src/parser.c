@@ -234,6 +234,7 @@ static Token *xp(Parser *p, TokenKind k, const char *w) {
 static Node *parse_expr(Parser *p);
 static Node *parse_stmt_list(Parser *p, Token *ref);
 static Node *parse_type_expr(Parser *p);
+static void  parse_one_param(Parser *p, Node *fn);
 
 /* ── Type expressions ─────────────────────────────────────────────── */
 
@@ -404,6 +405,32 @@ static Node *parse_primary(Parser *p) {
         adv(p); /* consume '&' */
         Token *nt=cur(p); adv(p); /* consume function name */
         return mk(p,NODE_FUNC_REF,nt);
+    }
+    /* Closure expression: fn(params):ReturnSpec{body}
+     * Disambiguated from a plain ident by checking that the ident is "fn"
+     * and the next token is '('.  Story 76.1.9a. */
+    if(peek(p)==TK_IDENT&&peek_at(p,1)==TK_LPAREN&&teq(p,cur(p),"fn")){
+        Token *ft=adv(p); /* consume 'fn' */
+        Node *n=mk(p,NODE_CLOSURE,ft);
+        xp(p,TK_LPAREN,"'('");
+        if(peek(p)!=TK_RPAREN){
+            parse_one_param(p,n);
+            while(peek(p)==TK_SEMICOLON&&p->pos+1<p->n&&p->toks[p->pos+1].kind!=TK_RPAREN){adv(p);parse_one_param(p,n);}
+        }
+        if(!xp(p,TK_RPAREN,"')'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+        /* Optional return spec: ':' TypeExpr ('!' TypeExpr)? */
+        if(peek(p)==TK_COLON){
+            adv(p);
+            Token *rs=cur(p); Node *rspec=mk(p,NODE_RETURN_SPEC,rs);
+            ch(p,rspec,parse_type_expr(p));
+            if(peek(p)==TK_BANG){adv(p);ch(p,rspec,parse_type_expr(p));}
+            ch(p,n,rspec);
+        }
+        /* Body: '{' StmtList '}' */
+        if(!xp(p,TK_LBRACE,"'{' for closure body")){sync(p);return n;}
+        ch(p,n,parse_stmt_list(p,ft));
+        if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+        return n;
     }
     if(peek(p)==TK_IDENT){adv(p);return mk(p,NODE_IDENT,t);}
     if(peek(p)==TK_TYPE_IDENT){
