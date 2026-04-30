@@ -468,15 +468,28 @@ Stories for features explicitly deferred in the specification, with target versi
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 76.1.1 | Concurrency model design | planned | — | **P2** Target: v0.5+. Async/await or structured concurrency. Requires formal memory model (76.1.4). Research: Rust async, Go goroutines, structured concurrency (Trio/Kotlin). |
-| 76.1.2 | Foreign Function Interface (FFI) formalisation | planned | — | **P2** Target: v0.4. Current: experimental std.os/std.mem. Formalise extern function declarations in .tki, C type mapping, safety boundaries. |
+| 76.1.1 | Concurrency model design | done | 2026-04-30 | **P2** DECIDED: structured concurrency. Phase 1 (v0.4): std.task stdlib module, zero grammar changes. Phase 2 (v0.5): sc/spawn keywords. Pre-fork kept for HTTP scaling. Design memo complete. |
+| 76.1.1a | Implement std.task stdlib module (Phase 1) | backlog | — | **P1** Target: v0.4. task.scope(), task.spawn(scope; &fn), task.await_all(scope), task.result(handle). C runtime with thread pool sized to CPU count. Each spawned task gets own arena. Zero grammar changes. |
+| 76.1.1b | Implement sc/spawn keywords (Phase 2) | backlog | — | **P2** Target: v0.5. Add `sc` keyword for scope blocks, `spawn` context-keyword. LL(1) compatible. Compiler-enforced lifetime checking. Depends on 76.1.1a proving the model. |
+| 76.1.2 | Foreign Function Interface (FFI) formalisation | done | 2026-04-30 | **P2** DECIDED: 5-phase plan. Design memo complete covering calling conventions, type marshalling, ownership semantics, safety boundaries. |
+| 76.1.2a | FFI Phase 1: normative spec text for S24.2 | backlog | — | **P1** Document existing behaviour: extern declarations, i64 ABI, calling conventions per target. No code changes — pure documentation. |
+| 76.1.2b | FFI Phase 2: extern_c kind in .tki schema | backlog | — | **P1** Add "kind": "extern_c" with "c_name" field to .tki. Update load_stdlib_tki in llvm.c. |
+| 76.1.2c | FFI Phase 3: ownership annotation in .tki | backlog | — | **P2** Add optional "ownership" field (static/caller/borrowed) to .tki exports. Informational initially. |
+| 76.1.2d | FFI Phase 4: unsafe annotation for extern decls | backlog | — | **P2** Diagnostic note for non-stdlib bodyless declarations. v0.5: require explicit unsafe annotation. |
 | 76.1.3 | Package registry implementation | planned | — | **P2** Target: v0.6+. ADR-0004 design complete. MVS resolution, pkg.* namespace, TOML manifest, git-based with optional central index. |
 | 76.1.4 | Formal memory model | planned | — | **P3** Downstream of 76.1.1 (concurrency). Arena model works informally. Formalise allocation, ownership, lifetime guarantees. |
 | 76.1.5 | Debugger metadata | done | 2026-04-25 | **P3** `-g`/`--debug` flag emits DWARF via LLVM debug metadata: DICompileUnit, DIFile, DISubprogram per function, `!dbg` annotations, `-g` passed to clang. |
 | 76.1.6 | Canonical binary IR | planned | — | **P3** LLVM bitcode is interim. Define toke-specific binary IR for distribution without LLVM dependency. |
-| 76.1.7 | Generic type parameters | planned | — | **P3** Deferred since v0.1. Design: monomorphisation vs dictionary passing, bounds, variance. Current workaround: concrete types + code generation. |
+| 76.1.7 | Generic type parameters | done | 2026-04-30 | **P3** DECIDED: no user-visible generics. Expand built-in parameterised types + code-gen tooling. Design memo complete. Generics conflict with "minimal surface for LLMs" thesis — LLMs generate concrete specialised code more reliably. |
+| 76.1.7a | Built-in HOFs: arr.map, arr.filter, arr.reduce, arr.sort | backlog | — | **P1** Compiler-magic functions on @$t arrays. Type-checked using array element type (extend types.c pattern from .len). |
+| 76.1.7b | Built-in container types: $set, $stack, $queue | backlog | — | **P2** Parameterised like @$t. Compiler-special types with C runtime backing. |
+| 76.1.7c | ooke gen specialise: type-specific code generation | backlog | — | **P2** Template-based code gen for user-defined containers. `ooke gen stack i64` produces $stack_i64 with all functions. |
 | 76.1.8 | Option type ($some/$none) | done | 2026-04-25 | **P1** Implemented as T!$none convention reusing error-union infrastructure. $none is a built-in zero-field struct; $none{} emits zero at LLVM level (error arm). Match: expr\|{$ok:v v;$none:_ fallback}. stdlib/option.tki documents the convention. |
-| 76.1.9 | Full closures with environment capture | planned | — | **P2** Target: v0.4. Current: &name function references (no capture). Add environment capture for callback patterns. Research: Rust closures, OCaml closures, LLVM closure compilation. |
+| 76.1.9 | Full closures with environment capture | done | 2026-04-30 | **P2** DECIDED: capture by value, fn(params){body} syntax, {fn_ptr, env_ptr} pair representation. malloc-based env, no auto-free in v0.4. Design memo complete. |
+| 76.1.9a | Parser: add NODE_CLOSURE, parse fn(params){body} | backlog | — | **P1** In parse_primary: detect TK_IDENT "fn" + TK_LPAREN. Create NODE_CLOSURE with params + body. Update ast_json.c and fmt.c. |
+| 76.1.9b | Name resolution: free-variable analysis for closures | backlog | — | **P1** In resolve_node: when entering NODE_CLOSURE, compute capture set (variables referenced from ancestor scopes). Store on CaptureInfo side table. |
+| 76.1.9c | Codegen: lifted functions + environment struct | backlog | — | **P1** Emit @closure.N with env parameter. At creation: malloc env struct, store captured values, package as {fn_ptr, env_ptr}. Update &name to produce null-env pair for uniformity. |
+| 76.1.9d | Runtime: update handler dispatch for closure pairs | backlog | — | **P1** Update tk_http_get_handler etc. to unpack {fn_ptr, env_ptr} and pass env as first arg. Backward compatible: bare refs have env=null. |
 | 76.1.10 | Tokenizer vocabulary v0.3 formalisation | planned | — | **P1** Promoted to normative in spec S24.7. Formalise the canonical BPE merge list. Depends on Phase 2 tokenizer retrain (Epic 23). |
 
 ### Epic 8.1 — Cloud Corpus Generation Infrastructure
