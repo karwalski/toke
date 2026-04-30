@@ -1,35 +1,35 @@
-# toke specification
+# toke specification (redirect)
 
-The normative language specification for toke (tk) — a compiled,
-statically typed programming language designed for LLM code generation.
+The canonical specification now lives at **`tk/docs/spec/`** (currently `toke-spec-v0.3.md`).
 
-## What is toke?
+All normative spec content (grammar, semantics, errors, stdlib signatures) and
+decision records (ADRs, gate decisions) have been consolidated into `tk/docs/`.
 
-toke is a programming language built for machines, not humans. Its syntax
-is designed to minimise token usage in LLM generation while eliminating
-ambiguity and providing structured, machine-readable compiler diagnostics.
+## What remains here
 
-- **Legacy profile:** 80-character set, compatible with existing LLM tokenizers (used for bootstrapping)
-- **Default syntax:** 56-character set, for use with the purpose-built toke tokenizer
+- `rfc/` — the toke RFC document (canonical location)
+- `.github/ISSUE_TEMPLATE/` — GitHub issue templates for the spec repo
+- `examples/` — example program placeholders
+- `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `LICENSE`, `NOTICE` — repo-level legal/governance files
 
-Programs compile to native machine code via LLVM. No runtime. No GC.
+## Canonical locations
 
-## Repository contents
+| Content | Location |
+|---------|----------|
+| Language spec | `tk/docs/spec/toke-spec-v0.3.md` |
+| Formal grammar | `tk/docs/spec/grammar.ebnf` |
+| Semantics | `tk/docs/spec/semantics.md` |
+| Error registry | `tk/docs/spec/errors.md` |
+| Stdlib signatures | `tk/docs/spec/stdlib-signatures.md` |
+| Decision records | `tk/docs/decisions/` |
+| Stdlib module docs | `tk/docs/stdlib/` |
 
-- `rfc/` — the toke RFC document
-- `spec/grammar.ebnf` — the normative formal grammar
-- `spec/semantics.md` — type rules and memory model
-- `spec/errors.md` — error code registry
-- `examples/` — example programs in legacy and default syntax
+## Archived duplicates
 
-## Related
-
-| Location | Description |
-|----------|-------------|
-| [../src/](../src/) | Reference compiler (tkc) |
-| [../stdlib/](../stdlib/) | Standard library |
-| [toke-model](https://github.com/karwalski/toke-model) | Corpus generation, tokenizer, model training |
-| [toke-eval](https://github.com/karwalski/toke-eval) | Benchmarks and evaluation |
+Previous copies of spec and decision files that lived here were moved to
+`tk/archive/docs/spec-repo-duplicates/` on 2026-04-25. The `tk/docs/` versions
+are authoritative (they contain YAML frontmatter for the website and have
+received updates not present in the old copies).
 
 ## Licence
 

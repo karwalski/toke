@@ -8,6 +8,7 @@
  *   process.spawn(cmd:[Str]):Handle!ProcessErr
  *   process.wait(h:Handle):i32!ProcessErr
  *   process.stdout(h:Handle):Str!ProcessErr
+ *   process.stderr(h:Handle):Str!ProcessErr
  *   process.kill(h:Handle):bool
  *   type Handle          -- opaque OS process handle
  *   sum  ProcessErr      -- NotFound | Permission | IO

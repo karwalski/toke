@@ -1,11 +1,11 @@
 # toke
 
-toke is a compiled programming language designed so that AI can write better code. It uses a minimal 56-character alphabet and just 12 keywords, making programs shorter and more predictable for language models to generate. The result is a language where AI-generated code is more likely to compile correctly on the first try, while remaining readable and maintainable by humans.
+toke is a compiled programming language designed so that AI can write better code. It uses a 59-character alphabet -- lowercase letters, digits, and a small set of punctuation -- and just 12 keywords, making programs shorter and more predictable for language models to generate. The result is a language where AI-generated code is more likely to compile correctly on the first try, while remaining readable and maintainable by humans.
 
 ## Key Features
 
 - **Compiled to native code** via LLVM -- produces standalone binaries for x86-64 and ARM64
-- **56-character alphabet** -- programs use only lowercase letters, digits, and a small set of punctuation, eliminating an entire class of tokenisation ambiguity
+- **59-character alphabet** -- programs use only lowercase letters, digits, and a small set of punctuation, eliminating an entire class of tokenisation ambiguity
 - **12 keywords** -- the entire language control flow fits in a short list: `m`, `f`, `t`, `i`, `if`, `el`, `lp`, `br`, `let`, `mut`, `as`, `rt`
 - **LL(1) grammar** -- every parse decision is determined by a single token of lookahead, making the language simple for both humans and machines to parse
 - **Error handling with result types** -- no exceptions; errors are values returned from functions and handled explicitly with `match`
@@ -108,7 +108,7 @@ tkc [flags] <source-files>
   --emit-interface      emit .tki interface files
   --check               type-check only, no code generation
   --profile1            legacy profile: 80-character set
-  --profile2            default syntax: 56-character set (default)
+  --profile2            default syntax: 59-character set (default)
   --diag-json           structured JSON diagnostics (default)
   --diag-text           human-readable diagnostics
 ```
