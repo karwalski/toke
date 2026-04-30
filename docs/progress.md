@@ -460,7 +460,25 @@ Research complete. Decisions documented in ~/tk/spec-v03-research.md (generated)
 | 75.1.17 | Companion file .tkc: reserve extension, defer format to v0.4 | backlog | — | **P2** DECISION: defer. Add one paragraph to S24 reserving .tkc. Comments (75.1.2) cover the immediate documentation need. |
 | 75.1.18 | Multimodal LLM: spec minimal contract | backlog | — | **P2** DECISION: Option C. Add section stating: toke programs may be authored by code-LLM + content-LLM division. Code channel produces toke source. Content channel produces strings, i18n, companion files. Channels agree on identifiers/tags; disagreement is compile error. Formal protocol reserved for future version. |
 | 75.1.19 | Token efficiency claims: reframe for comments | done | 2026-04-30 | — | **P2** Update why.md, guide: "toke's token cost is fixed because LLMs are trained to write without comments. The language supports comments for human authors, but the LLM training corpus is comment-stripped." |
-| 75.1.20 | Deferred features epic from Section 24 | backlog | — | **P2** Create stories with milestones: concurrency (v0.5+), package registry (v0.6+), formal memory model (after concurrency), debugger (LLVM/DWARF defaults apply), binary IR (LLVM bitcode interim), generics (deferred), option type (v0.4). |
+| 75.1.20 | Deferred features epic from Section 24 | done | 2026-04-25 | **P2** Created Epic 76 with milestones: concurrency (v0.5+), package registry (v0.6+), formal memory model (after concurrency), debugger (LLVM/DWARF defaults apply), binary IR (LLVM bitcode interim), generics (deferred), option type (v0.4). |
+
+### Epic 76 — Deferred Language Features (from Spec Section 24)
+
+Stories for features explicitly deferred in the specification, with target version milestones. Related planned stories already tracked: 3.2.2 (Phase E corpus), 3.5.1 (autonomous pipeline), 3.5.2 (quality gate), 3.6.1 (Llama eval), 3.6.2 (cross-arch report), 4.4.1 (AI language improvements).
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 76.1.1 | Concurrency model design | planned | — | **P2** Target: v0.5+. Async/await or structured concurrency. Requires formal memory model (76.1.4). Research: Rust async, Go goroutines, structured concurrency (Trio/Kotlin). |
+| 76.1.2 | Foreign Function Interface (FFI) formalisation | planned | — | **P2** Target: v0.4. Current: experimental std.os/std.mem. Formalise extern function declarations in .tki, C type mapping, safety boundaries. |
+| 76.1.3 | Package registry implementation | planned | — | **P2** Target: v0.6+. ADR-0004 design complete. MVS resolution, pkg.* namespace, TOML manifest, git-based with optional central index. |
+| 76.1.4 | Formal memory model | planned | — | **P3** Downstream of 76.1.1 (concurrency). Arena model works informally. Formalise allocation, ownership, lifetime guarantees. |
+| 76.1.5 | Debugger metadata | planned | — | **P3** LLVM/DWARF defaults apply. Formalise source-level debug info, variable inspection, breakpoint mapping. |
+| 76.1.6 | Canonical binary IR | planned | — | **P3** LLVM bitcode is interim. Define toke-specific binary IR for distribution without LLVM dependency. |
+| 76.1.7 | Generic type parameters | planned | — | **P3** Deferred since v0.1. Design: monomorphisation vs dictionary passing, bounds, variance. Current workaround: concrete types + code generation. |
+| 76.1.8 | Option type ($some/$none) | planned | — | **P1** Target: v0.4. Natural fit with existing $lowercase tag unions. [$some:$t; $none:bool]. Thin layer over existing sum type infrastructure. |
+| 76.1.9 | Full closures with environment capture | planned | — | **P2** Target: v0.4. Current: &name function references (no capture). Add environment capture for callback patterns. Research: Rust closures, OCaml closures, LLVM closure compilation. |
+| 76.1.10 | Tokenizer vocabulary v0.3 formalisation | planned | — | **P1** Promoted to normative in spec S24.7. Formalise the canonical BPE merge list. Depends on Phase 2 tokenizer retrain (Epic 23). |
+
 ### Epic 8.1 — Cloud Corpus Generation Infrastructure
 
 | ID | Story | Status | Branch | Notes |
