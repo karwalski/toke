@@ -214,6 +214,10 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
         free(t);
         break;
     }
+    case NODE_SPAWN_EXPR:
+        buf_puts(b, "spawn ");
+        if (n->child_count > 0) fmt_expr(b, n->children[0], src);
+        break;
     case NODE_BINARY_EXPR:
         if (n->child_count >= 2) {
             fmt_expr(b, n->children[0], src);
@@ -545,6 +549,18 @@ static void fmt_stmt(Buf *b, const Node *n, const char *src, int depth)
     case NODE_ARENA_STMT: {
         buf_indent(b, depth);
         buf_puts(b, "{arena");
+        if (n->child_count > 0) {
+            buf_putc(b, '\n');
+            fmt_stmt_list(b, n->children[0], src, depth + 1);
+            buf_putc(b, '\n');
+        }
+        buf_indent(b, depth);
+        buf_putc(b, '}');
+        break;
+    }
+    case NODE_SCOPE_STMT: {
+        buf_indent(b, depth);
+        buf_puts(b, "sc {");
         if (n->child_count > 0) {
             buf_putc(b, '\n');
             fmt_stmt_list(b, n->children[0], src, depth + 1);
@@ -900,6 +916,10 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
         free(t);
         break;
     }
+    case NODE_SPAWN_EXPR:
+        buf_puts(b, "spawn ");
+        if (n->child_count > 0) pfmt_expr(b, n->children[0], src, opts, root);
+        break;
     case NODE_BINARY_EXPR:
         if (n->child_count >= 2) {
             pfmt_expr(b, n->children[0], src, opts, root);
@@ -1264,6 +1284,18 @@ static void pfmt_stmt(Buf *b, const Node *n, const char *src,
     case NODE_ARENA_STMT: {
         buf_indent(b, depth);
         buf_puts(b, "{arena");
+        if (n->child_count > 0) {
+            buf_putc(b, '\n');
+            pfmt_stmt_list(b, n->children[0], src, depth + 1, opts, root);
+            buf_putc(b, '\n');
+        }
+        buf_indent(b, depth);
+        buf_putc(b, '}');
+        break;
+    }
+    case NODE_SCOPE_STMT: {
+        buf_indent(b, depth);
+        buf_puts(b, "sc {");
         if (n->child_count > 0) {
             buf_putc(b, '\n');
             pfmt_stmt_list(b, n->children[0], src, depth + 1, opts, root);

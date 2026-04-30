@@ -71,7 +71,9 @@ typedef enum {
     NODE_MAP_LIT,
     NODE_MAP_ENTRY,
     NODE_FUNC_REF,
-    NODE_CLOSURE          /* closure expression: params + body (story 76.1.9a) */
+    NODE_CLOSURE,         /* closure expression: params + body (story 76.1.9a) */
+    NODE_SCOPE_STMT,      /* sc { ... } structured concurrency block (story 76.1.1b) */
+    NODE_SPAWN_EXPR       /* spawn expr inside sc block (story 76.1.1b) */
 } NodeKind;
 
 /* ────────────────────────────────────────────────────────────────────────── */

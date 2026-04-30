@@ -1253,6 +1253,16 @@ static Type *infer(Ctx *cx, const Node *node) {
      * Returns the type of the last child (useful for expression-position
      * blocks where the block's value is the final expression).
      * ──────────────────────────────────────────────────────────────────── */
+    /* sc { ... } — structured concurrency block (story 76.1.1b) */
+    case NODE_SCOPE_STMT: {
+        for (int i=0;i<node->child_count;i++) infer(cx,node->children[i]);
+        return mk_type(A,TY_VOID);
+    }
+    /* spawn expr — returns task handle (i64) (story 76.1.1b) */
+    case NODE_SPAWN_EXPR: {
+        if (node->child_count>0) infer(cx,node->children[0]);
+        return mk_type(A,TY_I64);
+    }
     default: {
         Type *last=mk_type(A,TY_VOID);
         for (int i=0;i<node->child_count;i++) last=infer(cx,node->children[i]);

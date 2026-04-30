@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "module": "std.queue",
+  "exports": [
+    {"kind": "func", "name": "queue.new",  "params": [],              "return": "i64"},
+    {"kind": "func", "name": "queue.push", "params": ["i64", "i64"], "return": "i64"},
+    {"kind": "func", "name": "queue.pop",  "params": ["i64"],        "return": "i64"},
+    {"kind": "func", "name": "queue.peek", "params": ["i64"],        "return": "i64"},
+    {"kind": "func", "name": "queue.len",  "params": ["i64"],        "return": "i64"}
+  ]
+}

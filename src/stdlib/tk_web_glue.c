@@ -28,6 +28,7 @@
 #include "sys.h"
 #include "db.h"
 #include "json.h"
+#include "collections.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -398,6 +399,61 @@ int64_t tk_http_set_cors(int64_t origins_ptr) {
  * where req is a pointer to a heap-allocated Req struct (as i64) and the
  * return value is a pointer to a heap-allocated Res struct (as i64).
  */
+
+/* ── Story 76.1.9d: Closure-aware dispatch helpers ────────────────────────
+ *
+ * Once NODE_FUNC_REF (76.1.9c) emits closure pairs {fn_ptr, env_ptr} instead
+ * of bare function pointers, every runtime call site that invokes a toke
+ * callback must unpack the pair.  These helpers provide that dispatch.
+ *
+ * Until 76.1.9c lands, &name still produces a bare i64 function pointer, so
+ * the call sites below continue to use the legacy typedef casts.  When 76.1.9c
+ * is complete, replace each legacy call with the corresponding closure helper.
+ *
+ * Call sites that need updating:
+ *   1. tk_get_handler_dispatch   (line ~430)  — call_closure_1
+ *   2. tk_post_handler_dispatch  (line ~661)  — call_closure_1
+ *   3. tk_put_handler_dispatch   (line ~719)  — call_closure_1
+ *   4. tk_delete_handler_dispatch(line ~782)  — call_closure_1
+ *   5. tk_patch_handler_dispatch (line ~845)  — call_closure_1
+ *   6. tk_arr_map                (line ~1882) — call_closure_1
+ *   7. tk_arr_filter             (line ~1900) — call_closure_1
+ *   8. tk_arr_reduce             (line ~1918) — call_closure_2
+ *   9. tk_arr_sort / qsort_cmp  (line ~1931) — call_closure_2
+ */
+
+/*
+ * call_closure_1 — Invoke a closure pair {fn_ptr, env_ptr} with 1 argument.
+ *
+ * fn_val: i64 pointing to a heap-allocated 2-element int64_t array:
+ *           [0] = real function pointer  (env, arg) -> i64
+ *           [1] = environment pointer    (0 for bare &name refs)
+ * arg:    the single argument to forward to the function.
+ * Returns: whatever the function returns.
+ */
+static int64_t call_closure_1(int64_t fn_val, int64_t arg) {
+    int64_t *pair = (int64_t *)(intptr_t)fn_val;
+    int64_t real_fn = pair[0];
+    int64_t env     = pair[1];
+    typedef int64_t (*ClosureFn1)(int64_t, int64_t);
+    ClosureFn1 f = (ClosureFn1)(intptr_t)real_fn;
+    return f(env, arg);
+}
+
+/*
+ * call_closure_2 — Invoke a closure pair {fn_ptr, env_ptr} with 2 arguments.
+ *
+ * Same layout as call_closure_1, but the underlying function takes (env, a, b).
+ */
+static int64_t call_closure_2(int64_t fn_val, int64_t a, int64_t b) {
+    int64_t *pair = (int64_t *)(intptr_t)fn_val;
+    int64_t real_fn = pair[0];
+    int64_t env     = pair[1];
+    typedef int64_t (*ClosureFn2)(int64_t, int64_t, int64_t);
+    ClosureFn2 f = (ClosureFn2)(intptr_t)real_fn;
+    return f(env, a, b);
+}
+
 #define TK_MAX_GET_HANDLERS 256
 
 typedef int64_t (*TkGetHandlerFn)(int64_t);
@@ -2369,3 +2425,24 @@ int64_t tk_task_spawn_w(int64_t scope, int64_t fn) { (void)scope; (void)fn; retu
 int64_t tk_task_awaitall_w(int64_t scope) { (void)scope; return -1; }
 int64_t tk_task_result_w(int64_t handle) { (void)handle; return -1; }
 int64_t tk_task_cancel_w(int64_t scope) { (void)scope; return -1; }
+
+/* ── Story 76.1.7b: $stack / $queue / $set container wrappers ──────── */
+
+int64_t tk_stack_new_w(void)                         { return tk_stack_new(); }
+int64_t tk_stack_push_w(int64_t s, int64_t val)      { return tk_stack_push(s, val); }
+int64_t tk_stack_pop_w(int64_t s)                    { return tk_stack_pop(s); }
+int64_t tk_stack_peek_w(int64_t s)                   { return tk_stack_peek(s); }
+int64_t tk_stack_len_w(int64_t s)                    { return tk_stack_len(s); }
+int64_t tk_stack_empty_w(int64_t s)                  { return tk_stack_empty(s); }
+
+int64_t tk_queue_new_w(void)                         { return tk_queue_new(); }
+int64_t tk_queue_push_w(int64_t q, int64_t val)      { return tk_queue_push(q, val); }
+int64_t tk_queue_pop_w(int64_t q)                    { return tk_queue_pop(q); }
+int64_t tk_queue_peek_w(int64_t q)                   { return tk_queue_peek(q); }
+int64_t tk_queue_len_w(int64_t q)                    { return tk_queue_len(q); }
+
+int64_t tk_set_new_w(void)                           { return tk_set_new(); }
+int64_t tk_set_add_w(int64_t s, int64_t val)         { return tk_set_add(s, val); }
+int64_t tk_set_has_w(int64_t s, int64_t val)         { return tk_set_has(s, val); }
+int64_t tk_set_remove_w(int64_t s, int64_t val)      { return tk_set_remove(s, val); }
+int64_t tk_set_len_w(int64_t s)                      { return tk_set_len(s); }

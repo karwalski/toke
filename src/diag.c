@@ -179,6 +179,7 @@ phase_for_code(int code)
     if (code >= 4000 && code <= 4999) return "type_check";
     if (code >= 5000 && code <= 5999) return "arena_check";
     if (code >= 6000 && code <= 6999) return "ir_lower";
+    if (code >= 8000 && code <= 8999) return "ffi";
     if (code >= 9000 && code <= 9999) return "codegen";
     return "lex";
 }

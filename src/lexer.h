@@ -13,7 +13,7 @@ typedef enum {
 } Profile;
 
 typedef enum {
-    /* Keywords (12) */
+    /* Keywords (13) */
     TK_KW_F,
     TK_KW_T,
     TK_KW_I,
@@ -26,6 +26,7 @@ typedef enum {
     TK_KW_MUT,
     TK_KW_AS,
     TK_KW_RT,
+    TK_KW_SC,
 
     /* Literals */
     TK_BOOL_LIT,

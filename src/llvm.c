@@ -146,7 +146,10 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Buffer size for forward-declare stubs of user-module cross-module calls */
 #define TKC_FWD_DECL_SIZE (8*1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; } Ctx;
+/* Lifted closure buffer size (Story 76.1.9c) */
+#define TKC_LIFTED_BUF_SIZE (32 * 1024)
+
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; } Ctx;
 
 /* ── SSA counter helpers ───────────────────────────────────────────── */
 /* next_tmp: allocate the next SSA temporary (%tN).
@@ -569,6 +572,7 @@ typedef struct {
     char toke_ret[64];
     char c_name[128];       /* extern_c: raw C symbol name, empty if none */
     const char *llvm_ret;   /* e.g. "i8*", "i64", "double", "void" */
+    char ownership[16];     /* "static", "caller", "borrowed", or "" */
 } TkiCacheEntry;
 
 static TkiCacheEntry g_tki_cache[TKI_CACHE_MAX];
@@ -666,6 +670,24 @@ static void load_stdlib_tki(const char *module) {
         strncpy(e->method, meth_part, sizeof(e->method) - 1);
         strncpy(e->toke_ret, toke_ret, sizeof(e->toke_ret) - 1);
         e->c_name[0] = '\0';
+        e->ownership[0] = '\0';
+
+        /* Story 76.1.2c: parse optional "ownership" annotation */
+        {
+            char *ok = strstr(p, "\"ownership\"");
+            if (ok && (!next_kind || ok < next_kind)) {
+                char *oq1 = strchr(ok + 11, '"');
+                if (oq1) {
+                    char *oq2 = strchr(oq1 + 1, '"');
+                    if (oq2) {
+                        int olen = (int)(oq2 - oq1 - 1);
+                        if (olen >= (int)sizeof(e->ownership)) olen = (int)sizeof(e->ownership) - 1;
+                        memcpy(e->ownership, oq1 + 1, (size_t)olen);
+                        e->ownership[olen] = '\0';
+                    }
+                }
+            }
+        }
 
         if (is_extern_c) {
             /* extern_c: extract "c_name" and use it as the wrapper name */
@@ -1198,6 +1220,24 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         if (!strcmp(method, "stdout_fd"))  return "tk_os_stdout_fd";
         if (!strcmp(method, "stderr_fd"))  return "tk_os_stderr_fd";
     }
+    /* std.stack functions — LIFO container (Story 76.1.7b) */
+    if (!strcmp(mod, "stack")) {
+        static char stack_buf[128];
+        snprintf(stack_buf, sizeof stack_buf, "tk_stack_%s_w", method);
+        return stack_buf;
+    }
+    /* std.queue functions — FIFO container (Story 76.1.7b) */
+    if (!strcmp(mod, "queue")) {
+        static char queue_buf[128];
+        snprintf(queue_buf, sizeof queue_buf, "tk_queue_%s_w", method);
+        return queue_buf;
+    }
+    /* std.set functions — unique-element container (Story 76.1.7b) */
+    if (!strcmp(mod, "set")) {
+        static char set_buf[128];
+        snprintf(set_buf, sizeof set_buf, "tk_set_%s_w", method);
+        return set_buf;
+    }
     /* Story 76.1.2b: check TKI cache for extern_c entries with c_name.
      * If a .tki declares {"kind":"extern_c", "c_name":"open", ...} for
      * this module+method, return the raw C symbol name directly. */
@@ -1240,6 +1280,25 @@ static void str_buf_append(Ctx *c, const char *fmt, ...) {
     if (rem > 0) {
         int n = vsnprintf(c->str_globals + c->str_globals_len, (size_t)rem, fmt, ap);
         if (n > 0) c->str_globals_len += (n < rem) ? n : rem - 1;
+    }
+    va_end(ap);
+}
+
+/*
+ * lifted_buf_append — Append formatted text to the lifted closure buffer.
+ *
+ * Lifted closure functions must appear at LLVM module scope, but we
+ * encounter them while emitting function bodies.  We buffer the IR
+ * text and flush it after all functions are emitted (Story 76.1.9c).
+ */
+__attribute__((unused))
+static void lifted_buf_append(Ctx *c, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    int rem = TKC_LIFTED_BUF_SIZE - c->lifted_len;
+    if (rem > 0) {
+        int n = vsnprintf(c->lifted_buf + c->lifted_len, (size_t)rem, fmt, ap);
+        if (n > 0) c->lifted_len += (n < rem) ? n : rem - 1;
     }
     va_end(ap);
 }
@@ -1426,6 +1485,14 @@ static int emit_expr(Ctx *c, const Node *n)
             /* Unknown function — assume i64(i64) as fallback */
             fprintf(c->out, "  %%t%d = ptrtoint i64 (i64)* @%s to i64\n", t, tb);
         }
+        return t;
+    }
+    case NODE_SPAWN_EXPR: {
+        /* spawn expr — emit tk_task_spawn(scope, fn_ptr) (story 76.1.1b) */
+        int fn_val = emit_expr(c, n->children[0]);
+        t = next_tmp(c);
+        fprintf(c->out, "  %%t%d = call i64 @tk_task_spawn(i64 %%t%d, i64 %%t%d)\n",
+                t, c->sc_scope, fn_val);
         return t;
     }
     case NODE_BINARY_EXPR: {
@@ -3277,6 +3344,21 @@ static void emit_stmt(Ctx *c, const Node *n)
         if (n->child_count > 0) emit_stmt(c, n->children[0]);
         fputs("  ; arena end\n", c->out);
         break;
+    case NODE_SCOPE_STMT: {
+        /* sc { ... } — structured concurrency block (story 76.1.1b)
+         * 1. Create scope handle via tk_task_scope()
+         * 2. Emit body (spawn exprs use the scope handle)
+         * 3. Await all spawned tasks via tk_task_awaitall(scope) */
+        int sc_handle = next_tmp(c);
+        fprintf(c->out, "  %%t%d = call i64 @tk_task_scope()\n", sc_handle);
+        int prev_sc = c->sc_scope;
+        c->sc_scope = sc_handle;
+        if (n->child_count > 0) emit_stmt(c, n->children[0]);
+        int aw = next_tmp(c);
+        fprintf(c->out, "  %%t%d = call i64 @tk_task_awaitall(i64 %%t%d)\n", aw, sc_handle);
+        c->sc_scope = prev_sc;
+        break;
+    }
     case NODE_MATCH_STMT: {
         int ML = next_lbl(c);
         int sv = emit_expr(c, n->children[0]);
@@ -3402,6 +3484,16 @@ static void emit_toplevel(Ctx *c, const Node *n)
                 first = 0;
             }
             fputs(")\n", c->out);
+            /* Story 76.1.2d: warn about extern FFI declarations outside stdlib */
+            if (strncmp(c->source_file, "std/", 4) != 0 &&
+                strncmp(c->source_file, "std.", 4) != 0) {
+                char wmsg[256];
+                snprintf(wmsg, sizeof wmsg,
+                         "extern function declaration '%s' "
+                         "\xe2\x80\x94 FFI calls are inherently unsafe", tb);
+                diag_emit(DIAG_WARNING, W8001,
+                          n->tok_start, n->line, n->col, wmsg, NULL);
+            }
             break;
         }
         c->ptr_count = 0; /* reset ptr-local tracking for each function */
@@ -3524,6 +3616,8 @@ int emit_llvm_ir(const Node *ast, const char *src,
         return -1;
     }
     Ctx ctx; memset(&ctx, 0, sizeof ctx); ctx.out = f; ctx.src = src;
+    /* Story 76.1.2d: store source file for FFI extern diagnostic */
+    ctx.source_file = (env && env->source_file) ? env->source_file : "";
     /* Story 76.1.5: debug metadata support */
     if (env && env->debug) {
         ctx.debug = 1;

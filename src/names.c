@@ -1235,6 +1235,15 @@ static int resolve_node(const Node *node, const char *src,
         break;
     }
 
+    case NODE_SCOPE_STMT: {
+        /* sc { ... } — open a new scope for the structured concurrency block
+         * so that let-bindings inside are scoped to the block (story 76.1.1b). */
+        Scope *sc_scope = push_scope(arena, scope);
+        for (int i = 0; i < node->child_count; i++)
+            resolve_node(node->children[i], src, sc_scope, arena, had_error);
+        break;
+    }
+
     default:
         /* Generic: walk all children */
         for (int i = 0; i < node->child_count; i++)

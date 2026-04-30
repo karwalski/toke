@@ -73,6 +73,10 @@ static const StdlibModule stdlib_table[] = {
     { "webview",       "webview.c",                             "",                                                                 "" },
     { "mem",           "mem.c",                                 "",                                                                 "" },
     { "os",            "os.c",                                  "",                                                                 "" },
+    { "stack",         "collections.c",                         "",                                                                 "" },
+    { "queue",         "collections.c",                         "",                                                                 "" },
+    { "set",           "collections.c",                         "",                                                                 "" },
+    { "task",          "task.c",                                "",                                                                 "-lpthread" },
     { NULL, NULL, NULL, NULL }  /* sentinel */
 };
 

@@ -78,7 +78,7 @@
  *   a    — arena allocator for all AST node memory
  *   errs — running count of emitted errors (used for the bail-out cap)
  */
-typedef struct { Token *toks; int n; int pos; const char *src; Arena *a; int errs; Profile profile; } Parser;
+typedef struct { Token *toks; int n; int pos; const char *src; Arena *a; int errs; Profile profile; int in_sc; } Parser;
 
 /*
  * peek — return the TokenKind at the current position without advancing.
@@ -431,6 +431,11 @@ static Node *parse_primary(Parser *p) {
         ch(p,n,parse_stmt_list(p,ft));
         if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
         return n;
+    }
+    /* spawn context keyword inside sc block: spawn expr */
+    if(p->in_sc&&peek(p)==TK_IDENT&&teq(p,cur(p),"spawn")){
+        Token *st=cur(p);adv(p);
+        Node *sp=mk(p,NODE_SPAWN_EXPR,st);ch(p,sp,parse_expr(p));return sp;
     }
     if(peek(p)==TK_IDENT){adv(p);return mk(p,NODE_IDENT,t);}
     if(peek(p)==TK_TYPE_IDENT){
@@ -1001,7 +1006,14 @@ static Node *parse_stmt(Parser *p) {
         Node *n=mk(p,mut?NODE_MUT_BIND_STMT:NODE_BIND_STMT,t); ch(p,n,mk(p,NODE_IDENT,nt));
         if(type_ann) ch(p,n,type_ann);
         if(mut){adv(p);if(!xp(p,TK_DOT,"'.'")){ sync(p);return n;}}
-        ch(p,n,parse_expr(p));
+        /* spawn context keyword inside sc block: let x = spawn expr */
+        if(p->in_sc&&peek(p)==TK_IDENT&&teq(p,cur(p),"spawn")){
+            Token *st=cur(p);adv(p);
+            Node *sp=mk(p,NODE_SPAWN_EXPR,st);ch(p,sp,parse_expr(p));
+            ch(p,n,sp);
+        } else {
+            ch(p,n,parse_expr(p));
+        }
         opt_semi(p);
         return n;}
     case TK_KW_BR:{adv(p);Node *n=mk(p,NODE_BREAK_STMT,t);opt_semi(p);return n;}
@@ -1010,6 +1022,17 @@ static Node *parse_stmt(Parser *p) {
         if(peek(p)!=TK_SEMICOLON&&peek(p)!=TK_RBRACE&&peek(p)!=TK_EOF)
             ch(p,n,parse_expr(p));
         opt_semi(p);return n;}
+    case TK_KW_SC:{
+        /* ScopeStmt: 'sc' '{' StmtList '}' — structured concurrency block */
+        adv(p);
+        if(!xp(p,TK_LBRACE,"'{'")){sync(p);return NULL;}
+        Node *n=mk(p,NODE_SCOPE_STMT,t);
+        int prev_sc=p->in_sc; p->in_sc=1;
+        ch(p,n,parse_stmt_list(p,t));
+        p->in_sc=prev_sc;
+        if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+        opt_semi(p);
+        return n;}
     case TK_KW_IF: return parse_if_stmt(p);
     case TK_KW_LP: return parse_loop_stmt(p);
     case TK_LBRACE:
@@ -1415,7 +1438,7 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
 {
     if(!tokens||count<=0||!arena) return NULL;
     Parser p;
-    p.toks=tokens; p.n=count; p.pos=0; p.src=src?src:""; p.a=arena; p.errs=0; p.profile=profile;
+    p.toks=tokens; p.n=count; p.pos=0; p.src=src?src:""; p.a=arena; p.errs=0; p.profile=profile; p.in_sc=0;
     Token *first=cur(&p);
     Node *root=mk(&p,NODE_PROGRAM,first);
     /* Module declaration: M= or m= */

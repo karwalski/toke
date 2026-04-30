@@ -19,6 +19,7 @@
 
 #define E9002 9002  /* LLVM IR emission failed                           */
 #define E9003 9003  /* clang invocation failed                           */
+#define W8001 8001  /* extern function declaration — FFI unsafe (76.1.2d) */
 
 /* ── CodegenEnv ──────────────────────────────────────────────────────── */
 

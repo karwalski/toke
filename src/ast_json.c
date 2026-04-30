@@ -64,6 +64,8 @@ static const char *node_kind_name(NodeKind k)
     case NODE_MAP_ENTRY:      return "MAP_ENTRY";
     case NODE_FUNC_REF:       return "FUNC_REF";
     case NODE_CLOSURE:        return "CLOSURE";
+    case NODE_SCOPE_STMT:     return "SCOPE_STMT";
+    case NODE_SPAWN_EXPR:     return "SPAWN_EXPR";
     }
     return "UNKNOWN";
 }

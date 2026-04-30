@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "module": "std.set",
+  "exports": [
+    {"kind": "func", "name": "set.new",    "params": [],              "return": "i64"},
+    {"kind": "func", "name": "set.add",    "params": ["i64", "i64"], "return": "i64"},
+    {"kind": "func", "name": "set.has",    "params": ["i64", "i64"], "return": "i64"},
+    {"kind": "func", "name": "set.remove", "params": ["i64", "i64"], "return": "i64"},
+    {"kind": "func", "name": "set.len",    "params": ["i64"],        "return": "i64"}
+  ]
+}

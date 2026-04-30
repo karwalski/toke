@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "module": "std.stack",
+  "exports": [
+    {"kind": "func", "name": "stack.new",   "params": [],              "return": "i64"},
+    {"kind": "func", "name": "stack.push",  "params": ["i64", "i64"], "return": "i64"},
+    {"kind": "func", "name": "stack.pop",   "params": ["i64"],        "return": "i64"},
+    {"kind": "func", "name": "stack.peek",  "params": ["i64"],        "return": "i64"},
+    {"kind": "func", "name": "stack.len",   "params": ["i64"],        "return": "i64"},
+    {"kind": "func", "name": "stack.empty", "params": ["i64"],        "return": "i64"}
+  ]
+}
