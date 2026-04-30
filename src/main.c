@@ -71,6 +71,7 @@ static const char HELP[] =
     "  --emit-interface    Also emit .tki interface file\n"
     "  --emit-llvm         Emit LLVM IR (.ll) instead of compiling to binary\n"
     "  --emit-asm          Emit assembly (.s) instead of compiling to binary\n"
+    "  -g / --debug        Emit DWARF debug metadata for lldb/gdb\n"
     "  -O0/-O1/-O2/-O3    Optimization level (default: -O1)\n"
     "  --fmt               Format source to canonical form and print to stdout\n"
     "  --pretty            Pretty-print with whitespace for human readability\n"
@@ -208,7 +209,7 @@ int main(int argc, char **argv)
     const char *tgt = NULL, *out = NULL, *src = NULL;
     const char *config_path = NULL;
     int emit_iface = 0, check_only = 0, djson = 0, dtext = 0, dsarif = 0;
-    int emit_ll = 0, emit_asm = 0, opt_level = 1, fmt_only = 0;
+    int emit_ll = 0, emit_asm = 0, opt_level = 1, fmt_only = 0, debug_info = 0;
     int pretty = 0, expand = 0, sourcemap = 0;
     int dump_ast = 0;
     int migrate = 0;
@@ -283,6 +284,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--profile2"))   { /* default mode, no-op */ }
         else if (!strcmp(argv[i], "--phase1"))     profile = PROFILE_LEGACY;
         else if (!strcmp(argv[i], "--phase2"))     { /* default mode, no-op */ }
+        else if (!strcmp(argv[i], "-g"))                debug_info = 1;
+        else if (!strcmp(argv[i], "--debug"))          debug_info = 1;
         else if (!strcmp(argv[i], "-O0"))             opt_level = 0;
         else if (!strcmp(argv[i], "-O1"))             opt_level = 1;
         else if (!strcmp(argv[i], "-O2"))             opt_level = 2;
@@ -631,6 +634,23 @@ int main(int argc, char **argv)
         goto done;
     }
 
+    /* Story 76.1.5: derive source filename and directory for debug metadata */
+    const char *dbg_file = src;
+    char dbg_dir[PATH_BUF];
+    dbg_dir[0] = '\0';
+    if (debug_info) {
+        const char *slash = strrchr(src, '/');
+        if (slash) {
+            int dlen = (int)(slash - src);
+            if (dlen >= (int)sizeof(dbg_dir)) dlen = (int)sizeof(dbg_dir) - 1;
+            memcpy(dbg_dir, src, (size_t)dlen);
+            dbg_dir[dlen] = '\0';
+            dbg_file = slash + 1;
+        } else {
+            dbg_dir[0] = '.'; dbg_dir[1] = '\0';
+        }
+    }
+
     /* Derive output path */
     char obin[PATH_BUF], ostm[MSG_BUF];
     if (out) {
@@ -656,7 +676,7 @@ int main(int argc, char **argv)
         } else {
             snprintf(ll_path, sizeof(ll_path), "%s.ll", obin);
         }
-        CodegenEnv cg = { &te, &ne, arena, tgt, limits };
+        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir };
         if (emit_llvm_ir(ast, sbuf, &cg, ll_path) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
         progress_update(90);
         symtab_free(&st);
@@ -669,7 +689,7 @@ int main(int argc, char **argv)
         int fd = mkstemps(tmp, 3);
         if (fd < 0) { fputs("tkc: failed to create temp file\n", stderr); symtab_free(&st); rc = EINTERNAL; goto done; }
         close(fd);
-        CodegenEnv cg = { &te, &ne, arena, tgt, limits };
+        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir };
         if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
         progress_update(90);
         char asm_path[PATH_BUF];
@@ -696,10 +716,10 @@ int main(int argc, char **argv)
         int fd = mkstemps(tmp, 3);
         if (fd < 0) { fputs("tkc: failed to create temp file\n", stderr); symtab_free(&st); rc = EINTERNAL; goto done; }
         close(fd);
-        CodegenEnv cg = { &te, &ne, arena, tgt, limits };
+        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir };
         if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
         progress_update(90);
-        if (compile_binary(tmp, obin, tgt, opt_level, &st) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
+        if (compile_binary(tmp, obin, tgt, opt_level, &st, debug_info) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
         progress_update(100);
         unlink(tmp);
         symtab_free(&st);

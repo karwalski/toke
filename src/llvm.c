@@ -146,13 +146,16 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Buffer size for forward-declare stubs of user-module cross-module calls */
 #define TKC_FWD_DECL_SIZE (8*1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; } Ctx;
 
 /* ── SSA counter helpers ───────────────────────────────────────────── */
 /* next_tmp: allocate the next SSA temporary (%tN).
  * next_lbl: allocate the next label suffix for control-flow blocks.
  * next_str: allocate the next string global index (@.str.N). */
 static int next_tmp(Ctx *c){return c->tmp++;} static int next_lbl(Ctx *c){return c->lbl++;} static int next_str(Ctx *c){return c->str_idx++;}
+
+/* next_dbg: allocate the next debug metadata node ID (!N). Story 76.1.5. */
+static int next_dbg(Ctx *c){return c->dbg_next++;}
 
 /*
  * tok_cp — Copy a token's text from the source buffer into a NUL-terminated
@@ -2191,6 +2194,13 @@ static int emit_expr(Ctx *c, const Node *n)
         /* Look up the struct to get field count and field names for
          * correct allocation and field-to-index mapping. */
         char sn[128]; tok_cp(c->src, n, sn, sizeof sn);
+        /* Built-in $none: emit zero (null) so error-union match treats it
+         * as the "err" arm.  Story 76.1.8 */
+        if (!strcmp(sn, "none")) {
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = add i64 0, 0 ; $none\n", t);
+            return t;
+        }
         const StructInfo *si = lookup_struct(c, sn);
         int nfields = si ? si->field_count : (n->child_count > 0 ? n->child_count : 1);
         t = next_tmp(c);
@@ -2626,7 +2636,12 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         return "i8*";
     case NODE_INT_LIT:
         return "i64";
-    case NODE_STRUCT_LIT:
+    case NODE_STRUCT_LIT: {
+        /* $none{} emits i64 0 (not a pointer) — Story 76.1.8 */
+        char _sn[128]; tok_cp(c->src, n, _sn, sizeof _sn);
+        if (!strcmp(_sn, "none")) return "i64";
+        return "i8*";
+    }
     case NODE_ARRAY_LIT:
     case NODE_MAP_LIT:
         return "i8*";
@@ -3345,7 +3360,30 @@ static void emit_toplevel(Ctx *c, const Node *n)
             fprintf(c->out, "%s %%%s.arg", pty, pn);
             first = 0;
         }
-        fputs(") nounwind #0 {\nbb.entry:\n", c->out);
+        /* Story 76.1.5: attach !dbg to function definition when debug enabled */
+        if (c->debug) {
+            int fn_line = n->line > 0 ? n->line : 1;
+            /* Allocate DISubroutineType and DISubprogram metadata nodes */
+            int subrt_id = next_dbg(c);
+            int subprog_id = next_dbg(c);
+            c->cur_fn_dbg = subprog_id;
+            fprintf(c->out, ") nounwind #0 !dbg !%d {\nbb.entry:\n", subprog_id);
+            /* Buffer the metadata — emitted after all functions.
+             * We append to str_globals since it is flushed at module scope. */
+            int n2 = snprintf(c->str_globals + c->str_globals_len,
+                              TKC_STR_GLOBALS_SIZE - c->str_globals_len,
+                              "!%d = !DISubroutineType(types: !{})\n"
+                              "!%d = distinct !DISubprogram(name: \"%s\", file: !%d, line: %d, "
+                              "type: !%d, unit: !%d, scopeLine: %d, "
+                              "spFlags: DISPFlagDefinition, flags: DIFlagPrototyped)\n",
+                              subrt_id,
+                              subprog_id, tb, c->dbg_file, fn_line,
+                              subrt_id, c->dbg_cu, fn_line);
+            if (n2 > 0 && c->str_globals_len + n2 < TKC_STR_GLOBALS_SIZE)
+                c->str_globals_len += n2;
+        } else {
+            fputs(") nounwind #0 {\nbb.entry:\n", c->out);
+        }
         /* Spill params */
         for (int i = 1; i < n->child_count; i++) {
             if (n->children[i]->kind != NODE_PARAM) continue;
@@ -3425,6 +3463,18 @@ int emit_llvm_ir(const Node *ast, const char *src,
         return -1;
     }
     Ctx ctx; memset(&ctx, 0, sizeof ctx); ctx.out = f; ctx.src = src;
+    /* Story 76.1.5: debug metadata support */
+    if (env && env->debug) {
+        ctx.debug = 1;
+        if (env->source_file && env->source_file[0])
+            strncpy(ctx.dbg_source_file, env->source_file, sizeof ctx.dbg_source_file - 1);
+        else
+            strncpy(ctx.dbg_source_file, "unknown.tk", sizeof ctx.dbg_source_file - 1);
+        if (env->source_dir && env->source_dir[0])
+            strncpy(ctx.dbg_source_dir, env->source_dir, sizeof ctx.dbg_source_dir - 1);
+        else
+            strncpy(ctx.dbg_source_dir, ".", sizeof ctx.dbg_source_dir - 1);
+    }
     /* Allocate dynamic arrays from arena using runtime limits */
     Arena *ar = (env && env->arena) ? env->arena : NULL;
     ctx.arena = ar;
@@ -3666,6 +3716,14 @@ int emit_llvm_ir(const Node *ast, const char *src,
               "[44 x i8] c\"tkc: loop exceeded %d iterations, aborting\\0A\\00\"\n\n", f);
     }
 
+    /* Story 76.1.5: allocate base debug metadata node IDs for DIFile and
+     * DICompileUnit.  Actual metadata text is emitted after all functions
+     * so that DISubprogram forward references resolve correctly. */
+    if (ctx.debug) {
+        ctx.dbg_file = next_dbg(&ctx);  /* !N = DIFile */
+        ctx.dbg_cu   = next_dbg(&ctx);  /* !N+1 = DICompileUnit */
+    }
+
     prepass_structs(&ctx, ast);
     prepass_funcs(&ctx, ast);
     prepass_imports(&ctx, ast);
@@ -3682,6 +3740,14 @@ int emit_llvm_ir(const Node *ast, const char *src,
         strcpy(si->field_names[3], "hour");
         strcpy(si->field_names[4], "min");
         strcpy(si->field_names[5], "sec");
+        ctx.struct_count++;
+    }
+    /* Built-in $none struct: zero-field sentinel for option types (T!$none).
+     * Story 76.1.8 */
+    if (ctx.struct_count < ctx.struct_cap && !lookup_struct(&ctx, "none")) {
+        StructInfo *si = &ctx.structs[ctx.struct_count];
+        strcpy(si->name, "none");
+        si->field_count = 0;
         ctx.struct_count++;
     }
 
@@ -3713,6 +3779,27 @@ int emit_llvm_ir(const Node *ast, const char *src,
 
     /* Stack probe and stack-protector attributes for recursion safety */
     fputs("\nattributes #0 = { \"stack-protector-buffer-size\"=\"8\" }\n", f);
+
+    /* Story 76.1.5: emit DWARF debug metadata nodes at module tail */
+    if (ctx.debug) {
+        fputs("\n; Debug metadata (Story 76.1.5)\n", f);
+        fprintf(f, "!llvm.dbg.cu = !{!%d}\n", ctx.dbg_cu);
+        fprintf(f, "!llvm.module.flags = !{!%d, !%d}\n",
+                next_dbg(&ctx), next_dbg(&ctx));
+        /* DIFile */
+        fprintf(f, "!%d = !DIFile(filename: \"%s\", directory: \"%s\")\n",
+                ctx.dbg_file, ctx.dbg_source_file, ctx.dbg_source_dir);
+        /* DICompileUnit */
+        fprintf(f, "!%d = distinct !DICompileUnit(language: DW_LANG_C99, "
+                "file: !%d, producer: \"tkc 0.1.0\", isOptimized: false, "
+                "runtimeVersion: 0, emissionKind: FullDebug)\n",
+                ctx.dbg_cu, ctx.dbg_file);
+        /* Module flags for DWARF version and Debug Info Version */
+        fprintf(f, "!%d = !{i32 7, !\"Dwarf Version\", i32 4}\n",
+                ctx.dbg_next - 2);
+        fprintf(f, "!%d = !{i32 2, !\"Debug Info Version\", i32 3}\n",
+                ctx.dbg_next - 1);
+    }
 
     if (fflush(f) || ferror(f)) {
         fclose(f);
@@ -3908,10 +3995,11 @@ static const char *find_stdlib_vendor_includes(void) {
  * Returns 0 on success, -1 if clang fails (with E9003 diagnostic).
  */
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
-                   int opt_level, const SymbolTable *st)
+                   int opt_level, const SymbolTable *st, int debug)
 {
     char cmd[8192];
     int ol = (opt_level < 0) ? 0 : (opt_level > 3) ? 3 : opt_level;
+    const char *dbg_flag = debug ? " -g" : "";
 
     /* Story 46.1.2: selective stdlib linking.
      * If st is provided and TKC_LINK_ALL is not set, resolve only the
@@ -4005,9 +4093,9 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
      * warnings when clang's host triple doesn't exactly match the IR's
      * embedded triple (Story 58.35). */
     if(target&&target[0])
-        snprintf(cmd,sizeof cmd,"clang -O%d -Wno-override-module %s %s -target %s -o %s %s%s %s",ol,tls_flags,vi,target,out_bin,out_ll,sources,all_libs);
+        snprintf(cmd,sizeof cmd,"clang -O%d%s -Wno-override-module %s %s -target %s -o %s %s%s %s",ol,dbg_flag,tls_flags,vi,target,out_bin,out_ll,sources,all_libs);
     else
-        snprintf(cmd,sizeof cmd,"clang -O%d -Wno-override-module %s %s -o %s %s%s %s",ol,tls_flags,vi,out_bin,out_ll,sources,all_libs);
+        snprintf(cmd,sizeof cmd,"clang -O%d%s -Wno-override-module %s %s -o %s %s%s %s",ol,dbg_flag,tls_flags,vi,out_bin,out_ll,sources,all_libs);
 
     int rc = system(cmd);
     /* Clean up temp glue file */

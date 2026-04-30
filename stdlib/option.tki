@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "module": "std.option",
+  "description": "Option type convention for toke. An option type is an error-union T!$none where $none is a built-in zero-field variant meaning 'no value'. This reuses the existing error-union (T!Err) infrastructure with no new type system machinery. Pattern matching works via the standard match syntax: expr|{$ok:v v;$none:_ default}.",
+  "exports": [
+    {"kind": "type", "name": "$none", "fields": []},
+    {"kind": "convention", "name": "option",
+     "description": "Declare a function returning T!$none to express 'may return T or nothing'. Return the value directly for $ok, or return $none{} for no-value. Match with expr|{$ok:v use_v;$none:_ fallback}.",
+     "examples": [
+       "F=find(haystack:str;needle:str):i64!$none { ... < $none{} }",
+       "let idx = find(s;\"x\")|{$ok:v v;$none:_ 0 - 1}"
+     ]}
+  ]
+}

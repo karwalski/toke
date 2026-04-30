@@ -26,8 +26,11 @@ typedef struct {
     TypeEnv    *types;
     NameEnv    *names;
     Arena      *arena;
-    const char *target;  /* LLVM triple, e.g. "aarch64-apple-macos" or NULL */
-    TkcLimits   limits;  /* runtime-configurable capacity limits */
+    const char *target;      /* LLVM triple, e.g. "aarch64-apple-macos" or NULL */
+    TkcLimits   limits;      /* runtime-configurable capacity limits */
+    int         debug;       /* 1 = emit DWARF debug metadata (Story 76.1.5)  */
+    const char *source_file; /* original .tk filename for DIFile               */
+    const char *source_dir;  /* directory containing source_file               */
 } CodegenEnv;
 
 /* ── Public API ───────────────────────────────────────────────────────── */
@@ -42,8 +45,9 @@ int emit_llvm_ir(const Node *ast, const char *src,
  * opt_level: optimization level 0-3 (passed as -O0..-O3 to clang).
  * st: symbol table from resolve_imports() — used for selective stdlib linking
  *     (Story 46.1.2).  If NULL or TKC_LINK_ALL=1, all stdlib sources are linked.
+ * debug: if non-zero, pass -g to clang for DWARF emission (Story 76.1.5).
  * Returns 0 on success, -1 if clang invocation fails (E9003 emitted). */
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
-                   int opt_level, const SymbolTable *st);
+                   int opt_level, const SymbolTable *st, int debug);
 
 #endif /* TK_LLVM_H */

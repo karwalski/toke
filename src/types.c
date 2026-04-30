@@ -391,6 +391,15 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
     if (strcmp(nb,"u32") ==0) return mk_type(cx->env->arena, TY_U32);
     if (strcmp(nb,"f32") ==0) return mk_type(cx->env->arena, TY_F32);
     if (strcmp(nb,"Byte")==0) return mk_type(cx->env->arena, TY_U8);
+    /* Built-in $none type: zero-field struct used as the error variant in
+     * option types (T!$none).  Reuses existing error-union infrastructure
+     * so that match arms work unchanged: expr|{$ok:v v;$none:_ default}.
+     * Story 76.1.8 */
+    if (strcmp(nb,"none")==0) {
+        Type *st = mk_type(cx->env->arena, TY_STRUCT);
+        if (st) { st->name = ty_intern(cx->env->arena, "none"); st->field_count = 0; }
+        return st ? st : mk_type(cx->env->arena, TY_UNKNOWN);
+    }
     Decl *d = tc_lookup(cx->env->names->module_scope, nb, (int)strlen(nb));
     if (d && d->def_node && d->def_node->kind == NODE_TYPE_DECL) {
         const Node *decl = d->def_node;

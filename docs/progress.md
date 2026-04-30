@@ -472,10 +472,10 @@ Stories for features explicitly deferred in the specification, with target versi
 | 76.1.2 | Foreign Function Interface (FFI) formalisation | planned | — | **P2** Target: v0.4. Current: experimental std.os/std.mem. Formalise extern function declarations in .tki, C type mapping, safety boundaries. |
 | 76.1.3 | Package registry implementation | planned | — | **P2** Target: v0.6+. ADR-0004 design complete. MVS resolution, pkg.* namespace, TOML manifest, git-based with optional central index. |
 | 76.1.4 | Formal memory model | planned | — | **P3** Downstream of 76.1.1 (concurrency). Arena model works informally. Formalise allocation, ownership, lifetime guarantees. |
-| 76.1.5 | Debugger metadata | planned | — | **P3** LLVM/DWARF defaults apply. Formalise source-level debug info, variable inspection, breakpoint mapping. |
+| 76.1.5 | Debugger metadata | done | 2026-04-25 | **P3** `-g`/`--debug` flag emits DWARF via LLVM debug metadata: DICompileUnit, DIFile, DISubprogram per function, `!dbg` annotations, `-g` passed to clang. |
 | 76.1.6 | Canonical binary IR | planned | — | **P3** LLVM bitcode is interim. Define toke-specific binary IR for distribution without LLVM dependency. |
 | 76.1.7 | Generic type parameters | planned | — | **P3** Deferred since v0.1. Design: monomorphisation vs dictionary passing, bounds, variance. Current workaround: concrete types + code generation. |
-| 76.1.8 | Option type ($some/$none) | planned | — | **P1** Target: v0.4. Natural fit with existing $lowercase tag unions. [$some:$t; $none:bool]. Thin layer over existing sum type infrastructure. |
+| 76.1.8 | Option type ($some/$none) | done | 2026-04-25 | **P1** Implemented as T!$none convention reusing error-union infrastructure. $none is a built-in zero-field struct; $none{} emits zero at LLVM level (error arm). Match: expr\|{$ok:v v;$none:_ fallback}. stdlib/option.tki documents the convention. |
 | 76.1.9 | Full closures with environment capture | planned | — | **P2** Target: v0.4. Current: &name function references (no capture). Add environment capture for callback patterns. Research: Rust closures, OCaml closures, LLVM closure compilation. |
 | 76.1.10 | Tokenizer vocabulary v0.3 formalisation | planned | — | **P1** Promoted to normative in spec S24.7. Formalise the canonical BPE merge list. Depends on Phase 2 tokenizer retrain (Epic 23). |
 
