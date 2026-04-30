@@ -422,6 +422,33 @@ Statuses: `backlog` | `planned` | `in_progress` | `blocked` | `review` | `done` 
 | 7.7.4 | ooke: CORS headers for localhost cross-port | backlog | — | **P0** No Access-Control-Allow-Origin headers. Browser blocks moke (port 11432) fetching from loke (port 11430). Need configurable CORS: Access-Control-Allow-Origin for localhost origins + OPTIONS preflight handling. Add [server] cors_origins config in ooke.toml. |
 | 7.7.5 | ooke: API route namespace prefix | backlog | — | **P1** API routes register as /api/health with no app namespace. When loke and moke both define /api/health, they collide. Add [paths] api_prefix config in ooke.toml (e.g. api_prefix = "loke" → /api/loke/health). |
 | 7.3.1 | Audit empty stub files across all repos | done | — | 12 empty files found, 3 stories with false done status, 1 missing from tracking |
+
+### Epic 75 — Specification Audit and v0.3 Update
+
+The spec (v0.1 draft, named v02) has fallen behind implementation. 8+ categories of contradiction between spec and compiler. Character set count, comment syntax, bitwise operators, identifier rules, error variants all wrong. Two diverged copies of the spec. Only 6 of 34 stdlib modules documented. This epic brings the spec to v0.3.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 75.1.1 | Character set update: recalculate true count including &, ^, ~, %, _; update all "56 chars" refs | backlog | — | **P0** Actual count is ~61. Update spec S7.1, design.md, why.md, guide, website. Decide: rebrand to 64 or keep 56 with extended set documented separately. |
+| 75.1.2 | Add comment syntax section (S8.10): document (* ... *) block comments with nesting | backlog | — | **P0** Implemented in lexer. Spec says "no comments". Update S7.2, design.md, why.md, guide. Reframe: comments supported for humans but LLM training corpus does NOT include comments — the LLM writes without them. |
+| 75.1.3 | Add bitwise operators section (S11.15): &, \|, ^, ~, <<, >>, % with precedence table | backlog | — | **P0** 7 operators implemented but absent from spec and EBNF grammar. |
+| 75.1.4 | Fix identifier rules (S8.4): allow _ in identifiers | backlog | — | **P0** Spec says a-z + 0-9 only. Implementation allows _. |
+| 75.1.5 | Fix error variant naming: replace PascalCase with $lowercase | backlog | — | **P0** Spec contradicts itself: S11.5 uses $lowercase, S13.2/S16.x use PascalCase which violates character set. |
+| 75.1.6 | Fix reserved identifiers: Ok/Err → $ok/$err | backlog | — | **P1** Appendix E uses uppercase which is not in the character set. |
+| 75.1.7 | Document let re-declaration/shadowing rules | backlog | — | **P1** Implementation allows same-scope shadowing. Spec silent. |
+| 75.1.8 | Document function reference syntax f=name | backlog | — | **P1** NODE_FUNC_REF implemented. Spec defers higher-order functions (S24.8). |
+| 75.1.9 | Update Section 24 deferred items status | backlog | — | **P1** Mark 24.2 (FFI) and 24.8 (function refs) as partially addressed. ^ and ~ no longer reserved. |
+| 75.1.10 | Expand Section 16 stdlib: document all 34 modules | backlog | — | **P2** Only 6 of 34 documented. Large effort. |
+| 75.1.11 | Eliminate duplicate spec: single source of truth | backlog | — | **P1** Two diverged copies at tk/docs/spec/ and tk/toke/spec/spec/. Delete one, symlink or redirect. |
+| 75.1.12 | Reconcile design.md, why.md, guide with updated spec | backlog | — | **P1** Character count, comment syntax, symbol count all inconsistent. |
+| 75.1.13 | Align spec filename (v02) with content; bump to v0.3 | backlog | — | **P1** File named v02 but content says v0.1. Bump content to v0.3 reflecting all changes. |
+| 75.1.14 | Update token efficiency claims re: comments | backlog | — | **P2** "Zero documentation overhead" is no longer strictly true. Reframe: LLMs trained NOT to write comments, but humans can. |
+| 75.1.15 | Consolidate docs: merge tk/docs/ and tk/toke/spec/ into single hierarchy | backlog | — | **P1** Current layout has 3 locations with overlapping content. Reference docs duplicate spec. Decisions duplicated. Archive historical docs. |
+| 75.1.16 | Companion file spec: define .tkc (toke companion) format for comments/docs | backlog | — | **P2** Instead of inline comments, define a companion file format where comments reference code sections (e.g. `*c7.3*` → section 7.3 of companion maps to corresponding code). Similar to template insertion. Standard to merge/split .tk and .tkc files. |
+| 75.1.17 | Multimodal LLM approach: spec the string externalisation pattern | backlog | — | **P2** Toke-trained LLM writes only toke code. Separate model writes strings, companion files, i18n content. Leverages existing template/toon/json insertion patterns. Spec the contract between code and content models. |
+| 75.1.18 | Corpus prompt spec: codify machine-readable spec version for corpus generation | backlog | — | **P1** When local compute available, corpus generation needs a condensed, machine-readable spec as system prompt. Create a ≤4K token spec reference for LLM prompts. Update with v0.3 changes (bitwise, comments, underscore, func refs). |
+| 75.1.19 | Create deferred features epic from Section 24 items | backlog | — | **P2** Stories for: concurrency (24.1), package registry governance (24.3), formal memory model (24.4), debugger metadata (24.5), canonical binary IR (24.6), generics/parametric types (24.9), option type (24.10). |
+| 75.1.20 | Archive research and historical docs | backlog | — | **P2** Move pre-Gate-1 research, superseded decisions, and historical analysis to tk/archive/. Keep only current canonical docs in tk/docs/. |
 ### Epic 8.1 — Cloud Corpus Generation Infrastructure
 
 | ID | Story | Status | Branch | Notes |
