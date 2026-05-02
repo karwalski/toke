@@ -447,19 +447,9 @@ int main(int argc, char **argv)
     if (!toks) { rc = EINTERNAL; goto done; }
     int tc;
     if (migrate) {
-        /* --migrate: try default profile first, fall back to legacy.
-         * Suppress lex diagnostics on first attempt. */
-        diag_suppress(1);
-        tc = lex(sbuf, (int)slen, toks, tcap, profile);
-        int default_errs = diag_error_count();
-        diag_suppress(0);
-        if (tc < 0 || default_errs > 0) {
-            /* Retry with legacy profile */
-            diag_reset_counts();
-            tc = lex(sbuf, (int)slen, toks, tcap, PROFILE_LEGACY);
-        }
-        if (tc < 0) { rc = ECOMPILE; goto done; }
-        if (tkc_migrate(sbuf, (int)slen, toks, tc, stdout) < 0) {
+        /* --migrate does its own prepass + re-lex internally.
+         * Pass raw source directly — no external lex needed. */
+        if (tkc_migrate(sbuf, (int)slen, NULL, 0, stdout) < 0) {
             rc = EINTERNAL;
         }
         goto done;

@@ -5,292 +5,230 @@
  * to v0.3 default syntax. Handles both legacy (80-char) and partially
  * migrated (mixed old/new) input.
  *
- * Transformations:
- *   1. Legacy uppercase keywords (M=,F=,T=,I=) → lowercase (m=,f=,t=,i=)
- *   2. PascalCase type identifiers → $lowercase ($Vec2 → $vec2)
- *   3. |{ match syntax → mt expr { (v0.3 keyword-led match)
- *   4. Underscore removal: to_int → toint, from_bytes → frombytes
- *   5. $snake_case variants → $concatenated ($not_found → $notfound)
- *   6. Comment stripping: (* ... *) removed (comment-free design)
- *   7. Bitwise operators: ^ ~ << >> emit warnings (deferred to v0.5)
+ * Architecture:
+ *   prepass()     — text-level cleanup before lexing (strip // comments,
+ *                   (* *) comments, pub keyword, non-ASCII outside strings)
+ *   tkc_migrate() — calls prepass, re-lexes cleaned text, runs token-level
+ *                   transforms, then text-level |{ → mt transform
  *
- * Safe for partially migrated files: each transform is idempotent.
- *
- * Stories: 11.3.5, 82.3.1
+ * Stories: 11.3.5, 82.3.1, 82.3.2
  */
 
 #include "migrate.h"
+#include "lexer.h"
+#include "diag.h"
 #include <string.h>
 #include <stdlib.h>
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
-/*
- * remove_underscores — Remove underscores from an identifier, writing
- *                      concatenated lowercase to out. Returns chars written.
- */
 static int remove_underscores(const char *s, int len, char *out, int cap)
 {
     int w = 0;
-    for (int i = 0; i < len && w < cap - 1; i++) {
+    for (int i = 0; i < len && w < cap - 1; i++)
         if (s[i] != '_') out[w++] = s[i];
-    }
     out[w] = '\0';
     return w;
 }
 
-/*
- * is_in_string — Check if byte offset `pos` is inside a string literal
- *                by scanning from the start. Simple: count unescaped quotes.
- */
-static int is_in_string(const char *src, int pos)
+static int is_in_string(const char *s, int pos)
 {
-    int in_str = 0;
-    for (int i = 0; i < pos; i++) {
-        if (src[i] == '"' && (i == 0 || src[i-1] != '\\')) in_str = !in_str;
+    int q = 0;
+    for (int i = 0; i < pos; i++)
+        if (s[i] == '"' && (i == 0 || s[i-1] != '\\')) q = !q;
+    return q;
+}
+
+static int is_primitive(const char *lower)
+{
+    return (!strcmp(lower,"i64") || !strcmp(lower,"u64") ||
+            !strcmp(lower,"i32") || !strcmp(lower,"u32") ||
+            !strcmp(lower,"i16") || !strcmp(lower,"u16") ||
+            !strcmp(lower,"i8")  || !strcmp(lower,"u8")  ||
+            !strcmp(lower,"f32") || !strcmp(lower,"f64") ||
+            !strcmp(lower,"str") || !strcmp(lower,"bool") ||
+            !strcmp(lower,"void"));
+}
+
+/* ── Prepass: text-level cleanup BEFORE lexing ────────────────────── */
+
+static char *prepass(const char *src, int slen, int *out_len)
+{
+    char *o = malloc((size_t)(slen + 1));
+    if (!o) return NULL;
+    int w = 0, in_str = 0;
+
+    for (int i = 0; i < slen; i++) {
+        if (src[i] == '"' && (i == 0 || src[i-1] != '\\')) {
+            in_str = !in_str; o[w++] = src[i]; continue;
+        }
+        if (in_str) { o[w++] = src[i]; continue; }
+
+        /* Strip // line comments */
+        if (src[i] == '/' && i+1 < slen && src[i+1] == '/') {
+            while (i < slen && src[i] != '\n') i++;
+            if (i < slen) o[w++] = '\n';
+            continue;
+        }
+        /* Strip (* ... *) block comments */
+        if (src[i] == '(' && i+1 < slen && src[i+1] == '*') {
+            int d = 1; i += 2;
+            while (i < slen && d > 0) {
+                if (i+1 < slen && src[i]=='(' && src[i+1]=='*') { d++; i+=2; continue; }
+                if (i+1 < slen && src[i]=='*' && src[i+1]==')') { d--; i+=2; continue; }
+                i++;
+            }
+            i--; continue;
+        }
+        /* Strip pub keyword at line start */
+        if (i+4 <= slen && !strncmp(src+i, "pub ", 4)) {
+            int ok = (i == 0 || src[i-1] == '\n');
+            if (!ok) { int j=i-1; while(j>=0&&src[j]!='\n'){if(src[j]!=' '&&src[j]!='\t')break;j--;} if(j<0||src[j]=='\n')ok=1; }
+            if (ok) { i += 3; continue; }
+        }
+        /* Skip non-ASCII */
+        if ((unsigned char)src[i] > 127) continue;
+
+        o[w++] = src[i];
     }
-    return in_str;
+    o[w] = '\0'; *out_len = w;
+    return o;
 }
 
 /* ── Public API ───────────────────────────────────────────────────── */
 
-int tkc_migrate(const char *src, int slen, const Token *toks, int tc,
+int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unused,
                 FILE *out)
 {
-    /*
-     * Phase 1: Token-level migration into a buffer.
-     * Handles: uppercase keywords, PascalCase types, underscore removal,
-     * $snake_case → $concatenated, comment stripping, bitwise warnings.
-     */
-    char *buf = malloc((size_t)(slen * 2 + 1024));
-    if (!buf) return -1;
-    int blen = 0;
+    (void)toks_unused; (void)tc_unused;
 
-    int prev_end = 0;
+    /* Step 1: Prepass */
+    int clen = 0;
+    char *c = prepass(src, slen, &clen);
+    if (!c) return -1;
 
-    for (int i = 0; i < tc; i++) {
-        const Token *t = &toks[i];
+    /* Step 2: Lex cleaned text (try default, fallback to legacy) */
+    int ncap = clen * 2 + 256;
+    Token *nt = malloc((size_t)ncap * sizeof(Token));
+    if (!nt) { free(c); return -1; }
+
+    diag_suppress(1);
+    int ntc = lex(c, clen, nt, ncap, PROFILE_DEFAULT);
+    int errs = diag_error_count();
+    diag_reset_counts();
+    if (ntc < 0 || errs > 0) {
+        ntc = lex(c, clen, nt, ncap, PROFILE_LEGACY);
+        diag_reset_counts();
+    }
+    diag_suppress(0);
+    if (ntc < 0) { free(c); free(nt); return -1; }
+
+    /* Step 3: Token-level transforms (using c[] and nt[]) */
+    char *buf = malloc((size_t)(clen * 3 + 1024));
+    if (!buf) { free(c); free(nt); return -1; }
+    int blen = 0, prev = 0;
+
+    for (int i = 0; i < ntc; i++) {
+        const Token *t = &nt[i];
         if (t->kind == TK_EOF) break;
 
-        /* Copy gap (whitespace between tokens) but strip comments */
-        for (int g = prev_end; g < t->start; g++) {
-            /* Detect (* ... *) comments and skip them */
-            if (g + 1 < t->start && src[g] == '(' && src[g+1] == '*') {
-                int depth = 1;
-                g += 2;
-                while (g < slen && depth > 0) {
-                    if (g + 1 < slen && src[g] == '(' && src[g+1] == '*') { depth++; g += 2; continue; }
-                    if (g + 1 < slen && src[g] == '*' && src[g+1] == ')') { depth--; g += 2; continue; }
-                    g++;
-                }
-                g--; /* for loop will increment */
-                continue;
-            }
-            buf[blen++] = src[g];
-        }
+        /* Gap: copy whitespace from cleaned text */
+        for (int g = prev; g < t->start; g++) buf[blen++] = c[g];
 
         switch (t->kind) {
         case TK_KW_M: case TK_KW_F: case TK_KW_T: case TK_KW_I:
-            /* Uppercase single-letter → lowercase */
-            if (t->len == 1 && src[t->start] >= 'A' && src[t->start] <= 'Z') {
-                buf[blen++] = (char)(src[t->start] + ('a' - 'A'));
-            } else {
-                memcpy(buf + blen, src + t->start, (size_t)t->len);
-                blen += t->len;
-            }
+            if (t->len == 1 && c[t->start] >= 'A' && c[t->start] <= 'Z')
+                buf[blen++] = (char)(c[t->start] + 32);
+            else { memcpy(buf+blen, c+t->start, (size_t)t->len); blen += t->len; }
             break;
 
         case TK_TYPE_IDENT: {
-            /* PascalCase → $lowercase, but primitives stay bare.
-             * I64→i64, U64→u64, Str→str, Bool→bool (no $ prefix). */
-            char lower[128];
-            int tl = t->len < (int)sizeof(lower)-1 ? t->len : (int)sizeof(lower)-1;
-            for (int j = 0; j < tl; j++) {
-                char c = src[t->start + j];
-                lower[j] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
-            }
-            lower[tl] = '\0';
-            int is_prim = (!strcmp(lower,"i64") || !strcmp(lower,"u64") ||
-                           !strcmp(lower,"i32") || !strcmp(lower,"u32") ||
-                           !strcmp(lower,"i16") || !strcmp(lower,"u16") ||
-                           !strcmp(lower,"i8")  || !strcmp(lower,"u8")  ||
-                           !strcmp(lower,"f32") || !strcmp(lower,"f64") ||
-                           !strcmp(lower,"str") || !strcmp(lower,"bool") ||
-                           !strcmp(lower,"void"));
-            if (!is_prim) buf[blen++] = '$';
-            memcpy(buf + blen, lower, (size_t)tl);
-            blen += tl;
+            char lo[128]; int tl = t->len < 127 ? t->len : 127;
+            for (int j = 0; j < tl; j++) { char ch = c[t->start+j]; lo[j] = (ch>='A'&&ch<='Z') ? (char)(ch+32) : ch; }
+            lo[tl] = '\0';
+            if (!is_primitive(lo)) buf[blen++] = '$';
+            memcpy(buf+blen, lo, (size_t)tl); blen += tl;
             break;
         }
 
-        case TK_LBRACKET: {
-            /* Legacy [Type] array syntax → @$type (or @type for primitives).
-             * Look ahead: if next token is TYPE_IDENT or IDENT followed by ],
-             * this is an array type annotation. Convert to @type. */
-            if (i + 2 < tc &&
-                (toks[i+1].kind == TK_TYPE_IDENT || toks[i+1].kind == TK_IDENT) &&
-                toks[i+2].kind == TK_RBRACKET) {
+        case TK_LBRACKET:
+            if (i+2 < ntc && (nt[i+1].kind==TK_TYPE_IDENT||nt[i+1].kind==TK_IDENT) && nt[i+2].kind==TK_RBRACKET)
                 buf[blen++] = '@';
-                /* The type will be handled by TK_TYPE_IDENT/TK_IDENT case */
-                /* Skip the [ — type and ] handled in subsequent iterations */
-            } else {
-                /* Multi-element or complex — emit [ verbatim (shouldn't happen
-                 * in default mode, but be safe) */
-                buf[blen++] = '[';
-            }
+            else buf[blen++] = '[';
             break;
-        }
 
-        case TK_RBRACKET: {
-            /* If we just converted [Type] → @type, skip the ] */
-            if (i >= 2 &&
-                toks[i-2].kind == TK_LBRACKET &&
-                (toks[i-1].kind == TK_TYPE_IDENT || toks[i-1].kind == TK_IDENT)) {
-                /* Already handled — skip ] */
-            } else {
-                buf[blen++] = ']';
-            }
+        case TK_RBRACKET:
+            if (i>=2 && nt[i-2].kind==TK_LBRACKET && (nt[i-1].kind==TK_TYPE_IDENT||nt[i-1].kind==TK_IDENT))
+                ; /* skip ] from [Type] → @type */
+            else buf[blen++] = ']';
             break;
-        }
 
-        case TK_LPAREN: {
-            /* Check for @(Type) pattern — strip parens for type annotations.
-             * @(Type) → @$type, but @(a;b;c) stays as array literal. */
-            if (i >= 1 && toks[i-1].kind == TK_AT &&
-                i + 2 < tc &&
-                (toks[i+1].kind == TK_TYPE_IDENT || toks[i+1].kind == TK_DOLLAR) &&
-                toks[i+2].kind == TK_RPAREN) {
-                /* Single type in parens after @ — skip the ( */
+        case TK_LPAREN:
+            /* @(Type) → @$type: skip ( */
+            if (i>=1 && nt[i-1].kind==TK_AT && i+2<ntc &&
+                (nt[i+1].kind==TK_TYPE_IDENT||nt[i+1].kind==TK_DOLLAR) && nt[i+2].kind==TK_RPAREN)
                 break;
-            }
-            /* Also check: @($type) where $ is TK_DOLLAR and type is TK_IDENT */
-            if (i >= 1 && toks[i-1].kind == TK_AT &&
-                i + 3 < tc &&
-                toks[i+1].kind == TK_DOLLAR &&
-                toks[i+2].kind == TK_IDENT &&
-                toks[i+3].kind == TK_RPAREN) {
-                /* @($type) → @$type — skip the ( */
+            /* @($type) → @$type: skip ( */
+            if (i>=1 && nt[i-1].kind==TK_AT && i+3<ntc &&
+                nt[i+1].kind==TK_DOLLAR && nt[i+2].kind==TK_IDENT && nt[i+3].kind==TK_RPAREN)
                 break;
-            }
-            buf[blen++] = '(';
-            break;
-        }
+            buf[blen++] = '('; break;
 
-        case TK_RPAREN: {
-            /* Skip ) that closes @(Type) or @($type) type annotation */
-            if (i >= 2 && toks[i-2].kind == TK_LPAREN) {
-                /* Check if the ( was after @ and contained a single type */
-                int lparen_idx = i - 2;
-                if (lparen_idx >= 1 && toks[lparen_idx-1].kind == TK_AT &&
-                    (toks[lparen_idx+1].kind == TK_TYPE_IDENT ||
-                     toks[lparen_idx+1].kind == TK_DOLLAR)) {
-                    break; /* skip ) */
-                }
-            }
-            if (i >= 3 && toks[i-3].kind == TK_LPAREN) {
-                int lp3 = i - 3;
-                if (lp3 >= 1 && toks[lp3-1].kind == TK_AT &&
-                    toks[lp3+1].kind == TK_DOLLAR &&
-                    toks[lp3+2].kind == TK_IDENT) {
-                    break; /* skip ) for @($ident) */
-                }
-            }
-            buf[blen++] = ')';
-            break;
-        }
+        case TK_RPAREN:
+            /* Skip ) matching @(Type) or @($type) */
+            if (i>=2 && nt[i-2].kind==TK_LPAREN && i>=3 && nt[i-3].kind==TK_AT &&
+                (nt[i-1].kind==TK_TYPE_IDENT||nt[i-1].kind==TK_DOLLAR)) break;
+            if (i>=3 && nt[i-3].kind==TK_LPAREN && i>=4 && nt[i-4].kind==TK_AT &&
+                nt[i-2].kind==TK_DOLLAR && nt[i-1].kind==TK_IDENT) break;
+            buf[blen++] = ')'; break;
 
         case TK_IDENT: {
-            /* Remove underscores from identifiers */
-            char clean[256];
-            int clen = remove_underscores(src + t->start, t->len, clean, sizeof clean);
-            memcpy(buf + blen, clean, (size_t)clen);
-            blen += clen;
+            char tmp[256];
+            int cl = remove_underscores(c+t->start, t->len, tmp, sizeof tmp);
+            memcpy(buf+blen, tmp, (size_t)cl); blen += cl;
             break;
         }
 
-        case TK_DOLLAR: {
-            /* $variant_name → $variantname (strip underscores after $) */
-            buf[blen++] = '$';
-            /* The $ token is just the dollar sign; the following IDENT
-             * will be processed in the TK_IDENT case above. */
-            break;
-        }
+        case TK_DOLLAR: buf[blen++] = '$'; break;
 
         case TK_CARET: case TK_TILDE:
-            /* Bitwise operators deferred — emit warning comment */
-            fprintf(stderr, "migrate: warning: bitwise operator '%.*s' at line %d "
-                    "deferred to v0.5, removing\n", t->len, src + t->start, t->line);
+            fprintf(stderr, "migrate: warning: bitwise '%.*s' at line %d removed (v0.5)\n", t->len, c+t->start, t->line);
             break;
-
         case TK_SHL: case TK_SHR:
-            fprintf(stderr, "migrate: warning: shift operator '%.*s' at line %d "
-                    "deferred to v0.5, removing\n", t->len, src + t->start, t->line);
+            fprintf(stderr, "migrate: warning: shift '%.*s' at line %d removed (v0.5)\n", t->len, c+t->start, t->line);
             break;
 
         default:
-            memcpy(buf + blen, src + t->start, (size_t)t->len);
-            blen += t->len;
+            memcpy(buf+blen, c+t->start, (size_t)t->len); blen += t->len;
             break;
         }
-
-        prev_end = t->start + t->len;
+        prev = t->start + t->len;
     }
-
-    /* Trailing content */
-    for (int g = prev_end; g < slen; g++) buf[blen++] = src[g];
+    for (int g = prev; g < clen; g++) buf[blen++] = c[g];
     buf[blen] = '\0';
 
-    /*
-     * Phase 2: Text-level migration.
-     * Handles: |{ match → mt expr {
-     * This must be text-level because the pipe-brace pattern spans
-     * two tokens and the expression before it becomes the scrutinee.
-     *
-     * Pattern: `expr|{` → `mt expr {`
-     * We search for `|{` NOT inside string literals.
-     */
+    /* Step 4: Text-level |{ → mt expr { */
     char *buf2 = malloc((size_t)(blen * 2 + 256));
-    if (!buf2) { free(buf); return -1; }
-    int b2len = 0;
+    if (!buf2) { free(buf); free(c); free(nt); return -1; }
+    int b2 = 0;
 
     for (int p = 0; p < blen; p++) {
-        if (buf[p] == '|' && p + 1 < blen && buf[p+1] == '{' && !is_in_string(buf, p)) {
-            /* Found |{ — need to insert `mt ` before the scrutinee expression.
-             * Walk backwards to find where the expression starts.
-             * Simple heuristic: the expression starts after the last `;` or `{`
-             * or `=` or at the start of line. */
-            int expr_start = p;
-            while (expr_start > 0) {
-                char pc = buf[expr_start - 1];
-                if (pc == ';' || pc == '{' || pc == '=' || pc == '\n') break;
-                expr_start--;
-            }
-            /* Skip leading whitespace in the expression */
-            while (expr_start < p && (buf[expr_start] == ' ' || buf[expr_start] == '\t'))
-                expr_start++;
-
-            /* Rewind b2len to expr_start — we need to re-emit with `mt ` prefix */
-            /* Calculate how many chars of the expression we already wrote */
-            int already_written = p - expr_start;
-            b2len -= already_written;
-
-            /* Emit: mt <expr> { */
-            memcpy(buf2 + b2len, "mt ", 3);
-            b2len += 3;
-            memcpy(buf2 + b2len, buf + expr_start, (size_t)(p - expr_start));
-            b2len += (p - expr_start);
-            buf2[b2len++] = ' ';
-            buf2[b2len++] = '{';
-            p++; /* skip the { after | */
+        if (buf[p]=='|' && p+1<blen && buf[p+1]=='{' && !is_in_string(buf,p)) {
+            int es = p;
+            while (es>0) { char pc=buf[es-1]; if(pc==';'||pc=='{'||pc=='='||pc=='\n') break; es--; }
+            while (es<p && (buf[es]==' '||buf[es]=='\t')) es++;
+            b2 -= (p - es);
+            memcpy(buf2+b2, "mt ", 3); b2 += 3;
+            memcpy(buf2+b2, buf+es, (size_t)(p-es)); b2 += (p-es);
+            buf2[b2++] = ' '; buf2[b2++] = '{';
+            p++;
         } else {
-            buf2[b2len++] = buf[p];
+            buf2[b2++] = buf[p];
         }
     }
-    buf2[b2len] = '\0';
+    buf2[b2] = '\0';
 
-    /* Write result */
-    fwrite(buf2, 1, (size_t)b2len, out);
-    free(buf);
-    free(buf2);
+    fwrite(buf2, 1, (size_t)b2, out);
+    free(buf2); free(buf); free(c); free(nt);
     return 0;
 }
