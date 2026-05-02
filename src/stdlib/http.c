@@ -38,6 +38,7 @@ void http_shutdown(void)
 /* ── CORS configuration (Story 7.7.4) ────────────────────────────────── */
 
 static char *g_cors_origins = NULL;  /* heap-allocated; NULL = disabled */
+static const char *g_cors_matched = NULL; /* per-request matched origin (set before send_response) */
 
 void http_set_cors(const char *origins)
 {
@@ -462,18 +463,46 @@ static void write_security_headers(int fd)
     write(fd, hdrs, sizeof(hdrs) - 1);
 }
 
-/* write_cors_headers — emit CORS headers when configured (Story 7.7.4). */
-static void write_cors_headers(int fd)
+/*
+ * cors_match_origin — find the request Origin in the allowed list.
+ * g_cors_origins is a comma-separated string like "http://localhost:3000,http://example.com".
+ * Returns the matched origin (pointer into g_cors_origins) or NULL.
+ * The browser expects exactly one matching origin, not the whole list.
+ */
+static const char *cors_match_origin(const char *request_origin)
 {
-    if (!g_cors_origins) return;
+    if (!g_cors_origins || !request_origin) return NULL;
+    if (strcmp(g_cors_origins, "*") == 0) return "*";
+    size_t orig_len = strlen(request_origin);
+    const char *p = g_cors_origins;
+    while (*p) {
+        while (*p == ' ' || *p == ',') p++;
+        if (!*p) break;
+        const char *start = p;
+        while (*p && *p != ',') p++;
+        size_t entry_len = (size_t)(p - start);
+        while (entry_len > 0 && start[entry_len-1] == ' ') entry_len--;
+        if (entry_len == orig_len && strncmp(start, request_origin, entry_len) == 0)
+            return request_origin;
+    }
+    return NULL;
+}
+
+/* write_cors_headers — emit CORS headers when configured (Story 7.7.4).
+ * Only sends back the matching origin, not the full allowed list. */
+static void write_cors_headers_for(int fd, const char *matched_origin)
+{
+    if (!matched_origin) return;
     char buf[512];
     int n = snprintf(buf, sizeof(buf),
         "Access-Control-Allow-Origin: %s\r\n"
         "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS\r\n"
-        "Access-Control-Allow-Headers: Content-Type, Authorization\r\n",
-        g_cors_origins);
+        "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
+        "Vary: Origin\r\n",
+        matched_origin);
     if (n > 0) write(fd, buf, (size_t)n);
 }
+static void write_cors_headers(int fd) { write_cors_headers_for(fd, g_cors_matched); }
 
 static void send_response(int fd, Res res, int keep_alive) {
     const char *conn_hdr = keep_alive ? "keep-alive" : "close";
@@ -850,8 +879,20 @@ static void handle_connection(int fd)
             }
         }
 
+        /* ── CORS: match request Origin against allowed list ── */
+        g_cors_matched = NULL;
+        if (g_cors_origins) {
+            for (uint64_t ci = 0; ci < req.headers.len; ci++) {
+                if (req.headers.data[ci].key &&
+                    strcasecmp(req.headers.data[ci].key, "Origin") == 0) {
+                    g_cors_matched = cors_match_origin(req.headers.data[ci].val);
+                    break;
+                }
+            }
+        }
+
         /* ── CORS preflight: OPTIONS → 204 with CORS headers (Story 7.7.4) ── */
-        if (req.method && strcmp(req.method, "OPTIONS") == 0 && g_cors_origins) {
+        if (req.method && strcmp(req.method, "OPTIONS") == 0 && g_cors_matched) {
             Res res;
             res.status       = 204;
             res.body         = NULL;
@@ -3028,16 +3069,18 @@ static void write_security_headers_ssl(SSL *ssl)
     SSL_write(ssl, hdrs, (int)(sizeof(hdrs) - 1));
 }
 
-/* write_cors_headers_ssl — emit CORS headers over TLS when configured (Story 7.7.4). */
+/* write_cors_headers_ssl — emit CORS headers over TLS when configured (Story 7.7.4).
+ * Uses g_cors_matched (the single matching origin), not the full allowed list. */
 static void write_cors_headers_ssl(SSL *ssl)
 {
-    if (!g_cors_origins) return;
+    if (!g_cors_matched) return;
     char buf[512];
     int n = snprintf(buf, sizeof(buf),
         "Access-Control-Allow-Origin: %s\r\n"
         "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS\r\n"
-        "Access-Control-Allow-Headers: Content-Type, Authorization\r\n",
-        g_cors_origins);
+        "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
+        "Vary: Origin\r\n",
+        g_cors_matched);
     if (n > 0) SSL_write(ssl, buf, n);
 }
 
@@ -3659,8 +3702,20 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
 
         Req req = parse_request(raw);
 
+        /* ── CORS: match request Origin against allowed list (TLS path) ── */
+        g_cors_matched = NULL;
+        if (g_cors_origins) {
+            for (uint64_t ci = 0; ci < req.headers.len; ci++) {
+                if (req.headers.data[ci].key &&
+                    strcasecmp(req.headers.data[ci].key, "Origin") == 0) {
+                    g_cors_matched = cors_match_origin(req.headers.data[ci].val);
+                    break;
+                }
+            }
+        }
+
         /* ── CORS preflight: OPTIONS → 204 with CORS headers (Story 7.7.4) ── */
-        if (req.method && strcmp(req.method, "OPTIONS") == 0 && g_cors_origins) {
+        if (req.method && strcmp(req.method, "OPTIONS") == 0 && g_cors_matched) {
             const char *ch = keep_alive ? "keep-alive" : "close";
             char hb[256];
             int hl2 = snprintf(hb, sizeof(hb),
