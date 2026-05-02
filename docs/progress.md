@@ -555,7 +555,7 @@ The handler registry (78.1.x, serve.tk handledpaths) provides the skip mechanism
 | 82.1.4 | Create working example: page handler with template | done | 2026-05-02 | — | **P1** Example in examples/page-handler/ — handler calls tpl.tplrenderfile with dynamic ctx (var("key")), returns HTML via http.resok. Shows server-side data in templates. |
 | 82.1.5 | Request accessor helpers: req.path, req.body, req.param | done | 2026-05-02 | — | **P1** Verify req.path/req.body/req.param work from toke handler code. If missing wrappers, add to tk_web_glue.c. |
 | 82.1.6 | Update toke-website to use dynamic health handler | done | 2026-05-01 | **P2** Replaced static getstaticmime+postjson with http.get("/api/health";&healthhandler). Added apigethandler in apihealth.tk using http.resjson. Local wrapper in main.tk needed because &mod.func cross-module fn-refs not yet supported. Build passes. |
-| 82.2.1 | ooke build-time handler auto-registration | backlog | — | **P0** ooke should scan pages/*.tk at build time and auto-generate handler registration code. Convention: pages/api/health.tk exports get(req:i64):i64 → generates http.get("/api/health";&wrapper). Emitted as generated _handlers.tk compiled into binary. Eliminates manual registration in main.tk. |
+| 82.2.1 | ooke build-time handler auto-registration | done | 2026-05-02 | — | **P0** ooke should scan pages/*.tk at build time and auto-generate handler registration code. Convention: pages/api/health.tk exports get(req:i64):i64 → generates http.get("/api/health";&wrapper). Emitted as generated _handlers.tk compiled into binary. Eliminates manual registration in main.tk. |
 
 ### Epic 80 — No Comments, Purpose-Built Model, Timeline Cleanup
 
