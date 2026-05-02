@@ -1,0 +1,15 @@
+id: D051
+series: D
+description: "No E5001 when returning function-level binding from inside if block"
+input: |
+  m=test;
+  f=ok():i64{
+    let y=10;
+    if(y>5){
+      <y
+    }el{
+      <0
+    }
+  };
+expected_exit_code: 0
+expected_error_codes: []

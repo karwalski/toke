@@ -40,6 +40,7 @@
 #include "progress.h"
 #include "migrate.h"
 #include "lint.h"
+#include "tkir.h"
 
 /* Forward declarations for stubs not yet exported by their headers */
 #ifndef TK_ARENA_TYPES_DEFINED
@@ -214,6 +215,7 @@ int main(int argc, char **argv)
     int dump_ast = 0;
     int migrate = 0;
     int do_lint = 0, do_fix = 0;
+    int emit_tkir_flag = 0;
     int do_compress = 0, do_decompress = 0, do_compress_stream = 0;
     int companion = 0;
     const char *companion_out = NULL;
@@ -260,6 +262,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--dump-ast"))       dump_ast = 1;
         else if (!strcmp(argv[i], "--lint"))             do_lint = 1;
         else if (!strcmp(argv[i], "--fix"))              do_fix = 1;
+        else if (!strcmp(argv[i], "--emit-tkir"))       emit_tkir_flag = 1;
         else if (!strcmp(argv[i], "--migrate"))         migrate = 1;
         else if (!strcmp(argv[i], "--compress"))        do_compress = 1;
         else if (!strcmp(argv[i], "--decompress"))      do_decompress = 1;
@@ -665,6 +668,17 @@ int main(int argc, char **argv)
         char tki[PATH_BUF];
         snprintf(tki, sizeof(tki), "%s.tki", obin);
         if (emit_interface(ast, sbuf, &te, tki) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
+    }
+
+    /* --emit-tkir: write .tkir binary IR and exit (story 76.1.6a) */
+    if (emit_tkir_flag) {
+        char tkir_path[PATH_BUF];
+        if (out) { strncpy(tkir_path, out, sizeof(tkir_path) - 1); tkir_path[sizeof(tkir_path) - 1] = '\0'; }
+        else { snprintf(tkir_path, sizeof(tkir_path), "%s.tkir", obin); }
+        if (emit_tkir(ast, sbuf, &te, &ne, tgt, tkir_path) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
+        progress_update(90);
+        symtab_free(&st);
+        goto done;
     }
 
     /* Emit LLVM IR */

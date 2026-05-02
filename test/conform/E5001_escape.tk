@@ -1,0 +1,43 @@
+m=test;
+
+f=safelit():i64{
+  if(true){
+    <42
+  }el{
+    <0
+  }
+};
+
+f=safeparam(x:i64):i64{
+  if(x>0){
+    <x
+  }el{
+    <0
+  }
+};
+
+f=safefn():i64{
+  let y=10;
+  if(y>5){
+    <y
+  }el{
+    <0
+  }
+};
+
+f=badifescape(cond:bool):i64{
+  if(cond){
+    let inner=99;
+    <inner
+  }el{
+    <0
+  }
+};
+
+f=badlpescape():i64{
+  lp(let i=0;i<10;i=i+1){
+    let tmp=i+1;
+    <tmp
+  };
+  <0
+};

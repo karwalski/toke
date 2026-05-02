@@ -1,0 +1,15 @@
+id: D049
+series: D
+description: "E5001 escape analysis: returning binding from nested if block"
+input: |
+  m=test;
+  f=bad(cond:bool):i64{
+    if(cond){
+      let inner=99;
+      <inner
+    }el{
+      <0
+    }
+  };
+expected_exit_code: 1
+expected_error_codes: ["E5001"]

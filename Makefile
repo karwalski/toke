@@ -16,7 +16,7 @@ TOML_FLAGS  = -Istdlib/vendor/tomlc99
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/config.c src/fmt.c src/progress.c \
           src/sourcemap.c src/ast_json.c src/migrate.c src/companion.c src/compress.c \
-          src/stdlib_deps.c src/glue_gen.c src/lint.c \
+          src/stdlib_deps.c src/glue_gen.c src/lint.c src/tkir.c \
           src/main.c src/stdlib/str.c
 
 # ── Story 19.1.4: stdlib modules linked into tkc for i= imports ──────────
@@ -75,6 +75,7 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-stdlib-file test-stdlib-runtime \
 	test-stdlib-path test-stdlib-args test-stdlib-md test-stdlib-toml \
 	test-stdlib-vecstore \
+	test-tkir-encoder \
 	install-man
 
 all: $(BIN)
@@ -480,6 +481,10 @@ test-stdlib-vecstore:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_vecstore \
 	    test/stdlib/test_vecstore.c src/stdlib/vecstore.c -lpthread
 	$(RUN_TEST) ./test/stdlib/test_vecstore
+
+# ── Story 76.1.6a: .tkir encoder test ────────────────────────────────────────
+test-tkir-encoder: $(BIN)
+	@bash test/tkir/test_tkir_encoder.sh ./$(BIN)
 
 clean:
 	rm -f $(OBJS) $(BIN) test/stdlib/test_str test/stdlib/test_db \

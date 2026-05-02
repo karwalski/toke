@@ -248,9 +248,68 @@ static Decl *tc_lookup(const Scope *s, const char *name, int len) {
  *               Used to look up parameter types when an identifier is not
  *               found at module scope.
  */
+/*
+ * BindDepth — record the scope depth at which a local binding was created.
+ * Used by escape analysis (E5001) to detect when a return statement
+ * references a value allocated in a nested scope (if/lp/arena block).
+ */
+#define MAX_BIND_DEPTH 256
+typedef struct {
+    const char *name;
+    int         name_len;
+    int         depth;
+} BindDepth;
+
 typedef struct { TypeEnv *env; const char *src;
                  Type *fn_ret; int had_error;
-                 const Node *fn_node; } Ctx;
+                 const Node *fn_node;
+                 int scope_depth;              /* nesting level within function */
+                 BindDepth binds[MAX_BIND_DEPTH];
+                 int bind_count; } Ctx;
+
+/*
+ * record_bind_depth — record the scope depth at which a binding is created.
+ * Called from NODE_BIND_STMT / NODE_MUT_BIND_STMT handling.
+ */
+static void record_bind_depth(Ctx *cx, const char *name, int name_len, int depth) {
+    if (cx->bind_count >= MAX_BIND_DEPTH) return;
+    cx->binds[cx->bind_count].name     = name;
+    cx->binds[cx->bind_count].name_len = name_len;
+    cx->binds[cx->bind_count].depth    = depth;
+    cx->bind_count++;
+}
+
+/*
+ * lookup_bind_depth — return the scope depth at which a binding was created,
+ * or -1 if not found in the side-table.
+ */
+static int lookup_bind_depth(const Ctx *cx, const char *name, int name_len) {
+    /* Search backwards so the most recent binding with the same name wins
+     * (handles shadowing within the same function). */
+    for (int i = cx->bind_count - 1; i >= 0; i--) {
+        if (cx->binds[i].name_len == name_len &&
+            memcmp(cx->binds[i].name, name, (size_t)name_len) == 0)
+            return cx->binds[i].depth;
+    }
+    return -1;
+}
+
+/*
+ * is_param — return 1 if the identifier name matches a parameter of the
+ * current function.  Parameters are always safe to return (caller owns them).
+ */
+static int is_param(const Ctx *cx, const char *name, int name_len) {
+    if (!cx->fn_node) return 0;
+    for (int i = 0; i < cx->fn_node->child_count; i++) {
+        const Node *ch = cx->fn_node->children[i];
+        if (!ch || ch->kind != NODE_PARAM || ch->child_count < 1) continue;
+        const Node *pn = ch->children[0];
+        if (pn && pn->tok_len == name_len &&
+            memcmp(cx->src + pn->tok_start, name, (size_t)name_len) == 0)
+            return 1;
+    }
+    return 0;
+}
 
 /* Forward declaration: infer() is the main recursive type-inference walker. */
 static Type *infer(Ctx *cx, const Node *node);
@@ -953,6 +1012,12 @@ static Type *infer(Ctx *cx, const Node *node) {
             char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(ann));
             emit_mm(cx,node,ann,init,fix);
         }
+        /* Record the scope depth at which this binding was created so that
+         * escape analysis (E5001) can detect returns from deeper scopes. */
+        if (node->child_count>0&&node->children[0]) {
+            record_bind_depth(cx, cx->src+node->children[0]->tok_start,
+                              node->children[0]->tok_len, cx->scope_depth);
+        }
         return mk_type(A,TY_VOID);
     }
 
@@ -1047,6 +1112,33 @@ static Type *infer(Ctx *cx, const Node *node) {
             if (!ok) {
                 char fix[128]; snprintf(fix,sizeof(fix),"cast return value to %s using 'as'",type_name(cx->fn_ret));
                 emit_mm(cx,node,cx->fn_ret,val,fix);
+            }
+        }
+        /* ── Escape analysis (E5001) ─────────────────────────────────────
+         * Check whether the returned expression references a binding from
+         * a deeper scope (if/lp/arena block).  Literals and parameters
+         * are always safe.  A local binding is safe only if it was created
+         * at scope_depth 0 (function body level).  Bindings from deeper
+         * scopes may reference arena-allocated values that are freed when
+         * the block exits, so returning them is conservatively rejected.
+         * ──────────────────────────────────────────────────────────────── */
+        if (node->child_count>0&&node->children[0]&&
+            node->children[0]->kind==NODE_IDENT) {
+            char rnb[128]; TOKSTR(rnb,cx->src,node->children[0]);
+            int rlen=(int)strlen(rnb);
+            /* Parameters are safe — caller owns them */
+            if (!is_param(cx,rnb,rlen)) {
+                int bd=lookup_bind_depth(cx,rnb,rlen);
+                if (bd>0) {
+                    char msg[256];
+                    snprintf(msg,sizeof(msg),
+                        "value '%s' escapes its scope: bound in a nested block (depth %d)",
+                        rnb,bd);
+                    diag_emit(DIAG_ERROR,E5001,node->start,node->line,node->col,
+                        msg,"fix","move the binding to the function body or return a copy",
+                        (const char*)NULL);
+                    cx->had_error=1;
+                }
             }
         }
         return mk_type(A,TY_VOID);
@@ -1146,6 +1238,7 @@ static Type *infer(Ctx *cx, const Node *node) {
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_ARENA_STMT: {
         cx->env->arena_depth++;
+        cx->scope_depth++;
         for (int i=0;i<node->child_count;i++) {
             const Node *ch=node->children[i];
             if (ch&&ch->kind==NODE_ASSIGN_STMT&&ch->child_count>0) {
@@ -1163,6 +1256,7 @@ static Type *infer(Ctx *cx, const Node *node) {
             }
             infer(cx,ch);
         }
+        cx->scope_depth--;
         cx->env->arena_depth--;
         return mk_type(A,TY_VOID);
     }
@@ -1216,7 +1310,11 @@ static Type *infer(Ctx *cx, const Node *node) {
         }
         Type *saved=cx->fn_ret; cx->fn_ret=ret;
         const Node *saved_fn=cx->fn_node; cx->fn_node=node;
+        /* Save and reset escape-analysis state for this function */
+        int saved_depth=cx->scope_depth; cx->scope_depth=0;
+        int saved_bc=cx->bind_count; cx->bind_count=0;
         for (int i=0;i<node->child_count;i++) infer(cx,node->children[i]);
+        cx->bind_count=saved_bc; cx->scope_depth=saved_depth;
         cx->fn_node=saved_fn; cx->fn_ret=saved;
         return mk_type(A,TY_VOID);
     }
@@ -1243,9 +1341,47 @@ static Type *infer(Ctx *cx, const Node *node) {
         return last;
     }
 
+    /* ── If statement ─────────────────────────────────────────────────────
+     * Increments scope_depth for the then/else branch bodies so that
+     * bindings created inside are tracked at a deeper scope level.
+     * Escape analysis (E5001) uses this to detect returns of values
+     * bound inside a conditional block.
+     *
+     * NODE_IF_STMT children:
+     *   children[0] = condition expression (inferred at current depth)
+     *   children[1] = NODE_STMT_LIST — then-branch body (deeper scope)
+     *   children[2] = NODE_STMT_LIST — else-branch body (deeper scope, optional)
+     * ──────────────────────────────────────────────────────────────────── */
+    case NODE_IF_STMT: {
+        /* Infer condition at current depth */
+        if (node->child_count>0) infer(cx,node->children[0]);
+        /* Infer then/else branches at increased depth */
+        cx->scope_depth++;
+        for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
+        cx->scope_depth--;
+        return mk_type(A,TY_VOID);
+    }
+
+    /* ── Loop statement ───────────────────────────────────────────────────
+     * Increments scope_depth for the loop body so that bindings created
+     * inside are tracked at a deeper scope level.
+     *
+     * NODE_LOOP_STMT children:
+     *   children[0] = NODE_LOOP_INIT (optional init — deeper scope)
+     *   children[1] = condition expression
+     *   children[2] = step expression
+     *   children[3] = NODE_STMT_LIST body (deeper scope)
+     * ──────────────────────────────────────────────────────────────────── */
+    case NODE_LOOP_STMT: {
+        cx->scope_depth++;
+        for (int i=0;i<node->child_count;i++) infer(cx,node->children[i]);
+        cx->scope_depth--;
+        return mk_type(A,TY_VOID);
+    }
+
     /* ── Default fallthrough ─────────────────────────────────────────────
      * Handles all node kinds not explicitly matched above (e.g.
-     * NODE_IF_STMT, NODE_WHILE_STMT, NODE_TYPE_DECL).
+     * NODE_TYPE_DECL).
      * These nodes do not have specific type rules — the checker simply
      * recurses into all children so that any nested expressions and
      * statements are still validated.
@@ -1298,6 +1434,7 @@ int type_check(const Node *ast, const char *src,
     if (!ast||!src||!names||!arena||!out) return -1;
     out->names=names; out->arena=arena; out->arena_depth=0;
     Ctx cx; cx.env=out; cx.src=src; cx.fn_ret=NULL; cx.had_error=0; cx.fn_node=NULL;
+    cx.scope_depth=0; cx.bind_count=0;
     for (int i=0;i<ast->child_count;i++) infer(&cx,ast->children[i]);
     return cx.had_error?-1:0;
 }
