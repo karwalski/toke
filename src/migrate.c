@@ -377,6 +377,46 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
         case TK_IDENT: {
             char tmp[256];
             int cl = remove_underscores(c+t->start, t->len, tmp, sizeof tmp);
+            /* Detect type position: add $ prefix for non-primitive user types.
+             * Type positions: after ':', after 't=', after '!', after '@',
+             * and after ')' ':' (return type). */
+            int in_type_pos = 0;
+            if (i >= 1) {
+                TokenKind pk = nt[i-1].kind;
+                if (pk == TK_BANG || pk == TK_AT) in_type_pos = 1;
+                /* After ':' — but NOT in imports (i=alias:module) or match arms ($variant:binding) */
+                if (pk == TK_COLON) {
+                    int is_import = 0, is_match_bind = 0;
+                    /* Check if this : is in an import (preceded by IDENT = IDENT :) */
+                    if (i >= 3 && nt[i-2].kind == TK_IDENT && nt[i-3].kind == TK_EQ) {
+                        /* Check if before = is i or I (import keyword) */
+                        if (i >= 4 && nt[i-4].kind == TK_IDENT && nt[i-4].len == 1 &&
+                            (c[nt[i-4].start] == 'i' || c[nt[i-4].start] == 'I'))
+                            is_import = 1;
+                        if (i >= 4 && nt[i-4].kind == TK_KW_I) is_import = 1;
+                    }
+                    /* Check if : is in match arm ($variant:binding) */
+                    if (i >= 2 && (nt[i-2].kind == TK_DOLLAR ||
+                        (nt[i-2].kind == TK_IDENT && i >= 3 && nt[i-3].kind == TK_DOLLAR)))
+                        is_match_bind = 1;
+                    if (!is_import && !is_match_bind) in_type_pos = 1;
+                }
+                /* After t= or T= (type declaration name) */
+                if (pk == TK_EQ && i >= 2 &&
+                    (nt[i-2].kind == TK_KW_T ||
+                     (nt[i-2].kind == TK_IDENT && nt[i-2].len == 1 &&
+                      (c[nt[i-2].start] == 't' || c[nt[i-2].start] == 'T'))))
+                    in_type_pos = 1;
+            }
+            if (in_type_pos && !is_primitive(tmp) && cl > 0 &&
+                tmp[0] >= 'a' && tmp[0] <= 'z') {
+                /* Check it's not a keyword or common non-type identifier */
+                int is_kw = (!strcmp(tmp,"if")||!strcmp(tmp,"el")||!strcmp(tmp,"lp")||
+                             !strcmp(tmp,"br")||!strcmp(tmp,"let")||!strcmp(tmp,"mut")||
+                             !strcmp(tmp,"as")||!strcmp(tmp,"rt")||!strcmp(tmp,"mt")||
+                             !strcmp(tmp,"sc")||!strcmp(tmp,"true")||!strcmp(tmp,"false"));
+                if (!is_kw) buf[blen++] = '$';
+            }
             memcpy(buf+blen, tmp, (size_t)cl); blen += cl;
             break;
         }
