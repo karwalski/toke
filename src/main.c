@@ -413,8 +413,9 @@ int main(int argc, char **argv)
                     isatty(STDOUT_FILENO) ? DIAG_FMT_TEXT : DIAG_FMT_JSON);
     diag_set_source_file(src);
 
-    /* --migrate forces legacy profile for lexing */
-    if (migrate) profile = PROFILE_LEGACY;
+    /* --migrate: try default profile first (handles partially migrated files),
+     * fall back to legacy if too many lex errors. Actual migration is
+     * idempotent — already-migrated constructs pass through unchanged. */
 
     /* Progress bar: skip for fast-path modes */
     int fast_path = fmt_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp || do_compress || do_decompress || do_compress_stream || do_lint;
@@ -444,17 +445,28 @@ int main(int argc, char **argv)
     int tcap = (int)(slen + 16);
     Token *toks = arena_alloc(arena, tcap * (int)sizeof(Token));
     if (!toks) { rc = EINTERNAL; goto done; }
-    int tc = lex(sbuf, (int)slen, toks, tcap, profile);
-    if (tc < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
-    progress_update(10);
-
-    /* --migrate: transform legacy tokens to default syntax and exit */
+    int tc;
     if (migrate) {
+        /* --migrate: try default profile first, fall back to legacy.
+         * Suppress lex diagnostics on first attempt. */
+        diag_suppress(1);
+        tc = lex(sbuf, (int)slen, toks, tcap, profile);
+        int default_errs = diag_error_count();
+        diag_suppress(0);
+        if (tc < 0 || default_errs > 0) {
+            /* Retry with legacy profile */
+            diag_reset_counts();
+            tc = lex(sbuf, (int)slen, toks, tcap, PROFILE_LEGACY);
+        }
+        if (tc < 0) { rc = ECOMPILE; goto done; }
         if (tkc_migrate(sbuf, (int)slen, toks, tc, stdout) < 0) {
             rc = EINTERNAL;
         }
         goto done;
     }
+    tc = lex(sbuf, (int)slen, toks, tcap, profile);
+    if (tc < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
+    progress_update(10);
 
     /* Parse */
     Node *ast = parse(toks, tc, sbuf, arena, profile);

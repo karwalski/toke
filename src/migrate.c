@@ -1,51 +1,55 @@
 /*
- * migrate.c — Legacy-to-default syntax migration for the toke reference
- *             compiler.
+ * migrate.c — Source migration for the toke reference compiler.
  *
- * =========================================================================
- * Role
- * =========================================================================
- * This module implements the --migrate flag.  It walks a token stream
- * produced by lexing in PROFILE_LEGACY mode and emits equivalent default
- * (56-char, lowercase) syntax.
+ * Implements --migrate: converts v0.2 (or partially migrated) toke source
+ * to v0.3 default syntax. Handles both legacy (80-char) and partially
+ * migrated (mixed old/new) input.
  *
- * The transformation is purely token-level: whitespace and comments between
- * tokens are preserved verbatim by copying the source text gaps between
- * consecutive token spans.
+ * Transformations:
+ *   1. Legacy uppercase keywords (M=,F=,T=,I=) → lowercase (m=,f=,t=,i=)
+ *   2. PascalCase type identifiers → $lowercase ($Vec2 → $vec2)
+ *   3. |{ match syntax → mt expr { (v0.3 keyword-led match)
+ *   4. Underscore removal: to_int → toint, from_bytes → frombytes
+ *   5. $snake_case variants → $concatenated ($not_found → $notfound)
+ *   6. Comment stripping: (* ... *) removed (comment-free design)
+ *   7. Bitwise operators: ^ ~ << >> emit warnings (deferred to v0.5)
  *
- * Story: 11.3.5
+ * Safe for partially migrated files: each transform is idempotent.
+ *
+ * Stories: 11.3.5, 82.3.1
  */
 
 #include "migrate.h"
+#include <string.h>
+#include <stdlib.h>
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
 /*
- * emit_gap — Write the source text between the end of the previous token
- *            and the start of the current token.  This preserves whitespace,
- *            comments, and any other inter-token characters verbatim.
+ * remove_underscores — Remove underscores from an identifier, writing
+ *                      concatenated lowercase to out. Returns chars written.
  */
-static void emit_gap(const char *src, int gap_start, int gap_end, FILE *out)
+static int remove_underscores(const char *s, int len, char *out, int cap)
 {
-    for (int i = gap_start; i < gap_end; i++) {
-        fputc(src[i], out);
+    int w = 0;
+    for (int i = 0; i < len && w < cap - 1; i++) {
+        if (s[i] != '_') out[w++] = s[i];
     }
+    out[w] = '\0';
+    return w;
 }
 
 /*
- * emit_lowercase — Write `len` bytes from src+start, lowercasing ASCII
- *                  uppercase letters.
+ * is_in_string — Check if byte offset `pos` is inside a string literal
+ *                by scanning from the start. Simple: count unescaped quotes.
  */
-static void emit_lowercase(const char *src, int start, int len, FILE *out)
+static int is_in_string(const char *src, int pos)
 {
-    for (int i = 0; i < len; i++) {
-        char c = src[start + i];
-        if (c >= 'A' && c <= 'Z') {
-            fputc(c + ('a' - 'A'), out);
-        } else {
-            fputc(c, out);
-        }
+    int in_str = 0;
+    for (int i = 0; i < pos; i++) {
+        if (src[i] == '"' && (i == 0 || src[i-1] != '\\')) in_str = !in_str;
     }
+    return in_str;
 }
 
 /* ── Public API ───────────────────────────────────────────────────── */
@@ -53,58 +57,150 @@ static void emit_lowercase(const char *src, int start, int len, FILE *out)
 int tkc_migrate(const char *src, int slen, const Token *toks, int tc,
                 FILE *out)
 {
-    int prev_end = 0;  /* byte offset just past the previous token */
+    /*
+     * Phase 1: Token-level migration into a buffer.
+     * Handles: uppercase keywords, PascalCase types, underscore removal,
+     * $snake_case → $concatenated, comment stripping, bitwise warnings.
+     */
+    char *buf = malloc((size_t)(slen * 2 + 1024));
+    if (!buf) return -1;
+    int blen = 0;
+
+    int prev_end = 0;
 
     for (int i = 0; i < tc; i++) {
         const Token *t = &toks[i];
-
-        /* Skip the EOF sentinel — it has zero length. */
         if (t->kind == TK_EOF) break;
 
-        /* Emit any whitespace / gap between previous token and this one. */
-        emit_gap(src, prev_end, t->start, out);
+        /* Copy gap (whitespace between tokens) but strip comments */
+        for (int g = prev_end; g < t->start; g++) {
+            /* Detect (* ... *) comments and skip them */
+            if (g + 1 < t->start && src[g] == '(' && src[g+1] == '*') {
+                int depth = 1;
+                g += 2;
+                while (g < slen && depth > 0) {
+                    if (g + 1 < slen && src[g] == '(' && src[g+1] == '*') { depth++; g += 2; continue; }
+                    if (g + 1 < slen && src[g] == '*' && src[g+1] == ')') { depth--; g += 2; continue; }
+                    g++;
+                }
+                g--; /* for loop will increment */
+                continue;
+            }
+            buf[blen++] = src[g];
+        }
 
         switch (t->kind) {
-        case TK_KW_M:
-        case TK_KW_F:
-        case TK_KW_T:
-        case TK_KW_I:
-            /*
-             * Single-letter keywords: if the lexeme is a single uppercase
-             * letter (M, F, T, I), emit it as lowercase.  Multi-char
-             * keywords that happen to share the enum (shouldn't occur for
-             * these four) are emitted verbatim.
-             */
+        case TK_KW_M: case TK_KW_F: case TK_KW_T: case TK_KW_I:
+            /* Uppercase single-letter → lowercase */
             if (t->len == 1 && src[t->start] >= 'A' && src[t->start] <= 'Z') {
-                fputc(src[t->start] + ('a' - 'A'), out);
+                buf[blen++] = (char)(src[t->start] + ('a' - 'A'));
             } else {
-                fwrite(src + t->start, 1, (size_t)t->len, out);
+                memcpy(buf + blen, src + t->start, (size_t)t->len);
+                blen += t->len;
             }
             break;
 
         case TK_TYPE_IDENT:
-            /*
-             * Uppercase-initial type identifiers become $-prefixed
-             * lowercase in default syntax.
-             * e.g. Vec2 -> $vec2, I64 -> $i64, Str -> $str
-             */
-            fputc('$', out);
-            emit_lowercase(src, t->start, t->len, out);
+            /* PascalCase → $lowercase */
+            buf[blen++] = '$';
+            for (int j = 0; j < t->len; j++) {
+                char c = src[t->start + j];
+                buf[blen++] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
+            }
+            break;
+
+        case TK_IDENT: {
+            /* Remove underscores from identifiers */
+            char clean[256];
+            int clen = remove_underscores(src + t->start, t->len, clean, sizeof clean);
+            memcpy(buf + blen, clean, (size_t)clen);
+            blen += clen;
+            break;
+        }
+
+        case TK_DOLLAR: {
+            /* $variant_name → $variantname (strip underscores after $) */
+            buf[blen++] = '$';
+            /* The $ token is just the dollar sign; the following IDENT
+             * will be processed in the TK_IDENT case above. */
+            break;
+        }
+
+        case TK_CARET: case TK_TILDE:
+            /* Bitwise operators deferred — emit warning comment */
+            fprintf(stderr, "migrate: warning: bitwise operator '%.*s' at line %d "
+                    "deferred to v0.5, removing\n", t->len, src + t->start, t->line);
+            break;
+
+        case TK_SHL: case TK_SHR:
+            fprintf(stderr, "migrate: warning: shift operator '%.*s' at line %d "
+                    "deferred to v0.5, removing\n", t->len, src + t->start, t->line);
             break;
 
         default:
-            /* All other tokens: emit verbatim from source. */
-            fwrite(src + t->start, 1, (size_t)t->len, out);
+            memcpy(buf + blen, src + t->start, (size_t)t->len);
+            blen += t->len;
             break;
         }
 
         prev_end = t->start + t->len;
     }
 
-    /* Emit any trailing content after the last token (trailing newline, etc.) */
-    if (prev_end < slen) {
-        emit_gap(src, prev_end, slen, out);
-    }
+    /* Trailing content */
+    for (int g = prev_end; g < slen; g++) buf[blen++] = src[g];
+    buf[blen] = '\0';
 
+    /*
+     * Phase 2: Text-level migration.
+     * Handles: |{ match → mt expr {
+     * This must be text-level because the pipe-brace pattern spans
+     * two tokens and the expression before it becomes the scrutinee.
+     *
+     * Pattern: `expr|{` → `mt expr {`
+     * We search for `|{` NOT inside string literals.
+     */
+    char *buf2 = malloc((size_t)(blen * 2 + 256));
+    if (!buf2) { free(buf); return -1; }
+    int b2len = 0;
+
+    for (int p = 0; p < blen; p++) {
+        if (buf[p] == '|' && p + 1 < blen && buf[p+1] == '{' && !is_in_string(buf, p)) {
+            /* Found |{ — need to insert `mt ` before the scrutinee expression.
+             * Walk backwards to find where the expression starts.
+             * Simple heuristic: the expression starts after the last `;` or `{`
+             * or `=` or at the start of line. */
+            int expr_start = p;
+            while (expr_start > 0) {
+                char pc = buf[expr_start - 1];
+                if (pc == ';' || pc == '{' || pc == '=' || pc == '\n') break;
+                expr_start--;
+            }
+            /* Skip leading whitespace in the expression */
+            while (expr_start < p && (buf[expr_start] == ' ' || buf[expr_start] == '\t'))
+                expr_start++;
+
+            /* Rewind b2len to expr_start — we need to re-emit with `mt ` prefix */
+            /* Calculate how many chars of the expression we already wrote */
+            int already_written = p - expr_start;
+            b2len -= already_written;
+
+            /* Emit: mt <expr> { */
+            memcpy(buf2 + b2len, "mt ", 3);
+            b2len += 3;
+            memcpy(buf2 + b2len, buf + expr_start, (size_t)(p - expr_start));
+            b2len += (p - expr_start);
+            buf2[b2len++] = ' ';
+            buf2[b2len++] = '{';
+            p++; /* skip the { after | */
+        } else {
+            buf2[b2len++] = buf[p];
+        }
+    }
+    buf2[b2len] = '\0';
+
+    /* Write result */
+    fwrite(buf2, 1, (size_t)b2len, out);
+    free(buf);
+    free(buf2);
     return 0;
 }

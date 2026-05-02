@@ -52,6 +52,8 @@ void diag_emit_span(DiagSeverity severity, int code,
 
 int  diag_error_count(void);
 void diag_reset(void);
+void diag_suppress(int on);
+void diag_reset_counts(void);
 
 /* Alternate format selector used by main.c (TEXT=0, JSON=1, SARIF=2). */
 typedef enum { DIAG_FMT_TEXT = 0, DIAG_FMT_JSON = 1, DIAG_FMT_SARIF = 2 } DiagFormat;

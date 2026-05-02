@@ -64,6 +64,7 @@ static DiagMode    s_mode        = DIAG_MODE_JSON;   /* legacy accessor */
 static int         s_error_count = 0;
 static int         s_warn_count  = 0;
 static int         s_seq         = 0;
+static int         s_suppress    = 0;  /* when nonzero, emit_* functions are no-ops */
 static const char *s_source_file = "";
 
 /* ── SARIF buffer ──────────────────────────────────────────────────── */
@@ -120,6 +121,9 @@ void diag_reset(void)
     s_warn_count  = 0;
     s_seq         = 0;
 }
+
+void diag_suppress(int on) { s_suppress = on; }
+void diag_reset_counts(void) { s_error_count = 0; s_warn_count = 0; }
 
 /* Extract "fix" value from variadic key/value tail.
  * Convention: alternating (key, value) pairs; NULL key OR NULL value
@@ -297,6 +301,7 @@ diag_emit(DiagSeverity sev, int code,
     va_end(ap);
 
     update_counters(sev);
+    if (s_suppress) return;
     if (s_int_mode == DIAG_INT_TEXT)
         emit_text(sev, code, line, col, message);
     else if (s_int_mode == DIAG_INT_SARIF)
