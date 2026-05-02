@@ -1,6 +1,6 @@
 (* toke Phase 1 Formal Grammar — EBNF *)
 (* Normative per toke-spec-v0.3.md Section 11. *)
-(* Matches the reference compiler (tkc/src/parser.c) as of 2026-03-29. *)
+(* Matches the reference compiler (tkc/src/parser.c) as of 2026-05-01. *)
 (*                                                                        *)
 (* Notation:                                                              *)
 (*   =   definition          ;   termination                              *)
@@ -14,6 +14,8 @@
 (* before a closing '}' or EOF may be omitted. In the grammar below,     *)
 (* every Stmt and Decl is written with a terminating ';', but the         *)
 (* compiler silently accepts its absence in that position.                *)
+(*                                                                        *)
+(* Keywords (13): M I T F let if el lp br rt as mt sc                    *)
 
 
 (* ================================================================== *)
@@ -89,6 +91,7 @@ Stmt         = BindStmt
              | LoopStmt
              | BreakStmt
              | ArenaStmt
+             | ScopeStmt
              | ExprStmt
              ;
 
@@ -103,6 +106,7 @@ LoopStmt     = 'lp' '(' LoopInit ';' Expr ';' LoopStep ')' '{' StmtList '}' ;
 LoopInit     = [ 'let' ] IDENT '=' Expr ;
 LoopStep     = IDENT '=' Expr ;
 ArenaStmt    = '{' 'arena' StmtList '}' ;
+ScopeStmt    = 'sc' '{' StmtList '}' ;
 
 ExprStmt     = Expr ';' ;
 
@@ -110,16 +114,26 @@ ExprStmt     = Expr ';' ;
 (* ================================================================== *)
 (* Expressions — precedence from lowest to highest                     *)
 (* ================================================================== *)
+(*                                                                        *)
+(* Precedence chain (no bitwise operators):                               *)
+(*   MatchExpr → OrExpr → AndExpr → CompareExpr → AddExpr → MulExpr      *)
+(*   → UnaryExpr → CastExpr → PropagateExpr → CallExpr → PostfixExpr     *)
+(*   → PrimaryExpr                                                        *)
 
 Expr         = MatchExpr ;
 
-MatchExpr    = CompareExpr [ '|' '{' MatchArmList '}' ] ;
+MatchExpr    = 'mt' OrExpr '{' MatchArmList '}'
+             | OrExpr ;
+
+OrExpr       = AndExpr { '||' AndExpr } ;
+
+AndExpr      = CompareExpr { '&&' CompareExpr } ;
 
 CompareExpr  = AddExpr [ ( '<' | '>' | '=' ) AddExpr ] ;
 
 AddExpr      = MulExpr { ( '+' | '-' ) MulExpr } ;
 
-MulExpr      = UnaryExpr { ( '*' | '/' ) UnaryExpr } ;
+MulExpr      = UnaryExpr { ( '*' | '/' | '%' ) UnaryExpr } ;
 
 UnaryExpr    = '-' UnaryExpr
              | '!' UnaryExpr
@@ -140,6 +154,9 @@ PrimaryExpr  = IDENT
              | StructLit
              | ArrayLit
              | MapLit
+             | FuncRef
+             | ClosureExpr
+             | SpawnExpr
              ;
 
 
@@ -148,20 +165,34 @@ PrimaryExpr  = IDENT
 (* ================================================================== *)
 
 MatchArmList = MatchArm { ';' MatchArm } ;
-MatchArm     = TYPE_IDENT ':' IDENT Expr ;
+MatchArm     = ( '$' IDENT | TYPE_IDENT ) ':' IDENT Expr ;
 
 
 (* ================================================================== *)
 (* Struct, array, and map literals                                     *)
 (* ================================================================== *)
 
-StructLit    = TypeName '{' FieldInit { ';' FieldInit } '}' ;
+StructLit    = TypeName '{' FieldInit { ';' FieldInit } '}'
+             | '$' IDENT '{' FieldInit { ';' FieldInit } '}' ;
 FieldInit    = IDENT ':' Expr ;
 
-ArrayLit     = '[' [ Expr { ';' Expr } ] ']' ;
+ArrayLit     = '[' [ Expr { ';' Expr } ] ']'
+             | '@' '(' [ Expr { ';' Expr } ] ')' ;
 
-MapLit       = '[' MapEntry { ';' MapEntry } ']' ;
+MapLit       = '[' MapEntry { ';' MapEntry } ']'
+             | '@' '(' MapEntry { ';' MapEntry } ')' ;
 MapEntry     = Expr ':' Expr ;
+
+
+(* ================================================================== *)
+(* Function references and closures                                    *)
+(* ================================================================== *)
+
+FuncRef      = '&' IDENT ;
+
+ClosureExpr  = 'fn' '(' [ ParamList ] ')' [ ':' ReturnSpec ] '{' StmtList '}' ;
+
+SpawnExpr    = 'spawn' Expr ;
 
 
 (* ================================================================== *)
@@ -176,6 +207,9 @@ ArgList      = Expr { ';' Expr } ;
 (* ================================================================== *)
 
 TypeExpr     = PtrTypeExpr
+             | '$' IDENT
+             | '@' TypeExpr
+             | '@' '(' TypeExpr ':' TypeExpr ')'
              | MapTypeExpr
              | ArrayTypeExpr
              | FuncTypeExpr

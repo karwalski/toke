@@ -31,8 +31,9 @@
  * =========================================================================
  * Precedence chain (lowest to highest)
  * =========================================================================
- *   CompareExpr  →  AddExpr  →  MulExpr  →  UnaryExpr  →  CastPropExpr
- *   →  CallExpr  →  PostfixExpr  →  PrimaryExpr
+ *   OrExpr  →  AndExpr  →  CompareExpr  →  AddExpr  →  MulExpr
+ *   →  UnaryExpr  →  CastPropExpr  →  CallExpr  →  PostfixExpr
+ *   →  PrimaryExpr
  *
  * Match expressions (pipe '|') bind at the top of the expression chain,
  * below comparison level.
@@ -422,9 +423,7 @@ static Node *parse_literal(Parser *p) {
 static Node *parse_primary(Parser *p) {
     Token *t=cur(p);
     /* Function reference: &name — unary prefix & followed by ident.
-     * Disambiguated from binary & (bitwise AND) by position: at expression
-     * start (parse_primary), & is always a function reference.  Binary &
-     * is handled in parse_bitand between two expressions. */
+     * The & token in parse_primary is always a function reference. */
     if(peek(p)==TK_AMP&&peek_at(p,1)==TK_IDENT){
         adv(p); /* consume '&' */
         Token *nt=cur(p); adv(p); /* consume function name */
@@ -667,9 +666,9 @@ static Node *parse_cast_prop(Parser *p) {
  * in error propagation (postfix) is handled at a lower precedence level
  * in parse_cast_prop, so there is no ambiguity.
  */
-/* UnaryExpr = ('-'|'!'|'~') UnaryExpr | PropagateExpr */
+/* UnaryExpr = ('-'|'!') UnaryExpr | PropagateExpr */
 static Node *parse_unary(Parser *p) {
-    if(peek(p)==TK_MINUS||peek(p)==TK_BANG||peek(p)==TK_TILDE){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_UNARY_EXPR,t);n->op=op;ch(p,n,parse_unary(p));return n;}
+    if(peek(p)==TK_MINUS||peek(p)==TK_BANG){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_UNARY_EXPR,t);n->op=op;ch(p,n,parse_unary(p));return n;}
     return parse_cast_prop(p);
 }
 
@@ -730,45 +729,17 @@ static Node *parse_add(Parser *p) {
  * Note: '=' here is the equality comparison operator in expression
  * context, not the assignment operator (which is handled in parse_stmt).
  */
-/* ShiftExpr = AddExpr (('<<'|'>>') AddExpr)* */
-static Node *parse_shift(Parser *p) {
-    Node *l=parse_add(p);
-    while(peek(p)==TK_SHL||peek(p)==TK_SHR){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_add(p));l=n;}
-    return l;
-}
-
-/* CompareExpr = ShiftExpr (('<'|'>'|'=') ShiftExpr)? */
+/* CompareExpr = AddExpr (('<'|'>'|'=') AddExpr)? */
 static Node *parse_compare(Parser *p) {
-    Node *l=parse_shift(p);
-    if(peek(p)==TK_LT||peek(p)==TK_GT||peek(p)==TK_EQ){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_shift(p));return n;}
+    Node *l=parse_add(p);
+    if(peek(p)==TK_LT||peek(p)==TK_GT||peek(p)==TK_EQ){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_add(p));return n;}
     return l;
 }
 
-/* BitAndExpr = CompareExpr ('&' CompareExpr)* */
-static Node *parse_bitand(Parser *p) {
-    Node *l=parse_compare(p);
-    while(peek(p)==TK_AMP){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_compare(p));l=n;}
-    return l;
-}
-
-/* BitXorExpr = BitAndExpr ('^' BitAndExpr)* */
-static Node *parse_bitxor(Parser *p) {
-    Node *l=parse_bitand(p);
-    while(peek(p)==TK_CARET){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_bitand(p));l=n;}
-    return l;
-}
-
-/* BitOrExpr = BitXorExpr ('|' BitXorExpr)* — note: '|' followed by '{' is match, not bitwise */
-static Node *parse_bitor(Parser *p) {
-    Node *l=parse_bitxor(p);
-    while(peek(p)==TK_PIPE&&peek_at(p,1)!=TK_LBRACE){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_bitxor(p));l=n;}
-    return l;
-}
-
-/* AndExpr = BitOrExpr ('&&' BitOrExpr)* */
+/* AndExpr = CompareExpr ('&&' CompareExpr)* */
 static Node *parse_and(Parser *p) {
-    Node *l=parse_bitor(p);
-    while(peek(p)==TK_AND){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_bitor(p));l=n;}
+    Node *l=parse_compare(p);
+    while(peek(p)==TK_AND){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_compare(p));l=n;}
     return l;
 }
 
