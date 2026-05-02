@@ -542,7 +542,10 @@ static Node *parse_postfix(Parser *p) {
              * Disambiguate: only treat as index when the arg list is a single
              * expression (no ';' before ')').  Multi-arg .get(...;...) is a
              * normal method call — fall through to field-access so parse_call
-             * picks up the '(' later. */
+             * picks up the '(' later.
+             * NOTE: when the base is a module import alias, the codegen
+             * detects this in NODE_INDEX_EXPR and generates a cross-module
+             * function call instead of an array index (Story 82.2.1). */
             if(peek(p)==TK_IDENT&&teq(p,f,"get")&&peek_at(p,1)==TK_LPAREN){
                 int save=p->pos;
                 adv(p); /* consume "get" */

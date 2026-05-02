@@ -2262,9 +2262,40 @@ static int emit_expr(Ctx *c, const Node *n)
         return t;
     }
     case NODE_INDEX_EXPR: {
-        /* If base is a stdlib module alias, route .get(i) to the stdlib wrapper */
+        /* If base is a module alias, .get(arg) is a cross-module function call.
+         * Check for user-module imports FIRST — they take priority over
+         * array indexing because the parser can't distinguish at parse time. */
         if (n->children[0]->kind == NODE_IDENT && n->child_count >= 2) {
             char base_alias[128]; tok_cp(c->src, n->children[0], base_alias, sizeof base_alias);
+            /* Check if base is a non-stdlib import alias → cross-module get() call */
+            int is_user_mod = 0;
+            for (int ii = 0; ii < c->import_count; ii++) {
+                if (!strcmp(c->imports[ii].alias, base_alias) && !c->imports[ii].is_std) {
+                    is_user_mod = 1; break;
+                }
+            }
+            if (is_user_mod) {
+                /* Cross-module call: mod.get(arg) → call @get(arg) */
+                int arg = emit_expr(c, n->children[1]);
+                const char *aty = expr_llvm_type(c, n->children[1]);
+                if (strcmp(aty, "i64") && !strcmp(aty, "i8*")) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, arg);
+                    arg = z;
+                }
+                /* Emit forward declaration for 'get' */
+                char decl_check[64]; snprintf(decl_check, sizeof decl_check, "@get(");
+                if (!strstr(c->fwd_decls, decl_check)) {
+                    int dlen = snprintf(c->fwd_decls + c->fwd_decls_len,
+                        TKC_FWD_DECL_SIZE - c->fwd_decls_len,
+                        "declare fastcc i64 @get(i64)\n");
+                    if (dlen > 0) c->fwd_decls_len += dlen;
+                    c->fwd_decls[c->fwd_decls_len] = '\0';
+                }
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call fastcc i64 @get( i64 %%t%d)\n", t, arg);
+                return t;
+            }
             /* Map variable: emit tk_map_get(map_ptr, key_i64) */
             if (is_map_var(c, base_alias)) {
                 int base_map = emit_expr(c, n->children[0]);
