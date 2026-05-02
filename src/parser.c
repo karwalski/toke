@@ -852,6 +852,13 @@ static Node *parse_expr(Parser *p) {
         return n;
     }
     Node *l=parse_or(p);
+    /* Detect v0.2 match syntax: expr|{...} → should be mt expr {...} */
+    if (peek(p)==TK_PIPE && peek_at(p,1)==TK_LBRACE) {
+        eerr_got(p, E2002, cur(p),
+                 "v0.2 match syntax '|{' is no longer supported; "
+                 "use 'mt expr {...}' instead, or run `toke --migrate`");
+        sync(p);
+    }
     return l;
 }
 

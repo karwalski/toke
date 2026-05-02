@@ -134,7 +134,8 @@ static int is_digit(char c) { return c >= '0' && c <= '9'; }
  * is_ident_cont — Return non-zero if `c` may appear as the second or
  * subsequent character of an identifier (letter, digit, or underscore).
  */
-static int is_ident_cont(char c) { return is_letter(c) || is_digit(c) || c == '_'; }
+static int is_ident_cont(char c) { return is_letter(c) || is_digit(c); }
+static int is_ident_cont_legacy(char c) { return is_letter(c) || is_digit(c) || c == '_'; }
 
 /*
  * is_hex — Return non-zero if `c` is a valid hexadecimal digit
@@ -494,6 +495,26 @@ static const UpperKwEntry UPPER_KW_MAP[] = {
 static int lex_ident(Lexer *l, int start, int line, int col)
 {
     while (l->pos < l->len && is_ident_cont(l->src[l->pos])) advance(l);
+
+    /* Detect v0.2 underscore identifiers: to_int, get_user, etc.
+     * Emit a helpful error pointing to --migrate. */
+    if (l->profile == PROFILE_DEFAULT && l->pos < l->len && l->src[l->pos] == '_') {
+        /* Consume the full underscore identifier for the error span */
+        while (l->pos < l->len && is_ident_cont_legacy(l->src[l->pos])) advance(l);
+        int full_len = l->pos - start;
+        char id_buf[128];
+        int cplen = full_len < (int)sizeof(id_buf) - 1 ? full_len : (int)sizeof(id_buf) - 1;
+        for (int j = 0; j < cplen; j++) id_buf[j] = l->src[start + j];
+        id_buf[cplen] = '\0';
+        char msg[256];
+        snprintf(msg, sizeof msg,
+                 "identifier '%s' contains underscore (v0.2 syntax); "
+                 "run `toke --migrate` to convert to v0.3", id_buf);
+        diag_emit(DIAG_ERROR, LEX_E1003, start, line, col, msg,
+                  "fix", "remove underscores: concatenate words (e.g., to_int -> toint)", NULL);
+        return -1;
+    }
+
     int len = l->pos - start;
     TokenKind kind = classify_ident(l->src, start, len, l->profile);
 
@@ -590,8 +611,22 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
         /* 1. Skip whitespace silently. */
         if (is_whitespace(c)) { advance(&l); continue; }
 
-        /* 2. Identifiers and keywords — starts with a letter or underscore. */
-        if (is_letter(c) || c == '_') {
+        /* 2. Identifiers and keywords — starts with a letter.
+         *    Underscore at start is a v0.2 construct — reject with hint. */
+        if (c == '_' && l.profile == PROFILE_DEFAULT) {
+            advance(&l);
+            while (l.pos < l.len && is_ident_cont_legacy(l.src[l.pos])) advance(&l);
+            int ulen = l.pos - start;
+            char ubuf[128]; int cp = ulen < (int)sizeof(ubuf)-1 ? ulen : (int)sizeof(ubuf)-1;
+            for (int j = 0; j < cp; j++) ubuf[j] = l.src[start+j]; ubuf[cp] = '\0';
+            char umsg[256];
+            snprintf(umsg, sizeof umsg,
+                     "identifier '%s' starts with underscore (v0.2 syntax); "
+                     "run `toke --migrate` to convert to v0.3", ubuf);
+            diag_emit(DIAG_ERROR, LEX_E1003, start, line, col, umsg, "fix", "remove underscores", NULL);
+            return -1;
+        }
+        if (is_letter(c) || (c == '_' && l.profile == PROFILE_LEGACY)) {
             advance(&l);
             if (lex_ident(&l, start, line, col) < 0) return -1;
             continue;
@@ -663,6 +698,12 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
         case '/':  sym = TK_SLASH;    break;
         case '<':
             if (l.pos + 1 < l.len && src[l.pos + 1] == '<') {
+                if (l.profile == PROFILE_DEFAULT) {
+                    diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
+                              "shift operator '<<' not available in v0.3 (deferred to v0.5); "
+                              "run `toke --migrate` to update", NULL);
+                    return -1;
+                }
                 advance(&l); advance(&l);
                 if (emit(&l, TK_SHL, start, 2, line, col) < 0) return -1;
                 continue;
@@ -670,6 +711,12 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
             sym = TK_LT; break;
         case '>':
             if (l.pos + 1 < l.len && src[l.pos + 1] == '>') {
+                if (l.profile == PROFILE_DEFAULT) {
+                    diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
+                              "shift operator '>>' not available in v0.3 (deferred to v0.5); "
+                              "run `toke --migrate` to update", NULL);
+                    return -1;
+                }
                 advance(&l); advance(&l);
                 if (emit(&l, TK_SHR, start, 2, line, col) < 0) return -1;
                 continue;
@@ -690,8 +737,22 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                 continue;
             }
             sym = TK_AMP; break;
-        case '^':  sym = TK_CARET;   break;
-        case '~':  sym = TK_TILDE;   break;
+        case '^':
+            if (l.profile == PROFILE_DEFAULT) {
+                diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
+                          "bitwise XOR '^' not available in v0.3 (deferred to v0.5); "
+                          "run `toke --migrate` to update", NULL);
+                return -1;
+            }
+            sym = TK_CARET; break;
+        case '~':
+            if (l.profile == PROFILE_DEFAULT) {
+                diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
+                          "bitwise NOT '~' not available in v0.3 (deferred to v0.5); "
+                          "run `toke --migrate` to update", NULL);
+                return -1;
+            }
+            sym = TK_TILDE; break;
         case '%':  sym = TK_PERCENT;  break;
         case '$':
             if (l.profile == PROFILE_LEGACY) {
