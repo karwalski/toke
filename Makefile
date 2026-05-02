@@ -38,20 +38,20 @@ STDLIB_SRCS = \
 SRCS    += $(STDLIB_SRCS)
 OBJS    = $(SRCS:.c=.o)
 LDLIBS  = -lm -lz -lpthread
-BIN     = tkc
+BIN     = toke
 
 # ── Reproducible-build flags ──────────────────────────────────────────────────
 # These flags eliminate sources of non-determinism so that the same source tree
 # produces bit-identical binaries across builds on the same platform.
 #
-#   -frandom-seed=tkc       deterministic internal compiler hashes
+#   -frandom-seed=toke      deterministic internal compiler hashes
 #   -ffile-prefix-map=...   strip absolute paths from debug info / __FILE__
 #
 # SOURCE_DATE_EPOCH: if set in the environment, GCC/Clang use it for __DATE__
 # and __TIME__.  The Makefile exports it when available; CI pins it to the
 # commit timestamp.
 # ──────────────────────────────────────────────────────────────────────────────
-REPRO_FLAGS = -frandom-seed=tkc \
+REPRO_FLAGS = -frandom-seed=toke \
               -ffile-prefix-map=$(CURDIR)=.
 
 export SOURCE_DATE_EPOCH ?= 0
@@ -78,10 +78,13 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-tkir-encoder \
 	install-man
 
-all: $(BIN)
+all: $(BIN) tkc
 
 $(BIN): $(OBJS)
 	$(CC) $(CFLAGS) $(REPRO_FLAGS) -o $@ $^ $(LDLIBS)
+
+tkc: $(BIN)
+	ln -sf $(BIN) tkc
 
 %.o: %.c
 	$(CC) $(CFLAGS) $(REPRO_FLAGS) -c -o $@ $<
@@ -487,7 +490,7 @@ test-tkir-encoder: $(BIN)
 	@bash test/tkir/test_tkir_encoder.sh ./$(BIN)
 
 clean:
-	rm -f $(OBJS) $(BIN) test/stdlib/test_str test/stdlib/test_db \
+	rm -f $(OBJS) $(BIN) tkc test/stdlib/test_str test/stdlib/test_db \
 	    test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto \
 	    test/stdlib/test_time test/stdlib/test_tktest test/stdlib/test_log \
 	    test/stdlib/test_stdlib_coverage test/stdlib/bench_stdlib \

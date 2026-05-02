@@ -58,13 +58,13 @@ int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile prof
 
 /* ── Constants ─────────────────────────────────────────────────────── */
 
-#define VERSION   "tkc 0.1.0"
+#define VERSION   "toke 0.1.0"
 #define EUSAGE    TKC_EXIT_USAGE
 #define EINTERNAL TKC_EXIT_INTERNAL
 #define ECOMPILE  TKC_EXIT_COMPILE
 
 static const char HELP[] =
-    "Usage: tkc [flags] <source-file>\n"
+    "Usage: toke [flags] <source-file>\n"
     "\n"
     "Flags:\n"
     "  --target <triple>   LLVM target triple (default: native)\n"

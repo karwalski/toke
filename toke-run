@@ -1,0 +1,115 @@
+#!/bin/sh
+# toke-run — compile-and-run wrapper for the toke compiler.
+#
+# Usage:
+#   toke-run <file.tk> [args...]              compile file.tk and run it immediately
+#   toke-run --timeout=N <file.tk> [args...]  set execution timeout (default 30s)
+#   toke-run --compile <file.tk>              compile only (passes through to toke)
+#
+# Stories: 39.1.1, 39.1.2
+#
+# All args after <file.tk> are forwarded to the compiled binary.
+# The temp binary is cleaned up on exit via a trap.
+# Exit code matches the compiled program's exit code, or 124 on timeout.
+
+set -e
+
+# Find the toke compiler relative to this script's own location.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TKC="$SCRIPT_DIR/toke"
+
+if [ ! -x "$TKC" ]; then
+    printf 'toke-run: cannot find toke compiler at %s\n' "$TKC" >&2
+    exit 1
+fi
+
+# If called with no arguments, print usage.
+if [ $# -eq 0 ]; then
+    printf 'Usage: toke-run <file.tk> [args...]\n' >&2
+    printf '       toke-run --timeout=N <file.tk> [args...]\n' >&2
+    printf '       toke-run --compile <file.tk> [toke-flags...]\n' >&2
+    exit 64
+fi
+
+# --compile: pass everything through to toke and exit.
+if [ "$1" = "--compile" ]; then
+    shift
+    exec "$TKC" "$@"
+fi
+
+# Parse --timeout=N (default 30 seconds).
+TIMEOUT=30
+case "$1" in
+    --timeout=*)
+        TIMEOUT="${1#--timeout=}"
+        shift
+        # Validate: must be a positive integer.
+        case "$TIMEOUT" in
+            ''|*[!0-9]*)
+                printf 'toke: invalid timeout value: %s\n' "$TIMEOUT" >&2
+                exit 64
+                ;;
+        esac
+        if [ "$TIMEOUT" -eq 0 ]; then
+            printf 'toke: timeout must be greater than 0\n' >&2
+            exit 64
+        fi
+        ;;
+esac
+
+# First argument is the .tk source file; remaining args go to the binary.
+TK_FILE="$1"
+shift
+
+if [ ! -f "$TK_FILE" ]; then
+    printf 'toke: no such file: %s\n' "$TK_FILE" >&2
+    exit 64
+fi
+
+# Create a temp file for the compiled binary.
+TMP_BIN="$(mktemp /tmp/toke_XXXXXX)"
+
+# Ensure the temp binary and any watchdog are cleaned up on exit.
+trap 'rm -f "$TMP_BIN"; [ -n "$WATCHDOG_PID" ] && kill "$WATCHDOG_PID" 2>/dev/null; true' EXIT
+
+# Compile the source to the temp binary.
+if ! "$TKC" --out "$TMP_BIN" "$TK_FILE"; then
+    printf 'toke: compilation failed\n' >&2
+    exit 65
+fi
+
+# Make it executable (mktemp may not set +x).
+chmod +x "$TMP_BIN"
+
+# Run the binary with a watchdog timeout.
+# Launch the binary in the background.
+"$TMP_BIN" "$@" &
+BIN_PID=$!
+
+# Launch a watchdog: sleep for TIMEOUT then kill the binary.
+(
+    sleep "$TIMEOUT"
+    kill "$BIN_PID" 2>/dev/null
+) &
+WATCHDOG_PID=$!
+
+# Wait for the binary to finish.
+# Disable errexit around wait so we can capture the exit code.
+set +e
+wait "$BIN_PID" 2>/dev/null
+BIN_EXIT=$?
+set -e
+
+# Kill the watchdog (binary finished before timeout).
+kill "$WATCHDOG_PID" 2>/dev/null || true
+wait "$WATCHDOG_PID" 2>/dev/null || true
+WATCHDOG_PID=""
+
+# Detect if the binary was killed by the watchdog.
+# SIGTERM (signal 15) results in exit code 143 (128+15).
+if [ "$BIN_EXIT" -eq 143 ]; then
+    printf 'toke: execution timeout (%ss)\n' "$TIMEOUT" >&2
+    exit 124
+fi
+
+exit "$BIN_EXIT"

@@ -363,7 +363,7 @@ diag_flush_sarif(void)
           "    {\n"
           "      \"tool\": {\n"
           "        \"driver\": {\n"
-          "          \"name\": \"tkc\",\n"
+          "          \"name\": \"toke\",\n"
           "          \"version\": \"0.1.0\"\n"
           "        }\n"
           "      },\n"
