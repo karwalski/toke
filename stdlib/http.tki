@@ -4,7 +4,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "Req",
+      "name": "req",
       "fields": [
         {"name": "method",  "type": "str"},
         {"name": "path",    "type": "str"},
@@ -15,7 +15,7 @@
     },
     {
       "kind": "type",
-      "name": "Res",
+      "name": "res",
       "fields": [
         {"name": "status",  "type": "u16"},
         {"name": "headers", "type": "[[str]]"},
@@ -24,12 +24,12 @@
     },
     {
       "kind": "type",
-      "name": "HttpErr",
+      "name": "httprouteerr",
       "variants": [
-        {"name": "BadRequest", "type": "str"},
-        {"name": "NotFound",   "type": "str"},
-        {"name": "Internal",   "type": "str"},
-        {"name": "Timeout",    "type": "u32"}
+        {"name": "badrequest", "type": "str"},
+        {"name": "notfound",   "type": "str"},
+        {"name": "internal",   "type": "str"},
+        {"name": "timeout",    "type": "u32"}
       ]
     },
     {
@@ -76,17 +76,35 @@
         {"name": "open", "type": "bool"}
       ]
     },
-    {"kind": "func", "name": "http.param",      "params": ["Req", "str"],                          "return": "str!HttpErr"},
-    {"kind": "func", "name": "http.header",     "params": ["Req", "str"],                          "return": "str!HttpErr"},
-    {"kind": "func", "name": "http.Res.ok",     "params": ["str"],                                 "return": "Res"},
-    {"kind": "func", "name": "http.Res.json",   "params": ["u16", "str"],                          "return": "Res"},
-    {"kind": "func", "name": "http.Res.bad",    "params": ["str"],                                 "return": "Res"},
-    {"kind": "func", "name": "http.Res.err",    "params": ["str"],                                 "return": "Res"},
-    {"kind": "route", "name": "http.GET",       "params": ["str", "FuncDecl"]},
-    {"kind": "route", "name": "http.POST",      "params": ["str", "FuncDecl"]},
-    {"kind": "route", "name": "http.PUT",       "params": ["str", "FuncDecl"]},
-    {"kind": "route", "name": "http.DELETE",    "params": ["str", "FuncDecl"]},
-    {"kind": "route", "name": "http.PATCH",     "params": ["str", "FuncDecl"]},
+    {"kind": "func", "name": "http.param",      "params": ["req", "str"],                          "return": "str!httprouteerr"},
+    {"kind": "func", "name": "http.header",     "params": ["req", "str"],                          "return": "str!httprouteerr"},
+    {"kind": "func", "name": "http.reqpath",    "params": ["i64"],                                 "return": "str",
+     "note": "extract path from raw req pointer in handler"},
+    {"kind": "func", "name": "http.reqmethod",  "params": ["i64"],                                 "return": "str",
+     "note": "extract HTTP method from raw req pointer in handler"},
+    {"kind": "func", "name": "http.reqbody",    "params": ["i64"],                                 "return": "str",
+     "note": "extract body from raw req pointer in handler"},
+    {"kind": "func", "name": "http.reqparam",   "params": ["i64", "str"],                          "return": "str",
+     "note": "look up URL parameter by name from raw req pointer"},
+    {"kind": "func", "name": "http.reqheader",  "params": ["i64", "str"],                          "return": "str",
+     "note": "look up header by name from raw req pointer (case-insensitive)"},
+    {"kind": "func", "name": "http.res.ok",     "params": ["str"],                                 "return": "res"},
+    {"kind": "func", "name": "http.res.json",   "params": ["u16", "str"],                          "return": "res"},
+    {"kind": "func", "name": "http.res.bad",    "params": ["str"],                                 "return": "res"},
+    {"kind": "func", "name": "http.res.err",    "params": ["str"],                                 "return": "res"},
+    {"kind": "func", "name": "http.resok",      "params": ["i64"],                                 "return": "i64",
+     "note": "create 200 OK res from body pointer for handler dispatch"},
+    {"kind": "func", "name": "http.resjson",    "params": ["i64", "i64"],                          "return": "i64",
+     "note": "create JSON res from status and body pointer for handler dispatch"},
+    {"kind": "func", "name": "http.resbad",     "params": ["i64"],                                 "return": "i64",
+     "note": "create 400 bad request res from message pointer"},
+    {"kind": "func", "name": "http.reserr",     "params": ["i64"],                                 "return": "i64",
+     "note": "create 500 internal server error res from message pointer"},
+    {"kind": "route", "name": "http.get",       "params": ["str", "funcdecl"]},
+    {"kind": "route", "name": "http.post",      "params": ["str", "funcdecl"]},
+    {"kind": "route", "name": "http.put",       "params": ["str", "funcdecl"]},
+    {"kind": "route", "name": "http.delete",    "params": ["str", "funcdecl"]},
+    {"kind": "route", "name": "http.patch",     "params": ["str", "funcdecl"]},
     {"kind": "func", "name": "http.client",     "params": ["str"],                                 "return": "httpclient"},
     {"kind": "func", "name": "http.withproxy", "params": ["httpclient", "str"],                   "return": "httpclient"},
     {"kind": "func", "name": "http.get",        "params": ["httpclient", "str"],                   "return": "httpresp!httperr"},

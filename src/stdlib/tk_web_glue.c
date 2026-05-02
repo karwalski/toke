@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <string.h>
+#include <strings.h>
 
 /* ── f64↔i64 bitcast helpers (Story 7.5.2) ───────────────────────────── */
 /*
@@ -576,6 +577,80 @@ int64_t tk_http_res_json_new(int64_t status, int64_t body_ptr) {
     r->status       = (uint16_t)status;
     r->body         = (const char *)(intptr_t)body_ptr;
     r->headers.data = &g_json_ct_hdr;
+    r->headers.len  = 1;
+    return (int64_t)(intptr_t)r;
+}
+
+/*
+ * tk_http_req_param — look up a URL parameter by name from a Req pointer.
+ * Returns the value as const char * (i64), or empty string if not found.
+ */
+int64_t tk_http_req_param(int64_t req_ptr, int64_t name_ptr) {
+    if (!req_ptr || !name_ptr) return (int64_t)(intptr_t)"";
+    Req *r = (Req *)(intptr_t)req_ptr;
+    const char *name = (const char *)(intptr_t)name_ptr;
+    for (uint64_t i = 0; i < r->params.len; i++) {
+        if (r->params.data[i].key && strcmp(r->params.data[i].key, name) == 0) {
+            return (int64_t)(intptr_t)(r->params.data[i].val ? r->params.data[i].val : "");
+        }
+    }
+    return (int64_t)(intptr_t)"";
+}
+
+/*
+ * tk_http_req_header — look up a header by name from a Req pointer.
+ * Returns the value as const char * (i64), or empty string if not found.
+ */
+int64_t tk_http_req_header(int64_t req_ptr, int64_t name_ptr) {
+    if (!req_ptr || !name_ptr) return (int64_t)(intptr_t)"";
+    Req *r = (Req *)(intptr_t)req_ptr;
+    const char *name = (const char *)(intptr_t)name_ptr;
+    for (uint64_t i = 0; i < r->headers.len; i++) {
+        if (r->headers.data[i].key && strcasecmp(r->headers.data[i].key, name) == 0) {
+            return (int64_t)(intptr_t)(r->headers.data[i].val ? r->headers.data[i].val : "");
+        }
+    }
+    return (int64_t)(intptr_t)"";
+}
+
+/*
+ * tk_http_res_ok — create a 200 OK Res with text/html body.
+ * Returns Res pointer as i64.
+ */
+int64_t tk_http_res_ok(int64_t body_ptr) {
+    Res *r = (Res *)malloc(sizeof(Res));
+    if (!r) return 0;
+    r->status       = 200;
+    r->body         = (const char *)(intptr_t)body_ptr;
+    r->headers.data = &g_html_ct_hdr;
+    r->headers.len  = 1;
+    return (int64_t)(intptr_t)r;
+}
+
+/*
+ * tk_http_res_bad — create a 400 Bad Request Res.
+ * Returns Res pointer as i64.
+ */
+int64_t tk_http_res_bad(int64_t msg_ptr) {
+    Res *r = (Res *)malloc(sizeof(Res));
+    if (!r) return 0;
+    r->status       = 400;
+    r->body         = (const char *)(intptr_t)msg_ptr;
+    r->headers.data = &g_text_ct_hdr;
+    r->headers.len  = 1;
+    return (int64_t)(intptr_t)r;
+}
+
+/*
+ * tk_http_res_err — create a 500 Internal Server Error Res.
+ * Returns Res pointer as i64.
+ */
+int64_t tk_http_res_err(int64_t msg_ptr) {
+    Res *r = (Res *)malloc(sizeof(Res));
+    if (!r) return 0;
+    r->status       = 500;
+    r->body         = (const char *)(intptr_t)msg_ptr;
+    r->headers.data = &g_text_ct_hdr;
     r->headers.len  = 1;
     return (int64_t)(intptr_t)r;
 }

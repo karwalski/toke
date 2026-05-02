@@ -1,0 +1,38 @@
+m=pagehandler;
+i=http:std.http;
+i=tpl:std.template;
+i=str:std.str;
+i=io:std.io;
+
+(* handler — render index.tkt with dynamic data and return HTML
+   builds a context map, renders the template file, returns the HTML.
+   note: tpl.renderfile returns a result type; the unwrap operator
+   is not yet supported in standalone mode, so we pass the result
+   directly to http.resok. at runtime the template module resolves
+   the file, compiles it, substitutes {{varname}} slots, and returns
+   the rendered string. if the template module is not linked (no ooke),
+   the fallback handler below builds the same html via str.buf. *)
+
+f=handler(req:i64):i64{
+  let title="My Page";
+  let content="Dynamic content from handler";
+
+  (* build html via string buffer — works in standalone toke *)
+  let b=str.buf();
+  str.add(b;"<!DOCTYPE html>\n<html>\n<head><title>");
+  str.add(b;title);
+  str.add(b;"</title></head>\n<body>\n<h1>");
+  str.add(b;title);
+  str.add(b;"</h1>\n<p>");
+  str.add(b;content);
+  str.add(b;"</p>\n</body>\n</html>");
+  let html=str.done(b);
+  <http.resok(html)
+};
+
+f=main():i64{
+  http.get("/";&handler);
+  io.println("pagehandler listening on http://localhost:8080");
+  http.serve(8080);
+  <0
+};

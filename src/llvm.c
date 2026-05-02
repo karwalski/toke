@@ -1153,8 +1153,13 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         if (!strcmp(method, "reqpath"))        return "tk_http_req_path";
         if (!strcmp(method, "reqmethod"))      return "tk_http_req_method";
         if (!strcmp(method, "reqbody"))        return "tk_http_req_body";
+        if (!strcmp(method, "reqparam"))       return "tk_http_req_param";
+        if (!strcmp(method, "reqheader"))      return "tk_http_req_header";
         if (!strcmp(method, "resnew"))         return "tk_http_res_new";
         if (!strcmp(method, "resjson"))        return "tk_http_res_json_new";
+        if (!strcmp(method, "resok"))          return "tk_http_res_ok";
+        if (!strcmp(method, "resbad"))         return "tk_http_res_bad";
+        if (!strcmp(method, "reserr"))         return "tk_http_res_err";
         if (!strcmp(method, "post"))           return "tk_http_post_handler";
         if (!strcmp(method, "put"))            return "tk_http_put_handler";
         if (!strcmp(method, "delete"))         return "tk_http_delete_handler";
@@ -1959,7 +1964,9 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_http_post_handler", "tk_http_put_handler",
                         "tk_http_delete_handler", "tk_http_patch_handler",
                         "tk_http_req_path", "tk_http_req_method", "tk_http_req_body",
+                        "tk_http_req_param", "tk_http_req_header",
                         "tk_http_res_new", "tk_http_res_json_new",
+                        "tk_http_res_ok", "tk_http_res_bad", "tk_http_res_err",
                         "tk_http_serve_staticdir_w",
                         "tk_http_serve", "tk_http_servetls", "tk_http_serveworkers_w",
                         "tk_http_vhost", "tk_http_servevhosts", "tk_http_servevhoststls",
@@ -3790,8 +3797,13 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fputs("declare i64 @tk_http_req_path(i64)\n", f);
     fputs("declare i64 @tk_http_req_method(i64)\n", f);
     fputs("declare i64 @tk_http_req_body(i64)\n", f);
+    fputs("declare i64 @tk_http_req_param(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_req_header(i64, i64)\n", f);
     fputs("declare i64 @tk_http_res_new(i64, i64)\n", f);
     fputs("declare i64 @tk_http_res_json_new(i64, i64)\n", f);
+    fputs("declare i64 @tk_http_res_ok(i64)\n", f);
+    fputs("declare i64 @tk_http_res_bad(i64)\n", f);
+    fputs("declare i64 @tk_http_res_err(i64)\n", f);
     fputs("declare i64 @tk_http_post_echo(i64)\n", f);
     fputs("declare i64 @tk_http_post_static(i64, i64)\n", f);
     fputs("declare i64 @tk_http_post_json(i64, i64)\n", f);

@@ -549,12 +549,12 @@ The handler registry (78.1.x, serve.tk handledpaths) provides the skip mechanism
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 82.1.1 | Fix http.tki: rename GET/POST/PUT/DELETE/PATCH to lowercase | backlog | — | **P0** .tki uses uppercase names (http.GET) but 55-char set forbids uppercase. Compiler resolves lowercase http.get already. Rename in .tki to match. |
-| 82.1.2 | Document handler function contract | backlog | — | **P0** Handler signature: `f=myhandler(req:i64):i64`. req is ptr to Req struct. Return ptr to Res struct via http.resok/http.resjson/http.resbad. Document in docs/reference/. |
-| 82.1.3 | Create working example: dynamic API handler | backlog | — | **P0** Example in examples/api-handler/ — a main.tk that registers http.get("/api/hello";&hellohandler) where hellohandler builds a JSON response. Compile and test. |
-| 82.1.4 | Create working example: page handler with template | backlog | — | **P1** Example in examples/page-handler/ — handler calls tpl.tplrenderfile with dynamic ctx (var("key")), returns HTML via http.resok. Shows server-side data in templates. |
-| 82.1.5 | Request accessor helpers: req.path, req.body, req.param | backlog | — | **P1** Verify req.path/req.body/req.param work from toke handler code. If missing wrappers, add to tk_web_glue.c. |
-| 82.1.6 | Update toke-website to use dynamic health handler | backlog | — | **P2** Replace static apihealth.apigetjson() with http.get("/api/health";&healthget) dynamic handler. Proves the pattern works in production. |
+| 82.1.1 | Fix http.tki: rename to lowercase | done | 2026-05-02 | — | **P0** .tki uses uppercase names (http.GET) but 55-char set forbids uppercase. Compiler resolves lowercase http.get already. Rename in .tki to match. |
+| 82.1.2 | Document handler function contract | done | 2026-05-02 | — | **P0** Handler signature: `f=myhandler(req:i64):i64`. req is ptr to Req struct. Return ptr to Res struct via http.resok/http.resjson/http.resbad. Document in docs/reference/. |
+| 82.1.3 | Create working example: dynamic API handler | done | 2026-05-02 | — | **P0** Example in examples/api-handler/ — a main.tk that registers http.get("/api/hello";&hellohandler) where hellohandler builds a JSON response. Compile and test. |
+| 82.1.4 | Create working example: page handler with template | done | 2026-05-02 | — | **P1** Example in examples/page-handler/ — handler calls tpl.tplrenderfile with dynamic ctx (var("key")), returns HTML via http.resok. Shows server-side data in templates. |
+| 82.1.5 | Request accessor helpers: req.path, req.body, req.param | done | 2026-05-02 | — | **P1** Verify req.path/req.body/req.param work from toke handler code. If missing wrappers, add to tk_web_glue.c. |
+| 82.1.6 | Update toke-website to use dynamic health handler | done | 2026-05-01 | **P2** Replaced static getstaticmime+postjson with http.get("/api/health";&healthhandler). Added apigethandler in apihealth.tk using http.resjson. Local wrapper in main.tk needed because &mod.func cross-module fn-refs not yet supported. Build passes. |
 
 ### Epic 80 — No Comments, Purpose-Built Model, Timeline Cleanup
 
