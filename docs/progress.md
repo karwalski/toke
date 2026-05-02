@@ -572,6 +572,29 @@ When the compiler encounters syntax from other languages (Python, Go, JS, Rust, 
 | 83.1.4 | Detect Rust patterns and suggest toke equivalents | backlog | — | **P2** `fn` → `f=`, `let mut` → `let x=mut.v`, `match` → `mt`, `impl` → not needed, `&` borrow → not needed (arena), `::` → `.`, `Result<T,E>` → `T!$err`, `Ok(v)/Err(e)` → `$ok/$err` |
 | 83.1.5 | Detect C patterns and suggest toke equivalents | backlog | — | **P2** `#include` → `i=`, `int main()` → `f=main():i64`, `printf` → `io.println`, `->` → `.`, `NULL` → `$none`, `switch/case` → `mt`, `//` comment → remove |
 
+
+### Epic 84 — Diagnostic Quality: Machine-Readable, Multi-Error, Repair-Loop Ready
+
+All compiler outputs must produce structured JSON diagnostics suitable for automated LLM repair loops.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 84.1.1 | Audit all lexer diagnostics for structure and fix hints | backlog | — | **P0** Every E1xxx must have error code, line/col, span, offending token text, and fix field with toke equivalent. |
+| 84.1.2 | Audit all parser diagnostics for structure and fix hints | backlog | — | **P0** E2002 show found+expected. E2003 suggest insertion point. E2004 show opening delimiter location. |
+| 84.1.3 | Audit name resolution diagnostics | backlog | — | **P1** E3011 suggest similar names (Levenshtein). E3012 show previous declaration location. |
+| 84.1.4 | Audit type checker diagnostics | backlog | — | **P1** Type mismatch show expected vs actual. Error propagation show type chain. |
+| 84.1.5 | Audit codegen/linker diagnostics | backlog | — | **P2** Missing stdlib suggest correct import. Unresolved symbol show which module provides it. |
+| 84.1.6 | Multi-error recovery in lexer | backlog | — | **P0** Continue after errors, report all lex errors in one pass. LLM gets ALL errors not one-at-a-time. |
+| 84.1.7 | Multi-error recovery in parser | backlog | — | **P0** After sync(), resume parsing. Collect up to 20 errors before stopping. |
+| 84.1.8 | Multi-error recovery in name resolver | backlog | — | **P1** Continue after E3011/E3012, collect all unresolved names. |
+| 84.1.9 | Multi-error recovery in type checker | backlog | — | **P1** Continue after type mismatches, collect all per function. |
+| 84.1.10 | Cross-language pattern detection (Python) | backlog | — | **P1** def/return/import/class/elif/for-in/print → toke equivalents in fix field. |
+| 84.1.11 | Cross-language pattern detection (Go/JS/Rust/C) | backlog | — | **P2** func/package/:=/function/const/===/#include/printf → toke equivalents. |
+| 84.1.12 | JSON diagnostic schema validation | backlog | — | **P1** JSON Schema for diagnostic format + test validating all emitted diagnostics. |
+| 84.1.13 | Populate file path in diagnostic output | backlog | — | **P0** "file":"" is always empty. Fill with actual source path for repair loop. |
+| 84.1.14 | Add source_line field to diagnostics | backlog | — | **P1** Include actual source line text so LLM sees context without reading file. |
+| 84.1.15 | Human-readable --diag-text improvements | backlog | — | **P2** Show source line, caret at error column, message, fix suggestion (Rust/Clang style). |
+
 ### Epic 80 — No Comments, Purpose-Built Model, Timeline Cleanup
 
 | ID | Story | Status | Date | Notes |
