@@ -175,6 +175,24 @@ static int  teq(Parser *p, Token *t, const char *s) { int l=(int)strlen(s); retu
  */
 static void eerr(Parser *p, int code, Token *t, const char *msg) { p->errs++; diag_emit(DIAG_ERROR,code,t->start,t->line,t->col,msg,"fix",NULL); }
 
+/* eerr_got — emit error with the actual token text included in the message. */
+static void eerr_got(Parser *p, int code, Token *t, const char *msg) {
+    char buf[256], tok_text[64];
+    int tlen = t->len;
+    if (tlen > 0 && tlen < (int)sizeof(tok_text) - 1 && p->src) {
+        memcpy(tok_text, p->src + t->start, (size_t)tlen);
+        tok_text[tlen] = '\0';
+    } else {
+        tok_text[0] = '\0';
+    }
+    if (tok_text[0])
+        snprintf(buf, sizeof buf, "%s, got '%s'", msg, tok_text);
+    else
+        snprintf(buf, sizeof buf, "%s", msg);
+    p->errs++;
+    diag_emit(DIAG_ERROR, code, t->start, t->line, t->col, buf, "fix", NULL);
+}
+
 /*
  * ewarn — emit a warning diagnostic (does not increment error counter).
  *
@@ -222,8 +240,14 @@ static void opt_semi(Parser *p) {
  * the error message was simplified).
  */
 static Token *xp(Parser *p, TokenKind k, const char *w) {
-    (void)w; if(peek(p)==k) return adv(p);
-    eerr(p, peek(p)==TK_EOF?E2004:E2002, cur(p), "unexpected token"); return NULL;
+    if(peek(p)==k) return adv(p);
+    char msg[128];
+    snprintf(msg, sizeof msg, "expected %s", w);
+    if (peek(p)==TK_EOF)
+        eerr(p, E2004, cur(p), msg);
+    else
+        eerr_got(p, E2002, cur(p), msg);
+    return NULL;
 }
 
 /* Forward declarations — these three functions participate in mutual
@@ -351,7 +375,7 @@ static Node *parse_literal(Parser *p) {
     Token *t=cur(p); NodeKind k;
     switch(peek(p)){case TK_INT_LIT:k=NODE_INT_LIT;break;case TK_FLOAT_LIT:k=NODE_FLOAT_LIT;break;
     case TK_STR_LIT:k=NODE_STR_LIT;break;case TK_BOOL_LIT:k=NODE_BOOL_LIT;break;
-    default:eerr(p,E2002,t,"unexpected token");return NULL;}
+    default:eerr_got(p,E2002,t,"unexpected token in expression");return NULL;}
     adv(p); return mk(p,k,t);
 }
 
@@ -1049,7 +1073,7 @@ static Node *parse_stmt(Parser *p) {
             ch(p,n,parse_stmt_list(p,t));
             if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
             return n;}
-        eerr(p,E2002,t,"unexpected token");sync(p);return NULL;
+        eerr_got(p,E2002,t,"unexpected token at statement level");sync(p);return NULL;
     case TK_IDENT:
         check_stmt_keyword_prefix(p, t);
         /* AssignStmt: IDENT '=' Expr ';' — one-token ahead check on '=' */
@@ -1104,7 +1128,7 @@ static Node *parse_stmt_list(Parser *p, Token *ref) {
  * allows uppercase module names like std.Http; names.c normalises them. */
 static Token *xp_seg(Parser *p) {
     if (peek(p)==TK_IDENT || peek(p)==TK_TYPE_IDENT) return adv(p);
-    eerr(p, peek(p)==TK_EOF?E2004:E2002, cur(p), "unexpected token"); return NULL;
+    eerr_got(p, peek(p)==TK_EOF?E2004:E2002, cur(p), "unexpected token in type declaration"); return NULL;
 }
 static Node *parse_module_path(Parser *p) {
     Token *t=cur(p); if(!xp_seg(p)) return NULL;
@@ -1208,7 +1232,7 @@ static Node *parse_field_list(Parser *p) {
         Token *ft=cur(p); TokenKind fk=peek(p);
         /* Default mode: $variant field name in sum type (e.g. $notfound:u64) */
         if(fk==TK_DOLLAR){adv(p);ft=cur(p);fk=peek(p);}
-        if(fk!=TK_IDENT&&fk!=TK_TYPE_IDENT){ eerr(p,E2002,ft,"unexpected token");break;}
+        if(fk!=TK_IDENT&&fk!=TK_TYPE_IDENT){ eerr_got(p,E2002,ft,"expected field name");break;}
         /* Check for duplicate field name */
         for(int i=0;i<seen_count;i++){
             if(seen_lens[i]==ft->len&&memcmp(p->src+seen_starts[i],p->src+ft->start,(size_t)ft->len)==0){
