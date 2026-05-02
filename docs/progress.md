@@ -543,6 +543,19 @@ Audit of every non-alphanumeric character. Produced researcher-ready report. Led
 | 79.1.10 | Repo cleanup: consolidate docs back into toke | done | 2026-05-02 | ~/tk/docs/ merged into toke/docs/ |
 | 79.1.11 | Fix toke --compile delegation | done | 2026-05-02 | Binary renamed tkc→toke, tkc symlink for compat |
 
+### Epic 82 — Dynamic Page Handlers in ooke
+
+The handler registry (78.1.x, serve.tk handledpaths) provides the skip mechanism, but end-to-end dynamic handlers need additional work. `http.get(path;&handler)` compiles and the C runtime dispatches correctly, but no project has a working dynamic handler yet.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 82.1.1 | Fix http.tki: rename GET/POST/PUT/DELETE/PATCH to lowercase | backlog | — | **P0** .tki uses uppercase names (http.GET) but 55-char set forbids uppercase. Compiler resolves lowercase http.get already. Rename in .tki to match. |
+| 82.1.2 | Document handler function contract | backlog | — | **P0** Handler signature: `f=myhandler(req:i64):i64`. req is ptr to Req struct. Return ptr to Res struct via http.resok/http.resjson/http.resbad. Document in docs/reference/. |
+| 82.1.3 | Create working example: dynamic API handler | backlog | — | **P0** Example in examples/api-handler/ — a main.tk that registers http.get("/api/hello";&hellohandler) where hellohandler builds a JSON response. Compile and test. |
+| 82.1.4 | Create working example: page handler with template | backlog | — | **P1** Example in examples/page-handler/ — handler calls tpl.tplrenderfile with dynamic ctx (var("key")), returns HTML via http.resok. Shows server-side data in templates. |
+| 82.1.5 | Request accessor helpers: req.path, req.body, req.param | backlog | — | **P1** Verify req.path/req.body/req.param work from toke handler code. If missing wrappers, add to tk_web_glue.c. |
+| 82.1.6 | Update toke-website to use dynamic health handler | backlog | — | **P2** Replace static apihealth.apigetjson() with http.get("/api/health";&healthget) dynamic handler. Proves the pattern works in production. |
+
 ### Epic 80 — No Comments, Purpose-Built Model, Timeline Cleanup
 
 | ID | Story | Status | Date | Notes |
