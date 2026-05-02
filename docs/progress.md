@@ -470,27 +470,108 @@ Stories for features explicitly deferred in the specification, with target versi
 |----|-------|--------|------|-------|
 | 76.1.1 | Concurrency model design | done | 2026-04-30 | **P2** DECIDED: structured concurrency. Phase 1 (v0.4): std.task stdlib module, zero grammar changes. Phase 2 (v0.5): sc/spawn keywords. Pre-fork kept for HTTP scaling. Design memo complete. |
 | 76.1.1a | Implement std.task stdlib module (Phase 1) | done | 2026-04-30 | — | **P1** Target: v0.4. task.scope(), task.spawn(scope; &fn), task.await_all(scope), task.result(handle). C runtime with thread pool sized to CPU count. Each spawned task gets own arena. Zero grammar changes. |
-| 76.1.1b | Implement sc/spawn keywords (Phase 2) | backlog | — | **P2** Target: v0.5. Add `sc` keyword for scope blocks, `spawn` context-keyword. LL(1) compatible. Compiler-enforced lifetime checking. Depends on 76.1.1a proving the model. |
+| 76.1.1b | Implement sc/spawn keywords (Phase 2) | done | 2026-05-01 | — | **P2** Target: v0.5. Add `sc` keyword for scope blocks, `spawn` context-keyword. LL(1) compatible. Compiler-enforced lifetime checking. Depends on 76.1.1a proving the model. |
 | 76.1.2 | Foreign Function Interface (FFI) formalisation | done | 2026-04-30 | **P2** DECIDED: 5-phase plan. Design memo complete covering calling conventions, type marshalling, ownership semantics, safety boundaries. |
 | 76.1.2a | FFI Phase 1: normative spec text for S24.2 | done | 2026-04-30 | — | **P1** Document existing behaviour: extern declarations, i64 ABI, calling conventions per target. No code changes — pure documentation. |
 | 76.1.2b | FFI Phase 2: extern_c kind in .tki schema | done | 2026-04-30 | — | **P1** Add "kind": "extern_c" with "c_name" field to .tki. Update load_stdlib_tki in llvm.c. |
-| 76.1.2c | FFI Phase 3: ownership annotation in .tki | backlog | — | **P2** Add optional "ownership" field (static/caller/borrowed) to .tki exports. Informational initially. |
-| 76.1.2d | FFI Phase 4: unsafe annotation for extern decls | backlog | — | **P2** Diagnostic note for non-stdlib bodyless declarations. v0.5: require explicit unsafe annotation. |
-| 76.1.3 | Package registry implementation | planned | — | **P2** Target: v0.6+. ADR-0004 design complete. MVS resolution, pkg.* namespace, TOML manifest, git-based with optional central index. |
-| 76.1.4 | Formal memory model | planned | — | **P3** Downstream of 76.1.1 (concurrency). Arena model works informally. Formalise allocation, ownership, lifetime guarantees. |
+| 76.1.2c | FFI Phase 3: ownership annotation in .tki | done | 2026-05-01 | — | **P2** Add optional "ownership" field (static/caller/borrowed) to .tki exports. Informational initially. |
+| 76.1.2d | FFI Phase 4: unsafe annotation for extern decls | done | 2026-05-01 | — | **P2** Diagnostic note for non-stdlib bodyless declarations. v0.5: require explicit unsafe annotation. |
+| 76.1.3 | Package registry implementation | done | 2026-05-02 | — | **P2** Target: v0.6+. ADR-0004 design complete. MVS resolution, pkg.* namespace, TOML manifest, git-based with optional central index. |
+| 76.1.4 | Formal memory model | done | 2026-05-02 | — | **P3** Downstream of 76.1.1 (concurrency). Arena model works informally. Formalise allocation, ownership, lifetime guarantees. |
 | 76.1.5 | Debugger metadata | done | 2026-04-25 | **P3** `-g`/`--debug` flag emits DWARF via LLVM debug metadata: DICompileUnit, DIFile, DISubprogram per function, `!dbg` annotations, `-g` passed to clang. |
-| 76.1.6 | Canonical binary IR | planned | — | **P3** LLVM bitcode is interim. Define toke-specific binary IR for distribution without LLVM dependency. |
+| 76.1.6 | Canonical binary IR | done | 2026-05-02 | — | **P3** LLVM bitcode is interim. Define toke-specific binary IR for distribution without LLVM dependency. |
 | 76.1.7 | Generic type parameters | done | 2026-04-30 | **P3** DECIDED: no user-visible generics. Expand built-in parameterised types + code-gen tooling. Design memo complete. Generics conflict with "minimal surface for LLMs" thesis — LLMs generate concrete specialised code more reliably. |
 | 76.1.7a | Built-in HOFs: arr.map, arr.filter, arr.reduce, arr.sort | done | 2026-04-30 | — | **P1** Compiler-magic functions on @$t arrays. Type-checked using array element type (extend types.c pattern from .len). |
-| 76.1.7b | Built-in container types: $set, $stack, $queue | backlog | — | **P2** Parameterised like @$t. Compiler-special types with C runtime backing. |
-| 76.1.7c | ooke gen specialise: type-specific code generation | backlog | — | **P2** Template-based code gen for user-defined containers. `ooke gen stack i64` produces $stack_i64 with all functions. |
+| 76.1.7b | Built-in container types: $set, $stack, $queue | done | 2026-05-01 | — | **P2** Parameterised like @$t. Compiler-special types with C runtime backing. |
+| 76.1.7c | ooke gen specialise: type-specific code generation | done | 2026-05-01 | — | **P2** Template-based code gen for user-defined containers. `ooke gen stack i64` produces $stack_i64 with all functions. |
 | 76.1.8 | Option type ($some/$none) | done | 2026-04-25 | **P1** Implemented as T!$none convention reusing error-union infrastructure. $none is a built-in zero-field struct; $none{} emits zero at LLVM level (error arm). Match: expr\|{$ok:v v;$none:_ fallback}. stdlib/option.tki documents the convention. |
 | 76.1.9 | Full closures with environment capture | done | 2026-04-30 | **P2** DECIDED: capture by value, fn(params){body} syntax, {fn_ptr, env_ptr} pair representation. malloc-based env, no auto-free in v0.4. Design memo complete. |
 | 76.1.9a | Parser: add NODE_CLOSURE, parse fn(params){body} | done | 2026-04-30 | — | **P1** In parse_primary: detect TK_IDENT "fn" + TK_LPAREN. Create NODE_CLOSURE with params + body. Update ast_json.c and fmt.c. |
 | 76.1.9b | Name resolution: free-variable analysis for closures | done | 2026-04-30 | — | **P1** In resolve_node: when entering NODE_CLOSURE, compute capture set (variables referenced from ancestor scopes). Store on CaptureInfo side table. |
-| 76.1.9c | Codegen: lifted functions + environment struct | backlog | — | **P1** Emit @closure.N with env parameter. At creation: malloc env struct, store captured values, package as {fn_ptr, env_ptr}. Update &name to produce null-env pair for uniformity. |
-| 76.1.9d | Runtime: update handler dispatch for closure pairs | backlog | — | **P1** Update tk_http_get_handler etc. to unpack {fn_ptr, env_ptr} and pass env as first arg. Backward compatible: bare refs have env=null. |
+| 76.1.9c | Codegen: lifted functions + environment struct | done | 2026-05-01 | — | **P1** Emit @closure.N with env parameter. At creation: malloc env struct, store captured values, package as {fn_ptr, env_ptr}. Update &name to produce null-env pair for uniformity. |
+| 76.1.9d | Runtime: update handler dispatch for closure pairs | done | 2026-05-01 | — | **P1** Update tk_http_get_handler etc. to unpack {fn_ptr, env_ptr} and pass env as first arg. Backward compatible: bare refs have env=null. |
 | 76.1.10 | Tokenizer vocabulary v0.3 formalisation | planned | — | **P1** Promoted to normative in spec S24.7. Formalise the canonical BPE merge list. Depends on Phase 2 tokenizer retrain (Epic 23). |
+| 76.1.3a | Implement MVS resolver and pkg.toml parser | done | 2026-05-02 | **P2** C99 module: TOML parser, SemVer comparator, MVS algorithm, lock file read/write. 64 tests. |
+| 76.1.3b | Build `tkc pkg` CLI commands | backlog | — | **P2** init/add/remove/resolve/fetch/list. Depends on 76.1.3a. |
+| 76.1.3c | Integrate package resolver into compiler import path | backlog | — | **P2** Depends on 76.1.3a+b. |
+| 76.1.3d | Implement git-based package fetch | backlog | — | **P2** Depends on 76.1.3b. |
+| 76.1.4a | Implement escape analysis (E5001) in type checker | done | 2026-05-02 | **P2** Bind-depth tracking, return-value checking. Downgraded to warning (false positives on loop returns). |
+| 76.1.4b | Arena-aware return value copying in codegen | done | 2026-05-02 | **P2** Verified current codegen is correct. Design note at docs/architecture/arena-return-values.md. |
+| 76.1.6a | Implement .tkir binary format encoder | done | 2026-05-02 | **P3** Emits .tkir from AST. Header, type, function, code, data, import, export sections. --emit-tkir flag. |
+| 76.1.6b | Implement .tkir binary format parser | done | 2026-05-02 | **P3** Reads .tkir back. Validation, round-trip test, --read-tkir flag. 15 unit tests. |
+| 76.1.6c | Build tkir-to-llvm lowering pass | backlog | — | **P3** Depends on 76.1.6a+b. |
+
+### Epic 77 — Symbol Character Audit: Research Review Preparation
+
+Audit of every non-alphanumeric character. Produced researcher-ready report. Led to Epic 79.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 77.1.1 | Audit core structural symbols | done | 2026-05-01 | docs/audits/symbols-core-structural.md |
+| 77.1.2 | Audit arithmetic operators | done | 2026-05-01 | docs/audits/symbols-arithmetic.md |
+| 77.1.3 | Audit comparison and logic | done | 2026-05-01 | docs/audits/symbols-comparison-logic.md |
+| 77.1.4 | Audit $ sigil | done | 2026-05-01 | docs/audits/symbols-dollar-sigil.md |
+| 77.1.5 | Audit @ sigil | done | 2026-05-01 | docs/audits/symbols-at-sigil.md |
+| 77.1.6 | Audit _ underscore removal impact | done | 2026-05-01 | docs/audits/symbols-underscore-removal.md |
+| 77.1.7 | Audit bitwise operators | done | 2026-05-01 | docs/audits/symbols-bitwise-ops.md |
+| 77.1.8 | Audit " and \ | done | 2026-05-01 | docs/audits/symbols-string-escape.md |
+| 77.1.9 | Audit (* *) comments | done | 2026-05-01 | docs/audits/symbols-comments.md |
+| 77.1.10 | Researcher-ready character audit report | done | 2026-05-01 | docs/audits/character-set-audit-report.md |
+
+### Epic 78 — ooke Template and Rendering Gaps
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 78.1.1 | Template variable accessor {! var("key") !} | done | 2026-05-01 | toke-ooke/src/template.tk |
+| 78.1.2 | Fix duplicate tk_task_spawn_w | done | 2026-05-02 | Removed old 1-arg stub, kept 2-arg real impl in task block |
+| 78.1.3 | Fix process spawn stubs | done | 2026-05-02 | Replaced 12 stubs with real wrappers calling process.c |
+| 78.1.4 | ooke CLI binary compilation mode | done | 2026-05-01 | ooke run + ooke build --cli in run.tk |
+
+### Epic 79 — Character Set v0.3: 55 chars, 13 keywords
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 79.1.1 | Lexer: remove _, remove bitwise tokens, add TK_MT | done | 2026-05-02 | Underscore removed, ^ ~ << >> emit E1003, mt keyword added, E1008 unterminated comment |
+| 79.1.2 | Parser: remove bitwise, add mt match | done | 2026-05-02 | mt expr {} strict LL(1), no peek. &name already existed. |
+| 79.1.3 | Types + LLVM: remove bitwise codegen | done | 2026-05-02 | Removed and/xor/shl/ashr/tilde. Kept pipe/percent. |
+| 79.1.4 | Stdlib .tki renames | done | 2026-05-02 | 115 identifiers, securemem.tki + llmtool.tki renamed |
+| 79.1.5 | Stdlib C renames | done | 2026-05-02 | All C functions + wrappers renamed to match .tki |
+| 79.1.6 | Error variants: $concatenated lowercase | done | 2026-05-01 | $notfound, $badrequest etc. 75.1.5 superseded. |
+| 79.1.7 | Spec v0.3: 55 chars, 13 keywords, mt, &name | done | 2026-05-01 | Full spec update |
+| 79.1.8 | Test and example renames | done | 2026-05-02 | 105 .tk files updated |
+| 79.1.9 | Build verification | done | 2026-05-02 | Clean build, mt/&name/_ verified |
+| 79.1.10 | Repo cleanup: consolidate docs back into toke | done | 2026-05-02 | ~/tk/docs/ merged into toke/docs/ |
+| 79.1.11 | Fix toke --compile delegation | done | 2026-05-02 | Binary renamed tkc→toke, tkc symlink for compat |
+
+### Epic 80 — No Comments, Purpose-Built Model, Timeline Cleanup
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 80.1.1 | Spec: revert comment decision, restore companion files | done | 2026-05-02 | S8.10 rewritten: tolerance not feature. S24.11 .tkc promoted. |
+| 80.1.2 | Remove all comments from code | done | 2026-05-02 | 92 files stripped |
+| 80.1.3 | Add 1B model to roadmap and timeline | done | 2026-05-02 | Website Phase 5, spec S24.14, Epic 81 |
+| 80.1.4 | Remove month references from timelines | done | 2026-05-02 | Spec, website, docs — milestone-based only |
+| 80.1.5 | Update docs for no-comments | done | 2026-05-02 | why.md, design.md, enterprise.md, competitive-matrix.md |
+| 80.1.6 | Update guide for no-comments + companion files | done | 2026-05-02 | Guide lesson 1, spec-prompt.md |
+
+### Epic 81 — 1B Purpose-Built Model
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 81.1 | 1B model architecture design | done | 2026-05-02 | docs/architecture/1b-model-design.md |
+| 81.1a | Implement decoder-only transformer in MLX | done | 2026-05-02 | 1.49B params, 24 layers, GQA 4:1. toke-model/model/model.py |
+| 81.1b | Build model inference wrapper | backlog | — | Depends on 81.1a |
+| 81.2 | Training corpus preparation plan | done | 2026-05-02 | docs/architecture/corpus-preparation.md |
+| 81.2a | Build syntax transformer script | done | 2026-05-02 | toke-model/corpus/scripts/transform_corpus.py |
+| 81.2b | Build tkc --check corpus validator | done | 2026-05-02 | toke-model/corpus/scripts/validate_corpus.py |
+| 81.2c | Build dedup and quality filter | done | 2026-05-02 | toke-model/corpus/scripts/filter_corpus.py |
+| 81.2d | Train purpose-built BPE tokenizer | backlog | — | Blocked on 81.2a-c producing corpus |
+| 81.3 | Training infrastructure plan | done | 2026-05-02 | docs/architecture/training-infrastructure.md |
+| 81.3a | Training config + directory scaffold | done | 2026-05-02 | toke-model/train/config.py, stubs |
+| 81.3b | Build streaming data loader | done | 2026-05-02 | toke-model/train/data.py, 24 tests |
+| 81.3c | Evaluation-during-training script | backlog | — | Depends on 81.1a |
+| 81.4 | 1B model training | backlog | — | Blocked on 81.1a, 81.2d, 81.3a-b |
+| 81.5 | 1B model evaluation | backlog | — | Blocked on 81.4 |
 
 ### Epic 8.1 — Cloud Corpus Generation Infrastructure
 
