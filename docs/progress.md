@@ -557,6 +557,20 @@ The handler registry (78.1.x, serve.tk handledpaths) provides the skip mechanism
 | 82.1.6 | Update toke-website to use dynamic health handler | done | 2026-05-01 | **P2** Replaced static getstaticmime+postjson with http.get("/api/health";&healthhandler). Added apigethandler in apihealth.tk using http.resjson. Local wrapper in main.tk needed because &mod.func cross-module fn-refs not yet supported. Build passes. |
 | 82.2.1 | ooke build-time handler auto-registration | done | 2026-05-02 | **P0** gen_handlers.sh + compiler cross-module .get() fix in NODE_INDEX_EXPR codegen. |
 | 82.2.2 | ooke compile: per-app binary with handlers | done | 2026-05-02 | **P0** gen_app_makefile.sh generates Makefile.serve + _handlers.tk + _serve_main.tk. `ooke compile` runs it. Each app gets its own binary with handlers. |
+| 82.3.1 | v0.2 syntax detection with --migrate hint | done | 2026-05-03 | **P0** Underscore in identifiers, \|{ match, ^ ~ << >> bitwise — all emit helpful errors with fix suggestions and `toke --migrate` pointer. |
+| 82.3.2 | --migrate: v0.2→v0.3 full migration | done | 2026-05-03 | **P0** migrate.c handles underscores, $snake_case, \|{→mt, comments, bitwise. Idempotent for partial migrations. Profile fallback (try default, then legacy). |
+
+### Epic 83 — Cross-Language Pattern Detection in Diagnostics
+
+When the compiler encounters syntax from other languages (Python, Go, JS, Rust, C) that doesn't compile in toke, emit a helpful diagnostic showing the toke equivalent. This helps LLMs during Phase 2 corpus generation and repair loops — the structured JSON diagnostic with a `fix` field teaches the model how to write toke.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 83.1.1 | Detect Python patterns and suggest toke equivalents | backlog | — | **P1** `def` → `f=`, `return` → `<`, `import x` → `i=x:std.x`, `class` → `t=`, `elif` → `el{if(`, `for x in` → `lp(`, `:` after if/for → `{`, indentation-only blocks → need `{}`, `#` comment → remove (no comments in v0.3), `True/False` → `true/false`, `print()` → `io.println()` |
+| 83.1.2 | Detect Go patterns and suggest toke equivalents | backlog | — | **P1** `func` → `f=`, `package` → `m=`, `if err != nil` → `!$err` or `mt`, `:=` → `let x=`, `fmt.Println` → `io.println`, `for` → `lp`, `var x int` → `let x=mut.0`, `nil` → `$none` |
+| 83.1.3 | Detect JavaScript/TypeScript patterns | backlog | — | **P1** `function` → `f=`, `const/let/var` → `let`, `===` → `=`, `!==` → `!(x=y)`, `=>` arrow → `fn(){}`, `console.log` → `io.println`, `null/undefined` → `$none`, `async/await` → `sc/spawn` |
+| 83.1.4 | Detect Rust patterns and suggest toke equivalents | backlog | — | **P2** `fn` → `f=`, `let mut` → `let x=mut.v`, `match` → `mt`, `impl` → not needed, `&` borrow → not needed (arena), `::` → `.`, `Result<T,E>` → `T!$err`, `Ok(v)/Err(e)` → `$ok/$err` |
+| 83.1.5 | Detect C patterns and suggest toke equivalents | backlog | — | **P2** `#include` → `i=`, `int main()` → `f=main():i64`, `printf` → `io.println`, `->` → `.`, `NULL` → `$none`, `switch/case` → `mt`, `//` comment → remove |
 
 ### Epic 80 — No Comments, Purpose-Built Model, Timeline Cleanup
 
