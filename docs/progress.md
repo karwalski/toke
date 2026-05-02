@@ -573,6 +573,25 @@ When the compiler encounters syntax from other languages (Python, Go, JS, Rust, 
 | 83.1.5 | Detect C patterns and suggest toke equivalents | backlog | — | **P2** `#include` → `i=`, `int main()` → `f=main():i64`, `printf` → `io.println`, `->` → `.`, `NULL` → `$none`, `switch/case` → `mt`, `//` comment → remove |
 
 
+
+### Epic 85 — Source Migration Tooling (v0.1/v0.2 → v0.3)
+
+The `toke --migrate` command converts legacy and partially migrated source to v0.3 syntax. This epic tracks the tool's development, known limitations, and downstream migration progress.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 85.1.1 | --migrate v0.1→v0.2 (original) | done | 2026-04-30 | Story 11.3.5. Uppercase keywords, PascalCase→$sigil. |
+| 85.1.2 | --migrate v0.2→v0.3: underscore, mt, comments, bitwise | done | 2026-05-03 | Story 82.3.2. Prepass architecture: strip comments/pub/UTF-8, re-lex, token transforms, text-level |{→mt. |
+| 85.1.3 | Fix @($type) orphan ) and primitive $ prefix | done | 2026-05-03 | @($type)→@$type paren stripping, [Type]→@type, I64→i64 (no $). |
+| 85.1.4 | Fix files without m= module declaration | done | 2026-05-03 | Insert stub m=migrated; for lex, strip from output. Handles blank lines, comments before first decl. |
+| 85.1.5 | Fix 5 loke migration issues (profile fallback, pub, UTF-8) | done | 2026-05-03 | Prepass runs before lex. main.c passes raw source directly. Profile fallback on any error. |
+| 85.1.6 | Fix last edge cases: m.$type, [], M= lowering | done | 2026-05-03 | m.$type→t=$type, []→@(), M=/F=/T=/I= lowered in prepass. |
+| 85.1.7 | Fix all 10 loke migration issues | done | 2026-05-03 | Comprehensive: @() underscore strip, }; postpass, [expr]→.get(expr), comma→semicolon. |
+| 85.1.8 | v0.2 syntax detection with --migrate hint | done | 2026-05-03 | Compiler rejects _ |{ ^ ~ << >> with helpful errors pointing to --migrate. |
+| 85.1.9 | Migrate ooke to v0.3 | done | 2026-05-03 | All src/*.tk and test/**/*.tk files migrated. Build clean. |
+| 85.1.10 | Migrate loke to v0.3 | in_progress | — | 559 files. Previous: 21% success. With all fixes: targeting 90%+. Remaining: unit enums, immutable reassignment need manual fixes. |
+| 85.1.11 | Known limitations documentation | backlog | — | **P1** Document: unit enum $foo; needs manual →$foo:i64;, let x=v; x=new needs manual →let x=mut.v, nested generics, trait-like patterns. |
+
 ### Epic 84 — Diagnostic Quality: Machine-Readable, Multi-Error, Repair-Loop Ready
 
 All compiler outputs must produce structured JSON diagnostics suitable for automated LLM repair loops.
