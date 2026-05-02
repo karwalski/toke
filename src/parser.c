@@ -798,10 +798,9 @@ static Node *parse_match_arm(Parser *p) {
  * parse_expr — parse a full expression (top of the precedence chain).
  *
  * Grammar:
- *   Expr = CompareExpr ('|' '{' MatchArm (';' MatchArm)* '}')?
+ *   Expr = 'mt' OrExpr '{' MatchArm (';' MatchArm)* '}' | OrExpr
  *
- * If no pipe '|' follows the comparison expression, returns the
- * comparison result directly.  Otherwise, constructs a match expression.
+ * Keyword-led match: strict LL(1), no lookahead needed.
  *
  * AST node: NODE_MATCH_STMT (despite the name, used for match expressions)
  *   children[0]   = scrutinee expression (the value being matched)
@@ -814,14 +813,19 @@ static Node *parse_match_arm(Parser *p) {
  * on unclosed '}'.
  */
 static Node *parse_expr(Parser *p) {
+    /* mt expr { arms } — keyword-led match (strict LL(1), no peek) */
+    if(peek(p)==TK_KW_MT){
+        Token *t=adv(p);
+        Node *scrutinee=parse_or(p);
+        Node *n=mk(p,NODE_MATCH_STMT,t); ch(p,n,scrutinee);
+        if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
+        ch(p,n,parse_match_arm(p));
+        while(peek(p)==TK_SEMICOLON){adv(p);if(peek(p)==TK_RBRACE)break;ch(p,n,parse_match_arm(p));}
+        if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+        return n;
+    }
     Node *l=parse_or(p);
-    if(peek(p)!=TK_PIPE) return l;
-    Token *t=adv(p); Node *n=mk(p,NODE_MATCH_STMT,t); ch(p,n,l);
-    if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
-    ch(p,n,parse_match_arm(p));
-    while(peek(p)==TK_SEMICOLON){adv(p);if(peek(p)==TK_RBRACE)break;ch(p,n,parse_match_arm(p));}
-    if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
-    return n;
+    return l;
 }
 
 /* ── Statements ───────────────────────────────────────────────────── */

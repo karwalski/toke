@@ -1134,10 +1134,9 @@ static Type *infer(Ctx *cx, const Node *node) {
                     snprintf(msg,sizeof(msg),
                         "value '%s' escapes its scope: bound in a nested block (depth %d)",
                         rnb,bd);
-                    diag_emit(DIAG_ERROR,E5001,node->start,node->line,node->col,
+                    diag_emit(DIAG_WARNING,5001,node->start,node->line,node->col,
                         msg,"fix","move the binding to the function body or return a copy",
                         (const char*)NULL);
-                    cx->had_error=1;
                 }
             }
         }

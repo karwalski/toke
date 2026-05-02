@@ -27,6 +27,7 @@ typedef enum {
     TK_KW_AS,
     TK_KW_RT,
     TK_KW_SC,
+    TK_KW_MT,
 
     /* Literals */
     TK_BOOL_LIT,

@@ -176,7 +176,7 @@ static const KwEntry KEYWORDS_LEGACY[] = {
     { "lp",    TK_KW_LP  }, { "br",    TK_KW_BR  },
     { "let",   TK_KW_LET }, { "mut",   TK_KW_MUT },
     { "as",    TK_KW_AS  }, { "rt",    TK_KW_RT  },
-    { "sc",    TK_KW_SC  },
+    { "sc",    TK_KW_SC  }, { "mt",    TK_KW_MT  },
     { "true",  TK_BOOL_LIT }, { "false", TK_BOOL_LIT },
 };
 #define KW_LEGACY_COUNT ((int)(sizeof(KEYWORDS_LEGACY) / sizeof(KEYWORDS_LEGACY[0])))
@@ -191,7 +191,7 @@ static const KwEntry KEYWORDS_DEFAULT[] = {
     { "lp",    TK_KW_LP  }, { "br",    TK_KW_BR  },
     { "let",   TK_KW_LET }, { "mut",   TK_KW_MUT },
     { "as",    TK_KW_AS  }, { "rt",    TK_KW_RT  },
-    { "sc",    TK_KW_SC  },
+    { "sc",    TK_KW_SC  }, { "mt",    TK_KW_MT  },
     { "true",  TK_BOOL_LIT }, { "false", TK_BOOL_LIT },
 };
 #define KW_DEFAULT_COUNT ((int)(sizeof(KEYWORDS_DEFAULT) / sizeof(KEYWORDS_DEFAULT[0])))

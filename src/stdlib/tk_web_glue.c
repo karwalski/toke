@@ -2227,9 +2227,7 @@ int64_t tk_config_load_w(int64_t path) { (void)path; return 0; }
 int64_t tk_config_get_w(int64_t cfg, int64_t key) { (void)cfg; (void)key; return 0; }
 int64_t tk_config_getint_w(int64_t cfg, int64_t key) { (void)cfg; (void)key; return 0; }
 
-/* task/async */
-int64_t tk_task_spawn_w(int64_t fn) { (void)fn; return 0; }
-int64_t tk_task_await_w(int64_t task) { (void)task; return 0; }
+/* task/async stubs removed — real implementations in Story 76.1.1a block below */
 
 /* uuid */
 int64_t tk_uuid_v4_w(void) { return 0; }
