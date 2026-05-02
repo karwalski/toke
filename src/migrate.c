@@ -52,11 +52,48 @@ static int is_primitive(const char *lower)
 
 /* ── Prepass: text-level cleanup BEFORE lexing ────────────────────── */
 
-static char *prepass(const char *src, int slen, int *out_len)
+static char *prepass(const char *src, int slen, int *out_len, int *inserted_module)
 {
-    char *o = malloc((size_t)(slen + 1));
+    /* Extra space for possible m=_migrate; insertion */
+    char *o = malloc((size_t)(slen + 32));
     if (!o) return NULL;
     int w = 0, in_str = 0;
+    *inserted_module = 0;
+
+    /* Check if source has a module declaration. Scan past comments/whitespace
+     * to find first non-whitespace content. If it's not m= or M=, insert one. */
+    {
+        int p = 0;
+        /* skip whitespace */
+        while (p < slen && (src[p]==' '||src[p]=='\t'||src[p]=='\n'||src[p]=='\r')) p++;
+        /* skip // comment */
+        while (p+1 < slen && src[p]=='/' && src[p+1]=='/') {
+            while (p < slen && src[p] != '\n') p++;
+            while (p < slen && (src[p]==' '||src[p]=='\t'||src[p]=='\n'||src[p]=='\r')) p++;
+        }
+        /* skip (* *) comment */
+        while (p+1 < slen && src[p]=='(' && src[p+1]=='*') {
+            int d=1; p+=2;
+            while (p < slen && d>0) {
+                if (p+1<slen && src[p]=='(' && src[p+1]=='*') {d++;p+=2;continue;}
+                if (p+1<slen && src[p]=='*' && src[p+1]==')') {d--;p+=2;continue;}
+                p++;
+            }
+            while (p < slen && (src[p]==' '||src[p]=='\t'||src[p]=='\n'||src[p]=='\r')) p++;
+        }
+        int has_module = 0;
+        if (p+1 < slen && ((src[p]=='m' || src[p]=='M') && src[p+1]=='=')) has_module = 1;
+        /* Also check for 'pub m=' */
+        if (!has_module && p+5 < slen && !strncmp(src+p, "pub m=", 6)) has_module = 1;
+        if (!has_module && p+5 < slen && !strncmp(src+p, "pub M=", 6)) has_module = 1;
+        if (!has_module) {
+            const char *stub = "m=migrated;\n";
+            int sl = (int)strlen(stub);
+            memcpy(o, stub, (size_t)sl);
+            w = sl;
+            *inserted_module = 1;
+        }
+    }
 
     for (int i = 0; i < slen; i++) {
         if (src[i] == '"' && (i == 0 || src[i-1] != '\\')) {
@@ -89,6 +126,15 @@ static char *prepass(const char *src, int slen, int *out_len)
         /* Skip non-ASCII */
         if ((unsigned char)src[i] > 127) continue;
 
+        /* Strip underscores from identifiers (not inside strings).
+         * An underscore between two identifier chars (a-z, 0-9) is removed. */
+        if (src[i] == '_' && !in_str) {
+            /* Check if between identifier chars */
+            int prev_id = (i > 0 && ((src[i-1]>='a'&&src[i-1]<='z') || (src[i-1]>='0'&&src[i-1]<='9') || (src[i-1]>='A'&&src[i-1]<='Z')));
+            int next_id = (i+1 < slen && ((src[i+1]>='a'&&src[i+1]<='z') || (src[i+1]>='0'&&src[i+1]<='9') || (src[i+1]>='A'&&src[i+1]<='Z')));
+            if (prev_id && next_id) continue; /* skip underscore */
+        }
+
         o[w++] = src[i];
     }
     o[w] = '\0'; *out_len = w;
@@ -104,7 +150,8 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
 
     /* Step 1: Prepass */
     int clen = 0;
-    char *c = prepass(src, slen, &clen);
+    int inserted_module = 0;
+    char *c = prepass(src, slen, &clen, &inserted_module);
     if (!c) return -1;
 
     /* Step 2: Lex cleaned text (try default, fallback to legacy) */
@@ -228,7 +275,18 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
     }
     buf2[b2] = '\0';
 
-    fwrite(buf2, 1, (size_t)b2, out);
+    /* If we inserted a placeholder module declaration, strip it from output */
+    if (inserted_module) {
+        const char *skip = "m=migrated;\n";
+        int skiplen = (int)strlen(skip);
+        if (b2 >= skiplen && !strncmp(buf2, skip, (size_t)skiplen)) {
+            fwrite(buf2 + skiplen, 1, (size_t)(b2 - skiplen), out);
+        } else {
+            fwrite(buf2, 1, (size_t)b2, out);
+        }
+    } else {
+        fwrite(buf2, 1, (size_t)b2, out);
+    }
     free(buf2); free(buf); free(c); free(nt);
     return 0;
 }
