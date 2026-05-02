@@ -117,6 +117,35 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             }
             i--; continue;
         }
+        /* Lowercase single-letter declaration keywords: M= F= T= I= → m= f= t= i= */
+        if (i+1 < slen && src[i+1] == '=' &&
+            (src[i]=='M'||src[i]=='F'||src[i]=='T'||src[i]=='I')) {
+            int at_decl = (i == 0 || src[i-1] == '\n' || src[i-1] == ';');
+            if (!at_decl) { int j=i-1; while(j>=0&&src[j]!='\n'&&src[j]!=';'){if(src[j]!=' '&&src[j]!='\t')break;j--;} if(j<0||src[j]=='\n'||src[j]==';')at_decl=1; }
+            if (at_decl) { o[w++] = (char)(src[i]+32); continue; }
+        }
+
+        /* Convert m.$typename{ → t=$typename{ (type declaration, not module) */
+        if (src[i] == 'm' && i+2 < slen && src[i+1] == '.' && src[i+2] == '$') {
+            o[w++] = 't'; o[w++] = '=';
+            i++; /* skip the '.', $ will be copied by next iteration */
+            continue;
+        }
+        /* M.Typename{ or M.$typename{ in legacy — convert to t= */
+        if (src[i] == 'M' && i+2 < slen && src[i+1] == '.' &&
+            (src[i+2] >= 'A' || src[i+2] == '$')) {
+            o[w++] = 't'; o[w++] = '=';
+            i++; /* skip '.', Type/$type passes through to token phase */
+            continue;
+        }
+
+        /* Convert [] empty array literal → @() */
+        if (src[i] == '[' && i+1 < slen && src[i+1] == ']') {
+            o[w++] = '@'; o[w++] = '('; o[w++] = ')';
+            i++; /* skip ] */
+            continue;
+        }
+
         /* Strip pub keyword at line start */
         if (i+4 <= slen && !strncmp(src+i, "pub ", 4)) {
             int ok = (i == 0 || src[i-1] == '\n');
