@@ -100,14 +100,104 @@ int tkc_migrate(const char *src, int slen, const Token *toks, int tc,
             }
             break;
 
-        case TK_TYPE_IDENT:
-            /* PascalCase → $lowercase */
-            buf[blen++] = '$';
-            for (int j = 0; j < t->len; j++) {
+        case TK_TYPE_IDENT: {
+            /* PascalCase → $lowercase, but primitives stay bare.
+             * I64→i64, U64→u64, Str→str, Bool→bool (no $ prefix). */
+            char lower[128];
+            int tl = t->len < (int)sizeof(lower)-1 ? t->len : (int)sizeof(lower)-1;
+            for (int j = 0; j < tl; j++) {
                 char c = src[t->start + j];
-                buf[blen++] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
+                lower[j] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
+            }
+            lower[tl] = '\0';
+            int is_prim = (!strcmp(lower,"i64") || !strcmp(lower,"u64") ||
+                           !strcmp(lower,"i32") || !strcmp(lower,"u32") ||
+                           !strcmp(lower,"i16") || !strcmp(lower,"u16") ||
+                           !strcmp(lower,"i8")  || !strcmp(lower,"u8")  ||
+                           !strcmp(lower,"f32") || !strcmp(lower,"f64") ||
+                           !strcmp(lower,"str") || !strcmp(lower,"bool") ||
+                           !strcmp(lower,"void"));
+            if (!is_prim) buf[blen++] = '$';
+            memcpy(buf + blen, lower, (size_t)tl);
+            blen += tl;
+            break;
+        }
+
+        case TK_LBRACKET: {
+            /* Legacy [Type] array syntax → @$type (or @type for primitives).
+             * Look ahead: if next token is TYPE_IDENT or IDENT followed by ],
+             * this is an array type annotation. Convert to @type. */
+            if (i + 2 < tc &&
+                (toks[i+1].kind == TK_TYPE_IDENT || toks[i+1].kind == TK_IDENT) &&
+                toks[i+2].kind == TK_RBRACKET) {
+                buf[blen++] = '@';
+                /* The type will be handled by TK_TYPE_IDENT/TK_IDENT case */
+                /* Skip the [ — type and ] handled in subsequent iterations */
+            } else {
+                /* Multi-element or complex — emit [ verbatim (shouldn't happen
+                 * in default mode, but be safe) */
+                buf[blen++] = '[';
             }
             break;
+        }
+
+        case TK_RBRACKET: {
+            /* If we just converted [Type] → @type, skip the ] */
+            if (i >= 2 &&
+                toks[i-2].kind == TK_LBRACKET &&
+                (toks[i-1].kind == TK_TYPE_IDENT || toks[i-1].kind == TK_IDENT)) {
+                /* Already handled — skip ] */
+            } else {
+                buf[blen++] = ']';
+            }
+            break;
+        }
+
+        case TK_LPAREN: {
+            /* Check for @(Type) pattern — strip parens for type annotations.
+             * @(Type) → @$type, but @(a;b;c) stays as array literal. */
+            if (i >= 1 && toks[i-1].kind == TK_AT &&
+                i + 2 < tc &&
+                (toks[i+1].kind == TK_TYPE_IDENT || toks[i+1].kind == TK_DOLLAR) &&
+                toks[i+2].kind == TK_RPAREN) {
+                /* Single type in parens after @ — skip the ( */
+                break;
+            }
+            /* Also check: @($type) where $ is TK_DOLLAR and type is TK_IDENT */
+            if (i >= 1 && toks[i-1].kind == TK_AT &&
+                i + 3 < tc &&
+                toks[i+1].kind == TK_DOLLAR &&
+                toks[i+2].kind == TK_IDENT &&
+                toks[i+3].kind == TK_RPAREN) {
+                /* @($type) → @$type — skip the ( */
+                break;
+            }
+            buf[blen++] = '(';
+            break;
+        }
+
+        case TK_RPAREN: {
+            /* Skip ) that closes @(Type) or @($type) type annotation */
+            if (i >= 2 && toks[i-2].kind == TK_LPAREN) {
+                /* Check if the ( was after @ and contained a single type */
+                int lparen_idx = i - 2;
+                if (lparen_idx >= 1 && toks[lparen_idx-1].kind == TK_AT &&
+                    (toks[lparen_idx+1].kind == TK_TYPE_IDENT ||
+                     toks[lparen_idx+1].kind == TK_DOLLAR)) {
+                    break; /* skip ) */
+                }
+            }
+            if (i >= 3 && toks[i-3].kind == TK_LPAREN) {
+                int lp3 = i - 3;
+                if (lp3 >= 1 && toks[lp3-1].kind == TK_AT &&
+                    toks[lp3+1].kind == TK_DOLLAR &&
+                    toks[lp3+2].kind == TK_IDENT) {
+                    break; /* skip ) for @($ident) */
+                }
+            }
+            buf[blen++] = ')';
+            break;
+        }
 
         case TK_IDENT: {
             /* Remove underscores from identifiers */
