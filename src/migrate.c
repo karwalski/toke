@@ -154,9 +154,14 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             i++; continue;
         }
 
-        /* [] empty array → @() */
+        /* [] empty array → @() (but skip @ if already preceded by @) */
         if (src[i] == '[' && i+1 < slen && src[i+1] == ']') {
-            o[w++] = '@'; o[w++] = '('; o[w++] = ')';
+            if (w > 0 && o[w-1] == '@') {
+                /* @[] → @() — already have @, just add () */
+                o[w++] = '('; o[w++] = ')';
+            } else {
+                o[w++] = '@'; o[w++] = '('; o[w++] = ')';
+            }
             i++; continue;
         }
 
@@ -187,8 +192,8 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                 if (i > 0 && src[i-1] == ')') prev_ident = 1;
 
                 if (prev_colon) {
-                    /* Type position: [str] → @str */
-                    o[w++] = '@';
+                    /* Type position: [str] → @str (skip @ if already preceded by @) */
+                    if (!(w > 0 && o[w-1] == '@')) o[w++] = '@';
                     for (int k = i+1; k < end; k++) o[w++] = src[k];
                     i = end; continue;
                 } else if (prev_ident) {
