@@ -574,6 +574,18 @@ When the compiler encounters syntax from other languages (Python, Go, JS, Rust, 
 
 
 
+
+### Epic 86 — Local Development Server
+
+No project can serve locally without sudo or production TLS certs. Need a dev mode that serves on localhost with HTTP on a configurable port.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 86.1.1 | toke-website: add --port and --http flags to main.tk | backlog | — | **P0** main.tk hardcodes port 443 + TLS. Add CLI arg parsing: --port N for custom port, --http to skip TLS. make dev target that serves on localhost:3000. |
+| 86.1.2 | ooke serve: localhost mode without TLS | backlog | — | **P1** ooke serve reads port from ooke.toml but always tries TLS if certs configured. Add --http flag or detect missing certs and fall back to HTTP. |
+| 86.1.3 | toke: http.serve() convenience function | backlog | — | **P2** stdlib: http.serve(port) as simple HTTP-only alternative to http.servevhoststls(). Single call, no certs, no vhosts. For dev/testing. |
+| 86.1.4 | make dev target across all projects | backlog | — | **P1** toke-website, toke-ooke, loke, moke: add make dev that builds + serves on localhost:3000 (or next available port). One command local development. |
+
 ### Epic 85 — Source Migration Tooling (v0.1/v0.2 → v0.3)
 
 The `toke --migrate` command converts legacy and partially migrated source to v0.3 syntax. This epic tracks the tool's development, known limitations, and downstream migration progress.
