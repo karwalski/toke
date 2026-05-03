@@ -339,13 +339,20 @@ static Node *parse_type_expr(Parser *p) {
     if(peek(p)==TK_DOLLAR){Token *dt=adv(p);Token *nt=cur(p);
         if(!xp(p,TK_IDENT,"type name after '$'")){eerr(p,E2002,dt,"unexpected token");return NULL;}
         return mk(p,NODE_TYPE_IDENT,nt);}
-    /* Default mode: @$type for array type, @($key:$val) for map type */
+    /* Default mode: @$type or @(type) for array, @($key:$val) for map */
     if(peek(p)==TK_AT){Token *at=adv(p);
-        if(peek(p)==TK_LPAREN){adv(p);Node *n=mk(p,NODE_MAP_TYPE,at);
-            ch(p,n,parse_type_expr(p));xp(p,TK_COLON,"':' in map type");
-            ch(p,n,parse_type_expr(p));
-            if(!xp(p,TK_RPAREN,"')' to close map type"))eerr(p,E2004,cur(p),"unclosed delimiter");
-            return n;}
+        if(peek(p)==TK_LPAREN){adv(p);
+            Node *first=parse_type_expr(p);
+            if(peek(p)==TK_COLON){
+                /* Map type: @(key:val) */
+                adv(p);Node *n=mk(p,NODE_MAP_TYPE,at);ch(p,n,first);
+                ch(p,n,parse_type_expr(p));
+                if(!xp(p,TK_RPAREN,"')' to close map type"))eerr(p,E2004,cur(p),"unclosed delimiter");
+                return n;
+            }
+            /* Parenthesized array type: @(type) = @type */
+            if(!xp(p,TK_RPAREN,"')' to close array type"))eerr(p,E2004,cur(p),"unclosed delimiter");
+            Node *n=mk(p,NODE_ARRAY_TYPE,at);ch(p,n,first);return n;}
         {Node *n=mk(p,NODE_ARRAY_TYPE,at);ch(p,n,parse_type_expr(p));return n;}}
     if(peek(p)==TK_LBRACKET){Token *t=xp(p,TK_LBRACKET,"'['");Node *first=parse_type_expr(p);
         if(peek(p)==TK_COLON){adv(p);Node *n=mk(p,NODE_MAP_TYPE,t);ch(p,n,first);ch(p,n,parse_type_expr(p));if(!xp(p,TK_RBRACKET,"']'"))eerr(p,E2004,cur(p),"unclosed delimiter");return n;}
