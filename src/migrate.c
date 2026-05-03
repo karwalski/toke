@@ -313,7 +313,10 @@ static void postpass_semicolons(char *buf, int *blen_p)
             /* Check if next non-whitespace is NOT ; already */
             int j = i + 1;
             while (j < blen && (buf[j]==' '||buf[j]=='\t')) j++;
-            if (j < blen && buf[j] != ';' && buf[j] != ',' && buf[j] != ')' &&
+            /* Don't add ; before 'el' (else branch: }el{ not };el{) */
+            if (j+1 < blen && buf[j] == 'e' && buf[j+1] == 'l') {
+                /* }el{ — no semicolon */
+            } else if (j < blen && buf[j] != ';' && buf[j] != ',' && buf[j] != ')' &&
                 buf[j] != '}' && buf[j] != '\0') {
                 /* Check if this } ends a function, type, or top-level block.
                  * Heuristic: if next non-ws char is a letter, newline, or EOF-like */
