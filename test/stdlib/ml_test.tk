@@ -1,24 +1,24 @@
-m=ml_test;
+m=mltest;
 i=ml:std.ml;
 i=test:std.test;
 
-(* Linear regression: fit y = 2x, predict at x=5 => 10. *)
-f=linreg_fit_predict():bool{
-  let x_train=@(
+
+f=linregfitpredict():bool{
+  let xtrain=@(
     $row{vals:@(0.0)};
     $row{vals:@(1.0)};
     $row{vals:@(2.0)};
     $row{vals:@(3.0)};
     $row{vals:@(4.0)}
   );
-  let y_train=@(0.0;2.0;4.0;6.0;8.0);
-  let fit_result=ml.linregfit(x_train;y_train);
-  (match fit_result{
+  let ytrain=@(0.0;2.0;4.0;6.0;8.0);
+  let fitresult=ml.linregfit(xtrain;ytrain);
+  (match fitresult{
     ok(model){
       let pred=ml.linregpredict(model;@(5.0));
       let diff=pred-10.0;
-      let abs_diff=if diff<0.0{<(-diff);}el{<diff;};
-      <(abs_diff<0.01)
+      let absdiff=if diff<0.0{<(-diff);}el{<diff;};
+      <(absdiff<0.01)
     };
     err(e){
       (test.fail(e.msg));
@@ -27,8 +27,8 @@ f=linreg_fit_predict():bool{
   })
 };
 
-(* k-means: two well-separated clusters should assign correctly. *)
-f=kmeans_two_clusters():bool{
+
+f=kmeanstwoclusters():bool{
   let data=@(
     $row{vals:@(0.0;0.0)};
     $row{vals:@(0.1;0.1)};
@@ -37,13 +37,13 @@ f=kmeans_two_clusters():bool{
     $row{vals:@(10.1;9.9)};
     $row{vals:@(9.9;10.1)}
   );
-  let fit_result=ml.kmeanstrain(data;2;100);
-  (match fit_result{
+  let fitresult=ml.kmeanstrain(data;2;100);
+  (match fitresult{
     ok(model){
       (test.eq(model.k;2));
       let c0=ml.kmeansassign(model;@(0.0;0.0));
       let c1=ml.kmeansassign(model;@(10.0;10.0));
-      (* The two query points must land in different clusters. *)
+      
       <(!(c0=c1))
     };
     err(e){
@@ -53,30 +53,30 @@ f=kmeans_two_clusters():bool{
   })
 };
 
-(* k-NN: 1-NN on linearly separable classes. *)
-f=knn_classify():bool{
-  let train_x=@(
+
+f=knnclassify():bool{
+  let trainx=@(
     $row{vals:@(1.0)};
     $row{vals:@(2.0)};
     $row{vals:@(8.0)};
     $row{vals:@(9.0)}
   );
-  let train_y=@("low";"low";"high";"high");
-  let label=ml.knnpredict(train_x;train_y;@(1.5);1);
+  let trainy=@("low";"low";"high";"high");
+  let label=ml.knnpredict(trainx;trainy;@(1.5);1);
   <(label="low")
 };
 
-(* Decision tree: fit binary labels and predict. *)
-f=dtree_fit_predict():bool{
-  let x_train=@(
+
+f=dtreefitpredict():bool{
+  let xtrain=@(
     $row{vals:@(0.0;0.0)};
     $row{vals:@(0.0;1.0)};
     $row{vals:@(1.0;0.0)};
     $row{vals:@(1.0;1.0)}
   );
-  let y_train=@("neg";"neg";"neg";"pos");
-  let fit_result=ml.dtreefit(x_train;y_train;5);
-  (match fit_result{
+  let ytrain=@("neg";"neg";"neg";"pos");
+  let fitresult=ml.dtreefit(xtrain;ytrain;5);
+  (match fitresult{
     ok(model){
       let label=ml.dtreepredict(model;@(1.0;1.0));
       <(label="pos")
@@ -89,9 +89,9 @@ f=dtree_fit_predict():bool{
 };
 
 f=main():i64{
-  (test.ok(linreg_fit_predict()));
-  (test.ok(kmeans_two_clusters()));
-  (test.ok(knn_classify()));
-  (test.ok(dtree_fit_predict()));
+  (test.ok(linregfitpredict()));
+  (test.ok(kmeanstwoclusters()));
+  (test.ok(knnclassify()));
+  (test.ok(dtreefitpredict()));
   <0
 };

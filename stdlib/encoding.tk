@@ -36,7 +36,7 @@ f=b64urlval(b:i64):i64{
   <255
 };
 
-f=b64encodeImpl(input:$str;urlsafe:i64):$str{
+f=b64encodeimpl(input:$str;urlsafe:i64):$str{
   let inlen=s.len(input);
   if(inlen=0){<""};
   let fullgroups=inlen/3;
@@ -116,7 +116,7 @@ f=b64encodeImpl(input:$str;urlsafe:i64):$str{
   <out as $str
 };
 
-f=b64decodeImpl(input:$str;urlsafe:i64):$str{
+f=b64decodeimpl(input:$str;urlsafe:i64):$str{
   let inlen=s.len(input);
   if(inlen=0){<""};
   let p=input as i64;
@@ -162,19 +162,19 @@ f=b64decodeImpl(input:$str;urlsafe:i64):$str{
 };
 
 f=b64encode(input:$str):$str{
-  <b64encodeImpl(input;0)
+  <b64encodeimpl(input;0)
 };
 
 f=b64decode(input:$str):$str{
-  <b64decodeImpl(input;0)
+  <b64decodeimpl(input;0)
 };
 
 f=b64urlencode(input:$str):$str{
-  <b64encodeImpl(input;1)
+  <b64encodeimpl(input;1)
 };
 
 f=b64urldecode(input:$str):$str{
-  <b64decodeImpl(input;1)
+  <b64decodeimpl(input;1)
 };
 
 f=hexhi(b:i64):i64{
@@ -226,7 +226,7 @@ f=hexdecode(input:$str):$str{
   <out as $str
 };
 
-f=isUnreserved(b:i64):bool{
+f=isunreserved(b:i64):bool{
   if(!(b<65)&&!(b>90)){<true};
   if(!(b<97)&&!(b>122)){<true};
   if(!(b<48)&&!(b>57)){<true};
@@ -246,7 +246,7 @@ f=urlencode(input:$str):$str{
   let oi=mut.0 as i64;
   lp(let i=0 as i64;i<inlen;i=i+1){
     let b=mem.load8(p;i);
-    if(isUnreserved(b)){
+    if(isunreserved(b)){
       mem.store8(out;oi;b);
       oi=oi+1
     }el{
@@ -279,26 +279,26 @@ f=urldecode(input:$str):$str{
         if(hi<16&&lo<16){
           let byte=(hi<<4)|lo;
           if(byte=0){
-            i=i+3
+            i=i+3;
           }el{
             mem.store8(out;oi;byte);
             oi=oi+1;
-            i=i+3
+            i=i+3;
           }
         }el{
           mem.store8(out;oi;b);
           oi=oi+1;
-          i=i+1
+          i=i+1;
         }
       }el{
         if(b=43){
           mem.store8(out;oi;32);
           oi=oi+1;
-          i=i+1
+          i=i+1;
         }el{
           mem.store8(out;oi;b);
           oi=oi+1;
-          i=i+1
+          i=i+1;
         }
       }
     }

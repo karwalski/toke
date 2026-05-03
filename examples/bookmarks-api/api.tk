@@ -5,26 +5,26 @@ i=json:std.json;
 i=str:std.str;
 i=io:std.io;
 
-(* store — global mutable bookmark store *)
-let store=mut.m.$bookmarks{items:@();nextid:1};
 
-(* bookmark_to_json — serialise a single bookmark to json string *)
-f=bookmark_to_json(b:m.$bookmark):str{
+let store=mut.t=$bookmarks{items:@();nextid:1};
+
+
+f=bookmarktojson(b:i64):str{
   let buf=str.buf();
   str.add(buf;"{\"id\":");
-  str.add(buf;str.from_int(b.id as i64));
+  str.add(buf;str.fromint(b.id as i64));
   str.add(buf;",\"url\":\"");
   str.add(buf;b.url);
   str.add(buf;"\",\"title\":\"");
   str.add(buf;b.title);
   str.add(buf;"\",\"tags\":");
-  str.add(buf;tags_to_json(b.tags));
+  str.add(buf;tagstojson(b.tags));
   str.add(buf;"}");
   <str.done(buf)
 };
 
-(* tags_to_json — serialise a tag array to json *)
-f=tags_to_json(tags:@$str):str{
+
+f=tagstojson(tags:@$str):str{
   let buf=str.buf();
   str.add(buf;"[");
   lp(let i=0;i<(tags.len as i64);i=i+1){
@@ -39,27 +39,27 @@ f=tags_to_json(tags:@$str):str{
   <str.done(buf)
 };
 
-(* bookmarks_to_json — serialise the full list *)
-f=bookmarks_to_json(items:@(m.$bookmark)):str{
+
+f=bookmarkstojson(items:@i64):str{
   let buf=str.buf();
   str.add(buf;"[");
   lp(let i=0;i<(items.len as i64);i=i+1){
     if(i>0){
       str.add(buf;",")
     };
-    str.add(buf;bookmark_to_json(items.get(i)))
+    str.add(buf;bookmarktojson(items.get(i)))
   };
   str.add(buf;"]");
   <str.done(buf)
 };
 
-(* error_to_json — serialise an api error *)
-f=error_to_json(e:m.$apierr):str{
-  e|{
+
+f=errortojson(e:i64):str{
+  mt e {
     $notfound:id {
       let buf=str.buf();
       str.add(buf;"{\"error\":\"not found\",\"id\":");
-      str.add(buf;str.from_int(id as i64));
+      str.add(buf;str.fromint(id as i64));
       str.add(buf;"}");
       <str.done(buf)
     };
@@ -73,27 +73,27 @@ f=error_to_json(e:m.$apierr):str{
   }
 };
 
-(* parse_bookmark — extract bookmark fields from json body *)
-f=parse_bookmark(body:str):m.$bookmark!m.$apierr{
-  let doc=json.dec(body)|{
+
+f=parsebookmark(body:str):i64!$t=$apierr{
+  let doc=mt json.dec(body) {
     $ok:d d;
-    $err:e <$err(m.$apierr.$badrequest("invalid json"))
+    $err:e <$err(t=$$badrequest("invalid json"))
   };
-  let url=json.str(doc;"url")|{
+  let url=mt json.str(doc;"url") {
     $ok:v v;
-    $err:e <$err(m.$apierr.$badrequest("missing url"))
+    $err:e <$err(t=$$badrequest("missing url"))
   };
-  let title=json.str(doc;"title")|{
+  let title=mt json.str(doc;"title") {
     $ok:v v;
-    $err:e <$err(m.$apierr.$badrequest("missing title"))
+    $err:e <$err(t=$$badrequest("missing title"))
   };
-  let tags=json.arr(doc;"tags")|{
+  let tags=mt json.arr(doc;"tags") {
     $ok:v v;
     $err:e @()
   };
   let taglist=mut.@();
   lp(let i=0;i<(tags.len as i64);i=i+1){
-    let tag=json.str_at(tags;i)|{
+    let tag=mt json.strat(tags;i) {
       $ok:v v;
       $err:e ""
     };
@@ -101,34 +101,34 @@ f=parse_bookmark(body:str):m.$bookmark!m.$apierr{
       taglist=taglist.push(tag)
     }
   };
-  <$ok(m.$bookmark{id:0;url:url;title:title;tags:taglist})
+  <$ok(t=$bookmark{id:0;url:url;title:title;tags:taglist})
 };
 
-(* find_bookmark — look up a bookmark by id *)
-f=find_bookmark(id:u64):m.$bookmark!m.$apierr{
+
+f=findbookmark(id:u64):i64!$t=$apierr{
   lp(let i=0;i<(store.items.len as i64);i=i+1){
     let b=store.items.get(i);
-    if(b.id==id){
+    if(b.id=id){
       <$ok(b)
     }
   };
-  <$err(m.$apierr.$notfound(id))
+  <$err(t=$$notfound(id))
 };
 
-(* find_index — return index of bookmark with given id, or -1 *)
-f=find_index(id:u64):i64{
+
+f=findindex(id:u64):i64{
   lp(let i=0;i<(store.items.len as i64);i=i+1){
     let b=store.items.get(i);
-    if(b.id==id){
+    if(b.id=id){
       <i
     }
   };
   <(0-1)
 };
 
-(* handle_list — GET /api/bookmarks *)
-f=handle_list(req:http.$request):http.$response{
-  let body=bookmarks_to_json(store.items);
+
+f=handlelist(req:i64):i64{
+  let body=bookmarkstojson(store.items);
   <http.$response{
     status:200;
     headers:@("content-type":"application/json");
@@ -136,87 +136,87 @@ f=handle_list(req:http.$request):http.$response{
   }
 };
 
-(* handle_create — POST /api/bookmarks *)
-f=handle_create(req:http.$request):http.$response{
-  parse_bookmark(req.body)|{
+
+f=handlecreate(req:i64):i64{
+  mt parsebookmark(req.body) {
     $ok:b {
-      let newb=m.$bookmark{
+      let newb=t=$bookmark{
         id:store.nextid;
         url:b.url;
         title:b.title;
         tags:b.tags
       };
-      store=m.$bookmarks{
+      store=t=$bookmarks{
         items:store.items.push(newb);
         nextid:store.nextid+1
       };
       <http.$response{
         status:201;
         headers:@("content-type":"application/json");
-        body:bookmark_to_json(newb)
+        body:bookmarktojson(newb)
       }
     };
     $err:e {
       <http.$response{
         status:400;
         headers:@("content-type":"application/json");
-        body:error_to_json(e)
+        body:errortojson(e)
       }
     }
   }
 };
 
-(* handle_get — GET /api/bookmarks/:id *)
-f=handle_get(req:http.$request):http.$response{
-  let id=http.param_u64(req;"id")|{
+
+f=handleget(req:i64):i64{
+  let id=mt http.paramu64(req;"id") {
     $ok:v v;
     $err:e {
       <http.$response{
         status:400;
         headers:@("content-type":"application/json");
-        body:error_to_json(m.$apierr.$badrequest("invalid id"))
+        body:errortojson(t=$$badrequest("invalid id"))
       }
     }
   };
-  find_bookmark(id)|{
+  mt findbookmark(id) {
     $ok:b {
       <http.$response{
         status:200;
         headers:@("content-type":"application/json");
-        body:bookmark_to_json(b)
+        body:bookmarktojson(b)
       }
     };
     $err:e {
       <http.$response{
         status:404;
         headers:@("content-type":"application/json");
-        body:error_to_json(e)
+        body:errortojson(e)
       }
     }
   }
 };
 
-(* handle_delete — DELETE /api/bookmarks/:id *)
-f=handle_delete(req:http.$request):http.$response{
-  let id=http.param_u64(req;"id")|{
+
+f=handledelete(req:i64):i64{
+  let id=mt http.paramu64(req;"id") {
     $ok:v v;
     $err:e {
       <http.$response{
         status:400;
         headers:@("content-type":"application/json");
-        body:error_to_json(m.$apierr.$badrequest("invalid id"))
+        body:errortojson(t=$$badrequest("invalid id"))
       }
     }
   };
-  let idx=find_index(id);
+  let idx=findindex(id);
   if(idx<0){
     <http.$response{
       status:404;
       headers:@("content-type":"application/json");
-      body:error_to_json(m.$apierr.$notfound(id))
+      body:errortojson(t=$$notfound(id))
     }
   };
-  store=m.$bookmarks{
+  store=t=$bookmarks{
     items:store.items.remove(idx);
     nextid:store.nextid
   };

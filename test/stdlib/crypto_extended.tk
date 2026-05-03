@@ -1,57 +1,57 @@
-m=crypto_extended_test;
+m=cryptoextendedtest;
 
-(* Demonstrate HMAC signing and verification using extended crypto functions. *)
 
-(* Sign a message with HMAC-SHA256 and verify it is correct. *)
-f=hmac_roundtrip():bool{
+
+
+f=hmacroundtrip():bool{
   let key=str.bytes("supersecretkey");
   let msg=str.bytes("user:alice;role:admin;exp:9999999999");
   let tag=crypto.hmacsha256(key;msg);
-  let expected_len:u64=32;
-  (test.eq(tag.len;expected_len));
+  let expectedlen:u64=32;
+  (test.eq(tag.len;expectedlen));
 
-  (* Verify: re-compute the tag and compare with constant-time equality *)
+  
   let tag2=crypto.hmacsha256(key;msg);
   <crypto.constanteq(tag;tag2)
 };
 
-(* Sign with HMAC-SHA512 and verify the tag length is 64 bytes. *)
-f=hmac512_len():bool{
+
+f=hmac512len():bool{
   let key=str.bytes("anotherkey");
   let msg=str.bytes("payload");
   let tag=crypto.hmacsha512(key;msg);
-  let expected_len:u64=64;
-  (test.eq(tag.len;expected_len));
+  let expectedlen:u64=64;
+  (test.eq(tag.len;expectedlen));
   <true
 };
 
-(* SHA-256 produces a known digest for the empty input. *)
-f=sha256_empty():bool{
+
+f=sha256empty():bool{
   let hash=crypto.sha256(@());
-  let hex=crypto.to_hex(hash);
-  <hex=="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  let hex=crypto.tohex(hash);
+  <hex="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 };
 
-(* SHA-512 produces a 64-byte digest. *)
-f=sha512_len():bool{
+
+f=sha512len():bool{
   let hash=crypto.sha512(str.bytes("abc"));
-  let expected_len:u64=64;
-  (test.eq(hash.len;expected_len));
+  let expectedlen:u64=64;
+  (test.eq(hash.len;expectedlen));
   <true
 };
 
-(* constanteq rejects a tampered tag without short-circuiting. *)
-f=constanteq_tamper():bool{
+
+f=constanteqtamper():bool{
   let key=str.bytes("k");
   let msg=str.bytes("msg");
   let tag=crypto.hmacsha256(key;msg);
-  let bad_msg=str.bytes("msg-tampered");
-  let bad_tag=crypto.hmacsha256(key;bad_msg);
-  <(!crypto.constanteq(tag;bad_tag))
+  let badmsg=str.bytes("msg-tampered");
+  let badtag=crypto.hmacsha256(key;badmsg);
+  <(!$crypto.constanteq(tag;badtag))
 };
 
-(* randombytes returns the requested number of bytes. *)
-f=random_len():bool{
+
+f=randomlen():bool{
   let n:u64=32;
   let rand=crypto.randombytes(n);
   (test.eq(rand.len;n));
@@ -59,11 +59,11 @@ f=random_len():bool{
 };
 
 f=main():i64{
-  (test.ok(hmac_roundtrip()));
-  (test.ok(hmac512_len()));
-  (test.ok(sha256_empty()));
-  (test.ok(sha512_len()));
-  (test.ok(constanteq_tamper()));
-  (test.ok(random_len()));
+  (test.ok(hmacroundtrip()));
+  (test.ok(hmac512len()));
+  (test.ok(sha256empty()));
+  (test.ok(sha512len()));
+  (test.ok(constanteqtamper()));
+  (test.ok(randomlen()));
   <0
 };

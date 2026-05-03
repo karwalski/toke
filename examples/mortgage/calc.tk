@@ -2,21 +2,19 @@ m=mortgage.calc;
 i=m:mortgage.model;
 i=math:std.math;
 
-(* validate — reject nonsensical inputs *)
-f=validate(s:m.$scenario):bool!m.$calcerr{
+
+f=validate(s:i64):bool!$t=$calcerr{
   if(s.rate<0.0||s.rate>1.0){
-    <$err(m.$calcerr.$invalidrate(s.rate))
+    <$err(t=$$invalidrate(s.rate))
   };
   if(s.term<1){
-    <$err(m.$calcerr.$invalidterm(s.term))
+    <$err(t=$$invalidterm(s.term))
   };
   <$ok(true)
 };
 
-(* monthly — M = P * [r(1+r)^n] / [(1+r)^n - 1]
- * r = annual rate / 12,  n = term * 12
- * When rate is 0 the formula degenerates to P / n *)
-f=monthly(s:m.$scenario):f64{
+
+f=monthly(s:i64):f64{
   let n=s.term*12;
   let r=s.rate/12.0;
   if(r<0.000000001){
@@ -26,8 +24,8 @@ f=monthly(s:m.$scenario):f64{
   <s.principal*(r*rn)/(rn-1.0)
 };
 
-(* amortise — build full schedule as @($payment) *)
-f=amortise(s:m.$scenario):@(m.$payment){
+
+f=amortise(s:i64):@i64{
   let pmt=monthly(s);
   let n=s.term*12;
   let bal=mut.s.principal;
@@ -41,7 +39,7 @@ f=amortise(s:m.$scenario):@(m.$payment){
     let princ=mp-mi;
     bal=bal-princ;
     if(bal<0.0){bal=0.0};
-    let row=m.$payment{
+    let row=t=$payment{
       month:(i as u64);
       payment:mp;
       principal:princ;
@@ -56,10 +54,10 @@ f=amortise(s:m.$scenario):@(m.$payment){
   <sched
 };
 
-(* calculate — produce the complete result *)
-f=calculate(s:m.$scenario):m.$result!m.$calcerr{
-  validate(s)|{
-    $ok:_ ();
+
+f=calculate(s:i64):i64!$t=$calcerr{
+  mt validate(s) {
+    $ok: ();
     $err:e <$err(e)
   };
   let pmt=monthly(s);
@@ -72,7 +70,7 @@ f=calculate(s:m.$scenario):m.$result!m.$calcerr{
     totalcost=totalcost+row.payment;
     totalinterest=totalinterest+row.interest
   };
-  <$ok(m.$result{
+  <$ok(t=$result{
     monthly:pmt;
     totalinterest:totalinterest;
     totalcost:totalcost;

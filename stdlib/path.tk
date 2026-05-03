@@ -9,7 +9,7 @@ f=striptslash(s:$str;mincap:i64):i64{
     if(pos<mincap+1){
       running=false
     }el{
-      let ch=str.slice(s;pos-1;pos)|{Ok:v v;Err:e ""};
+      let ch=mt str.slice(s;pos-1;pos) {$ok:v v;$err:e ""};
       if(ch="/"){
         pos=pos-1
       }el{
@@ -28,7 +28,7 @@ f=striplslash(s:$str):i64{
     if(pos>slen-1){
       running=false
     }el{
-      let ch=str.slice(s;pos;pos+1)|{Ok:v v;Err:e ""};
+      let ch=mt str.slice(s;pos;pos+1) {$ok:v v;$err:e ""};
       if(ch="/"){
         pos=pos+1
       }el{
@@ -43,7 +43,7 @@ f=basename(s:$str):$str{
   let slen=str.len(s);
   let slashpos=str.lastindex(s;"/");
   if(slashpos<0){<s}el{
-    <str.slice(s;slashpos+1;slen)|{Ok:v v;Err:e s}
+    <mt str.slice(s;slashpos+1;slen) {$ok:v v;$err:e s}
   }
 };
 
@@ -52,8 +52,8 @@ f=join(a:$str;b:$str):$str{
   let blen=str.len(b);
   let aend=striptslash(a;0);
   let bstart=striplslash(b);
-  let lhs=str.slice(a;0;aend)|{Ok:v v;Err:e ""};
-  let rhs=str.slice(b;bstart;blen)|{Ok:v v;Err:e ""};
+  let lhs=mt str.slice(a;0;aend) {$ok:v v;$err:e ""};
+  let rhs=mt str.slice(b;bstart;blen) {$ok:v v;$err:e ""};
   <str.concat(str.concat(lhs;"/");rhs)
 };
 
@@ -63,9 +63,9 @@ f=ext(p:$str):$str{
   let base=basename(p);
   let baselen=str.len(base);
   if(baselen=0){<""}el{};
-  let first=str.slice(base;0;1)|{Ok:v v;Err:e ""};
+  let first=mt str.slice(base;0;1) {$ok:v v;$err:e ""};
   if(first="."){
-    let rest=str.slice(base;1;baselen)|{Ok:v v;Err:e ""};
+    let rest=mt str.slice(base;1;baselen) {$ok:v v;$err:e ""};
     let dot2=str.indexof(rest;".");
     if(dot2<0){
       <base
@@ -73,7 +73,7 @@ f=ext(p:$str):$str{
   }el{};
   let dotpos=str.lastindex(base;".");
   if(dotpos<0){<""}el{};
-  <str.slice(base;dotpos;baselen)|{Ok:v v;Err:e ""}
+  <mt str.slice(base;dotpos;baselen) {$ok:v v;$err:e ""}
 };
 
 f=stem(p:$str):$str{
@@ -82,33 +82,33 @@ f=stem(p:$str):$str{
   let base=basename(p);
   let baselen=str.len(base);
   if(baselen=0){<""}el{};
-  let first=str.slice(base;0;1)|{Ok:v v;Err:e ""};
+  let first=mt str.slice(base;0;1) {$ok:v v;$err:e ""};
   if(first="."){
-    let rest=str.slice(base;1;baselen)|{Ok:v v;Err:e ""};
+    let rest=mt str.slice(base;1;baselen) {$ok:v v;$err:e ""};
     let dot2=str.indexof(rest;".");
     if(dot2<0){
       <""
     }el{
       let dotpos=str.lastindex(base;".");
-      <str.slice(base;0;dotpos)|{Ok:v v;Err:e ""}
+      <mt str.slice(base;0;dotpos) {$ok:v v;$err:e ""}
     }
   }el{};
   let dotpos=str.lastindex(base;".");
   if(dotpos<0){<base}el{};
-  <str.slice(base;0;dotpos)|{Ok:v v;Err:e base}
+  <mt str.slice(base;0;dotpos) {$ok:v v;$err:e base}
 };
 
 f=dir(p:$str):$str{
   let plen=str.len(p);
   if(plen=0){<"."}el{};
   let end=striptslash(p;1);
-  let trimmed=str.slice(p;0;end)|{Ok:v v;Err:e p};
+  let trimmed=mt str.slice(p;0;end) {$ok:v v;$err:e p};
   let slashpos=str.lastindex(trimmed;"/");
   if(slashpos<0){<"."}el{};
-  let dirportion=str.slice(p;0;slashpos)|{Ok:v v;Err:e ""};
+  let dirportion=mt str.slice(p;0;slashpos) {$ok:v v;$err:e ""};
   let dirend=striptslash(dirportion;1);
   if(dirend=0){<"/"}el{};
-  <str.slice(p;0;dirend)|{Ok:v v;Err:e "."}
+  <mt str.slice(p;0;dirend) {$ok:v v;$err:e "."}
 };
 
 f=base(p:$str):$str{
@@ -118,10 +118,10 @@ f=base(p:$str):$str{
     <p
   }el{};
   let end=striptslash(p;1);
-  let trimmed=str.slice(p;0;end)|{Ok:v v;Err:e p};
+  let trimmed=mt str.slice(p;0;end) {$ok:v v;$err:e p};
   let slashpos=str.lastindex(trimmed;"/");
   if(slashpos<0){<trimmed}el{};
-  <str.slice(trimmed;slashpos+1;end)|{Ok:v v;Err:e ""}
+  <mt str.slice(trimmed;slashpos+1;end) {$ok:v v;$err:e ""}
 };
 
 f=isabs(p:$str):bool{

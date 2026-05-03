@@ -1,41 +1,39 @@
-m=dashboard_test;
+m=dashboardtest;
 
-(* Demonstrate std.dashboard: construct a dashboard, add widgets, and
-   verify the API surface compiles correctly.  dashboard.serve() would
-   block, so it is not called in tests. *)
 
-f=build_dashboard():$dashboard{
+
+f=builddashboard():$dashboard{
   let d=dashboard.new("System Monitor";8080);
   <d
 };
 
-f=add_widgets():bool{
+f=addwidgets():bool{
   let d=dashboard.new("Test Dashboard";9090);
 
-  (* Add a bar chart widget. *)
+  
   let spec=chart.bar(
     @("cpu";"mem";"disk");
     @(42.0;67.3;15.8);
     "Resource Usage"
   );
   let w1=dashboard.addchart(d;"resources";spec);
-  (test.ok(w1.id=="resources"));
+  (test.ok(w1.id="resources"));
 
-  (* Add a table widget. *)
+  
   let w2=dashboard.addtable(d;"requests";@("Method";"Path";"Status";"Latency"));
-  (test.ok(w2.id=="requests"));
+  (test.ok(w2.id="requests"));
 
-  (* Push a data update to the table widget. *)
-  let row_json=str.bytes("[\"GET\";\"/ \";\"200\";\"12ms\"]");
-  dashboard.update(d;w2;row_json);
+  
+  let rowjson=str.bytes("[\"GET\";\"/ \";\"200\";\"12ms\"]");
+  dashboard.update(d;w2;rowjson);
 
   <true
 };
 
 f=main():i64{
-  let d=build_dashboard();
-  (* Verify handle was constructed without panic. *)
+  let d=builddashboard();
+  
   (test.ok(true));
-  (test.ok(add_widgets()));
+  (test.ok(addwidgets()));
   <0
 };

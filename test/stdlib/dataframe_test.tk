@@ -1,11 +1,15 @@
-m=dataframe_test;
+m=dataframetest;
 i=df:std.dataframe;
 i=test:std.test;
 i=str:std.str;
 
-(* Build a dataframe from raw CSV bytes and inspect shape. *)
-f=fromcsv_shape():bool{
-  let data=str.bytes("name,age,score\nalice,30,95.5\nbob,25,82.0\ncarol,28,88.0\n");
+
+f=fromcsvshape():bool{
+  let data=str.bytes("name,age,score
+alice,30,95.5
+bob,25,82.0
+carol,28,88.0
+");
   let result=df.fromcsv(data);
   (match result{
     ok(frame){
@@ -21,14 +25,18 @@ f=fromcsv_shape():bool{
   })
 };
 
-(* Retrieve a numeric column by name. *)
-f=column_numeric():bool{
-  let data=str.bytes("x,y\n1,10\n2,20\n3,30\n");
+
+f=columnnumeric():bool{
+  let data=str.bytes("x,y
+1,10
+2,20
+3,30
+");
   let result=df.fromcsv(data);
   (match result{
     ok(frame){
-      let col_result=df.column(frame;"y");
-      (match col_result{
+      let colresult=df.column(frame;"y");
+      (match colresult{
         ok(vals){
           (test.eq(vals.len;3));
           (test.eq(vals.get(0);10.0));
@@ -48,9 +56,13 @@ f=column_numeric():bool{
   })
 };
 
-(* Filter: keep only rows where score > 85. *)
-f=filter_gt():bool{
-  let data=str.bytes("name,score\nalice,95\nbob,70\ncarol,88\n");
+
+f=filtergt():bool{
+  let data=str.bytes("name,score
+alice,95
+bob,70
+carol,88
+");
   let result=df.fromcsv(data);
   (match result{
     ok(frame){
@@ -74,9 +86,15 @@ f=filter_gt():bool{
   })
 };
 
-(* head: take first 2 rows. *)
-f=head_rows():bool{
-  let data=str.bytes("id,val\n1,a\n2,b\n3,c\n4,d\n5,e\n");
+
+f=headrows():bool{
+  let data=str.bytes("id,val
+1,a
+2,b
+3,c
+4,d
+5,e
+");
   let result=df.fromcsv(data);
   (match result{
     ok(frame){
@@ -92,9 +110,11 @@ f=head_rows():bool{
   })
 };
 
-(* schema: returns one series entry per column. *)
-f=schema_check():bool{
-  let data=str.bytes("a,b,c\n1,2,3\n");
+
+f=schemacheck():bool{
+  let data=str.bytes("a,b,c
+1,2,3
+");
   let result=df.fromcsv(data);
   (match result{
     ok(frame){
@@ -111,10 +131,10 @@ f=schema_check():bool{
 };
 
 f=main():i64{
-  (test.ok(fromcsv_shape()));
-  (test.ok(column_numeric()));
-  (test.ok(filter_gt()));
-  (test.ok(head_rows()));
-  (test.ok(schema_check()));
+  (test.ok(fromcsvshape()));
+  (test.ok(columnnumeric()));
+  (test.ok(filtergt()));
+  (test.ok(headrows()));
+  (test.ok(schemacheck()));
   <0
 };

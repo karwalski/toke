@@ -1,8 +1,8 @@
-m=html_test;
+m=htmltest;
 
-(* Demonstrate std.html: build a document and verify rendered output. *)
 
-f=build_doc():$str{
+
+f=builddoc():$str{
   let d=html.doc();
   html.title(d;"My Page");
   html.style(d;"body { font-family: sans-serif; }");
@@ -30,18 +30,18 @@ f=build_doc():$str{
   <html.render(d)
 };
 
-f=escape_smoke():bool{
+f=escapesmoke():bool{
   let escaped=html.escape("<script>alert('xss')</script>");
-  (* Must not contain raw < or > after escaping. *)
+  
   <(!str.contains(escaped;"<script>"))
 };
 
 f=main():i64{
-  let out=build_doc();
-  (* Rendered output must be non-empty and contain key landmarks. *)
+  let out=builddoc();
+  
   (test.ok(out.len>0));
   (test.ok(str.contains(out;"Hello, World!")));
   (test.ok(str.contains(out;"My Page")));
-  (test.ok(escape_smoke()));
+  (test.ok(escapesmoke()));
   <0
 };

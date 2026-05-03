@@ -6,12 +6,12 @@ f=hparsefields(raw:$str):@$str{
   if(bracepos<0){
     <@()
   }el{
-    let afterbrace=s.slice(raw;bracepos+1;s.len(raw))|{Ok:v v;Err:e ""};
+    let afterbrace=mt s.slice(raw;bracepos+1;s.len(raw)) {$ok:v v;$err:e ""};
     let closepos=s.indexof(afterbrace;"}");
     if(closepos<0){
       <@()
     }el{
-      let fieldstr=s.slice(afterbrace;0;closepos)|{Ok:v v;Err:e ""};
+      let fieldstr=mt s.slice(afterbrace;0;closepos) {$ok:v v;$err:e ""};
       <s.split(fieldstr;",")
     }
   }
@@ -22,22 +22,23 @@ f=hdatapart(raw:$str):$str{
   if(bracepos<0){
     <""
   }el{
-    let afterbrace=s.slice(raw;bracepos;s.len(raw))|{Ok:v v;Err:e ""};
+    let afterbrace=mt s.slice(raw;bracepos;s.len(raw)) {$ok:v v;$err:e ""};
     let closepos=s.indexof(afterbrace;"}");
     if(closepos<0){
       <""
     }el{
-      let afterclose=s.slice(afterbrace;closepos+1;s.len(afterbrace))|{Ok:v v;Err:e ""};
+      let afterclose=mt s.slice(afterbrace;closepos+1;s.len(afterbrace)) {$ok:v v;$err:e ""};
       let alen=s.len(afterclose);
       if(alen>0){
-        let first=s.slice(afterclose;0;1)|{Ok:v v;Err:e ""};
+        let first=mt s.slice(afterclose;0;1) {$ok:v v;$err:e ""};
         if(first=":"){
-          let rest=s.slice(afterclose;1;alen)|{Ok:v v;Err:e ""};
+          let rest=mt s.slice(afterclose;1;alen) {$ok:v v;$err:e ""};
           let rlen=s.len(rest);
           if(rlen>0){
-            let rfirst=s.slice(rest;0;1)|{Ok:v v;Err:e ""};
-            if(rfirst="\n"){
-              <s.slice(rest;1;rlen)|{Ok:v v;Err:e rest}
+            let rfirst=mt s.slice(rest;0;1) {$ok:v v;$err:e ""};
+            if(rfirst="
+"){
+              <mt s.slice(rest;1;rlen) {$ok:v v;$err:e rest}
             }el{
               <rest
             }
@@ -74,7 +75,8 @@ f=hcolval(row:$str;idx:i64):$str{
 };
 
 f=hdatalines(data:$str):@$str{
-  let lines=s.split(data;"\n");
+  let lines=s.split(data;"
+");
   let result=mut.@();
   lp(let i=0;i<lines.len;i=i+1){
     let line=lines.get(i);
@@ -94,11 +96,11 @@ f=dec(input:$str):$str{
     <""
   }el{
     let hasopen=s.contains(input;"{");
-    if(!hasopen){
+    if(!$hasopen){
       <""
     }el{
       let hasclose=s.contains(input;"}");
-      if(!hasclose){
+      if(!$hasclose){
         <""
       }el{
         <input
@@ -127,13 +129,13 @@ f=str(t:$str;key:$str):$str{
 f=i64(t:$str;key:$str):i64{
   let val=str(t;key);
   let trimmed=s.trim(val);
-  <s.to_int(trimmed)|{Ok:v v;Err:e 0}
+  <mt s.toint(trimmed) {$ok:v v;$err:e 0}
 };
 
 f=f64(t:$str;key:$str):f64{
   let val=str(t;key);
   let trimmed=s.trim(val);
-  <s.to_float(trimmed)|{Ok:v v;Err:e 0.0}
+  <mt s.tofloat(trimmed) {$ok:v v;$err:e 0.0}
 };
 
 f=bool(t:$str;key:$str):bool{
@@ -183,17 +185,17 @@ f=hisnumeric(val:$str):bool{
   let vlen=s.len(val);
   if(vlen=0){<false}el{
     let start=mut.0;
-    let first=s.slice(val;0;1)|{Ok:v v;Err:e ""};
+    let first=mt s.slice(val;0;1) {$ok:v v;$err:e ""};
     if(first="-"){
       start=1
     }el{};
     if(!(start<vlen)){<false}el{
       let alldig=mut.true;
       lp(let i=start;i<vlen;i=i+1){
-        let c=s.slice(val;i;i+1)|{Ok:v v;Err:e ""};
+        let c=mt s.slice(val;i;i+1) {$ok:v v;$err:e ""};
         if(c="."){
         }el{
-          if(!hisdigitchar(c)){
+          if(!$hisdigitchar(c)){
             alldig=false
           }el{}
         }
@@ -204,10 +206,11 @@ f=hisnumeric(val:$str):bool{
 };
 
 f=hjsonesc(val:$str):$str{
-  let r1=s.replace(val;"\\";"\\\\");
-  let r2=s.replace(r1;"\"";"\\\"");
-  let r3=s.replace(r2;"\n";"\\n");
-  let r4=s.replace(r3;"\t";"\\t");
+  let r1=s.replace(val;"\";"\\");
+  let r2=s.replace(r1;"\"";"\\"");
+  let r3=s.replace(r2;"
+";"\n");
+  let r4=s.replace(r3;"	";"\t");
   <r4
 };
 
@@ -272,8 +275,9 @@ f=hskipws(src:$str;pos:i64):i64{
     if(!(p<slen)){
       running=false
     }el{
-      let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
-      if(c=" "||c="\t"||c="\n"||c="\r"){
+      let c=mt s.slice(src;p;p+1) {$ok:v v;$err:e ""};
+      if(c=" "||c="	"||c="
+"||c=""){
         p=p+1
       }el{
         running=false
@@ -293,23 +297,24 @@ f=hjsonstring(src:$str;pos:i64):$str{
     if(!(p<slen)){
       running=false
     }el{
-      let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
-      if(c="\\"){
-        let next=s.slice(src;p+1;p+2)|{Ok:v v;Err:e ""};
+      let c=mt s.slice(src;p;p+1) {$ok:v v;$err:e ""};
+      if(c="\"){
+        let next=s.slice(src;p+1;p+2)|{$ok:v v;$err:e ""};
         if(next="\""){
           result=s.concat(result;"\"");
           p=p+2
         }el{
-          if(next="\\"){
-            result=s.concat(result;"\\");
+          if(next="\"){
+            result=s.concat(result;"\");
             p=p+2
           }el{
             if(next="n"){
-              result=s.concat(result;"\n");
+              result=s.concat(result;"
+");
               p=p+2
             }el{
               if(next="t"){
-                result=s.concat(result;"\t");
+                result=s.concat(result;"	");
                 p=p+2
               }el{
                 result=s.concat(result;c);
@@ -339,8 +344,8 @@ f=hjsonstringend(src:$str;pos:i64):i64{
     if(!(p<slen)){
       running=false
     }el{
-      let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
-      if(c="\\"){
+      let c=s.slice(src;p;p+1)|{$ok:v v;$err:e ""};
+      if(c="\"){
         p=p+2
       }el{
         if(c="\""){
@@ -361,7 +366,7 @@ f=hskipjsonval(src:$str;pos:i64):i64{
   if(!(p<slen)){
     <p
   }el{
-    let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
+    let c=mt s.slice(src;p;p+1) {$ok:v v;$err:e ""};
     if(c="\""){
       <hjsonstringend(src;p)
     }el{
@@ -376,7 +381,7 @@ f=hskipjsonval(src:$str;pos:i64):i64{
           if(!(q<slen)||depth=0){
             running=false
           }el{
-            let ch=s.slice(src;q;q+1)|{Ok:v v;Err:e ""};
+            let ch=mt s.slice(src;q;q+1) {$ok:v v;$err:e ""};
             if(ch="\""){
               q=hjsonstringend(src;q)
             }el{
@@ -403,8 +408,9 @@ f=hskipjsonval(src:$str;pos:i64):i64{
           if(!(q<slen)){
             running=false
           }el{
-            let ch=s.slice(src;q;q+1)|{Ok:v v;Err:e ""};
-            if(ch=","||ch="}"||ch="]"||ch=" "||ch="\n"||ch="\t"||ch="\r"){
+            let ch=mt s.slice(src;q;q+1) {$ok:v v;$err:e ""};
+            if(ch=","||ch="}"||ch="]"||ch=" "||ch="
+"||ch="	"||ch=""){
               running=false
             }el{
               q=q+1
@@ -423,12 +429,12 @@ f=hjsonvalraw(src:$str;pos:i64):$str{
   if(!(p<slen)){
     <""
   }el{
-    let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
+    let c=mt s.slice(src;p;p+1) {$ok:v v;$err:e ""};
     if(c="\""){
       <hjsonstring(src;p)
     }el{
       let endp=hskipjsonval(src;p);
-      <s.trim(s.slice(src;p;endp)|{Ok:v v;Err:e ""})
+      <s.trim(mt s.slice(src;p;endp) {$ok:v v;$err:e ""})
     }
   }
 };
@@ -442,7 +448,7 @@ f=hjsonkeys(src:$str;pos:i64):@$str{
     if(!(p<slen)){
       running=false
     }el{
-      let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
+      let c=mt s.slice(src;p;p+1) {$ok:v v;$err:e ""};
       if(c="}"){
         running=false
       }el{
@@ -454,7 +460,7 @@ f=hjsonkeys(src:$str;pos:i64):@$str{
           let aftercolon=colonpos+1;
           let afterval=hskipjsonval(src;aftercolon);
           let np=hskipws(src;afterval);
-          let nc=s.slice(src;np;np+1)|{Ok:v v;Err:e ""};
+          let nc=mt s.slice(src;np;np+1) {$ok:v v;$err:e ""};
           if(nc=","){
             p=hskipws(src;np+1)
           }el{
@@ -479,7 +485,7 @@ f=hjsonobjrow(src:$str;pos:i64;keys:@$str):$str{
     if(!(p<slen)){
       running=false
     }el{
-      let c=s.slice(src;p;p+1)|{Ok:v v;Err:e ""};
+      let c=mt s.slice(src;p;p+1) {$ok:v v;$err:e ""};
       if(c="}"){
         running=false
       }el{
@@ -493,7 +499,7 @@ f=hjsonobjrow(src:$str;pos:i64;keys:@$str):$str{
           kvvals=kvvals.append(rawval);
           let afterval=hskipjsonval(src;valstart);
           let np=hskipws(src;afterval);
-          let nc=s.slice(src;np;np+1)|{Ok:v v;Err:e ""};
+          let nc=mt s.slice(src;np;np+1) {$ok:v v;$err:e ""};
           if(nc=","){
             p=hskipws(src;np+1)
           }el{
@@ -520,7 +526,7 @@ f=hjsonobjrow(src:$str;pos:i64;keys:@$str):$str{
         found=true
       }el{}
     };
-    if(!found){
+    if(!$found){
     }el{}
   };
   <row
@@ -530,7 +536,7 @@ f=fromjson(j:$str):$str{
   let slen=s.len(j);
   if(slen=0){<""}el{
     let p=hskipws(j;0);
-    let c=s.slice(j;p;p+1)|{Ok:v v;Err:e ""};
+    let c=mt s.slice(j;p;p+1) {$ok:v v;$err:e ""};
     if(c="{"){
       
       let keys=hjsonkeys(j;p);
@@ -540,18 +546,21 @@ f=fromjson(j:$str):$str{
           if(i>0){header=s.concat(header;",")}el{};
           header=s.concat(header;keys.get(i))
         };
-        header=s.concat(header;"}:\n");
+        header=s.concat(header;"}:
+");
         let row=hjsonobjrow(j;p;keys);
         let result=s.concat(header;row);
-        <s.concat(result;"\n")
+        <s.concat(result;"
+")
       }
     }el{
       if(c="["){
         
         let ap=hskipws(j;p+1);
-        let ac=s.slice(j;ap;ap+1)|{Ok:v v;Err:e ""};
+        let ac=mt s.slice(j;ap;ap+1) {$ok:v v;$err:e ""};
         if(ac="]"){
-          <"data[0]{}:\n"
+          <"data[0]{}:
+"
         }el{
           if(ac="{"){
             let keys=hjsonkeys(j;ap);
@@ -565,12 +574,12 @@ f=fromjson(j:$str):$str{
                 if(!(wp<slen)){
                   counting=false
                 }el{
-                  let wc=s.slice(j;wp;wp+1)|{Ok:v v;Err:e ""};
+                  let wc=mt s.slice(j;wp;wp+1) {$ok:v v;$err:e ""};
                   if(wc="{"){
                     objcount=objcount+1;
                     let endobj=hskipjsonval(j;wp);
                     let np=hskipws(j;endobj);
-                    let nc=s.slice(j;np;np+1)|{Ok:v v;Err:e ""};
+                    let nc=mt s.slice(j;np;np+1) {$ok:v v;$err:e ""};
                     if(nc=","){
                       cp=np+1
                     }el{
@@ -582,13 +591,14 @@ f=fromjson(j:$str):$str{
                 }
               };
               
-              let header=mut.s.concat("data[";s.from_int(objcount));
+              let header=mut.s.concat("data[";s.fromint(objcount));
               header=s.concat(header;"]{");
               lp(let i=0;i<keys.len;i=i+1){
                 if(i>0){header=s.concat(header;",")}el{};
                 header=s.concat(header;keys.get(i))
               };
-              header=s.concat(header;"}:\n");
+              header=s.concat(header;"}:
+");
               
               let buf=mut.header;
               let rp=mut.ap;
@@ -598,14 +608,15 @@ f=fromjson(j:$str):$str{
                 if(!(wp<slen)){
                   rowrunning=false
                 }el{
-                  let wc=s.slice(j;wp;wp+1)|{Ok:v v;Err:e ""};
+                  let wc=mt s.slice(j;wp;wp+1) {$ok:v v;$err:e ""};
                   if(wc="{"){
                     let row=hjsonobjrow(j;wp;keys);
                     buf=s.concat(buf;row);
-                    buf=s.concat(buf;"\n");
+                    buf=s.concat(buf;"
+");
                     let endobj=hskipjsonval(j;wp);
                     let np=hskipws(j;endobj);
-                    let nc=s.slice(j;np;np+1)|{Ok:v v;Err:e ""};
+                    let nc=mt s.slice(j;np;np+1) {$ok:v v;$err:e ""};
                     if(nc=","){
                       rp=np+1
                     }el{

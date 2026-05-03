@@ -956,7 +956,9 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
             int in_type_pos = 0;
             if (i >= 1) {
                 TokenKind pk = nt[i-1].kind;
-                if (pk == TK_BANG || pk == TK_AT) in_type_pos = 1;
+                /* ! is ambiguous (logical NOT vs error propagation).
+                 * Only treat as type position after @, not after !. */
+                if (pk == TK_AT) in_type_pos = 1;
                 /* ':' is ambiguous — used for both type annotations (x:$user)
                  * and struct literal values (name:value). Don't add $ after ':'
                  * since false positives in struct literals are worse than

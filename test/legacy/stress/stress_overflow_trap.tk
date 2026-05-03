@@ -1,5 +1,5 @@
-M=test;
-F=main():i64{
+m=test;
+f=main():i64{
   let x=9223372036854775807;
   <x+1
 };

@@ -4,11 +4,11 @@ i=file:std.file;
 i=str:std.str;
 i=args:std.args;
 
-(* greperr — error sum type *)
+
 t=$greperr{$usage:$str;$fileerr:$str;$nopattern:void};
 
-(* print_usage — show usage information *)
-f=print_usage():void{
+
+f=printusage():void{
   io.println("usage: tkgrep <pattern> <file>");
   io.println("");
   io.println("search for lines matching <pattern> in <file>");
@@ -21,14 +21,14 @@ f=print_usage():void{
   io.println("  -v    invert match (print non-matching lines)")
 };
 
-(* opts — parsed command line options *)
+
 t=$opts{pattern:$str;path:$str;ignorecase:bool;countonly:bool;nolinenum:bool;invert:bool};
 
-(* parse_args — extract options, pattern, and file path from argv *)
-f=parse_args():$opts!$greperr{
+
+f=parseargs():$opts!$greperr{
   let argc=args.count();
   if(argc<3){
-    <$err($greperr.$usage("too few arguments"))
+    <$err($$usage("too few arguments"))
   };
   let ignorecase=mut.false;
   let countonly=mut.false;
@@ -52,12 +52,12 @@ f=parse_args():$opts!$greperr{
         invert=true
       }
     };
-    if(str.startswith(arg;"-")==false){
+    if(str.startswith(arg;"-")=false){
       positional=positional.push(arg)
     }
   };
   if(positional.len<2){
-    <$err($greperr.$usage("need <pattern> and <file>"))
+    <$err($$usage("need <pattern> and <file>"))
   };
   <$ok($opts{
     pattern:positional.get(0);
@@ -69,7 +69,7 @@ f=parse_args():$opts!$greperr{
   })
 };
 
-(* matches — check if a line contains the pattern *)
+
 f=matches(line:$str;pattern:$str;ignorecase:bool):bool{
   if(ignorecase){
     <str.contains(str.lower(line);str.lower(pattern))
@@ -77,11 +77,11 @@ f=matches(line:$str;pattern:$str;ignorecase:bool):bool{
   <str.contains(line;pattern)
 };
 
-(* format_line — build output string for a matching line *)
-f=format_line(linenum:u64;line:$str;shownum:bool):$str{
+
+f=formatline(linenum:u64;line:$str;shownum:bool):$str{
   if(shownum){
     let buf=str.buf();
-    str.add(buf;str.from_int(linenum as i64));
+    str.add(buf;str.fromint(linenum as i64));
     str.add(buf;":");
     str.add(buf;line);
     <str.done(buf)
@@ -89,71 +89,72 @@ f=format_line(linenum:u64;line:$str;shownum:bool):$str{
   <line
 };
 
-(* search — read file and search line by line *)
+
 f=search(opts:$opts):u64!$greperr{
-  let content=file.read(opts.path)|{
+  let content=mt file.read(opts.path) {
     $ok:v v;
-    $err:e <$err($greperr.$fileerr(
+    $err:e <$err($$fileerr(
       str.concat("cannot read file: ";opts.path)
     ))
   };
-  let lines=str.split(content;"\n");
+  let lines=str.split(content;"
+");
   let count=mut.0;
-  let shownum=opts.nolinenum==false;
+  let shownum=opts.nolinenum=false;
 
   lp(let i=0;i<(lines.len as i64);i=i+1){
     let line=lines.get(i);
     let hit=matches(line;opts.pattern;opts.ignorecase);
     let show=hit;
     if(opts.invert){
-      show=hit==false
+      show=hit=false
     };
     if(show){
       count=count+1;
-      if(opts.countonly==false){
+      if(opts.countonly=false){
         let linenum=(i+1) as u64;
-        io.println(format_line(linenum;line;shownum))
+        io.println(formatline(linenum;line;shownum))
       }
     }
   };
   if(opts.countonly){
-    io.println(str.from_int(count as i64))
+    io.println(str.fromint(count as i64))
   };
   <$ok(count as u64)
 };
 
-(* main — entry point *)
+
 f=main():i64{
-  parse_args()|{
+  mt parseargs() {
     $ok:opts {
-      search(opts)|{
+      mt search(opts) {
         $ok:count {
-          if(count==0){
+          if(count=0){
             <1
           };
           <0
         };
         $err:e {
-          e|{
+          mt e {
             $usage:msg {
               io.eprintln(msg);
-              print_usage()
+              printusage()
             };
             $fileerr:msg io.eprintln(msg);
-            $nopattern:_ io.eprintln("no pattern given")
+            $nopattern: io.eprintln("no pattern given")
           };
           <2
         }
       }
     };
     $err:e {
-      e|{
+      mt e {
         $usage:msg {
           io.eprintln(msg);
-          print_usage()
+          printusage()
         };
         $fileerr:msg io.eprintln(msg);
-        $nopattern:_ io.eprintln("no pattern given")
+        $nopattern: io.eprintln("no pattern given")
       };
       <2
     }

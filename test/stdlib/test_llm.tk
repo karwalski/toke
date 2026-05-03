@@ -1,37 +1,35 @@
-m=llm_test;
+m=llmtest;
 
-(* Demonstrate std.llm API surface.
-   Real HTTP calls are not made in unit tests; we verify that client
-   construction and message assembly compile and type-check correctly. *)
 
-f=make_client():$llmclient{
+
+f=makeclient():$llmclient{
   let c=llm.client("anthropic";"claude-3-5-sonnet-20241022";"sk-test-key");
   <c
 };
 
-f=make_messages():@$llmmsg{
+f=makemessages():@$llmmsg{
   let sys=$llmmsg{role:"system";content:"You are a helpful assistant."};
   let usr=$llmmsg{role:"user";content:"What is 2 + 2?"};
   <@(sys;usr)
 };
 
-f=count_tokens_smoke():bool{
-  let c=make_client();
+f=counttokenssmoke():bool{
+  let c=makeclient();
   let n=llm.countokens(c;"Hello, world!");
-  (* Token count must be at least 1 for non-empty input. *)
-  <n>=1
+  
+  <n>1
 };
 
 f=main():i64{
-  let c=make_client();
-  (test.ok(c.provider=="anthropic"));
-  (test.ok(c.model=="claude-3-5-sonnet-20241022"));
+  let c=makeclient();
+  (test.ok(c.provider="anthropic"));
+  (test.ok(c.model="claude-3-5-sonnet-20241022"));
 
-  let msgs=make_messages();
+  let msgs=makemessages();
   (test.eq(msgs.len;2));
-  (test.ok(msgs[0].role=="system"));
-  (test.ok(msgs[1].role=="user"));
+  (test.ok(msgs.get(0).role="system"));
+  (test.ok(msgs.get(1).role="user"));
 
-  (test.ok(count_tokens_smoke()));
+  (test.ok(counttokenssmoke()));
   <0
 };

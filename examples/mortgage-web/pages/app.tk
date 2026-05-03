@@ -6,28 +6,28 @@ i=str:std.str;
 i=idx:mortgage.web.index;
 i=calc:mortgage.web.calculate;
 
-(* static_handler — serve static css file *)
-f=static_handler(req:http.$req):http.$res{
+
+f=statichandler(req:i64):i64{
   let path=str.concat("static";req.path);
-  let content=file.read(path)|{
+  let content=mt file.read(path) {
     $ok:v v;
     $err:e <http.res.bad("file not found")
   };
-  <$http.$res{
+  <$$res{
     status:200;
     headers:@(@("content-type":"text/css"));
     body:content
   }
 };
 
-(* main — start the web server *)
+
 f=main():i64{
   let r=router.new();
   router.get(r;"/";idx.handler);
   router.post(r;"/calculate";calc.handler);
-  router.get(r;"/static/style.css";static_handler);
-  router.serve(r;"0.0.0.0";8080)|{
-    $ok:_ ();
+  router.get(r;"/static/style.css";statichandler);
+  mt router.serve(r;"0.0.0.0";8080) {
+    $ok: ();
     $err:e ()
   };
   <0

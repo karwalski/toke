@@ -1,60 +1,60 @@
-m=encoding_test;
+m=encodingtest;
 i=enc:std.encoding;
 
-(* round-trip: base64 encode then decode *)
-f=test_b64_roundtrip():bool{
+
+f=testb64roundtrip():bool{
   let data=@(72;101;108;108;111);
   let encoded=enc.b64encode(data);
-  let decoded=enc.b64decode(encoded)!$enc.$encodingerr;
-  <decoded.len()==data.len()
+  let decoded=enc.b64decode(encoded)!i64$encodingerr;
+  <decoded.len()=data.len()
 };
 
-(* round-trip: url-safe base64 encode then decode *)
-f=test_b64url_roundtrip():bool{
+
+f=testb64urlroundtrip():bool{
   let data=@(72;101;108;108;111);
   let encoded=enc.b64urlencode(data);
-  let decoded=enc.b64urldecode(encoded)!$enc.$encodingerr;
-  <decoded.len()==data.len()
+  let decoded=enc.b64urldecode(encoded)!i64$encodingerr;
+  <decoded.len()=data.len()
 };
 
-(* round-trip: hex encode then decode *)
-f=test_hex_roundtrip():bool{
+
+f=testhexroundtrip():bool{
   let data=@(222;173;190;239);
   let encoded=enc.hexencode(data);
-  let decoded=enc.hexdecode(encoded)!$enc.$encodingerr;
-  <decoded.len()==data.len()
+  let decoded=enc.hexdecode(encoded)!i64$encodingerr;
+  <decoded.len()=data.len()
 };
 
-(* hex encode produces lowercase *)
-f=test_hex_lowercase():bool{
+
+f=testhexlowercase():bool{
   let data=@(255;0;171);
   let encoded=enc.hexencode(data);
-  <encoded=="ff00ab"
+  <encoded="ff00ab"
 };
 
-(* round-trip: url percent-encoding *)
-f=test_url_roundtrip():bool{
+
+f=testurlroundtrip():bool{
   let s="hello world+foo=bar&baz";
   let encoded=enc.urlencode(s);
-  let decoded=enc.urldecode(encoded)!$enc.$encodingerr;
-  <decoded==s
+  let decoded=enc.urldecode(encoded)!i64$encodingerr;
+  <decoded=s
 };
 
-(* url-safe base64 has no padding characters *)
-f=test_b64url_no_padding():bool{
+
+f=testb64urlnopadding():bool{
   let data=@(1;2;3);
   let encoded=enc.b64urlencode(data);
-  let has_pad=str.contains(encoded;"=");
-  <has_pad==false
+  let haspad=str.contains(encoded;"=");
+  <haspad=false
 };
 
 f=main():i64{
-  let r0=test_b64_roundtrip();
-  let r1=test_b64url_roundtrip();
-  let r2=test_hex_roundtrip();
-  let r3=test_hex_lowercase();
-  let r4=test_url_roundtrip();
-  let r5=test_b64url_no_padding();
+  let r0=testb64roundtrip();
+  let r1=testb64urlroundtrip();
+  let r2=testhexroundtrip();
+  let r3=testhexlowercase();
+  let r4=testurlroundtrip();
+  let r5=testb64urlnopadding();
   if(r0&&r1&&r2&&r3&&r4&&r5){
     <0
   }el{

@@ -1,4 +1,4 @@
 m=main;
 f=greet():void{
     let msg = "hello, world";
-}
+};

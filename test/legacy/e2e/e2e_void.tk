@@ -1,8 +1,8 @@
-M=t;
-F=greet():void{
+m=t;
+f=greet():void{
   let x=42;
 };
-F=main():i64{
+f=main():i64{
   greet();
   <0
 };

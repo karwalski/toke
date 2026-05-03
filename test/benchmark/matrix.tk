@@ -3,48 +3,45 @@ i=io:std.io;
 i=str:std.str;
 i=time:std.time;
 
-(* matrix multiplication — multiply two nxn matrices of f64.
- * exercises: nested loops, floating-point arithmetic, array indexing.
- * matrices stored as flat @f64 arrays in row-major order.
- * result is built sequentially via push since arrays are append-only. *)
 
-(* mat_idx — row-major index for (r;c) in an nxn matrix *)
-f=mat_idx(n:i64;r:i64;c:i64):i64{
+
+
+f=matidx(n:i64;r:i64;c:i64):i64{
   <r*n+c
 };
 
-(* mat_fill_a — build matrix a with a deterministic pattern *)
-f=mat_fill_a(n:i64):@f64{
+
+f=matfilla(n:i64):@f64{
   let m=mut.@();
   lp(let i=0;i<n*n;i=i+1){
     let r=i/n;
     let c=i-r*n;
     let v=(r as f64)*0.5+(c as f64)*0.3+1.0;
-    m=m.push(v)
+    m=m.push(v);
   };
   <m
 };
 
-(* mat_fill_b — build matrix b with a different deterministic pattern *)
-f=mat_fill_b(n:i64):@f64{
+
+f=matfillb(n:i64):@f64{
   let m=mut.@();
   lp(let i=0;i<n*n;i=i+1){
     let r=i/n;
     let c=i-r*n;
     let v=(c as f64)*0.7-(r as f64)*0.2+2.0;
-    m=m.push(v)
+    m=m.push(v);
   };
   <m
 };
 
-(* mat_mul — multiply a*b; both nxn; result built row by row via push *)
-f=mat_mul(a:@f64;b:@f64;n:i64):@f64{
+
+f=matmul(a:@f64;b:@f64;n:i64):@f64{
   let c=mut.@();
   lp(let r=0;r<n;r=r+1){
     lp(let col=0;col<n;col=col+1){
       let sum=mut.0.0;
       lp(let k=0;k<n;k=k+1){
-        sum=sum+a.get(mat_idx(n;r;k))*b.get(mat_idx(n;k;col))
+        sum=sum+a.get(matidx(n;r;k))*b.get(matidx(n;k;col))
       };
       c=c.push(sum)
     }
@@ -52,33 +49,33 @@ f=mat_mul(a:@f64;b:@f64;n:i64):@f64{
   <c
 };
 
-(* checksum — sum corner and centre elements to verify correctness *)
+
 f=checksum(m:@f64;n:i64):f64{
   let sum=mut.0.0;
-  sum=sum+m.get(mat_idx(n;0;0));
-  sum=sum+m.get(mat_idx(n;0;n-1));
-  sum=sum+m.get(mat_idx(n;n-1;0));
-  sum=sum+m.get(mat_idx(n;n-1;n-1));
-  sum=sum+m.get(mat_idx(n;n/2;n/2));
+  sum=sum+m.get(matidx(n;0;0));
+  sum=sum+m.get(matidx(n;0;n-1));
+  sum=sum+m.get(matidx(n;n-1;0));
+  sum=sum+m.get(matidx(n;n-1;n-1));
+  sum=sum+m.get(matidx(n;n/2;n/2));
   <sum
 };
 
-(* main — run matrix multiply benchmark *)
+
 f=main():i64{
   let n=200;
   let iterations=3;
 
   io.println("benchmark: matrix multiplication");
-  io.println(str.concat("  size: ";str.concat(str.from_int(n);str.concat("x";str.from_int(n)))));
-  io.println(str.concat("  iterations: ";str.from_int(iterations)));
+  io.println(str.concat("  size: ";str.concat(str.fromint(n);str.concat("x";str.fromint(n)))));
+  io.println(str.concat("  iterations: ";str.fromint(iterations)));
 
-  let a=mat_fill_a(n);
-  let b=mat_fill_b(n);
+  let a=matfilla(n);
+  let b=matfillb(n);
 
   let t0=time.now();
-  let result=mut.mat_mul(a;b;n);
+  let result=mut.matmul(a;b;n);
   lp(let run=1;run<iterations;run=run+1){
-    result=mat_mul(a;b;n)
+    result=matmul(a;b;n)
   };
   let t1=time.now();
   let elapsed=t1-t0;
@@ -86,11 +83,11 @@ f=main():i64{
   let ck=checksum(result;n);
 
   io.println("");
-  io.println(str.concat("  checksum:    ";str.from_float(ck)));
-  io.println(str.concat("  elapsed (s): ";str.from_int(elapsed)));
+  io.println(str.concat("  checksum:    ";str.fromfloat(ck)));
+  io.println(str.concat("  elapsed (s): ";str.fromint(elapsed)));
   io.println("");
   io.println("  (compare checksum against c/rust reference)");
 
-  (* return non-zero to prevent dead code elimination *)
+  
   if(ck>0.0){<1}el{<0}
 };

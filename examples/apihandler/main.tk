@@ -3,12 +3,12 @@ i=http:std.http;
 i=str:std.str;
 i=time:std.time;
 
-(* GET /api/hello — static JSON greeting *)
+
 f=helloget(req:i64):i64{
   <http.resjson(200; "{\"msg\":\"hello\",\"status\":\"ok\"}")
 };
 
-(* GET /api/time — current server time *)
+
 f=timeget(req:i64):i64{
   let now=time.now();
   let ts=time.format(now; "%Y-%m-%dT%H:%M:%S");
@@ -16,18 +16,18 @@ f=timeget(req:i64):i64{
   <http.resjson(200; body)
 };
 
-(* POST /api/echo — echo request body as JSON *)
+
 f=echopost(req:i64):i64{
   let body=http.reqbody(req);
   let resp=str.concat("{\"echo\":"; str.concat(body; "}"));
   <http.resjson(200; resp)
 };
 
-(* main — register routes and start server on port 8080 *)
+
 f=main():i64{
   http.get("/api/hello"; &helloget);
   http.get("/api/time"; &timeget);
   http.post("/api/echo"; &echopost);
-  http.serve_workers(8080; 1);
+  http.serveworkers(8080; 1);
   <0
 };

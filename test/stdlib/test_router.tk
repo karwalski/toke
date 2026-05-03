@@ -1,27 +1,25 @@
-m=router_test;
+m=routertest;
 
-(* Demonstrate std.router: create a router, register routes, and verify
-   that route registration does not panic.  Actual network I/O is skipped
-   in unit tests; the test verifies the API surface only. *)
 
-f=build_router():$router{
+
+f=buildrouter():$router{
   let r=router.new();
-  (* Register a GET handler using an opaque handler id. *)
+  
   let h:$handler=$handler{id:1};
   router.get(r;"/";h);
   router.get(r;"/items/:id";h);
 
-  (* Register a POST handler. *)
+  
   let ph:$handler=$handler{id:2};
   router.post(r;"/items";ph);
 
-  (* Register a PUT and DELETE handler. *)
+  
   let uh:$handler=$handler{id:3};
   router.put(r;"/items/:id";uh);
   let dh:$handler=$handler{id:4};
   router.delete(r;"/items/:id";dh);
 
-  (* Attach a middleware. *)
+  
   let mw:$middleware=$middleware{id:10};
   router.use(r;mw);
 
@@ -29,10 +27,8 @@ f=build_router():$router{
 };
 
 f=main():i64{
-  let r=build_router();
-  (* router.new() returns an opaque handle; we can only verify it was
-     constructed without error.  router.serve() would block, so it is
-     not called in tests. *)
+  let r=buildrouter();
+  
   (test.ok(true));
   <0
 };

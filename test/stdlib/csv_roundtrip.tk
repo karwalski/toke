@@ -1,9 +1,9 @@
-m=csv_roundtrip_test;
+m=csvroundtriptest;
 i=csv:std.csv;
 i=test:std.test;
 i=str:std.str;
 
-(* Round-trip: write rows then parse them back and verify field values. *)
+
 f=roundtrip():bool{
   let w=csv.writer(44);
   (csv.writerow(w;@("name";"score";"grade")));
@@ -29,12 +29,16 @@ f=roundtrip():bool{
   })
 };
 
-(* Streaming reader: header then rows one at a time. *)
+
 f=streaming():bool{
-  let data=str.bytes("id,val\n1,10\n2,20\n3,30\n");
+  let data=str.bytes("id,val
+1,10
+2,20
+3,30
+");
   let r=csv.reader(data;44);
-  let hdr_result=csv.header(r);
-  (match hdr_result{
+  let hdrresult=csv.header(r);
+  (match hdrresult{
     ok(h){
       (test.eq(h.len;2));
       (test.eq(h.get(0);"id"));
@@ -55,12 +59,14 @@ f=streaming():bool{
   <true
 };
 
-(* Tab-separated values: sep=9 (ASCII tab). *)
-f=tsv_parse():bool{
-  let data=str.bytes("a\tb\tc\n1\t2\t3\n");
+
+f=tsvparse():bool{
+  let data=str.bytes("a	b	c
+1	2	3
+");
   let r=csv.reader(data;9);
-  let hdr_result=csv.header(r);
-  (match hdr_result{
+  let hdrresult=csv.header(r);
+  (match hdrresult{
     ok(h){
       (test.eq(h.len;3));
       (test.eq(h.get(2);"c"));
@@ -75,6 +81,6 @@ f=tsv_parse():bool{
 f=main():i64{
   (test.ok(roundtrip()));
   (test.ok(streaming()));
-  (test.ok(tsv_parse()));
+  (test.ok(tsvparse()));
   <0
 };

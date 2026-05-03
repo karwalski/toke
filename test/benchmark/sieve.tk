@@ -3,28 +3,25 @@ i=io:std.io;
 i=str:std.str;
 i=time:std.time;
 
-(* prime counting via trial division.
- * for each candidate n, tests divisibility against all primes up to sqrt(n).
- * exercises: array growth via push, nested iteration, conditional branching.
- * runs multiple iterations to ensure measurable wall-clock time. *)
 
-(* is_prime — check if n is prime by dividing against known primes *)
-f=is_prime(n:i64;primes:@i64):bool{
+
+
+f=isprime(n:i64;primes:@i64):bool{
   if(n<2){<false};
   lp(let i=0;i<(primes.len as i64);i=i+1){
     let p=primes.get(i);
     if(p*p>n){<true};
-    if(n-n/p*p==0){<false}
+    if(n-n/p*p=0){<false}
   };
   <true
 };
 
-(* find_primes — find all primes below limit using trial division *)
-f=find_primes(limit:i64):i64{
+
+f=findprimes(limit:i64):i64{
   let primes=mut.@();
   let count=mut.0;
   lp(let n=2;n<limit;n=n+1){
-    if(is_prime(n;primes)){
+    if(isprime(n;primes)){
       primes=primes.push(n);
       count=count+1
     }
@@ -32,30 +29,30 @@ f=find_primes(limit:i64):i64{
   <count
 };
 
-(* main — run prime finder repeatedly and report timing *)
+
 f=main():i64{
   let limit=100000;
   let iterations=5;
 
   io.println("benchmark: prime counting (trial division)");
-  io.println(str.concat("  limit: ";str.from_int(limit)));
-  io.println(str.concat("  iterations: ";str.from_int(iterations)));
+  io.println(str.concat("  limit: ";str.fromint(limit)));
+  io.println(str.concat("  iterations: ";str.fromint(iterations)));
 
   let t0=time.now();
   let result=mut.0;
   lp(let run=0;run<iterations;run=run+1){
-    result=find_primes(limit)
+    result=findprimes(limit)
   };
   let t1=time.now();
   let elapsed=t1-t0;
 
   io.println("");
-  io.println(str.concat("  primes found: ";str.from_int(result)));
-  io.println(str.concat("  elapsed (s):  ";str.from_int(elapsed)));
+  io.println(str.concat("  primes found: ";str.fromint(result)));
+  io.println(str.concat("  elapsed (s):  ";str.fromint(elapsed)));
   io.println("");
 
-  (* expected: 9592 primes below 100000 *)
-  if(result==9592){
+  
+  if(result=9592){
     io.println("  result: CORRECT")
   }el{
     io.println("  result: INCORRECT (expected 9592)")

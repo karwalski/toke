@@ -1,29 +1,37 @@
-m=analytics_test;
+m=analyticstest;
 i=df:std.dataframe;
 i=analytics:std.analytics;
 i=test:std.test;
 i=str:std.str;
 
-(* Helper: build a simple numeric dataframe inline. *)
-f=make_frame():$dataframe{
-  let data=str.bytes("group,value,ts\nA,10,1\nA,20,2\nB,30,3\nB,40,4\nA,15,5\n");
+
+f=makeframe():$dataframe{
+  let data=str.bytes("group,value,ts
+A,10,1
+A,20,2
+B,30,3
+B,40,4
+A,15,5
+");
   let result=df.fromcsv(data);
   (match result{
     ok(frame){<frame};
     err(e){
       (test.fail(e.msg));
-      <df.head(df.fromcsv(str.bytes("g,v,t\n0,0,0\n")).ok;0)
+      <df.head(df.fromcsv(str.bytes("g,v,t
+0,0,0
+")).ok;0)
     };
   })
 };
 
-(* describe: per-column stats, one statsrow per numeric column. *)
-f=describe_test():bool{
-  let frame=make_frame();
+
+f=describetest():bool{
+  let frame=makeframe();
   let result=analytics.describe(frame);
   (match result{
     ok(rows){
-      (* at least one statsrow returned *)
+      
       <(rows.len>0)
     };
     err(e){
@@ -33,13 +41,13 @@ f=describe_test():bool{
   })
 };
 
-(* groupstats: mean of 'value' per 'group'. *)
-f=groupstats_test():bool{
-  let frame=make_frame();
+
+f=groupstatstest():bool{
+  let frame=makeframe();
   let result=analytics.groupstats(frame;"group";"value");
   (match result{
     ok(stats){
-      (* Two groups: A and B *)
+      
       (test.eq(stats.len;2));
       <true
     };
@@ -50,9 +58,9 @@ f=groupstats_test():bool{
   })
 };
 
-(* timeseries: rolling mean window=2 over 'value' indexed by 'ts'. *)
-f=timeseries_test():bool{
-  let frame=make_frame();
+
+f=timeseriestest():bool{
+  let frame=makeframe();
   let result=analytics.timeseries(frame;"ts";"value";2);
   (match result{
     ok(pts){
@@ -66,9 +74,15 @@ f=timeseries_test():bool{
   })
 };
 
-(* anomalies: z-score threshold 2.0 — no anomalies in uniform data. *)
-f=anomalies_test():bool{
-  let data=str.bytes("v\n1\n2\n3\n4\n5\n");
+
+f=anomaliestest():bool{
+  let data=str.bytes("v
+1
+2
+3
+4
+5
+");
   let result=df.fromcsv(data);
   (match result{
     ok(frame){
@@ -90,9 +104,14 @@ f=anomalies_test():bool{
   })
 };
 
-(* corr: perfectly correlated columns should return ~1.0. *)
-f=corr_test():bool{
-  let data=str.bytes("x,y\n1,2\n2,4\n3,6\n4,8\n");
+
+f=corrtest():bool{
+  let data=str.bytes("x,y
+1,2
+2,4
+3,6
+4,8
+");
   let result=df.fromcsv(data);
   (match result{
     ok(frame){
@@ -115,10 +134,10 @@ f=corr_test():bool{
 };
 
 f=main():i64{
-  (test.ok(describe_test()));
-  (test.ok(groupstats_test()));
-  (test.ok(timeseries_test()));
-  (test.ok(anomalies_test()));
-  (test.ok(corr_test()));
+  (test.ok(describetest()));
+  (test.ok(groupstatstest()));
+  (test.ok(timeseriestest()));
+  (test.ok(anomaliestest()));
+  (test.ok(corrtest()));
   <0
 };

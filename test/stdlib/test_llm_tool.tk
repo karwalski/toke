@@ -1,9 +1,8 @@
-m=llm_tool_test;
+m=llmtooltest;
 
-(* Demonstrate std.llm.tool API surface: declare tools, attach them to
-   a client, and verify the data structures compile correctly. *)
 
-f=make_tool():$tooldecl{
+
+f=maketool():$tooldecl{
   let p1=$toolparam{name:"city";type:"str";desc:"The city name";required:true};
   let p2=$toolparam{name:"units";type:"str";desc:"celsius or fahrenheit";required:false};
   <$tooldecl{
@@ -13,29 +12,29 @@ f=make_tool():$tooldecl{
   }
 };
 
-f=make_result(call_id:$str):$toolresult{
-  <$toolresult{id:call_id;content:"{\"temp\":22;\"desc\":\"sunny\"}";error:false}
+f=makeresult(callid:$str):$toolresult{
+  <$toolresult{id:callid;content:"{\"temp\":22;\"desc\":\"sunny\"}";error:false}
 };
 
 f=main():i64{
-  let tool=make_tool();
-  (test.ok(tool.name=="get_weather"));
+  let tool=maketool();
+  (test.ok(tool.name="get_weather"));
   (test.eq(tool.params.len;2));
-  (test.ok(tool.params[0].required));
-  (test.ok(!tool.params[1].required));
+  (test.ok(tool.params.get(0).required));
+  (test.ok(!$tool.params.get(1).required));
 
-  let result=make_result("call-abc123");
-  (test.ok(result.id=="call-abc123"));
-  (test.ok(!result.error));
+  let result=makeresult("call-abc123");
+  (test.ok(result.id="call-abc123"));
+  (test.ok(!$result.error));
 
-  (* Verify toolcall struct construction. *)
+  
   let tc=$toolcall{
     name:"get_weather";
     args:@(@("city";"London");@("units";"celsius"));
     id:"call-abc123"
   };
-  (test.ok(tc.name=="get_weather"));
-  (test.ok(tc.id=="call-abc123"));
+  (test.ok(tc.name="get_weather"));
+  (test.ok(tc.id="call-abc123"));
 
   <0
 };

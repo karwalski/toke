@@ -1,39 +1,35 @@
-m=ws_client_test;
+m=wsclienttest;
 
-(* std.ws — WebSocket client examples.
-   ws.connect opens a WebSocket handshake; ws.recv blocks until a frame arrives.
-   Binary frames use ws.sendbytes; text frames use ws.send.
-   ws.broadcast fans a text message out to a slice of connections. *)
 
-(* Connect, send a text message, receive the echo, then close. *)
-f=echo_roundtrip(url:$str):bool!$wserr{
-  let conn=ws.connect(url)?;
-  ws.send(conn;"hello")?;
-  let msg=ws.recv(conn)?;
-  let body=str.from_bytes(msg.payload);
+
+
+f=echoroundtrip(url:$str):bool!$wserr{
+  let conn=ws.connect(url);
+  ws.send(conn;"hello");
+  let msg=ws.recv(conn);
+  let body=str.frombytes(msg.payload);
   ws.close(conn);
-  <ok(body=="hello")
+  <ok(body="hello")
 };
 
-(* Send a binary frame and verify the reply payload length matches. *)
-f=binary_roundtrip(url:$str;data:@byte):bool!$wserr{
-  let conn=ws.connect(url)?;
-  ws.sendbytes(conn;data)?;
-  let reply=ws.recv(conn)?;
+
+f=binaryroundtrip(url:$str;data:@$byte):bool!$wserr{
+  let conn=ws.connect(url);
+  ws.sendbytes(conn;data);
+  let reply=ws.recv(conn);
   ws.close(conn);
-  <ok(reply.payload.len==data.len)
+  <ok(reply.payload.len=data.len)
 };
 
-(* Receive messages in a loop until the server closes the connection
-   (fin=true on a close frame, opcode=8). *)
-f=recv_loop(url:$str):i64!$wserr{
-  let conn=ws.connect(url)?;
+
+f=recvlp(let lv=0;true;lv=lv)(url:$str):i64!$wserr{
+  let conn=ws.connect(url);
   let count:i64=0;
   let running:bool=true;
-  loop{
-    if !running{break};
-    let msg=ws.recv(conn)?;
-    if msg.opcode==8{
+  lp(let lv=0;true;lv=lv){
+    if(!$running){break};
+    let msg=ws.recv(conn);
+    if(msg.opcode=8){
       set running=false;
     }el{
       set count=count+1;
@@ -43,22 +39,22 @@ f=recv_loop(url:$str):i64!$wserr{
   <ok(count)
 };
 
-(* Broadcast a status update to all connected dashboard clients. *)
-f=notify_all(conns:@$wsconn;status:$str):void{
+
+f=notifyall(conns:@$wsconn;status:$str):void{
   let payload=str.concat("{\"status\":\"";str.concat(status;"\"}"));
   ws.broadcast(conns;payload);
 };
 
-(* Smoke test: wsconn fields are initialised on connect. *)
-f=test_conn_ready(url:$str):bool!$wserr{
-  let conn=ws.connect(url)?;
+
+f=testconnready(url:$str):bool!$wserr{
+  let conn=ws.connect(url);
   let ready=conn.ready;
   ws.close(conn);
   <ok(ready)
 };
 
 f=main():i64{
-  (* Unit-level assertions that do not require a live server. *)
+  
   let dummy=$wsconn{id:0;ready:false};
   (test.eq(dummy.id;0));
   let msg=$wsmsg{payload:@();fin:true;opcode:1};

@@ -1,25 +1,22 @@
-m=sse_server_test;
+m=sseservertest;
 
-(* std.sse — Server-Sent Events examples.
-   An SSE handler receives an ssectx and emits events until it calls sse.close.
-   sse.keepalive sends comment pings on an interval to hold the connection open
-   through proxies that enforce idle timeouts. *)
 
-(* Emit a numbered sequence of data events then close. *)
-f=count_stream(ctx:$ssectx):void{
+
+
+f=countstream(ctx:$ssectx):void{
   sse.keepalive(ctx;15000);
   let i:u64=0;
-  loop{
-    if i==10{break};
+  lp(let lv=0;true;lv=lv){
+    if(i=10){break};
     let ev=$sseevent{
-      id:str.from_u64(i);
+      id:str.fromu64(i);
       event:"tick";
-      data:str.from_u64(i);
+      data:str.fromu64(i);
       retry:3000
     };
     let result=sse.emit(ctx;ev);
     (match result{
-      ok(_){};
+      ok(){};
       err(e){
         (log.error(str.concat("sse emit error: ";e.msg)));
         break;
@@ -30,35 +27,33 @@ f=count_stream(ctx:$ssectx):void{
   sse.close(ctx);
 };
 
-(* Tail a log channel: emit each line as a data-only event. *)
-f=log_tail(ctx:$ssectx;lines:@$str):void{
+
+f=logtail(ctx:$ssectx;lines:@$str):void{
   sse.keepalive(ctx;10000);
   let i:u64=0;
-  loop{
-    if i==lines.len{break};
+  lp(let lv=0;true;lv=lv){
+    if(i=lines.len){break};
     let line=lines.get(i);
     let result=sse.emitdata(ctx;line);
     (match result{
-      ok(_){};
-      err(_){break};
+      ok(){};
+      err(){break};
     });
     set i=i+1;
   };
   sse.close(ctx);
 };
 
-(* Stream LLM tokens: each token is a data-only event.
-   The caller supplies a token slice (in practice the runtime feeds
-   these from a streaming HTTP response). *)
-f=token_stream(ctx:$ssectx;tokens:@$str):void{
+
+f=tokenstream(ctx:$ssectx;tokens:@$str):void{
   sse.keepalive(ctx;20000);
   let i:u64=0;
-  loop{
-    if i==tokens.len{break};
+  lp(let lv=0;true;lv=lv){
+    if(i=tokens.len){break};
     let tok=tokens.get(i);
     let result=sse.emitdata(ctx;tok);
     (match result{
-      ok(_){};
+      ok(){};
       err(e){
         (log.warn(str.concat("token stream interrupted: ";e.msg)));
         sse.close(ctx);
@@ -73,43 +68,43 @@ f=token_stream(ctx:$ssectx;tokens:@$str):void{
     data:"";
     retry:0
   };
-  let _ = sse.emit(ctx;done);
+  let  = sse.emit(ctx;done);
   sse.close(ctx);
 };
 
-(* Live chart update: push a JSON data point every tick. *)
-f=chart_feed(ctx:$ssectx;points:@$str):void{
+
+f=chartfeed(ctx:$ssectx;points:@$str):void{
   sse.keepalive(ctx;5000);
   let i:u64=0;
-  loop{
-    if i==points.len{break};
+  lp(let lv=0;true;lv=lv){
+    if(i=points.len){break};
     let ev=$sseevent{
-      id:str.from_u64(i);
+      id:str.fromu64(i);
       event:"datapoint";
       data:points.get(i);
       retry:2000
     };
     let result=sse.emit(ctx;ev);
     (match result{
-      ok(_){};
-      err(_){break};
+      ok(){};
+      err(){break};
     });
     set i=i+1;
   };
   sse.close(ctx);
 };
 
-(* Smoke tests: verify sseevent and ssectx field initialisation. *)
-f=test_event_fields():bool{
+
+f=testeventfields():bool{
   let ev=$sseevent{id:"42";event:"update";data:"hello";retry:1000};
-  (test.ok(ev.id=="42"));
-  (test.ok(ev.event=="update"));
-  (test.ok(ev.data=="hello"));
+  (test.ok(ev.id="42"));
+  (test.ok(ev.event="update"));
+  (test.ok(ev.data="hello"));
   (test.eq(ev.retry;1000));
   <true
 };
 
-f=test_ctx_fields():bool{
+f=testctxfields():bool{
   let ctx=$ssectx{id:7;open:true};
   (test.eq(ctx.id;7));
   (test.ok(ctx.open));
@@ -117,7 +112,7 @@ f=test_ctx_fields():bool{
 };
 
 f=main():i64{
-  (test.ok(test_event_fields()));
-  (test.ok(test_ctx_fields()));
+  (test.ok(testeventfields()));
+  (test.ok(testctxfields()));
   <0
 };

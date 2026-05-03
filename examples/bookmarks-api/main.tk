@@ -3,14 +3,14 @@ i=http:std.http;
 i=io:std.io;
 i=api:bookmarks.api;
 
-(* main — register routes and start the http server *)
+
 f=main():i64{
   let srv=http.server();
 
-  http.get(srv;"/api/bookmarks";api.handle_list);
-  http.post(srv;"/api/bookmarks";api.handle_create);
-  http.get(srv;"/api/bookmarks/:id";api.handle_get);
-  http.delete(srv;"/api/bookmarks/:id";api.handle_delete);
+  http.get(srv;"/api/bookmarks";api.handlelist);
+  http.post(srv;"/api/bookmarks";api.handlecreate);
+  http.get(srv;"/api/bookmarks/:id";api.handleget);
+  http.delete(srv;"/api/bookmarks/:id";api.handledelete);
 
   io.println("bookmarks api listening on http://localhost:8080");
   http.listen(srv;8080);

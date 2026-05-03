@@ -1,9 +1,9 @@
-M=test;
-T=Vec2{x:i64;y:i64};
-F=add(a:Vec2;b:Vec2):Vec2{<Vec2{x:a.x+b.x;y:a.y+b.y}};
-F=main():i64{
-  let a=Vec2{x:3;y:4};
-  let b=Vec2{x:10;y:20};
+m=test;
+t=$vec2{x:i64;y:i64};
+f=add(a:$vec2;b:$vec2):$vec2{<$vec2{x:a.x+b.x;y:a.y+b.y}};
+f=main():i64{
+  let a=$vec2{x:3;y:4};
+  let b=$vec2{x:10;y:20};
   let c=add(a;b);
   <c.x
 };

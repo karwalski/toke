@@ -3,7 +3,7 @@ i=mem:std.mem;
 i=s:std.str;
 
 f=mask(x:i64):i64{
-  <x & 0xFFFFFFFF
+  <x & 0xffffffff
 };
 
 f=rotr(x:i64;n:i64):i64{
@@ -118,10 +118,10 @@ f=load32be(buf:i64;off:i64):i64{
 };
 
 f=store32be(buf:i64;off:i64;val:i64):void{
-  st8(buf;off;(val >> 24) & 0xFF);
-  st8(buf;off+1;(val >> 16) & 0xFF);
-  st8(buf;off+2;(val >> 8) & 0xFF);
-  st8(buf;off+3;val & 0xFF)
+  st8(buf;off;(val >> 24) & 0xff);
+  st8(buf;off+1;(val >> 16) & 0xff);
+  st8(buf;off+2;(val >> 8) & 0xff);
+  st8(buf;off+3;val & 0xff)
 };
 
 f=wget(wbuf:i64;idx:i64):i64{
@@ -209,24 +209,24 @@ f=padandfinish(hbuf:i64;block:i64;blocklen:i64;totallen:i64):void{
   };
   zeropad(block;blen;56);
   let bitlen=totallen*8;
-  st8(block;56;(bitlen >> 56) & 0xFF);
-  st8(block;57;(bitlen >> 48) & 0xFF);
-  st8(block;58;(bitlen >> 40) & 0xFF);
-  st8(block;59;(bitlen >> 32) & 0xFF);
-  st8(block;60;(bitlen >> 24) & 0xFF);
-  st8(block;61;(bitlen >> 16) & 0xFF);
-  st8(block;62;(bitlen >> 8) & 0xFF);
-  st8(block;63;bitlen & 0xFF);
+  st8(block;56;(bitlen >> 56) & 0xff);
+  st8(block;57;(bitlen >> 48) & 0xff);
+  st8(block;58;(bitlen >> 40) & 0xff);
+  st8(block;59;(bitlen >> 32) & 0xff);
+  st8(block;60;(bitlen >> 24) & 0xff);
+  st8(block;61;(bitlen >> 16) & 0xff);
+  st8(block;62;(bitlen >> 8) & 0xff);
+  st8(block;63;bitlen & 0xff);
   processblock(hbuf;block)
 };
 
 f=writeresult(hbuf:i64;digest:i64):void{
   lp(let i=0;i<8;i=i+1){
     let v=load32be(hbuf;i*4);
-    st8(digest;i*4;(v >> 24) & 0xFF);
-    st8(digest;i*4+1;(v >> 16) & 0xFF);
-    st8(digest;i*4+2;(v >> 8) & 0xFF);
-    st8(digest;i*4+3;v & 0xFF)
+    st8(digest;i*4;(v >> 24) & 0xff);
+    st8(digest;i*4+1;(v >> 16) & 0xff);
+    st8(digest;i*4+2;(v >> 8) & 0xff);
+    st8(digest;i*4+3;v & 0xff)
   }
 };
 
@@ -239,8 +239,8 @@ f=tohex(buf:i64;nbytes:i64):$str{
   let out=s.buf();
   lp(let i=0;i<nbytes;i=i+1){
     let b=ld8(buf;i);
-    s.addbyte(out;hexchar((b >> 4) & 0xF));
-    s.addbyte(out;hexchar(b & 0xF))
+    s.addbyte(out;hexchar((b >> 4) & 0xf));
+    s.addbyte(out;hexchar(b & 0xf))
   };
   <s.done(out)
 };
