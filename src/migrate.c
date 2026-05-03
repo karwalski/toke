@@ -472,11 +472,12 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             continue;
         }
 
-        /* loop{ → lp(true){ (v2 infinite loop) */
+        /* loop{ → lp(let lv=0;true;lv=lv){ (v3 three-part infinite loop) */
         if (src[i] == 'l' && i+4 < slen && !strncmp(src+i, "loop", 4) &&
             !is_idchar(src[i+4]) && !in_str) {
-            o[w++] = 'l'; o[w++] = 'p'; o[w++] = '('; o[w++] = 't';
-            o[w++] = 'r'; o[w++] = 'u'; o[w++] = 'e'; o[w++] = ')';
+            const char *inf = "lp(let lv=0;true;lv=lv)";
+            int il = (int)strlen(inf);
+            memcpy(o+w, inf, (size_t)il); w += il;
             i += 3; continue;
         }
 
