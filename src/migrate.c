@@ -528,7 +528,20 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
     for (int p = 0; p < blen; p++) {
         if (buf[p]=='|' && p+1<blen && buf[p+1]=='{' && !is_in_string(buf,p)) {
             int es = p;
-            while (es>0) { char pc=buf[es-1]; if(pc==';'||pc=='{'||pc=='='||pc=='\n') break; es--; }
+            /* Walk backwards to find expression start, skipping balanced parens */
+            int paren_depth = 0;
+            while (es > 0) {
+                char pc = buf[es-1];
+                if (pc == ')') { paren_depth++; es--; continue; }
+                if (pc == '(') {
+                    if (paren_depth > 0) { paren_depth--; es--; continue; }
+                    /* Unmatched ( — this is a statement boundary */
+                    break;
+                }
+                if (paren_depth == 0 && (pc==';'||pc=='{'||pc=='='||pc=='\n'||pc=='<'))
+                    break;
+                es--;
+            }
             while (es<p && (buf[es]==' '||buf[es]=='\t')) es++;
             b2 -= (p - es);
             memcpy(buf2+b2, "mt ", 3); b2 += 3;
@@ -541,7 +554,41 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
     }
     buf2[b2] = '\0';
 
-    /* Step 5: Add missing }; terminators */
+    /* Step 5: Wrap if/lp conditions in parens if missing: if cond { → if(cond){ */
+    {
+        char *buf3 = malloc((size_t)(b2 * 2 + 256));
+        if (buf3) {
+            int b3 = 0;
+            for (int p = 0; p < b2; p++) {
+                /* Detect 'if ' not followed by '(' */
+                if (p+3 < b2 && buf2[p]=='i' && buf2[p+1]=='f' &&
+                    buf2[p+2]==' ' && buf2[p+3]!='(' && !is_in_string(buf2,p)) {
+                    /* Check it's a keyword position (after ; { or start of line) */
+                    int ok = (p==0 || buf2[p-1]==';' || buf2[p-1]=='{' || buf2[p-1]=='\n' || buf2[p-1]==' ');
+                    if (ok) {
+                        buf3[b3++] = 'i'; buf3[b3++] = 'f'; buf3[b3++] = '(';
+                        p += 2; /* skip 'if', the space is consumed */
+                        /* Copy condition until { */
+                        while (p < b2 && buf2[p]==' ') p++; /* skip spaces after if */
+                        while (p < b2 && buf2[p]!='{') buf3[b3++] = buf2[p++];
+                        /* Trim trailing whitespace before { */
+                        while (b3 > 0 && (buf3[b3-1]==' '||buf3[b3-1]=='\t')) b3--;
+                        buf3[b3++] = ')';
+                        buf3[b3++] = '{';
+                        /* p now points at {, the for loop will increment past it */
+                        continue;
+                    }
+                }
+                buf3[b3++] = buf2[p];
+            }
+            memcpy(buf2, buf3, (size_t)b3);
+            b2 = b3;
+            buf2[b2] = '\0';
+            free(buf3);
+        }
+    }
+
+    /* Step 6: Add missing }; terminators */
     postpass_semicolons(buf2, &b2);
 
     /* Output — strip inserted module if needed */
