@@ -323,7 +323,25 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
         diag_reset_counts();
     }
     diag_suppress(0);
-    if (ntc < 0) { free(c); free(nt); return -1; }
+    if (ntc < 0) {
+        /* Both lex profiles failed — output the prepass result as-is.
+         * This gives a partially migrated file (comments stripped, pub removed,
+         * underscores stripped, etc.) rather than empty output. */
+        fprintf(stderr, "migrate: warning: lexing failed on both profiles, "
+                "outputting text-level transforms only\n");
+        if (inserted_module) {
+            const char *skip = "m=migrated;\n";
+            int skiplen = (int)strlen(skip);
+            if (clen >= skiplen && !strncmp(c, skip, (size_t)skiplen))
+                fwrite(c + skiplen, 1, (size_t)(clen - skiplen), out);
+            else
+                fwrite(c, 1, (size_t)clen, out);
+        } else {
+            fwrite(c, 1, (size_t)clen, out);
+        }
+        free(c); free(nt);
+        return 0; /* partial success — text transforms applied */
+    }
 
     /* Step 3: Token-level transforms */
     char *buf = malloc((size_t)(clen * 3 + 2048));
