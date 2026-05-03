@@ -621,25 +621,24 @@ static void postpass_semicolons(char *buf, int *blen_p)
     for (int i = 0; i < blen; i++) {
         out[w++] = buf[i];
         if (buf[i] == '}' && !is_in_string(buf, i)) {
-            /* Check if next non-whitespace is NOT ; already */
+            /* Find next non-whitespace (including newlines) */
             int j = i + 1;
-            while (j < blen && (buf[j]==' '||buf[j]=='\t')) j++;
-            /* Don't add ; before 'el' (else branch: }el{ not };el{) */
+            while (j < blen && (buf[j]==' '||buf[j]=='\t'||buf[j]=='\n'||buf[j]=='\r')) j++;
+
+            /* Don't add ; before: el, ;, ), }, already-terminated */
             if (j+1 < blen && buf[j] == 'e' && buf[j+1] == 'l') {
                 /* }el{ — no semicolon */
-            } else if (j < blen && buf[j] != ';' && buf[j] != ',' && buf[j] != ')' &&
-                buf[j] != '}' && buf[j] != '\0') {
-                /* Check if this } ends a function, type, or top-level block.
-                 * Heuristic: if next non-ws char is a letter, newline, or EOF-like */
-                if (buf[j] == '\n' || (buf[j] >= 'a' && buf[j] <= 'z') ||
-                    buf[j] == 'f' || buf[j] == 't' || buf[j] == 'i' || buf[j] == 'm' ||
-                    buf[j] == '$' || buf[j] == '@' || buf[j] == '<') {
+            } else if (j < blen && (buf[j] == ';' || buf[j] == ')' || buf[j] == '}')) {
+                /* Already terminated or nested close — no semicolon */
+            } else if (j >= blen) {
+                /* } at end of file — add ; */
+                out[w++] = ';';
+            } else {
+                /* Add ; if next is a declaration, statement, or expression start */
+                if ((buf[j] >= 'a' && buf[j] <= 'z') || buf[j] == '$' ||
+                    buf[j] == '@' || buf[j] == '<' || buf[j] == '(') {
                     out[w++] = ';';
                 }
-            }
-            /* Also: } at end of file without ; */
-            if (j >= blen) {
-                out[w++] = ';';
             }
         }
     }
