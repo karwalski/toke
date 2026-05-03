@@ -154,11 +154,16 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             i++; continue;
         }
 
-        /* [] empty array → @() (but skip @ if already preceded by @) */
+        /* [] empty array → @() (but handle preceding @ or @(...)) */
         if (src[i] == '[' && i+1 < slen && src[i+1] == ']') {
             if (w > 0 && o[w-1] == '@') {
-                /* @[] → @() — already have @, just add () */
+                /* @[] → @() */
                 o[w++] = '('; o[w++] = ')';
+            } else if (w > 0 && o[w-1] == ')') {
+                /* @($type)[] → the @($type) is the type constructor,
+                 * [] is the empty literal. Just drop [] entirely —
+                 * @($type) already constructs an empty typed array. */
+                /* skip [] */
             } else {
                 o[w++] = '@'; o[w++] = '('; o[w++] = ')';
             }
@@ -414,7 +419,17 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                     if (k >= 0 && (src[k]==':'||src[k]=='@'||src[k]=='!')) prev_is_type = 1;
                 }
                 if (prev_is_type) {
+                    /* Type position: $mod.type → i64 */
                     o[w++]='i';o[w++]='6';o[w++]='4';
+                    i = j - 1; continue;
+                } else {
+                    /* Expression position: $mod.type → $type (drop module prefix) */
+                    int dot = i + 1;
+                    while (dot < j && src[dot] != '.') dot++;
+                    o[w++] = '$';
+                    for (int k = dot + 1; k < j; k++) {
+                        if (src[k] != '_') o[w++] = src[k];
+                    }
                     i = j - 1; continue;
                 }
             }
