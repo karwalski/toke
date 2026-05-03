@@ -281,12 +281,9 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
         /* Skip non-ASCII bytes outside strings */
         if ((unsigned char)src[i] > 127) continue;
 
-        /* Strip underscores from identifiers */
+        /* Strip ALL underscores outside strings — v0.3 has no underscores */
         if (src[i] == '_' && !in_str) {
-            int prev_id = (i > 0 && is_idchar(src[i-1]));
-            int next_id = (i+1 < slen && is_idchar(src[i+1]));
-            /* Strip _ between identifier chars, or leading _ before identifier */
-            if ((prev_id && next_id) || (!prev_id && next_id)) continue;
+            continue;
         }
 
         /* Replace , with ; (argument separator) outside strings */
@@ -458,23 +455,10 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
             if (i >= 1) {
                 TokenKind pk = nt[i-1].kind;
                 if (pk == TK_BANG || pk == TK_AT) in_type_pos = 1;
-                /* After ':' — but NOT in imports (i=alias:module) or match arms ($variant:binding) */
-                if (pk == TK_COLON) {
-                    int is_import = 0, is_match_bind = 0;
-                    /* Check if this : is in an import (preceded by IDENT = IDENT :) */
-                    if (i >= 3 && nt[i-2].kind == TK_IDENT && nt[i-3].kind == TK_EQ) {
-                        /* Check if before = is i or I (import keyword) */
-                        if (i >= 4 && nt[i-4].kind == TK_IDENT && nt[i-4].len == 1 &&
-                            (c[nt[i-4].start] == 'i' || c[nt[i-4].start] == 'I'))
-                            is_import = 1;
-                        if (i >= 4 && nt[i-4].kind == TK_KW_I) is_import = 1;
-                    }
-                    /* Check if : is in match arm ($variant:binding) */
-                    if (i >= 2 && (nt[i-2].kind == TK_DOLLAR ||
-                        (nt[i-2].kind == TK_IDENT && i >= 3 && nt[i-3].kind == TK_DOLLAR)))
-                        is_match_bind = 1;
-                    if (!is_import && !is_match_bind) in_type_pos = 1;
-                }
+                /* ':' is ambiguous — used for both type annotations (x:$user)
+                 * and struct literal values (name:value). Don't add $ after ':'
+                 * since false positives in struct literals are worse than
+                 * missing $ in type positions (compiler tells user to add $). */
                 /* After t= or T= (type declaration name) */
                 if (pk == TK_EQ && i >= 2 &&
                     (nt[i-2].kind == TK_KW_T ||
