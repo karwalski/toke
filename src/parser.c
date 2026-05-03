@@ -275,7 +275,7 @@ static void  parse_one_param(Parser *p, Node *fn);
  */
 static int is_scalar(Parser *p, Token *t) {
     if (t->kind!=TK_IDENT&&t->kind!=TK_TYPE_IDENT) return 0;
-    static const char *sc[]={"u8","u16","u32","u64","i8","i16","i32","i64","f32","f64","bool","Str","Byte","void",NULL};
+    static const char *sc[]={"u8","u16","u32","u64","i8","i16","i32","i64","f32","f64","bool","str","byte","Str","Byte","void",NULL};
     for(int i=0;sc[i];i++) if(teq(p,t,sc[i])) return 1;
     return 0;
 }
