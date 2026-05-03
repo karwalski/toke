@@ -230,26 +230,43 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             }
         }
 
-        /* @($type) → @$type: strip ( after @ when followed by single $ type and ) */
+        /* @($type) handling — strip parens ONLY in type positions (after :)
+         * In expression positions (after = < ( ;), keep parens: @($type) is a literal */
         if (src[i] == '@' && i+1 < slen && src[i+1] == '(') {
+            /* Check if type position: preceded by : */
+            int in_type = 0;
+            if (i > 0) {
+                int k = i - 1;
+                while (k >= 0 && (src[k]==' '||src[k]=='\t')) k--;
+                if (k >= 0 && src[k] == ':') in_type = 1;
+            }
+
             /* Look ahead for single type + ) */
             int j = i + 2;
-            /* Skip whitespace */
             while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
             if (j < slen && src[j] == '$') {
-                /* $identifier) pattern */
                 int tstart = j; j++;
                 while (j < slen && is_idchar(src[j])) j++;
                 while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
                 if (j < slen && src[j] == ')') {
-                    /* Confirmed @($type) → emit @$type, strip underscores */
-                    o[w++] = '@';
-                    for (int k = tstart; k < j; k++) {
-                        if (src[k] == '_' || src[k] == ' ' || src[k] == '\t') continue;
-                        o[w++] = src[k];
+                    if (in_type) {
+                        /* Type position: @($type) → @$type */
+                        o[w++] = '@';
+                        for (int k = tstart; k < j; k++) {
+                            if (src[k] == '_' || src[k] == ' ' || src[k] == '\t') continue;
+                            o[w++] = src[k];
+                        }
+                        i = j; continue;
+                    } else {
+                        /* Expression position: keep @($type) with parens, just strip _ */
+                        o[w++] = '@'; o[w++] = '(';
+                        for (int k = tstart; k < j; k++) {
+                            if (src[k] == '_' || src[k] == ' ' || src[k] == '\t') continue;
+                            o[w++] = src[k];
+                        }
+                        o[w++] = ')';
+                        i = j; continue;
                     }
-                    i = j;
-                    continue;
                 }
             }
             /* Check for @(mod.$type) — qualified cross-module type → @i64 */
@@ -276,15 +293,22 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                 while (j < slen && is_idchar(src[j])) j++;
                 while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
                 if (j < slen && src[j] == ')') {
-                    /* @(str) → @str, @(item) → @$item */
                     char lo[128]; int tl = j - tstart < 127 ? j - tstart : 127;
                     for (int k = 0; k < tl; k++) lo[k] = src[tstart+k];
                     lo[tl] = '\0';
-                    /* Strip underscores */
                     char clean[128]; int cl = remove_underscores(lo, tl, clean, sizeof clean);
-                    o[w++] = '@';
-                    if (!is_primitive(clean)) o[w++] = '$';
-                    memcpy(o+w, clean, (size_t)cl); w += cl;
+                    if (in_type) {
+                        /* Type: @(str) → @str, @(item) → @$item */
+                        o[w++] = '@';
+                        if (!is_primitive(clean)) o[w++] = '$';
+                        memcpy(o+w, clean, (size_t)cl); w += cl;
+                    } else {
+                        /* Expr: keep parens @(str) or @($item) */
+                        o[w++] = '@'; o[w++] = '(';
+                        if (!is_primitive(clean)) o[w++] = '$';
+                        memcpy(o+w, clean, (size_t)cl); w += cl;
+                        o[w++] = ')';
+                    }
                     i = j; continue;
                 }
                 /* Not a single-type parens — rewind j */
@@ -297,14 +321,18 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                 while (j < slen && is_idchar(src[j])) j++;
                 while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
                 if (j < slen && src[j] == ')') {
-                    o[w++] = '@'; o[w++] = '$';
+                    if (in_type) {
+                        o[w++] = '@'; o[w++] = '$';
+                    } else {
+                        o[w++] = '@'; o[w++] = '('; o[w++] = '$';
+                    }
                     for (int k = tstart; k < j; k++) {
                         char ch = src[k];
                         if (ch == '_' || ch == ' ' || ch == '\t') continue;
                         o[w++] = (ch >= 'A' && ch <= 'Z') ? (char)(ch+32) : ch;
                     }
-                    i = j;
-                    continue;
+                    if (!in_type) o[w++] = ')';
+                    i = j; continue;
                 }
             }
         }
