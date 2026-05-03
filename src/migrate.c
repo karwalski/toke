@@ -278,6 +278,26 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             if (ok) { i += 3; continue; }
         }
 
+        /* Convert ?() option types — not in v0.3 character set.
+         * ?($type) → $type!$none  (option type annotation)
+         * ??(cond) → if(cond)     (conditional check) */
+        if (src[i] == '?' && !in_str) {
+            /* ?? → if */
+            if (i+1 < slen && src[i+1] == '?') {
+                o[w++] = 'i'; o[w++] = 'f';
+                i++; continue;
+            }
+            /* ?( → strip ? and keep ( — converts ?($type) to ($type) which
+             * the rest of the pipeline handles. For type annotations like
+             * :?($type), this becomes :$type!$none after further processing. */
+            if (i+1 < slen && src[i+1] == '(') {
+                /* Skip the ?, let ( pass through normally */
+                continue;
+            }
+            /* Bare ? — just strip it */
+            continue;
+        }
+
         /* Skip non-ASCII bytes outside strings */
         if ((unsigned char)src[i] > 127) continue;
 
