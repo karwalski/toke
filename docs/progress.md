@@ -592,6 +592,9 @@ The `toke --migrate` command converts legacy and partially migrated source to v0
 | 85.1.10 | Migrate loke to v0.3 | in_progress | — | 559 files. Previous: 21% success. With all fixes: targeting 90%+. Remaining: unit enums, immutable reassignment need manual fixes. |
 | 85.1.11 | Known limitations documentation | backlog | — | **P1** Document: unit enum $foo; needs manual →$foo:i64;, let x=v; x=new needs manual →let x=mut.v, nested generics, trait-like patterns. |
 
+| 85.1.12 | Merge corpus transform patterns into --migrate | done | 2026-05-04 | **P1** Audited all Python corpus scripts (transform_corpus.py, phase2_syntax_audit.py, phase2_autofix_v2.py, disinfect_task_specs.py, canonicalise_tk_source.py, fix_type_cast_leak.py). Merged 60+ camelCase→lowercase mappings, generic camelCase lowering. migrate.c now handles LLM-generated code patterns, not just version migration. |
+| 85.1.13 | --migrate supports multi-turn LLM repair | done | 2026-05-04 | **P1** Recursive retry (up to 3 passes), structured error output, fix suggestions in diagnostics. Tool can be used in generate→compile→migrate→recompile loops for corpus generation. |
+
 ### Epic 84 — Diagnostic Quality: Machine-Readable, Multi-Error, Repair-Loop Ready
 
 All compiler outputs must produce structured JSON diagnostics suitable for automated LLM repair loops.
