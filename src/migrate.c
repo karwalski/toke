@@ -52,6 +52,39 @@ static int is_idchar(char c) {
     return (c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_';
 }
 
+/* camelCase → lowercase normalization for common LLM-generated patterns.
+ * LLMs frequently produce Python/JS-style camelCase for toke stdlib functions. */
+static const struct { const char *from; const char *to; } CAMEL_MAP[] = {
+    {"startsWith","startswith"},{"endsWith","endswith"},{"indexOf","indexof"},
+    {"parseInt","parseint"},{"toString","tostring"},{"toInt","toint"},
+    {"toLower","tolower"},{"toUpper","toupper"},{"fromInt","fromint"},
+    {"fromFloat","fromfloat"},{"toFloat","tofloat"},{"fromBytes","frombytes"},
+    {"padLeft","padleft"},{"padRight","padright"},{"trimLeft","trimleft"},
+    {"trimRight","trimright"},{"splitLines","splitlines"},{"isAlpha","isalpha"},
+    {"isDigit","isdigit"},{"isAlnum","isalnum"},{"isSpace","isspace"},
+    {"charAt","charat"},{"charCode","charcode"},{"arrIndex","arrindex"},
+    {"arrCount","arrcount"},{"arrConcat","arrconcat"},{"arrSlice","arrslice"},
+    {"safeDiv","safediv"},{"readFile","readfile"},{"writeFile","writefile"},
+    {"readAll","readall"},{"listAll","listall"},{"isDir","isdir"},
+    {"mkDir","mkdir"},{"lineCount","linecount"},{"wordCount","wordcount"},
+    {"getUser","getuser"},{"setUser","setuser"},{"getUserName","getusername"},
+    {"firstName","firstname"},{"lastName","lastname"},{"isValid","isvalid"},
+    {"hasKey","haskey"},{"getKey","getkey"},{"setKey","setkey"},
+    {"maxVal","maxval"},{"minVal","minval"},{"absVal","absval"},
+    {"isEven","iseven"},{"isOdd","isodd"},{"isPrime","isprime"},
+    {"forEach","foreach"},{"mapValues","mapvalues"},{"filterBy","filterby"},
+    {"sortBy","sortby"},{"groupBy","groupby"},{"flatMap","flatmap"},
+    {"toJson","tojson"},{"fromJson","fromjson"},{"parseJson","parsejson"},
+    {"httpGet","httpget"},{"httpPost","httppost"},{"httpPut","httpput"},
+    {"getHeader","getheader"},{"setHeader","setheader"},
+    {"isActive","isactive"},{"isEnabled","isenabled"},{"isReady","isready"},
+    {"runTest","runtest"},{"assertEqual","asserteq"},{"assertNotEqual","assertne"},
+    {"assertTrue","asserttrue"},{"assertFalse","assertfalse"},
+    {"getEnv","getenv"},{"setEnv","setenv"},{"getOrDefault","getor"},
+    {"println","println"},{"printLn","println"},{"readLine","readline"},
+    {NULL,NULL}
+};
+
 /* ── Prepass: comprehensive text-level cleanup BEFORE lexing ──────── */
 
 static char *prepass(const char *src, int slen, int *out_len, int *inserted_module)
@@ -432,6 +465,42 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                     }
                     i = j - 1; continue;
                 }
+            }
+        }
+
+        /* camelCase → lowercase for LLM-generated code patterns.
+         * Check if current position starts a camelCase identifier. */
+        if (src[i] >= 'a' && src[i] <= 'z' && !in_str) {
+            /* Extract the full identifier */
+            int ie = i;
+            while (ie < slen && is_idchar(src[ie])) ie++;
+            int ilen = ie - i;
+            /* Check if it contains uppercase (camelCase indicator) */
+            int has_upper = 0;
+            for (int k = i+1; k < ie; k++)
+                if (src[k] >= 'A' && src[k] <= 'Z') { has_upper = 1; break; }
+            if (has_upper && ilen < 64) {
+                char word[64];
+                memcpy(word, src+i, (size_t)ilen);
+                word[ilen] = '\0';
+                /* Look up in camelCase map */
+                int found = 0;
+                for (int k = 0; CAMEL_MAP[k].from; k++) {
+                    if (!strcmp(word, CAMEL_MAP[k].from)) {
+                        const char *rep = CAMEL_MAP[k].to;
+                        int rlen = (int)strlen(rep);
+                        memcpy(o+w, rep, (size_t)rlen); w += rlen;
+                        i = ie - 1; found = 1; break;
+                    }
+                }
+                if (found) continue;
+                /* Not in map — just lowercase all uppercase chars */
+                for (int k = i; k < ie; k++) {
+                    char ch = src[k];
+                    if (ch == '_') continue;
+                    o[w++] = (ch >= 'A' && ch <= 'Z') ? (char)(ch+32) : ch;
+                }
+                i = ie - 1; continue;
             }
         }
 
