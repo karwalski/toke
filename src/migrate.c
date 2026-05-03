@@ -120,6 +120,19 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
 
         int has_module = 0;
         if (p+1 < slen && ((src[p]=='m'||src[p]=='M') && src[p+1]=='=')) has_module = 1;
+        /* Also scan entire source for m= anywhere (catches files where m= isn't first) */
+        if (!has_module) {
+            for (int s = 0; s+1 < slen; s++) {
+                if ((src[s]=='m'||src[s]=='M') && src[s+1]=='=' &&
+                    (s==0||src[s-1]=='\n'||src[s-1]==';')) {
+                    /* Check it's followed by an identifier (not m=$type{ which is a struct) */
+                    int t = s + 2;
+                    while (t < slen && is_idchar(src[t])) t++;
+                    if (t < slen && src[t] == ';') { has_module = 1; break; }
+                    if (t < slen && src[t] == '.') { has_module = 1; break; }
+                }
+            }
+        }
         if (!has_module) {
             const char *stub = "m=migrated;\n";
             int sl = (int)strlen(stub);
@@ -512,6 +525,97 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             continue;
         }
 
+        /* }{ → }el{ when preceded by if/el block (Pattern A: missing else) */
+        if (src[i] == '}' && !in_str && i+1 < slen) {
+            int j = i + 1;
+            while (j < slen && (src[j]==' '||src[j]=='\t'||src[j]=='\n')) j++;
+            if (j < slen && src[j] == '{') {
+                /* Check if this } closes an if/el block by scanning back */
+                int k = i - 1;
+                while (k >= 0 && (src[k]==' '||src[k]=='\t'||src[k]=='\n')) k--;
+                /* The } at position i closes a block. If what follows is {
+                 * without el, it's likely a missing else. */
+                /* But only if NOT after a function/type declaration (those use }; not }el{) */
+                int is_branch = 0;
+                /* Scan back further to check if this was an if or el block */
+                int depth = 1, scan = i - 1;
+                while (scan >= 0 && depth > 0) {
+                    if (src[scan] == '}') depth++;
+                    else if (src[scan] == '{') depth--;
+                    scan--;
+                }
+                /* scan now points before the matching {. Check if preceded by ) */
+                while (scan >= 0 && (src[scan]==' '||src[scan]=='\t')) scan--;
+                if (scan >= 0 && src[scan] == ')') is_branch = 1;
+                /* Also check for }el{ pattern */
+                if (scan >= 1 && src[scan]=='l' && src[scan-1]=='e') is_branch = 1;
+
+                if (is_branch) {
+                    o[w++] = '}'; o[w++] = 'e'; o[w++] = 'l';
+                    i = j - 1; /* will be incremented to j which is { */
+                    continue;
+                }
+            }
+        }
+
+        /* m=$type{ → t=$type{ (type declaration using m= instead of t=) */
+        if (src[i] == 'm' && !in_str && i+1 < slen && src[i+1] == '=' &&
+            i+2 < slen && src[i+2] == '$') {
+            /* Check if at declaration position */
+            int at_decl = (i == 0 || src[i-1] == '\n' || src[i-1] == ';');
+            if (!at_decl) {
+                int k = i - 1;
+                while (k >= 0 && (src[k]==' '||src[k]=='\t')) k--;
+                if (k < 0 || src[k]=='\n' || src[k]==';') at_decl = 1;
+            }
+            if (at_decl) {
+                /* Check if after = there's $ident{ — this is a type decl not module */
+                int j = i + 2; /* at $ */
+                j++; /* skip $ */
+                while (j < slen && is_idchar(src[j])) j++;
+                while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
+                if (j < slen && src[j] == '{') {
+                    o[w++] = 't'; /* t=$type{ instead of m=$type{ */
+                    continue;
+                }
+            }
+        }
+
+        /* ):type{ after if() → strip :type (Pattern D: type on if expression) */
+        if (src[i] == ')' && !in_str && i+1 < slen && src[i+1] == ':') {
+            /* Check if this is after an if( condition */
+            int j = i - 1, d = 1;
+            while (j >= 0 && d > 0) {
+                if (src[j] == ')') d++;
+                else if (src[j] == '(') d--;
+                j--;
+            }
+            while (j >= 0 && (src[j]==' '||src[j]=='\t')) j--;
+            /* Check for 'if' before ( */
+            if (j >= 1 && src[j] == 'f' && src[j-1] == 'i') {
+                o[w++] = ')';
+                /* Skip :type until { */
+                int k = i + 1;
+                while (k < slen && src[k] != '{' && src[k] != '\n') k++;
+                i = k - 1;
+                continue;
+            }
+        }
+
+        /* |$errtype in return type → !$errtype (Pattern B: pipe error union) */
+        if (src[i] == '|' && !in_str && i+1 < slen && src[i+1] == '$') {
+            /* Check if in return type position: after ):type */
+            int k = i - 1;
+            while (k >= 0 && is_idchar(src[k])) k--;
+            if (k >= 0 && src[k] == '$') k--; /* skip $ of type */
+            while (k >= 0 && (src[k]==' '||src[k]=='\t')) k--;
+            if (k >= 0 && src[k] == ':') {
+                /* In return type: |$err → !$err */
+                o[w++] = '!';
+                continue;
+            }
+        }
+
         /* == comparison → = (toke uses single = for equality) */
         if (src[i] == '=' && i+1 < slen && src[i+1] == '=' && !in_str) {
             o[w++] = '=';
@@ -640,7 +744,8 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
         if (src[i] == '$' && !in_str) {
             int j = i + 1;
             while (j < slen && is_idchar(src[j])) j++;
-            while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
+            int jend = j; /* position right after identifier, before whitespace */
+            while (j < slen && (src[j]==' '||src[j]=='\t'||src[j]=='\n'||src[j]=='\r')) j++;
             if (j < slen && (src[j] == ';' || src[j] == '}')) {
                 /* Check if we're inside a type block — scan back for t= or { */
                 int in_type = 0;
@@ -650,12 +755,11 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                 if (in_type) {
                     /* Emit $name:i64 instead of $name */
                     o[w++] = '$';
-                    for (int m = i+1; m < j; m++) {
-                        if (src[m] != ' ' && src[m] != '\t' && src[m] != '_')
-                            o[w++] = src[m];
+                    for (int m = i+1; m < jend; m++) {
+                        if (src[m] != '_') o[w++] = src[m];
                     }
                     o[w++] = ':'; o[w++] = 'i'; o[w++] = '6'; o[w++] = '4';
-                    i = j - 1; /* for loop will advance to ; */
+                    i = j - 1;
                     continue;
                 }
             }
