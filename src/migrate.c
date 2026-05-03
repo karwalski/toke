@@ -247,6 +247,24 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                     continue;
                 }
             }
+            /* Check for @(mod.$type) — qualified cross-module type → @i64 */
+            if (j < slen && src[j] >= 'a' && src[j] <= 'z') {
+                while (j < slen && is_idchar(src[j])) j++;
+                if (j < slen && src[j] == '.') {
+                    j++;
+                    if (j < slen && src[j] == '$') {
+                        /* mod.$type pattern — skip to ) */
+                        while (j < slen && src[j] != ')') j++;
+                        if (j < slen && src[j] == ')') {
+                            o[w++] = '@'; o[w++] = 'i'; o[w++] = '6'; o[w++] = '4';
+                            i = j; continue;
+                        }
+                    }
+                }
+                /* Not a mod.$type — rewind j for the bareident check */
+                j = i + 2;
+                while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
+            }
             /* Check for @(bareident) — single bare lowercase type like @(str) */
             if (j < slen && src[j] >= 'a' && src[j] <= 'z') {
                 int tstart = j;
@@ -336,8 +354,8 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                         while (j < slen && is_idchar(src[j])) j++;
                         int mlen = (int)(ts - 1 - ms); /* module name length */
                         char mod[32]; if (mlen < 31) { memcpy(mod, src+ms, (size_t)mlen); mod[mlen]='\0'; } else mod[0]='\0';
-                        if (!strcmp(mod,"http")||!strcmp(mod,"db")||!strcmp(mod,"ws")||
-                            !strcmp(mod,"sse")||!strcmp(mod,"router")) {
+                        /* Any cross-module qualified type → i64 */
+                        if (mod[0]) {
                             o[w++] = ':'; o[w++] = 'i'; o[w++] = '6'; o[w++] = '4';
                             i = j - 1; continue;
                         }
@@ -354,9 +372,96 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             continue;
         }
 
+        /* == comparison → = (toke uses single = for equality) */
+        if (src[i] == '=' && i+1 < slen && src[i+1] == '=' && !in_str) {
+            o[w++] = '=';
+            i++; /* skip second = */
+            continue;
+        }
+
+        /* Strip mut from parameter types: (x:mut $type → (x:$type
+         * Detect ': mut ' or ':mut ' pattern */
+        if (src[i] == 'm' && i+4 <= slen && !strncmp(src+i, "mut ", 4) && !in_str) {
+            /* Check if preceded by : (type position) */
+            int j = i - 1;
+            while (j >= 0 && (src[j]==' '||src[j]=='\t')) j--;
+            if (j >= 0 && src[j] == ':') {
+                i += 3; /* skip 'mut ', for loop skips space */
+                continue;
+            }
+        }
+
+        /* f=name(){ → f=name():i64{ (missing return type)
+         * Only for function declarations — detect by checking for f= before the ( */
+        if (src[i] == ')' && !in_str && i+1 < slen && src[i+1] == '{') {
+            /* Walk back past balanced parens to find ( */
+            int j = i - 1, d = 1;
+            while (j >= 0 && d > 0) {
+                if (src[j] == ')') d++;
+                else if (src[j] == '(') d--;
+                j--;
+            }
+            /* j is now before the opening (. Check if preceded by an ident followed by = */
+            while (j >= 0 && (src[j]==' '||src[j]=='\t')) j--;
+            /* Walk back over identifier */
+            int ie = j;
+            while (j >= 0 && is_idchar(src[j])) j--;
+            /* Check for = before identifier */
+            if (j >= 0 && src[j] == '=' && ie > j) {
+                /* This is a function declaration — add :i64 */
+                o[w++] = ')'; o[w++] = ':'; o[w++] = 'i'; o[w++] = '6'; o[w++] = '4';
+                continue;
+            }
+        }
+
+        /* ():(type){ → ():type{ (strip parens from return type) */
+        if (src[i] == ')' && !in_str && i+2 < slen && src[i+1] == ':' && src[i+2] == '(') {
+            /* Find matching ) for the return type parens */
+            int j = i + 3, d = 1;
+            while (j < slen && d > 0) {
+                if (src[j] == '(') d++;
+                else if (src[j] == ')') d--;
+                j++;
+            }
+            /* j now past closing ). Check if followed by { */
+            if (j <= slen) {
+                o[w++] = ')'; o[w++] = ':';
+                /* Copy content between parens, skip outer ( and ) */
+                for (int k = i+3; k < j-1; k++) o[w++] = src[k];
+                i = j - 1; /* for loop increments past ) */
+                continue;
+            }
+        }
+
         /* Replace , with ; (argument separator) outside strings */
         if (src[i] == ',' && !in_str) {
             o[w++] = ';'; continue;
+        }
+
+        /* Unit enum variants: $name; inside t= → $name:i64;
+         * Detect $ + ident + ; where preceded by { or ; (inside type block) */
+        if (src[i] == '$' && !in_str) {
+            int j = i + 1;
+            while (j < slen && is_idchar(src[j])) j++;
+            while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
+            if (j < slen && (src[j] == ';' || src[j] == '}')) {
+                /* Check if we're inside a type block — scan back for t= or { */
+                int in_type = 0;
+                int k = i - 1;
+                while (k >= 0 && (src[k]==' '||src[k]=='\t'||src[k]=='\n')) k--;
+                if (k >= 0 && (src[k] == '{' || src[k] == ';')) in_type = 1;
+                if (in_type) {
+                    /* Emit $name:i64 instead of $name */
+                    o[w++] = '$';
+                    for (int m = i+1; m < j; m++) {
+                        if (src[m] != ' ' && src[m] != '\t' && src[m] != '_')
+                            o[w++] = src[m];
+                    }
+                    o[w++] = ':'; o[w++] = 'i'; o[w++] = '6'; o[w++] = '4';
+                    i = j - 1; /* for loop will advance to ; */
+                    continue;
+                }
+            }
         }
 
         /* Ensure m= and i= declarations end with ; before newline */
