@@ -247,6 +247,27 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                     continue;
                 }
             }
+            /* Check for @(bareident) — single bare lowercase type like @(str) */
+            if (j < slen && src[j] >= 'a' && src[j] <= 'z') {
+                int tstart = j;
+                while (j < slen && is_idchar(src[j])) j++;
+                while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
+                if (j < slen && src[j] == ')') {
+                    /* @(str) → @str, @(item) → @$item */
+                    char lo[128]; int tl = j - tstart < 127 ? j - tstart : 127;
+                    for (int k = 0; k < tl; k++) lo[k] = src[tstart+k];
+                    lo[tl] = '\0';
+                    /* Strip underscores */
+                    char clean[128]; int cl = remove_underscores(lo, tl, clean, sizeof clean);
+                    o[w++] = '@';
+                    if (!is_primitive(clean)) o[w++] = '$';
+                    memcpy(o+w, clean, (size_t)cl); w += cl;
+                    i = j; continue;
+                }
+                /* Not a single-type parens — rewind j */
+                j = i + 2;
+                while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
+            }
             /* Check for @(PascalCase) */
             if (j < slen && src[j] >= 'A' && src[j] <= 'Z') {
                 int tstart = j;
@@ -298,6 +319,33 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             continue;
         }
 
+        /* Convert qualified stdlib types to i64 in function signatures:
+         * http.$req → i64, http.$res → i64, db.$store → i64, db.$conn → i64 */
+        if (src[i] == ':' && !in_str && i+1 < slen) {
+            int j = i + 1;
+            while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
+            /* Check for module.$ pattern */
+            if (j+2 < slen && src[j] >= 'a' && src[j] <= 'z') {
+                int ms = j;
+                while (j < slen && (src[j]>='a'&&src[j]<='z')) j++;
+                if (j < slen && src[j] == '.') {
+                    j++;
+                    if (j < slen && src[j] == '$') {
+                        /* It's mod.$type — check if it's a known stdlib type */
+                        int ts = j; j++;
+                        while (j < slen && is_idchar(src[j])) j++;
+                        int mlen = (int)(ts - 1 - ms); /* module name length */
+                        char mod[32]; if (mlen < 31) { memcpy(mod, src+ms, (size_t)mlen); mod[mlen]='\0'; } else mod[0]='\0';
+                        if (!strcmp(mod,"http")||!strcmp(mod,"db")||!strcmp(mod,"ws")||
+                            !strcmp(mod,"sse")||!strcmp(mod,"router")) {
+                            o[w++] = ':'; o[w++] = 'i'; o[w++] = '6'; o[w++] = '4';
+                            i = j - 1; continue;
+                        }
+                    }
+                }
+            }
+        }
+
         /* Skip non-ASCII bytes outside strings */
         if ((unsigned char)src[i] > 127) continue;
 
@@ -309,6 +357,32 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
         /* Replace , with ; (argument separator) outside strings */
         if (src[i] == ',' && !in_str) {
             o[w++] = ';'; continue;
+        }
+
+        /* Ensure m= and i= declarations end with ; before newline */
+        if (src[i] == '\n' && !in_str && i >= 2) {
+            /* Walk back to find line start */
+            int ls = i - 1;
+            while (ls > 0 && src[ls-1] != '\n') ls--;
+            /* Skip whitespace */
+            int lp = ls;
+            while (lp < i && (src[lp]==' '||src[lp]=='\t')) lp++;
+            /* Check if line starts with m= or i= (after possible pub stripping) */
+            int is_decl = 0;
+            if (lp+1 < i && (src[lp]=='m'||src[lp]=='i'||src[lp]=='M'||src[lp]=='I') && src[lp+1]=='=')
+                is_decl = 1;
+            if (lp+5 < i && !strncmp(src+lp,"pub ",4) && (src[lp+4]=='m'||src[lp+4]=='i') && src[lp+5]=='=')
+                is_decl = 1;
+            if (is_decl && lp < i) {
+                /* Check last non-ws char before \n */
+                int le = i - 1;
+                while (le > lp && (src[le]==' '||src[le]=='\t')) le--;
+                /* Only add ; if this line has actual content between lp and i */
+                if (le > lp && src[le] != ';' && src[le] != '{' && src[le] != '}' && src[le] != '\n') {
+                    o[w++] = ';';
+                }
+            }
+            o[w++] = '\n'; continue;
         }
 
         o[w++] = src[i];
