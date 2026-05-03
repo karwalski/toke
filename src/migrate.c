@@ -160,6 +160,47 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             i++; continue;
         }
 
+        /* [Type] or [$type] in type positions → @Type or @$type
+         * Heuristic: [ after ':' or after '[' (nested) is a type bracket */
+        if (src[i] == '[' && !in_str) {
+            /* Find matching ] */
+            int depth = 1, end = i + 1;
+            int has_semi = 0;
+            while (end < slen && depth > 0) {
+                if (src[end] == '[') depth++;
+                else if (src[end] == ']') depth--;
+                else if (src[end] == ';' && depth == 1) has_semi = 1;
+                if (depth > 0) end++;
+            }
+            if (depth == 0 && !has_semi) {
+                /* Single-element brackets — check if type position (after : or in type decl) */
+                int prev_colon = 0;
+                if (i > 0) {
+                    int j = i - 1;
+                    while (j >= 0 && (src[j]==' '||src[j]=='\t')) j--;
+                    if (j >= 0 && (src[j] == ':' || src[j] == '@' || src[j] == '['))
+                        prev_colon = 1;
+                }
+                /* Also: [expr] after identifier is indexing → .get(expr) */
+                int prev_ident = 0;
+                if (i > 0 && is_idchar(src[i-1])) prev_ident = 1;
+                if (i > 0 && src[i-1] == ')') prev_ident = 1;
+
+                if (prev_colon) {
+                    /* Type position: [str] → @str */
+                    o[w++] = '@';
+                    for (int k = i+1; k < end; k++) o[w++] = src[k];
+                    i = end; continue;
+                } else if (prev_ident) {
+                    /* Indexing: a[expr] → a.get(expr) */
+                    o[w++] = '.'; o[w++] = 'g'; o[w++] = 'e'; o[w++] = 't'; o[w++] = '(';
+                    for (int k = i+1; k < end; k++) o[w++] = src[k];
+                    o[w++] = ')';
+                    i = end; continue;
+                }
+            }
+        }
+
         /* [expr] indexing → .get(expr)  (NOT [Type] which is handled in token phase)
          * Heuristic: [ after identifier or ) is indexing; [ after : or @ is type */
         if (src[i] == '[' && i > 0 && !is_in_string(src, i)) {
@@ -298,10 +339,18 @@ static void postpass_semicolons(char *buf, int *blen_p)
 
 /* ── Public API ────────────────────────────────────��──────────────── */
 
+static int s_migrate_depth = 0;  /* recursion guard */
+
 int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unused,
                 FILE *out)
 {
     (void)toks_unused; (void)tc_unused;
+    if (s_migrate_depth > 2) {
+        /* Max 3 passes — if still failing, output what we have */
+        fwrite(src, 1, (size_t)slen, out);
+        return 0;
+    }
+    s_migrate_depth++;
 
     /* Step 1: Prepass — text-level cleanup */
     int clen = 0;
@@ -324,23 +373,30 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
     }
     diag_suppress(0);
     if (ntc < 0) {
-        /* Both lex profiles failed — output the prepass result as-is.
-         * This gives a partially migrated file (comments stripped, pub removed,
-         * underscores stripped, etc.) rather than empty output. */
-        fprintf(stderr, "migrate: warning: lexing failed on both profiles, "
-                "outputting text-level transforms only\n");
+        /* Both lex profiles failed — the prepass did text-level transforms.
+         * Run a second pass: the cleaned text may now lex after the first
+         * prepass stripped comments, UTF-8, pub, etc. This is the "migrate
+         * loop" — each pass fixes more, until it stabilises or lex succeeds. */
+        fprintf(stderr, "migrate: note: retrying after text-level transforms\n");
+
+        /* Strip the inserted module stub before second pass */
+        const char *p2src = c;
+        int p2len = clen;
         if (inserted_module) {
             const char *skip = "m=migrated;\n";
             int skiplen = (int)strlen(skip);
-            if (clen >= skiplen && !strncmp(c, skip, (size_t)skiplen))
-                fwrite(c + skiplen, 1, (size_t)(clen - skiplen), out);
-            else
-                fwrite(c, 1, (size_t)clen, out);
-        } else {
-            fwrite(c, 1, (size_t)clen, out);
+            if (clen >= skiplen && !strncmp(c, skip, (size_t)skiplen)) {
+                p2src = c + skiplen;
+                p2len = clen - skiplen;
+            }
         }
+
+        /* Recursive call with the prepass output as new source.
+         * The second prepass will re-insert m= if needed, and the text
+         * may now lex because the first pass stripped the offending chars. */
+        int rc = tkc_migrate(p2src, p2len, NULL, 0, out);
         free(c); free(nt);
-        return 0; /* partial success — text transforms applied */
+        return rc;
     }
 
     /* Step 3: Token-level transforms */
@@ -493,5 +549,6 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
         fwrite(buf2, 1, (size_t)b2, out);
     }
     free(buf2); free(buf); free(c); free(nt);
+    s_migrate_depth--;
     return 0;
 }
