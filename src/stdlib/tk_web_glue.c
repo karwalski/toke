@@ -343,10 +343,13 @@ static Res tk_static_dispatch(Req req) {
 int64_t tk_http_get_static(int64_t path_ptr, int64_t body_ptr) {
     if (g_static_route_count >= TK_MAX_STATIC_ROUTES) return -1;
     int i = g_static_route_count++;
-    g_static_routes[i].path   = (const char *)(intptr_t)path_ptr;
-    g_static_routes[i].body   = (const char *)(intptr_t)body_ptr;
+    const char *p = (const char *)(intptr_t)path_ptr;
+    const char *b = (const char *)(intptr_t)body_ptr;
+    /* Duplicate strings to ensure they persist (caller may free originals) */
+    g_static_routes[i].path   = p ? strdup(p) : NULL;
+    g_static_routes[i].body   = b ? strdup(b) : NULL;
     g_static_routes[i].status = 200;
-    http_GET((const char *)(intptr_t)path_ptr, tk_static_dispatch);
+    http_GET(g_static_routes[i].path, tk_static_dispatch);
     return 0;
 }
 
@@ -361,11 +364,14 @@ int64_t tk_http_get_static(int64_t path_ptr, int64_t body_ptr) {
 int64_t tk_http_get_static_mime(int64_t path_ptr, int64_t body_ptr, int64_t mime_ptr) {
     if (g_static_route_count >= TK_MAX_STATIC_ROUTES) return -1;
     int i = g_static_route_count++;
-    g_static_routes[i].path         = (const char *)(intptr_t)path_ptr;
-    g_static_routes[i].body         = (const char *)(intptr_t)body_ptr;
-    g_static_routes[i].content_type = (const char *)(intptr_t)mime_ptr;
+    const char *p = (const char *)(intptr_t)path_ptr;
+    const char *b = (const char *)(intptr_t)body_ptr;
+    const char *m = (const char *)(intptr_t)mime_ptr;
+    g_static_routes[i].path         = p ? strdup(p) : NULL;
+    g_static_routes[i].body         = b ? strdup(b) : NULL;
+    g_static_routes[i].content_type = m ? strdup(m) : NULL;
     g_static_routes[i].status       = 200;
-    http_GET((const char *)(intptr_t)path_ptr, tk_static_dispatch);
+    http_GET(g_static_routes[i].path, tk_static_dispatch);
     return 0;
 }
 

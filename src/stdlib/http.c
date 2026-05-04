@@ -926,6 +926,10 @@ static void handle_connection(int fd)
         StrPair params[32]; int pc = 0;
         int path_matched = 0;
         int handler_called = 0;
+        /* Two-pass routing: exact matches first, then wildcard/param routes.
+         * This ensures http.getstatic("/docs") takes priority over
+         * http.servedir("*") even if registered later. */
+        int best = -1;
         for (int i = 0; i < route_count; i++) {
             if (match_pattern(route_table[i].pattern,
                               req.path ? req.path : "", params, &pc)) {
@@ -933,17 +937,22 @@ static void handle_connection(int fd)
                 const char *check_method = is_head ? "GET" : req.method;
                 if (check_method &&
                     strcmp(route_table[i].method, check_method) == 0) {
-                    req.params.data = params; req.params.len = (uint64_t)pc;
-                    res = route_table[i].h(req);
-                    handler_called = 1;
-                    if (is_head) {
-                        /* HEAD: send headers only, suppress body */
-                        res.body = NULL;
+                    /* Prefer non-wildcard routes over "*" */
+                    if (strcmp(route_table[i].pattern, "*") != 0) {
+                        best = i; break; /* exact match — done */
                     }
-                    break;
+                    if (best < 0) best = i; /* wildcard — keep as fallback */
                 }
-                pc = 0; /* reset params for next pattern attempt */
+                pc = 0;
             }
+        }
+        if (best >= 0) {
+            match_pattern(route_table[best].pattern,
+                          req.path ? req.path : "", params, &pc);
+            req.params.data = params; req.params.len = (uint64_t)pc;
+            res = route_table[best].h(req);
+            handler_called = 1;
+            if (is_head) res.body = NULL;
         }
         /* Path existed but no method matched → 405 (only if handler wasn't called) */
         if (path_matched && !handler_called && res.status == 404) {
@@ -3765,6 +3774,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         StrPair params[32]; int pc = 0;
         int tls_path_matched = 0;
         int tls_handler_called = 0;
+        int tls_best = -1;
         for (int i = 0; i < route_count; i++) {
             if (match_pattern(route_table[i].pattern,
                               req.path ? req.path : "", params, &pc)) {
@@ -3772,14 +3782,21 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 const char *check_method = tls_is_head ? "GET" : req.method;
                 if (check_method &&
                     strcmp(route_table[i].method, check_method) == 0) {
-                    req.params.data = params; req.params.len = (uint64_t)pc;
-                    res = route_table[i].h(req);
-                    tls_handler_called = 1;
-                    if (tls_is_head) res.body = NULL;
-                    break;
+                    if (strcmp(route_table[i].pattern, "*") != 0) {
+                        tls_best = i; break;
+                    }
+                    if (tls_best < 0) tls_best = i;
                 }
                 pc = 0;
             }
+        }
+        if (tls_best >= 0) {
+            match_pattern(route_table[tls_best].pattern,
+                          req.path ? req.path : "", params, &pc);
+            req.params.data = params; req.params.len = (uint64_t)pc;
+            res = route_table[tls_best].h(req);
+            tls_handler_called = 1;
+            if (tls_is_head) res.body = NULL;
         }
         if (tls_path_matched && !tls_handler_called && res.status == 404) {
             res = make_res(405, "Method Not Allowed");
