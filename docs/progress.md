@@ -575,6 +575,17 @@ When the compiler encounters syntax from other languages (Python, Go, JS, Rust, 
 
 
 
+
+### Epic 87 — HTTP Stdlib Bugs (found during dev server testing)
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 87.1.1 | mt match corrupts static route table after first file.read | backlog | — | **P0** Second http.getstatic after mt file.read returns Not Found. First call works, all subsequent fail. The mt match result or file.read return value corrupts global route state. Repro: two consecutive let x=mt file.read(...); http.getstatic(path;x) — second path returns 404. |
+| 87.1.2 | http.servedir Content-Length:0 and no index.html resolution | backlog | — | **P0** servedir serves files but: (1) HEAD requests return Content-Length:0, (2) /docs/ doesn't resolve to /docs/index.html, (3) subdirectory files return 404 or empty. Only works for single flat directory. |
+| 87.1.3 | Routes from called functions have dangling string pointers | backlog | — | **P1** http.getstatic(path;body) inside a helper function — body string freed on function return, route table has dangling pointer. Only inline calls from main() work. |
+| 87.1.4 | http.getstatic inside if blocks not visible to server | backlog | — | **P1** Routes registered inside if(){...} blocks are not found by the request dispatcher. Same route registered at top level works. May be related to 87.1.1 or fork timing. |
+| 87.1.5 | HEAD requests return Content-Length:0 for all static routes | backlog | — | **P2** curl -I always shows Content-Length:0 even for routes with content. GET works correctly via chunked transfer. Browsers use GET so functional but breaks HEAD-based tools. |
+
 ### Epic 86 — Local Development Server
 
 No project can serve locally without sudo or production TLS certs. Need a dev mode that serves on localhost with HTTP on a configurable port.
