@@ -1009,16 +1009,17 @@ int64_t tk_http_patch_handler(int64_t path_ptr, int64_t handler_ptr) {
     return 0;
 }
 
+/* forward declaration — defined below at line ~1293 */
+int64_t tk_http_serveworkers_w(int64_t port, int64_t workers);
+
 /*
- * tk_http_serve — Start the HTTP server on the given port (blocks until SIGINT/SIGTERM).
+ * tk_http_serve — Convenience wrapper: start HTTP server with 2 workers (Story 86.1.3).
  *
- * port: i64 — TCP port number (1-65535; defaults to 8080 if out of range)
+ * port: i64 — TCP port number (1-65535)
  * Returns: 0 on clean shutdown, -1 on bind/listen failure.
  */
 int64_t tk_http_serve(int64_t port) {
-    int p = (int)port;
-    if (p <= 0 || p > 65535) p = 8080;
-    return (int64_t)http_serve((uint16_t)p);
+    return tk_http_serveworkers_w(port, 2);  /* default 2 workers */
 }
 
 /*
