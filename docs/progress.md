@@ -576,6 +576,9 @@ When the compiler encounters syntax from other languages (Python, Go, JS, Rust, 
 
 
 
+| 87.1.6 | /about page missing title tag | backlog | — | **P2** ooke build generates /about/index.html without <title>. Template or content missing title frontmatter. |
+| 87.1.7 | HTTP servedir wildcard catches all routes (FIXED) | done | 2026-05-04 | **P0** servedir registered * wildcard that caught all GET requests before specific routes. Fixed with two-pass routing: exact match priority over wildcard. Also strdup'd static bodies to prevent dangling pointers. |
+
 ### Epic 87 — HTTP Stdlib Bugs (found during dev server testing)
 
 | ID | Story | Status | Date | Notes |
