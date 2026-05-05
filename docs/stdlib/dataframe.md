@@ -55,8 +55,8 @@ Parses CSV bytes into a new data frame, treating the first row as column headers
 
 <!-- skip-check -->
 ```toke
-let raw  = file.read("sales.csv")|{$ok:d d;$err:e <1};
-let data = df.fromcsv(raw)|{$ok:d d;$err:e <1};
+let raw  = mt file.read("sales.csv") {$ok:d d;$err:e <1};
+let data = mt df.fromcsv(raw) {$ok:d d;$err:e <1};
 ```
 
 ### df.fromrows(cols: @($str); rows: @($csvrow)): $dataframe
@@ -76,7 +76,7 @@ Extracts a numeric column by name and returns its values as an `f64` array. Retu
 
 <!-- skip-check -->
 ```toke
-let revenue = df.column(data; "revenue")|{$ok:v v;$err:e @()};
+let revenue = mt df.column(data; "revenue") {$ok:v v;$err:e @()};
 ```
 
 ### df.columnstr(d: $dataframe; name: $str): @($str)!$dferr
@@ -85,7 +85,7 @@ Extracts a string column by name and returns its values as a `$str` array. Retur
 
 <!-- skip-check -->
 ```toke
-let regions = df.columnstr(data; "region")|{$ok:v v;$err:e @()};
+let regions = mt df.columnstr(data; "region") {$ok:v v;$err:e @()};
 ```
 
 ### df.filter(d: $dataframe; col: $str; op: $str; val: $str): $dataframe!$dferr
@@ -94,8 +94,8 @@ Returns a new data frame containing only the rows where the numeric column `col`
 
 <!-- skip-check -->
 ```toke
-let apac  = df.filter(data; "region_id"; ">="; "100")|{$ok:d d;$err:e <1};
-let large = df.filter(apac; "revenue";   ">";  "5000")|{$ok:d d;$err:e <1};
+let apac  = mt df.filter(data; "region_id"; ">="; "100") {$ok:d d;$err:e <1};
+let large = mt df.filter(apac; "revenue";   ">";  "5000") {$ok:d d;$err:e <1};
 ```
 
 ### df.groupby(d: $dataframe; col: $str): @($dataframe)!$dferr
@@ -104,7 +104,7 @@ Splits the data frame into one sub-frame per distinct value in the string column
 
 <!-- skip-check -->
 ```toke
-let groups = df.groupby(data; "region")|{$ok:g g;$err:e <1};
+let groups = mt df.groupby(data; "region") {$ok:g g;$err:e <1};
 ```
 
 ### df.join(left: $dataframe; right: $dataframe; on: $str): $dataframe!$dferr
@@ -113,7 +113,7 @@ Performs an inner hash join on the string column `on`, which must exist in both 
 
 <!-- skip-check -->
 ```toke
-let combined = df.join(orders; customers; "customer_id")|{$ok:d d;$err:e <1};
+let combined = mt df.join(orders; customers; "customer_id") {$ok:d d;$err:e <1};
 ```
 
 ### df.head(d: $dataframe; n: u64): $dataframe
@@ -141,7 +141,7 @@ Serialises the data frame as RFC 4180 CSV with a header row and returns the resu
 <!-- skip-check -->
 ```toke
 let bytes = df.tocsv(result);
-file.write("output.csv"; bytes)|{$ok:v ();$err:e <1};
+mt file.write("output.csv"; bytes) {$ok:v ();$err:e <1};
 ```
 
 ### df.tojson(d: $dataframe): @($byte)!$dferr
@@ -150,7 +150,7 @@ Serialises the data frame as a JSON array of row objects, with numeric columns e
 
 <!-- skip-check -->
 ```toke
-let json = df.tojson(summary)|{$ok:b b;$err:e <1};
+let json = mt df.tojson(summary) {$ok:b b;$err:e <1};
 ```
 
 ### df.schema(d: $dataframe): @($series)
@@ -174,24 +174,24 @@ i=io:std.io;
 i=str:std.str;
 
 f=main():i64{
-  let raw = file.read("sales.csv")|{$ok:d d;$err:e @()};
+  let raw = mt file.read("sales.csv") {$ok:d d;$err:e @()};
 
-  let data = df.fromcsv(raw)|{$ok:d d;$err:e $dataframe{}};
+  let data = mt df.fromcsv(raw) {$ok:d d;$err:e $dataframe{}};
 
   let s = df.shape(data);
   io.println(str.concat("Rows: "; str.fromint(s.rows)));
 
-  let big = df.filter(data; "revenue"; ">"; "1000")|{$ok:d d;$err:e $dataframe{}};
+  let big = mt df.filter(data; "revenue"; ">"; "1000") {$ok:d d;$err:e $dataframe{}};
 
-  let groups = df.groupby(big; "region")|{$ok:g g;$err:e @()};
+  let groups = mt df.groupby(big; "region") {$ok:g g;$err:e @()};
 
   lp(let i=0;i<groups.len;i=i+1){
     let grp = groups.get(i);
-    let regioncol = df.columnstr(grp; "region")|{$ok:v v;$err:e @()};
+    let regioncol = mt df.columnstr(grp; "region") {$ok:v v;$err:e @()};
     let out = df.tocsv(grp);
     let fname = str.concat(regioncol.get(0); ".csv");
     let wr = file.write(fname; out);
-    wr|{$ok:v 0;$err:e 0};
+    mt wr {$ok:v 0;$err:e 0};
   };
 
   <0;

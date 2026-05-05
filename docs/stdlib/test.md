@@ -68,7 +68,7 @@ f=main():i64{
   let r2=test.assert(str.contains("foobar";"oba");"contains finds substring");
   let parts=str.split("a:b:c";":");
   let r3=test.asserteq(str.fromint(parts.len as i64);"3";"split produces 3 parts");
-  let iserr=str.toint("not a number")|{$ok:n false;$err:e true};
+  let iserr=mt str.toint("not a number") {$ok:n false;$err:e true};
   let r4=test.assert(iserr;"toint rejects non-numeric input");
   < 0
 };

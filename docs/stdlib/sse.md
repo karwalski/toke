@@ -52,7 +52,7 @@ i=log:std.log;
 f=streamhandler():void{
   let ctx=$ssectx{id:1;open:true};
   let ev=$sseevent{id:"1";event:"update";data:"{\"count\":42}";retry:3000};
-  sse.emit(ctx;ev)|{$ok:v v;$err:e log.warn("emit failed";@())};
+  mt sse.emit(ctx;ev) {$ok:v v;$err:e log.warn("emit failed";@())};
   sse.keepalive(ctx;15000);
 };
 ```
@@ -76,10 +76,10 @@ f=handlestream():void{
       data:ts;
       retry:0
     };
-    sse.emit(ctx;ev)|{$ok:v v;$err:e log.warn("emit failed";@())};
+    mt sse.emit(ctx;ev) {$ok:v v;$err:e log.warn("emit failed";@())};
   };
 
-  sse.emitdata(ctx;"done")|{$ok:v v;$err:e log.warn("final emit failed";@())};
+  mt sse.emitdata(ctx;"done") {$ok:v v;$err:e log.warn("final emit failed";@())};
   sse.close(ctx);
 };
 ```

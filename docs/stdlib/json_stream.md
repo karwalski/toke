@@ -125,7 +125,7 @@ f=sumamounts(raw:@(u8)):i64!$jsonstreamerr{
   let parser=json.streamparser(raw);
   let total:i64=0;
   let wantamount:bool=false;
-  loop{
+  lp(let lv=0;true;lv=lv){
     let tok=json.streamnext(parser)?;
     (match tok{
       $jsontoken.key(k){

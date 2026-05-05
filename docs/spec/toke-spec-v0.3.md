@@ -2651,7 +2651,7 @@ An extern function is declared using the standard `f=` syntax with parameter typ
 Grammar:
 
 ```
-f=name(param1:type1, param2:type2):returnType;
+f=name(param1:type1; param2:type2):returnType;
 ```
 
 Examples:
@@ -2659,7 +2659,7 @@ Examples:
 ```
 f=puts(s:$str):i64;
 f=clock():i64;
-f=write(fd:i64, buf:$str, count:i64):i64;
+f=write(fd:i64; buf:$str; count:i64):i64;
 ```
 
 The compiler emits an LLVM `declare` for each extern declaration. The linker resolves the symbol at link time against the C library or any object file provided on the link command line.

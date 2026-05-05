@@ -1,12 +1,12 @@
 # toke
 
-toke is a compiled programming language designed so that AI can write better code. It uses a 59-character alphabet -- lowercase letters, digits, and a small set of punctuation -- and just 12 keywords, making programs shorter and more predictable for language models to generate. The result is a language where AI-generated code is more likely to compile correctly on the first try, while remaining readable and maintainable by humans.
+toke is a compiled programming language designed so that AI can write better code. It uses a 55-character alphabet -- lowercase letters, digits, and a small set of punctuation -- and just 13 keywords, making programs shorter and more predictable for language models to generate. The result is a language where AI-generated code is more likely to compile correctly on the first try, while remaining readable and maintainable by humans.
 
 ## Key Features
 
 - **Compiled to native code** via LLVM -- produces standalone binaries for x86-64 and ARM64
-- **59-character alphabet** -- programs use only lowercase letters, digits, and a small set of punctuation, eliminating an entire class of tokenisation ambiguity
-- **12 keywords** -- the entire language control flow fits in a short list: `m`, `f`, `t`, `i`, `if`, `el`, `lp`, `br`, `let`, `mut`, `as`, `rt`
+- **55-character alphabet** -- programs use only lowercase letters, digits, and a small set of punctuation, eliminating an entire class of tokenisation ambiguity
+- **13 keywords** -- the entire language control flow fits in a short list: `m`, `f`, `t`, `i`, `if`, `el`, `lp`, `br`, `let`, `mut`, `as`, `rt`, `mt`, `sc`
 - **LL(1) grammar** -- every parse decision is determined by a single token of lookahead, making the language simple for both humans and machines to parse
 - **Error handling with result types** -- no exceptions; errors are values returned from functions and handled explicitly with `match`
 - **38 standard library modules** with C runtime backing -- from strings and JSON to HTTP servers, database access, cryptography, and machine learning
