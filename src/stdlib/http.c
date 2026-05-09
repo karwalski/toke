@@ -952,14 +952,34 @@ static void handle_connection(int fd)
             req.params.data = params; req.params.len = (uint64_t)pc;
             res = route_table[best].h(req);
             handler_called = 1;
-            if (is_head) res.body = NULL;
         }
         /* Path existed but no method matched → 405 (only if handler wasn't called) */
         if (path_matched && !handler_called && res.status == 404) {
             res = make_res(405, "Method Not Allowed");
         }
 
+        /* HEAD: send headers with correct Content-Length, but no body
+         * (RFC 9110 §9.3.2) */
+        if (is_head) {
+            size_t head_body_len = res.body ? strlen(res.body) : 0;
+            const char *conn_hdr = keep_alive ? "keep-alive" : "close";
+            char hdr[256];
+            int hl = snprintf(hdr, sizeof(hdr),
+                "HTTP/1.1 %u %s\r\n"
+                "Content-Length: %zu\r\n"
+                "Connection: %s\r\n",
+                res.status, reason(res.status), head_body_len, conn_hdr);
+            write(fd, hdr, (size_t)hl);
+            write_res_headers(fd, res);
+            write_security_headers(fd);
+            write_cors_headers(fd);
+            write(fd, "\r\n", 2);
+            /* No body for HEAD */
+            log_request(client_ip, &req, res.status, head_body_len);
+        }
+
         /* Gzip compress if eligible — write directly (binary-safe) */
+        else {
         char  *gz_buf = NULL;
         size_t gz_len = 0;
         int    did_gz = maybe_gzip_body(req, &res, &gz_buf, &gz_len);
@@ -985,6 +1005,7 @@ static void handle_connection(int fd)
             send_response(fd, res, keep_alive);
             log_request(client_ip, &req,
                         res.status, res.body ? strlen(res.body) : 0);
+        }
         }
 
         if (!keep_alive) break;
@@ -2774,7 +2795,7 @@ struct TkTlsCtx {
 
 /* ── ALPN callback (Story 60.1.5) ─────────────────────────────────────── */
 
-/* Preferred protocols: h2 first, then http/1.1 */
+/* Preferred protocols: h2 first, then http/1.1 (Story 75.2 fixed h2 dispatch) */
 static const uint8_t alpn_protos[] = {
     2, 'h', '2',
     8, 'h', 't', 't', 'p', '/', '1', '.', '1',
@@ -3316,24 +3337,39 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             req.headers.data = req_headers;
             req.headers.len  = (uint64_t)req_hcount;
 
-            /* Dispatch through route table */
-            Res res = {0};
-            int matched = 0;
+            /* Dispatch through route table — two-pass: exact match
+             * over wildcard, same logic as HTTP/1.1 TLS path (Story 75.2) */
+            Res res = make_res(404, "Not Found");
+            StrPair h2_params[32]; int h2_pc = 0;
+            int h2_path_matched = 0;
+            int h2_handler_called = 0;
+            int h2_is_head = (strcmp(method, "HEAD") == 0);
+            int h2_best = -1;
             for (int r = 0; r < route_count; r++) {
-                if (strcmp(route_table[r].method, method) == 0 ||
-                    strcmp(route_table[r].method, "*") == 0) {
-                    /* Simple path matching (TODO: use router.c scoring) */
-                    if (strcmp(route_table[r].pattern, path) == 0 ||
-                        strcmp(route_table[r].pattern, "*") == 0) {
-                        res = route_table[r].h(req);
-                        matched = 1;
-                        break;
+                if (match_pattern(route_table[r].pattern,
+                                  path ? path : "", h2_params, &h2_pc)) {
+                    h2_path_matched = 1;
+                    const char *cm = h2_is_head ? "GET" : method;
+                    if (cm && strcmp(route_table[r].method, cm) == 0) {
+                        if (strcmp(route_table[r].pattern, "*") != 0) {
+                            h2_best = r; break;
+                        }
+                        if (h2_best < 0) h2_best = r;
                     }
+                    h2_pc = 0;
                 }
             }
-            if (!matched) {
-                res.status = 404;
-                res.body   = "Not Found";
+            if (h2_best >= 0) {
+                match_pattern(route_table[h2_best].pattern,
+                              path ? path : "", h2_params, &h2_pc);
+                req.params.data = h2_params;
+                req.params.len  = (uint64_t)h2_pc;
+                res = route_table[h2_best].h(req);
+                h2_handler_called = 1;
+                if (h2_is_head) res.body = NULL;
+            }
+            if (h2_path_matched && !h2_handler_called && res.status == 404) {
+                res = make_res(405, "Method Not Allowed");
             }
 
             /* Send response as HEADERS + DATA frames */
@@ -3796,13 +3832,40 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
             req.params.data = params; req.params.len = (uint64_t)pc;
             res = route_table[tls_best].h(req);
             tls_handler_called = 1;
-            if (tls_is_head) res.body = NULL;
         }
         if (tls_path_matched && !tls_handler_called && res.status == 404) {
             res = make_res(405, "Method Not Allowed");
         }
 
+        /* HEAD: send headers with correct Content-Length, but no body
+         * (RFC 9110 §9.3.2) */
+        if (tls_is_head) {
+            size_t head_body_len = res.body ? strlen(res.body) : 0;
+            const char *conn_hdr = keep_alive ? "keep-alive" : "close";
+            char hdr_buf[256];
+            int hl = snprintf(hdr_buf, sizeof(hdr_buf),
+                "HTTP/1.1 %u %s\r\n"
+                "Content-Length: %zu\r\n"
+                "Connection: %s\r\n",
+                res.status, reason(res.status), head_body_len, conn_hdr);
+            if (hl > 0) SSL_write(ssl, hdr_buf, hl);
+            for (uint64_t hi = 0; hi < res.headers.len; hi++) {
+                const char *hk = res.headers.data[hi].key;
+                const char *hv = res.headers.data[hi].val;
+                if (!hk || !hv) continue;
+                char hline[512];
+                int ln = snprintf(hline, sizeof(hline), "%s: %s\r\n", hk, hv);
+                if (ln > 0) SSL_write(ssl, hline, ln);
+            }
+            write_security_headers_ssl(ssl);
+            write_cors_headers_ssl(ssl);
+            SSL_write(ssl, "\r\n", 2);
+            /* No body for HEAD */
+            log_request(client_ip, &req, res.status, head_body_len);
+        }
+
         /* Gzip compress if eligible — write directly (binary-safe) */
+        else {
         char  *tls_gz_buf = NULL;
         size_t tls_gz_len = 0;
         int    tls_did_gz = maybe_gzip_body(req, &res, &tls_gz_buf, &tls_gz_len);
@@ -3855,6 +3918,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
             SSL_write(ssl, "\r\n", 2);
             if (body_len) SSL_write(ssl, res.body, (int)body_len);
             log_request(client_ip, &req, res.status, body_len);
+        }
         }
 
         if (!keep_alive) break;

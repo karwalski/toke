@@ -1323,7 +1323,7 @@ static void lifted_buf_append(Ctx *c, const char *fmt, ...) {
  * Returns the string index (N in @.str.N) so the caller can emit a GEP
  * to obtain a ptr to the string data.
  */
-static int emit_str_global(Ctx *c, const char *raw, int rlen)
+static int emit_str_global(Ctx *c, const char *raw, int rlen, int *out_alen)
 {
     const char *inner = raw + 1; int ilen = rlen-2; if(ilen<0)ilen=0;
     /* Pre-scan to compute actual byte count (escape sequences reduce raw char count) */
@@ -1354,6 +1354,7 @@ static int emit_str_global(Ctx *c, const char *raw, int rlen)
         }
     }
     str_buf_append(c, "\\00\"\n");
+    if (out_alen) *out_alen = byte_count + 1; /* escaped bytes + NUL */
     return idx;
 }
 
@@ -1445,8 +1446,8 @@ static int emit_expr(Ctx *c, const Node *n)
         fprintf(c->out, "  %%t%d = add i1 0, %d\n", t, tb[0]=='t' ? 1 : 0);
         return t;
     case NODE_STR_LIT: {
-        int alen = n->tok_len - 2 + 1; if (alen < 1) alen = 1;
-        int si = emit_str_global(c, c->src + n->tok_start, n->tok_len);
+        int alen = 1;
+        int si = emit_str_global(c, c->src + n->tok_start, n->tok_len, &alen);
         t = next_tmp(c);
         fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%d, i32 0, i32 0\n",
                 t, alen, alen, si);
@@ -3484,8 +3485,8 @@ static void emit_toplevel(Ctx *c, const Node *n)
             fprintf(c->out, "@%s = constant i64 %s\n", tb, vb);
         } else if (n->child_count >= 3 && n->children[2]->kind == NODE_STR_LIT) {
             const Node *sl = n->children[2];
-            int ilen = sl->tok_len - 2 + 1; if (ilen < 1) ilen = 1;
-            int si = emit_str_global(c, c->src + sl->tok_start, sl->tok_len);
+            int ilen = 1;
+            int si = emit_str_global(c, c->src + sl->tok_start, sl->tok_len, &ilen);
             fprintf(c->out, "@%s = constant i8* getelementptr ([%d x i8], [%d x i8]* @.str.%d, i32 0, i32 0)\n",
                     tb, ilen, ilen, si);
         } else {

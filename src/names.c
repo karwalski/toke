@@ -1113,6 +1113,10 @@ static int resolve_node(const Node *node, const char *src,
         break;
 
     case NODE_TYPE_IDENT:
+        /* Qualified type references (module.$type) are marked with op==TK_DOT
+         * by the parser.  Skip name resolution — the module's type is not in
+         * local scope; the type checker treats it as TY_UNKNOWN. (story 75.5) */
+        if (node->op == TK_DOT) break;
         /* Type identifiers are resolved the same way as regular identifiers. */
         resolve_ident(node, src, scope, had_error);
         break;

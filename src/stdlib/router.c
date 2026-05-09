@@ -1228,8 +1228,8 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
     if (n < 0 || (size_t)n >= sizeof(full))
         return router_resp_status(403, "Forbidden");
 
-    /* Reject null bytes in path (prevents truncation attacks) */
-    if (memchr(full, '\0', (size_t)n) != (full + n))
+    /* Reject embedded null bytes in path (prevents truncation attacks) */
+    if (memchr(full, '\0', (size_t)n) != NULL)
         return router_resp_status(403, "Forbidden");
 
     /* Resolve symlinks and validate the path stays under dir_path */

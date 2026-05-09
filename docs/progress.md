@@ -3617,3 +3617,119 @@ The ABI wrapper layer. Directly blocked by story 7.5.5 (auto-generated wrappers)
 | 74.7.2 | Remove tk_web_glue.c from build | done | 2026-04-26 | — | **P1** After 74.7.1 is complete and verified, delete the manual glue file. Depends on 74.7.1. |
 | 74.7.3 | Verify ooke builds without any manual C glue | done | 2026-04-26 | — | **P1** End-to-end test: ooke compiles and serves correctly using only auto-generated wrappers. Depends on 74.7.2. |
 
+## Epic 75 — HTTP Stdlib Bug Fixes (discovered during production deployment)
+
+Bugs found during toke-website production deployment on 2026-05-05.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 75.1 | Fix router_static_serve memchr null-byte check always returning 403 | done | 2026-05-05 | **P0** router.c:1232 — `memchr(full, '\0', n) != (full + n)` always true because memchr returns NULL (no null in first n bytes), and NULL != non-null-addr. Fix: change to `memchr(full, '\0', n) != NULL`. Blocked ALL vhost file serving. |
+| 75.2 | Fix HTTP/2 dispatch not using route table for getstatic routes | done | 2026-05-09 | **P1** http.c: Replaced naive h2 dispatch (strcmp-only, first-match) with two-pass routing using match_pattern() — exact matches prioritised over wildcard "*". Added HEAD support, param extraction, 405 handling. Re-enabled h2 ALPN. |
+| 75.3 | Fix compiler LLVM IR string literal size mismatch for escaped strings | done | 2026-05-09 | **P1** llvm.c: emit_str_global() now returns escaped byte count via out_alen param. GEP size uses correct escaped length. Eliminates sed post-processing on server deploys. |
+| 75.4 | Fix HEAD request Content-Length: 0 bug in HTTP stdlib | done | 2026-05-09 | **P2** http.c: Both plain HTTP and TLS paths compute Content-Length from body before clearing for HEAD. Dedicated HEAD branches write correct Content-Length but skip body. |
+| 75.5 | Support qualified type references in type position (`module.$typename`) | done | 2026-05-09 | **P2** parser.c: IDENT+DOT+DOLLAR lookahead in parse_type_expr(). names.c: qualified types skip name resolution (TY_UNKNOWN in --check). Unblocked 3 doc failures → 234 PASS, 0 FAIL. |
+| 75.6 | Fix compiler LLVM IR string interpolation to work in default profile | backlog | — | **P2** String interpolation `\(expr)` produces W1010 warning "not supported in Profile 1". Should either be promoted to supported or docs should use str.concat(). |
+
+## Epic 76 — Documentation v0.3 Spec Compliance Audit
+
+Full review of all website documentation, reference material, API docs, guides, tutorials, and code examples to ensure compliance with toke v0.3 specification (55-char set, 13 keywords, default syntax). Every code snippet must compile with `toke --check` and produce correct output. Non-compiling examples are bugs.
+
+**Spec reference:** docs/spec/toke-spec-v0.3.md
+**Key v0.3 rules:**
+- 55-character set (no underscore)
+- 13 keywords: `m`, `f`, `t`, `i`, `if`, `el`, `lp`, `br`, `let`, `mut`, `as`, `rt`, `mt`, `sc`
+- Default syntax: `f=name():i64{`, `m=name;`, `i=alias:std.mod;`
+- Match: `mt(expr){sc val:body;}`
+- Arrays: `@(1;2;3)`, Maps: `@("k":v;"k2":v2)`
+- Return: `<expr` (not `ret` or `return`)
+- No comments in source (docs live outside)
+- Semicolons separate statements and function parameters
+
+### Epic 76.1 — Learn/Guide Pages (14 files)
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 76.1.1 | Audit and fix guide/01-why-toke.md | done | 2026-05-07 | Fixed: keyword count (13→9+4 prefixes), "single-character" → "two-character" prefix. Code blocks all compliant. |
+| 76.1.2 | Audit and fix guide/02-modules-functions.md | done | 2026-05-07 | All code blocks compliant. No changes needed. |
+| 76.1.3 | Audit and fix guide/03-control-flow.md | done | 2026-05-07 | Fixed: trailing semicolons on match arms, reverted incorrect trailing ; on type field. 3/3 blocks pass. |
+| 76.1.4 | Audit and fix guide/04-collections.md | done | 2026-05-07 | All code blocks compliant. @() syntax correct throughout. |
+| 76.1.5 | Audit and fix guide/05-errors.md | done | 2026-05-07 | All code blocks compliant. |
+| 76.1.6 | Audit and fix guide/06-strings-io.md | done | 2026-05-07 | All code blocks compliant. |
+| 76.1.7 | Audit and fix guide/07-modules-imports.md | done | 2026-05-07 | All code blocks compliant. |
+| 76.1.8 | Audit and fix guide/08-advanced.md | done | 2026-05-07 | All code blocks compliant. |
+| 76.1.9 | Audit and fix guide/09-stdlib.md | in_progress | 2026-05-07 | 4 blocks fail: "unexpected token in type position" (error propagation without declared types) + string interpolation warning. Needs stub types or compiler fix. |
+| 76.1.10 | Audit and fix guide/10-project.md | in_progress | 2026-05-07 | 2 blocks fail: same type position + string interpolation issues. |
+| 76.1.11 | Audit and fix guide/hello-world.md, install.md, tour.md, project-structure.md | done | 2026-05-07 | All code blocks compliant. |
+
+### Epic 76.2 — Reference Pages (12 files)
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 76.2.1 | Audit and fix reference/grammar.md | done | 2026-05-07 | **P0** Fixed: ConstDecl c= → spec syntax, added BreakStmt/br, added rt alternative, match |{→mt, added % to BinOp, added ! to UnaryExpr, added byte to PrimType, fixed prose refs. |
+| 76.2.2 | Audit and fix reference/types.md and type-system.md | backlog | — | Type declarations (`t=`), type annotations, primitive types. |
+| 76.2.3 | Audit and fix reference/expressions.md and statements.md | backlog | — | Expression syntax, operator precedence, statement forms. |
+| 76.2.4 | Audit and fix reference/modules.md | backlog | — | Module system: `m=`, `i=`, `.tki` interfaces, visibility. |
+| 76.2.5 | Audit and fix reference/error-handling.md and errors.md | backlog | — | Error codes, diagnostic format, error handling patterns. |
+| 76.2.7 | Fix reference/statements.md break claim | done | 2026-05-07 | Fixed: "There is no break" → "Use br to exit loops early. No continue keyword." |
+| 76.2.6 | Audit and fix reference/data-formats.md, migration.md, plugin-guide.md | backlog | — | Data format examples, migration from legacy syntax. |
+
+### Epic 76.3 — Stdlib/API Pages (40 files)
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 76.3.1 | Audit and fix stdlib/str.md, json.md, encoding.md | done | 2026-05-07 | Migrated v0.2 match syntax (|{→mt) across all three. str.md 15/16 pass (1 remaining |{ in fragment). json.md underscore in param fixed. |
+| 76.3.2 | Audit and fix stdlib/http.md, router.md, ws.md, sse.md | done | 2026-05-07 | Fixed: get_or→getor, poolsize, timeoutms, certpath, keypath, contenttype. Migrated match syntax. |
+| 76.3.3 | Audit and fix stdlib/file.md, path.md, env.md, args.md, process.md | done | 2026-05-07 | file.md: 9 blocks migrated (|{→mt), 11/11 pass. args.md: -- comments→(* *), 4/4 pass. env.md: get_or→getor. path.md: -- comments fixed. process.md: match migrated. |
+| 76.3.4 | Audit and fix stdlib/db.md, csv.md, toml.md, yaml.md, toon.md | in_progress | 2026-05-07 | db.md: 9 blocks migrated. csv.md: 4 migrated. yaml.md: 7 migrated. toon.md: 7 migrated. toml.md: 7 blocks still fail (error propagation uses undeclared $tomlerr type). |
+| 76.3.5 | Audit and fix stdlib/crypto.md, crypto_ext.md, encrypt.md, auth.md | done | 2026-05-07 | crypto.md: get_or→getor fixed, 2 blocks migrated. encrypt.md: 1 migrated. auth.md: 1 migrated. |
+| 76.3.6 | Audit and fix stdlib/math.md, time.md, log.md, test.md | done | 2026-05-07 | log.md: get_or→getor fixed, 2 blocks migrated. test.md: 1 migrated. |
+| 76.3.7 | Audit and fix stdlib/html.md, md.md, template.md, svg.md | done | 2026-05-07 | md.md: -- comments→(* *), title restored. template.md: 2 migrated. |
+| 76.3.8 | Audit and fix stdlib/llm.md, llm_tool.md, ml.md, analytics.md | in_progress | 2026-05-07 | llm.md: 8 migrated. llm_tool.md: @$p→@(p) fixed, 3 blocks still fail on type issues. ml.md: 4 migrated. analytics.md: 8 migrated. |
+| 76.3.9 | Audit and fix stdlib/image.md, canvas.md, chart.md, dashboard.md | done | 2026-05-07 | canvas.md: fill_rect→fillrect. image.md: 1 migrated but 1 block fails (undeclared 'png'). |
+| 76.3.10 | Audit and fix stdlib/dataframe.md, i18n.md | done | 2026-05-07 | dataframe.md: 1 migrated. i18n.md: 4 migrated. |
+
+### Epic 76.4 — Tutorials (7 files)
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 76.4.1 | Audit and fix tutorials/rest-api.md | backlog | — | End-to-end REST API tutorial — must compile and run. |
+| 76.4.2 | Audit and fix tutorials/cli-tool.md | backlog | — | CLI tool tutorial with args parsing. |
+| 76.4.3 | Audit and fix tutorials/static-site.md | backlog | — | Static site generator tutorial. |
+| 76.4.4 | Audit and fix tutorials/data-pipeline.md | backlog | — | Data pipeline tutorial. |
+| 76.4.5 | Audit and fix tutorials/mortgage-cli.md, mortgage-web.md | backlog | — | Mortgage calculator tutorials (CLI + web). |
+| 76.4.6 | Audit and fix tutorials/cross-platform.md | backlog | — | Cross-platform build tutorial. |
+
+### Epic 76.5 — Cookbook and About Pages (7 files)
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 76.5.1 | Audit and fix cookbook/rest-api.md, data-pipeline.md, doc-pipeline.md | backlog | — | Recipe-style code examples. |
+| 76.5.2 | Audit and fix about/contributing.md, enterprise.md, ooke.md, web-server.md | backlog | — | About pages with code examples. |
+
+### Epic 76.6 — Spec and Compiler Docs (11 files)
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 76.6.1 | Audit and fix spec/toke-spec-v0.3.md code examples | backlog | — | **P0** The spec itself must have correct examples. Normative reference. |
+| 76.6.2 | Audit and fix spec/semantics.md, stdlib-signatures.md, oke-namespace.md | backlog | — | Semantic rules and stdlib signatures. |
+| 76.6.3 | Audit and fix spec/errors.md, toke-spec-prompt.md | backlog | — | Error spec and LLM prompt spec. |
+| 76.6.4 | Audit and fix compiler/conventions.md, runtime-abi.md, lint-rules-v1.md | backlog | — | Compiler documentation code examples. |
+| 76.6.5 | Audit and fix compiler/companion-file-spec.md, build-deps.md | backlog | — | Build system and .tki spec. |
+
+### Epic 76.7 — Homepage and Templates
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 76.7.1 | Audit and fix index.tkt (homepage) code examples | backlog | — | Most visible page. TokenViz examples, quick example, "See the Difference" tabs. |
+| 76.7.2 | Audit and fix doc-page.tkt embedded examples | backlog | — | Template with hello world, fibonacci examples. |
+| 76.7.3 | Audit and fix ecosystem.tkt, loke.tkt, ooke.tkt code examples | backlog | — | Ecosystem pages with toke code. |
+
+### Epic 76.8 — Verification Infrastructure
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 76.8.1 | Create docs/examples/ directory with compilable .tk files for each doc page | backlog | — | Each file wraps the doc's code snippets in a compilable main(). File naming: `guide_02.tk`, `stdlib_http.tk`, etc. These serve as regression tests. |
+| 76.8.2 | Create verify_docs.sh script to compile all example files | done | 2026-05-09 | Created docs/examples/verify_docs.sh. Extracts toke code blocks from markdown, runs --check. Handles code fence language tags, skips non-toke blocks, skips multi-module imports. Final results: **231 PASS, 3 FAIL** (all 3 are qualified type `module.$type` — tracked in 75.5), 426 SKIP (fragments/non-toke). |
+| 76.8.3 | Create expected output files for runtime-testable examples | backlog | — | For examples that produce output (hello world, fibonacci, API responses), store expected output and verify with `./binary | diff - expected`. |
+| 76.8.4 | Add `make check-docs` target to toke-website Makefile | backlog | — | Single command to verify all documentation code examples compile and run correctly. |
+
