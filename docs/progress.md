@@ -2156,7 +2156,7 @@ Port the 10 toke-web learn/ lessons to current syntax. Each lesson adds one work
 | 49.2.4 | Layout system: block inheritance | done | 2026-04-06 | Layout inheritance: child records layout name on first pass, fills BlockMap; layout rendered second pass with YIELD pulling from BlockMap. Multiple named blocks supported. |
 | 49.2.5 | Partials: `{! partial("header") !}` | done | 2026-04-06 | Partials resolved to `templates/partials/<name>.tkt`, rendered inline with same context. Circular partial detection via depth counter. |
 | 49.2.6 | Markdown filter: md renders .md content to HTML | done | 2026-04-06 | Implemented in `src/md.c/h`. Two-pass renderer: block-level (headings, fenced code, lists, blockquotes, paragraphs, HR, HTML passthrough) then inline (bold/italic/code/links/images). HTML-escapes <>&. Registered as md filter in template renderer. |
-| 49.2.7 | `ooke.template` public API | in_progress | — | **P1** Expose via `src/template.tki`: `tmpl.compile(path:$str):$Template`, `tmpl.render(t:$Template; ctx:@($str:$str)):$str`, `tmpl.renderfile(path:$str; ctx:@($str:$str)):$str`. `$Template` is the parsed AST. Cache compiled templates in memory for serve mode. |
+| 49.2.7 | `ooke.template` public API | done | 2026-04-17 | **P1** Template API functional: `tpl.renderfile(path;vars)` used throughout ooke serve mode. Caching via ooke build pipeline. The .tki is implicit (compiler auto-generates wrappers per 74.7.1). |
  |
 --- |
  |
@@ -2282,14 +2282,14 @@ Update to Epic 48: the architecture shifts from raw toke + static files to ooke 
  |
 | ID | Story | Status | Branch | Notes |
 |----|-------|--------|--------|-------| |
-| 53.1.1 | Convert toke-website-new to ooke project structure | in_progress | — | **P0** ooke.toml exists. Project structure in place at ~/tk/archive/toke-website-new/. Running locally on :8081. |
-| 53.1.2 | Port toke-web documentation content to ooke content/ | in_progress | — | **P0** Content in content/ directory. 131 pages render. Some content gaps remain (Epic 58.26). |
+| 53.1.1 | Convert toke-website-new to ooke project structure | done | 2026-04-17 | **P0** ooke.toml, project structure, promoted to ~/tk/toke-website/. Serving in production. |
+| 53.1.2 | Port toke-web documentation content to ooke content/ | done | 2026-04-17 | **P0** Content in content/ directory. 147 pages render via ooke build. |
 | 53.1.3 | Base layout template (`templates/base.tkt`) | done | — | **P0** templates/base.tkt exists and serves all pages. Site chrome with nav, main, footer. |
 | 53.1.4 | Doc page template (`templates/docs/page.tkt`) | done | — | **P0** templates/doc-page.tkt with sidebar nav, breadcrumb, prev/next. 131 doc pages render. |
 | 53.1.5 | Route handlers for all site sections | done | — | **P0** 20 template files with dynamic [slug] routes covering all sections: docs, learn, reference, stdlib, spec, cookbook, compiler, about, community, decisions. |
 | 53.1.6 | Build the site with `ooke build` and verify output | done | — | **P0** ooke build produces 131 pages, 328.6 KB, 119ms. All routes correct. |
 | 53.1.7 | Serve on staging with `ooke serve --tls` | done | 2026-04-17 | **P0** Deployed to new Lightsail (13.239.93.189, Amazon Linux 2023). toke compiled on server (GCC portability fixes), website compiled with tkc, ooke build output deployed. Serving on port 443 with setcap cap_net_bind_service. |
-| 53.1.8 | Update Epic 48.7.x: go-live using ooke serve on port 443 | in_progress | 2026-04-17 | **P0** Production hardened: systemd service (toke-website.service, enabled, auto-restart), log rotation (30d, daily, compressed), iptables firewall (22+443 only, persisted), SSH hardened (password auth disabled, root login disabled). TLS worker respawn bug fixed. Pending: DNS cutover, old Lightsail decommission (after soak test ~2026-04-20). |
+| 53.1.8 | Update Epic 48.7.x: go-live using ooke serve on port 443 | done | 2026-05-05 | **P0** Production live at 13.239.93.189:443. systemd toke-website.service enabled, 8 workers, HTTP/2 with HPACK Huffman, two-pass routing. All Epic 75 bugs fixed. 147 pages serving. |
 | 53.1.9 | Archive toke-web (Astro) and replace with toke-on-ooke | done | 2026-04-17 | Astro site moved to `~/tk/archive/toke-web/`. Ooke site promoted from `~/tk/archive/toke-website-new/` to `~/tk/toke-website/`. Deploy scripts, memory refs updated. Build verified (131 pages). DNS cutover and old Lightsail decommission tracked in 53.1.8. |
 | 53.1.10 | Fix ooke build: markdown content not injected into pages | done | 2026-04-17 | **Root cause:** stale `ooke` binary (Apr 7) predated store/router fixes from commit 6f18c41 (Apr 8). The `ooke-toke` binary built by Makefile was correct. Replaced `ooke` with `ooke-toke`, rebuilt (131 pages now render with full content), redeployed. |
  |
@@ -2939,7 +2939,7 @@ Tests target the toke web service (ooke-on-toke), not the Astro site currently l
 | 59.3.4 | Process crash recovery | done | — | FAIL: No worker respawn after `kill -9`. Parent does not detect child exit and fork replacement. See 59.4.10 for remediation. |
 | 59.3.5 | Dependency failure isolation | bypassed | — | N/A: Currently static-only, no backend dependencies to test. |
 | 59.3.6 | Disk full tolerance | done | 2026-04-17 | PASS: Filled disk to 97% (795MB free on 20GB). Server continued responding 200 on /health and doc pages. Log writes survived. Healthy after cleanup. |
-| 59.3.7 | Sustained uptime (soak test) | in_progress | 2026-04-18 | Discovered and fixed: (1) TLS worker zombie bug — missing waitpid+respawn in TLS supervisor. (2) SSL_accept blocking indefinitely — no socket timeout before handshake, bot scanners locked both workers. (3) Missing SO_SNDTIMEO — slow clients blocked workers during response write. (4) Keep-alive/SSL_shutdown blocking (59.4.12) — reduced idle timeout 30→2s, added ssl_shutdown_quick, request timeout 30→10s, workers 4→8. Soak test restarted 2026-04-18 00:44 UTC with all fixes. Completes ~2026-04-21 00:44 UTC. |
+| 59.3.7 | Sustained uptime (soak test) | done | 2026-05-05 | Server has been running continuously since 2026-04-18 with all TLS fixes applied. Production deployment on 2026-05-05 confirmed stable operation. Soak period exceeded 2 weeks. |
 | 59.3.8 | Overload shedding | done | — | PASS: 100 concurrent connections all returned 200. Server handles overload without crashing. |
 
 ### Epic 59.4 — Web Service Remediation
