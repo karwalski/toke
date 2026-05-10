@@ -3631,6 +3631,7 @@ Bugs found during toke-website production deployment on 2026-05-05.
 | 75.6 | Fix compiler string interpolation to work in default profile | done | 2026-05-10 | **P2** lexer.c: W1010 warning now only emitted in PROFILE_LEGACY. Default profile accepts `\(expr)` silently per spec §8.7. |
 | 75.7 | E9010 too many local variables in generated main.tk | backlog | — | **P1** gen_main.sh generates 147 inline file.read+getstatic calls in main(), exceeding the default local variable limit. Workaround: use dev.tk with http.servedir for local dev, or pass --max-locals=512. Root cause: routes registered inside loops/functions don't persist (route pointers are stack-local). Proper fix: either make route registration work inside loops, or use servedir for all serving. |
 | 75.8 | http.serve silently fails when port is occupied | backlog | — | **P2** When bind() fails (e.g., port 3000 already in use), http.serve returns without error. Should emit a diagnostic or return an error code. |
+| 75.9 | Fix http.servedir missing directory index.html resolution | done | 2026-05-10 | **P1** staticdir_handler in tk_web_glue.c opened directories as files (failed or returned octet-stream). Fixed: stat() to detect directory, append /index.html, then open. Now serves index.html with correct text/html MIME. |
 
 ## Epic 76 — Documentation v0.3 Spec Compliance Audit
 

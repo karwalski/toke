@@ -31,6 +31,7 @@
 #include "collections.h"
 #include <stdint.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
 #include <string.h>
@@ -1106,6 +1107,15 @@ static Res staticdir_handler(Req req) {
     if (strstr(filepath, "..")) {
         Res r; r.status = 403; r.body = "Forbidden";
         r.headers.data = NULL; r.headers.len = 0; return r;
+    }
+    /* Try opening as file; if directory, append /index.html */
+    struct stat st;
+    if (stat(filepath, &st) == 0 && S_ISDIR(st.st_mode)) {
+        size_t fplen = strlen(filepath);
+        if (fplen > 0 && filepath[fplen-1] == '/')
+            snprintf(filepath + fplen, sizeof(filepath) - fplen, "index.html");
+        else
+            snprintf(filepath + fplen, sizeof(filepath) - fplen, "/index.html");
     }
     FILE *f = fopen(filepath, "rb");
     if (!f) return mk404();
