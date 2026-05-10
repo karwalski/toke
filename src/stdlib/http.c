@@ -1024,13 +1024,25 @@ static void serve_sighandler(int sig)
 }
 
 int http_serve(uint16_t port) {
-    int srv = socket(AF_INET, SOCK_STREAM, 0); if (srv < 0) return -1;
+    int srv = socket(AF_INET, SOCK_STREAM, 0);
+    if (srv < 0) {
+        fprintf(stderr, "error: could not create socket: %s\n", strerror(errno));
+        return -1;
+    }
     int opt = 1; setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     struct sockaddr_in addr; memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET; addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(port);
-    if (bind(srv,(struct sockaddr*)&addr,sizeof(addr))<0){close(srv);return -1;}
-    if (listen(srv, 8)<0){close(srv);return -1;}
+    if (bind(srv,(struct sockaddr*)&addr,sizeof(addr))<0){
+        fprintf(stderr, "error: could not bind to port %d: %s\n",
+                (int)port, strerror(errno));
+        close(srv);return -1;
+    }
+    if (listen(srv, 8)<0){
+        fprintf(stderr, "error: listen failed on port %d: %s\n",
+                (int)port, strerror(errno));
+        close(srv);return -1;
+    }
 
     signal(SIGTERM, serve_sighandler);
     signal(SIGINT,  serve_sighandler);
@@ -1105,7 +1117,10 @@ static void workers_parent_sighandler(int sig)
 static int bind_listen(const char *host, uint64_t port)
 {
     int srv = socket(AF_INET, SOCK_STREAM, 0);
-    if (srv < 0) return -1;
+    if (srv < 0) {
+        fprintf(stderr, "error: could not create socket: %s\n", strerror(errno));
+        return -1;
+    }
 
     int opt = 1;
     setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -1122,14 +1137,19 @@ static int bind_listen(const char *host, uint64_t port)
         addr.sin_addr.s_addr = INADDR_ANY;
     } else {
         if (inet_pton(AF_INET, host, &addr.sin_addr) != 1) {
+            fprintf(stderr, "error: invalid host address '%s'\n", host);
             close(srv); return -1;
         }
     }
 
     if (bind(srv, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        fprintf(stderr, "error: could not bind to port %llu: %s\n",
+                (unsigned long long)port, strerror(errno));
         close(srv); return -1;
     }
     if (listen(srv, 128) < 0) {
+        fprintf(stderr, "error: listen failed on port %llu: %s\n",
+                (unsigned long long)port, strerror(errno));
         close(srv); return -1;
     }
     return srv;
