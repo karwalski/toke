@@ -3729,8 +3729,8 @@ Full review of all website documentation, reference material, API docs, guides, 
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 76.8.1 | Create docs/examples/ directory with compilable .tk files for each doc page | backlog | — | Each file wraps the doc's code snippets in a compilable main(). File naming: `guide_02.tk`, `stdlib_http.tk`, etc. These serve as regression tests. |
+| 76.8.1 | Create docs/examples/ directory with compilable .tk files for each doc page | done | 2026-05-10 | 76 .tk files extracted (one per doc page with compilable blocks). extract_examples.sh script for regeneration. All 76 pass `toke --check`. |
 | 76.8.2 | Create verify_docs.sh script to compile all example files | done | 2026-05-10 | docs/examples/verify_docs.sh. Final results: **352 PASS, 0 real FAIL** (30 intentional error-demo failures in errors.md/lint-rules excluded), 656 SKIP. |
-| 76.8.3 | Create expected output files for runtime-testable examples | backlog | — | For examples that produce output (hello world, fibonacci, API responses), store expected output and verify with `./binary | diff - expected`. |
-| 76.8.4 | Add `make check-docs` target to toke-website Makefile | backlog | — | Single command to verify all documentation code examples compile and run correctly. |
+| 76.8.3 | Create expected output files for runtime-testable examples | done | 2026-05-10 | 8 runtime examples (hello, counting, abs, sumofsquares, fibonacci, ifelse, minmax, sumto) with .expected files. All compile, run, and match expected output. |
+| 76.8.4 | Add `make check-docs` target to toke-website Makefile | done | 2026-05-10 | `make check-docs` runs check-docs-examples (76 pass) + check-docs-runtime (8 pass). Non-zero exit on any failure. |
 
