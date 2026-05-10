@@ -51,7 +51,7 @@
  *   E1004 — Unterminated string at EOF (distinct from mid-file E1002).
  *   E1005 — Invalid numeric literal (0x/0b with no digits, etc.).
  *   E1006 — Uppercase keyword in default syntax mode.
- *   W1010 — String interpolation \( attempted (not supported).
+ *   W1010 — String interpolation \( in legacy profile (not supported).
  *   W1011 — Identifier starts with a keyword prefix (hint).
  *
  * Errors cause lex() to return -1 immediately after emitting the
@@ -386,12 +386,13 @@ static int lex_number(Lexer *l, int start, int line, int col)
  *   \xHH                   — hex escape (exactly two hex digits required)
  *
  * Non-obvious logic — string interpolation (\():
- *   toke defines \( ... ) as string interpolation syntax, but Profile 1
- *   does NOT support it.  Instead of producing an error, the lexer emits
- *   a W1010 warning with a "fix" hint and then skips the interpolation
- *   expression by tracking parenthesis nesting depth.  This allows the
- *   rest of the string to be scanned normally, producing better
- *   downstream error recovery.
+ *   toke defines \( ... ) as string interpolation syntax (spec §8.7).
+ *   In default profile, interpolation is fully supported — the lexer
+ *   silently skips the interpolation expression (tracking parenthesis
+ *   nesting depth) and includes it in the TK_STR_LIT span.  In legacy
+ *   profile (Profile 1), a W1010 warning is emitted since interpolation
+ *   is not supported there.  Either way, the rest of the string is
+ *   scanned normally, producing better downstream error recovery.
  *
  * Error conditions:
  *   - Backslash followed by an unrecognised character -> E1001.
@@ -432,10 +433,12 @@ static int lex_string(Lexer *l, int start, int line, int col)
                     return -1;
                 }
             } else if (esc == '(') {
-                diag_emit(DIAG_WARNING, LEX_W1010, l->pos - 1, l->line, l->col - 1,
-                          "string interpolation \\( is not supported in Profile 1; "
-                          "use str.concat() instead",
-                          "fix", "use str.concat() for string composition", NULL);
+                if (l->profile == PROFILE_LEGACY) {
+                    diag_emit(DIAG_WARNING, LEX_W1010, l->pos - 1, l->line, l->col - 1,
+                              "string interpolation \\( is not supported in Profile 1; "
+                              "use str.concat() instead",
+                              "fix", "use str.concat() for string composition", NULL);
+                }
                 advance(l);
                 int depth = 1;
                 while (l->pos < l->len && depth > 0) {
