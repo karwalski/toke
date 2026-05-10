@@ -3737,3 +3737,34 @@ Full review of all website documentation, reference material, API docs, guides, 
 | 76.8.3 | Create expected output files for runtime-testable examples | done | 2026-05-10 | 8 runtime examples (hello, counting, abs, sumofsquares, fibonacci, ifelse, minmax, sumto) with .expected files. All compile, run, and match expected output. |
 | 76.8.4 | Add `make check-docs` target to toke-website Makefile | done | 2026-05-10 | `make check-docs` runs check-docs-examples (76 pass) + check-docs-runtime (8 pass). Non-zero exit on any failure. |
 
+## Epic 77 — ooke Test Suite
+
+Existing test files in toke-ooke/test/ are all broken (v0.2 syntax, don't compile). Need a complete test suite for the ooke static site generator covering all modules.
+
+### Epic 77.1 — Fix and modernise existing tests
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 77.1.1 | Migrate test/config/test_config.tk to v0.3 and verify compiles | backlog | — | Config loading from ooke.toml, defaults, overrides. |
+| 77.1.2 | Migrate test/store/test_store.tk to v0.3 and verify compiles | backlog | — | Content store: load markdown, frontmatter parsing, slug resolution. |
+| 77.1.3 | Migrate test/router/test_router.tk to v0.3 and verify compiles | backlog | — | Route matching, pattern params, static vs dynamic routes. |
+| 77.1.4 | Migrate test/template/test_template.tk to v0.3 and verify compiles | backlog | — | Template rendering, variable substitution, filters, layouts. |
+| 77.1.5 | Migrate test/build/test_build.tk to v0.3 and verify compiles | backlog | — | Full build pipeline: scan content, match routes, render pages. |
+| 77.1.6 | Migrate test/cli/test_cli.tk to v0.3 and verify compiles | backlog | — | CLI argument parsing, subcommands (build/serve). |
+
+### Epic 77.2 — Integration and end-to-end tests
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 77.2.1 | Create test/e2e/test_build_site.tk — build testproj and verify output | backlog | — | Use testproj/ fixture. Run ooke build, verify page count, check output files exist with correct content. |
+| 77.2.2 | Create test/e2e/test_serve.tk — start server and verify HTTP responses | backlog | — | Build testproj, start serve, curl endpoints, verify status codes and content-types. |
+| 77.2.3 | Add Playwright tests for ooke-generated sites | backlog | — | Port toke-website test.spec.js patterns to test ooke rendering, navigation, CSS, links. |
+
+### Epic 77.3 — Test infrastructure
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 77.3.1 | Add `make test` target to toke-ooke Makefile | backlog | — | Compile and run all test/*.tk files. Report pass/fail. |
+| 77.3.2 | Add `make check` target that runs --check on all test files | backlog | — | Fast syntax/type check without linking. |
+| 77.3.3 | Create test fixtures in testproj/ with known-good content | backlog | — | Markdown pages, templates, ooke.toml with deterministic output for assertions. |
+
