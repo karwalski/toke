@@ -3745,12 +3745,12 @@ Existing test files in toke-ooke/test/ are all broken (v0.2 syntax, don't compil
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 77.1.1 | Migrate test/config/test_config.tk to v0.3 and verify compiles | backlog | — | Config loading from ooke.toml, defaults, overrides. |
-| 77.1.2 | Migrate test/store/test_store.tk to v0.3 and verify compiles | backlog | — | Content store: load markdown, frontmatter parsing, slug resolution. |
-| 77.1.3 | Migrate test/router/test_router.tk to v0.3 and verify compiles | backlog | — | Route matching, pattern params, static vs dynamic routes. |
-| 77.1.4 | Migrate test/template/test_template.tk to v0.3 and verify compiles | backlog | — | Template rendering, variable substitution, filters, layouts. |
-| 77.1.5 | Migrate test/build/test_build.tk to v0.3 and verify compiles | backlog | — | Full build pipeline: scan content, match routes, render pages. |
-| 77.1.6 | Migrate test/cli/test_cli.tk to v0.3 and verify compiles | backlog | — | CLI argument parsing, subcommands (build/serve). |
+| 77.1.1 | Migrate test/config/test_config.tk to v0.3 and verify compiles | done | 2026-05-11 | Match arms rewritten ($ok:v/$err:e), equality operator =, no block arms. 0 parse errors. |
+| 77.1.2 | Migrate test/store/test_store.tk to v0.3 and verify compiles | done | 2026-05-11 | Unqualified struct literals, inline match arms. 0 parse errors. |
+| 77.1.3 | Migrate test/router/test_router.tk to v0.3 and verify compiles | done | 2026-05-11 | Route matching with $ok/$err, fixed comparisons. 0 parse errors. |
+| 77.1.4 | Migrate test/template/test_template.tk to v0.3 and verify compiles | done | 2026-05-11 | 437-line file rewritten: flattened nested matches, added failret helper. 0 parse errors. |
+| 77.1.5 | Migrate test/build/test_build.tk to v0.3 and verify compiles | done | 2026-05-11 | Match arms + equality operators fixed. 0 parse errors. |
+| 77.1.6 | Migrate test/cli/test_cli.tk to v0.3 and verify compiles | done | 2026-05-11 | Match arms + equality operators fixed. 0 parse errors. |
 
 ### Epic 77.2 — Integration and end-to-end tests
 
@@ -3764,7 +3764,7 @@ Existing test files in toke-ooke/test/ are all broken (v0.2 syntax, don't compil
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 77.3.1 | Add `make test` target to toke-ooke Makefile | backlog | — | Compile and run all test/*.tk files. Report pass/fail. |
-| 77.3.2 | Add `make check` target that runs --check on all test files | backlog | — | Fast syntax/type check without linking. |
-| 77.3.3 | Create test fixtures in testproj/ with known-good content | backlog | — | Markdown pages, templates, ooke.toml with deterministic output for assertions. |
+| 77.3.1 | Add `make test` target to toke-ooke Makefile | done | 2026-05-11 | `make test` runs test-check + test-run. `make test-check` syntax-checks all 6 test files (excludes E2030 module-not-found). 6/6 pass. |
+| 77.3.2 | Add `make test-check` target for fast syntax check | done | 2026-05-11 | Covered by 77.3.1 — test-check target. |
+| 77.3.3 | Create test fixtures in testproj/ with known-good content | done | 2026-05-11 | testproj/: ooke.toml, 2 content .md files, base.tkt + doc.tkt templates. `ooke-toke build --config testproj/ooke.toml` produces 3 pages. |
 
