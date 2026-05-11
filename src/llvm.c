@@ -3619,6 +3619,239 @@ static void emit_toplevel(Ctx *c, const Node *n)
 /* ── Public API ────────────────────────────────────────────────────── */
 
 /*
+ * g_stdlib_decls — Table of all stdlib/runtime/intrinsic declarations.
+ *
+ * Each entry has a symbol name and its full LLVM IR declaration line.
+ * emit_llvm_ir emits the body to a tmpfile first, then scans the body
+ * for @name references and only emits declarations for symbols actually
+ * used.  Entries marked "always" are unconditionally emitted because
+ * they are used by the main wrapper or overflow checking.
+ */
+typedef struct { const char *name; const char *decl; int always; } StdlibDecl;
+static const StdlibDecl g_stdlib_decls[] = {
+    /* Always-needed: main wrapper and overflow checks */
+    {"tk_runtime_init", "declare void @tk_runtime_init(i32, i8**)", 1},
+    {"tk_overflow_trap", "declare void @tk_overflow_trap(i32)", 1},
+    {"llvm.sadd.with.overflow.i64", "declare {i64, i1} @llvm.sadd.with.overflow.i64(i64, i64)", 1},
+    {"llvm.ssub.with.overflow.i64", "declare {i64, i1} @llvm.ssub.with.overflow.i64(i64, i64)", 1},
+    {"llvm.smul.with.overflow.i64", "declare {i64, i1} @llvm.smul.with.overflow.i64(i64, i64)", 1},
+    /* libc */
+    {"printf", "declare i32 @printf(i8*, ...)", 0},
+    {"puts", "declare i32 @puts(i8*)", 0},
+    {"strcmp", "declare i32 @strcmp(i8*, i8*)", 0},
+    {"malloc", "declare i8* @malloc(i64)", 0},
+    /* Runtime: json/str */
+    {"tk_json_parse", "declare i64 @tk_json_parse(i8*)", 0},
+    {"tk_json_print", "declare void @tk_json_print(i64)", 0},
+    {"tk_str_argv", "declare i8* @tk_str_argv(i64)", 0},
+    {"tk_array_concat", "declare i8* @tk_array_concat(i8*, i8*)", 0},
+    {"tk_str_concat", "declare i8* @tk_str_concat(i8*, i8*)", 0},
+    {"tk_str_len", "declare i64 @tk_str_len(i8*)", 0},
+    {"tk_str_char_at", "declare i64 @tk_str_char_at(i8*, i64)", 0},
+    {"tk_json_print_bool", "declare void @tk_json_print_bool(i64)", 0},
+    {"tk_json_print_arr", "declare void @tk_json_print_arr(i8*)", 0},
+    {"tk_json_print_str", "declare void @tk_json_print_str(i8*)", 0},
+    /* std.str wrappers */
+    {"tk_str_concat_w", "declare i64 @tk_str_concat_w(i64, i64)", 0},
+    {"tk_str_len_w", "declare i64 @tk_str_len_w(i64)", 0},
+    {"tk_str_trim_w", "declare i64 @tk_str_trim_w(i64)", 0},
+    {"tk_str_upper_w", "declare i64 @tk_str_upper_w(i64)", 0},
+    {"tk_str_lower_w", "declare i64 @tk_str_lower_w(i64)", 0},
+    {"tk_str_from_int", "declare i64 @tk_str_from_int(i64)", 0},
+    {"tk_str_to_int", "declare i64 @tk_str_to_int(i64)", 0},
+    {"tk_str_split_w", "declare i64 @tk_str_split_w(i64, i64)", 0},
+    {"tk_str_indexof_w", "declare i64 @tk_str_indexof_w(i64, i64)", 0},
+    {"tk_str_slice_w", "declare i64 @tk_str_slice_w(i64, i64, i64)", 0},
+    {"tk_str_replace_w", "declare i64 @tk_str_replace_w(i64, i64, i64)", 0},
+    {"tk_str_startswith_w", "declare i64 @tk_str_startswith_w(i64, i64)", 0},
+    {"tk_str_endswith_w", "declare i64 @tk_str_endswith_w(i64, i64)", 0},
+    {"tk_str_trimprefix_w", "declare i64 @tk_str_trimprefix_w(i64, i64)", 0},
+    {"tk_str_trimsuffix_w", "declare i64 @tk_str_trimsuffix_w(i64, i64)", 0},
+    {"tk_str_lastindex_w", "declare i64 @tk_str_lastindex_w(i64, i64)", 0},
+    {"tk_str_matchbracket_w", "declare i64 @tk_str_matchbracket_w(i64)", 0},
+    {"tk_str_contains_w", "declare i64 @tk_str_contains_w(i64, i64)", 0},
+    /* std.env */
+    {"tk_env_get_or", "declare i64 @tk_env_get_or(i64, i64)", 0},
+    {"tk_env_getint_w", "declare i64 @tk_env_getint_w(i64, i64)", 0},
+    {"tk_env_set_w", "declare i64 @tk_env_set_w(i64, i64)", 0},
+    {"tk_env_expand_w", "declare i64 @tk_env_expand_w(i64)", 0},
+    /* std.file */
+    {"tk_file_read_w", "declare i64 @tk_file_read_w(i64)", 0},
+    {"tk_file_write_w", "declare i64 @tk_file_write_w(i64, i64)", 0},
+    {"tk_file_isdir_w", "declare i64 @tk_file_isdir_w(i64)", 0},
+    {"tk_file_mkdir_w", "declare i64 @tk_file_mkdir_w(i64)", 0},
+    {"tk_file_copy_w", "declare i64 @tk_file_copy_w(i64, i64)", 0},
+    {"tk_file_listall_w", "declare i64 @tk_file_listall_w(i64)", 0},
+    {"tk_file_exists_w", "declare i64 @tk_file_exists_w(i64)", 0},
+    /* std.path */
+    {"tk_path_join_w", "declare i64 @tk_path_join_w(i64, i64)", 0},
+    {"tk_path_dir_w", "declare i64 @tk_path_dir_w(i64)", 0},
+    {"tk_path_ext_w", "declare i64 @tk_path_ext_w(i64)", 0},
+    /* std.md, std.toml */
+    {"tk_md_render_w", "declare i64 @tk_md_render_w(i64)", 0},
+    {"tk_toml_load_w", "declare i64 @tk_toml_load_w(i64)", 0},
+    {"tk_toml_section_w", "declare i64 @tk_toml_section_w(i64, i64)", 0},
+    {"tk_toml_str_w", "declare i64 @tk_toml_str_w(i64, i64)", 0},
+    {"tk_toml_i64_w", "declare i64 @tk_toml_i64_w(i64, i64)", 0},
+    {"tk_toml_bool_w", "declare i64 @tk_toml_bool_w(i64, i64)", 0},
+    /* libc math */
+    {"sin", "declare double @sin(double)", 0},
+    {"cos", "declare double @cos(double)", 0},
+    {"tan", "declare double @tan(double)", 0},
+    {"asin", "declare double @asin(double)", 0},
+    {"acos", "declare double @acos(double)", 0},
+    {"atan", "declare double @atan(double)", 0},
+    {"atan2", "declare double @atan2(double, double)", 0},
+    {"fmod", "declare double @fmod(double, double)", 0},
+    {"fabs", "declare double @fabs(double)", 0},
+    {"log", "declare double @log(double)", 0},
+    {"log10", "declare double @log10(double)", 0},
+    {"exp", "declare double @exp(double)", 0},
+    {"round", "declare double @round(double)", 0},
+    {"sqrt", "declare double @sqrt(double)", 0},
+    {"floor", "declare double @floor(double)", 0},
+    {"ceil", "declare double @ceil(double)", 0},
+    {"pow", "declare double @pow(double, double)", 0},
+    /* std.mem */
+    {"tk_mem_alloc", "declare i64 @tk_mem_alloc(i64)", 0},
+    {"tk_mem_free", "declare void @tk_mem_free(i64)", 0},
+    {"tk_mem_realloc", "declare i64 @tk_mem_realloc(i64, i64)", 0},
+    {"tk_mem_copy", "declare void @tk_mem_copy(i64, i64, i64)", 0},
+    {"tk_mem_set", "declare void @tk_mem_set(i64, i64, i64)", 0},
+    {"tk_mem_cmp", "declare i64 @tk_mem_cmp(i64, i64, i64)", 0},
+    {"tk_mem_load8", "declare i64 @tk_mem_load8(i64, i64)", 0},
+    {"tk_mem_store8", "declare void @tk_mem_store8(i64, i64, i64)", 0},
+    /* std.args */
+    {"tk_args_count_w", "declare i64 @tk_args_count_w()", 0},
+    {"tk_args_get_w", "declare i64 @tk_args_get_w(i64)", 0},
+    /* std.http */
+    {"tk_http_get_static", "declare i64 @tk_http_get_static(i64, i64)", 0},
+    {"tk_http_get_static_mime", "declare i64 @tk_http_get_static_mime(i64, i64, i64)", 0},
+    {"tk_http_get_handler", "declare i64 @tk_http_get_handler(i64, i64)", 0},
+    {"tk_http_post_handler", "declare i64 @tk_http_post_handler(i64, i64)", 0},
+    {"tk_http_put_handler", "declare i64 @tk_http_put_handler(i64, i64)", 0},
+    {"tk_http_delete_handler", "declare i64 @tk_http_delete_handler(i64, i64)", 0},
+    {"tk_http_patch_handler", "declare i64 @tk_http_patch_handler(i64, i64)", 0},
+    {"tk_http_req_path", "declare i64 @tk_http_req_path(i64)", 0},
+    {"tk_http_req_method", "declare i64 @tk_http_req_method(i64)", 0},
+    {"tk_http_req_body", "declare i64 @tk_http_req_body(i64)", 0},
+    {"tk_http_req_param", "declare i64 @tk_http_req_param(i64, i64)", 0},
+    {"tk_http_req_header", "declare i64 @tk_http_req_header(i64, i64)", 0},
+    {"tk_http_res_new", "declare i64 @tk_http_res_new(i64, i64)", 0},
+    {"tk_http_res_json_new", "declare i64 @tk_http_res_json_new(i64, i64)", 0},
+    {"tk_http_res_ok", "declare i64 @tk_http_res_ok(i64)", 0},
+    {"tk_http_res_bad", "declare i64 @tk_http_res_bad(i64)", 0},
+    {"tk_http_res_err", "declare i64 @tk_http_res_err(i64)", 0},
+    {"tk_http_post_echo", "declare i64 @tk_http_post_echo(i64)", 0},
+    {"tk_http_post_static", "declare i64 @tk_http_post_static(i64, i64)", 0},
+    {"tk_http_post_json", "declare i64 @tk_http_post_json(i64, i64)", 0},
+    {"tk_http_serve_staticdir_w", "declare i64 @tk_http_serve_staticdir_w(i64, i64)", 0},
+    {"tk_http_serve", "declare i64 @tk_http_serve(i64)", 0},
+    {"tk_http_servetls", "declare i64 @tk_http_servetls(i64, i64, i64)", 0},
+    {"tk_http_serveworkers_w", "declare i64 @tk_http_serveworkers_w(i64, i64)", 0},
+    {"tk_http_vhost", "declare i64 @tk_http_vhost(i64, i64)", 0},
+    {"tk_http_servevhosts", "declare i64 @tk_http_servevhosts(i64)", 0},
+    {"tk_http_servevhoststls", "declare i64 @tk_http_servevhoststls(i64, i64, i64)", 0},
+    {"tk_http_set_notfound", "declare i64 @tk_http_set_notfound(i64)", 0},
+    {"tk_http_set_cors", "declare i64 @tk_http_set_cors(i64)", 0},
+    {"tk_http_client_w", "declare i64 @tk_http_client_w(i64)", 0},
+    {"tk_http_get_w", "declare i64 @tk_http_get_w(i64)", 0},
+    {"tk_http_post_w", "declare i64 @tk_http_post_w(i64, i64, i64)", 0},
+    {"tk_http_put_w", "declare i64 @tk_http_put_w(i64, i64, i64)", 0},
+    {"tk_http_delete_w", "declare i64 @tk_http_delete_w(i64, i64)", 0},
+    {"tk_http_withproxy_w", "declare i64 @tk_http_withproxy_w(i64, i64)", 0},
+    {"tk_http_stream_w", "declare i64 @tk_http_stream_w(i64)", 0},
+    {"tk_http_streamnext_w", "declare i64 @tk_http_streamnext_w(i64)", 0},
+    {"tk_http_listen_w", "declare i64 @tk_http_listen_w(i64, i64)", 0},
+    {"tk_http_print_w", "declare i64 @tk_http_print_w(i64)", 0},
+    /* std.log */
+    {"tk_log_open_access_w", "declare i64 @tk_log_open_access_w(i64, i64, i64, i64)", 0},
+    {"tk_log_open_error_w", "declare i64 @tk_log_open_error_w(i64, i64, i64, i64)", 0},
+    {"tk_log_accessformat_w", "declare i64 @tk_log_accessformat_w(i64)", 0},
+    {"tk_log_info_w", "declare i64 @tk_log_info_w(i64, i64)", 0},
+    {"tk_log_error_w", "declare i64 @tk_log_error_w(i64, i64)", 0},
+    {"tk_log_warn_w", "declare i64 @tk_log_warn_w(i64, i64)", 0},
+    {"tk_log_debug_w", "declare i64 @tk_log_debug_w(i64, i64)", 0},
+    /* std.router */
+    {"tk_router_new_w", "declare i64 @tk_router_new_w()", 0},
+    /* Array/map runtime */
+    {"tk_map_new", "declare i8* @tk_map_new()", 0},
+    {"tk_map_put", "declare void @tk_map_put(i8*, i64, i64)", 0},
+    {"tk_map_get", "declare i64 @tk_map_get(i8*, i64)", 0},
+    {"tk_array_append_w", "declare i64 @tk_array_append_w(i64, i64)", 0},
+    {"tk_map_set_w", "declare i64 @tk_map_set_w(i64, i64, i64)", 0},
+    /* Higher-order array functions */
+    {"tk_arr_map", "declare i64 @tk_arr_map(i64, i64)", 0},
+    {"tk_arr_filter", "declare i64 @tk_arr_filter(i64, i64)", 0},
+    {"tk_arr_reduce", "declare i64 @tk_arr_reduce(i64, i64, i64)", 0},
+    {"tk_arr_sort", "declare i64 @tk_arr_sort(i64, i64)", 0},
+    /* std.os — POSIX syscall bridge */
+    {"tk_os_open", "declare i64 @tk_os_open(i64, i64, i64)", 0},
+    {"tk_os_close", "declare i64 @tk_os_close(i64)", 0},
+    {"tk_os_read", "declare i64 @tk_os_read(i64, i64, i64)", 0},
+    {"tk_os_write", "declare i64 @tk_os_write(i64, i64, i64)", 0},
+    {"tk_os_lseek", "declare i64 @tk_os_lseek(i64, i64, i64)", 0},
+    {"tk_os_stat", "declare i64 @tk_os_stat(i64)", 0},
+    {"tk_os_unlink", "declare i64 @tk_os_unlink(i64)", 0},
+    {"tk_os_rename", "declare i64 @tk_os_rename(i64, i64)", 0},
+    {"tk_os_mkdir", "declare i64 @tk_os_mkdir(i64, i64)", 0},
+    {"tk_os_rmdir", "declare i64 @tk_os_rmdir(i64)", 0},
+    {"tk_os_access", "declare i64 @tk_os_access(i64, i64)", 0},
+    {"tk_os_getcwd", "declare i64 @tk_os_getcwd()", 0},
+    {"tk_os_getpid", "declare i64 @tk_os_getpid()", 0},
+    {"tk_os_exit", "declare i64 @tk_os_exit(i64)", 0},
+    {"tk_os_getenv", "declare i64 @tk_os_getenv(i64)", 0},
+    {"tk_os_setenv", "declare i64 @tk_os_setenv(i64, i64)", 0},
+    {"tk_os_errno", "declare i64 @tk_os_errno()", 0},
+    {"tk_os_strerror", "declare i64 @tk_os_strerror(i64)", 0},
+    {"tk_os_o_rdonly", "declare i64 @tk_os_o_rdonly()", 0},
+    {"tk_os_o_wronly", "declare i64 @tk_os_o_wronly()", 0},
+    {"tk_os_o_rdwr", "declare i64 @tk_os_o_rdwr()", 0},
+    {"tk_os_o_creat", "declare i64 @tk_os_o_creat()", 0},
+    {"tk_os_o_trunc", "declare i64 @tk_os_o_trunc()", 0},
+    {"tk_os_o_append", "declare i64 @tk_os_o_append()", 0},
+    {"tk_os_stdin_fd", "declare i64 @tk_os_stdin_fd()", 0},
+    {"tk_os_stdout_fd", "declare i64 @tk_os_stdout_fd()", 0},
+    {"tk_os_stderr_fd", "declare i64 @tk_os_stderr_fd()", 0},
+    /* std.task */
+    {"tk_task_scope", "declare i64 @tk_task_scope()", 0},
+    {"tk_task_spawn", "declare i64 @tk_task_spawn(i64, i64)", 0},
+    {"tk_task_awaitall", "declare i64 @tk_task_awaitall(i64)", 0},
+    {"tk_task_result", "declare i64 @tk_task_result(i64)", 0},
+    {"tk_task_cancel", "declare i64 @tk_task_cancel(i64)", 0},
+    {NULL, NULL, 0}
+};
+
+/*
+ * body_references_symbol — Check if an IR body buffer contains a reference
+ * to @name.  Searches for the pattern "@name(" or "@name " or "@name\n"
+ * to avoid false positives from substring matches (e.g. @tk_str matching
+ * @tk_str_concat).
+ */
+static int body_references_symbol(const char *body, long body_len, const char *name)
+{
+    char pattern[256];
+    int plen = snprintf(pattern, sizeof pattern, "@%s", name);
+    if (plen <= 0 || plen >= (int)sizeof(pattern)) return 0;
+    const char *p = body;
+    const char *end = body + body_len - plen;
+    while (p <= end) {
+        p = memchr(p, '@', (size_t)(end - p + 1));
+        if (!p) return 0;
+        if (!memcmp(p, pattern, (size_t)plen)) {
+            char next = p[plen];
+            /* Match if followed by '(', ' ', '\n', '\0', or ')' — i.e.
+             * not an alphanumeric/underscore continuation */
+            if (next == '(' || next == ' ' || next == '\n' || next == '\0' ||
+                next == ')' || next == ',' || next == '\t')
+                return 1;
+        }
+        p++;
+    }
+    return 0;
+}
+
+/*
  * emit_llvm_ir — Main entry point: emit a complete LLVM IR module (.ll file).
  *
  * Orchestrates the full emission pipeline:
@@ -3627,21 +3860,13 @@ static void emit_toplevel(Ctx *c, const Node *n)
  *   2. Allocates all dynamic arrays (fns, ptrs, structs, imports, locals,
  *      aliases) from the arena if available, otherwise via calloc.  Sizes
  *      come from TkcLimits (configurable via CodegenEnv).
- *   3. Emits the module header: target triple, target datalayout (inferred
- *      from the target string or compile-time platform detection), and
- *      runtime/intrinsic declarations (printf, tk_json_parse, overflow
- *      intrinsics, etc.).
- *   4. Runs three prepass walks: prepass_structs, prepass_funcs,
- *      prepass_imports — populating the Ctx registries.
- *   5. Calls emit_toplevel to emit all struct types, constants, and
- *      function definitions.
- *   6. Flushes the buffered string globals (@.str.N constants) that
- *      accumulated during function emission.
- *   7. Emits the C-compatible main() wrapper that calls tk_runtime_init
- *      and then tk_main.  If tk_main returns i64, truncates to i32 for
- *      the process exit code.
- *   8. Emits function attributes (#0) for stack probing and protection.
- *   9. Cleans up: flushes and closes the file, frees non-arena allocations.
+ *   3. Emits the module header and target triple/datalayout.
+ *   4. Emits the IR body (struct types, functions, string globals, main
+ *      wrapper) to a tmpfile, then scans it for @symbol references.
+ *   5. Writes only the declarations for actually-used stdlib symbols.
+ *   6. Copies the body from the tmpfile to the output.
+ *   7. Emits function attributes and debug metadata.
+ *   8. Cleans up: flushes and closes the file, frees non-arena allocations.
  *
  * Returns 0 on success, -1 on I/O error (with diagnostic emitted).
  */
@@ -3730,201 +3955,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
         fputs("target datalayout = \"e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"\n", f);
 #endif
     }
-    fputs("\ndeclare i32 @printf(i8*, ...)\ndeclare i32 @puts(i8*)\n", f);
-    fputs("declare i32 @strcmp(i8*, i8*)\n", f);
-    fputs("declare i8* @malloc(i64)\n", f);
-    /* Runtime declarations for std.json and std.str */
-    fputs("declare i64 @tk_json_parse(i8*)\n", f);
-    fputs("declare void @tk_json_print(i64)\n", f);
-    fputs("declare i8* @tk_str_argv(i64)\n", f);
-    fputs("declare void @tk_runtime_init(i32, i8**)\n", f);
-    fputs("declare i8* @tk_array_concat(i8*, i8*)\n", f);
-    fputs("declare i8* @tk_str_concat(i8*, i8*)\n", f);
-    fputs("declare i64 @tk_str_len(i8*)\n", f);
-    fputs("declare i64 @tk_str_char_at(i8*, i64)\n", f);
-    fputs("declare void @tk_json_print_bool(i64)\n", f);
-    fputs("declare void @tk_json_print_arr(i8*)\n", f);
-    fputs("declare void @tk_json_print_str(i8*)\n", f);
-    /* Checked overflow intrinsics and trap (D2=E) */
-    fputs("declare {i64, i1} @llvm.sadd.with.overflow.i64(i64, i64)\n", f);
-    fputs("declare {i64, i1} @llvm.ssub.with.overflow.i64(i64, i64)\n", f);
-    fputs("declare {i64, i1} @llvm.smul.with.overflow.i64(i64, i64)\n", f);
-    fputs("declare void @tk_overflow_trap(i32)\n", f);
-    /* std.str module wrappers (tk_web_glue.c) */
-    /* Story 49.4.5: all _w wrappers use i64 ABI uniformly */
-    fputs("declare i64 @tk_str_concat_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_str_len_w(i64)\n", f);
-    fputs("declare i64 @tk_str_trim_w(i64)\n", f);
-    fputs("declare i64 @tk_str_upper_w(i64)\n", f);
-    fputs("declare i64 @tk_str_lower_w(i64)\n", f);
-    fputs("declare i64 @tk_str_from_int(i64)\n", f);
-    fputs("declare i64 @tk_str_to_int(i64)\n", f);
-    fputs("declare i64 @tk_str_split_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_str_indexof_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_str_slice_w(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_str_replace_w(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_str_startswith_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_str_endswith_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_str_trimprefix_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_str_trimsuffix_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_str_lastindex_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_str_matchbracket_w(i64)\n", f);
-    fputs("declare i64 @tk_str_contains_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_env_get_or(i64, i64)\n", f);
-    fputs("declare i64 @tk_env_getint_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_env_set_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_env_expand_w(i64)\n", f);
-    fputs("declare i64 @tk_file_read_w(i64)\n", f);
-    fputs("declare i64 @tk_file_write_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_file_isdir_w(i64)\n", f);
-    fputs("declare i64 @tk_file_mkdir_w(i64)\n", f);
-    fputs("declare i64 @tk_file_copy_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_file_listall_w(i64)\n", f);
-    fputs("declare i64 @tk_file_exists_w(i64)\n", f);
-    fputs("declare i64 @tk_path_join_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_path_dir_w(i64)\n", f);
-    fputs("declare i64 @tk_path_ext_w(i64)\n", f);
-    fputs("declare i64 @tk_md_render_w(i64)\n", f);
-    fputs("declare i64 @tk_toml_load_w(i64)\n", f);
-    fputs("declare i64 @tk_toml_section_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_toml_str_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_toml_i64_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_toml_bool_w(i64, i64)\n", f);
-    /* libc math functions (linked via -lm) */
-    fputs("declare double @sin(double)\n", f);
-    fputs("declare double @cos(double)\n", f);
-    fputs("declare double @tan(double)\n", f);
-    fputs("declare double @asin(double)\n", f);
-    fputs("declare double @acos(double)\n", f);
-    fputs("declare double @atan(double)\n", f);
-    fputs("declare double @atan2(double, double)\n", f);
-    fputs("declare double @fmod(double, double)\n", f);
-    fputs("declare double @fabs(double)\n", f);
-    fputs("declare double @log(double)\n", f);
-    fputs("declare double @log10(double)\n", f);
-    fputs("declare double @exp(double)\n", f);
-    fputs("declare double @round(double)\n", f);
-    fputs("declare double @sqrt(double)\n", f);
-    fputs("declare double @floor(double)\n", f);
-    fputs("declare double @ceil(double)\n", f);
-    fputs("declare double @pow(double, double)\n", f);
-    /* std.mem module functions (mem.c) */
-    fputs("declare i64 @tk_mem_alloc(i64)\n", f);
-    fputs("declare void @tk_mem_free(i64)\n", f);
-    fputs("declare i64 @tk_mem_realloc(i64, i64)\n", f);
-    fputs("declare void @tk_mem_copy(i64, i64, i64)\n", f);
-    fputs("declare void @tk_mem_set(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_mem_cmp(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_mem_load8(i64, i64)\n", f);
-    fputs("declare void @tk_mem_store8(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_args_count_w()\n", f);
-    fputs("declare i64 @tk_args_get_w(i64)\n", f);
-    fputs("declare i64 @tk_http_get_static(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_get_static_mime(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_http_get_handler(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_post_handler(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_put_handler(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_delete_handler(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_patch_handler(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_req_path(i64)\n", f);
-    fputs("declare i64 @tk_http_req_method(i64)\n", f);
-    fputs("declare i64 @tk_http_req_body(i64)\n", f);
-    fputs("declare i64 @tk_http_req_param(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_req_header(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_res_new(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_res_json_new(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_res_ok(i64)\n", f);
-    fputs("declare i64 @tk_http_res_bad(i64)\n", f);
-    fputs("declare i64 @tk_http_res_err(i64)\n", f);
-    fputs("declare i64 @tk_http_post_echo(i64)\n", f);
-    fputs("declare i64 @tk_http_post_static(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_post_json(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_serve_staticdir_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_serve(i64)\n", f);
-    fputs("declare i64 @tk_http_servetls(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_http_serveworkers_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_vhost(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_servevhosts(i64)\n", f);
-    fputs("declare i64 @tk_http_servevhoststls(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_http_set_notfound(i64)\n", f);
-    fputs("declare i64 @tk_http_set_cors(i64)\n", f);
-    fputs("declare i64 @tk_http_client_w(i64)\n", f);
-    fputs("declare i64 @tk_http_get_w(i64)\n", f);
-    fputs("declare i64 @tk_http_post_w(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_http_put_w(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_http_delete_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_withproxy_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_stream_w(i64)\n", f);
-    fputs("declare i64 @tk_http_streamnext_w(i64)\n", f);
-    fputs("declare i64 @tk_http_listen_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_http_print_w(i64)\n", f);
-    fputs("declare i64 @tk_log_open_access_w(i64, i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_log_open_error_w(i64, i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_log_accessformat_w(i64)\n", f);
-    fputs("declare i64 @tk_log_info_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_log_error_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_log_warn_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_log_debug_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_router_new_w()\n", f);
-    /* Array/map runtime and instance method wrappers (tk_web_glue.c) */
-    fputs("declare i8* @tk_map_new()\n", f);
-    fputs("declare void @tk_map_put(i8*, i64, i64)\n", f);
-    fputs("declare i64 @tk_map_get(i8*, i64)\n", f);
-    fputs("declare i64 @tk_array_append_w(i64, i64)\n", f);
-    fputs("declare i64 @tk_map_set_w(i64, i64, i64)\n", f);
-    /* Story 76.1.7a: higher-order array functions */
-    fputs("declare i64 @tk_arr_map(i64, i64)\n", f);
-    fputs("declare i64 @tk_arr_filter(i64, i64)\n", f);
-    fputs("declare i64 @tk_arr_reduce(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_arr_sort(i64, i64)\n\n", f);
-    /* std.os module — POSIX syscall bridge (Story 74.2.1) */
-    fputs("declare i64 @tk_os_open(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_os_close(i64)\n", f);
-    fputs("declare i64 @tk_os_read(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_os_write(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_os_lseek(i64, i64, i64)\n", f);
-    fputs("declare i64 @tk_os_stat(i64)\n", f);
-    fputs("declare i64 @tk_os_unlink(i64)\n", f);
-    fputs("declare i64 @tk_os_rename(i64, i64)\n", f);
-    fputs("declare i64 @tk_os_mkdir(i64, i64)\n", f);
-    fputs("declare i64 @tk_os_rmdir(i64)\n", f);
-    fputs("declare i64 @tk_os_access(i64, i64)\n", f);
-    fputs("declare i64 @tk_os_getcwd()\n", f);
-    fputs("declare i64 @tk_os_getpid()\n", f);
-    fputs("declare i64 @tk_os_exit(i64)\n", f);
-    fputs("declare i64 @tk_os_getenv(i64)\n", f);
-    fputs("declare i64 @tk_os_setenv(i64, i64)\n", f);
-    fputs("declare i64 @tk_os_errno()\n", f);
-    fputs("declare i64 @tk_os_strerror(i64)\n", f);
-    fputs("declare i64 @tk_os_o_rdonly()\n", f);
-    fputs("declare i64 @tk_os_o_wronly()\n", f);
-    fputs("declare i64 @tk_os_o_rdwr()\n", f);
-    fputs("declare i64 @tk_os_o_creat()\n", f);
-    fputs("declare i64 @tk_os_o_trunc()\n", f);
-    fputs("declare i64 @tk_os_o_append()\n", f);
-    fputs("declare i64 @tk_os_stdin_fd()\n", f);
-    fputs("declare i64 @tk_os_stdout_fd()\n", f);
-    fputs("declare i64 @tk_os_stderr_fd()\n\n", f);
-    /* std.task module functions (task.c) — Story 76.1.1a */
-    fputs("declare i64 @tk_task_scope()\n", f);
-    fputs("declare i64 @tk_task_spawn(i64, i64)\n", f);
-    fputs("declare i64 @tk_task_awaitall(i64)\n", f);
-    fputs("declare i64 @tk_task_result(i64)\n", f);
-    fputs("declare i64 @tk_task_cancel(i64)\n\n", f);
-
-    /* Loop-iteration guard: declare fprintf, exit, stderr when enabled */
-    if (ctx.max_iters > 0) {
-        fputs("declare i32 @fprintf(i8*, i8*, ...)\n", f);
-        fputs("declare void @exit(i32) noreturn\n", f);
-#ifdef __APPLE__
-        fputs("@__stderrp = external global i8*\n", f);
-#else
-        fputs("@stderr = external global i8*\n", f);
-#endif
-        /* Format string: "toke: loop exceeded %d iterations, aborting\n\0" = 45 bytes */
-        fputs("@.str.loop_guard = private unnamed_addr constant "
-              "[45 x i8] c\"toke: loop exceeded %d iterations, aborting\\0A\\00\"\n\n", f);
-    }
+    /* ── Two-pass approach: emit body to tmpfile, then scan for used symbols ── */
 
     /* Story 76.1.5: allocate base debug metadata node IDs for DIFile and
      * DICompileUnit.  Actual metadata text is emitted after all functions
@@ -3932,6 +3963,29 @@ int emit_llvm_ir(const Node *ast, const char *src,
     if (ctx.debug) {
         ctx.dbg_file = next_dbg(&ctx);  /* !N = DIFile */
         ctx.dbg_cu   = next_dbg(&ctx);  /* !N+1 = DICompileUnit */
+    }
+
+    /* Redirect ctx.out to a tmpfile for body emission */
+    FILE *body_file = tmpfile();
+    if (!body_file) {
+        fclose(f);
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free(ctx.structs); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+        diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
+                  "LLVM IR emission failed: cannot create temp file", (void*)0);
+        return -1;
+    }
+    ctx.out = body_file;
+
+    /* Loop-iteration guard: emit globals to body_file when enabled */
+    if (ctx.max_iters > 0) {
+#ifdef __APPLE__
+        fputs("@__stderrp = external global i8*\n", body_file);
+#else
+        fputs("@stderr = external global i8*\n", body_file);
+#endif
+        /* Format string: "toke: loop exceeded %d iterations, aborting\n\0" = 45 bytes */
+        fputs("@.str.loop_guard = private unnamed_addr constant "
+              "[45 x i8] c\"toke: loop exceeded %d iterations, aborting\\0A\\00\"\n\n", body_file);
     }
 
     prepass_structs(&ctx, ast);
@@ -3965,51 +4019,88 @@ int emit_llvm_ir(const Node *ast, const char *src,
 
     /* Flush forward declarations for cross-module user function calls */
     if (ctx.fwd_decls_len > 0)
-        fwrite(ctx.fwd_decls, 1, (size_t)ctx.fwd_decls_len, f);
+        fwrite(ctx.fwd_decls, 1, (size_t)ctx.fwd_decls_len, body_file);
 
     /* Flush buffered string globals (must appear at module scope, before main) */
     if (ctx.str_globals_len > 0)
-        fwrite(ctx.str_globals, 1, (size_t)ctx.str_globals_len, f);
+        fwrite(ctx.str_globals, 1, (size_t)ctx.str_globals_len, body_file);
 
     /* Emit C-compatible main wrapper only when this module defines main */
     const FnSig *tkmain = lookup_fn(&ctx, "tk_main");
     if (tkmain) {
-        fputs("\ndefine i32 @main(i32 %argc, i8** %argv) #0 {\n", f);
-        fputs("  call void @tk_runtime_init(i32 %argc, i8** %argv)\n", f);
+        fputs("\ndefine i32 @main(i32 %argc, i8** %argv) #0 {\n", body_file);
+        fputs("  call void @tk_runtime_init(i32 %argc, i8** %argv)\n", body_file);
         if (!strcmp(tkmain->ret, "void")) {
-            fputs("  call fastcc void @tk_main()\n", f);
-            fputs("  ret i32 0\n", f);
+            fputs("  call fastcc void @tk_main()\n", body_file);
+            fputs("  ret i32 0\n", body_file);
         } else {
-            fputs("  %r = call fastcc i64 @tk_main()\n", f);
-            fputs("  %rc = trunc i64 %r to i32\n", f);
-            fputs("  ret i32 %rc\n", f);
+            fputs("  %r = call fastcc i64 @tk_main()\n", body_file);
+            fputs("  %rc = trunc i64 %r to i32\n", body_file);
+            fputs("  ret i32 %rc\n", body_file);
         }
-        fputs("}\n", f);
+        fputs("}\n", body_file);
     }
 
     /* Stack probe and stack-protector attributes for recursion safety */
-    fputs("\nattributes #0 = { \"stack-protector-buffer-size\"=\"8\" }\n", f);
+    fputs("\nattributes #0 = { \"stack-protector-buffer-size\"=\"8\" }\n", body_file);
 
     /* Story 76.1.5: emit DWARF debug metadata nodes at module tail */
     if (ctx.debug) {
-        fputs("\n; Debug metadata (Story 76.1.5)\n", f);
-        fprintf(f, "!llvm.dbg.cu = !{!%d}\n", ctx.dbg_cu);
-        fprintf(f, "!llvm.module.flags = !{!%d, !%d}\n",
+        fputs("\n; Debug metadata (Story 76.1.5)\n", body_file);
+        fprintf(body_file, "!llvm.dbg.cu = !{!%d}\n", ctx.dbg_cu);
+        fprintf(body_file, "!llvm.module.flags = !{!%d, !%d}\n",
                 next_dbg(&ctx), next_dbg(&ctx));
         /* DIFile */
-        fprintf(f, "!%d = !DIFile(filename: \"%s\", directory: \"%s\")\n",
+        fprintf(body_file, "!%d = !DIFile(filename: \"%s\", directory: \"%s\")\n",
                 ctx.dbg_file, ctx.dbg_source_file, ctx.dbg_source_dir);
         /* DICompileUnit */
-        fprintf(f, "!%d = distinct !DICompileUnit(language: DW_LANG_C99, "
+        fprintf(body_file, "!%d = distinct !DICompileUnit(language: DW_LANG_C99, "
                 "file: !%d, producer: \"toke 0.1.0\", isOptimized: false, "
                 "runtimeVersion: 0, emissionKind: FullDebug)\n",
                 ctx.dbg_cu, ctx.dbg_file);
         /* Module flags for DWARF version and Debug Info Version */
-        fprintf(f, "!%d = !{i32 7, !\"Dwarf Version\", i32 4}\n",
+        fprintf(body_file, "!%d = !{i32 7, !\"Dwarf Version\", i32 4}\n",
                 ctx.dbg_next - 2);
-        fprintf(f, "!%d = !{i32 2, !\"Debug Info Version\", i32 3}\n",
+        fprintf(body_file, "!%d = !{i32 2, !\"Debug Info Version\", i32 3}\n",
                 ctx.dbg_next - 1);
     }
+
+    /* ── Pass 2: read body, scan for references, emit only needed decls ── */
+    fflush(body_file);
+    long body_len = ftell(body_file);
+    rewind(body_file);
+
+    char *body_buf = (char *)malloc((size_t)body_len + 1);
+    if (!body_buf) {
+        fclose(body_file); fclose(f);
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free(ctx.structs); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+        diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
+                  "LLVM IR emission failed: out of memory for body scan", (void*)0);
+        return -1;
+    }
+    fread(body_buf, 1, (size_t)body_len, body_file);
+    body_buf[body_len] = '\0';
+    fclose(body_file);
+
+    /* Emit only the declarations whose symbols are referenced in the body */
+    fputs("\n", f);
+    for (int di = 0; g_stdlib_decls[di].name; di++) {
+        if (g_stdlib_decls[di].always ||
+            body_references_symbol(body_buf, body_len, g_stdlib_decls[di].name)) {
+            fprintf(f, "%s\n", g_stdlib_decls[di].decl);
+        }
+    }
+
+    /* Loop-iteration guard declarations (only if loop guards are enabled) */
+    if (ctx.max_iters > 0) {
+        fputs("declare i32 @fprintf(i8*, i8*, ...)\n", f);
+        fputs("declare void @exit(i32) noreturn\n", f);
+    }
+    fputs("\n", f);
+
+    /* Copy body to final output */
+    fwrite(body_buf, 1, (size_t)body_len, f);
+    free(body_buf);
 
     if (fflush(f) || ferror(f)) {
         fclose(f);
