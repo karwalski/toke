@@ -164,7 +164,13 @@ int64_t tk_str_repeat_w(int64_t s, int64_t n) { (void)s; (void)n; return 0; }
 int64_t tk_str_reverse_w(int64_t s) { (void)s; return 0; }
 int64_t tk_str_format_w(int64_t fmt, int64_t args) { (void)fmt; (void)args; return 0; }
 int64_t tk_str_ends_w(int64_t s, int64_t suffix) { (void)s; (void)suffix; return 0; }
-int64_t tk_str_eq_w(int64_t a, int64_t b) { (void)a; (void)b; return 0; }
+int64_t tk_str_eq_w(int64_t a, int64_t b) {
+    const char *sa = (const char *)(intptr_t)a;
+    const char *sb = (const char *)(intptr_t)b;
+    if (sa == sb) return 1;
+    if (!sa || !sb) return 0;
+    return strcmp(sa, sb) == 0 ? 1 : 0;
+}
 int64_t tk_str_append_w(int64_t s, int64_t t) { (void)s; (void)t; return 0; }
 int64_t tk_str_newarr_w(void) { return 0; }
 int64_t tk_str_padright_w(int64_t s, int64_t width, int64_t pad) { (void)s; (void)width; (void)pad; return 0; }
