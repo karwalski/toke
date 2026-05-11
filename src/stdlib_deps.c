@@ -21,24 +21,25 @@
 
 static const StdlibModule stdlib_table[] = {
     /* module          c_files                                  deps                                                                extra_flags */
-    { "str",           "str.c",                                 "",                                                                 "" },
-    { "encoding",      "encoding.c",                            "",                                                                 "" },
-    { "env",           "env.c",                                 "",                                                                 "" },
-    { "file",          "file.c",                                "",                                                                 "" },
-    { "path",          "path.c",                                "",                                                                 "" },
-    { "args",          "args.c",                                "",                                                                 "" },
-    { "process",       "process.c",                             "",                                                                 "" },
-    { "crypto",        "crypto.c",                              "str",                                                              "" },
-    { "csv",           "csv.c",                                 "",                                                                 "" },
-    { "template",      "template.c",                            "",                                                                 "" },
-    { "math",          "math.c",                                "",                                                                 "-lm" },
-    { "json",          "json.c",                                "",                                                                 "" },
+    { "io",            "io_glue.c",                             "",                                                                 "" },
+    { "str",           "str.c str_glue.c",                      "",                                                                 "" },
+    { "encoding",      "encoding.c encoding_glue.c",            "",                                                                 "" },
+    { "env",           "env.c env_glue.c",                      "",                                                                 "" },
+    { "file",          "file.c file_glue.c",                    "",                                                                 "" },
+    { "path",          "path.c path_glue.c",                    "",                                                                 "" },
+    { "args",          "args.c args_glue.c",                    "",                                                                 "" },
+    { "process",       "process.c process_glue.c",              "",                                                                 "" },
+    { "crypto",        "crypto.c crypto_glue.c",                "str",                                                              "" },
+    { "csv",           "csv.c csv_glue.c",                      "",                                                                 "" },
+    { "template",      "template.c template_glue.c",            "",                                                                 "" },
+    { "math",          "math.c math_glue.c",                    "",                                                                 "-lm" },
+    { "json",          "json.c json_glue.c",                    "",                                                                 "" },
     { "toon",          "toon.c",                                "",                                                                 "" },
     { "yaml",          "yaml.c",                                "",                                                                 "" },
     { "i18n",          "i18n.c",                                "",                                                                 "" },
-    { "time",          "tk_time.c",                             "",                                                                 "" },
-    { "test",          "tk_test.c",                             "",                                                                 "" },
-    { "log",           "log.c",                                 "time",                                                             "" },
+    { "time",          "tk_time.c time_glue.c",                 "",                                                                 "" },
+    { "test",          "tk_test.c test_glue.c",                 "",                                                                 "" },
+    { "log",           "log.c log_glue.c",                      "time",                                                             "" },
     { "ws",            "ws.c",                                  "",                                                                 "" },
     { "sse",           "sse.c",                                 "",                                                                 "" },
     { "net",           "net.c",                                 "",                                                                 "" },
@@ -57,11 +58,12 @@ static const StdlibModule stdlib_table[] = {
     { "analytics",     "analytics.c",                           "dataframe csv str math",                                           "-lm" },
     { "router",        "router.c",                              "ws",                                                               "-lz" },
     { "dashboard",     "dashboard.c",                           "chart html router",                                                "-lz" },
-    { "http",          "http.c http2.c acme.c proxy.c cache.c content.c security.c metrics.c server_ops.c ws_server.c hooks.c",
+    { "http",          "http.c http2.c acme.c proxy.c cache.c content.c security.c metrics.c server_ops.c ws_server.c hooks.c tk_web_glue.c",
                                                                 "encoding log str",                                                 "" },
-    { "toml",          "toml.c",                                "",                                                                 "" },  /* vendor sources appended separately */
-    { "md",            "md.c",                                  "",                                                                 "" },  /* vendor sources appended separately */
-    { "db",            "db.c",                                  "",                                                                 "-lsqlite3" },
+    { "toml",          "toml.c toml_glue.c",                    "",                                                                 "" },  /* vendor sources appended separately */
+    { "md",            "md.c md_glue.c",                        "",                                                                 "" },  /* vendor sources appended separately */
+    { "db",            "db.c db_glue.c",                        "",                                                                 "-lsqlite3" },
+    { "collections",   "collections.c collections_glue.c",      "",                                                                 "" },
     { "vecstore",      "vecstore.c",                            "",                                                                 "-lpthread" },
     { "secure_mem",    "secure_mem.c",                          "",                                                                 "" },
     { "tls",           "tls.c",                                 "",                                                                 "" },
@@ -73,9 +75,9 @@ static const StdlibModule stdlib_table[] = {
     { "webview",       "webview.c",                             "",                                                                 "" },
     { "mem",           "mem.c",                                 "",                                                                 "" },
     { "os",            "os.c",                                  "",                                                                 "" },
-    { "stack",         "collections.c",                         "",                                                                 "" },
-    { "queue",         "collections.c",                         "",                                                                 "" },
-    { "set",           "collections.c",                         "",                                                                 "" },
+    { "stack",         "collections.c collections_glue.c",      "",                                                                 "" },
+    { "queue",         "collections.c collections_glue.c",      "",                                                                 "" },
+    { "set",           "collections.c collections_glue.c",      "",                                                                 "" },
     { "task",          "task.c",                                "",                                                                 "-lpthread" },
     { NULL, NULL, NULL, NULL }  /* sentinel */
 };
@@ -193,9 +195,9 @@ int resolve_stdlib_deps(const char *stdlib_dir, const SymbolTable *st,
      *     args toml md crypto math time net sys
      *   - glue_gen.c modules[]: json toon yaml i18n ws */
     static const char *glue_deps[] = {
-        "str", "http", "env", "log", "router", "file", "path",
-        "args", "toml", "md", "crypto", "math", "time", "net", "sys",
-        "json", "toon", "yaml", "i18n", "ws",
+        "str", "io", "collections", "http", "env", "log", "router",
+        "file", "path", "args", "toml", "md", "crypto", "math",
+        "time", "net", "sys", "json", "toon", "yaml", "i18n", "ws",
         NULL
     };
     for (int i = 0; glue_deps[i]; i++) {
@@ -248,10 +250,10 @@ int resolve_stdlib_deps(const char *stdlib_dir, const SymbolTable *st,
         }
     }
 
-    /* Always include tk_runtime.c and tk_web_glue.c */
+    /* Always include tk_runtime.c (tk_web_glue.c is now part of the http module) */
     snprintf(out->sources, sizeof out->sources,
-             "%s/tk_runtime.c %s/tk_web_glue.c",
-             stdlib_dir, stdlib_dir);
+             "%s/tk_runtime.c",
+             stdlib_dir);
 
     /* For each needed module, append its .c files and vendor sources */
     {

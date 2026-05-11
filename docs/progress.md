@@ -3633,7 +3633,8 @@ Bugs found during toke-website production deployment on 2026-05-05.
 | 75.8 | http.serve silently fails when port is occupied | done | 2026-05-10 | **P2** http.c: bind_listen() and http_serve() now fprintf to stderr on socket/bind/listen failure with port number and strerror(errno). |
 | 75.9 | Fix http.servedir missing directory index.html resolution | done | 2026-05-10 | **P1** staticdir_handler in tk_web_glue.c opened directories as files (failed or returned octet-stream). Fixed: stat() to detect directory, append /index.html, then open. Now serves index.html with correct text/html MIME. |
 | 75.10 | Standalone binary compilation — only emit used extern declarations | done | 2026-05-11 | **P0** llvm.c: two-pass emission, only used declarations emitted (5 for minimal, was 171). Standalone binary links with just tk_runtime.c + args.c + str.c. |
-| 75.11 | Add `--emit-deps` flag for selective stdlib linking | done | 2026-05-11 | **P1** main.c + stdlib_deps.c: `toke --emit-deps source.tk` outputs needed C files and linker flags. Uses `resolve_stdlib_deps_imports_only()` — seeds from actual imports, no blanket web glue. Minimal: 3 files. HTTP: 16 files. No db/collections unless imported. |
+| 75.11 | Add `--emit-deps` flag for selective stdlib linking | done | 2026-05-11 | **P1** `toke --emit-deps source.tk` outputs needed C files and linker flags. Minimal: 3 files. HTTP: 16 files. No db/collections unless imported. |
+| 75.12 | Split tk_web_glue.c into per-module _glue.c files | done | 2026-05-11 | **P0** 424 wrapper functions split from monolithic tk_web_glue.c into 20 per-module glue files (io_glue.c, str_glue.c, test_glue.c, etc.). tk_web_glue.c now HTTP-only. stdlib_deps.c updated to reference glue files. Standalone `io.println("hi")` links with 4 files, no web glue/db/collections. |
 
 ## Epic 76 — Documentation v0.3 Spec Compliance Audit
 
