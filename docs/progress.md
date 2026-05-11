@@ -3634,7 +3634,42 @@ Bugs found during toke-website production deployment on 2026-05-05.
 | 75.9 | Fix http.servedir missing directory index.html resolution | done | 2026-05-10 | **P1** staticdir_handler in tk_web_glue.c opened directories as files (failed or returned octet-stream). Fixed: stat() to detect directory, append /index.html, then open. Now serves index.html with correct text/html MIME. |
 | 75.10 | Standalone binary compilation — only emit used extern declarations | done | 2026-05-11 | **P0** llvm.c: two-pass emission, only used declarations emitted (5 for minimal, was 171). Standalone binary links with just tk_runtime.c + args.c + str.c. |
 | 75.11 | Add `--emit-deps` flag for selective stdlib linking | done | 2026-05-11 | **P1** `toke --emit-deps source.tk` outputs needed C files and linker flags. Minimal: 3 files. HTTP: 16 files. No db/collections unless imported. |
-| 75.12 | Split tk_web_glue.c into per-module _glue.c files | done | 2026-05-11 | **P0** 424 wrapper functions split from monolithic tk_web_glue.c into 20 per-module glue files (io_glue.c, str_glue.c, test_glue.c, etc.). tk_web_glue.c now HTTP-only. stdlib_deps.c updated to reference glue files. Standalone `io.println("hi")` links with 4 files, no web glue/db/collections. |
+| 75.12 | Split tk_web_glue.c into per-module _glue.c files | done | 2026-05-11 | **P0** 424 wrapper functions split into 20 per-module glue files. Standalone `io.println("hi")` links with 4 files. |
+| 75.13 | Fix str.eq stub always returning false | done | 2026-05-12 | tk_str_eq_w was no-op stub. Now does strcmp comparison. |
+
+## Epic 78 — Wire up stub glue wrappers to real C implementations
+
+During the 75.12 glue split, many `_w` wrapper functions were copied as no-op stubs (`return 0`) even though real C implementations exist. These need to be wired up so standalone builds can use the full stdlib.
+
+~170 stubs total. Categorised by priority:
+
+### Epic 78.1 — Tier 1: Core (str, file, test) — blocks loke test suite
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 78.1.1 | Wire str_glue.c stubs to real str.c functions | backlog | — | **P0** `str_from_float`, `str_to_float`, `str_isempty`, `str_reverse`, `str_repeat`, `str_padright`, `str_fromfloat`, `str_tofloat`, `str_fromi64`, `str_fromf64`, `str_starts`, `str_ends`, `str_tolower`, `str_toupper`, `str_append`, `str_parsef64` — 16 stubs. Real impls exist in str.c. |
+| 78.1.2 | Wire file_glue.c stubs to real file.c functions | backlog | — | **P0** `file_delete`, `file_list`, `file_rename`, `file_stat`, `file_readlines`, `file_writelines`, `file_listdir`, `file_err` — 8 stubs. Real impls exist in file.c. |
+| 78.1.3 | Wire test_glue.c stubs to real tk_test.c functions | backlog | — | **P0** `test_run`, `test_report` — 2 stubs. Real impls exist in tk_test.c. Blocks ooke test suite from running. |
+
+### Epic 78.2 — Tier 2: Common modules (crypto, encoding, process, time, json, collections)
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 78.2.1 | Wire crypto_glue.c stubs | backlog | — | **P1** `sha256`, `hmacsha256`, `randombytes`, `constanttimeequal`, `tohex` — 5 stubs. Real impls in crypto.c. |
+| 78.2.2 | Wire encoding_glue.c stubs | backlog | — | **P1** `base64_encode`, `base64_decode` — 2 stubs. Real impls in encoding.c. |
+| 78.2.3 | Wire process_glue.c stubs | backlog | — | **P1** `spawn`, `wait`, `exitcode`, `kill`, `isalive`, `stdout`, `stderr`, `sleep` etc. — 12 stubs. Real impls in process.c. |
+| 78.2.4 | Wire time_glue.c stubs | backlog | — | **P1** `parse`, `elapsed`, `sleep` — 3 stubs. Real impls in tk_time.c. |
+| 78.2.5 | Wire json_glue.c stubs | backlog | — | **P1** `set`, `keys`, `values`, `getint`, `getbool`, `getstring`, `haskey`, `serialize` — 8 stubs. Partial impls in json.c. |
+| 78.2.6 | Wire collections_glue.c stubs | backlog | — | **P1** `map_keys`, `newarray`, `append`, `push` — 6 stubs. Partial impls in collections.c. |
+
+### Epic 78.3 — Tier 3: Remaining modules (lower priority)
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 78.3.1 | Wire remaining tk_web_glue.c stubs (encrypt, html, chart, svg, canvas, etc.) | backlog | — | **P2** ~80 stubs across encrypt, html, chart, df, ml, i18n, dashboard, svg, canvas, cache, regex, validate, ws, auth, ratelimit, config, uuid, yaml, toon, llm, fmt. Most have real impls in their .c files. |
+| 78.3.2 | Wire csv_glue.c stubs | backlog | — | **P2** `parse`, `serialize` — 2 stubs. |
+| 78.3.3 | Wire template_glue.c stubs | backlog | — | **P2** `render`, `load` — 4 stubs. |
+| 78.3.4 | Wire log_glue.c and math_glue.c stubs | backlog | — | **P2** log: `setformat`, `setlevel`. math: `mean`, `median`, `percentile`, `linreg`, `sum`, `stddev` — 8 stubs. |
 
 ## Epic 76 — Documentation v0.3 Spec Compliance Audit
 
