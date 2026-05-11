@@ -11,6 +11,10 @@
 #include <string.h>
 #include <stdio.h>
 
+/* --- bitcast helpers for f64 <-> i64 ------------------------------------ */
+static double i64_to_f64(int64_t i) { double d; memcpy(&d, &i, sizeof(d)); return d; }
+static int64_t f64_to_i64(double d) { int64_t i; memcpy(&i, &d, sizeof(i)); return i; }
+
 int64_t tk_str_concat_w(int64_t a, int64_t b) {
     return (int64_t)(intptr_t)str_concat(
         (const char *)(intptr_t)a,
@@ -135,10 +139,18 @@ int64_t tk_str_substr_w(int64_t s, int64_t start, int64_t end_) {
     return tk_str_slice_w(s, start, end_);
 }
 int64_t tk_str_padleft_w(int64_t s, int64_t width, int64_t pad) {
-    (void)width; (void)pad; return s;
+    char ch = (char)(pad ? pad : ' ');
+    return (int64_t)(intptr_t)str_pad_left(
+        (const char *)(intptr_t)s, (uint64_t)width, ch);
 }
 int64_t tk_str_join_w(int64_t arr, int64_t sep) {
-    (void)arr; (void)sep; return 0;
+    if (!arr) return (int64_t)(intptr_t)str_join((const char *)(intptr_t)sep, (StrArray){NULL, 0});
+    int64_t *ptr = (int64_t *)(intptr_t)arr;
+    int64_t len = ptr[-1];
+    StrArray parts;
+    parts.len = (uint64_t)len;
+    parts.data = (const char **)ptr;
+    return (int64_t)(intptr_t)str_join((const char *)(intptr_t)sep, parts);
 }
 int64_t tk_str_toint_w(int64_t s) {
     const char *p = s ? (const char *)(intptr_t)s : "";
@@ -155,15 +167,59 @@ int64_t tk_str_print_w(int64_t s) {
     return 0;
 }
 
-/* str newarray */
-int64_t tk_str_newarray_w(int64_t dummy) { (void)dummy; return 0; }
+/* --- empty array helper: allocates a block with count=0, returns block+1 --- */
+static int64_t str_make_empty_array(void) {
+    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
+    if (!block) return 0;
+    block[0] = 0;
+    return (int64_t)(intptr_t)(block + 1);
+}
 
-/* str extras (stubs) */
-int64_t tk_str_emptyarr_w(void) { return 0; }
-int64_t tk_str_repeat_w(int64_t s, int64_t n) { (void)s; (void)n; return 0; }
-int64_t tk_str_reverse_w(int64_t s) { (void)s; return 0; }
-int64_t tk_str_format_w(int64_t fmt, int64_t args) { (void)fmt; (void)args; return 0; }
-int64_t tk_str_ends_w(int64_t s, int64_t suffix) { (void)s; (void)suffix; return 0; }
+/* --- array append helper (same layout as tk_array_append_w) ------------- */
+static int64_t str_array_append(int64_t arr_i64, int64_t elem) {
+    if (!arr_i64) {
+        /* create single-element array */
+        int64_t *block = (int64_t *)malloc(2 * sizeof(int64_t));
+        if (!block) return 0;
+        block[0] = 1;
+        block[1] = elem;
+        return (int64_t)(intptr_t)(block + 1);
+    }
+    int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
+    int64_t len = ptr[-1];
+    int64_t *block = (int64_t *)malloc((size_t)(len + 2) * sizeof(int64_t));
+    if (!block) return arr_i64;
+    block[0] = len + 1;
+    if (len > 0) memcpy(block + 1, ptr, (size_t)len * sizeof(int64_t));
+    block[len + 1] = elem;
+    return (int64_t)(intptr_t)(block + 1);
+}
+
+/* str newarray */
+int64_t tk_str_newarray_w(int64_t dummy) { (void)dummy; return str_make_empty_array(); }
+
+/* str extras */
+int64_t tk_str_emptyarr_w(void) { return str_make_empty_array(); }
+
+int64_t tk_str_repeat_w(int64_t s, int64_t n) {
+    return (int64_t)(intptr_t)str_repeat(
+        (const char *)(intptr_t)s, (uint64_t)n);
+}
+
+int64_t tk_str_reverse_w(int64_t s) {
+    return (int64_t)(intptr_t)str_reverse((const char *)(intptr_t)s);
+}
+
+int64_t tk_str_format_w(int64_t fmt, int64_t args) {
+    /* TODO: str_format not implemented in str.c */
+    (void)args;
+    return fmt; /* return the format string unmodified as fallback */
+}
+
+int64_t tk_str_ends_w(int64_t s, int64_t suffix) {
+    return tk_str_endswith_w(s, suffix);
+}
+
 int64_t tk_str_eq_w(int64_t a, int64_t b) {
     const char *sa = (const char *)(intptr_t)a;
     const char *sb = (const char *)(intptr_t)b;
@@ -171,25 +227,118 @@ int64_t tk_str_eq_w(int64_t a, int64_t b) {
     if (!sa || !sb) return 0;
     return strcmp(sa, sb) == 0 ? 1 : 0;
 }
-int64_t tk_str_append_w(int64_t s, int64_t t) { (void)s; (void)t; return 0; }
-int64_t tk_str_newarr_w(void) { return 0; }
-int64_t tk_str_padright_w(int64_t s, int64_t width, int64_t pad) { (void)s; (void)width; (void)pad; return 0; }
-int64_t tk_str_tolower_w(int64_t s) { (void)s; return 0; }
-int64_t tk_str_arrappend_w(int64_t arr, int64_t item) { (void)arr; (void)item; return 0; }
-int64_t tk_str_arrayappend_w(int64_t arr, int64_t item) { (void)arr; (void)item; return 0; }
-int64_t tk_str_toupper_w(int64_t s) { (void)s; return 0; }
-int64_t tk_str_appendarray_w(int64_t arr, int64_t item) { (void)arr; (void)item; return 0; }
-int64_t tk_str_arraypush_w(int64_t arr, int64_t item) { (void)arr; (void)item; return 0; }
-int64_t tk_str_starts_w(int64_t s, int64_t prefix) { (void)s; (void)prefix; return 0; }
-int64_t tk_str_appenditem_w(int64_t arr, int64_t item) { (void)arr; (void)item; return 0; }
-int64_t tk_str_emptylist_w(void) { return 0; }
-int64_t tk_str_replaceitem_w(int64_t arr, int64_t idx, int64_t val) { (void)arr; (void)idx; (void)val; return 0; }
-int64_t tk_str_arrof_w(int64_t v) { (void)v; return 0; }
-int64_t tk_str_fromfloat_w(int64_t f) { (void)f; return 0; }
-int64_t tk_str_tofloat_w(int64_t s) { (void)s; return 0; }
-int64_t tk_str_fromf64_w(int64_t f) { (void)f; return 0; }
-int64_t tk_str_fromi64_w(int64_t i) { (void)i; return 0; }
-int64_t tk_str_isempty_w(int64_t s) { (void)s; return 0; }
-int64_t tk_str_parsef64_w(int64_t s) { (void)s; return 0; }
-int64_t tk_str_emptyof_w(int64_t type) { (void)type; return 0; }
-int64_t tk_str_setat_w(int64_t s, int64_t idx, int64_t ch) { (void)s; (void)idx; (void)ch; return 0; }
+
+int64_t tk_str_append_w(int64_t s, int64_t t) {
+    return tk_str_concat_w(s, t);
+}
+
+int64_t tk_str_newarr_w(void) { return str_make_empty_array(); }
+
+int64_t tk_str_padright_w(int64_t s, int64_t width, int64_t pad) {
+    char ch = (char)(pad ? pad : ' ');
+    return (int64_t)(intptr_t)str_pad_right(
+        (const char *)(intptr_t)s, (uint64_t)width, ch);
+}
+
+int64_t tk_str_tolower_w(int64_t s) {
+    return tk_str_lower_w(s);
+}
+
+int64_t tk_str_arrappend_w(int64_t arr, int64_t item) {
+    return str_array_append(arr, item);
+}
+
+int64_t tk_str_arrayappend_w(int64_t arr, int64_t item) {
+    return str_array_append(arr, item);
+}
+
+int64_t tk_str_toupper_w(int64_t s) {
+    return tk_str_upper_w(s);
+}
+
+int64_t tk_str_appendarray_w(int64_t arr, int64_t item) {
+    return str_array_append(arr, item);
+}
+
+int64_t tk_str_arraypush_w(int64_t arr, int64_t item) {
+    return str_array_append(arr, item);
+}
+
+int64_t tk_str_starts_w(int64_t s, int64_t prefix) {
+    return tk_str_startswith_w(s, prefix);
+}
+
+int64_t tk_str_appenditem_w(int64_t arr, int64_t item) {
+    return str_array_append(arr, item);
+}
+
+int64_t tk_str_emptylist_w(void) { return str_make_empty_array(); }
+
+int64_t tk_str_replaceitem_w(int64_t arr, int64_t idx, int64_t val) {
+    if (!arr) return arr;
+    int64_t *ptr = (int64_t *)(intptr_t)arr;
+    int64_t len = ptr[-1];
+    if (idx < 0 || idx >= len) return arr;
+    /* copy-on-write: allocate new block */
+    int64_t *block = (int64_t *)malloc((size_t)(len + 1) * sizeof(int64_t));
+    if (!block) return arr;
+    block[0] = len;
+    memcpy(block + 1, ptr, (size_t)len * sizeof(int64_t));
+    block[idx + 1] = val;
+    return (int64_t)(intptr_t)(block + 1);
+}
+
+int64_t tk_str_arrof_w(int64_t v) {
+    /* create a single-element array */
+    int64_t *block = (int64_t *)malloc(2 * sizeof(int64_t));
+    if (!block) return 0;
+    block[0] = 1;
+    block[1] = v;
+    return (int64_t)(intptr_t)(block + 1);
+}
+
+int64_t tk_str_fromfloat_w(int64_t f) {
+    return (int64_t)(intptr_t)str_from_float(i64_to_f64(f));
+}
+
+int64_t tk_str_tofloat_w(int64_t s) {
+    if (!s) return f64_to_i64(0.0);
+    FloatParseResult r = str_to_float((const char *)(intptr_t)s);
+    return r.is_err ? f64_to_i64(0.0) : f64_to_i64(r.ok);
+}
+
+int64_t tk_str_fromf64_w(int64_t f) {
+    return (int64_t)(intptr_t)str_from_float(i64_to_f64(f));
+}
+
+int64_t tk_str_fromi64_w(int64_t i) {
+    return (int64_t)(intptr_t)str_from_int(i);
+}
+
+int64_t tk_str_isempty_w(int64_t s) {
+    const char *p = (const char *)(intptr_t)s;
+    return (!p || *p == '\0') ? 1 : 0;
+}
+
+int64_t tk_str_parsef64_w(int64_t s) {
+    if (!s) return f64_to_i64(0.0);
+    FloatParseResult r = str_to_float((const char *)(intptr_t)s);
+    return r.is_err ? f64_to_i64(0.0) : f64_to_i64(r.ok);
+}
+
+int64_t tk_str_emptyof_w(int64_t type) {
+    (void)type;
+    return str_make_empty_array();
+}
+
+int64_t tk_str_setat_w(int64_t s, int64_t idx, int64_t ch) {
+    const char *p = (const char *)(intptr_t)s;
+    if (!p) return s;
+    size_t len = strlen(p);
+    if (idx < 0 || (size_t)idx >= len) return s;
+    char *out = malloc(len + 1);
+    if (!out) return s;
+    memcpy(out, p, len + 1);
+    out[idx] = (char)ch;
+    return (int64_t)(intptr_t)out;
+}

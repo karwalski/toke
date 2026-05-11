@@ -102,5 +102,14 @@ int64_t tk_log_debug_w(int64_t msg, int64_t fields_map) {
     return 0;
 }
 
-int64_t tk_log_setformat_w(int64_t fmt) { (void)fmt; return 0; }
-int64_t tk_log_setlevel_w(int64_t lvl) { (void)lvl; return 0; }
+int64_t tk_log_setformat_w(int64_t fmt) {
+    if (!fmt) return 0;
+    tk_log_set_format((const char *)(intptr_t)fmt);
+    return 0;
+}
+
+int64_t tk_log_setlevel_w(int64_t lvl) {
+    if (!lvl) return 0;
+    tk_log_set_level((const char *)(intptr_t)lvl);
+    return 0;
+}

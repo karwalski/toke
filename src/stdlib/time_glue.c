@@ -8,6 +8,7 @@
 #include "tk_time.h"
 #include <stdint.h>
 #include <stdlib.h>
+#include <time.h>
 
 int64_t tk_time_now_w(void) {
     return (int64_t)tk_time_now();
@@ -18,9 +19,25 @@ int64_t tk_time_format_w(int64_t ts, int64_t fmt) {
         (const char *)(intptr_t)fmt);
     return (int64_t)(intptr_t)result;
 }
-int64_t tk_time_parse_w(int64_t s, int64_t fmt) { (void)s; (void)fmt; return 0; }
-int64_t tk_time_elapsed_w(int64_t start) { (void)start; return 0; }
-int64_t tk_time_sleep_w(int64_t ms) { (void)ms; return 0; }
+int64_t tk_time_parse_w(int64_t s, int64_t fmt) {
+    if (!s || !fmt) return 0;
+    const char *sstr = (const char *)(intptr_t)s;
+    const char *fstr = (const char *)(intptr_t)fmt;
+    TimeParseResult r = tk_time_parse(sstr, fstr);
+    if (r.is_err) return 0;
+    return (int64_t)r.ok;
+}
+int64_t tk_time_elapsed_w(int64_t start) {
+    return (int64_t)tk_time_since((uint64_t)start);
+}
+int64_t tk_time_sleep_w(int64_t ms) {
+    if (ms <= 0) return 0;
+    struct timespec req;
+    req.tv_sec  = (time_t)(ms / 1000);
+    req.tv_nsec = (long)((ms % 1000) * 1000000L);
+    nanosleep(&req, NULL);
+    return 0;
+}
 
 int64_t tk_time_toparts_w(int64_t ts) {
     TkTimeParts parts = tk_time_to_parts((uint64_t)ts);

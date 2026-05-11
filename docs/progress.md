@@ -3647,29 +3647,29 @@ During the 75.12 glue split, many `_w` wrapper functions were copied as no-op st
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 78.1.1 | Wire str_glue.c stubs to real str.c functions | backlog | — | **P0** `str_from_float`, `str_to_float`, `str_isempty`, `str_reverse`, `str_repeat`, `str_padright`, `str_fromfloat`, `str_tofloat`, `str_fromi64`, `str_fromf64`, `str_starts`, `str_ends`, `str_tolower`, `str_toupper`, `str_append`, `str_parsef64` — 16 stubs. Real impls exist in str.c. |
-| 78.1.2 | Wire file_glue.c stubs to real file.c functions | backlog | — | **P0** `file_delete`, `file_list`, `file_rename`, `file_stat`, `file_readlines`, `file_writelines`, `file_listdir`, `file_err` — 8 stubs. Real impls exist in file.c. |
-| 78.1.3 | Wire test_glue.c stubs to real tk_test.c functions | backlog | — | **P0** `test_run`, `test_report` — 2 stubs. Real impls exist in tk_test.c. Blocks ooke test suite from running. |
+| 78.1.1 | Wire str_glue.c stubs to real str.c functions | done | 2026-05-12 | **P0** 20+ stubs wired: fromfloat, tofloat, fromi64, isempty, reverse, repeat, padright/padleft, join, starts/ends (→startswith/endswith), tolower/toupper (→lower/upper), append (→concat), array ops (newarray, append, push, arrof, replaceitem). |
+| 78.1.2 | Wire file_glue.c stubs to real file.c functions | done | 2026-05-12 | **P0** 8 stubs wired: list→file_list, delete→file_delete, rename→file_move, readlines→file_readlines, writelines→join+file_write, stat→file_size, listdir→file_list, err→passthrough. |
+| 78.1.3 | Wire test_glue.c stubs to real tk_test.c functions | done | 2026-05-12 | **P0** 2 stubs wired: test_run, test_report. |
 
 ### Epic 78.2 — Tier 2: Common modules (crypto, encoding, process, time, json, collections)
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 78.2.1 | Wire crypto_glue.c stubs | backlog | — | **P1** `sha256`, `hmacsha256`, `randombytes`, `constanttimeequal`, `tohex` — 5 stubs. Real impls in crypto.c. |
-| 78.2.2 | Wire encoding_glue.c stubs | backlog | — | **P1** `base64_encode`, `base64_decode` — 2 stubs. Real impls in encoding.c. |
-| 78.2.3 | Wire process_glue.c stubs | backlog | — | **P1** `spawn`, `wait`, `exitcode`, `kill`, `isalive`, `stdout`, `stderr`, `sleep` etc. — 12 stubs. Real impls in process.c. |
-| 78.2.4 | Wire time_glue.c stubs | backlog | — | **P1** `parse`, `elapsed`, `sleep` — 3 stubs. Real impls in tk_time.c. |
-| 78.2.5 | Wire json_glue.c stubs | backlog | — | **P1** `set`, `keys`, `values`, `getint`, `getbool`, `getstring`, `haskey`, `serialize` — 8 stubs. Partial impls in json.c. |
-| 78.2.6 | Wire collections_glue.c stubs | backlog | — | **P1** `map_keys`, `newarray`, `append`, `push` — 6 stubs. Partial impls in collections.c. |
+| 78.2.1 | Wire crypto_glue.c stubs | done | 2026-05-12 | **P1** 5 stubs wired to crypto.c ByteArray API. |
+| 78.2.2 | Wire encoding_glue.c stubs | done | 2026-05-12 | **P1** 2 stubs wired to encoding.c base64 API. |
+| 78.2.3 | Wire process_glue.c stubs | done | 2026-05-12 | **P1** 12 stubs wired to process.c spawn/wait/kill API. |
+| 78.2.4 | Wire time_glue.c stubs | done | 2026-05-12 | **P1** 3 stubs wired to tk_time.c. |
+| 78.2.5 | Wire json_glue.c stubs | done | 2026-05-12 | **P1** 8 stubs wired to json.c accessor API. |
+| 78.2.6 | Wire collections_glue.c stubs | backlog | — | **P1** 6 stubs — collections.c API needs toke array ABI bridge. Deferred. |
 
 ### Epic 78.3 — Tier 3: Remaining modules (lower priority)
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 78.3.1 | Wire remaining tk_web_glue.c stubs (encrypt, html, chart, svg, canvas, etc.) | backlog | — | **P2** ~80 stubs across encrypt, html, chart, df, ml, i18n, dashboard, svg, canvas, cache, regex, validate, ws, auth, ratelimit, config, uuid, yaml, toon, llm, fmt. Most have real impls in their .c files. |
-| 78.3.2 | Wire csv_glue.c stubs | backlog | — | **P2** `parse`, `serialize` — 2 stubs. |
-| 78.3.3 | Wire template_glue.c stubs | backlog | — | **P2** `render`, `load` — 4 stubs. |
-| 78.3.4 | Wire log_glue.c and math_glue.c stubs | backlog | — | **P2** log: `setformat`, `setlevel`. math: `mean`, `median`, `percentile`, `linreg`, `sum`, `stddev` — 8 stubs. |
+| 78.3.1 | Wire remaining tk_web_glue.c stubs (encrypt, html, chart, svg, canvas, etc.) | done | 2026-05-12 | **P2** Wired: encrypt (9), html (7/8), svg (5/6), canvas (4), chart (3/5), dashboard (3), dataframe (11), ml (2), i18n (5/7), ws (4), auth (4), task (5). Remaining stubs: cache, regex, validate, ratelimit, config, uuid, yaml/toon extras, llm, fmt — left with descriptive TODO comments. |
+| 78.3.2 | Wire csv_glue.c stubs | done | 2026-05-12 | **P2** parse→csv_parse, serialize→csv_writer. |
+| 78.3.3 | Wire template_glue.c stubs | done | 2026-05-12 | **P2** render→tmpl_compile+tmpl_render, load→file read+tmpl_compile. |
+| 78.3.4 | Wire log_glue.c and math_glue.c stubs | done | 2026-05-12 | **P2** log: setformat, setlevel. math: mean, median, percentile, linreg, sum, stddev — all wired with f64 array decode helper. |
 
 ## Epic 76 — Documentation v0.3 Spec Compliance Audit
 

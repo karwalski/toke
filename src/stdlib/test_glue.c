@@ -5,6 +5,7 @@
  * when a program imports std.test.
  */
 
+#include "tk_test.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -28,5 +29,15 @@ int64_t tk_test_assertequal_w(int64_t a, int64_t b) {
 }
 int64_t tk_test_ok_w(int64_t val) { return val ? 1 : 0; }
 int64_t tk_test_eq_w(int64_t a, int64_t b) { return (a == b) ? 1 : 0; }
-int64_t tk_test_run_w(int64_t suite) { (void)suite; return 0; }
-int64_t tk_test_report_w(int64_t suite) { (void)suite; return 0; }
+int64_t tk_test_run_w(int64_t suite) {
+    /* suite is a function pointer to the test body; run it with a default name */
+    TkTestFn fn = (TkTestFn)(intptr_t)suite;
+    if (!fn) return 0;
+    tk_test_run("(unnamed)", fn);
+    return 1;
+}
+int64_t tk_test_report_w(int64_t suite) {
+    (void)suite;
+    tk_test_print_summary();
+    return 1;
+}
