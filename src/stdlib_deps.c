@@ -274,3 +274,85 @@ int resolve_stdlib_deps(const char *stdlib_dir, const SymbolTable *st,
 
     return 0;
 }
+
+/* ── resolve_stdlib_deps_imports_only ────────────────────────────────── */
+
+int resolve_stdlib_deps_imports_only(const char *stdlib_dir,
+                                     const SymbolTable *st,
+                                     ResolvedDeps *out) {
+    if (!stdlib_dir || !stdlib_dir[0]) return -1;
+
+    out->sources[0] = '\0';
+    out->flags[0]   = '\0';
+
+    /* Collect only the modules actually imported by the program */
+    char needed[2048];
+    needed[0] = '\0';
+
+    for (int i = 0; i < st->count; i++) {
+        const char *path = st->entries[i].module_path;
+        if (!path) continue;
+        if (strncmp(path, "std.", 4) != 0) continue;
+        const char *mod = path + 4;
+        if (!word_in_list(needed, mod)) {
+            size_t cur = strlen(needed);
+            snprintf(needed + cur, sizeof needed - cur,
+                     "%s%s", cur ? " " : "", mod);
+        }
+    }
+
+    /* Transitive closure over dependencies */
+    int changed = 1;
+    while (changed) {
+        changed = 0;
+        char snapshot[2048];
+        snprintf(snapshot, sizeof snapshot, "%s", needed);
+        char *save = NULL;
+        char *tok = strtok_r(snapshot, " ", &save);
+        while (tok) {
+            const StdlibModule *m = find_module(tok);
+            if (m && m->deps[0]) {
+                char deps_copy[512];
+                snprintf(deps_copy, sizeof deps_copy, "%s", m->deps);
+                char *save2 = NULL;
+                char *dep = strtok_r(deps_copy, " ", &save2);
+                while (dep) {
+                    if (!word_in_list(needed, dep)) {
+                        size_t cur = strlen(needed);
+                        snprintf(needed + cur, sizeof needed - cur,
+                                 " %s", dep);
+                        changed = 1;
+                    }
+                    dep = strtok_r(NULL, " ", &save2);
+                }
+            }
+            tok = strtok_r(NULL, " ", &save);
+        }
+    }
+
+    /* Always include tk_runtime.c + its deps (args.c, str.c) */
+    snprintf(out->sources, sizeof out->sources,
+             "%s/tk_runtime.c %s/args.c %s/str.c",
+             stdlib_dir, stdlib_dir, stdlib_dir);
+
+    /* Append .c files and vendor sources for each needed module */
+    {
+        char snap[2048];
+        snprintf(snap, sizeof snap, "%s", needed);
+        char *save = NULL;
+        char *tok = strtok_r(snap, " ", &save);
+        while (tok) {
+            const StdlibModule *m = find_module(tok);
+            if (m) {
+                append_module_sources(out->sources, sizeof out->sources,
+                                      stdlib_dir, m->c_files);
+                append_flags(out->flags, sizeof out->flags, m->extra_flags);
+                append_vendor_sources(out->sources, sizeof out->sources,
+                                      stdlib_dir, tok);
+            }
+            tok = strtok_r(NULL, " ", &save);
+        }
+    }
+
+    return 0;
+}

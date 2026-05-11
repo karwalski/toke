@@ -48,4 +48,17 @@ typedef struct {
 int resolve_stdlib_deps(const char *stdlib_dir, const SymbolTable *st,
                         ResolvedDeps *out);
 
+/*
+ * resolve_stdlib_deps_imports_only — Like resolve_stdlib_deps but only
+ * includes C files and flags for modules the program actually imports.
+ * Does NOT add tk_web_glue.c or the blanket glue dependencies.
+ * Always includes tk_runtime.c.
+ *
+ * Intended for --emit-deps output so external build systems can see
+ * exactly which stdlib sources a given .tk file needs.
+ */
+int resolve_stdlib_deps_imports_only(const char *stdlib_dir,
+                                     const SymbolTable *st,
+                                     ResolvedDeps *out);
+
 #endif /* TK_STDLIB_DEPS_H */

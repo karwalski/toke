@@ -41,6 +41,7 @@
 #include "migrate.h"
 #include "lint.h"
 #include "tkir.h"
+#include "stdlib_deps.h"
 
 /* Forward declarations for stubs not yet exported by their headers */
 #ifndef TK_ARENA_TYPES_DEFINED
@@ -72,6 +73,7 @@ static const char HELP[] =
     "  --emit-interface    Also emit .tki interface file\n"
     "  --emit-llvm         Emit LLVM IR (.ll) instead of compiling to binary\n"
     "  --emit-asm          Emit assembly (.s) instead of compiling to binary\n"
+    "  --emit-deps         Print stdlib C sources and linker flags needed, then exit\n"
     "  -g / --debug        Emit DWARF debug metadata for lldb/gdb\n"
     "  -O0/-O1/-O2/-O3    Optimization level (default: -O1)\n"
     "  --fmt               Format source to canonical form and print to stdout\n"
@@ -216,6 +218,7 @@ int main(int argc, char **argv)
     int migrate = 0;
     int do_lint = 0, do_fix = 0;
     int emit_tkir_flag = 0;
+    int emit_deps = 0;
     int do_compress = 0, do_decompress = 0, do_compress_stream = 0;
     int companion = 0;
     const char *companion_out = NULL;
@@ -254,6 +257,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--emit-interface")) emit_iface = 1;
         else if (!strcmp(argv[i], "--emit-llvm"))      emit_ll = 1;
         else if (!strcmp(argv[i], "--emit-asm"))       emit_asm = 1;
+        else if (!strcmp(argv[i], "--emit-deps"))      emit_deps = 1;
         else if (!strcmp(argv[i], "--fmt"))             fmt_only = 1;
         else if (!strcmp(argv[i], "--pretty"))          pretty = 1;
         else if (!strcmp(argv[i], "--expand"))          expand = 1;
@@ -418,7 +422,7 @@ int main(int argc, char **argv)
      * idempotent — already-migrated constructs pass through unchanged. */
 
     /* Progress bar: skip for fast-path modes */
-    int fast_path = fmt_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp || do_compress || do_decompress || do_compress_stream || do_lint;
+    int fast_path = fmt_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp || do_compress || do_decompress || do_compress_stream || do_lint || emit_deps;
     progress_init(fast_path);
 
     /* Read source file — only malloc in the pipeline */
@@ -622,6 +626,62 @@ int main(int argc, char **argv)
     progress_update(70);
 
     if (check_only) { symtab_free(&st); goto done; }
+
+    /* --emit-deps: print stdlib C sources and linker flags, then exit */
+    if (emit_deps) {
+        /* Locate stdlib directory (same probe logic as compile_binary) */
+        const char *stdlib_dir = getenv("TKC_STDLIB_DIR");
+        if (!stdlib_dir) {
+            /* Try common relative paths from the toke binary */
+            static const char *candidates[] = {
+                "src/stdlib", "stdlib", "../src/stdlib", NULL
+            };
+            for (int ci = 0; candidates[ci]; ci++) {
+                char probe[PATH_BUF];
+                snprintf(probe, sizeof probe, "%s/tk_runtime.c", candidates[ci]);
+                FILE *pf = fopen(probe, "r");
+                if (pf) { fclose(pf); stdlib_dir = candidates[ci]; break; }
+            }
+        }
+        if (!stdlib_dir) {
+            fputs("tkc: cannot locate stdlib directory (set TKC_STDLIB_DIR)\n", stderr);
+            symtab_free(&st); rc = EUSAGE; goto done;
+        }
+
+        ResolvedDeps deps;
+        if (resolve_stdlib_deps_imports_only(stdlib_dir, &st, &deps) < 0) {
+            fputs("tkc: failed to resolve stdlib dependencies\n", stderr);
+            symtab_free(&st); rc = EINTERNAL; goto done;
+        }
+
+        /* Print sources: one full path per line */
+        {
+            char buf[8192];
+            snprintf(buf, sizeof buf, "%s", deps.sources);
+            char *save = NULL;
+            char *tok = strtok_r(buf, " ", &save);
+            while (tok) {
+                puts(tok);
+                tok = strtok_r(NULL, " ", &save);
+            }
+        }
+
+        /* Print separator and flags (if any) */
+        if (deps.flags[0]) {
+            puts("---");
+            char buf[512];
+            snprintf(buf, sizeof buf, "%s", deps.flags);
+            char *save = NULL;
+            char *tok = strtok_r(buf, " ", &save);
+            while (tok) {
+                puts(tok);
+                tok = strtok_r(NULL, " ", &save);
+            }
+        }
+
+        symtab_free(&st);
+        goto done;
+    }
 
     /* --companion: generate .tkc.md skeleton and exit */
     if (companion) {
