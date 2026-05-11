@@ -3757,9 +3757,9 @@ Existing test files in toke-ooke/test/ are all broken (v0.2 syntax, don't compil
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 77.2.1 | Create test/e2e/test_build_site.tk — build testproj and verify output | backlog | — | Use testproj/ fixture. Run ooke build, verify page count, check output files exist with correct content. |
-| 77.2.2 | Create test/e2e/test_serve.tk — start server and verify HTTP responses | backlog | — | Build testproj, start serve, curl endpoints, verify status codes and content-types. |
-| 77.2.3 | Add Playwright tests for ooke-generated sites | backlog | — | Port toke-website test.spec.js patterns to test ooke rendering, navigation, CSS, links. |
+| 77.2.1 | Create test/e2e/test_build.sh — build site and verify output | done | 2026-05-11 | 15 assertions: homepage, docs, ecosystem, static assets, page count ≥100, no empty files, CSS non-empty, size check. All pass. |
+| 77.2.2 | Create test/e2e/test_serve.sh — start server and verify HTTP responses | done | 2026-05-11 | Compiles test server with http.servedir, curls 5 endpoints + Content-Type + JSON body. 7/7 pass. |
+| 77.2.3 | Add Playwright tests for ooke-generated sites | done | 2026-05-11 | ooke.spec.js: 14 tests (homepage, navigation, content, static assets, API, 404, links). run_playwright.sh orchestrator. playwright.config.js targeting :3099. |
 
 ### Epic 77.3 — Test infrastructure
 
