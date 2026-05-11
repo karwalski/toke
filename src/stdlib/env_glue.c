@@ -29,4 +29,8 @@ int64_t tk_env_expand_w(int64_t tmpl) {
 }
 
 int64_t tk_env_getor_w(int64_t key, int64_t def) { return tk_env_get_or(key, def); }
-int64_t tk_env_get_w(int64_t key) { (void)key; return 0; }
+int64_t tk_env_get_w(int64_t key) {
+    EnvGetResult r = env_get((const char *)(intptr_t)key);
+    if (r.is_err) return 0;
+    return (int64_t)(intptr_t)r.ok;
+}

@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #ifndef TK_STRARRAY_DEFINED
 #define TK_STRARRAY_DEFINED
@@ -99,21 +100,124 @@ int64_t tk_db_tableexists_w(int64_t conn, int64_t table) {
     return (int64_t)db_table_exists((int)conn, (const char *)(intptr_t)table);
 }
 
-/* Legacy stubs */
-int64_t tk_db_print_w(int64_t rows) { (void)rows; return 0; }
+/* ── Legacy API wrappers ─────────────────────────────────────────────── */
+
+/* Helper: empty params for legacy functions that don't take parameters */
+static StrArray empty_params(void) {
+    StrArray sa; sa.data = NULL; sa.len = 0; return sa;
+}
+
 int64_t tk_db_connect_w(int64_t dsn) { return tk_db_open_w(dsn); }
-int64_t tk_db_query_w(int64_t conn, int64_t sql) { (void)conn; (void)sql; return 0; }
-int64_t tk_db_insert_w(int64_t conn, int64_t sql) { (void)conn; (void)sql; return 0; }
-int64_t tk_db_delete_w(int64_t conn, int64_t sql) { (void)conn; (void)sql; return 0; }
-int64_t tk_db_lastinsertid_w(int64_t conn) { (void)conn; return 0; }
-int64_t tk_db_newquery_w(int64_t dummy) { (void)dummy; return 0; }
-int64_t tk_db_settable_w(int64_t q, int64_t t) { (void)q; (void)t; return 0; }
-int64_t tk_db_setfield_w(int64_t q, int64_t f) { (void)q; (void)f; return 0; }
-int64_t tk_db_setfieldint_w(int64_t q, int64_t f, int64_t v) { (void)q; (void)f; (void)v; return 0; }
-int64_t tk_db_execute_w(int64_t conn, int64_t q) { (void)conn; (void)q; return 0; }
-int64_t tk_db_rows_w(int64_t result) { (void)result; return 0; }
-int64_t tk_db_getrow_w(int64_t result, int64_t idx) { (void)result; (void)idx; return 0; }
-int64_t tk_db_getfield_w(int64_t row, int64_t name) { (void)row; (void)name; return 0; }
+
+/* tk_db_query_w — legacy query; maps to db_many() with empty params.
+ * Returns toke-format array of Row pointers (block[-1]=count). */
+int64_t tk_db_query_w(int64_t conn, int64_t sql) {
+    (void)conn;
+    if (!sql) return 0;
+    StrArray sa = empty_params();
+    RowArrayResult res = db_many((const char *)(intptr_t)sql, sa);
+    if (res.is_err) return 0;
+    uint64_t count = res.ok.len;
+    int64_t *block = (int64_t *)malloc((count + 1) * sizeof(int64_t));
+    if (!block) { free(res.ok.data); return 0; }
+    block[0] = (int64_t)count;
+    for (uint64_t i = 0; i < count; i++) {
+        Row *heap_row = (Row *)malloc(sizeof(Row));
+        if (!heap_row) { block[0] = (int64_t)i; break; }
+        *heap_row = res.ok.data[i];
+        block[i + 1] = (int64_t)(intptr_t)heap_row;
+    }
+    free(res.ok.data);
+    return (int64_t)(intptr_t)(block + 1);
+}
+
+/* tk_db_insert_w — legacy insert; maps to db_exec() with empty params. */
+int64_t tk_db_insert_w(int64_t conn, int64_t sql) {
+    (void)conn;
+    if (!sql) return 0;
+    StrArray sa = empty_params();
+    U64Result res = db_exec((const char *)(intptr_t)sql, sa);
+    if (res.is_err) return 0;
+    return res.ok > 0 ? (int64_t)res.ok : 1;
+}
+
+/* tk_db_delete_w — legacy delete; maps to db_exec() with empty params. */
+int64_t tk_db_delete_w(int64_t conn, int64_t sql) {
+    (void)conn;
+    if (!sql) return 0;
+    StrArray sa = empty_params();
+    U64Result res = db_exec((const char *)(intptr_t)sql, sa);
+    if (res.is_err) return 0;
+    return res.ok > 0 ? (int64_t)res.ok : 1;
+}
+
+/* tk_db_execute_w — legacy execute; maps to db_exec() with empty params. */
+int64_t tk_db_execute_w(int64_t conn, int64_t q) {
+    (void)conn;
+    if (!q) return 0;
+    StrArray sa = empty_params();
+    U64Result res = db_exec((const char *)(intptr_t)q, sa);
+    if (res.is_err) return 0;
+    return res.ok > 0 ? (int64_t)res.ok : 1;
+}
+
+/* tk_db_lastinsertid_w — not tracked in current single-connection API.
+ * Returns 0 (no reliable last-insert-id without a conn_id). */
+int64_t tk_db_lastinsertid_w(int64_t conn) {
+    (void)conn;
+    return 0; /* TODO: wire to db_last_insert_id() when conn_id mapping exists */
+}
+
+/* ── Result accessor wrappers for toke-format row arrays ─────────────── */
+
+/* tk_db_rows_w — return count of rows in a toke-format result array. */
+int64_t tk_db_rows_w(int64_t result) {
+    if (!result) return 0;
+    int64_t *ptr = (int64_t *)(intptr_t)result;
+    return ptr[-1];
+}
+
+/* tk_db_getrow_w — return the Row pointer at index idx from a result array. */
+int64_t tk_db_getrow_w(int64_t result, int64_t idx) {
+    if (!result) return 0;
+    int64_t *ptr = (int64_t *)(intptr_t)result;
+    int64_t count = ptr[-1];
+    if (idx < 0 || idx >= count) return 0;
+    return ptr[idx];
+}
+
+/* tk_db_getfield_w — get a field value by column name from a Row pointer. */
+int64_t tk_db_getfield_w(int64_t row, int64_t name) {
+    if (!row || !name) return 0;
+    Row *rp = (Row *)(intptr_t)row;
+    StrResult res = row_str(*rp, (const char *)(intptr_t)name);
+    if (res.is_err) return 0;
+    return (int64_t)(intptr_t)res.ok;
+}
+
+/* tk_db_print_w — print all rows to stdout for debugging. */
+int64_t tk_db_print_w(int64_t rows) {
+    if (!rows) return 0;
+    int64_t *ptr = (int64_t *)(intptr_t)rows;
+    int64_t count = ptr[-1];
+    for (int64_t i = 0; i < count; i++) {
+        Row *rp = (Row *)(intptr_t)ptr[i];
+        if (!rp) continue;
+        for (uint64_t c = 0; c < rp->col_count; c++) {
+            if (c > 0) printf("\t");
+            printf("%s=%s", rp->col_names[c] ? rp->col_names[c] : "",
+                            rp->col_values[c] ? rp->col_values[c] : "NULL");
+        }
+        printf("\n");
+    }
+    return 0;
+}
+
+/* ── Query builder stubs (no C implementation exists) ────────────────── */
+int64_t tk_db_newquery_w(int64_t dummy) { (void)dummy; return 0; /* TODO: no query builder in C API */ }
+int64_t tk_db_settable_w(int64_t q, int64_t t) { (void)q; (void)t; return 0; /* TODO: no query builder in C API */ }
+int64_t tk_db_setfield_w(int64_t q, int64_t f) { (void)q; (void)f; return 0; /* TODO: no query builder in C API */ }
+int64_t tk_db_setfieldint_w(int64_t q, int64_t f, int64_t v) { (void)q; (void)f; (void)v; return 0; /* TODO: no query builder in C API */ }
 
 /* row accessor wrappers */
 int64_t tk_row_str_w(int64_t row, int64_t col) {

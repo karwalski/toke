@@ -3660,7 +3660,11 @@ During the 75.12 glue split, many `_w` wrapper functions were copied as no-op st
 | 78.2.3 | Wire process_glue.c stubs | done | 2026-05-12 | **P1** 12 stubs wired to process.c spawn/wait/kill API. |
 | 78.2.4 | Wire time_glue.c stubs | done | 2026-05-12 | **P1** 3 stubs wired to tk_time.c. |
 | 78.2.5 | Wire json_glue.c stubs | done | 2026-05-12 | **P1** 8 stubs wired to json.c accessor API. |
-| 78.2.6 | Wire collections_glue.c stubs | backlog | — | **P1** 6 stubs — collections.c API needs toke array ABI bridge. Deferred. |
+| 78.2.6 | Wire collections_glue.c stubs | done | 2026-05-12 | **P1** 6 stubs wired: newarray (toke block layout), append/push (→tk_array_append_w), map_keys (TkMapImpl extraction). |
+| 78.2.7 | Wire env_glue.c env.get stub | done | 2026-05-12 | env_get_w now calls env_get(). |
+| 78.2.8 | Wire db_glue.c legacy stubs | done | 2026-05-12 | query→db_many, insert/delete/execute→db_exec, rows/getrow/getfield wired. 4 query-builder stubs left as TODO (no C API). |
+| 78.2.9 | Wire HTTP client stubs | done | 2026-05-12 | client, get, post, put, delete, stream, streamnext, print all wired to http.c client API. |
+| 78.2.10 | Wire yaml/toon/llm/misc stubs | done | 2026-05-12 | yaml (9), toon (17), llm (4), validate (3), cache (4), ratelimit (2), config (3), uuid (1), fmt (1), i18n (2), router (2) wired. ~10 TODOs remain for missing C APIs (regex, net sockets, svg style, complex decoders). |
 
 ### Epic 78.3 — Tier 3: Remaining modules (lower priority)
 

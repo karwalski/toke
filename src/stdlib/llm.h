@@ -99,7 +99,10 @@ const char  *llm_parse_sse_chunk(const char *sse_data);
 
 /* F64Array — a read-only view of a heap-allocated array of doubles.
  * The .data pointer is owned by the containing result struct. */
+#ifndef TK_F64ARRAY_DEFINED
+#define TK_F64ARRAY_DEFINED
 typedef struct { const double *data; uint64_t len; } F64Array;
+#endif
 
 /* F64ArrayLlmResult — result of a single embedding request. */
 typedef struct {

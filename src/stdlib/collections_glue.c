@@ -73,7 +73,18 @@ int64_t tk_map_set_w(int64_t map_i64, int64_t key, int64_t val) {
     return map_i64;
 }
 
-int64_t tk_map_keys_w(int64_t map) { (void)map; return 0; }
+/* tk_map_keys_w — extract keys from TkMapImpl into a toke-format array. */
+int64_t tk_map_keys_w(int64_t map) {
+    if (!map) return 0;
+    TkMapImpl *m = (TkMapImpl *)(intptr_t)map;
+    int64_t count = m->len;
+    int64_t *block = (int64_t *)malloc((size_t)(count + 1) * sizeof(int64_t));
+    if (!block) return 0;
+    block[0] = count;
+    for (int i = 0; i < m->len; i++)
+        block[i + 1] = m->entries[i].key;
+    return (int64_t)(intptr_t)(block + 1);
+}
 int64_t tk_map_getor_w(int64_t map, int64_t key, int64_t def) { (void)map; (void)key; return def; }
 int64_t tk_map_put_w(int64_t map, int64_t key, int64_t val) {
     if (map) tk_map_put((void *)(intptr_t)map, key, val);
@@ -87,9 +98,21 @@ int64_t tk_map_setint_w(int64_t map, int64_t key, int64_t val) {
     return tk_map_put_w(map, key, val);
 }
 
-/* array extras */
-int64_t tk_array_newarray_w(int64_t dummy) { (void)dummy; return 0; }
-int64_t tk_array_newstrarray_w(int64_t dummy) { (void)dummy; return 0; }
+/* array extras — allocate empty toke-format arrays */
+int64_t tk_array_newarray_w(int64_t dummy) {
+    (void)dummy;
+    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
+    if (!block) return 0;
+    block[0] = 0;
+    return (int64_t)(intptr_t)(block + 1);
+}
+int64_t tk_array_newstrarray_w(int64_t dummy) {
+    (void)dummy;
+    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
+    if (!block) return 0;
+    block[0] = 0;
+    return (int64_t)(intptr_t)(block + 1);
+}
 int64_t tk_array_strarrayappend_w(int64_t arr, int64_t s) { return tk_array_append_w(arr, s); }
 int64_t tk_array_arrayappend_w(int64_t arr, int64_t elem) { return tk_array_append_w(arr, elem); }
 int64_t tk_array_appendarray_w(int64_t arr, int64_t arr2) { (void)arr2; return arr; }
@@ -162,10 +185,25 @@ int64_t tk_arr_sort(int64_t arr_i64, int64_t cmp_ptr) {
 int64_t tk_sort_ints_w(int64_t arr) { (void)arr; return arr; }
 int64_t tk_sort_strs_w(int64_t arr) { (void)arr; return arr; }
 
-/* collections stubs */
-int64_t tk_collections_newarray_w(void) { return 0; }
-int64_t tk_collections_append_w(int64_t arr, int64_t item) { (void)arr; (void)item; return 0; }
-int64_t tk_collections_push_w(int64_t arr, int64_t item) { (void)arr; (void)item; return 0; }
+/* ── collections wrappers (toke array layout: block[-1]=count, return block+1) */
+
+/* tk_collections_newarray_w — allocate an empty toke-format array. */
+int64_t tk_collections_newarray_w(void) {
+    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
+    if (!block) return 0;
+    block[0] = 0;
+    return (int64_t)(intptr_t)(block + 1);
+}
+
+/* tk_collections_append_w — copy array + append item (immutable style). */
+int64_t tk_collections_append_w(int64_t arr, int64_t item) {
+    return tk_array_append_w(arr, item);
+}
+
+/* tk_collections_push_w — same as append (alias). */
+int64_t tk_collections_push_w(int64_t arr, int64_t item) {
+    return tk_array_append_w(arr, item);
+}
 
 /* ── stack / queue / set wrappers ────────────────────────────────────── */
 
