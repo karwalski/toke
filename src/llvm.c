@@ -547,13 +547,12 @@ static const char *tki_type_to_llvm(const char *toke_type) {
 /*
  * tki_type_to_llvm_abi — Same as tki_type_to_llvm but for stdlib _w wrappers
  * which use the uniform i64 ABI. Str→i64 (not i8*), bool→i64 (not i1).
- * Only f64/f32→double/float and void→void differ from i64.
+ * 80.2.2: _w wrappers bitcast f64/f32 internally, so they also return i64.
+ * Only void→void differs from i64.
  */
 static const char *tki_type_to_llvm_abi(const char *toke_type) {
-    if (!strcmp(toke_type, "f64"))  return "double";
-    if (!strcmp(toke_type, "f32"))  return "float";
     if (!strcmp(toke_type, "void")) return "void";
-    return "i64"; /* everything else is i64 in the _w wrapper ABI */
+    return "i64"; /* everything including f64/f32 is i64 in the _w wrapper ABI */
 }
 
 /* ── Story 7.5.5: Stdlib .tki cache for ABI return-type inference ──── */
@@ -2000,6 +1999,8 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_os_stdin_fd", "tk_os_stdout_fd", "tk_os_stderr_fd",
                         "tk_task_scope", "tk_task_spawn",
                         "tk_task_awaitall", "tk_task_result", "tk_task_cancel",
+                        "tk_str_push_w", "tk_str_arrayget_w", "tk_str_arraylen_w",
+                        "tk_arr_push_w", "tk_str_containsre_w", "tk_str_i64tof64_w",
                         NULL
                     };
                     int in_preamble = 0;
@@ -2166,6 +2167,15 @@ static int emit_expr(Ctx *c, const Node *n)
                         fprintf(c->out, "  %%t%d = fptosi %s %%t%d to %s\n", t, src_ty, v, dst_ty);
                     else
                         fprintf(c->out, "  %%t%d = fptoui %s %%t%d to %s\n", t, src_ty, v, dst_ty);
+                    /* 80.2.1: re-extend sub-64-bit result to i64 for storage */
+                    if (strcmp(dst_ty, "i64")) {
+                        int t2x = next_tmp(c);
+                        if (dst_signed)
+                            fprintf(c->out, "  %%t%d = sext %s %%t%d to i64\n", t2x, dst_ty, t);
+                        else
+                            fprintf(c->out, "  %%t%d = zext %s %%t%d to i64\n", t2x, dst_ty, t);
+                        t = t2x;
+                    }
                 } else if (src_is_int && !dst_is_float) {
                     /* int -> int: trunc, sext, or zext */
                     int sb = 64;
@@ -2186,6 +2196,16 @@ static int emit_expr(Ctx *c, const Node *n)
                             fprintf(c->out, "  %%t%d = sext %s %%t%d to %s\n", t, src_ty, v, dst_ty);
                     } else if (db < sb) {
                         fprintf(c->out, "  %%t%d = trunc %s %%t%d to %s\n", t, src_ty, v, dst_ty);
+                        /* 80.2.1: all toke variables are i64 — re-extend
+                         * the truncated value back to i64 for storage. */
+                        if (db < 64) {
+                            int t2x = next_tmp(c);
+                            if (dst_signed)
+                                fprintf(c->out, "  %%t%d = sext %s %%t%d to i64\n", t2x, dst_ty, t);
+                            else
+                                fprintf(c->out, "  %%t%d = zext %s %%t%d to i64\n", t2x, dst_ty, t);
+                            t = t2x;
+                        }
                     } else {
                         fprintf(c->out, "  %%t%d = add %s 0, %%t%d\n", t, dst_ty, v);
                     }
@@ -2250,6 +2270,12 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", conv, base);
                 base = conv;
             }
+        }
+        /* 80.2.3: base is i8* — bitcast to i64* before GEP */
+        {
+            int bc = next_tmp(c);
+            fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", bc, base);
+            base = bc;
         }
         t2 = next_tmp(c); t = next_tmp(c);
         fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 %d ; .%s\n", t2, base, fidx, fn);
@@ -2372,6 +2398,9 @@ static int emit_expr(Ctx *c, const Node *n)
         int nfields = si ? si->field_count : (n->child_count > 0 ? n->child_count : 1);
         t = next_tmp(c);
         fprintf(c->out, "  %%t%d = call i8* @malloc(i64 %d) ; struct_lit %s\n", t, nfields * 8, sn);
+        /* 80.2.3: bitcast malloc result (i8*) to i64* for field GEP */
+        int struct_base_i64 = next_tmp(c);
+        fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", struct_base_i64, t);
         for (int i = 0; i < n->child_count; i++) {
             const Node *fi = n->children[i];
             if (!fi || fi->kind != NODE_FIELD_INIT) continue;
@@ -2396,11 +2425,11 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
                 t2 = next_tmp(c);
                 fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 %d ; .%s\n",
-                        t2, t, fidx, si ? si->field_names[fidx] : "?");
+                        t2, struct_base_i64, fidx, si ? si->field_names[fidx] : "?");
                 fprintf(c->out, "  store i64 %%t%d, i64* %%t%d\n", t3, t2);
             }
         }
-        return t;
+        return t; /* return original i8* for storage */
     }
     case NODE_ARRAY_LIT: {
         /* Count actual value elements — skip type-annotation children like
@@ -2899,9 +2928,11 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             if (!strcmp(tn, "f64")) return "double";
             if (!strcmp(tn, "f32")) return "float";
             if (!strcmp(tn, "i64") || !strcmp(tn, "u64")) return "i64";
-            if (!strcmp(tn, "i32") || !strcmp(tn, "u32")) return "i32";
-            if (!strcmp(tn, "i16") || !strcmp(tn, "u16")) return "i16";
-            if (!strcmp(tn, "i8")  || !strcmp(tn, "u8") || !strcmp(tn, "Byte")) return "i8";
+            /* Sub-64-bit int casts still produce i64 for alloca/storage
+             * (the trunc + re-extend happens inside emit_expr). 80.2.1 */
+            if (!strcmp(tn, "i32") || !strcmp(tn, "u32")) return "i64";
+            if (!strcmp(tn, "i16") || !strcmp(tn, "u16")) return "i64";
+            if (!strcmp(tn, "i8")  || !strcmp(tn, "u8") || !strcmp(tn, "Byte")) return "i64";
             if (!strcmp(tn, "bool")) return "i1";
         }
         return "i8*"; /* array / unknown cast → inttoptr */
@@ -3785,6 +3816,13 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_arr_filter", "declare i64 @tk_arr_filter(i64, i64)", 0},
     {"tk_arr_reduce", "declare i64 @tk_arr_reduce(i64, i64, i64)", 0},
     {"tk_arr_sort", "declare i64 @tk_arr_sort(i64, i64)", 0},
+    {"tk_arr_push_w", "declare i64 @tk_arr_push_w(i64, i64)", 0},
+    /* str glue extras (loke/moke) */
+    {"tk_str_push_w", "declare i64 @tk_str_push_w(i64, i64)", 0},
+    {"tk_str_arrayget_w", "declare i64 @tk_str_arrayget_w(i64, i64)", 0},
+    {"tk_str_arraylen_w", "declare i64 @tk_str_arraylen_w(i64)", 0},
+    {"tk_str_containsre_w", "declare i64 @tk_str_containsre_w(i64, i64)", 0},
+    {"tk_str_i64tof64_w", "declare i64 @tk_str_i64tof64_w(i64)", 0},
     /* std.os — POSIX syscall bridge */
     {"tk_os_open", "declare i64 @tk_os_open(i64, i64, i64)", 0},
     {"tk_os_close", "declare i64 @tk_os_close(i64)", 0},

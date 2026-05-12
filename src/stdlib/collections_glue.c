@@ -225,3 +225,7 @@ int64_t tk_set_add_w(int64_t s, int64_t val)         { return tk_set_add(s, val)
 int64_t tk_set_has_w(int64_t s, int64_t val)         { return tk_set_has(s, val); }
 int64_t tk_set_remove_w(int64_t s, int64_t val)      { return tk_set_remove(s, val); }
 int64_t tk_set_len_w(int64_t s)                      { return tk_set_len(s); }
+
+int64_t tk_arr_push_w(int64_t arr, int64_t item) {
+    return tk_array_append_w(arr, item);
+}

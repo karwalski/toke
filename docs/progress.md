@@ -3713,6 +3713,25 @@ The ~170 `_w` glue wrappers in *_glue.c were wired to C implementations but neve
 | 79.3.1 | Build script: compile + run each test, report pass/fail | done | 2026-05-12 | test/standalone/run_all.sh — compiles each .tk with --emit-deps linking, runs binary, tallies PASS/FAIL. 85/85 pass. |
 | 79.3.2 | Add `make test-standalone` target to toke Makefile | done | 2026-05-12 | `make test-standalone` runs run_all.sh. |
 
+## Epic 80 — Standalone Stdlib Blockers (reported by loke/moke)
+
+### Epic 80.1 — Missing glue wrappers
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 80.1.1 | Add str.push, str.arrayget, str.arraylen wrappers | done | 2026-05-12 | push→str_array_append, arrayget reads toke array at index, arraylen reads ptr[-1]. |
+| 80.1.2 | Add arr.push wrapper | done | 2026-05-12 | tk_arr_push_w→tk_array_append_w. |
+| 80.1.3 | Add str.containsre wrapper | done | 2026-05-12 | POSIX regex REG_EXTENDED match. |
+| 80.1.4 | Add str.i64tof64 wrapper | done | 2026-05-12 | (double)i cast + f64_to_i64 bitcast. |
+
+### Epic 80.2 — LLVM IR codegen bugs
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 80.2.1 | Fix `as i32`/`as u32` cast codegen — alloca wrong type | done | 2026-05-12 | llvm.c: sub-64-bit cast types now return "i64" from expr_llvm_type. Trunc results sext/zext back to i64 before store. |
+| 80.2.2 | Fix math.abs codegen — call returns double instead of i64 | done | 2026-05-12 | llvm.c: tki_type_to_llvm_abi no longer maps f64→"double" for _w wrappers. All glue calls use i64 ABI. |
+| 80.2.3 | Fix struct field access GEP type mismatch | done | 2026-05-12 | llvm.c: bitcast i8*→i64* before struct field GEP in both NODE_FIELD_EXPR and NODE_STRUCT_LIT. |
+
 ### Epic 78.3 — Tier 3: Remaining modules (lower priority)
 
 | ID | Story | Status | Date | Notes |

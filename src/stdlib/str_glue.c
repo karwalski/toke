@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <regex.h>
 
 /* --- bitcast helpers for f64 <-> i64 ------------------------------------ */
 static double i64_to_f64(int64_t i) { double d; memcpy(&d, &i, sizeof(d)); return d; }
@@ -340,4 +341,43 @@ int64_t tk_str_setat_w(int64_t s, int64_t idx, int64_t ch) {
     memcpy(out, p, len + 1);
     out[idx] = (char)ch;
     return (int64_t)(intptr_t)out;
+}
+
+/* str.push — append element to array (same as str_array_append) */
+int64_t tk_str_push_w(int64_t arr, int64_t item) {
+    return str_array_append(arr, item);
+}
+
+/* str.arrayget — get element at index from toke array */
+int64_t tk_str_arrayget_w(int64_t arr, int64_t idx) {
+    if (!arr) return 0;
+    int64_t *ptr = (int64_t *)(intptr_t)arr;
+    int64_t len = ptr[-1];
+    if (idx < 0 || idx >= len) return 0;
+    return ptr[idx];
+}
+
+/* str.arraylen — get length of toke array */
+int64_t tk_str_arraylen_w(int64_t arr) {
+    if (!arr) return 0;
+    int64_t *ptr = (int64_t *)(intptr_t)arr;
+    return ptr[-1];
+}
+
+/* str.containsre — regex match using POSIX extended regex */
+int64_t tk_str_containsre_w(int64_t s, int64_t pattern) {
+    const char *str = (const char *)(intptr_t)s;
+    const char *pat = (const char *)(intptr_t)pattern;
+    if (!str || !pat) return 0;
+    regex_t re;
+    if (regcomp(&re, pat, REG_EXTENDED | REG_NOSUB) != 0) return 0;
+    int match = regexec(&re, str, 0, NULL, 0) == 0 ? 1 : 0;
+    regfree(&re);
+    return match;
+}
+
+/* str.i64tof64 — integer to float conversion */
+int64_t tk_str_i64tof64_w(int64_t i) {
+    double d = (double)i;
+    return f64_to_i64(d);
 }
