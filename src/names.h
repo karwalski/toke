@@ -63,15 +63,17 @@ typedef struct {
  *
  *   ast         : root NODE_PROGRAM node returned by parse()
  *   src         : original source bytes (same pointer passed to parse())
- *   search_path : directory to search for <module/path>.tki files
- *   out         : caller-supplied SymbolTable; initialised by this call
+ *   search_paths      : array of directories to search for .tki files
+ *   search_path_count : number of entries in search_paths
+ *   out               : caller-supplied SymbolTable; initialised by this call
  *
  * Returns 0 if every import was resolved, -1 if one or more could not be
  * resolved (E2030) or a circular dependency was detected (E2031).
  * Diagnostics are emitted via diag_emit() for each failure.
  */
 int resolve_imports(const Node *ast, const char *src,
-                    const char *search_path, const TkcLimits *limits,
+                    const char **search_paths, int search_path_count,
+                    const TkcLimits *limits,
                     SymbolTable *out);
 
 /*

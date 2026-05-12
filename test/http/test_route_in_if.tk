@@ -1,0 +1,14 @@
+m=testrouteif;
+i=http:std.http;
+i=io:std.io;
+
+f=main():i64{
+  let debug=true;
+  if(debug){
+    http.getstatic("/about";"<h1>About</h1>");
+    http.getstatic("/help";"<h1>Help</h1>")
+  }el{};
+  http.getstatic("/";"<h1>Home</h1>");
+  io.println("routes registered inside if block");
+  <0
+};

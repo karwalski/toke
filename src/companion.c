@@ -260,7 +260,7 @@ static void emit_frontmatter(FILE *out, const char *source_path,
     fprintf(out, "---\n");
     fprintf(out, "source_file: \"%s\"\n", basename);
     fprintf(out, "source_hash: \"%s\"\n", hex);
-    fprintf(out, "compiler_version: \"0.1.0\"\n");
+    fprintf(out, "compiler_version: \"0.3.0\"\n");
     fprintf(out, "generated_at: \"%s\"\n", ts);
     fprintf(out, "format_version: \"1.0\"\n");
     fprintf(out, "---\n");

@@ -394,7 +394,7 @@ diag_flush_sarif(void)
           "      \"tool\": {\n"
           "        \"driver\": {\n"
           "          \"name\": \"toke\",\n"
-          "          \"version\": \"0.1.0\"\n"
+          "          \"version\": \"0.3.0\"\n"
           "        }\n"
           "      },\n"
           "      \"results\": [\n", fp);

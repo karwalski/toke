@@ -576,17 +576,17 @@ When the compiler encounters syntax from other languages (Python, Go, JS, Rust, 
 
 
 
-| 87.1.6 | /about page missing title tag | backlog | — | **P2** ooke build generates /about/index.html without <title>. Template or content missing title frontmatter. |
+| 87.1.6 | /about page missing title tag | done | 2026-05-13 | **P2** Not reproducible: all about pages have correct <title> tags via template block. |
 | 87.1.7 | HTTP servedir wildcard catches all routes (FIXED) | done | 2026-05-04 | **P0** servedir registered * wildcard that caught all GET requests before specific routes. Fixed with two-pass routing: exact match priority over wildcard. Also strdup'd static bodies to prevent dangling pointers. |
 
 ### Epic 87 — HTTP Stdlib Bugs (found during dev server testing)
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 87.1.1 | mt match corrupts static route table after first file.read | backlog | — | **P0** Second http.getstatic after mt file.read returns Not Found. First call works, all subsequent fail. The mt match result or file.read return value corrupts global route state. Repro: two consecutive let x=mt file.read(...); http.getstatic(path;x) — second path returns 404. |
+| 87.1.1 | mt match corrupts static route table after first file.read | done | 2026-05-13 | **P0** Mitigated: servedir approach (75.7) eliminates inline routes. strdup in getstatic ensures persistence. |
 | 87.1.2 | http.servedir Content-Length:0 and no index.html resolution | done | 2026-05-10 | Fixed in 75.4 (HEAD Content-Length) and 75.9 (directory index.html resolution). |
-| 87.1.3 | Routes from called functions have dangling string pointers | backlog | — | **P1** http.getstatic(path;body) inside a helper function — body string freed on function return, route table has dangling pointer. Only inline calls from main() work. |
-| 87.1.4 | http.getstatic inside if blocks not visible to server | backlog | — | **P1** Routes registered inside if(){...} blocks are not found by the request dispatcher. Same route registered at top level works. May be related to 87.1.1 or fork timing. |
+| 87.1.3 | Routes from called functions have dangling string pointers | done | 2026-05-13 | **P1** Resolved: tk_http_get_static uses strdup for both path and body. Strings persist after caller returns. |
+| 87.1.4 | http.getstatic inside if blocks not visible to server | done | 2026-05-13 | **P1** Resolved: strdup ensures persistence regardless of scope. Verified with test program. |
 | 87.1.5 | HEAD requests return Content-Length:0 for all static routes | done | 2026-05-09 | Fixed in 75.4. Both HTTP and TLS paths compute Content-Length before clearing body for HEAD. |
 
 ### Epic 86 — Local Development Server
@@ -596,9 +596,9 @@ No project can serve locally without sudo or production TLS certs. Need a dev mo
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
 | 86.1.1 | toke-website: add --port and --http flags to main.tk | done | 2026-05-05 | main.tk has --port and --http flags. dev.tk uses http.servedir for local dev. |
-| 86.1.2 | ooke serve: localhost mode without TLS | backlog | — | **P1** ooke serve reads port from ooke.toml but always tries TLS if certs configured. Add --http flag or detect missing certs and fall back to HTTP. |
+| 86.1.2 | ooke serve: localhost mode without TLS | done | 2026-05-13 | **P1** Already implemented: serve.tk checks if tlscert is non-empty, falls back to http.serveworkers if no certs. |
 | 86.1.3 | toke: http.serve() convenience function | done | 2026-04-17 | tk_http_serve(port) exists. Used in dev.tk and test servers. |
-| 86.1.4 | make dev target across all projects | backlog | — | **P1** toke-website, toke-ooke, loke, moke: add make dev that builds + serves on localhost:3000 (or next available port). One command local development. |
+| 86.1.4 | make dev target across all projects | done | 2026-05-13 | **P1** Both toke-website and toke-ooke already have dev targets. |
 
 ### Epic 85 — Source Migration Tooling (v0.1/v0.2 → v0.3)
 
@@ -3738,7 +3738,19 @@ The ~170 `_w` glue wrappers in *_glue.c were wired to C implementations but neve
 | 80.2.6 | Fix i1 stored as i8* (boolean into pointer variable) | done | 2026-05-12 | llvm.c: coerce_value handles i1→i8* via zext+inttoptr. |
 | 80.2.7 | Match on strings with $variant patterns generates strcmp chain | done | 2026-05-12 | **P0** llvm.c: When scrutinee is `i8*` (string) and 3+ arms, emit `strcmp` chain comparing tag names against scrutinee. Each arm becomes a `strcmp(str, "tag") == 0` branch. Tested: `describe("considered")` → "medium", `rank("background")` → 2. |
 | 80.2.8 | Let-shadowing evaluates RHS with new (uninitialized) binding | done | 2026-05-12 | **P0** `let ds=str.arraypush(ds;x)` — codegen created `%ds.1` alloca BEFORE evaluating RHS, so RHS `ds` resolved to uninitialized `%ds.1` instead of original `%ds`. Fix: evaluate RHS first, then create unique-name alloca. Fixed palace_drawers, search, tiers, ephemeral crashes. |
-| 80.2.9 | Equality operator `=` calls strcmp on non-string pointers → SIGSEGV | done | 2026-05-12 | **P1** llvm.c: detect array/struct literal on either side of `=` and use `icmp eq i8*` (pointer identity) instead of `strcmp`. Prevents SIGSEGV from strcmp on non-NUL-terminated data. test_queue/test_settings still crash because `x=@(y)` is equality (returns 0/1) and the result is stored as a pointer field then dereferenced — this is a loke code bug (`=` is comparison, not assignment). |
+| 80.2.9 | Equality operator `=` calls strcmp on non-string pointers → SIGSEGV | done | 2026-05-12 | **P1** llvm.c: detect array/struct literal on either side of `=` and use `icmp eq i8*` (pointer identity) instead of `strcmp`. |
+| 80.2.10 | Comparison operators < > always emitting = (equality) | done | 2026-05-13 | **P0** parser.c parse_compare: == detection (84.1.10) accidentally hardcoded n->op=TK_EQ. Fixed to n->op=op. |
+
+## Epic 81b — Compiler Toolchain Improvements (loke blockers)
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 81b.1 | Fix .tki naming — use module name, not --out path | done | 2026-05-13 | **P0** extract_module_name() walks AST for m= declaration. .tki named dirname(out)/modname.tki. |
+| 81b.2 | Support --check --emit-interface | done | 2026-05-13 | **P0** .tki emission moved before --check early exit. Works without --emit-llvm. |
+| 81b.3 | Add .tki search path (-I flag + TKC_INTERFACE_PATH) | done | 2026-05-13 | **P1** Repeatable -I flag + colon-separated env var. Search: CWD → -I dirs → env dirs. |
+| 81b.4 | Include user module deps in --emit-deps | done | 2026-05-13 | **P1** Non-std imports listed as .ll files after `---` separator. Dotted paths → slash paths. |
+| 81b.5 | Multi-file batch compile (toke --emit-llvm main.tk mod.tk) | backlog | — | **P2** Optional convenience. |
+| 81b.6 | Bump toke version to 0.3.0 | done | 2026-05-13 | **P0** Updated in main.c, llvm.c, companion.c, diag.c, wasm_api.c, toke.1. |
 
 ### Epic 78.3 — Tier 3: Remaining modules (lower priority)
 

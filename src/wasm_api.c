@@ -43,7 +43,7 @@ int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile prof
 
 /* ── Version ────────────────────────────────────────────────────────── */
 
-#define TKC_WASM_VERSION "tkc 0.1.0-wasm"
+#define TKC_WASM_VERSION "tkc 0.3.0-wasm"
 
 /* ── Diagnostic capture ─────────────────────────────────────────────
  *
@@ -183,7 +183,8 @@ static PipeResult run_pipeline(const char *source, const char *up_to)
 
     /* ── Names ───────────────────────────────────────────────────── */
     SymbolTable st;
-    if (resolve_imports(r.ast, source, ".", &limits, &st) < 0 ||
+    const char *wasm_search_paths[] = { "." };
+    if (resolve_imports(r.ast, source, wasm_search_paths, 1, &limits, &st) < 0 ||
         diag_error_count() > 0) {
         r.fail_stage = "names";
         return r;

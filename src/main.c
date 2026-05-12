@@ -59,7 +59,7 @@ int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile prof
 
 /* ── Constants ─────────────────────────────────────────────────────── */
 
-#define VERSION   "toke 0.1.0"
+#define VERSION   "toke 0.3.0"
 #define EUSAGE    TKC_EXIT_USAGE
 #define EINTERNAL TKC_EXIT_INTERNAL
 #define ECOMPILE  TKC_EXIT_COMPILE
@@ -74,6 +74,7 @@ static const char HELP[] =
     "  --emit-llvm         Emit LLVM IR (.ll) instead of compiling to binary\n"
     "  --emit-asm          Emit assembly (.s) instead of compiling to binary\n"
     "  --emit-deps         Print stdlib C sources and linker flags needed, then exit\n"
+    "  -I <dir>            Add .tki interface search directory (repeatable)\n"
     "  -g / --debug        Emit DWARF debug metadata for lldb/gdb\n"
     "  -O0/-O1/-O2/-O3    Optimization level (default: -O1)\n"
     "  --fmt               Format source to canonical form and print to stdout\n"
@@ -113,6 +114,9 @@ static const char HELP[] =
     "\n"
     "Configuration:\n"
     "  --config=PATH       Load config from PATH (default: ./tkc.toml)\n"
+    "\n"
+    "Environment:\n"
+    "  TKC_INTERFACE_PATH  Colon-separated list of .tki search directories\n"
     "\n"
     "  --version           Print version and exit\n"
     "  --help              Print this help and exit";
@@ -188,6 +192,39 @@ static void stem(const char *path, char *buf, int n)
     if (d) *d = '\0';
 }
 
+/*
+ * extract_module_name — Extract the module name from a parsed AST.
+ *
+ * Walks the top-level children for a NODE_MODULE / NODE_MODULE_PATH and
+ * writes the dotted module path (e.g. "mylib" or "std.math") into buf.
+ * Returns 1 if a module declaration was found, 0 otherwise.
+ */
+static int extract_module_name(const Node *ast, const char *src,
+                                char *buf, int size)
+{
+    buf[0] = '\0';
+    for (int i = 0; i < ast->child_count; i++) {
+        const Node *mod = ast->children[i];
+        if (!mod || mod->kind != NODE_MODULE) continue;
+        for (int j = 0; j < mod->child_count; j++) {
+            const Node *mp = mod->children[j];
+            if (!mp || mp->kind != NODE_MODULE_PATH) continue;
+            int pos = 0;
+            for (int k = 0; k < mp->child_count && pos < size - 1; k++) {
+                const Node *id = mp->children[k];
+                if (!id) continue;
+                if (pos > 0 && pos < size - 2) buf[pos++] = '.';
+                int len = id->tok_len < size - 1 - pos ? id->tok_len : size - 1 - pos;
+                memcpy(buf + pos, src + id->tok_start, (size_t)len);
+                pos += len;
+            }
+            buf[pos] = '\0';
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* ── main ──────────────────────────────────────────────────────────── */
 
 /*
@@ -228,6 +265,12 @@ int main(int argc, char **argv)
     Profile profile = PROFILE_DEFAULT;
     TkcLimits limits;
     tkc_limits_defaults(&limits);
+
+    /* .tki search path: CWD + -I dirs + TKC_INTERFACE_PATH dirs */
+    #define MAX_SEARCH_PATHS 64
+    const char *search_paths[MAX_SEARCH_PATHS];
+    int search_path_count = 0;
+    search_paths[search_path_count++] = ".";  /* CWD always first */
 
     /* Pre-scan for --config=PATH before full flag parsing */
     for (int i = 1; i < argc; i++) {
@@ -317,12 +360,32 @@ int main(int argc, char **argv)
         } else if (!strcmp(argv[i], "--out")) {
             if (++i >= argc) { fputs("tkc: --out requires an argument\n", stderr); return EUSAGE; }
             out = argv[i];
+        } else if (!strcmp(argv[i], "-I")) {
+            if (++i >= argc) { fputs("tkc: -I requires a directory argument\n", stderr); return EUSAGE; }
+            if (search_path_count < MAX_SEARCH_PATHS)
+                search_paths[search_path_count++] = argv[i];
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "tkc: unknown flag: %s\n", argv[i]);
             return EUSAGE;
         } else {
             if (src) { fputs("tkc: only one source file supported\n", stderr); return EUSAGE; }
             src = argv[i];
+        }
+    }
+
+    /* Append TKC_INTERFACE_PATH dirs (colon-separated) after -I dirs */
+    {
+        static char ipath_buf[4096];
+        const char *ipath = getenv("TKC_INTERFACE_PATH");
+        if (ipath && ipath[0]) {
+            strncpy(ipath_buf, ipath, sizeof(ipath_buf) - 1);
+            ipath_buf[sizeof(ipath_buf) - 1] = '\0';
+            char *save = NULL;
+            char *tok = strtok_r(ipath_buf, ":", &save);
+            while (tok && search_path_count < MAX_SEARCH_PATHS) {
+                search_paths[search_path_count++] = tok;
+                tok = strtok_r(NULL, ":", &save);
+            }
         }
     }
 
@@ -608,7 +671,7 @@ int main(int argc, char **argv)
 
     /* Resolve imports */
     SymbolTable st;
-    if (resolve_imports(ast, sbuf, ".", &limits, &st) < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
+    if (resolve_imports(ast, sbuf, search_paths, search_path_count, &limits, &st) < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
 
     /* Resolve names */
     NameEnv ne;
@@ -624,6 +687,36 @@ int main(int argc, char **argv)
     }
 
     progress_update(70);
+
+    /* Emit .tki before --check exit so --check --emit-interface works.
+     * The .tki is named after the module declaration, placed in the
+     * same directory as --out (or the source file directory). */
+    if (emit_iface) {
+        char mod_name[256];
+        char tki[PATH_BUF];
+        if (extract_module_name(ast, sbuf, mod_name, (int)sizeof(mod_name)) && mod_name[0]) {
+            /* Place .tki in --out directory (if given), else source dir */
+            const char *dir_src = out ? out : src;
+            const char *slash = strrchr(dir_src, '/');
+            if (slash) {
+                int dlen = (int)(slash - dir_src);
+                snprintf(tki, sizeof(tki), "%.*s/%s.tki", dlen, dir_src, mod_name);
+            } else {
+                snprintf(tki, sizeof(tki), "%s.tki", mod_name);
+            }
+        } else {
+            /* Fallback: use output stem if no module declaration */
+            char odir[PATH_BUF], ostm_tki[MSG_BUF];
+            if (out) {
+                strncpy(odir, out, sizeof(odir) - 1); odir[sizeof(odir) - 1] = '\0';
+            } else {
+                stem(src, ostm_tki, (int)sizeof(ostm_tki));
+                snprintf(odir, sizeof(odir), "%s", ostm_tki);
+            }
+            snprintf(tki, sizeof(tki), "%s.tki", odir);
+        }
+        if (emit_interface(ast, sbuf, &te, tki) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
+    }
 
     if (check_only) { symtab_free(&st); goto done; }
 
@@ -679,6 +772,24 @@ int main(int argc, char **argv)
             }
         }
 
+        /* Print user module deps (non-std imports) as .ll files */
+        {
+            int has_user_deps = 0;
+            for (int ui = 0; ui < st.count; ui++) {
+                const char *mp = st.entries[ui].module_path;
+                if (!mp || !st.entries[ui].resolved) continue;
+                if (strncmp(mp, "std.", 4) == 0 || strcmp(mp, "std") == 0) continue;
+                if (!has_user_deps) { puts("---"); has_user_deps = 1; }
+                /* Convert dots to slashes for nested module paths */
+                char mod_ll[PATH_BUF];
+                strncpy(mod_ll, mp, sizeof(mod_ll) - 4);
+                mod_ll[sizeof(mod_ll) - 4] = '\0';
+                for (char *p = mod_ll; *p; p++) { if (*p == '.') *p = '/'; }
+                strcat(mod_ll, ".ll");
+                puts(mod_ll);
+            }
+        }
+
         symtab_free(&st);
         goto done;
     }
@@ -725,12 +836,7 @@ int main(int argc, char **argv)
         snprintf(obin, sizeof(obin), "%s", ostm);
     }
 
-    /* Emit .tki if requested */
-    if (emit_iface) {
-        char tki[PATH_BUF];
-        snprintf(tki, sizeof(tki), "%s.tki", obin);
-        if (emit_interface(ast, sbuf, &te, tki) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
-    }
+    /* .tki already emitted above (before --check exit) */
 
     /* --emit-tkir: write .tkir binary IR and exit (story 76.1.6a) */
     if (emit_tkir_flag) {

@@ -415,10 +415,12 @@ static int normalise_module_path(char *mpath) {
  * Returns 0 if all imports resolved, -1 on any failure.
  */
 int resolve_imports(const Node *ast, const char *src,
-                    const char *search_path, const TkcLimits *limits,
+                    const char **search_paths, int search_path_count,
+                    const TkcLimits *limits,
                     SymbolTable *out) {
     if (!ast || !src || !limits || !out) return -1;
-    out->entries = NULL; out->count = 0; out->search_path = search_path;
+    out->entries = NULL; out->count = 0;
+    out->search_path = (search_paths && search_path_count > 0) ? search_paths[0] : ".";
 
     int err = 0;
     InFlight inf;
@@ -426,7 +428,15 @@ int resolve_imports(const Node *ast, const char *src,
     inf.capacity = limits->max_imports_in_flight;
     inf.paths = (const char **)malloc((size_t)inf.capacity * sizeof(const char *));
     if (!inf.paths) return -1;
-    const char *sp = search_path ? search_path : ".";
+
+    /* Build effective search path list: at least "." */
+    static const char *dot_path[] = { "." };
+    const char **sp_list = dot_path;
+    int sp_count = 1;
+    if (search_paths && search_path_count > 0) {
+        sp_list = search_paths;
+        sp_count = search_path_count;
+    }
 
     for (int i = 0; i < ast->child_count; i++) {
         const Node *d = ast->children[i];
@@ -526,18 +536,21 @@ int resolve_imports(const Node *ast, const char *src,
         ifl_push(&inf, mpath);
 
         int found = 0;
-        if (ver) {
-            /* Try versioned path: module/path.1.2.tki */
-            char vfpath[TKC_MAX_PATH * 2];
-            snprintf(vfpath, sizeof(vfpath), "%s.%s", fpath, ver);
-            if (tki_exists(sp, vfpath)) { found = 1; }
+        for (int si = 0; si < sp_count && !found; si++) {
+            const char *sp = sp_list[si];
+            if (ver) {
+                /* Try versioned path: module/path.1.2.tki */
+                char vfpath[TKC_MAX_PATH * 2];
+                snprintf(vfpath, sizeof(vfpath), "%s.%s", fpath, ver);
+                if (tki_exists(sp, vfpath)) { found = 1; }
+            }
+            if (!found && tki_exists(sp, fpath)) { found = 1; }
         }
-        if (!found && tki_exists(sp, fpath)) { found = 1; }
 
         if (found) {
             st_push(out, alias, mpath, ver, 1);
         } else {
-            char *avail = build_avail_list(sp, limits->max_avail_modules);
+            char *avail = build_avail_list(sp_list[0], limits->max_avail_modules);
             char msg[TKC_MAX_PATH + 512];
             snprintf(msg, sizeof(msg),
                      "module '%s' not found; available: %s", mpath, avail ? avail : "");
