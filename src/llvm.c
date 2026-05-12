@@ -2596,7 +2596,115 @@ static int emit_expr(Ctx *c, const Node *n)
         int sv = emit_expr(c, n->children[0]);
         const char *scr_ty = expr_llvm_type(c, n->children[0]);
 
-        /* icmp ne sv, 0/null → cond (Story 57.13.11) */
+        /* Count real arms (skip children[0] which is the scrutinee) */
+        int num_arms = 0;
+        for (int i = 1; i < n->child_count; i++)
+            if (n->children[i] && n->children[i]->child_count >= 1) num_arms++;
+
+        /* Multi-arm string match: when scrutinee is a string (i8*) and
+         * there are 3+ arms, emit a strcmp chain instead of ok/err bifurcation.
+         * Each arm tag is compared against the scrutinee as a string. (Story 80.2.7) */
+        if (!strcmp(scr_ty, "i8*") && num_arms >= 3) {
+            /* Ensure scrutinee is i8* (it should be since scr_ty is i8*) */
+            int str_val = sv;
+
+            /* Emit strcmp chain: for each arm, compare tag string */
+            int arm_labels[64];
+            int arm_count = 0;
+            for (int i = 1; i < n->child_count && arm_count < 64; i++) {
+                const Node *arm = n->children[i];
+                if (!arm || arm->child_count < 1) continue;
+                arm_labels[arm_count] = next_lbl(c);
+                arm_count++;
+            }
+
+            /* Emit comparison chain */
+            int check_idx = 0;
+            int arm_i = 0;
+            for (int i = 1; i < n->child_count; i++) {
+                const Node *arm = n->children[i];
+                if (!arm || arm->child_count < 1) continue;
+
+                char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
+                int this_arm_lbl = arm_labels[arm_i];
+
+                if (arm_i == arm_count - 1) {
+                    /* Last arm: unconditional branch (default/else) */
+                    fprintf(c->out, "  br label %%marm%d\n", this_arm_lbl);
+                } else {
+                    /* Emit string constant for the tag name */
+                    int str_g = next_str(c);
+                    int tag_len = (int)strlen(tag) + 1;
+                    fprintf(c->out, "  %%tag%d = getelementptr inbounds [%d x i8], [%d x i8]* @.strtag.%d, i32 0, i32 0\n",
+                            check_idx, tag_len, tag_len, str_g);
+                    /* Add the string constant to globals buffer */
+                    int glen = c->str_globals_len;
+                    int wrote = snprintf(c->str_globals + glen,
+                                         TKC_STR_GLOBALS_SIZE - glen,
+                                         "@.strtag.%d = private unnamed_addr constant [%d x i8] c\"%s\\00\"\n",
+                                         str_g, tag_len, tag);
+                    if (wrote > 0 && glen + wrote < TKC_STR_GLOBALS_SIZE)
+                        c->str_globals_len += wrote;
+
+                    /* strcmp(scrutinee, tag) */
+                    int cmp = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = call i32 @strcmp(i8* %%t%d, i8* %%tag%d)\n", cmp, str_val, check_idx);
+                    int eq = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp eq i32 %%t%d, 0\n", eq, cmp);
+
+                    int next_check_lbl = next_lbl(c);
+                    fprintf(c->out, "  br i1 %%t%d, label %%marm%d, label %%mcheck%d\n", eq, this_arm_lbl, next_check_lbl);
+                    fprintf(c->out, "mcheck%d:\n", next_check_lbl);
+                    check_idx++;
+                }
+                arm_i++;
+            }
+
+            /* Emit each arm body */
+            arm_i = 0;
+            for (int i = 1; i < n->child_count; i++) {
+                const Node *arm = n->children[i];
+                if (!arm || arm->child_count < 1) continue;
+
+                fprintf(c->out, "marm%d:\n", arm_labels[arm_i]);
+
+                /* Bind arm variable to scrutinee */
+                if (arm->child_count >= 2 && arm->children[1]) {
+                    char vname[NAME_BUF]; tok_cp(c->src, arm->children[1], vname, sizeof vname);
+                    const char *uname = make_unique_name(c, vname);
+                    if (uname != vname) {
+                        strncpy(vname, uname, sizeof vname - 1);
+                        vname[sizeof vname - 1] = '\0';
+                    }
+                    set_local_type(c, vname, scr_ty);
+                    fprintf(c->out, "  %%%s = alloca %s\n", vname, scr_ty);
+                    fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", scr_ty, str_val, scr_ty, vname);
+                }
+
+                /* Emit arm body */
+                int body_val = -1;
+                if (arm->child_count >= 3 && arm->children[2])
+                    body_val = emit_expr(c, arm->children[2]);
+
+                if (body_val >= 0) {
+                    const Node *body_node = arm->children[2];
+                    const char *bty = expr_llvm_type(c, body_node);
+                    body_val = coerce_value(c, body_val, bty, res_ty);
+                    fprintf(c->out, "  store %s %%t%d, %s* %%t%d\n", res_ty, body_val, res_ty, res_slot);
+                }
+
+                fprintf(c->out, "  br label %%rm_end%d\n", L);
+                arm_i++;
+            }
+
+            /* Merge label */
+            fprintf(c->out, "rm_end%d:\n", L);
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = load %s, %s* %%t%d\n", t, res_ty, res_ty, res_slot);
+            return t;
+        }
+
+        /* 2-arm ok/err bifurcation (original path) */
         int cond = next_tmp(c);
         if (!strcmp(scr_ty, "i8*"))
             fprintf(c->out, "  %%t%d = icmp ne i8* %%t%d, null\n", cond, sv);
@@ -2634,7 +2742,6 @@ static int emit_expr(Ctx *c, const Node *n)
                 char vname[NAME_BUF]; tok_cp(c->src, arm->children[1], vname, sizeof vname);
                 const char *uname = make_unique_name(c, vname);
                 if (uname != vname) {
-                    /* unique name already recorded; copy into vname for use below */
                     strncpy(vname, uname, sizeof vname - 1);
                     vname[sizeof vname - 1] = '\0';
                 }
