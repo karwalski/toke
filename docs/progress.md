@@ -584,10 +584,10 @@ When the compiler encounters syntax from other languages (Python, Go, JS, Rust, 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
 | 87.1.1 | mt match corrupts static route table after first file.read | backlog | — | **P0** Second http.getstatic after mt file.read returns Not Found. First call works, all subsequent fail. The mt match result or file.read return value corrupts global route state. Repro: two consecutive let x=mt file.read(...); http.getstatic(path;x) — second path returns 404. |
-| 87.1.2 | http.servedir Content-Length:0 and no index.html resolution | backlog | — | **P0** servedir serves files but: (1) HEAD requests return Content-Length:0, (2) /docs/ doesn't resolve to /docs/index.html, (3) subdirectory files return 404 or empty. Only works for single flat directory. |
+| 87.1.2 | http.servedir Content-Length:0 and no index.html resolution | done | 2026-05-10 | Fixed in 75.4 (HEAD Content-Length) and 75.9 (directory index.html resolution). |
 | 87.1.3 | Routes from called functions have dangling string pointers | backlog | — | **P1** http.getstatic(path;body) inside a helper function — body string freed on function return, route table has dangling pointer. Only inline calls from main() work. |
 | 87.1.4 | http.getstatic inside if blocks not visible to server | backlog | — | **P1** Routes registered inside if(){...} blocks are not found by the request dispatcher. Same route registered at top level works. May be related to 87.1.1 or fork timing. |
-| 87.1.5 | HEAD requests return Content-Length:0 for all static routes | backlog | — | **P2** curl -I always shows Content-Length:0 even for routes with content. GET works correctly via chunked transfer. Browsers use GET so functional but breaks HEAD-based tools. |
+| 87.1.5 | HEAD requests return Content-Length:0 for all static routes | done | 2026-05-09 | Fixed in 75.4. Both HTTP and TLS paths compute Content-Length before clearing body for HEAD. |
 
 ### Epic 86 — Local Development Server
 
@@ -595,9 +595,9 @@ No project can serve locally without sudo or production TLS certs. Need a dev mo
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 86.1.1 | toke-website: add --port and --http flags to main.tk | backlog | — | **P0** main.tk hardcodes port 443 + TLS. Add CLI arg parsing: --port N for custom port, --http to skip TLS. make dev target that serves on localhost:3000. |
+| 86.1.1 | toke-website: add --port and --http flags to main.tk | done | 2026-05-05 | main.tk has --port and --http flags. dev.tk uses http.servedir for local dev. |
 | 86.1.2 | ooke serve: localhost mode without TLS | backlog | — | **P1** ooke serve reads port from ooke.toml but always tries TLS if certs configured. Add --http flag or detect missing certs and fall back to HTTP. |
-| 86.1.3 | toke: http.serve() convenience function | backlog | — | **P2** stdlib: http.serve(port) as simple HTTP-only alternative to http.servevhoststls(). Single call, no certs, no vhosts. For dev/testing. |
+| 86.1.3 | toke: http.serve() convenience function | done | 2026-04-17 | tk_http_serve(port) exists. Used in dev.tk and test servers. |
 | 86.1.4 | make dev target across all projects | backlog | — | **P1** toke-website, toke-ooke, loke, moke: add make dev that builds + serves on localhost:3000 (or next available port). One command local development. |
 
 ### Epic 85 — Source Migration Tooling (v0.1/v0.2 → v0.3)
