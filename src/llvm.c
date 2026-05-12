@@ -3246,9 +3246,6 @@ static void emit_stmt(Ctx *c, const Node *n)
     case NODE_BIND_STMT:
     case NODE_MUT_BIND_STMT:
         tok_cp(c->src, n->children[0], tb, sizeof tb);
-        { const char *uname = make_unique_name(c, tb);
-          if (uname != tb) strncpy(tb, uname, sizeof tb - 1);
-        }
         {
         /* Determine which child is the init expression.
          * 3 children: [0]=ident [1]=type_ann [2]=init
@@ -3262,6 +3259,17 @@ static void emit_stmt(Ctx *c, const Node *n)
             else
                 vty = expr_llvm_type(c, init_node);
             if (!strcmp(vty, "void")) vty = "i64"; /* void fn result → store 0 */
+            /* Story 80.2.8: Evaluate RHS BEFORE creating the new alloca,
+             * so that shadowed name references resolve to the OLD binding.
+             * e.g. `let ds=str.arraypush(ds;x)` — the `ds` in the RHS
+             * must resolve to the previous `ds`, not the new one. */
+            const char *init_ty = has_ann ? vty : expr_llvm_type(c, init_node);
+            int v = emit_expr(c, init_node);
+            v = coerce_value(c, v, init_ty, vty);
+            /* NOW create the unique name and alloca (after RHS is evaluated) */
+            { const char *uname = make_unique_name(c, tb);
+              if (uname != tb) strncpy(tb, uname, sizeof tb - 1);
+            }
             if (!strcmp(vty, "i8*")) {
                 if (init_node->kind == NODE_MAP_LIT)
                     mark_ptr_with_type(c, tb, "__map__");
@@ -3272,14 +3280,11 @@ static void emit_stmt(Ctx *c, const Node *n)
             }
             set_local_type(c, tb, vty);
             fprintf(c->out, "  %%%s = alloca %s\n", tb, vty);
-            /* Save the pre-emit init type.  emit_expr may bind new locals
-             * (e.g. match arm variables) that change expr_llvm_type results,
-             * so we must not re-query after emit. */
-            const char *init_ty = has_ann ? vty : expr_llvm_type(c, init_node);
-            int v = emit_expr(c, init_node);
-            v = coerce_value(c, v, init_ty, vty);
             fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", vty, v, vty, tb);
         } else {
+            { const char *uname = make_unique_name(c, tb);
+              if (uname != tb) strncpy(tb, uname, sizeof tb - 1);
+            }
             set_local_type(c, tb, "i64");
             fprintf(c->out, "  %%%s = alloca i64\n", tb);
         }

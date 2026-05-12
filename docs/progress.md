@@ -3737,7 +3737,8 @@ The ~170 `_w` glue wrappers in *_glue.c were wired to C implementations but neve
 | 80.2.5 | Fix ret i32 with i64 value + narrow-int comparison coercion | done | 2026-05-12 | llvm.c: return coercion handles i64→i32 trunc. Binary op coercion handles mismatched narrow-int widths. |
 | 80.2.6 | Fix i1 stored as i8* (boolean into pointer variable) | done | 2026-05-12 | llvm.c: coerce_value handles i1→i8* via zext+inttoptr. |
 | 80.2.7 | Match on strings with $variant patterns generates strcmp chain | done | 2026-05-12 | **P0** llvm.c: When scrutinee is `i8*` (string) and 3+ arms, emit `strcmp` chain comparing tag names against scrutinee. Each arm becomes a `strcmp(str, "tag") == 0` branch. Tested: `describe("considered")` → "medium", `rank("background")` → 2. |
-| 80.2.8 | Struct-of-struct arrays crash in complex chain patterns | backlog | — | **P1** Multi-step struct field access + array push + struct reconstruction crashes (SIGSEGV) in loke tests (queue, palace_drawers, search). Simple patterns work — crash only in larger programs with many struct layers. May be stack corruption or ptr/i64 confusion in deep call chains. |
+| 80.2.8 | Let-shadowing evaluates RHS with new (uninitialized) binding | done | 2026-05-12 | **P0** `let ds=str.arraypush(ds;x)` — codegen created `%ds.1` alloca BEFORE evaluating RHS, so RHS `ds` resolved to uninitialized `%ds.1` instead of original `%ds`. Fix: evaluate RHS first, then create unique-name alloca. Fixed palace_drawers, search, tiers, ephemeral crashes. |
+| 80.2.9 | Equality operator `=` calls strcmp on non-string pointers → SIGSEGV | backlog | — | **P1** `queue.jobs=@(job)` calls `strcmp` on array pointers (not strings) → crash. The `=` codegen uses `strcmp` for all `i8*` operands. Fix: use `strcmp` only for string-typed operands; use `icmp eq i8*` for pointer equality. Affects test_queue, test_settings. |
 
 ### Epic 78.3 — Tier 3: Remaining modules (lower priority)
 
