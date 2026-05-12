@@ -55,6 +55,10 @@ TkSvgElem  *svg_polygon(double *pts, uint64_t npts, TkSvgStyle s);
 TkSvgElem  *svg_arrow(double x1, double y1, double x2, double y2, TkSvgStyle s);
 void        svg_elem_free(TkSvgElem *elem);
 
+/* Post-creation style setter — parse a CSS-like string into the element's style.
+ * Recognised properties: fill, stroke, stroke-width, opacity, font-size, font-family. */
+void        svg_elem_set_style(TkSvgElem *elem, const char *css);
+
 /* -----------------------------------------------------------------------
  * Story 34.5.1 — gradients, animation, ellipse, defs, file output
  * ----------------------------------------------------------------------- */

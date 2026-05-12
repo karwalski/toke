@@ -48,6 +48,9 @@ const char     *str_lower(const char *s);
 ByteArray       str_bytes(const char *s);
 StrEncResult    str_from_bytes(ByteArray b);
 
+/* Story 78.4.1 — printf-style single-argument format */
+const char     *str_format(const char *fmt, int64_t arg);
+
 /* Story 28.1.1 — search and transform */
 int64_t         str_index(const char *s, const char *sub);
 int64_t         str_rindex(const char *s, const char *sub);

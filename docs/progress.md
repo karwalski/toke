@@ -3664,7 +3664,19 @@ During the 75.12 glue split, many `_w` wrapper functions were copied as no-op st
 | 78.2.7 | Wire env_glue.c env.get stub | done | 2026-05-12 | env_get_w now calls env_get(). |
 | 78.2.8 | Wire db_glue.c legacy stubs | done | 2026-05-12 | query→db_many, insert/delete/execute→db_exec, rows/getrow/getfield wired. 4 query-builder stubs left as TODO (no C API). |
 | 78.2.9 | Wire HTTP client stubs | done | 2026-05-12 | client, get, post, put, delete, stream, streamnext, print all wired to http.c client API. |
-| 78.2.10 | Wire yaml/toon/llm/misc stubs | done | 2026-05-12 | yaml (9), toon (17), llm (4), validate (3), cache (4), ratelimit (2), config (3), uuid (1), fmt (1), i18n (2), router (2) wired. ~10 TODOs remain for missing C APIs (regex, net sockets, svg style, complex decoders). |
+| 78.2.10 | Wire yaml/toon/llm/misc stubs | done | 2026-05-12 | yaml (9), toon (17), llm (4), validate (3), cache (4), ratelimit (2), config (3), uuid (1), fmt (1), i18n (2), router (2) wired. |
+
+### Epic 78.4 — Implement remaining 22 stub TODOs (new C code required)
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 78.4.1 | Implement str.format in str.c | done | 2026-05-12 | str_format() added to str.c/str.h — single-arg printf-style (%s/%d/%f/%%%). Glue wired. |
+| 78.4.2 | Implement net socket API (listen/accept/read/write/close) | done | 2026-05-12 | POSIX sockets: listen (bind+listen), accept, read (4KB buf), write, close. All 5 stubs wired. |
+| 78.4.3 | Implement regex API (match/replace/findall) | done | 2026-05-12 | POSIX regex.h: match (REG_EXTENDED), replace (first match splice), findall (loop→toke array). |
+| 78.4.4 | Implement db query builder | done | 2026-05-12 | TkQueryBuilder struct: newquery, settable, setfield, setfieldint, buildinsert, buildupdate, qexecute. |
+| 78.4.5 | Wire html.table, chart.new/bar, svg.style, toon.arr, llm.chat multi-turn | done | 2026-05-12 | html.table decodes toke array-of-arrays. chart.new/bar with labels+data. svg.style via new svg_elem_set_style(). toon.arr empty array. llm.chat decodes role/content struct array. |
+| 78.4.6 | Wire http.listen and router closure handler dispatch | done | 2026-05-12 | http.listen parses addr, registers closure as wildcard, calls http_serve. router.post uses 64-slot closure dispatch table. |
+| 78.4.7 | Wire db.lastinsertid | done | 2026-05-12 | Calls db_last_insert_id(conn). |
 
 ### Epic 78.3 — Tier 3: Remaining modules (lower priority)
 

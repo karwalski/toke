@@ -296,6 +296,54 @@ void svg_elem_free(TkSvgElem *elem)
     free(elem);
 }
 
+/* svg_elem_set_style — parse a CSS-like property string and apply to elem.
+ * Recognised: fill, stroke, stroke-width, opacity, font-size, font-family. */
+void svg_elem_set_style(TkSvgElem *elem, const char *css)
+{
+    if (!elem || !css) return;
+    /* Parse "prop:value; prop:value; ..." */
+    const char *p = css;
+    while (*p) {
+        /* skip whitespace / semicolons */
+        while (*p == ' ' || *p == ';' || *p == '\t' || *p == '\n') p++;
+        if (!*p) break;
+        const char *key = p;
+        while (*p && *p != ':') p++;
+        if (!*p) break;
+        size_t klen = (size_t)(p - key);
+        p++; /* skip ':' */
+        while (*p == ' ') p++;
+        const char *val = p;
+        while (*p && *p != ';' && *p != '\n') p++;
+        size_t vlen = (size_t)(p - val);
+        /* trim trailing whitespace from value */
+        while (vlen > 0 && (val[vlen-1] == ' ' || val[vlen-1] == '\t')) vlen--;
+
+        char kbuf[64], vbuf[256];
+        if (klen >= sizeof kbuf) klen = sizeof kbuf - 1;
+        if (vlen >= sizeof vbuf) vlen = sizeof vbuf - 1;
+        memcpy(kbuf, key, klen); kbuf[klen] = '\0';
+        memcpy(vbuf, val, vlen); vbuf[vlen] = '\0';
+
+        if (strcmp(kbuf, "fill") == 0) {
+            free((void *)elem->style.fill);
+            elem->style.fill = strdup(vbuf);
+        } else if (strcmp(kbuf, "stroke") == 0) {
+            free((void *)elem->style.stroke);
+            elem->style.stroke = strdup(vbuf);
+        } else if (strcmp(kbuf, "stroke-width") == 0) {
+            elem->style.stroke_width = strtod(vbuf, NULL);
+        } else if (strcmp(kbuf, "opacity") == 0) {
+            elem->style.opacity = strtod(vbuf, NULL);
+        } else if (strcmp(kbuf, "font-size") == 0) {
+            elem->style.font_size = strtod(vbuf, NULL);
+        } else if (strcmp(kbuf, "font-family") == 0) {
+            free((void *)elem->style.font_family);
+            elem->style.font_family = strdup(vbuf);
+        }
+    }
+}
+
 /* -----------------------------------------------------------------------
  * Document
  * ----------------------------------------------------------------------- */

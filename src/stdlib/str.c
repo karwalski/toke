@@ -221,6 +221,99 @@ StrEncResult str_from_bytes(ByteArray b)
     return r;
 }
 
+/* --- Story 78.4.1: printf-style single-argument format ------------------- */
+
+const char *str_format(const char *fmt, int64_t arg)
+{
+    if (!fmt) return NULL;
+
+    /* First pass: compute output length. */
+    size_t needed = 0;
+    const char *p = fmt;
+    int applied = 0;
+    while (*p) {
+        if (*p == '%' && *(p + 1)) {
+            char spec = *(p + 1);
+            if (spec == '%') {
+                needed += 1;         /* literal % */
+                p += 2;
+            } else if (!applied && (spec == 's')) {
+                const char *s = (const char *)(intptr_t)arg;
+                needed += s ? strlen(s) : 6; /* "(null)" */
+                p += 2;
+                applied = 1;
+            } else if (!applied && (spec == 'd' || spec == 'i')) {
+                char tmp[24];
+                snprintf(tmp, sizeof tmp, "%" PRId64, arg);
+                needed += strlen(tmp);
+                p += 2;
+                applied = 1;
+            } else if (!applied && spec == 'f') {
+                double d;
+                memcpy(&d, &arg, sizeof(d));
+                char tmp[64];
+                snprintf(tmp, sizeof tmp, "%f", d);
+                needed += strlen(tmp);
+                p += 2;
+                applied = 1;
+            } else {
+                needed += 1;
+                p += 1;
+            }
+        } else {
+            needed += 1;
+            p += 1;
+        }
+    }
+
+    char *out = malloc(needed + 1);
+    if (!out) return NULL;
+
+    /* Second pass: build output. */
+    char *w = out;
+    p = fmt;
+    applied = 0;
+    while (*p) {
+        if (*p == '%' && *(p + 1)) {
+            char spec = *(p + 1);
+            if (spec == '%') {
+                *w++ = '%';
+                p += 2;
+            } else if (!applied && spec == 's') {
+                const char *s = (const char *)(intptr_t)arg;
+                if (!s) s = "(null)";
+                size_t slen = strlen(s);
+                memcpy(w, s, slen);
+                w += slen;
+                p += 2;
+                applied = 1;
+            } else if (!applied && (spec == 'd' || spec == 'i')) {
+                char tmp[24];
+                int n = snprintf(tmp, sizeof tmp, "%" PRId64, arg);
+                memcpy(w, tmp, (size_t)n);
+                w += n;
+                p += 2;
+                applied = 1;
+            } else if (!applied && spec == 'f') {
+                double d;
+                memcpy(&d, &arg, sizeof(d));
+                char tmp[64];
+                int n = snprintf(tmp, sizeof tmp, "%f", d);
+                memcpy(w, tmp, (size_t)n);
+                w += n;
+                p += 2;
+                applied = 1;
+            } else {
+                *w++ = *p++;
+            }
+        } else {
+            *w++ = *p++;
+        }
+    }
+    *w = '\0';
+    return out;
+}
+
 /* --- Story 28.1.1: search and transform ---------------------------------- */
 
 int64_t str_index(const char *s, const char *sub)

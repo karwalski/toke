@@ -46,6 +46,11 @@
 #include <string.h>
 #include <strings.h>
 #include <ctype.h>
+#include <regex.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 
 /* ── f64<->i64 bitcast helpers (Story 7.5.2) ───────────────────────── */
 static double i64_to_f64(int64_t i) {
@@ -938,22 +943,76 @@ int64_t tk_http_print_w(int64_t resp) {
     printf("%s\n", (const char *)(intptr_t)resp);
     return 0;
 }
-/* TODO: no direct listen+handler API; use http_serve() + route registration */
-int64_t tk_http_listen_w(int64_t addr, int64_t handler) { (void)addr; (void)handler; return 0; }
+/* tk_http_listen_w — parse addr for port, register handler as wildcard GET route,
+ * then start the HTTP server.  handler is a closure i64. */
+static int64_t g_http_listen_handler = 0;
+
+static Res tk_http_listen_dispatch(Req req) {
+    if (!g_http_listen_handler) return http_Res_err("no handler");
+    int64_t req_body = req.body ? (int64_t)(intptr_t)req.body : 0;
+    int64_t result = call_closure_1(g_http_listen_handler, req_body);
+    const char *body = result ? (const char *)(intptr_t)result : "";
+    return http_Res_ok(body);
+}
+
+int64_t tk_http_listen_w(int64_t addr, int64_t handler) {
+    if (!handler) return -1;
+    /* Parse addr for port — supports ":8080", "localhost:8080", or "8080" */
+    uint16_t port = 8080;
+    if (addr) {
+        const char *a = (const char *)(intptr_t)addr;
+        const char *colon = strrchr(a, ':');
+        if (colon)
+            port = (uint16_t)strtol(colon + 1, NULL, 10);
+        else if (a[0] >= '0' && a[0] <= '9')
+            port = (uint16_t)strtol(a, NULL, 10);
+    }
+    if (port == 0) port = 8080;
+    g_http_listen_handler = handler;
+    http_GET("/*", tk_http_listen_dispatch);
+    http_POST("/*", tk_http_listen_dispatch);
+    return (int64_t)http_serve(port);
+}
 int64_t tk_http_withproxy_w(int64_t client, int64_t proxy_url) {
     return (int64_t)(intptr_t)http_withproxy((HttpClient *)(intptr_t)client, (const char *)(intptr_t)proxy_url);
 }
 
-/* ── router extras ───────────────────────────────────────────────────── */
+/* ── router extras: closure dispatch table ─────────────────────────── */
+
+#define TK_MAX_CLOSURE_ROUTES 64
+
+typedef struct {
+    const char *path;
+    int64_t     handler;  /* closure i64 */
+} TkClosureRoute;
+
+static TkClosureRoute g_closure_routes[TK_MAX_CLOSURE_ROUTES];
+static int            g_closure_route_count = 0;
 
 static TkRouteResp tk_router_closure_dispatch(TkRouteCtx ctx) {
-    (void)ctx;
+    /* Find the matching closure by path */
+    for (int i = 0; i < g_closure_route_count; i++) {
+        if (g_closure_routes[i].path &&
+            strcmp(g_closure_routes[i].path, ctx.path) == 0) {
+            /* Build request body as the arg to the closure */
+            int64_t body_arg = ctx.body ? (int64_t)(intptr_t)ctx.body : 0;
+            int64_t result = call_closure_1(g_closure_routes[i].handler, body_arg);
+            const char *rbody = result ? (const char *)(intptr_t)result : "";
+            return router_resp_json(rbody);
+        }
+    }
     return router_resp_404();
 }
 
 int64_t tk_router_post_w(int64_t router_i64, int64_t path, int64_t handler) {
     if (!router_i64 || !path) return -1;
-    (void)handler; /* TODO: wire closure handler via dispatch table */
+    /* Store the closure handler in the dispatch table */
+    if (g_closure_route_count < TK_MAX_CLOSURE_ROUTES) {
+        g_closure_routes[g_closure_route_count].path =
+            (const char *)(intptr_t)path;
+        g_closure_routes[g_closure_route_count].handler = handler;
+        g_closure_route_count++;
+    }
     router_post((TkRouter *)(intptr_t)router_i64,
                 (const char *)(intptr_t)path,
                 tk_router_closure_dispatch);
@@ -978,11 +1037,77 @@ int64_t tk_router_serve_w(int64_t router_i64, int64_t addr) {
 int64_t tk_net_portavailable_w(int64_t port) {
     return (int64_t)net_portavailable((uint64_t)port);
 }
-int64_t tk_net_listen_w(int64_t addr) { (void)addr; return 0; }
-int64_t tk_net_accept_w(int64_t listener) { (void)listener; return 0; }
-int64_t tk_net_read_w(int64_t conn) { (void)conn; return 0; }
-int64_t tk_net_write_w(int64_t conn, int64_t data) { (void)conn; (void)data; return 0; }
-int64_t tk_net_close_w(int64_t conn) { (void)conn; return 0; }
+int64_t tk_net_listen_w(int64_t addr) {
+    const char *s = (const char *)(intptr_t)addr;
+    if (!s) return 0;
+
+    /* Parse "host:port" — find last ':' to split. */
+    const char *colon = strrchr(s, ':');
+    if (!colon || colon == s) return 0;
+
+    char host[256];
+    size_t hlen = (size_t)(colon - s);
+    if (hlen >= sizeof(host)) return 0;
+    memcpy(host, s, hlen);
+    host[hlen] = '\0';
+
+    int port = atoi(colon + 1);
+    if (port <= 0 || port > 65535) return 0;
+
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return 0;
+
+    int opt = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET;
+    sa.sin_port   = htons((uint16_t)port);
+    if (inet_pton(AF_INET, host, &sa.sin_addr) != 1) {
+        close(fd);
+        return 0;
+    }
+
+    if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+        close(fd);
+        return 0;
+    }
+
+    if (listen(fd, 128) < 0) {
+        close(fd);
+        return 0;
+    }
+
+    return (int64_t)fd;
+}
+
+int64_t tk_net_accept_w(int64_t listener) {
+    int fd = accept((int)listener, NULL, NULL);
+    if (fd < 0) return 0;
+    return (int64_t)fd;
+}
+
+int64_t tk_net_read_w(int64_t conn) {
+    char *buf = malloc(4096);
+    if (!buf) return 0;
+    ssize_t n = read((int)conn, buf, 4095);
+    if (n <= 0) { free(buf); return 0; }
+    buf[n] = '\0';
+    return (int64_t)(intptr_t)buf;
+}
+
+int64_t tk_net_write_w(int64_t conn, int64_t data) {
+    const char *s = (const char *)(intptr_t)data;
+    if (!s) return 0;
+    ssize_t n = write((int)conn, s, strlen(s));
+    return (n < 0) ? 0 : (int64_t)n;
+}
+
+int64_t tk_net_close_w(int64_t conn) {
+    close((int)conn);
+    return 0;
+}
 
 /* ── sys wrappers ────────────────────────────────────────────────────── */
 
@@ -1133,10 +1258,47 @@ int64_t tk_html_h1_w(int64_t text) {
 }
 
 int64_t tk_html_table_w(int64_t data) {
-    /* data is an opaque pointer; without knowing the toke array layout
-     * for table data, we cannot wire this up fully yet. */
-    (void)data;
-    return 0; /* TODO: decode toke table data into headers/rows arrays */
+    /* data is a toke array of string arrays (rows).
+     * Layout: ptr[-1] = row count, ptr[0..n-1] = row pointers.
+     * Each row is itself a toke array: rptr[-1] = col count, rptr[0..m-1] = strings.
+     * The first row is treated as headers. */
+    if (!data) return 0;
+    int64_t *rows = (int64_t *)(intptr_t)data;
+    int64_t nrows = rows[-1];
+    if (nrows <= 0) return 0;
+
+    /* Extract headers from first row */
+    int64_t *hdr_row = (int64_t *)(intptr_t)rows[0];
+    int64_t ncols = hdr_row[-1];
+    if (ncols <= 0) return 0;
+    const char **headers = (const char **)malloc((size_t)ncols * sizeof(const char *));
+    if (!headers) return 0;
+    for (int64_t c = 0; c < ncols; c++)
+        headers[c] = (const char *)(intptr_t)hdr_row[c];
+
+    /* Extract data rows (rows 1..n-1) */
+    int64_t data_nrows = nrows - 1;
+    int64_t total_cells = data_nrows * ncols;
+    const char **cells = NULL;
+    if (total_cells > 0) {
+        cells = (const char **)malloc((size_t)total_cells * sizeof(const char *));
+        if (!cells) { free(headers); return 0; }
+        for (int64_t r = 0; r < data_nrows; r++) {
+            int64_t *rp = (int64_t *)(intptr_t)rows[r + 1];
+            int64_t rc = rp[-1];
+            for (int64_t c = 0; c < ncols; c++) {
+                if (c < rc)
+                    cells[r * ncols + c] = (const char *)(intptr_t)rp[c];
+                else
+                    cells[r * ncols + c] = "";
+            }
+        }
+    }
+    TkHtmlNode *node = html_table(headers, (uint64_t)ncols,
+                                   cells, (uint64_t)data_nrows);
+    free(headers);
+    free(cells);
+    return (int64_t)(intptr_t)node;
 }
 
 int64_t tk_html_render_w(int64_t doc) {
@@ -1177,16 +1339,53 @@ int64_t tk_html_docr_w(int64_t body) {
 
 /* ── chart wrappers (chart.h) ─────────────────────────────────────── */
 int64_t tk_chart_new_w(int64_t dummy) {
-    /* No parameterless chart constructor in chart.h; return placeholder */
+    /* Allocate an empty TkChartSpec (bar type, no labels/datasets).
+     * Caller populates it via tk_chart_bar_w or similar. */
     (void)dummy;
-    return 0; /* TODO: chart.h requires labels/datasets to construct */
+    TkChartSpec *spec = (TkChartSpec *)calloc(1, sizeof(TkChartSpec));
+    if (!spec) return 0;
+    spec->type = CHART_BAR;
+    return (int64_t)(intptr_t)spec;
 }
 
-int64_t tk_chart_bar_w(int64_t chart, int64_t data) {
-    /* Requires decoding toke array layout into StrArray + TkDataset;
-     * chart_bar() needs structured input that doesn't map to 2 i64s. */
-    (void)chart; (void)data;
-    return 0; /* TODO: decode toke chart data layout */
+int64_t tk_chart_bar_w(int64_t labels_i64, int64_t data_i64) {
+    /* labels_i64: toke array of strings (ptr[-1]=count, ptr[0..n-1]=str ptrs)
+     * data_i64:   toke array of f64 values (ptr[-1]=count, ptr[0..n-1]=f64 bits)
+     * Returns a TkChartSpec* for a bar chart. */
+    StrArray labels = { NULL, 0 };
+    if (labels_i64) {
+        int64_t *lp = (int64_t *)(intptr_t)labels_i64;
+        int64_t n = lp[-1];
+        if (n > 0) {
+            labels.data = (const char **)malloc((size_t)n * sizeof(const char *));
+            if (labels.data) {
+                labels.len = (uint64_t)n;
+                for (int64_t i = 0; i < n; i++)
+                    labels.data[i] = (const char *)(intptr_t)lp[i];
+            }
+        }
+    }
+    TkDataset ds;
+    memset(&ds, 0, sizeof(ds));
+    ds.label = "data";
+    ds.color = NULL;
+    if (data_i64) {
+        int64_t *dp = (int64_t *)(intptr_t)data_i64;
+        int64_t n = dp[-1];
+        if (n > 0) {
+            double *vals = (double *)malloc((size_t)n * sizeof(double));
+            if (vals) {
+                for (int64_t i = 0; i < n; i++)
+                    memcpy(&vals[i], &dp[i], sizeof(double));
+                ds.values = vals;
+                ds.nvalues = (uint64_t)n;
+            }
+        }
+    }
+    TkChartSpec *spec = chart_bar(labels, &ds, 1, NULL);
+    free((void *)labels.data);
+    free((void *)ds.values);
+    return (int64_t)(intptr_t)spec;
 }
 
 int64_t tk_chart_addchart_w(int64_t dash, int64_t chart) {
@@ -1425,10 +1624,10 @@ int64_t tk_svg_append_w(int64_t doc, int64_t elem) {
 }
 
 int64_t tk_svg_style_w(int64_t elem, int64_t css) {
-    /* svg_style is a constructor, not a setter on an existing element.
-     * No direct API to set style on an already-created element. */
-    (void)elem; (void)css;
-    return elem; /* TODO: svg.h has no post-creation style setter */
+    if (!elem || !css) return elem;
+    svg_elem_set_style((TkSvgElem *)(intptr_t)elem,
+                       (const char *)(intptr_t)css);
+    return elem;
 }
 
 int64_t tk_svg_render_w(int64_t doc) {
@@ -1508,10 +1707,102 @@ int64_t tk_cache_del_w(int64_t key) {
     return 0;
 }
 
-/* regex — no regex.h / regex.c in stdlib yet; needs implementation */
-int64_t tk_regex_match_w(int64_t pattern, int64_t s) { (void)pattern; (void)s; return 0; }
-int64_t tk_regex_replace_w(int64_t pattern, int64_t s, int64_t repl) { (void)pattern; (void)s; (void)repl; return 0; }
-int64_t tk_regex_findall_w(int64_t pattern, int64_t s) { (void)pattern; (void)s; return 0; }
+/* ── regex — POSIX regex wrappers (Story 78.4.3) ─────────────────────── */
+
+int64_t tk_regex_match_w(int64_t pattern, int64_t s) {
+    const char *pat = (const char *)(intptr_t)pattern;
+    const char *str = (const char *)(intptr_t)s;
+    if (!pat || !str) return 0;
+    regex_t re;
+    if (regcomp(&re, pat, REG_EXTENDED | REG_NOSUB) != 0) return 0;
+    int match = regexec(&re, str, 0, NULL, 0) == 0 ? 1 : 0;
+    regfree(&re);
+    return match;
+}
+
+int64_t tk_regex_replace_w(int64_t pattern, int64_t s, int64_t repl) {
+    const char *pat  = (const char *)(intptr_t)pattern;
+    const char *str  = (const char *)(intptr_t)s;
+    const char *rep  = (const char *)(intptr_t)repl;
+    if (!pat || !str) return s;
+    if (!rep) rep = "";
+    regex_t re;
+    if (regcomp(&re, pat, REG_EXTENDED) != 0) return s;
+    regmatch_t m;
+    if (regexec(&re, str, 1, &m, 0) != 0) {
+        regfree(&re);
+        /* no match — return copy of original */
+        char *copy = strdup(str);
+        return (int64_t)(intptr_t)(copy ? copy : str);
+    }
+    /* build: prefix + replacement + suffix */
+    size_t prefix_len = (size_t)m.rm_so;
+    size_t suffix_len = strlen(str + m.rm_eo);
+    size_t rep_len    = strlen(rep);
+    char *out = malloc(prefix_len + rep_len + suffix_len + 1);
+    if (!out) { regfree(&re); return s; }
+    memcpy(out, str, prefix_len);
+    memcpy(out + prefix_len, rep, rep_len);
+    memcpy(out + prefix_len + rep_len, str + m.rm_eo, suffix_len + 1);
+    regfree(&re);
+    return (int64_t)(intptr_t)out;
+}
+
+int64_t tk_regex_findall_w(int64_t pattern, int64_t s) {
+    const char *pat = (const char *)(intptr_t)pattern;
+    const char *str = (const char *)(intptr_t)s;
+    /* allocate empty toke array: block[0]=count, return block+1 */
+    if (!pat || !str) {
+        int64_t *block = (int64_t *)malloc(sizeof(int64_t));
+        if (!block) return 0;
+        block[0] = 0;
+        return (int64_t)(intptr_t)(block + 1);
+    }
+    regex_t re;
+    if (regcomp(&re, pat, REG_EXTENDED) != 0) {
+        int64_t *block = (int64_t *)malloc(sizeof(int64_t));
+        if (!block) return 0;
+        block[0] = 0;
+        return (int64_t)(intptr_t)(block + 1);
+    }
+    /* collect matches into a temporary buffer */
+    size_t cap = 16;
+    size_t count = 0;
+    int64_t *items = (int64_t *)malloc(cap * sizeof(int64_t));
+    if (!items) { regfree(&re); return 0; }
+
+    const char *cursor = str;
+    regmatch_t m;
+    while (regexec(&re, cursor, 1, &m, 0) == 0) {
+        size_t mlen = (size_t)(m.rm_eo - m.rm_so);
+        char *piece = malloc(mlen + 1);
+        if (!piece) break;
+        memcpy(piece, cursor + m.rm_so, mlen);
+        piece[mlen] = '\0';
+        if (count >= cap) {
+            cap *= 2;
+            int64_t *tmp = (int64_t *)realloc(items, cap * sizeof(int64_t));
+            if (!tmp) { free(piece); break; }
+            items = tmp;
+        }
+        items[count++] = (int64_t)(intptr_t)piece;
+        cursor += m.rm_eo;
+        if (m.rm_eo == m.rm_so) {
+            /* zero-length match — advance by one byte to avoid infinite loop */
+            if (*cursor == '\0') break;
+            cursor++;
+        }
+    }
+    regfree(&re);
+
+    /* build toke-format array: block[0]=len, block[1..N]=elements */
+    int64_t *block = (int64_t *)malloc((count + 1) * sizeof(int64_t));
+    if (!block) { free(items); return 0; }
+    block[0] = (int64_t)count;
+    if (count > 0) memcpy(block + 1, items, count * sizeof(int64_t));
+    free(items);
+    return (int64_t)(intptr_t)(block + 1);
+}
 
 /* ── validation wrappers (basic regex-free checks) ────────────────── */
 int64_t tk_validate_email_w(int64_t s) {
@@ -1892,9 +2183,15 @@ int64_t tk_toon_tostr_w(int64_t v) {
 }
 
 int64_t tk_toon_arr_w(void) {
-    /* No key-based array extraction without a Toon handle + key;
-     * callers should use toon_arr(t, key) via getstring + parse. */
-    return 0; /* TODO: needs (handle, key) arguments */
+    /* Create an empty ToonArray on the heap and return it as a
+     * toke-format array pointer (block[-1]=count, block[0..n-1]=elements).
+     * An empty array has count=0, so we allocate a 1-element block where
+     * block[0] = count = 0, and return &block[1]. */
+    ToonArray *ta = (ToonArray *)calloc(1, sizeof(ToonArray));
+    if (!ta) return 0;
+    ta->data = NULL;
+    ta->len  = 0;
+    return (int64_t)(intptr_t)ta;
 }
 
 int64_t tk_toon_f64_w(int64_t v) {
@@ -1970,11 +2267,36 @@ int64_t tk_llm_complete_w(int64_t prompt) {
 }
 
 int64_t tk_llm_chat_w(int64_t messages) {
-    /* messages is a toke string: treat as a single user message for now.
-     * TODO: decode toke array-of-structs into TkLlmMsg[] for multi-turn. */
+    /* messages is a toke array of message structs.
+     * Each message struct is a 2-element i64 block: [role_ptr, content_ptr].
+     * The array layout: ptr[-1] = count, ptr[0..n-1] = struct pointers.
+     * If messages is a plain string (not an array), treat as single user msg. */
     if (!messages) return 0;
     TkLlmClient *c = llm_ensure_client();
     if (!c) return 0;
+
+    /* Try to interpret as an array of structs.
+     * Heuristic: if ptr[-1] looks like a small positive count (1..100),
+     * treat as an array; otherwise treat as a raw string. */
+    int64_t *ptr = (int64_t *)(intptr_t)messages;
+    int64_t count = ptr[-1];
+    if (count >= 1 && count <= 100) {
+        TkLlmMsg *msgs = (TkLlmMsg *)malloc((size_t)count * sizeof(TkLlmMsg));
+        if (!msgs) return 0;
+        for (int64_t i = 0; i < count; i++) {
+            /* Each element is a pointer to a struct with two i64 fields:
+             * field[0] = role (const char *), field[1] = content (const char *) */
+            int64_t *sp = (int64_t *)(intptr_t)ptr[i];
+            msgs[i].role    = (const char *)(intptr_t)sp[0];
+            msgs[i].content = (const char *)(intptr_t)sp[1];
+        }
+        TkLlmResp r = llm_chat(c, msgs, (uint64_t)count, 0.7);
+        free(msgs);
+        if (r.is_err || !r.content) return 0;
+        return (int64_t)(intptr_t)r.content;
+    }
+
+    /* Fallback: treat as a single user-message string */
     TkLlmMsg msg;
     msg.role    = "user";
     msg.content = (const char *)(intptr_t)messages;

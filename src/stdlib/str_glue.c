@@ -210,10 +210,9 @@ int64_t tk_str_reverse_w(int64_t s) {
     return (int64_t)(intptr_t)str_reverse((const char *)(intptr_t)s);
 }
 
-int64_t tk_str_format_w(int64_t fmt, int64_t args) {
-    /* TODO: str_format not implemented in str.c */
-    (void)args;
-    return fmt; /* return the format string unmodified as fallback */
+int64_t tk_str_format_w(int64_t fmt, int64_t arg) {
+    return (int64_t)(intptr_t)str_format(
+        (const char *)(intptr_t)fmt, arg);
 }
 
 int64_t tk_str_ends_w(int64_t s, int64_t suffix) {

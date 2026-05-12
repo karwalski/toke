@@ -161,11 +161,12 @@ int64_t tk_db_execute_w(int64_t conn, int64_t q) {
     return res.ok > 0 ? (int64_t)res.ok : 1;
 }
 
-/* tk_db_lastinsertid_w — not tracked in current single-connection API.
- * Returns 0 (no reliable last-insert-id without a conn_id). */
+/* tk_db_lastinsertid_w — return the last INSERT rowid.
+ * conn is treated as the conn_id (0 = default global connection). */
 int64_t tk_db_lastinsertid_w(int64_t conn) {
-    (void)conn;
-    return 0; /* TODO: wire to db_last_insert_id() when conn_id mapping exists */
+    U64Result res = db_last_insert_id((int)conn);
+    if (res.is_err) return 0;
+    return (int64_t)res.ok;
 }
 
 /* ── Result accessor wrappers for toke-format row arrays ─────────────── */
@@ -213,11 +214,132 @@ int64_t tk_db_print_w(int64_t rows) {
     return 0;
 }
 
-/* ── Query builder stubs (no C implementation exists) ────────────────── */
-int64_t tk_db_newquery_w(int64_t dummy) { (void)dummy; return 0; /* TODO: no query builder in C API */ }
-int64_t tk_db_settable_w(int64_t q, int64_t t) { (void)q; (void)t; return 0; /* TODO: no query builder in C API */ }
-int64_t tk_db_setfield_w(int64_t q, int64_t f) { (void)q; (void)f; return 0; /* TODO: no query builder in C API */ }
-int64_t tk_db_setfieldint_w(int64_t q, int64_t f, int64_t v) { (void)q; (void)f; (void)v; return 0; /* TODO: no query builder in C API */ }
+/* ── Query builder ───────────────────────────────────────────────────── */
+
+typedef struct {
+    char table[128];
+    char fields[16][128];   /* field names */
+    char values[16][256];   /* field values (string or int) */
+    int  is_int[16];        /* 1 if value is integer */
+    int  field_count;
+} TkQueryBuilder;
+
+/* tk_db_newquery_w — allocate a new empty query builder. */
+int64_t tk_db_newquery_w(int64_t dummy) {
+    (void)dummy;
+    TkQueryBuilder *qb = (TkQueryBuilder *)calloc(1, sizeof(TkQueryBuilder));
+    return (int64_t)(intptr_t)qb;
+}
+
+/* tk_db_settable_w — set the target table name on the query builder. */
+int64_t tk_db_settable_w(int64_t q, int64_t t) {
+    TkQueryBuilder *qb = (TkQueryBuilder *)(intptr_t)q;
+    if (!qb || !t) return 0;
+    snprintf(qb->table, sizeof qb->table, "%s", (const char *)(intptr_t)t);
+    return q;
+}
+
+/* tk_db_setfield_w — add a string field=value pair.
+ * f is a "field=value" string; split on the first '='. */
+int64_t tk_db_setfield_w(int64_t q, int64_t f) {
+    TkQueryBuilder *qb = (TkQueryBuilder *)(intptr_t)q;
+    if (!qb || !f) return 0;
+    if (qb->field_count >= 16) return q;
+    const char *s = (const char *)(intptr_t)f;
+    const char *eq = strchr(s, '=');
+    int idx = qb->field_count;
+    if (eq) {
+        size_t klen = (size_t)(eq - s);
+        if (klen >= sizeof qb->fields[0]) klen = sizeof qb->fields[0] - 1;
+        memcpy(qb->fields[idx], s, klen);
+        qb->fields[idx][klen] = '\0';
+        snprintf(qb->values[idx], sizeof qb->values[0], "%s", eq + 1);
+    } else {
+        snprintf(qb->fields[idx], sizeof qb->fields[0], "%s", s);
+        qb->values[idx][0] = '\0';
+    }
+    qb->is_int[idx] = 0;
+    qb->field_count++;
+    return q;
+}
+
+/* tk_db_setfieldint_w — add an integer field/value pair. */
+int64_t tk_db_setfieldint_w(int64_t q, int64_t f, int64_t v) {
+    TkQueryBuilder *qb = (TkQueryBuilder *)(intptr_t)q;
+    if (!qb || !f) return 0;
+    if (qb->field_count >= 16) return q;
+    int idx = qb->field_count;
+    snprintf(qb->fields[idx], sizeof qb->fields[0], "%s",
+             (const char *)(intptr_t)f);
+    snprintf(qb->values[idx], sizeof qb->values[0], "%lld", (long long)v);
+    qb->is_int[idx] = 1;
+    qb->field_count++;
+    return q;
+}
+
+/* tk_db_buildinsert_w — generate an INSERT SQL string from the builder.
+ * Returns a heap-allocated SQL string. */
+int64_t tk_db_buildinsert_w(int64_t q) {
+    TkQueryBuilder *qb = (TkQueryBuilder *)(intptr_t)q;
+    if (!qb || qb->field_count == 0 || qb->table[0] == '\0') return 0;
+    /* Estimate buffer size */
+    char *buf = (char *)malloc(4096);
+    if (!buf) return 0;
+    int off = snprintf(buf, 4096, "INSERT INTO %s (", qb->table);
+    for (int i = 0; i < qb->field_count; i++) {
+        if (i > 0) off += snprintf(buf + off, 4096 - off, ", ");
+        off += snprintf(buf + off, 4096 - off, "%s", qb->fields[i]);
+    }
+    off += snprintf(buf + off, 4096 - off, ") VALUES (");
+    for (int i = 0; i < qb->field_count; i++) {
+        if (i > 0) off += snprintf(buf + off, 4096 - off, ", ");
+        if (qb->is_int[i])
+            off += snprintf(buf + off, 4096 - off, "%s", qb->values[i]);
+        else
+            off += snprintf(buf + off, 4096 - off, "'%s'", qb->values[i]);
+    }
+    off += snprintf(buf + off, 4096 - off, ")");
+    return (int64_t)(intptr_t)buf;
+}
+
+/* tk_db_buildupdate_w — generate an UPDATE SQL string from the builder.
+ * The first field is used as the WHERE clause (field=value). */
+int64_t tk_db_buildupdate_w(int64_t q) {
+    TkQueryBuilder *qb = (TkQueryBuilder *)(intptr_t)q;
+    if (!qb || qb->field_count < 2 || qb->table[0] == '\0') return 0;
+    char *buf = (char *)malloc(4096);
+    if (!buf) return 0;
+    int off = snprintf(buf, 4096, "UPDATE %s SET ", qb->table);
+    for (int i = 1; i < qb->field_count; i++) {
+        if (i > 1) off += snprintf(buf + off, 4096 - off, ", ");
+        if (qb->is_int[i])
+            off += snprintf(buf + off, 4096 - off, "%s = %s",
+                            qb->fields[i], qb->values[i]);
+        else
+            off += snprintf(buf + off, 4096 - off, "%s = '%s'",
+                            qb->fields[i], qb->values[i]);
+    }
+    /* First field is the WHERE key */
+    if (qb->is_int[0])
+        off += snprintf(buf + off, 4096 - off, " WHERE %s = %s",
+                        qb->fields[0], qb->values[0]);
+    else
+        off += snprintf(buf + off, 4096 - off, " WHERE %s = '%s'",
+                        qb->fields[0], qb->values[0]);
+    return (int64_t)(intptr_t)buf;
+}
+
+/* tk_db_qexecute_w — build INSERT SQL from the query builder and execute it.
+ * Returns affected row count or 0 on error. */
+int64_t tk_db_qexecute_w(int64_t q) {
+    int64_t sql = tk_db_buildinsert_w(q);
+    if (!sql) return 0;
+    StrArray sa = { NULL, 0 };
+    U64Result res = db_exec((const char *)(intptr_t)sql, sa);
+    free((void *)(intptr_t)sql);
+    if (res.is_err) return 0;
+    return res.ok > 0 ? (int64_t)res.ok : 1;
+}
 
 /* row accessor wrappers */
 int64_t tk_row_str_w(int64_t row, int64_t col) {
