@@ -1579,8 +1579,32 @@ static int emit_expr(Ctx *c, const Node *n)
             return t;
         }
         /* String equality: when TK_EQ and at least one side is a str/ptr,
-         * use strcmp instead of pointer comparison. */
-        if (n->op == TK_EQ &&
+         * use strcmp instead of pointer comparison.
+         * Story 80.2.9: Do NOT use strcmp if either side is an array or
+         * struct — those are not NUL-terminated strings. Use icmp eq
+         * (pointer identity) instead to avoid SIGSEGV. */
+        int lhs_is_array = 0, rhs_is_array = 0;
+        if (n->children[0]->kind == NODE_ARRAY_LIT || n->children[0]->kind == NODE_MAP_LIT)
+            lhs_is_array = 1;
+        if (n->child_count > 1 && (n->children[1]->kind == NODE_ARRAY_LIT || n->children[1]->kind == NODE_MAP_LIT))
+            rhs_is_array = 1;
+        /* Also check if the operand is a known struct pointer */
+        if (n->children[0]->kind == NODE_STRUCT_LIT) lhs_is_array = 1;
+        if (n->child_count > 1 && n->children[1]->kind == NODE_STRUCT_LIT) rhs_is_array = 1;
+        /* Check if base is a field of a struct whose type is an array */
+        if (n->children[0]->kind == NODE_FIELD_EXPR) {
+            const StructInfo *si0 = resolve_base_struct(c, n->children[0]->children[0]);
+            if (si0) {
+                char fn0[128]; tok_cp(c->src, n->children[0]->children[1], fn0, sizeof fn0);
+                int fi0 = struct_field_index(si0, fn0);
+                if (fi0 >= 0 && fi0 < si0->field_count) {
+                    const char *ft0 = si0->field_types[fi0];
+                    if (ft0[0] == '@' || (ft0[0] == '$' && strcmp(ft0, "$str")))
+                        lhs_is_array = 1;
+                }
+            }
+        }
+        if (n->op == TK_EQ && !lhs_is_array && !rhs_is_array &&
             (!strcmp(lty, "i8*") || !strcmp(rty, "i8*"))) {
             /* Normalize both sides to ptr */
             int lhs_p = lhs, rhs_p = rhs;
@@ -1602,6 +1626,16 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = call i32 @strcmp(i8* %%t%d, i8* %%t%d)\n", cmpres, lhs_p, rhs_p);
             t = next_tmp(c);
             fprintf(c->out, "  %%t%d = icmp eq i32 %%t%d, 0\n", t, cmpres);
+            return t;
+        }
+        /* Non-string pointer equality (arrays, structs): use icmp eq (80.2.9) */
+        if (n->op == TK_EQ && (lhs_is_array || rhs_is_array) &&
+            (!strcmp(lty, "i8*") || !strcmp(rty, "i8*"))) {
+            int lp = lhs, rp = rhs;
+            if (!strcmp(lty, "i64")) { lp = next_tmp(c); fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", lp, lhs); }
+            if (!strcmp(rty, "i64")) { rp = next_tmp(c); fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", rp, rhs); }
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = icmp eq i8* %%t%d, %%t%d\n", t, lp, rp);
             return t;
         }
         /* ptr < ptr, ptr > ptr: compare pointers directly */
