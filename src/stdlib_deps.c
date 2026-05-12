@@ -332,10 +332,12 @@ int resolve_stdlib_deps_imports_only(const char *stdlib_dir,
         }
     }
 
-    /* Always include tk_runtime.c + its deps (args.c, str.c) */
+    /* Always include tk_runtime.c + its deps (args.c, str.c) + glue for
+     * built-in array/map/str methods (.push, .get, .len, .append, etc.)
+     * which are used without explicit imports. */
     snprintf(out->sources, sizeof out->sources,
-             "%s/tk_runtime.c %s/args.c %s/str.c",
-             stdlib_dir, stdlib_dir, stdlib_dir);
+             "%s/tk_runtime.c %s/args.c %s/str.c %s/str_glue.c %s/collections_glue.c %s/collections.c",
+             stdlib_dir, stdlib_dir, stdlib_dir, stdlib_dir, stdlib_dir, stdlib_dir);
 
     /* Append .c files and vendor sources for each needed module */
     {

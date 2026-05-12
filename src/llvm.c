@@ -1778,11 +1778,15 @@ static int emit_expr(Ctx *c, const Node *n)
             for (int ii = 0; ii < c->import_count; ii++)
                 if (!strcmp(c->imports[ii].alias, alias_im)) { is_mod_im = 1; break; }
             if (!is_mod_im &&
-                (!strcmp(method_im, "append") || !strcmp(method_im, "set") ||
+                (!strcmp(method_im, "append") || !strcmp(method_im, "push") ||
+                 !strcmp(method_im, "set") ||
+                 !strcmp(method_im, "get") ||
                  !strcmp(method_im, "map") || !strcmp(method_im, "filter") ||
                  !strcmp(method_im, "reduce") || !strcmp(method_im, "sort"))) {
                 const char *fn_im;
                 if (!strcmp(method_im, "append"))      fn_im = "tk_array_append_w";
+                else if (!strcmp(method_im, "push"))    fn_im = "tk_array_append_w";
+                else if (!strcmp(method_im, "get"))     fn_im = "tk_str_arrayget_w";
                 else if (!strcmp(method_im, "set"))     fn_im = "tk_map_set_w";
                 else if (!strcmp(method_im, "map"))     fn_im = "tk_arr_map";
                 else if (!strcmp(method_im, "filter"))  fn_im = "tk_arr_filter";

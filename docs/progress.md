@@ -3719,10 +3719,12 @@ The ~170 `_w` glue wrappers in *_glue.c were wired to C implementations but neve
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 80.1.1 | Add str.push, str.arrayget, str.arraylen wrappers | done | 2026-05-12 | push→str_array_append, arrayget reads toke array at index, arraylen reads ptr[-1]. |
+| 80.1.1 | Add str.push, str.arrayget, str.arraylen wrappers | done | 2026-05-12 | Glue wrappers added + llvm.c declaration table entries. |
 | 80.1.2 | Add arr.push wrapper | done | 2026-05-12 | tk_arr_push_w→tk_array_append_w. |
 | 80.1.3 | Add str.containsre wrapper | done | 2026-05-12 | POSIX regex REG_EXTENDED match. |
 | 80.1.4 | Add str.i64tof64 wrapper | done | 2026-05-12 | (double)i cast + f64_to_i64 bitcast. |
+| 80.1.5 | Fix .push()/.get() method dispatch on arrays | done | 2026-05-12 | llvm.c NODE_CALL_EXPR: added "push"→tk_array_append_w, "get"→tk_str_arrayget_w to instance method table. Previously emitted bare `@push` symbol. |
+| 80.1.6 | Include collections_glue.c in base deps | done | 2026-05-12 | stdlib_deps.c: str_glue.c, collections_glue.c, collections.c always included — array/map built-in methods (.push, .get, .append) are used without explicit imports. |
 
 ### Epic 80.2 — LLVM IR codegen bugs
 
