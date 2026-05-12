@@ -3733,6 +3733,9 @@ The ~170 `_w` glue wrappers in *_glue.c were wired to C implementations but neve
 | 80.2.1 | Fix `as i32`/`as u32` cast codegen — alloca wrong type | done | 2026-05-12 | llvm.c: sub-64-bit cast types now return "i64" from expr_llvm_type. Trunc results sext/zext back to i64 before store. |
 | 80.2.2 | Fix math.abs codegen — call returns double instead of i64 | done | 2026-05-12 | llvm.c: tki_type_to_llvm_abi no longer maps f64→"double" for _w wrappers. All glue calls use i64 ABI. |
 | 80.2.3 | Fix struct field access GEP type mismatch | done | 2026-05-12 | llvm.c: bitcast i8*→i64* before struct field GEP in both NODE_FIELD_EXPR and NODE_STRUCT_LIT. |
+| 80.2.4 | Fix ret i8* with i64 value (match result type inference) | done | 2026-05-12 | llvm.c: match-result slot type now inferred from first arm body when no $ok arm found. Fixes struct-returning match expressions. |
+| 80.2.5 | Fix ret i32 with i64 value + narrow-int comparison coercion | done | 2026-05-12 | llvm.c: return coercion handles i64→i32 trunc. Binary op coercion handles mismatched narrow-int widths. |
+| 80.2.6 | Fix i1 stored as i8* (boolean into pointer variable) | done | 2026-05-12 | llvm.c: coerce_value handles i1→i8* via zext+inttoptr. |
 
 ### Epic 78.3 — Tier 3: Remaining modules (lower priority)
 

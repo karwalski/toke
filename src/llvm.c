@@ -1622,12 +1622,18 @@ static int emit_expr(Ctx *c, const Node *n)
         /* Determine the operand LLVM type for binary ops.
          * For narrow int/float types, use the actual type; for i1/ptr, coerce. */
         int is_narrow_int = (!strcmp(lty, "i8") || !strcmp(lty, "i16") || !strcmp(lty, "i32"));
+        int rhs_narrow_int = (!strcmp(rty, "i8") || !strcmp(rty, "i16") || !strcmp(rty, "i32"));
         int is_float_binop = (!strcmp(lty, "double") || !strcmp(lty, "float") ||
                               !strcmp(rty, "double") || !strcmp(rty, "float"));
         /* If only RHS is float, promote LHS and use RHS type as canonical */
         if (is_float_binop && strcmp(lty, "double") && strcmp(lty, "float")) {
             lhs = coerce_value(c, lhs, lty, rty);
             lty = rty;
+        }
+        /* Coerce mismatched narrow-int / i64 operands to the same type */
+        if ((is_narrow_int || rhs_narrow_int) && strcmp(lty, rty) && !is_float_binop) {
+            rhs = coerce_value(c, rhs, rty, lty);
+            rty = lty;
         }
         if (!is_narrow_int && !is_float_binop) {
             /* Coerce i1 operands to i64 for arithmetic/comparisons */
@@ -2558,7 +2564,7 @@ static int emit_expr(Ctx *c, const Node *n)
          */
         int L = next_lbl(c);
 
-        /* Infer result type from Ok arm body (children[1] is first arm) */
+        /* Infer result type from Ok arm body, falling back to first arm */
         const char *res_ty = "i64";
         for (int i = 1; i < n->child_count; i++) {
             const Node *arm = n->children[i];
@@ -2568,6 +2574,15 @@ static int emit_expr(Ctx *c, const Node *n)
                     res_ty = expr_llvm_type(c, arm->children[2]);
                     break;
                 }
+            }
+        }
+        /* If no Ok arm found, infer from first arm body (value match) */
+        if (!strcmp(res_ty, "i64") && n->child_count >= 2) {
+            const Node *arm0 = n->children[1];
+            if (arm0->child_count >= 3) {
+                const char *arm0_ty = expr_llvm_type(c, arm0->children[2]);
+                if (strcmp(arm0_ty, "i64"))
+                    res_ty = arm0_ty;
             }
         }
         /* Normalize: never use i1 as result slot type */
@@ -3104,6 +3119,11 @@ static int coerce_value(Ctx *c, int v, const char *src_ty, const char *dst_ty)
         int iz = next_tmp(c);
         fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", iz, v);
         fprintf(c->out, "  %%t%d = trunc i64 %%t%d to i32\n", z, iz);
+    /* i1 → i8* (boolean stored into pointer variable) */
+    } else if (!strcmp(src_ty, "i1") && !strcmp(dst_ty, "i8*")) {
+        int iz = next_tmp(c);
+        fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", iz, v);
+        fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, iz);
     } else {
         /* Unknown coercion — pass through and hope for the best.
          * This preserves existing behaviour for unhandled cases. */
@@ -3269,6 +3289,12 @@ static void emit_stmt(Ctx *c, const Node *n)
                     int z = next_tmp(c);
                     fprintf(c->out, "  %%t%d = sext %s %%t%d to i64\n", z, ety, v);
                     fprintf(c->out, "  ret i64 %%t%d\n", z);
+                } else if (!strcmp(ety, "i64")
+                           && (!strcmp(rt, "i8") || !strcmp(rt, "i16") || !strcmp(rt, "i32"))) {
+                    /* i64 → narrow int return (Story 80.2.1 fix) */
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = trunc i64 %%t%d to %s\n", z, v, rt);
+                    fprintf(c->out, "  ret %s %%t%d\n", rt, z);
                 } else {
                     fprintf(c->out, "  ret %s %%t%d\n", rt, v);
                 }
