@@ -566,11 +566,11 @@ When the compiler encounters syntax from other languages (Python, Go, JS, Rust, 
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 83.1.1 | Detect Python patterns and suggest toke equivalents | backlog | — | **P1** `def` → `f=`, `return` → `<`, `import x` → `i=x:std.x`, `class` → `t=`, `elif` → `el{if(`, `for x in` → `lp(`, `:` after if/for → `{`, indentation-only blocks → need `{}`, `#` comment → remove (no comments in v0.3), `True/False` → `true/false`, `print()` → `io.println()` |
-| 83.1.2 | Detect Go patterns and suggest toke equivalents | backlog | — | **P1** `func` → `f=`, `package` → `m=`, `if err != nil` → `!$err` or `mt`, `:=` → `let x=`, `fmt.Println` → `io.println`, `for` → `lp`, `var x int` → `let x=mut.0`, `nil` → `$none` |
-| 83.1.3 | Detect JavaScript/TypeScript patterns | backlog | — | **P1** `function` → `f=`, `const/let/var` → `let`, `===` → `=`, `!==` → `!(x=y)`, `=>` arrow → `fn(){}`, `console.log` → `io.println`, `null/undefined` → `$none`, `async/await` → `sc/spawn` |
-| 83.1.4 | Detect Rust patterns and suggest toke equivalents | backlog | — | **P2** `fn` → `f=`, `let mut` → `let x=mut.v`, `match` → `mt`, `impl` → not needed, `&` borrow → not needed (arena), `::` → `.`, `Result<T,E>` → `T!$err`, `Ok(v)/Err(e)` → `$ok/$err` |
-| 83.1.5 | Detect C patterns and suggest toke equivalents | backlog | — | **P2** `#include` → `i=`, `int main()` → `f=main():i64`, `printf` → `io.println`, `->` → `.`, `NULL` → `$none`, `switch/case` → `mt`, `//` comment → remove |
+| 83.1.1 | Detect Python patterns and suggest toke equivalents | done | 2026-05-13 | **P1** W1020: def, return, import, class, elif, print, True/False, None, # comments. 9 patterns. |
+| 83.1.2 | Detect Go patterns and suggest toke equivalents | done | 2026-05-13 | **P1** W1020: func, package, var, fmt.Println. |
+| 83.1.3 | Detect JavaScript/TypeScript patterns | done | 2026-05-13 | **P1** W1020: function, const, console, null, undefined, async, await. |
+| 83.1.4 | Detect Rust patterns and suggest toke equivalents | done | 2026-05-13 | **P2** W1020: fn, impl, match, pub. |
+| 83.1.5 | Detect C patterns and suggest toke equivalents | done | 2026-05-13 | **P2** W1020: printf, switch, while, int, char, void. |
 
 
 
@@ -627,19 +627,19 @@ All compiler outputs must produce structured JSON diagnostics suitable for autom
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 84.1.1 | Audit all lexer diagnostics for structure and fix hints | backlog | — | **P0** Every E1xxx must have error code, line/col, span, offending token text, and fix field with toke equivalent. |
-| 84.1.2 | Audit all parser diagnostics for structure and fix hints | backlog | — | **P0** E2002 show found+expected. E2003 suggest insertion point. E2004 show opening delimiter location. |
+| 84.1.1 | Audit all lexer diagnostics for structure and fix hints | done | 2026-05-13 | **P0** All E1xxx have got/expected/fix fields. diag.c extract_fields() parses variadic key-value pairs. |
+| 84.1.2 | Audit all parser diagnostics for structure and fix hints | done | 2026-05-13 | **P0** eerr/eerr_got/xp/opt_semi all emit got/expected/fix. E2002-E2005 have contextual fix suggestions. |
 | 84.1.3 | Audit name resolution diagnostics | backlog | — | **P1** E3011 suggest similar names (Levenshtein). E3012 show previous declaration location. |
 | 84.1.4 | Audit type checker diagnostics | backlog | — | **P1** Type mismatch show expected vs actual. Error propagation show type chain. |
 | 84.1.5 | Audit codegen/linker diagnostics | backlog | — | **P2** Missing stdlib suggest correct import. Unresolved symbol show which module provides it. |
-| 84.1.6 | Multi-error recovery in lexer | backlog | — | **P0** Continue after errors, report all lex errors in one pass. LLM gets ALL errors not one-at-a-time. |
-| 84.1.7 | Multi-error recovery in parser | backlog | — | **P0** After sync(), resume parsing. Collect up to 20 errors before stopping. |
+| 84.1.6 | Multi-error recovery in lexer | done | 2026-05-13 | **P0** Lexer continues after errors, collects up to 20 per pass. record_error() + skip for E1001/E1003/E1004. |
+| 84.1.7 | Multi-error recovery in parser | done | 2026-05-13 | **P0** Parser sync() to next statement boundary, NULL-propagation guards in expression chain, error cap at 20. |
 | 84.1.8 | Multi-error recovery in name resolver | backlog | — | **P1** Continue after E3011/E3012, collect all unresolved names. |
 | 84.1.9 | Multi-error recovery in type checker | backlog | — | **P1** Continue after type mismatches, collect all per function. |
-| 84.1.10 | Cross-language pattern detection (Python) | backlog | — | **P1** def/return/import/class/elif/for-in/print → toke equivalents in fix field. |
-| 84.1.11 | Cross-language pattern detection (Go/JS/Rust/C) | backlog | — | **P2** func/package/:=/function/const/===/#include/printf → toke equivalents. |
+| 84.1.10 | Cross-language pattern detection (Python) | done | 2026-05-13 | **P1** Covered by 83.1.1 + parser W2021 for == and : after if/for. |
+| 84.1.11 | Cross-language pattern detection (Go/JS/Rust/C) | done | 2026-05-13 | **P2** Covered by 83.1.2-5 + names.c foreign_keyword_fix() for E3011. |
 | 84.1.12 | JSON diagnostic schema validation | backlog | — | **P1** JSON Schema for diagnostic format + test validating all emitted diagnostics. |
-| 84.1.13 | Populate file path in diagnostic output | backlog | — | **P0** "file":"" is always empty. Fill with actual source path for repair loop. |
+| 84.1.13 | Populate file path in diagnostic output | done | 2026-05-13 | **P0** diag.c: emit_json() now uses s_source_file instead of hardcoded "". |
 | 84.1.14 | Add source_line field to diagnostics | backlog | — | **P1** Include actual source line text so LLM sees context without reading file. |
 | 84.1.15 | Human-readable --diag-text improvements | backlog | — | **P2** Show source line, caret at error column, message, fix suggestion (Rust/Clang style). |
 

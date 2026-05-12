@@ -766,11 +766,39 @@ static int resolve_node(const Node *node, const char *src,
                         Scope *scope, Arena *arena, int *had_error);
 
 /*
+ * foreign_keyword_fix — return a fix suggestion if the identifier matches
+ * a keyword from another language (Python, Go, JS, Rust, C).
+ *
+ * This complements the lexer-level W1020 warnings (story 83.1.x) by
+ * catching foreign keywords at the name-resolution level, where they
+ * have survived lexing as valid toke identifiers.
+ *
+ * Returns a static fix string, or NULL if the name is not a known
+ * foreign keyword.  Story 84.1.11.
+ */
+static const char *foreign_keyword_fix(const char *name) {
+    if (!strcmp(name, "def")) return "Python: use f=name():type{body};";
+    if (!strcmp(name, "return")) return "use <expr; for return";
+    if (!strcmp(name, "func")) return "Go: use f=name():type{body};";
+    if (!strcmp(name, "function")) return "JS: use f=name():type{body};";
+    if (!strcmp(name, "fn")) return "Rust: use f=name():type{body};";
+    if (!strcmp(name, "printf")) return "C: use io.println()";
+    if (!strcmp(name, "console")) return "JS: use io.println()";
+    if (!strcmp(name, "var")) return "use let x=mut.val; for mutable or let x=val; for immutable";
+    if (!strcmp(name, "const")) return "use let x=val;";
+    if (!strcmp(name, "null")) return "use 0 or empty struct";
+    if (!strcmp(name, "None")) return "use 0 or empty struct";
+    return NULL;
+}
+
+/*
  * resolve_ident — resolve an identifier reference against the scope chain.
  *
  * Looks up the identifier's name (extracted from the source via
  * tok_start / tok_len) in the scope chain.  If not found, emits E3011
- * ("identifier is not declared") and sets *had_error.
+ * ("identifier is not declared") and sets *had_error.  If the name
+ * matches a known foreign keyword, the fix field is populated with the
+ * toke equivalent (story 84.1.11).
  *
  * This is called for both NODE_IDENT and NODE_TYPE_IDENT nodes,
  * because toke treats type names and value names in the same namespace.
@@ -791,9 +819,10 @@ static void resolve_ident(const Node *node, const char *src,
         char nbuf[201];
         memcpy(nbuf, name, (size_t)mlen);
         nbuf[mlen] = '\0';
+        const char *fix = foreign_keyword_fix(nbuf);
         snprintf(msg, sizeof(msg), "identifier '%s' is not declared", nbuf);
         diag_emit(DIAG_ERROR, E3011, node->start, node->line, node->col,
-                  msg, "fix", NULL);
+                  msg, "fix", fix, NULL);
         *had_error = 1;
     }
 }

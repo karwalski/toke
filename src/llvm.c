@@ -3224,19 +3224,25 @@ static int coerce_value(Ctx *c, int v, const char *src_ty, const char *dst_ty)
         fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, v);
     } else if (!strcmp(src_ty, "i64") && !strcmp(dst_ty, "i1")) {
         fprintf(c->out, "  %%t%d = trunc i64 %%t%d to i1\n", z, v);
-    /* float ↔ integer (Story 57.13.1) */
+    /* float ↔ integer: use bitcast to preserve bit pattern for ABI coercion
+     * (passing double to i64-ABI wrapper). Explicit `as i64` cast in source
+     * uses fptosi via NODE_CAST_EXPR, not this path. (Story 57.13.1, 80.2.2) */
     } else if (!strcmp(src_ty, "double") && !strcmp(dst_ty, "i64")) {
-        fprintf(c->out, "  %%t%d = fptosi double %%t%d to i64\n", z, v);
+        fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", z, v);
     } else if (!strcmp(src_ty, "i64") && !strcmp(dst_ty, "double")) {
-        fprintf(c->out, "  %%t%d = sitofp i64 %%t%d to double\n", z, v);
+        fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double\n", z, v);
     } else if (!strcmp(src_ty, "float") && !strcmp(dst_ty, "double")) {
         fprintf(c->out, "  %%t%d = fpext float %%t%d to double\n", z, v);
     } else if (!strcmp(src_ty, "double") && !strcmp(dst_ty, "float")) {
         fprintf(c->out, "  %%t%d = fptrunc double %%t%d to float\n", z, v);
     } else if (!strcmp(src_ty, "float") && !strcmp(dst_ty, "i64")) {
-        fprintf(c->out, "  %%t%d = fptosi float %%t%d to i64\n", z, v);
+        int fe = next_tmp(c);
+        fprintf(c->out, "  %%t%d = fpext float %%t%d to double\n", fe, v);
+        fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", z, fe);
     } else if (!strcmp(src_ty, "i64") && !strcmp(dst_ty, "float")) {
-        fprintf(c->out, "  %%t%d = sitofp i64 %%t%d to float\n", z, v);
+        int bd = next_tmp(c);
+        fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double\n", bd, v);
+        fprintf(c->out, "  %%t%d = fptrunc double %%t%d to float\n", z, bd);
     /* i1 ↔ double (comparison result to float) */
     } else if (!strcmp(src_ty, "i1") && !strcmp(dst_ty, "double")) {
         int iz = next_tmp(c);

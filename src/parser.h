@@ -115,6 +115,7 @@ typedef enum { DIAG_WARNING = 0, DIAG_ERROR = 1 } DiagSeverity;
 #define E2010 2010   /* pointer type *T used outside extern function */
 #define E2015 2015   /* duplicate field name in struct declaration  */
 #define W2020 2020   /* identifier starts with keyword — did you mean 'let x'? */
+#define W2021 2021   /* cross-language pattern detected (story 84.1.10) */
 
 /*
  * diag_emit — forward declaration matching the variadic convention.

@@ -125,19 +125,29 @@ void diag_reset(void)
 void diag_suppress(int on) { s_suppress = on; }
 void diag_reset_counts(void) { s_error_count = 0; s_warn_count = 0; }
 
-/* Extract "fix" value from variadic key/value tail.
+/* Extracted key/value fields from the variadic tail of diag_emit(). */
+typedef struct {
+    const char *fix;
+    const char *expected;
+    const char *got;
+} DiagFields;
+
+/* Extract "fix", "expected", and "got" values from variadic key/value tail.
  * Convention: alternating (key, value) pairs; NULL key OR NULL value
- * terminates the scan.  Only "fix" key is extracted; others are skipped. */
-static const char *
-extract_fix(va_list ap)
+ * terminates the scan. */
+static DiagFields
+extract_fields(va_list ap)
 {
+    DiagFields f = { NULL, NULL, NULL };
     const char *key;
     while ((key = va_arg(ap, const char *)) != NULL) {
         const char *val = va_arg(ap, const char *);
-        if (strcmp(key, "fix") == 0) return val;  /* val may be NULL */
+        if      (strcmp(key, "fix")      == 0) f.fix      = val;
+        else if (strcmp(key, "expected") == 0) f.expected = val;
+        else if (strcmp(key, "got")      == 0) f.got      = val;
         if (val == NULL) break;
     }
-    return NULL;
+    return f;
 }
 
 /*
@@ -199,7 +209,7 @@ static void
 emit_json(DiagSeverity sev, int code,
           int byte_offset, int line, int col,
           int span_start, int span_end,
-          const char *message, const char *fix)
+          const char *message, const DiagFields *fields)
 {
     char diag_id[16], code_str[8];
     snprintf(diag_id,  sizeof(diag_id),  "D%04d", s_seq);
@@ -215,20 +225,35 @@ emit_json(DiagSeverity sev, int code,
             "\"message\":\"",
             diag_id, code_str, severity_str(sev), phase_for_code(code));
     json_escape(stderr, message);
+    fprintf(stderr, "\",\"file\":\"");
+    json_escape(stderr, s_source_file);
     fprintf(stderr,
-            "\",\"file\":\"\","
+            "\","
             "\"pos\":{\"offset\":%d,\"line\":%d,\"col\":%d},"
             "\"span_start\":%d,\"span_end\":%d,"
-            "\"context\":[],\"expected\":\"\",\"got\":\"\"",
+            "\"context\":[]",
             byte_offset, line, col,
             (span_start >= 0) ? span_start : byte_offset,
             (span_end   >= 0) ? span_end   : byte_offset);
 
-    if (fix != NULL && fix[0] != '\0') {
-        fputs(",\"fix\":\"", stderr);
-        json_escape(stderr, fix);
-        fputc('"', stderr);
-    }
+    /* expected field */
+    fputs(",\"expected\":\"", stderr);
+    if (fields && fields->expected && fields->expected[0])
+        json_escape(stderr, fields->expected);
+    fputc('"', stderr);
+
+    /* got field */
+    fputs(",\"got\":\"", stderr);
+    if (fields && fields->got && fields->got[0])
+        json_escape(stderr, fields->got);
+    fputc('"', stderr);
+
+    /* fix field — always present for consistent schema */
+    fputs(",\"fix\":\"", stderr);
+    if (fields && fields->fix && fields->fix[0])
+        json_escape(stderr, fields->fix);
+    fputc('"', stderr);
+
     fputs("}\n", stderr);
 }
 
@@ -297,7 +322,7 @@ diag_emit(DiagSeverity sev, int code,
 {
     va_list ap;
     va_start(ap, message);
-    const char *fix = extract_fix(ap);
+    DiagFields fields = extract_fields(ap);
     va_end(ap);
 
     update_counters(sev);
@@ -305,9 +330,9 @@ diag_emit(DiagSeverity sev, int code,
     if (s_int_mode == DIAG_INT_TEXT)
         emit_text(sev, code, line, col, message);
     else if (s_int_mode == DIAG_INT_SARIF)
-        buffer_sarif(sev, code, byte_offset, line, col, -1, -1, message, fix);
+        buffer_sarif(sev, code, byte_offset, line, col, -1, -1, message, fields.fix);
     else
-        emit_json(sev, code, byte_offset, line, col, -1, -1, message, fix);
+        emit_json(sev, code, byte_offset, line, col, -1, -1, message, &fields);
 }
 
 void
@@ -317,7 +342,7 @@ diag_emit_span(DiagSeverity sev, int code,
 {
     va_list ap;
     va_start(ap, message);
-    const char *fix = extract_fix(ap);
+    DiagFields fields = extract_fields(ap);
     va_end(ap);
 
     update_counters(sev);
@@ -325,10 +350,10 @@ diag_emit_span(DiagSeverity sev, int code,
         emit_text(sev, code, line, col, message);
     else if (s_int_mode == DIAG_INT_SARIF)
         buffer_sarif(sev, code, byte_offset, line, col,
-                     byte_offset, byte_offset + span_len, message, fix);
+                     byte_offset, byte_offset + span_len, message, fields.fix);
     else
         emit_json(sev, code, byte_offset, line, col,
-                  byte_offset, byte_offset + span_len, message, fix);
+                  byte_offset, byte_offset + span_len, message, &fields);
 }
 
 /* ── SARIF v2.1.0 flush ───────────────────────────────────────────── */

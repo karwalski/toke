@@ -45,8 +45,8 @@
  *   - On any unexpected token, emit a diagnostic (E2002/E2003/E2004).
  *   - Advance tokens until a semicolon or closing brace is found, then
  *     resume parsing at that synchronisation point.
- *   - A hard error cap (errs > 16) prevents runaway diagnostics on badly
- *     malformed input.
+ *   - A hard error cap (MAX_PARSE_ERRORS = 20) prevents runaway diagnostics
+ *     on badly malformed input.
  *
  * All AST nodes are arena-allocated — no explicit free is needed.
  *
@@ -80,6 +80,9 @@
  *   errs — running count of emitted errors (used for the bail-out cap)
  */
 typedef struct { Token *toks; int n; int pos; const char *src; Arena *a; int errs; Profile profile; int in_sc; } Parser;
+
+/* Maximum number of parse errors before the parser gives up. */
+#define MAX_PARSE_ERRORS 20
 
 /*
  * peek — return the TokenKind at the current position without advancing.
@@ -171,27 +174,46 @@ static int  teq(Parser *p, Token *t, const char *s) { int l=(int)strlen(s); retu
 /*
  * eerr — emit an error diagnostic and increment the error counter.
  *
- * Wraps diag_emit() with DIAG_ERROR severity.  The "fix" key-value pair
- * is always NULL (no automated fix suggestion from the parser).
+ * Wraps diag_emit() with DIAG_ERROR severity and a contextual fix hint.
  */
-static void eerr(Parser *p, int code, Token *t, const char *msg) { p->errs++; diag_emit(DIAG_ERROR,code,t->start,t->line,t->col,msg,"fix",NULL); }
+static void eerr(Parser *p, int code, Token *t, const char *msg) {
+    const char *fix = NULL;
+    if (code == E2003) fix = "insert ';' after expression";
+    else if (code == E2004) fix = "add the missing closing delimiter";
+    else if (code == E2001) fix = "reorder declarations: m= first, then i=, t=, f=";
+    p->errs++;
+    diag_emit(DIAG_ERROR, code, t->start, t->line, t->col, msg,
+              "fix", fix, NULL);
+}
 
-/* eerr_got — emit error with the actual token text included in the message. */
+/*
+ * tok_text_extract — extract the text of a token into a caller buffer.
+ */
+static void tok_text_extract(Parser *p, Token *t, char *buf, int bufsz) {
+    int tlen = t->len;
+    if (tlen > 0 && tlen < bufsz - 1 && p->src) {
+        memcpy(buf, p->src + t->start, (size_t)tlen);
+        buf[tlen] = '\0';
+    } else {
+        buf[0] = '\0';
+    }
+}
+
+/* eerr_got — emit error with structured got/expected/fix fields. */
 static void eerr_got(Parser *p, int code, Token *t, const char *msg) {
     char buf[256], tok_text[64];
-    int tlen = t->len;
-    if (tlen > 0 && tlen < (int)sizeof(tok_text) - 1 && p->src) {
-        memcpy(tok_text, p->src + t->start, (size_t)tlen);
-        tok_text[tlen] = '\0';
-    } else {
-        tok_text[0] = '\0';
-    }
+    tok_text_extract(p, t, tok_text, (int)sizeof(tok_text));
     if (tok_text[0])
         snprintf(buf, sizeof buf, "%s, got '%s'", msg, tok_text);
     else
         snprintf(buf, sizeof buf, "%s", msg);
+    const char *fix = NULL;
+    if (code == E2005) fix = "expected a type: scalar (i32, bool, Str), struct ($Name), array (@(T)), or function type ((T):R)";
+    else if (code == E2002) fix = "check syntax; see toke spec for valid constructs";
     p->errs++;
-    diag_emit(DIAG_ERROR, code, t->start, t->line, t->col, buf, "fix", NULL);
+    diag_emit(DIAG_ERROR, code, t->start, t->line, t->col, buf,
+              "fix", fix,
+              "got", tok_text, NULL);
 }
 
 /*
@@ -213,7 +235,29 @@ static void ewarn(Parser *p, int code, Token *t, const char *msg, const char *fi
  * parsing.  If TK_EOF is reached first, the function returns without
  * consuming it, allowing the caller's loop to terminate naturally.
  */
-static void sync(Parser *p) { while(peek(p)!=TK_EOF){TokenKind k=peek(p);adv(p);if(k==TK_SEMICOLON||k==TK_RBRACE)return;} }
+/*
+ * sync — panic-mode error recovery for statements.
+ *
+ * Advances tokens until a synchronisation point is reached: a semicolon,
+ * a closing brace, or a token that starts a new statement/declaration
+ * (without consuming that token).  This allows the parser to resume
+ * cleanly at the next statement or declaration boundary.
+ */
+static void sync(Parser *p) {
+    while (peek(p) != TK_EOF) {
+        TokenKind k = peek(p);
+        /* Consume the synchronisation token when it is a separator */
+        if (k == TK_SEMICOLON || k == TK_RBRACE) { adv(p); return; }
+        /* Stop WITHOUT consuming if we see something that starts a new
+         * statement or declaration — the main loop will handle it. */
+        if (k == TK_KW_LET || k == TK_KW_IF || k == TK_KW_LP ||
+            k == TK_KW_RT  || k == TK_KW_BR || k == TK_KW_SC ||
+            k == TK_KW_MT  || k == TK_KW_F  || k == TK_KW_T  ||
+            k == TK_KW_I   || k == TK_KW_M  || k == TK_LT)
+            return;
+        adv(p);
+    }
+}
 
 /*
  * opt_semi — consume an optional semicolon separator.
@@ -226,7 +270,14 @@ static void sync(Parser *p) { while(peek(p)!=TK_EOF){TokenKind k=peek(p);adv(p);
 static void opt_semi(Parser *p) {
     if(peek(p)==TK_SEMICOLON){adv(p);return;}
     if(peek(p)==TK_RBRACE||peek(p)==TK_EOF) return;
-    eerr(p,E2003,cur(p),"missing semicolon");
+    Token *t = cur(p);
+    char tok_text[64];
+    tok_text_extract(p, t, tok_text, (int)sizeof(tok_text));
+    p->errs++;
+    diag_emit(DIAG_ERROR, E2003, t->start, t->line, t->col, "missing semicolon",
+              "fix", "insert ';' after expression",
+              "got", tok_text,
+              "expected", ";", NULL);
 }
 
 /*
@@ -244,10 +295,29 @@ static Token *xp(Parser *p, TokenKind k, const char *w) {
     if(peek(p)==k) return adv(p);
     char msg[128];
     snprintf(msg, sizeof msg, "expected %s", w);
-    if (peek(p)==TK_EOF)
-        eerr(p, E2004, cur(p), msg);
-    else
-        eerr_got(p, E2002, cur(p), msg);
+    Token *t = cur(p);
+    char tok_text[64];
+    tok_text_extract(p, t, tok_text, (int)sizeof(tok_text));
+    if (peek(p)==TK_EOF) {
+        char full_msg[256];
+        snprintf(full_msg, sizeof full_msg, "%s, got end of file", msg);
+        p->errs++;
+        diag_emit(DIAG_ERROR, E2004, t->start, t->line, t->col, full_msg,
+                  "fix", "add the missing closing delimiter",
+                  "got", "end of file",
+                  "expected", w, NULL);
+    } else {
+        char full_msg[256];
+        if (tok_text[0])
+            snprintf(full_msg, sizeof full_msg, "%s, got '%s'", msg, tok_text);
+        else
+            snprintf(full_msg, sizeof full_msg, "%s", msg);
+        p->errs++;
+        diag_emit(DIAG_ERROR, E2002, t->start, t->line, t->col, full_msg,
+                  "fix", "check syntax; see toke spec for valid constructs",
+                  "got", tok_text,
+                  "expected", w, NULL);
+    }
     return NULL;
 }
 
@@ -366,7 +436,7 @@ static Node *parse_type_expr(Parser *p) {
     Token *t=cur(p);
     if(is_scalar(p,t)){Node *n=mk(p,NODE_TYPE_EXPR,t);adv(p);return n;}
     if(peek(p)==TK_TYPE_IDENT){Node *n=mk(p,NODE_TYPE_IDENT,t);adv(p);return n;}
-    eerr(p,E2005,t,"unexpected token in type position"); return NULL;
+    eerr_got(p,E2005,t,"unexpected token in type position"); return NULL;
 }
 
 /* ── Literals ─────────────────────────────────────────────────────── */
@@ -570,6 +640,7 @@ static Node *parse_primary(Parser *p) {
 /* PostfixExpr = PrimaryExpr ('.' IDENT | '.' 'get' '(' Expr ')' | '[' Expr ']')* */
 static Node *parse_postfix(Parser *p) {
     Node *l=parse_primary(p);
+    if(!l) return NULL;
     for(;;){
         if(peek(p)==TK_DOT){
             Token *d=adv(p);Token *f=cur(p);
@@ -628,6 +699,7 @@ static Node *parse_postfix(Parser *p) {
 /* CallExpr = PostfixExpr ('(' ArgList ')')* */
 static Node *parse_call(Parser *p) {
     Node *l=parse_postfix(p);
+    if(!l) return NULL;
     while(peek(p)==TK_LPAREN){Token *op=adv(p);Node *c=mk(p,NODE_CALL_EXPR,op);ch(p,c,l);
         if(peek(p)!=TK_RPAREN){ch(p,c,parse_expr(p));while(peek(p)==TK_SEMICOLON){adv(p);ch(p,c,parse_expr(p));}}
         if(!xp(p,TK_RPAREN,"')'"))eerr(p,E2004,cur(p),"unclosed delimiter");l=c;}
@@ -656,6 +728,7 @@ static Node *parse_call(Parser *p) {
 /* CastExpr = CallExpr ('as' TypeExpr)?  /  PropagateExpr = CastExpr ('!' TypeExpr)? */
 static Node *parse_cast_prop(Parser *p) {
     Node *l=parse_call(p);
+    if(!l) return NULL;
     if(peek(p)==TK_KW_AS){Token *t=adv(p);Node *n=mk(p,NODE_CAST_EXPR,t);ch(p,n,l);ch(p,n,parse_type_expr(p));l=n;}
     if(peek(p)==TK_BANG){Token *t=adv(p);Node *n=mk(p,NODE_PROPAGATE_EXPR,t);ch(p,n,l);ch(p,n,parse_type_expr(p));l=n;}
     return l;
@@ -700,6 +773,7 @@ static Node *parse_unary(Parser *p) {
 /* MulExpr = UnaryExpr (('*'|'/'|'%') UnaryExpr)* */
 static Node *parse_mul(Parser *p) {
     Node *l=parse_unary(p);
+    if(!l) return NULL;
     while(peek(p)==TK_STAR||peek(p)==TK_SLASH||peek(p)==TK_PERCENT){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_unary(p));l=n;}
     return l;
 }
@@ -720,6 +794,7 @@ static Node *parse_mul(Parser *p) {
 /* AddExpr = MulExpr (('+'|'-') MulExpr)* */
 static Node *parse_add(Parser *p) {
     Node *l=parse_mul(p);
+    if(!l) return NULL;
     while(peek(p)==TK_PLUS||peek(p)==TK_MINUS){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_mul(p));l=n;}
     return l;
 }
@@ -744,13 +819,22 @@ static Node *parse_add(Parser *p) {
 /* CompareExpr = AddExpr (('<'|'>'|'=') AddExpr)? */
 static Node *parse_compare(Parser *p) {
     Node *l=parse_add(p);
-    if(peek(p)==TK_LT||peek(p)==TK_GT||peek(p)==TK_EQ){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_add(p));return n;}
+    if(!l) return NULL;
+    if(peek(p)==TK_LT||peek(p)==TK_GT||peek(p)==TK_EQ){
+        Token *t=cur(p);TokenKind op=adv(p)->kind;
+        /* Detect '==' — two consecutive TK_EQ tokens (story 84.1.10). */
+        if(op==TK_EQ&&peek(p)==TK_EQ){
+            ewarn(p,W2021,cur(p),"'==' detected; toke uses '=' for equality","toke uses `=` for equality");
+            adv(p); /* consume the extra '=' */
+        }
+        Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=TK_EQ;ch(p,n,l);ch(p,n,parse_add(p));return n;}
     return l;
 }
 
 /* AndExpr = CompareExpr ('&&' CompareExpr)* */
 static Node *parse_and(Parser *p) {
     Node *l=parse_compare(p);
+    if(!l) return NULL;
     while(peek(p)==TK_AND){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_compare(p));l=n;}
     return l;
 }
@@ -758,6 +842,7 @@ static Node *parse_and(Parser *p) {
 /* OrExpr = AndExpr ('||' AndExpr)* */
 static Node *parse_or(Parser *p) {
     Node *l=parse_and(p);
+    if(!l) return NULL;
     while(peek(p)==TK_OR){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_and(p));l=n;}
     return l;
 }
@@ -896,6 +981,11 @@ static Node *parse_loop_stmt(Parser *p) {
     if(!xp(p,TK_EQ,"'='")){ sync(p);return n;}
     ch(p,step,parse_expr(p)); ch(p,n,step);
     if(!xp(p,TK_RPAREN,"')'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+    /* Detect Python-style ':' after lp(...) — story 84.1.10 */
+    if(peek(p)==TK_COLON){
+        ewarn(p,W2021,cur(p),"':' after loop condition is Python syntax","replace `:` with `{`");
+        adv(p); /* consume the ':' */
+    }
     if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
     ch(p,n,parse_stmt_list(p,t));
     if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
@@ -930,6 +1020,11 @@ static Node *parse_if_stmt(Parser *p) {
     if(!xp(p,TK_LPAREN,"'('")){ sync(p);return n;}
     ch(p,n,parse_expr(p));
     if(!xp(p,TK_RPAREN,"')'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+    /* Detect Python-style ':' after if(...) — story 84.1.10 */
+    if(peek(p)==TK_COLON){
+        ewarn(p,W2021,cur(p),"':' after if(...) is Python syntax","replace `:` with `{`");
+        adv(p); /* consume the ':' */
+    }
     if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
     ch(p,n,parse_stmt_list(p,t));
     if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
@@ -1033,15 +1128,20 @@ static Node *parse_stmt(Parser *p) {
             Node *sp=mk(p,NODE_SPAWN_EXPR,st);ch(p,sp,parse_expr(p));
             ch(p,n,sp);
         } else {
-            ch(p,n,parse_expr(p));
+            Node *val=parse_expr(p);
+            if(val) ch(p,n,val);
+            else { sync(p); return n; }
         }
         opt_semi(p);
         return n;}
     case TK_KW_BR:{adv(p);Node *n=mk(p,NODE_BREAK_STMT,t);opt_semi(p);return n;}
     case TK_KW_RT:
     case TK_LT:{adv(p);Node *n=mk(p,NODE_RETURN_STMT,t);
-        if(peek(p)!=TK_SEMICOLON&&peek(p)!=TK_RBRACE&&peek(p)!=TK_EOF)
-            ch(p,n,parse_expr(p));
+        if(peek(p)!=TK_SEMICOLON&&peek(p)!=TK_RBRACE&&peek(p)!=TK_EOF){
+            Node *val=parse_expr(p);
+            if(val) ch(p,n,val);
+            else { sync(p); return n; }
+        }
         opt_semi(p);return n;}
     case TK_KW_SC:{
         /* ScopeStmt: 'sc' '{' StmtList '}' — structured concurrency block */
@@ -1069,9 +1169,14 @@ static Node *parse_stmt(Parser *p) {
         /* AssignStmt: IDENT '=' Expr ';' — one-token ahead check on '=' */
         if(p->pos+1<p->n&&p->toks[p->pos+1].kind==TK_EQ){
             adv(p);adv(p);Node *n=mk(p,NODE_ASSIGN_STMT,t);ch(p,n,mk(p,NODE_IDENT,t));
-            ch(p,n,parse_expr(p));opt_semi(p);return n;}
+            Node *val=parse_expr(p);
+            if(val) ch(p,n,val); else { sync(p); return n; }
+            opt_semi(p);return n;}
         __attribute__((fallthrough));
-    default:{Node *n=mk(p,NODE_EXPR_STMT,t);ch(p,n,parse_expr(p));opt_semi(p);return n;}
+    default:{Node *n=mk(p,NODE_EXPR_STMT,t);
+        Node *val=parse_expr(p);
+        if(val) ch(p,n,val); else { sync(p); return n; }
+        opt_semi(p);return n;}
     }
 }
 
@@ -1093,7 +1198,13 @@ static Node *parse_stmt(Parser *p) {
  */
 static Node *parse_stmt_list(Parser *p, Token *ref) {
     Node *n=mk(p,NODE_STMT_LIST,ref);
-    while(peek(p)!=TK_RBRACE&&peek(p)!=TK_EOF){int sv=p->pos;Node *s=parse_stmt(p);if(s)ch(p,n,s);if(p->pos==sv){sync(p);}}
+    while(peek(p)!=TK_RBRACE&&peek(p)!=TK_EOF){
+        if(p->errs>=MAX_PARSE_ERRORS) break;
+        int sv=p->pos;
+        Node *s=parse_stmt(p);
+        if(s) ch(p,n,s);
+        if(p->pos==sv){ sync(p); }
+    }
     return n;
 }
 
@@ -1415,7 +1526,7 @@ static Node *parse_func_decl(Parser *p) {
  *
  * Error handling:
  *   - Unrecognised top-level tokens emit E2002 and trigger sync().
- *   - A hard cap of 16 errors prevents runaway diagnostics.
+ *   - A hard cap of 20 errors (MAX_PARSE_ERRORS) prevents runaway diagnostics.
  *   - Returns the (possibly incomplete) root node even on errors, so
  *     downstream passes can report additional diagnostics.
  *   - Returns NULL only on truly fatal conditions (NULL input, zero
@@ -1474,17 +1585,18 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
             else { ch(&p,n,parse_module_path(&p)); opt_semi(&p); ch(&p,root,n); }
         }
     }
-    else { diag_emit(DIAG_ERROR,E2001,first->start,first->line,first->col,"module declaration must appear first","fix",NULL); p.errs++; }
+    else { diag_emit(DIAG_ERROR,E2001,first->start,first->line,first->col,"module declaration must appear first","fix","add 'm=modulename;' as the first declaration",NULL); p.errs++; }
     int phase=1; /* 1=import 2=type 3=const 4=func */
     while(peek(&p)!=TK_EOF){
+        if(p.errs>=MAX_PARSE_ERRORS) break;
         Token *t=cur(&p); int cp;
         int di=is_decl_ident(&p);
         if(peek(&p)==TK_KW_I||(di==1))     cp=1;
         else if(peek(&p)==TK_KW_T||(di==2)) cp=2;
         else if(peek(&p)==TK_IDENT&&di==0)   cp=3;
         else if(peek(&p)==TK_KW_F||(di==4)) cp=4;
-        else{eerr(&p,E2002,t,"unexpected token");sync(&p);if(p.errs>16)break;continue;}
-        if(cp<phase){diag_emit(DIAG_ERROR,E2001,t->start,t->line,t->col,"declaration ordering violation","fix",NULL);p.errs++;}
+        else{eerr(&p,E2002,t,"unexpected token");sync(&p);if(p.errs>=MAX_PARSE_ERRORS)break;continue;}
+        if(cp<phase){diag_emit(DIAG_ERROR,E2001,t->start,t->line,t->col,"declaration ordering violation","fix","reorder declarations: m= first, then i=, t=, f=",NULL);p.errs++;}
         else if(cp>phase) phase=cp;
         Node *d;
         if(cp==1){

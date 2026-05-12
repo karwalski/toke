@@ -48,15 +48,19 @@
  *   E1001 — Invalid escape sequence in a string literal.
  *   E1002 — Unterminated string literal (EOF before closing quote).
  *   E1003 — Character outside the allowed character set.
- *   E1004 — Unterminated string at EOF (distinct from mid-file E1002).
+ *   E1004 — Digit-starting identifier (e.g. 3abc) or unterminated string
+ *           at EOF.
  *   E1005 — Invalid numeric literal (0x/0b with no digits, etc.).
  *   E1006 — Uppercase keyword in default syntax mode.
  *   W1010 — String interpolation \( in legacy profile (not supported).
  *   W1011 — Identifier starts with a keyword prefix (hint).
  *
- * Errors cause lex() to return -1 immediately after emitting the
- * diagnostic via diag_emit().  Warnings (W1010, W1011) are non-fatal;
- * lexing continues normally.
+ * Errors are collected without halting the scan.  After emitting a
+ * diagnostic via diag_emit(), the lexer skips past the offending token
+ * and continues.  Up to LEX_MAX_ERRORS (20) errors are collected per
+ * file; once that limit is reached the scan stops early.  lex() returns
+ * -1 if any errors were recorded.  Warnings (W1010, W1011) are
+ * non-fatal; lexing continues normally.
  * =========================================================================
  */
 
@@ -70,24 +74,29 @@
 #define LEX_E1001 1001   /* invalid escape sequence                       */
 #define LEX_E1002 1002   /* unterminated string literal                   */
 #define LEX_E1003 1003   /* character outside Profile 1 set               */
-#define LEX_E1004 1004   /* unterminated string at EOF                    */
+#define LEX_E1004 1004   /* digit-starting identifier / unterminated str  */
 #define LEX_E1005 1005   /* invalid numeric literal                       */
 #define LEX_E1006 1006   /* uppercase keyword in default syntax mode      */
 #define LEX_W1010 1010   /* string interpolation not supported (warning)  */
 #define LEX_W1011 1011   /* identifier starts with keyword prefix (hint)  */
+#define LEX_W1020 1020   /* foreign keyword detected (cross-lang hint)    */
+
+/* Maximum number of errors before the lexer stops scanning. */
+#define LEX_MAX_ERRORS 20
 
 /*
  * Lexer — private scanner state.
  *
  * All fields are value-initialised by lex() before the scan loop begins.
- *   src     — pointer to the source text (not NUL-terminated)
- *   len     — total byte length of `src`
- *   pos     — current read position (byte offset into src)
- *   line    — current 1-based line number
- *   col     — current 1-based column number
- *   out     — caller-supplied token output buffer
- *   out_cap — maximum number of tokens `out` can hold
- *   out_n   — number of tokens emitted so far
+ *   src        — pointer to the source text (not NUL-terminated)
+ *   len        — total byte length of `src`
+ *   pos        — current read position (byte offset into src)
+ *   line       — current 1-based line number
+ *   col        — current 1-based column number
+ *   out        — caller-supplied token output buffer
+ *   out_cap    — maximum number of tokens `out` can hold
+ *   out_n      — number of tokens emitted so far
+ *   err_count  — number of lexical errors encountered so far
  */
 typedef struct {
     const char *src;
@@ -99,6 +108,7 @@ typedef struct {
     int         out_cap;
     int         out_n;
     Profile     profile;
+    int         err_count;
 } Lexer;
 
 /* Forward declarations. */
@@ -108,49 +118,35 @@ static int  lex_ident (Lexer *l, int start, int line, int col);
 static void advance(Lexer *l);
 static int  emit(Lexer *l, TokenKind k, int start, int len, int line, int col);
 
+/*
+ * record_error — Increment the error counter and return 1 if the maximum
+ *                has been reached, signalling that the caller should stop.
+ */
+static int record_error(Lexer *l)
+{
+    l->err_count++;
+    return l->err_count >= LEX_MAX_ERRORS;
+}
+
 /* -------------------------------------------------------------------------
  * Character classification helpers
- * -------------------------------------------------------------------------
- * These small predicates are used throughout the scanner to classify the
- * current character without repeating range checks inline.  They operate
- * on ASCII values only; multi-byte encodings are not relevant because
- * Profile 1 is pure ASCII.
  * ----------------------------------------------------------------------- */
 
-/*
- * is_letter — Return non-zero if `c` is an ASCII letter (a-z, A-Z).
- */
 static int is_letter(char c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
-/*
- * is_digit — Return non-zero if `c` is an ASCII decimal digit (0-9).
- */
 static int is_digit(char c) { return c >= '0' && c <= '9'; }
 
-/*
- * is_ident_cont — Return non-zero if `c` may appear as the second or
- * subsequent character of an identifier (letter, digit, or underscore).
- */
 static int is_ident_cont(char c) { return is_letter(c) || is_digit(c); }
 static int is_ident_cont_legacy(char c) { return is_letter(c) || is_digit(c) || c == '_'; }
 
-/*
- * is_hex — Return non-zero if `c` is a valid hexadecimal digit
- * (0-9, a-f, A-F).  Used when parsing 0x... integer literals and
- * \xHH escape sequences inside strings.
- */
 static int is_hex(char c)
 {
     return is_digit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
 
-/*
- * is_whitespace — Return non-zero if `c` is a whitespace character that
- * the lexer should silently skip (space, tab, carriage return, newline).
- */
 static int is_whitespace(char c)
 {
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
@@ -158,18 +154,10 @@ static int is_whitespace(char c)
 
 /* -------------------------------------------------------------------------
  * Keyword table
- * -------------------------------------------------------------------------
- * The 12 toke keywords plus the two boolean literals are stored in a flat
- * table.  classify_ident() performs a linear scan — the table is small
- * enough (14 entries) that a hash map would add complexity without a
- * measurable speed-up.
- *
- * Note that "true" and "false" map to TK_BOOL_LIT, not to keyword tokens.
  * ----------------------------------------------------------------------- */
 
 typedef struct { const char *word; TokenKind kind; } KwEntry;
 
-/* Legacy-mode keywords: uppercase single-letter, plus multi-char keywords. */
 static const KwEntry KEYWORDS_LEGACY[] = {
     { "F",     TK_KW_F   }, { "T",     TK_KW_T   },
     { "I",     TK_KW_I   }, { "M",     TK_KW_M   },
@@ -182,11 +170,6 @@ static const KwEntry KEYWORDS_LEGACY[] = {
 };
 #define KW_LEGACY_COUNT ((int)(sizeof(KEYWORDS_LEGACY) / sizeof(KEYWORDS_LEGACY[0])))
 
-/* Default-mode keywords: single-letter declarations (m/f/i/t) are NOT in
- * the keyword table — the parser handles them via lookahead (is_decl_ident),
- * keeping them as TK_IDENT so that e.g. `i` inside a function body is a
- * variable.  Uppercase single-letter forms (M/F/T/I) are rejected by
- * lex_ident() with E1006 when followed by '='. */
 static const KwEntry KEYWORDS_DEFAULT[] = {
     { "if",    TK_KW_IF  }, { "el",    TK_KW_EL  },
     { "lp",    TK_KW_LP  }, { "br",    TK_KW_BR  },
@@ -197,25 +180,6 @@ static const KwEntry KEYWORDS_DEFAULT[] = {
 };
 #define KW_DEFAULT_COUNT ((int)(sizeof(KEYWORDS_DEFAULT) / sizeof(KEYWORDS_DEFAULT[0])))
 
-/*
- * classify_ident — Determine whether a scanned identifier is a keyword,
- *                  boolean literal, type identifier, or plain identifier.
- *
- * Parameters:
- *   src     — full source text
- *   start   — byte offset where the identifier begins
- *   len     — length of the identifier in bytes
- *   profile — PROFILE_DEFAULT or PROFILE_LEGACY
- *
- * Returns:
- *   The appropriate TokenKind.  Lookup proceeds as follows:
- *     1. If the identifier is >= 32 characters it cannot be a keyword
- *        (all keywords are <= 5 chars), so skip the table search.
- *     2. Copy the identifier into a NUL-terminated local buffer and
- *        compare against every entry in the profile's keyword table.
- *     3. If no keyword matches:
- *        - Both modes: uppercase-initial -> TK_TYPE_IDENT, else TK_IDENT.
- */
 static TokenKind classify_ident(const char *src, int start, int len,
                                 Profile profile)
 {
@@ -239,28 +203,13 @@ static TokenKind classify_ident(const char *src, int start, int len,
         if (strcmp(buf, table[i].word) == 0) return table[i].kind;
 
 not_kw:
-    /* Both modes: uppercase-initial identifiers produce TK_TYPE_IDENT.
-     * In default mode, $ + ident is also a type reference (handled by the
-     * parser), but TK_TYPE_IDENT is retained for backward compatibility
-     * so that existing code using uppercase type names still works. */
     return (src[start] >= 'A' && src[start] <= 'Z') ? TK_TYPE_IDENT : TK_IDENT;
 }
 
-/*
- * advance — Move the scanner forward by one byte, updating position
- *           tracking (line and column numbers).
- *
- * Parameters:
- *   l — lexer state
- *
- * Invariants:
- *   - If l->pos >= l->len the call is a no-op (prevents reading past the
- *     source buffer).
- *   - On a newline character the line counter increments and the column
- *     resets to 1 BEFORE pos is incremented, so the newline itself is
- *     reported at its original position.
- *   - Column is incremented for every non-newline character.
- */
+/* -------------------------------------------------------------------------
+ * advance / emit
+ * ----------------------------------------------------------------------- */
+
 static void advance(Lexer *l)
 {
     if (l->pos >= l->len) return;
@@ -269,26 +218,6 @@ static void advance(Lexer *l)
     l->pos++;
 }
 
-/*
- * emit — Append a token to the output buffer.
- *
- * Parameters:
- *   l     — lexer state (contains the output buffer and its capacity)
- *   k     — token kind to record
- *   start — byte offset in the source where this token begins
- *   len   — length of the token's lexeme in bytes
- *   line  — 1-based line number where the token starts
- *   col   — 1-based column number where the token starts
- *
- * Returns:
- *    0 on success.
- *   -1 if the output buffer is full (l->out_n >= l->out_cap).
- *
- * Invariants:
- *   - On success, l->out_n is incremented by exactly 1.
- *   - The token is stored at l->out[l->out_n] (the old value) before
- *     the counter advances.
- */
 static int emit(Lexer *l, TokenKind k, int start, int len, int line, int col)
 {
     if (l->out_n >= l->out_cap) return -1;
@@ -301,32 +230,10 @@ static int emit(Lexer *l, TokenKind k, int start, int len, int line, int col)
     return 0;
 }
 
-/*
- * lex_number — Scan a numeric literal starting at the current position.
- *
- * Parameters:
- *   l     — lexer state (l->pos points to the first digit)
- *   start — byte offset where this number token begins (same as l->pos
- *           on entry, captured by the caller before any advance)
- *   line  — line number at the start of the token
- *   col   — column number at the start of the token
- *
- * Returns:
- *    0 on success (token emitted).
- *   -1 if the output buffer overflows.
- *
- * Supported formats:
- *   - Decimal integer:   one or more digits, e.g. "42"
- *   - Hexadecimal:       "0x" or "0X" prefix followed by hex digits
- *   - Binary:            "0b" or "0B" prefix followed by '0' and '1'
- *   - Floating-point:    digits, a dot, then more digits, e.g. "3.14"
- *
- * Non-obvious logic — float detection:
- *   A dot is only treated as a decimal point if the character immediately
- *   after the dot is a digit.  This prevents "42.method" from being
- *   mis-parsed as a float; the lexer would emit TK_INT_LIT for "42",
- *   then TK_DOT, then the identifier "method" in the main loop.
- */
+/* -------------------------------------------------------------------------
+ * lex_number
+ * ----------------------------------------------------------------------- */
+
 static int lex_number(Lexer *l, int start, int line, int col)
 {
     int is_float = 0;
@@ -337,21 +244,43 @@ static int lex_number(Lexer *l, int start, int line, int col)
             advance(l); advance(l);
             if (l->pos >= l->len || !is_hex(l->src[l->pos])) {
                 diag_emit(DIAG_ERROR, LEX_E1005, start, line, col,
-                          "invalid numeric literal: 0x requires hex digits", NULL);
+                          "invalid numeric literal: 0x requires hex digits",
+                          "fix", "provide hex digits after 0x (e.g., 0xFF)",
+                          "got", "0x with no hex digits",
+                          "expected", "hexadecimal digit (0-9, a-f)", NULL);
                 return -1;
             }
             while (l->pos < l->len && is_hex(l->src[l->pos])) advance(l);
+            if (l->pos < l->len && is_letter(l->src[l->pos])) {
+                while (l->pos < l->len && is_ident_cont(l->src[l->pos])) advance(l);
+                diag_emit(DIAG_ERROR, LEX_E1004, start, line, col,
+                          "identifier must not start with a digit",
+                          "fix", "identifiers must start with a-z or A-Z",
+                          "expected", "letter (a-z, A-Z) to start an identifier", NULL);
+                return -1;
+            }
             return emit(l, TK_INT_LIT, start, l->pos - start, line, col);
         }
         if (next == 'b' || next == 'B') {
             advance(l); advance(l);
             if (l->pos >= l->len || (l->src[l->pos] != '0' && l->src[l->pos] != '1')) {
                 diag_emit(DIAG_ERROR, LEX_E1005, start, line, col,
-                          "invalid numeric literal: 0b requires binary digits", NULL);
+                          "invalid numeric literal: 0b requires binary digits",
+                          "fix", "provide binary digits after 0b (e.g., 0b1010)",
+                          "got", "0b with no binary digits",
+                          "expected", "binary digit (0 or 1)", NULL);
                 return -1;
             }
             while (l->pos < l->len &&
                    (l->src[l->pos] == '0' || l->src[l->pos] == '1')) advance(l);
+            if (l->pos < l->len && is_letter(l->src[l->pos])) {
+                while (l->pos < l->len && is_ident_cont(l->src[l->pos])) advance(l);
+                diag_emit(DIAG_ERROR, LEX_E1004, start, line, col,
+                          "identifier must not start with a digit",
+                          "fix", "identifiers must start with a-z or A-Z",
+                          "expected", "letter (a-z, A-Z) to start an identifier", NULL);
+                return -1;
+            }
             return emit(l, TK_INT_LIT, start, l->pos - start, line, col);
         }
     }
@@ -362,57 +291,32 @@ static int lex_number(Lexer *l, int start, int line, int col)
         advance(l);
         while (l->pos < l->len && is_digit(l->src[l->pos])) advance(l);
     }
+    /* Detect digit-starting identifiers: e.g. "3abc", "42xyz". */
+    if (l->pos < l->len && is_letter(l->src[l->pos])) {
+        while (l->pos < l->len && is_ident_cont(l->src[l->pos])) advance(l);
+        diag_emit(DIAG_ERROR, LEX_E1004, start, line, col,
+                  "identifier must not start with a digit", NULL);
+        return -1;
+    }
     return emit(l, is_float ? TK_FLOAT_LIT : TK_INT_LIT,
                 start, l->pos - start, line, col);
 }
 
-/*
- * lex_string — Scan a string literal, handling escape sequences.
- *
- * Parameters:
- *   l     — lexer state; l->pos points to the character immediately AFTER
- *           the opening double-quote (the caller already advanced past it)
- *   start — byte offset of the opening '"' character
- *   line  — line number at the opening '"'
- *   col   — column number at the opening '"'
- *
- * Returns:
- *    0 on success (TK_STR_LIT emitted; the token span includes both
- *      the opening and closing quotes).
- *   -1 on error (diagnostic emitted; the caller should propagate -1).
- *
- * Supported escape sequences:
- *   \"  \\  \n  \t  \r  \0  — single-character escapes
- *   \xHH                   — hex escape (exactly two hex digits required)
- *
- * Non-obvious logic — string interpolation (\():
- *   toke defines \( ... ) as string interpolation syntax (spec §8.7).
- *   In default profile, interpolation is fully supported — the lexer
- *   silently skips the interpolation expression (tracking parenthesis
- *   nesting depth) and includes it in the TK_STR_LIT span.  In legacy
- *   profile (Profile 1), a W1010 warning is emitted since interpolation
- *   is not supported there.  Either way, the rest of the string is
- *   scanned normally, producing better downstream error recovery.
- *
- * Error conditions:
- *   - Backslash followed by an unrecognised character -> E1001.
- *   - \x not followed by exactly two hex digits       -> E1001.
- *   - EOF reached before a closing '"'                -> E1004.
- */
+/* -------------------------------------------------------------------------
+ * lex_string
+ * ----------------------------------------------------------------------- */
+
 static int lex_string(Lexer *l, int start, int line, int col)
 {
-    /* The string body loop consumes ALL characters between the opening and
-     * closing double-quote.  Only two characters receive special treatment:
-     *   '"'  — terminates the string
-     *   '\\' — starts an escape sequence
-     * Everything else — including operator-like sequences such as '--', '<',
-     * '>', '!', etc. — is literal string content.  No comment or operator
-     * recognition occurs inside string literals (story 7.6.5). */
+    int had_error = 0;
+
     while (l->pos < l->len) {
         char c = l->src[l->pos];
         if (c == '"') {
             advance(l);
-            return emit(l, TK_STR_LIT, start, l->pos - start, line, col);
+            if (!had_error)
+                return emit(l, TK_STR_LIT, start, l->pos - start, line, col);
+            return -1;
         }
         if (c == '\\') {
             advance(l);
@@ -429,8 +333,11 @@ static int lex_string(Lexer *l, int start, int line, int col)
                 } else {
                     diag_emit(DIAG_ERROR, LEX_E1001, l->pos, l->line, l->col,
                               "invalid escape sequence: \\x requires two hex digits",
-                              NULL);
-                    return -1;
+                              "fix", "use \\xHH with exactly two hex digits (e.g., \\x0A)",
+                              "got", "\\x without two hex digits",
+                              "expected", "\\xHH (two hex digits 0-9, a-f)", NULL);
+                    had_error = 1;
+                    if (record_error(l)) return -1;
                 }
             } else if (esc == '(') {
                 if (l->profile == PROFILE_LEGACY) {
@@ -447,47 +354,38 @@ static int lex_string(Lexer *l, int start, int line, int col)
                     advance(l);
                 }
             } else {
+                char esc_got[8];
+                snprintf(esc_got, sizeof(esc_got), "\\%c", esc);
+                char esc_msg[128];
+                snprintf(esc_msg, sizeof(esc_msg),
+                         "invalid escape sequence '\\%c' in string literal", esc);
                 diag_emit(DIAG_ERROR, LEX_E1001, l->pos - 1, l->line, l->col - 1,
-                          "invalid escape sequence in string literal", NULL);
-                return -1;
+                          esc_msg,
+                          "fix", "valid escapes are: \\n \\t \\r \\\\ \\\" \\0 \\xHH",
+                          "got", esc_got,
+                          "expected", "one of: \\n \\t \\r \\\\ \\\" \\0 \\xHH", NULL);
+                had_error = 1;
+                if (record_error(l)) return -1;
+                /* Skip the bad escape character and continue scanning */
+                advance(l);
             }
         } else {
             advance(l);
         }
     }
     diag_emit(DIAG_ERROR, LEX_E1004, start, line, col,
-              "unterminated string literal at end of file", NULL);
+              "unterminated string literal at end of file",
+              "fix", "add closing double-quote '\"' to terminate the string",
+              "got", "end of file",
+              "expected", "closing '\"'", NULL);
+    record_error(l);
     return -1;
 }
 
-/*
- * lex_ident — Scan the remainder of an identifier or keyword.
- *
- * Parameters:
- *   l     — lexer state; l->pos points to the SECOND character of the
- *           identifier (the main loop already advanced past the first
- *           letter)
- *   start — byte offset of the first character
- *   line  — line number at the first character
- *   col   — column number at the first character
- *
- * Returns:
- *    0 on success (token emitted).
- *   -1 if the output buffer overflows.
- *
- * After consuming all contiguous identifier-continuation characters
- * (letters and digits), the full lexeme is passed to classify_ident()
- * which decides whether it is a keyword, boolean literal, type
- * identifier, or plain identifier.
- */
-/* W1011 keyword-prefix check (KW_HINT_PREFIXES, check_keyword_prefix) removed
- * — replaced by W2020 in the parser at statement level (story 44.1.4). */
+/* -------------------------------------------------------------------------
+ * lex_ident
+ * ----------------------------------------------------------------------- */
 
-/*
- * Uppercase keyword letters that are valid in legacy mode but must be
- * rejected in default mode.  Maps each uppercase letter to its lowercase
- * equivalent for the error message.
- */
 typedef struct { char upper; const char *lower; } UpperKwEntry;
 static const UpperKwEntry UPPER_KW_MAP[] = {
     { 'M', "m=" }, { 'F', "f=" }, { 'T', "t=" },
@@ -495,14 +393,58 @@ static const UpperKwEntry UPPER_KW_MAP[] = {
 };
 #define UPPER_KW_COUNT ((int)(sizeof(UPPER_KW_MAP) / sizeof(UPPER_KW_MAP[0])))
 
+typedef struct { const char *python_kw; const char *message; const char *fix; } PyKwEntry;
+
+static const PyKwEntry PYTHON_KEYWORDS[] = {
+    { "def",    "Python keyword 'def' detected; toke uses f=name():type{body}",
+                "replace 'def name(args):' with 'f=name(args):type{'" },
+    { "return", "Python keyword 'return' detected; toke uses <expr for returns",
+                "replace 'return expr' with '<expr'" },
+    { "import", "Python keyword 'import' detected; toke uses i=alias:std.module;",
+                "replace 'import module' with 'i=alias:std.module;'" },
+    { "class",  "Python keyword 'class' detected; toke uses t=$typename{fields}",
+                "replace 'class Name:' with 't=$typename{fields}'" },
+    { "elif",   "Python keyword 'elif' detected; toke uses el{if(cond){",
+                "replace 'elif cond:' with 'el{if(cond){'" },
+    { "print",  "Python keyword 'print' detected; toke uses io.println()",
+                "replace 'print(...)' with 'io.println(...)'" },
+    { "None",   "Python keyword 'None' detected; toke uses 0 or struct with empty field",
+                "replace 'None' with '0' or an empty-field struct" },
+};
+#define PY_KW_COUNT ((int)(sizeof(PYTHON_KEYWORDS) / sizeof(PYTHON_KEYWORDS[0])))
+
+static int check_python_keyword(const char *buf, int start, int line, int col)
+{
+    int i;
+    for (i = 0; i < PY_KW_COUNT; i++) {
+        if (strcmp(buf, PYTHON_KEYWORDS[i].python_kw) == 0) {
+            diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
+                      PYTHON_KEYWORDS[i].message,
+                      "fix", PYTHON_KEYWORDS[i].fix, NULL);
+            return 1;
+        }
+    }
+    if (strcmp(buf, "True") == 0) {
+        diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
+                  "Python boolean 'True' detected; toke uses 'true'",
+                  "fix", "replace 'True' with 'true'", NULL);
+        return 1;
+    }
+    if (strcmp(buf, "False") == 0) {
+        diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
+                  "Python boolean 'False' detected; toke uses 'false'",
+                  "fix", "replace 'False' with 'false'", NULL);
+        return 1;
+    }
+    return 0;
+}
+
 static int lex_ident(Lexer *l, int start, int line, int col)
 {
     while (l->pos < l->len && is_ident_cont(l->src[l->pos])) advance(l);
 
-    /* Detect v0.2 underscore identifiers: to_int, get_user, etc.
-     * Emit a helpful error pointing to --migrate. */
+    /* Detect v0.2 underscore identifiers */
     if (l->profile == PROFILE_DEFAULT && l->pos < l->len && l->src[l->pos] == '_') {
-        /* Consume the full underscore identifier for the error span */
         while (l->pos < l->len && is_ident_cont_legacy(l->src[l->pos])) advance(l);
         int full_len = l->pos - start;
         char id_buf[128];
@@ -514,16 +456,16 @@ static int lex_ident(Lexer *l, int start, int line, int col)
                  "identifier '%s' contains underscore (v0.2 syntax); "
                  "run `toke --migrate` to convert to v0.3", id_buf);
         diag_emit(DIAG_ERROR, LEX_E1003, start, line, col, msg,
-                  "fix", "remove underscores: concatenate words (e.g., to_int -> toint)", NULL);
+                  "fix", "remove underscores: concatenate words (e.g., to_int -> toint)",
+                  "got", id_buf,
+                  "expected", "identifier without underscores (a-z, A-Z, 0-9)", NULL);
         return -1;
     }
 
     int len = l->pos - start;
     TokenKind kind = classify_ident(l->src, start, len, l->profile);
 
-    /* In default mode, reject uppercase single-letter declaration keywords
-     * (M, F, T, I, C) when followed by '='.  These are only valid in
-     * --legacy mode; default syntax uses lowercase (m=, f=, t=, i=, c=). */
+    /* Reject uppercase single-letter declaration keywords in default mode */
     if (l->profile == PROFILE_DEFAULT && len == 1) {
         char ch = l->src[start];
         if (ch >= 'A' && ch <= 'Z' && l->pos < l->len && l->src[l->pos] == '=') {
@@ -534,76 +476,51 @@ static int lex_ident(Lexer *l, int start, int line, int col)
                              "uppercase keyword `%c=` is not valid in default "
                              "syntax mode — use `%s` instead",
                              ch, UPPER_KW_MAP[i].lower);
+                    {
+                    char got_kw[4], fix_kw[64];
+                    snprintf(got_kw, sizeof(got_kw), "%c=", ch);
+                    snprintf(fix_kw, sizeof(fix_kw),
+                             "replace '%c=' with '%s'", ch, UPPER_KW_MAP[i].lower);
                     diag_emit(DIAG_ERROR, LEX_E1006, start, line, col,
-                              msg, "fix",
-                              "use lowercase declaration keyword", NULL);
+                              msg, "fix", fix_kw,
+                              "got", got_kw,
+                              "expected", UPPER_KW_MAP[i].lower, NULL);
+                    }
                     return -1;
                 }
             }
         }
     }
 
-    /* W1011 keyword-prefix check removed — replaced by W2020 in the parser
-     * (story 44.1.4), which fires only at statement level to reduce false
-     * positives inside expressions. */
+    /* W1020: detect Python keywords and emit migration hints. */
+    if (kind == TK_IDENT || kind == TK_TYPE_IDENT) {
+        char py_buf[32];
+        int py_len = len < (int)sizeof(py_buf) - 1 ? len : (int)sizeof(py_buf) - 1;
+        for (int pi = 0; pi < py_len; pi++) py_buf[pi] = l->src[start + pi];
+        py_buf[py_len] = '\0';
+        check_python_keyword(py_buf, start, line, col);
+    }
+
     return emit(l, kind, start, len, line, col);
 }
 
-/*
- * lex — Tokenise a source buffer into a caller-supplied Token array.
- *
- * This is the public entry point for the lexer.
- *
- * Parameters:
- *   src     — pointer to the source text (need not be NUL-terminated)
- *   src_len — number of bytes in `src`
- *   out     — pre-allocated array of Token structs to fill
- *   out_cap — capacity of `out` (maximum tokens it can hold)
- *
- * Returns:
- *   On success: the number of tokens written to `out`, including the
- *               trailing TK_EOF sentinel.
- *   On error:   -1 (a diagnostic has already been emitted via diag_emit).
- *
- * Invariants:
- *   - The returned token count is always >= 1 on success (at minimum the
- *     TK_EOF token is emitted).
- *   - Tokens are emitted in source order; their `start` fields are
- *     monotonically non-decreasing.
- *   - No heap allocation is performed.  The function is safe to call from
- *     any context where `out` has been pre-allocated.
- *
- * Main loop structure:
- *   1. Skip whitespace.
- *   2. If the character is a letter  -> lex_ident (keywords resolved
- *      after the full identifier is consumed).
- *   3. If the character is a digit   -> lex_number.
- *   4. If the character is '"'       -> lex_string.
- *   5. Otherwise, look up the character in the single-char symbol table
- *      (the switch statement).  If it is not recognised, emit E1003.
- *
- * Non-obvious logic — advance before lex_ident / lex_string:
- *   For identifiers and strings, the main loop calls advance() to move
- *   past the initial character (the first letter, or the opening '"')
- *   before delegating to the sub-scanner.  The sub-scanners therefore
- *   begin with l->pos pointing at the SECOND character of the lexeme.
- *   The `start` parameter preserves the original offset so the token
- *   span remains correct.  lex_number does NOT follow this pattern —
- *   it begins with l->pos still on the first digit, because the leading
- *   '0' may need to be inspected for prefix detection (0x, 0b).
- */
+/* -------------------------------------------------------------------------
+ * lex — public entry point (multi-error recovery)
+ * ----------------------------------------------------------------------- */
+
 int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
 {
     Lexer l;
-    l.src     = src;
-    l.len     = src_len;
-    l.pos     = 0;
-    l.line    = 1;
-    l.col     = 1;
-    l.out     = out;
-    l.out_cap = out_cap;
-    l.out_n   = 0;
-    l.profile = profile;
+    l.src       = src;
+    l.len       = src_len;
+    l.pos       = 0;
+    l.line      = 1;
+    l.col       = 1;
+    l.out       = out;
+    l.out_cap   = out_cap;
+    l.out_n     = 0;
+    l.profile   = profile;
+    l.err_count = 0;
 
     while (l.pos < l.len) {
         char c     = src[l.pos];
@@ -614,8 +531,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
         /* 1. Skip whitespace silently. */
         if (is_whitespace(c)) { advance(&l); continue; }
 
-        /* 2. Identifiers and keywords — starts with a letter.
-         *    Underscore at start is a v0.2 construct — reject with hint. */
+        /* 2. Identifiers and keywords */
         if (c == '_' && l.profile == PROFILE_DEFAULT) {
             advance(&l);
             while (l.pos < l.len && is_ident_cont_legacy(l.src[l.pos])) advance(&l);
@@ -626,35 +542,52 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
             snprintf(umsg, sizeof umsg,
                      "identifier '%s' starts with underscore (v0.2 syntax); "
                      "run `toke --migrate` to convert to v0.3", ubuf);
-            diag_emit(DIAG_ERROR, LEX_E1003, start, line, col, umsg, "fix", "remove underscores", NULL);
-            return -1;
+            diag_emit(DIAG_ERROR, LEX_E1003, start, line, col, umsg,
+                      "fix", "remove underscores: identifiers must start with a letter (a-z, A-Z)",
+                      "got", ubuf,
+                      "expected", "identifier starting with a letter (a-z, A-Z)", NULL);
+            if (record_error(&l)) break;
+            continue;
         }
         if (is_letter(c) || (c == '_' && l.profile == PROFILE_LEGACY)) {
             advance(&l);
-            if (lex_ident(&l, start, line, col) < 0) return -1;
+            if (lex_ident(&l, start, line, col) < 0) {
+                if (record_error(&l)) break;
+            }
             continue;
         }
-        /* 3. Numeric literals — starts with a digit. */
+        /* 3. Numeric literals */
         if (is_digit(c)) {
-            if (lex_number(&l, start, line, col) < 0) return -1;
+            if (lex_number(&l, start, line, col) < 0) {
+                if (record_error(&l)) break;
+            }
             continue;
         }
-        /* 4. String literals — starts with '"'. */
+        /* 4. String literals */
         if (c == '"') {
             advance(&l);
-            if (lex_string(&l, start, line, col) < 0) return -1;
+            if (lex_string(&l, start, line, col) < 0) {
+                if (l.err_count >= LEX_MAX_ERRORS) break;
+            }
+            continue;
+        }
+
+        /* 4b. Python-style '#' line comments */
+        if (c == '#') {
+            diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
+                      "Python comment '#' detected; toke uses (* comment *) block comments",
+                      "fix", "replace '# comment' with '(* comment *)'", NULL);
+            while (l.pos < l.len && l.src[l.pos] != '\n') advance(&l);
             continue;
         }
 
         /* 5. Single-character symbols. */
         TokenKind sym;
+        int sym_error = 0;
         switch (c) {
         case '(':
-            /* Block comment: (* ... *) — skip everything including newlines.
-             * Supports nested comments: (* outer (* inner *) outer *). */
             if (l.pos + 1 < l.len && src[l.pos + 1] == '*') {
-                advance(&l); /* skip ( */
-                advance(&l); /* skip * */
+                advance(&l); advance(&l);
                 int depth = 1;
                 while (l.pos < l.len && depth > 0) {
                     if (l.pos + 1 < l.len &&
@@ -679,16 +612,28 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
             if (l.profile == PROFILE_DEFAULT) {
                 diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
                           "square brackets are not allowed in default mode; "
-                          "use @() for arrays/maps", NULL);
-                return -1;
+                          "use @() for arrays/maps",
+                          "fix", "replace '[' with '@(' for array/map literals",
+                          "got", "[",
+                          "expected", "@( for arrays/maps", NULL);
+                sym_error = 1;
+                if (record_error(&l)) break;
+                advance(&l);
+                continue;
             }
             sym = TK_LBRACKET; break;
         case ']':
             if (l.profile == PROFILE_DEFAULT) {
                 diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
                           "square brackets are not allowed in default mode; "
-                          "use @() for arrays/maps", NULL);
-                return -1;
+                          "use @() for arrays/maps",
+                          "fix", "replace ']' with ')' to close @() array/map literal",
+                          "got", "]",
+                          "expected", ") to close @() array/map", NULL);
+                sym_error = 1;
+                if (record_error(&l)) break;
+                advance(&l);
+                continue;
             }
             sym = TK_RBRACKET; break;
         case '=':  sym = TK_EQ;       break;
@@ -704,8 +649,13 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                 if (l.profile == PROFILE_DEFAULT) {
                     diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
                               "shift operator '<<' not available in v0.3 (deferred to v0.5); "
-                              "run `toke --migrate` to update", NULL);
-                    return -1;
+                              "run `toke --migrate` to update",
+                              "fix", "remove '<<'; bitwise shift is deferred to v0.5",
+                              "got", "<<", NULL);
+                    sym_error = 1;
+                    if (record_error(&l)) break;
+                    advance(&l); advance(&l);
+                    continue;
                 }
                 advance(&l); advance(&l);
                 if (emit(&l, TK_SHL, start, 2, line, col) < 0) return -1;
@@ -717,8 +667,13 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                 if (l.profile == PROFILE_DEFAULT) {
                     diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
                               "shift operator '>>' not available in v0.3 (deferred to v0.5); "
-                              "run `toke --migrate` to update", NULL);
-                    return -1;
+                              "run `toke --migrate` to update",
+                              "fix", "remove '>>'; bitwise shift is deferred to v0.5",
+                              "got", ">>", NULL);
+                    sym_error = 1;
+                    if (record_error(&l)) break;
+                    advance(&l); advance(&l);
+                    continue;
                 }
                 advance(&l); advance(&l);
                 if (emit(&l, TK_SHR, start, 2, line, col) < 0) return -1;
@@ -744,43 +699,79 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
             if (l.profile == PROFILE_DEFAULT) {
                 diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
                           "bitwise XOR '^' not available in v0.3 (deferred to v0.5); "
-                          "run `toke --migrate` to update", NULL);
-                return -1;
+                          "run `toke --migrate` to update",
+                          "fix", "remove '^'; bitwise XOR is deferred to v0.5",
+                          "got", "^", NULL);
+                sym_error = 1;
+                if (record_error(&l)) break;
+                advance(&l);
+                continue;
             }
             sym = TK_CARET; break;
         case '~':
             if (l.profile == PROFILE_DEFAULT) {
                 diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
                           "bitwise NOT '~' not available in v0.3 (deferred to v0.5); "
-                          "run `toke --migrate` to update", NULL);
-                return -1;
+                          "run `toke --migrate` to update",
+                          "fix", "remove '~'; bitwise NOT is deferred to v0.5",
+                          "got", "~", NULL);
+                sym_error = 1;
+                if (record_error(&l)) break;
+                advance(&l);
+                continue;
             }
             sym = TK_TILDE; break;
         case '%':  sym = TK_PERCENT;  break;
         case '$':
             if (l.profile == PROFILE_LEGACY) {
                 diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
-                          "character outside Profile 1 character set", NULL);
-                return -1;
+                          "character outside Profile 1 character set",
+                          "fix", "remove '$'; type references use uppercase names in legacy mode",
+                          "got", "$", NULL);
+                sym_error = 1;
+                if (record_error(&l)) break;
+                advance(&l);
+                continue;
             }
             sym = TK_DOLLAR; break;
         case '@':
             if (l.profile == PROFILE_LEGACY) {
                 diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
-                          "character outside Profile 1 character set", NULL);
-                return -1;
+                          "character outside Profile 1 character set",
+                          "fix", "remove '@'; use --default mode for @() array/map syntax",
+                          "got", "@", NULL);
+                sym_error = 1;
+                if (record_error(&l)) break;
+                advance(&l);
+                continue;
             }
             sym = TK_AT; break;
-        default:
+        default: {
+            char got_ch[8];
+            if (c >= 0x20 && c <= 0x7E)
+                snprintf(got_ch, sizeof(got_ch), "%c", c);
+            else
+                snprintf(got_ch, sizeof(got_ch), "0x%02X", (unsigned char)c);
             diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
-                      "character outside allowed character set", NULL);
-            return -1;
+                      "character outside allowed character set",
+                      "fix", "remove this character; only ASCII letters, digits, and toke operators are allowed",
+                      "got", got_ch,
+                      "expected", "ASCII letter, digit, or toke operator", NULL);
+            sym_error = 1;
+            if (record_error(&l)) break;
+            advance(&l);
+            continue;
         }
+        }
+        if (sym_error) break;
         advance(&l);
         if (emit(&l, sym, start, 1, line, col) < 0) return -1;
     }
 
     /* Append the EOF sentinel so the parser always has a clean terminator. */
     if (emit(&l, TK_EOF, l.pos, 0, l.line, l.col) < 0) return -1;
+
+    /* If any errors were recorded, return -1 to signal failure. */
+    if (l.err_count > 0) return -1;
     return l.out_n;
 }
