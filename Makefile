@@ -76,7 +76,8 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-stdlib-path test-stdlib-args test-stdlib-md test-stdlib-toml \
 	test-stdlib-vecstore \
 	test-tkir-encoder \
-	install-man
+	install-man \
+	test-standalone
 
 all: $(BIN) tkc
 
@@ -488,6 +489,9 @@ test-stdlib-vecstore:
 # ── Story 76.1.6a: .tkir encoder test ────────────────────────────────────────
 test-tkir-encoder: $(BIN)
 	@bash test/tkir/test_tkir_encoder.sh ./$(BIN)
+
+test-standalone: $(BIN)
+	@test/standalone/run_all.sh
 
 clean:
 	rm -f $(OBJS) $(BIN) tkc test/stdlib/test_str test/stdlib/test_db \

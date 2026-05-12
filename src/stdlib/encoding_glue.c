@@ -21,6 +21,27 @@ int64_t tk_encoding_base64decode_w(int64_t s) { return s; }
 int64_t tk_encoding_bytes_w(int64_t s) { return s; }
 int64_t tk_encoding_toint_w(int64_t s) { return s; }
 
+/* b64encode/b64decode — string-oriented wrappers matching toke enc.b64encode() */
+int64_t tk_encoding_b64encode_w(int64_t data) {
+    if (!data) return 0;
+    const char *s = (const char *)(intptr_t)data;
+    ByteArray ba = { (const uint8_t *)s, (uint64_t)strlen(s) };
+    const char *encoded = encoding_b64encode(ba);
+    return encoded ? (int64_t)(intptr_t)encoded : 0;
+}
+int64_t tk_encoding_b64decode_w(int64_t data) {
+    if (!data) return 0;
+    const char *s = (const char *)(intptr_t)data;
+    ByteArray decoded = encoding_b64decode(s);
+    if (!decoded.data || decoded.len == 0) return 0;
+    char *str = (char *)malloc(decoded.len + 1);
+    if (!str) return 0;
+    memcpy(str, decoded.data, decoded.len);
+    str[decoded.len] = '\0';
+    free((void *)decoded.data);
+    return (int64_t)(intptr_t)str;
+}
+
 /* base64 */
 int64_t tk_base64_encode_w(int64_t data) {
     if (!data) return 0;

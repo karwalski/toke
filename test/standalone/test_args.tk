@@ -1,0 +1,30 @@
+m=test.args;
+i=args:std.args;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let pass=mut.0;
+  let fail=mut.0;
+
+  let c=args.count();
+  if(c>0){
+    io.println("PASS args.count >= 1");
+    pass=pass+1
+  }el{
+    io.println("FAIL args.count >= 1");
+    fail=fail+1
+  };
+
+  let a0=mt args.get(0){$ok:v v;$err:e ""};
+  if(str.len(a0)>0){
+    io.println("PASS args.get(0) is non-empty");
+    pass=pass+1
+  }el{
+    io.println("FAIL args.get(0) is non-empty");
+    fail=fail+1
+  };
+
+  io.println(str.concat("args: ";str.concat(str.fromint(pass);str.concat(" passed, ";str.concat(str.fromint(fail);" failed")))));
+  <fail
+};

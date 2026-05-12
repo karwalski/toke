@@ -1,0 +1,52 @@
+m=test.collections;
+i=coll:std.collections;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let pass=mut.0;
+  let fail=mut.0;
+
+  let arr=mut.@();
+  let len0=arr.len;
+  if(len0=0){
+    io.println("PASS empty array has length 0");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL empty array has length 0 (got: ";str.concat(str.fromint(len0);")")));
+    fail=fail+1
+  };
+
+  arr=arr.append(10);
+  arr=arr.append(20);
+  arr=arr.append(30);
+  let len3=arr.len;
+  if(len3=3){
+    io.println("PASS array after 3 appends has length 3");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL array after 3 appends has length 3 (got: ";str.concat(str.fromint(len3);")")));
+    fail=fail+1
+  };
+
+  let first=arr.get(0);
+  if(first=10){
+    io.println("PASS first element is 10");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL first element is 10 (got: ";str.concat(str.fromint(first);")")));
+    fail=fail+1
+  };
+
+  let last=arr.get(2);
+  if(last=30){
+    io.println("PASS third element is 30");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL third element is 30 (got: ";str.concat(str.fromint(last);")")));
+    fail=fail+1
+  };
+
+  io.println(str.concat("collections: ";str.concat(str.fromint(pass);str.concat(" passed, ";str.concat(str.fromint(fail);" failed")))));
+  <fail
+};

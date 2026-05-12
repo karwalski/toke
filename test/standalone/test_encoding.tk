@@ -1,0 +1,39 @@
+m=test.encoding;
+i=enc:std.encoding;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let pass=mut.0;
+  let fail=mut.0;
+
+  let encoded=enc.b64encode("hello");
+  if(str.len(encoded)>0){
+    io.println("PASS encoding.b64encode returns non-empty string");
+    pass=pass+1
+  }el{
+    io.println("FAIL encoding.b64encode returns non-empty string");
+    fail=fail+1
+  };
+
+  let decoded=enc.b64decode(encoded);
+  if(str.eq(decoded;"hello")){
+    io.println("PASS encoding.b64decode roundtrip equals hello");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL encoding.b64decode roundtrip (got: ";str.concat(decoded;")")));
+    fail=fail+1
+  };
+
+  let encoded2=enc.b64encode("hello");
+  if(str.eq(encoded;encoded2)){
+    io.println("PASS encoding.b64encode is deterministic");
+    pass=pass+1
+  }el{
+    io.println("FAIL encoding.b64encode is deterministic");
+    fail=fail+1
+  };
+
+  io.println(str.concat("encoding: ";str.concat(str.fromint(pass);str.concat(" passed, ";str.concat(str.fromint(fail);" failed")))));
+  <fail
+};

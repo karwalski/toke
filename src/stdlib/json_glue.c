@@ -210,6 +210,13 @@ int64_t tk_json_setint_w(int64_t obj, int64_t key, int64_t val) {
 int64_t tk_json_haskey_w(int64_t obj, int64_t key) {
     return tk_json_has_w(obj, key);
 }
+int64_t tk_json_len_w(int64_t obj) {
+    if (!obj) return 0;
+    Json *jp = (Json *)(intptr_t)obj;
+    U64JsonResult res = json_len(*jp);
+    if (res.is_err) return 0;
+    return (int64_t)res.ok;
+}
 int64_t tk_json_getbool_w(int64_t obj, int64_t key) {
     return tk_json_bool_w(obj, key);
 }

@@ -1,0 +1,75 @@
+m=test.path;
+i=path:std.path;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let pass=mut.0;
+  let fail=mut.0;
+
+  let joined=path.join("foo";"bar.tk");
+  if(str.contains(joined;"foo") && str.contains(joined;"bar.tk")){
+    io.println("PASS path.join contains both parts");
+    pass=pass+1
+  }el{
+    io.println("FAIL path.join contains both parts");
+    fail=fail+1
+  };
+
+  let ext=path.ext("file.tk");
+  if(str.eq(ext;".tk")){
+    io.println("PASS path.ext returns .tk");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL path.ext returns .tk (got: ";str.concat(ext;")")));
+    fail=fail+1
+  };
+
+  let stem=path.stem("file.tk");
+  if(str.eq(stem;"file")){
+    io.println("PASS path.stem returns file");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL path.stem returns file (got: ";str.concat(stem;")")));
+    fail=fail+1
+  };
+
+  let dir=path.dir("foo/bar.tk");
+  if(str.eq(dir;"foo")){
+    io.println("PASS path.dir returns foo");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL path.dir returns foo (got: ";str.concat(dir;")")));
+    fail=fail+1
+  };
+
+  let base=path.base("foo/bar.tk");
+  if(str.eq(base;"bar.tk")){
+    io.println("PASS path.base returns bar.tk");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL path.base returns bar.tk (got: ";str.concat(base;")")));
+    fail=fail+1
+  };
+
+  let abs1=path.isabs("/usr/local");
+  if(abs1){
+    io.println("PASS path.isabs /usr/local is true");
+    pass=pass+1
+  }el{
+    io.println("FAIL path.isabs /usr/local is true");
+    fail=fail+1
+  };
+
+  let abs2=path.isabs("relative");
+  if(abs2){
+    io.println("FAIL path.isabs relative is false");
+    fail=fail+1
+  }el{
+    io.println("PASS path.isabs relative is false");
+    pass=pass+1
+  };
+
+  io.println(str.concat("path: ";str.concat(str.fromint(pass);str.concat(" passed, ";str.concat(str.fromint(fail);" failed")))));
+  <fail
+};

@@ -1,0 +1,48 @@
+m=test.crypto;
+i=cry:std.crypto;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let pass=mut.0;
+  let fail=mut.0;
+
+  let h=cry.sha256("hello");
+  if(str.len(h)>0){
+    io.println("PASS crypto.sha256 returns non-empty result");
+    pass=pass+1
+  }el{
+    io.println("FAIL crypto.sha256 returns non-empty result");
+    fail=fail+1
+  };
+
+  let hlen=str.len(h);
+  if(hlen=64){
+    io.println("PASS crypto.sha256 returns 64-char hex digest");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL crypto.sha256 returns 64-char hex digest (got: ";str.concat(str.fromint(hlen);")")));
+    fail=fail+1
+  };
+
+  let h2=cry.sha256("hello");
+  if(str.eq(h;h2)){
+    io.println("PASS crypto.sha256 same input gives same output");
+    pass=pass+1
+  }el{
+    io.println("FAIL crypto.sha256 same input gives same output");
+    fail=fail+1
+  };
+
+  let h3=cry.sha256("world");
+  if(str.eq(h;h3)){
+    io.println("FAIL crypto.sha256 different input gives different output");
+    fail=fail+1
+  }el{
+    io.println("PASS crypto.sha256 different input gives different output");
+    pass=pass+1
+  };
+
+  io.println(str.concat("crypto: ";str.concat(str.fromint(pass);str.concat(" passed, ";str.concat(str.fromint(fail);" failed")))));
+  <fail
+};

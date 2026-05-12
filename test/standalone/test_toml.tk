@@ -1,0 +1,40 @@
+m=test.toml;
+i=toml:std.toml;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let pass=mut.0;
+  let fail=mut.0;
+
+  let doc=toml.load("[site]\nname = \"test\"\nport = 8080\n");
+  if(doc>0){
+    io.println("PASS toml.load returns non-zero result");
+    pass=pass+1
+  }el{
+    io.println("FAIL toml.load returns non-zero result");
+    fail=fail+1
+  };
+
+  let sec=toml.section(doc;"site");
+  let name=toml.str(sec;"name");
+  if(str.eq(name;"test")){
+    io.println("PASS toml.str extracts site.name");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL toml.str extracts site.name (got: ";str.concat(name;")")));
+    fail=fail+1
+  };
+
+  let port=toml.i64(sec;"port");
+  if(port=8080){
+    io.println("PASS toml.i64 extracts site.port");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL toml.i64 extracts site.port (got: ";str.concat(str.fromint(port);")")));
+    fail=fail+1
+  };
+
+  io.println(str.concat("toml: ";str.concat(str.fromint(pass);str.concat(" passed, ";str.concat(str.fromint(fail);" failed")))));
+  <fail
+};

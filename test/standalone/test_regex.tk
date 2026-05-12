@@ -1,0 +1,56 @@
+m=test.regex;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let pass=mut.0;
+  let fail=mut.0;
+
+  let m1=str.startswith("hello world";"hello");
+  if(m1){
+    io.println("PASS str.startswith hello world starts with hello");
+    pass=pass+1
+  }el{
+    io.println("FAIL str.startswith hello world starts with hello");
+    fail=fail+1
+  };
+
+  let m2=str.startswith("hello world";"world");
+  if(m2){
+    io.println("FAIL str.startswith hello world does not start with world");
+    fail=fail+1
+  }el{
+    io.println("PASS str.startswith hello world does not start with world");
+    pass=pass+1
+  };
+
+  let rep=str.replace("hello world";"world";"toke");
+  if(str.eq(rep;"hello toke")){
+    io.println("PASS str.replace world with toke");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL str.replace world with toke (got: ";str.concat(rep;")")));
+    fail=fail+1
+  };
+
+  let has=str.contains("hello world";"world");
+  if(has){
+    io.println("PASS str.contains finds world in hello world");
+    pass=pass+1
+  }el{
+    io.println("FAIL str.contains finds world in hello world");
+    fail=fail+1
+  };
+
+  let hasnot=str.contains("hello world";"xyz");
+  if(hasnot){
+    io.println("FAIL str.contains does not find xyz in hello world");
+    fail=fail+1
+  }el{
+    io.println("PASS str.contains does not find xyz in hello world");
+    pass=pass+1
+  };
+
+  io.println(str.concat("regex: ";str.concat(str.fromint(pass);str.concat(" passed, ";str.concat(str.fromint(fail);" failed")))));
+  <fail
+};

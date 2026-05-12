@@ -1,0 +1,72 @@
+m=test.json;
+i=json:std.json;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let pass=mut.0;
+  let fail=mut.0;
+
+  let enc=json.enc("hello");
+  let roundtrip=str.concat("{\"val\":";str.concat(enc;"}"));
+  let rtobj=mt json.dec(roundtrip){$ok:v v;$err:e 0};
+  let rtval=mt json.str(rtobj;"val"){$ok:v v;$err:e "ERR"};
+  if(str.eq(rtval;"hello")){
+    io.println("PASS json.enc then json.dec roundtrip");
+    pass=pass+1
+  }el{
+    io.println("FAIL json.enc then json.dec roundtrip");
+    fail=fail+1
+  };
+
+  let src="{\"name\":\"toke\",\"version\":42}";
+  let parsed=mt json.dec(src){$ok:v v;$err:e 0};
+
+  let name=mt json.str(parsed;"name"){$ok:v v;$err:e "ERR"};
+  if(str.eq(name;"toke")){
+    io.println("PASS json.str extracts string field");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL json.str extracts string field (got: ";str.concat(name;")")));
+    fail=fail+1
+  };
+
+  let ver=mt json.i64(parsed;"version"){$ok:v v;$err:e 0};
+  if(ver=42){
+    io.println("PASS json.i64 extracts integer field");
+    pass=pass+1
+  }el{
+    io.println("FAIL json.i64 extracts integer field");
+    fail=fail+1
+  };
+
+  let hasname=json.has(parsed;"name");
+  if(hasname){
+    io.println("PASS json.has returns true for existing key");
+    pass=pass+1
+  }el{
+    io.println("FAIL json.has returns true for existing key");
+    fail=fail+1
+  };
+
+  let hasmissing=json.has(parsed;"missing");
+  if(hasmissing){
+    io.println("FAIL json.has returns false for missing key");
+    fail=fail+1
+  }el{
+    io.println("PASS json.has returns false for missing key");
+    pass=pass+1
+  };
+
+  let kcount=json.len(parsed);
+  if(kcount=2){
+    io.println("PASS json.len returns 2 for object with 2 keys");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL json.len returns 2 (got: ";str.concat(str.fromint(kcount);")")));
+    fail=fail+1
+  };
+
+  io.println(str.concat("json: ";str.concat(str.fromint(pass);str.concat(" passed, ";str.concat(str.fromint(fail);" failed")))));
+  <fail
+};

@@ -1,0 +1,41 @@
+m=test.env;
+i=env:std.env;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let pass=mut.0;
+  let fail=mut.0;
+
+  env.set("TOKE_TEST_VAR";"hello123");
+  let v1=env.getor("TOKE_TEST_VAR";"fallback");
+  if(str.eq(v1;"hello123")){
+    io.println("PASS env.getor returns set value");
+    pass=pass+1
+  }el{
+    io.println("FAIL env.getor returns set value");
+    fail=fail+1
+  };
+
+  let v2=env.getor("NONEXISTENT_VAR_XYZ";"default");
+  if(str.eq(v2;"default")){
+    io.println("PASS env.getor returns default for missing var");
+    pass=pass+1
+  }el{
+    io.println("FAIL env.getor returns default for missing var");
+    fail=fail+1
+  };
+
+  env.set("TOKE_TEST_INT";"99");
+  let v3=env.getint("TOKE_TEST_INT";42);
+  if(v3=99){
+    io.println("PASS env.getint returns parsed integer");
+    pass=pass+1
+  }el{
+    io.println("FAIL env.getint returns parsed integer");
+    fail=fail+1
+  };
+
+  io.println(str.concat("env: ";str.concat(str.fromint(pass);str.concat(" passed, ";str.concat(str.fromint(fail);" failed")))));
+  <fail
+};

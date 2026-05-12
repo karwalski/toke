@@ -1,0 +1,8 @@
+m=testio;
+i=io:std.io;
+f=main():i64{
+  io.print("PASS io.print no crash");
+  io.println("");
+  io.println("PASS io.println no crash");
+  <0
+};

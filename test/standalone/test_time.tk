@@ -1,0 +1,39 @@
+m=test.time;
+i=time:std.time;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let pass=mut.0;
+  let fail=mut.0;
+
+  let now=time.now();
+  if(now>0){
+    io.println("PASS time.now returns a positive number");
+    pass=pass+1
+  }el{
+    io.println("FAIL time.now returns a positive number");
+    fail=fail+1
+  };
+
+  let fmt=time.format(now;"%Y-%m-%d");
+  if(str.len(fmt)>0){
+    io.println("PASS time.format returns a non-empty string");
+    pass=pass+1
+  }el{
+    io.println("FAIL time.format returns a non-empty string");
+    fail=fail+1
+  };
+
+  let fmt2=time.format(now;"%H:%M:%S");
+  if(str.len(fmt2)>0){
+    io.println("PASS time.format with time pattern returns non-empty string");
+    pass=pass+1
+  }el{
+    io.println("FAIL time.format with time pattern returns non-empty string");
+    fail=fail+1
+  };
+
+  io.println(str.concat("time: ";str.concat(str.fromint(pass);str.concat(" passed, ";str.concat(str.fromint(fail);" failed")))));
+  <fail
+};

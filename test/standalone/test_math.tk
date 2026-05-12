@@ -1,0 +1,31 @@
+m=testmath;
+i=math:std.math;
+i=io:std.io;
+f=fclose(a:f64;b:f64):bool{
+  let d=mut.a-b;
+  if(d<0.0){d=0.0-d};
+  <(d<0.001)
+};
+f=main():i64{
+  let r1=math.sqrt(4.0);
+  if(fclose(r1;2.0)){io.println("PASS math.sqrt")}el{io.println("FAIL math.sqrt")};
+  let r2=math.pow(2.0;3.0);
+  if(fclose(r2;8.0)){io.println("PASS math.pow")}el{io.println("FAIL math.pow")};
+  let r3=math.floor(3.7);
+  if(fclose(r3;3.0)){io.println("PASS math.floor")}el{io.println("FAIL math.floor")};
+  let r4=math.ceil(3.2);
+  if(fclose(r4;4.0)){io.println("PASS math.ceil")}el{io.println("FAIL math.ceil")};
+  let r5=math.round(3.5);
+  if(fclose(r5;4.0)){io.println("PASS math.round")}el{io.println("FAIL math.round")};
+  let r6=math.sqrt(9.0);
+  if(fclose(r6;3.0)){io.println("PASS math.sqrt 9")}el{io.println("FAIL math.sqrt 9")};
+  let r7=math.pow(3.0;2.0);
+  if(fclose(r7;9.0)){io.println("PASS math.pow 3^2")}el{io.println("FAIL math.pow 3^2")};
+  let r8=math.floor(5.0);
+  if(fclose(r8;5.0)){io.println("PASS math.floor exact")}el{io.println("FAIL math.floor exact")};
+  let r9=math.ceil(5.0);
+  if(fclose(r9;5.0)){io.println("PASS math.ceil exact")}el{io.println("FAIL math.ceil exact")};
+  let r10=math.round(2.4);
+  if(fclose(r10;2.0)){io.println("PASS math.round down")}el{io.println("FAIL math.round down")};
+  <0
+};
