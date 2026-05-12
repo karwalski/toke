@@ -827,7 +827,7 @@ static Node *parse_compare(Parser *p) {
             ewarn(p,W2021,cur(p),"'==' detected; toke uses '=' for equality","toke uses `=` for equality");
             adv(p); /* consume the extra '=' */
         }
-        Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=TK_EQ;ch(p,n,l);ch(p,n,parse_add(p));return n;}
+        Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_add(p));return n;}
     return l;
 }
 
