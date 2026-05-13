@@ -1607,6 +1607,7 @@ static int emit_expr(Ctx *c, const Node *n)
         /* &name — emit ptrtoint of function pointer to i64 */
         tok_cp(c->src, n, tb, sizeof tb);
         if (!strcmp(tb, "main")) strcpy(tb, "tk_main");
+        mangle_fn_name(c, tb, sizeof tb);
         const FnSig *ref = lookup_fn(c, tb);
         t = next_tmp(c);
         if (ref) {
