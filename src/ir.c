@@ -230,12 +230,7 @@ int emit_interface(const Node *ast, const char *src,
             if (top->child_count < 1 || !top->children[0]) continue;
             tok_copy(top->children[0], src, nbuf, sizeof(nbuf));
             if (!first) fputs(",", fp); first = 0;
-            fputs("\n    {\"kind\": \"type\", \"name\": \"", fp);
-            json_str(fp, nbuf, (int)strlen(nbuf));
-            fputs("\", \"fields\": [", fp);
-            int ff = 1;
-            /* Fields may be direct children or wrapped in NODE_STMT_LIST.
-             * Collect all NODE_FIELD nodes from either layout. */
+            /* Collect field nodes first, then detect sum type before emitting JSON */
             const Node *field_nodes[64];
             int field_count = 0;
             for (int j = 1; j < top->child_count && field_count < 64; j++) {
@@ -250,10 +245,23 @@ int emit_interface(const Node *ast, const char *src,
                     }
                 }
             }
+            int is_sum = 0;
+            for (int fi = 0; fi < field_count; fi++) {
+                const Node *fch = field_nodes[fi];
+                if (fch->tok_start > 0 && src[fch->tok_start - 1] == '$') {
+                    is_sum = 1; break;
+                }
+            }
+            fputs("\n    {\"kind\": \"type\", \"name\": \"", fp);
+            json_str(fp, nbuf, (int)strlen(nbuf));
+            if (is_sum) {
+                fputs("\", \"is_sum\": true, \"fields\": [", fp);
+            } else {
+                fputs("\", \"fields\": [", fp);
+            }
+            int ff = 1;
             for (int fi = 0; fi < field_count; fi++) {
                 const Node *ch = field_nodes[fi];
-                /* Field name is in the token (tok_start/tok_len).
-                 * Field type is in children[0] (TYPE_EXPR) or children[1]. */
                 char fn[128], ft[128];
                 tok_copy(ch, src, fn, sizeof(fn));
                 if (ch->child_count >= 1 && ch->children[0]) {
@@ -264,7 +272,12 @@ int emit_interface(const Node *ast, const char *src,
                     strcpy(ft, "i64");
                 }
                 if (!ff) fputs(", ", fp); ff = 0;
-                fputs("{\"name\": \"", fp); json_str(fp, fn, (int)strlen(fn));
+                fputs("{\"name\": \"", fp);
+                /* Preserve $ prefix for sum type variants */
+                if (is_sum && ch->tok_start > 0 && src[ch->tok_start - 1] == '$') {
+                    fputc('$', fp);
+                }
+                json_str(fp, fn, (int)strlen(fn));
                 fputs("\", \"type\": \"", fp); json_str(fp, ft, (int)strlen(ft));
                 fputs("\"}", fp);
             }
