@@ -234,12 +234,35 @@ int emit_interface(const Node *ast, const char *src,
             json_str(fp, nbuf, (int)strlen(nbuf));
             fputs("\", \"fields\": [", fp);
             int ff = 1;
-            for (int j = 1; j < top->child_count; j++) {
+            /* Fields may be direct children or wrapped in NODE_STMT_LIST.
+             * Collect all NODE_FIELD nodes from either layout. */
+            const Node *field_nodes[64];
+            int field_count = 0;
+            for (int j = 1; j < top->child_count && field_count < 64; j++) {
                 const Node *ch = top->children[j];
-                if (!ch || ch->kind != NODE_FIELD || ch->child_count < 2 || !ch->children[0] || !ch->children[1]) continue;
+                if (!ch) continue;
+                if (ch->kind == NODE_FIELD) {
+                    field_nodes[field_count++] = ch;
+                } else if (ch->kind == NODE_STMT_LIST) {
+                    for (int k = 0; k < ch->child_count && field_count < 64; k++) {
+                        if (ch->children[k] && ch->children[k]->kind == NODE_FIELD)
+                            field_nodes[field_count++] = ch->children[k];
+                    }
+                }
+            }
+            for (int fi = 0; fi < field_count; fi++) {
+                const Node *ch = field_nodes[fi];
+                /* Field name is in the token (tok_start/tok_len).
+                 * Field type is in children[0] (TYPE_EXPR) or children[1]. */
                 char fn[128], ft[128];
-                tok_copy(ch->children[0], src, fn, sizeof(fn));
-                tok_copy(ch->children[1], src, ft, sizeof(ft));
+                tok_copy(ch, src, fn, sizeof(fn));
+                if (ch->child_count >= 1 && ch->children[0]) {
+                    tok_copy(ch->children[0], src, ft, sizeof(ft));
+                } else if (ch->child_count >= 2 && ch->children[1]) {
+                    tok_copy(ch->children[1], src, ft, sizeof(ft));
+                } else {
+                    strcpy(ft, "i64");
+                }
                 if (!ff) fputs(", ", fp); ff = 0;
                 fputs("{\"name\": \"", fp); json_str(fp, fn, (int)strlen(fn));
                 fputs("\", \"type\": \"", fp); json_str(fp, ft, (int)strlen(ft));
