@@ -1443,6 +1443,86 @@ int resolve_names(const Node *ast, const char *src,
         mscope->head = d;
     }
 
+    /* Register type names from imported .tki files so they can be used
+     * as type annotations ($color, $point) in the importing module.
+     * For sum types, also register variant names ($red, $green) as
+     * predefined identifiers. (Story 81b — cross-module types) */
+    for (int i = 0; i < symtab->count; i++) {
+        const ImportEntry *ie = &symtab->entries[i];
+        if (!ie->resolved) continue;
+        /* Build .tki path — try dotted name in search paths */
+        char tki_rel[256];
+        strncpy(tki_rel, ie->module_path, sizeof(tki_rel) - 5);
+        strncat(tki_rel, ".tki", sizeof(tki_rel) - strlen(tki_rel) - 1);
+        /* Also try with dots replaced by slashes */
+        char tki_slash[256];
+        strncpy(tki_slash, ie->module_path, sizeof(tki_slash) - 5);
+        for (char *p = tki_slash; *p; p++) if (*p == '.') *p = '/';
+        strncat(tki_slash, ".tki", sizeof(tki_slash) - strlen(tki_slash) - 1);
+        FILE *tf = fopen(tki_rel, "r");
+        if (!tf) tf = fopen(tki_slash, "r");
+        if (!tf) continue;
+        fseek(tf, 0, SEEK_END); long tsz = ftell(tf); fseek(tf, 0, SEEK_SET);
+        if (tsz <= 0 || tsz > 64*1024) { fclose(tf); continue; }
+        char *tbuf = (char *)malloc((size_t)(tsz+1));
+        if (!tbuf) { fclose(tf); continue; }
+        size_t trd = fread(tbuf, 1, (size_t)tsz, tf); fclose(tf);
+        tbuf[trd] = '\0';
+        /* Parse type exports */
+        char *tp = tbuf;
+        while ((tp = strstr(tp, "\"kind\"")) != NULL) {
+            char *tk_type = strstr(tp, "\"type\"");
+            char *next_k = strstr(tp + 6, "\"kind\"");
+            if (!tk_type || (next_k && tk_type > next_k)) { tp = next_k ? next_k : tp + 6; continue; }
+            /* Extract type name */
+            char *tnk = strstr(tp, "\"name\"");
+            if (!tnk || (next_k && tnk > next_k)) { tp += 6; continue; }
+            char *tq1 = strchr(tnk + 6, '"');
+            if (!tq1) break;
+            char *tq2 = strchr(tq1 + 1, '"');
+            if (!tq2) break;
+            int tnlen = (int)(tq2 - tq1 - 1);
+            char tname[128];
+            if (tnlen >= (int)sizeof(tname)) tnlen = (int)sizeof(tname) - 1;
+            memcpy(tname, tq1 + 1, (size_t)tnlen);
+            tname[tnlen] = '\0';
+            /* Register type name as predefined so $typename is valid */
+            seed_predefined(mscope, arena, tname);
+            /* Check for is_sum and register variants */
+            char *sum_check = strstr(tp, "\"is_sum\"");
+            if (sum_check && (!next_k || sum_check < next_k)) {
+                /* Parse field names and register $-prefixed variants */
+                char *farr = strstr(sum_check, "\"fields\"");
+                if (farr && (!next_k || farr < next_k)) {
+                    char *fa = strchr(farr, '[');
+                    char *fe = fa ? strchr(fa, ']') : NULL;
+                    if (fa && fe) {
+                        char *fp2 = fa + 1;
+                        while (fp2 < fe) {
+                            char *vnk = strstr(fp2, "\"name\"");
+                            if (!vnk || vnk >= fe) break;
+                            char *vq1 = strchr(vnk + 6, '"');
+                            if (!vq1 || vq1 >= fe) break;
+                            char *vq2 = strchr(vq1 + 1, '"');
+                            if (!vq2 || vq2 > fe) break;
+                            int vlen = (int)(vq2 - vq1 - 1);
+                            char vname[128];
+                            if (vlen >= (int)sizeof(vname)) vlen = (int)sizeof(vname) - 1;
+                            memcpy(vname, vq1 + 1, (size_t)vlen);
+                            vname[vlen] = '\0';
+                            /* Strip $ prefix for registration (it's added by the parser) */
+                            char *vbare = (vname[0] == '$') ? vname + 1 : vname;
+                            seed_predefined(mscope, arena, vbare);
+                            fp2 = vq2 + 1;
+                        }
+                    }
+                }
+            }
+            tp = next_k ? next_k : tp + 6;
+        }
+        free(tbuf);
+    }
+
     /* Register sub-namespace prefixes from .tki exports (Story 7.6.1).
      *
      * Some stdlib modules export functions whose dot-prefix differs from the
