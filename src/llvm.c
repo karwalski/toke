@@ -834,6 +834,26 @@ static void load_tki_funcs(Ctx *c, const char *tki_path) {
     fclose(f);
     buf[rd] = '\0';
 
+    /* Extract module name from .tki for symbol mangling (Story 81b.7).
+     * "module": "mod.a" → prefix "mod_a_" */
+    char tki_mod_prefix[256] = "";
+    {
+        char *mk = strstr(buf, "\"module\"");
+        if (mk) {
+            char *mq1 = strchr(mk + 8, '"');
+            if (mq1) { char *mq2 = strchr(mq1 + 1, '"');
+                if (mq2) {
+                    int plen = 0;
+                    for (char *mp = mq1 + 1; mp < mq2 && plen < (int)sizeof(tki_mod_prefix) - 2; mp++) {
+                        tki_mod_prefix[plen++] = (*mp == '.') ? '_' : *mp;
+                    }
+                    tki_mod_prefix[plen++] = '_';
+                    tki_mod_prefix[plen] = '\0';
+                }
+            }
+        }
+    }
+
     /* Scan for each "kind":"func" or "kind":"extern_c" entry (Story 76.1.2b) */
     char *p = buf;
     while ((p = strstr(p, "\"kind\"")) != NULL) {
@@ -875,8 +895,13 @@ static void load_tki_funcs(Ctx *c, const char *tki_path) {
                     }}}
         }
 
-        /* Register the function */
-        FnSig *sig = register_fn(c, fn_name, !strcmp(ret_type, "i8*") ? "i8*"
+        /* Register the function with mangled name (module_prefix + fn_name) */
+        char mangled_fn[256];
+        if (tki_mod_prefix[0])
+            snprintf(mangled_fn, sizeof mangled_fn, "%s%s", tki_mod_prefix, fn_name);
+        else
+            strncpy(mangled_fn, fn_name, sizeof mangled_fn - 1);
+        FnSig *sig = register_fn(c, mangled_fn, !strcmp(ret_type, "i8*") ? "i8*"
                                   : !strcmp(ret_type, "double") ? "double"
                                   : !strcmp(ret_type, "i1") ? "i1"
                                   : !strcmp(ret_type, "void") ? "void"
