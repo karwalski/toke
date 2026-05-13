@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 #include "parser.h"  /* Token, Node, parse(); Arena/diag_emit forwards */
 #include "names.h"   /* resolve_imports(), resolve_names(), SymbolTable, NameEnv */
@@ -65,7 +66,7 @@ int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile prof
 #define ECOMPILE  TKC_EXIT_COMPILE
 
 static const char HELP[] =
-    "Usage: toke [flags] <source-file>\n"
+    "Usage: toke [flags] <source-file> [source-file ...]\n"
     "\n"
     "Flags:\n"
     "  --target <triple>   LLVM target triple (default: native)\n"
@@ -246,7 +247,10 @@ static int extract_module_name(const Node *ast, const char *src,
  */
 int main(int argc, char **argv)
 {
-    const char *tgt = NULL, *out = NULL, *src = NULL;
+    const char *tgt = NULL, *out = NULL;
+    #define MAX_SOURCE_FILES 256
+    const char *source_files[MAX_SOURCE_FILES];
+    int source_file_count = 0;
     const char *config_path = NULL;
     int emit_iface = 0, check_only = 0, djson = 0, dtext = 0, dsarif = 0;
     int emit_ll = 0, emit_asm = 0, opt_level = 1, fmt_only = 0, debug_info = 0;
@@ -368,8 +372,10 @@ int main(int argc, char **argv)
             fprintf(stderr, "tkc: unknown flag: %s\n", argv[i]);
             return EUSAGE;
         } else {
-            if (src) { fputs("tkc: only one source file supported\n", stderr); return EUSAGE; }
-            src = argv[i];
+            if (source_file_count >= MAX_SOURCE_FILES) {
+                fputs("tkc: too many source files\n", stderr); return EUSAGE;
+            }
+            source_files[source_file_count++] = argv[i];
         }
     }
 
@@ -471,8 +477,39 @@ int main(int argc, char **argv)
 
     /* --verify-companion: standalone mode, no source file needed */
     if (verify_companion_path) return verify_companion(verify_companion_path);
-    if (!src)            { puts(HELP); return EUSAGE; }
+    if (source_file_count == 0) { puts(HELP); return EUSAGE; }
     if ((djson + dtext + dsarif) > 1) { fputs("tkc: --diag-json, --diag-text, and --diag-sarif are mutually exclusive\n", stderr); return EUSAGE; }
+
+    /* Determine if --out is a directory path.
+     * A path is treated as a directory if it ends with '/' or if it
+     * exists and is actually a directory on disk. */
+    int out_is_dir = 0;
+    if (out) {
+        size_t olen = strlen(out);
+        if (olen > 0 && out[olen - 1] == '/') {
+            out_is_dir = 1;
+        } else {
+            struct stat sb;
+            if (stat(out, &sb) == 0 && S_ISDIR(sb.st_mode))
+                out_is_dir = 1;
+        }
+    }
+
+    /* Multi-file with a non-directory --out is an error */
+    if (source_file_count > 1 && out && !out_is_dir) {
+        fputs("tkc: --out must be a directory when compiling multiple files\n", stderr);
+        return EUSAGE;
+    }
+
+    /* When --out is a directory, add it to the .tki search path so that
+     * later files in a batch can find .tki files emitted by earlier ones. */
+    if (out_is_dir && search_path_count < MAX_SEARCH_PATHS) {
+        search_paths[search_path_count++] = out;
+    }
+
+    /* For backward compatibility, set src to point to the first (or only)
+     * source file.  The multi-file loop below uses source_files[si]. */
+    const char *src = source_files[0];
 
     diag_set_format(dsarif ? DIAG_FMT_SARIF :
                     djson  ? DIAG_FMT_JSON  :
@@ -695,14 +732,21 @@ int main(int argc, char **argv)
         char mod_name[256];
         char tki[PATH_BUF];
         if (extract_module_name(ast, sbuf, mod_name, (int)sizeof(mod_name)) && mod_name[0]) {
-            /* Place .tki in --out directory (if given), else source dir */
-            const char *dir_src = out ? out : src;
-            const char *slash = strrchr(dir_src, '/');
-            if (slash) {
-                int dlen = (int)(slash - dir_src);
+            /* Place .tki in --out directory (if given and is a dir), else source dir */
+            const char *dir_src = (out && out_is_dir) ? out : src;
+            if (out_is_dir) {
+                /* Strip trailing slash for clean path construction */
+                int dlen = (int)strlen(dir_src);
+                while (dlen > 1 && dir_src[dlen - 1] == '/') dlen--;
                 snprintf(tki, sizeof(tki), "%.*s/%s.tki", dlen, dir_src, mod_name);
             } else {
-                snprintf(tki, sizeof(tki), "%s.tki", mod_name);
+                const char *slash = strrchr(dir_src, '/');
+                if (slash) {
+                    int dlen = (int)(slash - dir_src);
+                    snprintf(tki, sizeof(tki), "%.*s/%s.tki", dlen, dir_src, mod_name);
+                } else {
+                    snprintf(tki, sizeof(tki), "%s.tki", mod_name);
+                }
             }
         } else {
             /* Fallback: use output stem if no module declaration */
@@ -829,8 +873,17 @@ int main(int argc, char **argv)
 
     /* Derive output path */
     char obin[PATH_BUF], ostm[MSG_BUF];
-    if (out) {
+    if (out && !out_is_dir) {
         strncpy(obin, out, sizeof(obin) - 1); obin[sizeof(obin) - 1] = '\0';
+    } else if (out_is_dir) {
+        /* For directory output, derive basename from source stem */
+        stem(src, ostm, (int)sizeof(ostm));
+        /* Strip trailing slash from out for clean path */
+        char out_clean[PATH_BUF];
+        strncpy(out_clean, out, sizeof(out_clean) - 1); out_clean[sizeof(out_clean) - 1] = '\0';
+        int oclen = (int)strlen(out_clean);
+        while (oclen > 1 && out_clean[oclen - 1] == '/') out_clean[--oclen] = '\0';
+        snprintf(obin, sizeof(obin), "%s/%s", out_clean, ostm);
     } else {
         stem(src, ostm, (int)sizeof(ostm));
         snprintf(obin, sizeof(obin), "%s", ostm);
@@ -841,7 +894,7 @@ int main(int argc, char **argv)
     /* --emit-tkir: write .tkir binary IR and exit (story 76.1.6a) */
     if (emit_tkir_flag) {
         char tkir_path[PATH_BUF];
-        if (out) { strncpy(tkir_path, out, sizeof(tkir_path) - 1); tkir_path[sizeof(tkir_path) - 1] = '\0'; }
+        if (out && !out_is_dir) { strncpy(tkir_path, out, sizeof(tkir_path) - 1); tkir_path[sizeof(tkir_path) - 1] = '\0'; }
         else { snprintf(tkir_path, sizeof(tkir_path), "%s.tkir", obin); }
         if (emit_tkir(ast, sbuf, &te, &ne, tgt, tkir_path) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
         progress_update(90);
@@ -853,7 +906,7 @@ int main(int argc, char **argv)
     if (emit_ll) {
         /* --emit-llvm: write .ll to output path (or stdout) */
         char ll_path[PATH_BUF];
-        if (out) {
+        if (out && !out_is_dir) {
             strncpy(ll_path, out, sizeof(ll_path) - 1); ll_path[sizeof(ll_path) - 1] = '\0';
         } else {
             snprintf(ll_path, sizeof(ll_path), "%s.ll", obin);
@@ -875,7 +928,7 @@ int main(int argc, char **argv)
         if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
         progress_update(90);
         char asm_path[PATH_BUF];
-        if (out) {
+        if (out && !out_is_dir) {
             strncpy(asm_path, out, sizeof(asm_path) - 1); asm_path[sizeof(asm_path) - 1] = '\0';
         } else {
             snprintf(asm_path, sizeof(asm_path), "%s.s", obin);
@@ -912,5 +965,170 @@ done:
     diag_flush_sarif();
     arena_free(arena);
     free(sbuf);
+
+    /* ── Multi-file batch: process remaining source files (index 1+) ── */
+    for (int si = 1; si < source_file_count; si++) {
+        src = source_files[si];
+        diag_reset();
+        diag_set_format(dsarif ? DIAG_FMT_SARIF :
+                        djson  ? DIAG_FMT_JSON  :
+                        dtext  ? DIAG_FMT_TEXT  :
+                        isatty(STDOUT_FILENO) ? DIAG_FMT_TEXT : DIAG_FMT_JSON);
+        diag_set_source_file(src);
+
+        /* Read source file */
+        f = fopen(src, "rb");
+        if (!f) { fprintf(stderr, "tkc: cannot open '%s'\n", src); return EUSAGE; }
+        fseek(f, 0, SEEK_END);
+        slen = ftell(f);
+        rewind(f);
+        sbuf = malloc((size_t)slen + 1);
+        if (!sbuf || (long)fread(sbuf, 1, (size_t)slen, f) != slen) {
+            fclose(f); free(sbuf);
+            fprintf(stderr, "tkc: failed to read '%s'\n", src);
+            return EINTERNAL;
+        }
+        sbuf[slen] = '\0';
+        fclose(f);
+
+        arena = arena_init();
+        if (!arena) { free(sbuf); fputs("tkc: arena_init failed\n", stderr); return EINTERNAL; }
+
+        /* Lex */
+        tcap = (int)(slen + 16);
+        toks = arena_alloc(arena, tcap * (int)sizeof(Token));
+        if (!toks) { arena_free(arena); free(sbuf); return EINTERNAL; }
+        tc = lex(sbuf, (int)slen, toks, tcap, profile);
+        if (tc < 0 || diag_error_count() > 0) { arena_free(arena); free(sbuf); return ECOMPILE; }
+
+        /* Parse */
+        ast = parse(toks, tc, sbuf, arena, profile);
+        if (!ast || diag_error_count() > 0) { arena_free(arena); free(sbuf); return ECOMPILE; }
+
+        /* Resolve imports */
+        if (resolve_imports(ast, sbuf, search_paths, search_path_count, &limits, &st) < 0 || diag_error_count() > 0) {
+            arena_free(arena); free(sbuf); return ECOMPILE;
+        }
+
+        /* Resolve names */
+        if (resolve_names(ast, sbuf, &st, arena, &ne) < 0 || diag_error_count() > 0) {
+            symtab_free(&st); arena_free(arena); free(sbuf); return ECOMPILE;
+        }
+
+        /* Type check */
+        if (type_check(ast, sbuf, &ne, arena, &te) < 0 || diag_error_count() > 0) {
+            symtab_free(&st); arena_free(arena); free(sbuf); return ECOMPILE;
+        }
+
+        /* Emit .tki if requested */
+        if (emit_iface) {
+            char mod_name[256];
+            char tki[PATH_BUF];
+            if (extract_module_name(ast, sbuf, mod_name, (int)sizeof(mod_name)) && mod_name[0]) {
+                const char *dir_src = (out && out_is_dir) ? out : src;
+                if (out_is_dir) {
+                    int dlen = (int)strlen(dir_src);
+                    while (dlen > 1 && dir_src[dlen - 1] == '/') dlen--;
+                    snprintf(tki, sizeof(tki), "%.*s/%s.tki", dlen, dir_src, mod_name);
+                } else {
+                    const char *slash = strrchr(dir_src, '/');
+                    if (slash) {
+                        int dlen = (int)(slash - dir_src);
+                        snprintf(tki, sizeof(tki), "%.*s/%s.tki", dlen, dir_src, mod_name);
+                    } else {
+                        snprintf(tki, sizeof(tki), "%s.tki", mod_name);
+                    }
+                }
+            } else {
+                char tki_stem[MSG_BUF];
+                stem(src, tki_stem, (int)sizeof(tki_stem));
+                if (out_is_dir) {
+                    char out_clean[PATH_BUF];
+                    strncpy(out_clean, out, sizeof(out_clean) - 1); out_clean[sizeof(out_clean) - 1] = '\0';
+                    int oclen = (int)strlen(out_clean);
+                    while (oclen > 1 && out_clean[oclen - 1] == '/') out_clean[--oclen] = '\0';
+                    snprintf(tki, sizeof(tki), "%s/%s.tki", out_clean, tki_stem);
+                } else {
+                    snprintf(tki, sizeof(tki), "%s.tki", tki_stem);
+                }
+            }
+            if (emit_interface(ast, sbuf, &te, tki) < 0) {
+                symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL;
+            }
+        }
+
+        if (check_only) { symtab_free(&st); arena_free(arena); free(sbuf); continue; }
+
+        /* Derive per-file output path */
+        stem(src, ostm, (int)sizeof(ostm));
+        if (out_is_dir) {
+            char out_clean[PATH_BUF];
+            strncpy(out_clean, out, sizeof(out_clean) - 1); out_clean[sizeof(out_clean) - 1] = '\0';
+            int oclen = (int)strlen(out_clean);
+            while (oclen > 1 && out_clean[oclen - 1] == '/') out_clean[--oclen] = '\0';
+            snprintf(obin, sizeof(obin), "%s/%s", out_clean, ostm);
+        } else {
+            snprintf(obin, sizeof(obin), "%s", ostm);
+        }
+
+        /* Debug metadata for this file */
+        dbg_file = src;
+        dbg_dir[0] = '\0';
+        if (debug_info) {
+            const char *slash = strrchr(src, '/');
+            if (slash) {
+                int dlen = (int)(slash - src);
+                if (dlen >= (int)sizeof(dbg_dir)) dlen = (int)sizeof(dbg_dir) - 1;
+                memcpy(dbg_dir, src, (size_t)dlen);
+                dbg_dir[dlen] = '\0';
+                dbg_file = slash + 1;
+            } else {
+                dbg_dir[0] = '.'; dbg_dir[1] = '\0';
+            }
+        }
+
+        /* Emit LLVM IR */
+        if (emit_ll) {
+            char ll_path[PATH_BUF];
+            snprintf(ll_path, sizeof(ll_path), "%s.ll", obin);
+            CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
+            if (emit_llvm_ir(ast, sbuf, &cg, ll_path) < 0) {
+                symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL;
+            }
+        } else if (emit_asm) {
+            char tmp_asm[] = "/tmp/tkc_XXXXXX.ll";
+            int fd = mkstemps(tmp_asm, 3);
+            if (fd < 0) { symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
+            close(fd);
+            CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
+            if (emit_llvm_ir(ast, sbuf, &cg, tmp_asm) < 0) { unlink(tmp_asm); symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
+            char asm_path[PATH_BUF];
+            snprintf(asm_path, sizeof(asm_path), "%s.s", obin);
+            char cmd[CMD_BUF];
+            if (tgt && tgt[0])
+                snprintf(cmd, sizeof cmd, "clang -O%d -Wno-override-module -S -x ir %s -o %s --target=%s 2>&1", opt_level, tmp_asm, asm_path, tgt);
+            else
+                snprintf(cmd, sizeof cmd, "clang -O%d -Wno-override-module -S -x ir %s -o %s 2>&1", opt_level, tmp_asm, asm_path);
+            int r = system(cmd);
+            unlink(tmp_asm);
+            if (r != 0) { symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
+        } else {
+            /* Default: compile to binary */
+            char tmp_bin[] = "/tmp/tkc_XXXXXX.ll";
+            int fd = mkstemps(tmp_bin, 3);
+            if (fd < 0) { symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
+            close(fd);
+            CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
+            if (emit_llvm_ir(ast, sbuf, &cg, tmp_bin) < 0) { unlink(tmp_bin); symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
+            if (compile_binary(tmp_bin, obin, tgt, opt_level, &st, debug_info) < 0) { unlink(tmp_bin); symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
+            unlink(tmp_bin);
+        }
+
+        symtab_free(&st);
+        diag_flush_sarif();
+        arena_free(arena);
+        free(sbuf);
+    }
+
     return rc;
 }
