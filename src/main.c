@@ -858,7 +858,7 @@ int main(int argc, char **argv)
         } else {
             snprintf(ll_path, sizeof(ll_path), "%s.ll", obin);
         }
-        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir };
+        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
         if (emit_llvm_ir(ast, sbuf, &cg, ll_path) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
         progress_update(90);
         symtab_free(&st);
@@ -871,7 +871,7 @@ int main(int argc, char **argv)
         int fd = mkstemps(tmp, 3);
         if (fd < 0) { fputs("tkc: failed to create temp file\n", stderr); symtab_free(&st); rc = EINTERNAL; goto done; }
         close(fd);
-        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir };
+        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
         if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
         progress_update(90);
         char asm_path[PATH_BUF];
@@ -898,7 +898,7 @@ int main(int argc, char **argv)
         int fd = mkstemps(tmp, 3);
         if (fd < 0) { fputs("tkc: failed to create temp file\n", stderr); symtab_free(&st); rc = EINTERNAL; goto done; }
         close(fd);
-        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir };
+        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
         if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
         progress_update(90);
         if (compile_binary(tmp, obin, tgt, opt_level, &st, debug_info) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }

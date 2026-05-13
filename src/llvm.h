@@ -32,6 +32,8 @@ typedef struct {
     int         debug;       /* 1 = emit DWARF debug metadata (Story 76.1.5)  */
     const char *source_file; /* original .tk filename for DIFile               */
     const char *source_dir;  /* directory containing source_file               */
+    const char **search_paths;  /* -I directories for .tki lookup (81b.8)     */
+    int  search_path_count;     /* number of entries in search_paths           */
 } CodegenEnv;
 
 /* ── Public API ───────────────────────────────────────────────────────── */

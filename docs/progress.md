@@ -3750,6 +3750,9 @@ The ~170 `_w` glue wrappers in *_glue.c were wired to C implementations but neve
 | 81b.3 | Add .tki search path (-I flag + TKC_INTERFACE_PATH) | done | 2026-05-13 | **P1** Repeatable -I flag + colon-separated env var. Search: CWD → -I dirs → env dirs. |
 | 81b.4 | Include user module deps in --emit-deps | done | 2026-05-13 | **P1** Non-std imports listed as .ll files after `---` separator. Dotted paths → slash paths. |
 | 81b.5 | Multi-file batch compile (toke --emit-llvm main.tk mod.tk) | backlog | — | **P2** Optional convenience. |
+| 81b.7 | Symbol mangling — prefix function names with module path | done | 2026-05-13 | **P0** llvm.c: module_prefix from m= path, mangle_fn_name() prepends to defs/calls. tk_main stays unmangled. |
+| 81b.8 | -I search path for .tki in --emit-llvm mode | done | 2026-05-13 | **P2** llvm.h: search_paths in CodegenEnv. prepass_load_tki iterates -I dirs. |
+| 81b.9 | void expression in if-branch generates invalid %void IR | done | 2026-05-13 | **P2** llvm.c NODE_IDENT: `void` as expression emits `add i64 0, 0` instead of loading undefined %void. |
 | 81b.6 | Bump toke version to 0.3.0 | done | 2026-05-13 | **P0** Updated in main.c, llvm.c, companion.c, diag.c, wasm_api.c, toke.1. |
 
 ### Epic 78.3 — Tier 3: Remaining modules (lower priority)

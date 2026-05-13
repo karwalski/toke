@@ -149,7 +149,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; } Ctx;
 
 /* ── SSA counter helpers ───────────────────────────────────────────── */
 /* next_tmp: allocate the next SSA temporary (%tN).
@@ -166,6 +166,57 @@ static int next_dbg(Ctx *c){return c->dbg_next++;}
  * Truncates to sz-1 if the token is longer than the buffer.
  */
 static void tok_cp(const char *src,const Node *n,char *buf,int sz){int len=n->tok_len<sz-1?n->tok_len:sz-1;memcpy(buf,src+n->tok_start,(size_t)len);buf[len]='\0';}
+
+/*
+ * mangle_fn_name — Prepend the module prefix to a function name buffer.
+ *
+ * If the context has a non-empty module_prefix (e.g. "browser_pages_api_health_")
+ * and the function name is not "tk_main", prepends the prefix to the name.
+ * This ensures all user-defined functions are mangled with their module path
+ * to avoid symbol collisions when linking multiple modules.
+ */
+static void mangle_fn_name(const Ctx *c, char *buf, int sz) {
+    if (!c->module_prefix[0]) return;
+    if (!strcmp(buf, "tk_main")) return;
+    char tmp[256];
+    snprintf(tmp, sizeof tmp, "%s%s", c->module_prefix, buf);
+    strncpy(buf, tmp, (size_t)(sz - 1));
+    buf[sz - 1] = '\0';
+}
+
+/*
+ * extract_module_prefix — Build the module prefix string from the AST.
+ *
+ * Walks the AST to find the NODE_MODULE node, then its NODE_MODULE_PATH child.
+ * Concatenates all path segments with underscores to produce a prefix like
+ * "browser_pages_api_health_".  Result stored in c->module_prefix.
+ */
+static void extract_module_prefix(Ctx *c, const Node *ast) {
+    c->module_prefix[0] = '\0';
+    if (!ast) return;
+    const Node *mod = NULL;
+    /* NODE_PROGRAM's first child is NODE_MODULE */
+    if (ast->kind == NODE_PROGRAM && ast->child_count > 0 &&
+        ast->children[0]->kind == NODE_MODULE)
+        mod = ast->children[0];
+    else if (ast->kind == NODE_MODULE)
+        mod = ast;
+    if (!mod || mod->child_count < 1) return;
+    const Node *mp = mod->children[0];
+    if (mp->kind != NODE_MODULE_PATH || mp->child_count < 1) return;
+    int pos = 0;
+    for (int i = 0; i < mp->child_count; i++) {
+        char seg[128];
+        tok_cp(c->src, mp->children[i], seg, sizeof seg);
+        int slen = (int)strlen(seg);
+        if (pos + slen + 1 >= (int)sizeof(c->module_prefix) - 1) break;
+        if (pos > 0) c->module_prefix[pos++] = '_';
+        memcpy(c->module_prefix + pos, seg, (size_t)slen);
+        pos += slen;
+    }
+    c->module_prefix[pos++] = '_';
+    c->module_prefix[pos] = '\0';
+}
 
 /*
  * mark_ptr_with_type — Register a local variable as pointer-typed.
@@ -453,6 +504,7 @@ static void prepass_funcs(Ctx *c, const Node *n) {
     if (n->kind != NODE_FUNC_DECL) return;
     tok_cp(c->src, n->children[0], tb, sizeof tb);
     if (!strcmp(tb, "main")) strcpy(tb, "tk_main");
+    mangle_fn_name(c, tb, sizeof tb);
     const char *ret = "void";
     char ret_tn[128] = "";
     for (int i = 1; i < n->child_count; i++) {
@@ -1002,8 +1054,29 @@ static void prepass_load_tki(Ctx *c, const Node *ast) {
             }
         }
         if (found && tki_path[0]) {
-            load_tki_funcs(c, tki_path);
-            load_tki_structs(c, tki_path);
+            /* Story 81b.8: search -I directories for the .tki file */
+            FILE *probe = fopen(tki_path, "r");
+            if (probe) {
+                fclose(probe);
+                load_tki_funcs(c, tki_path);
+                load_tki_structs(c, tki_path);
+            } else {
+                int sp_found = 0;
+                for (int si = 0; si < c->search_path_count && !sp_found; si++) {
+                    char sp_path[512];
+                    snprintf(sp_path, sizeof sp_path, "%s/%s", c->search_paths[si], tki_path);
+                    FILE *pf = fopen(sp_path, "r");
+                    if (pf) {
+                        fclose(pf);
+                        load_tki_funcs(c, sp_path);
+                        load_tki_structs(c, sp_path);
+                        sp_found = 1;
+                    }
+                }
+                if (!sp_found) {
+                    fprintf(stderr, "[tki] FAIL open: %s\n", tki_path);
+                }
+            }
         } else
             fprintf(stderr, "[tki] no AST import found for alias '%s'\n", c->imports[i].alias);
     }
@@ -1465,6 +1538,13 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = add i1 0, 0\n", t);
             return t;
         }
+        /* void keyword used as expression (e.g., if-branch placeholder):
+         * emit 0 instead of trying to load a %void variable. Story 81b.9. */
+        if (!strcmp(tb, "void")) {
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = add i64 0, 0 ; void expression\n", t);
+            return t;
+        }
         t = next_tmp(c);
         {
             const char *ln = get_llvm_name(c, tb);
@@ -1905,6 +1985,7 @@ static int emit_expr(Ctx *c, const Node *n)
         if (!resolved_fn) {
             tok_cp(c->src, n->children[0], tb, sizeof tb);
             if (!strcmp(tb, "main")) strcpy(tb, "tk_main");
+            mangle_fn_name(c, tb, sizeof tb);
         } else {
             strncpy(tb, resolved_fn, sizeof tb - 1); tb[sizeof tb - 1] = '\0';
         }
@@ -3078,6 +3159,8 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             }
         }
         char fn[128]; tok_cp(c->src, n->children[0], fn, sizeof fn);
+        if (!strcmp(fn, "main")) strcpy(fn, "tk_main");
+        mangle_fn_name(c, fn, sizeof fn);
         const FnSig *sig = lookup_fn(c, fn);
         if (sig) return sig->ret;
         return "i64";
@@ -3351,6 +3434,7 @@ static void emit_stmt(Ctx *c, const Node *n)
                 char callee_name[256];
                 tok_cp(c->src, n->children[0]->children[0], callee_name, sizeof callee_name);
                 if (!strcmp(callee_name, "main")) strcpy(callee_name, "tk_main");
+                mangle_fn_name(c, callee_name, sizeof callee_name);
                 if (!strcmp(callee_name, c->cur_fn_name)) {
                     /* Tail-recursive call — emit musttail call fastcc */
                     const Node *call = n->children[0];
@@ -3710,6 +3794,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
         tok_cp(c->src, n->children[0], tb, sizeof tb);
         /* Rename toke main to tk_main to avoid collision with C main wrapper */
         if (!strcmp(tb, "main")) strcpy(tb, "tk_main");
+        mangle_fn_name(c, tb, sizeof tb);
         /* Determine return type from NODE_RETURN_SPEC if present */
         const char *ret = "void";
         int body_i = -1;
@@ -4143,6 +4228,9 @@ int emit_llvm_ir(const Node *ast, const char *src,
 
     ctx.max_iters = lim.max_iters;
     ctx.loop_guard_idx = 0;
+    /* Story 81b.8: pass -I search paths for .tki lookup */
+    ctx.search_paths = (env) ? env->search_paths : NULL;
+    ctx.search_path_count = (env) ? env->search_path_count : 0;
 
     fputs("; module generated by toke\n", f);
     if (env && env->target && env->target[0]) {
@@ -4207,6 +4295,8 @@ int emit_llvm_ir(const Node *ast, const char *src,
         fputs("@.str.loop_guard = private unnamed_addr constant "
               "[45 x i8] c\"toke: loop exceeded %d iterations, aborting\\0A\\00\"\n\n", body_file);
     }
+
+    extract_module_prefix(&ctx, ast);
 
     prepass_structs(&ctx, ast);
     prepass_funcs(&ctx, ast);
