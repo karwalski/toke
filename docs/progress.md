@@ -629,19 +629,19 @@ All compiler outputs must produce structured JSON diagnostics suitable for autom
 |----|-------|--------|------|-------|
 | 84.1.1 | Audit all lexer diagnostics for structure and fix hints | done | 2026-05-13 | **P0** All E1xxx have got/expected/fix fields. diag.c extract_fields() parses variadic key-value pairs. |
 | 84.1.2 | Audit all parser diagnostics for structure and fix hints | done | 2026-05-13 | **P0** eerr/eerr_got/xp/opt_semi all emit got/expected/fix. E2002-E2005 have contextual fix suggestions. |
-| 84.1.3 | Audit name resolution diagnostics | backlog | — | **P1** E3011 suggest similar names (Levenshtein). E3012 show previous declaration location. |
-| 84.1.4 | Audit type checker diagnostics | backlog | — | **P1** Type mismatch show expected vs actual. Error propagation show type chain. |
-| 84.1.5 | Audit codegen/linker diagnostics | backlog | — | **P2** Missing stdlib suggest correct import. Unresolved symbol show which module provides it. |
-| 84.1.6 | Multi-error recovery in lexer | done | 2026-05-13 | **P0** Lexer continues after errors, collects up to 20 per pass. record_error() + skip for E1001/E1003/E1004. |
-| 84.1.7 | Multi-error recovery in parser | done | 2026-05-13 | **P0** Parser sync() to next statement boundary, NULL-propagation guards in expression chain, error cap at 20. |
-| 84.1.8 | Multi-error recovery in name resolver | backlog | — | **P1** Continue after E3011/E3012, collect all unresolved names. |
-| 84.1.9 | Multi-error recovery in type checker | backlog | — | **P1** Continue after type mismatches, collect all per function. |
-| 84.1.10 | Cross-language pattern detection (Python) | done | 2026-05-13 | **P1** Covered by 83.1.1 + parser W2021 for == and : after if/for. |
-| 84.1.11 | Cross-language pattern detection (Go/JS/Rust/C) | done | 2026-05-13 | **P2** Covered by 83.1.2-5 + names.c foreign_keyword_fix() for E3011. |
-| 84.1.12 | JSON diagnostic schema validation | backlog | — | **P1** JSON Schema for diagnostic format + test validating all emitted diagnostics. |
-| 84.1.13 | Populate file path in diagnostic output | done | 2026-05-13 | **P0** diag.c: emit_json() now uses s_source_file instead of hardcoded "". |
-| 84.1.14 | Add source_line field to diagnostics | backlog | — | **P1** Include actual source line text so LLM sees context without reading file. |
-| 84.1.15 | Human-readable --diag-text improvements | backlog | — | **P2** Show source line, caret at error column, message, fix suggestion (Rust/Clang style). |
+| 84.1.3 | Audit name resolution diagnostics | done | 2026-05-14 | **P1** Levenshtein distance suggestions for E3011 (max distance 3). Scans all scopes for closest match. |
+| 84.1.4 | Audit type checker diagnostics | done | 2026-05-14 | **P1** All type errors now have expected/got/fix fields. E4031, E4025, E4026, E4043, E4010, E4011 enriched. |
+| 84.1.5 | Audit codegen/linker diagnostics | done | 2026-05-14 | **P2** E9004 for unresolved stdlib calls suggests correct import. 36 known module names in lookup table. |
+| 84.1.6 | Multi-error recovery in lexer | done | 2026-05-13 | **P0** Lexer continues after errors, collects up to 20 per pass. |
+| 84.1.7 | Multi-error recovery in parser | done | 2026-05-13 | **P0** Parser sync() to next statement boundary, error cap at 20. |
+| 84.1.8 | Multi-error recovery in name resolver | done | 2026-05-14 | **P1** s_name_error_count cap at 20. Error-marker Decl inserted for undeclared names. |
+| 84.1.9 | Multi-error recovery in type checker | done | 2026-05-14 | **P1** fn_error_count cap at 20 per function. tc_can_emit() guards all diag sites. |
+| 84.1.10 | Cross-language pattern detection (Python) | done | 2026-05-13 | **P1** W1020 + W2021. |
+| 84.1.11 | Cross-language pattern detection (Go/JS/Rust/C) | done | 2026-05-13 | **P2** W1020 + E3011 foreign_keyword_fix(). |
+| 84.1.12 | JSON diagnostic schema validation | done | 2026-05-14 | **P1** test/test_diag_schema.sh validates required fields across 5 error categories. |
+| 84.1.13 | Populate file path in diagnostic output | done | 2026-05-13 | **P0** diag.c emit_json() uses s_source_file. |
+| 84.1.14 | Add source_line field to diagnostics | done | 2026-05-14 | **P1** diag_set_source() + extract_source_line(). JSON output has "source_line" field. |
+| 84.1.15 | Human-readable --diag-text improvements | done | 2026-05-14 | **P2** Rust/Clang-style output: error[E1001], file:line:col, source line, caret, fix suggestion. |
 
 ### Epic 80 — No Comments, Purpose-Built Model, Timeline Cleanup
 

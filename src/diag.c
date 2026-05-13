@@ -66,6 +66,8 @@ static int         s_warn_count  = 0;
 static int         s_seq         = 0;
 static int         s_suppress    = 0;  /* when nonzero, emit_* functions are no-ops */
 static const char *s_source_file = "";
+static const char *s_source_buf  = NULL;
+static size_t      s_source_len  = 0;
 
 /* ── SARIF buffer ──────────────────────────────────────────────────── */
 #define SARIF_MAX_DIAGS 4096
@@ -105,6 +107,41 @@ void diag_set_format(DiagFormat fmt)
 }
 /* diag_set_source_file — Record the path used in SARIF artifact locations. */
 void diag_set_source_file(const char *path) { s_source_file = path ? path : ""; }
+
+/* diag_set_source — Store a pointer to the source text for line extraction. */
+void diag_set_source(const char *src, size_t len) { s_source_buf = src; s_source_len = len; }
+
+/*
+ * extract_source_line — Copy the source line containing byte_offset into buf.
+ *
+ * Scans backward from byte_offset to find the start of the line, then forward
+ * to find the end.  Copies at most (buf_size - 1) characters and
+ * NUL-terminates.  Returns 0 on success, -1 if no source is available.
+ */
+static int
+extract_source_line(int byte_offset, char *buf, size_t buf_size)
+{
+    if (!s_source_buf || s_source_len == 0 || byte_offset < 0 || buf_size == 0) {
+        if (buf_size > 0) buf[0] = '\0';
+        return -1;
+    }
+    size_t off = (size_t)byte_offset;
+    if (off > s_source_len) off = s_source_len;
+
+    /* Find line start */
+    size_t ls = off;
+    while (ls > 0 && s_source_buf[ls - 1] != '\n') --ls;
+
+    /* Find line end */
+    size_t le = off;
+    while (le < s_source_len && s_source_buf[le] != '\n' && s_source_buf[le] != '\r') ++le;
+
+    size_t line_len = le - ls;
+    if (line_len >= buf_size) line_len = buf_size - 1;
+    memcpy(buf, s_source_buf + ls, line_len);
+    buf[line_len] = '\0';
+    return 0;
+}
 
 /* diag_error_count — Return the cumulative error count for this compilation. */
 int  diag_error_count(void)       { return s_error_count; }
@@ -254,23 +291,67 @@ emit_json(DiagSeverity sev, int code,
         json_escape(stderr, fields->fix);
     fputc('"', stderr);
 
+    /* source_line — the text of the line where the diagnostic occurred */
+    {
+        char sl_buf[1024];
+        if (extract_source_line(byte_offset, sl_buf, sizeof(sl_buf)) == 0) {
+            fputs(",\"source_line\":\"", stderr);
+            json_escape(stderr, sl_buf);
+            fputc('"', stderr);
+        } else {
+            fputs(",\"source_line\":\"\"", stderr);
+        }
+    }
+
     fputs("}\n", stderr);
 }
 
 /*
- * emit_text — Write a diagnostic in human-readable two-line format to stderr.
+ * emit_text — Write a Rust/Clang-style diagnostic to stderr.
  *
- * Line 1: "severity[CODE]: message"
- * Line 2: "  --> line N, col N"
+ * Example output:
+ *   error[E1001]: invalid escape sequence '\q'
+ *    --> source.tk:3:15
+ *     |
+ *   3 | let x = "\q";
+ *     |           ^^ valid escapes: \n \t \r \\ \" \0 \xNN
+ *     |
  */
 static void
-emit_text(DiagSeverity sev, int code, int line, int col, const char *message)
+emit_text(DiagSeverity sev, int code, int byte_offset, int line, int col,
+          const char *message, const DiagFields *fields)
 {
     fprintf(stderr, "%s[%c%04d]: %s\n",
             severity_str(sev),
             (sev == DIAG_ERROR) ? 'E' : 'W',
             code, message);
-    fprintf(stderr, "  --> line %d, col %d\n", line, col);
+    fprintf(stderr, " --> %s:%d:%d\n", s_source_file[0] ? s_source_file : "<input>", line, col);
+
+    char sl_buf[1024];
+    if (extract_source_line(byte_offset, sl_buf, sizeof(sl_buf)) == 0) {
+        /* Compute gutter width for the line number */
+        char line_str[16];
+        snprintf(line_str, sizeof(line_str), "%d", line);
+        int gutter = (int)strlen(line_str);
+
+        /* Blank gutter line */
+        fprintf(stderr, "%*s |\n", gutter, "");
+
+        /* Source line with line number */
+        fprintf(stderr, "%d | %s\n", line, sl_buf);
+
+        /* Caret line: gutter + " | " + spaces up to col, then caret(s) */
+        fprintf(stderr, "%*s | ", gutter, "");
+        for (int i = 1; i < col; i++) fputc(' ', stderr);
+        fputc('^', stderr);
+        /* If there's a fix hint, show it after the caret */
+        if (fields && fields->fix && fields->fix[0])
+            fprintf(stderr, " %s", fields->fix);
+        fputc('\n', stderr);
+
+        /* Trailing blank gutter */
+        fprintf(stderr, "%*s |\n", gutter, "");
+    }
 }
 
 /* update_counters — Bump the error or warning counter and the sequence id. */
@@ -328,7 +409,7 @@ diag_emit(DiagSeverity sev, int code,
     update_counters(sev);
     if (s_suppress) return;
     if (s_int_mode == DIAG_INT_TEXT)
-        emit_text(sev, code, line, col, message);
+        emit_text(sev, code, byte_offset, line, col, message, &fields);
     else if (s_int_mode == DIAG_INT_SARIF)
         buffer_sarif(sev, code, byte_offset, line, col, -1, -1, message, fields.fix);
     else
@@ -347,7 +428,7 @@ diag_emit_span(DiagSeverity sev, int code,
 
     update_counters(sev);
     if (s_int_mode == DIAG_INT_TEXT)
-        emit_text(sev, code, line, col, message);
+        emit_text(sev, code, byte_offset, line, col, message, &fields);
     else if (s_int_mode == DIAG_INT_SARIF)
         buffer_sarif(sev, code, byte_offset, line, col,
                      byte_offset, byte_offset + span_len, message, fields.fix);

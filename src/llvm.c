@@ -1976,6 +1976,33 @@ static int emit_expr(Ctx *c, const Node *n)
                         if (!strcmp(c->imports[ii].alias, alias)) {
                             is_cross_module_user = 1; break;
                         }
+                    /* Story 84.1.5: If alias matches a known stdlib module but
+                     * wasn't imported, emit a diagnostic suggesting the import. */
+                    if (!is_cross_module_user) {
+                        static const char *known_stdlib[] = {
+                            "io", "str", "env", "file", "path", "args", "toml",
+                            "md", "log", "http", "router", "json", "toon", "yaml",
+                            "i18n", "math", "time", "crypto", "net", "sys", "ws",
+                            "os", "mem", "process", "db", "task", "encoding",
+                            "csv", "template", "test", "sse", "image", "canvas",
+                            "chart", "stack", "queue", "set", NULL
+                        };
+                        for (int ki = 0; known_stdlib[ki]; ki++) {
+                            if (!strcmp(alias, known_stdlib[ki])) {
+                                char dmsg[256], dfix[256];
+                                snprintf(dmsg, sizeof dmsg,
+                                    "unresolved stdlib call '%s.%s()' — module 'std.%s' is not imported",
+                                    alias, method, alias);
+                                snprintf(dfix, sizeof dfix,
+                                    "add i=%s:std.%s; to imports",
+                                    alias, alias);
+                                diag_emit(DIAG_ERROR, E9004,
+                                          n->tok_start, n->line, n->col,
+                                          dmsg, "fix", dfix, NULL);
+                                break;
+                            }
+                        }
+                    }
                     snprintf(fn_buf, sizeof fn_buf, "%s", method);
                     resolved_fn = fn_buf;
                 }

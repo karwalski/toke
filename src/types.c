@@ -260,12 +260,18 @@ typedef struct {
     int         depth;
 } BindDepth;
 
+/* Maximum number of type errors to collect per function before
+ * suppressing further diagnostics.  Story 84.1.9. */
+#define MAX_TYPE_ERRORS 20
+
 typedef struct { TypeEnv *env; const char *src;
                  Type *fn_ret; int had_error;
                  const Node *fn_node;
                  int scope_depth;              /* nesting level within function */
                  BindDepth binds[MAX_BIND_DEPTH];
-                 int bind_count; } Ctx;
+                 int bind_count;
+                 int fn_error_count;           /* errors in current function (story 84.1.9) */
+               } Ctx;
 
 /*
  * record_bind_depth — record the scope depth at which a binding is created.
@@ -548,16 +554,31 @@ static Type *resolve_return_spec(Ctx *cx, const Node *rspec) {
  * assignment mismatches, argument mismatches, return type mismatches, and
  * binary operator mismatches.
  */
+/*
+ * tc_can_emit — return 1 if the per-function error limit has not been
+ * reached, incrementing the counter.  Always sets cx->had_error.
+ * Story 84.1.9.
+ */
+static int tc_can_emit(Ctx *cx) {
+    cx->had_error = 1;
+    cx->fn_error_count++;
+    return cx->fn_error_count <= MAX_TYPE_ERRORS;
+}
+
 static void emit_mm(Ctx *cx, const Node *n, const Type *exp,
                     const Type *got, const char *fix) {
+    if (!tc_can_emit(cx)) return;
     char msg[256];
     snprintf(msg,sizeof(msg),"type mismatch: expected '%s', got '%s'",
              type_name(exp),type_name(got));
     if (fix)
-        diag_emit(DIAG_ERROR,E4031,n->start,n->line,n->col,msg,"fix",fix,(const char*)NULL);
+        diag_emit(DIAG_ERROR,E4031,n->start,n->line,n->col,msg,
+                  "expected",type_name(exp),"got",type_name(got),
+                  "fix",fix,(const char*)NULL);
     else
-        diag_emit(DIAG_ERROR,E4031,n->start,n->line,n->col,msg,"fix",(const char*)NULL);
-    cx->had_error=1;
+        diag_emit(DIAG_ERROR,E4031,n->start,n->line,n->col,msg,
+                  "expected",type_name(exp),"got",type_name(got),
+                  "fix",(const char*)NULL);
 }
 
 /*
@@ -649,16 +670,22 @@ static Type *infer(Ctx *cx, const Node *node) {
             if (!kt) { kt = ek; vt = ev; }
             else {
                 if (ek->kind != TY_UNKNOWN && kt->kind != TY_UNKNOWN && !types_equal(kt, ek)) {
-                    char msg[256];
-                    snprintf(msg, sizeof(msg), "inconsistent map key type: expected '%s', got '%s'", type_name(kt), type_name(ek));
-                    diag_emit(DIAG_ERROR, E4043, entry->start, entry->line, entry->col, msg, "fix", (const char *)NULL);
-                    cx->had_error = 1;
+                    if (tc_can_emit(cx)) {
+                        char msg[256];
+                        snprintf(msg, sizeof(msg), "inconsistent map key type: expected '%s', got '%s'", type_name(kt), type_name(ek));
+                        diag_emit(DIAG_ERROR, E4043, entry->start, entry->line, entry->col, msg,
+                                  "expected", type_name(kt), "got", type_name(ek),
+                                  "fix", "all map keys must have the same type", (const char *)NULL);
+                    }
                 }
                 if (ev->kind != TY_UNKNOWN && vt->kind != TY_UNKNOWN && !types_equal(vt, ev)) {
-                    char msg[256];
-                    snprintf(msg, sizeof(msg), "inconsistent map value type: expected '%s', got '%s'", type_name(vt), type_name(ev));
-                    diag_emit(DIAG_ERROR, E4043, entry->start, entry->line, entry->col, msg, "fix", (const char *)NULL);
-                    cx->had_error = 1;
+                    if (tc_can_emit(cx)) {
+                        char msg[256];
+                        snprintf(msg, sizeof(msg), "inconsistent map value type: expected '%s', got '%s'", type_name(vt), type_name(ev));
+                        diag_emit(DIAG_ERROR, E4043, entry->start, entry->line, entry->col, msg,
+                                  "expected", type_name(vt), "got", type_name(ev),
+                                  "fix", "all map values must have the same type", (const char *)NULL);
+                    }
                 }
             }
         }
@@ -731,16 +758,24 @@ static Type *infer(Ctx *cx, const Node *node) {
             &&op->kind!=TY_I64&&op->kind!=TY_F64
             &&op->kind!=TY_I8&&op->kind!=TY_I16&&op->kind!=TY_I32
             &&op->kind!=TY_F32) {
-            char msg[128];
-            snprintf(msg,sizeof(msg),"type mismatch: expected 'i64' or 'f64', got '%s'",type_name(op));
-            diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,"fix",(const char*)NULL);
-            cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+            if (tc_can_emit(cx)) {
+                char msg[128];
+                snprintf(msg,sizeof(msg),"type mismatch: expected 'i64' or 'f64', got '%s'",type_name(op));
+                diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
+                          "expected","i64 or f64","got",type_name(op),
+                          "fix","unary minus requires a signed numeric type",(const char*)NULL);
+            }
+            return mk_type(A,TY_UNKNOWN);
         }
         if (node->op==TK_TILDE&&op->kind!=TY_UNKNOWN&&!is_integer(op)) {
-            char msg[128];
-            snprintf(msg,sizeof(msg),"type mismatch: bitwise NOT requires integer type, got '%s'",type_name(op));
-            diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,"fix",(const char*)NULL);
-            cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+            if (tc_can_emit(cx)) {
+                char msg[128];
+                snprintf(msg,sizeof(msg),"type mismatch: bitwise NOT requires integer type, got '%s'",type_name(op));
+                diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
+                          "expected","integer","got",type_name(op),
+                          "fix","bitwise NOT requires an integer operand",(const char*)NULL);
+            }
+            return mk_type(A,TY_UNKNOWN);
         }
         return op;
     }
@@ -829,11 +864,17 @@ static Type *infer(Ctx *cx, const Node *node) {
         /* E4026: wrong argument count */
         int actual_args=node->child_count-1;
         if (actual_args!=pi) {
-            char msg[256];
-            snprintf(msg,sizeof(msg),"wrong number of arguments: expected %d, got %d",pi,actual_args);
-            diag_emit(DIAG_ERROR,E4026,node->start,node->line,node->col,msg,
-                      "fix",(const char*)NULL);
-            cx->had_error=1;
+            if (tc_can_emit(cx)) {
+                char msg[256];
+                snprintf(msg,sizeof(msg),"wrong number of arguments: expected %d, got %d",pi,actual_args);
+                char exp_str[16], got_str[16];
+                snprintf(exp_str,sizeof(exp_str),"%d",pi);
+                snprintf(got_str,sizeof(got_str),"%d",actual_args);
+                diag_emit(DIAG_ERROR,E4026,node->start,node->line,node->col,msg,
+                          "expected",exp_str,"got",got_str,
+                          "fix","check the function signature for the correct number of parameters",
+                          (const char*)NULL);
+            }
             for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
             /* Still resolve return type even on arg count mismatch */
             for (int i=0;i<fn->child_count;i++) {
@@ -893,7 +934,9 @@ static Type *infer(Ctx *cx, const Node *node) {
                     snprintf(msg,sizeof(msg),"lossy cast from '%s' to '%s'",
                              type_name(src_t),type_name(dst_t));
                     diag_emit(DIAG_WARNING,W1001,node->start,node->line,node->col,
-                              msg,"fix",(const char*)NULL);
+                              msg,"expected",type_name(dst_t),"got",type_name(src_t),
+                              "fix","ensure the value fits in the target type or handle truncation",
+                              (const char*)NULL);
                 }
             }
             return dst_t;
@@ -916,10 +959,14 @@ static Type *infer(Ctx *cx, const Node *node) {
         Type *inner=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         if (!cx->fn_ret||cx->fn_ret->kind!=TY_ERROR_TYPE||
             (inner->kind!=TY_UNKNOWN&&inner->kind!=TY_ERROR_TYPE)) {
-            diag_emit(DIAG_ERROR,E3020,node->start,node->line,node->col,
-                "! applied to a non-error-union value; function must return T!Err",
-                "fix",(const char*)NULL);
-            cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+            if (tc_can_emit(cx)) {
+                diag_emit(DIAG_ERROR,E3020,node->start,node->line,node->col,
+                    "! applied to a non-error-union value; function must return T!Err",
+                    "expected","error-union (T!Err)","got",type_name(inner),
+                    "fix","use ! only on error-union values inside a function that returns T!Err",
+                    (const char*)NULL);
+            }
+            return mk_type(A,TY_UNKNOWN);
         }
         return (inner->kind==TY_ERROR_TYPE&&inner->elem)?inner->elem:mk_type(A,TY_UNKNOWN);
     }
@@ -939,18 +986,26 @@ static Type *infer(Ctx *cx, const Node *node) {
         Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *idx=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
         if (base->kind!=TY_UNKNOWN&&base->kind!=TY_ARRAY) {
-            char msg[256];
-            snprintf(msg,sizeof(msg),"type mismatch: cannot index into '%s'; expected array type",type_name(base));
-            diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,"fix",(const char*)NULL);
-            cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+            if (tc_can_emit(cx)) {
+                char msg[256];
+                snprintf(msg,sizeof(msg),"type mismatch: cannot index into '%s'; expected array type",type_name(base));
+                diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
+                          "expected","array","got",type_name(base),
+                          "fix","indexing with [] requires an array type",(const char*)NULL);
+            }
+            return mk_type(A,TY_UNKNOWN);
         }
         if (idx->kind!=TY_UNKNOWN&&idx->kind!=TY_I64&&idx->kind!=TY_U64
             &&idx->kind!=TY_I8&&idx->kind!=TY_I16&&idx->kind!=TY_I32
             &&idx->kind!=TY_U8&&idx->kind!=TY_U16&&idx->kind!=TY_U32) {
-            char msg[256];
-            snprintf(msg,sizeof(msg),"type mismatch: array index must be integer, got '%s'",type_name(idx));
-            diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,"fix",(const char*)NULL);
-            cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+            if (tc_can_emit(cx)) {
+                char msg[256];
+                snprintf(msg,sizeof(msg),"type mismatch: array index must be integer, got '%s'",type_name(idx));
+                diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
+                          "expected","integer","got",type_name(idx),
+                          "fix","cast index to i64 or u64 using 'as'",(const char*)NULL);
+            }
+            return mk_type(A,TY_UNKNOWN);
         }
         if (base->kind==TY_ARRAY&&base->elem) return base->elem;
         return mk_type(A,TY_UNKNOWN);
@@ -984,11 +1039,15 @@ static Type *infer(Ctx *cx, const Node *node) {
         for (int i=0;i<base->field_count;i++)
             if (base->field_names[i]&&strcmp(base->field_names[i],fname)==0)
                 return base->field_types[i];
-        char msg[256];
-        snprintf(msg,sizeof(msg),"struct '%s' has no field '%s'",
-                 base->name?base->name:"?",fname);
-        diag_emit(DIAG_ERROR,E4025,node->start,node->line,node->col,msg,"fix",(const char*)NULL);
-        cx->had_error=1; return mk_type(A,TY_UNKNOWN);
+        if (tc_can_emit(cx)) {
+            char msg[256];
+            snprintf(msg,sizeof(msg),"struct '%s' has no field '%s'",
+                     base->name?base->name:"?",fname);
+            diag_emit(DIAG_ERROR,E4025,node->start,node->line,node->col,msg,
+                      "expected","a valid field name","got",fname,
+                      "fix","check the struct definition for available fields",(const char*)NULL);
+        }
+        return mk_type(A,TY_UNKNOWN);
     }
 
     /* ── Bind / mutable-bind statement (let / let mut) ─────────────────
@@ -1057,12 +1116,14 @@ static Type *infer(Ctx *cx, const Node *node) {
                 /* NODE_MUT_BIND_STMT and NODE_LOOP_INIT are mutable — no error. */
             }
             if (immutable) {
-                char msg[256];
-                snprintf(msg,sizeof(msg),
-                    "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
-                diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
-                    "fix","let x = mut.expr",(const char*)NULL);
-                cx->had_error=1;
+                if (tc_can_emit(cx)) {
+                    char msg[256];
+                    snprintf(msg,sizeof(msg),
+                        "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
+                    diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
+                        "expected","mutable binding","got","immutable binding",
+                        "fix","declare with 'mut' to make mutable: let x = mut.expr",(const char*)NULL);
+                }
                 return mk_type(A,TY_VOID);
             }
         }
@@ -1096,9 +1157,12 @@ static Type *infer(Ctx *cx, const Node *node) {
         Type *val=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_VOID);
         if (cx->fn_ret&&cx->fn_ret->kind==TY_VOID&&node->child_count>0
             &&val->kind!=TY_UNKNOWN&&val->kind!=TY_VOID) {
-            diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,
-                "void function cannot return a value","fix","remove the return value",(const char*)NULL);
-            cx->had_error=1;
+            if (tc_can_emit(cx)) {
+                diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,
+                    "void function cannot return a value",
+                    "expected","void","got",type_name(val),
+                    "fix","remove the return value",(const char*)NULL);
+            }
         } else if (cx->fn_ret&&cx->fn_ret->kind!=TY_UNKNOWN&&val->kind!=TY_UNKNOWN
             &&!types_equal(cx->fn_ret,val)) {
             /* In error-union functions (T!Err), allow returning either
@@ -1181,17 +1245,30 @@ static Type *infer(Ctx *cx, const Node *node) {
             Type *at=arm->child_count>1&&arm->children[1]?infer(cx,arm->children[1]):mk_type(A,TY_VOID);
             if (!arm_type) { arm_type=at; }
             else if (at->kind!=TY_UNKNOWN&&arm_type->kind!=TY_UNKNOWN&&!types_equal(arm_type,at)) {
-                char msg[256];
-                snprintf(msg,sizeof(msg),"match arms have inconsistent types: '%s' vs '%s'",type_name(arm_type),type_name(at));
-                diag_emit(DIAG_ERROR,E4011,arm->start,arm->line,arm->col,msg,"fix",(const char*)NULL);
-                cx->had_error=1;
+                if (tc_can_emit(cx)) {
+                    char msg[256];
+                    snprintf(msg,sizeof(msg),"match arms have inconsistent types: '%s' vs '%s'",type_name(arm_type),type_name(at));
+                    diag_emit(DIAG_ERROR,E4011,arm->start,arm->line,arm->col,msg,
+                              "expected",type_name(arm_type),"got",type_name(at),
+                              "fix","ensure all match arms return the same type",(const char*)NULL);
+                }
             }
         }
         /* Bool exhaustiveness check */
-        if (scr->kind==TY_BOOL&&!has_t) { diag_emit(DIAG_ERROR,E4010,node->start,node->line,node->col,
-            "non-exhaustive match: missing arm for 'true'","fix",(const char*)NULL); cx->had_error=1; }
-        if (scr->kind==TY_BOOL&&!has_f) { diag_emit(DIAG_ERROR,E4010,node->start,node->line,node->col,
-            "non-exhaustive match: missing arm for 'false'","fix",(const char*)NULL); cx->had_error=1; }
+        if (scr->kind==TY_BOOL&&!has_t) {
+            if (tc_can_emit(cx))
+                diag_emit(DIAG_ERROR,E4010,node->start,node->line,node->col,
+                    "non-exhaustive match: missing arm for 'true'",
+                    "expected","true arm","got","missing",
+                    "fix","add a match arm for 'true'",(const char*)NULL);
+        }
+        if (scr->kind==TY_BOOL&&!has_f) {
+            if (tc_can_emit(cx))
+                diag_emit(DIAG_ERROR,E4010,node->start,node->line,node->col,
+                    "non-exhaustive match: missing arm for 'false'",
+                    "expected","false arm","got","missing",
+                    "fix","add a match arm for 'false'",(const char*)NULL);
+        }
         /* Sum type exhaustiveness check: if scrutinee is a struct (sum type)
          * with variant fields, verify every variant is covered by a match arm. */
         if (scr->kind==TY_STRUCT&&scr->field_count>0&&scr->field_names) {
@@ -1211,11 +1288,12 @@ static Type *infer(Ctx *cx, const Node *node) {
                 }
             }
             if (miss_count>0) {
-                char msg[768];
-                snprintf(msg,sizeof(msg),"non-exhaustive match: missing variant(s) %s",missing);
-                diag_emit(DIAG_ERROR,E5001,node->start,node->line,node->col,msg,"fix",
-                    "add the missing match arm(s)",(const char*)NULL);
-                cx->had_error=1;
+                if (tc_can_emit(cx)) {
+                    char msg[768];
+                    snprintf(msg,sizeof(msg),"non-exhaustive match: missing variant(s) %s",missing);
+                    diag_emit(DIAG_ERROR,E5001,node->start,node->line,node->col,msg,"fix",
+                        "add the missing match arm(s)",(const char*)NULL);
+                }
             }
         }
         return arm_type?arm_type:mk_type(A,TY_VOID);
@@ -1246,10 +1324,10 @@ static Type *infer(Ctx *cx, const Node *node) {
                     char nb[128]; TOKSTR(nb,cx->src,ln);
                     Decl *d=tc_lookup(cx->env->names->module_scope,nb,(int)strlen(nb));
                     if (d&&d->def_node) {
-                        diag_emit(DIAG_ERROR,E5001,ch->start,ch->line,ch->col,
-                            "value escapes arena scope: cannot assign arena-allocated value to outer variable",
-                            "fix",(const char*)NULL);
-                        cx->had_error=1;
+                        if (tc_can_emit(cx))
+                            diag_emit(DIAG_ERROR,E5001,ch->start,ch->line,ch->col,
+                                "value escapes arena scope: cannot assign arena-allocated value to outer variable",
+                                "fix",(const char*)NULL);
                     }
                 }
             }
@@ -1295,16 +1373,16 @@ static Type *infer(Ctx *cx, const Node *node) {
                 if (ch&&ch->kind==NODE_PARAM&&ch->child_count>1) {
                     Type *pt=resolve_type(cx,ch->children[1]);
                     if (contains_ptr(pt)) {
-                        diag_emit(DIAG_ERROR,E2010,ch->start,ch->line,ch->col,
-                            "pointer type *T used outside extern function","fix",(const char*)NULL);
-                        cx->had_error=1;
+                        if (tc_can_emit(cx))
+                            diag_emit(DIAG_ERROR,E2010,ch->start,ch->line,ch->col,
+                                "pointer type *T used outside extern function","fix",(const char*)NULL);
                     }
                 }
             }
             if (contains_ptr(ret)) {
-                diag_emit(DIAG_ERROR,E2010,node->start,node->line,node->col,
-                    "pointer type *T used outside extern function","fix",(const char*)NULL);
-                cx->had_error=1;
+                if (tc_can_emit(cx))
+                    diag_emit(DIAG_ERROR,E2010,node->start,node->line,node->col,
+                        "pointer type *T used outside extern function","fix",(const char*)NULL);
             }
         }
         Type *saved=cx->fn_ret; cx->fn_ret=ret;
@@ -1312,7 +1390,10 @@ static Type *infer(Ctx *cx, const Node *node) {
         /* Save and reset escape-analysis state for this function */
         int saved_depth=cx->scope_depth; cx->scope_depth=0;
         int saved_bc=cx->bind_count; cx->bind_count=0;
+        /* Reset per-function error counter (story 84.1.9) */
+        int saved_fec=cx->fn_error_count; cx->fn_error_count=0;
         for (int i=0;i<node->child_count;i++) infer(cx,node->children[i]);
+        cx->fn_error_count=saved_fec;
         cx->bind_count=saved_bc; cx->scope_depth=saved_depth;
         cx->fn_node=saved_fn; cx->fn_ret=saved;
         return mk_type(A,TY_VOID);
@@ -1329,9 +1410,9 @@ static Type *infer(Ctx *cx, const Node *node) {
             const Node *ch=node->children[i];
             if (!ch) continue;
             if (saw_return) {
-                diag_emit(DIAG_ERROR,E5002,ch->start,ch->line,ch->col,
-                    "unreachable code after return statement","fix",(const char*)NULL);
-                cx->had_error=1;
+                if (tc_can_emit(cx))
+                    diag_emit(DIAG_ERROR,E5002,ch->start,ch->line,ch->col,
+                        "unreachable code after return statement","fix",(const char*)NULL);
                 break; /* stop checking after first unreachable */
             }
             last=infer(cx,ch);
@@ -1433,7 +1514,7 @@ int type_check(const Node *ast, const char *src,
     if (!ast||!src||!names||!arena||!out) return -1;
     out->names=names; out->arena=arena; out->arena_depth=0;
     Ctx cx; cx.env=out; cx.src=src; cx.fn_ret=NULL; cx.had_error=0; cx.fn_node=NULL;
-    cx.scope_depth=0; cx.bind_count=0;
+    cx.scope_depth=0; cx.bind_count=0; cx.fn_error_count=0;
     for (int i=0;i<ast->child_count;i++) infer(&cx,ast->children[i]);
     return cx.had_error?-1:0;
 }

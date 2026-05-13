@@ -539,6 +539,7 @@ int main(int argc, char **argv)
     }
     sbuf[slen] = '\0';
     fclose(f);
+    diag_set_source(sbuf, (size_t)slen);
 
     Arena *arena = arena_init();
     if (!arena) { free(sbuf); fputs("tkc: arena_init failed\n", stderr); return EINTERNAL; }
@@ -990,6 +991,7 @@ done:
         }
         sbuf[slen] = '\0';
         fclose(f);
+        diag_set_source(sbuf, (size_t)slen);
 
         arena = arena_init();
         if (!arena) { free(sbuf); fputs("tkc: arena_init failed\n", stderr); return EINTERNAL; }

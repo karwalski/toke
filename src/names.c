@@ -595,6 +595,12 @@ void symtab_free(SymbolTable *st) {
 
 /* ── Name resolution ──────────────────────────────────────────────────── */
 
+/* Maximum number of name-resolution errors to collect before stopping
+ * further diagnostics.  The resolution pass still completes so that
+ * downstream phases receive partial results.  Story 84.1.8. */
+#define MAX_NAME_ERRORS 20
+static int s_name_error_count = 0;
+
 /*
  * push_scope — allocate a new Scope from the arena and link it to its
  *              parent scope, forming a chain for lexical scoping.
@@ -714,16 +720,20 @@ static int scope_insert(Scope *s, Arena *arena, const char *src,
             existing->def_node = def_node;
             return 0;  /* silently replace */
         }
-        char msg[256];
-        /* Copy name for message */
-        int mlen = name_len < 200 ? name_len : 200;
-        char nbuf[201];
-        memcpy(nbuf, src + name_start, (size_t)mlen);
-        nbuf[mlen] = '\0';
-        snprintf(msg, sizeof(msg),
-                 "identifier '%s' is already declared in this scope", nbuf);
-        diag_emit(DIAG_ERROR, E3012, tok_start, node_line, node_col, msg,
-                  "fix", NULL);
+        /* Multi-error recovery (story 84.1.8): emit diagnostic but skip
+         * the duplicate and continue resolution instead of aborting. */
+        s_name_error_count++;
+        if (s_name_error_count <= MAX_NAME_ERRORS) {
+            char msg[256];
+            int mlen = name_len < 200 ? name_len : 200;
+            char nbuf[201];
+            memcpy(nbuf, src + name_start, (size_t)mlen);
+            nbuf[mlen] = '\0';
+            snprintf(msg, sizeof(msg),
+                     "identifier '%s' is already declared in this scope", nbuf);
+            diag_emit(DIAG_ERROR, E3012, tok_start, node_line, node_col, msg,
+                      "fix", NULL);
+        }
         return -1;
     }
     Decl *d = (Decl *)arena_alloc(arena, (int)sizeof(Decl));
@@ -827,15 +837,60 @@ static void resolve_ident(const Node *node, const char *src,
     const char *name = src + node->tok_start;
     int         len  = node->tok_len;
     if (!scope_lookup(scope, name, len)) {
-        char msg[256];
-        int mlen = len < 200 ? len : 200;
-        char nbuf[201];
-        memcpy(nbuf, name, (size_t)mlen);
-        nbuf[mlen] = '\0';
-        const char *fix = foreign_keyword_fix(nbuf);
-        snprintf(msg, sizeof(msg), "identifier '%s' is not declared", nbuf);
-        diag_emit(DIAG_ERROR, E3011, node->start, node->line, node->col,
-                  msg, "fix", fix, NULL);
+        /* Only emit a diagnostic if we have not yet reached the error limit.
+         * The diagnostic is emitted BEFORE inserting the error-marker decl so
+         * that the Levenshtein "did you mean?" search does not match the very
+         * identifier that is missing. */
+        s_name_error_count++;
+        if (s_name_error_count <= MAX_NAME_ERRORS) {
+            char msg[256];
+            int mlen = len < 200 ? len : 200;
+            char nbuf[201];
+            memcpy(nbuf, name, (size_t)mlen);
+            nbuf[mlen] = '\0';
+            const char *fix = foreign_keyword_fix(nbuf);
+            /* If no foreign-keyword fix, try Levenshtein suggestion from scope */
+            char lev_fix[256];
+            if (!fix) {
+                const char *best_name = NULL;
+                int best_dist = 4; /* max distance 3 */
+                for (const Scope *sc = scope; sc; sc = sc->parent) {
+                    for (const Decl *d = sc->head; d; d = d->next) {
+                        if (!d->name) continue;
+                        int dist = levenshtein(nbuf, d->name);
+                        if (dist < best_dist) {
+                            best_dist = dist;
+                            best_name = d->name;
+                        }
+                    }
+                }
+                if (best_name) {
+                    snprintf(lev_fix, sizeof(lev_fix),
+                             "did you mean '%s'?", best_name);
+                    fix = lev_fix;
+                }
+            }
+            snprintf(msg, sizeof(msg), "identifier '%s' is not declared", nbuf);
+            diag_emit(DIAG_ERROR, E3011, node->start, node->line, node->col,
+                      msg, "fix", fix, NULL);
+        }
+
+        /* Mark the identifier as "error" in the current scope so that
+         * (a) subsequent references to the same name do not re-report, and
+         * (b) downstream phases see a declaration and can produce partial
+         * results.  Story 84.1.8. */
+        if (s_name_env && s_name_env->arena) {
+            Decl *ed = (Decl *)arena_alloc(s_name_env->arena, (int)sizeof(Decl));
+            if (ed) {
+                ed->name     = arena_intern(s_name_env->arena, name, len);
+                ed->name_len = len;
+                ed->kind     = DECL_PREDEFINED; /* treated as built-in "error" */
+                ed->def_node = NULL;
+                ed->next     = scope->head;
+                scope->head  = ed;
+            }
+        }
+
         *had_error = 1;
     }
 }
@@ -1349,6 +1404,9 @@ int resolve_names(const Node *ast, const char *src,
 
     /* Make NameEnv available to resolve_closure via file-static pointer */
     s_name_env = out;
+
+    /* Reset the multi-error counter (story 84.1.8) */
+    s_name_error_count = 0;
 
     /* Seed predefined identifiers */
     static const char *predefined[] = {

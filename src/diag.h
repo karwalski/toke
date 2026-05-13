@@ -1,6 +1,8 @@
 #ifndef TK_DIAG_H
 #define TK_DIAG_H
 
+#include <stddef.h> /* size_t */
+
 /*
  * diag.h — structured diagnostic emitter for the toke Profile 1 reference
  * compiler.
@@ -61,6 +63,10 @@ void diag_set_format(DiagFormat fmt);
 
 /* Set the source filename for SARIF location reporting. */
 void diag_set_source_file(const char *path);
+
+/* Store a pointer to the source text so diagnostics can include source lines.
+ * The pointer must remain valid for the lifetime of the compilation unit. */
+void diag_set_source(const char *src, size_t len);
 
 /* Flush buffered SARIF output. Call before exit when DIAG_FMT_SARIF is active.
  * No-op in other modes. Writes the complete SARIF v2.1.0 envelope to stdout. */
