@@ -3279,7 +3279,21 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             for (int ii = 0; ii < c->import_count; ii++)
                 if (!strcmp(c->imports[ii].alias, alias)) { is_mod = 1; break; }
             if (is_mod) {
-                const FnSig *msig = lookup_fn(c, method);
+                /* Build mangled name for lookup (Story 81b.7) */
+                char mangled[256];
+                for (int ii = 0; ii < c->import_count; ii++) {
+                    if (!strcmp(c->imports[ii].alias, alias)) {
+                        const char *mp = c->imports[ii].module;
+                        int plen = 0;
+                        for (const char *p = mp; *p && plen < 250; p++)
+                            mangled[plen++] = (*p == '.') ? '_' : *p;
+                        mangled[plen++] = '_';
+                        mangled[plen] = '\0';
+                        strncat(mangled, method, sizeof(mangled) - strlen(mangled) - 1);
+                        break;
+                    }
+                }
+                const FnSig *msig = lookup_fn(c, mangled);
                 if (msig) return msig->ret;
                 return "i8*";
             }
