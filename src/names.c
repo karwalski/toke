@@ -161,11 +161,23 @@ static char *build_avail_list(const char *sp, int max_avail) {
  */
 static int tki_exists(const char *sp, const char *rel) {
     char full[TKC_MAX_PATH * 2];
+    /* Try slash-separated path first: mod/a.tki */
     int n = snprintf(full, sizeof(full), "%s/%s.tki", sp ? sp : ".", rel);
-    if (n < 0 || n >= (int)sizeof(full)) return 0;
-    FILE *f = fopen(full, "r");
-    if (!f) return 0;
-    fclose(f); return 1;
+    if (n >= 0 && n < (int)sizeof(full)) {
+        FILE *f = fopen(full, "r");
+        if (f) { fclose(f); return 1; }
+    }
+    /* Also try dot-separated name: mod.a.tki (Story 81b.7) */
+    char dotrel[TKC_MAX_PATH];
+    strncpy(dotrel, rel, sizeof(dotrel) - 1);
+    dotrel[sizeof(dotrel) - 1] = '\0';
+    for (char *p = dotrel; *p; p++) if (*p == '/') *p = '.';
+    n = snprintf(full, sizeof(full), "%s/%s.tki", sp ? sp : ".", dotrel);
+    if (n >= 0 && n < (int)sizeof(full)) {
+        FILE *f = fopen(full, "r");
+        if (f) { fclose(f); return 1; }
+    }
+    return 0;
 }
 
 /* ── In-flight set for circular-import detection ─────────────────────── */

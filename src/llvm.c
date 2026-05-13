@@ -570,7 +570,14 @@ static void prepass_imports(Ctx *c, const Node *n) {
      * Last IDENT child is the module name (e.g. std.json → "json") */
     const Node *mp = n->children[1];
     if (mp->kind == NODE_MODULE_PATH && mp->child_count > 0) {
-        tok_cp(c->src, mp->children[mp->child_count - 1], ia->module, sizeof ia->module);
+        /* Store the FULL dotted module path (e.g., "mod.a" not just "a")
+         * for cross-module symbol mangling (Story 81b.7). */
+        ia->module[0] = '\0';
+        for (int s = 0; s < mp->child_count; s++) {
+            char seg[ALIAS_BUF]; tok_cp(c->src, mp->children[s], seg, sizeof seg);
+            if (s > 0) strncat(ia->module, ".", sizeof(ia->module) - strlen(ia->module) - 1);
+            strncat(ia->module, seg, sizeof(ia->module) - strlen(ia->module) - 1);
+        }
         /* Check if first path segment is "std" to distinguish stdlib from user modules */
         char seg0[ALIAS_BUF]; tok_cp(c->src, mp->children[0], seg0, sizeof seg0);
         ia->is_std = !strcmp(seg0, "std");
@@ -1054,18 +1061,37 @@ static void prepass_load_tki(Ctx *c, const Node *ast) {
             }
         }
         if (found && tki_path[0]) {
-            /* Story 81b.8: search -I directories for the .tki file */
+            /* Story 81b.8+81b.7: search for .tki file.
+             * Try slash-separated path first (mod/a.tki), then
+             * dot-separated (mod.a.tki) for both CWD and -I dirs. */
+            char dot_path[512];
+            strncpy(dot_path, tki_path, sizeof(dot_path) - 1);
+            dot_path[sizeof(dot_path) - 1] = '\0';
+            /* Convert slashes back to dots for alternate name */
+            for (char *dp = dot_path; *dp; dp++)
+                if (*dp == '/' && dp != dot_path) *dp = '.';
+
             FILE *probe = fopen(tki_path, "r");
+            if (!probe) probe = fopen(dot_path, "r");
             if (probe) {
+                /* Determine which path worked */
+                char *used = tki_path;
                 fclose(probe);
-                load_tki_funcs(c, tki_path);
-                load_tki_structs(c, tki_path);
+                probe = fopen(tki_path, "r");
+                if (!probe) used = dot_path;
+                else fclose(probe);
+                load_tki_funcs(c, used);
+                load_tki_structs(c, used);
             } else {
                 int sp_found = 0;
                 for (int si = 0; si < c->search_path_count && !sp_found; si++) {
                     char sp_path[512];
                     snprintf(sp_path, sizeof sp_path, "%s/%s", c->search_paths[si], tki_path);
                     FILE *pf = fopen(sp_path, "r");
+                    if (!pf) {
+                        snprintf(sp_path, sizeof sp_path, "%s/%s", c->search_paths[si], dot_path);
+                        pf = fopen(sp_path, "r");
+                    }
                     if (pf) {
                         fclose(pf);
                         load_tki_funcs(c, sp_path);
@@ -2003,7 +2029,31 @@ static int emit_expr(Ctx *c, const Node *n)
                             }
                         }
                     }
-                    snprintf(fn_buf, sizeof fn_buf, "%s", method);
+                    /* Cross-module calls need mangled names: mod_path_method
+                     * Story 81b.7: look up the module path from the import
+                     * and build the mangled function name. */
+                    if (is_cross_module_user) {
+                        for (int ii = 0; ii < c->import_count; ii++) {
+                            if (!strcmp(c->imports[ii].alias, alias)) {
+                                /* Build mangled name from module path */
+                                char mod_prefix[256] = "";
+                                const char *mp = c->imports[ii].module;
+                                int plen = 0;
+                                for (const char *p = mp; *p; p++) {
+                                    if (*p == '.' && plen < (int)sizeof(mod_prefix) - 2)
+                                        mod_prefix[plen++] = '_';
+                                    else if (plen < (int)sizeof(mod_prefix) - 2)
+                                        mod_prefix[plen++] = *p;
+                                }
+                                mod_prefix[plen++] = '_';
+                                mod_prefix[plen] = '\0';
+                                snprintf(fn_buf, sizeof fn_buf, "%s%s", mod_prefix, method);
+                                break;
+                            }
+                        }
+                    } else {
+                        snprintf(fn_buf, sizeof fn_buf, "%s", method);
+                    }
                     resolved_fn = fn_buf;
                 }
             }
@@ -2454,7 +2504,31 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
             }
             if (is_user_mod) {
-                /* Cross-module call: mod.get(arg) → call @get(arg) */
+                /* Cross-module call: a.func(arg) → call @mod_path_func(arg)
+                 * Build the mangled function name from the module path. */
+                char fn_name[256] = "get"; /* default fallback */
+                /* The parser stores this as INDEX_EXPR where child[0]=base, child[1]=arg.
+                 * The actual method name was consumed by the parser — for INDEX_EXPR
+                 * the method is always "get". For other methods, it goes through
+                 * NODE_CALL_EXPR with NODE_FIELD_EXPR. So we always mangle "get" here. */
+                /* Build mangled name: module_path_get */
+                for (int ii = 0; ii < c->import_count; ii++) {
+                    if (!strcmp(c->imports[ii].alias, base_alias)) {
+                        const char *mp = c->imports[ii].module;
+                        char mod_prefix[256] = "";
+                        int plen = 0;
+                        for (const char *p = mp; *p; p++) {
+                            if (*p == '.' && plen < (int)sizeof(mod_prefix) - 2)
+                                mod_prefix[plen++] = '_';
+                            else if (plen < (int)sizeof(mod_prefix) - 2)
+                                mod_prefix[plen++] = *p;
+                        }
+                        mod_prefix[plen++] = '_';
+                        mod_prefix[plen] = '\0';
+                        snprintf(fn_name, sizeof fn_name, "%sget", mod_prefix);
+                        break;
+                    }
+                }
                 int arg = emit_expr(c, n->children[1]);
                 const char *aty = expr_llvm_type(c, n->children[1]);
                 if (strcmp(aty, "i64") && !strcmp(aty, "i8*")) {
@@ -2462,17 +2536,17 @@ static int emit_expr(Ctx *c, const Node *n)
                     fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, arg);
                     arg = z;
                 }
-                /* Emit forward declaration for 'get' */
-                char decl_check[64]; snprintf(decl_check, sizeof decl_check, "@get(");
+                /* Emit forward declaration */
+                char decl_check[64]; snprintf(decl_check, sizeof decl_check, "@%s(", fn_name);
                 if (!strstr(c->fwd_decls, decl_check)) {
                     int dlen = snprintf(c->fwd_decls + c->fwd_decls_len,
                         TKC_FWD_DECL_SIZE - c->fwd_decls_len,
-                        "declare fastcc i64 @get(i64)\n");
+                        "declare fastcc i64 @%s(i64)\n", fn_name);
                     if (dlen > 0) c->fwd_decls_len += dlen;
                     c->fwd_decls[c->fwd_decls_len] = '\0';
                 }
                 t = next_tmp(c);
-                fprintf(c->out, "  %%t%d = call fastcc i64 @get( i64 %%t%d)\n", t, arg);
+                fprintf(c->out, "  %%t%d = call fastcc i64 @%s( i64 %%t%d)\n", t, fn_name, arg);
                 return t;
             }
             /* Map variable: emit tk_map_get(map_ptr, key_i64) */
