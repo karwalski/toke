@@ -1424,6 +1424,8 @@ int resolve_names(const Node *ast, const char *src,
     /* Seed predefined identifiers */
     static const char *predefined[] = {
         "true", "false", "bool", "i64", "u64", "f64", "str", "void",
+        "ok", "err",  /* result type variants — used by ! and mt */
+        "none",       /* option type variant — used by T!$none */
         NULL
     };
     for (int i = 0; predefined[i]; i++)
