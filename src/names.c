@@ -1401,7 +1401,8 @@ static int resolve_node(const Node *node, const char *src,
  * Returns 0 on success, -1 if any identifier could not be resolved.
  */
 int resolve_names(const Node *ast, const char *src,
-                  const SymbolTable *symtab, Arena *arena, NameEnv *out) {
+                  const SymbolTable *symtab, Arena *arena, NameEnv *out,
+                  const char **search_paths, int search_path_count) {
     if (!ast || !src || !symtab || !arena || !out) return -1;
 
     /* Build module scope */
@@ -1461,6 +1462,18 @@ int resolve_names(const Node *ast, const char *src,
         strncat(tki_slash, ".tki", sizeof(tki_slash) - strlen(tki_slash) - 1);
         FILE *tf = fopen(tki_rel, "r");
         if (!tf) tf = fopen(tki_slash, "r");
+        /* Try -I search paths */
+        if (!tf) {
+            for (int si = 0; si < search_path_count && !tf; si++) {
+                char sp_try[512];
+                snprintf(sp_try, sizeof sp_try, "%s/%s", search_paths[si], tki_rel);
+                tf = fopen(sp_try, "r");
+                if (!tf) {
+                    snprintf(sp_try, sizeof sp_try, "%s/%s", search_paths[si], tki_slash);
+                    tf = fopen(sp_try, "r");
+                }
+            }
+        }
         if (!tf) continue;
         fseek(tf, 0, SEEK_END); long tsz = ftell(tf); fseek(tf, 0, SEEK_SET);
         if (tsz <= 0 || tsz > 64*1024) { fclose(tf); continue; }

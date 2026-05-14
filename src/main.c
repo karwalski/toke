@@ -713,7 +713,7 @@ int main(int argc, char **argv)
 
     /* Resolve names */
     NameEnv ne;
-    if (resolve_names(ast, sbuf, &st, arena, &ne) < 0 || diag_error_count() > 0) {
+    if (resolve_names(ast, sbuf, &st, arena, &ne, search_paths, search_path_count) < 0 || diag_error_count() > 0) {
         symtab_free(&st); rc = ECOMPILE; goto done;
     }
     progress_update(50);
@@ -1013,7 +1013,7 @@ done:
         }
 
         /* Resolve names */
-        if (resolve_names(ast, sbuf, &st, arena, &ne) < 0 || diag_error_count() > 0) {
+        if (resolve_names(ast, sbuf, &st, arena, &ne, search_paths, search_path_count) < 0 || diag_error_count() > 0) {
             symtab_free(&st); arena_free(arena); free(sbuf); return ECOMPILE;
         }
 

@@ -191,7 +191,7 @@ static PipeResult run_pipeline(const char *source, const char *up_to)
     }
 
     NameEnv ne;
-    if (resolve_names(r.ast, source, &st, r.arena, &ne) < 0 ||
+    if (resolve_names(r.ast, source, &st, r.arena, &ne, NULL, 0) < 0 ||
         diag_error_count() > 0) {
         symtab_free(&st);
         r.fail_stage = "names";

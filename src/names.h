@@ -144,6 +144,7 @@ typedef struct {
  * src:    original source buffer.
  * Returns 0 on success, -1 if any identifier could not be resolved. */
 int resolve_names(const Node *ast, const char *src,
-                  const SymbolTable *symtab, Arena *arena, NameEnv *out);
+                  const SymbolTable *symtab, Arena *arena, NameEnv *out,
+                  const char **search_paths, int search_path_count);
 
 #endif /* TK_NAMES_H */
