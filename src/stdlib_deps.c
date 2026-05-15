@@ -79,6 +79,7 @@ static const StdlibModule stdlib_table[] = {
     { "queue",         "collections.c collections_glue.c",      "",                                                                 "" },
     { "set",           "collections.c collections_glue.c",      "",                                                                 "" },
     { "task",          "task.c",                                "",                                                                 "-lpthread" },
+    { "clipboard",     "clipboard_glue.c",                      "",                                                                 "" },
     { NULL, NULL, NULL, NULL }  /* sentinel */
 };
 

@@ -2815,9 +2815,9 @@ struct TkTlsCtx {
 
 /* ── ALPN callback (Story 60.1.5) ─────────────────────────────────────── */
 
-/* Preferred protocols: h2 first, then http/1.1 (Story 75.2 fixed h2 dispatch) */
+/* Preferred protocols: http/1.1 only — h2 has bugs with large responses
+ * (CSS 24KB causes worker hang). Disable h2 until frame handling fixed. */
 static const uint8_t alpn_protos[] = {
-    2, 'h', '2',
     8, 'h', 't', 't', 'p', '/', '1', '.', '1',
 };
 

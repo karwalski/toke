@@ -4317,6 +4317,12 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_task_awaitall", "declare i64 @tk_task_awaitall(i64)", 0},
     {"tk_task_result", "declare i64 @tk_task_result(i64)", 0},
     {"tk_task_cancel", "declare i64 @tk_task_cancel(i64)", 0},
+    /* arr/clipboard/crypto extras (loke) */
+    {"tk_arr_join_w", "declare i64 @tk_arr_join_w(i64, i64)", 0},
+    {"tk_clipboard_read_w", "declare i64 @tk_clipboard_read_w()", 0},
+    {"tk_clipboard_write_w", "declare i64 @tk_clipboard_write_w(i64)", 0},
+    {"tk_crypto_randomhex_w", "declare i64 @tk_crypto_randomhex_w(i64)", 0},
+    {"tk_crypto_randombase64url_w", "declare i64 @tk_crypto_randombase64url_w(i64)", 0},
     {NULL, NULL, 0}
 };
 

@@ -229,3 +229,9 @@ int64_t tk_set_len_w(int64_t s)                      { return tk_set_len(s); }
 int64_t tk_arr_push_w(int64_t arr, int64_t item) {
     return tk_array_append_w(arr, item);
 }
+
+/* arr.join — alias for str.join (join array elements with separator) */
+int64_t tk_arr_join_w(int64_t arr, int64_t sep) {
+    extern int64_t tk_str_join_w(int64_t, int64_t);
+    return tk_str_join_w(sep, arr); /* str_join takes (sep, arr) */
+}
