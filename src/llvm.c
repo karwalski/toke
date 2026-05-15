@@ -2123,8 +2123,16 @@ static int emit_expr(Ctx *c, const Node *n)
          * returns the name unchanged for non-function identifiers). */
         if (!callee && !is_cross_module_user && !resolved_fn && na == 1 &&
             strncmp(tb, "tk_", 3) != 0) {
-            /* Variant constructor: just pass through the argument value */
-            return args[0];
+            /* Variant constructor: pass through the argument value,
+             * but coerce i8* → i64 if the argument is a pointer (struct). */
+            int val = args[0];
+            const char *vty = arg_tys[0];
+            if (!strcmp(vty, "i8*")) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, val);
+                val = z;
+            }
+            return val;
         }
 
         /* Determine return type */
