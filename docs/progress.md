@@ -3774,7 +3774,7 @@ Migrate existing corpus and training data from v0.2 (Phase 2, 56-char) to v0.3 (
 | 82.1.3 | Validate migrated corpus — all records compile with `toke --check` | backlog | — | After migration, verify every record compiles. Report pass/fail. Fix or remove records that fail. |
 | 82.1.4 | Runtime-verify migrated corpus — compile and run a sample | backlog | — | For records with expected output, compile to binary, run, compare output. At minimum verify 100 records end-to-end. |
 | 82.1.5 | Update system prompt in training data to v0.3 spec | backlog | — | Change "Phase 2 profile, v0.2" to v0.3. Update character set (55 chars), keywords, syntax examples in the system prompt. |
-| 82.1.6 | Migrate cloud-API high-quality exemplars to v0.3 | backlog | — | Identify and migrate the cloud API-generated exemplars (higher quality than mechanical generation). Ensure they compile and run. Location TBD — user to confirm which files. |
+| 82.1.6 | Migrate cloud-API high-quality exemplars to v0.3 | backlog | — | **FOUND:** toke-model/benchmark/test_programs_100.jsonl (100 programs, all --check pass, 31 compiled, 17 ran) + tasks_v2.jsonl (400 tasks with expected output, reference source, judge scores). All v0.2 lowercase syntax. Need: --migrate, revalidate, runtime-test. |
 | 82.1.7 | Migrate phase2_deduplicated corpus (61 categories, ~190K records) | backlog | — | Bulk migration of the full phase2 corpus. Run --migrate on all, validate, produce statistics. |
 | 82.1.8 | Generate new v0.3 training JSONL from migrated corpus | backlog | — | Produce train.jsonl + eval.jsonl in ChatML format with v0.3 system prompt. Ready for fine-tuning when hardware available. |
 
