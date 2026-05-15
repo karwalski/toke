@@ -3761,6 +3761,23 @@ The ~170 `_w` glue wrappers in *_glue.c were wired to C implementations but neve
 | 81b.14 | Imported types from .tki registered in name scope | done | 2026-05-14 | names.c resolve_names parses .tki type exports, registers type names and sum variants as predefined. Uses -I search paths. |
 | 81b.15 | $ok, $err, $none are built-in predefined identifiers | done | 2026-05-15 | names.c: Added to predefined[] list. Unblocks 19+ modules using ! result type. |
 
+## Epic 82 — Training Corpus v0.3 Migration
+
+Migrate existing corpus and training data from v0.2 (Phase 2, 56-char) to v0.3 (55-char, 13 keywords). Ensure all examples compile and produce correct output with the current compiler.
+
+### Epic 82.1 — Corpus audit and migration
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 82.1.1 | Audit training-data-p2 JSONL for v0.3 compliance | backlog | — | 18,890 train + 994 eval records in toke-model/training-data-p2/. System prompt says "v0.2". Check: keyword syntax (m= vs M=), array syntax (@() vs []), match syntax (mt vs \|{), character set (55 vs 56 chars). |
+| 82.1.2 | Run `toke --migrate` on all corpus .tk source fields | backlog | — | Extract tk_source from each JSONL/JSON record, run `toke --migrate`, replace source, update system prompt to v0.3. |
+| 82.1.3 | Validate migrated corpus — all records compile with `toke --check` | backlog | — | After migration, verify every record compiles. Report pass/fail. Fix or remove records that fail. |
+| 82.1.4 | Runtime-verify migrated corpus — compile and run a sample | backlog | — | For records with expected output, compile to binary, run, compare output. At minimum verify 100 records end-to-end. |
+| 82.1.5 | Update system prompt in training data to v0.3 spec | backlog | — | Change "Phase 2 profile, v0.2" to v0.3. Update character set (55 chars), keywords, syntax examples in the system prompt. |
+| 82.1.6 | Migrate cloud-API high-quality exemplars to v0.3 | backlog | — | Identify and migrate the cloud API-generated exemplars (higher quality than mechanical generation). Ensure they compile and run. Location TBD — user to confirm which files. |
+| 82.1.7 | Migrate phase2_deduplicated corpus (61 categories, ~190K records) | backlog | — | Bulk migration of the full phase2 corpus. Run --migrate on all, validate, produce statistics. |
+| 82.1.8 | Generate new v0.3 training JSONL from migrated corpus | backlog | — | Produce train.jsonl + eval.jsonl in ChatML format with v0.3 system prompt. Ready for fine-tuning when hardware available. |
+
 ### Epic 78.3 — Tier 3: Remaining modules (lower priority)
 
 | ID | Story | Status | Date | Notes |
