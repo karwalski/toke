@@ -916,11 +916,10 @@ static void load_tki_funcs(Ctx *c, const char *tki_path) {
             snprintf(mangled_fn, sizeof mangled_fn, "%s%s", tki_mod_prefix, fn_name);
         else
             strncpy(mangled_fn, fn_name, sizeof mangled_fn - 1);
-        FnSig *sig = register_fn(c, mangled_fn, !strcmp(ret_type, "i8*") ? "i8*"
-                                  : !strcmp(ret_type, "double") ? "double"
-                                  : !strcmp(ret_type, "i1") ? "i1"
-                                  : !strcmp(ret_type, "void") ? "void"
-                                  : "i64");
+        /* Cross-module ABI: all non-void returns use i64 (pointers via
+         * ptrtoint, bools via zext, floats via bitcast). Only void stays void. */
+        FnSig *sig = register_fn(c, mangled_fn,
+                                  !strcmp(ret_type, "void") ? "void" : "i64");
         if (sig) {
             sig->is_internal = 1; /* use fastcc */
             /* Store toke return type name for struct type propagation */
@@ -1806,9 +1805,15 @@ static int emit_expr(Ctx *c, const Node *n)
         int rhs_narrow_int = (!strcmp(rty, "i8") || !strcmp(rty, "i16") || !strcmp(rty, "i32"));
         int is_float_binop = (!strcmp(lty, "double") || !strcmp(lty, "float") ||
                               !strcmp(rty, "double") || !strcmp(rty, "float"));
-        /* If only RHS is float, promote LHS and use RHS type as canonical */
+        /* If only RHS is float, promote LHS integer to float via sitofp.
+         * Don't use coerce_value (which bitcasts) — we need value conversion. */
         if (is_float_binop && strcmp(lty, "double") && strcmp(lty, "float")) {
-            lhs = coerce_value(c, lhs, lty, rty);
+            int z = next_tmp(c);
+            if (!strcmp(lty, "i64") || !strcmp(lty, "i32") || !strcmp(lty, "i16") || !strcmp(lty, "i8"))
+                fprintf(c->out, "  %%t%d = sitofp %s %%t%d to %s\n", z, lty, lhs, rty);
+            else
+                z = coerce_value(c, lhs, lty, rty);
+            lhs = z;
             lty = rty;
         }
         /* Coerce mismatched narrow-int / i64 operands to the same type */
@@ -1839,7 +1844,15 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         /* Float binary operations — coerce mismatched operands (Story 57.13.2) */
         if (is_float_binop) {
-            rhs = coerce_value(c, rhs, rty, lty);    /* e.g. i64 → double */
+            /* Use sitofp for integer→float, not bitcast (coerce_value) */
+            if (strcmp(rty, lty) && (!strcmp(rty, "i64") || !strcmp(rty, "i32") ||
+                !strcmp(rty, "i16") || !strcmp(rty, "i8"))) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = sitofp %s %%t%d to %s\n", z, rty, rhs, lty);
+                rhs = z;
+            } else {
+                rhs = coerce_value(c, rhs, rty, lty);
+            }
             t = next_tmp(c);
             const char *fop;
             switch (n->op) {
