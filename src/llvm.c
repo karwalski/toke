@@ -178,6 +178,9 @@ static void tok_cp(const char *src,const Node *n,char *buf,int sz){int len=n->to
 static void mangle_fn_name(const Ctx *c, char *buf, int sz) {
     if (!c->module_prefix[0]) return;
     if (!strcmp(buf, "tk_main")) return;
+    /* Don't mangle built-in identifiers ($ok, $err, $none) or stdlib wrappers */
+    if (!strcmp(buf, "ok") || !strcmp(buf, "err") || !strcmp(buf, "none")) return;
+    if (!strncmp(buf, "tk_", 3)) return;
     char tmp[256];
     snprintf(tmp, sizeof tmp, "%s%s", c->module_prefix, buf);
     strncpy(buf, tmp, (size_t)(sz - 1));
@@ -2861,7 +2864,6 @@ static int emit_expr(Ctx *c, const Node *n)
             }
 
             /* Emit comparison chain */
-            int check_idx = 0;
             int arm_i = 0;
             for (int i = 1; i < n->child_count; i++) {
                 const Node *arm = n->children[i];
@@ -2877,8 +2879,9 @@ static int emit_expr(Ctx *c, const Node *n)
                     /* Emit string constant for the tag name */
                     int str_g = next_str(c);
                     int tag_len = (int)strlen(tag) + 1;
-                    fprintf(c->out, "  %%tag%d = getelementptr inbounds [%d x i8], [%d x i8]* @.strtag.%d, i32 0, i32 0\n",
-                            check_idx, tag_len, tag_len, str_g);
+                    int tag_tmp = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.strtag.%d, i32 0, i32 0\n",
+                            tag_tmp, tag_len, tag_len, str_g);
                     /* Add the string constant to globals buffer */
                     int glen = c->str_globals_len;
                     int wrote = snprintf(c->str_globals + glen,
@@ -2890,14 +2893,13 @@ static int emit_expr(Ctx *c, const Node *n)
 
                     /* strcmp(scrutinee, tag) */
                     int cmp = next_tmp(c);
-                    fprintf(c->out, "  %%t%d = call i32 @strcmp(i8* %%t%d, i8* %%tag%d)\n", cmp, str_val, check_idx);
+                    fprintf(c->out, "  %%t%d = call i32 @strcmp(i8* %%t%d, i8* %%t%d)\n", cmp, str_val, tag_tmp);
                     int eq = next_tmp(c);
                     fprintf(c->out, "  %%t%d = icmp eq i32 %%t%d, 0\n", eq, cmp);
 
                     int next_check_lbl = next_lbl(c);
                     fprintf(c->out, "  br i1 %%t%d, label %%marm%d, label %%mcheck%d\n", eq, this_arm_lbl, next_check_lbl);
                     fprintf(c->out, "mcheck%d:\n", next_check_lbl);
-                    check_idx++;
                 }
                 arm_i++;
             }
