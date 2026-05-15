@@ -175,12 +175,24 @@ static void tok_cp(const char *src,const Node *n,char *buf,int sz){int len=n->to
  * This ensures all user-defined functions are mangled with their module path
  * to avoid symbol collisions when linking multiple modules.
  */
+static const FnSig *lookup_fn(Ctx *c, const char *name); /* forward decl */
 static void mangle_fn_name(const Ctx *c, char *buf, int sz) {
     if (!c->module_prefix[0]) return;
     if (!strcmp(buf, "tk_main")) return;
     /* Don't mangle built-in identifiers ($ok, $err, $none) or stdlib wrappers */
     if (!strcmp(buf, "ok") || !strcmp(buf, "err") || !strcmp(buf, "none")) return;
     if (!strncmp(buf, "tk_", 3)) return;
+    /* Only mangle names that are registered as local functions.
+     * Imported variant constructors ($badval, $notfound) and other
+     * non-function identifiers should not get the local module prefix. */
+    const FnSig *sig = lookup_fn((Ctx *)(uintptr_t)c, buf);
+    if (!sig) {
+        /* Check if it would match with prefix (already mangled in prepass) */
+        char prefixed[256];
+        snprintf(prefixed, sizeof prefixed, "%s%s", c->module_prefix, buf);
+        sig = lookup_fn((Ctx *)(uintptr_t)c, prefixed);
+        if (!sig) return; /* Not a local function — don't mangle */
+    }
     char tmp[256];
     snprintf(tmp, sizeof tmp, "%s%s", c->module_prefix, buf);
     strncpy(buf, tmp, (size_t)(sz - 1));
