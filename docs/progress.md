@@ -3754,6 +3754,12 @@ The ~170 `_w` glue wrappers in *_glue.c were wired to C implementations but neve
 | 81b.8 | -I search path for .tki in --emit-llvm mode | done | 2026-05-13 | **P2** llvm.h: search_paths in CodegenEnv. prepass_load_tki iterates -I dirs. |
 | 81b.9 | void expression in if-branch generates invalid %void IR | done | 2026-05-13 | **P2** llvm.c NODE_IDENT: `void` as expression emits `add i64 0, 0` instead of loading undefined %void. |
 | 81b.6 | Bump toke version to 0.3.0 | done | 2026-05-13 | **P0** Updated in main.c, llvm.c, companion.c, diag.c, wasm_api.c, toke.1. |
+| 81b.10 | Cross-module caller-side symbol mangling | done | 2026-05-14 | **P0** NODE_INDEX_EXPR and NODE_CALL_EXPR build mangled names from import module path. prepass_imports stores full dotted path. |
+| 81b.11 | Cross-module .tki return types use correct type | done | 2026-05-14 | **P0** load_tki_funcs registers with mangled name. expr_llvm_type builds mangled name for FnSig lookup. |
+| 81b.12 | &funcname uses mangled symbol | done | 2026-05-14 | NODE_FUNC_REF calls mangle_fn_name before ptrtoint. |
+| 81b.13 | .tki includes struct fields and sum type variants | done | 2026-05-14 | ir.c unwraps NODE_STMT_LIST for fields. Detects sum types via $ prefix. Emits is_sum flag. |
+| 81b.14 | Imported types from .tki registered in name scope | done | 2026-05-14 | names.c resolve_names parses .tki type exports, registers type names and sum variants as predefined. Uses -I search paths. |
+| 81b.15 | $ok, $err, $none are built-in predefined identifiers | done | 2026-05-15 | names.c: Added to predefined[] list. Unblocks 19+ modules using ! result type. |
 
 ### Epic 78.3 — Tier 3: Remaining modules (lower priority)
 
