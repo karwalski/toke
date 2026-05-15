@@ -3970,17 +3970,11 @@ static void emit_toplevel(Ctx *c, const Node *n)
                 const Node *rs = n->children[i];
                 if (rs->child_count > 0) {
                     ret = resolve_llvm_type(c, rs->children[0]);
-                    /* User-defined struct types return i8* internally but
-                     * cross-module ABI requires i64. Use i64 for struct
-                     * returns so define matches the importer's declare. */
-                    if (!strcmp(ret, "i8*") && rs->children[0]->kind != NODE_TYPE_EXPR) {
-                        /* NODE_TYPE_EXPR = primitive (str, bool); keep i8* for str.
-                         * TYPE_IDENT = user struct; convert to i64 for ABI. */
-                        char tn[128];
-                        tok_cp(c->src, rs->children[0], tn, sizeof tn);
-                        if (strcmp(tn, "str") != 0 && strcmp(tn, "Str") != 0)
-                            ret = "i64";
-                    }
+                    /* All i8* return types (str, structs, arrays) should use
+                     * i64 for cross-module ABI consistency. The ret statement
+                     * coerces via ptrtoint i8* to i64 automatically. */
+                    if (!strcmp(ret, "i8*"))
+                        ret = "i64";
                 }
             }
         }
