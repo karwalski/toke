@@ -2116,6 +2116,17 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         const FnSig *callee = lookup_fn(c, tb);
 
+        /* Sum type variant constructor: $configerr("msg") is not a function
+         * call — it's just a value wrapper. The variant value IS the payload.
+         * Only applies when the call was NOT resolved via resolve_stdlib_call
+         * or cross-module import, and the name was not mangled (mangle_fn_name
+         * returns the name unchanged for non-function identifiers). */
+        if (!callee && !is_cross_module_user && !resolved_fn && na == 1 &&
+            strncmp(tb, "tk_", 3) != 0) {
+            /* Variant constructor: just pass through the argument value */
+            return args[0];
+        }
+
         /* Determine return type */
         const char *callee_ret = callee ? callee->ret : "i64";
         if (is_cross_module_user) {

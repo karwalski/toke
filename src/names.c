@@ -1663,6 +1663,43 @@ int resolve_names(const Node *ast, const char *src,
                      name_node->start, name_node->tok_len,
                      name_node->tok_start, name_node->tok_len,
                      dk, d, name_node->line, name_node->col);
+
+        /* For sum types: register variant names ($red, $green, etc.) as
+         * predefined so they can be used as constructors: $red(val).
+         * Sum type variants have $ before the field name in source. */
+        if (dk == DECL_TYPE) {
+            for (int j = 1; j < d->child_count; j++) {
+                const Node *ch = d->children[j];
+                if (!ch) continue;
+                /* Fields may be wrapped in NODE_STMT_LIST */
+                const Node *fields_parent = ch;
+                if (ch->kind == NODE_STMT_LIST) fields_parent = ch;
+                else if (ch->kind != NODE_FIELD) continue;
+                int fc_start = (fields_parent->kind == NODE_STMT_LIST) ? 0 : -1;
+                int fc_end = (fields_parent->kind == NODE_STMT_LIST) ? fields_parent->child_count : 0;
+                if (fc_start < 0) { /* single NODE_FIELD as direct child */
+                    if (ch->kind == NODE_FIELD && ch->tok_start > 0 && src[ch->tok_start - 1] == '$') {
+                        char vname[128];
+                        int vlen = ch->tok_len < 127 ? ch->tok_len : 127;
+                        memcpy(vname, src + ch->tok_start, (size_t)vlen);
+                        vname[vlen] = '\0';
+                        seed_predefined(mscope, arena, vname);
+                    }
+                } else {
+                    for (int k = fc_start; k < fc_end; k++) {
+                        const Node *fld = fields_parent->children[k];
+                        if (!fld || fld->kind != NODE_FIELD) continue;
+                        if (fld->tok_start > 0 && src[fld->tok_start - 1] == '$') {
+                            char vname[128];
+                            int vlen = fld->tok_len < 127 ? fld->tok_len : 127;
+                            memcpy(vname, src + fld->tok_start, (size_t)vlen);
+                            vname[vlen] = '\0';
+                            seed_predefined(mscope, arena, vname);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /* Second pass: resolve references inside each top-level declaration. */
