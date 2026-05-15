@@ -3399,10 +3399,18 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             char cl_str[32];
             snprintf(cl_str, sizeof(cl_str), "%zu", body_len);
 
+            /* Extract Content-Type from response headers if present */
+            const char *h2_ct = "text/html; charset=utf-8";
+            for (uint64_t hi = 0; hi < res.headers.len; hi++) {
+                if (res.headers.data[hi].key &&
+                    strcasecmp(res.headers.data[hi].key, "Content-Type") == 0) {
+                    h2_ct = res.headers.data[hi].val;
+                    break;
+                }
+            }
             const char *resp_names[]  = { ":status", "content-length",
                                           "content-type" };
-            const char *resp_values[] = { status_str, cl_str,
-                                          "text/html; charset=utf-8" };
+            const char *resp_values[] = { status_str, cl_str, h2_ct };
             uint8_t hbuf[4096];
             int hlen = hpack_encode(&conn->hpack_encode,
                                     resp_names, resp_values, 3,
