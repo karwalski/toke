@@ -2747,13 +2747,92 @@ static int emit_expr(Ctx *c, const Node *n)
         /* Count actual value elements — skip type-annotation children like
          * NODE_TYPE_IDENT (e.g. the $route in @($route) typed empty arrays). */
         int elem_count = 0;
+        int spread_idx = -1; /* index of first spread (array-typed) element */
         for (int i = 0; i < n->child_count; i++) {
             NodeKind ck = n->children[i]->kind;
-            if (ck != NODE_TYPE_IDENT && ck != NODE_TYPE_EXPR &&
-                ck != NODE_ARRAY_TYPE && ck != NODE_MAP_TYPE &&
-                ck != NODE_FUNC_TYPE  && ck != NODE_PTR_TYPE)
-                elem_count++;
+            if (ck == NODE_TYPE_IDENT || ck == NODE_TYPE_EXPR ||
+                ck == NODE_ARRAY_TYPE || ck == NODE_MAP_TYPE ||
+                ck == NODE_FUNC_TYPE  || ck == NODE_PTR_TYPE)
+                continue;
+            /* Detect if this element is an array variable to be spread:
+             * NODE_IDENT that is ptr_local, not a map, and not a struct. */
+            if (spread_idx < 0 && n->children[i]->kind == NODE_IDENT) {
+                char eid[128]; tok_cp(c->src, n->children[i], eid, sizeof eid);
+                if (is_ptr_local(c, eid) && !is_map_var(c, eid) &&
+                    !ptr_local_struct_type(c, eid))
+                    spread_idx = i;
+            }
+            elem_count++;
         }
+
+        /* ── Spread path: @(base_arr; item1; item2; ...) ─────────────── */
+        if (spread_idx >= 0) {
+            /* Emit the spread source array */
+            int src_arr = emit_expr(c, n->children[spread_idx]);
+            const char *sty = expr_llvm_type(c, n->children[spread_idx]);
+            if (!strcmp(sty, "i64")) {
+                int conv = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", conv, src_arr);
+                src_arr = conv;
+            }
+            /* Read base.len from ptr[-1] */
+            int base_len_ptr = next_tmp(c);
+            int base_len = next_tmp(c);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 -1\n", base_len_ptr, src_arr);
+            fprintf(c->out, "  %%t%d = load i64, i64* %%t%d ; base.len\n", base_len, base_len_ptr);
+            /* total_len = base_len + N_scalar_items */
+            int n_scalars = elem_count - 1; /* everything except the spread source */
+            int total_len = next_tmp(c);
+            fprintf(c->out, "  %%t%d = add i64 %%t%d, %d ; total_len = base.len + %d\n",
+                    total_len, base_len, n_scalars, n_scalars);
+            /* alloc_bytes = (total_len + 1) * 8 */
+            int alloc_elems = next_tmp(c);
+            int alloc_bytes = next_tmp(c);
+            fprintf(c->out, "  %%t%d = add i64 %%t%d, 1\n", alloc_elems, total_len);
+            fprintf(c->out, "  %%t%d = mul i64 %%t%d, 8\n", alloc_bytes, alloc_elems);
+            /* malloc */
+            int block = next_tmp(c);
+            fprintf(c->out, "  %%t%d = call i8* @malloc(i64 %%t%d) ; spread array\n", block, alloc_bytes);
+            /* Store total_len at block[0] */
+            int len_slot = next_tmp(c);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 0\n", len_slot, block);
+            fprintf(c->out, "  store i64 %%t%d, i64* %%t%d ; .len\n", total_len, len_slot);
+            /* data_ptr = block + 1 */
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 1 ; data start\n", t, block);
+            /* Copy base_len * 8 bytes from source array to new data */
+            int copy_bytes = next_tmp(c);
+            fprintf(c->out, "  %%t%d = mul i64 %%t%d, 8\n", copy_bytes, base_len);
+            int dst_i8 = next_tmp(c);
+            int src_i8 = next_tmp(c);
+            fprintf(c->out, "  %%t%d = bitcast i64* %%t%d to i8*\n", dst_i8, t);
+            fprintf(c->out, "  %%t%d = bitcast i64* %%t%d to i8*\n", src_i8, src_arr);
+            fprintf(c->out, "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %%t%d, i8* %%t%d, i64 %%t%d, i1 false)\n",
+                    dst_i8, src_i8, copy_bytes);
+            /* Store scalar items after the copied data */
+            int write_idx = 0;
+            for (int i = 0; i < n->child_count; i++) {
+                if (i == spread_idx) continue;
+                NodeKind ck = n->children[i]->kind;
+                if (ck == NODE_TYPE_IDENT || ck == NODE_TYPE_EXPR ||
+                    ck == NODE_ARRAY_TYPE || ck == NODE_MAP_TYPE ||
+                    ck == NODE_FUNC_TYPE  || ck == NODE_PTR_TYPE)
+                    continue;
+                int ev = emit_expr(c, n->children[i]);
+                const char *aety = expr_llvm_type(c, n->children[i]);
+                ev = coerce_value(c, ev, aety, "i64");
+                /* Slot = data_ptr + base_len + write_idx */
+                int slot_off = next_tmp(c);
+                int slot = next_tmp(c);
+                fprintf(c->out, "  %%t%d = add i64 %%t%d, %d\n", slot_off, base_len, write_idx);
+                fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 %%t%d\n", slot, t, slot_off);
+                fprintf(c->out, "  store i64 %%t%d, i64* %%t%d\n", ev, slot);
+                write_idx++;
+            }
+            return t;
+        }
+
+        /* ── Static path: @(item1; item2; ...) — all scalars ─────────── */
         /* Allocate len+1 slots: [length | data[0] | data[1] | ...].
          * Return pointer to data[0] so that ptr[-1] == length. */
         int block = next_tmp(c);
