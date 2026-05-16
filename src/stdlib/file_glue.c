@@ -155,3 +155,59 @@ int64_t tk_file_err_w(int64_t msg) {
 int64_t tk_file_listdir_w(int64_t path) {
     return tk_file_list_w(path);
 }
+
+/* ── Linker-gap additions ───────────────────────────────────────────────── */
+
+/* file.appendline(path, line) — append a line with trailing newline */
+int64_t tk_file_appendline_w(int64_t path, int64_t line) {
+    if (!path || !line) return 0;
+    const char *l = (const char *)(intptr_t)line;
+    size_t llen = strlen(l);
+    char *with_nl = (char *)malloc(llen + 2);
+    if (!with_nl) return 0;
+    memcpy(with_nl, l, llen);
+    with_nl[llen] = '\n';
+    with_nl[llen + 1] = '\0';
+    BoolFileResult r = file_append((const char *)(intptr_t)path, with_nl);
+    free(with_nl);
+    return r.is_err ? 0 : (int64_t)r.ok;
+}
+
+/* file.ensuredir(path) — create directory if it doesn't exist (mkdir -p) */
+int64_t tk_file_ensuredir_w(int64_t path) {
+    if (!path) return 0;
+    BoolFileResult r = file_mkdir_p((const char *)(intptr_t)path);
+    return r.is_err ? 0 : (int64_t)r.ok;
+}
+
+/* file.listglob(pattern) — list files matching a glob pattern */
+int64_t tk_file_listglob_w(int64_t pattern) {
+    if (!pattern) return 0;
+    StrArrayFileResult r = file_glob((const char *)(intptr_t)pattern);
+    if (r.is_err) return 0;
+    StrArray arr = r.ok;
+    int64_t *block = (int64_t *)malloc((arr.len + 1) * sizeof(int64_t));
+    if (!block) return 0;
+    block[0] = (int64_t)arr.len;
+    for (uint64_t i = 0; i < arr.len; i++)
+        block[i + 1] = (int64_t)(intptr_t)arr.data[i];
+    free(arr.data);
+    return (int64_t)(intptr_t)(block + 1);
+}
+
+/* file.parsetoml(path) — read file and parse as TOML, return raw string
+ * (delegates actual parsing to the toml module; here just reads the file) */
+int64_t tk_file_parsetoml_w(int64_t path) {
+    return tk_file_read_w(path);
+}
+
+/* file.remove(path) — alias for file.delete */
+int64_t tk_file_remove_w(int64_t path) {
+    return tk_file_delete_w(path);
+}
+
+/* ── fs module aliases (loke imports std.fs which maps to std.file) ───── */
+
+int64_t tk_fs_read_w(int64_t path) { return tk_file_read_w(path); }
+int64_t tk_fs_write_w(int64_t path, int64_t content) { return tk_file_write_w(path, content); }
+int64_t tk_fs_writetext_w(int64_t path, int64_t content) { return tk_file_write_w(path, content); }

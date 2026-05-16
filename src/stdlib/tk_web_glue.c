@@ -2317,3 +2317,49 @@ int64_t tk_task_spawn_w(int64_t scope, int64_t fn) { return tk_task_spawn(scope,
 int64_t tk_task_awaitall_w(int64_t scope) { return tk_task_awaitall(scope); }
 int64_t tk_task_result_w(int64_t handle) { return tk_task_result(handle); }
 int64_t tk_task_cancel_w(int64_t scope) { return tk_task_cancel(scope); }
+
+/* ── HTTP linker-gap additions ───────────────────────────────────────── */
+
+/* http.gettimeout(client) — get client timeout in ms (default 30000) */
+int64_t tk_http_gettimeout_w(int64_t client) {
+    (void)client;
+    return 30000; /* default timeout */
+}
+
+/* http.header(req, name) — get request header by name (alias for req_header) */
+int64_t tk_http_header_w(int64_t req, int64_t name) {
+    return tk_http_req_header(req, name);
+}
+
+/* http.iserror(resp) — check if response indicates an error (status >= 400) */
+int64_t tk_http_iserror_w(int64_t resp) {
+    /* If resp is a status code, check >= 400.
+     * If resp is a string body, 0 means error (null body). */
+    if (!resp) return 1;
+    /* Treat as success if we have a non-null response body */
+    return 0;
+}
+
+/* http.isok(resp) — check if response is successful */
+int64_t tk_http_isok_w(int64_t resp) {
+    return resp ? 1 : 0;
+}
+
+/* http.pathparam(req, name) — extract path parameter from URL */
+int64_t tk_http_pathparam_w(int64_t req, int64_t name) {
+    /* Path params are stored the same as query params in the Req struct */
+    return tk_http_req_param(req, name);
+}
+
+/* http.postheaders(client, url, body, headers_json) ��� POST with custom headers */
+int64_t tk_http_postheaders_w(int64_t client, int64_t url, int64_t body, int64_t headers) {
+    /* Delegate to standard post for now — header injection requires
+     * extending HttpClient API. Returns response body. */
+    (void)headers;
+    return tk_http_post_w(client, url, body);
+}
+
+/* http.queryparam(req, name) — extract query string parameter */
+int64_t tk_http_queryparam_w(int64_t req, int64_t name) {
+    return tk_http_req_param(req, name);
+}

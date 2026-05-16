@@ -381,3 +381,67 @@ int64_t tk_row_bool_w(int64_t row, int64_t col) {
     if (res.is_err) return 0;
     return (int64_t)res.ok;
 }
+
+/* ── Linker-gap additions ───────────────────────────────────────────────── */
+
+/* db.execparams(sql, params) — execute with explicit params array */
+int64_t tk_db_execparams_w(int64_t sql, int64_t params) {
+    return tk_db_exec_w(sql, params);
+}
+
+/* db.manyparams(sql, params) — query many with explicit params */
+int64_t tk_db_manyparams_w(int64_t sql, int64_t params) {
+    return tk_db_many_w(sql, params);
+}
+
+/* db.queryone(sql) — query single row, no params */
+int64_t tk_db_queryone_w(int64_t sql) {
+    return tk_db_one_w(sql, 0);
+}
+
+/* db.queryoneparams(sql, params) — query single row with params */
+int64_t tk_db_queryoneparams_w(int64_t sql, int64_t params) {
+    return tk_db_one_w(sql, params);
+}
+
+/* db.queryparams(sql, params) — query many with params (alias) */
+int64_t tk_db_queryparams_w(int64_t sql, int64_t params) {
+    return tk_db_many_w(sql, params);
+}
+
+/* db.rowbool(row, col) — alias for row_bool */
+int64_t tk_db_rowbool_w(int64_t row, int64_t col) {
+    return tk_row_bool_w(row, col);
+}
+
+/* db.rowget(row, col) — alias for row_str (get field as string) */
+int64_t tk_db_rowget_w(int64_t row, int64_t col) {
+    return tk_row_str_w(row, col);
+}
+
+/* db.rowi32(row, col) — get int field (same as i64 at ABI level) */
+int64_t tk_db_rowi32_w(int64_t row, int64_t col) {
+    return tk_row_i64_w(row, col);
+}
+
+/* db.rowi64(row, col) — alias for row_i64 */
+int64_t tk_db_rowi64_w(int64_t row, int64_t col) {
+    return tk_row_i64_w(row, col);
+}
+
+/* db.rowslen(rows) — count of rows in result array */
+int64_t tk_db_rowslen_w(int64_t rows) {
+    return tk_db_rows_w(rows);
+}
+
+/* db.rowstr(row, col) — alias for row_str */
+int64_t tk_db_rowstr_w(int64_t row, int64_t col) {
+    return tk_row_str_w(row, col);
+}
+
+/* db.nowms() — convenience: current time in ms (delegates to time module) */
+int64_t tk_db_nowms_w(int64_t dummy) {
+    (void)dummy;
+    extern int64_t tk_time_nowms_w(int64_t);
+    return tk_time_nowms_w(0);
+}

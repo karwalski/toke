@@ -87,3 +87,9 @@ int64_t tk_math_stddev_w(int64_t arr) {
 }
 int64_t tk_math_ceil_w(int64_t v) { return f64_to_i64(math_ceil(i64_to_f64(v))); }
 int64_t tk_math_round_w(int64_t v) { return f64_to_i64(math_round(i64_to_f64(v), 0)); }
+
+/* math.pow2neg(n) — compute 2^(-n) as f64 (useful for decay/probability) */
+int64_t tk_math_pow2neg_w(int64_t n) {
+    double result = math_pow(2.0, -(double)n);
+    return f64_to_i64(result);
+}

@@ -63,3 +63,75 @@ int64_t tk_base64_decode_w(int64_t data) {
     free((void *)decoded.data);
     return (int64_t)(intptr_t)str;
 }
+
+/* ── Linker-gap additions ───────────────────────────────────────────────── */
+
+/* encoding.base64urlencodenopad(data) — URL-safe base64 without padding */
+int64_t tk_encoding_base64urlencodenopad_w(int64_t data) {
+    if (!data) return 0;
+    const char *s = (const char *)(intptr_t)data;
+    ByteArray ba = { (const uint8_t *)s, (uint64_t)strlen(s) };
+    const char *encoded = encoding_b64urlencode(ba);
+    return encoded ? (int64_t)(intptr_t)encoded : 0;
+}
+
+/* encoding.jsonfield(obj, key) — extract a JSON string field value.
+ * Simple implementation: find "key":"value" and return value. */
+int64_t tk_encoding_jsonfield_w(int64_t json_str, int64_t key) {
+    if (!json_str || !key) return 0;
+    const char *j = (const char *)(intptr_t)json_str;
+    const char *k = (const char *)(intptr_t)key;
+    size_t klen = strlen(k);
+    /* Search for "key":" pattern */
+    const char *p = j;
+    while ((p = strstr(p, k)) != NULL) {
+        /* Verify it's a proper key: preceded by " and followed by ": */
+        if (p > j && *(p - 1) == '"') {
+            const char *after = p + klen;
+            if (*after == '"' && *(after + 1) == ':') {
+                const char *vstart = after + 2;
+                while (*vstart == ' ') vstart++;
+                if (*vstart == '"') {
+                    vstart++;
+                    const char *vend = vstart;
+                    while (*vend && *vend != '"') {
+                        if (*vend == '\\') vend++; /* skip escaped char */
+                        vend++;
+                    }
+                    size_t vlen = (size_t)(vend - vstart);
+                    char *result = (char *)malloc(vlen + 1);
+                    if (!result) return 0;
+                    memcpy(result, vstart, vlen);
+                    result[vlen] = '\0';
+                    return (int64_t)(intptr_t)result;
+                }
+            }
+        }
+        p++;
+    }
+    return 0;
+}
+
+/* encoding.jsonfieldint(obj, key) — extract a JSON integer field value */
+int64_t tk_encoding_jsonfieldint_w(int64_t json_str, int64_t key) {
+    if (!json_str || !key) return 0;
+    const char *j = (const char *)(intptr_t)json_str;
+    const char *k = (const char *)(intptr_t)key;
+    size_t klen = strlen(k);
+    const char *p = j;
+    while ((p = strstr(p, k)) != NULL) {
+        if (p > j && *(p - 1) == '"') {
+            const char *after = p + klen;
+            if (*after == '"' && *(after + 1) == ':') {
+                const char *vstart = after + 2;
+                while (*vstart == ' ') vstart++;
+                /* Parse integer directly */
+                char *end;
+                long long val = strtoll(vstart, &end, 10);
+                if (end != vstart) return (int64_t)val;
+            }
+        }
+        p++;
+    }
+    return 0;
+}

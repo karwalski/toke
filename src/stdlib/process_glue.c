@@ -92,3 +92,61 @@ int64_t tk_process_sleep_w(int64_t ms) {
     usleep((useconds_t)(ms * 1000));
     return 0;
 }
+
+/* ── Linker-gap additions ───────────────────────────────────────────────── */
+
+/* process.env(name) — get environment variable value */
+int64_t tk_process_env_w(int64_t name) {
+    if (!name) return 0;
+    const char *val = getenv((const char *)(intptr_t)name);
+    if (!val) return 0;
+    return (int64_t)(intptr_t)strdup(val);
+}
+
+/* process.exec(cmd) — run command and return stdout as string */
+int64_t tk_process_exec_w(int64_t cmd) {
+    if (!cmd) return 0;
+    int64_t handle = tk_process_spawn_w(cmd);
+    if (!handle) return 0;
+    ProcessHandle *h = (ProcessHandle *)(intptr_t)handle;
+    process_wait(h);
+    StdoutResult r = process_stdout(h);
+    if (r.is_err) { process_handle_free(h); return 0; }
+    int64_t result = (int64_t)(intptr_t)r.ok;
+    process_handle_free(h);
+    return result;
+}
+
+/* process.homedir() — return user's home directory */
+int64_t tk_process_homedir_w(int64_t dummy) {
+    (void)dummy;
+    const char *home = getenv("HOME");
+    if (!home) home = "/tmp";
+    return (int64_t)(intptr_t)strdup(home);
+}
+
+/* process.readlines(cmd) — run command and return stdout as array of lines */
+int64_t tk_process_readlines_w(int64_t cmd) {
+    int64_t output = tk_process_exec_w(cmd);
+    if (!output) return 0;
+    /* Split on newlines */
+    extern int64_t tk_str_split_w(int64_t, int64_t);
+    return tk_str_split_w(output, (int64_t)(intptr_t)"\n");
+}
+
+/* process.spawndetached(cmd) — spawn a background process, don't track handle */
+int64_t tk_process_spawndetached_w(int64_t cmd) {
+    if (!cmd) return 0;
+    int64_t handle = tk_process_spawn_w(cmd);
+    /* Return pid as integer, don't wait */
+    if (!handle) return 0;
+    ProcessHandle *h = (ProcessHandle *)(intptr_t)handle;
+    int64_t pid = (int64_t)h->pid;
+    /* Intentionally don't free — detached process lives independently */
+    return pid;
+}
+
+/* std.homedir() — alias exposed at top level */
+int64_t tk_std_homedir_w(int64_t dummy) {
+    return tk_process_homedir_w(dummy);
+}

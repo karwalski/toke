@@ -519,7 +519,17 @@ static void prepass_funcs(Ctx *c, const Node *n) {
     if (n->kind != NODE_FUNC_DECL) return;
     tok_cp(c->src, n->children[0], tb, sizeof tb);
     if (!strcmp(tb, "main")) strcpy(tb, "tk_main");
-    mangle_fn_name(c, tb, sizeof tb);
+    /* Directly prepend module prefix instead of calling mangle_fn_name(),
+     * which requires the function to already be registered (chicken-and-egg).
+     * All local function declarations should be prefixed with the module path. */
+    if (c->module_prefix[0] && strcmp(tb, "tk_main") != 0 &&
+        strncmp(tb, "tk_", 3) != 0 &&
+        strcmp(tb, "ok") != 0 && strcmp(tb, "err") != 0 && strcmp(tb, "none") != 0) {
+        char tmp[256];
+        snprintf(tmp, sizeof tmp, "%s%s", c->module_prefix, tb);
+        strncpy(tb, tmp, sizeof tb - 1);
+        tb[sizeof tb - 1] = '\0';
+    }
     const char *ret = "void";
     char ret_tn[128] = "";
     for (int i = 1; i < n->child_count; i++) {
@@ -531,6 +541,9 @@ static void prepass_funcs(Ctx *c, const Node *n) {
             }
         }
     }
+    /* Normalize i8* return type to i64 for ABI consistency (same as emit_toplevel).
+     * All pointer-returning functions use i64 at the calling convention level. */
+    if (!strcmp(ret, "i8*")) ret = "i64";
     FnSig *sig = register_fn(c, tb, ret);
     if (sig) {
         memcpy(sig->ret_type_name, ret_tn, sizeof sig->ret_type_name);

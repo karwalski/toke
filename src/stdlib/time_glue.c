@@ -56,3 +56,45 @@ int64_t tk_time_toparts_w(int64_t ts) {
 int64_t tk_time_weekday_w(int64_t ts) {
     return (int64_t)tk_time_weekday((uint64_t)ts);
 }
+
+/* ── Linker-gap additions ───────────────────────────────────────────────── */
+
+/* time.nowms() — current Unix timestamp in milliseconds (same as time.now) */
+int64_t tk_time_nowms_w(int64_t dummy) {
+    (void)dummy;
+    return (int64_t)tk_time_now();
+}
+
+/* time.nowunix() — current Unix timestamp in seconds */
+int64_t tk_time_nowunix_w(int64_t dummy) {
+    (void)dummy;
+    return (int64_t)(tk_time_now() / 1000);
+}
+
+/* time.unixnow() — alias for nowunix */
+int64_t tk_time_unixnow_w(int64_t dummy) {
+    return tk_time_nowunix_w(dummy);
+}
+
+/* time.elapsedms(start) — milliseconds elapsed since start timestamp */
+int64_t tk_time_elapsedms_w(int64_t start) {
+    return (int64_t)tk_time_since((uint64_t)start);
+}
+
+/* time.formatnow(fmt) — format current time with given strftime format */
+int64_t tk_time_formatnow_w(int64_t fmt) {
+    if (!fmt) fmt = (int64_t)(intptr_t)"%Y-%m-%dT%H:%M:%SZ";
+    uint64_t now = tk_time_now();
+    const char *result = tk_time_format(now, (const char *)(intptr_t)fmt);
+    return (int64_t)(intptr_t)result;
+}
+
+/* time.sleepms(ms) — sleep for given milliseconds */
+int64_t tk_time_sleepms_w(int64_t ms) {
+    if (ms <= 0) return 0;
+    struct timespec req;
+    req.tv_sec  = (time_t)(ms / 1000);
+    req.tv_nsec = (long)((ms % 1000) * 1000000L);
+    nanosleep(&req, NULL);
+    return 0;
+}
