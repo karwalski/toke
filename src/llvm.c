@@ -3136,6 +3136,8 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                 return sig2->ret_type_name;
         }
         char fn[128]; tok_cp(c->src, n->children[0], fn, sizeof fn);
+        if (!strcmp(fn, "main")) strcpy(fn, "tk_main");
+        mangle_fn_name(c, fn, sizeof fn);
         const FnSig *sig = lookup_fn(c, fn);
         if (sig && sig->ret_type_name[0] && lookup_struct(c, sig->ret_type_name))
             return sig->ret_type_name;
@@ -3600,6 +3602,11 @@ static void emit_stmt(Ctx *c, const Node *n)
                     const char *stype = expr_struct_type(c, init_node);
                     mark_ptr_with_type(c, tb, stype);
                 }
+            } else if (!strcmp(vty, "i64")) {
+                /* Struct-returning functions use i64 ABI (ptrtoint) but still
+                 * need struct type tracking for field-index resolution. */
+                const char *stype = expr_struct_type(c, init_node);
+                if (stype) mark_ptr_with_type(c, tb, stype);
             }
             set_local_type(c, tb, vty);
             fprintf(c->out, "  %%%s = alloca %s\n", tb, vty);
