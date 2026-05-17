@@ -615,7 +615,7 @@ The `toke --migrate` command converts legacy and partially migrated source to v0
 | 85.1.7 | Fix all 10 loke migration issues | done | 2026-05-03 | Comprehensive: @() underscore strip, }; postpass, [expr]→.get(expr), comma→semicolon. |
 | 85.1.8 | v0.2 syntax detection with --migrate hint | done | 2026-05-03 | Compiler rejects _ |{ ^ ~ << >> with helpful errors pointing to --migrate. |
 | 85.1.9 | Migrate ooke to v0.3 | done | 2026-05-03 | All src/*.tk and test/**/*.tk files migrated. Build clean. |
-| 85.1.10 | Migrate loke to v0.3 | in_progress | — | 559 files. Previous: 21% success. With all fixes: targeting 90%+. Remaining: unit enums, immutable reassignment need manual fixes. |
+| 85.1.10 | Migrate loke to v0.3 | moved | — | Moved to separate loke project. Not tracked here.
 | 85.1.11 | Known limitations documentation | done | 2026-05-14 | **P1** Created docs/known-limitations.md: language (8), codegen (8), build system (4), runtime (3), diagnostics (3), package mgmt limitations with workarounds. |
 
 | 85.1.12 | Merge corpus transform patterns into --migrate | done | 2026-05-04 | **P1** Audited all Python corpus scripts (transform_corpus.py, phase2_syntax_audit.py, phase2_autofix_v2.py, disinfect_task_specs.py, canonicalise_tk_source.py, fix_type_cast_leak.py). Merged 60+ camelCase→lowercase mappings, generic camelCase lowering. migrate.c now handles LLM-generated code patterns, not just version migration. |
@@ -4013,3 +4013,11 @@ Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, li
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
 | 87.2.1 | http.get with :param pattern uses exact match instead of pattern matching | backlog | 2026-05-17 | `http.get("/api/greet/:name";&handler)` returns 404 because `tk_get_handler_dispatch` in tk_web_glue.c compares paths with `strcmp` (exact). Path params only work via `router.get`. Fix: add pattern matching to handler dispatch (reuse `match_pattern` from http.c route table), or document that parameterised routes require the router module. |
+
+### Epic 89.2 — ooke Live Server + Codegen Bugs Found
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 89.2.6 | Template module SIGBUS crash during test execution | backlog | 2026-05-17 | `test_template` crashes (exit 138 = SIGBUS). Complex module with nested match, 380 lines. Likely codegen bug with string operations or struct field access in deeply nested scope. Needs IR-level debugging. |
+| 89.2.7 | http.servedir does not infer MIME type from file extension | backlog | 2026-05-17 | Static CSS file is served but Content-Type header is missing/wrong. `tk_http_serve_staticdir_w` should map .css→text/css, .js→application/javascript, etc. |
+| 89.2.8 | Router test fixture: file.mkdir needs mkdir -p semantics | backlog | 2026-05-17 | `file.mkdir(path)` fails if parent doesn't exist. Router test creates `/tmp/ooke_router_test/blog` but parent `/tmp/ooke_router_test` may not exist. Glue has `file.ensuredir` (mkdir_p) but test uses `file.mkdir`. |
