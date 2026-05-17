@@ -2116,14 +2116,23 @@ static HttpClientResp client_do_request(HttpClient *c,
         }
     }
 
-    /* read full response */
+    /* read full response (headers + body) with proper framing */
     size_t cap = 65536, used = 0;
     char *resp = malloc(cap);
     if (!resp) { close(fd); return err_resp_client("out of memory", 0); }
 
     ssize_t n;
-    while ((n = recv(fd, resp + used, cap - used - 1, 0)) > 0) {
+    char *hdr_end_ptr = NULL;
+    size_t hdr_end_off = 0;   /* offset of first byte after \r\n\r\n */
+    int body_mode = 0;        /* 0=unknown, 1=content-length, 2=chunked, 3=close */
+    size_t content_length = 0;
+
+    /* Phase 1: read until we have full headers (\r\n\r\n) */
+    while (!hdr_end_ptr) {
+        n = recv(fd, resp + used, cap - used - 1, 0);
+        if (n <= 0) break; /* timeout or close */
         used += (size_t)n;
+        resp[used] = '\0';
         if (used + 1 >= cap) {
             cap *= 2;
             char *tmp = realloc(resp, cap);
@@ -2131,7 +2140,111 @@ static HttpClientResp client_do_request(HttpClient *c,
                         return err_resp_client("out of memory", 0); }
             resp = tmp;
         }
+        hdr_end_ptr = strstr(resp, "\r\n\r\n");
     }
+
+    if (hdr_end_ptr) {
+        hdr_end_off = (size_t)(hdr_end_ptr - resp) + 4;
+
+        /* Determine body framing from headers */
+        /* Check Transfer-Encoding: chunked (case-insensitive scan) */
+        const char *te = resp;
+        while ((te = strstr(te, "\r\n")) != NULL && te < hdr_end_ptr) {
+            te += 2;
+            if ((te + 18 <= hdr_end_ptr) &&
+                (strncasecmp(te, "Transfer-Encoding:", 18) == 0)) {
+                const char *val = te + 18;
+                while (*val == ' ') val++;
+                if (strncasecmp(val, "chunked", 7) == 0) {
+                    body_mode = 2;
+                }
+                break;
+            }
+        }
+        /* Check Content-Length if not chunked */
+        if (body_mode == 0) {
+            const char *cl = resp;
+            while ((cl = strstr(cl, "\r\n")) != NULL && cl < hdr_end_ptr) {
+                cl += 2;
+                if ((cl + 15 <= hdr_end_ptr) &&
+                    (strncasecmp(cl, "Content-Length:", 15) == 0)) {
+                    const char *val = cl + 15;
+                    while (*val == ' ') val++;
+                    content_length = (size_t)strtoul(val, NULL, 10);
+                    body_mode = 1;
+                    break;
+                }
+            }
+        }
+        /* If neither, fall back to read-until-close */
+        if (body_mode == 0) body_mode = 3;
+    } else {
+        /* Never found headers — treat what we have as the full response */
+        body_mode = 3;
+    }
+
+    /* Phase 2: read body according to framing mode */
+    if (body_mode == 1) {
+        /* Content-Length: read exactly content_length bytes of body */
+        size_t body_have = used - hdr_end_off;
+        while (body_have < content_length) {
+            if (used + 1 >= cap) {
+                cap *= 2;
+                char *tmp = realloc(resp, cap);
+                if (!tmp) { free(resp); close(fd);
+                            return err_resp_client("out of memory", 0); }
+                resp = tmp;
+            }
+            n = recv(fd, resp + used, cap - used - 1, 0);
+            if (n <= 0) break;
+            used += (size_t)n;
+            body_have += (size_t)n;
+        }
+    } else if (body_mode == 2) {
+        /* Chunked: read until final chunk marker "0\r\n\r\n" appears in body */
+        for (;;) {
+            resp[used] = '\0';
+            /* Look for terminal chunk in body portion */
+            const char *body_start = resp + hdr_end_off;
+            size_t body_len_so_far = used - hdr_end_off;
+            /* Terminal chunk: "0\r\n\r\n" (could also be "0\r\n" + trailers + "\r\n") */
+            if (body_len_so_far >= 5) {
+                const char *p = body_start;
+                const char *end = resp + used - 4;
+                while (p <= end) {
+                    if (p[0] == '0' && p[1] == '\r' && p[2] == '\n' &&
+                        p[3] == '\r' && p[4] == '\n') {
+                        goto chunked_done;
+                    }
+                    p++;
+                }
+            }
+            if (used + 1 >= cap) {
+                cap *= 2;
+                char *tmp = realloc(resp, cap);
+                if (!tmp) { free(resp); close(fd);
+                            return err_resp_client("out of memory", 0); }
+                resp = tmp;
+            }
+            n = recv(fd, resp + used, cap - used - 1, 0);
+            if (n <= 0) break;
+            used += (size_t)n;
+        }
+        chunked_done: ;
+    } else {
+        /* mode 3: read until connection close / timeout (original behavior) */
+        while ((n = recv(fd, resp + used, cap - used - 1, 0)) > 0) {
+            used += (size_t)n;
+            if (used + 1 >= cap) {
+                cap *= 2;
+                char *tmp = realloc(resp, cap);
+                if (!tmp) { free(resp); close(fd);
+                            return err_resp_client("out of memory", 0); }
+                resp = tmp;
+            }
+        }
+    }
+
     resp[used] = '\0';
     close(fd);
 

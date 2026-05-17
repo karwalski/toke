@@ -673,20 +673,25 @@ static char g_staticdir_root[1024];
 static const char *mime_for_ext(const char *path) {
     const char *dot = strrchr(path, '.');
     if (!dot) return "application/octet-stream";
-    if (!strcmp(dot, ".html")) return "text/html; charset=utf-8";
+    if (!strcmp(dot, ".html") || !strcmp(dot, ".htm")) return "text/html; charset=utf-8";
     if (!strcmp(dot, ".css"))  return "text/css; charset=utf-8";
-    if (!strcmp(dot, ".js"))   return "application/javascript";
-    if (!strcmp(dot, ".json")) return "application/json";
+    if (!strcmp(dot, ".js"))   return "application/javascript; charset=utf-8";
+    if (!strcmp(dot, ".json")) return "application/json; charset=utf-8";
     if (!strcmp(dot, ".svg"))  return "image/svg+xml";
     if (!strcmp(dot, ".png"))  return "image/png";
     if (!strcmp(dot, ".jpg") || !strcmp(dot, ".jpeg")) return "image/jpeg";
     if (!strcmp(dot, ".gif"))  return "image/gif";
     if (!strcmp(dot, ".ico"))  return "image/x-icon";
-    if (!strcmp(dot, ".woff")) return "font/woff";
     if (!strcmp(dot, ".woff2")) return "font/woff2";
+    if (!strcmp(dot, ".woff")) return "font/woff";
     if (!strcmp(dot, ".ttf"))  return "font/ttf";
     if (!strcmp(dot, ".txt"))  return "text/plain; charset=utf-8";
     if (!strcmp(dot, ".xml"))  return "application/xml";
+    if (!strcmp(dot, ".pdf"))  return "application/pdf";
+    if (!strcmp(dot, ".wasm")) return "application/wasm";
+    if (!strcmp(dot, ".mp4"))  return "video/mp4";
+    if (!strcmp(dot, ".webp")) return "image/webp";
+    if (!strcmp(dot, ".avif")) return "image/avif";
     return "application/octet-stream";
 }
 
