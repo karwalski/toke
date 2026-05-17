@@ -1,0 +1,21 @@
+m=test;
+i=str:std.str;
+t=$pair{a:i64;b:i64};
+f=main():i64{
+  let fails=mut.0;
+  let x=mut.0;
+  x=5;
+  if(x=5){}el{fails=fails+1};
+  let s=mut."hello";
+  s="world";
+  if(str.eq(s;"world")){}el{fails=fails+1};
+  let counter=mut.0;
+  lp(let i=0;i<10;i=i+1){
+    counter=counter+1
+  };
+  if(counter=10){}el{fails=fails+1};
+  let p=mut.$pair{a:1;b:2};
+  p=$pair{a:10;b:20};
+  if(p.a=10){}el{fails=fails+1};
+  <fails
+};

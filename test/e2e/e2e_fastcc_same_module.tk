@@ -1,0 +1,31 @@
+m=test;
+i=str:std.str;
+f=greet():str{
+  <"hello"
+};
+f=world():str{
+  <"world"
+};
+f=combine():str{
+  let a=greet();
+  let b=world();
+  <str.concat(a;" ");
+};
+f=main():i64{
+  let g=greet();
+  let w=world();
+  let c=combine();
+  if(str.eq(g;"hello")){
+    if(str.eq(w;"world")){
+      if(str.eq(c;"hello ")){
+        <0
+      }el{
+        <3
+      }
+    }el{
+      <2
+    }
+  }el{
+    <1
+  }
+};

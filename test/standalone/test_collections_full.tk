@@ -1,0 +1,75 @@
+m=test.collections.full;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let fails=mut.0;
+
+  let arr=@(1;2;3);
+  if(arr.len=3){
+    io.println("PASS @(1;2;3) has len 3")
+  }el{
+    io.println(str.concat("FAIL @(1;2;3) len (got: ";str.concat(str.fromint(arr.len);")")));
+    fails=fails+1
+  };
+
+  let first=arr.get(0);
+  if(first=1){
+    io.println("PASS arr.get(0) == 1")
+  }el{
+    io.println(str.concat("FAIL arr.get(0) (got: ";str.concat(str.fromint(first);")")));
+    fails=fails+1
+  };
+
+  let last=arr.get(2);
+  if(last=3){
+    io.println("PASS arr.get(2) == 3")
+  }el{
+    io.println(str.concat("FAIL arr.get(2) (got: ";str.concat(str.fromint(last);")")));
+    fails=fails+1
+  };
+
+  let arr2=mut.arr;
+  arr2=arr2.append(4);
+  if(arr2.len=4){
+    io.println("PASS append increases len to 4")
+  }el{
+    io.println(str.concat("FAIL append len (got: ";str.concat(str.fromint(arr2.len);")")));
+    fails=fails+1
+  };
+
+  let appended=arr2.get(3);
+  if(appended=4){
+    io.println("PASS appended element is 4")
+  }el{
+    io.println(str.concat("FAIL appended element (got: ";str.concat(str.fromint(appended);")")));
+    fails=fails+1
+  };
+
+  let sarr=@("a";"b";"c");
+  if(sarr.len=3){
+    io.println("PASS string array has len 3")
+  }el{
+    io.println(str.concat("FAIL string array len (got: ";str.concat(str.fromint(sarr.len);")")));
+    fails=fails+1
+  };
+
+  let s0=sarr.get(0);
+  if(str.eq(s0;"a")){
+    io.println("PASS string arr.get(0) == a")
+  }el{
+    io.println(str.concat("FAIL string arr.get(0) (got: ";str.concat(s0;")")));
+    fails=fails+1
+  };
+
+  let s2=sarr.get(2);
+  if(str.eq(s2;"c")){
+    io.println("PASS string arr.get(2) == c")
+  }el{
+    io.println(str.concat("FAIL string arr.get(2) (got: ";str.concat(s2;")")));
+    fails=fails+1
+  };
+
+  io.println(str.concat("collections_full: ";str.concat(str.fromint(fails);" failed")));
+  <fails
+};

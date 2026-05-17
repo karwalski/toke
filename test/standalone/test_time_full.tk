@@ -1,0 +1,33 @@
+m=test.time.full;
+i=time:std.time;
+i=str:std.str;
+
+f=main():i64{
+  let fails=mut.0;
+  let now=time.now();
+  if(now>0){}el{fails=fails+1};
+  let now2=time.now();
+  if(now2>now||now2=now){}el{fails=fails+1};
+  let start=time.now();
+  let dummy=mut.0;
+  lp(let i=0;i<100000;i=i+1){
+    dummy=dummy+1
+  };
+  let elapsed=time.elapsed(start);
+  if(elapsed>0||elapsed=0){}el{fails=fails+1};
+  let fmt1=time.format(now;"%Y-%m-%d");
+  if(str.len(fmt1)>0){}el{fails=fails+1};
+  if(str.len(fmt1)=10){}el{fails=fails+1};
+  if(str.contains(fmt1;"-")){}el{fails=fails+1};
+  let fmt2=time.format(now;"%H:%M:%S");
+  if(str.len(fmt2)>0){}el{fails=fails+1};
+  if(str.contains(fmt2;":")){}el{fails=fails+1};
+  let fmt3=time.format(now;"%Y");
+  if(str.len(fmt3)=4){}el{fails=fails+1};
+  let year=str.toint(fmt3);
+  if(year>2024){}el{fails=fails+1};
+  let now3=time.now();
+  let fmt4=time.format(now3;"%Y-%m-%d");
+  if(str.startswith(fmt4;"20")){}el{fails=fails+1};
+  <fails
+};

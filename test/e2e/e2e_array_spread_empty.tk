@@ -1,0 +1,10 @@
+m=test;
+f=main():i64{
+  let empty=@();
+  let ext=@(empty;42);
+  if(ext.len=1){
+    if(ext.get(0)=42){
+      <0
+    }el{<2}
+  }el{<1}
+};

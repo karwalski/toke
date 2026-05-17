@@ -1,0 +1,9 @@
+m=test;
+f=main():i64{
+  let fails=mut.0;
+  let sum=100+200;
+  if(sum=300){}el{fails=fails+1};
+  let prod=1000000*1000000;
+  if(prod=1000000000000){}el{fails=fails+1};
+  <fails
+};

@@ -1,0 +1,66 @@
+m=test.file.full;
+i=file:std.file;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let fails=mut.0;
+
+  file.write("/tmp/toke_test_file_full_rw.txt";"toke file test content");
+  let content=file.read("/tmp/toke_test_file_full_rw.txt");
+  if(str.eq(content;"toke file test content")){
+    io.println("PASS write then read matches")
+  }el{
+    io.println("FAIL write then read matches");
+    fails=fails+1
+  };
+
+  if(file.exists("/tmp/toke_test_file_full_rw.txt")){
+    io.println("PASS exists returns true after write")
+  }el{
+    io.println("FAIL exists returns true after write");
+    fails=fails+1
+  };
+
+  file.delete("/tmp/toke_test_file_full_rw.txt");
+  if(file.exists("/tmp/toke_test_file_full_rw.txt")){
+    io.println("FAIL exists returns false after delete");
+    fails=fails+1
+  }el{
+    io.println("PASS exists returns false after delete")
+  };
+
+  file.write("/tmp/toke_test_file_full_overwrite.txt";"first");
+  file.write("/tmp/toke_test_file_full_overwrite.txt";"second");
+  let ov=file.read("/tmp/toke_test_file_full_overwrite.txt");
+  if(str.eq(ov;"second")){
+    io.println("PASS overwrite replaces content")
+  }el{
+    io.println("FAIL overwrite replaces content");
+    fails=fails+1
+  };
+  file.delete("/tmp/toke_test_file_full_overwrite.txt");
+
+  file.mkdir("/tmp/toke_test_file_full_dir");
+  if(file.isdir("/tmp/toke_test_file_full_dir")){
+    io.println("PASS mkdir creates directory")
+  }el{
+    io.println("FAIL mkdir creates directory");
+    fails=fails+1
+  };
+
+  file.write("/tmp/toke_test_file_full_dir/nested.txt";"nested");
+  let nested=file.read("/tmp/toke_test_file_full_dir/nested.txt");
+  if(str.eq(nested;"nested")){
+    io.println("PASS write and read in created directory")
+  }el{
+    io.println("FAIL write and read in created directory");
+    fails=fails+1
+  };
+
+  file.delete("/tmp/toke_test_file_full_dir/nested.txt");
+  file.delete("/tmp/toke_test_file_full_dir");
+
+  io.println(str.concat("file_full: ";str.concat(str.fromint(fails);" failed")));
+  <fails
+};

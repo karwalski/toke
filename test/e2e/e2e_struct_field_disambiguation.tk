@@ -1,0 +1,24 @@
+m=test;
+t=$alpha{x:i64;y:i64;z:i64};
+t=$beta{name:i64;x:i64;w:i64};
+t=$gamma{w:i64;z:i64;x:i64;q:i64};
+f=main():i64{
+  let a=$alpha{x:10;y:20;z:30};
+  let b=$beta{name:100;x:200;w:300};
+  let g=$gamma{w:1;z:2;x:3;q:4};
+  if(a.x=10){
+    if(b.x=200){
+      if(g.x=3){
+        if(a.z=30){
+          if(g.z=2){
+            if(b.w=300){
+              if(g.w=1){
+                <0
+              }el{<7}
+            }el{<6}
+          }el{<5}
+        }el{<4}
+      }el{<3}
+    }el{<2}
+  }el{<1}
+};

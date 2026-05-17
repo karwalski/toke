@@ -1,0 +1,77 @@
+m=test.json.full;
+i=json:std.json;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let fails=mut.0;
+
+  io.println("--- json.dec ---");
+  let src="{\"name\":\"toke\",\"version\":42,\"active\":true,\"tag\":\"v1.0\"}";
+  let obj=mt json.dec(src){$ok:v v;$err:e 0};
+
+  io.println("--- json.str ---");
+  let name=mt json.str(obj;"name"){$ok:v v;$err:e "ERR"};
+  if(str.eq(name;"toke")){io.println("PASS json.str name field")}el{io.println("FAIL json.str name field");fails=fails+1};
+
+  let tag=mt json.str(obj;"tag"){$ok:v v;$err:e "ERR"};
+  if(str.eq(tag;"v1.0")){io.println("PASS json.str tag field")}el{io.println("FAIL json.str tag field");fails=fails+1};
+
+  let missing=mt json.str(obj;"nokey"){$ok:v v;$err:e "ERR"};
+  if(str.eq(missing;"ERR")){io.println("PASS json.str missing key returns error")}el{io.println("FAIL json.str missing key returns error");fails=fails+1};
+
+  io.println("--- json.i64 ---");
+  let ver=mt json.i64(obj;"version"){$ok:v v;$err:e 0};
+  if(ver=42){io.println("PASS json.i64 version field")}el{io.println("FAIL json.i64 version field");fails=fails+1};
+
+  let missingint=mt json.i64(obj;"nokey"){$ok:v v;$err:e -1};
+  if(missingint=-1){io.println("PASS json.i64 missing key returns error")}el{io.println("FAIL json.i64 missing key returns error");fails=fails+1};
+
+  io.println("--- json.has ---");
+  if(json.has(obj;"name")){io.println("PASS json.has existing key")}el{io.println("FAIL json.has existing key");fails=fails+1};
+  if(json.has(obj;"version")){io.println("PASS json.has int key")}el{io.println("FAIL json.has int key");fails=fails+1};
+  if(json.has(obj;"missing")){io.println("FAIL json.has missing key");fails=fails+1}el{io.println("PASS json.has missing key")};
+
+  io.println("--- json.enc ---");
+  let enc1=json.enc("hello");
+  if(str.eq(enc1;"\"hello\"")){io.println("PASS json.enc string")}el{io.println("FAIL json.enc string");fails=fails+1};
+
+  let enc2=json.enc("");
+  if(str.eq(enc2;"\"\"")){io.println("PASS json.enc empty string")}el{io.println("FAIL json.enc empty string");fails=fails+1};
+
+  io.println("--- json.enc roundtrip ---");
+  let wrapped=str.concat("{\"val\":";str.concat(json.enc("world");"}"));
+  let parsed2=mt json.dec(wrapped){$ok:v v;$err:e 0};
+  let val2=mt json.str(parsed2;"val"){$ok:v v;$err:e "ERR"};
+  if(str.eq(val2;"world")){io.println("PASS json.enc roundtrip")}el{io.println("FAIL json.enc roundtrip");fails=fails+1};
+
+  io.println("--- json.len ---");
+  let kcount=json.len(obj);
+  if(kcount=4){io.println("PASS json.len returns 4")}el{io.println("FAIL json.len returns 4");fails=fails+1};
+
+  let emptysrc="{}";
+  let emptyobj=mt json.dec(emptysrc){$ok:v v;$err:e 0};
+  let elen=json.len(emptyobj);
+  if(elen=0){io.println("PASS json.len empty object")}el{io.println("FAIL json.len empty object");fails=fails+1};
+
+  io.println("--- json.dec nested ---");
+  let nestedsrc="{\"outer\":{\"inner\":\"deep\"}}";
+  let nested=mt json.dec(nestedsrc){$ok:v v;$err:e 0};
+  if(json.has(nested;"outer")){io.println("PASS json.dec nested has outer")}el{io.println("FAIL json.dec nested has outer");fails=fails+1};
+
+  io.println("--- json.dec array value ---");
+  let arrsrc="{\"nums\":[1,2,3]}";
+  let arrobj=mt json.dec(arrsrc){$ok:v v;$err:e 0};
+  if(json.has(arrobj;"nums")){io.println("PASS json.dec array field exists")}el{io.println("FAIL json.dec array field exists");fails=fails+1};
+
+  io.println("--- json.getbool ---");
+  let bsrc="{\"flag\":true,\"off\":false}";
+  let bobj=mt json.dec(bsrc){$ok:v v;$err:e 0};
+  let bval=mt json.getbool(bobj;"flag"){$ok:v v;$err:e false};
+  if(bval){io.println("PASS json.getbool true")}el{io.println("FAIL json.getbool true");fails=fails+1};
+  let bval2=mt json.getbool(bobj;"off"){$ok:v v;$err:e true};
+  if(bval2){io.println("FAIL json.getbool false");fails=fails+1}el{io.println("PASS json.getbool false")};
+
+  io.println(str.concat("json_full: ";str.concat(str.fromi64(fails);" failures")));
+  <fails
+};

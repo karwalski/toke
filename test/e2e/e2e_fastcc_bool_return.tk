@@ -1,0 +1,30 @@
+m=test;
+f=ispos(n:i64):bool{
+  <n>0
+};
+f=iszero(n:i64):bool{
+  <n=0
+};
+f=main():i64{
+  let a=ispos(5);
+  let b=ispos(-1);
+  let c=iszero(0);
+  let d=iszero(7);
+  if(a){
+    if(b){
+      <1
+    }el{
+      if(c){
+        if(d){
+          <2
+        }el{
+          <0
+        }
+      }el{
+        <3
+      }
+    }
+  }el{
+    <4
+  }
+};

@@ -1,0 +1,130 @@
+m=test.str.full;
+i=str:std.str;
+i=io:std.io;
+
+f=main():i64{
+  let fails=mut.0;
+
+  io.println("--- str.len ---");
+  if(str.len("hello")=5){io.println("PASS str.len basic")}el{io.println("FAIL str.len basic");fails=fails+1};
+  if(str.len("")=0){io.println("PASS str.len empty")}el{io.println("FAIL str.len empty");fails=fails+1};
+  if(str.len("a")=1){io.println("PASS str.len single")}el{io.println("FAIL str.len single");fails=fails+1};
+  if(str.len("hello world")=11){io.println("PASS str.len with space")}el{io.println("FAIL str.len with space");fails=fails+1};
+
+  io.println("--- str.concat ---");
+  let c1=str.concat("hello";" world");
+  if(str.eq(c1;"hello world")){io.println("PASS str.concat basic")}el{io.println("FAIL str.concat basic");fails=fails+1};
+  let c2=str.concat("";"abc");
+  if(str.eq(c2;"abc")){io.println("PASS str.concat empty left")}el{io.println("FAIL str.concat empty left");fails=fails+1};
+  let c3=str.concat("abc";"");
+  if(str.eq(c3;"abc")){io.println("PASS str.concat empty right")}el{io.println("FAIL str.concat empty right");fails=fails+1};
+
+  io.println("--- str.contains ---");
+  if(str.contains("hello world";"world")){io.println("PASS str.contains found")}el{io.println("FAIL str.contains found");fails=fails+1};
+  if(str.contains("hello";"xyz")){io.println("FAIL str.contains notfound");fails=fails+1}el{io.println("PASS str.contains notfound")};
+  if(str.contains("hello";"hello")){io.println("PASS str.contains full match")}el{io.println("FAIL str.contains full match");fails=fails+1};
+  if(str.contains("hello";"")){io.println("PASS str.contains empty sub")}el{io.println("FAIL str.contains empty sub");fails=fails+1};
+
+  io.println("--- str.startswith ---");
+  if(str.startswith("hello";"hel")){io.println("PASS str.startswith true")}el{io.println("FAIL str.startswith true");fails=fails+1};
+  if(str.startswith("hello";"xyz")){io.println("FAIL str.startswith false");fails=fails+1}el{io.println("PASS str.startswith false")};
+  if(str.startswith("hello";"")){io.println("PASS str.startswith empty")}el{io.println("FAIL str.startswith empty");fails=fails+1};
+
+  io.println("--- str.endswith ---");
+  if(str.endswith("hello";"llo")){io.println("PASS str.endswith true")}el{io.println("FAIL str.endswith true");fails=fails+1};
+  if(str.endswith("hello";"xyz")){io.println("FAIL str.endswith false");fails=fails+1}el{io.println("PASS str.endswith false")};
+  if(str.endswith("hello";"")){io.println("PASS str.endswith empty")}el{io.println("FAIL str.endswith empty");fails=fails+1};
+
+  io.println("--- str.trim ---");
+  let t1=str.trim("  hello  ");
+  if(str.eq(t1;"hello")){io.println("PASS str.trim both sides")}el{io.println("FAIL str.trim both sides");fails=fails+1};
+  let t2=str.trim("hello");
+  if(str.eq(t2;"hello")){io.println("PASS str.trim no whitespace")}el{io.println("FAIL str.trim no whitespace");fails=fails+1};
+  let t3=str.trim("");
+  if(str.eq(t3;"")){io.println("PASS str.trim empty")}el{io.println("FAIL str.trim empty");fails=fails+1};
+
+  io.println("--- str.upper ---");
+  let u1=str.upper("hello");
+  if(str.eq(u1;"HELLO")){io.println("PASS str.upper basic")}el{io.println("FAIL str.upper basic");fails=fails+1};
+  let u2=str.upper("HELLO");
+  if(str.eq(u2;"HELLO")){io.println("PASS str.upper already upper")}el{io.println("FAIL str.upper already upper");fails=fails+1};
+  let u3=str.upper("");
+  if(str.eq(u3;"")){io.println("PASS str.upper empty")}el{io.println("FAIL str.upper empty");fails=fails+1};
+
+  io.println("--- str.lower ---");
+  let l1=str.lower("HELLO");
+  if(str.eq(l1;"hello")){io.println("PASS str.lower basic")}el{io.println("FAIL str.lower basic");fails=fails+1};
+  let l2=str.lower("hello");
+  if(str.eq(l2;"hello")){io.println("PASS str.lower already lower")}el{io.println("FAIL str.lower already lower");fails=fails+1};
+
+  io.println("--- str.replace ---");
+  let r1=str.replace("hello";"l";"r");
+  if(str.eq(r1;"herro")){io.println("PASS str.replace multi")}el{io.println("FAIL str.replace multi");fails=fails+1};
+  let r2=str.replace("aaa";"a";"b");
+  if(str.eq(r2;"bbb")){io.println("PASS str.replace all")}el{io.println("FAIL str.replace all");fails=fails+1};
+  let r3=str.replace("hello";"xyz";"abc");
+  if(str.eq(r3;"hello")){io.println("PASS str.replace not found")}el{io.println("FAIL str.replace not found");fails=fails+1};
+
+  io.println("--- str.split ---");
+  let sp1=str.split("a,b,c";",");
+  let sp1f=sp1.get(0);
+  let sp1l=sp1.get(2);
+  if(str.eq(sp1f;"a")){io.println("PASS str.split first")}el{io.println("FAIL str.split first");fails=fails+1};
+  if(str.eq(sp1l;"c")){io.println("PASS str.split last")}el{io.println("FAIL str.split last");fails=fails+1};
+
+  io.println("--- str.slice ---");
+  let sl1=str.slice("hello";1;4);
+  if(str.eq(sl1;"ell")){io.println("PASS str.slice middle")}el{io.println("FAIL str.slice middle");fails=fails+1};
+  let sl2=str.slice("hello";0;5);
+  if(str.eq(sl2;"hello")){io.println("PASS str.slice full")}el{io.println("FAIL str.slice full");fails=fails+1};
+  let sl3=str.slice("hello";0;0);
+  if(str.eq(sl3;"")){io.println("PASS str.slice empty range")}el{io.println("FAIL str.slice empty range");fails=fails+1};
+
+  io.println("--- str.indexof ---");
+  let idx1=str.indexof("hello world";"world");
+  if(idx1=6){io.println("PASS str.indexof found")}el{io.println("FAIL str.indexof found");fails=fails+1};
+  let idx2=str.indexof("hello";"hello");
+  if(idx2=0){io.println("PASS str.indexof at start")}el{io.println("FAIL str.indexof at start");fails=fails+1};
+
+  io.println("--- str.eq ---");
+  if(str.eq("abc";"abc")){io.println("PASS str.eq same")}el{io.println("FAIL str.eq same");fails=fails+1};
+  if(str.eq("abc";"xyz")){io.println("FAIL str.eq different");fails=fails+1}el{io.println("PASS str.eq different")};
+  if(str.eq("";"")){io.println("PASS str.eq both empty")}el{io.println("FAIL str.eq both empty");fails=fails+1};
+  if(str.eq("a";"")){io.println("FAIL str.eq one empty");fails=fails+1}el{io.println("PASS str.eq one empty")};
+
+  io.println("--- str.fromi64 ---");
+  let fi1=str.fromi64(42);
+  if(str.eq(fi1;"42")){io.println("PASS str.fromi64 positive")}el{io.println("FAIL str.fromi64 positive");fails=fails+1};
+  let fi2=str.fromi64(0);
+  if(str.eq(fi2;"0")){io.println("PASS str.fromi64 zero")}el{io.println("FAIL str.fromi64 zero");fails=fails+1};
+
+  io.println("--- str.toint ---");
+  let ti1=str.toint("99");
+  if(ti1=99){io.println("PASS str.toint basic")}el{io.println("FAIL str.toint basic");fails=fails+1};
+  let ti2=str.toint("0");
+  if(ti2=0){io.println("PASS str.toint zero")}el{io.println("FAIL str.toint zero");fails=fails+1};
+
+  io.println("--- str.repeat ---");
+  let rp1=str.repeat("ab";3);
+  if(str.eq(rp1;"ababab")){io.println("PASS str.repeat basic")}el{io.println("FAIL str.repeat basic");fails=fails+1};
+  let rp2=str.repeat("x";1);
+  if(str.eq(rp2;"x")){io.println("PASS str.repeat once")}el{io.println("FAIL str.repeat once");fails=fails+1};
+  let rp3=str.repeat("x";0);
+  if(str.eq(rp3;"")){io.println("PASS str.repeat zero")}el{io.println("FAIL str.repeat zero");fails=fails+1};
+
+  io.println("--- str.reverse ---");
+  let rv1=str.reverse("abcd");
+  if(str.eq(rv1;"dcba")){io.println("PASS str.reverse basic")}el{io.println("FAIL str.reverse basic");fails=fails+1};
+  let rv2=str.reverse("");
+  if(str.eq(rv2;"")){io.println("PASS str.reverse empty")}el{io.println("FAIL str.reverse empty");fails=fails+1};
+  let rv3=str.reverse("a");
+  if(str.eq(rv3;"a")){io.println("PASS str.reverse single")}el{io.println("FAIL str.reverse single");fails=fails+1};
+
+  io.println("--- str.isempty ---");
+  if(str.isempty("")){io.println("PASS str.isempty true")}el{io.println("FAIL str.isempty true");fails=fails+1};
+  if(str.isempty("x")){io.println("FAIL str.isempty false");fails=fails+1}el{io.println("PASS str.isempty false")};
+  if(str.isempty(" ")){io.println("FAIL str.isempty whitespace");fails=fails+1}el{io.println("PASS str.isempty whitespace is not empty")};
+
+  io.println(str.concat("str_full: ";str.concat(str.fromi64(fails);" failures")));
+  <fails
+};

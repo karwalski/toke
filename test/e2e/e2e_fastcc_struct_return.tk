@@ -1,0 +1,25 @@
+m=test;
+t=$point{x:i64;y:i64;z:i64};
+f=make(a:i64;b:i64;c:i64):$point{
+  <$point{x:a;y:b;z:c}
+};
+f=shift(p:$point;dx:i64):$point{
+  <$point{x:p.x+dx;y:p.y+dx;z:p.z+dx}
+};
+f=main():i64{
+  let p=make(1;2;3);
+  let q=shift(p;10);
+  if(q.x=11){
+    if(q.y=12){
+      if(q.z=13){
+        <0
+      }el{
+        <3
+      }
+    }el{
+      <2
+    }
+  }el{
+    <1
+  }
+};

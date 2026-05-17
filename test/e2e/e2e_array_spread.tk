@@ -1,0 +1,16 @@
+m=test;
+f=main():i64{
+  let base=@(10;20;30);
+  let ext=@(base;40);
+  if(ext.len=4){
+    if(ext.get(0)=10){
+      if(ext.get(1)=20){
+        if(ext.get(2)=30){
+          if(ext.get(3)=40){
+            <0
+          }el{<5}
+        }el{<4}
+      }el{<3}
+    }el{<2}
+  }el{<1}
+};

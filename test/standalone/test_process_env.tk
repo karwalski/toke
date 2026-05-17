@@ -1,0 +1,35 @@
+m=test.process.env;
+i=process:std.process;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let fails=mut.0;
+
+  let home=process.env("HOME");
+  if(str.len(home)>0){
+    io.println("PASS process.env HOME is non-empty")
+  }el{
+    io.println("FAIL process.env HOME is empty");
+    fails=fails+1
+  };
+
+  let path=process.env("PATH");
+  if(str.len(path)>0){
+    io.println("PASS process.env PATH is non-empty")
+  }el{
+    io.println("FAIL process.env PATH is empty");
+    fails=fails+1
+  };
+
+  let missing=process.env("TOKE_NONEXISTENT_VAR_XYZ_12345");
+  if(str.len(missing)=0){
+    io.println("PASS process.env missing var returns empty")
+  }el{
+    io.println("FAIL process.env missing var is non-empty");
+    fails=fails+1
+  };
+
+  io.println(str.concat("process_env: ";str.concat(str.fromint(fails);" failed")));
+  <fails
+};

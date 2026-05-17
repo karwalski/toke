@@ -1,0 +1,22 @@
+m=test;
+t=$box{val:bool};
+f=rettrue():bool{<true};
+f=retfalse():bool{<false};
+f=passbool(b:bool):bool{<b};
+f=main():i64{
+  let fails=mut.0;
+  let t=$rettrue();
+  if(t){}el{fails=fails+1};
+  let f=retfalse();
+  if(f){fails=fails+1};
+  let p1=passbool(true);
+  if(p1){}el{fails=fails+1};
+  let p2=passbool(false);
+  if(p2){fails=fails+1};
+  let s=$box{val:true};
+  if(s.val){}el{fails=fails+1};
+  let cmp=5>3;
+  let r=passbool(cmp);
+  if(r){}el{fails=fails+1};
+  <fails
+};

@@ -1,0 +1,59 @@
+m=test.encoding.full;
+i=enc:std.encoding;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let fails=mut.0;
+
+  let b64=enc.b64encode("hello");
+  if(str.eq(b64;"aGVsbG8=")){
+    io.println("PASS b64encode hello gives aGVsbG8=")
+  }el{
+    io.println(str.concat("FAIL b64encode hello (got: ";str.concat(b64;")")));
+    fails=fails+1
+  };
+
+  let dec=enc.b64decode("aGVsbG8=");
+  if(str.eq(dec;"hello")){
+    io.println("PASS b64decode aGVsbG8= gives hello")
+  }el{
+    io.println(str.concat("FAIL b64decode aGVsbG8= (got: ";str.concat(dec;")")));
+    fails=fails+1
+  };
+
+  let urlenc=enc.urlencode("hello world");
+  if(str.eq(urlenc;"hello%20world")){
+    io.println("PASS urlencode hello world gives hello%20world")
+  }el{
+    io.println(str.concat("FAIL urlencode hello world (got: ";str.concat(urlenc;")")));
+    fails=fails+1
+  };
+
+  let urldec=enc.urldecode("hello%20world");
+  if(str.eq(urldec;"hello world")){
+    io.println("PASS urldecode hello%20world gives hello world")
+  }el{
+    io.println(str.concat("FAIL urldecode hello%20world (got: ";str.concat(urldec;")")));
+    fails=fails+1
+  };
+
+  let rt1=enc.b64decode(enc.b64encode("round trip test"));
+  if(str.eq(rt1;"round trip test")){
+    io.println("PASS b64 round-trip decode(encode(x)) == x")
+  }el{
+    io.println("FAIL b64 round-trip decode(encode(x)) == x");
+    fails=fails+1
+  };
+
+  let rt2=enc.urldecode(enc.urlencode("foo bar&baz=1"));
+  if(str.eq(rt2;"foo bar&baz=1")){
+    io.println("PASS url round-trip decode(encode(x)) == x")
+  }el{
+    io.println("FAIL url round-trip decode(encode(x)) == x");
+    fails=fails+1
+  };
+
+  io.println(str.concat("encoding_full: ";str.concat(str.fromint(fails);" failed")));
+  <fails
+};

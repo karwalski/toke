@@ -1,0 +1,62 @@
+m=test.crypto.full;
+i=cry:std.crypto;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let fails=mut.0;
+
+  io.println("--- crypto.sha256 ---");
+  let h1=cry.sha256("hello");
+  let expected="2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+  if(str.eq(h1;expected)){io.println("PASS crypto.sha256 known hash for hello")}el{io.println("FAIL crypto.sha256 known hash for hello");fails=fails+1};
+
+  let hlen=str.len(h1);
+  if(hlen=64){io.println("PASS crypto.sha256 length is 64")}el{io.println("FAIL crypto.sha256 length is 64");fails=fails+1};
+
+  let h2=cry.sha256("hello");
+  if(str.eq(h1;h2)){io.println("PASS crypto.sha256 deterministic")}el{io.println("FAIL crypto.sha256 deterministic");fails=fails+1};
+
+  let h3=cry.sha256("world");
+  if(str.eq(h1;h3)){io.println("FAIL crypto.sha256 different inputs differ");fails=fails+1}el{io.println("PASS crypto.sha256 different inputs differ")};
+
+  let h4=cry.sha256("");
+  let emptyexpected="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+  if(str.eq(h4;emptyexpected)){io.println("PASS crypto.sha256 empty string known hash")}el{io.println("FAIL crypto.sha256 empty string known hash");fails=fails+1};
+
+  let h4len=str.len(h4);
+  if(h4len=64){io.println("PASS crypto.sha256 empty string length is 64")}el{io.println("FAIL crypto.sha256 empty string length is 64");fails=fails+1};
+
+  io.println("--- crypto.hmacsha256 ---");
+  let hmac1=cry.hmacsha256("secret";"hello");
+  let hmaclen=str.len(hmac1);
+  if(hmaclen=64){io.println("PASS crypto.hmacsha256 length is 64")}el{io.println("FAIL crypto.hmacsha256 length is 64");fails=fails+1};
+
+  let hmac2=cry.hmacsha256("secret";"hello");
+  if(str.eq(hmac1;hmac2)){io.println("PASS crypto.hmacsha256 deterministic")}el{io.println("FAIL crypto.hmacsha256 deterministic");fails=fails+1};
+
+  let hmac3=cry.hmacsha256("other";"hello");
+  if(str.eq(hmac1;hmac3)){io.println("FAIL crypto.hmacsha256 different keys differ");fails=fails+1}el{io.println("PASS crypto.hmacsha256 different keys differ")};
+
+  let hmac4=cry.hmacsha256("secret";"world");
+  if(str.eq(hmac1;hmac4)){io.println("FAIL crypto.hmacsha256 different data differ");fails=fails+1}el{io.println("PASS crypto.hmacsha256 different data differ")};
+
+  io.println("--- crypto.randombytes ---");
+  let rb1=cry.randombytes(16);
+  let rb1len=str.len(rb1);
+  if(rb1len=32){io.println("PASS crypto.randombytes 16 bytes is 32 hex chars")}el{io.println("FAIL crypto.randombytes 16 bytes is 32 hex chars");fails=fails+1};
+
+  let rb2=cry.randombytes(16);
+  if(str.eq(rb1;rb2)){io.println("FAIL crypto.randombytes not deterministic");fails=fails+1}el{io.println("PASS crypto.randombytes not deterministic")};
+
+  let rb3=cry.randombytes(32);
+  let rb3len=str.len(rb3);
+  if(rb3len=64){io.println("PASS crypto.randombytes 32 bytes is 64 hex chars")}el{io.println("FAIL crypto.randombytes 32 bytes is 64 hex chars");fails=fails+1};
+
+  let rb4=cry.randombytes(1);
+  let rb4len=str.len(rb4);
+  if(rb4len=2){io.println("PASS crypto.randombytes 1 byte is 2 hex chars")}el{io.println("FAIL crypto.randombytes 1 byte is 2 hex chars");fails=fails+1};
+
+  io.println(str.concat("crypto_full: ";str.concat(str.fromi64(fails);" failures")));
+  <fails
+};

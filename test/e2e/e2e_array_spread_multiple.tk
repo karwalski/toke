@@ -1,0 +1,18 @@
+m=test;
+f=main():i64{
+  let base=@(1;2;3);
+  let ext=@(base;4;5);
+  if(ext.len=5){
+    if(ext.get(0)=1){
+      if(ext.get(1)=2){
+        if(ext.get(2)=3){
+          if(ext.get(3)=4){
+            if(ext.get(4)=5){
+              <0
+            }el{<6}
+          }el{<5}
+        }el{<4}
+      }el{<3}
+    }el{<2}
+  }el{<1}
+};

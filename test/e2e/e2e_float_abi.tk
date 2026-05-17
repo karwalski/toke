@@ -1,0 +1,18 @@
+m=test;
+t=$fbox{val:f64};
+f=getpi():f64{<3.14};
+f=main():i64{
+  let fails=mut.0;
+  let pi=getpi();
+  let pii=pi as i64;
+  if(pii=3){}el{fails=fails+1};
+  let sum=2.5+2.5;
+  let sumi=sum as i64;
+  if(sumi=5){}el{fails=fails+1};
+  let cmp=3.14>3.0;
+  if(cmp){}el{fails=fails+1};
+  let b=$fbox{val:9.75};
+  let bv=b.val as i64;
+  if(bv=9){}el{fails=fails+1};
+  <fails
+};
