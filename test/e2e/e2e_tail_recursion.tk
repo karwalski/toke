@@ -1,0 +1,34 @@
+m=test;
+f=factorial(n:i64;acc:i64):i64{
+  if(n=0){
+    <acc
+  };
+  <factorial(n-1;acc*n)
+};
+f=fib(n:i64;a:i64;b:i64):i64{
+  if(n=0){
+    <a
+  };
+  <fib(n-1;b;a+b)
+};
+f=countdown(n:i64):i64{
+  if(n=0){
+    <0
+  };
+  <countdown(n-1)
+};
+f=main():i64{
+  let f10=factorial(10;1);
+  if(!(f10=3628800)){
+    <1
+  };
+  let fib20=fib(20;0;1);
+  if(!(fib20=6765)){
+    <2
+  };
+  let cd=countdown(100000);
+  if(!(cd=0)){
+    <3
+  };
+  <0
+};

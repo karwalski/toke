@@ -1,0 +1,22 @@
+m=test.dbsandbox;
+i=db:std.db;
+i=io:std.io;
+i=str:std.str;
+i=fs:std.fs;
+
+f=main():i64{
+  let dbpath="/tmp/toke_test_db_sandbox.db";
+  let conn=db.open(dbpath);
+  db.exec(conn; "CREATE TABLE IF NOT EXISTS test(id INTEGER PRIMARY KEY,name TEXT)"; @());
+  db.exec(conn; "INSERT INTO test(name) VALUES('hello')"; @());
+  let rows=db.many(conn; "SELECT name FROM test"; @());
+  let count=rows.len;
+  db.close(conn);
+  fs.remove(dbpath);
+  if(count>0){
+    io.println("PASS db sandbox");
+    <0
+  };
+  io.println("FAIL db sandbox: no rows returned");
+  <1
+};

@@ -544,4 +544,41 @@ install-man: doc/toke.1
 	@ln -sf $(MANDIR)/toke.1 $(MANDIR)/tkc.1 2>/dev/null || true
 	@echo "Installed toke.1 and tkc.1 symlink to $(MANDIR)"
 
-.PHONY: fuzz fuzz-lexer fuzz-parser fuzz-http fuzz-http-parse fuzz-url-route
+.PHONY: fuzz fuzz-lexer fuzz-parser fuzz-http fuzz-http-parse fuzz-url-route \
+	test-e2e-check test-standalone-check test-all
+
+# ── Epic 88: Comprehensive test suite ─────────────────────────────────────
+
+# Syntax-check all new e2e and standalone tests
+test-e2e-check:
+	@echo "=== E2E syntax check ==="
+	@fails=0; total=0; \
+	for f in test/e2e/e2e_*.tk; do \
+		total=$$((total + 1)); \
+		if $(BIN) --check "$$f" 2>&1 | grep -q '"severity":"error"'; then \
+			echo "  FAIL: $$f"; fails=$$((fails + 1)); \
+		else \
+			echo "  OK: $$f"; \
+		fi; \
+	done; \
+	echo "$$total checked, $$fails failed"; \
+	test $$fails -eq 0
+
+test-standalone-check:
+	@echo "=== Standalone syntax check ==="
+	@fails=0; total=0; \
+	for f in test/standalone/test_*_full.tk test/standalone/test_process_env.tk; do \
+		total=$$((total + 1)); \
+		if $(BIN) --check "$$f" 2>&1 | grep -q '"severity":"error"'; then \
+			echo "  FAIL: $$f"; fails=$$((fails + 1)); \
+		else \
+			echo "  OK: $$f"; \
+		fi; \
+	done; \
+	echo "$$total checked, $$fails failed"; \
+	test $$fails -eq 0
+
+# Run all test suites
+test-all: test-stdlib test-e2e-check test-standalone-check conform
+	@echo ""
+	@echo "=== All test suites complete ==="
