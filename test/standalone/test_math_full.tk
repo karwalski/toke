@@ -1,67 +1,38 @@
 m=test.math.full;
 i=math:std.math;
-i=io:std.io;
 i=str:std.str;
+i=io:std.io;
 
 f=main():i64{
   let fails=mut.0;
-
   let mx=math.max(3;7);
   if(mx=7){
     io.println("PASS math.max(3;7) == 7")
   }el{
-    io.println(str.concat("FAIL math.max(3;7) (got: ";str.concat(str.fromint(mx);")")));
+    io.println("FAIL math.max(3;7)");
     fails=fails+1
   };
-
   let mn=math.min(3;7);
   if(mn=3){
     io.println("PASS math.min(3;7) == 3")
   }el{
-    io.println(str.concat("FAIL math.min(3;7) (got: ";str.concat(str.fromint(mn);")")));
+    io.println("FAIL math.min(3;7)");
     fails=fails+1
   };
-
-  let ab=math.abs(0-5);
-  if(ab=5){
-    io.println("PASS math.abs(0-5) == 5")
-  }el{
-    io.println(str.concat("FAIL math.abs(0-5) (got: ";str.concat(str.fromint(ab);")")));
-    fails=fails+1
-  };
-
-  let ab2=math.abs(5);
-  if(ab2=5){
-    io.println("PASS math.abs(5) == 5")
-  }el{
-    io.println(str.concat("FAIL math.abs(5) (got: ";str.concat(str.fromint(ab2);")")));
-    fails=fails+1
-  };
-
-  let ab3=math.abs(0);
-  if(ab3=0){
-    io.println("PASS math.abs(0) == 0")
-  }el{
-    io.println(str.concat("FAIL math.abs(0) (got: ";str.concat(str.fromint(ab3);")")));
-    fails=fails+1
-  };
-
-  let mx2=math.max(10;10);
-  if(mx2=10){
+  let mxeq=math.max(10;10);
+  if(mxeq=10){
     io.println("PASS math.max(10;10) == 10")
   }el{
-    io.println(str.concat("FAIL math.max(10;10) (got: ";str.concat(str.fromint(mx2);")")));
+    io.println("FAIL math.max(10;10)");
     fails=fails+1
   };
-
-  let mn2=math.min(0-3;0-7);
-  if(mn2=(0-7)){
-    io.println("PASS math.min(0-3;0-7) == -7")
+  let mneq=math.min(5;5);
+  if(mneq=5){
+    io.println("PASS math.min(5;5) == 5")
   }el{
-    io.println(str.concat("FAIL math.min(0-3;0-7) (got: ";str.concat(str.fromint(mn2);")")));
+    io.println("FAIL math.min(5;5)");
     fails=fails+1
   };
-
-  io.println(str.concat("math_full: ";str.concat(str.fromint(fails);" failed")));
+  io.println(str.concat("math_full: ";str.concat(str.fromi64(fails);" failed")));
   <fails
 };

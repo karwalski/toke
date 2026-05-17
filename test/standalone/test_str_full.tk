@@ -36,12 +36,12 @@ f=main():i64{
   if(str.endswith("hello";"")){io.println("PASS str.endswith empty")}el{io.println("FAIL str.endswith empty");fails=fails+1};
 
   io.println("--- str.trim ---");
-  let t1=str.trim("  hello  ");
-  if(str.eq(t1;"hello")){io.println("PASS str.trim both sides")}el{io.println("FAIL str.trim both sides");fails=fails+1};
-  let t2=str.trim("hello");
-  if(str.eq(t2;"hello")){io.println("PASS str.trim no whitespace")}el{io.println("FAIL str.trim no whitespace");fails=fails+1};
-  let t3=str.trim("");
-  if(str.eq(t3;"")){io.println("PASS str.trim empty")}el{io.println("FAIL str.trim empty");fails=fails+1};
+  let tr1=str.trim("  hello  ");
+  if(str.eq(tr1;"hello")){io.println("PASS str.trim both sides")}el{io.println("FAIL str.trim both sides");fails=fails+1};
+  let tr2=str.trim("hello");
+  if(str.eq(tr2;"hello")){io.println("PASS str.trim no whitespace")}el{io.println("FAIL str.trim no whitespace");fails=fails+1};
+  let tr3=str.trim("");
+  if(str.eq(tr3;"")){io.println("PASS str.trim empty")}el{io.println("FAIL str.trim empty");fails=fails+1};
 
   io.println("--- str.upper ---");
   let u1=str.upper("hello");
