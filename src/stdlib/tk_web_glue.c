@@ -2363,3 +2363,62 @@ int64_t tk_http_postheaders_w(int64_t client, int64_t url, int64_t body, int64_t
 int64_t tk_http_queryparam_w(int64_t req, int64_t name) {
     return tk_http_req_param(req, name);
 }
+
+/* Aliases for v0.3 concatenated naming (no underscores) */
+int64_t tk_http_resjsonnew_w(int64_t status, int64_t body) {
+    return tk_http_res_json_new(status, body);
+}
+int64_t tk_http_resnew_w(int64_t status, int64_t body) {
+    return tk_http_res_new(status, body);
+}
+int64_t tk_http_resok_w(int64_t body) {
+    return tk_http_res_ok(body);
+}
+int64_t tk_http_resbad_w(int64_t msg) {
+    return tk_http_res_bad(msg);
+}
+int64_t tk_http_reserr_w(int64_t msg) {
+    return tk_http_res_err(msg);
+}
+int64_t tk_http_reqpath_w(int64_t req) {
+    return tk_http_req_path(req);
+}
+int64_t tk_http_reqmethod_w(int64_t req) {
+    return tk_http_req_method(req);
+}
+int64_t tk_http_reqbody_w(int64_t req) {
+    return tk_http_req_body(req);
+}
+int64_t tk_http_reqparam_w(int64_t req, int64_t name) {
+    return tk_http_req_param(req, name);
+}
+int64_t tk_http_reqheader_w(int64_t req, int64_t name) {
+    return tk_http_req_header(req, name);
+}
+int64_t tk_http_getstaticmime_w(int64_t path, int64_t body, int64_t mime) {
+    return tk_http_get_static_mime(path, body, mime);
+}
+int64_t tk_http_getstatic_w(int64_t path, int64_t body) {
+    return tk_http_get_static(path, body);
+}
+int64_t tk_http_postecho_w(int64_t path) {
+    return tk_http_post_echo(path);
+}
+int64_t tk_http_postjson_w(int64_t path, int64_t body) {
+    return tk_http_post_json(path, body);
+}
+int64_t tk_http_setnotfound_w(int64_t body) {
+    return tk_http_set_notfound(body);
+}
+int64_t tk_http_setcors_w(int64_t origins) {
+    return tk_http_set_cors(origins);
+}
+int64_t tk_http_servetls_w(int64_t port, int64_t cert, int64_t key) {
+    return tk_http_servetls(port, cert, key);
+}
+int64_t tk_http_servevhosts_w(int64_t port) {
+    return tk_http_servevhosts(port);
+}
+int64_t tk_http_serve_w(int64_t port) {
+    return tk_http_serve(port);
+}
