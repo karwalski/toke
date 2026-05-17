@@ -25,6 +25,10 @@
 #include <signal.h>
 #include <time.h>
 #include <zlib.h>
+#ifdef TK_HAVE_OPENSSL
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#endif
 
 /* ── Graceful shutdown flag (Story 27.1.10) ─────────────────────────── */
 
@@ -1998,10 +2002,12 @@ static HttpClientResp client_do_request(HttpClient *c,
 {
     if (!c || !c->base_url) return err_resp_client("null client", 0);
 
+#ifndef TK_HAVE_OPENSSL
     if (strncmp(c->base_url, "https://", 8) == 0) {
         return err_resp_client(
             "HTTPS requires TLS (not compiled in); use http://", 0);
     }
+#endif
 
     char host[256], port[16], full_path[1024];
     int is_https = 0;
@@ -2038,6 +2044,30 @@ static HttpClientResp client_do_request(HttpClient *c,
     }
     if (fd < 0) return err_resp_client("TCP connect failed", 0);
 
+#ifdef TK_HAVE_OPENSSL
+    SSL_CTX *ssl_ctx = NULL;
+    SSL *ssl = NULL;
+    if (is_https) {
+        ssl_ctx = SSL_CTX_new(TLS_client_method());
+        if (!ssl_ctx) { close(fd); return err_resp_client("SSL_CTX_new failed", 0); }
+        ssl = SSL_new(ssl_ctx);
+        if (!ssl) { SSL_CTX_free(ssl_ctx); close(fd); return err_resp_client("SSL_new failed", 0); }
+        SSL_set_fd(ssl, fd);
+        SSL_set_tlsext_host_name(ssl, host);
+        if (SSL_connect(ssl) <= 0) {
+            SSL_free(ssl); SSL_CTX_free(ssl_ctx); close(fd);
+            return err_resp_client("SSL handshake failed", 0);
+        }
+    }
+#define CLIENT_SEND(buf, len) (is_https ? SSL_write(ssl, buf, (int)(len)) : send(fd, buf, len, 0))
+#define CLIENT_RECV(buf, len) (is_https ? SSL_read(ssl, buf, (int)(len)) : (int)recv(fd, buf, len, 0))
+#define CLIENT_CLOSE() do { if (ssl) { SSL_shutdown(ssl); SSL_free(ssl); } if (ssl_ctx) SSL_CTX_free(ssl_ctx); close(fd); } while(0)
+#else
+#define CLIENT_SEND(buf, len) send(fd, buf, len, 0)
+#define CLIENT_RECV(buf, len) (int)recv(fd, buf, len, 0)
+#define CLIENT_CLOSE() close(fd)
+#endif
+
     /* For HTTPS through proxy: send CONNECT tunnel request */
     if (use_proxy && is_https) {
         char connect_buf[512];
@@ -2048,20 +2078,20 @@ static HttpClientResp client_do_request(HttpClient *c,
             host, port, host, port);
         if (clen < 0 || (size_t)clen >= sizeof(connect_buf) ||
             send(fd, connect_buf, (size_t)clen, 0) < 0) {
-            close(fd);
+            CLIENT_CLOSE();
             return err_resp_client("proxy CONNECT send failed", 0);
         }
         /* Read proxy 200 response */
         char cbuf[1024];
         ssize_t cn = recv(fd, cbuf, sizeof(cbuf) - 1, 0);
         if (cn <= 0) {
-            close(fd);
+            CLIENT_CLOSE();
             return err_resp_client("proxy CONNECT recv failed", 0);
         }
         cbuf[cn] = '\0';
         if (strncmp(cbuf, "HTTP/1.1 200", 12) != 0 &&
             strncmp(cbuf, "HTTP/1.0 200", 12) != 0) {
-            close(fd);
+            CLIENT_CLOSE();
             return err_resp_client("proxy CONNECT rejected", 0);
         }
         /* Tunnel established — subsequent I/O goes direct to target */
@@ -2101,17 +2131,17 @@ static HttpClientResp client_do_request(HttpClient *c,
     }
 
     if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
-        close(fd);
+        CLIENT_CLOSE();
         return err_resp_client("request header too large", 0);
     }
 
-    if (send(fd, req_buf, (size_t)req_len, 0) < 0) {
-        close(fd);
+    if (CLIENT_SEND(req_buf, (size_t)req_len) < 0) {
+        CLIENT_CLOSE();
         return err_resp_client("send header failed", 0);
     }
     if (body && body_len > 0) {
-        if (send(fd, body, (size_t)body_len, 0) < 0) {
-            close(fd);
+        if (CLIENT_SEND(body, (size_t)body_len) < 0) {
+            CLIENT_CLOSE();
             return err_resp_client("send body failed", 0);
         }
     }
@@ -2119,7 +2149,7 @@ static HttpClientResp client_do_request(HttpClient *c,
     /* read full response (headers + body) with proper framing */
     size_t cap = 65536, used = 0;
     char *resp = malloc(cap);
-    if (!resp) { close(fd); return err_resp_client("out of memory", 0); }
+    if (!resp) { CLIENT_CLOSE(); return err_resp_client("out of memory", 0); }
 
     ssize_t n;
     char *hdr_end_ptr = NULL;
@@ -2129,14 +2159,14 @@ static HttpClientResp client_do_request(HttpClient *c,
 
     /* Phase 1: read until we have full headers (\r\n\r\n) */
     while (!hdr_end_ptr) {
-        n = recv(fd, resp + used, cap - used - 1, 0);
+        n = CLIENT_RECV(resp + used, cap - used - 1);
         if (n <= 0) break; /* timeout or close */
         used += (size_t)n;
         resp[used] = '\0';
         if (used + 1 >= cap) {
             cap *= 2;
             char *tmp = realloc(resp, cap);
-            if (!tmp) { free(resp); close(fd);
+            if (!tmp) { free(resp); CLIENT_CLOSE();
                         return err_resp_client("out of memory", 0); }
             resp = tmp;
         }
@@ -2191,11 +2221,11 @@ static HttpClientResp client_do_request(HttpClient *c,
             if (used + 1 >= cap) {
                 cap *= 2;
                 char *tmp = realloc(resp, cap);
-                if (!tmp) { free(resp); close(fd);
+                if (!tmp) { free(resp); CLIENT_CLOSE();
                             return err_resp_client("out of memory", 0); }
                 resp = tmp;
             }
-            n = recv(fd, resp + used, cap - used - 1, 0);
+            n = CLIENT_RECV(resp + used, cap - used - 1);
             if (n <= 0) break;
             used += (size_t)n;
             body_have += (size_t)n;
@@ -2222,23 +2252,23 @@ static HttpClientResp client_do_request(HttpClient *c,
             if (used + 1 >= cap) {
                 cap *= 2;
                 char *tmp = realloc(resp, cap);
-                if (!tmp) { free(resp); close(fd);
+                if (!tmp) { free(resp); CLIENT_CLOSE();
                             return err_resp_client("out of memory", 0); }
                 resp = tmp;
             }
-            n = recv(fd, resp + used, cap - used - 1, 0);
+            n = CLIENT_RECV(resp + used, cap - used - 1);
             if (n <= 0) break;
             used += (size_t)n;
         }
         chunked_done: ;
     } else {
         /* mode 3: read until connection close / timeout (original behavior) */
-        while ((n = recv(fd, resp + used, cap - used - 1, 0)) > 0) {
+        while ((n = CLIENT_RECV(resp + used, cap - used - 1)) > 0) {
             used += (size_t)n;
             if (used + 1 >= cap) {
                 cap *= 2;
                 char *tmp = realloc(resp, cap);
-                if (!tmp) { free(resp); close(fd);
+                if (!tmp) { free(resp); CLIENT_CLOSE();
                             return err_resp_client("out of memory", 0); }
                 resp = tmp;
             }
@@ -2246,7 +2276,10 @@ static HttpClientResp client_do_request(HttpClient *c,
     }
 
     resp[used] = '\0';
-    close(fd);
+    CLIENT_CLOSE();
+#undef CLIENT_SEND
+#undef CLIENT_RECV
+#undef CLIENT_CLOSE
 
     /* parse status line: "HTTP/1.x NNN ..." */
     uint64_t status = 0;
