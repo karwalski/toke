@@ -1990,7 +1990,6 @@ static int emit_expr(Ctx *c, const Node *n)
             int is_mod_im = 0;
             for (int ii = 0; ii < c->import_count; ii++)
                 if (!strcmp(c->imports[ii].alias, alias_im)) { is_mod_im = 1; break; }
-                if (getenv("TKC_DEBUG_HTTP")) fprintf(stderr, "[im] alias=%s method=%s is_mod=%d\n", alias_im, method_im, is_mod_im);
             if (!is_mod_im &&
                 (!strcmp(method_im, "append") || !strcmp(method_im, "push") ||
                  !strcmp(method_im, "set") ||
@@ -2056,11 +2055,10 @@ static int emit_expr(Ctx *c, const Node *n)
              * 1 arg = HTTP client request, 2 args = route registration */
             if (resolved_fn) {
                 int call_argc = n->child_count - 1;
-                if (getenv("TKC_DEBUG_HTTP")) fprintf(stderr, "[http] resolved=%s argc=%d\n", resolved_fn, call_argc);
                 if (!strcmp(resolved_fn, "tk_http_get_handler") && call_argc == 1) {
                     resolved_fn = "tk_http_get_w";
-                } else if (!strcmp(resolved_fn, "tk_http_post_handler") && call_argc <= 2 &&
-                           n->child_count >= 3 && n->children[2]->kind != NODE_UNARY_EXPR) {
+                } else if (!strcmp(resolved_fn, "tk_http_post_handler") && call_argc == 2 &&
+                           n->child_count >= 3 && n->children[2]->kind != NODE_FUNC_REF) {
                     resolved_fn = "tk_http_posturl_w";
                 }
             }
