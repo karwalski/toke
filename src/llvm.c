@@ -1990,6 +1990,7 @@ static int emit_expr(Ctx *c, const Node *n)
             int is_mod_im = 0;
             for (int ii = 0; ii < c->import_count; ii++)
                 if (!strcmp(c->imports[ii].alias, alias_im)) { is_mod_im = 1; break; }
+                if (getenv("TKC_DEBUG_HTTP")) fprintf(stderr, "[im] alias=%s method=%s is_mod=%d\n", alias_im, method_im, is_mod_im);
             if (!is_mod_im &&
                 (!strcmp(method_im, "append") || !strcmp(method_im, "push") ||
                  !strcmp(method_im, "set") ||
@@ -2051,6 +2052,18 @@ static int emit_expr(Ctx *c, const Node *n)
             tok_cp(c->src, n->children[0]->children[0], alias, sizeof alias);
             tok_cp(c->src, n->children[0]->children[1], method, sizeof method);
             resolved_fn = resolve_stdlib_call(c, alias, method);
+            /* Disambiguate http.get/post by argument count:
+             * 1 arg = HTTP client request, 2 args = route registration */
+            if (resolved_fn) {
+                int call_argc = n->child_count - 1;
+                if (getenv("TKC_DEBUG_HTTP")) fprintf(stderr, "[http] resolved=%s argc=%d\n", resolved_fn, call_argc);
+                if (!strcmp(resolved_fn, "tk_http_get_handler") && call_argc == 1) {
+                    resolved_fn = "tk_http_get_w";
+                } else if (!strcmp(resolved_fn, "tk_http_post_handler") && call_argc <= 2 &&
+                           n->child_count >= 3 && n->children[2]->kind != NODE_UNARY_EXPR) {
+                    resolved_fn = "tk_http_posturl_w";
+                }
+            }
             if (!resolved_fn) {
                 /* Check if alias is a known sub-namespace (e.g. "row" from std.db).
                  * Sub-namespaces are not in c->imports[] but should generate
@@ -2582,12 +2595,28 @@ static int emit_expr(Ctx *c, const Node *n)
          * array indexing because the parser can't distinguish at parse time. */
         if (n->children[0]->kind == NODE_IDENT && n->child_count >= 2) {
             char base_alias[128]; tok_cp(c->src, n->children[0], base_alias, sizeof base_alias);
-            /* Check if base is a non-stdlib import alias → cross-module get() call */
+            /* Check if base is any import alias (stdlib or user module) */
             int is_user_mod = 0;
+            int is_std_mod = 0;
             for (int ii = 0; ii < c->import_count; ii++) {
-                if (!strcmp(c->imports[ii].alias, base_alias) && !c->imports[ii].is_std) {
-                    is_user_mod = 1; break;
+                if (!strcmp(c->imports[ii].alias, base_alias)) {
+                    if (c->imports[ii].is_std) is_std_mod = 1;
+                    else is_user_mod = 1;
+                    break;
                 }
+            }
+            /* Stdlib module.get(arg) — e.g. http.get(url) parsed as INDEX_EXPR */
+            if (is_std_mod) {
+                const char *fn = resolve_stdlib_call(c, base_alias, "get");
+                /* Disambiguate: http.get with 1 arg = client GET */
+                if (fn && !strcmp(fn, "tk_http_get_handler")) fn = "tk_http_get_w";
+                if (!fn) fn = "tk_http_get_w"; /* fallback */
+                int arg = emit_expr(c, n->children[1]);
+                const char *aty = expr_llvm_type(c, n->children[1]);
+                arg = coerce_value(c, arg, aty, "i64");
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i64 @%s( i64 %%t%d)\n", t, fn, arg);
+                return t;
             }
             if (is_user_mod) {
                 /* Cross-module call: a.func(arg) → call @mod_path_func(arg)
