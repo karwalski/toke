@@ -4002,9 +4002,9 @@ Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, li
 | 90.3.1 | toke-spec: flag v0.2 phase2-profile.md as FROZEN, cross-reference v0.3 | backlog | | Add header noting v0.3 is the active spec, link to toke/docs |
 | 90.3.2 | toke-tokenizer: verify vocabulary training used v0.3 corpus only | backlog | | Check no v0.2 underscore syntax leaked into training data |
 | 90.3.3 | toke-eval: verify eval harness accepts v0.3 submissions, rejects v0.2 | backlog | | Benchmark tasks should only pass with v0.3-valid programs |
-| 90.4.1 | Archive toke-benchmark (consolidated into toke-eval) | backlog | | Add ARCHIVED.md, update README, disable CI |
-| 90.4.2 | Archive old corpus artifacts (pre-migration snapshots) | backlog | | Flag in toke-corpus/archive/ as v0.2 legacy, not for training |
-| 90.4.3 | Archive toke-web (replaced by ooke + toke-website) | backlog | | Already in archive/ — verify README notes replacement |
+| 90.4.1 | Archive toke-benchmark (consolidated into toke-eval) | done | 2026-05-18 | ARCHIVED.md added to toke-benchmark and archive/toke-benchmark |
+| 90.4.2 | Archive old corpus artifacts (pre-migration snapshots) | done | 2026-05-18 | ARCHIVED.md added to archive/toke-corpus flagging v0.2 legacy |
+| 90.4.3 | Archive toke-web (replaced by ooke + toke-website) | done | 2026-05-18 | ARCHIVED.md added to archive/toke-web noting ooke + toke-website replacement |
 | 90.5.1 | toke-cloud: verify sandbox executes v0.3 programs correctly | backlog | | Test MCP sandbox with v0.3 programs, check compiler version matches |
 | 90.5.2 | Cross-repo dependency audit: ensure all repos point to latest toke binary | backlog | | Check build scripts, CI configs, Makefiles all reference current compiler |
 

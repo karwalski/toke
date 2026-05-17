@@ -1,0 +1,18 @@
+m=test.process.full;
+i=process:std.process;
+i=str:std.str;
+i=io:std.io;
+f=main():i64{
+  let fails=mut.0;
+  let home=process.env("HOME");
+  if(str.len(home)>0){}el{fails=fails+1};
+  let path=process.env("PATH");
+  if(str.len(path)>0){}el{fails=fails+1};
+  let novar=process.env("TOKE_NONEXISTENT_VAR_XYZ");
+  if(str.len(novar)=0){}el{fails=fails+1};
+  let out=process.exec("echo hello");
+  if(str.contains(out;"hello")){}el{fails=fails+1};
+  let lines=process.readlines("echo line1 && echo line2");
+  if(lines.len>0){}el{fails=fails+1};
+  <fails
+};

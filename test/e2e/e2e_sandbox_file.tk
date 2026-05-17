@@ -1,0 +1,15 @@
+m=test.sandbox.file;
+i=fs:std.fs;
+i=str:std.str;
+f=main():i64{
+  let fails=mut.0;
+  let path="/tmp/tokesandboxtestxyz.txt";
+  let content="hello toke sandbox";
+  fs.write(path;content);
+  let read=fs.read(path);
+  if(str.eq(read;content)){}el{fails=fails+1};
+  fs.delete(path);
+  let exists=fs.exists(path);
+  if(exists=0){}el{fails=fails+1};
+  <fails
+};
