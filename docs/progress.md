@@ -4029,3 +4029,22 @@ Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, li
 | 87.3.1 | http.posturl returns empty for slow responses (>2-3s) | backlog | 2026-05-17 | `client_do_request` recv loop exits early on slow responses. Server sends headers quickly but body arrives later (Ollama ~10-15s). The recv with SO_RCVTIMEO=30s should wait, but may be hitting a shorter effective timeout or treating a partial read as EOF. Need to: (1) read until Content-Length bytes received, or (2) handle Transfer-Encoding:chunked (decode chunk framing), or (3) keep reading until connection close. Reproducer: POST to Ollama with stream:false, 500-word essay prompt. |
 | 87.3.2 | http.get returns empty for chunked Transfer-Encoding responses | backlog | 2026-05-17 | Same root cause as 87.3.1. The recv loop reads until recv returns 0 (connection close), but servers using chunked encoding with keep-alive don't close the connection after the final chunk. Need to detect `Transfer-Encoding: chunked` in response headers and decode chunk framing (read hex length + CRLF + data + CRLF, until 0-length chunk). |
 | 87.3.3 | HTTP client does not respect Content-Length for response body reading | backlog | 2026-05-17 | When response includes `Content-Length: N`, the client should read exactly N bytes after headers rather than relying on connection close. This would fix both timeout and chunked issues for servers that provide Content-Length. |
+
+### Epic 90.1 — MCP v0.3 Fixes (from audit)
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 90.1.5 | tools/generate.js: fix wrong type sigils in SageMaker prompt | backlog | | $string→$str, remove %int/@float/!bool, remove pipe operators, add v0.3 keywords |
+| 90.1.6 | lsp/server.js: update keywords, remove underscores from identifier regex | backlog | | KEYWORD_INFO uses M/F/T/I → m/f/t/i. TOKE_KEYWORDS has fn/else/for → m/f/t/i/if/el/lp/br/let/mut/as/rt/mt. Remove _ from /[A-Za-z_0-9]/ patterns |
+| 90.1.7 | vscode-toke/syntaxes/toke.tmLanguage.json: v0.3 grammar patterns | backlog | | M/F/T/I → m/f/t/i, add mt/rt/br keywords, add @( pattern, remove [] |
+| 90.1.8 | vscode-toke/snippets/toke.json: lowercase v0.3 templates | backlog | | M= → m=, F= → f=, T= → t=, I= → i= |
+| 90.1.9 | tools/explain.js: update error catalog examples to v0.3 | backlog | | ~25 examples use M=/F=/T= and [1;2;3] array syntax |
+
+### Epic 90.2 — Linter Test Coverage + Missing Rules
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 90.2.4 | Create test/lint/ directory with test fixtures for 4 implemented rules | backlog | | unreachable-code, empty-fn-body, unused-import, redundant-bind — each needs 2 positive + 2 negative cases |
+| 90.2.5 | Implement mutable-never-mutated lint rule | backlog | | Warn when `let x=mut.val` is never reassigned. Track mut bindings, flag if no store instruction targets them. |
+| 90.2.6 | Implement unused-let lint rule | backlog | | Warn when `let x=expr` binding is never referenced. Requires read-usage tracking. |
+| 90.2.7 | Implement deprecated-v0.2-pattern lint rule | backlog | | Warn on patterns that parse but aren't idiomatic v0.3 (uppercase keywords accepted by --legacy, [] arrays). |
