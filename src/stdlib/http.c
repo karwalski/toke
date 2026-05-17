@@ -2299,8 +2299,45 @@ static HttpClientResp client_do_request(HttpClient *c,
     uint64_t resp_body_len = 0;
     if (sep) {
         sep += 4;
-        resp_body_len = (uint64_t)(used - (size_t)(sep - resp));
-        if (resp_body_len > 0) {
+        size_t raw_body_len = used - (size_t)(sep - resp);
+        if (raw_body_len > 0 && body_mode == 2) {
+            /* Decode chunked transfer encoding:
+             * Format: <hex-size>\r\n<data>\r\n ... 0\r\n\r\n */
+            uint8_t *decoded = malloc(raw_body_len); /* upper bound */
+            if (decoded) {
+                size_t dpos = 0;
+                const char *cp = sep;
+                const char *raw_end = sep + raw_body_len;
+                while (cp < raw_end) {
+                    /* Parse chunk size (hex) */
+                    char *nl = NULL;
+                    unsigned long chunk_sz = strtoul(cp, &nl, 16);
+                    if (!nl || nl == cp) break; /* malformed */
+                    /* Skip to data (past \r\n after size) */
+                    if (nl + 2 <= raw_end && nl[0] == '\r' && nl[1] == '\n')
+                        cp = nl + 2;
+                    else if (nl + 1 <= raw_end && nl[0] == '\n')
+                        cp = nl + 1;
+                    else
+                        break;
+                    if (chunk_sz == 0) break; /* final chunk */
+                    /* Copy chunk data */
+                    size_t avail = (size_t)(raw_end - cp);
+                    size_t to_copy = chunk_sz < avail ? (size_t)chunk_sz : avail;
+                    memcpy(decoded + dpos, cp, to_copy);
+                    dpos += to_copy;
+                    cp += to_copy;
+                    /* Skip trailing \r\n after chunk data */
+                    if (cp + 2 <= raw_end && cp[0] == '\r' && cp[1] == '\n')
+                        cp += 2;
+                    else if (cp + 1 <= raw_end && cp[0] == '\n')
+                        cp += 1;
+                }
+                resp_body = decoded;
+                resp_body_len = (uint64_t)dpos;
+            }
+        } else if (raw_body_len > 0) {
+            resp_body_len = (uint64_t)raw_body_len;
             resp_body = malloc((size_t)resp_body_len);
             if (resp_body) memcpy(resp_body, sep, (size_t)resp_body_len);
         }
