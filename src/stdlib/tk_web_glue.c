@@ -181,6 +181,38 @@ int64_t tk_http_set_cors(int64_t origins_ptr) {
     return 0;
 }
 
+/* ── Pattern matching for handler dispatch (Story 87.2.1) ────────────── */
+
+/*
+ * tk_match_pattern — Match a route pattern against a request path.
+ * Supports :param segments (e.g. "/api/greet/:name" matches "/api/greet/world").
+ * Populates out[] with extracted key/value pairs. Returns 1 on match, 0 otherwise.
+ */
+static int tk_match_pattern(const char *pat, const char *path,
+                            StrPair *out, int *cnt) {
+    if (strcmp(pat, "*") == 0) { *cnt = 0; return 1; }
+    *cnt = 0;
+    while (*pat && *path) {
+        if (*pat == ':') {
+            pat++;
+            const char *ks = pat; while (*pat && *pat != '/') pat++;
+            size_t kn = (size_t)(pat - ks);
+            char *key = malloc(kn + 1); if (!key) return 0;
+            memcpy(key, ks, kn); key[kn] = '\0';
+            const char *vs = path; while (*path && *path != '/') path++;
+            size_t vn = (size_t)(path - vs);
+            char *val = malloc(vn + 1); if (!val) { free(key); return 0; }
+            memcpy(val, vs, vn); val[vn] = '\0';
+            if (*cnt < 32) { out[*cnt].key = key; out[*cnt].val = val; (*cnt)++; }
+            else { free(key); free(val); }
+        } else {
+            if (*pat != *path) return 0;
+            pat++; path++;
+        }
+    }
+    return *pat == '\0' && *path == '\0';
+}
+
 /* ── Dynamic GET handler dispatch (Story 46.1.3) ─────────────────────── */
 
 #define TK_MAX_GET_HANDLERS 256
@@ -197,9 +229,13 @@ static int               g_get_handler_count = 0;
 
 static Res tk_get_handler_dispatch(Req req) {
     const char *rpath = req.path ? req.path : "/";
+    StrPair params[32]; int pc = 0;
     for (int i = 0; i < g_get_handler_count; i++) {
         if (g_get_handler_routes[i].path &&
-            strcmp(g_get_handler_routes[i].path, rpath) == 0) {
+            tk_match_pattern(g_get_handler_routes[i].path, rpath, params, &pc)) {
+            /* Populate request params from pattern match */
+            req.params.data = params;
+            req.params.len  = (uint64_t)pc;
             Req *heap_req = (Req *)malloc(sizeof(Req));
             if (!heap_req) {
                 Res r;
@@ -225,6 +261,7 @@ static Res tk_get_handler_dispatch(Req req) {
             r.headers.len  = 1;
             return r;
         }
+        pc = 0; /* reset for next iteration */
     }
     return tk_static_dispatch(req);
 }
@@ -430,9 +467,12 @@ static int                 g_post_handler_count = 0;
 
 static Res tk_post_handler_dispatch(Req req) {
     const char *rpath = req.path ? req.path : "/";
+    StrPair params[32]; int pc = 0;
     for (int i = 0; i < g_post_handler_count; i++) {
         if (g_post_handler_routes[i].path &&
-            strcmp(g_post_handler_routes[i].path, rpath) == 0) {
+            tk_match_pattern(g_post_handler_routes[i].path, rpath, params, &pc)) {
+            req.params.data = params;
+            req.params.len  = (uint64_t)pc;
             Req *heap_req = (Req *)malloc(sizeof(Req));
             if (!heap_req) {
                 Res r;
@@ -458,6 +498,7 @@ static Res tk_post_handler_dispatch(Req req) {
             r.headers.len  = 1;
             return r;
         }
+        pc = 0;
     }
     return tk_post_dispatch(req);
 }
