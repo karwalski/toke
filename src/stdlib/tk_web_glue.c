@@ -2364,61 +2364,58 @@ int64_t tk_http_queryparam_w(int64_t req, int64_t name) {
     return tk_http_req_param(req, name);
 }
 
-/* Aliases for v0.3 concatenated naming (no underscores) */
-int64_t tk_http_resjsonnew_w(int64_t status, int64_t body) {
-    return tk_http_res_json_new(status, body);
-}
-int64_t tk_http_resnew_w(int64_t status, int64_t body) {
+/* ── v0.3 naming aliases ─────────────────────────────────────────────────
+ *
+ * Toke v0.3 codegen emits tk_<module>_<method>_w for all stdlib calls.
+ * The original C functions use varying suffixes (_new, _json_new, etc.)
+ * or multi-word names with underscores. These aliases bridge the gap.
+ */
+
+/* Response constructors */
+int64_t tk_http_res_w(int64_t status, int64_t body) { return tk_http_res_new(status, body); }
+int64_t tk_http_resnew_w(int64_t status, int64_t body) { return tk_http_res_new(status, body); }
+int64_t tk_http_resjson_w(int64_t status, int64_t body) { return tk_http_res_json_new(status, body); }
+int64_t tk_http_resjsonnew_w(int64_t status, int64_t body) { return tk_http_res_json_new(status, body); }
+int64_t tk_http_jsonresp_w(int64_t status, int64_t body) { return tk_http_res_json_new(status, body); }
+int64_t tk_http_resp_w(int64_t status, int64_t body, int64_t ct) {
+    (void)ct; /* TODO: pass content-type through */
     return tk_http_res_new(status, body);
 }
-int64_t tk_http_resok_w(int64_t body) {
-    return tk_http_res_ok(body);
-}
-int64_t tk_http_resbad_w(int64_t msg) {
-    return tk_http_res_bad(msg);
-}
-int64_t tk_http_reserr_w(int64_t msg) {
-    return tk_http_res_err(msg);
-}
-int64_t tk_http_reqpath_w(int64_t req) {
-    return tk_http_req_path(req);
-}
-int64_t tk_http_reqmethod_w(int64_t req) {
-    return tk_http_req_method(req);
-}
-int64_t tk_http_reqbody_w(int64_t req) {
-    return tk_http_req_body(req);
-}
-int64_t tk_http_reqparam_w(int64_t req, int64_t name) {
-    return tk_http_req_param(req, name);
-}
-int64_t tk_http_reqheader_w(int64_t req, int64_t name) {
-    return tk_http_req_header(req, name);
-}
-int64_t tk_http_getstaticmime_w(int64_t path, int64_t body, int64_t mime) {
-    return tk_http_get_static_mime(path, body, mime);
-}
-int64_t tk_http_getstatic_w(int64_t path, int64_t body) {
-    return tk_http_get_static(path, body);
-}
-int64_t tk_http_postecho_w(int64_t path) {
-    return tk_http_post_echo(path);
-}
-int64_t tk_http_postjson_w(int64_t path, int64_t body) {
-    return tk_http_post_json(path, body);
-}
-int64_t tk_http_setnotfound_w(int64_t body) {
-    return tk_http_set_notfound(body);
-}
-int64_t tk_http_setcors_w(int64_t origins) {
-    return tk_http_set_cors(origins);
-}
-int64_t tk_http_servetls_w(int64_t port, int64_t cert, int64_t key) {
-    return tk_http_servetls(port, cert, key);
-}
-int64_t tk_http_servevhosts_w(int64_t port) {
-    return tk_http_servevhosts(port);
-}
-int64_t tk_http_serve_w(int64_t port) {
-    return tk_http_serve(port);
-}
+int64_t tk_http_resok_w(int64_t body) { return tk_http_res_ok(body); }
+int64_t tk_http_resbad_w(int64_t msg) { return tk_http_res_bad(msg); }
+int64_t tk_http_reserr_w(int64_t msg) { return tk_http_res_err(msg); }
+
+/* Request accessors */
+int64_t tk_http_reqpath_w(int64_t req) { return tk_http_req_path(req); }
+int64_t tk_http_reqmethod_w(int64_t req) { return tk_http_req_method(req); }
+int64_t tk_http_reqbody_w(int64_t req) { return tk_http_req_body(req); }
+int64_t tk_http_body_w(int64_t req) { return tk_http_req_body(req); }
+int64_t tk_http_reqparam_w(int64_t req, int64_t name) { return tk_http_req_param(req, name); }
+int64_t tk_http_param_w(int64_t req, int64_t name) { return tk_http_req_param(req, name); }
+int64_t tk_http_reqheader_w(int64_t req, int64_t name) { return tk_http_req_header(req, name); }
+
+/* Route registration (static) */
+int64_t tk_http_getstatic_w(int64_t path, int64_t body) { return tk_http_get_static(path, body); }
+int64_t tk_http_getstaticmime_w(int64_t path, int64_t body, int64_t mime) { return tk_http_get_static_mime(path, body, mime); }
+int64_t tk_http_poststatic_w(int64_t path, int64_t body) { return tk_http_post_static(path, body); }
+int64_t tk_http_postecho_w(int64_t path) { return tk_http_post_echo(path); }
+int64_t tk_http_postjson_w(int64_t path, int64_t body) { return tk_http_post_json(path, body); }
+
+/* Route registration (handler function pointers) */
+int64_t tk_http_gethandler_w(int64_t path, int64_t handler) { return tk_http_get_handler(path, handler); }
+int64_t tk_http_posthandler_w(int64_t path, int64_t handler) { return tk_http_post_handler(path, handler); }
+int64_t tk_http_puthandler_w(int64_t path, int64_t handler) { return tk_http_put_handler(path, handler); }
+int64_t tk_http_deletehandler_w(int64_t path, int64_t handler) { return tk_http_delete_handler(path, handler); }
+int64_t tk_http_patchhandler_w(int64_t path, int64_t handler) { return tk_http_patch_handler(path, handler); }
+
+/* Server lifecycle */
+int64_t tk_http_serve_w(int64_t port) { return tk_http_serve(port); }
+int64_t tk_http_servetls_w(int64_t port, int64_t cert, int64_t key) { return tk_http_servetls(port, cert, key); }
+int64_t tk_http_servevhosts_w(int64_t port) { return tk_http_servevhosts(port); }
+int64_t tk_http_servevhoststls_w(int64_t port, int64_t cert, int64_t key) { return tk_http_servevhoststls(port, cert, key); }
+int64_t tk_http_vhost_w(int64_t hostname, int64_t docroot) { return tk_http_vhost(hostname, docroot); }
+int64_t tk_http_servedir_w(int64_t prefix, int64_t root) { return tk_http_serve_staticdir_w(prefix, root); }
+
+/* Server config */
+int64_t tk_http_setnotfound_w(int64_t body) { return tk_http_set_notfound(body); }
+int64_t tk_http_setcors_w(int64_t origins) { return tk_http_set_cors(origins); }
