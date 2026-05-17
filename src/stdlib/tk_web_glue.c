@@ -882,12 +882,36 @@ int64_t tk_http_client_w(int64_t url) {
     HttpClient *c = http_client((const char *)(intptr_t)url);
     return (int64_t)(intptr_t)c;
 }
-/* tk_http_get_w — simple GET; creates temporary client from the URL. */
+/* tk_http_get_w — simple GET; creates temporary client from the URL.
+ * The URL includes the full path (e.g. http://host:port/path).
+ * We split it: base = http://host:port, path = /path suffix.
+ * This ensures client_parse_url correctly combines base + path. */
 int64_t tk_http_get_w(int64_t url) {
     if (!url) return 0;
-    HttpClient *c = http_client((const char *)(intptr_t)url);
+    const char *u = (const char *)(intptr_t)url;
+    /* Find the path portion: skip scheme + host */
+    const char *p = u;
+    if (strncmp(p, "http://", 7) == 0) p += 7;
+    else if (strncmp(p, "https://", 8) == 0) p += 8;
+    const char *slash = strchr(p, '/');
+    char *base_url;
+    const char *path;
+    if (slash) {
+        /* Split: base = scheme://host:port, path = /rest */
+        size_t base_len = (size_t)(slash - u);
+        base_url = (char *)malloc(base_len + 1);
+        if (!base_url) return 0;
+        memcpy(base_url, u, base_len);
+        base_url[base_len] = '\0';
+        path = slash;
+    } else {
+        base_url = strdup(u);
+        path = "/";
+    }
+    HttpClient *c = http_client(base_url);
+    free(base_url);
     if (!c) return 0;
-    HttpClientResp resp = http_get(c, "");
+    HttpClientResp resp = http_get(c, path);
     http_client_free(c);
     if (resp.is_err || !resp.body) return 0;
     char *s = (char *)malloc(resp.body_len + 1);
@@ -897,6 +921,50 @@ int64_t tk_http_get_w(int64_t url) {
     free(resp.body);
     return (int64_t)(intptr_t)s;
 }
+/* tk_http_posturl_w — simple outbound POST to a full URL with JSON body.
+ * http.posturl(url, body) → response body string */
+int64_t tk_http_posturl_w(int64_t url, int64_t body) {
+    if (!url) return 0;
+    const char *u = (const char *)(intptr_t)url;
+    const char *b = body ? (const char *)(intptr_t)body : "";
+    /* Split URL into base + path */
+    const char *p = u;
+    if (strncmp(p, "http://", 7) == 0) p += 7;
+    else if (strncmp(p, "https://", 8) == 0) p += 8;
+    const char *slash = strchr(p, '/');
+    char *base_url;
+    const char *path_str;
+    if (slash) {
+        size_t base_len = (size_t)(slash - u);
+        base_url = (char *)malloc(base_len + 1);
+        if (!base_url) return 0;
+        memcpy(base_url, u, base_len);
+        base_url[base_len] = '\0';
+        path_str = slash;
+    } else {
+        base_url = strdup(u);
+        path_str = "/";
+    }
+    HttpClient *c = http_client(base_url);
+    free(base_url);
+    if (!c) return 0;
+    HttpClientResp resp = http_post(c, path_str,
+                                     (const uint8_t *)b, strlen(b),
+                                     "application/json");
+    http_client_free(c);
+    if (resp.is_err || !resp.body) return 0;
+    char *s = (char *)malloc(resp.body_len + 1);
+    if (!s) return 0;
+    memcpy(s, resp.body, resp.body_len);
+    s[resp.body_len] = '\0';
+    free(resp.body);
+    return (int64_t)(intptr_t)s;
+}
+/* tk_http_postjson_w alias for outbound POST */
+int64_t tk_http_postjson_w(int64_t url, int64_t body) {
+    return tk_http_posturl_w(url, body);
+}
+
 /* tk_http_post_w — POST request via client handle; body is a string. */
 int64_t tk_http_post_w(int64_t client, int64_t path, int64_t body) {
     if (!client || !path) return 0;
@@ -2440,7 +2508,8 @@ int64_t tk_http_getstatic_w(int64_t path, int64_t body) { return tk_http_get_sta
 int64_t tk_http_getstaticmime_w(int64_t path, int64_t body, int64_t mime) { return tk_http_get_static_mime(path, body, mime); }
 int64_t tk_http_poststatic_w(int64_t path, int64_t body) { return tk_http_post_static(path, body); }
 int64_t tk_http_postecho_w(int64_t path) { return tk_http_post_echo(path); }
-int64_t tk_http_postjson_w(int64_t path, int64_t body) { return tk_http_post_json(path, body); }
+/* tk_http_postjson route registration — use server-side post_json */
+int64_t tk_http_postroutejson_w(int64_t path, int64_t body) { return tk_http_post_json(path, body); }
 
 /* Route registration (handler function pointers) */
 int64_t tk_http_gethandler_w(int64_t path, int64_t handler) { return tk_http_get_handler(path, handler); }
