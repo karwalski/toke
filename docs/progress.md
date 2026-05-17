@@ -3999,14 +3999,14 @@ Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, li
 | 90.2.1 | Linter (src/lint.c): review rules against v0.3 spec, add missing rules | backlog | | Check: unused-mut, unreachable-after-break, redundant-parens |
 | 90.2.2 | Linter: add rule for deprecated v0.2 syntax patterns still accepted | backlog | | Warn on legacy patterns that compile but aren't idiomatic v0.3 |
 | 90.2.3 | Linter: test coverage for all lint rules with positive and negative cases | backlog | | Each rule needs at least 2 triggers + 2 non-triggers |
-| 90.3.1 | toke-spec: flag v0.2 phase2-profile.md as FROZEN, cross-reference v0.3 | backlog | | Add header noting v0.3 is the active spec, link to toke/docs |
-| 90.3.2 | toke-tokenizer: verify vocabulary training used v0.3 corpus only | backlog | | Check no v0.2 underscore syntax leaked into training data |
-| 90.3.3 | toke-eval: verify eval harness accepts v0.3 submissions, rejects v0.2 | backlog | | Benchmark tasks should only pass with v0.3-valid programs |
+| 90.3.1 | toke-spec: flag v0.2 phase2-profile.md as FROZEN, cross-reference v0.3 | done | 2026-05-18 | FROZEN header added to phase2-profile.md |
+| 90.3.2 | toke-tokenizer: verify vocabulary training used v0.3 corpus only | done | 2026-05-18 | FINDING: corpus.jsonl is v0.2, corpus_p2.jsonl is v0.3. Training scripts default to v0.2. Need to archive old corpus and update README. |
+| 90.3.3 | toke-eval: verify eval harness accepts v0.3 submissions, rejects v0.2 | done | 2026-05-18 | FINDING: No syntax validation in eval. run_inference_mlx.py teaches models v0.2 syntax. No --version flag passed to tkc. |
 | 90.4.1 | Archive toke-benchmark (consolidated into toke-eval) | done | 2026-05-18 | ARCHIVED.md added to toke-benchmark and archive/toke-benchmark |
 | 90.4.2 | Archive old corpus artifacts (pre-migration snapshots) | done | 2026-05-18 | ARCHIVED.md added to archive/toke-corpus flagging v0.2 legacy |
 | 90.4.3 | Archive toke-web (replaced by ooke + toke-website) | done | 2026-05-18 | ARCHIVED.md added to archive/toke-web noting ooke + toke-website replacement |
-| 90.5.1 | toke-cloud: verify sandbox executes v0.3 programs correctly | backlog | | Test MCP sandbox with v0.3 programs, check compiler version matches |
-| 90.5.2 | Cross-repo dependency audit: ensure all repos point to latest toke binary | backlog | | Check build scripts, CI configs, Makefiles all reference current compiler |
+| 90.5.1 | toke-cloud: verify sandbox executes v0.3 programs correctly | done | 2026-05-18 | toke-cloud Dockerfiles use COPY tkc pattern (correct for deploy). build-tkc-layer.sh references ~/tk/tkc/ (stale path — should be ~/tk/toke/). |
+| 90.5.2 | Cross-repo dependency audit: ensure all repos point to latest toke binary | done | 2026-05-18 | FINDINGS: toke-ooke correct. toke-corpus has 25+ scripts with stale toke/tkc paths. toke-mcp/toke-cloud build scripts reference ~/tk/tkc/ (nonexistent). toke-eval uses toke/tkc. Local tkc symlink exists so most work, but ~/tk/tkc/ dir references are broken. |
 
 ### Epic 87.2 — HTTP Handler Dispatch Bugs
 
