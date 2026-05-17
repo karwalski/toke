@@ -41,3 +41,9 @@ int64_t tk_test_report_w(int64_t suite) {
     tk_test_print_summary();
     return 1;
 }
+
+int64_t tk_test_fail_w(int64_t msg) {
+    const char *m = msg ? (const char *)(intptr_t)msg : "test failed";
+    fprintf(stderr, "FAIL: %s\n", m);
+    return 0;
+}

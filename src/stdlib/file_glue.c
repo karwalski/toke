@@ -211,3 +211,11 @@ int64_t tk_file_remove_w(int64_t path) {
 int64_t tk_fs_read_w(int64_t path) { return tk_file_read_w(path); }
 int64_t tk_fs_write_w(int64_t path, int64_t content) { return tk_file_write_w(path, content); }
 int64_t tk_fs_writetext_w(int64_t path, int64_t content) { return tk_file_write_w(path, content); }
+
+/* file.tempdir() — return a temporary directory path */
+int64_t tk_file_tempdir_w(int64_t dummy) {
+    (void)dummy;
+    const char *tmp = getenv("TMPDIR");
+    if (!tmp) tmp = "/tmp";
+    return (int64_t)(intptr_t)tmp;
+}
