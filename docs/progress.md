@@ -3922,3 +3922,88 @@ Existing test files in toke-ooke/test/ are all broken (v0.2 syntax, don't compil
 | 77.3.2 | Add `make test-check` target for fast syntax check | done | 2026-05-11 | Covered by 77.3.1 — test-check target. |
 | 77.3.3 | Create test fixtures in testproj/ with known-good content | done | 2026-05-11 | testproj/: ooke.toml, 2 content .md files, base.tkt + doc.tkt templates. `ooke-toke build --config testproj/ooke.toml` produces 3 pages. |
 
+
+---
+
+### Epic 88 — Comprehensive toke Compiler & Stdlib Test Suite
+
+End-to-end reliability testing for the toke compiler and standard library. Every stdlib function, every input/output type, every codegen path verified. Includes sandboxed testing for destructive operations and complex integration test rigs for HTTP/network protocols.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 88.1.1 | Codegen regression tests for recent fixes (fastcc, struct field, array spread) | backlog | | Add reproduce cases from bugs 66a78d1, cecc47b, c8eaa5f to conformance suite |
+| 88.1.2 | Same-module function call tests: all return types (i64, bool, str, struct, array, void) | backlog | | Verify fastcc correctness for every return type combination |
+| 88.1.3 | Cross-module function call tests: import + call + return type verification | backlog | | Test .tki resolution, mangled names, return types across modules |
+| 88.1.4 | Struct field access tests: multiple structs with shared field names, nested access | backlog | | Regression guard for struct_field_index resolution |
+| 88.1.5 | Array spread tests: @(arr;item), @(arr1;arr2), empty arrays, large arrays | backlog | | Cover spread with 0/1/N base elements, multiple spread sources |
+| 88.2.1 | str module: test every function (45+) with edge cases (empty, null, unicode) | backlog | | Standalone .tk test file exercising all str_glue.c functions |
+| 88.2.2 | json module: test all 30+ functions (encode/decode/get/set/arr/try variants) | backlog | | Test nested objects, arrays, null handling, unicode keys |
+| 88.2.3 | crypto module: sha256, hmac, randombytes, randomhex, verify, constanteq | backlog | | Known-answer tests for deterministic functions |
+| 88.2.4 | time module: now, format, parse, sleep, elapsed, parts, weekday, calendar | backlog | | Test boundary values, leap years, timezone handling |
+| 88.2.5 | db module: open/close/exec/query/row accessors/query builder/transactions | backlog | | **Sandbox required** — uses SQLite file. Temp directory isolation |
+| 88.2.6 | file module: read/write/append/delete/mkdir/copy/rename/glob/stat | backlog | | **Sandbox required** — filesystem operations. Temp directory isolation |
+| 88.2.7 | process module: spawn/exec/env/stdout/stderr/wait/kill/exitcode | backlog | | **Sandbox required** — spawns subprocesses |
+| 88.2.8 | encoding module: b64, b64url, hex, urlencode, urldecode, utf8 validation | backlog | | Known-answer tests, round-trip encode/decode |
+| 88.2.9 | math module: abs, pow, sqrt, floor, ceil, round, mean, median, linreg, stddev | backlog | | Floating point precision tests, edge cases (NaN, Inf, zero) |
+| 88.2.10 | collections module: array append/get/len/join/map/filter/reduce/sort | backlog | | Test with 0/1/many elements, nested arrays, large arrays |
+| 88.3.1 | HTTP client integration: GET/POST/PUT/DELETE against test server | backlog | | **Requires test server** — either local or EC2 |
+| 88.3.2 | HTTP server integration: route registration, request handling, response codes | backlog | | Spawn server in subprocess, hit with curl/client |
+| 88.3.3 | HTTP content types: JSON, form-urlencoded, multipart, plain text, binary | backlog | | Verify Content-Type propagation end-to-end |
+| 88.3.4 | TLS/HTTPS: self-signed cert generation, TLS serve, TLS client connect | backlog | | **Sandbox required** — cert generation, port binding |
+| 88.3.5 | WebSocket: connect, send, receive, close, reconnect | backlog | | Requires WS echo server |
+| 88.3.6 | REST transaction testing: CRUD lifecycle with JSON payloads | backlog | | Full create→read→update→delete→verify-gone cycle |
+| 88.3.7 | SOAP/XML transaction testing: envelope construction, namespace handling | backlog | | If loke requires XML, test the encoding |
+| 88.4.1 | Sandbox infrastructure: temp directory creation, cleanup, timeout enforcement | backlog | | Shell wrapper that creates /tmp/toke-test-$PID, runs test, cleans up |
+| 88.4.2 | Destructive operation isolation: file.delete, file.rmdir, process.kill | backlog | | Run only inside sandbox, never touch real filesystem |
+| 88.4.3 | Network isolation: tests that bind ports use random high ports (49152-65535) | backlog | | Avoid port conflicts in parallel test runs |
+| 88.4.4 | CI test runner: single `make test-all` target that runs full suite safely | backlog | | Orchestrates sandbox setup, test execution, cleanup, summary |
+| 88.5.1 | Boolean ABI tests: bool params, bool returns, bool in structs, bool arrays | backlog | | Verify zext/trunc i1↔i64 at all boundaries |
+| 88.5.2 | Float ABI tests: f64 params, f64 returns, f64 in structs, f64 arithmetic | backlog | | Verify bitcast i64↔double at all boundaries |
+| 88.5.3 | Mutable variable tests: let mut, reassignment, shadowing, scope rules | backlog | | Test mut with all types (str, i64, bool, struct, array) |
+| 88.5.4 | Match expression tests: int match, string match, sum type match, exhaustiveness | backlog | | Cover the G012/G045/G073 conform failures |
+| 88.5.5 | Tail recursion tests: verify musttail optimization for self-recursive functions | backlog | | Test with various param counts and return types |
+| 88.5.6 | Overflow detection tests: +, -, * with values near i64 max/min | backlog | | Verify trap fires correctly, doesn't fire for valid operations |
+
+### Epic 89 — Comprehensive ooke Framework Test Suite
+
+Full test coverage for the ooke web framework. Template engine, routing, content store, build pipeline, and live server testing.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 89.1.1 | Implement test harness: compile and execute test .tk files, report pass/fail | backlog | | The 6 test modules (724 lines) are written but never executed. Build the runner |
+| 89.1.2 | Template engine: expressions, filters, directives, includes, loops, conditionals | backlog | | Test all filter types (md, escape, upper, lower, trim, date, truncate) |
+| 89.1.3 | Router: static routes, dynamic [slug] params, nested routes, 404 handling | backlog | | Test /blog/[year]/[month]/[slug] style nested params |
+| 89.1.4 | Config: TOML loading, defaults, validation, missing keys, invalid types | backlog | | Test all config sections (site, build, server, store) |
+| 89.1.5 | Content store: frontmatter parsing, collection loading, slug lookup, filtering | backlog | | Test markdown rendering, YAML metadata extraction |
+| 89.1.6 | Build pipeline: static generation, HTML minification, asset copying, output structure | backlog | | Verify output matches expected for testproj/ |
+| 89.1.7 | Content validation: TOML models, required/optional fields, type checking | backlog | | Test list, date, bool, number field types |
+| 89.2.1 | Live server: start ooke serve, verify routes respond correctly | backlog | | **Requires port binding** — use random high port |
+| 89.2.2 | Error pages: 404, 405, 500 templates render correctly | backlog | | Hit non-existent routes, wrong methods, trigger errors |
+| 89.2.3 | Static file serving: CSS, JS, images served with correct Content-Type | backlog | | Verify MIME types, caching headers |
+| 89.2.4 | API handlers: JSON endpoints return correct structure and status codes | backlog | | Test /api/health and custom handlers |
+| 89.2.5 | Island hydration: client-side components load and initialize | backlog | | May need Playwright or similar browser automation |
+| 89.3.1 | Concurrent request handling: multiple simultaneous requests don't corrupt state | backlog | | Stress test with parallel curl or wrk |
+| 89.3.2 | Large response handling: pages >64KB serve without truncation | backlog | | Regression guard for h2 large response bug |
+| 89.3.3 | Performance baseline: measure req/s for static and dynamic routes | backlog | | Establish benchmark numbers for regression detection |
+
+### Epic 90 — v0.3 Alignment Audit (MCP, Linter, Cross-Repo)
+
+Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, linter rules, and auxiliary repos. Archive stale artifacts.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 90.1.1 | toke-mcp: audit all 14 tools for v0.3 syntax in examples and prompts | backlog | | Check code_generate, spec_lookup, format, etc. use v0.3 syntax |
+| 90.1.2 | toke-mcp: update toke_migrate tool to handle latest v0.3 constructs | backlog | | Ensure @() arrays, $types, mt match all migrate correctly |
+| 90.1.3 | toke-mcp: verify LSP diagnostics match current error codes | backlog | | E-codes may have changed since MCP was last updated |
+| 90.1.4 | toke-mcp: update VS Code extension syntax highlighting for v0.3 | backlog | | $type, @() arrays, mt keyword, (*..*) comments |
+| 90.2.1 | Linter (src/lint.c): review rules against v0.3 spec, add missing rules | backlog | | Check: unused-mut, unreachable-after-break, redundant-parens |
+| 90.2.2 | Linter: add rule for deprecated v0.2 syntax patterns still accepted | backlog | | Warn on legacy patterns that compile but aren't idiomatic v0.3 |
+| 90.2.3 | Linter: test coverage for all lint rules with positive and negative cases | backlog | | Each rule needs at least 2 triggers + 2 non-triggers |
+| 90.3.1 | toke-spec: flag v0.2 phase2-profile.md as FROZEN, cross-reference v0.3 | backlog | | Add header noting v0.3 is the active spec, link to toke/docs |
+| 90.3.2 | toke-tokenizer: verify vocabulary training used v0.3 corpus only | backlog | | Check no v0.2 underscore syntax leaked into training data |
+| 90.3.3 | toke-eval: verify eval harness accepts v0.3 submissions, rejects v0.2 | backlog | | Benchmark tasks should only pass with v0.3-valid programs |
+| 90.4.1 | Archive toke-benchmark (consolidated into toke-eval) | backlog | | Add ARCHIVED.md, update README, disable CI |
+| 90.4.2 | Archive old corpus artifacts (pre-migration snapshots) | backlog | | Flag in toke-corpus/archive/ as v0.2 legacy, not for training |
+| 90.4.3 | Archive toke-web (replaced by ooke + toke-website) | backlog | | Already in archive/ — verify README notes replacement |
+| 90.5.1 | toke-cloud: verify sandbox executes v0.3 programs correctly | backlog | | Test MCP sandbox with v0.3 programs, check compiler version matches |
+| 90.5.2 | Cross-repo dependency audit: ensure all repos point to latest toke binary | backlog | | Check build scripts, CI configs, Makefiles all reference current compiler |
