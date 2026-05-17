@@ -18,6 +18,9 @@
 
 #include "http.h"
 #include "router.h"
+#include <netdb.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #include "net.h"
 #include "sys.h"
 #include "encrypt.h"
@@ -2465,12 +2468,123 @@ int64_t tk_http_pathparam_w(int64_t req, int64_t name) {
     return tk_http_req_param(req, name);
 }
 
-/* http.postheaders(client, url, body, headers_json) ��� POST with custom headers */
-int64_t tk_http_postheaders_w(int64_t client, int64_t url, int64_t body, int64_t headers) {
-    /* Delegate to standard post for now — header injection requires
-     * extending HttpClient API. Returns response body. */
-    (void)headers;
-    return tk_http_post_w(client, url, body);
+/* http.postheaders(url, body, headers_json) — POST with custom headers.
+ * headers is a JSON string like {"Authorization":"Bearer xxx","X-Custom":"val"}
+ * which gets parsed and injected into the HTTP request headers. */
+int64_t tk_http_postheaders_w(int64_t url_i64, int64_t body_i64, int64_t headers_i64, int64_t extra) {
+    (void)extra;
+    if (!url_i64) return 0;
+    const char *url = (const char *)(intptr_t)url_i64;
+    const char *body = body_i64 ? (const char *)(intptr_t)body_i64 : "";
+    const char *hdrs = headers_i64 ? (const char *)(intptr_t)headers_i64 : "";
+    size_t body_len = strlen(body);
+
+    /* Parse URL into host:port + path */
+    const char *p = url;
+    int is_https = 0;
+    if (strncmp(p, "https://", 8) == 0) { is_https = 1; p += 8; }
+    else if (strncmp(p, "http://", 7) == 0) { p += 7; }
+    const char *slash = strchr(p, '/');
+    char host[256] = "", port[16] = "80";
+    const char *path = "/";
+    if (slash) {
+        size_t hlen = (size_t)(slash - p);
+        if (hlen >= sizeof(host)) hlen = sizeof(host) - 1;
+        memcpy(host, p, hlen); host[hlen] = '\0';
+        path = slash;
+    } else {
+        strncpy(host, p, sizeof(host) - 1);
+    }
+    if (is_https) strcpy(port, "443");
+    char *colon = strchr(host, ':');
+    if (colon) { *colon = '\0'; strncpy(port, colon + 1, sizeof(port) - 1); }
+
+    /* Build custom header lines from JSON-like string.
+     * Simple parser: scan for "key":"value" pairs. */
+    char extra_hdrs[4096] = "";
+    size_t epos = 0;
+    if (hdrs[0] == '{') {
+        const char *hp = hdrs + 1;
+        while (*hp && *hp != '}') {
+            while (*hp && (*hp == ' ' || *hp == ',' || *hp == '\n')) hp++;
+            if (*hp == '"') {
+                hp++;
+                const char *ks = hp; while (*hp && *hp != '"') hp++;
+                size_t klen = (size_t)(hp - ks);
+                if (*hp == '"') hp++;
+                while (*hp && *hp != ':') hp++;
+                if (*hp == ':') hp++;
+                while (*hp == ' ') hp++;
+                if (*hp == '"') {
+                    hp++;
+                    const char *vs = hp; while (*hp && *hp != '"') hp++;
+                    size_t vlen = (size_t)(hp - vs);
+                    if (*hp == '"') hp++;
+                    if (epos + klen + 2 + vlen + 3 < sizeof(extra_hdrs)) {
+                        memcpy(extra_hdrs + epos, ks, klen); epos += klen;
+                        extra_hdrs[epos++] = ':'; extra_hdrs[epos++] = ' ';
+                        memcpy(extra_hdrs + epos, vs, vlen); epos += vlen;
+                        extra_hdrs[epos++] = '\r'; extra_hdrs[epos++] = '\n';
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+    }
+    extra_hdrs[epos] = '\0';
+
+    /* Connect */
+    struct addrinfo hints = {0}, *res;
+    hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host, port, &hints, &res) != 0) return 0;
+    int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (fd < 0) { freeaddrinfo(res); return 0; }
+    struct timeval tv = { .tv_sec = 30, .tv_usec = 0 };
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    if (connect(fd, res->ai_addr, res->ai_addrlen) != 0) {
+        freeaddrinfo(res); close(fd); return 0;
+    }
+    freeaddrinfo(res);
+
+    /* Build and send request */
+    char req_buf[8192];
+    int req_len = snprintf(req_buf, sizeof(req_buf),
+        "POST %s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: %zu\r\n"
+        "%s"
+        "Connection: close\r\n"
+        "\r\n",
+        path, host, body_len, extra_hdrs);
+    if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) { close(fd); return 0; }
+    send(fd, req_buf, (size_t)req_len, 0);
+    if (body_len > 0) send(fd, body, body_len, 0);
+
+    /* Read response */
+    size_t cap = 65536, used = 0;
+    char *resp = malloc(cap);
+    if (!resp) { close(fd); return 0; }
+    ssize_t n;
+    while ((n = recv(fd, resp + used, cap - used - 1, 0)) > 0) {
+        used += (size_t)n;
+        if (used + 1 >= cap) { cap *= 2; char *tmp = realloc(resp, cap); if (!tmp) break; resp = tmp; }
+    }
+    resp[used] = '\0';
+    close(fd);
+
+    /* Extract body after \r\n\r\n */
+    const char *sep = strstr(resp, "\r\n\r\n");
+    if (!sep) { free(resp); return 0; }
+    sep += 4;
+    size_t resp_body_len = used - (size_t)(sep - resp);
+    char *result = malloc(resp_body_len + 1);
+    if (!result) { free(resp); return 0; }
+    memcpy(result, sep, resp_body_len);
+    result[resp_body_len] = '\0';
+    free(resp);
+    return (int64_t)(intptr_t)result;
 }
 
 /* http.queryparam(req, name) — extract query string parameter */
