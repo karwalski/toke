@@ -4007,3 +4007,9 @@ Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, li
 | 90.4.3 | Archive toke-web (replaced by ooke + toke-website) | backlog | | Already in archive/ — verify README notes replacement |
 | 90.5.1 | toke-cloud: verify sandbox executes v0.3 programs correctly | backlog | | Test MCP sandbox with v0.3 programs, check compiler version matches |
 | 90.5.2 | Cross-repo dependency audit: ensure all repos point to latest toke binary | backlog | | Check build scripts, CI configs, Makefiles all reference current compiler |
+
+### Epic 87.2 — HTTP Handler Dispatch Bugs
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 87.2.1 | http.get with :param pattern uses exact match instead of pattern matching | backlog | 2026-05-17 | `http.get("/api/greet/:name";&handler)` returns 404 because `tk_get_handler_dispatch` in tk_web_glue.c compares paths with `strcmp` (exact). Path params only work via `router.get`. Fix: add pattern matching to handler dispatch (reuse `match_pattern` from http.c route table), or document that parameterised routes require the router module. |
