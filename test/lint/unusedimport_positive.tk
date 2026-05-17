@@ -1,0 +1,4 @@
+m=test;
+i=str:std.str;
+i=json:std.json;
+f=main():i64{ <str.len("hi") };
