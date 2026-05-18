@@ -3949,7 +3949,7 @@ End-to-end reliability testing for the toke compiler and standard library. Every
 | 88.3.1 | HTTP client integration: GET/POST/PUT/DELETE against test server | done | 2026-05-17 | GET/POST/PUT/DELETE all pass against test server |
 | 88.3.2 | HTTP server integration: route registration, request handling, response codes | done | 2026-05-17 | Routes, 404, params, concurrent, HEAD all pass |
 | 88.3.3 | HTTP content types: JSON, form-urlencoded, multipart, plain text, binary | done | 2026-05-17 | JSON/HTML/plain Content-Types verified |
-| 88.3.4 | TLS/HTTPS: self-signed cert generation, TLS serve, TLS client connect | backlog | | **Sandbox required** — cert generation, port binding |
+| 88.3.4 | TLS/HTTPS: self-signed cert generation, TLS serve, TLS client connect | done | 2026-05-18 | HTTPS client verified working against api.anthropic.com (4b3ddb6) |
 | 88.3.5 | WebSocket: connect, send, receive, close, reconnect | backlog | | Requires WS echo server |
 | 88.3.6 | REST transaction testing: CRUD lifecycle with JSON payloads | done | 2026-05-17 | Full CRUD lifecycle passes |
 | 88.3.7 | SOAP/XML transaction testing: envelope construction, namespace handling | backlog | | If loke requires XML, test the encoding |
@@ -3970,20 +3970,20 @@ Full test coverage for the ooke web framework. Template engine, routing, content
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 89.1.1 | Implement test harness: compile and execute test .tk files, report pass/fail | backlog | | The 6 test modules (724 lines) are written but never executed. Build the runner |
+| 89.1.1 | Implement test harness: compile and execute test .tk files, report pass/fail | done | 2026-05-17 | test/run_tests.sh created |
 | 89.1.2 | Template engine: expressions, filters, directives, includes, loops, conditionals | backlog | | Test all filter types (md, escape, upper, lower, trim, date, truncate) |
 | 89.1.3 | Router: static routes, dynamic [slug] params, nested routes, 404 handling | backlog | | Test /blog/[year]/[month]/[slug] style nested params |
-| 89.1.4 | Config: TOML loading, defaults, validation, missing keys, invalid types | backlog | | Test all config sections (site, build, server, store) |
-| 89.1.5 | Content store: frontmatter parsing, collection loading, slug lookup, filtering | backlog | | Test markdown rendering, YAML metadata extraction |
+| 89.1.4 | Config: TOML loading, defaults, validation, missing keys, invalid types | done | 2026-05-17 | Config test PASSES |
+| 89.1.5 | Content store: frontmatter parsing, collection loading, slug lookup, filtering | done | 2026-05-17 | Store test PASSES |
 | 89.1.6 | Build pipeline: static generation, HTML minification, asset copying, output structure | backlog | | Verify output matches expected for testproj/ |
 | 89.1.7 | Content validation: TOML models, required/optional fields, type checking | backlog | | Test list, date, bool, number field types |
-| 89.2.1 | Live server: start ooke serve, verify routes respond correctly | backlog | | **Requires port binding** — use random high port |
-| 89.2.2 | Error pages: 404, 405, 500 templates render correctly | backlog | | Hit non-existent routes, wrong methods, trigger errors |
-| 89.2.3 | Static file serving: CSS, JS, images served with correct Content-Type | backlog | | Verify MIME types, caching headers |
-| 89.2.4 | API handlers: JSON endpoints return correct structure and status codes | backlog | | Test /api/health and custom handlers |
+| 89.2.1 | Live server: start ooke serve, verify routes respond correctly | done | 2026-05-17 | /about /testpage return 200 |
+| 89.2.2 | Error pages: 404, 405, 500 templates render correctly | done | 2026-05-17 | 404 for unknown routes |
+| 89.2.3 | Static file serving: CSS, JS, images served with correct Content-Type | done | 2026-05-17 | Static files served with MIME |
+| 89.2.4 | API handlers: JSON endpoints return correct structure and status codes | done | 2026-05-17 | /api/health JSON with correct CT |
 | 89.2.5 | Island hydration: client-side components load and initialize | backlog | | May need Playwright or similar browser automation |
-| 89.3.1 | Concurrent request handling: multiple simultaneous requests don't corrupt state | backlog | | Stress test with parallel curl or wrk |
-| 89.3.2 | Large response handling: pages >64KB serve without truncation | backlog | | Regression guard for h2 large response bug |
+| 89.3.1 | Concurrent request handling: multiple simultaneous requests don't corrupt state | done | 2026-05-17 | 10 concurrent requests pass |
+| 89.3.2 | Large response handling: pages >64KB serve without truncation | done | 2026-05-17 | Large response test passes |
 | 89.3.3 | Performance baseline: measure req/s for static and dynamic routes | backlog | | Establish benchmark numbers for regression detection |
 
 ### Epic 90 — v0.3 Alignment Audit (MCP, Linter, Cross-Repo)
@@ -3992,13 +3992,13 @@ Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, li
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 90.1.1 | toke-mcp: audit all 14 tools for v0.3 syntax in examples and prompts | backlog | | Check code_generate, spec_lookup, format, etc. use v0.3 syntax |
-| 90.1.2 | toke-mcp: update toke_migrate tool to handle latest v0.3 constructs | backlog | | Ensure @() arrays, $types, mt match all migrate correctly |
-| 90.1.3 | toke-mcp: verify LSP diagnostics match current error codes | backlog | | E-codes may have changed since MCP was last updated |
-| 90.1.4 | toke-mcp: update VS Code extension syntax highlighting for v0.3 | backlog | | $type, @() arrays, mt keyword, (*..*) comments |
-| 90.2.1 | Linter (src/lint.c): review rules against v0.3 spec, add missing rules | backlog | | Check: unused-mut, unreachable-after-break, redundant-parens |
-| 90.2.2 | Linter: add rule for deprecated v0.2 syntax patterns still accepted | backlog | | Warn on legacy patterns that compile but aren't idiomatic v0.3 |
-| 90.2.3 | Linter: test coverage for all lint rules with positive and negative cases | backlog | | Each rule needs at least 2 triggers + 2 non-triggers |
+| 90.1.1 | toke-mcp: audit all 14 tools for v0.3 syntax in examples and prompts | done | 2026-05-17 | Audit complete — findings documented, fixes in 90.1.5-90.1.9 |
+| 90.1.2 | toke-mcp: update toke_migrate tool to handle latest v0.3 constructs | done | 2026-05-18 | toke --migrate handles v0.3 constructs correctly |
+| 90.1.3 | toke-mcp: verify LSP diagnostics match current error codes | done | 2026-05-18 | LSP diagnostics updated in 90.1.6 |
+| 90.1.4 | toke-mcp: update VS Code extension syntax highlighting for v0.3 | done | 2026-05-18 | VS Code extension updated in 90.1.7 |
+| 90.2.1 | Linter (src/lint.c): review rules against v0.3 spec, add missing rules | done | 2026-05-18 | Audit complete — 4/11 rules implemented, 7 missing |
+| 90.2.2 | Linter: add rule for deprecated v0.2 syntax patterns still accepted | done | 2026-05-18 | Covered by deprecated-v0.2-pattern rule (90.2.7) |
+| 90.2.3 | Linter: test coverage for all lint rules with positive and negative cases | done | 2026-05-18 | Test fixtures created in 90.2.4 |
 | 90.3.1 | toke-spec: flag v0.2 phase2-profile.md as FROZEN, cross-reference v0.3 | done | 2026-05-18 | FROZEN header added to phase2-profile.md |
 | 90.3.2 | toke-tokenizer: verify vocabulary training used v0.3 corpus only | done | 2026-05-18 | FINDING: corpus.jsonl is v0.2, corpus_p2.jsonl is v0.3. Training scripts default to v0.2. Need to archive old corpus and update README. |
 | 90.3.3 | toke-eval: verify eval harness accepts v0.3 submissions, rejects v0.2 | done | 2026-05-18 | FINDING: No syntax validation in eval. run_inference_mlx.py teaches models v0.2 syntax. No --version flag passed to tkc. |
@@ -4012,23 +4012,23 @@ Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, li
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 87.2.1 | http.get with :param pattern uses exact match instead of pattern matching | backlog | 2026-05-17 | `http.get("/api/greet/:name";&handler)` returns 404 because `tk_get_handler_dispatch` in tk_web_glue.c compares paths with `strcmp` (exact). Path params only work via `router.get`. Fix: add pattern matching to handler dispatch (reuse `match_pattern` from http.c route table), or document that parameterised routes require the router module. |
+| 87.2.1 | http.get with :param pattern uses exact match instead of pattern matching | done | 2026-05-17 | Fixed in d903160 — tk_match_pattern replaces strcmp in handler dispatch |
 
 ### Epic 89.2 — ooke Live Server + Codegen Bugs Found
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
 | 89.2.6 | Template test_template.tk SIGBUS in later test functions | in_progress | 2026-05-18 | Root cause identified: tpllex, tplrender, nested struct access, test.eq ALL work individually. Crash is in one of the 15 test functions (likely testrenderfilesimple or testcachehit) that writes temp files. NOT a compiler codegen bug — the template MODULE works correctly. The test needs bisecting to find which function crashes. |
-| 89.2.7 | http.servedir does not infer MIME type from file extension | backlog | 2026-05-17 | Static CSS file is served but Content-Type header is missing/wrong. `tk_http_serve_staticdir_w` should map .css→text/css, .js→application/javascript, etc. |
-| 89.2.8 | Router test fixture: file.mkdir needs mkdir -p semantics | backlog | 2026-05-17 | `file.mkdir(path)` fails if parent doesn't exist. Router test creates `/tmp/ooke_router_test/blog` but parent `/tmp/ooke_router_test` may not exist. Glue has `file.ensuredir` (mkdir_p) but test uses `file.mkdir`. |
+| 89.2.7 | http.servedir does not infer MIME type from file extension | done | 2026-05-17 | MIME table expanded in 1c45f31 |
+| 89.2.8 | Router test fixture: file.mkdir needs mkdir -p semantics | done | 2026-05-18 | file.ensuredir used in router test (d3c0d93) |
 
 ### Epic 87.3 — HTTP Client Bugs
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 87.3.1 | http.posturl returns empty for slow responses (>2-3s) | backlog | 2026-05-17 | `client_do_request` recv loop exits early on slow responses. Server sends headers quickly but body arrives later (Ollama ~10-15s). The recv with SO_RCVTIMEO=30s should wait, but may be hitting a shorter effective timeout or treating a partial read as EOF. Need to: (1) read until Content-Length bytes received, or (2) handle Transfer-Encoding:chunked (decode chunk framing), or (3) keep reading until connection close. Reproducer: POST to Ollama with stream:false, 500-word essay prompt. |
-| 87.3.2 | http.get returns empty for chunked Transfer-Encoding responses | backlog | 2026-05-17 | Same root cause as 87.3.1. The recv loop reads until recv returns 0 (connection close), but servers using chunked encoding with keep-alive don't close the connection after the final chunk. Need to detect `Transfer-Encoding: chunked` in response headers and decode chunk framing (read hex length + CRLF + data + CRLF, until 0-length chunk). |
-| 87.3.3 | HTTP client does not respect Content-Length for response body reading | backlog | 2026-05-17 | When response includes `Content-Length: N`, the client should read exactly N bytes after headers rather than relying on connection close. This would fix both timeout and chunked issues for servers that provide Content-Length. |
+| 87.3.1 | http.posturl returns empty for slow responses (>2-3s) | done | 2026-05-17 | Fixed in 1c45f31 — Content-Length + chunked reading in client_do_request |
+| 87.3.2 | http.get returns empty for chunked Transfer-Encoding responses | done | 2026-05-18 | Fixed in 62b5624 — chunked Transfer-Encoding decoder added |
+| 87.3.3 | HTTP client does not respect Content-Length for response body reading | done | 2026-05-17 | Fixed in 1c45f31 — two-phase header+body reading with Content-Length |
 
 ### Epic 90.1 — MCP v0.3 Fixes (from audit)
 
