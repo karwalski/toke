@@ -4048,3 +4048,14 @@ Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, li
 | 90.2.5 | Implement mutable-never-mutated lint rule | done | 2026-05-18 | mutable-never-mutated rule implemented + test fixtures |
 | 90.2.6 | Implement unused-let lint rule | done | 2026-05-18 | unused-let rule implemented + test fixtures. 11/12 lint tests pass. |
 | 90.2.7 | Implement deprecated-v0.2-pattern lint rule | backlog | | Warn on patterns that parse but aren't idiomatic v0.3 (uppercase keywords accepted by --legacy, [] arrays). |
+
+### Epic 88.6 — XML/SOAP Protocol Support and Testing
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 88.6.1 | XML builder: construct deeply nested XML documents from toke structs/maps | backlog | | Build XML strings programmatically: elements, attributes, namespaces, CDATA, nested children 5+ levels deep. Test round-trip: build → serialize → parse → verify fields. |
+| 88.6.2 | XML parser: parse complex XML into toke data structures | backlog | | Parse real-world XML (RSS feeds, SVG, XHTML, config files). Handle namespaces (xmlns:soap), attributes, mixed content, self-closing tags, entities (&amp; &lt;). |
+| 88.6.3 | SOAP envelope construction and parsing | backlog | | Build SOAP 1.1/1.2 envelopes with Header + Body + Fault. Handle WSDL-style typed elements, namespace prefixes (soap:Envelope, soap:Body), mustUnderstand attributes. |
+| 88.6.4 | SOAP web service client: POST SOAP request over HTTPS, parse response | backlog | | End-to-end: construct SOAP envelope → http.postheaders with Content-Type text/xml → parse XML response → extract result. Test against a real or mock SOAP endpoint. |
+| 88.6.5 | SOAP fault handling and WS-Security headers | backlog | | Parse SOAP Fault responses (faultcode, faultstring, detail). Construct WS-Security headers (UsernameToken, Timestamp). Test error paths. |
+| 88.6.6 | Deep nested XML stress test: 20+ level nesting, large documents | backlog | | Generate XML with 20+ nesting levels, 1000+ elements, mixed namespaces. Verify parser handles without stack overflow or truncation. Test documents >1MB. |
