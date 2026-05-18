@@ -4047,7 +4047,7 @@ Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, li
 | 90.2.4 | Create test/lint/ directory with test fixtures for 4 implemented rules | done | 2026-05-18 | 8 fixtures + runner. 7/8 pass (unused-import false-negative found) |
 | 90.2.5 | Implement mutable-never-mutated lint rule | done | 2026-05-18 | mutable-never-mutated rule implemented + test fixtures |
 | 90.2.6 | Implement unused-let lint rule | done | 2026-05-18 | unused-let rule implemented + test fixtures. 11/12 lint tests pass. |
-| 90.2.7 | Implement deprecated-v0.2-pattern lint rule | backlog | | Warn on patterns that parse but aren't idiomatic v0.3 (uppercase keywords accepted by --legacy, [] arrays). |
+| 90.2.7 | Implement deprecated-v0.2-pattern lint rule | cancelled | 2026-05-19 | Not needed — v0.2 syntax rejected by default compiler. Only useful with --legacy flag which is rarely used. |
 
 ### Epic 88.6 — XML/SOAP Protocol Support and Testing
 
