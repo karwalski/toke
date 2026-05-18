@@ -5,7 +5,7 @@ input: |
   m=test;
   t=$color{$red:i64;$green:i64;$blue:i64};
   f=name(c:$color):i64{
-    <c|{$red:r r;$green:g g;$blue:b b}
+    <mt c{$red:r r;$green:g g;$blue:b b}
   };
 expected_exit_code: 0
 expected_error_codes: []

@@ -5,7 +5,7 @@ input: |
   m=test;
   t=$opt{$some:i64;$none:bool};
   f=unwrap(v:$opt):i64{
-    <v|{$some:x x;$none:n 0}
+    <mt v{$some:x x;$none:n 0}
   };
 expected_exit_code: 0
 expected_error_codes: []

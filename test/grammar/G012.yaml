@@ -5,7 +5,7 @@ input: |
   M=test;
   T=Opt{Some:i64;None:bool};
   F=unwrap(v:Opt):i64{
-    <v|{Some:x x;None:n 0}
+    <mt v{Some:x x;None:n 0}
   };
 flags: --legacy
 expected_exit_code: 0

@@ -5,7 +5,7 @@ input: |
   m=test;
   t=$shape{$circle:f64;$rect:f64;$triangle:f64};
   f=area(s:$shape):f64{
-    <s|{$circle:r r;$rect:r r;$triangle:r r}
+    <mt s{$circle:r r;$rect:r r;$triangle:r r}
   };
 expected_exit_code: 0
 expected_error_codes: []
