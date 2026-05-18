@@ -2699,6 +2699,65 @@ static int emit_expr(Ctx *c, const Node *n)
                 return t;
             }
         }
+        /* Check if base is a map (field access on a struct whose field type is a map).
+         * If so, emit tk_map_get instead of array GEP. */
+        {
+            int base_is_map = 0;
+            /* Direct map variable */
+            if (n->children[0]->kind == NODE_IDENT) {
+                char bn[128]; tok_cp(c->src, n->children[0], bn, sizeof bn);
+                if (is_map_var(c, bn)) base_is_map = 1;
+            }
+            /* Field access result: check if the field type starts with "@(" (map) */
+            if (!base_is_map && n->children[0]->kind == NODE_FIELD_EXPR &&
+                n->children[0]->child_count >= 2) {
+                const StructInfo *bsi = resolve_base_struct(c, n->children[0]->children[0]);
+                if (bsi) {
+                    char fn[128]; tok_cp(c->src, n->children[0]->children[1], fn, sizeof fn);
+                    for (int fi = 0; fi < bsi->field_count; fi++) {
+                        if (!strcmp(bsi->field_names[fi], fn)) {
+                            const char *fty = bsi->field_types[fi];
+                            /* Map types: "@($k:$v)" or contains ":".
+                             * When ambiguous (bare "@"), check if the .get() key
+                             * is a string (→map) vs integer (→array). */
+                            if (fty && strstr(fty, ":")) {
+                                base_is_map = 1;
+                            } else if (fty && fty[0] == '@' && strlen(fty) <= 2) {
+                                /* Bare "@" from .tki — check key argument type:
+                                 * string key → map get, integer key → array get */
+                                const char *kty = (n->child_count >= 2) ?
+                                    expr_llvm_type(c, n->children[1]) : "i64";
+                                if (!strcmp(kty, "i8*")) base_is_map = 1;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            if (base_is_map) {
+                int base_map = emit_expr(c, n->children[0]);
+                const char *mbty = expr_llvm_type(c, n->children[0]);
+                if (!strcmp(mbty, "i64")) {
+                    int conv = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", conv, base_map);
+                    base_map = conv;
+                }
+                int idx = emit_expr(c, n->children[1]);
+                const char *ity = expr_llvm_type(c, n->children[1]);
+                if (strcmp(ity, "i64")) {
+                    int z = next_tmp(c);
+                    if (!strcmp(ity, "i8*"))
+                        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, idx);
+                    else
+                        fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, idx);
+                    idx = z;
+                }
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i64 @tk_map_get(i8* %%t%d, i64 %%t%d)\n",
+                        t, base_map, idx);
+                return t;
+            }
+        }
         int base = emit_expr(c, n->children[0]);
         const char *bty = expr_llvm_type(c, n->children[0]);
         /* If base is i64 (e.g. from j.parse), inttoptr to ptr first */
