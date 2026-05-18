@@ -1,0 +1,50 @@
+m=test.xmlstress;
+i=str:std.str;
+i=io:std.io;
+
+f=main():i64{
+  let fails=mut.0;
+
+  (* Test 1: Build 20-level nested XML *)
+  let xml=mut."<root>";
+  lp(let i=0;i<20;i=i+1){
+    xml=str.concat(xml;str.concat("<level";str.concat(str.fromi64(i);">")))
+  };
+  xml=str.concat(xml;"DEEPVALUE");
+  lp(let j=19;j>0-1;j=j-1){
+    xml=str.concat(xml;str.concat("</level";str.concat(str.fromi64(j);">")))
+  };
+  xml=str.concat(xml;"</root>");
+
+  (* Verify structure *)
+  if(!str.contains(xml;"<level0>")){io.println("FAIL nested open tag 0");fails=fails+1};
+  if(!str.contains(xml;"<level19>")){io.println("FAIL nested open tag 19");fails=fails+1};
+  if(!str.contains(xml;"DEEPVALUE")){io.println("FAIL nested deep value");fails=fails+1};
+  if(!str.contains(xml;"</level0>")){io.println("FAIL nested close tag 0");fails=fails+1};
+  if(str.len(xml)<200){io.println("FAIL nested xml too short");fails=fails+1};
+  io.println("PASS test 1: 20-level nested XML");
+
+  (* Test 2: Build 100 sibling elements *)
+  let siblings=mut."<list>";
+  lp(let k=0;k<100;k=k+1){
+    siblings=str.concat(siblings;str.concat("<item>";str.concat(str.fromi64(k);"</item>")))
+  };
+  siblings=str.concat(siblings;"</list>");
+  if(!str.contains(siblings;"<item>0</item>")){io.println("FAIL siblings first");fails=fails+1};
+  if(!str.contains(siblings;"<item>99</item>")){io.println("FAIL siblings last");fails=fails+1};
+  if(str.len(siblings)<1000){io.println("FAIL siblings too short");fails=fails+1};
+  io.println("PASS test 2: 100 sibling elements");
+
+  (* Test 3: Large attribute string *)
+  let attrs=mut."<data ";
+  lp(let a=0;a<50;a=a+1){
+    attrs=str.concat(attrs;str.concat("attr";str.concat(str.fromi64(a);str.concat("=\"val";str.concat(str.fromi64(a);"\" ")))))
+  };
+  attrs=str.concat(attrs;"/>");
+  if(!str.contains(attrs;"attr0=\"val0\"")){io.println("FAIL attrs first");fails=fails+1};
+  if(!str.contains(attrs;"attr49=\"val49\"")){io.println("FAIL attrs last");fails=fails+1};
+  io.println("PASS test 3: 50-attribute element");
+
+  io.println(str.concat("xmlstress: ";str.concat(str.fromi64(fails);" failed")));
+  <fails
+};

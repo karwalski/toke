@@ -1,0 +1,12 @@
+m=test;
+i=xml:std.xml;
+i=str:std.str;
+f=main():i64{
+  let fails=mut.0;
+  let el=xml.element("name";"John";"");
+  if(!str.contains(el;"<name>")){ fails=fails+1 };
+  if(!str.contains(el;"John")){ fails=fails+1 };
+  let esc=xml.escape("<>&");
+  if(!str.contains(esc;"&lt;")){ fails=fails+1 };
+  <fails
+};

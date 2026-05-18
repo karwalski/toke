@@ -1,0 +1,14 @@
+m=test;
+i=soap:std.soap;
+i=str:std.str;
+f=main():i64{
+  let fails=mut.0;
+  let env=soap.envelope("<GetPrice><Item>Widget</Item></GetPrice>";"");
+  if(!str.contains(env;"soap:Envelope")){ fails=fails+1 };
+  if(!str.contains(env;"GetPrice")){ fails=fails+1 };
+  let fault=soap.fault("Server";"Internal Error";"details");
+  if(!str.contains(fault;"faultcode")){ fails=fails+1 };
+  let body=soap.extractbody(env);
+  if(!str.contains(body;"GetPrice")){ fails=fails+1 };
+  <fails
+};
