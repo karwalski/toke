@@ -21,6 +21,10 @@
 #include <netdb.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#ifdef TK_HAVE_OPENSSL
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#endif
 #include "net.h"
 #include "sys.h"
 #include "encrypt.h"
@@ -2542,10 +2546,34 @@ int64_t tk_http_postheaders_w(int64_t url_i64, int64_t body_i64, int64_t headers
     if (fd < 0) { freeaddrinfo(res); return 0; }
     struct timeval tv = { .tv_sec = 30, .tv_usec = 0 };
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     if (connect(fd, res->ai_addr, res->ai_addrlen) != 0) {
         freeaddrinfo(res); close(fd); return 0;
     }
     freeaddrinfo(res);
+
+    /* TLS handshake for HTTPS */
+#ifdef TK_HAVE_OPENSSL
+    SSL_CTX *ph_ssl_ctx = NULL;
+    SSL *ph_ssl = NULL;
+    if (is_https) {
+        ph_ssl_ctx = SSL_CTX_new(TLS_client_method());
+        if (!ph_ssl_ctx) { close(fd); return 0; }
+        ph_ssl = SSL_new(ph_ssl_ctx);
+        if (!ph_ssl) { SSL_CTX_free(ph_ssl_ctx); close(fd); return 0; }
+        SSL_set_fd(ph_ssl, fd);
+        SSL_set_tlsext_host_name(ph_ssl, host);
+        if (SSL_connect(ph_ssl) <= 0) {
+            SSL_free(ph_ssl); SSL_CTX_free(ph_ssl_ctx); close(fd); return 0;
+        }
+    }
+#define PH_SEND(buf, len) (is_https ? SSL_write(ph_ssl, buf, (int)(len)) : (int)send(fd, buf, len, 0))
+#define PH_RECV(buf, len) (is_https ? SSL_read(ph_ssl, buf, (int)(len)) : (int)recv(fd, buf, len, 0))
+#else
+    if (is_https) { close(fd); return 0; } /* no TLS support */
+#define PH_SEND(buf, len) (int)send(fd, buf, len, 0)
+#define PH_RECV(buf, len) (int)recv(fd, buf, len, 0)
+#endif
 
     /* Build and send request */
     char req_buf[8192];
@@ -2558,31 +2586,95 @@ int64_t tk_http_postheaders_w(int64_t url_i64, int64_t body_i64, int64_t headers
         "Connection: close\r\n"
         "\r\n",
         path, host, body_len, extra_hdrs);
-    if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) { close(fd); return 0; }
-    send(fd, req_buf, (size_t)req_len, 0);
-    if (body_len > 0) send(fd, body, body_len, 0);
+    if (req_len < 0 || (size_t)req_len >= sizeof(req_buf)) {
+#ifdef TK_HAVE_OPENSSL
+        if (ph_ssl) { SSL_shutdown(ph_ssl); SSL_free(ph_ssl); }
+        if (ph_ssl_ctx) SSL_CTX_free(ph_ssl_ctx);
+#endif
+        close(fd); return 0;
+    }
+    PH_SEND(req_buf, (size_t)req_len);
+    if (body_len > 0) PH_SEND(body, body_len);
 
     /* Read response */
     size_t cap = 65536, used = 0;
     char *resp = malloc(cap);
-    if (!resp) { close(fd); return 0; }
-    ssize_t n;
-    while ((n = recv(fd, resp + used, cap - used - 1, 0)) > 0) {
+    if (!resp) {
+#ifdef TK_HAVE_OPENSSL
+        if (ph_ssl) { SSL_shutdown(ph_ssl); SSL_free(ph_ssl); }
+        if (ph_ssl_ctx) SSL_CTX_free(ph_ssl_ctx);
+#endif
+        close(fd); return 0;
+    }
+    int n;
+    while ((n = PH_RECV(resp + used, cap - used - 1)) > 0) {
         used += (size_t)n;
         if (used + 1 >= cap) { cap *= 2; char *tmp = realloc(resp, cap); if (!tmp) break; resp = tmp; }
     }
     resp[used] = '\0';
+#ifdef TK_HAVE_OPENSSL
+    if (ph_ssl) { SSL_shutdown(ph_ssl); SSL_free(ph_ssl); }
+    if (ph_ssl_ctx) SSL_CTX_free(ph_ssl_ctx);
+#endif
+#undef PH_SEND
+#undef PH_RECV
     close(fd);
 
-    /* Extract body after \r\n\r\n */
+    /* Extract body after \r\n\r\n, with chunked decoding */
     const char *sep = strstr(resp, "\r\n\r\n");
     if (!sep) { free(resp); return 0; }
     sep += 4;
-    size_t resp_body_len = used - (size_t)(sep - resp);
-    char *result = malloc(resp_body_len + 1);
-    if (!result) { free(resp); return 0; }
-    memcpy(result, sep, resp_body_len);
-    result[resp_body_len] = '\0';
+    size_t raw_len = used - (size_t)(sep - resp);
+
+    /* Check for Transfer-Encoding: chunked in headers */
+    int is_chunked = 0;
+    {
+        const char *te = resp;
+        const char *hdr_end = sep - 4;
+        while ((te = strstr(te, "\r\n")) != NULL && te < hdr_end) {
+            te += 2;
+            if (strncasecmp(te, "Transfer-Encoding:", 18) == 0) {
+                const char *val = te + 18;
+                while (*val == ' ') val++;
+                if (strncasecmp(val, "chunked", 7) == 0) is_chunked = 1;
+                break;
+            }
+        }
+    }
+
+    char *result;
+    if (is_chunked && raw_len > 0) {
+        /* Decode chunked body */
+        result = malloc(raw_len + 1);
+        if (!result) { free(resp); return 0; }
+        size_t dpos = 0;
+        const char *cp = sep;
+        const char *raw_end = sep + raw_len;
+        while (cp < raw_end) {
+            char *nl = NULL;
+            unsigned long chunk_sz = strtoul(cp, &nl, 16);
+            if (!nl || nl == cp) break;
+            if (nl + 2 <= raw_end && nl[0] == '\r' && nl[1] == '\n') cp = nl + 2;
+            else if (nl + 1 <= raw_end && nl[0] == '\n') cp = nl + 1;
+            else break;
+            if (chunk_sz == 0) break;
+            size_t avail = (size_t)(raw_end - cp);
+            size_t to_copy = chunk_sz < avail ? (size_t)chunk_sz : avail;
+            memcpy(result + dpos, cp, to_copy);
+            dpos += to_copy;
+            cp += to_copy;
+            if (cp + 2 <= raw_end && cp[0] == '\r' && cp[1] == '\n') cp += 2;
+            else if (cp + 1 <= raw_end && cp[0] == '\n') cp += 1;
+        }
+        result[dpos] = '\0';
+    } else if (raw_len > 0) {
+        result = malloc(raw_len + 1);
+        if (!result) { free(resp); return 0; }
+        memcpy(result, sep, raw_len);
+        result[raw_len] = '\0';
+    } else {
+        free(resp); return 0;
+    }
     free(resp);
     return (int64_t)(intptr_t)result;
 }
