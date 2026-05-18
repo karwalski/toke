@@ -1487,7 +1487,8 @@ static int emit_str_global(Ctx *c, const char *raw, int rlen, int *out_alen)
         byte_count++;
     }
     int idx = next_str(c);
-    str_buf_append(c, "@.str.%d = private unnamed_addr constant [%d x i8] c\"",idx,byte_count+1);
+    str_buf_append(c, "@.str.%s%d = private unnamed_addr constant [%d x i8] c\"",
+                   c->module_prefix, idx, byte_count+1);
     for(int i=0;i<ilen;i++){
         unsigned char ch=(unsigned char)inner[i];
         if(ch=='\\'&&i+1<ilen){char nx=inner[i+1];
@@ -1599,8 +1600,8 @@ static int emit_expr(Ctx *c, const Node *n)
         int alen = 1;
         int si = emit_str_global(c, c->src + n->tok_start, n->tok_len, &alen);
         t = next_tmp(c);
-        fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%d, i32 0, i32 0\n",
-                t, alen, alen, si);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                t, alen, alen, c->module_prefix, si);
         return t;
     }
     case NODE_IDENT:
@@ -4097,8 +4098,8 @@ static void emit_toplevel(Ctx *c, const Node *n)
             const Node *sl = n->children[2];
             int ilen = 1;
             int si = emit_str_global(c, c->src + sl->tok_start, sl->tok_len, &ilen);
-            fprintf(c->out, "@%s = constant i8* getelementptr ([%d x i8], [%d x i8]* @.str.%d, i32 0, i32 0)\n",
-                    tb, ilen, ilen, si);
+            fprintf(c->out, "@%s = constant i8* getelementptr ([%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0)\n",
+                    tb, ilen, ilen, c->module_prefix, si);
         } else {
             fprintf(c->out, "@%s = constant i64 0 ; const stub\n", tb);
         }
