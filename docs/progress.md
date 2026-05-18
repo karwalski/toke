@@ -4078,4 +4078,4 @@ Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, li
 | 89.4.12 | testrenderfilesimple — render from .tkt file | done | 2026-05-18 | PASS individually |
 | 89.4.13 | testcachehit — tplrenderfilecached SIGBUS | backlog | 2026-05-18 | SIGBUS in tplrenderfilecached. The $renderresult{output;cache} struct's .cache field access or the tplcache map operations crash. Skipped in full test. |
 | 89.4.14 | testlexbasic — SSA name collision in large function | done | 2026-05-18 | Renamed t0-t4 → tok0-tok4. testlexbasic re-enabled. |
-| 89.4.15 | testpartial — partial include rendering | backlog | 2026-05-18 | Codegen error. Needs investigation. |
+| 89.4.15 | testpartial — partial include rendering | done | 2026-05-18 | Bisect truncation artifact — full function compiles and passes |
