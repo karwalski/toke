@@ -4018,7 +4018,7 @@ Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, li
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 89.2.6 | Template tplrender SIGBUS: crash is in tplrender (not tpllex). tpllex works correctly after clean rebuild. The render function (380 lines, nested loops, map access, string concat chains) has a codegen or runtime bug triggered by specific template content. Needs IR-level debugging of the render path. | backlog | 2026-05-18 | |
+| 89.2.6 | Template test_template.tk SIGBUS in later test functions | in_progress | 2026-05-18 | Root cause identified: tpllex, tplrender, nested struct access, test.eq ALL work individually. Crash is in one of the 15 test functions (likely testrenderfilesimple or testcachehit) that writes temp files. NOT a compiler codegen bug — the template MODULE works correctly. The test needs bisecting to find which function crashes. |
 | 89.2.7 | http.servedir does not infer MIME type from file extension | backlog | 2026-05-17 | Static CSS file is served but Content-Type header is missing/wrong. `tk_http_serve_staticdir_w` should map .css→text/css, .js→application/javascript, etc. |
 | 89.2.8 | Router test fixture: file.mkdir needs mkdir -p semantics | backlog | 2026-05-17 | `file.mkdir(path)` fails if parent doesn't exist. Router test creates `/tmp/ooke_router_test/blog` but parent `/tmp/ooke_router_test` may not exist. Glue has `file.ensuredir` (mkdir_p) but test uses `file.mkdir`. |
 
