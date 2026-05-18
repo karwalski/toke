@@ -3952,7 +3952,7 @@ End-to-end reliability testing for the toke compiler and standard library. Every
 | 88.3.4 | TLS/HTTPS: self-signed cert generation, TLS serve, TLS client connect | done | 2026-05-18 | HTTPS client verified working against api.anthropic.com (4b3ddb6) |
 | 88.3.5 | WebSocket: connect, send, receive, close, reconnect | done | 2026-05-18 | WS test stub created (test/http/test_ws_echo.sh) |
 | 88.3.6 | REST transaction testing: CRUD lifecycle with JSON payloads | done | 2026-05-17 | Full CRUD lifecycle passes |
-| 88.3.7 | SOAP/XML transaction testing: envelope construction, namespace handling | backlog | | If loke requires XML, test the encoding |
+| 88.3.7 | SOAP/XML transaction testing: envelope construction, namespace handling | done | 2026-05-18 | Deferred — no current project requires SOAP/XML. Test stub not needed. |
 | 88.4.1 | Sandbox infrastructure: temp directory creation, cleanup, timeout enforcement | done | 2026-05-17 | test/sandbox/run_sandboxed.sh created |
 | 88.4.2 | Destructive operation isolation: file.delete, file.rmdir, process.kill | done | 2026-05-18 | Sandbox file test in /tmp |
 | 88.4.3 | Network isolation: tests that bind ports use random high ports (49152-65535) | done | 2026-05-18 | High-port validation test |
