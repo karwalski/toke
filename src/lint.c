@@ -10,11 +10,14 @@
  *   empty-fn-body     — function with an empty statement list body
  *   unused-import     — import alias never referenced in the AST
  *   redundant-bind    — `let x = x;` where both sides are the same ident
+ *   unused-let        — `let x = expr;` where x is never referenced
+ *   mutable-never-mutated — `let x=mut.v` where x is never reassigned
  *
  * Story: 45.1.2  Branch: feature/compiler-lint
  */
 
 #include "lint.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -294,6 +297,168 @@ static int rule_redundant_bind(const Node *node, const char *src,
     return 0;
 }
 
+/* ── Rule: unused-let ─────────────────────────────────────────────────── */
+
+/*
+ * In a NODE_FUNC_DECL body, find NODE_BIND_STMT nodes whose bound name
+ * (child[0], a NODE_IDENT) is never referenced anywhere else in the
+ * function body.  We skip the bind statement itself when searching.
+ */
+static int check_unused_binds(const Node *body, const char *src,
+                               int src_len,
+                               const LintOptions *opts, LintResult *out)
+{
+    if (!body || body->kind != NODE_STMT_LIST) return 0;
+
+    for (int i = 0; i < body->child_count; i++) {
+        const Node *stmt = body->children[i];
+        if (!stmt || stmt->kind != NODE_BIND_STMT) continue;
+        if (stmt->child_count < 1) continue;
+
+        const Node *lhs = stmt->children[0];
+        if (!lhs || lhs->kind != NODE_IDENT || lhs->tok_len == 0) continue;
+
+        const char *name = src + lhs->tok_start;
+        int name_len = lhs->tok_len;
+
+        /* Search every other statement in the body for a reference */
+        int used = 0;
+        for (int j = 0; j < body->child_count; j++) {
+            if (j == i) continue;  /* skip the bind statement itself */
+            if (ident_used_in(body->children[j], name, name_len, src)) {
+                used = 1;
+                break;
+            }
+        }
+
+        if (!used && rule_enabled("unused-let", opts)) {
+            /* Build the message: "binding 'x' is never used" */
+            /* Use a static buffer — names are short identifiers */
+            static char msg[256];
+            int n = snprintf(msg, sizeof(msg), "binding '");
+            if (name_len < (int)(sizeof(msg) - n - 20)) {
+                memcpy(msg + n, name, (size_t)name_len);
+                n += name_len;
+            }
+            snprintf(msg + n, sizeof(msg) - (size_t)n, "' is never used");
+
+            int sp_start = stmt->start;
+            int sp_end   = span_end_of_stmt(stmt, src, src_len);
+            if (lint_push(out, "unused-let", msg,
+                          stmt->line, stmt->col, 1,
+                          1, sp_start, sp_end) < 0)
+                return -1;
+        }
+    }
+    return 0;
+}
+
+static int rule_unused_let(const Node *node, const char *src,
+                            int src_len,
+                            const LintOptions *opts, LintResult *out)
+{
+    if (!node) return 0;
+
+    if (node->kind == NODE_FUNC_DECL && node->child_count > 0) {
+        /* The body is the last child (a NODE_STMT_LIST) */
+        const Node *body = node->children[node->child_count - 1];
+        if (check_unused_binds(body, src, src_len, opts, out) < 0)
+            return -1;
+    }
+
+    for (int i = 0; i < node->child_count; i++) {
+        if (rule_unused_let(node->children[i], src, src_len, opts, out) < 0)
+            return -1;
+    }
+    return 0;
+}
+
+/* ── Rule: mutable-never-mutated ──────────────────────────────────────── */
+
+/*
+ * A NODE_MUT_BIND_STMT declares a mutable binding.  If no
+ * NODE_ASSIGN_STMT in the enclosing function body targets the same
+ * identifier, the binding could be immutable.
+ */
+
+/*
+ * has_assign_to — return 1 if the subtree contains a NODE_ASSIGN_STMT
+ * whose LHS (children[0]) is a NODE_IDENT matching (name, name_len).
+ */
+static int has_assign_to(const Node *node, const char *name, int name_len,
+                         const char *src)
+{
+    if (!node) return 0;
+
+    if (node->kind == NODE_ASSIGN_STMT && node->child_count > 0) {
+        const Node *lhs = node->children[0];
+        if (lhs && lhs->kind == NODE_IDENT &&
+            lhs->tok_len == name_len &&
+            memcmp(src + lhs->tok_start, name, (size_t)name_len) == 0) {
+            return 1;
+        }
+    }
+
+    for (int i = 0; i < node->child_count; i++) {
+        if (has_assign_to(node->children[i], name, name_len, src))
+            return 1;
+    }
+    return 0;
+}
+
+static int rule_mutable_never_mutated(const Node *node, const char *src,
+                                       int src_len,
+                                       const LintOptions *opts, LintResult *out)
+{
+    if (!node) return 0;
+
+    if (node->kind == NODE_FUNC_DECL && node->child_count > 0) {
+        /* The body is the last child (NODE_STMT_LIST) */
+        const Node *body = node->children[node->child_count - 1];
+        if (body && body->kind == NODE_STMT_LIST) {
+            /* Scan for NODE_MUT_BIND_STMT in the body */
+            for (int i = 0; i < body->child_count; i++) {
+                const Node *stmt = body->children[i];
+                if (!stmt || stmt->kind != NODE_MUT_BIND_STMT) continue;
+                if (stmt->child_count == 0) continue;
+
+                const Node *ident = stmt->children[0];
+                if (!ident || ident->kind != NODE_IDENT || ident->tok_len == 0)
+                    continue;
+
+                const char *name = src + ident->tok_start;
+                int name_len = ident->tok_len;
+
+                /* Search the entire body for any assignment to this name */
+                if (!has_assign_to(body, name, name_len, src)) {
+                    if (rule_enabled("mutable-never-mutated", opts)) {
+                        static char mnm_msg[256];
+                        int n = snprintf(mnm_msg, sizeof(mnm_msg),
+                            "mutable binding '%.*s' is never reassigned; "
+                            "consider removing 'mut'",
+                            name_len, name);
+                        (void)n;
+                        if (lint_push(out, "mutable-never-mutated",
+                                      mnm_msg,
+                                      stmt->line, stmt->col, 1,
+                                      1,
+                                      stmt->start,
+                                      span_end_of_stmt(stmt, src, src_len)) < 0)
+                            return -1;
+                    }
+                }
+            }
+        }
+    }
+
+    /* Recurse into children (handles nested functions) */
+    for (int i = 0; i < node->child_count; i++) {
+        if (rule_mutable_never_mutated(node->children[i], src, src_len, opts, out) < 0)
+            return -1;
+    }
+    return 0;
+}
+
 /* ── Public API ───────────────────────────────────────────────────────── */
 
 int tkc_lint(const Node *ast, const char *src, int src_len,
@@ -309,6 +474,8 @@ int tkc_lint(const Node *ast, const char *src, int src_len,
     if (rule_empty_fn_body(ast, src, opts, out) < 0)    return -1;
     if (rule_unused_import(ast, src, src_len, opts, out) < 0) return -1;
     if (rule_redundant_bind(ast, src, src_len, opts, out) < 0) return -1;
+    if (rule_unused_let(ast, src, src_len, opts, out) < 0)    return -1;
+    if (rule_mutable_never_mutated(ast, src, src_len, opts, out) < 0) return -1;
 
     return 0;
 }

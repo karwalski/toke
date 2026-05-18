@@ -32,6 +32,10 @@ check_warns test/lint/unusedimport_positive.tk "unused"
 check_clean test/lint/unusedimport_negative.tk
 check_warns test/lint/redundantbind_positive.tk "redundant"
 check_clean test/lint/redundantbind_negative.tk
+check_warns test/lint/unusedlet_positive.tk "unused-let"
+check_clean test/lint/unusedlet_negative.tk
+check_warns test/lint/mutnevermut_positive.tk "mutable-never-mutated"
+check_clean test/lint/mutnevermut_negative.tk
 
 echo "---"
 echo "$PASS passed, $FAIL failed"
