@@ -3971,7 +3971,7 @@ Full test coverage for the ooke web framework. Template engine, routing, content
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
 | 89.1.1 | Implement test harness: compile and execute test .tk files, report pass/fail | done | 2026-05-17 | test/run_tests.sh created |
-| 89.1.2 | Template engine: 12/15 tests pass individually | done | 2026-05-18 | Bisected: testrawpassthrough through testrenderfilesimple all PASS. testcachehit=SIGBUS, testlexbasic=SSA collision, testpartial=codegen error. Skipped in full test file. |
+| 89.1.2 | Template engine: 12/15 tests pass individually | done | 2026-05-19 | All 15 template tests pass individually after map.get fix + string prefix fix + cache init fix |
 | 89.1.3 | Router: static routes, dynamic [slug] params, nested routes, 404 handling | done | 2026-05-18 | test_router_live.sh: live routes, 404, API handler |
 | 89.1.4 | Config: TOML loading, defaults, validation, missing keys, invalid types | done | 2026-05-17 | Config test PASSES |
 | 89.1.5 | Content store: frontmatter parsing, collection loading, slug lookup, filtering | done | 2026-05-17 | Store test PASSES |
@@ -4076,6 +4076,6 @@ Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, li
 | 89.4.10 | testblockcollected — block directive collected | done | 2026-05-18 | PASS individually |
 | 89.4.11 | testescapehelper — tplescape function | done | 2026-05-18 | PASS individually |
 | 89.4.12 | testrenderfilesimple — render from .tkt file | done | 2026-05-18 | PASS individually |
-| 89.4.13 | testcachehit — tplrenderfilecached SIGBUS | backlog | 2026-05-18 | SIGBUS in tplrenderfilecached. The $renderresult{output;cache} struct's .cache field access or the tplcache map operations crash. Skipped in full test. |
+| 89.4.13 | testcachehit — tplrenderfilecached SIGBUS | done | 2026-05-19 | ROOT CAUSE: 3 bugs — (1) string constant collisions across modules (59aa97a), (2) map.get on struct fields emitted array GEP instead of tk_map_get (2410a59), (3) tplcachenew used @() (array) instead of map literal (9a7690e). All 15/15 template tests now pass. |
 | 89.4.14 | testlexbasic — SSA name collision in large function | done | 2026-05-18 | Renamed t0-t4 → tok0-tok4. testlexbasic re-enabled. |
 | 89.4.15 | testpartial — partial include rendering | done | 2026-05-18 | Bisect truncation artifact — full function compiles and passes |
