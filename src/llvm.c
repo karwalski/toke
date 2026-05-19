@@ -75,7 +75,7 @@ typedef struct { char name[NAME_BUF]; char struct_type[NAME_BUF]; } PtrLocal;
  * All struct fields are represented as i64 at the LLVM level; the struct
  * is laid out as { i64, i64, ... } with one slot per field.
  */
-typedef struct { char name[NAME_BUF]; int field_count; char field_names[TKC_MAX_PARAMS][NAME_BUF]; char field_types[TKC_MAX_PARAMS][NAME_BUF]; } StructInfo;
+typedef struct { char name[NAME_BUF]; int field_count; char field_names[TKC_MAX_PARAMS][NAME_BUF]; char field_types[TKC_MAX_PARAMS][NAME_BUF]; int field_is_map[TKC_MAX_PARAMS]; } StructInfo;
 
 /*
  * ImportAlias — Maps a toke import alias to its module name.
@@ -331,8 +331,11 @@ static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, 
         if (ch->kind == NODE_FIELD) {
             tok_cp(src, ch, si->field_names[fi], 128);
             si->field_types[fi][0] = '\0';
-            if (ch->child_count >= 1 && ch->children[0])
+            si->field_is_map[fi] = 0;
+            if (ch->child_count >= 1 && ch->children[0]) {
                 tok_cp(src, ch->children[0], si->field_types[fi], 128);
+                if (ch->children[0]->kind == NODE_MAP_TYPE) si->field_is_map[fi] = 1;
+            }
             fi++;
         } else if (ch->kind == NODE_STMT_LIST) {
             for (int j = 0; j < ch->child_count && fi < TKC_MAX_PARAMS; j++) {
@@ -340,8 +343,11 @@ static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, 
                 if (fj && fj->kind == NODE_FIELD) {
                     tok_cp(src, fj, si->field_names[fi], 128);
                     si->field_types[fi][0] = '\0';
-                    if (fj->child_count >= 1 && fj->children[0])
+                    si->field_is_map[fi] = 0;
+                    if (fj->child_count >= 1 && fj->children[0]) {
                         tok_cp(src, fj->children[0], si->field_types[fi], 128);
+                        if (fj->children[0]->kind == NODE_MAP_TYPE) si->field_is_map[fi] = 1;
+                    }
                     fi++;
                 }
             }
@@ -2716,18 +2722,11 @@ static int emit_expr(Ctx *c, const Node *n)
                     char fn[128]; tok_cp(c->src, n->children[0]->children[1], fn, sizeof fn);
                     for (int fi = 0; fi < bsi->field_count; fi++) {
                         if (!strcmp(bsi->field_names[fi], fn)) {
-                            const char *fty = bsi->field_types[fi];
-                            /* Map types: "@($k:$v)" or contains ":".
-                             * When ambiguous (bare "@"), check if the .get() key
-                             * is a string (→map) vs integer (→array). */
-                            if (fty && strstr(fty, ":")) {
+                            /* Use the field_is_map flag set during struct registration.
+                             * Only locally-defined structs with NODE_MAP_TYPE get this.
+                             * Cross-module .tki imports don't distinguish @ (array vs map). */
+                            if (bsi->field_is_map[fi]) {
                                 base_is_map = 1;
-                            } else if (fty && fty[0] == '@' && strlen(fty) <= 2) {
-                                /* Bare "@" from .tki — check key argument type:
-                                 * string key → map get, integer key → array get */
-                                const char *kty = (n->child_count >= 2) ?
-                                    expr_llvm_type(c, n->children[1]) : "i64";
-                                if (!strcmp(kty, "i8*")) base_is_map = 1;
                             }
                             break;
                         }
