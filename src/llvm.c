@@ -2610,18 +2610,22 @@ static int emit_expr(Ctx *c, const Node *n)
                     break;
                 }
             }
-            /* Stdlib module.get(arg) — e.g. http.get(url) parsed as INDEX_EXPR */
+            /* Stdlib module.get(arg) — e.g. http.get(url) parsed as INDEX_EXPR.
+             * Only intercept if resolve_stdlib_call has a mapping for "get".
+             * If not, fall through to the normal array/cross-module path. */
             if (is_std_mod) {
                 const char *fn = resolve_stdlib_call(c, base_alias, "get");
-                /* Disambiguate: http.get with 1 arg = client GET */
-                if (fn && !strcmp(fn, "tk_http_get_handler")) fn = "tk_http_get_w";
-                if (!fn) fn = "tk_http_get_w"; /* fallback */
-                int arg = emit_expr(c, n->children[1]);
-                const char *aty = expr_llvm_type(c, n->children[1]);
-                arg = coerce_value(c, arg, aty, "i64");
-                t = next_tmp(c);
-                fprintf(c->out, "  %%t%d = call i64 @%s( i64 %%t%d)\n", t, fn, arg);
-                return t;
+                if (fn) {
+                    /* Disambiguate: http.get with 1 arg = client GET */
+                    if (!strcmp(fn, "tk_http_get_handler")) fn = "tk_http_get_w";
+                    int arg = emit_expr(c, n->children[1]);
+                    const char *aty = expr_llvm_type(c, n->children[1]);
+                    arg = coerce_value(c, arg, aty, "i64");
+                    t = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = call i64 @%s( i64 %%t%d)\n", t, fn, arg);
+                    return t;
+                }
+                /* No mapping — fall through to normal .get() handling */
             }
             if (is_user_mod) {
                 /* Cross-module call: a.func(arg) → call @mod_path_func(arg)
