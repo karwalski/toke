@@ -4079,3 +4079,20 @@ Review all tooling repos for v0.3 syntax compliance. Update MCP server tools, li
 | 89.4.13 | testcachehit — tplrenderfilecached SIGBUS | done | 2026-05-19 | ROOT CAUSE: 3 bugs — (1) string constant collisions across modules (59aa97a), (2) map.get on struct fields emitted array GEP instead of tk_map_get (2410a59), (3) tplcachenew used @() (array) instead of map literal (9a7690e). All 15/15 template tests now pass. |
 | 89.4.14 | testlexbasic — SSA name collision in large function | done | 2026-05-18 | Renamed t0-t4 → tok0-tok4. testlexbasic re-enabled. |
 | 89.4.15 | testpartial — partial include rendering | done | 2026-05-18 | Bisect truncation artifact — full function compiles and passes |
+
+### Epic 91 — Extract Working Code Snippets from loke/moke into Corpus
+
+The loke (172 modules) and moke projects contain production-quality toke code that compiles and runs correctly. This code represents real-world patterns not present in the synthetic corpus: cross-module imports, struct-heavy data models, HTTP handlers, template rendering, database queries, crypto operations, and complex control flow. Extracting verified snippets from these projects into the training corpus would significantly improve model quality for real-world toke programming.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 91.1.1 | Inventory loke/moke modules: count functions, categorise by pattern type | backlog | | Scan all .tk files, extract function signatures, classify: HTTP handler, DB query, string processing, crypto, struct manipulation, array/map ops, error handling, config loading |
+| 91.1.2 | Extract self-contained function snippets with minimal imports | backlog | | For each function, determine minimum imports needed. Produce standalone snippets that compile with `toke --check`. Target: 500+ snippets from loke, 100+ from moke |
+| 91.1.3 | Generate task descriptions from function signatures and doc comments | backlog | | For each snippet, create a natural-language task prompt derived from the signature and context |
+| 91.1.4 | Validate all extracted snippets compile with current toke | backlog | | Run `toke --check` on every snippet. Fix or discard failures. Report pass rate. |
+| 91.1.5 | Generate ChatML training records from validated snippets | backlog | | Produce JSONL in the same format as training-data-p2 with v0.3 system prompt |
+| 91.1.6 | Deduplicate against existing corpus — only add genuinely new patterns | backlog | | Compare extracted snippets against existing 19K training records. Remove near-duplicates. |
+| 91.1.7 | Extract multi-function patterns: caller + callee pairs showing cross-module use | backlog | | For functions that call other module functions, extract the pair as a training example |
+| 91.1.8 | Extract struct definition + accessor patterns | backlog | | For each struct type, extract the type definition + functions that construct/access it |
+| 91.1.9 | Extract error handling patterns: Result types, match expressions, propagation | backlog | | Collect all `mt result {$ok:v v;$err:e ...}` patterns and recovery patterns |
+| 91.1.10 | Merge into training-data-v03 and validate full corpus compiles | backlog | | Append new records to the v0.3 training JSONL. Run full validation. |
