@@ -4030,6 +4030,15 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         }
 
         /* Dispatch to route table (HEAD falls back to GET handler) */
+        if (getenv("TK_HTTP_DEBUG")) {
+            fprintf(stderr, "[tls] route_count=%d req.path=%s req.method=%s\n",
+                    route_count, req.path ? req.path : "(null)",
+                    req.method ? req.method : "(null)");
+            for (int _d = 0; _d < route_count && _d < 10; _d++)
+                fprintf(stderr, "[tls]   [%d] %s %s\n", _d,
+                        route_table[_d].method ? route_table[_d].method : "?",
+                        route_table[_d].pattern ? route_table[_d].pattern : "?");
+        }
         Res res = make_res(404, "Not Found");
         StrPair params[32]; int pc = 0;
         int tls_path_matched = 0;
@@ -4159,8 +4168,10 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
  */
 static void tls_worker_loop(int srv_fd, TkHttpRouter *r, SSL_CTX *ssl_ctx)
 {
-    route_count = r->count;
-    memcpy(route_table, r->routes, (size_t)r->count * sizeof(Route));
+    if (r) {
+        route_count = r->count;
+        memcpy(route_table, r->routes, (size_t)r->count * sizeof(Route));
+    }
 
     for (;;) {
         int fd = accept(srv_fd, NULL, NULL);
@@ -4191,7 +4202,6 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
                                   uint64_t port, TkTlsCtx *tls,
                                   uint64_t nworkers)
 {
-    if (!r)   return TK_HTTP_ERR_SOCKET;
     if (!tls) return TK_HTTP_ERR_BIND;
 
     if (nworkers <= 1) {

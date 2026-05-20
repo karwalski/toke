@@ -664,10 +664,8 @@ int64_t tk_http_servetls(int64_t port, int64_t cert_ptr, int64_t key_ptr) {
     const char *key  = (const char *)(intptr_t)key_ptr;
     TkTlsCtx *tls = http_tls_ctx_new(cert, key);
     if (!tls) return -1;
-    TkHttpRouter *router = http_router_new();
-    if (!router) { http_tls_ctx_free(tls); return -1; }
-    TkHttpErr err = http_serve_tls(router, NULL, (uint64_t)p, tls);
-    http_router_free(router);
+    /* Pass NULL router — tls_worker_loop will use the global route_table. */
+    TkHttpErr err = http_serve_tls(NULL, NULL, (uint64_t)p, tls);
     http_tls_ctx_free(tls);
     return (err == TK_HTTP_OK) ? 0 : -1;
 }
