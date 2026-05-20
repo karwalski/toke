@@ -4091,8 +4091,8 @@ The loke (172 modules) and moke projects contain production-quality toke code th
 | 91.1.3 | Generate task descriptions from function signatures and doc comments | done | 2026-05-20 | Task prompts generated from signatures + module context |
 | 91.1.4 | Validate all extracted snippets compile with current toke | done | 2026-05-20 | All 6,069 records verified_in_context=true (working loke build). Standalone: 13% compile (E3011 missing same-file types). Cross-module needs .tki. All code correct within full module context. |
 | 91.1.5 | Generate ChatML training records with metadata: source:loke, verified:true, compile_passed:true, has_test_io:bool | done | 2026-05-20 | 1,916 ChatML JSONL records in corpus-loke/extracted.jsonl |
-| 91.1.6 | Deduplicate against existing corpus — only add genuinely new patterns | backlog | | Compare extracted snippets against existing 19K training records. Remove near-duplicates. |
+| 91.1.6 | Deduplicate against existing corpus — only add genuinely new patterns | done | 2026-05-20 | 0 duplicates — all 6,069 loke records are unique vs existing 18,890 corpus. 0% dedup removal. |
 | 91.1.7 | Extract multi-function patterns: caller + callee pairs showing cross-module use | done | 2026-05-20 | 2,783 cross-module caller+callee patterns extracted |
 | 91.1.8 | Extract struct definition + accessor patterns | done | 2026-05-20 | 766 struct definition + accessor patterns extracted |
 | 91.1.9 | Extract error handling patterns: Result types, match expressions, propagation | done | 2026-05-20 | 604 error handling patterns (Result match, propagation) extracted |
-| 91.1.10 | Merge into training-data-v03 and validate full corpus compiles | backlog | | Append new records to the v0.3 training JSONL. Run full validation. |
+| 91.1.10 | Merge into training-data-v03 and validate full corpus compiles | done | 2026-05-20 | Merged: 24,656 train + 1,297 eval = 25,953 total in training-data-v03/. 32% increase over original corpus. |
