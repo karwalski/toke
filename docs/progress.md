@@ -4086,11 +4086,11 @@ The loke (172 modules) and moke projects contain production-quality toke code th
 
 | ID | Story | Status | Date | Notes |
 |----|-------|--------|------|-------|
-| 91.1.1 | Inventory loke/moke modules: count functions, categorise by pattern type | backlog | | Scan all .tk files, extract function signatures, classify: HTTP handler, DB query, string processing, crypto, struct manipulation, array/map ops, error handling, config loading |
-| 91.1.2 | Extract self-contained function snippets with minimal imports | backlog | | For each function, determine minimum imports needed. Produce standalone snippets that compile with `toke --check`. Target: 500+ snippets from loke, 100+ from moke |
+| 91.1.1 | Inventory loke/moke modules: count functions, categorise by pattern type | done | 2026-05-20 | 629 files, 80,741 lines, 4,283 functions, 904 structs, 2,168 imports. Top patterns: string(495), struct(473), array(431), loop(365), logging(347), error_handling(204), json(81), http(58). |
+| 91.1.2 | Extract self-contained function snippets with minimal imports, tag as source:loke, verified:true | backlog | | For each function, determine minimum imports needed. Produce standalone snippets that compile with `toke --check`. Target: 500+ snippets from loke, 100+ from moke |
 | 91.1.3 | Generate task descriptions from function signatures and doc comments | backlog | | For each snippet, create a natural-language task prompt derived from the signature and context |
 | 91.1.4 | Validate all extracted snippets compile with current toke | backlog | | Run `toke --check` on every snippet. Fix or discard failures. Report pass rate. |
-| 91.1.5 | Generate ChatML training records from validated snippets | backlog | | Produce JSONL in the same format as training-data-p2 with v0.3 system prompt |
+| 91.1.5 | Generate ChatML training records with metadata: source:loke, verified:true, compile_passed:true, has_test_io:bool | backlog | | Produce JSONL in the same format as training-data-p2 with v0.3 system prompt |
 | 91.1.6 | Deduplicate against existing corpus — only add genuinely new patterns | backlog | | Compare extracted snippets against existing 19K training records. Remove near-duplicates. |
 | 91.1.7 | Extract multi-function patterns: caller + callee pairs showing cross-module use | backlog | | For functions that call other module functions, extract the pair as a training example |
 | 91.1.8 | Extract struct definition + accessor patterns | backlog | | For each struct type, extract the type definition + functions that construct/access it |
