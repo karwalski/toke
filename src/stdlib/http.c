@@ -926,6 +926,15 @@ static void handle_connection(int fd)
         }
 
         /* ── Route dispatch (HEAD falls back to GET handler) ── */
+        if (getenv("TK_HTTP_DEBUG")) {
+            fprintf(stderr, "[http] route_count=%d req.path=%s req.method=%s\n",
+                    route_count, req.path ? req.path : "(null)",
+                    req.method ? req.method : "(null)");
+            for (int _d = 0; _d < route_count && _d < 10; _d++)
+                fprintf(stderr, "[http]   [%d] %s %s\n", _d,
+                        route_table[_d].method ? route_table[_d].method : "?",
+                        route_table[_d].pattern ? route_table[_d].pattern : "?");
+        }
         Res res = make_res(404, "Not Found");
         StrPair params[32]; int pc = 0;
         int path_matched = 0;
