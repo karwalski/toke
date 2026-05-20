@@ -33,6 +33,7 @@
 #include "diag.h"
 #include "tkc_limits.h"
 #include "stdlib_deps.h"
+#include <stdint.h>
 #include "glue_gen.h"
 #include <stdio.h>
 #include <string.h>
