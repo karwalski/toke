@@ -1162,10 +1162,10 @@ static int bind_listen(const char *host, uint64_t port)
 /* worker_loop — accept and handle connections; exits when shutdown is set. */
 static void worker_loop(int srv_fd, TkHttpRouter *r)
 {
-    /* Only overwrite the global route table if the router has routes.
-     * When r is empty (from tk_http_serveworkers_w), preserve the global
-     * routes registered via http_GET/http_POST/tk_http_get_handler. */
-    if (r->count > 0) {
+    /* If a router is provided, copy its routes into the global table.
+     * If NULL, use the global route_table as-is (already populated by
+     * http_GET/http_POST/tk_http_get_handler calls). */
+    if (r) {
         route_count = r->count;
         memcpy(route_table, r->routes, (size_t)r->count * sizeof(Route));
     }
@@ -1187,7 +1187,6 @@ static void worker_loop(int srv_fd, TkHttpRouter *r)
 TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
                               uint64_t port, uint64_t nworkers)
 {
-    if (!r) return TK_HTTP_ERR_SOCKET;
 
     /* nworkers == 0: auto-detect CPU count (Story 49.6.5) */
     if (nworkers == 0) {

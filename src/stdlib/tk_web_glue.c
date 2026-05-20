@@ -872,10 +872,9 @@ int64_t tk_http_servevhoststls(int64_t port, int64_t cert_ptr, int64_t key_ptr) 
 int64_t tk_http_serveworkers_w(int64_t port, int64_t workers) {
     int p = (int)port;
     if (p <= 0 || p > 65535) p = 8080;
-    TkHttpRouter *r = http_router_new();
-    if (!r) return -1;
-    TkHttpErr err = http_serve_workers(r, NULL, (uint64_t)p, (int)workers);
-    http_router_free(r);
+    /* Pass NULL router — worker_loop will use the global route_table
+     * which already has all handlers registered via http_GET/http_POST. */
+    TkHttpErr err = http_serve_workers(NULL, NULL, (uint64_t)p, (int)workers);
     return (err == TK_HTTP_OK) ? 0 : -1;
 }
 
