@@ -491,7 +491,7 @@ Stories for features explicitly deferred in the specification, with target versi
 | 76.1.9b | Name resolution: free-variable analysis for closures | done | 2026-04-30 | — | **P1** In resolve_node: when entering NODE_CLOSURE, compute capture set (variables referenced from ancestor scopes). Store on CaptureInfo side table. |
 | 76.1.9c | Codegen: lifted functions + environment struct | done | 2026-05-01 | — | **P1** Emit @closure.N with env parameter. At creation: malloc env struct, store captured values, package as {fn_ptr, env_ptr}. Update &name to produce null-env pair for uniformity. |
 | 76.1.9d | Runtime: update handler dispatch for closure pairs | done | 2026-05-01 | — | **P1** Update tk_http_get_handler etc. to unpack {fn_ptr, env_ptr} and pass env as first arg. Backward compatible: bare refs have env=null. |
-| 76.1.10 | Tokenizer vocabulary v0.3 formalisation | planned | — | **P1** Promoted to normative in spec S24.7. Formalise the canonical BPE merge list. Depends on Phase 2 tokenizer retrain (Epic 23). |
+| 76.1.10 | Tokenizer vocabulary v0.3 formalisation | done | 2026-05-24 | **P1** Section 24.7 rewritten: 7 subsections covering vocab params (16K), training methodology, JSON format, canonical location (HF), measured 52% reduction, use cases, normative status. Section 7.5 cross-referenced. |
 | 76.1.3a | Implement MVS resolver and pkg.toml parser | done | 2026-05-02 | **P2** C99 module: TOML parser, SemVer comparator, MVS algorithm, lock file read/write. 64 tests. |
 | 76.1.3b | Build `tkc pkg` CLI commands | backlog | — | **P2** init/add/remove/resolve/fetch/list. Depends on 76.1.3a. |
 | 76.1.3c | Integrate package resolver into compiler import path | backlog | — | **P2** Depends on 76.1.3a+b. |
@@ -4181,7 +4181,7 @@ The ooke web framework needs proper support for serving arbitrary static files (
 | 97.15 | Runtime: fix json.print for all types | done | 2026-05-23 | tk_json_print now detects strings, arrays, integers. Heuristic: printable ASCII = string, arr[-1] = array length. |
 | 97.16 | Add toke to GitHub Linguist for syntax detection | done | 2026-05-24 | Submission prepared in linguist-submission/: languages.yml entry, 5 sample .tk files, PR description template. Ready to submit. |
 | 97.17 | Console: show success/error rate on requests | done | 2026-05-24 | Success rate in admin + dashboard. Colour-coded: green >90%, yellow >70%, red. Counts from DynamoDB usage scan. |
-| 97.18 | SageMaker: deploy AWQ 4-bit model on real-time endpoint | review | 2026-05-20 | AWQ model on S3 (5.3GB). Test script at /private/tmp/test_awq_endpoint.sh. Console start_endpoint updated: creates AWQ model (QUANTIZE=awq) + config (toke-7b-gate2-config-awq) if missing, then starts endpoint. Ready to test. |
+| 97.18 | SageMaker: deploy AWQ 4-bit model on real-time endpoint | done | 2026-05-24 | AWQ endpoint verified InService. 4/4 test prompts compiled via api.tokelang.dev. Console start/stop working with error checking and auto-shutdown cron. |
 | 97.19 | Console: admin endpoint start/stop control | done | 2026-05-24 | Admin: Start/Stop buttons with status badge. Users: offline banner + Request Online. Online requests in DynamoDB. |
 
 ### Epic 96 — Research Review Response and v0.3 Lock
@@ -4210,7 +4210,26 @@ Ensure all IDE integrations, linters, and developer tools use v0.3 syntax (lower
 | 98.3 | LSP server: fix type names and array syntax for v0.3 | done | 2026-05-24 | $int→$i64, $float→$f64, $nil→$void. [$str]→@($str). Hover text lowercased. TYPE_SIGILS and TOKE_KEYWORDS fixed. |
 | 98.4 | VS Code extension: fix language-configuration.json for v0.3 | done | 2026-05-24 | Removed [] from brackets, autoClosingPairs, surroundingPairs. |
 | 98.5 | Tree-sitter grammar: migrate from Phase 1 to v0.3 | done | 2026-05-24 | Full rewrite: lowercase keywords, $sigil types, @() arrays, removed [], mt keyword, lp infinite form. Test corpus + highlight queries updated. |
-| 98.6 | VS Code extension: publish to Marketplace | planned | | Needs icon (128x128), screenshots (highlighting, diagnostics, snippets). Publisher: tokelang. |
+| 98.6 | VS Code extension: publish to Marketplace | done | 2026-05-24 | Published tokelang.toke-language v0.1.0. Icon from website favicon. marketplace.visualstudio.com/items?itemName=tokelang.toke-language |
+| 98.16 | VS Code extension: companion file side-by-side | done | 2026-05-24 | Published v0.2.2. Auto-opens .tkc.md/.tkc.yaml/.tkc.json beside .tk files. Command palette, status bar indicator, file watcher, toke.companion.autoOpen setting. esbuild bundling fix. |
+
+### Epic 99 — Publishing and Distribution
+
+Publish toke tooling, models, and packages to standard registries for developer adoption.
+
+| ID | Story | Status | Date | Notes |
+|----|-------|--------|------|-------|
+| 99.1 | npm: publish @tokelang/mcp-server | done | 2026-05-24 | Published @tokelang/mcp-server@0.1.0. 30 files, 42.1 kB. npx @tokelang/mcp-server to run. |
+| 99.2 | GitHub Linguist: submit PR for .tk language recognition | blocked | 2026-05-24 | PR github-linguist/linguist#7979 rejected — needs real-world usage outside author repos and proper CONTRIBUTING.md template. Re-attempt after external adoption + whitepaper (99.11). |
+| 99.11 | Whitepaper: toke as a research language, not AI-generated slop | planned | | Write a whitepaper addressing the "AI-generated sloplang" dismissal. Cover: (1) 3-month research programme with formal gates, pre-registered criteria, and falsification methodology (2) 8 independent research review teams (T1-T8) with structured feedback (3) Formal language spec (v0.3, 3400+ lines, EBNF grammar, 13 keywords, LL(1) parser) (4) Reference compiler in C with LLVM backend, 62+ conformance tests, structured JSON diagnostics (5) Gate 1 PASS (12.5% token reduction, 63.7% Pass@1), Gate 2 PASS (100% compile, 84% via API) (6) Real applications: ooke (CMS/web framework serving tokelang.dev), loke (production stdlib with 38 modules), moke (mobile framework) (7) Purpose-built 16K BPE tokenizer with 52% measured reduction vs cl100k (8) Developer tooling: VS Code extension, LSP, MCP server (15 tools), tree-sitter grammar, npm packages (9) Published model on HuggingFace, API at api.tokelang.dev, developer console (10) Curriculum training pipeline with 73K records across 6 phases. Target: academic venues, HN, language design communities. |
+| 99.3 | Open VSX: publish extension for VS Codium/Gitpod/Theia | done | 2026-05-24 | Published tokelang.toke-language v0.2.2 to open-vsx.org. Namespace created. Available for VS Codium, Gitpod, Theia. |
+| 99.4 | npm: publish toke-lsp as standalone package | done | 2026-05-24 | Published @tokelang/lsp@0.1.0. 3 files, 9.4 kB. npm install -g @tokelang/lsp then toke-lsp --stdio. Needs vscode-languageserver dep added for v0.1.1. |
+| 99.5 | Homebrew: create tap for tkc compiler | done | 2026-05-24 | Created homebrew-toke/ with Formula/tkc.rb (3 platforms, GitHub Release asset URLs). SHA256 placeholders — fill after first `git tag v0.3.0 && git push --tags`. |
+| 99.9 | CI: release binary pipeline for tkc | done | 2026-05-24 | release.yml: 4-platform matrix (linux x86_64/arm64, macOS arm64/x86_64), conformance gate, -O2 build, tar.gz with tkc+stdlib+vendor, SBOM, cosign signing, SHA-256 checksums, GitHub Release. ci.yml: build+conform+lint on push/PR. |
+| 99.10 | npm: publish @tokelang/tkc binary wrapper | done | 2026-05-24 | Created npm-tkc/ with root @tokelang/tkc + 4 platform packages (darwin-arm64/x64, linux-x64/arm64). postinstall.js detects platform and copies binary. Placeholders — publish after first CI release. |
+| 99.6 | PyPI: publish toke-tokenizer Python bindings | review | 2026-05-24 | Package built at toke-tokenizer/python/. Pure Python, 274KB wheel. encode/decode/count_tokens + string normalisation. Tested. Ready to publish to PyPI. |
+| 99.7 | Ollama: publish GGUF model for local inference | planned | | Convert AWQ model to GGUF format (llama.cpp compatible). Create Modelfile, publish to Ollama registry. Users run `ollama pull karwalski/toke` for local inference without cloud. Enables offline toke code generation. |
+| 99.8 | Docker Hub: publish TGI container with model | planned | | Pre-built Docker image with TGI + toke model weights. Self-hosted inference: `docker run -p 8080:80 karwalski/toke-inference`. Include docker-compose.yml with GPU support. For users who want to self-host the API without SageMaker. |
 | 98.7 | Lambda system prompt: add keyword warnings and fix return syntax | done | 2026-05-24 | Lists all 13 keywords. Warns bare i= is import. Requires let in loop init. Shows both < and rt return forms. Uses idx not i in examples. |
 | 98.8 | Docs: fix return statement page to document both < and rt | done | 2026-05-24 | statements.md, toke-spec-prompt.md, cli-tool.md updated. Removed "There is no return keyword" claim. |
 | 98.9 | Console: generated code feedback channel | done | 2026-05-24 | Dashboard shows Compiles/Runs/Correct Yes/No buttons + commentary after generation. Saves to DynamoDB as type=generation_feedback. CSRF protected. Lambda returns feedback hint in response. |

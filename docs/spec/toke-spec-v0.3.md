@@ -347,7 +347,7 @@ The purpose-built toke BPE tokenizer is trained on the default-syntax corpus and
 
 **Common compound patterns:** `io.println(`, `main():i64{`, `.len`, `.get(`
 
-The Phase 1 tokenizer (8K vocab, trained on legacy corpus) achieved 13.1% token reduction vs cl100k_base. The Phase 2 purpose-built BPE tokenizer (16K vocab, trained on 25,953 programs) achieves 52% average token reduction vs cl100k_base across 42 benchmarks. For example, a recursive fibonacci program uses 14 toke BPE tokens vs 27 for Python on cl100k. Patterns like `m=`, `f=main():i64{`, and `i=j:std.json` merge into single tokens.
+The Phase 1 tokenizer (8K vocab, trained on legacy corpus) achieved 12.5% token reduction vs cl100k_base. The v0.3 purpose-built BPE tokenizer (16K vocab, trained on 25,953 normalised programs) achieves 52% average token reduction vs cl100k_base across 42 benchmarks. For example, a recursive fibonacci program uses 14 toke BPE tokens vs 27 for Python on cl100k. Patterns like `m=`, `f=main():i64{`, and `i=j:std.json` merge into single tokens. See Section 24.7 for the full normative vocabulary specification.
 
 ---
 
@@ -2927,13 +2927,64 @@ A typed binary intermediate representation for toke programmes suitable for dist
 
 A design document for the `.tkir` binary IR format — covering file layout, type encoding, register-based SSA instruction set (~35 opcodes), export/import tables, and a four-phase migration path — is maintained at `docs/architecture/binary-ir-design.md`.
 
-### 24.7 Tokenizer Vocabulary
+### 24.7 Tokenizer Vocabulary [N]
 
-**Status: PROMOTED TO NORMATIVE — Target: v0.3**
+**Status: NORMATIVE**
 
-The toke BPE tokenizer vocabulary is a first-class language artifact. The canonical vocabulary lists the keywords, common stdlib identifiers, and common operator sequences that any toke-aware tokenizer should treat as atomic tokens.
+The toke BPE tokenizer vocabulary is a first-class normative language artifact. Conforming implementations that perform token counting or compression measurement MUST use the canonical merge list defined here.
 
-The 8K BPE tokenizer has been trained on the toke corpus. Phase 2 retraining is pending completion of expanded corpus coverage. The full vocabulary specification will be maintained as a companion document referenced from this specification.
+#### 24.7.1 Vocabulary Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| Algorithm | Byte-Pair Encoding (BPE) |
+| Vocabulary size | 16,384 tokens |
+| Merge count | 16,295 merges |
+| Training corpus | Normalised v0.3 toke programs (25,953 files) |
+| Corpus normalisation | String literal contents replaced with `_` |
+| Character set | 55-character default-syntax alphabet |
+| Special tokens | `<\|endoftext\|>` (id 0), `<pad>` (id 1), `<newline>` (id 2) |
+| Pre-tokenizer | Newline-isolated split (each `\n` becomes a separate token boundary) |
+
+#### 24.7.2 Training Methodology
+
+The tokenizer is trained exclusively on toke source code normalised to the default (55-character) syntax. Before training, all string literal contents are replaced with a single underscore character (`_`), ensuring the vocabulary allocates capacity to language structure rather than arbitrary string payloads. The training corpus consists of programs that pass the v0.3 compiler without error.
+
+#### 24.7.3 Canonical Format
+
+The tokenizer is distributed as a single JSON file conforming to the HuggingFace `tokenizers` library schema (version `"1.0"`). The file contains:
+
+- `model.type`: `"BPE"`
+- `model.vocab`: mapping from token string to integer id (16,384 entries)
+- `model.merges`: ordered list of merge rules (16,295 entries)
+- `added_tokens`: special token definitions
+- `pre_tokenizer`: newline-isolation configuration
+
+#### 24.7.4 Canonical Location
+
+The authoritative tokenizer artifact is published at:
+
+- **HuggingFace:** `karwalski/toke-tokenizer`
+- **Repository:** `toke-tokenizer/tokenizer_v03.json`
+
+#### 24.7.5 Measured Performance
+
+The v0.3 tokenizer achieves approximately 52% fewer tokens than OpenAI's cl100k_base tokenizer when encoding toke source code, measured across 42 benchmark programs. For comparison, the Phase 1 tokenizer (8K vocab, legacy corpus) achieved 12.5% reduction.
+
+Example: a recursive Fibonacci implementation uses 14 toke BPE tokens vs 27 tokens for equivalent Python under cl100k_base.
+
+#### 24.7.6 Use Cases
+
+- **Token budget estimation:** tools can predict LLM context usage for toke source
+- **Compression ratio measurement:** benchmark comparisons against general-purpose tokenizers
+- **Training data preparation:** segmentation of toke source for language model training
+- **Conformance testing:** verifying that syntax changes do not regress token efficiency
+
+#### 24.7.7 Normative Status and Versioning
+
+The merge list (`model.merges`) is a **normative artifact**. Any change to the merge list — including reordering, additions, or deletions — constitutes a vocabulary version change and MUST be accompanied by a spec version bump. The vocabulary version is tied to the spec version (v0.3 vocabulary accompanies the v0.3 spec).
+
+Implementations MAY extend the vocabulary with additional special tokens for tool-specific purposes, provided the base 16,384-token vocabulary and merge ordering remain unchanged.
 
 ### 24.8 Closures and Higher-Order Functions
 

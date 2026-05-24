@@ -11,66 +11,106 @@ permissions:
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
-  # Build matrix: compile tkc on every target platform
+  # Build matrix: compile tkc on every target platform and package release
   # ────────────────────────────────────────────────────────────────────────────
   build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            artifact: tkc-linux-x86_64
-            install_deps: sudo apt-get install -y llvm-dev clang
-          - os: macos-latest
-            artifact: tkc-macos-arm64
-            install_deps: brew install llvm
+          - target: linux-x86_64
+            runner: ubuntu-latest
+            os: linux
+            arch: x86_64
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            os: linux
+            arch: arm64
+          - target: macos-arm64
+            runner: macos-14
+            os: macos
+            arch: arm64
+          - target: macos-x86_64
+            runner: macos-13
+            os: macos
+            arch: x86_64
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install toolchain
-        run: ${{ matrix.install_deps }}
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
 
       - name: Conformance gate
-        # Release is blocked if any conformance test fails.
         run: make conform
 
       - name: Build release binary
-        run: make CFLAGS="-O2 -DNDEBUG"
+        env:
+          SOURCE_DATE_EPOCH: ${{ github.event.head_commit.timestamp && '0' || '0' }}
+        run: |
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
+          make CFLAGS="-std=c99 -D_GNU_SOURCE -O2 -DNDEBUG -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -DTKC_STDLIB_DIR='\"./src/stdlib\"'"
 
-      - name: Rename binary for platform
-        run: cp tkc ${{ matrix.artifact }}
+      - name: Package release tarball
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          STAGING="tkc-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}"
+          mkdir -p "${STAGING}/src/stdlib"
+          mkdir -p "${STAGING}/stdlib/vendor"
+
+          # Compiler binary
+          cp toke "${STAGING}/tkc"
+          chmod +x "${STAGING}/tkc"
+
+          # stdlib C sources (needed for linking user programs)
+          cp src/stdlib/*.c src/stdlib/*.h "${STAGING}/src/stdlib/" 2>/dev/null || true
+
+          # stdlib .tki interface files
+          cp stdlib/*.tki "${STAGING}/stdlib/" 2>/dev/null || true
+
+          # Vendor sources (cmark, tomlc99)
+          cp -r stdlib/vendor/cmark "${STAGING}/stdlib/vendor/"
+          cp -r stdlib/vendor/tomlc99 "${STAGING}/stdlib/vendor/"
+
+          # LICENSE
+          cp LICENSE "${STAGING}/"
+
+          tar czf "${STAGING}.tar.gz" "${STAGING}"
+          echo "TARBALL=${STAGING}.tar.gz" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME=tkc-${{ matrix.target }}" >> "$GITHUB_ENV"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          name: tkc-${{ matrix.target }}
+          path: ${{ env.TARBALL }}
           retention-days: 1
 
   # ────────────────────────────────────────────────────────────────────────────
-  # SBOM + signing: runs once on Linux after both builds succeed
-  # SBOM and signature are platform-independent release metadata.
+  # SBOM + signing + release: runs once on Linux after all builds succeed
   # ────────────────────────────────────────────────────────────────────────────
-  sbom-and-sign:
-    name: SBOM and signing (Linux)
+  release:
+    name: SBOM, signing, and release
     runs-on: ubuntu-latest
     needs: build
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install toolchain
-        run: sudo apt-get install -y llvm-dev clang
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
 
-      - name: Rebuild binary (signing host)
-        run: make CFLAGS="-O2 -DNDEBUG"
+      - name: Rebuild binary for signing
+        run: |
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
+          make CFLAGS="-std=c99 -D_GNU_SOURCE -O2 -DNDEBUG -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -DTKC_STDLIB_DIR='\"./src/stdlib\"'"
 
       # ── SBOM ──────────────────────────────────────────────────────────────
-      # syft inspects the compiled binary and its source files.
-      # tkc has zero external runtime dependencies beyond libc (system-provided).
-      # The SBOM will therefore list only the tkc sources and glibc as components.
       - name: Install syft
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
@@ -83,9 +123,6 @@ jobs:
         run: sha256sum tkc-sbom.spdx.json > tkc-sbom.spdx.json.sha256
 
       # ── Binary signing (cosign keyless via GitHub Actions OIDC) ───────────
-      # No private key is stored or rotated.  cosign exchanges the OIDC token
-      # issued by GitHub Actions for a short-lived Fulcio certificate.
-      # The signing event is recorded permanently in the Rekor transparency log.
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
@@ -95,10 +132,7 @@ jobs:
         run: cosign sign-blob --yes tkc > tkc.sig
 
       # ── Tamper-detection test ─────────────────────────────────────────────
-      # Verifies that a byte-modified binary fails cosign verification.
-      # The test must exit non-zero on the tampered copy; if cosign
-      # incorrectly accepts the tampered binary the step fails the release.
-      - name: Tamper test — modified binary must fail verification
+      - name: Tamper test
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
@@ -109,36 +143,29 @@ jobs:
                --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}" \
                --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
                tkc-tampered 2>/dev/null; then
-            echo "ERROR: cosign accepted a tampered binary — aborting release" >&2
+            echo "ERROR: cosign accepted a tampered binary" >&2
             exit 1
           fi
           echo "Tamper test passed: tampered binary correctly rejected."
           rm tkc-tampered
 
-      # ── Download platform binaries built in the build matrix ──────────────
-      - name: Download Linux binary
+      # ── Download all platform tarballs ──────────────────────────────────
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: tkc-linux-x86_64
           path: release-artifacts/
+          merge-multiple: true
 
-      - name: Download macOS binary
-        uses: actions/download-artifact@v4
-        with:
-          name: tkc-macos-arm64
-          path: release-artifacts/
-
-      - name: Compute platform binary checksums
+      - name: Compute checksums
         working-directory: release-artifacts
-        run: sha256sum tkc-linux-x86_64 tkc-macos-arm64 > checksums.txt
+        run: sha256sum tkc-*.tar.gz > checksums.txt
 
       # ── Publish GitHub release ────────────────────────────────────────────
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release-artifacts/tkc-linux-x86_64
-            release-artifacts/tkc-macos-arm64
+            release-artifacts/tkc-*.tar.gz
             release-artifacts/checksums.txt
             tkc-sbom.spdx.json
             tkc-sbom.spdx.json.sha256
@@ -146,35 +173,42 @@ jobs:
           body: |
             ## tkc ${{ github.ref_name }}
 
-            ### Artifacts
+            ### Platform binaries
 
-            | File | Description |
-            |------|-------------|
-            | `tkc-linux-x86_64` | Compiler binary — Linux x86-64 |
-            | `tkc-macos-arm64`  | Compiler binary — macOS ARM64  |
-            | `checksums.txt`    | SHA-256 checksums for platform binaries |
-            | `tkc-sbom.spdx.json` | Software Bill of Materials (SPDX format) |
-            | `tkc-sbom.spdx.json.sha256` | SHA-256 checksum of the SBOM |
-            | `tkc.sig` | cosign keyless signature bundle (Rekor-backed) |
+            | File | Platform |
+            |------|----------|
+            | `tkc-${{ github.ref_name }}-linux-x86_64.tar.gz` | Linux x86-64 |
+            | `tkc-${{ github.ref_name }}-linux-arm64.tar.gz` | Linux ARM64 |
+            | `tkc-${{ github.ref_name }}-macos-arm64.tar.gz` | macOS ARM64 (Apple Silicon) |
+            | `tkc-${{ github.ref_name }}-macos-x86_64.tar.gz` | macOS x86-64 (Intel) |
+            | `checksums.txt` | SHA-256 checksums for all tarballs |
+            | `tkc-sbom.spdx.json` | Software Bill of Materials (SPDX) |
+            | `tkc.sig` | cosign keyless signature bundle |
+
+            ### Install
+
+            ```sh
+            tar xzf tkc-${{ github.ref_name }}-linux-x86_64.tar.gz
+            cd tkc-${{ github.ref_name }}-linux-x86_64
+            ./tkc --version
+            ```
+
+            ### Each tarball contains
+
+            - `tkc` — the compiler binary
+            - `src/stdlib/` — C sources needed for linking user programs
+            - `stdlib/*.tki` — interface files for standard library modules
+            - `stdlib/vendor/` — vendored cmark and tomlc99 sources
+            - `LICENSE`
 
             ### Verifying the binary
 
-            See [docs/security/release-signing.md](https://github.com/${{ github.repository }}/blob/main/docs/security/release-signing.md)
-            for full verification instructions.
-
-            Quick verify:
+            See [docs/security/release-signing.md](https://github.com/${{ github.repository }}/blob/main/docs/security/release-signing.md) for full instructions.
 
             ```sh
             cosign verify-blob \
               --bundle tkc.sig \
               --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/${{ github.ref_name }}" \
               --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-              tkc-linux-x86_64   # or tkc-macos-arm64
-            ```
-
-            ### SBOM
-
-            ```sh
-            sha256sum -c tkc-sbom.spdx.json.sha256
-            syft convert tkc-sbom.spdx.json -o table
+              tkc-${{ github.ref_name }}-linux-x86_64/tkc
             ```
