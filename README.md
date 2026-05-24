@@ -66,6 +66,53 @@ Or use the `toke` wrapper to compile and run in one step:
 ./toke hello.tk
 ```
 
+## Install & Use
+
+**Build from source** (current primary method):
+
+```bash
+git clone https://github.com/karwalski/toke.git
+cd toke
+make
+./build/tkc --version
+```
+
+**Homebrew** (coming soon):
+
+```bash
+brew tap karwalski/toke && brew install tkc
+```
+
+**Run the model locally** via Ollama:
+
+```bash
+ollama run karwalski/toke
+```
+
+**Generate toke via API** (free tier, no credit card):
+
+```bash
+curl -X POST https://api.tokelang.dev/v1/generate \
+  -H "X-Api-Key: YOUR_KEY" \
+  -d '{"description": "Sum an array"}'
+```
+
+## Tooling & Integrations
+
+| Platform | Package | Install |
+|----------|---------|---------|
+| VS Code | `tokelang.toke-language` | Extensions: search "Toke" |
+| Open VSX | `tokelang.toke-language` | [open-vsx.org/extension/tokelang/toke-language](https://open-vsx.org/extension/tokelang/toke-language) |
+| npm (MCP) | `@tokelang/mcp-server` | `npx @tokelang/mcp-server` |
+| npm (LSP) | `@tokelang/lsp` | `npm install -g @tokelang/lsp` |
+| PyPI | `toke-tokenizer` | `pip install toke-tokenizer` |
+| Ollama | `karwalski/toke` | `ollama run karwalski/toke` |
+| HuggingFace | Model | [huggingface.co/karwalski/toke](https://huggingface.co/karwalski/toke) |
+| HuggingFace | Tokenizer | [huggingface.co/karwalski/toke-tokenizer](https://huggingface.co/karwalski/toke-tokenizer) |
+| Docker | Self-host | `docker compose up` (see `toke-model/docker/`) |
+| API | REST | [api.tokelang.dev](https://api.tokelang.dev) |
+| Console | Web UI | [console.tokelang.dev](https://console.tokelang.dev) |
+
 ## Project Structure
 
 | Directory | Contents |
