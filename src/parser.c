@@ -1110,6 +1110,14 @@ static Node *parse_stmt(Parser *p) {
     switch(peek(p)){
     case TK_KW_LET:{
         adv(p); Token *nt=cur(p);
+        /* Detect Rust-style 'let mut x = expr' and recover */
+        if(peek(p)==TK_KW_MUT&&peek_at(p,1)==TK_IDENT){
+            ewarn(p,W2021,nt,
+                  "Rust-style 'let mut x' detected; toke uses "
+                  "'let x=mut.expr' for mutable bindings",
+                  "replace 'let mut x = expr' with 'let x=mut.expr'");
+            adv(p); nt=cur(p); /* skip 'mut', land on identifier */
+        }
         if(peek(p)==TK_BOOL_LIT){
             eerr(p,1010,nt,"reserved literal cannot be used as an identifier");
             sync(p);return NULL;}

@@ -253,7 +253,7 @@ Write the module declarations and import statements for each file. You can stub 
 ## Key takeaways
 
 - `i=alias:module.path;` imports a module under a local alias
-- Standard library lives under `std.*` (11 modules)
+- Standard library lives under `std.*` (38 modules)
 - Interface files (`.tki`) contain only public signatures -- no bodies
 - Each file is independently type-checkable given its import interfaces
 - One primary export per file is the recommended convention

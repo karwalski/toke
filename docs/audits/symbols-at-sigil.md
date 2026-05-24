@@ -146,7 +146,7 @@ The parser supports `[]` syntax when `PROFILE_LEGACY` is active (lines 452-464 f
 
 **Technically yes** -- `[]` does the same job in legacy mode. The design choice to use `@` was deliberate:
 
-1. **Character budget:** Default syntax has 56 characters. `[` and `]` were explicitly excluded from default mode (spec line 286: "Square brackets `[` `]` -- not used; array literals use `@(...)`, array types use `@$type`"). The `@` sigil reuses one character instead of two.
+1. **Character budget:** Default syntax has 55 characters. `[` and `]` were explicitly excluded from default mode (spec line 286: "Square brackets `[` `]` -- not used; array literals use `@(...)`, array types use `@$type`"). The `@` sigil reuses one character instead of two.
 
 2. **Visual distinctness:** `@` is visually distinct from parentheses/braces, making collection types easy to spot in dense toke code.
 

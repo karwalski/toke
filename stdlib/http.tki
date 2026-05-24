@@ -124,6 +124,8 @@
     {"kind": "func", "name": "http.getstaticmime", "params": ["str", "str", "str"],                  "return": "i64",
      "note": "path; body; mime_type — register static GET route with explicit Content-Type"},
     {"kind": "func", "name": "http.setcors",       "params": ["str"],                                 "return": "i64",
-     "note": "origins — set Access-Control-Allow-Origin for all responses (e.g. \"*\" or \"http://localhost:11432\")"}
+     "note": "origins — set Access-Control-Allow-Origin for all responses (e.g. \"*\" or \"http://localhost:11432\")"},
+    {"kind": "func", "name": "http.servepages",   "params": ["str", "str"],                           "return": "i64",
+     "note": "pages_dir; templates_dir — scan pages_dir for .tkt template files and serve them with layout/block/yield directive support. Pages are re-read from disk on each request. Returns number of routes registered."}
   ]
 }

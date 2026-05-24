@@ -31,7 +31,7 @@ Current target languages (Python, TypeScript, Go, Java) were designed for human 
 
 toke eliminates this overhead at the language level:
 
-- **40--75% fewer tokens** than equivalent Python, C, or Java programs when documentation standards are applied.
+- **52% average token reduction** vs cl100k_base across 42 benchmarks with the purpose-built BPE tokenizer (16K vocab, trained on 25,953 programs).
 - **63.7% first-pass compilation accuracy** (Pass@1) measured at Gate 1 -- reducing the costly generate-compile-repair loop.
 - **Structured JSON diagnostics** with stable error codes enable mechanical repair without parsing English prose.
 - **No comment syntax** -- documentation lives outside source files, so token cost is fixed regardless of coding standards.
@@ -89,7 +89,7 @@ The consortium maintains and expands the validated training corpus:
 - Currently 46,754 validated programs generated across 4 stages with differential testing against 3 models.
 - Compiler-in-the-loop validation ensures every program in the corpus compiles and produces correct output.
 - Shared corpus enables member organisations to fine-tune their own models without duplicating the expensive generation and validation pipeline.
-- Purpose-built BPE tokenizer (vocabulary size 8K, 70.2% utilisation at Gate 1) shared across members.
+- Purpose-built BPE tokenizer (16K vocabulary, trained on 25,953 programs, 52% average token reduction vs cl100k_base) shared across members.
 
 ### 3.6 Enterprise Support Tiers
 
@@ -159,7 +159,7 @@ A C99 compiler with an LLVM backend producing native binaries for x86-64 and ARM
 
 ### 5.5 Purpose-Built Tokenizer
 
-BPE tokenizer trained on the toke corpus. 8K vocabulary, 70.2% utilisation, fertility 0.374 at Gate 1. Retrain on default (56-character) syntax corpus is planned for Gate 2.
+BPE tokenizer trained on the toke corpus. Phase 2 purpose-built tokenizer: 16K vocabulary, trained on 25,953 programs, 52% average token reduction vs cl100k_base across 42 benchmarks. Phase 1 tokenizer (8K vocab) achieved 70.2% utilisation, fertility 0.374 at Gate 1.
 
 ### 5.6 MCP Server for IDE Integration
 
@@ -271,7 +271,6 @@ This proposal is aspirational but grounded. Transparency about where the project
 
 **What does not yet exist:**
 - A second independent implementation of the language (required for spec 1.0).
-- A purpose-built tokenizer retrained on the default (56-character) syntax.
 - Gate 2 completion (on hold, waiting for local compute hardware).
 - Any enterprise adopter or production deployment.
 - A package ecosystem or third-party library registry.

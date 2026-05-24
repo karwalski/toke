@@ -58,7 +58,7 @@ The spec (S7.2) explicitly lists `\` under excluded characters: it is not assign
 
 **Yes.** The spec's position is:
 
-- Section 7.1 character table: `"` is NOT counted in the 56 characters.
+- Section 7.1 character table: `"` is NOT counted in the 55 characters.
 - Section 7.1 note: "The double-quote `"` appears in source as the string delimiter for string literals but is not a structural symbol -- it is consumed by the lexer during string literal scanning and never produces a token. It is analogous to whitespace in this regard."
 - Appendix operators table: repeats the same note.
 
@@ -66,7 +66,7 @@ This is defensible because:
 
 1. **No token is emitted.** Unlike `(` which produces `TK_LPAREN`, `"` produces nothing -- it triggers string scanning but has no independent token kind.
 2. **Analogy to whitespace is apt.** Whitespace separates tokens but is not itself a token. `"` delimits string content but is not itself a token.
-3. **The 56-char count is about structural symbols** -- characters that participate in the grammar as tokens. `"` participates at the lexer level only.
+3. **The 55-char count is about structural symbols** -- characters that participate in the grammar as tokens. `"` participates at the lexer level only.
 4. **Precedent in other languages.** Most language specifications treat string delimiters as lexer-level constructs rather than grammar-level operators.
 
 Minor inconsistency to note: the lexer.c header comment (line 18) lists both `"` and `\` in its "Symbols" line alongside `(`, `)`, etc. This is technically informal documentation (not the spec), but could confuse a reader. The comment is documenting "characters the lexer must handle" rather than "structural symbols."

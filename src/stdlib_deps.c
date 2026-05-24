@@ -22,7 +22,7 @@
 static const StdlibModule stdlib_table[] = {
     /* module          c_files                                  deps                                                                extra_flags */
     { "io",            "io_glue.c",                             "",                                                                 "" },
-    { "str",           "str.c str_glue.c",                      "",                                                                 "" },
+    { "str",           "str.c str_glue.c",                      "crypto time encoding",                                             "" },
     { "encoding",      "encoding.c encoding_glue.c",            "",                                                                 "" },
     { "env",           "env.c env_glue.c",                      "",                                                                 "" },
     { "file",          "file.c file_glue.c",                    "",                                                                 "" },
@@ -336,12 +336,48 @@ int resolve_stdlib_deps_imports_only(const char *stdlib_dir,
         }
     }
 
-    /* Always include tk_runtime.c + its deps (args.c, str.c) + glue for
-     * built-in array/map/str methods (.push, .get, .len, .append, etc.)
-     * which are used without explicit imports. */
-    snprintf(out->sources, sizeof out->sources,
-             "%s/tk_runtime.c %s/args.c %s/str.c %s/str_glue.c %s/collections_glue.c %s/collections.c",
-             stdlib_dir, stdlib_dir, stdlib_dir, stdlib_dir, stdlib_dir, stdlib_dir);
+    /* Always-needed modules: str, collections, args are used without
+     * explicit imports (built-in array/map/str methods like .push, .get, .len).
+     * Add them to the needed list so their transitive deps get resolved. */
+    static const char *core_modules[] = { "str", "collections", "args", NULL };
+    for (int i = 0; core_modules[i]; i++) {
+        if (!word_in_list(needed, core_modules[i])) {
+            size_t cur = strlen(needed);
+            snprintf(needed + cur, sizeof needed - cur,
+                     "%s%s", cur ? " " : "", core_modules[i]);
+        }
+    }
+
+    /* Re-run transitive closure with the core modules added */
+    changed = 1;
+    while (changed) {
+        changed = 0;
+        char snapshot2[2048];
+        snprintf(snapshot2, sizeof snapshot2, "%s", needed);
+        char *save3 = NULL;
+        char *tok3 = strtok_r(snapshot2, " ", &save3);
+        while (tok3) {
+            const StdlibModule *m = find_module(tok3);
+            if (m && m->deps[0]) {
+                char deps_copy2[512];
+                snprintf(deps_copy2, sizeof deps_copy2, "%s", m->deps);
+                char *save4 = NULL;
+                char *dep2 = strtok_r(deps_copy2, " ", &save4);
+                while (dep2) {
+                    if (!word_in_list(needed, dep2)) {
+                        size_t cur = strlen(needed);
+                        snprintf(needed + cur, sizeof needed - cur, " %s", dep2);
+                        changed = 1;
+                    }
+                    dep2 = strtok_r(NULL, " ", &save4);
+                }
+            }
+            tok3 = strtok_r(NULL, " ", &save3);
+        }
+    }
+
+    /* Always include tk_runtime.c */
+    snprintf(out->sources, sizeof out->sources, "%s/tk_runtime.c", stdlib_dir);
 
     /* Append .c files and vendor sources for each needed module */
     {

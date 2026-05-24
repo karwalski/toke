@@ -44,15 +44,15 @@ No offensive, trademarked, or culturally sensitive meanings were found for `oke`
 These names are actively in use or committed for development.
 
 ### toke — the language
-The core programming language, purpose-built for LLM code generation. Fewer tokens, faster inference, lower cost.
+The core programming language. 55-character alphabet, 13 keywords, LL(1) grammar. Purpose-built 16K BPE tokenizer achieves 52% token reduction vs cl100k. Gate 2 PASS (2026-05-22): 100% compilation Pass@1 on fine-tuned 7B model. 38 stdlib modules.
 **Traditional stack equivalent:** Programming language and compiler (Rust, Go, TypeScript).
 
-### ooke — CMS and web framework
-A CMS and web framework built on the toke language.
+### ooke — static site generator and web framework
+Static site generator and web framework built in toke. File-system routing, template engine, Markdown content, build and serve modes. Ships as a single binary. Serves [tokelang.dev](https://tokelang.dev) in production.
 **Traditional stack equivalent:** Web framework (Next.js, Django, Rails, Express).
 
 ### loke — intelligence layer
-A locally-run intelligence layer that sits between users, their data, and external LLMs — minimising token spend, maximising privacy, and keeping sensitive data on the user's device.
+A locally-run intelligence layer that sits between users, their data, and external LLMs. 698 files, 87,000 lines of toke. Multi-layer PII detection, token optimisation, intelligent routing, governance controls, memory palace, MCP framework. All processing on-device.
 **Traditional stack equivalent:** AI/ML inference layer (LangChain, vector DB, RAG pipeline).
 
 ### aoke — human experience physics
@@ -63,9 +63,9 @@ The topmost layer of the stack. Concerned with sound waves, light waves, percept
 The bottommost layer of the stack. Concerned with hardware, silicon, electrons, circuits — the physical substrate of computation.
 **Traditional stack equivalent:** Hardware, silicon, drivers, ISA, FPGA.
 
-### moke — fun layer / playground
-The donkey. Demo environments, sandboxes, playgrounds, experimental features. Originally a demo of loke. Retained as the project workhorse — the thing you ride when you're just messing around.
-**Traditional stack equivalent:** Sandbox, REPL, playground, demo environment.
+### moke — demo application
+Data analysis demo exercising loke's privacy pipeline, governance controls, and LLM integration end-to-end. 26-detector analysis engine, 9 Australian-themed datasets, client-side ML. Integrated into the loke project.
+**Traditional stack equivalent:** Reference application, demo, integration tests.
 
 ### woke — principles charter
 Reserved for the open source, transparent, free and fair principles of the toke projects. Not a software layer — a governance and values layer.
@@ -176,3 +176,4 @@ When assigning a new `*oke` name, follow these checks:
 | Date | Version | Change |
 |------|---------|--------|
 | 2026-04-06 | 0.1 | Initial draft. Established namespace registry, linguistic audit, layer architecture, and naming rules. |
+| 2026-05-23 | 0.2 | Updated assigned names with current production status (Gate 2 PASS, loke 87K lines, ooke serving tokelang.dev, moke reclassified as demo application). |

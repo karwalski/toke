@@ -12,7 +12,7 @@ A reverse-chronological record of major project milestones.
 - **(2026-04-15)** **Gate 2 ON HOLD**: Training corpus quality insufficient for reliable model training. Automated toke code generation produces too many syntax and semantic errors for the corpus to be useful without significant manual curation. Gate 2 evaluation paused until a higher-accuracy training corpus can be built, likely requiring local compute hardware (Mac Mini/Studio) for iterative retraining.
 - **(2026-04-15)** **Documentation consolidation**: All documentation merged into `~/tk/docs/` as single source of truth. Research and planning documents moved to `~/tk/research/`.
 - **(2026-04-12)** **Corpus overhaul complete**: 188,830 deduplicated records, 18,890 train + 994 eval rows in chat format with quality gates. Phase 1 data archived.
-- **(2026-04-05)** **Syntax frozen** at `v0.2-syntax-lock`. 56-char profile is the default ("toke"). 80-char profile available under `--legacy`.
+- **(2026-04-05)** **Syntax frozen** at `v0.2-syntax-lock`. 55-char profile is the default ("toke"). 80-char profile available under `--legacy`.
 - **(2026-04-03)** **Gate 1 PASS**: 12.5% token reduction vs. Python/Go/Rust equivalents; 63.7% Pass@1 (Qwen 2.5 Coder 7B + LoRA, 1,000 held-out tasks). Both thresholds exceeded (spec requires >= 10% reduction, >= 60% Pass@1).
 
 ## Q1 2026

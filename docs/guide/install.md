@@ -7,7 +7,7 @@ order: 12
 
 ## Prerequisites
 
-You need three things to build `tkc`:
+You need three things to build `toke`:
 
 | Dependency | Minimum version | Check with |
 |------------|----------------|------------|
@@ -48,17 +48,17 @@ sudo dnf install gcc make llvm llvm-devel
 Clone the repository and build:
 
 ```bash
-git clone https://github.com/karwalski/tkc.git
-cd tkc
+git clone https://github.com/karwalski/toke.git
+cd toke
 make
 ```
 
-This produces the `tkc` binary in the `build/` directory.
+This produces the `toke` binary in the project root.
 
 ## Verify the installation
 
 ```bash
-./build/tkc --version
+./toke --version
 ```
 
 You should see the compiler version and target triple printed to stdout.
@@ -69,7 +69,7 @@ Create a minimal toke program and compile it:
 
 ```bash
 echo 'm=test; f=main():i64{<42;};' > test.tk
-./build/tkc test.tk -o test
+./toke test.tk -o test
 ./test; echo $?
 ```
 
@@ -115,7 +115,7 @@ The output should include `arm64` on Apple Silicon machines.
 
 ## Supported targets
 
-`tkc` can produce native binaries for these platforms:
+`toke` can produce native binaries for these platforms:
 
 | Target | Architecture | Binary format |
 |--------|-------------|---------------|
@@ -126,5 +126,5 @@ The output should include `arm64` on Apple Silicon machines.
 Cross-compilation is supported via the `--target` flag:
 
 ```bash
-./build/tkc hello.tk -o hello --target x86_64-linux
+./toke hello.tk -o hello --target x86_64-linux
 ```

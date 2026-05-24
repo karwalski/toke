@@ -1901,7 +1901,7 @@ As a potential contributor or enterprise evaluator, I want an about page that ex
 Acceptance criteria:
 - About page with sections: Vision, Problem Statement, Approach, Design Principles, Open Source Commitment
 - Problem statement: LLMs waste tokens on verbose syntax, toke compresses code 3-5x vs Python while remaining human-writable
-- Design principles: toke character set (56 chars), LL(1) grammar, 12 keywords, everything is explicit
+- Design principles: toke character set (55 chars), LL(1) grammar, 13 keywords, everything is explicit
 - Open source section: MIT licence, contribution welcome, enterprise use encouraged
 - Enterprise section: toke is designed for companies building their own AI coding systems — lower inference cost, faster generation, deterministic compilation
 - Community section: how to participate, where to ask questions, contribution guidelines link

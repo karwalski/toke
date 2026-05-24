@@ -9,7 +9,7 @@ order: 5
 
 **Language name:** toke
 **Written shorthand:** tk
-**Compiler binary:** tkc
+**Compiler binary:** toke
 **File extension:** .tk
 **Package registry name:** tokelang
 **Specification status:** Draft — normative sections marked [N], informative sections marked [I]
@@ -267,7 +267,7 @@ Additional terms:
 | token | a single atomic lexical unit produced by the lexer |
 | tk token | an LLM vocabulary token in the tokenizer sense (distinguished from lexical token by context) |
 | legacy profile | the 80-character variant of the language using uppercase keywords and `[]` arrays; available via `--legacy` flag (see Appendix F) |
-| tkc | the reference compiler binary |
+| toke | the reference compiler binary |
 | arena | a lexically scoped memory region whose allocations are freed on scope exit |
 | diagnostic | a structured machine-readable compiler message |
 | repair loop | an automated cycle of generate, compile, extract diagnostic, fix, recompile |
@@ -347,7 +347,7 @@ The purpose-built toke BPE tokenizer is trained on the default-syntax corpus and
 
 **Common compound patterns:** `io.println(`, `main():i64{`, `.len`, `.get(`
 
-The Phase 1 tokenizer (8K vocab, trained on legacy corpus) achieves 13.1% token reduction vs cl100k_base. The Phase 2 retrained tokenizer on default syntax is estimated to achieve 40--75% fewer tokens than equivalent Python, C, or Java programs -- verified against a complete fibonacci benchmark program (~23 tokens vs 41--102 for other languages). The tokenizer is being finalised as part of Gate 2.
+The Phase 1 tokenizer (8K vocab, trained on legacy corpus) achieved 13.1% token reduction vs cl100k_base. The Phase 2 purpose-built BPE tokenizer (16K vocab, trained on 25,953 programs) achieves 52% average token reduction vs cl100k_base across 42 benchmarks. For example, a recursive fibonacci program uses 14 toke BPE tokens vs 27 for Python on cl100k. Patterns like `m=`, `f=main():i64{`, and `i=j:std.json` merge into single tokens.
 
 ---
 
@@ -2167,7 +2167,7 @@ POSIX-like system calls (thin wrappers).
 
 #### 16.50 std.test [I]
 
-Test assertions (used with `tkc --test`).
+Test assertions (used with `toke --test`).
 
 **Functions:**
 
@@ -2181,7 +2181,7 @@ Test assertions (used with `tkc --test`).
 
 ### 17.1 Required Phases
 
-A conforming tkc implementation shall provide the following phases in order:
+A conforming toke implementation shall provide the following phases in order:
 
 1. **Lexical analysis** — produces a flat token stream; no whitespace tokens
 2. **Parsing** — produces an AST; fails with structured E1xxx/E2xxx diagnostic on grammar violation
@@ -2238,7 +2238,7 @@ These targets ensure the compiler runs synchronously within LLM API call timeout
 ### 17.6 Standard Command-Line Interface
 
 ```
-tkc [flags] <source-files>
+toke [flags] <source-files>
 
 Flags:
   --target <arch-os>    compilation target (default: host)
@@ -2346,7 +2346,7 @@ Runtime traps emit the following record to stderr and exit with code 2:
 
 ## 19. Tooling Protocol [N]
 
-The tooling protocol defines a machine-callable interface for driving the tkc compiler programmatically. It supports the generate-compile-inspect-repair loop without shell invocation.
+The tooling protocol defines a machine-callable interface for driving the toke compiler programmatically. It supports the generate-compile-inspect-repair loop without shell invocation.
 
 ### 19.1 Transport
 
@@ -2388,7 +2388,7 @@ Every operation returns:
 {
   "request_id":   "<string: echoed from request>",
   "status":       "<ok|error>",
-  "tool_version": "<string: tkc version>",
+  "tool_version": "<string: toke version>",
   "elapsed_ms":   "<integer>",
   "diagnostics":  ["<diagnostic record per Section 18.1>"],
   "artefacts":    {
@@ -2607,7 +2607,7 @@ These properties make toke programmes safer to execute in LLM-driven generation 
 
 ## 23. Reference Implementation Requirements [N]
 
-The reference implementation (`tkc`) shall include:
+The reference implementation (`toke`) shall include:
 
 - compiler frontend (lexer, parser, name resolver, type checker, arena validator)
 - LLVM IR backend
@@ -2853,9 +2853,9 @@ version = "1.2.0"
 commit = "f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5"
 ```
 
-The lock file SHALL be committed to version control. When `pkg.lock` is present, `tkc pkg fetch` SHALL use the recorded commit hashes rather than re-resolving, ensuring bit-for-bit reproducible builds.
+The lock file SHALL be committed to version control. When `pkg.lock` is present, `toke pkg fetch` SHALL use the recorded commit hashes rather than re-resolving, ensuring bit-for-bit reproducible builds.
 
-If `pkg.toml` is modified (dependency added, removed, or constraint changed), the lock file is invalidated and must be regenerated via `tkc pkg resolve`.
+If `pkg.toml` is modified (dependency added, removed, or constraint changed), the lock file is invalidated and must be regenerated via `toke pkg resolve`.
 
 #### 24.3.6 Import Syntax Integration
 
@@ -2977,20 +2977,104 @@ Generic type parameters beyond built-in collection types are deferred to a futur
 
 A built-in `$option` type is deferred. In version 0.1, optionality is expressed through sum types: `t=$maybeuser{$some:$user;$none:bool}`. The `$option` type is a natural fit with `$some`/`$none` tags and is targeted for v0.4.
 
-### 24.11 Companion Files (.tkc) [N]
+### 24.11 Companion Files (.tkc.*) [N]
 
-**Status:** First-class language mechanism. Format reserved for v0.4.
+**Status:** First-class language mechanism. Convention established; format extensible.
 
-Every `.tk` source file may have an associated **companion file** with the `.tkc` extension. Companion files live alongside their source file and share the same base name (e.g., `main.tk` + `main.tkc`).
+Every `.tk` source file may have one or more associated **companion files** identified by the `.tkc` infix in their extension. Companion files live alongside their source file and share the same base name:
 
-Companion files are the designated mechanism for:
-- Human-readable documentation of toke programs
-- API documentation and metadata
-- Any non-code annotations associated with a source file
+```
+main.tk              source code (compiled)
+main.tkc.md          prose documentation (human + LLM readable)
+main.tkc.yaml        structured metadata (line-targeted annotations)
+main.tkc.json        machine metadata (IDE, training pipeline)
+```
 
-The internal format of `.tkc` files is reserved for specification in v0.4. Until the format is specified, implementations shall not assign semantics to `.tkc` file contents, but shall recognise `.tkc` files as belonging to the toke toolchain and shall not treat them as source input.
+#### 24.11.1 Extension Convention
 
-Companion files are part of the toke language design. Source code is kept comment-free (see Section 8.10); all documentation lives in companion files.
+The companion file extension is `.tkc.<format>` where `<format>` identifies the serialisation:
+
+| Extension | Format | Primary use |
+|-----------|--------|-------------|
+| `.tkc.md` | Markdown (freeform prose) | Module documentation, design rationale, LLM reasoning context |
+| `.tkc.yaml` | YAML (structured) | Per-function docs, line-targeted comments, parameter descriptions |
+| `.tkc.json` | JSON (machine) | IDE metadata, training pipeline labels, diagnostic annotations |
+
+The `.tkc.md` format is the **default and recommended** companion format. It is the format used by the loke project (699 companion files across 87K lines of toke).
+
+A bare `.tkc` extension (without format suffix) is recognised by the toolchain as equivalent to `.tkc.md`.
+
+#### 24.11.2 .tkc.md Convention (recommended)
+
+The `.tkc.md` companion is freeform Markdown prose. The convention established by loke (the largest toke codebase) is:
+
+- **First sentence:** what the module does
+- **Middle:** what it exports (types and functions by name)
+- **Last sentence:** what it depends on
+
+Example (`pipeline.tkc.md`):
+```
+Privacy pipeline API endpoint with full core engine integration. Exports get
+and post handlers. The post handler validates input, checks the governance
+kill switch, runs the privacy pipeline (regex + NER + Presidio), evaluates
+governance policy, routes to LLM, restores placeholders, and logs to the
+audit trail. Depends on std.http, std.json, core.privacy.pipeline,
+core.governance.killswitch, and core.storage.audit.
+```
+
+No front matter, no headings, no mandatory structure. Just prose that an LLM can consume as context and a human can scan quickly.
+
+#### 24.11.3 .tkc.yaml Convention (future)
+
+The `.tkc.yaml` format enables **line-targeted annotations** — comments associated with specific functions, bindings, or line ranges without appearing in the source:
+
+```yaml
+module: api.users
+functions:
+  getuser:
+    summary: Fetch user by ID from database
+    params:
+      id: The user's database primary key
+    returns: User struct or $apierr.$notfound
+    notes: Uses connection pooling; safe to call in hot path
+  createuser:
+    summary: Insert new user record
+    params:
+      name: Display name (1-100 chars)
+      email: Must be unique; validated by caller
+    returns: Created user with generated ID
+lines:
+  14: This guard prevents duplicate inserts under concurrent load
+  27: Intentionally using i64 not u64 — negative IDs reserved for system accounts
+```
+
+This format is reserved for v0.4 specification. The structure above is indicative, not normative.
+
+#### 24.11.4 .tkc.json Convention (future)
+
+The `.tkc.json` format is for machine consumers: IDE hover providers, training pipelines, diagnostic tools. Reserved for v0.4.
+
+#### 24.11.5 Compiler Interaction
+
+The compiler **never reads** companion files during compilation. Companion files have no effect on compilation, type checking, or code generation.
+
+The following tools **do read** companion files:
+- `toke --companion` — generates a `.tkc.md` skeleton from function signatures
+- IDE/LSP hover — displays companion content on hover (when available)
+- MCP server `toke.search_stdlib` — includes companion prose in search results
+- Training pipeline — companion content may be included as context in training records
+
+#### 24.11.6 Reasoning Channel
+
+Companion files serve as the **out-of-band reasoning channel** for LLM code generation (see [reasoning-channel.md](reasoning-channel.md)). The model can:
+
+1. Reason about the problem in `(* *)` blocks during generation (lexer discards these)
+2. Emit structured reasoning in the `.tkc.md` file alongside the source
+3. Read existing `.tkc.md` files as context when modifying a module
+
+This addresses chain-of-thought research findings (Reflexion: +11% on HumanEval) without inflating source token counts. Reasoning tokens and source tokens are separated by design.
+
+Companion files are part of the toke language design. Source code is kept comment-free (see Section 8.10); all documentation, reasoning, and annotations live in companion files.
 
 ### 24.13 Multimodal LLM Code Generation [I]
 
@@ -3398,8 +3482,8 @@ f=getuser(id:u64):$user!$usererr{
 ### F.6 Compiler Flag
 
 ```
-tkc --legacy source.tk        # compile in legacy mode
-tkc source.tk                  # compile in default mode (no flag needed)
+toke --legacy source.tk        # compile in legacy mode
+toke source.tk                  # compile in default mode (no flag needed)
 ```
 
 The deprecated flags `--phase1` and `--profile1` are aliases for `--legacy` and may be removed in a future version.

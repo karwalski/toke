@@ -40,7 +40,7 @@ This project uses the word "phase" in four distinct senses. To eliminate ambigui
 | Profile | Characters | Tokenizer | Status |
 |---------|-----------|-----------|--------|
 | Legacy (80 characters) | 26 lower + 26 upper + 10 digits + 18 symbols | Compatible with cl100k_base and existing LLM tokenizers | Historical — used for bootstrapping |
-| Default (56 characters) | 26 lower + 10 digits + 20 symbols, including `$` and `@` | Purpose-built BPE tokenizer trained on legacy corpus | Current — the normative toke syntax |
+| Default (55 characters) | 26 lower + 10 digits + 19 symbols, including `$` and `@` | Purpose-built BPE tokenizer (16K vocab, trained on 25,953 programs) | Current — the normative toke syntax |
 
 The default syntax eliminates all 26 uppercase letters. Type names use a `$`-prefixed lowercase form. Array literal syntax `[...]` becomes `@(...)`.
 

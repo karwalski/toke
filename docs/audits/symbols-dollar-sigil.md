@@ -8,7 +8,7 @@
 
 ## Summary
 
-The `$` sigil is a core structural symbol in toke's default syntax (56-char profile). It serves as a **prefix marker for type names and variant tags**, distinguishing them from plain identifiers. It is NOT part of the identifier token itself — the lexer emits `TK_DOLLAR` as a separate token, and the parser consumes it before reading the following `TK_IDENT`.
+The `$` sigil is a core structural symbol in toke's default syntax (55-char profile). It serves as a **prefix marker for type names and variant tags**, distinguishing them from plain identifiers. It is NOT part of the identifier token itself — the lexer emits `TK_DOLLAR` as a separate token, and the parser consumes it before reading the following `TK_IDENT`.
 
 ---
 

@@ -46,6 +46,8 @@
 #include "toml.h"
 #include "file.h"
 #include "crypto.h"
+#include "template.h"
+#include <dirent.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -770,6 +772,165 @@ int64_t tk_http_serve_staticdir_w(int64_t prefix_i64, int64_t root_i64) {
     return 0;
 }
 
+/* ── page directory handler (Story 95.2) ────────────────────────────── */
+/*
+ * http.servepages(pages_dir, templates_dir) — file-based page routing.
+ *
+ * Scans pages_dir for .tkt template files at startup and registers a
+ * route for each one.  At request time, each page is rendered through
+ * tmpl_renderpage() which processes {! layout/block/yield !} directives
+ * and {{var}} substitution.
+ *
+ * File-to-route mapping:
+ *   pages/index.tkt      → /
+ *   pages/ooke.tkt       → /ooke
+ *   pages/docs/index.tkt → /docs
+ *   pages/docs/foo.tkt   → /docs/foo
+ *
+ * Pages are re-read from disk on every request so edits take effect
+ * immediately without restart or recompile.
+ */
+
+#define TK_MAX_PAGES 256
+
+typedef struct {
+    char *route;          /* URL path, e.g. "/ooke" */
+    char *page_path;      /* filesystem path to .tkt file */
+    char *templates_dir;  /* path to templates directory */
+} TkPageRoute;
+
+static TkPageRoute g_page_routes[TK_MAX_PAGES];
+static int         g_page_count = 0;
+
+static Res tk_page_dispatch(Req req) {
+    const char *rpath = req.path ? req.path : "/";
+
+    for (int i = 0; i < g_page_count; i++) {
+        if (strcmp(g_page_routes[i].route, rpath) == 0) {
+            /* Render page template at request time (reads from disk) */
+            const char *html = tmpl_renderpage(
+                g_page_routes[i].page_path,
+                g_page_routes[i].templates_dir,
+                NULL, 0);
+
+            if (!html) {
+                Res r; r.status = 500;
+                r.body = "Template render failed";
+                r.headers.data = NULL; r.headers.len = 0;
+                return r;
+            }
+
+            Res res;
+            res.status = 200;
+            res.body   = html;
+            StrPair *hdrs = malloc(sizeof(StrPair));
+            if (hdrs) {
+                hdrs[0].key = "Content-Type";
+                hdrs[0].val = "text/html; charset=utf-8";
+                res.headers.data = hdrs;
+                res.headers.len  = 1;
+            } else {
+                res.headers.data = NULL;
+                res.headers.len  = 0;
+            }
+            return res;
+        }
+    }
+
+    return mk404();
+}
+
+/*
+ * scan_pages_recursive — recursively scan a directory for .tkt files
+ * and register routes.  prefix is the URL path prefix (e.g. "" for root).
+ */
+static void scan_pages_recursive(const char *dir_path, const char *prefix,
+                                  const char *templates_dir)
+{
+    DIR *d = opendir(dir_path);
+    if (!d) return;
+
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL && g_page_count < TK_MAX_PAGES) {
+        if (ent->d_name[0] == '.') continue; /* skip hidden files */
+
+        /* Build full filesystem path */
+        char fullpath[2048];
+        snprintf(fullpath, sizeof fullpath, "%s/%s", dir_path, ent->d_name);
+
+        struct stat st;
+        if (stat(fullpath, &st) != 0) continue;
+
+        if (S_ISDIR(st.st_mode)) {
+            /* Recurse into subdirectory */
+            char subprefix[1024];
+            snprintf(subprefix, sizeof subprefix, "%s/%s", prefix, ent->d_name);
+            scan_pages_recursive(fullpath, subprefix, templates_dir);
+            continue;
+        }
+
+        /* Check for .tkt extension */
+        size_t nlen = strlen(ent->d_name);
+        if (nlen < 5 || strcmp(ent->d_name + nlen - 4, ".tkt") != 0) continue;
+
+        /* Only register pages (files containing {! layout() !}), not layouts.
+         * A layout template (e.g. base.tkt) contains {! yield() !} and should
+         * not be served as a standalone page. */
+        {
+            FILE *probe = fopen(fullpath, "r");
+            if (!probe) continue;
+            char head[256];
+            size_t nread = fread(head, 1, sizeof(head) - 1, probe);
+            fclose(probe);
+            head[nread] = '\0';
+            if (!strstr(head, "{! layout(")) continue;
+        }
+
+        /* Build route path */
+        char route[1024];
+        if (nlen == 9 && strcmp(ent->d_name, "index.tkt") == 0) {
+            /* index.tkt maps to the directory root */
+            if (prefix[0] == '\0')
+                snprintf(route, sizeof route, "/");
+            else
+                snprintf(route, sizeof route, "%s", prefix);
+        } else {
+            /* Strip .tkt extension for route */
+            char basename[256];
+            size_t blen = nlen - 4;
+            if (blen >= sizeof basename) blen = sizeof basename - 1;
+            memcpy(basename, ent->d_name, blen);
+            basename[blen] = '\0';
+            snprintf(route, sizeof route, "%s/%s", prefix, basename);
+        }
+
+        /* Register route */
+        int idx = g_page_count++;
+        g_page_routes[idx].route = strdup(route);
+        g_page_routes[idx].page_path = strdup(fullpath);
+        g_page_routes[idx].templates_dir = strdup(templates_dir);
+    }
+    closedir(d);
+}
+
+int64_t tk_http_servepages_w(int64_t pages_dir_i64, int64_t templates_dir_i64) {
+    const char *pages_dir = (const char *)(intptr_t)pages_dir_i64;
+    const char *templates_dir = (const char *)(intptr_t)templates_dir_i64;
+    if (!pages_dir || !templates_dir) return -1;
+
+    /* Scan directory for .tkt files and register routes */
+    scan_pages_recursive(pages_dir, "", templates_dir);
+
+    /* Register an individual named route for each discovered page.
+     * Named routes take priority over wildcard (*) routes in the router,
+     * so these won't interfere with http.servedir fallback. */
+    for (int i = 0; i < g_page_count; i++) {
+        http_GET(g_page_routes[i].route, tk_page_dispatch);
+    }
+
+    return (int64_t)g_page_count;
+}
+
 /* ── vhost registry ───────────────────────────────────────────────────── */
 
 #define TK_MAX_VHOSTS 8
@@ -1227,14 +1388,7 @@ int64_t tk_net_close_w(int64_t conn) {
     return 0;
 }
 
-/* ── sys wrappers ────────────────────────────────────────────────────── */
-
-int64_t tk_sys_configdir_w(int64_t appname) {
-    return (int64_t)(intptr_t)sys_configdir((const char *)(intptr_t)appname);
-}
-int64_t tk_sys_datadir_w(int64_t appname) {
-    return (int64_t)(intptr_t)sys_datadir((const char *)(intptr_t)appname);
-}
+/* ── sys wrappers — defined in sys_glue.c ─────────────────────────── */
 
 /* ── Misc stubs that remain in the HTTP glue (cross-module) ──────────── */
 
@@ -2733,6 +2887,7 @@ int64_t tk_http_servevhosts_w(int64_t port) { return tk_http_servevhosts(port); 
 int64_t tk_http_servevhoststls_w(int64_t port, int64_t cert, int64_t key) { return tk_http_servevhoststls(port, cert, key); }
 int64_t tk_http_vhost_w(int64_t hostname, int64_t docroot) { return tk_http_vhost(hostname, docroot); }
 int64_t tk_http_servedir_w(int64_t prefix, int64_t root) { return tk_http_serve_staticdir_w(prefix, root); }
+/* tk_http_servepages_w defined above (Story 95.2) */
 
 /* Server config */
 int64_t tk_http_setnotfound_w(int64_t body) { return tk_http_set_notfound(body); }

@@ -104,6 +104,24 @@ typedef const char *(*TkTmplHelperFn)(const char *value);
  * At most 64 helpers may be registered. */
 void tmpl_register_helper(const char *name, TkTmplHelperFn fn);
 
+/* -----------------------------------------------------------------------
+ * Page rendering with layout/block/yield — Story 95.2
+ *
+ * Processes {! !} directives used in .tkt page templates:
+ *   {! layout("name") !}     — inherit from templates/name.tkt
+ *   {! block("name") !}...{! end !} — define a named content block
+ *   {! yield("name") !}      — placeholder in layout for named block
+ *
+ * tmpl_renderpage reads a page file, extracts layout and block directives,
+ * loads the layout from templates_dir, substitutes yield placeholders with
+ * block content, then performs {{var}} rendering on the result.
+ *
+ * Returns a heap-allocated string on success; caller owns it.
+ * Returns NULL on failure.
+ * ----------------------------------------------------------------------- */
+const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
+                            const TkTmplVar *vars, uint64_t nvar);
+
 /* .tki compatibility aliases (tpl.* → tpl_*) */
 #define tpl_compile            tmpl_compile
 #define tpl_free               tmpl_free

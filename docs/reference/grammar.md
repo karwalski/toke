@@ -1,328 +1,391 @@
 ---
-title: Grammar
+title: Language Reference
 slug: grammar
 section: reference
 order: 6
 ---
 
-This page defines the formal grammar of toke. The grammar is LL(1)-compatible, meaning it can be parsed with a single token of lookahead and no backtracking.
+# toke Language Reference
 
-## EBNF Notation
+A complete guide to toke's syntax. Every construct is shown with working code examples you can copy and compile.
 
-The grammar uses standard EBNF notation:
+---
 
-| Notation    | Meaning                           |
-|-------------|-----------------------------------|
-| `=`         | Definition                        |
-| `,`         | Concatenation                     |
-| `\|`        | Alternation                       |
-| `[ ... ]`   | Optional (zero or one)            |
-| `{ ... }`   | Repetition (zero or more)         |
-| `( ... )`   | Grouping                          |
-| `"..."`     | Terminal string                   |
-| `(*...*)`   | Comment                           |
+## File Structure
 
-## Production Rules
+Every toke file follows a strict order. The compiler enforces this — you cannot put imports after functions or types before imports.
 
-### Module Structure
+| Order | Keyword | Purpose | Required? |
+|-------|---------|---------|-----------|
+| 1 | `m=` | Module declaration | Yes (exactly one) |
+| 2 | `i=` | Imports | Optional |
+| 3 | `t=` | Type declarations | Optional |
+| 4 | `f=` | Function declarations | Optional |
 
-```ebnf
-Module      = ModuleDecl , { ImportDecl } , { TypeDecl } , { ConstDecl } , { FuncDecl } ;
+```toke
+m=myapp;                            (* 1. module — always first *)
+i=http:std.http;                    (* 2. imports *)
+i=j:std.json;
 
-ModuleDecl  = "m" , "=" , Ident , ";" ;
+t=$config{port:i64;host:str};      (* 3. types *)
 
-ImportDecl  = "i" , "=" , Ident , ":" , ModulePath , [ VersionStr ] , ";" ;
-
-ModulePath  = Ident , { "." , Ident } ;
-
-VersionStr  = StringLit ;
+f=main():i64{                      (* 4. functions *)
+  http.serve(8080);
+  <0
+};
 ```
 
-Declarations must appear in this exact order: module, imports, types, constants, functions. Violating this order produces error [E2001](/docs/reference/errors/#e2001).
+---
 
-### Type Declarations
+## Module Declaration
 
-```ebnf
-TypeDecl    = "t" , "=" , "$" , Ident , "{" , FieldList , "}" , ";" ;
+Every file starts with `m=name;`. The name is a dot-separated path that identifies the module.
 
-FieldList   = Field , { ";" , Field } , [ ";" ] ;
-
-Field       = Ident , ":" , TypeExpr ;
+```toke
+m=api.users;
 ```
 
-### Constant Declarations
+---
 
-```ebnf
-ConstDecl   = "c" , "=" , Ident , [ ":" , TypeExpr ] , Expr , ";" ;
+## Imports
+
+Import a module and give it a local alias. All access to the module uses the alias.
+
+```toke
+i=http:std.http;          (* import std.http, access via http.* *)
+i=j:std.json;             (* import std.json, access via j.* *)
+i=db:std.db;              (* import std.db, access via db.* *)
 ```
 
-### Function Declarations
+After importing, use the alias to call functions:
 
-```ebnf
-FuncDecl    = "f" , "=" , Ident , "(" , [ ParamList ] , ")" ,
-              [ ":" , TypeExpr ] , ( Block | ";" ) ;
-
-ParamList   = Param , { ";" , Param } ;
-
-Param       = Ident , ":" , TypeExpr ;
-
-Block       = "{" , StmtList , "}" ;
+```toke
+let body=j.parse(input);
+let res=http.ok(body);
 ```
 
-A function declaration without a body (terminated by `;` instead of a block) is an **extern declaration** for FFI.
+---
 
-### Type Expressions
+## Functions
 
-```ebnf
-TypeExpr    = PrimType
-            | "@" , TypeExpr                               (* array type: @T *)
-            | "@" , "(" , TypeExpr , ":" , TypeExpr , ")"  (* map type: @(K:V) *)
-            | TypeExpr , "!" , TypeExpr                    (* error union: T!$err *)
-            | "*" , TypeExpr                               (* pointer, FFI only *)
-            | "$" , Ident                                  (* named type / struct *)
-            ;
+Declared with `f=name(params):returntype{body};`. Parameters are separated by semicolons. The return operator is `<`.
 
-PrimType    = "i8" | "i16" | "i32" | "i64"
-            | "u8" | "u16" | "u32" | "u64"
-            | "f32" | "f64"
-            | "bool" | "$str" | "void"
-            ;
+```toke
+f=add(a:i64;b:i64):i64{
+  <a+b
+};
 ```
 
-### Statements
+### Multiple parameters
 
-```ebnf
-StmtList    = { Stmt , [ ";" ] } ;
-
-Stmt        = LetStmt
-            | MutLetStmt
-            | AssignStmt
-            | ReturnStmt
-            | IfStmt
-            | MatchExpr
-            | LoopStmt
-            | ArenaStmt
-            | ExprStmt
-            ;
-
-LetStmt     = "let" , Ident , [ ":" , TypeExpr ] , "=" , Expr ;
-
-MutLetStmt  = "let" , Ident , [ ":" , TypeExpr ] , "=" , "mut" , "." , Expr ;
-
-AssignStmt  = Ident , "=" , Expr ;
-
-ReturnStmt  = "<" , Expr ;
-
-IfStmt      = "if" , "(" , Expr , ")" , Block , [ "el" , Block ] ;
-
-LoopStmt    = "lp" , "(" , [ LoopInit ] , ";" , [ Expr ] , ";" , [ Expr ] , ")" , Block ;
-
-LoopInit    = "let" , Ident , [ ":" , TypeExpr ] , "=" , Expr ;
-
-ArenaStmt   = "{" , "arena" , StmtList , "}" ;
-
-ExprStmt    = Expr ;
+```toke
+f=clamp(val:i64;lo:i64;hi:i64):i64{
+  if(val<lo){<lo};
+  if(val>hi){<hi};
+  <val
+};
 ```
 
-### Expressions
+### No parameters
 
-```ebnf
-Expr        = UnaryExpr , [ BinOp , Expr ]
-            | CallExpr
-            | FieldExpr
-            | CastExpr
-            | PropagateExpr
-            | MatchExpr
-            | Literal
-            | Ident
-            | "(" , Expr , ")"
-            ;
-
-UnaryExpr   = [ "-" ] , PrimaryExpr ;
-
-BinOp       = "+" | "-" | "*" | "/" | "<" | ">" | "=" | "&&" | "||" ;
-
-CallExpr    = Ident , "(" , [ ArgList ] , ")" ;
-
-ArgList     = Expr , { ";" , Expr } ;
-
-FieldExpr   = Expr , "." , Ident ;
-
-CastExpr    = Expr , "as" , TypeExpr ;
-
-PropagateExpr = Expr , "!" , TypeExpr ;
-
-MatchExpr   = Expr , "|" , "{" , MatchArm , { ";" , MatchArm } , [ ";" ] , "}" ;
-
-MatchArm    = TypeIdent , ":" , Ident , Expr ;
+```toke
+f=greet():i64{
+  io.println("hello");
+  <0
+};
 ```
 
-### Literals
+### Fallible functions (error handling)
 
-```ebnf
-IntLit      = Digit , { Digit } ;
+A function that can fail declares its error type with `!`:
 
-FloatLit    = Digit , { Digit } , "." , Digit , { Digit } ;
-
-StringLit   = '"' , { StringChar } , '"' ;
-
-StringChar  =
-            | EscapeSeq ;
-
-EscapeSeq   = '\' , ( '"' | '\' | 'n' | 't' | 'r' | '0' | HexEscape ) ;
-
-HexEscape   = 'x' , HexDigit , HexDigit ;
-
-BoolLit     = "true" | "false" ;
-
-ArrayLit    = "@" , "(" , [ Expr , { ";" , Expr } , [ ";" ] ] , ")" ;
-
-MapLit      = "@" , "(" , MapEntry , { ";" , MapEntry } , [ ";" ] , ")" ;
-
-MapEntry    = Expr , ":" , Expr ;
-
-StructLit   = "$" , Ident , "{" , FieldInit , { ";" , FieldInit } , [ ";" ] , "}" ;
-
-FieldInit   = Ident , ":" , Expr ;
-
-Ident       = Letter , { Letter | Digit } ;
-
-Letter      = "a" .. "z" ;
-
-Digit       = "0" .. "9" ;
-
-HexDigit    = Digit | "a" .. "f" | "A" .. "F" ;
+```toke
+f=fetch(id:i64):$user!$apierr{
+  let row=db.one("select * from users where id=?";@(id))!$apierr;
+  <$user{id:row.id;name:row.name}
+};
 ```
 
-## Whitespace
+The `!` operator propagates errors — if the call fails, the function returns the error immediately.
 
-Whitespace (space, tab, carriage return, line feed) is not a structural element of toke source. **Whitespace separates tokens but has no other structural role.** The lexer discards whitespace outside string literals after using it to determine token boundaries. Any amount of whitespace between two tokens is equivalent — two programs that differ only in whitespace between tokens are semantically identical.
+---
 
-Whitespace is **required** only between adjacent tokens that both consist entirely of alphanumeric characters; otherwise the longest-match lexer would merge them into a single token.
+## Types
 
-## Syntax Profile
+### Scalar types (no sigil)
 
-toke has two syntax profiles. All productions on this page use **default syntax**.
+| Type | Description | Example |
+|------|-------------|---------|
+| `i64` | 64-bit signed integer | `let x=42;` |
+| `i32`, `i16`, `i8` | Smaller integers | `let b=0 as i8;` |
+| `u64`, `u32`, `u16`, `u8` | Unsigned integers | `let c=255 as u8;` |
+| `f64`, `f32` | Floating point | `let pi=3.14159;` |
+| `bool` | Boolean | `let ok=true;` |
+| `str` | String | `let s="hello";` |
 
-| Feature | Default (55-char) | Legacy (80-char, `--legacy`) |
+### Struct types (`$` prefix)
+
+Define a struct with `t=$name{fields};`. Access fields with `.`:
+
+```toke
+t=$point{x:i64;y:i64};
+
+f=dist(p:$point):i64{
+  <p.x*p.x+p.y*p.y
+};
+
+f=origin():$point{
+  <$point{x:0;y:0}
+};
+```
+
+### Sum types (error variants)
+
+When all fields start with `$`, the type is a sum type (tagged union):
+
+```toke
+t=$result{$ok:i64;$err:str};
+
+f=divide(a:i64;b:i64):$result{
+  if(b=0){<$result{$err:"division by zero"}};
+  <$result{$ok:a/b}
+};
+```
+
+### Array type (`@`)
+
+```toke
+let nums=@(1;2;3);          (* array literal *)
+let first=nums.get(0);       (* read element — never nums[0] *)
+let size=nums.len;            (* length — property, no parens *)
+```
+
+| Operation | Syntax | Notes |
+|-----------|--------|-------|
+| Create | `@(1;2;3)` | Semicolons separate elements |
+| Read | `arr.get(i)` | Never `arr[i]` |
+| Write | `arr.set(i;val)` | |
+| Length | `arr.len` | Property, not function call |
+| Type annotation | `@i64` | Array of i64 |
+
+### Map type (`@(key:val)`)
+
+```toke
+let ages=@("alice":30;"bob":25);
+let age=ages.get("alice");
+```
+
+| Operation | Syntax |
+|-----------|--------|
+| Create | `@("key":val;"key2":val2)` |
+| Type annotation | `@(str:i64)` |
+
+---
+
+## Bindings
+
+### Immutable (default)
+
+```toke
+let x=42;                     (* cannot be reassigned *)
+let name="toke";
+```
+
+### Mutable
+
+```toke
+let count=mut.0;               (* mut. prefix on initial value *)
+count=count+1;                 (* reassignment allowed *)
+```
+
+### With type annotation
+
+```toke
+let pi:f64=3.14159;
+let flags:@bool=@(true;false;true);
+```
+
+---
+
+## Control Flow
+
+### Conditional (`if` / `el`)
+
+```toke
+if(x>0){
+  io.println("positive")
+}el{
+  io.println("non-positive")
+};
+```
+
+Nested conditionals (no `elif` — use nested `el{if`):
+
+```toke
+if(x>0){
+  io.println("positive")
+}el{
+  if(x=0){
+    io.println("zero")
+  }el{
+    io.println("negative")
+  }
+};
+```
+
+### Loop (`lp`)
+
+toke has exactly one loop construct: `lp(init;condition;step){body}`.
+
+```toke
+lp(let i=0;i<10;i=i+1){
+  io.println(i)
+};
+```
+
+Break out of a loop with `br`:
+
+```toke
+lp(let i=0;true;i=i+1){
+  if(i>100){br};
+  io.println(i)
+};
+```
+
+### Match (`mt`)
+
+Match on sum types to handle variants:
+
+```toke
+mt getuser(id) {
+  $ok:user  io.println(user.name);
+  $err:e    io.println(e)
+};
+```
+
+Match is an expression — it produces a value:
+
+```toke
+let name=mt lookup(id) {
+  $ok:u   u.name;
+  $err:e  "unknown"
+};
+```
+
+---
+
+## Return
+
+Two forms, both produce the same result:
+
+```toke
+f=add(a:i64;b:i64):i64{
+  <a+b                          (* short form — preferred *)
+};
+
+f=add2(a:i64;b:i64):i64{
+  rt a+b;                       (* long form — clearer in nested code *)
+};
+```
+
+---
+
+## Operators
+
+From highest to lowest precedence:
+
+| Precedence | Operator | Description | Example |
+|------------|----------|-------------|---------|
+| 1 (highest) | `.` | Field access | `p.x` |
+| 2 | `()` | Function call | `add(1;2)` |
+| 3 | `!` | Error propagation | `parse(s)!$err` |
+| 4 | `-` (unary) | Negation | `-x` |
+| 5 | `as` | Type cast | `x as f64` |
+| 6 | `*` `/` `%` | Multiply, divide, modulo | `a*b` |
+| 7 | `+` `-` | Add, subtract | `a+b` |
+| 8 | `<` `>` `=` | Compare, equality | `a>b`, `a=b` |
+| 9 | `&&` | Logical AND | `a>0 && b>0` |
+| 10 (lowest) | `\|\|` | Logical OR | `a=0 \|\| b=0` |
+
+Note: `=` is both assignment (at statement level) and equality comparison (in expressions). Context disambiguates — no `==` operator.
+
+---
+
+## Separators
+
+toke uses **semicolons everywhere**. Never commas.
+
+```toke
+f=add(a:i64;b:i64):i64{       (* parameters: semicolons *)
+  <a+b
+};
+
+let r=add(1;2);                 (* arguments: semicolons *)
+let arr=@(10;20;30);            (* array elements: semicolons *)
+let m=@("a":1;"b":2);           (* map entries: semicolons *)
+```
+
+---
+
+## Keywords
+
+toke has 13 keywords. 4 are context-sensitive (only special when followed by `=` at the top level), 9 are reserved everywhere.
+
+### Context keywords (declaration prefixes)
+
+| Keyword | Purpose | Example |
+|---------|---------|---------|
+| `m=` | Module declaration | `m=myapp;` |
+| `f=` | Function declaration | `f=add(a:i64):i64{...};` |
+| `t=` | Type declaration | `t=$point{x:i64;y:i64};` |
+| `i=` | Import declaration | `i=http:std.http;` |
+
+Inside function bodies, `m`, `f`, `t`, `i` are valid variable names.
+
+### Reserved keywords
+
+| Keyword | Purpose | Example |
+|---------|---------|---------|
+| `let` | Immutable binding | `let x=42;` |
+| `mut` | Mutable qualifier | `let x=mut.0;` |
+| `if` | Conditional | `if(x>0){...}` |
+| `el` | Else branch | `}el{...}` |
+| `lp` | Loop | `lp(init;cond;step){...}` |
+| `br` | Break | `br;` |
+| `rt` | Return (long form) | `rt expr;` |
+| `as` | Type cast | `x as f64` |
+| `mt` | Match expression | `mt expr {...}` |
+
+---
+
+## Character Set
+
+toke source uses exactly 55 ASCII characters:
+
+| Category | Characters | Count |
+|----------|-----------|-------|
+| Letters | `a` through `z` | 26 |
+| Digits | `0` through `9` | 10 |
+| Symbols | `( ) { } = : . ; + - * / < > ! \| & $ @ % "` | 19 |
+
+Plus space and newline as whitespace. No uppercase letters, no underscores, no square brackets, no commas.
+
+---
+
+## Syntax Profiles
+
+| Feature | Default (55-char) | Legacy (`--legacy`, 80-char) |
 |---------|-------------------|------------------------------|
-| Keywords | `m=` `f=` `t=` `i=` | `M=` `F=` `T=` `I=` |
-| Type names | `$user`, `$str` | `User`, `Str` |
-| Array literal | `@(1; 2; 3)` | `[1; 2; 3]` |
+| Declaration keywords | `m=` `f=` `t=` `i=` | `M=` `F=` `T=` `I=` |
+| Type names | `$user` | `User` |
+| Array literal | `@(1;2;3)` | `[1;2;3]` |
 | Array type | `@i64` | `[i64]` |
-| Map type | `@($str:i64)` | `[Str:i64]` |
 | Array indexing | `arr.get(0)` | `arr[0]` |
-| `$` and `@` | structural symbols | not available |
-| `[` and `]` | not available | array delimiters |
 
-The compiler rejects `[` and `]` in default mode (E1003) and rejects `$` and `@` in legacy mode (E1003). The compiler currently accepts both uppercase and lowercase declaration keywords in default mode; the spec reserves uppercase keywords for legacy mode only.
+The default syntax is the only syntax used for training and is the target for all tooling.
 
-See spec Appendix F for full legacy profile documentation.
+---
 
-## Reading the Grammar
+## Formal Grammar
 
-Each EBNF production describes how a syntactic construct is formed from tokens. Here is how to read them:
-
-**Example:** `LetStmt = "let" , Ident , [ ":" , TypeExpr ] , "=" , Expr ;`
-
-This says: a let statement is the keyword `let`, followed by an identifier, optionally followed by a colon and type expression, then `=`, then an expression.
-
-In toke source, that looks like:
-
-```toke
-m=ex;
-f=main():void{
-  let x=42;
-  let y:f64=3.14
-};
-```
-
-**Example:** `MatchExpr = "mt" , Expr , "{" , MatchArm , { ";" , MatchArm } , "}" ;`
-
-This says: a match expression is `mt`, then an expression, then `{`, then one or more match arms separated by `;`, then `}`.
-
-```toke
-m=ex;
-f=check(r:i64!$str):i64{
-  <mt r {$ok:v v;$err:e 0}
-};
-```
-
-The formal EBNF is in `spec/grammar.ebnf`. The normative grammar uses legacy-profile keywords (`M=`/`F=`/`T=`/`I=`); the default-syntax equivalents are lowercase.
-
-## Key Productions Explained
-
-### Module
-
-Every toke source file is a `Module`. It begins with a mandatory module declaration (`m=name;`) followed by optional imports, type declarations, constants, and function declarations -- in that strict order.
-
-```toke
-m=myapp;
-i=io:std.file;
-t=$config{port:i64;host:$str};
-f=main(): void { };
-```
-
-### FuncDecl
-
-Functions are declared with `f=name(params):ReturnType { body }`. A function without a body is an extern (FFI) declaration. The return statement uses `<` instead of a `return` keyword.
-
-```toke
-f=add(a: i64; b: i64): i64 { < a + b };
-f=puts(s: *u8): void;
-```
-
-### TypeExpr
-
-Type expressions describe the type of a value. They can be primitives, arrays (`@T`), maps (`@(K:V)`), error unions (`T!$err`), pointers (`*T`, FFI only), or named struct types (`$name`).
-
-### Stmt
-
-Statements within a block are separated by semicolons. The trailing semicolon before a closing `}` or at end-of-file may be omitted (trailing-semicolon elision).
-
-### Expr
-
-Expressions produce values. The `<` return statement, `match` expressions, `as` casts, and the `!` propagation operator are all expression forms.
-
-## LL(1) Property
-
-The toke grammar is designed to be LL(1)-parseable:
-
-- **Single token lookahead.** At every decision point in the grammar, the parser can determine which production to use by examining only the current token.
-- **No backtracking.** The parser never needs to speculatively try a production and then undo work.
-- **Predictable performance.** Parsing time is linear in the number of tokens.
-
-Key design choices that enable LL(1) parsing:
-
-- Declaration prefixes (`m=`, `i=`, `t=`, `c=`, `f=`) are unique single-token lookaheads.
-- Statement prefixes (`let`, `<`, `lp`, `if`, `{arena`) are distinct.
-- The `<` return operator avoids ambiguity with the comparison `<` because return always appears at statement position.
-
-## Operator Precedence
-
-Operators are listed from highest to lowest precedence:
-
-| Precedence | Operator(s)        | Associativity | Description              |
-|------------|--------------------|---------------|--------------------------|
-| 1 (highest)| `.`                | Left          | Field access             |
-| 2          | `()`               | Left          | Function call            |
-| 3          | `!` (postfix)      | Left          | Error propagation        |
-| 4          | `-` (unary)        | Right         | Negation                 |
-| 5          | `as`               | Left          | Type cast                |
-| 6          | `*`, `/`           | Left          | Multiplication, division |
-| 7          | `+`, `-`           | Left          | Addition, subtraction    |
-| 8          | `<`, `>`, `=`      | Left          | Comparison               |
-| 9          | `&&`               | Left          | Logical AND              |
-| 10 (lowest)| `\|\|`             | Left          | Logical OR               |
-
-### Precedence examples
-
-```toke
-m=grammar;
-f=examples(a:i64;b:i64;c:i64;x:@i64):void{
-  let r1=a+b*c;
-  let r2=x.len+1;
-  let r4=x.get(0) as f64+1.0;
-  let r5=a>0
-};
-```
+The complete formal grammar in EBNF notation is available at [grammar.ebnf](https://github.com/karwalski/toke/blob/main/docs/spec/grammar.ebnf) for compiler implementers. This page presents the same information in human-readable form.

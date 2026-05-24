@@ -58,13 +58,13 @@ Token counts for a complete runnable fibonacci(10) program, measured with cl100k
 
 On a general-purpose tokenizer, toke matches C and beats Java for bare code. toke's token cost advantage comes from predictable syntax, single-token operators, and consistent lowercase -- not from an artificially small character count. The structural advantage emerges as documentation standards are applied: Python doubles from 41 to 82 tokens with docstrings, while toke stays at 59 -- there are no comments to add. toke source is comment-free by design; documentation lives in companion files (`.tkc`), so the token cost of generated source is fixed regardless of coding standards.
 
-A purpose-built BPE tokenizer trained on toke programs (Phase 2, projected) would merge common patterns like `:i64):i64{` and `<0};` into single tokens, reducing the minimal fibonacci program to an estimated ~22 tokens. This tokenizer has not yet been retrained on the default syntax corpus -- the projection is based on frequency analysis of the 46,730-program training corpus.
+The Phase 2 purpose-built BPE tokenizer (16K vocab, trained on 25,953 programs) merges common patterns like `:i64):i64{`, `m=`, `f=main():i64{`, and `i=j:std.json` into single tokens. Across 42 benchmarks, it achieves 52% average token reduction vs cl100k_base -- for example, the fibonacci program drops to 14 toke BPE tokens vs 27 for Python on cl100k.
 
 At Gate 1, toke demonstrated 12.5% token reduction versus cl100k_base and 63.7% first-pass compilation accuracy (Pass@1) on 1,000 held-out tasks -- both exceeding the required thresholds.
 
 ## Who Benefits
 
-**AI companies.** Every token saved in code generation is a direct cost reduction. At 40--75% fewer tokens per program, the savings compound at scale across thousands of generation calls.
+**AI companies.** Every token saved in code generation is a direct cost reduction. With the purpose-built tokenizer achieving 52% average token reduction across 42 benchmarks, the savings compound at scale across thousands of generation calls.
 
 **Developers building AI-powered coding tools.** Tools that generate, test, and deploy code autonomously need a language that minimises round trips through the generate-compile-repair loop. toke's structured diagnostics and deterministic grammar reduce iterations.
 

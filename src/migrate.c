@@ -388,6 +388,73 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             }
         }
 
+        /* fn name( → f=name( (Rust-style function keyword) */
+        if (src[i] == 'f' && i+3 < slen && src[i+1] == 'n' && src[i+2] == ' ' && !in_str) {
+            int ok = (i == 0 || src[i-1] == '\n' || src[i-1] == ';' || src[i-1] == '}');
+            if (!ok) {
+                int j=i-1;
+                while(j>=0&&src[j]!='\n'&&src[j]!=';'&&src[j]!='}') {
+                    if(src[j]!=' '&&src[j]!='\t') break; j--;
+                }
+                if(j<0||src[j]=='\n'||src[j]==';'||src[j]=='}') ok=1;
+            }
+            if (ok) {
+                /* Check that an identifier follows */
+                int j = i + 3;
+                while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
+                if (j < slen && ((src[j]>='a'&&src[j]<='z')||(src[j]>='A'&&src[j]<='Z')||src[j]=='_')) {
+                    fprintf(stderr, "migrate: note: fn → f= (Rust-style function keyword)\n");
+                    o[w++] = 'f'; o[w++] = '=';
+                    i += 2; /* skip 'fn ', for loop will advance past space */
+                    continue;
+                }
+            }
+        }
+
+        /* func name( → f=name( (Go-style function keyword) */
+        if (src[i] == 'f' && i+5 < slen && !strncmp(src+i, "func ", 5) && !in_str) {
+            int ok = (i == 0 || src[i-1] == '\n' || src[i-1] == ';' || src[i-1] == '}');
+            if (!ok) {
+                int j=i-1;
+                while(j>=0&&src[j]!='\n'&&src[j]!=';'&&src[j]!='}') {
+                    if(src[j]!=' '&&src[j]!='\t') break; j--;
+                }
+                if(j<0||src[j]=='\n'||src[j]==';'||src[j]=='}') ok=1;
+            }
+            if (ok) {
+                int j = i + 5;
+                while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
+                if (j < slen && ((src[j]>='a'&&src[j]<='z')||(src[j]>='A'&&src[j]<='Z')||src[j]=='_')) {
+                    fprintf(stderr, "migrate: note: func → f= (Go-style function keyword)\n");
+                    o[w++] = 'f'; o[w++] = '=';
+                    i += 4; /* skip 'func ', for loop will advance past space */
+                    continue;
+                }
+            }
+        }
+
+        /* function name( → f=name( (JS-style function keyword) */
+        if (src[i] == 'f' && i+9 < slen && !strncmp(src+i, "function ", 9) && !in_str) {
+            int ok = (i == 0 || src[i-1] == '\n' || src[i-1] == ';' || src[i-1] == '}');
+            if (!ok) {
+                int j=i-1;
+                while(j>=0&&src[j]!='\n'&&src[j]!=';'&&src[j]!='}') {
+                    if(src[j]!=' '&&src[j]!='\t') break; j--;
+                }
+                if(j<0||src[j]=='\n'||src[j]==';'||src[j]=='}') ok=1;
+            }
+            if (ok) {
+                int j = i + 9;
+                while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
+                if (j < slen && ((src[j]>='a'&&src[j]<='z')||(src[j]>='A'&&src[j]<='Z')||src[j]=='_')) {
+                    fprintf(stderr, "migrate: note: function → f= (JS-style function keyword)\n");
+                    o[w++] = 'f'; o[w++] = '=';
+                    i += 8; /* skip 'function ', for loop will advance past space */
+                    continue;
+                }
+            }
+        }
+
         /* Strip pub keyword at line start */
         if (i+4 <= slen && !strncmp(src+i, "pub ", 4)) {
             int ok = (i == 0 || src[i-1] == '\n' || src[i-1] == ';' || src[i-1] == '}');
@@ -419,6 +486,19 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             }
             /* Bare ? — just strip it */
             continue;
+        }
+
+        /* :void → :i64 (C-style void return type) */
+        if (src[i] == ':' && !in_str && i+1 < slen) {
+            int j = i + 1;
+            while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
+            if (j+4 <= slen && !strncmp(src+j, "void", 4) &&
+                (j+4 >= slen || !is_idchar(src[j+4]))) {
+                fprintf(stderr, "migrate: note: :void → :i64 (C-style void return)\n");
+                o[w++] = ':'; o[w++] = 'i'; o[w++] = '6'; o[w++] = '4';
+                i = j + 3; /* skip past 'void' */
+                continue;
+            }
         }
 
         /* Convert qualified stdlib types to i64 in function signatures:
@@ -478,6 +558,30 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                     }
                     i = j - 1; continue;
                 }
+            }
+        }
+
+        /* null / nil / NULL → 0 (LLM null-pointer patterns) */
+        if (!in_str) {
+            int matched = 0;
+            if (src[i] == 'n' && i+4 <= slen && !strncmp(src+i, "null", 4) &&
+                (i+4 >= slen || !is_idchar(src[i+4])) &&
+                (i == 0 || !is_idchar(src[i-1]))) {
+                matched = 4;
+            } else if (src[i] == 'n' && i+3 <= slen && !strncmp(src+i, "nil", 3) &&
+                       (i+3 >= slen || !is_idchar(src[i+3])) &&
+                       (i == 0 || !is_idchar(src[i-1]))) {
+                matched = 3;
+            } else if (src[i] == 'N' && i+4 <= slen && !strncmp(src+i, "NULL", 4) &&
+                       (i+4 >= slen || !is_idchar(src[i+4])) &&
+                       (i == 0 || !is_idchar(src[i-1]))) {
+                matched = 4;
+            }
+            if (matched) {
+                fprintf(stderr, "migrate: note: %.*s → 0 (null literal)\n", matched, src+i);
+                o[w++] = '0';
+                i += matched - 1;
+                continue;
             }
         }
 
@@ -689,6 +793,33 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             if (j >= 0 && src[j] == ':') {
                 i += 3; /* skip 'mut ', for loop skips space */
                 continue;
+            }
+        }
+
+        /* ) -> type → ):type (Rust-style return type arrow) */
+        if (src[i] == ')' && !in_str && i+1 < slen) {
+            int j = i + 1;
+            while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
+            if (j+2 < slen && src[j] == '-' && src[j+1] == '>') {
+                /* Check this ) closes a function param list by walking back to f= */
+                int k = i - 1, d = 1;
+                while (k >= 0 && d > 0) {
+                    if (src[k] == ')') d++;
+                    else if (src[k] == '(') d--;
+                    k--;
+                }
+                while (k >= 0 && (src[k]==' '||src[k]=='\t')) k--;
+                int ke = k;
+                while (k >= 0 && is_idchar(src[k])) k--;
+                if (k >= 0 && src[k] == '=' && ke > k) {
+                    /* In function signature context — replace -> with : */
+                    fprintf(stderr, "migrate: note: -> → : (Rust-style return type arrow)\n");
+                    o[w++] = ')'; o[w++] = ':';
+                    j += 2; /* skip '->' */
+                    while (j < slen && (src[j]==' '||src[j]=='\t')) j++;
+                    i = j - 1; /* for loop will increment to first char of type */
+                    continue;
+                }
             }
         }
 

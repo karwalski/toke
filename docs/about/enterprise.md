@@ -11,7 +11,7 @@ Every token an LLM generates costs compute time and API dollars. When your code 
 
 toke eliminates this overhead at the language level. Its 55-character set and strict LL(1) grammar have exactly one valid interpretation at every syntactic position. Its mandatory typed interface files compress module contracts into minimal token sequences. toke source is comment-free by design -- there are no comments to add. Documentation lives in companion files (`.tkc`), not inline. The token cost of generated toke programs is fixed regardless of coding standards.
 
-The result: **toke programs use 40--75% fewer tokens than equivalent Python, C, or Java.** A complete fibonacci program in toke uses ~23 tokens with the purpose-built tokenizer, compared to 41 in Python, 59 in C, and 62 in Java. With documentation best practices applied, the gap widens further: Python doubles to 82 tokens and Java grows to 102, while toke stays at 23 -- because toke source is comment-free by design and there are no comments to add. The purpose-built tokenizer is being finalised as part of Gate 2.
+The result: **toke programs use 52% fewer tokens on average than equivalent Python with cl100k_base, measured across 42 benchmarks.** A complete fibonacci program in toke uses 14 tokens with the purpose-built BPE tokenizer (16K vocab, trained on 25,953 programs), compared to 27 for Python on cl100k. With documentation best practices applied, the gap widens further: Python doubles from 41 to 82 tokens with docstrings, while toke stays fixed -- because toke source is comment-free by design and there are no comments to add.
 
 ## Use Cases
 

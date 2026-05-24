@@ -1325,6 +1325,7 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         if (!strcmp(method, "poststatic"))     return "tk_http_post_static";
         if (!strcmp(method, "postjson"))       return "tk_http_post_json";
         if (!strcmp(method, "servedir"))       return "tk_http_serve_staticdir_w";
+        if (!strcmp(method, "servepages"))     return "tk_http_servepages_w";
         if (!strcmp(method, "serve"))          return "tk_http_serve";
         if (!strcmp(method, "servetls"))       return "tk_http_servetls";
         if (!strcmp(method, "serveworkers"))   return "tk_http_serveworkers_w";
@@ -5034,7 +5035,7 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
             }
         }
         ResolvedDeps deps;
-        if (stdlib_dir && resolve_stdlib_deps(stdlib_dir, st, &deps) == 0) {
+        if (stdlib_dir && resolve_stdlib_deps_imports_only(stdlib_dir, st, &deps) == 0) {
             snprintf(sources, sizeof sources, " %s", deps.sources);
             if (deps.flags[0])
                 snprintf(extra_flags, sizeof extra_flags, "%s", deps.flags);

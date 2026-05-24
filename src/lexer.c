@@ -396,6 +396,7 @@ static const UpperKwEntry UPPER_KW_MAP[] = {
 typedef struct { const char *python_kw; const char *message; const char *fix; } PyKwEntry;
 
 static const PyKwEntry PYTHON_KEYWORDS[] = {
+    /* Python */
     { "def",    "Python keyword 'def' detected; toke uses f=name():type{body}",
                 "replace 'def name(args):' with 'f=name(args):type{'" },
     { "return", "Python keyword 'return' detected; toke uses <expr for returns",
@@ -410,10 +411,59 @@ static const PyKwEntry PYTHON_KEYWORDS[] = {
                 "replace 'print(...)' with 'io.println(...)'" },
     { "None",   "Python keyword 'None' detected; toke uses 0 or struct with empty field",
                 "replace 'None' with '0' or an empty-field struct" },
+    /* Go */
+    { "func",      "Go keyword 'func' detected; toke uses f=name(args):type{body}",
+                    "replace 'func name(args)' with 'f=name(args):type{'" },
+    { "package",   "Go keyword 'package' detected; toke uses m=name;",
+                    "replace 'package name' with 'm=name;'" },
+    { "var",       "Go/JS keyword 'var' detected; toke uses let x=expr;",
+                    "replace 'var x = expr' with 'let x=expr;'" },
+    { "nil",       "Go keyword 'nil' detected; toke uses 0 for null values",
+                    "replace 'nil' with '0'" },
+    /* Rust */
+    { "fn",        "Rust keyword 'fn' detected; toke uses f=name(args):type{body}",
+                    "replace 'fn name(args)' with 'f=name(args):type{'" },
+    { "impl",      "Rust keyword 'impl' detected; toke has no impl blocks — define methods as standalone functions",
+                    "move methods to standalone f= declarations" },
+    { "pub",       "Rust keyword 'pub' detected; toke v0.3 removed pub — all declarations are public by default",
+                    "remove 'pub' keyword" },
+    { "use",       "Rust keyword 'use' detected; toke uses i=alias:std.module;",
+                    "replace 'use module' with 'i=alias:std.module;'" },
+    /* JavaScript */
+    { "function",  "JS keyword 'function' detected; toke uses f=name(args):type{body}",
+                    "replace 'function name(args)' with 'f=name(args):type{'" },
+    { "const",     "JS keyword 'const' detected; toke uses let x=expr; (immutable by default)",
+                    "replace 'const x = expr' with 'let x=expr;'" },
+    { "null",      "JS keyword 'null' detected; toke uses 0 for null values",
+                    "replace 'null' with '0'" },
+    { "undefined", "JS keyword 'undefined' detected; toke uses 0 for uninitialized values",
+                    "replace 'undefined' with '0'" },
+    { "console",   "JS keyword 'console' detected; toke uses io.println() for output",
+                    "replace 'console.log(...)' with 'io.println(...)'" },
+    /* C */
+    { "void",      "C keyword 'void' detected; toke functions return i64 (use 0 for no meaningful return)",
+                    "replace 'void' with 'i64' and add '<0' as last statement" },
+    { "char",      "C keyword 'char' detected; toke uses u8 for bytes",
+                    "replace 'char' with 'u8'" },
+    { "printf",    "C function 'printf' detected; toke uses io.println() for output",
+                    "replace 'printf(...)' with 'io.println(...)'" },
+    /* Common near-miss toke keywords */
+    { "else",      "keyword 'else' detected; toke uses 'el' for else branches",
+                    "replace 'else' with 'el'" },
+    { "loop",      "keyword 'loop' detected; toke uses 'lp' for loops: lp(init;cond;step){body}",
+                    "replace loop construct with 'lp(init;cond;step){body}'" },
+    { "match",     "keyword 'match' detected; toke uses 'mt' for match expressions",
+                    "replace 'match' with 'mt'" },
+    { "module",    "keyword 'module' detected; toke uses m=name; for module declarations",
+                    "replace 'module name' with 'm=name;'" },
+    { "while",     "keyword 'while' detected; toke uses lp for all loops: lp(;cond;){body}",
+                    "replace 'while(cond)' with 'lp(;cond;){body}'" },
+    { "struct",    "keyword 'struct' detected; toke uses t=$typename{fields} for types",
+                    "replace 'struct Name{...}' with 't=$name{...}'" },
 };
 #define PY_KW_COUNT ((int)(sizeof(PYTHON_KEYWORDS) / sizeof(PYTHON_KEYWORDS[0])))
 
-static int check_python_keyword(const char *buf, int start, int line, int col)
+static int check_foreign_keyword(const char *buf, int start, int line, int col)
 {
     int i;
     for (i = 0; i < PY_KW_COUNT; i++) {
@@ -492,13 +542,17 @@ static int lex_ident(Lexer *l, int start, int line, int col)
         }
     }
 
-    /* W1020: detect Python keywords and emit migration hints. */
+    /* W1020: detect foreign keywords and emit migration hints.
+     * Skip if preceded by '.' (module-qualified call like j.print). */
     if (kind == TK_IDENT || kind == TK_TYPE_IDENT) {
-        char py_buf[32];
-        int py_len = len < (int)sizeof(py_buf) - 1 ? len : (int)sizeof(py_buf) - 1;
-        for (int pi = 0; pi < py_len; pi++) py_buf[pi] = l->src[start + pi];
-        py_buf[py_len] = '\0';
-        check_python_keyword(py_buf, start, line, col);
+        int preceded_by_dot = (start > 0 && l->src[start - 1] == '.');
+        if (!preceded_by_dot) {
+            char py_buf[32];
+            int py_len = len < (int)sizeof(py_buf) - 1 ? len : (int)sizeof(py_buf) - 1;
+            for (int pi = 0; pi < py_len; pi++) py_buf[pi] = l->src[start + pi];
+            py_buf[py_len] = '\0';
+            check_foreign_keyword(py_buf, start, line, col);
+        }
     }
 
     return emit(l, kind, start, len, line, col);
@@ -643,7 +697,17 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
         case '+':  sym = TK_PLUS;     break;
         case '-':  sym = TK_MINUS;    break;
         case '*':  sym = TK_STAR;     break;
-        case '/':  sym = TK_SLASH;    break;
+        case '/':
+            if (l.pos + 1 < l.len && src[l.pos + 1] == '/') {
+                diag_emit(DIAG_WARNING, LEX_W1020, start, line, col,
+                          "C-style comment '//' detected; toke has no comment "
+                          "syntax — documentation belongs in companion .tkc files",
+                          "fix", "remove '// comment' and place documentation "
+                          "in a companion .tkc file", NULL);
+                while (l.pos < l.len && l.src[l.pos] != '\n') advance(&l);
+                continue;
+            }
+            sym = TK_SLASH; break;
         case '<':
             if (l.pos + 1 < l.len && src[l.pos + 1] == '<') {
                 if (l.profile == PROFILE_DEFAULT) {

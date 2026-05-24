@@ -78,7 +78,7 @@ If you are using an LLM to help write toke code, here are prompts tuned for each
 > 5. Build an HTML amortisation table (one row per month).
 > 6. Build an SVG stacked bar chart comparing principal vs interest per year.
 > 7. Render the results template with all computed values and return HTTP 200.
-> Use toke 56-char syntax. All names lowercase. Types prefixed with $. Arrays with @(). Return with <.
+> Use toke 55-char syntax. All names lowercase. Types prefixed with $. Arrays with @(). Return with <.
 
 ### 3.4 Router and main
 

@@ -58,7 +58,7 @@ in plain language. Regenerate the toke source code described by this companion.
 
 Rules:
 - Output only the .tk source file. Do not include explanation or markdown fences.
-- Use the default toke syntax (56-char set, M= for module, F= for functions,
+- Use the default toke syntax (55-char set, m= for module, f= for functions,
   T= for types, @() for arrays).
 - Match every function signature and type declaration exactly as described.
 - Implement the logic described in each function's "Logic" section.

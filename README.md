@@ -1,15 +1,41 @@
 # toke
 
-toke is a compiled programming language designed so that AI can write better code. It uses a 55-character alphabet -- lowercase letters, digits, and a small set of punctuation -- and just 13 keywords, making programs shorter and more predictable for language models to generate. The result is a language where AI-generated code is more likely to compile correctly on the first try, while remaining readable and maintainable by humans.
+toke is a compiled programming language designed to reduce the token cost of AI-generated code. A purpose-built BPE tokenizer trained on toke programs achieves **52% fewer tokens** on average compared to cl100k_base (GPT-4/Claude's tokenizer) across 42 benchmark programs, and a fine-tuned 7B model writes toke that compiles correctly **100% of the time**.
+
+The token reduction comes from three reinforcing design choices:
+
+1. **A purpose-built tokenizer** trained on real toke code, so common patterns like `f=main():i64{` and `i=j:std.json` merge into single tokens
+2. **Structural choices that eliminate overhead** -- no comments in source (documentation lives in companion files), semicolons as the only separator, errors as values not exceptions
+3. **A constrained character set and grammar** (55 characters, 13 keywords, LL(1)) that reduces the space of valid programs, making it easier for both the tokenizer and the model to learn
+
+The character set and syntax are means to an end. The goal is measurable: fewer tokens per unit of functionality, validated by compilation and execution.
 
 ## Key Features
 
-- **Compiled to native code** via LLVM -- produces standalone binaries for x86-64 and ARM64
-- **55-character alphabet** -- programs use only lowercase letters, digits, and a small set of punctuation, eliminating an entire class of tokenisation ambiguity
-- **13 keywords** -- the entire language control flow fits in a short list: `m`, `f`, `t`, `i`, `if`, `el`, `lp`, `br`, `let`, `mut`, `as`, `rt`, `mt`, `sc`
-- **LL(1) grammar** -- every parse decision is determined by a single token of lookahead, making the language simple for both humans and machines to parse
-- **Error handling with result types** -- no exceptions; errors are values returned from functions and handled explicitly with `match`
-- **38 standard library modules** with C runtime backing -- from strings and JSON to HTTP servers, database access, cryptography, and machine learning
+- **52% token reduction** -- measured with a 16K BPE tokenizer trained on 25,953 toke programs. [Try the live tokenizer](https://tokelang.dev/tokenizer/)
+- **100% compilation Pass@1** -- a fine-tuned Qwen 2.5 Coder 7B produces valid toke on every attempt (Gate 2, May 2026)
+- **Compiled to native code** via LLVM -- standalone binaries for x86-64 and ARM64, sub-second compile times for fast feedback loops
+- **70+ structured diagnostic codes** -- machine-readable JSON errors with fix suggestions, designed for automated repair loops
+- **38 standard library modules** with C runtime backing -- strings, JSON, HTTP server/client, database, crypto, ML, and more
+- **Error handling with result types** -- no exceptions; errors are values handled explicitly with `mt` (match)
+
+## Project Status
+
+| Milestone | Date | Result |
+|-----------|------|--------|
+| Gate 1 | 2026-04-03 | 63.7% compilation Pass@1, 12.5% token reduction vs cl100k_base |
+| Gate 2 | 2026-05-22 | **100% compilation Pass@1** on 700 tasks. ~8% functional correctness (model masters syntax; algorithmic reasoning is the next target) |
+| Tokenizer | 2026-05-22 | 16K BPE trained on 25,953 programs. **52% avg token reduction** vs cl100k across 42 benchmarks |
+
+**What works:** the model writes syntactically valid toke every time. The tokenizer compresses toke code significantly. The compiler provides 70+ structured diagnostic codes for automated repair.
+
+**What doesn't yet:** functional correctness (producing correct I/O) is ~8%. This is a corpus quality problem (67% of training solutions hardcoded inputs), not a language problem. Next phase: execution-verified RLVR training with randomised inputs. See [training-next-phase.md](docs/spec/training-next-phase.md).
+
+Three production codebases validate the language and standard library:
+
+- **ooke** -- static site generator and web framework, built in toke, serving [tokelang.dev](https://tokelang.dev)
+- **loke** -- privacy and AI platform: 698 files, 87,000 lines of toke across security, networking, and ML
+- **moke** -- data analysis demo exercising privacy pipeline, governance, and LLM integration
 
 ## Quick Start
 
@@ -30,7 +56,7 @@ f=main():i64{
 EOF
 
 # Compile and run
-./tkc hello.tk -o hello
+./toke hello.tk -o hello
 ./hello
 ```
 
@@ -44,7 +70,7 @@ Or use the `toke` wrapper to compile and run in one step:
 
 | Directory | Contents |
 |-----------|----------|
-| `src/` | Reference compiler (`tkc`) -- lexer, parser, type checker, LLVM backend |
+| `src/` | Reference compiler (`toke`) -- lexer, parser, type checker, LLVM backend |
 | `src/stdlib/` | C runtime implementations for standard library modules |
 | `spec/` | Language specification, formal grammar (EBNF), and semantics |
 | `stdlib/` | Standard library interface files (`.tki`) and documentation |
@@ -58,10 +84,9 @@ Or use the `toke` wrapper to compile and run in one step:
 
 ## Documentation
 
-- **Language specification:** [spec/spec/toke-spec-v02.md](spec/spec/toke-spec-v02.md)
-- **Formal grammar:** [spec/spec/grammar.ebnf](spec/spec/grammar.ebnf)
-- **Semantics:** [spec/spec/semantics.md](spec/spec/semantics.md)
-- **Standard library reference:** each module has a `.md` doc in [stdlib/](stdlib/) (e.g., [stdlib/str.md](stdlib/str.md), [stdlib/http.md](stdlib/http.md))
+- **Language specification:** [docs/spec/toke-spec-v0.3.md](docs/spec/toke-spec-v0.3.md)
+- **Formal grammar:** [docs/spec/grammar.ebnf](docs/spec/grammar.ebnf)
+- **Standard library reference:** each module has a `.md` doc in [docs/stdlib/](docs/stdlib/) (e.g., [docs/stdlib/str.md](docs/stdlib/str.md), [docs/stdlib/http.md](docs/stdlib/http.md))
 - **Example programs:** [examples/](examples/)
 - **Architecture decisions:** [docs/architecture/](docs/architecture/)
 - **Conventions:** [docs/conventions.md](docs/conventions.md)
@@ -77,7 +102,7 @@ Or use the `toke` wrapper to compile and run in one step:
 **Build commands:**
 
 ```bash
-make            # Build tkc compiler
+make            # Build toke compiler
 make clean      # Remove build artifacts
 make lint       # Run static analysis (cppcheck + clang-tidy)
 ```
@@ -101,21 +126,20 @@ make bench      # Run compiler benchmarks
 ## Usage
 
 ```
-tkc [flags] <source-files>
+toke [flags] <source-files>
 
   --target <arch-os>    cross-compile (x86_64-linux, arm64-macos, etc.)
   --out <path>          output binary path
   --emit-interface      emit .tki interface files
   --check               type-check only, no code generation
-  --profile1            legacy profile: 80-character set
-  --profile2            default syntax: 59-character set (default)
+  --legacy              legacy syntax: 80-character set
   --diag-json           structured JSON diagnostics (default)
   --diag-text           human-readable diagnostics
 ```
 
 ## Standard Library
 
-tkc ships with 38 standard library modules backed by C runtime implementations:
+toke ships with 38 standard library modules backed by C runtime implementations:
 
 | Module | Description |
 |--------|-------------|
@@ -162,8 +186,10 @@ tkc ships with 38 standard library modules backed by C runtime implementations:
 | [toke-model](https://github.com/karwalski/toke-model) | Corpus generation, BPE tokeniser, and model fine-tuning pipeline |
 | [toke-eval](https://github.com/karwalski/toke-eval) | Benchmark tasks and evaluation harness |
 | [toke-mcp](https://github.com/karwalski/toke-mcp) | Model Context Protocol server for toke |
-| [toke-ooke](https://github.com/karwalski/toke-ooke) | toke-on-ooke: interactive web playground |
+| [toke-ooke](https://github.com/karwalski/toke-ooke) | Static site generator and web framework, built in toke |
 | [toke-website](https://github.com/karwalski/toke-website) | Project website (tokelang.dev) |
+| [toke on HuggingFace](https://huggingface.co/karwalski/toke) | Gate 2 model, tokenizer, and model card |
+| [Developer Console](https://console.tokelang.dev) | Free API access for testing toke code generation |
 
 ## Licence
 

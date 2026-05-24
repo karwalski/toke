@@ -1106,3 +1106,309 @@ const char *tmpl_renderfile(const char *path, const TkTmplVar *vars,
     tmpl_free(t);
     return result;
 }
+
+/* -----------------------------------------------------------------------
+ * tmpl_renderpage — Story 95.2
+ *
+ * Render a .tkt page file with layout/block/yield directive support.
+ *
+ * Directive syntax:
+ *   {! layout("name") !}     — use templates_dir/name.tkt as layout
+ *   {! block("name") !}...{! end !} — define named content block
+ *   {! yield("name") !}      — in layout, replaced by named block content
+ *
+ * After directive processing, the result is rendered through the {{var}}
+ * template engine with the provided variable bindings.
+ * ----------------------------------------------------------------------- */
+
+/* Read a file into a heap-allocated string. Caller owns result. */
+static char *tmpl_readfile(const char *path) {
+    if (!path) return NULL;
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return NULL;
+    if (fseek(fp, 0, SEEK_END) != 0) { fclose(fp); return NULL; }
+    long fsize = ftell(fp);
+    if (fsize < 0) { fclose(fp); return NULL; }
+    rewind(fp);
+    char *buf = (char *)malloc((size_t)fsize + 1);
+    if (!buf) { fclose(fp); return NULL; }
+    size_t nread = fread(buf, 1, (size_t)fsize, fp);
+    fclose(fp);
+    buf[nread] = '\0';
+    return buf;
+}
+
+/* A named block extracted from a page template. */
+typedef struct {
+    char *name;
+    char *content;
+} TmplBlock;
+
+#define TMPL_MAX_BLOCKS 32
+
+/*
+ * parse_page_directives — scan page source for {! !} directives.
+ *
+ * Extracts:
+ *   layout_name  — from {! layout("name") !}  (heap-allocated, caller frees)
+ *   blocks       — from {! block("name") !}...{! end !}
+ *   nblocks      — number of blocks found
+ *
+ * Returns 1 on success, 0 on failure.
+ */
+static int parse_page_directives(const char *src, char **layout_name,
+                                  TmplBlock *blocks, int *nblocks)
+{
+    *layout_name = NULL;
+    *nblocks = 0;
+    const char *p = src;
+
+    while (*p) {
+        /* Look for {! */
+        if (p[0] == '{' && p[1] == '!') {
+            p += 2;
+
+            /* Skip whitespace */
+            while (*p == ' ' || *p == '\t') p++;
+
+            /* Check for layout("name") */
+            if (strncmp(p, "layout(\"", 8) == 0) {
+                p += 8;
+                const char *name_start = p;
+                while (*p && *p != '"') p++;
+                if (*p != '"') return 0;
+                size_t nlen = (size_t)(p - name_start);
+                *layout_name = (char *)malloc(nlen + 1);
+                if (!*layout_name) return 0;
+                memcpy(*layout_name, name_start, nlen);
+                (*layout_name)[nlen] = '\0';
+                p++; /* skip closing quote */
+                while (*p == ')' || *p == ' ' || *p == '\t') p++;
+                if (p[0] == '!' && p[1] == '}') p += 2;
+                continue;
+            }
+
+            /* Check for block("name") */
+            if (strncmp(p, "block(\"", 7) == 0) {
+                p += 7;
+                const char *name_start = p;
+                while (*p && *p != '"') p++;
+                if (*p != '"') return 0;
+                size_t nlen = (size_t)(p - name_start);
+                char *bname = (char *)malloc(nlen + 1);
+                if (!bname) return 0;
+                memcpy(bname, name_start, nlen);
+                bname[nlen] = '\0';
+                p++; /* skip closing quote */
+                while (*p == ')' || *p == ' ' || *p == '\t') p++;
+                if (p[0] == '!' && p[1] == '}') p += 2;
+
+                /* Now collect content until {! end !} */
+                const char *content_start = p;
+                const char *content_end = NULL;
+
+                while (*p) {
+                    if (p[0] == '{' && p[1] == '!') {
+                        const char *tp = p + 2;
+                        while (*tp == ' ' || *tp == '\t') tp++;
+                        if (strncmp(tp, "end", 3) == 0) {
+                            content_end = p;
+                            tp += 3;
+                            while (*tp == ' ' || *tp == '\t') tp++;
+                            if (tp[0] == '!' && tp[1] == '}') {
+                                p = tp + 2;
+                                break;
+                            }
+                        }
+                    }
+                    p++;
+                }
+
+                if (!content_end) {
+                    /* No matching {! end !} found, use rest of string */
+                    content_end = p;
+                }
+
+                if (*nblocks < TMPL_MAX_BLOCKS) {
+                    size_t clen = (size_t)(content_end - content_start);
+                    char *content = (char *)malloc(clen + 1);
+                    if (!content) { free(bname); return 0; }
+                    memcpy(content, content_start, clen);
+                    content[clen] = '\0';
+                    blocks[*nblocks].name = bname;
+                    blocks[*nblocks].content = content;
+                    (*nblocks)++;
+                } else {
+                    free(bname);
+                }
+                continue;
+            }
+
+            /* Unknown directive — skip to !} */
+            while (*p) {
+                if (p[0] == '!' && p[1] == '}') { p += 2; break; }
+                p++;
+            }
+            continue;
+        }
+        p++;
+    }
+    return 1;
+}
+
+/*
+ * apply_yields — replace {! yield("name") !} in layout with block content.
+ * Returns a heap-allocated string. Caller owns it.
+ */
+static char *apply_yields(const char *layout_src, const TmplBlock *blocks,
+                           int nblocks)
+{
+    /* Calculate output size: start with layout length, add block content */
+    size_t out_cap = strlen(layout_src) * 2 + 1;
+    for (int i = 0; i < nblocks; i++) {
+        if (blocks[i].content) out_cap += strlen(blocks[i].content);
+    }
+    char *out = (char *)malloc(out_cap);
+    if (!out) return NULL;
+
+    size_t out_len = 0;
+    const char *p = layout_src;
+
+    while (*p) {
+        if (p[0] == '{' && p[1] == '!') {
+            const char *tp = p + 2;
+            while (*tp == ' ' || *tp == '\t') tp++;
+
+            if (strncmp(tp, "yield(\"", 7) == 0) {
+                tp += 7;
+                const char *name_start = tp;
+                while (*tp && *tp != '"') tp++;
+                if (*tp == '"') {
+                    size_t nlen = (size_t)(tp - name_start);
+                    tp++; /* skip quote */
+                    while (*tp == ')' || *tp == ' ' || *tp == '\t') tp++;
+                    if (tp[0] == '!' && tp[1] == '}') {
+                        tp += 2;
+                        /* Find matching block */
+                        const char *replacement = NULL;
+                        for (int i = 0; i < nblocks; i++) {
+                            if (strlen(blocks[i].name) == nlen &&
+                                memcmp(blocks[i].name, name_start, nlen) == 0) {
+                                replacement = blocks[i].content;
+                                break;
+                            }
+                        }
+                        if (replacement) {
+                            size_t rlen = strlen(replacement);
+                            /* Ensure capacity */
+                            while (out_len + rlen + 1 > out_cap) {
+                                out_cap *= 2;
+                                char *tmp = (char *)realloc(out, out_cap);
+                                if (!tmp) { free(out); return NULL; }
+                                out = tmp;
+                            }
+                            memcpy(out + out_len, replacement, rlen);
+                            out_len += rlen;
+                        }
+                        p = tp;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        /* Ensure capacity for one char */
+        if (out_len + 2 > out_cap) {
+            out_cap *= 2;
+            char *tmp = (char *)realloc(out, out_cap);
+            if (!tmp) { free(out); return NULL; }
+            out = tmp;
+        }
+        out[out_len++] = *p++;
+    }
+    out[out_len] = '\0';
+    return out;
+}
+
+const char *tmpl_renderpage(const char *page_path, const char *templates_dir,
+                            const TkTmplVar *vars, uint64_t nvar)
+{
+    if (!page_path || !templates_dir) return NULL;
+
+    /* Read the page file */
+    char *page_src = tmpl_readfile(page_path);
+    if (!page_src) return NULL;
+
+    /* Parse directives */
+    char *layout_name = NULL;
+    TmplBlock blocks[TMPL_MAX_BLOCKS];
+    int nblocks = 0;
+
+    if (!parse_page_directives(page_src, &layout_name, blocks, &nblocks)) {
+        free(page_src);
+        return NULL;
+    }
+
+    char *final_src = NULL;
+
+    if (layout_name) {
+        /* Build layout path: templates_dir/layout_name.tkt */
+        size_t dir_len = strlen(templates_dir);
+        size_t name_len = strlen(layout_name);
+        /* +1 for '/', +4 for ".tkt", +1 for '\0' */
+        char *layout_path = (char *)malloc(dir_len + 1 + name_len + 4 + 1);
+        if (!layout_path) goto cleanup;
+
+        memcpy(layout_path, templates_dir, dir_len);
+        size_t pos = dir_len;
+        if (pos > 0 && layout_path[pos - 1] != '/') layout_path[pos++] = '/';
+        memcpy(layout_path + pos, layout_name, name_len);
+        pos += name_len;
+        memcpy(layout_path + pos, ".tkt", 4);
+        pos += 4;
+        layout_path[pos] = '\0';
+
+        char *layout_src = tmpl_readfile(layout_path);
+        free(layout_path);
+        if (!layout_src) goto cleanup;
+
+        /* The layout may itself have a layout (recursive) — for now, support
+         * one level of nesting by processing {! yield !} in the layout */
+        final_src = apply_yields(layout_src, blocks, nblocks);
+        free(layout_src);
+    } else {
+        /* No layout — just use the page source directly (after stripping
+         * any {! !} directives, treat remaining content as the template) */
+        final_src = strdup(page_src);
+    }
+
+    if (!final_src) goto cleanup;
+
+    /* Now render {{var}} slots in the assembled template */
+    TkTmpl *t = tmpl_compile(final_src);
+    free(final_src);
+    final_src = NULL;
+    if (!t) goto cleanup;
+
+    const char *result = tmpl_render(t, vars, nvar);
+    tmpl_free(t);
+
+    /* Cleanup blocks and page source */
+    free(page_src);
+    free(layout_name);
+    for (int i = 0; i < nblocks; i++) {
+        free(blocks[i].name);
+        free(blocks[i].content);
+    }
+    return result;
+
+cleanup:
+    free(page_src);
+    free(layout_name);
+    free(final_src);
+    for (int i = 0; i < nblocks; i++) {
+        free(blocks[i].name);
+        free(blocks[i].content);
+    }
+    return NULL;
+}
