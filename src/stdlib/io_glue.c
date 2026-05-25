@@ -18,6 +18,12 @@ int64_t tk_io_println_w(int64_t s) {
     return 0;
 }
 
+int64_t tk_io_eprintln_w(int64_t s) {
+    if (s) fprintf(stderr, "%s\n", (const char *)(intptr_t)s);
+    else fprintf(stderr, "\n");
+    return 0;
+}
+
 int64_t tk_io_readln_w(void) {
     static char buf[4096];
     if (fgets(buf, sizeof(buf), stdin)) {

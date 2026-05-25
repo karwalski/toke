@@ -71,6 +71,43 @@ int64_t tk_crypto_randomhex_w(int64_t n) {
     return (int64_t)(intptr_t)hex;
 }
 
+/* crypto.sha512(data) — SHA-512 hash, returns hex string */
+int64_t tk_crypto_sha512_w(int64_t data) {
+    if (!data) return 0;
+    const char *s = (const char *)(intptr_t)data;
+    ByteArray ba = { (const uint8_t *)s, (uint64_t)strlen(s) };
+    ByteArray digest = crypto_sha512(ba);
+    const char *hex = crypto_to_hex(digest);
+    return hex ? (int64_t)(intptr_t)hex : 0;
+}
+
+/* crypto.hmacsha512(key, data) — HMAC-SHA-512, returns hex string */
+int64_t tk_crypto_hmacsha512_w(int64_t key, int64_t data) {
+    if (!key || !data) return 0;
+    const char *ks = (const char *)(intptr_t)key;
+    const char *ds = (const char *)(intptr_t)data;
+    ByteArray kba = { (const uint8_t *)ks, (uint64_t)strlen(ks) };
+    ByteArray dba = { (const uint8_t *)ds, (uint64_t)strlen(ds) };
+    ByteArray tag = crypto_hmac_sha512(kba, dba);
+    const char *hex = crypto_to_hex(tag);
+    return hex ? (int64_t)(intptr_t)hex : 0;
+}
+
+/* crypto.constanteq(a, b) — constant-time string comparison */
+int64_t tk_crypto_constanteq_w(int64_t a, int64_t b) {
+    if (!a || !b) return 0;
+    const char *as = (const char *)(intptr_t)a;
+    const char *bs = (const char *)(intptr_t)b;
+    ByteArray aba = { (const uint8_t *)as, (uint64_t)strlen(as) };
+    ByteArray bba = { (const uint8_t *)bs, (uint64_t)strlen(bs) };
+    return (int64_t)crypto_constanteq(aba, bba);
+}
+
+/* crypto.to_hex(data) — convert bytes to hex string */
+int64_t tk_crypto_to_hex_w(int64_t data) {
+    return tk_crypto_tohex_w(data);
+}
+
 /* crypto.randombase64url(n) — generate n random bytes, return as base64url */
 int64_t tk_crypto_randombase64url_w(int64_t n) {
     ByteArray ba = crypto_randombytes((size_t)n);

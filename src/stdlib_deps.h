@@ -61,4 +61,10 @@ int resolve_stdlib_deps_imports_only(const char *stdlib_dir,
                                      const SymbolTable *st,
                                      ResolvedDeps *out);
 
+/*
+ * append_flags — Append space-separated flags to buf if not already present.
+ * Used by compile_binary to merge per-module linker flags.
+ */
+void stdlib_deps_append_flags(char *flags, size_t flagsz, const char *extra);
+
 #endif /* TK_STDLIB_DEPS_H */

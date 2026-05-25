@@ -59,7 +59,7 @@ static const StdlibModule stdlib_table[] = {
     { "router",        "router.c",                              "ws",                                                               "-lz" },
     { "dashboard",     "dashboard.c",                           "chart html router",                                                "-lz" },
     { "http",          "http.c http2.c acme.c proxy.c cache.c content.c security.c metrics.c server_ops.c ws_server.c hooks.c tk_web_glue.c",
-                                                                "encoding log str",                                                 "" },
+                                                                "encoding log str",                                                 "-lssl -lcrypto" },
     { "toml",          "toml.c toml_glue.c",                    "",                                                                 "" },  /* vendor sources appended separately */
     { "md",            "md.c md_glue.c",                        "",                                                                 "" },  /* vendor sources appended separately */
     { "db",            "db.c db_glue.c",                        "",                                                                 "-lsqlite3" },
@@ -67,7 +67,7 @@ static const StdlibModule stdlib_table[] = {
     { "vecstore",      "vecstore.c vecstore_glue.c",             "",                                                                 "-lpthread" },
     { "secure_mem",    "secure_mem.c securemem_glue.c",          "",                                                                 "" },
     { "securemem",     "securemem.c securemem_glue.c",           "",                                                                 "" },
-    { "tls",           "tls.c tls_glue.c",                       "",                                                                 "" },
+    { "tls",           "tls.c tls_glue.c",                       "",                                                                 "-lssl -lcrypto" },
     { "keychain",      "keychain.c keychain_glue.c",             "",                                                                 "" },
     { "infer",         "infer.c infer_glue.c",                   "",                                                                 "" },
     { "infer_stream",  "infer_stream.c",                         "",                                                                 "" },
@@ -154,6 +154,12 @@ static void append_flags(char *flags, size_t flagsz, const char *extra) {
         }
         tok = strtok_r(NULL, " ", &save);
     }
+}
+
+/* ── Public wrapper for append_flags (used by llvm.c compile_binary) ── */
+
+void stdlib_deps_append_flags(char *flags, size_t flagsz, const char *extra) {
+    append_flags(flags, flagsz, extra);
 }
 
 /* ── Helper: append vendor sources for toml/md ─────────────────────── */

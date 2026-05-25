@@ -658,3 +658,77 @@ int64_t tk_str_sha256prefix_w(int64_t s, int64_t n) {
     prefix[take] = '\0';
     return (int64_t)(intptr_t)prefix;
 }
+
+/* ── StrBuf builder API ─────────────────────────────────────────────────── */
+
+/* StrBuf is a simple growable buffer stored as a heap struct:
+ *   struct { char *data; size_t len; size_t cap; }
+ * We pack the pointer to this struct into an i64. */
+typedef struct { char *data; size_t len; size_t cap; } TkStrBuf;
+
+/* str.buf() — create a new string builder */
+int64_t tk_str_buf_w(void) {
+    TkStrBuf *buf = (TkStrBuf *)malloc(sizeof(TkStrBuf));
+    if (!buf) return 0;
+    buf->cap = 64;
+    buf->data = (char *)malloc(buf->cap);
+    if (!buf->data) { free(buf); return 0; }
+    buf->len = 0;
+    buf->data[0] = '\0';
+    return (int64_t)(intptr_t)buf;
+}
+
+/* str.add(buf, s) — append a string to the builder */
+int64_t tk_str_add_w(int64_t b, int64_t s) {
+    TkStrBuf *buf = (TkStrBuf *)(intptr_t)b;
+    if (!buf) return 0;
+    const char *str = s ? (const char *)(intptr_t)s : "";
+    size_t slen = strlen(str);
+    if (buf->len + slen + 1 > buf->cap) {
+        size_t newcap = (buf->len + slen + 1) * 2;
+        char *tmp = (char *)realloc(buf->data, newcap);
+        if (!tmp) return 0;
+        buf->data = tmp;
+        buf->cap = newcap;
+    }
+    memcpy(buf->data + buf->len, str, slen);
+    buf->len += slen;
+    buf->data[buf->len] = '\0';
+    return 0;
+}
+
+/* str.addbyte(buf, byte) — append a single byte to the builder */
+int64_t tk_str_addbyte_w(int64_t b, int64_t ch) {
+    TkStrBuf *buf = (TkStrBuf *)(intptr_t)b;
+    if (!buf) return 0;
+    if (buf->len + 2 > buf->cap) {
+        size_t newcap = buf->cap * 2;
+        char *tmp = (char *)realloc(buf->data, newcap);
+        if (!tmp) return 0;
+        buf->data = tmp;
+        buf->cap = newcap;
+    }
+    buf->data[buf->len++] = (char)ch;
+    buf->data[buf->len] = '\0';
+    return 0;
+}
+
+/* str.done(buf) — finalize and return the built string */
+int64_t tk_str_done_w(int64_t b) {
+    TkStrBuf *buf = (TkStrBuf *)(intptr_t)b;
+    if (!buf) return (int64_t)(intptr_t)"";
+    char *result = buf->data;
+    free(buf);
+    return (int64_t)(intptr_t)result;
+}
+
+/* ── .tki name-mismatch aliases (underscore variants) ───────────────────── */
+
+/* str.from_float -> tk_str_from_float_w (alias for tk_str_fromfloat_w) */
+int64_t tk_str_from_float_w(int64_t f) { return tk_str_fromfloat_w(f); }
+
+/* str.to_float -> tk_str_to_float_w (alias for tk_str_tofloat_w) */
+int64_t tk_str_to_float_w(int64_t s) { return tk_str_tofloat_w(s); }
+
+/* str.from_bytes -> tk_str_from_bytes_w (alias for tk_str_frombytes_w) */
+int64_t tk_str_from_bytes_w(int64_t b) { return tk_str_frombytes_w(b); }

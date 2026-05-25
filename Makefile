@@ -77,7 +77,8 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-stdlib-vecstore \
 	test-tkir-encoder \
 	install-man \
-	test-standalone
+	test-standalone \
+	check-tki
 
 all: $(BIN) tkc
 
@@ -135,7 +136,10 @@ verify-ir: $(BIN)
 stress: $(BIN)
 	@bash test/stress/run_stress.sh
 
-ci: lint conform conform-check
+check-tki:
+	python3 scripts/check_tki_coverage.py
+
+ci: lint conform conform-check check-tki
 
 test-stdlib:
 	$(CC) $(CFLAGS) -o test/stdlib/test_str \

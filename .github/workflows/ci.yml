@@ -52,6 +52,14 @@ jobs:
           clang-tidy src/*.c -- \
             -std=c99 -Wall -Wextra -Wpedantic -Werror -g
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check .tki/C coverage
+        run: make check-tki
+
   repro:
     name: Reproducible build check
     runs-on: ubuntu-latest

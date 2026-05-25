@@ -543,10 +543,12 @@ static int lex_ident(Lexer *l, int start, int line, int col)
     }
 
     /* W1020: detect foreign keywords and emit migration hints.
-     * Skip if preceded by '.' (module-qualified call like j.print). */
+     * Skip if preceded by '.' (module-qualified call like j.print).
+     * Skip if preceded by '$' (type sigil — $void is a valid toke type). */
     if (kind == TK_IDENT || kind == TK_TYPE_IDENT) {
         int preceded_by_dot = (start > 0 && l->src[start - 1] == '.');
-        if (!preceded_by_dot) {
+        int preceded_by_sigil = (start > 0 && l->src[start - 1] == '$');
+        if (!preceded_by_dot && !preceded_by_sigil) {
             char py_buf[32];
             int py_len = len < (int)sizeof(py_buf) - 1 ? len : (int)sizeof(py_buf) - 1;
             for (int pi = 0; pi < py_len; pi++) py_buf[pi] = l->src[start + pi];

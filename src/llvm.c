@@ -5058,20 +5058,48 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
     const char *vendor_inc = find_stdlib_vendor_includes();
     const char *vi = (vendor_inc && vendor_inc[0]) ? vendor_inc : "";
 
-    /* TLS flags — always include when OpenSSL is present on macOS/homebrew */
-    const char *tls_flags = "-D_GNU_SOURCE -DTK_HAVE_OPENSSL";
-    const char *tls_libs  = "-lssl -lcrypto -lz -lm -lsqlite3";
+    /* Story 102.19: conditional linker flags based on resolved deps.
+     * Only -lm and -lpthread are always included; everything else comes
+     * from the per-module extra_flags in stdlib_table. */
+    const char *base_cflags = "-D_GNU_SOURCE";
 #if defined(__APPLE__)
-    tls_flags = "-I/opt/homebrew/include -DTK_HAVE_OPENSSL";
-    tls_libs  = "-L/opt/homebrew/lib -lssl -lcrypto -lz -lm -lsqlite3";
+    base_cflags = "-I/opt/homebrew/include";
 #endif
 
-    /* Merge extra_flags from selective linking into tls_libs */
+    /* Build the library flags: always include -lm -lpthread */
     char all_libs[1024];
-    if (extra_flags[0])
-        snprintf(all_libs, sizeof all_libs, "%s %s", tls_libs, extra_flags);
-    else
-        snprintf(all_libs, sizeof all_libs, "%s", tls_libs);
+    snprintf(all_libs, sizeof all_libs, "-lm -lpthread");
+#if defined(__APPLE__)
+    /* Homebrew library path (no-op if not present) */
+    snprintf(all_libs, sizeof all_libs, "-L/opt/homebrew/lib -lm -lpthread");
+#endif
+
+    /* Append per-module flags from selective linking, or all flags if link_all */
+    if (link_all || !st) {
+        /* Link-all mode: include every possible library */
+        stdlib_deps_append_flags(all_libs, sizeof all_libs,
+                                 "-lssl -lcrypto -lz -lsqlite3");
+    } else if (extra_flags[0]) {
+        stdlib_deps_append_flags(all_libs, sizeof all_libs, extra_flags);
+    }
+
+    /* If OpenSSL libs are needed, define TK_HAVE_OPENSSL and add frameworks on macOS */
+    int needs_openssl = (strstr(all_libs, "-lssl") != NULL);
+    char cflags_buf[512];
+    if (needs_openssl) {
+        snprintf(cflags_buf, sizeof cflags_buf, "%s -DTK_HAVE_OPENSSL", base_cflags);
+#if defined(__APPLE__)
+        /* macOS needs Security and CoreFoundation frameworks for OpenSSL */
+        {
+            size_t cur = strlen(all_libs);
+            snprintf(all_libs + cur, sizeof all_libs - cur,
+                     " -framework Security -framework CoreFoundation");
+        }
+#endif
+    } else {
+        snprintf(cflags_buf, sizeof cflags_buf, "%s", base_cflags);
+    }
+    const char *tls_flags = cflags_buf;
 
     /* Story 7.5.5 Phase 2: generate auto-glue wrappers from .tki files.
      * Produces a temp C file with simple _w wrappers and appends it to
