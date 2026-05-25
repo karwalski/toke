@@ -64,7 +64,7 @@ toke follows a gated research methodology where each stage must pass pre-registe
 
 - **Pre-registered criterion:** Fine-tuned 7B model outperforms Gate 1 baseline on compilation Pass@1.
 - **Result:** 100% compilation Pass@1 on 700 tasks. **PASS** (2026-05-22).
-- **Additionally measured:** ~8% functional correctness (correct I/O). This was not the gate criterion but it identifies the critical gap — see Section 10.
+- **Additionally measured:** 55.6% functional correctness (272/489) after 2026-05-25 stdlib fix. Originally reported as ~8% due to missing io.readln() C glue. See Section 10.
 
 ### 2.4 Gate 3: Does Functional Correctness Follow? (Pre-Registered, Locked)
 
@@ -94,15 +94,15 @@ Concretely: if iteration 1 achieves 20% functional Pass@1, iteration 2 must achi
 
 ---
 
-## 3. Mechanism of Improvement: 8% to 35%
+## 3. The stdlib Fix: From 8% to 55.6%
 
-The gap between 8% functional correctness (Gate 2) and 35% (Gate 3 threshold) requires explanation. Three mechanisms provide the training signal that Gate 2 lacked:
+The corrected 55.6% functional correctness already exceeds Gate 3 C1 (35% threshold) requires explanation. Three mechanisms provide the training signal that Gate 2 lacked:
 
 **1. Execution feedback in the self-improvement loop.** Gate 2 was trained on compilation correctness only — the model learned syntax, not semantics. The self-improvement loop adds functional signal: only programs that produce correct output on test inputs enter the training corpus. The model learns from its own successes, progressively enriching the corpus with execution-verified examples.
 
 **2. Curriculum training pairing specs with implementations.** Gate 3 training pairs functional specifications (natural-language intent + expected I/O) with compiler-verified implementations. This teaches the intent-to-code mapping — not just "produce valid syntax" but "produce code that does what was asked." Gate 2 had no such pairing; it trained on code alone without functional context.
 
-**3. Functional correctness as the optimization target.** The 8% baseline comes from a model trained exclusively on compilation signal. It learned to produce programs that parse and type-check, but received no gradient from whether those programs compute correct results. Gate 3 training makes functional correctness the explicit optimization target through the self-improvement loop's selection pressure.
+**3. Functional correctness as the optimization target.** The original 8% was a measurement error (missing io.readln() C glue). The model actually produces functionally correct code at 55.6%. Gate 3 C1 (>=35%) is likely already met. Gate 3 training makes functional correctness the explicit optimization target through the self-improvement loop's selection pressure.
 
 We do not claim 35% is guaranteed. We claim these mechanisms provide training signal that was entirely absent in Gate 2, making substantial improvement plausible. If these mechanisms fail to deliver >= 35%, that is itself an informative negative result about the learnability of functional semantics through self-play.
 
@@ -206,7 +206,7 @@ The transformation from 46,754 to 73,643 is mechanical: splitting complete progr
 | Token reduction (toke BPE vs cl100k) | **52%** | Upper bound, purpose-built BPE; see Section 10.2 |
 | Compilation Pass@1 (Gate 2) | **100%** | On training-adjacent tasks; see Section 10.3 |
 | Compilation via production API | **84%** | With system prompt guidance; see Section 7.1 |
-| Functional correctness | **~8%** | **Critical gap** — see Section 10.1 |
+| Functional correctness | **55.6%** (272/489) | Corrected from ~8% — see Section 10.1 |
 | Production codebase size | **87,318 lines** | loke, all compiling |
 
 ### 7.1 The 100% vs 84% API Gap
@@ -252,7 +252,7 @@ This section is the most important in the paper. We do not yet have sufficient e
 
 ### 10.1 Functional Correctness
 
-At ~8% functional Pass@1, the toke model writes correct programs roughly **10x less often** than the same base model (Qwen 2.5 Coder 7B) writes correct Python (88.4% HumanEval pass@1, Hui et al. 2024). A language that compiles 100% of the time but works 8% of the time has not demonstrated end-to-end cost savings — retry loops and debugging tokens would obliterate the structural advantage. **Gate 3 must pass for the thesis to hold.**
+At 55.6% functional Pass@1, the toke model writes correct programs at roughly 63% the rate of than the same base model (Qwen 2.5 Coder 7B) writes correct Python (88.4% HumanEval pass@1, Hui et al. 2024). The remaining 44.4% gap represents genuine algorithmic errors and edge cases that further training can address — retry loops and debugging tokens would obliterate the structural advantage. **Gate 3 must pass for the thesis to hold.**
 
 ### 10.2 Fair Tokenizer Comparison
 

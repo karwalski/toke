@@ -14,7 +14,7 @@ toke is a statically typed, compiled programming language designed from first pr
 
 - **Gate 1 (2026-04-03):** 63.7% Pass@1 compilation rate with legacy syntax
 - **Gate 2 (2026-05-22):** 100% Pass@1 compilation rate with default syntax (7B model)
-- **Functional correctness:** ~8% on arbitrary benchmark tasks (model masters syntax, not algorithms)
+- **Functional correctness:** 55.6% (corrected from ~8% after stdlib fix — see gate2-decision.md)
 
 We are seeking feedback from researchers in code generation, curriculum learning, program synthesis, and AI safety on our next training phase design.
 
@@ -69,7 +69,7 @@ The full normative specification is available at:
 | Method | QLoRA (rank 64, alpha 128, 3 epochs) |
 | Corpus | 25,953 records (canonical prompt, includes 6,069 from production codebase) |
 | Compilation Pass@1 | **100%** (700/700 tasks) |
-| Functional Pass@1 | ~8% of testable subset |
+| Functional Pass@1 | 55.6% (272/489) — corrected 2026-05-25 from ~8% after io.readln() fix |
 | BPE tokenizer | 8,192 tokens, trained on v0.3 corpus |
 | Training time | 37 hours on NVIDIA A10G 24GB |
 
@@ -110,7 +110,7 @@ Each phase uses the previous phase's checkpoint as starting point. Evaluation ga
 
 ### Self-Improvement Loop
 
-4. **Bootstrapping:** We can generate 50K candidates at 100% compile rate and ~8% functional rate. Is rejection sampling (keep only correct) the best use of this, or should we also train on the incorrect-but-compilable examples with appropriate labels?
+4. **Bootstrapping:** We can generate 50K candidates at 100% compile rate and 55.6% functional rate. Is rejection sampling (keep only correct) the best use of this, or should we also train on the incorrect-but-compilable examples with appropriate labels?
 
 5. **Diversity:** When generating training data via self-play, how do we avoid mode collapse (model generating the same solution patterns repeatedly)?
 
