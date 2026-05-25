@@ -17,3 +17,15 @@ int64_t tk_io_println_w(int64_t s) {
     else puts("");
     return 0;
 }
+
+int64_t tk_io_readln_w(void) {
+    static char buf[4096];
+    if (fgets(buf, sizeof(buf), stdin)) {
+        /* Strip trailing newline */
+        size_t len = 0;
+        while (buf[len] && buf[len] != '\n') len++;
+        buf[len] = '\0';
+        return (int64_t)(intptr_t)buf;
+    }
+    return (int64_t)(intptr_t)"";
+}
