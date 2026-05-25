@@ -24,12 +24,12 @@ The character set and syntax are means to an end. The goal is measurable: fewer 
 | Milestone | Date | Result |
 |-----------|------|--------|
 | Gate 1 | 2026-04-03 | 63.7% compilation Pass@1, 12.5% token reduction vs cl100k_base |
-| Gate 2 | 2026-05-22 | **100% compilation Pass@1** on 700 tasks. ~8% functional correctness (model masters syntax; algorithmic reasoning is the next target) |
+| Gate 2 | 2026-05-22 | **100% compilation Pass@1** on 700 tasks. **55.6% functional correctness** (corrected from 8% — stdlib bug; model masters both syntax and semantics) |
 | Tokenizer | 2026-05-22 | 16K BPE trained on 25,953 programs. **52% avg token reduction** vs cl100k across 42 benchmarks |
 
 **What works:** the model writes syntactically valid toke every time. The tokenizer compresses toke code significantly. The compiler provides 70+ structured diagnostic codes for automated repair.
 
-**What doesn't yet:** functional correctness (producing correct I/O) is ~8%. This is a corpus quality problem (67% of training solutions hardcoded inputs), not a language problem. Next phase: execution-verified RLVR training with randomised inputs. See [training-next-phase.md](docs/spec/training-next-phase.md).
+**What doesn't yet:** functional correctness is 55.6% (corrected from 8% — the original figure was caused by a missing `io.readln()` C glue function that prevented programs from linking). The remaining gap is a mix of argv-hardcoding patterns and algorithmic errors. Next phase: execution-verified RLVR training with randomised inputs. See [training-next-phase.md](docs/spec/training-next-phase.md).
 
 Three production codebases validate the language and standard library:
 

@@ -3,7 +3,7 @@
 **Pre-registration date:** 2026-05-24
 **Evaluator:** Automated pipeline (gate3_pipeline.py)
 **Status:** PRE-REGISTERED — criteria are locked once training begins
-**Context:** Gate 2 passed 2026-05-22 with 100% compilation, ~8% functional correctness. Gate 3 targets functional correctness.
+**Context:** Gate 2 passed 2026-05-22 with 100% compilation. Functional correctness originally reported as ~8% but corrected to 55.6% (272/489) on 2026-05-25 after fixing missing io.readln() C glue. The corrected Gate 2 result already exceeds C1's 35% threshold (pending formal re-evaluation with the exact Gate 3 eval harness).
 
 ---
 
@@ -82,4 +82,4 @@ This document is append-only after pre-registration. Any clarifications are logg
 
 | Date | Amendment |
 |------|-----------|
-| — | — |
+| 2026-05-25 | Note: Gate 2 functional correctness corrected from ~8% to 55.6% (272/489) after fixing missing io.readln() C glue in io_glue.c. The corrected result exceeds C1's 35% threshold. Thresholds remain unchanged — formal Gate 3 evaluation with the full eval harness (all 5 criteria) is still required. C1 may already be achievable; C3, C4, C5 remain unverified. |

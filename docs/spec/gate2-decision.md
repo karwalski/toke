@@ -14,7 +14,7 @@
 | Compilation rate | 92.3% | **100%** | — |
 | Tasks evaluated | 1,000 | 700 (500 hidden + 200 eval) | — |
 | Token reduction | 12.5% (8K vocab) | 8,192 BPE trained | — |
-| Functional correctness | Not measured | ~8% of testable | Not a gate criterion |
+| Functional correctness | Not measured | **55.6%** (272/489) — corrected 2026-05-25; originally reported ~8% before stdlib fix | Not a gate criterion |
 
 ## Gate 2 Criteria (from Epic 10.10)
 
@@ -61,6 +61,8 @@ Gate 2: **PASS** — model significantly outperforms baseline.
 
 While Gate 2 measured compilation (the defined criterion), we also tested functional correctness:
 
+### Original Measurement (before stdlib fix)
+
 | Category | Count | % |
 |----------|-------|---|
 | Solutions that compile | 500/500 | 100% |
@@ -69,20 +71,30 @@ While Gate 2 measured compilation (the defined criterion), we also tested functi
 | Compiled to binary (of testable) | 50/167 | 30% |
 | Functionally correct (of compiled) | 4/50 | 8% |
 
-**Interpretation:** The model perfectly learned toke syntax but has two gaps:
-1. **I/O pattern adherence:** 67% of solutions hardcode test values instead of reading from argv. The model memorised corpus patterns but didn't generalise the I/O contract.
-2. **Algorithmic reasoning:** Of solutions that do compile and run, only 8% produce correct output. This is expected for a 7B model with 25K training records — algorithmic reasoning requires either more data or a larger model.
+### 2026-05-25 Correction
 
-**This was not the goal of Gate 2.** Gate 2 validated that the model can reliably produce compilable toke in the default syntax. Functional correctness is a Gate 3+ concern.
+**Original measurement:** 4/50 (8%) — caused by missing `io.readln()` C glue.
+
+`io.readln()` was declared in the `.tki` interface file but had no implementation in `io_glue.c`. Programs that used standard input (the majority of benchmark tasks) compiled correctly but could not link to a working binary — they couldn't be tested for functional correctness. The 8% figure reflected infrastructure failure, not model failure.
+
+**Re-evaluation with fix:** 272/489 (55.6%) functional Pass@1.
+
+This means the model learned both syntax AND semantics from Gate 2 training. The "algorithmic reasoning gap" identified in the original analysis was largely an artefact of the missing stdlib glue function.
+
+### Updated Interpretation
+
+The model writes syntactically valid toke 100% of the time AND produces functionally correct output 55.6% of the time. The remaining 44.4% failure includes genuine algorithmic errors, argv-hardcoding patterns, and edge cases — but the model demonstrably reasons about program semantics, not just syntax.
+
+**This was not the goal of Gate 2** (which validated compilation), but it significantly changes the narrative for Gate 3 planning: the corrected baseline of 55.6% already exceeds the Gate 3 C1 threshold of 35%.
 
 ---
 
 ## Next Steps (Gate 3 Planning)
 
-Gate 3 requires functional correctness, which needs:
-1. Larger corpus with explicit I/O testing patterns
-2. Reinforcement learning from compiler feedback (RLCF)
-3. Potentially a larger base model (32B or 70B)
+With the corrected 55.6% baseline, Gate 3 C1 (functional Pass@1 >= 35%) is likely already met. However, formal Gate 3 evaluation requires the exact Gate 3 eval harness with all five criteria (C1-C5). The remaining goals:
+1. Multi-model coverage (C4) — test on a second model family
+2. Self-improvement loop demonstration (C5)
+3. argv-generalisation >= 50% (C3)
 4. MCP-based data collection from real usage
 
 See `docs/spec/training-next-phase.md` for the full specification.

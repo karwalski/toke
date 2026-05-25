@@ -2,7 +2,7 @@
 
 **Status:** Planning (post-Gate 2)
 **Date:** 2026-05-23 (updated with research review recommendations)
-**Context:** Gate 2 passed with 100% compilation but ~8% functional correctness. Next phase targets functional correctness (correct I/O on benchmark tasks).
+**Context:** Gate 2 passed with 100% compilation. Functional correctness originally reported as ~8% but corrected to 55.6% (272/489) on 2026-05-25 after fixing missing io.readln() C glue. Next phase targets further improving functional correctness and meeting all Gate 3 criteria (C1-C5).
 **Language version:** v0.3 syntax and spec are **locked**. All training targets v0.3. Language changes (if any) are deferred to a future v1.0 RFC process after community feedback.
 
 ---
@@ -42,7 +42,7 @@ These are explicitly not decided yet. Each has a decision deadline and fallback.
 |-------|--------|
 | Compiler (toke 0.3.1) | Production — 22 W1020 hints, --migrate for LLM patterns |
 | BPE tokenizer (16,384 tokens) | Trained on normalised v0.3 code. 52% avg reduction vs cl100k |
-| QLoRA adapter (Gate 2) | 100% compile rate, ~8% functional |
+| QLoRA adapter (Gate 2) | 100% compile rate, 55.6% functional (corrected from ~8% after io.readln() fix) |
 | Corpus | 25,953 records (canonical prompt) |
 | loke codebase | 698 .tk files, 87,318 lines — production, tested |
 | MCP server | Built, not deployed — can collect new training data |
@@ -337,13 +337,13 @@ Because Gate 2 achieved 100% compilation, we can now:
 │  1. Generate: Gate 2 model produces solutions   │
 │  2. Compile:  toke --check filters syntax       │ 100% should pass
 │  3. Execute:  Run against test I/O              │ Filter correct
-│  4. Verify:   Keep only functionally correct    │ ~8% initially
+│  4. Verify:   Keep only functionally correct    │ 55.6% baseline
 │  5. Train:    Add to corpus, retrain            │ Model improves
 │  6. Repeat:   Improved model → more correct     │ Positive feedback
 └─────────────────────────────────────────────────┘
 ```
 
-Each iteration should improve the functional rate. With 500 tasks × 20 samples × 5 temperatures = 50,000 attempts, even at 8% success rate that's ~4,000 verified solutions per iteration.
+Each iteration should improve the functional rate. With 500 tasks × 20 samples × 5 temperatures = 50,000 attempts, at the corrected 55.6% success rate that's ~27,800 verified solutions per iteration — a substantial corpus expansion with each cycle.
 
 ---
 
