@@ -227,88 +227,119 @@ const char *str_format(const char *fmt, int64_t arg)
 {
     if (!fmt) return NULL;
 
-    /* First pass: compute output length. */
-    size_t needed = 0;
+    /*
+     * Single-pass approach using snprintf with the extracted format specifier.
+     * We support one substitution per call.  Format specifiers may include
+     * width, precision, and flags (e.g. "%.2f", "%10d", "%-8s").
+     */
+    char tmp[256];
+    char spec_buf[64];  /* holds the extracted format specifier e.g. "%.2f" */
+
+    /* Find the first real format specifier (skip %%) */
     const char *p = fmt;
-    int applied = 0;
+    const char *spec_start = NULL;
+    const char *spec_end = NULL;
+    char conversion = 0;
+
     while (*p) {
-        if (*p == '%' && *(p + 1)) {
-            char spec = *(p + 1);
-            if (spec == '%') {
-                needed += 1;         /* literal % */
-                p += 2;
-            } else if (!applied && (spec == 's')) {
-                const char *s = (const char *)(intptr_t)arg;
-                needed += s ? strlen(s) : 6; /* "(null)" */
-                p += 2;
-                applied = 1;
-            } else if (!applied && (spec == 'd' || spec == 'i')) {
-                char tmp[24];
-                snprintf(tmp, sizeof tmp, "%" PRId64, arg);
-                needed += strlen(tmp);
-                p += 2;
-                applied = 1;
-            } else if (!applied && spec == 'f') {
-                double d;
-                memcpy(&d, &arg, sizeof(d));
-                char tmp[64];
-                snprintf(tmp, sizeof tmp, "%f", d);
-                needed += strlen(tmp);
-                p += 2;
-                applied = 1;
-            } else {
-                needed += 1;
-                p += 1;
-            }
+        if (*p == '%') {
+            if (*(p + 1) == '%') { p += 2; continue; }
+            /* Start of a format specifier */
+            spec_start = p;
+            p++;
+            /* Skip flags: -, +, 0, space, # */
+            while (*p == '-' || *p == '+' || *p == '0' || *p == ' ' || *p == '#') p++;
+            /* Skip width */
+            while (*p >= '0' && *p <= '9') p++;
+            /* Skip precision */
+            if (*p == '.') { p++; while (*p >= '0' && *p <= '9') p++; }
+            /* Conversion character */
+            if (*p) { conversion = *p; spec_end = p + 1; }
+            break;
         } else {
-            needed += 1;
-            p += 1;
+            p++;
         }
     }
 
-    char *out = malloc(needed + 1);
+    if (!spec_start || !spec_end || !conversion) {
+        /* No format specifier found, return fmt as-is (with %% -> %) */
+        size_t len = strlen(fmt);
+        char *out = malloc(len + 1);
+        if (!out) return NULL;
+        char *w = out;
+        for (const char *r = fmt; *r; ) {
+            if (*r == '%' && *(r+1) == '%') { *w++ = '%'; r += 2; }
+            else *w++ = *r++;
+        }
+        *w = '\0';
+        return out;
+    }
+
+    /* Extract the format specifier into spec_buf */
+    size_t spec_len = (size_t)(spec_end - spec_start);
+    if (spec_len >= sizeof(spec_buf)) spec_len = sizeof(spec_buf) - 1;
+    memcpy(spec_buf, spec_start, spec_len);
+    spec_buf[spec_len] = '\0';
+
+    /* Format the argument according to the conversion character */
+    int tmp_len = 0;
+    if (conversion == 's') {
+        const char *s = (const char *)(intptr_t)arg;
+        if (!s) s = "(null)";
+        tmp_len = snprintf(tmp, sizeof tmp, spec_buf, s);
+    } else if (conversion == 'd' || conversion == 'i') {
+        /* Replace the conversion with PRId64-compatible one */
+        spec_buf[spec_len - 1] = '\0';  /* remove 'd' or 'i' */
+        char i64_spec[80];
+        snprintf(i64_spec, sizeof i64_spec, "%s" PRId64, spec_buf);
+        tmp_len = snprintf(tmp, sizeof tmp, i64_spec, arg);
+    } else if (conversion == 'u') {
+        spec_buf[spec_len - 1] = '\0';
+        char u64_spec[80];
+        snprintf(u64_spec, sizeof u64_spec, "%s" PRIu64, spec_buf);
+        tmp_len = snprintf(tmp, sizeof tmp, u64_spec, (uint64_t)arg);
+    } else if (conversion == 'f' || conversion == 'e' || conversion == 'g' ||
+               conversion == 'F' || conversion == 'E' || conversion == 'G') {
+        double d;
+        memcpy(&d, &arg, sizeof(d));
+        tmp_len = snprintf(tmp, sizeof tmp, spec_buf, d);
+    } else if (conversion == 'x' || conversion == 'X') {
+        spec_buf[spec_len - 1] = '\0';
+        char hex_spec[80];
+        snprintf(hex_spec, sizeof hex_spec, "%s%s",
+                 spec_buf, conversion == 'x' ? PRIx64 : PRIX64);
+        tmp_len = snprintf(tmp, sizeof tmp, hex_spec, (uint64_t)arg);
+    } else if (conversion == 'c') {
+        tmp_len = snprintf(tmp, sizeof tmp, "%c", (char)arg);
+    } else {
+        /* Unknown conversion — just use it raw */
+        tmp_len = snprintf(tmp, sizeof tmp, "%s", spec_buf);
+    }
+
+    if (tmp_len < 0) tmp_len = 0;
+    if ((size_t)tmp_len >= sizeof(tmp)) tmp_len = (int)(sizeof(tmp) - 1);
+
+    /* Build the output: prefix + formatted arg + suffix */
+    size_t prefix_len = (size_t)(spec_start - fmt);
+    size_t suffix_len = strlen(spec_end);
+    /* Handle %% in prefix and suffix */
+    size_t out_len = prefix_len + (size_t)tmp_len + suffix_len + 1;
+    char *out = malloc(out_len);
     if (!out) return NULL;
 
-    /* Second pass: build output. */
+    /* Copy prefix, converting %% to % */
     char *w = out;
-    p = fmt;
-    applied = 0;
-    while (*p) {
-        if (*p == '%' && *(p + 1)) {
-            char spec = *(p + 1);
-            if (spec == '%') {
-                *w++ = '%';
-                p += 2;
-            } else if (!applied && spec == 's') {
-                const char *s = (const char *)(intptr_t)arg;
-                if (!s) s = "(null)";
-                size_t slen = strlen(s);
-                memcpy(w, s, slen);
-                w += slen;
-                p += 2;
-                applied = 1;
-            } else if (!applied && (spec == 'd' || spec == 'i')) {
-                char tmp[24];
-                int n = snprintf(tmp, sizeof tmp, "%" PRId64, arg);
-                memcpy(w, tmp, (size_t)n);
-                w += n;
-                p += 2;
-                applied = 1;
-            } else if (!applied && spec == 'f') {
-                double d;
-                memcpy(&d, &arg, sizeof(d));
-                char tmp[64];
-                int n = snprintf(tmp, sizeof tmp, "%f", d);
-                memcpy(w, tmp, (size_t)n);
-                w += n;
-                p += 2;
-                applied = 1;
-            } else {
-                *w++ = *p++;
-            }
-        } else {
-            *w++ = *p++;
-        }
+    for (const char *r = fmt; r < spec_start; ) {
+        if (*r == '%' && *(r+1) == '%') { *w++ = '%'; r += 2; }
+        else *w++ = *r++;
+    }
+    /* Copy formatted value */
+    memcpy(w, tmp, (size_t)tmp_len);
+    w += tmp_len;
+    /* Copy suffix, converting %% to % */
+    for (const char *r = spec_end; *r; ) {
+        if (*r == '%' && *(r+1) == '%') { *w++ = '%'; r += 2; }
+        else *w++ = *r++;
     }
     *w = '\0';
     return out;

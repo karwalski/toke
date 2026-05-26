@@ -211,9 +211,17 @@ int64_t tk_str_reverse_w(int64_t s) {
     return (int64_t)(intptr_t)str_reverse((const char *)(intptr_t)s);
 }
 
-int64_t tk_str_format_w(int64_t fmt, int64_t arg) {
+int64_t tk_str_format_w(int64_t val, int64_t fmt) {
+    /*
+     * ABI: s.format(value, fmt_string) — the compiler emits value as arg1,
+     * format string as arg2.  The underlying str_format(fmt, arg) expects
+     * the format string first, so we swap here.
+     *
+     * The value may be an i64 integer, an f64 encoded as i64 bits, or a
+     * string pointer — str_format inspects the format specifier to decide.
+     */
     return (int64_t)(intptr_t)str_format(
-        (const char *)(intptr_t)fmt, arg);
+        (const char *)(intptr_t)fmt, val);
 }
 
 int64_t tk_str_ends_w(int64_t s, int64_t suffix) {
@@ -350,6 +358,15 @@ int64_t tk_str_push_w(int64_t arr, int64_t item) {
 
 /* str.arrayget — get element at index from toke array */
 int64_t tk_str_arrayget_w(int64_t arr, int64_t idx) {
+    if (!arr) return 0;
+    int64_t *ptr = (int64_t *)(intptr_t)arr;
+    int64_t len = ptr[-1];
+    if (idx < 0 || idx >= len) return 0;
+    return ptr[idx];
+}
+
+/* str.get — get element at index (compiler resolves p.get(i) to this) */
+int64_t tk_str_get_w(int64_t arr, int64_t idx) {
     if (!arr) return 0;
     int64_t *ptr = (int64_t *)(intptr_t)arr;
     int64_t len = ptr[-1];
