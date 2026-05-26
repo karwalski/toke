@@ -2011,6 +2011,27 @@ static int emit_expr(Ctx *c, const Node *n)
             int is_mod_im = 0;
             for (int ii = 0; ii < c->import_count; ii++)
                 if (!strcmp(c->imports[ii].alias, alias_im)) { is_mod_im = 1; break; }
+            /* Handle .len() as inline ptr[-1] access (same as .len property) */
+            if (!is_mod_im && !strcmp(method_im, "len")) {
+                int obj_v = emit_expr(c, n->children[0]->children[0]);
+                const char *obj_ty = expr_llvm_type(c, n->children[0]->children[0]);
+                int ptr_v;
+                if (!strcmp(obj_ty, "i8*")) {
+                    ptr_v = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", ptr_v, obj_v);
+                } else if (!strcmp(obj_ty, "i64*")) {
+                    ptr_v = obj_v;
+                } else {
+                    /* i64 (integer holding a pointer) → cast to i64* */
+                    ptr_v = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i64*\n", ptr_v, obj_v);
+                }
+                int len_ptr = next_tmp(c);
+                fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 -1 ; .len()\n", len_ptr, ptr_v);
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", t, len_ptr);
+                return t;
+            }
             if (!is_mod_im &&
                 (!strcmp(method_im, "append") || !strcmp(method_im, "push") ||
                  !strcmp(method_im, "set") ||
