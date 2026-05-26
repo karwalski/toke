@@ -114,9 +114,9 @@ LogOrExpr    = LogAndExpr { '||' LogAndExpr } ;
 
 LogAndExpr   = EqExpr { '&&' EqExpr } ;
 
-EqExpr       = CompareExpr [ '=' CompareExpr ] ;
+EqExpr       = CompareExpr [ ( '=' | '!=' ) CompareExpr ] ;
 
-CompareExpr  = AddExpr [ ( '<' | '>' ) AddExpr ] ;
+CompareExpr  = AddExpr [ ( '<' | '>' | '<=' | '>=' ) AddExpr ] ;
 
 AddExpr      = MulExpr { ( '+' | '-' ) MulExpr } ;
 

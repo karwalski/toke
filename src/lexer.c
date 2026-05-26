@@ -711,6 +711,11 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
             }
             sym = TK_SLASH; break;
         case '<':
+            if (l.pos + 1 < l.len && src[l.pos + 1] == '=') {
+                advance(&l); advance(&l);
+                if (emit(&l, TK_LE, start, 2, line, col) < 0) return -1;
+                continue;
+            }
             if (l.pos + 1 < l.len && src[l.pos + 1] == '<') {
                 if (l.profile == PROFILE_DEFAULT) {
                     diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
@@ -729,6 +734,11 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
             }
             sym = TK_LT; break;
         case '>':
+            if (l.pos + 1 < l.len && src[l.pos + 1] == '=') {
+                advance(&l); advance(&l);
+                if (emit(&l, TK_GE, start, 2, line, col) < 0) return -1;
+                continue;
+            }
             if (l.pos + 1 < l.len && src[l.pos + 1] == '>') {
                 if (l.profile == PROFILE_DEFAULT) {
                     diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
@@ -746,7 +756,13 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                 continue;
             }
             sym = TK_GT; break;
-        case '!':  sym = TK_BANG;     break;
+        case '!':
+            if (l.pos + 1 < l.len && src[l.pos + 1] == '=') {
+                advance(&l); advance(&l);
+                if (emit(&l, TK_NE, start, 2, line, col) < 0) return -1;
+                continue;
+            }
+            sym = TK_BANG; break;
         case '|':
             if (l.pos + 1 < l.len && src[l.pos + 1] == '|') {
                 advance(&l); advance(&l);

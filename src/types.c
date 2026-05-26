@@ -798,7 +798,8 @@ static Type *infer(Ctx *cx, const Node *node) {
         Type *r=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
         if (l->kind==TY_UNKNOWN||r->kind==TY_UNKNOWN) return mk_type(A,TY_UNKNOWN);
         int arith=(node->op==TK_PLUS||node->op==TK_MINUS||node->op==TK_STAR||node->op==TK_SLASH);
-        int cmp  =(node->op==TK_LT  ||node->op==TK_GT  ||node->op==TK_EQ);
+        int cmp  =(node->op==TK_LT  ||node->op==TK_GT  ||node->op==TK_EQ
+                  ||node->op==TK_LE ||node->op==TK_GE ||node->op==TK_NE);
         int logic=(node->op==TK_AND  ||node->op==TK_OR);
         int bitwise=(node->op==TK_AMP||node->op==TK_PIPE||node->op==TK_CARET
                    ||node->op==TK_SHL||node->op==TK_SHR||node->op==TK_PERCENT);

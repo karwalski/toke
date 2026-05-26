@@ -803,10 +803,11 @@ static Node *parse_add(Parser *p) {
  * parse_compare — parse comparison operators.
  *
  * Grammar:
- *   CompareExpr = AddExpr (('<' | '>' | '=') AddExpr)?
+ *   CompareExpr = AddExpr (('<' | '>' | '<=' | '>=' | '!=' | '=') AddExpr)?
  *
  * AST node: NODE_BINARY_EXPR
- *   op          = TK_LT (less than), TK_GT (greater than), or TK_EQ (equal)
+ *   op          = TK_LT (<), TK_GT (>), TK_LE (<=), TK_GE (>=),
+ *                 TK_NE (!=), or TK_EQ (=)
  *   children[0] = left operand
  *   children[1] = right operand
  *
@@ -816,11 +817,11 @@ static Node *parse_add(Parser *p) {
  * Note: '=' here is the equality comparison operator in expression
  * context, not the assignment operator (which is handled in parse_stmt).
  */
-/* CompareExpr = AddExpr (('<'|'>'|'=') AddExpr)? */
+/* CompareExpr = AddExpr (('<'|'>'|'<='|'>='|'!='|'=') AddExpr)? */
 static Node *parse_compare(Parser *p) {
     Node *l=parse_add(p);
     if(!l) return NULL;
-    if(peek(p)==TK_LT||peek(p)==TK_GT||peek(p)==TK_EQ){
+    if(peek(p)==TK_LT||peek(p)==TK_GT||peek(p)==TK_EQ||peek(p)==TK_LE||peek(p)==TK_GE||peek(p)==TK_NE){
         Token *t=cur(p);TokenKind op=adv(p)->kind;
         /* Detect '==' — two consecutive TK_EQ tokens (story 84.1.10). */
         if(op==TK_EQ&&peek(p)==TK_EQ){

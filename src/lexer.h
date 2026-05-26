@@ -68,6 +68,9 @@ typedef enum {
     TK_SHR,
     TK_SHL,
     TK_PERCENT,
+    TK_LE,
+    TK_GE,
+    TK_NE,
 
     /* Special */
     TK_EOF,

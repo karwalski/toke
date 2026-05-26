@@ -1772,7 +1772,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
             }
         }
-        if (n->op == TK_EQ && !lhs_is_array && !rhs_is_array &&
+        if ((n->op == TK_EQ || n->op == TK_NE) && !lhs_is_array && !rhs_is_array &&
             (!strcmp(lty, "i8*") || !strcmp(rty, "i8*"))) {
             /* Normalize both sides to ptr */
             int lhs_p = lhs, rhs_p = rhs;
@@ -1793,22 +1793,22 @@ static int emit_expr(Ctx *c, const Node *n)
             int cmpres = next_tmp(c);
             fprintf(c->out, "  %%t%d = call i32 @strcmp(i8* %%t%d, i8* %%t%d)\n", cmpres, lhs_p, rhs_p);
             t = next_tmp(c);
-            fprintf(c->out, "  %%t%d = icmp eq i32 %%t%d, 0\n", t, cmpres);
+            fprintf(c->out, "  %%t%d = icmp %s i32 %%t%d, 0\n", t, n->op == TK_NE ? "ne" : "eq", cmpres);
             return t;
         }
-        /* Non-string pointer equality (arrays, structs): use icmp eq (80.2.9) */
-        if (n->op == TK_EQ && (lhs_is_array || rhs_is_array) &&
+        /* Non-string pointer equality (arrays, structs): use icmp eq/ne (80.2.9) */
+        if ((n->op == TK_EQ || n->op == TK_NE) && (lhs_is_array || rhs_is_array) &&
             (!strcmp(lty, "i8*") || !strcmp(rty, "i8*"))) {
             int lp = lhs, rp = rhs;
             if (!strcmp(lty, "i64")) { lp = next_tmp(c); fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", lp, lhs); }
             if (!strcmp(rty, "i64")) { rp = next_tmp(c); fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", rp, rhs); }
             t = next_tmp(c);
-            fprintf(c->out, "  %%t%d = icmp eq i8* %%t%d, %%t%d\n", t, lp, rp);
+            fprintf(c->out, "  %%t%d = icmp %s i8* %%t%d, %%t%d\n", t, n->op == TK_NE ? "ne" : "eq", lp, rp);
             return t;
         }
-        /* ptr < ptr, ptr > ptr: compare pointers directly */
+        /* ptr < ptr, ptr > ptr, ptr <= ptr, ptr >= ptr: compare pointers directly */
         if ((!strcmp(lty, "i8*") || !strcmp(rty, "i8*")) &&
-            (n->op == TK_LT || n->op == TK_GT)) {
+            (n->op == TK_LT || n->op == TK_GT || n->op == TK_LE || n->op == TK_GE)) {
             /* Normalize both to i64 for unsigned comparison */
             if (!strcmp(lty, "i8*")) {
                 int z = next_tmp(c);
@@ -1891,6 +1891,15 @@ static int emit_expr(Ctx *c, const Node *n)
             case TK_EQ:
                 fprintf(c->out, "  %%t%d = fcmp oeq %s %%t%d, %%t%d\n", t, lty, lhs, rhs);
                 return t;
+            case TK_LE:
+                fprintf(c->out, "  %%t%d = fcmp ole %s %%t%d, %%t%d\n", t, lty, lhs, rhs);
+                return t;
+            case TK_GE:
+                fprintf(c->out, "  %%t%d = fcmp oge %s %%t%d, %%t%d\n", t, lty, lhs, rhs);
+                return t;
+            case TK_NE:
+                fprintf(c->out, "  %%t%d = fcmp one %s %%t%d, %%t%d\n", t, lty, lhs, rhs);
+                return t;
             default: fop = "fadd";
                 fprintf(c->out, "  ; unsupported float binop %d\n", (int)n->op);
             }
@@ -1941,6 +1950,9 @@ static int emit_expr(Ctx *c, const Node *n)
             case TK_LT:     snprintf(op_buf, sizeof op_buf, "icmp slt %s", ity); break;
             case TK_GT:     snprintf(op_buf, sizeof op_buf, "icmp sgt %s", ity); break;
             case TK_EQ:     snprintf(op_buf, sizeof op_buf, "icmp eq %s", ity); break;
+            case TK_LE:     snprintf(op_buf, sizeof op_buf, "icmp sle %s", ity); break;
+            case TK_GE:     snprintf(op_buf, sizeof op_buf, "icmp sge %s", ity); break;
+            case TK_NE:     snprintf(op_buf, sizeof op_buf, "icmp ne %s", ity); break;
             case TK_AMP:    snprintf(op_buf, sizeof op_buf, "and %s", ity); break;
             case TK_PIPE:   snprintf(op_buf, sizeof op_buf, "or %s", ity); break;
             case TK_CARET:  snprintf(op_buf, sizeof op_buf, "xor %s", ity); break;
@@ -3470,6 +3482,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
     case NODE_BINARY_EXPR:
         switch (n->op) {
         case TK_LT: case TK_GT: case TK_EQ:
+        case TK_LE: case TK_GE: case TK_NE:
         case TK_AND: case TK_OR: return "i1";
         case TK_PLUS: case TK_MINUS: case TK_STAR: case TK_SLASH: {
             const char *lt = expr_llvm_type(c, n->children[0]);
