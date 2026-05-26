@@ -93,6 +93,18 @@ int64_t tk_math_variance_w(int64_t arr) {
     return f64_to_i64(math_variance(fa));
 }
 
+/* math.ln(x) — natural logarithm */
+int64_t tk_math_ln_w(int64_t x) { return f64_to_i64(math_log(i64_to_f64(x))); }
+
+/* math.exp(x) — e^x */
+int64_t tk_math_exp_w(int64_t x) { return f64_to_i64(math_exp(i64_to_f64(x))); }
+
+/* math.log(x) — alias for ln (natural log) */
+int64_t tk_math_log_w(int64_t x) { return f64_to_i64(math_log(i64_to_f64(x))); }
+
+/* math.log10(x) — base-10 logarithm */
+int64_t tk_math_log10_w(int64_t x) { return f64_to_i64(math_log10(i64_to_f64(x))); }
+
 /* math.pow2neg(n) — compute 2^(-n) as f64 (useful for decay/probability) */
 int64_t tk_math_pow2neg_w(int64_t n) {
     double result = math_pow(2.0, -(double)n);

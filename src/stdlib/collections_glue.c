@@ -181,6 +181,55 @@ int64_t tk_arr_sort(int64_t arr_i64, int64_t cmp_ptr) {
     return (int64_t)(intptr_t)(block + 1);
 }
 
+/* ── std.array instance methods ──────────────────────────────────────── */
+
+/* array.get(arr, idx) — get element at index */
+int64_t tk_array_get_w(int64_t arr, int64_t idx) {
+    if (!arr) return 0;
+    int64_t *ptr = (int64_t *)(intptr_t)arr;
+    int64_t len = ptr[-1];
+    if (idx < 0 || idx >= len) return 0;
+    return ptr[idx];
+}
+
+/* array.length(arr) — get array length */
+int64_t tk_array_length_w(int64_t arr) {
+    if (!arr) return 0;
+    int64_t *ptr = (int64_t *)(intptr_t)arr;
+    return ptr[-1];
+}
+
+/* array.new(type) — create empty array (type tag ignored at runtime) */
+int64_t tk_array_new_w(int64_t type_tag) {
+    (void)type_tag;
+    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
+    if (!block) return 0;
+    block[0] = 0;
+    return (int64_t)(intptr_t)(block + 1);
+}
+
+/* array.push(arr, elem) — append element, return new array */
+int64_t tk_array_push_w(int64_t arr, int64_t elem) {
+    return tk_array_append_w(arr, elem);
+}
+
+/* array.pop(arr) — remove last element, return new array */
+int64_t tk_array_pop_w(int64_t arr) {
+    if (!arr) return 0;
+    int64_t *ptr = (int64_t *)(intptr_t)arr;
+    int64_t len = ptr[-1];
+    if (len <= 0) return arr;
+    int64_t new_len = len - 1;
+    int64_t *block = (int64_t *)malloc((size_t)(new_len + 1) * sizeof(int64_t));
+    if (!block) return arr;
+    block[0] = new_len;
+    if (new_len > 0) memcpy(block + 1, ptr, (size_t)new_len * sizeof(int64_t));
+    return (int64_t)(intptr_t)(block + 1);
+}
+
+/* array.len — alias for array.length */
+int64_t tk_array_len_w(int64_t arr) { return tk_array_length_w(arr); }
+
 /* sort stubs */
 int64_t tk_sort_ints_w(int64_t arr) { (void)arr; return arr; }
 int64_t tk_sort_strs_w(int64_t arr) { (void)arr; return arr; }

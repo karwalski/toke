@@ -2950,7 +2950,12 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  store i64 %%t%d, i64* %%t%d\n", ev, slot);
                 write_idx++;
             }
-            return t;
+            /* Bug 102.22: GEP returns i64* but expr_llvm_type promises i8* —
+             * bitcast so that store instructions use consistent types. */
+            { int bc = next_tmp(c);
+              fprintf(c->out, "  %%t%d = bitcast i64* %%t%d to i8*\n", bc, t);
+              return bc;
+            }
         }
 
         /* ── Static path: @(item1; item2; ...) — all scalars ─────────── */
@@ -2985,7 +2990,12 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  store i64 %%t%d, i64* %%t%d\n", ev, t3);
             elem_idx++;
         }
-        return t;
+        /* Bug 102.22: GEP returns i64* but expr_llvm_type promises i8* —
+         * bitcast so that store instructions use consistent types. */
+        { int bc = next_tmp(c);
+          fprintf(c->out, "  %%t%d = bitcast i64* %%t%d to i8*\n", bc, t);
+          return bc;
+        }
     }
     case NODE_MAP_LIT: {
         /* Emit calls to tk_map_new and tk_map_put — runtime stubs. */

@@ -732,3 +732,46 @@ int64_t tk_str_to_float_w(int64_t s) { return tk_str_tofloat_w(s); }
 
 /* str.from_bytes -> tk_str_from_bytes_w (alias for tk_str_frombytes_w) */
 int64_t tk_str_from_bytes_w(int64_t b) { return tk_str_frombytes_w(b); }
+
+/* ── str.charcode / str.charAt / str.length aliases ─────────────────────── */
+
+/* str.charcode(s) — get Unicode code point (byte value) of first char, or
+ * str.charcode(s, i) compiled as single-arg by the compiler passing char str.
+ * The compiler emits: tk_str_charcode_w(s) where s is a single-char string. */
+int64_t tk_str_charcode_w(int64_t s) {
+    const char *p = s ? (const char *)(intptr_t)s : "";
+    return (int64_t)(unsigned char)p[0];
+}
+
+/* str.charAt — camelCase alias for tk_str_charat_w */
+int64_t tk_str_charAt_w(int64_t s, int64_t i) {
+    return tk_str_charat_w(s, i);
+}
+
+/* str.length — alias for tk_str_len_w */
+int64_t tk_str_length_w(int64_t s) {
+    return tk_str_len_w(s);
+}
+
+/* ── std.float glue (no separate file; linked via str_glue) ─────────────── */
+
+/* float.parse(s) — parse string to f64 */
+int64_t tk_float_parse_w(int64_t s) {
+    return tk_str_tofloat_w(s);
+}
+
+/* ── std.fmt glue (no separate file; linked via str_glue) ───────────────── */
+
+/* fmt.f64(value, decimals) — format f64 with N decimal places, returns string */
+int64_t tk_fmt_f64_w(int64_t val_bits, int64_t decimals) {
+    double d = i64_to_f64(val_bits);
+    int dec = (int)decimals;
+    if (dec < 0) dec = 0;
+    if (dec > 20) dec = 20;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%.*f", dec, d);
+    char *out = (char *)malloc(strlen(buf) + 1);
+    if (!out) return (int64_t)(intptr_t)"0";
+    strcpy(out, buf);
+    return (int64_t)(intptr_t)out;
+}
