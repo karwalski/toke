@@ -1342,8 +1342,11 @@ static int resolve_node(const Node *node, const char *src,
             }
         }
 
-        /* Resolve condition, step, and body in loop scope. */
-        for (int i = 1; i < node->child_count; i++)
+        /* Resolve condition, step, and body in loop scope.
+         * For while-loop form lp(expr){body}, children[0] is the condition
+         * (not NODE_LOOP_INIT), so start resolving from index 0. */
+        int start = (init && init->kind == NODE_LOOP_INIT) ? 1 : 0;
+        for (int i = start; i < node->child_count; i++)
             resolve_node(node->children[i], src, lp_scope, arena, had_error);
         break;
     }

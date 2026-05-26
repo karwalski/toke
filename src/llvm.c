@@ -2545,6 +2545,11 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", conv, base);
                 base = conv;
             }
+            /* Bug 102.22: bitcast i8* → i64* for GEP */
+            { int bc = next_tmp(c);
+              fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", bc, base);
+              base = bc;
+            }
             t2 = next_tmp(c); t = next_tmp(c);
             fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 -1 ; .len\n", t2, base);
             fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", t, t2);
@@ -2771,6 +2776,11 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", conv, base);
             base = conv;
         }
+        /* Bug 102.22: base is now i8* but GEP needs i64* — bitcast */
+        { int bc = next_tmp(c);
+          fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", bc, base);
+          base = bc;
+        }
         int idx  = emit_expr(c, n->children[1]);
         { const char *ity = expr_llvm_type(c, n->children[1]);
           if (strcmp(ity, "i64")) {
@@ -2867,6 +2877,11 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", conv, src_arr);
                 src_arr = conv;
             }
+            /* Bug 102.22: bitcast i8* → i64* for GEP */
+            { int bc = next_tmp(c);
+              fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", bc, src_arr);
+              src_arr = bc;
+            }
             /* Read base.len from ptr[-1] */
             int base_len_ptr = next_tmp(c);
             int base_len = next_tmp(c);
@@ -2883,8 +2898,10 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = add i64 %%t%d, 1\n", alloc_elems, total_len);
             fprintf(c->out, "  %%t%d = mul i64 %%t%d, 8\n", alloc_bytes, alloc_elems);
             /* malloc */
+            int block_raw = next_tmp(c);
+            fprintf(c->out, "  %%t%d = call i8* @malloc(i64 %%t%d) ; spread array\n", block_raw, alloc_bytes);
             int block = next_tmp(c);
-            fprintf(c->out, "  %%t%d = call i8* @malloc(i64 %%t%d) ; spread array\n", block, alloc_bytes);
+            fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", block, block_raw);
             /* Store total_len at block[0] */
             int len_slot = next_tmp(c);
             fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 0\n", len_slot, block);
@@ -2927,9 +2944,12 @@ static int emit_expr(Ctx *c, const Node *n)
         /* ── Static path: @(item1; item2; ...) — all scalars ─────────── */
         /* Allocate len+1 slots: [length | data[0] | data[1] | ...].
          * Return pointer to data[0] so that ptr[-1] == length. */
-        int block = next_tmp(c);
+        int block_raw = next_tmp(c);
         fprintf(c->out, "  %%t%d = call i8* @malloc(i64 %d) ; array block (len + %d elems)\n",
-                block, (elem_count + 1) * 8, elem_count);
+                block_raw, (elem_count + 1) * 8, elem_count);
+        /* Bug 102.22: bitcast i8* from malloc to i64* for GEP */
+        int block = next_tmp(c);
+        fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", block, block_raw);
         /* Store length at index 0 of the block */
         t2 = next_tmp(c);
         fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 0\n", t2, block);

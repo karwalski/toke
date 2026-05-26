@@ -937,6 +937,7 @@ static Node *parse_expr(Parser *p) {
  *
  * Grammar:
  *   LoopStmt = 'lp' '(' LoopInit ';' Expr ';' LoopStep ')' '{' StmtList '}'
+ *            | 'lp' '(' Expr ')' '{' StmtList '}'
  *   LoopInit = ('let' IDENT | IDENT) '=' Expr
  *   LoopStep = IDENT '=' Expr
  *
@@ -951,9 +952,14 @@ static Node *parse_expr(Parser *p) {
  *     children[1] = step expression
  *   children[3] = NODE_STMT_LIST — loop body
  *
- * Example:
+ * Example (3-clause):
  *   lp(let i = 0; i < 10; i = i + 1) {
  *       print(i)
+ *   }
+ *
+ * Example (while-loop):
+ *   lp(x < 5) {
+ *       x = x + 1
  *   }
  *
  * An optional trailing semicolon after the closing '}' is consumed.
@@ -961,11 +967,21 @@ static Node *parse_expr(Parser *p) {
  * Error recovery: calls sync() at each structural point (missing '(',
  * '=', ';', identifier); emits E2004 on unclosed ')' or '}'.
  */
-/* LoopStmt = 'lp' '(' LoopInit ';' Expr ';' LoopStep ')' '{' StmtList '}' */
+/* LoopStmt = 'lp' '(' LoopInit ';' Expr ';' LoopStep ')' '{' StmtList '}'
+ *          | 'lp' '(' Expr ')' '{' StmtList '}'                           */
 static Node *parse_loop_stmt(Parser *p) {
     Token *t=xp(p,TK_KW_LP,"'lp'"); if(!t) return NULL;
     Node *n=mk(p,NODE_LOOP_STMT,t);
     if(!xp(p,TK_LPAREN,"'('")){ sync(p);return n;}
+    /* Disambiguate: 3-clause form starts with 'let IDENT =' or 'IDENT ='.
+     * Anything else (e.g. 'idx<n') is the while-loop form lp(expr){body}. */
+    int is_three_clause = 0;
+    if(peek(p)==TK_KW_LET && peek_at(p,1)==TK_IDENT && peek_at(p,2)==TK_EQ)
+        is_three_clause = 1;
+    else if(peek(p)==TK_IDENT && peek_at(p,1)==TK_EQ)
+        is_three_clause = 1;
+    if(is_three_clause){
+    /* ── 3-clause form: lp(init; cond; step){body} ── */
     /* LoopInit = ('let' IDENT | IDENT) '=' Expr */
     Token *it=cur(p); Node *ini=mk(p,NODE_LOOP_INIT,it);
     if(peek(p)==TK_KW_LET){ini->op=TK_KW_LET;adv(p);}
@@ -981,6 +997,11 @@ static Node *parse_loop_stmt(Parser *p) {
     if(!xp(p,TK_EQ,"'='")){ sync(p);return n;}
     ch(p,step,parse_expr(p)); ch(p,n,step);
     if(!xp(p,TK_RPAREN,"')'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+    } else {
+    /* ── while-loop form: lp(expr){body} ── */
+    ch(p,n,parse_expr(p));
+    if(!xp(p,TK_RPAREN,"')'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+    }
     /* Detect Python-style ':' after lp(...) — story 84.1.10 */
     if(peek(p)==TK_COLON){
         ewarn(p,W2021,cur(p),"':' after loop condition is Python syntax","replace `:` with `{`");

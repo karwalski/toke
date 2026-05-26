@@ -499,48 +499,62 @@ static void fmt_stmt(Buf *b, const Node *n, const char *src, int depth)
         break;
     }
     case NODE_LOOP_STMT: {
-        /* child[0]=init, child[1]=cond, child[2]=step, child[3]=body */
         buf_indent(b, depth);
-        buf_puts(b, "lp (");
-        /* Init: NODE_LOOP_INIT -> child[0]=ident, child[1]=expr */
-        if (n->child_count > 0) {
-            const Node *init = n->children[0];
-            if (init->kind == NODE_LOOP_INIT) {
-                if (init->op == TK_KW_LET)
-                    buf_puts(b, "let ");
-                if (init->child_count > 0) {
-                    char *name = tok_text(init->children[0], src);
+        int is_while = (n->child_count >= 1 &&
+                        n->children[0]->kind != NODE_LOOP_INIT);
+        if (is_while) {
+            /* while-loop form: lp(expr){body} */
+            buf_puts(b, "lp (");
+            fmt_expr(b, n->children[0], src);
+            buf_puts(b, ") {");
+            if (n->child_count > 1) {
+                buf_putc(b, '\n');
+                fmt_stmt_list(b, n->children[1], src, depth + 1);
+                buf_putc(b, '\n');
+            }
+        } else {
+            /* 3-clause form: child[0]=init, child[1]=cond, child[2]=step, child[3]=body */
+            buf_puts(b, "lp (");
+            /* Init: NODE_LOOP_INIT -> child[0]=ident, child[1]=expr */
+            if (n->child_count > 0) {
+                const Node *init = n->children[0];
+                if (init->kind == NODE_LOOP_INIT) {
+                    if (init->op == TK_KW_LET)
+                        buf_puts(b, "let ");
+                    if (init->child_count > 0) {
+                        char *name = tok_text(init->children[0], src);
+                        buf_puts(b, name);
+                        free(name);
+                    }
+                    buf_putc(b, '=');
+                    if (init->child_count > 1)
+                        fmt_expr(b, init->children[1], src);
+                }
+            }
+            buf_puts(b, "; ");
+            /* Condition */
+            if (n->child_count > 1)
+                fmt_expr(b, n->children[1], src);
+            buf_puts(b, "; ");
+            /* Step: NODE_ASSIGN_STMT */
+            if (n->child_count > 2) {
+                const Node *step = n->children[2];
+                if (step->child_count > 0) {
+                    char *name = tok_text(step->children[0], src);
                     buf_puts(b, name);
                     free(name);
                 }
                 buf_putc(b, '=');
-                if (init->child_count > 1)
-                    fmt_expr(b, init->children[1], src);
+                if (step->child_count > 1)
+                    fmt_expr(b, step->children[1], src);
             }
-        }
-        buf_puts(b, "; ");
-        /* Condition */
-        if (n->child_count > 1)
-            fmt_expr(b, n->children[1], src);
-        buf_puts(b, "; ");
-        /* Step: NODE_ASSIGN_STMT */
-        if (n->child_count > 2) {
-            const Node *step = n->children[2];
-            if (step->child_count > 0) {
-                char *name = tok_text(step->children[0], src);
-                buf_puts(b, name);
-                free(name);
+            buf_puts(b, ") {");
+            /* Body */
+            if (n->child_count > 3) {
+                buf_putc(b, '\n');
+                fmt_stmt_list(b, n->children[3], src, depth + 1);
+                buf_putc(b, '\n');
             }
-            buf_putc(b, '=');
-            if (step->child_count > 1)
-                fmt_expr(b, step->children[1], src);
-        }
-        buf_puts(b, ") {");
-        /* Body */
-        if (n->child_count > 3) {
-            buf_putc(b, '\n');
-            fmt_stmt_list(b, n->children[3], src, depth + 1);
-            buf_putc(b, '\n');
         }
         buf_indent(b, depth);
         buf_putc(b, '}');
@@ -1234,14 +1248,46 @@ static void pfmt_stmt(Buf *b, const Node *n, const char *src,
     }
     case NODE_LOOP_STMT: {
         buf_indent(b, depth);
-        buf_puts(b, "lp (");
-        if (n->child_count > 0) {
-            const Node *init = n->children[0];
-            if (init->kind == NODE_LOOP_INIT) {
-                if (init->op == TK_KW_LET)
-                    buf_puts(b, "let ");
-                if (init->child_count > 0) {
-                    char *name = tok_text(init->children[0], src);
+        int is_while = (n->child_count >= 1 &&
+                        n->children[0]->kind != NODE_LOOP_INIT);
+        if (is_while) {
+            /* while-loop form: lp(expr){body} */
+            buf_puts(b, "lp (");
+            pfmt_expr(b, n->children[0], src, opts, root);
+            buf_puts(b, ") {");
+            if (n->child_count > 1) {
+                buf_putc(b, '\n');
+                pfmt_stmt_list(b, n->children[1], src, depth + 1, opts, root);
+                buf_putc(b, '\n');
+            }
+        } else {
+            buf_puts(b, "lp (");
+            if (n->child_count > 0) {
+                const Node *init = n->children[0];
+                if (init->kind == NODE_LOOP_INIT) {
+                    if (init->op == TK_KW_LET)
+                        buf_puts(b, "let ");
+                    if (init->child_count > 0) {
+                        char *name = tok_text(init->children[0], src);
+                        buf_puts(b, name);
+                        free(name);
+                    }
+                    if (opts.pretty)
+                        buf_puts(b, " = ");
+                    else
+                        buf_putc(b, '=');
+                    if (init->child_count > 1)
+                        pfmt_expr(b, init->children[1], src, opts, root);
+                }
+            }
+            buf_puts(b, "; ");
+            if (n->child_count > 1)
+                pfmt_expr(b, n->children[1], src, opts, root);
+            buf_puts(b, "; ");
+            if (n->child_count > 2) {
+                const Node *step = n->children[2];
+                if (step->child_count > 0) {
+                    char *name = tok_text(step->children[0], src);
                     buf_puts(b, name);
                     free(name);
                 }
@@ -1249,33 +1295,15 @@ static void pfmt_stmt(Buf *b, const Node *n, const char *src,
                     buf_puts(b, " = ");
                 else
                     buf_putc(b, '=');
-                if (init->child_count > 1)
-                    pfmt_expr(b, init->children[1], src, opts, root);
+                if (step->child_count > 1)
+                    pfmt_expr(b, step->children[1], src, opts, root);
             }
-        }
-        buf_puts(b, "; ");
-        if (n->child_count > 1)
-            pfmt_expr(b, n->children[1], src, opts, root);
-        buf_puts(b, "; ");
-        if (n->child_count > 2) {
-            const Node *step = n->children[2];
-            if (step->child_count > 0) {
-                char *name = tok_text(step->children[0], src);
-                buf_puts(b, name);
-                free(name);
+            buf_puts(b, ") {");
+            if (n->child_count > 3) {
+                buf_putc(b, '\n');
+                pfmt_stmt_list(b, n->children[3], src, depth + 1, opts, root);
+                buf_putc(b, '\n');
             }
-            if (opts.pretty)
-                buf_puts(b, " = ");
-            else
-                buf_putc(b, '=');
-            if (step->child_count > 1)
-                pfmt_expr(b, step->children[1], src, opts, root);
-        }
-        buf_puts(b, ") {");
-        if (n->child_count > 3) {
-            buf_putc(b, '\n');
-            pfmt_stmt_list(b, n->children[3], src, depth + 1, opts, root);
-            buf_putc(b, '\n');
         }
         buf_indent(b, depth);
         buf_putc(b, '}');
