@@ -1081,7 +1081,8 @@ static Node *parse_if_stmt(Parser *p) {
  * AST nodes produced:
  *   NODE_BIND_STMT     — immutable binding: children[0]=ident, children[1]=value
  *   NODE_MUT_BIND_STMT — mutable binding: children[0]=ident, children[1]=value
- *                         (the `mut.` prefix is consumed; the '.' is required)
+ *                         (the `mut.` prefix is consumed; '.' is canonical,
+ *                          but `mut ` with space is auto-corrected with W2022)
  *   NODE_BREAK_STMT    — loop break (leaf node, no children)
  *   NODE_RETURN_STMT   — return: children[0]=value expr (optional; a bare
  *                         `<` or `rt` with no expression returns void)
@@ -1151,7 +1152,18 @@ static Node *parse_stmt(Parser *p) {
         int mut=(peek(p)==TK_KW_MUT);
         Node *n=mk(p,mut?NODE_MUT_BIND_STMT:NODE_BIND_STMT,t); ch(p,n,mk(p,NODE_IDENT,nt));
         if(type_ann) ch(p,n,type_ann);
-        if(mut){adv(p);if(!xp(p,TK_DOT,"'.'")){ sync(p);return n;}}
+        if(mut){adv(p);
+            if(peek(p)==TK_DOT){adv(p);} /* canonical: mut.expr */
+            else if(peek(p)==TK_INT_LIT||peek(p)==TK_FLOAT_LIT||
+                    peek(p)==TK_STR_LIT||peek(p)==TK_IDENT||
+                    peek(p)==TK_BOOL_LIT||peek(p)==TK_LPAREN||
+                    peek(p)==TK_LBRACKET){
+                ewarn(p,W2022,cur(p),
+                      "'mut ' (space) detected; toke uses 'mut.' (with dot)",
+                      "replace 'mut ' with 'mut.'");
+                /* auto-correct: skip the missing dot and continue */
+            } else {if(!xp(p,TK_DOT,"'.'")){ sync(p);return n;}}
+        }
         /* spawn context keyword inside sc block: let x = spawn expr */
         if(p->in_sc&&peek(p)==TK_IDENT&&teq(p,cur(p),"spawn")){
             Token *st=cur(p);adv(p);

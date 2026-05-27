@@ -2064,6 +2064,11 @@ static int emit_expr(Ctx *c, const Node *n)
                         int z = next_tmp(c);
                         fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, av);
                         av = z;
+                    } else if (!strcmp(aty, "double")) {
+                        /* Bug 102.29: bitcast double → i64 for array i64 ABI */
+                        int z = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", z, av);
+                        av = z;
                     } else if (!strcmp(aty, "i1")) {
                         int z = next_tmp(c);
                         fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, av);
