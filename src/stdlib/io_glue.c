@@ -35,3 +35,9 @@ int64_t tk_io_readln_w(void) {
     }
     return (int64_t)(intptr_t)"";
 }
+
+/* io.printf(fmt, val) — formatted print (Story 103) */
+int64_t tk_io_printf_w(int64_t fmt, int64_t val) {
+    if (fmt) printf((const char *)(intptr_t)fmt, (const char *)(intptr_t)val);
+    return 0;
+}

@@ -1723,15 +1723,29 @@ static int emit_expr(Ctx *c, const Node *n)
         int lhs=emit_expr(c,n->children[0]), rhs=emit_expr(c,n->children[1]);
         const char *lty = expr_llvm_type(c, n->children[0]);
         const char *rty = expr_llvm_type(c, n->children[1]);
-        /* Array/string concat: ptr + ptr → call tk_array_concat */
-        if (n->op == TK_PLUS && !strcmp(lty, "i8*") && !strcmp(rty, "i8*")) {
-            t = next_tmp(c);
-            fprintf(c->out, "  %%t%d = call i8* @tk_array_concat(i8* %%t%d, i8* %%t%d)\n", t, lhs, rhs);
-            return t;
-        }
-        /* ptr + i64 or i64 + ptr with + → also array concat (e.g. arr + [x]) */
+        /* Concat dispatch: distinguish string concat from array concat.
+         * Strings are NUL-terminated i8*; arrays have a length at ptr[-1].
+         * Calling tk_array_concat on strings reads garbage → SEGFAULT.
+         * Story 101.R3b: detect array literals/types to pick the right fn. */
         if (n->op == TK_PLUS && (!strcmp(lty, "i8*") || !strcmp(rty, "i8*"))) {
-            /* Coerce the non-ptr side to ptr */
+            int either_is_array = 0;
+            if (n->children[0]->kind == NODE_ARRAY_LIT || n->children[0]->kind == NODE_MAP_LIT)
+                either_is_array = 1;
+            if (n->child_count > 1 &&
+                (n->children[1]->kind == NODE_ARRAY_LIT || n->children[1]->kind == NODE_MAP_LIT))
+                either_is_array = 1;
+            /* Check if operand is a known array-typed variable (type starts with @) */
+            if (!either_is_array && n->children[0]->kind == NODE_IDENT) {
+                char vn0[128]; tok_cp(c->src, n->children[0], vn0, sizeof vn0);
+                const char *pt0 = ptr_local_struct_type(c, vn0);
+                if (pt0 && pt0[0] == '@') either_is_array = 1;
+            }
+            if (!either_is_array && n->child_count > 1 && n->children[1]->kind == NODE_IDENT) {
+                char vn1[128]; tok_cp(c->src, n->children[1], vn1, sizeof vn1);
+                const char *pt1 = ptr_local_struct_type(c, vn1);
+                if (pt1 && pt1[0] == '@') either_is_array = 1;
+            }
+            /* Coerce non-ptr side to ptr if mixed */
             if (!strcmp(lty, "i64")) {
                 int z = next_tmp(c);
                 fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, lhs);
@@ -1743,7 +1757,11 @@ static int emit_expr(Ctx *c, const Node *n)
                 rhs = z;
             }
             t = next_tmp(c);
-            fprintf(c->out, "  %%t%d = call i8* @tk_array_concat(i8* %%t%d, i8* %%t%d)\n", t, lhs, rhs);
+            if (either_is_array) {
+                fprintf(c->out, "  %%t%d = call i8* @tk_array_concat(i8* %%t%d, i8* %%t%d)\n", t, lhs, rhs);
+            } else {
+                fprintf(c->out, "  %%t%d = call i8* @tk_str_concat(i8* %%t%d, i8* %%t%d)\n", t, lhs, rhs);
+            }
             return t;
         }
         /* String equality: when TK_EQ and at least one side is a str/ptr,
@@ -1997,8 +2015,23 @@ static int emit_expr(Ctx *c, const Node *n)
             const char *uty3 = expr_llvm_type(c, n->children[0]);
             fprintf(c->out, "  %%t%d = xor %s %%t%d, -1\n", t, uty3, v);
         }
-        else
-            fprintf(c->out, "  %%t%d = add i64 0, %%t%d ; unary stub\n", t, v);
+        else if (n->op == TK_PLUS) {
+            /* Unary plus is a no-op — just copy the operand */
+            const char *uty4 = expr_llvm_type(c, n->children[0]);
+            if (!strcmp(uty4, "double") || !strcmp(uty4, "float"))
+                fprintf(c->out, "  %%t%d = fadd %s 0.0, %%t%d\n", t, uty4, v);
+            else
+                fprintf(c->out, "  %%t%d = add %s 0, %%t%d\n", t, uty4, v);
+        }
+        else {
+            /* Unknown unary op — emit identity as safe fallback */
+            const char *uty5 = expr_llvm_type(c, n->children[0]);
+            fprintf(c->out, "  ; unknown unary op %d\n", (int)n->op);
+            if (!strcmp(uty5, "double") || !strcmp(uty5, "float"))
+                fprintf(c->out, "  %%t%d = fadd %s 0.0, %%t%d\n", t, uty5, v);
+            else
+                fprintf(c->out, "  %%t%d = add %s 0, %%t%d\n", t, uty5, v);
+        }
         return t;
     }
     case NODE_CALL_EXPR: {
@@ -2037,7 +2070,14 @@ static int emit_expr(Ctx *c, const Node *n)
                  !strcmp(method_im, "set") ||
                  !strcmp(method_im, "get") ||
                  !strcmp(method_im, "map") || !strcmp(method_im, "filter") ||
-                 !strcmp(method_im, "reduce") || !strcmp(method_im, "sort"))) {
+                 !strcmp(method_im, "reduce") || !strcmp(method_im, "sort") ||
+                 !strcmp(method_im, "split") || !strcmp(method_im, "trim") ||
+                 !strcmp(method_im, "contains") || !strcmp(method_im, "charat") ||
+                 !strcmp(method_im, "slice") || !strcmp(method_im, "find") ||
+                 !strcmp(method_im, "starts") || !strcmp(method_im, "indexof") ||
+                 !strcmp(method_im, "substr") || !strcmp(method_im, "concat") ||
+                 !strcmp(method_im, "chars") || !strcmp(method_im, "sub") ||
+                 !strcmp(method_im, "substring") || !strcmp(method_im, "eq"))) {
                 const char *fn_im;
                 if (!strcmp(method_im, "append"))      fn_im = "tk_array_append_w";
                 else if (!strcmp(method_im, "push"))    fn_im = "tk_array_append_w";
@@ -2046,7 +2086,21 @@ static int emit_expr(Ctx *c, const Node *n)
                 else if (!strcmp(method_im, "map"))     fn_im = "tk_arr_map";
                 else if (!strcmp(method_im, "filter"))  fn_im = "tk_arr_filter";
                 else if (!strcmp(method_im, "reduce"))  fn_im = "tk_arr_reduce";
-                else                                    fn_im = "tk_arr_sort";
+                else if (!strcmp(method_im, "sort"))    fn_im = "tk_arr_sort";
+                else if (!strcmp(method_im, "split"))   fn_im = "tk_str_split_w";
+                else if (!strcmp(method_im, "trim"))    fn_im = "tk_str_trim_w";
+                else if (!strcmp(method_im, "contains"))fn_im = "tk_str_contains_w";
+                else if (!strcmp(method_im, "charat"))  fn_im = "tk_str_charat_w";
+                else if (!strcmp(method_im, "slice"))   fn_im = "tk_str_slice_w";
+                else if (!strcmp(method_im, "find"))    fn_im = "tk_str_find_w";
+                else if (!strcmp(method_im, "starts"))  fn_im = "tk_str_starts_w";
+                else if (!strcmp(method_im, "indexof")) fn_im = "tk_str_indexof_w";
+                else if (!strcmp(method_im, "substr"))  fn_im = "tk_str_substr_w";
+                else if (!strcmp(method_im, "concat"))  fn_im = "tk_str_concat_w";
+                else if (!strcmp(method_im, "chars"))   fn_im = "tk_str_chars_w";
+                else if (!strcmp(method_im, "sub"))     fn_im = "tk_str_sub_w";
+                else if (!strcmp(method_im, "substring"))fn_im = "tk_str_substr_w";
+                else                                    fn_im = "tk_str_eq_w";
                 /* Emit base object as first arg (coerce ptr→i64) */
                 int obj_v = emit_expr(c, n->children[0]->children[0]);
                 const char *obj_ty = expr_llvm_type(c, n->children[0]->children[0]);
@@ -2084,6 +2138,23 @@ static int emit_expr(Ctx *c, const Node *n)
                     fprintf(c->out, " i64 %%t%d", coa[i]);
                 }
                 fputs(")\n", c->out);
+                /* Bug 102.29b: bitcast i64 → double for .get() on float arrays.
+                 * Arrays store doubles as bitcast i64 values; when reading back
+                 * via .get(), the i64 must be reinterpreted as double so that
+                 * downstream float arithmetic uses the correct bit pattern. */
+                if (!strcmp(fn_im, "tk_str_arrayget_w")) {
+                    const char *base_stype = NULL;
+                    if (n->children[0]->children[0]->kind == NODE_IDENT) {
+                        char _bn[128]; tok_cp(c->src, n->children[0]->children[0], _bn, sizeof _bn);
+                        const char *_ln = get_llvm_name(c, _bn);
+                        base_stype = ptr_local_struct_type(c, _ln);
+                    }
+                    if (base_stype && !strcmp(base_stype, "@f64")) {
+                        int bc = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; f64 array .get()\n", bc, t);
+                        t = bc;
+                    }
+                }
                 return t;
             }
         }
@@ -2563,6 +2634,30 @@ static int emit_expr(Ctx *c, const Node *n)
                 return t;
             }
         }
+        /* Cast to $str: convert int/float to string via runtime call.
+         * Story 101.R3b: `n as $str` was doing inttoptr → SIGSEGV. */
+        if (n->child_count >= 2 && n->children[1]) {
+            char tn2[64]; tok_cp(c->src, n->children[1], tn2, sizeof tn2);
+            if (!strcmp(tn2, "str") || !strcmp(tn2, "$str")) {
+                int src_is_float = (!strcmp(src_ty, "double") || !strcmp(src_ty, "float"));
+                if (src_is_float) {
+                    /* float -> str: bitcast double to i64 then call fromfloat */
+                    int bc = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, v);
+                    fprintf(c->out, "  %%t%d = call i64 @tk_str_fromfloat_w(i64 %%t%d)\n", t, bc);
+                } else if (!strcmp(src_ty, "i8*")) {
+                    /* str -> str: identity */
+                    fprintf(c->out, "  %%t%d = getelementptr i8, i8* %%t%d, i32 0\n", t, v);
+                } else {
+                    /* int -> str */
+                    fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", t, v);
+                    int bc = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", bc, t);
+                    t = bc;
+                }
+                return t;
+            }
+        }
         /* Array or unknown cast — treat as ptr identity (inttoptr or passthrough) */
         if (!strcmp(src_ty, "i8*")) {
             fprintf(c->out, "  %%t%d = getelementptr i8, i8* %%t%d, i32 0 ; as-cast ptr\n", t, v);
@@ -2833,6 +2928,17 @@ static int emit_expr(Ctx *c, const Node *n)
         t2 = next_tmp(c); t = next_tmp(c);
         fprintf(c->out, "  %%t%d = getelementptr i64, i64* %%t%d, i64 %%t%d\n", t2, base, idx);
         fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", t, t2);
+        /* Bug 102.29b: bitcast i64 → double for subscript on float arrays */
+        if (n->children[0]->kind == NODE_IDENT) {
+            char _bn2[128]; tok_cp(c->src, n->children[0], _bn2, sizeof _bn2);
+            const char *_ln2 = get_llvm_name(c, _bn2);
+            const char *_st2 = ptr_local_struct_type(c, _ln2);
+            if (_st2 && !strcmp(_st2, "@f64")) {
+                int bc = next_tmp(c);
+                fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; f64 array subscript\n", bc, t);
+                t = bc;
+            }
+        }
         return t;
     }
     case NODE_STRUCT_LIT: {
@@ -3348,6 +3454,23 @@ static int emit_expr(Ctx *c, const Node *n)
  */
 static const char *expr_struct_type(Ctx *c, const Node *n) {
     if (!n) return NULL;
+    /* Array literal: detect element type for float array tracking.
+     * Returns "@f64" when the first non-annotation element is a float literal
+     * or double-typed expression, so that .get() can bitcast i64→double. */
+    if (n->kind == NODE_ARRAY_LIT) {
+        for (int i = 0; i < n->child_count; i++) {
+            NodeKind ck = n->children[i]->kind;
+            if (ck == NODE_TYPE_IDENT || ck == NODE_TYPE_EXPR ||
+                ck == NODE_ARRAY_TYPE || ck == NODE_MAP_TYPE ||
+                ck == NODE_FUNC_TYPE  || ck == NODE_PTR_TYPE)
+                continue; /* skip type annotations */
+            if (ck == NODE_FLOAT_LIT) return "@f64";
+            const char *ety = expr_llvm_type(c, n->children[i]);
+            if (!strcmp(ety, "double")) return "@f64";
+            break; /* only check the first real element */
+        }
+        return NULL;
+    }
     if (n->kind == NODE_STRUCT_LIT) {
         /* For struct literals, the type name is in the token */
         static char sn[128];
@@ -3553,6 +3676,23 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         return "i64";
     case NODE_CALL_EXPR: {
         if (n->child_count < 1) return "i64";
+        /* Bug 102.29b: instance .get() on @f64 arrays returns double */
+        if (n->children[0]->kind == NODE_FIELD_EXPR &&
+            n->children[0]->child_count >= 2) {
+            char _ga[128], _gm[128];
+            tok_cp(c->src, n->children[0]->children[0], _ga, sizeof _ga);
+            tok_cp(c->src, n->children[0]->children[1], _gm, sizeof _gm);
+            if (!strcmp(_gm, "get")) {
+                int _is_mod = 0;
+                for (int ii = 0; ii < c->import_count; ii++)
+                    if (!strcmp(c->imports[ii].alias, _ga)) { _is_mod = 1; break; }
+                if (!_is_mod) {
+                    const char *_ln = get_llvm_name(c, _ga);
+                    const char *_st = ptr_local_struct_type(c, _ln);
+                    if (_st && !strcmp(_st, "@f64")) return "double";
+                }
+            }
+        }
         /* Check for resolved stdlib calls */
         if (n->children[0]->kind == NODE_FIELD_EXPR) {
             char alias[128], method[128];
@@ -3640,6 +3780,13 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         return mrt;
     }
     case NODE_INDEX_EXPR:
+        /* Bug 102.29b: subscript on @f64 arrays returns double */
+        if (n->child_count >= 1 && n->children[0]->kind == NODE_IDENT) {
+            char _ia[128]; tok_cp(c->src, n->children[0], _ia, sizeof _ia);
+            const char *_iln = get_llvm_name(c, _ia);
+            const char *_ist = ptr_local_struct_type(c, _iln);
+            if (_ist && !strcmp(_ist, "@f64")) return "double";
+        }
         return "i64"; /* array element load */
     case NODE_FIELD_EXPR: {
         char fn[128]; tok_cp(c->src, n->children[1], fn, sizeof fn);
@@ -4233,8 +4380,24 @@ static void emit_toplevel(Ctx *c, const Node *n)
             int si = emit_str_global(c, c->src + sl->tok_start, sl->tok_len, &ilen);
             fprintf(c->out, "@%s = constant i8* getelementptr ([%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0)\n",
                     tb, ilen, ilen, c->module_prefix, si);
+        } else if (n->child_count >= 3 && n->children[2]->kind == NODE_FLOAT_LIT) {
+            char vb[64]; tok_cp(c->src, n->children[2], vb, sizeof vb);
+            fprintf(c->out, "@%s = constant double %s\n", tb, vb);
+        } else if (n->child_count >= 3 && n->children[2]->kind == NODE_BOOL_LIT) {
+            char vb[64]; tok_cp(c->src, n->children[2], vb, sizeof vb);
+            fprintf(c->out, "@%s = constant i1 %d\n", tb, vb[0] == 't' ? 1 : 0);
+        } else if (n->child_count >= 2) {
+            /* Unknown initializer — try to resolve the declared type */
+            const char *cty = (n->child_count >= 2 && n->children[1])
+                              ? resolve_llvm_type(c, n->children[1]) : "i64";
+            if (cty[0] == '%')
+                fprintf(c->out, "@%s = constant %s zeroinitializer\n", tb, cty);
+            else if (!strcmp(cty, "double") || !strcmp(cty, "float"))
+                fprintf(c->out, "@%s = constant %s 0.0\n", tb, cty);
+            else
+                fprintf(c->out, "@%s = constant %s 0\n", tb, cty);
         } else {
-            fprintf(c->out, "@%s = constant i64 0 ; const stub\n", tb);
+            fprintf(c->out, "@%s = constant i64 0 ; const fallback\n", tb);
         }
         break;
     case NODE_FUNC_DECL: {
@@ -4409,7 +4572,23 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_str_upper_w", "declare i64 @tk_str_upper_w(i64)", 0},
     {"tk_str_lower_w", "declare i64 @tk_str_lower_w(i64)", 0},
     {"tk_str_from_int", "declare i64 @tk_str_from_int(i64)", 0},
+    {"tk_str_fromi64_w", "declare i64 @tk_str_fromi64_w(i64)", 0},
     {"tk_str_to_int", "declare i64 @tk_str_to_int(i64)", 0},
+    /* Instance method string functions (101.R3a) */
+    {"tk_str_charat_w", "declare i64 @tk_str_charat_w(i64, i64)", 0},
+    {"tk_str_find_w", "declare i64 @tk_str_find_w(i64, i64)", 0},
+    {"tk_str_starts_w", "declare i64 @tk_str_starts_w(i64, i64)", 0},
+    {"tk_str_substr_w", "declare i64 @tk_str_substr_w(i64, i64, i64)", 0},
+    {"tk_str_chars_w", "declare i64 @tk_str_chars_w(i64)", 0},
+    {"tk_str_sub_w", "declare i64 @tk_str_sub_w(i64, i64, i64)", 0},
+    {"tk_str_eq_w", "declare i64 @tk_str_eq_w(i64, i64)", 0},
+    {"tk_str_fromfloat_w", "declare i64 @tk_str_fromfloat_w(i64)", 0},
+    {"tk_http_servepages_w", "declare i64 @tk_http_servepages_w(i64, i64)", 0},
+    {"tk_json_print_f64", "declare void @tk_json_print_f64(double)", 0},
+    {"tk_str_get_w", "declare i64 @tk_str_get_w(i64, i64)", 0},
+    {"tk_io_printf_w", "declare i64 @tk_io_printf_w(i64, i64)", 0},
+    {"tk_fmt_sprintf_w", "declare i64 @tk_fmt_sprintf_w(i64, i64)", 0},
+    {"tk_str_equals_w", "declare i64 @tk_str_equals_w(i64, i64)", 0},
     {"tk_str_split_w", "declare i64 @tk_str_split_w(i64, i64)", 0},
     {"tk_str_indexof_w", "declare i64 @tk_str_indexof_w(i64, i64)", 0},
     {"tk_str_slice_w", "declare i64 @tk_str_slice_w(i64, i64, i64)", 0},
@@ -4583,6 +4762,13 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_clipboard_write_w", "declare i64 @tk_clipboard_write_w(i64)", 0},
     {"tk_crypto_randomhex_w", "declare i64 @tk_crypto_randomhex_w(i64)", 0},
     {"tk_crypto_randombase64url_w", "declare i64 @tk_crypto_randombase64url_w(i64)", 0},
+
+    /* --- Auto-generated declarations from stdlib glue files (103.11) ---
+     * Regenerate with: python3 scripts/gen_stdlib_decls.py
+     * This ensures every tk_* function in any glue .c file has a matching
+     * LLVM IR declaration, preventing "undefined value" link errors. */
+#include "stdlib_decls_gen.h"
+
     {NULL, NULL, 0}
 };
 
@@ -4851,11 +5037,33 @@ int emit_llvm_ir(const Node *ast, const char *src,
     body_buf[body_len] = '\0';
     fclose(body_file);
 
-    /* Emit only the declarations whose symbols are referenced in the body */
+    /* Emit only the declarations whose symbols are referenced in the body
+     * AND not already declared (e.g. via fwd_decls from resolve_stdlib_call) */
     fputs("\n", f);
     for (int di = 0; g_stdlib_decls[di].name; di++) {
         if (g_stdlib_decls[di].always ||
             body_references_symbol(body_buf, body_len, g_stdlib_decls[di].name)) {
+            /* Skip if already forward-declared in body (avoid "invalid redefinition") */
+            char needle[256];
+            snprintf(needle, sizeof needle, "declare %%*[^ ] @%s(", g_stdlib_decls[di].name);
+            /* Simple check: look for "declare" + "@name(" in body */
+            char simple_needle[256];
+            snprintf(simple_needle, sizeof simple_needle, "@%s(", g_stdlib_decls[di].name);
+            if (strstr(body_buf, simple_needle) &&
+                strstr(body_buf, "declare") &&
+                strstr(body_buf, g_stdlib_decls[di].name)) {
+                /* Check more precisely: is there a declare line with this name? */
+                char *pos = body_buf;
+                int already = 0;
+                while ((pos = strstr(pos, g_stdlib_decls[di].name)) != NULL) {
+                    /* Walk back to check if this line starts with "declare" */
+                    char *line_start = pos;
+                    while (line_start > body_buf && *(line_start-1) != '\n') line_start--;
+                    if (!strncmp(line_start, "declare ", 8)) { already = 1; break; }
+                    pos++;
+                }
+                if (already) continue;
+            }
             fprintf(f, "%s\n", g_stdlib_decls[di].decl);
         }
     }

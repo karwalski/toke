@@ -772,22 +772,66 @@ static void (*const _rtp_ref)(TkStreamState *, double) __attribute__((unused))
  *
  * tk_infer_detect_storage_type is defined above (unconditionally).
  * Only load_streaming, stream_throughput, and stream_cleanup need stubs.
+ *
+ * These stubs exist so that code which calls the streaming API can link
+ * and run without llama.cpp.  Each function returns a clear error or a
+ * safe default value so that callers can detect the missing backend at
+ * runtime and surface a helpful diagnostic to the user.
  * ========================================================================= */
 
+/*
+ * tk_infer_load_streaming (stub) — streaming model load is unavailable.
+ *
+ * When fully implemented (TK_HAVE_LLAMACPP build), this function:
+ *   1. Detects the storage type of model_dir (NVMe/SSD/HDD).
+ *   2. Scans model_dir for per-layer GGUF shards (layer_NNN.gguf).
+ *   3. Spawns a prefetch thread that reads shards ahead of the decode
+ *      window, bounded by opts.ram_ceiling_gb.
+ *   4. Iterates shards in order: waits for the prefetch slot, feeds the
+ *      shard data to llama_model_load_from_file(), accumulates layers
+ *      into a combined llama_context, then frees the buffer.
+ *   5. Records throughput samples and warns if below 0.1 tok/s.
+ *
+ * Required llama.cpp functions:
+ *   - llama_model_default_params / llama_load_model_from_file
+ *   - llama_context_default_params / llama_new_context_with_model
+ *   - llama_free / llama_free_model
+ *
+ * Without llama.cpp this stub returns is_err=1, code=-2.
+ */
 TkModelHandleResult tk_infer_load_streaming(const char  *model_dir,
                                               TkStreamOpts opts)
 {
-    (void)model_dir;
     (void)opts;
     TkModelHandleResult r;
     r.handle   = NULL;
     r.is_err   = 1;
-    r.err.msg  = "std.infer: llama.cpp not available "
-                 "(rebuild with -DTK_HAVE_LLAMACPP)";
+
+    if (!model_dir || model_dir[0] == '\0') {
+        r.err.msg  = "infer.load_streaming: model_dir must not be empty";
+        r.err.code = -1;
+        return r;
+    }
+
+    r.err.msg  = "infer.load_streaming: streaming model load requires "
+                 "llama.cpp (rebuild toke with -DTK_HAVE_LLAMACPP to enable)";
     r.err.code = -2;
     return r;
 }
 
+/*
+ * tk_infer_stream_throughput (stub) — returns zeroed metrics.
+ *
+ * When fully implemented, this queries the TkStreamState registry for the
+ * given handle and returns a snapshot of:
+ *   - tokens_per_sec: rolling average from the last 16 throughput samples
+ *   - bytes_loaded:   total bytes read from disk across all shards
+ *   - ram_used_bytes: current RAM consumed by live prefetch buffers
+ *   - warn_slow:      1 if throughput is below TK_STREAM_SLOW_THRESHOLD_TOK_S
+ *
+ * The stub returns all-zero fields with warn_slow=0, which is safe for
+ * callers that check tokens_per_sec == 0.0 as "no data available".
+ */
 TkStreamThroughput tk_infer_stream_throughput(const TkModelHandle *h)
 {
     (void)h;
@@ -799,6 +843,22 @@ TkStreamThroughput tk_infer_stream_throughput(const TkModelHandle *h)
     return out;
 }
 
+/*
+ * tk_infer_stream_cleanup (stub) — no-op, returns 0 (nothing to clean up).
+ *
+ * When fully implemented, this function:
+ *   1. Looks up the TkStreamState for handle h in the global registry.
+ *   2. Sets the shutdown flag and broadcasts on condition variables to
+ *      wake the prefetch thread.
+ *   3. Joins the prefetch thread.
+ *   4. Frees all prefetch slot buffers and the stream state itself.
+ *   5. Removes the entry from the registry.
+ *   Returns 1 if a stream state was found and cleaned, 0 otherwise.
+ *
+ * The stub always returns 0 since no streaming state can exist without
+ * llama.cpp.  This is correct: tk_infer_unload can safely call this and
+ * treat 0 as "no streaming resources to release".
+ */
 int tk_infer_stream_cleanup(TkModelHandle *h)
 {
     (void)h;

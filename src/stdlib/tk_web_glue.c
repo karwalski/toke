@@ -2179,40 +2179,73 @@ int64_t tk_auth_verifyjwt_w(int64_t token, int64_t secret) {
     return r.is_err ? 0 : 1;
 }
 
-/* ── rate limit — token bucket ─────────────────────────────────────── */
+/* ── rate limit — token bucket with per-key partitioning ───────────── */
 
 #include <time.h>
 
+#define TK_RL_MAP_SIZE 256 /* fixed-size hash table, power of 2 */
+
 typedef struct {
-    int64_t  max_tokens;
-    int64_t  window_sec;
+    char    *key;        /* heap-allocated key string, NULL = empty slot */
     int64_t  tokens;
     time_t   last_refill;
+} TkRlEntry;
+
+typedef struct {
+    int64_t    max_tokens;
+    int64_t    window_sec;
+    TkRlEntry  map[TK_RL_MAP_SIZE];
 } TkRateLimiter;
 
+static uint32_t tk_rl_hash(const char *s) {
+    uint32_t h = 5381;
+    while (*s) { h = ((h << 5) + h) ^ (uint32_t)(unsigned char)*s++; }
+    return h;
+}
+
 int64_t tk_ratelimit_new_w(int64_t max, int64_t window) {
-    TkRateLimiter *rl = (TkRateLimiter *)malloc(sizeof(TkRateLimiter));
+    TkRateLimiter *rl = (TkRateLimiter *)calloc(1, sizeof(TkRateLimiter));
     if (!rl) return 0;
-    rl->max_tokens  = max > 0 ? max : 10;
-    rl->window_sec  = window > 0 ? window : 60;
-    rl->tokens      = rl->max_tokens;
-    rl->last_refill = time(NULL);
+    rl->max_tokens = max > 0 ? max : 10;
+    rl->window_sec = window > 0 ? window : 60;
     return (int64_t)(intptr_t)rl;
 }
 
 int64_t tk_ratelimit_check_w(int64_t limiter, int64_t key) {
-    (void)key; /* key-based partitioning not implemented yet */
     if (!limiter) return 0;
     TkRateLimiter *rl = (TkRateLimiter *)(intptr_t)limiter;
-    time_t now = time(NULL);
-    /* Refill tokens based on elapsed time */
-    int64_t elapsed = (int64_t)(now - rl->last_refill);
-    if (elapsed >= rl->window_sec) {
-        rl->tokens = rl->max_tokens;
-        rl->last_refill = now;
+    const char *key_str = key ? (const char *)(intptr_t)key : "__global__";
+    uint32_t idx = tk_rl_hash(key_str) & (TK_RL_MAP_SIZE - 1);
+
+    /* Linear probe to find existing entry or empty slot */
+    TkRlEntry *slot = NULL;
+    for (uint32_t i = 0; i < TK_RL_MAP_SIZE; i++) {
+        uint32_t probe = (idx + i) & (TK_RL_MAP_SIZE - 1);
+        TkRlEntry *e = &rl->map[probe];
+        if (!e->key) {
+            /* Empty slot — claim it for this key */
+            e->key = strdup(key_str);
+            if (!e->key) return 0;
+            e->tokens = rl->max_tokens;
+            e->last_refill = time(NULL);
+            slot = e;
+            break;
+        }
+        if (strcmp(e->key, key_str) == 0) {
+            slot = e;
+            break;
+        }
     }
-    if (rl->tokens > 0) {
-        rl->tokens--;
+    if (!slot) return 0; /* table full */
+
+    time_t now = time(NULL);
+    int64_t elapsed = (int64_t)(now - slot->last_refill);
+    if (elapsed >= rl->window_sec) {
+        slot->tokens = rl->max_tokens;
+        slot->last_refill = now;
+    }
+    if (slot->tokens > 0) {
+        slot->tokens--;
         return 1; /* allowed */
     }
     return 0; /* rate limited */
@@ -2849,8 +2882,21 @@ int64_t tk_http_resjson_w(int64_t status, int64_t body) { return tk_http_res_jso
 int64_t tk_http_resjsonnew_w(int64_t status, int64_t body) { return tk_http_res_json_new(status, body); }
 int64_t tk_http_jsonresp_w(int64_t status, int64_t body) { return tk_http_res_json_new(status, body); }
 int64_t tk_http_resp_w(int64_t status, int64_t body, int64_t ct) {
-    (void)ct; /* TODO: pass content-type through */
-    return tk_http_res_new(status, body);
+    Res *r = (Res *)malloc(sizeof(Res));
+    if (!r) return 0;
+    r->status      = (uint16_t)status;
+    r->body        = (const char *)(intptr_t)body;
+    if (ct) {
+        StrPair *hdr = (StrPair *)malloc(sizeof(StrPair));
+        if (!hdr) { free(r); return 0; }
+        hdr->key   = "Content-Type";
+        hdr->val   = (const char *)(intptr_t)ct;
+        r->headers.data = hdr;
+    } else {
+        r->headers.data = &g_html_ct_hdr;
+    }
+    r->headers.len = 1;
+    return (int64_t)(intptr_t)r;
 }
 int64_t tk_http_resok_w(int64_t body) { return tk_http_res_ok(body); }
 int64_t tk_http_resbad_w(int64_t msg) { return tk_http_res_bad(msg); }

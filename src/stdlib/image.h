@@ -13,7 +13,8 @@
  *
  * Implementation is self-contained (no external dependencies beyond libc).
  * PNG encode/decode use a pure-C99 DEFLATE implementation (RFC 1951).
- * JPEG, WebP, BMP encode/decode are stubbed and return an error directing
+ * BMP encode outputs 24-bit uncompressed files with no external dependencies.
+ * JPEG, WebP encode/decode are stubbed and return an error directing
  * the caller to link the appropriate library.
  *
  * malloc is permitted here: this is a stdlib boundary, not arena-managed
@@ -88,7 +89,7 @@ ImgResult    image_decode(const uint8_t *bytes, uint64_t len);
 /* image.encode(imgbuf, imgfmt, u8) [byte]!str
  * Encode a TkImgBuf to the given format.
  * quality is used for lossy formats (0-100); ignored for PNG/BMP.
- * Non-PNG formats return is_err=1 with an instructional err_msg. */
+ * Non-PNG/BMP formats return is_err=1 with an instructional err_msg. */
 ImgEncResult image_encode(TkImgBuf buf, TkImgFmt fmt, uint8_t quality);
 
 /* image.resize(imgbuf, u32, u32) imgbuf

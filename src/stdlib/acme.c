@@ -510,6 +510,15 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
         }
     }
 
+    /* Extract Location header = order URL for polling */
+    char *order_url = NULL;
+    for (uint64_t i = 0; i < resp.headers.len; i++) {
+        if (strcasecmp(resp.headers.data[i].key, "Location") == 0) {
+            order_url = strdup(resp.headers.data[i].val);
+            break;
+        }
+    }
+
     free(resp.body);
     free(resp.err_msg);
 
@@ -611,12 +620,66 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
         free(resp.err_msg);
     }
 
-    /* Wait for challenge validation (poll with backoff) */
+    /* Wait for challenge validation (poll order status) */
+    int poll_ok = 0;
     for (int attempt = 0; attempt < 30; attempt++) {
         sleep(2);
-        /* Re-fetch the order to check status */
-        /* For now, proceed to finalize after waiting */
-        break; /* TODO: proper polling */
+
+        if (!order_url) break;
+
+        /* POST-as-GET to fetch current order status */
+        nonce = acme_get_nonce(ac);
+        if (!nonce) continue;
+
+        jws = acme_jws(ac, order_url, "", nonce);
+        free(nonce);
+        if (!jws) continue;
+
+        resp = http_post(ac->client, order_url,
+                          (uint8_t *)jws, (uint64_t)strlen(jws),
+                          "application/jose+json");
+        free(jws);
+
+        if (resp.is_err || resp.status != 200) {
+            free(resp.body);
+            free(resp.err_msg);
+            continue;
+        }
+
+        /* Check order status in response body */
+        char *sb = (char *)resp.body;
+        char *sp = strstr(sb, "\"status\"");
+        if (sp) {
+            sp = strchr(sp + 8, '"');
+            if (sp) {
+                sp++;
+                if (strncmp(sp, "ready", 5) == 0 ||
+                    strncmp(sp, "valid", 5) == 0) {
+                    poll_ok = 1;
+                    free(resp.body);
+                    free(resp.err_msg);
+                    break;
+                } else if (strncmp(sp, "invalid", 7) == 0) {
+                    fprintf(stderr,
+                            "acme: challenge validation failed\n");
+                    free(resp.body);
+                    free(resp.err_msg);
+                    free(order_url);
+                    free(finalize_url);
+                    return -1;
+                }
+                /* "pending" or "processing" — keep polling */
+            }
+        }
+        free(resp.body);
+        free(resp.err_msg);
+    }
+    free(order_url);
+
+    if (!poll_ok) {
+        fprintf(stderr, "acme: challenge validation timed out\n");
+        free(finalize_url);
+        return -1;
     }
 
     /* Generate CSR */

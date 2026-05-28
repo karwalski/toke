@@ -11,7 +11,10 @@
  * The PNG encoder uses DEFLATE stored (uncompressed) blocks, which is valid
  * per RFC 1951 and avoids a Huffman/LZ77 compression implementation.
  *
- * JPEG, WebP, and BMP are intentionally stubbed.  Functions for those formats
+ * BMP encode outputs 24-bit uncompressed (BI_RGB) files — no external
+ * dependencies.  Alpha channels are dropped; grayscale is expanded to BGR.
+ *
+ * JPEG and WebP are intentionally stubbed.  Functions for those formats
  * return is_err=1 with a message directing the caller to link the appropriate
  * library.
  *
@@ -792,8 +795,90 @@ ImgEncResult image_encode(TkImgBuf buf, TkImgFmt fmt, uint8_t quality)
         return res;
     }
     if (fmt == IMG_FMT_BMP) {
-        res.is_err  = 1;
-        res.err_msg = "BMP encode is not implemented in the minimal stdlib";
+        /* 24-bit uncompressed BMP (no alpha). */
+        if (!buf.data || buf.width == 0 || buf.height == 0 ||
+            buf.channels == 0 || buf.channels > 4) {
+            res.is_err  = 1;
+            res.err_msg = "image_encode: invalid TkImgBuf";
+            return res;
+        }
+
+        uint32_t w = buf.width;
+        uint32_t h = buf.height;
+        /* Each row: 3 bytes per pixel, padded to 4-byte boundary. */
+        uint32_t row_bytes   = w * 3;
+        uint32_t row_padding = (4 - (row_bytes % 4)) % 4;
+        uint32_t row_stride  = row_bytes + row_padding;
+        uint32_t pixel_size  = row_stride * h;
+        uint32_t file_size   = 14 + 40 + pixel_size;
+
+        uint8_t *out = (uint8_t *)malloc(file_size);
+        if (!out) {
+            res.is_err  = 1;
+            res.err_msg = "image_encode: BMP allocation failed";
+            return res;
+        }
+        memset(out, 0, file_size);
+
+        /* --- 14-byte BMP file header --- */
+        out[0] = 'B'; out[1] = 'M';
+        out[2] = (uint8_t)(file_size);
+        out[3] = (uint8_t)(file_size >> 8);
+        out[4] = (uint8_t)(file_size >> 16);
+        out[5] = (uint8_t)(file_size >> 24);
+        /* bytes 6-9: reserved (0) */
+        uint32_t data_offset = 14 + 40;
+        out[10] = (uint8_t)(data_offset);
+        out[11] = (uint8_t)(data_offset >> 8);
+        out[12] = (uint8_t)(data_offset >> 16);
+        out[13] = (uint8_t)(data_offset >> 24);
+
+        /* --- 40-byte BITMAPINFOHEADER --- */
+        uint32_t hdr_size = 40;
+        out[14] = (uint8_t)(hdr_size);
+        out[15] = (uint8_t)(hdr_size >> 8);
+        out[16] = (uint8_t)(hdr_size >> 16);
+        out[17] = (uint8_t)(hdr_size >> 24);
+        /* width (signed 32-bit LE) */
+        out[18] = (uint8_t)(w);
+        out[19] = (uint8_t)(w >> 8);
+        out[20] = (uint8_t)(w >> 16);
+        out[21] = (uint8_t)(w >> 24);
+        /* height (signed 32-bit LE, positive = bottom-up) */
+        out[22] = (uint8_t)(h);
+        out[23] = (uint8_t)(h >> 8);
+        out[24] = (uint8_t)(h >> 16);
+        out[25] = (uint8_t)(h >> 24);
+        /* planes = 1 */
+        out[26] = 1; out[27] = 0;
+        /* bits per pixel = 24 */
+        out[28] = 24; out[29] = 0;
+        /* compression = 0 (BI_RGB), image size = 0, rest stays 0 */
+
+        /* --- Pixel data: bottom-to-top, BGR order --- */
+        uint8_t ch = buf.channels;
+        uint32_t src_stride = w * ch;
+        for (uint32_t y = 0; y < h; y++) {
+            /* BMP row 0 = bottom of image = source row (h-1-y) */
+            const uint8_t *src_row = buf.data + (uint64_t)(h - 1 - y) * src_stride;
+            uint8_t       *dst_row = out + data_offset + (uint64_t)y * row_stride;
+            for (uint32_t x = 0; x < w; x++) {
+                const uint8_t *px = src_row + x * ch;
+                uint8_t r, g, b;
+                if (ch == 1) {
+                    r = g = b = px[0];
+                } else {
+                    r = px[0]; g = px[1]; b = px[2];
+                }
+                dst_row[x * 3 + 0] = b;
+                dst_row[x * 3 + 1] = g;
+                dst_row[x * 3 + 2] = r;
+            }
+            /* padding bytes are already 0 from memset */
+        }
+
+        res.ok     = out;
+        res.ok_len = file_size;
         return res;
     }
 

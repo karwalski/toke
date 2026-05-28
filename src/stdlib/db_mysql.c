@@ -254,31 +254,177 @@ static int my_table_exists(int conn_id, const char *name)
     return exists;
 }
 
+/* Internal struct for MySQL prepared statements, cast to/from TkStmt*. */
+typedef struct {
+    MYSQL_STMT   *stmt;
+    MYSQL_RES    *meta;       /* result metadata (column info)            */
+    unsigned int  col_count;  /* number of result columns                 */
+    MYSQL_BIND   *result_binds; /* bind structs for fetching results      */
+    char        **result_bufs;  /* buffers for column values              */
+    unsigned long *result_lens; /* actual lengths returned by fetch       */
+    my_bool      *result_nulls; /* null indicators for each column        */
+} MyStmt;
+
 static StmtResult my_prepare(int conn_id, const char *sql)
 {
-    (void)conn_id; (void)sql;
-    StmtResult r; r.is_err = 1; r.ok = NULL;
-    r.err = my_err(DB_ERR_QUERY, "prepared statements not yet implemented for mysql");
+    (void)conn_id;
+    StmtResult r; r.is_err = 0; r.ok = NULL;
+
+    if (!g_mysql) {
+        r.is_err = 1;
+        r.err = my_err(DB_ERR_CONNECTION, "no connection");
+        return r;
+    }
+
+    MYSQL_STMT *raw = mysql_stmt_init(g_mysql);
+    if (!raw) {
+        r.is_err = 1;
+        r.err = my_err(DB_ERR_QUERY, mysql_error(g_mysql));
+        return r;
+    }
+
+    if (mysql_stmt_prepare(raw, sql, (unsigned long)strlen(sql)) != 0) {
+        r.is_err = 1;
+        r.err = my_err(DB_ERR_QUERY, mysql_stmt_error(raw));
+        mysql_stmt_close(raw);
+        return r;
+    }
+
+    MyStmt *s = calloc(1, sizeof(MyStmt));
+    s->stmt = raw;
+
+    /* Prepare result binding metadata if this is a SELECT-style query. */
+    s->meta = mysql_stmt_result_metadata(raw);
+    if (s->meta) {
+        s->col_count    = mysql_num_fields(s->meta);
+        s->result_binds = calloc(s->col_count, sizeof(MYSQL_BIND));
+        s->result_bufs  = calloc(s->col_count, sizeof(char *));
+        s->result_lens  = calloc(s->col_count, sizeof(unsigned long));
+        s->result_nulls = calloc(s->col_count, sizeof(my_bool));
+
+        MYSQL_FIELD *fields = mysql_fetch_fields(s->meta);
+        for (unsigned int i = 0; i < s->col_count; i++) {
+            unsigned long buflen = fields[i].length + 1;
+            if (buflen < 256) buflen = 256;
+            s->result_bufs[i] = calloc(1, buflen);
+            s->result_binds[i].buffer_type   = MYSQL_TYPE_STRING;
+            s->result_binds[i].buffer        = s->result_bufs[i];
+            s->result_binds[i].buffer_length = buflen;
+            s->result_binds[i].length        = &s->result_lens[i];
+            s->result_binds[i].is_null       = &s->result_nulls[i];
+        }
+        mysql_stmt_bind_result(raw, s->result_binds);
+    }
+
+    r.ok = (TkStmt *)s;
     return r;
 }
 
 static BoolResult my_bind(TkStmt *stmt, StrArray params)
 {
-    (void)stmt; (void)params;
-    BoolResult r; r.is_err = 1; r.ok = 0;
-    r.err = my_err(DB_ERR_QUERY, "not implemented");
+    BoolResult r; r.is_err = 0; r.ok = 1;
+    if (!stmt) {
+        r.is_err = 1;
+        r.err = my_err(DB_ERR_QUERY, "null statement");
+        return r;
+    }
+    MyStmt *s = (MyStmt *)stmt;
+
+    if (params.len == 0) return r;
+
+    MYSQL_BIND *binds = calloc(params.len, sizeof(MYSQL_BIND));
+    unsigned long *lengths = calloc(params.len, sizeof(unsigned long));
+    for (uint64_t i = 0; i < params.len; i++) {
+        lengths[i] = (unsigned long)strlen(params.data[i]);
+        binds[i].buffer_type   = MYSQL_TYPE_STRING;
+        binds[i].buffer        = (void *)params.data[i];
+        binds[i].buffer_length = lengths[i];
+        binds[i].length        = &lengths[i];
+        binds[i].is_null       = NULL;
+    }
+
+    if (mysql_stmt_bind_param(s->stmt, binds) != 0) {
+        r.is_err = 1;
+        r.err = my_err(DB_ERR_QUERY, mysql_stmt_error(s->stmt));
+    }
+
+    if (mysql_stmt_execute(s->stmt) != 0) {
+        r.is_err = 1;
+        r.err = my_err(DB_ERR_QUERY, mysql_stmt_error(s->stmt));
+    }
+
+    free(lengths);
+    free(binds);
     return r;
 }
 
 static RowResult my_step(TkStmt *stmt)
 {
-    (void)stmt;
-    RowResult r; r.is_err = 1;
-    r.err = my_err(DB_ERR_QUERY, "not implemented");
+    RowResult r; r.is_err = 0;
+    if (!stmt) {
+        r.is_err = 1;
+        r.err = my_err(DB_ERR_QUERY, "null statement");
+        return r;
+    }
+    MyStmt *s = (MyStmt *)stmt;
+
+    if (!s->meta) {
+        /* Not a SELECT; no rows to fetch. */
+        r.is_err = 1;
+        r.err = my_err(DB_ERR_NOT_FOUND, "done");
+        return r;
+    }
+
+    int rc = mysql_stmt_fetch(s->stmt);
+    if (rc == MYSQL_NO_DATA) {
+        r.is_err = 1;
+        r.err = my_err(DB_ERR_NOT_FOUND, "done");
+        return r;
+    }
+    if (rc != 0 && rc != MYSQL_DATA_TRUNCATED) {
+        r.is_err = 1;
+        r.err = my_err(DB_ERR_QUERY, mysql_stmt_error(s->stmt));
+        return r;
+    }
+
+    unsigned int n = s->col_count;
+    MYSQL_FIELD *fields = mysql_fetch_fields(s->meta);
+    const char **names  = malloc(n * sizeof(char *));
+    const char **values = malloc(n * sizeof(char *));
+    int         *nulls  = malloc(n * sizeof(int));
+
+    for (unsigned int c = 0; c < n; c++) {
+        names[c] = strdup(fields[c].name);
+        nulls[c] = s->result_nulls[c] ? 1 : 0;
+        if (s->result_nulls[c])
+            values[c] = strdup("");
+        else
+            values[c] = strndup(s->result_bufs[c], s->result_lens[c]);
+    }
+
+    r.ok.col_names  = names;
+    r.ok.col_values = values;
+    r.ok.col_nulls  = nulls;
+    r.ok.col_count  = (uint64_t)n;
     return r;
 }
 
-static void my_finalize(TkStmt *stmt) { (void)stmt; }
+static void my_finalize(TkStmt *stmt)
+{
+    if (!stmt) return;
+    MyStmt *s = (MyStmt *)stmt;
+    if (s->meta) {
+        for (unsigned int i = 0; i < s->col_count; i++)
+            free(s->result_bufs[i]);
+        free(s->result_bufs);
+        free(s->result_binds);
+        free(s->result_lens);
+        free(s->result_nulls);
+        mysql_free_result(s->meta);
+    }
+    mysql_stmt_close(s->stmt);
+    free(s);
+}
 
 const DbBackend db_mysql_backend = {
     .name            = "mysql",

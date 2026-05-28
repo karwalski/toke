@@ -220,33 +220,119 @@ static int pg_table_exists(int conn_id, const char *name)
     return exists;
 }
 
-/* Prepared statements not yet implemented for PostgreSQL.
- * Use db_one/db_many/db_exec with parameterised queries. */
+/* Internal struct for PostgreSQL prepared statements, cast to/from TkStmt*. */
+static unsigned int pg_stmt_counter = 0;
+
+typedef struct {
+    char      name[32];    /* PQprepare statement name ("_tk_s0", "_tk_s1", ...) */
+    char     *sql;         /* rewritten SQL with $N placeholders                 */
+    PGresult *result;      /* result set from last PQexecPrepared                */
+    int       row_idx;     /* current row cursor within result                   */
+    int       total_rows;  /* total rows in result set                           */
+} PgStmt;
+
 static StmtResult pg_prepare(int conn_id, const char *sql)
 {
-    (void)conn_id; (void)sql;
-    StmtResult r; r.is_err = 1; r.ok = NULL;
-    r.err = pg_err(DB_ERR_QUERY, "prepared statements not yet implemented for postgres");
+    (void)conn_id;
+    StmtResult r; r.is_err = 0; r.ok = NULL;
+
+    if (!g_pg) {
+        r.is_err = 1;
+        r.err = pg_err(DB_ERR_CONNECTION, "no connection");
+        return r;
+    }
+
+    PgStmt *s = calloc(1, sizeof(PgStmt));
+    snprintf(s->name, sizeof(s->name), "_tk_s%u", pg_stmt_counter++);
+    s->sql = rewrite_placeholders(sql);
+
+    PGresult *res = PQprepare(g_pg, s->name, s->sql, 0, NULL);
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        r.is_err = 1;
+        r.err = pg_err(DB_ERR_QUERY, PQerrorMessage(g_pg));
+        PQclear(res);
+        free(s->sql);
+        free(s);
+        return r;
+    }
+    PQclear(res);
+
+    r.ok = (TkStmt *)s;
     return r;
 }
 
 static BoolResult pg_bind(TkStmt *stmt, StrArray params)
 {
-    (void)stmt; (void)params;
-    BoolResult r; r.is_err = 1; r.ok = 0;
-    r.err = pg_err(DB_ERR_QUERY, "not implemented");
+    BoolResult r; r.is_err = 0; r.ok = 1;
+    if (!stmt) {
+        r.is_err = 1;
+        r.err = pg_err(DB_ERR_QUERY, "null statement");
+        return r;
+    }
+    PgStmt *s = (PgStmt *)stmt;
+
+    /* Clear any previous result set. */
+    if (s->result) {
+        PQclear(s->result);
+        s->result = NULL;
+    }
+
+    s->result = PQexecPrepared(g_pg, s->name, (int)params.len,
+                               params.data, NULL, NULL, 0);
+
+    ExecStatusType status = PQresultStatus(s->result);
+    if (status != PGRES_TUPLES_OK && status != PGRES_COMMAND_OK) {
+        r.is_err = 1;
+        r.err = pg_err(DB_ERR_QUERY, PQerrorMessage(g_pg));
+        PQclear(s->result);
+        s->result = NULL;
+        return r;
+    }
+
+    s->row_idx    = 0;
+    s->total_rows = (status == PGRES_TUPLES_OK) ? PQntuples(s->result) : 0;
     return r;
 }
 
 static RowResult pg_step(TkStmt *stmt)
 {
-    (void)stmt;
-    RowResult r; r.is_err = 1;
-    r.err = pg_err(DB_ERR_QUERY, "not implemented");
+    RowResult r; r.is_err = 0;
+    if (!stmt) {
+        r.is_err = 1;
+        r.err = pg_err(DB_ERR_QUERY, "null statement");
+        return r;
+    }
+    PgStmt *s = (PgStmt *)stmt;
+
+    if (!s->result || s->row_idx >= s->total_rows) {
+        r.is_err = 1;
+        r.err = pg_err(DB_ERR_NOT_FOUND, "done");
+        return r;
+    }
+
+    r.ok = pg_collect_row(s->result, s->row_idx);
+    s->row_idx++;
     return r;
 }
 
-static void pg_finalize(TkStmt *stmt) { (void)stmt; }
+static void pg_finalize(TkStmt *stmt)
+{
+    if (!stmt) return;
+    PgStmt *s = (PgStmt *)stmt;
+
+    if (s->result) PQclear(s->result);
+
+    /* Deallocate the server-side prepared statement. */
+    if (g_pg) {
+        char dealloc[64];
+        snprintf(dealloc, sizeof(dealloc), "DEALLOCATE %s", s->name);
+        PGresult *res = PQexec(g_pg, dealloc);
+        if (res) PQclear(res);
+    }
+
+    free(s->sql);
+    free(s);
+}
 
 const DbBackend db_postgres_backend = {
     .name            = "postgres",

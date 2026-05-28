@@ -108,4 +108,19 @@ typedef struct {
  */
 TkStreamThroughput tk_infer_stream_throughput(const TkModelHandle *h);
 
+/* -------------------------------------------------------------------------
+ * Stream cleanup (Story 72.7.3)
+ * -------------------------------------------------------------------------
+ *
+ * tk_infer_stream_cleanup — release all streaming resources for a handle.
+ *
+ * Called from tk_infer_unload when a streaming handle is being freed.
+ * Shuts down the prefetch thread, frees all shard buffers, and removes
+ * the handle from the internal stream-state registry.
+ *
+ * Returns 1 if a streaming state was found and cleaned up, 0 otherwise
+ * (including when h is NULL or was not loaded via load_streaming).
+ */
+int tk_infer_stream_cleanup(TkModelHandle *h);
+
 #endif /* TK_STDLIB_INFER_STREAM_H */

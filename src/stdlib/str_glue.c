@@ -282,6 +282,14 @@ int64_t tk_str_appenditem_w(int64_t arr, int64_t item) {
 
 int64_t tk_str_emptylist_w(void) { return str_make_empty_array(); }
 
+/* Forward declaration */
+int64_t tk_str_replaceitem_w(int64_t arr, int64_t idx, int64_t val);
+
+/* str.set(arr, idx, val) — set element at index in array (copy-on-write) */
+int64_t tk_str_set_w(int64_t arr, int64_t idx, int64_t val) {
+    return tk_str_replaceitem_w(arr, idx, val);
+}
+
 int64_t tk_str_replaceitem_w(int64_t arr, int64_t idx, int64_t val) {
     if (!arr) return arr;
     int64_t *ptr = (int64_t *)(intptr_t)arr;
@@ -791,4 +799,51 @@ int64_t tk_fmt_f64_w(int64_t val_bits, int64_t decimals) {
     if (!out) return (int64_t)(intptr_t)"0";
     strcpy(out, buf);
     return (int64_t)(intptr_t)out;
+}
+
+/* --- str.find(s, sub) — alias for indexof --- */
+int64_t tk_str_find_w(int64_t s, int64_t sub) {
+    return tk_str_indexof_w(s, sub);
+}
+
+/* --- str.chars(s) — split string into array of single characters --- */
+int64_t tk_str_chars_w(int64_t s) {
+    if (!s) return 0;
+    const char *str = (const char *)(intptr_t)s;
+    size_t len = strlen(str);
+    /* Allocate array: length header + one i64 per character */
+    int64_t *arr = (int64_t *)malloc((len + 1) * sizeof(int64_t));
+    if (!arr) return 0;
+    arr[0] = (int64_t)len;
+    for (size_t i = 0; i < len; i++) {
+        char *ch = (char *)malloc(2);
+        if (!ch) { arr[i + 1] = (int64_t)(intptr_t)""; continue; }
+        ch[0] = str[i];
+        ch[1] = '\0';
+        arr[i + 1] = (int64_t)(intptr_t)ch;
+    }
+    return (int64_t)(intptr_t)(arr + 1); /* point past length header */
+}
+
+/* --- str.sub(s, old, new) — alias for replace --- */
+int64_t tk_str_sub_w(int64_t s, int64_t old_val, int64_t new_val) {
+    return tk_str_replace_w(s, old_val, new_val);
+}
+
+/* --- fmt.sprintf(fmt, val) — format a value into a string --- */
+int64_t tk_fmt_sprintf_w(int64_t fmt, int64_t val) {
+    if (!fmt) return (int64_t)(intptr_t)"";
+    char buf[1024];
+    snprintf(buf, sizeof(buf), (const char *)(intptr_t)fmt, (const char *)(intptr_t)val);
+    char *out = (char *)malloc(strlen(buf) + 1);
+    if (!out) return (int64_t)(intptr_t)"";
+    strcpy(out, buf);
+    return (int64_t)(intptr_t)out;
+}
+
+/* --- str.equals(a, b) — string equality --- */
+int64_t tk_str_equals_w(int64_t a, int64_t b) {
+    if (!a && !b) return 1;
+    if (!a || !b) return 0;
+    return strcmp((const char *)(intptr_t)a, (const char *)(intptr_t)b) == 0 ? 1 : 0;
 }

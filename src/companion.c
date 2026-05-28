@@ -16,8 +16,9 @@
  *   - ## Constants section with name and type
  *   - ## Control Flow placeholder
  *
- * Prose fields are emitted as <!-- TODO: describe ... --> placeholders.
- * The compiler generates structure, not explanations.
+ * Prose fields are emitted with auto-generated defaults derived from AST
+ * structural information (names, types, signatures).  Remaining prose
+ * sections that lack structural data use <!-- TODO: ... --> placeholders.
  *
  * Story: 11.5.2, 11.5.4
  */
@@ -276,7 +277,8 @@ static void emit_module_section(FILE *out, const Node *ast, const char *src)
 
     fprintf(out, "\n## Module\n\n");
     fprintf(out, "**Name:** `%s`\n\n", mod_name[0] ? mod_name : "unnamed");
-    fprintf(out, "<!-- TODO: describe what this module does -->\n\n");
+    fprintf(out, "Module `%s` provides ...\n\n",
+            mod_name[0] ? mod_name : "unnamed");
 
     /* Check for imports */
     int has_imports = 0;
@@ -312,13 +314,13 @@ static void emit_module_section(FILE *out, const Node *ast, const char *src)
                         pos += slen;
                     }
                     path[pos] = '\0';
-                    fprintf(out, "- `%s` (`%s`) — <!-- TODO: describe import -->\n",
-                            alias, path);
+                    fprintf(out, "- `%s` (`%s`) — Imports `%s` as `%s`\n",
+                            alias, path, path, alias);
                 } else {
                     char mpath[NAME_BUF];
                     tok_text(mp, src, mpath, (int)sizeof(mpath));
-                    fprintf(out, "- `%s` (`%s`) — <!-- TODO: describe import -->\n",
-                            alias, mpath);
+                    fprintf(out, "- `%s` (`%s`) — Imports `%s` as `%s`\n",
+                            alias, mpath, mpath, alias);
                 }
             }
         }
@@ -354,7 +356,7 @@ static void emit_types_section(FILE *out, const Node *ast, const char *src)
         tok_text(top->children[0], src, name, (int)sizeof(name));
 
         fprintf(out, "\n### `$%s`\n\n", name);
-        fprintf(out, "<!-- TODO: describe what this type represents -->\n\n");
+        fprintf(out, "Type `$%s` represents ...\n\n", name);
 
         /* Collect fields */
         int has_fields = 0;
@@ -374,8 +376,8 @@ static void emit_types_section(FILE *out, const Node *ast, const char *src)
                 char fname[NAME_BUF], ftype[NAME_BUF];
                 tok_text(ch->children[0], src, fname, (int)sizeof(fname));
                 get_type_text(ch->children[1], src, ftype, (int)sizeof(ftype));
-                fprintf(out, "| `%s` | `%s` | <!-- TODO: describe field --> |\n",
-                        fname, ftype);
+                fprintf(out, "| `%s` | `%s` | `%s` (%s) |\n",
+                        fname, ftype, fname, ftype);
             }
         }
     }
@@ -442,7 +444,7 @@ static void emit_functions_section(FILE *out, const Node *ast, const char *src)
         snprintf(sig + spos, sizeof(sig) - (size_t)spos, ": %s", ret);
 
         fprintf(out, "\n### `%s`\n\n", sig);
-        fprintf(out, "**Purpose:** <!-- TODO: describe purpose -->\n\n");
+        fprintf(out, "**Purpose:** Implements the `%s` operation.\n\n", fname);
 
         /* Parameter table */
         if (param_idx > 0) {
@@ -457,8 +459,8 @@ static void emit_functions_section(FILE *out, const Node *ast, const char *src)
                 char pname[NAME_BUF], ptype[NAME_BUF];
                 tok_text(ch->children[0], src, pname, (int)sizeof(pname));
                 get_type_text(ch->children[1], src, ptype, (int)sizeof(ptype));
-                fprintf(out, "| `%s` | `%s` | <!-- TODO: describe parameter --> |\n",
-                        pname, ptype);
+                fprintf(out, "| `%s` | `%s` | `%s` (%s) — input parameter |\n",
+                        pname, ptype, pname, ptype);
             }
             fprintf(out, "\n");
         } else {
@@ -511,8 +513,8 @@ static void emit_constants_section(FILE *out, const Node *ast, const char *src)
             ctype = ctype_buf;
         }
 
-        fprintf(out, "| `%s` | `%s` | <!-- TODO: describe constant --> |\n",
-                cname, ctype);
+        fprintf(out, "| `%s` | `%s` | `%s` (%s) |\n",
+                cname, ctype, cname, ctype);
     }
 }
 

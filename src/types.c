@@ -1121,9 +1121,12 @@ static Type *infer(Ctx *cx, const Node *node) {
                     char msg[256];
                     snprintf(msg,sizeof(msg),
                         "cannot assign to immutable binding '%s'; declare with 'mut' to make mutable",nb);
+                    char fix[256];
+                    snprintf(fix,sizeof(fix),
+                        "change 'let %s=' to 'let %s=mut.' to make it mutable",nb,nb);
                     diag_emit(DIAG_ERROR,E4070,node->start,node->line,node->col,msg,
                         "expected","mutable binding","got","immutable binding",
-                        "fix","declare with 'mut' to make mutable: let x = mut.expr",(const char*)NULL);
+                        "fix",fix,(const char*)NULL);
                 }
                 return mk_type(A,TY_VOID);
             }
