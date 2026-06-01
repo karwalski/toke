@@ -382,6 +382,24 @@ int64_t tk_str_get_w(int64_t arr, int64_t idx) {
     return ptr[idx];
 }
 
+/* tk_array_set_w — issue 112.3
+ * Replace element at index. Returns a NEW array (immutable-style), mirroring
+ * how tk_array_append_w in collections_glue.c builds a fresh allocation.
+ * Previously `.set` was unconditionally routed to tk_map_set_w, which casts
+ * the numeric index to a string pointer and crashes via strcmp(). */
+int64_t tk_array_set_w(int64_t arr_i64, int64_t idx, int64_t elem) {
+    if (!arr_i64) return arr_i64;
+    int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
+    int64_t len = ptr[-1];
+    if (idx < 0 || idx >= len) return arr_i64;
+    int64_t *block = (int64_t *)malloc((size_t)(len + 1) * sizeof(int64_t));
+    if (!block) return arr_i64;
+    block[0] = len;
+    if (len > 0) memcpy(block + 1, ptr, (size_t)len * sizeof(int64_t));
+    block[idx + 1] = elem;
+    return (int64_t)(intptr_t)(block + 1);
+}
+
 /* str.arraylen — get length of toke array */
 int64_t tk_str_arraylen_w(int64_t arr) {
     if (!arr) return 0;
@@ -689,11 +707,11 @@ int64_t tk_str_sha256prefix_w(int64_t s, int64_t n) {
 /* StrBuf is a simple growable buffer stored as a heap struct:
  *   struct { char *data; size_t len; size_t cap; }
  * We pack the pointer to this struct into an i64. */
-typedef struct { char *data; size_t len; size_t cap; } TkStrBuf;
+typedef struct { char *data; size_t len; size_t cap; } TkStrBuilder;
 
 /* str.buf() — create a new string builder */
 int64_t tk_str_buf_w(void) {
-    TkStrBuf *buf = (TkStrBuf *)malloc(sizeof(TkStrBuf));
+    TkStrBuilder *buf = (TkStrBuilder *)malloc(sizeof(TkStrBuilder));
     if (!buf) return 0;
     buf->cap = 64;
     buf->data = (char *)malloc(buf->cap);
@@ -705,7 +723,7 @@ int64_t tk_str_buf_w(void) {
 
 /* str.add(buf, s) — append a string to the builder */
 int64_t tk_str_add_w(int64_t b, int64_t s) {
-    TkStrBuf *buf = (TkStrBuf *)(intptr_t)b;
+    TkStrBuilder *buf = (TkStrBuilder *)(intptr_t)b;
     if (!buf) return 0;
     const char *str = s ? (const char *)(intptr_t)s : "";
     size_t slen = strlen(str);
@@ -724,7 +742,7 @@ int64_t tk_str_add_w(int64_t b, int64_t s) {
 
 /* str.addbyte(buf, byte) — append a single byte to the builder */
 int64_t tk_str_addbyte_w(int64_t b, int64_t ch) {
-    TkStrBuf *buf = (TkStrBuf *)(intptr_t)b;
+    TkStrBuilder *buf = (TkStrBuilder *)(intptr_t)b;
     if (!buf) return 0;
     if (buf->len + 2 > buf->cap) {
         size_t newcap = buf->cap * 2;
@@ -740,7 +758,7 @@ int64_t tk_str_addbyte_w(int64_t b, int64_t ch) {
 
 /* str.done(buf) — finalize and return the built string */
 int64_t tk_str_done_w(int64_t b) {
-    TkStrBuf *buf = (TkStrBuf *)(intptr_t)b;
+    TkStrBuilder *buf = (TkStrBuilder *)(intptr_t)b;
     if (!buf) return (int64_t)(intptr_t)"";
     char *result = buf->data;
     free(buf);
@@ -846,4 +864,21 @@ int64_t tk_str_equals_w(int64_t a, int64_t b) {
     if (!a && !b) return 1;
     if (!a || !b) return 0;
     return strcmp((const char *)(intptr_t)a, (const char *)(intptr_t)b) == 0 ? 1 : 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Epic 111 / ADR-0004 — string-building canonical patterns
+ *
+ * The builder API already exists below as tk_str_buf_w / tk_str_add_w /
+ * tk_str_done_w. ADR-0004 names the canonical surface s.builder() /
+ * b.add(part) / b.build(); name aliases below redirect to the existing
+ * implementation so we don't ship duplicate code.
+ *
+ * Variadic interpolate: takes an array of $str parts and joins with no
+ * separator. Used by interpolation lowering (story 111.5).
+ * ──────────────────────────────────────────────────────────────────────── */
+int64_t tk_str_interpolate_w(int64_t arr) {
+    static const char empty[] = "";
+    extern int64_t tk_str_join_w(int64_t, int64_t);
+    return tk_str_join_w(arr, (int64_t)(intptr_t)empty);
 }

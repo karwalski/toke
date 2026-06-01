@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 int64_t tk_io_print_w(int64_t s) {
     if (s) printf("%s", (const char *)(intptr_t)s);
@@ -25,13 +27,19 @@ int64_t tk_io_eprintln_w(int64_t s) {
 }
 
 int64_t tk_io_readln_w(void) {
-    static char buf[4096];
-    if (fgets(buf, sizeof(buf), stdin)) {
-        /* Strip trailing newline */
+    /* Issue 112.1: previously returned a pointer to a static buffer, which
+     * meant `let a=io.readln();let b=io.readln()` had both a and b pointing
+     * to the same memory — every binding aliased the latest read.
+     * Fix: allocate a fresh buffer per call so each binding owns its value. */
+    char tmp[4096];
+    if (fgets(tmp, sizeof(tmp), stdin)) {
         size_t len = 0;
-        while (buf[len] && buf[len] != '\n') len++;
-        buf[len] = '\0';
-        return (int64_t)(intptr_t)buf;
+        while (tmp[len] && tmp[len] != '\n') len++;
+        tmp[len] = '\0';
+        char *out = (char *)malloc(len + 1);
+        if (!out) return (int64_t)(intptr_t)"";
+        memcpy(out, tmp, len + 1);
+        return (int64_t)(intptr_t)out;
     }
     return (int64_t)(intptr_t)"";
 }

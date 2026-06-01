@@ -850,6 +850,36 @@ static const char *tki_lookup_return_type(const char *wrapper_name) {
 }
 
 /*
+ * is_f64_returning_wrapper — Returns 1 if the given _w wrapper name's
+ * return value is the bit-pattern of an $f64 stored in i64 ABI.
+ *
+ * Bug 110.1: Several stdlib C glue functions (`tk_str_tofloat_w`,
+ * `tk_str_parsefloat_w`, etc.) declare themselves as returning int64
+ * but actually carry an f64 bit-pattern (via `f64_to_i64()`). Without
+ * this special-case, the compiler treats the return as a real i64 and
+ * subsequent `xi*xi` lowers to integer multiplication, which traps
+ * RT002 at runtime. Callers should:
+ *   (a) treat expr_llvm_type as "double" for downstream type checking, and
+ *   (b) emit `bitcast i64 → double` on the call's SSA result.
+ */
+static int is_f64_returning_wrapper(const char *name) {
+    if (!name) return 0;
+    static const char *const names[] = {
+        "tk_str_tofloat_w",
+        "tk_str_to_float_w",
+        "tk_str_tof64_w",
+        "tk_str_tof32_w",
+        "tk_str_parsefloat_w",
+        "tk_str_parsef64_w",
+        NULL,
+    };
+    for (int i = 0; names[i]; i++) {
+        if (!strcmp(name, names[i])) return 1;
+    }
+    return 0;
+}
+
+/*
  * load_tki_funcs — Load function signatures from a .tki interface file
  * and register them in the Ctx so cross-module calls use correct types.
  *
@@ -1223,6 +1253,21 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         if (!strcmp(method, "from_int"))     return "tk_str_from_int";
         if (!strcmp(method, "fromint"))      return "tk_str_from_int";
         if (!strcmp(method, "to_int"))       return "tk_str_to_int";
+        /* Bug 110.1: register f64-returning string→number wrappers so
+         * expr_llvm_type sees `resolved` and routes through
+         * is_f64_returning_wrapper to return "double". Without these
+         * the call goes via the generic tk_<mod>_<method>_w fallback
+         * and downstream arithmetic lowers to integer multiplication. */
+        if (!strcmp(method, "tofloat"))      return "tk_str_tofloat_w";
+        if (!strcmp(method, "to_float"))     return "tk_str_to_float_w";
+        if (!strcmp(method, "tof64"))        return "tk_str_tof64_w";
+        if (!strcmp(method, "tof32"))        return "tk_str_tof32_w";
+        if (!strcmp(method, "parsefloat"))   return "tk_str_parsefloat_w";
+        if (!strcmp(method, "parsef64"))     return "tk_str_parsef64_w";
+        /* Epic 111 / ADR-0004: canonical builder names route to existing glue. */
+        if (!strcmp(method, "builder"))      return "tk_str_buf_w";
+        if (!strcmp(method, "build"))        return "tk_str_done_w";
+        if (!strcmp(method, "interpolate"))  return "tk_str_interpolate_w";
         if (!strcmp(method, "indexof"))      return "tk_str_indexof_w";
         if (!strcmp(method, "slice"))        return "tk_str_slice_w";
         if (!strcmp(method, "replace"))      return "tk_str_replace_w";
@@ -1605,12 +1650,202 @@ static int emit_expr(Ctx *c, const Node *n)
         fprintf(c->out, "  %%t%d = add i1 0, %d\n", t, tb[0]=='t' ? 1 : 0);
         return t;
     case NODE_STR_LIT: {
-        int alen = 1;
-        int si = emit_str_global(c, c->src + n->tok_start, n->tok_len, &alen);
-        t = next_tmp(c);
-        fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
-                t, alen, alen, c->module_prefix, si);
-        return t;
+        /* Story 111.5a: interpolation lowering.
+         *
+         * Detect `\(<expr>)` sequences inside a STR_LIT and lower the whole
+         * literal to a chain of `tk_str_concat` calls — one piece per
+         * literal segment + interpolated expression. The expression is
+         * synthetic-parsed by lexing + parsing a wrapper toke program of
+         * the form  `m=_i_;f=_e():$str{<...EXPR...};}`  and pulling out
+         * the inner expression AST node, which is then handed back to
+         * emit_expr with `c->src` temporarily swapped to the wrapper buffer.
+         *
+         * Falls back to the plain-literal path when no `\(` is present.
+         */
+        const char *raw = c->src + n->tok_start;
+        int rlen = n->tok_len;
+        /* Plain literal — fast path */
+        int has_interp = 0;
+        for (int i = 1; i + 1 < rlen - 1; i++) {
+            if (raw[i] == '\\' && raw[i + 1] == '(') { has_interp = 1; break; }
+            if (raw[i] == '\\') i++;  /* skip ordinary escape */
+        }
+        if (!has_interp) {
+            int alen = 1;
+            int si = emit_str_global(c, raw, rlen, &alen);
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                    t, alen, alen, c->module_prefix, si);
+            return t;
+        }
+        /* Interpolation path: walk the string content between the
+         * outer quotes and split into segments. Each segment is either
+         * a literal slice or an expression slice. */
+        /* Each segment emits one i8* SSA temp that feeds a pairwise
+         * tk_str_concat chain. Carrying char[] slots in this stack frame
+         * is bounded by the 2 KB token-length the lexer accepts. */
+        typedef struct { int start; int end; int is_expr; } Seg;
+        enum { MAX_SEGS = 128 };
+        Seg segs[MAX_SEGS]; int nsegs = 0;
+        int last = 1;                   /* skip leading `"` */
+        int content_end = rlen - 1;     /* skip trailing `"` */
+        for (int i = 1; i < content_end; i++) {
+            if (raw[i] == '\\' && i + 1 < content_end && raw[i + 1] == '(') {
+                if (nsegs < MAX_SEGS) {
+                    segs[nsegs].start = last;
+                    segs[nsegs].end   = i;
+                    segs[nsegs].is_expr = 0;
+                    nsegs++;
+                }
+                /* skip past `\(` then find the matching `)` honouring
+                 * nested parens but not nested strings (rare). */
+                int j = i + 2;
+                int depth = 1;
+                while (j < content_end && depth > 0) {
+                    char ch = raw[j];
+                    if (ch == '\\' && j + 1 < content_end) { j += 2; continue; }
+                    if (ch == '(') depth++;
+                    else if (ch == ')') {
+                        depth--;
+                        if (depth == 0) break;
+                    }
+                    j++;
+                }
+                if (j >= content_end) break;  /* malformed — bail out */
+                if (nsegs < MAX_SEGS) {
+                    segs[nsegs].start = i + 2;
+                    segs[nsegs].end   = j;
+                    segs[nsegs].is_expr = 1;
+                    nsegs++;
+                }
+                i = j;
+                last = j + 1;
+            } else if (raw[i] == '\\') {
+                i++;  /* skip ordinary escape */
+            }
+        }
+        if (last < content_end && nsegs < MAX_SEGS) {
+            segs[nsegs].start = last;
+            segs[nsegs].end   = content_end;
+            segs[nsegs].is_expr = 0;
+            nsegs++;
+        }
+        int accumulator = -1;
+        for (int p = 0; p < nsegs; p++) {
+            int seg_val;
+            if (segs[p].is_expr) {
+                /* Build a synthetic wrapper program and parse it. The
+                 * wrapper is allocated in the compiler arena so its
+                 * source text outlives the parse — emit_expr below
+                 * reads token text from the wrapper buffer via c->src
+                 * swapping. */
+                int elen = segs[p].end - segs[p].start;
+                int wrap_cap = elen + 64;
+                char *wrap = (char *)arena_alloc(c->arena, wrap_cap);
+                int wlen = snprintf(wrap, (size_t)wrap_cap,
+                                     "m=i;f=e():$str{<%.*s;};", elen, raw + segs[p].start);
+                /* Lex */
+                int tcap = elen + 32;
+                Token *sub_toks = (Token *)arena_alloc(c->arena, tcap * (int)sizeof(Token));
+                int sub_tc = lex(wrap, wlen, sub_toks, tcap, 0 /* PROFILE_DEFAULT */);
+                if (sub_tc <= 0) {
+                    /* fall back: emit empty string for unparseable expr */
+                    int alen2 = 1;
+                    int si2 = emit_str_global(c, "\"\"", 2, &alen2);
+                    seg_val = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                            seg_val, alen2, alen2, c->module_prefix, si2);
+                } else {
+                    Node *sub_ast = parse(sub_toks, sub_tc, wrap, c->arena, 0);
+                    /* Walk: PROGRAM > (MODULE) > FUNC_DECL > STMT_LIST > RETURN_STMT > expr */
+                    Node *expr_node = NULL;
+                    if (sub_ast) {
+                        Node *fn = NULL;
+                        for (int i = 0; i < sub_ast->child_count; i++) {
+                            Node *ch = sub_ast->children[i];
+                            if (ch && ch->kind == NODE_FUNC_DECL) { fn = ch; break; }
+                            if (ch && ch->kind == NODE_MODULE) {
+                                for (int j = 0; j < ch->child_count; j++) {
+                                    if (ch->children[j] && ch->children[j]->kind == NODE_FUNC_DECL) {
+                                        fn = ch->children[j];
+                                        break;
+                                    }
+                                }
+                                if (fn) break;
+                            }
+                        }
+                        if (fn) {
+                            for (int i = 0; i < fn->child_count; i++) {
+                                Node *ch = fn->children[i];
+                                if (ch && ch->kind == NODE_STMT_LIST) {
+                                    for (int j = 0; j < ch->child_count; j++) {
+                                        Node *st = ch->children[j];
+                                        if (st && st->kind == NODE_RETURN_STMT
+                                            && st->child_count > 0) {
+                                            expr_node = st->children[0];
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (expr_node) break;
+                            }
+                        }
+                    }
+                    if (!expr_node) {
+                        int alen3 = 1;
+                        int si3 = emit_str_global(c, "\"\"", 2, &alen3);
+                        seg_val = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                                seg_val, alen3, alen3, c->module_prefix, si3);
+                    } else {
+                        const char *saved_src = c->src;
+                        c->src = wrap;
+                        seg_val = emit_expr(c, expr_node);
+                        const char *ety = expr_llvm_type(c, expr_node);
+                        c->src = saved_src;
+                        /* Coerce to i8* so tk_str_concat can consume it.
+                         * Most $str-returning stdlib wrappers (e.g.
+                         * s.fromint, s.format) return i64 ABI carrying a
+                         * pointer bit-pattern. */
+                        if (ety && !strcmp(ety, "i64")) {
+                            int z = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, seg_val);
+                            seg_val = z;
+                        }
+                    }
+                }
+            } else {
+                /* Literal segment: build a quoted slice and emit_str_global */
+                int slen = segs[p].end - segs[p].start;
+                int buf_cap = slen + 3;
+                char *buf = (char *)arena_alloc(c->arena, buf_cap);
+                buf[0] = '"';
+                memcpy(buf + 1, raw + segs[p].start, (size_t)slen);
+                buf[1 + slen] = '"';
+                int alen4 = 1;
+                int si4 = emit_str_global(c, buf, slen + 2, &alen4);
+                seg_val = next_tmp(c);
+                fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                        seg_val, alen4, alen4, c->module_prefix, si4);
+            }
+            if (accumulator < 0) {
+                accumulator = seg_val;
+            } else {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i8* @tk_str_concat(i8* %%t%d, i8* %%t%d) ; interp\n",
+                        z, accumulator, seg_val);
+                accumulator = z;
+            }
+        }
+        if (accumulator < 0) {
+            /* empty interpolation — return empty string */
+            int alen5 = 1;
+            int si5 = emit_str_global(c, "\"\"", 2, &alen5);
+            accumulator = next_tmp(c);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                    accumulator, alen5, alen5, c->module_prefix, si5);
+        }
+        return accumulator;
     }
     case NODE_IDENT:
         tok_cp(c->src, n, tb, sizeof tb);
@@ -1723,27 +1958,38 @@ static int emit_expr(Ctx *c, const Node *n)
         int lhs=emit_expr(c,n->children[0]), rhs=emit_expr(c,n->children[1]);
         const char *lty = expr_llvm_type(c, n->children[0]);
         const char *rty = expr_llvm_type(c, n->children[1]);
-        /* Concat dispatch: distinguish string concat from array concat.
-         * Strings are NUL-terminated i8*; arrays have a length at ptr[-1].
-         * Calling tk_array_concat on strings reads garbage → SEGFAULT.
-         * Story 101.R3b: detect array literals/types to pick the right fn. */
+        /* Concat dispatch for `+` with at least one i8* operand.
+         *
+         * Epic 111 / ADR-0004: `+` is type-checker-rejected for $str+$str.
+         * In practice a few patterns still slip through (e.g.
+         * `let formatted=s.format(...); formatted+"%"` — the let binding
+         * doesn't propagate TY_STR from the stdlib call, so the type
+         * checker sees TY_UNKNOWN + TY_STR and lets it through). Codegen
+         * dispatches on the operand struct-type marker:
+         *   "@<elem>"  → tk_array_concat (real array)
+         *   "$str" / NULL → tk_str_concat (safe for strings; the
+         *                   migration tool flags these for rewriting
+         *                   but they shouldn't crash in the interim)
+         */
         if (n->op == TK_PLUS && (!strcmp(lty, "i8*") || !strcmp(rty, "i8*"))) {
-            int either_is_array = 0;
-            if (n->children[0]->kind == NODE_ARRAY_LIT || n->children[0]->kind == NODE_MAP_LIT)
-                either_is_array = 1;
-            if (n->child_count > 1 &&
-                (n->children[1]->kind == NODE_ARRAY_LIT || n->children[1]->kind == NODE_MAP_LIT))
-                either_is_array = 1;
-            /* Check if operand is a known array-typed variable (type starts with @) */
-            if (!either_is_array && n->children[0]->kind == NODE_IDENT) {
+            int is_array = 0;
+            const char *lhs_mark = NULL;
+            const char *rhs_mark = NULL;
+            if (n->children[0]->kind == NODE_ARRAY_LIT || n->children[0]->kind == NODE_MAP_LIT) {
+                is_array = 1;
+            } else if (n->children[0]->kind == NODE_IDENT) {
                 char vn0[128]; tok_cp(c->src, n->children[0], vn0, sizeof vn0);
-                const char *pt0 = ptr_local_struct_type(c, vn0);
-                if (pt0 && pt0[0] == '@') either_is_array = 1;
+                lhs_mark = ptr_local_struct_type(c, vn0);
+                if (lhs_mark && lhs_mark[0] == '@') is_array = 1;
             }
-            if (!either_is_array && n->child_count > 1 && n->children[1]->kind == NODE_IDENT) {
-                char vn1[128]; tok_cp(c->src, n->children[1], vn1, sizeof vn1);
-                const char *pt1 = ptr_local_struct_type(c, vn1);
-                if (pt1 && pt1[0] == '@') either_is_array = 1;
+            if (n->child_count > 1) {
+                if (n->children[1]->kind == NODE_ARRAY_LIT || n->children[1]->kind == NODE_MAP_LIT) {
+                    is_array = 1;
+                } else if (n->children[1]->kind == NODE_IDENT) {
+                    char vn1[128]; tok_cp(c->src, n->children[1], vn1, sizeof vn1);
+                    rhs_mark = ptr_local_struct_type(c, vn1);
+                    if (rhs_mark && rhs_mark[0] == '@') is_array = 1;
+                }
             }
             /* Coerce non-ptr side to ptr if mixed */
             if (!strcmp(lty, "i64")) {
@@ -1757,10 +2003,10 @@ static int emit_expr(Ctx *c, const Node *n)
                 rhs = z;
             }
             t = next_tmp(c);
-            if (either_is_array) {
+            if (is_array) {
                 fprintf(c->out, "  %%t%d = call i8* @tk_array_concat(i8* %%t%d, i8* %%t%d)\n", t, lhs, rhs);
             } else {
-                fprintf(c->out, "  %%t%d = call i8* @tk_str_concat(i8* %%t%d, i8* %%t%d)\n", t, lhs, rhs);
+                fprintf(c->out, "  %%t%d = call i8* @tk_str_concat(i8* %%t%d, i8* %%t%d) ; safety net — should be migrated\n", t, lhs, rhs);
             }
             return t;
         }
@@ -1790,8 +2036,25 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
             }
         }
+        /* Issue 112.2: detect string-typed variables (not just literals) so
+         * var-to-var `=`/`!=` performs content-compare via strcmp instead of
+         * pointer-compare. Without this gate `if(a=b)` returns false for
+         * equal-content strings allocated separately (e.g., after two
+         * io.readln() calls — see 112.1 fix). */
+        int lhs_is_str = !strcmp(lty, "i8*");
+        int rhs_is_str = !strcmp(rty, "i8*");
+        if (!lhs_is_str && n->children[0]->kind == NODE_IDENT) {
+            char nb_eq[128]; tok_cp(c->src, n->children[0], nb_eq, sizeof nb_eq);
+            const char *st = ptr_local_struct_type(c, nb_eq);
+            if (st && !strcmp(st, "$str")) lhs_is_str = 1;
+        }
+        if (!rhs_is_str && n->child_count > 1 && n->children[1]->kind == NODE_IDENT) {
+            char nb_eq[128]; tok_cp(c->src, n->children[1], nb_eq, sizeof nb_eq);
+            const char *st = ptr_local_struct_type(c, nb_eq);
+            if (st && !strcmp(st, "$str")) rhs_is_str = 1;
+        }
         if ((n->op == TK_EQ || n->op == TK_NE) && !lhs_is_array && !rhs_is_array &&
-            (!strcmp(lty, "i8*") || !strcmp(rty, "i8*"))) {
+            (lhs_is_str || rhs_is_str)) {
             /* Normalize both sides to ptr */
             int lhs_p = lhs, rhs_p = rhs;
             if (!strcmp(lty, "i64")) {
@@ -2082,7 +2345,19 @@ static int emit_expr(Ctx *c, const Node *n)
                 if (!strcmp(method_im, "append"))      fn_im = "tk_array_append_w";
                 else if (!strcmp(method_im, "push"))    fn_im = "tk_array_append_w";
                 else if (!strcmp(method_im, "get"))     fn_im = "tk_str_arrayget_w";
-                else if (!strcmp(method_im, "set"))     fn_im = "tk_map_set_w";
+                else if (!strcmp(method_im, "set")) {
+                    /* Issue 112.3: dispatch array.set to tk_array_set_w (new
+                     * immutable replace), and only route map.set to the existing
+                     * tk_map_set_w. Without this gate the array path treated the
+                     * numeric index as a string pointer and crashed in strcmp(). */
+                    int base_is_map = 0;
+                    if (n->children[0]->children[0]->kind == NODE_IDENT) {
+                        char nb_set[128];
+                        tok_cp(c->src, n->children[0]->children[0], nb_set, sizeof nb_set);
+                        if (is_map_var(c, nb_set)) base_is_map = 1;
+                    }
+                    fn_im = base_is_map ? "tk_map_set_w" : "tk_array_set_w";
+                }
                 else if (!strcmp(method_im, "map"))     fn_im = "tk_arr_map";
                 else if (!strcmp(method_im, "filter"))  fn_im = "tk_arr_filter";
                 else if (!strcmp(method_im, "reduce"))  fn_im = "tk_arr_reduce";
@@ -2392,7 +2667,7 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_log_info_w", "tk_log_error_w",
                         "tk_log_warn_w", "tk_log_debug_w", "tk_router_new_w",
                         "tk_map_new", "tk_map_put", "tk_map_get",
-                        "tk_array_append_w", "tk_map_set_w",
+                        "tk_array_append_w", "tk_array_set_w", "tk_map_set_w",
                         "tk_arr_map", "tk_arr_filter", "tk_arr_reduce", "tk_arr_sort",
                         "tk_str_from_float",
                         "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
@@ -2531,6 +2806,15 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, " %s %%t%d", aty, args[i]);
         }
         fputs(")\n", c->out);
+        /* Bug 110.1: f64-returning _w wrappers carry the bit-pattern of a
+         * double inside their i64 ABI return. Reinterpret the SSA result
+         * as `double` so downstream arithmetic chooses fmul/fadd. */
+        if (is_f64_returning_wrapper(tb)) {
+            int bc = next_tmp(c);
+            fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; %s returns $f64\n",
+                    bc, t, tb);
+            t = bc;
+        }
         return t;
         }
     }
@@ -3454,9 +3738,15 @@ static int emit_expr(Ctx *c, const Node *n)
  */
 static const char *expr_struct_type(Ctx *c, const Node *n) {
     if (!n) return NULL;
-    /* Array literal: detect element type for float array tracking.
-     * Returns "@f64" when the first non-annotation element is a float literal
-     * or double-typed expression, so that .get() can bitcast i64→double. */
+    /* Bug 111.10: string literals must be marked "$str" so that locals
+     * bound to one (`let s="hello"`) aren't misidentified by the
+     * array-literal spread detector as an array base. */
+    if (n->kind == NODE_STR_LIT) return "$str";
+    /* Array literal: detect element type so the `+` codegen and the
+     * spread-detector can dispatch correctly. "@f64" for float arrays
+     * (so .get() bitcasts i64→double), "@i64" for integer/bool/other
+     * arrays (so `arr+arr` reaches tk_array_concat instead of falling
+     * back to tk_str_concat which would garbage-read a string header). */
     if (n->kind == NODE_ARRAY_LIT) {
         for (int i = 0; i < n->child_count; i++) {
             NodeKind ck = n->children[i]->kind;
@@ -3467,9 +3757,13 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             if (ck == NODE_FLOAT_LIT) return "@f64";
             const char *ety = expr_llvm_type(c, n->children[i]);
             if (!strcmp(ety, "double")) return "@f64";
-            break; /* only check the first real element */
+            return "@i64";  /* any non-float array element marks the
+                              array as integer-element for codegen
+                              purposes (the actual element type may be
+                              i64/bool/struct/i8*; we only care that it
+                              is NOT a NUL-terminated string). */
         }
-        return NULL;
+        return "@i64";  /* empty literal — assume integer until proven otherwise */
     }
     if (n->kind == NODE_STRUCT_LIT) {
         /* For struct literals, the type name is in the token */
@@ -3492,6 +3786,21 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             const char *resolved = resolve_stdlib_call(c, alias, method);
             if (resolved && !strcmp(resolved, "tk_time_toparts_w"))
                 return "timeparts";
+            /* Issue 112.2: mark string-returning stdlib calls so that
+             * `let x = s.trim(...)` records `x` as `$str` in ptr_local
+             * tracking. Without this, var-to-var `=` falls back to
+             * pointer-compare and reports false-negative for equal content. */
+            if (resolved) {
+                static const char *str_wrappers[] = {
+                    "tk_str_concat_w","tk_str_trim_w","tk_str_upper_w","tk_str_lower_w",
+                    "tk_str_slice_w","tk_str_replace_w","tk_str_trimprefix_w","tk_str_trimsuffix_w",
+                    "tk_str_charat_w","tk_str_substr_w","tk_str_chars_w","tk_str_sub_w",
+                    "tk_str_fromint_w","tk_str_fromfloat_w","tk_str_fromf64_w","tk_str_fromf32_w",
+                    "tk_str_format_w","tk_io_readln_w","tk_str_join_w","tk_str_interpolate_w",
+                    NULL };
+                for (int i = 0; str_wrappers[i]; i++)
+                    if (!strcmp(resolved, str_wrappers[i])) return "$str";
+            }
             /* Cross-module user calls: check FnSig by method name */
             const FnSig *sig2 = lookup_fn(c, method);
             if (sig2 && sig2->ret_type_name[0] && lookup_struct(c, sig2->ret_type_name))
@@ -3713,6 +4022,8 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
                     !strcmp(resolved, "sqrt") || !strcmp(resolved, "ceil") ||
                     !strcmp(resolved, "pow"))
                     return "double";
+                /* Bug 110.1: _w wrappers whose i64 carries an f64 bit-pattern */
+                if (is_f64_returning_wrapper(resolved)) return "double";
                 /* Story 49.4.5: all _w wrappers use i64 ABI uniformly */
                 return "i64";
             }
@@ -4501,10 +4812,47 @@ static void emit_toplevel(Ctx *c, const Node *n)
                 const Node *tyn = (n->children[i]->child_count > 1) ? n->children[i]->children[1] : NULL;
                 if (tyn && tyn->kind == NODE_MAP_TYPE) {
                     mark_ptr_with_type(c, pn, "__map__");
+                } else if (tyn && tyn->kind == NODE_ARRAY_TYPE &&
+                           tyn->child_count >= 1 && tyn->children[0]) {
+                    /* Bug 110.9: propagate @$f64/@$f32 element-type marker to
+                     * parameter so 102.29b's .get() bitcast (i64→double) fires
+                     * for float arrays passed as function arguments. */
+                    char et[64] = ""; tok_cp(c->src, tyn->children[0], et, sizeof et);
+                    if (!strcmp(et, "f64") || !strcmp(et, "$f64"))
+                        mark_ptr_with_type(c, pn, "@f64");
+                    else if (!strcmp(et, "f32") || !strcmp(et, "$f32"))
+                        mark_ptr_with_type(c, pn, "@f32");
+                    else {
+                        char pty_name[128] = "";
+                        tok_cp(c->src, tyn, pty_name, sizeof pty_name);
+                        const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
+                        mark_ptr_with_type(c, pn, stype);
+                    }
                 } else {
                     char pty_name[128] = "";
                     if (tyn) tok_cp(c->src, tyn, pty_name, sizeof pty_name);
                     const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
+                    /* Bug 111.10: any scalar pointer param that isn't a struct
+                     * or map must still be marked with SOMETHING (typically
+                     * "$str") so the NODE_ARRAY_LIT spread detector excludes
+                     * it. Without a marker, the spread logic reads `ptr[-1]`
+                     * expecting an array length header — on a NUL-terminated
+                     * string this returns adjacent-memory garbage and either
+                     * segfaults or mallocs an absurd amount. tok_cp strips
+                     * the `$` sigil so we synthesize "$<name>" to keep the
+                     * marker shape distinct from array markers (which start
+                     * with `@`). */
+                    if (!stype && pty_name[0] && pty_name[0] != '@') {
+                        static char marker_buf[2048];
+                        static int marker_off = 0;
+                        int wrote = snprintf(marker_buf + marker_off,
+                                              sizeof(marker_buf) - marker_off,
+                                              "$%s", pty_name);
+                        if (wrote > 0 && marker_off + wrote < (int)sizeof(marker_buf)) {
+                            stype = marker_buf + marker_off;
+                            marker_off += wrote + 1;
+                        }
+                    }
                     mark_ptr_with_type(c, pn, stype);
                 }
             }
@@ -4709,6 +5057,7 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_map_put", "declare void @tk_map_put(i8*, i64, i64)", 0},
     {"tk_map_get", "declare i64 @tk_map_get(i8*, i64)", 0},
     {"tk_array_append_w", "declare i64 @tk_array_append_w(i64, i64)", 0},
+    {"tk_array_set_w", "declare i64 @tk_array_set_w(i64, i64, i64)", 0},
     {"tk_map_set_w", "declare i64 @tk_map_set_w(i64, i64, i64)", 0},
     /* Higher-order array functions */
     {"tk_arr_map", "declare i64 @tk_arr_map(i64, i64)", 0},

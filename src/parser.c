@@ -208,7 +208,7 @@ static void eerr_got(Parser *p, int code, Token *t, const char *msg) {
     else
         snprintf(buf, sizeof buf, "%s", msg);
     const char *fix = NULL;
-    if (code == E2005) fix = "expected a type: scalar (i32, bool, Str), struct ($Name), array (@(T)), or function type ((T):R)";
+    if (code == E2005) fix = "expected a type: scalar ($i64, $f64, $str, $bool), struct ($name), array (@($t)), or function type (($t):$r)";
     else if (code == E2002) fix = "check syntax; see toke spec for valid constructs";
     p->errs++;
     diag_emit(DIAG_ERROR, code, t->start, t->line, t->col, buf,
@@ -700,9 +700,40 @@ static Node *parse_postfix(Parser *p) {
 static Node *parse_call(Parser *p) {
     Node *l=parse_postfix(p);
     if(!l) return NULL;
-    while(peek(p)==TK_LPAREN){Token *op=adv(p);Node *c=mk(p,NODE_CALL_EXPR,op);ch(p,c,l);
-        if(peek(p)!=TK_RPAREN){ch(p,c,parse_expr(p));while(peek(p)==TK_SEMICOLON){adv(p);ch(p,c,parse_expr(p));}}
-        if(!xp(p,TK_RPAREN,"')'"))eerr(p,E2004,cur(p),"unclosed delimiter");l=c;}
+    /* Issue 112.4: loop on ALL postfix operators (call `(`, field `.`,
+     * index `[`) so that `f().g()` and `s.split(...).get(0)` parse. The
+     * previous version only looped on `(`, so any `.` or `[` immediately
+     * after `)` was rejected as "missing semicolon". */
+    for(;;){
+        TokenKind tk=peek(p);
+        if(tk==TK_LPAREN){
+            Token *op=adv(p);Node *c=mk(p,NODE_CALL_EXPR,op);ch(p,c,l);
+            if(peek(p)!=TK_RPAREN){ch(p,c,parse_expr(p));while(peek(p)==TK_SEMICOLON){adv(p);ch(p,c,parse_expr(p));}}
+            if(!xp(p,TK_RPAREN,"')'"))eerr(p,E2004,cur(p),"unclosed delimiter");l=c;
+        } else if(tk==TK_DOT){
+            Token *d=adv(p);Token *f=cur(p);
+            if(peek(p)==TK_IDENT&&teq(p,f,"get")&&peek_at(p,1)==TK_LPAREN){
+                int save=p->pos;
+                adv(p); adv(p);
+                Node *idx=parse_expr(p);
+                if(peek(p)==TK_RPAREN){
+                    adv(p);
+                    Node *n=mk(p,NODE_INDEX_EXPR,d);ch(p,n,l);ch(p,n,idx);
+                    l=n;
+                } else {
+                    p->pos=save;
+                    if(!xp(p,TK_IDENT,"field"))break;
+                    Node *n=mk(p,NODE_FIELD_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_IDENT,f));l=n;
+                }
+            } else {
+                if(!xp(p,TK_IDENT,"field"))break;
+                Node *n=mk(p,NODE_FIELD_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_IDENT,f));l=n;
+            }
+        } else if(tk==TK_LBRACKET){
+            Token *d=adv(p);Node *n=mk(p,NODE_INDEX_EXPR,d);ch(p,n,l);ch(p,n,parse_expr(p));
+            if(!xp(p,TK_RBRACKET,"']'"))eerr(p,E2004,cur(p),"unclosed delimiter");l=n;
+        } else break;
+    }
     return l;
 }
 
