@@ -2328,6 +2328,25 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", t, len_ptr);
                 return t;
             }
+            /* 113.B.15: map.keys() → tk_map_keys_w(map) → toke array of keys.
+             * Gated on a map receiver so a user .keys() on a non-map is
+             * unaffected. tk_map_keys_w takes the map as i64. */
+            if (!is_mod_im && !strcmp(method_im, "keys") &&
+                n->children[0]->children[0]->kind == NODE_IDENT) {
+                char mkb[128]; tok_cp(c->src, n->children[0]->children[0], mkb, sizeof mkb);
+                if (is_map_var(c, mkb)) {
+                    int mv = emit_expr(c, n->children[0]->children[0]);
+                    const char *mvty = expr_llvm_type(c, n->children[0]->children[0]);
+                    if (!strcmp(mvty, "i8*")) {
+                        int z = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, mv);
+                        mv = z;
+                    }
+                    t = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = call i64 @tk_map_keys_w(i64 %%t%d)\n", t, mv);
+                    return t;
+                }
+            }
             if (!is_mod_im &&
                 (!strcmp(method_im, "append") || !strcmp(method_im, "push") ||
                  !strcmp(method_im, "set") ||
