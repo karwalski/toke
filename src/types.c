@@ -734,8 +734,15 @@ static Type *infer(Ctx *cx, const Node *node) {
                  * TY_UNKNOWN behaviour to avoid surfacing latent E4031s on
                  * array returns etc. (narrow blast radius). */
                 if (bn->child_count>1&&bn->children[1]) {
-                    Type *it=infer(cx,bn->children[1]);
-                    if (it&&(it->kind==TY_MAP||it->kind==TY_STRUCT)) return it;
+                    /* Only adopt the inferred type for struct-literal and
+                     * field-access inits (the B.12 chain: c=$s{...}; m=c.field).
+                     * Other inits (match results, calls) keep TY_UNKNOWN to
+                     * avoid codegen blast radius (113.B.12 follow-up). */
+                    NodeKind ik=bn->children[1]->kind;
+                    if (ik==NODE_STRUCT_LIT||ik==NODE_FIELD_EXPR) {
+                        Type *it=infer(cx,bn->children[1]);
+                        if (it&&(it->kind==TY_MAP||it->kind==TY_STRUCT)) return it;
+                    }
                     return mk_type(A,TY_UNKNOWN);
                 }
             }
@@ -748,8 +755,11 @@ static Type *infer(Ctx *cx, const Node *node) {
             /* Un-annotated `let x=init`: infer, but adopt only MAP types
              * (113.B.12); keep TY_UNKNOWN otherwise (narrow blast radius). */
             if (def->child_count>1&&def->children[1]) {
-                Type *it=infer(cx,def->children[1]);
-                if (it&&(it->kind==TY_MAP||it->kind==TY_STRUCT)) return it;
+                NodeKind ik=def->children[1]->kind;
+                if (ik==NODE_STRUCT_LIT||ik==NODE_FIELD_EXPR) {
+                    Type *it=infer(cx,def->children[1]);
+                    if (it&&(it->kind==TY_MAP||it->kind==TY_STRUCT)) return it;
+                }
                 return mk_type(A,TY_UNKNOWN);
             }
         }
