@@ -728,9 +728,16 @@ static Type *infer(Ctx *cx, const Node *node) {
             if (bn && (bn->kind==NODE_BIND_STMT||bn->kind==NODE_MUT_BIND_STMT)) {
                 /* Annotated `let x:T=init` → type at [1]. */
                 if (bn->child_count>2&&bn->children[1]) return resolve_type(cx,bn->children[1]);
-                /* Un-annotated `let x=init` → INFER from the init (113.B.12;
-                 * was resolve_type'd, poisoning map-typed locals to UNKNOWN). */
-                if (bn->child_count>1&&bn->children[1]) return infer(cx,bn->children[1]);
+                /* Un-annotated `let x=init`: infer the init, but only adopt it
+                 * when it is a MAP (113.B.12 — map-typed locals need their type
+                 * so .get/.set resolve). For other inits keep the prior
+                 * TY_UNKNOWN behaviour to avoid surfacing latent E4031s on
+                 * array returns etc. (narrow blast radius). */
+                if (bn->child_count>1&&bn->children[1]) {
+                    Type *it=infer(cx,bn->children[1]);
+                    if (it&&(it->kind==TY_MAP||it->kind==TY_STRUCT)) return it;
+                    return mk_type(A,TY_UNKNOWN);
+                }
             }
         }
         if (!d||!d->def_node) return mk_type(A,TY_UNKNOWN);
@@ -738,10 +745,13 @@ static Type *infer(Ctx *cx, const Node *node) {
         if ((def->kind==NODE_BIND_STMT||def->kind==NODE_MUT_BIND_STMT)) {
             /* Annotated `let x:T=init` → [name, type, init]: type is at [1]. */
             if (def->child_count>2&&def->children[1]) return resolve_type(cx,def->children[1]);
-            /* Un-annotated `let x=init` → [name, init]: INFER from the init
-             * expression (113.B.12 — was wrongly resolve_type'd, poisoning the
-             * binding to TY_UNKNOWN so e.g. map-typed lets lost their type). */
-            if (def->child_count>1&&def->children[1]) return infer(cx,def->children[1]);
+            /* Un-annotated `let x=init`: infer, but adopt only MAP types
+             * (113.B.12); keep TY_UNKNOWN otherwise (narrow blast radius). */
+            if (def->child_count>1&&def->children[1]) {
+                Type *it=infer(cx,def->children[1]);
+                if (it&&(it->kind==TY_MAP||it->kind==TY_STRUCT)) return it;
+                return mk_type(A,TY_UNKNOWN);
+            }
         }
         if (def->kind==NODE_PARAM&&def->child_count>1&&def->children[1])
             return resolve_type(cx,def->children[1]);
