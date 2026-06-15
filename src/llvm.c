@@ -3100,7 +3100,15 @@ static int emit_expr(Ctx *c, const Node *n)
             /* Map variable: emit tk_map_get(map_ptr, key_i64) */
             if (is_map_var(c, base_alias)) {
                 int base_map = emit_expr(c, n->children[0]);
-                /* base is a ptr local — emit as ptr */
+                /* base is a ptr local — emit as ptr. A map sourced from a
+                 * struct field (113.B.12) is held in an i64-ABI slot, so
+                 * inttoptr it to i8* before tk_map_get (which takes i8*). */
+                const char *bmty = expr_llvm_type(c, n->children[0]);
+                if (!strcmp(bmty, "i64")) {
+                    int p = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", p, base_map);
+                    base_map = p;
+                }
                 int idx = emit_expr(c, n->children[1]);
                 const char *ity = expr_llvm_type(c, n->children[1]);
                 if (strcmp(ity, "i64")) {
