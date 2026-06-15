@@ -4310,13 +4310,29 @@ static void emit_stmt(Ctx *c, const Node *n)
             { const char *uname = make_unique_name(c, tb);
               if (uname != tb) strncpy(tb, uname, sizeof tb - 1);
             }
-            if (!strcmp(vty, "i8*")) {
-                if (init_node->kind == NODE_MAP_LIT)
-                    mark_ptr_with_type(c, tb, "__map__");
-                else {
-                    const char *stype = expr_struct_type(c, init_node);
-                    mark_ptr_with_type(c, tb, stype);
+            /* 113.B.12: detect a map-typed initialiser so the local is
+             * registered as a map (is_map_var). Covers map literals AND
+             * `let m = structval.mapfield` (a map stored in a struct field),
+             * so m.get/.set lower to tk_map_* instead of array indexing
+             * (which segfaults). Reuses the field_is_map detection. */
+            int init_is_map = (init_node->kind == NODE_MAP_LIT);
+            if (!init_is_map && init_node->kind == NODE_FIELD_EXPR &&
+                init_node->child_count >= 2) {
+                const StructInfo *bsi = resolve_base_struct(c, init_node->children[0]);
+                if (bsi) {
+                    char mfn[128]; tok_cp(c->src, init_node->children[1], mfn, sizeof mfn);
+                    for (int fi = 0; fi < bsi->field_count; fi++)
+                        if (!strcmp(bsi->field_names[fi], mfn)) {
+                            if (bsi->field_is_map[fi]) init_is_map = 1;
+                            break;
+                        }
                 }
+            }
+            if (init_is_map) {
+                mark_ptr_with_type(c, tb, "__map__");
+            } else if (!strcmp(vty, "i8*")) {
+                const char *stype = expr_struct_type(c, init_node);
+                mark_ptr_with_type(c, tb, stype);
             } else if (!strcmp(vty, "i64")) {
                 /* Struct-returning functions use i64 ABI (ptrtoint) but still
                  * need struct type tracking for field-index resolution. */

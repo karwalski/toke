@@ -726,16 +726,22 @@ static Type *infer(Ctx *cx, const Node *node) {
             /* Search the function body for local bindings with type annotations. */
             const Node *bn=find_binding_node(cx->fn_node,cx->src,nb,nlen);
             if (bn && (bn->kind==NODE_BIND_STMT||bn->kind==NODE_MUT_BIND_STMT)) {
+                /* Annotated `let x:T=init` → type at [1]. */
                 if (bn->child_count>2&&bn->children[1]) return resolve_type(cx,bn->children[1]);
-                if (bn->child_count>1&&bn->children[1]) return resolve_type(cx,bn->children[1]);
+                /* Un-annotated `let x=init` → INFER from the init (113.B.12;
+                 * was resolve_type'd, poisoning map-typed locals to UNKNOWN). */
+                if (bn->child_count>1&&bn->children[1]) return infer(cx,bn->children[1]);
             }
         }
         if (!d||!d->def_node) return mk_type(A,TY_UNKNOWN);
         const Node *def=d->def_node;
         if ((def->kind==NODE_BIND_STMT||def->kind==NODE_MUT_BIND_STMT)) {
+            /* Annotated `let x:T=init` → [name, type, init]: type is at [1]. */
             if (def->child_count>2&&def->children[1]) return resolve_type(cx,def->children[1]);
-            if (def->child_count>1&&def->children[1]) return resolve_type(cx,def->children[1]);
-            if (def->child_count>2&&def->children[2]) return infer(cx,def->children[2]);
+            /* Un-annotated `let x=init` → [name, init]: INFER from the init
+             * expression (113.B.12 — was wrongly resolve_type'd, poisoning the
+             * binding to TY_UNKNOWN so e.g. map-typed lets lost their type). */
+            if (def->child_count>1&&def->children[1]) return infer(cx,def->children[1]);
         }
         if (def->kind==NODE_PARAM&&def->child_count>1&&def->children[1])
             return resolve_type(cx,def->children[1]);
@@ -1014,6 +1020,24 @@ static Type *infer(Ctx *cx, const Node *node) {
     case NODE_INDEX_EXPR: {
         Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *idx=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
+        /* 113.B.12: indexing a map (incl. a map stored in a struct field) by
+         * key — `m.get(k)` desugars to NODE_INDEX_EXPR. The index is the KEY
+         * (type ->elem), the result is the VALUE (->field_types[0]). Handle
+         * this BEFORE the array-only rejection below. */
+        if (base->kind==TY_MAP) {
+            Type *kt=base->elem;
+            if (kt&&kt->kind!=TY_UNKNOWN&&idx->kind!=TY_UNKNOWN&&!types_equal(kt,idx)) {
+                if (tc_can_emit(cx)) {
+                    char msg[256];
+                    snprintf(msg,sizeof(msg),"type mismatch: map key must be '%s', got '%s'",type_name(kt),type_name(idx));
+                    diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
+                              "expected",type_name(kt),"got",type_name(idx),
+                              "fix","map key must match the map's key type",(const char*)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
+            return (base->field_count>0&&base->field_types&&base->field_types[0])?base->field_types[0]:mk_type(A,TY_UNKNOWN);
+        }
         if (base->kind!=TY_UNKNOWN&&base->kind!=TY_ARRAY) {
             if (tc_can_emit(cx)) {
                 char msg[256];
