@@ -3222,6 +3222,13 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; f64 array subscript\n", bc, t);
                 t = bc;
             }
+            /* 113.B.11: subscript on @str array yields i8* so the result is
+             * a real string pointer (enables var-to-var `=` strcmp). */
+            if (_st2 && !strcmp(_st2, "@str")) {
+                int p = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8* ; str array subscript\n", p, t);
+                t = p;
+            }
         }
         return t;
     }
@@ -3790,6 +3797,15 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
              * `let x = s.trim(...)` records `x` as `$str` in ptr_local
              * tracking. Without this, var-to-var `=` falls back to
              * pointer-compare and reports false-negative for equal content. */
+            /* Issue 113.B.11: str-array-returning wrappers mark their result
+             * as "@str" (array of strings). Must run BEFORE the $str loop so
+             * tk_str_chars_w resolves to @str (array) not $str (scalar). This
+             * lets `let a = s.get(i)` on a split/chars result be typed i8*, so
+             * the var-to-var `=` strcmp gate fires (closes the 112.2 gap for
+             * strings produced by str.split / str.chars). */
+            if (resolved && (!strcmp(resolved, "tk_str_split_w") ||
+                             !strcmp(resolved, "tk_str_chars_w")))
+                return "@str";
             if (resolved) {
                 static const char *str_wrappers[] = {
                     "tk_str_concat_w","tk_str_trim_w","tk_str_upper_w","tk_str_lower_w",
@@ -4097,6 +4113,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             const char *_iln = get_llvm_name(c, _ia);
             const char *_ist = ptr_local_struct_type(c, _iln);
             if (_ist && !strcmp(_ist, "@f64")) return "double";
+            if (_ist && !strcmp(_ist, "@str")) return "i8*"; /* 113.B.11 */
         }
         return "i64"; /* array element load */
     case NODE_FIELD_EXPR: {
