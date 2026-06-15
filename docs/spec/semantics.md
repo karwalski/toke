@@ -165,11 +165,28 @@ For a binary expression `lhs op rhs`:
 - Both operands must have equal types (no implicit widening).
 - The result type is the common operand type.
 - Violation: `[errors.md E4031]` with fix suggestion `"cast RHS to <T> using 'as'"`.
+- **`+` is strictly numeric** — there is no operator overload for string
+  concatenation. See `decisions/ADR-0004.md`. The compiler diagnostic for a
+  `$str + $str` use site directs the author to one of the three canonical
+  string-building patterns (interpolation, `s.join`, `s.builder`).
 
 **Comparison operators** (`<`, `>`, `=`):
 - Both operands must have equal types.
 - The result type is `bool`.
 - Violation: `[errors.md E4031]`.
+
+**String building** (canonical patterns; see `decisions/ADR-0004.md`):
+- **Interpolation** `"text \(expr) more text"` — primary form for templates
+  with embedded values. Lexed by `\(`; the interpolated expression must
+  evaluate to `$str` (use `s.fromint(n)` / `s.format(f; "%.4f")` / `n as $str`
+  for non-string values). Lowered to a single `tk_str_join_n` call regardless
+  of segment count.
+- **`s.join(arr: @$str; sep: $str): $str`** — delimiter-joined collection.
+  Single allocation, O(N).
+- **`s.builder(): $strbuilder`**, `b.add(part: $str)`, `b.build(): $str` —
+  dynamic accumulation. Single backing buffer that grows; O(N) total.
+- **`s.concat(parts: @$str): $str`** — secondary variadic helper for when
+  the parts already form an array. Single allocation.
 
 **Logical operators** (`&&`, `||`): STUB -- not yet formalized in the type checker.
 

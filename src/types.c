@@ -796,6 +796,22 @@ static Type *infer(Ctx *cx, const Node *node) {
     case NODE_BINARY_EXPR: {
         Type *l=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *r=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
+        /* Story 111.12: catch `+` between a known $str and a TY_UNKNOWN
+         * operand BEFORE the early-return below. This is the slip-through
+         * that caused FIN-079-style segfaults — type-checker silently
+         * returns TY_UNKNOWN, codegen sees i8*+i8* and dispatches the
+         * safety-net tk_str_concat which then walks an int as a string.
+         * Emit the canonical-pattern E4031 here. */
+        if (node->op==TK_PLUS &&
+            ((l->kind==TY_STR && r->kind==TY_UNKNOWN) ||
+             (l->kind==TY_UNKNOWN && r->kind==TY_STR))) {
+            emit_mm(cx, node, l, r,
+                    "`+` operand is $str and the other has unresolved type. "
+                    "If both are $str, use s.concat(a;b) or interpolation "
+                    "\"\\(a)\\(b)\". If the other is numeric, convert: "
+                    "s.fromint(n) / s.format(f;\"%.4f\"). See ADR-0004.");
+            return mk_type(A,TY_UNKNOWN);
+        }
         if (l->kind==TY_UNKNOWN||r->kind==TY_UNKNOWN) return mk_type(A,TY_UNKNOWN);
         int arith=(node->op==TK_PLUS||node->op==TK_MINUS||node->op==TK_STAR||node->op==TK_SLASH);
         int cmp  =(node->op==TK_LT  ||node->op==TK_GT  ||node->op==TK_EQ
@@ -824,6 +840,18 @@ static Type *infer(Ctx *cx, const Node *node) {
             return l;
         }
         if (arith||cmp) {
+            /* Epic 111 / ADR-0004: + is strictly numeric. When str+str is
+             * attempted, point the author at the three canonical string-
+             * building patterns instead of the generic "cast RHS" message. */
+            if (arith && node->op==TK_PLUS &&
+                l->kind==TY_STR && r->kind==TY_STR) {
+                emit_mm(cx, node, l, r,
+                        "`+` is numeric-only in toke. For string templates use "
+                        "interpolation \"\\(a)\\(b)\"; for delimiter-joined "
+                        "collections use s.join(arr;sep); for dynamic accumulation "
+                        "use s.builder()/s.add()/s.build(). See ADR-0004.");
+                return mk_type(A,TY_UNKNOWN);
+            }
             if ((arith&&(!is_numeric(l)||!types_equal(l,r)))||(cmp&&!types_equal(l,r))) {
                 char fix[64];
                 snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(l));
@@ -1182,13 +1210,19 @@ static Type *infer(Ctx *cx, const Node *node) {
                 emit_mm(cx,node,cx->fn_ret,val,fix);
             }
         }
-        /* ── Escape analysis (E5001) ─────────────────────────────────────
+        /* ── Escape analysis (W5001) ─────────────────────────────────────
          * Check whether the returned expression references a binding from
          * a deeper scope (if/lp/arena block).  Literals and parameters
          * are always safe.  A local binding is safe only if it was created
          * at scope_depth 0 (function body level).  Bindings from deeper
          * scopes may reference arena-allocated values that are freed when
-         * the block exits, so returning them is conservatively rejected.
+         * the block exits.
+         *
+         * Bug 110.7: returns of heap-allocated values (strings, arrays,
+         * structs) are also safe — those types are passed by pointer and
+         * the runtime owns the memory.  Only stack/arena-local primitives
+         * actually escape on a `<binding` return.  Skip the warning when
+         * the value's type is one of the heap-allocated kinds.
          * ──────────────────────────────────────────────────────────────── */
         if (node->child_count>0&&node->children[0]&&
             node->children[0]->kind==NODE_IDENT) {
@@ -1197,7 +1231,18 @@ static Type *infer(Ctx *cx, const Node *node) {
             /* Parameters are safe — caller owns them */
             if (!is_param(cx,rnb,rlen)) {
                 int bd=lookup_bind_depth(cx,rnb,rlen);
-                if (bd>0) {
+                /* Bug 110.7: skip the warning for heap-allocated types
+                 * (strings, arrays, structs) which are passed by pointer
+                 * and outlive the block.  Also skip for TY_UNKNOWN — the
+                 * inferred type for bindings in nested blocks is often
+                 * not resolvable here, and W5001 should err on the side
+                 * of NOT firing rather than spamming false positives. */
+                int is_safe_kind = !val ||
+                                   val->kind == TY_STR ||
+                                   val->kind == TY_ARRAY ||
+                                   val->kind == TY_STRUCT ||
+                                   val->kind == TY_UNKNOWN;
+                if (bd>0 && !is_safe_kind) {
                     char msg[256];
                     snprintf(msg,sizeof(msg),
                         "value '%s' escapes its scope: bound in a nested block (depth %d)",

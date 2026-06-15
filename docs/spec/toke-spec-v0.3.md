@@ -3417,7 +3417,7 @@ The following JSON Schema defines the normative diagnostic record format for ver
 | `)` | call close | group close |
 | `{` | block open | struct literal open |
 | `}` | block close | struct literal close |
-| `+` | add | string concat |
+| `+` | add (numeric only) | -- |
 | `-` | subtract | unary negate |
 | `*` | multiply | pointer deref (FFI only) |
 | `/` | divide | -- |

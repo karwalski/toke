@@ -113,8 +113,35 @@ http.post("/users";&createuser);
 ## strings
 
 Double-quoted. Escapes: \" \\ \n \t \r \0 \xNN.
-Interpolation: "\(expr)" where expr resolves to $str.
 Semicolons separate args, never commas: f(a;b;c).
+
+`+` is numeric only. NEVER `+` on strings. Use these canonical patterns:
+
+1. Interpolation — PRIMARY form for templates with mixed literals and
+   expressions:
+   ```
+   io.println("hello \(name): count=\(s.fromint(n))");
+   ```
+   Each `\(expr)` segment must evaluate to $str — use `s.fromint(n)`,
+   `s.format(f;"%.4f")`, or `n as $str` for non-strings.
+
+2. s.concat(a;b) — simple pairwise concatenation when interpolation is
+   awkward (e.g. all variables, no literal text).
+
+3. s.join(arr;sep) — delimiter-joined collection (use this instead of any
+   loop accumulator pattern).
+   ```
+   let parts=@("a";"b";"c");
+   io.println(s.join(parts;","));   # prints: a,b,c
+   ```
+
+4. s.builder() / s.add(b;part) / s.build(b) — dynamic accumulation
+   (logs, code-gen, large blobs).
+   ```
+   let b=s.builder();
+   lp(let i=0;i<n;i=i+1){s.add(b;"line ");s.add(b;s.fromint(i));s.add(b;"\n")};
+   io.println(s.build(b));
+   ```
 
 ## struct and collection literals
 

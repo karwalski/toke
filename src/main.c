@@ -948,6 +948,48 @@ int main(int argc, char **argv)
 
     /* Default: compile to binary */
     {
+        /* Story 111.14: an executable binary requires `f=main()`. Detect the
+         * absence here and emit a clear E9020 before the linker fails with
+         * a cryptic "_main not found" message that the model can't act on. */
+        int has_main = 0;
+        for (int i = 0; ast && i < ast->child_count; i++) {
+            const Node *ch = ast->children[i];
+            if (!ch) continue;
+            const Node *fn_scope = ch;
+            /* Functions may sit inside a NODE_MODULE wrapper or directly under PROGRAM */
+            if (ch->kind == NODE_MODULE) {
+                for (int j = 0; j < ch->child_count; j++) {
+                    const Node *c2 = ch->children[j];
+                    if (c2 && c2->kind == NODE_FUNC_DECL && c2->child_count > 0) {
+                        char fnb[64];
+                        int tlen = c2->children[0]->tok_len < (int)sizeof(fnb) - 1
+                                   ? c2->children[0]->tok_len : (int)sizeof(fnb) - 1;
+                        memcpy(fnb, sbuf + c2->children[0]->tok_start, (size_t)tlen);
+                        fnb[tlen] = '\0';
+                        if (!strcmp(fnb, "main")) { has_main = 1; break; }
+                    }
+                }
+                if (has_main) break;
+                continue;
+            }
+            if (fn_scope->kind == NODE_FUNC_DECL && fn_scope->child_count > 0) {
+                char fnb[64];
+                int tlen = fn_scope->children[0]->tok_len < (int)sizeof(fnb) - 1
+                           ? fn_scope->children[0]->tok_len : (int)sizeof(fnb) - 1;
+                memcpy(fnb, sbuf + fn_scope->children[0]->tok_start, (size_t)tlen);
+                fnb[tlen] = '\0';
+                if (!strcmp(fnb, "main")) { has_main = 1; break; }
+            }
+        }
+        if (!has_main) {
+            diag_emit(DIAG_ERROR, 9020, 0, 1, 1,
+                      "no main function defined — every executable toke program needs an entry point",
+                      "fix", "add `f=main():$i64{<0}` (or a body that calls your helper functions)",
+                      NULL);
+            symtab_free(&st);
+            rc = ECOMPILE;
+            goto done;
+        }
         char tmp[] = "/tmp/tkc_XXXXXX.ll";
         int fd = mkstemps(tmp, 3);
         if (fd < 0) { fputs("tkc: failed to create temp file\n", stderr); symtab_free(&st); rc = EINTERNAL; goto done; }
