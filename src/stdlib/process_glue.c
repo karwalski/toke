@@ -12,12 +12,32 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-int64_t tk_process_spawn_w(int64_t cmd) {
-    if (!cmd) return 0;
-    const char *cmdstr = (const char *)(intptr_t)cmd;
-    /* Build a NULL-terminated argv: {"sh", "-c", cmdstr, NULL} */
+/* Internal helper: spawn a single command string via the shell.
+ * Used by the convenience wrappers (exec/spawndetached) which are NOT .tki
+ * exports and pass a single command string, not a [str] argv array. */
+static int64_t spawn_shell(const char *cmdstr) {
     const char *argv[] = { "sh", "-c", cmdstr, NULL };
     SpawnResult r = process_spawn(argv);
+    if (r.is_err) return 0;
+    return (int64_t)(intptr_t)r.ok;
+}
+
+/* process.spawn(cmd:[str]) — honours the .tki [str] argv contract: the toke
+ * array pointer has block[-1] == element count and block[i] == char* (as i64),
+ * matching the runtime array layout (cf. tk_str_split_w in str_glue.c).
+ * We decode it into a real NULL-terminated argv[] and execvp directly. */
+int64_t tk_process_spawn_w(int64_t cmd) {
+    if (!cmd) return 0;
+    const int64_t *block = (const int64_t *)(intptr_t)cmd;
+    int64_t n = block[-1];
+    if (n <= 0) return 0;
+    const char **argv = (const char **)malloc((size_t)(n + 1) * sizeof(char *));
+    if (!argv) return 0;
+    for (int64_t i = 0; i < n; i++)
+        argv[i] = (const char *)(intptr_t)block[i];
+    argv[n] = NULL;
+    SpawnResult r = process_spawn(argv);
+    free(argv);
     if (r.is_err) return 0;
     return (int64_t)(intptr_t)r.ok;
 }
@@ -106,7 +126,7 @@ int64_t tk_process_env_w(int64_t name) {
 /* process.exec(cmd) — run command and return stdout as string */
 int64_t tk_process_exec_w(int64_t cmd) {
     if (!cmd) return 0;
-    int64_t handle = tk_process_spawn_w(cmd);
+    int64_t handle = spawn_shell((const char *)(intptr_t)cmd);
     if (!handle) return 0;
     ProcessHandle *h = (ProcessHandle *)(intptr_t)handle;
     process_wait(h);
@@ -137,7 +157,7 @@ int64_t tk_process_readlines_w(int64_t cmd) {
 /* process.spawndetached(cmd) — spawn a background process, don't track handle */
 int64_t tk_process_spawndetached_w(int64_t cmd) {
     if (!cmd) return 0;
-    int64_t handle = tk_process_spawn_w(cmd);
+    int64_t handle = spawn_shell((const char *)(intptr_t)cmd);
     /* Return pid as integer, don't wait */
     if (!handle) return 0;
     ProcessHandle *h = (ProcessHandle *)(intptr_t)handle;
