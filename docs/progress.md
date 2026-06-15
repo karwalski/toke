@@ -4533,3 +4533,71 @@ Hand-repaired 5 networking-rest + 10 data-processing programs that the Opus repa
 | 112.6 | Add canonical-pattern rules to TOKE_SYSTEM_PROMPT for 112.1–112.4 | done | 2026-06-01 | **P3** Obviated by the compiler fixes. With 112.1–112.4 all resolved at compiler level, the model no longer needs workaround rules — bare `let x=io.readln()` works, var-to-var `=` works, `arr.set(i;v)` works, chained `f().g()` parses. Closing without prompt changes; left as a no-op story. |
 | 112.7 | Investigation: how many corpus failures are explained by 112.1–112.4? | done | 2026-06-01 | **P1** Re-ran `infra/audit-all-solutions.py` corpus-wide with the patched compiler. Verdict deltas: GENUINE **165 → 201** (+36); REGRESSED-RUN 240 → 210 (-30, mostly 112.1+112.2); REGRESSED-COMPILE 1557 → 1549 (-8, mostly 112.4 chained-postfix). Eligible-pool pass rate moves 160/1390 → 196/1390 (11.5% → 14.1%, +2.6pp absolute). Per-category notable gains: crypto-blockchain 13→19 (+6), security 15→17, devtools 13→15, data-processing 5→17 (boosted by hand-repairs + compiler fixes), messaging 8→10, manufacturing-ml 9→11, ai-agents 12→13. Conclusion: the four bugs were collectively responsible for ~36 latent passes that compiled-and-built but failed strict-equality runs due to readln aliasing or string-eq variable-asymmetry, plus a few that didn't parse due to 112.4. |
 | 112.8 | Hand-repair backlog: continue manual repairs of remaining data-processing eligible failures | planned | 2026-06-01 | **P3** 10/20 attempted data-processing repairs passed (DAT-001/002/004/007/009/010/011/012/013/032). Remaining 10 targets stalled on algorithmic complexity beyond hand-rewriting: DAT-005 (JSON Schema), DAT-006 (YAML to JSON), DAT-008 (TOML), DAT-014 (Pivot), DAT-015 (Z-Score, needs sqrt), DAT-016 (Min-Max — was chained-mut, 112.4 now resolved), DAT-082 (Funnel multi-line), DAT-089 (Levenshtein/Jaro-Winkler), DAT-112 (Pipeline), DAT-114 (Time zone — impossible without TZ DB). With 112.4 fixed, DAT-016 is now repairable; revisit when capacity allows. |
+
+---
+
+### Epic 113 — ooke pure-toke rebuild (zero C in app; gaps become reusable toke core)
+
+**Decision (2026-06-15):** rebuild ooke as a 100% toke application that reaches
+native capability **only** through the published toke stdlib API (module import
+→ `.tki` → `tk_*_w` wrapper). ooke contains no C/shell/Python/JS and declares no
+`extern` of its own. Every capability gap, missing library, runtime bug, or
+compiler limitation surfaced during the rebuild is fixed **in toke core** as a
+*reusable, generalised* stdlib capability — so all toke programs benefit, not
+just ooke. ooke is the forcing function for toke-core completeness; loke then
+validates end-to-end, so **plumbing parity with current ooke is mandatory**.
+Rationale recorded in **ADR-0005**.
+
+**Repo/branch:** `toke-ooke-pure/` (sibling repo, seeded from `toke-ooke` as the
+behavioural + plumbing parity reference) on `feature/pure-toke-rebuild`. `main`
+holds the current ooke source as the reference baseline until parity is reached.
+
+**Working rules for every 113.A story (per ADR-0005 + companion-file-spec):**
+1. Consult `docs/spec/*` (semantics, grammar, prompt) and current syntax while authoring — no guessed constructs.
+2. Keep files small and multiple — single canonical patterns, no mega-files, token-efficient.
+3. Ship a `.tkc.md` companion file for every `.tk` source file (Companion File Format Specification 1.0).
+4. **Test each function as it is written** — tests in `toke-ooke-pure/test/`, `make test` green before a story is `done`.
+5. ooke never reaches C directly. A capability gap → open a paired **113.B** story; mark the ooke story `blocked` on it; solve it in toke core (generalised stdlib + `.tki` + wrapper).
+
+**Track A — ooke module rebuild (pure toke).** Order follows the dependency
+chain proven in Epic 56.
+
+| ID | Story | Status | Branch | Notes |
+|----|-------|--------|--------|-------|
+| 113.0 | Setup: seed `toke-ooke-pure/`, init git + `feature/pure-toke-rebuild`, ADR-0005, Epic 113 skeleton | done | feature/pure-toke-rebuild | Repo seeded from `toke-ooke` (source + tests + plumbing reference, build artifacts excluded; 404K). ADR-0005 written + indexed. AGENTS.md to be updated to the pure-toke principle + working rules (113.1a). |
+| 113.1 | Audit & boundary map: catalogue every toke stdlib API ooke consumes and the C backing behind each | done | feature/pure-toke-rebuild | Output: `toke-ooke-pure/docs/audit-113.1.md`. Parallel read of all 12 modules + spec + build + per-stdlib trace. **Key finding:** ooke depends on 11 stdlib modules; there are essentially NO missing capabilities — the C backing already implements everything ooke needs. The work is almost entirely at the published-interface layer (`.tki` under-exports/mis-names what the `tk_*_w` wrappers already provide) plus a few wrapper-contract bugs. Classification: `std.db/file/path/log` reusable-as-is; `std.md/args` reusable (minor dead-export); `std.http` **partial** (interface under-exposes ~30 wrappers); `std.str/toml/json/process` needs-generalising. Full plumbing parity surface + `ooke.toml` key drift documented. Rebuild order: config→store→router→template→build→serve→cli (+extras). Seeded Track B with 10 concrete stories (below). |
+| 113.2a | Decision: resolve `config` default mismatch (`serverworkers` 0 vs test expects 4) | planned | — | `config.tk` defaults `serverworkers=0`; `test_config.tk` asserts `==4`. Faithful rebuild fails the test. Decide authoritative value before/with 113.2 (do not silently fix). Also reconcile `ooke.toml` key naming drift (`inline_css`/`image_optimize`/`access_format` vs config.tk field names). |
+| 113.1a | Rewrite `toke-ooke-pure/AGENTS.md` to the pure-toke principle + working rules | done | feature/pure-toke-rebuild | AGENTS.md v2.0 written: ADR-0005 invariant (zero C in app, capability lives in toke core, consumed only via published stdlib API), the 5 working rules (spec review / small files / `.tkc.md` companions / test-per-function / plumbing parity), and the 113.A/113.B story model. Replaces the stale "Phase 1 C placeholder" spec. |
+| 113.2 | Rebuild `ooke.config` (TOML) in pure toke + companion + tests | planned | — | Depends on toke-core TOML capability via stdlib API only. |
+| 113.3 | Rebuild `ooke.store` (flat-file content store, frontmatter) + companion + tests | planned | — | Flat-file first; SQLite backend parity tracked separately. |
+| 113.4 | Rebuild `ooke.router` (file-system route scan + match, dynamic segments) + companion + tests | planned | — | — |
+| 113.5 | Rebuild `ooke.template` (lexer/parser/renderer, layout, partials, islands, filters incl. `md`) + companion + tests | planned | — | Largest component; split into sub-stories during execution as in Epic 56.4. |
+| 113.6 | Rebuild `ooke.build` (static gen, CSS inline, minify, asset copy) + companion + tests | planned | — | — |
+| 113.7 | Rebuild `ooke.serve` (HTTP server, workers, dynamic GET/POST/PUT/DELETE/PATCH handlers, CORS, api-prefix, TLS, access/error logs) + companion + tests | planned | — | This is where most loke plumbing parity lives. |
+| 113.8 | Rebuild `ooke.cli` (`main`, `new`, `gen type/page/api/island`, `repair`) + companion + tests | planned | — | — |
+| 113.9 | Rebuild remaining modules (`apihealth`, `validate`, `run`, handlers) + companions + tests | planned | — | Bring the extras present in current ooke to parity. |
+| 113.10 | Integration: full `make test` green + loke plumbing-parity validation against the baseline | planned | — | Gate for declaring the rebuild at parity. loke runs on `toke-ooke-pure`. |
+| 113.11 | Cutover: replace `toke-ooke` with the pure-toke implementation | backlog | — | Only after 113.10 passes and the user signs off. |
+
+**Track B — toke-core capability / bug / compiler stories (rolling).** Each gap
+found in Track A gets an entry here, solved as a reusable toke-core capability.
+ooke stories block on their paired 113.B entry. (Per the "bugs must become
+stories" rule, any compiler/runtime bug found also lands here.)
+
+Seeded by the 113.1 audit. Most are *publish/align existing core capability*
+(the C wrappers already exist; the `.tki` under-exports or mis-names them), not
+new C — consistent with ADR-0005. Further entries added as module rebuilds
+surface them.
+
+| ID | Story | Status | Prio | Blocks | Notes |
+|----|-------|--------|------|--------|-------|
+| 113.B.1 | `http.tki`: export handler/server wrappers present in `tk_web_glue.c` but unpublished — `getstatic`, `postjson` (route variant), `postecho`, `setnotfound`, `servedir`; reconcile full intended public surface | planned | P0 | 113.7 serve, apihealth, handlers | ~30 `tk_http_*_w` wrappers exist; only a subset exported. ooke depends on the C-level surface, not the published contract. |
+| 113.B.2 | `http.tki`: resolve naming mismatch — ooke calls `http.servetls`/`http.serveworkers`; tki publishes `serve_tls`/`serve_workers` | planned | P0 | 113.7 serve | Add aliases or align. C glue has both `tk_http_servetls_w` and the `serve_tls` path. |
+| 113.B.3 | `str.tki`: publish `str.fromint`/`str.toint` aliases (tki has `from_int`/`to_int`); resolve `str.eq` (publish or confirm `=`); pick one naming convention + stable aliases | planned | P0 | all modules (pervasive) | C backing complete (often both name variants compiled in); pure interface/naming drift. |
+| 113.B.4 | `std.toml`: add `tk_toml_loadfile_w` (declared, unreachable); thread real `tomlerr.msg` (currently swallowed); add `toml.f64`, array access, `toml.keys`/`len`, table free | planned | P1 | 113.2 config, validate | tomlc99 supports doubles/arrays; not exposed. Errors indistinguishable (absent vs parse-fail vs wrong-type). |
+| 113.B.5 | `std.json`: export `json.keys`/`entries`/`has`/`haskey` (wrappers exist); add nested-path key access + generic `json.get`; object construction/mutation for output | planned | P1 | 113.3 store | `find_json_key` is flat-object only; ooke forced into manual `str` slicing for nested docs. |
+| 113.B.6 | `std.process`: fix `tk_process_spawn_w` to honour `[str]` argv (currently `sh -c`, injection hazard); add `process.run(cmd)->{code,out,err}`; document drain-once stdout/stderr; expose richer spawn opts + existing extras (exec/exitcode/poll/env) | planned | P1 | 113.9 run, repair, cli | `.tki` declares argv vector but wrapper hardcodes shell-string spawn. `run` convenience = ooke's exact spawn;wait;stdout;stderr pattern. |
+| 113.B.7 | `std.md`: `md.renderfile` is a dead export (no `tk_md_render_file_w`) — add wrapper or remove export | planned | P3 | (none — template uses file.read + md.render) | Unlinkable dead export; does not block ooke. |
+| 113.B.8 | `std.args`: add `tk_args_all_w` for `args.all()` (declared, unreachable); stop dropping `ArgsErr.msg` at ABI boundary | planned | P3 | (none — ooke uses count/get) | Low priority. |
+| 113.B.9 | Compiler/spec: confirm canonical result-constructor casing (`Ok`/`Err` vs `$ok`/`$err`) and document; align ooke source + tests | planned | P1 | 113.5 template, store, cli, build | Sources use bare `Ok`/`Err`; several tests use `$ok`/`$err`. Relates to variant-naming / str `=` family. |
+| 113.B.10 | Spec/tooling: decide whether `.tki` exports must faithfully encode `!error` unions (currently erased) and update interface-gen + checker | planned | P2 | all (interface fidelity) | e.g. `configload` exported as `ookecfg`, source is `$ookecfg!$configerr`. |
