@@ -3,6 +3,7 @@ series: L
 description: "$char type reference does not trigger W1020 (type sigil suppresses foreign keyword warning)"
 input: |
   m=test;
-  f=byte():$char{<0};
+  t=$char{x:i64};
+  f=byte():$char{<$char{x:0}};
 expected_exit_code: 0
 expected_error_codes: []

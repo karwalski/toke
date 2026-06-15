@@ -1,11 +1,11 @@
 id: D040
 series: D
-description: "Non-exhaustive match on sum type in default mode emits E5001"
+description: "Non-exhaustive match on sum type in default mode emits E4010"
 input: |
   m=test;
-  t=$color{$red:i64;$green:i64;$blue:i64};
-  f=name(c:$color):i64{
-    <c|{$red:r r;$green:g g}
+  t=$shape{$circle:i64;$square:i64;$triangle:i64};
+  f=area(s:$shape):i64{
+    <mt s{$circle:r r;$square:s2 s2}
   };
 expected_exit_code: 1
-expected_error_codes: ["E5001"]
+expected_error_codes: ["E4010"]

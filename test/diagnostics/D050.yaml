@@ -1,6 +1,6 @@
 id: D050
 series: D
-description: "E5001 escape analysis: returning binding from loop body"
+description: "Returning a loop-body primitive binding is safe (no E5001 — E5001 is arena-escape only)"
 input: |
   m=test;
   f=bad():i64{
@@ -10,5 +10,5 @@ input: |
     };
     <0
   };
-expected_exit_code: 1
-expected_error_codes: ["E5001"]
+expected_exit_code: 0
+expected_error_codes: []

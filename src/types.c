@@ -1340,7 +1340,9 @@ static Type *infer(Ctx *cx, const Node *node) {
                 if (tc_can_emit(cx)) {
                     char msg[768];
                     snprintf(msg,sizeof(msg),"non-exhaustive match: missing variant(s) %s",missing);
-                    diag_emit(DIAG_ERROR,E5001,node->start,node->line,node->col,msg,"fix",
+                    /* Non-exhaustive match is E4010 (errors.md), not E5001
+                     * (which is arena-escape only). */
+                    diag_emit(DIAG_ERROR,E4010,node->start,node->line,node->col,msg,"fix",
                         "add the missing match arm(s)",(const char*)NULL);
                 }
             }

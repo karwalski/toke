@@ -359,9 +359,11 @@ static int lex_string(Lexer *l, int start, int line, int col)
                 char esc_msg[128];
                 snprintf(esc_msg, sizeof(esc_msg),
                          "invalid escape sequence '\\%c' in string literal", esc);
+                /* E1001 carries NO fix field (errors.md): an unrecognised
+                 * escape has no single deterministic correction. The valid
+                 * escape list is already conveyed via `expected`. */
                 diag_emit(DIAG_ERROR, LEX_E1001, l->pos - 1, l->line, l->col - 1,
                           esc_msg,
-                          "fix", "valid escapes are: \\n \\t \\r \\\\ \\\" \\0 \\xHH",
                           "got", esc_got,
                           "expected", "one of: \\n \\t \\r \\\\ \\\" \\0 \\xHH", NULL);
                 had_error = 1;
@@ -373,9 +375,10 @@ static int lex_string(Lexer *l, int start, int line, int col)
             advance(l);
         }
     }
-    diag_emit(DIAG_ERROR, LEX_E1004, start, line, col,
+    /* Unterminated string is E1002 per errors.md (E1004 is digit-starting
+     * identifier). No fix field — lexer codes carry none. */
+    diag_emit(DIAG_ERROR, LEX_E1002, start, line, col,
               "unterminated string literal at end of file",
-              "fix", "add closing double-quote '\"' to terminate the string",
               "got", "end of file",
               "expected", "closing '\"'", NULL);
     record_error(l);
@@ -834,9 +837,10 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                 snprintf(got_ch, sizeof(got_ch), "%c", c);
             else
                 snprintf(got_ch, sizeof(got_ch), "0x%02X", (unsigned char)c);
+            /* E1003 carries NO fix field (errors.md): lexer codes are
+             * informational-only. Guidance is conveyed via `expected`. */
             diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
                       "character outside allowed character set",
-                      "fix", "remove this character; only ASCII letters, digits, and toke operators are allowed",
                       "got", got_ch,
                       "expected", "ASCII letter, digit, or toke operator", NULL);
             sym_error = 1;

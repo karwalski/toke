@@ -1,12 +1,11 @@
 id: D022
 series: D
-description: "Non-exhaustive match on sum type emits E5001"
+description: "Non-exhaustive match on sum type emits E4010"
 input: |
-  M=test;
-  T=Color{Red:i64;Green:i64;Blue:i64};
-  F=name(c:Color):i64{
-    <c|{Red:r r;Green:g g}
+  m=test;
+  t=$color{$red:i64;$green:i64;$blue:i64};
+  f=name(c:$color):i64{
+    <mt c{$red:r r;$green:g g}
   };
-flags: --legacy
 expected_exit_code: 1
-expected_error_codes: ["E5001"]
+expected_error_codes: ["E4010"]

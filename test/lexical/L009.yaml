@@ -1,9 +1,10 @@
 id: L009
 series: L
-description: "String interpolation \\( emits W1010 warning"
+description: "String interpolation \\( emits W1010 warning (legacy profile)"
 input: |
-  m=test;
-  f=interp():Str{<"hello \(name)"};
+  M=test;
+  F=interp():Str{<"hello \(name)"};
+flags: --legacy
 expected_exit_code: 0
 expected_error_codes: ["W1010"]
 expected_output: ""

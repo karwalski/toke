@@ -1,6 +1,6 @@
 id: D049
 series: D
-description: "E5001 escape analysis: returning binding from nested if block"
+description: "Returning a function-local primitive from a nested if block is safe (no E5001 — E5001 is arena-escape only)"
 input: |
   m=test;
   f=bad(cond:bool):i64{
@@ -11,5 +11,5 @@ input: |
       <0
     }
   };
-expected_exit_code: 1
-expected_error_codes: ["E5001"]
+expected_exit_code: 0
+expected_error_codes: []

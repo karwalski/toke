@@ -1,9 +1,10 @@
 id: D005
 series: D
-description: "W1010 fix field is informational string (string interpolation warning)"
+description: "W1010 fix field is informational string (string interpolation warning, legacy profile)"
 input: |
-  m=test;
-  f=interp():Str{<"hello \(name)"};
+  M=test;
+  F=interp():Str{<"hello \(name)"};
+flags: --legacy
 expected_exit_code: 0
 expected_error_codes: ["W1010"]
 expected_fix: "use str.concat() for string composition"

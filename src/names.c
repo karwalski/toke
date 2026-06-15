@@ -732,6 +732,15 @@ static int scope_insert(Scope *s, Arena *arena, const char *src,
             existing->def_node = def_node;
             return 0;  /* silently replace */
         }
+        /* A user declaration may shadow a seeded predefined identifier
+         * ($ok/$err/$none/true/false/...): the seeds exist precisely so they
+         * can be shadowed by user names (see seed_predefined below). Replace
+         * the predefined seed rather than emitting a spurious E3012. */
+        if (existing->kind == DECL_PREDEFINED) {
+            existing->kind     = kind;
+            existing->def_node = def_node;
+            return 0;
+        }
         /* Multi-error recovery (story 84.1.8): emit diagnostic but skip
          * the duplicate and continue resolution instead of aborting. */
         s_name_error_count++;

@@ -1,9 +1,10 @@
 id: D009
 series: D
-description: "Severity field is \"warning\" for W-series codes"
+description: "Severity field is \"warning\" for W-series codes (legacy profile)"
 input: |
-  m=test;
-  f=interp():Str{<"hello \(x)"};
+  M=test;
+  F=interp():Str{<"hello \(x)"};
+flags: --legacy
 expected_exit_code: 0
 expected_error_codes: ["W1010"]
 expected_diag_field:
