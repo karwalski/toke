@@ -1068,6 +1068,11 @@ static Type *infer(Ctx *cx, const Node *node) {
             }
             return mk_type(A,TY_UNKNOWN);
         }
+        /* 113.B.20: base type is unresolved (e.g. `item.meta` where item came
+         * from an array element / chained access). We cannot tell array from
+         * map here, so do NOT enforce an integer index — a string key may be a
+         * valid map access. Stay permissive (codegen routes it correctly). */
+        if (base->kind==TY_UNKNOWN) return mk_type(A,TY_UNKNOWN);
         if (idx->kind!=TY_UNKNOWN&&idx->kind!=TY_I64&&idx->kind!=TY_U64
             &&idx->kind!=TY_I8&&idx->kind!=TY_I16&&idx->kind!=TY_I32
             &&idx->kind!=TY_U8&&idx->kind!=TY_U16&&idx->kind!=TY_U32) {

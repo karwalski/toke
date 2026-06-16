@@ -3172,9 +3172,9 @@ static int emit_expr(Ctx *c, const Node *n)
             /* Field access result: check if the field type starts with "@(" (map) */
             if (!base_is_map && n->children[0]->kind == NODE_FIELD_EXPR &&
                 n->children[0]->child_count >= 2) {
+                char fn[128]; tok_cp(c->src, n->children[0]->children[1], fn, sizeof fn);
                 const StructInfo *bsi = resolve_base_struct(c, n->children[0]->children[0]);
                 if (bsi) {
-                    char fn[128]; tok_cp(c->src, n->children[0]->children[1], fn, sizeof fn);
                     for (int fi = 0; fi < bsi->field_count; fi++) {
                         if (!strcmp(bsi->field_names[fi], fn)) {
                             /* Use the field_is_map flag set during struct registration.
@@ -3185,6 +3185,22 @@ static int emit_expr(Ctx *c, const Node *n)
                             }
                             break;
                         }
+                    }
+                } else {
+                    /* 113.B.20: base struct type untracked (item from col.get(i),
+                     * a chained access, or a match result). Mirror the
+                     * NODE_FIELD_EXPR heuristic fallback: search all registered
+                     * structs for a map field named `fn`, so `item.meta.get(k)`
+                     * lowers to tk_map_get instead of array-GEP (segfault).
+                     * Correct when field names are unique across structs. */
+                    for (int _si = 0; _si < c->struct_count; _si++) {
+                        int _hit = 0;
+                        for (int _fi = 0; _fi < c->structs[_si].field_count; _fi++)
+                            if (!strcmp(c->structs[_si].field_names[_fi], fn)) {
+                                if (c->structs[_si].field_is_map[_fi]) base_is_map = 1;
+                                _hit = 1; break;
+                            }
+                        if (_hit) break;
                     }
                 }
             }
