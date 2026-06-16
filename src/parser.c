@@ -784,7 +784,23 @@ static Node *parse_cast_prop(Parser *p) {
  */
 /* UnaryExpr = ('-'|'!') UnaryExpr | PropagateExpr */
 static Node *parse_unary(Parser *p) {
-    if(peek(p)==TK_MINUS||peek(p)==TK_BANG){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_UNARY_EXPR,t);n->op=op;ch(p,n,parse_unary(p));return n;}
+    if(peek(p)==TK_MINUS||peek(p)==TK_BANG){
+        Token *t=cur(p);TokenKind op=adv(p)->kind;
+        Node *n=mk(p,NODE_UNARY_EXPR,t);n->op=op;
+        Node *operand=parse_unary(p);ch(p,n,operand);
+        /* 113.B.13: a leading `!` on a struct literal (e.g. `!$err{...}`) is the
+         * broken error-raise misuse — it parses as logical-NOT of the struct and
+         * is silently discarded (the error is never raised). Make it a hard error
+         * directing to the canonical raise form `<$err(...)`. */
+        if(op==TK_BANG && operand && operand->kind==NODE_STRUCT_LIT){
+            p->errs++;
+            diag_emit(DIAG_ERROR, E2002, t->start, t->line, t->col,
+                      "leading '!' on a struct value does not raise an error (it is discarded as logical-NOT)",
+                      "fix", "to return an error use `<$err(payload)`; `!` negates a bool, it does not raise",
+                      NULL);
+        }
+        return n;
+    }
     return parse_cast_prop(p);
 }
 
