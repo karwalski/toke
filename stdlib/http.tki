@@ -126,6 +126,20 @@
     {"kind": "func", "name": "http.setcors",       "params": ["str"],                                 "return": "i64",
      "note": "origins — set Access-Control-Allow-Origin for all responses (e.g. \"*\" or \"http://localhost:11432\")"},
     {"kind": "func", "name": "http.servepages",   "params": ["str", "str"],                           "return": "i64",
-     "note": "pages_dir; templates_dir — scan pages_dir for .tkt template files and serve them with layout/block/yield directive support. Pages are re-read from disk on each request. Returns number of routes registered."}
+     "note": "pages_dir; templates_dir — scan pages_dir for .tkt template files and serve them with layout/block/yield directive support. Pages are re-read from disk on each request. Returns number of routes registered."},
+    {"kind": "func", "name": "http.getstatic",     "params": ["str", "str"],                           "return": "i64",
+     "note": "path; body — register a static GET route serving body (text/html)"},
+    {"kind": "func", "name": "http.postjson",      "params": ["str", "str"],                           "return": "i64",
+     "note": "pattern; json — register a POST route returning a fixed JSON body"},
+    {"kind": "func", "name": "http.postecho",      "params": ["str"],                                  "return": "i64",
+     "note": "path — register a POST route that echoes the request body back"},
+    {"kind": "func", "name": "http.setnotfound",   "params": ["str"],                                  "return": "i64",
+     "note": "body — set the custom 404 Not Found response body"},
+    {"kind": "func", "name": "http.servedir",      "params": ["str", "str"],                           "return": "i64",
+     "note": "prefix; root — serve a static directory tree mounted under prefix"},
+    {"kind": "func", "name": "http.serveworkers",  "params": ["u64", "u64"],                           "return": "i64",
+     "note": "port; workers — alias of serve_workers (no-underscore name ooke uses); pre-fork worker pool"},
+    {"kind": "func", "name": "http.servetls",      "params": ["u64", "str", "str"],                    "return": "i64",
+     "note": "port; cert_path; key_path — alias of serve_tls (no-underscore name ooke uses); HTTPS with TLS termination"}
   ]
 }
