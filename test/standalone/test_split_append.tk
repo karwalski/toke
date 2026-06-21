@@ -1,0 +1,50 @@
+m=test.splitappend;
+i=io:std.io;
+i=str:std.str;
+
+(* Regression test for 113.B.21: appending a `let`-bound element of a
+ * str.split() result via `arr + @(x)` used to silently drop the append
+ * (the array-literal spread detector mistook the untyped scalar string for
+ * an array base, reading x[-1] as a length). Result was len 0 / SIGBUS.
+ * These assertions fail on the buggy compiler and pass on the fixed one. *)
+
+f=main():i64{
+  let pass=mut.0;
+  let fail=mut.0;
+
+  let parts=str.split("aa,bb,cc";",");
+
+  (* the failing pattern: bind a split element to a `let`, then append it *)
+  let acc=mut.@();
+  let x0=parts.get(0);
+  acc=acc+@(x0);
+  let x1=parts.get(1);
+  acc=acc+@(x1);
+
+  if(acc.len=2){
+    io.println("PASS split-element append grows the array");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL split-element append (len=";str.concat(str.fromint(acc.len);")")));
+    fail=fail+1
+  };
+
+  if(str.eq(acc.get(0);"aa")){
+    io.println("PASS appended split element 0 round-trips");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL appended element 0 (got: ";str.concat(acc.get(0);")")));
+    fail=fail+1
+  };
+
+  if(str.eq(acc.get(1);"bb")){
+    io.println("PASS appended split element 1 round-trips");
+    pass=pass+1
+  }el{
+    io.println(str.concat("FAIL appended element 1 (got: ";str.concat(acc.get(1);")")));
+    fail=fail+1
+  };
+
+  io.println(str.concat("RESULT pass=";str.concat(str.fromint(pass);str.concat(" fail=";str.fromint(fail)))))
+  <0
+}

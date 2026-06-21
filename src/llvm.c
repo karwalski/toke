@@ -3826,12 +3826,43 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         char nb[128]; tok_cp(c->src, n, nb, sizeof nb);
         return ptr_local_struct_type(c, nb);
     }
+    /* Bug 113.B.21: subscript / `.get(i)` on a local typed "@str" (a
+     * str-array element load, e.g. from str.split / str.chars) yields a
+     * single string. `parts.get(i)` parses as NODE_INDEX_EXPR, so mark the
+     * result "$str" — otherwise `let x = parts.get(i)` records x with no
+     * struct type and the NODE_ARRAY_LIT spread detector mistakes the scalar
+     * string for an array base (`arr + @(x)` reads x[-1] as a length and
+     * drops the append, leaving len 0 / SIGBUS). Mirrors the @str→i8* case
+     * in expr_llvm_type (NODE_INDEX_EXPR, 113.B.11). */
+    if (n->kind == NODE_INDEX_EXPR && n->child_count >= 1 &&
+        n->children[0]->kind == NODE_IDENT) {
+        char ia[128]; tok_cp(c->src, n->children[0], ia, sizeof ia);
+        const char *iln = get_llvm_name(c, ia);
+        const char *ist = ptr_local_struct_type(c, iln);
+        if (ist && !strcmp(ist, "@str")) return "$str";
+    }
     if (n->kind == NODE_CALL_EXPR && n->child_count >= 1) {
         /* Check for qualified module.method calls (e.g. time.toparts) */
         if (n->children[0]->kind == NODE_FIELD_EXPR && n->children[0]->child_count >= 2) {
             char alias[128], method[128];
             tok_cp(c->src, n->children[0]->children[0], alias, sizeof alias);
             tok_cp(c->src, n->children[0]->children[1], method, sizeof method);
+            /* Bug 113.B.21: `.get(i)` on a local typed "@str" (a str-array
+             * element load, e.g. from str.split / str.chars) yields a single
+             * string. Mark it "$str" so `let x = parts.get(i)` records x as a
+             * string; otherwise the array-literal/append codegen (`arr+@(x)`)
+             * mis-lowers the untyped element and silently drops the append.
+             * Mirrors the @str → i8* case in expr_llvm_type. */
+            if (!strcmp(method, "get")) {
+                int _is_mod = 0;
+                for (int ii = 0; ii < c->import_count; ii++)
+                    if (!strcmp(c->imports[ii].alias, alias)) { _is_mod = 1; break; }
+                if (!_is_mod) {
+                    const char *_ln = get_llvm_name(c, alias);
+                    const char *_bst = ptr_local_struct_type(c, _ln);
+                    if (_bst && !strcmp(_bst, "@str")) return "$str";
+                }
+            }
             /* Well-known stdlib struct returns */
             const char *resolved = resolve_stdlib_call(c, alias, method);
             if (resolved && !strcmp(resolved, "tk_time_toparts_w"))
@@ -4058,6 +4089,12 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
                     const char *_ln = get_llvm_name(c, _ga);
                     const char *_st = ptr_local_struct_type(c, _ln);
                     if (_st && !strcmp(_st, "@f64")) return "double";
+                    /* Bug 113.B.21: `.get(i)` on an @str local (str-array
+                     * element load, e.g. from str.split) is a single string.
+                     * Type it i8* so `let x=parts.get(i)` allocas x as a
+                     * string pointer and gets marked $str — without this x is
+                     * an i64 local and `arr+@(x)` drops the append (len 0). */
+                    if (_st && !strcmp(_st, "@str")) return "i8*";
                 }
             }
         }
