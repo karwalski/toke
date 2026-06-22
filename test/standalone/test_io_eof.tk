@@ -1,0 +1,36 @@
+m=test.ioeof;
+i=io:std.io;
+i=s:std.str;
+
+(* Regression test for 113.B.22: io.readln() returns "" for both a blank
+ * line and EOF; io.eof() must distinguish them. Feed `a\n\nb` (an embedded
+ * blank line) and assert we read 3 lines incl. the blank, then hit EOF.
+ * Echoes one PASS/FAIL line per assertion (run_all.sh tallies ^PASS). *)
+
+f=main():i64{
+  let lines=mut.0;
+  let blanks=mut.0;
+  let sawEof=mut.0;
+  lp(1=1){
+    let l=io.readln();
+    if(io.eof()){sawEof=1;br};
+    lines=lines+1;
+    if(s.len(l)=0){blanks=blanks+1}
+  };
+  if(lines=3){
+    io.println("PASS read 3 lines including the embedded blank")
+  }el{
+    io.println(s.concat("FAIL line count (got ";s.concat(s.fromint(lines);")")))
+  };
+  if(blanks=1){
+    io.println("PASS the blank line was read, not treated as EOF")
+  }el{
+    io.println(s.concat("FAIL blank count (got ";s.concat(s.fromint(blanks);")")))
+  };
+  if(sawEof=1){
+    io.println("PASS io.eof() fired at true end-of-input")
+  }el{
+    io.println("FAIL io.eof() never fired")
+  };
+  <0
+}
