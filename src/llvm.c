@@ -3273,6 +3273,11 @@ static int emit_expr(Ctx *c, const Node *n)
                 t = p;
             }
         }
+        /* Bug 114.1 (deferred sub-case): `.get()` on a function-RETURNED float
+         * array (`mk().get(i)` where `mk():@$f64`) cannot bitcast here because
+         * the callee FnSig.ret_type_name collapses `@$f64` to bare `@` — the
+         * array element type is erased (113.B.10). Resolve once element types
+         * are preserved through return-type names. */
         return t;
     }
     case NODE_STRUCT_LIT: {
@@ -3802,8 +3807,16 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             NodeKind ck = n->children[i]->kind;
             if (ck == NODE_TYPE_IDENT || ck == NODE_TYPE_EXPR ||
                 ck == NODE_ARRAY_TYPE || ck == NODE_MAP_TYPE ||
-                ck == NODE_FUNC_TYPE  || ck == NODE_PTR_TYPE)
-                continue; /* skip type annotations */
+                ck == NODE_FUNC_TYPE  || ck == NODE_PTR_TYPE) {
+                /* Bug 114.1: a typed-EMPTY float-array literal `@($f64)` must
+                 * be marked "@f64" so `.get()` bitcasts i64→double (102.29b)
+                 * and arithmetic on its elements isn't lowered as integer mul
+                 * (RT002 overflow). Without this the type annotation is skipped
+                 * and the array falls through to "@i64". */
+                char tnm[64]; tok_cp(c->src, n->children[i], tnm, sizeof tnm);
+                if (strstr(tnm, "f64") || strstr(tnm, "f32")) return "@f64";
+                continue; /* skip non-float type annotations */
+            }
             if (ck == NODE_FLOAT_LIT) return "@f64";
             const char *ety = expr_llvm_type(c, n->children[i]);
             if (!strcmp(ety, "double")) return "@f64";

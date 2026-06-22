@@ -1,0 +1,43 @@
+m=test.f64array;
+i=io:std.io;
+i=s:std.str;
+
+(* Regression test for 114.1: a typed-EMPTY float-array literal `@($f64)`
+ * must be marked @f64 so `.get()` elements bitcast i64→double and arithmetic
+ * uses float ops (not integer mul → RT002 overflow). Also covers appending a
+ * non-literal float to a seeded float array. *)
+
+f=main():i64{
+  let pass=mut.0;
+  let fail=mut.0;
+
+  (* typed-empty literal + literal appends, then multiply elements *)
+  let a=mut.@($f64);
+  a=a+@(3.0);
+  a=a+@(6.0);
+  let p=a.get(0)*a.get(1);
+  if(s.eq(s.format(p;"%.4f");"18.0000")){
+    io.println("PASS @($f64) typed-empty array element multiply");
+    pass=pass+1
+  }el{
+    io.println(s.concat("FAIL @($f64) product (got ";s.concat(s.format(p;"%.4f");")")));
+    fail=fail+1
+  };
+
+  (* seeded array + NON-literal float append *)
+  let b=mut.@(0.0);
+  let v=s.tofloat("4");
+  b=b+@(v);
+  let g=b.get(1);
+  if(s.eq(s.format(g*g;"%.4f");"16.0000")){
+    io.println("PASS non-literal float append round-trips through .get()");
+    pass=pass+1
+  }el{
+    io.println(s.concat("FAIL non-literal append (got ";s.concat(s.format(g*g;"%.4f");")")));
+    fail=fail+1
+  };
+
+  io.println(s.concat("RESULT pass=";s.fromint(pass)));
+  io.println(s.concat("RESULT fail=";s.fromint(fail)));
+  <0
+}
