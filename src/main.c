@@ -60,7 +60,7 @@ int lex(const char *src, int src_len, Token *tokens, int token_cap, Profile prof
 
 /* ── Constants ─────────────────────────────────────────────────────── */
 
-#define VERSION   "toke 0.3.9"
+#define VERSION   "toke 2.8.0"
 #define EUSAGE    TKC_EXIT_USAGE
 #define EINTERNAL TKC_EXIT_INTERNAL
 #define ECOMPILE  TKC_EXIT_COMPILE
