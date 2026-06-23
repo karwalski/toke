@@ -1155,8 +1155,17 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * Returns TY_VOID (bindings are statements, not expressions).
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_BIND_STMT: case NODE_MUT_BIND_STMT: {
-        Type *ann =(node->child_count>1&&node->children[1])?resolve_type(cx,node->children[1]):NULL;
-        Type *init=(node->child_count>2&&node->children[2])?infer(cx,node->children[2]):NULL;
+        /* Stage 2 (type-flow): correctly distinguish annotated (3 children:
+         * ident, type, init) from un-annotated (2 children: ident, init). The
+         * old code always treated children[1] as the annotation and only
+         * inferred the init when annotated — so un-annotated `let x=expr` inits
+         * were never type-checked (no diagnostics, no rtype). Infer the init in
+         * BOTH cases so node->rtype is populated and latent type errors surface. */
+        int has_ann = (node->child_count >= 3 && node->children[2]);
+        Type *ann = has_ann ? resolve_type(cx, node->children[1]) : NULL;
+        const Node *initN = has_ann ? node->children[2]
+                          : (node->child_count >= 2 ? node->children[1] : NULL);
+        Type *init = initN ? infer(cx, initN) : NULL;
         if (ann&&init&&ann->kind!=TY_UNKNOWN&&init->kind!=TY_UNKNOWN&&!types_equal(ann,init)) {
             char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(ann));
             emit_mm(cx,node,ann,init,fix);

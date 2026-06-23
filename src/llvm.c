@@ -30,6 +30,7 @@
  */
 #include "llvm.h"
 #include "parser.h"
+#include "types.h"   /* Stage 2: codegen consumes node->rtype (Type/TypeKind) */
 #include "diag.h"
 #include "tkc_limits.h"
 #include "stdlib_deps.h"
@@ -3261,8 +3262,23 @@ static int emit_expr(Ctx *c, const Node *n)
         t2 = next_tmp(c); t = next_tmp(c);
         fprintf(c->out, "  %%t%d = getelementptr i64, i64* %%t%d, i64 %%t%d\n", t2, base, idx);
         fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", t, t2);
-        /* Bug 102.29b: bitcast i64 → double for subscript on float arrays */
-        if (n->children[0]->kind == NODE_IDENT) {
+        /* Stage 2 (type-flow redesign): bitcast the loaded i64 element to its
+         * real element type using the resolved n->rtype. This is authoritative
+         * for ANY base — including function-RETURNED and nested arrays that the
+         * @f64/@str local markers cannot see — closing the 114.1 deferred
+         * fn-return case and 114.16. (Elements are stored i64-strided, so only
+         * f64/str need a non-i64 result.) */
+        if (n->rtype && n->rtype->kind == TY_F64) {
+            int bc = next_tmp(c);
+            fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; f64 array subscript (rtype)\n", bc, t);
+            t = bc;
+        } else if (n->rtype && n->rtype->kind == TY_STR) {
+            int p = next_tmp(c);
+            fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8* ; str array subscript (rtype)\n", p, t);
+            t = p;
+        } else if (n->children[0]->kind == NODE_IDENT) {
+            /* Legacy @f64/@str local-marker fallback when rtype is unavailable
+             * (e.g. TY_UNKNOWN). Retained until Stage 3 retires the heuristics. */
             char _bn2[128]; tok_cp(c->src, n->children[0], _bn2, sizeof _bn2);
             const char *_ln2 = get_llvm_name(c, _bn2);
             const char *_st2 = ptr_local_struct_type(c, _ln2);
@@ -3271,19 +3287,12 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; f64 array subscript\n", bc, t);
                 t = bc;
             }
-            /* 113.B.11: subscript on @str array yields i8* so the result is
-             * a real string pointer (enables var-to-var `=` strcmp). */
             if (_st2 && !strcmp(_st2, "@str")) {
                 int p = next_tmp(c);
                 fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8* ; str array subscript\n", p, t);
                 t = p;
             }
         }
-        /* Bug 114.1 (deferred sub-case): `.get()` on a function-RETURNED float
-         * array (`mk().get(i)` where `mk():@$f64`) cannot bitcast here because
-         * the callee FnSig.ret_type_name collapses `@$f64` to bare `@` — the
-         * array element type is erased (113.B.10). Resolve once element types
-         * are preserved through return-type names. */
         return t;
     }
     case NODE_STRUCT_LIT: {
@@ -4206,7 +4215,18 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         return mrt;
     }
     case NODE_INDEX_EXPR:
-        /* Bug 102.29b: subscript on @f64 arrays returns double */
+        /* Stage 2 (type-flow redesign): the resolved element type is
+         * authoritative — infer() set n->rtype to the element type for ANY
+         * array/map subscript, including function-returned and nested arrays
+         * that the @f64/@str local-marker heuristics below cannot see (114.1
+         * deferred fn-return case, 114.16 nested arrays). Element values are
+         * stored i64-strided, so only f64/str need a non-i64 element type. */
+        if (n->rtype) {
+            if (n->rtype->kind == TY_F64) return "double";
+            if (n->rtype->kind == TY_STR) return "i8*";
+        }
+        /* Bug 102.29b: subscript on @f64 arrays returns double (legacy marker
+         * path; retained until Stage 3 retires the shadow inferencer). */
         if (n->child_count >= 1 && n->children[0]->kind == NODE_IDENT) {
             char _ia[128]; tok_cp(c->src, n->children[0], _ia, sizeof _ia);
             const char *_iln = get_llvm_name(c, _ia);
