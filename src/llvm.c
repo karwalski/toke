@@ -3148,6 +3148,24 @@ static int emit_expr(Ctx *c, const Node *n)
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = call i64 @tk_map_get(i8* %%t%d, i64 %%t%d)\n",
                         t, base_map, idx);
+                /* Stage 2 (type-flow): tk_map_get returns the value in the i64
+                 * ABI; coerce to this node's resolved LLVM type so it matches the
+                 * destination slot (str->i8*, f64->double). Mirrors the array
+                 * subscript coercion. Without it, a str or f64 map value stored
+                 * into its i8p-or-double bind slot is an IR type mismatch (ooke
+                 * store, template, validate; corpus REGRESSED-COMPILE class). */
+                {
+                    const char *vty = expr_llvm_type(c, n);
+                    if (!strcmp(vty, "i8*")) {
+                        int p = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8* ; str map value (rtype)\n", p, t);
+                        t = p;
+                    } else if (!strcmp(vty, "double")) {
+                        int bc = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; f64 map value (rtype)\n", bc, t);
+                        t = bc;
+                    }
+                }
                 return t;
             }
             const char *resolved_get = resolve_stdlib_call(c, base_alias, "get");
@@ -3232,6 +3250,21 @@ static int emit_expr(Ctx *c, const Node *n)
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = call i64 @tk_map_get(i8* %%t%d, i64 %%t%d)\n",
                         t, base_map, idx);
+                /* Stage 2 (type-flow): coerce i64-ABI map value to this node's
+                 * resolved LLVM type (str->i8*, f64->double) — see the matching
+                 * coercion in the map-var .get path above. */
+                {
+                    const char *vty = expr_llvm_type(c, n);
+                    if (!strcmp(vty, "i8*")) {
+                        int p = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8* ; str map value (rtype)\n", p, t);
+                        t = p;
+                    } else if (!strcmp(vty, "double")) {
+                        int bc = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double ; f64 map value (rtype)\n", bc, t);
+                        t = bc;
+                    }
+                }
                 return t;
             }
         }

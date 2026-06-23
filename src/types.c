@@ -890,6 +890,18 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         "use s.builder()/s.add()/s.build(). See ADR-0004.");
                 return mk_type(A,TY_UNKNOWN);
             }
+            /* Untyped integer literals adopt the other operand's integer type:
+             * `x as u64 + 1`, `u64v < 10`, etc. stay well-typed rather than
+             * spuriously failing E4031. An integer literal is i64 by default,
+             * but in mixed integer arithmetic/comparison it coerces to the
+             * non-literal operand's type (u64 here). Pervasive index-math
+             * pattern (ooke build.tk; corpus). */
+            if ((arith||cmp) && is_integer(l) && is_integer(r) && !types_equal(l,r)) {
+                int l_lit = node->children[0] && node->children[0]->kind==NODE_INT_LIT;
+                int r_lit = node->children[1] && node->children[1]->kind==NODE_INT_LIT;
+                if (l_lit ^ r_lit)
+                    return cmp?mk_type(A,TY_BOOL):(l_lit?r:l);
+            }
             if ((arith&&(!is_numeric(l)||!types_equal(l,r)))||(cmp&&!types_equal(l,r))) {
                 char fix[64];
                 snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(l));
