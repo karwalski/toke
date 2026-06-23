@@ -1,0 +1,29 @@
+m=test.bitwise;
+i=io:std.io;
+i=s:std.str;
+
+(* 114.8: bitwise operators & | ^ << >> ~ (deferred from v0.3, now enabled).
+ * Verifies values + C-style precedence + a 32-bit rotate (crypto idiom). *)
+
+f=ck(name:$str;got:$i64;want:$i64;p:$i64;fl:$i64):$i64{
+  if(got=want){io.println(s.concat("PASS ";name));<p+1}el{
+    io.println(s.concat(s.concat("FAIL ";name);s.concat(" got ";s.fromint(got))));<p}
+};
+
+f=rotl(x:$i64;n:$i64):$i64{let mask=mut.4294967295;<((x<<n)|(x>>(32-n)))&mask};
+
+f=main():i64{
+  let p=mut.0;
+  let f=mut.0;
+  p=ck("and";12&10;8;p;f);
+  p=ck("or";12|10;14;p;f);
+  p=ck("xor";12^10;6;p;f);
+  p=ck("shl";12<<2;48;p;f);
+  p=ck("shr";12>>1;6;p;f);
+  p=ck("not";~12;0-13;p;f);
+  p=ck("precedence";1+2&3;3;p;f);
+  p=ck("rotl";rotl(1;4);16;p;f);
+  p=ck("rotl-wrap";rotl(2147483648;1);1;p;f);
+  io.println(s.concat("RESULT pass=";s.fromint(p)));
+  <0
+}

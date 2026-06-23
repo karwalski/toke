@@ -784,7 +784,7 @@ static Node *parse_cast_prop(Parser *p) {
  */
 /* UnaryExpr = ('-'|'!') UnaryExpr | PropagateExpr */
 static Node *parse_unary(Parser *p) {
-    if(peek(p)==TK_MINUS||peek(p)==TK_BANG){
+    if(peek(p)==TK_MINUS||peek(p)==TK_BANG||peek(p)==TK_TILDE){
         Token *t=cur(p);TokenKind op=adv(p)->kind;
         Node *n=mk(p,NODE_UNARY_EXPR,t);n->op=op;
         Node *operand=parse_unary(p);ch(p,n,operand);
@@ -864,9 +864,17 @@ static Node *parse_add(Parser *p) {
  * Note: '=' here is the equality comparison operator in expression
  * context, not the assignment operator (which is handled in parse_stmt).
  */
-/* CompareExpr = AddExpr (('<'|'>'|'<='|'>='|'!='|'=') AddExpr)? */
-static Node *parse_compare(Parser *p) {
+/* 114.8: ShiftExpr = AddExpr (('<<'|'>>') AddExpr)* — above compare, below add */
+static Node *parse_shift(Parser *p) {
     Node *l=parse_add(p);
+    if(!l) return NULL;
+    while(peek(p)==TK_SHL||peek(p)==TK_SHR){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_add(p));l=n;}
+    return l;
+}
+
+/* CompareExpr = ShiftExpr (('<'|'>'|'<='|'>='|'!='|'=') ShiftExpr)? */
+static Node *parse_compare(Parser *p) {
+    Node *l=parse_shift(p);
     if(!l) return NULL;
     if(peek(p)==TK_LT||peek(p)==TK_GT||peek(p)==TK_EQ||peek(p)==TK_LE||peek(p)==TK_GE||peek(p)==TK_NE){
         Token *t=cur(p);TokenKind op=adv(p)->kind;
@@ -875,15 +883,39 @@ static Node *parse_compare(Parser *p) {
             ewarn(p,W2021,cur(p),"'==' detected; toke uses '=' for equality","toke uses `=` for equality");
             adv(p); /* consume the extra '=' */
         }
-        Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_add(p));return n;}
+        Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_shift(p));return n;}
     return l;
 }
 
-/* AndExpr = CompareExpr ('&&' CompareExpr)* */
-static Node *parse_and(Parser *p) {
+/* 114.8: bitwise precedence (C-style, all below compare, above &&):
+ * BitAndExpr = CompareExpr ('&' CompareExpr)*  — infix '&' only; prefix
+ *   '&name' func-ref is already consumed in parse_primary, so no conflict. */
+static Node *parse_bitand(Parser *p) {
     Node *l=parse_compare(p);
     if(!l) return NULL;
-    while(peek(p)==TK_AND){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_compare(p));l=n;}
+    while(peek(p)==TK_AMP){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_compare(p));l=n;}
+    return l;
+}
+/* BitXorExpr = BitAndExpr ('^' BitAndExpr)* */
+static Node *parse_bitxor(Parser *p) {
+    Node *l=parse_bitand(p);
+    if(!l) return NULL;
+    while(peek(p)==TK_CARET){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_bitand(p));l=n;}
+    return l;
+}
+/* BitOrExpr = BitXorExpr ('|' BitXorExpr)* */
+static Node *parse_bitor(Parser *p) {
+    Node *l=parse_bitxor(p);
+    if(!l) return NULL;
+    while(peek(p)==TK_PIPE){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_bitxor(p));l=n;}
+    return l;
+}
+
+/* AndExpr = BitOrExpr ('&&' BitOrExpr)* */
+static Node *parse_and(Parser *p) {
+    Node *l=parse_bitor(p);
+    if(!l) return NULL;
+    while(peek(p)==TK_AND){Token *t=cur(p);TokenKind op=adv(p)->kind;Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_bitor(p));l=n;}
     return l;
 }
 

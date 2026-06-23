@@ -720,17 +720,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                 continue;
             }
             if (l.pos + 1 < l.len && src[l.pos + 1] == '<') {
-                if (l.profile == PROFILE_DEFAULT) {
-                    diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
-                              "shift operator '<<' not available in v0.3 (deferred to v0.5); "
-                              "run `toke --migrate` to update",
-                              "fix", "remove '<<'; bitwise shift is deferred to v0.5",
-                              "got", "<<", NULL);
-                    sym_error = 1;
-                    if (record_error(&l)) break;
-                    advance(&l); advance(&l);
-                    continue;
-                }
+                /* 114.8: bitwise shift-left now available */
                 advance(&l); advance(&l);
                 if (emit(&l, TK_SHL, start, 2, line, col) < 0) return -1;
                 continue;
@@ -743,17 +733,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                 continue;
             }
             if (l.pos + 1 < l.len && src[l.pos + 1] == '>') {
-                if (l.profile == PROFILE_DEFAULT) {
-                    diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
-                              "shift operator '>>' not available in v0.3 (deferred to v0.5); "
-                              "run `toke --migrate` to update",
-                              "fix", "remove '>>'; bitwise shift is deferred to v0.5",
-                              "got", ">>", NULL);
-                    sym_error = 1;
-                    if (record_error(&l)) break;
-                    advance(&l); advance(&l);
-                    continue;
-                }
+                /* 114.8: bitwise shift-right now available */
                 advance(&l); advance(&l);
                 if (emit(&l, TK_SHR, start, 2, line, col) < 0) return -1;
                 continue;
@@ -781,30 +761,10 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
             }
             sym = TK_AMP; break;
         case '^':
-            if (l.profile == PROFILE_DEFAULT) {
-                diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
-                          "bitwise XOR '^' not available in v0.3 (deferred to v0.5); "
-                          "run `toke --migrate` to update",
-                          "fix", "remove '^'; bitwise XOR is deferred to v0.5",
-                          "got", "^", NULL);
-                sym_error = 1;
-                if (record_error(&l)) break;
-                advance(&l);
-                continue;
-            }
+            /* 114.8: bitwise XOR now available */
             sym = TK_CARET; break;
         case '~':
-            if (l.profile == PROFILE_DEFAULT) {
-                diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
-                          "bitwise NOT '~' not available in v0.3 (deferred to v0.5); "
-                          "run `toke --migrate` to update",
-                          "fix", "remove '~'; bitwise NOT is deferred to v0.5",
-                          "got", "~", NULL);
-                sym_error = 1;
-                if (record_error(&l)) break;
-                advance(&l);
-                continue;
-            }
+            /* 114.8: bitwise NOT now available */
             sym = TK_TILDE; break;
         case '%':  sym = TK_PERCENT;  break;
         case '$':

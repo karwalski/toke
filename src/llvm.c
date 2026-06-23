@@ -2257,6 +2257,12 @@ static int emit_expr(Ctx *c, const Node *n)
             else
                 fprintf(c->out, "  %%t%d = sub %s 0, %%t%d\n", t, uty, v);
         }
+        else if (n->op == TK_TILDE) {
+            /* 114.8: bitwise NOT — flip all bits (xor with all-ones). */
+            const char *utyn = expr_llvm_type(c, n->children[0]);
+            const char *ity = strcmp(utyn, "i64") ? "i64" : utyn;
+            fprintf(c->out, "  %%t%d = xor %s %%t%d, -1\n", t, ity, v);
+        }
         else if (n->op == TK_BANG) {
             /* If operand is i64 (integer), convert to i1 first via icmp ne 0 */
             const char *uty2 = expr_llvm_type(c, n->children[0]);
