@@ -605,7 +605,19 @@ static void emit_mm(Ctx *cx, const Node *n, const Type *exp,
  * to prevent cascading diagnostics (Section 13.6 rule: one error per
  * root cause).
  */
+/* Stage 0 (type-flow redesign): memoize each expression's resolved Type onto
+ * node->rtype so codegen can consume it directly instead of re-deriving types
+ * via string heuristics (the cause of 113.B.10/114.1/114.16/113.B.21/114.4).
+ * infer() recurses through this wrapper, so every expression node visited by
+ * the type checker gets its rtype set. The cast drops const only to write the
+ * memoization cache field. */
+static Type *infer_impl(Ctx *cx, const Node *node);
 static Type *infer(Ctx *cx, const Node *node) {
+    Type *t = infer_impl(cx, node);
+    if (node) ((Node *)node)->rtype = t;
+    return t;
+}
+static Type *infer_impl(Ctx *cx, const Node *node) {
     if (!node) return mk_type(cx->env->arena, TY_UNKNOWN);
     Arena *A = cx->env->arena;
     switch (node->kind) {

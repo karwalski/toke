@@ -82,6 +82,7 @@ typedef enum {
 
 
 typedef struct Node Node;
+struct Type;                /* fwd decl — resolved type attached by the type checker */
 struct Node {
     NodeKind kind;
     int      start;         /* byte offset of first token       */
@@ -95,6 +96,12 @@ struct Node {
     int      tok_len;       /* length in bytes                  */
     /* Operator / keyword stored for binary/unary nodes */
     TokenKind op;
+    /* Type-flow redesign (Stage 0): the resolved Type* for this expression,
+     * memoized by infer() during type checking. NULL before type-check / for
+     * non-expression nodes. Arena-allocated, so it lives through codegen — the
+     * single source of truth that codegen will consume, replacing the
+     * string-heuristic shadow inferencer in llvm.c. */
+    struct Type *rtype;
 };
 
 /* ────────────────────────────────────────────────────────────────────────── */
