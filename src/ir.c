@@ -160,6 +160,47 @@ static const char *tok_copy(const Node *n, const char *src, char *buf, int size)
 }
 
 /*
+ * render_type_node — Stage 1 (113.B.10): recursively serialize a type-annotation
+ * AST subtree to its full .tki type string, so compound element/key/value types
+ * survive into the interface. The old tok_copy lifted only the head token,
+ * collapsing `@$f64` -> "@" and `@($str:$str)` -> "@", erasing element types
+ * across module boundaries. Renders the canonical .tki notation: scalars as
+ * bare names (str, f64, byte), arrays as "[elem]", maps as "[k:v]", pointers
+ * as "*T". Falls back to tok_copy for anything else (e.g. error-union forms),
+ * which is no worse than the previous behavior.
+ */
+static void render_type_node(const Node *n, const char *src, char *buf, int size) {
+    if (!n || size <= 1) { if (size > 0) buf[0] = '\0'; return; }
+    switch (n->kind) {
+        case NODE_ARRAY_TYPE: {
+            char e[128]; e[0] = '\0';
+            if (n->child_count >= 1) render_type_node(n->children[0], src, e, sizeof e);
+            snprintf(buf, size, "[%s]", e);
+            return;
+        }
+        case NODE_MAP_TYPE: {
+            char k[128], v[128]; k[0] = v[0] = '\0';
+            if (n->child_count >= 1) render_type_node(n->children[0], src, k, sizeof k);
+            if (n->child_count >= 2) render_type_node(n->children[1], src, v, sizeof v);
+            snprintf(buf, size, "[%s:%s]", k, v);
+            return;
+        }
+        case NODE_PTR_TYPE: {
+            char e[128]; e[0] = '\0';
+            if (n->child_count >= 1) render_type_node(n->children[0], src, e, sizeof e);
+            snprintf(buf, size, "*%s", e);
+            return;
+        }
+        default: {
+            char t[128]; tok_copy(n, src, t, sizeof t);
+            /* strip a leading '$' sigil so .tki uses bare scalar names */
+            snprintf(buf, size, "%s", (t[0] == '$') ? t + 1 : t);
+            return;
+        }
+    }
+}
+
+/*
  * emit_interface — Write a .tki JSON interface file for the given AST.
  *
  * Walks every top-level AST node and emits JSON export descriptors:
@@ -213,7 +254,7 @@ int emit_interface(const Node *ast, const char *src,
             for (int j = 1; j < top->child_count; j++) {
                 const Node *ch = top->children[j];
                 if (!ch || ch->kind != NODE_PARAM || ch->child_count < 2 || !ch->children[1]) continue;
-                tok_copy(ch->children[1], src, tbuf, sizeof(tbuf));
+                render_type_node(ch->children[1], src, tbuf, sizeof(tbuf));   /* 113.B.10: full compound type */
                 if (!fp2) fputs(", ", fp); fp2 = 0;
                 fputc('"', fp); json_str(fp, tbuf, (int)strlen(tbuf)); fputc('"', fp);
             }
@@ -222,7 +263,7 @@ int emit_interface(const Node *ast, const char *src,
             for (int j = 1; j < top->child_count; j++) {
                 const Node *ch = top->children[j];
                 if (!ch || ch->kind != NODE_RETURN_SPEC || ch->child_count < 1 || !ch->children[0]) continue;
-                tok_copy(ch->children[0], src, tbuf, sizeof(tbuf)); ret = tbuf; break;
+                render_type_node(ch->children[0], src, tbuf, sizeof(tbuf)); ret = tbuf; break;   /* 113.B.10 */
             }
             json_str(fp, ret, (int)strlen(ret));
             fputs("\"}", fp);
@@ -265,9 +306,9 @@ int emit_interface(const Node *ast, const char *src,
                 char fn[128], ft[128];
                 tok_copy(ch, src, fn, sizeof(fn));
                 if (ch->child_count >= 1 && ch->children[0]) {
-                    tok_copy(ch->children[0], src, ft, sizeof(ft));
+                    render_type_node(ch->children[0], src, ft, sizeof(ft));   /* 113.B.10: full field type */
                 } else if (ch->child_count >= 2 && ch->children[1]) {
-                    tok_copy(ch->children[1], src, ft, sizeof(ft));
+                    render_type_node(ch->children[1], src, ft, sizeof(ft));
                 } else {
                     strcpy(ft, "i64");
                 }
