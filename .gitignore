@@ -64,3 +64,6 @@ stdlib/vendor/tomlc99/
 
 # Logs
 logs/
+
+# header-dependency files from -MMD
+*.d

@@ -1,6 +1,7 @@
 CC      = cc
 CFLAGS  = -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -g \
-          -DTKC_STDLIB_DIR='"$(CURDIR)/src/stdlib"'
+          -DTKC_STDLIB_DIR='"$(CURDIR)/src/stdlib"' \
+          -MMD -MP   # emit .d header-dependency files so header changes trigger recompiles
 # GCC-specific: suppress format-truncation warnings (snprintf truncation is by design)
 GCC_CHECK := $(shell $(CC) -Wno-format-truncation -x c -c /dev/null -o /dev/null 2>/dev/null && echo yes)
 ifeq ($(GCC_CHECK),yes)
@@ -96,6 +97,11 @@ src/llvm.o: src/stdlib_decls_gen.h
 
 %.o: %.c
 	$(CC) $(CFLAGS) $(REPRO_FLAGS) -c -o $@ $<
+
+# Header-dependency files emitted by -MMD; pull them in so editing a .h
+# recompiles every .o that includes it (prevents stale-header struct-layout
+# corruption, e.g. adding a field to Node in parser.h). Silent if absent.
+-include $(OBJS:.o=.d)
 
 # encrypt.c uses __int128 for Ed25519 arithmetic — allowed under GCC but rejected by -Wpedantic
 src/stdlib/encrypt.o: src/stdlib/encrypt.c
