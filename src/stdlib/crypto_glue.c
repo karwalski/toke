@@ -6,33 +6,37 @@
  */
 
 #include "crypto.h"
+#include "bytes_rt.h"   /* Stage 5: [byte] pack/unpack marshalling */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
+/* Stage 5 (114.4): crypto hashes now consume real [byte] (binary-safe, holds
+ * 0x00) and RETURN raw [byte] digests — not hex strings. Callers render with
+ * crypto.tohex(...) / encoding.hexencode(...). This is the breaking change that
+ * makes binary input (keys/IVs/digests with NUL bytes) hashable correctly. */
 int64_t tk_crypto_sha256_w(int64_t data) {
-    if (!data) return 0;
-    const char *s = (const char *)(intptr_t)data;
-    ByteArray ba = { (const uint8_t *)s, (uint64_t)strlen(s) };
+    uint8_t *buf; uint64_t n = tk_bytes_unpack(data, &buf);
+    ByteArray ba = { buf, n };
     ByteArray digest = crypto_sha256(ba);
-    const char *hex = crypto_to_hex(digest);
-    return hex ? (int64_t)(intptr_t)hex : 0;
+    int64_t out = tk_bytes_pack(digest.data, digest.len);
+    free(buf);
+    return out;
 }
 int64_t tk_crypto_randombytes_w(int64_t n) {
-    if (n <= 0) return 0;
+    if (n <= 0) return tk_bytes_pack((const uint8_t *)"", 0);
     ByteArray ba = crypto_randombytes((uint64_t)n);
-    const char *hex = crypto_to_hex(ba);
-    return hex ? (int64_t)(intptr_t)hex : 0;
+    int64_t out = tk_bytes_pack(ba.data, ba.len);
+    free((void *)ba.data);
+    return out;
 }
 int64_t tk_crypto_hmacsha256_w(int64_t key, int64_t data) {
-    if (!key || !data) return 0;
-    const char *ks = (const char *)(intptr_t)key;
-    const char *ds = (const char *)(intptr_t)data;
-    ByteArray kba = { (const uint8_t *)ks, (uint64_t)strlen(ks) };
-    ByteArray dba = { (const uint8_t *)ds, (uint64_t)strlen(ds) };
+    uint8_t *kb, *db; uint64_t kn = tk_bytes_unpack(key, &kb), dn = tk_bytes_unpack(data, &db);
+    ByteArray kba = { kb, kn }, dba = { db, dn };
     ByteArray tag = crypto_hmac_sha256(kba, dba);
-    const char *hex = crypto_to_hex(tag);
-    return hex ? (int64_t)(intptr_t)hex : 0;
+    int64_t out = tk_bytes_pack(tag.data, tag.len);
+    free(kb); free(db);
+    return out;
 }
 
 int64_t tk_crypto_sha256file_w(int64_t path) {
@@ -48,18 +52,18 @@ int64_t tk_crypto_sha256verify_w(int64_t path, int64_t expected) {
 }
 
 int64_t tk_crypto_constanttimeequal_w(int64_t a, int64_t b) {
-    if (!a || !b) return 0;
-    const char *as = (const char *)(intptr_t)a;
-    const char *bs = (const char *)(intptr_t)b;
-    ByteArray aba = { (const uint8_t *)as, (uint64_t)strlen(as) };
-    ByteArray bba = { (const uint8_t *)bs, (uint64_t)strlen(bs) };
-    return (int64_t)crypto_constanteq(aba, bba);
+    uint8_t *ab, *bb; uint64_t an = tk_bytes_unpack(a, &ab), bn = tk_bytes_unpack(b, &bb);
+    ByteArray aba = { ab, an }, bba = { bb, bn };
+    int64_t r = (int64_t)crypto_constanteq(aba, bba);
+    free(ab); free(bb);
+    return r;
 }
+/* crypto.tohex([byte]) -> hex str — the canonical way to render a raw digest. */
 int64_t tk_crypto_tohex_w(int64_t data) {
-    if (!data) return 0;
-    const char *s = (const char *)(intptr_t)data;
-    ByteArray ba = { (const uint8_t *)s, (uint64_t)strlen(s) };
+    uint8_t *buf; uint64_t n = tk_bytes_unpack(data, &buf);
+    ByteArray ba = { buf, n };
     const char *hex = crypto_to_hex(ba);
+    free(buf);
     return hex ? (int64_t)(intptr_t)hex : 0;
 }
 
@@ -71,36 +75,33 @@ int64_t tk_crypto_randomhex_w(int64_t n) {
     return (int64_t)(intptr_t)hex;
 }
 
-/* crypto.sha512(data) — SHA-512 hash, returns hex string */
+/* crypto.sha512([byte]) -> [byte] raw digest */
 int64_t tk_crypto_sha512_w(int64_t data) {
-    if (!data) return 0;
-    const char *s = (const char *)(intptr_t)data;
-    ByteArray ba = { (const uint8_t *)s, (uint64_t)strlen(s) };
+    uint8_t *buf; uint64_t n = tk_bytes_unpack(data, &buf);
+    ByteArray ba = { buf, n };
     ByteArray digest = crypto_sha512(ba);
-    const char *hex = crypto_to_hex(digest);
-    return hex ? (int64_t)(intptr_t)hex : 0;
+    int64_t out = tk_bytes_pack(digest.data, digest.len);
+    free(buf);
+    return out;
 }
 
-/* crypto.hmacsha512(key, data) — HMAC-SHA-512, returns hex string */
+/* crypto.hmacsha512(key,data) -> [byte] raw tag */
 int64_t tk_crypto_hmacsha512_w(int64_t key, int64_t data) {
-    if (!key || !data) return 0;
-    const char *ks = (const char *)(intptr_t)key;
-    const char *ds = (const char *)(intptr_t)data;
-    ByteArray kba = { (const uint8_t *)ks, (uint64_t)strlen(ks) };
-    ByteArray dba = { (const uint8_t *)ds, (uint64_t)strlen(ds) };
+    uint8_t *kb, *db; uint64_t kn = tk_bytes_unpack(key, &kb), dn = tk_bytes_unpack(data, &db);
+    ByteArray kba = { kb, kn }, dba = { db, dn };
     ByteArray tag = crypto_hmac_sha512(kba, dba);
-    const char *hex = crypto_to_hex(tag);
-    return hex ? (int64_t)(intptr_t)hex : 0;
+    int64_t out = tk_bytes_pack(tag.data, tag.len);
+    free(kb); free(db);
+    return out;
 }
 
-/* crypto.constanteq(a, b) — constant-time string comparison */
+/* crypto.constanteq([byte],[byte]) -> bool */
 int64_t tk_crypto_constanteq_w(int64_t a, int64_t b) {
-    if (!a || !b) return 0;
-    const char *as = (const char *)(intptr_t)a;
-    const char *bs = (const char *)(intptr_t)b;
-    ByteArray aba = { (const uint8_t *)as, (uint64_t)strlen(as) };
-    ByteArray bba = { (const uint8_t *)bs, (uint64_t)strlen(bs) };
-    return (int64_t)crypto_constanteq(aba, bba);
+    uint8_t *ab, *bb; uint64_t an = tk_bytes_unpack(a, &ab), bn = tk_bytes_unpack(b, &bb);
+    ByteArray aba = { ab, an }, bba = { bb, bn };
+    int64_t r = (int64_t)crypto_constanteq(aba, bba);
+    free(ab); free(bb);
+    return r;
 }
 
 /* crypto.to_hex(data) — convert bytes to hex string */

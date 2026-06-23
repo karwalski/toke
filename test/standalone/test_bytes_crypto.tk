@@ -1,0 +1,37 @@
+m=test.bytescrypto;
+i=io:std.io;
+i=s:std.str;
+i=c:std.crypto;
+i=e:std.encoding;
+
+(* Stage 5 (114.4): first-class binary-safe `bytes`. crypto hashes consume and
+ * return real [byte] (i64-array of byte values, holds 0x00); render via tohex.
+ * Verified against RFC known-answer vectors incl. binary inputs with 0x00. *)
+
+f=ck(name:$str;got:$str;want:$str;p:$i64):$i64{
+  if(s.eq(got;want)){io.println(s.concat("PASS ";name));<p+1}el{
+    io.println(s.concat(s.concat("FAIL ";name);s.concat(" got ";got)));<p}
+};
+
+f=main():i64{
+  let p=mut.0;
+  (* SHA-256("abc") *)
+  p=ck("sha256-abc";c.tohex(c.sha256(s.bytes("abc")));
+       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";p);
+  (* SHA-256("") *)
+  p=ck("sha256-empty";c.tohex(c.sha256(s.bytes("")));
+       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";p);
+  (* binary-safe: SHA-256 of bytes <61 00 62> (contains 0x00) *)
+  p=ck("sha256-binary-nul";c.tohex(c.sha256(@(97;0;98)));
+       "59b271ae1bbcb1d31d41929817f4b16fb439eb4f31520b5ad1d5ce98920a7138";p);
+  (* HMAC-SHA-256 RFC 4231 TC1: key = 0x0b x20, data = "Hi There" *)
+  let k=@(11;11;11;11;11;11;11;11;11;11;11;11;11;11;11;11;11;11;11;11);
+  p=ck("hmac-rfc4231-tc1";c.tohex(c.hmacsha256(k;s.bytes("Hi There")));
+       "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7";p);
+  (* hex round-trip *)
+  p=ck("hex-roundtrip";s.frombytes(e.hexdecode("414243"));"ABC";p);
+  (* base64 round-trip *)
+  p=ck("b64-roundtrip";s.frombytes(e.b64decode("aGVsbG8="));"hello";p);
+  io.println(s.concat("RESULT pass=";s.fromint(p)));
+  <0
+};

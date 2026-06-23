@@ -6,6 +6,7 @@
  */
 
 #include "str.h"
+#include "bytes_rt.h"   /* Stage 5: [byte] pack/unpack marshalling */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -159,10 +160,22 @@ int64_t tk_str_toint_w(int64_t s) {
     return r.is_err ? 0 : r.ok;
 }
 
-/* str extras (tobytes, frombytes, bytes, print) */
-int64_t tk_str_tobytes_w(int64_t s) { return s; }
-int64_t tk_str_frombytes_w(int64_t b) { return b; }
-int64_t tk_str_bytes_w(int64_t s) { return s; }
+/* str extras (tobytes, frombytes, bytes, print) — Stage 5: real [byte] rep.
+ * str.bytes(s)  -> [byte] (i64-array of s's UTF-8 byte values, binary-safe).
+ * str.frombytes -> str    (NUL-terminated C string from the byte values; an
+ *                          interior 0x00 truncates the str — an inherent limit
+ *                          of the char* str rep until length-prefixed str). */
+int64_t tk_str_bytes_w(int64_t s) {
+    if (!s) return tk_bytes_pack((const uint8_t *)"", 0);
+    const char *str = (const char *)(intptr_t)s;
+    return tk_bytes_pack((const uint8_t *)str, (uint64_t)strlen(str));
+}
+int64_t tk_str_tobytes_w(int64_t s) { return tk_str_bytes_w(s); }
+int64_t tk_str_frombytes_w(int64_t b) {
+    uint8_t *buf; uint64_t n = tk_bytes_unpack(b, &buf);
+    (void)n;                       /* buf is already NUL-terminated by unpack */
+    return buf ? (int64_t)(intptr_t)buf : (int64_t)(intptr_t)"";
+}
 int64_t tk_str_print_w(int64_t s) {
     if (s) printf("%s", (const char *)(intptr_t)s);
     return 0;

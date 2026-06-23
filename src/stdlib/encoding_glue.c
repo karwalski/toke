@@ -6,73 +6,84 @@
  */
 
 #include "encoding.h"
+#include "bytes_rt.h"   /* Stage 5: [byte] pack/unpack marshalling */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-int64_t tk_encoding_tobytes_w(int64_t s) { return s; }
-int64_t tk_encoding_frombytes_w(int64_t b) { return b; }
-int64_t tk_encoding_hexencode_w(int64_t s) { return s; }
-int64_t tk_encoding_hexdecode_w(int64_t s) { return s; }
-int64_t tk_encoding_urlencode_w(int64_t s) { return s; }
+/* Stage 5 (114.4): real [byte] <-> str/encoding marshalling (was identity
+ * stubs). encode takes [byte] and returns a str; decode takes a str and
+ * returns [byte]. All binary-safe (0x00 preserved). */
+int64_t tk_encoding_tobytes_w(int64_t s) {
+    const char *str = s ? (const char *)(intptr_t)s : "";
+    return tk_bytes_pack((const uint8_t *)str, (uint64_t)strlen(str));
+}
+int64_t tk_encoding_bytes_w(int64_t s) { return tk_encoding_tobytes_w(s); }
+int64_t tk_encoding_frombytes_w(int64_t b) {
+    uint8_t *buf; tk_bytes_unpack(b, &buf);
+    return buf ? (int64_t)(intptr_t)buf : (int64_t)(intptr_t)"";
+}
+int64_t tk_encoding_hexencode_w(int64_t b) {
+    uint8_t *buf; uint64_t n = tk_bytes_unpack(b, &buf);
+    ByteArray ba = { buf, n };
+    const char *hex = encoding_hexencode(ba);
+    free(buf);
+    return hex ? (int64_t)(intptr_t)hex : (int64_t)(intptr_t)"";
+}
+int64_t tk_encoding_hexdecode_w(int64_t s) {
+    if (!s) return tk_bytes_pack((const uint8_t *)"", 0);
+    ByteArray d = encoding_hexdecode((const char *)(intptr_t)s);
+    int64_t out = tk_bytes_pack(d.data, d.len);
+    if (d.data) free((void *)d.data);
+    return out;
+}
+int64_t tk_encoding_urlencode_w(int64_t s) { return s; }   /* str-domain; unchanged */
 int64_t tk_encoding_urldecode_w(int64_t s) { return s; }
-int64_t tk_encoding_base64encode_w(int64_t s) { return s; }
-int64_t tk_encoding_base64decode_w(int64_t s) { return s; }
-int64_t tk_encoding_bytes_w(int64_t s) { return s; }
+int64_t tk_encoding_base64encode_w(int64_t b) {
+    uint8_t *buf; uint64_t n = tk_bytes_unpack(b, &buf);
+    ByteArray ba = { buf, n };
+    const char *enc = encoding_b64encode(ba);
+    free(buf);
+    return enc ? (int64_t)(intptr_t)enc : (int64_t)(intptr_t)"";
+}
+int64_t tk_encoding_base64decode_w(int64_t s) {
+    if (!s) return tk_bytes_pack((const uint8_t *)"", 0);
+    ByteArray d = encoding_b64decode((const char *)(intptr_t)s);
+    int64_t out = tk_bytes_pack(d.data, d.len);
+    if (d.data) free((void *)d.data);
+    return out;
+}
 int64_t tk_encoding_toint_w(int64_t s) { return s; }
 
-/* b64encode/b64decode — string-oriented wrappers matching toke enc.b64encode() */
+/* b64encode([byte])->str / b64decode(str)->[byte] — Stage 5 real bytes ABI */
 int64_t tk_encoding_b64encode_w(int64_t data) {
-    if (!data) return 0;
-    const char *s = (const char *)(intptr_t)data;
-    ByteArray ba = { (const uint8_t *)s, (uint64_t)strlen(s) };
-    const char *encoded = encoding_b64encode(ba);
-    return encoded ? (int64_t)(intptr_t)encoded : 0;
+    uint8_t *buf; uint64_t n = tk_bytes_unpack(data, &buf);
+    ByteArray ba = { buf, n };
+    const char *enc = encoding_b64encode(ba);
+    free(buf);
+    return enc ? (int64_t)(intptr_t)enc : (int64_t)(intptr_t)"";
 }
 int64_t tk_encoding_b64decode_w(int64_t data) {
-    if (!data) return 0;
-    const char *s = (const char *)(intptr_t)data;
-    ByteArray decoded = encoding_b64decode(s);
-    if (!decoded.data || decoded.len == 0) return 0;
-    char *str = (char *)malloc(decoded.len + 1);
-    if (!str) return 0;
-    memcpy(str, decoded.data, decoded.len);
-    str[decoded.len] = '\0';
-    free((void *)decoded.data);
-    return (int64_t)(intptr_t)str;
+    if (!data) return tk_bytes_pack((const uint8_t *)"", 0);
+    ByteArray d = encoding_b64decode((const char *)(intptr_t)data);
+    int64_t out = tk_bytes_pack(d.data, d.len);
+    if (d.data) free((void *)d.data);
+    return out;
 }
 
-/* base64 */
-int64_t tk_base64_encode_w(int64_t data) {
-    if (!data) return 0;
-    const char *s = (const char *)(intptr_t)data;
-    ByteArray ba = { (const uint8_t *)s, (uint64_t)strlen(s) };
-    const char *encoded = encoding_b64encode(ba);
-    return encoded ? (int64_t)(intptr_t)encoded : 0;
-}
-int64_t tk_base64_decode_w(int64_t data) {
-    if (!data) return 0;
-    const char *s = (const char *)(intptr_t)data;
-    ByteArray decoded = encoding_b64decode(s);
-    if (!decoded.data || decoded.len == 0) return 0;
-    /* Return as NUL-terminated string */
-    char *str = (char *)malloc(decoded.len + 1);
-    if (!str) return 0;
-    memcpy(str, decoded.data, decoded.len);
-    str[decoded.len] = '\0';
-    free((void *)decoded.data);
-    return (int64_t)(intptr_t)str;
-}
+/* base64 (alias spelling) */
+int64_t tk_base64_encode_w(int64_t data) { return tk_encoding_b64encode_w(data); }
+int64_t tk_base64_decode_w(int64_t data) { return tk_encoding_b64decode_w(data); }
 
 /* ── Linker-gap additions ───────────────────────────────────────────────── */
 
-/* encoding.base64urlencodenopad(data) — URL-safe base64 without padding */
+/* encoding.base64urlencodenopad([byte]) — URL-safe base64 without padding */
 int64_t tk_encoding_base64urlencodenopad_w(int64_t data) {
-    if (!data) return 0;
-    const char *s = (const char *)(intptr_t)data;
-    ByteArray ba = { (const uint8_t *)s, (uint64_t)strlen(s) };
-    const char *encoded = encoding_b64urlencode(ba);
-    return encoded ? (int64_t)(intptr_t)encoded : 0;
+    uint8_t *buf; uint64_t n = tk_bytes_unpack(data, &buf);
+    ByteArray ba = { buf, n };
+    const char *enc = encoding_b64urlencode(ba);
+    free(buf);
+    return enc ? (int64_t)(intptr_t)enc : (int64_t)(intptr_t)"";
 }
 
 /* encoding.jsonfield(obj, key) — extract a JSON string field value.
