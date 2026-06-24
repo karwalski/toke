@@ -902,6 +902,26 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 if (l_lit ^ r_lit)
                     return cmp?mk_type(A,TY_BOOL):(l_lit?r:l);
             }
+            /* Story 114.10: array concatenation via `+` (`arr + arr`,
+             * `arr + @(x)`, `acc + @(x)`). Valid when both operands are arrays
+             * with compatible element types — types_equal already treats a
+             * TY_UNKNOWN elem as a wildcard, covering empty/typed-empty
+             * literals. Returning the concrete array type lets a declared
+             * `:@T` return value or a typed `@T` parameter round-trip instead
+             * of spuriously failing E4031 ("expected 'array', got 'array'").
+             * Previously only untyped (TY_UNKNOWN) array operands slipped
+             * through the early-out above; typed ones hit the numeric reject. */
+            if (arith && node->op==TK_PLUS &&
+                l->kind==TY_ARRAY && r->kind==TY_ARRAY) {
+                if (types_equal(l,r)) {
+                    /* prefer the side carrying a concrete element type */
+                    if (l->elem && l->elem->kind!=TY_UNKNOWN) return l;
+                    return r;
+                }
+                emit_mm(cx,node,l,r,
+                        "array concatenation requires matching element types");
+                return mk_type(A,TY_UNKNOWN);
+            }
             if ((arith&&(!is_numeric(l)||!types_equal(l,r)))||(cmp&&!types_equal(l,r))) {
                 char fix[64];
                 snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(l));
