@@ -5169,6 +5169,25 @@ static void emit_toplevel(Ctx *c, const Node *n)
                         char pty_name[128] = "";
                         tok_cp(c->src, tyn, pty_name, sizeof pty_name);
                         const char *stype = lookup_struct(c, pty_name) ? pty_name : NULL;
+                        /* Story 114.21: a non-float array param (@byte, @$i64,
+                         * @$str, …) that isn't a registered struct must still get
+                         * an `@`-prefixed marker so array-aware codegen treats it
+                         * as an array. Without it the param was marked NULL and
+                         * `a+b` fell to tk_str_concat (NUL-truncating) — corrupting
+                         * binary byte-array concatenation across @byte boundaries. */
+                        if (!stype) {
+                            char et2[96] = "";
+                            tok_cp(c->src, tyn->children[0], et2, sizeof et2);
+                            static char arr_marker_buf[2048];
+                            static int arr_marker_off = 0;
+                            int w = snprintf(arr_marker_buf + arr_marker_off,
+                                             sizeof(arr_marker_buf) - arr_marker_off,
+                                             "@%s", et2);
+                            if (w > 0 && arr_marker_off + w < (int)sizeof(arr_marker_buf)) {
+                                stype = arr_marker_buf + arr_marker_off;
+                                arr_marker_off += w + 1;
+                            }
+                        }
                         mark_ptr_with_type(c, pn, stype);
                     }
                 } else {
