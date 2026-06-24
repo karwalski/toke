@@ -19,16 +19,16 @@
         {"name": "privkey", "type": "[byte]"}
       ]
     },
-    {"kind": "func", "name": "encrypt.aes256gcm_encrypt",    "params": ["[byte]", "[byte]", "[byte]", "[byte]"], "return": "[byte]"},
-    {"kind": "func", "name": "encrypt.aes256gcm_decrypt",    "params": ["[byte]", "[byte]", "[byte]", "[byte]"], "return": "DecryptResult"},
-    {"kind": "func", "name": "encrypt.aes256gcm_keygen",     "params": [],                                       "return": "[byte]"},
-    {"kind": "func", "name": "encrypt.aes256gcm_noncegen",   "params": [],                                       "return": "[byte]"},
-    {"kind": "func", "name": "encrypt.x25519_keypair",       "params": [],                                       "return": "Keypair"},
-    {"kind": "func", "name": "encrypt.x25519_dh",            "params": ["[byte]", "[byte]"],                     "return": "[byte]"},
-    {"kind": "func", "name": "encrypt.ed25519_keypair",      "params": [],                                       "return": "Keypair"},
-    {"kind": "func", "name": "encrypt.ed25519_sign",         "params": ["[byte]", "[byte]"],                     "return": "[byte]"},
-    {"kind": "func", "name": "encrypt.ed25519_verify",       "params": ["[byte]", "[byte]", "[byte]"],           "return": "bool"},
-    {"kind": "func", "name": "encrypt.hkdf_sha256",          "params": ["[byte]", "[byte]", "[byte]", "u64"],   "return": "[byte]"},
-    {"kind": "func", "name": "encrypt.tls_cert_fingerprint", "params": ["str"],                                  "return": "[byte]"}
+    {"kind": "func", "name": "encrypt.aes256gcmencrypt",    "params": ["[byte]", "[byte]", "[byte]", "[byte]"], "return": "[byte]"},
+    {"kind": "func", "name": "encrypt.aes256gcmdecrypt",    "params": ["[byte]", "[byte]", "[byte]", "[byte]"], "return": "DecryptResult"},
+    {"kind": "func", "name": "encrypt.aes256gcmkeygen",     "params": [],                                       "return": "[byte]"},
+    {"kind": "func", "name": "encrypt.aes256gcmnoncegen",   "params": [],                                       "return": "[byte]"},
+    {"kind": "func", "name": "encrypt.x25519keypair",       "params": [],                                       "return": "Keypair"},
+    {"kind": "func", "name": "encrypt.x25519dh",            "params": ["[byte]", "[byte]"],                     "return": "[byte]"},
+    {"kind": "func", "name": "encrypt.ed25519keypair",      "params": [],                                       "return": "Keypair"},
+    {"kind": "func", "name": "encrypt.ed25519sign",         "params": ["[byte]", "[byte]"],                     "return": "[byte]"},
+    {"kind": "func", "name": "encrypt.ed25519verify",       "params": ["[byte]", "[byte]", "[byte]"],           "return": "bool"},
+    {"kind": "func", "name": "encrypt.hkdfsha256",          "params": ["[byte]", "[byte]", "[byte]", "u64"],   "return": "[byte]"},
+    {"kind": "func", "name": "encrypt.tlscertfingerprint", "params": ["str"],                                  "return": "[byte]"}
   ]
 }
