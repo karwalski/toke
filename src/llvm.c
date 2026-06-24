@@ -2117,6 +2117,21 @@ static int emit_expr(Ctx *c, const Node *n)
                     if (rhs_mark && rhs_mark[0] == '@') is_array = 1;
                 }
             }
+            /* Story 114.19c: array + non-array scalar (e.g. `@(a)+b`, appending
+             * an unwrapped scalar) — one side is a definite array (i8*) and the
+             * other is a plain i64 scalar. The type checker can't always catch
+             * this (an ident RHS infers TY_UNKNOWN), and coercing the scalar to
+             * a pointer below would feed garbage to tk_array_concat -> segfault.
+             * Reject it here at codegen, where the operand types are known. */
+            if (is_array && (!strcmp(lty, "i64") || !strcmp(rty, "i64"))) {
+                diag_emit(DIAG_ERROR, E4031, n->start, n->line, n->col,
+                          "array concatenation requires both operands to be arrays "
+                          "(wrap a scalar element as @(x))",
+                          "fix", "wrap the scalar element: @(x)", NULL);
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 0 to i8*\n", t);
+                return t;
+            }
             /* Coerce non-ptr side to ptr if mixed */
             if (!strcmp(lty, "i64")) {
                 int z = next_tmp(c);
@@ -5807,6 +5822,10 @@ int emit_llvm_ir(const Node *ast, const char *src,
     }
     if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free(ctx.structs); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
     fclose(f);
+    /* A DIAG_ERROR emitted during codegen (e.g. 114.19c array+scalar concat)
+     * must fail the build — the .ll is written but callers treat <0 as failure
+     * and skip clang. Previously codegen-phase errors were silently ignored. */
+    if (diag_error_count() > 0) return -1;
     return 0;
 }
 
