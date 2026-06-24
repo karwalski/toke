@@ -851,6 +851,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             return mk_type(A,TY_UNKNOWN);
         }
         if (l->kind==TY_UNKNOWN||r->kind==TY_UNKNOWN) return mk_type(A,TY_UNKNOWN);
+        /* Story 114.19c: array + non-array (e.g. `@(a)+(b)`, appending an unwrapped
+         * scalar) is a type error, not a runtime segfault. Both operands are concrete
+         * here (TY_UNKNOWN early-out above). Array concat needs BOTH sides arrays. */
+        if (node->op==TK_PLUS &&
+            ((l->kind==TY_ARRAY)!=(r->kind==TY_ARRAY))) {
+            emit_mm(cx,node,l,r,"array concatenation requires both operands to be "
+                    "arrays — wrap a scalar element as @(x)");
+            return mk_type(A,TY_UNKNOWN);
+        }
         int arith=(node->op==TK_PLUS||node->op==TK_MINUS||node->op==TK_STAR||node->op==TK_SLASH);
         int cmp  =(node->op==TK_LT  ||node->op==TK_GT  ||node->op==TK_EQ
                   ||node->op==TK_LE ||node->op==TK_GE ||node->op==TK_NE);
