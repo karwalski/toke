@@ -3,7 +3,7 @@
   "module": "std.test",
   "exports": [
     {"kind": "func", "name": "test.assert",    "params": ["bool", "str"],        "return": "bool"},
-    {"kind": "func", "name": "test.assert_eq", "params": ["str", "str", "str"],  "return": "bool"},
-    {"kind": "func", "name": "test.assert_ne", "params": ["str", "str", "str"],  "return": "bool"}
+    {"kind": "func", "name": "test.asserteq", "params": ["str", "str", "str"],  "return": "bool"},
+    {"kind": "func", "name": "test.assertne", "params": ["str", "str", "str"],  "return": "bool"}
   ]
 }

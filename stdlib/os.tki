@@ -20,14 +20,14 @@
     {"kind": "func", "name": "os.setenv",    "params": ["str", "str"],        "return": "i64"},
     {"kind": "func", "name": "os.errno",     "params": [],                    "return": "i64"},
     {"kind": "func", "name": "os.strerror",  "params": ["i64"],               "return": "str",  "ownership": "static"},
-    {"kind": "func", "name": "os.o_rdonly",   "params": [],                   "return": "i64"},
-    {"kind": "func", "name": "os.o_wronly",   "params": [],                   "return": "i64"},
-    {"kind": "func", "name": "os.o_rdwr",     "params": [],                   "return": "i64"},
-    {"kind": "func", "name": "os.o_creat",    "params": [],                   "return": "i64"},
-    {"kind": "func", "name": "os.o_trunc",    "params": [],                   "return": "i64"},
-    {"kind": "func", "name": "os.o_append",   "params": [],                   "return": "i64"},
-    {"kind": "func", "name": "os.stdin_fd",   "params": [],                   "return": "i64"},
-    {"kind": "func", "name": "os.stdout_fd",  "params": [],                   "return": "i64"},
-    {"kind": "func", "name": "os.stderr_fd",  "params": [],                   "return": "i64"}
+    {"kind": "func", "name": "os.ordonly",   "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.owronly",   "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.ordwr",     "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.ocreat",    "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.otrunc",    "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.oappend",   "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.stdinfd",   "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.stdoutfd",  "params": [],                   "return": "i64"},
+    {"kind": "func", "name": "os.stderrfd",  "params": [],                   "return": "i64"}
   ]
 }

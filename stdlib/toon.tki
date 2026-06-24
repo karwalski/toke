@@ -15,7 +15,7 @@
     {"kind": "func", "name": "toon.f64",     "params": ["Toon", "str"],      "return": "f64!ToonErr"},
     {"kind": "func", "name": "toon.bool",    "params": ["Toon", "str"],      "return": "bool!ToonErr"},
     {"kind": "func", "name": "toon.arr",     "params": ["Toon", "str"],      "return": "[Toon]!ToonErr"},
-    {"kind": "func", "name": "toon.from_json", "params": ["str"],            "return": "str"},
-    {"kind": "func", "name": "toon.to_json",   "params": ["str"],            "return": "str"}
+    {"kind": "func", "name": "toon.fromjson", "params": ["str"],            "return": "str"},
+    {"kind": "func", "name": "toon.tojson",   "params": ["str"],            "return": "str"}
   ]
 }

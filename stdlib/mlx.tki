@@ -17,7 +17,7 @@
         {"name": "msg", "type": "str"}
       ]
     },
-    {"kind": "func", "name": "mlx.is_available", "params": [],                                    "return": "bool"},
+    {"kind": "func", "name": "mlx.isavailable", "params": [],                                    "return": "bool"},
     {"kind": "func", "name": "mlx.load",          "params": ["str"],                              "return": "mlx_model!mlxerr"},
     {"kind": "func", "name": "mlx.unload",        "params": ["mlx_model"],                       "return": "bool"},
     {"kind": "func", "name": "mlx.generate",      "params": ["mlx_model", "str", "i32"],         "return": "str!mlxerr"},

@@ -40,7 +40,7 @@
     {"kind": "func", "name": "infer.unload",          "params": ["model_handle"],       "return": "bool"},
     {"kind": "func", "name": "infer.generate",        "params": ["model_handle", "str", "i32"], "return": "str!infererr"},
     {"kind": "func", "name": "infer.embed",           "params": ["model_handle", "str"], "return": "@(f32)!infererr"},
-    {"kind": "func", "name": "infer.is_loaded",       "params": ["model_handle"],       "return": "bool"},
-    {"kind": "func", "name": "infer.load_streaming",  "params": ["str", "stream_opts"], "return": "model_handle!infererr"}
+    {"kind": "func", "name": "infer.isloaded",       "params": ["model_handle"],       "return": "bool"},
+    {"kind": "func", "name": "infer.loadstreaming",  "params": ["str", "stream_opts"], "return": "model_handle!infererr"}
   ]
 }

@@ -22,10 +22,10 @@
     {"kind": "func", "name": "image.encode",       "params": ["imgbuf", "imgfmt", "u8"],           "return": "[byte]!str"},
     {"kind": "func", "name": "image.resize",       "params": ["imgbuf", "u32", "u32"],             "return": "imgbuf"},
     {"kind": "func", "name": "image.crop",         "params": ["imgbuf", "u32", "u32", "u32", "u32"], "return": "imgbuf!str"},
-    {"kind": "func", "name": "image.to_grayscale", "params": ["imgbuf"],                           "return": "imgbuf"},
-    {"kind": "func", "name": "image.flip_h",       "params": ["imgbuf"],                           "return": "imgbuf"},
-    {"kind": "func", "name": "image.flip_v",       "params": ["imgbuf"],                           "return": "imgbuf"},
-    {"kind": "func", "name": "image.pixel_at",     "params": ["imgbuf", "u32", "u32"],             "return": "[byte]!str"},
-    {"kind": "func", "name": "image.from_raw",     "params": ["[byte]", "u32", "u32", "u8"],       "return": "imgbuf"}
+    {"kind": "func", "name": "image.tograyscale", "params": ["imgbuf"],                           "return": "imgbuf"},
+    {"kind": "func", "name": "image.fliph",       "params": ["imgbuf"],                           "return": "imgbuf"},
+    {"kind": "func", "name": "image.flipv",       "params": ["imgbuf"],                           "return": "imgbuf"},
+    {"kind": "func", "name": "image.pixelat",     "params": ["imgbuf", "u32", "u32"],             "return": "[byte]!str"},
+    {"kind": "func", "name": "image.fromraw",     "params": ["[byte]", "u32", "u32", "u8"],       "return": "imgbuf"}
   ]
 }

@@ -34,10 +34,10 @@
       ]
     },
     {"kind": "func", "name": "mdns.advertise",      "params": ["$service_record"],      "return": "bool"},
-    {"kind": "func", "name": "mdns.stop_advertise", "params": ["str"],                   "return": "bool"},
+    {"kind": "func", "name": "mdns.stopadvertise", "params": ["str"],                   "return": "bool"},
     {"kind": "func", "name": "mdns.browse",         "params": ["str", "fn($discovered):void"], "return": "bool"},
-    {"kind": "func", "name": "mdns.stop_browse",    "params": ["str"],                   "return": "bool"},
+    {"kind": "func", "name": "mdns.stopbrowse",    "params": ["str"],                   "return": "bool"},
     {"kind": "func", "name": "mdns.resolve",        "params": ["str", "str"],            "return": "?($discovered)"},
-    {"kind": "func", "name": "mdns.is_available",   "params": [],                        "return": "bool"}
+    {"kind": "func", "name": "mdns.isavailable",   "params": [],                        "return": "bool"}
   ]
 }

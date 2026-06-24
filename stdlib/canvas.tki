@@ -22,20 +22,20 @@
       ]
     },
     {"kind": "func", "name": "canvas.new",         "params": ["str", "u32", "u32"],                       "return": "canvas"},
-    {"kind": "func", "name": "canvas.fill_rect",   "params": ["canvas", "f64", "f64", "f64", "f64", "str"], "return": "canvas"},
-    {"kind": "func", "name": "canvas.stroke_rect", "params": ["canvas", "f64", "f64", "f64", "f64", "str", "f64"], "return": "canvas"},
-    {"kind": "func", "name": "canvas.clear_rect",  "params": ["canvas", "f64", "f64", "f64", "f64"],       "return": "canvas"},
-    {"kind": "func", "name": "canvas.fill_text",   "params": ["canvas", "str", "f64", "f64", "str", "str"], "return": "canvas"},
-    {"kind": "func", "name": "canvas.begin_path",  "params": ["canvas"],                                   "return": "canvas"},
-    {"kind": "func", "name": "canvas.move_to",     "params": ["canvas", "f64", "f64"],                     "return": "canvas"},
-    {"kind": "func", "name": "canvas.line_to",     "params": ["canvas", "f64", "f64"],                     "return": "canvas"},
+    {"kind": "func", "name": "canvas.fillrect",   "params": ["canvas", "f64", "f64", "f64", "f64", "str"], "return": "canvas"},
+    {"kind": "func", "name": "canvas.strokerect", "params": ["canvas", "f64", "f64", "f64", "f64", "str", "f64"], "return": "canvas"},
+    {"kind": "func", "name": "canvas.clearrect",  "params": ["canvas", "f64", "f64", "f64", "f64"],       "return": "canvas"},
+    {"kind": "func", "name": "canvas.filltext",   "params": ["canvas", "str", "f64", "f64", "str", "str"], "return": "canvas"},
+    {"kind": "func", "name": "canvas.beginpath",  "params": ["canvas"],                                   "return": "canvas"},
+    {"kind": "func", "name": "canvas.moveto",     "params": ["canvas", "f64", "f64"],                     "return": "canvas"},
+    {"kind": "func", "name": "canvas.lineto",     "params": ["canvas", "f64", "f64"],                     "return": "canvas"},
     {"kind": "func", "name": "canvas.arc",         "params": ["canvas", "f64", "f64", "f64", "f64", "f64"], "return": "canvas"},
-    {"kind": "func", "name": "canvas.close_path",  "params": ["canvas"],                                   "return": "canvas"},
+    {"kind": "func", "name": "canvas.closepath",  "params": ["canvas"],                                   "return": "canvas"},
     {"kind": "func", "name": "canvas.fill",        "params": ["canvas", "str"],                            "return": "canvas"},
     {"kind": "func", "name": "canvas.stroke",      "params": ["canvas", "str", "f64"],                     "return": "canvas"},
-    {"kind": "func", "name": "canvas.draw_image",  "params": ["canvas", "str", "f64", "f64", "f64", "f64"], "return": "canvas"},
-    {"kind": "func", "name": "canvas.set_alpha",   "params": ["canvas", "f64"],                            "return": "canvas"},
-    {"kind": "func", "name": "canvas.to_js",       "params": ["canvas"],                                   "return": "str"},
-    {"kind": "func", "name": "canvas.to_html",     "params": ["canvas"],                                   "return": "str"}
+    {"kind": "func", "name": "canvas.drawimage",  "params": ["canvas", "str", "f64", "f64", "f64", "f64"], "return": "canvas"},
+    {"kind": "func", "name": "canvas.setalpha",   "params": ["canvas", "f64"],                            "return": "canvas"},
+    {"kind": "func", "name": "canvas.tojs",       "params": ["canvas"],                                   "return": "str"},
+    {"kind": "func", "name": "canvas.tohtml",     "params": ["canvas"],                                   "return": "str"}
   ]
 }
