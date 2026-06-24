@@ -2117,21 +2117,13 @@ static int emit_expr(Ctx *c, const Node *n)
                     if (rhs_mark && rhs_mark[0] == '@') is_array = 1;
                 }
             }
-            /* Story 114.19c: array + non-array scalar (e.g. `@(a)+b`, appending
-             * an unwrapped scalar) — one side is a definite array (i8*) and the
-             * other is a plain i64 scalar. The type checker can't always catch
-             * this (an ident RHS infers TY_UNKNOWN), and coercing the scalar to
-             * a pointer below would feed garbage to tk_array_concat -> segfault.
-             * Reject it here at codegen, where the operand types are known. */
-            if (is_array && (!strcmp(lty, "i64") || !strcmp(rty, "i64"))) {
-                diag_emit(DIAG_ERROR, E4031, n->start, n->line, n->col,
-                          "array concatenation requires both operands to be arrays "
-                          "(wrap a scalar element as @(x))",
-                          "fix", "wrap the scalar element: @(x)", NULL);
-                t = next_tmp(c);
-                fprintf(c->out, "  %%t%d = inttoptr i64 0 to i8*\n", t);
-                return t;
-            }
+            /* NOTE (Story 114.19c): an earlier codegen guard here rejected
+             * `array + i64` to catch `@(a)+b` (unwrapped-scalar append). It was
+             * reverted — an array handle is itself often an i64 (e.g. a @byte
+             * local, struct/Vec/byte-array i64 ABI), so the guard false-positived
+             * on valid `arr + @(x)` concat (E4031 on CRY-012/MSG-105/…). Catching
+             * the typo safely needs precise array-vs-scalar type tracking the
+             * codegen doesn't have; left as the original (segfault) behaviour. */
             /* Coerce non-ptr side to ptr if mixed */
             if (!strcmp(lty, "i64")) {
                 int z = next_tmp(c);
