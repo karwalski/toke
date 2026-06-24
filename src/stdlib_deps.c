@@ -39,7 +39,7 @@ static const StdlibModule stdlib_table[] = {
     { "i18n",          "i18n.c",                                "",                                                                 "" },
     { "time",          "tk_time.c time_glue.c",                 "",                                                                 "" },
     { "test",          "tk_test.c test_glue.c",                 "",                                                                 "" },
-    { "log",           "log.c log_glue.c",                      "time",                                                             "" },
+    { "log",           "log.c log_glue.c",                      "time",                                                             "-lz" },
     { "ws",            "ws.c",                                  "",                                                                 "" },
     { "sse",           "sse.c",                                 "",                                                                 "" },
     { "net",           "net.c",                                 "",                                                                 "" },
@@ -59,7 +59,7 @@ static const StdlibModule stdlib_table[] = {
     { "router",        "router.c",                              "ws",                                                               "-lz" },
     { "dashboard",     "dashboard.c",                           "chart html router",                                                "-lz" },
     { "http",          "http.c http2.c acme.c proxy.c cache.c content.c security.c metrics.c server_ops.c ws_server.c hooks.c tk_web_glue.c",
-                                                                "encoding log str",                                                 "-lssl -lcrypto" },
+                                                                "encoding log str crypto ws router net yaml toon i18n html svg canvas chart dashboard dataframe template toml file auth encrypt llm ml task", "-lssl -lcrypto -lz -lm -lpthread" },
     { "toml",          "toml.c toml_glue.c",                    "",                                                                 "" },  /* vendor sources appended separately */
     { "md",            "md.c md_glue.c",                        "",                                                                 "" },  /* vendor sources appended separately */
     { "db",            "db.c db_glue.c",                        "",                                                                 "-lsqlite3" },
