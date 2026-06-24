@@ -2284,6 +2284,7 @@ static int emit_expr(Ctx *c, const Node *n)
             case TK_MINUS: fop = "fsub"; break;
             case TK_STAR:  fop = "fmul"; break;
             case TK_SLASH: fop = "fdiv"; break;
+            case TK_PERCENT: fop = "frem"; break; /* Story 114.12: float modulo (fmod) */
             case TK_LT:
                 fprintf(c->out, "  %%t%d = fcmp olt %s %%t%d, %%t%d\n", t, lty, lhs, rhs);
                 return t;
@@ -4259,7 +4260,8 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         case TK_LT: case TK_GT: case TK_EQ:
         case TK_LE: case TK_GE: case TK_NE:
         case TK_AND: case TK_OR: return "i1";
-        case TK_PLUS: case TK_MINUS: case TK_STAR: case TK_SLASH: {
+        case TK_PLUS: case TK_MINUS: case TK_STAR: case TK_SLASH:
+        case TK_PERCENT: { /* Story 114.12: % propagates float type (frem) too */
             const char *lt = expr_llvm_type(c, n->children[0]);
             const char *rt = expr_llvm_type(c, n->children[1]);
             if (!strcmp(lt, "i8*") || !strcmp(rt, "i8*")) return "i8*";
@@ -4273,7 +4275,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             return "i64";
         }
         case TK_AMP: case TK_PIPE: case TK_CARET:
-        case TK_SHL: case TK_SHR: case TK_PERCENT: {
+        case TK_SHL: case TK_SHR: {
             const char *lt = expr_llvm_type(c, n->children[0]);
             if (!strcmp(lt, "i32") || !strcmp(lt, "i16") || !strcmp(lt, "i8"))
                 return lt;

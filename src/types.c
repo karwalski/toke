@@ -856,7 +856,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                   ||node->op==TK_LE ||node->op==TK_GE ||node->op==TK_NE);
         int logic=(node->op==TK_AND  ||node->op==TK_OR);
         int bitwise=(node->op==TK_AMP||node->op==TK_PIPE||node->op==TK_CARET
-                   ||node->op==TK_SHL||node->op==TK_SHR||node->op==TK_PERCENT);
+                   ||node->op==TK_SHL||node->op==TK_SHR);
+        int modulo=(node->op==TK_PERCENT);
         if (logic) {
             if (l->kind!=TY_BOOL) {
                 emit_mm(cx,node,mk_type(A,TY_BOOL),l,"operand of && / || must be bool");
@@ -871,11 +872,30 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (bitwise) {
             if (!is_integer(l)||!is_integer(r)||!types_equal(l,r)) {
                 char fix[64];
-                snprintf(fix,sizeof(fix),"bitwise/modulo operators require matching integer types");
+                snprintf(fix,sizeof(fix),"bitwise operators require matching integer types");
                 emit_mm(cx,node,l,r,fix);
                 return mk_type(A,TY_UNKNOWN);
             }
             return l;
+        }
+        if (modulo) {
+            /* Story 114.12: `%` is modulo on matching integers (srem) OR
+             * matching floats (frem / fmod). Previously grouped with bitwise
+             * (integer-only): a float modulo q%1.0 type-checked as i64, so
+             * codegen stored a double into an i64 slot -> invalid LLVM. */
+            int l_int=is_integer(l), r_int=is_integer(r);
+            int l_flt=is_numeric(l)&&!l_int, r_flt=is_numeric(r)&&!r_int;
+            if (l_int&&r_int) {
+                /* untyped int literal adopts the other operand's integer type */
+                int l_lit=node->children[0]&&node->children[0]->kind==NODE_INT_LIT;
+                int r_lit=node->children[1]&&node->children[1]->kind==NODE_INT_LIT;
+                if (!types_equal(l,r)&&(l_lit^r_lit)) return l_lit?r:l;
+                if (types_equal(l,r)) return l;
+            } else if (l_flt&&r_flt&&types_equal(l,r)) {
+                return l;
+            }
+            emit_mm(cx,node,l,r,"modulo requires matching integer or float types");
+            return mk_type(A,TY_UNKNOWN);
         }
         if (arith||cmp) {
             /* Epic 111 / ADR-0004: + is strictly numeric. When str+str is
