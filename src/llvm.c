@@ -935,7 +935,7 @@ static void ensure_tki_cache_loaded(void) {
         "str", "env", "file", "path", "args", "toml", "md", "log",
         "http", "router", "json", "toon", "yaml", "i18n", "math",
         "time", "crypto", "net", "sys", "ws", "os", "mem", "process",
-        "db", "task",
+        "db", "task", "vec",
         NULL
     };
     for (int i = 0; stdlib_modules[i]; i++)
@@ -2480,6 +2480,62 @@ static int emit_expr(Ctx *c, const Node *n)
             int is_mod_im = 0;
             for (int ii = 0; ii < c->import_count; ii++)
                 if (!strcmp(c->imports[ii].alias, alias_im)) { is_mod_im = 1; break; }
+            /* Story 114.18 first-class Vec: if the receiver is a Vec-typed local/
+             * param, instance methods dispatch to the tk_vec_* wrappers instead of
+             * the array path (a Vec handle is a DynArr*, not a [count|data] block).
+             * Strict gate on the "Vec" struct marker leaves arrays/maps/strs alone. */
+            int base_is_vec = 0;
+            if (!is_mod_im && n->children[0]->children[0]->kind == NODE_IDENT) {
+                const char *_vst = ptr_local_struct_type(c, get_llvm_name(c, alias_im));
+                if (_vst && !strcmp(_vst, "Vec")) base_is_vec = 1;
+            }
+            if (base_is_vec) {
+                const char *vfn = NULL;
+                if      (!strcmp(method_im, "push"))    vfn = "tk_vec_push_w";
+                else if (!strcmp(method_im, "pop"))     vfn = "tk_vec_pop_w";
+                else if (!strcmp(method_im, "get"))     vfn = "tk_vec_get_w";
+                else if (!strcmp(method_im, "set"))     vfn = "tk_vec_set_w";
+                else if (!strcmp(method_im, "len"))     vfn = "tk_vec_len_w";
+                else if (!strcmp(method_im, "toarray")) vfn = "tk_vec_toarray_w";
+                if (vfn) {
+                    int vbase = emit_expr(c, n->children[0]->children[0]);
+                    const char *vbty = expr_llvm_type(c, n->children[0]->children[0]);
+                    if (!strcmp(vbty, "i8*")) {
+                        int z = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, vbase);
+                        vbase = z;
+                    }
+                    /* emit method args (after the receiver) coerced to i64 */
+                    int avals[4]; int an = 0;
+                    for (int ai = 1; ai < n->child_count && an < 4; ai++) {
+                        int av = emit_expr(c, n->children[ai]);
+                        const char *aty = expr_llvm_type(c, n->children[ai]);
+                        if (!strcmp(aty, "i8*")) { int z = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, av); av = z; }
+                        avals[an++] = av;
+                    }
+                    /* Register a forward declare for the wrapper (dedup via
+                     * fwd_decls), matching the qualified-call path's mechanism. */
+                    char vtag[64]; snprintf(vtag, sizeof vtag, "@%s(", vfn);
+                    if (!strstr(c->fwd_decls, vtag)) {
+                        char vdecl[256];
+                        int vn = 1 + an; /* receiver + args */
+                        int dl = snprintf(vdecl, sizeof vdecl, "declare i64 @%s(", vfn);
+                        for (int pi = 0; pi < vn && dl < (int)sizeof(vdecl) - 16; pi++)
+                            dl += snprintf(vdecl + dl, sizeof(vdecl) - (size_t)dl, "%si64", pi ? ", " : "");
+                        dl += snprintf(vdecl + dl, sizeof(vdecl) - (size_t)dl, ")\n");
+                        if (c->fwd_decls_len + dl < TKC_FWD_DECL_SIZE) {
+                            memcpy(c->fwd_decls + c->fwd_decls_len, vdecl, (size_t)dl);
+                            c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
+                        }
+                    }
+                    t = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = call i64 @%s(i64 %%t%d", t, vfn, vbase);
+                    for (int ai = 0; ai < an; ai++) fprintf(c->out, ", i64 %%t%d", avals[ai]);
+                    fprintf(c->out, ")\n");
+                    return t;
+                }
+            }
             /* Handle .len() as inline ptr[-1] access (same as .len property) */
             if (!is_mod_im && !strcmp(method_im, "len")) {
                 int obj_v = emit_expr(c, n->children[0]->children[0]);
@@ -3211,6 +3267,32 @@ static int emit_expr(Ctx *c, const Node *n)
         return t;
     }
     case NODE_INDEX_EXPR: {
+        /* Story 114.18: `q.get(i)` / `q[i]` on a Vec-typed base is parsed as
+         * INDEX_EXPR — route to tk_vec_get_w (a Vec handle is a DynArr*, not a
+         * [count|data] array block, so the normal subscript would read garbage). */
+        if (n->children[0]->kind == NODE_IDENT && n->child_count >= 2) {
+            char _vb[128]; tok_cp(c->src, n->children[0], _vb, sizeof _vb);
+            const char *_vst = ptr_local_struct_type(c, get_llvm_name(c, _vb));
+            if (_vst && !strcmp(_vst, "Vec")) {
+                int vb = emit_expr(c, n->children[0]);
+                const char *vbty = expr_llvm_type(c, n->children[0]);
+                if (!strcmp(vbty, "i8*")) { int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, vb); vb = z; }
+                int ix = emit_expr(c, n->children[1]);
+                const char *ixty = expr_llvm_type(c, n->children[1]);
+                ix = coerce_value(c, ix, ixty, "i64");
+                if (!strstr(c->fwd_decls, "@tk_vec_get_w(")) {
+                    const char *d = "declare i64 @tk_vec_get_w(i64, i64)\n"; int dl = (int)strlen(d);
+                    if (c->fwd_decls_len + dl < TKC_FWD_DECL_SIZE) {
+                        memcpy(c->fwd_decls + c->fwd_decls_len, d, (size_t)dl);
+                        c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
+                    }
+                }
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i64 @tk_vec_get_w(i64 %%t%d, i64 %%t%d)\n", t, vb, ix);
+                return t;
+            }
+        }
         /* If base is a module alias, .get(arg) is a cross-module function call.
          * Check for user-module imports FIRST — they take priority over
          * array indexing because the parser can't distinguish at parse time. */
@@ -4117,6 +4199,20 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                     NULL };
                 for (int i = 0; str_wrappers[i]; i++)
                     if (!strcmp(resolved, str_wrappers[i])) return "$str";
+                /* Story 114.18: generic stdlib struct/record return — consult the
+                 * .tki return-type cache so any call whose .tki return is a
+                 * registered type (vec.new()->Vec, encrypt.x25519keypair()->
+                 * Keypair) tags the bound local with that struct name. */
+                ensure_tki_cache_loaded();
+                for (int ci = 0; ci < g_tki_cache_count; ci++) {
+                    if (!strcmp(g_tki_cache[ci].wrapper_name, resolved)) {
+                        char tbase[64];
+                        tki_base_return_type(g_tki_cache[ci].toke_ret, tbase, sizeof tbase);
+                        const StructInfo *vsi = lookup_struct(c, tbase);
+                        if (vsi) return vsi->name;
+                        break;
+                    }
+                }
             }
             /* Cross-module user calls: check FnSig by method name */
             const FnSig *sig2 = lookup_fn(c, method);

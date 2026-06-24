@@ -1587,6 +1587,34 @@ int resolve_names(const Node *ast, const char *src,
         fclose(tkf);
         tki_buf[rd] = '\0';
 
+        /* Story 114.18: register "kind":"type" names (e.g. Vec, JwtClaims) as
+         * predefined identifiers so they're usable in `:Type` annotations on
+         * params/returns. The first .tki loop above does this but can't locate
+         * std.* files (it probes module-path/-I dirs, not TKC_STDLIB_DIR); this
+         * loop finds them, so register type names here too. Mirrors 1500-1517. */
+        {
+            char *typ = tki_buf;
+            while ((typ = strstr(typ, "\"kind\"")) != NULL) {
+                char *next_k2 = strstr(typ + 6, "\"kind\"");
+                char *is_type = strstr(typ, "\"type\"");
+                if (is_type && (!next_k2 || is_type < next_k2)) {
+                    char *nmk = strstr(typ, "\"name\"");
+                    if (nmk && (!next_k2 || nmk < next_k2)) {
+                        char *a1 = strchr(nmk + 6, '"');
+                        char *a2 = a1 ? strchr(a1 + 1, '"') : NULL;
+                        if (a1 && a2) {
+                            int nl2 = (int)(a2 - a1 - 1);
+                            char tnm[128];
+                            if (nl2 >= (int)sizeof tnm) nl2 = (int)sizeof tnm - 1;
+                            memcpy(tnm, a1 + 1, (size_t)nl2); tnm[nl2] = '\0';
+                            seed_predefined(mscope, arena, tnm);
+                        }
+                    }
+                }
+                typ = next_k2 ? next_k2 : typ + 6;
+            }
+        }
+
         /* Scan for "name": "prefix.method" patterns; collect unique prefixes
          * that differ from the import alias. */
         char sub_ns[16][64];
