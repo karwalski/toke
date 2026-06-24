@@ -52,7 +52,7 @@ static const StdlibModule stdlib_table[] = {
     { "llm",           "llm.c",                                 "",                                                                 "" },
     { "llm_tool",      "llm_tool.c",                            "llm",                                                              "" },
     { "ml",            "ml.c",                                  "",                                                                 "-lm" },
-    { "encrypt",       "encrypt.c",                             "crypto encoding str",                                              "" },
+    { "encrypt",       "encrypt.c encrypt_glue.c",              "crypto encoding str",                                              "" },
     { "auth",          "auth.c",                                "encoding crypto str",                                              "" },
     { "dataframe",     "dataframe.c",                           "csv str",                                                          "" },
     { "analytics",     "analytics.c",                           "dataframe csv str math",                                           "-lm" },

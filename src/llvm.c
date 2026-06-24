@@ -625,6 +625,112 @@ static void prepass_imports(Ctx *c, const Node *n) {
 }
 
 /*
+ * register_tki_struct_types — Register record ("kind":"type") layouts declared
+ * in the .tki files of imported std modules, so field access on stdlib record
+ * returns (e.g. encrypt.x25519keypair():Keypair, auth.jwtverify():JwtClaims)
+ * resolves the correct GEP index instead of defaulting to 0 (Story 114.17).
+ *
+ * Field names/order are taken verbatim from the .tki, matching the i64-slot
+ * layout produced by the modules' _w glue wrappers. Sum types and func/type
+ * entries other than plain records are skipped. Already-registered names
+ * (local decls, or a prior import) are left untouched.
+ */
+static void register_tki_struct_types(Ctx *c) {
+    for (int ii = 0; ii < c->import_count; ii++) {
+        if (!c->imports[ii].is_std) continue;
+        /* module path is "std.<mod>" — take the segment after the last dot */
+        const char *full = c->imports[ii].module;
+        const char *mod = strrchr(full, '.');
+        mod = mod ? mod + 1 : full;
+
+        char tki_path[512];
+        const char *env_dir = getenv("TKC_STDLIB_DIR");
+        const char *base = env_dir ? env_dir : TKC_STDLIB_DIR;
+        snprintf(tki_path, sizeof tki_path, "%s/../../stdlib/%s.tki", base, mod);
+        FILE *f = fopen(tki_path, "r");
+        if (!f) continue;
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        if (sz <= 0 || sz > 1000000) { fclose(f); continue; }
+        fseek(f, 0, SEEK_SET);
+        char *buf = (char *)malloc((size_t)sz + 1);
+        if (!buf) { fclose(f); continue; }
+        size_t rd = fread(buf, 1, (size_t)sz, f);
+        fclose(f);
+        buf[rd] = '\0';
+
+        char *p = buf;
+        while ((p = strstr(p, "\"kind\"")) != NULL) {
+            char *next_kind = strstr(p + 6, "\"kind\"");
+            /* Extract the kind value (first quoted string after "kind"). */
+            char *kc = strchr(p + 6, ':');
+            char *kq1 = kc ? strchr(kc, '"') : NULL;
+            char *kq2 = kq1 ? strchr(kq1 + 1, '"') : NULL;
+            int is_record = kq1 && kq2 && (size_t)(kq2 - kq1 - 1) == 4 &&
+                            !strncmp(kq1 + 1, "type", 4);
+            if (!is_record) { p = next_kind ? next_kind : p + 6; continue; }
+
+            /* Type name: first "name" after the kind, before next_kind. */
+            char *nk = strstr(kq2, "\"name\"");
+            if (!nk || (next_kind && nk > next_kind)) { p = next_kind ? next_kind : p + 6; continue; }
+            char *nq1 = strchr(nk + 6, '"');
+            char *nq2 = nq1 ? strchr(nq1 + 1, '"') : NULL;
+            if (!nq2) { p = next_kind ? next_kind : p + 6; continue; }
+            char tname[128];
+            int tlen = (int)(nq2 - nq1 - 1);
+            if (tlen >= (int)sizeof tname) tlen = (int)sizeof tname - 1;
+            memcpy(tname, nq1 + 1, (size_t)tlen);
+            tname[tlen] = '\0';
+
+            if (lookup_struct(c, tname) || c->struct_count >= c->struct_cap) {
+                p = next_kind ? next_kind : p + 6; continue;
+            }
+
+            /* Fields: scan "name"/"type" pairs inside the "fields" array,
+             * bounded by next_kind. */
+            char *fields = strstr(nq2, "\"fields\"");
+            if (!fields || (next_kind && fields > next_kind)) { p = next_kind ? next_kind : p + 6; continue; }
+            char *bound = next_kind ? next_kind : (buf + rd);
+
+            StructInfo *si = &c->structs[c->struct_count];
+            memcpy(si->name, tname, (size_t)tlen + 1);
+            int fc = 0;
+            char *fp = fields + 8;
+            while (fc < TKC_MAX_PARAMS) {
+                char *fn = strstr(fp, "\"name\"");
+                if (!fn || fn >= bound) break;
+                char *fq1 = strchr(fn + 6, '"');
+                char *fq2 = fq1 ? strchr(fq1 + 1, '"') : NULL;
+                if (!fq2) break;
+                int flen = (int)(fq2 - fq1 - 1);
+                if (flen >= 128) flen = 127;
+                memcpy(si->field_names[fc], fq1 + 1, (size_t)flen);
+                si->field_names[fc][flen] = '\0';
+                si->field_types[fc][0] = '\0';
+                si->field_is_map[fc] = 0;
+                char *ft = strstr(fq2, "\"type\"");
+                if (ft && (ft < bound)) {
+                    char *tq1 = strchr(ft + 6, '"');
+                    char *tq2 = tq1 ? strchr(tq1 + 1, '"') : NULL;
+                    if (tq2) {
+                        int ftlen = (int)(tq2 - tq1 - 1);
+                        if (ftlen >= 128) ftlen = 127;
+                        memcpy(si->field_types[fc], tq1 + 1, (size_t)ftlen);
+                        si->field_types[fc][ftlen] = '\0';
+                    }
+                }
+                fc++;
+                fp = fq2 + 1;
+            }
+            si->field_count = fc;
+            c->struct_count++;
+            p = next_kind ? next_kind : p + 6;
+        }
+        free(buf);
+    }
+}
+
+/*
  * tki_type_to_llvm — map a toke type name from .tki to an LLVM IR type string.
  */
 static const char *tki_type_to_llvm(const char *toke_type) {
@@ -5503,6 +5609,9 @@ int emit_llvm_ir(const Node *ast, const char *src,
         si->field_count = 0;
         ctx.struct_count++;
     }
+    /* Story 114.17: register record types from imported std .tki files so
+     * field access on stdlib record returns resolves the correct GEP index. */
+    register_tki_struct_types(&ctx);
 
     emit_toplevel(&ctx, ast);
 
