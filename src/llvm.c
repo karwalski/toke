@@ -1633,16 +1633,26 @@ static void lifted_buf_append(Ctx *c, const char *fmt, ...) {
  * Returns the string index (N in @.str.N) so the caller can emit a GEP
  * to obtain a ptr to the string data.
  */
+/* Hex-digit value, or -1 if not a hex digit. */
+static int tk_hexval(char ch) {
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    return -1;
+}
+
 static int emit_str_global(Ctx *c, const char *raw, int rlen, int *out_alen)
 {
     const char *inner = raw + 1; int ilen = rlen-2; if(ilen<0)ilen=0;
-    /* Pre-scan to compute actual byte count (escape sequences reduce raw char count) */
+    /* Pre-scan to compute actual byte count (escape sequences reduce raw char count).
+     * Story 114.11: \xHH (4 raw chars -> 1 byte), \r and \0 (2 raw -> 1 byte) were
+     * not accounted for here, so they passed through verbatim. Mirror the emit loop. */
     int byte_count = 0;
     for(int i=0;i<ilen;i++){
-        unsigned char ch=(unsigned char)inner[i];
-        if(ch=='\\'&&i+1<ilen){
+        if(inner[i]=='\\'&&i+1<ilen){
             char nx=inner[i+1];
-            if(nx=='n'||nx=='t'||nx=='\\'||nx=='"'){i++;} /* 2 raw chars = 1 byte */
+            if(nx=='x'&&i+3<ilen&&tk_hexval(inner[i+2])>=0&&tk_hexval(inner[i+3])>=0){i+=3;} /* \xHH = 1 byte */
+            else if(nx=='n'||nx=='t'||nx=='r'||nx=='\\'||nx=='"'||nx=='0'){i++;} /* 2 raw chars = 1 byte */
         }
         byte_count++;
     }
@@ -1654,8 +1664,12 @@ static int emit_str_global(Ctx *c, const char *raw, int rlen, int *out_alen)
         if(ch=='\\'&&i+1<ilen){char nx=inner[i+1];
             if(nx=='n'){str_buf_append(c,"\\0A");i++;continue;}
             if(nx=='t'){str_buf_append(c,"\\09");i++;continue;}
+            if(nx=='r'){str_buf_append(c,"\\0D");i++;continue;}
             if(nx=='\\'){str_buf_append(c,"\\5C");i++;continue;}
             if(nx=='"'){str_buf_append(c,"\\22");i++;continue;}
+            if(nx=='0'){str_buf_append(c,"\\00");i++;continue;}
+            if(nx=='x'&&i+3<ilen){int hi=tk_hexval(inner[i+2]),lo=tk_hexval(inner[i+3]);
+                if(hi>=0&&lo>=0){str_buf_append(c,"\\%02X",(hi<<4)|lo);i+=3;continue;}}
         }
         if(ch>=32&&ch<127&&ch!='"'&&ch!='\\') {
             char tmp[2] = {(char)ch, 0};
@@ -4104,6 +4118,17 @@ static const char *get_llvm_name(Ctx *c, const char *toke_name) {
  * This ensures that LLVM IR sees distinct alloca names even when toke
  * allows rebinding the same name in nested scopes.
  */
+/* Story 114.15: a user local named t<N> (e.g. t1, t2) collides with the
+ * compiler's %tN SSA temporaries, producing duplicate-definition clang errors.
+ * Such names must always be aliased to a dotted form (%t1.N, distinct from the
+ * dotless temp namespace) even on first use. */
+static int is_temp_like_name(const char *s) {
+    if (s[0] != 't' || !s[1]) return 0;
+    for (const char *p = s + 1; *p; p++)
+        if (*p < '0' || *p > '9') return 0;
+    return 1;
+}
+
 static const char *make_unique_name(Ctx *c, const char *toke_name) {
     /* Check if this name already exists in locals */
     int exists = 0;
@@ -4113,7 +4138,7 @@ static const char *make_unique_name(Ctx *c, const char *toke_name) {
              !strncmp(c->locals[i].name, toke_name, strlen(toke_name)) &&
              c->locals[i].name[strlen(toke_name)] == '.'))
             exists = 1;
-    if (!exists) return toke_name; /* first use, no renaming needed */
+    if (!exists && !is_temp_like_name(toke_name)) return toke_name; /* first use, no renaming needed */
 
     /* Generate a unique name */
     if (c->alias_count >= c->alias_cap) {
