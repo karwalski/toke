@@ -2344,6 +2344,31 @@ static int emit_expr(Ctx *c, const Node *n)
             default:       iop = "mul"; break;
             }
             fprintf(c->out, "  %%t%d = %s %s %%t%d, %%t%d\n", t, iop, ity, lhs, rhs);
+        } else if (n->op == TK_SHL || n->op == TK_SHR) {
+            /* Story 114.20: a raw shl/ashr by a count >= the type width is
+             * LLVM undefined behaviour (it produced surprising mod-width
+             * results, e.g. v>>64 != 0). Emit fixed-width saturating
+             * semantics (Go-like): a left shift by >= width yields 0; an
+             * arithmetic right shift saturates to the sign bit (clamp the
+             * count to width-1, so positive->0, negative->-1). */
+            int width = !strcmp(ity,"i64")?64:!strcmp(ity,"i32")?32:
+                        !strcmp(ity,"i16")?16:!strcmp(ity,"i8")?8:64;
+            if (n->op == TK_SHR) {
+                int ge = next_tmp(c), cl = next_tmp(c);
+                fprintf(c->out, "  %%t%d = icmp uge %s %%t%d, %d\n", ge, ity, rhs, width);
+                fprintf(c->out, "  %%t%d = select i1 %%t%d, %s %d, %s %%t%d\n",
+                        cl, ge, ity, width - 1, ity, rhs);
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ashr %s %%t%d, %%t%d\n", t, ity, lhs, cl);
+            } else {
+                int mask = next_tmp(c), sh = next_tmp(c), ge = next_tmp(c);
+                fprintf(c->out, "  %%t%d = and %s %%t%d, %d\n", mask, ity, rhs, width - 1);
+                fprintf(c->out, "  %%t%d = shl %s %%t%d, %%t%d\n", sh, ity, lhs, mask);
+                fprintf(c->out, "  %%t%d = icmp uge %s %%t%d, %d\n", ge, ity, rhs, width);
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = select i1 %%t%d, %s 0, %s %%t%d\n",
+                        t, ge, ity, ity, sh);
+            }
         } else {
             t = next_tmp(c);
             char op_buf[32];
