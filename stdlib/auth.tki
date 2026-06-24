@@ -4,23 +4,14 @@
   "imports": ["std.encoding", "std.crypto"],
   "exports": [
     {
-      "kind": "sum_type",
-      "name": "JwtAlg",
-      "variants": [
-        {"name": "Hs256", "type": "void"},
-        {"name": "Hs384", "type": "void"},
-        {"name": "Rs256", "type": "void"}
-      ]
-    },
-    {
       "kind": "type",
       "name": "JwtClaims",
       "fields": [
-        {"name": "sub",   "type": "str"},
-        {"name": "iss",   "type": "str"},
-        {"name": "exp",   "type": "u64"},
-        {"name": "iat",   "type": "u64"},
-        {"name": "extra", "type": "[[str]]"}
+        {"name": "sub", "type": "str"},
+        {"name": "iss", "type": "str"},
+        {"name": "iat", "type": "u64"},
+        {"name": "exp", "type": "u64"},
+        {"name": "aud", "type": "str"}
       ]
     },
     {
@@ -31,18 +22,13 @@
         {"name": "code", "type": "u64"}
       ]
     },
-    {
-      "kind": "type",
-      "name": "Keystore",
-      "fields": [
-        {"name": "handle", "type": "u64"}
-      ]
-    },
-    {"kind": "func", "name": "auth.jwtsign",        "params": ["JwtClaims", "[byte]", "JwtAlg"], "return": "str!AuthErr"},
-    {"kind": "func", "name": "auth.jwtverify",      "params": ["str", "[byte]"],                 "return": "JwtClaims!AuthErr"},
-    {"kind": "func", "name": "auth.jwtexpired",     "params": ["JwtClaims"],                     "return": "bool"},
-    {"kind": "func", "name": "auth.apikeygenerate", "params": ["str"],                           "return": "str"},
-    {"kind": "func", "name": "auth.apikeyvalidate", "params": ["str", "Keystore"],               "return": "bool!AuthErr"},
-    {"kind": "func", "name": "auth.bearerextract",  "params": ["str"],                           "return": "str!AuthErr"}
+    {"kind": "func", "name": "auth.jwtsign",        "params": ["JwtClaims", "[byte]"], "return": "str!AuthErr"},
+    {"kind": "func", "name": "auth.jwtverify",      "params": ["str", "[byte]"],       "return": "JwtClaims!AuthErr"},
+    {"kind": "func", "name": "auth.jwtexpired",     "params": ["str"],                 "return": "bool"},
+    {"kind": "func", "name": "auth.apikeygenerate", "params": [],                      "return": "str"},
+    {"kind": "func", "name": "auth.apikeyvalidate", "params": ["str", "str"],          "return": "bool"},
+    {"kind": "func", "name": "auth.bearerextract",  "params": ["str"],                 "return": "str!AuthErr"},
+    {"kind": "func", "name": "auth.passwordhash",   "params": ["str"],                 "return": "str!AuthErr"},
+    {"kind": "func", "name": "auth.passwordverify", "params": ["str", "str"],          "return": "bool"}
   ]
 }
