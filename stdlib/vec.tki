@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "module": "std.vec",
+  "exports": [
+    {"kind": "func", "name": "vec.new",     "params": [],                    "return": "i64"},
+    {"kind": "func", "name": "vec.push",    "params": ["i64", "i64"],        "return": "i64"},
+    {"kind": "func", "name": "vec.pop",     "params": ["i64"],               "return": "i64"},
+    {"kind": "func", "name": "vec.get",     "params": ["i64", "i64"],        "return": "i64"},
+    {"kind": "func", "name": "vec.set",     "params": ["i64", "i64", "i64"], "return": "i64"},
+    {"kind": "func", "name": "vec.len",     "params": ["i64"],               "return": "i64"},
+    {"kind": "func", "name": "vec.tovec",   "params": ["@$i64"],             "return": "i64"},
+    {"kind": "func", "name": "vec.toarray", "params": ["i64"],               "return": "@$i64"}
+  ]
+}

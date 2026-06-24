@@ -79,6 +79,7 @@ static const StdlibModule stdlib_table[] = {
     { "stack",         "collections.c collections_glue.c",      "",                                                                 "" },
     { "queue",         "collections.c collections_glue.c",      "",                                                                 "" },
     { "set",           "collections.c collections_glue.c",      "",                                                                 "" },
+    { "vec",           "collections.c collections_glue.c",      "",                                                                 "" },
     { "task",          "task.c",                                "",                                                                 "-lpthread" },
     { "clipboard",     "clipboard_glue.c",                      "",                                                                 "" },
     { "fs",            "file.c file_glue.c",                    "",                                                                 "" },
@@ -132,8 +133,18 @@ static void append_module_sources(char *buf, size_t bufsz, const char *dir,
     char *save = NULL;
     char *tok = strtok_r(tmp, " ", &save);
     while (tok) {
-        size_t cur = strlen(buf);
-        snprintf(buf + cur, bufsz - cur, " %s/%s", dir, tok);
+        /* De-dup: several modules share a .c file (e.g. stack/queue/set/vec all
+         * map to collections.c, which the core also adds). Linking the same
+         * source twice yields duplicate-symbol errors. Append each path once. */
+        char path[512];
+        snprintf(path, sizeof path, "%s/%s", dir, tok);
+        char hay[8192], needle[514];
+        snprintf(hay, sizeof hay, " %s ", buf);   /* space-pad both ends */
+        snprintf(needle, sizeof needle, " %s ", path);
+        if (!strstr(hay, needle)) {                /* append only if not present */
+            size_t cur = strlen(buf);
+            snprintf(buf + cur, bufsz - cur, " %s", path);
+        }
         tok = strtok_r(NULL, " ", &save);
     }
 }

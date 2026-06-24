@@ -1553,6 +1553,11 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         snprintf(set_buf, sizeof set_buf, "tk_set_%s_w", method);
         return set_buf;
     }
+    if (!strcmp(mod, "vec")) { /* Story 114.18: mutable growable vector */
+        static char vec_buf[128];
+        snprintf(vec_buf, sizeof vec_buf, "tk_vec_%s_w", method);
+        return vec_buf;
+    }
     /* Story 76.1.2b: check TKI cache for extern_c entries with c_name.
      * If a .tki declares {"kind":"extern_c", "c_name":"open", ...} for
      * this module+method, return the raw C symbol name directly. */
@@ -2654,7 +2659,7 @@ static int emit_expr(Ctx *c, const Node *n)
                             "i18n", "math", "time", "crypto", "net", "sys", "ws",
                             "os", "mem", "process", "db", "task", "encoding",
                             "csv", "template", "test", "sse", "image", "canvas",
-                            "chart", "stack", "queue", "set", NULL
+                            "chart", "stack", "queue", "set", "vec", NULL
                         };
                         for (int ki = 0; known_stdlib[ki]; ki++) {
                             if (!strcmp(alias, known_stdlib[ki])) {

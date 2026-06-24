@@ -284,3 +284,13 @@ int64_t tk_arr_join_w(int64_t arr, int64_t sep) {
     extern int64_t tk_str_join_w(int64_t, int64_t);
     return tk_str_join_w(sep, arr); /* str_join takes (sep, arr) */
 }
+
+/* ── std.vec — mutable growable vector wrappers (Story 114.18) ──── */
+int64_t tk_vec_new_w(void)                                { return tk_vec_new(); }
+int64_t tk_vec_push_w(int64_t v, int64_t val)             { return tk_vec_push(v, val); }
+int64_t tk_vec_pop_w(int64_t v)                           { return tk_vec_pop(v); }
+int64_t tk_vec_get_w(int64_t v, int64_t idx)              { return tk_vec_get(v, idx); }
+int64_t tk_vec_set_w(int64_t v, int64_t idx, int64_t val) { return tk_vec_set(v, idx, val); }
+int64_t tk_vec_len_w(int64_t v)                           { return tk_vec_len(v); }
+int64_t tk_vec_tovec_w(int64_t arr)                       { return tk_vec_tovec(arr); }
+int64_t tk_vec_toarray_w(int64_t v)                       { return tk_vec_toarray(v); }

@@ -37,4 +37,15 @@ int64_t tk_set_has(int64_t s, int64_t val);
 int64_t tk_set_remove(int64_t s, int64_t val);
 int64_t tk_set_len(int64_t s);
 
+/* ── $vec — mutable growable vector (Story 114.18) ───────────────── */
+
+int64_t tk_vec_new(void);
+int64_t tk_vec_push(int64_t v, int64_t val);
+int64_t tk_vec_pop(int64_t v);
+int64_t tk_vec_get(int64_t v, int64_t idx);
+int64_t tk_vec_set(int64_t v, int64_t idx, int64_t val);
+int64_t tk_vec_len(int64_t v);
+int64_t tk_vec_tovec(int64_t arr);
+int64_t tk_vec_toarray(int64_t v);
+
 #endif /* TK_STDLIB_COLLECTIONS_H */

@@ -246,3 +246,72 @@ int64_t tk_set_len(int64_t sh) {
     if (!s) return 0;
     return s->len;
 }
+
+/* ── $vec — mutable growable vector (Story 114.18) ───────────────────
+ * Opt-in O(1) amortized append + O(1) in-place set/get, for large-array
+ * algorithms where value-semantic `@()` arrays are O(N^2). Backed by the
+ * same DynArr (cap + 2x realloc). Handles are opaque i64 (DynArr*).
+ * Bridges to/from value-arrays (the [count|data] block layout) for interop. */
+
+int64_t tk_vec_new(void) {
+    DynArr *v = dynarr_new();
+    return (int64_t)(intptr_t)v;
+}
+
+int64_t tk_vec_push(int64_t vh, int64_t val) {
+    DynArr *v = (DynArr *)(intptr_t)vh;
+    if (!v) return vh;
+    dynarr_push(v, val);
+    return vh;
+}
+
+int64_t tk_vec_pop(int64_t vh) {
+    DynArr *v = (DynArr *)(intptr_t)vh;
+    if (!v || v->len == 0) return 0;
+    return v->data[--v->len];
+}
+
+int64_t tk_vec_get(int64_t vh, int64_t idx) {
+    DynArr *v = (DynArr *)(intptr_t)vh;
+    if (!v || idx < 0 || idx >= v->len) return 0;
+    return v->data[idx];
+}
+
+/* In-place element replacement — O(1), no copy (the whole point of $vec). */
+int64_t tk_vec_set(int64_t vh, int64_t idx, int64_t val) {
+    DynArr *v = (DynArr *)(intptr_t)vh;
+    if (!v || idx < 0 || idx >= v->len) return vh;
+    v->data[idx] = val;
+    return vh;
+}
+
+int64_t tk_vec_len(int64_t vh) {
+    DynArr *v = (DynArr *)(intptr_t)vh;
+    if (!v) return 0;
+    return v->len;
+}
+
+/* vec.tovec(arr) — build a $vec from a value-array (copies elements).
+ * arr is a toke array data pointer: count at arr[-1], elements at arr[0..]. */
+int64_t tk_vec_tovec(int64_t arr_i64) {
+    DynArr *v = dynarr_new();
+    if (!v) return 0;
+    if (arr_i64) {
+        int64_t *arr = (int64_t *)(intptr_t)arr_i64;
+        int64_t n = arr[-1];
+        for (int64_t i = 0; i < n; i++) dynarr_push(v, arr[i]);
+    }
+    return (int64_t)(intptr_t)v;
+}
+
+/* vec.toarray(v) — snapshot a $vec back to a value-array [count|data],
+ * returning the data pointer (block+1), matching array-literal layout. */
+int64_t tk_vec_toarray(int64_t vh) {
+    DynArr *v = (DynArr *)(intptr_t)vh;
+    int64_t n = v ? v->len : 0;
+    int64_t *block = (int64_t *)malloc((size_t)(n + 1) * sizeof(int64_t));
+    if (!block) return 0;
+    block[0] = n;
+    for (int64_t i = 0; i < n; i++) block[i + 1] = v->data[i];
+    return (int64_t)(intptr_t)(block + 1);
+}
