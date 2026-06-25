@@ -3,7 +3,7 @@
   "module": "std.process",
   "exports": [
     {"kind": "func", "name": "process.spawn",  "params": ["[str]"],          "return": "Handle!ProcessErr"},
-    {"kind": "func", "name": "process.wait",   "params": ["Handle"],         "return": "i32!ProcessErr"},
+    {"kind": "func", "name": "process.wait",   "params": ["Handle"],         "return": "i32"},
     {"kind": "func", "name": "process.stdout", "params": ["Handle"],         "return": "str!ProcessErr"},
     {"kind": "func", "name": "process.stderr", "params": ["Handle"],         "return": "str!ProcessErr"},
     {"kind": "func", "name": "process.kill",   "params": ["Handle"],         "return": "bool"},

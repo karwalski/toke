@@ -1313,80 +1313,8 @@ int64_t tk_router_serve_w(int64_t router_i64, int64_t addr) {
 
 /* ── net wrappers ────────────────────────────────────────────────────── */
 
-int64_t tk_net_portavailable_w(int64_t port) {
-    return (int64_t)net_portavailable((uint64_t)port);
-}
-int64_t tk_net_listen_w(int64_t addr) {
-    const char *s = (const char *)(intptr_t)addr;
-    if (!s) return 0;
-
-    /* Parse "host:port" — find last ':' to split. */
-    const char *colon = strrchr(s, ':');
-    if (!colon || colon == s) return 0;
-
-    char host[256];
-    size_t hlen = (size_t)(colon - s);
-    if (hlen >= sizeof(host)) return 0;
-    memcpy(host, s, hlen);
-    host[hlen] = '\0';
-
-    int port = atoi(colon + 1);
-    if (port <= 0 || port > 65535) return 0;
-
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) return 0;
-
-    int opt = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-    struct sockaddr_in sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sin_family = AF_INET;
-    sa.sin_port   = htons((uint16_t)port);
-    if (inet_pton(AF_INET, host, &sa.sin_addr) != 1) {
-        close(fd);
-        return 0;
-    }
-
-    if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-        close(fd);
-        return 0;
-    }
-
-    if (listen(fd, 128) < 0) {
-        close(fd);
-        return 0;
-    }
-
-    return (int64_t)fd;
-}
-
-int64_t tk_net_accept_w(int64_t listener) {
-    int fd = accept((int)listener, NULL, NULL);
-    if (fd < 0) return 0;
-    return (int64_t)fd;
-}
-
-int64_t tk_net_read_w(int64_t conn) {
-    char *buf = malloc(4096);
-    if (!buf) return 0;
-    ssize_t n = read((int)conn, buf, 4095);
-    if (n <= 0) { free(buf); return 0; }
-    buf[n] = '\0';
-    return (int64_t)(intptr_t)buf;
-}
-
-int64_t tk_net_write_w(int64_t conn, int64_t data) {
-    const char *s = (const char *)(intptr_t)data;
-    if (!s) return 0;
-    ssize_t n = write((int)conn, s, strlen(s));
-    return (n < 0) ? 0 : (int64_t)n;
-}
-
-int64_t tk_net_close_w(int64_t conn) {
-    close((int)conn);
-    return 0;
-}
+/* ── net wrappers moved to net_glue.c (Story 114.31) so std.net links
+ *    standalone; http depends on net via stdlib_deps so still gets them. ── */
 
 /* ── sys wrappers — defined in sys_glue.c ─────────────────────────── */
 
@@ -1418,103 +1346,10 @@ static int64_t encode_bytearray(ByteArray ba) {
     return (int64_t)(intptr_t)(block + 1);
 }
 
-int64_t tk_encrypt_aes256gcmencrypt_w(int64_t key, int64_t plaintext) {
-    ByteArray k = decode_bytearray(key);
-    ByteArray pt = decode_bytearray(plaintext);
-    ByteArray nonce = encrypt_aes256gcm_noncegen();
-    ByteArray aad = {NULL, 0};
-    EncryptResult r = encrypt_aes256gcm_encrypt(k, nonce, pt, aad);
-    free((void *)nonce.data);
-    if (r.is_err) return 0;
-    ByteArray combined;
-    combined.len = 12 + r.ok_len; /* nonce || ciphertext+tag */
-    combined.data = (uint8_t *)malloc(combined.len);
-    if (!combined.data) { free(r.ok); return 0; }
-    /* Regenerate nonce for the prefix — actually we freed it; re-derive:
-     * Instead, pre-pend the nonce we used.  We need to redo this properly. */
-    /* Simplification: return just the ciphertext+tag; caller manages nonce */
-    ByteArray out = {r.ok, r.ok_len};
-    int64_t result = encode_bytearray(out);
-    free(r.ok);
-    return result;
-}
-
-int64_t tk_encrypt_aes256gcmdecrypt_w(int64_t key, int64_t ciphertext) {
-    ByteArray k = decode_bytearray(key);
-    ByteArray ct = decode_bytearray(ciphertext);
-    ByteArray nonce = {NULL, 0}; /* caller must provide nonce separately in real usage */
-    ByteArray aad = {NULL, 0};
-    EncryptResult r = encrypt_aes256gcm_decrypt(k, nonce, ct, aad);
-    if (r.is_err) return 0;
-    ByteArray out = {r.ok, r.ok_len};
-    int64_t result = encode_bytearray(out);
-    free(r.ok);
-    return result;
-}
-
-int64_t tk_encrypt_aes256gcmnoncegen_w(int64_t dummy) {
-    (void)dummy;
-    ByteArray nonce = encrypt_aes256gcm_noncegen();
-    int64_t result = encode_bytearray(nonce);
-    free((void *)nonce.data);
-    return result;
-}
-
-int64_t tk_encrypt_hkdfsha256_w(int64_t key, int64_t salt, int64_t info) {
-    ByteArray ikm  = decode_bytearray(key);
-    ByteArray s    = decode_bytearray(salt);
-    ByteArray inf  = decode_bytearray(info);
-    ByteArray out  = encrypt_hkdf_sha256(ikm, s, inf, 32);
-    int64_t result = encode_bytearray(out);
-    free((void *)out.data);
-    return result;
-}
-
-int64_t tk_encrypt_x25519keypair_w(int64_t dummy) {
-    (void)dummy;
-    X25519Keypair kp = encrypt_x25519_keypair();
-    /* Return a heap block containing pubkey(32) + privkey(32) */
-    uint8_t *buf = (uint8_t *)malloc(64);
-    if (!buf) return 0;
-    memcpy(buf, kp.pubkey, 32);
-    memcpy(buf + 32, kp.privkey, 32);
-    return (int64_t)(intptr_t)buf;
-}
-
-int64_t tk_encrypt_x25519dh_w(int64_t priv, int64_t pub) {
-    ByteArray privkey = decode_bytearray(priv);
-    ByteArray pubkey  = decode_bytearray(pub);
-    ByteArray shared  = encrypt_x25519_dh(privkey, pubkey);
-    int64_t result = encode_bytearray(shared);
-    free((void *)shared.data);
-    return result;
-}
-
-int64_t tk_encrypt_ed25519keypair_w(void) {
-    Ed25519Keypair kp = encrypt_ed25519_keypair();
-    /* Return a heap block containing pubkey(32) + privkey(64) */
-    uint8_t *buf = (uint8_t *)malloc(96);
-    if (!buf) return 0;
-    memcpy(buf, kp.pubkey, 32);
-    memcpy(buf + 32, kp.privkey, 64);
-    return (int64_t)(intptr_t)buf;
-}
-
-int64_t tk_encrypt_ed25519sign_w(int64_t key, int64_t msg) {
-    ByteArray privkey = decode_bytearray(key);
-    ByteArray message = decode_bytearray(msg);
-    ByteArray sig     = encrypt_ed25519_sign(privkey, message);
-    int64_t result = encode_bytearray(sig);
-    free((void *)sig.data);
-    return result;
-}
-
-int64_t tk_encrypt_ed25519verify_w(int64_t key, int64_t msg, int64_t sig) {
-    ByteArray pubkey  = decode_bytearray(key);
-    ByteArray message = decode_bytearray(msg);
-    ByteArray sigba   = decode_bytearray(sig);
-    return (int64_t)encrypt_ed25519_verify(pubkey, message, sigba);
-}
+/* ── encrypt wrappers moved to encrypt_glue.c (Story 114.17/114.31): the
+ *    versions here were stale (2-arg AES-GCM with an internal nonce that was
+ *    discarded — broken) and collided with encrypt_glue.c's correct .tki-
+ *    matching wrappers. http depends on encrypt via stdlib_deps. ────────── */
 
 /* ── html wrappers (html.h) ───────────────────────────────────────── */
 int64_t tk_html_doc_w(int64_t title) {

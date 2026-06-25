@@ -983,6 +983,18 @@ static int is_f64_returning_wrapper(const char *name) {
     for (int i = 0; names[i]; i++) {
         if (!strcmp(name, names[i])) return 1;
     }
+    /* Story 114.30: consult the .tki cache so ANY stdlib function whose toke
+     * return type is f64/f32 (math.abs/sqrt/ln/sin/cos/…, math.frombits) gets
+     * its i64-ABI result bitcast back to double. Previously only the hardcoded
+     * str list did, so f64 math results were mis-typed as i64 and corrupted
+     * when used in arithmetic (printed the raw IEEE-754 bit pattern). */
+    ensure_tki_cache_loaded();
+    for (int i = 0; i < g_tki_cache_count; i++) {
+        if (!strcmp(g_tki_cache[i].wrapper_name, name)) {
+            char b[64]; tki_base_return_type(g_tki_cache[i].toke_ret, b, sizeof b);
+            return !strcmp(b, "f64") || !strcmp(b, "f32");
+        }
+    }
     return 0;
 }
 

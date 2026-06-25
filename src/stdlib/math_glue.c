@@ -110,3 +110,9 @@ int64_t tk_math_pow2neg_w(int64_t n) {
     double result = math_pow(2.0, -(double)n);
     return f64_to_i64(result);
 }
+
+/* Story 114.33: float<->int bit reinterpretation. f64 crosses the _w ABI as
+ * its i64 bit-pattern already, so both wrappers are the identity at the bit
+ * level — only the toke-side type (i64 vs f64) differs. */
+int64_t tk_math_tobits_w(int64_t x)   { return x; }
+int64_t tk_math_frombits_w(int64_t x) { return x; }

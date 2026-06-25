@@ -42,7 +42,7 @@ static const StdlibModule stdlib_table[] = {
     { "log",           "log.c log_glue.c",                      "time",                                                             "-lz" },
     { "ws",            "ws.c",                                  "",                                                                 "" },
     { "sse",           "sse.c",                                 "",                                                                 "" },
-    { "net",           "net.c",                                 "",                                                                 "" },
+    { "net",           "net.c net_glue.c",                      "",                                                                 "" },
     { "sys",           "sys.c sys_glue.c",                       "",                                                                 "" },
     { "image",         "image.c",                               "",                                                                 "" },
     { "canvas",        "canvas.c",                              "",                                                                 "" },
