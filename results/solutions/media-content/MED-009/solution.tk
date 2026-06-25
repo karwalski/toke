@@ -1,0 +1,90 @@
+m=fogindex;
+i=io:std.io;
+i=s:std.str;
+i=math:std.math;
+f=isalpha(c:$i64):$bool{
+if(c>=65&&c<=90){<true};
+if(c>=97&&c<=122){<true};
+<false
+};
+f=isvowel(c:$i64):$bool{
+let lc=mut.0;
+lc=c;
+if(lc>=65&&lc<=90){lc=lc+32};
+if(lc=97){<true};
+if(lc=101){<true};
+if(lc=105){<true};
+if(lc=111){<true};
+if(lc=117){<true};
+if(lc=121){<true};
+<false
+};
+f=sylcount(word:$str):$i64{
+let b=s.bytes(word);
+let n=b.len;
+let count=mut.0;
+let prev=mut.false;
+lp(let i=0;i<n;i=i+1){
+let c=b.get(i);
+let v=isvowel(c);
+if(v&&!prev){count=count+1};
+prev=v;
+};
+if(n>0){
+let last=b.get(n-1);
+if(last=101||last=69){
+if(count>1){count=count-1}
+};
+};
+if(count<1){count=1};
+<count
+};
+f=fmt1(v:$f64):$str{
+let x=mut.0.0;
+x=v;
+let neg=mut.false;
+if(x<0.0){neg=true;x=0.0-x};
+let scaled=mut.0.0;
+scaled=math.round(x*10.0);
+let total=scaled as i64;
+let ip=total/10;
+let frac=total-ip*10;
+let res=mut.s.concat(s.fromint(ip);".");
+res=s.concat(res;s.fromint(frac));
+if(neg){res=s.concat("-";res)};
+<res
+};
+f=main():$i64{
+let text=io.readln();
+let b=s.bytes(text);
+let n=b.len;
+let words=mut.0;
+let sentences=mut.0;
+let complex=mut.0;
+let cur=mut."";
+lp(let i=0;i<n;i=i+1){
+let c=b.get(i);
+if(isalpha(c)){
+cur=s.concat(cur;s.substr(text;i;i+1));
+}el{
+if(s.len(cur)>0){
+words=words+1;
+if(sylcount(cur)>=3){complex=complex+1};
+cur="";
+};
+if(c=46||c=33||c=63){sentences=sentences+1};
+};
+};
+if(s.len(cur)>0){
+words=words+1;
+if(sylcount(cur)>=3){complex=complex+1};
+};
+if(sentences<1){sentences=1};
+if(words<1){words=1};
+let wf=words as f64;
+let sf=sentences as f64;
+let cf=complex as f64;
+let fog=0.4*(wf/sf+100.0*cf/wf);
+io.println(s.concat("fog: ";fmt1(fog)));
+<0
+};

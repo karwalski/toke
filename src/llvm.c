@@ -546,6 +546,17 @@ static void prepass_funcs(Ctx *c, const Node *n) {
             if (rs->child_count > 0) {
                 ret = resolve_llvm_type(c, rs->children[0]);
                 tok_cp(c->src, rs->children[0], ret_tn, sizeof ret_tn);
+                /* tok_cp on an array type yields only the "@" marker; append
+                 * the element type so callers can tell @$str (array of
+                 * strings) apart from other arrays. Lets a user fn returning
+                 * @$str tag its bound local "@str" → element `.get(i)` is a
+                 * $str scalar (var-to-var `=` uses strcmp, not ptr identity). */
+                if (rs->children[0]->kind == NODE_ARRAY_TYPE &&
+                    rs->children[0]->child_count > 0) {
+                    char el[64];
+                    tok_cp(c->src, rs->children[0]->children[0], el, sizeof el);
+                    snprintf(ret_tn, sizeof ret_tn, "@%s", el);
+                }
             }
         }
     }
@@ -1712,6 +1723,7 @@ static void set_local_type(Ctx *c, const char *name, const char *ty);
 static const char *get_local_type(Ctx *c, const char *name);
 static const char *expr_llvm_type(Ctx *c, const Node *n);
 static const char *get_llvm_name(Ctx *c, const char *toke_name);
+static const char *expr_struct_type(Ctx *c, const Node *n);
 static const char *make_unique_name(Ctx *c, const char *toke_name);
 
 /*
@@ -2197,6 +2209,18 @@ static int emit_expr(Ctx *c, const Node *n)
             char nb_eq[128]; tok_cp(c->src, n->children[1], nb_eq, sizeof nb_eq);
             const char *st = ptr_local_struct_type(c, nb_eq);
             if (st && !strcmp(st, "$str")) rhs_is_str = 1;
+        }
+        /* A `.get(i)`/`arr[i]` element of a @str array, or any expression the
+         * struct-type tracker knows is $str, is a single string — compare by
+         * content. Without this `a.get(0)=b.get(0)` on @$str pointer-compared
+         * two equal-content heap strings and returned false. */
+        if (!lhs_is_str && !lhs_is_array) {
+            const char *est = expr_struct_type(c, n->children[0]);
+            if (est && !strcmp(est, "$str")) lhs_is_str = 1;
+        }
+        if (!rhs_is_str && !rhs_is_array && n->child_count > 1) {
+            const char *est = expr_struct_type(c, n->children[1]);
+            if (est && !strcmp(est, "$str")) rhs_is_str = 1;
         }
         if ((n->op == TK_EQ || n->op == TK_NE) && !lhs_is_array && !rhs_is_array &&
             (lhs_is_str || rhs_is_str)) {
@@ -4222,6 +4246,9 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             const FnSig *sig2 = lookup_fn(c, method);
             if (sig2 && sig2->ret_type_name[0] && lookup_struct(c, sig2->ret_type_name))
                 return sig2->ret_type_name;
+            if (sig2 && (!strcmp(sig2->ret_type_name, "@$str") ||
+                         !strcmp(sig2->ret_type_name, "@str")))
+                return "@str";
         }
         char fn[128]; tok_cp(c->src, n->children[0], fn, sizeof fn);
         if (!strcmp(fn, "main")) strcpy(fn, "tk_main");
@@ -4229,6 +4256,12 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         const FnSig *sig = lookup_fn(c, fn);
         if (sig && sig->ret_type_name[0] && lookup_struct(c, sig->ret_type_name))
             return sig->ret_type_name;
+        /* User fn returning an array of strings (@$str / @str) — tag the bound
+         * local "@str" so element access `.get(i)` resolves to a $str scalar
+         * (and var-to-var `=` uses strcmp, not pointer identity). */
+        if (sig && (!strcmp(sig->ret_type_name, "@$str") ||
+                    !strcmp(sig->ret_type_name, "@str")))
+            return "@str";
         return NULL;
     }
     return NULL;
