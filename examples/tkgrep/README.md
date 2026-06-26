@@ -6,28 +6,32 @@ similar to grep.
 ## Build
 
 ```bash
-tkc main.tk -o tkgrep
+tkc --out tkgrep main.tk
 ```
 
 ## Usage
 
 ```
-$ ./tkgrep <pattern> <file...>
+$ ./tkgrep [-icnv] <pattern> <file>
 ```
 
 Example:
 
 ```
-$ ./tkgrep "function" src/main.tk src/utils.tk
-src/main.tk:12: f=main():i64{
-src/utils.tk:3: f=helper(x:i64):i64{
+$ ./tkgrep main src/app.tk
+12:f=main():$i64{
+$ ./tkgrep -ci error log.txt
+4
 ```
+
+Flags: `-i` case-insensitive, `-c` count only, `-n` suppress line numbers,
+`-v` invert (print non-matching lines).
 
 ## Features
 
-- Pattern matching across multiple files
-- File and line number display
-- Exit codes for scripting (0 = match found, 1 = no match)
+- Substring pattern matching with line numbers
+- Case-insensitive (`-i`), count (`-c`), no-line-numbers (`-n`), invert (`-v`)
+- Exit codes for scripting (0 = match found, 1 = no match, 2 = usage/file error)
 
 ## Tutorial
 

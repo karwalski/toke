@@ -5,10 +5,10 @@ i=str:std.str;
 i=args:std.args;
 
 
-t=$greperr{$usage:$str;$fileerr:$str;$nopattern:void};
+t=$opts{pattern:$str;path:$str;ignorecase:bool;countonly:bool;nolinenum:bool;invert:bool};
 
 
-f=printusage():void{
+f=printusage():$i64{
   io.println("usage: tkgrep <pattern> <file>");
   io.println("");
   io.println("search for lines matching <pattern> in <file>");
@@ -18,55 +18,42 @@ f=printusage():void{
   io.println("  -i    case-insensitive matching");
   io.println("  -c    count matches only");
   io.println("  -n    suppress line numbers");
-  io.println("  -v    invert match (print non-matching lines)")
+  io.println("  -v    invert match (print non-matching lines)");
+  <0
 };
 
 
-t=$opts{pattern:$str;path:$str;ignorecase:bool;countonly:bool;nolinenum:bool;invert:bool};
-
-
-f=parseargs():$opts!$greperr{
-  let argc=args.count();
-  if(argc<3){
-    <$err($$usage("too few arguments"))
-  };
+f=parseargs():$opts{
   let ignorecase=mut.false;
   let countonly=mut.false;
   let nolinenum=mut.false;
   let invert=mut.false;
   let positional=mut.@();
 
-  lp(let i=1;i<(argc as i64);i=i+1){
+  lp(let i=1;i<(args.count() as i64);i=i+1){
     let arg=args.get(i);
     if(str.startswith(arg;"-")){
-      if(str.contains(arg;"i")){
-        ignorecase=true
-      };
-      if(str.contains(arg;"c")){
-        countonly=true
-      };
-      if(str.contains(arg;"n")){
-        nolinenum=true
-      };
-      if(str.contains(arg;"v")){
-        invert=true
-      }
+      if(str.contains(arg;"i")){ignorecase=true};
+      if(str.contains(arg;"c")){countonly=true};
+      if(str.contains(arg;"n")){nolinenum=true};
+      if(str.contains(arg;"v")){invert=true}
     };
     if(str.startswith(arg;"-")=false){
       positional=positional.push(arg)
     }
   };
-  if(positional.len<2){
-    <$err($$usage("need <pattern> and <file>"))
-  };
-  <$ok($opts{
-    pattern:positional.get(0);
-    path:positional.get(1);
+  let pattern=mut."";
+  let path=mut."";
+  if(positional.len>=1){pattern=positional.get(0)};
+  if(positional.len>=2){path=positional.get(1)};
+  <$opts{
+    pattern:pattern;
+    path:path;
     ignorecase:ignorecase;
     countonly:countonly;
     nolinenum:nolinenum;
     invert:invert
-  })
+  }
 };
 
 
@@ -90,22 +77,19 @@ f=formatline(linenum:u64;line:$str;shownum:bool):$str{
 };
 
 
-f=search(opts:$opts):u64!$greperr{
+f=search(opts:$opts):u64{
   let content=mt file.read(opts.path) {
     $ok:v v;
-    $err:e <$err($$fileerr(
-      str.concat("cannot read file: ";opts.path)
-    ))
+    $err:e ""
   };
-  let lines=str.split(content;"
-");
+  let lines=str.split(content;"\n");
   let count=mut.0;
   let shownum=opts.nolinenum=false;
 
   lp(let i=0;i<(lines.len as i64);i=i+1){
     let line=lines.get(i);
     let hit=matches(line;opts.pattern;opts.ignorecase);
-    let show=hit;
+    let show=mut.hit;
     if(opts.invert){
       show=hit=false
     };
@@ -120,43 +104,29 @@ f=search(opts:$opts):u64!$greperr{
   if(opts.countonly){
     io.println(str.fromint(count as i64))
   };
-  <$ok(count as u64)
+  <count as u64
 };
 
 
-f=main():i64{
-  mt parseargs() {
-    $ok:opts {
-      mt search(opts) {
-        $ok:count {
-          if(count=0){
-            <1
-          };
-          <0
-        };
-        $err:e {
-          mt e {
-            $usage:msg {
-              io.eprintln(msg);
-              printusage()
-            };
-            $fileerr:msg io.eprintln(msg);
-            $nopattern: io.eprintln("no pattern given")
-          };
-          <2
-        }
-      }
-    };
-    $err:e {
-      mt e {
-        $usage:msg {
-          io.eprintln(msg);
-          printusage()
-        };
-        $fileerr:msg io.eprintln(msg);
-        $nopattern: io.eprintln("no pattern given")
-      };
-      <2
-    }
-  }
+f=main():$i64{
+  if(args.count()<3){
+    io.eprintln("tkgrep: too few arguments");
+    printusage();
+    <2
+  };
+  let opts=parseargs();
+  if(str.len(opts.pattern)=0){
+    io.eprintln("tkgrep: need <pattern> and <file>");
+    printusage();
+    <2
+  };
+  if(file.exists(opts.path)=false){
+    io.eprintln(str.concat("tkgrep: cannot read file: ";opts.path));
+    <2
+  };
+  let count=search(opts);
+  if(count=0){
+    <1
+  };
+  <0
 };
