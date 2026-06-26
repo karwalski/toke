@@ -1352,97 +1352,13 @@ static int64_t encode_bytearray(ByteArray ba) {
  *    matching wrappers. http depends on encrypt via stdlib_deps. ────────── */
 
 /* ── html wrappers (html.h) ───────────────────────────────────────── */
-int64_t tk_html_doc_w(int64_t title) {
-    TkHtmlDoc *doc = html_doc();
-    if (!doc) return 0;
-    if (title) html_title(doc, (const char *)(intptr_t)title);
-    return (int64_t)(intptr_t)doc;
-}
 
-int64_t tk_html_h1_w(int64_t text) {
-    TkHtmlNode *node = html_h1((const char *)(intptr_t)text);
-    return (int64_t)(intptr_t)node;
-}
 
-int64_t tk_html_table_w(int64_t data) {
-    /* data is a toke array of string arrays (rows).
-     * Layout: ptr[-1] = row count, ptr[0..n-1] = row pointers.
-     * Each row is itself a toke array: rptr[-1] = col count, rptr[0..m-1] = strings.
-     * The first row is treated as headers. */
-    if (!data) return 0;
-    int64_t *rows = (int64_t *)(intptr_t)data;
-    int64_t nrows = rows[-1];
-    if (nrows <= 0) return 0;
 
-    /* Extract headers from first row */
-    int64_t *hdr_row = (int64_t *)(intptr_t)rows[0];
-    int64_t ncols = hdr_row[-1];
-    if (ncols <= 0) return 0;
-    const char **headers = (const char **)malloc((size_t)ncols * sizeof(const char *));
-    if (!headers) return 0;
-    for (int64_t c = 0; c < ncols; c++)
-        headers[c] = (const char *)(intptr_t)hdr_row[c];
 
-    /* Extract data rows (rows 1..n-1) */
-    int64_t data_nrows = nrows - 1;
-    int64_t total_cells = data_nrows * ncols;
-    const char **cells = NULL;
-    if (total_cells > 0) {
-        cells = (const char **)malloc((size_t)total_cells * sizeof(const char *));
-        if (!cells) { free(headers); return 0; }
-        for (int64_t r = 0; r < data_nrows; r++) {
-            int64_t *rp = (int64_t *)(intptr_t)rows[r + 1];
-            int64_t rc = rp[-1];
-            for (int64_t c = 0; c < ncols; c++) {
-                if (c < rc)
-                    cells[r * ncols + c] = (const char *)(intptr_t)rp[c];
-                else
-                    cells[r * ncols + c] = "";
-            }
-        }
-    }
-    TkHtmlNode *node = html_table(headers, (uint64_t)ncols,
-                                   cells, (uint64_t)data_nrows);
-    free(headers);
-    free(cells);
-    return (int64_t)(intptr_t)node;
-}
 
-int64_t tk_html_render_w(int64_t doc) {
-    if (!doc) return 0;
-    const char *s = html_render((TkHtmlDoc *)(intptr_t)doc);
-    return (int64_t)(intptr_t)s;
-}
 
-int64_t tk_html_style_w(int64_t doc, int64_t css) {
-    if (!doc) return 0;
-    html_style((TkHtmlDoc *)(intptr_t)doc, (const char *)(intptr_t)css);
-    return doc;
-}
 
-int64_t tk_html_title_w(int64_t doc, int64_t t) {
-    if (!doc) return 0;
-    html_title((TkHtmlDoc *)(intptr_t)doc, (const char *)(intptr_t)t);
-    return doc;
-}
-
-int64_t tk_html_append_w(int64_t doc, int64_t elem) {
-    if (!doc || !elem) return doc;
-    html_append((TkHtmlDoc *)(intptr_t)doc, (TkHtmlNode *)(intptr_t)elem);
-    return doc;
-}
-
-int64_t tk_html_docr_w(int64_t body) {
-    /* Convenience: create doc, append body text as a raw paragraph, render */
-    TkHtmlDoc *doc = html_doc();
-    if (!doc) return 0;
-    if (body) {
-        TkHtmlNode *p = html_p((const char *)(intptr_t)body);
-        if (p) html_append(doc, p);
-    }
-    const char *s = html_render(doc);
-    return (int64_t)(intptr_t)s;
-}
 
 /* ── chart wrappers (chart.h) ─────────────────────────────────────── */
 int64_t tk_chart_new_w(int64_t dummy) {
@@ -1620,68 +1536,18 @@ int64_t tk_ml_linregpredict_w(int64_t model, int64_t input) {
 /* ── i18n wrappers (i18n.h) ───────────────────────────────────────── */
 
 /* Global i18n bundle for simple get/fmt calls */
-static I18nBundle g_i18n_bundle = {NULL};
 
-int64_t tk_i18n_empty_w(int64_t dummy) {
-    (void)dummy;
-    return 0; /* No parameterless i18n constructor in i18n.h */
-}
 
-int64_t tk_i18n_str_w(int64_t key) {
-    if (!key) return 0;
-    return (int64_t)(intptr_t)i18n_get(g_i18n_bundle, (const char *)(intptr_t)key);
-}
 
-int64_t tk_i18n_load_w(int64_t path) {
-    if (!path) return 0;
-    const char *p = (const char *)(intptr_t)path;
-    const char *locale = i18n_locale();
-    I18nBundleResult r = i18n_load(p, locale ? locale : "en");
-    if (r.is_err) return 0;
-    g_i18n_bundle = r.ok;
-    return (int64_t)(intptr_t)g_i18n_bundle.data;
-}
 
-int64_t tk_i18n_get_w(int64_t key) {
-    if (!key) return 0;
-    return (int64_t)(intptr_t)i18n_get(g_i18n_bundle, (const char *)(intptr_t)key);
-}
 
-int64_t tk_i18n_fmt_w(int64_t key, int64_t args) {
-    if (!key) return 0;
-    const char *k = (const char *)(intptr_t)key;
-    const char *a = args ? (const char *)(intptr_t)args : "";
-    return (int64_t)(intptr_t)i18n_fmt(g_i18n_bundle, k, a);
-}
 
-int64_t tk_i18n_locale_w(int64_t loc) {
-    (void)loc;
-    return (int64_t)(intptr_t)i18n_locale();
-}
 
-int64_t tk_i18n_newstrarray_w(int64_t dummy) {
-    (void)dummy;
-    return 0; /* No standalone StrArray constructor in i18n.h */
-}
 /* NOTE: these call collections_glue.c functions — declared as extern */
 extern int64_t tk_array_append_w(int64_t arr_i64, int64_t elem);
 extern int64_t tk_str_slice_w(int64_t s, int64_t start, int64_t end_);
-int64_t tk_i18n_strarrayappend_w(int64_t arr, int64_t s) { return tk_array_append_w(arr, s); }
-int64_t tk_i18n_substr_w(int64_t s, int64_t start, int64_t end_) { return tk_str_slice_w(s, start, end_); }
-int64_t tk_i18n_print_w(int64_t s) {
-    if (s) printf("%s", (const char *)(intptr_t)s);
-    return 0;
-}
 /* i18n_localize/translate — delegate to i18n_get on the global bundle.
  * The locale/lang argument is ignored (bundle already loaded). */
-int64_t tk_i18n_localize_w(int64_t key, int64_t locale) {
-    (void)locale;
-    return tk_i18n_get_w(key);
-}
-int64_t tk_i18n_translate_w(int64_t key, int64_t lang) {
-    (void)lang;
-    return tk_i18n_get_w(key);
-}
 
 /* ── dashboard wrappers (dashboard.h) ─────────────────────────────── */
 int64_t tk_dashboard_new_w(int64_t title) {
@@ -1705,71 +1571,16 @@ int64_t tk_dashboard_serve_w(int64_t dash, int64_t port) {
 }
 
 /* ── svg wrappers (svg.h) ─────────────────────────────────────────── */
-int64_t tk_svg_doc_w(int64_t w, int64_t h) {
-    TkSvgDoc *doc = svg_doc(i64_to_f64(w), i64_to_f64(h));
-    return (int64_t)(intptr_t)doc;
-}
 
-int64_t tk_svg_rect_w(int64_t x, int64_t y, int64_t w, int64_t h) {
-    TkSvgStyle s = svg_style(NULL, NULL, 0);
-    TkSvgElem *elem = svg_rect(i64_to_f64(x), i64_to_f64(y),
-                                 i64_to_f64(w), i64_to_f64(h), s);
-    return (int64_t)(intptr_t)elem;
-}
 
-int64_t tk_svg_circle_w(int64_t cx, int64_t cy, int64_t r) {
-    TkSvgStyle s = svg_style(NULL, NULL, 0);
-    TkSvgElem *elem = svg_circle(i64_to_f64(cx), i64_to_f64(cy),
-                                   i64_to_f64(r), s);
-    return (int64_t)(intptr_t)elem;
-}
 
-int64_t tk_svg_append_w(int64_t doc, int64_t elem) {
-    if (!doc || !elem) return doc;
-    svg_append((TkSvgDoc *)(intptr_t)doc, (TkSvgElem *)(intptr_t)elem);
-    return doc;
-}
 
-int64_t tk_svg_style_w(int64_t elem, int64_t css) {
-    if (!elem || !css) return elem;
-    svg_elem_set_style((TkSvgElem *)(intptr_t)elem,
-                       (const char *)(intptr_t)css);
-    return elem;
-}
 
-int64_t tk_svg_render_w(int64_t doc) {
-    if (!doc) return 0;
-    const char *s = svg_render((TkSvgDoc *)(intptr_t)doc);
-    return (int64_t)(intptr_t)s;
-}
 
 /* ── canvas wrappers (canvas.h) ───────────────────────────────────── */
-int64_t tk_canvas_fillrect_w(int64_t c, int64_t x, int64_t y, int64_t w, int64_t h) {
-    if (!c) return 0;
-    canvas_fill_rect((TkCanvas *)(intptr_t)c,
-                     i64_to_f64(x), i64_to_f64(y),
-                     i64_to_f64(w), i64_to_f64(h), NULL);
-    return c;
-}
 
-int64_t tk_canvas_filltext_w(int64_t c, int64_t text, int64_t x, int64_t y) {
-    if (!c) return 0;
-    canvas_fill_text((TkCanvas *)(intptr_t)c,
-                     (const char *)(intptr_t)text,
-                     i64_to_f64(x), i64_to_f64(y), NULL, NULL);
-    return c;
-}
 
-int64_t tk_canvas_new_w(int64_t w, int64_t h) {
-    TkCanvas *c = canvas_new("canvas", (uint32_t)w, (uint32_t)h);
-    return (int64_t)(intptr_t)c;
-}
 
-int64_t tk_canvas_tohtml_w(int64_t c) {
-    if (!c) return 0;
-    const char *s = canvas_to_html((TkCanvas *)(intptr_t)c);
-    return (int64_t)(intptr_t)s;
-}
 
 /* ── cache / kv — simple in-memory hash map ───────────────────────── */
 
@@ -1940,44 +1751,9 @@ int64_t tk_validate_range_w(int64_t val, int64_t lo, int64_t hi) {
 }
 
 /* ── ws wrappers (ws.h) ───────────────────────────────────────────── */
-int64_t tk_ws_connect_w(int64_t url) {
-    if (!url) return 0;
-    WsConnResult r = ws_connect((const char *)(intptr_t)url);
-    if (r.is_err || !r.conn) return 0;
-    return (int64_t)(intptr_t)r.conn;
-}
 
-int64_t tk_ws_send_w(int64_t conn, int64_t msg) {
-    if (!conn || !msg) return -1;
-    WsSendResult r = ws_send((WsConn *)(intptr_t)conn,
-                              (const char *)(intptr_t)msg);
-    return r.is_err ? -1 : 0;
-}
 
-int64_t tk_ws_recv_w(int64_t conn) {
-    if (!conn) return 0;
-    WsRecvResult r = ws_recv((WsConn *)(intptr_t)conn);
-    if (r.is_err || !r.frame) return 0;
-    /* Return the payload as a string (for text frames) */
-    if (r.frame->opcode == WS_TEXT && r.frame->payload && r.frame->payload_len > 0) {
-        char *s = (char *)malloc(r.frame->payload_len + 1);
-        if (s) {
-            memcpy(s, r.frame->payload, r.frame->payload_len);
-            s[r.frame->payload_len] = '\0';
-            ws_frame_free(r.frame);
-            return (int64_t)(intptr_t)s;
-        }
-    }
-    ws_frame_free(r.frame);
-    return 0;
-}
 
-int64_t tk_ws_close_w(int64_t conn) {
-    if (!conn) return 0;
-    ws_close((WsConn *)(intptr_t)conn);
-    ws_conn_free((WsConn *)(intptr_t)conn);
-    return 0;
-}
 
 /* ── auth wrappers (auth.h) ───────────────────────────────────────── */
 int64_t tk_auth_hash_w(int64_t pw) {
@@ -2215,138 +1991,22 @@ int64_t tk_yaml_splitstr_w(int64_t s, int64_t delim) {
 
 /* Toon handles are stored as heap-allocated Toon structs cast to i64. */
 
-int64_t tk_toon_parse_w(int64_t s) {
-    if (!s) return 0;
-    ToonResult r = toon_dec((const char *)(intptr_t)s);
-    if (r.is_err) return 0;
-    Toon *heap = (Toon *)malloc(sizeof(Toon));
-    if (!heap) return 0;
-    *heap = r.ok;
-    return (int64_t)(intptr_t)heap;
-}
 
-int64_t tk_toon_stringify_w(int64_t val) {
-    if (!val) return 0;
-    const char *s = toon_enc((const char *)(intptr_t)val);
-    return (int64_t)(intptr_t)s;
-}
 
-int64_t tk_toon_load_w(int64_t path) {
-    if (!path) return 0;
-    StrFileResult fr = file_read((const char *)(intptr_t)path);
-    if (fr.is_err || !fr.ok) return 0;
-    ToonResult r = toon_dec(fr.ok);
-    if (r.is_err) return 0;
-    Toon *heap = (Toon *)malloc(sizeof(Toon));
-    if (!heap) return 0;
-    *heap = r.ok;
-    return (int64_t)(intptr_t)heap;
-}
 
-int64_t tk_toon_print_w(int64_t v) {
-    if (!v) return 0;
-    const char *s = toon_enc((const char *)(intptr_t)v);
-    if (s) printf("%s\n", s);
-    return 0;
-}
 
-int64_t tk_toon_enc_w(int64_t v) {
-    if (!v) return 0;
-    const char *s = toon_enc((const char *)(intptr_t)v);
-    return (int64_t)(intptr_t)s;
-}
 
-int64_t tk_toon_dec_w(int64_t s) {
-    if (!s) return 0;
-    ToonResult r = toon_dec((const char *)(intptr_t)s);
-    if (r.is_err) return 0;
-    Toon *heap = (Toon *)malloc(sizeof(Toon));
-    if (!heap) return 0;
-    *heap = r.ok;
-    return (int64_t)(intptr_t)heap;
-}
 
-int64_t tk_toon_tojson_w(int64_t v) {
-    if (!v) return 0;
-    Toon *t = (Toon *)(intptr_t)v;
-    const char *json = toon_to_json(t->raw);
-    return (int64_t)(intptr_t)json;
-}
 
-int64_t tk_toon_i64_w(int64_t v) {
-    /* v is a Toon handle; extract .raw as an integer string */
-    if (!v) return 0;
-    Toon *t = (Toon *)(intptr_t)v;
-    if (!t->raw) return 0;
-    return (int64_t)strtoll(t->raw, NULL, 10);
-}
 
-int64_t tk_toon_getint_w(int64_t obj, int64_t key) {
-    if (!obj || !key) return 0;
-    Toon *t = (Toon *)(intptr_t)obj;
-    I64ToonResult r = toon_i64(*t, (const char *)(intptr_t)key);
-    if (r.is_err) return 0;
-    return (int64_t)r.ok;
-}
 
-int64_t tk_toon_getstring_w(int64_t obj, int64_t key) {
-    if (!obj || !key) return 0;
-    Toon *t = (Toon *)(intptr_t)obj;
-    StrToonResult r = toon_str(*t, (const char *)(intptr_t)key);
-    if (r.is_err) return 0;
-    return (int64_t)(intptr_t)r.ok;
-}
 
-int64_t tk_toon_fromstr_w(int64_t s) {
-    /* Alias for toon_dec */
-    return tk_toon_dec_w(s);
-}
 
-int64_t tk_toon_bool_w(int64_t v) {
-    if (!v) return 0;
-    Toon *t = (Toon *)(intptr_t)v;
-    if (!t->raw) return 0;
-    /* Parse raw value as boolean */
-    if (strcmp(t->raw, "true") == 0 || strcmp(t->raw, "1") == 0) return 1;
-    return 0;
-}
 
-int64_t tk_toon_deserialize_w(int64_t s) {
-    /* Alias for toon_dec */
-    return tk_toon_dec_w(s);
-}
 
-int64_t tk_toon_tostr_w(int64_t v) {
-    if (!v) return 0;
-    const char *s = toon_enc((const char *)(intptr_t)v);
-    return (int64_t)(intptr_t)s;
-}
 
-int64_t tk_toon_arr_w(void) {
-    /* Create an empty ToonArray on the heap and return it as a
-     * toke-format array pointer (block[-1]=count, block[0..n-1]=elements).
-     * An empty array has count=0, so we allocate a 1-element block where
-     * block[0] = count = 0, and return &block[1]. */
-    ToonArray *ta = (ToonArray *)calloc(1, sizeof(ToonArray));
-    if (!ta) return 0;
-    ta->data = NULL;
-    ta->len  = 0;
-    return (int64_t)(intptr_t)ta;
-}
 
-int64_t tk_toon_f64_w(int64_t v) {
-    if (!v) return 0;
-    Toon *t = (Toon *)(intptr_t)v;
-    if (!t->raw) return 0;
-    double d = strtod(t->raw, NULL);
-    return f64_to_i64(d);
-}
 
-int64_t tk_toon_str_w(int64_t v) {
-    if (!v) return 0;
-    Toon *t = (Toon *)(intptr_t)v;
-    return (int64_t)(intptr_t)t->raw;
-}
 
 /* ── llm / tool wrappers (llm.h, llm_tool.h) ──────────────────────── */
 
