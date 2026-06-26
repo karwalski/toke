@@ -1,25 +1,49 @@
 m=mortgage.main;
 i=io:std.io;
-i=json:std.json;
-i=file:std.file;
 i=str:std.str;
 i=calc:mortgage.calc;
-i=m:mortgage.model;
+i=md:mortgage.model;
 
 
-f=formatcurrency(v:f64):str{
-  let s=str.fromfloat(v);
-  <s
+(* parsefloat — parse a decimal string like "123.45" or "0.065" to f64.
+ * std.str has no float parser yet (see toke story 114.39), so the CLI
+ * rolls its own: split on '.', parse the integer and fractional halves. *)
+f=parsefloat(s:$str):f64{
+  let parts=str.split(s;".");
+  let whole=mt str.toint(parts.get(0)) {
+    $ok:v v;
+    $err:e 0
+  };
+  let result=mut.(whole as f64);
+  if(parts.len>1){
+    let frac=parts.get(1);
+    let fracval=mt str.toint(frac) {
+      $ok:v v;
+      $err:e 0
+    };
+    let scale=mut.1.0;
+    lp(let i=0;i<(str.len(frac) as i64);i=i+1){
+      scale=scale*10.0
+    };
+    result=result+(fracval as f64)/scale
+  };
+  <result
 };
 
 
-f=printheader():void{
+f=formatcurrency(v:f64):$str{
+  <str.format(v;"%.2f")
+};
+
+
+f=printheader():$i64{
   io.println("Month    Payment    Principal  Interest   Balance");
-  io.println("-----  ----------  ----------  ---------  ----------")
+  io.println("-----  ----------  ----------  ---------  ----------");
+  <0
 };
 
 
-f=printrow(p:i64):void{
+f=printrow(p:$payment):$i64{
   let line=str.buf();
   str.add(line;str.fromint(p.month as i64));
   str.add(line;"      ");
@@ -30,104 +54,39 @@ f=printrow(p:i64):void{
   str.add(line;formatcurrency(p.interest));
   str.add(line;"    ");
   str.add(line;formatcurrency(p.balance));
-  io.println(str.done(line))
+  io.println(str.done(line));
+  <0
 };
 
 
-f=printsummary(r:i64):void{
+f=printsummary(r:$result):$i64{
   io.println("");
   io.println(str.concat("Monthly payment:  ";formatcurrency(r.monthly)));
   io.println(str.concat("Total interest:   ";formatcurrency(r.totalinterest)));
   io.println(str.concat("Total cost:       ";formatcurrency(r.totalcost)));
-  io.println("")
+  io.println("");
+  <0
 };
 
 
-f=printschedule(sched:@i64):void{
+f=printschedule(sched:@$payment):$i64{
   printheader();
   lp(let i=0;i<(sched.len as i64);i=i+1){
     let row=sched.get(i);
     printrow(row)
-  }
+  };
+  <0
 };
 
 
-f=scenariotojson(s:i64):str{
-  let b=str.buf();
-  str.add(b;"{");
-  str.add(b;"\"principal\":");
-  str.add(b;str.fromfloat(s.principal));
-  str.add(b;",\"rate\":");
-  str.add(b;str.fromfloat(s.rate));
-  str.add(b;",\"term\":");
-  str.add(b;str.fromint(s.term as i64));
-  str.add(b;",\"extra\":");
-  str.add(b;str.fromfloat(s.extra));
-  str.add(b;"}");
-  <str.done(b)
-};
-
-
-f=jsontoscenario(raw:str):i64!$t=$calcerr{
-  let doc=mt json.dec(raw) {
-    $ok:d d;
-    $err:e <$err(t=$$fileerr("invalid json"))
-  };
-  let principal=mt json.f64(doc;"principal") {
-    $ok:v v;
-    $err:e <$err(t=$$fileerr("missing principal"))
-  };
-  let rate=mt json.f64(doc;"rate") {
-    $ok:v v;
-    $err:e <$err(t=$$fileerr("missing rate"))
-  };
-  let term=mt json.u64(doc;"term") {
-    $ok:v v;
-    $err:e <$err(t=$$fileerr("missing term"))
-  };
-  let extra=mt json.f64(doc;"extra") {
-    $ok:v v;
-    $err:e <$err(t=$$fileerr("missing extra"))
-  };
-  <$ok(t=$scenario{
-    principal:principal;
-    rate:rate;
-    term:(term as u64);
-    extra:extra
-  })
-};
-
-
-f=savescenario(s:i64;path:str):bool!$t=$calcerr{
-  let data=scenariotojson(s);
-  mt file.write(path;data) {
-    $ok:v <$ok(true);
-    $err:e <$err(t=$$fileerr("could not write file"))
-  }
-};
-
-
-f=loadscenario(path:str):i64!$t=$calcerr{
-  let raw=mt file.read(path) {
-    $ok:v v;
-    $err:e <$err(t=$$fileerr("could not read file"))
-  };
-  <jsontoscenario(raw)
-};
-
-
-f=promptfloat(msg:str):f64{
+f=promptfloat(msg:$str):f64{
   io.print(msg);
   let line=io.readln();
-  let v=mt str.tofloat(str.trim(line)) {
-    $ok:v v;
-    $err:e 0.0
-  };
-  <v
+  <parsefloat(str.trim(line))
 };
 
 
-f=promptint(msg:str):u64{
+f=promptint(msg:$str):u64{
   io.print(msg);
   let line=io.readln();
   let v=mt str.toint(str.trim(line)) {
@@ -138,7 +97,25 @@ f=promptint(msg:str):u64{
 };
 
 
-f=run():void{
+f=showresult(r:$result):$i64{
+  printsummary(r);
+  printschedule(r.schedule);
+  <0
+};
+
+
+f=showerror(e:$calcerr):$i64{
+  io.println("Calculation error:");
+  mt e {
+    $invalidrate:v io.println(str.concat("  Invalid rate: ";str.format(v;"%.4f")));
+    $invalidterm:v io.println(str.concat("  Invalid term: ";str.fromint(v as i64)));
+    $fileerr:v     io.println(str.concat("  File error: ";v))
+  };
+  <0
+};
+
+
+f=run():$i64{
   io.println("=== Toke Mortgage Calculator ===");
   io.println("");
 
@@ -147,7 +124,7 @@ f=run():void{
   let term=promptint("Loan term in years: ");
   let extra=promptfloat("Extra monthly payment (0 for none): ");
 
-  let s=t=$scenario{
+  let s=$scenario{
     principal:principal;
     rate:rate;
     term:term;
@@ -155,35 +132,14 @@ f=run():void{
   };
 
   mt calc.calculate(s) {
-    $ok:r {
-      printsummary(r);
-      printschedule(r.schedule);
-
-      io.println("");
-      io.print("Save scenario to file? (y/n): ");
-      let ans=str.trim(io.readln());
-      if(str.startswith(ans;"y")){
-        io.print("File path: ");
-        let path=str.trim(io.readln());
-        mt savescenario(s;path) {
-          $ok: io.println("Scenario saved.");
-          $err:e io.println("Error saving scenario.")
-        }
-      }
-    };
-    $err:e {
-      io.println("Calculation error:");
-      mt e {
-        $invalidrate:v io.println(str.concat("  Invalid rate: ";str.fromfloat(v)));
-        $invalidterm:v io.println(str.concat("  Invalid term: ";str.fromint(v as i64)));
-        $fileerr:v     io.println(str.concat("  File error: ";v))
-      }
-    }
-  }
+    $ok:r showresult(r);
+    $err:e showerror(e)
+  };
+  <0
 };
 
 
-f=main():i64{
+f=main():$i64{
   run();
   <0
 };
