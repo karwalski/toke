@@ -14,6 +14,12 @@
 #include <string.h>
 #include <ctype.h>
 
+/* 114.41: side channel carrying a T!$E error's typed sum-type payload.
+ * An error return stores the box here and returns the 0 ok/err sentinel; the
+ * matching $err arm loads it. (Plain global — adequate for the single-threaded
+ * common case; revisit for cross-thread error propagation.) */
+int64_t tk_current_error = 0;
+
 /* ── Global argv storage ─────────────────────────────────────────── */
 
 static int    g_argc;

@@ -57,7 +57,7 @@
  *                    (declare).  Internal functions use fastcc calling
  *                    convention; extern functions use the default C convention.
  */
-typedef struct { char name[NAME_BUF]; const char *ret; char ret_type_name[NAME_BUF]; const char *param_tys[TKC_MAX_PARAMS]; char param_type_names[TKC_MAX_PARAMS][NAME_BUF]; int param_count; int is_internal; } FnSig;
+typedef struct { char name[NAME_BUF]; const char *ret; char ret_type_name[NAME_BUF]; char err_type_name[NAME_BUF]; /* 114.41: T!$E error type, or "" */ const char *param_tys[TKC_MAX_PARAMS]; char param_type_names[TKC_MAX_PARAMS][NAME_BUF]; int param_count; int is_internal; } FnSig;
 
 /*
  * PtrLocal — Tracks local variables that hold pointer values at the LLVM
@@ -151,7 +151,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; } Ctx;
 
 /* ── SSA counter helpers ───────────────────────────────────────────── */
 /* next_tmp: allocate the next SSA temporary (%tN).
@@ -460,6 +460,7 @@ static FnSig *register_fn(Ctx *c, const char *name, const char *ret) {
     s->name[len] = '\0';
     s->ret = ret;
     s->ret_type_name[0] = '\0';
+    s->err_type_name[0] = '\0';
     s->param_count = 0;
     c->fn_count++;
     return s;
@@ -545,9 +546,13 @@ static void prepass_funcs(Ctx *c, const Node *n) {
     }
     const char *ret = "void";
     char ret_tn[128] = "";
+    char err_tn[128] = "";
     for (int i = 1; i < n->child_count; i++) {
         if (n->children[i]->kind == NODE_RETURN_SPEC) {
             const Node *rs = n->children[i];
+            /* 114.41: capture the T!$E error type name (children[1]). */
+            if (rs->child_count > 1 && rs->children[1])
+                tok_cp(c->src, rs->children[1], err_tn, sizeof err_tn);
             if (rs->child_count > 0) {
                 ret = resolve_llvm_type(c, rs->children[0]);
                 tok_cp(c->src, rs->children[0], ret_tn, sizeof ret_tn);
@@ -571,6 +576,7 @@ static void prepass_funcs(Ctx *c, const Node *n) {
     FnSig *sig = register_fn(c, tb, ret);
     if (sig) {
         memcpy(sig->ret_type_name, ret_tn, sizeof sig->ret_type_name);
+        snprintf(sig->err_type_name, sizeof sig->err_type_name, "%s", err_tn);
         /* Determine if function has a body (internal) vs extern (declaration only) */
         int has_body = 0;
         for (int i = 1; i < n->child_count; i++) {
@@ -4182,6 +4188,29 @@ static int emit_expr(Ctx *c, const Node *n)
          * Second arm = "err" branch (scrutinee zero).
          * This replaces the previous approach of matching hardcoded variant
          * names (Ok/Err) which broke with $-prefixed lowercase variants. */
+        /* 114.41: if the scrutinee is a call to a T!$E function whose error
+         * type is a discriminated sum type, the $err arm binds its variable to
+         * the typed payload box stashed in tk_current_error (and tags it with
+         * the sum type so a nested `mt e {$variants}` dispatches correctly). */
+        const char *eu_err_type = NULL;
+        if (n->children[0]->kind == NODE_CALL_EXPR && n->children[0]->child_count >= 1) {
+            const Node *callee = n->children[0]->children[0];
+            char cn[256] = ""; const FnSig *cs = NULL;
+            if (callee->kind == NODE_IDENT) {
+                tok_cp(c->src, callee, cn, sizeof cn);
+                if (!strcmp(cn, "main")) strcpy(cn, "tk_main");
+                mangle_fn_name(c, cn, sizeof cn);
+                cs = lookup_fn(c, cn);
+            } else if (callee->kind == NODE_FIELD_EXPR && callee->child_count >= 2) {
+                tok_cp(c->src, callee->children[1], cn, sizeof cn);
+                cs = lookup_fn(c, cn);
+            }
+            if (cs && cs->err_type_name[0]) {
+                const StructInfo *esi = lookup_struct(c, cs->err_type_name);
+                if (esi && esi->is_sum) eu_err_type = cs->err_type_name;
+            }
+        }
+
         int arm_idx = 0;
         for (int i = 1; i < n->child_count; i++) {
             const Node *arm = n->children[i];
@@ -4193,7 +4222,8 @@ static int emit_expr(Ctx *c, const Node *n)
             else
                 fprintf(c->out, "rm_err%d:\n", L);
 
-            /* Bind the arm variable: first arm gets sv, second arm gets 0/null */
+            /* Bind the arm variable: first arm gets sv, second arm gets the
+             * typed error payload (114.41) or 0/null. */
             if (arm->child_count >= 2 && arm->children[1]) {
                 char vname[NAME_BUF]; tok_cp(c->src, arm->children[1], vname, sizeof vname);
                 const char *uname = make_unique_name(c, vname);
@@ -4201,11 +4231,17 @@ static int emit_expr(Ctx *c, const Node *n)
                     strncpy(vname, uname, sizeof vname - 1);
                     vname[sizeof vname - 1] = '\0';
                 }
-                set_local_type(c, vname, scr_ty);
-                fprintf(c->out, "  %%%s = alloca %s\n", vname, scr_ty);
+                const char *bind_ty = (!is_ok && eu_err_type) ? "i64" : scr_ty;
+                set_local_type(c, vname, bind_ty);
+                fprintf(c->out, "  %%%s = alloca %s\n", vname, bind_ty);
                 if (is_ok)
                     fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", scr_ty, sv, scr_ty, vname);
-                else {
+                else if (eu_err_type) {
+                    int ev = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error\n", ev);
+                    fprintf(c->out, "  store i64 %%t%d, i64* %%%s\n", ev, vname);
+                    mark_ptr_with_type(c, vname, eu_err_type);
+                } else {
                     if (!strcmp(scr_ty, "i8*"))
                         fprintf(c->out, "  store i8* null, i8** %%%s\n", vname);
                     else
@@ -4976,6 +5012,38 @@ static void emit_stmt(Ctx *c, const Node *n)
     case NODE_RETURN_STMT:
         if (n->child_count > 0) {
             const char *rt = c->cur_fn_ret ? c->cur_fn_ret : "i64";
+            /* 114.41: typed error return. In a T!$E function, `<$E{...}` (or
+             * `<errval` of the error type) stashes the typed box in the
+             * thread-local tk_current_error and returns the 0 err-sentinel —
+             * keeping the ok-or-0 ABI while carrying the payload to the
+             * matching $err arm. */
+            if (c->cur_fn_err[0]) {
+                char rsn[128] = "";
+                if (n->children[0]->kind == NODE_STRUCT_LIT)
+                    tok_cp(c->src, n->children[0], rsn, sizeof rsn);
+                else {
+                    const char *est = expr_struct_type(c, n->children[0]);
+                    if (est) { strncpy(rsn, est, sizeof rsn - 1); rsn[sizeof rsn - 1] = '\0'; }
+                }
+                if (rsn[0] && !strcmp(rsn, c->cur_fn_err)) {
+                    int box = emit_expr(c, n->children[0]);
+                    const char *bt = expr_llvm_type(c, n->children[0]);
+                    if (!strcmp(bt, "i8*")) {
+                        int iv = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", iv, box);
+                        box = iv;
+                    }
+                    fprintf(c->out, "  store i64 %%t%d, i64* @tk_current_error\n", box);
+                    if (!strcmp(rt, "void")) fputs("  ret void\n", c->out);
+                    else if (!strcmp(rt, "double")) fputs("  ret double 0.0\n", c->out);
+                    else if (!strcmp(rt, "float")) fputs("  ret float 0.0\n", c->out);
+                    else if (!strcmp(rt, "i1")) fputs("  ret i1 0\n", c->out);
+                    else if (!strcmp(rt, "i8*")) fputs("  ret i8* null\n", c->out);
+                    else fprintf(c->out, "  ret %s 0\n", rt);
+                    c->term = 1;
+                    break;
+                }
+            }
             /* Detect tail-recursive call: return expr is a call to the current function */
             if (n->children[0]->kind == NODE_CALL_EXPR && c->cur_fn_name[0] &&
                 n->children[0]->children[0]->kind != NODE_FIELD_EXPR) {
@@ -5362,6 +5430,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
         /* Determine return type from NODE_RETURN_SPEC if present */
         const char *ret = "void";
         int body_i = -1;
+        c->cur_fn_err[0] = '\0';
         for (int i = 1; i < n->child_count; i++) {
             if (n->children[i]->kind == NODE_STMT_LIST)  body_i = i;
             if (n->children[i]->kind == NODE_RETURN_SPEC) {
@@ -5374,6 +5443,10 @@ static void emit_toplevel(Ctx *c, const Node *n)
                     if (!strcmp(ret, "i8*"))
                         ret = "i64";
                 }
+                /* 114.41: capture the T!$E error type name (children[1]) so an
+                 * error return `<$E{...}` can stash the typed payload. */
+                if (rs->child_count > 1 && rs->children[1])
+                    tok_cp(c->src, rs->children[1], c->cur_fn_err, NAME_BUF);
             }
         }
         /* Map parameter types to LLVM types */
@@ -6087,6 +6160,9 @@ int emit_llvm_ir(const Node *ast, const char *src,
         fputs("declare i32 @fprintf(i8*, i8*, ...)\n", f);
         fputs("declare void @exit(i32) noreturn\n", f);
     }
+    /* 114.41: thread-local side channel carrying a T!$E error's typed payload
+     * (set on an error return, read by the matching $err arm). */
+    fputs("@tk_current_error = external global i64\n", f);
     fputs("\n", f);
 
     /* Copy body to final output */
