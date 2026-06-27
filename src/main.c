@@ -245,6 +245,104 @@ static int extract_module_name(const Node *ast, const char *src,
  * Returns 0 on success, EUSAGE (64) for bad arguments, ECOMPILE (65)
  * for source errors, or EINTERNAL (70) for tool failures.
  */
+
+/* 114.40: compile several module source files into ONE linked binary.
+ * Files must be listed in dependency order (imported modules before their
+ * importers). Each is compiled to a temp .ll, with .tki interfaces emitted
+ * into a shared temp dir so later modules' imports resolve; all the .ll are
+ * then linked together with the union of their stdlib deps in one clang call. */
+static int link_multi_module(const char **files, int nfiles, const char *out_bin,
+                             const char *target, int opt_level, int debug_info,
+                             const char **base_sp, int base_spc,
+                             TkcLimits limits, Profile profile)
+{
+    char tmpl[] = "/tmp/tkc_proj_XXXXXX";
+    char *tdir = mkdtemp(tmpl);
+    if (!tdir) { fputs("tkc: failed to create temp dir\n", stderr); return EINTERNAL; }
+
+    /* literals mirror MAX_SEARCH_PATHS (64) / MAX_SOURCE_FILES (256) in main() */
+    const char *sp[65]; int spc = 0;
+    for (int i = 0; i < base_spc && spc < 64; i++) sp[spc++] = base_sp[i];
+    sp[spc++] = tdir;
+
+    char ll_paths[256][PATH_BUF];
+    char ll_joined[8192]; ll_joined[0] = '\0';
+    SymbolTable merged; merged.entries = (ImportEntry *)malloc(sizeof(ImportEntry) * 256);
+    merged.count = 0; merged.search_path = tdir;
+    int has_main = 0, rc = 0;
+
+    for (int fi = 0; fi < nfiles; fi++) {
+        const char *src = files[fi];
+        diag_reset(); diag_set_source_file(src);
+        FILE *f = fopen(src, "rb");
+        if (!f) { fprintf(stderr, "tkc: cannot open '%s'\n", src); rc = EUSAGE; goto cleanup; }
+        fseek(f, 0, SEEK_END); long slen = ftell(f); rewind(f);
+        char *sbuf = (char *)malloc((size_t)slen + 1);
+        if (!sbuf || (long)fread(sbuf, 1, (size_t)slen, f) != slen) {
+            fclose(f); free(sbuf); fprintf(stderr, "tkc: failed to read '%s'\n", src); rc = EINTERNAL; goto cleanup; }
+        sbuf[slen] = '\0'; fclose(f); diag_set_source(sbuf, (size_t)slen);
+        Arena *arena = arena_init();
+        Token *toks = arena_alloc(arena, (int)(slen + 16) * (int)sizeof(Token));
+        int tc = lex(sbuf, (int)slen, toks, (int)(slen + 16), profile);
+        if (tc < 0 || diag_error_count() > 0) { rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
+        Node *ast = parse(toks, tc, sbuf, arena, profile);
+        if (!ast || diag_error_count() > 0) { rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
+        SymbolTable st;
+        if (resolve_imports(ast, sbuf, sp, spc, &limits, &st) < 0 || diag_error_count() > 0) {
+            rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
+        NameEnv ne;
+        if (resolve_names(ast, sbuf, &st, arena, &ne, sp, spc) < 0 || diag_error_count() > 0) {
+            symtab_free(&st); rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
+        TypeEnv te;
+        if (type_check(ast, sbuf, &ne, arena, &te) < 0 || diag_error_count() > 0) {
+            symtab_free(&st); rc = ECOMPILE; free(sbuf); arena_free(arena); goto cleanup; }
+        /* emit .tki so importers later in the list resolve this module */
+        char mod_name[256];
+        if (extract_module_name(ast, sbuf, mod_name, (int)sizeof mod_name) && mod_name[0]) {
+            char tki[PATH_BUF]; snprintf(tki, sizeof tki, "%s/%s.tki", tdir, mod_name);
+            emit_interface(ast, sbuf, &te, tki);
+        }
+        /* detect f=main() (functions may sit under a NODE_MODULE wrapper) */
+        for (int i = 0; ast && i < ast->child_count && !has_main; i++) {
+            const Node *ch = ast->children[i]; if (!ch) continue;
+            const Node *cont = (ch->kind == NODE_MODULE) ? ch : ast;
+            int from = (ch->kind == NODE_MODULE) ? 0 : i;
+            int to   = (ch->kind == NODE_MODULE) ? cont->child_count : i + 1;
+            for (int j = from; j < to; j++) {
+                const Node *fn = cont->children[j];
+                if (fn && fn->kind == NODE_FUNC_DECL && fn->child_count > 0) {
+                    char fnb[64]; int tl = fn->children[0]->tok_len < 63 ? fn->children[0]->tok_len : 63;
+                    memcpy(fnb, sbuf + fn->children[0]->tok_start, (size_t)tl); fnb[tl] = '\0';
+                    if (!strcmp(fnb, "main")) { has_main = 1; break; }
+                }
+                if (ch->kind != NODE_MODULE) break;
+            }
+        }
+        snprintf(ll_paths[fi], PATH_BUF, "%s/m%d.ll", tdir, fi);
+        CodegenEnv cg = { &te, &ne, arena, target, limits, debug_info, NULL, NULL, sp, spc };
+        if (emit_llvm_ir(ast, sbuf, &cg, ll_paths[fi]) < 0) {
+            symtab_free(&st); rc = EINTERNAL; free(sbuf); arena_free(arena); goto cleanup; }
+        for (int e = 0; e < st.count && merged.count < 256; e++) {
+            merged.entries[merged.count].module_path = strdup(st.entries[e].module_path ? st.entries[e].module_path : "");
+            merged.entries[merged.count].version = NULL;
+            merged.entries[merged.count].resolved = st.entries[e].resolved;
+            merged.count++;
+        }
+        if (ll_joined[0]) strncat(ll_joined, " ", sizeof ll_joined - strlen(ll_joined) - 1);
+        strncat(ll_joined, ll_paths[fi], sizeof ll_joined - strlen(ll_joined) - 1);
+        symtab_free(&st); free(sbuf); arena_free(arena);
+    }
+    if (!has_main) { fputs("tkc: no f=main() found among the source files\n", stderr); rc = ECOMPILE; goto cleanup; }
+    if (compile_binary(ll_joined, out_bin, target, opt_level, &merged, debug_info) < 0) rc = EINTERNAL;
+
+cleanup:
+    for (int e = 0; e < merged.count; e++) free(merged.entries[e].module_path);
+    free(merged.entries);
+    for (int fi = 0; fi < nfiles; fi++) unlink(ll_paths[fi]);
+    /* best-effort: leave .tki/tempdir (harmless); /tmp is cleared by the OS */
+    return rc;
+}
+
 int main(int argc, char **argv)
 {
     const char *tgt = NULL, *out = NULL;
@@ -361,7 +459,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--target")) {
             if (++i >= argc) { fputs("tkc: --target requires an argument\n", stderr); return EUSAGE; }
             tgt = argv[i];
-        } else if (!strcmp(argv[i], "--out")) {
+        } else if (!strcmp(argv[i], "--out") || !strcmp(argv[i], "-o")) {
             if (++i >= argc) { fputs("tkc: --out requires an argument\n", stderr); return EUSAGE; }
             out = argv[i];
         } else if (!strcmp(argv[i], "-I")) {
@@ -495,7 +593,17 @@ int main(int argc, char **argv)
         }
     }
 
-    /* Multi-file with a non-directory --out is an error */
+    /* 114.40: multiple files + a non-directory out path link into ONE binary
+     * (instead of the old per-file error). Only in the default
+     * compile-to-binary mode (skipped for check, emit, fmt, lint, ... modes). */
+    if (source_file_count > 1 && out && !out_is_dir &&
+        !check_only && !emit_iface && !emit_ll && !emit_asm && !emit_deps &&
+        !fmt_only && !pretty && !do_lint && !migrate && !dump_ast) {
+        return link_multi_module(source_files, source_file_count, out,
+                                 tgt, opt_level, debug_info,
+                                 search_paths, search_path_count, limits, profile);
+    }
+    /* Multi-file with a non-directory --out in a non-binary mode is an error */
     if (source_file_count > 1 && out && !out_is_dir) {
         fputs("tkc: --out must be a directory when compiling multiple files\n", stderr);
         return EUSAGE;
