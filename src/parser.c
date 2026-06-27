@@ -1452,8 +1452,9 @@ static Node *parse_field_list(Parser *p) {
     int seen_starts[64]; int seen_lens[64]; int seen_count=0;
     do {
         Token *ft=cur(p); TokenKind fk=peek(p);
+        int is_variant=0;
         /* Default mode: $variant field name in sum type (e.g. $notfound:u64) */
-        if(fk==TK_DOLLAR){adv(p);ft=cur(p);fk=peek(p);}
+        if(fk==TK_DOLLAR){adv(p);ft=cur(p);fk=peek(p);is_variant=1;}
         if(fk!=TK_IDENT&&fk!=TK_TYPE_IDENT){ eerr_got(p,E2002,ft,"expected field name");break;}
         /* Check for duplicate field name */
         for(int i=0;i<seen_count;i++){
@@ -1464,6 +1465,7 @@ static Node *parse_field_list(Parser *p) {
         }
         if(seen_count<64){seen_starts[seen_count]=ft->start;seen_lens[seen_count]=ft->len;seen_count++;}
         adv(p); Node *f=mk(p,NODE_FIELD,ft);
+        if(is_variant) f->op=TK_DOLLAR; /* mark sum-type variant field (114.41) */
         if(!xp(p,TK_COLON,"':'")){ sync(p);break;}
         ch(p,f,parse_type_expr(p)); ch(p,n,f);
         if(peek(p)!=TK_SEMICOLON) break;

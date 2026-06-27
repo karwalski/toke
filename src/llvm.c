@@ -77,7 +77,7 @@ typedef struct { char name[NAME_BUF]; char struct_type[NAME_BUF]; } PtrLocal;
  * All struct fields are represented as i64 at the LLVM level; the struct
  * is laid out as { i64, i64, ... } with one slot per field.
  */
-typedef struct { char name[NAME_BUF]; int field_count; char field_names[TKC_MAX_PARAMS][NAME_BUF]; char field_types[TKC_MAX_PARAMS][NAME_BUF]; int field_is_map[TKC_MAX_PARAMS]; } StructInfo;
+typedef struct { char name[NAME_BUF]; int field_count; char field_names[TKC_MAX_PARAMS][NAME_BUF]; char field_types[TKC_MAX_PARAMS][NAME_BUF]; int field_is_map[TKC_MAX_PARAMS]; int is_sum; /* 114.41: fields are $-variants (discriminated union) */ } StructInfo;
 
 /*
  * ImportAlias — Maps a toke import alias to its module name.
@@ -324,8 +324,11 @@ static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, 
     memcpy(si->name, name, (size_t)len);
     si->name[len] = '\0';
     si->field_count = fc;
+    si->is_sum = 0;
     /* Extract field names from type decl.  Fields may be direct children
-     * or wrapped in a NODE_STMT_LIST (from parse_field_list). */
+     * or wrapped in a NODE_STMT_LIST (from parse_field_list).
+     * 114.41: a field marked op==TK_DOLLAR was a $-variant → this is a
+     * discriminated sum type (any variant field marks the whole type). */
     int fi = 0;
     for (int i = 1; i < decl->child_count && fi < TKC_MAX_PARAMS; i++) {
         const Node *ch = decl->children[i];
@@ -334,6 +337,7 @@ static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, 
             tok_cp(src, ch, si->field_names[fi], 128);
             si->field_types[fi][0] = '\0';
             si->field_is_map[fi] = 0;
+            if (ch->op == TK_DOLLAR) si->is_sum = 1;
             if (ch->child_count >= 1 && ch->children[0]) {
                 tok_cp(src, ch->children[0], si->field_types[fi], 128);
                 if (ch->children[0]->kind == NODE_MAP_TYPE) si->field_is_map[fi] = 1;
@@ -346,6 +350,7 @@ static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, 
                     tok_cp(src, fj, si->field_names[fi], 128);
                     si->field_types[fi][0] = '\0';
                     si->field_is_map[fi] = 0;
+                    if (fj->op == TK_DOLLAR) si->is_sum = 1;
                     if (fj->child_count >= 1 && fj->children[0]) {
                         tok_cp(src, fj->children[0], si->field_types[fi], 128);
                         if (fj->children[0]->kind == NODE_MAP_TYPE) si->field_is_map[fi] = 1;
@@ -3616,6 +3621,48 @@ static int emit_expr(Ctx *c, const Node *n)
             return t;
         }
         const StructInfo *si = lookup_struct(c, sn);
+        /* 114.41: a discriminated sum-type value is a 2-slot box [tag, payload].
+         * The single field-init names the active variant; its declaration index
+         * is the tag, and its value is stored in the payload slot. */
+        if (si && si->is_sum) {
+            int box = next_tmp(c);
+            fprintf(c->out, "  %%t%d = call i8* @malloc(i64 16) ; sum_lit %s\n", box, sn);
+            int sbase = next_tmp(c);
+            fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", sbase, box);
+            int vtag = 0, vpay = -1; const char *vname = "?";
+            for (int i = 0; i < n->child_count; i++) {
+                const Node *fi = n->children[i];
+                if (!fi || fi->kind != NODE_FIELD_INIT) continue;
+                if (fi->tok_len > 0) {
+                    char fname[128]; tok_cp(c->src, fi, fname, sizeof fname);
+                    vtag = struct_field_index(si, fname);
+                    vname = si->field_names[vtag];
+                }
+                if (fi->child_count >= 1) {
+                    int v = emit_expr(c, fi->children[0]);
+                    const char *vety = expr_llvm_type(c, fi->children[0]);
+                    if (!strcmp(vety, "double")) {
+                        int bc = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, v);
+                        v = bc;
+                    } else {
+                        v = coerce_value(c, v, vety, "i64");
+                    }
+                    vpay = v;
+                }
+                break; /* only one variant is active in a sum literal */
+            }
+            int tg = next_tmp(c);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 0 ; .$tag(%s)\n", tg, sbase, vname);
+            fprintf(c->out, "  store i64 %d, i64* %%t%d\n", vtag, tg);
+            int pg = next_tmp(c);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 1 ; .$payload\n", pg, sbase);
+            if (vpay >= 0)
+                fprintf(c->out, "  store i64 %%t%d, i64* %%t%d\n", vpay, pg);
+            else
+                fprintf(c->out, "  store i64 0, i64* %%t%d\n", pg);
+            return box;
+        }
         int nfields = si ? si->field_count : (n->child_count > 0 ? n->child_count : 1);
         t = next_tmp(c);
         fprintf(c->out, "  %%t%d = call i8* @malloc(i64 %d) ; struct_lit %s\n", t, nfields * 8, sn);
@@ -3910,6 +3957,106 @@ static int emit_expr(Ctx *c, const Node *n)
         int num_arms = 0;
         for (int i = 1; i < n->child_count; i++)
             if (n->children[i] && n->children[i]->child_count >= 1) num_arms++;
+
+        /* 114.41: discriminated sum-type match. When the scrutinee is a
+         * sum-type value (a [tag, payload] box) and the arms name real
+         * variants, dispatch on the tag (slot[0]) and bind each arm's var to
+         * the payload (slot[1]) interpreted per that variant's type. */
+        const char *scr_sum = expr_struct_type(c, n->children[0]);
+        const StructInfo *ssi = scr_sum ? lookup_struct(c, scr_sum) : NULL;
+        int sum_match = 0;
+        if (ssi && ssi->is_sum && num_arms >= 1 && n->child_count >= 2 &&
+            n->children[1]->child_count >= 1) {
+            char t0[128]; tok_cp(c->src, n->children[1]->children[0], t0, sizeof t0);
+            for (int fi = 0; fi < ssi->field_count; fi++)
+                if (!strcmp(ssi->field_names[fi], t0)) { sum_match = 1; break; }
+        }
+        if (sum_match) {
+            /* Normalize scrutinee to an i64* box base */
+            int sbase = next_tmp(c);
+            if (!strcmp(scr_ty, "i8*")) {
+                fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", sbase, sv);
+            } else {
+                int pp = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", pp, sv);
+                fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", sbase, pp);
+            }
+            int tagp = next_tmp(c);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 0\n", tagp, sbase);
+            int tagv = next_tmp(c);
+            fprintf(c->out, "  %%t%d = load i64, i64* %%t%d ; sum tag\n", tagv, tagp);
+            int arm_lbls[64]; int na = 0;
+            for (int i = 1; i < n->child_count && na < 64; i++)
+                if (n->children[i] && n->children[i]->child_count >= 1) arm_lbls[na++] = next_lbl(c);
+            /* dispatch chain (last arm is the default/catch-all) */
+            int ai = 0;
+            for (int i = 1; i < n->child_count; i++) {
+                const Node *arm = n->children[i];
+                if (!arm || arm->child_count < 1) continue;
+                char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
+                int vidx = struct_field_index(ssi, tag);
+                if (ai == na - 1) {
+                    fprintf(c->out, "  br label %%svarm%d\n", arm_lbls[ai]);
+                } else {
+                    int eq = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, %d\n", eq, tagv, vidx);
+                    int nx = next_lbl(c);
+                    fprintf(c->out, "  br i1 %%t%d, label %%svarm%d, label %%svchk%d\n", eq, arm_lbls[ai], nx);
+                    fprintf(c->out, "svchk%d:\n", nx);
+                }
+                ai++;
+            }
+            /* arm bodies */
+            ai = 0;
+            for (int i = 1; i < n->child_count; i++) {
+                const Node *arm = n->children[i];
+                if (!arm || arm->child_count < 1) continue;
+                fprintf(c->out, "svarm%d:\n", arm_lbls[ai]);
+                char tag[128]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
+                int vidx = struct_field_index(ssi, tag);
+                if (arm->child_count >= 2 && arm->children[1]) {
+                    char vname[NAME_BUF]; tok_cp(c->src, arm->children[1], vname, sizeof vname);
+                    const char *uname = make_unique_name(c, vname);
+                    if (uname != vname) { strncpy(vname, uname, sizeof vname - 1); vname[sizeof vname - 1] = '\0'; }
+                    const char *vty = ssi->field_types[vidx];
+                    int is_f = (!strcmp(vty, "f64") || !strcmp(vty, "f32"));
+                    int is_str = (!strcmp(vty, "str") || !strcmp(vty, "$str"));
+                    const char *slot_ty = is_f ? "double" : (is_str ? "i8*" : "i64");
+                    set_local_type(c, vname, slot_ty);
+                    if (is_str) mark_ptr_with_type(c, vname, "$str");
+                    fprintf(c->out, "  %%%s = alloca %s\n", vname, slot_ty);
+                    int payp = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 1\n", payp, sbase);
+                    int payv = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = load i64, i64* %%t%d ; sum payload\n", payv, payp);
+                    if (is_f) {
+                        int bc = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double\n", bc, payv);
+                        fprintf(c->out, "  store double %%t%d, double* %%%s\n", bc, vname);
+                    } else if (is_str) {
+                        int pp = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", pp, payv);
+                        fprintf(c->out, "  store i8* %%t%d, i8** %%%s\n", pp, vname);
+                    } else {
+                        fprintf(c->out, "  store i64 %%t%d, i64* %%%s\n", payv, vname);
+                    }
+                }
+                int body_val = -1;
+                if (arm->child_count >= 3 && arm->children[2])
+                    body_val = emit_expr(c, arm->children[2]);
+                if (body_val >= 0) {
+                    const char *bty = expr_llvm_type(c, arm->children[2]);
+                    body_val = coerce_value(c, body_val, bty, res_ty);
+                    fprintf(c->out, "  store %s %%t%d, %s* %%t%d\n", res_ty, body_val, res_ty, res_slot);
+                }
+                fprintf(c->out, "  br label %%rm_end%d\n", L);
+                ai++;
+            }
+            fprintf(c->out, "rm_end%d:\n", L);
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = load %s, %s* %%t%d\n", t, res_ty, res_ty, res_slot);
+            return t;
+        }
 
         /* Multi-arm string match: when scrutinee is a string (i8*) and
          * there are 3+ arms, emit a strcmp chain instead of ok/err bifurcation.
