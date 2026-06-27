@@ -14,12 +14,11 @@ amortisation schedule.
 ## Build
 
 ```bash
-./build.sh        # writes ./mortgage
+tkc model.tk calc.tk main.tk -o mortgage
 ```
 
-toke has no single-command multi-module link yet (the older `tkc *.tk -o`
-form is unimplemented — see toke story 114.40), so `build.sh` emits each
-module to LLVM IR and links them with the stdlib via `--emit-deps`.
+`tkc <files> -o <bin>` links the modules into a single binary (list imported
+modules before their importers). `./build.sh` wraps the same command.
 
 ## Usage
 
