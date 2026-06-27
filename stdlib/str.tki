@@ -12,6 +12,8 @@
     {"kind": "func", "name": "str.to_int", "params": ["str"], "return": "i64!ParseErr"},
     {"kind": "func", "name": "str.toint", "params": ["str"], "return": "i64!ParseErr",
      "note": "alias of to_int (no-underscore name)"},
+    {"kind": "func", "name": "str.tofloat", "params": ["str"], "return": "f64!ParseErr",
+     "note": "parse a decimal string to f64 (Story 114.39)"},
     {"kind": "func", "name": "str.to_float", "params": ["str"], "return": "f64!ParseErr"},
     {"kind": "func", "name": "str.contains", "params": ["str", "str"], "return": "bool"},
     {"kind": "func", "name": "str.eq", "params": ["str", "str"], "return": "bool",
