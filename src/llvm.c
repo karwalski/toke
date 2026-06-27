@@ -1116,6 +1116,17 @@ static void load_tki_funcs(Ctx *c, const char *tki_path) {
             /* Store toke return type name for struct type propagation */
             if (ret_toke_type[0])
                 strncpy(sig->ret_type_name, ret_toke_type, NAME_BUF - 1);
+            /* 114.41: cross-module error type — `"error": "calcerr"`. */
+            char *ek = strstr(nk, "\"error\"");
+            if (ek && (!next_kind || ek < next_kind)) {
+                char *eq1 = strchr(ek + 7, '"');
+                if (eq1) { char *eq2 = strchr(eq1 + 1, '"');
+                    if (eq2) { int elen = (int)(eq2 - eq1 - 1);
+                        if (elen > 0 && elen < NAME_BUF) {
+                            memcpy(sig->err_type_name, eq1 + 1, (size_t)elen);
+                            sig->err_type_name[elen] = '\0';
+                        }}}
+            }
             /* Extract param types */
             char *pk = strstr(nk, "\"params\"");
             if (pk && (!next_kind || pk < next_kind)) {
@@ -1207,6 +1218,11 @@ static void load_tki_structs(Ctx *c, const char *tki_path) {
                         if (flen >= 128) flen = 127;
                         memcpy(field_names[fc], q1 + 1, (size_t)flen);
                         field_names[fc][flen] = '\0';
+                        /* 114.41: sum-variant names are emitted with their `$`
+                         * prefix in the .tki; strip it so they match construction
+                         * and match sites (which use the bare variant name). */
+                        if (field_names[fc][0] == '$')
+                            memmove(field_names[fc], field_names[fc] + 1, strlen(field_names[fc]));
                         /* Find "type":"xxx" after this name */
                         field_types[fc][0] = '\0';
                         char *tp = strstr(q2, "\"type\"");
@@ -1236,7 +1252,11 @@ static void load_tki_structs(Ctx *c, const char *tki_path) {
                         for (int i = 0; i < fc; i++) {
                             memcpy(si->field_names[i], field_names[i], 128);
                             memcpy(si->field_types[i], field_types[i], 128);
+                            si->field_is_map[i] = 0;
                         }
+                        /* 114.41: carry the discriminated-union marker across modules. */
+                        { char *sk = strstr(nk, "\"is_sum\": true");
+                          si->is_sum = (sk && (!next_kind || sk < next_kind)) ? 1 : 0; }
                         c->struct_count++;
                     }
                 }
@@ -4202,8 +4222,26 @@ static int emit_expr(Ctx *c, const Node *n)
                 mangle_fn_name(c, cn, sizeof cn);
                 cs = lookup_fn(c, cn);
             } else if (callee->kind == NODE_FIELD_EXPR && callee->child_count >= 2) {
-                tok_cp(c->src, callee->children[1], cn, sizeof cn);
-                cs = lookup_fn(c, cn);
+                char al[128], mth[128];
+                tok_cp(c->src, callee->children[0], al, sizeof al);
+                tok_cp(c->src, callee->children[1], mth, sizeof mth);
+                cs = lookup_fn(c, mth); /* same-module fallback */
+                if (!cs || !cs->err_type_name[0]) {
+                    /* qualified cross-module call: alias -> module -> mangled name */
+                    for (int ii = 0; ii < c->import_count; ii++) {
+                        if (strcmp(c->imports[ii].alias, al)) continue;
+                        char mangled[256]; int mp = 0;
+                        const char *mod = c->imports[ii].module;
+                        for (int k = 0; mod[k] && mp < (int)sizeof(mangled) - 2; k++)
+                            mangled[mp++] = (mod[k] == '.') ? '_' : mod[k];
+                        if (mp < (int)sizeof(mangled) - 1) mangled[mp++] = '_';
+                        mangled[mp] = '\0';
+                        strncat(mangled, mth, sizeof(mangled) - strlen(mangled) - 1);
+                        const FnSig *cs2 = lookup_fn(c, mangled);
+                        if (cs2) cs = cs2;
+                        break;
+                    }
+                }
             }
             if (cs && cs->err_type_name[0]) {
                 const StructInfo *esi = lookup_struct(c, cs->err_type_name);

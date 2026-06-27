@@ -260,13 +260,25 @@ int emit_interface(const Node *ast, const char *src,
             }
             fputs("], \"return\": \"", fp);
             const char *ret = "void";
+            const Node *err_node = NULL;
             for (int j = 1; j < top->child_count; j++) {
                 const Node *ch = top->children[j];
                 if (!ch || ch->kind != NODE_RETURN_SPEC || ch->child_count < 1 || !ch->children[0]) continue;
-                render_type_node(ch->children[0], src, tbuf, sizeof(tbuf)); ret = tbuf; break;   /* 113.B.10 */
+                render_type_node(ch->children[0], src, tbuf, sizeof(tbuf)); ret = tbuf;   /* 113.B.10 */
+                /* 114.41: carry the T!$E error type so cross-module error
+                 * matching can recover the typed payload. */
+                if (ch->child_count > 1 && ch->children[1]) err_node = ch->children[1];
+                break;
             }
             json_str(fp, ret, (int)strlen(ret));
-            fputs("\"}", fp);
+            fputs("\"", fp);
+            if (err_node) {
+                char ebuf[256]; render_type_node(err_node, src, ebuf, sizeof(ebuf));
+                fputs(", \"error\": \"", fp);
+                json_str(fp, ebuf, (int)strlen(ebuf));
+                fputs("\"", fp);
+            }
+            fputs("}", fp);
         } else if (top->kind == NODE_TYPE_DECL) {
             if (top->child_count < 1 || !top->children[0]) continue;
             tok_copy(top->children[0], src, nbuf, sizeof(nbuf));
