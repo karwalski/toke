@@ -3968,6 +3968,30 @@ static int emit_expr(Ctx *c, const Node *n)
                     res_ty = arm0_ty;
             }
         }
+        /* 114.42: an f64-payload error union (e.g. str.tofloat → f64!ParseErr)
+         * carries its ok value in an i64-ABI slot. The inference above runs
+         * before the arm bindings exist, so a `$ok:x x` body reads as i64 and
+         * the result is wrongly truncated. If the scrutinee is an f64 value and
+         * some arm yields the bare ok-binding or a float, the result is f64. */
+        if (!strcmp(res_ty, "i64")) {
+            const char *spre = expr_llvm_type(c, n->children[0]);
+            if (!strcmp(spre, "double") || !strcmp(spre, "float")) {
+                for (int i = 1; i < n->child_count; i++) {
+                    const Node *arm = n->children[i];
+                    if (arm->child_count < 3 || !arm->children[2]) continue;
+                    const Node *body = arm->children[2];
+                    int is_bind = 0;
+                    if (body->kind == NODE_IDENT && arm->child_count >= 2 && arm->children[1]) {
+                        char bn[64], vn[64];
+                        tok_cp(c->src, body, bn, sizeof bn);
+                        tok_cp(c->src, arm->children[1], vn, sizeof vn);
+                        is_bind = !strcmp(bn, vn);
+                    }
+                    const char *bty = is_bind ? spre : expr_llvm_type(c, body);
+                    if (!strcmp(bty, "double") || !strcmp(bty, "float")) { res_ty = spre; break; }
+                }
+            }
+        }
         /* Normalize: never use i1 as result slot type */
         if (!strcmp(res_ty, "i1")) res_ty = "i64";
 
@@ -4282,6 +4306,8 @@ static int emit_expr(Ctx *c, const Node *n)
                 } else {
                     if (!strcmp(scr_ty, "i8*"))
                         fprintf(c->out, "  store i8* null, i8** %%%s\n", vname);
+                    else if (!strcmp(scr_ty, "double") || !strcmp(scr_ty, "float"))
+                        fprintf(c->out, "  store %s 0.0, %s* %%%s\n", scr_ty, scr_ty, vname); /* 114.42 */
                     else
                         fprintf(c->out, "  store i64 0, i64* %%%s\n", vname);
                 }
@@ -4775,6 +4801,28 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             const Node *arm0 = n->children[1];
             if (arm0->child_count >= 3)
                 mrt = expr_llvm_type(c, arm0->children[2]);
+        }
+        /* 114.42: f64-payload error union — see the matching inference in
+         * emit_expr. Keep both in sync so the `let v = mt …` binding type
+         * matches the actual result slot type. */
+        if (!strcmp(mrt, "i64") && n->child_count >= 1) {
+            const char *spre = expr_llvm_type(c, n->children[0]);
+            if (!strcmp(spre, "double") || !strcmp(spre, "float")) {
+                for (int i = 1; i < n->child_count; i++) {
+                    const Node *arm = n->children[i];
+                    if (arm->child_count < 3 || !arm->children[2]) continue;
+                    const Node *body = arm->children[2];
+                    int is_bind = 0;
+                    if (body->kind == NODE_IDENT && arm->child_count >= 2 && arm->children[1]) {
+                        char bn[64], vn[64];
+                        tok_cp(c->src, body, bn, sizeof bn);
+                        tok_cp(c->src, arm->children[1], vn, sizeof vn);
+                        is_bind = !strcmp(bn, vn);
+                    }
+                    const char *bty = is_bind ? spre : expr_llvm_type(c, body);
+                    if (!strcmp(bty, "double") || !strcmp(bty, "float")) { mrt = spre; break; }
+                }
+            }
         }
         if (!strcmp(mrt, "i1")) mrt = "i64";
         return mrt;
