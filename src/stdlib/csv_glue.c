@@ -6,8 +6,10 @@
  */
 
 #include "csv.h"
+#include "bytes_rt.h"
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 /*
  * tk_csv_parse_w — parse a CSV string and return a pointer to an array of
@@ -19,20 +21,37 @@
  */
 int64_t tk_csv_parse_w(int64_t data) {
     if (!data) return 0;
-    const char *s = (const char *)(intptr_t)data;
-    uint64_t len = 0;
-    while (s[len]) len++;
+    /* The argument is a toke [byte] (packed), not a C string — unpack it. */
+    uint8_t *bytes = NULL;
+    uint64_t len = tk_bytes_unpack(data, &bytes);
+    if (!bytes || len == 0) return 0;
+    char *s = (char *)malloc(len + 1);
+    if (!s) return 0;
+    memcpy(s, bytes, len); s[len] = '\0';
     uint64_t nrows = 0;
     StrArray *rows = csv_parse(s, len, &nrows);
-    if (!rows || nrows == 0) return 0;
-    /* Pack nrows + row pointer into a heap block so the runtime can access */
-    int64_t *block = (int64_t *)malloc(sizeof(int64_t) + nrows * sizeof(StrArray));
-    if (!block) { free(rows); return 0; }
-    block[0] = (int64_t)nrows;
-    StrArray *dest = (StrArray *)(block + 1);
-    for (uint64_t i = 0; i < nrows; i++) dest[i] = rows[i];
+    free(s);
+    if (!rows || nrows == 0) { if (rows) free(rows); return 0; }
+    /* Return a toke-native [csvrow]: outer[-1]=nrows, outer[i]=*csvrow, where
+     * a csvrow is a 1-field struct {fields:[str]} and [str] is the toke array
+     * convention (block[-1]=len, block[i]=char*). */
+    int64_t *outer = (int64_t *)malloc((nrows + 1) * sizeof(int64_t));
+    if (!outer) { free(rows); return 0; }
+    outer[0] = (int64_t)nrows;
+    for (uint64_t i = 0; i < nrows; i++) {
+        uint64_t fl = rows[i].len;
+        int64_t *fields = (int64_t *)malloc((fl + 1) * sizeof(int64_t));
+        if (!fields) { outer[i + 1] = 0; continue; }
+        fields[0] = (int64_t)fl;
+        for (uint64_t j = 0; j < fl; j++)
+            fields[j + 1] = (int64_t)(intptr_t)rows[i].data[j];
+        int64_t *cr = (int64_t *)malloc(sizeof(int64_t));
+        if (!cr) { outer[i + 1] = 0; continue; }
+        cr[0] = (int64_t)(intptr_t)(fields + 1);
+        outer[i + 1] = (int64_t)(intptr_t)cr;
+    }
     free(rows);
-    return (int64_t)(intptr_t)block;
+    return (int64_t)(intptr_t)(outer + 1);
 }
 
 /*
