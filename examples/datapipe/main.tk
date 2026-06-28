@@ -2,270 +2,142 @@ m=datapipe.main;
 i=io:std.io;
 i=file:std.file;
 i=csv:std.csv;
-i=json:std.json;
 i=str:std.str;
-i=math:std.math;
 i=args:std.args;
 
 
-t=$pipeerr{$fileerr:$str;$csverr:$str;$usage:$str};
+t=$colstats{name:$str;count:u64;sum:f64;min:f64;max:f64;avg:f64};
 
 
-t=$colstats{name:$str;count:u64;sum:f64;avg:f64;min:f64;max:f64};
-
-
-t=$report{filename:$str;rows:u64;columns:u64;stats:@$colstats};
-
-
-f=parseargs():@$str!$pipeerr{
-  let argc=args.count();
-  if(argc<3){
-    <$err($$usage("usage: datapipe <input.csv> <output.json>"))
-  };
-  let input=args.get(1);
-  let output=args.get(2);
-  <$ok(@(input;output))
-};
-
-
-f=readcsv(path:$str):i64!$pipeerr{
-  let raw=mt file.read(path) {
-    $ok:v v;
-    $err:e <$err($$fileerr(
-      str.concat("cannot read file: ";path)
-    ))
-  };
-  let doc=mt csv.parse(raw) {
-    $ok:d d;
-    $err:e <$err($$csverr("failed to parse csv"))
-  };
-  <$ok(doc)
+(* cell — value at data row r (0-based); row 0 of the parsed CSV is the header. *)
+f=cell(rows:@$csvrow;r:i64;c:i64):$str{
+  let row=rows.get(r+1);
+  <row.fields.get(c)
 };
 
 
 f=isnumeric(s:$str):bool{
-  let v=mt str.tofloat(str.trim(s)) {
-    $ok:v true;
+  let t=str.trim(s);
+  if(str.len(t)=0){<false};
+  <mt str.tofloat(t) {
+    $ok:x true;
     $err:e false
+  }
+};
+
+
+f=tofloat(s:$str):f64{
+  let v=mt str.tofloat(str.trim(s)) {
+    $ok:x x;
+    $err:e 0.0
   };
   <v
 };
 
 
-f=detectnumericcols(doc:i64):@bool{
-  let headers=csv.headers(doc);
-  let ncols=headers.len;
-  let result=mut.@();
-
-  lp(let c=0;c<(ncols as i64);c=c+1){
-    let numeric=mut.true;
-    let nrows=csv.rowcount(doc);
-    let checked=mut.0;
-    lp(let r=0;r<(nrows as i64);r=r+1){
-      let val=csv.cell(doc;r;c);
-      if(str.len(str.trim(val))>0){
-        if(isnumeric(val)=false){
-          numeric=false
-        };
-        checked=checked+1
+(* iscolnumeric — true if column c has at least one value and every non-empty
+ * cell parses as a number. *)
+f=iscolnumeric(rows:@$csvrow;c:i64;ndata:i64):bool{
+  let allnum=mut.true;
+  let any=mut.false;
+  lp(let r=0;r<ndata;r=r+1){
+    let v=str.trim(cell(rows;r;c));
+    if(str.len(v)>0){
+      any=true;
+      if(isnumeric(v)=false){
+        allnum=false
       }
-    };
-    if(checked=0){
-      numeric=false
-    };
-    result=result.push(numeric)
+    }
   };
-  <result
+  if(any=false){<false};
+  <allnum
 };
 
 
-f=computecolstats(doc:i64;col:i64;name:$str):$colstats{
-  let nrows=csv.rowcount(doc);
+f=computecol(rows:@$csvrow;c:i64;ndata:i64;name:$str):$colstats{
   let count=mut.0;
   let sum=mut.0.0;
-  let mn=mut.999999999.0;
-  let mx=mut.(0.0-999999999.0);
-
-  lp(let r=0;r<(nrows as i64);r=r+1){
-    let val=csv.cell(doc;r;col);
-    if(str.len(str.trim(val))>0){
-      let num=mt str.tofloat(str.trim(val)) {
-        $ok:v v;
-        $err:e 0.0
-      };
+  let mn=mut.0.0;
+  let mx=mut.0.0;
+  let first=mut.true;
+  lp(let r=0;r<ndata;r=r+1){
+    let v=str.trim(cell(rows;r;c));
+    if(str.len(v)>0){
+      let num=tofloat(v);
       count=count+1;
       sum=sum+num;
-      if(num<mn){mn=num};
-      if(num>mx){mx=num}
+      if(first){
+        mn=num;
+        mx=num;
+        first=false
+      }el{
+        if(num<mn){mn=num};
+        if(num>mx){mx=num}
+      }
     }
   };
-  let avg=0.0;
+  let avg=mut.0.0;
   if(count>0){
-    avg=sum/((count) as f64)
+    avg=sum/(count as f64)
   };
   <$colstats{
     name:name;
     count:(count as u64);
     sum:sum;
-    avg:avg;
     min:mn;
-    max:mx
+    max:mx;
+    avg:avg
   }
 };
 
 
-f=computeallstats(doc:i64):@$colstats{
-  let headers=csv.headers(doc);
-  let numeric=detectnumericcols(doc);
-  let result=mut.@();
-
-  lp(let c=0;c<(headers.len as i64);c=c+1){
-    if(numeric.get(c)){
-      let stats=computecolstats(doc;c;headers.get(c));
-      result=result.push(stats)
-    }
-  };
-  <result
-};
-
-
-f=colstatstojson(s:$colstats):$str{
-  let buf=str.buf();
-  str.add(buf;"{\"name\":\"");
-  str.add(buf;s.name);
-  str.add(buf;"\",\"count\":");
-  str.add(buf;str.fromint(s.count as i64));
-  str.add(buf;",\"sum\":");
-  str.add(buf;str.fromfloat(s.sum));
-  str.add(buf;",\"avg\":");
-  str.add(buf;str.fromfloat(s.avg));
-  str.add(buf;",\"min\":");
-  str.add(buf;str.fromfloat(s.min));
-  str.add(buf;",\"max\":");
-  str.add(buf;str.fromfloat(s.max));
-  str.add(buf;"}");
-  <str.done(buf)
-};
-
-
-f=reporttojson(r:$report):$str{
-  let buf=str.buf();
-  str.add(buf;"{
-");
-  str.add(buf;"  \"filename\": \"");
-  str.add(buf;r.filename);
-  str.add(buf;"\",
-");
-  str.add(buf;"  \"rows\": ");
-  str.add(buf;str.fromint(r.rows as i64));
-  str.add(buf;",
-");
-  str.add(buf;"  \"columns\": ");
-  str.add(buf;str.fromint(r.columns as i64));
-  str.add(buf;",
-");
-  str.add(buf;"  \"stats\": [
-");
-
-  lp(let i=0;i<(r.stats.len as i64);i=i+1){
-    if(i>0){
-      str.add(buf;",
-")
-    };
-    str.add(buf;"    ");
-    str.add(buf;colstatstojson(r.stats.get(i)))
-  };
-  str.add(buf;"
-  ]
-");
-  str.add(buf;"}");
-  <str.done(buf)
-};
-
-
-f=printsummary(r:$report):void{
-  io.println(str.concat("file:    ";r.filename));
-  io.println(str.concat("rows:    ";str.fromint(r.rows as i64)));
-  io.println(str.concat("columns: ";str.fromint(r.columns as i64)));
-  io.println("");
-  io.println("numeric column statistics:");
-  io.println("  column          count       sum       avg       min       max");
-  io.println("  --------------- -----  --------  --------  --------  --------");
-
-  lp(let i=0;i<(r.stats.len as i64);i=i+1){
-    let s=r.stats.get(i);
-    let line=str.buf();
-    str.add(line;"  ");
-    str.add(line;s.name);
-    str.add(line;"  ");
-    str.add(line;str.fromint(s.count as i64));
-    str.add(line;"  ");
-    str.add(line;str.fromfloat(s.sum));
-    str.add(line;"  ");
-    str.add(line;str.fromfloat(s.avg));
-    str.add(line;"  ");
-    str.add(line;str.fromfloat(s.min));
-    str.add(line;"  ");
-    str.add(line;str.fromfloat(s.max));
-    io.println(str.done(line))
-  }
-};
-
-
-f=run():i64{
-  let paths=mt parseargs() {
-    $ok:v v;
-    $err:e {
-      mt e {
-        $usage:msg io.eprintln(msg);
-        $fileerr:msg io.eprintln(msg);
-        $csverr:msg io.eprintln(msg)
-      };
-      <1
-    }
-  };
-  let input=paths.get(0);
-  let output=paths.get(1);
-
-  io.println(str.concat("reading: ";input));
-  let doc=mt readcsv(input) {
-    $ok:d d;
-    $err:e {
-      mt e {
-        $fileerr:msg io.eprintln(msg);
-        $csverr:msg io.eprintln(msg);
-        $usage:msg io.eprintln(msg)
-      };
-      <1
-    }
-  };
-
-  let headers=csv.headers(doc);
-  let stats=computeallstats(doc);
-  let r=$report{
-    filename:input;
-    rows:(csv.rowcount(doc) as u64);
-    columns:(headers.len as u64);
-    stats:stats
-  };
-
-  printsummary(r);
-  io.println("");
-
-  let jsonstr=reporttojson(r);
-  mt file.write(output;jsonstr) {
-    $ok:v {
-      io.println(str.concat("report written to: ";output))
-    };
-    $err:e {
-      io.eprintln(str.concat("error writing report: ";output));
-      <1
-    }
-  };
+f=printstats(s:$colstats):$i64{
+  io.println(str.concat("  ";str.concat(s.name;str.concat(" (count ";str.concat(str.fromint(s.count as i64);")")))));
+  io.println(str.concat("    sum=";str.format(s.sum;"%.2f")));
+  io.println(str.concat("    avg=";str.format(s.avg;"%.2f")));
+  io.println(str.concat("    min=";str.format(s.min;"%.2f")));
+  io.println(str.concat("    max=";str.format(s.max;"%.2f")));
   <0
 };
 
 
-f=main():i64{
-  <run()
+f=main():$i64{
+  if(args.count()<2){
+    io.eprintln("usage: datapipe <input.csv>");
+    <2
+  };
+  let path=args.get(1);
+  let raw=mt file.read(path) {
+    $ok:v v;
+    $err:e ""
+  };
+  if(str.len(raw)=0){
+    io.eprintln(str.concat("cannot read file: ";path));
+    <2
+  };
+  let rows=mt csv.parse(str.bytes(raw)) {
+    $ok:v v;
+    $err:e @()
+  };
+  if(rows.len<2){
+    io.eprintln("no data rows in csv");
+    <2
+  };
+  let headers=rows.get(0).fields;
+  let ncols=headers.len as i64;
+  let ndata=(rows.len as i64)-1;
+
+  io.println(str.concat("file:    ";path));
+  io.println(str.concat("rows:    ";str.fromint(ndata)));
+  io.println(str.concat("columns: ";str.fromint(ncols)));
+  io.println("");
+  io.println("numeric column statistics:");
+
+  lp(let c=0;c<ncols;c=c+1){
+    if(iscolnumeric(rows;c;ndata)){
+      let st=computecol(rows;c;ndata;headers.get(c));
+      printstats(st)
+    }
+  };
+  <0
 };
