@@ -1709,7 +1709,7 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
         }
     }
     else { diag_emit(DIAG_ERROR,E2001,first->start,first->line,first->col,"module declaration must appear first","fix","add 'm=modulename;' as the first declaration",NULL); p.errs++; }
-    int phase=1; /* 1=import 2=type 3=const 4=func */
+    int phase=1; /* 1=import 2=type 3=const 4=global 5=func */
     while(peek(&p)!=TK_EOF){
         if(p.errs>=MAX_PARSE_ERRORS) break;
         Token *t=cur(&p); int cp;
@@ -1717,7 +1717,8 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
         if(peek(&p)==TK_KW_I||(di==1))     cp=1;
         else if(peek(&p)==TK_KW_T||(di==2)) cp=2;
         else if(peek(&p)==TK_IDENT&&di==0)   cp=3;
-        else if(peek(&p)==TK_KW_F||(di==4)) cp=4;
+        else if(peek(&p)==TK_KW_LET)        cp=4; /* 114.44: module-level mutable global */
+        else if(peek(&p)==TK_KW_F||(di==4)) cp=5;
         else{eerr(&p,E2002,t,"unexpected token");sync(&p);if(p.errs>=MAX_PARSE_ERRORS)break;continue;}
         if(cp<phase){diag_emit(DIAG_ERROR,E2001,t->start,t->line,t->col,"declaration ordering violation","fix","reorder declarations: m= first, then i=, t=, f=",NULL);p.errs++;}
         else if(cp>phase) phase=cp;
@@ -1755,6 +1756,7 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
             }
         }
         else if(cp==3) d=parse_const_decl(&p);
+        else if(cp==4) d=parse_stmt(&p); /* 114.44: top-level `let x=mut.…` → mutable global */
         else {
             if(peek(&p)==TK_KW_F) d=parse_func_decl(&p);
             else { Token *ft=consume_decl_kw(&p);Node *n=mk(&p,NODE_FUNC_DECL,ft);

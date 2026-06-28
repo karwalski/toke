@@ -96,6 +96,14 @@ typedef struct { char alias[ALIAS_BUF]; char module[ALIAS_BUF]; int is_std; } Im
 typedef struct { char name[NAME_BUF]; const char *ty; } LocalType;
 
 /*
+ * GlobalVar — 114.44: a module-level mutable global declared with a top-level
+ *   `let name=mut.expr;`. `name` is the source name, `llvm_name` the mangled
+ *   LLVM symbol (`@<llvm_name>`), `struct_type` the $type for field access (or
+ *   ""), and `init` the initializer AST node (run at startup via a ctor).
+ */
+typedef struct { char name[NAME_BUF]; char llvm_name[NAME_BUF]; char struct_type[NAME_BUF]; const Node *init; } GlobalVar;
+
+/*
  * NameAlias — Maps a toke variable name to a unique LLVM name.
  *   When variable shadowing occurs (e.g. the same name bound in nested
  *   scopes), make_unique_name appends a ".N" suffix and records the
@@ -151,7 +159,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; } Ctx;
 
 /* ── SSA counter helpers ───────────────────────────────────────────── */
 /* next_tmp: allocate the next SSA temporary (%tN).
@@ -297,6 +305,29 @@ static const char *ptr_local_struct_type(Ctx *c, const char *name) {
             return c->ptrs[i].struct_type;
     return NULL;
 }
+
+/* ── 114.44: module-level mutable globals ──────────────────────────── */
+
+/* Look up a global by source name; returns the GlobalVar or NULL. */
+static GlobalVar *lookup_global(Ctx *c, const char *name) {
+    for (int i = 0; i < c->global_count; i++)
+        if (!strcmp(c->globals[i].name, name)) return &c->globals[i];
+    return NULL;
+}
+/* The global's $struct type (for `.field` access), or NULL. */
+static const char *global_struct_type(Ctx *c, const char *name) {
+    GlobalVar *g = lookup_global(c, name);
+    return (g && g->struct_type[0]) ? g->struct_type : NULL;
+}
+/* A name is a local (so it shadows a same-named global) if it's a tracked
+ * local type, a scoping alias, or a ptr-local (covers params + let bindings). */
+static int name_is_local(Ctx *c, const char *name) {
+    for (int i = 0; i < c->local_count; i++) if (!strcmp(c->locals[i].name, name)) return 1;
+    for (int i = 0; i < c->alias_count; i++) if (!strcmp(c->aliases[i].toke_name, name)) return 1;
+    for (int i = 0; i < c->ptr_count;  i++) if (!strcmp(c->ptrs[i].name,  name)) return 1;
+    return 0;
+}
+static const char *expr_struct_type(Ctx *c, const Node *n); /* defined later */
 
 /* ── Struct type registry ──────────────────────────────────────────── */
 
@@ -610,6 +641,32 @@ static void prepass_funcs(Ctx *c, const Node *n) {
  * These mappings are later consulted by resolve_stdlib_call to translate
  * qualified calls like j.parse(x) into C runtime function names.
  */
+/*
+ * prepass_globals — 114.44: register every top-level `let name=mut.expr;`
+ *
+ * (forward decl below; expr_struct_type is defined later in the file)
+ * (a NODE_(MUT_)BIND_STMT that is a direct child of NODE_PROGRAM/NODE_MODULE)
+ * as a module-level mutable global. Recurses only through PROGRAM/MODULE
+ * containers, so binds inside function bodies stay locals. Must run after
+ * prepass_structs + prepass_load_tki so the initializer's struct type resolves.
+ */
+static void prepass_globals(Ctx *c, const Node *n) {
+    if (n->kind == NODE_PROGRAM || n->kind == NODE_MODULE) {
+        for (int i = 0; i < n->child_count; i++) prepass_globals(c, n->children[i]);
+        return;
+    }
+    if (n->kind != NODE_MUT_BIND_STMT && n->kind != NODE_BIND_STMT) return;
+    if (n->child_count < 2 || c->global_count >= c->global_cap) return;
+    GlobalVar *g = &c->globals[c->global_count];
+    tok_cp(c->src, n->children[0], g->name, sizeof g->name);
+    snprintf(g->llvm_name, sizeof g->llvm_name, "%s%s", c->module_prefix, g->name);
+    g->init = n->children[n->child_count - 1];   /* [0]=name, [opt type], last=init */
+    g->struct_type[0] = '\0';
+    const char *st = expr_struct_type(c, g->init);
+    if (st) { strncpy(g->struct_type, st, sizeof g->struct_type - 1); g->struct_type[sizeof g->struct_type - 1] = '\0'; }
+    c->global_count++;
+}
+
 static void prepass_imports(Ctx *c, const Node *n) {
     if (n->kind == NODE_PROGRAM || n->kind == NODE_MODULE) {
         for (int i = 0; i < n->child_count; i++) prepass_imports(c, n->children[i]);
@@ -2047,6 +2104,15 @@ static int emit_expr(Ctx *c, const Node *n)
             t = next_tmp(c);
             fprintf(c->out, "  %%t%d = add i64 0, 0 ; void expression\n", t);
             return t;
+        }
+        /* 114.44: read a module-level mutable global (unless a local shadows it) */
+        {
+            GlobalVar *g = lookup_global(c, tb);
+            if (g && !name_is_local(c, tb)) {
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = load i64, i64* @%s\n", t, g->llvm_name);
+                return t;
+            }
         }
         t = next_tmp(c);
         {
@@ -4408,7 +4474,14 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
     }
     if (n->kind == NODE_IDENT) {
         char nb[128]; tok_cp(c->src, n, nb, sizeof nb);
-        return ptr_local_struct_type(c, nb);
+        const char *lst = ptr_local_struct_type(c, nb);
+        if (lst) return lst;
+        /* 114.44: a module-level mutable global's struct type (for .field) */
+        if (!name_is_local(c, nb)) {
+            const char *gst = global_struct_type(c, nb);
+            if (gst) return gst;
+        }
+        return NULL;
     }
     /* Bug 113.B.21: subscript / `.get(i)` on a local typed "@str" (a
      * str-array element load, e.g. from str.split / str.chars) yields a
@@ -5085,6 +5158,17 @@ static void emit_stmt(Ctx *c, const Node *n)
         break;
     case NODE_ASSIGN_STMT:
         tok_cp(c->src, n->children[0], tb, sizeof tb);
+        /* 114.44: assign to a module-level mutable global (unless shadowed) */
+        {
+            GlobalVar *g = lookup_global(c, tb);
+            if (g && !name_is_local(c, tb)) {
+                int v = emit_expr(c, n->children[1]);
+                const char *ety2 = expr_llvm_type(c, n->children[1]);
+                v = coerce_value(c, v, ety2, "i64");
+                fprintf(c->out, "  store i64 %%t%d, i64* @%s\n", v, g->llvm_name);
+                break;
+            }
+        }
         {
             const char *ln = get_llvm_name(c, tb);
             const char *lty = get_local_type(c, ln);
@@ -6025,12 +6109,14 @@ int emit_llvm_ir(const Node *ast, const char *src,
     ctx.import_cap = lim.max_imports;
     ctx.local_cap  = lim.max_locals;
     ctx.alias_cap  = lim.max_locals;
+    ctx.global_cap = lim.max_locals; /* 114.44: module-level mutable globals */
     if (ar) {
         ctx.fns     = (FnSig *)arena_alloc(ar, ctx.fn_cap * (int)sizeof(FnSig));
         ctx.ptrs    = (PtrLocal *)arena_alloc(ar, ctx.ptr_cap * (int)sizeof(PtrLocal));
         ctx.structs = (StructInfo *)arena_alloc(ar, ctx.struct_cap * (int)sizeof(StructInfo));
         ctx.imports = (ImportAlias *)arena_alloc(ar, ctx.import_cap * (int)sizeof(ImportAlias));
         ctx.locals  = (LocalType *)arena_alloc(ar, ctx.local_cap * (int)sizeof(LocalType));
+        ctx.globals = (GlobalVar *)arena_alloc(ar, ctx.global_cap * (int)sizeof(GlobalVar));
         ctx.aliases = (NameAlias *)arena_alloc(ar, ctx.alias_cap * (int)sizeof(NameAlias));
     } else {
         ctx.fns     = (FnSig *)calloc((size_t)ctx.fn_cap, sizeof(FnSig));
@@ -6038,8 +6124,10 @@ int emit_llvm_ir(const Node *ast, const char *src,
         ctx.structs = (StructInfo *)calloc((size_t)ctx.struct_cap, sizeof(StructInfo));
         ctx.imports = (ImportAlias *)calloc((size_t)ctx.import_cap, sizeof(ImportAlias));
         ctx.locals  = (LocalType *)calloc((size_t)ctx.local_cap, sizeof(LocalType));
+        ctx.globals = (GlobalVar *)calloc((size_t)ctx.global_cap, sizeof(GlobalVar));
         ctx.aliases = (NameAlias *)calloc((size_t)ctx.alias_cap, sizeof(NameAlias));
     }
+    ctx.global_count = 0;
 
     ctx.max_iters = lim.max_iters;
     ctx.loop_guard_idx = 0;
@@ -6117,6 +6205,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     prepass_funcs(&ctx, ast);
     prepass_imports(&ctx, ast);
     prepass_load_tki(&ctx, ast);
+    prepass_globals(&ctx, ast); /* 114.44: after structs+tki so init types resolve */
 
     /* Register well-known stdlib struct types for field-index resolution */
     if (ctx.struct_count < ctx.struct_cap && !lookup_struct(&ctx, "timeparts")) {
@@ -6144,6 +6233,34 @@ int emit_llvm_ir(const Node *ast, const char *src,
     register_tki_struct_types(&ctx);
 
     emit_toplevel(&ctx, ast);
+
+    /* 114.44: module-level mutable globals. Emit a storage cell per global and
+     * a startup constructor that runs each initializer (which may heap-
+     * allocate), registered in @llvm.global_ctors so it runs before main —
+     * and, via "appending" linkage, composes across modules in a single-binary
+     * build (each module contributes its own ctor). */
+    if (ctx.global_count > 0) {
+        for (int gi = 0; gi < ctx.global_count; gi++)
+            fprintf(body_file, "@%s = global i64 0\n", ctx.globals[gi].llvm_name);
+        char ctor_name[NAME_BUF];
+        snprintf(ctor_name, sizeof ctor_name, "%sglobals_init_ctor",
+                 ctx.module_prefix[0] ? ctx.module_prefix : "tk_");
+        ctx.cur_fn_ret = "void"; ctx.cur_fn_err[0] = '\0';
+        ctx.ptr_count = 0; ctx.local_count = 0; ctx.alias_count = 0; ctx.name_scope = 0;
+        ctx.tmp = 0; ctx.term = 0;
+        fprintf(body_file, "\ndefine internal void @%s() nounwind {\nbb.entry:\n", ctor_name);
+        for (int gi = 0; gi < ctx.global_count; gi++) {
+            int v = emit_expr(&ctx, ctx.globals[gi].init);
+            const char *vty = expr_llvm_type(&ctx, ctx.globals[gi].init);
+            v = coerce_value(&ctx, v, vty, "i64");
+            fprintf(body_file, "  store i64 %%t%d, i64* @%s\n", v, ctx.globals[gi].llvm_name);
+        }
+        fprintf(body_file, "  ret void\n}\n");
+        fprintf(body_file,
+                "@llvm.global_ctors = appending global [1 x { i32, void ()*, i8* }] "
+                "[{ i32, void ()*, i8* } { i32 65535, void ()* @%s, i8* null }]\n",
+                ctor_name);
+    }
 
     /* Flush forward declarations for cross-module user function calls */
     if (ctx.fwd_decls_len > 0)
