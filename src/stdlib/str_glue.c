@@ -151,7 +151,11 @@ int64_t tk_str_padleft_w(int64_t s, int64_t width, int64_t pad) {
     return (int64_t)(intptr_t)str_pad_left(
         (const char *)(intptr_t)s, (uint64_t)width, ch);
 }
-int64_t tk_str_join_w(int64_t arr, int64_t sep) {
+/* 114.6: str.join(sep:str; arr:[str]) — params are (sep, arr) per str.tki; the
+ * wrapper previously took (arr, sep), so a real `str.join(",";@(...))` passed
+ * the separator where the array was expected and read ptr[-1] off a string →
+ * SIGSEGV. Order now matches the .tki. */
+int64_t tk_str_join_w(int64_t sep, int64_t arr) {
     if (!arr) return (int64_t)(intptr_t)str_join((const char *)(intptr_t)sep, (StrArray){NULL, 0});
     int64_t *ptr = (int64_t *)(intptr_t)arr;
     int64_t len = ptr[-1];
@@ -806,9 +810,32 @@ int64_t tk_str_from_bytes_w(int64_t b) { return tk_str_frombytes_w(b); }
 /* str.charcode(s) — get Unicode code point (byte value) of first char, or
  * str.charcode(s, i) compiled as single-arg by the compiler passing char str.
  * The compiler emits: tk_str_charcode_w(s) where s is a single-char string. */
-int64_t tk_str_charcode_w(int64_t s) {
+/* 114.6: str.charcode(s; i) returns the byte code at index i. The wrapper
+ * previously ignored i and always returned byte 0. Out-of-range → 0. */
+int64_t tk_str_charcode_w(int64_t s, int64_t i) {
     const char *p = s ? (const char *)(intptr_t)s : "";
-    return (int64_t)(unsigned char)p[0];
+    if (i < 0) return 0;
+    for (int64_t k = 0; k < i; k++) { if (!p[k]) return 0; }
+    return (int64_t)(unsigned char)p[i];
+}
+
+/* 114.6: str ordering comparators — strcmp-based, returning bool. (str.gt etc.
+ * had no `_w` wrapper, so `s.gt(...)` failed to link.) */
+int64_t tk_str_gt_w(int64_t a, int64_t b) {
+    return strcmp((const char *)(intptr_t)(a ? a : (int64_t)(intptr_t)""),
+                  (const char *)(intptr_t)(b ? b : (int64_t)(intptr_t)"")) > 0 ? 1 : 0;
+}
+int64_t tk_str_lt_w(int64_t a, int64_t b) {
+    return strcmp((const char *)(intptr_t)(a ? a : (int64_t)(intptr_t)""),
+                  (const char *)(intptr_t)(b ? b : (int64_t)(intptr_t)"")) < 0 ? 1 : 0;
+}
+int64_t tk_str_ge_w(int64_t a, int64_t b) {
+    return strcmp((const char *)(intptr_t)(a ? a : (int64_t)(intptr_t)""),
+                  (const char *)(intptr_t)(b ? b : (int64_t)(intptr_t)"")) >= 0 ? 1 : 0;
+}
+int64_t tk_str_le_w(int64_t a, int64_t b) {
+    return strcmp((const char *)(intptr_t)(a ? a : (int64_t)(intptr_t)""),
+                  (const char *)(intptr_t)(b ? b : (int64_t)(intptr_t)"")) <= 0 ? 1 : 0;
 }
 
 /* str.charAt — camelCase alias for tk_str_charat_w */
@@ -905,5 +932,6 @@ int64_t tk_str_equals_w(int64_t a, int64_t b) {
 int64_t tk_str_interpolate_w(int64_t arr) {
     static const char empty[] = "";
     extern int64_t tk_str_join_w(int64_t, int64_t);
-    return tk_str_join_w(arr, (int64_t)(intptr_t)empty);
+    /* (sep, arr) order — see tk_str_join_w (114.6) */
+    return tk_str_join_w((int64_t)(intptr_t)empty, arr);
 }
