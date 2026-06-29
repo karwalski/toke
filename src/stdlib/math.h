@@ -98,6 +98,12 @@ double       math_log(double x);
 /* math.log10(x:f64):f64 — log base 10 */
 double       math_log10(double x);
 
+/* math.log2(x:f64):f64 — log base 2 (114.5) */
+double       math_log2(double x);
+
+/* math.erf(x:f64):f64 — Gauss error function (114.5) */
+double       math_erf(double x);
+
 /* math.exp(x:f64):f64 — e^x */
 double       math_exp(double x);
 

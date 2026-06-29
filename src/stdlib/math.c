@@ -216,6 +216,8 @@ double math_atan(double x)             { return atan(x);       }
 double math_atan2(double y, double x)  { return atan2(y, x);   }
 double math_log(double x)              { return log(x);        }
 double math_log10(double x)            { return log10(x);      }
+double math_log2(double x)             { return log2(x);       }  /* 114.5 */
+double math_erf(double x)              { return erf(x);        }  /* 114.5 */
 double math_exp(double x)              { return exp(x);        }
 double math_hypot(double x, double y)  { return hypot(x, y);   }
 

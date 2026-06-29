@@ -24,8 +24,25 @@
     {"kind": "func", "name": "math.tobits",     "params": ["f64"],            "return": "i64"},
     {"kind": "func", "name": "math.frombits",   "params": ["i64"],            "return": "f64"},
     {"kind": "func", "name": "math.sqrt",       "params": ["f64"],            "return": "f64"},
-    {"kind": "func", "name": "math.floor",      "params": ["f64"],            "return": "i64"},
-    {"kind": "func", "name": "math.ceil",       "params": ["f64"],            "return": "i64"},
-    {"kind": "func", "name": "math.pow",        "params": ["f64", "f64"],     "return": "f64"}
+    {"kind": "func", "name": "math.floor",      "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.ceil",       "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.round",      "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.pow",        "params": ["f64", "f64"],     "return": "f64"},
+    {"kind": "func", "name": "math.exp",        "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.ln",         "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.log",        "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.log10",      "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.log2",       "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.erf",        "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.sin",        "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.cos",        "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.tan",        "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.asin",       "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.acos",       "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.atan",       "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.atan2",      "params": ["f64", "f64"],     "return": "f64"},
+    {"kind": "func", "name": "math.fmod",       "params": ["f64", "f64"],     "return": "f64"},
+    {"kind": "func", "name": "math.fabs",       "params": ["f64"],            "return": "f64"},
+    {"kind": "func", "name": "math.hypot",      "params": ["f64", "f64"],     "return": "f64"}
   ]
 }

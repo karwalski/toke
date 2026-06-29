@@ -104,6 +104,8 @@ int64_t tk_math_log_w(int64_t x) { return f64_to_i64(math_log(i64_to_f64(x))); }
 
 /* math.log10(x) — base-10 logarithm */
 int64_t tk_math_log10_w(int64_t x) { return f64_to_i64(math_log10(i64_to_f64(x))); }
+int64_t tk_math_log2_w(int64_t x)  { return f64_to_i64(math_log2(i64_to_f64(x))); }   /* 114.5 */
+int64_t tk_math_erf_w(int64_t x)   { return f64_to_i64(math_erf(i64_to_f64(x))); }     /* 114.5 */
 
 /* math.pow2neg(n) — compute 2^(-n) as f64 (useful for decay/probability) */
 int64_t tk_math_pow2neg_w(int64_t n) {
