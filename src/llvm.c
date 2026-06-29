@@ -2157,6 +2157,60 @@ static int emit_expr(Ctx *c, const Node *n)
     case NODE_FUNC_REF: {
         /* &name — emit ptrtoint of function pointer to i64 */
         tok_cp(c->src, n, tb, sizeof tb);
+        /* 114.50: qualified `&alias.method` — node token is the alias, child[0]
+         * the method. Resolve alias→module→mangled symbol like a call would. */
+        if (n->child_count >= 1 && n->children[0]) {
+            char mth[128]; tok_cp(c->src, n->children[0], mth, sizeof mth);
+            char mangled[256]; mangled[0] = '\0';
+            for (int ii = 0; ii < c->import_count; ii++) {
+                if (strcmp(c->imports[ii].alias, tb)) continue;
+                const char *mod = c->imports[ii].module; int mp = 0;
+                for (int k = 0; mod[k] && mp < (int)sizeof(mangled) - 2; k++)
+                    mangled[mp++] = (mod[k] == '.') ? '_' : mod[k];
+                if (mp < (int)sizeof(mangled) - 1) mangled[mp++] = '_';
+                mangled[mp] = '\0';
+                strncat(mangled, mth, sizeof(mangled) - strlen(mangled) - 1);
+                break;
+            }
+            /* Fallback to same-module method name if the alias wasn't found. */
+            if (!mangled[0]) { strncpy(mangled, mth, sizeof mangled - 1); mangled[sizeof mangled - 1] = '\0'; }
+            const FnSig *qref = lookup_fn(c, mangled);
+            /* Emit a forward declaration for the external symbol (dedup via
+             * fwd_decls) — referencing @sym without a declare is invalid IR.
+             * Mirrors the cross-module call path. */
+            {
+                char name_check[300];
+                snprintf(name_check, sizeof name_check, "@%s(", mangled);
+                if (!strstr(c->fwd_decls, name_check)) {
+                    char decl[512];
+                    int dlen = snprintf(decl, sizeof decl, "declare fastcc %s @%s(",
+                                        qref ? qref->ret : "i64", mangled);
+                    int pc = qref ? qref->param_count : 1;
+                    for (int i = 0; i < pc && dlen < (int)sizeof(decl) - 16; i++) {
+                        if (i) dlen += snprintf(decl + dlen, sizeof(decl) - (size_t)dlen, ", ");
+                        dlen += snprintf(decl + dlen, sizeof(decl) - (size_t)dlen, "%s",
+                                         qref ? qref->param_tys[i] : "i64");
+                    }
+                    dlen += snprintf(decl + dlen, sizeof(decl) - (size_t)dlen, ")\n");
+                    if (c->fwd_decls_len + dlen < TKC_FWD_DECL_SIZE) {
+                        memcpy(c->fwd_decls + c->fwd_decls_len, decl, (size_t)dlen);
+                        c->fwd_decls_len += dlen; c->fwd_decls[c->fwd_decls_len] = '\0';
+                    }
+                }
+            }
+            t = next_tmp(c);
+            if (qref) {
+                fprintf(c->out, "  %%t%d = ptrtoint %s (", t, qref->ret);
+                for (int i = 0; i < qref->param_count; i++) {
+                    if (i) fprintf(c->out, ", ");
+                    fprintf(c->out, "%s", qref->param_tys[i]);
+                }
+                fprintf(c->out, ")* @%s to i64\n", qref->name);
+            } else {
+                fprintf(c->out, "  %%t%d = ptrtoint i64 (i64)* @%s to i64\n", t, mangled);
+            }
+            return t;
+        }
         if (!strcmp(tb, "main")) strcpy(tb, "tk_main");
         mangle_fn_name(c, tb, sizeof tb);
         const FnSig *ref = lookup_fn(c, tb);

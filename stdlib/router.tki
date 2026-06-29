@@ -51,6 +51,22 @@
     {"kind": "func", "name": "router.put",    "params": ["router", "str", "handler"],        "return": "void"},
     {"kind": "func", "name": "router.delete", "params": ["router", "str", "handler"],        "return": "void"},
     {"kind": "func", "name": "router.use",    "params": ["router", "middleware"],            "return": "void"},
-    {"kind": "func", "name": "router.serve",  "params": ["router", "str", "u64"],           "return": "void!routererr"}
+    {"kind": "func", "name": "router.serve",  "params": ["router", "str", "u64"],           "return": "void!routererr"},
+
+    {"kind": "func", "name": "router.reqbody",   "params": ["i64"],        "return": "str"},
+    {"kind": "func", "name": "router.reqpath",   "params": ["i64"],        "return": "str"},
+    {"kind": "func", "name": "router.reqmethod", "params": ["i64"],        "return": "str"},
+    {"kind": "func", "name": "router.reqquery",  "params": ["i64"],        "return": "str"},
+    {"kind": "func", "name": "router.param",     "params": ["i64", "str"], "return": "str"},
+
+    {"kind": "func", "name": "router.ok",       "params": ["str"],               "return": "i64"},
+    {"kind": "func", "name": "router.html",     "params": ["str"],               "return": "i64"},
+    {"kind": "func", "name": "router.json",     "params": ["str"],               "return": "i64"},
+    {"kind": "func", "name": "router.css",      "params": ["str"],               "return": "i64"},
+    {"kind": "func", "name": "router.text",     "params": ["str"],               "return": "i64"},
+    {"kind": "func", "name": "router.bad",      "params": ["str"],               "return": "i64"},
+    {"kind": "func", "name": "router.notfound", "params": ["str"],               "return": "i64"},
+    {"kind": "func", "name": "router.status",   "params": ["u64", "str"],        "return": "i64"},
+    {"kind": "func", "name": "router.respond",  "params": ["u64", "str", "str"], "return": "i64"}
   ]
 }

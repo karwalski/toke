@@ -37,6 +37,31 @@ static int64_t call_route_handler(int64_t fn_val, int64_t arg) {
     return f(arg);
 }
 
+/* ── request / response objects (114.49) ─────────────────────────────────
+ *
+ * A router handler is `(req:i64) -> res:i64`. `req` is a handle to the parsed
+ * request (read with router.reqbody/reqpath/reqmethod/reqquery/param); `res` is
+ * a handle built by the router.ok/html/json/css/text/status/bad/notfound
+ * builders. The dispatch trampoline constructs the req, calls the handler, and
+ * turns the returned res handle into the C router's TkRouteResp. The req lives
+ * only for the synchronous handler call (router dispatch is single-threaded).
+ */
+typedef struct {
+    const char  *method;
+    const char  *path;
+    const char  *query;
+    const char  *body;
+    const char **pnames;
+    const char **pvals;
+    uint64_t     nparam;
+} TkRouterReq;
+
+typedef struct {
+    int          status;
+    const char  *content_type;
+    const char  *body;        /* toke-owned string; outlives the send */
+} TkRouterResp;
+
 /* ── closure route registry ──────────────────────────────────────────── */
 
 #define TK_MAX_CLOSURE_ROUTES 128
@@ -44,7 +69,7 @@ static int64_t call_route_handler(int64_t fn_val, int64_t arg) {
 typedef struct {
     const char *method;   /* "GET", "POST", … */
     const char *path;     /* route pattern as registered */
-    int64_t     handler;  /* toke closure value */
+    int64_t     handler;  /* toke handler fn pointer */
 } TkClosureRoute;
 
 static TkClosureRoute g_closure_routes[TK_MAX_CLOSURE_ROUTES];
@@ -58,10 +83,20 @@ static TkRouteResp router_closure_dispatch(TkRouteCtx ctx) {
             strcmp(g_closure_routes[i].path, p) == 0 &&
             g_closure_routes[i].method &&
             strcmp(g_closure_routes[i].method, m) == 0) {
-            int64_t body_arg = ctx.body ? (int64_t)(intptr_t)ctx.body : 0;
-            int64_t result = call_route_handler(g_closure_routes[i].handler, body_arg);
-            const char *rbody = result ? (const char *)(intptr_t)result : "";
-            return router_resp_json(rbody);
+            TkRouterReq req = {
+                m, p, ctx.query, ctx.body,
+                ctx.param_names, ctx.param_values, ctx.nparam
+            };
+            int64_t res_i64 = call_route_handler(g_closure_routes[i].handler,
+                                                 (int64_t)(intptr_t)&req);
+            if (!res_i64) return router_resp_status(500, "handler returned null");
+            TkRouterResp *rr = (TkRouterResp *)(intptr_t)res_i64;
+            TkRouteResp out;
+            memset(&out, 0, sizeof out);
+            out.status       = rr->status;
+            out.body         = rr->body ? rr->body : "";
+            out.content_type = rr->content_type ? rr->content_type : "text/html";
+            return out;
         }
     }
     return router_resp_404();
@@ -127,4 +162,69 @@ int64_t tk_router_serve_w(int64_t router_i64, int64_t host, int64_t port) {
     if (p == 0 || p > 65535) p = 8080;
     TkRouterErr err = router_serve((TkRouter *)(intptr_t)router_i64, h, p);
     return err.failed ? -1 : 0;
+}
+
+/* ── request accessors (114.49) ──────────────────────────────────────────
+ * Each takes the req handle and returns a toke string (char* as i64). A
+ * missing field yields "" rather than null so str.* ops are always safe. */
+static int64_t req_str(const char *s) {
+    return (int64_t)(intptr_t)(s ? s : "");
+}
+
+int64_t tk_router_reqbody_w(int64_t req) {
+    if (!req) return req_str("");
+    return req_str(((TkRouterReq *)(intptr_t)req)->body);
+}
+int64_t tk_router_reqpath_w(int64_t req) {
+    if (!req) return req_str("");
+    return req_str(((TkRouterReq *)(intptr_t)req)->path);
+}
+int64_t tk_router_reqmethod_w(int64_t req) {
+    if (!req) return req_str("");
+    return req_str(((TkRouterReq *)(intptr_t)req)->method);
+}
+int64_t tk_router_reqquery_w(int64_t req) {
+    if (!req) return req_str("");
+    return req_str(((TkRouterReq *)(intptr_t)req)->query);
+}
+/* router.param(req; name) — value of the :name path param, or "". */
+int64_t tk_router_param_w(int64_t req, int64_t name) {
+    if (!req || !name) return req_str("");
+    TkRouterReq *r = (TkRouterReq *)(intptr_t)req;
+    const char *nm = (const char *)(intptr_t)name;
+    for (uint64_t i = 0; i < r->nparam; i++)
+        if (r->pnames && r->pnames[i] && strcmp(r->pnames[i], nm) == 0)
+            return req_str(r->pvals ? r->pvals[i] : "");
+    return req_str("");
+}
+
+/* ── response builders (114.49) ──────────────────────────────────────────
+ * Build a heap TkRouterResp the dispatch reads back. content_type is a static
+ * string; body is the toke-owned string handed in (it outlives the send). */
+static int64_t make_resp(int status, const char *ct, int64_t body) {
+    TkRouterResp *r = (TkRouterResp *)malloc(sizeof *r);
+    if (!r) return 0;
+    r->status = status;
+    r->content_type = ct;
+    r->body = body ? (const char *)(intptr_t)body : "";
+    return (int64_t)(intptr_t)r;
+}
+
+int64_t tk_router_ok_w(int64_t body)   { return make_resp(200, "text/html; charset=utf-8", body); }
+int64_t tk_router_html_w(int64_t body) { return make_resp(200, "text/html; charset=utf-8", body); }
+int64_t tk_router_json_w(int64_t body) { return make_resp(200, "application/json", body); }
+int64_t tk_router_css_w(int64_t body)  { return make_resp(200, "text/css; charset=utf-8", body); }
+int64_t tk_router_text_w(int64_t body) { return make_resp(200, "text/plain; charset=utf-8", body); }
+int64_t tk_router_bad_w(int64_t body)  { return make_resp(400, "text/html; charset=utf-8", body); }
+int64_t tk_router_notfound_w(int64_t body) { return make_resp(404, "text/html; charset=utf-8", body); }
+/* router.status(code; body) — custom status, text/html. */
+int64_t tk_router_status_w(int64_t code, int64_t body) {
+    int s = (int)code; if (s < 100 || s > 599) s = 200;
+    return make_resp(s, "text/html; charset=utf-8", body);
+}
+/* router.respond(code; contenttype; body) — full control. */
+int64_t tk_router_respond_w(int64_t code, int64_t ct, int64_t body) {
+    int s = (int)code; if (s < 100 || s > 599) s = 200;
+    const char *c = ct ? (const char *)(intptr_t)ct : "text/html; charset=utf-8";
+    return make_resp(s, c, body);
 }

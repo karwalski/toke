@@ -1,5 +1,5 @@
 m=mortgage.web.calculate;
-i=http:std.http;
+i=router:std.router;
 i=tpl:std.template;
 i=str:std.str;
 i=math:std.math;
@@ -142,7 +142,7 @@ f=buildsvgchart(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):str{
   };
 
   
-  let d=svg.doc(chartw+marginl+20.0;charth+marginb+40.0);
+  let d=mut.svg.doc(chartw+marginl+20.0;charth+marginb+40.0);
   let princstyle=svg.style("#4caf50";"none";0.0);
   let intstyle=svg.style("#f44336";"none";0.0);
   let axisstyle=svg.style("none";"#333";1.0);
@@ -150,12 +150,12 @@ f=buildsvgchart(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):str{
   let titlestyle=$svgstyle{fill:"#333";stroke:"none";strokewidth:0.0;opacity:1.0;fontsize:14.0;fontfamily:"sans-serif"};
 
   
-  let d=svg.append(d;svg.text(marginl+chartw/2.0-80.0;16.0;"principal vs interest by year";titlestyle));
+  d=svg.append(d;svg.text(marginl+chartw/2.0-80.0;16.0;"principal vs interest by year";titlestyle));
 
   
-  let d=svg.append(d;svg.line(marginl;30.0;marginl;charth+30.0;axisstyle));
+  d=svg.append(d;svg.line(marginl;30.0;marginl;charth+30.0;axisstyle));
   
-  let d=svg.append(d;svg.line(marginl;charth+30.0;marginl+chartw;charth+30.0;axisstyle));
+  d=svg.append(d;svg.line(marginl;charth+30.0;marginl+chartw;charth+30.0;axisstyle));
 
   if(maxannual<1.0){maxannual=1.0};
   let scale=charth/maxannual;
@@ -170,24 +170,24 @@ f=buildsvgchart(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):str{
     
     let ih=yi*scale;
     let iy=charth+30.0-ih;
-    let d=svg.append(d;svg.rect(x;iy;barw;ih;intstyle));
+    d=svg.append(d;svg.rect(x;iy;barw;ih;intstyle));
 
     
     let ph=yp*scale;
     let py=iy-ph;
-    let d=svg.append(d;svg.rect(x;py;barw;ph;princstyle));
+    d=svg.append(d;svg.rect(x;py;barw;ph;princstyle));
 
     
     let lx=marginl+(y as f64)*spacing+spacing/2.0-4.0;
-    let d=svg.append(d;svg.text(lx;charth+44.0;str.fromint(y+1);txtstyle))
+    d=svg.append(d;svg.text(lx;charth+44.0;str.fromint(y+1);txtstyle))
   };
 
   
   let legy=charth+60.0;
-  let d=svg.append(d;svg.rect(marginl;legy;12.0;12.0;princstyle));
-  let d=svg.append(d;svg.text(marginl+16.0;legy+10.0;"principal";txtstyle));
-  let d=svg.append(d;svg.rect(marginl+100.0;legy;12.0;12.0;intstyle));
-  let d=svg.append(d;svg.text(marginl+116.0;legy+10.0;"interest";txtstyle));
+  d=svg.append(d;svg.rect(marginl;legy;12.0;12.0;princstyle));
+  d=svg.append(d;svg.text(marginl+16.0;legy+10.0;"principal";txtstyle));
+  d=svg.append(d;svg.rect(marginl+100.0;legy;12.0;12.0;intstyle));
+  d=svg.append(d;svg.text(marginl+116.0;legy+10.0;"interest";txtstyle));
 
   <svg.render(d)
 };
@@ -216,7 +216,7 @@ f=calctotals(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):@f64{
 
 
 f=handler(req:i64):i64{
-  let form=parseform(req.body);
+  let form=parseform(router.reqbody(req));
   let principals=formval(form;"principal");
   let rates=formval(form;"rate");
   let terms=formval(form;"term");
@@ -224,15 +224,15 @@ f=handler(req:i64):i64{
 
   let principal=mt str.tofloat(principals) {
     $ok:v v;
-    $err:e <http.res.bad("invalid principal")
+    $err:e <router.bad("invalid principal")
   };
   let annualrate=mt str.tofloat(rates) {
     $ok:v v;
-    $err:e <http.res.bad("invalid rate")
+    $err:e <router.bad("invalid rate")
   };
   let term=mt str.toint(terms) {
     $ok:v (v as u64);
-    $err:e <http.res.bad("invalid term")
+    $err:e <router.bad("invalid term")
   };
   let extra=mt str.tofloat(extras) {
     $ok:v v;
@@ -240,10 +240,10 @@ f=handler(req:i64):i64{
   };
 
   if(annualrate<0.0||annualrate>1.0){
-    <http.res.bad("rate must be between 0 and 1 (e.g. 0.065 for 6.5%)")
+    <router.bad("rate must be between 0 and 1 (e.g. 0.065 for 6.5%)")
   };
   if(term<1){
-    <http.res.bad("term must be at least 1 year")
+    <router.bad("term must be at least 1 year")
   };
 
   let pmt=monthlypayment(principal;annualrate;term*12);
@@ -268,13 +268,13 @@ f=handler(req:i64):i64{
 
   let body=mt tpl.renderfile("templates/results.tkt";vars) {
     $ok:v v;
-    $err:e <http.res.err("template error")
+    $err:e <router.status(500;"template error")
   };
   let layoutvars=tpl.vars(@("title":"Mortgage Results"));
   let layout=mt tpl.renderfile("templates/layout.tkt";layoutvars) {
     $ok:v v;
-    $err:e <http.res.err("template error")
+    $err:e <router.status(500;"template error")
   };
   let page=str.replace(layout;"{{content}}";body);
-  <http.res.ok(page)
+  <router.ok(page)
 };

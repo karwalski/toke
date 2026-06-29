@@ -508,8 +508,17 @@ static Node *parse_primary(Parser *p) {
      * The & token in parse_primary is always a function reference. */
     if(peek(p)==TK_AMP&&peek_at(p,1)==TK_IDENT){
         adv(p); /* consume '&' */
-        Token *nt=cur(p); adv(p); /* consume function name */
-        return mk(p,NODE_FUNC_REF,nt);
+        Token *nt=cur(p); adv(p); /* consume function name (or module alias) */
+        Node *ref=mk(p,NODE_FUNC_REF,nt);
+        /* 114.50: qualified function reference `&alias.method` — the node token
+         * holds the alias and a child NODE_IDENT holds the method, so codegen
+         * can resolve the cross-module mangled symbol. */
+        if(peek(p)==TK_DOT&&peek_at(p,1)==TK_IDENT){
+            adv(p); /* consume '.' */
+            Token *mt2=cur(p); adv(p); /* consume method name */
+            if(ref) ch(p,ref,mk(p,NODE_IDENT,mt2));
+        }
+        return ref;
     }
     /* Closure expression: fn(params):ReturnSpec{body}
      * Disambiguated from a plain ident by checking that the ident is "fn"

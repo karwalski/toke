@@ -1,5 +1,5 @@
 m=mortgage.web.index;
-i=http:std.http;
+i=router:std.router;
 i=tpl:std.template;
 i=str:std.str;
 
@@ -8,12 +8,12 @@ f=handler(req:i64):i64{
   let vars=tpl.vars(@("title":"Mortgage Calculator"));
   let layout=mt tpl.renderfile("templates/layout.tkt";vars) {
     $ok:v v;
-    $err:e <http.res.err("template error")
+    $err:e <router.status(500;"template error")
   };
   let body=mt tpl.renderfile("templates/index.tkt";tpl.vars(@())) {
     $ok:v v;
-    $err:e <http.res.err("template error")
+    $err:e <router.status(500;"template error")
   };
   let page=str.replace(layout;"{{content}}";body);
-  <http.res.ok(page)
+  <router.ok(page)
 };
