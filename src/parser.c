@@ -1081,12 +1081,24 @@ static Node *parse_loop_stmt(Parser *p) {
     Node *n=mk(p,NODE_LOOP_STMT,t);
     if(!xp(p,TK_LPAREN,"'('")){ sync(p);return n;}
     /* Disambiguate: 3-clause form starts with 'let IDENT =' or 'IDENT ='.
-     * Anything else (e.g. 'idx<n') is the while-loop form lp(expr){body}. */
+     * Anything else (e.g. 'idx<n') is the while-loop form lp(expr){body}.
+     * 114.7: `=` is also the equality operator, so `lp(go=1)` is a valid
+     * while-condition (`go == 1`), NOT a 3-clause init. Only commit to the
+     * 3-clause form when a top-level `;` actually appears before the closing
+     * `)` (the clause separator); otherwise it's a while-condition. */
     int is_three_clause = 0;
-    if(peek(p)==TK_KW_LET && peek_at(p,1)==TK_IDENT && peek_at(p,2)==TK_EQ)
-        is_three_clause = 1;
-    else if(peek(p)==TK_IDENT && peek_at(p,1)==TK_EQ)
-        is_three_clause = 1;
+    if((peek(p)==TK_KW_LET && peek_at(p,1)==TK_IDENT && peek_at(p,2)==TK_EQ) ||
+       (peek(p)==TK_IDENT && peek_at(p,1)==TK_EQ)) {
+        int depth=0;
+        for(int k=0;;k++){
+            TokenKind tk=peek_at(p,k);
+            if(tk==TK_EOF) break;
+            if(tk==TK_LPAREN) depth++;
+            else if(tk==TK_RPAREN){ if(depth==0) break; depth--; }
+            else if(tk==TK_SEMICOLON && depth==0){ is_three_clause=1; break; }
+            else if(tk==TK_LBRACE && depth==0) break; /* loop body — stop */
+        }
+    }
     if(is_three_clause){
     /* ── 3-clause form: lp(init; cond; step){body} ── */
     /* LoopInit = ('let' IDENT | IDENT) '=' Expr */

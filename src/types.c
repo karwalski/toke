@@ -331,25 +331,38 @@ static Type *infer(Ctx *cx, const Node *node);
  *   NODE_LOOP_INIT      — loop init variable (implicitly mutable)
  *   -1                  — not found
  */
+/* 114.7: when a name has multiple bindings (shadowing), prefer a *mutable* one
+ * (NODE_MUT_BIND_STMT / NODE_LOOP_INIT) over an immutable NODE_BIND_STMT, so
+ * `let x=5; let x=mut.10; x=x+1` doesn't spuriously report E4070 by finding the
+ * earlier immutable `let x` first. (A purely position/scope-accurate resolver
+ * would be ideal, but preferring mutable avoids false positives — the worst
+ * case is failing to flag an assignment to a shadowed immutable when a mutable
+ * of the same name also exists, which is rare and harmless.) */
 static int find_binding_kind(const Node *root, const char *src,
                              const char *name, int nlen) {
     if (!root) return -1;
+    int best=-1;
     if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT)
         &&root->child_count>0&&root->children[0]) {
         int tl=root->children[0]->tok_len;
         if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0)
-            return (int)root->kind;
+            best=(int)root->kind;
     }
-    if (root->kind==NODE_LOOP_INIT&&root->child_count>0&&root->children[0]) {
+    if (best!=(int)NODE_MUT_BIND_STMT && root->kind==NODE_LOOP_INIT
+        &&root->child_count>0&&root->children[0]) {
         int tl=root->children[0]->tok_len;
         if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0)
-            return (int)NODE_LOOP_INIT;
+            best=(int)NODE_LOOP_INIT;
     }
     for (int i=0;i<root->child_count;i++) {
         int r=find_binding_kind(root->children[i],src,name,nlen);
-        if (r>=0) return r;
+        if (r<0) continue;
+        if (best<0) best=r;
+        /* a mutable/loop binding wins over an immutable one */
+        else if (best==(int)NODE_BIND_STMT &&
+                 (r==(int)NODE_MUT_BIND_STMT||r==(int)NODE_LOOP_INIT)) best=r;
     }
-    return -1;
+    return best;
 }
 
 /*
