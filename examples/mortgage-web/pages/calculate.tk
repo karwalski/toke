@@ -44,8 +44,8 @@ f=monthlypayment(principal:f64;rate:f64;months:u64):f64{
 
 
 f=formatmoney(v:f64):str{
-  let whole=(v as i64);
-  let frac=((v-(whole as f64))*100.0+0.5 as i64);
+  let whole=mut.(v as i64);
+  let frac=mut.(((v-(whole as f64))*100.0+0.5) as i64);
   if(frac>99){
     whole=whole+1;
     frac=0
@@ -69,7 +69,7 @@ f=buildschedulerows(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):str{
   let totalpaid=mut.0.0;
   lp(let i=1;i<(n as i64)+1;i=i+1){
     let mi=bal*(rate/12.0);
-    let mp=pmt+extra;
+    let mp=mut.(pmt+extra);
     if(mp>bal+mi){
       mp=bal+mi
     };
@@ -105,7 +105,7 @@ f=buildsvgchart(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):str{
   let charth=300.0;
   let marginl=60.0;
   let marginb=40.0;
-  let barw=chartw/(years as f64)-4.0;
+  let barw=mut.(chartw/(years as f64)-4.0);
   if(barw>40.0){barw=40.0};
   if(barw<4.0){barw=4.0};
 
@@ -117,7 +117,7 @@ f=buildsvgchart(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):str{
   let yrint=mut.0.0;
   lp(let i=1;i<(n as i64)+1;i=i+1){
     let mi=bal*(rate/12.0);
-    let mp=pmt+extra;
+    let mp=mut.(pmt+extra);
     if(mp>bal+mi){mp=bal+mi};
     let princ=mp-mi;
     bal=bal-princ;
@@ -200,7 +200,7 @@ f=calctotals(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):@f64{
   let totalpaid=mut.0.0;
   lp(let i=1;i<(n as i64)+1;i=i+1){
     let mi=bal*(rate/12.0);
-    let mp=pmt+extra;
+    let mp=mut.(pmt+extra);
     if(mp>bal+mi){mp=bal+mi};
     let princ=mp-mi;
     bal=bal-princ;
