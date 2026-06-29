@@ -74,3 +74,82 @@ int64_t tk_csv_serialize_w(int64_t data) {
     csv_writer_free(w);
     return (int64_t)(intptr_t)result;
 }
+
+/* ── 114.43: streaming reader/writer wrappers ────────────────────────────
+ * The streaming API was declared in csv.tki but had no `_w` wrappers, so any
+ * program using it failed to link. csv.c already implements the primitives. */
+
+/* Build a toke [str] (block[-1]=len, block[i]=char*) from a StrArray. */
+static int64_t strarray_to_tokearr(StrArray a) {
+    int64_t *blk = (int64_t *)malloc((a.len + 1) * sizeof(int64_t));
+    if (!blk) return 0;
+    blk[0] = (int64_t)a.len;
+    for (uint64_t i = 0; i < a.len; i++)
+        blk[i + 1] = (int64_t)(intptr_t)a.data[i];
+    return (int64_t)(intptr_t)(blk + 1);
+}
+
+/* csv.reader([byte] data; u8 sep) -> csvreader. csv_reader_new references the
+ * data buffer, so it is kept alive for the reader's lifetime. */
+int64_t tk_csv_reader_w(int64_t data, int64_t sep) {
+    uint8_t *bytes = NULL;
+    uint64_t len = tk_bytes_unpack(data, &bytes);
+    char *s = (char *)malloc(len + 1);
+    if (!s) return 0;
+    if (bytes && len) memcpy(s, bytes, len);
+    s[len] = '\0';
+    TkCsvReader *r = csv_reader_new(s, len);
+    if (!r) { free(s); return 0; }
+    if (sep) csv_reader_set_separator(r, (char)sep);
+    return (int64_t)(intptr_t)r;
+}
+
+/* csv.next(csvreader) -> csvrow!csverr — 0 (err sentinel) at end of data. */
+int64_t tk_csv_next_w(int64_t reader) {
+    if (!reader) return 0;
+    TkCsvReader *r = (TkCsvReader *)(intptr_t)reader;
+    if (!csv_reader_has_next(r)) return 0;
+    StrArray row = csv_reader_next(r);
+    if (!row.data || row.len == 0) return 0;
+    int64_t fields = strarray_to_tokearr(row);
+    int64_t *cr = (int64_t *)malloc(sizeof(int64_t));   /* csvrow = {fields:[str]} */
+    if (!cr) return 0;
+    cr[0] = fields;
+    return (int64_t)(intptr_t)cr;
+}
+
+/* csv.header(csvreader) -> [str]!csverr */
+int64_t tk_csv_header_w(int64_t reader) {
+    if (!reader) return 0;
+    StrArray h = csv_reader_header((TkCsvReader *)(intptr_t)reader);
+    if (!h.data) return 0;
+    return strarray_to_tokearr(h);
+}
+
+/* csv.writer(u8 sep) -> csvwriter */
+int64_t tk_csv_writer_w(int64_t sep) {
+    TkCsvWriter *w = csv_writer_new();
+    if (!w) return 0;
+    if (sep) csv_writer_set_separator(w, (char)sep);
+    return (int64_t)(intptr_t)w;
+}
+
+/* csv.writerow(csvwriter; [str] row) -> void */
+int64_t tk_csv_writerow_w(int64_t writer, int64_t row) {
+    if (!writer || !row) return 0;
+    int64_t *ptr = (int64_t *)(intptr_t)row;
+    int64_t n = ptr[-1];
+    StrArray a;
+    a.len = (uint64_t)(n > 0 ? n : 0);
+    a.data = (const char **)ptr;
+    csv_writer_writerow((TkCsvWriter *)(intptr_t)writer, a);
+    return 0;
+}
+
+/* csv.flush(csvwriter) -> [byte] */
+int64_t tk_csv_flush_w(int64_t writer) {
+    if (!writer) return tk_bytes_pack((const uint8_t *)"", 0);
+    const char *res = csv_writer_flush((TkCsvWriter *)(intptr_t)writer);
+    if (!res) return tk_bytes_pack((const uint8_t *)"", 0);
+    return tk_bytes_pack((const uint8_t *)res, strlen(res));
+}
