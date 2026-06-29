@@ -2159,6 +2159,29 @@ static int emit_expr(Ctx *c, const Node *n)
                 return t;
             }
         }
+        /* 114.36: a bare function name used in value position resolves to a
+         * function reference (ptrtoint @fn) — so `http.get("/"; home)` behaves
+         * like `&home`. Gated on the name not being a local/global, so those
+         * always take precedence; only same-module functions match here
+         * (cross-module refs are `alias.fn`, a NODE_FIELD_EXPR). Without this a
+         * bare function name emitted `load %fn` of an undefined value. */
+        if (!name_is_local(c, tb)) {
+            char fmangle[256];
+            strncpy(fmangle, tb, sizeof fmangle - 1); fmangle[sizeof fmangle - 1] = '\0';
+            if (!strcmp(fmangle, "main")) strcpy(fmangle, "tk_main");
+            mangle_fn_name(c, fmangle, sizeof fmangle);
+            const FnSig *fref = lookup_fn(c, fmangle);
+            if (fref) {
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ptrtoint %s (", t, fref->ret);
+                for (int i = 0; i < fref->param_count; i++) {
+                    if (i) fprintf(c->out, ", ");
+                    fprintf(c->out, "%s", fref->param_tys[i]);
+                }
+                fprintf(c->out, ")* @%s to i64\n", fref->name);
+                return t;
+            }
+        }
         t = next_tmp(c);
         {
             const char *ln = get_llvm_name(c, tb);
@@ -4089,6 +4112,13 @@ static int emit_expr(Ctx *c, const Node *n)
               fprintf(c->out, "  ret i1 0\n");
           else if (!strcmp(rt, "void"))
               fprintf(c->out, "  ret void\n");
+          /* 114.37: an f64/f32-returning fallible fn (`f64!$err`) must return a
+           * float-typed err sentinel here, not `i8* null` (which mismatches the
+           * function result type and produces invalid IR). */
+          else if (!strcmp(rt, "double"))
+              fprintf(c->out, "  ret double 0.0\n");
+          else if (!strcmp(rt, "float"))
+              fprintf(c->out, "  ret float 0.0\n");
           else
               fprintf(c->out, "  ret i8* null\n");
         }
