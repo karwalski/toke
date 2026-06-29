@@ -7,9 +7,20 @@
  */
 
 #include "collections.h"
+#include "tk_array.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+/*
+ * tk_array_retain — bump the refcount on an array-typed handle (ADR-0006 D2).
+ * Codegen emits a call to this at every array-typed handle duplication so that
+ * a later in-place mutation can tell whether the array is uniquely referenced.
+ * Monotonic (never decremented) and NULL-safe.
+ */
+void tk_array_retain(int64_t h) {
+    if (h) ((int64_t *)(intptr_t)h)[-3] += 1;
+}
 
 /* ── Map runtime (tk_map_new / tk_map_put / tk_map_get) ────────────── */
 
@@ -58,14 +69,13 @@ int64_t tk_map_get(void *m_ptr, int64_t key) {
 /* ── Array/map instance method wrappers ──────────────────────────────── */
 
 int64_t tk_array_append_w(int64_t arr_i64, int64_t elem) {
-    int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
-    int64_t len = ptr[-1];
-    int64_t *block = (int64_t *)malloc((size_t)(len + 2) * sizeof(int64_t));
-    if (!block) return arr_i64;
-    block[0] = len + 1;
-    if (len > 0) memcpy(block + 1, ptr, (size_t)len * sizeof(int64_t));
-    block[len + 1] = elem;
-    return (int64_t)(intptr_t)(block + 1);
+    int64_t len = tk_arr_len(arr_i64);
+    int64_t h = tk_arr_alloc(len + 1, len + 1);
+    if (!h) return arr_i64;
+    int64_t *out = (int64_t *)(intptr_t)h;
+    if (len > 0) memcpy(out, (int64_t *)(intptr_t)arr_i64, (size_t)len * sizeof(int64_t));
+    out[len] = elem;
+    return h;
 }
 
 int64_t tk_map_set_w(int64_t map_i64, int64_t key, int64_t val) {
@@ -78,12 +88,12 @@ int64_t tk_map_keys_w(int64_t map) {
     if (!map) return 0;
     TkMapImpl *m = (TkMapImpl *)(intptr_t)map;
     int64_t count = m->len;
-    int64_t *block = (int64_t *)malloc((size_t)(count + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = count;
+    int64_t h = tk_arr_alloc(count, count);
+    if (!h) return 0;
+    int64_t *out = (int64_t *)(intptr_t)h;
     for (int i = 0; i < m->len; i++)
-        block[i + 1] = m->entries[i].key;
-    return (int64_t)(intptr_t)(block + 1);
+        out[i] = m->entries[i].key;
+    return h;
 }
 int64_t tk_map_getor_w(int64_t map, int64_t key, int64_t def) { (void)map; (void)key; return def; }
 int64_t tk_map_put_w(int64_t map, int64_t key, int64_t val) {
@@ -101,17 +111,11 @@ int64_t tk_map_setint_w(int64_t map, int64_t key, int64_t val) {
 /* array extras — allocate empty toke-format arrays */
 int64_t tk_array_newarray_w(int64_t dummy) {
     (void)dummy;
-    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = 0;
-    return (int64_t)(intptr_t)(block + 1);
+    return tk_arr_alloc(0, 0);
 }
 int64_t tk_array_newstrarray_w(int64_t dummy) {
     (void)dummy;
-    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = 0;
-    return (int64_t)(intptr_t)(block + 1);
+    return tk_arr_alloc(0, 0);
 }
 int64_t tk_array_strarrayappend_w(int64_t arr, int64_t s) { return tk_array_append_w(arr, s); }
 int64_t tk_array_arrayappend_w(int64_t arr, int64_t elem) { return tk_array_append_w(arr, elem); }
@@ -124,29 +128,30 @@ int64_t tk_arr_map(int64_t arr_i64, int64_t fn_ptr) {
     typedef int64_t (*map_fn)(int64_t);
     int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
     int64_t len = ptr[-1];
-    int64_t *block = (int64_t *)malloc((size_t)(len + 1) * sizeof(int64_t));
-    if (!block) return arr_i64;
-    block[0] = len;
+    int64_t h = tk_arr_alloc(len, len);
+    if (!h) return arr_i64;
+    int64_t *out = (int64_t *)(intptr_t)h;
     map_fn f = (map_fn)(intptr_t)fn_ptr;
     for (int64_t i = 0; i < len; i++)
-        block[i + 1] = f(ptr[i]);
-    return (int64_t)(intptr_t)(block + 1);
+        out[i] = f(ptr[i]);
+    return h;
 }
 
 int64_t tk_arr_filter(int64_t arr_i64, int64_t fn_ptr) {
     typedef int64_t (*filter_fn)(int64_t);
     int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
     int64_t len = ptr[-1];
-    int64_t *block = (int64_t *)malloc((size_t)(len + 1) * sizeof(int64_t));
-    if (!block) return arr_i64;
+    int64_t h = tk_arr_alloc(len, len);
+    if (!h) return arr_i64;
+    int64_t *out = (int64_t *)(intptr_t)h;
     filter_fn f = (filter_fn)(intptr_t)fn_ptr;
     int64_t out_len = 0;
     for (int64_t i = 0; i < len; i++) {
         if (f(ptr[i]))
-            block[out_len + 1] = ptr[i], out_len++;
+            out[out_len] = ptr[i], out_len++;
     }
-    block[0] = out_len;
-    return (int64_t)(intptr_t)(block + 1);
+    tk_arr_setlen(h, out_len);
+    return h;
 }
 
 int64_t tk_arr_reduce(int64_t arr_i64, int64_t init, int64_t fn_ptr) {
@@ -172,13 +177,13 @@ static int tk_arr_sort_qsort_cmp(const void *a, const void *b) {
 int64_t tk_arr_sort(int64_t arr_i64, int64_t cmp_ptr) {
     int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
     int64_t len = ptr[-1];
-    int64_t *block = (int64_t *)malloc((size_t)(len + 1) * sizeof(int64_t));
-    if (!block) return arr_i64;
-    block[0] = len;
-    if (len > 0) memcpy(block + 1, ptr, (size_t)len * sizeof(int64_t));
+    int64_t h = tk_arr_alloc(len, len);
+    if (!h) return arr_i64;
+    int64_t *out = (int64_t *)(intptr_t)h;
+    if (len > 0) memcpy(out, ptr, (size_t)len * sizeof(int64_t));
     tk_arr_sort_cmp_global = (tk_arr_cmp_fn_t)(intptr_t)cmp_ptr;
-    qsort(block + 1, (size_t)len, sizeof(int64_t), tk_arr_sort_qsort_cmp);
-    return (int64_t)(intptr_t)(block + 1);
+    qsort(out, (size_t)len, sizeof(int64_t), tk_arr_sort_qsort_cmp);
+    return h;
 }
 
 /* ── std.array instance methods ──────────────────────────────────────── */
@@ -202,10 +207,7 @@ int64_t tk_array_length_w(int64_t arr) {
 /* array.new(type) — create empty array (type tag ignored at runtime) */
 int64_t tk_array_new_w(int64_t type_tag) {
     (void)type_tag;
-    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = 0;
-    return (int64_t)(intptr_t)(block + 1);
+    return tk_arr_alloc(0, 0);
 }
 
 /* array.push(arr, elem) — append element, return new array */
@@ -220,11 +222,11 @@ int64_t tk_array_pop_w(int64_t arr) {
     int64_t len = ptr[-1];
     if (len <= 0) return arr;
     int64_t new_len = len - 1;
-    int64_t *block = (int64_t *)malloc((size_t)(new_len + 1) * sizeof(int64_t));
-    if (!block) return arr;
-    block[0] = new_len;
-    if (new_len > 0) memcpy(block + 1, ptr, (size_t)new_len * sizeof(int64_t));
-    return (int64_t)(intptr_t)(block + 1);
+    int64_t h = tk_arr_alloc(new_len, new_len);
+    if (!h) return arr;
+    int64_t *out = (int64_t *)(intptr_t)h;
+    if (new_len > 0) memcpy(out, ptr, (size_t)new_len * sizeof(int64_t));
+    return h;
 }
 
 /* array.len — alias for array.length */
@@ -238,10 +240,7 @@ int64_t tk_sort_strs_w(int64_t arr) { (void)arr; return arr; }
 
 /* tk_collections_newarray_w — allocate an empty toke-format array. */
 int64_t tk_collections_newarray_w(void) {
-    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = 0;
-    return (int64_t)(intptr_t)(block + 1);
+    return tk_arr_alloc(0, 0);
 }
 
 /* tk_collections_append_w — copy array + append item (immutable style). */

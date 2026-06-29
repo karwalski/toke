@@ -6,6 +6,7 @@
  */
 
 #include "file.h"
+#include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,12 +45,12 @@ int64_t tk_file_listall_w(int64_t dir) {
     StrArrayFileResult r = file_listall((const char *)(intptr_t)dir);
     if (r.is_err) return 0;
     StrArray arr = r.ok;
-    int64_t *block = (int64_t *)malloc((arr.len + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)arr.len;
+    int64_t h = tk_arr_alloc((int64_t)arr.len, (int64_t)arr.len);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < arr.len; i++)
-        block[i + 1] = (int64_t)(intptr_t)arr.data[i];
-    return (int64_t)(intptr_t)(block + 1);
+        block[i] = (int64_t)(intptr_t)arr.data[i];
+    return h;
 }
 
 int64_t tk_file_exists_w(int64_t path) {
@@ -64,13 +65,13 @@ int64_t tk_file_list_w(int64_t dir) {
     StrArrayFileResult r = file_list((const char *)(intptr_t)dir);
     if (r.is_err) return 0;
     StrArray arr = r.ok;
-    int64_t *block = (int64_t *)malloc((arr.len + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)arr.len;
+    int64_t h = tk_arr_alloc((int64_t)arr.len, (int64_t)arr.len);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < arr.len; i++)
-        block[i + 1] = (int64_t)(intptr_t)arr.data[i];
+        block[i] = (int64_t)(intptr_t)arr.data[i];
     free(arr.data);
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 
 int64_t tk_file_append_w(int64_t path, int64_t content, int64_t extra) {
@@ -97,13 +98,13 @@ int64_t tk_file_readlines_w(int64_t path) {
     StrArrayFileResult r = file_readlines((const char *)(intptr_t)path);
     if (r.is_err) return 0;
     StrArray arr = r.ok;
-    int64_t *block = (int64_t *)malloc((arr.len + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)arr.len;
+    int64_t h = tk_arr_alloc((int64_t)arr.len, (int64_t)arr.len);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < arr.len; i++)
-        block[i + 1] = (int64_t)(intptr_t)arr.data[i];
+        block[i] = (int64_t)(intptr_t)arr.data[i];
     free(arr.data);
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 
 int64_t tk_file_writelines_w(int64_t path, int64_t lines) {
@@ -186,13 +187,13 @@ int64_t tk_file_listglob_w(int64_t pattern) {
     StrArrayFileResult r = file_glob((const char *)(intptr_t)pattern);
     if (r.is_err) return 0;
     StrArray arr = r.ok;
-    int64_t *block = (int64_t *)malloc((arr.len + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)arr.len;
+    int64_t h = tk_arr_alloc((int64_t)arr.len, (int64_t)arr.len);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < arr.len; i++)
-        block[i + 1] = (int64_t)(intptr_t)arr.data[i];
+        block[i] = (int64_t)(intptr_t)arr.data[i];
     free(arr.data);
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 
 /* file.parsetoml(path) — read file and parse as TOML, return raw string

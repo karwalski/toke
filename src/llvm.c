@@ -4068,23 +4068,30 @@ static int emit_expr(Ctx *c, const Node *n)
             int total_len = next_tmp(c);
             fprintf(c->out, "  %%t%d = add i64 %%t%d, %d ; total_len = base.len + %d\n",
                     total_len, base_len, n_scalars, n_scalars);
-            /* alloc_bytes = (total_len + 1) * 8 */
+            /* 114.18/ADR-0006 header: alloc_bytes = (total_len + 3) * 8 */
             int alloc_elems = next_tmp(c);
             int alloc_bytes = next_tmp(c);
-            fprintf(c->out, "  %%t%d = add i64 %%t%d, 1\n", alloc_elems, total_len);
+            fprintf(c->out, "  %%t%d = add i64 %%t%d, 3\n", alloc_elems, total_len);
             fprintf(c->out, "  %%t%d = mul i64 %%t%d, 8\n", alloc_bytes, alloc_elems);
             /* malloc */
             int block_raw = next_tmp(c);
             fprintf(c->out, "  %%t%d = call i8* @malloc(i64 %%t%d) ; spread array\n", block_raw, alloc_bytes);
             int block = next_tmp(c);
             fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", block, block_raw);
-            /* Store total_len at block[0] */
+            /* Header: block[0]=rc=1, block[1]=cap=total_len, block[2]=total_len */
+            { int hp = next_tmp(c);
+              fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 0\n", hp, block);
+              fprintf(c->out, "  store i64 1, i64* %%t%d ; rc\n", hp);
+              hp = next_tmp(c);
+              fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 1\n", hp, block);
+              fprintf(c->out, "  store i64 %%t%d, i64* %%t%d ; cap\n", total_len, hp);
+            }
             int len_slot = next_tmp(c);
-            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 0\n", len_slot, block);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 2\n", len_slot, block);
             fprintf(c->out, "  store i64 %%t%d, i64* %%t%d ; .len\n", total_len, len_slot);
-            /* data_ptr = block + 1 */
+            /* data_ptr = block + 3 */
             t = next_tmp(c);
-            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 1 ; data start\n", t, block);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 3 ; data start\n", t, block);
             /* Copy base_len * 8 bytes from source array to new data */
             int copy_bytes = next_tmp(c);
             fprintf(c->out, "  %%t%d = mul i64 %%t%d, 8\n", copy_bytes, base_len);
@@ -4123,21 +4130,28 @@ static int emit_expr(Ctx *c, const Node *n)
         }
 
         /* ── Static path: @(item1; item2; ...) — all scalars ─────────── */
-        /* Allocate len+1 slots: [length | data[0] | data[1] | ...].
-         * Return pointer to data[0] so that ptr[-1] == length. */
+        /* 114.18/ADR-0006 header: [ rc | cap | len | data[0] | ... ].
+         * Allocate elem_count+3 slots; return &data[0] so ptr[-1]==len. */
         int block_raw = next_tmp(c);
-        fprintf(c->out, "  %%t%d = call i8* @malloc(i64 %d) ; array block (len + %d elems)\n",
-                block_raw, (elem_count + 1) * 8, elem_count);
+        fprintf(c->out, "  %%t%d = call i8* @malloc(i64 %d) ; array block (3-word hdr + %d elems)\n",
+                block_raw, (elem_count + 3) * 8, elem_count);
         /* Bug 102.22: bitcast i8* from malloc to i64* for GEP */
         int block = next_tmp(c);
         fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", block, block_raw);
-        /* Store length at index 0 of the block */
+        /* Header: block[0]=rc=1, block[1]=cap=len, block[2]=len */
+        { int hp = next_tmp(c);
+          fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 0\n", hp, block);
+          fprintf(c->out, "  store i64 1, i64* %%t%d ; rc\n", hp);
+          hp = next_tmp(c);
+          fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 1\n", hp, block);
+          fprintf(c->out, "  store i64 %d, i64* %%t%d ; cap\n", elem_count, hp);
+        }
         t2 = next_tmp(c);
-        fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 0\n", t2, block);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 2\n", t2, block);
         fprintf(c->out, "  store i64 %d, i64* %%t%d ; .len\n", elem_count, t2);
-        /* Data pointer = block + 1 */
+        /* Data pointer = block + 3 */
         t = next_tmp(c);
-        fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 1 ; data start\n", t, block);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 3 ; data start\n", t, block);
         int elem_idx = 0;
         for (int i = 0; i < n->child_count; i++) {
             NodeKind ck = n->children[i]->kind;

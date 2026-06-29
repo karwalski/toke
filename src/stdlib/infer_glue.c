@@ -8,6 +8,7 @@
  * On platforms without local inference support, they return error sentinels.
  */
 
+#include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,8 +44,5 @@ int64_t tk_infer_embed_w(int64_t handle, int64_t text) {
     (void)handle;
     (void)text;
     /* Return empty array */
-    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = 0;
-    return (int64_t)(intptr_t)(block + 1);
+    return tk_arr_alloc(0, 0);
 }

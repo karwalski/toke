@@ -7,6 +7,7 @@
 
 #include "str.h"
 #include "bytes_rt.h"   /* Stage 5: [byte] pack/unpack marshalling */
+#include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,12 +73,12 @@ int64_t tk_str_from_float(int64_t n_as_double_bits) {
 int64_t tk_str_split_w(int64_t s, int64_t sep) {
     if (!s || !sep) return 0;
     StrArray arr = str_split((const char *)(intptr_t)s, (const char *)(intptr_t)sep);
-    int64_t *block = (int64_t *)malloc((arr.len + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)arr.len;
+    int64_t h = tk_arr_alloc((int64_t)arr.len, (int64_t)arr.len);
+    if (!h) return 0;
+    int64_t *out = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < arr.len; i++)
-        block[i + 1] = (int64_t)(intptr_t)arr.data[i];
-    return (int64_t)(intptr_t)(block + 1);
+        out[i] = (int64_t)(intptr_t)arr.data[i];
+    return h;
 }
 
 int64_t tk_str_indexof_w(int64_t s, int64_t sub) {
@@ -197,30 +198,18 @@ int64_t tk_str_print_w(int64_t s) {
 
 /* --- empty array helper: allocates a block with count=0, returns block+1 --- */
 static int64_t str_make_empty_array(void) {
-    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = 0;
-    return (int64_t)(intptr_t)(block + 1);
+    return tk_arr_alloc(0, 0);
 }
 
 /* --- array append helper (same layout as tk_array_append_w) ------------- */
 static int64_t str_array_append(int64_t arr_i64, int64_t elem) {
-    if (!arr_i64) {
-        /* create single-element array */
-        int64_t *block = (int64_t *)malloc(2 * sizeof(int64_t));
-        if (!block) return 0;
-        block[0] = 1;
-        block[1] = elem;
-        return (int64_t)(intptr_t)(block + 1);
-    }
-    int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
-    int64_t len = ptr[-1];
-    int64_t *block = (int64_t *)malloc((size_t)(len + 2) * sizeof(int64_t));
-    if (!block) return arr_i64;
-    block[0] = len + 1;
-    if (len > 0) memcpy(block + 1, ptr, (size_t)len * sizeof(int64_t));
-    block[len + 1] = elem;
-    return (int64_t)(intptr_t)(block + 1);
+    int64_t len = tk_arr_len(arr_i64);
+    int64_t h = tk_arr_alloc(len + 1, len + 1);
+    if (!h) return arr_i64;
+    int64_t *out = (int64_t *)(intptr_t)h;
+    if (len > 0) memcpy(out, (int64_t *)(intptr_t)arr_i64, (size_t)len * sizeof(int64_t));
+    out[len] = elem;
+    return h;
 }
 
 /* str newarray */
@@ -323,21 +312,20 @@ int64_t tk_str_replaceitem_w(int64_t arr, int64_t idx, int64_t val) {
     int64_t len = ptr[-1];
     if (idx < 0 || idx >= len) return arr;
     /* copy-on-write: allocate new block */
-    int64_t *block = (int64_t *)malloc((size_t)(len + 1) * sizeof(int64_t));
-    if (!block) return arr;
-    block[0] = len;
-    memcpy(block + 1, ptr, (size_t)len * sizeof(int64_t));
-    block[idx + 1] = val;
-    return (int64_t)(intptr_t)(block + 1);
+    int64_t h = tk_arr_alloc(len, len);
+    if (!h) return arr;
+    int64_t *out = (int64_t *)(intptr_t)h;
+    memcpy(out, ptr, (size_t)len * sizeof(int64_t));
+    out[idx] = val;
+    return h;
 }
 
 int64_t tk_str_arrof_w(int64_t v) {
     /* create a single-element array */
-    int64_t *block = (int64_t *)malloc(2 * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = 1;
-    block[1] = v;
-    return (int64_t)(intptr_t)(block + 1);
+    int64_t h = tk_arr_alloc(1, 1);
+    if (!h) return 0;
+    ((int64_t *)(intptr_t)h)[0] = v;
+    return h;
 }
 
 int64_t tk_str_fromfloat_w(int64_t f) {
@@ -421,12 +409,12 @@ int64_t tk_array_set_w(int64_t arr_i64, int64_t idx, int64_t elem) {
     int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
     int64_t len = ptr[-1];
     if (idx < 0 || idx >= len) return arr_i64;
-    int64_t *block = (int64_t *)malloc((size_t)(len + 1) * sizeof(int64_t));
-    if (!block) return arr_i64;
-    block[0] = len;
-    if (len > 0) memcpy(block + 1, ptr, (size_t)len * sizeof(int64_t));
-    block[idx + 1] = elem;
-    return (int64_t)(intptr_t)(block + 1);
+    int64_t h = tk_arr_alloc(len, len);
+    if (!h) return arr_i64;
+    int64_t *out = (int64_t *)(intptr_t)h;
+    if (len > 0) memcpy(out, ptr, (size_t)len * sizeof(int64_t));
+    out[idx] = elem;
+    return h;
 }
 
 /* str.arraylen — get length of toke array */
@@ -636,12 +624,11 @@ int64_t tk_str_findall_w(int64_t s, int64_t pattern) {
     regfree(&re);
 
     /* Build toke array: [len, items...] */
-    int64_t *block = (int64_t *)malloc((len + 1) * sizeof(int64_t));
-    if (!block) { free(items); return 0; }
-    block[0] = (int64_t)len;
-    memcpy(block + 1, items, len * sizeof(int64_t));
+    int64_t h = tk_arr_alloc((int64_t)len, (int64_t)len);
+    if (!h) { free(items); return 0; }
+    memcpy((int64_t *)(intptr_t)h, items, len * sizeof(int64_t));
     free(items);
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 
 /* str.matches(s, pattern) — return 1 if entire string matches regex */
@@ -881,18 +868,18 @@ int64_t tk_str_chars_w(int64_t s) {
     if (!s) return 0;
     const char *str = (const char *)(intptr_t)s;
     size_t len = strlen(str);
-    /* Allocate array: length header + one i64 per character */
-    int64_t *arr = (int64_t *)malloc((len + 1) * sizeof(int64_t));
-    if (!arr) return 0;
-    arr[0] = (int64_t)len;
+    /* Allocate array: header + one i64 per character */
+    int64_t h = tk_arr_alloc((int64_t)len, (int64_t)len);
+    if (!h) return 0;
+    int64_t *arr = (int64_t *)(intptr_t)h;
     for (size_t i = 0; i < len; i++) {
         char *ch = (char *)malloc(2);
-        if (!ch) { arr[i + 1] = (int64_t)(intptr_t)""; continue; }
+        if (!ch) { arr[i] = (int64_t)(intptr_t)""; continue; }
         ch[0] = str[i];
         ch[1] = '\0';
-        arr[i + 1] = (int64_t)(intptr_t)ch;
+        arr[i] = (int64_t)(intptr_t)ch;
     }
-    return (int64_t)(intptr_t)(arr + 1); /* point past length header */
+    return h;
 }
 
 /* --- str.sub(s, old, new) — alias for replace --- */

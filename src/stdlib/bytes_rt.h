@@ -18,6 +18,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include "tk_array.h"   /* 114.18: array backing-block header + tk_arr_alloc */
 
 /* Unpack a toke [byte] (i64-array of byte values) into a freshly malloc'd
  * contiguous uint8_t buffer (NUL-terminated for convenience). Returns the
@@ -38,11 +39,11 @@ static inline uint64_t tk_bytes_unpack(int64_t arr, uint8_t **out) {
 /* Pack a contiguous byte buffer into a toke [byte] (i64-array of byte values).
  * Returns the toke array handle (&block[1]). */
 static inline int64_t tk_bytes_pack(const uint8_t *buf, uint64_t n) {
-    int64_t *block = (int64_t *)malloc((size_t)(n + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)n;
-    for (uint64_t i = 0; i < n; i++) block[i + 1] = (int64_t)buf[i];
-    return (int64_t)(intptr_t)(block + 1);
+    int64_t h = tk_arr_alloc((int64_t)n, (int64_t)n);
+    if (!h) return 0;
+    int64_t *data = (int64_t *)(intptr_t)h;
+    for (uint64_t i = 0; i < n; i++) data[i] = (int64_t)buf[i];
+    return h;
 }
 
 #endif /* TK_BYTES_RT_H */

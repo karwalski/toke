@@ -8,6 +8,7 @@
  */
 
 #include "tk_runtime.h"
+#include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include "args.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,9 +58,8 @@ static int64_t parse_int(const char **pp) {
 /* Allocate a toke-runtime array: [len | data...].
  * Returns pointer to data[0]; len stored at ptr[-1]. */
 static int64_t *alloc_array(int64_t len) {
-    int64_t *block = (int64_t *)malloc((size_t)(len + 1) * sizeof(int64_t));
-    block[0] = len;
-    return block + 1;  /* pointer to first data element */
+    int64_t h = tk_arr_alloc(len, len);
+    return (int64_t *)(intptr_t)h;  /* pointer to first data element (or NULL on OOM) */
 }
 
 /* Parse a JSON array of integers: [1, 2, 3] */
@@ -223,9 +223,9 @@ int64_t *tk_array_concat(int64_t *a, int64_t *b) {
     int64_t la = a ? a[-1] : 0;
     int64_t lb = b ? b[-1] : 0;
     int64_t total = la + lb;
-    int64_t *block = (int64_t *)malloc((size_t)(total + 1) * sizeof(int64_t));
-    block[0] = total;
-    int64_t *data = block + 1;
+    int64_t h = tk_arr_alloc(total, total);
+    if (!h) return NULL;
+    int64_t *data = (int64_t *)(intptr_t)h;
     for (int64_t i = 0; i < la; i++) data[i] = a[i];
     for (int64_t i = 0; i < lb; i++) data[la + i] = b[i];
     return data;

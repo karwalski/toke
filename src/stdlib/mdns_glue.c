@@ -6,6 +6,7 @@
  * Stubs return 0/error when not linked with the platform library.
  */
 
+#include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -28,10 +29,7 @@ int64_t tk_mdns_stopadvertise_w(int64_t handle) {
 int64_t tk_mdns_browse_w(int64_t service_type) {
     (void)service_type;
     /* Return empty array */
-    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = 0;
-    return (int64_t)(intptr_t)(block + 1);
+    return tk_arr_alloc(0, 0);
 }
 
 /* mdns.stopbrowse(handle) — stop browsing */

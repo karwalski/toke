@@ -6,6 +6,7 @@
  */
 
 #include "vecstore.h"
+#include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,13 +73,13 @@ int64_t tk_vecstore_search_w(int64_t coll, int64_t query_vec, int64_t k) {
     free(vec);
     if (results.count <= 0) return 0;
     /* Return as toke array of id strings */
-    int64_t *block = (int64_t *)malloc(((size_t)results.count + 1) * sizeof(int64_t));
-    if (!block) { vecstore_free_results(&results); return 0; }
-    block[0] = (int64_t)results.count;
+    int64_t h = tk_arr_alloc((int64_t)results.count, (int64_t)results.count);
+    if (!h) { vecstore_free_results(&results); return 0; }
+    int64_t *block = (int64_t *)(intptr_t)h;
     for (int32_t i = 0; i < results.count; i++)
-        block[i + 1] = (int64_t)(intptr_t)results.items[i].id;
+        block[i] = (int64_t)(intptr_t)results.items[i].id;
     /* Don't free results — ids are now owned by the toke array */
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 
 /* vecstore.delete(collection, id) — remove a vector by id */

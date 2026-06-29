@@ -6,6 +6,7 @@
  */
 
 #include "json.h"
+#include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -117,13 +118,13 @@ int64_t tk_json_keys_w(int64_t obj) {
     StrArrayJsonResult r = json_keys(*jp);
     if (r.is_err || r.ok.len == 0) return 0;
     /* Return as toke array: [len, elem0, elem1, ...] */
-    int64_t *block = (int64_t *)malloc((size_t)(r.ok.len + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)r.ok.len;
+    int64_t h = tk_arr_alloc((int64_t)r.ok.len, (int64_t)r.ok.len);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < r.ok.len; i++)
-        block[i + 1] = (int64_t)(intptr_t)r.ok.data[i];
+        block[i] = (int64_t)(intptr_t)r.ok.data[i];
     free(r.ok.data); /* free the pointer array, strings are now owned by the toke array */
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 int64_t tk_json_values_w(int64_t obj) {
     if (!obj) return 0;
@@ -131,19 +132,19 @@ int64_t tk_json_values_w(int64_t obj) {
     /* Get keys first, then extract each value */
     StrArrayJsonResult kr = json_keys(*jp);
     if (kr.is_err || kr.ok.len == 0) return 0;
-    int64_t *block = (int64_t *)malloc((size_t)(kr.ok.len + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)kr.ok.len;
+    int64_t h = tk_arr_alloc((int64_t)kr.ok.len, (int64_t)kr.ok.len);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < kr.ok.len; i++) {
         StrJsonResult vr = json_str(*jp, kr.ok.data[i]);
         if (vr.is_err)
-            block[i + 1] = 0;
+            block[i] = 0;
         else
-            block[i + 1] = (int64_t)(intptr_t)vr.ok;
+            block[i] = (int64_t)(intptr_t)vr.ok;
         free((void *)kr.ok.data[i]);
     }
     free(kr.ok.data);
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 
 /* json extras */
@@ -268,17 +269,17 @@ int64_t tk_json_getarr_w(int64_t obj, int64_t key) {
     JsonArrayResult r = json_arr(*jp, (const char *)(intptr_t)key);
     if (r.is_err || r.ok.len == 0) return 0;
     uint64_t count = r.ok.len;
-    int64_t *block = (int64_t *)malloc((count + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)count;
+    int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < count; i++) {
         Json *elem = (Json *)malloc(sizeof(Json));
-        if (!elem) { block[0] = (int64_t)i; break; }
+        if (!elem) { tk_arr_setlen(h, (int64_t)i); break; }
         *elem = r.ok.data[i];
-        block[i + 1] = (int64_t)(intptr_t)elem;
+        block[i] = (int64_t)(intptr_t)elem;
     }
     free(r.ok.data);
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 
 /* json.getarray — alias for getarr */
@@ -352,18 +353,18 @@ int64_t tk_json_arr_w(int64_t raw) {
     U64JsonResult lenr = json_len(j);
     if (lenr.is_err || lenr.ok == 0) return 0;
     uint64_t count = lenr.ok;
-    int64_t *block = (int64_t *)malloc((count + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)count;
+    int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < count; i++) {
         JsonResult r = json_index(j, i);
-        if (r.is_err) { block[0] = (int64_t)i; break; }
+        if (r.is_err) { tk_arr_setlen(h, (int64_t)i); break; }
         Json *elem = (Json *)malloc(sizeof(Json));
-        if (!elem) { block[0] = (int64_t)i; break; }
+        if (!elem) { tk_arr_setlen(h, (int64_t)i); break; }
         *elem = r.ok;
-        block[i + 1] = (int64_t)(intptr_t)elem;
+        block[i] = (int64_t)(intptr_t)elem;
     }
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 
 /* json.arrget(arr, idx) — get element at index from a toke array of Json* */
@@ -389,9 +390,9 @@ int64_t tk_json_entries_w(int64_t obj) {
     StrArrayJsonResult kr = json_keys(*jp);
     if (kr.is_err || kr.ok.len == 0) return 0;
     uint64_t count = kr.ok.len;
-    int64_t *block = (int64_t *)malloc((count + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)count;
+    int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < count; i++) {
         const char *k = kr.ok.data[i];
         StrJsonResult vr = json_str(*jp, k);
@@ -404,11 +405,11 @@ int64_t tk_json_entries_w(int64_t obj) {
             memcpy(entry + klen + 1, v, vlen);
             entry[klen + 1 + vlen] = '\0';
         }
-        block[i + 1] = (int64_t)(intptr_t)entry;
+        block[i] = (int64_t)(intptr_t)entry;
         free((void *)k);
     }
     free(kr.ok.data);
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 
 /* json.kv(key, value) — build {"key":"value"} JSON object */
@@ -436,16 +437,16 @@ int64_t tk_json_parsearray_w(int64_t s) {
     U64JsonResult lenr = json_len(j);
     if (lenr.is_err || lenr.ok == 0) return 0;
     uint64_t count = lenr.ok;
-    int64_t *block = (int64_t *)malloc((count + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)count;
+    int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < count; i++) {
         JsonResult r = json_index(j, i);
-        if (r.is_err) { block[0] = (int64_t)i; break; }
+        if (r.is_err) { tk_arr_setlen(h, (int64_t)i); break; }
         /* Return the raw JSON text for each element */
-        block[i + 1] = r.ok.raw ? (int64_t)(intptr_t)r.ok.raw : 0;
+        block[i] = r.ok.raw ? (int64_t)(intptr_t)r.ok.raw : 0;
     }
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 
 /* json.strarr(arr) — encode a toke string array as JSON array string */
@@ -531,8 +532,5 @@ int64_t tk_json_tryarr_w(int64_t obj, int64_t key) {
 /* json.getregulations — loke-specific, stub returning empty array */
 int64_t tk_json_getregulations_w(int64_t obj) {
     (void)obj;
-    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = 0;
-    return (int64_t)(intptr_t)(block + 1);
+    return tk_arr_alloc(0, 0);
 }

@@ -17,6 +17,7 @@
  */
 
 #include "http.h"
+#include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include "router.h"
 #include <netdb.h>
 #include <sys/socket.h>
@@ -1296,11 +1297,16 @@ static ByteArray decode_bytearray(int64_t arr) {
 /* Return a toke-ABI byte array: allocate [count][bytes...] block */
 static int64_t encode_bytearray(ByteArray ba) {
     if (!ba.data || ba.len == 0) return 0;
-    int64_t *block = (int64_t *)malloc(sizeof(int64_t) + ba.len);
-    if (!block) return 0;
-    block[0] = (int64_t)ba.len;
-    memcpy(block + 1, ba.data, ba.len);
-    return (int64_t)(intptr_t)(block + 1);
+    /* Raw-byte layout (paired with decode_bytearray): handle[-1] = byte count,
+     * the data region holds ba.len contiguous bytes. Allocate enough i64 slots
+     * to hold the bytes, then set the length to the real byte count so
+     * handle[-1] matches the array-len convention. */
+    int64_t slots = (int64_t)((ba.len + 7) / 8);
+    int64_t h = tk_arr_alloc(slots, slots);
+    if (!h) return 0;
+    tk_arr_setlen(h, (int64_t)ba.len);
+    memcpy((void *)(intptr_t)h, ba.data, ba.len);
+    return h;
 }
 
 /* ── encrypt wrappers moved to encrypt_glue.c (Story 114.17/114.31): the
@@ -1626,19 +1632,13 @@ int64_t tk_regex_replace_w(int64_t pattern, int64_t s, int64_t repl) {
 int64_t tk_regex_findall_w(int64_t pattern, int64_t s) {
     const char *pat = (const char *)(intptr_t)pattern;
     const char *str = (const char *)(intptr_t)s;
-    /* allocate empty toke array: block[0]=count, return block+1 */
+    /* allocate empty toke array */
     if (!pat || !str) {
-        int64_t *block = (int64_t *)malloc(sizeof(int64_t));
-        if (!block) return 0;
-        block[0] = 0;
-        return (int64_t)(intptr_t)(block + 1);
+        return tk_arr_alloc(0, 0);
     }
     regex_t re;
     if (regcomp(&re, pat, REG_EXTENDED) != 0) {
-        int64_t *block = (int64_t *)malloc(sizeof(int64_t));
-        if (!block) return 0;
-        block[0] = 0;
-        return (int64_t)(intptr_t)(block + 1);
+        return tk_arr_alloc(0, 0);
     }
     /* collect matches into a temporary buffer */
     size_t cap = 16;
@@ -1670,13 +1670,12 @@ int64_t tk_regex_findall_w(int64_t pattern, int64_t s) {
     }
     regfree(&re);
 
-    /* build toke-format array: block[0]=len, block[1..N]=elements */
-    int64_t *block = (int64_t *)malloc((count + 1) * sizeof(int64_t));
-    if (!block) { free(items); return 0; }
-    block[0] = (int64_t)count;
-    if (count > 0) memcpy(block + 1, items, count * sizeof(int64_t));
+    /* build toke-format array: handle[-1]=len, handle[0..N-1]=elements */
+    int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
+    if (!h) { free(items); return 0; }
+    if (count > 0) memcpy((int64_t *)(intptr_t)h, items, count * sizeof(int64_t));
     free(items);
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 
 /* ── validation wrappers (basic regex-free checks) ────────────────── */

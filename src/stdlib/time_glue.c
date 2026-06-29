@@ -6,6 +6,7 @@
  */
 
 #include "tk_time.h"
+#include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,16 +43,16 @@ int64_t tk_time_sleep_w(int64_t ms) {
 
 int64_t tk_time_toparts_w(int64_t ts) {
     TkTimeParts parts = tk_time_to_parts((uint64_t)ts);
-    int64_t *block = (int64_t *)malloc(7 * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = 6;
-    block[1] = (int64_t)parts.year;
-    block[2] = (int64_t)parts.month;
-    block[3] = (int64_t)parts.day;
-    block[4] = (int64_t)parts.hour;
-    block[5] = (int64_t)parts.min;
-    block[6] = (int64_t)parts.sec;
-    return (int64_t)(intptr_t)(block + 1);
+    int64_t h = tk_arr_alloc(6, 6);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
+    block[0] = (int64_t)parts.year;
+    block[1] = (int64_t)parts.month;
+    block[2] = (int64_t)parts.day;
+    block[3] = (int64_t)parts.hour;
+    block[4] = (int64_t)parts.min;
+    block[5] = (int64_t)parts.sec;
+    return h;
 }
 
 int64_t tk_time_weekday_w(int64_t ts) {
@@ -206,16 +207,16 @@ int64_t tk_time_parse_duration_w(int64_t s) {
     if (!s) return 0;
     TkDurationParseResult r = tk_time_parse_duration((const char *)(intptr_t)s);
     if (r.is_err) return 0;
-    int64_t *block = (int64_t *)malloc(7 * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = 6;
-    block[1] = (int64_t)r.ok.years;
-    block[2] = (int64_t)r.ok.months;
-    block[3] = (int64_t)r.ok.days;
-    block[4] = (int64_t)r.ok.hours;
-    block[5] = (int64_t)r.ok.minutes;
-    block[6] = (int64_t)r.ok.seconds;
-    return (int64_t)(intptr_t)(block + 1);
+    int64_t h = tk_arr_alloc(6, 6);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
+    block[0] = (int64_t)r.ok.years;
+    block[1] = (int64_t)r.ok.months;
+    block[2] = (int64_t)r.ok.days;
+    block[3] = (int64_t)r.ok.hours;
+    block[4] = (int64_t)r.ok.minutes;
+    block[5] = (int64_t)r.ok.seconds;
+    return h;
 }
 
 /* time.format_duration(dur_arr) — array of [y,mo,d,h,m,s] -> string */
@@ -236,16 +237,16 @@ int64_t tk_time_format_duration_w(int64_t dur_arr) {
 /* time.duration(from, to) — structured duration between timestamps */
 int64_t tk_time_duration_w(int64_t from, int64_t to) {
     TkDuration d = tk_time_duration((uint64_t)from, (uint64_t)to);
-    int64_t *block = (int64_t *)malloc(7 * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = 6;
-    block[1] = (int64_t)d.years;
-    block[2] = (int64_t)d.months;
-    block[3] = (int64_t)d.days;
-    block[4] = (int64_t)d.hours;
-    block[5] = (int64_t)d.minutes;
-    block[6] = (int64_t)d.seconds;
-    return (int64_t)(intptr_t)(block + 1);
+    int64_t h = tk_arr_alloc(6, 6);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
+    block[0] = (int64_t)d.years;
+    block[1] = (int64_t)d.months;
+    block[2] = (int64_t)d.days;
+    block[3] = (int64_t)d.hours;
+    block[4] = (int64_t)d.minutes;
+    block[5] = (int64_t)d.seconds;
+    return h;
 }
 
 /* time.julian_date(ts) — returns f64 as i64 bits */

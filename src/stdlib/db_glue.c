@@ -6,6 +6,7 @@
  */
 
 #include "db.h"
+#include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -79,20 +80,20 @@ int64_t tk_db_many_w(int64_t sql, int64_t params) {
     free((void *)sa.data);
     if (res.is_err) return 0;
     uint64_t count = res.ok.len;
-    int64_t *block = (int64_t *)malloc((count + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)count;
+    int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
+    if (!h) return 0;
+    int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < count; i++) {
         Row *heap_row = (Row *)malloc(sizeof(Row));
         if (!heap_row) {
-            block[0] = (int64_t)i;
+            tk_arr_setlen(h, (int64_t)i);
             break;
         }
         *heap_row = res.ok.data[i];
-        block[i + 1] = (int64_t)(intptr_t)heap_row;
+        block[i] = (int64_t)(intptr_t)heap_row;
     }
     free(res.ok.data);
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 
 int64_t tk_db_tableexists_w(int64_t conn, int64_t table) {
@@ -118,17 +119,17 @@ int64_t tk_db_query_w(int64_t conn, int64_t sql) {
     RowArrayResult res = db_many((const char *)(intptr_t)sql, sa);
     if (res.is_err) return 0;
     uint64_t count = res.ok.len;
-    int64_t *block = (int64_t *)malloc((count + 1) * sizeof(int64_t));
-    if (!block) { free(res.ok.data); return 0; }
-    block[0] = (int64_t)count;
+    int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
+    if (!h) { free(res.ok.data); return 0; }
+    int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < count; i++) {
         Row *heap_row = (Row *)malloc(sizeof(Row));
-        if (!heap_row) { block[0] = (int64_t)i; break; }
+        if (!heap_row) { tk_arr_setlen(h, (int64_t)i); break; }
         *heap_row = res.ok.data[i];
-        block[i + 1] = (int64_t)(intptr_t)heap_row;
+        block[i] = (int64_t)(intptr_t)heap_row;
     }
     free(res.ok.data);
-    return (int64_t)(intptr_t)(block + 1);
+    return h;
 }
 
 /* tk_db_insert_w — legacy insert; maps to db_exec() with empty params. */

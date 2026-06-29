@@ -6,6 +6,7 @@
  */
 
 #include "csv.h"
+#include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include "bytes_rt.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -35,23 +36,23 @@ int64_t tk_csv_parse_w(int64_t data) {
     /* Return a toke-native [csvrow]: outer[-1]=nrows, outer[i]=*csvrow, where
      * a csvrow is a 1-field struct {fields:[str]} and [str] is the toke array
      * convention (block[-1]=len, block[i]=char*). */
-    int64_t *outer = (int64_t *)malloc((nrows + 1) * sizeof(int64_t));
-    if (!outer) { free(rows); return 0; }
-    outer[0] = (int64_t)nrows;
+    int64_t outer_h = tk_arr_alloc((int64_t)nrows, (int64_t)nrows);
+    if (!outer_h) { free(rows); return 0; }
+    int64_t *outer = (int64_t *)(intptr_t)outer_h;
     for (uint64_t i = 0; i < nrows; i++) {
         uint64_t fl = rows[i].len;
-        int64_t *fields = (int64_t *)malloc((fl + 1) * sizeof(int64_t));
-        if (!fields) { outer[i + 1] = 0; continue; }
-        fields[0] = (int64_t)fl;
+        int64_t fields_h = tk_arr_alloc((int64_t)fl, (int64_t)fl);
+        if (!fields_h) { outer[i] = 0; continue; }
+        int64_t *fields = (int64_t *)(intptr_t)fields_h;
         for (uint64_t j = 0; j < fl; j++)
-            fields[j + 1] = (int64_t)(intptr_t)rows[i].data[j];
+            fields[j] = (int64_t)(intptr_t)rows[i].data[j];
         int64_t *cr = (int64_t *)malloc(sizeof(int64_t));
-        if (!cr) { outer[i + 1] = 0; continue; }
-        cr[0] = (int64_t)(intptr_t)(fields + 1);
-        outer[i + 1] = (int64_t)(intptr_t)cr;
+        if (!cr) { outer[i] = 0; continue; }
+        cr[0] = fields_h;
+        outer[i] = (int64_t)(intptr_t)cr;
     }
     free(rows);
-    return (int64_t)(intptr_t)(outer + 1);
+    return outer_h;
 }
 
 /*
@@ -81,12 +82,12 @@ int64_t tk_csv_serialize_w(int64_t data) {
 
 /* Build a toke [str] (block[-1]=len, block[i]=char*) from a StrArray. */
 static int64_t strarray_to_tokearr(StrArray a) {
-    int64_t *blk = (int64_t *)malloc((a.len + 1) * sizeof(int64_t));
-    if (!blk) return 0;
-    blk[0] = (int64_t)a.len;
+    int64_t h = tk_arr_alloc((int64_t)a.len, (int64_t)a.len);
+    if (!h) return 0;
+    int64_t *blk = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < a.len; i++)
-        blk[i + 1] = (int64_t)(intptr_t)a.data[i];
-    return (int64_t)(intptr_t)(blk + 1);
+        blk[i] = (int64_t)(intptr_t)a.data[i];
+    return h;
 }
 
 /* csv.reader([byte] data; u8 sep) -> csvreader. csv_reader_new references the

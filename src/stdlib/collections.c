@@ -12,6 +12,7 @@
  */
 
 #include "collections.h"
+#include "tk_array.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -309,9 +310,9 @@ int64_t tk_vec_tovec(int64_t arr_i64) {
 int64_t tk_vec_toarray(int64_t vh) {
     DynArr *v = (DynArr *)(intptr_t)vh;
     int64_t n = v ? v->len : 0;
-    int64_t *block = (int64_t *)malloc((size_t)(n + 1) * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = n;
-    for (int64_t i = 0; i < n; i++) block[i + 1] = v->data[i];
-    return (int64_t)(intptr_t)(block + 1);
+    int64_t h = tk_arr_alloc(n, n);
+    if (!h) return 0;
+    int64_t *out = (int64_t *)(intptr_t)h;
+    for (int64_t i = 0; i < n; i++) out[i] = v->data[i];
+    return h;
 }
