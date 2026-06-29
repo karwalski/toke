@@ -4107,9 +4107,53 @@ static int emit_expr(Ctx *c, const Node *n)
         int sv = emit_expr(c, n->children[0]);
         const char *sty = expr_llvm_type(c, n->children[0]);
         if (!strcmp(sty, "void")) return sv; /* void fn → always Ok, no check */
+        /* 114.53/54/55: a string→number parse wrapper or a user `T!$err` call
+         * signals failure via tk_current_error, so propagate on that rather than
+         * the value-vs-0 sentinel (which a 0/0.0 ok value collides with). */
+        int prop_cur_err = 0;
+        if (n->children[0]->kind == NODE_CALL_EXPR && n->children[0]->child_count >= 1) {
+            const Node *sc = n->children[0]->children[0];
+            if (sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
+                char pal[128], pme[128];
+                tok_cp(c->src, sc->children[0], pal, sizeof pal);
+                tok_cp(c->src, sc->children[1], pme, sizeof pme);
+                const char *prv = resolve_stdlib_call(c, pal, pme);
+                if (is_num_parse_wrapper(prv)) prop_cur_err = 1;
+                else if (!prv) {
+                    const FnSig *ucs = lookup_fn(c, pme);
+                    if (!ucs || !ucs->err_type_name[0]) {
+                        for (int ii = 0; ii < c->import_count; ii++) {
+                            if (strcmp(c->imports[ii].alias, pal)) continue;
+                            char mg[256]; int mp = 0; const char *mod = c->imports[ii].module;
+                            for (int k = 0; mod[k] && mp < (int)sizeof(mg) - 2; k++)
+                                mg[mp++] = (mod[k] == '.') ? '_' : mod[k];
+                            if (mp < (int)sizeof(mg) - 1) mg[mp++] = '_';
+                            mg[mp] = '\0';
+                            strncat(mg, pme, sizeof(mg) - strlen(mg) - 1);
+                            const FnSig *cs2 = lookup_fn(c, mg);
+                            if (cs2) ucs = cs2;
+                            break;
+                        }
+                    }
+                    if (ucs && ucs->err_type_name[0]) prop_cur_err = 1;
+                }
+            } else if (sc->kind == NODE_IDENT) {
+                char cn[256]; tok_cp(c->src, sc, cn, sizeof cn);
+                if (strcmp(cn, "main")) {
+                    mangle_fn_name(c, cn, sizeof cn);
+                    const FnSig *ucs = lookup_fn(c, cn);
+                    if (ucs && ucs->err_type_name[0]) prop_cur_err = 1;
+                }
+            }
+        }
         int prop_lbl = next_lbl(c);
         int prop_cond = next_tmp(c);
-        if (!strcmp(sty, "i8*"))
+        if (prop_cur_err) {
+            int ev = next_tmp(c);
+            fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error\n", ev);
+            fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0 ; 114.55 ok = no error\n", prop_cond, ev);
+        }
+        else if (!strcmp(sty, "i8*"))
             fprintf(c->out, "  %%t%d = icmp ne i8* %%t%d, null\n", prop_cond, sv);
         else if (!strcmp(sty, "double") || !strcmp(sty, "float"))
             fprintf(c->out, "  %%t%d = fcmp une %s %%t%d, 0.0\n", prop_cond, sty, sv);
@@ -4424,27 +4468,58 @@ static int emit_expr(Ctx *c, const Node *n)
             return t;
         }
 
-        /* 114.53/114.54: detect a string→number parse scrutinee (str.tofloat,
-         * str.toint, …) — it signals failure via tk_current_error, so ok/err is
-         * decided on that, letting a legitimately-parsed 0.0 / 0 reach $ok. */
-        int num_parse_call = 0;
-        if (n->children[0]->kind == NODE_CALL_EXPR &&
-            n->children[0]->child_count >= 1 &&
-            n->children[0]->children[0]->kind == NODE_FIELD_EXPR &&
-            n->children[0]->children[0]->child_count >= 2) {
-            char pal[128], pme[128];
-            tok_cp(c->src, n->children[0]->children[0]->children[0], pal, sizeof pal);
-            tok_cp(c->src, n->children[0]->children[0]->children[1], pme, sizeof pme);
-            const char *prv = resolve_stdlib_call(c, pal, pme);
-            if (is_num_parse_wrapper(prv)) num_parse_call = 1;
+        /* Decide whether to discriminate ok/err on tk_current_error (the
+         * authoritative error flag) rather than the value-vs-0 sentinel:
+         *   114.53/54 — string→number parse wrappers (str.tofloat/toint/…) set
+         *               it, so a parsed 0.0/0 reaches $ok.
+         *   114.55    — *user* `T!$err` functions also maintain it (err returns
+         *               set it; ok returns clear it — see NODE_RETURN_STMT), so
+         *               a user fn returning an ok value of 0/0.0 reaches $ok.
+         * Stdlib non-parse error-union wrappers (json.dec/file.read/csv.parse/…)
+         * still use the 0/null sentinel and are NOT matched here. */
+        int use_current_error = 0;
+        if (n->children[0]->kind == NODE_CALL_EXPR && n->children[0]->child_count >= 1) {
+            const Node *sc = n->children[0]->children[0];
+            if (sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
+                char pal[128], pme[128];
+                tok_cp(c->src, sc->children[0], pal, sizeof pal);
+                tok_cp(c->src, sc->children[1], pme, sizeof pme);
+                const char *prv = resolve_stdlib_call(c, pal, pme);
+                if (is_num_parse_wrapper(prv)) use_current_error = 1;       /* 114.53/54 */
+                else if (!prv) {                                            /* 114.55: qualified user call */
+                    const FnSig *ucs = lookup_fn(c, pme);
+                    if (!ucs || !ucs->err_type_name[0]) {
+                        for (int ii = 0; ii < c->import_count; ii++) {
+                            if (strcmp(c->imports[ii].alias, pal)) continue;
+                            char mg[256]; int mp = 0; const char *mod = c->imports[ii].module;
+                            for (int k = 0; mod[k] && mp < (int)sizeof(mg) - 2; k++)
+                                mg[mp++] = (mod[k] == '.') ? '_' : mod[k];
+                            if (mp < (int)sizeof(mg) - 1) mg[mp++] = '_';
+                            mg[mp] = '\0';
+                            strncat(mg, pme, sizeof(mg) - strlen(mg) - 1);
+                            const FnSig *cs2 = lookup_fn(c, mg);
+                            if (cs2) ucs = cs2;
+                            break;
+                        }
+                    }
+                    if (ucs && ucs->err_type_name[0]) use_current_error = 1;
+                }
+            } else if (sc->kind == NODE_IDENT) {                            /* 114.55: bare same-module user call */
+                char cn[256]; tok_cp(c->src, sc, cn, sizeof cn);
+                if (strcmp(cn, "main")) {
+                    mangle_fn_name(c, cn, sizeof cn);
+                    const FnSig *ucs = lookup_fn(c, cn);
+                    if (ucs && ucs->err_type_name[0]) use_current_error = 1;
+                }
+            }
         }
 
         /* 2-arm ok/err bifurcation (original path) */
         int cond = next_tmp(c);
-        if (num_parse_call) {
+        if (use_current_error) {
             int ev = next_tmp(c);
             fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error\n", ev);
-            fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0 ; 114.53/54 ok = no parse error\n", cond, ev);
+            fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0 ; 114.53/54/55 ok = no error\n", cond, ev);
         }
         else if (!strcmp(scr_ty, "i8*"))
             fprintf(c->out, "  %%t%d = icmp ne i8* %%t%d, null\n", cond, sv);
@@ -5471,10 +5546,21 @@ static void emit_stmt(Ctx *c, const Node *n)
             if (!strcmp(rt, "void")) {
                 /* void function with <expr — emit the expr for side effects, return void */
                 emit_expr(c, n->children[0]);
+                /* 114.55: ok return from a void!$err fn clears the error flag. */
+                if (c->cur_fn_err[0])
+                    fprintf(c->out, "  store i64 0, i64* @tk_current_error\n");
                 fputs("  ret void\n", c->out);
             } else {
                 int v = emit_expr(c, n->children[0]);
                 const char *ety = expr_llvm_type(c, n->children[0]);
+                /* 114.55: an ok return from a T!$err fn clears tk_current_error
+                 * (set after the return value is computed, so a sub-call in the
+                 * return expr can't leave a stale error) — so the caller's match/
+                 * propagation, which now decode on tk_current_error for user
+                 * error-union calls, see success even when the ok value is 0/0.0
+                 * (which collides with the old 0 sentinel). */
+                if (c->cur_fn_err[0])
+                    fprintf(c->out, "  store i64 0, i64* @tk_current_error\n");
                 /* Coerce if needed: e.g. i1→i64, i64→i1 */
                 if (!strcmp(ety, rt)) {
                     fprintf(c->out, "  ret %s %%t%d\n", rt, v);
