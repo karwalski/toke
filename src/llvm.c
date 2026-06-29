@@ -1077,17 +1077,22 @@ static int is_f64_returning_wrapper(const char *name) {
     return 0;
 }
 
-/* 114.53: the f64 string→float parse wrappers signal failure via
- * tk_current_error (not the 0 sentinel, which a parsed 0.0 collides with), so a
- * match on one of these must discriminate ok/err on tk_current_error. */
-static int is_f64_parse_wrapper(const char *name) {
+/* 114.53/114.54: the string→number parse wrappers signal failure via
+ * tk_current_error, not the 0 sentinel — which a parsed 0.0 (f64) or 0 (int)
+ * collides with. A match on one of these discriminates ok/err on
+ * tk_current_error instead of comparing the value to zero. */
+static int is_num_parse_wrapper(const char *name) {
     if (!name) return 0;
     return !strcmp(name, "tk_str_tofloat_w")    ||
            !strcmp(name, "tk_str_to_float_w")   ||
            !strcmp(name, "tk_str_tof64_w")      ||
            !strcmp(name, "tk_str_tof32_w")      ||
            !strcmp(name, "tk_str_parsefloat_w") ||
-           !strcmp(name, "tk_str_parsef64_w");
+           !strcmp(name, "tk_str_parsef64_w")   ||
+           !strcmp(name, "tk_str_toint_w")      ||
+           !strcmp(name, "tk_str_parseint_w")   ||
+           !strcmp(name, "tk_str_toi64_w")      ||
+           !strcmp(name, "tk_str_toint64_w");
 }
 
 /*
@@ -4419,10 +4424,10 @@ static int emit_expr(Ctx *c, const Node *n)
             return t;
         }
 
-        /* 114.53: detect an f64 string-parse scrutinee (str.tofloat etc.) — it
-         * signals failure via tk_current_error, so ok/err is decided on that,
-         * letting a legitimately-parsed 0.0 reach the $ok arm. */
-        int f64_parse_call = 0;
+        /* 114.53/114.54: detect a string→number parse scrutinee (str.tofloat,
+         * str.toint, …) — it signals failure via tk_current_error, so ok/err is
+         * decided on that, letting a legitimately-parsed 0.0 / 0 reach $ok. */
+        int num_parse_call = 0;
         if (n->children[0]->kind == NODE_CALL_EXPR &&
             n->children[0]->child_count >= 1 &&
             n->children[0]->children[0]->kind == NODE_FIELD_EXPR &&
@@ -4431,15 +4436,15 @@ static int emit_expr(Ctx *c, const Node *n)
             tok_cp(c->src, n->children[0]->children[0]->children[0], pal, sizeof pal);
             tok_cp(c->src, n->children[0]->children[0]->children[1], pme, sizeof pme);
             const char *prv = resolve_stdlib_call(c, pal, pme);
-            if (is_f64_parse_wrapper(prv)) f64_parse_call = 1;
+            if (is_num_parse_wrapper(prv)) num_parse_call = 1;
         }
 
         /* 2-arm ok/err bifurcation (original path) */
         int cond = next_tmp(c);
-        if (f64_parse_call) {
+        if (num_parse_call) {
             int ev = next_tmp(c);
             fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error\n", ev);
-            fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0 ; 114.53 ok = no parse error\n", cond, ev);
+            fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0 ; 114.53/54 ok = no parse error\n", cond, ev);
         }
         else if (!strcmp(scr_ty, "i8*"))
             fprintf(c->out, "  %%t%d = icmp ne i8* %%t%d, null\n", cond, sv);
