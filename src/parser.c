@@ -944,6 +944,24 @@ static Node *parse_or(Parser *p) {
  * Error recovery: calls sync() on missing ':' or binding name, returning
  * a partial NODE_MATCH_ARM.
  */
+/* parse_match_arm_body — a match arm's body is normally an expression, but
+ * Story 114.47 also allows an early-return form `<expr` so an arm can bail out
+ * of the enclosing function (e.g. `$err:e <http.res.bad("bad")`). When the
+ * body starts with '<' build a NODE_RETURN_STMT directly — without consuming a
+ * trailing ';' (that separates arms; parse_match's loop must still see it). */
+static Node *parse_match_arm_body(Parser *p) {
+    if (peek(p) == TK_LT) {
+        Token *t = cur(p); adv(p); /* consume '<' */
+        Node *n = mk(p, NODE_RETURN_STMT, t);
+        if (peek(p) != TK_SEMICOLON && peek(p) != TK_RBRACE && peek(p) != TK_EOF) {
+            Node *val = parse_expr(p);
+            if (val) ch(p, n, val); else sync(p);
+        }
+        return n;
+    }
+    return parse_expr(p);
+}
+
 /* MatchArm = TypeExpr ':' IDENT Expr
  * Legacy: TYPE_IDENT ':' IDENT Expr   (e.g. Ok:v ...)
  * Default: '$' IDENT ':' IDENT Expr   (e.g. $ok:v ...) */
@@ -957,7 +975,7 @@ static Node *parse_match_arm(Parser *p) {
         Node *arm=mk(p,NODE_MATCH_ARM,pt); ch(p,arm,mk(p,NODE_TYPE_IDENT,nt));
         if(!xp(p,TK_COLON,"':'")){ sync(p);return arm;}
         Token *bt=cur(p); if(!xp(p,TK_IDENT,"binding name")){sync(p);return arm;}
-        ch(p,arm,mk(p,NODE_IDENT,bt)); ch(p,arm,parse_expr(p)); return arm;
+        ch(p,arm,mk(p,NODE_IDENT,bt)); ch(p,arm,parse_match_arm_body(p)); return arm;
     }
     /* Accept both TK_TYPE_IDENT (legacy Ok/Err) and TK_IDENT (default mode
      * where uppercase-initial tokens are lexed as plain idents) */
@@ -966,7 +984,7 @@ static Node *parse_match_arm(Parser *p) {
     Node *arm=mk(p,NODE_MATCH_ARM,pt); ch(p,arm,mk(p,NODE_TYPE_IDENT,pt));
     if(!xp(p,TK_COLON,"':'")){ sync(p);return arm;}
     Token *bt=cur(p); if(!xp(p,TK_IDENT,"binding name")){sync(p);return arm;}
-    ch(p,arm,mk(p,NODE_IDENT,bt)); ch(p,arm,parse_expr(p)); return arm;
+    ch(p,arm,mk(p,NODE_IDENT,bt)); ch(p,arm,parse_match_arm_body(p)); return arm;
 }
 
 /*

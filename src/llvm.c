@@ -1838,6 +1838,8 @@ static int emit_str_global(Ctx *c, const char *raw, int rlen, int *out_alen)
 static int coerce_value(Ctx *c, int v, const char *src_ty, const char *dst_ty);
 static int emit_expr(Ctx *c, const Node *n);
 static void emit_stmt(Ctx *c, const Node *n);
+static void emit_match_arm_body(Ctx *c, const Node *body, const char *res_ty,
+                                int res_slot, int merge_lbl);
 static void set_local_type(Ctx *c, const char *name, const char *ty);
 static const char *get_local_type(Ctx *c, const char *name);
 static const char *expr_llvm_type(Ctx *c, const Node *n);
@@ -4050,19 +4052,23 @@ static int emit_expr(Ctx *c, const Node *n)
             const Node *arm = n->children[i];
             if (arm->child_count >= 1) {
                 char tag[64]; tok_cp(c->src, arm->children[0], tag, sizeof tag);
-                if (!strcmp(tag, "Ok") && arm->child_count >= 3) {
+                /* 114.47: a return-bodied arm yields no value — skip it. */
+                if (!strcmp(tag, "Ok") && arm->child_count >= 3 &&
+                    arm->children[2]->kind != NODE_RETURN_STMT) {
                     res_ty = expr_llvm_type(c, arm->children[2]);
                     break;
                 }
             }
         }
-        /* If no Ok arm found, infer from first arm body (value match) */
-        if (!strcmp(res_ty, "i64") && n->child_count >= 2) {
-            const Node *arm0 = n->children[1];
-            if (arm0->child_count >= 3) {
-                const char *arm0_ty = expr_llvm_type(c, arm0->children[2]);
-                if (strcmp(arm0_ty, "i64"))
-                    res_ty = arm0_ty;
+        /* If no Ok arm found, infer from the first value-yielding arm body. */
+        if (!strcmp(res_ty, "i64")) {
+            for (int i = 1; i < n->child_count; i++) {
+                const Node *arm = n->children[i];
+                if (arm->child_count < 3 || !arm->children[2]) continue;
+                if (arm->children[2]->kind == NODE_RETURN_STMT) continue;
+                const char *arm0_ty = expr_llvm_type(c, arm->children[2]);
+                if (strcmp(arm0_ty, "i64")) { res_ty = arm0_ty; }
+                break;
             }
         }
         /* 114.42: an f64-payload error union (e.g. str.tofloat → f64!ParseErr)
@@ -4077,6 +4083,7 @@ static int emit_expr(Ctx *c, const Node *n)
                     const Node *arm = n->children[i];
                     if (arm->child_count < 3 || !arm->children[2]) continue;
                     const Node *body = arm->children[2];
+                    if (body->kind == NODE_RETURN_STMT) continue; /* 114.47 */
                     int is_bind = 0;
                     if (body->kind == NODE_IDENT && arm->child_count >= 2 && arm->children[1]) {
                         char bn[64], vn[64];
@@ -4188,15 +4195,9 @@ static int emit_expr(Ctx *c, const Node *n)
                         fprintf(c->out, "  store i64 %%t%d, i64* %%%s\n", payv, vname);
                     }
                 }
-                int body_val = -1;
-                if (arm->child_count >= 3 && arm->children[2])
-                    body_val = emit_expr(c, arm->children[2]);
-                if (body_val >= 0) {
-                    const char *bty = expr_llvm_type(c, arm->children[2]);
-                    body_val = coerce_value(c, body_val, bty, res_ty);
-                    fprintf(c->out, "  store %s %%t%d, %s* %%t%d\n", res_ty, body_val, res_ty, res_slot);
-                }
-                fprintf(c->out, "  br label %%rm_end%d\n", L);
+                /* 114.47: arm body may be an early-return (`<expr`). */
+                emit_match_arm_body(c, (arm->child_count >= 3 ? arm->children[2] : NULL),
+                                    res_ty, res_slot, L);
                 ai++;
             }
             fprintf(c->out, "rm_end%d:\n", L);
@@ -4284,19 +4285,9 @@ static int emit_expr(Ctx *c, const Node *n)
                     fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", scr_ty, str_val, scr_ty, vname);
                 }
 
-                /* Emit arm body */
-                int body_val = -1;
-                if (arm->child_count >= 3 && arm->children[2])
-                    body_val = emit_expr(c, arm->children[2]);
-
-                if (body_val >= 0) {
-                    const Node *body_node = arm->children[2];
-                    const char *bty = expr_llvm_type(c, body_node);
-                    body_val = coerce_value(c, body_val, bty, res_ty);
-                    fprintf(c->out, "  store %s %%t%d, %s* %%t%d\n", res_ty, body_val, res_ty, res_slot);
-                }
-
-                fprintf(c->out, "  br label %%rm_end%d\n", L);
+                /* Emit arm body (114.47: may be an early-return `<expr`). */
+                emit_match_arm_body(c, (arm->child_count >= 3 ? arm->children[2] : NULL),
+                                    res_ty, res_slot, L);
                 arm_i++;
             }
 
@@ -4410,27 +4401,33 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
             }
 
-            /* Emit arm body expression */
-            int body_val = -1;
-            if (arm->child_count >= 3 && arm->children[2]) {
-                body_val = emit_expr(c, arm->children[2]);
-            } else if (arm->child_count >= 2 && arm->children[1]) {
-                /* Fallback: no body; use binding value */
-                char vname[NAME_BUF]; tok_cp(c->src, arm->children[1], vname, sizeof vname);
-                const char *ln = get_llvm_name(c, vname);
-                body_val = next_tmp(c);
-                fprintf(c->out, "  %%t%d = load %s, %s* %%%s\n", body_val, scr_ty, scr_ty, ln);
-            }
+            /* 114.47: arm body may be an early-return (`<expr`) — emit `ret`
+             * and skip the store/branch to the merge block. */
+            const Node *abody = (arm->child_count >= 3) ? arm->children[2] : NULL;
+            if (abody && abody->kind == NODE_RETURN_STMT) {
+                emit_match_arm_body(c, abody, res_ty, res_slot, L);
+            } else {
+                /* Emit arm body expression */
+                int body_val = -1;
+                if (abody) {
+                    body_val = emit_expr(c, abody);
+                } else if (arm->child_count >= 2 && arm->children[1]) {
+                    /* Fallback: no body; use binding value */
+                    char vname[NAME_BUF]; tok_cp(c->src, arm->children[1], vname, sizeof vname);
+                    const char *ln = get_llvm_name(c, vname);
+                    body_val = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = load %s, %s* %%%s\n", body_val, scr_ty, scr_ty, ln);
+                }
 
-            /* Coerce and store body value to result slot (Story 57.13.7) */
-            if (body_val >= 0) {
-                const Node *body_node = (arm->child_count >= 3) ? arm->children[2] : NULL;
-                const char *bty = body_node ? expr_llvm_type(c, body_node) : "i64";
-                body_val = coerce_value(c, body_val, bty, res_ty);
-                fprintf(c->out, "  store %s %%t%d, %s* %%t%d\n", res_ty, body_val, res_ty, res_slot);
-            }
+                /* Coerce and store body value to result slot (Story 57.13.7) */
+                if (body_val >= 0) {
+                    const char *bty = abody ? expr_llvm_type(c, abody) : "i64";
+                    body_val = coerce_value(c, body_val, bty, res_ty);
+                    fprintf(c->out, "  store %s %%t%d, %s* %%t%d\n", res_ty, body_val, res_ty, res_slot);
+                }
 
-            fprintf(c->out, "  br label %%rm_end%d\n", L);
+                fprintf(c->out, "  br label %%rm_end%d\n", L);
+            }
         }
 
         /* Merge label: load and return result */
@@ -4901,10 +4898,12 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
          * Previously this returned a hardcoded "i64" which caused ptr/i64
          * mismatches when the match body returned a struct pointer. */
         const char *mrt = "i64";
-        if (n->child_count >= 2) {
-            const Node *arm0 = n->children[1];
-            if (arm0->child_count >= 3)
-                mrt = expr_llvm_type(c, arm0->children[2]);
+        for (int i = 1; i < n->child_count; i++) {
+            const Node *arm0 = n->children[i];
+            if (arm0->child_count < 3 || !arm0->children[2]) continue;
+            if (arm0->children[2]->kind == NODE_RETURN_STMT) continue; /* 114.47 */
+            mrt = expr_llvm_type(c, arm0->children[2]);
+            break;
         }
         /* 114.42: f64-payload error union — see the matching inference in
          * emit_expr. Keep both in sync so the `let v = mt …` binding type
@@ -4916,6 +4915,7 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
                     const Node *arm = n->children[i];
                     if (arm->child_count < 3 || !arm->children[2]) continue;
                     const Node *body = arm->children[2];
+                    if (body->kind == NODE_RETURN_STMT) continue; /* 114.47 */
                     int is_bind = 0;
                     if (body->kind == NODE_IDENT && arm->child_count >= 2 && arm->children[1]) {
                         char bn[64], vn[64];
@@ -5113,6 +5113,33 @@ static int coerce_value(Ctx *c, int v, const char *src_ty, const char *dst_ty)
         return v;
     }
     return z;
+}
+
+/*
+ * emit_match_arm_body — emit a single match-arm body into the match's result.
+ *
+ * Story 114.47: a match arm body may be an early-return (`<expr`), e.g.
+ *   let v=mt str.tofloat(s){ $ok:x x; $err:e <http.res.bad("bad") };
+ * where the $err arm bails out of the enclosing function rather than yielding
+ * a value. For a return-bodied arm we emit the function return via emit_stmt
+ * (the block terminates with `ret`) and emit NO store/branch to the merge
+ * block. For an ordinary value body we emit it, coerce to the result type,
+ * store into the result slot, and branch to the merge label as before.
+ */
+static void emit_match_arm_body(Ctx *c, const Node *body, const char *res_ty,
+                                int res_slot, int merge_lbl) {
+    if (body && body->kind == NODE_RETURN_STMT) {
+        emit_stmt(c, body);   /* emits `ret …`; sets c->term */
+        c->term = 0;          /* clear so following arms / merge block emit */
+        return;               /* block already terminated — no store, no br */
+    }
+    int body_val = body ? emit_expr(c, body) : -1;
+    if (body_val >= 0) {
+        const char *bty = expr_llvm_type(c, body);
+        body_val = coerce_value(c, body_val, bty, res_ty);
+        fprintf(c->out, "  store %s %%t%d, %s* %%t%d\n", res_ty, body_val, res_ty, res_slot);
+    }
+    fprintf(c->out, "  br label %%rm_end%d\n", merge_lbl);
 }
 
 static void emit_stmt(Ctx *c, const Node *n)
@@ -5525,7 +5552,10 @@ static void emit_stmt(Ctx *c, const Node *n)
             fprintf(c->out, "marm%d:\n", AL);
             if (arm->child_count >= 3) emit_stmt(c, arm->children[2]);
             else if (arm->child_count >= 2) emit_stmt(c, arm->children[1]);
-            fprintf(c->out, "  br label %%mend%d\n", ML);
+            /* 114.47: a return-bodied arm already terminated the block with
+             * `ret`; don't append a second terminator. */
+            if (!c->term) fprintf(c->out, "  br label %%mend%d\n", ML);
+            c->term = 0;
             fprintf(c->out, "mnxt%d:\n", AL);
         }
         fprintf(c->out, "mend%d:\n", ML);
