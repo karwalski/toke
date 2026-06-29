@@ -5,6 +5,9 @@ i=str:std.str;
 i=args:std.args;
 
 
+t=$greperr{$usage:$str;$fileerr:$str;$nopattern:void};
+
+
 t=$opts{pattern:$str;path:$str;ignorecase:bool;countonly:bool;nolinenum:bool;invert:bool};
 
 
@@ -23,7 +26,9 @@ f=printusage():$i64{
 };
 
 
-f=parseargs():$opts{
+(* parseargs walks argv, collecting flags and positionals; it fails with a
+   $greperr when there is no pattern or no file path. *)
+f=parseargs():$opts!$greperr{
   let ignorecase=mut.false;
   let countonly=mut.false;
   let nolinenum=mut.false;
@@ -42,13 +47,15 @@ f=parseargs():$opts{
       positional=positional.push(arg)
     }
   };
-  let pattern=mut."";
-  let path=mut."";
-  if(positional.len>=1){pattern=positional.get(0)};
-  if(positional.len>=2){path=positional.get(1)};
+  if(positional.len=0){
+    <$greperr{$nopattern:0}
+  };
+  if(positional.len<2){
+    <$greperr{$usage:"need <pattern> and <file>"}
+  };
   <$opts{
-    pattern:pattern;
-    path:path;
+    pattern:positional.get(0);
+    path:positional.get(1);
     ignorecase:ignorecase;
     countonly:countonly;
     nolinenum:nolinenum;
@@ -77,10 +84,13 @@ f=formatline(linenum:u64;line:$str;shownum:bool):$str{
 };
 
 
-f=search(opts:$opts):u64{
+(* search reads the file and prints/counts matches; it fails with $fileerr if
+   the file cannot be read. Returns the match count — 0 is a valid count (the
+   error union no longer conflates it with failure; see toke story 114.55). *)
+f=search(opts:$opts):u64!$greperr{
   let content=mt file.read(opts.path) {
     $ok:v v;
-    $err:e ""
+    $err:e <$greperr{$fileerr:str.concat("cannot read file: ";opts.path)}
   };
   let lines=str.split(content;"\n");
   let count=mut.0;
@@ -108,23 +118,30 @@ f=search(opts:$opts):u64{
 };
 
 
+(* reporterr dispatches a $greperr to a message on stderr and returns exit
+   code 2; it optionally prints the usage text (for argument errors). *)
+f=reporterr(e:$greperr;showusage:bool):$i64{
+  mt e {
+    $usage:msg io.eprintln(str.concat("tkgrep: ";msg));
+    $fileerr:msg io.eprintln(str.concat("tkgrep: ";msg));
+    $nopattern:z io.eprintln("tkgrep: need <pattern> and <file>")
+  };
+  if(showusage){
+    printusage()
+  };
+  <2
+};
+
+
 f=main():$i64{
-  if(args.count()<3){
-    io.eprintln("tkgrep: too few arguments");
-    printusage();
-    <2
+  let opts=mt parseargs() {
+    $ok:o o;
+    $err:e <reporterr(e;true)
   };
-  let opts=parseargs();
-  if(str.len(opts.pattern)=0){
-    io.eprintln("tkgrep: need <pattern> and <file>");
-    printusage();
-    <2
+  let count=mt search(opts) {
+    $ok:c c;
+    $err:e <reporterr(e;false)
   };
-  if(file.exists(opts.path)=false){
-    io.eprintln(str.concat("tkgrep: cannot read file: ";opts.path));
-    <2
-  };
-  let count=search(opts);
   if(count=0){
     <1
   };

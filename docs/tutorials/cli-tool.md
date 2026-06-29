@@ -106,10 +106,11 @@ Sum type variants start with `$`. The `$nopattern` variant carries no data, so i
 
 ### 3.4 Usage text
 
-A small helper prints the usage banner. This gets called on argument errors.
+A small helper prints the usage banner. It returns `$i64` (so it can end with a
+`<0`); it is called on argument errors.
 
 ```toke
-f=printusage():void{
+f=printusage():$i64{
   io.println("usage: tkgrep <pattern> <file>");
   io.println("");
   io.println("search for lines matching <pattern> in <file>");
@@ -119,74 +120,67 @@ f=printusage():void{
   io.println("  -i    case-insensitive matching");
   io.println("  -c    count matches only");
   io.println("  -n    suppress line numbers");
-  io.println("  -v    invert match (print non-matching lines)")
+  io.println("  -v    invert match (print non-matching lines)");
+  <0
 };
 ```
 
-`f=` declares a function. The return type `void` means nothing is returned. Statements inside the body are separated by `;`.
-
 ### 3.5 Parse command-line arguments
 
-This is the largest function. It walks through argv, collects flags, and gathers positional arguments into a mutable array.
+This is the largest function. It walks argv, collects flags, and gathers
+positional arguments into a mutable array. It fails with a `$greperr` when there
+is no pattern (`$nopattern`) or no file path (`$usage`).
 
 ```toke
 f=parseargs():$opts!$greperr{
-  let argc=args.count();
-  if(argc<3){
-    <$err($greperr.$usage("too few arguments"))
-  };
   let ignorecase=mut.false;
   let countonly=mut.false;
   let nolinenum=mut.false;
   let invert=mut.false;
   let positional=mut.@();
 
-  lp(let i=1;i<(argc as i64);i=i+1){
+  lp(let i=1;i<(args.count() as i64);i=i+1){
     let arg=args.get(i);
     if(str.startswith(arg;"-")){
-      if(str.contains(arg;"i")){
-        ignorecase=true
-      };
-      if(str.contains(arg;"c")){
-        countonly=true
-      };
-      if(str.contains(arg;"n")){
-        nolinenum=true
-      };
-      if(str.contains(arg;"v")){
-        invert=true
-      }
+      if(str.contains(arg;"i")){ignorecase=true};
+      if(str.contains(arg;"c")){countonly=true};
+      if(str.contains(arg;"n")){nolinenum=true};
+      if(str.contains(arg;"v")){invert=true}
     };
-    if(str.startswith(arg;"-")==false){
+    if(str.startswith(arg;"-")=false){
       positional=positional.push(arg)
     }
   };
-  if(positional.len<2){
-    <$err($greperr.$usage("need <pattern> and <file>"))
+  if(positional.len=0){
+    <$greperr{$nopattern:0}
   };
-  <$ok($opts{
+  if(positional.len<2){
+    <$greperr{$usage:"need <pattern> and <file>"}
+  };
+  <$opts{
     pattern:positional.get(0);
     path:positional.get(1);
     ignorecase:ignorecase;
     countonly:countonly;
     nolinenum:nolinenum;
     invert:invert
-  })
+  }
 };
 ```
 
 Key patterns to notice:
 
-- **`!$greperr`** after the return type means this function can fail with a `$greperr` error.
-- **`<$err(...)`** is an early return with an error value. The `<` keyword is return.
-- **`mut.false`** creates a mutable binding initialised to `false`. Without `mut.` a binding is immutable.
-- **`mut.@()`** creates a mutable empty array.
-- **`lp(...)`** is a C-style loop. The three sections (init; condition; step) are separated by `;`.
-- **Semicolons** separate parameters in function calls: `str.contains(arg;"-")`.
+- **`!$greperr`** after the return type means this function can fail with a `$greperr`.
+- The **ok return** is just the bare value (`<$opts{...}`); the **error return**
+  constructs an error variant (`<$greperr{$usage:"…"}`). There is no `$ok(...)` /
+  `$err(...)` wrapper — the `T!$err` signature already says which is which.
+- **`mut.@()`** creates a mutable empty array; **`=`** is equality
+  (`startswith(arg;"-")=false`).
 
 ### 3.6 Pattern matching
 
-A small pure function checks whether a line contains the search pattern. When case-insensitive mode is on, both strings are lowered first.
+A small pure function checks whether a line contains the search pattern. When
+case-insensitive mode is on, both strings are lowered first.
 
 ```toke
 f=matches(line:$str;pattern:$str;ignorecase:bool):bool{
@@ -197,11 +191,10 @@ f=matches(line:$str;pattern:$str;ignorecase:bool):bool{
 };
 ```
 
-The first `if` block returns early when `ignorecase` is true. If it does not fire, execution falls through to the plain case-sensitive check.
-
 ### 3.7 Output formatting
 
-Each matching line can optionally be prefixed with its line number. A string buffer builds the result efficiently.
+Each matching line can optionally be prefixed with its line number, built with a
+string buffer.
 
 ```toke
 f=formatline(linenum:u64;line:$str;shownum:bool):$str{
@@ -216,34 +209,33 @@ f=formatline(linenum:u64;line:$str;shownum:bool):$str{
 };
 ```
 
-`str.buf()` creates a mutable string buffer. `str.add` appends to it. `str.done` finalises and returns the built string. When `shownum` is false, the raw line is returned unchanged.
-
 ### 3.8 The search function
 
-This is the core loop. It reads a file, splits it into lines, and checks each line against the pattern.
+The core loop reads a file, splits it into lines, and checks each line. It fails
+with `$fileerr` if the file cannot be read, and otherwise returns the match
+**count** — `0` is a perfectly valid count (the error union no longer conflates
+it with failure; see toke story 114.55).
 
 ```toke
 f=search(opts:$opts):u64!$greperr{
   let content=mt file.read(opts.path) {
     $ok:v v;
-    $err:e <$err($greperr.$fileerr(
-      str.concat("cannot read file: ";opts.path)
-    ))
+    $err:e <$greperr{$fileerr:str.concat("cannot read file: ";opts.path)}
   };
   let lines=str.split(content;"\n");
   let count=mut.0;
-  let shownum=opts.nolinenum==false;
+  let shownum=opts.nolinenum=false;
 
   lp(let i=0;i<(lines.len as i64);i=i+1){
     let line=lines.get(i);
     let hit=matches(line;opts.pattern;opts.ignorecase);
-    let show=hit;
+    let show=mut.hit;
     if(opts.invert){
-      show=hit==false
+      show=hit=false
     };
     if(show){
       count=count+1;
-      if(opts.countonly==false){
+      if(opts.countonly=false){
         let linenum=(i+1) as u64;
         io.println(formatline(linenum;line;shownum))
       }
@@ -252,62 +244,59 @@ f=search(opts:$opts):u64!$greperr{
   if(opts.countonly){
     io.println(str.fromint(count as i64))
   };
-  <$ok(count as u64)
+  <count as u64
 };
 ```
 
-Key patterns:
+- **`mt file.read(opts.path) {…}`** — the `mt` keyword matches on a result.
+  `$ok:v v` unwraps the success value; `$err:e <$greperr{$fileerr:…}` early-returns
+  the file error.
+- **`<count as u64`** is the ok return. Because `search` is a `T!$err` function,
+  a `count` of `0` (no matches) is still `$ok` — the caller decides that "no
+  matches" maps to exit code 1, not an error.
 
-- **`mt file.read(opts.path) {...}`** -- the `mt` keyword introduces a match expression on a result. `$ok:v v` unwraps the success value. `$err:e` handles the error by returning early with a `$greperr.$fileerr`.
-- **`str.split(content;"\n")`** -- splits the file contents into an array of lines.
-- **`count as u64`** -- explicit type casting with `as`.
-- When `-c` is active, individual lines are suppressed and only the total count is printed at the end.
+### 3.9 Reporting errors and the entry point
 
-### 3.9 Entry point
-
-The `main` function ties everything together. It parses arguments, runs the search, and maps outcomes to exit codes.
+`reporterr` dispatches a `$greperr` to a stderr message (and the usage banner for
+argument errors), returning exit code 2:
 
 ```toke
-f=main():i64{
-  mt parseargs() {
-    $ok:opts {
-      mt search(opts) {
-        $ok:count {
-          if(count==0){
-            <1
-          };
-          <0
-        };
-        $err:e {
-          mt e {
-            $usage:msg {
-              io.eprintln(msg);
-              printusage()
-            };
-            $fileerr:msg io.eprintln(msg);
-            $nopattern:_ io.eprintln("no pattern given")
-          };
-          <2
-        }
-      }
-    };
-    $err:e {
-      mt e {
-        $usage:msg {
-          io.eprintln(msg);
-          printusage()
-        };
-        $fileerr:msg io.eprintln(msg);
-        $nopattern:_ io.eprintln("no pattern given")
-      };
-      <2
-    }
-  }
+f=reporterr(e:$greperr;showusage:bool):$i64{
+  mt e {
+    $usage:msg io.eprintln(str.concat("tkgrep: ";msg));
+    $fileerr:msg io.eprintln(str.concat("tkgrep: ";msg));
+    $nopattern:z io.eprintln("tkgrep: need <pattern> and <file>")
+  };
+  if(showusage){
+    printusage()
+  };
+  <2
 };
 ```
 
-Exit codes follow Unix convention: 0 for success (matches found), 1 for "no match" (not an error), and 2 for actual errors. The nested `mt` blocks first match on `parseargs` and then on `search`. Each `$greperr` variant is matched to print the appropriate message to stderr via `io.eprintln`.
+`main` ties it together — parse, search, and map outcomes to exit codes. Each
+`$err` arm early-returns `reporterr(e;…)`:
 
+```toke
+f=main():$i64{
+  let opts=mt parseargs() {
+    $ok:o o;
+    $err:e <reporterr(e;true)
+  };
+  let count=mt search(opts) {
+    $ok:c c;
+    $err:e <reporterr(e;false)
+  };
+  if(count=0){
+    <1
+  };
+  <0
+};
+```
+
+Exit codes follow Unix convention: 0 for success (matches found), 1 for "no
+match" (not an error), and 2 for actual errors. The inner `mt e {…}` in
+`reporterr` dispatches each `$greperr` variant to a message on stderr.
 ---
 
 ## 4. Build and Run
@@ -378,6 +367,7 @@ $ ./tkgrep -v fox sample.txt
 2:jumps over the lazy dog
 4:a cat sleeps quietly
 5:the dog barks loudly
+6:
 ```
 
 With `-v`, lines that do not match the pattern are printed instead.
@@ -405,7 +395,7 @@ $ ./tkgrep zebra sample.txt; echo "exit: $?"
 exit: 1
 
 $ ./tkgrep fox missing.txt; echo "exit: $?"
-cannot read file: missing.txt
+tkgrep: cannot read file: missing.txt
 exit: 2
 ```
 
