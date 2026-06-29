@@ -2103,14 +2103,67 @@ static int emit_expr(Ctx *c, const Node *n)
                         c->src = wrap;
                         seg_val = emit_expr(c, expr_node);
                         const char *ety = expr_llvm_type(c, expr_node);
+                        const char *est = expr_struct_type(c, expr_node);
                         c->src = saved_src;
-                        /* Coerce to i8* so tk_str_concat can consume it.
-                         * Most $str-returning stdlib wrappers (e.g.
-                         * s.fromint, s.format) return i64 ABI carrying a
-                         * pointer bit-pattern. */
-                        if (ety && !strcmp(ety, "i64")) {
+                        /* 114.32: interpolation of a non-string value. Previously
+                         * any i64 was inttoptr'd to i8* on the assumption it
+                         * carried a string pointer (true for s.fromint/format),
+                         * so a raw `\(n)` (n:i64/f64/bool) deref'd a bogus pointer
+                         * → segfault. Detect strings vs numbers and auto-convert
+                         * numbers/bools to their string form. */
+                        int is_str = (ety && !strcmp(ety, "i8*")) ||
+                                     (est && (!strcmp(est, "$str") || !strcmp(est, "str")));
+                        if (is_str) {
+                            if (ety && !strcmp(ety, "i64")) {
+                                int z = next_tmp(c);
+                                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, seg_val);
+                                seg_val = z;
+                            }
+                            /* else already i8* */
+                        } else if (ety && (!strcmp(ety, "double") || !strcmp(ety, "float"))) {
+                            if (!strcmp(ety, "float")) {
+                                int ext = next_tmp(c);
+                                fprintf(c->out, "  %%t%d = fpext float %%t%d to double\n", ext, seg_val);
+                                seg_val = ext;
+                            }
+                            if (!strstr(c->fwd_decls, "@tk_str_fromfloat_w(")) {
+                                const char *d = "declare i64 @tk_str_fromfloat_w(i64)\n";
+                                int dl = (int)strlen(d);
+                                if (c->fwd_decls_len + dl < TKC_FWD_DECL_SIZE) {
+                                    memcpy(c->fwd_decls + c->fwd_decls_len, d, (size_t)dl);
+                                    c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
+                                }
+                            }
+                            int bc = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, seg_val);
+                            int cv = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = call i64 @tk_str_fromfloat_w(i64 %%t%d)\n", cv, bc);
                             int z = next_tmp(c);
-                            fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, seg_val);
+                            fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, cv);
+                            seg_val = z;
+                        } else {
+                            /* raw int / bool → decimal string */
+                            if (ety && !strcmp(ety, "i1")) {
+                                int zx = next_tmp(c);
+                                fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", zx, seg_val);
+                                seg_val = zx;
+                            } else if (ety && (!strcmp(ety, "i8") || !strcmp(ety, "i16") || !strcmp(ety, "i32"))) {
+                                int zx = next_tmp(c);
+                                fprintf(c->out, "  %%t%d = sext %s %%t%d to i64\n", zx, ety, seg_val);
+                                seg_val = zx;
+                            }
+                            if (!strstr(c->fwd_decls, "@tk_str_fromi64_w(")) {
+                                const char *d = "declare i64 @tk_str_fromi64_w(i64)\n";
+                                int dl = (int)strlen(d);
+                                if (c->fwd_decls_len + dl < TKC_FWD_DECL_SIZE) {
+                                    memcpy(c->fwd_decls + c->fwd_decls_len, d, (size_t)dl);
+                                    c->fwd_decls_len += dl; c->fwd_decls[c->fwd_decls_len] = '\0';
+                                }
+                            }
+                            int cv = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", cv, seg_val);
+                            int z = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, cv);
                             seg_val = z;
                         }
                     }
