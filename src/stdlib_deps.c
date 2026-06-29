@@ -56,7 +56,7 @@ static const StdlibModule stdlib_table[] = {
     { "auth",          "auth.c auth_glue.c",                    "encoding crypto str",                                              "" },
     { "dataframe",     "dataframe.c",                           "csv str",                                                          "" },
     { "analytics",     "analytics.c",                           "dataframe csv str math",                                           "-lm" },
-    { "router",        "router.c",                              "ws",                                                               "-lz" },
+    { "router",        "router.c router_glue.c",                "ws",                                                               "-lz" },
     { "dashboard",     "dashboard.c",                           "chart html router",                                                "-lz" },
     { "http",          "http.c http2.c acme.c proxy.c cache.c content.c security.c metrics.c server_ops.c ws_server.c hooks.c tk_web_glue.c",
                                                                 "encoding log str crypto ws router net yaml toon i18n html svg canvas chart dashboard dataframe template toml file auth encrypt llm ml task", "-lssl -lcrypto -lz -lm -lpthread" },

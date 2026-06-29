@@ -1049,12 +1049,8 @@ int64_t tk_http_serveworkers_w(int64_t port, int64_t workers) {
     return (err == TK_HTTP_OK) ? 0 : -1;
 }
 
-/* ── router.new wrapper ──────────────────────────────────────────────── */
-
-int64_t tk_router_new_w(void) {
-    TkRouter *r = router_new();
-    return (int64_t)(intptr_t)r;
-}
+/* ── router wrappers moved to router_glue.c (114.48) so std.router links
+ *    standalone; http depends on router via stdlib_deps so still gets them. ── */
 
 /* ── HTTP client stubs ───────────────────────────────────────────────── */
 
@@ -1268,59 +1264,8 @@ int64_t tk_http_withproxy_w(int64_t client, int64_t proxy_url) {
     return (int64_t)(intptr_t)http_withproxy((HttpClient *)(intptr_t)client, (const char *)(intptr_t)proxy_url);
 }
 
-/* ── router extras: closure dispatch table ─────────────────────────── */
-
-#define TK_MAX_CLOSURE_ROUTES 64
-
-typedef struct {
-    const char *path;
-    int64_t     handler;  /* closure i64 */
-} TkClosureRoute;
-
-static TkClosureRoute g_closure_routes[TK_MAX_CLOSURE_ROUTES];
-static int            g_closure_route_count = 0;
-
-static TkRouteResp tk_router_closure_dispatch(TkRouteCtx ctx) {
-    /* Find the matching closure by path */
-    for (int i = 0; i < g_closure_route_count; i++) {
-        if (g_closure_routes[i].path &&
-            strcmp(g_closure_routes[i].path, ctx.path) == 0) {
-            /* Build request body as the arg to the closure */
-            int64_t body_arg = ctx.body ? (int64_t)(intptr_t)ctx.body : 0;
-            int64_t result = call_closure_1(g_closure_routes[i].handler, body_arg);
-            const char *rbody = result ? (const char *)(intptr_t)result : "";
-            return router_resp_json(rbody);
-        }
-    }
-    return router_resp_404();
-}
-
-int64_t tk_router_post_w(int64_t router_i64, int64_t path, int64_t handler) {
-    if (!router_i64 || !path) return -1;
-    /* Store the closure handler in the dispatch table */
-    if (g_closure_route_count < TK_MAX_CLOSURE_ROUTES) {
-        g_closure_routes[g_closure_route_count].path =
-            (const char *)(intptr_t)path;
-        g_closure_routes[g_closure_route_count].handler = handler;
-        g_closure_route_count++;
-    }
-    router_post((TkRouter *)(intptr_t)router_i64,
-                (const char *)(intptr_t)path,
-                tk_router_closure_dispatch);
-    return 0;
-}
-
-int64_t tk_router_serve_w(int64_t router_i64, int64_t addr) {
-    if (!router_i64) return -1;
-    const char *a = addr ? (const char *)(intptr_t)addr : "";
-    const char *colon = strrchr(a, ':');
-    uint64_t port = 8080;
-    if (colon) port = (uint64_t)strtoll(colon + 1, NULL, 10);
-    else if (a[0] >= '0' && a[0] <= '9') port = (uint64_t)strtoll(a, NULL, 10);
-    if (port == 0 || port > 65535) port = 8080;
-    TkRouterErr err = router_serve((TkRouter *)(intptr_t)router_i64, NULL, port);
-    return err.failed ? -1 : 0;
-}
+/* ── router closure-dispatch table + get/post/put/delete/use/serve wrappers
+ *    moved to router_glue.c (114.48). ── */
 
 
 /* ── net wrappers ────────────────────────────────────────────────────── */
