@@ -72,28 +72,42 @@ t=$apierr{$notfound:u64;$badrequest:$str};
 > - handleget: extract :id from the route, find the bookmark, return 200 or 404
 > - handledelete: extract :id, remove from store, return 200 or 404
 >
-> Each handler receives an http.$request and returns an http.$response.
+> Each handler receives the request handle (`req:i64`) and returns a response
+> built with `http.resjson(status; body)`.
 > Serialise all JSON manually using str.buf().
 
 ### Generated code: api.tk
 
 ```toke
 m=bookmarks.api;
-i=m:bookmarks.model;
+i=md:bookmarks.model;
 i=http:std.http;
 i=json:std.json;
 i=str:std.str;
-i=io:std.io;
 
-let store=mut.m.$bookmarks{items:@();nextid:1};
+(* in-memory store (a single-process demo) *)
+let store=mut.$bookmarks{items:@();nextid:1};
 ```
 
-The store is declared with `mut.` so it can be reassigned. The `@()` literal creates an empty array.
+The store is a **module-level mutable global** (`let store=mut.…` at module scope), so it persists across request handlers. The `mut.` marks the binding reassignable; the `@()` literal creates an empty array. Imported model types are used unqualified (`$bookmarks`, `$bookmark`).
 
 #### JSON serialisation
 
 ```toke
-f=bookmarktojson(b:m.$bookmark):str{
+f=tagstojson(tags:@$str):$str{
+  let buf=str.buf();
+  str.add(buf;"[");
+  lp(let i=0;i<(tags.len as i64);i=i+1){
+    if(i>0){str.add(buf;",")};
+    str.add(buf;"\"");
+    str.add(buf;tags.get(i));
+    str.add(buf;"\"")
+  };
+  str.add(buf;"]");
+  <str.done(buf)
+};
+
+f=bookmarktojson(b:$bookmark):$str{
   let buf=str.buf();
   str.add(buf;"{\"id\":");
   str.add(buf;str.fromint(b.id as i64));
@@ -106,138 +120,129 @@ f=bookmarktojson(b:m.$bookmark):str{
   str.add(buf;"}");
   <str.done(buf)
 };
+
+f=bookmarkstojson(items:@$bookmark):$str{
+  let buf=str.buf();
+  str.add(buf;"[");
+  lp(let i=0;i<(items.len as i64);i=i+1){
+    if(i>0){str.add(buf;",")};
+    str.add(buf;bookmarktojson(items.get(i)))
+  };
+  str.add(buf;"]");
+  <str.done(buf)
+};
 ```
 
 `str.buf()` creates a mutable string buffer. `str.add` appends to it. `str.done` finalises and returns the built string. This is the standard pattern for building strings in toke.
 
-#### Parsing request bodies
+#### Finding a bookmark by id
 
 ```toke
-f=parsebookmark(body:str):m.$bookmark!m.$apierr{
-  let doc=mt json.dec(body) {
-    $ok:d d;
-    $err:e <$err(m.$apierr.$badrequest("invalid json"))
+f=findindex(id:u64):i64{
+  lp(let i=0;i<(store.items.len as i64);i=i+1){
+    let b=store.items.get(i);
+    if(b.id=id){<i}
   };
-  let url=mt json.str(doc;"url") {
-    $ok:v v;
-    $err:e <$err(m.$apierr.$badrequest("missing url"))
-  };
-  let title=mt json.str(doc;"title") {
-    $ok:v v;
-    $err:e <$err(m.$apierr.$badrequest("missing title"))
-  };
-  <$ok(m.$bookmark{id:0;url:url;title:title;tags:taglist})
+  <(0-1)
 };
 ```
 
-The return type `m.$bookmark!m.$apierr` means "returns a bookmark or an apierr." The `mt` keyword introduces a match expression -- it destructures the result of `json.dec` into `$ok` or `$err` branches.
+`findindex` scans the store and returns the array index of a matching id, or `-1` if none. JSON request parsing is done inline in the create handler below: `mt json.dec(body) {$ok:d d; $err:e (0-1)}` yields the parsed document handle or a `0` sentinel, which the handler then checks.
 
 #### Route handlers
 
-```toke
-f=handlelist(req:http.$request):http.$response{
-  let body=bookmarkstojson(store.items);
-  <http.$response{
-    status:200;
-    headers:@("content-type":"application/json");
-    body:body
-  }
-};
-
-f=handlecreate(req:http.$request):http.$response{
-  mt parsebookmark(req.body) {
-    $ok:b {
-      let newb=m.$bookmark{
-        id:store.nextid;
-        url:b.url;
-        title:b.title;
-        tags:b.tags
-      };
-      store=m.$bookmarks{
-        items:store.items.push(newb);
-        nextid:store.nextid+1
-      };
-      <http.$response{
-        status:201;
-        headers:@("content-type":"application/json");
-        body:bookmarktojson(newb)
-      }
-    };
-    $err:e {
-      <http.$response{
-        status:400;
-        headers:@("content-type":"application/json");
-        body:errortojson(e)
-      }
-    }
-  }
-};
-```
-
-Notice how the store is updated by creating a new `$bookmarks` value. Toke values are immutable by default; `mut.` marks a binding as reassignable but the values themselves are still created fresh.
+Each handler takes the request handle (`req:i64`) and returns an HTTP response built with `http.resjson(status; body)`. Reading the store, the `:id` route param (`http.param`), and the request body (`http.reqbody`) all go through `std.http` helpers.
 
 ```toke
-f=handleget(req:http.$request):http.$response{
-  let id=mt http.paramu64(req;"id") {
-    $ok:v v;
-    $err:e {
-      <http.$response{
-        status:400;
-        headers:@("content-type":"application/json");
-        body:errortojson(m.$apierr.$badrequest("invalid id"))
-      }
-    }
-  };
-  mt findbookmark(id) {
-    $ok:b {
-      <http.$response{
-        status:200;
-        headers:@("content-type":"application/json");
-        body:bookmarktojson(b)
-      }
-    };
-    $err:e {
-      <http.$response{
-        status:404;
-        headers:@("content-type":"application/json");
-        body:errortojson(e)
-      }
-    }
-  }
+f=handlelist(req:i64):i64{
+  <http.resjson(200; bookmarkstojson(store.items))
 };
 
-f=handledelete(req:http.$request):http.$response{
-  let id=mt http.paramu64(req;"id") {
+f=handleget(req:i64):i64{
+  let id=mt str.toint(http.param(req;"id")) {
     $ok:v v;
-    $err:e {
-      <http.$response{
-        status:400;
-        headers:@("content-type":"application/json");
-        body:errortojson(m.$apierr.$badrequest("invalid id"))
-      }
-    }
+    $err:e (0-1)
   };
-  let idx=findindex(id);
+  let idx=findindex(id as u64);
   if(idx<0){
-    <http.$response{
-      status:404;
-      headers:@("content-type":"application/json");
-      body:errortojson(m.$apierr.$notfound(id))
+    <http.resjson(404; "{\"error\":\"not found\"}")
+  };
+  <http.resjson(200; bookmarktojson(store.items.get(idx)))
+};
+
+f=handlecreate(req:i64):i64{
+  let body=http.reqbody(req);
+  let doc=mt json.dec(body) {
+    $ok:d d;
+    $err:e (0-1)
+  };
+  if(doc<0){
+    <http.resjson(400; "{\"error\":\"invalid json\"}")
+  };
+  let url=mt json.str(doc;"url") {
+    $ok:v v;
+    $err:e ""
+  };
+  let title=mt json.str(doc;"title") {
+    $ok:v v;
+    $err:e ""
+  };
+  if(str.len(url)=0){
+    <http.resjson(400; "{\"error\":\"missing url\"}")
+  };
+  let newb=$bookmark{
+    id:store.nextid;
+    url:url;
+    title:title;
+    tags:@()
+  };
+  store=$bookmarks{
+    items:store.items.push(newb);
+    nextid:store.nextid+1
+  };
+  <http.resjson(201; bookmarktojson(newb))
+};
+
+f=handledelete(req:i64):i64{
+  let id=mt str.toint(http.param(req;"id")) {
+    $ok:v v;
+    $err:e (0-1)
+  };
+  let idx=findindex(id as u64);
+  if(idx<0){
+    <http.resjson(404; "{\"error\":\"not found\"}")
+  };
+  let kept=mut.@();
+  lp(let i=0;i<(store.items.len as i64);i=i+1){
+    if((i=idx)=false){
+      kept=kept.push(store.items.get(i))
     }
   };
-  store=m.$bookmarks{
-    items:store.items.remove(idx);
+  store=$bookmarks{
+    items:kept;
     nextid:store.nextid
   };
-  <http.$response{
-    status:200;
-    headers:@("content-type":"application/json");
-    body:"{\"deleted\":true}"
-  }
+  <http.resjson(200; "{\"deleted\":true}")
 };
 ```
 
-`http.paramu64(req;"id")` extracts the `:id` path parameter and parses it as a `u64`. This returns a result type, so we match on success or failure.
+Each handler updates the store by creating a fresh `$bookmarks` value and reassigning `store` (toke values are immutable; `mut.` makes the *binding* reassignable). `http.param(req;"id")` returns the `:id` path parameter as a string, which `str.toint` parses; the `if(idx<0)` checks return a 404. Create validates that a `url` was supplied before inserting.
+
+#### Registering the routes
+
+Routes are registered from inside the `api` module so the `&handler` references resolve locally:
+
+```toke
+f=routes():$i64{
+  http.get("/api/bookmarks"; &handlelist);
+  http.post("/api/bookmarks"; &handlecreate);
+  http.get("/api/bookmarks/:id"; &handleget);
+  http.delete("/api/bookmarks/:id"; &handledelete);
+  <0
+};
+```
+
+`&handler` takes the address of a handler function. The `:id` segment defines a path parameter, read back with `http.param(req;"id")`.
 
 ## Step 3: Wire up the server
 
@@ -255,30 +260,26 @@ i=http:std.http;
 i=io:std.io;
 i=api:bookmarks.api;
 
-f=main():i64{
-  let srv=http.server();
-
-  http.get(srv;"/api/bookmarks";api.handlelist);
-  http.post(srv;"/api/bookmarks";api.handlecreate);
-  http.get(srv;"/api/bookmarks/:id";api.handleget);
-  http.delete(srv;"/api/bookmarks/:id";api.handledelete);
-
+f=main():$i64{
+  api.routes();
   io.println("bookmarks api listening on http://localhost:8080");
-  http.listen(srv;8080);
+  (* single worker: the in-memory store is per-process, so one worker
+     keeps state consistent across requests *)
+  http.serveworkers(8080; 1);
   <0
 };
 ```
 
-Route registration uses `http.get`, `http.post`, and `http.delete`. Each takes the server handle, a path pattern, and a handler function. The `:id` syntax defines a path parameter.
+`main` calls `api.routes()` to register the four routes, then `http.serveworkers(8080; 1)` to start the server. A **single** worker is used because the in-memory `store` is per-process — forking multiple workers (the default `http.serve`) would give each its own copy-on-write store, so state would appear inconsistent across requests.
 
 ## Build and run
 
 ```bash
-# Compile all three modules
-toke build bookmarks-api/
+# Compile all three modules into one binary
+toke model.tk api.tk main.tk -o bookmarks-api
 
 # Run the server
-toke run bookmarks-api/
+./bookmarks-api
 ```
 
 Expected output:
@@ -436,7 +437,7 @@ kill <pid>
 Or change the port in `main.tk`:
 
 ```toke
-http.listen(srv;3000);
+http.serveworkers(3000; 1);
 ```
 
 ### POST returns 400 "invalid json"
@@ -466,7 +467,7 @@ IDs are not reused after deletion. If you delete id 1 and create another bookmar
 
 ### Server exits immediately
 
-If the server prints the listening message and then exits, check that `http.listen` is the last call before the return. The `http.listen` function blocks the main thread. If anything after it causes a return, the server shuts down.
+If the server prints the listening message and then exits, check that `http.serveworkers` is the last call before the return. It blocks the main thread; if anything after it causes a return, the server shuts down.
 
 ## Exercises
 
