@@ -2546,6 +2546,23 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = icmp %s i8* %%t%d, %%t%d\n", t, n->op == TK_NE ? "ne" : "eq", lp, rp);
             return t;
         }
+        /* 114.2: string `<`/`>`/`<=`/`>=` is lexicographic (strcmp), not a
+         * pointer-address comparison. Detect a string operand (literal, $str
+         * local, or derived string via array-element/slice/call-return) and
+         * compare strcmp(a,b) against 0 with the same operator. */
+        if ((lhs_is_str || rhs_is_str) &&
+            (n->op == TK_LT || n->op == TK_GT || n->op == TK_LE || n->op == TK_GE)) {
+            int lhs_p = lhs, rhs_p = rhs;
+            if (!strcmp(lty, "i64")) { lhs_p = next_tmp(c); fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", lhs_p, lhs); }
+            if (!strcmp(rty, "i64")) { rhs_p = next_tmp(c); fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", rhs_p, rhs); }
+            int cmpres = next_tmp(c);
+            fprintf(c->out, "  %%t%d = call i32 @strcmp(i8* %%t%d, i8* %%t%d)\n", cmpres, lhs_p, rhs_p);
+            const char *pred = n->op == TK_LT ? "slt" : n->op == TK_GT ? "sgt" :
+                               n->op == TK_LE ? "sle" : "sge";
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = icmp %s i32 %%t%d, 0\n", t, pred, cmpres);
+            return t;
+        }
         /* ptr < ptr, ptr > ptr, ptr <= ptr, ptr >= ptr: compare pointers directly */
         if ((!strcmp(lty, "i8*") || !strcmp(rty, "i8*")) &&
             (n->op == TK_LT || n->op == TK_GT || n->op == TK_LE || n->op == TK_GE)) {
