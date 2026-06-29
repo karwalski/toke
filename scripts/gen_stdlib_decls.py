@@ -59,9 +59,13 @@ def parse_param_type(param: str) -> str | None:
 def parse_function(line: str) -> dict | None:
     """Parse a function definition line into (name, ret_type, param_types)."""
     # Match: <rettype> tk_<name>(<params>) {
+    # The `{` may be absent (brace on the next line) or followed by an inline
+    # body on the same line (one-liner wrappers like
+    # `int64_t tk_router_ok_w(int64_t b) { return ...; }`). Bare prototypes end
+    # in `;` and are excluded (they don't match `(\{.*)?$`).
     m = re.match(
         r'^(int64_t|void|double|float|uint64_t|int32_t|int)\s+'
-        r'(tk_\w+)\s*\(([^)]*)\)\s*\{?\s*$',
+        r'(tk_\w+)\s*\(([^)]*)\)\s*(\{.*)?$',
         line.strip()
     )
     if not m:
