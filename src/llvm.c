@@ -2412,6 +2412,26 @@ static int emit_expr(Ctx *c, const Node *n)
          *                   but they shouldn't crash in the interim)
          */
         if (n->op == TK_PLUS && (!strcmp(lty, "i8*") || !strcmp(rty, "i8*"))) {
+            /* 114.19c: adding a bare number/bool literal to an array or string
+             * (`arr + @(2) + (3)`, the unwrapped-scalar-append typo) routed to
+             * tk_str_concat / tk_array_concat which deref the scalar as a
+             * pointer → segfault. A numeric/bool *literal* operand is
+             * unambiguously a scalar (an array handle is never a literal), so
+             * reject it at compile time. */
+            {
+                const Node *L = n->children[0];
+                const Node *R = n->child_count > 1 ? n->children[1] : NULL;
+                int l_lit = L && (L->kind == NODE_INT_LIT || L->kind == NODE_FLOAT_LIT || L->kind == NODE_BOOL_LIT);
+                int r_lit = R && (R->kind == NODE_INT_LIT || R->kind == NODE_FLOAT_LIT || R->kind == NODE_BOOL_LIT);
+                if ((!strcmp(lty, "i8*") && r_lit) || (!strcmp(rty, "i8*") && l_lit)) {
+                    diag_emit(DIAG_ERROR, E4031, n->start, n->line, n->col,
+                              "cannot add a number to an array or string with `+`",
+                              "to append to an array wrap the element as `@(x)`; to build a string convert it with `s.fromint(x)`/`s.fromfloat(x)` or interpolate `\\(x)`", NULL);
+                    t = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = add i64 0, 0 ; 114.19c error stub\n", t);
+                    return t;
+                }
+            }
             int is_array = 0;
             const char *lhs_mark = NULL;
             const char *rhs_mark = NULL;
