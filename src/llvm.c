@@ -1840,6 +1840,18 @@ static int emit_expr(Ctx *c, const Node *n);
 static void emit_stmt(Ctx *c, const Node *n);
 static void emit_match_arm_body(Ctx *c, const Node *body, const char *res_ty,
                                 int res_slot, int merge_lbl);
+
+/* True when a match arm's body is exactly its own binding ident (`$ok:v v`),
+ * i.e. the arm yields the bound ok value unchanged. Used by result-type
+ * inference to take the type from the scrutinee rather than the binding's
+ * (possibly stale) local type. */
+static int match_arm_body_is_binding(Ctx *c, const Node *body, const Node *bind) {
+    if (!body || !bind || body->kind != NODE_IDENT) return 0;
+    char b1[NAME_BUF], b2[NAME_BUF];
+    tok_cp(c->src, body, b1, sizeof b1);
+    tok_cp(c->src, bind, b2, sizeof b2);
+    return !strcmp(b1, b2);
+}
 static void set_local_type(Ctx *c, const char *name, const char *ty);
 static const char *get_local_type(Ctx *c, const char *name);
 static const char *expr_llvm_type(Ctx *c, const Node *n);
@@ -4120,7 +4132,19 @@ static int emit_expr(Ctx *c, const Node *n)
                 const Node *arm = n->children[i];
                 if (arm->child_count < 3 || !arm->children[2]) continue;
                 if (arm->children[2]->kind == NODE_RETURN_STMT) continue;
-                const char *arm0_ty = expr_llvm_type(c, arm->children[2]);
+                const Node *ab = arm->children[2];
+                const char *arm0_ty;
+                /* A bare-binding ok arm (`$ok:v v`) yields the scrutinee's ok
+                 * value, so its type is the scrutinee's — NOT the binding ident's
+                 * local type, which may be stale from a prior same-named binding
+                 * in this function (binding names aren't block-scoped in the type
+                 * registry, so reusing `v` across two matches would otherwise leak
+                 * the first match's type into the second). */
+                if (ab->kind == NODE_IDENT && arm->children[1] &&
+                    match_arm_body_is_binding(c, ab, arm->children[1]))
+                    arm0_ty = expr_llvm_type(c, n->children[0]);
+                else
+                    arm0_ty = expr_llvm_type(c, ab);
                 if (strcmp(arm0_ty, "i64")) { res_ty = arm0_ty; }
                 break;
             }
@@ -4956,7 +4980,14 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             const Node *arm0 = n->children[i];
             if (arm0->child_count < 3 || !arm0->children[2]) continue;
             if (arm0->children[2]->kind == NODE_RETURN_STMT) continue; /* 114.47 */
-            mrt = expr_llvm_type(c, arm0->children[2]);
+            const Node *ab = arm0->children[2];
+            /* bare-binding ok arm → scrutinee's type, not the binding's stale
+             * local type (see the matching note in emit_expr). */
+            if (ab->kind == NODE_IDENT && arm0->children[1] &&
+                match_arm_body_is_binding(c, ab, arm0->children[1]))
+                mrt = expr_llvm_type(c, n->children[0]);
+            else
+                mrt = expr_llvm_type(c, ab);
             break;
         }
         /* 114.42: f64-payload error union — see the matching inference in

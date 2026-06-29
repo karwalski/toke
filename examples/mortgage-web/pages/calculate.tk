@@ -6,27 +6,16 @@ i=math:std.math;
 i=svg:std.svg;
 
 
-f=parseform(body:str):@(str:str){
+(* look up a urlencoded form field directly from the request body — only
+   str/[str] cross the boundary, avoiding the array-of-maps ABI confusion *)
+f=formval(body:str;key:str):str{
   let pairs=str.split(body;"&");
-  let result=mut.@();
   lp(let i=0;i<(pairs.len as i64);i=i+1){
-    let pair=pairs.get(i);
-    let kv=str.split(pair;"=");
+    let kv=str.split(pairs.get(i);"=");
     if(kv.len>1){
-      let k=kv.get(0);
-      let v=kv.get(1);
-      result=result.push(@(k:v))
-    }
-  };
-  <result
-};
-
-
-f=formval(form:@(str:str);key:str):str{
-  lp(let i=0;i<(form.len as i64);i=i+1){
-    let entry=form.get(i);
-    if(entry.key=key){
-      <entry.val
+      if(kv.get(0)=key){
+        <kv.get(1)
+      }
     }
   };
   <"0"
@@ -216,11 +205,11 @@ f=calctotals(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):@f64{
 
 
 f=handler(req:i64):i64{
-  let form=parseform(router.reqbody(req));
-  let principals=formval(form;"principal");
-  let rates=formval(form;"rate");
-  let terms=formval(form;"term");
-  let extras=formval(form;"extra");
+  let body=router.reqbody(req);
+  let principals=formval(body;"principal");
+  let rates=formval(body;"rate");
+  let terms=formval(body;"term");
+  let extras=formval(body;"extra");
 
   let principal=mt str.tofloat(principals) {
     $ok:v v;
@@ -270,11 +259,10 @@ f=handler(req:i64):i64{
     $ok:v v;
     $err:e <router.status(500;"template error")
   };
-  let layoutvars=tpl.vars(@("title":"Mortgage Results"));
-  let layout=mt tpl.renderfile("templates/layout.tkt";layoutvars) {
+  let layoutvars=tpl.vars(@("title":"Mortgage Results";"content":body));
+  let page=mt tpl.renderfile("templates/layout.tkt";layoutvars) {
     $ok:v v;
     $err:e <router.status(500;"template error")
   };
-  let page=str.replace(layout;"{{content}}";body);
   <router.ok(page)
 };

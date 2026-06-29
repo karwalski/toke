@@ -19,6 +19,32 @@
  *                           ptr[0..count-1] = alternating key/value i64 ptrs
  * Returns a heap-allocated rendered string, or 0 on failure.
  */
+/* A toke `@($str:$str)` map is a tk_map object, NOT a flat array: it is the
+ * TkMapImpl built by tk_map_new/tk_map_put (see collections_glue.c). Mirror its
+ * layout here so we can iterate its entries. (The previous flat-array unpack
+ * read garbage, so template variables never actually bound — a latent bug.) */
+typedef struct { int64_t key; int64_t val; } TkMapEntryT;
+typedef struct { TkMapEntryT *entries; int len; int cap; } TkMapImplT;
+
+/* Unpack a toke string→string map / $tmplvars bundle into a TkTmplVar[].
+ * tpl.vars is the identity on the map (see tk_template_vars_w), so the same
+ * unpack serves render and renderfile. Caller frees the returned array. */
+static TkTmplVar *unpack_tmplvars(int64_t data, uint64_t *nout) {
+    *nout = 0;
+    if (!data) return NULL;
+    const TkMapImplT *m = (const TkMapImplT *)(intptr_t)data;
+    if (m->len <= 0 || !m->entries) return NULL;
+    uint64_t nvar = (uint64_t)m->len;
+    TkTmplVar *vars = (TkTmplVar *)malloc(nvar * sizeof(TkTmplVar));
+    if (!vars) return NULL;
+    for (uint64_t i = 0; i < nvar; i++) {
+        vars[i].key   = (const char *)(intptr_t)m->entries[i].key;
+        vars[i].value = (const char *)(intptr_t)m->entries[i].val;
+    }
+    *nout = nvar;
+    return vars;
+}
+
 static const char *template_render_impl(int64_t tpl, int64_t data) {
     if (!tpl) return NULL;
     const char *source = (const char *)(intptr_t)tpl;
@@ -26,21 +52,7 @@ static const char *template_render_impl(int64_t tpl, int64_t data) {
     if (!t) return NULL;
 
     uint64_t nvar = 0;
-    TkTmplVar *vars = NULL;
-    if (data) {
-        int64_t *ptr = (int64_t *)(intptr_t)data;
-        int64_t count = ptr[-1];
-        if (count > 0 && (count & 1) == 0) {
-            nvar = (uint64_t)(count / 2);
-            vars = (TkTmplVar *)malloc(nvar * sizeof(TkTmplVar));
-            if (vars) {
-                for (uint64_t i = 0; i < nvar; i++) {
-                    vars[i].key   = (const char *)(intptr_t)ptr[i * 2];
-                    vars[i].value = (const char *)(intptr_t)ptr[i * 2 + 1];
-                }
-            }
-        }
-    }
+    TkTmplVar *vars = unpack_tmplvars(data, &nvar);
 
     const char *result = tmpl_render(t, vars, nvar);
     free(vars);
@@ -50,6 +62,33 @@ static const char *template_render_impl(int64_t tpl, int64_t data) {
 
 int64_t tk_template_render_w(int64_t tpl, int64_t data) {
     return (int64_t)(intptr_t)template_render_impl(tpl, data);
+}
+
+/* tpl.vars(@($str:$str)) -> $tmplvars — the map already carries the key/value
+ * pairs in the layout render/renderfile expect, so the bundle is the map. */
+int64_t tk_template_vars_w(int64_t map) { return map; }
+
+/* tpl.renderfile(path; $tmplvars) -> $str!$tmplerr — read+compile+render the
+ * file with the bundle. Returns the rendered string, or 0 (err sentinel). */
+int64_t tk_template_renderfile_w(int64_t path, int64_t data) {
+    if (!path) return 0;
+    uint64_t nvar = 0;
+    TkTmplVar *vars = unpack_tmplvars(data, &nvar);
+    const char *res = tmpl_renderfile((const char *)(intptr_t)path, vars, nvar);
+    free(vars);
+    return (int64_t)(intptr_t)res;
+}
+
+/* tpl.compile(str) -> $tmpl!$tmplerr — compile to a handle (0 on error). */
+int64_t tk_template_compile_w(int64_t src) {
+    if (!src) return 0;
+    return (int64_t)(intptr_t)tmpl_compile((const char *)(intptr_t)src);
+}
+
+/* tpl.escape(str) -> str — HTML-escape. */
+int64_t tk_template_escape_w(int64_t s) {
+    if (!s) return (int64_t)(intptr_t)"";
+    return (int64_t)(intptr_t)tmpl_escape((const char *)(intptr_t)s);
 }
 
 /*

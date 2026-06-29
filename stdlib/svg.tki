@@ -21,12 +21,12 @@
       "kind": "type",
       "name": "svgstyle",
       "fields": [
-        {"name": "fill",         "type": "str"},
-        {"name": "stroke",       "type": "str"},
-        {"name": "stroke_width", "type": "f64"},
-        {"name": "opacity",      "type": "f64"},
-        {"name": "font_size",    "type": "f64"},
-        {"name": "font_family",  "type": "str"}
+        {"name": "fill",        "type": "str"},
+        {"name": "stroke",      "type": "str"},
+        {"name": "strokewidth", "type": "f64"},
+        {"name": "opacity",     "type": "f64"},
+        {"name": "fontsize",    "type": "f64"},
+        {"name": "fontfamily",  "type": "str"}
       ]
     },
     {"kind": "func", "name": "svg.doc",      "params": ["f64", "f64"],                          "return": "svgdoc"},

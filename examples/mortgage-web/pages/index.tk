@@ -1,19 +1,19 @@
 m=mortgage.web.index;
 i=router:std.router;
 i=tpl:std.template;
-i=str:std.str;
 
 
 f=handler(req:i64):i64{
-  let vars=tpl.vars(@("title":"Mortgage Calculator"));
-  let layout=mt tpl.renderfile("templates/layout.tkt";vars) {
-    $ok:v v;
-    $err:e <router.status(500;"template error")
-  };
   let body=mt tpl.renderfile("templates/index.tkt";tpl.vars(@())) {
     $ok:v v;
     $err:e <router.status(500;"template error")
   };
-  let page=str.replace(layout;"{{content}}";body);
+  (* pass the rendered body as the {{content}} var — the engine substitutes
+     unknown vars with empty, so a post-render str.replace would find nothing *)
+  let vars=tpl.vars(@("title":"Mortgage Calculator";"content":body));
+  let page=mt tpl.renderfile("templates/layout.tkt";vars) {
+    $ok:v v;
+    $err:e <router.status(500;"template error")
+  };
   <router.ok(page)
 };
