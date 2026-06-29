@@ -1,15 +1,29 @@
 m=bookmarks.api;
-i=m:bookmarks.model;
+i=md:bookmarks.model;
 i=http:std.http;
 i=json:std.json;
 i=str:std.str;
-i=io:std.io;
 
 
-let store=mut.t=$bookmarks{items:@();nextid:1};
+(* in-memory store (a single-process demo) *)
+let store=mut.$bookmarks{items:@();nextid:1};
 
 
-f=bookmarktojson(b:i64):str{
+f=tagstojson(tags:@$str):$str{
+  let buf=str.buf();
+  str.add(buf;"[");
+  lp(let i=0;i<(tags.len as i64);i=i+1){
+    if(i>0){str.add(buf;",")};
+    str.add(buf;"\"");
+    str.add(buf;tags.get(i));
+    str.add(buf;"\"")
+  };
+  str.add(buf;"]");
+  <str.done(buf)
+};
+
+
+f=bookmarktojson(b:$bookmark):$str{
   let buf=str.buf();
   str.add(buf;"{\"id\":");
   str.add(buf;str.fromint(b.id as i64));
@@ -24,29 +38,11 @@ f=bookmarktojson(b:i64):str{
 };
 
 
-f=tagstojson(tags:@$str):str{
-  let buf=str.buf();
-  str.add(buf;"[");
-  lp(let i=0;i<(tags.len as i64);i=i+1){
-    if(i>0){
-      str.add(buf;",")
-    };
-    str.add(buf;"\"");
-    str.add(buf;tags.get(i));
-    str.add(buf;"\"")
-  };
-  str.add(buf;"]");
-  <str.done(buf)
-};
-
-
-f=bookmarkstojson(items:@i64):str{
+f=bookmarkstojson(items:@$bookmark):$str{
   let buf=str.buf();
   str.add(buf;"[");
   lp(let i=0;i<(items.len as i64);i=i+1){
-    if(i>0){
-      str.add(buf;",")
-    };
+    if(i>0){str.add(buf;",")};
     str.add(buf;bookmarktojson(items.get(i)))
   };
   str.add(buf;"]");
@@ -54,175 +50,95 @@ f=bookmarkstojson(items:@i64):str{
 };
 
 
-f=errortojson(e:i64):str{
-  mt e {
-    $notfound:id {
-      let buf=str.buf();
-      str.add(buf;"{\"error\":\"not found\",\"id\":");
-      str.add(buf;str.fromint(id as i64));
-      str.add(buf;"}");
-      <str.done(buf)
-    };
-    $badrequest:msg {
-      let buf=str.buf();
-      str.add(buf;"{\"error\":\"bad request\",\"message\":\"");
-      str.add(buf;msg);
-      str.add(buf;"\"}");
-      <str.done(buf)
-    }
-  }
-};
-
-
-f=parsebookmark(body:str):i64!$t=$apierr{
-  let doc=mt json.dec(body) {
-    $ok:d d;
-    $err:e <$err(t=$$badrequest("invalid json"))
-  };
-  let url=mt json.str(doc;"url") {
-    $ok:v v;
-    $err:e <$err(t=$$badrequest("missing url"))
-  };
-  let title=mt json.str(doc;"title") {
-    $ok:v v;
-    $err:e <$err(t=$$badrequest("missing title"))
-  };
-  let tags=mt json.arr(doc;"tags") {
-    $ok:v v;
-    $err:e @()
-  };
-  let taglist=mut.@();
-  lp(let i=0;i<(tags.len as i64);i=i+1){
-    let tag=mt json.strat(tags;i) {
-      $ok:v v;
-      $err:e ""
-    };
-    if(str.len(tag)>0){
-      taglist=taglist.push(tag)
-    }
-  };
-  <$ok(t=$bookmark{id:0;url:url;title:title;tags:taglist})
-};
-
-
-f=findbookmark(id:u64):i64!$t=$apierr{
-  lp(let i=0;i<(store.items.len as i64);i=i+1){
-    let b=store.items.get(i);
-    if(b.id=id){
-      <$ok(b)
-    }
-  };
-  <$err(t=$$notfound(id))
-};
-
-
 f=findindex(id:u64):i64{
   lp(let i=0;i<(store.items.len as i64);i=i+1){
     let b=store.items.get(i);
-    if(b.id=id){
-      <i
-    }
+    if(b.id=id){<i}
   };
   <(0-1)
 };
 
 
 f=handlelist(req:i64):i64{
-  let body=bookmarkstojson(store.items);
-  <http.$response{
-    status:200;
-    headers:@("content-type":"application/json");
-    body:body
-  }
-};
-
-
-f=handlecreate(req:i64):i64{
-  mt parsebookmark(req.body) {
-    $ok:b {
-      let newb=t=$bookmark{
-        id:store.nextid;
-        url:b.url;
-        title:b.title;
-        tags:b.tags
-      };
-      store=t=$bookmarks{
-        items:store.items.push(newb);
-        nextid:store.nextid+1
-      };
-      <http.$response{
-        status:201;
-        headers:@("content-type":"application/json");
-        body:bookmarktojson(newb)
-      }
-    };
-    $err:e {
-      <http.$response{
-        status:400;
-        headers:@("content-type":"application/json");
-        body:errortojson(e)
-      }
-    }
-  }
+  <http.resjson(200; bookmarkstojson(store.items))
 };
 
 
 f=handleget(req:i64):i64{
-  let id=mt http.paramu64(req;"id") {
+  let id=mt str.toint(http.param(req;"id")) {
     $ok:v v;
-    $err:e {
-      <http.$response{
-        status:400;
-        headers:@("content-type":"application/json");
-        body:errortojson(t=$$badrequest("invalid id"))
-      }
-    }
+    $err:e (0-1)
   };
-  mt findbookmark(id) {
-    $ok:b {
-      <http.$response{
-        status:200;
-        headers:@("content-type":"application/json");
-        body:bookmarktojson(b)
-      }
-    };
-    $err:e {
-      <http.$response{
-        status:404;
-        headers:@("content-type":"application/json");
-        body:errortojson(e)
-      }
-    }
-  }
+  let idx=findindex(id as u64);
+  if(idx<0){
+    <http.resjson(404; "{\"error\":\"not found\"}")
+  };
+  <http.resjson(200; bookmarktojson(store.items.get(idx)))
+};
+
+
+f=handlecreate(req:i64):i64{
+  let body=http.reqbody(req);
+  let doc=mt json.dec(body) {
+    $ok:d d;
+    $err:e (0-1)
+  };
+  if(doc<0){
+    <http.resjson(400; "{\"error\":\"invalid json\"}")
+  };
+  let url=mt json.str(doc;"url") {
+    $ok:v v;
+    $err:e ""
+  };
+  let title=mt json.str(doc;"title") {
+    $ok:v v;
+    $err:e ""
+  };
+  if(str.len(url)=0){
+    <http.resjson(400; "{\"error\":\"missing url\"}")
+  };
+  let newb=$bookmark{
+    id:store.nextid;
+    url:url;
+    title:title;
+    tags:@()
+  };
+  store=$bookmarks{
+    items:store.items.push(newb);
+    nextid:store.nextid+1
+  };
+  <http.resjson(201; bookmarktojson(newb))
 };
 
 
 f=handledelete(req:i64):i64{
-  let id=mt http.paramu64(req;"id") {
+  let id=mt str.toint(http.param(req;"id")) {
     $ok:v v;
-    $err:e {
-      <http.$response{
-        status:400;
-        headers:@("content-type":"application/json");
-        body:errortojson(t=$$badrequest("invalid id"))
-      }
-    }
+    $err:e (0-1)
   };
-  let idx=findindex(id);
+  let idx=findindex(id as u64);
   if(idx<0){
-    <http.$response{
-      status:404;
-      headers:@("content-type":"application/json");
-      body:errortojson(t=$$notfound(id))
+    <http.resjson(404; "{\"error\":\"not found\"}")
+  };
+  let kept=mut.@();
+  lp(let i=0;i<(store.items.len as i64);i=i+1){
+    if((i=idx)=false){
+      kept=kept.push(store.items.get(i))
     }
   };
-  store=t=$bookmarks{
-    items:store.items.remove(idx);
+  store=$bookmarks{
+    items:kept;
     nextid:store.nextid
   };
-  <http.$response{
-    status:200;
-    headers:@("content-type":"application/json");
-    body:"{\"deleted\":true}"
-  }
+  <http.resjson(200; "{\"deleted\":true}")
+};
+
+
+(* routes — registered from this module so the &handler refs are local *)
+f=routes():$i64{
+  http.get("/api/bookmarks"; &handlelist);
+  http.post("/api/bookmarks"; &handlecreate);
+  http.get("/api/bookmarks/:id"; &handleget);
+  http.delete("/api/bookmarks/:id"; &handledelete);
+  <0
 };

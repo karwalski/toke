@@ -1078,6 +1078,37 @@ static int is_f64_returning_wrapper(const char *name) {
 }
 
 /*
+ * json_array_end — Given a pointer to the opening '[' of a JSON array,
+ * return a pointer to its MATCHING ']', honoring nested brackets and
+ * brackets that appear inside JSON string values.
+ *
+ * Story 114.45: the old `strchr(arr, ']')` stopped at the FIRST ']', which
+ * for a fields/params array whose member types use bracket notation
+ * (e.g. an array type `[item]` or map type `[k:v]`) is the ']' *inside*
+ * the first type string — truncating the field/param list at the first
+ * compound-typed member. That dropped every following field, so a struct
+ * like `$box{items:[item]; n:u64}` loaded cross-module as a 1-field struct,
+ * corrupting struct-literal layout and field access. Counting bracket depth
+ * outside of strings finds the real end of the array.
+ */
+static char *json_array_end(char *open) {
+    int depth = 0;
+    int in_str = 0;
+    for (char *p = open; *p; p++) {
+        char ch = *p;
+        if (in_str) {
+            if (ch == '\\') { if (p[1]) p++; continue; }
+            if (ch == '"') in_str = 0;
+            continue;
+        }
+        if (ch == '"') { in_str = 1; continue; }
+        if (ch == '[') depth++;
+        else if (ch == ']') { depth--; if (depth == 0) return p; }
+    }
+    return NULL;
+}
+
+/*
  * load_tki_funcs — Load function signatures from a .tki interface file
  * and register them in the Ctx so cross-module calls use correct types.
  *
@@ -1189,7 +1220,7 @@ static void load_tki_funcs(Ctx *c, const char *tki_path) {
             if (pk && (!next_kind || pk < next_kind)) {
                 char *arr = strchr(pk, '[');
                 if (arr) {
-                    char *end = strchr(arr, ']');
+                    char *end = json_array_end(arr);
                     if (end) {
                         char *cp = arr + 1;
                         while (cp < end && sig->param_count < TKC_MAX_PARAMS) {
@@ -1256,7 +1287,7 @@ static void load_tki_structs(Ctx *c, const char *tki_path) {
         if (fk && (!next_kind || fk < next_kind)) {
             char *arr = strchr(fk, '[');
             if (arr) {
-                char *end = strchr(arr, ']');
+                char *end = json_array_end(arr);
                 if (end) {
                     /* Count fields and extract names */
                     char field_names[TKC_MAX_PARAMS][128];

@@ -4,15 +4,11 @@ i=io:std.io;
 i=api:bookmarks.api;
 
 
-f=main():i64{
-  let srv=http.server();
-
-  http.get(srv;"/api/bookmarks";api.handlelist);
-  http.post(srv;"/api/bookmarks";api.handlecreate);
-  http.get(srv;"/api/bookmarks/:id";api.handleget);
-  http.delete(srv;"/api/bookmarks/:id";api.handledelete);
-
+f=main():$i64{
+  api.routes();
   io.println("bookmarks api listening on http://localhost:8080");
-  http.listen(srv;8080);
+  (* single worker: the in-memory store is per-process, so one worker
+     keeps state consistent across requests (a single-process demo) *)
+  http.serveworkers(8080; 1);
   <0
 };

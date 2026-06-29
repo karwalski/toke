@@ -535,9 +535,12 @@ static int                g_put_handler_count = 0;
 
 static Res tk_put_handler_dispatch(Req req) {
     const char *rpath = req.path ? req.path : "/";
+    StrPair params[32]; int pc = 0;
     for (int i = 0; i < g_put_handler_count; i++) {
         if (g_put_handler_routes[i].path &&
-            strcmp(g_put_handler_routes[i].path, rpath) == 0) {
+            tk_match_pattern(g_put_handler_routes[i].path, rpath, params, &pc)) {
+            req.params.data = params;
+            req.params.len  = (uint64_t)pc;
             Req *heap_req = (Req *)malloc(sizeof(Req));
             if (!heap_req) {
                 Res r; r.status = 500; r.body = "Internal Server Error";
@@ -550,6 +553,7 @@ static Res tk_put_handler_dispatch(Req req) {
             Res r; r.status = 500; r.body = "Handler returned null";
             r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
         }
+        pc = 0; /* reset for next iteration */
     }
     Res r; r.status = 404; r.body = "{\"error\":\"Not Found\"}";
     r.headers.data = &g_json_ct_hdr; r.headers.len = 1; return r;
@@ -578,9 +582,12 @@ static int                   g_delete_handler_count = 0;
 
 static Res tk_delete_handler_dispatch(Req req) {
     const char *rpath = req.path ? req.path : "/";
+    StrPair params[32]; int pc = 0;
     for (int i = 0; i < g_delete_handler_count; i++) {
         if (g_delete_handler_routes[i].path &&
-            strcmp(g_delete_handler_routes[i].path, rpath) == 0) {
+            tk_match_pattern(g_delete_handler_routes[i].path, rpath, params, &pc)) {
+            req.params.data = params;
+            req.params.len  = (uint64_t)pc;
             Req *heap_req = (Req *)malloc(sizeof(Req));
             if (!heap_req) {
                 Res r; r.status = 500; r.body = "Internal Server Error";
@@ -593,6 +600,7 @@ static Res tk_delete_handler_dispatch(Req req) {
             Res r; r.status = 500; r.body = "Handler returned null";
             r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
         }
+        pc = 0; /* reset for next iteration */
     }
     Res r; r.status = 404; r.body = "{\"error\":\"Not Found\"}";
     r.headers.data = &g_json_ct_hdr; r.headers.len = 1; return r;
@@ -621,9 +629,12 @@ static int                  g_patch_handler_count = 0;
 
 static Res tk_patch_handler_dispatch(Req req) {
     const char *rpath = req.path ? req.path : "/";
+    StrPair params[32]; int pc = 0;
     for (int i = 0; i < g_patch_handler_count; i++) {
         if (g_patch_handler_routes[i].path &&
-            strcmp(g_patch_handler_routes[i].path, rpath) == 0) {
+            tk_match_pattern(g_patch_handler_routes[i].path, rpath, params, &pc)) {
+            req.params.data = params;
+            req.params.len  = (uint64_t)pc;
             Req *heap_req = (Req *)malloc(sizeof(Req));
             if (!heap_req) {
                 Res r; r.status = 500; r.body = "Internal Server Error";
@@ -636,6 +647,7 @@ static Res tk_patch_handler_dispatch(Req req) {
             Res r; r.status = 500; r.body = "Handler returned null";
             r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
         }
+        pc = 0; /* reset for next iteration */
     }
     Res r; r.status = 404; r.body = "{\"error\":\"Not Found\"}";
     r.headers.data = &g_json_ct_hdr; r.headers.len = 1; return r;
