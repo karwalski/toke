@@ -78,6 +78,35 @@ int64_t tk_array_append_w(int64_t arr_i64, int64_t elem) {
     return h;
 }
 
+/*
+ * tk_array_append_inplace_w — append assuming the caller uniquely owns `arr`
+ * (ADR-0006 D2). Emitted by codegen only at a self-update `x = x.append(e)`
+ * where a per-function linearity analysis proves `x` is never aliased. Writes
+ * into spare capacity (amortised O(1)); doubles capacity and copies once when
+ * full. Turns an O(N) loop of appends from O(N^2) into O(N).
+ */
+int64_t tk_array_append_inplace_w(int64_t arr_i64, int64_t elem) {
+    if (!arr_i64) {
+        int64_t h = tk_arr_alloc(1, 1);
+        if (h) ((int64_t *)(intptr_t)h)[0] = elem;
+        return h;
+    }
+    int64_t *p = (int64_t *)(intptr_t)arr_i64;
+    int64_t len = p[-1], cap = p[-2];
+    if (len < cap) {            /* spare capacity → write in place */
+        p[len] = elem;
+        p[-1] = len + 1;
+        return arr_i64;
+    }
+    int64_t ncap = cap > 0 ? cap * 2 : 1;   /* grow (amortised doubling) */
+    int64_t h = tk_arr_alloc(ncap, len + 1);
+    if (!h) return arr_i64;
+    int64_t *out = (int64_t *)(intptr_t)h;
+    if (len > 0) memcpy(out, p, (size_t)len * sizeof(int64_t));
+    out[len] = elem;
+    return h;
+}
+
 int64_t tk_map_set_w(int64_t map_i64, int64_t key, int64_t val) {
     tk_map_put((void *)(intptr_t)map_i64, key, val);
     return map_i64;

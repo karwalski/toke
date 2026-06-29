@@ -417,6 +417,20 @@ int64_t tk_array_set_w(int64_t arr_i64, int64_t idx, int64_t elem) {
     return h;
 }
 
+/*
+ * tk_array_set_inplace_w — set assuming the caller uniquely owns `arr`
+ * (ADR-0006 D2). Emitted by codegen only at a self-update `x = x.set(i;v)`
+ * proven linearly-owned, turning an O(N) loop of sets from O(N^2) into O(N).
+ */
+int64_t tk_array_set_inplace_w(int64_t arr_i64, int64_t idx, int64_t elem) {
+    if (!arr_i64) return arr_i64;
+    int64_t *ptr = (int64_t *)(intptr_t)arr_i64;
+    int64_t len = ptr[-1];
+    if (idx < 0 || idx >= len) return arr_i64;
+    ptr[idx] = elem;
+    return arr_i64;
+}
+
 /* str.arraylen — get length of toke array */
 int64_t tk_str_arraylen_w(int64_t arr) {
     if (!arr) return 0;

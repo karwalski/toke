@@ -1,0 +1,53 @@
+(* test_array_inplace.tk — 114.18 / ADR-0006 D2.
+ * Verifies that in-place array mutation for linearly-owned accumulators
+ * preserves value semantics (aliases must be unaffected) and produces correct
+ * results for linear build/update loops. *)
+m=test.arrayinplace;
+i=io:std.io;
+i=s:std.str;
+
+f=check(name:str;got:i64;want:i64):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");s.fromint(got))) };
+  <0
+};
+
+(* linear build via append loop — should use in-place, O(N) *)
+f=build(nn:i64):@i64{
+  let a=mut.@();
+  lp(let i=0;i<nn;i=i+1){ a=a.append(i*i); };
+  <a
+};
+
+f=main():$i64{
+  (* linear build correctness *)
+  let v=build(6);
+  check("build-len";v.len;6);
+  check("build-elem";v.get(5);25);
+
+  (* linear set loop on a pre-sized array *)
+  let p=mut.@(0;0;0;0);
+  lp(let j=0;j<4;j=j+1){ p=p.set(j;j*10); };
+  check("set-loop";p.get(3);30);
+
+  (* value semantics: an alias must NOT see the original's mutation *)
+  let a=mut.@(1;2;3);
+  let b=a;
+  a=a.set(0;99);
+  a=a.append(4);
+  check("alias-unchanged-elem";b.get(0);1);
+  check("alias-unchanged-len";b.len;3);
+  check("orig-mutated-elem";a.get(0);99);
+  check("orig-mutated-len";a.len;4);
+
+  (* escape into a container: mutating the source must not change the stored copy *)
+  let src=mut.@(5;6;7);
+  let box=mut.@(0;0);
+  box=box.set(0;src);
+  src=src.set(0;88);
+  let inner=box.get(0);
+  check("container-escape";inner.get(0);5);
+
+  io.println("RESULT done");
+  <0
+};

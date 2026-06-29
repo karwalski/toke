@@ -159,7 +159,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; } Ctx;
 
 /* ── SSA counter helpers ───────────────────────────────────────────── */
 /* next_tmp: allocate the next SSA temporary (%tN).
@@ -5474,6 +5474,178 @@ static void emit_match_arm_body(Ctx *c, const Node *body, const char *res_ty,
     fprintf(c->out, "  br label %%rm_end%d\n", merge_lbl);
 }
 
+/* ───────────────────────────────────────────────────────────────────────────
+ * 114.18 / ADR-0006 — linear-array analysis for in-place mutation.
+ *
+ * A local array `x` is "linearly owned" within a function iff its backing block
+ * is provably never aliased: every binding/assignment to x produces a FRESH
+ * block (array literal or a self-update x.append/set/pop), and x never flows
+ * into a position that creates a durable second reference (a call argument, a
+ * binding RHS, a container literal element, a closure capture). Reads
+ * (x.get/x.len/x[i]) and a terminal `<x` return are fine.
+ *
+ * For such x, codegen lowers `x = x.append(e)` / `x = x.set(i;e)` to the
+ * in-place runtime variant (O(1) amortised) instead of the copy-on-write one,
+ * turning O(N^2) incremental builds/updates into O(N). The analysis is a
+ * conservative whitelist: anything it cannot prove safe falls back to copying.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+static int la_ident_is(Ctx *c, const Node *n, const char *name) {
+    if (!n || n->kind != NODE_IDENT) return 0;
+    char b[NAME_BUF]; tok_cp(c->src, n, b, sizeof b);
+    return !strcmp(b, name);
+}
+
+/* Does the subtree mention identifier `x` anywhere? */
+static int la_mentions(Ctx *c, const Node *n, const char *x) {
+    if (!n) return 0;
+    if (la_ident_is(c, n, x)) return 1;
+    for (int i = 0; i < n->child_count; i++)
+        if (la_mentions(c, n->children[i], x)) return 1;
+    return 0;
+}
+
+/* Is `call` a self-update method call on x: x.<m>(...) with m in the in-place
+ * set? Writes the method name into out_m (sized >= NAME_BUF) when non-NULL. */
+static int la_self_update_call(Ctx *c, const Node *call, const char *x, char *out_m) {
+    if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1) return 0;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2) return 0;
+    if (!la_ident_is(c, callee->children[0], x)) return 0;
+    char m[NAME_BUF]; tok_cp(c->src, callee->children[1], m, sizeof m);
+    int ok = (!strcmp(m, "append") || !strcmp(m, "push") || !strcmp(m, "set"));
+    if (ok && out_m) { strncpy(out_m, m, NAME_BUF - 1); out_m[NAME_BUF - 1] = '\0'; }
+    return ok;
+}
+
+/* A fresh RHS for x: an array literal, or a self-update on x (append/set/push).
+ * These are exactly the producers that yield an unshared block for x. */
+static int la_fresh_rhs(Ctx *c, const Node *rhs, const char *x) {
+    if (!rhs) return 0;
+    if (rhs->kind == NODE_ARRAY_LIT) return 1;
+    return la_self_update_call(c, rhs, x, NULL);
+}
+
+/* Recursively detect a disqualifying (alias-creating) use of x. Allowed roles:
+ * assign-LHS, method/field receiver, index base, bind name-slot, terminal
+ * return operand. Any other bare occurrence — or any occurrence inside a
+ * closure — disqualifies. */
+static int la_bad_use(Ctx *c, const Node *n, const char *x, int in_closure) {
+    if (!n) return 0;
+    if (n->kind == NODE_IDENT)
+        return la_ident_is(c, n, x);   /* a bare ident reached here = a use */
+    if (n->kind == NODE_CLOSURE)
+        return la_mentions(c, n, x);    /* any capture of x is unsafe */
+    int skip0 = 0, skip_field_name = 0;
+    switch (n->kind) {
+    case NODE_ASSIGN_STMT:
+        if (la_ident_is(c, n->children[0], x)) skip0 = 1;     /* LHS */
+        break;
+    case NODE_FIELD_EXPR:
+        if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) skip0 = 1; /* receiver */
+        skip_field_name = 1;                                  /* child[1] is a field name */
+        break;
+    case NODE_INDEX_EXPR:
+        if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) skip0 = 1; /* base */
+        break;
+    case NODE_RETURN_STMT:
+        if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) skip0 = 1; /* terminal */
+        break;
+    case NODE_BIND_STMT:
+    case NODE_MUT_BIND_STMT:
+        if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) skip0 = 1; /* name slot */
+        break;
+    default: break;
+    }
+    for (int i = 0; i < n->child_count; i++) {
+        if (i == 0 && skip0) continue;
+        if (i == 1 && skip_field_name) continue;
+        if (la_bad_use(c, n->children[i], x, in_closure)) return 1;
+    }
+    (void)in_closure;
+    return 0;
+}
+
+/* Every binding/assignment to x must have a fresh RHS, and there must be at
+ * least one self-update (otherwise in-place buys nothing). Also reject shadow
+ * (x bound more than once). Returns 1 if x passes these structural checks. */
+static int la_assigns_ok(Ctx *c, const Node *n, const char *x, int *binds, int *self_updates) {
+    if (!n) return 1;
+    if (n->kind == NODE_BIND_STMT || n->kind == NODE_MUT_BIND_STMT) {
+        if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) {
+            (*binds)++;
+            int has_ann = (n->child_count >= 3 && n->children[2]);
+            const Node *init = has_ann ? n->children[2]
+                                       : (n->child_count >= 2 ? n->children[1] : NULL);
+            if (!la_fresh_rhs(c, init, x)) return 0;
+        }
+    } else if (n->kind == NODE_ASSIGN_STMT) {
+        if (n->child_count >= 2 && la_ident_is(c, n->children[0], x)) {
+            if (!la_fresh_rhs(c, n->children[1], x)) return 0;
+            if (la_self_update_call(c, n->children[1], x, NULL)) (*self_updates)++;
+        }
+    }
+    for (int i = 0; i < n->child_count; i++)
+        if (!la_assigns_ok(c, n->children[i], x, binds, self_updates)) return 0;
+    return 1;
+}
+
+/* Populate c->linear_arr for the function node `fn` (its NODE_PARAM children
+ * are params; its NODE_STMT_LIST child is the body). */
+static void compute_linear_arrays(Ctx *c, const Node *fn) {
+    c->linear_arr_count = 0;
+    const Node *body = NULL;
+    for (int i = 0; i < fn->child_count; i++)
+        if (fn->children[i]->kind == NODE_STMT_LIST) { body = fn->children[i]; break; }
+    if (!body) return;
+    /* Candidate names: the LHS of any self-update assignment in the body. */
+    /* Walk and, for each distinct candidate, validate. */
+    /* Inline collection to avoid a separate visited-set structure. */
+    for (int pass = 0; pass < 1; pass++) { (void)pass;
+        /* depth-first scan for self-update assignments */
+        const Node *stack[512]; int sp = 0; stack[sp++] = body;
+        while (sp > 0) {
+            const Node *n = stack[--sp];
+            if (!n) continue;
+            if (n->kind == NODE_ASSIGN_STMT && n->child_count >= 2 &&
+                n->children[0]->kind == NODE_IDENT) {
+                char x[NAME_BUF]; tok_cp(c->src, n->children[0], x, sizeof x);
+                if (la_self_update_call(c, n->children[1], x, NULL)) {
+                    /* candidate x — skip if already decided */
+                    int known = 0;
+                    for (int k = 0; k < c->linear_arr_count; k++)
+                        if (!strcmp(c->linear_arr[k], x)) { known = 1; break; }
+                    if (!known && c->linear_arr_count < 64) {
+                        /* x must not be a param */
+                        int is_param = 0;
+                        for (int pi = 0; pi < fn->child_count; pi++) {
+                            const Node *p = fn->children[pi];
+                            if (p->kind == NODE_PARAM && p->child_count > 0 &&
+                                la_ident_is(c, p->children[0], x)) { is_param = 1; break; }
+                        }
+                        int binds = 0, self_updates = 0;
+                        if (!is_param && !la_bad_use(c, body, x, 0) &&
+                            la_assigns_ok(c, body, x, &binds, &self_updates) &&
+                            binds >= 1 && self_updates >= 1) {
+                            strncpy(c->linear_arr[c->linear_arr_count], x, NAME_BUF - 1);
+                            c->linear_arr[c->linear_arr_count][NAME_BUF - 1] = '\0';
+                            c->linear_arr_count++;
+                        }
+                    }
+                }
+            }
+            for (int i = 0; i < n->child_count && sp < 510; i++)
+                if (n->children[i]) stack[sp++] = n->children[i];
+        }
+    }
+}
+
+static int is_linear_arr(Ctx *c, const char *name) {
+    for (int i = 0; i < c->linear_arr_count; i++)
+        if (!strcmp(c->linear_arr[i], name)) return 1;
+    return 0;
+}
+
 static void emit_stmt(Ctx *c, const Node *n)
 {
     char tb[256];
@@ -5556,6 +5728,41 @@ static void emit_stmt(Ctx *c, const Node *n)
                 const char *ety2 = expr_llvm_type(c, n->children[1]);
                 v = coerce_value(c, v, ety2, "i64");
                 fprintf(c->out, "  store i64 %%t%d, i64* @%s\n", v, g->llvm_name);
+                break;
+            }
+        }
+        /* 114.18/ADR-0006: in-place mutation for a linearly-owned array
+         * accumulator. Lower `x = x.append(e)` / `x = x.set(i;e)` to the
+         * in-place runtime variant (amortised O(1)) rather than copy-on-write,
+         * turning an O(N) loop of appends/sets from O(N^2) into O(N). Only fires
+         * when compute_linear_arrays proved x is never aliased. */
+        if (is_linear_arr(c, tb) && !is_map_var(c, tb)) {
+            char mname[NAME_BUF];
+            const Node *rhs = n->children[1];
+            if (la_self_update_call(c, rhs, tb, mname)) {
+                const char *ln = get_llvm_name(c, tb);
+                const char *lty = get_local_type(c, ln);
+                const Node *recv_node = rhs->children[0]->children[0];
+                int recv = emit_expr(c, recv_node);
+                recv = coerce_value(c, recv, expr_llvm_type(c, recv_node), "i64");
+                int res;
+                if (!strcmp(mname, "set")) {
+                    int iv = emit_expr(c, rhs->children[1]);
+                    iv = coerce_value(c, iv, expr_llvm_type(c, rhs->children[1]), "i64");
+                    int ev = emit_expr(c, rhs->children[2]);
+                    ev = coerce_value(c, ev, expr_llvm_type(c, rhs->children[2]), "i64");
+                    res = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = call i64 @tk_array_set_inplace_w(i64 %%t%d, i64 %%t%d, i64 %%t%d) ; 114.18 in-place set\n",
+                            res, recv, iv, ev);
+                } else { /* append / push */
+                    int ev = emit_expr(c, rhs->children[1]);
+                    ev = coerce_value(c, ev, expr_llvm_type(c, rhs->children[1]), "i64");
+                    res = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = call i64 @tk_array_append_inplace_w(i64 %%t%d, i64 %%t%d) ; 114.18 in-place append\n",
+                            res, recv, ev);
+                }
+                int rv = coerce_value(c, res, "i64", lty);
+                fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", lty, rv, lty, ln);
                 break;
             }
         }
@@ -6169,6 +6376,8 @@ static void emit_toplevel(Ctx *c, const Node *n)
             fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", pn, pty, pty, pn, pty, pn);
         }
         c->term = 0;
+        /* 114.18: identify linearly-owned array locals for in-place mutation. */
+        compute_linear_arrays(c, n);
         if (body_i >= 0) emit_stmt(c, n->children[body_i]);
         if (!c->term) {
             if (!strcmp(ret, "void")) fputs("  ret void\n", c->out);
