@@ -14,7 +14,7 @@
     {{content}}
   </main>
   <footer class="footer">
-    <p>Built with toke + ooke</p>
+    <p>Built with toke</p>
   </footer>
 </body>
 </html>

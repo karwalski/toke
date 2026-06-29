@@ -5,11 +5,11 @@ section: tutorials
 order: 2
 ---
 
-Build a web-based mortgage calculator with ooke, the toke web framework. By the end you will have a form-driven app that computes monthly payments, renders a full amortisation table, and draws an SVG stacked-bar chart comparing principal versus interest by year.
+Build a web-based mortgage calculator in toke. It uses `std.router` for routing, `std.template` for HTML, `std.svg` for a server-rendered chart, and `std.file` to serve static assets — composed as a plain multi-module toke binary. By the end you will have a form-driven app that computes monthly payments, renders a full amortisation table, and draws an SVG stacked-bar chart comparing principal versus interest by year.
 
 **Time:** ~45 minutes
 **Difficulty:** Intermediate
-**Prerequisites:** toke compiler installed, ooke installed, completed [CLI tutorial](/docs/tutorials/mortgage-cli/)
+**Prerequisites:** toke compiler installed, completed [CLI tutorial](/docs/tutorials/mortgage-cli/)
 
 ---
 
@@ -25,7 +25,7 @@ The project is split across seven files:
 
 | File | Responsibility |
 |------|---------------|
-| `ooke.toml` | Site metadata and build config |
+| `ooke.toml` | Optional project metadata (not required to build or run) |
 | `pages/app.tk` | Router setup, static file handler, main entry point |
 | `pages/index.tk` | GET `/` handler -- render the input form |
 | `pages/calculate.tk` | POST `/calculate` handler -- parse form, run math, build HTML |
@@ -37,7 +37,7 @@ The project is split across seven files:
 Architecture at a glance:
 
 ```
-Browser                  ooke server
+Browser                  toke server
   |                          |
   |-- GET / ---------------->|  index.tk handler
   |<--- HTML form -----------|  layout.tkt + index.tkt
@@ -51,8 +51,7 @@ Browser                  ooke server
 ## 2. Prerequisites
 
 1. **toke compiler** — `toke --version` should print a version string.
-2. **ooke** — `ooke --version` should print a version string.
-3. **CLI tutorial done** — you should already be comfortable with modules, types, result handling, and the amortisation formula from the [CLI mortgage calculator](/docs/tutorials/mortgage-cli/).
+2. **CLI tutorial done** — you should already be comfortable with modules, types, result handling, and the amortisation formula from the [CLI mortgage calculator](/docs/tutorials/mortgage-cli/).
 
 ---
 
@@ -62,15 +61,15 @@ If you are using an LLM to help write toke code, here are prompts tuned for each
 
 ### 3.1 Project scaffold
 
-> Create an ooke web project called "Mortgage Calculator". The ooke.toml should set the site name, url to localhost:8080, language to "en", and build output to "build". Show only the ooke.toml file.
+> Scaffold a toke web project called "Mortgage Calculator": a `pages/` directory for handler modules, `templates/` for `.tkt` files, and `static/` for assets. (An optional `ooke.toml` can hold project metadata.)
 
 ### 3.2 Form page handler
 
-> Write a toke ooke page handler in module mortgage.web.index that serves a GET request. It should render templates/layout.tkt with a title variable set to "Mortgage Calculator", then render templates/index.tkt as the body, replace the {{content}} placeholder in the layout with the body, and return an HTTP 200 response. Use std.http, std.template, and std.str imports.
+> Write a toke page handler in module mortgage.web.index that serves a GET request. It should render templates/layout.tkt with a title variable set to "Mortgage Calculator", then render templates/index.tkt as the body, replace the {{content}} placeholder in the layout with the body, and return an HTTP 200 response. Use std.http, std.template, and std.str imports.
 
 ### 3.3 Calculation handler
 
-> Write a toke ooke page handler in module mortgage.web.calculate that handles a POST of URL-encoded form data. It should:
+> Write a toke page handler in module mortgage.web.calculate that handles a POST of URL-encoded form data. It should:
 > 1. Parse the request body into key=value pairs.
 > 2. Extract principal (f64), rate (f64), term (u64), and extra (f64, defaulting to 0).
 > 3. Validate rate is between 0 and 1, term is at least 1.
@@ -82,11 +81,11 @@ If you are using an LLM to help write toke code, here are prompts tuned for each
 
 ### 3.4 Router and main
 
-> Write a toke ooke app module mortgage.web.app that sets up a router with three routes: GET / mapped to the index handler, POST /calculate mapped to the calculate handler, and GET /static/style.css mapped to a static file handler that reads from the static/ directory. The main function should start the server on 0.0.0.0:8080.
+> Write a toke app module mortgage.web.app that sets up a router with three routes: GET / mapped to the index handler, POST /calculate mapped to the calculate handler, and GET /static/style.css mapped to a static file handler that reads from the static/ directory. The main function should start the server on 0.0.0.0:8080.
 
 ### 3.5 Templates
 
-> Write three ooke .tkt template files for a mortgage calculator:
+> Write three `.tkt` template files for a mortgage calculator:
 > 1. layout.tkt — HTML5 shell with {{title}} in the head, a navbar, a {{content}} slot in main, and a footer.
 > 2. index.tkt — a form card POSTing to /calculate with fields: principal, rate, term, extra, and a submit button.
 > 3. results.tkt — a results card with {{monthly}}, {{total_interest}}, {{total_cost}} summary; an input recap; a {{chart_svg}} container; and an amortisation table with {{schedule_rows}}.
@@ -106,7 +105,7 @@ mkdir mortgage-web
 cd mortgage-web
 ```
 
-Create an `ooke.toml` with the site metadata:
+Optionally create an `ooke.toml` with project metadata (it is not read by the `std.router` binary, but documents the project):
 
 ```toml
 [site]
@@ -145,7 +144,7 @@ Create `templates/layout.tkt`. This is the outer shell every page shares:
     {{content}}
   </main>
   <footer class="footer">
-    <p>Built with toke + ooke</p>
+    <p>Built with toke</p>
   </footer>
 </body>
 </html>
@@ -724,7 +723,7 @@ Expected response: `rate must be between 0 and 1 (e.g. 0.065 for 6.5%)`.
 template error
 ```
 
-Make sure template paths in `tpl.renderfile` are relative to the project root (where `ooke.toml` lives), not relative to the `pages/` directory. The correct path is `"templates/layout.tkt"`, not `"../templates/layout.tkt"`.
+Make sure template paths in `tpl.renderfile` are relative to the directory you run the binary from (the project root), not relative to the `pages/` directory. The correct path is `"templates/layout.tkt"`, not `"../templates/layout.tkt"`.
 
 ### Form values are all zero
 
@@ -796,10 +795,10 @@ Hints:
 
 ## What's Next
 
-You now have a working web application built with ooke. The patterns you have learned — route handlers, template composition, form parsing, and server-side SVG generation — apply to any ooke web project.
+You now have a working toke web application. The patterns you have learned — `std.router` route handlers, `std.template` composition, form parsing, and server-side SVG generation — apply to any toke web project.
 
 Suggested next tutorials:
 
-- [REST API](/docs/tutorials/rest-api/) — build a JSON API with ooke
-- [Static Site](/docs/tutorials/static-site/) — generate a static site with ooke
+- [REST API](/docs/tutorials/rest-api/) — build a JSON API in toke
+- [Static Site](/docs/tutorials/static-site/) — generate a static site in toke
 - [Cross-Platform](/docs/tutorials/cross-platform/) — share code between CLI and web targets
