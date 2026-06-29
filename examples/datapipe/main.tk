@@ -9,6 +9,9 @@ i=args:std.args;
 t=$colstats{name:$str;count:u64;sum:f64;min:f64;max:f64;avg:f64};
 
 
+t=$report{filename:$str;rows:u64;columns:u64;stats:@$colstats};
+
+
 (* cell — value at data row r (0-based); row 0 of the parsed CSV is the header. *)
 f=cell(rows:@$csvrow;r:i64;c:i64):$str{
   let row=rows.get(r+1);
@@ -101,12 +104,52 @@ f=printstats(s:$colstats):$i64{
 };
 
 
+(* colstatstojson — serialise one column's stats as a JSON object. *)
+f=colstatstojson(s:$colstats):$str{
+  let buf=str.buf();
+  str.add(buf;"{\"name\":\"");
+  str.add(buf;s.name);
+  str.add(buf;"\",\"count\":");
+  str.add(buf;str.fromint(s.count as i64));
+  str.add(buf;",\"sum\":");
+  str.add(buf;str.format(s.sum;"%.2f"));
+  str.add(buf;",\"min\":");
+  str.add(buf;str.format(s.min;"%.2f"));
+  str.add(buf;",\"max\":");
+  str.add(buf;str.format(s.max;"%.2f"));
+  str.add(buf;",\"avg\":");
+  str.add(buf;str.format(s.avg;"%.2f"));
+  str.add(buf;"}");
+  <str.done(buf)
+};
+
+
+(* reporttojson — wrap the file metadata + every column's stats. *)
+f=reporttojson(r:$report):$str{
+  let buf=str.buf();
+  str.add(buf;"{\"filename\":\"");
+  str.add(buf;r.filename);
+  str.add(buf;"\",\"rows\":");
+  str.add(buf;str.fromint(r.rows as i64));
+  str.add(buf;",\"columns\":");
+  str.add(buf;str.fromint(r.columns as i64));
+  str.add(buf;",\"stats\":[");
+  lp(let i=0;i<(r.stats.len as i64);i=i+1){
+    if(i>0){str.add(buf;",")};
+    str.add(buf;colstatstojson(r.stats.get(i)))
+  };
+  str.add(buf;"]}");
+  <str.done(buf)
+};
+
+
 f=main():$i64{
-  if(args.count()<2){
-    io.eprintln("usage: datapipe <input.csv>");
+  if(args.count()<3){
+    io.eprintln("usage: datapipe <input.csv> <output.json>");
     <2
   };
   let path=args.get(1);
+  let output=args.get(2);
   let raw=mt file.read(path) {
     $ok:v v;
     $err:e ""
@@ -127,17 +170,35 @@ f=main():$i64{
   let ncols=headers.len as i64;
   let ndata=(rows.len as i64)-1;
 
+  (* compute stats for every numeric column *)
+  let stats=mut.@();
+  lp(let c=0;c<ncols;c=c+1){
+    if(iscolnumeric(rows;c;ndata)){
+      stats=stats.push(computecol(rows;c;ndata;headers.get(c)))
+    }
+  };
+
+  (* print a human-readable summary *)
   io.println(str.concat("file:    ";path));
   io.println(str.concat("rows:    ";str.fromint(ndata)));
   io.println(str.concat("columns: ";str.fromint(ncols)));
   io.println("");
   io.println("numeric column statistics:");
+  lp(let i=0;i<(stats.len as i64);i=i+1){
+    printstats(stats.get(i))
+  };
 
-  lp(let c=0;c<ncols;c=c+1){
-    if(iscolnumeric(rows;c;ndata)){
-      let st=computecol(rows;c;ndata;headers.get(c));
-      printstats(st)
-    }
+  (* write the JSON report to the output path *)
+  let report=$report{
+    filename:path;
+    rows:(ndata as u64);
+    columns:(ncols as u64);
+    stats:stats
+  };
+  let jsonstr=reporttojson(report);
+  mt file.write(output;jsonstr) {
+    $ok:v io.println(str.concat("\nreport written to: ";output));
+    $err:e io.eprintln(str.concat("error writing report: ";output))
   };
   <0
 };

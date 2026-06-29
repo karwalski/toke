@@ -330,10 +330,18 @@ int64_t tk_str_fromfloat_w(int64_t f) {
     return (int64_t)(intptr_t)str_from_float(i64_to_f64(f));
 }
 
+/* 114.53: f64 0.0 has bit-pattern 0, which collides with the error-union's
+ * 0 sentinel — so `str.tofloat("0.0")` was misread as a parse error. Signal
+ * failure out-of-band via tk_current_error (0 = ok, 1 = err) and always return
+ * the real value, so the match-decode can discriminate without conflating a
+ * legitimately-parsed 0.0 with failure. */
+extern int64_t tk_current_error;
+
 int64_t tk_str_tofloat_w(int64_t s) {
-    if (!s) return f64_to_i64(0.0);
+    if (!s) { tk_current_error = 1; return f64_to_i64(0.0); }
     FloatParseResult r = str_to_float((const char *)(intptr_t)s);
-    return r.is_err ? f64_to_i64(0.0) : f64_to_i64(r.ok);
+    tk_current_error = r.is_err ? 1 : 0;
+    return f64_to_i64(r.is_err ? 0.0 : r.ok);
 }
 
 int64_t tk_str_fromf64_w(int64_t f) {
@@ -350,9 +358,10 @@ int64_t tk_str_isempty_w(int64_t s) {
 }
 
 int64_t tk_str_parsef64_w(int64_t s) {
-    if (!s) return f64_to_i64(0.0);
+    if (!s) { tk_current_error = 1; return f64_to_i64(0.0); }
     FloatParseResult r = str_to_float((const char *)(intptr_t)s);
-    return r.is_err ? f64_to_i64(0.0) : f64_to_i64(r.ok);
+    tk_current_error = r.is_err ? 1 : 0;
+    return f64_to_i64(r.is_err ? 0.0 : r.ok);
 }
 
 int64_t tk_str_emptyof_w(int64_t type) {

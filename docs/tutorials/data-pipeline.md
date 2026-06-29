@@ -19,19 +19,34 @@ report as json.
 
 ```
 $ ./datapipe sales.csv report.json
-reading: sales.csv
 file:    sales.csv
 rows:    5
 columns: 5
 
 numeric column statistics:
-  column          count       sum       avg       min       max
-  --------------- -----  --------  --------  --------  --------
-  price  5  257.98  51.60  29.99  99.00
-  quantity  5  58  11.60  3  25
-  discount  5  0.40  0.08  0.00  0.15
+  price (count 5)
+    sum=257.98
+    avg=51.60
+    min=29.99
+    max=99.00
+  quantity (count 5)
+    sum=58.00
+    avg=11.60
+    min=3.00
+    max=25.00
+  discount (count 5)
+    sum=0.40
+    avg=0.08
+    min=0.00
+    max=0.15
 
 report written to: report.json
+```
+
+and `report.json` contains:
+
+```json
+{"filename":"sales.csv","rows":5,"columns":5,"stats":[{"name":"price","count":5,"sum":257.98,"min":29.99,"max":99.00,"avg":51.60},{"name":"quantity","count":5,"sum":58.00,"min":3.00,"max":25.00,"avg":11.60},{"name":"discount","count":5,"sum":0.40,"min":0.00,"max":0.15,"avg":0.08}]}
 ```
 
 **source code:** `toke/examples/datapipe/`
@@ -44,33 +59,30 @@ previous output.
 **prompt 1 -- project scaffold and types**
 
 > write a toke program in 55-char default mode. define a module
-> `datapipe.main`. import `std.io`, `std.file`, `std.csv`, `std.json`,
-> `std.str`, `std.math`, `std.args`. define three types: `$pipeerr` -- a
-> sum type with variants `$fileerr:$str`, `$csverr:$str`, `$usage:$str`;
-> `$colstats` -- a product type with fields `name:$str`, `count:u64`,
-> `sum:f64`, `avg:f64`, `min:f64`, `max:f64`; and `$report` -- a product
-> type with `filename:$str`, `rows:u64`, `columns:u64`, `stats:@$colstats`.
+> `datapipe.main`. import `std.io`, `std.file`, `std.csv`, `std.str`,
+> `std.args`. define two types: `$colstats` -- a product type with fields
+> `name:$str`, `count:u64`, `sum:f64`, `min:f64`, `max:f64`, `avg:f64`; and
+> `$report` -- a product type with `filename:$str`, `rows:u64`,
+> `columns:u64`, `stats:@$colstats`.
 
 **prompt 2 -- csv reading and numeric detection**
 
-> add a function `readcsv(path:$str):csv.$doc!$pipeerr` that reads a
-> file and parses it as csv, returning `$pipeerr.$fileerr` or
-> `$pipeerr.$csverr` on failure. add `isnumeric(s:$str):bool` that
-> tries `str.tofloat` and returns true/false. add
-> `detectnumericcols(doc:csv.$doc):@bool` that loops every column,
-> checks every non-empty cell with `isnumeric`, and returns an array of
-> booleans.
+> `csv.parse(bytes)` returns an array of `$csvrow` (each has a `.fields`
+> array); row 0 is the header. add a `cell(rows;r;c)` helper that returns the
+> value at data row `r`, column `c`. add `isnumeric(s:$str):bool` that tries
+> `str.tofloat` and returns true/false. add
+> `iscolnumeric(rows;c;ndata):bool` that returns true only if a column has at
+> least one value and every non-empty cell parses as a number.
 
 **prompt 3 -- statistics and json output**
 
-> add `computecolstats(doc:csv.$doc;col:i64;name:$str):$colstats`
-> that loops rows, accumulates count/sum/min/max, and computes avg. add
-> `computeallstats(doc:csv.$doc):@$colstats` that calls it for each
-> numeric column. add `reporttojson(r:$report):$str` that builds the
-> json string manually with `str.buf`/`str.add`/`str.done`. add
-> `printsummary(r:$report):void` that prints a formatted table to
-> stdout. wire everything in a `run():i64` function and call it from
-> `main`.
+> add `computecol(rows;c;ndata;name):$colstats` that loops the data rows,
+> accumulates count/sum/min/max, and computes avg. add
+> `colstatstojson(s:$colstats):$str` and `reporttojson(r:$report):$str` that
+> build the json string manually with `str.buf`/`str.add`/`str.done`. add
+> `printstats(s:$colstats):$i64` that prints one column to stdout. wire
+> everything in `main`: read the input csv, compute stats for each numeric
+> column, print the summary, and write the json report to the output path.
 
 ## step by step
 
@@ -88,209 +100,247 @@ m=datapipe.main;
 i=io:std.io;
 i=file:std.file;
 i=csv:std.csv;
-i=json:std.json;
 i=str:std.str;
-i=math:std.math;
 i=args:std.args;
 ```
 
-`m=` declares the module path. each `i=` binds a standard library module
-to a local alias.
+`m=` declares the module path. Each `i=` binds a standard library module to a
+local alias. We read the file with `std.file`, parse it with `std.csv`, and
+take CLI arguments from `std.args`.
 
 ### 3. define types
 
 ```toke
-t=$pipeerr{$fileerr:$str;$csverr:$str;$usage:$str};
-t=$colstats{name:$str;count:u64;sum:f64;avg:f64;min:f64;max:f64};
+t=$colstats{name:$str;count:u64;sum:f64;min:f64;max:f64;avg:f64};
+
 t=$report{filename:$str;rows:u64;columns:u64;stats:@$colstats};
 ```
 
-`$pipeerr` is a sum type (tagged union) with three error variants.
-`$colstats` and `$report` are product types (structs). `@$colstats`
-means "array of `$colstats`".
+`$colstats` holds the summary for one numeric column. `$report` is the
+top-level structure written out as JSON. `@$colstats` means "array of
+`$colstats`".
 
-### 4. parse arguments and read csv
+### 4. read the CSV
+
+`csv.parse` takes the file's bytes and returns an array of `$csvrow` (each row
+has a `.fields` array). Row 0 is the header; data rows start at index 1. A
+small `cell` helper hides that offset:
 
 ```toke
-f=parseargs():@$str!$pipeerr{
-  let argc=args.count();
-  if(argc<3){
-    <$err($pipeerr.$usage("usage: datapipe <input.csv> <output.json>"))
-  };
-  let input=args.get(1);
-  let output=args.get(2);
-  <$ok(@(input;output))
-};
-
-f=readcsv(path:$str):csv.$doc!$pipeerr{
-  let raw=mt file.read(path) {
-    $ok:v v;
-    $err:e <$err($pipeerr.$fileerr(
-      str.concat("cannot read file: ";path)
-    ))
-  };
-  let doc=mt csv.parse(raw) {
-    $ok:d d;
-    $err:e <$err($pipeerr.$csverr("failed to parse csv"))
-  };
-  <$ok(doc)
+f=cell(rows:@$csvrow;r:i64;c:i64):$str{
+  let row=rows.get(r+1);
+  <row.fields.get(c)
 };
 ```
 
-the return type `@$str!$pipeerr` means "array of strings or a `$pipeerr`
-error". `<` is return. `@(input;output)` constructs a two-element array.
-the `mt` keyword introduces pattern matching on a result -- `$ok:v v` means
-"if ok, bind to `v` and evaluate to `v`".
+The file read and CSV parse happen in `main` (below) using the result-matching
+pattern `mt csv.parse(...) {$ok:v v; $err:e @()}`.
 
 ### 5. detect numeric columns
 
 ```toke
 f=isnumeric(s:$str):bool{
-  let v=mt str.tofloat(str.trim(s)) {
-    $ok:v true;
+  let t=str.trim(s);
+  if(str.len(t)=0){<false};
+  <mt str.tofloat(t) {
+    $ok:x true;
     $err:e false
-  };
-  <v
+  }
 };
 
-f=detectnumericcols(doc:csv.$doc):@bool{
-  let headers=csv.headers(doc);
-  let ncols=headers.len;
-  let result=mut.@();
-
-  lp(let c=0;c<(ncols as i64);c=c+1){
-    let numeric=mut.true;
-    let nrows=csv.rowcount(doc);
-    let checked=mut.0;
-    lp(let r=0;r<(nrows as i64);r=r+1){
-      let val=csv.cell(doc;r;c);
-      if(str.len(str.trim(val))>0){
-        if(isnumeric(val)==false){numeric=false};
-        checked=checked+1
+f=iscolnumeric(rows:@$csvrow;c:i64;ndata:i64):bool{
+  let allnum=mut.true;
+  let any=mut.false;
+  lp(let r=0;r<ndata;r=r+1){
+    let v=str.trim(cell(rows;r;c));
+    if(str.len(v)>0){
+      any=true;
+      if(isnumeric(v)=false){
+        allnum=false
       }
-    };
-    if(checked==0){numeric=false};
-    result=result.push(numeric)
+    }
   };
-  <result
+  if(any=false){<false};
+  <allnum
 };
 ```
 
-`mut.@()` creates a mutable empty array. `lp(init;cond;step){body}` is
-a c-style loop. `csv.cell(doc;r;c)` fetches row `r`, column `c` --
-semicolons separate arguments. empty cells are skipped; a column with
-zero non-empty cells is marked non-numeric.
+`str.tofloat` returns a result type, so `mt … {$ok:x true; $err:e false}`
+turns a parse attempt into a boolean. A column is numeric only if it has at
+least one value and every non-empty cell parses as a number.
 
 ### 6. compute statistics
 
 ```toke
-f=computecolstats(doc:csv.$doc;col:i64;name:$str):$colstats{
-  let nrows=csv.rowcount(doc);
-  let count=mut.0;
-  let sum=mut.0.0;
-  let mn=mut.999999999.0;
-  let mx=mut.(0.0-999999999.0);
-
-  lp(let r=0;r<(nrows as i64);r=r+1){
-    let val=csv.cell(doc;r;col);
-    if(str.len(str.trim(val))>0){
-      let num=mt str.tofloat(str.trim(val)) {
-        $ok:v v;
-        $err:e 0.0
-      };
-      count=count+1;
-      sum=sum+num;
-      if(num<mn){mn=num};
-      if(num>mx){mx=num}
-    }
+f=tofloat(s:$str):f64{
+  let v=mt str.tofloat(str.trim(s)) {
+    $ok:x x;
+    $err:e 0.0
   };
-  let avg=0.0;
-  if(count>0){avg=sum/((count) as f64)};
-  <$colstats{
-    name:name;count:(count as u64);sum:sum;
-    avg:avg;min:mn;max:mx
-  }
+  <v
 };
 
-f=computeallstats(doc:csv.$doc):@$colstats{
-  let headers=csv.headers(doc);
-  let numeric=detectnumericcols(doc);
-  let result=mut.@();
-  lp(let c=0;c<(headers.len as i64);c=c+1){
-    if(numeric.get(c)){
-      let stats=computecolstats(doc;c;headers.get(c));
-      result=result.push(stats)
+f=computecol(rows:@$csvrow;c:i64;ndata:i64;name:$str):$colstats{
+  let count=mut.0;
+  let sum=mut.0.0;
+  let mn=mut.0.0;
+  let mx=mut.0.0;
+  let first=mut.true;
+  lp(let r=0;r<ndata;r=r+1){
+    let v=str.trim(cell(rows;r;c));
+    if(str.len(v)>0){
+      let num=tofloat(v);
+      count=count+1;
+      sum=sum+num;
+      if(first){
+        mn=num;
+        mx=num;
+        first=false
+      }el{
+        if(num<mn){mn=num};
+        if(num>mx){mx=num}
+      }
     }
   };
-  <result
+  let avg=mut.0.0;
+  if(count>0){
+    avg=sum/(count as f64)
+  };
+  <$colstats{
+    name:name;
+    count:(count as u64);
+    sum:sum;
+    min:mn;
+    max:mx;
+    avg:avg
+  }
 };
 ```
 
-`(count as u64)` and `(count) as f64` -- toke requires explicit casts
-between integer and float types. `mut.(0.0-999999999.0)` initialises a
-mutable to a negative float (no negative literal; subtract from zero).
+`(count as u64)` and `(count as f64)` — toke requires explicit casts between
+integer and float types. The `first` flag seeds min/max with the first value
+seen rather than a sentinel.
 
-### 7. serialise to json
+### 7. serialise to JSON
 
-toke builds json strings with a string buffer -- `str.buf()` allocates,
-`str.add()` appends, `str.done()` finalises. two functions handle this:
-`colstatstojson` serialises one column's stats as a json object, and
-`reporttojson` wraps all columns into the top-level report structure.
-see the full source for the complete implementations -- the pattern is
-always `str.add(buf;"key:");str.add(buf;value)` repeated for each field.
+Toke builds JSON strings with a string buffer — `str.buf()` allocates,
+`str.add()` appends, `str.done()` finalises. One function serialises a single
+column; another wraps the whole report:
+
+```toke
+f=colstatstojson(s:$colstats):$str{
+  let buf=str.buf();
+  str.add(buf;"{\"name\":\"");
+  str.add(buf;s.name);
+  str.add(buf;"\",\"count\":");
+  str.add(buf;str.fromint(s.count as i64));
+  str.add(buf;",\"sum\":");
+  str.add(buf;str.format(s.sum;"%.2f"));
+  str.add(buf;",\"min\":");
+  str.add(buf;str.format(s.min;"%.2f"));
+  str.add(buf;",\"max\":");
+  str.add(buf;str.format(s.max;"%.2f"));
+  str.add(buf;",\"avg\":");
+  str.add(buf;str.format(s.avg;"%.2f"));
+  str.add(buf;"}");
+  <str.done(buf)
+};
+
+f=reporttojson(r:$report):$str{
+  let buf=str.buf();
+  str.add(buf;"{\"filename\":\"");
+  str.add(buf;r.filename);
+  str.add(buf;"\",\"rows\":");
+  str.add(buf;str.fromint(r.rows as i64));
+  str.add(buf;",\"columns\":");
+  str.add(buf;str.fromint(r.columns as i64));
+  str.add(buf;",\"stats\":[");
+  lp(let i=0;i<(r.stats.len as i64);i=i+1){
+    if(i>0){str.add(buf;",")};
+    str.add(buf;colstatstojson(r.stats.get(i)))
+  };
+  str.add(buf;"]}");
+  <str.done(buf)
+};
+```
 
 ### 8. print summary and wire together
 
-`printsummary` formats a table to stdout using `str.buf` the same way
-as the json serialiser. the `run` function orchestrates the full
-pipeline:
+`printstats` prints one column to stdout; `main` orchestrates the whole
+pipeline — read, parse, compute every numeric column, print the summary, then
+write the JSON report to the output path:
 
 ```toke
-f=run():i64{
-  let paths=mt parseargs() {
-    $ok:v v;
-    $err:e {
-      mt e {$usage:msg io.eprintln(msg);
-         $fileerr:msg io.eprintln(msg);
-         $csverr:msg io.eprintln(msg)};
-      <1
-    }
-  };
-  let input=paths.get(0);
-  let output=paths.get(1);
-  io.println(str.concat("reading: ";input));
-  let doc=mt readcsv(input) {
-    $ok:d d;
-    $err:e {
-      mt e {$fileerr:msg io.eprintln(msg);
-         $csverr:msg io.eprintln(msg);
-         $usage:msg io.eprintln(msg)};
-      <1
-    }
-  };
-  let stats=computeallstats(doc);
-  let r=$report{
-    filename:input;
-    rows:(csv.rowcount(doc) as u64);
-    columns:(csv.headers(doc).len as u64);
-    stats:stats
-  };
-  printsummary(r);
-  io.println("");
-  let jsonstr=reporttojson(r);
-  mt file.write(output;jsonstr) {
-    $ok:v {io.println(str.concat("report written to: ";output))};
-    $err:e {io.eprintln(str.concat("error writing report: ";output));<1}
-  };
+f=printstats(s:$colstats):$i64{
+  io.println(str.concat("  ";str.concat(s.name;str.concat(" (count ";str.concat(str.fromint(s.count as i64);")")))));
+  io.println(str.concat("    sum=";str.format(s.sum;"%.2f")));
+  io.println(str.concat("    avg=";str.format(s.avg;"%.2f")));
+  io.println(str.concat("    min=";str.format(s.min;"%.2f")));
+  io.println(str.concat("    max=";str.format(s.max;"%.2f")));
   <0
 };
 
-f=main():i64{<run()};
+f=main():$i64{
+  if(args.count()<3){
+    io.eprintln("usage: datapipe <input.csv> <output.json>");
+    <2
+  };
+  let path=args.get(1);
+  let output=args.get(2);
+  let raw=mt file.read(path) {
+    $ok:v v;
+    $err:e ""
+  };
+  if(str.len(raw)=0){
+    io.eprintln(str.concat("cannot read file: ";path));
+    <2
+  };
+  let rows=mt csv.parse(str.bytes(raw)) {
+    $ok:v v;
+    $err:e @()
+  };
+  if(rows.len<2){
+    io.eprintln("no data rows in csv");
+    <2
+  };
+  let headers=rows.get(0).fields;
+  let ncols=headers.len as i64;
+  let ndata=(rows.len as i64)-1;
+
+  let stats=mut.@();
+  lp(let c=0;c<ncols;c=c+1){
+    if(iscolnumeric(rows;c;ndata)){
+      stats=stats.push(computecol(rows;c;ndata;headers.get(c)))
+    }
+  };
+
+  io.println(str.concat("file:    ";path));
+  io.println(str.concat("rows:    ";str.fromint(ndata)));
+  io.println(str.concat("columns: ";str.fromint(ncols)));
+  io.println("");
+  io.println("numeric column statistics:");
+  lp(let i=0;i<(stats.len as i64);i=i+1){
+    printstats(stats.get(i))
+  };
+
+  let report=$report{
+    filename:path;
+    rows:(ndata as u64);
+    columns:(ncols as u64);
+    stats:stats
+  };
+  let jsonstr=reporttojson(report);
+  mt file.write(output;jsonstr) {
+    $ok:v io.println(str.concat("\nreport written to: ";output));
+    $err:e io.eprintln(str.concat("error writing report: ";output))
+  };
+  <0
+};
 ```
 
-the nested `mt` shows a key toke pattern: the outer match unwraps
-`$ok`/`$err`, and the inner match dispatches the error variant so each
-gets a meaningful message on stderr.
+The store of computed columns is built in a `mut.@()` array, pushing one
+`$colstats` per numeric column. Reading the store, the summary print and the
+JSON serialisation both iterate that same array.
 
 ## build and run
 
