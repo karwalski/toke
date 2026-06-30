@@ -1,0 +1,42 @@
+(* test_str_compare.tk — 114.56.
+ * String relational operators (`<` `<=` `>` `>=`) must compare by content
+ * (strcmp), not pointer address, even when an operand is a string RETURNED
+ * FROM A FUNCTION (whose i8* type erases to i64 at the ABI). *)
+m=test.strcompare;
+i=io:std.io;
+i=s:std.str;
+
+f=ret(x:str):str{ <x };
+f=build(a:str;b:str):str{ <s.concat(a;b) };
+
+f=ck(name:str;cond:i64):i64{
+  if(cond==1){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat("FAIL ";name)) };
+  <0
+};
+
+f=main():$i64{
+  let r=mut.0;
+  (* function-returned string literals — the 114.56 case *)
+  let a=ret("zzz");
+  let b=ret("aaa");
+  if(a>b){r=1}el{r=0};   ck("ret-gt";r);
+  if(a<=b){r=0}el{r=1};  ck("ret-not-le";r);
+
+  (* function-BUILT strings (concat inside callee) *)
+  let p=build("581";"00");
+  let q=build("503";"99");
+  if(p>q){r=1}el{r=0};   ck("built-gt";r);
+  if(p>=q){r=1}el{r=0};  ck("built-ge";r);
+
+  (* equal content, distinct allocations *)
+  let e1=ret("hello");
+  let e2=build("hel";"lo");
+  if(e1<=e2){r=1}el{r=0}; ck("eq-le";r);
+  if(e1>=e2){r=1}el{r=0}; ck("eq-ge";r);
+
+  (* literals still correct (regression guard) *)
+  if("aaa"<"bbb"){r=1}el{r=0}; ck("lit-lt";r);
+  io.println("RESULT done");
+  <0
+};

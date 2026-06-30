@@ -4922,6 +4922,13 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             if (sig2 && (!strcmp(sig2->ret_type_name, "@$str") ||
                          !strcmp(sig2->ret_type_name, "@str")))
                 return "@str";
+            /* 114.56: a cross-module user fn returning a scalar string — tag
+             * "$str" so the result is recognised as a string (the ABI lowers
+             * str returns to i64, erasing the i8* type), routing `<`/`<=`/`>`/
+             * `>=` and var-to-var `=` to strcmp instead of pointer comparison. */
+            if (sig2 && (!strcmp(sig2->ret_type_name, "str") ||
+                         !strcmp(sig2->ret_type_name, "$str")))
+                return "$str";
         }
         char fn[128]; tok_cp(c->src, n->children[0], fn, sizeof fn);
         if (!strcmp(fn, "main")) strcpy(fn, "tk_main");
@@ -4935,6 +4942,13 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         if (sig && (!strcmp(sig->ret_type_name, "@$str") ||
                     !strcmp(sig->ret_type_name, "@str")))
             return "@str";
+        /* 114.56: a user fn returning a scalar string — tag "$str" so the
+         * comparison and var-to-var `=` codegen route to strcmp, not a
+         * pointer-address compare (the str return is lowered to i64 at the ABI,
+         * erasing its i8* type at the call site). */
+        if (sig && (!strcmp(sig->ret_type_name, "str") ||
+                    !strcmp(sig->ret_type_name, "$str")))
+            return "$str";
         return NULL;
     }
     return NULL;
