@@ -140,13 +140,14 @@ operation. It does not extend the existing array.
 **Workaround:** Use `.push()` for appending to an existing array:
 `existing_arr.push(new_item)`.
 
-### 6. `=` is equality, not assignment
+### 6. ~~`=` is equality, not assignment~~ — CHANGED (A3, 116.3)
 
-The `=` operator is the equality comparison operator, not assignment. This is by
-design in toke.
-
-**Note:** Assignment is only via `let` binding (`let x=5`) or mutable
-reassignment (`x=10` after `let x=mut.5`). There is no separate `==` operator.
+As of v0.4 (Epic 116 / A3), **`=` is assignment/binding and `==` is equality**
+(the conventional split, and strict-LL(1) — it removed the `=`-overload's
+unbounded loop-init lookahead). `let x=5`, `x=10`, `lp(let i=0;i<n;i=i+1)` use
+`=`; comparisons use `==` (`if(x==5)`). A bare `=` in expression position is a
+compile error (E2002, "use `==`"). Migrate old sources with
+`scripts/migrate_eq.py`.
 
 ### 7. Struct field map access generates incorrect code
 

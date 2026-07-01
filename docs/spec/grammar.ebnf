@@ -122,7 +122,9 @@ LogOrExpr    = LogAndExpr { '||' LogAndExpr } ;
 
 LogAndExpr   = EqExpr { '&&' EqExpr } ;
 
-EqExpr       = CompareExpr [ ( '=' | '!=' ) CompareExpr ] ;
+(* A3: '==' is equality; '=' is assignment/binding only (BindStmt/AssignStmt/
+   decls/ConstDecl/LoopInit). A bare '=' in expression position is an error. *)
+EqExpr       = CompareExpr [ ( '==' | '!=' ) CompareExpr ] ;
 
 CompareExpr  = AddExpr [ ( '<' | '>' | '<=' | '>=' ) AddExpr ] ;
 
