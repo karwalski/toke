@@ -647,6 +647,31 @@ static Node *parse_primary(Parser *p) {
  * Error recovery: breaks the loop on missing field name after '.';
  * emits E2004 on unclosed ']'.
  */
+/*
+ * parse_get_postfix — A4: parse `base.get( ... )` with NO backtracking (strict
+ * LL(1)). Parses the argument list once, then lowers it: a single argument is
+ * array/map indexing (NODE_INDEX_EXPR); anything else (multi-arg or zero-arg) is
+ * an ordinary method call — NODE_FIELD_EXPR(base,"get") wrapped in a
+ * NODE_CALL_EXPR (identical AST to the old rewind path). `d` = the '.' token,
+ * `f` = the 'get' ident (at cur). Precondition: peek=='get', next=='('.
+ */
+static Node *parse_get_postfix(Parser *p, Node *base, Token *d, Token *f) {
+    adv(p); /* 'get' */
+    adv(p); /* '(' */
+    Node *first = (peek(p)==TK_RPAREN) ? NULL : parse_expr(p);
+    if(first && peek(p)==TK_RPAREN){
+        adv(p); /* ')' */
+        Node *n=mk(p,NODE_INDEX_EXPR,d);ch(p,n,base);ch(p,n,first);return n;
+    }
+    /* multi-arg (or zero-arg) → method call on the field `get` */
+    Node *fld=mk(p,NODE_FIELD_EXPR,d);ch(p,fld,base);ch(p,fld,mk(p,NODE_IDENT,f));
+    Node *call=mk(p,NODE_CALL_EXPR,f);ch(p,call,fld);
+    if(first) ch(p,call,first);
+    while(peek(p)==TK_SEMICOLON){adv(p);ch(p,call,parse_expr(p));}
+    if(!xp(p,TK_RPAREN,"')'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+    return call;
+}
+
 /* PostfixExpr = PrimaryExpr ('.' IDENT | '.' 'get' '(' Expr ')' | '[' Expr ']')* */
 static Node *parse_postfix(Parser *p) {
     Node *l=parse_primary(p);
@@ -663,21 +688,7 @@ static Node *parse_postfix(Parser *p) {
              * detects this in NODE_INDEX_EXPR and generates a cross-module
              * function call instead of an array index (Story 82.2.1). */
             if(peek(p)==TK_IDENT&&teq(p,f,"get")&&peek_at(p,1)==TK_LPAREN){
-                int save=p->pos;
-                adv(p); /* consume "get" */
-                adv(p); /* consume ( */
-                Node *idx=parse_expr(p);
-                if(peek(p)==TK_RPAREN){
-                    /* Single-arg .get(expr) — index expression */
-                    adv(p); /* consume ) */
-                    Node *n=mk(p,NODE_INDEX_EXPR,d);ch(p,n,l);ch(p,n,idx);
-                    l=n;
-                } else {
-                    /* Multi-arg: rewind and treat as field access + call */
-                    p->pos=save;
-                    if(!xp(p,TK_IDENT,"field"))break;
-                    Node *n=mk(p,NODE_FIELD_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_IDENT,f));l=n;
-                }
+                l=parse_get_postfix(p,l,d,f);   /* A4: no backtracking */
             } else {
                 if(!xp(p,TK_IDENT,"field"))break;
                 Node *n=mk(p,NODE_FIELD_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_IDENT,f));l=n;
@@ -723,18 +734,7 @@ static Node *parse_call(Parser *p) {
         } else if(tk==TK_DOT){
             Token *d=adv(p);Token *f=cur(p);
             if(peek(p)==TK_IDENT&&teq(p,f,"get")&&peek_at(p,1)==TK_LPAREN){
-                int save=p->pos;
-                adv(p); adv(p);
-                Node *idx=parse_expr(p);
-                if(peek(p)==TK_RPAREN){
-                    adv(p);
-                    Node *n=mk(p,NODE_INDEX_EXPR,d);ch(p,n,l);ch(p,n,idx);
-                    l=n;
-                } else {
-                    p->pos=save;
-                    if(!xp(p,TK_IDENT,"field"))break;
-                    Node *n=mk(p,NODE_FIELD_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_IDENT,f));l=n;
-                }
+                l=parse_get_postfix(p,l,d,f);   /* A4: no backtracking */
             } else {
                 if(!xp(p,TK_IDENT,"field"))break;
                 Node *n=mk(p,NODE_FIELD_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_IDENT,f));l=n;
