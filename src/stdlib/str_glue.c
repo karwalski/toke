@@ -81,6 +81,41 @@ int64_t tk_str_split_w(int64_t s, int64_t sep) {
     return h;
 }
 
+/*
+ * str.fields(s) — 116.6/A6: split on runs of ASCII whitespace (space/tab/CR/LF),
+ * dropping leading/trailing/empty fields (like Go's strings.Fields). This is the
+ * idiomatic tokeniser for whitespace-separated input — the corpus hand-rolls it
+ * as a per-char scan loop because `str.split(s;" ")` yields empty fields on
+ * whitespace runs. Returns a toke [str].
+ */
+static int tk_str_is_ws(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'; }
+int64_t tk_str_fields_w(int64_t s) {
+    const char *str = (const char *)(intptr_t)s;
+    if (!str) return tk_arr_alloc(0, 0);
+    int64_t n = 0; int in = 0;
+    for (const char *p = str; *p; p++) {
+        if (tk_str_is_ws(*p)) in = 0;
+        else { if (!in) n++; in = 1; }
+    }
+    int64_t h = tk_arr_alloc(n, n);
+    if (!h) return 0;
+    int64_t *out = (int64_t *)(intptr_t)h;
+    int64_t idx = 0;
+    const char *p = str;
+    while (*p) {
+        while (*p && tk_str_is_ws(*p)) p++;
+        if (!*p) break;
+        const char *start = p;
+        while (*p && !tk_str_is_ws(*p)) p++;
+        size_t len = (size_t)(p - start);
+        char *field = (char *)malloc(len + 1);
+        if (!field) { out[idx++] = (int64_t)(intptr_t)""; continue; }
+        memcpy(field, start, len); field[len] = '\0';
+        out[idx++] = (int64_t)(intptr_t)field;
+    }
+    return h;
+}
+
 int64_t tk_str_indexof_w(int64_t s, int64_t sub) {
     if (!s || !sub) return -1;
     return str_index((const char *)(intptr_t)s, (const char *)(intptr_t)sub);

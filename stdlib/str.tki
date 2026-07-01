@@ -24,6 +24,7 @@
     {"kind": "func", "name": "str.le", "params": ["str", "str"], "return": "bool"},
     {"kind": "func", "name": "str.charcode", "params": ["str", "i64"], "return": "i64"},
     {"kind": "func", "name": "str.split", "params": ["str", "str"], "return": "[str]"},
+    {"kind": "func", "name": "str.fields", "params": ["str"], "return": "[str]"},
     {"kind": "func", "name": "str.trim", "params": ["str"], "return": "str"},
     {"kind": "func", "name": "str.upper", "params": ["str"], "return": "str"},
     {"kind": "func", "name": "str.lower", "params": ["str"], "return": "str"},
