@@ -1,0 +1,40 @@
+(* test_eq_split.tk — 116.3 / A3: `=` is assignment, `==` is equality.
+ * Verifies equality via `==` (with && / ||), assignment `=`, both loop forms,
+ * and that `=` still binds/assigns. (A bare `=` in a condition is now a compile
+ * error — checked separately in the diagnostics suite.) *)
+m=test.eqsplit;
+i=io:std.io;
+i=s:std.str;
+
+f=ck(name:str;cond:i64):i64{
+  if(cond==1){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat("FAIL ";name)) };
+  <0
+};
+
+f=main():$i64{
+  (* == equality, incl. compound with && / || *)
+  ck("eq-true";  if(3==3){1}el{0});
+  ck("eq-false"; if(3==4){0}el{1});
+  ck("ne";       if(3!=4){1}el{0});
+  ck("and";      if(2>1 && 3==3){1}el{0});
+  ck("or";       if(1==2 || 5==5){1}el{0});
+
+  (* assignment `=` unchanged *)
+  let x=mut.10;
+  x=x+5;
+  ck("assign"; if(x==15){1}el{0});
+
+  (* 3-clause loop: init/step use assignment `=` *)
+  let sum=mut.0;
+  lp(let i=0;i<5;i=i+1){ sum=sum+i };
+  ck("loop3"; if(sum==10){1}el{0});
+
+  (* while loop: guard uses `==` *)
+  let n=mut.0;
+  lp(n==0){ n=n+1 };
+  ck("while"; if(n==1){1}el{0});
+
+  io.println("RESULT done");
+  <0
+};

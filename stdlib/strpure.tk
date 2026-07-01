@@ -7,7 +7,7 @@ f=len(s:$str):i64{
   let running=mut.true;
   lp(let d=0;running;d=0){
     let b=mem.load8(p;n);
-    if(b=0){
+    if(b==0){
       running=false
     }el{
       n=n+1
@@ -46,7 +46,7 @@ f=slice(s:$str;start:i64;end:i64):$str{
 f=contains(s:$str;sub:$str):bool{
   let slen=len(s);
   let sublen=len(sub);
-  if(sublen=0){<true};
+  if(sublen==0){<true};
   if(sublen>slen){<false};
   let limit=slen-sublen+1;
   let ps=s as i64;
@@ -54,7 +54,7 @@ f=contains(s:$str;sub:$str):bool{
   lp(let i=0 as i64;i<limit;i=i+1){
     let matched=mut.true;
     lp(let j=0 as i64;j<sublen;j=j+1){
-      if(!(mem.load8(ps;i+j)=mem.load8(psub;j))){
+      if(!(mem.load8(ps;i+j)==mem.load8(psub;j))){
         matched=false
       }
     };
@@ -66,7 +66,7 @@ f=contains(s:$str;sub:$str):bool{
 f=indexof(s:$str;sub:$str):i64{
   let slen=len(s);
   let sublen=len(sub);
-  if(sublen=0){<0 as i64};
+  if(sublen==0){<0 as i64};
   if(sublen>slen){<-1 as i64};
   let limit=slen-sublen+1;
   let ps=s as i64;
@@ -74,7 +74,7 @@ f=indexof(s:$str;sub:$str):i64{
   lp(let i=0 as i64;i<limit;i=i+1){
     let matched=mut.true;
     lp(let j=0 as i64;j<sublen;j=j+1){
-      if(!(mem.load8(ps;i+j)=mem.load8(psub;j))){
+      if(!(mem.load8(ps;i+j)==mem.load8(psub;j))){
         matched=false
       }
     };
@@ -90,7 +90,7 @@ f=startswith(s:$str;prefix:$str):bool{
   let ps=s as i64;
   let pp=prefix as i64;
   lp(let i=0 as i64;i<plen;i=i+1){
-    if(!(mem.load8(ps;i)=mem.load8(pp;i))){<false}
+    if(!(mem.load8(ps;i)==mem.load8(pp;i))){<false}
   };
   <true
 };
@@ -103,7 +103,7 @@ f=endswith(s:$str;suffix:$str):bool{
   let ps=s as i64;
   let psuf=suffix as i64;
   lp(let i=0 as i64;i<suflen;i=i+1){
-    if(!(mem.load8(ps;offset+i)=mem.load8(psuf;i))){<false}
+    if(!(mem.load8(ps;offset+i)==mem.load8(psuf;i))){<false}
   };
   <true
 };

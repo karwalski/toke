@@ -6,7 +6,7 @@ f=b64byte(idx:i64):i64{
   if(idx<26){<idx+65};
   if(idx<52){<idx-26+97};
   if(idx<62){<idx-52+48};
-  if(idx=62){<43};
+  if(idx==62){<43};
   <47
 };
 
@@ -14,7 +14,7 @@ f=b64urlbyte(idx:i64):i64{
   if(idx<26){<idx+65};
   if(idx<52){<idx-26+97};
   if(idx<62){<idx-52+48};
-  if(idx=62){<45};
+  if(idx==62){<45};
   <95
 };
 
@@ -22,8 +22,8 @@ f=b64val(b:i64):i64{
   if(!(b<65)&&!(b>90)){<b-65};
   if(!(b<97)&&!(b>122)){<b-97+26};
   if(!(b<48)&&!(b>57)){<b-48+52};
-  if(b=43){<62};
-  if(b=47){<63};
+  if(b==43){<62};
+  if(b==47){<63};
   <255
 };
 
@@ -31,22 +31,22 @@ f=b64urlval(b:i64):i64{
   if(!(b<65)&&!(b>90)){<b-65};
   if(!(b<97)&&!(b>122)){<b-97+26};
   if(!(b<48)&&!(b>57)){<b-48+52};
-  if(b=45){<62};
-  if(b=95){<63};
+  if(b==45){<62};
+  if(b==95){<63};
   <255
 };
 
 f=b64encodeimpl(input:$str;urlsafe:i64):$str{
   let inlen=s.len(input);
-  if(inlen=0){<""};
+  if(inlen==0){<""};
   let fullgroups=inlen/3;
   let rem=inlen%3;
   let outlen=mut.fullgroups*4;
   if(rem>0){
-    if(urlsafe=0){
+    if(urlsafe==0){
       outlen=outlen+4
     }el{
-      if(rem=1){outlen=outlen+2}el{outlen=outlen+3}
+      if(rem==1){outlen=outlen+2}el{outlen=outlen+3}
     }
   }el{};
   let out=mem.alloc(outlen+1);
@@ -61,7 +61,7 @@ f=b64encodeimpl(input:$str;urlsafe:i64):$str{
     let v1=((a<<4)|(b>>4))&63;
     let v2=((b<<2)|(c>>6))&63;
     let v3=c&63;
-    if(urlsafe=0){
+    if(urlsafe==0){
       mem.store8(out;oi;b64byte(v0));
       mem.store8(out;oi+1;b64byte(v1));
       mem.store8(out;oi+2;b64byte(v2));
@@ -74,12 +74,12 @@ f=b64encodeimpl(input:$str;urlsafe:i64):$str{
     };
     oi=oi+4
   };
-  if(rem=1){
+  if(rem==1){
     let bi=fullgroups*3;
     let a=mem.load8(p;bi);
     let v0=(a>>2)&63;
     let v1=(a<<4)&63;
-    if(urlsafe=0){
+    if(urlsafe==0){
       mem.store8(out;oi;b64byte(v0));
       mem.store8(out;oi+1;b64byte(v1));
       mem.store8(out;oi+2;61);
@@ -91,14 +91,14 @@ f=b64encodeimpl(input:$str;urlsafe:i64):$str{
       oi=oi+2
     }
   }el{
-    if(rem=2){
+    if(rem==2){
       let bi=fullgroups*3;
       let a=mem.load8(p;bi);
       let b=mem.load8(p;bi+1);
       let v0=(a>>2)&63;
       let v1=((a<<4)|(b>>4))&63;
       let v2=(b<<2)&63;
-      if(urlsafe=0){
+      if(urlsafe==0){
         mem.store8(out;oi;b64byte(v0));
         mem.store8(out;oi+1;b64byte(v1));
         mem.store8(out;oi+2;b64byte(v2));
@@ -118,14 +118,14 @@ f=b64encodeimpl(input:$str;urlsafe:i64):$str{
 
 f=b64decodeimpl(input:$str;urlsafe:i64):$str{
   let inlen=s.len(input);
-  if(inlen=0){<""};
+  if(inlen==0){<""};
   let p=input as i64;
   let datalen=mut.inlen;
   let running=mut.true;
   lp(let chk=0 as i64;running;chk=chk+1){
     if(datalen>0){
       let last=mem.load8(p;datalen-1);
-      if(last=61){
+      if(last==61){
         datalen=datalen-1
       }el{
         running=false
@@ -142,7 +142,7 @@ f=b64decodeimpl(input:$str;urlsafe:i64):$str{
   lp(let i=0 as i64;i<datalen;i=i+1){
     let b=mem.load8(p;i);
     let val=mut.0 as i64;
-    if(urlsafe=0){
+    if(urlsafe==0){
       val=b64val(b)
     }el{
       val=b64urlval(b)
@@ -198,7 +198,7 @@ f=hexval(b:i64):i64{
 
 f=hexencode(input:$str):$str{
   let inlen=s.len(input);
-  if(inlen=0){<""};
+  if(inlen==0){<""};
   let outlen=inlen*2;
   let out=mem.alloc(outlen+1);
   let p=input as i64;
@@ -213,7 +213,7 @@ f=hexencode(input:$str):$str{
 
 f=hexdecode(input:$str):$str{
   let inlen=s.len(input);
-  if(inlen=0){<""};
+  if(inlen==0){<""};
   let outlen=inlen/2;
   let out=mem.alloc(outlen+1);
   let p=input as i64;
@@ -230,16 +230,16 @@ f=isunreserved(b:i64):bool{
   if(!(b<65)&&!(b>90)){<true};
   if(!(b<97)&&!(b>122)){<true};
   if(!(b<48)&&!(b>57)){<true};
-  if(b=45){<true};
-  if(b=46){<true};
-  if(b=95){<true};
-  if(b=126){<true};
+  if(b==45){<true};
+  if(b==46){<true};
+  if(b==95){<true};
+  if(b==126){<true};
   <false
 };
 
 f=urlencode(input:$str):$str{
   let inlen=s.len(input);
-  if(inlen=0){<""};
+  if(inlen==0){<""};
   let p=input as i64;
   let maxout=inlen*3;
   let out=mem.alloc(maxout+1);
@@ -262,7 +262,7 @@ f=urlencode(input:$str):$str{
 
 f=urldecode(input:$str):$str{
   let inlen=s.len(input);
-  if(inlen=0){<""};
+  if(inlen==0){<""};
   let p=input as i64;
   let out=mem.alloc(inlen+1);
   let i=mut.0 as i64;
@@ -273,12 +273,12 @@ f=urldecode(input:$str):$str{
       running=false
     }el{
       let b=mem.load8(p;i);
-      if(b=37&&i+2<inlen){
+      if(b==37&&i+2<inlen){
         let hi=hexval(mem.load8(p;i+1));
         let lo=hexval(mem.load8(p;i+2));
         if(hi<16&&lo<16){
           let byte=(hi<<4)|lo;
-          if(byte=0){
+          if(byte==0){
             i=i+3;
           }el{
             mem.store8(out;oi;byte);
@@ -291,7 +291,7 @@ f=urldecode(input:$str):$str{
           i=i+1;
         }
       }el{
-        if(b=43){
+        if(b==43){
           mem.store8(out;oi;32);
           oi=oi+1;
           i=i+1;

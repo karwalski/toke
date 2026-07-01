@@ -9,7 +9,7 @@ f=main():i64{
   let path=process.env("PATH");
   if(str.len(path)>0){}el{fails=fails+1};
   let novar=process.env("TOKE_NONEXISTENT_VAR_XYZ");
-  if(str.len(novar)=0){}el{fails=fails+1};
+  if(str.len(novar)==0){}el{fails=fails+1};
   let out=process.exec("echo hello");
   if(str.contains(out;"hello")){}el{fails=fails+1};
   let lines=process.readlines("echo line1 && echo line2");

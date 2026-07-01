@@ -9,7 +9,7 @@ f=main():i64{
 
   let arr=mut.@();
   let len0=arr.len;
-  if(len0=0){
+  if(len0==0){
     io.println("PASS empty array has length 0");
     pass=pass+1
   }el{
@@ -21,7 +21,7 @@ f=main():i64{
   arr=arr.append(20);
   arr=arr.append(30);
   let len3=arr.len;
-  if(len3=3){
+  if(len3==3){
     io.println("PASS array after 3 appends has length 3");
     pass=pass+1
   }el{
@@ -30,7 +30,7 @@ f=main():i64{
   };
 
   let first=arr.get(0);
-  if(first=10){
+  if(first==10){
     io.println("PASS first element is 10");
     pass=pass+1
   }el{
@@ -39,7 +39,7 @@ f=main():i64{
   };
 
   let last=arr.get(2);
-  if(last=30){
+  if(last==30){
     io.println("PASS third element is 30");
     pass=pass+1
   }el{

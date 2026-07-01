@@ -6,7 +6,7 @@ f=main():i64{
   let fails=mut.0;
 
   let arr=@(1;2;3);
-  if(arr.len=3){
+  if(arr.len==3){
     io.println("PASS @(1;2;3) has len 3")
   }el{
     io.println(str.concat("FAIL @(1;2;3) len (got: ";str.concat(str.fromint(arr.len);")")));
@@ -14,7 +14,7 @@ f=main():i64{
   };
 
   let first=arr.get(0);
-  if(first=1){
+  if(first==1){
     io.println("PASS arr.get(0) == 1")
   }el{
     io.println(str.concat("FAIL arr.get(0) (got: ";str.concat(str.fromint(first);")")));
@@ -22,7 +22,7 @@ f=main():i64{
   };
 
   let last=arr.get(2);
-  if(last=3){
+  if(last==3){
     io.println("PASS arr.get(2) == 3")
   }el{
     io.println(str.concat("FAIL arr.get(2) (got: ";str.concat(str.fromint(last);")")));
@@ -31,7 +31,7 @@ f=main():i64{
 
   let arr2=mut.arr;
   arr2=arr2.append(4);
-  if(arr2.len=4){
+  if(arr2.len==4){
     io.println("PASS append increases len to 4")
   }el{
     io.println(str.concat("FAIL append len (got: ";str.concat(str.fromint(arr2.len);")")));
@@ -39,7 +39,7 @@ f=main():i64{
   };
 
   let appended=arr2.get(3);
-  if(appended=4){
+  if(appended==4){
     io.println("PASS appended element is 4")
   }el{
     io.println(str.concat("FAIL appended element (got: ";str.concat(str.fromint(appended);")")));
@@ -47,7 +47,7 @@ f=main():i64{
   };
 
   let sarr=@("a";"b";"c");
-  if(sarr.len=3){
+  if(sarr.len==3){
     io.println("PASS string array has len 3")
   }el{
     io.println(str.concat("FAIL string array len (got: ";str.concat(str.fromint(sarr.len);")")));

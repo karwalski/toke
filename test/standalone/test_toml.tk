@@ -27,7 +27,7 @@ f=main():i64{
   };
 
   let port=toml.i64(sec;"port");
-  if(port=8080){
+  if(port==8080){
     io.println("PASS toml.i64 extracts site.port");
     pass=pass+1
   }el{

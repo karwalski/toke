@@ -21,7 +21,7 @@ f=main():i64{
   let x1=parts.get(1);
   acc=acc+@(x1);
 
-  if(acc.len=2){
+  if(acc.len==2){
     io.println("PASS split-element append grows the array");
     pass=pass+1
   }el{

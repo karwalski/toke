@@ -882,18 +882,22 @@ static Node *parse_shift(Parser *p) {
     return l;
 }
 
-/* CompareExpr = ShiftExpr (('<'|'>'|'<='|'>='|'!='|'=') ShiftExpr)? */
+/* CompareExpr = ShiftExpr (('<'|'>'|'<='|'>='|'!='|'==') ShiftExpr)? */
 static Node *parse_compare(Parser *p) {
     Node *l=parse_shift(p);
     if(!l) return NULL;
-    if(peek(p)==TK_LT||peek(p)==TK_GT||peek(p)==TK_EQ||peek(p)==TK_LE||peek(p)==TK_GE||peek(p)==TK_NE){
+    if(peek(p)==TK_LT||peek(p)==TK_GT||peek(p)==TK_EQEQ||peek(p)==TK_LE||peek(p)==TK_GE||peek(p)==TK_NE){
         Token *t=cur(p);TokenKind op=adv(p)->kind;
-        /* Detect '==' — two consecutive TK_EQ tokens (story 84.1.10). */
-        if(op==TK_EQ&&peek(p)==TK_EQ){
-            ewarn(p,W2021,cur(p),"'==' detected; toke uses '=' for equality","toke uses `=` for equality");
-            adv(p); /* consume the extra '=' */
-        }
+        /* A3: '==' is the equality operator; normalise to the TK_EQ equality op
+         * so codegen/formatter are unchanged. */
+        if(op==TK_EQEQ) op=TK_EQ;
         Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=op;ch(p,n,l);ch(p,n,parse_shift(p));return n;}
+    /* A3: a bare '=' in expression position is assignment, not equality. */
+    if(peek(p)==TK_EQ){
+        eerr(p,E2002,cur(p),"`=` is assignment; use `==` for equality");
+        Token *t=adv(p); /* consume '=' and the RHS to recover */
+        Node *n=mk(p,NODE_BINARY_EXPR,t);n->op=TK_EQ;ch(p,n,l);ch(p,n,parse_shift(p));return n;
+    }
     return l;
 }
 
@@ -1086,24 +1090,14 @@ static Node *parse_loop_stmt(Parser *p) {
     Node *n=mk(p,NODE_LOOP_STMT,t);
     if(!xp(p,TK_LPAREN,"'('")){ sync(p);return n;}
     /* Disambiguate: 3-clause form starts with 'let IDENT =' or 'IDENT ='.
-     * Anything else (e.g. 'idx<n') is the while-loop form lp(expr){body}.
-     * 114.7: `=` is also the equality operator, so `lp(go=1)` is a valid
-     * while-condition (`go == 1`), NOT a 3-clause init. Only commit to the
-     * 3-clause form when a top-level `;` actually appears before the closing
-     * `)` (the clause separator); otherwise it's a while-condition. */
-    int is_three_clause = 0;
-    if((peek(p)==TK_KW_LET && peek_at(p,1)==TK_IDENT && peek_at(p,2)==TK_EQ) ||
-       (peek(p)==TK_IDENT && peek_at(p,1)==TK_EQ)) {
-        int depth=0;
-        for(int k=0;;k++){
-            TokenKind tk=peek_at(p,k);
-            if(tk==TK_EOF) break;
-            if(tk==TK_LPAREN) depth++;
-            else if(tk==TK_RPAREN){ if(depth==0) break; depth--; }
-            else if(tk==TK_SEMICOLON && depth==0){ is_three_clause=1; break; }
-            else if(tk==TK_LBRACE && depth==0) break; /* loop body — stop */
-        }
-    }
+     * Anything else (e.g. 'idx<n', or a while-guard equality 'go==1') is the
+     * while-loop form lp(expr){body}. A3 made '=' assignment-only, so a leading
+     * 'IDENT =' is *unambiguously* a 3-clause init — this is fixed 3-token
+     * lookahead (strict LL(1)); no forward scan is needed (was the pre-A3
+     * unbounded-lookahead workaround for the '=' / equality overload, 114.7). */
+    int is_three_clause =
+        (peek(p)==TK_KW_LET && peek_at(p,1)==TK_IDENT && peek_at(p,2)==TK_EQ) ||
+        (peek(p)==TK_IDENT && peek_at(p,1)==TK_EQ);
     if(is_three_clause){
     /* ── 3-clause form: lp(init; cond; step){body} ── */
     /* LoopInit = ('let' IDENT | IDENT) '=' Expr */

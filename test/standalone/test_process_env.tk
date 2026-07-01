@@ -23,7 +23,7 @@ f=main():i64{
   };
 
   let missing=process.env("TOKE_NONEXISTENT_VAR_XYZ_12345");
-  if(str.len(missing)=0){
+  if(str.len(missing)==0){
     io.println("PASS process.env missing var returns empty")
   }el{
     io.println("FAIL process.env missing var is non-empty");

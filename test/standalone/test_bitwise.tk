@@ -6,7 +6,7 @@ i=s:std.str;
  * Verifies values + C-style precedence + a 32-bit rotate (crypto idiom). *)
 
 f=ck(name:$str;got:$i64;want:$i64;p:$i64;fl:$i64):$i64{
-  if(got=want){io.println(s.concat("PASS ";name));<p+1}el{
+  if(got==want){io.println(s.concat("PASS ";name));<p+1}el{
     io.println(s.concat(s.concat("FAIL ";name);s.concat(" got ";s.fromint(got))));<p}
 };
 

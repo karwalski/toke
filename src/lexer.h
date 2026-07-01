@@ -47,6 +47,7 @@ typedef enum {
     TK_LBRACKET,
     TK_RBRACKET,
     TK_EQ,
+    TK_EQEQ,   /* '==' equality operator (A3: '=' is assignment/binding) */
     TK_COLON,
     TK_DOT,
     TK_SEMI,

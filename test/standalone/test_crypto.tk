@@ -17,7 +17,7 @@ f=main():i64{
   };
 
   let hlen=str.len(h);
-  if(hlen=64){
+  if(hlen==64){
     io.println("PASS crypto.sha256 returns 64-char hex digest");
     pass=pass+1
   }el{

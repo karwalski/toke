@@ -6,28 +6,28 @@ i=io:std.io;
 f=main():i64{
   let fails=mut.0;
   let mx=math.max(3;7);
-  if(mx=7){
+  if(mx==7){
     io.println("PASS math.max(3;7) == 7")
   }el{
     io.println("FAIL math.max(3;7)");
     fails=fails+1
   };
   let mn=math.min(3;7);
-  if(mn=3){
+  if(mn==3){
     io.println("PASS math.min(3;7) == 3")
   }el{
     io.println("FAIL math.min(3;7)");
     fails=fails+1
   };
   let mxeq=math.max(10;10);
-  if(mxeq=10){
+  if(mxeq==10){
     io.println("PASS math.max(10;10) == 10")
   }el{
     io.println("FAIL math.max(10;10)");
     fails=fails+1
   };
   let mneq=math.min(5;5);
-  if(mneq=5){
+  if(mneq==5){
     io.println("PASS math.min(5;5) == 5")
   }el{
     io.println("FAIL math.min(5;5)");

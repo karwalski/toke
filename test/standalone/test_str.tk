@@ -7,8 +7,8 @@ f=main():i64{
   if(str.eq("";"")) {io.println("PASS str.eq empty")}el{io.println("FAIL str.eq empty")};
   let c=str.concat("hello";" world");
   if(str.eq(c;"hello world")){io.println("PASS str.concat")}el{io.println("FAIL str.concat")};
-  if(str.len("hello")=5){io.println("PASS str.len")}el{io.println("FAIL str.len")};
-  if(str.len("")=0){io.println("PASS str.len empty")}el{io.println("FAIL str.len empty")};
+  if(str.len("hello")==5){io.println("PASS str.len")}el{io.println("FAIL str.len")};
+  if(str.len("")==0){io.println("PASS str.len empty")}el{io.println("FAIL str.len empty")};
   if(str.contains("hello world";"world")){io.println("PASS str.contains found")}el{io.println("FAIL str.contains found")};
   if(str.contains("hello";"xyz")){io.println("FAIL str.contains notfound")}el{io.println("PASS str.contains notfound")};
   let parts=str.split("a,b,c";",");
@@ -31,7 +31,7 @@ f=main():i64{
   let ff=str.fromfloat(3.14);
   if(str.isempty(ff)){io.println("FAIL str.fromfloat")}el{io.println("PASS str.fromfloat")};
   let ti=str.toint("99");
-  if(ti=99){io.println("PASS str.toint")}el{io.println("FAIL str.toint")};
+  if(ti==99){io.println("PASS str.toint")}el{io.println("FAIL str.toint")};
   if(str.isempty("")){io.println("PASS str.isempty true")}el{io.println("FAIL str.isempty true")};
   if(str.isempty("x")){io.println("FAIL str.isempty false")}el{io.println("PASS str.isempty false")};
   let rp=str.replace("hello";"l";"r");
@@ -39,7 +39,7 @@ f=main():i64{
   let sl=str.slice("hello";1;4);
   if(str.eq(sl;"ell")){io.println("PASS str.slice")}el{io.println("FAIL str.slice")};
   let idx=str.indexof("hello world";"world");
-  if(idx=6){io.println("PASS str.indexof")}el{io.println("FAIL str.indexof")};
+  if(idx==6){io.println("PASS str.indexof")}el{io.println("FAIL str.indexof")};
   let j=str.join(@("a";"b";"c");",");
   if(str.eq(j;"a,b,c")){io.println("PASS str.join")}el{io.println("FAIL str.join")};
   let pl=str.padleft("hi";5;48);

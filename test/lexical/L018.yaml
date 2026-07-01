@@ -9,7 +9,7 @@ input: |
     if(x>0){
       let y=mut.x;
       lp(let i=0;i<y;i=i+1){
-        if(i=5){br};
+        if(i==5){br};
       };
       <true
     }el{

@@ -43,11 +43,11 @@ f=parseargs():$opts!$greperr{
       if(str.contains(arg;"n")){nolinenum=true};
       if(str.contains(arg;"v")){invert=true}
     };
-    if(str.startswith(arg;"-")=false){
+    if(str.startswith(arg;"-")==false){
       positional=positional.push(arg)
     }
   };
-  if(positional.len=0){
+  if(positional.len==0){
     <$greperr{$nopattern:0}
   };
   if(positional.len<2){

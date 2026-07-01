@@ -5,7 +5,7 @@ input: |
   m=test;
   f=findfive():i64{
     lp(let i=0;i<100;i=i+1){
-      if(i=5){br};
+      if(i==5){br};
     };
     <5
   };

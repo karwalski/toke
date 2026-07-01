@@ -10,7 +10,7 @@ f=striptslash(s:$str;mincap:i64):i64{
       running=false
     }el{
       let ch=mt str.slice(s;pos-1;pos) {$ok:v v;$err:e ""};
-      if(ch="/"){
+      if(ch=="/"){
         pos=pos-1
       }el{
         running=false
@@ -29,7 +29,7 @@ f=striplslash(s:$str):i64{
       running=false
     }el{
       let ch=mt str.slice(s;pos;pos+1) {$ok:v v;$err:e ""};
-      if(ch="/"){
+      if(ch=="/"){
         pos=pos+1
       }el{
         running=false
@@ -59,12 +59,12 @@ f=join(a:$str;b:$str):$str{
 
 f=ext(p:$str):$str{
   let plen=str.len(p);
-  if(plen=0){<""}el{};
+  if(plen==0){<""}el{};
   let base=basename(p);
   let baselen=str.len(base);
-  if(baselen=0){<""}el{};
+  if(baselen==0){<""}el{};
   let first=mt str.slice(base;0;1) {$ok:v v;$err:e ""};
-  if(first="."){
+  if(first=="."){
     let rest=mt str.slice(base;1;baselen) {$ok:v v;$err:e ""};
     let dot2=str.indexof(rest;".");
     if(dot2<0){
@@ -78,12 +78,12 @@ f=ext(p:$str):$str{
 
 f=stem(p:$str):$str{
   let plen=str.len(p);
-  if(plen=0){<""}el{};
+  if(plen==0){<""}el{};
   let base=basename(p);
   let baselen=str.len(base);
-  if(baselen=0){<""}el{};
+  if(baselen==0){<""}el{};
   let first=mt str.slice(base;0;1) {$ok:v v;$err:e ""};
-  if(first="."){
+  if(first=="."){
     let rest=mt str.slice(base;1;baselen) {$ok:v v;$err:e ""};
     let dot2=str.indexof(rest;".");
     if(dot2<0){
@@ -100,21 +100,21 @@ f=stem(p:$str):$str{
 
 f=dir(p:$str):$str{
   let plen=str.len(p);
-  if(plen=0){<"."}el{};
+  if(plen==0){<"."}el{};
   let end=striptslash(p;1);
   let trimmed=mt str.slice(p;0;end) {$ok:v v;$err:e p};
   let slashpos=str.lastindex(trimmed;"/");
   if(slashpos<0){<"."}el{};
   let dirportion=mt str.slice(p;0;slashpos) {$ok:v v;$err:e ""};
   let dirend=striptslash(dirportion;1);
-  if(dirend=0){<"/"}el{};
+  if(dirend==0){<"/"}el{};
   <mt str.slice(p;0;dirend) {$ok:v v;$err:e "."}
 };
 
 f=base(p:$str):$str{
   let plen=str.len(p);
-  if(plen=0){<""}el{};
-  if(plen=1){
+  if(plen==0){<""}el{};
+  if(plen==1){
     <p
   }el{};
   let end=striptslash(p;1);

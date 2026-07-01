@@ -35,69 +35,69 @@ f=maj(x:i64;y:i64;z:i64):i64{
 };
 
 f=kval(idx:i64):i64{
-  if(idx=0){<0x428a2f98};
-  if(idx=1){<0x71374491};
-  if(idx=2){<0xb5c0fbcf};
-  if(idx=3){<0xe9b5dba5};
-  if(idx=4){<0x3956c25b};
-  if(idx=5){<0x59f111f1};
-  if(idx=6){<0x923f82a4};
-  if(idx=7){<0xab1c5ed5};
-  if(idx=8){<0xd807aa98};
-  if(idx=9){<0x12835b01};
-  if(idx=10){<0x243185be};
-  if(idx=11){<0x550c7dc3};
-  if(idx=12){<0x72be5d74};
-  if(idx=13){<0x80deb1fe};
-  if(idx=14){<0x9bdc06a7};
-  if(idx=15){<0xc19bf174};
-  if(idx=16){<0xe49b69c1};
-  if(idx=17){<0xefbe4786};
-  if(idx=18){<0x0fc19dc6};
-  if(idx=19){<0x240ca1cc};
-  if(idx=20){<0x2de92c6f};
-  if(idx=21){<0x4a7484aa};
-  if(idx=22){<0x5cb0a9dc};
-  if(idx=23){<0x76f988da};
-  if(idx=24){<0x983e5152};
-  if(idx=25){<0xa831c66d};
-  if(idx=26){<0xb00327c8};
-  if(idx=27){<0xbf597fc7};
-  if(idx=28){<0xc6e00bf3};
-  if(idx=29){<0xd5a79147};
-  if(idx=30){<0x06ca6351};
-  if(idx=31){<0x14292967};
-  if(idx=32){<0x27b70a85};
-  if(idx=33){<0x2e1b2138};
-  if(idx=34){<0x4d2c6dfc};
-  if(idx=35){<0x53380d13};
-  if(idx=36){<0x650a7354};
-  if(idx=37){<0x766a0abb};
-  if(idx=38){<0x81c2c92e};
-  if(idx=39){<0x92722c85};
-  if(idx=40){<0xa2bfe8a1};
-  if(idx=41){<0xa81a664b};
-  if(idx=42){<0xc24b8b70};
-  if(idx=43){<0xc76c51a3};
-  if(idx=44){<0xd192e819};
-  if(idx=45){<0xd6990624};
-  if(idx=46){<0xf40e3585};
-  if(idx=47){<0x106aa070};
-  if(idx=48){<0x19a4c116};
-  if(idx=49){<0x1e376c08};
-  if(idx=50){<0x2748774c};
-  if(idx=51){<0x34b0bcb5};
-  if(idx=52){<0x391c0cb3};
-  if(idx=53){<0x4ed8aa4a};
-  if(idx=54){<0x5b9cca4f};
-  if(idx=55){<0x682e6ff3};
-  if(idx=56){<0x748f82ee};
-  if(idx=57){<0x78a5636f};
-  if(idx=58){<0x84c87814};
-  if(idx=59){<0x8cc70208};
-  if(idx=60){<0x90befffa};
-  if(idx=61){<0xa4506ceb};
-  if(idx=62){<0xbef9a3f7};
+  if(idx==0){<0x428a2f98};
+  if(idx==1){<0x71374491};
+  if(idx==2){<0xb5c0fbcf};
+  if(idx==3){<0xe9b5dba5};
+  if(idx==4){<0x3956c25b};
+  if(idx==5){<0x59f111f1};
+  if(idx==6){<0x923f82a4};
+  if(idx==7){<0xab1c5ed5};
+  if(idx==8){<0xd807aa98};
+  if(idx==9){<0x12835b01};
+  if(idx==10){<0x243185be};
+  if(idx==11){<0x550c7dc3};
+  if(idx==12){<0x72be5d74};
+  if(idx==13){<0x80deb1fe};
+  if(idx==14){<0x9bdc06a7};
+  if(idx==15){<0xc19bf174};
+  if(idx==16){<0xe49b69c1};
+  if(idx==17){<0xefbe4786};
+  if(idx==18){<0x0fc19dc6};
+  if(idx==19){<0x240ca1cc};
+  if(idx==20){<0x2de92c6f};
+  if(idx==21){<0x4a7484aa};
+  if(idx==22){<0x5cb0a9dc};
+  if(idx==23){<0x76f988da};
+  if(idx==24){<0x983e5152};
+  if(idx==25){<0xa831c66d};
+  if(idx==26){<0xb00327c8};
+  if(idx==27){<0xbf597fc7};
+  if(idx==28){<0xc6e00bf3};
+  if(idx==29){<0xd5a79147};
+  if(idx==30){<0x06ca6351};
+  if(idx==31){<0x14292967};
+  if(idx==32){<0x27b70a85};
+  if(idx==33){<0x2e1b2138};
+  if(idx==34){<0x4d2c6dfc};
+  if(idx==35){<0x53380d13};
+  if(idx==36){<0x650a7354};
+  if(idx==37){<0x766a0abb};
+  if(idx==38){<0x81c2c92e};
+  if(idx==39){<0x92722c85};
+  if(idx==40){<0xa2bfe8a1};
+  if(idx==41){<0xa81a664b};
+  if(idx==42){<0xc24b8b70};
+  if(idx==43){<0xc76c51a3};
+  if(idx==44){<0xd192e819};
+  if(idx==45){<0xd6990624};
+  if(idx==46){<0xf40e3585};
+  if(idx==47){<0x106aa070};
+  if(idx==48){<0x19a4c116};
+  if(idx==49){<0x1e376c08};
+  if(idx==50){<0x2748774c};
+  if(idx==51){<0x34b0bcb5};
+  if(idx==52){<0x391c0cb3};
+  if(idx==53){<0x4ed8aa4a};
+  if(idx==54){<0x5b9cca4f};
+  if(idx==55){<0x682e6ff3};
+  if(idx==56){<0x748f82ee};
+  if(idx==57){<0x78a5636f};
+  if(idx==58){<0x84c87814};
+  if(idx==59){<0x8cc70208};
+  if(idx==60){<0x90befffa};
+  if(idx==61){<0xa4506ceb};
+  if(idx==62){<0xbef9a3f7};
   <0xc67178f2
 };
 
@@ -254,7 +254,7 @@ f=sha256raw(data:$str;datalen:i64;digest:i64):void{
   lp(let pos=0;pos<datalen;pos=pos+1){
     st8(block;blen;bytes.get(pos));
     blen=blen+1;
-    if(blen=64){
+    if(blen==64){
       processblock(hbuf;block);
       blen=0
     }
@@ -282,7 +282,7 @@ f=sha256mem(buf:i64;buflen:i64;digest:i64):void{
   lp(let pos=0;pos<buflen;pos=pos+1){
     st8(block;blen;ld8(buf;pos));
     blen=blen+1;
-    if(blen=64){
+    if(blen==64){
       processblock(hbuf;block);
       blen=0
     }

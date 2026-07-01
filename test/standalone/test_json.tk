@@ -32,7 +32,7 @@ f=main():i64{
   };
 
   let ver=mt json.i64(parsed;"version"){$ok:v v;$err:e 0};
-  if(ver=42){
+  if(ver==42){
     io.println("PASS json.i64 extracts integer field");
     pass=pass+1
   }el{
@@ -59,7 +59,7 @@ f=main():i64{
   };
 
   let kcount=json.len(parsed);
-  if(kcount=2){
+  if(kcount==2){
     io.println("PASS json.len returns 2 for object with 2 keys");
     pass=pass+1
   }el{

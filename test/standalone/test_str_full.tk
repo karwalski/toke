@@ -6,10 +6,10 @@ f=main():i64{
   let fails=mut.0;
 
   io.println("--- str.len ---");
-  if(str.len("hello")=5){io.println("PASS str.len basic")}el{io.println("FAIL str.len basic");fails=fails+1};
-  if(str.len("")=0){io.println("PASS str.len empty")}el{io.println("FAIL str.len empty");fails=fails+1};
-  if(str.len("a")=1){io.println("PASS str.len single")}el{io.println("FAIL str.len single");fails=fails+1};
-  if(str.len("hello world")=11){io.println("PASS str.len with space")}el{io.println("FAIL str.len with space");fails=fails+1};
+  if(str.len("hello")==5){io.println("PASS str.len basic")}el{io.println("FAIL str.len basic");fails=fails+1};
+  if(str.len("")==0){io.println("PASS str.len empty")}el{io.println("FAIL str.len empty");fails=fails+1};
+  if(str.len("a")==1){io.println("PASS str.len single")}el{io.println("FAIL str.len single");fails=fails+1};
+  if(str.len("hello world")==11){io.println("PASS str.len with space")}el{io.println("FAIL str.len with space");fails=fails+1};
 
   io.println("--- str.concat ---");
   let c1=str.concat("hello";" world");
@@ -82,9 +82,9 @@ f=main():i64{
 
   io.println("--- str.indexof ---");
   let idx1=str.indexof("hello world";"world");
-  if(idx1=6){io.println("PASS str.indexof found")}el{io.println("FAIL str.indexof found");fails=fails+1};
+  if(idx1==6){io.println("PASS str.indexof found")}el{io.println("FAIL str.indexof found");fails=fails+1};
   let idx2=str.indexof("hello";"hello");
-  if(idx2=0){io.println("PASS str.indexof at start")}el{io.println("FAIL str.indexof at start");fails=fails+1};
+  if(idx2==0){io.println("PASS str.indexof at start")}el{io.println("FAIL str.indexof at start");fails=fails+1};
 
   io.println("--- str.eq ---");
   if(str.eq("abc";"abc")){io.println("PASS str.eq same")}el{io.println("FAIL str.eq same");fails=fails+1};
@@ -100,9 +100,9 @@ f=main():i64{
 
   io.println("--- str.toint ---");
   let ti1=str.toint("99");
-  if(ti1=99){io.println("PASS str.toint basic")}el{io.println("FAIL str.toint basic");fails=fails+1};
+  if(ti1==99){io.println("PASS str.toint basic")}el{io.println("FAIL str.toint basic");fails=fails+1};
   let ti2=str.toint("0");
-  if(ti2=0){io.println("PASS str.toint zero")}el{io.println("FAIL str.toint zero");fails=fails+1};
+  if(ti2==0){io.println("PASS str.toint zero")}el{io.println("FAIL str.toint zero");fails=fails+1};
 
   io.println("--- str.repeat ---");
   let rp1=str.repeat("ab";3);

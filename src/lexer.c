@@ -695,7 +695,13 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
                 continue;
             }
             sym = TK_RBRACKET; break;
-        case '=':  sym = TK_EQ;       break;
+        case '=':
+            if (l.pos + 1 < l.len && src[l.pos + 1] == '=') {
+                advance(&l); advance(&l);
+                if (emit(&l, TK_EQEQ, start, 2, line, col) < 0) return -1;
+                continue;
+            }
+            sym = TK_EQ; break;
         case ':':  sym = TK_COLON;    break;
         case '.':  sym = TK_DOT;      break;
         case ';':  sym = TK_SEMI;     break;

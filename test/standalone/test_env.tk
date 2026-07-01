@@ -28,7 +28,7 @@ f=main():i64{
 
   env.set("TOKE_TEST_INT";"99");
   let v3=env.getint("TOKE_TEST_INT";42);
-  if(v3=99){
+  if(v3==99){
     io.println("PASS env.getint returns parsed integer");
     pass=pass+1
   }el{
