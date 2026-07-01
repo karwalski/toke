@@ -8,13 +8,13 @@ t=$fileerr{$notfound:$str;$permission:$str;$io:$str};
 
 f=makerr(fallback:$str):$fileerr{
   let e=os.errno();
-  if(e=2){
+  if(e==2){
     <$$notfound(s.concat("file not found: ";fallback))
   };
-  if(e=13){
+  if(e==13){
     <$$permission(s.concat("permission denied: ";fallback))
   };
-  if(e=1){
+  if(e==1){
     <$$permission(s.concat("operation not permitted: ";fallback))
   };
   <$$io(s.concat(os.strerror(e);s.concat(": ";fallback)))
