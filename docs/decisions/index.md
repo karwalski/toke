@@ -18,4 +18,5 @@ Architectural decisions for the toke project, recorded as ADRs.
 - [ADR-0007 — `if` is an expression](/docs/decisions/ADR-0007/) -- v0.4 (116/A1); expression-`if` replaces the mut-flag idiom
 - [ADR-0008 — `=` is assignment, `==` is equality](/docs/decisions/ADR-0008/) -- v0.4 (116/A3); breaking; removes the `=` overload
 - [ADR-0009 — Backtrack-free parser (bounded lookahead) + `&&`/`||`](/docs/decisions/ADR-0009/) -- v0.4 (116/A2,A4,A5); honest grammar property
+- [ADR-0010 — Ambient authority and the toke capability model](/docs/decisions/ADR-0010/) -- **proposed** (story 120.17); deny-by-default capabilities vs status quo; awaiting owner decision
 - [Gate 1 Decision Document](/docs/decisions/gate1-decision/) -- Gate 1 review and outcome

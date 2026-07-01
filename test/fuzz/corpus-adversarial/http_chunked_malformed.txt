@@ -1,0 +1,8 @@
+POST /upload HTTP/1.1
+Host: x
+Transfer-Encoding: chunked
+
+FFFFFFFFFFFFFFF0
+AAAA
+ZZ
+

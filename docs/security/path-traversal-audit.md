@@ -36,3 +36,26 @@ All file path operations in toke stdlib and ooke web server that handle paths de
 - `make tkc` compiles clean with `-Wall -Wextra -Wpedantic -Werror`
 - `realpath()` validation ensures no symlink or `..` traversal escapes the document root
 - Null byte injection blocked in both URL decoders
+
+## Audit-120 cross-reference
+
+**Added:** 2026-07-02 (Story 120.21, Epic 120)
+
+The Epic 120 security audit re-examined path-handling and containment across the
+compiler, runtime, and web layers and found several traversal / symlink /
+decoding issues beyond the 57.4.3 scope. Per-area reports live under
+[`audit-120/`](audit-120/); each finding is tracked as an Epic 121 remediation story.
+
+| Finding | Area report | Severity / reach | Relation to this audit |
+|---------|-------------|------------------|------------------------|
+| WEB-02 `http.servedir` lacks symlink/allowed-root resolution (weaker than `router_static_serve`) | [`web-glue.md`](audit-120/web-glue.md) | Medium / remote-unauth | `servedir` did **not** inherit the 57.4.3 `realpath()` document-root fix |
+| OOK-01 ooke static file server exposes the entire project directory | [`ooke.md`](audit-120/ooke.md) | High / remote-unauth | app-layer static serving is unrooted |
+| PAR-09 Template engine layout path traversal (+ unbounded block/partial recursion) | [`parsers.md`](audit-120/parsers.md) | Medium / remote-auth | template layout path not contained |
+| AMB-05 `file_rmdir_r` follows symlinks (`stat` not `lstat`) — recursive delete escapes the tree | [`ambient-authority.md`](audit-120/ambient-authority.md) | Medium / remote-auth | extends item 6 "accepted risk" for `file.c` |
+| AMB-06 `path_join` / `file_join` do not normalize `..` — unsafe as containment primitives | [`ambient-authority.md`](audit-120/ambient-authority.md) | Medium / remote-auth | no safe join primitive exists yet |
+| AMB-07 File open/read/write/copy follow symlinks (no `O_NOFOLLOW`); write-through-symlink + TOCTOU | [`ambient-authority.md`](audit-120/ambient-authority.md) | Low / remote-auth | extends item 6 "accepted risk" for `file.c` |
+| WEB-06 Route params not percent-decoded; router query decoder keeps `%00` | [`web-glue.md`](audit-120/web-glue.md) | Info / remote-unauth | inconsistent decoding vs. the 57.4.3 `%00`-drop fix (item 4) |
+| RUN-10 WAF URI validator does not decode; misses traversal / double-encoding; permits raw TAB | [`runtime-waf.md`](audit-120/runtime-waf.md) | Low / remote-unauth | the WAF-layer traversal check is bypassable (and the engine is dead code — RUN-01) |
+
+The 57.4.3 `realpath()` + document-root fix in `router_static_serve` remains valid;
+audit-120 shows it is **not uniformly applied** across the other serving/joining paths.
