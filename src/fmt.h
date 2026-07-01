@@ -36,4 +36,11 @@ char *tkc_format(const Node *root, const char *src);
  */
 char *tkc_format_pretty(const Node *root, const char *src, FmtOptions opts);
 
+/* tkc_minify — the deterministic single-line canonical form (116.7/B2): the
+ * source re-lexed and re-emitted with minimal required whitespace, no newlines/
+ * indentation/comments. Token-based (needs only the source, not an AST), so it
+ * preserves every surface form exactly. The training target + tokenizer input.
+ * Returns malloc'd string, caller frees; NULL on error. */
+char *tkc_minify(const char *src, int src_len);
+
 #endif /* TKC_FMT_H */

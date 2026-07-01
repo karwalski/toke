@@ -800,6 +800,55 @@ char *tkc_format(const Node *root, const char *src)
     return b.buf;
 }
 
+/* fmt_is_word — is `c` an identifier/word char (letters, digits, underscore)? */
+static int fmt_is_word(char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_';
+}
+
+/*
+ * tkc_minify — 116.7/B2: the deterministic single-line canonical form.
+ *
+ * Re-lexes the source and re-emits every token with the *minimum* whitespace
+ * needed to preserve the token stream: a single space is inserted only where two
+ * word-like tokens (`let x`, `rt x`, `mt e`, `el if`, `as i64`) would otherwise
+ * merge. The lexer already coalesces multi-character operators (`==`, `<=`, `&&`,
+ * …), so operator boundaries never need a space. Newlines, indentation, and
+ * `(* … *)` comments are dropped. Working from tokens (not the AST) means it
+ * preserves every surface form exactly — sigils, `@()`, `$`, expr-`if` — unlike
+ * the AST pretty-printer. This is the training target and the tokenizer input.
+ * Returns a malloc'd string (caller frees), or NULL on error.
+ */
+char *tkc_minify(const char *src, int src_len)
+{
+    if (!src) return NULL;
+    int cap = src_len + 16;
+    Token *toks = malloc(sizeof(Token) * (size_t)cap);
+    if (!toks) return NULL;
+    int nt = lex(src, src_len, toks, cap, PROFILE_DEFAULT);
+    if (nt < 0) { free(toks); return NULL; }
+
+    Buf b;
+    buf_init(&b);
+    if (!b.buf) { free(toks); return NULL; }
+
+    char prev_last = 0;
+    for (int i = 0; i < nt; i++) {
+        if (toks[i].kind == TK_EOF) break;
+        if (toks[i].len <= 0) continue;
+        const char *t = src + toks[i].start;
+        if (prev_last && fmt_is_word(prev_last) && fmt_is_word(t[0]))
+            buf_putc(&b, ' ');
+        for (int k = 0; k < toks[i].len; k++)
+            buf_putc(&b, t[k]);
+        prev_last = t[toks[i].len - 1];
+    }
+
+    free(toks);
+    return b.buf;
+}
+
 /* ══════════════════════════════════════════════════════════════════════
  * Pretty-print / expand mode (story 10.8.2)
  *

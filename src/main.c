@@ -79,6 +79,7 @@ static const char HELP[] =
     "  -g / --debug        Emit DWARF debug metadata for lldb/gdb\n"
     "  -O0/-O1/-O2/-O3    Optimization level (default: -O1)\n"
     "  --fmt               Format source to canonical form and print to stdout\n"
+    "  --min               Emit the single-line canonical (minified) form and exit\n"
     "  --pretty            Pretty-print with whitespace for human readability\n"
     "  --expand            Expand abbreviated identifiers as inline comments\n"
     "  --sourcemap         Emit .map source map alongside --fmt/--pretty output\n"
@@ -355,6 +356,7 @@ int main(int argc, char **argv)
     int pretty = 0, expand = 0, sourcemap = 0;
     int dump_ast = 0;
     int migrate = 0;
+    int min_only = 0;
     int do_lint = 0, do_fix = 0;
     int emit_tkir_flag = 0;
     int emit_deps = 0;
@@ -404,6 +406,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--emit-asm"))       emit_asm = 1;
         else if (!strcmp(argv[i], "--emit-deps"))      emit_deps = 1;
         else if (!strcmp(argv[i], "--fmt"))             fmt_only = 1;
+        else if (!strcmp(argv[i], "--min"))             min_only = 1;
         else if (!strcmp(argv[i], "--pretty"))          pretty = 1;
         else if (!strcmp(argv[i], "--expand"))          expand = 1;
         else if (!strcmp(argv[i], "--sourcemap"))      sourcemap = 1;
@@ -598,7 +601,7 @@ int main(int argc, char **argv)
      * compile-to-binary mode (skipped for check, emit, fmt, lint, ... modes). */
     if (source_file_count > 1 && out && !out_is_dir &&
         !check_only && !emit_iface && !emit_ll && !emit_asm && !emit_deps &&
-        !fmt_only && !pretty && !do_lint && !migrate && !dump_ast) {
+        !fmt_only && !pretty && !do_lint && !migrate && !dump_ast && !min_only) {
         return link_multi_module(source_files, source_file_count, out,
                                  tgt, opt_level, debug_info,
                                  search_paths, search_path_count, limits, profile);
@@ -630,7 +633,7 @@ int main(int argc, char **argv)
      * idempotent — already-migrated constructs pass through unchanged. */
 
     /* Progress bar: skip for fast-path modes */
-    int fast_path = fmt_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp || do_compress || do_decompress || do_compress_stream || do_lint || emit_deps;
+    int fast_path = fmt_only || min_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp || do_compress || do_decompress || do_compress_stream || do_lint || emit_deps;
     progress_init(fast_path);
 
     /* Read source file — only malloc in the pipeline */
@@ -665,6 +668,16 @@ int main(int argc, char **argv)
         if (tkc_migrate(sbuf, (int)slen, NULL, 0, stdout) < 0) {
             rc = EINTERNAL;
         }
+        goto done;
+    }
+    if (min_only) {
+        /* --min: single-line canonical (minified) form. Token-based — needs
+         * only the source, so it works even when later stages would fail. */
+        char *m = tkc_minify(sbuf, (int)slen);
+        if (!m) { rc = EINTERNAL; goto done; }
+        fputs(m, stdout);
+        fputc('\n', stdout);
+        free(m);
         goto done;
     }
     tc = lex(sbuf, (int)slen, toks, tcap, profile);
