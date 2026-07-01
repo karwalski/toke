@@ -213,7 +213,7 @@ f=main():i64{
   let stream=llm.chatstream(c;msgs)|{$ok:s s;$err:e llm.emptystream()};
   lp(let n=0;n<4096;n=n+1){
     let chunk=llm.streamnext(stream)|{$ok:t t;$err:e ""};
-    if(str.len(chunk)=0){br;};
+    if(str.len(chunk)==0){br;};
     io.write(chunk);
   };
   io.writeln("");

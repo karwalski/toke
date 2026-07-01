@@ -246,7 +246,7 @@ f=formval(body:str;key:str):str{
   lp(let i=0;i<(pairs.len as i64);i=i+1){
     let kv=str.split(pairs.get(i);"=");
     if(kv.len>1){
-      if(kv.get(0)=key){
+      if(kv.get(0)==key){
         <kv.get(1)
       }
     }
@@ -366,7 +366,7 @@ f=buildsvgchart(principal:f64;rate:f64;term:u64;extra:f64;pmt:f64):str{
     if(bal<0.0){bal=0.0};
     yrprinc=yrprinc+princ;
     yrint=yrint+mi;
-    if(i>(0 as i64)&&(i as u64)%12=0||bal<0.01){
+    if(i>(0 as i64)&&(i as u64)%12==0||bal<0.01){
       let total=yrprinc+yrint;
       if(total>maxannual){maxannual=total};
       yearlyprinc=yearlyprinc.push(yrprinc);

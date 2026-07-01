@@ -147,7 +147,7 @@ When all fields start with `$`, the type is a sum type (tagged union):
 t=$result{$ok:i64;$err:str};
 
 f=divide(a:i64;b:i64):$result{
-  if(b=0){<$result{$err:"division by zero"}};
+  if(b==0){<$result{$err:"division by zero"}};
   <$result{$ok:a/b}
 };
 ```
@@ -225,7 +225,7 @@ Nested conditionals (no `elif` — use nested `el{if`):
 if(x>0){
   io.println("positive")
 }el{
-  if(x=0){
+  if(x==0){
     io.println("zero")
   }el{
     io.println("negative")

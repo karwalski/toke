@@ -147,11 +147,11 @@ f=parseargs():$opts!$greperr{
       if(str.contains(arg;"n")){nolinenum=true};
       if(str.contains(arg;"v")){invert=true}
     };
-    if(str.startswith(arg;"-")=false){
+    if(str.startswith(arg;"-")==false){
       positional=positional.push(arg)
     }
   };
-  if(positional.len=0){
+  if(positional.len==0){
     <$greperr{$nopattern:0}
   };
   if(positional.len<2){
@@ -224,18 +224,18 @@ f=search(opts:$opts):u64!$greperr{
   };
   let lines=str.split(content;"\n");
   let count=mut.0;
-  let shownum=opts.nolinenum=false;
+  let shownum=opts.nolinenum==false;
 
   lp(let i=0;i<(lines.len as i64);i=i+1){
     let line=lines.get(i);
     let hit=matches(line;opts.pattern;opts.ignorecase);
     let show=mut.hit;
     if(opts.invert){
-      show=hit=false
+      show=hit==false
     };
     if(show){
       count=count+1;
-      if(opts.countonly=false){
+      if(opts.countonly==false){
         let linenum=(i+1) as u64;
         io.println(formatline(linenum;line;shownum))
       }
@@ -287,7 +287,7 @@ f=main():$i64{
     $ok:c c;
     $err:e <reporterr(e;false)
   };
-  if(count=0){
+  if(count==0){
     <1
   };
   <0

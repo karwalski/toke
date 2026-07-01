@@ -15,7 +15,7 @@ An error union type represents either a success value of type `T` or an error. T
 m=test;
 t=$err{msg:$str};
 f=divide(a:i64;b:i64):i64!$err{
-  if(b=0){
+  if(b==0){
     < $err{msg:"division by zero"}
   }el{
     < a/b
@@ -133,7 +133,7 @@ t=$err{msg:$str};
 f=processfile(path:$str):i64!$err{
   let data=file.read(path)!$err;
   let size=data.len as i64;
-  if(size=0){
+  if(size==0){
     < $err{msg:"empty file"}
   }el{
     < size
@@ -173,7 +173,7 @@ f=fetch(url:$str):$str{
 
 f=main():void{
   let body=fetch("https://api.example.com/data");
-  if(!(body="")){ log.info("got data") }el{ log.warn("no data") }
+  if(!(body=="")){ log.info("got data") }el{ log.warn("no data") }
 };
 ```
 

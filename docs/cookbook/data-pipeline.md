@@ -41,7 +41,7 @@ f=countmatches(rows:@$str;col:i64;target:$str):i64{
   let count=mut.0;
   lp(let i=0;i<rows.len as i64;i=i+1){
     let val=str.trim(getfield(rows.get(i); col));
-    if(val=target){
+    if(val==target){
       count=count+1
     }
   };
@@ -68,7 +68,7 @@ f=run(csvpath:$str;col:i64;target:$str;outpath:$str):i64!$err{
   let datarows=mut.0;
   lp(let i=1;i<allrows.len as i64;i=i+1){
     let row=str.trim(allrows.get(i));
-    if(!(row="")){ datarows=datarows+1 }
+    if(!(row=="")){ datarows=datarows+1 }
   };
   let matched=countmatches(allrows; col; target);
   let report=buildreport(target; datarows; matched);

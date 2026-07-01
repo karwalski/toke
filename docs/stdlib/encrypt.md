@@ -87,7 +87,7 @@ i=str:std.str;
 
 f=decryptdemo(key:@(u8);nonce:@(u8);ct:@(u8)):$str{
   let result=enc.aes256gcmdecrypt(key;nonce;ct;@());
-  if(result.err=""){
+  if(result.err==""){
     str.frombytes(result.ok)
   }el{
     ""
@@ -230,7 +230,7 @@ let salt=crypto.randombytes(32);
 let nonce=enc.aes256gcmnoncegen();
   let ct=enc.aes256gcmencrypt(enckey;nonce;str.tobytes("hello from alice");@());
 let result=enc.aes256gcmdecrypt(enckey;nonce;ct;@());
-  if(result.err=""){
+  if(result.err==""){
     let plain=str.frombytes(result.ok);
 < 0
   }el{

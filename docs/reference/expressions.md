@@ -90,7 +90,7 @@ In toke, `=` is both assignment (in binding context) and equality comparison (in
 m=exprs;
 f=demo():bool{
   let x=5;
-  < x=5
+  < x==5
 };
 ```
 
@@ -105,7 +105,7 @@ m=exprs;
 f=demo():bool{
   let x=5;
   let y=7;
-  < !(x=y)
+  < !(x==y)
 };
 ```
 

@@ -141,7 +141,7 @@ pattern `mt csv.parse(...) {$ok:v v; $err:e @()}`.
 ```toke
 f=isnumeric(s:$str):bool{
   let t=str.trim(s);
-  if(str.len(t)=0){<false};
+  if(str.len(t)==0){<false};
   <mt str.tofloat(t) {
     $ok:x true;
     $err:e false
@@ -155,12 +155,12 @@ f=iscolnumeric(rows:@$csvrow;c:i64;ndata:i64):bool{
     let v=str.trim(cell(rows;r;c));
     if(str.len(v)>0){
       any=true;
-      if(isnumeric(v)=false){
+      if(isnumeric(v)==false){
         allnum=false
       }
     }
   };
-  if(any=false){<false};
+  if(any==false){<false};
   <allnum
 };
 ```
@@ -291,7 +291,7 @@ f=main():$i64{
     $ok:v v;
     $err:e ""
   };
-  if(str.len(raw)=0){
+  if(str.len(raw)==0){
     io.eprintln(str.concat("cannot read file: ";path));
     <2
   };

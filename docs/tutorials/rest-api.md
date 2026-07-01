@@ -141,7 +141,7 @@ f=bookmarkstojson(items:@$bookmark):$str{
 f=findindex(id:u64):i64{
   lp(let i=0;i<(store.items.len as i64);i=i+1){
     let b=store.items.get(i);
-    if(b.id=id){<i}
+    if(b.id==id){<i}
   };
   <(0-1)
 };
@@ -187,7 +187,7 @@ f=handlecreate(req:i64):i64{
     $ok:v v;
     $err:e ""
   };
-  if(str.len(url)=0){
+  if(str.len(url)==0){
     <http.resjson(400; "{\"error\":\"missing url\"}")
   };
   let newb=$bookmark{
@@ -214,7 +214,7 @@ f=handledelete(req:i64):i64{
   };
   let kept=mut.@();
   lp(let i=0;i<(store.items.len as i64);i=i+1){
-    if((i=idx)=false){
+    if((i==idx)==false){
       kept=kept.push(store.items.get(i))
     }
   };

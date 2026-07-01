@@ -396,7 +396,7 @@ f=main():i64{
 
   let raw="{\"status\":\"ok\"}";
   let ok=json.dec(raw)|{$ok:v 1;$err:e 0};
-  if(ok=1){
+  if(ok==1){
     io.println("parsed ok");
   }el{};
   <0;

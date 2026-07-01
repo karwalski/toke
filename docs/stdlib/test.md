@@ -21,7 +21,7 @@ i=test:std.test;
 i=str:std.str;
 i=file:std.file;
 f=main():i64{
-  let r1=test.assert(str.len("hi")=2;"length should be 2");
+  let r1=test.assert(str.len("hi")==2;"length should be 2");
   let r2=test.assert(file.exists("/tmp/data.txt");"file should exist");
   < 0
 };
