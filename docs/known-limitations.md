@@ -120,22 +120,17 @@ types.
 
 ### 3. Match expressions are expression-only
 
-Match expressions can only be used as expressions that return a value. They
-cannot be used as standalone statements with side effects in arms.
+Match (`mt`) is an expression that yields a value; it is not a side-effect
+statement. **As of 116.1/A1, `if`/`el` is *also* an expression** (`let x=if(c){a}el{b}`,
+`<if(c){a}el{b}`, with `el if` chaining) — the expression form requires an `el`
+branch (a value on every path). `if` also still works as a plain statement.
+Prefer the expression form over the old `let x=mut.0; if(c){x=a}el{x=b}` pattern.
 
-**Workaround:** Bind the match result to a variable:
-`let r=x?{$ok:v=>v;$err:e=>default_value}`. If you need side effects, use
-`if`/`el` chains instead.
+### 4. ~~Return operator `<` cannot be used inside match arms~~ — RESOLVED
 
-### 4. Return operator `<` cannot be used inside match arms
-
-Using `<` (return) inside a match arm produces `ret ptr null` (implicit return)
-instead of the intended early return.
-
-**Workaround:** Use `rt` or restructure the code so the match expression
-returns a value, then return after the match: `let r=...; <r`.
-
-**Reference:** Story 56.10.2 documented this codegen bug.
+Fixed by 114.47: `<expr` in a match arm is an early return
+(`emit_match_arm_body` emits the function return). Verified 2026-07-01:
+`let r=mt st.toint(x){$ok:v v; $err:e <0}` returns `0` on the error arm.
 
 ### 5. Array append syntax creates a new array
 

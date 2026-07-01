@@ -104,11 +104,19 @@ ExprStmt     = Expr ';' ;
 (* ================================================================== *)
 (*                                                                        *)
 (* Precedence chain (no bitwise operators):                               *)
+(*   Expr → IfExpr | MatchExpr | LogOrExpr                                *)
 (*   LogOrExpr → LogAndExpr → EqExpr → CompareExpr → AddExpr → MulExpr   *)
-(*   → UnaryExpr → MatchExpr → PropagateExpr → CallExpr → PostfixExpr    *)
-(*   → PrimaryExpr                                                        *)
+(*   → UnaryExpr → PropagateExpr → CallExpr → PostfixExpr → PrimaryExpr   *)
 
-Expr         = LogOrExpr ;
+(* A1: `if` and `mt` are keyword-led expression forms, resolved before the      *)
+(* binary chain (single-token lookahead on the leading keyword — strict LL(1)). *)
+(* Both yield a value: an if-expression yields the tail expression of the taken *)
+(* block; a match yields the taken arm's value. The `if` expression form        *)
+(* REQUIRES `el` (a value on every path); the statement form (IfStmt) does not. *)
+Expr         = IfExpr | MatchExpr | LogOrExpr ;
+
+IfExpr       = 'if' '(' Expr ')' Block ( 'el' IfExpr | 'el' Block ) ;
+Block        = '{' StmtList '}' ;
 
 LogOrExpr    = LogAndExpr { '||' LogAndExpr } ;
 
@@ -124,11 +132,10 @@ MulExpr      = UnaryExpr { ( '*' | '/' | '%' ) UnaryExpr } ;
 
 UnaryExpr    = '-' UnaryExpr
              | '!' UnaryExpr
-             | MatchExpr
+             | PropagateExpr
              ;
 
-MatchExpr    = 'mt' PropagateExpr '{' MatchArmList '}'
-             | PropagateExpr ;
+MatchExpr    = 'mt' LogOrExpr '{' MatchArmList '}' ;
 
 PropagateExpr = CallExpr [ '!' TypeExpr ] ;
 
