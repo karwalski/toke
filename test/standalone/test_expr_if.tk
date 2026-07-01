@@ -1,0 +1,41 @@
+(* test_expr_if.tk — 116.1 / A1: `if` as an expression.
+ * Verifies if-expressions yield the taken branch's tail value in bind, return,
+ * argument, and nested positions, and that el-if chains work. *)
+m=test.exprif;
+i=io:std.io;
+i=s:std.str;
+
+f=ck(name:str;got:i64;want:i64):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");s.fromint(got))) };
+  <0
+};
+
+f=sign(n:i64):str{ <if(n>0){"pos"}el if(n<0){"neg"}el{"zero"} };
+f=dbl(n:i64):i64{ <n*2 };
+
+f=main():$i64{
+  (* bind position *)
+  ck("bind";if(3>2){10}el{20};10);
+  ck("bind-else";if(1>2){10}el{20};20);
+
+  (* return position + el-if chain (string) — checked via sign() *)
+  io.println(sign(5));    (* pos *)
+  io.println(sign(-4));   (* neg *)
+  io.println(sign(0));    (* zero *)
+
+  (* argument position: pass an if-expr as a call arg *)
+  ck("arg";dbl(if(1>0){7}el{0});14);
+
+  (* nested if-expr *)
+  ck("nested";if(1>0){if(2>1){3}el{4}}el{5};3);
+
+  (* multi-statement block: leading stmts then a tail value *)
+  ck("multistmt";if(1>0){let t=mut.4;t=t+1;t}el{0};5);
+
+  (* condition is a boolean expr with && / || *)
+  ck("boolcond";if(2>1 && 3>2){1}el{0};1);
+
+  io.println("RESULT done");
+  <0
+};

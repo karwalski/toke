@@ -330,6 +330,7 @@ static Node *parse_expr(Parser *p);
 static Node *parse_stmt_list(Parser *p, Token *ref);
 static Node *parse_type_expr(Parser *p);
 static void  parse_one_param(Parser *p, Node *fn);
+static Node *parse_if_expr(Parser *p);   /* A1: `if` in expression position */
 
 /* ── Type expressions ─────────────────────────────────────────────── */
 
@@ -1015,6 +1016,10 @@ static Node *parse_match_arm(Parser *p) {
  * on unclosed '}'.
  */
 static Node *parse_expr(Parser *p) {
+    /* A1: `if` in expression position — keyword-led, strict LL(1), no peek.
+     * Statement-position `if` is dispatched by parse_stmt *before* parse_expr,
+     * so this only fires for `if` as a sub-expression (bind/return/arg). */
+    if(peek(p)==TK_KW_IF) return parse_if_expr(p);
     /* mt expr { arms } — keyword-led match (strict LL(1), no peek) */
     if(peek(p)==TK_KW_MT){
         Token *t=adv(p);
@@ -1173,6 +1178,37 @@ static Node *parse_if_stmt(Parser *p) {
         ch(p,n,parse_stmt_list(p,t));
         if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");}
     if(peek(p)==TK_SEMICOLON) adv(p);  /* optional trailing ';' after if/el block */
+    return n;
+}
+
+/*
+ * parse_if_expr — A1: `if` used as an expression. Yields the tail value of the
+ * taken block; **requires** an `el` branch (an expression must produce a value
+ * on every path) and does **not** consume a trailing ';' (that terminator
+ * belongs to the enclosing statement). Supports `el if` chaining. Produces a
+ * NODE_IF_STMT — `emit_expr` lowers it to a value; the statement form is emitted
+ * by `emit_stmt`. children: [0]=cond, [1]=then-block, [2]=else-block or nested
+ * NODE_IF_STMT (for `el if`).
+ */
+static Node *parse_if_expr(Parser *p) {
+    Token *t=xp(p,TK_KW_IF,"'if'"); if(!t) return NULL;
+    Node *n=mk(p,NODE_IF_STMT,t);
+    if(!xp(p,TK_LPAREN,"'('")){ sync(p);return n;}
+    ch(p,n,parse_expr(p));
+    if(!xp(p,TK_RPAREN,"')'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+    if(peek(p)==TK_COLON){ ewarn(p,W2021,cur(p),"':' after if(...) is Python syntax","replace `:` with `{`"); adv(p); }
+    if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
+    ch(p,n,parse_stmt_list(p,t));
+    if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+    if(peek(p)!=TK_KW_EL){
+        eerr_got(p,E2002,cur(p),"`if` used as an expression requires an `el` branch");
+        return n;
+    }
+    adv(p); /* el */
+    if(peek(p)==TK_KW_IF){ ch(p,n,parse_if_expr(p)); return n; }  /* el if … */
+    if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
+    ch(p,n,parse_stmt_list(p,t));
+    if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
     return n;
 }
 

@@ -1858,6 +1858,10 @@ static int emit_expr(Ctx *c, const Node *n);
 static void emit_stmt(Ctx *c, const Node *n);
 static void emit_match_arm_body(Ctx *c, const Node *body, const char *res_ty,
                                 int res_slot, int merge_lbl);
+/* A1: expression-`if` helpers (defined after emit_stmt). */
+static const Node *block_tail_expr(const Node *blk);
+static void emit_if_branch_value(Ctx *c, const Node *blk, const char *res_ty,
+                                 int res_slot, int end_lbl);
 
 /* True when a match arm's body is exactly its own binding ident (`$ok:v v`),
  * i.e. the arm yields the bound ok value unchanged. Used by result-type
@@ -4291,6 +4295,46 @@ static int emit_expr(Ctx *c, const Node *n)
         fprintf(c->out, "prop_ok%d:\n", prop_lbl);
         return sv;
     }
+    case NODE_IF_STMT: {
+        /* A1: `if` as an expression — yields the tail value of the taken block.
+         * Mirrors the match-expression value pattern: alloca a result slot, emit
+         * the condition, branch, emit each block's tail value into the slot, then
+         * load at the merge. The parser (parse_if_expr) guarantees an else. */
+        const Node *tail = block_tail_expr(n->children[1]);
+        const char *res_ty = tail ? expr_llvm_type(c, tail) : "i64";
+        int slot = next_tmp(c);
+        fprintf(c->out, "  %%t%d = alloca %s\n", slot, res_ty);
+        int cond = emit_expr(c, n->children[0]);
+        const char *cty = expr_llvm_type(c, n->children[0]);
+        int ci = cond;
+        if (strcmp(cty, "i1")) {
+            if (!strcmp(cty, "i8*")) {
+                int pz = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", pz, cond);
+                cond = pz; cty = "i64";
+            }
+            ci = next_tmp(c);
+            fprintf(c->out, "  %%t%d = icmp ne %s %%t%d, 0\n", ci, cty, cond);
+        }
+        int lt = next_lbl(c), le = next_lbl(c), lend = next_lbl(c);
+        fprintf(c->out, "  br i1 %%t%d, label %%ife_then%d, label %%ife_else%d\n", ci, lt, le);
+        fprintf(c->out, "ife_then%d:\n", lt); c->term = 0;
+        emit_if_branch_value(c, n->children[1], res_ty, slot, lend);
+        fprintf(c->out, "ife_else%d:\n", le); c->term = 0;
+        if (n->child_count > 2)
+            emit_if_branch_value(c, n->children[2], res_ty, slot, lend);
+        else {
+            /* No else (should not happen via parse_if_expr) — store a zero. */
+            const char *z = !strcmp(res_ty, "i8*") ? "null"
+                          : (!strcmp(res_ty, "double") || !strcmp(res_ty, "float")) ? "0.0" : "0";
+            fprintf(c->out, "  store %s %s, %s* %%t%d\n  br label %%ife_end%d\n",
+                    res_ty, z, res_ty, slot, lend);
+        }
+        fprintf(c->out, "ife_end%d:\n", lend); c->term = 0;
+        t = next_tmp(c);
+        fprintf(c->out, "  %%t%d = load %s, %s* %%t%d\n", t, res_ty, res_ty, slot);
+        return t;
+    }
     case NODE_MATCH_STMT: {
         /*
          * Result-match expression: expr|{Ok:v body_ok; Err:e body_err}
@@ -5228,6 +5272,11 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         }
         return "i8*"; /* array / unknown cast → inttoptr */
     }
+    case NODE_IF_STMT: {
+        /* A1: an if-expression's type is its then-block tail value's type. */
+        const Node *tail = block_tail_expr(n->children[1]);
+        return tail ? expr_llvm_type(c, tail) : "i64";
+    }
     case NODE_MATCH_STMT: {
         /* Infer result type from the first arm's body expression, mirroring
          * the logic in emit_expr for NODE_MATCH_STMT (lines 1689-1701).
@@ -5486,6 +5535,55 @@ static void emit_match_arm_body(Ctx *c, const Node *body, const char *res_ty,
         fprintf(c->out, "  store %s %%t%d, %s* %%t%d\n", res_ty, body_val, res_ty, res_slot);
     }
     fprintf(c->out, "  br label %%rm_end%d\n", merge_lbl);
+}
+
+/* A1: the value-producing tail expression of an if/el block, or NULL if the
+ * block's last statement yields no value. A bare expression statement is
+ * NODE_EXPR_STMT(expr); a nested if/match is itself an expression; an `el if`
+ * chain passes the whole NODE_IF_STMT as the else-block. */
+static const Node *block_tail_expr(const Node *blk) {
+    if (!blk) return NULL;
+    if (blk->kind == NODE_IF_STMT || blk->kind == NODE_MATCH_STMT) return blk;
+    if (blk->kind != NODE_STMT_LIST || blk->child_count == 0) return NULL;
+    const Node *last = blk->children[blk->child_count - 1];
+    if (last->kind == NODE_EXPR_STMT && last->child_count >= 1) return last->children[0];
+    if (last->kind == NODE_IF_STMT || last->kind == NODE_MATCH_STMT) return last;
+    return NULL;
+}
+
+/* A1: emit an if/el branch as a value — the block's leading statements as
+ * statements, then its tail expression coerced+stored into the result slot and
+ * a branch to the merge label. A `<expr` tail terminates the block (no store).
+ * A non-value tail stores a type-appropriate zero. */
+static void emit_if_branch_value(Ctx *c, const Node *blk, const char *res_ty,
+                                 int res_slot, int end_lbl) {
+    if (blk->kind == NODE_IF_STMT || blk->kind == NODE_MATCH_STMT) {
+        int v = emit_expr(c, blk);
+        v = coerce_value(c, v, expr_llvm_type(c, blk), res_ty);
+        fprintf(c->out, "  store %s %%t%d, %s* %%t%d\n", res_ty, v, res_ty, res_slot);
+        fprintf(c->out, "  br label %%ife_end%d\n", end_lbl);
+        return;
+    }
+    int cc = (blk->kind == NODE_STMT_LIST) ? blk->child_count : 0;
+    for (int i = 0; i < cc - 1; i++) emit_stmt(c, blk->children[i]);
+    const Node *last = cc > 0 ? blk->children[cc - 1] : NULL;
+    if (last && last->kind == NODE_RETURN_STMT) {
+        emit_stmt(c, last);   /* block terminates with `ret` — no store/br */
+        c->term = 0;
+        return;
+    }
+    const Node *ve = block_tail_expr(blk);
+    if (ve) {
+        int v = emit_expr(c, ve);
+        v = coerce_value(c, v, expr_llvm_type(c, ve), res_ty);
+        fprintf(c->out, "  store %s %%t%d, %s* %%t%d\n", res_ty, v, res_ty, res_slot);
+    } else {
+        if (last) emit_stmt(c, last);   /* non-value tail (assign/bind/loop) */
+        const char *z = !strcmp(res_ty, "i8*") ? "null"
+                      : (!strcmp(res_ty, "double") || !strcmp(res_ty, "float")) ? "0.0" : "0";
+        fprintf(c->out, "  store %s %s, %s* %%t%d\n", res_ty, z, res_ty, res_slot);
+    }
+    fprintf(c->out, "  br label %%ife_end%d\n", end_lbl);
 }
 
 /* ───────────────────────────────────────────────────────────────────────────

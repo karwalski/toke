@@ -1632,9 +1632,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (node->child_count>0) infer(cx,node->children[0]);
         /* Infer then/else branches at increased depth */
         cx->scope_depth++;
-        for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
+        Type *then_ty=mk_type(A,TY_VOID);
+        for (int i=1;i<node->child_count;i++) {
+            Type *bt=infer(cx,node->children[i]);
+            if (i==1) then_ty=bt;   /* A1: expression-if yields the then-branch tail type */
+        }
         cx->scope_depth--;
-        return mk_type(A,TY_VOID);
+        /* As an expression, the if yields its then-branch tail value's type.
+         * Statement-position `if` callers discard the returned type. */
+        return then_ty;
     }
 
     /* ── Loop statement ───────────────────────────────────────────────────
