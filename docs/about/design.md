@@ -27,9 +27,9 @@ The double-quote `"` appears in source as the string literal delimiter but is no
 
 **Why restricted:** every character in the set must be necessary. Every token in generated output must carry semantic information. A smaller, predictable character set means fewer token boundary splits in BPE tokenizers and a tighter generation space for the model. The `$` and `@` sigils replace uppercase type names (`$user` instead of `User`) and bracket-based array syntax (`@T` instead of `[T]`), producing consistent forms that a purpose-built BPE tokenizer can absorb into single merged tokens. The Phase 2 purpose-built BPE tokenizer (16K vocab, trained on 25,953 programs) merges declaration prefixes (`m=`, `f=`, `i=`), full type signatures (`(n:i64):i64{`), and import patterns (`i=j:std.json`) into single tokens, achieving 52% average token reduction vs cl100k_base across 42 benchmarks.
 
-## LL(1) Grammar
+## Backtrack-free Grammar
 
-The toke grammar is LL(1): the parser requires exactly one token of lookahead. No backtracking. No context-sensitive disambiguation. A valid toke source file parses to exactly one unambiguous syntax tree.
+The toke grammar is **backtrack-free**: the parser never rescans consumed input, and no production needs semantic context to resolve. It is not strictly LL(1) — a small, enumerated set of productions require bounded lookahead of up to 3 tokens (documented in Appendix A of `grammar.ebnf`). A valid toke source file parses to exactly one unambiguous syntax tree.
 
 This matters for two reasons:
 

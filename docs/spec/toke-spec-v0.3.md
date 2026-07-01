@@ -7,6 +7,13 @@ order: 5
 
 ## Version 0.3
 
+> ⚠️ **Partially superseded by [toke-spec-v0.4](/docs/spec/toke-spec-v0.4/) (2026-07-02).**
+> v0.4 is a **breaking** amendment: `==` (not `=`) is equality, `if` is an expression,
+> `&&`/`||` are short-circuit operators, the grammar is characterised as backtrack-free
+> with bounded ≤3-token lookahead (not strict one-token LL(1)), and `str.fields` is added.
+> Where this v0.3 document and v0.4 disagree, **v0.4 governs**. Sections changed by v0.4
+> carry an inline supersession note.
+
 **Language name:** toke
 **Written shorthand:** tk
 **Compiler binary:** toke
@@ -78,7 +85,7 @@ order: 5
 - Match expression keyword `mt` — replaces `expr|{...}` syntax (§11.12)
 - Function references via `&name` promoted to implemented (§24.8)
 - `let` shadowing: same-scope re-declaration creates new binding (§11.8.x)
-- Normative LL(1) grammar appendix with FIRST/FOLLOW sets (Appendix X)
+- Normative grammar appendix with FIRST-sets & bounded-lookahead exceptions — **delivered** as Appendix A of `grammar.ebnf` (v0.4; the "Appendix X" placeholder is retired, and the grammar is characterised as backtrack-free rather than strict LL(1) — see [toke-spec-v0.4 §E](/docs/spec/toke-spec-v0.4/))
 
 **Promoted from deferred:**
 - Tokenizer vocabulary: promoted to normative (§24.7)
@@ -164,7 +171,7 @@ The language shall define exactly one canonical syntactic form for each construc
 
 ### 3.2 Deterministic structure
 
-A valid toke source unit shall parse to exactly one unambiguous syntax tree under the normative grammar. The grammar is LL(1): the parser shall never require more than one token of lookahead to determine the applicable production.
+A valid toke source unit shall parse to exactly one unambiguous syntax tree under the normative grammar. **(Superseded by [toke-spec-v0.4 §E](/docs/spec/toke-spec-v0.4/).)** The grammar is **backtrack-free**: the parser never rescans consumed input. It is not strictly LL(1) — a small, enumerated set of productions require bounded lookahead of up to 3 tokens (see Appendix A of `grammar.ebnf`). An implementation that backtracks, or requires unbounded lookahead, is non-conforming.
 
 ### 3.3 Token efficiency
 
@@ -693,12 +700,12 @@ LiteralExpr     = INT_LIT | FLOAT_LIT | STR_LIT | BOOL_LIT ;
 
 ### 10.1 Grammar Properties [N]
 
-The grammar as defined is:
+The grammar as defined is (**superseded by [toke-spec-v0.4 §E](/docs/spec/toke-spec-v0.4/)**):
 - **Context-free** — no production requires semantic context to resolve
-- **LL(1)** — every production is unambiguously determined by the next token
+- **Backtrack-free** — the parser never rescans consumed input (not strictly LL(1); a small enumerated set of productions need bounded ≤3-token lookahead — see Appendix A of `grammar.ebnf`)
 - **Unambiguous** — no input string has more than one parse tree under this grammar
 
-Any implementation that requires more than one token of lookahead is non-conforming.
+Any implementation that backtracks, or requires unbounded lookahead at any production, is non-conforming.
 
 ### 10.2 Grammar Validation [I]
 

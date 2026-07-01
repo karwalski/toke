@@ -159,9 +159,9 @@ Humans can read and write toke -- it is designed to be learnable -- but its prim
 toke achieves token efficiency through deliberate constraints:
 
 - **55 characters** -- lowercase letters, digits, and 19 symbols. No uppercase, no underscores, no `#`
-- **13 keywords** -- `f`, `t`, `i`, `m`, `if`, `el`, `lp`, `br`, `let`, `mut`, `as`, `rt`, `mt`
+- **14 keywords** -- `m`, `i`, `t`, `f`, `let`, `if`, `el`, `lp`, `br`, `rt`, `as`, `mt`, `sc`, `mut`
 - **One way to do everything** -- no synonym constructs, no optional syntax
-- **LL(1) grammar** -- deterministic parsing with one token of lookahead
+- **Backtrack-free grammar** -- deterministic parsing, no rescanning; bounded ≤3-token lookahead (not strict one-token LL(1) — see `grammar.ebnf` Appendix A)
 - **Semicolons terminate everything** -- no whitespace-as-syntax
 - **No comment syntax** -- source is comment-free by design; human documentation lives in companion files (`.tkc`)
 - **Explicit types everywhere** -- no type inference in v0.1
@@ -196,7 +196,7 @@ Do not worry about getting the syntax perfectly right yet -- the next lesson cov
 - Gate 1 benchmark: 12.5% token reduction and 63.7% Pass@1 across 1,000 held-out tasks.
 - toke is a compilation target for LLM workflows, not a general-purpose replacement.
 - Fewer tokens means lower cost, faster generation, and fewer errors.
-- The language has 13 keywords, 55 characters, and one canonical form for every construct.
+- The language has 14 keywords, 55 characters, and one canonical form for every construct.
 
 ## Next
 

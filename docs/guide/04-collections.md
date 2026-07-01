@@ -210,7 +210,7 @@ f=contains(arr:@i64;target:i64):bool{
 };
 ```
 
-Note: equality comparison in toke uses `=` (single equals) in expression context. The parser distinguishes assignment (statement position) from comparison (expression position) by context.
+Note: equality comparison in toke uses `==` (double equals); `!=` is inequality. A single `=` is assignment/binding only — using `=` in a comparison is a compile error (E2002). (Changed in v0.4; v0.3 used `=` for equality.)
 
 ### Array reversal
 

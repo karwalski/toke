@@ -37,7 +37,7 @@ The double-quote `"` appears in source as the string literal delimiter but is no
 
 **13 keywords.** Where Python has 35 keywords and JavaScript has 64 reserved words, toke has 13: `m` (module), `f` (function), `t` (type), `i` (import), `if`, `el`, `lp` (loop), `br` (break), `let`, `mut`, `as`, `rt` (return), `mt` (match). Single-character keywords for declarations. Two-character keywords for control flow and match.
 
-**LL(1) grammar.** The parser requires exactly one token of lookahead. No backtracking. No ambiguity. Every syntactic position has exactly one valid interpretation. This means the model's generation space contains fewer invalid programs.
+**Backtrack-free grammar.** The parser never rescans consumed input — no backtracking, no ambiguity. It is not strictly LL(1): a small, enumerated set of productions need bounded lookahead of up to 3 tokens (Appendix A of `grammar.ebnf`). Every syntactic position has exactly one valid interpretation. This means the model's generation space contains fewer invalid programs.
 
 **Explicit everything.** No implicit returns. No optional semicolons. No structural whitespace -- indentation, line breaks, and spacing between tokens are all equivalent. No synonym constructs. One way to write each thing. The model never has to choose between equivalent forms.
 
