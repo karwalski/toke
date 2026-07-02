@@ -52,10 +52,10 @@ i=imgfmt:std.image;
 i=file:std.file;
 
 f=main():i64{
-  let raw = file.read("photo.jpg")|{$ok:d d;$err:e ""};
-  let img = image.decode(raw)|{$ok:i i;$err:e $imgbuf{width:0;height:0;channels:0;data:@()}};
+  let raw = mt file.read("photo.jpg") {$ok:d d;$err:e ""};
+  let img = mt image.decode(raw) {$ok:i i;$err:e $imgbuf{width:0;height:0;channels:0;data:@()}};
   let thumb = image.resize(img; 128; 128);
-  let out = image.encode(thumb; $imgfmt.png; 90)|{$ok:b b;$err:e @()};
+  let out = mt image.encode(thumb; $imgfmt.png; 90) {$ok:b b;$err:e @()};
   let res = file.write("thumb.png"; out);
   <0;
 }

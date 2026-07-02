@@ -49,7 +49,7 @@ i=str:std.str;
 
 f=parsedemo():i64{
   let raw=str.tobytes("name,score\nAlice,95\nBob,87");
-  csv.parse(raw)|{
+  mt csv.parse(raw) {
     $ok:rows 0;
     $err:e   1
   }
@@ -84,7 +84,7 @@ i=str:std.str;
 f=headerdemo():i64{
   let data=str.tobytes("name,age\nAlice,30\nBob,25");
   let r=csv.reader(data;44);
-  csv.header(r)|{
+  mt csv.header(r) {
     $ok:hdr 0;
     $err:e  1
   }
@@ -103,7 +103,7 @@ i=str:std.str;
 f=nextdemo():i64{
   let data=str.tobytes("1,2\n3,4\n");
   let r=csv.reader(data;44);
-  csv.next(r)|{
+  mt csv.next(r) {
     $ok:row 0;
     $err:e  1
   }
@@ -169,30 +169,30 @@ i=str:std.str;
 i=file:std.file;
 
 f=filterscores(inpath:$str;outpath:$str;threshold:$str):i64{
-  let raw=file.read(inpath)|{
+  let raw=mt file.read(inpath) {
     $ok:s  str.tobytes(s);
     $err:e @()
   };
 
-  let rows=csv.parse(raw)|{
+  let rows=mt csv.parse(raw) {
     $ok:r  r;
     $err:e @()
   };
 
   let w=csv.writer(44);
 
-  let hdr=rows.get(0)|{
+  let hdr=mt rows.get(0) {
     $ok:r  r;
     $err:e $csvrow{fields:@()}
   };
   csv.writerow(w;hdr.fields);
 
   lp(let i=1;i<rows.len;i=i+1){
-    let row=rows.get(i)|{
+    let row=mt rows.get(i) {
       $ok:r  r;
       $err:e $csvrow{fields:@()}
     };
-    let score=row.fields.get(1)|{
+    let score=mt row.fields.get(1) {
       $ok:s  s;
       $err:e "0"
     };
@@ -202,7 +202,7 @@ f=filterscores(inpath:$str;outpath:$str;threshold:$str):i64{
   };
 
   let out=csv.flush(w);
-  file.write(outpath;str.frombytes(out))|{
+  mt file.write(outpath;str.frombytes(out)) {
     $ok:ok 0;
     $err:e 1
   }

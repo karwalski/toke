@@ -34,7 +34,7 @@ i=env:std.env;
 
 f=showpath():i64{
   let r=env.get("PATH");
-  r|{
+  mt r {
     $ok:v  0;
     $err:e 1
   }
@@ -90,7 +90,7 @@ f=configure():i64{
   };
 
   let r=env.get("API_SECRET");
-  let ok=r|{$ok:s 1;$err:e 0};
+  let ok=mt r {$ok:s 1;$err:e 0};
   if(ok=0){
     log.error("API_SECRET is required";@());
     <1

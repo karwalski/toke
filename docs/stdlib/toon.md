@@ -64,7 +64,7 @@ Parses a TOON string into a `Toon` value. Returns `$toonerr.$parse` if the input
 m=app;
 i=toon:std.toon;
 f=demo():i64{
-  let t=toon.dec("data[2]{id,name}:\n1|Alice\n2|Bob\n")|{$ok:v v;$err:e toon.empty()};
+  let t=mt toon.dec("data[2]{id,name}:\n1|Alice\n2|Bob\n") {$ok:v v;$err:e toon.empty()};
   < 0
 };
 ```
@@ -77,7 +77,7 @@ Extracts a string value from the first TOON row by field name. Returns `$toonerr
 m=app;
 i=toon:std.toon;
 f=demo(t:$toon):i64{
-  let name=toon.str(t;"name")|{$ok:s s;$err:e "unknown"};
+  let name=mt toon.str(t;"name") {$ok:s s;$err:e "unknown"};
   < 0
 };
 ```
@@ -90,7 +90,7 @@ Extracts a signed 64-bit integer by field name. Returns `$toonerr.$type` if the 
 m=app;
 i=toon:std.toon;
 f=demo(t:$toon):i64{
-  let id=toon.i64(t;"id")|{$ok:n n;$err:e 0};
+  let id=mt toon.i64(t;"id") {$ok:n n;$err:e 0};
   < id
 };
 ```
@@ -103,7 +103,7 @@ Extracts a 64-bit float by field name.
 m=app;
 i=toon:std.toon;
 f=demo(t:$toon):f64{
-  let x=toon.f64(t;"x")|{$ok:f f;$err:e 0.0};
+  let x=mt toon.f64(t;"x") {$ok:f f;$err:e 0.0};
   < x
 };
 ```
@@ -116,7 +116,7 @@ Extracts a boolean by field name.
 m=app;
 i=toon:std.toon;
 f=demo(t:$toon):bool{
-  let active=toon.bool(t;"active")|{$ok:b b;$err:e false};
+  let active=mt toon.bool(t;"active") {$ok:b b;$err:e false};
   < active
 };
 ```
@@ -129,7 +129,7 @@ Extracts all rows for a given field as a `Toon` array.
 m=app;
 i=toon:std.toon;
 f=demo(t:$toon):i64{
-  let names=toon.arr(t;"name")|{$ok:a a;$err:e @()};
+  let names=mt toon.arr(t;"name") {$ok:a a;$err:e @()};
   < 0
 };
 ```
@@ -172,9 +172,9 @@ i=log:std.log;
 f=main():i64{
   let json="[{\"id\":1,\"name\":\"Alice\"},{\"id\":2,\"name\":\"Bob\"}]";
   let compact=toon.fromjson(json);
-  let data=toon.dec(compact)|{$ok:d d;$err:e toon.empty()};
-  let name=toon.str(data;"name")|{$ok:s s;$err:e "unknown"};
-  let id=toon.i64(data;"id")|{$ok:n n;$err:e 0};
+  let data=mt toon.dec(compact) {$ok:d d;$err:e toon.empty()};
+  let name=mt toon.str(data;"name") {$ok:s s;$err:e "unknown"};
+  let id=mt toon.i64(data;"id") {$ok:n n;$err:e 0};
   log.info(name;@());
   let roundtrip=toon.tojson(compact);
   log.info(roundtrip;@());

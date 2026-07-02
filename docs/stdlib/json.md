@@ -93,7 +93,7 @@ Extracts a string value from the JSON object by key, returning `$jsonerr.$missin
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"name\":\"alice\";\"age\":30}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"name\":\"alice\";\"age\":30}") {$ok:v v;$err:e io.exit(1)};
   let name=json.str(j;"name");
   let bad=json.str(j;"age");
   let gone=json.str(j;"nope");
@@ -108,7 +108,7 @@ Extracts an unsigned 64-bit integer from the JSON object by key. Returns `$jsone
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"age\":30;\"count\":0}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"age\":30;\"count\":0}") {$ok:v v;$err:e io.exit(1)};
   let age=json.u64(j;"age");
   let count=json.u64(j;"count");
 };
@@ -122,7 +122,7 @@ Extracts a signed 64-bit integer from the JSON object by key, accepting negative
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"temp\":-42;\"offset\":-1}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"temp\":-42;\"offset\":-1}") {$ok:v v;$err:e io.exit(1)};
   let temp=json.i64(j;"temp");
   let offset=json.i64(j;"offset");
 };
@@ -136,7 +136,7 @@ Extracts a 64-bit floating-point number from the JSON object by key. Returns `$j
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"pi\":3.14;\"ratio\":0.5}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"pi\":3.14;\"ratio\":0.5}") {$ok:v v;$err:e io.exit(1)};
   let pi=json.f64(j;"pi");
   let ratio=json.f64(j;"ratio");
 };
@@ -150,7 +150,7 @@ Extracts a boolean value from the JSON object by key. Returns `$jsonerr.$missing
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"active\":true;\"flag\":false}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"active\":true;\"flag\":false}") {$ok:v v;$err:e io.exit(1)};
   let active=json.bool(j;"active");
   let flag=json.bool(j;"flag");
 };
@@ -164,7 +164,7 @@ Extracts a JSON array from the object by key, returning each element as a `$json
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"items\":[1;2;3]}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"items\":[1;2;3]}") {$ok:v v;$err:e io.exit(1)};
   let items=json.arr(j;"items");
 };
 ```
@@ -177,7 +177,7 @@ Returns the top-level key names of a JSON object as an array of strings. Returns
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"name\":\"alice\";\"age\":30;\"active\":true}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"name\":\"alice\";\"age\":30;\"active\":true}") {$ok:v v;$err:e io.exit(1)};
   let ks=json.keys(j);
 };
 ```
@@ -190,7 +190,7 @@ Returns `true` if the top-level JSON object contains the given key, `false` othe
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"name\":\"alice\"}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"name\":\"alice\"}") {$ok:v v;$err:e io.exit(1)};
   let present=json.has(j;"name");
   let absent=json.has(j;"email");
 };
@@ -204,8 +204,8 @@ Returns the number of elements in a JSON array, or the number of keys in a JSON 
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"name\":\"alice\";\"age\":30;\"active\":true}")|{$ok:v v;$err:e io.exit(1)};
-  let arr=json.dec("[1;2;3]")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"name\":\"alice\";\"age\":30;\"active\":true}") {$ok:v v;$err:e io.exit(1)};
+  let arr=mt json.dec("[1;2;3]") {$ok:v v;$err:e io.exit(1)};
   let alen=json.len(arr);
   let olen=json.len(j);
 };
@@ -219,11 +219,11 @@ Returns a string literal describing the top-level type of `j`: one of `"null"`, 
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"name\":\"alice\";\"age\":30}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"name\":\"alice\";\"age\":30}") {$ok:v v;$err:e io.exit(1)};
   let t=json.type(j);
-  let jnul=json.dec("null")|{$ok:v v;$err:e io.exit(1)};
+  let jnul=mt json.dec("null") {$ok:v v;$err:e io.exit(1)};
   let n=json.type(jnul);
-  let jstr=json.dec("\"hi\"")|{$ok:v v;$err:e io.exit(1)};
+  let jstr=mt json.dec("\"hi\"") {$ok:v v;$err:e io.exit(1)};
   let s=json.type(jstr);
 };
 ```
@@ -236,7 +236,7 @@ Returns a new string containing the JSON value re-serialised with 2-space indent
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"name\":\"alice\";\"age\":30}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"name\":\"alice\";\"age\":30}") {$ok:v v;$err:e io.exit(1)};
   let pretty=json.pretty(j);
 };
 ```
@@ -249,7 +249,7 @@ Returns `true` if the value at `key` is JSON `null`, or if the key does not exis
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"name\":\"alice\"}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"name\":\"alice\"}") {$ok:v v;$err:e io.exit(1)};
   let nilval=json.isnull(j;"optional");
   let present=json.isnull(j;"name");
 };
@@ -263,7 +263,7 @@ Traverses a dotted path through nested objects and arrays, where each segment is
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"user\":{\"address\":{\"city\":\"Auckland\"}}}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"user\":{\"address\":{\"city\":\"Auckland\"}}}") {$ok:v v;$err:e io.exit(1)};
   let city=json.at(j;"user.address.city");
   let item=json.at(j;"results.0.id");
 };
@@ -277,7 +277,7 @@ Returns the element at position `i` in a JSON array. Returns `$jsonerr.$type` if
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let arr=json.dec("[10;20;30]")|{$ok:v v;$err:e io.exit(1)};
+  let arr=mt json.dec("[10;20;30]") {$ok:v v;$err:e io.exit(1)};
   let first=json.index(arr;0);
   let oob=json.index(arr;5);
 };
@@ -291,8 +291,8 @@ Produces a new JSON object that is a shallow merge of `j1` and `j2`, with keys f
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let base=json.dec("{\"a\":1;\"b\":2}")|{$ok:v v;$err:e io.exit(1)};
-  let override=json.dec("{\"b\":99;\"c\":3}")|{$ok:v v;$err:e io.exit(1)};
+  let base=mt json.dec("{\"a\":1;\"b\":2}") {$ok:v v;$err:e io.exit(1)};
+  let override=mt json.dec("{\"b\":99;\"c\":3}") {$ok:v v;$err:e io.exit(1)};
   let merged=json.merge(base;override);
 };
 ```
@@ -318,7 +318,7 @@ Creates a SAX-style streaming parser over a byte buffer without copying it. The 
 i=json:std.json;
 i=file:std.file;
 f=example():void{
-  let rawbuf=file.read("/data/big.json")|{$ok:v v;$err:e @()};
+  let rawbuf=mt file.read("/data/big.json") {$ok:v v;$err:e @()};
   let stream=json.streamparser(rawbuf);
 };
 ```
@@ -331,7 +331,7 @@ Advances the streaming parser by one token and returns it. Returns `$jsonstreame
 i=json:std.json;
 i=file:std.file;
 f=example():void{
-  let buf=file.read("/data/big.json")|{$ok:v v;$err:e @()};
+  let buf=mt file.read("/data/big.json") {$ok:v v;$err:e @()};
   let stream=json.streamparser(buf);
   let tok=json.streamnext(stream);
   let key=json.streamnext(stream);
@@ -358,9 +358,9 @@ Emits the complete JSON value `j` into the writer `w` as a stream of bytes. Retu
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"name\":\"alice\"}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"name\":\"alice\"}") {$ok:v v;$err:e io.exit(1)};
   let w=json.newwriter(256);
-  json.streamemit(w;j)|{$ok:x x;$err:e io.exit(1)};
+  mt json.streamemit(w;j) {$ok:x x;$err:e io.exit(1)};
 };
 ```
 
@@ -372,9 +372,9 @@ Returns the bytes accumulated in the writer so far as a byte slice. The writer r
 i=json:std.json;
 i=io:std.io;
 f=example():void{
-  let j=json.dec("{\"name\":\"alice\"}")|{$ok:v v;$err:e io.exit(1)};
+  let j=mt json.dec("{\"name\":\"alice\"}") {$ok:v v;$err:e io.exit(1)};
   let w=json.newwriter(256);
-  json.streamemit(w;j)|{$ok:x x;$err:e io.exit(1)};
+  mt json.streamemit(w;j) {$ok:x x;$err:e io.exit(1)};
   let bytes=json.writerbytes(w);
 };
 ```
@@ -395,7 +395,7 @@ f=main():i64{
   io.println(encoded);
 
   let raw="{\"status\":\"ok\"}";
-  let ok=json.dec(raw)|{$ok:v 1;$err:e 0};
+  let ok=mt json.dec(raw) {$ok:v 1;$err:e 0};
   if(ok==1){
     io.println("parsed ok");
   }el{};

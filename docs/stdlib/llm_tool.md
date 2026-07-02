@@ -74,7 +74,7 @@ i=llm:std.llm;
 i=env:std.env;
 
 f=demo():void{
-  let key=env.get("OPENAI_KEY")|{$ok:k k;$err:e ""};
+  let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let p=$toolparam{name:"city";type:"string";desc:"City name";required:true};
   let tool=$tooldecl{name:"getweather";desc:"Return current weather";params:@(p)};
@@ -93,7 +93,7 @@ i=llm:std.llm;
 i=env:std.env;
 
 f=demo():void{
-  let key=env.get("OPENAI_KEY")|{$ok:k k;$err:e ""};
+  let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let p=$toolparam{name:"city";type:"string";desc:"City name";required:true};
   let tool=$tooldecl{name:"getweather";desc:"Return weather for a city";params:@(p)};
@@ -101,7 +101,7 @@ f=demo():void{
   let msgusr=$llmmsg{role:"user";content:"What is the weather in Sydney?"};
   let msgs=@(msgusr);
   let emptycall=$toolcall{name:"";args:@();id:""};
-  let call=llm.chatwithtools(c2;msgs)|{$ok:tc tc;$err:e emptycall};
+  let call=mt llm.chatwithtools(c2;msgs) {$ok:tc tc;$err:e emptycall};
 };
 ```
 
@@ -117,7 +117,7 @@ i=env:std.env;
 i=log:std.log;
 
 f=demo():void{
-  let key=env.get("OPENAI_KEY")|{$ok:k k;$err:e ""};
+  let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let p=$toolparam{name:"city";type:"string";desc:"City name";required:true};
   let tool=$tooldecl{name:"getweather";desc:"Return weather for a city";params:@(p)};
@@ -125,10 +125,10 @@ f=demo():void{
   let msgusr=$llmmsg{role:"user";content:"What is the weather in Sydney?"};
   let msgs=@(msgusr);
   let emptycall=$toolcall{name:"";args:@();id:""};
-  let call=llm.chatwithtools(c2;msgs)|{$ok:tc tc;$err:e emptycall};
+  let call=mt llm.chatwithtools(c2;msgs) {$ok:tc tc;$err:e emptycall};
   let result=$toolresult{id:call.id;content:"{\"temp_c\": 22, \"condition\": \"sunny\"}";error:false};
   let emptyresp=$llmresp{content:"";tokensin:0;tokensout:0;model:""};
-  let resp=llm.submitresult(c2;msgs;result)|{$ok:r r;$err:e emptyresp};
+  let resp=mt llm.submitresult(c2;msgs;result) {$ok:r r;$err:e emptyresp};
   log.info(resp.content;@());
 };
 ```
@@ -144,14 +144,14 @@ i=llm:std.llm;
 i=env:std.env;
 
 f=demo():void{
-  let key=env.get("OPENAI_KEY")|{$ok:k k;$err:e ""};
+  let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let msgusr=$llmmsg{role:"user";content:"Hello"};
   let msgs=@(msgusr);
   let emptyresp=$llmresp{content:"";tokensin:0;tokensout:0;model:""};
-  let resp=llm.chat(c;msgs)|{$ok:r r;$err:e emptyresp};
+  let resp=mt llm.chat(c;msgs) {$ok:r r;$err:e emptyresp};
   let emptycall=$toolcall{name:"";args:@();id:""};
-  let call=llm.parsetoolcalls(resp.content)|{$ok:tc tc;$err:e emptycall};
+  let call=mt llm.parsetoolcalls(resp.content) {$ok:tc tc;$err:e emptycall};
 };
 ```
 
@@ -184,18 +184,18 @@ f=main():i64{
   let pcity=$toolparam{name:"city";type:"string";desc:"City name";required:true};
   let punits=$toolparam{name:"units";type:"string";desc:"celsius or fahrenheit";required:false};
   let wtool=$tooldecl{name:"getweather";desc:"Return weather for a city";params:@(pcity;punits)};
-  let key=env.get("OPENAI_KEY")|{$ok:k k;$err:e ""};
+  let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let base=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let c=llm.withtools(base;@(wtool));
   let msgsys=$llmmsg{role:"system";content:"You are a weather assistant. Use tools to answer."};
   let msgusr=$llmmsg{role:"user";content:"What is the weather in Sydney right now?"};
   let msgs=@(msgsys;msgusr);
   let emptycall=$toolcall{name:"";args:@();id:""};
-  let call=llm.chatwithtools(c;msgs)|{$ok:tc tc;$err:e emptycall};
+  let call=mt llm.chatwithtools(c;msgs) {$ok:tc tc;$err:e emptycall};
   let weatherjson="{\"city\":\"Sydney\",\"temp_c\":22,\"condition\":\"partly cloudy\"}";
   let result=$toolresult{id:call.id;content:weatherjson;error:false};
   let emptyresp=$llmresp{content:"";tokensin:0;tokensout:0;model:""};
-  let resp=llm.submitresult(c;msgs;result)|{$ok:r r;$err:e emptyresp};
+  let resp=mt llm.submitresult(c;msgs;result) {$ok:r r;$err:e emptyresp};
   log.info(resp.content;@());
   <0;
 };

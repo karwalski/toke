@@ -193,10 +193,10 @@ m=test;
 i=str:std.str;
 f=example(rawinput:$str):void{
   let input=str.trim(rawinput);
-  let val=str.toint(input)|{$ok:n n;$err:e 0};
-  let first=str.slice("alice";0;1)|{$ok:s s;$err:e ""};
+  let val=mt str.toint(input) {$ok:n n;$err:e 0};
+  let first=mt str.slice("alice";0;1) {$ok:s s;$err:e ""};
   let name=str.upper(first);
-  let rest=str.slice("alice";1;5)|{$ok:s s;$err:e ""};
+  let rest=mt str.slice("alice";1;5) {$ok:s s;$err:e ""};
   let greeting=str.concat("Hello ";str.concat(name;rest));
   let fields=str.split("name:age:city";":");
 };

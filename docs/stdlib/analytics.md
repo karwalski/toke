@@ -61,9 +61,9 @@ i=df:std.dataframe;
 i=file:std.file;
 
 f=main():i64{
-  let raw=file.read("data.csv")|{$ok:d d;$err:e ""};
-  let data=df.fromcsv(raw)|{$ok:d d;$err:e df.fromrows(@();@())};
-  let stats=analytics.describe(data)|{$ok:s s;$err:e @()};
+  let raw=mt file.read("data.csv") {$ok:d d;$err:e ""};
+  let data=mt df.fromcsv(raw) {$ok:d d;$err:e df.fromrows(@();@())};
+  let stats=mt analytics.describe(data) {$ok:s s;$err:e @()};
   <0;
 };
 ```
@@ -79,9 +79,9 @@ i=df:std.dataframe;
 i=file:std.file;
 
 f=main():i64{
-  let raw=file.read("data.csv")|{$ok:d d;$err:e ""};
-  let data=df.fromcsv(raw)|{$ok:d d;$err:e df.fromrows(@();@())};
-  let r=analytics.corr(data;"cpu";"latency")|{$ok:v v;$err:e 0.0};
+  let raw=mt file.read("data.csv") {$ok:d d;$err:e ""};
+  let data=mt df.fromcsv(raw) {$ok:d d;$err:e df.fromrows(@();@())};
+  let r=mt analytics.corr(data;"cpu";"latency") {$ok:v v;$err:e 0.0};
   <0;
 };
 ```
@@ -97,9 +97,9 @@ i=df:std.dataframe;
 i=file:std.file;
 
 f=main():i64{
-  let raw=file.read("data.csv")|{$ok:d d;$err:e ""};
-  let data=df.fromcsv(raw)|{$ok:d d;$err:e df.fromrows(@();@())};
-  let outliers=analytics.anomalies(data;"latency";3.0)|{$ok:a a;$err:e @()};
+  let raw=mt file.read("data.csv") {$ok:d d;$err:e ""};
+  let data=mt df.fromcsv(raw) {$ok:d d;$err:e df.fromrows(@();@())};
+  let outliers=mt analytics.anomalies(data;"latency";3.0) {$ok:a a;$err:e @()};
   <0;
 };
 ```
@@ -115,9 +115,9 @@ i=df:std.dataframe;
 i=file:std.file;
 
 f=main():i64{
-  let raw=file.read("data.csv")|{$ok:d d;$err:e ""};
-  let data=df.fromcsv(raw)|{$ok:d d;$err:e df.fromrows(@();@())};
-  let gs=analytics.groupstats(data;"region";"revenue")|{$ok:g g;$err:e @()};
+  let raw=mt file.read("data.csv") {$ok:d d;$err:e ""};
+  let data=mt df.fromcsv(raw) {$ok:d d;$err:e df.fromrows(@();@())};
+  let gs=mt analytics.groupstats(data;"region";"revenue") {$ok:g g;$err:e @()};
   <0;
 };
 ```
@@ -133,9 +133,9 @@ i=df:std.dataframe;
 i=file:std.file;
 
 f=main():i64{
-  let raw=file.read("data.csv")|{$ok:d d;$err:e ""};
-  let data=df.fromcsv(raw)|{$ok:d d;$err:e df.fromrows(@();@())};
-  let table=analytics.pivot(data;"region";"product";"revenue")|{$ok:t t;$err:e data};
+  let raw=mt file.read("data.csv") {$ok:d d;$err:e ""};
+  let data=mt df.fromcsv(raw) {$ok:d d;$err:e df.fromrows(@();@())};
+  let table=mt analytics.pivot(data;"region";"product";"revenue") {$ok:t t;$err:e data};
   <0;
 };
 ```
@@ -151,9 +151,9 @@ i=df:std.dataframe;
 i=file:std.file;
 
 f=main():i64{
-  let raw=file.read("logs.csv")|{$ok:d d;$err:e ""};
-  let logs=df.fromcsv(raw)|{$ok:d d;$err:e df.fromrows(@();@())};
-  let series=analytics.timeseries(logs;"ts";"latency";60000)|{$ok:s s;$err:e @()};
+  let raw=mt file.read("logs.csv") {$ok:d d;$err:e ""};
+  let logs=mt df.fromcsv(raw) {$ok:d d;$err:e df.fromrows(@();@())};
+  let series=mt analytics.timeseries(logs;"ts";"latency";60000) {$ok:s s;$err:e @()};
   <0;
 };
 ```
@@ -171,11 +171,11 @@ i=io:std.io;
 i=str:std.str;
 
 f=main():i64{
-  let raw=file.read("metrics.csv")|{$ok:d d;$err:e ""};
-  let data=df.fromcsv(raw)|{$ok:d d;$err:e df.fromrows(@();@())};
-  let idx=analytics.anomalies(data;"latency";3.0)|{$ok:a a;$err:e @()};
+  let raw=mt file.read("metrics.csv") {$ok:d d;$err:e ""};
+  let data=mt df.fromcsv(raw) {$ok:d d;$err:e df.fromrows(@();@())};
+  let idx=mt analytics.anomalies(data;"latency";3.0) {$ok:a a;$err:e @()};
   io.println(str.concat("Anomalies: ";str.fromint(idx.len as i64)));
-  let flagged=df.filter(data;"anomalyflag";"=";"1")|{$ok:d d;$err:e data};
+  let flagged=mt df.filter(data;"anomalyflag";"=";"1") {$ok:d d;$err:e data};
   let out=df.tocsv(flagged);
   let res=file.write("anomalies.csv";out);
   <0;
@@ -195,9 +195,9 @@ i=io:std.io;
 i=str:std.str;
 
 f=main():i64{
-  let raw=file.read("sensors.csv")|{$ok:d d;$err:e ""};
-  let data=df.fromcsv(raw)|{$ok:d d;$err:e df.fromrows(@();@())};
-  let gs=analytics.groupstats(data;"region";"reading")|{$ok:g g;$err:e @()};
+  let raw=mt file.read("sensors.csv") {$ok:d d;$err:e ""};
+  let data=mt df.fromcsv(raw) {$ok:d d;$err:e df.fromrows(@();@())};
+  let gs=mt analytics.groupstats(data;"region";"reading") {$ok:g g;$err:e @()};
   lp(let i=0;i<gs.len;i=i+1){
     let row=gs.get(i);
     let line=str.concat(row.group;str.concat(": mean=";str.fromfloat(row.mean)));

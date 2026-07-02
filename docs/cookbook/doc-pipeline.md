@@ -65,7 +65,7 @@ f=processdir(dir:$str):i64!$err{
   lp(let i=0;i<entries.len as i64;i=i+1){
     let name=entries.get(i);
     let fullpath=str.concat(dir; str.concat("/"; name));
-    let counted=file.read(fullpath)|{
+    let counted=mt file.read(fullpath) {
       $ok:content processfile(name; content);
       $err:e skipfile(name)
     };

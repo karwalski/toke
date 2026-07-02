@@ -308,7 +308,7 @@ i=http:std.http;
 f=main():void{
   let c=http.client("https://api.example.com");
   let s=http.stream(c;"GET";"/events");
-  let chunk=http.streamnext(s)|{$ok:v v;$err:e @()};
+  let chunk=mt http.streamnext(s) {$ok:v v;$err:e @()};
 };
 ```
 

@@ -55,7 +55,7 @@ Parses a YAML string into a `Yaml` value. Returns `$yamlerr.$parse` if the input
 m=app;
 i=yaml:std.yaml;
 f=demo():i64{
-  let y=yaml.dec("name: Alice\nage: 30\n")|{$ok:v v;$err:e yaml.empty()};
+  let y=mt yaml.dec("name: Alice\nage: 30\n") {$ok:v v;$err:e yaml.empty()};
   < 0
 };
 ```
@@ -68,7 +68,7 @@ Extracts a string value by key. Automatically strips surrounding quotes.
 m=app;
 i=yaml:std.yaml;
 f=demo(y:$yaml):i64{
-  let name=yaml.str(y;"name")|{$ok:s s;$err:e "unknown"};
+  let name=mt yaml.str(y;"name") {$ok:s s;$err:e "unknown"};
   < 0
 };
 ```
@@ -81,7 +81,7 @@ Extracts a signed 64-bit integer by key.
 m=app;
 i=yaml:std.yaml;
 f=demo(y:$yaml):i64{
-  let age=yaml.i64(y;"age")|{$ok:n n;$err:e 0};
+  let age=mt yaml.i64(y;"age") {$ok:n n;$err:e 0};
   < age
 };
 ```
@@ -94,7 +94,7 @@ Extracts a 64-bit float by key.
 m=app;
 i=yaml:std.yaml;
 f=demo(y:$yaml):f64{
-  let pi=yaml.f64(y;"pi")|{$ok:f f;$err:e 0.0};
+  let pi=mt yaml.f64(y;"pi") {$ok:f f;$err:e 0.0};
   < pi
 };
 ```
@@ -107,7 +107,7 @@ Extracts a boolean by key. Accepts `true`/`false` and YAML-style `yes`/`no`.
 m=app;
 i=yaml:std.yaml;
 f=demo(y:$yaml):bool{
-  let active=yaml.bool(y;"active")|{$ok:b b;$err:e false};
+  let active=mt yaml.bool(y;"active") {$ok:b b;$err:e false};
   < active
 };
 ```
@@ -120,7 +120,7 @@ Extracts a YAML sequence as an array of `Yaml` values.
 m=app;
 i=yaml:std.yaml;
 f=demo(y:$yaml):i64{
-  let items=yaml.arr(y;"items")|{$ok:a a;$err:e @()};
+  let items=mt yaml.arr(y;"items") {$ok:a a;$err:e @()};
   < 0
 };
 ```
@@ -162,11 +162,11 @@ i=file:std.file;
 i=log:std.log;
 
 f=main():i64{
-  let raw=file.read("config.yaml")|{$ok:s s;$err:e ""};
-  let config=yaml.dec(raw)|{$ok:c c;$err:e yaml.empty()};
-  let host=yaml.str(config;"host")|{$ok:s s;$err:e "localhost"};
-  let port=yaml.i64(config;"port")|{$ok:n n;$err:e 8080};
-  let debug=yaml.bool(config;"debug")|{$ok:b b;$err:e false};
+  let raw=mt file.read("config.yaml") {$ok:s s;$err:e ""};
+  let config=mt yaml.dec(raw) {$ok:c c;$err:e yaml.empty()};
+  let host=mt yaml.str(config;"host") {$ok:s s;$err:e "localhost"};
+  let port=mt yaml.i64(config;"port") {$ok:n n;$err:e 8080};
+  let debug=mt yaml.bool(config;"debug") {$ok:b b;$err:e false};
   log.info(host;@());
   let jsondata=yaml.tojson("key: value\ncount: 42\n");
   log.info(jsondata;@());

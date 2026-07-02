@@ -197,7 +197,7 @@ i=file:std.file;
 i=crypto:std.crypto;
 
 f=certfp():$str{
-  let pem=file.read("/etc/ssl/certs/server.pem")|{
+  let pem=mt file.read("/etc/ssl/certs/server.pem") {
     $ok:s  s;
     $err:e ""
   };

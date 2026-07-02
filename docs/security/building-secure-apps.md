@@ -150,7 +150,7 @@ f=isidentifier(s:$str):bool{
   if(n>64){<false}el{};        // always bound length
   let ok=mut.true;
   lp(let i=0;i<n;i=i+1){
-    let c=str.slice(s;i;i+1)|{$ok:v v;$err:e ""};
+    let c=mt str.slice(s;i;i+1) {$ok:v v;$err:e ""};
     let isalnum=(c>="a"&&c<="z")||(c>="A"&&c<="Z")||(c>="0"&&c<="9")||c="_";
     if(!isalnum){ok=false}el{}
   };
@@ -292,8 +292,8 @@ f=consteq(a:$str;b:$str):bool{
   let diff=mut.(la=lb ? 0 : 1);
   let n=(la<lb ? la : lb);
   lp(let i=0;i<n;i=i+1){
-    let ca=str.slice(a;i;i+1)|{$ok:v v;$err:e ""};
-    let cb=str.slice(b;i;i+1)|{$ok:v v;$err:e ""};
+    let ca=mt str.slice(a;i;i+1) {$ok:v v;$err:e ""};
+    let cb=mt str.slice(b;i;i+1) {$ok:v v;$err:e ""};
     if(!str.eq(ca;cb)){diff=1}el{}
   };
   <diff=0

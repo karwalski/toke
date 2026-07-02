@@ -118,7 +118,7 @@ i=log:std.log;
 i=str:std.str;
 
 f=main():i64{
-  let cfg = toml.loadfile("ooke.toml")|{$ok:v v;$err:e < 1};
+  let cfg = mt toml.loadfile("ooke.toml") {$ok:v v;$err:e < 1};
 
   let server  = toml.section(cfg; "server")!;
   let host    = toml.str(server;  "host")!;

@@ -43,8 +43,8 @@ m=example;
 i=args:std.args;
 
 f=main():i64{
-  let name = args.get(0)|{$ok:s s;$err:e ""};
-  let flag = args.get(1)|{$ok:s s;$err:e ""};
+  let name = mt args.get(0) {$ok:s s;$err:e ""};
+  let flag = mt args.get(1) {$ok:s s;$err:e ""};
   < 0
 };
 ```
@@ -64,7 +64,7 @@ f=main():i64{
 
   -- iterate over user-supplied args, skipping argv[0]
   lp(let i=1;i<n;i=i+1){
-    let a = args.get(i)|{$ok:s s;$err:e ""};
+    let a = mt args.get(i) {$ok:s s;$err:e ""};
   };
   < 0
 };

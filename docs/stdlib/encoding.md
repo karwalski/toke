@@ -69,12 +69,12 @@ f=main():i64{
   log.info(b64url;@());
   log.info(hex;@());
 
-  let decoded=enc.b64decode(b64)|{$ok:v v;$err:e @()};
+  let decoded=mt enc.b64decode(b64) {$ok:v v;$err:e @()};
   let rehex=enc.hexencode(decoded);
   log.info(rehex;@());
 
   let query=enc.urlencode("search=hello world&page=1");
-  let back=enc.urldecode(query)|{$ok:s s;$err:e ""};
+  let back=mt enc.urldecode(query) {$ok:s s;$err:e ""};
   log.info(back;@());
 
   <0

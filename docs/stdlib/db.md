@@ -44,7 +44,7 @@ i=db:std.db;
 
 f=setup():i64{
   let n=db.exec("CREATE TABLE t(id INTEGER; name TEXT)";@());
-  n|{$ok:v 0;$err:e 1}
+  mt n {$ok:v 0;$err:e 1}
 };
 ```
 
@@ -58,7 +58,7 @@ i=db:std.db;
 
 f=finduser(id:$str):i64{
   let r=db.one("SELECT id,name FROM t WHERE id=?";@(id));
-  r|{$ok:v 0;$err:e 1}
+  mt r {$ok:v 0;$err:e 1}
 };
 ```
 
@@ -72,7 +72,7 @@ i=db:std.db;
 
 f=allrows():i64{
   let rows=db.many("SELECT * FROM t";@());
-  rows|{$ok:v 0;$err:e 1}
+  mt rows {$ok:v 0;$err:e 1}
 };
 ```
 
@@ -86,8 +86,8 @@ i=db:std.db;
 
 f=getname():$str{
   let r=db.one("SELECT name FROM t WHERE id=?";@("1"));
-  let row=r|{$ok:v v;$err:e $row{cols:@()}};
-  let name=row.str(row;"name")|{$ok:s s;$err:e "unknown"};
+  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let name=mt row.str(row;"name") {$ok:s s;$err:e "unknown"};
   < name
 };
 ```
@@ -102,8 +102,8 @@ i=db:std.db;
 
 f=getid():u64{
   let r=db.one("SELECT id FROM t WHERE id=?";@("1"));
-  let row=r|{$ok:v v;$err:e $row{cols:@()}};
-  let id=row.u64(row;"id")|{$ok:n n;$err:e 0};
+  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let id=mt row.u64(row;"id") {$ok:n n;$err:e 0};
   < id
 };
 ```
@@ -118,8 +118,8 @@ i=db:std.db;
 
 f=getbal():i64{
   let r=db.one("SELECT balance FROM t WHERE id=?";@("1"));
-  let row=r|{$ok:v v;$err:e $row{cols:@()}};
-  let val=row.i64(row;"balance")|{$ok:n n;$err:e 0};
+  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let val=mt row.i64(row;"balance") {$ok:n n;$err:e 0};
   < val
 };
 ```
@@ -134,8 +134,8 @@ i=db:std.db;
 
 f=getprice():f64{
   let r=db.one("SELECT price FROM t WHERE id=?";@("1"));
-  let row=r|{$ok:v v;$err:e $row{cols:@()}};
-  let price=row.f64(row;"price")|{$ok:f f;$err:e 0.0};
+  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let price=mt row.f64(row;"price") {$ok:f f;$err:e 0.0};
   < price
 };
 ```
@@ -150,8 +150,8 @@ i=db:std.db;
 
 f=isactive():bool{
   let r=db.one("SELECT active FROM t WHERE id=?";@("1"));
-  let row=r|{$ok:v v;$err:e $row{cols:@()}};
-  let active=row.bool(row;"active")|{$ok:b b;$err:e false};
+  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let active=mt row.bool(row;"active") {$ok:b b;$err:e false};
   < active
 };
 ```
@@ -164,18 +164,18 @@ i=db:std.db;
 i=log:std.log;
 
 f=main():i64{
-  db.exec("CREATE TABLE users(id INTEGER; name TEXT; active INTEGER)";@())|{
+  mt db.exec("CREATE TABLE users(id INTEGER; name TEXT; active INTEGER)";@()) {
     $ok:n log.info("table ready";@());
     $err:e log.warn("create failed";@())
   };
-  db.exec("INSERT INTO users VALUES(?;?;?)";@("1";"alice";"1"))|{
+  mt db.exec("INSERT INTO users VALUES(?;?;?)";@("1";"alice";"1")) {
     $ok:n log.info("inserted";@());
     $err:e log.warn("insert failed";@())
   };
   let r=db.one("SELECT * FROM users WHERE id=?";@("1"));
-  let row=r|{$ok:v v;$err:e $row{cols:@()}};
-  let name=row.str(row;"name")|{$ok:s s;$err:e "unknown"};
-  let active=row.bool(row;"active")|{$ok:b b;$err:e false};
+  let row=mt r {$ok:v v;$err:e $row{cols:@()}};
+  let name=mt row.str(row;"name") {$ok:s s;$err:e "unknown"};
+  let active=mt row.bool(row;"active") {$ok:b b;$err:e false};
   log.info("found user";@());
   <0
 };

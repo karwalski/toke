@@ -58,7 +58,7 @@ i=router:std.router;
 f=main():i64{
   let r = router.new();
   router.post(r; "/hello"; 0);
-  router.serve(r; "0.0.0.0"; 8080)|{$ok:v 0;$err:e 1};
+  mt router.serve(r; "0.0.0.0"; 8080) {$ok:v 0;$err:e 1};
   <0;
 }
 ```

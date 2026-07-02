@@ -64,7 +64,7 @@ f=main():i64{
   let key = str.bytes("mysecret");
   let apikey = auth.apikeygenerate("app");
   let header = "Bearer sometoken";
-  let tok = auth.bearerextract(header)|{$ok:t t;$err:e ""};
+  let tok = mt auth.bearerextract(header) {$ok:t t;$err:e ""};
   <0;
 }
 ```

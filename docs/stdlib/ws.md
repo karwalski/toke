@@ -51,9 +51,9 @@ i=ws:std.ws;
 i=log:std.log;
 
 f=main():i64{
-  let conn=ws.connect("ws://localhost:8080/chat")|{$ok:c c;$err:e $wsconn{id:0;ready:false}};
-  ws.send(conn;"hello")|{$ok:v v;$err:e log.warn("send failed";@())};
-  let msg=ws.recv(conn)|{$ok:m m;$err:e $wsmsg{payload:@();fin:false;opcode:0}};
+  let conn=mt ws.connect("ws://localhost:8080/chat") {$ok:c c;$err:e $wsconn{id:0;ready:false}};
+  mt ws.send(conn;"hello") {$ok:v v;$err:e log.warn("send failed";@())};
+  let msg=mt ws.recv(conn) {$ok:m m;$err:e $wsmsg{payload:@();fin:false;opcode:0}};
   ws.close(conn);
   <0
 };
@@ -68,18 +68,18 @@ i=enc:std.encoding;
 i=log:std.log;
 
 f=main():i64{
-  let conn=ws.connect("ws://localhost:8080/echo")|{
+  let conn=mt ws.connect("ws://localhost:8080/echo") {
     $ok:c c;
     $err:e $wsconn{id:0;ready:false}
   };
 
-  ws.send(conn;"ping")|{$ok:v v;$err:e log.warn("send failed";@())};
+  mt ws.send(conn;"ping") {$ok:v v;$err:e log.warn("send failed";@())};
 
-  let msg=ws.recv(conn)|{$ok:m m;$err:e $wsmsg{payload:@();fin:false;opcode:0}};
+  let msg=mt ws.recv(conn) {$ok:m m;$err:e $wsmsg{payload:@();fin:false;opcode:0}};
   let text=enc.b64encode(msg.payload);
   log.info(text;@());
 
-  let c2=ws.connect("ws://localhost:8080/echo")|{$ok:c c;$err:e $wsconn{id:0;ready:false}};
+  let c2=mt ws.connect("ws://localhost:8080/echo") {$ok:c c;$err:e $wsconn{id:0;ready:false}};
   ws.broadcast(@(conn;c2);"bye");
 
   ws.close(conn);

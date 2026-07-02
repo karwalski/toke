@@ -47,7 +47,7 @@ i=str:std.str;
 
 f=demo():i64{
   let result = md.renderfile("docs/intro.md");
-  result|{
+  mt result {
     $ok:html io.println(html);
     $err:e   io.println(str.concat("error: "; e.msg))
   };

@@ -219,7 +219,7 @@ f=loguser(userid:$str):void{
   let result=db.one("SELECT id, name FROM users WHERE id=?";@(userid));
   let ms=time.since(start);
 
-  result|{
+  mt result {
     $ok:row log.info("user fetched"; @(
       @("user_id"; userid);
       @("elapsed_ms"; str.fromint(ms))

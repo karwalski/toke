@@ -35,7 +35,7 @@ i=file:std.file;
 
 f=readfile():$str{
   let r=file.read("/tmp/data.txt");
-  r|{
+  mt r {
     $ok:s  s;
     $err:e ""
   }
@@ -51,7 +51,7 @@ m=example;
 i=file:std.file;
 
 f=writefile():i64{
-  file.write("/tmp/data.txt";"hello world")|{
+  mt file.write("/tmp/data.txt";"hello world") {
     $ok:ok 0;
     $err:e 1
   }
@@ -67,7 +67,7 @@ m=example;
 i=file:std.file;
 
 f=appendfile():i64{
-  file.append("/tmp/log.txt";"new line\n")|{
+  mt file.append("/tmp/log.txt";"new line\n") {
     $ok:ok 0;
     $err:e 1
   }
@@ -97,7 +97,7 @@ m=example;
 i=file:std.file;
 
 f=delfile():i64{
-  file.delete("/tmp/temp.txt")|{
+  mt file.delete("/tmp/temp.txt") {
     $ok:ok 0;
     $err:e 1
   }
@@ -113,7 +113,7 @@ m=example;
 i=file:std.file;
 
 f=listdir():i64{
-  file.list("/tmp")|{
+  mt file.list("/tmp") {
     $ok:entries 0;
     $err:e      1
   }
@@ -129,7 +129,7 @@ m=example;
 i=file:std.file;
 
 f=listrecursive():i64{
-  file.listall("/tmp")|{
+  mt file.listall("/tmp") {
     $ok:entries 0;
     $err:e      1
   }
@@ -159,7 +159,7 @@ m=example;
 i=file:std.file;
 
 f=makedir():i64{
-  file.mkdir("/tmp/mydir")|{
+  mt file.mkdir("/tmp/mydir") {
     $ok:ok 0;
     $err:e 1
   }
@@ -175,7 +175,7 @@ m=example;
 i=file:std.file;
 
 f=copyfile():i64{
-  file.copy("/tmp/original.txt";"/tmp/backup.txt")|{
+  mt file.copy("/tmp/original.txt";"/tmp/backup.txt") {
     $ok:ok 0;
     $err:e 1
   }
@@ -198,17 +198,17 @@ f=countlines(content:$str):i64{
 };
 
 f=summarize(dir:$str):i64{
-  let entries=file.list(dir)|{
+  let entries=mt file.list(dir) {
     $ok:e  e;
     $err:e @()
   };
 
   let total=mut.0;
   lp(let i=0;i<entries.len;i=i+1){
-    let name=entries.get(i)|{$ok:v v;$err:e ""};
+    let name=mt entries.get(i) {$ok:v v;$err:e ""};
     let path=str.concat(dir;str.concat("/";name));
     let r=file.read(path);
-    let n=r|{$ok:content countlines(content);$err:e 0};
+    let n=mt r {$ok:content countlines(content);$err:e 0};
     total=total+n;
     log.info(name;@())
   };

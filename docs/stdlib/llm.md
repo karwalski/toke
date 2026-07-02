@@ -68,7 +68,7 @@ m=main;
 i=llm:std.llm;
 i=env:std.env;
 f=demo():i64{
-  let key=env.get("OPENAI_KEY")|{$ok:k k;$err:e ""};
+  let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   < 0
 };
@@ -85,12 +85,12 @@ i=env:std.env;
 i=log:std.log;
 
 f=demo():void{
-  let key=env.get("OPENAI_KEY")|{$ok:k k;$err:e ""};
+  let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let msgsys=$llmmsg{role:"system";content:"You are a toke language assistant."};
   let msgusr=$llmmsg{role:"user";content:"What is a result type?"};
   let msgs=@(msgsys;msgusr);
-  let resp=llm.chat(c;msgs)|{$ok:r r;$err:e $llmresp{content:"";tokensin:0;tokensout:0;model:""}};
+  let resp=mt llm.chat(c;msgs) {$ok:r r;$err:e $llmresp{content:"";tokensin:0;tokensout:0;model:""}};
   log.info(resp.content;@());
 };
 ```
@@ -105,11 +105,11 @@ i=llm:std.llm;
 i=env:std.env;
 
 f=demo():void{
-  let key=env.get("OPENAI_KEY")|{$ok:k k;$err:e ""};
+  let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let msgusr=$llmmsg{role:"user";content:"Hello"};
   let msgs=@(msgusr;msgusr);
-  let stream=llm.chatstream(c;msgs)|{$ok:s s;$err:e $llmstream{}};
+  let stream=mt llm.chatstream(c;msgs) {$ok:s s;$err:e $llmstream{}};
 };
 ```
 
@@ -125,13 +125,13 @@ i=io:std.io;
 i=str:std.str;
 
 f=demo():void{
-  let key=env.get("OPENAI_KEY")|{$ok:k k;$err:e ""};
+  let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let msgusr=$llmmsg{role:"user";content:"Hello"};
   let msgs=@(msgusr;msgusr);
-  let stream=llm.chatstream(c;msgs)|{$ok:s s;$err:e $llmstream{}};
+  let stream=mt llm.chatstream(c;msgs) {$ok:s s;$err:e $llmstream{}};
   lp(let n=0;n<4096;n=n+1){
-    let chunk=llm.streamnext(stream)|{$ok:t t;$err:e ""};
+    let chunk=mt llm.streamnext(stream) {$ok:t t;$err:e ""};
     if(str.len(chunk)=0){br;};
     io.write(chunk);
   };
@@ -148,9 +148,9 @@ i=llm:std.llm;
 i=env:std.env;
 
 f=demo():void{
-  let key=env.get("OPENAI_KEY")|{$ok:k k;$err:e ""};
+  let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
-  let answer=llm.complete(c;"Summarise the toke type system.")|{$ok:s s;$err:e ""};
+  let answer=mt llm.complete(c;"Summarise the toke type system.") {$ok:s s;$err:e ""};
 };
 ```
 
@@ -164,7 +164,7 @@ i=llm:std.llm;
 i=env:std.env;
 
 f=demo():void{
-  let key=env.get("OPENAI_KEY")|{$ok:k k;$err:e ""};
+  let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let n=llm.countokens(c;"some large text here");
 };
@@ -183,12 +183,12 @@ i=env:std.env;
 i=log:std.log;
 
 f=main():i64{
-  let key=env.get("OPENAI_KEY")|{$ok:k k;$err:e ""};
+  let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let msgsys=$llmmsg{role:"system";content:"You are a helpful assistant."};
   let msgusr=$llmmsg{role:"user";content:"What is the toke language?"};
   let msgs=@(msgsys;msgusr);
-  let resp=llm.chat(c;msgs)|{$ok:r r;$err:e $llmresp{content:"";tokensin:0;tokensout:0;model:""}};
+  let resp=mt llm.chat(c;msgs) {$ok:r r;$err:e $llmresp{content:"";tokensin:0;tokensout:0;model:""}};
   log.info(resp.content;@());
   <0;
 };
@@ -206,13 +206,13 @@ i=io:std.io;
 i=str:std.str;
 
 f=main():i64{
-  let key=env.get("OPENAI_KEY")|{$ok:k k;$err:e ""};
+  let key=mt env.get("OPENAI_KEY") {$ok:k k;$err:e ""};
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let msgusr=$llmmsg{role:"user";content:"Write a haiku about compilers."};
   let msgs=@(msgusr;msgusr);
-  let stream=llm.chatstream(c;msgs)|{$ok:s s;$err:e llm.emptystream()};
+  let stream=mt llm.chatstream(c;msgs) {$ok:s s;$err:e llm.emptystream()};
   lp(let n=0;n<4096;n=n+1){
-    let chunk=llm.streamnext(stream)|{$ok:t t;$err:e ""};
+    let chunk=mt llm.streamnext(stream) {$ok:t t;$err:e ""};
     if(str.len(chunk)==0){br;};
     io.write(chunk);
   };

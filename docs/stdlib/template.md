@@ -56,9 +56,9 @@ i=tpl:std.template;
 i=log:std.log;
 
 f=main():i64{
-  let t=tpl.compile("Hello, {{name}}!")|{$ok:t t;$err:e $tmpl{id:0;src:""}};
+  let t=mt tpl.compile("Hello, {{name}}!") {$ok:t t;$err:e $tmpl{id:0;src:""}};
   let vars=tpl.vars(@("name":"world"));
-  let out=tpl.render(t;vars)|{$ok:s s;$err:e ""};
+  let out=mt tpl.render(t;vars) {$ok:s s;$err:e ""};
   log.info(out;@());
   <0
 };
@@ -74,15 +74,15 @@ i=log:std.log;
 
 f=main():i64{
   let src="<html><body><h1>{{title}}</h1><p>{{body}}</p></body></html>";
-  let t=tpl.compile(src)|{$ok:t t;$err:e $tmpl{id:0;src:""}};
+  let t=mt tpl.compile(src) {$ok:t t;$err:e $tmpl{id:0;src:""}};
 
   let userinput="<script>alert('xss')</script>";
   let safe=tpl.escape(userinput);
 
   let vars=tpl.vars(@("title":"Welcome";"body":safe));
-  let page=tpl.render(t;vars)|{$ok:s s;$err:e ""};
+  let page=mt tpl.render(t;vars) {$ok:s s;$err:e ""};
 
-  file.write("out.html";page)|{$ok:v log.info("page written";@());$err:e log.warn("write failed";@())};
+  mt file.write("out.html";page) {$ok:v log.info("page written";@());$err:e log.warn("write failed";@())};
   <0
 };
 ```

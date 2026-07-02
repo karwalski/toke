@@ -74,7 +74,7 @@ f=example():void{
   let rc = $row{vals:@(3.0; 5.0)};
   let feats = @(ra; rb; rc);
   let y = @(5.0; 8.0; 13.0);
-  let model = ml.linregfit(feats; y)|{$ok:m m;$err:e $linearmodel{coef:@();intercept:0.0}};
+  let model = mt ml.linregfit(feats; y) {$ok:m m;$err:e $linearmodel{coef:@();intercept:0.0}};
 };
 ```
 
@@ -107,7 +107,7 @@ f=example():void{
     $row{vals:@(1.5; 1.5)};
     $row{vals:@(5.5; 5.2)}
   );
-  let km = ml.kmeanstrain(rows; 2; 100)|{$ok:m m;$err:e $kmeansmodel{centroids:@();k:0}};
+  let km = mt ml.kmeanstrain(rows; 2; 100) {$ok:m m;$err:e $kmeansmodel{centroids:@();k:0}};
 };
 ```
 
@@ -140,7 +140,7 @@ f=example():void{
   let rd = $row{vals:@(9.0; 8.0)};
   let feats = @(ra; rb; rc; rd);
   let labels = @("low"; "high"; "low"; "high");
-  let tree = ml.dtreefit(feats; labels; 4)|{$ok:m m;$err:e $dtreemodel{}};
+  let tree = mt ml.dtreefit(feats; labels; 4) {$ok:m m;$err:e $dtreemodel{}};
 };
 ```
 
@@ -190,7 +190,7 @@ f=train():i64{
   let r4=$row{vals:@(4.0)};
   let traindata=@(r1;r2;r3;r4);
   let targets=@(2.0;4.0;6.0;8.0);
-  let model=ml.linregfit(traindata;targets)|{$ok:m m;$err:e $linearmodel{coef:@();intercept:0.0}};
+  let model=mt ml.linregfit(traindata;targets) {$ok:m m;$err:e $linearmodel{coef:@();intercept:0.0}};
   let pred=ml.linregpredict(model;@(5.0));
   <0;
 };

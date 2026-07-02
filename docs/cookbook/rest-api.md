@@ -47,7 +47,7 @@ f=main():i64!$err{
   log.info("starting notes-api on port 8080");
 
   let notesfile="data/notes.json";
-  let notesbody=loadnotes(notesfile)|{
+  let notesbody=mt loadnotes(notesfile) {
     $ok:v v;
     $err:e "{\"error\":\"could not load notes\"}"
   };
@@ -110,7 +110,7 @@ curl http://localhost:8080/api/notes
 |---------|--------|
 | Import alias | `i=alias:std.modname;` |
 | Error propagate | `expr!$err` |
-| Error match | `result\|{$ok:v body; $err:e body}` |
+mt | Error match | `result\ {$ok:v body; $err:e body}` |
 | String concat | `str.concat(a; b)` |
 | Static route | `http.getstatic(path; body)` |
 | Serve | `http.serveworkers(port; workers)` |
