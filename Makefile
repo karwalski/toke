@@ -63,7 +63,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all clean lint conform conform-check build-all ci check-docs test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all clean lint conform conform-check build-all ci check-docs diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -157,6 +157,16 @@ ci: lint conform conform-check check-tki check-docs
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
 check-docs: $(BIN)
 	python3 scripts/check_doc_examples.py docs
+
+# 124.0b — differential codegen regression gate (root of trust). Fails if any
+# full-program test's observable behaviour (compile / exit / stdout) changed vs
+# the recorded baseline. Run BEFORE landing a codegen change that feeds the
+# corpus; re-record (diff-codegen-record) only for an *intended* behaviour change.
+DIFF_CODEGEN_DIRS = test/standalone test/e2e test/codegen
+diff-codegen: $(BIN)
+	TOKE=./$(BIN) python3 scripts/diff_codegen.py --baseline test/codegen-baseline.json $(DIFF_CODEGEN_DIRS)
+diff-codegen-record: $(BIN)
+	TOKE=./$(BIN) python3 scripts/diff_codegen.py --record test/codegen-baseline.json $(DIFF_CODEGEN_DIRS)
 
 test-stdlib:
 	$(CC) $(CFLAGS) -o test/stdlib/test_str \
