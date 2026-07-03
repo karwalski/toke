@@ -3400,6 +3400,10 @@ The following JSON Schema defines the normative diagnostic record format for ver
 
 ### Reserved Keywords (9 keywords + 4 context keywords = 13 total)
 
+> **Superseded by [toke-spec-v0.4 §A](/docs/spec/toke-spec-v0.4/):** the keyword set
+> is **14** (`m i t f let if el lp br rt as mt sc mut`); `mut` and `sc` are keywords.
+> The count is not normative-critical (it depends on the reserved-vs-context split).
+
 | Keyword | Role | Notes |
 |---------|------|-------|
 | `if` | Conditional | Lowercase |
