@@ -9,7 +9,7 @@ order: 14
 
 The `std.env` module provides functions for reading and writing process environment variables. Keys and values are UTF-8 strings. Keys must not be empty or contain `=` or NUL characters. Changes made via `env.set` are visible to the current process only and are not inherited by previously-spawned children.
 
-> **Note:** `env.tki` exports four functions: `env.get`, `env.get_or`, `env.set`, and the `$enverr` sum type. Functions documented in earlier versions (`env.unset`, `env.all`, `env.expand`, `env.args`) are not in the current tki and are not compiled — do not use them.
+> **Note:** `env.tki` exports four functions: `env.get`, `env.getor`, `env.set`, and the `$enverr` sum type. Functions documented in earlier versions (`env.unset`, `env.all`, `env.expand`, `env.args`) are not in the current tki and are not compiled — do not use them.
 
 ## Types
 
@@ -41,7 +41,7 @@ f=showpath():i64{
 };
 ```
 
-### env.get_or(key: $str; default: $str): $str
+### env.getor(key: $str; default: $str): $str
 
 Looks up `key` and returns its value when the variable is set, or `default` when the variable is absent or the key is invalid. This function is always infallible.
 
@@ -50,7 +50,7 @@ m=example;
 i=env:std.env;
 
 f=getport():$str{
-  let port=env.get_or("PORT";"8080");
+  let port=env.getor("PORT";"8080");
   < port
 };
 ```
@@ -79,11 +79,11 @@ i=env:std.env;
 i=log:std.log;
 
 f=configure():i64{
-  let port=env.get_or("PORT";"3000");
-  let host=env.get_or("HOST";"0.0.0.0");
-  let debug=env.get_or("DEBUG";"false");
+  let port=env.getor("PORT";"3000");
+  let host=env.getor("HOST";"0.0.0.0");
+  let debug=env.getor("DEBUG";"false");
 
-  if(debug="true"){
+  if(debug=="true"){
     log.setlevel("debug")
   }el{
     log.setlevel("info")
@@ -91,7 +91,7 @@ f=configure():i64{
 
   let r=env.get("API_SECRET");
   let ok=mt r {$ok:s 1;$err:e 0};
-  if(ok=0){
+  if(ok==0){
     log.error("API_SECRET is required";@());
     <1
   }el{

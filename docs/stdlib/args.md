@@ -28,7 +28,7 @@ m=example;
 i=args:std.args;
 
 f=main():i64{
-  let n = args.count();  -- n >= 1
+  let n = args.count();  (* n >= 1 *)
   < 0
 };
 ```
@@ -62,7 +62,7 @@ f=main():i64{
   let all = args.all();
   let n   = args.count();
 
-  -- iterate over user-supplied args, skipping argv[0]
+  (* iterate over user-supplied args, skipping argv[0] *)
   lp(let i=1;i<n;i=i+1){
     let a = mt args.get(i) {$ok:s s;$err:e ""};
   };
@@ -77,7 +77,7 @@ i=args:std.args;
 
 f=main():i64{
   let argv = args.all();
-  -- argv.get(0) is the program name; argv.get(1..) are user flags
+  (* argv.get(0) is the program name; argv.get(1..) are user flags *)
   < 0
 };
 ```

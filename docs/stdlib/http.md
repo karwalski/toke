@@ -324,8 +324,8 @@ i=env:std.env;
 
 f=main():i64{
   let port=8080;
-  let cert=env.get_or("TLS_CERT";"");
-  let key=env.get_or("TLS_KEY";"");
+  let cert=env.getor("TLS_CERT";"");
+  let key=env.getor("TLS_KEY";"");
 
   log.openaccess("logs/access.log";10000;30;0);
   log.info("server starting";@(@("port";"8080")));
@@ -334,7 +334,7 @@ f=main():i64{
   http.getstatic("/health"; "ok");
   http.servedir("/static";"./public");
 
-  if(!(cert="")){
+  if(!(cert=="")){
     http.servetls(443;cert;key);
   }el{
     http.serveworkers(port as u64;4);

@@ -115,10 +115,6 @@
     {"kind": "func", "name": "http.streamnext",    "params": ["httpstream"],                          "return": "[byte]!httperr"},
     {"kind": "func", "name": "http.serve",         "params": ["u64"],                                 "return": "i64",
      "note": "port — convenience wrapper: starts server with 2 workers (default)"},
-    {"kind": "func", "name": "http.serve_workers", "params": ["u64", "u64"],                          "return": "void",
-     "note": "port; workers — starts pre-fork worker pool; workers=1 is single-process"},
-    {"kind": "func", "name": "http.serve_tls",     "params": ["u64", "str", "str"],                   "return": "void",
-     "note": "port; cert_path; key_path — start HTTPS server with TLS termination"},
     {"kind": "func", "name": "http.downloadfile", "params": ["httpclient", "str", "str"],             "return": "i64",
      "note": "client; url; dest_path — streaming file download, returns 0 on success, -1 on error"},
     {"kind": "func", "name": "http.getstaticmime", "params": ["str", "str", "str"],                  "return": "i64",
@@ -138,8 +134,8 @@
     {"kind": "func", "name": "http.servedir",      "params": ["str", "str"],                           "return": "i64",
      "note": "prefix; root — serve a static directory tree mounted under prefix"},
     {"kind": "func", "name": "http.serveworkers",  "params": ["u64", "u64"],                           "return": "i64",
-     "note": "port; workers — alias of serve_workers (no-underscore name ooke uses); pre-fork worker pool"},
+     "note": "port; workers — starts pre-fork worker pool; workers=1 is single-process"},
     {"kind": "func", "name": "http.servetls",      "params": ["u64", "str", "str"],                    "return": "i64",
-     "note": "port; cert_path; key_path — alias of serve_tls (no-underscore name ooke uses); HTTPS with TLS termination"}
+     "note": "port; cert_path; key_path — start HTTPS server with TLS termination"}
   ]
 }

@@ -188,9 +188,9 @@ i=env:std.env;
 i=log:std.log;
 
 f=configure():i64{
-  let mode = env.get_or("APP_MODE"; "production");
+  let mode = env.getor("APP_MODE"; "production");
 
-  if(mode="development"){
+  if(mode=="development"){
     log.setlevel("debug");
     log.setformat("text");
   }el{
@@ -258,10 +258,10 @@ i=http:std.http;
 i=env:std.env;
 
 f=main():i64{
-  let mode = env.get_or("APP_MODE"; "production");
+  let mode = env.getor("APP_MODE"; "production");
   let port  = 8080;
 
-  if(mode="development"){
+  if(mode=="development"){
     log.setlevel("debug");
     log.setformat("text");
   }el{

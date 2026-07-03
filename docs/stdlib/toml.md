@@ -26,7 +26,7 @@ i=toml:std.toml;
 
 f=demo():i64{
   let src = "[server]\nhost = \"localhost\"\nport = 8080\n";
-  let cfg = toml.load(src)!;
+  let cfg = mt toml.load(src) {$ok:v v;$err:e < 1};
   < 0
 };
 ```
@@ -41,7 +41,7 @@ m=example;
 i=toml:std.toml;
 
 f=demo():i64{
-  let cfg = toml.loadfile("ooke.toml")!;
+  let cfg = mt toml.loadfile("ooke.toml") {$ok:v v;$err:e < 1};
   < 0
 };
 ```
@@ -55,9 +55,10 @@ Retrieves the string value associated with `key` in the TOML table `v`. Returns 
 m=example;
 i=toml:std.toml;
 
-f=demo(cfg:$tomlval):$str{
-  let host = toml.str(cfg; "host")!;
-  < host
+f=main():i64{
+  let cfg = mt toml.load("[server]\nhost = \"localhost\"\n") {$ok:v v;$err:e < 1};
+  let host = mt toml.str(cfg; "host") {$ok:v v;$err:e ""};
+  < 0
 };
 ```
 
@@ -70,8 +71,9 @@ Retrieves the integer value associated with `key` in the TOML table `v`. Returns
 m=example;
 i=toml:std.toml;
 
-f=demo(cfg:$tomlval):i64{
-  let port = toml.i64(cfg; "port")!;
+f=main():i64{
+  let cfg = mt toml.load("[server]\nport = 8080\n") {$ok:v v;$err:e < 1};
+  let port = mt toml.i64(cfg; "port") {$ok:v v;$err:e 0};
   < port
 };
 ```
@@ -85,8 +87,9 @@ Retrieves the boolean value associated with `key` in the TOML table `v`. Returns
 m=example;
 i=toml:std.toml;
 
-f=demo(cfg:$tomlval):i64{
-  let debug = toml.bool(cfg; "debug")!;
+f=main():i64{
+  let cfg = mt toml.load("debug = true\n") {$ok:v v;$err:e < 1};
+  let debug = mt toml.bool(cfg; "debug") {$ok:v v;$err:e false};
   < 0
 };
 ```
@@ -100,10 +103,11 @@ Returns a `$tomlval` handle for the sub-table identified by `key`. The returned 
 m=example;
 i=toml:std.toml;
 
-f=demo(cfg:$tomlval):$str{
-  let server = toml.section(cfg; "server")!;
-  let host   = toml.str(server; "host")!;
-  < host
+f=main():i64{
+  let cfg = mt toml.load("[server]\nhost = \"localhost\"\n") {$ok:v v;$err:e < 1};
+  let server = mt toml.section(cfg; "server") {$ok:v v;$err:e < 1};
+  let host   = mt toml.str(server; "host") {$ok:v v;$err:e ""};
+  < 0
 };
 ```
 
@@ -120,13 +124,13 @@ i=str:std.str;
 f=main():i64{
   let cfg = mt toml.loadfile("ooke.toml") {$ok:v v;$err:e < 1};
 
-  let server  = toml.section(cfg; "server")!;
-  let host    = toml.str(server;  "host")!;
-  let port    = toml.i64(server;  "port")!;
-  let debug   = toml.bool(server; "debug")!;
+  let server  = mt toml.section(cfg; "server") {$ok:v v;$err:e < 1};
+  let host    = mt toml.str(server;  "host") {$ok:v v;$err:e ""};
+  let port    = mt toml.i64(server;  "port") {$ok:v v;$err:e 0};
+  let debug   = mt toml.bool(server; "debug") {$ok:v v;$err:e false};
 
-  let db      = toml.section(cfg; "db")!;
-  let db_url  = toml.str(db; "url")!;
+  let db      = mt toml.section(cfg; "db") {$ok:v v;$err:e < 1};
+  let dburl  = mt toml.str(db; "url") {$ok:v v;$err:e ""};
 
   log.info(str.concat("listening on "; str.concat(host; str.concat(":"; str.fromint(port)))); @());
   < 0

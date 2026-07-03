@@ -26,10 +26,10 @@ i=md:std.md;
 
 f=demo():i64{
   let html = md.render("# Hello\n\nWorld.");
-  -- html = "<h1>Hello</h1>\n<p>World.</p>\n"
+  (* html = "<h1>Hello</h1>\n<p>World.</p>\n" *)
 
   let empty = md.render("");
-  -- empty = ""
+  (* empty = "" *)
   < 0
 };
 ```

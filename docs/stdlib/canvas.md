@@ -29,10 +29,10 @@ Opaque handle to a single canvas drawing operation.
 | Function | Parameters | Return | Description |
 |----------|-----------|--------|-------------|
 | `canvas.new` | `id: $str; w: u32; h: u32` | `$canvas` | Create a new canvas |
-| `canvas.fill_rect` | `c: $canvas; x: f64; y: f64; w: f64; h: f64; color: $str` | `$canvas` | Draw a filled rectangle |
+| `canvas.fillrect` | `c: $canvas; x: f64; y: f64; w: f64; h: f64; color: $str` | `$canvas` | Draw a filled rectangle |
 | `canvas.stroke_rect` | `c: $canvas; x: f64; y: f64; w: f64; h: f64; color: $str; line_width: f64` | `$canvas` | Draw a stroked rectangle |
 | `canvas.clear_rect` | `c: $canvas; x: f64; y: f64; w: f64; h: f64` | `$canvas` | Clear a rectangular area |
-| `canvas.fill_text` | `c: $canvas; text: $str; x: f64; y: f64; font: $str; color: $str` | `$canvas` | Draw filled text |
+| `canvas.filltext` | `c: $canvas; text: $str; x: f64; y: f64; font: $str; color: $str` | `$canvas` | Draw filled text |
 | `canvas.begin_path` | `c: $canvas` | `$canvas` | Begin a new path |
 | `canvas.move_to` | `c: $canvas; x: f64; y: f64` | `$canvas` | Move the path cursor |
 | `canvas.line_to` | `c: $canvas; x: f64; y: f64` | `$canvas` | Add a line segment to the path |
@@ -43,7 +43,7 @@ Opaque handle to a single canvas drawing operation.
 | `canvas.draw_image` | `c: $canvas; src: $str; x: f64; y: f64; w: f64; h: f64` | `$canvas` | Draw an image from a URL or data URI |
 | `canvas.set_alpha` | `c: $canvas; alpha: f64` | `$canvas` | Set global alpha (0.0--1.0) |
 | `canvas.to_js` | `c: $canvas` | `$str` | Export drawing operations as JavaScript code |
-| `canvas.to_html` | `c: $canvas` | `$str` | Export as a self-contained HTML page |
+| `canvas.tohtml` | `c: $canvas` | `$str` | Export as a self-contained HTML page |
 
 ## Usage
 
@@ -53,10 +53,10 @@ i=canvas:std.canvas;
 
 f=main():i64{
   let c = canvas.new("mycanvas"; 400; 300);
-  let c2 = canvas.fill_rect(c; 0.0; 0.0; 400.0; 300.0; "#ffffff");
-  let c3 = canvas.fill_rect(c2; 50.0; 50.0; 100.0; 80.0; "#3366cc");
-  let c4 = canvas.fill_text(c3; "Hello"; 60.0; 100.0; "24px sans-serif"; "#ffffff");
-  let html = canvas.to_html(c4);
+  let c2 = canvas.fillrect(c; 0.0; 0.0; 400.0; 300.0; "#ffffff");
+  let c3 = canvas.fillrect(c2; 50.0; 50.0; 100.0; 80.0; "#3366cc");
+  let c4 = canvas.filltext(c3; "Hello"; 60.0; 100.0; "24px sans-serif"; "#ffffff");
+  let html = canvas.tohtml(c4);
   <0;
 }
 ```

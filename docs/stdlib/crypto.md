@@ -56,7 +56,7 @@ i=str:std.str;
 i=env:std.env;
 
 f=macdemo():$str{
-  let secret=env.get_or("HMAC_SECRET";"fallback");
+  let secret=env.getor("HMAC_SECRET";"fallback");
   let key=str.tobytes(secret);
   let payload=str.tobytes("amount=100&currency=usd");
   let tag=crypto.hmacsha256(key;payload);
@@ -148,7 +148,7 @@ f=gentoken():$str{
 };
 
 f=verifywebhook(body:$str;sigheader:$str):bool{
-  let secret=env.get_or("WEBHOOK_SECRET";"");
+  let secret=env.getor("WEBHOOK_SECRET";"");
   let key=str.tobytes(secret);
   let payload=str.tobytes(body);
   let expected=crypto.hmacsha256(key;payload);
