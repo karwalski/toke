@@ -68,19 +68,18 @@ types cannot be generic over type parameters.
 **Planned fix:** No timeline set. Generics are deferred indefinitely per the
 spec (Section 24).
 
-### 5. Option type is partial; the `$none` match arm miscodegen's
+### 5. Option type via `T!$none` — WORKS (no `$some` wrapper)
 
 `$none` exists as a built-in zero-field struct (`stdlib/option.tki`; `$none{}` is
-a value; the `T!$none` convention reuses the error-union machinery). Verified
-2026-07-03: a function returning `T!$none` compiles and the `$ok` path is correct
-(`find(5)→5`), **but the `$none` match arm returns `0` instead of the arm's
-value** (`mt find(0){$ok:v v;$none:e 42}` returns `0`, not `42`) — a codegen bug
-in the same family as #3. There is no `$some` wrapper or distinct `$option<T>`.
+a value; the `T!$none` convention reuses the error-union machinery). The prior
+`$none`-arm miscodegen is **fixed** (Epic 124.0a, 2026-07-04): `mt find(0){$ok:v
+v;$none:e 42}` now returns `42`, the `$ok` path returns the value, and an ok value
+of `0` is correctly distinguished from `$none`. Root cause was the return path —
+`<$none{}` stored `$none`'s zero box into `@tk_current_error` (colliding with the
+"no error" sentinel); the fix stores a non-zero flag for `$none` returns.
 
-**Workaround:** For optional returns, prefer a sentinel or
-`$result{$ok:T;$err:$str}` until the `$none`-arm codegen is fixed.
-
-**Status:** Codegen correctness bug — tracked in **Epic 123.5**.
+**Remaining:** there is still no `$some` wrapper or distinct `$option<T>` type, and
+closures/error-unions are not yet type-checked (see #3 follow-ups / ADR-0014).
 
 ### 6. No concurrency primitives beyond `std.task`
 

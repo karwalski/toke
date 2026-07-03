@@ -6045,6 +6045,17 @@ static void emit_stmt(Ctx *c, const Node *n)
                         fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", iv, box);
                         box = iv;
                     }
+                    /* 124.0a: `$none`'s box value is 0, which collides with the
+                     * "no error" sentinel in @tk_current_error — so a `<$none{}`
+                     * error return would be read as success and the caller's match
+                     * would take the $ok arm. Store a non-zero flag instead ($none
+                     * carries no payload, so the value is irrelevant). Named $err
+                     * types are non-null pointer boxes and are unaffected. */
+                    if (!strcmp(rsn, "none")) {
+                        int nz = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = add i64 0, 1 ; $none error flag\n", nz);
+                        box = nz;
+                    }
                     fprintf(c->out, "  store i64 %%t%d, i64* @tk_current_error\n", box);
                     if (!strcmp(rt, "void")) fputs("  ret void\n", c->out);
                     else if (!strcmp(rt, "double")) fputs("  ret double 0.0\n", c->out);
