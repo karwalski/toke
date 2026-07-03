@@ -34,18 +34,26 @@ reassignment to an immutable binding.
 **Planned fix:** None planned. This is intentional — mutability must be
 declared explicitly.
 
-### 3. Anonymous functions / closures miscodegen — DO NOT USE
+### 3. Closures / anonymous functions — IMPLEMENTED (capture by value)
 
-`fn(params){body}` anonymous functions parse and typecheck, but the emitted code
-is **incorrect at runtime**. Verified 2026-07-03: a pure `fn(x:i64):i64{<x+1}`
-called with `7` returns **`7`, not `8`** (the body computation is lost), and
-captured enclosing variables read as **`0`** (`fn(x){<x+base}` with `base=10`
-returns `x` only). The v0.4 capture-by-value design (76.1.9: `{fn_ptr,env_ptr}`
-pair) is not correctly wired, and even the non-capturing case is wrong.
+`fn(params){body}` anonymous functions now **compile and run correctly** (Epic
+124.0a, 2026-07-04). The prior silent-wrong-value miscodegen is fixed: non-capturing
+and capture-by-value closures, direct application `fn(x){<x+1}(7)`, binding + call
+`let f=fn(..){..}; f(a)`, closures passed/returned, and **nested closures** all
+produce correct values (verified `test/standalone/test_closures.tk`, 6/6). A closure
+value is a heap box `{fn_ptr, captured…}` (the `{fn_ptr,env_ptr}` design of 76.1.9);
+the lifted function is emitted at module scope and invoked via an indirect call.
 
-**Workaround:** Use named top-level functions; pass all needed values as explicit
-parameters and reference with `&name`. This is a **silent wrong-value** bug — it
-does not error, so avoid `fn(...)` entirely until fixed.
+**Remaining follow-ups (do not block use for the common i64/pointer case):**
+- The env is `malloc`'d and **not freed until process exit** — ref-counted free
+  (memory-model §2.5) is a follow-up. No use-after-free; just retained memory,
+  consistent with the arena model.
+- Closures are **not yet type-checked** (`types.c` returns `TY_UNKNOWN` for a
+  closure-valued call — call arity / arg / return types are unchecked). A soundness
+  follow-up (its own ADR-adjacent story); codegen is correct.
+- `f64` / array / map **closure params** aren't covered by the i64/pointer ABI yet.
+- The lexer emits a **spurious `W1020` "Rust keyword 'fn'"** warning on the valid
+  `fn(` closure form (harmless — it's a warning; a lexer fix is pending).
 
 **Status:** Codegen correctness bug — tracked in **Epic 123.5**.
 

@@ -1,0 +1,44 @@
+(* test_closures.tk — 124.0a: anonymous-function / closure codegen.
+ * Verifies non-capturing AND capturing closures compile *and run* correctly
+ * (fixes the silent-wrong-value miscodegen where fn(x){x+1}(7) returned 7 and
+ * captured vars read as 0). main returns the failure count (0 = all pass). *)
+m=test.closures;
+i=io:std.io;
+i=s:std.str;
+
+f=ck(name:str;got:i64;want:i64;acc:i64):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)); <acc }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");s.fromint(got))); <acc+1 }
+};
+
+f=main():i64{
+  let fails=mut.0;
+
+  (* pure closure, no capture, applied directly *)
+  fails=ck("pure";fn(x:i64):i64{<x+1}(7);8;fails);
+
+  (* single capture by value *)
+  let base=10;
+  let add=fn(x:i64):i64{<x+base};
+  fails=ck("capture";add(5);15;fails);
+
+  (* multiple captures *)
+  let a=3;
+  let b=4;
+  let g=fn(x:i64):i64{<x+a+b};
+  fails=ck("multicap";g(0);7;fails);
+
+  (* capture used, argument ignored *)
+  let k=100;
+  fails=ck("caponly";fn(x:i64):i64{<k}(0);100;fails);
+
+  (* no-capture closure bound then called *)
+  let dbl=fn(x:i64):i64{<x*2};
+  fails=ck("bound";dbl(21);42;fails);
+
+  (* nested closure: inner captures the outer scope's `a` (=3) *)
+  let outer=fn(y:i64):i64{let inner=fn(z:i64):i64{<z+a};<inner(y)};
+  fails=ck("nested";outer(10);13;fails);
+
+  <fails
+};

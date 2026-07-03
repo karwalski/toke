@@ -159,7 +159,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; } Ctx;
 
 /* ── SSA counter helpers ───────────────────────────────────────────── */
 /* next_tmp: allocate the next SSA temporary (%tN).
@@ -1878,6 +1878,32 @@ static void set_local_type(Ctx *c, const char *name, const char *ty);
 static const char *get_local_type(Ctx *c, const char *name);
 static const char *expr_llvm_type(Ctx *c, const Node *n);
 static const char *get_llvm_name(Ctx *c, const char *toke_name);
+
+/* 124.0a: build the LLVM function type of a closure's lifted function —
+ *   "<ret> (i8*, <pty0>, <pty1>, ...)"  (the env pointer is the first param).
+ * Writes it into out (without a trailing '*'); sets *ret_out to the LLVM
+ * return type. Params/return use their declared types; a closure with no
+ * return spec returns i64. */
+static void closure_sig(Ctx *c, const Node *clos, char *out, int sz, const char **ret_out) {
+    const char *ret = "i64";
+    for (int i = 0; i < clos->child_count; i++) {
+        if (clos->children[i]->kind == NODE_RETURN_SPEC &&
+            clos->children[i]->child_count > 0) {
+            ret = resolve_llvm_type(c, clos->children[i]->children[0]);
+            if (!strcmp(ret, "i8*")) ret = "i64";  /* i8* returns use i64 ABI */
+        }
+    }
+    if (ret_out) *ret_out = ret;
+    int off = snprintf(out, sz, "%s (i8*", ret);
+    for (int i = 0; i < clos->child_count && off < sz; i++) {
+        if (clos->children[i]->kind != NODE_PARAM) continue;
+        const char *pty = "i64";
+        if (clos->children[i]->child_count > 1 && clos->children[i]->children[1])
+            pty = resolve_llvm_type(c, clos->children[i]->children[1]);
+        off += snprintf(out + off, sz - off, ", %s", pty);
+    }
+    if (off < sz) snprintf(out + off, sz - off, ")");
+}
 static const char *expr_struct_type(Ctx *c, const Node *n);
 static const char *make_unique_name(Ctx *c, const char *toke_name);
 
@@ -2264,6 +2290,51 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = load %s, %s* %%%s\n", t, lty, lty, ln);
         }
         return t;
+    case NODE_CLOSURE: {
+        /* 124.0a: a closure value is an i8* to a heap box {fn_ptr, cap0, ...}.
+         * Emit the env box here; the lifted @__tk_closure_N is deferred to the
+         * module tail (emit_lifted_closures). Represented/stored as i8*. */
+        if (c->pend_clos_count >= 512) {
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = add i64 0, 0 ; closure limit exceeded\n", t);
+            return t;
+        }
+        int cid = c->pend_clos_count;
+        c->pend_clos[c->pend_clos_count++] = n;
+        const char **caps = NULL; int ncap = 0;
+        if (c->names)
+            for (int i = 0; i < c->names->capture_count; i++)
+                if (c->names->captures[i].closure_node == n) {
+                    caps = c->names->captures[i].cap_names;
+                    ncap = c->names->captures[i].cap_count; break;
+                }
+        char fpty[256]; const char *cret;
+        closure_sig(c, n, fpty, sizeof fpty, &cret); (void)cret;
+        int box = next_tmp(c);
+        fprintf(c->out, "  %%t%d = call i8* @malloc(i64 %d) ; closure %d\n", box, (1 + ncap) * 8, cid);
+        int base = next_tmp(c);
+        fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", base, box);
+        int fp = next_tmp(c);
+        fprintf(c->out, "  %%t%d = ptrtoint %s* @__tk_closure_%d to i64\n", fp, fpty, cid);
+        int g0 = next_tmp(c);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 0\n", g0, base);
+        fprintf(c->out, "  store i64 %%t%d, i64* %%t%d\n", fp, g0);
+        for (int i = 0; i < ncap; i++) {
+            int gi = next_tmp(c);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 %d\n", gi, base, i + 1);
+            const char *ln = get_llvm_name(c, caps[i]);
+            const char *lty = get_local_type(c, caps[i]);
+            if (ln && lty) {
+                int lv = next_tmp(c);
+                fprintf(c->out, "  %%t%d = load %s, %s* %%%s\n", lv, lty, lty, ln);
+                int cv = coerce_value(c, lv, lty, "i64");
+                fprintf(c->out, "  store i64 %%t%d, i64* %%t%d\n", cv, gi);
+            } else {
+                fprintf(c->out, "  store i64 0, i64* %%t%d ; capture %s unresolved\n", gi, caps[i]);
+            }
+        }
+        return box;  /* i8* box pointer, used as the closure value */
+    }
     case NODE_FUNC_REF: {
         /* &name — emit ptrtoint of function pointer to i64 */
         tok_cp(c->src, n, tb, sizeof tb);
@@ -2830,6 +2901,58 @@ static int emit_expr(Ctx *c, const Node *n)
         return t;
     }
     case NODE_CALL_EXPR: {
+        /* 124.0a: indirect call through a closure value — a direct application
+         * of a closure literal `fn(..){..}(args)`, or a call of a closure-bound
+         * local `let f=fn(..){..}; f(args)`. Both are an i8* env box whose slot 0
+         * is the lifted function pointer. */
+        {
+            const Node *callee = n->children[0];
+            const Node *clos = NULL;
+            if (callee->kind == NODE_CLOSURE) {
+                clos = callee;
+            } else if (callee->kind == NODE_IDENT) {
+                char cnm[128]; tok_cp(c->src, callee, cnm, sizeof cnm);
+                for (int i = 0; i < c->clos_lcount; i++)
+                    if (!strcmp(c->clos_lname[i], cnm)) { clos = c->clos_lnode[i]; break; }
+            }
+            if (clos) {
+                char fpty[256]; const char *cret;
+                closure_sig(c, clos, fpty, sizeof fpty, &cret);
+                int box = emit_expr(c, callee);          /* i8* env box */
+                int na = n->child_count - 1; if (na > 16) na = 16;
+                int argv[16]; const char *argt[16];
+                for (int i = 0; i < na; i++) {
+                    int av = emit_expr(c, n->children[i + 1]);
+                    const char *aty = expr_llvm_type(c, n->children[i + 1]);
+                    const char *pty = "i64"; int pj = 0;
+                    for (int k = 0; k < clos->child_count; k++) {
+                        if (clos->children[k]->kind != NODE_PARAM) continue;
+                        if (pj == i) {
+                            if (clos->children[k]->child_count > 1 && clos->children[k]->children[1])
+                                pty = resolve_llvm_type(c, clos->children[k]->children[1]);
+                            break;
+                        }
+                        pj++;
+                    }
+                    argv[i] = coerce_value(c, av, aty, pty);
+                    argt[i] = pty;
+                }
+                int base = next_tmp(c);
+                fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", base, box);
+                int g0 = next_tmp(c);
+                fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 0\n", g0, base);
+                int fpi = next_tmp(c);
+                fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", fpi, g0);
+                int fp = next_tmp(c);
+                fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to %s*\n", fp, fpi, fpty);
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call fastcc %s %%t%d(i8* %%t%d", t, cret, fp, box);
+                for (int i = 0; i < na; i++)
+                    fprintf(c->out, ", %s %%t%d", argt[i], argv[i]);
+                fputs(")\n", c->out);
+                return t;
+            }
+        }
         /* --- Instance method calls on local variables (array.append / map.set) --- */
         if (n->children[0]->kind == NODE_FIELD_EXPR &&
             n->children[0]->child_count >= 2) {
@@ -5133,6 +5256,8 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
     case NODE_ARRAY_LIT:
     case NODE_MAP_LIT:
         return "i8*";
+    case NODE_CLOSURE:            /* 124.0a: closure value is an i8* env box */
+        return "i8*";
     case NODE_IDENT: {
         char nb[128]; tok_cp(c->src, n, nb, sizeof nb);
         if (!strcmp(nb, "true") || !strcmp(nb, "false")) return "i1";
@@ -5772,6 +5897,14 @@ static void emit_stmt(Ctx *c, const Node *n)
         int has_ann = (n->child_count >= 3 && n->children[2]);
         const Node *init_node = has_ann ? n->children[2] : (n->child_count >= 2 ? n->children[1] : NULL);
         if (init_node) {
+            /* 124.0a: remember closure-bound locals so a later `f(args)` lowers
+             * as an indirect call. Record the toke name before make_unique_name. */
+            if (init_node->kind == NODE_CLOSURE && c->clos_lcount < 64) {
+                strncpy(c->clos_lname[c->clos_lcount], tb, NAME_BUF - 1);
+                c->clos_lname[c->clos_lcount][NAME_BUF - 1] = '\0';
+                c->clos_lnode[c->clos_lcount] = init_node;
+                c->clos_lcount++;
+            }
             const char *vty;
             if (has_ann)
                 vty = resolve_llvm_type(c, n->children[1]);
@@ -6799,6 +6932,72 @@ static int body_references_symbol(const char *body, long body_len, const char *n
  *
  * Returns 0 on success, -1 on I/O error (with diagnostic emitted).
  */
+/* 124.0a: emit the lifted top-level function for one closure, at module tail.
+ *   define internal fastcc <ret> @__tk_closure_N(i8* %__env, <ptys> %p.arg)
+ * Captured vars are loaded from the env box (slots 1..ncap; slot 0 is the fn
+ * pointer) into locals; params are spilled; the body runs with cur_fn_ret set
+ * so `<expr` returns from the lifted function. Mirrors NODE_FUNC_DECL + the
+ * globals-init ctor (both reset per-function state and write to c->out). */
+static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
+    c->ptr_count = 0; c->local_count = 0; c->alias_count = 0;
+    c->name_scope = 0; c->term = 0;
+    const char *ret; char fpty[256];
+    closure_sig(c, clos, fpty, sizeof fpty, &ret); (void)fpty;
+    c->cur_fn_ret = ret; c->cur_fn_err[0] = '\0';
+    strncpy(c->cur_fn_name, "closure", NAME_BUF - 1); c->cur_fn_name[NAME_BUF - 1] = '\0';
+    fprintf(c->out, "\ndefine internal fastcc %s @__tk_closure_%d(i8* %%__env", ret, cid);
+    const Node *body = NULL;
+    for (int i = 0; i < clos->child_count; i++) {
+        if (clos->children[i]->kind == NODE_STMT_LIST) body = clos->children[i];
+        if (clos->children[i]->kind != NODE_PARAM) continue;
+        char pn[128]; tok_cp(c->src, clos->children[i]->children[0], pn, sizeof pn);
+        const char *pty = "i64";
+        if (clos->children[i]->child_count > 1 && clos->children[i]->children[1])
+            pty = resolve_llvm_type(c, clos->children[i]->children[1]);
+        fprintf(c->out, ", %s %%%s.arg", pty, pn);
+    }
+    fputs(") nounwind #0 {\nbb.entry:\n", c->out);
+    int envb = next_tmp(c);
+    fprintf(c->out, "  %%t%d = bitcast i8* %%__env to i64*\n", envb);
+    const char **caps = NULL; int ncap = 0;
+    if (c->names)
+        for (int i = 0; i < c->names->capture_count; i++)
+            if (c->names->captures[i].closure_node == clos) {
+                caps = c->names->captures[i].cap_names;
+                ncap = c->names->captures[i].cap_count; break;
+            }
+    for (int i = 0; i < ncap; i++) {
+        int gi = next_tmp(c);
+        fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 %d\n", gi, envb, i + 1);
+        int lv = next_tmp(c);
+        fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", lv, gi);
+        set_local_type(c, caps[i], "i64");
+        fprintf(c->out, "  %%%s = alloca i64\n  store i64 %%t%d, i64* %%%s\n", caps[i], lv, caps[i]);
+    }
+    for (int i = 0; i < clos->child_count; i++) {
+        if (clos->children[i]->kind != NODE_PARAM) continue;
+        char pn[128]; tok_cp(c->src, clos->children[i]->children[0], pn, sizeof pn);
+        const char *pty = "i64";
+        if (clos->children[i]->child_count > 1 && clos->children[i]->children[1])
+            pty = resolve_llvm_type(c, clos->children[i]->children[1]);
+        set_local_type(c, pn, pty);
+        fprintf(c->out, "  %%%s = alloca %s\n  store %s %%%s.arg, %s* %%%s\n", pn, pty, pty, pn, pty, pn);
+    }
+    if (body) emit_stmt(c, body);
+    if (!c->term) {
+        if (!strcmp(ret, "void")) fputs("  ret void\n", c->out);
+        else fprintf(c->out, "  ret %s 0 ; implicit\n", ret);
+    }
+    fputs("}\n", c->out);
+    c->cur_fn_ret = NULL; c->cur_fn_name[0] = '\0';
+}
+
+/* Drain the pending-closure list; nested closures append during emission. */
+static void emit_lifted_closures(Ctx *c) {
+    for (int i = 0; i < c->pend_clos_count; i++)
+        emit_lifted_closure(c, c->pend_clos[i], i);
+}
+
 int emit_llvm_ir(const Node *ast, const char *src,
                  const CodegenEnv *env, const char *out_ll)
 {
@@ -6811,6 +7010,9 @@ int emit_llvm_ir(const Node *ast, const char *src,
     Ctx ctx; memset(&ctx, 0, sizeof ctx); ctx.out = f; ctx.src = src;
     /* Story 76.1.2d: store source file for FFI extern diagnostic */
     ctx.source_file = (env && env->source_file) ? env->source_file : "";
+    /* 124.0a: thread the name-resolver's NameEnv (closure capture side-table)
+     * into codegen so NODE_CLOSURE lowering can read each closure's captures. */
+    ctx.names = (env) ? env->names : (NameEnv*)0;
     /* Story 76.1.5: debug metadata support */
     if (env && env->debug) {
         ctx.debug = 1;
@@ -6986,6 +7188,11 @@ int emit_llvm_ir(const Node *ast, const char *src,
                 "[{ i32, void ()*, i8* } { i32 65535, void ()* @%s, i8* null }]\n",
                 ctor_name);
     }
+
+    /* 124.0a: emit lifted closure functions (mirrors the ctor above; must run
+     * before the fwd-decl/string-global flushes so the forward-referenced
+     * @__tk_closure_N symbols are defined at module scope). */
+    emit_lifted_closures(&ctx);
 
     /* Flush forward declarations for cross-module user function calls */
     if (ctx.fwd_decls_len > 0)
