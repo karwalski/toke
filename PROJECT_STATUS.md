@@ -1,9 +1,15 @@
 # PROJECT_STATUS.md
-## toke — Live Project Status
+## toke — Live Project Status (high-level dashboard)
 
-**Last updated:** see git log  
-**Current phase:** Default Syntax Implementation (Gate 1 passed)
-**Current milestone:** M1 — Reference compiler complete; M2 — Standard Library Core
+> **Source of truth:** `docs/progress.md` (detailed per-story tracker). This file is
+> a **regenerated high-level view** — do not hand-edit it independently; update
+> `docs/progress.md` and summarise here. (Governance: one authoritative tracker;
+> dashboards are views, not parallel state.)
+
+**Last updated:** 2026-07-03
+**Current phase:** v0.4 language foundation + pre-from-scratch-training hardening
+**Current milestone:** M3 — post-Gate-2 functional-correctness sprint; week-12 GO/NO-GO mid-August
+**Language version:** **v0.4** — Epic 116 shipped the breaking `=`/`==` split, expression-`if`/`match`, `&&`/`||`, and a backtrack-free grammar. The earlier "v0.3 LOCKED / no breaking changes" freeze was superseded; v1.0 RFC pending.
 
 ---
 
@@ -11,63 +17,32 @@
 
 | Gate | Month | Criterion | Status |
 |------|-------|-----------|--------|
-| Gate 1 | 8 | >10% token reduction AND Pass@1 ≥ 60% | PASS (2026-04-03: 12.5% reduction, 63.7% Pass@1) |
-| Gate 2 | 14 | Extended features retain efficiency AND 7B model beats baseline | ON HOLD (waiting for local compute) |
-| Gate 3 | 26 | Two+ model families ≥70% Pass@1 AND self-improvement loop running | not reached |
-| Gate 4 | 32 | All benchmarks met, spec complete, consortium proposal ready | not reached |
+| Gate 1 | 8 | >10% token reduction AND Pass@1 ≥ 60% | **PASS** (2026-04-03: 12.5% reduction, 63.7% Pass@1) |
+| Gate 2 | 14 | Extended features retain efficiency AND model beats baseline | **PASS on the *compile* criterion** (2026-05-22): 100% compile-Pass@1 on the curated hidden+eval set, cloud-trained Qwen 2.5 Coder 7B + QLoRA (37h, A10G). **Open weakness: functional correctness 55.6%** (272/489); a full-local re-audit (101.R1, v0.3.9) found 1093/1748 COMPILE_FAIL. The Gate-2 model was **v0.3-trained** — corpus/tokenizer/model need refresh for v0.4. See `docs/metrics-baseline.md`. |
+| Gate 3 | 26 | Two+ model families ≥70% Pass@1 AND self-improvement loop | not reached |
+| Gate 4 | 32 | All benchmarks met, spec complete, consortium proposal | not reached |
 
 ---
 
-## Epic Status
+## Current focus (detail in `docs/progress.md`)
 
-| Epic | Title | Status |
-|------|-------|--------|
-| 1.1 | Language Specification Lock | done |
-| 1.2 | Reference Compiler Frontend | done |
-| 1.3 | Standard Library Core | done |
-| 1.4 | Mac Studio Setup and Local Pipeline | backlog |
-| 1.5 | Phase A Corpus Generation | backlog |
-| 1.6 | Gate 1 Benchmark | backlog |
-| 1.7 | Compiler Security and SAST | backlog |
-| 1.8 | Corpus Pipeline Threat Model | backlog |
-| 1.9 | Remote Monitoring Console | done |
-| 1.10 | Phase 1 Integration and Conformance Review | backlog |
-| 2.6 | Responsible Disclosure and CVE Process | done |
-| 3.7 | Supply Chain Security and Release Signing | backlog |
-| 4.6 | Security Audit and Hosted Service Readiness | backlog |
+- **Runnable now (laptop):** Epic 123 (foundation, root-of-trust, quality — in progress); Epic 119 (docs compile-health — done, gate green); Epics 120–122 (security audit done; remediation + ADR ratification pending); v0.4 uplift 116.13 / 117 (ooke migrated) / 118 (corpus 84% compile).
+- **Compute-gated (~Oct local hardware):** tokenizer retrain (116.9), from-scratch training (116.12), corpus regeneration (116.8), idiom re-measure (118.3/118.4), website deploy (117.6 — also owner-approval-gated).
+- **Awaiting owner decision:** ADR-0010 (ambient authority), ADR-0011 (injection/auto-escape), ADR-0012 (spatial safety), ADR-0013 (crypto agility); generics investigation (ADR-0014).
 
 ---
 
-## Active Blockers
+## Honest-metrics rule
 
-None.
-
----
-
-## Known Technical Debt
-
-- Arena escape detection (E5001) is conservative: flags any assignment to a module-scope variable inside an arena block. Needs `arena_depth` field added to `Decl` struct in names.h to distinguish pre-arena vs. in-arena declarations. (story 1.2.5)
-- LLVM backend: `as` cast emits identity stub (full sitofp/fptosi/trunc/zext requires TypeEnv wiring); struct field GEP always uses offset 0 (correct only for first field); nested break requires a loop-label stack. (story 1.2.8)
+External / efficiency / academic claims MUST use the numbers + methodology in
+`docs/metrics-baseline.md` (the `--min` token basis, functional-correctness %, and
+the v0.3-era caveat) — **not** the headline "Gate 2 PASS 100%", which is compile-only
+on a curated set.
 
 ---
 
-## Next Action
+## Governance & top risk
 
-Epic 1.1 complete including spec review gate (story 1.1.6, branch feature/spec-review-m0).
-Spec review resolved 7 blocking issues; 4 warnings and 4 notes remain as tracked risks.
-Two pre-conditions must be met before 1.2.1 starts:
-  1. Document BOOL_LIT vs IDENT token-class strategy
-  2. Document string interpolation lexer strategy
-Both are ~1 day each and can run in parallel with sprint planning.
-
-Epics 1.2, 1.3, 1.7, 1.8 complete.
-
-**Current blocker:** Epic 1.4 (Mac Studio configuration) requires physical hardware setup.
-All of 1.4.x, 1.5.x, and 1.6.2–1.6.4 are blocked until 1.4.1 is done.
-
-Epic 2.6 (Responsible Disclosure and CVE Process) complete (feature/security-disclosure).
-GitHub UI actions still required: enable private vulnerability reporting on karwalski/toke, karwalski/toke-model; establish Advisory Database point of contact.
-
-Epics 2.7 (Standard Library Expansion) and 3.8 (Standard Library Production Hardening) added to backlog.
-
-Epic 1.9 (Remote Monitoring Console) started: stories 1.9.1 (job manager daemon) and 1.9.2 (web dashboard) implemented at toke-model/corpus/monitor/. Stories 1.9.3 (log streaming) and 1.9.4 (auth/HTTPS) remain.
+BDFL (single maintainer) until spec 1.0 + a second conformant compiler, or a 2+ org
+consortium adopts the spec (→ TSC). **#1 accepted risk: single-developer bus factor
+(R005).** See `docs/governance.md`, `docs/risk-register.md`.
