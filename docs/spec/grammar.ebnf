@@ -1,6 +1,6 @@
-(* toke v0.3 Formal Grammar — EBNF *)
-(* Normative per toke-spec-v0.3.md Section 10. *)
-(* Matches the reference compiler (toke src/parser.c) as of 2026-05-01. *)
+(* toke v0.4 Formal Grammar — EBNF *)
+(* Normative per toke-spec-v0.3.md §10 as amended by toke-spec-v0.4.md. *)
+(* Matches the reference compiler (toke src/parser.c) as of 2026-07-03. *)
 (*                                                                        *)
 (* Notation:                                                              *)
 (*   =   definition          ;   termination                              *)
@@ -15,7 +15,9 @@
 (* every Stmt and Decl is written with a terminating ';', but the         *)
 (* compiler silently accepts its absence in that position.                *)
 (*                                                                        *)
-(* Keywords (13): m i t f let if el lp br rt as mt sc                    *)
+(* Keywords (14): m i t f let if el lp br rt as mt sc mut                *)
+(* (v0.4 §A: 14 keywords; `mut` and `sc` are keywords; `&&`/`||` and the *)
+(* two-char operators `== != <= >=` are lexical, not keywords.)          *)
 
 
 (* ================================================================== *)
@@ -109,7 +111,10 @@ ExprStmt     = Expr ';' ;
 (*   → UnaryExpr → PropagateExpr → CallExpr → PostfixExpr → PrimaryExpr   *)
 
 (* A1: `if` and `mt` are keyword-led expression forms, resolved before the      *)
-(* binary chain (single-token lookahead on the leading keyword — strict LL(1)). *)
+(* binary chain (single-token lookahead on the leading keyword). The grammar    *)
+(* as a whole is NOT strict LL(1): it is backtrack-free with a small, closed set *)
+(* of deterministic bounded (≤3-token) disambiguations — see Appendix A and     *)
+(* toke-spec-v0.4.md §E, which retire the earlier "strict LL(1)" claim.         *)
 (* Both yield a value: an if-expression yields the tail expression of the taken *)
 (* block; a match yields the taken arm's value. The `if` expression form        *)
 (* REQUIRES `el` (a value on every path); the statement form (IfStmt) does not. *)

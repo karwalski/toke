@@ -1,10 +1,13 @@
-# Known Limitations — toke compiler v0.3
+# Known Limitations — toke compiler v0.4
 
-Last updated: 2026-05-05
+Last updated: 2026-07-03 (empirically re-verified against the reference compiler)
 
 This document lists known limitations, workarounds, and planned fixes for the
-toke compiler v0.3 release. It covers the language, code generation, build
-system, and runtime.
+toke compiler v0.4 release. It covers the language, code generation, build
+system, and runtime. Each entry marked "verified 2026-07-03" was confirmed by
+compiling and *running* a minimal program (exit-code check), not just `--check`
+— several prior entries were stale in both directions (bitwise operators are now
+implemented; anonymous functions now compile but miscodegen).
 
 ---
 
@@ -31,16 +34,20 @@ reassignment to an immutable binding.
 **Planned fix:** None planned. This is intentional — mutability must be
 declared explicitly.
 
-### 3. No closures with environment capture
+### 3. Anonymous functions / closures miscodegen — DO NOT USE
 
-Anonymous functions cannot capture variables from their enclosing scope.
-Function references (`&name`) work but only for named, top-level functions.
+`fn(params){body}` anonymous functions parse and typecheck, but the emitted code
+is **incorrect at runtime**. Verified 2026-07-03: a pure `fn(x:i64):i64{<x+1}`
+called with `7` returns **`7`, not `8`** (the body computation is lost), and
+captured enclosing variables read as **`0`** (`fn(x){<x+base}` with `base=10`
+returns `x` only). The v0.4 capture-by-value design (76.1.9: `{fn_ptr,env_ptr}`
+pair) is not correctly wired, and even the non-capturing case is wrong.
 
-**Workaround:** Pass all needed values as explicit function parameters.
+**Workaround:** Use named top-level functions; pass all needed values as explicit
+parameters and reference with `&name`. This is a **silent wrong-value** bug — it
+does not error, so avoid `fn(...)` entirely until fixed.
 
-**Planned fix:** Deferred to v0.4. Design decided: capture by value,
-`fn(params){body}` syntax, `{fn_ptr, env_ptr}` pair representation, malloc-based
-env with no auto-free in v0.4. (Story 76.1.9)
+**Status:** Codegen correctness bug — tracked in **Epic 123.5**.
 
 ### 4. No generics or traits
 
@@ -53,14 +60,19 @@ types cannot be generic over type parameters.
 **Planned fix:** No timeline set. Generics are deferred indefinitely per the
 spec (Section 24).
 
-### 5. No option type
+### 5. Option type is partial; the `$none` match arm miscodegen's
 
-There is no built-in `$option` / `$some` / `$none` sum type.
+`$none` exists as a built-in zero-field struct (`stdlib/option.tki`; `$none{}` is
+a value; the `T!$none` convention reuses the error-union machinery). Verified
+2026-07-03: a function returning `T!$none` compiles and the `$ok` path is correct
+(`find(5)→5`), **but the `$none` match arm returns `0` instead of the arm's
+value** (`mt find(0){$ok:v v;$none:e 42}` returns `0`, not `42`) — a codegen bug
+in the same family as #3. There is no `$some` wrapper or distinct `$option<T>`.
 
-**Workaround:** Use a sentinel value (e.g. -1 or 0) to represent "no value",
-or use `$result{$ok:T;$err:$str}` if error context is appropriate.
+**Workaround:** For optional returns, prefer a sentinel or
+`$result{$ok:T;$err:$str}` until the `$none`-arm codegen is fixed.
 
-**Planned fix:** Deferred to v0.4 (Story 76, milestone from Section 24).
+**Status:** Codegen correctness bug — tracked in **Epic 123.5**.
 
 ### 6. No concurrency primitives beyond `std.task`
 
@@ -75,14 +87,14 @@ servers, ooke uses pre-fork for scaling.
 **Planned fix:** `sc`/`spawn` keywords deferred to v0.5 (Story 76.1.1b).
 Formal memory model documented (Story 76.1.4).
 
-### 7. Bitwise operators deferred
+### 7. ~~Bitwise operators deferred~~ — IMPLEMENTED
 
-`&`, `^`, `~`, `<<`, `>>` are not implemented.
-
-**Workaround:** Use stdlib math functions where available, or restructure
-algorithms to avoid bitwise operations.
-
-**Planned fix:** Deferred to v0.5+.
+`&` `|` `^` `<<` `>>` are implemented and verified at runtime (2026-07-03:
+`5&3=1`, `5|2=7`, `5^3=6`, `1<<3=8`, `8>>1=4`). Precedence chain is
+`BitOr → BitXor → BitAnd` (`src/parser.c` `parse_bitor`/`parse_bitxor`/
+`parse_bitand`). Note single `|` is bitwise-OR (distinct from `||`). A dedicated
+`~` (bitwise NOT) prefix operator is not confirmed here — use `(0-1) ^ x` if a
+NOT is needed, or verify `~` separately.
 
 ### 8. `@wrapping` overflow annotation not implemented
 

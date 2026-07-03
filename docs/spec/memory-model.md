@@ -8,8 +8,8 @@ order: 6
 # toke Memory Model Specification
 
 **Status:** Normative [N]
-**Extends:** toke Language Specification v0.3, Section 14
-**Version:** 0.3.2
+**Extends:** toke Language Specification §14 (v0.3 base as amended by toke-spec-v0.4.md)
+**Version:** 0.4 (memory model unchanged from 0.3.2; re-stamped for the v0.4 line)
 
 This document formalises the memory model that toke programs operate under. It covers arena allocation, value lifetimes, concurrency memory semantics, and FFI boundary rules. All sections are normative unless marked [I].
 
