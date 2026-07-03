@@ -157,6 +157,21 @@ int main(void)
     }
 
     /* -------------------------------------------------------------------
+     * 10b. 124.3 (ADR-0011): attribute values are escaped in attribute
+     *      context — a `"` in a value must NOT break out of the attribute
+     *      and inject markup (XSS).
+     * ------------------------------------------------------------------- */
+    {
+        TkHtmlNode *node = html_a("\"><script>alert(1)</script>", "x");
+        const char *out  = html_node_render(node);
+        ASSERT(out && strstr(out, "<script>") == NULL,
+               "html attr escaping: raw <script> injection is neutralized");
+        ASSERT_CONTAINS(out, "&quot;", "html attr escaping: \" becomes &quot;");
+        free((void *)out);
+        html_node_free(node);
+    }
+
+    /* -------------------------------------------------------------------
      * 11. html_img: void element with src and alt
      * ------------------------------------------------------------------- */
     {

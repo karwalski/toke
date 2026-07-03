@@ -165,7 +165,14 @@ static void render_attrs(TkHtmlNode *node, Buf *b)
         buf_appendc(b, ' ');
         buf_append(b, a->name);
         buf_append(b, "=\"");
-        buf_append(b, a->value);
+        /* 124.3 (ADR-0011): context-aware escaping — attribute values are emitted
+         * in a double-quoted attribute context. A raw value containing `"` would
+         * break out of the attribute and inject further attributes / event
+         * handlers (XSS). html_escape covers & < > " ' — safe for quoted attrs. */
+        const char *val = a->value ? a->value : "";
+        const char *esc = html_escape(val);
+        buf_append(b, esc ? esc : val);
+        free((void *)esc);
         buf_appendc(b, '"');
         a = a->next;
     }
