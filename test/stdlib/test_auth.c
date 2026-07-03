@@ -130,6 +130,20 @@ int main(void)
     free(tampered);
 
     /* ------------------------------------------------------------------ */
+    /* auth_jwtverify — alg:none rejection (ADR-0013b, 124.1)             */
+    /* ------------------------------------------------------------------ */
+
+    /* A token whose header declares "alg":"none" must be rejected outright,
+     * regardless of its (stripped/forged) signature — the classic JWT
+     * algorithm-confusion / signature-strip attack. The header segment below
+     * b64url-decodes to {"alg":"none","typ":"JWT"}. */
+    const char *alg_none_token =
+        "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhdHRhY2tlciJ9.AAAA";
+    JwtVerifyResult none_result = auth_jwtverify(alg_none_token, secret);
+    ASSERT(none_result.is_err == 1,
+           "jwtverify alg:none token rejected (is_err=1)");
+
+    /* ------------------------------------------------------------------ */
     /* auth_jwtverify — wrong secret                                       */
     /* ------------------------------------------------------------------ */
 

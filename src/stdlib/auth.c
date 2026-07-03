@@ -324,6 +324,35 @@ JwtVerifyResult auth_jwtverify(const char *token, ByteArray secret)
         return result;
     }
 
+    /* 124.1 (ADR-0013b): explicit JWT algorithm allowlist. Decode the header and
+     * require alg == "HS256"; reject "none" (the classic signature-strip attack),
+     * a missing alg, and any other/unsupported algorithm. Defense-in-depth: the
+     * HMAC check below already rejects a stripped signature by length, but an
+     * explicit allowlist is the audit-compliant, forward-safe behaviour (and the
+     * only correct thing once more algorithms are ever added). */
+    {
+        ByteArray hdr = encoding_b64urldecode(part[0]);
+        char alg[32] = "";
+        int alg_ok = 0;
+        if (hdr.data) {
+            char *hdr_json = (char *)malloc(hdr.len + 1);
+            if (hdr_json) {
+                memcpy(hdr_json, hdr.data, hdr.len);
+                hdr_json[hdr.len] = '\0';
+                if (json_get_str(hdr_json, "alg", alg, sizeof alg) &&
+                    !strcmp(alg, "HS256"))
+                    alg_ok = 1;
+                free(hdr_json);
+            }
+        }
+        free((void *)hdr.data);
+        if (!alg_ok) {
+            free(part[0]); free(part[1]); free(part[2]);
+            result.err_msg = "unsupported or missing JWT algorithm (only HS256 allowed)";
+            return result;
+        }
+    }
+
     /* Re-compute expected signature over "header.payload" */
     char *signing_input = concat3(part[0], '.', part[1]);
     if (!signing_input) {
