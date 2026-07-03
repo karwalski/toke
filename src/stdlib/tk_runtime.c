@@ -316,3 +316,11 @@ void tk_div_trap(int32_t op_code) {
     fprintf(stderr, "RT004: %s by zero\n", op_code == 1 ? "remainder" : "division");
     exit(1);
 }
+
+/* 124.2a: RT003 — array subscript out of bounds. `arr[i]`/`arr.get(i)` with i
+ * outside [0, len) is undefined at the machine level; toke traps instead. */
+void tk_bounds_trap(int64_t idx, int64_t len) {
+    fprintf(stderr, "RT003: index %lld out of bounds for length %lld\n",
+            (long long)idx, (long long)len);
+    exit(1);
+}

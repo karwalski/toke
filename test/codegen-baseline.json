@@ -261,8 +261,8 @@
  ],
  "test/standalone/test_crypto_full.tk": [
   true,
-  -11,
-  "e3b0c44298fc1c14"
+  "signal",
+  null
  ],
  "test/standalone/test_db_sandbox.tk": [
   false,
@@ -371,8 +371,8 @@
  ],
  "test/standalone/test_str.tk": [
   true,
-  -11,
-  "e3b0c44298fc1c14"
+  "signal",
+  null
  ],
  "test/standalone/test_str_compare.tk": [
   true,

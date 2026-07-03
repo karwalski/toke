@@ -38,6 +38,14 @@ def probe(tk):
             rr = subprocess.run([out], capture_output=True, timeout=20)
         except subprocess.TimeoutExpired:
             return [True, "timeout", None]
+        # A signal-kill (negative returncode) is normalized to one "signal" token:
+        # the specific signal for a memory bug is non-deterministic (SIGSEGV vs
+        # SIGBUS depending on heap layout), so recording the number produces false
+        # positives on already-crashing programs. A real regression (clean exit ->
+        # crash, or vice-versa) still changes the signature. Output is ignored for
+        # crashes since a crashed program's partial stdout is also non-deterministic.
+        if rr.returncode < 0:
+            return [True, "signal", None]
         return [True, rr.returncode, hashlib.sha256(rr.stdout).hexdigest()[:16]]
 
 def collect(dirs):

@@ -4034,6 +4034,27 @@ static int emit_expr(Ctx *c, const Node *n)
             idx = z;
           }
         }
+        /* 124.2a: RT003 bounds check on the real array-subscript path (Vec, map,
+         * module-alias, and stdlib `.get` were all dispatched earlier). The array
+         * length is stored at base[-1] (tk_arr_alloc layout); trap if idx is
+         * outside [0, len). base==null is a pre-existing nil-deref (RT005, parked)
+         * and still faults here as before. */
+        {
+            int lenp = next_tmp(c);
+            fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i64 -1 ; RT003 len\n", lenp, base);
+            int len = next_tmp(c);
+            fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", len, lenp);
+            int lo = next_tmp(c), hi = next_tmp(c), oob = next_tmp(c);
+            fprintf(c->out, "  %%t%d = icmp slt i64 %%t%d, 0\n", lo, idx);
+            fprintf(c->out, "  %%t%d = icmp sge i64 %%t%d, %%t%d\n", hi, idx, len);
+            fprintf(c->out, "  %%t%d = or i1 %%t%d, %%t%d\n", oob, lo, hi);
+            int lt = next_lbl(c), lc = next_lbl(c);
+            fprintf(c->out, "  br i1 %%t%d, label %%oob_trap%d, label %%oob_ok%d\n", oob, lt, lc);
+            fprintf(c->out, "oob_trap%d:\n", lt);
+            fprintf(c->out, "  call void @tk_bounds_trap(i64 %%t%d, i64 %%t%d)\n", idx, len);
+            fprintf(c->out, "  unreachable\n");
+            fprintf(c->out, "oob_ok%d:\n", lc);
+        }
         t2 = next_tmp(c); t = next_tmp(c);
         fprintf(c->out, "  %%t%d = getelementptr i64, i64* %%t%d, i64 %%t%d\n", t2, base, idx);
         fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", t, t2);
@@ -6681,6 +6702,7 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_runtime_init", "declare void @tk_runtime_init(i32, i8**)", 1},
     {"tk_overflow_trap", "declare void @tk_overflow_trap(i32)", 1},
     {"tk_div_trap", "declare void @tk_div_trap(i32)", 0},  /* 124.2b: RT004 divide-by-zero */
+    {"tk_bounds_trap", "declare void @tk_bounds_trap(i64, i64)", 0},  /* 124.2a: RT003 OOB */
     {"llvm.sadd.with.overflow.i64", "declare {i64, i1} @llvm.sadd.with.overflow.i64(i64, i64)", 1},
     {"llvm.ssub.with.overflow.i64", "declare {i64, i1} @llvm.ssub.with.overflow.i64(i64, i64)", 1},
     {"llvm.smul.with.overflow.i64", "declare {i64, i1} @llvm.smul.with.overflow.i64(i64, i64)", 1},
