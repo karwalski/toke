@@ -2840,6 +2840,18 @@ static int emit_expr(Ctx *c, const Node *n)
             default:       snprintf(op_buf, sizeof op_buf, "add %s", ity);
                 fprintf(c->out, "  ; unsupported binop %d\n", (int)n->op);
             }
+            /* 124.2b: guard signed division/remainder against a zero divisor
+             * (machine-level UB otherwise) — trap deterministically (RT004). */
+            if (n->op == TK_SLASH || n->op == TK_PERCENT) {
+                int dz = next_tmp(c);
+                int lt = next_lbl(c), lc = next_lbl(c);
+                fprintf(c->out, "  %%t%d = icmp eq %s %%t%d, 0\n", dz, ity, rhs);
+                fprintf(c->out, "  br i1 %%t%d, label %%dz_trap%d, label %%dz_ok%d\n", dz, lt, lc);
+                fprintf(c->out, "dz_trap%d:\n", lt);
+                fprintf(c->out, "  call void @tk_div_trap(i32 %d)\n", n->op == TK_PERCENT ? 1 : 0);
+                fprintf(c->out, "  unreachable\n");
+                fprintf(c->out, "dz_ok%d:\n", lc);
+            }
             fprintf(c->out, "  %%t%d = %s %%t%d, %%t%d\n", t, op_buf, lhs, rhs);
         }
         return t;
@@ -6668,6 +6680,7 @@ static const StdlibDecl g_stdlib_decls[] = {
     /* Always-needed: main wrapper and overflow checks */
     {"tk_runtime_init", "declare void @tk_runtime_init(i32, i8**)", 1},
     {"tk_overflow_trap", "declare void @tk_overflow_trap(i32)", 1},
+    {"tk_div_trap", "declare void @tk_div_trap(i32)", 0},  /* 124.2b: RT004 divide-by-zero */
     {"llvm.sadd.with.overflow.i64", "declare {i64, i1} @llvm.sadd.with.overflow.i64(i64, i64)", 1},
     {"llvm.ssub.with.overflow.i64", "declare {i64, i1} @llvm.ssub.with.overflow.i64(i64, i64)", 1},
     {"llvm.smul.with.overflow.i64", "declare {i64, i1} @llvm.smul.with.overflow.i64(i64, i64)", 1},
@@ -7229,8 +7242,10 @@ int emit_llvm_ir(const Node *ast, const char *src,
         fputs("}\n", body_file);
     }
 
-    /* Stack probe and stack-protector attributes for recursion safety */
-    fputs("\nattributes #0 = { \"stack-protector-buffer-size\"=\"8\" }\n", body_file);
+    /* 124.2e: enable a REAL stack canary (sspstrong) — the buffer-size hint
+     * alone was inert (LLVM inserts a canary only when an ssp* attribute is
+     * present). Applies to every emitted function via the #0 attribute group. */
+    fputs("\nattributes #0 = { sspstrong \"stack-protector-buffer-size\"=\"8\" }\n", body_file);
 
     /* Story 76.1.5: emit DWARF debug metadata nodes at module tail */
     if (ctx.debug) {

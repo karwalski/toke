@@ -309,3 +309,10 @@ void tk_overflow_trap(int32_t op_code) {
     fprintf(stderr, "RT002: integer overflow in %s\n", name);
     exit(1);
 }
+
+/* 124.2b: RT004 — division/remainder by zero. `a/0` and `a%%0` are undefined
+ * behaviour at the machine level; toke traps deterministically instead. */
+void tk_div_trap(int32_t op_code) {
+    fprintf(stderr, "RT004: %s by zero\n", op_code == 1 ? "remainder" : "division");
+    exit(1);
+}
