@@ -556,7 +556,13 @@ static int lex_ident(Lexer *l, int start, int line, int col)
             int py_len = len < (int)sizeof(py_buf) - 1 ? len : (int)sizeof(py_buf) - 1;
             for (int pi = 0; pi < py_len; pi++) py_buf[pi] = l->src[start + pi];
             py_buf[py_len] = '\0';
-            check_foreign_keyword(py_buf, start, line, col);
+            /* 124.0c: `fn(` is a valid v0.4 closure literal, not Rust's `fn name(`
+             * function keyword — suppress the W1020 migration hint for it (the
+             * Rust form has a name/space after `fn`, so it still warns). */
+            int is_closure_fn = (!strcmp(py_buf, "fn") &&
+                                 start + len < l->len && l->src[start + len] == '(');
+            if (!is_closure_fn)
+                check_foreign_keyword(py_buf, start, line, col);
         }
     }
 
