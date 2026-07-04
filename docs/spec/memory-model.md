@@ -173,6 +173,28 @@ Memory allocated in an arena is freed when the scope exits. The maximum unreclai
 
 Tasks do not share mutable memory (Section 3.2). All inter-task communication is by copy. Therefore concurrent access to the same mutable memory location cannot occur.
 
+### 6.6 Spatial and Arithmetic Safety [N]
+
+A conforming implementation **traps deterministically** — aborting with a diagnostic rather than executing undefined behaviour — on the following out-of-contract operations:
+
+| Code  | Condition                             | Guard |
+|-------|---------------------------------------|-------|
+| RT002 | Signed integer overflow (`+ - *`)     | Checked arithmetic (`llvm.*.with.overflow`), `tk_overflow_trap`. |
+| RT003 | Array subscript outside `[0, len)`    | Length read from the array header (`base[-1]`), `tk_bounds_trap`. Default-on; the optimizer elides provably-in-range checks at `-O2`. |
+| RT004 | Division or remainder by zero         | Divisor tested before `sdiv`/`srem`, `tk_div_trap`. |
+| RT005 | Nil dereference of a struct field     | *(partial — tracked; see `known-limitations.md`)* |
+
+Every emitted function additionally carries a stack canary (`sspstrong`), so a stack-buffer overflow aborts rather than redirecting control flow.
+
+**Rationale.** The compiler is the root of trust for the training corpus. Deterministic traps make a program's observable behaviour a total function of its inputs — never a function of uninitialised or out-of-bounds memory — a precondition for a differential-tested, reproducible corpus.
+
+### 6.7 Injection Resistance [N]
+
+The standard library is injection-resistant by construction on its guaranteed surfaces:
+
+- **Process execution is argv-only.** `process.spawn`/`exec`/`readlines`/`detach` never invoke a shell; a command built from untrusted data cannot inject a second command (shell metacharacters are inert arguments).
+- **HTML is context-aware auto-escaped by default.** Interpolated template values (`tpl.render`) and HTML attribute values are HTML-escaped; URL-context attributes (`href`/`src`/…) drop dangerous schemes (`javascript:`/`vbscript:`/non-image `data:`); `<script>`/`<style>`/`<title>` content is breakout-guarded; markdown rendering neutralises raw HTML from the source. Raw HTML output requires the explicit `|raw` opt-out.
+
 ---
 
 ## 7. Implementation Notes [I]
