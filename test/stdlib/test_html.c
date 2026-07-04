@@ -172,6 +172,26 @@ int main(void)
     }
 
     /* -------------------------------------------------------------------
+     * 10c. 124.3 (ADR-0011): URL-context attributes drop a dangerous scheme
+     *      (javascript:/vbscript:/data:) that escaping alone would leave live.
+     * ------------------------------------------------------------------- */
+    {
+        TkHtmlNode *node = html_a("javascript:alert(1)", "x");
+        const char *out  = html_node_render(node);
+        ASSERT(out && strstr(out, "javascript:") == NULL,
+               "url scheme: javascript: href is neutralized");
+        free((void *)out);
+        html_node_free(node);
+
+        /* a safe URL is preserved unchanged */
+        node = html_a("https://example.com/p?a=1&b=2", "x");
+        out  = html_node_render(node);
+        ASSERT_CONTAINS(out, "https://example.com/p?a=1", "url scheme: safe URL preserved");
+        free((void *)out);
+        html_node_free(node);
+    }
+
+    /* -------------------------------------------------------------------
      * 11. html_img: void element with src and alt
      * ------------------------------------------------------------------- */
     {

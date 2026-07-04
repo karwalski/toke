@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <ctype.h>
 
 /* -----------------------------------------------------------------------
  * Internal helper: growable string buffer
@@ -158,6 +159,45 @@ void html_node_free(TkHtmlNode *node)
 /* Forward declaration. */
 static void render_node(TkHtmlNode *node, Buf *b);
 
+/* 124.3 (ADR-0011): URL-context attribute check. Attributes whose value is a URL
+ * can carry a `javascript:`/`vbscript:`/`data:` scheme that HTML-escaping does NOT
+ * neutralize (the scheme has no HTML-special chars), giving script execution on
+ * click/load. These are detected so the dangerous value can be dropped. */
+static int is_url_attr(const char *name) {
+    static const char *urlattrs[] = {
+        "href", "src", "action", "formaction", "poster",
+        "cite", "background", "xlink:href", NULL
+    };
+    for (int i = 0; urlattrs[i]; i++)
+        if (strcmp(name, urlattrs[i]) == 0) return 1;
+    return 0;
+}
+static int ci_starts(const char *s, const char *prefix) {
+    while (*prefix) {
+        if (tolower((unsigned char)*s) != tolower((unsigned char)*prefix)) return 0;
+        s++; prefix++;
+    }
+    return 1;
+}
+static int is_dangerous_url(const char *val) {
+    if (!val) return 0;
+    while (*val && (unsigned char)*val <= 0x20) val++;   /* leading ws/controls */
+    /* scheme compare tolerating embedded whitespace/controls (browsers do too) */
+    static const char *bad[] = { "javascript:", "vbscript:", NULL };
+    for (int i = 0; bad[i]; i++) {
+        const char *s = val; const char *bp = bad[i]; int ok = 1;
+        while (*bp) {
+            while (*s && (unsigned char)*s <= 0x20) s++;
+            if (tolower((unsigned char)*s) != *bp) { ok = 0; break; }
+            s++; bp++;
+        }
+        if (ok) return 1;
+    }
+    /* data: is dangerous except an image subtype (allow inline data:image/... URIs) */
+    if (ci_starts(val, "data:") && !ci_starts(val, "data:image/")) return 1;
+    return 0;
+}
+
 static void render_attrs(TkHtmlNode *node, Buf *b)
 {
     TkAttr *a = node->attrs;
@@ -170,6 +210,10 @@ static void render_attrs(TkHtmlNode *node, Buf *b)
          * break out of the attribute and inject further attributes / event
          * handlers (XSS). html_escape covers & < > " ' — safe for quoted attrs. */
         const char *val = a->value ? a->value : "";
+        /* URL-context: neutralize a dangerous scheme (javascript:, etc.) that
+         * escaping alone would leave executable. */
+        if (is_url_attr(a->name) && is_dangerous_url(val))
+            val = "";
         const char *esc = html_escape(val);
         buf_append(b, esc ? esc : val);
         free((void *)esc);
