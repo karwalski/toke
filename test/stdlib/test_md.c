@@ -178,9 +178,30 @@ int main(void)
 
     /* ── HTML passthrough (CMARK_OPT_UNSAFE) ──────────────────────────── */
 
-    /* 25: raw HTML div is preserved */
+    /* 25: raw HTML block is NEUTRALIZED (124.3/ADR-0011 — no raw-HTML passthrough) */
     html = md_render("<div class=\"raw\">content</div>\n");
-    ASSERT_CONTAINS(html, "<div", "raw HTML: <div passes through");
+    ASSERT_NOT_CONTAINS(html, "<div", "raw HTML <div>: neutralized, not passed through");
+    free((void *)html);
+
+    /* 25b: a <script> in the markdown source must not reach the output (XSS) */
+    html = md_render("hello <script>alert(1)</script> world\n");
+    ASSERT_NOT_CONTAINS(html, "<script>", "raw HTML <script>: neutralized (XSS)");
+    free((void *)html);
+
+    /* 25c: pipe tables still render (trusted md_preprocess_tables output) */
+    html = md_render("| A | B |\n|---|---|\n| 1 | 2 |\n");
+    ASSERT_CONTAINS(html, "<table", "pipe table: still renders a <table>");
+    ASSERT_CONTAINS(html, "<td>1</td>", "pipe table: cell content present");
+    ASSERT_NOT_CONTAINS(html, "TKMDTABLE", "pipe table: no leftover placeholder");
+    free((void *)html);
+
+    /* 25d: two tables with a heading + a <script> between them — both tables
+     * render, the script is neutralized, and placeholders don't cross-wire. */
+    html = md_render("| A |\n|---|\n| 1 |\n\n## mid <script>x</script>\n\n| B |\n|---|\n| 2 |\n");
+    ASSERT_CONTAINS(html, "<td>1</td>", "two tables: first table cell present");
+    ASSERT_CONTAINS(html, "<td>2</td>", "two tables: second table cell present");
+    ASSERT_NOT_CONTAINS(html, "<script>", "two tables: script between neutralized");
+    ASSERT_NOT_CONTAINS(html, "TKMDTABLE", "two tables: no leftover placeholder");
     free((void *)html);
 
     /* ── Nested structures ─────────────────────────────────────────────── */
@@ -236,9 +257,9 @@ int main(void)
     ASSERT_CONTAINS(html, "*", "escaped asterisks: literal * in output");
     free((void *)html);
 
-    /* 32: inline HTML em tag passes through */
+    /* 32: inline HTML is escaped, not passed through (124.3/ADR-0011) */
     html = md_render("<em>manual</em>\n");
-    ASSERT_CONTAINS(html, "<em>", "inline HTML <em>: passes through");
+    ASSERT_NOT_CONTAINS(html, "<em>", "inline HTML <em>: escaped, not passed through");
     free((void *)html);
 
     /* ── md_render_file ────────────────────────────────────────────────── */
