@@ -54,7 +54,13 @@ static const char *template_render_impl(int64_t tpl, int64_t data) {
     uint64_t nvar = 0;
     TkTmplVar *vars = unpack_tmplvars(data, &nvar);
 
-    const char *result = tmpl_render(t, vars, nvar);
+    /* 124.3 (ADR-0011): escape slot values by default. `tpl.render` previously
+     * mapped to tmpl_render (escape OFF), so `{{name}}` interpolated untrusted
+     * data raw into the HTML output — a stored/reflected XSS sink. Point it at
+     * tmpl_renderhtml (escape ON): only interpolated *values* are HTML-escaped;
+     * the template's own literal markup is preserved. Raw output must be an
+     * explicit opt-in (follow-up: a `|raw` helper / tpl.renderraw). */
+    const char *result = tmpl_renderhtml(t, vars, nvar);
     free(vars);
     tmpl_free(t);
     return result;

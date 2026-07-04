@@ -781,8 +781,14 @@ static int render_nodes(const Node *nodes, uint64_t nnode,
                     }
                 }
 
+                /* 124.3 (ADR-0011): escape-by-default, with an explicit `|raw`
+                 * opt-out for trusted HTML (e.g. composing sub-templates). A
+                 * slot written `{{key|raw}}` is emitted unescaped; every other
+                 * slot is HTML-escaped when escape_values is on. */
+                int is_raw = (nd->helper_name &&
+                              strcmp(nd->helper_name, "raw") == 0);
                 int slot_ok;
-                if (escape_values) {
+                if (escape_values && !is_raw) {
                     slot_ok = buf_append_escaped(out, transformed);
                 } else {
                     slot_ok = buf_append(out, transformed, strlen(transformed));

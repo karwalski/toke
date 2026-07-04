@@ -35,7 +35,10 @@ def probe(tk):
         if r.returncode != 0 or not os.path.exists(out):
             return [False, None, None]
         try:
-            rr = subprocess.run([out], capture_output=True, timeout=20)
+            # stdin from /dev/null so stdin-reading programs get a deterministic
+            # immediate EOF instead of blocking (which flapped timeout<->exit).
+            rr = subprocess.run([out], capture_output=True, timeout=20,
+                                stdin=subprocess.DEVNULL)
         except subprocess.TimeoutExpired:
             return [True, "timeout", None]
         # A signal-kill (negative returncode) is normalized to one "signal" token:

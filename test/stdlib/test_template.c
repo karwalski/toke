@@ -105,6 +105,17 @@ int main(void)
         tmpl_free(t);
     }
 
+    /* ---- 6b. 124.3 (ADR-0011): {{key|raw}} opts out of escaping ---- */
+    {
+        TkTmpl *t = tmpl_compile("{{content|raw}}");
+        TkTmplVar vars[] = {{"content", "<b>bold</b>"}};
+        const char *got = tmpl_renderhtml(t, vars, 1);
+        ASSERT_STREQ(got, "<b>bold</b>",
+                     "renderhtml: {{content|raw}} emits trusted HTML unescaped");
+        free((void *)got);
+        tmpl_free(t);
+    }
+
     /* ---- 7. tmpl_renderhtml: literal text left unescaped ---- */
     {
         TkTmpl *t = tmpl_compile("<p>{{name}}</p>");

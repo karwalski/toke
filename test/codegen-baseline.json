@@ -316,8 +316,8 @@
  ],
  "test/standalone/test_io_eof.tk": [
   true,
-  "timeout",
-  null
+  0,
+  "fa539b617c46361a"
  ],
  "test/standalone/test_json.tk": [
   true,
