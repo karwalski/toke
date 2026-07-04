@@ -3749,6 +3749,19 @@ static int emit_expr(Ctx *c, const Node *n)
             fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", bc, base);
             base = bc;
         }
+        /* 124.2d: RT005 nil-deref guard — reading a field of a null struct
+         * pointer is UB; trap deterministically. -O2 elides this where the base
+         * is provably non-null. */
+        {
+            int nz = next_tmp(c);
+            fprintf(c->out, "  %%t%d = icmp eq i64* %%t%d, null\n", nz, base);
+            int lt = next_lbl(c), lc = next_lbl(c);
+            fprintf(c->out, "  br i1 %%t%d, label %%nil_trap%d, label %%nil_ok%d\n", nz, lt, lc);
+            fprintf(c->out, "nil_trap%d:\n", lt);
+            fprintf(c->out, "  call void @tk_nil_trap(i32 0)\n");
+            fprintf(c->out, "  unreachable\n");
+            fprintf(c->out, "nil_ok%d:\n", lc);
+        }
         t2 = next_tmp(c); t = next_tmp(c);
         fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 %d ; .%s\n", t2, base, fidx, fn);
         fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", t, t2);
@@ -6703,6 +6716,7 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_overflow_trap", "declare void @tk_overflow_trap(i32)", 1},
     {"tk_div_trap", "declare void @tk_div_trap(i32)", 0},  /* 124.2b: RT004 divide-by-zero */
     {"tk_bounds_trap", "declare void @tk_bounds_trap(i64, i64)", 0},  /* 124.2a: RT003 OOB */
+    {"tk_nil_trap", "declare void @tk_nil_trap(i32)", 0},  /* 124.2d: RT005 nil-deref */
     {"llvm.sadd.with.overflow.i64", "declare {i64, i1} @llvm.sadd.with.overflow.i64(i64, i64)", 1},
     {"llvm.ssub.with.overflow.i64", "declare {i64, i1} @llvm.ssub.with.overflow.i64(i64, i64)", 1},
     {"llvm.smul.with.overflow.i64", "declare {i64, i1} @llvm.smul.with.overflow.i64(i64, i64)", 1},

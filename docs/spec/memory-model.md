@@ -182,7 +182,7 @@ A conforming implementation **traps deterministically** — aborting with a diag
 | RT002 | Signed integer overflow (`+ - *`)     | Checked arithmetic (`llvm.*.with.overflow`), `tk_overflow_trap`. |
 | RT003 | Array subscript outside `[0, len)`    | Length read from the array header (`base[-1]`), `tk_bounds_trap`. Default-on; the optimizer elides provably-in-range checks at `-O2`. |
 | RT004 | Division or remainder by zero         | Divisor tested before `sdiv`/`srem`, `tk_div_trap`. |
-| RT005 | Nil dereference of a struct field     | *(partial — tracked; see `known-limitations.md`)* |
+| RT005 | Nil dereference of a struct field     | Struct base tested for null before the field GEP, `tk_nil_trap`. |
 
 Every emitted function additionally carries a stack canary (`sspstrong`), so a stack-buffer overflow aborts rather than redirecting control flow.
 

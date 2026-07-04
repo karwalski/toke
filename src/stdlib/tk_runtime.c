@@ -324,3 +324,11 @@ void tk_bounds_trap(int64_t idx, int64_t len) {
             (long long)idx, (long long)len);
     exit(1);
 }
+
+/* 124.2d: RT005 — nil dereference. Reading a field of a null struct pointer is
+ * undefined; toke traps deterministically instead of reading wild memory. */
+void tk_nil_trap(int32_t code) {
+    (void)code;
+    fprintf(stderr, "RT005: nil dereference\n");
+    exit(1);
+}
