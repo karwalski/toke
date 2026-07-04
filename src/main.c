@@ -77,7 +77,7 @@ static const char HELP[] =
     "  --emit-deps         Print stdlib C sources and linker flags needed, then exit\n"
     "  -I <dir>            Add .tki interface search directory (repeatable)\n"
     "  -g / --debug        Emit DWARF debug metadata for lldb/gdb\n"
-    "  -O0/-O1/-O2/-O3    Optimization level (default: -O1)\n"
+    "  -O0/-O1/-O2/-O3    Optimization level (default: -O2)\n"
     "  --fmt               Format source to canonical form and print to stdout\n"
     "  --min               Emit the single-line canonical (minified) form and exit\n"
     "  --pretty            Pretty-print with whitespace for human readability\n"
@@ -352,7 +352,7 @@ int main(int argc, char **argv)
     int source_file_count = 0;
     const char *config_path = NULL;
     int emit_iface = 0, check_only = 0, djson = 0, dtext = 0, dsarif = 0;
-    int emit_ll = 0, emit_asm = 0, opt_level = 1, fmt_only = 0, debug_info = 0;
+    int emit_ll = 0, emit_asm = 0, opt_level = 2, fmt_only = 0, debug_info = 0;  /* 124.6b: default -O2 */
     int pretty = 0, expand = 0, sourcemap = 0;
     int dump_ast = 0;
     int migrate = 0;
