@@ -12,12 +12,42 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-/* Internal helper: spawn a single command string via the shell.
- * Used by the convenience wrappers (exec/spawndetached) which are NOT .tki
- * exports and pass a single command string, not a [str] argv array. */
-static int64_t spawn_shell(const char *cmdstr) {
-    const char *argv[] = { "sh", "-c", cmdstr, NULL };
+/* 124.3 (ADR-0011): run a single command STRING as argv WITHOUT a shell.
+ * Used by the convenience wrappers (exec/spawndetached) which pass one command
+ * string, not a [str] argv array. The string is tokenized on whitespace (with
+ * "..." kept intact) and execvp'd directly — shell metacharacters (; | & $() `
+ * > <) are NOT interpreted, so a command built from untrusted data cannot inject
+ * a second command. Callers needing pipelines/redirection must compose processes
+ * explicitly (or build an argv array and use process.spawn). Replaces the prior
+ * `sh -c cmdstr` path, which was a shell-injection sink. */
+static int64_t spawn_cmdstr(const char *cmdstr) {
+    if (!cmdstr) return 0;
+    size_t len = strlen(cmdstr);
+    char *buf = (char *)malloc(len + 1);
+    if (!buf) return 0;
+    const char **argv = (const char **)malloc((len / 2 + 2) * sizeof(char *));
+    if (!argv) { free(buf); return 0; }
+    int argc = 0;
+    size_t bi = 0;
+    const char *p = cmdstr;
+    while (*p) {
+        while (*p == ' ' || *p == '\t' || *p == '\n') p++;   /* skip whitespace */
+        if (!*p) break;
+        argv[argc++] = buf + bi;
+        if (*p == '"') {                    /* quoted token: keep spaces intact */
+            p++;
+            while (*p && *p != '"') buf[bi++] = *p++;
+            if (*p == '"') p++;
+        } else {                            /* bare token */
+            while (*p && *p != ' ' && *p != '\t' && *p != '\n') buf[bi++] = *p++;
+        }
+        buf[bi++] = '\0';
+    }
+    argv[argc] = NULL;
+    if (argc == 0) { free(buf); free(argv); return 0; }
     SpawnResult r = process_spawn(argv);
+    free(buf);
+    free(argv);
     if (r.is_err) return 0;
     return (int64_t)(intptr_t)r.ok;
 }
@@ -126,7 +156,7 @@ int64_t tk_process_env_w(int64_t name) {
 /* process.exec(cmd) — run command and return stdout as string */
 int64_t tk_process_exec_w(int64_t cmd) {
     if (!cmd) return 0;
-    int64_t handle = spawn_shell((const char *)(intptr_t)cmd);
+    int64_t handle = spawn_cmdstr((const char *)(intptr_t)cmd);
     if (!handle) return 0;
     ProcessHandle *h = (ProcessHandle *)(intptr_t)handle;
     process_wait(h);
@@ -157,7 +187,7 @@ int64_t tk_process_readlines_w(int64_t cmd) {
 /* process.spawndetached(cmd) — spawn a background process, don't track handle */
 int64_t tk_process_spawndetached_w(int64_t cmd) {
     if (!cmd) return 0;
-    int64_t handle = spawn_shell((const char *)(intptr_t)cmd);
+    int64_t handle = spawn_cmdstr((const char *)(intptr_t)cmd);
     /* Return pid as integer, don't wait */
     if (!handle) return 0;
     ProcessHandle *h = (ProcessHandle *)(intptr_t)handle;

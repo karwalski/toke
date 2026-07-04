@@ -1,0 +1,15 @@
+(* test_process_noshell.tk — 124.3 (ADR-0011): process.exec must NOT run through
+ * a shell. A `;` (or any shell metacharacter) in the command string is passed
+ * as a literal argument, never interpreted — so a command built from untrusted
+ * data cannot inject a second command. main returns 0 on pass. *)
+m=test.noshell;
+i=p:std.process;
+i=s:std.str;
+
+f=main():i64{
+  (* With a shell, `echo a; echo b` would run two commands and print "a\nb".
+   * Argv-only, the whole tail is literal args to echo, so the output still
+   * contains the literal "; echo b" text. *)
+  let out=p.exec("echo a; echo b");
+  <if(s.contains(out;"; echo b")){0}el{1}
+};
