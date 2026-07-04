@@ -261,8 +261,8 @@
  ],
  "test/standalone/test_crypto_full.tk": [
   true,
-  "signal",
-  null
+  0,
+  "94ca8bd0ab1a625c"
  ],
  "test/standalone/test_db_sandbox.tk": [
   false,
