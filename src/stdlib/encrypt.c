@@ -464,6 +464,75 @@ ByteArray encrypt_aes256gcm_noncegen(void)
     return r;
 }
 
+/* -----------------------------------------------------------------------
+ * 124.1 (ADR-0013a): versioned, algorithm-tagged AEAD envelope.
+ *
+ * A self-describing ciphertext that carries its own format so it can be
+ * upgraded (new algorithm / larger nonce / PQC) without breaking data at rest:
+ *
+ *   [ 'T' 'K' 'E' | version(1) | alg(1) | nonce(12) | ciphertext | tag(16) ]
+ *
+ * version 1 is the current envelope; alg 1 = AES-256-GCM (2 = ChaCha20-Poly1305
+ * reserved — trivial follow-up, its result type differs). `open` dispatches on
+ * (version, alg) and rejects unknown ones, so an attacker cannot downgrade or
+ * confuse the format, and a future toke can add algorithms additively. The
+ * nonce is freshly generated per seal (never reused).
+ * --------------------------------------------------------------------- */
+#define TKE_MAGIC0   'T'
+#define TKE_MAGIC1   'K'
+#define TKE_MAGIC2   'E'
+#define TKE_VERSION  1
+#define TKE_ALG_AESGCM 1
+#define TKE_HDR      5   /* magic(3) + version(1) + alg(1) */
+
+EncryptResult encrypt_seal(ByteArray key, ByteArray plaintext, ByteArray aad)
+{
+    EncryptResult res; memset(&res, 0, sizeof res);
+    ByteArray nonce = encrypt_aes256gcm_noncegen();
+    if (!nonce.data || nonce.len != 12) {
+        res.is_err = 1; res.err_msg = "seal: nonce generation failed"; return res;
+    }
+    EncryptResult inner = encrypt_aes256gcm_encrypt(key, nonce, plaintext, aad);
+    if (inner.is_err) { free((void *)nonce.data); return inner; }
+
+    uint64_t elen = TKE_HDR + 12 + inner.ok_len;
+    uint8_t *env = (uint8_t *)malloc(elen);
+    if (!env) {
+        free(inner.ok); free((void *)nonce.data);
+        res.is_err = 1; res.err_msg = "seal: malloc failed"; return res;
+    }
+    env[0] = TKE_MAGIC0; env[1] = TKE_MAGIC1; env[2] = TKE_MAGIC2;
+    env[3] = TKE_VERSION; env[4] = TKE_ALG_AESGCM;
+    memcpy(env + TKE_HDR, nonce.data, 12);
+    memcpy(env + TKE_HDR + 12, inner.ok, inner.ok_len);
+    free(inner.ok);
+    free((void *)nonce.data);
+    res.ok = env; res.ok_len = elen;
+    return res;
+}
+
+EncryptResult encrypt_open(ByteArray key, ByteArray envelope, ByteArray aad)
+{
+    EncryptResult res; memset(&res, 0, sizeof res);
+    /* smallest valid envelope: header + nonce + empty-ct + 16-byte tag */
+    if (envelope.len < (uint64_t)(TKE_HDR + 12 + 16)) {
+        res.is_err = 1; res.err_msg = "open: envelope too short"; return res;
+    }
+    const uint8_t *e = envelope.data;
+    if (e[0] != TKE_MAGIC0 || e[1] != TKE_MAGIC1 || e[2] != TKE_MAGIC2) {
+        res.is_err = 1; res.err_msg = "open: bad envelope magic"; return res;
+    }
+    uint8_t version = e[3], alg = e[4];
+    if (version != TKE_VERSION) {
+        res.is_err = 1; res.err_msg = "open: unsupported envelope version"; return res;
+    }
+    ByteArray nonce = { e + TKE_HDR, 12 };
+    ByteArray ct    = { e + TKE_HDR + 12, envelope.len - TKE_HDR - 12 };
+    if (alg == TKE_ALG_AESGCM)
+        return encrypt_aes256gcm_decrypt(key, nonce, ct, aad);
+    res.is_err = 1; res.err_msg = "open: unsupported algorithm"; return res;
+}
+
 /* =========================================================================
  * X25519 — Curve25519 scalar multiplication (RFC 7748)
  *

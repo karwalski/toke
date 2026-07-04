@@ -54,6 +54,14 @@ ByteArray encrypt_aes256gcm_keygen(void);
  * Returns 12 cryptographically random bytes. Caller owns .data. */
 ByteArray encrypt_aes256gcm_noncegen(void);
 
+/* 124.1 (ADR-0013a): versioned, algorithm-tagged AEAD envelope.
+ *   seal(key, plaintext, aad) -> ['T''K''E' | version | alg | nonce | ct | tag]
+ *   open(key, envelope, aad)  -> plaintext (dispatches on version+alg)
+ * Self-describing so ciphertext at rest can be upgraded without breaking format;
+ * seal generates a fresh nonce each call. Caller owns .ok. */
+EncryptResult encrypt_seal(ByteArray key, ByteArray plaintext, ByteArray aad);
+EncryptResult encrypt_open(ByteArray key, ByteArray envelope, ByteArray aad);
+
 /* -----------------------------------------------------------------------
  * X25519 Diffie-Hellman (RFC 7748)
  * ----------------------------------------------------------------------- */
