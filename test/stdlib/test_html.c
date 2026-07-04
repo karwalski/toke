@@ -88,6 +88,28 @@ int main(void)
     }
 
     /* -------------------------------------------------------------------
+     * 4b. 124.3 (ADR-0011): raw-text/title breakout is neutralized.
+     * ------------------------------------------------------------------- */
+    {
+        TkHtmlDoc *doc = html_doc();
+        html_script(doc, "var s=\"</script><img src=x onerror=alert(1)>\";");
+        const char *out = html_render(doc);
+        ASSERT_CONTAINS(out, "<\\/script>",
+                        "script: </script> breakout neutralized to <\\/script>");
+        ASSERT(out && strstr(out, "</script><img") == NULL,
+               "script: no raw </script><img breakout");
+        html_free(doc);
+    }
+    {
+        TkHtmlDoc *doc = html_doc();
+        html_title(doc, "x</title><script>alert(1)</script>");
+        const char *out = html_render(doc);
+        ASSERT(out && strstr(out, "</title><script>") == NULL,
+               "title: </title><script> breakout neutralized (escaped)");
+        html_free(doc);
+    }
+
+    /* -------------------------------------------------------------------
      * 5. html_div with class and content
      * ------------------------------------------------------------------- */
     {

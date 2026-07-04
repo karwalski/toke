@@ -198,6 +198,24 @@ static int is_dangerous_url(const char *val) {
     return 0;
 }
 
+/* 124.3 (ADR-0011): append text into a raw-text element (<script>/<style>),
+ * neutralizing a `</tag` breakout by inserting a backslash (`<\/tag`). The HTML
+ * tokenizer then no longer sees a close tag, while JS/CSS treat `\/` as `/`, so
+ * a `</script>`/`</style>` embedded in the content can't terminate the element
+ * early and inject markup. `closetag` is e.g. "/script" (no leading '<'). */
+static void buf_append_rawtext(Buf *b, const char *s, const char *closetag) {
+    if (!s) return;
+    for (const char *p = s; *p; ) {
+        if (*p == '<' && ci_starts(p + 1, closetag)) {
+            buf_append(b, "<\\");   /* emit "<\" then let "/tag" append normally */
+            p++;
+        } else {
+            buf_appendc(b, *p);
+            p++;
+        }
+    }
+}
+
 static void render_attrs(TkHtmlNode *node, Buf *b)
 {
     TkAttr *a = node->attrs;
@@ -338,19 +356,20 @@ const char *html_render(TkHtmlDoc *doc)
 
     if (doc->title) {
         buf_append(&b, "<title>");
-        buf_append(&b, doc->title);
+        { const char *te = html_escape(doc->title);   /* title is HTML text */
+          buf_append(&b, te ? te : doc->title); free((void *)te); }
         buf_append(&b, "</title>\n");
     }
 
     if (doc->style) {
         buf_append(&b, "<style>");
-        buf_append(&b, doc->style);
+        buf_append_rawtext(&b, doc->style, "/style");
         buf_append(&b, "</style>\n");
     }
 
     if (doc->script) {
         buf_append(&b, "<script>");
-        buf_append(&b, doc->script);
+        buf_append_rawtext(&b, doc->script, "/script");
         buf_append(&b, "</script>\n");
     }
 
