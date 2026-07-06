@@ -472,43 +472,68 @@ ByteArray encrypt_aes256gcm_noncegen(void)
  *
  *   [ 'T' 'K' 'E' | version(1) | alg(1) | nonce(12) | ciphertext | tag(16) ]
  *
- * version 1 is the current envelope; alg 1 = AES-256-GCM (2 = ChaCha20-Poly1305
- * reserved — trivial follow-up, its result type differs). `open` dispatches on
- * (version, alg) and rejects unknown ones, so an attacker cannot downgrade or
- * confuse the format, and a future toke can add algorithms additively. The
- * nonce is freshly generated per seal (never reused).
+ * version 1 is the current envelope; alg 1 = AES-256-GCM, alg 2 =
+ * ChaCha20-Poly1305 (both 256-bit AEADs producing ciphertext||16-byte tag over a
+ * 12-byte nonce, so the layout is shared). `open` dispatches on (version, alg)
+ * and rejects unknown ones, so an attacker cannot downgrade or confuse the
+ * format, and a future toke can add algorithms additively. The nonce is freshly
+ * generated per seal (never reused).
  * --------------------------------------------------------------------- */
 #define TKE_MAGIC0   'T'
 #define TKE_MAGIC1   'K'
 #define TKE_MAGIC2   'E'
 #define TKE_VERSION  1
-#define TKE_ALG_AESGCM 1
+#define TKE_ALG_AESGCM           1
+#define TKE_ALG_CHACHA20POLY1305 2
 #define TKE_HDR      5   /* magic(3) + version(1) + alg(1) */
 
-EncryptResult encrypt_seal(ByteArray key, ByteArray plaintext, ByteArray aad)
+EncryptResult encrypt_seal_alg(ByteArray key, ByteArray plaintext,
+                               ByteArray aad, uint8_t alg)
 {
     EncryptResult res; memset(&res, 0, sizeof res);
-    ByteArray nonce = encrypt_aes256gcm_noncegen();
+    if (alg != TKE_ALG_AESGCM && alg != TKE_ALG_CHACHA20POLY1305) {
+        res.is_err = 1; res.err_msg = "seal: unsupported algorithm"; return res;
+    }
+    ByteArray nonce = encrypt_aes256gcm_noncegen();   /* 12 CSPRNG bytes; alg-agnostic */
     if (!nonce.data || nonce.len != 12) {
         res.is_err = 1; res.err_msg = "seal: nonce generation failed"; return res;
     }
-    EncryptResult inner = encrypt_aes256gcm_encrypt(key, nonce, plaintext, aad);
-    if (inner.is_err) { free((void *)nonce.data); return inner; }
 
-    uint64_t elen = TKE_HDR + 12 + inner.ok_len;
+    /* Both AEADs emit ciphertext||16-byte tag; normalize to (ct, ct_len). */
+    uint8_t *ct = NULL; uint64_t ct_len = 0;
+    if (alg == TKE_ALG_AESGCM) {
+        EncryptResult inner = encrypt_aes256gcm_encrypt(key, nonce, plaintext, aad);
+        if (inner.is_err) { free((void *)nonce.data); return inner; }
+        ct = inner.ok; ct_len = inner.ok_len;
+    } else {
+        ChaChaEncResult inner =
+            encrypt_chacha20poly1305_encrypt(key, nonce, plaintext, aad);
+        if (inner.is_err) {
+            free((void *)nonce.data);
+            res.is_err = 1; res.err_msg = inner.err_msg; return res;
+        }
+        ct = (uint8_t *)inner.ciphertext.data; ct_len = inner.ciphertext.len;
+    }
+
+    uint64_t elen = TKE_HDR + 12 + ct_len;
     uint8_t *env = (uint8_t *)malloc(elen);
     if (!env) {
-        free(inner.ok); free((void *)nonce.data);
+        free(ct); free((void *)nonce.data);
         res.is_err = 1; res.err_msg = "seal: malloc failed"; return res;
     }
     env[0] = TKE_MAGIC0; env[1] = TKE_MAGIC1; env[2] = TKE_MAGIC2;
-    env[3] = TKE_VERSION; env[4] = TKE_ALG_AESGCM;
+    env[3] = TKE_VERSION; env[4] = alg;
     memcpy(env + TKE_HDR, nonce.data, 12);
-    memcpy(env + TKE_HDR + 12, inner.ok, inner.ok_len);
-    free(inner.ok);
+    memcpy(env + TKE_HDR + 12, ct, ct_len);
+    free(ct);
     free((void *)nonce.data);
     res.ok = env; res.ok_len = elen;
     return res;
+}
+
+EncryptResult encrypt_seal(ByteArray key, ByteArray plaintext, ByteArray aad)
+{
+    return encrypt_seal_alg(key, plaintext, aad, TKE_ALG_AESGCM);
 }
 
 EncryptResult encrypt_open(ByteArray key, ByteArray envelope, ByteArray aad)
@@ -530,6 +555,12 @@ EncryptResult encrypt_open(ByteArray key, ByteArray envelope, ByteArray aad)
     ByteArray ct    = { e + TKE_HDR + 12, envelope.len - TKE_HDR - 12 };
     if (alg == TKE_ALG_AESGCM)
         return encrypt_aes256gcm_decrypt(key, nonce, ct, aad);
+    if (alg == TKE_ALG_CHACHA20POLY1305) {
+        ChaChaDecResult d = encrypt_chacha20poly1305_decrypt(key, nonce, ct, aad);
+        if (d.is_err) { res.is_err = 1; res.err_msg = d.err_msg; return res; }
+        res.ok = (uint8_t *)d.plaintext.data; res.ok_len = d.plaintext.len;
+        return res;
+    }
     res.is_err = 1; res.err_msg = "open: unsupported algorithm"; return res;
 }
 

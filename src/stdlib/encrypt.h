@@ -58,7 +58,10 @@ ByteArray encrypt_aes256gcm_noncegen(void);
  *   seal(key, plaintext, aad) -> ['T''K''E' | version | alg | nonce | ct | tag]
  *   open(key, envelope, aad)  -> plaintext (dispatches on version+alg)
  * Self-describing so ciphertext at rest can be upgraded without breaking format;
- * seal generates a fresh nonce each call. Caller owns .ok. */
+ * seal generates a fresh nonce each call. Caller owns .ok.
+ * alg: 1 = AES-256-GCM (encrypt_seal default), 2 = ChaCha20-Poly1305. */
+EncryptResult encrypt_seal_alg(ByteArray key, ByteArray plaintext,
+                               ByteArray aad, uint8_t alg);
 EncryptResult encrypt_seal(ByteArray key, ByteArray plaintext, ByteArray aad);
 EncryptResult encrypt_open(ByteArray key, ByteArray envelope, ByteArray aad);
 

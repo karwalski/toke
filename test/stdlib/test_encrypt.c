@@ -191,6 +191,51 @@ static void test_seal_open_roundtrip(void)
     free((void *)key.data);
 }
 
+/* 124.1 (ADR-0013a): alg-2 ChaCha20-Poly1305 envelope round-trip + negatives.
+ * Proves the envelope is genuinely algorithm-agile (a second live alg id). */
+static void test_seal_open_chacha_alg2(void)
+{
+    const char *pt = "chacha envelope secret";
+    ByteArray key   = encrypt_chacha20poly1305_keygen();
+    ByteArray plain = ba_str(pt);
+    ByteArray aad   = ba_str("ctx");
+
+    EncryptResult sealed = encrypt_seal_alg(key, plain, aad, 2);
+    ASSERT(sealed.is_err == 0, "seal(alg2): no error");
+    ASSERT(sealed.ok_len == 5 + 12 + plain.len + 16, "seal(alg2): len = hdr+nonce+ct+tag");
+    if (!sealed.is_err && sealed.ok != NULL) {
+        ASSERT(sealed.ok[0] == 'T' && sealed.ok[1] == 'K' && sealed.ok[2] == 'E',
+               "seal(alg2): envelope magic 'TKE'");
+        ASSERT(sealed.ok[3] == 1, "seal(alg2): version 1");
+        ASSERT(sealed.ok[4] == 2, "seal(alg2): alg id ChaCha20-Poly1305");
+
+        ByteArray env = ba_raw(sealed.ok, sealed.ok_len);
+        EncryptResult opened = encrypt_open(key, env, aad);
+        ASSERT(opened.is_err == 0, "open(alg2): no error");
+        ASSERT(opened.ok_len == plain.len, "open(alg2): plaintext length matches");
+        if (!opened.is_err && opened.ok != NULL)
+            ASSERT(memcmp(opened.ok, pt, plain.len) == 0, "open(alg2): plaintext content matches");
+        free(opened.ok);
+
+        ByteArray wrongkey = encrypt_chacha20poly1305_keygen();
+        EncryptResult bad = encrypt_open(wrongkey, env, aad);
+        ASSERT(bad.is_err == 1, "open(alg2): wrong key -> is_err=1");
+        free(bad.ok);
+        free((void *)wrongkey.data);
+
+        uint8_t *tamper = (uint8_t *)malloc(sealed.ok_len);
+        memcpy(tamper, sealed.ok, sealed.ok_len);
+        tamper[sealed.ok_len - 1] ^= 0xff;  /* corrupt the Poly1305 tag */
+        ByteArray tenv = ba_raw(tamper, sealed.ok_len);
+        EncryptResult tr = encrypt_open(key, tenv, aad);
+        ASSERT(tr.is_err == 1, "open(alg2): tampered tag -> is_err=1");
+        free(tr.ok);
+        free(tamper);
+    }
+    free(sealed.ok);
+    free((void *)key.data);
+}
+
 /*
  * NIST SP 800-38D, Test Case 13 (AES-256-GCM).
  * Key=0^256, IV=0^96, PT=empty, AAD=empty.
@@ -1202,6 +1247,7 @@ int main(void)
     test_aes_noncegen_len();
     test_aes_roundtrip();
     test_seal_open_roundtrip();
+    test_seal_open_chacha_alg2();
     test_aes_nist_vector_tc13();
     test_aes_nist_vector_tc14();
     test_aes_nist_vector_tc16();
