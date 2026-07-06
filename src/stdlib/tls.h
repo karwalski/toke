@@ -99,6 +99,18 @@ typedef void (*TlsConnCallback)(TlsConn conn);
 TlsKeypairResult tls_gen_self_signed(const char *common_name, int32_t valid_days);
 
 /*
+ * tls.gen_self_signed_alg(common_name, valid_days, key_alg) -> TlsKeypair!TlsErr
+ *
+ * As tls_gen_self_signed, but selects the certificate signing key:
+ *   NULL / "ecdsa-p384" -> classical P-384 ECDSA (default, broad interop)
+ *   "ml-dsa-65"         -> post-quantum ML-DSA-65 (FIPS 204; OpenSSL 3.5+).
+ * ML-DSA certs are opt-in and won't verify with classical-only peers.
+ */
+TlsKeypairResult tls_gen_self_signed_alg(const char *common_name,
+                                          int32_t valid_days,
+                                          const char *key_alg);
+
+/*
  * tls.listen(port, cfg, cb) -> bool
  *
  * Binds a TCP socket on `port`, accepts TLS connections in a loop, and calls

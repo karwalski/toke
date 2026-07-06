@@ -306,8 +306,15 @@ void tls_conn_free_id(TlsConn conn)
  * tls_gen_self_signed
  * ========================================================================= */
 
-TlsKeypairResult tls_gen_self_signed(const char *common_name,
-                                      int32_t     valid_days)
+/* key_alg selects the certificate's signature key:
+ *   NULL or "ecdsa-p384" -> classical P-384 ECDSA (default, broad interop)
+ *   "ml-dsa-65"          -> post-quantum ML-DSA-65 (FIPS 204, level 3;
+ *                           OpenSSL 3.5+; won't verify with classical-only peers)
+ * ADR-0013(d): additive/opt-in — the authentication counterpart to the hybrid
+ * X25519MLKEM768 KEX (crypto agility, no default breakage). */
+TlsKeypairResult tls_gen_self_signed_alg(const char *common_name,
+                                          int32_t     valid_days,
+                                          const char *key_alg)
 {
     TlsKeypairResult result = {NULL, NULL, 0, NULL};
 
@@ -322,9 +329,34 @@ TlsKeypairResult tls_gen_self_signed(const char *common_name,
         return result;
     }
 
-    /* Generate P-384 EC key */
+    int use_mldsa = 0;
+    if (key_alg && *key_alg) {
+        if (strcmp(key_alg, "ml-dsa-65") == 0)      use_mldsa = 1;
+        else if (strcmp(key_alg, "ecdsa-p384") != 0) {
+            result.is_err  = 1;
+            result.err_msg = "unsupported key_alg (want ecdsa-p384 or ml-dsa-65)";
+            return result;
+        }
+    }
+
+    /* Generate the signing key: P-384 EC (default) or ML-DSA-65 (opt-in). */
     EVP_PKEY *pkey = NULL;
-    {
+    if (use_mldsa) {
+        EVP_PKEY_CTX *kctx = EVP_PKEY_CTX_new_from_name(NULL, "ML-DSA-65", NULL);
+        if (!kctx) {
+            result.is_err  = 1;
+            result.err_msg = ssl_err_str();
+            return result;
+        }
+        if (EVP_PKEY_keygen_init(kctx) != 1 ||
+            EVP_PKEY_keygen(kctx, &pkey) != 1) {
+            EVP_PKEY_CTX_free(kctx);
+            result.is_err  = 1;
+            result.err_msg = ssl_err_str();
+            return result;
+        }
+        EVP_PKEY_CTX_free(kctx);
+    } else {
         EVP_PKEY_CTX *kctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL);
         if (!kctx) {
             result.is_err  = 1;
@@ -370,8 +402,9 @@ TlsKeypairResult tls_gen_self_signed(const char *common_name,
     /* Public key */
     X509_set_pubkey(cert, pkey);
 
-    /* Sign with the private key (SHA-384 suits P-384) */
-    if (X509_sign(cert, pkey, EVP_sha384()) == 0) {
+    /* Sign with the private key. ML-DSA is not hash-then-sign (NULL digest);
+     * P-384 ECDSA pairs with SHA-384. */
+    if (X509_sign(cert, pkey, use_mldsa ? NULL : EVP_sha384()) == 0) {
         X509_free(cert);
         EVP_PKEY_free(pkey);
         result.is_err  = 1;
@@ -436,6 +469,13 @@ TlsKeypairResult tls_gen_self_signed(const char *common_name,
         result.err_msg  = "malloc failed";
     }
     return result;
+}
+
+/* Back-compat wrapper: classical P-384 ECDSA self-signed cert (default). */
+TlsKeypairResult tls_gen_self_signed(const char *common_name,
+                                      int32_t     valid_days)
+{
+    return tls_gen_self_signed_alg(common_name, valid_days, NULL);
 }
 
 /* =========================================================================

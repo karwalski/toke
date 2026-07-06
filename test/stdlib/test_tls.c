@@ -40,6 +40,10 @@
 #include <string.h>
 #include <ctype.h>
 
+#include <openssl/x509.h>
+#include <openssl/pem.h>
+#include <openssl/objects.h>
+
 #include "../../src/stdlib/tls.h"
 
 static int failures = 0;
@@ -324,6 +328,55 @@ static void test_gen_and_fingerprint_roundtrip(void)
 }
 
 /* =========================================================================
+ * Test 23: opt-in ML-DSA-65 self-signed cert (ADR-0013(d), 124.1)
+ * ========================================================================= */
+
+/* helper: signature-algorithm long-name of a PEM cert (caller frees nothing) */
+static int cert_sig_alg_contains(const char *pem, const char *needle)
+{
+    BIO *b = BIO_new_mem_buf(pem, -1);
+    X509 *c = b ? PEM_read_bio_X509(b, NULL, NULL, NULL) : NULL;
+    BIO_free(b);
+    if (!c) return 0;
+    const X509_ALGOR *alg = NULL;
+    X509_get0_signature(NULL, &alg, c);
+    const char *ln = OBJ_nid2ln(OBJ_obj2nid(alg->algorithm));
+    int hit = (ln && strstr(ln, needle) != NULL);
+    /* self-signed cert must verify under its own public key */
+    EVP_PKEY *pub = X509_get_pubkey(c);
+    int verifies = pub && X509_verify(c, pub) == 1;
+    EVP_PKEY_free(pub);
+    X509_free(c);
+    return hit && verifies;
+}
+
+static void test_gen_self_signed_mldsa(void)
+{
+    /* Default path is unchanged: classical ECDSA/SHA-384. */
+    TlsKeypairResult def = tls_gen_self_signed("default.test", 30);
+    ASSERT(!def.is_err, "mldsa: default gen succeeds");
+    if (!def.is_err)
+        ASSERT(cert_sig_alg_contains(def.cert_pem, "ecdsa"),
+               "mldsa: default cert is ECDSA + self-verifies");
+    free(def.cert_pem); free(def.key_pem);
+
+    /* Opt-in ML-DSA-65. */
+    TlsKeypairResult pq = tls_gen_self_signed_alg("pq.test", 30, "ml-dsa-65");
+    ASSERT(!pq.is_err, "mldsa: ml-dsa-65 gen succeeds");
+    if (!pq.is_err) {
+        ASSERT(pq.cert_pem && pq.key_pem, "mldsa: cert+key PEM present");
+        ASSERT(cert_sig_alg_contains(pq.cert_pem, "ML-DSA"),
+               "mldsa: cert sig alg is ML-DSA-65 + self-verifies");
+    }
+    free(pq.cert_pem); free(pq.key_pem);
+
+    /* Unknown key_alg is rejected. */
+    TlsKeypairResult bad = tls_gen_self_signed_alg("x.test", 30, "rsa-9000");
+    ASSERT(bad.is_err, "mldsa: unknown key_alg -> is_err");
+    free(bad.cert_pem); free(bad.key_pem);
+}
+
+/* =========================================================================
  * main
  * ========================================================================= */
 
@@ -364,6 +417,9 @@ int main(void)
 
     /* round-trip */
     test_gen_and_fingerprint_roundtrip();
+
+    /* opt-in ML-DSA-65 cert */
+    test_gen_self_signed_mldsa();
 
     if (failures == 0) {
         printf("All tests passed.\n");
