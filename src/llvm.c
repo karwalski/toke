@@ -7417,6 +7417,31 @@ static const char *find_runtime_source(void) {
 }
 
 /*
+ * find_capabilities_source — Locate capabilities.c (124.4a). The capability
+ * broker pairs with tk_runtime.c (tk_runtime_init calls tk_cap_init), so it
+ * must link into every binary regardless of which stdlib modules are imported.
+ * Same search order as find_runtime_source. Returns a static path or NULL.
+ */
+static const char *find_capabilities_source(void) {
+    static char path[512];
+    const char *env = getenv("TKC_RUNTIME_DIR");
+    if (env) {
+        snprintf(path, sizeof path, "%s/capabilities.c", env);
+        FILE *f = fopen(path, "r"); if (f) { fclose(f); return path; }
+    }
+    const char *candidates[] = {
+        TKC_STDLIB_DIR "/capabilities.c",
+        "src/stdlib/capabilities.c",
+        NULL
+    };
+    for (int i = 0; candidates[i]; i++) {
+        FILE *f = fopen(candidates[i], "r");
+        if (f) { fclose(f); return candidates[i]; }
+    }
+    return NULL;
+}
+
+/*
  * find_stdlib_sources — Build a space-separated list of stdlib C sources to
  * link when compiling user programs.
  *
@@ -7621,6 +7646,17 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
                              strncat(sources, rt,  sizeof sources - strlen(sources) - 1); }
         if (std && std[0]) { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
                              strncat(sources, std, sizeof sources - strlen(sources) - 1); }
+    }
+
+    /* 124.4a: the capability broker pairs with tk_runtime.c and must link into
+     * every binary (tk_runtime_init calls tk_cap_init), in both selective and
+     * link-all modes. Append it once here so neither path double-links it. */
+    {
+        const char *cap = find_capabilities_source();
+        if (cap && cap[0]) {
+            strncat(sources, " ", sizeof sources - strlen(sources) - 1);
+            strncat(sources, cap, sizeof sources - strlen(sources) - 1);
+        }
     }
 
     const char *vendor_inc = find_stdlib_vendor_includes();

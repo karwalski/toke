@@ -10,6 +10,7 @@
 #include "tk_runtime.h"
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include "args.h"
+#include "capabilities.h"  /* 124.4a: capability broker init */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,7 @@ void tk_runtime_init(int argc, char **argv) {
     g_argc = argc;
     g_argv = argv;
     args_init(argc, argv);
+    tk_cap_init(argc, argv);   /* 124.4a: init capability broker (ALLOW_ALL default) */
 }
 
 const char *tk_str_argv(int64_t index) {
