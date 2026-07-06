@@ -27,7 +27,9 @@ def probe(tk):
     with tempfile.TemporaryDirectory() as d:
         out = os.path.join(d, "b")
         try:
-            r = subprocess.run([TOKE, tk, "--out", out],
+            # 124.4f: --allow-all so the deny-by-default capability flip (124.4g)
+            # is a no-op here — the gate measures codegen behaviour, not grants.
+            r = subprocess.run([TOKE, tk, "--allow-all", "--out", out],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                timeout=90)
         except subprocess.TimeoutExpired:

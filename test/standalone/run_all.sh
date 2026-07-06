@@ -15,7 +15,7 @@ for tk in "$DIR"/test_*.tk; do
   echo "=== $name ==="
 
   # Compile to LLVM IR
-  "$TOKE" --emit-llvm --out "/tmp/${name}.ll" "$tk" 2>/dev/null
+  "$TOKE" --allow-all --emit-llvm --out "/tmp/${name}.ll" "$tk" 2>/dev/null
   if [ $? -ne 0 ]; then echo "  COMPILE ERROR"; TOTAL_FAIL=$((TOTAL_FAIL+1)); continue; fi
 
   # Gather C dependencies (--emit-deps includes vendor sources when needed)

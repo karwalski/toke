@@ -13,7 +13,7 @@ for tk in "${DIR}"/*.tk; do
     continue
   fi
   expected=$(tr -d ' \r\n' < "$exp_file")
-  if ! "$TKC" --out "/tmp/tkc_e2e_${name}" "$tk" 2>/tmp/tkc_e2e_err_${name}; then
+  if ! "$TKC" --allow-all --out "/tmp/tkc_e2e_${name}" "$tk" 2>/tmp/tkc_e2e_err_${name}; then
     echo "FAIL $name (tkc compile failed)"
     cat /tmp/tkc_e2e_err_${name}
     FAIL=$((FAIL+1))

@@ -66,7 +66,7 @@ for name in "${BENCHMARKS[@]}"; do
   fi
 
   # Compile toke
-  if ! "$TKC" -O2 "$tk_src" --out "$tk_bin" 2>/dev/null; then
+  if ! "$TKC" -O2 --allow-all "$tk_src" --out "$tk_bin" 2>/dev/null; then
     printf "  ${RED}FAIL${RST} %s.tk — tkc compilation failed\n" "$name"
     compile_failures+=("$name")
     continue
