@@ -79,5 +79,46 @@ else
     echo "  PASS: missing explicit config file is an error"
 fi
 
+# Test 6: [capabilities] section (124.4b, ADR-0010) parses into the grant set.
+# net=4 | fs_read=1 => cap-grants 0x5, enforce on. Scoped string coarsened to class.
+cat > "$TMPDIR/caps.toml" <<'EOF'
+[capabilities]
+net = true
+fs_read = "/srv/www"
+fs_write = false
+enforce = true
+EOF
+OUTCAP=$("$TKC" --config="$TMPDIR/caps.toml" --show-limits 2>&1)
+if echo "$OUTCAP" | grep -q "cap-grants *= *0x5" \
+   && echo "$OUTCAP" | grep -q "cap-present *= *1" \
+   && echo "$OUTCAP" | grep -q "cap-enforce *= *1"; then
+    echo "  PASS: [capabilities] parses net+fs_read grant, enforce"
+else
+    echo "  FAIL: [capabilities] parse"
+    echo "  GOT: $OUTCAP"
+    exit 1
+fi
+
+# Test 7: CLI --allow-* unions with (and can stand alone against) config.
+OUTCLI=$("$TKC" --allow-net --allow-run --show-limits 2>&1)
+if echo "$OUTCLI" | grep -q "cap-grants *= *0x14" \
+   && echo "$OUTCLI" | grep -q "cap-present *= *1"; then
+    echo "  PASS: --allow-net --allow-run => 0x14 (net|process_spawn)"
+else
+    echo "  FAIL: CLI --allow-* parse"
+    echo "  GOT: $OUTCLI"
+    exit 1
+fi
+
+# Test 8: no capability config => nothing baked (pure no-op default).
+OUTNONE=$(cd /tmp && "$TKC" --show-limits 2>&1)
+if echo "$OUTNONE" | grep -q "cap-present *= *0"; then
+    echo "  PASS: no capability config => cap-present = 0"
+else
+    echo "  FAIL: expected cap-present = 0 without config"
+    echo "  GOT: $OUTNONE"
+    exit 1
+fi
+
 echo ""
 echo "All config tests passed."

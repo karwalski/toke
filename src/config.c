@@ -13,6 +13,7 @@
 #include <ctype.h>
 
 #include "config.h"
+#include "stdlib/capabilities.h"  /* 124.4b: TK_CAP_* bits (single source of truth) */
 
 #define LINE_BUF 256
 
@@ -24,6 +25,22 @@ static char *strip(char *s)
     char *end = s + strlen(s) - 1;
     while (end > s && isspace((unsigned char)*end)) *end-- = '\0';
     return s;
+}
+
+/*
+ * Map a [capabilities] key to its TK_CAP_* bit (or 0 for the special "enforce"
+ * key, handled by the caller). Returns (unsigned)-1 for an unknown key.
+ * Accepts both the dotted-name and short spellings.
+ */
+static unsigned cap_key_bit(const char *key)
+{
+    if (!strcmp(key, "all"))                                 return TK_CAP_ALL;
+    if (!strcmp(key, "fs_read")  || !strcmp(key, "read"))    return TK_CAP_FS_READ;
+    if (!strcmp(key, "fs_write") || !strcmp(key, "write"))   return TK_CAP_FS_WRITE;
+    if (!strcmp(key, "net"))                                 return TK_CAP_NET;
+    if (!strcmp(key, "env_write")|| !strcmp(key, "env"))     return TK_CAP_ENV_WRITE;
+    if (!strcmp(key, "process_spawn") || !strcmp(key, "run")) return TK_CAP_PROCESS_SPAWN;
+    return (unsigned)-1;
 }
 
 /*
@@ -48,6 +65,7 @@ int tkc_load_config(const char *path, TkcLimits *limits)
 
     char line[LINE_BUF];
     int lineno = 0;
+    char section[64] = "";   /* current [section]; "" = top-level (limits) */
 
     while (fgets(line, (int)sizeof(line), f)) {
         lineno++;
@@ -55,6 +73,20 @@ int tkc_load_config(const char *path, TkcLimits *limits)
 
         /* Skip blank lines and comments */
         if (*s == '\0' || *s == '#') continue;
+
+        /* Section header: [name] */
+        if (*s == '[') {
+            char *close = strchr(s, ']');
+            if (!close) {
+                fprintf(stderr, "tkc: %s:%d: unterminated section header\n", path, lineno);
+                fclose(f);
+                return -2;
+            }
+            *close = '\0';
+            char *name = strip(s + 1);
+            snprintf(section, sizeof section, "%s", name);
+            continue;
+        }
 
         /* Find '=' separator */
         char *eq = strchr(s, '=');
@@ -73,6 +105,37 @@ int tkc_load_config(const char *path, TkcLimits *limits)
             fprintf(stderr, "tkc: %s:%d: empty key or value\n", path, lineno);
             fclose(f);
             return -2;
+        }
+
+        /* [capabilities] section (124.4b, ADR-0010): grant declarations.
+         * A value is truthy if it is `true` or any (quoted) path/host string —
+         * scoping is coarsened to the whole class for now (124.4c refines it).
+         * `enforce = true` bakes deny-by-default. */
+        if (!strcmp(section, "capabilities")) {
+            int truthy;
+            if (*val == '"' || *val == '\'') {
+                truthy = (val[1] != *val);   /* non-empty quoted string */
+            } else {
+                truthy = !strcmp(val, "true") || !strcmp(val, "1");
+                if (!truthy && strcmp(val, "false") && strcmp(val, "0")) {
+                    fprintf(stderr, "tkc: %s:%d: capability '%s' wants true/false or a "
+                            "quoted path, got '%s'\n", path, lineno, key, val);
+                    fclose(f); return -2;
+                }
+            }
+            if (!strcmp(key, "enforce")) {
+                limits->cap_present = 1;
+                limits->cap_enforce = truthy;
+            } else {
+                unsigned bit = cap_key_bit(key);
+                if (bit == (unsigned)-1) {
+                    fprintf(stderr, "tkc: %s:%d: unknown capability '%s'\n", path, lineno, key);
+                    fclose(f); return -2;
+                }
+                limits->cap_present = 1;
+                if (truthy) limits->cap_grants |= bit;
+            }
+            continue;
         }
 
         /* Parse integer value (ignore quoted strings for now) */

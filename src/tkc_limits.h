@@ -283,6 +283,13 @@ typedef struct {
     int max_avail_modules;
     int arena_block_size;
     int max_iters;       /* --max-iters=N: loop iteration guard (0 = off) */
+    /* 124.4b (ADR-0010): capability grant set baked into the emitted binary.
+     * cap_present=1 iff any grant/[capabilities] config was given (only then
+     * does the compiler emit the @__tk_cap_baked_* globals). cap_grants is the
+     * TK_CAP_* bitmask; cap_enforce bakes deny-by-default enforcement. */
+    unsigned cap_grants;
+    int cap_present;
+    int cap_enforce;
 } TkcLimits;
 
 static inline void tkc_limits_defaults(TkcLimits *lim)
@@ -296,6 +303,9 @@ static inline void tkc_limits_defaults(TkcLimits *lim)
     lim->max_avail_modules     = TKC_MAX_AVAIL_MODULES;
     lim->arena_block_size = TKC_ARENA_BLOCK_SIZE;
     lim->max_iters        = 0;  /* 0 = no limit (off by default) */
+    lim->cap_grants       = 0u;
+    lim->cap_present      = 0;   /* no capability config -> emit nothing */
+    lim->cap_enforce      = 0;
 }
 
 #endif /* TKC_LIMITS_H */

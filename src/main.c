@@ -38,6 +38,7 @@
 #include "compress.h"  /* compress_text(), decompress_text(), compress_stream_*() */
 #include "tkc_limits.h"
 #include "config.h"
+#include "stdlib/capabilities.h"  /* 124.4b: TK_CAP_* bits for --allow-* baking */
 #include "progress.h"
 #include "migrate.h"
 #include "lint.h"
@@ -113,6 +114,13 @@ static const char HELP[] =
     "  --arena-block=N     Arena block size in bytes (default: 65536)\n"
     "  --max-iters=N       Max loop iterations at runtime (default: 0 = unlimited)\n"
     "  --show-limits       Print effective limits and exit\n"
+    "\n"
+    "Capabilities (ADR-0010, deny-by-default; grants also declarable in\n"
+    "tkc.toml [capabilities] and passable at run time on the compiled binary):\n"
+    "  --allow-read[=PATH] --allow-write[=PATH]  Grant fs read / write\n"
+    "  --allow-net[=HOST]  --allow-env  --allow-run[=PATH]  Grant net / env / spawn\n"
+    "  --allow-all         Grant every capability\n"
+    "  --cap-enforce       Bake deny-by-default enforcement into the binary\n"
     "\n"
     "Configuration:\n"
     "  --config=PATH       Load config from PATH (default: ./tkc.toml)\n"
@@ -458,6 +466,18 @@ int main(int argc, char **argv)
         else if (!strncmp(argv[i], "--max-avail=", 12)) limits.max_avail_modules = atoi(argv[i] + 12);
         else if (!strncmp(argv[i], "--arena-block=", 14)) limits.arena_block_size = atoi(argv[i] + 14);
         else if (!strncmp(argv[i], "--max-iters=", 12))  limits.max_iters = atoi(argv[i] + 12);
+        /* 124.4b (ADR-0010): compile-time capability grants baked into the
+         * binary. Accept an optional =scope (coarsened to the class for now).
+         * --cap-enforce bakes deny-by-default. */
+        else if (!strncmp(argv[i], "--allow-all", 11))   { limits.cap_grants |= TK_CAP_ALL; limits.cap_present = 1; }
+        else if (!strncmp(argv[i], "--allow-read", 12) ||
+                 !strncmp(argv[i], "--allow-fs-read", 15))  { limits.cap_grants |= TK_CAP_FS_READ; limits.cap_present = 1; }
+        else if (!strncmp(argv[i], "--allow-write", 13) ||
+                 !strncmp(argv[i], "--allow-fs-write", 16)) { limits.cap_grants |= TK_CAP_FS_WRITE; limits.cap_present = 1; }
+        else if (!strncmp(argv[i], "--allow-net", 11))   { limits.cap_grants |= TK_CAP_NET; limits.cap_present = 1; }
+        else if (!strncmp(argv[i], "--allow-env", 11))   { limits.cap_grants |= TK_CAP_ENV_WRITE; limits.cap_present = 1; }
+        else if (!strncmp(argv[i], "--allow-run", 11))   { limits.cap_grants |= TK_CAP_PROCESS_SPAWN; limits.cap_present = 1; }
+        else if (!strcmp(argv[i], "--cap-enforce"))      { limits.cap_enforce = 1; limits.cap_present = 1; }
         else if (!strncmp(argv[i], "--config=", 9)) { /* already handled */ }
         else if (!strcmp(argv[i], "--target")) {
             if (++i >= argc) { fputs("tkc: --target requires an argument\n", stderr); return EUSAGE; }
@@ -507,6 +527,10 @@ int main(int argc, char **argv)
         printf("  max-avail    = %d\n", limits.max_avail_modules);
         printf("  arena-block  = %d\n", limits.arena_block_size);
         printf("  max-iters    = %d%s\n", limits.max_iters, limits.max_iters ? "" : " (unlimited)");
+        /* 124.4b: capability grant set that would be baked into the binary. */
+        printf("  cap-present  = %d\n", limits.cap_present);
+        printf("  cap-grants   = 0x%x\n", limits.cap_grants);
+        printf("  cap-enforce  = %d\n", limits.cap_enforce);
         return 0;
     }
     /* --compress / --decompress / --compress-stream: standalone stdin modes */

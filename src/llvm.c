@@ -7265,6 +7265,17 @@ int emit_llvm_ir(const Node *ast, const char *src,
     /* Emit C-compatible main wrapper only when this module defines main */
     const FnSig *tkmain = lookup_fn(&ctx, "tk_main");
     if (tkmain) {
+        /* 124.4b (ADR-0010): bake the capability grant set as strong module
+         * globals that override capabilities.c's weak defaults. Emitted only
+         * here (the entry module) so exactly one strong definition exists, and
+         * only when grants were declared (else the weak ALLOW_ALL default holds
+         * and behaviour is unchanged). */
+        if (lim.cap_present) {
+            fprintf(body_file, "@__tk_cap_baked_grants = constant i32 %u\n", lim.cap_grants);
+            fputs("@__tk_cap_baked_present = constant i32 1\n", body_file);
+            fprintf(body_file, "@__tk_cap_baked_enforce = constant i32 %d\n",
+                    lim.cap_enforce ? 1 : 0);
+        }
         fputs("\ndefine i32 @main(i32 %argc, i8** %argv) #0 {\n", body_file);
         fputs("  call void @tk_runtime_init(i32 %argc, i8** %argv)\n", body_file);
         if (!strcmp(tkmain->ret, "void")) {
