@@ -175,7 +175,24 @@ All functions are declared in `tk_runtime.h` and linked from
 
 ---
 
-## 9. Overflow Trap
+## 9. Runtime Traps
+
+The emitted code fails **loudly at the fault site** rather than corrupting memory
+or invoking undefined behaviour. Each trap prints `RTNNN: …` to stderr and
+`exit(1)`; the `unreachable` after the call lets `-O2` delete the guard where it
+can prove the fault is impossible.
+
+| Code | Condition | Runtime fn | Message |
+|------|-----------|-----------|---------|
+| RT002 | `i64` add/sub/mul overflow | `tk_overflow_trap` | `RT002: integer overflow in <op>` |
+| RT003 | array/collection index out of bounds | `tk_bounds_trap` | `RT003: index N out of bounds for length M` |
+| RT004 | divide-by-zero / `INT64_MIN / -1` | `tk_div_trap` | `RT004: <division|remainder> by zero` |
+| RT005 | nil struct-field dereference | `tk_nil_trap` | `RT005: nil dereference` |
+
+(See [memory-model.md §6.6](spec/memory-model.md) for the normative spatial/
+arithmetic-safety properties, and ADR-0012 for the design.)
+
+### 9.1 Overflow (RT002)
 
 Integer arithmetic on `i64` uses LLVM checked intrinsics:
 
@@ -222,3 +239,58 @@ arguments at any point during execution.
 - Out-of-bounds `tk_str_argv` calls return `""` (empty string, not NULL).
 - `argv[0]` is the program name, `argv[1]` is typically the JSON input
   for benchmark programs.
+
+`tk_runtime_init` also calls `tk_cap_init(argc, argv)` to initialise the
+capability broker (see §12).
+
+---
+
+## 11. Injection Resistance
+
+The runtime neutralises the injection classes closed in ADR-0011; these are
+guarantees of the emitted/stdlib behaviour, not advice:
+
+1. **Argv-only process exec.** `process.exec`/`spawn`/`spawndetached` never route
+   through `sh -c`. The command string is tokenised on whitespace (quoted segments
+   preserved) and `execvp`'d directly, so shell metacharacters (`;`, `|`, `$()`,
+   backticks, `&&`) are treated literally — a command-injection payload runs no
+   extra process.
+2. **Context-aware HTML/template escaping (escape-by-default).** Interpolated
+   values are HTML-escaped by default in both `tpl.render` (stdlib) and the ooke
+   `{= =}` template engine; attribute values, and JS/CSS/`<title>` raw-text
+   contexts, are escaped for their context; `md.render` runs with cmark's safe
+   default (raw HTML in markdown source is neutralised). A `|raw` filter is the
+   explicit, greppable opt-out for trusted HTML.
+3. **URL-scheme neutralisation.** `javascript:`/`vbscript:`/`data:` URLs are dropped
+   from `href`/`src`/`action`/… attributes.
+
+(See [memory-model.md §6.7](spec/memory-model.md) and ADR-0011.)
+
+---
+
+## 12. At-Rest Crypto Envelope
+
+`encrypt.seal`/`encrypt.open` wrap AEAD output in a self-describing, versioned,
+algorithm-tagged envelope so ciphertext at rest is upgradeable without breaking
+format:
+
+```
+[ 'T' 'K' 'E' | version(1) | alg(1) | nonce(12) | ciphertext | tag(16) ]
+```
+
+`open` dispatches on `(version, alg)` and rejects unknown/tampered values, so an
+attacker cannot downgrade or confuse the format. `alg` 1 = AES-256-GCM, 2 =
+ChaCha20-Poly1305 (both 256-bit AEADs). New algorithms (incl. PQC) are added as new
+`alg` ids. TLS uses hybrid post-quantum key exchange (`X25519MLKEM768`, classical
+fallback) and an opt-in ML-DSA-65 self-signed cert path. (See ADR-0013.)
+
+---
+
+## 13. Capability Broker
+
+`tk_cap_init` (called from `tk_runtime_init`) computes the effective grant set from
+the compiler-baked `@__tk_cap_baked_{grants,present,enforce}` globals unioned with
+runtime `--allow-*` flags. Each fs/net/env/process sink calls `tk_cap_check`; a
+denied call raises `CAP001` and exits before the syscall. Default mode is
+`ALLOW_ALL` (no-op) until the deny-by-default flip. Full details in
+[spec/capabilities.md](spec/capabilities.md) and ADR-0010.

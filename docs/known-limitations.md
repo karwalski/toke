@@ -254,23 +254,31 @@ return value copying is verified correct (Story 76.1.4b). No GC is planned.
 
 ### 2. No stack overflow detection
 
-Deep recursion will segfault without a meaningful error message. The runtime
-spec defines a recursion limit of 1000 frames (RT005) but this is not enforced
-at the compiler or runtime level.
+Deep recursion will segfault without a meaningful error message. There is no
+enforced recursion-frame limit at the compiler or runtime level.
 
 **Workaround:** Avoid deep recursion. Convert recursive algorithms to iterative
 versions using loops (`lp`).
 
-### 3. No array bounds checking
+### 3. ~~No array bounds checking~~ — RESOLVED (RT003)
 
-Out-of-bounds array access produces a segfault. There is no runtime bounds
-check or trap.
+Array/collection index access is now bounds-checked in codegen: an out-of-range
+index traps `RT003: index N out of bounds for length M` and exits, rather than
+segfaulting. Divide-by-zero traps `RT004`, and dereferencing a nil struct base
+traps `RT005: nil dereference` (the map-`.get`-miss-returns-0 case). Under `-O2`
+provably-in-range checks are eliminated. See [runtime-abi.md §9](runtime-abi.md)
+and ADR-0012.
 
-**Workaround:** Check array length before access. Use `.get()` methods where
-available.
+### 4. Capability enforcement is opt-in (default allow-all)
 
-**Planned fix:** Runtime bounds traps are specified (RT003) but not yet
-implemented in codegen.
+The deny-by-default capability model (ADR-0010) is implemented and every
+fs/net/env/process sink is gated, but the default mode is still **allow-all** — a
+program only fails closed under `--cap-enforce` (baked) or a runtime `--allow-*`
+flag, until the deny-by-default flip (Epic 124.4g). Two current coarsenings:
+scoped grants (`--allow-net=host`, `--allow-read=/path`) are honoured at the
+**class** level (per-path/per-host scoping is a planned refinement), and consumed
+`--allow-*` flags are **not yet stripped** from the program's own argv. See
+[spec/capabilities.md](spec/capabilities.md).
 
 ---
 
