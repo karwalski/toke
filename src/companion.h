@@ -14,6 +14,7 @@
  */
 
 #include "parser.h"
+#include "tkc_limits.h"
 #include <stdio.h>
 
 /*
@@ -25,9 +26,11 @@
  * source      : full source buffer content (used for SHA-256 and token text)
  * source_len  : length of source in bytes
  * ast         : root NODE_PROGRAM node from the parser
+ * limits      : compiler limits/grants; the baked capability set (if any) is
+ *               recorded in a ## Capabilities section. May be NULL.
  */
 void emit_companion(FILE *out, const char *source_path, const char *source,
-                    long source_len, const Node *ast);
+                    long source_len, const Node *ast, const TkcLimits *limits);
 
 /*
  * verify_companion — Read a .tkc.md companion file, extract source_file and

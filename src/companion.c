@@ -25,6 +25,7 @@
 
 #include "companion.h"
 #include "tkc_limits.h"
+#include "stdlib/capabilities.h"   /* 124.4-fu: TK_CAP_* bits for the grant record */
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
@@ -530,8 +531,30 @@ static void emit_control_flow_section(FILE *out)
 
 /* ── Public API ──────────────────────────────────────────────────────── */
 
+/* 124.4-fu: record the baked capability grant set (ADR-0010), so the companion
+ * makes "what can this binary touch" a verifiable, hash-bound fact. */
+static void emit_capabilities_section(FILE *out, const TkcLimits *lim)
+{
+    if (!lim || !lim->cap_present) return;
+    fprintf(out, "\n## Capabilities\n\n");
+    fprintf(out, "Declared authority baked into the binary (ADR-0010). Mode: **%s**.\n\n",
+            lim->cap_enforce ? "enforce (deny-by-default)" : "advisory (allow-all)");
+    static const struct { unsigned bit; const char *name; } classes[] = {
+        {TK_CAP_FS_READ, "fs.read"}, {TK_CAP_FS_WRITE, "fs.write"},
+        {TK_CAP_NET, "net"}, {TK_CAP_ENV_WRITE, "env.write"},
+        {TK_CAP_PROCESS_SPAWN, "process.spawn"},
+    };
+    int any = 0;
+    for (int i = 0; i < 5; i++)
+        if (lim->cap_grants & classes[i].bit) {
+            fprintf(out, "- `%s`\n", classes[i].name);
+            any = 1;
+        }
+    if (!any) fprintf(out, "- (none — pure computation)\n");
+}
+
 void emit_companion(FILE *out, const char *source_path, const char *source,
-                    long source_len, const Node *ast)
+                    long source_len, const Node *ast, const TkcLimits *limits)
 {
     emit_frontmatter(out, source_path, source, source_len);
     emit_module_section(out, ast, source);
@@ -539,6 +562,7 @@ void emit_companion(FILE *out, const char *source_path, const char *source,
     emit_functions_section(out, ast, source);
     emit_constants_section(out, ast, source);
     emit_control_flow_section(out);
+    emit_capabilities_section(out, limits);
 }
 
 /* ── Companion file verification ─────────────────────────────────────── */

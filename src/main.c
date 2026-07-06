@@ -994,7 +994,7 @@ int main(int argc, char **argv)
                 symtab_free(&st); rc = EUSAGE; goto done;
             }
         }
-        emit_companion(comp_out, src, sbuf, slen, ast);
+        emit_companion(comp_out, src, sbuf, slen, ast, &limits);
         if (companion_out) fclose(comp_out);
         symtab_free(&st);
         goto done;
