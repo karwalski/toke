@@ -271,10 +271,12 @@ int resolve_stdlib_deps(const char *stdlib_dir, const SymbolTable *st,
         }
     }
 
-    /* Always include tk_runtime.c (tk_web_glue.c is now part of the http module) */
+    /* Always include tk_runtime.c (tk_web_glue.c is now part of the http module)
+     * and capabilities.c (124.4: the capability broker is a universal dep —
+     * tk_runtime_init calls tk_cap_init, and every gated sink calls tk_cap_check). */
     snprintf(out->sources, sizeof out->sources,
-             "%s/tk_runtime.c",
-             stdlib_dir);
+             "%s/tk_runtime.c %s/capabilities.c",
+             stdlib_dir, stdlib_dir);
 
     /* For each needed module, append its .c files and vendor sources */
     {
@@ -393,8 +395,9 @@ int resolve_stdlib_deps_imports_only(const char *stdlib_dir,
         }
     }
 
-    /* Always include tk_runtime.c */
-    snprintf(out->sources, sizeof out->sources, "%s/tk_runtime.c", stdlib_dir);
+    /* Always include tk_runtime.c + capabilities.c (universal deps, 124.4). */
+    snprintf(out->sources, sizeof out->sources,
+             "%s/tk_runtime.c %s/capabilities.c", stdlib_dir, stdlib_dir);
 
     /* Append .c files and vendor sources for each needed module */
     {

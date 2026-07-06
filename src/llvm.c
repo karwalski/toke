@@ -7650,24 +7650,19 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
     }
 
     if (link_all || !st) {
-        /* Original behaviour: link all stdlib sources */
+        /* Original behaviour: link all stdlib sources. tk_runtime.c and
+         * capabilities.c (124.4: universal capability broker dep) are added here
+         * for the link-all path; the selective path gets both from the resolver's
+         * deps.sources, so neither path double-links. */
         const char *rt  = find_runtime_source();
+        const char *cap = find_capabilities_source();
         const char *std = find_stdlib_sources();
         if (rt  && rt[0])  { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
                              strncat(sources, rt,  sizeof sources - strlen(sources) - 1); }
+        if (cap && cap[0]) { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
+                             strncat(sources, cap, sizeof sources - strlen(sources) - 1); }
         if (std && std[0]) { strncat(sources, " ", sizeof sources - strlen(sources) - 1);
                              strncat(sources, std, sizeof sources - strlen(sources) - 1); }
-    }
-
-    /* 124.4a: the capability broker pairs with tk_runtime.c and must link into
-     * every binary (tk_runtime_init calls tk_cap_init), in both selective and
-     * link-all modes. Append it once here so neither path double-links it. */
-    {
-        const char *cap = find_capabilities_source();
-        if (cap && cap[0]) {
-            strncat(sources, " ", sizeof sources - strlen(sources) - 1);
-            strncat(sources, cap, sizeof sources - strlen(sources) - 1);
-        }
     }
 
     const char *vendor_inc = find_stdlib_vendor_includes();
