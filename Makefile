@@ -34,7 +34,8 @@ STDLIB_SRCS = \
           src/stdlib/mem.c \
           src/stdlib/os.c \
           src/stdlib/task.c \
-          src/stdlib/collections.c
+          src/stdlib/collections.c \
+          src/stdlib/capabilities.c
 
 SRCS    += $(STDLIB_SRCS)
 OBJS    = $(SRCS:.c=.o)

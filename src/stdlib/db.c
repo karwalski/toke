@@ -2,6 +2,7 @@
  * Story: 1.3.3  Branch: feature/stdlib-db */
 
 #include "db.h"
+#include "capabilities.h"   /* 124.4c2: sqlite db file is a read-write fs sink */
 #include <sqlite3.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,8 @@ static int find_col(Row r, const char *col);
 
 int db_open(const char *dsn)
 {
+    TK_REQUIRE(TK_CAP_FS_READ);
+    TK_REQUIRE(TK_CAP_FS_WRITE);
     if (sqlite3_open(dsn, &g_db) != SQLITE_OK) {
         sqlite3_close(g_db); g_db = NULL; return -1;
     }

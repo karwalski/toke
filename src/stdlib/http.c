@@ -10,6 +10,7 @@
 #include "http.h"
 #include "log.h"
 #include "encoding.h"
+#include "capabilities.h"   /* 124.4c2: net capability gate (server + client) */
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -1037,6 +1038,7 @@ static void serve_sighandler(int sig)
 }
 
 int http_serve(uint16_t port) {
+    TK_REQUIRE(TK_CAP_NET);
     int srv = socket(AF_INET, SOCK_STREAM, 0);
     if (srv < 0) {
         fprintf(stderr, "error: could not create socket: %s\n", strerror(errno));
@@ -1129,6 +1131,7 @@ static void workers_parent_sighandler(int sig)
  * host == NULL means INADDR_ANY.  Returns fd or -1 on error. */
 static int bind_listen(const char *host, uint64_t port)
 {
+    TK_REQUIRE(TK_CAP_NET);
     int srv = socket(AF_INET, SOCK_STREAM, 0);
     if (srv < 0) {
         fprintf(stderr, "error: could not create socket: %s\n", strerror(errno));
@@ -1973,6 +1976,7 @@ static int client_parse_url(const char *base_url, const char *path_suffix,
 static int client_tcp_connect(const char *host, const char *port,
                               uint64_t timeout_ms)
 {
+    TK_REQUIRE(TK_CAP_NET);
     struct addrinfo hints, *res, *rp;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family   = AF_UNSPEC;

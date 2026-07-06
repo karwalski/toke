@@ -4,6 +4,7 @@
 #ifdef TK_HAVE_LIBPQ
 
 #include "db.h"
+#include "capabilities.h"   /* 124.4c2: postgres connect is a net sink */
 #include <libpq-fe.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +45,7 @@ static char *rewrite_placeholders(const char *sql)
 
 static int pg_open(const char *dsn)
 {
+    TK_REQUIRE(TK_CAP_NET);
     g_pg = PQconnectdb(dsn);
     if (PQstatus(g_pg) != CONNECTION_OK) {
         PQfinish(g_pg); g_pg = NULL; return -1;

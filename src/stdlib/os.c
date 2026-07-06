@@ -8,6 +8,7 @@
  */
 
 #include "os.h"
+#include "capabilities.h"   /* 124.4c2: fs/env capability gates */
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -21,6 +22,12 @@
 /* ── File operations ─────────────────────────────────────────────── */
 
 int64_t tk_os_open(int64_t path, int64_t flags, int64_t mode) {
+    /* 124.4c2: gate by access mode — reads need FS_READ, any write/create/
+     * truncate/append needs FS_WRITE (O_RDWR needs both). */
+    int af = (int)flags & O_ACCMODE;
+    if (af == O_RDONLY || af == O_RDWR) TK_REQUIRE(TK_CAP_FS_READ);
+    if (af == O_WRONLY || af == O_RDWR ||
+        ((int)flags & (O_CREAT | O_TRUNC | O_APPEND))) TK_REQUIRE(TK_CAP_FS_WRITE);
     return (int64_t)open((const char *)(intptr_t)path, (int)flags, (mode_t)mode);
 }
 
@@ -41,6 +48,7 @@ int64_t tk_os_lseek(int64_t fd, int64_t offset, int64_t whence) {
 }
 
 int64_t tk_os_stat(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_READ);
     struct stat st;
     int rc = stat((const char *)(intptr_t)path, &st);
     if (rc != 0) return (int64_t)-1;
@@ -48,23 +56,28 @@ int64_t tk_os_stat(int64_t path) {
 }
 
 int64_t tk_os_unlink(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_WRITE);
     return (int64_t)unlink((const char *)(intptr_t)path);
 }
 
 int64_t tk_os_rename(int64_t oldpath, int64_t newpath) {
+    TK_REQUIRE(TK_CAP_FS_WRITE);
     return (int64_t)rename((const char *)(intptr_t)oldpath,
                            (const char *)(intptr_t)newpath);
 }
 
 int64_t tk_os_mkdir(int64_t path, int64_t mode) {
+    TK_REQUIRE(TK_CAP_FS_WRITE);
     return (int64_t)mkdir((const char *)(intptr_t)path, (mode_t)mode);
 }
 
 int64_t tk_os_rmdir(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_WRITE);
     return (int64_t)rmdir((const char *)(intptr_t)path);
 }
 
 int64_t tk_os_access(int64_t path, int64_t amode) {
+    TK_REQUIRE(TK_CAP_FS_READ);
     return (int64_t)access((const char *)(intptr_t)path, (int)amode);
 }
 
@@ -93,6 +106,7 @@ int64_t tk_os_getenv(int64_t name) {
 }
 
 int64_t tk_os_setenv(int64_t name, int64_t value) {
+    TK_REQUIRE(TK_CAP_ENV_WRITE);
     return (int64_t)setenv((const char *)(intptr_t)name,
                            (const char *)(intptr_t)value, 1);
 }

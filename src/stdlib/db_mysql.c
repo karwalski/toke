@@ -4,6 +4,7 @@
 #ifdef TK_HAVE_MYSQL
 
 #include "db.h"
+#include "capabilities.h"   /* 124.4c2: mysql connect is a net sink */
 #include <mysql/mysql.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,6 +65,7 @@ static int parse_mysql_dsn(const char *dsn,
 
 static int my_open(const char *dsn)
 {
+    TK_REQUIRE(TK_CAP_NET);
     g_mysql = mysql_init(NULL);
     if (!g_mysql) return -1;
 
