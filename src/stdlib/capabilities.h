@@ -57,6 +57,17 @@ int tk_cap_check(uint32_t cap);
 const char *tk_cap_class_name(uint32_t cap);
 
 /*
+ * TK_REQUIRE — gate a capability sink. Placed at the top of a stdlib _w wrapper
+ * (a resource-acquisition point: open file / listen / connect / spawn / setenv).
+ * A no-op in ALLOW_ALL mode; under enforcement a missing grant prints CAP001 and
+ * exits. Gating is at acquisition, not per read/write on an already-open handle
+ * (Deno semantics — the check happens once, when authority is taken).
+ */
+#define TK_REQUIRE(cap) do { \
+    if (!tk_cap_check(cap)) tk_cap_deny(cap); \
+} while (0)
+
+/*
  * tk_cap_deny — a denied sink: print a structured capability diagnostic that
  * names the missing grant and the flag that would grant it, then exit(1).
  * (124.4d refines the diagnostic; sinks are wired in 124.4c.)

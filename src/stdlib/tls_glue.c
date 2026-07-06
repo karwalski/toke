@@ -5,6 +5,7 @@
  * SecureTransport). These stubs allow linking without the TLS backend.
  */
 
+#include "capabilities.h"   /* 124.4c: net capability gate */
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -17,6 +18,7 @@ int64_t tk_tls_tlsconfig_w(int64_t cert_path, int64_t key_path) {
 
 /* tls.connecttls(host, port) — establish TLS connection */
 int64_t tk_tls_connecttls_w(int64_t host, int64_t port) {
+    TK_REQUIRE(TK_CAP_NET);
     (void)host;
     (void)port;
     return 0;
@@ -24,6 +26,7 @@ int64_t tk_tls_connecttls_w(int64_t host, int64_t port) {
 
 /* tls.listentls(port, config) — listen for TLS connections */
 int64_t tk_tls_listentls_w(int64_t port, int64_t config) {
+    TK_REQUIRE(TK_CAP_NET);
     (void)port;
     (void)config;
     return 0;

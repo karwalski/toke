@@ -9,6 +9,7 @@
  */
 
 #include "net.h"
+#include "capabilities.h"   /* 124.4c: net capability gate */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,10 +19,12 @@
 #include <arpa/inet.h>
 
 int64_t tk_net_portavailable_w(int64_t port) {
+    TK_REQUIRE(TK_CAP_NET);
     return (int64_t)net_portavailable((uint64_t)port);
 }
 
 int64_t tk_net_listen_w(int64_t addr) {
+    TK_REQUIRE(TK_CAP_NET);
     const char *s = (const char *)(intptr_t)addr;
     if (!s) return 0;
 
@@ -67,6 +70,7 @@ int64_t tk_net_listen_w(int64_t addr) {
 }
 
 int64_t tk_net_accept_w(int64_t listener) {
+    TK_REQUIRE(TK_CAP_NET);
     int fd = accept((int)listener, NULL, NULL);
     if (fd < 0) return 0;
     return (int64_t)fd;

@@ -5,11 +5,13 @@
  * tk_web_glue.c). Same fix class as 114.31 (net_glue.c).
  */
 #include "ws.h"
+#include "capabilities.h"   /* 124.4c: net capability gate */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 int64_t tk_ws_connect_w(int64_t url) {
+    TK_REQUIRE(TK_CAP_NET);
     if (!url) return 0;
     WsConnResult r = ws_connect((const char *)(intptr_t)url);
     if (r.is_err || !r.conn) return 0;

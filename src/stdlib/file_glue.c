@@ -7,40 +7,48 @@
 
 #include "file.h"
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
+#include "capabilities.h"   /* 124.4c: fs.read / fs.write capability gates */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 int64_t tk_file_read_w(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!path) return 0;
     StrFileResult r = file_read((const char *)(intptr_t)path);
     return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
 }
 
 int64_t tk_file_write_w(int64_t path, int64_t content) {
+    TK_REQUIRE(TK_CAP_FS_WRITE);
     if (!path || !content) return 0;
     BoolFileResult r = file_write((const char *)(intptr_t)path, (const char *)(intptr_t)content);
     return r.is_err ? 0 : (int64_t)r.ok;
 }
 
 int64_t tk_file_isdir_w(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!path) return 0;
     return (int64_t)file_is_dir((const char *)(intptr_t)path);
 }
 
 int64_t tk_file_mkdir_w(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_WRITE);
     if (!path) return 0;
     BoolFileResult r = file_mkdir_p((const char *)(intptr_t)path);
     return r.is_err ? 0 : (int64_t)r.ok;
 }
 
 int64_t tk_file_copy_w(int64_t src, int64_t dst) {
+    TK_REQUIRE(TK_CAP_FS_READ);   /* reads src */
+    TK_REQUIRE(TK_CAP_FS_WRITE);  /* writes dst */
     if (!src || !dst) return 0;
     BoolFileResult r = file_copy((const char *)(intptr_t)src, (const char *)(intptr_t)dst);
     return r.is_err ? 0 : (int64_t)r.ok;
 }
 
 int64_t tk_file_listall_w(int64_t dir) {
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!dir) return 0;
     StrArrayFileResult r = file_listall((const char *)(intptr_t)dir);
     if (r.is_err) return 0;
@@ -54,6 +62,7 @@ int64_t tk_file_listall_w(int64_t dir) {
 }
 
 int64_t tk_file_exists_w(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!path) return 0;
     return (int64_t)file_exists((const char *)(intptr_t)path);
 }
@@ -61,6 +70,7 @@ int64_t tk_file_exists_w(int64_t path) {
 /* ── wrappers for additional file operations ────────────────────────────── */
 
 int64_t tk_file_list_w(int64_t dir) {
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!dir) return 0;
     StrArrayFileResult r = file_list((const char *)(intptr_t)dir);
     if (r.is_err) return 0;
@@ -76,24 +86,28 @@ int64_t tk_file_list_w(int64_t dir) {
 
 int64_t tk_file_append_w(int64_t path, int64_t content, int64_t extra) {
     (void)extra;
+    TK_REQUIRE(TK_CAP_FS_WRITE);
     if (!path || !content) return 0;
     BoolFileResult r = file_append((const char *)(intptr_t)path, (const char *)(intptr_t)content);
     return r.is_err ? 0 : (int64_t)r.ok;
 }
 
 int64_t tk_file_delete_w(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_WRITE);
     if (!path) return 0;
     BoolFileResult r = file_delete((const char *)(intptr_t)path);
     return r.is_err ? 0 : (int64_t)r.ok;
 }
 
 int64_t tk_file_rename_w(int64_t from, int64_t to) {
+    TK_REQUIRE(TK_CAP_FS_WRITE);
     if (!from || !to) return 0;
     BoolFileResult r = file_move((const char *)(intptr_t)from, (const char *)(intptr_t)to);
     return r.is_err ? 0 : (int64_t)r.ok;
 }
 
 int64_t tk_file_readlines_w(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!path) return 0;
     StrArrayFileResult r = file_readlines((const char *)(intptr_t)path);
     if (r.is_err) return 0;
@@ -108,6 +122,7 @@ int64_t tk_file_readlines_w(int64_t path) {
 }
 
 int64_t tk_file_writelines_w(int64_t path, int64_t lines) {
+    TK_REQUIRE(TK_CAP_FS_WRITE);
     if (!path || !lines) return 0;
     /* lines points to block+1; block[0] (at lines[-1]) is the length */
     int64_t *arr = (int64_t *)(intptr_t)lines;
@@ -143,6 +158,7 @@ int64_t tk_file_writelines_w(int64_t path, int64_t lines) {
 }
 
 int64_t tk_file_stat_w(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!path) return 0;
     U64FileResult r = file_size((const char *)(intptr_t)path);
     return r.is_err ? 0 : (int64_t)r.ok;
@@ -161,6 +177,7 @@ int64_t tk_file_listdir_w(int64_t path) {
 
 /* file.appendline(path, line) — append a line with trailing newline */
 int64_t tk_file_appendline_w(int64_t path, int64_t line) {
+    TK_REQUIRE(TK_CAP_FS_WRITE);
     if (!path || !line) return 0;
     const char *l = (const char *)(intptr_t)line;
     size_t llen = strlen(l);
@@ -176,6 +193,7 @@ int64_t tk_file_appendline_w(int64_t path, int64_t line) {
 
 /* file.ensuredir(path) — create directory if it doesn't exist (mkdir -p) */
 int64_t tk_file_ensuredir_w(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_WRITE);
     if (!path) return 0;
     BoolFileResult r = file_mkdir_p((const char *)(intptr_t)path);
     return r.is_err ? 0 : (int64_t)r.ok;
@@ -183,6 +201,7 @@ int64_t tk_file_ensuredir_w(int64_t path) {
 
 /* file.listglob(pattern) — list files matching a glob pattern */
 int64_t tk_file_listglob_w(int64_t pattern) {
+    TK_REQUIRE(TK_CAP_FS_READ);
     if (!pattern) return 0;
     StrArrayFileResult r = file_glob((const char *)(intptr_t)pattern);
     if (r.is_err) return 0;

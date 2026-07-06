@@ -6,6 +6,7 @@
  */
 
 #include "env.h"
+#include "capabilities.h"   /* 124.4c: env.write capability gate */
 #include <stdint.h>
 
 int64_t tk_env_get_or(int64_t key, int64_t def) {
@@ -15,6 +16,7 @@ int64_t tk_env_get_or(int64_t key, int64_t def) {
 }
 
 int64_t tk_env_set_w(int64_t key, int64_t val) {
+    TK_REQUIRE(TK_CAP_ENV_WRITE);
     return (int64_t)env_set(
         (const char *)(intptr_t)key,
         (const char *)(intptr_t)val);

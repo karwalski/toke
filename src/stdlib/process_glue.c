@@ -6,6 +6,7 @@
  */
 
 #include "process.h"
+#include "capabilities.h"   /* 124.4c: process.spawn capability gate */
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -57,6 +58,7 @@ static int64_t spawn_cmdstr(const char *cmdstr) {
  * matching the runtime array layout (cf. tk_str_split_w in str_glue.c).
  * We decode it into a real NULL-terminated argv[] and execvp directly. */
 int64_t tk_process_spawn_w(int64_t cmd) {
+    TK_REQUIRE(TK_CAP_PROCESS_SPAWN);
     if (!cmd) return 0;
     const int64_t *block = (const int64_t *)(intptr_t)cmd;
     int64_t n = block[-1];
@@ -155,6 +157,7 @@ int64_t tk_process_env_w(int64_t name) {
 
 /* process.exec(cmd) — run command and return stdout as string */
 int64_t tk_process_exec_w(int64_t cmd) {
+    TK_REQUIRE(TK_CAP_PROCESS_SPAWN);
     if (!cmd) return 0;
     int64_t handle = spawn_cmdstr((const char *)(intptr_t)cmd);
     if (!handle) return 0;
@@ -186,6 +189,7 @@ int64_t tk_process_readlines_w(int64_t cmd) {
 
 /* process.spawndetached(cmd) — spawn a background process, don't track handle */
 int64_t tk_process_spawndetached_w(int64_t cmd) {
+    TK_REQUIRE(TK_CAP_PROCESS_SPAWN);
     if (!cmd) return 0;
     int64_t handle = spawn_cmdstr((const char *)(intptr_t)cmd);
     /* Return pid as integer, don't wait */
