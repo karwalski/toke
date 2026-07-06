@@ -3,7 +3,7 @@ f=collatz(n:i64):i64{
   let v=mut.n;
   let steps=mut.0;
   lp(let dummy=0;v>1;dummy=0){
-    if(v-v/2*2=0){
+    if(v-v/2*2==0){
       v=v/2
     }el{
       v=v*3+1

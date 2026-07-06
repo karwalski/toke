@@ -4,7 +4,7 @@ f=isprime(n:i64):i64{
     let d=mut.2;
     let found=mut.1;
     lp(let dummy=0;d*d<n+1;dummy=0){
-      if(n-n/d*d=0){
+      if(n-n/d*d==0){
         found=0;
         d=n
       }el{
