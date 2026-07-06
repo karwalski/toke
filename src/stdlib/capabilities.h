@@ -57,6 +57,14 @@ int tk_cap_check(uint32_t cap);
 const char *tk_cap_class_name(uint32_t cap);
 
 /*
+ * tk_cap_is_grant_flag — is `arg` a consumed `--allow-*` capability flag?
+ * Used by tk_runtime_init to strip these tokens from the program's argv so the
+ * program never sees the capability flags (Deno-style). Returns 0 for argv[0]
+ * callers to handle, and for any non-grant token.
+ */
+int tk_cap_is_grant_flag(const char *arg);
+
+/*
  * TK_REQUIRE — gate a capability sink. Placed at the top of a stdlib _w wrapper
  * (a resource-acquisition point: open file / listen / connect / spawn / setenv).
  * A no-op in ALLOW_ALL mode; under enforcement a missing grant prints CAP001 and

@@ -28,12 +28,17 @@ int main(void) {
     ASSERT(strcmp(tk_cap_class_name(TK_CAP_ENV_WRITE), "env.write") == 0,   "name: env.write");
     ASSERT(strcmp(tk_cap_class_name(TK_CAP_PROCESS_SPAWN), "process.spawn") == 0, "name: process.spawn");
 
-    /* A runtime grant opts the program into enforcement and grants only the
-     * named class; scoped values (=host / =path) are accepted and ignored. */
+    /* 124.4g: deny-by-default — the broker enforces before any grant is seen. */
+    ASSERT(tk_cap_mode() == TK_CAP_MODE_ENFORCE, "default mode is ENFORCE (deny-by-default)");
+    ASSERT(tk_cap_check(TK_CAP_FS_WRITE) == 0, "default: fs.write denied before any grant");
+    ASSERT(tk_cap_check(TK_CAP_NET) == 0,      "default: net denied before any grant");
+
+    /* A specific grant keeps deny-by-default and grants only the named class;
+     * scoped values (=host / =path) are accepted and coarsened to the class. */
     char *argv[] = { "prog", "--allow-net=api.example.com", "--allow-read", "input.txt", NULL };
     tk_cap_init(4, argv);
 
-    ASSERT(tk_cap_mode() == TK_CAP_MODE_ENFORCE, "mode: a specific grant enforces");
+    ASSERT(tk_cap_mode() == TK_CAP_MODE_ENFORCE, "mode: still ENFORCE with a specific grant");
     ASSERT(tk_cap_check(TK_CAP_NET) == 1,          "granted: net passes");
     ASSERT(tk_cap_check(TK_CAP_FS_READ) == 1,      "granted: fs.read passes");
     ASSERT(tk_cap_check(TK_CAP_FS_WRITE) == 0,     "denied: fs.write blocked");

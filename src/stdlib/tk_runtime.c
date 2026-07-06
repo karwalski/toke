@@ -28,10 +28,33 @@ static int    g_argc;
 static char **g_argv;
 
 void tk_runtime_init(int argc, char **argv) {
+    /* 124.4a/g: parse capability grants from the RAW argv first (tk_cap_init
+     * must see the --allow-* flags). */
+    tk_cap_init(argc, argv);
+
+    /* 124.4g: strip the consumed --allow-* tokens so the program never sees the
+     * capability flags in its own argv (Deno-style). argv[0] is preserved; the
+     * surviving entries still point into the OS argv strings (only the pointer
+     * array is new). Both g_argv and args_init must get the filtered vector —
+     * std.args keeps its own copy of the pointers. */
+    if (argc > 0 && argv) {
+        char **filtered = (char **)malloc(sizeof(char *) * (size_t)argc);
+        if (filtered) {
+            int fn = 0;
+            for (int i = 0; i < argc; i++) {
+                if (i > 0 && tk_cap_is_grant_flag(argv[i])) continue;
+                filtered[fn++] = argv[i];
+            }
+            g_argc = fn;
+            g_argv = filtered;
+            args_init(fn, filtered);
+            return;
+        }
+    }
+    /* Fallback (no argv / malloc failed): unfiltered. */
     g_argc = argc;
     g_argv = argv;
     args_init(argc, argv);
-    tk_cap_init(argc, argv);   /* 124.4a: init capability broker (ALLOW_ALL default) */
 }
 
 const char *tk_str_argv(int64_t index) {

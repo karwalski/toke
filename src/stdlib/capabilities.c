@@ -18,7 +18,10 @@ __attribute__((weak)) const int      __tk_cap_baked_present = 0;
 __attribute__((weak)) const int      __tk_cap_baked_enforce = 0;
 
 /* ── Broker state ─────────────────────────────────────────────────── */
-static TkCapMode g_mode   = TK_CAP_MODE_ALLOW_ALL;
+/* 124.4g: deny-by-default. The mode with no baked grants and no runtime flags is
+ * ENFORCE — a program has no fs/net/env/process authority unless it is granted.
+ * Only an explicit --allow-all (baked or runtime) opts back into ALLOW_ALL. */
+static TkCapMode g_mode   = TK_CAP_MODE_ENFORCE;
 static uint32_t  g_grants = 0u;
 static int       g_inited = 0;
 
@@ -45,25 +48,33 @@ void tk_cap_init(int argc, char **argv) {
     if (g_inited) return;
     g_inited = 1;
 
-    /* Start from the compiler-baked grant set (if the program declared one). */
+    /* Start from the compiler-baked grant set (if the program declared one).
+     * Post-flip the mode is ENFORCE by default (set statically above), so a
+     * baked allowlist simply enforces those grants. The only opt-out is an
+     * explicit --allow-all (all bits) — baked or at run time. The legacy
+     * __tk_cap_baked_enforce flag is now vestigial (enforcement is the default). */
     if (__tk_cap_baked_present) {
         g_grants = __tk_cap_baked_grants;
-        g_mode   = __tk_cap_baked_enforce ? TK_CAP_MODE_ENFORCE
-                                           : TK_CAP_MODE_ALLOW_ALL;
+        if (__tk_cap_baked_grants == TK_CAP_ALL)
+            g_mode = TK_CAP_MODE_ALLOW_ALL;
     }
 
-    /* Union in runtime --allow-* flags. A runtime grant also opts the program
-     * into enforcement (an operator asking for a specific grant expects the
-     * rest to be denied); --allow-all stays permissive. */
+    /* Union in runtime --allow-* flags. --allow-all drops to permissive mode
+     * (the explicit escape hatch); any specific grant keeps deny-by-default for
+     * every other class. */
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         if (strncmp(a, "--allow-", 8) != 0) continue;
         uint32_t caps = flag_to_caps(a);
         if (caps == 0u) continue;
         g_grants |= caps;
-        if (caps != TK_CAP_ALL)
-            g_mode = TK_CAP_MODE_ENFORCE;
+        if (caps == TK_CAP_ALL)
+            g_mode = TK_CAP_MODE_ALLOW_ALL;
     }
+}
+
+int tk_cap_is_grant_flag(const char *arg) {
+    return arg && strncmp(arg, "--allow-", 8) == 0 && flag_to_caps(arg) != 0u;
 }
 
 int tk_cap_check(uint32_t cap) {
