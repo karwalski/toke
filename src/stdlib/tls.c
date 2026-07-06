@@ -200,6 +200,23 @@ static SSL_CTX *build_ssl_ctx(int is_server, TlsConfig cfg)
         return NULL;
     }
 
+    /* Post-quantum hybrid key exchange (ADR-0013 crypto agility).
+     * Prefer X25519MLKEM768 (NIST ML-KEM-768 + X25519) so the TLS 1.3
+     * handshake secret is quantum-resistant against "harvest-now,
+     * decrypt-later" attacks, while classical groups are retained as
+     * fallback for interop with peers that don't offer the hybrid group.
+     * If the linked OpenSSL is too old to know the hybrid group
+     * (< 3.5), degrade gracefully to classical groups rather than
+     * failing the context. */
+    if (SSL_CTX_set1_groups_list(ctx,
+            "X25519MLKEM768:X25519:secp256r1:x448:secp384r1") != 1) {
+        if (SSL_CTX_set1_groups_list(ctx,
+                "X25519:secp256r1:x448:secp384r1") != 1) {
+            SSL_CTX_free(ctx);
+            return NULL;
+        }
+    }
+
     /* Load local certificate + key (if provided) */
     if (cfg.cert_pem && *cfg.cert_pem != '\0') {
         BIO *bio = BIO_new_mem_buf(cfg.cert_pem, -1);
