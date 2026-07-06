@@ -95,10 +95,20 @@ static const char *cap_flag_hint(uint32_t cap) {
 }
 
 void tk_cap_deny(uint32_t cap) {
+    const char *cls = tk_cap_class_name(cap);
+    const char *flag = cap_flag_hint(cap);
     fprintf(stderr,
         "CAP001: capability '%s' required but not granted\n"
         "  grant it at run time with %s, or declare it in tkc.toml [capabilities]\n",
-        tk_cap_class_name(cap), cap_flag_hint(cap));
+        cls, flag);
+    /* 124.4d: opt-in machine-parseable line so the generate-compile-repair loop
+     * can repair the missing grant mechanically (like a type error). */
+    if (getenv("TK_DIAG_JSON")) {
+        fprintf(stderr,
+            "{\"diagnostic_id\":\"CAP001\",\"severity\":\"error\",\"stage\":\"runtime\","
+            "\"capability\":\"%s\",\"fix\":\"grant %s or tkc.toml [capabilities] %s=true\"}\n",
+            cls, flag, cls);
+    }
     exit(1);
 }
 
