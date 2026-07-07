@@ -23,6 +23,11 @@ int64_t tk_path_ext_w(int64_t p) {
     return (int64_t)(intptr_t)path_ext((const char *)(intptr_t)p);
 }
 
+int64_t tk_path_normalize_w(int64_t p) {
+    if (!p) return 0;
+    return (int64_t)(intptr_t)path_normalize((const char *)(intptr_t)p);
+}
+
 int64_t tk_path_stem_w(int64_t p) {
     if (!p) return 0;
     return (int64_t)(intptr_t)path_stem((const char *)(intptr_t)p);

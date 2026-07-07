@@ -27,9 +27,41 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <time.h>
+#include <limits.h>
+#include "tk_runtime.h"   /* AMB-03: tk_path_snapshot() */
 
 /* Initial buffer size for stdout/stderr capture */
 #define STDOUT_BUF_INIT 4096
+
+/*
+ * AMB-03: exec without trusting the live, mutable PATH. If argv[0] contains a
+ * '/', exec it directly (no search). Otherwise resolve it against the PATH
+ * SNAPSHOT captured at startup (tk_path_snapshot), execv'ing the first
+ * executable match. Replaces execvp, whose PATH lookup could be repointed by a
+ * program's own env.set/dotenv between spawn calls. Returns only on failure
+ * (errno set); the caller reports it down the error pipe.
+ */
+static void exec_no_ambient_path(const char *const *cmd)
+{
+    if (strchr(cmd[0], '/')) {
+        execv(cmd[0], (char *const *)cmd);
+        return;                                   /* failed; errno set */
+    }
+    const char *path = tk_path_snapshot();
+    if (!path) path = "/usr/bin:/bin";            /* last-resort default */
+    char *dup = strdup(path);
+    if (!dup) { errno = ENOMEM; return; }
+    char *save = NULL;
+    for (char *dir = strtok_r(dup, ":", &save); dir; dir = strtok_r(NULL, ":", &save)) {
+        char full[PATH_MAX];
+        if (snprintf(full, sizeof full, "%s/%s", dir[0] ? dir : ".", cmd[0])
+                >= (int)sizeof full) continue;    /* too long; skip */
+        if (access(full, X_OK) == 0)
+            execv(full, (char *const *)cmd);      /* returns only on failure */
+    }
+    free(dup);
+    errno = ENOENT;                               /* nothing runnable found */
+}
 
 /* Set FD_CLOEXEC on a file descriptor. Returns 0 on success, -1 on error. */
 static int set_cloexec(int fd)
@@ -127,8 +159,8 @@ SpawnResult process_spawn(const char **cmd)
         close(stderr_pipe[0]);
         close(stderr_pipe[1]);
 
-        /* execvp: cast from const char ** is safe — exec replaces the image */
-        execvp(cmd[0], (char *const *)cmd);
+        /* AMB-03: resolve against the PATH snapshot, not the ambient PATH. */
+        exec_no_ambient_path((const char *const *)cmd);
 
         /* exec failed: send errno down the error pipe, then exit */
         int saved_errno = errno;

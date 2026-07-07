@@ -3,6 +3,7 @@
   "module": "std.path",
   "exports": [
     {"kind": "func", "name": "path.join",  "params": ["str", "str"], "return": "str"},
+    {"kind": "func", "name": "path.normalize", "params": ["str"],    "return": "str"},
     {"kind": "func", "name": "path.ext",   "params": ["str"],        "return": "str"},
     {"kind": "func", "name": "path.stem",  "params": ["str"],        "return": "str"},
     {"kind": "func", "name": "path.dir",   "params": ["str"],        "return": "str"},

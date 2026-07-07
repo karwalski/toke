@@ -27,10 +27,23 @@ int64_t tk_current_error = 0;
 static int    g_argc;
 static char **g_argv;
 
+/* AMB-03: snapshot of PATH captured at startup (before any program code can
+ * env.set/dotenv-load a hostile PATH), used by process exec so command lookup
+ * never trusts the live, mutable environment. */
+static char *g_path_snapshot;
+
+const char *tk_path_snapshot(void) { return g_path_snapshot; }
+
 void tk_runtime_init(int argc, char **argv) {
     /* 124.4a/g: parse capability grants from the RAW argv first (tk_cap_init
      * must see the --allow-* flags). */
     tk_cap_init(argc, argv);
+
+    /* AMB-03: snapshot PATH now, before any toke code runs. */
+    {
+        const char *p = getenv("PATH");
+        g_path_snapshot = p ? strdup(p) : NULL;
+    }
 
     /* 124.4g: strip the consumed --allow-* tokens so the program never sees the
      * capability flags in its own argv (Deno-style). argv[0] is preserved; the

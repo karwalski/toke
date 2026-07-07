@@ -269,16 +269,35 @@ traps `RT005: nil dereference` (the map-`.get`-miss-returns-0 case). Under `-O2`
 provably-in-range checks are eliminated. See [runtime-abi.md §9](runtime-abi.md)
 and ADR-0012.
 
-### 4. Capability enforcement is opt-in (default allow-all)
+### 4. Capabilities are deny-by-default (ADR-0010)
 
-The deny-by-default capability model (ADR-0010) is implemented and every
-fs/net/env/process sink is gated, but the default mode is still **allow-all** — a
-program only fails closed under `--cap-enforce` (baked) or a runtime `--allow-*`
-flag, until the deny-by-default flip (Epic 124.4g). Two current coarsenings:
-scoped grants (`--allow-net=host`, `--allow-read=/path`) are honoured at the
-**class** level (per-path/per-host scoping is a planned refinement), and consumed
-`--allow-*` flags are **not yet stripped** from the program's own argv. See
-[spec/capabilities.md](spec/capabilities.md).
+A compiled program has **no** fs/net/env-write/process-spawn authority unless it
+is granted — via `tkc.toml [capabilities]` / `--allow-*` at compile time (baked)
+or `--allow-*` at run time. An ungranted sink fails closed with `CAP001`.
+Consumed `--allow-*` flags are stripped from the program's own argv. One
+coarsening remains: scoped grants (`--allow-net=host`, `--allow-read=/path`) are
+honoured at the **class** level (per-path/per-host scoping is a planned
+refinement). See [spec/capabilities.md](spec/capabilities.md).
+
+### 5. Ambient-hardening behavioural changes (124.4h)
+
+Defense-in-depth hardening of the stdlib changes some filesystem/exec behaviour:
+- **`O_NOFOLLOW` on file opens** (`file.read`/`write`/`append`/`copy`, `os.open`):
+  opening a path whose final component is a **symlink** now fails (`ELOOP`) rather
+  than following it. Programs that intentionally read/write through a symlink must
+  target the link's real path.
+- **PATH is snapshotted at startup** for `process.exec`/`spawn`: a bare command is
+  resolved against the PATH captured before any program code runs, so a later
+  `env.set("PATH", …)` / dotenv load cannot repoint command lookup. Absolute/`/`-
+  containing commands exec directly.
+- **`os.read`/`os.write` are string-based** (`os.read(fd, count) -> str`,
+  `os.write(fd, data:str)`) — the old raw integer-as-buffer-pointer form is gone.
+  Embedded-NUL binary data is a known limitation of the string form (a `[byte]`
+  variant is a follow-up).
+- **dotenv (`env.file_load`) refuses** `LD_*`/`DYLD_*`/`PATH`/`IFS` keys; explicit
+  `env.set` is unaffected.
+- Recursive delete (`file.rmdir_r`) uses `lstat`, so a symlink inside the tree is
+  removed as a link and never followed to delete external files.
 
 ---
 

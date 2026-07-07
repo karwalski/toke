@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <glob.h>
 #include <ftw.h>
+#include <fcntl.h>   /* AMB-07: O_NOFOLLOW */
 
 /* Map errno to a FileErrKind after a failed POSIX call. */
 static FileErr make_err(int err_no, const char *fallback)
@@ -41,10 +42,30 @@ static FileErr make_err(int err_no, const char *fallback)
     return e;
 }
 
+/*
+ * AMB-07: open with O_NOFOLLOW so a symlink on the final path component is NOT
+ * followed — prevents write-through-symlink and TOCTOU redirection. Behavioural
+ * change: opening a symlinked path fails with ELOOP. Covers the fopen modes
+ * file.c uses ("rb"/"wb"/"ab"/"w"/"a"/"r").
+ */
+static FILE *fopen_nofollow(const char *path, const char *mode)
+{
+    int flags;
+    if      (mode[0] == 'r') flags = O_RDONLY;
+    else if (mode[0] == 'w') flags = O_WRONLY | O_CREAT | O_TRUNC;
+    else if (mode[0] == 'a') flags = O_WRONLY | O_CREAT | O_APPEND;
+    else return fopen(path, mode);   /* unknown mode: fall back */
+    int fd = open(path, flags | O_NOFOLLOW, 0644);
+    if (fd < 0) return NULL;          /* errno set (ELOOP on symlink) */
+    FILE *f = fdopen(fd, mode);
+    if (!f) { int e = errno; close(fd); errno = e; }
+    return f;
+}
+
 StrFileResult file_read(const char *path)
 {
     StrFileResult r = {NULL, 0, {0, NULL}};
-    FILE *f = fopen(path, "rb");
+    FILE *f = fopen_nofollow(path, "rb");
     if (!f) { r.is_err = 1; r.err = make_err(errno, NULL); return r; }
 
     if (fseek(f, 0, SEEK_END) != 0) {
@@ -73,7 +94,7 @@ StrFileResult file_read(const char *path)
 BoolFileResult file_write(const char *path, const char *content)
 {
     BoolFileResult r = {0, 0, {0, NULL}};
-    FILE *f = fopen(path, "w");
+    FILE *f = fopen_nofollow(path, "w");
     if (!f) { r.is_err = 1; r.err = make_err(errno, NULL); return r; }
     if (fputs(content, f) == EOF) {
         int saved = errno; fclose(f);
@@ -87,7 +108,7 @@ BoolFileResult file_write(const char *path, const char *content)
 BoolFileResult file_append(const char *path, const char *content)
 {
     BoolFileResult r = {0, 0, {0, NULL}};
-    FILE *f = fopen(path, "a");
+    FILE *f = fopen_nofollow(path, "a");
     if (!f) { r.is_err = 1; r.err = make_err(errno, NULL); return r; }
     if (fputs(content, f) == EOF) {
         int saved = errno; fclose(f);
@@ -245,8 +266,11 @@ BoolFileResult file_rmdir_r(const char *path)
         child[plen] = '/';
         memcpy(child + plen + 1, ent->d_name, nlen + 1);
 
+        /* AMB-05: lstat (not stat) so a symlink to an external directory is
+         * classified as a non-dir and removed as a link (unlink), never recursed
+         * into — a recursive delete must not follow links outside the tree. */
         struct stat st;
-        if (stat(child, &st) == 0 && S_ISDIR(st.st_mode)) {
+        if (lstat(child, &st) == 0 && S_ISDIR(st.st_mode)) {
             BoolFileResult sub = file_rmdir_r(child);
             if (sub.is_err) { free(child); closedir(d); return sub; }
         } else {
@@ -276,11 +300,11 @@ BoolFileResult file_rmdir_r(const char *path)
 BoolFileResult file_copy(const char *src, const char *dst)
 {
     BoolFileResult r = {0, 0, {0, NULL}};
-    FILE *in = fopen(src, "rb");
+    FILE *in = fopen_nofollow(src, "rb");
     if (!in) {
         r.is_err = 1; r.err = make_err(errno, "open source failed"); return r;
     }
-    FILE *out = fopen(dst, "wb");
+    FILE *out = fopen_nofollow(dst, "wb");
     if (!out) {
         int saved_errno = errno; fclose(in);
         r.is_err = 1; r.err = make_err(saved_errno, "open dest failed"); return r;

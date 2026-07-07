@@ -34,6 +34,19 @@ static int key_is_valid(const char *key)
     return 1;
 }
 
+/*
+ * AMB-04: dangerous keys an untrusted dotenv file must not be allowed to set —
+ * they change how child processes load code / resolve commands (code injection).
+ * Applies to env_file_load only; an explicit env.set is a deliberate program act.
+ */
+static int dotenv_key_denied(const char *key)
+{
+    return strncmp(key, "LD_", 3) == 0 ||
+           strncmp(key, "DYLD_", 5) == 0 ||
+           strcmp(key, "PATH") == 0 ||
+           strcmp(key, "IFS") == 0;
+}
+
 EnvGetResult env_get(const char *key)
 {
     EnvGetResult r = {NULL, 0, ENV_ERR_NONE, NULL};
@@ -343,6 +356,9 @@ int env_file_load(const char *path)
             memcpy(processed, trimmed, vlen);
             processed[vlen] = '\0';
         }
+
+        /* AMB-04: silently skip dangerous keys from the (untrusted) dotenv file. */
+        if (dotenv_key_denied(key)) continue;
 
         if (setenv(key, processed, 1) == 0) count++;
     }

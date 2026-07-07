@@ -64,7 +64,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all clean lint conform conform-check build-all ci check-docs diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all clean lint conform conform-check build-all ci check-docs diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -186,7 +186,8 @@ test-stdlib-file:
 
 test-stdlib-runtime:
 	$(CC) $(CFLAGS) -o test/stdlib/test_tk_runtime \
-	    test/stdlib/test_tk_runtime.c src/stdlib/tk_runtime.c
+	    test/stdlib/test_tk_runtime.c src/stdlib/tk_runtime.c \
+	    src/stdlib/capabilities.c src/stdlib/args.c
 	$(RUN_TEST) ./test/stdlib/test_tk_runtime
 
 test-stdlib-http:
@@ -235,8 +236,16 @@ test-stdlib-http-tls:
 
 test-stdlib-process:
 	$(CC) $(CFLAGS) -o test/stdlib/test_process \
-	    test/stdlib/test_process.c src/stdlib/process.c
+	    test/stdlib/test_process.c src/stdlib/process.c \
+	    src/stdlib/tk_runtime.c src/stdlib/capabilities.c src/stdlib/args.c
 	$(RUN_TEST) ./test/stdlib/test_process
+
+# 124.4h — ambient defect hardening (AMB-04/05/06/07/08 at the C level).
+test-stdlib-ambient:
+	$(CC) $(CFLAGS) -o test/stdlib/test_ambient \
+	    test/stdlib/test_ambient.c src/stdlib/path.c src/stdlib/file.c \
+	    src/stdlib/env.c src/stdlib/os.c src/stdlib/capabilities.c
+	$(RUN_TEST) ./test/stdlib/test_ambient
 
 test-stdlib-env:
 	$(CC) $(CFLAGS) -o test/stdlib/test_env \

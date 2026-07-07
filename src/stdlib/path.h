@@ -13,6 +13,7 @@
 
 const char *path_join(const char *a, const char *b);
 const char *path_ext(const char *p);
+const char *path_normalize(const char *p);
 const char *path_stem(const char *p);
 const char *path_dir(const char *p);
 const char *path_base(const char *p);

@@ -42,6 +42,56 @@ const char *path_join(const char *a, const char *b)
 }
 
 /*
+ * path_normalize — AMB-06: lexically resolve '.', '..', and redundant '/' with
+ * NO filesystem access (path.c is string-only). '..' is clamped at the root: a
+ * leading/over-popping '..' is dropped rather than escaping above the base, so a
+ * normalized relative path stays within its starting point — making it safe as a
+ * containment primitive when combined with a prefix check. An absolute path keeps
+ * its leading '/'. An empty relative result normalizes to ".".
+ * Returns a heap-allocated string; caller owns it.
+ */
+const char *path_normalize(const char *p)
+{
+    if (!p) return NULL;
+    size_t len = strlen(p);
+    int absolute = (len > 0 && p[0] == '/');
+
+    char *buf = malloc(len + 1);
+    if (!buf) return NULL;
+    memcpy(buf, p, len + 1);
+
+    const char **stack = malloc(sizeof(char *) * (len + 1));
+    if (!stack) { free(buf); return NULL; }
+    size_t sp = 0;
+
+    char *save = NULL;
+    for (char *tok = strtok_r(buf, "/", &save); tok; tok = strtok_r(NULL, "/", &save)) {
+        if (tok[0] == '\0' || strcmp(tok, ".") == 0) continue;
+        if (strcmp(tok, "..") == 0) {
+            if (sp > 0) sp--;   /* pop a real segment; clamp at root when empty */
+            continue;
+        }
+        stack[sp++] = tok;
+    }
+
+    char *out = malloc(len + 2);   /* <= input + optional leading '/' + NUL */
+    if (!out) { free(stack); free(buf); return NULL; }
+    size_t o = 0;
+    if (absolute) out[o++] = '/';
+    for (size_t i = 0; i < sp; i++) {
+        if (i > 0) out[o++] = '/';
+        size_t sl = strlen(stack[i]);
+        memcpy(out + o, stack[i], sl);
+        o += sl;
+    }
+    if (o == 0) out[o++] = '.';   /* empty relative result */
+    out[o] = '\0';
+    free(stack);
+    free(buf);
+    return out;
+}
+
+/*
  * path_ext — return the file extension of the last path component, including
  * the leading dot (e.g. ".tk"), or "" if there is no extension.
  *

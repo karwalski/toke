@@ -22,6 +22,10 @@ void    tk_runtime_init(int argc, char **argv);
 /* Return argv[index] as a C string (ptr). */
 const char *tk_str_argv(int64_t index);
 
+/* AMB-03: PATH snapshot captured at tk_runtime_init (or NULL). Used by process
+ * exec so command resolution never trusts the live, mutable PATH. */
+const char *tk_path_snapshot(void);
+
 /* Parse a JSON string into a toke runtime value.
  * Returns an i64:
  *   - for integers: the value directly

@@ -28,19 +28,38 @@ int64_t tk_os_open(int64_t path, int64_t flags, int64_t mode) {
     if (af == O_RDONLY || af == O_RDWR) TK_REQUIRE(TK_CAP_FS_READ);
     if (af == O_WRONLY || af == O_RDWR ||
         ((int)flags & (O_CREAT | O_TRUNC | O_APPEND))) TK_REQUIRE(TK_CAP_FS_WRITE);
-    return (int64_t)open((const char *)(intptr_t)path, (int)flags, (mode_t)mode);
+    /* AMB-07: do not follow a symlink on the final component. A caller who
+     * genuinely needs to open a symlink must clear this via a future opt-out. */
+    return (int64_t)open((const char *)(intptr_t)path,
+                         (int)flags | O_NOFOLLOW, (mode_t)mode);
 }
 
 int64_t tk_os_close(int64_t fd) {
     return (int64_t)close((int)fd);
 }
 
-int64_t tk_os_read(int64_t fd, int64_t buf, int64_t count) {
-    return (int64_t)read((int)fd, (void *)(intptr_t)buf, (size_t)count);
+/* AMB-08: os.read(fd, count) -> str. Allocates and returns the bytes read (as a
+ * caller-owned string), instead of the old (fd, buf:i64, count) form that cast a
+ * caller-supplied integer straight to a buffer pointer (arbitrary OOB read/write
+ * primitive). Mirrors file.read. Returns "" on error. Note: NUL-terminated, so
+ * embedded-NUL binary data is a known limitation (a [byte] variant is a follow-up). */
+int64_t tk_os_read(int64_t fd, int64_t count) {
+    if (count < 0) return (int64_t)(intptr_t)"";
+    char *buf = malloc((size_t)count + 1);
+    if (!buf) return (int64_t)(intptr_t)"";
+    ssize_t n = read((int)fd, buf, (size_t)count);
+    if (n < 0) { free(buf); return (int64_t)(intptr_t)""; }
+    buf[n] = '\0';
+    return (int64_t)(intptr_t)buf;
 }
 
-int64_t tk_os_write(int64_t fd, int64_t buf, int64_t count) {
-    return (int64_t)write((int)fd, (const void *)(intptr_t)buf, (size_t)count);
+/* AMB-08: os.write(fd, data:str) -> bytes written. Writes the string's bytes; no
+ * caller-supplied pointer. */
+int64_t tk_os_write(int64_t fd, int64_t data) {
+    const char *s = (const char *)(intptr_t)data;
+    if (!s) return 0;
+    ssize_t n = write((int)fd, s, strlen(s));
+    return (n < 0) ? 0 : (int64_t)n;
 }
 
 int64_t tk_os_lseek(int64_t fd, int64_t offset, int64_t whence) {
@@ -129,6 +148,7 @@ int64_t tk_os_o_rdwr(void)    { return (int64_t)O_RDWR; }
 int64_t tk_os_o_creat(void)   { return (int64_t)O_CREAT; }
 int64_t tk_os_o_trunc(void)   { return (int64_t)O_TRUNC; }
 int64_t tk_os_o_append(void)  { return (int64_t)O_APPEND; }
+int64_t tk_os_o_nofollow(void){ return (int64_t)O_NOFOLLOW; }
 int64_t tk_os_stdin_fd(void)  { return (int64_t)STDIN_FILENO; }
 int64_t tk_os_stdout_fd(void) { return (int64_t)STDOUT_FILENO; }
 int64_t tk_os_stderr_fd(void) { return (int64_t)STDERR_FILENO; }
