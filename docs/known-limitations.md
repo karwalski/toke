@@ -117,25 +117,25 @@ implemented.
 
 ## Code Generation Limitations
 
-### 1. `as $str` on integers emits `inttoptr`
+### 1. ~~`as $str` on integers emits `inttoptr`~~ — RESOLVED
 
-Casting an integer to `$str` with `as $str` emits an LLVM `inttoptr`
-instruction instead of calling the `str_from_int` runtime function. The result
-is a garbage pointer, not a string representation of the number.
+`n as $str` now calls `str_from_int` (via `tk_str_fromi64_w`) and returns the
+decimal string (Story 101.R3b; verified 2026-07-07: `42 as $str` → `"42"`).
 
-**Workaround:** Use `str.fromint(n)` for integer-to-string conversion.
+### 2. String interpolation `\(expr)` — numbers/strings work; composites error
 
-**Planned fix:** Tracked. The `str_from_int` C function exists in the stdlib
-(one of 4 functions that must remain in C per Story 74.1.1).
+`\(x)` correctly stringifies `str`, `i64`, narrow ints, `bool`, and `f64`
+(via `tk_str_fromi64_w`/`tk_str_fromfloat_w`). Interpolating an **array** (and a
+struct whose type the compiler can resolve) is now a **compile error**
+(`E4032` — "cannot interpolate a composite value into a string") rather than the
+previous silent garbage (123.5, 2026-07-07). **Residual:** a struct/map whose
+static type resolves to unknown (`est==NULL`, e.g. some `.get()` results) still
+falls through to the string path and can misbehave — this can't be tightened
+without regressing real strings from `str.concat` (which also have `est==NULL`);
+it needs interpolation-context type tracking (follow-up). E4032 fires at compile
+(codegen) time, not under `--check`.
 
-### 2. String interpolation `\(expr)` unreliable for some types
-
-String interpolation works in the default profile but does not evaluate at
-runtime for all types. Non-string, non-integer expressions inside `\(...)` may
-produce unexpected results.
-
-**Workaround:** Use `str.concat()` for reliable string building across all
-types.
+**Workaround:** interpolate the elements/fields, or use `str.concat()`.
 
 ### 3. Match expressions are expression-only
 
@@ -168,16 +168,14 @@ unbounded loop-init lookahead). `let x=5`, `x=10`, `lp(let i=0;i<n;i=i+1)` use
 compile error (E2002, "use `==`"). Migrate old sources with
 `scripts/migrate_eq.py`.
 
-### 7. Struct field map access generates incorrect code
+### 7. ~~Struct field map access generates incorrect code~~ — RESOLVED
 
-`is_map_var()` in the compiler does not recognize maps extracted from struct
-fields. Accessing a map that was obtained from a struct field generates array
-indexing instead of `tk_map_get()`, causing SIGBUS.
-
-**Workaround:** Extract the map into a dedicated typed field on the struct
-rather than accessing it dynamically.
-
-**Reference:** Story 56.10.4.
+`.get()` on a map stored in a struct field now correctly routes to
+`tk_map_get()` — verified 2026-07-07 for direct (`b.meta.get("k")`), extracted-
+to-local, and nested (`o.inner.meta.get("k")`) access, all returning the right
+value. The old `[]`-index path that caused the SIGBUS is unreachable: square-
+bracket indexing was removed in v0.4 (`E1003`; use `.get()`). Reference: Story
+56.10.4.
 
 ### 8. Cross-module function references not supported
 

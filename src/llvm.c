@@ -2141,9 +2141,29 @@ static int emit_expr(Ctx *c, const Node *n)
                          * so a raw `\(n)` (n:i64/f64/bool) deref'd a bogus pointer
                          * → segfault. Detect strings vs numbers and auto-convert
                          * numbers/bools to their string form. */
-                        int is_str = (ety && !strcmp(ety, "i8*")) ||
-                                     (est && (!strcmp(est, "$str") || !strcmp(est, "str")));
-                        if (is_str) {
+                        /* 123.5: a genuine string and a composite (array/struct/
+                         * map) are BOTH i8*. Using a composite's heap pointer as a
+                         * NUL-terminated C string reads garbage — a silent-wrong-
+                         * value bug. `est` (expr_struct_type) discriminates:
+                         * "$str"=string, "@…"=array, "$X"(≠$str)=struct. Fail loud
+                         * on known composites; treat est==NULL+i8* as a string
+                         * (preserves interp of strings the tracker didn't tag). */
+                        int est_is_str = est && (!strcmp(est, "$str") || !strcmp(est, "str"));
+                        int est_is_composite = est && (est[0] == '@' ||
+                                                       (est[0] == '$' && strcmp(est, "$str") != 0));
+                        if (ety && !strcmp(ety, "i8*") && est_is_composite) {
+                            diag_emit(DIAG_ERROR, E4032, expr_node->start, expr_node->line, expr_node->col,
+                                      "cannot interpolate a composite value (array/struct/map) into a string",
+                                      "convert it to a string first (e.g. str.concat, or interpolate its fields/elements)",
+                                      NULL);
+                            /* Emit an empty-string placeholder so the IR stays
+                             * well-formed (compilation has already failed). */
+                            int alenc = 1;
+                            int sic = emit_str_global(c, "\"\"", 2, &alenc);
+                            seg_val = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                                    seg_val, alenc, alenc, c->module_prefix, sic);
+                        } else if (est_is_str || (ety && !strcmp(ety, "i8*"))) {
                             if (ety && !strcmp(ety, "i64")) {
                                 int z = next_tmp(c);
                                 fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, seg_val);

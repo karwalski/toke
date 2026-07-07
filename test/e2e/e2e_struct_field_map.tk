@@ -1,0 +1,6 @@
+m=main;
+t=$box{meta:@($str:i64)};
+f=main():i64{
+  let b=$box{meta:@("k":7)};
+  <mt b.meta.get("k") {$ok:v v;$err:e 0}
+}

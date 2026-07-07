@@ -1,0 +1,6 @@
+m=main;
+i=str:std.str;
+f=main():i64{
+  let s=42 as $str;
+  <str.len(s)
+}

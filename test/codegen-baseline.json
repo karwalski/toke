@@ -24,6 +24,11 @@
   null,
   null
  ],
+ "test/e2e/e2e_as_str_int.tk": [
+  true,
+  2,
+  "e3b0c44298fc1c14"
+ ],
  "test/e2e/e2e_bool_abi.tk": [
   true,
   0,
@@ -178,6 +183,11 @@
   false,
   null,
   null
+ ],
+ "test/e2e/e2e_struct_field_map.tk": [
+  true,
+  7,
+  "e3b0c44298fc1c14"
  ],
  "test/e2e/e2e_struct_field_y.tk": [
   true,
