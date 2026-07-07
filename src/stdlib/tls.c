@@ -165,13 +165,19 @@ static X509 *pem_to_x509(const char *pem)
  */
 static int x509_fingerprint_hex(X509 *cert, char buf[65])
 {
-    unsigned char der[8192];
-    unsigned char *p = der;
-    int der_len = i2d_X509(cert, &p);
+    /* 121.10 (TLS-01): size the DER buffer to the actual encoding length
+     * instead of a fixed 8 KiB stack buffer that a larger cert overflows.
+     * i2d_X509(cert, NULL) returns the required length. */
+    int der_len = i2d_X509(cert, NULL);
     if (der_len <= 0) return -1;
+    unsigned char *der = (unsigned char *)malloc((size_t)der_len);
+    if (!der) return -1;
+    unsigned char *p = der;
+    if (i2d_X509(cert, &p) != der_len) { free(der); return -1; }
 
     unsigned char digest[SHA256_DIGEST_LENGTH];
     SHA256(der, (size_t)der_len, digest);
+    free(der);
 
     for (int i = 0; i < SHA256_DIGEST_LENGTH; i++)
         snprintf(buf + i * 2, 3, "%02x", digest[i]);

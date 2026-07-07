@@ -24,6 +24,11 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <errno.h>
+
+/* 121.8 (HTT-04): maximum accepted WebSocket payload (64 MiB). Bounds the
+ * 64-bit length field so `payload_len + 1` can't wrap and a crafted frame
+ * can't force an over-large / overflowing allocation. */
+#define WS_MAX_PAYLOAD (64ULL * 1024 * 1024)
 #include <time.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -367,6 +372,13 @@ WsFrameResult ws_decode_frame(const uint8_t *buf, uint64_t buflen,
         masking_key_ptr = NULL;
     }
 
+    /* 121.8: bound the length first — `header_len + payload_len` below can itself
+     * overflow, letting a huge payload_len slip past the truncation check. */
+    if (payload_len > WS_MAX_PAYLOAD) {
+        res.is_err  = 1;
+        res.err_msg = "ws_decode_frame: payload too large";
+        return res;
+    }
     /* Verify enough bytes remain for payload */
     if (buflen < header_len + payload_len) {
         res.is_err  = 1;
@@ -980,6 +992,15 @@ WsRecvResult ws_recv(WsConn *conn)
             res.err_msg = "ws_recv: failed to read masking key";
             return res;
         }
+    }
+
+    /* 121.8 (HTT-04): reject an oversized 64-bit payload length before malloc —
+     * payload_len == UINT64_MAX makes `payload_len + 1` wrap to 0 (a 0-byte
+     * alloc), then reading payload_len bytes overflows the heap. */
+    if (payload_len > WS_MAX_PAYLOAD) {
+        res.is_err  = 1;
+        res.err_msg = "ws_recv: payload too large";
+        return res;
     }
 
     /* Read payload */
