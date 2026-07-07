@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "../../src/stdlib/db.h"
+#include "../../src/stdlib/capabilities.h"
 
 static int failures = 0;
 
@@ -19,6 +20,11 @@ static int failures = 0;
 
 int main(void)
 {
+    /* 124.4-testcaps: db_open gates fs.read/fs.write (deny-by-default since the
+     * 124.4 capability flip). Grant everything so this harness can exercise it. */
+    char *av[] = {"t", "--allow-all", NULL};
+    tk_cap_init(2, av);
+
     /* Empty params helper */
     StrArray no_params = {NULL, 0};
 
