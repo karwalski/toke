@@ -40,6 +40,19 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <unistd.h>     /* 121.1b: fork/execvp/_exit for argv-exec */
+#include <sys/wait.h>   /* 121.1b: waitpid/WEXITSTATUS */
+
+/* 121.1b: split a whitespace-separated string, in place, into argv elements
+ * (each token becomes one argv entry). Bounded by `max` so argv can't overflow.
+ * The caller must pass a MUTABLE buffer that outlives the exec (strtok_r writes
+ * NULs into it). */
+static void push_ws_tokens(char **argv, int *argc, int max, char *s) {
+    if (!s) return;
+    char *save = NULL;
+    for (char *tok = strtok_r(s, " \t", &save); tok; tok = strtok_r(NULL, " \t", &save))
+        if (*argc < max - 1) argv[(*argc)++] = tok;
+}
 
 /* ── Internal data structures ──────────────────────────────────────── */
 
@@ -7622,7 +7635,6 @@ static const char *find_stdlib_vendor_includes(void) {
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
                    int opt_level, const SymbolTable *st, int debug)
 {
-    char cmd[8192];
     int ol = (opt_level < 0) ? 0 : (opt_level > 3) ? 3 : opt_level;
     const char *dbg_flag = debug ? " -g" : "";
 
@@ -7729,7 +7741,6 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
     } else {
         snprintf(cflags_buf, sizeof cflags_buf, "%s", base_cflags);
     }
-    const char *tls_flags = cflags_buf;
 
     /* Story 7.5.5 Phase 2: generate auto-glue wrappers from .tki files.
      * Produces a temp C file with simple _w wrappers and appends it to
@@ -7748,43 +7759,56 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
         }
     }
 
-    /* 121.1 (COM-01): the command below is handed to system(), so any shell
-     * metacharacter in a user-controlled path (--out, --target, the IR path)
-     * would be interpreted by /bin/sh — a build-time command injection. Reject
-     * such characters here; legitimate file paths and target triples never
-     * contain them. (The clean end-state is argv-exec — tracked as 121.1b.) */
+    /* 121.1b (COM-01): invoke clang via argv-exec (fork + execvp) — no shell is
+     * involved, so shell metacharacters in a path are inert (passed literally to
+     * clang). This supersedes the interim 121.1 metacharacter guard.
+     *
+     * -Wno-override-module suppresses the "overriding the module target triple"
+     * warning when clang's host triple doesn't match the IR's embedded triple
+     * (Story 58.35). */
     {
-        static const char *meta = ";&|$`()<>\n\r\"'\\!*?{}";
-        const char *checks[3]; int nchecks = 0;
-        checks[nchecks++] = out_bin;
-        checks[nchecks++] = out_ll;
-        if (target) checks[nchecks++] = target;
-        for (int ci = 0; ci < nchecks; ci++) {
-            const char *s = checks[ci];
-            if (s && s[0] && strpbrk(s, meta)) {
-                char msg[256];
-                snprintf(msg, sizeof msg,
-                         "refusing to invoke clang: path contains a shell "
-                         "metacharacter: '%.128s'", s);
-                diag_emit(DIAG_ERROR, E9002, 0, 0, 0, msg, "fix",
-                          "remove shell metacharacters from the path", NULL);
-                return -1;
-            }
+        char *argv[1024];
+        int argc = 0;
+        char obuf[16];
+        snprintf(obuf, sizeof obuf, "-O%d", ol);
+        argv[argc++] = "clang";
+        argv[argc++] = obuf;
+        if (dbg_flag[0]) argv[argc++] = "-g";      /* dbg_flag is " -g" or "" */
+        argv[argc++] = "-Wno-override-module";
+        /* Multi-token strings → one argv element per whitespace-separated token.
+         * cflags_buf (== tls_flags), sources, all_libs are local mutable buffers
+         * no longer reused; vi is a STATIC buffer, so tokenize a private copy. */
+        char vibuf[1024];
+        snprintf(vibuf, sizeof vibuf, "%s", vi);
+        const int AMAX = (int)(sizeof argv / sizeof argv[0]);
+        push_ws_tokens(argv, &argc, AMAX, cflags_buf);
+        push_ws_tokens(argv, &argc, AMAX, vibuf);
+        if (target && target[0]) { argv[argc++] = "-target"; argv[argc++] = (char *)target; }
+        argv[argc++] = "-o";
+        argv[argc++] = (char *)out_bin;
+        argv[argc++] = (char *)out_ll;
+        push_ws_tokens(argv, &argc, AMAX, sources);   /* leading space is skipped */
+        push_ws_tokens(argv, &argc, AMAX, all_libs);
+        argv[argc] = NULL;
+
+        int rc = -1;
+        pid_t pid = fork();
+        if (pid == 0) {
+            execvp("clang", argv);
+            _exit(127);                                /* exec failed */
+        } else if (pid > 0) {
+            int status;
+            if (waitpid(pid, &status, 0) == pid && WIFEXITED(status))
+                rc = WEXITSTATUS(status);
         }
+        /* Clean up temp glue file */
+        if (glue_path[0]) remove(glue_path);
+        if (rc != 0) {
+            char msg[256];
+            snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
+            diag_emit(DIAG_ERROR, E9003, 0, 0, 0, msg, (void *)0);
+            return -1;
+        }
+        return 0;
     }
-
-    /* -Wno-override-module suppresses "overriding the module target triple"
-     * warnings when clang's host triple doesn't exactly match the IR's
-     * embedded triple (Story 58.35). */
-    if(target&&target[0])
-        snprintf(cmd,sizeof cmd,"clang -O%d%s -Wno-override-module %s %s -target %s -o %s %s%s %s",ol,dbg_flag,tls_flags,vi,target,out_bin,out_ll,sources,all_libs);
-    else
-        snprintf(cmd,sizeof cmd,"clang -O%d%s -Wno-override-module %s %s -o %s %s%s %s",ol,dbg_flag,tls_flags,vi,out_bin,out_ll,sources,all_libs);
-
-    int rc = system(cmd);
-    /* Clean up temp glue file */
-    if (glue_path[0]) remove(glue_path);
-    if(rc!=0){char msg[256];snprintf(msg,sizeof msg,"clang invocation failed with exit code %d",rc);
-        diag_emit(DIAG_ERROR,E9003,0,0,0,msg,(void*)0);return -1;}
-    return 0;
 }

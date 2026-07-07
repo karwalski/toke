@@ -25,6 +25,35 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/wait.h>   /* 121.1b: waitpid/WEXITSTATUS for --emit-asm argv-exec */
+
+/*
+ * 121.1b: run `clang -S -x ir` (--emit-asm) via argv-exec (fork + execvp) — no
+ * shell, so paths with metacharacters are inert. Returns clang's exit code
+ * (0 = success), or -1 if the process could not be run.
+ */
+static int run_clang_emit_asm(int opt_level, const char *ir_path,
+                              const char *asm_path, const char *tgt) {
+    char obuf[16], tbuf[256];
+    snprintf(obuf, sizeof obuf, "-O%d", opt_level);
+    char *argv[16]; int argc = 0;
+    argv[argc++] = "clang";
+    argv[argc++] = obuf;
+    argv[argc++] = "-Wno-override-module";
+    argv[argc++] = "-S";
+    argv[argc++] = "-x"; argv[argc++] = "ir";
+    argv[argc++] = (char *)ir_path;
+    argv[argc++] = "-o"; argv[argc++] = (char *)asm_path;
+    if (tgt && tgt[0]) { snprintf(tbuf, sizeof tbuf, "--target=%s", tgt); argv[argc++] = tbuf; }
+    argv[argc] = NULL;
+    pid_t pid = fork();
+    if (pid == 0) { execvp("clang", argv); _exit(127); }
+    if (pid > 0) {
+        int status;
+        if (waitpid(pid, &status, 0) == pid && WIFEXITED(status)) return WEXITSTATUS(status);
+    }
+    return -1;
+}
 
 #include "parser.h"  /* Token, Node, parse(); Arena/diag_emit forwards */
 #include "names.h"   /* resolve_imports(), resolve_names(), SymbolTable, NameEnv */
@@ -1079,12 +1108,7 @@ int main(int argc, char **argv)
         } else {
             snprintf(asm_path, sizeof(asm_path), "%s.s", obin);
         }
-        char cmd[CMD_BUF];
-        if (tgt && tgt[0])
-            snprintf(cmd, sizeof cmd, "clang -O%d -Wno-override-module -S -x ir %s -o %s --target=%s 2>&1", opt_level, tmp, asm_path, tgt);
-        else
-            snprintf(cmd, sizeof cmd, "clang -O%d -Wno-override-module -S -x ir %s -o %s 2>&1", opt_level, tmp, asm_path);
-        int r = system(cmd);
+        int r = run_clang_emit_asm(opt_level, tmp, asm_path, tgt);
         unlink(tmp);
         symtab_free(&st);
         if (r != 0) { rc = EINTERNAL; goto done; }
@@ -1293,12 +1317,7 @@ done:
             if (emit_llvm_ir(ast, sbuf, &cg, tmp_asm) < 0) { unlink(tmp_asm); symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
             char asm_path[PATH_BUF];
             snprintf(asm_path, sizeof(asm_path), "%s.s", obin);
-            char cmd[CMD_BUF];
-            if (tgt && tgt[0])
-                snprintf(cmd, sizeof cmd, "clang -O%d -Wno-override-module -S -x ir %s -o %s --target=%s 2>&1", opt_level, tmp_asm, asm_path, tgt);
-            else
-                snprintf(cmd, sizeof cmd, "clang -O%d -Wno-override-module -S -x ir %s -o %s 2>&1", opt_level, tmp_asm, asm_path);
-            int r = system(cmd);
+            int r = run_clang_emit_asm(opt_level, tmp_asm, asm_path, tgt);
             unlink(tmp_asm);
             if (r != 0) { symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
         } else {
