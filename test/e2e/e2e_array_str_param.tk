@@ -1,0 +1,9 @@
+m=main;
+i=str:std.str;
+f=wrap(s:$str):i64{
+  let a=@(s;"b";"c");
+  <str.len(a.get(0))
+};
+f=main():i64{
+  <wrap("hello")
+};

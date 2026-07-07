@@ -24,6 +24,11 @@
   null,
   null
  ],
+ "test/e2e/e2e_array_str_param.tk": [
+  true,
+  5,
+  "e3b0c44298fc1c14"
+ ],
  "test/e2e/e2e_as_str_int.tk": [
   true,
   2,
