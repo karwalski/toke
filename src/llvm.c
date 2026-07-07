@@ -7533,12 +7533,12 @@ static const char *find_stdlib_sources(void) {
      * and ws (bundled with router). */
     int n = snprintf(buf, sizeof buf,
         "%s/str.c %s/encoding.c %s/env.c %s/http.c %s/http2.c %s/acme.c %s/proxy.c "
-        "%s/cache.c %s/content.c %s/security.c %s/metrics.c %s/server_ops.c "
+        "%s/cache.c %s/content.c %s/metrics.c %s/server_ops.c "
         "%s/ws_server.c %s/hooks.c %s/ws.c %s/router.c "
         "%s/log.c %s/file.c %s/path.c %s/args.c %s/toml.c %s/md.c "
         "%s/db.c %s/json.c "
         "%s/tk_web_glue.c",
-        dir, dir, dir, dir, dir, dir, dir, dir, dir, dir, dir, dir,
+        dir, dir, dir, dir, dir, dir, dir, dir, dir, dir, dir,
         dir, dir, dir, dir, dir, dir, dir, dir, dir, dir,
         dir, dir,
         dir);

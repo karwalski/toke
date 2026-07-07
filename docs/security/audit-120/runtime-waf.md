@@ -1,5 +1,16 @@
 ## 120.13 — In-runtime defense review (WAF layer)
 
+> **RESOLVED 2026-07-07 (Story 121.13) — the module was removed.** `src/stdlib/security.c`
+> was deleted and unlinked from the `http` C-file set (`stdlib_deps.c`) and the
+> `TKC_LINK_ALL` path (`llvm.c`). RUN-01 is resolved by removal: an unreachable,
+> unmaintained "defense" that never runs is a false control, worse than none. The real
+> defenses are ADR-0011 (deny-by-default capabilities, context-aware auto-escaping,
+> parameterized-queries-only). **RUN-02…RUN-11 below (the rate-bucket bypass, key
+> truncation, SQLi-heuristic bypass, CSP heap-overflow, conn-count drift, etc.) are now
+> MOOT** — they described bugs in code that no longer exists; Story 121.24 (fix RUN-02…11)
+> is closed as obsolete. If an in-runtime WAF is wanted later, design it fresh against
+> ADR-0011 rather than reviving this module.
+
 **Scope:** `src/stdlib/security.c` (561 lines) — the module Epic 65 designates as the
 in-runtime defense: token-bucket rate limiting, per-route limits, per-IP connection
 limits, Slowloris params, URI/body validation, SQLi/XSS heuristics, a WAF rule engine,
