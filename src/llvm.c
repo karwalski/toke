@@ -7748,6 +7748,31 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
         }
     }
 
+    /* 121.1 (COM-01): the command below is handed to system(), so any shell
+     * metacharacter in a user-controlled path (--out, --target, the IR path)
+     * would be interpreted by /bin/sh — a build-time command injection. Reject
+     * such characters here; legitimate file paths and target triples never
+     * contain them. (The clean end-state is argv-exec — tracked as 121.1b.) */
+    {
+        static const char *meta = ";&|$`()<>\n\r\"'\\!*?{}";
+        const char *checks[3]; int nchecks = 0;
+        checks[nchecks++] = out_bin;
+        checks[nchecks++] = out_ll;
+        if (target) checks[nchecks++] = target;
+        for (int ci = 0; ci < nchecks; ci++) {
+            const char *s = checks[ci];
+            if (s && s[0] && strpbrk(s, meta)) {
+                char msg[256];
+                snprintf(msg, sizeof msg,
+                         "refusing to invoke clang: path contains a shell "
+                         "metacharacter: '%.128s'", s);
+                diag_emit(DIAG_ERROR, E9002, 0, 0, 0, msg, "fix",
+                          "remove shell metacharacters from the path", NULL);
+                return -1;
+            }
+        }
+    }
+
     /* -Wno-override-module suppresses "overriding the module target triple"
      * warnings when clang's host triple doesn't exactly match the IR's
      * embedded triple (Story 58.35). */
