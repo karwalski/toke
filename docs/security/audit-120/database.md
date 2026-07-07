@@ -1,5 +1,18 @@
 ## 120.10 — Database layer & injection
 
+> **DAT-01 / DAT-05 RESOLVED 2026-07-07 (Story 121.11b) — the query builder was
+> removed.** The string-concatenation SQL builder (`TkQueryBuilder`,
+> `tk_db_newquery/settable/setfield/setfieldint/buildinsert/buildupdate/qexecute_w`)
+> and the legacy `tk_db_query/insert/delete/execute/connect/lastinsertid_w` wrappers
+> were deleted from `db_glue.c`. They were **never in `db.tki`** (unreachable from
+> toke), had zero callers, and were unused in the corpus — the injection (DAT-01)
+> and 4096-byte-buffer overflow (DAT-05) lived only in that dead code. The **live**
+> toke-facing db API — `db.exec` / `db.one` / `db.many`, typed `("str", "[str]")` —
+> is already parameterized (SQL + bound `[str]` values), which is ADR-0011's
+> guarantee. The interim 121.11 escaping / 121.12 bounded-append fixes are
+> superseded by the removal. If a typed query-builder is ever wanted, expose it via
+> `db.tki` built on the parameterized `db_exec` path, not string concatenation.
+
 Scope: `src/stdlib/db.c` (SQLite backend + row accessors), `src/stdlib/db_postgres.c`
 (libpq backend), `src/stdlib/db_mysql.c` (MySQL/MariaDB backend), `src/stdlib/db_glue.c`
 (i64-ABI wrappers exposed to compiled toke programs), plus `src/stdlib/db.h` and the
