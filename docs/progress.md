@@ -5057,10 +5057,19 @@ Sequencing: foundation **115.1→115.5** first (tokens + chrome + components + c
 - **No runtime WAF (121.13):** the rate-limit/SQLi/XSS "security module" was removed as dead code; edge filtering belongs at an external proxy — remove any program/doc that references it.
 - **Spatial safety (ADR-0012):** RT002–005 traps (bounds/nil-deref) are automatic; no action, but out-of-bounds `.get` now traps loudly rather than corrupting.
 
+**Test result (2026-07-08, current v0.4 compiler):** **1377/1460 PASS (94.3%)** —
+compile + run + exact-output match; **0 RUN_FAIL** (zero crashes/traps — confirms the
+recent codegen/stdlib/security work regressed nothing at runtime). Failures: **69
+COMPILE_FAIL** (65 = un-migrated v0.3 `=` → `E2002`, concentrated in ai-agents +
+manufacturing-ml; 3 W1020; 1 E9003) and **14 WRONG_OUTPUT**. **285/1460 (20%)** have
+`byte_ratio<1` (toke bigger than Python). None of the failures are caused by the
+recent changes (diff-codegen 0; E2002 is a parse-stage v0.4-migration gap).
+
 | Story | Description | Status | Priority |
 |-------|-------------|--------|----------|
-| 126.0 | Full 1460 re-test harness (`scripts/test-library-1460.py`) — compile current solution.tk + run every manifest test_case + exact-output compare; report PASS/WRONG_OUTPUT/COMPILE_FAIL/RUN_FAIL + the `byte_ratio<1` target set | **DONE 2026-07-07** | P0 |
-| 126.1 | **Batch 1** — optimise the 285 `byte_ratio<1` programs (toke > Python), worst-ratio first; expr-`if`/`&&`/stdlib/`vec`; outputs unchanged; re-measure on `--min` | planned | **P0** |
+| 126.0 | Full 1460 re-test harness (`scripts/test-lib-resumable.py`, JSONL-resumable) — compile current solution.tk + run every manifest test_case + exact-output compare | **DONE 2026-07-08** | P0 |
+| 126.0a | **Functional fixes (do first)** — the 69 COMPILE_FAIL + 14 WRONG_OUTPUT. 65 of the 69 are un-migrated v0.3 `=`-equality (`E2002`), **concentrated in ai-agents (25) + manufacturing-ml (44)** — the `=`→`==` v0.4 migration skipped those two categories; run `migrate_eq.py` over them. Triage the other 4 COMPILE_FAIL (3× W1020, 1× E9003) and the 14 WRONG_OUTPUT (AIA/DEV/MSG/SCI/SEC/SYS — likely output-format/float vs genuine). Lists in `toke-test-programs/reports/library-1460-FINAL.json`. | planned | **P0** |
+| 126.1 | **Batch 1** — optimise the 285 `byte_ratio<1` programs (toke > Python), worst-ratio first (DAT-072/EDU-120/CRY-008 ≈0.13×); expr-`if`/`&&`/stdlib/`vec`; outputs unchanged; re-measure on `--min` | planned | **P0** |
 | 126.2 | Idiom rewrite of the remaining ~1175 (ratio≥1) — same feature adoption, gated by `qwen_judge.py`≥0.6; batch by category | planned | P1 |
 | 126.3 | Security best-practices pass — add `tkc.toml` capability grants to fs/net/db programs; confirm parameterized SQL / argv-exec / escaping; remove any WAF references | planned | P1 |
 | 126.4 | Re-measure + re-tag the library on `--min` (token counts, `byte_ratio`); regenerate `results/library/*.json` + website `library.html`; publish the honest recount | planned | P1 |
