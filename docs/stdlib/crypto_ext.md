@@ -29,7 +29,7 @@ line with the default-syntax array notation.
 **Example:**
 ```toke
 let hash=crypto.sha256(str.bytes("hello"));
-let hex=crypto.to_hex(hash);
+let hex=crypto.tohex(hash);
 -- hex = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
 ```
 
@@ -40,7 +40,7 @@ Computes the SHA-512 digest of `data`. Returns a 64-byte slice.
 **Example:**
 ```toke
 let hash=crypto.sha512(str.bytes("hello"));
-let hex=crypto.to_hex(hash);
+let hex=crypto.tohex(hash);
 -- hex is a 128-character lowercase hex string
 ```
 
@@ -55,7 +55,7 @@ internally per RFC 2104.
 let key=str.bytes("secret");
 let msg=str.bytes("payload");
 let tag=crypto.hmacsha256(key;msg);
-let hex=crypto.to_hex(tag);
+let hex=crypto.tohex(tag);
 ```
 
 ### crypto.hmacsha512(key: @($byte); data: @($byte)): @($byte)
@@ -98,7 +98,7 @@ is suitable for generating nonces, salts, session tokens, and API keys.
 **Example:**
 ```toke
 let nonce=crypto.randombytes(16);
-let nonce_hex=crypto.to_hex(nonce);
+let nonce_hex=crypto.tohex(nonce);
 -- nonce_hex is a 32-character random hex string
 ```
 
@@ -122,5 +122,5 @@ f=signpayload(key:@(u8);payload:@(u8)):@(u8){
 
 - All hash and HMAC functions are infallible — they do not return error variants.
 - `crypto.randombytes` panics on entropy source failure (extremely rare, OS-level fault).
-- `crypto.to_hex` (from the base module) is the canonical way to produce a
+- `crypto.tohex` (from the base module) is the canonical way to produce a
   printable representation of any `@($byte)` digest.

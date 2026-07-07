@@ -9,7 +9,7 @@ order: 6
 
 The `std.crypto` module provides cryptographic hash functions (SHA-256, SHA-512), HMAC message authentication codes, constant-time comparison, cryptographically secure random byte generation, and hex encoding.
 
-> **Implemented functions (from `crypto.tki`):** `crypto.sha256`, `crypto.sha512`, `crypto.hmacsha256`, `crypto.hmacsha512`, `crypto.constanteq`, `crypto.randombytes`, `crypto.to_hex`. Functions documented in earlier versions (`crypto.md5`, `crypto.bcrypt_hash`, `crypto.bcrypt_verify`, `crypto.rand_bytes`, `crypto.constant_eq`, `crypto.hmac_sha256`, `crypto.hmac_sha512`, `crypto.from_hex`) used incorrect names or are not in the current tki.
+> **Implemented functions (from `crypto.tki`):** `crypto.sha256`, `crypto.sha512`, `crypto.hmacsha256`, `crypto.hmacsha512`, `crypto.constanteq`, `crypto.randombytes`, `crypto.tohex`. Functions documented in earlier versions (`crypto.md5`, `crypto.bcrypt_hash`, `crypto.bcrypt_verify`, `crypto.rand_bytes`, `crypto.constant_eq`, `crypto.hmac_sha256`, `crypto.hmac_sha512`, `crypto.from_hex`) used incorrect names or are not in the current tki.
 
 ## Functions
 
@@ -23,7 +23,7 @@ i=crypto:std.crypto;
 i=str:std.str;
 
 f=hashstr():$str{
-  let hash=crypto.sha256(str.tobytes("abc"));
+  let hash=crypto.sha256(str.bytes("abc"));
   let hex=crypto.tohex(hash);
   < hex
 };
@@ -39,7 +39,7 @@ i=crypto:std.crypto;
 i=str:std.str;
 
 f=hash512():$str{
-  let hash=crypto.sha512(str.tobytes("abc"));
+  let hash=crypto.sha512(str.bytes("abc"));
   let hex=crypto.tohex(hash);
   < hex
 };
@@ -57,8 +57,8 @@ i=env:std.env;
 
 f=macdemo():$str{
   let secret=env.getor("HMAC_SECRET";"fallback");
-  let key=str.tobytes(secret);
-  let payload=str.tobytes("amount=100&currency=usd");
+  let key=str.bytes(secret);
+  let payload=str.bytes("amount=100&currency=usd");
   let tag=crypto.hmacsha256(key;payload);
   let hex=crypto.tohex(tag);
   < hex
@@ -75,8 +75,8 @@ i=crypto:std.crypto;
 i=str:std.str;
 
 f=mac512demo():i64{
-  let key=str.tobytes("secret-key");
-  let msg=str.tobytes("important payload");
+  let key=str.bytes("secret-key");
+  let msg=str.bytes("important payload");
   let tag=crypto.hmacsha512(key;msg);
   < 0
 };
@@ -92,10 +92,10 @@ i=crypto:std.crypto;
 i=str:std.str;
 
 f=verifymac(keystr:$str;paystr:$str;providedstr:$str):bool{
-  let key=str.tobytes(keystr);
-  let payload=str.tobytes(paystr);
+  let key=str.bytes(keystr);
+  let payload=str.bytes(paystr);
   let expected=crypto.hmacsha256(key;payload);
-  let provided=str.tobytes(providedstr);
+  let provided=str.bytes(providedstr);
   let valid=crypto.constanteq(expected;provided);
   < valid
 };
@@ -115,7 +115,7 @@ f=gensalt():i64{
 };
 ```
 
-### crypto.to_hex(data: @(byte)): $str
+### crypto.tohex(data: @(byte)): $str
 
 Converts a byte array to a lowercase hexadecimal string, producing exactly two characters per byte.
 
@@ -125,7 +125,7 @@ i=crypto:std.crypto;
 i=str:std.str;
 
 f=tohexdemo():$str{
-  let hash=crypto.sha256(str.tobytes("abc"));
+  let hash=crypto.sha256(str.bytes("abc"));
   let hex=crypto.tohex(hash);
   < hex
 };
@@ -149,10 +149,10 @@ f=gentoken():$str{
 
 f=verifywebhook(body:$str;sigheader:$str):bool{
   let secret=env.getor("WEBHOOK_SECRET";"");
-  let key=str.tobytes(secret);
-  let payload=str.tobytes(body);
+  let key=str.bytes(secret);
+  let payload=str.bytes(body);
   let expected=crypto.hmacsha256(key;payload);
-  let provided=str.tobytes(sigheader);
+  let provided=str.bytes(sigheader);
   let valid=crypto.constanteq(expected;provided);
   < valid
 };

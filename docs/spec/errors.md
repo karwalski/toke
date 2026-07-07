@@ -38,7 +38,6 @@ See `spec/toke-spec-v0.3.md` Appendix A for the diagnostic JSON schema.
 | E1003 | error | lex | Character outside legacy character set | D003 |
 | E1004 | error | lex | Identifier beginning with a digit | -- |
 | E1005 | error | lex | Non-UTF-8 byte sequence | -- |
-| E1010 | error | parse | Reserved literal used as identifier | D004 |
 | W1001 | warning | type_check | Potentially truncating cast | -- |
 | W1010 | warning | lex | String interpolation unsupported in P1 | D005, D009 |
 | E2001 | error | parse | Declaration ordering violation | G024 |
@@ -70,9 +69,6 @@ See `spec/toke-spec-v0.3.md` Appendix A for the diagnostic JSON schema.
 | E4041 | error | type_check | Map value type mismatch | -- |
 | E4042 | error | type_check | Method on non-collection type | -- |
 | E4043 | error | type_check | Inconsistent types in map literal | D015 |
-| E4050 | error | type_check | spawn argument not a callable function | -- |
-| E4051 | error | type_check | await argument not a Task | D016 |
-| E4052 | error | type_check | Spawned function has parameters (v0.1) | -- |
 | E4060 | error | type_check | FFI type mismatch | -- |
 | E5001 | error | arena_check | Value escapes arena scope | -- |
 | E5002 | error | arena_check | Returned pointer to arena-local allocation | -- |
@@ -189,30 +185,6 @@ f=bad():i64{let 3x=1;<3x};
 
 **Notes:** The source file contains a byte sequence that is not valid UTF-8.
 All toke source files must be UTF-8 encoded.
-
----
-
-### E1010 -- Reserved literal used as identifier
-
-| Field | Value |
-|-------|-------|
-| **Code** | E1010 |
-| **Stage** | parse |
-| **Severity** | error |
-| **Message** | `reserved literal cannot be used as an identifier` |
-| **Fix field** | absent |
-| **Conformance test** | D004 |
-
-**Notes:** The lexer produces `BOOL_LIT` tokens for `true` and `false`. When one
-appears in a position that requires `IDENT` (e.g. `let true = ...`), the parser
-emits this error. Although the code is in the 1xxx lexer range, the diagnostic is
-actually emitted by the parser stage.
-
-**Example trigger:**
-```text
-m=test;
-f=bad():i64{let true=1;<true};
-```
 
 ---
 
@@ -833,61 +805,6 @@ f=bad():i64{<@(1:10; 2:"x")};
 
 ---
 
-### E4050 -- spawn argument not a callable function
-
-| Field | Value |
-|-------|-------|
-| **Code** | E4050 |
-| **Stage** | type_check |
-| **Severity** | error |
-| **Message** | `spawn argument not a callable function` |
-| **Fix field** | absent |
-| **Conformance test** | -- |
-
-**Notes:** `spawn(f)` requires its argument to be a declared function. Passing a
-non-function identifier or omitting the argument triggers this error.
-
----
-
-### E4051 -- await argument not a Task
-
-| Field | Value |
-|-------|-------|
-| **Code** | E4051 |
-| **Stage** | type_check |
-| **Severity** | error |
-| **Message** | `await argument not a Task` |
-| **Fix field** | absent |
-| **Conformance test** | D016 |
-
-**Notes:** `await(t)` requires its argument to have type `Task<T>`. Passing a
-value of any other type emits this error.
-
-**Example trigger:**
-```text
-m=test;
-f=notask():i64{<42};
-f=main():i64{<await(notask())};
-```
-
----
-
-### E4052 -- Spawned function has parameters
-
-| Field | Value |
-|-------|-------|
-| **Code** | E4052 |
-| **Stage** | type_check |
-| **Severity** | error |
-| **Message** | `spawned function has parameters; v0.1 requires nullary functions` |
-| **Fix field** | absent |
-| **Conformance test** | -- |
-
-**Notes:** In the legacy profile (v0.1), `spawn` only accepts nullary (zero-parameter)
-functions. This restriction may be lifted in a future profile.
-
----
-
 ### E4060 -- FFI type mismatch (reserved)
 
 | Field | Value |
@@ -1004,7 +921,6 @@ zero.
 | D001 | D | E1001 | Fix field absent for unrecognised escape |
 | D002 | D | E1002 | Fix field absent for unterminated string |
 | D003 | D | E1003 | Fix field absent for out-of-set character |
-| D004 | D | E1010 | Fix field absent for reserved literal as ident |
 | D005 | D | W1010 | Fix field is informational string |
 | D006 | D | E1001 | schema_version field is "1.0" |
 | D007 | D | E1001 | Diagnostic has pos.line and pos.col |
@@ -1016,5 +932,4 @@ zero.
 | D013 | D | E2010 | Pointer type in non-extern function |
 | D014 | D | E2035 | Malformed version string in import |
 | D015 | D | E4043 | Inconsistent map literal types |
-| D016 | D | E4051 | await on non-Task |
 | G024 | G | E2001 | Missing module declaration |

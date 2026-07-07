@@ -127,23 +127,20 @@ Emitted when an uppercase-cased keyword is used where the default (lowercase) pr
 
 ### W1010
 
-**String interpolation not yet supported**
+**String interpolation `\(…)` not supported in the legacy profile**
 
 | Field    | Value   |
 |----------|---------|
 | Severity | warning |
 | Stage    | lex     |
 
-The `\(` sequence inside a string literal triggers this warning. String interpolation is planned for a future release.
+Emitted when a `\(` interpolation appears in a string literal while compiling in the
+**legacy (80-column) profile**, which does not support interpolation. In the default
+profile, `\(expr)` interpolation **is** supported for scalar values (interpolating a
+composite value is the compile error `E4032` — see [types](types.md)).
 
-```text
-m=test;
-f=greet(): $str { < "hello \(name)" };
-```
-
-Triggers W1010.
-
-**Fix:** Use `str.concat()` for string composition instead.
+**Fix:** in legacy-profile code, build the string with `str.concat()`; or use the
+default profile, where `\(expr)` works.
 
 ---
 

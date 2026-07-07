@@ -228,11 +228,11 @@ f=index(req:http.$req):http.$res{
 };
 
 f=main():i64{
-  http.gzip(true);
-  http.rate_limit(100 as u32;60 as u32);
-  http.set_limits(8192 as u64;1048576 as u64;10 as u32);
-  http.cache_control("public, max-age=3600");
-
+  // Rate-limiting / gzip / cache-control are not in-runtime toke APIs — the
+  // in-runtime WAF was removed (Story 121.13). Put those at an external reverse
+  // proxy (nginx, Caddy, a cloud WAF). toke's controls are deny-by-default
+  // capabilities (ADR-0010), auto-escaping/parameterized queries (ADR-0011), and
+  // the spatial-safety traps (ADR-0012).
   http.get("/";index);
 
   < http.serve_tls_workers(

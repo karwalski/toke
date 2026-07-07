@@ -6,14 +6,27 @@ services in toke, using the `std` library, the `ooke` site framework, and the
 security audit (`docs/security/audit-120/`); finding IDs such as `OOK-02` or
 `AMB-02` are cited so you can read the underlying analysis.
 
-> **Read this first.** toke is a young language. Several defense layers you would
-> expect from a mature framework are **absent or opt-in today** — HTML escaping is
-> opt-in (`OOK-02`), there is no session/CSRF/authz primitive in `ooke` (`OOK-03`),
-> the in-runtime WAF engine is compiled but never called (`RUN-01`), and
-> `process.exec`/`os` grant full ambient authority with no capability gate
-> (`AMB-01`, `AMB-02`). This guide shows you the patterns to close those gaps in
-> **application code** until the platform closes them for you. Do not assume the
-> runtime is protecting you.
+> **Read this first (updated 2026-07-07).** toke's security posture has moved
+> quickly since the Epic 120 audit — several findings below are now closed at the
+> platform level:
+>
+> - **Ambient authority is gated (`AMB-01`/`AMB-02` closed).** Compiled programs are
+>   **deny-by-default** for `fs`/`net`/`env`/`process` (ADR-0010). A program gets no
+>   OS authority unless a `tkc.toml [capabilities]` grant or a `--allow-read/-write/`
+>   `-net/-env/-run/-all` flag permits it; an ungranted call fails with `CAP001`.
+> - **The in-runtime WAF was removed (`RUN-01`).** `src/stdlib/security.c` (rate-
+>   limit / SQLi / XSS / CSP engine) was unreachable dead code and is deleted (Story
+>   121.13). Do **not** rely on a runtime WAF — put rate-limiting behind an external
+>   proxy. The real controls are capabilities (ADR-0010), parameterized-only SQL and
+>   argv-only exec (ADR-0011), and the spatial-safety traps (ADR-0012).
+>
+> Still application-side today: **HTML escaping is opt-in** — escape untrusted values
+> with `tpl.escape` before rendering (auto-escape by default is accepted, ADR-0011,
+> but not yet shipped; `OOK-02`) — and `ooke` has no built-in session/CSRF/authz
+> primitive (`OOK-03`). This guide shows the patterns for the gaps the platform
+> hasn't closed yet. Sections that predate the capability flip are being refreshed;
+> where a section describes ambient authority or the WAF as present, treat the
+> summary above as current.
 
 Contents:
 

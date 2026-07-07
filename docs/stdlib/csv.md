@@ -48,7 +48,7 @@ i=csv:std.csv;
 i=str:std.str;
 
 f=parsedemo():i64{
-  let raw=str.tobytes("name,score\nAlice,95\nBob,87");
+  let raw=str.bytes("name,score\nAlice,95\nBob,87");
   mt csv.parse(raw) {
     $ok:rows 0;
     $err:e   1
@@ -66,7 +66,7 @@ i=csv:std.csv;
 i=str:std.str;
 
 f=readerdemo():i64{
-  let data=str.tobytes("a,b,c\n1,2,3\n");
+  let data=str.bytes("a,b,c\n1,2,3\n");
   let r=csv.reader(data;44);
   < 0
 };
@@ -82,7 +82,7 @@ i=csv:std.csv;
 i=str:std.str;
 
 f=headerdemo():i64{
-  let data=str.tobytes("name,age\nAlice,30\nBob,25");
+  let data=str.bytes("name,age\nAlice,30\nBob,25");
   let r=csv.reader(data;44);
   mt csv.header(r) {
     $ok:hdr 0;
@@ -101,7 +101,7 @@ i=csv:std.csv;
 i=str:std.str;
 
 f=nextdemo():i64{
-  let data=str.tobytes("1,2\n3,4\n");
+  let data=str.bytes("1,2\n3,4\n");
   let r=csv.reader(data;44);
   mt csv.next(r) {
     $ok:row 0;
@@ -170,7 +170,7 @@ i=file:std.file;
 
 f=filterscores(inpath:$str;outpath:$str;threshold:$str):i64{
   let raw=mt file.read(inpath) {
-    $ok:s  str.tobytes(s);
+    $ok:s  str.bytes(s);
     $err:e @()
   };
 

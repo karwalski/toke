@@ -40,7 +40,7 @@ i=str:std.str;
 i=log:std.log;
 
 f=main():i64{
-  let key=crypto.sha256(str.tobytes("secret"));
+  let key=crypto.sha256(str.bytes("secret"));
   let hex=enc.hexencode(key);
   log.info(hex;@());
 

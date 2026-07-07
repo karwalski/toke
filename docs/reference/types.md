@@ -44,7 +44,10 @@ f=demo():void{
 
 ### String type
 
-`$str` is an immutable UTF-8 string. String interpolation is not yet supported — use `str.concat()` from the standard library instead.
+`$str` is an immutable UTF-8 string. String interpolation is supported with `\(expr)`
+for scalar values (strings, ints, bools, floats). Interpolating a composite value
+(array, struct, or map) is a compile error (`E4032`) — interpolate its individual
+elements/fields, or build the string with `str.concat()`.
 
 ```toke
 m=types;

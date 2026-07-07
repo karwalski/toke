@@ -20,7 +20,8 @@ Every toke file follows a strict order. The compiler enforces this — you canno
 | 1 | `m=` | Module declaration | Yes (exactly one) |
 | 2 | `i=` | Imports | Optional |
 | 3 | `t=` | Type declarations | Optional |
-| 4 | `f=` | Function declarations | Optional |
+| 4 | `c=` | Constant declarations | Optional |
+| 5 | `f=` | Function declarations | Optional |
 
 ```toke
 m=myapp;                            (* 1. module — always first *)

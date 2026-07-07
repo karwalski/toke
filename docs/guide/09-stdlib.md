@@ -25,25 +25,29 @@ i=enc:std.encoding;
 
 | Function | Signature | Purpose |
 |----------|-----------|---------|
-| `base64enc` | `(data:$str):$str` | Base64 encode |
-| `base64dec` | `(data:$str):$str!enc.$err` | Base64 decode |
-| `hexenc` | `(data:@u8):$str` | Hex encode bytes |
-| `hexdec` | `(data:$str):@u8!enc.$err` | Hex decode string |
-| `urlenc` | `(data:$str):$str` | URL-encode string |
-| `urldec` | `(data:$str):$str!enc.$err` | URL-decode string |
+| `encoding.b64encode` | `(data:[byte]):$str` | Base64-encode bytes |
+| `encoding.b64decode` | `(s:$str):[byte]!EncodingErr` | Base64-decode to bytes |
+| `encoding.hexencode` | `(data:[byte]):$str` | Hex-encode bytes |
+| `encoding.hexdecode` | `(s:$str):[byte]!EncodingErr` | Hex-decode to bytes |
+| `encoding.urlencode` | `(s:$str):$str` | URL-encode string |
+| `encoding.urldecode` | `(s:$str):$str!EncodingErr` | URL-decode string |
+
+Encode/decode operate on real `[byte]` (see the bytes model in the crypto section);
+use `str.bytes` / `str.frombytes` to convert to and from text.
 
 **Example: base64 round-trip**
 
 ```
 i=enc:std.encoding;
+i=s:std.str;
 
 f=roundtrip(input:$str):bool{
-  let encoded=enc.base64enc(input);
-  let decoded=mt enc.base64dec(encoded) {
-    $ok:v  v;
+  let encoded=enc.b64encode(s.bytes(input));
+  let decoded=mt enc.b64decode(encoded) {
+    $ok:v  s.frombytes(v);
     $err:e "";
   };
-  <decoded=input;
+  <decoded==input;
 };
 ```
 
@@ -249,44 +253,53 @@ test.assert(str.contains("foobar";"oba");"contains finds substring");
 i=db:std.db;
 ```
 
+SQL is always **parameterized**: values travel in a separate `@$str` array and bind
+to `?` placeholders, so a string value can never break out of the query (ADR-0011 —
+parameterized-queries-only). Results are `Row` values read with typed accessors.
+
 | Function | Signature | Purpose |
 |----------|-----------|---------|
-| `open` | `(path:$str):db.$conn!db.$err` | Open SQLite database |
-| `exec` | `(conn:db.$conn;sql:$str;params:@$str):db.$result!db.$err` | Execute statement |
-| `query` | `(conn:db.$conn;sql:$str;params:@$str):@db.$row!db.$err` | Query rows |
-| `one` | `(conn:db.$conn;sql:$str;params:@$str):db.$row!db.$err` | Query single row |
-| `close` | `(conn:db.$conn):void` | Close connection |
+| `db.exec` | `(sql:$str;params:@$str):u64!DbErr` | Run a statement; returns affected-row count |
+| `db.one` | `(sql:$str;params:@$str):Row!DbErr` | Query a single row |
+| `db.many` | `(sql:$str;params:@$str):@Row!DbErr` | Query multiple rows |
+| `row.str` | `(r:Row;col:$str):$str!DbErr` | Read a text column |
+| `row.i64` | `(r:Row;col:$str):i64!DbErr` | Read an integer column |
+| `row.u64` | `(r:Row;col:$str):u64!DbErr` | Read an unsigned column |
+| `row.f64` | `(r:Row;col:$str):f64!DbErr` | Read a float column |
+| `row.bool` | `(r:Row;col:$str):bool!DbErr` | Read a boolean column |
 
-**Example: SQLite CRUD**
+> **Connection:** the database is a single process-global SQLite handle. A
+> source-level open/DSN call is not currently exposed in `std.db` (tracked as a
+> backlog gap); `db.exec`/`one`/`many` operate on that shared connection.
+
+**Example: parameterized CRUD**
 
 ```text
 m=todos;
 i=db:std.db;
 
-t=$todo{id:u64;title:$str;done:bool};
-t=$todoerr{$dberr:$str;$notfound:u64};
+t=$todo{id:i64;title:$str;done:bool};
 
-f=init(conn:db.$conn):void!$todoerr{
-  db.exec(conn;"CREATE TABLE IF NOT EXISTS todos (id INTEGER PRIMARY KEY, title TEXT, done INTEGER)";@())!$todoerr;
+f=init():u64!DbErr{
+  <db.exec("CREATE TABLE IF NOT EXISTS todos (id INTEGER PRIMARY KEY, title TEXT, done INTEGER)";@())
 };
 
-f=add(conn:db.$conn;title:$str):$todo!$todoerr{
-  let r=db.exec(conn;"INSERT INTO todos (title,done) VALUES (?,0)";@(title))!$todoerr;
-  <$todo{id:r.lastid;title:title;done:false};
+f=add(title:$str):u64!DbErr{
+  <db.exec("INSERT INTO todos (title,done) VALUES (?,0)";@(title))
 };
 
-f=list(conn:db.$conn):@$todo!$todoerr{
-  let rows=db.query(conn;"SELECT id,title,done FROM todos";@())!$todoerr;
+f=list():@$todo!DbErr{
+  let rows=db.many("SELECT id,title,done FROM todos";@())!DbErr;
   let result=mut.@();
   lp(let i=0;i<rows.len;i=i+1){
     let r=rows.get(i);
     result=result.push($todo{
-      id:r.u64("id");
-      title:r.str("title");
-      done:r.i64("done")=1
+      id:row.i64(r;"id")!DbErr;
+      title:row.str(r;"title")!DbErr;
+      done:row.i64(r;"done")!DbErr==1
     });
   };
-  <result;
+  <result
 };
 ```
 
@@ -302,19 +315,28 @@ Modules for cryptography, encryption, and authentication.
 i=crypto:std.crypto;
 ```
 
+Crypto operates on real `[byte]` (the bytes model): hashes **consume and return raw
+`[byte]`**, not hex text. Convert with `str.bytes` / `str.frombytes`, and render a
+digest for display with `crypto.tohex`.
+
 | Function | Signature | Purpose |
 |----------|-----------|---------|
-| `sha256` | `(data:$str):$str` | SHA-256 hash (hex string) |
-| `sha512` | `(data:$str):$str` | SHA-512 hash (hex string) |
-| `hmac` | `(key:$str;data:$str;algo:$str):$str` | HMAC signature |
-| `randombytes` | `(n:u64):@u8` | Cryptographic random bytes |
-| `uuid` | `():$str` | Generate UUID v4 |
+| `crypto.sha256` | `(data:[byte]):[byte]` | SHA-256 digest (raw bytes) |
+| `crypto.sha512` | `(data:[byte]):[byte]` | SHA-512 digest (raw bytes) |
+| `crypto.hmacsha256` | `(key:[byte];data:[byte]):[byte]` | HMAC-SHA-256 |
+| `crypto.hmacsha512` | `(key:[byte];data:[byte]):[byte]` | HMAC-SHA-512 |
+| `crypto.randombytes` | `(n:i64):[byte]` | Cryptographic random bytes |
+| `crypto.constanteq` | `(a:[byte];b:[byte]):bool` | Constant-time byte comparison |
+| `crypto.tohex` | `(data:[byte]):$str` | Hex-encode bytes for display |
 
-**Example: hash a password**
+**Example: hash a password (rendered as hex)**
 
 ```
+i=crypto:std.crypto;
+i=s:std.str;
+
 f=hashpassword(password:$str;salt:$str):$str{
-  <crypto.sha256(salt+password);
+  <crypto.tohex(crypto.sha256(s.bytes(salt+password)))
 };
 ```
 
@@ -482,7 +504,10 @@ SSE wire-format encoder for streaming events to browser clients. Supports multi-
 i=tmpl:std.template;
 ```
 
-Mustache-style `{{slot}}` template engine with automatic HTML escaping. Use `{{{raw}}}` for unescaped output.
+Mustache-style `{{slot}}` template engine (`tpl.compile` / `tpl.render`). Escape
+untrusted values explicitly with `tpl.escape(s)` before rendering them into HTML,
+and use `tpl.html(tag;attrs;children)` to build elements. (Auto-escaping by default
+is the accepted target — ADR-0011 — but is not yet the shipped behaviour.)
 
 **Example: render a page**
 

@@ -71,7 +71,7 @@ i=str:std.str;
 f=encryptdemo():@(u8){
   let key=enc.aes256gcmkeygen();
   let nonce=enc.aes256gcmnoncegen();
-  let ct=enc.aes256gcmencrypt(key;nonce;str.tobytes("hello, world");@());
+  let ct=enc.aes256gcmencrypt(key;nonce;str.bytes("hello, world");@());
 < ct
 };
 ```
@@ -121,7 +121,7 @@ i=str:std.str;
 
 f=dhdemo(myprivkey:@(u8);peerpubkey:@(u8)):@(u8){
   let shared=enc.x25519dh(myprivkey;peerpubkey);
-  let enckey=enc.hkdfsha256(shared;@();str.tobytes("enc");32);
+  let enckey=enc.hkdfsha256(shared;@();str.bytes("enc");32);
   < enckey
 };
 ```
@@ -151,7 +151,7 @@ i=enc:std.encrypt;
 i=str:std.str;
 
 f=signdemo(privkey:@(u8)):@(u8){
-  let sig=enc.ed25519sign(privkey;str.tobytes("authenticate this"));
+  let sig=enc.ed25519sign(privkey;str.bytes("authenticate this"));
 < sig
 };
 ```
@@ -166,7 +166,7 @@ i=enc:std.encrypt;
 i=str:std.str;
 
 f=verifydemo(pubkey:@(u8);sig:@(u8)):bool{
-  let ok=enc.ed25519verify(pubkey;str.tobytes("authenticate this");sig);
+  let ok=enc.ed25519verify(pubkey;str.bytes("authenticate this");sig);
   < ok
 };
 ```
@@ -181,7 +181,7 @@ i=enc:std.encrypt;
 i=str:std.str;
 
 f=hkdfdemo(sharedsecret:@(u8);salt:@(u8)):@(u8){
-  let enckey=enc.hkdfsha256(sharedsecret;salt;str.tobytes("enc");32);
+  let enckey=enc.hkdfsha256(sharedsecret;salt;str.bytes("enc");32);
   < enckey
 };
 ```
@@ -226,9 +226,9 @@ let aliceshared=enc.x25519dh(alice.privkey;bob.pubkey);
   let bobshared=enc.x25519dh(bob.privkey;alice.pubkey);
 
 let salt=crypto.randombytes(32);
-  let enckey=enc.hkdfsha256(aliceshared;salt;str.tobytes("enc-v1");32);
+  let enckey=enc.hkdfsha256(aliceshared;salt;str.bytes("enc-v1");32);
 let nonce=enc.aes256gcmnoncegen();
-  let ct=enc.aes256gcmencrypt(enckey;nonce;str.tobytes("hello from alice");@());
+  let ct=enc.aes256gcmencrypt(enckey;nonce;str.bytes("hello from alice");@());
 let result=enc.aes256gcmdecrypt(enckey;nonce;ct;@());
   if(result.err==""){
     let plain=str.frombytes(result.ok);
@@ -250,11 +250,11 @@ i=str:std.str;
 
 f=main():i64{
   let kp=enc.ed25519keypair();
-  let msg=str.tobytes("invoice #1042: $500.00");
+  let msg=str.bytes("invoice #1042: $500.00");
 let sig=enc.ed25519sign(kp.privkey;msg);
 let ok=enc.ed25519verify(kp.pubkey;msg;sig);
 
-let tampered=str.tobytes("invoice #1042: $5000.00");
+let tampered=str.bytes("invoice #1042: $5000.00");
   let bad=enc.ed25519verify(kp.pubkey;tampered;sig);
 if(ok){
     if(!(bad)){

@@ -153,13 +153,12 @@ t=$user{id:u64;name:$str;email:$str};
 t=$usererr{$notfound:u64;$dberror:$str};
 
 f=getbyid(id:u64):$user!$usererr{
-  let row=db.queryone("SELECT * FROM users WHERE id=?";@(id))!$usererr;
-  <$user{id:row.u64("id");name:row.str("name");email:row.str("email")};
+  let r=db.one("SELECT * FROM users WHERE id=?";@(id as $str))!$usererr;
+  <$user{id:row.u64(r;"id");name:row.str(r;"name");email:row.str(r;"email")};
 };
 
-f=create(name:$str;email:$str):$user!$usererr{
-  let row=db.exec("INSERT INTO users (name,email) VALUES (?,?)";@(name;email))!$usererr;
-  <$user{id:row.lastid;name:name;email:email};
+f=create(name:$str;email:$str):u64!$usererr{
+  <db.exec("INSERT INTO users (name,email) VALUES (?,?)";@(name;email))
 };
 ```
 
