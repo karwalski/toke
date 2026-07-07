@@ -142,12 +142,15 @@ static void test_parse_array(void)
     ASSERT(arr[0] == 1,  "parse array [1,2,3]: arr[0] == 1");
     ASSERT(arr[1] == 2,  "parse array [1,2,3]: arr[1] == 2");
     ASSERT(arr[2] == 3,  "parse array [1,2,3]: arr[2] == 3");
-    free(arr - 1);
+    /* The array handle points at data[0]; the malloc base is 3 header words
+     * before it (rc|cap|len — tk_array.h TK_ARR_HDR=3, since 114.18). Freeing
+     * at arr-1 (the old 1-word layout) is a bad free — the SIGTRAP this test hit. */
+    free(arr - 3);
 
     int64_t *empty = (int64_t *)(intptr_t)tk_json_parse("[]");
     ASSERT(empty != NULL, "parse empty array: non-NULL");
     ASSERT(empty[-1] == 0, "parse empty array: length == 0");
-    free(empty - 1);
+    free(empty - 3);
 }
 
 /* 6. json_parse: whitespace tolerance */
@@ -275,14 +278,14 @@ static void test_array_concat(void)
     ASSERT(c[2] == 3,   "array_concat: c[2] == 3");
     ASSERT(c[3] == 4,   "array_concat: c[3] == 4");
     ASSERT(c[4] == 5,   "array_concat: c[4] == 5");
-    free(c - 1);
+    free(c - 3);   /* 3-word array header (tk_array.h) */
 
     /* Concat with NULL (treated as empty) */
     int64_t *d = tk_array_concat(NULL, b);
     ASSERT(d != NULL,   "array_concat NULL+b: non-NULL");
     ASSERT(d[-1] == 3,  "array_concat NULL+b: len == 3");
     ASSERT(d[0] == 3,   "array_concat NULL+b: d[0] == 3");
-    free(d - 1);
+    free(d - 3);   /* 3-word array header (tk_array.h) */
 }
 
 /* 17. overflow_trap exits with code 1 */
