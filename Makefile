@@ -64,7 +64,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all clean lint conform conform-check build-all ci check-docs diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all clean lint conform conform-check build-all ci check-docs check-error-codes diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -152,12 +152,17 @@ stress: $(BIN)
 check-tki:
 	python3 scripts/check_tki_coverage.py
 
-ci: lint conform conform-check check-tki check-docs
+ci: lint conform conform-check check-tki check-docs check-error-codes
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
 check-docs: $(BIN)
 	python3 scripts/check_doc_examples.py docs
+
+# 123.12 — drift-gate: every diagnostic code the compiler emits must be
+# documented in docs/reference/errors.md, and errors.md must not list dead codes.
+check-error-codes:
+	python3 scripts/check_error_codes.py
 
 # 124.0b — differential codegen regression gate (root of trust). Fails if any
 # full-program test's observable behaviour (compile / exit / stdout) changed vs

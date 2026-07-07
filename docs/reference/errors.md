@@ -90,27 +90,38 @@ The above is valid; E1003 triggers when non-ASCII characters like `£` appear in
 
 ---
 
-### E1010
+### E1004
 
-**Reserved literal used as identifier**
+**Digit-leading or unterminated identifier**
 
 | Field    | Value |
 |----------|-------|
 | Severity | error |
-| Stage    | parse |
+| Stage    | lex |
 
-The literals `true` and `false` cannot be used as identifiers.
-<!-- skip-check -->
-```text
-m=test;
-f=bad(): i64 { let true = 1; < true };
-```
+Emitted when an identifier begins with a digit, or a token cannot be closed.
 
-Triggers E1010.
+### E1005
 
-**Fix:** Choose a different identifier name.
+**Invalid numeric literal**
 
----
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | lex |
+
+Emitted for a malformed number (e.g. a bad hex/float form).
+
+### E1006
+
+**Uppercase keyword in default syntax mode**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | lex |
+
+Emitted when an uppercase-cased keyword is used where the default (lowercase) profile expects it lowercase.
 
 ## Lexer Warnings (W1xxx)
 
@@ -135,6 +146,39 @@ Triggers W1010.
 **Fix:** Use `str.concat()` for string composition instead.
 
 ---
+
+### W1001
+
+**Lossy cast**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | lex |
+
+Warns that a cast loses information (e.g. `f64` to `i64`).
+
+### W1011
+
+**Identifier starts with a keyword prefix**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | lex |
+
+Hint that an identifier begins with a reserved keyword prefix.
+
+### W1020
+
+**Foreign keyword detected**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | lex |
+
+Cross-language hint: a keyword from another language was detected.
 
 ## Parser Errors (E2xxx)
 
@@ -247,6 +291,28 @@ Triggers E2010.
 **Fix:** Either remove the pointer type or make the function an extern declaration (remove the body).
 
 ---
+
+### E2005
+
+**Unexpected token in type position**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | parse |
+
+Emitted when a non-type token appears where a type expression is required.
+
+### E2015
+
+**Duplicate field name in struct declaration**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | parse |
+
+Emitted when a struct declares the same field name twice.
 
 ## Import/Module Errors (E2xxx continued)
 
@@ -523,59 +589,6 @@ Triggers E4043.
 
 ---
 
-### E4050
-
-**spawn argument not a callable function**
-
-| Field    | Value      |
-|----------|------------|
-| Severity | error      |
-| Stage    | type_check |
-
-`spawn(f)` requires its argument to be a declared function.
-
-**Fix:** Pass a function name (not an expression or non-function identifier) to `spawn`.
-
----
-
-### E4051
-
-**await argument not a Task**
-
-| Field    | Value      |
-|----------|------------|
-| Severity | error      |
-| Stage    | type_check |
-
-`await(t)` requires its argument to have type `Task<T>`.
-<!-- skip-check -->
-```text
-m=test;
-f=notask(): i64 { < 42 };
-f=main(): i64 { < await(notask()) };
-```
-
-Triggers E4051.
-
-**Fix:** Only call `await` on values returned by `spawn`.
-
----
-
-### E4052
-
-**Spawned function has parameters**
-
-| Field    | Value      |
-|----------|------------|
-| Severity | error      |
-| Stage    | type_check |
-
-`spawn` only accepts nullary (zero-parameter) functions.
-
-**Fix:** Wrap the parameterized function in a nullary function.
-
----
-
 ### E4060
 
 **FFI type mismatch**
@@ -588,6 +601,39 @@ Triggers E4051.
 Reserved. Planned for type mismatches at FFI boundaries.
 
 ---
+
+### E4026
+
+**Wrong argument count in function call**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | typecheck |
+
+Emitted when a call passes too few or too many arguments.
+
+### E4032
+
+**Cannot interpolate a composite value into a string**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+Emitted when a `\(expr)` interpolates an array, struct, or map. Convert it to a string first (e.g. its fields/elements). Fires at code generation.
+
+### E4070
+
+**Assignment to immutable binding**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | typecheck |
+
+Emitted when code assigns to a `let` binding that was not declared mutable.
 
 ## Arena Errors (E5xxx)
 
@@ -606,3 +652,164 @@ Inside an `{arena ...}` block, assigning an arena-allocated value to a variable 
 m=test;
 f=bad(): i64 { let x = 0; {arena x = 1}; < x };
 ```
+### E5002
+
+**Unreachable code after return**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | arena |
+
+Emitted for statements that follow a `<` return in the same block.
+
+## Codegen / Internal Errors (E9xxx)
+
+Internal and code-generation-stage diagnostics.
+
+### E9001
+
+**Failed to write interface file**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+The compiler could not write the module's `.tki` interface file.
+
+### E9002
+
+**LLVM IR emission failed**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+Code generation could not emit valid LLVM IR (also emitted when a build-time path contains a shell metacharacter).
+
+### E9003
+
+**clang invocation failed**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+The clang/linker sub-process returned a non-zero exit status.
+
+### E9004
+
+**Unresolved stdlib call — missing import**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+A `module.fn()` call refers to a stdlib module that was not imported.
+
+### E9010
+
+**Compiler limit exceeded**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+A fixed compiler capacity was exceeded (e.g. too many locals, functions, or imports).
+
+### E9020
+
+**Failed to write .tkir file**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+The compiler could not write the `.tkir` artifact.
+
+### E9021
+
+**Failed to read .tkir file**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+The compiler could not read a `.tkir` artifact.
+
+## Semantic Warnings (W2xxx / W5xxx / W8xxx)
+
+Non-fatal diagnostics from later stages.
+
+### W2020
+
+**Identifier starts with a keyword**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | parse |
+
+Suggests `let x = …` when an identifier begins with a keyword.
+
+### W2021
+
+**Cross-language pattern detected**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | parse |
+
+A construct idiomatic to another language was detected.
+
+### W2022
+
+**'mut ' used instead of 'mut.'**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | parse |
+
+`mut ` (space) was auto-corrected to `mut.` (dot).
+
+### W2038
+
+**Module name normalised from wrong capitalisation**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | parse |
+
+A module name was normalised from a non-canonical capitalisation.
+
+### W5001
+
+**Value may escape arena scope**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | typecheck |
+
+Escape analysis warns that a value may outlive its arena.
+
+### W8001
+
+**Extern function declaration — FFI unsafe**
+
+| Field    | Value |
+|----------|-------|
+| Severity | warning |
+| Stage    | typecheck |
+
+An `extern` function crosses the FFI boundary and is not memory-safe.
