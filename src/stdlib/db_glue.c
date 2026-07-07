@@ -11,6 +11,43 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
+
+/*
+ * 121.12 (DAT-05): bounded append for the SQL builders. The prior
+ * `off += snprintf(buf+off, 4096-off, …)` overflowed the 4096-byte buffer —
+ * once off exceeded 4096, `4096-off` went negative and (as snprintf's size_t
+ * argument) became huge, so the next write ran past `buf`. db_emit never
+ * passes a negative size and clamps off to cap-1.
+ */
+static int db_emit(char *buf, int off, int cap, const char *fmt, ...) {
+    if (cap <= 0) return 0;
+    if (off < 0) off = 0;
+    if (off >= cap - 1) return cap - 1;
+    va_list ap; va_start(ap, fmt);
+    int n = vsnprintf(buf + off, (size_t)(cap - off), fmt, ap);
+    va_end(ap);
+    if (n < 0) return off;
+    off += n;
+    if (off >= cap) off = cap - 1;
+    return off;
+}
+
+/*
+ * 121.11 (DAT-01): escape a string value for single-quoted SQL by doubling
+ * embedded single quotes. Without this, a value containing `'` breaks out of
+ * the literal — SQL injection. (The clean end-state is bound parameters —
+ * tracked as 121.11b; db_exec already accepts a parameter array.)
+ */
+static void sql_escape(char *dst, size_t dstsz, const char *src) {
+    size_t o = 0;
+    if (dstsz == 0) return;
+    for (size_t i = 0; src && src[i] && o + 2 < dstsz; i++) {
+        if (src[i] == '\'') { dst[o++] = '\''; dst[o++] = '\''; }
+        else               { dst[o++] = src[i]; }
+    }
+    dst[o] = '\0';
+}
 
 #ifndef TK_STRARRAY_DEFINED
 #define TK_STRARRAY_DEFINED
@@ -286,20 +323,22 @@ int64_t tk_db_buildinsert_w(int64_t q) {
     /* Estimate buffer size */
     char *buf = (char *)malloc(4096);
     if (!buf) return 0;
-    int off = snprintf(buf, 4096, "INSERT INTO %s (", qb->table);
+    int off = db_emit(buf, 0, 4096, "INSERT INTO %s (", qb->table);
     for (int i = 0; i < qb->field_count; i++) {
-        if (i > 0) off += snprintf(buf + off, 4096 - off, ", ");
-        off += snprintf(buf + off, 4096 - off, "%s", qb->fields[i]);
+        if (i > 0) off = db_emit(buf, off, 4096, ", ");
+        off = db_emit(buf, off, 4096, "%s", qb->fields[i]);
     }
-    off += snprintf(buf + off, 4096 - off, ") VALUES (");
+    off = db_emit(buf, off, 4096, ") VALUES (");
     for (int i = 0; i < qb->field_count; i++) {
-        if (i > 0) off += snprintf(buf + off, 4096 - off, ", ");
+        if (i > 0) off = db_emit(buf, off, 4096, ", ");
         if (qb->is_int[i])
-            off += snprintf(buf + off, 4096 - off, "%s", qb->values[i]);
-        else
-            off += snprintf(buf + off, 4096 - off, "'%s'", qb->values[i]);
+            off = db_emit(buf, off, 4096, "%s", qb->values[i]);
+        else {
+            char esc[512]; sql_escape(esc, sizeof esc, qb->values[i]);   /* 121.11 */
+            off = db_emit(buf, off, 4096, "'%s'", esc);
+        }
     }
-    off += snprintf(buf + off, 4096 - off, ")");
+    off = db_emit(buf, off, 4096, ")");
     return (int64_t)(intptr_t)buf;
 }
 
@@ -310,23 +349,25 @@ int64_t tk_db_buildupdate_w(int64_t q) {
     if (!qb || qb->field_count < 2 || qb->table[0] == '\0') return 0;
     char *buf = (char *)malloc(4096);
     if (!buf) return 0;
-    int off = snprintf(buf, 4096, "UPDATE %s SET ", qb->table);
+    int off = db_emit(buf, 0, 4096, "UPDATE %s SET ", qb->table);
     for (int i = 1; i < qb->field_count; i++) {
-        if (i > 1) off += snprintf(buf + off, 4096 - off, ", ");
+        if (i > 1) off = db_emit(buf, off, 4096, ", ");
         if (qb->is_int[i])
-            off += snprintf(buf + off, 4096 - off, "%s = %s",
+            off = db_emit(buf, off, 4096, "%s = %s",
                             qb->fields[i], qb->values[i]);
-        else
-            off += snprintf(buf + off, 4096 - off, "%s = '%s'",
-                            qb->fields[i], qb->values[i]);
+        else {
+            char esc[512]; sql_escape(esc, sizeof esc, qb->values[i]);   /* 121.11 */
+            off = db_emit(buf, off, 4096, "%s = '%s'", qb->fields[i], esc);
+        }
     }
     /* First field is the WHERE key */
     if (qb->is_int[0])
-        off += snprintf(buf + off, 4096 - off, " WHERE %s = %s",
+        off = db_emit(buf, off, 4096, " WHERE %s = %s",
                         qb->fields[0], qb->values[0]);
-    else
-        off += snprintf(buf + off, 4096 - off, " WHERE %s = '%s'",
-                        qb->fields[0], qb->values[0]);
+    else {
+        char esc[512]; sql_escape(esc, sizeof esc, qb->values[0]);       /* 121.11 */
+        off = db_emit(buf, off, 4096, " WHERE %s = '%s'", qb->fields[0], esc);
+    }
     return (int64_t)(intptr_t)buf;
 }
 

@@ -176,7 +176,7 @@ test-stdlib:
 
 test-stdlib-db:
 	$(CC) $(CFLAGS) -o test/stdlib/test_db \
-	    test/stdlib/test_db.c src/stdlib/db.c -lsqlite3
+	    test/stdlib/test_db.c src/stdlib/db.c src/stdlib/capabilities.c -lsqlite3
 	$(RUN_TEST) ./test/stdlib/test_db
 
 test-stdlib-file:
