@@ -19,6 +19,8 @@
         {"name": "Constraint", "type": "str"}
       ]
     },
+    {"kind": "func", "name": "db.open",  "params": ["str"], "return": "u64!DbErr"},
+    {"kind": "func", "name": "db.close", "params": [], "return": "i64"},
     {"kind": "func", "name": "db.one",  "params": ["str", "[str]"], "return": "Row!DbErr"},
     {"kind": "func", "name": "db.many", "params": ["str", "[str]"], "return": "[Row]!DbErr"},
     {"kind": "func", "name": "db.exec", "params": ["str", "[str]"], "return": "u64!DbErr"},

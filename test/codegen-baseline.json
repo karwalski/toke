@@ -44,6 +44,11 @@
   15,
   "e3b0c44298fc1c14"
  ],
+ "test/e2e/e2e_db_open.tk": [
+  true,
+  42,
+  "e3b0c44298fc1c14"
+ ],
  "test/e2e/e2e_default_syntax.tk": [
   true,
   40,

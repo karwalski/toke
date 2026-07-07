@@ -259,6 +259,8 @@ parameterized-queries-only). Results are `Row` values read with typed accessors.
 
 | Function | Signature | Purpose |
 |----------|-----------|---------|
+| `db.open` | `(dsn:$str):u64!DbErr` | Open the connection to a SQLite DSN/path |
+| `db.close` | `():i64` | Close the connection |
 | `db.exec` | `(sql:$str;params:@$str):u64!DbErr` | Run a statement; returns affected-row count |
 | `db.one` | `(sql:$str;params:@$str):Row!DbErr` | Query a single row |
 | `db.many` | `(sql:$str;params:@$str):@Row!DbErr` | Query multiple rows |
@@ -268,9 +270,10 @@ parameterized-queries-only). Results are `Row` values read with typed accessors.
 | `row.f64` | `(r:Row;col:$str):f64!DbErr` | Read a float column |
 | `row.bool` | `(r:Row;col:$str):bool!DbErr` | Read a boolean column |
 
-> **Connection:** the database is a single process-global SQLite handle. A
-> source-level open/DSN call is not currently exposed in `std.db` (tracked as a
-> backlog gap); `db.exec`/`one`/`many` operate on that shared connection.
+> **Connection:** `db.open` opens a single process-global SQLite handle; the query
+> functions then operate on it. Opening a database needs the `fs_read`/`fs_write`
+> capabilities (`--allow-read`/`--allow-write` or a `tkc.toml` grant), so an
+> ungranted `db.open` fails with `CAP001`.
 
 **Example: parameterized CRUD**
 
@@ -300,6 +303,13 @@ f=list():@$todo!DbErr{
     });
   };
   <result
+};
+
+f=main():i64{
+  db.open("todos.db")!DbErr;   // needs --allow-read/--allow-write (or tkc.toml)
+  init()!DbErr;
+  add("write docs")!DbErr;
+  <(list()!DbErr).len
 };
 ```
 

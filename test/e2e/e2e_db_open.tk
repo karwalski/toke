@@ -1,0 +1,10 @@
+m=main;
+i=db:std.db;
+f=run():i64!DbErr{
+  db.open(":memory:")!DbErr;
+  db.exec("CREATE TABLE t (x int)";@())!DbErr;
+  db.exec("INSERT INTO t VALUES (42)";@())!DbErr;
+  let r=db.one("SELECT x FROM t LIMIT 1";@())!DbErr;
+  <row.i64(r;"x")!DbErr
+};
+f=main():i64{ <mt run() {$ok:v v;$err:e 1} };

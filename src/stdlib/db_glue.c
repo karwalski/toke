@@ -40,15 +40,18 @@ static StrArray toke_arr_to_strarray(int64_t arr_i64) {
     return sa;
 }
 
+/* 125.1: db.open(dsn) -> u64!DbErr. Follows the db error-union ABI convention
+ * (0 = $err, non-zero = $ok): db_open returns 0 on success, so return 1 on
+ * success and 0 on failure. db_open is capability-gated (fs.read + fs.write). */
 int64_t tk_db_open_w(int64_t dsn) {
-    if (!dsn) return -1;
-    return (int64_t)db_open((const char *)(intptr_t)dsn);
+    if (!dsn) return 0;
+    return db_open((const char *)(intptr_t)dsn) == 0 ? 1 : 0;
 }
 
-int64_t tk_db_close_w(int64_t conn) {
-    (void)conn;
+/* 125.1: db.close() closes the process-global connection. */
+int64_t tk_db_close_w(void) {
     db_close();
-    return 0;
+    return 1;
 }
 
 int64_t tk_db_exec_w(int64_t sql, int64_t params) {
