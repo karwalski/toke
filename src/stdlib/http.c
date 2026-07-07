@@ -360,6 +360,8 @@ char *http_chunked_read(int fd, size_t *out_len)
                 else if (c >= 'a' && c <= 'f') nibble = (size_t)(c - 'a' + 10);
                 else if (c >= 'A' && c <= 'F') nibble = (size_t)(c - 'A' + 10);
                 else { free(buf); return NULL; }
+                /* 121.7 (HTT-01): reject a chunk-size that would overflow csz. */
+                if (csz > (SIZE_MAX - 15) / 16) { free(buf); return NULL; }
                 csz = csz * 16u + nibble;
                 endp++;
             }
@@ -371,6 +373,14 @@ char *http_chunked_read(int fd, size_t *out_len)
             ssize_t n = read(fd, tail, 2);
             (void)n;
             break;
+        }
+
+        /* 121.7 (HTT-01): enforce max_body across chunk accumulation — without
+         * this a stream of chunks grows the buffer without bound (memory-
+         * exhaustion DoS), bypassing the Content-Length ceiling. */
+        if (csz > (size_t)srv_limits.max_body ||
+            buf_len + csz > (size_t)srv_limits.max_body) {
+            free(buf); return NULL;
         }
 
         /* Grow output buffer if needed (+1 for NUL terminator) */
