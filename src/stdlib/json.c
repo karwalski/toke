@@ -33,23 +33,27 @@ static const char *skip_string(const char *p) {
     if (*p != '"') return NULL;
     p++;
     while (*p) {
-        if (*p == '\\') { p += 2; continue; }
+        /* 121.5 (PAR-03): a trailing '\' must not skip past the NUL — advance
+         * over the backslash, then over the escaped char only if it exists. */
+        if (*p == '\\') { p++; if (*p) p++; continue; }
         if (*p == '"')  { return p + 1; }
         p++;
     }
     return NULL;
 }
 
-/* Skip over any JSON value.  Returns pointer past the value, or NULL. */
-static const char *skip_value(const char *p);
+/* Skip over any JSON value.  Returns pointer past the value, or NULL.
+ * 121.6 (PAR-04): `depth` bounds nesting to stop a stack-overflow DoS on
+ * deeply-nested input; each container level increments it. */
+static const char *skip_value_d(const char *p, int depth);
 
-static const char *skip_array(const char *p) {
+static const char *skip_array_d(const char *p, int depth) {
     if (*p != '[') return NULL;
     p++;
     p = skip_ws(p);
     if (*p == ']') return p + 1;
     while (*p) {
-        p = skip_value(skip_ws(p));
+        p = skip_value_d(skip_ws(p), depth + 1);
         if (!p) return NULL;
         p = skip_ws(p);
         if (*p == ']') return p + 1;
@@ -59,7 +63,7 @@ static const char *skip_array(const char *p) {
     return NULL;
 }
 
-static const char *skip_object(const char *p) {
+static const char *skip_object_d(const char *p, int depth) {
     if (*p != '{') return NULL;
     p++;
     p = skip_ws(p);
@@ -69,7 +73,7 @@ static const char *skip_object(const char *p) {
         if (!p) return NULL;
         p = skip_ws(p);
         if (*p != ':') return NULL;
-        p = skip_value(skip_ws(p + 1));
+        p = skip_value_d(skip_ws(p + 1), depth + 1);
         if (!p) return NULL;
         p = skip_ws(p);
         if (*p == '}') return p + 1;
@@ -79,11 +83,12 @@ static const char *skip_object(const char *p) {
     return NULL;
 }
 
-static const char *skip_value(const char *p) {
+static const char *skip_value_d(const char *p, int depth) {
+    if (depth > JSON_STREAM_MAX_DEPTH) return NULL;   /* 121.6: bound recursion */
     p = skip_ws(p);
     if (*p == '"') return skip_string(p);
-    if (*p == '{') return skip_object(p);
-    if (*p == '[') return skip_array(p);
+    if (*p == '{') return skip_object_d(p, depth);
+    if (*p == '[') return skip_array_d(p, depth);
     if (*p == 't') return (strncmp(p, "true",  4) == 0) ? p + 4 : NULL;
     if (*p == 'f') return (strncmp(p, "false", 5) == 0) ? p + 5 : NULL;
     if (*p == 'n') return (strncmp(p, "null",  4) == 0) ? p + 4 : NULL;
@@ -102,6 +107,11 @@ static const char *skip_value(const char *p) {
     }
     return NULL;
 }
+
+/* Public depth-0 entry points (121.6). */
+static const char *skip_value(const char *p)  { return skip_value_d(p, 0); }
+static const char *skip_object(const char *p) { return skip_object_d(p, 0); }
+static const char *skip_array(const char *p)  { return skip_array_d(p, 0); }
 
 /*
  * find_json_key — linear scan of a flat JSON object for "key":value.
