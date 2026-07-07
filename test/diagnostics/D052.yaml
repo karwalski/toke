@@ -1,0 +1,11 @@
+id: D052
+series: D
+description: "E4032 — interpolating a composite (array literal) into a string is caught at --check (123.11-fu)"
+input: |
+  m=test;
+  i=str:std.str;
+  f=main():i64{
+    <str.len("a=\(@(1;2;3))")
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4032"]

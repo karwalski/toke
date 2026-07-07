@@ -76,6 +76,8 @@
  * =========================================================================
  */
 #include "types.h"
+#include "lexer.h"   /* 123.11-fu: re-lex interpolation sub-expressions */
+#include "parser.h"  /* 123.11-fu: re-parse interpolation sub-expressions */
 #include <string.h>
 #include <stdio.h>
 
@@ -319,6 +321,113 @@ static int is_param(const Ctx *cx, const char *name, int name_len) {
 
 /* Forward declaration: infer() is the main recursive type-inference walker. */
 static Type *infer(Ctx *cx, const Node *node);
+
+/* Shift a freshly-parsed sub-AST's token offsets by `delta` so they point into
+ * the real source instead of the throwaway wrap buffer (123.11-fu). Safe only
+ * for single-use arena nodes. */
+static void shift_tok_offsets(Node *n, int delta) {
+    if (!n) return;
+    n->tok_start += delta;
+    n->start     += delta;
+    for (int i = 0; i < n->child_count; i++)
+        shift_tok_offsets(n->children[i], delta);
+}
+
+/*
+ * check_interp_composites (123.11-fu) — make E4032 visible under `--check`.
+ *
+ * `\(expr)` interpolations are re-lexed from the string's raw text at codegen
+ * time, so the type checker normally never sees them. Here, for each
+ * interpolation we replay the same wrap/lex/parse the codegen does and infer
+ * the expression's type against the real environment: a *definite* composite
+ * (array / struct / map) is an error. Expressions the checker can only type as
+ * TY_UNKNOWN (e.g. array/map locals, which infer deliberately leaves unknown to
+ * avoid E4031 blast radius) fall through to the codegen E4032 backstop.
+ *
+ * Only E4032 is raised here; the sub-expression is one codegen also compiles,
+ * so inferring it introduces no new diagnostics for valid programs.
+ */
+static void check_interp_composites(Ctx *cx, const Node *strnode) {
+    if (!strnode || strnode->tok_len <= 3) return;
+    int tl = strnode->tok_len;
+    char raw[1024];
+    if (tl >= (int)sizeof(raw)) return;           /* skip pathologically long literals */
+    memcpy(raw, cx->src + strnode->tok_start, (size_t)tl);
+    raw[tl] = '\0';
+    Arena *A = cx->env->arena;
+
+    for (int i = 0; i + 1 < tl; i++) {
+        if (raw[i] != '\\' || raw[i + 1] != '(') continue;
+        /* Find the matching ')' with paren depth, ignoring nested strings. */
+        int depth = 1, j = i + 2, instr = 0;
+        for (; j < tl && depth > 0; j++) {
+            char c = raw[j];
+            if (instr) { if (c == '"' && raw[j - 1] != '\\') instr = 0; continue; }
+            if (c == '"') instr = 1;
+            else if (c == '(') depth++;
+            else if (c == ')') { depth--; if (depth == 0) break; }
+        }
+        if (depth != 0) break;                    /* unbalanced — leave to codegen */
+        int elen = j - (i + 2);
+        if (elen <= 0) { i = j; continue; }
+
+        static const char WRAP_PREFIX[] = "m=i;f=e():$str{<";
+        int wrap_cap = elen + 48;
+        char *wrap = (char *)arena_alloc(A, wrap_cap);
+        int wlen = snprintf(wrap, (size_t)wrap_cap,
+                            "%s%.*s;};", WRAP_PREFIX, elen, raw + i + 2);
+        /* Map sub-AST offsets back onto the real source so identifier lookups
+         * (which read enclosing bindings from cx->src) resolve correctly. */
+        int delta = (strnode->tok_start + i + 2) - (int)(sizeof(WRAP_PREFIX) - 1);
+        int tcap = elen + 32;
+        Token *toks = (Token *)arena_alloc(A, (size_t)tcap * sizeof(Token));
+        int tc = lex(wrap, wlen, toks, tcap, 0 /* PROFILE_DEFAULT */);
+        if (tc > 0) {
+            Node *ast = parse(toks, tc, wrap, A, 0);
+            Node *expr = NULL, *fn = NULL;
+            if (ast) {
+                for (int k = 0; k < ast->child_count; k++) {
+                    Node *ch = ast->children[k];
+                    if (ch && ch->kind == NODE_FUNC_DECL) { fn = ch; break; }
+                    if (ch && ch->kind == NODE_MODULE) {
+                        for (int m = 0; m < ch->child_count; m++)
+                            if (ch->children[m] && ch->children[m]->kind == NODE_FUNC_DECL) {
+                                fn = ch->children[m]; break;
+                            }
+                        if (fn) break;
+                    }
+                }
+            }
+            if (fn) {
+                for (int k = 0; k < fn->child_count && !expr; k++) {
+                    Node *ch = fn->children[k];
+                    if (ch && ch->kind == NODE_STMT_LIST)
+                        for (int m = 0; m < ch->child_count; m++) {
+                            Node *st = ch->children[m];
+                            if (st && st->kind == NODE_RETURN_STMT && st->child_count > 0) {
+                                expr = st->children[0]; break;
+                            }
+                        }
+                }
+            }
+            if (expr) {
+                /* Re-home the sub-expression onto the real source, then infer
+                 * against the real environment (no src swap). */
+                shift_tok_offsets(expr, delta);
+                Type *t = infer(cx, expr);
+                if (t && (t->kind == TY_ARRAY || t->kind == TY_MAP || t->kind == TY_STRUCT)) {
+                    diag_emit(DIAG_ERROR, E4032, strnode->start, strnode->line, strnode->col,
+                              "cannot interpolate a composite value (array/struct/map) into a string",
+                              "fix",
+                              "convert it to a string first (e.g. str.concat, or interpolate its fields/elements)",
+                              NULL);
+                    cx->had_error = 1;
+                }
+            }
+        }
+        i = j;   /* resume scanning after this interpolation */
+    }
+}
 
 /*
  * find_binding_kind — search the AST tree rooted at `root` for a binding
@@ -641,7 +750,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_INT_LIT:   return mk_type(A,TY_I64);
     case NODE_FLOAT_LIT: return mk_type(A,TY_F64);
-    case NODE_STR_LIT:   return mk_type(A,TY_STR);
+    case NODE_STR_LIT:   check_interp_composites(cx, node); return mk_type(A,TY_STR);
     case NODE_BOOL_LIT:  return mk_type(A,TY_BOOL);
 
     /* ── Struct literal ───────────────────────────────────────────────────

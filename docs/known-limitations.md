@@ -132,8 +132,12 @@ previous silent garbage (123.5, 2026-07-07). **Residual:** a struct/map whose
 static type resolves to unknown (`est==NULL`, e.g. some `.get()` results) still
 falls through to the string path and can misbehave — this can't be tightened
 without regressing real strings from `str.concat` (which also have `est==NULL`);
-it needs interpolation-context type tracking (follow-up). E4032 fires at compile
-(codegen) time, not under `--check`.
+it needs interpolation-context type tracking (follow-up). Since 123.11-fu, E4032
+also fires under `--check` for composites the type checker can definitively type
+(direct literals like `\(@(1;2;3))`, struct field accesses like `\(o.inner)`,
+and annotated composites); bare composite *locals* (which the checker
+conservatively types as unknown to limit E4031 blast radius) remain caught at
+codegen.
 
 **Workaround:** interpolate the elements/fields, or use `str.concat()`.
 
