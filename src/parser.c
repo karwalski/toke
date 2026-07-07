@@ -182,8 +182,8 @@ static void eerr(Parser *p, int code, Token *t, const char *msg) {
     else if (code == E2004) fix = "add the missing closing delimiter";
     else if (code == E2001) fix = "reorder declarations: m= first, then i=, t=, f=";
     p->errs++;
-    diag_emit(DIAG_ERROR, code, t->start, t->line, t->col, msg,
-              "fix", fix, NULL);
+    diag_emit_span(DIAG_ERROR, code, t->start, t->line, t->col, t->len, msg,
+                   "fix", fix, NULL);
 }
 
 /*
@@ -211,9 +211,9 @@ static void eerr_got(Parser *p, int code, Token *t, const char *msg) {
     if (code == E2005) fix = "expected a type: scalar ($i64, $f64, $str, $bool), struct ($name), array (@($t)), or function type (($t):$r)";
     else if (code == E2002) fix = "check syntax; see toke spec for valid constructs";
     p->errs++;
-    diag_emit(DIAG_ERROR, code, t->start, t->line, t->col, buf,
-              "fix", fix,
-              "got", tok_text, NULL);
+    diag_emit_span(DIAG_ERROR, code, t->start, t->line, t->col, t->len, buf,
+                   "fix", fix,
+                   "got", tok_text, NULL);
 }
 
 /*
@@ -274,10 +274,10 @@ static void opt_semi(Parser *p) {
     char tok_text[64];
     tok_text_extract(p, t, tok_text, (int)sizeof(tok_text));
     p->errs++;
-    diag_emit(DIAG_ERROR, E2003, t->start, t->line, t->col, "missing semicolon",
-              "fix", "insert ';' after expression",
-              "got", tok_text,
-              "expected", ";", NULL);
+    diag_emit_span(DIAG_ERROR, E2003, t->start, t->line, t->col, t->len, "missing semicolon",
+                   "fix", "insert ';' after expression",
+                   "got", tok_text,
+                   "expected", ";", NULL);
 }
 
 /*

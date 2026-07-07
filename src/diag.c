@@ -319,7 +319,7 @@ emit_json(DiagSeverity sev, int code,
  */
 static void
 emit_text(DiagSeverity sev, int code, int byte_offset, int line, int col,
-          const char *message, const DiagFields *fields)
+          int span_len, const char *message, const DiagFields *fields)
 {
     fprintf(stderr, "%s[%c%04d]: %s\n",
             severity_str(sev),
@@ -344,6 +344,14 @@ emit_text(DiagSeverity sev, int code, int byte_offset, int line, int col,
         fprintf(stderr, "%*s | ", gutter, "");
         for (int i = 1; i < col; i++) fputc(' ', stderr);
         fputc('^', stderr);
+        /* 123.12b: underline the rest of the token span with '~', clamped to
+         * the visible source line so a bad/multi-line span can't run away. */
+        if (span_len > 1) {
+            int avail = (int)strlen(sl_buf) - (col - 1) - 1; /* chars after the caret */
+            int under = span_len - 1;
+            if (under > avail) under = avail;
+            for (int i = 0; i < under; i++) fputc('~', stderr);
+        }
         /* If there's a fix hint, show it after the caret */
         if (fields && fields->fix && fields->fix[0])
             fprintf(stderr, " %s", fields->fix);
@@ -409,7 +417,7 @@ diag_emit(DiagSeverity sev, int code,
     update_counters(sev);
     if (s_suppress) return;
     if (s_int_mode == DIAG_INT_TEXT)
-        emit_text(sev, code, byte_offset, line, col, message, &fields);
+        emit_text(sev, code, byte_offset, line, col, 0, message, &fields);
     else if (s_int_mode == DIAG_INT_SARIF)
         buffer_sarif(sev, code, byte_offset, line, col, -1, -1, message, fields.fix);
     else
@@ -427,8 +435,9 @@ diag_emit_span(DiagSeverity sev, int code,
     va_end(ap);
 
     update_counters(sev);
+    if (s_suppress) return;
     if (s_int_mode == DIAG_INT_TEXT)
-        emit_text(sev, code, byte_offset, line, col, message, &fields);
+        emit_text(sev, code, byte_offset, line, col, span_len, message, &fields);
     else if (s_int_mode == DIAG_INT_SARIF)
         buffer_sarif(sev, code, byte_offset, line, col,
                      byte_offset, byte_offset + span_len, message, fields.fix);
