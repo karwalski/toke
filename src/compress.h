@@ -74,7 +74,7 @@ int compress_text(const char *input, size_t len, char *out_buf);
  * Returns: number of bytes written to out_buf (excluding any NUL
  *          terminator), or -1 on error.
  */
-int decompress_text(const char *input, size_t len, char *out_buf);
+int decompress_text(const char *input, size_t len, char *out_buf, size_t out_cap);
 
 /* ── Schema-aware structured compression ────────────────────────────── */
 

@@ -352,7 +352,7 @@ int compress_text(const char *input, size_t len, char *out_buf)
 
 /* ── decompress_text ────────────────────────────────────────────────── */
 
-int decompress_text(const char *input, size_t len, char *out_buf)
+int decompress_text(const char *input, size_t len, char *out_buf, size_t out_cap)
 {
     if (!input || !out_buf) return -1;
     if (len == 0) {
@@ -363,10 +363,11 @@ int decompress_text(const char *input, size_t len, char *out_buf)
     /* Verify and skip magic prefix */
     if (len < PROSE_MAGIC_LEN ||
         memcmp(input, PROSE_MAGIC, (size_t)PROSE_MAGIC_LEN) != 0) {
-        /* Not compressed — return as-is (identity) */
-        memcpy(out_buf, input, len);
-        out_buf[len] = '\0';
-        return (int)len;
+        /* Not compressed — return as-is (identity), clamped to out_cap (121.3). */
+        size_t n = (out_cap == 0) ? 0 : (len + 1 <= out_cap ? len : out_cap - 1);
+        memcpy(out_buf, input, n);
+        out_buf[n] = '\0';
+        return (int)n;
     }
 
     /*
@@ -383,6 +384,7 @@ int decompress_text(const char *input, size_t len, char *out_buf)
         /* Placeholder atom — copy verbatim */
         if (is_placeholder_start(input, pos, len)) {
             size_t plen = placeholder_len(input, pos, len);
+            if ((size_t)out + plen + 1 > out_cap) break;   /* 121.3 */
             memcpy(out_buf + out, input + pos, plen);
             out += (int)plen;
             pos += plen;
@@ -400,6 +402,7 @@ int decompress_text(const char *input, size_t len, char *out_buf)
             if (idx >= 1 && idx <= dict_count) {
                 const char *w = dict[idx - 1];
                 int wlen = (int)strlen(w);
+                if ((size_t)out + (size_t)wlen + 1 > out_cap) break;   /* 121.3 */
                 memcpy(out_buf + out, w, (size_t)wlen);
                 out += wlen;
             }
@@ -420,6 +423,7 @@ int decompress_text(const char *input, size_t len, char *out_buf)
                 const char *full = word_for_abbr(abbr);
                 if (full) {
                     int flen = (int)strlen(full);
+                    if ((size_t)out + (size_t)flen + 1 > out_cap) break;   /* 121.3 */
                     memcpy(out_buf + out, full, (size_t)flen);
                     out += flen;
                     pos = j;
@@ -427,6 +431,7 @@ int decompress_text(const char *input, size_t len, char *out_buf)
                 }
             }
             /* Unknown tilde sequence — emit verbatim */
+            if ((size_t)out + (j - pos) + 1 > out_cap) break;   /* 121.3 */
             memcpy(out_buf + out, input + pos, j - pos);
             out += (int)(j - pos);
             pos = j;
@@ -435,6 +440,7 @@ int decompress_text(const char *input, size_t len, char *out_buf)
 
         /* Whitespace — emit as-is */
         if (isspace((unsigned char)input[pos])) {
+            if ((size_t)out + 2 > out_cap) break;   /* 121.3 */
             out_buf[out++] = input[pos++];
             continue;
         }
@@ -442,6 +448,7 @@ int decompress_text(const char *input, size_t len, char *out_buf)
         /* Word — emit and rebuild dictionary */
         if (isalpha((unsigned char)input[pos])) {
             size_t wlen = word_len(input, pos, len);
+            if ((size_t)out + wlen + 1 > out_cap) break;   /* 121.3 */
             memcpy(out_buf + out, input + pos, wlen);
             out += (int)wlen;
             /* Add to dict for back-reference resolution */
@@ -456,6 +463,7 @@ int decompress_text(const char *input, size_t len, char *out_buf)
         }
 
         /* Digits and punctuation — emit verbatim */
+        if ((size_t)out + 2 > out_cap) break;   /* 121.3 */
         out_buf[out++] = input[pos++];
     }
 

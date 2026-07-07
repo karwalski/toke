@@ -586,7 +586,7 @@ int main(int argc, char **argv)
             else
                 written = compress_text(ibuf ? ibuf : "", ilen, obuf);
         } else {
-            written = decompress_text(ibuf ? ibuf : "", ilen, obuf);
+            written = decompress_text(ibuf ? ibuf : "", ilen, obuf, out_size);
         }
 
         free(ibuf);

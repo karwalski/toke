@@ -89,11 +89,22 @@ static const struct { const char *from; const char *to; } CAMEL_MAP[] = {
 
 static char *prepass(const char *src, int slen, int *out_len, int *inserted_module)
 {
-    /* Allocate generously — transforms may grow output slightly */
-    char *o = malloc((size_t)(slen * 2 + 256));
+    /* 121.2 (COM-01): grow-on-demand output. The old fixed `slen*2+256` buffer
+     * was written via unchecked `o[w++]`; a program whose transforms expand it
+     * past 2x overflowed the heap. OENSURE reallocs before any write so `o`
+     * always has room for the next `need` bytes plus the trailing NUL. */
+    long cap = (long)slen * 2 + 256;
+    char *o = malloc((size_t)cap);
     if (!o) return NULL;
     int w = 0, in_str = 0;
     *inserted_module = 0;
+    #define OENSURE(need) do { \
+        if ((long)w + (long)(need) + 1 > cap) { \
+            long nc = cap * 2 + (long)(need) + 16; \
+            char *no = realloc(o, (size_t)nc); \
+            if (!no) { free(o); return NULL; } \
+            o = no; cap = nc; \
+        } } while (0)
 
     /* Check if source has a module declaration */
     {
@@ -143,6 +154,8 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
     }
 
     for (int i = 0; i < slen; i++) {
+        OENSURE(64);   /* 121.2: room for this iteration's direct writes; bulk
+                          copies (inner for-loops, memcpy) ensure their own. */
         /* Track string state */
         if (src[i] == '"' && (i == 0 || src[i-1] != '\\')) {
             in_str = !in_str; o[w++] = src[i]; continue;
@@ -245,12 +258,12 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                 if (prev_colon) {
                     /* Type position: [str] → @str (skip @ if already preceded by @) */
                     if (!(w > 0 && o[w-1] == '@')) o[w++] = '@';
-                    for (int k = i+1; k < end; k++) o[w++] = src[k];
+                    for (int k = i+1; k < end; k++) { OENSURE(1); o[w++] = src[k]; }
                     i = end; continue;
                 } else if (prev_ident) {
                     /* Indexing: a[expr] → a.get(expr) */
                     o[w++] = '.'; o[w++] = 'g'; o[w++] = 'e'; o[w++] = 't'; o[w++] = '(';
-                    for (int k = i+1; k < end; k++) o[w++] = src[k];
+                    for (int k = i+1; k < end; k++) { OENSURE(1); o[w++] = src[k]; }
                     o[w++] = ')';
                     i = end; continue;
                 }
@@ -273,7 +286,7 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                 if (depth == 0) {
                     o[w++] = '.'; o[w++] = 'g'; o[w++] = 'e'; o[w++] = 't'; o[w++] = '(';
                     /* Copy the index expression */
-                    for (int k = i+1; k < end; k++) o[w++] = src[k];
+                    for (int k = i+1; k < end; k++) { OENSURE(1); o[w++] = src[k]; }
                     o[w++] = ')';
                     i = end; /* skip past ] */
                     continue;
@@ -352,12 +365,12 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                         /* Type: @(str) → @str, @(item) → @$item */
                         o[w++] = '@';
                         if (!is_primitive(clean)) o[w++] = '$';
-                        memcpy(o+w, clean, (size_t)cl); w += cl;
+                        OENSURE(cl); memcpy(o+w, clean, (size_t)cl); w += cl;
                     } else {
                         /* Expr: keep parens @(str) or @($item) */
                         o[w++] = '@'; o[w++] = '(';
                         if (!is_primitive(clean)) o[w++] = '$';
-                        memcpy(o+w, clean, (size_t)cl); w += cl;
+                        OENSURE(cl); memcpy(o+w, clean, (size_t)cl); w += cl;
                         o[w++] = ')';
                     }
                     i = j; continue;
@@ -606,7 +619,7 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                     if (!strcmp(word, CAMEL_MAP[k].from)) {
                         const char *rep = CAMEL_MAP[k].to;
                         int rlen = (int)strlen(rep);
-                        memcpy(o+w, rep, (size_t)rlen); w += rlen;
+                        OENSURE(rlen); memcpy(o+w, rep, (size_t)rlen); w += rlen;
                         i = ie - 1; found = 1; break;
                     }
                 }
@@ -754,7 +767,7 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             !is_idchar(src[i+4]) && !in_str) {
             const char *inf = "lp(let lv=0;true;lv=lv)";
             int il = (int)strlen(inf);
-            memcpy(o+w, inf, (size_t)il); w += il;
+            OENSURE(il); memcpy(o+w, inf, (size_t)il); w += il;
             i += 3; continue;
         }
 
@@ -774,7 +787,7 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                         /* Emit $variant: then let the ident pass through */
                         o[w++] = '$';
                         for (int m = i+1; m < j; m++) {
-                            if (src[m] != '_') o[w++] = src[m];
+                            if (src[m] != '_') { OENSURE(1); o[w++] = src[m]; }
                         }
                         o[w++] = ':';
                         i = j; /* skip the space, next char is binding name */
@@ -859,7 +872,7 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             if (j <= slen) {
                 o[w++] = ')'; o[w++] = ':';
                 /* Copy content between parens, skip outer ( and ) */
-                for (int k = i+3; k < j-1; k++) o[w++] = src[k];
+                for (int k = i+3; k < j-1; k++) { OENSURE(1); o[w++] = src[k]; }
                 i = j - 1; /* for loop increments past ) */
                 continue;
             }
@@ -887,7 +900,7 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                     /* Emit $name:i64 instead of $name */
                     o[w++] = '$';
                     for (int m = i+1; m < jend; m++) {
-                        if (src[m] != '_') o[w++] = src[m];
+                        if (src[m] != '_') { OENSURE(1); o[w++] = src[m]; }
                     }
                     o[w++] = ':'; o[w++] = 'i'; o[w++] = '6'; o[w++] = '4';
                     i = j - 1;
@@ -924,8 +937,9 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
 
         o[w++] = src[i];
     }
-    o[w] = '\0'; *out_len = w;
+    OENSURE(1); o[w] = '\0'; *out_len = w;
     return o;
+    #undef OENSURE
 }
 
 /* ��─ Post-pass: text-level transforms after token migration ──────── */
