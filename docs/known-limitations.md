@@ -133,11 +133,13 @@ static type resolves to unknown (`est==NULL`, e.g. some `.get()` results) still
 falls through to the string path and can misbehave — this can't be tightened
 without regressing real strings from `str.concat` (which also have `est==NULL`);
 it needs interpolation-context type tracking (follow-up). Since 123.11-fu, E4032
-also fires under `--check` for composites the type checker can definitively type
-(direct literals like `\(@(1;2;3))`, struct field accesses like `\(o.inner)`,
-and annotated composites); bare composite *locals* (which the checker
-conservatively types as unknown to limit E4031 blast radius) remain caught at
-codegen.
+fires under `--check` for direct literals (`\(@(1;2;3))`), struct field accesses
+(`\(o.inner)`), annotated composites, **and bare array/map *locals*** (`\(arrVar)`
+where `let arrVar=@(…)`) — the interp check resolves the identifier's array/map
+literal init locally, without expanding the type checker's deliberately-conservative
+global inference (so the E4031 blast radius is untouched). The only remaining
+codegen-only case is a local bound to a call/match that returns a composite (its
+type is not statically known).
 
 **Workaround:** interpolate the elements/fields, or use `str.concat()`.
 

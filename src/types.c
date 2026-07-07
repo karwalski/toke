@@ -321,6 +321,10 @@ static int is_param(const Ctx *cx, const char *name, int name_len) {
 
 /* Forward declaration: infer() is the main recursive type-inference walker. */
 static Type *infer(Ctx *cx, const Node *node);
+/* Forward decl: local-binding lookup (defined below; used by the 123.11-fu
+ * interp check to resolve a bare composite-local identifier). */
+static const Node *find_binding_node(const Node *root, const char *src,
+                                     const char *name, int nlen);
 
 /* Shift a freshly-parsed sub-AST's token offsets by `delta` so they point into
  * the real source instead of the throwaway wrap buffer (123.11-fu). Safe only
@@ -415,7 +419,29 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
                  * against the real environment (no src swap). */
                 shift_tok_offsets(expr, delta);
                 Type *t = infer(cx, expr);
-                if (t && (t->kind == TY_ARRAY || t->kind == TY_MAP || t->kind == TY_STRUCT)) {
+                int composite = t && (t->kind == TY_ARRAY || t->kind == TY_MAP ||
+                                      t->kind == TY_STRUCT);
+                /* 123.11-fu: a bare composite *local* (`\(arrVar)`) infers
+                 * TY_UNKNOWN — the global NODE_IDENT case deliberately leaves
+                 * array/map locals unknown to avoid corpus-wide E4031s. Resolve
+                 * just this interpolated identifier locally (no global change):
+                 * if it's an un-annotated `let x = @(...)/@(k:v)` binding, infer
+                 * that array/map literal init directly. */
+                if (!composite && expr->kind == NODE_IDENT) {
+                    char nb[128]; TOKSTR(nb, cx->src, expr);
+                    const Node *bn = find_binding_node(cx->fn_node, cx->src,
+                                                       nb, (int)strlen(nb));
+                    if (bn && (bn->kind == NODE_BIND_STMT || bn->kind == NODE_MUT_BIND_STMT)
+                        && bn->child_count > 1 && bn->children[1]) {
+                        NodeKind ik = bn->children[1]->kind;   /* [1]=init when un-annotated */
+                        if (ik == NODE_ARRAY_LIT || ik == NODE_MAP_LIT) {
+                            Type *it = infer(cx, bn->children[1]);
+                            if (it && (it->kind == TY_ARRAY || it->kind == TY_MAP))
+                                composite = 1;
+                        }
+                    }
+                }
+                if (composite) {
                     diag_emit(DIAG_ERROR, E4032, strnode->start, strnode->line, strnode->col,
                               "cannot interpolate a composite value (array/struct/map) into a string",
                               "fix",
