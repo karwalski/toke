@@ -5569,8 +5569,18 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
          * deferred fn-return case, 114.16 nested arrays). Element values are
          * stored i64-strided, so only f64/str need a non-i64 element type. */
         if (n->rtype) {
-            if (n->rtype->kind == TY_F64) return "double";
-            if (n->rtype->kind == TY_STR) return "i8*";
+            /* 126.5: for a NESTED subscript (base is itself an index, e.g.
+             * dist.get(i).get(j)) the inner array's element type is unreliable
+             * (element-type erasure) — a spurious TY_STR here routes a numeric
+             * comparison like `dist.get(i).get(j) >= 999999` to strcmp on a
+             * non-pointer i64 → SIGSEGV. The value is i64-strided regardless, so
+             * only trust a str/f64 element type for a direct (non-nested) index. */
+            int nested = n->child_count >= 1 &&
+                         n->children[0]->kind == NODE_INDEX_EXPR;
+            if (!nested) {
+                if (n->rtype->kind == TY_F64) return "double";
+                if (n->rtype->kind == TY_STR) return "i8*";
+            }
         }
         /* Bug 102.29b: subscript on @f64 arrays returns double (legacy marker
          * path; retained until Stage 3 retires the shadow inferencer). */

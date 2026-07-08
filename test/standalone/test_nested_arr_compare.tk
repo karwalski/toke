@@ -1,0 +1,16 @@
+m=cr;i=io:std.io;i=s:std.str;f=main():i64{
+  let n=s.toint(io.readln());
+  let dist=mut.@();
+  let row=mut.0;
+  lp(row<n){
+    let line=io.readln();
+    let parts=s.split(line;" ");
+    let rd=mut.@();
+    let col=mut.0;
+    lp(col<n){ rd=rd+@(s.toint(parts.get(col))); col=col+1 };
+    dist=dist+@(rd); row=row+1
+  };
+  let v=dist.get(0).get(1);
+  if(v>=999999){io.println("BIG")}el{io.println("ok")};
+  <0
+}
