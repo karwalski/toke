@@ -5077,11 +5077,21 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             if (ck == NODE_FLOAT_LIT) return "@f64";
             const char *ety = expr_llvm_type(c, n->children[i]);
             if (!strcmp(ety, "double")) return "@f64";
-            return "@i64";  /* any non-float array element marks the
-                              array as integer-element for codegen
+            /* 126.6: a string-element array literal (`@("x";"y")`) must be
+             * tagged "@str" (not "@i64") so element access `arr.get(i)` types
+             * as $str — else `\(arr.get(i))` interpolation and var-to-var `=`
+             * mis-handle the string pointer as a number. Only genuine string
+             * elements; nested-array / struct / int elements stay "@i64". */
+            {
+                const char *eest = expr_struct_type(c, n->children[i]);
+                if (eest && (!strcmp(eest, "$str") || !strcmp(eest, "str")))
+                    return "@str";
+            }
+            return "@i64";  /* any non-float, non-string array element marks
+                              the array as integer-element for codegen
                               purposes (the actual element type may be
-                              i64/bool/struct/i8*; we only care that it
-                              is NOT a NUL-terminated string). */
+                              i64/bool/struct; we only care that it is NOT a
+                              NUL-terminated string). */
         }
         return "@i64";  /* empty literal — assume integer until proven otherwise */
     }
