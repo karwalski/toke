@@ -285,6 +285,18 @@ static void mark_ptr_with_type(Ctx *c, const char *name, const char *stype) {
     c->ptr_count++;
 }
 
+/* 126.7: clear any recorded pointer/struct type for `name`. Called when a name
+ * is re-bound (shadowed) so a later `let x = <non-pointer>` does not inherit an
+ * earlier `let x = <string>`'s "$str" tag — which would otherwise route x's
+ * comparisons to strcmp on a non-pointer value (double/i64), emitting invalid
+ * IR (`double but expected ptr`, E9003). ptr_local_struct_type skips empty
+ * struct_type entries, so blanking them is enough. */
+static void clear_ptr_local(Ctx *c, const char *name) {
+    for (int i = 0; i < c->ptr_count; i++)
+        if (!strcmp(c->ptrs[i].name, name))
+            c->ptrs[i].struct_type[0] = '\0';
+}
+
 /*
  * is_ptr_local — Return 1 if `name` was previously registered via
  * mark_ptr_with_type, indicating it should be loaded/stored as "i8*"
@@ -6038,8 +6050,17 @@ static void emit_stmt(Ctx *c, const Node *n)
             const char *init_ty = has_ann ? vty : expr_llvm_type(c, init_node);
             int v = emit_expr(c, init_node);
             v = coerce_value(c, v, init_ty, vty);
+            /* 126.7: remember the raw source name (pre-uniquification) — when a
+             * name is re-bound (shadowed), the registry stores the new binding
+             * under a unique name (`c.1`) but expr_struct_type looks up the raw
+             * name (`c`), so a str->double shadow leaves the raw name tagged
+             * "$str" and routes `c >= 0.0` to strcmp on a double (E9003). */
+            char tb_raw[256];
+            strncpy(tb_raw, tb, sizeof tb_raw - 1); tb_raw[sizeof tb_raw - 1] = '\0';
+            int is_shadow;
             /* NOW create the unique name and alloca (after RHS is evaluated) */
             { const char *uname = make_unique_name(c, tb);
+              is_shadow = (uname != tb);
               if (uname != tb) strncpy(tb, uname, sizeof tb - 1);
             }
             /* 113.B.12: detect a map-typed initialiser so the local is
@@ -6060,6 +6081,14 @@ static void emit_stmt(Ctx *c, const Node *n)
                         }
                 }
             }
+            /* 126.7: a shadowing re-bind to a NON-pointer type (e.g. str->double)
+             * must drop the raw name's stale "$str"/struct tag, else its uses
+             * (comparisons, interpolation) mis-lower. Only for non-pointer types:
+             * a str->str shadow keeps the raw tag valid, and pointer re-binds
+             * register their own type below. */
+            if (is_shadow && !init_is_map && strcmp(vty, "i8*") != 0 &&
+                !expr_struct_type(c, init_node))
+                clear_ptr_local(c, tb_raw);
             if (init_is_map) {
                 mark_ptr_with_type(c, tb, "__map__");
             } else if (!strcmp(vty, "i8*")) {

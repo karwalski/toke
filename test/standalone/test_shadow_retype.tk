@@ -1,0 +1,10 @@
+m=sh;i=io:std.io;i=s:std.str;f=conv(t:$str):i64{
+  let c=s.slice(t;0;1);
+  if(s.equals(c;"F")){<1};
+  let f=s.tofloat(t);
+  let c=(f-32.0)*5.0/9.0;
+  let r=mut.0;
+  if(c>=0.0){r=1}el{r=0};
+  <r
+};
+f=main():i64{ <conv("100.0") }
