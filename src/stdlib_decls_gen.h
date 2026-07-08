@@ -86,7 +86,7 @@
     {"tk_dataframe_groupby_w", "declare i64 @tk_dataframe_groupby_w(i64, i64)", 0},
     {"tk_dataframe_shape_w", "declare i64 @tk_dataframe_shape_w(i64)", 0},
     {"tk_dataframe_tocsv_w", "declare i64 @tk_dataframe_tocsv_w(i64)", 0},
-    {"tk_db_close_w", "declare i64 @tk_db_close_w(i64)", 0},
+    {"tk_db_close_w", "declare i64 @tk_db_close_w()", 0},
     {"tk_db_exec_w", "declare i64 @tk_db_exec_w(i64, i64)", 0},
     {"tk_db_execparams_w", "declare i64 @tk_db_execparams_w(i64, i64)", 0},
     {"tk_db_getfield_w", "declare i64 @tk_db_getfield_w(i64, i64)", 0},

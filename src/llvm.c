@@ -3824,6 +3824,14 @@ static int emit_expr(Ctx *c, const Node *n)
             int bc = next_tmp(c);
             fprintf(c->out, "  %%t%d = bitcast i64 %%t%d to double\n", bc, t);
             t = bc;
+        } else if (struct_field_is_str(si, fidx)) {
+            /* 126.x: a $str field is an i8* pointer. expr_llvm_type reports it
+             * as "i8*", so materialise it as i8* here too — otherwise the i64
+             * SSA value is fed where i8* is expected (e.g. interpolation's
+             * tk_str_concat call), producing ill-typed IR (E9003). */
+            int pc = next_tmp(c);
+            fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", pc, t);
+            t = pc;
         }
         return t;
     }
@@ -4263,8 +4271,18 @@ static int emit_expr(Ctx *c, const Node *n)
              * NODE_IDENT that is ptr_local, not a map, and not a struct. */
             if (spread_idx < 0 && n->children[i]->kind == NODE_IDENT) {
                 char eid[128]; tok_cp(c->src, n->children[i], eid, sizeof eid);
+                /* 126.x: `is_ptr_local` is keyed on the raw source name and is
+                 * never removed, so a shadowing re-bind to a scalar (e.g. an
+                 * earlier `let l=io.readln()` — a $str ptr_local — followed by
+                 * `let l=arr.get(i)` — an i64) leaves the stale ptr_local entry.
+                 * Spreading such an `l` reads `l_value[-1]` off the integer as
+                 * if it were an array pointer → SIGSEGV. Confirm the identifier's
+                 * CURRENT binding is actually pointer-typed (via the uniquified
+                 * name's local type) before treating `@(x)` as a spread. */
+                const char *cur_ty = get_local_type(c, get_llvm_name(c, eid));
                 if (is_ptr_local(c, eid) && !is_map_var(c, eid) &&
-                    !ptr_local_struct_type(c, eid))
+                    !ptr_local_struct_type(c, eid) &&
+                    !strcmp(cur_ty, "i8*"))
                     spread_idx = i;
             }
             elem_count++;
@@ -5072,7 +5090,12 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                  * and the array falls through to "@i64". */
                 char tnm[64]; tok_cp(c->src, n->children[i], tnm, sizeof tnm);
                 if (strstr(tnm, "f64") || strstr(tnm, "f32")) return "@f64";
-                continue; /* skip non-float type annotations */
+                /* 126.7-fu: a typed-EMPTY string-array literal `@($str)` must be
+                 * "@str" so element access `arr.get(i)` types as $str — else its
+                 * i64-typed elements break `==` string comparison / interpolation
+                 * and (via the shadow-clear) drop needed $str tags (EDU-128). */
+                if (strstr(tnm, "str")) return "@str";
+                continue; /* skip other type annotations */
             }
             if (ck == NODE_FLOAT_LIT) return "@f64";
             const char *ety = expr_llvm_type(c, n->children[i]);
@@ -5187,7 +5210,14 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
              * the var-to-var `=` strcmp gate fires (closes the 112.2 gap for
              * strings produced by str.split / str.chars). */
             if (resolved && (!strcmp(resolved, "tk_str_split_w") ||
-                             !strcmp(resolved, "tk_str_chars_w")))
+                             !strcmp(resolved, "tk_str_chars_w") ||
+                             /* 126.x: json.keys/values return a toke array of
+                              * string pointers. Tag @str so `.get(k)` yields a
+                              * $str scalar (i8*) — otherwise interpolation
+                              * `\(keys.get(k))` prints the pointer as a decimal
+                              * and downstream lookups read garbage. */
+                             !strcmp(resolved, "tk_json_keys_w") ||
+                             !strcmp(resolved, "tk_json_values_w")))
                 return "@str";
             if (resolved) {
                 static const char *str_wrappers[] = {
@@ -5631,6 +5661,11 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             if (si) {
                 int fidx = struct_field_index(si, fn);
                 if (struct_field_is_float(si, fidx)) return "double";
+                /* 126.x: a $str field is an i8* pointer at the i64 ABI. Report
+                 * it as "i8*" so interpolation `\(rec.field)` uses the pointer
+                 * as a string instead of printing its address via
+                 * tk_str_fromi64_w (e.g. `\(json.getarr(...).get(i).raw)`). */
+                if (struct_field_is_str(si, fidx)) return "i8*";
             }
         }
         return "i64";
@@ -6091,11 +6126,12 @@ static void emit_stmt(Ctx *c, const Node *n)
                         }
                 }
             }
-            /* 126.7: a shadowing re-bind to a NON-pointer type (e.g. str->double)
-             * must drop the raw name's stale "$str"/struct tag, else its uses
-             * (comparisons, interpolation) mis-lower. Only for non-pointer types:
-             * a str->str shadow keeps the raw tag valid, and pointer re-binds
-             * register their own type below. */
+            /* 126.7: a shadowing re-bind to a NON-pointer type (e.g. str->double,
+             * or a genuine int-array element) must drop the raw name's stale
+             * "$str" tag, else its uses (comparisons, interpolation) mis-lower.
+             * The `!expr_struct_type` guard excludes string values (incl. @str
+             * array elements, now correctly typed) so a str->str shadow keeps the
+             * tag; pointer re-binds register their own type below. */
             if (is_shadow && !init_is_map && strcmp(vty, "i8*") != 0 &&
                 !expr_struct_type(c, init_node))
                 clear_ptr_local(c, tb_raw);
