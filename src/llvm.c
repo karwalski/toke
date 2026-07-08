@@ -423,6 +423,15 @@ static int struct_field_is_float(const StructInfo *si, int fidx) {
     return !strcmp(si->field_types[fidx], "f64") || !strcmp(si->field_types[fidx], "f32");
 }
 
+/* 126.6: return 1 if the field at the given index is a string type. A $str field
+ * is stored as an i8* pointer at the i64 ABI; without this, expr_llvm_type reports
+ * it as "i64" and a `\(rec.field)` interpolation prints the pointer as a decimal. */
+static int struct_field_is_str(const StructInfo *si, int fidx) {
+    if (!si || fidx < 0 || fidx >= si->field_count) return 0;
+    const char *t = si->field_types[fidx];
+    return !strcmp(t, "$str") || !strcmp(t, "str");
+}
+
 /* Return the field index for a given field name in a struct, or 0 if not found. */
 static int struct_field_index(const StructInfo *si, const char *fname) {
     if (!si) return 0;
@@ -5096,6 +5105,28 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         const char *iln = get_llvm_name(c, ia);
         const char *ist = ptr_local_struct_type(c, iln);
         if (ist && !strcmp(ist, "@str")) return "$str";
+    }
+    /* 126.6: a $str struct field access (`rec.name`) — the field stores an i8*
+     * pointer at the i64 ABI, so tag it "$str" so string interpolation and
+     * var-to-var `=` treat it as a string. Without this, `\(rec.name)` misses
+     * the interp is_str gate and prints the pointer as a decimal (AIA-102).
+     * Only fires when the base resolves to a real struct instance (not a module
+     * alias or .len), so field/method-name collisions can't mis-tag. */
+    if (n->kind == NODE_FIELD_EXPR && n->child_count >= 2 &&
+        n->children[1]->kind == NODE_IDENT) {
+        char fld[128]; tok_cp(c->src, n->children[1], fld, sizeof fld);
+        if (strcmp(fld, "len") != 0) {
+            const StructInfo *si = resolve_base_struct(c, n->children[0]);
+            if (si) {
+                int fidx = struct_field_index(si, fld);
+                /* struct_field_index returns 0 for not-found (ambiguous with
+                 * field 0), so confirm the name actually matches. */
+                if (fidx >= 0 && fidx < si->field_count &&
+                    !strcmp(si->field_names[fidx], fld) &&
+                    struct_field_is_str(si, fidx))
+                    return "$str";
+            }
+        }
     }
     if (n->kind == NODE_CALL_EXPR && n->child_count >= 1) {
         /* Check for qualified module.method calls (e.g. time.toparts) */
