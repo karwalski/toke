@@ -5226,6 +5226,11 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                     "tk_str_charat_w","tk_str_substr_w","tk_str_chars_w","tk_str_sub_w",
                     "tk_str_fromint_w","tk_str_fromfloat_w","tk_str_fromf64_w","tk_str_fromf32_w",
                     "tk_str_format_w","tk_io_readln_w","tk_str_join_w","tk_str_interpolate_w",
+                    /* 126.8: more scalar->string / string->string wrappers so a
+                     * `\(s.fromint(x))` / `\(s.repeat(...))` interpolation and
+                     * var-to-var `=` detect the string (fixes AIA-044). NB
+                     * s.fromint resolves to "tk_str_from_int" (not the _w form). */
+                    "tk_str_from_int","tk_str_repeat_w","tk_str_toupper_w","tk_str_tolower_w",
                     NULL };
                 for (int i = 0; str_wrappers[i]; i++)
                     if (!strcmp(resolved, str_wrappers[i])) return "$str";
