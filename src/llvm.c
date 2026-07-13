@@ -172,7 +172,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; } Ctx;
 
 /* ── SSA counter helpers ───────────────────────────────────────────── */
 /* next_tmp: allocate the next SSA temporary (%tN).
@@ -5170,6 +5170,18 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                     !strcmp(si->field_names[fidx], fld) &&
                     struct_field_is_str(si, fidx))
                     return "$str";
+            } else {
+                /* 126.8: the base didn't resolve to a struct instance (e.g.
+                 * `json.getobj(...).raw` — the stale getobj's Json return isn't
+                 * tracked). Fall back to searching all structs for a str field of
+                 * this name, so `.raw` (Json.raw:str) tags $str — else its result
+                 * is an untagged i8* and `@(x)` mis-spreads it (AIA-100). Mirrors
+                 * the float heuristic in expr_llvm_type NODE_FIELD_EXPR. */
+                for (int _si = 0; _si < c->struct_count; _si++)
+                    for (int _fi = 0; _fi < c->structs[_si].field_count; _fi++)
+                        if (!strcmp(c->structs[_si].field_names[_fi], fld) &&
+                            struct_field_is_str(&c->structs[_si], _fi))
+                            return "$str";
             }
         }
     }
@@ -5231,6 +5243,12 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                      * var-to-var `=` detect the string (fixes AIA-044). NB
                      * s.fromint resolves to "tk_str_from_int" (not the _w form). */
                     "tk_str_from_int","tk_str_repeat_w","tk_str_toupper_w","tk_str_tolower_w",
+                    /* 126.8: json string-returning wrappers — `\(json.getstr(...))`
+                     * / `\(json.enc(...))` were rendering the pointer as a decimal
+                     * (AIA-105/AIA-100). All return a string pointer (json_glue.c);
+                     * json.getstr/str/enc resolve via the generic fallback. */
+                    "tk_json_str_w","tk_json_getstr_w","tk_json_getstring_w","tk_json_get_w",
+                    "tk_json_enc_w","tk_json_encstr_w","tk_json_encode_w","tk_json_stringify_w",
                     NULL };
                 for (int i = 0; str_wrappers[i]; i++)
                     if (!strcmp(resolved, str_wrappers[i])) return "$str";
@@ -6059,6 +6077,76 @@ static void compute_linear_arrays(Ctx *c, const Node *fn) {
     }
 }
 
+/* 126.8: does RHS prove the assigned var holds strings? Covers `x = x + @("lit")`
+ * (string-literal array append/concat) and `x = <fn returning @str/@$str>`.
+ * Purely syntactic + FnSig, so it is safe to run before codegen. */
+static int rhs_proves_str_array(Ctx *c, const Node *rhs) {
+    if (!rhs) return 0;
+    if (rhs->kind == NODE_ARRAY_LIT || rhs->kind == NODE_BINARY_EXPR) {
+        const Node *stk[256]; int sp = 0, guard = 0; stk[sp++] = rhs;
+        while (sp > 0 && guard++ < 256) {
+            const Node *n = stk[--sp]; if (!n) continue;
+            if (n->kind == NODE_ARRAY_LIT) {
+                for (int i = 0; i < n->child_count; i++)
+                    if (n->children[i]->kind == NODE_STR_LIT) return 1;
+            }
+            if (n->kind == NODE_BINARY_EXPR)
+                for (int i = 0; i < n->child_count && sp < 254; i++) stk[sp++] = n->children[i];
+        }
+    }
+    if (rhs->kind == NODE_CALL_EXPR && rhs->child_count >= 1 &&
+        rhs->children[0]->kind == NODE_IDENT) {
+        char fn[128]; tok_cp(c->src, rhs->children[0], fn, sizeof fn);
+        if (!strcmp(fn, "main")) strcpy(fn, "tk_main");
+        mangle_fn_name(c, fn, sizeof fn);
+        const FnSig *sig = lookup_fn(c, fn);
+        if (sig && (!strcmp(sig->ret_type_name, "@$str") ||
+                    !strcmp(sig->ret_type_name, "@str"))) return 1;
+    }
+    return 0;
+}
+
+/* Populate c->str_arr: mut array locals that are assigned/appended a string
+ * value somewhere in the function. A `let x=mut.@()` (empty ⇒ typed "@i64" by
+ * default) is then tagged "@str" at its binding so `x.get(i)` resolves to $str
+ * regardless of statement order — fixes `\(x.get(i))` rendering a pointer. */
+static void compute_str_arrays(Ctx *c, const Node *fn) {
+    c->str_arr_count = 0;
+    const Node *body = NULL;
+    for (int i = 0; i < fn->child_count; i++)
+        if (fn->children[i]->kind == NODE_STMT_LIST) { body = fn->children[i]; break; }
+    if (!body) return;
+    const Node *stack[512]; int sp = 0; stack[sp++] = body;
+    while (sp > 0) {
+        const Node *n = stack[--sp]; if (!n) continue;
+        if ((n->kind == NODE_ASSIGN_STMT || n->kind == NODE_BIND_STMT ||
+             n->kind == NODE_MUT_BIND_STMT) && n->child_count >= 2 &&
+            n->children[0]->kind == NODE_IDENT) {
+            const Node *rhs = (n->child_count >= 3 && n->children[2]) ? n->children[2]
+                                                                       : n->children[1];
+            if (rhs_proves_str_array(c, rhs)) {
+                char x[NAME_BUF]; tok_cp(c->src, n->children[0], x, sizeof x);
+                int known = 0;
+                for (int k = 0; k < c->str_arr_count; k++)
+                    if (!strcmp(c->str_arr[k], x)) { known = 1; break; }
+                if (!known && c->str_arr_count < 64) {
+                    strncpy(c->str_arr[c->str_arr_count], x, NAME_BUF - 1);
+                    c->str_arr[c->str_arr_count][NAME_BUF - 1] = '\0';
+                    c->str_arr_count++;
+                }
+            }
+        }
+        for (int i = 0; i < n->child_count && sp < 510; i++)
+            if (n->children[i]) stack[sp++] = n->children[i];
+    }
+}
+
+static int is_str_arr(Ctx *c, const char *name) {
+    for (int i = 0; i < c->str_arr_count; i++)
+        if (!strcmp(c->str_arr[i], name)) return 1;
+    return 0;
+}
+
 static int is_linear_arr(Ctx *c, const char *name) {
     for (int i = 0; i < c->linear_arr_count; i++)
         if (!strcmp(c->linear_arr[i], name)) return 1;
@@ -6150,6 +6238,14 @@ static void emit_stmt(Ctx *c, const Node *n)
                  * need struct type tracking for field-index resolution. */
                 const char *stype = expr_struct_type(c, init_node);
                 if (stype) mark_ptr_with_type(c, tb, stype);
+            }
+            /* 126.8: a mut.@() array proven to hold strings (compute_str_arrays) is
+             * tagged @str — regardless of which branch above ran — so `x.get(i)`
+             * resolves to $str no matter the statement order; else `\(x.get(i))`
+             * renders a pointer (AIA-105). Only upgrades an untyped/@i64 tag. */
+            if (is_str_arr(c, tb_raw)) {
+                const char *cur = ptr_local_struct_type(c, tb);
+                if (!cur || !strcmp(cur, "@i64")) { clear_ptr_local(c, tb); mark_ptr_with_type(c, tb, "@str"); }
             }
             set_local_type(c, tb, vty);
             fprintf(c->out, "  %%%s = alloca %s\n", tb, vty);
@@ -6834,6 +6930,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
         c->term = 0;
         /* 114.18: identify linearly-owned array locals for in-place mutation. */
         compute_linear_arrays(c, n);
+        compute_str_arrays(c, n);
         if (body_i >= 0) emit_stmt(c, n->children[body_i]);
         if (!c->term) {
             if (!strcmp(ret, "void")) fputs("  ret void\n", c->out);
