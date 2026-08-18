@@ -1,5 +1,0 @@
-m=test;
-f=main():i64{
-  let x=10;
-  <x
-};

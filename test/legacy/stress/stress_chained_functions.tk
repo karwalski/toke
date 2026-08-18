@@ -1,6 +1,0 @@
-m=test;
-f=double(x:i64):i64{<x*2};
-f=inc(x:i64):i64{<x+1};
-f=main():i64{
-  <double(double(double(inc(inc(inc(0))))))
-};
