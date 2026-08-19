@@ -2,8 +2,10 @@
 
 Executed 2026-08-19 by a worker-agent fleet (one repo per worker, main-thread
 acceptance), per `docs/repo-hygiene.md` (130.1). Every repo was tagged
-`pre-cleanup-20260818` before its first change. **Nothing was pushed** — all
-commits are local, listed below for owner review and push.
+`pre-cleanup-20260818` before its first change. Initially nothing was pushed;
+on 2026-08-19 the owner ratified the close-out decisions in-session and the
+gitleaks-clean repos were pushed (see "Owner decisions" below). Still local:
+toke-website and toke-test-programs (held for the fixture-secret pass).
 
 ## Per-repo before → after
 
@@ -11,7 +13,7 @@ commits are local, listed below for owner review and push.
 |---|---|---|---|---|---|
 | toke | 172M (.git 148M loose) | **34M** (.git 10M) | 3 | 1¹ | 1c5ffce (130.1), 567651f (130.3) + Epic 130 entry rode into 17e0f82 |
 | toke-corpus | 9.3G | 8.6G² | 135 | 1³ | 3c95c1c/482c0b0 (130.2⁴), b67b932 (130.4), 0a3e911 (130.17) |
-| toke-model | 10G | **6.5G**⁵ | 4 | 0 | 1d92e03 (130.2), 9c8ffc5 (130.5), fc2e2ba (130.17) |
+| toke-model | 10G | **6.5G**⁵ | 4 | 0 | b44e174 (130.2), d71294e (130.5), c4adbb1 (130.17) — shas rewritten pre-push to strip unpushed training-data-p2 blobs |
 | toke-tokenizer | 387M | **73M** | 2 | 1⁶ | c04b57a (130.2), f10a654 (130.6), e25c5ba (130.17) |
 | toke-eval | 9.3M | 12M | 1,014 | 0 | 518e4ea (130.2⁷), 039fd2c (130.7), ff023a2 (130.17) |
 | toke-benchmark | 73M | **removed**⁸ | 409 | — | GitHub repo archived (read-only, reversible) |
@@ -36,7 +38,7 @@ commits are local, listed below for owner review and push.
 ⁸ byte-superset verified (diff -qr exit 0) against ~/tk/archive/toke-benchmark before removal; GitHub repo karwalski/toke-benchmark archived.
 ⁹ deleted regenerable `infra/node_modules` (210M) + `cdk.out`; a proper `package-lock.json` was recovered from npm's hidden lockfile first — commit it (recommended).
 ¹⁰ the recovered lockfile + 4 documented placeholder lambda stubs — owner call.
-¹¹ push those two commits (README retirement pointer) then `gh repo archive karwalski/toke-stdlib` if the GitHub repo should show the pointer.
+¹¹ done 2026-08-19: pushed (incl. salvaged ARCHIVED.md, a3c13c1), then `gh repo archive karwalski/toke-stdlib`; duplicate `archive/toke-stdlib` copy deleted under 130.14.
 
 ## Archive index (~/tk/archive/, all with MANIFEST.md)
 
@@ -47,26 +49,35 @@ New Epic-130 drops: `toke-legacy-20260819` (toke phase1/gate2 tests+docs),
 `toke-demo-20260819`, `toke-stdlib-20260819`, `research-stale-pre-v0.4-20260819`;
 plus MANIFEST.md added to the pre-existing `toke-benchmark` copy.
 
-## Owner decisions pending
+## Owner decisions — ratified 2026-08-19 (in-session), execution status
 
-1. **130.14 archive prune** — `~/tk/archive/PRUNE-CANDIDATES-130.14.md`:
-   ≈9.7GB checksum-verified reclaimable (max ≈11.2GB with optional dedupe);
-   headline: `archive/toke-models` 8.6G is 99%+ duplicate of live copies
-   (safetensors md5-verified). Salvage checklist included. Sign off, then delete.
-2. **130.15 history rewrites** (force-push round; gc-only half already done —
-   toke .git 148M→10M): candidates — toke's tracked `toke` binary (105 revs),
-   toke-corpus `data/corpus_default.jsonl` 149M blob, toke-model
-   `training-data-p2/*.jsonl` 114M, toke-test-programs tracked `test102` binary
-   + `audit-report` history, the 1.4M tokenizer_v03 blobs (mcp/website).
-3. **`toke-model/output/7b-merged` 5.5G** — archive once 128.3 provides a new
-   reference model.
-4. **Private remotes** for toke-cloud and toke-console (never public).
-5. **Secret-scan review before any public push**: JWT/key-pattern hits in
-   security-themed *fixture data* — toke-website `static/library/security.json`
-   (4), toke-test-programs requirements/results (59). Almost certainly
-   synthetic; needs one human pass.
-6. **Pushes**: nothing was pushed. Review + push the commits above per repo.
-7. Deferred corpus moves (see ² ³) once Epic 129 waves are idle.
+1. **130.14 archive prune — APPROVED & EXECUTED.** Salvage checklist completed
+   first (`training-data-p2-late/` → gate2-era archive; tokenizer keep-set →
+   `toke-tokenizer-legacy-20260819/salvage-130.14/`; stdlib `ARCHIVED.md`
+   committed into the dated copy; corpus `manifest.json` kept). All big-file
+   checksums re-verified immediately before deletion. Archive **14G → 5.4G**.
+   Optional extras (keep-one-encoding dedupe, toke-ooke snapshot) declined.
+2. **130.15 history rewrites — DEFERRED by decision.** Ordering when taken up:
+   tokenizer_v03 blobs (mcp/website) + test-programs anytime; toke after
+   `feat/type-flow-bytes-redesign` merges; corpus/model last (129 active).
+   Update: toke-model's *unpushed* `training-data-p2/*.jsonl` blobs (113.7M)
+   were stripped by a local-only rewrite before first push (no force-push
+   involved) — the remaining rewrite scope is only what was already on remotes.
+3. **`7b-merged` 5.5G — HOLD** until 128.3 lands; then archive (not delete)
+   for one cycle before pruning.
+4. **Private remotes — DONE.** `karwalski/toke-cloud` and
+   `karwalski/toke-console` created PRIVATE and pushed (cloud: main +
+   `wip/refactor-rescue-20260419`; recovered `package-lock.json` committed as
+   part of main). The 4 placeholder lambda stub dirs remain uncommitted —
+   still owner's call.
+5. **Fixture-secret review — with owner.** Review sheet prepared at
+   `~/tk/tmpwork/fixture-secret-review-130.md`. toke-website and
+   toke-test-programs pushes are HELD until this pass is done.
+6. **Pushes — APPROVED; executed for gitleaks-clean repos** (eval, mcp, spec,
+   corpus, tokenizer, model, toke branch; stdlib pushed then GitHub-archived).
+   Held: website + test-programs (see 5).
+7. **Deferred corpus moves — remain deferred** until Epic 129 waves are idle
+   (owner to trigger).
 
 ## Guardrails now in place
 
