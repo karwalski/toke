@@ -172,7 +172,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; } Ctx;
 
 /* ── SSA counter helpers ───────────────────────────────────────────── */
 /* next_tmp: allocate the next SSA temporary (%tN).
@@ -6233,6 +6233,28 @@ static void compute_linear_arrays(Ctx *c, const Node *fn) {
 /* 126.8: does RHS prove the assigned var holds strings? Covers `x = x + @("lit")`
  * (string-literal array append/concat) and `x = <fn returning @str/@$str>`.
  * Purely syntactic + FnSig, so it is safe to run before codegen. */
+/* 127.10: is `e` a string value by shape — a literal (interpolation included),
+ * a let-bound name proven str (c->str_loc), a checker-typed str, or anything
+ * expr_struct_type tags $str (stdlib / instance / user-fn call results, .get
+ * on a @str array). This runs before the function body is emitted, so it
+ * cannot consult the ptr-local registry. */
+static int is_str_loc(Ctx *c, const char *name) {
+    for (int i = 0; i < c->str_loc_count; i++)
+        if (!strcmp(c->str_loc[i], name)) return 1;
+    return 0;
+}
+static int is_str_arr(Ctx *c, const char *name);
+static int expr_is_str_value(Ctx *c, const Node *e) {
+    if (!e) return 0;
+    if (e->kind == NODE_STR_LIT) return 1;
+    if (e->kind == NODE_IDENT) {
+        char nb[NAME_BUF]; tok_cp(c->src, e, nb, sizeof nb);
+        if (is_str_loc(c, nb)) return 1;
+    }
+    if (e->rtype && e->rtype->kind == TY_STR) return 1;
+    const char *st = expr_struct_type(c, e);
+    return st && (!strcmp(st, "$str") || !strcmp(st, "str"));
+}
 static int rhs_proves_str_array(Ctx *c, const Node *rhs) {
     if (!rhs) return 0;
     if (rhs->kind == NODE_ARRAY_LIT || rhs->kind == NODE_BINARY_EXPR) {
@@ -6241,7 +6263,7 @@ static int rhs_proves_str_array(Ctx *c, const Node *rhs) {
             const Node *n = stk[--sp]; if (!n) continue;
             if (n->kind == NODE_ARRAY_LIT) {
                 for (int i = 0; i < n->child_count; i++)
-                    if (n->children[i]->kind == NODE_STR_LIT) return 1;
+                    if (expr_is_str_value(c, n->children[i])) return 1;
             }
             if (n->kind == NODE_BINARY_EXPR)
                 for (int i = 0; i < n->child_count && sp < 254; i++) stk[sp++] = n->children[i];
@@ -6256,41 +6278,96 @@ static int rhs_proves_str_array(Ctx *c, const Node *rhs) {
         if (sig && (!strcmp(sig->ret_type_name, "@$str") ||
                     !strcmp(sig->ret_type_name, "@str"))) return 1;
     }
+    /* 127.10: `x.append(e)` / `x.push(e)` (instance form) and `arr.append(x;e)`
+     * (module form) prove a str array when the element is a string, or when
+     * the receiver is itself a proven str array (`b = a.append(e)`). This RHS
+     * is a NODE_CALL_EXPR with a field-expression callee and was never
+     * examined, so a mut.@() accumulator stayed @i64 and every interpolated
+     * read of its elements printed an address (nothing ever dangled). */
+    if (rhs->kind == NODE_CALL_EXPR && rhs->child_count >= 1 &&
+        rhs->children[0]->kind == NODE_FIELD_EXPR && rhs->children[0]->child_count >= 2) {
+        char al[NAME_BUF], m[NAME_BUF];
+        tok_cp(c->src, rhs->children[0]->children[0], al, sizeof al);
+        tok_cp(c->src, rhs->children[0]->children[1], m, sizeof m);
+        if (!strcmp(m, "append") || !strcmp(m, "push")) {
+            int imp = 0;
+            for (int ii = 0; ii < c->import_count; ii++)
+                if (!strcmp(c->imports[ii].alias, al)) { imp = 1; break; }
+            const Node *e = imp ? (rhs->child_count >= 3 ? rhs->children[2] : NULL)
+                                : (rhs->child_count >= 2 ? rhs->children[1] : NULL);
+            if (expr_is_str_value(c, e)) return 1;
+            if (!imp && rhs->children[0]->children[0]->kind == NODE_IDENT &&
+                is_str_arr(c, al)) return 1;
+            if (imp && rhs->child_count >= 2 && rhs->children[1]->kind == NODE_IDENT) {
+                char rn[NAME_BUF]; tok_cp(c->src, rhs->children[1], rn, sizeof rn);
+                if (is_str_arr(c, rn)) return 1;
+            }
+        }
+    }
     return 0;
 }
 
 /* Populate c->str_arr: mut array locals that are assigned/appended a string
  * value somewhere in the function. A `let x=mut.@()` (empty ⇒ typed "@i64" by
  * default) is then tagged "@str" at its binding so `x.get(i)` resolves to $str
- * regardless of statement order — fixes `\(x.get(i))` rendering a pointer. */
+ * regardless of statement order — fixes `\(x.get(i))` rendering a pointer.
+ * 127.10: first collects c->str_loc (let-bound names whose RHS is a string by
+ * shape) so `let line="\(i)"; a=a.append(line)` proves `a`; both sets are
+ * grown to a fixed point because a binding may name an earlier one. */
 static void compute_str_arrays(Ctx *c, const Node *fn) {
     c->str_arr_count = 0;
+    c->str_loc_count = 0;
     const Node *body = NULL;
     for (int i = 0; i < fn->child_count; i++)
         if (fn->children[i]->kind == NODE_STMT_LIST) { body = fn->children[i]; break; }
     if (!body) return;
-    const Node *stack[512]; int sp = 0; stack[sp++] = body;
-    while (sp > 0) {
-        const Node *n = stack[--sp]; if (!n) continue;
-        if ((n->kind == NODE_ASSIGN_STMT || n->kind == NODE_BIND_STMT ||
-             n->kind == NODE_MUT_BIND_STMT) && n->child_count >= 2 &&
-            n->children[0]->kind == NODE_IDENT) {
-            const Node *rhs = (n->child_count >= 3 && n->children[2]) ? n->children[2]
-                                                                       : n->children[1];
-            if (rhs_proves_str_array(c, rhs)) {
+    for (int pass = 0; pass < 4; pass++) {
+        int added = 0;
+        const Node *stack[512]; int sp = 0; stack[sp++] = body;
+        while (sp > 0) {
+            const Node *n = stack[--sp]; if (!n) continue;
+            if ((n->kind == NODE_BIND_STMT || n->kind == NODE_MUT_BIND_STMT) &&
+                n->child_count >= 2 && n->children[0]->kind == NODE_IDENT) {
+                const Node *rhs = (n->child_count >= 3 && n->children[2]) ? n->children[2]
+                                                                           : n->children[1];
                 char x[NAME_BUF]; tok_cp(c->src, n->children[0], x, sizeof x);
-                int known = 0;
-                for (int k = 0; k < c->str_arr_count; k++)
-                    if (!strcmp(c->str_arr[k], x)) { known = 1; break; }
-                if (!known && c->str_arr_count < 64) {
-                    strncpy(c->str_arr[c->str_arr_count], x, NAME_BUF - 1);
-                    c->str_arr[c->str_arr_count][NAME_BUF - 1] = '\0';
-                    c->str_arr_count++;
+                if (!is_str_loc(c, x) && c->str_loc_count < 64 && expr_is_str_value(c, rhs)) {
+                    strncpy(c->str_loc[c->str_loc_count], x, NAME_BUF - 1);
+                    c->str_loc[c->str_loc_count][NAME_BUF - 1] = '\0';
+                    c->str_loc_count++; added = 1;
                 }
             }
+            for (int i = 0; i < n->child_count && sp < 510; i++)
+                if (n->children[i]) stack[sp++] = n->children[i];
         }
-        for (int i = 0; i < n->child_count && sp < 510; i++)
-            if (n->children[i]) stack[sp++] = n->children[i];
+        if (!added) break;
+    }
+    for (int pass = 0; pass < 4; pass++) {
+        int added = 0;
+        const Node *stack[512]; int sp = 0; stack[sp++] = body;
+        while (sp > 0) {
+            const Node *n = stack[--sp]; if (!n) continue;
+            if ((n->kind == NODE_ASSIGN_STMT || n->kind == NODE_BIND_STMT ||
+                 n->kind == NODE_MUT_BIND_STMT) && n->child_count >= 2 &&
+                n->children[0]->kind == NODE_IDENT) {
+                const Node *rhs = (n->child_count >= 3 && n->children[2]) ? n->children[2]
+                                                                           : n->children[1];
+                if (rhs_proves_str_array(c, rhs)) {
+                    char x[NAME_BUF]; tok_cp(c->src, n->children[0], x, sizeof x);
+                    int known = 0;
+                    for (int k = 0; k < c->str_arr_count; k++)
+                        if (!strcmp(c->str_arr[k], x)) { known = 1; break; }
+                    if (!known && c->str_arr_count < 64) {
+                        strncpy(c->str_arr[c->str_arr_count], x, NAME_BUF - 1);
+                        c->str_arr[c->str_arr_count][NAME_BUF - 1] = '\0';
+                        c->str_arr_count++; added = 1;
+                    }
+                }
+            }
+            for (int i = 0; i < n->child_count && sp < 510; i++)
+                if (n->children[i]) stack[sp++] = n->children[i];
+        }
+        if (!added) break;
     }
 }
 

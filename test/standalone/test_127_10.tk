@@ -1,0 +1,51 @@
+(* test_127_10.tk -- Epic 127.10: interpolated reads of an append-built
+ * string array printed addresses. Nothing dangled: the mut.@() array was
+ * never proven to hold strings when the element came through .append or
+ * .push so .get(j) was typed i64. Covers interpolation-built concat-built
+ * literal-built and push-built elements plus a seeded array and the array
+ * concat form that already worked. *)
+m=test.m12710;
+i=io:std.io;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=main():$i64{
+  let a=mut.@();
+  lp(let i=0;i<3;i=i+1){ let line="\(i): item"; a=a.append(line) };
+  cks("interp-let-append";"\(a.get(0))|\(a.get(2))";"0: item|2: item");
+  let b=mut.@();
+  lp(let i=0;i<3;i=i+1){ b=b.append("\(i)!") };
+  cks("interp-direct-append";"\(b.get(1))";"1!");
+  let c=mut.@();
+  lp(let i=0;i<3;i=i+1){ let t=s.concat(s.fromint(i);": c"); c=c.append(t) };
+  cks("concat-let-append";"\(c.get(2))";"2: c");
+  let d=mut.@();
+  lp(let i=0;i<2;i=i+1){ d=d.append(s.concat("d";s.fromint(i))) };
+  cks("concat-direct-append";"\(d.get(1))";"d1");
+  let e=mut.@();
+  lp(let i=0;i<2;i=i+1){ e=e.append("lit") };
+  cks("literal-append";"\(e.get(0))\(e.get(1))";"litlit");
+  let f=mut.@();
+  f=f.push("p0"); f=f.push("p1");
+  cks("push";"\(f.get(1))";"p1");
+  let g=mut.@("seed");
+  g=g.append("\(g.len)");
+  cks("seeded";"\(g.get(0)) \(g.get(1))";"seed 1");
+  let h=mut.@();
+  lp(let i=0;i<2;i=i+1){ h=h+@("\(i): h") };
+  cks("plus-at";"\(h.get(1))";"1: h");
+  let src="x y z";
+  let w=mut.@();
+  lp(let i=0;i<3;i=i+1){ let piece=s.fields(src).get(i); w=w.append("[\(piece)]") };
+  cks("loop-join";s.join("";w);"[x][y][z]");
+  let joined=mut.@();
+  lp(let i=0;i<a.len;i=i+1){ joined=joined.append("\(i)=\(a.get(i))") };
+  cks("read-then-append";"\(joined.get(2))";"2=2: item");
+  io.println("RESULT done");
+  <0
+};
