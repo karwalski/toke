@@ -152,3 +152,18 @@ int64_t tk_os_o_nofollow(void){ return (int64_t)O_NOFOLLOW; }
 int64_t tk_os_stdin_fd(void)  { return (int64_t)STDIN_FILENO; }
 int64_t tk_os_stdout_fd(void) { return (int64_t)STDOUT_FILENO; }
 int64_t tk_os_stderr_fd(void) { return (int64_t)STDERR_FILENO; }
+
+/* ── 131.38: no-underscore call-name forwarders ─────────────────────────────
+ * os.tki (114.22) declares os.ordonly, os.stdinfd, ... ; llvm.c's os table
+ * only maps the legacy o_rdonly/stdin_fd spellings, so the documented
+ * no-underscore names fell through to the generic tk_os_<method>_w resolver
+ * and were unresolved at link time.  Forwarders make both spellings link. */
+int64_t tk_os_ordonly_w(void)  { return tk_os_o_rdonly(); }
+int64_t tk_os_owronly_w(void)  { return tk_os_o_wronly(); }
+int64_t tk_os_ordwr_w(void)    { return tk_os_o_rdwr(); }
+int64_t tk_os_ocreat_w(void)   { return tk_os_o_creat(); }
+int64_t tk_os_otrunc_w(void)   { return tk_os_o_trunc(); }
+int64_t tk_os_oappend_w(void)  { return tk_os_o_append(); }
+int64_t tk_os_stdinfd_w(void)  { return tk_os_stdin_fd(); }
+int64_t tk_os_stdoutfd_w(void) { return tk_os_stdout_fd(); }
+int64_t tk_os_stderrfd_w(void) { return tk_os_stderr_fd(); }

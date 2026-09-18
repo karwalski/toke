@@ -46,3 +46,11 @@ int64_t tk_infer_embed_w(int64_t handle, int64_t text) {
     /* Return empty array */
     return tk_arr_alloc(0, 0);
 }
+
+/* infer.isloaded(handle) — 131.38: declared in infer.tki but had no wrapper.
+ * Consistent with the stub layer above: load never returns a handle, so
+ * nothing is ever loaded. */
+int64_t tk_infer_isloaded_w(int64_t handle) {
+    (void)handle;
+    return 0;
+}

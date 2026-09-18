@@ -632,6 +632,13 @@ static void prepass_funcs(Ctx *c, const Node *n) {
                     tok_cp(c->src, rs->children[0]->children[0], el, sizeof el);
                     snprintf(ret_tn, sizeof ret_tn, "@%s", el);
                 }
+                /* 127.28: a map return (`@(k:v)`) — the un-annotated `let m=mk()`
+                 * is never checker-typed, so carry the map-ness through the
+                 * FnSig; expr_struct_type turns it into the "__map__" local tag
+                 * and .keys()/.get/.len take the map runtime path (they linked
+                 * against `_keys` / read an array header before). */
+                if (rs->children[0]->kind == NODE_MAP_TYPE)
+                    snprintf(ret_tn, sizeof ret_tn, "__map__");
             }
         }
     }
@@ -3161,7 +3168,12 @@ static int emit_expr(Ctx *c, const Node *n)
             if (!is_mod_im && !strcmp(method_im, "keys") &&
                 n->children[0]->children[0]->kind == NODE_IDENT) {
                 char mkb[128]; tok_cp(c->src, n->children[0]->children[0], mkb, sizeof mkb);
-                if (is_map_var(c, mkb)) {
+                /* 127.28: a map returned by a user function is not a registered
+                 * map var, but the checker's rtype (via len_recv_kind) knows it
+                 * is a map; without this the call fell through to the
+                 * user-function path and linked against a non-existent `_keys`. */
+                const char *mrk = len_recv_kind(c, n->children[0]->children[0]);
+                if (is_map_var(c, mkb) || (mrk && !strcmp(mrk, "map"))) {
                     int mv = emit_expr(c, n->children[0]->children[0]);
                     const char *mvty = expr_llvm_type(c, n->children[0]->children[0]);
                     if (!strcmp(mvty, "i8*")) {
@@ -5221,6 +5233,13 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         const char *ist = ptr_local_struct_type(c, iln);
         if (ist && !strcmp(ist, "@str")) return "$str";
     }
+    /* 127.7: the same element load on a call result — the card's chain idiom
+     * `x.split(",").get(1)` — has no local to consult; ask the base. */
+    if (n->kind == NODE_INDEX_EXPR && n->child_count >= 1 &&
+        n->children[0]->kind != NODE_IDENT) {
+        const char *bst = expr_struct_type(c, n->children[0]);
+        if (bst && !strcmp(bst, "@str")) return "$str";
+    }
     /* 126.6: a $str struct field access (`rec.name`) — the field stores an i8*
      * pointer at the i64 ABI, so tag it "$str" so string interpolation and
      * var-to-var `=` treat it as a string. Without this, `\(rec.name)` misses
@@ -5272,9 +5291,16 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                 for (int ii = 0; ii < c->import_count; ii++)
                     if (!strcmp(c->imports[ii].alias, alias)) { _is_mod = 1; break; }
                 if (!_is_mod) {
-                    const char *_ln = get_llvm_name(c, alias);
-                    const char *_bst = ptr_local_struct_type(c, _ln);
-                    if (_bst && !strcmp(_bst, "@str")) return "$str";
+                    if (n->children[0]->children[0]->kind != NODE_IDENT) {
+                        /* 127.7: `.get(i)` on a call result (`s.fields(x).get(0)`,
+                         * `x.split(",").get(1)`) — ask the base expression. */
+                        const char *_cst = expr_struct_type(c, n->children[0]->children[0]);
+                        if (_cst && !strcmp(_cst, "@str")) return "$str";
+                    } else {
+                        const char *_ln = get_llvm_name(c, alias);
+                        const char *_bst = ptr_local_struct_type(c, _ln);
+                        if (_bst && !strcmp(_bst, "@str")) return "$str";
+                    }
                 }
             }
             /* Well-known stdlib struct returns */
@@ -5323,6 +5349,9 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                      * json.getstr/str/enc resolve via the generic fallback. */
                     "tk_json_str_w","tk_json_getstr_w","tk_json_getstring_w","tk_json_get_w",
                     "tk_json_enc_w","tk_json_encstr_w","tk_json_encode_w","tk_json_stringify_w",
+                    /* 127.7 (131.6): `s.build(b)` finishes a builder into a str;
+                     * untagged, `let r=s.build(b); "\(r)"` printed the pointer. */
+                    "tk_str_done_w",
                     NULL };
                 for (int i = 0; str_wrappers[i]; i++)
                     if (!strcmp(resolved, str_wrappers[i])) return "$str";
@@ -5341,6 +5370,54 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                     }
                 }
             }
+            /* 127.7 / 127.28: instance-method calls on a non-import receiver
+             * (`x.trim()`, `line.split(",")`, `m.keys()`, `a.append(e)`) never
+             * reach resolve_stdlib_call (it needs an import alias), so the
+             * result carried no tag: `"\(x.trim())"` routed the i64 through
+             * tk_str_fromi64_w and printed the address. Map the method name to
+             * the tag of what the dispatch table (emit_expr) actually calls;
+             * like that table, this wins over a same-named user function. */
+            if (!resolved) {
+                int _imp = 0;
+                for (int ii = 0; ii < c->import_count; ii++)
+                    if (!strcmp(c->imports[ii].alias, alias)) { _imp = 1; break; }
+                if (!_imp) {
+                    const Node *recv = n->children[0]->children[0];
+                    if (!strcmp(method, "trim") || !strcmp(method, "concat") ||
+                        !strcmp(method, "slice") || !strcmp(method, "substr") ||
+                        !strcmp(method, "sub") || !strcmp(method, "substring") ||
+                        !strcmp(method, "charat") || !strcmp(method, "upper") ||
+                        !strcmp(method, "lower") || !strcmp(method, "replace") ||
+                        !strcmp(method, "join"))
+                        return "$str";
+                    if (!strcmp(method, "split") || !strcmp(method, "chars") ||
+                        !strcmp(method, "fields"))
+                        return "@str";
+                    if (!strcmp(method, "keys")) {
+                        /* tk_map_keys_w returns the keys as stored: an
+                         * int-keyed map (127.20) yields i64s, else str ptrs. */
+                        if (recv->rtype && recv->rtype->kind == TY_MAP &&
+                            recv->rtype->elem && recv->rtype->elem->kind == TY_I64)
+                            return "@i64";
+                        return "@str";
+                    }
+                    if (!strcmp(method, "append") || !strcmp(method, "push") ||
+                        !strcmp(method, "pop")) {
+                        /* the result array has the receiver's element type; an
+                         * untagged receiver takes it from the appended element */
+                        const char *bst = expr_struct_type(c, recv);
+                        if (!strcmp(method, "pop"))
+                            return (bst && !strcmp(bst, "@str")) ? "$str" : NULL;
+                        if (bst && !strcmp(bst, "@str")) return "@str";
+                        if (n->child_count >= 2) {
+                            const char *ast = expr_struct_type(c, n->children[1]);
+                            if (ast && (!strcmp(ast, "$str") || !strcmp(ast, "str")))
+                                return "@str";
+                        }
+                        return bst;
+                    }
+                }
+            }
             /* Cross-module user calls: check FnSig by method name */
             const FnSig *sig2 = lookup_fn(c, method);
             if (sig2 && sig2->ret_type_name[0] && lookup_struct(c, sig2->ret_type_name))
@@ -5348,6 +5425,7 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             if (sig2 && (!strcmp(sig2->ret_type_name, "@$str") ||
                          !strcmp(sig2->ret_type_name, "@str")))
                 return "@str";
+            if (sig2 && !strcmp(sig2->ret_type_name, "__map__")) return "__map__"; /* 127.28 */
             /* 114.56: a cross-module user fn returning a scalar string — tag
              * "$str" so the result is recognised as a string (the ABI lowers
              * str returns to i64, erasing the i8* type), routing `<`/`<=`/`>`/
@@ -5368,6 +5446,7 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         if (sig && (!strcmp(sig->ret_type_name, "@$str") ||
                     !strcmp(sig->ret_type_name, "@str")))
             return "@str";
+        if (sig && !strcmp(sig->ret_type_name, "__map__")) return "__map__"; /* 127.28 */
         /* 114.56: a user fn returning a scalar string — tag "$str" so the
          * comparison and var-to-var `=` codegen route to strcmp, not a
          * pointer-address compare (the str return is lowered to i64 at the ABI,

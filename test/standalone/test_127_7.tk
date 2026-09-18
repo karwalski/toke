@@ -1,0 +1,56 @@
+(* test_127_7.tk -- Epic 127.7 and 127.9: interpolating a method-call str
+ * result printed the pointer as a decimal because string-ness was tracked by
+ * import-alias name only. Covers direct interpolation of x.trim() and friends;
+ * a let bound to a method result; the card chain idiom x.split(d).get(i);
+ * method-style fields(); the s.fields(x).get(i) alias form (127.9); the
+ * s.build(b) result (131.6); and .keys()/.get/.len on a map returned by a
+ * user function, which linked against `_keys` (127.28). *)
+m=test.m1277;
+i=io:std.io;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+f=shout(v:str):str{ <v.trim().upper() };
+f=mk():@(str:i64){ <@("a":1;"b":2) };
+
+f=main():$i64{
+  let x="  a  ";
+  let csv="a,b,c";
+  let words="a b  c";
+  cks("interp-trim";"[\(x.trim())]";"[a]");
+  cks("interp-upper";"<\(csv.upper())>";"<A,B,C>");
+  cks("interp-concat";"\(csv.concat("!"))";"a,b,c!");
+  cks("interp-slice";"\(csv.slice(0;1))";"a");
+  cks("interp-replace";"\(csv.replace(",";"-"))";"a-b-c");
+  let y=x.trim();
+  cks("let-then-interp";"[\(y)]";"[a]");
+  cks("chain-split-get";"\(csv.split(",").get(1))";"b");
+  cks("chain-split-get-last";"\(csv.split(",").get(2))";"c");
+  let parts=csv.split(",");
+  cks("split-let-get";"\(parts.get(0))-\(parts.len)";"a-3");
+  cks("fields-method-get";"\(words.fields().get(2))";"c");
+  let w=words.fields();
+  cks("fields-method-let";"\(w.len) \(w.get(1))";"3 b");
+  cks("fields-alias-get";"\(s.fields(words).get(0))";"a");
+  let w2=s.fields(words);
+  cks("fields-alias-let";"\(w2.len) \(w2.get(1))";"3 b");
+  cks("param-chain";"\(shout("  hi  "))";"HI");
+  cks("nested";"\(x.trim().upper())|\(csv.split(",").get(0).upper())";"A|A");
+  let bld=s.builder();
+  s.add(bld;"x"); s.add(bld;"y");
+  let r=s.build(bld);
+  cks("build-let-interp";"[\(r)]";"[xy]");
+  let bld2=s.builder();
+  s.add(bld2;"z");
+  cks("build-direct-interp";"[\(s.build(bld2))]";"[z]");
+  let m=mk();
+  let ks=m.keys();
+  cks("userfn-map-keys";"\(ks.len) \(ks.get(0)) \(ks.get(1))";"2 a b");
+  cks("userfn-map-get-len";"\(m.get("b")) \(m.len)";"2 2");
+  io.println("RESULT done");
+  <0
+};

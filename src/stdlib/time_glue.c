@@ -273,3 +273,28 @@ int64_t tk_time_light_delay_w(int64_t from, int64_t to, int64_t ts) {
     const char *tb = to ? (const char *)(intptr_t)to : "mars";
     return f64_to_i64(tk_time_light_delay(fb, tb, (uint64_t)ts));
 }
+
+/* ── 131.38: no-underscore call-name forwarders ─────────────────────────────
+ * The .tki (114.22, Profile-1 no-underscore names) declares time.fromparts,
+ * time.adddays, ... and the generic resolver in llvm.c emits
+ * tk_time_<method>_w for them.  The implementations above kept their
+ * underscore spellings, so those calls were unresolved at link time.
+ * These forwarders make the documented spelling link; the underscore
+ * symbols stay for existing callers. */
+int64_t tk_time_fromparts_w(int64_t parts_arr)              { return tk_time_from_parts_w(parts_arr); }
+int64_t tk_time_isleapyear_w(int64_t year)                  { return tk_time_is_leap_year_w(year); }
+int64_t tk_time_daysinmonth_w(int64_t year, int64_t month)  { return tk_time_days_in_month_w(year, month); }
+int64_t tk_time_withtz_w(int64_t ts, int64_t tz)            { return tk_time_with_tz_w(ts, tz); }
+int64_t tk_time_utcoffset_w(int64_t tz)                     { return tk_time_utc_offset_w(tz); }
+int64_t tk_time_adddays_w(int64_t ts, int64_t n)            { return tk_time_add_days_w(ts, n); }
+int64_t tk_time_addmonths_w(int64_t ts, int64_t n)          { return tk_time_add_months_w(ts, n); }
+int64_t tk_time_addyears_w(int64_t ts, int64_t n)           { return tk_time_add_years_w(ts, n); }
+int64_t tk_time_startofday_w(int64_t ts)                    { return tk_time_start_of_day_w(ts); }
+int64_t tk_time_startofmonth_w(int64_t ts)                  { return tk_time_start_of_month_w(ts); }
+int64_t tk_time_startofyear_w(int64_t ts)                   { return tk_time_start_of_year_w(ts); }
+int64_t tk_time_parseduration_w(int64_t s)                  { return tk_time_parse_duration_w(s); }
+int64_t tk_time_formatduration_w(int64_t dur_arr)           { return tk_time_format_duration_w(dur_arr); }
+int64_t tk_time_juliandate_w(int64_t ts)                    { return tk_time_julian_date_w(ts); }
+int64_t tk_time_marssol_w(int64_t ts)                       { return tk_time_mars_sol_w(ts); }
+int64_t tk_time_formatmars_w(int64_t sol_bits, int64_t fmt) { return tk_time_format_mars_w(sol_bits, fmt); }
+int64_t tk_time_lightdelay_w(int64_t from, int64_t to, int64_t ts) { return tk_time_light_delay_w(from, to, ts); }
