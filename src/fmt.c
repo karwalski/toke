@@ -817,6 +817,45 @@ static int fmt_is_word(char c)
 }
 
 /*
+ * min_put_str — 131.34: emit a string-literal token with raw control
+ * characters escaped so the minified program stays on ONE line.
+ *
+ * The lexer accepts a raw newline/tab/CR inside `"…"` and also the escapes
+ * `\n`/`\t`/`\r`; both lower to the same byte, so rewriting raw → escape is
+ * a no-op for the compiled program (verified by the round-trip test in
+ * test/conform/M001_min_literal.sh). Existing backslash escapes are copied
+ * through untouched. Inside a `\(…)` interpolation the interior is code
+ * (mirrors lex_string: only `(`/`)` nesting matters there), where a raw
+ * newline is plain whitespace — it becomes a single space.
+ */
+static void min_put_str(Buf *b, const char *t, int len)
+{
+    int depth = 0; /* `\(` interpolation nesting, as in lex_string */
+    for (int k = 0; k < len; k++) {
+        char c = t[k];
+        if (depth > 0) {
+            if      (c == '(') depth++;
+            else if (c == ')') depth--;
+            if (c == '\n' || c == '\t' || c == '\r') c = ' ';
+            buf_putc(b, c);
+            continue;
+        }
+        if (c == '\\' && k + 1 < len) {
+            buf_putc(b, c);
+            buf_putc(b, t[++k]);
+            if (t[k] == '(') depth = 1;
+            continue;
+        }
+        switch (c) {
+        case '\n': buf_puts(b, "\\n"); break;
+        case '\t': buf_puts(b, "\\t"); break;
+        case '\r': buf_puts(b, "\\r"); break;
+        default:   buf_putc(b, c);
+        }
+    }
+}
+
+/*
  * tkc_minify — 116.7/B2: the deterministic single-line canonical form.
  *
  * Re-lexes the source and re-emits every token with the *minimum* whitespace
@@ -824,9 +863,11 @@ static int fmt_is_word(char c)
  * word-like tokens (`let x`, `rt x`, `mt e`, `el if`, `as i64`) would otherwise
  * merge. The lexer already coalesces multi-character operators (`==`, `<=`, `&&`,
  * …), so operator boundaries never need a space. Newlines, indentation, and
- * `(* … *)` comments are dropped. Working from tokens (not the AST) means it
- * preserves every surface form exactly — sigils, `@()`, `$`, expr-`if` — unlike
- * the AST pretty-printer. This is the training target and the tokenizer input.
+ * `(* … *)` comments are dropped; a raw newline/tab/CR *inside a string literal*
+ * is re-emitted as its `\n`/`\t`/`\r` escape (131.34) so the output is always
+ * exactly one line. Working from tokens (not the AST) means it preserves every
+ * other surface form exactly — sigils, `@()`, `$`, expr-`if` — unlike the AST
+ * pretty-printer. This is the training target and the tokenizer input.
  * Returns a malloc'd string (caller frees), or NULL on error.
  */
 char *tkc_minify(const char *src, int src_len)
@@ -849,8 +890,11 @@ char *tkc_minify(const char *src, int src_len)
         const char *t = src + toks[i].start;
         if (prev_last && fmt_is_word(prev_last) && fmt_is_word(t[0]))
             buf_putc(&b, ' ');
-        for (int k = 0; k < toks[i].len; k++)
-            buf_putc(&b, t[k]);
+        if (toks[i].kind == TK_STR_LIT)
+            min_put_str(&b, t, toks[i].len);
+        else
+            for (int k = 0; k < toks[i].len; k++)
+                buf_putc(&b, t[k]);
         prev_last = t[toks[i].len - 1];
     }
 
