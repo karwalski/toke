@@ -5299,7 +5299,11 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                               * `\(keys.get(k))` prints the pointer as a decimal
                               * and downstream lookups read garbage. */
                              !strcmp(resolved, "tk_json_keys_w") ||
-                             !strcmp(resolved, "tk_json_values_w")))
+                             !strcmp(resolved, "tk_json_values_w") ||
+                             /* 127.9: s.fields(x) resolves via the generic
+                              * fallback; without this tag `\(s.fields(x).get(0))`
+                              * typed the element i64 and printed its address. */
+                             !strcmp(resolved, "tk_str_fields_w")))
                 return "@str";
             if (resolved) {
                 static const char *str_wrappers[] = {

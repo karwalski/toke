@@ -1,0 +1,24 @@
+(* test_127_9.tk -- Epic 127.9: interpolating an element of s.fields(x)
+ * printed a heap address. The str-array tag list for import-alias calls
+ * lacked the fields wrapper so .get(i) on the result was typed i64.
+ * The direct chain form s.fields(x).get(0) is covered by test_127_7. *)
+m=test.m1279;
+i=io:std.io;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=main():$i64{
+  let x="a b  c";
+  let w=s.fields(x);
+  cks("let-len-get";"\(w.len) \(w.get(1))";"3 b");
+  let y=w.get(2);
+  cks("let-elem";"[\(y)]";"[c]");
+  cks("compare-elem";s.join("+";s.fields("  p  q "));"p+q");
+  io.println("RESULT done");
+  <0
+};
