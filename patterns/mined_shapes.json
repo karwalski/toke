@@ -1,0 +1,9287 @@
+{
+ "story": "131.3",
+ "generated": "2026-09-18T22:22:37",
+ "runtime_sec": 129.2,
+ "tkc": "/Users/matthew.watt/tk/toke/tkc",
+ "tkc_version": "toke 2.8.0",
+ "dump_ast_from": "toke-corpus/regen/metrics.py",
+ "corpus_root": "/Users/matthew.watt/tk/toke-corpus/corpus/regen_v04",
+ "params": {
+  "depth": 3,
+  "min_nodes": 4,
+  "top": 50,
+  "limit": 0,
+  "categories": [],
+  "library": false
+ },
+ "records_selected": 23382,
+ "programs_parsed": 23382,
+ "programs_failed": 0,
+ "programs_by_category": {
+  "A-ARR": 1714,
+  "A-CND": 1714,
+  "A-ERR": 1546,
+  "A-MTH": 1714,
+  "A-SRT": 1714,
+  "A-STR": 1714,
+  "D-CFG": 1596,
+  "D-CLI": 1636,
+  "D-CRY": 1714,
+  "D-DAT": 1686,
+  "D-FIO": 1546,
+  "D-NET": 1714,
+  "D-TST": 1713,
+  "D-WEB": 1661
+ },
+ "unique_signatures": 34783,
+ "total_occurrences": 870766,
+ "signature_scheme": "S-expression over tkc --dump-ast node kinds; identifiers/literals erased to their kind; BIN[op]/UN[op]/ASSIGN[op] keep the operator; depth-limited to 3 with '(...)' marking elided children; roots are every *_STMT/*_EXPR/ARRAY_LIT/STRUCT_LIT node plus SEQ2 statement pairs. See the docstring of scripts/patterns/mine_shapes.py.",
+ "shapes": [
+  {
+   "rank": 1,
+   "signature": "ASSIGN[=](IDENT BIN[+](IDENT INT_LIT))",
+   "count": 21037,
+   "programs": 12403,
+   "program_share": 0.5305,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 2654,
+    "A-CND": 500,
+    "A-ERR": 850,
+    "A-MTH": 1760,
+    "A-SRT": 4687,
+    "A-STR": 2078,
+    "D-CFG": 851,
+    "D-CLI": 828,
+    "D-CRY": 668,
+    "D-DAT": 2339,
+    "D-FIO": 1068,
+    "D-NET": 567,
+    "D-TST": 1207,
+    "D-WEB": 980
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "i=i+1"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "i=i+1"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "i=i+1"
+    }
+   ]
+  },
+  {
+   "rank": 2,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) STR_LIT))",
+   "count": 19784,
+   "programs": 6835,
+   "program_share": 0.2923,
+   "depth": 3,
+   "node_count": 6,
+   "per_category": {
+    "A-ARR": 1453,
+    "A-CND": 2246,
+    "A-ERR": 1834,
+    "A-MTH": 2876,
+    "A-SRT": 1665,
+    "A-STR": 1253,
+    "D-CFG": 892,
+    "D-CLI": 697,
+    "D-CRY": 1918,
+    "D-DAT": 1226,
+    "D-FIO": 771,
+    "D-NET": 1191,
+    "D-TST": 857,
+    "D-WEB": 905
+   },
+   "top_callees": [
+    [
+     "io.println",
+     19739
+    ],
+    [
+     "bar.concat",
+     16
+    ],
+    [
+     "out.concat",
+     11
+    ],
+    [
+     "acc.concat",
+     5
+    ],
+    [
+     "trimmed.starts",
+     3
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(r)\")"
+    },
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(r.get(i))\")"
+    },
+    {
+     "task_id": "A-ARR-0051v65",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(r.get(i))\")"
+    }
+   ]
+  },
+  {
+   "rank": 3,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)))",
+   "count": 11013,
+   "programs": 5197,
+   "program_share": 0.2223,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-ARR": 645,
+    "A-CND": 1538,
+    "A-ERR": 293,
+    "A-MTH": 1846,
+    "A-SRT": 814,
+    "A-STR": 782,
+    "D-CFG": 532,
+    "D-CLI": 424,
+    "D-CRY": 1184,
+    "D-DAT": 719,
+    "D-FIO": 463,
+    "D-NET": 712,
+    "D-TST": 511,
+    "D-WEB": 550
+   },
+   "top_callees": [
+    [
+     "io.println",
+     22026
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0054v7",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(showarr(arrslice(@(1;2;3;4;5);1;4)))\"); io.println(\"\\(showarr(arrslice(@(10;20;30);0;2)))\")"
+    },
+    {
+     "task_id": "A-ARR-0055v17",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(render(arrslice(data;1;4)))\"); io.println(\"\\(render(arrslice(data;0;2)))\")"
+    },
+    {
+     "task_id": "A-ARR-0055v2",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(r.len)\"); io.println(\"\\(r.get(0))\")"
+    }
+   ]
+  },
+  {
+   "rank": 4,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) CALL_EXPR(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) CALL_EXPR(...))))",
+   "count": 10736,
+   "programs": 5005,
+   "program_share": 0.2141,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-ARR": 349,
+    "A-CND": 1296,
+    "A-ERR": 122,
+    "A-MTH": 97,
+    "A-SRT": 407,
+    "A-STR": 1049,
+    "D-CFG": 832,
+    "D-CLI": 1151,
+    "D-CRY": 454,
+    "D-DAT": 979,
+    "D-FIO": 892,
+    "D-NET": 882,
+    "D-TST": 1206,
+    "D-WEB": 1020
+   },
+   "top_callees": [
+    [
+     "io.println",
+     21472
+    ],
+    [
+     "show",
+     1422
+    ],
+    [
+     "fmt",
+     1192
+    ],
+    [
+     "render",
+     1146
+    ],
+    [
+     "boolstr",
+     918
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "io.println(fmtarr(unique(@(1 as u64;2 as u64;1 as u64;3 as u64;2 as u64)))); io.println(fmtarr(unique(@(5 as u64;5 as u64;5 as u64))))"
+    },
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "io.println(fmtarr(unique(@(1;2;1;3;2;4) as @u64))); io.println(fmtarr(unique(@(7;7;7) as @u64)))"
+    },
+    {
+     "task_id": "A-ARR-0052",
+     "category": "A-ARR",
+     "snippet": "io.println(fmt(unique(@(1.0;2.0;1.0;3.0;2.0)))); io.println(fmt(unique(@(5.5;5.5))))"
+    }
+   ]
+  },
+  {
+   "rank": 5,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT)",
+   "count": 9602,
+   "programs": 6419,
+   "program_share": 0.2745,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 522,
+    "A-CND": 69,
+    "A-ERR": 534,
+    "A-MTH": 20,
+    "A-SRT": 388,
+    "A-STR": 2119,
+    "D-CFG": 1073,
+    "D-CLI": 617,
+    "D-CRY": 559,
+    "D-DAT": 493,
+    "D-FIO": 676,
+    "D-NET": 824,
+    "D-TST": 890,
+    "D-WEB": 818
+   },
+   "top_callees": [
+    [
+     "s.len",
+     4816
+    ],
+    [
+     "s.build",
+     796
+    ],
+    [
+     "out.append",
+     743
+    ],
+    [
+     "s.toint",
+     318
+    ],
+    [
+     "s.trim",
+     290
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "out.append(cur)"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "out.append(v)"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "out.append(v)"
+    }
+   ]
+  },
+  {
+   "rank": 6,
+   "signature": "BIN[<](IDENT FIELD_EXPR(IDENT IDENT))",
+   "count": 9428,
+   "programs": 6708,
+   "program_share": 0.2869,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 1986,
+    "A-CND": 125,
+    "A-ERR": 437,
+    "A-MTH": 75,
+    "A-SRT": 2046,
+    "A-STR": 399,
+    "D-CFG": 497,
+    "D-CLI": 374,
+    "D-CRY": 86,
+    "D-DAT": 1730,
+    "D-FIO": 475,
+    "D-NET": 231,
+    "D-TST": 445,
+    "D-WEB": 522
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "i<val.len"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "i<arr.len"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "j<out.len"
+    }
+   ]
+  },
+  {
+   "rank": 7,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)) RETURN_STMT(INT_LIT))",
+   "count": 6317,
+   "programs": 6317,
+   "program_share": 0.2702,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 476,
+    "A-CND": 575,
+    "A-ERR": 709,
+    "A-MTH": 891,
+    "A-SRT": 492,
+    "A-STR": 401,
+    "D-CFG": 287,
+    "D-CLI": 226,
+    "D-CRY": 636,
+    "D-DAT": 406,
+    "D-FIO": 256,
+    "D-NET": 393,
+    "D-TST": 270,
+    "D-WEB": 299
+   },
+   "top_callees": [
+    [
+     "io.println",
+     6317
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(r)\"); <0"
+    },
+    {
+     "task_id": "A-ARR-0053v2",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(r.len)\"); <0"
+    },
+    {
+     "task_id": "A-ARR-0054v7",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(showarr(arrslice(@(1;2;3);2;2)))\"); <0"
+    }
+   ]
+  },
+  {
+   "rank": 8,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) CALL_EXPR(IDENT CALL_EXPR(...))))",
+   "count": 5979,
+   "programs": 1987,
+   "program_share": 0.085,
+   "depth": 3,
+   "node_count": 8,
+   "per_category": {
+    "A-ARR": 428,
+    "A-CND": 207,
+    "A-MTH": 104,
+    "A-SRT": 584,
+    "A-STR": 136,
+    "D-CFG": 363,
+    "D-CLI": 281,
+    "D-CRY": 321,
+    "D-DAT": 1209,
+    "D-FIO": 237,
+    "D-NET": 618,
+    "D-TST": 1146,
+    "D-WEB": 345
+   },
+   "top_callees": [
+    [
+     "io.println",
+     5979
+    ],
+    [
+     "show",
+     931
+    ],
+    [
+     "fmt",
+     899
+    ],
+    [
+     "render",
+     814
+    ],
+    [
+     "boolstr",
+     692
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "io.println(fmtarr(unique(@(1 as u64;2 as u64;1 as u64;3 as u64;2 as u64))))"
+    },
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "io.println(showint(unique(data)))"
+    },
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "io.println(fmtarr(unique(@(1;2;1;3;2;4) as @u64)))"
+    }
+   ]
+  },
+  {
+   "rank": 9,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) CALL_EXPR(...))) RETURN_STMT(INT_LIT))",
+   "count": 5075,
+   "programs": 5075,
+   "program_share": 0.217,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 205,
+    "A-CND": 337,
+    "A-ERR": 52,
+    "A-MTH": 36,
+    "A-SRT": 228,
+    "A-STR": 482,
+    "D-CFG": 420,
+    "D-CLI": 579,
+    "D-CRY": 227,
+    "D-DAT": 498,
+    "D-FIO": 448,
+    "D-NET": 445,
+    "D-TST": 606,
+    "D-WEB": 512
+   },
+   "top_callees": [
+    [
+     "io.println",
+     5075
+    ],
+    [
+     "show",
+     326
+    ],
+    [
+     "fmt",
+     312
+    ],
+    [
+     "render",
+     282
+    ],
+    [
+     "boolstr",
+     224
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "io.println(fmtarr(unique(@(7 as u64)))); <0"
+    },
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "io.println(showint(unique(data))); <0"
+    },
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "io.println(fmtarr(unique(@(7;7;7) as @u64))); <0"
+    }
+   ]
+  },
+  {
+   "rank": 10,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) STR_LIT)",
+   "count": 4489,
+   "programs": 3338,
+   "program_share": 0.1428,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 105,
+    "A-CND": 1,
+    "A-ERR": 48,
+    "A-MTH": 3,
+    "A-SRT": 107,
+    "A-STR": 93,
+    "D-CFG": 618,
+    "D-CLI": 375,
+    "D-CRY": 8,
+    "D-DAT": 483,
+    "D-FIO": 758,
+    "D-NET": 1024,
+    "D-TST": 198,
+    "D-WEB": 668
+   },
+   "top_callees": [
+    [
+     "n.split",
+     235
+    ],
+    [
+     "p.split",
+     228
+    ],
+    [
+     "x.split",
+     220
+    ],
+    [
+     "first.split",
+     199
+    ],
+    [
+     "val.split",
+     190
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "parts.append(\"\\(a.get(i))\")"
+    },
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "out.concat(\"]\")"
+    },
+    {
+     "task_id": "A-ARR-0053v61",
+     "category": "A-ARR",
+     "snippet": "out.concat(\",\")"
+    }
+   ]
+  },
+  {
+   "rank": 11,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) CALL_EXPR(IDENT STR_LIT)))",
+   "count": 4042,
+   "programs": 1342,
+   "program_share": 0.0574,
+   "depth": 3,
+   "node_count": 8,
+   "per_category": {
+    "A-ERR": 42,
+    "A-STR": 669,
+    "D-CFG": 708,
+    "D-CLI": 782,
+    "D-CRY": 72,
+    "D-FIO": 660,
+    "D-NET": 516,
+    "D-WEB": 593
+   },
+   "top_callees": [
+    [
+     "io.println",
+     4042
+    ],
+    [
+     "toquery",
+     132
+    ],
+    [
+     "extractpath",
+     111
+    ],
+    [
+     "basename",
+     108
+    ],
+    [
+     "firstline",
+     102
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ERR-0016v19",
+     "category": "A-ERR",
+     "snippet": "io.println(describe(\"123\"))"
+    },
+    {
+     "task_id": "A-ERR-0029v29",
+     "category": "A-ERR",
+     "snippet": "io.println(describe(\"ab\"))"
+    },
+    {
+     "task_id": "A-ERR-0029v35",
+     "category": "A-ERR",
+     "snippet": "io.println(check(\"ab\"))"
+    }
+   ]
+  },
+  {
+   "rank": 12,
+   "signature": "BIND_STMT(IDENT INDEX_EXPR(IDENT IDENT))",
+   "count": 3229,
+   "programs": 2881,
+   "program_share": 0.1232,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 601,
+    "A-CND": 62,
+    "A-ERR": 167,
+    "A-MTH": 5,
+    "A-SRT": 1111,
+    "A-STR": 137,
+    "D-CFG": 179,
+    "D-CLI": 132,
+    "D-CRY": 5,
+    "D-DAT": 348,
+    "D-FIO": 149,
+    "D-NET": 111,
+    "D-TST": 26,
+    "D-WEB": 196
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "let cur=val.get(i)"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "let v=arr.get(i)"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "let v=arr.get(i)"
+    }
+   ]
+  },
+  {
+   "rank": 13,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT STR_LIT)",
+   "count": 3022,
+   "programs": 1996,
+   "program_share": 0.0854,
+   "depth": 2,
+   "node_count": 6,
+   "per_category": {
+    "A-ARR": 2,
+    "A-ERR": 7,
+    "A-MTH": 10,
+    "A-SRT": 2,
+    "A-STR": 80,
+    "D-CFG": 714,
+    "D-CLI": 229,
+    "D-DAT": 125,
+    "D-FIO": 503,
+    "D-NET": 659,
+    "D-TST": 202,
+    "D-WEB": 489
+   },
+   "top_callees": [
+    [
+     "s.split",
+     1575
+    ],
+    [
+     "s.starts",
+     266
+    ],
+    [
+     "s.startswith",
+     228
+    ],
+    [
+     "s.indexof",
+     207
+    ],
+    [
+     "s.concat",
+     155
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0080v33",
+     "category": "A-ARR",
+     "snippet": "s.concat(out;\" \")"
+    },
+    {
+     "task_id": "A-ERR-0019v2",
+     "category": "A-ERR",
+     "snippet": "s.concat(out;\"\\(scaled/p)\")"
+    },
+    {
+     "task_id": "A-ERR-0029v43",
+     "category": "A-ERR",
+     "snippet": "s.split(lhs;\" \")"
+    }
+   ]
+  },
+  {
+   "rank": 14,
+   "signature": "BIN[==](FIELD_EXPR(IDENT IDENT) INT_LIT)",
+   "count": 2764,
+   "programs": 2618,
+   "program_share": 0.112,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 177,
+    "A-CND": 5,
+    "A-ERR": 451,
+    "A-MTH": 27,
+    "A-SRT": 212,
+    "A-STR": 123,
+    "D-CFG": 171,
+    "D-CLI": 177,
+    "D-CRY": 113,
+    "D-DAT": 536,
+    "D-FIO": 216,
+    "D-NET": 159,
+    "D-TST": 185,
+    "D-WEB": 212
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "a.len==0"
+    },
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "arr.len==0"
+    },
+    {
+     "task_id": "A-ARR-0052v15",
+     "category": "A-ARR",
+     "snippet": "left.len==0"
+    }
+   ]
+  },
+  {
+   "rank": 15,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) INDEX_EXPR(IDENT IDENT))",
+   "count": 2159,
+   "programs": 1659,
+   "program_share": 0.071,
+   "depth": 2,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 340,
+    "A-CND": 22,
+    "A-ERR": 91,
+    "A-SRT": 523,
+    "A-STR": 31,
+    "D-CFG": 180,
+    "D-CLI": 39,
+    "D-CRY": 3,
+    "D-DAT": 527,
+    "D-FIO": 164,
+    "D-NET": 75,
+    "D-TST": 8,
+    "D-WEB": 156
+   },
+   "top_callees": [
+    [
+     "out.append",
+     813
+    ],
+    [
+     "s.len",
+     276
+    ],
+    [
+     "s.trim",
+     168
+    ],
+    [
+     "r.append",
+     120
+    ],
+    [
+     "result.append",
+     87
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "out.append(arr.get(i))"
+    },
+    {
+     "task_id": "A-ARR-0052v15",
+     "category": "A-ARR",
+     "snippet": "out.append(left.get(i))"
+    },
+    {
+     "task_id": "A-ARR-0052v44",
+     "category": "A-ARR",
+     "snippet": "r.append(arr.get(i))"
+    }
+   ]
+  },
+  {
+   "rank": 16,
+   "signature": "CALL_EXPR(IDENT STR_LIT STR_LIT)",
+   "count": 2133,
+   "programs": 713,
+   "program_share": 0.0305,
+   "depth": 1,
+   "node_count": 4,
+   "per_category": {
+    "A-CND": 1,
+    "A-ERR": 61,
+    "A-SRT": 1,
+    "A-STR": 292,
+    "D-CFG": 99,
+    "D-CLI": 120,
+    "D-FIO": 387,
+    "D-NET": 3,
+    "D-TST": 608,
+    "D-WEB": 561
+   },
+   "top_callees": [
+    [
+     "globmatch",
+     177
+    ],
+    [
+     "joinpath",
+     141
+    ],
+    [
+     "replaceext",
+     111
+    ],
+    [
+     "hasext",
+     111
+    ],
+    [
+     "headerline",
+     99
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0002v40",
+     "category": "A-CND",
+     "snippet": "adddec(\"9223372036854775808\";\"\\(w)\")"
+    },
+    {
+     "task_id": "A-ERR-0018v11",
+     "category": "A-ERR",
+     "snippet": "parseanddivide(\"10.0\";\"2.0\")"
+    },
+    {
+     "task_id": "A-ERR-0018v14",
+     "category": "A-ERR",
+     "snippet": "parseanddivide(\"10.0\";\"2.0\")"
+    }
+   ]
+  },
+  {
+   "rank": 17,
+   "signature": "SEQ2(FIELD(TYPE_EXPR) FIELD(TYPE_EXPR))",
+   "count": 1932,
+   "programs": 1504,
+   "program_share": 0.0643,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 5,
+    "A-CND": 14,
+    "A-ERR": 1894,
+    "A-MTH": 2,
+    "A-SRT": 3,
+    "D-CFG": 2,
+    "D-CLI": 1,
+    "D-CRY": 2,
+    "D-DAT": 2,
+    "D-FIO": 3,
+    "D-TST": 3,
+    "D-WEB": 1
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0008v54",
+     "category": "A-ARR",
+     "snippet": "empty:bool;$count:i64"
+    },
+    {
+     "task_id": "A-ARR-0093v14",
+     "category": "A-ARR",
+     "snippet": "some:f64;$none:bool"
+    },
+    {
+     "task_id": "MIG-P2-A-A-ARR-0096v13-053a94db",
+     "category": "A-ARR",
+     "snippet": "p:f64;q:f64"
+    }
+   ]
+  },
+  {
+   "rank": 18,
+   "signature": "BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) STR_LIT))",
+   "count": 1878,
+   "programs": 1743,
+   "program_share": 0.0745,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ERR": 1,
+    "A-SRT": 2,
+    "A-STR": 55,
+    "D-CFG": 311,
+    "D-CLI": 58,
+    "D-CRY": 3,
+    "D-DAT": 142,
+    "D-FIO": 493,
+    "D-NET": 399,
+    "D-TST": 6,
+    "D-WEB": 408
+   },
+   "top_callees": [
+    [
+     "x.split",
+     200
+    ],
+    [
+     "p.split",
+     186
+    ],
+    [
+     "n.split",
+     179
+    ],
+    [
+     "num1.split",
+     175
+    ],
+    [
+     "val.split",
+     166
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ERR-0016v9",
+     "category": "A-ERR",
+     "snippet": "let neg=n.starts(\"-\")"
+    },
+    {
+     "task_id": "MIG-P2-A-A-SRT-0019v66-4c35ce67",
+     "category": "A-SRT",
+     "snippet": "let vc=val.split(\"\")"
+    },
+    {
+     "task_id": "A-STR-0004v43",
+     "category": "A-STR",
+     "snippet": "let chars=lhs.split(\"\")"
+    }
+   ]
+  },
+  {
+   "rank": 19,
+   "signature": "BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT))",
+   "count": 1857,
+   "programs": 1539,
+   "program_share": 0.0658,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-CND": 14,
+    "A-ERR": 54,
+    "A-MTH": 2,
+    "A-SRT": 8,
+    "A-STR": 690,
+    "D-CFG": 244,
+    "D-CLI": 90,
+    "D-CRY": 154,
+    "D-DAT": 11,
+    "D-FIO": 127,
+    "D-NET": 165,
+    "D-TST": 165,
+    "D-WEB": 133
+   },
+   "top_callees": [
+    [
+     "s.len",
+     1040
+    ],
+    [
+     "s.trim",
+     173
+    ],
+    [
+     "s.bytes",
+     125
+    ],
+    [
+     "s.lower",
+     110
+    ],
+    [
+     "st.len",
+     104
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0002v40",
+     "category": "A-CND",
+     "snippet": "let la=s.len(a)"
+    },
+    {
+     "task_id": "A-CND-0052v40",
+     "category": "A-CND",
+     "snippet": "let result=s.build(b)"
+    },
+    {
+     "task_id": "A-CND-0052v64",
+     "category": "A-CND",
+     "snippet": "let result=s.build(b)"
+    }
+   ]
+  },
+  {
+   "rank": 20,
+   "signature": "ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT))",
+   "count": 1790,
+   "programs": 1492,
+   "program_share": 0.0638,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 471,
+    "A-CND": 3,
+    "A-ERR": 33,
+    "A-MTH": 4,
+    "A-SRT": 283,
+    "A-STR": 172,
+    "D-CFG": 92,
+    "D-CLI": 98,
+    "D-CRY": 5,
+    "D-DAT": 218,
+    "D-FIO": 37,
+    "D-NET": 23,
+    "D-TST": 305,
+    "D-WEB": 46
+   },
+   "top_callees": [
+    [
+     "out.append",
+     747
+    ],
+    [
+     "result.append",
+     124
+    ],
+    [
+     "out.concat",
+     88
+    ],
+    [
+     "r.append",
+     75
+    ],
+    [
+     "result.concat",
+     69
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "out=out.append(cur)"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "out=out.append(v)"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "out=out.append(v)"
+    }
+   ]
+  },
+  {
+   "rank": 21,
+   "signature": "CALL_EXPR(IDENT CALL_EXPR(IDENT STR_LIT))",
+   "count": 1747,
+   "programs": 578,
+   "program_share": 0.0247,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-CND": 37,
+    "A-STR": 65,
+    "D-CFG": 373,
+    "D-CLI": 132,
+    "D-CRY": 273,
+    "D-FIO": 150,
+    "D-NET": 549,
+    "D-TST": 60,
+    "D-WEB": 108
+   },
+   "top_callees": [
+    [
+     "boolstr",
+     381
+    ],
+    [
+     "show",
+     368
+    ],
+    [
+     "fmtbool",
+     240
+    ],
+    [
+     "showbool",
+     234
+    ],
+    [
+     "b2s",
+     120
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0057v2",
+     "category": "A-CND",
+     "snippet": "render(ishexdigit(\"7\"))"
+    },
+    {
+     "task_id": "A-CND-0058v11",
+     "category": "A-CND",
+     "snippet": "render(isvowel(\"a\"))"
+    },
+    {
+     "task_id": "A-CND-0058v42",
+     "category": "A-CND",
+     "snippet": "show(isvowel(\"a\"))"
+    }
+   ]
+  },
+  {
+   "rank": 22,
+   "signature": "BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT STR_LIT))",
+   "count": 1717,
+   "programs": 1411,
+   "program_share": 0.0603,
+   "depth": 3,
+   "node_count": 8,
+   "per_category": {
+    "A-MTH": 1,
+    "A-STR": 48,
+    "D-CFG": 364,
+    "D-CLI": 90,
+    "D-DAT": 77,
+    "D-FIO": 374,
+    "D-NET": 361,
+    "D-TST": 45,
+    "D-WEB": 357
+   },
+   "top_callees": [
+    [
+     "s.split",
+     1335
+    ],
+    [
+     "s.indexof",
+     202
+    ],
+    [
+     "s.lastindex",
+     39
+    ],
+    [
+     "s.startswith",
+     24
+    ],
+    [
+     "st.split",
+     17
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-MTH-0094v30",
+     "category": "A-MTH",
+     "snippet": "let c=s.format(x;\"%.\\(p)g\")"
+    },
+    {
+     "task_id": "A-STR-0026v30",
+     "category": "A-STR",
+     "snippet": "let words=st.split(s;\" \")"
+    },
+    {
+     "task_id": "A-STR-0026v31",
+     "category": "A-STR",
+     "snippet": "let words=s.split(left;\" \")"
+    }
+   ]
+  },
+  {
+   "rank": 23,
+   "signature": "BIND_STMT(IDENT FIELD_EXPR(IDENT IDENT))",
+   "count": 1673,
+   "programs": 1472,
+   "program_share": 0.063,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 225,
+    "A-CND": 12,
+    "A-ERR": 109,
+    "A-MTH": 18,
+    "A-SRT": 484,
+    "A-STR": 231,
+    "D-CFG": 56,
+    "D-CLI": 53,
+    "D-CRY": 32,
+    "D-DAT": 228,
+    "D-FIO": 100,
+    "D-NET": 34,
+    "D-TST": 57,
+    "D-WEB": 34
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "let n=arr.len"
+    },
+    {
+     "task_id": "A-ARR-0051v58",
+     "category": "A-ARR",
+     "snippet": "let n=arr.len"
+    },
+    {
+     "task_id": "A-ARR-0052v19",
+     "category": "A-ARR",
+     "snippet": "let n=arr.len"
+    }
+   ]
+  },
+  {
+   "rank": 24,
+   "signature": "CAST_EXPR(FIELD_EXPR(IDENT IDENT) TYPE_EXPR)",
+   "count": 1667,
+   "programs": 1346,
+   "program_share": 0.0576,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 303,
+    "A-CND": 4,
+    "A-ERR": 281,
+    "A-MTH": 48,
+    "A-SRT": 338,
+    "A-STR": 54,
+    "D-CFG": 30,
+    "D-CLI": 63,
+    "D-CRY": 14,
+    "D-DAT": 245,
+    "D-FIO": 88,
+    "D-NET": 51,
+    "D-TST": 78,
+    "D-WEB": 70
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v63",
+     "category": "A-ARR",
+     "snippet": "left.len as i64"
+    },
+    {
+     "task_id": "A-ARR-0053v33",
+     "category": "A-ARR",
+     "snippet": "arr.len as i64"
+    },
+    {
+     "task_id": "A-ARR-0054v25",
+     "category": "A-ARR",
+     "snippet": "arr.len as i64"
+    }
+   ]
+  },
+  {
+   "rank": 25,
+   "signature": "IF_STMT(IDENT STMT_LIST(EXPR_STMT(STR_LIT)) STMT_LIST(EXPR_STMT(STR_LIT)))",
+   "count": 1595,
+   "programs": 1462,
+   "program_share": 0.0625,
+   "depth": 3,
+   "node_count": 8,
+   "per_category": {
+    "A-ARR": 12,
+    "A-CND": 87,
+    "A-ERR": 30,
+    "A-MTH": 27,
+    "A-SRT": 20,
+    "A-STR": 45,
+    "D-CFG": 173,
+    "D-CLI": 91,
+    "D-CRY": 175,
+    "D-FIO": 127,
+    "D-NET": 298,
+    "D-TST": 353,
+    "D-WEB": 157
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0019v27",
+     "category": "A-ARR",
+     "snippet": "if(x){\"true\"}el{\"false\"}"
+    },
+    {
+     "task_id": "A-ARR-0020v10",
+     "category": "A-ARR",
+     "snippet": "if(b){\"true\"}el{\"false\"}"
+    },
+    {
+     "task_id": "A-ARR-0020v50",
+     "category": "A-ARR",
+     "snippet": "if(v){\"true\"}el{\"false\"}"
+    }
+   ]
+  },
+  {
+   "rank": 26,
+   "signature": "ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) INDEX_EXPR(IDENT IDENT)))",
+   "count": 1518,
+   "programs": 1128,
+   "program_share": 0.0482,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-ARR": 334,
+    "A-CND": 22,
+    "A-ERR": 73,
+    "A-SRT": 516,
+    "A-STR": 14,
+    "D-CFG": 76,
+    "D-CLI": 34,
+    "D-DAT": 308,
+    "D-FIO": 88,
+    "D-NET": 15,
+    "D-TST": 6,
+    "D-WEB": 32
+   },
+   "top_callees": [
+    [
+     "out.append",
+     813
+    ],
+    [
+     "r.append",
+     120
+    ],
+    [
+     "result.append",
+     87
+    ],
+    [
+     "res.append",
+     47
+    ],
+    [
+     "keep.append",
+     39
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "out=out.append(arr.get(i))"
+    },
+    {
+     "task_id": "A-ARR-0052v15",
+     "category": "A-ARR",
+     "snippet": "out=out.append(left.get(i))"
+    },
+    {
+     "task_id": "A-ARR-0052v44",
+     "category": "A-ARR",
+     "snippet": "r=r.append(arr.get(i))"
+    }
+   ]
+  },
+  {
+   "rank": 27,
+   "signature": "BIN[==](CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT) INT_LIT)",
+   "count": 1506,
+   "programs": 1322,
+   "program_share": 0.0565,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-CND": 6,
+    "A-ERR": 27,
+    "A-SRT": 1,
+    "A-STR": 92,
+    "D-CFG": 286,
+    "D-CLI": 118,
+    "D-CRY": 112,
+    "D-DAT": 46,
+    "D-FIO": 264,
+    "D-NET": 164,
+    "D-TST": 118,
+    "D-WEB": 272
+   },
+   "top_callees": [
+    [
+     "s.len",
+     1451
+    ],
+    [
+     "st.len",
+     45
+    ],
+    [
+     "str.len",
+     3
+    ],
+    [
+     "strlib.len",
+     1
+    ],
+    [
+     "n.charat",
+     1
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0057v55",
+     "category": "A-CND",
+     "snippet": "s.len(left)==1"
+    },
+    {
+     "task_id": "A-CND-0058v42",
+     "category": "A-CND",
+     "snippet": "s.len(val)==0"
+    },
+    {
+     "task_id": "A-CND-0060",
+     "category": "A-CND",
+     "snippet": "s.len(c)==1"
+    }
+   ]
+  },
+  {
+   "rank": 28,
+   "signature": "CALL_EXPR(IDENT IDENT STR_LIT)",
+   "count": 1476,
+   "programs": 1054,
+   "program_share": 0.0451,
+   "depth": 1,
+   "node_count": 4,
+   "per_category": {
+    "A-ARR": 11,
+    "A-ERR": 54,
+    "A-SRT": 5,
+    "A-STR": 11,
+    "D-CFG": 257,
+    "D-CLI": 110,
+    "D-DAT": 77,
+    "D-FIO": 220,
+    "D-NET": 372,
+    "D-TST": 52,
+    "D-WEB": 307
+   },
+   "top_callees": [
+    [
+     "split",
+     877
+    ],
+    [
+     "startswith",
+     238
+    ],
+    [
+     "eq",
+     145
+    ],
+    [
+     "concat",
+     43
+    ],
+    [
+     "endswith",
+     33
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0022v19",
+     "category": "A-ARR",
+     "snippet": "arrcontains(a;\"banana\")"
+    },
+    {
+     "task_id": "A-ARR-0022v65",
+     "category": "A-ARR",
+     "snippet": "arrcontains(arr;\"b\")"
+    },
+    {
+     "task_id": "A-ARR-0067v12",
+     "category": "A-ARR",
+     "snippet": "arrcount(a;\"x\")"
+    }
+   ]
+  },
+  {
+   "rank": 29,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT STR_LIT))",
+   "count": 1467,
+   "programs": 543,
+   "program_share": 0.0232,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 108,
+    "A-CND": 2,
+    "A-ERR": 73,
+    "A-MTH": 23,
+    "A-SRT": 200,
+    "A-STR": 121,
+    "D-CFG": 26,
+    "D-CLI": 148,
+    "D-DAT": 441,
+    "D-FIO": 56,
+    "D-NET": 22,
+    "D-TST": 219,
+    "D-WEB": 28
+   },
+   "top_callees": [
+    [
+     "s.add",
+     1368
+    ],
+    [
+     "st.add",
+     66
+    ],
+    [
+     "s.concat",
+     12
+    ],
+    [
+     "sr.add",
+     6
+    ],
+    [
+     "sb.add",
+     5
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "s.add(b;\" \")"
+    },
+    {
+     "task_id": "A-ARR-0054v7",
+     "category": "A-ARR",
+     "snippet": "s.add(b;\";\")"
+    },
+    {
+     "task_id": "A-ARR-0035v6",
+     "category": "A-ARR",
+     "snippet": "s.add(b;\"\\(arr.get(i)) \")"
+    }
+   ]
+  },
+  {
+   "rank": 30,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) IF_STMT(CALL_EXPR(...) STMT_LIST(...) STMT_LIST(...))))",
+   "count": 1431,
+   "programs": 471,
+   "program_share": 0.0201,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-ARR": 12,
+    "A-CND": 101,
+    "A-MTH": 30,
+    "A-SRT": 43,
+    "A-STR": 61,
+    "D-CFG": 173,
+    "D-CLI": 78,
+    "D-CRY": 175,
+    "D-FIO": 100,
+    "D-NET": 247,
+    "D-TST": 303,
+    "D-WEB": 108
+   },
+   "top_callees": [
+    [
+     "io.println",
+     1431
+    ],
+    [
+     "globmatch",
+     63
+    ],
+    [
+     "isdigit",
+     42
+    ],
+    [
+     "ishexdigit",
+     40
+    ],
+    [
+     "isipv4",
+     40
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0020v1",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(vals;2 as u64)){\"true\"}el{\"false\"})"
+    },
+    {
+     "task_id": "A-ARR-0021v23",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(@(1.0;2.0;3.0);2.0)){\"true\"}el{\"false\"})"
+    },
+    {
+     "task_id": "A-ARR-0021v35",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(@(1.0;2.5;3.0);2.5)){\"true\"}el{\"false\"})"
+    }
+   ]
+  },
+  {
+   "rank": 31,
+   "signature": "RETURN_STMT(IF_STMT(IDENT STMT_LIST(EXPR_STMT(...)) STMT_LIST(EXPR_STMT(...))))",
+   "count": 1405,
+   "programs": 1403,
+   "program_share": 0.06,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 16,
+    "A-CND": 101,
+    "A-ERR": 17,
+    "A-MTH": 42,
+    "A-SRT": 23,
+    "A-STR": 48,
+    "D-CFG": 153,
+    "D-CLI": 80,
+    "D-CRY": 135,
+    "D-DAT": 1,
+    "D-FIO": 96,
+    "D-NET": 262,
+    "D-TST": 285,
+    "D-WEB": 146
+   },
+   "top_callees": [
+    [
+     "s.concat",
+     4
+    ],
+    [
+     "digstr",
+     2
+    ],
+    [
+     "p.slice",
+     2
+    ],
+    [
+     "out.append",
+     1
+    ],
+    [
+     "s.replace",
+     1
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0019v27",
+     "category": "A-ARR",
+     "snippet": "<if(x){\"true\"}el{\"false\"}"
+    },
+    {
+     "task_id": "A-ARR-0020v10",
+     "category": "A-ARR",
+     "snippet": "<if(b){\"true\"}el{\"false\"}"
+    },
+    {
+     "task_id": "A-ARR-0020v50",
+     "category": "A-ARR",
+     "snippet": "<if(v){\"true\"}el{\"false\"}"
+    }
+   ]
+  },
+  {
+   "rank": 32,
+   "signature": "CALL_EXPR(IDENT STR_LIT INT_LIT)",
+   "count": 1347,
+   "programs": 453,
+   "program_share": 0.0194,
+   "depth": 1,
+   "node_count": 4,
+   "per_category": {
+    "A-ERR": 52,
+    "A-STR": 215,
+    "D-CFG": 3,
+    "D-CLI": 123,
+    "D-CRY": 93,
+    "D-DAT": 222,
+    "D-FIO": 102,
+    "D-NET": 96,
+    "D-TST": 324,
+    "D-WEB": 117
+   },
+   "top_callees": [
+    [
+     "repeatstr",
+     129
+    ],
+    [
+     "nthline",
+     78
+    ],
+    [
+     "genitems",
+     78
+    ],
+    [
+     "repeat",
+     61
+    ],
+    [
+     "padleft",
+     60
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ERR-0047",
+     "category": "A-ERR",
+     "snippet": "safecharat(\"hello\";1)"
+    },
+    {
+     "task_id": "A-ERR-0047v18",
+     "category": "A-ERR",
+     "snippet": "safecharat(\"hello\";1)"
+    },
+    {
+     "task_id": "A-ERR-0047v19",
+     "category": "A-ERR",
+     "snippet": "safecharat(\"hello\";1)"
+    }
+   ]
+  },
+  {
+   "rank": 33,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT IDENT)",
+   "count": 1338,
+   "programs": 1109,
+   "program_share": 0.0474,
+   "depth": 2,
+   "node_count": 6,
+   "per_category": {
+    "A-ARR": 19,
+    "A-CND": 7,
+    "A-ERR": 65,
+    "A-MTH": 1,
+    "A-SRT": 289,
+    "A-STR": 348,
+    "D-CFG": 90,
+    "D-CLI": 50,
+    "D-CRY": 73,
+    "D-DAT": 45,
+    "D-FIO": 67,
+    "D-NET": 91,
+    "D-TST": 146,
+    "D-WEB": 47
+   },
+   "top_callees": [
+    [
+     "s.charcode",
+     264
+    ],
+    [
+     "r.set",
+     244
+    ],
+    [
+     "s.concat",
+     204
+    ],
+    [
+     "s.split",
+     70
+    ],
+    [
+     "s.contains",
+     61
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0029v32",
+     "category": "A-ARR",
+     "snippet": "out.set(i;cur)"
+    },
+    {
+     "task_id": "A-ARR-0086v45",
+     "category": "A-ARR",
+     "snippet": "s.concat(out;piece)"
+    },
+    {
+     "task_id": "A-ARR-0110v15",
+     "category": "A-ARR",
+     "snippet": "r.set(j;tmp)"
+    }
+   ]
+  },
+  {
+   "rank": 34,
+   "signature": "SEQ2(BIND_STMT(IDENT MATCH_STMT(CALL_EXPR(...) MATCH_ARM(...) MATCH_ARM(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)))",
+   "count": 1314,
+   "programs": 553,
+   "program_share": 0.0237,
+   "depth": 3,
+   "node_count": 11,
+   "per_category": {
+    "A-ERR": 1314
+   },
+   "top_callees": [
+    [
+     "io.println",
+     1314
+    ],
+    [
+     "safefirst",
+     49
+    ],
+    [
+     "safelast",
+     48
+    ],
+    [
+     "safefactorial",
+     38
+    ],
+    [
+     "safeget",
+     36
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ERR-0012v43",
+     "category": "A-ERR",
+     "snippet": "let r1=mt safelast(@(1;2;3)) {$ok:v v;$err:e -1}; io.println(\"\\(r1)\")"
+    },
+    {
+     "task_id": "A-ERR-0012v58",
+     "category": "A-ERR",
+     "snippet": "let filled=mt safelast(@(4;8;15)) {$ok:v v;$err:e -1}; io.println(\"\\(filled)\")"
+    },
+    {
+     "task_id": "A-ERR-0012v60",
+     "category": "A-ERR",
+     "snippet": "let a=mt safelast(@(1;2;3)) {$ok:v v;$err:e -1}; io.println(\"\\(a)\")"
+    }
+   ]
+  },
+  {
+   "rank": 35,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) CALL_EXPR(IDENT INT_LIT)))",
+   "count": 1311,
+   "programs": 334,
+   "program_share": 0.0143,
+   "depth": 3,
+   "node_count": 8,
+   "per_category": {
+    "A-CND": 747,
+    "A-ERR": 7,
+    "A-MTH": 20,
+    "A-STR": 99,
+    "D-CLI": 84,
+    "D-CRY": 195,
+    "D-FIO": 105,
+    "D-WEB": 54
+   },
+   "top_callees": [
+    [
+     "io.println",
+     1311
+    ],
+    [
+     "toroman",
+     158
+    ],
+    [
+     "timeofday",
+     88
+    ],
+    [
+     "priority",
+     87
+    ],
+    [
+     "tohex",
+     72
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0040",
+     "category": "A-CND",
+     "snippet": "io.println(grade(95))"
+    },
+    {
+     "task_id": "A-CND-0040v10",
+     "category": "A-CND",
+     "snippet": "io.println(grade(100))"
+    },
+    {
+     "task_id": "A-CND-0040v18",
+     "category": "A-CND",
+     "snippet": "io.println(grade(95))"
+    }
+   ]
+  },
+  {
+   "rank": 36,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT BIN[+](IDENT INT_LIT))",
+   "count": 1308,
+   "programs": 912,
+   "program_share": 0.039,
+   "depth": 2,
+   "node_count": 8,
+   "per_category": {
+    "A-CND": 4,
+    "A-ERR": 20,
+    "A-SRT": 8,
+    "A-STR": 506,
+    "D-CFG": 107,
+    "D-CLI": 41,
+    "D-CRY": 300,
+    "D-DAT": 17,
+    "D-FIO": 99,
+    "D-NET": 125,
+    "D-TST": 6,
+    "D-WEB": 75
+   },
+   "top_callees": [
+    [
+     "p0.slice",
+     210
+    ],
+    [
+     "s.slice",
+     134
+    ],
+    [
+     "alpha.slice",
+     130
+    ],
+    [
+     "lhs.slice",
+     63
+    ],
+    [
+     "num1.slice",
+     59
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0059v75",
+     "category": "A-CND",
+     "snippet": "letters.slice(i;i+1)"
+    },
+    {
+     "task_id": "A-CND-0060v59",
+     "category": "A-CND",
+     "snippet": "letters.slice(i;i+1)"
+    },
+    {
+     "task_id": "A-CND-0061v35",
+     "category": "A-CND",
+     "snippet": "letters.slice(i;i+1)"
+    }
+   ]
+  },
+  {
+   "rank": 37,
+   "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))) RETURN_STMT(IDENT))",
+   "count": 1255,
+   "programs": 1247,
+   "program_share": 0.0533,
+   "depth": 3,
+   "node_count": 15,
+   "per_category": {
+    "A-ARR": 228,
+    "A-CND": 19,
+    "A-ERR": 36,
+    "A-MTH": 2,
+    "A-SRT": 183,
+    "A-STR": 57,
+    "D-CFG": 29,
+    "D-CLI": 88,
+    "D-CRY": 6,
+    "D-DAT": 221,
+    "D-FIO": 120,
+    "D-NET": 21,
+    "D-TST": 130,
+    "D-WEB": 115
+   },
+   "top_callees": [
+    [
+     "out.append",
+     141
+    ],
+    [
+     "s.len",
+     127
+    ],
+    [
+     "r.append",
+     34
+    ],
+    [
+     "starts",
+     30
+    ],
+    [
+     "startswith",
+     21
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(!contains(out;arr.get(i))){out=out.append(arr.get(i))} }; <out"
+    },
+    {
+     "task_id": "A-ARR-0053v61",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(arr.get(i)==v){found=true}; }; <found"
+    },
+    {
+     "task_id": "A-ARR-0053v62",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(!hasitem(out;arr.get(i))){out=out.append(arr.get(i))} }; <out"
+    }
+   ]
+  },
+  {
+   "rank": 38,
+   "signature": "INDEX_EXPR(IDENT BIN[+](IDENT INT_LIT))",
+   "count": 1199,
+   "programs": 663,
+   "program_share": 0.0284,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 5,
+    "A-CND": 8,
+    "A-ERR": 38,
+    "A-SRT": 1046,
+    "A-STR": 24,
+    "D-CFG": 1,
+    "D-CLI": 72,
+    "D-NET": 2,
+    "D-WEB": 3
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0101v24",
+     "category": "A-ARR",
+     "snippet": "arr.get(i+1)"
+    },
+    {
+     "task_id": "A-ARR-0101v31",
+     "category": "A-ARR",
+     "snippet": "arr.get(i+1)"
+    },
+    {
+     "task_id": "A-ARR-0101v56",
+     "category": "A-ARR",
+     "snippet": "x.get(i+1)"
+    }
+   ]
+  },
+  {
+   "rank": 39,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) CALL_EXPR(IDENT STR_LIT STR_LIT)))",
+   "count": 1135,
+   "programs": 378,
+   "program_share": 0.0162,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-ERR": 7,
+    "A-STR": 129,
+    "D-CFG": 84,
+    "D-CLI": 108,
+    "D-FIO": 234,
+    "D-NET": 3,
+    "D-TST": 207,
+    "D-WEB": 363
+   },
+   "top_callees": [
+    [
+     "io.println",
+     1135
+    ],
+    [
+     "joinpath",
+     132
+    ],
+    [
+     "replaceext",
+     99
+    ],
+    [
+     "headerline",
+     99
+    ],
+    [
+     "helpline",
+     87
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ERR-0018v44",
+     "category": "A-ERR",
+     "snippet": "io.println(show(\"10.0\";\"4.0\"))"
+    },
+    {
+     "task_id": "A-ERR-0031v40",
+     "category": "A-ERR",
+     "snippet": "io.println(describe(\"10.0\";\"4.0\"))"
+    },
+    {
+     "task_id": "A-STR-0006v12",
+     "category": "A-STR",
+     "snippet": "io.println(concat(\"foo\";\"bar\"))"
+    }
+   ]
+  },
+  {
+   "rank": 40,
+   "signature": "RETURN_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT))",
+   "count": 1091,
+   "programs": 1061,
+   "program_share": 0.0454,
+   "depth": 3,
+   "node_count": 6,
+   "per_category": {
+    "A-ARR": 39,
+    "A-CND": 30,
+    "A-ERR": 64,
+    "A-MTH": 9,
+    "A-SRT": 78,
+    "A-STR": 312,
+    "D-CFG": 29,
+    "D-CLI": 98,
+    "D-CRY": 39,
+    "D-DAT": 111,
+    "D-FIO": 48,
+    "D-NET": 52,
+    "D-TST": 112,
+    "D-WEB": 70
+   },
+   "top_callees": [
+    [
+     "s.build",
+     731
+    ],
+    [
+     "st.build",
+     57
+    ],
+    [
+     "s.trim",
+     51
+    ],
+    [
+     "s.upper",
+     41
+    ],
+    [
+     "s.frombytes",
+     16
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "<s.build(b)"
+    },
+    {
+     "task_id": "A-ARR-0054v7",
+     "category": "A-ARR",
+     "snippet": "<s.build(b)"
+    },
+    {
+     "task_id": "A-ARR-0035v6",
+     "category": "A-ARR",
+     "snippet": "<s.build(b)"
+    }
+   ]
+  },
+  {
+   "rank": 41,
+   "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))) RETURN_STMT(IDENT))",
+   "count": 1054,
+   "programs": 1038,
+   "program_share": 0.0444,
+   "depth": 3,
+   "node_count": 15,
+   "per_category": {
+    "A-ARR": 241,
+    "A-ERR": 107,
+    "A-MTH": 24,
+    "A-SRT": 118,
+    "A-STR": 23,
+    "D-CFG": 23,
+    "D-CLI": 20,
+    "D-CRY": 31,
+    "D-DAT": 386,
+    "D-FIO": 36,
+    "D-NET": 12,
+    "D-TST": 14,
+    "D-WEB": 19
+   },
+   "top_callees": [
+    [
+     "out.append",
+     332
+    ],
+    [
+     "r.append",
+     38
+    ],
+    [
+     "s.concat",
+     37
+    ],
+    [
+     "s.lower",
+     35
+    ],
+    [
+     "s.upper",
+     32
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0052",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ acc=if(i==0){\"\\(a.get(0))\"}el{\"\\(acc) \\(a.get(i))\"} }; <acc"
+    },
+    {
+     "task_id": "A-ARR-0054v25",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ text=if(i==0){\"\\(a.get(i))\"}el{\"\\(text) \\(a.get(i))\"} }; <text"
+    },
+    {
+     "task_id": "A-ARR-0055v17",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ out=if(i==0){\"\\(a.get(i))\"}el{\"\\(out) \\(a.get(i))\"} }; <out"
+    }
+   ]
+  },
+  {
+   "rank": 42,
+   "signature": "LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(IDENT IDENT)) ASSIGN[=](IDENT BIN[+](IDENT INT_LIT)) STMT_LIST(IF_STMT(BIN[==](...) STMT_LIST(...))))",
+   "count": 1039,
+   "programs": 995,
+   "program_share": 0.0426,
+   "depth": 3,
+   "node_count": 18,
+   "per_category": {
+    "A-ARR": 396,
+    "A-CND": 13,
+    "A-ERR": 79,
+    "A-SRT": 147,
+    "A-STR": 51,
+    "D-CFG": 39,
+    "D-CLI": 72,
+    "D-CRY": 25,
+    "D-DAT": 93,
+    "D-FIO": 38,
+    "D-NET": 38,
+    "D-TST": 20,
+    "D-WEB": 28
+   },
+   "top_callees": [
+    [
+     "out.append",
+     15
+    ],
+    [
+     "split",
+     14
+    ],
+    [
+     "p0.slice",
+     14
+    ],
+    [
+     "s.slice",
+     10
+    ],
+    [
+     "keyof",
+     8
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==cur){seen=true;br}}"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==v){seen=true;br}}"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==v){ seen=true}}"
+    }
+   ]
+  },
+  {
+   "rank": 43,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT IDENT BIN[+](IDENT INT_LIT))",
+   "count": 1035,
+   "programs": 756,
+   "program_share": 0.0323,
+   "depth": 2,
+   "node_count": 9,
+   "per_category": {
+    "A-CND": 3,
+    "A-ERR": 19,
+    "A-MTH": 1,
+    "A-SRT": 3,
+    "A-STR": 511,
+    "D-CFG": 52,
+    "D-CLI": 50,
+    "D-CRY": 129,
+    "D-DAT": 10,
+    "D-FIO": 76,
+    "D-NET": 105,
+    "D-TST": 12,
+    "D-WEB": 64
+   },
+   "top_callees": [
+    [
+     "s.slice",
+     952
+    ],
+    [
+     "st.slice",
+     53
+    ],
+    [
+     "s.substr",
+     17
+    ],
+    [
+     "str.slice",
+     6
+    ],
+    [
+     "sr.slice",
+     3
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0058v19",
+     "category": "A-CND",
+     "snippet": "s.slice(vowels;i;i+1)"
+    },
+    {
+     "task_id": "A-CND-0062v51",
+     "category": "A-CND",
+     "snippet": "s.slice(chars;i;i+1)"
+    },
+    {
+     "task_id": "A-ERR-0016v69",
+     "category": "A-ERR",
+     "snippet": "s.slice(p;i;i+1)"
+    }
+   ]
+  },
+  {
+   "rank": 44,
+   "signature": "BIN[==](INDEX_EXPR(IDENT IDENT) IDENT)",
+   "count": 1032,
+   "programs": 991,
+   "program_share": 0.0424,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 417,
+    "A-CND": 1,
+    "A-ERR": 90,
+    "A-SRT": 221,
+    "A-STR": 25,
+    "D-CFG": 13,
+    "D-CLI": 120,
+    "D-CRY": 17,
+    "D-DAT": 102,
+    "D-FIO": 14,
+    "D-NET": 5,
+    "D-WEB": 7
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "out.get(j)==cur"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "out.get(j)==v"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "out.get(j)==v"
+    }
+   ]
+  },
+  {
+   "rank": 45,
+   "signature": "CALL_EXPR(IDENT INT_LIT INT_LIT)",
+   "count": 1029,
+   "programs": 365,
+   "program_share": 0.0156,
+   "depth": 1,
+   "node_count": 4,
+   "per_category": {
+    "A-CND": 71,
+    "A-ERR": 212,
+    "A-MTH": 92,
+    "D-CLI": 71,
+    "D-CRY": 55,
+    "D-TST": 528
+   },
+   "top_callees": [
+    [
+     "progressbar",
+     60
+    ],
+    [
+     "extgcd",
+     52
+    ],
+    [
+     "notequal",
+     48
+    ],
+    [
+     "isgreater",
+     39
+    ],
+    [
+     "rangearr",
+     39
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0019v50",
+     "category": "A-CND",
+     "snippet": "isequal(3;3)"
+    },
+    {
+     "task_id": "A-CND-0019v51",
+     "category": "A-CND",
+     "snippet": "isequal(3;3)"
+    },
+    {
+     "task_id": "A-CND-0019v60",
+     "category": "A-CND",
+     "snippet": "isequal(3;3)"
+    }
+   ]
+  },
+  {
+   "rank": 46,
+   "signature": "LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(IDENT IDENT)) ASSIGN[=](IDENT BIN[+](IDENT INT_LIT)) STMT_LIST(ASSIGN[=](IDENT CALL_EXPR(...))))",
+   "count": 1024,
+   "programs": 894,
+   "program_share": 0.0382,
+   "depth": 3,
+   "node_count": 18,
+   "per_category": {
+    "A-ARR": 186,
+    "A-CND": 1,
+    "A-ERR": 85,
+    "A-MTH": 1,
+    "A-SRT": 189,
+    "A-STR": 15,
+    "D-CFG": 24,
+    "D-CLI": 17,
+    "D-CRY": 2,
+    "D-DAT": 408,
+    "D-FIO": 21,
+    "D-NET": 22,
+    "D-TST": 40,
+    "D-WEB": 13
+   },
+   "top_callees": [
+    [
+     "out.append",
+     433
+    ],
+    [
+     "parts.append",
+     173
+    ],
+    [
+     "s.concat",
+     48
+    ],
+    [
+     "r.append",
+     40
+    ],
+    [
+     "result.append",
+     38
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\")}"
+    },
+    {
+     "task_id": "A-ARR-0054v8",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\")}"
+    },
+    {
+     "task_id": "A-ARR-0055v30",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){parts=parts.append(\"\\(a.get(i))\")}"
+    }
+   ]
+  },
+  {
+   "rank": 47,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IF_STMT(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IF_STMT(...))))",
+   "count": 959,
+   "programs": 464,
+   "program_share": 0.0198,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-ARR": 8,
+    "A-CND": 75,
+    "A-MTH": 21,
+    "A-SRT": 28,
+    "A-STR": 43,
+    "D-CFG": 114,
+    "D-CLI": 52,
+    "D-CRY": 116,
+    "D-FIO": 66,
+    "D-NET": 164,
+    "D-TST": 200,
+    "D-WEB": 72
+   },
+   "top_callees": [
+    [
+     "io.println",
+     1918
+    ],
+    [
+     "globmatch",
+     84
+    ],
+    [
+     "isvaliddate",
+     62
+    ],
+    [
+     "isdigit",
+     56
+    ],
+    [
+     "ishexdigit",
+     52
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0020v1",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(vals;2 as u64)){\"true\"}el{\"false\"}); io.println(if(arrcontains(vals;9 as u64)){\"true\"}el{\"false\"})"
+    },
+    {
+     "task_id": "A-ARR-0021v23",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(@(1.0;2.0;3.0);2.0)){\"true\"}el{\"false\"}); io.println(if(arrcontains(@(1.0;2.0;3.0);5.0)){\"true\"}el{\"false\"})"
+    },
+    {
+     "task_id": "A-ARR-0021v35",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(@(1.0;2.5;3.0);2.5)){\"true\"}el{\"false\"}); io.println(if(arrcontains(@(1.0;2.0);9.0)){\"true\"}el{\"false\"})"
+    }
+   ]
+  },
+  {
+   "rank": 48,
+   "signature": "BIN[-](FIELD_EXPR(IDENT IDENT) INT_LIT)",
+   "count": 954,
+   "programs": 903,
+   "program_share": 0.0386,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 68,
+    "A-ERR": 69,
+    "A-SRT": 232,
+    "A-STR": 32,
+    "D-CFG": 76,
+    "D-CLI": 20,
+    "D-CRY": 1,
+    "D-DAT": 28,
+    "D-FIO": 301,
+    "D-NET": 76,
+    "D-TST": 17,
+    "D-WEB": 34
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0027v24",
+     "category": "A-ARR",
+     "snippet": "arr.len-1"
+    },
+    {
+     "task_id": "A-ARR-0027v33",
+     "category": "A-ARR",
+     "snippet": "n.len-1"
+    },
+    {
+     "task_id": "A-ARR-0027v57",
+     "category": "A-ARR",
+     "snippet": "n.len-1"
+    }
+   ]
+  },
+  {
+   "rank": 49,
+   "signature": "CALL_EXPR(IDENT IDENT IDENT)",
+   "count": 951,
+   "programs": 740,
+   "program_share": 0.0316,
+   "depth": 1,
+   "node_count": 4,
+   "per_category": {
+    "A-ARR": 175,
+    "A-CND": 28,
+    "A-ERR": 175,
+    "A-MTH": 88,
+    "A-SRT": 111,
+    "A-STR": 105,
+    "D-CFG": 17,
+    "D-CLI": 32,
+    "D-CRY": 38,
+    "D-DAT": 58,
+    "D-FIO": 12,
+    "D-NET": 13,
+    "D-TST": 81,
+    "D-WEB": 18
+   },
+   "top_callees": [
+    [
+     "contains",
+     119
+    ],
+    [
+     "gcd",
+     60
+    ],
+    [
+     "get",
+     44
+    ],
+    [
+     "concat",
+     41
+    ],
+    [
+     "charat",
+     35
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "seen(result;v)"
+    },
+    {
+     "task_id": "A-ARR-0051v65",
+     "category": "A-ARR",
+     "snippet": "contains(result;v)"
+    },
+    {
+     "task_id": "A-ARR-0053v13",
+     "category": "A-ARR",
+     "snippet": "contains(acc;v)"
+    }
+   ]
+  },
+  {
+   "rank": 50,
+   "signature": "BIN[&&](BIN[>=](IDENT INT_LIT) BIN[<=](IDENT INT_LIT))",
+   "count": 933,
+   "programs": 495,
+   "program_share": 0.0212,
+   "depth": 2,
+   "node_count": 7,
+   "per_category": {
+    "A-CND": 233,
+    "A-STR": 99,
+    "D-CFG": 1,
+    "D-CRY": 428,
+    "D-NET": 155,
+    "D-WEB": 17
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-CND-0050v53",
+     "category": "A-CND",
+     "snippet": "m>=1&&m<=12"
+    },
+    {
+     "task_id": "A-CND-0053v19",
+     "category": "A-CND",
+     "snippet": "code>=100 && code<=199"
+    },
+    {
+     "task_id": "A-CND-0053v20",
+     "category": "A-CND",
+     "snippet": "code>=100&&code<=199"
+    }
+   ]
+  }
+ ],
+ "shapes_single_statement_or_expr": [
+  {
+   "rank": 1,
+   "signature": "ASSIGN[=](IDENT BIN[+](IDENT INT_LIT))",
+   "count": 21037,
+   "programs": 12403,
+   "program_share": 0.5305,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 2654,
+    "A-CND": 500,
+    "A-ERR": 850,
+    "A-MTH": 1760,
+    "A-SRT": 4687,
+    "A-STR": 2078,
+    "D-CFG": 851,
+    "D-CLI": 828,
+    "D-CRY": 668,
+    "D-DAT": 2339,
+    "D-FIO": 1068,
+    "D-NET": 567,
+    "D-TST": 1207,
+    "D-WEB": 980
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "i=i+1"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "i=i+1"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "i=i+1"
+    }
+   ]
+  },
+  {
+   "rank": 2,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) STR_LIT))",
+   "count": 19784,
+   "programs": 6835,
+   "program_share": 0.2923,
+   "depth": 3,
+   "node_count": 6,
+   "per_category": {
+    "A-ARR": 1453,
+    "A-CND": 2246,
+    "A-ERR": 1834,
+    "A-MTH": 2876,
+    "A-SRT": 1665,
+    "A-STR": 1253,
+    "D-CFG": 892,
+    "D-CLI": 697,
+    "D-CRY": 1918,
+    "D-DAT": 1226,
+    "D-FIO": 771,
+    "D-NET": 1191,
+    "D-TST": 857,
+    "D-WEB": 905
+   },
+   "top_callees": [
+    [
+     "io.println",
+     19739
+    ],
+    [
+     "bar.concat",
+     16
+    ],
+    [
+     "out.concat",
+     11
+    ],
+    [
+     "acc.concat",
+     5
+    ],
+    [
+     "trimmed.starts",
+     3
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(r)\")"
+    },
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(r.get(i))\")"
+    },
+    {
+     "task_id": "A-ARR-0051v65",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(r.get(i))\")"
+    }
+   ]
+  },
+  {
+   "rank": 3,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT)",
+   "count": 9602,
+   "programs": 6419,
+   "program_share": 0.2745,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 522,
+    "A-CND": 69,
+    "A-ERR": 534,
+    "A-MTH": 20,
+    "A-SRT": 388,
+    "A-STR": 2119,
+    "D-CFG": 1073,
+    "D-CLI": 617,
+    "D-CRY": 559,
+    "D-DAT": 493,
+    "D-FIO": 676,
+    "D-NET": 824,
+    "D-TST": 890,
+    "D-WEB": 818
+   },
+   "top_callees": [
+    [
+     "s.len",
+     4816
+    ],
+    [
+     "s.build",
+     796
+    ],
+    [
+     "out.append",
+     743
+    ],
+    [
+     "s.toint",
+     318
+    ],
+    [
+     "s.trim",
+     290
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "out.append(cur)"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "out.append(v)"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "out.append(v)"
+    }
+   ]
+  },
+  {
+   "rank": 4,
+   "signature": "BIN[<](IDENT FIELD_EXPR(IDENT IDENT))",
+   "count": 9428,
+   "programs": 6708,
+   "program_share": 0.2869,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 1986,
+    "A-CND": 125,
+    "A-ERR": 437,
+    "A-MTH": 75,
+    "A-SRT": 2046,
+    "A-STR": 399,
+    "D-CFG": 497,
+    "D-CLI": 374,
+    "D-CRY": 86,
+    "D-DAT": 1730,
+    "D-FIO": 475,
+    "D-NET": 231,
+    "D-TST": 445,
+    "D-WEB": 522
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "i<val.len"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "i<arr.len"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "j<out.len"
+    }
+   ]
+  },
+  {
+   "rank": 5,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) CALL_EXPR(IDENT CALL_EXPR(...))))",
+   "count": 5979,
+   "programs": 1987,
+   "program_share": 0.085,
+   "depth": 3,
+   "node_count": 8,
+   "per_category": {
+    "A-ARR": 428,
+    "A-CND": 207,
+    "A-MTH": 104,
+    "A-SRT": 584,
+    "A-STR": 136,
+    "D-CFG": 363,
+    "D-CLI": 281,
+    "D-CRY": 321,
+    "D-DAT": 1209,
+    "D-FIO": 237,
+    "D-NET": 618,
+    "D-TST": 1146,
+    "D-WEB": 345
+   },
+   "top_callees": [
+    [
+     "io.println",
+     5979
+    ],
+    [
+     "show",
+     931
+    ],
+    [
+     "fmt",
+     899
+    ],
+    [
+     "render",
+     814
+    ],
+    [
+     "boolstr",
+     692
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "io.println(fmtarr(unique(@(1 as u64;2 as u64;1 as u64;3 as u64;2 as u64))))"
+    },
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "io.println(showint(unique(data)))"
+    },
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "io.println(fmtarr(unique(@(1;2;1;3;2;4) as @u64)))"
+    }
+   ]
+  },
+  {
+   "rank": 6,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) STR_LIT)",
+   "count": 4489,
+   "programs": 3338,
+   "program_share": 0.1428,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 105,
+    "A-CND": 1,
+    "A-ERR": 48,
+    "A-MTH": 3,
+    "A-SRT": 107,
+    "A-STR": 93,
+    "D-CFG": 618,
+    "D-CLI": 375,
+    "D-CRY": 8,
+    "D-DAT": 483,
+    "D-FIO": 758,
+    "D-NET": 1024,
+    "D-TST": 198,
+    "D-WEB": 668
+   },
+   "top_callees": [
+    [
+     "n.split",
+     235
+    ],
+    [
+     "p.split",
+     228
+    ],
+    [
+     "x.split",
+     220
+    ],
+    [
+     "first.split",
+     199
+    ],
+    [
+     "val.split",
+     190
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "parts.append(\"\\(a.get(i))\")"
+    },
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "out.concat(\"]\")"
+    },
+    {
+     "task_id": "A-ARR-0053v61",
+     "category": "A-ARR",
+     "snippet": "out.concat(\",\")"
+    }
+   ]
+  },
+  {
+   "rank": 7,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) CALL_EXPR(IDENT STR_LIT)))",
+   "count": 4042,
+   "programs": 1342,
+   "program_share": 0.0574,
+   "depth": 3,
+   "node_count": 8,
+   "per_category": {
+    "A-ERR": 42,
+    "A-STR": 669,
+    "D-CFG": 708,
+    "D-CLI": 782,
+    "D-CRY": 72,
+    "D-FIO": 660,
+    "D-NET": 516,
+    "D-WEB": 593
+   },
+   "top_callees": [
+    [
+     "io.println",
+     4042
+    ],
+    [
+     "toquery",
+     132
+    ],
+    [
+     "extractpath",
+     111
+    ],
+    [
+     "basename",
+     108
+    ],
+    [
+     "firstline",
+     102
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ERR-0016v19",
+     "category": "A-ERR",
+     "snippet": "io.println(describe(\"123\"))"
+    },
+    {
+     "task_id": "A-ERR-0029v29",
+     "category": "A-ERR",
+     "snippet": "io.println(describe(\"ab\"))"
+    },
+    {
+     "task_id": "A-ERR-0029v35",
+     "category": "A-ERR",
+     "snippet": "io.println(check(\"ab\"))"
+    }
+   ]
+  },
+  {
+   "rank": 8,
+   "signature": "BIND_STMT(IDENT INDEX_EXPR(IDENT IDENT))",
+   "count": 3229,
+   "programs": 2881,
+   "program_share": 0.1232,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 601,
+    "A-CND": 62,
+    "A-ERR": 167,
+    "A-MTH": 5,
+    "A-SRT": 1111,
+    "A-STR": 137,
+    "D-CFG": 179,
+    "D-CLI": 132,
+    "D-CRY": 5,
+    "D-DAT": 348,
+    "D-FIO": 149,
+    "D-NET": 111,
+    "D-TST": 26,
+    "D-WEB": 196
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "let cur=val.get(i)"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "let v=arr.get(i)"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "let v=arr.get(i)"
+    }
+   ]
+  },
+  {
+   "rank": 9,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT STR_LIT)",
+   "count": 3022,
+   "programs": 1996,
+   "program_share": 0.0854,
+   "depth": 2,
+   "node_count": 6,
+   "per_category": {
+    "A-ARR": 2,
+    "A-ERR": 7,
+    "A-MTH": 10,
+    "A-SRT": 2,
+    "A-STR": 80,
+    "D-CFG": 714,
+    "D-CLI": 229,
+    "D-DAT": 125,
+    "D-FIO": 503,
+    "D-NET": 659,
+    "D-TST": 202,
+    "D-WEB": 489
+   },
+   "top_callees": [
+    [
+     "s.split",
+     1575
+    ],
+    [
+     "s.starts",
+     266
+    ],
+    [
+     "s.startswith",
+     228
+    ],
+    [
+     "s.indexof",
+     207
+    ],
+    [
+     "s.concat",
+     155
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0080v33",
+     "category": "A-ARR",
+     "snippet": "s.concat(out;\" \")"
+    },
+    {
+     "task_id": "A-ERR-0019v2",
+     "category": "A-ERR",
+     "snippet": "s.concat(out;\"\\(scaled/p)\")"
+    },
+    {
+     "task_id": "A-ERR-0029v43",
+     "category": "A-ERR",
+     "snippet": "s.split(lhs;\" \")"
+    }
+   ]
+  },
+  {
+   "rank": 10,
+   "signature": "BIN[==](FIELD_EXPR(IDENT IDENT) INT_LIT)",
+   "count": 2764,
+   "programs": 2618,
+   "program_share": 0.112,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 177,
+    "A-CND": 5,
+    "A-ERR": 451,
+    "A-MTH": 27,
+    "A-SRT": 212,
+    "A-STR": 123,
+    "D-CFG": 171,
+    "D-CLI": 177,
+    "D-CRY": 113,
+    "D-DAT": 536,
+    "D-FIO": 216,
+    "D-NET": 159,
+    "D-TST": 185,
+    "D-WEB": 212
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "a.len==0"
+    },
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "arr.len==0"
+    },
+    {
+     "task_id": "A-ARR-0052v15",
+     "category": "A-ARR",
+     "snippet": "left.len==0"
+    }
+   ]
+  },
+  {
+   "rank": 11,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) INDEX_EXPR(IDENT IDENT))",
+   "count": 2159,
+   "programs": 1659,
+   "program_share": 0.071,
+   "depth": 2,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 340,
+    "A-CND": 22,
+    "A-ERR": 91,
+    "A-SRT": 523,
+    "A-STR": 31,
+    "D-CFG": 180,
+    "D-CLI": 39,
+    "D-CRY": 3,
+    "D-DAT": 527,
+    "D-FIO": 164,
+    "D-NET": 75,
+    "D-TST": 8,
+    "D-WEB": 156
+   },
+   "top_callees": [
+    [
+     "out.append",
+     813
+    ],
+    [
+     "s.len",
+     276
+    ],
+    [
+     "s.trim",
+     168
+    ],
+    [
+     "r.append",
+     120
+    ],
+    [
+     "result.append",
+     87
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "out.append(arr.get(i))"
+    },
+    {
+     "task_id": "A-ARR-0052v15",
+     "category": "A-ARR",
+     "snippet": "out.append(left.get(i))"
+    },
+    {
+     "task_id": "A-ARR-0052v44",
+     "category": "A-ARR",
+     "snippet": "r.append(arr.get(i))"
+    }
+   ]
+  },
+  {
+   "rank": 12,
+   "signature": "CALL_EXPR(IDENT STR_LIT STR_LIT)",
+   "count": 2133,
+   "programs": 713,
+   "program_share": 0.0305,
+   "depth": 1,
+   "node_count": 4,
+   "per_category": {
+    "A-CND": 1,
+    "A-ERR": 61,
+    "A-SRT": 1,
+    "A-STR": 292,
+    "D-CFG": 99,
+    "D-CLI": 120,
+    "D-FIO": 387,
+    "D-NET": 3,
+    "D-TST": 608,
+    "D-WEB": 561
+   },
+   "top_callees": [
+    [
+     "globmatch",
+     177
+    ],
+    [
+     "joinpath",
+     141
+    ],
+    [
+     "replaceext",
+     111
+    ],
+    [
+     "hasext",
+     111
+    ],
+    [
+     "headerline",
+     99
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0002v40",
+     "category": "A-CND",
+     "snippet": "adddec(\"9223372036854775808\";\"\\(w)\")"
+    },
+    {
+     "task_id": "A-ERR-0018v11",
+     "category": "A-ERR",
+     "snippet": "parseanddivide(\"10.0\";\"2.0\")"
+    },
+    {
+     "task_id": "A-ERR-0018v14",
+     "category": "A-ERR",
+     "snippet": "parseanddivide(\"10.0\";\"2.0\")"
+    }
+   ]
+  },
+  {
+   "rank": 13,
+   "signature": "BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) STR_LIT))",
+   "count": 1878,
+   "programs": 1743,
+   "program_share": 0.0745,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ERR": 1,
+    "A-SRT": 2,
+    "A-STR": 55,
+    "D-CFG": 311,
+    "D-CLI": 58,
+    "D-CRY": 3,
+    "D-DAT": 142,
+    "D-FIO": 493,
+    "D-NET": 399,
+    "D-TST": 6,
+    "D-WEB": 408
+   },
+   "top_callees": [
+    [
+     "x.split",
+     200
+    ],
+    [
+     "p.split",
+     186
+    ],
+    [
+     "n.split",
+     179
+    ],
+    [
+     "num1.split",
+     175
+    ],
+    [
+     "val.split",
+     166
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ERR-0016v9",
+     "category": "A-ERR",
+     "snippet": "let neg=n.starts(\"-\")"
+    },
+    {
+     "task_id": "MIG-P2-A-A-SRT-0019v66-4c35ce67",
+     "category": "A-SRT",
+     "snippet": "let vc=val.split(\"\")"
+    },
+    {
+     "task_id": "A-STR-0004v43",
+     "category": "A-STR",
+     "snippet": "let chars=lhs.split(\"\")"
+    }
+   ]
+  },
+  {
+   "rank": 14,
+   "signature": "BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT))",
+   "count": 1857,
+   "programs": 1539,
+   "program_share": 0.0658,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-CND": 14,
+    "A-ERR": 54,
+    "A-MTH": 2,
+    "A-SRT": 8,
+    "A-STR": 690,
+    "D-CFG": 244,
+    "D-CLI": 90,
+    "D-CRY": 154,
+    "D-DAT": 11,
+    "D-FIO": 127,
+    "D-NET": 165,
+    "D-TST": 165,
+    "D-WEB": 133
+   },
+   "top_callees": [
+    [
+     "s.len",
+     1040
+    ],
+    [
+     "s.trim",
+     173
+    ],
+    [
+     "s.bytes",
+     125
+    ],
+    [
+     "s.lower",
+     110
+    ],
+    [
+     "st.len",
+     104
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0002v40",
+     "category": "A-CND",
+     "snippet": "let la=s.len(a)"
+    },
+    {
+     "task_id": "A-CND-0052v40",
+     "category": "A-CND",
+     "snippet": "let result=s.build(b)"
+    },
+    {
+     "task_id": "A-CND-0052v64",
+     "category": "A-CND",
+     "snippet": "let result=s.build(b)"
+    }
+   ]
+  },
+  {
+   "rank": 15,
+   "signature": "ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT))",
+   "count": 1790,
+   "programs": 1492,
+   "program_share": 0.0638,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 471,
+    "A-CND": 3,
+    "A-ERR": 33,
+    "A-MTH": 4,
+    "A-SRT": 283,
+    "A-STR": 172,
+    "D-CFG": 92,
+    "D-CLI": 98,
+    "D-CRY": 5,
+    "D-DAT": 218,
+    "D-FIO": 37,
+    "D-NET": 23,
+    "D-TST": 305,
+    "D-WEB": 46
+   },
+   "top_callees": [
+    [
+     "out.append",
+     747
+    ],
+    [
+     "result.append",
+     124
+    ],
+    [
+     "out.concat",
+     88
+    ],
+    [
+     "r.append",
+     75
+    ],
+    [
+     "result.concat",
+     69
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "out=out.append(cur)"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "out=out.append(v)"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "out=out.append(v)"
+    }
+   ]
+  },
+  {
+   "rank": 16,
+   "signature": "CALL_EXPR(IDENT CALL_EXPR(IDENT STR_LIT))",
+   "count": 1747,
+   "programs": 578,
+   "program_share": 0.0247,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-CND": 37,
+    "A-STR": 65,
+    "D-CFG": 373,
+    "D-CLI": 132,
+    "D-CRY": 273,
+    "D-FIO": 150,
+    "D-NET": 549,
+    "D-TST": 60,
+    "D-WEB": 108
+   },
+   "top_callees": [
+    [
+     "boolstr",
+     381
+    ],
+    [
+     "show",
+     368
+    ],
+    [
+     "fmtbool",
+     240
+    ],
+    [
+     "showbool",
+     234
+    ],
+    [
+     "b2s",
+     120
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0057v2",
+     "category": "A-CND",
+     "snippet": "render(ishexdigit(\"7\"))"
+    },
+    {
+     "task_id": "A-CND-0058v11",
+     "category": "A-CND",
+     "snippet": "render(isvowel(\"a\"))"
+    },
+    {
+     "task_id": "A-CND-0058v42",
+     "category": "A-CND",
+     "snippet": "show(isvowel(\"a\"))"
+    }
+   ]
+  },
+  {
+   "rank": 17,
+   "signature": "BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT STR_LIT))",
+   "count": 1717,
+   "programs": 1411,
+   "program_share": 0.0603,
+   "depth": 3,
+   "node_count": 8,
+   "per_category": {
+    "A-MTH": 1,
+    "A-STR": 48,
+    "D-CFG": 364,
+    "D-CLI": 90,
+    "D-DAT": 77,
+    "D-FIO": 374,
+    "D-NET": 361,
+    "D-TST": 45,
+    "D-WEB": 357
+   },
+   "top_callees": [
+    [
+     "s.split",
+     1335
+    ],
+    [
+     "s.indexof",
+     202
+    ],
+    [
+     "s.lastindex",
+     39
+    ],
+    [
+     "s.startswith",
+     24
+    ],
+    [
+     "st.split",
+     17
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-MTH-0094v30",
+     "category": "A-MTH",
+     "snippet": "let c=s.format(x;\"%.\\(p)g\")"
+    },
+    {
+     "task_id": "A-STR-0026v30",
+     "category": "A-STR",
+     "snippet": "let words=st.split(s;\" \")"
+    },
+    {
+     "task_id": "A-STR-0026v31",
+     "category": "A-STR",
+     "snippet": "let words=s.split(left;\" \")"
+    }
+   ]
+  },
+  {
+   "rank": 18,
+   "signature": "BIND_STMT(IDENT FIELD_EXPR(IDENT IDENT))",
+   "count": 1673,
+   "programs": 1472,
+   "program_share": 0.063,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 225,
+    "A-CND": 12,
+    "A-ERR": 109,
+    "A-MTH": 18,
+    "A-SRT": 484,
+    "A-STR": 231,
+    "D-CFG": 56,
+    "D-CLI": 53,
+    "D-CRY": 32,
+    "D-DAT": 228,
+    "D-FIO": 100,
+    "D-NET": 34,
+    "D-TST": 57,
+    "D-WEB": 34
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "let n=arr.len"
+    },
+    {
+     "task_id": "A-ARR-0051v58",
+     "category": "A-ARR",
+     "snippet": "let n=arr.len"
+    },
+    {
+     "task_id": "A-ARR-0052v19",
+     "category": "A-ARR",
+     "snippet": "let n=arr.len"
+    }
+   ]
+  },
+  {
+   "rank": 19,
+   "signature": "CAST_EXPR(FIELD_EXPR(IDENT IDENT) TYPE_EXPR)",
+   "count": 1667,
+   "programs": 1346,
+   "program_share": 0.0576,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 303,
+    "A-CND": 4,
+    "A-ERR": 281,
+    "A-MTH": 48,
+    "A-SRT": 338,
+    "A-STR": 54,
+    "D-CFG": 30,
+    "D-CLI": 63,
+    "D-CRY": 14,
+    "D-DAT": 245,
+    "D-FIO": 88,
+    "D-NET": 51,
+    "D-TST": 78,
+    "D-WEB": 70
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v63",
+     "category": "A-ARR",
+     "snippet": "left.len as i64"
+    },
+    {
+     "task_id": "A-ARR-0053v33",
+     "category": "A-ARR",
+     "snippet": "arr.len as i64"
+    },
+    {
+     "task_id": "A-ARR-0054v25",
+     "category": "A-ARR",
+     "snippet": "arr.len as i64"
+    }
+   ]
+  },
+  {
+   "rank": 20,
+   "signature": "IF_STMT(IDENT STMT_LIST(EXPR_STMT(STR_LIT)) STMT_LIST(EXPR_STMT(STR_LIT)))",
+   "count": 1595,
+   "programs": 1462,
+   "program_share": 0.0625,
+   "depth": 3,
+   "node_count": 8,
+   "per_category": {
+    "A-ARR": 12,
+    "A-CND": 87,
+    "A-ERR": 30,
+    "A-MTH": 27,
+    "A-SRT": 20,
+    "A-STR": 45,
+    "D-CFG": 173,
+    "D-CLI": 91,
+    "D-CRY": 175,
+    "D-FIO": 127,
+    "D-NET": 298,
+    "D-TST": 353,
+    "D-WEB": 157
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0019v27",
+     "category": "A-ARR",
+     "snippet": "if(x){\"true\"}el{\"false\"}"
+    },
+    {
+     "task_id": "A-ARR-0020v10",
+     "category": "A-ARR",
+     "snippet": "if(b){\"true\"}el{\"false\"}"
+    },
+    {
+     "task_id": "A-ARR-0020v50",
+     "category": "A-ARR",
+     "snippet": "if(v){\"true\"}el{\"false\"}"
+    }
+   ]
+  },
+  {
+   "rank": 21,
+   "signature": "ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) INDEX_EXPR(IDENT IDENT)))",
+   "count": 1518,
+   "programs": 1128,
+   "program_share": 0.0482,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-ARR": 334,
+    "A-CND": 22,
+    "A-ERR": 73,
+    "A-SRT": 516,
+    "A-STR": 14,
+    "D-CFG": 76,
+    "D-CLI": 34,
+    "D-DAT": 308,
+    "D-FIO": 88,
+    "D-NET": 15,
+    "D-TST": 6,
+    "D-WEB": 32
+   },
+   "top_callees": [
+    [
+     "out.append",
+     813
+    ],
+    [
+     "r.append",
+     120
+    ],
+    [
+     "result.append",
+     87
+    ],
+    [
+     "res.append",
+     47
+    ],
+    [
+     "keep.append",
+     39
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "out=out.append(arr.get(i))"
+    },
+    {
+     "task_id": "A-ARR-0052v15",
+     "category": "A-ARR",
+     "snippet": "out=out.append(left.get(i))"
+    },
+    {
+     "task_id": "A-ARR-0052v44",
+     "category": "A-ARR",
+     "snippet": "r=r.append(arr.get(i))"
+    }
+   ]
+  },
+  {
+   "rank": 22,
+   "signature": "BIN[==](CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT) INT_LIT)",
+   "count": 1506,
+   "programs": 1322,
+   "program_share": 0.0565,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-CND": 6,
+    "A-ERR": 27,
+    "A-SRT": 1,
+    "A-STR": 92,
+    "D-CFG": 286,
+    "D-CLI": 118,
+    "D-CRY": 112,
+    "D-DAT": 46,
+    "D-FIO": 264,
+    "D-NET": 164,
+    "D-TST": 118,
+    "D-WEB": 272
+   },
+   "top_callees": [
+    [
+     "s.len",
+     1451
+    ],
+    [
+     "st.len",
+     45
+    ],
+    [
+     "str.len",
+     3
+    ],
+    [
+     "strlib.len",
+     1
+    ],
+    [
+     "n.charat",
+     1
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0057v55",
+     "category": "A-CND",
+     "snippet": "s.len(left)==1"
+    },
+    {
+     "task_id": "A-CND-0058v42",
+     "category": "A-CND",
+     "snippet": "s.len(val)==0"
+    },
+    {
+     "task_id": "A-CND-0060",
+     "category": "A-CND",
+     "snippet": "s.len(c)==1"
+    }
+   ]
+  },
+  {
+   "rank": 23,
+   "signature": "CALL_EXPR(IDENT IDENT STR_LIT)",
+   "count": 1476,
+   "programs": 1054,
+   "program_share": 0.0451,
+   "depth": 1,
+   "node_count": 4,
+   "per_category": {
+    "A-ARR": 11,
+    "A-ERR": 54,
+    "A-SRT": 5,
+    "A-STR": 11,
+    "D-CFG": 257,
+    "D-CLI": 110,
+    "D-DAT": 77,
+    "D-FIO": 220,
+    "D-NET": 372,
+    "D-TST": 52,
+    "D-WEB": 307
+   },
+   "top_callees": [
+    [
+     "split",
+     877
+    ],
+    [
+     "startswith",
+     238
+    ],
+    [
+     "eq",
+     145
+    ],
+    [
+     "concat",
+     43
+    ],
+    [
+     "endswith",
+     33
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0022v19",
+     "category": "A-ARR",
+     "snippet": "arrcontains(a;\"banana\")"
+    },
+    {
+     "task_id": "A-ARR-0022v65",
+     "category": "A-ARR",
+     "snippet": "arrcontains(arr;\"b\")"
+    },
+    {
+     "task_id": "A-ARR-0067v12",
+     "category": "A-ARR",
+     "snippet": "arrcount(a;\"x\")"
+    }
+   ]
+  },
+  {
+   "rank": 24,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT STR_LIT))",
+   "count": 1467,
+   "programs": 543,
+   "program_share": 0.0232,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 108,
+    "A-CND": 2,
+    "A-ERR": 73,
+    "A-MTH": 23,
+    "A-SRT": 200,
+    "A-STR": 121,
+    "D-CFG": 26,
+    "D-CLI": 148,
+    "D-DAT": 441,
+    "D-FIO": 56,
+    "D-NET": 22,
+    "D-TST": 219,
+    "D-WEB": 28
+   },
+   "top_callees": [
+    [
+     "s.add",
+     1368
+    ],
+    [
+     "st.add",
+     66
+    ],
+    [
+     "s.concat",
+     12
+    ],
+    [
+     "sr.add",
+     6
+    ],
+    [
+     "sb.add",
+     5
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "s.add(b;\" \")"
+    },
+    {
+     "task_id": "A-ARR-0054v7",
+     "category": "A-ARR",
+     "snippet": "s.add(b;\";\")"
+    },
+    {
+     "task_id": "A-ARR-0035v6",
+     "category": "A-ARR",
+     "snippet": "s.add(b;\"\\(arr.get(i)) \")"
+    }
+   ]
+  },
+  {
+   "rank": 25,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) IF_STMT(CALL_EXPR(...) STMT_LIST(...) STMT_LIST(...))))",
+   "count": 1431,
+   "programs": 471,
+   "program_share": 0.0201,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-ARR": 12,
+    "A-CND": 101,
+    "A-MTH": 30,
+    "A-SRT": 43,
+    "A-STR": 61,
+    "D-CFG": 173,
+    "D-CLI": 78,
+    "D-CRY": 175,
+    "D-FIO": 100,
+    "D-NET": 247,
+    "D-TST": 303,
+    "D-WEB": 108
+   },
+   "top_callees": [
+    [
+     "io.println",
+     1431
+    ],
+    [
+     "globmatch",
+     63
+    ],
+    [
+     "isdigit",
+     42
+    ],
+    [
+     "ishexdigit",
+     40
+    ],
+    [
+     "isipv4",
+     40
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0020v1",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(vals;2 as u64)){\"true\"}el{\"false\"})"
+    },
+    {
+     "task_id": "A-ARR-0021v23",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(@(1.0;2.0;3.0);2.0)){\"true\"}el{\"false\"})"
+    },
+    {
+     "task_id": "A-ARR-0021v35",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(@(1.0;2.5;3.0);2.5)){\"true\"}el{\"false\"})"
+    }
+   ]
+  },
+  {
+   "rank": 26,
+   "signature": "RETURN_STMT(IF_STMT(IDENT STMT_LIST(EXPR_STMT(...)) STMT_LIST(EXPR_STMT(...))))",
+   "count": 1405,
+   "programs": 1403,
+   "program_share": 0.06,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 16,
+    "A-CND": 101,
+    "A-ERR": 17,
+    "A-MTH": 42,
+    "A-SRT": 23,
+    "A-STR": 48,
+    "D-CFG": 153,
+    "D-CLI": 80,
+    "D-CRY": 135,
+    "D-DAT": 1,
+    "D-FIO": 96,
+    "D-NET": 262,
+    "D-TST": 285,
+    "D-WEB": 146
+   },
+   "top_callees": [
+    [
+     "s.concat",
+     4
+    ],
+    [
+     "digstr",
+     2
+    ],
+    [
+     "p.slice",
+     2
+    ],
+    [
+     "out.append",
+     1
+    ],
+    [
+     "s.replace",
+     1
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0019v27",
+     "category": "A-ARR",
+     "snippet": "<if(x){\"true\"}el{\"false\"}"
+    },
+    {
+     "task_id": "A-ARR-0020v10",
+     "category": "A-ARR",
+     "snippet": "<if(b){\"true\"}el{\"false\"}"
+    },
+    {
+     "task_id": "A-ARR-0020v50",
+     "category": "A-ARR",
+     "snippet": "<if(v){\"true\"}el{\"false\"}"
+    }
+   ]
+  },
+  {
+   "rank": 27,
+   "signature": "CALL_EXPR(IDENT STR_LIT INT_LIT)",
+   "count": 1347,
+   "programs": 453,
+   "program_share": 0.0194,
+   "depth": 1,
+   "node_count": 4,
+   "per_category": {
+    "A-ERR": 52,
+    "A-STR": 215,
+    "D-CFG": 3,
+    "D-CLI": 123,
+    "D-CRY": 93,
+    "D-DAT": 222,
+    "D-FIO": 102,
+    "D-NET": 96,
+    "D-TST": 324,
+    "D-WEB": 117
+   },
+   "top_callees": [
+    [
+     "repeatstr",
+     129
+    ],
+    [
+     "nthline",
+     78
+    ],
+    [
+     "genitems",
+     78
+    ],
+    [
+     "repeat",
+     61
+    ],
+    [
+     "padleft",
+     60
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ERR-0047",
+     "category": "A-ERR",
+     "snippet": "safecharat(\"hello\";1)"
+    },
+    {
+     "task_id": "A-ERR-0047v18",
+     "category": "A-ERR",
+     "snippet": "safecharat(\"hello\";1)"
+    },
+    {
+     "task_id": "A-ERR-0047v19",
+     "category": "A-ERR",
+     "snippet": "safecharat(\"hello\";1)"
+    }
+   ]
+  },
+  {
+   "rank": 28,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT IDENT)",
+   "count": 1338,
+   "programs": 1109,
+   "program_share": 0.0474,
+   "depth": 2,
+   "node_count": 6,
+   "per_category": {
+    "A-ARR": 19,
+    "A-CND": 7,
+    "A-ERR": 65,
+    "A-MTH": 1,
+    "A-SRT": 289,
+    "A-STR": 348,
+    "D-CFG": 90,
+    "D-CLI": 50,
+    "D-CRY": 73,
+    "D-DAT": 45,
+    "D-FIO": 67,
+    "D-NET": 91,
+    "D-TST": 146,
+    "D-WEB": 47
+   },
+   "top_callees": [
+    [
+     "s.charcode",
+     264
+    ],
+    [
+     "r.set",
+     244
+    ],
+    [
+     "s.concat",
+     204
+    ],
+    [
+     "s.split",
+     70
+    ],
+    [
+     "s.contains",
+     61
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0029v32",
+     "category": "A-ARR",
+     "snippet": "out.set(i;cur)"
+    },
+    {
+     "task_id": "A-ARR-0086v45",
+     "category": "A-ARR",
+     "snippet": "s.concat(out;piece)"
+    },
+    {
+     "task_id": "A-ARR-0110v15",
+     "category": "A-ARR",
+     "snippet": "r.set(j;tmp)"
+    }
+   ]
+  },
+  {
+   "rank": 29,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) CALL_EXPR(IDENT INT_LIT)))",
+   "count": 1311,
+   "programs": 334,
+   "program_share": 0.0143,
+   "depth": 3,
+   "node_count": 8,
+   "per_category": {
+    "A-CND": 747,
+    "A-ERR": 7,
+    "A-MTH": 20,
+    "A-STR": 99,
+    "D-CLI": 84,
+    "D-CRY": 195,
+    "D-FIO": 105,
+    "D-WEB": 54
+   },
+   "top_callees": [
+    [
+     "io.println",
+     1311
+    ],
+    [
+     "toroman",
+     158
+    ],
+    [
+     "timeofday",
+     88
+    ],
+    [
+     "priority",
+     87
+    ],
+    [
+     "tohex",
+     72
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0040",
+     "category": "A-CND",
+     "snippet": "io.println(grade(95))"
+    },
+    {
+     "task_id": "A-CND-0040v10",
+     "category": "A-CND",
+     "snippet": "io.println(grade(100))"
+    },
+    {
+     "task_id": "A-CND-0040v18",
+     "category": "A-CND",
+     "snippet": "io.println(grade(95))"
+    }
+   ]
+  },
+  {
+   "rank": 30,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT BIN[+](IDENT INT_LIT))",
+   "count": 1308,
+   "programs": 912,
+   "program_share": 0.039,
+   "depth": 2,
+   "node_count": 8,
+   "per_category": {
+    "A-CND": 4,
+    "A-ERR": 20,
+    "A-SRT": 8,
+    "A-STR": 506,
+    "D-CFG": 107,
+    "D-CLI": 41,
+    "D-CRY": 300,
+    "D-DAT": 17,
+    "D-FIO": 99,
+    "D-NET": 125,
+    "D-TST": 6,
+    "D-WEB": 75
+   },
+   "top_callees": [
+    [
+     "p0.slice",
+     210
+    ],
+    [
+     "s.slice",
+     134
+    ],
+    [
+     "alpha.slice",
+     130
+    ],
+    [
+     "lhs.slice",
+     63
+    ],
+    [
+     "num1.slice",
+     59
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0059v75",
+     "category": "A-CND",
+     "snippet": "letters.slice(i;i+1)"
+    },
+    {
+     "task_id": "A-CND-0060v59",
+     "category": "A-CND",
+     "snippet": "letters.slice(i;i+1)"
+    },
+    {
+     "task_id": "A-CND-0061v35",
+     "category": "A-CND",
+     "snippet": "letters.slice(i;i+1)"
+    }
+   ]
+  },
+  {
+   "rank": 31,
+   "signature": "INDEX_EXPR(IDENT BIN[+](IDENT INT_LIT))",
+   "count": 1199,
+   "programs": 663,
+   "program_share": 0.0284,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 5,
+    "A-CND": 8,
+    "A-ERR": 38,
+    "A-SRT": 1046,
+    "A-STR": 24,
+    "D-CFG": 1,
+    "D-CLI": 72,
+    "D-NET": 2,
+    "D-WEB": 3
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0101v24",
+     "category": "A-ARR",
+     "snippet": "arr.get(i+1)"
+    },
+    {
+     "task_id": "A-ARR-0101v31",
+     "category": "A-ARR",
+     "snippet": "arr.get(i+1)"
+    },
+    {
+     "task_id": "A-ARR-0101v56",
+     "category": "A-ARR",
+     "snippet": "x.get(i+1)"
+    }
+   ]
+  },
+  {
+   "rank": 32,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) CALL_EXPR(IDENT STR_LIT STR_LIT)))",
+   "count": 1135,
+   "programs": 378,
+   "program_share": 0.0162,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-ERR": 7,
+    "A-STR": 129,
+    "D-CFG": 84,
+    "D-CLI": 108,
+    "D-FIO": 234,
+    "D-NET": 3,
+    "D-TST": 207,
+    "D-WEB": 363
+   },
+   "top_callees": [
+    [
+     "io.println",
+     1135
+    ],
+    [
+     "joinpath",
+     132
+    ],
+    [
+     "replaceext",
+     99
+    ],
+    [
+     "headerline",
+     99
+    ],
+    [
+     "helpline",
+     87
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ERR-0018v44",
+     "category": "A-ERR",
+     "snippet": "io.println(show(\"10.0\";\"4.0\"))"
+    },
+    {
+     "task_id": "A-ERR-0031v40",
+     "category": "A-ERR",
+     "snippet": "io.println(describe(\"10.0\";\"4.0\"))"
+    },
+    {
+     "task_id": "A-STR-0006v12",
+     "category": "A-STR",
+     "snippet": "io.println(concat(\"foo\";\"bar\"))"
+    }
+   ]
+  },
+  {
+   "rank": 33,
+   "signature": "RETURN_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT))",
+   "count": 1091,
+   "programs": 1061,
+   "program_share": 0.0454,
+   "depth": 3,
+   "node_count": 6,
+   "per_category": {
+    "A-ARR": 39,
+    "A-CND": 30,
+    "A-ERR": 64,
+    "A-MTH": 9,
+    "A-SRT": 78,
+    "A-STR": 312,
+    "D-CFG": 29,
+    "D-CLI": 98,
+    "D-CRY": 39,
+    "D-DAT": 111,
+    "D-FIO": 48,
+    "D-NET": 52,
+    "D-TST": 112,
+    "D-WEB": 70
+   },
+   "top_callees": [
+    [
+     "s.build",
+     731
+    ],
+    [
+     "st.build",
+     57
+    ],
+    [
+     "s.trim",
+     51
+    ],
+    [
+     "s.upper",
+     41
+    ],
+    [
+     "s.frombytes",
+     16
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "<s.build(b)"
+    },
+    {
+     "task_id": "A-ARR-0054v7",
+     "category": "A-ARR",
+     "snippet": "<s.build(b)"
+    },
+    {
+     "task_id": "A-ARR-0035v6",
+     "category": "A-ARR",
+     "snippet": "<s.build(b)"
+    }
+   ]
+  },
+  {
+   "rank": 34,
+   "signature": "LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(IDENT IDENT)) ASSIGN[=](IDENT BIN[+](IDENT INT_LIT)) STMT_LIST(IF_STMT(BIN[==](...) STMT_LIST(...))))",
+   "count": 1039,
+   "programs": 995,
+   "program_share": 0.0426,
+   "depth": 3,
+   "node_count": 18,
+   "per_category": {
+    "A-ARR": 396,
+    "A-CND": 13,
+    "A-ERR": 79,
+    "A-SRT": 147,
+    "A-STR": 51,
+    "D-CFG": 39,
+    "D-CLI": 72,
+    "D-CRY": 25,
+    "D-DAT": 93,
+    "D-FIO": 38,
+    "D-NET": 38,
+    "D-TST": 20,
+    "D-WEB": 28
+   },
+   "top_callees": [
+    [
+     "out.append",
+     15
+    ],
+    [
+     "split",
+     14
+    ],
+    [
+     "p0.slice",
+     14
+    ],
+    [
+     "s.slice",
+     10
+    ],
+    [
+     "keyof",
+     8
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==cur){seen=true;br}}"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==v){seen=true;br}}"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==v){ seen=true}}"
+    }
+   ]
+  },
+  {
+   "rank": 35,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT IDENT BIN[+](IDENT INT_LIT))",
+   "count": 1035,
+   "programs": 756,
+   "program_share": 0.0323,
+   "depth": 2,
+   "node_count": 9,
+   "per_category": {
+    "A-CND": 3,
+    "A-ERR": 19,
+    "A-MTH": 1,
+    "A-SRT": 3,
+    "A-STR": 511,
+    "D-CFG": 52,
+    "D-CLI": 50,
+    "D-CRY": 129,
+    "D-DAT": 10,
+    "D-FIO": 76,
+    "D-NET": 105,
+    "D-TST": 12,
+    "D-WEB": 64
+   },
+   "top_callees": [
+    [
+     "s.slice",
+     952
+    ],
+    [
+     "st.slice",
+     53
+    ],
+    [
+     "s.substr",
+     17
+    ],
+    [
+     "str.slice",
+     6
+    ],
+    [
+     "sr.slice",
+     3
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0058v19",
+     "category": "A-CND",
+     "snippet": "s.slice(vowels;i;i+1)"
+    },
+    {
+     "task_id": "A-CND-0062v51",
+     "category": "A-CND",
+     "snippet": "s.slice(chars;i;i+1)"
+    },
+    {
+     "task_id": "A-ERR-0016v69",
+     "category": "A-ERR",
+     "snippet": "s.slice(p;i;i+1)"
+    }
+   ]
+  },
+  {
+   "rank": 36,
+   "signature": "BIN[==](INDEX_EXPR(IDENT IDENT) IDENT)",
+   "count": 1032,
+   "programs": 991,
+   "program_share": 0.0424,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 417,
+    "A-CND": 1,
+    "A-ERR": 90,
+    "A-SRT": 221,
+    "A-STR": 25,
+    "D-CFG": 13,
+    "D-CLI": 120,
+    "D-CRY": 17,
+    "D-DAT": 102,
+    "D-FIO": 14,
+    "D-NET": 5,
+    "D-WEB": 7
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "out.get(j)==cur"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "out.get(j)==v"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "out.get(j)==v"
+    }
+   ]
+  },
+  {
+   "rank": 37,
+   "signature": "CALL_EXPR(IDENT INT_LIT INT_LIT)",
+   "count": 1029,
+   "programs": 365,
+   "program_share": 0.0156,
+   "depth": 1,
+   "node_count": 4,
+   "per_category": {
+    "A-CND": 71,
+    "A-ERR": 212,
+    "A-MTH": 92,
+    "D-CLI": 71,
+    "D-CRY": 55,
+    "D-TST": 528
+   },
+   "top_callees": [
+    [
+     "progressbar",
+     60
+    ],
+    [
+     "extgcd",
+     52
+    ],
+    [
+     "notequal",
+     48
+    ],
+    [
+     "isgreater",
+     39
+    ],
+    [
+     "rangearr",
+     39
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0019v50",
+     "category": "A-CND",
+     "snippet": "isequal(3;3)"
+    },
+    {
+     "task_id": "A-CND-0019v51",
+     "category": "A-CND",
+     "snippet": "isequal(3;3)"
+    },
+    {
+     "task_id": "A-CND-0019v60",
+     "category": "A-CND",
+     "snippet": "isequal(3;3)"
+    }
+   ]
+  },
+  {
+   "rank": 38,
+   "signature": "LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(IDENT IDENT)) ASSIGN[=](IDENT BIN[+](IDENT INT_LIT)) STMT_LIST(ASSIGN[=](IDENT CALL_EXPR(...))))",
+   "count": 1024,
+   "programs": 894,
+   "program_share": 0.0382,
+   "depth": 3,
+   "node_count": 18,
+   "per_category": {
+    "A-ARR": 186,
+    "A-CND": 1,
+    "A-ERR": 85,
+    "A-MTH": 1,
+    "A-SRT": 189,
+    "A-STR": 15,
+    "D-CFG": 24,
+    "D-CLI": 17,
+    "D-CRY": 2,
+    "D-DAT": 408,
+    "D-FIO": 21,
+    "D-NET": 22,
+    "D-TST": 40,
+    "D-WEB": 13
+   },
+   "top_callees": [
+    [
+     "out.append",
+     433
+    ],
+    [
+     "parts.append",
+     173
+    ],
+    [
+     "s.concat",
+     48
+    ],
+    [
+     "r.append",
+     40
+    ],
+    [
+     "result.append",
+     38
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\")}"
+    },
+    {
+     "task_id": "A-ARR-0054v8",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\")}"
+    },
+    {
+     "task_id": "A-ARR-0055v30",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){parts=parts.append(\"\\(a.get(i))\")}"
+    }
+   ]
+  },
+  {
+   "rank": 39,
+   "signature": "BIN[-](FIELD_EXPR(IDENT IDENT) INT_LIT)",
+   "count": 954,
+   "programs": 903,
+   "program_share": 0.0386,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 68,
+    "A-ERR": 69,
+    "A-SRT": 232,
+    "A-STR": 32,
+    "D-CFG": 76,
+    "D-CLI": 20,
+    "D-CRY": 1,
+    "D-DAT": 28,
+    "D-FIO": 301,
+    "D-NET": 76,
+    "D-TST": 17,
+    "D-WEB": 34
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0027v24",
+     "category": "A-ARR",
+     "snippet": "arr.len-1"
+    },
+    {
+     "task_id": "A-ARR-0027v33",
+     "category": "A-ARR",
+     "snippet": "n.len-1"
+    },
+    {
+     "task_id": "A-ARR-0027v57",
+     "category": "A-ARR",
+     "snippet": "n.len-1"
+    }
+   ]
+  },
+  {
+   "rank": 40,
+   "signature": "CALL_EXPR(IDENT IDENT IDENT)",
+   "count": 951,
+   "programs": 740,
+   "program_share": 0.0316,
+   "depth": 1,
+   "node_count": 4,
+   "per_category": {
+    "A-ARR": 175,
+    "A-CND": 28,
+    "A-ERR": 175,
+    "A-MTH": 88,
+    "A-SRT": 111,
+    "A-STR": 105,
+    "D-CFG": 17,
+    "D-CLI": 32,
+    "D-CRY": 38,
+    "D-DAT": 58,
+    "D-FIO": 12,
+    "D-NET": 13,
+    "D-TST": 81,
+    "D-WEB": 18
+   },
+   "top_callees": [
+    [
+     "contains",
+     119
+    ],
+    [
+     "gcd",
+     60
+    ],
+    [
+     "get",
+     44
+    ],
+    [
+     "concat",
+     41
+    ],
+    [
+     "charat",
+     35
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "seen(result;v)"
+    },
+    {
+     "task_id": "A-ARR-0051v65",
+     "category": "A-ARR",
+     "snippet": "contains(result;v)"
+    },
+    {
+     "task_id": "A-ARR-0053v13",
+     "category": "A-ARR",
+     "snippet": "contains(acc;v)"
+    }
+   ]
+  },
+  {
+   "rank": 41,
+   "signature": "BIN[&&](BIN[>=](IDENT INT_LIT) BIN[<=](IDENT INT_LIT))",
+   "count": 933,
+   "programs": 495,
+   "program_share": 0.0212,
+   "depth": 2,
+   "node_count": 7,
+   "per_category": {
+    "A-CND": 233,
+    "A-STR": 99,
+    "D-CFG": 1,
+    "D-CRY": 428,
+    "D-NET": 155,
+    "D-WEB": 17
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-CND-0050v53",
+     "category": "A-CND",
+     "snippet": "m>=1&&m<=12"
+    },
+    {
+     "task_id": "A-CND-0053v19",
+     "category": "A-CND",
+     "snippet": "code>=100 && code<=199"
+    },
+    {
+     "task_id": "A-CND-0053v20",
+     "category": "A-CND",
+     "snippet": "code>=100&&code<=199"
+    }
+   ]
+  },
+  {
+   "rank": 42,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) CALL_EXPR(IDENT STR_LIT INT_LIT)))",
+   "count": 916,
+   "programs": 305,
+   "program_share": 0.013,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-STR": 208,
+    "D-CLI": 117,
+    "D-CRY": 93,
+    "D-DAT": 117,
+    "D-FIO": 102,
+    "D-NET": 81,
+    "D-TST": 90,
+    "D-WEB": 108
+   },
+   "top_callees": [
+    [
+     "io.println",
+     916
+    ],
+    [
+     "nthline",
+     78
+    ],
+    [
+     "nthfield",
+     60
+    ],
+    [
+     "padleft",
+     57
+    ],
+    [
+     "repeatstr",
+     57
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-STR-0007v10",
+     "category": "A-STR",
+     "snippet": "io.println(repeat(\"ab\";3))"
+    },
+    {
+     "task_id": "A-STR-0007v24",
+     "category": "A-STR",
+     "snippet": "io.println(repeat(\"ab\";3))"
+    },
+    {
+     "task_id": "A-STR-0007v32",
+     "category": "A-STR",
+     "snippet": "io.println(repeat(\"ab\";3))"
+    }
+   ]
+  },
+  {
+   "rank": 43,
+   "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT))",
+   "count": 910,
+   "programs": 896,
+   "program_share": 0.0383,
+   "depth": 2,
+   "node_count": 4,
+   "per_category": {
+    "A-ARR": 42,
+    "A-CND": 26,
+    "A-ERR": 61,
+    "A-MTH": 10,
+    "A-SRT": 84,
+    "A-STR": 234,
+    "D-CFG": 54,
+    "D-CLI": 100,
+    "D-CRY": 9,
+    "D-DAT": 109,
+    "D-FIO": 47,
+    "D-NET": 22,
+    "D-TST": 79,
+    "D-WEB": 33
+   },
+   "top_callees": [
+    [
+     "s.builder",
+     801
+    ],
+    [
+     "st.builder",
+     58
+    ],
+    [
+     "lhs.trim",
+     6
+    ],
+    [
+     "line.trim",
+     5
+    ],
+    [
+     "p.trim",
+     4
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "s.builder()"
+    },
+    {
+     "task_id": "A-ARR-0054v7",
+     "category": "A-ARR",
+     "snippet": "s.builder()"
+    },
+    {
+     "task_id": "A-ARR-0035v6",
+     "category": "A-ARR",
+     "snippet": "s.builder()"
+    }
+   ]
+  },
+  {
+   "rank": 44,
+   "signature": "RETURN_STMT(STRUCT_LIT(FIELD_INIT(STR_LIT)))",
+   "count": 895,
+   "programs": 608,
+   "program_share": 0.026,
+   "depth": 3,
+   "node_count": 4,
+   "per_category": {
+    "A-ERR": 893,
+    "A-MTH": 1,
+    "D-CRY": 1
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ERR-0016v11",
+     "category": "A-ERR",
+     "snippet": "<$parseerr{$invalidformat:\"not a number\"}"
+    },
+    {
+     "task_id": "A-ERR-0016v19",
+     "category": "A-ERR",
+     "snippet": "<$parseerr{$invalidformat:\"no digits after sign\"}"
+    },
+    {
+     "task_id": "A-ERR-0016v40",
+     "category": "A-ERR",
+     "snippet": "<$parseerr{$invalidformat:\"not a valid integer\"}"
+    }
+   ]
+  },
+  {
+   "rank": 45,
+   "signature": "BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT)))",
+   "count": 876,
+   "programs": 863,
+   "program_share": 0.0369,
+   "depth": 3,
+   "node_count": 6,
+   "per_category": {
+    "A-ARR": 42,
+    "A-CND": 26,
+    "A-ERR": 60,
+    "A-MTH": 10,
+    "A-SRT": 79,
+    "A-STR": 228,
+    "D-CFG": 51,
+    "D-CLI": 95,
+    "D-CRY": 8,
+    "D-DAT": 105,
+    "D-FIO": 46,
+    "D-NET": 17,
+    "D-TST": 77,
+    "D-WEB": 32
+   },
+   "top_callees": [
+    [
+     "s.builder",
+     777
+    ],
+    [
+     "st.builder",
+     58
+    ],
+    [
+     "lhs.trim",
+     6
+    ],
+    [
+     "line.trim",
+     5
+    ],
+    [
+     "left.trim",
+     4
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "let b=s.builder()"
+    },
+    {
+     "task_id": "A-ARR-0054v7",
+     "category": "A-ARR",
+     "snippet": "let b=s.builder()"
+    },
+    {
+     "task_id": "A-ARR-0035v6",
+     "category": "A-ARR",
+     "snippet": "let b=s.builder()"
+    }
+   ]
+  },
+  {
+   "rank": 46,
+   "signature": "ARRAY_LIT(INT_LIT INT_LIT INT_LIT)",
+   "count": 857,
+   "programs": 623,
+   "program_share": 0.0266,
+   "depth": 1,
+   "node_count": 4,
+   "per_category": {
+    "A-ARR": 196,
+    "A-CND": 1,
+    "A-ERR": 289,
+    "A-MTH": 1,
+    "A-SRT": 292,
+    "D-CLI": 1,
+    "D-DAT": 77
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "@(7;7;7)"
+    },
+    {
+     "task_id": "A-ARR-0051v7",
+     "category": "A-ARR",
+     "snippet": "@(5;5;5)"
+    },
+    {
+     "task_id": "A-ARR-0054v8",
+     "category": "A-ARR",
+     "snippet": "@(7;8;9)"
+    }
+   ]
+  },
+  {
+   "rank": 47,
+   "signature": "BIND_STMT(IDENT CALL_EXPR(IDENT IDENT STR_LIT))",
+   "count": 820,
+   "programs": 740,
+   "program_share": 0.0316,
+   "depth": 2,
+   "node_count": 6,
+   "per_category": {
+    "A-ARR": 5,
+    "A-SRT": 5,
+    "D-CFG": 130,
+    "D-CLI": 34,
+    "D-DAT": 56,
+    "D-FIO": 170,
+    "D-NET": 188,
+    "D-TST": 15,
+    "D-WEB": 217
+   },
+   "top_callees": [
+    [
+     "split",
+     747
+    ],
+    [
+     "startswith",
+     36
+    ],
+    [
+     "endswith",
+     7
+    ],
+    [
+     "arrcount",
+     5
+    ],
+    [
+     "linearsearch",
+     5
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0067v12",
+     "category": "A-ARR",
+     "snippet": "let r1=arrcount(a;\"x\")"
+    },
+    {
+     "task_id": "A-ARR-0067v59",
+     "category": "A-ARR",
+     "snippet": "let r1=arrcount(a;\"x\")"
+    },
+    {
+     "task_id": "A-SRT-0026",
+     "category": "A-SRT",
+     "snippet": "let r1=linearsearch(a;\"banana\")"
+    }
+   ]
+  },
+  {
+   "rank": 48,
+   "signature": "BIN[==](BIN[%](IDENT INT_LIT) INT_LIT)",
+   "count": 778,
+   "programs": 524,
+   "program_share": 0.0224,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 32,
+    "A-CND": 426,
+    "A-ERR": 30,
+    "A-MTH": 172,
+    "A-SRT": 34,
+    "A-STR": 15,
+    "D-CRY": 11,
+    "D-DAT": 1,
+    "D-TST": 57
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0045v13",
+     "category": "A-ARR",
+     "snippet": "v%2==0"
+    },
+    {
+     "task_id": "A-ARR-0045v19",
+     "category": "A-ARR",
+     "snippet": "v%2==0"
+    },
+    {
+     "task_id": "A-ARR-0045v31",
+     "category": "A-ARR",
+     "snippet": "v%2==0"
+    }
+   ]
+  },
+  {
+   "rank": 49,
+   "signature": "IF_STMT(CALL_EXPR(IDENT STR_LIT) STMT_LIST(EXPR_STMT(STR_LIT)) STMT_LIST(EXPR_STMT(STR_LIT)))",
+   "count": 772,
+   "programs": 255,
+   "program_share": 0.0109,
+   "depth": 3,
+   "node_count": 10,
+   "per_category": {
+    "A-CND": 15,
+    "A-STR": 28,
+    "D-CFG": 177,
+    "D-CLI": 57,
+    "D-CRY": 162,
+    "D-FIO": 63,
+    "D-NET": 222,
+    "D-TST": 18,
+    "D-WEB": 30
+   },
+   "top_callees": [
+    [
+     "ishexdigit",
+     42
+    ],
+    [
+     "isdigit",
+     42
+    ],
+    [
+     "isipv4",
+     39
+    ],
+    [
+     "issecure",
+     36
+    ],
+    [
+     "iscomment",
+     33
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0058v28",
+     "category": "A-CND",
+     "snippet": "if(isvowel(\"a\")){\"true\"}el{\"false\"}"
+    },
+    {
+     "task_id": "A-CND-0058v33",
+     "category": "A-CND",
+     "snippet": "if(isvowel(\"a\")){\"true\"}el{\"false\"}"
+    },
+    {
+     "task_id": "A-CND-0058v47",
+     "category": "A-CND",
+     "snippet": "if(isvowel(\"a\")){\"true\"}el{\"false\"}"
+    }
+   ]
+  },
+  {
+   "rank": 50,
+   "signature": "RETURN_STMT(STRUCT_LIT(FIELD_INIT(BOOL_LIT)))",
+   "count": 769,
+   "programs": 722,
+   "program_share": 0.0309,
+   "depth": 3,
+   "node_count": 4,
+   "per_category": {
+    "A-ARR": 7,
+    "A-CND": 19,
+    "A-ERR": 709,
+    "A-MTH": 5,
+    "A-SRT": 7,
+    "A-STR": 1,
+    "D-CFG": 4,
+    "D-CLI": 1,
+    "D-CRY": 1,
+    "D-DAT": 4,
+    "D-FIO": 7,
+    "D-NET": 1,
+    "D-TST": 2,
+    "D-WEB": 1
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0008v54",
+     "category": "A-ARR",
+     "snippet": "<$lenres{$empty:true}"
+    },
+    {
+     "task_id": "A-ARR-0011v6",
+     "category": "A-ARR",
+     "snippet": "<$emptyerr{$empty:true}"
+    },
+    {
+     "task_id": "A-ARR-0001v54",
+     "category": "A-ARR",
+     "snippet": "<$sumerr{$empty:true}"
+    }
+   ]
+  }
+ ],
+ "shapes_seq2": [
+  {
+   "rank": 1,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)))",
+   "count": 11013,
+   "programs": 5197,
+   "program_share": 0.2223,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-ARR": 645,
+    "A-CND": 1538,
+    "A-ERR": 293,
+    "A-MTH": 1846,
+    "A-SRT": 814,
+    "A-STR": 782,
+    "D-CFG": 532,
+    "D-CLI": 424,
+    "D-CRY": 1184,
+    "D-DAT": 719,
+    "D-FIO": 463,
+    "D-NET": 712,
+    "D-TST": 511,
+    "D-WEB": 550
+   },
+   "top_callees": [
+    [
+     "io.println",
+     22026
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0054v7",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(showarr(arrslice(@(1;2;3;4;5);1;4)))\"); io.println(\"\\(showarr(arrslice(@(10;20;30);0;2)))\")"
+    },
+    {
+     "task_id": "A-ARR-0055v17",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(render(arrslice(data;1;4)))\"); io.println(\"\\(render(arrslice(data;0;2)))\")"
+    },
+    {
+     "task_id": "A-ARR-0055v2",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(r.len)\"); io.println(\"\\(r.get(0))\")"
+    }
+   ]
+  },
+  {
+   "rank": 2,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) CALL_EXPR(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) CALL_EXPR(...))))",
+   "count": 10736,
+   "programs": 5005,
+   "program_share": 0.2141,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-ARR": 349,
+    "A-CND": 1296,
+    "A-ERR": 122,
+    "A-MTH": 97,
+    "A-SRT": 407,
+    "A-STR": 1049,
+    "D-CFG": 832,
+    "D-CLI": 1151,
+    "D-CRY": 454,
+    "D-DAT": 979,
+    "D-FIO": 892,
+    "D-NET": 882,
+    "D-TST": 1206,
+    "D-WEB": 1020
+   },
+   "top_callees": [
+    [
+     "io.println",
+     21472
+    ],
+    [
+     "show",
+     1422
+    ],
+    [
+     "fmt",
+     1192
+    ],
+    [
+     "render",
+     1146
+    ],
+    [
+     "boolstr",
+     918
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "io.println(fmtarr(unique(@(1 as u64;2 as u64;1 as u64;3 as u64;2 as u64)))); io.println(fmtarr(unique(@(5 as u64;5 as u64;5 as u64))))"
+    },
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "io.println(fmtarr(unique(@(1;2;1;3;2;4) as @u64))); io.println(fmtarr(unique(@(7;7;7) as @u64)))"
+    },
+    {
+     "task_id": "A-ARR-0052",
+     "category": "A-ARR",
+     "snippet": "io.println(fmt(unique(@(1.0;2.0;1.0;3.0;2.0)))); io.println(fmt(unique(@(5.5;5.5))))"
+    }
+   ]
+  },
+  {
+   "rank": 3,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)) RETURN_STMT(INT_LIT))",
+   "count": 6317,
+   "programs": 6317,
+   "program_share": 0.2702,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 476,
+    "A-CND": 575,
+    "A-ERR": 709,
+    "A-MTH": 891,
+    "A-SRT": 492,
+    "A-STR": 401,
+    "D-CFG": 287,
+    "D-CLI": 226,
+    "D-CRY": 636,
+    "D-DAT": 406,
+    "D-FIO": 256,
+    "D-NET": 393,
+    "D-TST": 270,
+    "D-WEB": 299
+   },
+   "top_callees": [
+    [
+     "io.println",
+     6317
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(r)\"); <0"
+    },
+    {
+     "task_id": "A-ARR-0053v2",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(r.len)\"); <0"
+    },
+    {
+     "task_id": "A-ARR-0054v7",
+     "category": "A-ARR",
+     "snippet": "io.println(\"\\(showarr(arrslice(@(1;2;3);2;2)))\"); <0"
+    }
+   ]
+  },
+  {
+   "rank": 4,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) CALL_EXPR(...))) RETURN_STMT(INT_LIT))",
+   "count": 5075,
+   "programs": 5075,
+   "program_share": 0.217,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 205,
+    "A-CND": 337,
+    "A-ERR": 52,
+    "A-MTH": 36,
+    "A-SRT": 228,
+    "A-STR": 482,
+    "D-CFG": 420,
+    "D-CLI": 579,
+    "D-CRY": 227,
+    "D-DAT": 498,
+    "D-FIO": 448,
+    "D-NET": 445,
+    "D-TST": 606,
+    "D-WEB": 512
+   },
+   "top_callees": [
+    [
+     "io.println",
+     5075
+    ],
+    [
+     "show",
+     326
+    ],
+    [
+     "fmt",
+     312
+    ],
+    [
+     "render",
+     282
+    ],
+    [
+     "boolstr",
+     224
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "io.println(fmtarr(unique(@(7 as u64)))); <0"
+    },
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "io.println(showint(unique(data))); <0"
+    },
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "io.println(fmtarr(unique(@(7;7;7) as @u64))); <0"
+    }
+   ]
+  },
+  {
+   "rank": 5,
+   "signature": "SEQ2(FIELD(TYPE_EXPR) FIELD(TYPE_EXPR))",
+   "count": 1932,
+   "programs": 1504,
+   "program_share": 0.0643,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 5,
+    "A-CND": 14,
+    "A-ERR": 1894,
+    "A-MTH": 2,
+    "A-SRT": 3,
+    "D-CFG": 2,
+    "D-CLI": 1,
+    "D-CRY": 2,
+    "D-DAT": 2,
+    "D-FIO": 3,
+    "D-TST": 3,
+    "D-WEB": 1
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0008v54",
+     "category": "A-ARR",
+     "snippet": "empty:bool;$count:i64"
+    },
+    {
+     "task_id": "A-ARR-0093v14",
+     "category": "A-ARR",
+     "snippet": "some:f64;$none:bool"
+    },
+    {
+     "task_id": "MIG-P2-A-A-ARR-0096v13-053a94db",
+     "category": "A-ARR",
+     "snippet": "p:f64;q:f64"
+    }
+   ]
+  },
+  {
+   "rank": 6,
+   "signature": "SEQ2(BIND_STMT(IDENT MATCH_STMT(CALL_EXPR(...) MATCH_ARM(...) MATCH_ARM(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)))",
+   "count": 1314,
+   "programs": 553,
+   "program_share": 0.0237,
+   "depth": 3,
+   "node_count": 11,
+   "per_category": {
+    "A-ERR": 1314
+   },
+   "top_callees": [
+    [
+     "io.println",
+     1314
+    ],
+    [
+     "safefirst",
+     49
+    ],
+    [
+     "safelast",
+     48
+    ],
+    [
+     "safefactorial",
+     38
+    ],
+    [
+     "safeget",
+     36
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ERR-0012v43",
+     "category": "A-ERR",
+     "snippet": "let r1=mt safelast(@(1;2;3)) {$ok:v v;$err:e -1}; io.println(\"\\(r1)\")"
+    },
+    {
+     "task_id": "A-ERR-0012v58",
+     "category": "A-ERR",
+     "snippet": "let filled=mt safelast(@(4;8;15)) {$ok:v v;$err:e -1}; io.println(\"\\(filled)\")"
+    },
+    {
+     "task_id": "A-ERR-0012v60",
+     "category": "A-ERR",
+     "snippet": "let a=mt safelast(@(1;2;3)) {$ok:v v;$err:e -1}; io.println(\"\\(a)\")"
+    }
+   ]
+  },
+  {
+   "rank": 7,
+   "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))) RETURN_STMT(IDENT))",
+   "count": 1255,
+   "programs": 1247,
+   "program_share": 0.0533,
+   "depth": 3,
+   "node_count": 15,
+   "per_category": {
+    "A-ARR": 228,
+    "A-CND": 19,
+    "A-ERR": 36,
+    "A-MTH": 2,
+    "A-SRT": 183,
+    "A-STR": 57,
+    "D-CFG": 29,
+    "D-CLI": 88,
+    "D-CRY": 6,
+    "D-DAT": 221,
+    "D-FIO": 120,
+    "D-NET": 21,
+    "D-TST": 130,
+    "D-WEB": 115
+   },
+   "top_callees": [
+    [
+     "out.append",
+     141
+    ],
+    [
+     "s.len",
+     127
+    ],
+    [
+     "r.append",
+     34
+    ],
+    [
+     "starts",
+     30
+    ],
+    [
+     "startswith",
+     21
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(!contains(out;arr.get(i))){out=out.append(arr.get(i))} }; <out"
+    },
+    {
+     "task_id": "A-ARR-0053v61",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(arr.get(i)==v){found=true}; }; <found"
+    },
+    {
+     "task_id": "A-ARR-0053v62",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(!hasitem(out;arr.get(i))){out=out.append(arr.get(i))} }; <out"
+    }
+   ]
+  },
+  {
+   "rank": 8,
+   "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))) RETURN_STMT(IDENT))",
+   "count": 1054,
+   "programs": 1038,
+   "program_share": 0.0444,
+   "depth": 3,
+   "node_count": 15,
+   "per_category": {
+    "A-ARR": 241,
+    "A-ERR": 107,
+    "A-MTH": 24,
+    "A-SRT": 118,
+    "A-STR": 23,
+    "D-CFG": 23,
+    "D-CLI": 20,
+    "D-CRY": 31,
+    "D-DAT": 386,
+    "D-FIO": 36,
+    "D-NET": 12,
+    "D-TST": 14,
+    "D-WEB": 19
+   },
+   "top_callees": [
+    [
+     "out.append",
+     332
+    ],
+    [
+     "r.append",
+     38
+    ],
+    [
+     "s.concat",
+     37
+    ],
+    [
+     "s.lower",
+     35
+    ],
+    [
+     "s.upper",
+     32
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0052",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ acc=if(i==0){\"\\(a.get(0))\"}el{\"\\(acc) \\(a.get(i))\"} }; <acc"
+    },
+    {
+     "task_id": "A-ARR-0054v25",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ text=if(i==0){\"\\(a.get(i))\"}el{\"\\(text) \\(a.get(i))\"} }; <text"
+    },
+    {
+     "task_id": "A-ARR-0055v17",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ out=if(i==0){\"\\(a.get(i))\"}el{\"\\(out) \\(a.get(i))\"} }; <out"
+    }
+   ]
+  },
+  {
+   "rank": 9,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IF_STMT(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IF_STMT(...))))",
+   "count": 959,
+   "programs": 464,
+   "program_share": 0.0198,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-ARR": 8,
+    "A-CND": 75,
+    "A-MTH": 21,
+    "A-SRT": 28,
+    "A-STR": 43,
+    "D-CFG": 114,
+    "D-CLI": 52,
+    "D-CRY": 116,
+    "D-FIO": 66,
+    "D-NET": 164,
+    "D-TST": 200,
+    "D-WEB": 72
+   },
+   "top_callees": [
+    [
+     "io.println",
+     1918
+    ],
+    [
+     "globmatch",
+     84
+    ],
+    [
+     "isvaliddate",
+     62
+    ],
+    [
+     "isdigit",
+     56
+    ],
+    [
+     "ishexdigit",
+     52
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0020v1",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(vals;2 as u64)){\"true\"}el{\"false\"}); io.println(if(arrcontains(vals;9 as u64)){\"true\"}el{\"false\"})"
+    },
+    {
+     "task_id": "A-ARR-0021v23",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(@(1.0;2.0;3.0);2.0)){\"true\"}el{\"false\"}); io.println(if(arrcontains(@(1.0;2.0;3.0);5.0)){\"true\"}el{\"false\"})"
+    },
+    {
+     "task_id": "A-ARR-0021v35",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(@(1.0;2.5;3.0);2.5)){\"true\"}el{\"false\"}); io.println(if(arrcontains(@(1.0;2.0);9.0)){\"true\"}el{\"false\"})"
+    }
+   ]
+  },
+  {
+   "rank": 10,
+   "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(BIND_STMT(...) IF_STMT(...))) RETURN_STMT(IDENT))",
+   "count": 878,
+   "programs": 874,
+   "program_share": 0.0374,
+   "depth": 3,
+   "node_count": 16,
+   "per_category": {
+    "A-ARR": 204,
+    "A-CND": 5,
+    "A-ERR": 8,
+    "A-MTH": 1,
+    "A-SRT": 39,
+    "A-STR": 53,
+    "D-CFG": 118,
+    "D-CLI": 64,
+    "D-CRY": 2,
+    "D-DAT": 166,
+    "D-FIO": 87,
+    "D-NET": 32,
+    "D-TST": 8,
+    "D-WEB": 91
+   },
+   "top_callees": [
+    [
+     "s.len",
+     221
+    ],
+    [
+     "out.append",
+     198
+    ],
+    [
+     "contains",
+     88
+    ],
+    [
+     "s.trim",
+     60
+    ],
+    [
+     "split",
+     43
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ let v=arr.get(i); if(!seen(result;v)){result=result.append(v)} }; <result"
+    },
+    {
+     "task_id": "A-ARR-0051v65",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ let v=arr.get(i); if(!(contains(result;v))){ result=result.append(v) } }; <result"
+    },
+    {
+     "task_id": "A-ARR-0053v13",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<p.len;i=i+1){ let v=p.get(i); if(!contains(acc;v)){acc=acc.append(v)} }; <acc"
+    }
+   ]
+  },
+  {
+   "rank": 11,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT ARRAY_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))))",
+   "count": 834,
+   "programs": 754,
+   "program_share": 0.0322,
+   "depth": 3,
+   "node_count": 16,
+   "per_category": {
+    "A-ARR": 104,
+    "A-CND": 1,
+    "A-ERR": 83,
+    "A-MTH": 1,
+    "A-SRT": 159,
+    "A-STR": 7,
+    "D-CFG": 16,
+    "D-CLI": 15,
+    "D-CRY": 1,
+    "D-DAT": 369,
+    "D-FIO": 18,
+    "D-NET": 8,
+    "D-TST": 40,
+    "D-WEB": 12
+   },
+   "top_callees": [
+    [
+     "out.append",
+     333
+    ],
+    [
+     "parts.append",
+     167
+    ],
+    [
+     "s.concat",
+     37
+    ],
+    [
+     "s.lower",
+     31
+    ],
+    [
+     "result.append",
+     30
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "let parts=mut.@(); lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\")}"
+    },
+    {
+     "task_id": "A-ARR-0054v8",
+     "category": "A-ARR",
+     "snippet": "let parts=mut.@(); lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\")}"
+    },
+    {
+     "task_id": "A-ARR-0055v30",
+     "category": "A-ARR",
+     "snippet": "let parts=mut.@(); lp(let i=0;i<a.len;i=i+1){parts=parts.append(\"\\(a.get(i))\")}"
+    }
+   ]
+  },
+  {
+   "rank": 12,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)) BIND_STMT(IDENT MATCH_STMT(CALL_EXPR(...) MATCH_ARM(...) MATCH_ARM(...))))",
+   "count": 747,
+   "programs": 501,
+   "program_share": 0.0214,
+   "depth": 3,
+   "node_count": 11,
+   "per_category": {
+    "A-ERR": 747
+   },
+   "top_callees": [
+    [
+     "io.println",
+     747
+    ],
+    [
+     "safefactorial",
+     26
+    ],
+    [
+     "safelast",
+     21
+    ],
+    [
+     "safefirst",
+     21
+    ],
+    [
+     "safeget",
+     20
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ERR-0012v43",
+     "category": "A-ERR",
+     "snippet": "io.println(\"\\(r1)\"); let r2=mt safelast(@(7)) {$ok:v v;$err:e -1}"
+    },
+    {
+     "task_id": "A-ERR-0012v58",
+     "category": "A-ERR",
+     "snippet": "io.println(\"\\(filled)\"); let single=mt safelast(@(7)) {$ok:v v;$err:e -1}"
+    },
+    {
+     "task_id": "A-ERR-0012v60",
+     "category": "A-ERR",
+     "snippet": "io.println(\"\\(a)\"); let b=mt safelast(@()) {$ok:v v;$err:e -1}"
+    }
+   ]
+  },
+  {
+   "rank": 13,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT INT_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))))",
+   "count": 739,
+   "programs": 730,
+   "program_share": 0.0312,
+   "depth": 3,
+   "node_count": 16,
+   "per_category": {
+    "A-ARR": 73,
+    "A-CND": 13,
+    "A-ERR": 3,
+    "A-SRT": 129,
+    "A-STR": 40,
+    "D-CFG": 16,
+    "D-CLI": 44,
+    "D-CRY": 1,
+    "D-DAT": 132,
+    "D-FIO": 69,
+    "D-NET": 17,
+    "D-TST": 107,
+    "D-WEB": 95
+   },
+   "top_callees": [
+    [
+     "s.len",
+     117
+    ],
+    [
+     "starts",
+     23
+    ],
+    [
+     "startswith",
+     15
+    ],
+    [
+     "s.trim",
+     12
+    ],
+    [
+     "p0.slice",
+     11
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0064v29",
+     "category": "A-ARR",
+     "snippet": "let c=mut.0; lp(let i=0;i<p.len;i=i+1){if(p.get(i)==q){c=c+1}}"
+    },
+    {
+     "task_id": "A-ARR-0064v34",
+     "category": "A-ARR",
+     "snippet": "let count=mut.0; lp(let i=0;i<val.len;i=i+1){ if(val.get(i)==other){count=count+1}}"
+    },
+    {
+     "task_id": "A-ARR-0064v4",
+     "category": "A-ARR",
+     "snippet": "let count=mut.0; lp(let i=0;i<first.len;i=i+1){ if(first.get(i)==second){count=count+1}}"
+    }
+   ]
+  },
+  {
+   "rank": 14,
+   "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT IDENT) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))) RETURN_STMT(IDENT))",
+   "count": 671,
+   "programs": 666,
+   "program_share": 0.0285,
+   "depth": 3,
+   "node_count": 15,
+   "per_category": {
+    "A-ARR": 111,
+    "A-CND": 1,
+    "A-ERR": 17,
+    "A-MTH": 103,
+    "A-SRT": 20,
+    "A-STR": 28,
+    "D-CFG": 6,
+    "D-CLI": 19,
+    "D-CRY": 24,
+    "D-DAT": 79,
+    "D-FIO": 10,
+    "D-TST": 252,
+    "D-WEB": 1
+   },
+   "top_callees": [
+    [
+     "out.append",
+     238
+    ],
+    [
+     "r.append",
+     53
+    ],
+    [
+     "result.append",
+     34
+    ],
+    [
+     "s.concat",
+     21
+    ],
+    [
+     "res.append",
+     13
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0027v10",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<n;i=i+1){ res=res.append(arr.get(n-1-i)); }; <res"
+    },
+    {
+     "task_id": "A-ARR-0027v4",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<n;i=i+1){ res=res.append(first.get(n-1-i)) }; <res"
+    },
+    {
+     "task_id": "A-ARR-0028v19",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<n;i=i+1){out=out.set(i;arr.get(n-1-i))}; <out"
+    }
+   ]
+  },
+  {
+   "rank": 15,
+   "signature": "SEQ2(BIND_STMT(IDENT INDEX_EXPR(IDENT IDENT)) ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(...) IDENT INDEX_EXPR(...))))",
+   "count": 610,
+   "programs": 589,
+   "program_share": 0.0252,
+   "depth": 3,
+   "node_count": 12,
+   "per_category": {
+    "A-ARR": 12,
+    "A-CND": 3,
+    "A-ERR": 39,
+    "A-SRT": 542,
+    "A-STR": 12,
+    "D-DAT": 2
+   },
+   "top_callees": [
+    [
+     "r.set",
+     497
+    ],
+    [
+     "result.set",
+     27
+    ],
+    [
+     "sorted.set",
+     22
+    ],
+    [
+     "a.set",
+     6
+    ],
+    [
+     "row.set",
+     6
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0110v15",
+     "category": "A-ARR",
+     "snippet": "let tmp=r.get(i); r=r.set(i;r.get(j))"
+    },
+    {
+     "task_id": "A-ARR-0110v22",
+     "category": "A-ARR",
+     "snippet": "let tmp=r.get(i); r=r.set(i;r.get(j))"
+    },
+    {
+     "task_id": "A-ARR-0110v24",
+     "category": "A-ARR",
+     "snippet": "let tmp=r.get(i); r=r.set(i;r.get(j))"
+    }
+   ]
+  },
+  {
+   "rank": 16,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IF_STMT(...))) RETURN_STMT(INT_LIT))",
+   "count": 537,
+   "programs": 537,
+   "program_share": 0.023,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 4,
+    "A-CND": 28,
+    "A-ERR": 3,
+    "A-MTH": 9,
+    "A-SRT": 16,
+    "A-STR": 19,
+    "D-CFG": 64,
+    "D-CLI": 30,
+    "D-CRY": 69,
+    "D-FIO": 44,
+    "D-NET": 94,
+    "D-TST": 114,
+    "D-WEB": 43
+   },
+   "top_callees": [
+    [
+     "io.println",
+     537
+    ],
+    [
+     "globmatch",
+     21
+    ],
+    [
+     "isdigit",
+     14
+    ],
+    [
+     "isipv4",
+     14
+    ],
+    [
+     "ishexdigit",
+     13
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0020v1",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(@();4 as u64)){\"true\"}el{\"false\"}); <0"
+    },
+    {
+     "task_id": "A-ARR-0021v23",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(@();4.0)){\"true\"}el{\"false\"}); <0"
+    },
+    {
+     "task_id": "A-ARR-0021v35",
+     "category": "A-ARR",
+     "snippet": "io.println(if(arrcontains(@(4.0);4.0)){\"true\"}el{\"false\"}); <0"
+    }
+   ]
+  },
+  {
+   "rank": 17,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT INT_LIT) MUT_BIND_STMT(IDENT INT_LIT))",
+   "count": 504,
+   "programs": 413,
+   "program_share": 0.0177,
+   "depth": 2,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 3,
+    "A-CND": 1,
+    "A-ERR": 2,
+    "A-MTH": 223,
+    "A-SRT": 160,
+    "A-STR": 32,
+    "D-CFG": 8,
+    "D-CLI": 2,
+    "D-CRY": 16,
+    "D-DAT": 10,
+    "D-FIO": 10,
+    "D-NET": 17,
+    "D-TST": 4,
+    "D-WEB": 16
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "MIG-P2-A-A-ARR-0095v6-07726442",
+     "category": "A-ARR",
+     "snippet": "let num1=mut.18446744073709551615; let num2=mut.18446744073709551615"
+    },
+    {
+     "task_id": "MIG-P2-A-A-ARR-0098v15-68e53ad3",
+     "category": "A-ARR",
+     "snippet": "let left=mut.0; let right=mut.0"
+    },
+    {
+     "task_id": "MIG-P2-A-A-ARR-0119v26-233c1524",
+     "category": "A-ARR",
+     "snippet": "let winsum=mut.0; let i=mut.0"
+    }
+   ]
+  },
+  {
+   "rank": 18,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT BOOL_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))))",
+   "count": 494,
+   "programs": 459,
+   "program_share": 0.0196,
+   "depth": 3,
+   "node_count": 16,
+   "per_category": {
+    "A-ARR": 224,
+    "A-CND": 7,
+    "A-ERR": 36,
+    "A-SRT": 38,
+    "A-STR": 15,
+    "D-CFG": 22,
+    "D-CLI": 26,
+    "D-CRY": 4,
+    "D-DAT": 33,
+    "D-FIO": 27,
+    "D-NET": 13,
+    "D-TST": 41,
+    "D-WEB": 8
+   },
+   "top_callees": [
+    [
+     "s.eq",
+     17
+    ],
+    [
+     "endswith",
+     6
+    ],
+    [
+     "streq",
+     5
+    ],
+    [
+     "out.append",
+     4
+    ],
+    [
+     "s.concat",
+     4
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "let seen=mut.false; lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==cur){seen=true;br}}"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "let seen=mut.false; lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==v){seen=true;br}}"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "let seen=mut.false; lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==v){ seen=true}}"
+    }
+   ]
+  },
+  {
+   "rank": 19,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT ARRAY_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT IDENT) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))))",
+   "count": 454,
+   "programs": 451,
+   "program_share": 0.0193,
+   "depth": 3,
+   "node_count": 16,
+   "per_category": {
+    "A-ARR": 81,
+    "A-ERR": 13,
+    "A-MTH": 1,
+    "A-SRT": 73,
+    "A-STR": 16,
+    "D-CFG": 3,
+    "D-CLI": 6,
+    "D-CRY": 4,
+    "D-DAT": 52,
+    "D-FIO": 2,
+    "D-TST": 203
+   },
+   "top_callees": [
+    [
+     "out.append",
+     226
+    ],
+    [
+     "r.append",
+     49
+    ],
+    [
+     "result.append",
+     27
+    ],
+    [
+     "dp.append",
+     21
+    ],
+    [
+     "res.append",
+     14
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0027v10",
+     "category": "A-ARR",
+     "snippet": "let res=mut.@(); lp(let i=0;i<n;i=i+1){ res=res.append(arr.get(n-1-i))}"
+    },
+    {
+     "task_id": "A-ARR-0027v4",
+     "category": "A-ARR",
+     "snippet": "let res=mut.@(); lp(let i=0;i<n;i=i+1){ res=res.append(first.get(n-1-i))}"
+    },
+    {
+     "task_id": "A-ARR-0028v36",
+     "category": "A-ARR",
+     "snippet": "let result=mut.@(); lp(let i=0;i<n;i=i+1){ result=result+@(first.get(n-1-i))}"
+    }
+   ]
+  },
+  {
+   "rank": 20,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT ARRAY_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(BIND_STMT(...) IF_STMT(...))))",
+   "count": 452,
+   "programs": 451,
+   "program_share": 0.0193,
+   "depth": 3,
+   "node_count": 17,
+   "per_category": {
+    "A-ARR": 144,
+    "A-ERR": 4,
+    "A-SRT": 84,
+    "A-STR": 3,
+    "D-CFG": 35,
+    "D-CLI": 48,
+    "D-DAT": 114,
+    "D-FIO": 9,
+    "D-NET": 1,
+    "D-WEB": 10
+   },
+   "top_callees": [
+    [
+     "out.append",
+     203
+    ],
+    [
+     "contains",
+     83
+    ],
+    [
+     "s.len",
+     83
+    ],
+    [
+     "result.append",
+     28
+    ],
+    [
+     "evens.append",
+     28
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "let result=mut.@(); lp(let i=0;i<arr.len;i=i+1){ let v=arr.get(i); if(!seen(result;v)){result=result.append(v)}}"
+    },
+    {
+     "task_id": "A-ARR-0051v65",
+     "category": "A-ARR",
+     "snippet": "let result=mut.@(); lp(let i=0;i<arr.len;i=i+1){ let v=arr.get(i); if(!(contains(result;v))){ result=result.append(v)}}"
+    },
+    {
+     "task_id": "A-ARR-0053v13",
+     "category": "A-ARR",
+     "snippet": "let acc=mut.@(); lp(let i=0;i<p.len;i=i+1){ let v=p.get(i); if(!contains(acc;v)){acc=acc.append(v)}}"
+    }
+   ]
+  },
+  {
+   "rank": 21,
+   "signature": "SEQ2(BIND_STMT(IDENT CALL_EXPR(IDENT STR_LIT)) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)))",
+   "count": 426,
+   "programs": 147,
+   "program_share": 0.0063,
+   "depth": 3,
+   "node_count": 10,
+   "per_category": {
+    "A-CND": 10,
+    "A-STR": 43,
+    "D-CFG": 51,
+    "D-CLI": 6,
+    "D-CRY": 58,
+    "D-DAT": 51,
+    "D-FIO": 65,
+    "D-NET": 72,
+    "D-WEB": 70
+   },
+   "top_callees": [
+    [
+     "io.println",
+     426
+    ],
+    [
+     "countlines",
+     47
+    ],
+    [
+     "countsegments",
+     33
+    ],
+    [
+     "checksum",
+     27
+    ],
+    [
+     "countrows",
+     24
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0057v33",
+     "category": "A-CND",
+     "snippet": "let r1=ishexdigit(\"7\"); io.println(\"\\(r1)\")"
+    },
+    {
+     "task_id": "A-CND-0058v13",
+     "category": "A-CND",
+     "snippet": "let r1=isvowel(\"a\"); io.println(\"\\(r1)\")"
+    },
+    {
+     "task_id": "A-CND-0059v61",
+     "category": "A-CND",
+     "snippet": "let a=isconsonant(\"b\"); io.println(\"\\(a)\")"
+    }
+   ]
+  },
+  {
+   "rank": 22,
+   "signature": "SEQ2(ASSIGN[=](IDENT BOOL_LIT) BREAK_STMT)",
+   "count": 422,
+   "programs": 388,
+   "program_share": 0.0166,
+   "depth": 2,
+   "node_count": 5,
+   "per_category": {
+    "A-ARR": 146,
+    "A-CND": 23,
+    "A-ERR": 10,
+    "A-MTH": 11,
+    "A-SRT": 33,
+    "A-STR": 58,
+    "D-CFG": 25,
+    "D-CLI": 12,
+    "D-CRY": 7,
+    "D-DAT": 18,
+    "D-FIO": 12,
+    "D-NET": 24,
+    "D-TST": 21,
+    "D-WEB": 22
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "seen=true;br"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "seen=true;br"
+    },
+    {
+     "task_id": "A-ARR-0051v58",
+     "category": "A-ARR",
+     "snippet": "seen=true;br"
+    }
+   ]
+  },
+  {
+   "rank": 23,
+   "signature": "SEQ2(ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(...) IDENT INDEX_EXPR(...))) ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(...) BIN[+](...) IDENT)))",
+   "count": 422,
+   "programs": 416,
+   "program_share": 0.0178,
+   "depth": 3,
+   "node_count": 13,
+   "per_category": {
+    "A-CND": 3,
+    "A-ERR": 19,
+    "A-SRT": 388,
+    "A-STR": 12
+   },
+   "top_callees": [
+    [
+     "r.set",
+     686
+    ],
+    [
+     "sorted.set",
+     34
+    ],
+    [
+     "result.set",
+     26
+    ],
+    [
+     "row.set",
+     12
+    ],
+    [
+     "arr.set",
+     10
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0048v43",
+     "category": "A-CND",
+     "snippet": "r=r.set(j;r.get(j+1)); r=r.set(j+1;tmp)"
+    },
+    {
+     "task_id": "A-CND-0049v35",
+     "category": "A-CND",
+     "snippet": "arr=arr.set(j;arr.get(j+1)); arr=arr.set(j+1;tmp)"
+    },
+    {
+     "task_id": "MIG-P2-A-A-CND-0048v59-478cd137",
+     "category": "A-CND",
+     "snippet": "arr=arr.set(j;arr.get(j+1)); arr=arr.set(j+1;temp)"
+    }
+   ]
+  },
+  {
+   "rank": 24,
+   "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(EXPR_STMT(...))) RETURN_STMT(INT_LIT))",
+   "count": 410,
+   "programs": 410,
+   "program_share": 0.0175,
+   "depth": 3,
+   "node_count": 15,
+   "per_category": {
+    "A-ARR": 188,
+    "A-CND": 2,
+    "A-ERR": 9,
+    "A-SRT": 198,
+    "A-STR": 6,
+    "D-CFG": 3,
+    "D-CLI": 1,
+    "D-CRY": 1,
+    "D-FIO": 2
+   },
+   "top_callees": [
+    [
+     "io.println",
+     409
+    ],
+    [
+     "render",
+     3
+    ],
+    [
+     "fmtpair",
+     2
+    ],
+    [
+     "s.fromfloat",
+     2
+    ],
+    [
+     "grouptostr",
+     1
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<r.len;i=i+1){ io.println(\"\\(r.get(i))\") }; <0"
+    },
+    {
+     "task_id": "A-ARR-0051v65",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<r.len;i=i+1){ io.println(\"\\(r.get(i))\") }; <0"
+    },
+    {
+     "task_id": "A-ARR-0051v67",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<r.len;i=i+1){ io.println(\"\\(r.get(i))\"); }; <0"
+    }
+   ]
+  },
+  {
+   "rank": 25,
+   "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))) RETURN_STMT(BOOL_LIT))",
+   "count": 401,
+   "programs": 391,
+   "program_share": 0.0167,
+   "depth": 3,
+   "node_count": 15,
+   "per_category": {
+    "A-ARR": 140,
+    "A-CND": 1,
+    "A-ERR": 6,
+    "A-SRT": 60,
+    "A-STR": 5,
+    "D-CFG": 50,
+    "D-CLI": 20,
+    "D-CRY": 1,
+    "D-DAT": 4,
+    "D-FIO": 34,
+    "D-NET": 10,
+    "D-TST": 61,
+    "D-WEB": 9
+   },
+   "top_callees": [
+    [
+     "s.len",
+     17
+    ],
+    [
+     "keyof",
+     15
+    ],
+    [
+     "s.split",
+     11
+    ],
+    [
+     "s.eq",
+     8
+    ],
+    [
+     "streq",
+     8
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<p.len;i=i+1){ if(p.get(i)==q){<true} }; <false"
+    },
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<acc.len;i=i+1){ if(acc.get(i)==v){<true} }; <false"
+    },
+    {
+     "task_id": "A-ARR-0051v65",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(arr.get(i)==v){<true} }; <false"
+    }
+   ]
+  },
+  {
+   "rank": 26,
+   "signature": "SEQ2(BIND_STMT(IDENT MATCH_STMT(CALL_EXPR(...) MATCH_ARM(...) MATCH_ARM(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IDENT)))",
+   "count": 351,
+   "programs": 141,
+   "program_share": 0.006,
+   "depth": 3,
+   "node_count": 11,
+   "per_category": {
+    "A-ERR": 351
+   },
+   "top_callees": [
+    [
+     "io.println",
+     351
+    ],
+    [
+     "safereplace",
+     29
+    ],
+    [
+     "safeconcat",
+     25
+    ],
+    [
+     "validatelength",
+     24
+    ],
+    [
+     "safepadleft",
+     21
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ERR-0015v46",
+     "category": "A-ERR",
+     "snippet": "let r=mt safelast(@(\"a\";\"b\")) {$ok:v v;$err:e \"empty\"}; io.println(r)"
+    },
+    {
+     "task_id": "A-ERR-0015v54",
+     "category": "A-ERR",
+     "snippet": "let r=mt safelast(@(\"alpha\";\"beta\";\"gamma\")) {$ok:v v;$err:e \"empty\"}; io.println(r)"
+    },
+    {
+     "task_id": "A-ERR-0015v55",
+     "category": "A-ERR",
+     "snippet": "let r1=mt safelast(@(\"a\";\"b\";\"c\")) {$ok:v v;$err:e \"empty\"}; io.println(r1)"
+    }
+   ]
+  },
+  {
+   "rank": 27,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT STR_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))))",
+   "count": 344,
+   "programs": 342,
+   "program_share": 0.0146,
+   "depth": 3,
+   "node_count": 16,
+   "per_category": {
+    "A-ARR": 56,
+    "A-ERR": 13,
+    "A-MTH": 1,
+    "A-SRT": 57,
+    "A-STR": 10,
+    "D-CFG": 11,
+    "D-CLI": 8,
+    "D-CRY": 1,
+    "D-DAT": 85,
+    "D-FIO": 21,
+    "D-NET": 29,
+    "D-TST": 42,
+    "D-WEB": 10
+   },
+   "top_callees": [
+    [
+     "concat",
+     19
+    ],
+    [
+     "s.concat",
+     15
+    ],
+    [
+     "b.concat",
+     10
+    ],
+    [
+     "out.concat",
+     8
+    ],
+    [
+     "acc.concat",
+     5
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0052",
+     "category": "A-ARR",
+     "snippet": "let acc=mut.\"\"; lp(let i=0;i<a.len;i=i+1){ acc=if(i==0){\"\\(a.get(0))\"}el{\"\\(acc) \\(a.get(i))\"}}"
+    },
+    {
+     "task_id": "A-ARR-0054v25",
+     "category": "A-ARR",
+     "snippet": "let text=mut.\"\"; lp(let i=0;i<a.len;i=i+1){ text=if(i==0){\"\\(a.get(i))\"}el{\"\\(text) \\(a.get(i))\"}}"
+    },
+    {
+     "task_id": "A-ARR-0055v17",
+     "category": "A-ARR",
+     "snippet": "let out=mut.\"\"; lp(let i=0;i<a.len;i=i+1){ out=if(i==0){\"\\(a.get(i))\"}el{\"\\(out) \\(a.get(i))\"}}"
+    }
+   ]
+  },
+  {
+   "rank": 28,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT INT_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))))",
+   "count": 339,
+   "programs": 338,
+   "program_share": 0.0145,
+   "depth": 3,
+   "node_count": 16,
+   "per_category": {
+    "A-ARR": 86,
+    "A-ERR": 28,
+    "A-MTH": 25,
+    "A-SRT": 2,
+    "A-STR": 8,
+    "D-CFG": 9,
+    "D-CLI": 11,
+    "D-CRY": 38,
+    "D-DAT": 80,
+    "D-FIO": 22,
+    "D-NET": 4,
+    "D-TST": 17,
+    "D-WEB": 9
+   },
+   "top_callees": [
+    [
+     "charcode",
+     2
+    ],
+    [
+     "s.len",
+     2
+    ],
+    [
+     "mul",
+     1
+    ],
+    [
+     "low.split",
+     1
+    ],
+    [
+     "countline",
+     1
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0007v25",
+     "category": "A-ARR",
+     "snippet": "let count=mut.0; lp(let i=0;i<n.len;i=i+1){ count=count+1}"
+    },
+    {
+     "task_id": "A-ARR-0007v37",
+     "category": "A-ARR",
+     "snippet": "let p=mut.0; lp(let q=0;q<arr.len;q=q+1){ p=p+1}"
+    },
+    {
+     "task_id": "A-ARR-0007v49",
+     "category": "A-ARR",
+     "snippet": "let total=mut.0; lp(let i=0;i<n.len;i=i+1){ total=total+1}"
+    }
+   ]
+  },
+  {
+   "rank": 29,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT INT_LIT) MUT_BIND_STMT(IDENT IDENT))",
+   "count": 326,
+   "programs": 305,
+   "program_share": 0.013,
+   "depth": 2,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 1,
+    "A-CND": 17,
+    "A-ERR": 11,
+    "A-MTH": 205,
+    "A-SRT": 52,
+    "A-STR": 5,
+    "D-CRY": 30,
+    "D-DAT": 3,
+    "D-NET": 2
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "MIG-P2-A-A-ARR-0115v21-add9cd35",
+     "category": "A-ARR",
+     "snippet": "let p=mut.0; let q=mut.last"
+    },
+    {
+     "task_id": "A-CND-0078v24",
+     "category": "A-CND",
+     "snippet": "let bits=mut.0; let rest=mut.n"
+    },
+    {
+     "task_id": "A-CND-0078v51",
+     "category": "A-CND",
+     "snippet": "let count=mut.0; let v=mut.n"
+    }
+   ]
+  },
+  {
+   "rank": 30,
+   "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT IDENT) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(BIND_STMT(...) IF_STMT(...))) RETURN_STMT(IDENT))",
+   "count": 325,
+   "programs": 325,
+   "program_share": 0.0139,
+   "depth": 3,
+   "node_count": 16,
+   "per_category": {
+    "A-ARR": 19,
+    "A-ERR": 1,
+    "A-MTH": 4,
+    "A-SRT": 103,
+    "A-STR": 71,
+    "D-CFG": 11,
+    "D-CLI": 19,
+    "D-CRY": 1,
+    "D-DAT": 50,
+    "D-FIO": 10,
+    "D-NET": 15,
+    "D-TST": 8,
+    "D-WEB": 13
+   },
+   "top_callees": [
+    [
+     "s.slice",
+     48
+    ],
+    [
+     "s.len",
+     22
+    ],
+    [
+     "out.append",
+     21
+    ],
+    [
+     "s.charcode",
+     17
+    ],
+    [
+     "result.concat",
+     16
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0059v27",
+     "category": "A-ARR",
+     "snippet": "lp(let i=1;i<n;i=i+1){ let v=arr.get(i); if(v<m){m=v}; }; <m"
+    },
+    {
+     "task_id": "A-ARR-0060v15",
+     "category": "A-ARR",
+     "snippet": "lp(let i=1;i<n;i=i+1){ let cur=left.get(i); if(cur>best){best=cur}el{} }; <best"
+    },
+    {
+     "task_id": "A-ARR-0060v59",
+     "category": "A-ARR",
+     "snippet": "lp(let i=1;i<n;i=i+1){ let cur=arr.get(i); if(cur>best){best=cur} }; <best"
+    }
+   ]
+  },
+  {
+   "rank": 31,
+   "signature": "SEQ2(ASSIGN[=](IDENT IDENT) ASSIGN[=](IDENT IDENT))",
+   "count": 315,
+   "programs": 225,
+   "program_share": 0.0096,
+   "depth": 2,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 7,
+    "A-ERR": 3,
+    "A-MTH": 195,
+    "A-SRT": 39,
+    "A-STR": 61,
+    "D-CFG": 1,
+    "D-CLI": 8,
+    "D-NET": 1
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0092v59",
+     "category": "A-ARR",
+     "snippet": "rhs=best;best=v"
+    },
+    {
+     "task_id": "A-ARR-0093v52",
+     "category": "A-ARR",
+     "snippet": "first=second; second=tmp"
+    },
+    {
+     "task_id": "A-ARR-0096v23",
+     "category": "A-ARR",
+     "snippet": "right=left;left=v"
+    }
+   ]
+  },
+  {
+   "rank": 32,
+   "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))) RETURN_STMT(STR_LIT))",
+   "count": 304,
+   "programs": 302,
+   "program_share": 0.0129,
+   "depth": 3,
+   "node_count": 15,
+   "per_category": {
+    "A-ARR": 46,
+    "A-ERR": 21,
+    "A-MTH": 1,
+    "A-SRT": 39,
+    "D-CLI": 10,
+    "D-DAT": 124,
+    "D-TST": 61,
+    "D-WEB": 2
+   },
+   "top_callees": [
+    [
+     "parts.append",
+     111
+    ],
+    [
+     "out.append",
+     8
+    ],
+    [
+     "p.append",
+     7
+    ],
+    [
+     "quoted.append",
+     6
+    ],
+    [
+     "b.append",
+     3
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\") }; <\"[\\(s.join(\", \";parts))]\""
+    },
+    {
+     "task_id": "A-ARR-0054v8",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\") }; <\"[\\(s.join(\", \";parts))]\""
+    },
+    {
+     "task_id": "A-ARR-0055v30",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){parts=parts.append(\"\\(a.get(i))\")}; <\"[\\(s.join(\", \";parts))]\""
+    }
+   ]
+  },
+  {
+   "rank": 33,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT STR_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(BIND_STMT(...) ASSIGN[=](...))))",
+   "count": 285,
+   "programs": 283,
+   "program_share": 0.0121,
+   "depth": 3,
+   "node_count": 17,
+   "per_category": {
+    "A-ARR": 33,
+    "A-ERR": 1,
+    "A-SRT": 18,
+    "A-STR": 6,
+    "D-CFG": 6,
+    "D-CLI": 16,
+    "D-DAT": 116,
+    "D-FIO": 30,
+    "D-NET": 2,
+    "D-TST": 53,
+    "D-WEB": 4
+   },
+   "top_callees": [
+    [
+     "concat",
+     49
+    ],
+    [
+     "out.concat",
+     44
+    ],
+    [
+     "s.concat",
+     32
+    ],
+    [
+     "b.concat",
+     13
+    ],
+    [
+     "inner.concat",
+     6
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "let out=mut.\"[\"; lp(let i=0;i<a.len;i=i+1){ let piece=if(i==0){\"\\(a.get(i))\"}el{\", \\(a.get(i))\"}; out=out.concat(piece)}"
+    },
+    {
+     "task_id": "A-ARR-0035v36",
+     "category": "A-ARR",
+     "snippet": "let out=mut.\"\"; lp(let i=0;i<arr.len;i=i+1){ let v=arr.get(i); out=if(i==0){\"\\(v)\"}el{\"\\(out) \\(v)\"}}"
+    },
+    {
+     "task_id": "A-ARR-0037v16",
+     "category": "A-ARR",
+     "snippet": "let out=mut.\"[\"; lp(let i=0;i<a.len;i=i+1){ let sep=if(i==0){\"\"}el{\", \"}; out=\"\\(out)\\(sep)\\(a.get(i))\"}"
+    }
+   ]
+  },
+  {
+   "rank": 34,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)) BIND_STMT(IDENT CALL_EXPR(IDENT STR_LIT)))",
+   "count": 285,
+   "programs": 142,
+   "program_share": 0.0061,
+   "depth": 3,
+   "node_count": 10,
+   "per_category": {
+    "A-CND": 7,
+    "A-STR": 26,
+    "D-CFG": 34,
+    "D-CLI": 4,
+    "D-CRY": 38,
+    "D-DAT": 34,
+    "D-FIO": 44,
+    "D-NET": 52,
+    "D-WEB": 46
+   },
+   "top_callees": [
+    [
+     "io.println",
+     285
+    ],
+    [
+     "countlines",
+     32
+    ],
+    [
+     "countsegments",
+     22
+    ],
+    [
+     "checksum",
+     18
+    ],
+    [
+     "countrows",
+     16
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0057v33",
+     "category": "A-CND",
+     "snippet": "io.println(\"\\(r2)\"); let r3=ishexdigit(\"g\")"
+    },
+    {
+     "task_id": "A-CND-0058v13",
+     "category": "A-CND",
+     "snippet": "io.println(\"\\(r1)\"); let r2=isvowel(\"E\")"
+    },
+    {
+     "task_id": "A-CND-0059v61",
+     "category": "A-CND",
+     "snippet": "io.println(\"\\(a)\"); let b=isconsonant(\"a\")"
+    }
+   ]
+  },
+  {
+   "rank": 35,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT IDENT) MUT_BIND_STMT(IDENT INT_LIT))",
+   "count": 284,
+   "programs": 283,
+   "program_share": 0.0121,
+   "depth": 2,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 2,
+    "A-CND": 10,
+    "A-ERR": 1,
+    "A-MTH": 195,
+    "A-SRT": 29,
+    "A-STR": 4,
+    "D-CFG": 1,
+    "D-CLI": 1,
+    "D-CRY": 37,
+    "D-DAT": 1,
+    "D-FIO": 3
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0098v10",
+     "category": "A-ARR",
+     "snippet": "let r=mut.val; let sum=mut.0"
+    },
+    {
+     "task_id": "A-ARR-0111",
+     "category": "A-ARR",
+     "snippet": "let out=mut.arr; let best=mut.0"
+    },
+    {
+     "task_id": "A-CND-0078v18",
+     "category": "A-CND",
+     "snippet": "let n=mut.val; let cnt=mut.0"
+    }
+   ]
+  },
+  {
+   "rank": 36,
+   "signature": "SEQ2(BIND_STMT(IDENT FIELD_EXPR(IDENT IDENT)) IF_STMT(BIN[==](IDENT INT_LIT) STMT_LIST(RETURN_STMT(...))))",
+   "count": 282,
+   "programs": 280,
+   "program_share": 0.012,
+   "depth": 3,
+   "node_count": 12,
+   "per_category": {
+    "A-ARR": 30,
+    "A-ERR": 13,
+    "A-MTH": 10,
+    "A-SRT": 79,
+    "A-STR": 28,
+    "D-CFG": 5,
+    "D-CLI": 4,
+    "D-CRY": 6,
+    "D-DAT": 81,
+    "D-FIO": 5,
+    "D-NET": 2,
+    "D-TST": 18,
+    "D-WEB": 1
+   },
+   "top_callees": [
+    [
+     "out.append",
+     1
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0027v10",
+     "category": "A-ARR",
+     "snippet": "let n=arr.len; if(n==0){<arr}"
+    },
+    {
+     "task_id": "A-ARR-0057v37",
+     "category": "A-ARR",
+     "snippet": "let n=a.len; if(n==0){<\"[]\"}"
+    },
+    {
+     "task_id": "A-ARR-0031v5",
+     "category": "A-ARR",
+     "snippet": "let n=a.len; if(n==0){<\"[]\"}"
+    }
+   ]
+  },
+  {
+   "rank": 37,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT ARRAY_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))))",
+   "count": 262,
+   "programs": 262,
+   "program_share": 0.0112,
+   "depth": 3,
+   "node_count": 16,
+   "per_category": {
+    "A-ARR": 51,
+    "A-ERR": 13,
+    "A-SRT": 40,
+    "A-STR": 1,
+    "D-CFG": 25,
+    "D-CLI": 21,
+    "D-DAT": 79,
+    "D-FIO": 10,
+    "D-TST": 3,
+    "D-WEB": 19
+   },
+   "top_callees": [
+    [
+     "out.append",
+     145
+    ],
+    [
+     "s.len",
+     48
+    ],
+    [
+     "r.append",
+     32
+    ],
+    [
+     "kept.append",
+     15
+    ],
+    [
+     "contains",
+     11
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "let out=mut.@(); lp(let i=0;i<arr.len;i=i+1){ if(!contains(out;arr.get(i))){out=out.append(arr.get(i))}}"
+    },
+    {
+     "task_id": "A-ARR-0053v62",
+     "category": "A-ARR",
+     "snippet": "let out=mut.@(); lp(let i=0;i<arr.len;i=i+1){ if(!hasitem(out;arr.get(i))){out=out.append(arr.get(i))}}"
+    },
+    {
+     "task_id": "A-ARR-0041v37",
+     "category": "A-ARR",
+     "snippet": "let q=mut.@(); lp(let i=0;i<p.len;i=i+1){ if(p.get(i)>0){ q=q.append(p.get(i))}}"
+    }
+   ]
+  },
+  {
+   "rank": 38,
+   "signature": "SEQ2(IF_STMT(BIN[==](FIELD_EXPR(...) INT_LIT) STMT_LIST(RETURN_STMT(...))) MUT_BIND_STMT(IDENT ARRAY_LIT))",
+   "count": 261,
+   "programs": 257,
+   "program_share": 0.011,
+   "depth": 3,
+   "node_count": 10,
+   "per_category": {
+    "A-ARR": 32,
+    "A-ERR": 43,
+    "A-SRT": 20,
+    "A-STR": 2,
+    "D-CLI": 11,
+    "D-DAT": 139,
+    "D-FIO": 10,
+    "D-TST": 4
+   },
+   "top_callees": [
+    [
+     "concat",
+     1
+    ],
+    [
+     "left.concat",
+     1
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0036v12",
+     "category": "A-ARR",
+     "snippet": "if(first.len==0){<@()}; let out=mut.@()"
+    },
+    {
+     "task_id": "A-ARR-0036v50",
+     "category": "A-ARR",
+     "snippet": "if(val.len==0){<@()}; let out=mut.@()"
+    },
+    {
+     "task_id": "A-ARR-0029v34",
+     "category": "A-ARR",
+     "snippet": "if(arr.len==0){<@()}; let out=mut.@()"
+    }
+   ]
+  },
+  {
+   "rank": 39,
+   "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT IDENT) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))) RETURN_STMT(IDENT))",
+   "count": 259,
+   "programs": 258,
+   "program_share": 0.011,
+   "depth": 3,
+   "node_count": 15,
+   "per_category": {
+    "A-ARR": 27,
+    "A-CND": 1,
+    "A-ERR": 18,
+    "A-MTH": 3,
+    "A-SRT": 37,
+    "A-STR": 42,
+    "D-CFG": 6,
+    "D-CLI": 14,
+    "D-CRY": 12,
+    "D-DAT": 22,
+    "D-FIO": 18,
+    "D-NET": 11,
+    "D-TST": 36,
+    "D-WEB": 12
+   },
+   "top_callees": [
+    [
+     "s.slice",
+     54
+    ],
+    [
+     "out.append",
+     27
+    ],
+    [
+     "s.charcode",
+     9
+    ],
+    [
+     "lhs.slice",
+     7
+    ],
+    [
+     "result.append",
+     6
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0028v63",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<n;i=i+1){ if(n>0){ if(i<n){out=out.append(left.get(n-1-i))}el{} }el{} }; <out"
+    },
+    {
+     "task_id": "A-ARR-0060v28",
+     "category": "A-ARR",
+     "snippet": "lp(let i=1;i<len;i=i+1){ if(arr.get(i)>m){m=arr.get(i)}; }; <m"
+    },
+    {
+     "task_id": "A-ARR-0042v7",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<n;i=i+1){ if(left.get(i)<0){ if(left.get(i)!=0){ out=out.append(left.get(i)) } } }; <out"
+    }
+   ]
+  },
+  {
+   "rank": 40,
+   "signature": "SEQ2(ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(...) INDEX_EXPR(...))) ASSIGN[=](IDENT BIN[+](IDENT INT_LIT)))",
+   "count": 255,
+   "programs": 95,
+   "program_share": 0.0041,
+   "depth": 3,
+   "node_count": 11,
+   "per_category": {
+    "A-ARR": 1,
+    "A-SRT": 254
+   },
+   "top_callees": [
+    [
+     "out.append",
+     194
+    ],
+    [
+     "r.append",
+     20
+    ],
+    [
+     "res.append",
+     14
+    ],
+    [
+     "result.append",
+     13
+    ],
+    [
+     "merged.append",
+     6
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "MIG-P2-A-A-ARR-0052-193f793c",
+     "category": "A-ARR",
+     "snippet": "result=result.append(arr.get(j)); i=i+1"
+    },
+    {
+     "task_id": "A-SRT-0010v14",
+     "category": "A-SRT",
+     "snippet": "out=out.append(ls.get(li)); li=li+1"
+    },
+    {
+     "task_id": "A-SRT-0010v17",
+     "category": "A-SRT",
+     "snippet": "out=out.append(a.get(i)); i=i+1"
+    }
+   ]
+  },
+  {
+   "rank": 41,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT INT_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT IDENT) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))))",
+   "count": 246,
+   "programs": 242,
+   "program_share": 0.0103,
+   "depth": 3,
+   "node_count": 16,
+   "per_category": {
+    "A-ARR": 6,
+    "A-CND": 17,
+    "A-ERR": 3,
+    "A-MTH": 3,
+    "A-SRT": 33,
+    "A-STR": 85,
+    "D-CFG": 10,
+    "D-CLI": 5,
+    "D-CRY": 5,
+    "D-DAT": 10,
+    "D-FIO": 21,
+    "D-NET": 9,
+    "D-TST": 21,
+    "D-WEB": 18
+   },
+   "top_callees": [
+    [
+     "s.slice",
+     80
+    ],
+    [
+     "s.charcode",
+     17
+    ],
+    [
+     "s.add",
+     14
+    ],
+    [
+     "p0.slice",
+     14
+    ],
+    [
+     "first.slice",
+     11
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0064v59",
+     "category": "A-ARR",
+     "snippet": "let total=mut.0; lp(let i=0;i<n;i=i+1){ if(lhs.get(i)==rhs){total=total+1}}"
+    },
+    {
+     "task_id": "A-ARR-0067v20",
+     "category": "A-ARR",
+     "snippet": "let count=mut.0; lp(let i=0;i<n;i=i+1){ if(arr.get(i)==val){count=count+1}}"
+    },
+    {
+     "task_id": "MIG-P2-A-A-ARR-0022v9-852b7c1d",
+     "category": "A-ARR",
+     "snippet": "let count=mut.0; lp(let i=0;i<n;i=i+1){ if(arr.get(i)==val){count=count+1}}"
+    }
+   ]
+  },
+  {
+   "rank": 42,
+   "signature": "SEQ2(BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IDENT STR_LIT)))",
+   "count": 241,
+   "programs": 241,
+   "program_share": 0.0103,
+   "depth": 3,
+   "node_count": 10,
+   "per_category": {
+    "A-ARR": 16,
+    "A-ERR": 19,
+    "A-MTH": 7,
+    "A-SRT": 23,
+    "A-STR": 13,
+    "D-CFG": 1,
+    "D-CLI": 18,
+    "D-DAT": 94,
+    "D-TST": 50
+   },
+   "top_callees": [
+    [
+     "s.builder",
+     227
+    ],
+    [
+     "s.add",
+     227
+    ],
+    [
+     "st.builder",
+     12
+    ],
+    [
+     "st.add",
+     12
+    ],
+    [
+     "sb.builder",
+     1
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0057v19",
+     "category": "A-ARR",
+     "snippet": "let b=s.builder(); s.add(b;\"[\")"
+    },
+    {
+     "task_id": "A-ARR-0042v38",
+     "category": "A-ARR",
+     "snippet": "let b=s.builder(); s.add(b;\"[\")"
+    },
+    {
+     "task_id": "A-ARR-0042v7",
+     "category": "A-ARR",
+     "snippet": "let b=s.builder(); s.add(b;\"@(\")"
+    }
+   ]
+  },
+  {
+   "rank": 43,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT INT_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(BIND_STMT(...) IF_STMT(...))))",
+   "count": 240,
+   "programs": 238,
+   "program_share": 0.0102,
+   "depth": 3,
+   "node_count": 17,
+   "per_category": {
+    "A-ARR": 10,
+    "A-CND": 1,
+    "A-ERR": 3,
+    "A-SRT": 33,
+    "A-STR": 16,
+    "D-CFG": 55,
+    "D-CLI": 14,
+    "D-CRY": 1,
+    "D-DAT": 23,
+    "D-FIO": 17,
+    "D-NET": 24,
+    "D-TST": 6,
+    "D-WEB": 37
+   },
+   "top_callees": [
+    [
+     "s.len",
+     73
+    ],
+    [
+     "s.trim",
+     36
+    ],
+    [
+     "trim",
+     25
+    ],
+    [
+     "line.starts",
+     21
+    ],
+    [
+     "s.slice",
+     19
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0001v28",
+     "category": "A-ARR",
+     "snippet": "let total=mut.0; lp(let i=0;i<first.len;i=i+1){ let v=first.get(i); if(v<0){ total=total-(0-v) }el{ total=total+v}}"
+    },
+    {
+     "task_id": "A-ARR-0001v7",
+     "category": "A-ARR",
+     "snippet": "let total=mut.0; lp(let i=0;i<arr.len;i=i+1){ let v=arr.get(i); if(v>=0){ total=total+v; }el{ if(v<0){total=total+v}}}"
+    },
+    {
+     "task_id": "A-ARR-0004v44",
+     "category": "A-ARR",
+     "snippet": "let result=mut.1; lp(let i=0;i<arr.len;i=i+1){ let cur=arr.get(i); if(cur<0){ result=result*cur }el{ result=result*cur}}"
+    }
+   ]
+  },
+  {
+   "rank": 44,
+   "signature": "SEQ2(BIND_STMT(IDENT CALL_EXPR(IDENT ARRAY_LIT(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)))",
+   "count": 240,
+   "programs": 115,
+   "program_share": 0.0049,
+   "depth": 3,
+   "node_count": 10,
+   "per_category": {
+    "A-ARR": 77,
+    "A-MTH": 7,
+    "A-SRT": 90,
+    "A-STR": 2,
+    "D-CLI": 15,
+    "D-DAT": 34,
+    "D-TST": 15
+   },
+   "top_callees": [
+    [
+     "io.println",
+     240
+    ],
+    [
+     "arrmin",
+     12
+    ],
+    [
+     "countflags",
+     12
+    ],
+    [
+     "findmin",
+     12
+    ],
+    [
+     "product",
+     11
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0053v2",
+     "category": "A-ARR",
+     "snippet": "let r=unique(@(\"a\";\"b\";\"a\";\"c\";\"b\")); io.println(\"\\(r.len)\")"
+    },
+    {
+     "task_id": "A-ARR-0037v8",
+     "category": "A-ARR",
+     "snippet": "let r=mapdouble(@(1.0;2.5;3.0)); io.println(\"\\(r.get(0))\")"
+    },
+    {
+     "task_id": "A-ARR-0041v37",
+     "category": "A-ARR",
+     "snippet": "let a=filterpositive(@(1;-2;3;0;-5;7)); io.println(\"\\(a)\")"
+    }
+   ]
+  },
+  {
+   "rank": 45,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IDENT)) RETURN_STMT(INT_LIT))",
+   "count": 240,
+   "programs": 240,
+   "program_share": 0.0103,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 8,
+    "A-CND": 8,
+    "A-ERR": 141,
+    "A-SRT": 2,
+    "A-STR": 8,
+    "D-CFG": 15,
+    "D-CLI": 11,
+    "D-CRY": 6,
+    "D-DAT": 5,
+    "D-FIO": 11,
+    "D-NET": 9,
+    "D-TST": 6,
+    "D-WEB": 10
+   },
+   "top_callees": [
+    [
+     "io.println",
+     240
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0029v11",
+     "category": "A-ARR",
+     "snippet": "io.println(r2); <0"
+    },
+    {
+     "task_id": "A-ARR-0056v66",
+     "category": "A-ARR",
+     "snippet": "io.println(r2); <0"
+    },
+    {
+     "task_id": "A-ARR-0031v18",
+     "category": "A-ARR",
+     "snippet": "io.println(r2); <0"
+    }
+   ]
+  },
+  {
+   "rank": 46,
+   "signature": "SEQ2(IF_STMT(BIN[==](CALL_EXPR(...) INT_LIT) STMT_LIST(RETURN_STMT(...))) BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(...) IDENT STR_LIT)))",
+   "count": 240,
+   "programs": 240,
+   "program_share": 0.0103,
+   "depth": 3,
+   "node_count": 13,
+   "per_category": {
+    "A-STR": 7,
+    "D-CFG": 40,
+    "D-CLI": 7,
+    "D-DAT": 17,
+    "D-FIO": 54,
+    "D-NET": 34,
+    "D-TST": 2,
+    "D-WEB": 79
+   },
+   "top_callees": [
+    [
+     "s.len",
+     237
+    ],
+    [
+     "s.split",
+     208
+    ],
+    [
+     "s.lastindex",
+     9
+    ],
+    [
+     "s.indexof",
+     8
+    ],
+    [
+     "s.trim",
+     8
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-STR-0026v31",
+     "category": "A-STR",
+     "snippet": "if(s.len(left)==0){<\"\"}; let words=s.split(left;\" \")"
+    },
+    {
+     "task_id": "A-STR-0062v10",
+     "category": "A-STR",
+     "snippet": "if(s.len(val)==0){<\"\"}; let words=s.split(val;\" \")"
+    },
+    {
+     "task_id": "A-STR-0062v51",
+     "category": "A-STR",
+     "snippet": "if(s.len(lhs)==0){<\"\"}; let words=s.split(lhs;\" \")"
+    }
+   ]
+  },
+  {
+   "rank": 47,
+   "signature": "SEQ2(MUT_BIND_STMT(IDENT IDENT) MUT_BIND_STMT(IDENT IDENT))",
+   "count": 235,
+   "programs": 221,
+   "program_share": 0.0095,
+   "depth": 2,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 1,
+    "A-CND": 1,
+    "A-ERR": 12,
+    "A-MTH": 186,
+    "A-SRT": 26,
+    "A-STR": 1,
+    "D-CLI": 1,
+    "D-CRY": 6,
+    "D-WEB": 1
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "MIG-P2-A-A-ARR-0027v2-803f9d89",
+     "category": "A-ARR",
+     "snippet": "let val=mut.arr;let other=mut.arr"
+    },
+    {
+     "task_id": "MIG-P2-A-A-CND-0047v27-6fae03fd",
+     "category": "A-CND",
+     "snippet": "let minval=mut.lhs; let maxval=mut.lhs"
+    },
+    {
+     "task_id": "A-ERR-0059v14",
+     "category": "A-ERR",
+     "snippet": "let x=mut.a0; let y=mut.b0"
+    }
+   ]
+  },
+  {
+   "rank": 48,
+   "signature": "SEQ2(BIND_STMT(IDENT CALL_EXPR(IDENT ARRAY_LIT(...))) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(EXPR_STMT(...))))",
+   "count": 234,
+   "programs": 215,
+   "program_share": 0.0092,
+   "depth": 3,
+   "node_count": 18,
+   "per_category": {
+    "A-ARR": 87,
+    "A-SRT": 147
+   },
+   "top_callees": [
+    [
+     "io.println",
+     234
+    ],
+    [
+     "insertionsort",
+     17
+    ],
+    [
+     "bubblesort",
+     16
+    ],
+    [
+     "selectionsort",
+     16
+    ],
+    [
+     "mergesort",
+     16
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "let r=unique(@(3 as u64;1 as u64;3 as u64;2 as u64;1 as u64)); lp(let i=0;i<r.len;i=i+1){ io.println(\"\\(r.get(i))\")}"
+    },
+    {
+     "task_id": "A-ARR-0051v65",
+     "category": "A-ARR",
+     "snippet": "let r=unique(@(1 as u64;2 as u64;2 as u64;3 as u64;1 as u64;4 as u64)); lp(let i=0;i<r.len;i=i+1){ io.println(\"\\(r.get(i))\")}"
+    },
+    {
+     "task_id": "A-ARR-0052v53",
+     "category": "A-ARR",
+     "snippet": "let r1=unique(@(1.5;2.5;1.5;3.5)); lp(let i=0;i<r1.len;i=i+1){ io.println(\"\\(r1.get(i))\")}"
+    }
+   ]
+  },
+  {
+   "rank": 49,
+   "signature": "SEQ2(IF_STMT(BIN[>](IDENT INT_LIT) STMT_LIST(EXPR_STMT(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IDENT STR_LIT)))",
+   "count": 234,
+   "programs": 234,
+   "program_share": 0.01,
+   "depth": 3,
+   "node_count": 12,
+   "per_category": {
+    "A-ARR": 29,
+    "A-ERR": 2,
+    "A-MTH": 1,
+    "A-SRT": 47,
+    "A-STR": 10,
+    "D-CLI": 4,
+    "D-DAT": 91,
+    "D-FIO": 4,
+    "D-TST": 46
+   },
+   "top_callees": [
+    [
+     "s.add",
+     444
+    ],
+    [
+     "st.add",
+     20
+    ],
+    [
+     "sb.add",
+     2
+    ],
+    [
+     "sr.add",
+     2
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v68",
+     "category": "A-ARR",
+     "snippet": "if(i>0){s.add(b;\" \")}; s.add(b;\"\\(arr.get(i))\")"
+    },
+    {
+     "task_id": "A-ARR-0054v7",
+     "category": "A-ARR",
+     "snippet": "if(i>0){s.add(b;\";\")}; s.add(b;\"\\(a.get(i))\")"
+    },
+    {
+     "task_id": "A-ARR-0056v66",
+     "category": "A-ARR",
+     "snippet": "if(i>0){s.add(b;\" \")}; s.add(b;\"\\(a.get(i))\")"
+    }
+   ]
+  },
+  {
+   "rank": 50,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IDENT STR_LIT)) RETURN_STMT(CALL_EXPR(FIELD_EXPR(...) IDENT)))",
+   "count": 232,
+   "programs": 229,
+   "program_share": 0.0098,
+   "depth": 3,
+   "node_count": 10,
+   "per_category": {
+    "A-ARR": 16,
+    "A-ERR": 11,
+    "A-MTH": 1,
+    "A-SRT": 21,
+    "A-STR": 3,
+    "D-CLI": 29,
+    "D-DAT": 95,
+    "D-NET": 5,
+    "D-TST": 51
+   },
+   "top_callees": [
+    [
+     "s.add",
+     218
+    ],
+    [
+     "s.build",
+     218
+    ],
+    [
+     "st.add",
+     12
+    ],
+    [
+     "st.build",
+     12
+    ],
+    [
+     "sb.add",
+     1
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0057v19",
+     "category": "A-ARR",
+     "snippet": "s.add(b;\"]\"); <s.build(b)"
+    },
+    {
+     "task_id": "A-ARR-0042v38",
+     "category": "A-ARR",
+     "snippet": "s.add(b;\"]\"); <s.build(b)"
+    },
+    {
+     "task_id": "A-ARR-0042v7",
+     "category": "A-ARR",
+     "snippet": "s.add(b;\")\"); <s.build(b)"
+    }
+   ]
+  }
+ ],
+ "small_shapes": [
+  {
+   "rank": 1,
+   "signature": "TYPE_EXPR",
+   "count": 123450,
+   "programs": 23382,
+   "program_share": 1.0,
+   "depth": 0,
+   "node_count": 1,
+   "per_category": {
+    "A-ARR": 7212,
+    "A-CND": 6578,
+    "A-ERR": 10551,
+    "A-MTH": 6535,
+    "A-SRT": 8547,
+    "A-STR": 6516,
+    "D-CFG": 9324,
+    "D-CLI": 9525,
+    "D-CRY": 10336,
+    "D-DAT": 9504,
+    "D-FIO": 7738,
+    "D-NET": 10264,
+    "D-TST": 11602,
+    "D-WEB": 9218
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "u64"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "u64"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "u64"
+    }
+   ]
+  },
+  {
+   "rank": 2,
+   "signature": "FIELD_EXPR(IDENT IDENT)",
+   "count": 91967,
+   "programs": 20143,
+   "program_share": 0.8615,
+   "depth": 1,
+   "node_count": 3,
+   "per_category": {
+    "A-ARR": 6520,
+    "A-CND": 4397,
+    "A-ERR": 5299,
+    "A-MTH": 3395,
+    "A-SRT": 9764,
+    "A-STR": 9646,
+    "D-CFG": 6986,
+    "D-CLI": 5483,
+    "D-CRY": 4716,
+    "D-DAT": 8495,
+    "D-FIO": 6699,
+    "D-NET": 7590,
+    "D-TST": 6167,
+    "D-WEB": 6810
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "val.len"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "arr.len"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "arr.len"
+    }
+   ]
+  },
+  {
+   "rank": 3,
+   "signature": "BIN[+](IDENT INT_LIT)",
+   "count": 26628,
+   "programs": 12622,
+   "program_share": 0.5398,
+   "depth": 1,
+   "node_count": 3,
+   "per_category": {
+    "A-ARR": 2694,
+    "A-CND": 546,
+    "A-ERR": 968,
+    "A-MTH": 1861,
+    "A-SRT": 6768,
+    "A-STR": 3337,
+    "D-CFG": 1066,
+    "D-CLI": 1136,
+    "D-CRY": 1183,
+    "D-DAT": 2376,
+    "D-FIO": 1310,
+    "D-NET": 936,
+    "D-TST": 1229,
+    "D-WEB": 1218
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "i+1"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "i+1"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "i+1"
+    }
+   ]
+  },
+  {
+   "rank": 4,
+   "signature": "RETURN_STMT(INT_LIT)",
+   "count": 18183,
+   "programs": 15361,
+   "program_share": 0.657,
+   "depth": 1,
+   "node_count": 2,
+   "per_category": {
+    "A-ARR": 963,
+    "A-CND": 1146,
+    "A-ERR": 985,
+    "A-MTH": 1400,
+    "A-SRT": 1113,
+    "A-STR": 990,
+    "D-CFG": 1087,
+    "D-CLI": 981,
+    "D-CRY": 2845,
+    "D-DAT": 1605,
+    "D-FIO": 884,
+    "D-NET": 1781,
+    "D-TST": 1307,
+    "D-WEB": 1096
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "<0"
+    },
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "<0"
+    },
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "<0"
+    }
+   ]
+  },
+  {
+   "rank": 5,
+   "signature": "RETURN_STMT(IDENT)",
+   "count": 14720,
+   "programs": 12776,
+   "program_share": 0.5464,
+   "depth": 1,
+   "node_count": 2,
+   "per_category": {
+    "A-ARR": 1710,
+    "A-CND": 610,
+    "A-ERR": 866,
+    "A-MTH": 1184,
+    "A-SRT": 2008,
+    "A-STR": 1152,
+    "D-CFG": 839,
+    "D-CLI": 785,
+    "D-CRY": 863,
+    "D-DAT": 1484,
+    "D-FIO": 904,
+    "D-NET": 576,
+    "D-TST": 921,
+    "D-WEB": 818
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "<val"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "<out"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "<out"
+    }
+   ]
+  },
+  {
+   "rank": 6,
+   "signature": "INDEX_EXPR(IDENT IDENT)",
+   "count": 13584,
+   "programs": 8081,
+   "program_share": 0.3456,
+   "depth": 1,
+   "node_count": 3,
+   "per_category": {
+    "A-ARR": 2314,
+    "A-CND": 323,
+    "A-ERR": 772,
+    "A-MTH": 167,
+    "A-SRT": 4579,
+    "A-STR": 455,
+    "D-CFG": 621,
+    "D-CLI": 416,
+    "D-CRY": 96,
+    "D-DAT": 1820,
+    "D-FIO": 662,
+    "D-NET": 302,
+    "D-TST": 339,
+    "D-WEB": 718
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "val.get(i)"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "arr.get(i)"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "arr.get(i)"
+    }
+   ]
+  },
+  {
+   "rank": 7,
+   "signature": "EXPR_STMT(STR_LIT)",
+   "count": 12316,
+   "programs": 3822,
+   "program_share": 0.1635,
+   "depth": 1,
+   "node_count": 2,
+   "per_category": {
+    "A-ARR": 206,
+    "A-CND": 3143,
+    "A-ERR": 133,
+    "A-MTH": 128,
+    "A-SRT": 273,
+    "A-STR": 539,
+    "D-CFG": 853,
+    "D-CLI": 599,
+    "D-CRY": 957,
+    "D-DAT": 480,
+    "D-FIO": 844,
+    "D-NET": 1170,
+    "D-TST": 1570,
+    "D-WEB": 1421
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "\"\\(a.get(i))\""
+    },
+    {
+     "task_id": "A-ARR-0052",
+     "category": "A-ARR",
+     "snippet": "\"\\(a.get(0))\""
+    },
+    {
+     "task_id": "A-ARR-0054v25",
+     "category": "A-ARR",
+     "snippet": "\"\\(a.get(i))\""
+    }
+   ]
+  },
+  {
+   "rank": 8,
+   "signature": "RETURN_STMT(STR_LIT)",
+   "count": 10792,
+   "programs": 6536,
+   "program_share": 0.2795,
+   "depth": 1,
+   "node_count": 2,
+   "per_category": {
+    "A-ARR": 118,
+    "A-CND": 994,
+    "A-ERR": 616,
+    "A-MTH": 29,
+    "A-SRT": 93,
+    "A-STR": 435,
+    "D-CFG": 808,
+    "D-CLI": 1828,
+    "D-CRY": 547,
+    "D-DAT": 1021,
+    "D-FIO": 915,
+    "D-NET": 783,
+    "D-TST": 1277,
+    "D-WEB": 1328
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v61",
+     "category": "A-ARR",
+     "snippet": "<\"[\\(s.join(\", \";parts))]\""
+    },
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "<\"[]\""
+    },
+    {
+     "task_id": "A-ARR-0054v8",
+     "category": "A-ARR",
+     "snippet": "<\"[\\(s.join(\", \";parts))]\""
+    }
+   ]
+  },
+  {
+   "rank": 9,
+   "signature": "RETURN_STMT(BOOL_LIT)",
+   "count": 8283,
+   "programs": 4259,
+   "program_share": 0.1821,
+   "depth": 1,
+   "node_count": 2,
+   "per_category": {
+    "A-ARR": 400,
+    "A-CND": 588,
+    "A-ERR": 57,
+    "A-MTH": 324,
+    "A-SRT": 291,
+    "A-STR": 460,
+    "D-CFG": 1026,
+    "D-CLI": 604,
+    "D-CRY": 422,
+    "D-DAT": 10,
+    "D-FIO": 771,
+    "D-NET": 1614,
+    "D-TST": 1092,
+    "D-WEB": 624
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v5",
+     "category": "A-ARR",
+     "snippet": "<true"
+    },
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "<true"
+    },
+    {
+     "task_id": "A-ARR-0051v65",
+     "category": "A-ARR",
+     "snippet": "<true"
+    }
+   ]
+  },
+  {
+   "rank": 10,
+   "signature": "ARRAY_LIT",
+   "count": 7787,
+   "programs": 5752,
+   "program_share": 0.246,
+   "depth": 0,
+   "node_count": 1,
+   "per_category": {
+    "A-ARR": 1199,
+    "A-CND": 2,
+    "A-ERR": 444,
+    "A-MTH": 25,
+    "A-SRT": 1034,
+    "A-STR": 162,
+    "D-CFG": 520,
+    "D-CLI": 347,
+    "D-CRY": 21,
+    "D-DAT": 1838,
+    "D-FIO": 503,
+    "D-NET": 441,
+    "D-TST": 722,
+    "D-WEB": 529
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "@()"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "@()"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "@()"
+    }
+   ]
+  },
+  {
+   "rank": 11,
+   "signature": "CALL_EXPR(IDENT STR_LIT)",
+   "count": 7547,
+   "programs": 2528,
+   "program_share": 0.1081,
+   "depth": 1,
+   "node_count": 3,
+   "per_category": {
+    "A-CND": 68,
+    "A-ERR": 234,
+    "A-STR": 824,
+    "D-CFG": 1390,
+    "D-CLI": 996,
+    "D-CRY": 623,
+    "D-DAT": 51,
+    "D-FIO": 989,
+    "D-NET": 1455,
+    "D-TST": 90,
+    "D-WEB": 827
+   },
+   "top_callees": [
+    [
+     "solve",
+     148
+    ],
+    [
+     "toquery",
+     135
+    ],
+    [
+     "ishttps",
+     126
+    ],
+    [
+     "issecure",
+     126
+    ],
+    [
+     "extractpath",
+     114
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-CND-0057v2",
+     "category": "A-CND",
+     "snippet": "ishexdigit(\"7\")"
+    },
+    {
+     "task_id": "A-CND-0057v33",
+     "category": "A-CND",
+     "snippet": "ishexdigit(\"7\")"
+    },
+    {
+     "task_id": "A-CND-0058v11",
+     "category": "A-CND",
+     "snippet": "isvowel(\"a\")"
+    }
+   ]
+  },
+  {
+   "rank": 12,
+   "signature": "BIN[<](IDENT IDENT)",
+   "count": 5835,
+   "programs": 4516,
+   "program_share": 0.1931,
+   "depth": 1,
+   "node_count": 3,
+   "per_category": {
+    "A-ARR": 544,
+    "A-CND": 344,
+    "A-ERR": 238,
+    "A-MTH": 359,
+    "A-SRT": 1274,
+    "A-STR": 890,
+    "D-CFG": 119,
+    "D-CLI": 292,
+    "D-CRY": 147,
+    "D-DAT": 450,
+    "D-FIO": 222,
+    "D-NET": 222,
+    "D-TST": 598,
+    "D-WEB": 136
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "i<n"
+    },
+    {
+     "task_id": "A-ARR-0051v58",
+     "category": "A-ARR",
+     "snippet": "i<n"
+    },
+    {
+     "task_id": "A-ARR-0052v19",
+     "category": "A-ARR",
+     "snippet": "i<n"
+    }
+   ]
+  },
+  {
+   "rank": 13,
+   "signature": "BIN[<](IDENT INT_LIT)",
+   "count": 5604,
+   "programs": 4175,
+   "program_share": 0.1786,
+   "depth": 1,
+   "node_count": 3,
+   "per_category": {
+    "A-ARR": 151,
+    "A-CND": 1080,
+    "A-ERR": 677,
+    "A-MTH": 892,
+    "A-SRT": 318,
+    "A-STR": 384,
+    "D-CFG": 120,
+    "D-CLI": 159,
+    "D-CRY": 662,
+    "D-DAT": 90,
+    "D-FIO": 354,
+    "D-NET": 420,
+    "D-TST": 68,
+    "D-WEB": 229
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v63",
+     "category": "A-ARR",
+     "snippet": "found<0"
+    },
+    {
+     "task_id": "A-ARR-0053v42",
+     "category": "A-ARR",
+     "snippet": "n<2"
+    },
+    {
+     "task_id": "A-ARR-0054v25",
+     "category": "A-ARR",
+     "snippet": "start<0"
+    }
+   ]
+  },
+  {
+   "rank": 14,
+   "signature": "BIN[==](IDENT INT_LIT)",
+   "count": 5542,
+   "programs": 3115,
+   "program_share": 0.1332,
+   "depth": 1,
+   "node_count": 3,
+   "per_category": {
+    "A-ARR": 179,
+    "A-CND": 1557,
+    "A-ERR": 229,
+    "A-MTH": 450,
+    "A-SRT": 282,
+    "A-STR": 482,
+    "D-CFG": 104,
+    "D-CLI": 196,
+    "D-CRY": 483,
+    "D-DAT": 402,
+    "D-FIO": 215,
+    "D-NET": 217,
+    "D-TST": 238,
+    "D-WEB": 508
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v64",
+     "category": "A-ARR",
+     "snippet": "i==0"
+    },
+    {
+     "task_id": "A-ARR-0052",
+     "category": "A-ARR",
+     "snippet": "i==0"
+    },
+    {
+     "task_id": "A-ARR-0053v7",
+     "category": "A-ARR",
+     "snippet": "n==0"
+    }
+   ]
+  },
+  {
+   "rank": 15,
+   "signature": "MUT_BIND_STMT(IDENT INT_LIT)",
+   "count": 5012,
+   "programs": 4196,
+   "program_share": 0.1795,
+   "depth": 1,
+   "node_count": 3,
+   "per_category": {
+    "A-ARR": 284,
+    "A-CND": 133,
+    "A-ERR": 191,
+    "A-MTH": 1167,
+    "A-SRT": 847,
+    "A-STR": 500,
+    "D-CFG": 171,
+    "D-CLI": 130,
+    "D-CRY": 395,
+    "D-DAT": 344,
+    "D-FIO": 209,
+    "D-NET": 178,
+    "D-TST": 190,
+    "D-WEB": 273
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0038v1",
+     "category": "A-ARR",
+     "snippet": "let sq=mut.0"
+    },
+    {
+     "task_id": "A-ARR-0007v25",
+     "category": "A-ARR",
+     "snippet": "let count=mut.0"
+    },
+    {
+     "task_id": "A-ARR-0007v37",
+     "category": "A-ARR",
+     "snippet": "let p=mut.0"
+    }
+   ]
+  },
+  {
+   "rank": 16,
+   "signature": "BIN[==](IDENT STR_LIT)",
+   "count": 4321,
+   "programs": 1836,
+   "program_share": 0.0785,
+   "depth": 1,
+   "node_count": 3,
+   "per_category": {
+    "A-CND": 120,
+    "A-ERR": 66,
+    "A-SRT": 2,
+    "A-STR": 565,
+    "D-CFG": 605,
+    "D-CLI": 185,
+    "D-CRY": 771,
+    "D-DAT": 100,
+    "D-FIO": 298,
+    "D-NET": 878,
+    "D-TST": 99,
+    "D-WEB": 632
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-CND-0042v37",
+     "category": "A-CND",
+     "snippet": "out==\"\""
+    },
+    {
+     "task_id": "A-CND-0058v13",
+     "category": "A-CND",
+     "snippet": "c==\"a\""
+    },
+    {
+     "task_id": "A-CND-0058v26",
+     "category": "A-CND",
+     "snippet": "c==\"a\""
+    }
+   ]
+  },
+  {
+   "rank": 17,
+   "signature": "MUT_BIND_STMT(IDENT ARRAY_LIT)",
+   "count": 4021,
+   "programs": 3361,
+   "program_share": 0.1437,
+   "depth": 1,
+   "node_count": 3,
+   "per_category": {
+    "A-ARR": 979,
+    "A-CND": 2,
+    "A-ERR": 166,
+    "A-MTH": 25,
+    "A-SRT": 858,
+    "A-STR": 152,
+    "D-CFG": 132,
+    "D-CLI": 117,
+    "D-CRY": 21,
+    "D-DAT": 970,
+    "D-FIO": 120,
+    "D-NET": 12,
+    "D-TST": 409,
+    "D-WEB": 58
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v34",
+     "category": "A-ARR",
+     "snippet": "let out=mut.@()"
+    },
+    {
+     "task_id": "A-ARR-0051v38",
+     "category": "A-ARR",
+     "snippet": "let out=mut.@()"
+    },
+    {
+     "task_id": "A-ARR-0051v48",
+     "category": "A-ARR",
+     "snippet": "let out=mut.@()"
+    }
+   ]
+  },
+  {
+   "rank": 18,
+   "signature": "EXPR_STMT(IDENT)",
+   "count": 3273,
+   "programs": 1881,
+   "program_share": 0.0804,
+   "depth": 1,
+   "node_count": 2,
+   "per_category": {
+    "A-ARR": 232,
+    "A-CND": 636,
+    "A-ERR": 132,
+    "A-MTH": 461,
+    "A-SRT": 184,
+    "A-STR": 462,
+    "D-CFG": 184,
+    "D-CLI": 143,
+    "D-CRY": 35,
+    "D-DAT": 150,
+    "D-FIO": 177,
+    "D-NET": 225,
+    "D-TST": 124,
+    "D-WEB": 128
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0054v25",
+     "category": "A-ARR",
+     "snippet": "start"
+    },
+    {
+     "task_id": "A-ARR-0054v44",
+     "category": "A-ARR",
+     "snippet": "start"
+    },
+    {
+     "task_id": "A-ARR-0054v52",
+     "category": "A-ARR",
+     "snippet": "start"
+    }
+   ]
+  },
+  {
+   "rank": 19,
+   "signature": "MUT_BIND_STMT(IDENT IDENT)",
+   "count": 2975,
+   "programs": 2395,
+   "program_share": 0.1024,
+   "depth": 1,
+   "node_count": 3,
+   "per_category": {
+    "A-ARR": 128,
+    "A-CND": 155,
+    "A-ERR": 171,
+    "A-MTH": 866,
+    "A-SRT": 1035,
+    "A-STR": 185,
+    "D-CFG": 41,
+    "D-CLI": 79,
+    "D-CRY": 149,
+    "D-DAT": 44,
+    "D-FIO": 27,
+    "D-NET": 49,
+    "D-TST": 5,
+    "D-WEB": 41
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0034v53",
+     "category": "A-ARR",
+     "snippet": "let out=mut.p"
+    },
+    {
+     "task_id": "A-ARR-0035v23",
+     "category": "A-ARR",
+     "snippet": "let out=mut.arr"
+    },
+    {
+     "task_id": "A-ARR-0037v35",
+     "category": "A-ARR",
+     "snippet": "let r=mut.out"
+    }
+   ]
+  },
+  {
+   "rank": 20,
+   "signature": "UN[-](INT_LIT)",
+   "count": 2786,
+   "programs": 1631,
+   "program_share": 0.0698,
+   "depth": 1,
+   "node_count": 2,
+   "per_category": {
+    "A-ARR": 191,
+    "A-CND": 59,
+    "A-ERR": 1006,
+    "A-MTH": 75,
+    "A-SRT": 643,
+    "A-STR": 117,
+    "D-CFG": 39,
+    "D-CLI": 14,
+    "D-CRY": 156,
+    "D-DAT": 214,
+    "D-FIO": 85,
+    "D-NET": 164,
+    "D-TST": 3,
+    "D-WEB": 20
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0051v63",
+     "category": "A-ARR",
+     "snippet": "-1"
+    },
+    {
+     "task_id": "A-ARR-0055v68",
+     "category": "A-ARR",
+     "snippet": "-2"
+    },
+    {
+     "task_id": "A-ARR-0035v21",
+     "category": "A-ARR",
+     "snippet": "-4"
+    }
+   ]
+  }
+ ]
+}
