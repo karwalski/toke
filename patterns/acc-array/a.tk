@@ -1,0 +1,20 @@
+m=main;
+i=io:std.io;
+i=env:std.env;
+f=pat(n:i64):@i64{
+  let x=mut.@();
+  lp(let i=0;i<n;i=i+1){
+    x=x.append(i*3)
+  };
+  <x
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let r=pat(n);
+  let sum=mut.0;
+  lp(let i=0;i<r.len;i=i+1){
+    sum=sum+r.get(i)
+  };
+  io.println("len=\(r.len) sum=\(sum)");
+  <0
+};
