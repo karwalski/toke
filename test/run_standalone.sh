@@ -6,7 +6,7 @@ LLC="/opt/homebrew/opt/llvm/bin/llc"
 STDLIB="src/stdlib"
 CFLAGS="-O1 -Wno-implicit-function-declaration -I $STDLIB"
 LIBS="-lm"
-LINK_SRCS="$STDLIB/tk_runtime.c $STDLIB/args.c $STDLIB/str.c $STDLIB/str_glue.c \
+LINK_SRCS="$STDLIB/tk_runtime.c $STDLIB/capabilities.c $STDLIB/args.c $STDLIB/str.c $STDLIB/str_glue.c \
   $STDLIB/collections.c $STDLIB/collections_glue.c \
   $STDLIB/crypto.c $STDLIB/crypto_glue.c \
   $STDLIB/tk_time.c $STDLIB/time_glue.c \
