@@ -6,7 +6,7 @@
 > `docs/progress.md` and summarise here. (Governance: one authoritative tracker;
 > dashboards are views, not parallel state.)
 
-**Last updated:** 2026-07-03
+**Last updated:** 2026-09-18
 **Current phase:** v0.4 language foundation + pre-from-scratch-training hardening
 **Current milestone:** M3 — post-Gate-2 functional-correctness sprint; week-12 GO/NO-GO mid-August
 **Language version:** **v0.4** — Epic 116 shipped the breaking `=`/`==` split, expression-`if`/`match`, `&&`/`||`, and a backtrack-free grammar. The earlier "v0.3 LOCKED / no breaking changes" freeze was superseded; v1.0 RFC pending.
@@ -26,6 +26,7 @@
 
 ## Current focus (detail in `docs/progress.md`)
 
+- **Epic 131 (filed 2026-09-18, next up):** token-efficient-by-default patterns — measured pattern catalogue (token proxy + runtime micro-bench, perf a co-equal hard gate), `--lint` pattern rules → judge → validate gate → syntax card v2, corpus + library rewrite waves (reopens the 2026-08-19 freeze with a snapshot fallback; re-freeze as `AUDIT_131.md`), tokenizer Phase 0–1 absorbed. Supersedes 129.8, 126.2/126.4, 118.3, 118.7-ingest.
 - **Runnable now (laptop):** Epic 123 (foundation, root-of-trust, quality — in progress); Epic 119 (docs compile-health — done, gate green); Epics 120–122 (security audit done; remediation + ADR ratification pending); v0.4 uplift 116.13 / 117 (ooke migrated) / 118 (corpus 84% compile).
 - **Compute-gated (~Oct local hardware):** tokenizer retrain (116.9), from-scratch training (116.12), corpus regeneration (116.8), idiom re-measure (118.3/118.4), website deploy (117.6 — also owner-approval-gated).
 - **Awaiting owner decision:** ADR-0010 (ambient authority), ADR-0011 (injection/auto-escape), ADR-0012 (spatial safety), ADR-0013 (crypto agility); generics investigation (ADR-0014).
