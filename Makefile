@@ -64,7 +64,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all clean lint conform conform-check build-all ci check-docs check-patterns render-patterns check-error-codes diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all clean lint conform conform-sh conform-check build-all ci check-docs check-patterns render-patterns check-error-codes diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -113,6 +113,21 @@ lint:
 
 conform:
 	@bash test/run_conform.sh
+	@$(MAKE) --no-print-directory conform-sh
+
+# 131.37: shell-script conformance cases (test/conform/*.sh) — each script
+# prints its own PASS/FAIL lines and exits non-zero on any failure.
+conform-sh:
+	@pass=0; fail=0; \
+	for s in test/conform/*.sh; do \
+	  if bash "$$s" > /tmp/tkc_conform_sh.log 2>&1; then \
+	    pass=$$((pass+1)); echo "PASS $$s: $$(grep -E '^Results:' /tmp/tkc_conform_sh.log | tail -1)"; \
+	  else \
+	    fail=$$((fail+1)); echo "FAIL $$s"; tail -25 /tmp/tkc_conform_sh.log | sed 's/^/    /'; \
+	  fi; \
+	done; \
+	echo "conform-sh: $$pass scripts passed, $$fail failed"; \
+	[ $$fail -eq 0 ]
 
 conform-check:
 	@bash test/run_conform.sh && echo "CONFORMANCE: 100%"
@@ -152,7 +167,7 @@ stress: $(BIN)
 check-tki:
 	python3 scripts/check_tki_coverage.py
 
-ci: lint conform conform-check check-tki check-docs check-error-codes check-patterns
+ci: lint conform conform-sh conform-check check-tki check-docs check-error-codes check-patterns
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).

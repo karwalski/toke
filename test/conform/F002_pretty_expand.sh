@@ -46,7 +46,7 @@ echo "--------------------------------------"
 
 # ── Test 1: --pretty adds spaces around binary operators ──────────────────────
 
-T1=$(mktemp /tmp/tkc_pretty_t1_XXXXXX.tk)
+T1=$(mktemp /tmp/tkc_pretty_t1_XXXXXX)
 cat > "${T1}" <<'EOF'
 m=test;
 f=add(a:i64;b:i64):i64{<a+b}
@@ -55,15 +55,14 @@ EOF
 T1_EXPECTED='m=test;
 f=add(a:i64; b:i64):i64 {
   <a + b
-}
-'
+}'
 
 T1_ACTUAL=$("${TKC}" --pretty "${T1}" 2>/dev/null) || true
 check "pretty: spaces around binary ops" "${T1_EXPECTED}" "${T1_ACTUAL}"
 
 # ── Test 2: --pretty adds blank lines before loops and returns ────────────────
 
-T2=$(mktemp /tmp/tkc_pretty_t2_XXXXXX.tk)
+T2=$(mktemp /tmp/tkc_pretty_t2_XXXXXX)
 cat > "${T2}" <<'EOF'
 m=test;
 f=sum(n:i64):i64{let s=0;lp(let i=0;i<n;i=i+1){s=s+i};<s}
@@ -78,15 +77,14 @@ f=sum(n:i64):i64 {
   };
 
   <s
-}
-'
+}'
 
 T2_ACTUAL=$("${TKC}" --pretty "${T2}" 2>/dev/null) || true
 check "pretty: blank lines before loop and return" "${T2_EXPECTED}" "${T2_ACTUAL}"
 
 # ── Test 3: --expand adds identifier expansion comments ──────────────────────
 
-T3=$(mktemp /tmp/tkc_expand_t3_XXXXXX.tk)
+T3=$(mktemp /tmp/tkc_expand_t3_XXXXXX)
 cat > "${T3}" <<'EOF'
 m=test;
 f=sum(n:i64):i64{let s=0;let res=1;<res}
@@ -97,15 +95,14 @@ f=sum(n:i64):i64 {
   let s=0 /* sum:i64 */;
   let res=1 /* result:i64 */;
   <res /* result */
-}
-'
+}'
 
 T3_ACTUAL=$("${TKC}" --expand "${T3}" 2>/dev/null) || true
 check "expand: identifier expansion comments" "${T3_EXPECTED}" "${T3_ACTUAL}"
 
 # ── Test 4: --pretty --expand combined ───────────────────────────────────────
 
-T4=$(mktemp /tmp/tkc_both_t4_XXXXXX.tk)
+T4=$(mktemp /tmp/tkc_both_t4_XXXXXX)
 cat > "${T4}" <<'EOF'
 m=test;
 f=calc(n:i64):i64{let s=0;lp(let i=0;i<n;i=i+1){s=s+i};<s}
@@ -120,8 +117,7 @@ f=calc(n:i64):i64 {
   };
 
   <s /* sum */
-}
-'
+}'
 
 T4_ACTUAL=$("${TKC}" --pretty --expand "${T4}" 2>/dev/null) || true
 check "pretty+expand: combined output" "${T4_EXPECTED}" "${T4_ACTUAL}"
@@ -143,8 +139,7 @@ check "expand: exit code 0" "0" "${RC}"
 T7_EXPECTED='m=test;
 f=add(a:i64; b:i64):i64 {
   <a+b
-}
-'
+}'
 
 T7_ACTUAL=$("${TKC}" --fmt "${T1}" 2>/dev/null) || true
 check "fmt: regression (unchanged)" "${T7_EXPECTED}" "${T7_ACTUAL}"

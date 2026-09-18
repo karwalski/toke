@@ -6,12 +6,14 @@
 #   2. Idempotency: formatting the output again produces identical text
 #   3. Exit code 0 on valid input, 1 on invalid input
 #
-# Story: 10.8.1
+# Inputs use the default (56-char) syntax: `<` returns, `;`-separated decls.
+#
+# Story: 10.8.1, 131.37 (rewritten from the legacy `rt` / `:void` forms)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOt="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TKC="${REPO_ROOT}/tkc"
 
 PASS=0
@@ -43,16 +45,16 @@ echo "--------------------------------------"
 
 # ── Test 1: Messy input reformatted to canonical form ─────────────────────────
 
-MESSY=$(mktemp /tmp/tkc_fmt_messy_XXXXXX.tk)
+MESSY=$(mktemp /tmp/tkc_fmt_messy_XXXXXX)
 cat > "${MESSY}" <<'EOF'
 m=example;
 i=str:std.str;
 
 t=Point{x:i64;y:i64};
 
-f=add( a : i64 ;  b : i64 ) : i64 {  rt a+b  }
+f=add( a : i64 ;  b : i64 ) : i64 {  <a+b  };
 
-f=main():void{let r=add(1;2);rt r}
+f=main():i64{let r=add(1;2);<r}
 EOF
 
 EXPECTED='m=example;
@@ -64,31 +66,30 @@ t=Point {
 };
 
 f=add(a:i64; b:i64):i64 {
-  rt a+b
+  <a+b
 };
 
-f=main():void {
+f=main():i64 {
   let r=add(1; 2);
-  rt r
-}
-'
+  <r
+}'
 
 ACTUAL=$("${TKC}" --fmt "${MESSY}" 2>/dev/null) || true
 check "messy input reformatted" "${EXPECTED}" "${ACTUAL}"
 
 # ── Test 2: Idempotency ──────────────────────────────────────────────────────
 
-CANONICAL=$(mktemp /tmp/tkc_fmt_canon_XXXXXX.tk)
+CANONICAL=$(mktemp /tmp/tkc_fmt_canon_XXXXXX)
 echo -n "${ACTUAL}" > "${CANONICAL}"
 SECOND=$("${TKC}" --fmt "${CANONICAL}" 2>/dev/null) || true
 check "idempotent (fmt|fmt = fmt)" "${ACTUAL}" "${SECOND}"
 
 # ── Test 3: Exit code 0 on valid input ───────────────────────────────────────
 
-VALID=$(mktemp /tmp/tkc_fmt_valid_XXXXXX.tk)
+VALID=$(mktemp /tmp/tkc_fmt_valid_XXXXXX)
 cat > "${VALID}" <<'EOF'
 m=test;
-f=noop():void{rt}
+f=noop():i64{<0}
 EOF
 
 RC=0
@@ -97,7 +98,7 @@ check "exit 0 on valid input" "0" "${RC}"
 
 # ── Test 4: Exit code 1 on parse error ───────────────────────────────────────
 
-INVALID=$(mktemp /tmp/tkc_fmt_bad_XXXXXX.tk)
+INVALID=$(mktemp /tmp/tkc_fmt_bad_XXXXXX)
 cat > "${INVALID}" <<'EOF'
 this is not valid toke
 EOF
@@ -114,42 +115,40 @@ fi
 
 # ── Test 5: If/else formatting ───────────────────────────────────────────────
 
-IFTESt=$(mktemp /tmp/tkc_fmt_if_XXXXXX.tk)
+IFTEST=$(mktemp /tmp/tkc_fmt_if_XXXXXX)
 cat > "${IFTEST}" <<'EOF'
 m=test;
-f=abs(x:i64):i64{if(x<0){rt 0-x}el{rt x}}
+f=abs(x:i64):i64{if(x<0){<0-x}el{<x}}
 EOF
 
 IF_EXPECTED='m=test;
 f=abs(x:i64):i64 {
   if (x<0) {
-    rt 0-x
+    <0-x
   } el {
-    rt x
+    <x
   }
-}
-'
+}'
 
 IF_ACTUAL=$("${TKC}" --fmt "${IFTEST}" 2>/dev/null) || true
 check "if/else formatting" "${IF_EXPECTED}" "${IF_ACTUAL}"
 
 # ── Test 6: Loop formatting ─────────────────────────────────────────────────
 
-LPTESt=$(mktemp /tmp/tkc_fmt_lp_XXXXXX.tk)
+LPTEST=$(mktemp /tmp/tkc_fmt_lp_XXXXXX)
 cat > "${LPTEST}" <<'EOF'
 m=test;
-f=sum(n:i64):i64{let s=0;lp(let i=0;i<n;i=i+1){s=s+i};rt s}
+f=sum(n:i64):i64{let s=mut.0;lp(let i=0;i<n;i=i+1){s=s+i};<s}
 EOF
 
 LP_EXPECTED='m=test;
 f=sum(n:i64):i64 {
-  let s=0;
+  let s=mut.0;
   lp (let i=0; i<n; i=i+1) {
     s=s+i
   };
-  rt s
-}
-'
+  <s
+}'
 
 LP_ACTUAL=$("${TKC}" --fmt "${LPTEST}" 2>/dev/null) || true
 check "loop formatting" "${LP_EXPECTED}" "${LP_ACTUAL}"
