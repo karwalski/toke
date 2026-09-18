@@ -1,0 +1,24 @@
+(* test_127_16.blocked.tk -- Epic 127.16: std.array module form
+ * `arr.append(a;v)` emits ill-typed IR: the call site is typed `i8*`
+ * (src/llvm.c ~3485 lists tk_array_append_w among the i8*-returning callees)
+ * while the declaration is `i64` (~7386). `arr.push` works because it is not
+ * in that list. Rename to test_127_16b.tk once tk_array_append_w is removed
+ * from that i8* list. *)
+m=test.m12716b;
+i=io:std.io;
+i=s:std.str;
+i=arr:std.array;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=main():$i64{
+  let a=@(1;2;3);
+  let b=arr.append(a;9);
+  cks("module-append-len";"\(b.len) \(a.len)";"4 3");
+  cks("module-append-last";"\(b.get(3))";"9");
+  <0
+};

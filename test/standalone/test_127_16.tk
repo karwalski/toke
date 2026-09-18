@@ -1,0 +1,26 @@
+(* test_127_16.tk -- Epic 127.16: std.array module form `arr.join(a;sep)`
+ * resolved (generic tk_<mod>_<method>_w rule) to tk_array_join_w, which did
+ * not exist -> link error. The glue alias now exists; the method form and
+ * s.join(sep;arr) are unchanged. `arr.append(a;v)` module form is in
+ * test_127_16.blocked.tk (needs a src/llvm.c return-type fix). *)
+m=test.m12716;
+i=io:std.io;
+i=s:std.str;
+i=arr:std.array;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=main():$i64{
+  let parts=@("x";"y";"z");
+  cks("module-join";arr.join(parts;",");"x,y,z");
+  cks("module-join-empty-sep";arr.join(parts;"");"xyz");
+  cks("method-join";parts.join("-");"x-y-z");
+  cks("str-join";s.join("+";parts);"x+y+z");
+  let p2=arr.push(parts;"w");
+  cks("module-push";"\(p2.len)";"4");
+  <0
+};

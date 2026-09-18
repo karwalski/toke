@@ -458,6 +458,10 @@ int64_t tk_arr_join_w(int64_t arr, int64_t sep) {
     extern int64_t tk_str_join_w(int64_t, int64_t);
     return tk_str_join_w(sep, arr); /* str_join takes (sep, arr) */
 }
+/* 127.16: module form `arr.join(a;sep)` (`i=arr:std.array;`) resolves through
+ * the generic tk_<module>_<method>_w rule to tk_array_join_w, which did not
+ * exist (link error). Same (arr, sep) order as the method form. */
+int64_t tk_array_join_w(int64_t arr, int64_t sep) { return tk_arr_join_w(arr, sep); }
 
 /* ── std.vec — mutable growable vector wrappers (Story 114.18) ──── */
 int64_t tk_vec_new_w(void)                                { return tk_vec_new(); }
