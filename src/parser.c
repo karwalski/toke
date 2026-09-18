@@ -746,13 +746,7 @@ static Node *parse_call(Parser *p) {
             if(peek(p)==TK_IDENT&&teq(p,f,"get")&&peek_at(p,1)==TK_LPAREN){
                 l=parse_get_postfix(p,l,d,f);   /* A4: no backtracking */
             } else if(peek(p)==TK_INT_LIT){
-                /* 127.13: `a.0` / `a.1` — constant-index sugar for `a.get(0)`
-                 * (syntax card: "constant index may use arr.0"). Still LL(1):
-                 * after '.' the next token decides (IDENT = field, INT_LIT =
-                 * index) and FLOAT_LIT needs a leading digit, so `a.0` never
-                 * lexes as a float. Same NODE_INDEX_EXPR as parse_get_postfix,
-                 * so checker and codegen are untouched. Limit: `a.0.1` lexes
-                 * as `a` `.` `0.1` (maximal munch) — chain with `.get(1)`. */
+                /* 127.13: `f().0` — constant index after a call; see parse_postfix. */
                 adv(p);
                 Node *n=mk(p,NODE_INDEX_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_INT_LIT,f));l=n;
             } else {
