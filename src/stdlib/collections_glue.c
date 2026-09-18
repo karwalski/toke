@@ -34,9 +34,8 @@ void tk_array_retain(int64_t h) {
  *                    TkMapImplT) iterate this exactly as they did on 2.8.0, so
  *                    keys() order is unchanged: insertion order, overwrite
  *                    keeps the original position.
- *   hashes[i]        64-bit FNV-1a hash of entries[i].key. A parallel array,
- *                    kept out of TkMapEntry so the mirrored 16-byte entry
- *                    stays intact.
+ *   hashes[i]        64-bit hash of entries[i].key. A parallel array, kept out
+ *                    of TkMapEntry so the mirrored 16-byte entry stays intact.
  *   slots[]          power-of-two index table of int32 indices into entries
  *                    (-1 = empty); linear probing; load factor <= 0.7; doubled
  *                    and rebuilt from entries/hashes on growth. The ABI has no
@@ -45,13 +44,22 @@ void tk_array_retain(int64_t h) {
  * The first three fields (entries, len, cap) are a layout contract shared with
  * template_glue.c and tk_map_len_w — do not reorder them.
  *
- * Keys are NUL-terminated char* compared by content (a NULL key is a valid
- * key equal only to NULL, as on 2.8.0).
+ * Key kinds (127.20): codegen passes every key as a bare i64, so the glue can
+ * only tell str keys from int keys by a per-map tag fixed at creation:
+ *   TK_MAP_KEY_STR  (tk_map_new)      key is a NUL-terminated char*, compared
+ *                                     by content, hashed with FNV-1a 64.
+ *   TK_MAP_KEY_INT  (tk_map_new_int)  key is the i64 itself, hashed with the
+ *                                     splitmix64 finaliser.
+ * On a str-keyed map a key that cannot be a user-space pointer (negative, or
+ * inside the unmapped zero page) traps as RT006 instead of being handed to
+ * strcmp — that was the 2.8.0 `@(1:0); m=m.set(2;5)` segfault.
  *
  * Value semantics are unchanged from 2.8.0: tk_map_put mutates in place and
  * tk_map_set_w returns the same handle (maps have no copy-on-write yet; the
  * language's `m=m.set(k;v)` reassignment idiom is what makes this safe).
  */
+#define TK_MAP_KEY_STR   0
+#define TK_MAP_KEY_INT   1
 #define TK_MAP_MIN_SLOTS 16
 #define TK_MAP_MIN_CAP   8
 
@@ -60,6 +68,7 @@ typedef struct {
     TkMapEntry *entries;   /* dense, insertion order  (mirrored by template_glue.c) */
     int len;               /* entry count             (mirrored) */
     int cap;               /* entries/hashes capacity (mirrored) */
+    int kind;              /* TK_MAP_KEY_STR / TK_MAP_KEY_INT */
     int64_t nslots;        /* slots[] length, power of two (0 until first put) */
     int32_t *slots;        /* index into entries, or -1 when empty */
     uint64_t *hashes;      /* hashes[i] == hash of entries[i].key */
@@ -71,15 +80,34 @@ static uint64_t tk_map_hash_str(const char *s) {
     for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211ULL; }
     return h;
 }
+static uint64_t tk_map_hash_int(int64_t k) {
+    uint64_t z = (uint64_t)k + 0x9e3779b97f4a7c15ULL; /* splitmix64 finaliser */
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31);
+}
 static uint64_t tk_map_hash(const TkMapImpl *m, int64_t key) {
-    (void)m;
-    return tk_map_hash_str((const char *)(intptr_t)key);
+    return m->kind == TK_MAP_KEY_INT ? tk_map_hash_int(key)
+                                     : tk_map_hash_str((const char *)(intptr_t)key);
 }
 static int tk_map_key_eq(const TkMapImpl *m, int64_t a, int64_t b) {
-    (void)m;
+    if (m->kind == TK_MAP_KEY_INT) return a == b;
     const char *sa = (const char *)(intptr_t)a, *sb = (const char *)(intptr_t)b;
     if (!sa || !sb) return sa == sb;                   /* NULL key == NULL key, as on 2.8.0 */
     return strcmp(sa, sb) == 0;
+}
+
+/* RT006 (127.20): an int used as the key of a str-keyed map. A negative value
+ * or one inside the zero page can never be a str pointer, so trap with a
+ * message rather than crash inside strcmp. Larger ints are indistinguishable
+ * from pointers at this ABI — the complete fix is codegen creating int-keyed
+ * map literals via tk_map_new_int (see the 127.20 report / llvm.c patch). */
+static void tk_map_check_key(const TkMapImpl *m, int64_t key) {
+    if (m->kind == TK_MAP_KEY_STR && (key < 0 || (key > 0 && key < 4096))) {
+        fprintf(stderr, "RT006: map key %lld is not a str (int key on a str-keyed map)\n",
+                (long long)key);
+        exit(1);
+    }
 }
 
 /* Index into entries of `key` (with hash h), or -1. Load <= 0.7 guarantees
@@ -112,14 +140,20 @@ static int tk_map_rehash(TkMapImpl *m, int64_t nslots) {
     return 1;
 }
 
-void *tk_map_new(void) {
+static void *tk_map_new_kind(int kind) {
     TkMapImpl *m = (TkMapImpl *)calloc(1, sizeof(TkMapImpl));
+    if (m) m->kind = kind;
     return m;
 }
+void *tk_map_new(void)     { return tk_map_new_kind(TK_MAP_KEY_STR); }
+/* 127.20: constructor for int-keyed maps — for codegen to emit at a map
+ * literal whose key type is i64 (instead of tk_map_new). */
+void *tk_map_new_int(void) { return tk_map_new_kind(TK_MAP_KEY_INT); }
 
 void tk_map_put(void *m_ptr, int64_t key, int64_t val) {
     TkMapImpl *m = (TkMapImpl *)m_ptr;
     if (!m) return;
+    tk_map_check_key(m, key);
     uint64_t h = tk_map_hash(m, key);
     int e = tk_map_find(m, key, h);
     if (e >= 0) { m->entries[e].val = val; return; }   /* overwrite keeps position */
@@ -148,6 +182,7 @@ void tk_map_put(void *m_ptr, int64_t key, int64_t val) {
 int64_t tk_map_get(void *m_ptr, int64_t key) {
     TkMapImpl *m = (TkMapImpl *)m_ptr;
     if (!m) return 0;
+    tk_map_check_key(m, key);
     int e = tk_map_find(m, key, tk_map_hash(m, key));
     return e >= 0 ? m->entries[e].val : 0;             /* missing -> 0, as on 2.8.0 */
 }

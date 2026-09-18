@@ -2,7 +2,9 @@
  * test_map.c — unit tests for the toke map runtime in collections_glue.c.
  *
  * Build and run: make test-stdlib-map
- * Stories: 127.22 (open-addressing hash map, insertion-ordered keys())
+ * Stories: 127.22 (open-addressing hash map, insertion-ordered keys()),
+ *          127.20 (int-keyed maps via tk_map_new_int; RT006 trap is exit(1)
+ *          so it is covered by the standalone repro, not in-process here)
  */
 
 #include <stdio.h>
@@ -11,6 +13,7 @@
 #include <stdint.h>
 
 void   *tk_map_new(void);
+void   *tk_map_new_int(void);
 void    tk_map_put(void *m, int64_t key, int64_t val);
 int64_t tk_map_get(void *m, int64_t key);
 int64_t tk_map_keys_w(int64_t map);
@@ -76,6 +79,28 @@ int main(void) {
     tk_map_put(big, S("k7"), -1);
     ASSERT(tk_map_get(big, S("k7")) == -1 && arr_len(tk_map_keys_w(S(big))) == N,
            "100k str overwrite keeps len");
+
+    /* ── int keys (127.20): tk_map_new_int ── */
+    void *im = tk_map_new_int();
+    tk_map_put(im, 1, 0);
+    tk_map_put(im, 100000, 7);
+    tk_map_put(im, 2, 5);
+    tk_map_put(im, 1, 9);                     /* overwrite */
+    tk_map_put(im, -5, 11);
+    tk_map_put(im, 0, 13);
+    ASSERT(tk_map_get(im, 2) == 5 && tk_map_get(im, 1) == 9 && tk_map_get(im, 100000) == 7,
+           "int get / set / overwrite");
+    ASSERT(tk_map_get(im, -5) == 11 && tk_map_get(im, 0) == 13, "int negative and zero keys");
+    ASSERT(tk_map_get(im, 4242) == 0, "int missing key -> 0");
+    int64_t iks = tk_map_keys_w(S(im));
+    int64_t *ikp = (int64_t *)(intptr_t)iks;
+    ASSERT(arr_len(iks) == 5 && ikp[0] == 1 && ikp[1] == 100000 && ikp[2] == 2 &&
+           ikp[3] == -5 && ikp[4] == 0, "int keys() is insertion order");
+    for (int i = 0; i < N; i++) tk_map_put(im, (int64_t)i * 7919, i);
+    ok = 1;
+    for (int i = 0; i < N && ok; i++)
+        if (tk_map_get(im, (int64_t)i * 7919) != i) ok = 0;
+    ASSERT(ok, "100k int keys round-trip after growth");
 
     /* ── NULL map handle ── */
     ASSERT(tk_map_get(NULL, S("a")) == 0, "NULL map get -> 0");
