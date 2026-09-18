@@ -27,6 +27,7 @@
 ## Current focus (detail in `docs/progress.md`)
 
 - **Epic 131 (filed 2026-09-18, next up):** token-efficient-by-default patterns — measured pattern catalogue (token proxy + runtime micro-bench, perf a co-equal hard gate), `--lint` pattern rules → judge → validate gate → syntax card v2, corpus + library rewrite waves (reopens the 2026-08-19 freeze with a snapshot fallback; re-freeze as `AUDIT_131.md`), tokenizer Phase 0–1 absorbed. Supersedes 129.8, 126.2/126.4, 118.3, 118.7-ingest.
+- **Epic 132 (filed 2026-09-18):** awareness & discoverability — canonical facts block as single source of truth, home/console copy fixed to honest numbers (55.6%), `/toke-programming-language` article + schema.org + llms.txt, registry descriptions aligned, Search Console baseline + 30/60/90 reviews. Gated on the August gate write-up, Fibonacci side-by-side and the toke-eval drift decision (132.0).
 - **Runnable now (laptop):** Epic 123 (foundation, root-of-trust, quality — in progress); Epic 119 (docs compile-health — done, gate green); Epics 120–122 (security audit done; remediation + ADR ratification pending); v0.4 uplift 116.13 / 117 (ooke migrated) / 118 (corpus 84% compile).
 - **Compute-gated (~Oct local hardware):** tokenizer retrain (116.9), from-scratch training (116.12), corpus regeneration (116.8), idiom re-measure (118.3/118.4), website deploy (117.6 — also owner-approval-gated).
 - **Awaiting owner decision:** ADR-0010 (ambient authority), ADR-0011 (injection/auto-escape), ADR-0012 (spatial safety), ADR-0013 (crypto agility); generics investigation (ADR-0014).
