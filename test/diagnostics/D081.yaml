@@ -1,0 +1,30 @@
+id: D081
+series: D
+description: "lint discarded-value-result negative guard (127.33): statement-form if, a non-tail bare call inside an expression-if branch, and a plain bare call still fire; --fix rewrites only those and leaves the branch-value tails untouched"
+input: |
+  m=t;
+  f=main():i64{
+    let r=mut.@(1);
+    let v=3;
+    if(v>5){r.append(v)};
+    r.append(7);
+    r=if(v>2){r.append(v)}el{r.append(0);r};
+    <r.len
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["discarded-value-result"]
+expected_absent_codes: ["mutable-never-mutated"]
+expected_diag_field:
+  field: severity
+  value: error
+expected_fixed_output: |
+  m=t;
+  f=main():i64{
+    let r=mut.@(1);
+    let v=3;
+    if(v>5){r=r.append(v)};
+    r=r.append(7);
+    r=if(v>2){r.append(v)}el{r=r.append(0);r};
+    <r.len
+  };

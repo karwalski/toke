@@ -1,0 +1,34 @@
+id: D080
+series: D
+description: "lint discarded-value-result (127.33): a set/push/append call in tail position of an expression-if / mt-arm branch is the branch value, not a discarded statement — bind, assign, return, el-if chain, multi-statement branch, nested tail if and mt arm are all silent and --fix is a no-op"
+input: |
+  m=t;
+  i=json:std.json;
+  f=main():i64{
+    let r=mut.@(1);
+    let v=3;
+    r=if(v>2){r.append(v)}el{r};
+    let y=if(v>1){r.push(9)}el if(v>0){r}el{r.append(1)};
+    r=if(v>4){let w=v+1;r=r.append(w);r.append(w)}el{r};
+    r=if(v>0){if(v>9){r.set(0;v)}el{r}}el{r};
+    let obj=mt json.dec("{\"k\":1}"){$ok:o o;$err:e 0};
+    r=mt json.i64(obj;"k"){$ok:k if(k>0){r.append(k)}el{r};$err:e r};
+    <if(v>0){y.append(v)}el{y}
+  };
+flags: --lint
+expected_exit_code: 0
+expected_absent_codes: ["discarded-value-result"]
+expected_fixed_output: |
+  m=t;
+  i=json:std.json;
+  f=main():i64{
+    let r=mut.@(1);
+    let v=3;
+    r=if(v>2){r.append(v)}el{r};
+    let y=if(v>1){r.push(9)}el if(v>0){r}el{r.append(1)};
+    r=if(v>4){let w=v+1;r=r.append(w);r.append(w)}el{r};
+    r=if(v>0){if(v>9){r.set(0;v)}el{r}}el{r};
+    let obj=mt json.dec("{\"k\":1}"){$ok:o o;$err:e 0};
+    r=mt json.i64(obj;"k"){$ok:k if(k>0){r.append(k)}el{r};$err:e r};
+    <if(v>0){y.append(v)}el{y}
+  };

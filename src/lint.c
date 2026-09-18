@@ -19,6 +19,9 @@
  *   string-concat-chain    — concat nested ≥ 2 deep
  *   single-use-let         — let used exactly once, in the next statement
  *   discarded-value-result — bare `x.set/push/append(...)` statement
+ *                            (127.33: NOT the tail expression of an
+ *                            expression-position if/el or mt arm — that
+ *                            call IS the branch value, see pattern_walk)
  *   loop-rebuilds-array    — lp whose body is only `acc=acc.append(f(i))`
  *
  * Fix model: every fixable diagnostic carries [span_start, span_end) and a
@@ -1378,7 +1381,21 @@ static int check_loop_rebuilds_array(PatCtx *c, const Node *lp)
 
 /* ── Pattern walker ───────────────────────────────────────────────────── */
 
-static int pattern_walk(PatCtx *c, const Node *n, const Node *fn, int unsafe)
+/* 127.33 — value position.  The parser yields the same NODE_IF_STMT for the
+ * statement form and the A1 expression form (parse_if_core); what makes an
+ * `if`/`mt` an expression is its PARENT: a bind/assign/return/call-arg/match-arm
+ * (anything but a STMT_LIST), or being the tail of another value branch.  The
+ * emitter's block_tail_expr defines the branch value as the block's last
+ * statement when that is an EXPR_STMT (or a nested if/mt).  `value_pos` is 1
+ * when `n` is such an expression-position if/mt, or a STMT_LIST that is one of
+ * its branches — the tail EXPR_STMT of that list is consumed, not discarded.
+ * Statement-form `if(c){xs.append(v)};` and non-tail bare calls keep firing. */
+static int is_value_expr_kind(const Node *n)
+{
+    return n && (n->kind == NODE_IF_STMT || n->kind == NODE_MATCH_STMT);
+}
+
+static int pattern_walk(PatCtx *c, const Node *n, const Node *fn, int unsafe, int value_pos)
 {
     if (!n) return 0;
     if (n->kind == NODE_FUNC_DECL) { fn = n; unsafe = 0; }
@@ -1405,6 +1422,7 @@ static int pattern_walk(PatCtx *c, const Node *n, const Node *fn, int unsafe)
                 break;
             }
             case NODE_EXPR_STMT:
+                if (value_pos && i == n->child_count - 1) break;   /* 127.33: branch value */
                 if (check_discarded_result(c, s, fn, unsafe) < 0) return -1;
                 break;
             case NODE_LOOP_STMT:
@@ -1415,8 +1433,17 @@ static int pattern_walk(PatCtx *c, const Node *n, const Node *fn, int unsafe)
             }
         }
     }
-    for (int i = 0; i < n->child_count; i++)
-        if (pattern_walk(c, n->children[i], fn, unsafe) < 0) return -1;
+    for (int i = 0; i < n->child_count; i++) {
+        const Node *ch = n->children[i];
+        int child_vp;
+        if (n->kind == NODE_IF_STMT)
+            child_vp = (i >= 1) ? value_pos : 0;            /* branches + `el if` chain inherit */
+        else if (n->kind == NODE_STMT_LIST)
+            child_vp = (value_pos && i == n->child_count - 1 && is_value_expr_kind(ch)); /* tail if/mt */
+        else
+            child_vp = is_value_expr_kind(ch);              /* if/mt under a non-list parent = expression */
+        if (pattern_walk(c, ch, fn, unsafe, child_vp) < 0) return -1;
+    }
     return 0;
 }
 
@@ -1442,7 +1469,7 @@ int tkc_lint(const Node *ast, const char *src, int src_len,
     memset(&c, 0, sizeof c);
     c.root = ast; c.src = src; c.src_len = src_len; c.opts = opts; c.out = out;
     collect_aliases(ast, &c.aliases);
-    if (pattern_walk(&c, ast, NULL, 0) < 0) return -1;
+    if (pattern_walk(&c, ast, NULL, 0, 0) < 0) return -1;
     if (rule_concat_chain(&c, ast) < 0) return -1;
 
     return 0;
