@@ -1,0 +1,14 @@
+id: D077
+series: D
+description: "lint unused-let: a reference inside string interpolation counts as a use (no false unused-let, no destructive --fix)"
+input: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let n=1;
+    io.println("\(n)");
+    <0
+  };
+flags: --lint
+expected_exit_code: 0
+expected_absent_codes: ["unused-let"]

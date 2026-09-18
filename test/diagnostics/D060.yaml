@@ -1,0 +1,19 @@
+id: D060
+series: D
+description: "lint flag-soup negative: consecutive ifs assigning different variables, or non-literal values, are not flagged"
+input: |
+  m=t;
+  f=main():i64{
+    let a=3;
+    let b=4;
+    let ok=mut.0;
+    let no=mut.0;
+    if(a>0){ok=1};
+    if(b>0){no=1};
+    if(a>b){ok=a};
+    if(a>b){ok=b};
+    <ok+no
+  };
+flags: --lint
+expected_exit_code: 0
+expected_absent_codes: ["flag-soup"]

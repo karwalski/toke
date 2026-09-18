@@ -175,17 +175,46 @@ run_test() {
     extra_flags="$(yaml_get "${yaml_file}" "flags" 2>/dev/null || true)"
 
     # Write input to a temp file
-    local tmpfile
-    tmpfile="$(mktemp /tmp/tkc_conform_XXXXXX.tk)"
+    # NB: BSD mktemp only randomises trailing X's, so build the .tk name from a
+    # randomised base (keeps concurrent runs from colliding).
+    local tmpbase tmpfile
+    tmpbase="$(mktemp /tmp/tkc_conform_XXXXXX)"
+    tmpfile="${tmpbase}.tk"
     printf '%s\n' "${input_src}" > "${tmpfile}"
+
+    # Optional environment assignments (e.g. TKC_LINT_CONCAT_FIX=1)
+    local extra_env
+    extra_env="$(yaml_get "${yaml_file}" "env" 2>/dev/null || true)"
 
     # Run tkc --check --diag-json against the input
     diag_json_output=""
     actual_exit=0
     # shellcheck disable=SC2086
-    diag_json_output="$("${TKC}" --check --diag-json ${extra_flags} "${tmpfile}" 2>&1)" || actual_exit=$?
+    diag_json_output="$(env ${extra_env} "${TKC}" --check --diag-json ${extra_flags} "${tmpfile}" 2>&1)" || actual_exit=$?
 
-    rm -f "${tmpfile}"
+    # Optional: expected_fixed_output — run `--lint --fix` on a copy of the
+    # input, compare the rewritten file, and require a second --fix run to be
+    # a no-op (fix idempotency).  Used by the lint D-series (131.9).
+    local expected_fixed fixed_actual fix_idempotent
+    expected_fixed="$(yaml_get "${yaml_file}" "expected_fixed_output" 2>/dev/null || true)"
+    fixed_actual=""
+    fix_idempotent=true
+    if [ -n "${expected_fixed}" ]; then
+        local fixfile fixfile2
+        fixfile="${tmpbase}.fix.tk"
+        printf '%s\n' "${input_src}" > "${fixfile}"
+        # shellcheck disable=SC2086
+        env ${extra_env} "${TKC}" --lint --fix --diag-json ${extra_flags} "${fixfile}" >/dev/null 2>&1 || true
+        fixed_actual="$(cat "${fixfile}")"
+        fixfile2="${tmpbase}.fix2.tk"
+        cp "${fixfile}" "${fixfile2}"
+        # shellcheck disable=SC2086
+        env ${extra_env} "${TKC}" --lint --fix --diag-json ${extra_flags} "${fixfile2}" >/dev/null 2>&1 || true
+        if ! cmp -s "${fixfile}" "${fixfile2}"; then fix_idempotent=false; fi
+        rm -f "${fixfile}" "${fixfile2}"
+    fi
+
+    rm -f "${tmpfile}" "${tmpbase}"
 
     local pass=true
     local fail_reasons=()
@@ -208,6 +237,32 @@ run_test() {
             fail_reasons+=("expected error code ${code} not found in diagnostic output")
         fi
     done
+
+    # ── Check expected_absent_codes (codes / lint rule ids that must NOT appear) ──
+    local absent_codes=()
+    while IFS= read -r code; do
+        [ -n "${code}" ] && absent_codes+=("${code}")
+    done < <(yaml_get_list "${yaml_file}" "expected_absent_codes")
+
+    for code in "${absent_codes[@]+"${absent_codes[@]}"}"; do
+        if echo "${diag_json_output}" | grep -q "\"${code}\""; then
+            pass=false
+            fail_reasons+=("code ${code} expected absent but found in diagnostic output")
+        fi
+    done
+
+    # ── Check expected_fixed_output (--lint --fix result + idempotency) ───────
+    if [ -n "${expected_fixed}" ]; then
+        if [ "${fixed_actual}" != "${expected_fixed}" ]; then
+            pass=false
+            fail_reasons+=("--fix output mismatch; got:")
+            while IFS= read -r l; do fail_reasons+=("    | ${l}"); done <<< "${fixed_actual}"
+        fi
+        if ! ${fix_idempotent}; then
+            pass=false
+            fail_reasons+=("--fix is not idempotent (second run changed the file)")
+        fi
+    fi
 
     # ── Check fix field ──────────────────────────────────────────────────────
     if [ "${expected_fix_absent}" = "true" ]; then
@@ -240,6 +295,36 @@ sys.exit(0)
             fail_reasons+=("fix field expected \"${expected_fix}\" not found in diagnostic output")
         fi
     fi
+
+    # ── Check expected_fix_absent_for (fix must be absent on the named codes only) ──
+    local fix_absent_codes=()
+    while IFS= read -r code; do
+        [ -n "${code}" ] && fix_absent_codes+=("${code}")
+    done < <(yaml_get_list "${yaml_file}" "expected_fix_absent_for")
+    for code in "${fix_absent_codes[@]+"${fix_absent_codes[@]}"}"; do
+        if ! echo "${diag_json_output}" | python3 -c "
+import sys, json
+code = '${code}'
+for line in sys.stdin.read().splitlines():
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        rec = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    if rec.get('rule') != code and rec.get('error_code') != code:
+        continue
+    fix = rec.get('fix')
+    if fix is not None and fix != '':
+        print('FIX_PRESENT on ' + code + ': ' + repr(fix))
+        sys.exit(1)
+sys.exit(0)
+" 2>/dev/null; then
+            pass=false
+            fail_reasons+=("fix field expected absent on ${code} but was present")
+        fi
+    done
 
     # ── Check expected_diag_field (optional structured field check) ──────────
     local diag_field diag_value

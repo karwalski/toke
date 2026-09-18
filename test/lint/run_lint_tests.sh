@@ -5,7 +5,7 @@ PASS=0; FAIL=0
 
 check_warns() {
   local file="$1" rule="$2"
-  local output=$($TKC --lint "$file" 2>&1)
+  local output=$($TKC --lint --diag-json "$file" 2>&1)
   if echo "$output" | grep -q "$rule"; then
     PASS=$((PASS+1)); echo "  PASS $file (warns $rule)"
   else
@@ -15,8 +15,8 @@ check_warns() {
 
 check_clean() {
   local file="$1"
-  local output=$($TKC --lint "$file" 2>&1)
-  if ! echo "$output" | grep -q '"severity":"warning"'; then
+  local output=$($TKC --lint --diag-json "$file" 2>&1)
+  if ! echo "$output" | grep -qE '"severity":"(warning|error)"'; then
     PASS=$((PASS+1)); echo "  PASS $file (clean)"
   else
     FAIL=$((FAIL+1)); echo "  FAIL $file (unexpected warnings)"

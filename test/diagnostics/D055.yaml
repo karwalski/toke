@@ -1,0 +1,15 @@
+id: D055
+series: D
+description: "lint mut-flag-if: `let g=mut.0` written only by the following if/el is flagged; not fixable"
+input: |
+  m=t;
+  f=main():i64{
+    let a=3;
+    let g=mut.0;
+    if(a>0){g=1}el{g=2};
+    <g
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["mut-flag-if"]
+expected_fix_absent: true

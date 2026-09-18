@@ -1,0 +1,32 @@
+id: D070
+series: D
+description: "lint discarded-value-result (error): bare method-style arr.set/push/append and m.set are flagged; --fix reassigns when the receiver is a unique mut binding"
+input: |
+  m=t;
+  f=main():i64{
+    let arr=mut.@(1;2);
+    arr.set(0;5);
+    arr.push(7);
+    arr.append(8);
+    let m2=mut.@("k":1);
+    m2.set("j";2);
+    <arr.len
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["discarded-value-result"]
+expected_absent_codes: ["mutable-never-mutated"]
+expected_diag_field:
+  field: severity
+  value: error
+expected_fixed_output: |
+  m=t;
+  f=main():i64{
+    let arr=mut.@(1;2);
+    arr=arr.set(0;5);
+    arr=arr.push(7);
+    arr=arr.append(8);
+    let m2=mut.@("k":1);
+    m2=m2.set("j";2);
+    <arr.len
+  };

@@ -1,0 +1,16 @@
+id: D058
+series: D
+description: "lint mut-flag-if negative: a branch with a second statement, or a condition reading the flag, is not flagged"
+input: |
+  m=t;
+  f=main():i64{
+    let a=mut.3;
+    let k=mut.0;
+    if(a>1){k=1;a=2}el{k=2};
+    let h=mut.0;
+    if(h==0){h=5};
+    <k+h+a
+  };
+flags: --lint
+expected_exit_code: 0
+expected_absent_codes: ["mut-flag-if"]

@@ -1,0 +1,16 @@
+id: D064
+series: D
+description: "lint string-concat-chain negative: a single (un-nested) concat in either call style is not flagged"
+input: |
+  m=t;
+  i=s:std.str;
+  f=main():i64{
+    let a="a";
+    let b="b";
+    let c=s.concat(a;b);
+    let d=a.concat(b);
+    <s.len(c)+s.len(d)
+  };
+flags: --lint
+expected_exit_code: 0
+expected_absent_codes: ["string-concat-chain"]

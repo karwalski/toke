@@ -1,0 +1,16 @@
+id: D069
+series: D
+description: "lint single-use-let: a use inside the next statement's loop is a hint without a fix (the expression would be re-evaluated)"
+input: |
+  m=t;
+  f=main():i64{
+    let xs=@(1;2;3);
+    let n=xs.len;
+    let t=mut.0;
+    lp(let i=0;i<n;i=i+1){t=t+1};
+    <t
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["single-use-let"]
+expected_fix_absent: true

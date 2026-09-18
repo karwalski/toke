@@ -1,0 +1,22 @@
+id: D076
+series: D
+description: "lint mutable-never-mutated --fix removes only the `mut.` prefix (span replacement), not the whole binding"
+input: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let x=mut.5;
+    io.println("\(x)");
+    <0
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["mutable-never-mutated"]
+expected_fixed_output: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let x=5;
+    io.println("\(x)");
+    <0
+  };

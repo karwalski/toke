@@ -1,0 +1,26 @@
+id: D065
+series: D
+description: "lint single-use-let: a pure initialiser used once in the next statement is a hint with an inline fix; --fix inlines (parenthesised where needed) and deletes the let"
+input: |
+  m=t;
+  f=dbl(x:i64):i64{<x*2};
+  f=main():i64{
+    let a=3;
+    let n=a+1;
+    let r=dbl(n);
+    let arr=@(1;2;3);
+    let q=arr.len;
+    let z=arr.get(q-1);
+    <r+z
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["single-use-let"]
+expected_fixed_output: |
+  m=t;
+  f=dbl(x:i64):i64{<x*2};
+  f=main():i64{
+    let r=dbl(3+1);
+    let arr=@(1;2;3);
+    <r+arr.get(arr.len-1)
+  };

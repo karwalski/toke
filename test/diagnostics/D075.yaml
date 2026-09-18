@@ -1,0 +1,19 @@
+id: D075
+series: D
+description: "lint --fix span replacement: overlapping inline fixes are applied first-wins per round and re-run to a fixpoint; a second --fix is a no-op"
+input: |
+  m=t;
+  f=main():i64{
+    let a=3;
+    let b=a+1;
+    let c=b*2;
+    <c
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["single-use-let"]
+expected_fixed_output: |
+  m=t;
+  f=main():i64{
+    <((3+1)*2)
+  };

@@ -1,0 +1,15 @@
+id: D066
+series: D
+description: "lint single-use-let: the single use inside string interpolation is a hint only (no fix — interpolation is not AST-visible and 127.7/127.10 are open)"
+input: |
+  m=t;
+  i=io:std.io;
+  f=main():i64{
+    let n=3+1;
+    io.println("\(n)");
+    <0
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["single-use-let"]
+expected_fix_absent_for: ["single-use-let"]

@@ -1,0 +1,17 @@
+id: D074
+series: D
+description: "lint loop-rebuilds-array negative: a loop body with a second statement, or an append that reads the accumulator, is not flagged"
+input: |
+  m=t;
+  f=dbl(x:i64):i64{<x*2};
+  f=main():i64{
+    let xs=@(1;2;3);
+    let acc=mut.@();
+    let n=mut.0;
+    lp(let i=0;i<xs.len;i=i+1){acc=acc.append(dbl(xs.get(i)));n=n+1};
+    lp(let j=0;j<xs.len;j=j+1){acc=acc.append(acc.len)};
+    <acc.len+n
+  };
+flags: --lint
+expected_exit_code: 0
+expected_absent_codes: ["loop-rebuilds-array"]

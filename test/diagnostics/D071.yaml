@@ -1,0 +1,19 @@
+id: D071
+series: D
+description: "lint discarded-value-result negative: reassigned forms and module-style alias calls (in-place vec) are not flagged"
+input: |
+  m=t;
+  i=vec:std.vec;
+  f=main():i64{
+    let arr=mut.@(1;2);
+    arr=arr.set(0;5);
+    arr=arr.append(8);
+    let m2=mut.@("k":1);
+    m2=m2.set("j";2);
+    let v=vec.new();
+    vec.push(v;1);
+    <arr.len
+  };
+flags: --lint
+expected_exit_code: 0
+expected_absent_codes: ["discarded-value-result"]

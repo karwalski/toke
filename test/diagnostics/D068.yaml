@@ -1,0 +1,17 @@
+id: D068
+series: D
+description: "lint single-use-let: a call initialiser (possible side effects) is a hint without a fix"
+input: |
+  m=t;
+  i=s:std.str;
+  i=io:std.io;
+  f=main():i64{
+    let n=s.len("abc");
+    let m2=n*2;
+    io.println("\(m2)");
+    <0
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["single-use-let"]
+expected_fix_absent_for: ["single-use-let"]

@@ -1,0 +1,14 @@
+id: D072
+series: D
+description: "lint discarded-value-result: an immutable receiver is still an error but carries no fix (`x=` would not compile)"
+input: |
+  m=t;
+  f=main():i64{
+    let fixed=@(1);
+    fixed.append(2);
+    <fixed.len
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["discarded-value-result"]
+expected_fix_absent: true

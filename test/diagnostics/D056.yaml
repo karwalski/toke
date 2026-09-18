@@ -1,0 +1,15 @@
+id: D056
+series: D
+description: "lint mut-flag-if: no-else form (`if(c){h=5}`) is flagged — the literal is the el value; not fixable"
+input: |
+  m=t;
+  f=main():i64{
+    let a=3;
+    let h=mut.0;
+    if(a>1){h=5};
+    <h
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["mut-flag-if"]
+expected_fix_absent: true

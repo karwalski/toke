@@ -1,0 +1,21 @@
+id: D079
+series: D
+description: "lint consistency: a bare self-update counts as an intended write, so mutable-never-mutated stays silent and --fix yields `arr=arr.push(...)` on a mut binding"
+input: |
+  m=t;
+  f=main():i64{
+    let arr=mut.@(1);
+    arr.push(2);
+    <arr.len
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["discarded-value-result"]
+expected_absent_codes: ["mutable-never-mutated"]
+expected_fixed_output: |
+  m=t;
+  f=main():i64{
+    let arr=mut.@(1);
+    arr=arr.push(2);
+    <arr.len
+  };

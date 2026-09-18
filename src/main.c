@@ -124,6 +124,7 @@ static const char HELP[] =
     "  --compress-stream   Stream-compress stdin line-by-line, emitting chunks\n"
     "  --lint              Run lint rules and report diagnostics\n"
     "  --fix               With --lint, auto-fix mechanical violations in-place\n"
+    "  --dry-run           With --lint --fix, print the diff instead of writing\n"
     "  --migrate           Migrate legacy .tk file to default syntax (stdout)\n"
     "  --legacy            Legacy mode (80-char syntax, uppercase keywords)\n"
     "  --profile1          Deprecated alias for --legacy\n"
@@ -264,6 +265,220 @@ static int extract_module_name(const Node *ast, const char *src,
     return 0;
 }
 
+/* ── --lint / --fix driver (131.9) ─────────────────────────────────── */
+
+/*
+ * lint_apply_fixes — splice every non-overlapping fixable diagnostic into
+ * *pbuf, right-to-left by span_start so earlier offsets stay valid.  Two
+ * fixes overlap when the later-applied (lower-offset) one ends past the
+ * start of any fix already applied; the first is kept, the rest skipped.
+ * status[i] (when non-NULL): 1 = applied, 2 = skipped (overlap), 0 = n/a.
+ * Returns the number of fixes applied, or -1 on allocation failure.
+ */
+static int lint_apply_fixes(char **pbuf, long *plen, const LintResult *lr,
+                            int *status, int *skipped)
+{
+    int n = lr->count;
+    int *idx = malloc((size_t)(n > 0 ? n : 1) * sizeof(int));
+    if (!idx) return -1;
+    int fc = 0;
+    for (int i = 0; i < n; i++) if (lr->items[i].fixable) idx[fc++] = i;
+    /* selection sort: span_start descending, then span_end descending */
+    for (int a = 0; a < fc - 1; a++) {
+        for (int b = a + 1; b < fc; b++) {
+            const LintDiag *da = &lr->items[idx[a]], *db = &lr->items[idx[b]];
+            if (da->span_start < db->span_start ||
+                (da->span_start == db->span_start && da->span_end < db->span_end)) {
+                int t = idx[a]; idx[a] = idx[b]; idx[b] = t;
+            }
+        }
+    }
+    int applied = 0;
+    long min_applied_start = -1;   /* -1 = nothing applied yet */
+    for (int k = 0; k < fc; k++) {
+        const LintDiag *d = &lr->items[idx[k]];
+        long s = d->span_start, e = d->span_end;
+        if (s < 0 || e > *plen || s > e) continue;
+        if (min_applied_start >= 0 && e > min_applied_start) {
+            if (status) status[idx[k]] = 2;
+            (*skipped)++;
+            continue;
+        }
+        const char *rep = d->replacement ? d->replacement : "";
+        long rlen = (long)strlen(rep);
+        long new_len = *plen - (e - s) + rlen;
+        if (new_len > *plen) {
+            char *t = realloc(*pbuf, (size_t)new_len + 1);
+            if (!t) { free(idx); return -1; }
+            *pbuf = t;
+        }
+        memmove(*pbuf + s + rlen, *pbuf + e, (size_t)(*plen - e));
+        memcpy(*pbuf + s, rep, (size_t)rlen);
+        *plen = new_len;
+        (*pbuf)[new_len] = '\0';
+        min_applied_start = s;
+        if (status) status[idx[k]] = 1;
+        applied++;
+    }
+    free(idx);
+    return applied;
+}
+
+/* Split a buffer into line start offsets (lines exclude the '\n'). */
+static int split_lines(const char *b, long len, long **starts, long **lens)
+{
+    int n = 0;
+    for (long i = 0; i < len; i++) if (b[i] == '\n') n++;
+    if (len > 0 && b[len - 1] != '\n') n++;
+    *starts = malloc((size_t)(n > 0 ? n : 1) * sizeof(long));
+    *lens   = malloc((size_t)(n > 0 ? n : 1) * sizeof(long));
+    if (!*starts || !*lens) { free(*starts); free(*lens); *starts = NULL; *lens = NULL; return -1; }
+    int k = 0; long s = 0;
+    for (long i = 0; i < len; i++) {
+        if (b[i] == '\n') { (*starts)[k] = s; (*lens)[k] = i - s; k++; s = i + 1; }
+    }
+    if (s < len) { (*starts)[k] = s; (*lens)[k] = len - s; k++; }
+    return k;
+}
+
+/* lint_print_diff — minimal line-based LCS diff of a → b on stdout. */
+static void lint_print_diff(const char *path, const char *a, long alen,
+                            const char *b, long blen)
+{
+    long *as = NULL, *al = NULL, *bs = NULL, *bl = NULL;
+    int na = split_lines(a, alen, &as, &al);
+    int nb = split_lines(b, blen, &bs, &bl);
+    printf("--- %s\n+++ %s (after --fix)\n", path, path);
+    if (na < 0 || nb < 0 || (long)na * (long)nb > 4000000L) {
+        printf("@@ (diff too large — new content follows) @@\n%.*s", (int)blen, b);
+        free(as); free(al); free(bs); free(bl);
+        return;
+    }
+    int w = nb + 1;
+    int *L = calloc((size_t)(na + 1) * (size_t)w, sizeof(int));
+    if (!L) { free(as); free(al); free(bs); free(bl); return; }
+    for (int i = na - 1; i >= 0; i--) {
+        for (int j = nb - 1; j >= 0; j--) {
+            int eq = al[i] == bl[j] && memcmp(a + as[i], b + bs[j], (size_t)al[i]) == 0;
+            L[i * w + j] = eq ? L[(i + 1) * w + j + 1] + 1
+                              : (L[(i + 1) * w + j] > L[i * w + j + 1] ? L[(i + 1) * w + j]
+                                                                       : L[i * w + j + 1]);
+        }
+    }
+    int i = 0, j = 0, in_hunk = 0;
+    while (i < na || j < nb) {
+        int eq = i < na && j < nb && al[i] == bl[j] &&
+                 memcmp(a + as[i], b + bs[j], (size_t)al[i]) == 0;
+        if (eq) { in_hunk = 0; i++; j++; continue; }
+        if (!in_hunk) { printf("@@ -%d +%d @@\n", i + 1, j + 1); in_hunk = 1; }
+        if (j >= nb || (i < na && L[(i + 1) * w + j] >= L[i * w + j + 1])) {
+            printf("-%.*s\n", (int)al[i], a + as[i]); i++;
+        } else {
+            printf("+%.*s\n", (int)bl[j], b + bs[j]); j++;
+        }
+    }
+    free(L); free(as); free(al); free(bs); free(bl);
+}
+
+/*
+ * run_lint_mode — report lint diagnostics and, with --fix, rewrite the file
+ * to a fixpoint: fixes are applied, the result re-parsed and re-linted, and
+ * the cycle repeats until no fix applies (so a second --fix is a no-op).
+ * The file is written only if every intermediate result parses cleanly.
+ */
+static int run_lint_mode(const char *path, const char *sbuf, long slen,
+                         const Node *ast, Profile profile,
+                         int do_fix, int dry_run, int json)
+{
+    LintResult lr;
+    if (tkc_lint(ast, sbuf, (int)slen, NULL, &lr) < 0) return EINTERNAL;
+
+    int rc = 0, total_applied = 0, total_skipped = 0;
+    char *buf = NULL; long blen = slen;
+    int *status = NULL;
+
+    if (do_fix) {
+        buf = malloc((size_t)slen + 1);
+        status = calloc((size_t)(lr.count > 0 ? lr.count : 1), sizeof(int));
+        if (!buf || !status) { free(buf); free(status); lint_result_free(&lr); return EINTERNAL; }
+        memcpy(buf, sbuf, (size_t)slen + 1);
+        int applied = lint_apply_fixes(&buf, &blen, &lr, status, &total_skipped);
+        if (applied < 0) { free(buf); free(status); lint_result_free(&lr); return EINTERNAL; }
+        total_applied += applied;
+    }
+
+    /* Report round-0 diagnostics */
+    if (lr.count == 0) {
+        if (!json) fprintf(stderr, "tkc: no lint warnings\n");
+    }
+    for (int li = 0; li < lr.count; li++) {
+        const LintDiag *d = &lr.items[li];
+        if (json) {
+            lint_emit_json(stdout, d, path, li + 1);
+        } else {
+            fprintf(stderr, "%s:%d:%d: %s: [%s] %s", path, d->line, d->col,
+                    lint_severity_str(d->severity), d->rule_id, d->message);
+            if (do_fix && status && status[li] == 1) fprintf(stderr, " [auto-fixed]");
+            if (do_fix && status && status[li] == 2) fprintf(stderr, " [fix skipped: overlaps an applied fix]");
+            fprintf(stderr, "\n");
+        }
+    }
+    free(status);
+    lint_result_free(&lr);
+    if (!do_fix) return 0;
+
+    /* Fixpoint rounds: re-parse and re-lint the rewritten buffer. */
+    int round = 0, ok = 1;
+    while (total_applied > 0 && ok && round < 16) {
+        round++;
+        Arena *ar = arena_init();
+        if (!ar) { ok = 0; rc = EINTERNAL; break; }
+        int tcap = (int)(blen + 16);
+        Token *toks = arena_alloc(ar, tcap * (int)sizeof(Token));
+        if (!toks) { arena_free(ar); ok = 0; rc = EINTERNAL; break; }
+        diag_reset();
+        diag_set_source(buf, (size_t)blen);
+        int tc = lex(buf, (int)blen, toks, tcap, profile);
+        Node *ast2 = (tc < 0 || diag_error_count() > 0) ? NULL
+                     : parse(toks, tc, buf, ar, profile);
+        if (!ast2 || diag_error_count() > 0) {
+            fprintf(stderr, "tkc: --fix produced source that does not parse; "
+                            "nothing written to %s\n", path);
+            arena_free(ar); ok = 0; rc = EINTERNAL; break;
+        }
+        LintResult lr2;
+        if (tkc_lint(ast2, buf, (int)blen, NULL, &lr2) < 0) { arena_free(ar); ok = 0; rc = EINTERNAL; break; }
+        int applied = lint_apply_fixes(&buf, &blen, &lr2, NULL, &total_skipped);
+        lint_result_free(&lr2);
+        arena_free(ar);
+        if (applied < 0) { ok = 0; rc = EINTERNAL; break; }
+        if (applied == 0) break;
+        total_applied += applied;
+    }
+
+    if (ok && total_applied > 0) {
+        if (dry_run) {
+            lint_print_diff(path, sbuf, slen, buf, blen);
+            fprintf(stderr, "tkc: --dry-run: would fix %d violation(s) in %s\n", total_applied, path);
+        } else {
+            FILE *wf = fopen(path, "wb");
+            if (!wf) {
+                fprintf(stderr, "tkc: cannot write '%s'\n", path);
+                rc = EUSAGE;
+            } else {
+                fwrite(buf, 1, (size_t)blen, wf);
+                fclose(wf);
+                fprintf(stderr, "tkc: fixed %d violation(s) in %s\n", total_applied, path);
+            }
+        }
+    }
+    if (total_skipped > 0)
+        fprintf(stderr, "tkc: note: %d fix(es) skipped because they overlapped an applied fix\n",
+                total_skipped);
+    free(buf);
+    return rc;
+}
+
 /* ── main ──────────────────────────────────────────────────────────── */
 
 /*
@@ -394,7 +609,7 @@ int main(int argc, char **argv)
     int dump_ast = 0;
     int migrate = 0;
     int min_only = 0;
-    int do_lint = 0, do_fix = 0;
+    int do_lint = 0, do_fix = 0, lint_dry_run = 0;
     int emit_tkir_flag = 0;
     int emit_deps = 0;
     int do_compress = 0, do_decompress = 0, do_compress_stream = 0;
@@ -451,6 +666,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--dump-ast"))       dump_ast = 1;
         else if (!strcmp(argv[i], "--lint"))             do_lint = 1;
         else if (!strcmp(argv[i], "--fix"))              do_fix = 1;
+        else if (!strcmp(argv[i], "--dry-run"))          lint_dry_run = 1;
         else if (!strcmp(argv[i], "--emit-tkir"))       emit_tkir_flag = 1;
         else if (!strcmp(argv[i], "--migrate"))         migrate = 1;
         else if (!strcmp(argv[i], "--compress"))        do_compress = 1;
@@ -754,84 +970,10 @@ int main(int argc, char **argv)
         goto done;
     }
 
-    /* --lint (and optionally --fix): run lint rules, report/fix, then exit */
+    /* --lint (and optionally --fix / --dry-run): run lint rules, report/fix, exit */
     if (do_lint) {
-        LintResult lr;
-        if (tkc_lint(ast, sbuf, (int)slen, NULL, &lr) < 0) {
-            rc = EINTERNAL; goto done;
-        }
-        if (lr.count == 0) {
-            fprintf(stderr, "tkc: no lint warnings\n");
-            lint_result_free(&lr);
-            goto done;
-        }
-
-        /* Print all diagnostics */
-        for (int li = 0; li < lr.count; li++) {
-            LintDiag *d = &lr.items[li];
-            fprintf(stderr, "%s:%d:%d: warning: [%s] %s",
-                    src, d->line, d->col, d->rule_id, d->message);
-            if (do_fix && d->fixable)
-                fprintf(stderr, " [auto-fixed]");
-            fprintf(stderr, "\n");
-        }
-
-        /* --fix: apply fixable removals in reverse offset order */
-        if (do_fix) {
-            /* Collect fixable indices */
-            int fix_count = 0;
-            for (int li = 0; li < lr.count; li++) {
-                if (lr.items[li].fixable) fix_count++;
-            }
-            if (fix_count > 0) {
-                /* Sort fixable diags by span_start descending (simple selection sort) */
-                int *fix_idx = malloc((size_t)fix_count * sizeof(int));
-                if (!fix_idx) { lint_result_free(&lr); rc = EINTERNAL; goto done; }
-                int fi = 0;
-                for (int li = 0; li < lr.count; li++) {
-                    if (lr.items[li].fixable) fix_idx[fi++] = li;
-                }
-                /* Sort descending by span_start */
-                for (int a = 0; a < fix_count - 1; a++) {
-                    for (int b = a + 1; b < fix_count; b++) {
-                        if (lr.items[fix_idx[a]].span_start < lr.items[fix_idx[b]].span_start) {
-                            int tmp = fix_idx[a]; fix_idx[a] = fix_idx[b]; fix_idx[b] = tmp;
-                        }
-                    }
-                }
-
-                /* Apply removals in reverse order to preserve earlier offsets */
-                char *buf = malloc((size_t)slen + 1);
-                if (!buf) { free(fix_idx); lint_result_free(&lr); rc = EINTERNAL; goto done; }
-                memcpy(buf, sbuf, (size_t)slen + 1);
-                int cur_len = (int)slen;
-
-                for (int k = 0; k < fix_count; k++) {
-                    LintDiag *d = &lr.items[fix_idx[k]];
-                    int rm_start = d->span_start;
-                    int rm_end   = d->span_end;
-                    if (rm_start < 0 || rm_end > cur_len || rm_start >= rm_end) continue;
-                    int rm_len = rm_end - rm_start;
-                    memmove(buf + rm_start, buf + rm_end, (size_t)(cur_len - rm_end));
-                    cur_len -= rm_len;
-                    buf[cur_len] = '\0';
-                }
-
-                /* Write modified source back to the file */
-                FILE *wf = fopen(src, "wb");
-                if (!wf) {
-                    fprintf(stderr, "tkc: cannot write '%s'\n", src);
-                    free(buf); free(fix_idx); lint_result_free(&lr);
-                    rc = EUSAGE; goto done;
-                }
-                fwrite(buf, 1, (size_t)cur_len, wf);
-                fclose(wf);
-                fprintf(stderr, "tkc: fixed %d violation(s) in %s\n", fix_count, src);
-                free(buf);
-                free(fix_idx);
-            }
-        }
-        lint_result_free(&lr);
+        int lint_json = dsarif || djson || (!dtext && !isatty(STDOUT_FILENO));
+        rc = run_lint_mode(src, sbuf, slen, ast, profile, do_fix, lint_dry_run, lint_json);
         goto done;
     }
 

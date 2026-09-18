@@ -1,0 +1,12 @@
+id: D078
+series: D
+description: "lint unused-import fires for an import alias never referenced (alias is the first child of the import node)"
+input: |
+  m=t;
+  i=s:std.str;
+  i=json:std.json;
+  f=main():i64{ <s.len("hi") };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["unused-import"]
+expected_absent_codes: ["unused-let"]

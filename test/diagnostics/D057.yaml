@@ -1,0 +1,15 @@
+id: D057
+series: D
+description: "lint mut-flag-if negative: a later reassignment outside the if means the flag is a real accumulator"
+input: |
+  m=t;
+  f=main():i64{
+    let a=3;
+    let g=mut.0;
+    if(a>0){g=1}el{g=2};
+    g=g+1;
+    <g
+  };
+flags: --lint
+expected_exit_code: 0
+expected_absent_codes: ["mut-flag-if"]
