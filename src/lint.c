@@ -22,6 +22,9 @@
  *                            (127.33: NOT the tail expression of an
  *                            expression-position if/el or mt arm — that
  *                            call IS the branch value, see pattern_walk)
+ *                            (127.37: NOT a std.vec handle receiver —
+ *                            `let x=v.new()` / `x:Vec` — by-reference,
+ *                            the bare call mutates in place)
  *   loop-rebuilds-array    — lp whose body is only `acc=acc.append(f(i))`
  *
  * Fix model: every fixable diagnostic carries [span_start, span_end) and a
@@ -1256,6 +1259,75 @@ static int check_single_use_let(PatCtx *c, const Node *list, int i, const Node *
     return rc;
 }
 
+/* ── 127.37: reference-collection handles ─────────────────────────────── */
+
+/* `i=v:std.vec; let x=v.new(); x.push(1)` — a std.vec (set/stack/queue) handle
+ * is a by-reference collection: the method-style call mutates in place and
+ * the bare call is correct, so discarded-value-result must not fire on it.
+ * The linter has no types, so a receiver is a handle when a binding site of
+ * its name in the enclosing function is either
+ *   (a) `let x=<alias>.new(...)` for an import alias — every stdlib `.new`
+ *       returns a handle; value-semantic arrays/maps come from `@(...)` /
+ *       `@{...}` literals or `.append/.push/.set` results, never `.new`; or
+ *   (b) declared `:Vec` (let annotation or param) while `std.vec` is imported.
+ * Anything else (literal init, unannotated param, mt/lp binding) keeps firing. */
+static int module_path_is(const Node *mp, const char *path, const char *src)
+{
+    if (!mp || mp->kind != NODE_MODULE_PATH) return 0;
+    const char *p = path;
+    for (int i = 0; i < mp->child_count; i++) {
+        const Node *seg = mp->children[i];
+        if (!is_ident(seg)) return 0;
+        if (i > 0) { if (*p != '.') return 0; p++; }
+        if (strncmp(p, src + seg->tok_start, (size_t)seg->tok_len) != 0) return 0;
+        p += seg->tok_len;
+    }
+    return *p == '\0';
+}
+
+static int program_imports(const Node *root, const char *path, const char *src)
+{
+    if (!root || root->kind != NODE_PROGRAM) return 0;
+    for (int i = 0; i < root->child_count; i++) {
+        const Node *imp = root->children[i];
+        if (imp && imp->kind == NODE_IMPORT && imp->child_count >= 2 &&
+            module_path_is(imp->children[1], path, src)) return 1;
+    }
+    return 0;
+}
+
+/* init is `<alias>.new(...)` with alias an import alias */
+static int is_handle_ctor(PatCtx *c, const Node *init)
+{
+    const Node *base = NULL;
+    const Node *m = method_call(init, &base);
+    return m && method_is(m, "new", c->src) && is_alias(&c->aliases, base, c->src);
+}
+
+/* bare `Vec` type reference (not `mod.$Vec`) with std.vec imported */
+static int is_handle_type(PatCtx *c, const Node *ty)
+{
+    return ty && ty->kind == NODE_TYPE_IDENT && ty->op != TK_DOT && ty->tok_len == 3 &&
+           memcmp(c->src + ty->tok_start, "Vec", 3) == 0 &&
+           program_imports(c->root, "std.vec", c->src);
+}
+
+static int name_bound_to_handle(PatCtx *c, const Node *n, const char *name, int len)
+{
+    if (!n) return 0;
+    if ((n->kind == NODE_BIND_STMT || n->kind == NODE_MUT_BIND_STMT) &&
+        n->child_count >= 2 && name_is(n->children[0], name, len, c->src)) {
+        if (is_handle_ctor(c, n->children[n->child_count - 1])) return 1;
+        if (n->child_count >= 3 && is_handle_type(c, n->children[1])) return 1;
+    }
+    if (n->kind == NODE_PARAM && n->child_count >= 2 &&
+        name_is(n->children[0], name, len, c->src) && is_handle_type(c, n->children[1]))
+        return 1;
+    for (int i = 0; i < n->child_count; i++)
+        if (name_bound_to_handle(c, n->children[i], name, len)) return 1;
+    return 0;
+}
+
 /* ── Rule 5: discarded-value-result ───────────────────────────────────── */
 
 /* Binding sites of a name inside a function: returns count; *mut_decl set
@@ -1291,6 +1363,9 @@ static int check_discarded_result(PatCtx *c, const Node *stmt, const Node *fn, i
           method_is(m, "append", c->src)))
         return 0;
     if (is_alias(&c->aliases, base, c->src)) return 0;   /* module-style: vec/set modules mutate in place */
+    if (is_ident(base) &&                                 /* 127.37: method-style on a vec handle */
+        name_bound_to_handle(c, fn ? fn : c->root, c->src + base->tok_start, base->tok_len))
+        return 0;
     if (program_declares_fn(c->root, c->src + m->tok_start, m->tok_len, c->src)) return 0;  /* UFCS user fn */
     if (!rule_enabled("discarded-value-result", c->opts)) return 0;
 

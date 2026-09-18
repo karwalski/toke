@@ -1,0 +1,44 @@
+id: D082
+series: D
+description: "lint discarded-value-result (127.37): a std.vec handle receiver — `let x=v.new()`, `let x:Vec=…`, a `:Vec` param, an aliased module import — is a by-reference collection whose method-style bare `push/set` mutates in place; no diagnostic and --fix is a no-op"
+input: |
+  m=t;
+  i=vv:std.vec;
+  f=fill(xs:Vec;n:i64):i64{
+    xs.push(n);
+    xs.set(0;n);
+    <vv.len(xs)
+  };
+  f=main():i64{
+    let a=vv.new();
+    a.push(1);
+    let b:Vec=vv.new();
+    b.push(2);
+    let c=mut.vv.new();
+    c.push(3);
+    c.set(0;4);
+    if(vv.len(a)>0){a.push(5)};
+    <fill(a;4)+vv.len(b)+vv.len(c)
+  };
+flags: --lint
+expected_exit_code: 0
+expected_absent_codes: ["discarded-value-result"]
+expected_fixed_output: |
+  m=t;
+  i=vv:std.vec;
+  f=fill(xs:Vec;n:i64):i64{
+    xs.push(n);
+    xs.set(0;n);
+    <vv.len(xs)
+  };
+  f=main():i64{
+    let a=vv.new();
+    a.push(1);
+    let b:Vec=vv.new();
+    b.push(2);
+    let c=mut.vv.new();
+    c.push(3);
+    c.set(0;4);
+    if(vv.len(a)>0){a.push(5)};
+    <fill(a;4)+vv.len(b)+vv.len(c)
+  };

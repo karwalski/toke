@@ -1,0 +1,41 @@
+id: D083
+series: D
+description: "lint discarded-value-result negative guard (127.37): with std.vec imported, a value-semantic array (`@(...)` literal, unannotated param, a let initialised from `.append`) still fires and --fix rewrites only those; the vec handle in the same program stays silent"
+input: |
+  m=t;
+  i=v:std.vec;
+  f=grow(xs:@$i64;n:i64):@$i64{
+    xs.push(n);
+    <xs
+  };
+  f=main():i64{
+    let r=mut.@(1);
+    r.append(7);
+    let q=mut.r.append(2);
+    q.set(0;9);
+    let h=v.new();
+    h.push(1);
+    <r.len+q.len+v.len(h)+grow(r;1).len
+  };
+flags: --lint
+expected_exit_code: 0
+expected_error_codes: ["discarded-value-result"]
+expected_diag_field:
+  field: severity
+  value: error
+expected_fixed_output: |
+  m=t;
+  i=v:std.vec;
+  f=grow(xs:@$i64;n:i64):@$i64{
+    xs.push(n);
+    <xs
+  };
+  f=main():i64{
+    let r=mut.@(1);
+    r=r.append(7);
+    let q=mut.r.append(2);
+    q=q.set(0;9);
+    let h=v.new();
+    h.push(1);
+    <r.len+q.len+v.len(h)+grow(r;1).len
+  };
