@@ -1,0 +1,31 @@
+(* test_127_27.tk -- Epic 127.27: a bool-valued map literal `@("a":true)`
+ * emitted `tk_map_put(..., i64 %v)` with an i1 %v → ill-typed IR (E9003).
+ * Map values are coerced to the i64 slot at the literal (i1 zext, double
+ * bitcast) exactly as `.set` already does; reads give back the stored value. *)
+m=test.m12727;
+i=io:std.io;
+i=s:std.str;
+
+f=ck(name:str;got:i64;want:i64):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");s.fromint(got))) };
+  <0
+};
+
+f=main():$i64{
+  let m=mut.@("a":true;"b":false);
+  ck("bool-lit-true";m.get("a");1);
+  ck("bool-lit-false";m.get("b");0);
+  ck("bool-lit-len";m.len;2);
+  m=m.set("c";true);
+  ck("bool-set";m.get("c");1);
+  ck("bool-set-len";m.len;3);
+  let flag=1<2;
+  let m3=@("x":flag;"y":3>4);
+  ck("bool-expr-true";m3.get("x");1);
+  ck("bool-expr-false";m3.get("y");0);
+  let n=@(1:true;2:false);
+  ck("int-key-bool";n.get(1);1);
+  ck("int-key-bool-false";n.get(2);0);
+  <0
+};

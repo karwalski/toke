@@ -4542,6 +4542,22 @@ static int emit_expr(Ctx *c, const Node *n)
                     int z = next_tmp(c);
                     fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, vv);
                     vv = z;
+                } else if (!strcmp(vety, "i1")) {
+                    /* 127.27: a bool value (`@("a":true)`) was passed as i1 to
+                     * the i64 slot — ill-typed IR (E9003). Widen exactly as the
+                     * .set / .append argument path does. */
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, vv);
+                    vv = z;
+                } else if (!strcmp(vety, "double")) {
+                    /* 127.27: f64 values use the array/map i64 ABI (bit pattern). */
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", z, vv);
+                    vv = z;
+                } else if (!strcmp(vety, "i8") || !strcmp(vety, "i16") || !strcmp(vety, "i32")) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = sext %s %%t%d to i64\n", z, vety, vv);
+                    vv = z;
                 }
                 fprintf(c->out, "  call void @tk_map_put(i8* %%t%d, i64 %%t%d, i64 %%t%d)\n", t, kv, vv);
             }
