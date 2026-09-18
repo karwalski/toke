@@ -9,6 +9,7 @@ Subcommands
     spec          -> docs/spec/patterns-v0.4.md                 normative catalogue
     guide         -> docs/guide/11-patterns-and-efficiency.md   verbose-vs-canonical teaching chapter
     card-snippet  -> patterns/card_snippet.md                   <= 20-line "Patterns" block for syntax card v2
+                     (one `card_rule [id]` per entry, grouped by family, 2-3 rules per line; protocol §3)
     all           -> the three above
     check         -> regenerate into a temp dir, diff against the committed files (drift -> exit 1),
                      then compile-gate the two docs with scripts/check_doc_examples.py
@@ -16,7 +17,9 @@ Subcommands
                   -> copy the 131.5 runtime numbers into the catalogue per (id, form), set
                      measured_at.bench_result, re-derive runtime/token verdicts + canonical/hot_path
                      with validate_catalogue.derive_verdicts (the one implementation of protocol §6);
-                     status stays `provisional` (or `blocked`). Dry-run unless --write.
+                     a harness `timeout` form is ingested deterministically (protocol §5.2: wall 30000,
+                     ci [30000,30000], bigO 99 -> worse-bigO); status stays `provisional` (or `blocked`).
+                     Dry-run unless --write.
     merge --in patterns/catalogue.wave2.json [--write]
                   -> append entries whose id is not yet present, validate. Dry-run unless --write.
 
@@ -51,7 +54,6 @@ OUT_SPEC = os.path.join("docs", "spec", "patterns-v0.4.md")
 OUT_GUIDE = os.path.join("docs", "guide", "11-patterns-and-efficiency.md")
 OUT_CARD = os.path.join("patterns", "card_snippet.md")
 CARD_MAX_LINES = 20
-CARD_LINE_WIDTH = 120
 PROGRESS_URL = "/docs/progress/"  # where 127.x stories are tracked
 
 # protocol §2 — order and one-line intent per family
@@ -434,51 +436,45 @@ def render_guide(doc: dict, sha: str) -> str:
 
 
 # ─────────────────────────── card snippet ───────────────────────────────────
-def card_rule(e: dict, with_not: bool) -> str:
-    vd = e["verdict"]
-    canon = candidate(e, vd["canonical"])
-    rule = f"Use {short_label(canon['label'])}"
-    worst = worst_form(e)
-    if with_not and worst:
-        rule += f", not {short_label(worst['label'])}"
-    if vd["hot_path"]:
-        rule += f" (hot path: {short_label(candidate(e, vd['hot_path'])['label'])})"
-    blocked = [c for c in e["candidates"] if is_blocked(c)]
-    if blocked:
-        issues = "/".join(sorted({i for c in blocked for i in blocked_issues(e, c["form"])}))
-        rule += f" ({issues} fixed → {short_label(blocked[0]['label'])})"
-    return f"{rule} [{e['id']}]"
+CARD_RULES_PER_LINE = 3   # protocol §3: 2-3 rules per line
+CARD_SEP = " · "
 
 
-def pack(prefix: str, items: list[str], width: int) -> list[str]:
-    """Greedy line packing; every line ends with a rule's `[id]`."""
-    lines: list[str] = []
-    cur = ""
-    for it in items:
-        cand = it if not cur else f"{cur}; {it}"
-        if cur and len(prefix) + len(cand) > width:
-            lines.append(prefix + cur)
-            cur = it
-        else:
-            cur = cand
-    if cur:
-        lines.append(prefix + cur)
-    return lines
+def card_rule(e: dict) -> str:
+    """`<card_rule> [<id>]` — the authored one-line rule (protocol §3) and nothing derived: labels and
+    verdict prose stay in the spec/guide; the card carries only what an author wrote to fit it."""
+    return f"{e['card_rule']} [{e['id']}]"
+
+
+def chunk_even(items: list[str], per_line: int) -> list[list[str]]:
+    """Split into ceil(n/per_line) lines with the counts as even as possible, larger lines first
+    (7 -> 3,2,2; 5 -> 3,2; 4 -> 2,2) so no family ends on a lone rule unless it has only one."""
+    n = len(items)
+    if n == 0:
+        return []
+    k = -(-n // per_line)
+    base, extra = divmod(n, k)
+    out, i = [], 0
+    for j in range(k):
+        size = base + (1 if j < extra else 0)
+        out.append(items[i:i + size])
+        i += size
+    return out
 
 
 def render_card(doc: dict, sha: str) -> str:
     n_prov = sum(1 for e in doc["entries"] if e["verdict"]["status"] != "measured")
     head = f"## Patterns — measured canonical forms (catalogue {sha[:12]}; {len(doc['entries'])} entries"
     head += f", {n_prov} provisional)" if n_prov else ")"
-    for with_not in (True, False):  # degrade to canonical-only wording if the cap would be exceeded
-        body: list[str] = []
-        for fam, entries in by_family(doc):
-            body += pack(f"- {fam}: ", [card_rule(e, with_not) for e in entries], CARD_LINE_WIDTH)
-        lines = [head] + body
-        if len(lines) <= CARD_MAX_LINES:
-            return "\n".join(lines) + "\n"
-    sys.exit(f"card-snippet: {len(lines)} lines even in canonical-only wording; cap is {CARD_MAX_LINES} "
-             f"— shorten candidate labels or add a per-entry rule field")
+    body: list[str] = []
+    for fam, entries in by_family(doc):
+        for group in chunk_even([card_rule(e) for e in entries], CARD_RULES_PER_LINE):
+            body.append(f"- {fam}: " + CARD_SEP.join(group))
+    lines = [head] + body
+    if len(lines) > CARD_MAX_LINES:
+        sys.exit(f"card-snippet: {len(lines)} lines; cap is {CARD_MAX_LINES} — the catalogue has outgrown the card "
+                 f"block (raise CARD_RULES_PER_LINE only with owner sign-off)")
+    return "\n".join(lines) + "\n"
 
 
 # ─────────────────────────── ingest / merge ─────────────────────────────────
@@ -510,18 +506,33 @@ def ingest(doc: dict, results_path: str) -> tuple[list[str], list[str]]:
             if fr is None:
                 warnings.append(f"{pid}/{c['form']}: not in results — left as is")
                 continue
-            if fr.get("status") != "ok" or fr.get("wall_ms_median") is None:
+            al = fr.get("allocs")
+            allocs = {"calls": al.get("calls"), "bytes": al.get("bytes")} if isinstance(al, dict) else None
+            if fr.get("status") == "timeout":
+                # protocol §5.2: deterministic sentinels so the form re-derives to worse-bigO and the
+                # entry is never left unmeasured; rss/allocs as measured or null
+                warnings.append(f"{pid}/{c['form']}: harness timeout at N={fr.get('at_n', pr.get('pat_n'))} — ingested as "
+                                f"wall {vc.TIMEOUT_WALL_MS} ms, bigO {vc.TIMEOUT_BIGO} (worse-bigO)")
+                new = {
+                    "wall_ms_median": vc.TIMEOUT_WALL_MS,
+                    "wall_ci95": [vc.TIMEOUT_WALL_MS, vc.TIMEOUT_WALL_MS],
+                    "rss_kb_median": fr.get("rss_kb_median"),
+                    "allocs": allocs,
+                    "bigO_ratio": vc.TIMEOUT_BIGO,
+                    "pat_n": pr.get("pat_n"),
+                }
+            elif fr.get("status") != "ok" or fr.get("wall_ms_median") is None:
                 warnings.append(f"{pid}/{c['form']}: form status {fr.get('status')!r} — numbers left null, verdicts not re-derived")
                 continue
-            al = fr.get("allocs")
-            new = {
-                "wall_ms_median": fr["wall_ms_median"],
-                "wall_ci95": fr.get("wall_ci95"),
-                "rss_kb_median": fr.get("rss_kb_median"),
-                "allocs": {"calls": al.get("calls"), "bytes": al.get("bytes")} if isinstance(al, dict) else None,
-                "bigO_ratio": fr.get("bigO_ratio"),
-                "pat_n": pr.get("pat_n"),
-            }
+            else:
+                new = {
+                    "wall_ms_median": fr["wall_ms_median"],
+                    "wall_ci95": fr.get("wall_ci95"),
+                    "rss_kb_median": fr.get("rss_kb_median"),
+                    "allocs": allocs,
+                    "bigO_ratio": fr.get("bigO_ratio"),
+                    "pat_n": pr.get("pat_n"),
+                }
             for k, v in new.items():
                 if c.get(k) != v:
                     changes.append(f"{pid}/{c['form']}.{k}: {c.get(k)!r} -> {v!r}")

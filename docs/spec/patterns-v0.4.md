@@ -4,7 +4,7 @@ slug: patterns-v0.4
 section: spec
 ---
 
-> **GENERATED** by `scripts/patterns/render_catalogue.py spec` from `patterns/catalogue.json` (sha256 `fa57606a3a04`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
+> **GENERATED** by `scripts/patterns/render_catalogue.py spec` from `patterns/catalogue.json` (sha256 `015cb73f4a2c`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
 
 **Status:** normative (Epic 131). **Protocol:** `0.4` — [patterns-protocol-v0.4](/docs/spec/patterns-protocol-v0.4/) defines the schema (§3), the token (§4) and runtime (§5) measurements, the verdict algorithm (§6) and how a verdict is enforced (§7). **Companion:** [idiom-v0.4](/docs/spec/idiom-v0.4/) (the prose rules these verdicts measure), [Lesson 11 — Patterns and Efficiency](/docs/learn/11-patterns-and-efficiency/) (the teaching view of the same data).
 
@@ -33,6 +33,33 @@ Every entry lists all measured candidate forms and the verdict that follows from
 | [`err-propagate`](#err-propagate) | `err` | `a` | — | provisional | — |
 | [`err-default`](#err-default) | `err` | `a` | — | provisional | `single-use-let` (hint) |
 | [`err-validate-early`](#err-validate-early) | `err` | `a` | — | provisional | — |
+| [`parse-json`](#parse-json) | `parse` | `a` | `c` | provisional | `hand-rolled-parser` (warning) |
+| [`parse-csv-line`](#parse-csv-line) | `parse` | `b` | — | provisional | — |
+| [`parse-delim-split`](#parse-delim-split) | `parse` | `a` | — | provisional | `hand-rolled-parser` (warning) |
+| [`parse-fields`](#parse-fields) | `parse` | `a` | — | provisional | `hand-rolled-parser` (warning) |
+| [`parse-int`](#parse-int) | `parse` | `a` | — | provisional | `hand-rolled-parser` (warning) |
+| [`parse-kv-lines`](#parse-kv-lines) | `parse` | `a` | `b` | provisional | — |
+| [`iter-map`](#iter-map) | `iter` | `a` | — | provisional | `loop-is-map` (hint) |
+| [`iter-filter`](#iter-filter) | `iter` | `a` | — | provisional | `loop-is-filter` (hint) |
+| [`iter-filter-sum`](#iter-filter-sum) | `iter` | `c` | `b` | provisional | — |
+| [`iter-find-first`](#iter-find-first) | `iter` | `a` | — | provisional | `scan-without-break` (hint) |
+| [`iter-count`](#iter-count) | `iter` | `b` | — | provisional | — |
+| [`iter-nested-early-exit`](#iter-nested-early-exit) | `iter` | `a` | — | provisional | `flag-break-is-return` (hint) |
+| [`coll-lookup-default`](#coll-lookup-default) | `coll` | `a` | — | provisional | — |
+| [`coll-membership`](#coll-membership) | `coll` | `a` | — | blocked | — |
+| [`coll-sort-take`](#coll-sort-take) | `coll` | `a` | — | blocked | — |
+| [`coll-group-by`](#coll-group-by) | `coll` | `a` | — | provisional | — |
+| [`coll-reverse`](#coll-reverse) | `coll` | `a` | — | provisional | `quadratic-prepend` (warning) |
+| [`coll-swap`](#coll-swap) | `coll` | `b` | — | provisional | `swap-tmp-let` (hint) |
+| [`coll-dedupe`](#coll-dedupe) | `coll` | `a` | — | provisional | `quadratic-dedupe` (warning) |
+| [`cli-argv`](#cli-argv) | `cli` | `a` | — | provisional | — |
+| [`cli-flag-filter`](#cli-flag-filter) | `cli` | `a` | — | provisional | `loop-is-filter` (hint) |
+| [`cli-print-results`](#cli-print-results) | `cli` | `a` | — | provisional | `nested-concat` (warning) |
+| [`fn-helper-vs-inline`](#fn-helper-vs-inline) | `fn` | `a` | — | provisional | — |
+| [`fn-chain-vs-let`](#fn-chain-vs-let) | `fn` | `a` | — | provisional | `single-use-let` (hint) |
+| [`fn-recursion-vs-loop`](#fn-recursion-vs-loop) | `fn` | `a` | `b` | provisional | — |
+| [`io-read-lines`](#io-read-lines) | `io` | `a` | — | provisional | `hand-rolled-parser` (warning) |
+| [`io-write-accumulate`](#io-write-accumulate) | `io` | `b` | `a` | provisional | `append-in-loop` (warning) |
 
 ## Family `cond` — Conditionals
 
@@ -1349,3 +1376,1803 @@ f=pat(a:i64;b:i64):i64{
 **Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
 
 **Measured at.** tkc `toke 2.8.0` @ `386cf3d11f10`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+## Family `parse` — Parsing
+
+*Intent:* turning text into values.
+
+### parse-json
+
+**Intent.** Read typed fields (i64, str) out of a JSON document.
+
+**Applicability.** Any structured JSON input. json.dec + typed accessors is the only form that is correct on reordered keys, whitespace, escapes and nesting; the hand-scan forms are sketches that only work on a fixed layout. Runtime gap: json.dec allocates a heap Json per decode; json.i64 returns the 0 sentinel as $err (a field whose value is 0 is indistinguishable from a missing field); json.arr always returns $err on 2.8.0 (131.30 gap).
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | json.dec + json.i64/json.str via mt | 40 | 161 | 43 | 76 | 74 | 161 | pending | pending | pending | pending | slower | best |
+| b | indexof/slice hand scan (sketch) | 46 | 186 | 70 | 77 | 76 | 198 | pending | pending | pending | pending | slower | more |
+| c (hot path) | per-char charcode scan loop (sketch) | 51 | 244 | 62 | 131 | 125 | 244 | pending | pending | pending | pending | best | more |
+
+**Verdict.** canonical = `a` (json.dec + json.i64/json.str via mt); hot path = `c` (per-char charcode scan loop (sketch)) — choose it when Fixed, machine-generated layout parsed inside a loop body executed > 100k times AND profiling shows json.dec on the hot path; never for external input (hand scans are incorrect on reordered/escaped JSON). (expected; runtime deferred, loadavg>100); status = `provisional`.
+
+**Canonical form** (`patterns/parse-json/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+i=json:std.json;
+f=pat(src:str):i64{
+  let d=mt json.dec(src) {$ok:v v;$err:e <-1};
+  let a=mt json.i64(d;"a") {$ok:v v;$err:e <-1};
+  let b=mt json.str(d;"b") {$ok:v v;$err:e <-1};
+  <a+s.len(b)
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    t=t+pat("{\"a\":\(i+1),\"b\":\"x\(i%7)\"}")
+  };
+  io.println("t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — indexof/slice hand scan (sketch) (`patterns/parse-json/b.tk`, `pat` only):
+
+```toke
+f=pat(src:str):i64{
+  let pa=s.indexof(src;"\"a\":")+4;
+  let a=mt s.toint(s.slice(src;pa;s.indexof(src;","))) {$ok:v v;$err:e <-1};
+  let pb=s.indexof(src;"\"b\":\"")+5;
+  <a+s.len(s.slice(src;pb;s.len(src)-2))
+};
+```
+
+**Form `c`** (hot path) — per-char charcode scan loop (sketch) (`patterns/parse-json/c.tk`, `pat` only):
+
+```toke
+f=pat(src:str):i64{
+  let n=s.len(src);
+  let a=mut.0;
+  let i=mut.5;
+  lp(let k=0;k<n;k=k+1){
+    let c=s.charcode(src;i);
+    if(c<48||c>57){br};
+    a=a*10+c-48;
+    i=i+1
+  };
+  let j=mut.i+6;
+  let bl=mut.0;
+  lp(let k=0;k<n;k=k+1){
+    if(s.charcode(src;j)==34){br};
+    bl=bl+1;
+    j=j+1
+  };
+  <a+bl
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#4`
+- `card:Std modules`
+
+**Lint.** `hand-rolled-parser` — severity `warning`, not auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### parse-csv-line
+
+**Intent.** Split CSV text into rows of fields.
+
+**Applicability.** b (s.split on newline then comma) is only correct for unquoted fields; a (csv.parse) is required whenever fields may be quoted or contain separators/newlines (RFC 4180). csv.parse takes [byte] so the input needs s.bytes(txt); rows are csvrow structs, read fields via rows.get(r).fields. Interpolating a csv field element prints a pointer (127.7 class) - print it directly or use s.len.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| a | csv.parse(s.bytes(txt)) rows .fields | 54 | 209 | 59 | 95 | 92 | 209 | pending | pending | pending | pending | slower | more |
+| **b** | s.split lines then s.split "," | 50 | 199 | 62 | 93 | 90 | 200 | pending | pending | pending | pending | best | best |
+
+**Verdict.** canonical = `b` (s.split lines then s.split ","); status = `provisional`.
+
+**Canonical form** (`patterns/parse-csv-line/b.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+i=csv:std.csv;
+f=pat(txt:str):i64{
+  let ls=s.split(txt;"\n");
+  let t=mut.0;
+  lp(let r=0;r<ls.len;r=r+1){
+    if(ls.get(r)!=""){
+      let fs=s.split(ls.get(r);",");
+      t=t+fs.len*100;
+      lp(let j=0;j<fs.len;j=j+1){t=t+s.len(fs.get(j))}
+    }
+  };
+  <t
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let b=s.builder();
+  lp(let i=0;i<n;i=i+1){s.add(b;"aa,bbb,c\(i%10)\n")};
+  io.println("t=\(pat(s.build(b)))");
+  <0
+};
+```
+
+**Form `a`** — csv.parse(s.bytes(txt)) rows .fields (`patterns/parse-csv-line/a.tk`, `pat` only):
+
+```toke
+f=pat(txt:str):i64{
+  let rows=mt csv.parse(s.bytes(txt)) {$ok:v v;$err:e <-1};
+  let t=mut.0;
+  lp(let r=0;r<rows.len;r=r+1){
+    let fs=rows.get(r).fields;
+    t=t+fs.len*100;
+    lp(let j=0;j<fs.len;j=j+1){t=t+s.len(fs.get(j))}
+  };
+  <t
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#4`
+- `card:Std modules`
+
+**Bug caveats.**
+
+- [127.7](/docs/progress/): interpolating rows.get(r).fields.get(j) prints a pointer (untagged @str from a module call); checksum uses s.len only
+
+**Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### parse-delim-split
+
+**Intent.** Split one line on a single-character delimiter into a field array.
+
+**Applicability.** Any delimiter split where empty fields must be preserved. s.split is 5-7x fewer tokens than either manual form and is the only one that does not re-scan the string; b re-slices the remainder every iteration (quadratic in fields x line length).
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | s.split(line;",") | 7 | 40 | 11 | 16 | 16 | 40 | pending | pending | pending | pending | best | best |
+| b | indexof + slice loop | 50 | 219 | 55 | 93 | 93 | 219 | pending | pending | pending | pending | worse-bigO | more |
+| c | charcode scan + slice loop | 35 | 185 | 44 | 76 | 75 | 185 | pending | pending | pending | pending | slower | more |
+
+**Verdict.** canonical = `a` (s.split(line;",")); status = `provisional`.
+
+**Canonical form** (`patterns/parse-delim-split/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(line:str):@str{
+  <s.split(line;",")
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    let fs=pat("ab,cde,\(i),f");
+    t=t+fs.len*100;
+    lp(let j=0;j<fs.len;j=j+1){t=t+s.len(fs.get(j))}
+  };
+  io.println("t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — indexof + slice loop (`patterns/parse-delim-split/b.tk`, `pat` only):
+
+```toke
+f=pat(line:str):@str{
+  let r=mut.@();
+  let st=mut.0;
+  let n=s.len(line);
+  lp(let k=0;k<n;k=k+1){
+    let p=s.indexof(s.slice(line;st;n);",");
+    if(p<0){r=r.append(s.slice(line;st;n));br};
+    r=r.append(s.slice(line;st;st+p));
+    st=st+p+1
+  };
+  <r
+};
+```
+
+**Form `c`** — charcode scan + slice loop (`patterns/parse-delim-split/c.tk`, `pat` only):
+
+```toke
+f=pat(line:str):@str{
+  let r=mut.@();
+  let st=mut.0;
+  let n=s.len(line);
+  lp(let i=0;i<n;i=i+1){
+    if(s.charcode(line;i)==44){r=r.append(s.slice(line;st;i));st=i+1}
+  };
+  <r.append(s.slice(line;st;n))
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#4`
+- `card:Strings`
+
+**Lint.** `hand-rolled-parser` — severity `warning`, not auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### parse-fields
+
+**Intent.** Split a line on whitespace runs, dropping empty fields.
+
+**Applicability.** Whitespace tokenising (A6). s.fields is canonical; b (split on " " + skip empties) is what LLMs write when they forget fields exists. Direct reads of fields elements are correct; interpolating an element prints a pointer until 127.9 lands - use io.println(x) or s.len.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | s.fields(line) | 9 | 37 | 11 | 14 | 14 | 37 | pending | pending | pending | pending | best | best |
+| b | s.split(line;" ") + skip-empty loop | 22 | 132 | 34 | 55 | 55 | 132 | pending | pending | pending | pending | slower | more |
+| c | charcode scan + slice loop | 49 | 230 | 58 | 100 | 99 | 230 | pending | pending | pending | pending | slower | more |
+
+**Verdict.** canonical = `a` (s.fields(line)); status = `provisional`.
+
+**Canonical form** (`patterns/parse-fields/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(line:str):@str{
+  <s.fields(line)
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    let fs=pat("  ab \(i)   cde  f ");
+    t=t+fs.len*100;
+    lp(let j=0;j<fs.len;j=j+1){t=t+s.len(fs.get(j))}
+  };
+  io.println("t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — s.split(line;" ") + skip-empty loop (`patterns/parse-fields/b.tk`, `pat` only):
+
+```toke
+f=pat(line:str):@str{
+  let ws=s.split(line;" ");
+  let r=mut.@();
+  lp(let j=0;j<ws.len;j=j+1){
+    if(ws.get(j)!=""){r=r.append(ws.get(j))}
+  };
+  <r
+};
+```
+
+**Form `c`** — charcode scan + slice loop (`patterns/parse-fields/c.tk`, `pat` only):
+
+```toke
+f=pat(line:str):@str{
+  let r=mut.@();
+  let st=mut.-1;
+  let n=s.len(line);
+  lp(let i=0;i<n;i=i+1){
+    if(s.charcode(line;i)==32){
+      if(st>=0){r=r.append(s.slice(line;st;i));st=-1}
+    }el{if(st<0){st=i}}
+  };
+  <if(st>=0){r.append(s.slice(line;st;n))}el{r}
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#4`
+- `card:Strings`
+
+**Bug caveats.**
+
+- [127.9](/docs/progress/): "\(s.fields(x).get(i))" prints a pointer; fixture checksums use s.len only
+
+**Lint.** `hand-rolled-parser` — severity `warning`, not auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### parse-int
+
+**Intent.** Parse a decimal integer string, yielding a default on failure.
+
+**Applicability.** Any int parse. mt s.toint is 9 tokens vs 25 for a digit loop and handles sign/overflow. Note s.toint result 0 is indistinguishable from $err under mt on 2.8.0 (0 sentinel) when the text is "0".
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | mt s.toint(txt) {$ok:v v;$err:e -1} | 9 | 54 | 20 | 27 | 26 | 54 | pending | pending | pending | pending | best | best |
+| b | charcode digit loop | 25 | 144 | 41 | 78 | 73 | 144 | pending | pending | pending | pending | slower | more |
+
+**Verdict.** canonical = `a` (mt s.toint(txt) {$ok:v v;$err:e -1}); status = `provisional`.
+
+**Canonical form** (`patterns/parse-int/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(txt:str):i64{
+  <mt s.toint(txt) {$ok:v v;$err:e -1}
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){t=t+pat("\(i*7)")+pat("x\(i)")};
+  io.println("t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — charcode digit loop (`patterns/parse-int/b.tk`, `pat` only):
+
+```toke
+f=pat(txt:str):i64{
+  let n=s.len(txt);
+  if(n==0){<-1};
+  let v=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    let c=s.charcode(txt;i);
+    if(c<48||c>57){<-1};
+    v=v*10+c-48
+  };
+  <v
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#4`
+- `idiom-v0.4#9`
+- `card:Match expression`
+
+**Lint.** `hand-rolled-parser` — severity `warning`, not auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### parse-kv-lines
+
+**Intent.** Turn key=value lines into a str->str map.
+
+**Applicability.** Config-style text. Both forms need a seeded map literal (mut.@() as a map crashes with RT003 on set - 131.30 gap) so the sentinel key "" is present; keys() on a map returned from a user function fails to link (undefined _keys), so the checksum is computed in a helper that receives the map as a typed parameter. String values read back from the map interpolate as pointers (127.7 class); use io.println(v) or s.len(v).
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | s.split lines -> s.split "=" -> m.set | 33 | 172 | 54 | 74 | 73 | 173 | pending | pending | pending | pending | slower | best |
+| b (hot path) | s.indexof "=" + s.slice -> m.set | 45 | 194 | 60 | 86 | 85 | 195 | pending | pending | pending | pending | best | more |
+
+**Verdict.** canonical = `a` (s.split lines -> s.split "=" -> m.set); hot path = `b` (s.indexof "=" + s.slice -> m.set) — choose it when Millions of lines: b allocates two strings per line, a allocates a 2-element array plus two strings per line. (expected; runtime deferred, loadavg>100); status = `provisional`.
+
+**Canonical form** (`patterns/parse-kv-lines/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=chk(m:@(str:str)):i64{
+  let ks=m.keys();
+  let t=mut.ks.len*1000000;
+  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(m.get(ks.get(i)))};
+  <t
+};
+f=pat(txt:str):i64{
+  let m=mut.@("":"");
+  let ls=s.split(txt;"\n");
+  lp(let i=0;i<ls.len;i=i+1){
+    let kv=s.split(ls.get(i);"=");
+    if(kv.len==2){m=m.set(kv.get(0);kv.get(1))}
+  };
+  <chk(m)
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let b=s.builder();
+  lp(let i=0;i<n;i=i+1){s.add(b;"key\(i)=val\(i*3)\n")};
+  io.println("t=\(pat(s.build(b)))");
+  <0
+};
+```
+
+**Form `b`** (hot path) — s.indexof "=" + s.slice -> m.set (`patterns/parse-kv-lines/b.tk`, `pat` only):
+
+```toke
+f=pat(txt:str):i64{
+  let m=mut.@("":"");
+  let ls=s.split(txt;"\n");
+  lp(let i=0;i<ls.len;i=i+1){
+    let l=ls.get(i);
+    let p=s.indexof(l;"=");
+    if(p>0){m=m.set(s.slice(l;0;p);s.slice(l;p+1;s.len(l)))}
+  };
+  <chk(m)
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#4`
+- `idiom-v0.4#6`
+
+**Bug caveats.**
+
+- [127.7](/docs/progress/): "\(m.get(k))" on a str-valued map prints a pointer
+
+**Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+## Family `iter` — Iteration
+
+*Intent:* traversals.
+
+### iter-map
+
+**Intent.** Transform every element of an array with a per-element function.
+
+**Applicability.** Pure per-element transforms with a named function (&f). Keep a lp when the body is stateful or needs the index.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | xs.map(&dbl) | 13 | 34 | 14 | 20 | 18 | 34 | pending | pending | pending | pending | best | best |
+| b | index loop + append | 16 | 89 | 19 | 46 | 44 | 89 | pending | pending | pending | pending | slower | more |
+
+**Verdict.** canonical = `a` (xs.map(&dbl)); status = `provisional`.
+
+**Canonical form** (`patterns/iter-map/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=dbl(x:i64):i64{<x*2};
+f=pat(xs:@i64):@i64{
+  <xs.map(&dbl)
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%1000)};
+  let r=pat(xs);
+  let t=mut.0;
+  lp(let i=0;i<r.len;i=i+1){t=t+r.get(i)};
+  io.println("len=\(r.len) t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — index loop + append (`patterns/iter-map/b.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):@i64{
+  let r=mut.@();
+  lp(let i=0;i<xs.len;i=i+1){r=r.append(xs.get(i)*2)};
+  <r
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#7`
+- `card:Arrays and maps`
+- `ast-mine:1`
+
+**Lint.** `loop-is-map` — severity `hint`, not auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### iter-filter
+
+**Intent.** Keep the elements that satisfy a predicate.
+
+**Applicability.** Predicate is a named bool function. Element interpolation of the result: safe for @i64; for @str the filter result is untagged (127.10 class) - read elements directly.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | xs.filter(&isev) | 14 | 38 | 15 | 21 | 19 | 38 | pending | pending | pending | pending | best | best |
+| b | index loop + if + append | 18 | 107 | 23 | 54 | 52 | 107 | pending | pending | pending | pending | slower | more |
+
+**Verdict.** canonical = `a` (xs.filter(&isev)); status = `provisional`.
+
+**Canonical form** (`patterns/iter-filter/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=isev(x:i64):bool{<x%2==0};
+f=pat(xs:@i64):@i64{
+  <xs.filter(&isev)
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%1000)};
+  let r=pat(xs);
+  let t=mut.0;
+  lp(let i=0;i<r.len;i=i+1){t=t+r.get(i)};
+  io.println("len=\(r.len) t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — index loop + if + append (`patterns/iter-filter/b.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):@i64{
+  let r=mut.@();
+  lp(let i=0;i<xs.len;i=i+1){
+    if(xs.get(i)%2==0){r=r.append(xs.get(i))}
+  };
+  <r
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#7`
+- `card:Arrays and maps`
+
+**Lint.** `loop-is-filter` — severity `hint`, not auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### iter-filter-sum
+
+**Intent.** Sum the elements that satisfy a predicate.
+
+**Applicability.** Filter-then-aggregate. c folds the predicate into a single reduce (one pass, no intermediate array); a allocates the filtered array; b is the inline single loop. Likely hot-path split: b has no indirect call per element.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| a | xs.filter(&p).reduce(0;&add) | 21 | 52 | 21 | 26 | 24 | 52 | pending | pending | pending | pending | slower | more |
+| b (hot path) | single loop with if | 19 | 96 | 22 | 53 | 51 | 96 | pending | pending | pending | pending | best | more |
+| **c** | xs.reduce(0;&addev) (predicate folded) | 17 | 40 | 16 | 22 | 20 | 40 | pending | pending | pending | pending | slower | best |
+
+**Verdict.** canonical = `c` (xs.reduce(0;&addev) (predicate folded)); hot path = `b` (single loop with if) — choose it when Arrays > 100k elements or a loop body executed > 1k times: the inline loop avoids the per-element indirect call of reduce and the intermediate array of filter. (expected; runtime deferred, loadavg>100); status = `provisional`.
+
+**Canonical form** (`patterns/iter-filter-sum/c.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=isev(x:i64):bool{<x%2==0};
+f=add(a:i64;b:i64):i64{<a+b};
+f=addev(a:i64;x:i64):i64{<if(x%2==0){a+x}el{a}};
+f=pat(xs:@i64):i64{
+  <xs.reduce(0;&addev)
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%1000)};
+  io.println("t=\(pat(xs))");
+  <0
+};
+```
+
+**Form `a`** — xs.filter(&p).reduce(0;&add) (`patterns/iter-filter-sum/a.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):i64{
+  <xs.filter(&isev).reduce(0;&add)
+};
+```
+
+**Form `b`** (hot path) — single loop with if (`patterns/iter-filter-sum/b.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):i64{
+  let t=mut.0;
+  lp(let i=0;i<xs.len;i=i+1){
+    if(xs.get(i)%2==0){t=t+xs.get(i)}
+  };
+  <t
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#7`
+- `card:Arrays and maps`
+
+**Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### iter-find-first
+
+**Intent.** Return the first element satisfying a predicate, or a default.
+
+**Applicability.** Early-exit search. a returns directly from inside the loop (no flag, no br); b scans everything and allocates; c is the mut-flag scan. xs.find(v) is by value, not predicate, and segfaults on arrays (127.11) so it is not a candidate here (see coll-membership).
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | loop with direct < return | 17 | 81 | 20 | 45 | 41 | 81 | pending | pending | pending | pending | best | best |
+| b | filter(&p) then .get(0) guarded by .len | 22 | 79 | 25 | 38 | 36 | 79 | pending | pending | pending | pending | slower | more |
+| c | mut result + full scan | 22 | 99 | 23 | 56 | 52 | 99 | pending | pending | pending | pending | slower | more |
+
+**Verdict.** canonical = `a` (loop with direct < return); status = `provisional`.
+
+**Canonical form** (`patterns/iter-find-first/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=big(x:i64):bool{<x>990};
+f=pat(xs:@i64):i64{
+  lp(let i=0;i<xs.len;i=i+1){
+    if(xs.get(i)>990){<xs.get(i)}
+  };
+  <-1
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%1000)};
+  io.println("t=\(pat(xs))");
+  <0
+};
+```
+
+**Form `b`** — filter(&p) then .get(0) guarded by .len (`patterns/iter-find-first/b.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):i64{
+  let hits=xs.filter(&big);
+  <if(hits.len>0){hits.get(0)}el{-1}
+};
+```
+
+**Form `c`** — mut result + full scan (`patterns/iter-find-first/c.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):i64{
+  let r=mut.-1;
+  lp(let i=0;i<xs.len;i=i+1){
+    if(r<0&&xs.get(i)>990){r=xs.get(i)}
+  };
+  <r
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#7`
+- `card:Loops`
+
+**Lint.** `scan-without-break` — severity `hint`, not auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### iter-count
+
+**Intent.** Count the elements satisfying a predicate.
+
+**Applicability.** No count/any/all combinator exists on 2.8.0 (ABSENT - 131.30 gap: xs.count(&p) would be ~9 tokens). a allocates the filtered array only to read .len; b is the plain loop; c is a reduce with the predicate folded.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| a | xs.filter(&p).len | 15 | 41 | 15 | 22 | 20 | 41 | pending | pending | pending | pending | slower | best |
+| **b** | loop counter | 15 | 88 | 20 | 51 | 49 | 88 | pending | pending | pending | pending | best | best |
+| c | xs.reduce(0;&cntev) | 16 | 40 | 16 | 22 | 20 | 40 | pending | pending | pending | pending | slower | tied |
+
+**Verdict.** canonical = `b` (loop counter); status = `provisional`.
+
+**Canonical form** (`patterns/iter-count/b.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=isev(x:i64):bool{<x%2==0};
+f=cntev(a:i64;x:i64):i64{<if(x%2==0){a+1}el{a}};
+f=pat(xs:@i64):i64{
+  let c=mut.0;
+  lp(let i=0;i<xs.len;i=i+1){
+    if(xs.get(i)%2==0){c=c+1}
+  };
+  <c
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%1000)};
+  io.println("t=\(pat(xs))");
+  <0
+};
+```
+
+**Form `a`** — xs.filter(&p).len (`patterns/iter-count/a.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):i64{
+  <xs.filter(&isev).len
+};
+```
+
+**Form `c`** — xs.reduce(0;&cntev) (`patterns/iter-count/c.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):i64{
+  <xs.reduce(0;&cntev)
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#7`
+- `card:Arrays and maps`
+
+**Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### iter-nested-early-exit
+
+**Intent.** Find the first (i,j) pair in a nested loop and stop.
+
+**Applicability.** Nested search inside a function: return directly with < from the inner loop (a) instead of a found-flag plus two br (b). Only applies when the search is its own function; inline searches in main still need br.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | nested lp + direct < return | 27 | 124 | 30 | 67 | 63 | 124 | pending | pending | pending | pending | best | best |
+| b | mut flag + br in both loops | 35 | 153 | 37 | 82 | 78 | 153 | pending | pending | pending | pending | tied | more |
+
+**Verdict.** canonical = `a` (nested lp + direct < return); status = `provisional`.
+
+**Canonical form** (`patterns/iter-nested-early-exit/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(xs:@i64):i64{
+  lp(let i=0;i<xs.len;i=i+1){
+    lp(let j=i+1;j<xs.len;j=j+1){
+      if(xs.get(i)+xs.get(j)==1985){<i*xs.len+j}
+    }
+  };
+  <-1
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%1000)};
+  io.println("t=\(pat(xs))");
+  <0
+};
+```
+
+**Form `b`** — mut flag + br in both loops (`patterns/iter-nested-early-exit/b.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):i64{
+  let r=mut.-1;
+  lp(let i=0;i<xs.len;i=i+1){
+    lp(let j=i+1;j<xs.len;j=j+1){
+      if(xs.get(i)+xs.get(j)==1985){r=i*xs.len+j;br}
+    };
+    if(r>=0){br}
+  };
+  <r
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#1`
+- `card:Loops`
+
+**Lint.** `flag-break-is-return` — severity `hint`, not auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+## Family `coll` — Collections
+
+*Intent:* collection queries.
+
+### coll-lookup-default
+
+**Intent.** Read a map value, substituting a default when the key is missing.
+
+**Applicability.** str-keyed maps. m.get(k) on a missing key returns 0 and mt treats the 0 sentinel as $err, so BOTH forms conflate a stored 0 with "missing"; there is no m.has (m.contains silently returns 0 for present keys) - 131.30 gap. The mt arm cannot appear inside a binary expression (t=t+mt ... is E2002); bind it with let first.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | let v=mt m.get(k) {$ok:x x;$err:e d} | 26 | 125 | 35 | 68 | 66 | 125 | pending | pending | pending | pending | best | best |
+| b | let v=m.get(k); if(v==0){d}el{v} | 28 | 127 | 35 | 70 | 68 | 127 | pending | pending | pending | pending | tied | more |
+
+**Verdict.** canonical = `a` (let v=mt m.get(k) {$ok:x x;$err:e d}); status = `provisional`.
+
+**Canonical form** (`patterns/coll-lookup-default/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(m:@(str:i64);ks:@str):i64{
+  let t=mut.0;
+  lp(let i=0;i<ks.len;i=i+1){
+    let v=mt m.get(ks.get(i)) {$ok:x x;$err:e 7};
+    t=t+v
+  };
+  <t
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let m=mut.@("k0":1);
+  let ks=mut.@();
+  lp(let i=1;i<n;i=i+1){m=m.set("k\(i)";i+1)};
+  lp(let i=0;i<n;i=i+1){ks=ks+@("k\(i*3)")};
+  io.println("t=\(pat(m;ks))");
+  <0
+};
+```
+
+**Form `b`** — let v=m.get(k); if(v==0){d}el{v} (`patterns/coll-lookup-default/b.tk`, `pat` only):
+
+```toke
+f=pat(m:@(str:i64);ks:@str):i64{
+  let t=mut.0;
+  lp(let i=0;i<ks.len;i=i+1){
+    let v=m.get(ks.get(i));
+    let d=if(v==0){7}el{v};
+    t=t+d
+  };
+  <t
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#9`
+- `card:Match expression`
+
+**Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### coll-membership
+
+**Intent.** Count how many query values occur in a reference array.
+
+**Applicability.** Repeated membership tests. b (linear scan per query) is O(N*Q) and worse-bigO; a builds a str-keyed map once (int-keyed map literals @(0:1) segfault on .set - 131.30 gap - so keys are "\(x)"). The preferred xs.contains(v) form is blocked by 127.11 (routed to the string glue, SIGSEGV) and would still be O(N*Q).
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | map-as-set + mt get | 45 | 205 | 49 | 105 | 102 | 205 | pending | pending | pending | pending | best | more |
+| b | linear scan with br per query | 24 | 133 | 28 | 73 | 70 | 133 | pending | pending | pending | pending | worse-bigO | best |
+| c | xs.contains(q) per query (blocked 127.11) *(blocked)* | — | — | — | — | — | — | — | — | — | — | blocked | blocked |
+
+**Verdict.** canonical = `a` (map-as-set + mt get); status = `blocked`.
+
+**Canonical form** (`patterns/coll-membership/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(xs:@i64;qs:@i64):i64{
+  let set=mut.@("":1);
+  lp(let i=0;i<xs.len;i=i+1){set=set.set("\(xs.get(i))";1)};
+  let c=mut.0;
+  lp(let i=0;i<qs.len;i=i+1){
+    let h=mt set.get("\(qs.get(i))") {$ok:v 1;$err:e 0};
+    c=c+h
+  };
+  <c
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  let qs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append(i*3+1);qs=qs.append(i*2+1)};
+  io.println("c=\(pat(xs;qs))");
+  <0
+};
+```
+
+**Form `b`** — linear scan with br per query (`patterns/coll-membership/b.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64;qs:@i64):i64{
+  let c=mut.0;
+  lp(let i=0;i<qs.len;i=i+1){
+    lp(let j=0;j<xs.len;j=j+1){
+      if(xs.get(j)==qs.get(i)){c=c+1;br}
+    }
+  };
+  <c
+};
+```
+
+**Form `c`** — xs.contains(q) per query (blocked 127.11) — **blocked on 127.11** (`patterns/coll-membership/c.blocked.tk`, not compiled):
+
+```text
+f=pat(xs:@i64;qs:@i64):i64{
+  let c=mut.0;
+  lp(let i=0;i<qs.len;i=i+1){
+    if(xs.contains(qs.get(i))){c=c+1}
+  };
+  <c
+};
+```
+
+**Sources.**
+
+- `card:Arrays and maps`
+- `idiom-v0.4#4`
+
+**Bug caveats.**
+
+- [127.11](/docs/progress/): array .contains/.find/.indexof/.slice dispatch to the str glue and segfault; c.blocked.tk is the natural form — preferred when fixed: form `c`
+
+**Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### coll-sort-take
+
+**Intent.** Sort ascending and take the first k elements.
+
+**Applicability.** Top-k. a sorts (comparator &cmp returns a-b) then copies k elements; b does k selection passes (O(N*k), linear for fixed k but 2x the tokens). The natural xs.sort(&cmp).slice(0;k) is blocked by 127.11.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | xs.sort(&cmp) + append first k | 24 | 109 | 24 | 55 | 52 | 109 | pending | pending | pending | pending | best | best |
+| b | k selection passes with set-sentinel | 52 | 207 | 59 | 106 | 97 | 207 | pending | pending | pending | pending | tied | more |
+| c | xs.sort(&cmp).slice(0;k) (blocked 127.11) *(blocked)* | — | — | — | — | — | — | — | — | — | — | blocked | blocked |
+
+**Verdict.** canonical = `a` (xs.sort(&cmp) + append first k); status = `blocked`.
+
+**Canonical form** (`patterns/coll-sort-take/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=cmp(a:i64;b:i64):i64{<a-b};
+f=pat(xs:@i64;k:i64):@i64{
+  let so=xs.sort(&cmp);
+  let r=mut.@();
+  lp(let i=0;i<k;i=i+1){r=r.append(so.get(i))};
+  <r
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7919)%10007)};
+  let r=pat(xs;10);
+  let t=mut.0;
+  lp(let i=0;i<r.len;i=i+1){t=t*3+r.get(i)};
+  io.println("len=\(r.len) t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — k selection passes with set-sentinel (`patterns/coll-sort-take/b.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64;k:i64):@i64{
+  let src=mut.xs;
+  let r=mut.@();
+  lp(let t=0;t<k;t=t+1){
+    let bi=mut.0;
+    lp(let i=1;i<src.len;i=i+1){
+      if(src.get(i)<src.get(bi)){bi=i}
+    };
+    r=r.append(src.get(bi));
+    src=src.set(bi;1000000000)
+  };
+  <r
+};
+```
+
+**Form `c`** — xs.sort(&cmp).slice(0;k) (blocked 127.11) — **blocked on 127.11** (`patterns/coll-sort-take/c.blocked.tk`, not compiled):
+
+```text
+f=pat(xs:@i64;k:i64):@i64{
+  <xs.sort(&cmp).slice(0;k)
+};
+```
+
+**Sources.**
+
+- `card:Arrays and maps`
+
+**Bug caveats.**
+
+- [127.11](/docs/progress/): array .slice segfaults; c.blocked.tk (sort().slice(0;k)) is the preferred form — preferred when fixed: form `c`
+
+**Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### coll-group-by
+
+**Intent.** Group values by a derived string key into a map of arrays.
+
+**Applicability.** Grouping. a: map of arrays with mt-get-or-empty then set; b: parallel keys/groups arrays with a linear key scan (O(N*K)). Map literal must be seeded (mut.@("":@())) because an empty map literal crashes on set (131.30 gap); the checksum is computed inside pat because .keys() on a map returned from a user function fails to link.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | map of arrays via mt get-or-@() + set | 64 | 279 | 74 | 136 | 129 | 279 | pending | pending | pending | pending | best | best |
+| b | parallel key array + nested arrays | 89 | 408 | 97 | 181 | 174 | 408 | pending | pending | pending | pending | slower | more |
+
+**Verdict.** canonical = `a` (map of arrays via mt get-or-@() + set); status = `provisional`.
+
+**Canonical form** (`patterns/coll-group-by/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(xs:@i64):i64{
+  let g=mut.@("":@());
+  lp(let i=0;i<xs.len;i=i+1){
+    let k="g\(xs.get(i)%13)";
+    let cur=mt g.get(k) {$ok:v v;$err:e @()};
+    g=g.set(k;cur.append(xs.get(i)))
+  };
+  let ks=g.keys();
+  let t=mut.0;
+  lp(let i=0;i<ks.len;i=i+1){
+    let sz=g.get(ks.get(i)).len;
+    t=t+sz*sz
+  };
+  <t+(ks.len-1)*100000
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%1000)};
+  io.println("t=\(pat(xs))");
+  <0
+};
+```
+
+**Form `b`** — parallel key array + nested arrays (`patterns/coll-group-by/b.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):i64{
+  let keys=mut.@();
+  let groups=mut.@();
+  lp(let i=0;i<xs.len;i=i+1){
+    let k="g\(xs.get(i)%13)";
+    let gi=mut.-1;
+    lp(let j=0;j<keys.len;j=j+1){
+      if(keys.get(j)==k){gi=j;br}
+    };
+    if(gi<0){
+      keys=keys+@(k);
+      groups=groups.append(@(xs.get(i)))
+    }el{
+      let cur=groups.get(gi);
+      groups=groups.set(gi;cur.append(xs.get(i)))
+    }
+  };
+  let t=mut.0;
+  lp(let i=0;i<groups.len;i=i+1){
+    let sz=groups.get(i).len;
+    t=t+sz*sz
+  };
+  <t+keys.len*100000
+};
+```
+
+**Sources.**
+
+- `card:Arrays and maps`
+- `idiom-v0.4#9`
+
+**Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### coll-reverse
+
+**Intent.** Produce the reversed copy of an array.
+
+**Applicability.** No reverse combinator exists (131.30 gap). a appends from the end; b copies and swaps in place; c prepends with @(x)+r and is quadratic (each + copies the accumulator) - token-tied with a but worse-bigO, so it must never be taught.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | loop from end + append | 16 | 90 | 24 | 47 | 45 | 90 | pending | pending | pending | pending | best | best |
+| b | copy + set swap to the middle | 24 | 130 | 34 | 70 | 68 | 130 | pending | pending | pending | pending | tied | more |
+| c | prepend with @(x)+r | 16 | 82 | 19 | 46 | 44 | 82 | pending | pending | pending | pending | worse-bigO | best |
+
+**Verdict.** canonical = `a` (loop from end + append); status = `provisional`.
+
+**Canonical form** (`patterns/coll-reverse/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(xs:@i64):@i64{
+  let r=mut.@();
+  lp(let i=xs.len-1;i>=0;i=i-1){r=r.append(xs.get(i))};
+  <r
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%1000)};
+  let r=pat(xs);
+  let t=mut.0;
+  lp(let i=0;i<r.len;i=i+1){t=(t*31+r.get(i))%1000000007};
+  io.println("len=\(r.len) t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — copy + set swap to the middle (`patterns/coll-reverse/b.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):@i64{
+  let r=mut.xs;
+  let n=xs.len;
+  lp(let i=0;i<n/2;i=i+1){
+    let t=r.get(i);
+    r=r.set(i;r.get(n-1-i));
+    r=r.set(n-1-i;t)
+  };
+  <r
+};
+```
+
+**Form `c`** — prepend with @(x)+r (`patterns/coll-reverse/c.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):@i64{
+  let r=mut.@();
+  lp(let i=0;i<xs.len;i=i+1){r=@(xs.get(i))+r};
+  <r
+};
+```
+
+**Sources.**
+
+- `card:Arrays and maps`
+- `ast-mine:1`
+
+**Lint.** `quadratic-prepend` — severity `warning`, not auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### coll-swap
+
+**Intent.** Swap two elements of an array.
+
+**Applicability.** Any element swap (sort inner loops). Chained r=r.set(i;r.get(j)).set(j;r.get(i)) is correct under value semantics (the second r.get reads the original) and one token cheaper than the tmp form the card shows; verified byte-identical output.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| a | let tmp + two set statements (card form) | 26 | 126 | 33 | 68 | 66 | 126 | pending | pending | pending | pending | tied | tied |
+| **b** | chained .set().set() | 25 | 114 | 30 | 63 | 61 | 114 | pending | pending | pending | pending | best | best |
+
+**Verdict.** canonical = `b` (chained .set().set()); status = `provisional`.
+
+**Canonical form** (`patterns/coll-swap/b.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(xs:@i64):@i64{
+  let r=mut.xs;
+  let n=xs.len;
+  lp(let i=0;i<n-1;i=i+2){
+    r=r.set(i;r.get(i+1)).set(i+1;r.get(i))
+  };
+  <r
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%1000)};
+  let r=pat(xs);
+  let t=mut.0;
+  lp(let i=0;i<r.len;i=i+1){t=(t*31+r.get(i))%1000000007};
+  io.println("len=\(r.len) t=\(t)");
+  <0
+};
+```
+
+**Form `a`** — let tmp + two set statements (card form) (`patterns/coll-swap/a.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):@i64{
+  let r=mut.xs;
+  let n=xs.len;
+  lp(let i=0;i<n-1;i=i+2){
+    let t=r.get(i);
+    r=r.set(i;r.get(i+1));
+    r=r.set(i+1;t)
+  };
+  <r
+};
+```
+
+**Sources.**
+
+- `card:Arrays and maps`
+- `ast-mine:1`
+
+**Lint.** `swap-tmp-let` — severity `hint`, auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### coll-dedupe
+
+**Intent.** Count (or collect) the distinct values of an array.
+
+**Applicability.** Dedupe. b (nested scan over the unique list) is token-best but O(N*U) - worse-bigO when uniques grow with N - so the map-as-set form is canonical without a hot path. Int-keyed maps segfault (131.30 gap), so the set key is "\(x)".
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | str-keyed map-as-set + mt get | 41 | 187 | 50 | 94 | 92 | 187 | pending | pending | pending | pending | best | more |
+| b | nested scan over unique list | 34 | 182 | 36 | 84 | 82 | 182 | pending | pending | pending | pending | worse-bigO | best |
+
+**Verdict.** canonical = `a` (str-keyed map-as-set + mt get); status = `provisional`.
+
+**Canonical form** (`patterns/coll-dedupe/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(xs:@i64):i64{
+  let seen=mut.@("":1);
+  let c=mut.0;
+  lp(let i=0;i<xs.len;i=i+1){
+    let x=xs.get(i);
+    let dup=mt seen.get("\(x)") {$ok:v 1;$err:e 0};
+    if(dup==0){seen=seen.set("\(x)";1);c=c+1}
+  };
+  <c
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%(n*3/4))};
+  io.println("u=\(pat(xs))");
+  <0
+};
+```
+
+**Form `b`** — nested scan over unique list (`patterns/coll-dedupe/b.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):i64{
+  let u=mut.@();
+  lp(let i=0;i<xs.len;i=i+1){
+    let x=xs.get(i);
+    let dup=mut.false;
+    lp(let j=0;j<u.len;j=j+1){
+      if(u.get(j)==x){dup=true;br}
+    };
+    if(!dup){u=u.append(x)}
+  };
+  <u.len
+};
+```
+
+**Sources.**
+
+- `card:Arrays and maps`
+
+**Lint.** `quadratic-dedupe` — severity `warning`, not auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+## Family `cli` — Program boundary
+
+*Intent:* argv, stdin and printing results.
+
+### cli-argv
+
+**Intent.** Read the first program argument with a default when absent.
+
+**Applicability.** args.get(n) returns $err past the end, so mt is a one-expression form; the count check is 7 tokens more. The args.get result interpolates as a pointer (127.7 class) - print it directly or take s.len. args.count() includes the program name.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | mt args.get(1) {$ok:v v;$err:e "default"} | 8 | 47 | 14 | 23 | 23 | 53 | pending | pending | pending | pending | best | best |
+| b | if(args.count()>1){args.get(1)}el{"default"} | 15 | 52 | 18 | 22 | 22 | 58 | pending | pending | pending | pending | tied | more |
+
+**Verdict.** canonical = `a` (mt args.get(1) {$ok:v v;$err:e "default"}); status = `provisional`.
+
+**Canonical form** (`patterns/cli-argv/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+i=args:std.args;
+f=pat():str{
+  <mt args.get(1) {$ok:v v;$err:e "default"}
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){t=t+s.len(pat())};
+  io.println("t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — if(args.count()>1){args.get(1)}el{"default"} (`patterns/cli-argv/b.tk`, `pat` only):
+
+```toke
+f=pat():str{
+  <if(args.count()>1){args.get(1)}el{"default"}
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#9`
+- `card:Std modules`
+
+**Bug caveats.**
+
+- [127.7](/docs/progress/): "\(args.get(1))" prints a pointer
+
+**Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### cli-flag-filter
+
+**Intent.** Drop --flag arguments from an argv array.
+
+**Applicability.** The D-CLI "nonflags" shape: filter with a named predicate vs loop+if+append. The loop form builds with r=r+@(x) because an .append-built @str interpolates as pointers until 127.10 lands; the filter result is read directly in the fixture.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | av.filter(&notflag) | 14 | 41 | 17 | 17 | 17 | 41 | pending | pending | pending | pending | best | best |
+| b | loop + if + r=r+@(x) | 18 | 116 | 25 | 53 | 53 | 117 | pending | pending | pending | pending | slower | more |
+
+**Verdict.** canonical = `a` (av.filter(&notflag)); status = `provisional`.
+
+**Canonical form** (`patterns/cli-flag-filter/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=notflag(x:str):bool{<!s.startswith(x;"--")};
+f=pat(av:@str):@str{
+  <av.filter(&notflag)
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let av=mut.@();
+  lp(let i=0;i<n;i=i+1){av=av+@(if(i%3==0){"--flag\(i)"}el{"arg\(i)"})};
+  let r=pat(av);
+  let t=mut.0;
+  lp(let i=0;i<r.len;i=i+1){t=t+s.len(r.get(i))};
+  io.println("n=\(r.len) t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — loop + if + r=r+@(x) (`patterns/cli-flag-filter/b.tk`, `pat` only):
+
+```toke
+f=pat(av:@str):@str{
+  let r=mut.@();
+  lp(let i=0;i<av.len;i=i+1){
+    if(!s.startswith(av.get(i);"--")){r=r+@(av.get(i))}
+  };
+  <r
+};
+```
+
+**Sources.**
+
+- `ast-mine:4`
+- `idiom-v0.4#7`
+
+**Bug caveats.**
+
+- [127.10](/docs/progress/): .append-built string arrays print addresses when an element is interpolated; the loop form uses +@() instead
+
+**Lint.** `loop-is-filter` — severity `hint`, not auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### cli-print-results
+
+**Intent.** Format a labelled result as "key=value".
+
+**Applicability.** The 8.5% io.println(show(x)) shape (131.3). For i64/str values interpolation is the best form today; there is no show for bool (prints 1/0 - 127.15) or for arrays/maps (131.30 stdlib gap - a stdlib show/fmt would replace the hand formatters). Values derived from method calls interpolate as pointers (127.7).
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | "\(k)=\(v)" interpolation | 10 | 36 | 17 | 22 | 21 | 36 | pending | pending | pending | pending | best | best |
+| b | nested s.concat + s.fromint | 15 | 63 | 21 | 28 | 27 | 63 | pending | pending | pending | pending | slower | more |
+| c | s.builder add/add/add | 16 | 99 | 34 | 42 | 41 | 99 | pending | pending | pending | pending | slower | more |
+
+**Verdict.** canonical = `a` ("\(k)=\(v)" interpolation); status = `provisional`.
+
+**Canonical form** (`patterns/cli-print-results/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(k:str;v:i64):str{
+  <"\(k)=\(v)"
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){t=t+s.len(pat("r\(i%5)";i*13))};
+  io.println("t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — nested s.concat + s.fromint (`patterns/cli-print-results/b.tk`, `pat` only):
+
+```toke
+f=pat(k:str;v:i64):str{
+  <s.concat(s.concat(k;"=");s.fromint(v))
+};
+```
+
+**Form `c`** — s.builder add/add/add (`patterns/cli-print-results/c.tk`, `pat` only):
+
+```toke
+f=pat(k:str;v:i64):str{
+  let b=s.builder();
+  s.add(b;k);
+  s.add(b;"=");
+  s.add(b;s.fromint(v));
+  <s.build(b)
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#5`
+- `ast-mine:4`
+- `card:Strings`
+
+**Bug caveats.**
+
+- [127.15](/docs/progress/): bools interpolate as 1/0, so a bool result still needs a hand formatter
+- [127.7](/docs/progress/): method-call-derived str values print a pointer under interpolation
+
+**Lint.** `nested-concat` — severity `warning`, auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+## Family `fn` — Decomposition
+
+*Intent:* helpers, chaining and recursion.
+
+### fn-helper-vs-inline
+
+**Intent.** Test a compound condition inside a loop: named helper or inline expression.
+
+**Applicability.** Protocol region counts only pat: the helper call (16) beats the inline condition (21) but the helper itself costs 14 proxy8k tokens (isok: min_bytes 35), so whole-program the inline form wins for a single call site; a helper pays for itself from the second call site. -O2 is expected to inline the call.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | call named helper isok(x) | 16 | 89 | 20 | 50 | 48 | 89 | pending | pending | pending | pending | tied | best |
+| b | inline x%3==0&&x%5!=0 | 21 | 104 | 27 | 59 | 57 | 104 | pending | pending | pending | pending | best | more |
+
+**Verdict.** canonical = `a` (call named helper isok(x)); status = `provisional`.
+
+**Canonical form** (`patterns/fn-helper-vs-inline/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=isok(x:i64):bool{<x%3==0&&x%5!=0};
+f=pat(xs:@i64):i64{
+  let c=mut.0;
+  lp(let i=0;i<xs.len;i=i+1){
+    if(isok(xs.get(i))){c=c+1}
+  };
+  <c
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%1000)};
+  io.println("t=\(pat(xs))");
+  <0
+};
+```
+
+**Form `b`** — inline x%3==0&&x%5!=0 (`patterns/fn-helper-vs-inline/b.tk`, `pat` only):
+
+```toke
+f=pat(xs:@i64):i64{
+  let c=mut.0;
+  lp(let i=0;i<xs.len;i=i+1){
+    if(xs.get(i)%3==0&&xs.get(i)%5!=0){c=c+1}
+  };
+  <c
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#8`
+- `card:Program conventions and idiom`
+
+**Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### fn-chain-vs-let
+
+**Intent.** Read one field of a split line.
+
+**Applicability.** Single-use intermediates. Chained postfix (a) and the two-let form (b) count the same proxy8k tokens (11) - the hostile proxy has cheap merges for let - but a is 34 bytes shorter (min_bytes tie-break) and 3 tokens shorter under v03.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | s.len(s.split(line;",").get(1)) | 11 | 53 | 15 | 24 | 23 | 53 | pending | pending | pending | pending | best | best |
+| b | let parts=...; let second=parts.get(1); s.len(second) | 11 | 87 | 18 | 31 | 30 | 87 | pending | pending | pending | pending | tied | best |
+
+**Verdict.** canonical = `a` (s.len(s.split(line;",").get(1))); status = `provisional`.
+
+**Canonical form** (`patterns/fn-chain-vs-let/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(line:str):i64{
+  <s.len(s.split(line;",").get(1))
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){t=t+pat("ab,c\(i),de")};
+  io.println("t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — let parts=...; let second=parts.get(1); s.len(second) (`patterns/fn-chain-vs-let/b.tk`, `pat` only):
+
+```toke
+f=pat(line:str):i64{
+  let parts=s.split(line;",");
+  let second=parts.get(1);
+  <s.len(second)
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#6`
+- `idiom-v0.4#8`
+- `card:Program conventions and idiom`
+
+**Lint.** `single-use-let` — severity `hint`, auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### fn-recursion-vs-loop
+
+**Intent.** Sum the decimal digits of an integer.
+
+**Applicability.** Depth-bounded recursion (<= 19 frames). Recursion is 5 tokens cheaper; the loop avoids call overhead. Never recurse on unbounded depth (no TCO; stack).
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | expression-if recursion | 15 | 48 | 19 | 33 | 28 | 48 | pending | pending | pending | pending | slower | best |
+| b (hot path) | lp with mut accumulator | 20 | 83 | 26 | 55 | 51 | 83 | pending | pending | pending | pending | best | more |
+
+**Verdict.** canonical = `a` (expression-if recursion); hot path = `b` (lp with mut accumulator) — choose it when The call sits in a loop executed > 1M times, or the recursion depth is data-dependent (stack safety). (expected; runtime deferred, loadavg>100); status = `provisional`.
+
+**Canonical form** (`patterns/fn-recursion-vs-loop/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(x:i64):i64{
+  <if(x<10){x}el{x%10+pat(x/10)}
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){t=t+pat(i*7919+123456789)};
+  io.println("t=\(t)");
+  <0
+};
+```
+
+**Form `b`** (hot path) — lp with mut accumulator (`patterns/fn-recursion-vs-loop/b.tk`, `pat` only):
+
+```toke
+f=pat(x:i64):i64{
+  let t=mut.0;
+  let v=mut.x;
+  lp(let k=0;v>0;k=k+1){t=t+v%10;v=v/10};
+  <t
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#1`
+- `card:if is an EXPRESSION`
+
+**Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+## Family `io` — Files
+
+*Intent:* reading and writing files.
+
+### io-read-lines
+
+**Intent.** Read a file and split it into lines.
+
+**Applicability.** Whole-file reads. No file.readlines exists (131.30 gap); s.split(txt;"\n") yields a trailing "" when the file ends in a newline - both forms keep it. file.read needs --allow-read (fixtures build with --allow-all).
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **a** | mt file.read + s.split "\n" | 19 | 86 | 24 | 35 | 35 | 87 | pending | pending | pending | pending | best | best |
+| b | mt file.read + charcode scan + slice per line | 45 | 228 | 63 | 95 | 94 | 228 | pending | pending | pending | pending | slower | more |
+
+**Verdict.** canonical = `a` (mt file.read + s.split "\n"); status = `provisional`.
+
+**Canonical form** (`patterns/io-read-lines/a.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+i=file:std.file;
+f=pat(path:str):@str{
+  let txt=mt file.read(path) {$ok:v v;$err:e <@()};
+  <s.split(txt;"\n")
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let path="/tmp/pat-io-read-lines-\(n).txt";
+  let b=s.builder();
+  lp(let i=0;i<n;i=i+1){s.add(b;"line \(i) of the file\n")};
+  let w=mt file.write(path;s.build(b)) {$ok:v 1;$err:e <1};
+  let ls=pat(path);
+  let t=mut.ls.len*100;
+  lp(let i=0;i<ls.len;i=i+1){t=t+s.len(ls.get(i))};
+  io.println("t=\(t)");
+  <0
+};
+```
+
+**Form `b`** — mt file.read + charcode scan + slice per line (`patterns/io-read-lines/b.tk`, `pat` only):
+
+```toke
+f=pat(path:str):@str{
+  let txt=mt file.read(path) {$ok:v v;$err:e <@()};
+  let r=mut.@();
+  let st=mut.0;
+  let n=s.len(txt);
+  lp(let i=0;i<n;i=i+1){
+    if(s.charcode(txt;i)==10){r=r.append(s.slice(txt;st;i));st=i+1}
+  };
+  <r.append(s.slice(txt;st;n))
+};
+```
+
+**Sources.**
+
+- `idiom-v0.4#4`
+- `card:Std modules`
+
+**Lint.** `hand-rolled-parser` — severity `warning`, not auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.
+
+### io-write-accumulate
+
+**Intent.** Write N lines to a file.
+
+**Applicability.** Append-per-line is token-best (23 vs 27) but reopens the file on every call (a syscall per line, same asymptotic class); the protocol therefore makes it canonical with a hot path - flagged for owner review: a 10-100x constant-factor loss with identical bigO is exactly the case rule 6.4 does not catch. Fixture deletes the file first because file.append accumulates across runs.
+
+| form | label | proxy8k | byte256 | v03 | qwen | cl100k | min bytes | wall ms | RSS KB | allocs calls / bytes | bigO ratio | runtime | tokens |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| a (hot path) | s.builder then one file.write | 27 | 135 | 33 | 61 | 59 | 139 | pending | pending | pending | pending | best | more |
+| **b** | file.append per line | 23 | 107 | 25 | 53 | 51 | 111 | pending | pending | pending | pending | slower | best |
+
+**Verdict.** canonical = `b` (file.append per line); hot path = `a` (s.builder then one file.write) — choose it when More than a handful of lines, or any loop: file.append opens/closes the file per call. (expected; runtime deferred, loadavg>100); status = `provisional`.
+
+**Canonical form** (`patterns/io-write-accumulate/b.tk`, full fixture program):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+i=file:std.file;
+f=pat(path:str;n:i64):i64{
+  lp(let i=0;i<n;i=i+1){
+    let ok=mt file.append(path;"row \(i)\n") {$ok:v 1;$err:e <0}
+  };
+  <1
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let path="/tmp/pat-io-write-acc-\(n).txt";
+  if(file.exists(path)){let d=mt file.delete(path) {$ok:v 1;$err:e <1}};
+  let ok=pat(path;n);
+  let txt=mt file.read(path) {$ok:v v;$err:e <2};
+  io.println("ok=\(ok) len=\(s.len(txt)) lines=\(s.split(txt;"\n").len)");
+  <0
+};
+```
+
+**Form `a`** (hot path) — s.builder then one file.write (`patterns/io-write-accumulate/a.tk`, `pat` only):
+
+```toke
+f=pat(path:str;n:i64):i64{
+  let b=s.builder();
+  lp(let i=0;i<n;i=i+1){s.add(b;"row \(i)\n")};
+  <mt file.write(path;s.build(b)) {$ok:v 1;$err:e 0}
+};
+```
+
+**Sources.**
+
+- `card:Std modules`
+- `idiom-v0.4#5`
+
+**Lint.** `append-in-loop` — severity `warning`, not auto-fixable (`tkc --lint`, story 131.9).
+
+**Measured at.** tkc `toke 2.8.0` @ `386cf3d`; proxy `3c6fbf1909bb`; corpus `5f3f74314ce4`; bench result `deferred-load`; date 2026-09-18.

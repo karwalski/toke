@@ -26,7 +26,7 @@ def _cand(form, proxy, min_bytes, fixture_suffix=".tk", **kw):
 
 def _entry(cands, canonical="a", hot=None, status="provisional", caveats=None):
     return {
-        "id": "x-y", "family": "str", "intent": "i", "applicability": "a", "candidates": cands,
+        "id": "x-y", "family": "str", "intent": "i", "applicability": "a", "card_rule": "use a, not b", "candidates": cands,
         "verdict": {"canonical": canonical, "hot_path": hot, "choose_hot_path_when": "big" if hot else None, "status": status},
         "source": ["idiom-v0.4#1"], "bug_caveats": caveats or [], "lint": None,
         "measured_at": {"tkc_sha": "s", "tkc_version": "v", "proxy_sha": "p", "corpus_sha": "c", "bench_result": "deferred-load", "date": "2026-09-18"},
@@ -71,14 +71,56 @@ def test_worst_form_skips_blocked_and_hot_path():
     assert rc.worst_form(e) is None
 
 
-def test_card_snippet_is_within_cap_and_ends_lines_with_ids():
+def test_card_snippet_is_within_cap_and_carries_every_card_rule():
     doc, sha = rc.load(CAT)
     card = rc.render_card(doc, sha)
     lines = card.rstrip("\n").split("\n")
     assert len(lines) <= rc.CARD_MAX_LINES
     assert lines[0].startswith("## Patterns")
+    seen = []
     for ln in lines[1:]:
-        assert ln.startswith("- ") and ln.endswith("]") and "[" in ln, ln
+        fam, _, rest = ln[2:].partition(": ")
+        assert fam in rc.FAMILY_TITLE, ln
+        rules = rest.split(rc.CARD_SEP)
+        assert 1 <= len(rules) <= rc.CARD_RULES_PER_LINE, ln
+        for r in rules:
+            assert r.endswith("]") and " [" in r, r
+            text, _, rid = r[:-1].rpartition(" [")
+            assert rid.startswith(fam + "-"), r
+            seen.append((rid, text))
+    by_id = {e["id"]: e for e in doc["entries"]}
+    assert [rid for rid, _ in seen] == [e["id"] for e in rc.sorted_entries(doc)]  # every entry, family order
+    assert all(by_id[rid]["card_rule"] == text for rid, text in seen)  # derived from card_rule only
+
+
+def test_chunk_even_packs_two_to_three_per_line():
+    assert rc.chunk_even(list("abcdefg"), 3) == [list("abc"), list("de"), list("fg")]
+    assert rc.chunk_even(list("abcd"), 3) == [list("ab"), list("cd")]
+    assert rc.chunk_even(list("abcde"), 3) == [list("abc"), list("de")]
+    assert rc.chunk_even(list("a"), 3) == [["a"]]
+    assert rc.chunk_even([], 3) == []
+
+
+def test_card_snippet_exits_over_the_line_cap():
+    doc, sha = rc.load(CAT)
+    big = {"protocol": "0.4", "entries": []}
+    for i in range(rc.CARD_MAX_LINES * rc.CARD_RULES_PER_LINE + 3):
+        e = copy.deepcopy(doc["entries"][0])
+        e["id"] = f"{e['family']}-x{i}"
+        big["entries"].append(e)
+    with pytest.raises(SystemExit):
+        rc.render_card(big, sha)
+
+
+def test_validator_rejects_bad_card_rules():
+    for bad in ("", "x" * 41, "ends with period.", "has | pipe", " padded "):
+        e = _entry([_cand("a", 10, 40), _cand("b", 14, 60)])
+        e["card_rule"] = bad
+        errs = vc.validate_doc({"protocol": "0.4", "entries": [e]}, "")
+        assert any("card_rule" in x for x in errs), bad
+    e = _entry([_cand("a", 10, 40), _cand("b", 14, 60)])
+    del e["card_rule"]
+    assert any("missing keys" in x and "card_rule" in x for x in vc.validate_doc({"protocol": "0.4", "entries": [e]}, ""))
 
 
 def test_rendered_docs_contain_no_blocked_source_in_toke_fence():
@@ -124,11 +166,35 @@ def test_ingest_leaves_verdicts_when_a_form_is_unmeasured(tmp_path):
     doc = {"protocol": "0.4", "entries": [e]}
     res = tmp_path / "r.json"
     r = _results({"a": (100.0, [99, 101], 1000, 4.0), "b": (50.0, [49, 51], 1000, 4.0)})
-    r["patterns"]["x-y"]["forms"]["b"] = {"status": "timeout"}
+    r["patterns"]["x-y"]["forms"]["b"] = {"status": "nondeterministic"}
     res.write_text(json.dumps(r))
     _, warnings = rc.ingest(doc, str(res))
     assert e["candidates"][0]["runtime_verdict"] == "tied"  # untouched
     assert any("unmeasured" in w for w in warnings)
+
+
+def test_ingest_timeout_is_deterministic_and_rederives_to_worse_bigo(tmp_path):
+    # protocol §5.2: b is token-best but times out -> sentinels, worse-bigO, a becomes canonical (§6 step 4)
+    e = _entry([_cand("a", 14, 60), _cand("b", 10, 40)], canonical="b")
+    e["id"] = "str-y"  # a real id so the full validator can run on the result
+    for c in e["candidates"]:
+        c["fixture"] = c["fixture"].replace("x-y", "str-y")
+    doc = {"protocol": "0.4", "entries": [e]}
+    res = tmp_path / "r.json"
+    r = _results({"a": (100.0, [99, 101], 1000, 4.0)})
+    r["patterns"]["x-y"]["forms"]["b"] = {"status": "timeout", "at_n": 1000, "last_ok_n": 500, "last_ok_ms": 20000.0}
+    r["patterns"]["str-y"] = r["patterns"].pop("x-y")
+    res.write_text(json.dumps(r))
+    changes, warnings = rc.ingest(doc, str(res))
+    a, b = e["candidates"]
+    assert b["wall_ms_median"] == vc.TIMEOUT_WALL_MS and b["wall_ci95"] == [vc.TIMEOUT_WALL_MS] * 2
+    assert b["bigO_ratio"] == vc.TIMEOUT_BIGO and b["rss_kb_median"] is None and b["allocs"] is None
+    assert b["runtime_verdict"] == "worse-bigO" and b["token_verdict"] == "best"
+    assert a["runtime_verdict"] == "best" and a["token_verdict"] == "more"
+    assert e["verdict"]["canonical"] == "a" and e["verdict"]["hot_path"] is None
+    assert any("timeout" in w for w in warnings)
+    assert vc.validate_doc(doc, "") == []  # sentinels pass the (non-strict) validator
+    assert vc.validate_doc(doc, "", strict=True) == []  # and strict tolerates null rss/allocs on a timeout
 
 
 def test_ingest_refuses_results_recorded_under_load(tmp_path):

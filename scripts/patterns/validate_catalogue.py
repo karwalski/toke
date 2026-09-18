@@ -24,7 +24,7 @@ import sys
 FAMILIES = {"cond", "acc", "str", "err", "parse", "iter", "coll", "cli", "fn", "io"}
 ENTRY_KEYS = {
     "id", "family", "intent", "applicability", "candidates", "verdict", "source",
-    "bug_caveats", "lint", "measured_at",
+    "bug_caveats", "lint", "measured_at", "card_rule",
 }
 CANDIDATE_KEYS = {
     "form", "label", "fixture", "min_bytes", "tokens", "wall_ms_median", "wall_ci95",
@@ -50,6 +50,12 @@ RSS_REL = 1.05
 BIGO_FACTOR = 1.5
 # order-of-magnitude rule (protocol §6 step 4, added 2026-09-18): a same-big-O form >= 10x slower is never canonical
 OOM_FACTOR = 10.0
+# deterministic timeout ingestion (protocol §5.2, added 2026-09-18): a form that exceeds the harness ceiling is
+# recorded with these sentinels so it re-derives to worse-bigO; rss/allocs may stay null for such a form
+TIMEOUT_WALL_MS = 30000
+TIMEOUT_BIGO = 99
+# card_rule (protocol §3, added 2026-09-18): the one-line rule the syntax card carries; 2-3 per card line
+CARD_RULE_MAX = 40
 
 
 class V:
@@ -62,6 +68,16 @@ class V:
 
 def _is_num(x) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def is_timeout(c: dict) -> bool:
+    """A candidate ingested as a harness timeout (protocol §5.2 sentinels)."""
+    return _is_num(c.get("wall_ms_median")) and c["wall_ms_median"] >= TIMEOUT_WALL_MS and c.get("bigO_ratio") == TIMEOUT_BIGO
+
+
+def _rss(c: dict) -> float:
+    """Peak RSS for the runtime gate; a timed-out form with no RSS measurement never ties."""
+    return c["rss_kb_median"] if c.get("rss_kb_median") is not None else float("inf")
 
 
 def check_candidate(v: V, eid: str, c: dict, root: str, strict: bool) -> None:
@@ -117,7 +133,7 @@ def check_candidate(v: V, eid: str, c: dict, root: str, strict: bool) -> None:
             v.err(where, f"{k} must be a non-negative number or null")
     if strict:
         for k in ("min_bytes", "wall_ms_median", "wall_ci95", "rss_kb_median", "allocs", "bigO_ratio", "pat_n"):
-            if c.get(k) is None:
+            if c.get(k) is None and not (k in ("rss_kb_median", "allocs") and is_timeout(c)):
                 v.err(where, f"--strict: {k} is null")
         if isinstance(toks, dict) and (toks.get("proxy8k") is None or toks.get("byte256") is None):
             v.err(where, "--strict: tokens.proxy8k / byte256 must be measured")
@@ -129,7 +145,7 @@ def _measured(c: dict) -> bool:
         c.get("runtime_verdict") != "blocked"
         and t.get("proxy8k") is not None
         and c.get("wall_ms_median") is not None
-        and c.get("rss_kb_median") is not None
+        and (c.get("rss_kb_median") is not None or is_timeout(c))
         and c.get("bigO_ratio") is not None
         and isinstance(c.get("wall_ci95"), list)
     )
@@ -173,7 +189,7 @@ def derive_verdicts(e: dict) -> dict | None:
             tied = (
                 c["wall_ms_median"] <= WALL_REL * best_rt["wall_ms_median"]
                 and ci_overlap
-                and c["rss_kb_median"] <= RSS_REL * best_rt["rss_kb_median"]
+                and _rss(c) <= RSS_REL * _rss(best_rt)
             )
             exp = "tied" if tied else "slower"
         runtime[c["form"]] = exp
@@ -231,6 +247,24 @@ def check_verdict_consistency(v: V, e: dict) -> None:
             v.err(eid, "choose_hot_path_when must be written when a hot_path exists")
 
 
+def check_card_rule(v: V, eid: str, rule) -> None:
+    """protocol §3: non-empty, <= CARD_RULE_MAX chars, one line, no trailing period, no `|`
+    (the card packs 2-3 rules per line and `|` is the column separator in every rendered table)."""
+    if not (isinstance(rule, str) and rule.strip()):
+        v.err(eid, "card_rule must be a non-empty string")
+        return
+    if rule != rule.strip():
+        v.err(eid, "card_rule must not have leading/trailing whitespace")
+    if len(rule) > CARD_RULE_MAX:
+        v.err(eid, f"card_rule is {len(rule)} chars; max {CARD_RULE_MAX}")
+    if rule.endswith("."):
+        v.err(eid, "card_rule must not end with a period")
+    if "|" in rule:
+        v.err(eid, "card_rule must not contain '|'")
+    if "\n" in rule:
+        v.err(eid, "card_rule must be a single line")
+
+
 def check_entry(v: V, e: dict, root: str, strict: bool, seen: set) -> None:
     eid = e.get("id", "?")
     missing = ENTRY_KEYS - set(e)
@@ -252,6 +286,7 @@ def check_entry(v: V, e: dict, root: str, strict: bool, seen: set) -> None:
     for k in ("intent", "applicability"):
         if not (isinstance(e.get(k), str) and e[k].strip()):
             v.err(eid, f"{k} must be a non-empty string")
+    check_card_rule(v, eid, e.get("card_rule"))
     cands = e.get("candidates")
     if not (isinstance(cands, list) and len(cands) >= 2):
         v.err(eid, "candidates must be a list of >= 2")
