@@ -10,6 +10,7 @@
  *   - Semicolons as statement separators (not terminators)
  *   - No trailing whitespace, no blank lines within functions
  *   - One blank line between top-level declarations
+ *   - `(* … *)` comments kept, hoisted to the next statement boundary (131.46)
  *   - No spaces around '=' in declarations (m=, f=, i=, t=)
  *   - No spaces around operators within expressions
  *   - Spaces after ';' in parameter lists
@@ -24,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include "fmt.h"
 
 /* ── Dynamic string buffer ────────────────────────────────────────── */
@@ -95,6 +97,276 @@ static char *tok_text(const Node *n, const char *src)
     return s;
 }
 
+/* ── 131.46: source recovery (parens, comments, sigils) ───────────── */
+/*
+ * The parser keeps no paren node and the lexer drops `(* … *)` comments, so a
+ * faithful `--fmt` has to recover both from the source text.  fs_build()
+ * makes one pass over the source — strings (with `\(…)` interpolation) and
+ * comments skipped exactly as the lexer skips them — matching every bracket
+ * pair, flagging which `(` are *grouping* parens (preceded by an operator or
+ * separator rather than a callee, keyword, `@` or `$`) and recording every
+ * comment.  fmt_expr() then re-emits exactly the grouping layers the source
+ * had around each expression (the precedence table stays as a fallback), and
+ * the statement/declaration walkers hoist every comment to the nearest
+ * following statement boundary, or to the end of its block.
+ */
+typedef struct { int start, len; } FmtComment;
+
+typedef struct {
+    const char    *src;
+    int            len;
+    int           *match;      /* open-bracket offset -> close offset, else -1 */
+    int           *rmatch;     /* close-bracket offset -> open offset, else -1 */
+    unsigned char *group;      /* 1 if the '(' at this offset is a grouping paren */
+    FmtComment    *comments;   /* in source order */
+    int            ncomments, ccap;
+    int            next;       /* first comment not yet emitted */
+} FmtSrc;
+
+static FmtSrc *g_fs = NULL;    /* live for the duration of tkc_format[_pretty] */
+
+static int fs_is_word(char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_';
+}
+
+static int fs_is_space(char c)
+{
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+static void fs_free(FmtSrc *fs)
+{
+    if (!fs) return;
+    free(fs->match);
+    free(fs->rmatch);
+    free(fs->group);
+    free(fs->comments);
+    free(fs);
+}
+
+static FmtSrc *fs_build(const char *src, int len)
+{
+    FmtSrc *fs = calloc(1, sizeof *fs);
+    int *stack = malloc(sizeof(int) * (size_t)(len + 1));
+    if (!fs || !stack) { free(stack); fs_free(fs); return NULL; }
+    fs->src = src;
+    fs->len = len;
+    fs->match  = malloc(sizeof(int) * (size_t)(len + 1));
+    fs->rmatch = malloc(sizeof(int) * (size_t)(len + 1));
+    fs->group  = calloc((size_t)len + 1, 1);
+    if (!fs->match || !fs->rmatch || !fs->group) { free(stack); fs_free(fs); return NULL; }
+    for (int i = 0; i <= len; i++) fs->match[i] = fs->rmatch[i] = -1;
+    int sp = 0;
+    char prev = 0;              /* last significant (non-space, non-comment) byte */
+    for (int i = 0; i < len; i++) {
+        char c = src[i];
+        if (c == '(' && i + 1 < len && src[i + 1] == '*') {
+            int j = i + 2, depth = 1;          /* nested block comment, as the lexer */
+            while (j < len && depth > 0) {
+                if (j + 1 < len && src[j] == '(' && src[j + 1] == '*') { j += 2; depth++; }
+                else if (j + 1 < len && src[j] == '*' && src[j + 1] == ')') { j += 2; depth--; }
+                else j++;
+            }
+            if (fs->ncomments == fs->ccap) {
+                int nc = fs->ccap ? fs->ccap * 2 : 16;
+                FmtComment *nb = realloc(fs->comments, sizeof(FmtComment) * (size_t)nc);
+                if (!nb) break;
+                fs->comments = nb;
+                fs->ccap = nc;
+            }
+            fs->comments[fs->ncomments].start = i;
+            fs->comments[fs->ncomments].len = j - i;
+            fs->ncomments++;
+            i = j - 1;
+            continue;
+        }
+        if (c == '"') {                        /* string literal, as lex_string */
+            int j = i + 1, depth = 0;
+            while (j < len) {
+                char d = src[j];
+                if (depth > 0) {               /* inside `\(…)`: only paren nesting matters */
+                    if (d == '(') depth++; else if (d == ')') depth--;
+                    j++;
+                    continue;
+                }
+                if (d == '\\' && j + 1 < len) { if (src[j + 1] == '(') depth = 1; j += 2; continue; }
+                if (d == '"') break;
+                j++;
+            }
+            i = j;
+            prev = '"';
+            continue;
+        }
+        if (fs_is_space(c)) continue;
+        if (c == '(' || c == '{' || c == '[') {
+            if (c == '(')
+                fs->group[i] = !(fs_is_word(prev) || prev == ')' || prev == ']' ||
+                                 prev == '@' || prev == '$' || prev == '"');
+            stack[sp++] = i;
+        } else if (c == ')' || c == '}' || c == ']') {
+            char want = c == ')' ? '(' : c == '}' ? '{' : '[';
+            while (sp > 0) {
+                int o = stack[--sp];
+                if (src[o] == want) { fs->match[o] = i; fs->rmatch[i] = o; break; }
+            }
+        }
+        prev = c;
+    }
+    free(stack);
+    return fs;
+}
+
+/* node_span — [lo, hi) byte span of a subtree.  Leaves give the token spans;
+ * a closing bracket that follows the span and whose opening bracket lies
+ * inside it (a call's `)`, a block's `}`, `@(..)`, `$T{..}`) is pulled in, so
+ * `(f(x))` keeps its outer parens and `f((x))` does not gain one. */
+static void node_span(const Node *n, int *lo, int *hi)
+{
+    if (!n) return;
+    if (n->tok_len > 0) {
+        if (n->tok_start < *lo) *lo = n->tok_start;
+        if (n->tok_start + n->tok_len > *hi) *hi = n->tok_start + n->tok_len;
+    }
+    for (int i = 0; i < n->child_count; i++) node_span(n->children[i], lo, hi);
+    if (!g_fs || *hi < 0) return;
+    const char *s = g_fs->src;
+    for (int changed = 1; changed;) {
+        changed = 0;
+        int q = *hi;
+        while (q < g_fs->len && (fs_is_space(s[q]) || s[q] == ';')) q++;
+        if (q < g_fs->len && (s[q] == ')' || s[q] == '}' || s[q] == ']') &&
+            g_fs->rmatch[q] >= *lo) {
+            *hi = q + 1;
+            changed = 1;
+        }
+        /* …and a `(` just before the span whose `)` lies inside it belongs to
+         * the first operand (`((a+b) as f64)/2`, `((c-65)%26)+65`). */
+        int p = *lo - 1;
+        while (p >= 0 && fs_is_space(s[p])) p--;
+        if (p >= 0 && s[p] == '(' && g_fs->match[p] >= 0 && g_fs->match[p] < *hi) {
+            *lo = p;
+            changed = 1;
+        }
+    }
+}
+
+/* node_lo — first source byte of a statement/declaration (keyword or first leaf). */
+static int node_lo(const Node *n)
+{
+    int lo = INT_MAX, hi = -1;
+    node_span(n, &lo, &hi);
+    return lo < n->start ? lo : n->start;
+}
+
+/* src_paren_layers — how many grouping paren layers the source wrapped `n` in. */
+static int src_paren_layers(const Node *n)
+{
+    if (!g_fs || !n || n->kind == NODE_EXPR_STMT) return 0;
+    int lo = INT_MAX, hi = -1;
+    node_span(n, &lo, &hi);
+    if (hi < 0) return 0;
+    const char *s = g_fs->src;
+    int layers = 0;
+    for (;;) {
+        int p = lo - 1;
+        while (p >= 0 && fs_is_space(s[p])) p--;
+        if (p < 0 || s[p] != '(' || !g_fs->group[p]) break;
+        int q = hi;
+        while (q < g_fs->len && fs_is_space(s[q])) q++;
+        if (q >= g_fs->len || s[q] != ')' || g_fs->match[p] != q) break;
+        layers++;
+        lo = p;
+        hi = q + 1;
+    }
+    return layers;
+}
+
+static void buf_put_span(Buf *b, const char *src, int start, int len)
+{
+    buf_grow(b, len);
+    memcpy(b->buf + b->len, src + start, (size_t)len);
+    b->len += len;
+    b->buf[b->len] = '\0';
+}
+
+/* fs_emit_comments_before — every not-yet-emitted comment that starts before
+ * `pos`, each on its own line at `depth` (newline-terminated, so the statement
+ * that follows starts on a fresh, indented line). */
+static void fs_emit_comments_before(Buf *b, int pos, int depth)
+{
+    if (!g_fs) return;
+    while (g_fs->next < g_fs->ncomments && g_fs->comments[g_fs->next].start < pos) {
+        const FmtComment *c = &g_fs->comments[g_fs->next++];
+        buf_indent(b, depth);
+        buf_put_span(b, g_fs->src, c->start, c->len);
+        buf_putc(b, '\n');
+    }
+}
+
+/* fs_emit_trailing_comments — comments between a block's last statement and
+ * its closing `}` (offset `end`): each on its own line, newline-led (the
+ * caller closes the block). */
+static void fs_emit_trailing_comments(Buf *b, int end, int depth)
+{
+    if (!g_fs || end < 0) return;
+    while (g_fs->next < g_fs->ncomments && g_fs->comments[g_fs->next].start < end) {
+        const FmtComment *c = &g_fs->comments[g_fs->next++];
+        buf_putc(b, '\n');
+        buf_indent(b, depth);
+        buf_put_span(b, g_fs->src, c->start, c->len);
+    }
+}
+
+/* fs_block_end — offset of the `}` that closes the block whose last statement
+ * is `last` (only whitespace, `;` and comments may lie between), else -1. */
+static int fs_block_end(const Node *last)
+{
+    if (!g_fs || !last) return -1;
+    int lo = INT_MAX, hi = -1;
+    node_span(last, &lo, &hi);
+    if (hi < 0) return -1;
+    const char *s = g_fs->src;
+    int q = hi, ci = g_fs->next;
+    while (q < g_fs->len) {
+        if (fs_is_space(s[q]) || s[q] == ';') { q++; continue; }
+        if (s[q] == '(' && q + 1 < g_fs->len && s[q + 1] == '*') {
+            while (ci < g_fs->ncomments && g_fs->comments[ci].start < q) ci++;
+            if (ci < g_fs->ncomments && g_fs->comments[ci].start == q) { q += g_fs->comments[ci].len; continue; }
+            return -1;
+        }
+        return s[q] == '}' ? q : -1;
+    }
+    return -1;
+}
+
+/* emit_type_ident — a type name with its `$` sigil and, for a qualified
+ * `mod.$name` (op == TK_DOT; the parser keeps only the name), its qualifier —
+ * both recovered from the source bytes before the token. */
+static void emit_type_ident(Buf *b, const Node *n, const char *src)
+{
+    int p = n->tok_start - 1;
+    if (p >= 0 && src[p] == '$') {
+        if (n->op == TK_DOT && p >= 2 && src[p - 1] == '.') {
+            int e = p - 1, st = e;
+            while (st > 0 && fs_is_word(src[st - 1])) st--;
+            buf_put_span(b, src, st, e - st);
+            buf_putc(b, '.');
+        }
+        buf_putc(b, '$');
+    }
+    char *t = tok_text(n, src);
+    buf_puts(b, t);
+    free(t);
+}
+
+/* has_sigil — was this token written `$name` in the source? */
+static int has_sigil(const Node *n, const char *src)
+{
+    return n && n->tok_start > 0 && src[n->tok_start - 1] == '$';
+}
+
 /* ── Forward declarations ─────────────────────────────────────────── */
 
 static void fmt_expr(Buf *b, const Node *n, const char *src);
@@ -163,7 +435,8 @@ static int needs_paren(const Node *child, TokenKind parent_op, int is_right)
     if (!child || child->kind != NODE_BINARY_EXPR) return 0;
     if (parent_op == TK_ERROR) return 1;
     int pc = op_prec(child->op), pp = op_prec(parent_op);
-    return pc < pp || (pc == pp && is_right);
+    /* 131.46: comparisons do not chain (`a<b==c` is E2002) — both sides. */
+    return pc < pp || (pc == pp && (is_right || pp == 6));
 }
 
 /* ── Type expression formatting ───────────────────────────────────── */
@@ -179,27 +452,27 @@ static void fmt_type_expr(Buf *b, const Node *n, const char *src)
     if (!n) return;
     switch (n->kind) {
     case NODE_TYPE_EXPR:
-    case NODE_TYPE_IDENT: {
-        /* 131.37: `$name` type refs — the parser keeps only the name, so
-         * re-emit the sigil from the source byte before the token. */
-        if (n->tok_start > 0 && src[n->tok_start - 1] == '$')
-            buf_putc(b, '$');
-        char *t = tok_text(n, src);
-        buf_puts(b, t);
-        free(t);
+    case NODE_TYPE_IDENT:
+        /* 131.37/131.46: `$name` / `mod.$name` — the parser keeps only the
+         * name, so the sigil and qualifier come from the source bytes. */
+        emit_type_ident(b, n, src);
         break;
-    }
     case NODE_PTR_TYPE:
         buf_putc(b, '*');
         if (n->child_count > 0)
             fmt_type_expr(b, n->children[0], src);
         break;
-    case NODE_ARRAY_TYPE:
-        /* 131.37: default syntax `@T` (legacy `[T]` is E1003 in default mode) */
+    case NODE_ARRAY_TYPE: {
+        /* 131.37: default syntax `@T` (legacy `[T]` is E1003 in default mode);
+         * 131.46: keep the source's `@(T)` spelling (`@(@i64)`). */
+        int paren = src[n->tok_start] == '@' && src[n->tok_start + 1] == '(';
         buf_putc(b, '@');
+        if (paren) buf_putc(b, '(');
         if (n->child_count > 0)
             fmt_type_expr(b, n->children[0], src);
+        if (paren) buf_putc(b, ')');
         break;
+    }
     case NODE_MAP_TYPE:
         buf_puts(b, "@(");
         if (n->child_count > 0)
@@ -240,7 +513,19 @@ static void fmt_type_expr(Buf *b, const Node *n, const char *src)
  * binary/unary ops, calls, casts, error propagation, indexing, field
  * access, array/map/struct literals, match expressions, and expr stmts.
  */
+static void fmt_expr_inner(Buf *b, const Node *n, const char *src);
+
+/* fmt_expr — 131.46: re-emit the grouping parens the source had around `n`. */
 static void fmt_expr(Buf *b, const Node *n, const char *src)
+{
+    if (!n) return;
+    int layers = src_paren_layers(n);
+    for (int i = 0; i < layers; i++) buf_putc(b, '(');
+    fmt_expr_inner(b, n, src);
+    for (int i = 0; i < layers; i++) buf_putc(b, ')');
+}
+
+static void fmt_expr_inner(Buf *b, const Node *n, const char *src)
 {
     if (!n) return;
     switch (n->kind) {
@@ -248,13 +533,15 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
     case NODE_FLOAT_LIT:
     case NODE_STR_LIT:
     case NODE_BOOL_LIT:
-    case NODE_IDENT:
-    case NODE_TYPE_IDENT: {
+    case NODE_IDENT: {
         char *t = tok_text(n, src);
         buf_puts(b, t);
         free(t);
         break;
     }
+    case NODE_TYPE_IDENT:
+        emit_type_ident(b, n, src);
+        break;
     case NODE_FUNC_REF: {
         buf_putc(b, '&');
         char *t = tok_text(n, src);
@@ -268,8 +555,9 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
         break;
     case NODE_BINARY_EXPR:
         if (n->child_count >= 2) {
-            int pl = needs_paren(n->children[0], n->op, 0);
-            int pr = needs_paren(n->children[1], n->op, 1);
+            /* precedence parens only as a fallback when the source had none */
+            int pl = needs_paren(n->children[0], n->op, 0) && !src_paren_layers(n->children[0]);
+            int pr = needs_paren(n->children[1], n->op, 1) && !src_paren_layers(n->children[1]);
             if (pl) buf_putc(b, '(');
             fmt_expr(b, n->children[0], src);
             if (pl) buf_putc(b, ')');
@@ -282,7 +570,7 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
     case NODE_UNARY_EXPR:
         buf_puts(b, op_str(n->op));
         if (n->child_count > 0) {
-            int pc = needs_paren(n->children[0], TK_ERROR, 0);
+            int pc = needs_paren(n->children[0], TK_ERROR, 0) && !src_paren_layers(n->children[0]);
             if (pc) buf_putc(b, '(');
             fmt_expr(b, n->children[0], src);
             if (pc) buf_putc(b, ')');
@@ -299,14 +587,21 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
         }
         buf_putc(b, ')');
         break;
-    case NODE_CAST_EXPR:
-        /* child[0] = expr, child[1] = type */
-        if (n->child_count > 0)
-            fmt_expr(b, n->children[0], src);
+    case NODE_CAST_EXPR: {
+        /* child[0] = expr, child[1] = type — `as` binds tighter than any
+         * binary/unary operator, so such an operand needs parens (fallback). */
+        if (n->child_count > 0) {
+            const Node *c = n->children[0];
+            int pc = (c->kind == NODE_BINARY_EXPR || c->kind == NODE_UNARY_EXPR) && !src_paren_layers(c);
+            if (pc) buf_putc(b, '(');
+            fmt_expr(b, c, src);
+            if (pc) buf_putc(b, ')');
+        }
         buf_puts(b, " as ");
         if (n->child_count > 1)
             fmt_type_expr(b, n->children[1], src);
         break;
+    }
     case NODE_PROPAGATE_EXPR:
         /* child[0] = expr, child[1] = error type */
         if (n->child_count > 0)
@@ -358,15 +653,19 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
         buf_putc(b, ')');
         break;
     case NODE_STRUCT_LIT: {
-        /* tok = TypeName, children = NODE_FIELD_INIT */
+        /* tok = TypeName, children = NODE_FIELD_INIT.  131.46: default syntax
+         * is `$Name{field:val; $variant:val}` — sigils recovered from source. */
+        int sigil = has_sigil(n, src);
+        if (sigil) buf_putc(b, '$');
         char *t = tok_text(n, src);
         buf_puts(b, t);
         free(t);
-        buf_puts(b, " {");
+        buf_puts(b, sigil ? "{" : " {");
         for (int i = 0; i < n->child_count; i++) {
             if (i > 0) buf_puts(b, "; ");
             const Node *fi = n->children[i];
             if (fi->kind == NODE_FIELD_INIT) {
+                if (has_sigil(fi, src)) buf_putc(b, '$');
                 char *fn = tok_text(fi, src);
                 buf_puts(b, fn);
                 free(fn);
@@ -379,20 +678,20 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
         break;
     }
     case NODE_MATCH_STMT: {
-        /* child[0] = scrutinee expr, child[1..] = match arms */
+        /* child[0] = scrutinee expr, child[1..] = match arms.
+         * 131.46: keyword-led `mt x {$ok:v v; $err:e <0}` (the `x | {..}`
+         * form is v0.2 and E2002 in default mode). */
+        buf_puts(b, "mt ");
         if (n->child_count > 0)
             fmt_expr(b, n->children[0], src);
-        buf_puts(b, " | {");
+        buf_puts(b, " {");
         for (int i = 1; i < n->child_count; i++) {
             if (i > 1) buf_puts(b, "; ");
             const Node *arm = n->children[i];
             if (arm->kind == NODE_MATCH_ARM) {
-                /* child[0]=pattern(TYPE_IDENT), child[1]=binding(IDENT), child[2]=body expr */
-                if (arm->child_count > 0) {
-                    char *pt = tok_text(arm->children[0], src);
-                    buf_puts(b, pt);
-                    free(pt);
-                }
+                /* child[0]=pattern(TYPE_IDENT), child[1]=binding(IDENT), child[2]=body */
+                if (arm->child_count > 0)
+                    emit_type_ident(b, arm->children[0], src);
                 buf_putc(b, ':');
                 if (arm->child_count > 1) {
                     char *bt = tok_text(arm->children[1], src);
@@ -401,7 +700,13 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
                 }
                 if (arm->child_count > 2) {
                     buf_putc(b, ' ');
-                    fmt_expr(b, arm->children[2], src);
+                    const Node *body = arm->children[2];
+                    if (body->kind == NODE_RETURN_STMT) {   /* `<expr` arm body */
+                        buf_putc(b, '<');
+                        if (body->child_count > 0) fmt_expr(b, body->children[0], src);
+                    } else {
+                        fmt_expr(b, body, src);
+                    }
                 }
             }
         }
@@ -490,8 +795,11 @@ static void fmt_stmt_list(Buf *b, const Node *n, const char *src, int depth)
     if (!n || n->kind != NODE_STMT_LIST) return;
     for (int i = 0; i < n->child_count; i++) {
         if (i > 0) buf_puts(b, ";\n");   /* 131.37: statements are ';'-separated */
+        fs_emit_comments_before(b, node_lo(n->children[i]), depth);   /* 131.46 */
         fmt_stmt(b, n->children[i], src, depth);
     }
+    if (n->child_count > 0)
+        fs_emit_trailing_comments(b, fs_block_end(n->children[n->child_count - 1]), depth);
 }
 
 /* fmt_inline_stmts — one-line `;`-separated body for an expression-form `if`. */
@@ -518,20 +826,9 @@ static void fmt_stmt(Buf *b, const Node *n, const char *src, int depth)
     if (!n) return;
     switch (n->kind) {
     case NODE_BIND_STMT:
-        /* let name = expr */
-        buf_indent(b, depth);
-        buf_puts(b, "let ");
-        if (n->child_count > 0) {
-            char *name = tok_text(n->children[0], src);
-            buf_puts(b, name);
-            free(name);
-        }
-        buf_puts(b, "=");
-        if (n->child_count > 1)
-            fmt_expr(b, n->children[1], src);
-        break;
     case NODE_MUT_BIND_STMT:
-        /* let name = mut.expr */
+        /* let name[:type] = [mut.]expr — children [name, type?, value]
+         * (131.46: a typed binding put the type where the value goes). */
         buf_indent(b, depth);
         buf_puts(b, "let ");
         if (n->child_count > 0) {
@@ -539,9 +836,13 @@ static void fmt_stmt(Buf *b, const Node *n, const char *src, int depth)
             buf_puts(b, name);
             free(name);
         }
-        buf_puts(b, "=mut.");
+        if (n->child_count > 2) {
+            buf_putc(b, ':');
+            fmt_type_expr(b, n->children[1], src);
+        }
+        buf_puts(b, n->kind == NODE_MUT_BIND_STMT ? "=mut." : "=");
         if (n->child_count > 1)
-            fmt_expr(b, n->children[1], src);
+            fmt_expr(b, n->children[n->child_count - 1], src);
         break;
     case NODE_ASSIGN_STMT:
         /* name = expr */
@@ -557,7 +858,9 @@ static void fmt_stmt(Buf *b, const Node *n, const char *src, int depth)
         break;
     case NODE_RETURN_STMT:
         buf_indent(b, depth);
-        buf_putc(b, '<');
+        /* 131.46: keep the source's spelling — `<expr` or the `rt expr` keyword */
+        if (src[n->tok_start] == 'r') buf_puts(b, n->child_count > 0 ? "rt " : "rt");
+        else buf_putc(b, '<');
         if (n->child_count > 0) {
             fmt_expr(b, n->children[0], src);
         }
@@ -764,13 +1067,16 @@ static void fmt_decl(Buf *b, const Node *n, const char *src)
     }
     case NODE_TYPE_DECL: {
         buf_puts(b, "t=");
-        /* child[0]=type name, child[1]=field list */
+        /* child[0]=type name, child[1]=field list.  131.46: default syntax is
+         * `t=$name{field:T; $variant:T}` — sigils from source / TK_DOLLAR mark. */
+        int sigil = n->child_count > 0 && has_sigil(n->children[0], src);
         if (n->child_count > 0) {
+            if (sigil) buf_putc(b, '$');
             char *name = tok_text(n->children[0], src);
             buf_puts(b, name);
             free(name);
         }
-        buf_puts(b, " {");
+        buf_puts(b, sigil ? "{" : " {");
         if (n->child_count > 1) {
             const Node *fields = n->children[1];
             for (int i = 0; i < fields->child_count; i++) {
@@ -778,6 +1084,7 @@ static void fmt_decl(Buf *b, const Node *n, const char *src)
                 buf_putc(b, '\n');
                 buf_indent(b, 1);
                 const Node *f = fields->children[i];
+                if (f->op == TK_DOLLAR) buf_putc(b, '$');
                 char *fname = tok_text(f, src);
                 buf_puts(b, fname);
                 free(fname);
@@ -874,6 +1181,7 @@ char *tkc_format(const Node *root, const char *src)
     Buf b;
     buf_init(&b);
     if (!b.buf) return NULL;
+    g_fs = fs_build(src, (int)strlen(src));   /* 131.46: parens + comments */
 
     int first_decl = 1;
     int prev_was_module = 0;
@@ -890,6 +1198,7 @@ char *tkc_format(const Node *root, const char *src)
                 buf_putc(&b, '\n');
         }
 
+        fs_emit_comments_before(&b, node_lo(child), 0);
         fmt_decl(&b, child, src);
         first_decl = 0;
         prev_was_module = (child->kind == NODE_MODULE);
@@ -898,7 +1207,10 @@ char *tkc_format(const Node *root, const char *src)
     /* Final newline */
     if (b.len > 0)
         buf_putc(&b, '\n');
+    fs_emit_comments_before(&b, INT_MAX, 0);   /* comments after the last declaration */
 
+    fs_free(g_fs);
+    g_fs = NULL;
     return b.buf;
 }
 
@@ -1095,8 +1407,36 @@ static void pfmt_ident(Buf *b, const Node *n, const char *src,
     free(name);
 }
 
+static void pfmt_expr_inner(Buf *b, const Node *n, const char *src,
+                             FmtOptions opts, const Node *root);
+
+/* pfmt_inline_stmts — one-line body of an expression-form `if` (131.46). */
+static void pfmt_inline_stmts(Buf *b, const Node *n, const char *src,
+                              FmtOptions opts, const Node *root)
+{
+    if (!n || n->kind != NODE_STMT_LIST) return;
+    for (int i = 0; i < n->child_count; i++) {
+        if (i > 0) { buf_putc(b, ';'); if (opts.pretty) buf_putc(b, ' '); }
+        if (n->children[i] && n->children[i]->kind == NODE_IF_STMT)
+            pfmt_expr(b, n->children[i], src, opts, root);
+        else
+            pfmt_stmt(b, n->children[i], src, 0, opts, root);
+    }
+}
+
+/* pfmt_expr — 131.46: re-emit the grouping parens the source had around `n`. */
 static void pfmt_expr(Buf *b, const Node *n, const char *src,
                        FmtOptions opts, const Node *root)
+{
+    if (!n) return;
+    int layers = src_paren_layers(n);
+    for (int i = 0; i < layers; i++) buf_putc(b, '(');
+    pfmt_expr_inner(b, n, src, opts, root);
+    for (int i = 0; i < layers; i++) buf_putc(b, ')');
+}
+
+static void pfmt_expr_inner(Buf *b, const Node *n, const char *src,
+                             FmtOptions opts, const Node *root)
 {
     if (!n) return;
     switch (n->kind) {
@@ -1112,12 +1452,9 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
     case NODE_IDENT:
         pfmt_ident(b, n, src, opts, root);
         break;
-    case NODE_TYPE_IDENT: {
-        char *t = tok_text(n, src);
-        buf_puts(b, t);
-        free(t);
+    case NODE_TYPE_IDENT:
+        emit_type_ident(b, n, src);
         break;
-    }
     case NODE_FUNC_REF: {
         buf_putc(b, '&');
         char *t = tok_text(n, src);
@@ -1131,8 +1468,8 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
         break;
     case NODE_BINARY_EXPR:
         if (n->child_count >= 2) {
-            int pl = needs_paren(n->children[0], n->op, 0);
-            int pr = needs_paren(n->children[1], n->op, 1);
+            int pl = needs_paren(n->children[0], n->op, 0) && !src_paren_layers(n->children[0]);
+            int pr = needs_paren(n->children[1], n->op, 1) && !src_paren_layers(n->children[1]);
             if (pl) buf_putc(b, '(');
             pfmt_expr(b, n->children[0], src, opts, root);
             if (pl) buf_putc(b, ')');
@@ -1151,7 +1488,7 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
     case NODE_UNARY_EXPR:
         buf_puts(b, op_str(n->op));
         if (n->child_count > 0) {
-            int pc = needs_paren(n->children[0], TK_ERROR, 0);
+            int pc = needs_paren(n->children[0], TK_ERROR, 0) && !src_paren_layers(n->children[0]);
             if (pc) buf_putc(b, '(');
             pfmt_expr(b, n->children[0], src, opts, root);
             if (pc) buf_putc(b, ')');
@@ -1171,8 +1508,13 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
         buf_putc(b, ')');
         break;
     case NODE_CAST_EXPR:
-        if (n->child_count > 0)
-            pfmt_expr(b, n->children[0], src, opts, root);
+        if (n->child_count > 0) {
+            const Node *c = n->children[0];
+            int pc = (c->kind == NODE_BINARY_EXPR || c->kind == NODE_UNARY_EXPR) && !src_paren_layers(c);
+            if (pc) buf_putc(b, '(');
+            pfmt_expr(b, c, src, opts, root);
+            if (pc) buf_putc(b, ')');
+        }
         buf_puts(b, " as ");
         if (n->child_count > 1)
             pfmt_type_expr(b, n->children[1], src);
@@ -1230,10 +1572,12 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
         buf_putc(b, ')');
         break;
     case NODE_STRUCT_LIT: {
+        int sigil = has_sigil(n, src);
+        if (sigil) buf_putc(b, '$');
         char *t = tok_text(n, src);
         buf_puts(b, t);
         free(t);
-        buf_puts(b, " {");
+        buf_puts(b, sigil ? "{" : " {");
         for (int i = 0; i < n->child_count; i++) {
             if (i > 0) {
                 buf_putc(b, ';');
@@ -1241,6 +1585,7 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
             }
             const Node *fi = n->children[i];
             if (fi->kind == NODE_FIELD_INIT) {
+                if (has_sigil(fi, src)) buf_putc(b, '$');
                 char *fn = tok_text(fi, src);
                 buf_puts(b, fn);
                 free(fn);
@@ -1253,9 +1598,10 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
         break;
     }
     case NODE_MATCH_STMT: {
+        buf_puts(b, "mt ");
         if (n->child_count > 0)
             pfmt_expr(b, n->children[0], src, opts, root);
-        buf_puts(b, " | {");
+        buf_puts(b, " {");
         for (int i = 1; i < n->child_count; i++) {
             if (i > 1) {
                 buf_putc(b, ';');
@@ -1263,11 +1609,8 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
             }
             const Node *arm = n->children[i];
             if (arm->kind == NODE_MATCH_ARM) {
-                if (arm->child_count > 0) {
-                    char *pt = tok_text(arm->children[0], src);
-                    buf_puts(b, pt);
-                    free(pt);
-                }
+                if (arm->child_count > 0)
+                    emit_type_ident(b, arm->children[0], src);
                 buf_putc(b, ':');
                 if (arm->child_count > 1) {
                     char *bt = tok_text(arm->children[1], src);
@@ -1276,7 +1619,13 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
                 }
                 if (arm->child_count > 2) {
                     buf_putc(b, ' ');
-                    pfmt_expr(b, arm->children[2], src, opts, root);
+                    const Node *body = arm->children[2];
+                    if (body->kind == NODE_RETURN_STMT) {
+                        buf_putc(b, '<');
+                        if (body->child_count > 0) pfmt_expr(b, body->children[0], src, opts, root);
+                    } else {
+                        pfmt_expr(b, body, src, opts, root);
+                    }
                 }
             }
         }
@@ -1322,6 +1671,28 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
         }
         break;
     }
+    case NODE_IF_STMT: {
+        /* 131.46: `if` in expression position (bind, return, argument) —
+         * inline bodies, `el` / `el if` chain walked flat (see fmt_expr). */
+        for (const Node *c = n;;) {
+            buf_puts(b, opts.pretty ? "if (" : "if(");
+            if (c->child_count > 0) pfmt_expr(b, c->children[0], src, opts, root);
+            buf_puts(b, opts.pretty ? ") { " : "){");
+            if (c->child_count > 1) pfmt_inline_stmts(b, c->children[1], src, opts, root);
+            buf_puts(b, opts.pretty ? " }" : "}");
+            if (c->child_count <= 2) break;
+            if (c->children[2]->kind == NODE_IF_STMT) {
+                buf_puts(b, opts.pretty ? " el " : "el ");
+                c = c->children[2];
+                continue;
+            }
+            buf_puts(b, opts.pretty ? " el { " : "el{");
+            pfmt_inline_stmts(b, c->children[2], src, opts, root);
+            buf_puts(b, opts.pretty ? " }" : "}");
+            break;
+        }
+        break;
+    }
     case NODE_EXPR_STMT:
         if (n->child_count > 0)
             pfmt_expr(b, n->children[0], src, opts, root);
@@ -1349,8 +1720,11 @@ static void pfmt_stmt_list(Buf *b, const Node *n, const char *src,
             if (k == NODE_LOOP_STMT || k == NODE_RETURN_STMT)
                 buf_putc(b, '\n');
         }
+        fs_emit_comments_before(b, node_lo(n->children[i]), depth);   /* 131.46 */
         pfmt_stmt(b, n->children[i], src, depth, opts, root);
     }
+    if (n->child_count > 0)
+        fs_emit_trailing_comments(b, fs_block_end(n->children[n->child_count - 1]), depth);
 }
 
 /* Emit a bind/mut_bind with optional expand comment showing type info. */
@@ -1365,10 +1739,14 @@ static void pfmt_bind(Buf *b, const Node *n, const char *src,
         buf_puts(b, name);
         free(name);
     }
+    if (n->child_count > 2) {                 /* 131.46: `let x:T=…` */
+        buf_putc(b, ':');
+        pfmt_type_expr(b, n->children[1], src);
+    }
     buf_putc(b, '=');
     if (is_mut) buf_puts(b, "mut.");
     if (n->child_count > 1)
-        pfmt_expr(b, n->children[1], src, opts, root);
+        pfmt_expr(b, n->children[n->child_count - 1], src, opts, root);
 
     /* --expand: show identifier expansion and/or inferred type as comment */
     if (opts.expand && n->child_count > 0) {
@@ -1378,7 +1756,7 @@ static void pfmt_bind(Buf *b, const Node *n, const char *src,
         /* Detect simple type from RHS: integer literal -> i64 */
         const char *type_hint = NULL;
         if (n->child_count > 1) {
-            const Node *rhs = n->children[1];
+            const Node *rhs = n->children[n->child_count - 1];
             if (rhs->kind == NODE_INT_LIT) type_hint = "i64";
             else if (rhs->kind == NODE_FLOAT_LIT) type_hint = "f64";
             else if (rhs->kind == NODE_STR_LIT) type_hint = "str";
@@ -1420,7 +1798,8 @@ static void pfmt_stmt(Buf *b, const Node *n, const char *src,
         break;
     case NODE_RETURN_STMT:
         buf_indent(b, depth);
-        buf_putc(b, '<');
+        if (src[n->tok_start] == 'r') buf_puts(b, n->child_count > 0 ? "rt " : "rt");
+        else buf_putc(b, '<');
         if (n->child_count > 0)
             pfmt_expr(b, n->children[0], src, opts, root);
         break;
@@ -1590,12 +1969,14 @@ static void pfmt_decl(Buf *b, const Node *n, const char *src,
     }
     case NODE_TYPE_DECL: {
         buf_puts(b, "t=");
+        int sigil = n->child_count > 0 && has_sigil(n->children[0], src);
         if (n->child_count > 0) {
+            if (sigil) buf_putc(b, '$');
             char *name = tok_text(n->children[0], src);
             buf_puts(b, name);
             free(name);
         }
-        buf_puts(b, " {");
+        buf_puts(b, sigil ? "{" : " {");
         if (n->child_count > 1) {
             const Node *fields = n->children[1];
             for (int i = 0; i < fields->child_count; i++) {
@@ -1603,6 +1984,7 @@ static void pfmt_decl(Buf *b, const Node *n, const char *src,
                 buf_putc(b, '\n');
                 buf_indent(b, 1);
                 const Node *f = fields->children[i];
+                if (f->op == TK_DOLLAR) buf_putc(b, '$');
                 char *fname = tok_text(f, src);
                 buf_puts(b, fname);
                 free(fname);
@@ -1698,6 +2080,7 @@ char *tkc_format_pretty(const Node *root, const char *src, FmtOptions opts)
     Buf b;
     buf_init(&b);
     if (!b.buf) return NULL;
+    g_fs = fs_build(src, (int)strlen(src));   /* 131.46: parens + comments */
 
     int first_decl = 1;
     int prev_was_module = 0;
@@ -1712,6 +2095,7 @@ char *tkc_format_pretty(const Node *root, const char *src, FmtOptions opts)
                 buf_putc(&b, '\n');
         }
 
+        fs_emit_comments_before(&b, node_lo(child), 0);
         pfmt_decl(&b, child, src, opts, root);
         first_decl = 0;
         prev_was_module = (child->kind == NODE_MODULE);
@@ -1719,6 +2103,9 @@ char *tkc_format_pretty(const Node *root, const char *src, FmtOptions opts)
 
     if (b.len > 0)
         buf_putc(&b, '\n');
+    fs_emit_comments_before(&b, INT_MAX, 0);
 
+    fs_free(g_fs);
+    g_fs = NULL;
     return b.buf;
 }

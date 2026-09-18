@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # F003_fmt_roundtrip.sh — `--fmt` output must be a faithful program (131.37).
 #
-# For test/standalone/test_expr_if.tk plus five frozen v0.4 corpus records
-# (test/conform/fixtures/roundtrip/*.tk, all using expression-form `if`):
+# For test/standalone/test_expr_if.tk plus the fixtures under
+# test/conform/fixtures/roundtrip/ (five frozen v0.4 corpus records using
+# expression-form `if`; 131.46 adds struct_literal.tk — `$Name{..}`, `mt`,
+# `t=$name{$variant:..}`, `@(@i64)`, `let x:T=`, source parens —
+# qualified_type.tk — `mod.$type` — and comments.tk):
 #   1. `tkc --fmt X` exits 0.
 #   2. The formatted text passes `tkc --check` (no E2003 from a dropped `;`,
 #      no bare `<if`, no legacy `[..]`, `==` kept, `$T` kept).
@@ -11,8 +14,12 @@
 #      is token-faithful to the input and --fmt emits ';' as a separator, so
 #      `x;}` and `x}` are the same program.
 #   4. --fmt is idempotent: fmt(fmt(X)) == fmt(X).
+#   5. (131.46) every `(* … *)` comment survives: the count of `(*` in the
+#      formatted text equals the count in the original.
+#   6. (131.46) `--pretty` output is a program too: --check clean and the same
+#      --min (covers the expression-`if` case the pretty walker lacked).
 #
-# Story: 131.37
+# Story: 131.37, 131.46
 
 set -euo pipefail
 
@@ -65,6 +72,17 @@ roundtrip() {
           "$("${TKC}" --min "${WORK}/fmt.tk" 2>/dev/null | norm_min)"
     "${TKC}" --fmt "${WORK}/fmt.tk" > "${WORK}/fmt2.tk" 2>/dev/null || true
     check "${name}: --fmt idempotent" "$(cat "${WORK}/fmt.tk")" "$(cat "${WORK}/fmt2.tk")"
+    check "${name}: comments preserved" \
+          "$(grep -o '(\*' "${src}" | wc -l | tr -d ' ')" \
+          "$(grep -o '(\*' "${WORK}/fmt.tk" | wc -l | tr -d ' ')"
+    rc=0
+    "${TKC}" --pretty "${src}" > "${WORK}/pretty.tk" 2>/dev/null || rc=$?
+    "${TKC}" --check "${WORK}/pretty.tk" >/dev/null 2>"${WORK}/perr" || rc=$?
+    check "${name}: --pretty output --check clean" "0" "${rc}"
+    [ "${rc}" -eq 0 ] || head -3 "${WORK}/perr" | sed 's/^/      /'
+    check "${name}: --min(pretty) == --min(orig)" \
+          "$("${TKC}" --min "${src}" 2>/dev/null | norm_min)" \
+          "$("${TKC}" --min "${WORK}/pretty.tk" 2>/dev/null | norm_min)"
 }
 
 roundtrip "${REPO_ROOT}/test/standalone/test_expr_if.tk"

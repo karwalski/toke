@@ -1,0 +1,17 @@
+m=structlit;
+i=io:std.io;
+t=$point{x:i64;y:i64};
+t=$res{$ok:i64;$err:str};
+f=mk(a:i64):$point{ <$point{x:a;y:(a+1)*2} };
+f=pick(r:$res):i64{
+  let v=mt r {$ok:v v; $err:e <0-1};
+  let w=if((v<0)==(v>10)){1}el if(v==0){2}el{3};
+  let arr:@(@i64)=@(@(1;2));
+  let neg=mut.(0-w);
+  <((v+w) as i64)/2+arr.get(0).get(1)+neg
+};
+f=main():i64{
+  let p=mk(3);
+  io.println("\(p.x) \(p.y) \(pick($res{$ok:4}))");
+  <0
+};

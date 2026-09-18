@@ -1,0 +1,9 @@
+m=qualified;
+i=io:std.io;
+i=db:std.db;
+f=use(c:db.$conn):i64{ <0 };
+f=main():i64{
+  let n=if(true){use(db.open(":memory:"))}el{1};
+  io.println("\(n)");
+  <n
+};

@@ -1,0 +1,16 @@
+(* header: comments must survive --fmt (131.46) *)
+m=comments;
+(* between declarations *)
+i=io:std.io;
+f=main():i64{
+  (* first in body *)
+  let x=if(true){1}el{2}; (* trailing on a line *)
+  lp(let i=0;i<x;i=i+1){
+    io.println("\(i)")
+    (* last in a block *)
+  };
+  (* nested (* comment *) inside *)
+  <x
+  (* before the closing brace *)
+};
+(* footer *)
