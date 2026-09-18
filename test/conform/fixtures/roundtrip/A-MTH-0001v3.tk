@@ -1,0 +1,13 @@
+m=harness;
+i=io:std.io;
+i=s:std.str;
+f=add(lhs:i64;rhs:i64):i64{
+  let total=mut.lhs;
+  let step=if(rhs<0){-1}el{1};
+  let count=if(rhs<0){0-rhs}el{rhs};
+  lp(let i=0;i<count;i=i+1){
+    total=total+step;
+  };
+  <total
+};
+

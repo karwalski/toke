@@ -101,6 +101,7 @@ static void fmt_expr(Buf *b, const Node *n, const char *src);
 static void fmt_type_expr(Buf *b, const Node *n, const char *src);
 static void fmt_stmt(Buf *b, const Node *n, const char *src, int depth);
 static void fmt_stmt_list(Buf *b, const Node *n, const char *src, int depth);
+static void fmt_inline_stmts(Buf *b, const Node *n, const char *src);
 static void fmt_return_spec(Buf *b, const Node *n, const char *src);
 
 /* ── Operator to string ───────────────────────────────────────────── */
@@ -115,11 +116,54 @@ static const char *op_str(TokenKind op)
     case TK_SLASH: return "/";
     case TK_LT:    return "<";
     case TK_GT:    return ">";
-    case TK_EQ:    return "=";
+    case TK_EQ:    return "==";  /* parser folds `==` to TK_EQ on binary nodes */
+    case TK_EQEQ:  return "==";
+    case TK_NE:    return "!=";
+    case TK_LE:    return "<=";
+    case TK_GE:    return ">=";
+    case TK_AND:   return "&&";
+    case TK_OR:    return "||";
     case TK_BANG:  return "!";
     case TK_PIPE:  return "|";
+    case TK_PERCENT: return "%";
+    case TK_CARET: return "^";
+    case TK_AMP:   return "&";
+    case TK_SHL:   return "<<";
+    case TK_SHR:   return ">>";
+    case TK_TILDE: return "~";
     default:       return "?";
     }
+}
+
+/* op_prec — binary-operator precedence, mirroring the parser chain
+ * (parse_or < and < bitor < bitxor < bitand < compare < shift < add < mul). */
+static int op_prec(TokenKind op)
+{
+    switch (op) {
+    case TK_OR:    return 1;
+    case TK_AND:   return 2;
+    case TK_PIPE:  return 3;
+    case TK_CARET: return 4;
+    case TK_AMP:   return 5;
+    case TK_LT: case TK_GT: case TK_LE: case TK_GE: case TK_EQ: case TK_EQEQ: case TK_NE:
+                   return 6;
+    case TK_SHL: case TK_SHR: return 7;
+    case TK_PLUS: case TK_MINUS: return 8;
+    case TK_STAR: case TK_SLASH: case TK_PERCENT: return 9;
+    default:       return 10;
+    }
+}
+
+/* needs_paren — 131.37: the parser keeps no paren node, so an operand that
+ * binds looser than its parent (or equally, on the right of a left-assoc
+ * operator) must be re-parenthesised or `0-(0-v)` would print as `0-0-v`.
+ * parent_op == TK_ERROR means "parent is a unary operator". */
+static int needs_paren(const Node *child, TokenKind parent_op, int is_right)
+{
+    if (!child || child->kind != NODE_BINARY_EXPR) return 0;
+    if (parent_op == TK_ERROR) return 1;
+    int pc = op_prec(child->op), pp = op_prec(parent_op);
+    return pc < pp || (pc == pp && is_right);
 }
 
 /* ── Type expression formatting ───────────────────────────────────── */
@@ -136,6 +180,10 @@ static void fmt_type_expr(Buf *b, const Node *n, const char *src)
     switch (n->kind) {
     case NODE_TYPE_EXPR:
     case NODE_TYPE_IDENT: {
+        /* 131.37: `$name` type refs — the parser keeps only the name, so
+         * re-emit the sigil from the source byte before the token. */
+        if (n->tok_start > 0 && src[n->tok_start - 1] == '$')
+            buf_putc(b, '$');
         char *t = tok_text(n, src);
         buf_puts(b, t);
         free(t);
@@ -147,19 +195,19 @@ static void fmt_type_expr(Buf *b, const Node *n, const char *src)
             fmt_type_expr(b, n->children[0], src);
         break;
     case NODE_ARRAY_TYPE:
-        buf_putc(b, '[');
+        /* 131.37: default syntax `@T` (legacy `[T]` is E1003 in default mode) */
+        buf_putc(b, '@');
         if (n->child_count > 0)
             fmt_type_expr(b, n->children[0], src);
-        buf_putc(b, ']');
         break;
     case NODE_MAP_TYPE:
-        buf_putc(b, '[');
+        buf_puts(b, "@(");
         if (n->child_count > 0)
             fmt_type_expr(b, n->children[0], src);
         buf_putc(b, ':');
         if (n->child_count > 1)
             fmt_type_expr(b, n->children[1], src);
-        buf_putc(b, ']');
+        buf_putc(b, ')');
         break;
     case NODE_FUNC_TYPE: {
         buf_putc(b, '(');
@@ -220,15 +268,25 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
         break;
     case NODE_BINARY_EXPR:
         if (n->child_count >= 2) {
+            int pl = needs_paren(n->children[0], n->op, 0);
+            int pr = needs_paren(n->children[1], n->op, 1);
+            if (pl) buf_putc(b, '(');
             fmt_expr(b, n->children[0], src);
+            if (pl) buf_putc(b, ')');
             buf_puts(b, op_str(n->op));
+            if (pr) buf_putc(b, '(');
             fmt_expr(b, n->children[1], src);
+            if (pr) buf_putc(b, ')');
         }
         break;
     case NODE_UNARY_EXPR:
         buf_puts(b, op_str(n->op));
-        if (n->child_count > 0)
+        if (n->child_count > 0) {
+            int pc = needs_paren(n->children[0], TK_ERROR, 0);
+            if (pc) buf_putc(b, '(');
             fmt_expr(b, n->children[0], src);
+            if (pc) buf_putc(b, ')');
+        }
         break;
     case NODE_CALL_EXPR:
         /* child[0] = callee, child[1..] = args */
@@ -261,10 +319,10 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
         /* child[0] = target, child[1] = index */
         if (n->child_count > 0)
             fmt_expr(b, n->children[0], src);
-        buf_putc(b, '[');
+        buf_puts(b, ".get(");   /* 131.37: default syntax; `a[i]` is E1003 */
         if (n->child_count > 1)
             fmt_expr(b, n->children[1], src);
-        buf_putc(b, ']');
+        buf_putc(b, ')');
         break;
     case NODE_FIELD_EXPR:
         /* child[0] = target, child[1] = field ident */
@@ -278,15 +336,15 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
         }
         break;
     case NODE_ARRAY_LIT:
-        buf_putc(b, '[');
+        buf_puts(b, "@(");
         for (int i = 0; i < n->child_count; i++) {
             if (i > 0) buf_puts(b, "; ");
             fmt_expr(b, n->children[i], src);
         }
-        buf_putc(b, ']');
+        buf_putc(b, ')');
         break;
     case NODE_MAP_LIT:
-        buf_putc(b, '[');
+        buf_puts(b, "@(");
         for (int i = 0; i < n->child_count; i++) {
             if (i > 0) buf_puts(b, "; ");
             /* Each child is a NODE_MAP_ENTRY with key:value */
@@ -297,7 +355,7 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
                 fmt_expr(b, entry->children[1], src);
             }
         }
-        buf_putc(b, ']');
+        buf_putc(b, ')');
         break;
     case NODE_STRUCT_LIT: {
         /* tok = TypeName, children = NODE_FIELD_INIT */
@@ -387,6 +445,28 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
         }
         break;
     }
+    case NODE_IF_STMT: {
+        /* 131.37 / A1: `if` in expression position (bind, return, argument).
+         * Inline, `;`-separated bodies; `el` / `el if` chain walked flat. */
+        for (const Node *c = n;;) {
+            buf_puts(b, "if(");
+            if (c->child_count > 0) fmt_expr(b, c->children[0], src);
+            buf_puts(b, "){");
+            if (c->child_count > 1) fmt_inline_stmts(b, c->children[1], src);
+            buf_putc(b, '}');
+            if (c->child_count <= 2) break;
+            if (c->children[2]->kind == NODE_IF_STMT) {
+                buf_puts(b, "el ");
+                c = c->children[2];
+                continue;
+            }
+            buf_puts(b, "el{");
+            fmt_inline_stmts(b, c->children[2], src);
+            buf_putc(b, '}');
+            break;
+        }
+        break;
+    }
     case NODE_EXPR_STMT:
         /* Wrapper: format inner expression */
         if (n->child_count > 0)
@@ -409,8 +489,21 @@ static void fmt_stmt_list(Buf *b, const Node *n, const char *src, int depth)
 {
     if (!n || n->kind != NODE_STMT_LIST) return;
     for (int i = 0; i < n->child_count; i++) {
-        if (i > 0) buf_putc(b, '\n');
+        if (i > 0) buf_puts(b, ";\n");   /* 131.37: statements are ';'-separated */
         fmt_stmt(b, n->children[i], src, depth);
+    }
+}
+
+/* fmt_inline_stmts — one-line `;`-separated body for an expression-form `if`. */
+static void fmt_inline_stmts(Buf *b, const Node *n, const char *src)
+{
+    if (!n || n->kind != NODE_STMT_LIST) return;
+    for (int i = 0; i < n->child_count; i++) {
+        if (i > 0) buf_putc(b, ';');
+        if (n->children[i] && n->children[i]->kind == NODE_IF_STMT)
+            fmt_expr(b, n->children[i], src);     /* nested if-expr: stay inline */
+        else
+            fmt_stmt(b, n->children[i], src, 0);
     }
 }
 
@@ -1038,7 +1131,11 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
         break;
     case NODE_BINARY_EXPR:
         if (n->child_count >= 2) {
+            int pl = needs_paren(n->children[0], n->op, 0);
+            int pr = needs_paren(n->children[1], n->op, 1);
+            if (pl) buf_putc(b, '(');
             pfmt_expr(b, n->children[0], src, opts, root);
+            if (pl) buf_putc(b, ')');
             if (opts.pretty) {
                 buf_putc(b, ' ');
                 buf_puts(b, op_str(n->op));
@@ -1046,13 +1143,19 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
             } else {
                 buf_puts(b, op_str(n->op));
             }
+            if (pr) buf_putc(b, '(');
             pfmt_expr(b, n->children[1], src, opts, root);
+            if (pr) buf_putc(b, ')');
         }
         break;
     case NODE_UNARY_EXPR:
         buf_puts(b, op_str(n->op));
-        if (n->child_count > 0)
+        if (n->child_count > 0) {
+            int pc = needs_paren(n->children[0], TK_ERROR, 0);
+            if (pc) buf_putc(b, '(');
             pfmt_expr(b, n->children[0], src, opts, root);
+            if (pc) buf_putc(b, ')');
+        }
         break;
     case NODE_CALL_EXPR:
         if (n->child_count > 0)
@@ -1084,10 +1187,10 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
     case NODE_INDEX_EXPR:
         if (n->child_count > 0)
             pfmt_expr(b, n->children[0], src, opts, root);
-        buf_putc(b, '[');
+        buf_puts(b, ".get(");
         if (n->child_count > 1)
             pfmt_expr(b, n->children[1], src, opts, root);
-        buf_putc(b, ']');
+        buf_putc(b, ')');
         break;
     case NODE_FIELD_EXPR:
         if (n->child_count > 0)
@@ -1100,7 +1203,7 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
         }
         break;
     case NODE_ARRAY_LIT:
-        buf_putc(b, '[');
+        buf_puts(b, "@(");
         for (int i = 0; i < n->child_count; i++) {
             if (i > 0) {
                 buf_putc(b, ';');
@@ -1108,10 +1211,10 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
             }
             pfmt_expr(b, n->children[i], src, opts, root);
         }
-        buf_putc(b, ']');
+        buf_putc(b, ')');
         break;
     case NODE_MAP_LIT:
-        buf_putc(b, '[');
+        buf_puts(b, "@(");
         for (int i = 0; i < n->child_count; i++) {
             if (i > 0) {
                 buf_putc(b, ';');
@@ -1124,7 +1227,7 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
                 pfmt_expr(b, entry->children[1], src, opts, root);
             }
         }
-        buf_putc(b, ']');
+        buf_putc(b, ')');
         break;
     case NODE_STRUCT_LIT: {
         char *t = tok_text(n, src);
@@ -1239,7 +1342,7 @@ static void pfmt_stmt_list(Buf *b, const Node *n, const char *src,
 {
     if (!n || n->kind != NODE_STMT_LIST) return;
     for (int i = 0; i < n->child_count; i++) {
-        if (i > 0) buf_putc(b, '\n');
+        if (i > 0) buf_puts(b, ";\n");   /* 131.37: statements are ';'-separated */
         /* Pretty: blank line before loops and returns (except first stmt) */
         if (opts.pretty && i > 0) {
             NodeKind k = n->children[i]->kind;

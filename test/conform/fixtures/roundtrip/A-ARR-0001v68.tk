@@ -1,0 +1,13 @@
+m=harness;
+i=io:std.io;
+i=s:std.str;
+f=sum(arr:@i64):i64{
+  let total=mut.0;
+  lp(let i=0;i<arr.len;i=i+1){
+    let v=arr.get(i);
+    let add=if(v<0){0-(0-v)}el{v};
+    total=total+add;
+  };
+  <total
+};
+
