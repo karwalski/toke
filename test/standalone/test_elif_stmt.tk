@@ -1,0 +1,55 @@
+(* test_elif_stmt.tk — 127.23: statement-form `el if` chains.
+ * The expression form (116.1) already chained; the statement form must parse
+ * and branch identically: 3-arm chain, nested chains, chain without a final
+ * `el`, and the expression form unchanged. *)
+m=test.elifstmt;
+i=io:std.io;
+i=s:std.str;
+
+f=ck(name:str;got:i64;want:i64):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");s.fromint(got))) };
+  <0
+};
+
+f=cls(a:i64):i64{
+  let g=mut.0;
+  if(a>10){g=3}el if(a>5){g=2}el if(a>0){g=1}el{g=0};
+  <g
+};
+
+f=nest(a:i64;b:i64):i64{
+  let g=mut.0;
+  if(a>0){
+    if(b>0){g=11}el if(b<0){g=12}el{g=10}
+  }el if(a<0){
+    if(b>0){g=21}el if(b<0){g=22}
+  };
+  <g
+};
+
+f=noel(a:i64):i64{ let g=mut.0; if(a>0){g=1}el if(a<0){g=2}; <g };
+
+f=sign(n:i64):i64{ <if(n>0){1}el if(n<0){2}el{0} };
+
+f=main():$i64{
+  ck("chain-arm1";cls(11);3);
+  ck("chain-arm2";cls(6);2);
+  ck("chain-arm3";cls(1);1);
+  ck("chain-else";cls(0);0);
+  ck("nested-11";nest(1;1);11);
+  ck("nested-12";nest(1;-1);12);
+  ck("nested-10";nest(1;0);10);
+  ck("nested-21";nest(-1;1);21);
+  ck("nested-22";nest(-1;-1);22);
+  ck("nested-none";nest(-1;0);0);
+  ck("nested-outer-none";nest(0;5);0);
+  ck("noel-1";noel(3);1);
+  ck("noel-2";noel(-3);2);
+  ck("noel-0";noel(0);0);
+  ck("expr-pos";sign(5);1);
+  ck("expr-neg";sign(-4);2);
+  ck("expr-zero";sign(0);0);
+  io.println("RESULT done");
+  <0
+};

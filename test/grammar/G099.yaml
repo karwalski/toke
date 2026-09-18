@@ -1,0 +1,13 @@
+id: G099
+series: G
+description: "Statement-form el if chain with three arms parses (127.23)"
+input: |
+  m=test;
+  f=cls(a:i64):i64{
+    let g=mut.0;
+    if(a>10){g=3}el if(a>5){g=2}el if(a>0){g=1}el{g=0};
+    <g
+  };
+expected_exit_code: 0
+expected_error_codes: []
+expected_absent_codes: ["E2002", "E2003"]

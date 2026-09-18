@@ -475,26 +475,35 @@ static void fmt_stmt(Buf *b, const Node *n, const char *src, int depth)
         break;
     case NODE_IF_STMT: {
         buf_indent(b, depth);
-        buf_puts(b, "if (");
-        if (n->child_count > 0)
-            fmt_expr(b, n->children[0], src);
-        buf_puts(b, ") {");
-        /* child[1] = then stmt list */
-        if (n->child_count > 1) {
-            buf_putc(b, '\n');
-            fmt_stmt_list(b, n->children[1], src, depth + 1);
-            buf_putc(b, '\n');
-        }
-        buf_indent(b, depth);
-        buf_putc(b, '}');
-        /* child[2] = else stmt list (optional) */
-        if (n->child_count > 2) {
+        /* 127.23: child[2] may be a nested NODE_IF_STMT (`el if` chain) —
+         * walk the chain iteratively so every arm sits at the same depth. */
+        for (const Node *c = n;;) {
+            buf_puts(b, "if (");
+            if (c->child_count > 0)
+                fmt_expr(b, c->children[0], src);
+            buf_puts(b, ") {");
+            /* child[1] = then stmt list */
+            if (c->child_count > 1) {
+                buf_putc(b, '\n');
+                fmt_stmt_list(b, c->children[1], src, depth + 1);
+                buf_putc(b, '\n');
+            }
+            buf_indent(b, depth);
+            buf_putc(b, '}');
+            /* child[2] = else stmt list or chained if (optional) */
+            if (c->child_count <= 2) break;
+            if (c->children[2]->kind == NODE_IF_STMT) {
+                buf_puts(b, " el ");
+                c = c->children[2];
+                continue;
+            }
             buf_puts(b, " el {");
             buf_putc(b, '\n');
-            fmt_stmt_list(b, n->children[2], src, depth + 1);
+            fmt_stmt_list(b, c->children[2], src, depth + 1);
             buf_putc(b, '\n');
             buf_indent(b, depth);
             buf_putc(b, '}');
+            break;
         }
         break;
     }
@@ -1274,24 +1283,32 @@ static void pfmt_stmt(Buf *b, const Node *n, const char *src,
         break;
     case NODE_IF_STMT: {
         buf_indent(b, depth);
-        buf_puts(b, "if (");
-        if (n->child_count > 0)
-            pfmt_expr(b, n->children[0], src, opts, root);
-        buf_puts(b, ") {");
-        if (n->child_count > 1) {
-            buf_putc(b, '\n');
-            pfmt_stmt_list(b, n->children[1], src, depth + 1, opts, root);
-            buf_putc(b, '\n');
-        }
-        buf_indent(b, depth);
-        buf_putc(b, '}');
-        if (n->child_count > 2) {
+        /* 127.23: `el if` chains — see fmt_stmt. */
+        for (const Node *c = n;;) {
+            buf_puts(b, "if (");
+            if (c->child_count > 0)
+                pfmt_expr(b, c->children[0], src, opts, root);
+            buf_puts(b, ") {");
+            if (c->child_count > 1) {
+                buf_putc(b, '\n');
+                pfmt_stmt_list(b, c->children[1], src, depth + 1, opts, root);
+                buf_putc(b, '\n');
+            }
+            buf_indent(b, depth);
+            buf_putc(b, '}');
+            if (c->child_count <= 2) break;
+            if (c->children[2]->kind == NODE_IF_STMT) {
+                buf_puts(b, " el ");
+                c = c->children[2];
+                continue;
+            }
             buf_puts(b, " el {");
             buf_putc(b, '\n');
-            pfmt_stmt_list(b, n->children[2], src, depth + 1, opts, root);
+            pfmt_stmt_list(b, c->children[2], src, depth + 1, opts, root);
             buf_putc(b, '\n');
             buf_indent(b, depth);
             buf_putc(b, '}');
+            break;
         }
         break;
     }

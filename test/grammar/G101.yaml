@@ -1,0 +1,14 @@
+id: G101
+series: G
+description: "Expression-form el if chain still parses and still requires a final el (127.23 refactor guard)"
+input: |
+  m=test;
+  f=sign(n:i64):str{ <if(n>0){"pos"}el if(n<0){"neg"}el{"zero"} };
+  f=main():i64{
+    let a=1;
+    let g=if(a>1){2}el if(a>0){1}el{0};
+    let h=if(a>1){2}el if(a>0){1};
+    <g+h
+  };
+expected_exit_code: 1
+expected_error_codes: ["E2002"]

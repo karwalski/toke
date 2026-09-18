@@ -1,0 +1,18 @@
+id: G100
+series: G
+description: "Nested statement el if chains, with and without a final el (127.23)"
+input: |
+  m=test;
+  f=nest(a:i64;b:i64):i64{
+    let g=mut.0;
+    if(a>0){
+      if(b>0){g=11}el if(b<0){g=12}el{g=10}
+    }el if(a<0){
+      if(b>0){g=21}el if(b<0){g=22}
+    };
+    if(a==0){g=0}el if(b==0){g=1};
+    <g
+  };
+expected_exit_code: 0
+expected_error_codes: []
+expected_absent_codes: ["E2002", "E2003"]

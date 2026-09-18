@@ -1133,27 +1133,27 @@ static Node *parse_loop_stmt(Parser *p) {
 }
 
 /*
- * parse_if_stmt — parse an if/else statement.
+ * parse_if_core — shared body of the statement and expression `if` forms.
  *
  * Grammar:
- *   IfStmt = 'if' '(' Expr ')' '{' StmtList '}' ('el' '{' StmtList '}')?
+ *   IfStmt = 'if' '(' Expr ')' '{' StmtList '}' [ 'el' ( IfStmt | '{' StmtList '}' ) ]
+ *   IfExpr = 'if' '(' Expr ')' '{' StmtList '}'   'el' ( IfExpr | '{' StmtList '}' )
  *
  * AST node: NODE_IF_STMT
  *   children[0] = condition expression
  *   children[1] = NODE_STMT_LIST — then-branch body
- *   children[2] = NODE_STMT_LIST — else-branch body (only present when
- *                 'el' keyword follows the then-block)
+ *   children[2] = NODE_STMT_LIST — else-branch body, or a nested NODE_IF_STMT
+ *                 for an `el if (...)` chain (127.23: both forms chain).
  *
- * The else branch is optional.  There is no `else if` syntax in toke
- * Profile 1; nested conditionals require explicit `el { if(...){...} }`.
- *
- * An optional trailing semicolon after the closing '}' is consumed.
+ * expr_form=0 (statement): the `el` branch is optional and a trailing ';'
+ * after the closing '}' is consumed. expr_form=1 (A1 expression): the `el`
+ * branch is REQUIRED (a value on every path) and the ';' is left for the
+ * enclosing statement.
  *
  * Error recovery: calls sync() on missing '(' or '{'; emits E2004 on
  * unclosed ')' or '}'.
  */
-/* IfStmt = 'if' '(' Expr ')' '{' StmtList '}' ('el' '{' StmtList '}')? */
-static Node *parse_if_stmt(Parser *p) {
+static Node *parse_if_core(Parser *p, int expr_form) {
     Token *t=xp(p,TK_KW_IF,"'if'"); if(!t) return NULL;
     Node *n=mk(p,NODE_IF_STMT,t);
     if(!xp(p,TK_LPAREN,"'('")){ sync(p);return n;}
@@ -1167,44 +1167,30 @@ static Node *parse_if_stmt(Parser *p) {
     if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
     ch(p,n,parse_stmt_list(p,t));
     if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
-    if(peek(p)==TK_KW_EL){adv(p);
-        if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
-        ch(p,n,parse_stmt_list(p,t));
-        if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");}
-    if(peek(p)==TK_SEMICOLON) adv(p);  /* optional trailing ';' after if/el block */
-    return n;
-}
-
-/*
- * parse_if_expr — A1: `if` used as an expression. Yields the tail value of the
- * taken block; **requires** an `el` branch (an expression must produce a value
- * on every path) and does **not** consume a trailing ';' (that terminator
- * belongs to the enclosing statement). Supports `el if` chaining. Produces a
- * NODE_IF_STMT — `emit_expr` lowers it to a value; the statement form is emitted
- * by `emit_stmt`. children: [0]=cond, [1]=then-block, [2]=else-block or nested
- * NODE_IF_STMT (for `el if`).
- */
-static Node *parse_if_expr(Parser *p) {
-    Token *t=xp(p,TK_KW_IF,"'if'"); if(!t) return NULL;
-    Node *n=mk(p,NODE_IF_STMT,t);
-    if(!xp(p,TK_LPAREN,"'('")){ sync(p);return n;}
-    ch(p,n,parse_expr(p));
-    if(!xp(p,TK_RPAREN,"')'"))eerr(p,E2004,cur(p),"unclosed delimiter");
-    if(peek(p)==TK_COLON){ ewarn(p,W2021,cur(p),"':' after if(...) is Python syntax","replace `:` with `{`"); adv(p); }
-    if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
-    ch(p,n,parse_stmt_list(p,t));
-    if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
     if(peek(p)!=TK_KW_EL){
-        eerr_got(p,E2002,cur(p),"`if` used as an expression requires an `el` branch");
+        if(expr_form) eerr_got(p,E2002,cur(p),"`if` used as an expression requires an `el` branch");
+        else if(peek(p)==TK_SEMICOLON) adv(p);  /* optional trailing ';' after if block */
         return n;
     }
     adv(p); /* el */
-    if(peek(p)==TK_KW_IF){ ch(p,n,parse_if_expr(p)); return n; }  /* el if … */
+    if(peek(p)==TK_KW_IF){ ch(p,n,parse_if_core(p,expr_form)); return n; }  /* el if … chain */
     if(!xp(p,TK_LBRACE,"'{'")){ sync(p);return n;}
     ch(p,n,parse_stmt_list(p,t));
     if(!xp(p,TK_RBRACE,"'}'"))eerr(p,E2004,cur(p),"unclosed delimiter");
+    if(!expr_form && peek(p)==TK_SEMICOLON) adv(p);  /* optional trailing ';' after if/el block */
     return n;
 }
+
+/* parse_if_stmt — statement-form if/el (optional el, `el if` chains, eats ';'). */
+static Node *parse_if_stmt(Parser *p) { return parse_if_core(p, 0); }
+
+/*
+ * parse_if_expr — A1: `if` used as an expression. Yields the tail value of the
+ * taken block; **requires** an `el` branch and does **not** consume a trailing
+ * ';'. Supports `el if` chaining. Produces a NODE_IF_STMT — `emit_expr` lowers
+ * it to a value; the statement form is emitted by `emit_stmt`.
+ */
+static Node *parse_if_expr(Parser *p) { return parse_if_core(p, 1); }
 
 /*
  * parse_stmt — parse a single statement (dispatches by lookahead).

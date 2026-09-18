@@ -94,7 +94,8 @@ AssignStmt   = IDENT '=' Expr ';' ;
 ReturnStmt   = ( '<' | 'rt' ) Expr ';' ;
 BreakStmt    = 'br' ';' ;
 
-IfStmt       = 'if' '(' Expr ')' '{' StmtList '}' [ 'el' '{' StmtList '}' ] ;
+IfStmt       = 'if' '(' Expr ')' '{' StmtList '}' [ 'el' ( IfStmt | '{' StmtList '}' ) ] ;
+(* 127.23: the statement form chains `el if (...)` exactly like IfExpr.      *)
 LoopStmt     = 'lp' '(' Stmt Expr ';' Stmt ')' '{' StmtList '}' ;
 ArenaStmt    = '{' 'arena' StmtList '}' ;
 

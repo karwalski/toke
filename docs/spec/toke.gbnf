@@ -37,7 +37,7 @@ mutbindstmt ::= "let" ws ident ws "=" ws "mut." ws expr ws ";"?
 assignstmt  ::= ident ws "=" ws expr ws ";"?
 returnstmt  ::= ("<" | "rt") ws expr ws ";"?
 breakstmt   ::= "br" ws ";"?
-ifstmt      ::= "if" ws "(" ws expr ws ")" ws block (ws "el" ws block)? ws ";"?
+ifstmt      ::= "if" ws "(" ws expr ws ")" ws block (ws "el" ws (ifstmt | block))? ws ";"?
 loopstmt    ::= "lp" ws "(" ws loophead ws ")" ws block ws ";"?
 loophead    ::= ("let" ws)? ident ws "=" ws expr ws ";" ws expr ws ";" ws
                 ident ws "=" ws expr            # 3-clause init;cond;step

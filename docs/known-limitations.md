@@ -148,7 +148,8 @@ type is not statically known).
 Match (`mt`) is an expression that yields a value; it is not a side-effect
 statement. **As of 116.1/A1, `if`/`el` is *also* an expression** (`let x=if(c){a}el{b}`,
 `<if(c){a}el{b}`, with `el if` chaining) — the expression form requires an `el`
-branch (a value on every path). `if` also still works as a plain statement.
+branch (a value on every path). `if` also still works as a plain statement, and
+since 127.23 the statement form chains `el if (...)` exactly like the expression form.
 Prefer the expression form over the old `let x=mut.0; if(c){x=a}el{x=b}` pattern.
 
 ### 4. ~~Return operator `<` cannot be used inside match arms~~ — RESOLVED
