@@ -23,6 +23,7 @@ Changes here require coordinated updates to the stdlib and toke-eval/benchmark.
 - `std.db` — database queries (SQLite3 backend)
 - `std.file` — file I/O (read, write, append, list, delete)
 - `std.env` — environment variable access
+- `std.fmt` — value formatting for print (bool, i64/str arrays, fixed-decimal f64, padding)
 - `std.process` — subprocess spawning and control
 - `std.crypto` — SHA-256, SHA-512, HMAC-SHA-256, HMAC-SHA-512, constant-time compare, random bytes, hex encoding
 - `std.time` — time operations (now, format, since)
@@ -169,6 +170,18 @@ f=delete(path:$str):void
 f=get(key:$str):$str
 f=set(key:$str;val:$str):void
 ```
+
+### std.fmt
+
+```text
+f=bool(b:bool):$str
+f=arr(xs:@i64;sep:$str):$str
+f=strs(xs:@$str;sep:$str):$str
+f=f64(x:f64;prec:i64):$str
+f=pad(s:$str;width:i64;left:bool):$str
+```
+
+Module style only (`i=fmt:std.fmt;`). Every function returns a fresh string; `fmt.f64` renders exactly `prec` digits after the point (0..20, clamped); `fmt.pad` pads with spaces to `width` code points, before `s` when `left` is true.
 
 ### std.process
 

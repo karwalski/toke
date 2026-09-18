@@ -31,6 +31,7 @@ static const StdlibModule stdlib_table[] = {
     { "process",       "process.c process_glue.c",              "",                                                                 "" },
     { "crypto",        "crypto.c crypto_glue.c",                "str",                                                              "" },
     { "csv",           "csv.c csv_glue.c",                      "",                                                                 "" },
+    { "fmt",           "fmt.c fmt_glue.c",                      "",                                                                 "" },  /* 131.30 */
     { "template",      "template.c template_glue.c",            "",                                                                 "" },
     { "math",          "math.c math_glue.c",                    "",                                                                 "-lm" },
     { "json",          "json.c json_glue.c",                    "",                                                                 "" },

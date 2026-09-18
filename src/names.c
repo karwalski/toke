@@ -302,7 +302,7 @@ static const char * const s_known_modules[] = {
     "db", "crypto", "encrypt", "auth", "ws", "sse", "router", "template",
     "csv", "math", "llm", "tool", "chart", "html", "dashboard", "svg",
     "canvas", "image", "dataframe", "analytics", "ml", "toon", "yaml",
-    "i18n", "encoding", "gpu", "net", "sys", "std",
+    "i18n", "encoding", "gpu", "net", "sys", "std", "fmt",
     NULL
 };
 

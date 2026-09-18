@@ -1,0 +1,40 @@
+(* test_fmt.tk -- Story 131.30: std.fmt value formatting for print.
+ * fmt.bool / fmt.arr / fmt.strs / fmt.f64 / fmt.pad. Each returns a fresh
+ * str; the checks compare against the literal text expected on stdout. *)
+m=test.fmt;
+i=io:std.io;
+i=s:std.str;
+i=fmt:std.fmt;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat(s.concat("FAIL ";name);" got=[");got);"]")) };
+  <0
+};
+
+f=main():i64{
+  cks("bool-true";fmt.bool(true);"true");
+  cks("bool-false";fmt.bool(false);"false");
+  cks("bool-expr";fmt.bool(3>2);"true");
+  let e=mut.@();
+  cks("arr-empty";fmt.arr(e;", ");"");
+  cks("arr-one";fmt.arr(@(7);", ");"7");
+  cks("arr-many";fmt.arr(@(1;2;3);", ");"1, 2, 3");
+  cks("arr-neg";fmt.arr(@(-1;0;42);"|");"-1|0|42");
+  cks("arr-nosep";fmt.arr(@(1;2;3);"");"123");
+  cks("strs-many";fmt.strs(@("a";"b";"c");"-");"a-b-c");
+  cks("strs-one";fmt.strs(@("solo");"-");"solo");
+  cks("f64-prec0";fmt.f64(3.7;0);"4");
+  cks("f64-prec2";fmt.f64(3.14159;2);"3.14");
+  cks("f64-prec6";fmt.f64(2.5;6);"2.500000");
+  cks("f64-neg";fmt.f64(-1.005;2);"-1.00");
+  cks("f64-round";fmt.f64(2.675;2);"2.67");
+  cks("f64-roundup";fmt.f64(0.125;2);"0.12");
+  cks("f64-halfup";fmt.f64(1.5;0);"2");
+  cks("pad-left";fmt.pad("ab";5;true);"   ab");
+  cks("pad-right";fmt.pad("ab";5;false);"ab   ");
+  cks("pad-short";fmt.pad("abcdef";3;true);"abcdef");
+  cks("pad-exact";fmt.pad("abc";3;false);"abc");
+  cks("pad-empty";fmt.pad("";2;true);"  ");
+  <0
+};
