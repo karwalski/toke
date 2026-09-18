@@ -6153,20 +6153,46 @@ static int la_fresh_rhs(Ctx *c, const Node *rhs, const char *x) {
     return la_self_update_call(c, rhs, x, NULL);
 }
 
+/* 127.25: is `callee` (alias.method) a call into a stdlib module that reads
+ * its array arguments but never retains them? std.str (join/concat/len/…),
+ * std.io (println/print/…) and std.fmt only walk the block for the duration
+ * of the call and return fresh values, so a bare linear array passed to them
+ * creates no alias — `<s.join("";acc)` must not demote every
+ * `acc=acc.append(v)` to the copying path (O(N²) memory, 127.17). User
+ * functions and every other module may store the pointer, so they still
+ * disqualify. */
+static int la_nonretaining_callee(Ctx *c, const Node *callee) {
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2) return 0;
+    if (!callee->children[0] || callee->children[0]->kind != NODE_IDENT) return 0;
+    char al[NAME_BUF]; tok_cp(c->src, callee->children[0], al, sizeof al);
+    for (int i = 0; i < c->import_count; i++) {
+        if (strcmp(c->imports[i].alias, al)) continue;
+        if (!c->imports[i].is_std) return 0;
+        const char *m = strrchr(c->imports[i].module, '.');
+        m = m ? m + 1 : c->imports[i].module;
+        return !strcmp(m, "str") || !strcmp(m, "io") || !strcmp(m, "fmt");
+    }
+    return 0;
+}
+
 /* Recursively detect a disqualifying (alias-creating) use of x. Allowed roles:
  * assign-LHS, method/field receiver, index base, bind name-slot, terminal
- * return operand. Any other bare occurrence — or any occurrence inside a
- * closure — disqualifies. */
+ * return operand, bare argument to a non-retaining stdlib call (127.25). Any
+ * other bare occurrence — or any occurrence inside a closure — disqualifies. */
 static int la_bad_use(Ctx *c, const Node *n, const char *x, int in_closure) {
     if (!n) return 0;
     if (n->kind == NODE_IDENT)
         return la_ident_is(c, n, x);   /* a bare ident reached here = a use */
     if (n->kind == NODE_CLOSURE)
         return la_mentions(c, n, x);    /* any capture of x is unsafe */
-    int skip0 = 0, skip_field_name = 0;
+    int skip0 = 0, skip_field_name = 0, skip_bare_args = 0;
     switch (n->kind) {
     case NODE_ASSIGN_STMT:
         if (la_ident_is(c, n->children[0], x)) skip0 = 1;     /* LHS */
+        break;
+    case NODE_CALL_EXPR:
+        if (n->child_count > 0 && la_nonretaining_callee(c, n->children[0]))
+            skip_bare_args = 1;                               /* 127.25 */
         break;
     case NODE_FIELD_EXPR:
         if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) skip0 = 1; /* receiver */
@@ -6187,6 +6213,7 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int in_closure) {
     for (int i = 0; i < n->child_count; i++) {
         if (i == 0 && skip0) continue;
         if (i == 1 && skip_field_name) continue;
+        if (i >= 1 && skip_bare_args && la_ident_is(c, n->children[i], x)) continue;
         if (la_bad_use(c, n->children[i], x, in_closure)) return 1;
     }
     (void)in_closure;

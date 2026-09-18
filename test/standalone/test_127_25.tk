@@ -1,0 +1,42 @@
+(* test_127_25.tk -- Epic 127.25: a linear array passed as a bare argument to
+ * a non-retaining stdlib call (s.join("";acc), io.println of its length) was
+ * marked as aliased, so every `acc=acc.append(v)` fell back to the copying
+ * tk_array_append_w. The allowlist keeps in-place append while the results
+ * stay identical; a user-function argument (which may retain) still copies. *)
+m=test.m12725;
+i=io:std.io;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+f=keep(xs:@str):@str{ <xs };
+f=build(n:i64):str{
+  let acc=mut.@();
+  lp(let i=0;i<n;i=i+1){ acc=acc.append("\(i)") };
+  <s.join(",";acc)
+};
+f=build2(n:i64):str{
+  let acc=mut.@();
+  lp(let i=0;i<n;i=i+1){ acc=acc.append("\(i)") };
+  let j=s.join("-";acc);
+  acc=acc.append("z");
+  <s.concat(j;s.join("";acc))
+};
+f=build3(n:i64):str{
+  let acc=mut.@();
+  lp(let i=0;i<n;i=i+1){ acc=acc.append("\(i)") };
+  let held=keep(acc);
+  acc=acc.append("w");
+  <s.concat(s.join("";held);s.join("";acc))
+};
+
+f=main():$i64{
+  cks("join-arg";build(4);"0,1,2,3");
+  cks("join-then-append";build2(3);"0-1-2012z");
+  cks("user-fn-retains";build3(2);"0101w");
+  cks("len-interp";"\(build(3))";"0,1,2");
+  <0
+};
