@@ -2072,8 +2072,8 @@ static int emit_expr(Ctx *c, const Node *n)
         /* Story 111.5a: interpolation lowering.
          *
          * Detect `\(<expr>)` sequences inside a STR_LIT and lower the whole
-         * literal to a chain of `tk_str_concat` calls — one piece per
-         * literal segment + interpolated expression. The expression is
+         * literal to ONE `tk_str_join_n(n, parts…)` call (127.26) — one
+         * piece per literal segment + interpolated expression. The expression is
          * synthetic-parsed by lexing + parsing a wrapper toke program of
          * the form  `m=_i_;f=_e():$str{<...EXPR...};}`  and pulling out
          * the inner expression AST node, which is then handed back to
@@ -2100,9 +2100,9 @@ static int emit_expr(Ctx *c, const Node *n)
         /* Interpolation path: walk the string content between the
          * outer quotes and split into segments. Each segment is either
          * a literal slice or an expression slice. */
-        /* Each segment emits one i8* SSA temp that feeds a pairwise
-         * tk_str_concat chain. Carrying char[] slots in this stack frame
-         * is bounded by the 2 KB token-length the lexer accepts. */
+        /* Each segment emits one i8* SSA temp; the temps become the varargs
+         * of a single tk_str_join_n call. Carrying char[] slots in this stack
+         * frame is bounded by the 2 KB token-length the lexer accepts. */
         typedef struct { int start; int end; int is_expr; } Seg;
         enum { MAX_SEGS = 128 };
         Seg segs[MAX_SEGS]; int nsegs = 0;
@@ -2150,6 +2150,7 @@ static int emit_expr(Ctx *c, const Node *n)
             nsegs++;
         }
         int accumulator = -1;
+        int seg_vals[MAX_SEGS]; int nvals = 0;
         for (int p = 0; p < nsegs; p++) {
             int seg_val;
             if (segs[p].is_expr) {
@@ -2320,14 +2321,19 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
                         seg_val, alen4, alen4, c->module_prefix, si4);
             }
-            if (accumulator < 0) {
-                accumulator = seg_val;
-            } else {
-                int z = next_tmp(c);
-                fprintf(c->out, "  %%t%d = call i8* @tk_str_concat(i8* %%t%d, i8* %%t%d) ; interp\n",
-                        z, accumulator, seg_val);
-                accumulator = z;
-            }
+            seg_vals[nvals++] = seg_val;
+        }
+        if (nvals == 1) {
+            accumulator = seg_vals[0];
+        } else if (nvals >= 2) {
+            /* 127.26: one tk_str_join_n(n, parts…) call — a single allocation
+             * + memcpy per literal, as docs/spec/semantics.md 2.4 promises —
+             * instead of the pairwise tk_str_concat chain that allocated (and
+             * leaked) k-1 intermediate strings. */
+            accumulator = next_tmp(c);
+            fprintf(c->out, "  %%t%d = call i8* (i64, ...) @tk_str_join_n(i64 %d", accumulator, nvals);
+            for (int q = 0; q < nvals; q++) fprintf(c->out, ", i8* %%t%d", seg_vals[q]);
+            fputs(") ; interp\n", c->out);
         }
         if (accumulator < 0) {
             /* empty interpolation — return empty string */
@@ -7276,6 +7282,7 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_str_argv", "declare i8* @tk_str_argv(i64)", 0},
     {"tk_array_concat", "declare i8* @tk_array_concat(i8*, i8*)", 0},
     {"tk_str_concat", "declare i8* @tk_str_concat(i8*, i8*)", 0},
+    {"tk_str_join_n", "declare i8* @tk_str_join_n(i64, ...)", 0},  /* 127.26: interpolation */
     {"tk_str_len", "declare i64 @tk_str_len(i8*)", 0},
     {"tk_str_char_at", "declare i64 @tk_str_char_at(i8*, i64)", 0},
     {"tk_json_print_bool", "declare void @tk_json_print_bool(i64)", 0},

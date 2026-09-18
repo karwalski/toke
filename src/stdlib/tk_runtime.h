@@ -50,6 +50,7 @@ void    tk_json_print_arr_bool(int64_t *data);
 /* Array / string operations */
 int64_t *tk_array_concat(int64_t *a, int64_t *b);
 char   *tk_str_concat(const char *a, const char *b);
+char   *tk_str_join_n(int64_t n, ...);  /* 127.26: one-alloc interpolation */
 int64_t tk_str_len(const char *s);
 int64_t tk_str_char_at(const char *s, int64_t idx);
 

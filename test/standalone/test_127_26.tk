@@ -1,0 +1,47 @@
+(* test_127_26.tk -- Epic 127.26: interpolation lowered to a chain of k-1
+ * tk_str_concat calls; docs/spec/semantics.md promises a single
+ * tk_str_join_n allocation. Covers 2..6 segment literals, leading/trailing
+ * expression segments, adjacent expressions, str/i64/f64/bool/method-call
+ * segments, a call inside an interpolated expression, interpolation used
+ * as a call argument and in a loop accumulator; outputs must be unchanged.
+ * (A string literal that itself interpolates, nested inside `\(…)`, is not
+ * supported by the sub-parse — pre-existing, not part of this story.) *)
+m=test.m12726;
+i=io:std.io;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+f=tag(v:str):str{ <"<\(v)>" };
+
+f=main():$i64{
+  let a="x";
+  let n=42;
+  let f=1.5;
+  let b=3>2;
+  cks("two-seg-lead";"\(a)!";"x!");
+  cks("two-seg-trail";"!\(a)";"!x");
+  cks("three-seg";"[\(a)]";"[x]");
+  cks("adjacent";"\(a)\(n)";"x42");
+  cks("adjacent-mid";"a\(a)\(n)b";"ax42b");
+  cks("five-seg";"\(a)-\(n)-\(a)";"x-42-x");
+  cks("six-seg";"p\(a)q\(n)r\(a)s";"pxq42rxs");
+  cks("int";"n=\(n)";"n=42");
+  cks("float";"f=\(f)";"f=1.5");
+  cks("bool";"b=\(b)";"b=1");
+  cks("expr";"\(n+1)";"43");
+  cks("method";"\(a.upper())";"X");
+  let inner="\(n)";
+  cks("nested-call";"\(tag(inner))";"<42>");
+  cks("arg";tag("\(a)\(a)");"<xx>");
+  cks("empty-mid";"\(a)\("")\(a)";"xx");
+  let acc=mut."";
+  lp(let i=0;i<3;i=i+1){ acc="\(acc)\(i)," };
+  cks("loop";acc;"0,1,2,");
+  let nn="\(n)\(n)";
+  cks("len";"\(s.len(nn))";"4");
+  <0
+};

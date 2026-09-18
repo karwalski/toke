@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <ctype.h>
 
 /* 114.41: side channel carrying a T!$E error's typed sum-type payload.
@@ -278,6 +279,39 @@ char *tk_str_concat(const char *a, const char *b) {
     memcpy(r, a, la);
     memcpy(r + la, b, lb);
     r[la + lb] = '\0';
+    return r;
+}
+
+/* 127.26: one-allocation string interpolation. `n` NUL-terminated i8* parts
+ * follow as varargs (NULL reads as ""); the result is a fresh NUL-terminated
+ * heap string of their concatenation. Codegen lowers every `"…\(e)…"` literal
+ * with >= 2 segments to a single call here instead of a pairwise
+ * tk_str_concat chain (k-1 allocations) — docs/spec/semantics.md 2.4. */
+char *tk_str_join_n(int64_t n, ...) {
+    enum { STACK_PARTS = 32 };
+    const char *stack_parts[STACK_PARTS];
+    const char **parts = stack_parts;
+    if (n < 0) n = 0;
+    if (n > STACK_PARTS) parts = (const char **)malloc((size_t)n * sizeof *parts);
+    size_t total = 0;
+    va_list ap;
+    va_start(ap, n);
+    for (int64_t i = 0; i < n; i++) {
+        const char *p = va_arg(ap, const char *);
+        if (!p) p = "";
+        parts[i] = p;
+        total += strlen(p);
+    }
+    va_end(ap);
+    char *r = (char *)malloc(total + 1);
+    size_t off = 0;
+    for (int64_t i = 0; i < n; i++) {
+        size_t l = strlen(parts[i]);
+        memcpy(r + off, parts[i], l);
+        off += l;
+    }
+    r[off] = '\0';
+    if (parts != stack_parts) free(parts);
     return r;
 }
 
