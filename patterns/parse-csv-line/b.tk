@@ -1,0 +1,24 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+i=csv:std.csv;
+f=pat(txt:str):i64{
+  let ls=s.split(txt;"\n");
+  let t=mut.0;
+  lp(let r=0;r<ls.len;r=r+1){
+    if(ls.get(r)!=""){
+      let fs=s.split(ls.get(r);",");
+      t=t+fs.len*100;
+      lp(let j=0;j<fs.len;j=j+1){t=t+s.len(fs.get(j))}
+    }
+  };
+  <t
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let b=s.builder();
+  lp(let i=0;i<n;i=i+1){s.add(b;"aa,bbb,c\(i%10)\n")};
+  io.println("t=\(pat(s.build(b)))");
+  <0
+};

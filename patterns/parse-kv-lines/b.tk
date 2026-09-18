@@ -1,0 +1,27 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=chk(m:@(str:str)):i64{
+  let ks=m.keys();
+  let t=mut.ks.len*1000000;
+  lp(let i=0;i<ks.len;i=i+1){t=t+s.len(m.get(ks.get(i)))};
+  <t
+};
+f=pat(txt:str):i64{
+  let m=mut.@("":"");
+  let ls=s.split(txt;"\n");
+  lp(let i=0;i<ls.len;i=i+1){
+    let l=ls.get(i);
+    let p=s.indexof(l;"=");
+    if(p>0){m=m.set(s.slice(l;0;p);s.slice(l;p+1;s.len(l)))}
+  };
+  <chk(m)
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let b=s.builder();
+  lp(let i=0;i<n;i=i+1){s.add(b;"key\(i)=val\(i*3)\n")};
+  io.println("t=\(pat(s.build(b)))");
+  <0
+};

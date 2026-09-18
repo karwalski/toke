@@ -1,0 +1,22 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=notflag(x:str):bool{<!s.startswith(x;"--")};
+f=pat(av:@str):@str{
+  let r=mut.@();
+  lp(let i=0;i<av.len;i=i+1){
+    if(!s.startswith(av.get(i);"--")){r=r+@(av.get(i))}
+  };
+  <r
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let av=mut.@();
+  lp(let i=0;i<n;i=i+1){av=av+@(if(i%3==0){"--flag\(i)"}el{"arg\(i)"})};
+  let r=pat(av);
+  let t=mut.0;
+  lp(let i=0;i<r.len;i=i+1){t=t+s.len(r.get(i))};
+  io.println("n=\(r.len) t=\(t)");
+  <0
+};

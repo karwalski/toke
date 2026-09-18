@@ -1,0 +1,19 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+i=file:std.file;
+f=pat(path:str;n:i64):i64{
+  let b=s.builder();
+  lp(let i=0;i<n;i=i+1){s.add(b;"row \(i)\n")};
+  <mt file.write(path;s.build(b)) {$ok:v 1;$err:e 0}
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let path="/tmp/pat-io-write-acc-\(n).txt";
+  if(file.exists(path)){let d=mt file.delete(path) {$ok:v 1;$err:e <1}};
+  let ok=pat(path;n);
+  let txt=mt file.read(path) {$ok:v v;$err:e <2};
+  io.println("ok=\(ok) len=\(s.len(txt)) lines=\(s.split(txt;"\n").len)");
+  <0
+};

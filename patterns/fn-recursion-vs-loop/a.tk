@@ -1,0 +1,14 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(x:i64):i64{
+  <if(x<10){x}el{x%10+pat(x/10)}
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){t=t+pat(i*7919+123456789)};
+  io.println("t=\(t)");
+  <0
+};

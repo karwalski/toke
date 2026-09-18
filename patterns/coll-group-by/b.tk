@@ -1,0 +1,35 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(xs:@i64):i64{
+  let keys=mut.@();
+  let groups=mut.@();
+  lp(let i=0;i<xs.len;i=i+1){
+    let k="g\(xs.get(i)%13)";
+    let gi=mut.-1;
+    lp(let j=0;j<keys.len;j=j+1){
+      if(keys.get(j)==k){gi=j;br}
+    };
+    if(gi<0){
+      keys=keys+@(k);
+      groups=groups.append(@(xs.get(i)))
+    }el{
+      let cur=groups.get(gi);
+      groups=groups.set(gi;cur.append(xs.get(i)))
+    }
+  };
+  let t=mut.0;
+  lp(let i=0;i<groups.len;i=i+1){
+    let sz=groups.get(i).len;
+    t=t+sz*sz
+  };
+  <t+keys.len*100000
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%1000)};
+  io.println("t=\(pat(xs))");
+  <0
+};

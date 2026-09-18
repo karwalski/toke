@@ -1,0 +1,23 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(xs:@i64):i64{
+  let u=mut.@();
+  lp(let i=0;i<xs.len;i=i+1){
+    let x=xs.get(i);
+    let dup=mut.false;
+    lp(let j=0;j<u.len;j=j+1){
+      if(u.get(j)==x){dup=true;br}
+    };
+    if(!dup){u=u.append(x)}
+  };
+  <u.len
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%(n*3/4))};
+  io.println("u=\(pat(xs))");
+  <0
+};

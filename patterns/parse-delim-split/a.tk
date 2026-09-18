@@ -1,0 +1,18 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(line:str):@str{
+  <s.split(line;",")
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    let fs=pat("ab,cde,\(i),f");
+    t=t+fs.len*100;
+    lp(let j=0;j<fs.len;j=j+1){t=t+s.len(fs.get(j))}
+  };
+  io.println("t=\(t)");
+  <0
+};

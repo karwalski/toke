@@ -1,0 +1,16 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=isev(x:i64):bool{<x%2==0};
+f=cntev(a:i64;x:i64):i64{<if(x%2==0){a+1}el{a}};
+f=pat(xs:@i64):i64{
+  <xs.filter(&isev).len
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%1000)};
+  io.println("t=\(pat(xs))");
+  <0
+};

@@ -1,0 +1,27 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+i=file:std.file;
+f=pat(path:str):@str{
+  let txt=mt file.read(path) {$ok:v v;$err:e <@()};
+  let r=mut.@();
+  let st=mut.0;
+  let n=s.len(txt);
+  lp(let i=0;i<n;i=i+1){
+    if(s.charcode(txt;i)==10){r=r.append(s.slice(txt;st;i));st=i+1}
+  };
+  <r.append(s.slice(txt;st;n))
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let path="/tmp/pat-io-read-lines-\(n).txt";
+  let b=s.builder();
+  lp(let i=0;i<n;i=i+1){s.add(b;"line \(i) of the file\n")};
+  let w=mt file.write(path;s.build(b)) {$ok:v 1;$err:e <1};
+  let ls=pat(path);
+  let t=mut.ls.len*100;
+  lp(let i=0;i<ls.len;i=i+1){t=t+s.len(ls.get(i))};
+  io.println("t=\(t)");
+  <0
+};

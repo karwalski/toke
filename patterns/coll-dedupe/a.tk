@@ -1,0 +1,21 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(xs:@i64):i64{
+  let seen=mut.@("":1);
+  let c=mut.0;
+  lp(let i=0;i<xs.len;i=i+1){
+    let x=xs.get(i);
+    let dup=mt seen.get("\(x)") {$ok:v 1;$err:e 0};
+    if(dup==0){seen=seen.set("\(x)";1);c=c+1}
+  };
+  <c
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%(n*3/4))};
+  io.println("u=\(pat(xs))");
+  <0
+};

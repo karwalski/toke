@@ -1,0 +1,19 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(xs:@i64):@i64{
+  let r=mut.@();
+  lp(let i=xs.len-1;i>=0;i=i-1){r=r.append(xs.get(i))};
+  <r
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7)%1000)};
+  let r=pat(xs);
+  let t=mut.0;
+  lp(let i=0;i<r.len;i=i+1){t=(t*31+r.get(i))%1000000007};
+  io.println("len=\(r.len) t=\(t)");
+  <0
+};

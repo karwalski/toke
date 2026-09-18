@@ -1,0 +1,33 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+i=json:std.json;
+f=pat(src:str):i64{
+  let n=s.len(src);
+  let a=mut.0;
+  let i=mut.5;
+  lp(let k=0;k<n;k=k+1){
+    let c=s.charcode(src;i);
+    if(c<48||c>57){br};
+    a=a*10+c-48;
+    i=i+1
+  };
+  let j=mut.i+6;
+  let bl=mut.0;
+  lp(let k=0;k<n;k=k+1){
+    if(s.charcode(src;j)==34){br};
+    bl=bl+1;
+    j=j+1
+  };
+  <a+bl
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    t=t+pat("{\"a\":\(i+1),\"b\":\"x\(i%7)\"}")
+  };
+  io.println("t=\(t)");
+  <0
+};

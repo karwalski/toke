@@ -1,0 +1,14 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(txt:str):i64{
+  <mt s.toint(txt) {$ok:v v;$err:e -1}
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){t=t+pat("\(i*7)")+pat("x\(i)")};
+  io.println("t=\(t)");
+  <0
+};
