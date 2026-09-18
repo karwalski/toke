@@ -1,0 +1,69 @@
+m=test.strjoin;
+i=io:std.io;
+i=str:std.str;
+
+(* Regression test for 127.17: `str.join(sep;arr)` must be a single-allocation
+ * O(N) join (sum lengths, one malloc, memcpy) — see src/stdlib/str.c
+ * str_join and the tk_str_join_w glue in src/stdlib/str_glue.c. The alloc
+ * count itself is checked by bench/patterns (liballoccount.dylib); this file
+ * pins the observable contract: 0/1/2/many parts, empty separator,
+ * multi-byte separator, empty parts, and a 20k-element join built by the
+ * append idiom that motivated the story. Param order is (sep; arr) per
+ * stdlib/str.tki. *)
+
+f=build(n:i64):@str{
+  let acc=mut.@();
+  lp(let i=0;i<n;i=i+1){
+    acc=acc.append("ab")
+  };
+  <acc
+};
+
+f=empty():@str{
+  let acc=mut.@();
+  <acc
+};
+
+f=main():i64{
+  let fails=mut.0;
+
+  io.println("--- str.join ---");
+  let j0=str.join(",";empty());
+  if(str.eq(j0;"")){io.println("PASS str.join zero parts")}el{io.println("FAIL str.join zero parts");fails=fails+1};
+  if(str.len(j0)==0){io.println("PASS str.join zero parts len")}el{io.println("FAIL str.join zero parts len");fails=fails+1};
+
+  let j1=str.join(",";@("solo"));
+  if(str.eq(j1;"solo")){io.println("PASS str.join one part")}el{io.println("FAIL str.join one part");fails=fails+1};
+
+  let j2=str.join(",";@("a";"b"));
+  if(str.eq(j2;"a,b")){io.println("PASS str.join two parts")}el{io.println("FAIL str.join two parts");fails=fails+1};
+
+  let jm=str.join(", ";@("a";"b";"c";"d";"e"));
+  if(str.eq(jm;"a, b, c, d, e")){io.println("PASS str.join many parts")}el{io.println("FAIL str.join many parts");fails=fails+1};
+
+  let je=str.join("";@("ab";"cde";"f";"ghij"));
+  if(str.eq(je;"abcdefghij")){io.println("PASS str.join empty sep")}el{io.println("FAIL str.join empty sep");fails=fails+1};
+
+  (* U+2192 is 3 bytes in UTF-8: "a" + 2 seps + "b" + "c" = 3 + 6 = 9 bytes *)
+  let jb=str.join("→";@("a";"b";"c"));
+  if(str.eq(jb;"a→b→c")){io.println("PASS str.join multi-byte sep")}el{io.println("FAIL str.join multi-byte sep");fails=fails+1};
+  if(str.len(jb)==9){io.println("PASS str.join multi-byte sep byte len")}el{io.println("FAIL str.join multi-byte sep byte len");fails=fails+1};
+
+  let jp=str.join("-";@("";"";""));
+  if(str.eq(jp;"--")){io.println("PASS str.join empty parts keep seps")}el{io.println("FAIL str.join empty parts keep seps");fails=fails+1};
+
+  let js=str.join("-";@("";"x";""));
+  if(str.eq(js;"-x-")){io.println("PASS str.join leading/trailing empty parts")}el{io.println("FAIL str.join leading/trailing empty parts");fails=fails+1};
+
+  (* the 127.17 idiom: append in a loop, join once *)
+  let big=str.join("";build(20000));
+  if(str.len(big)==40000){io.println("PASS str.join 20k parts len")}el{io.println("FAIL str.join 20k parts len");fails=fails+1};
+  if(str.eq(str.slice(big;0;6);"ababab")){io.println("PASS str.join 20k parts prefix")}el{io.println("FAIL str.join 20k parts prefix");fails=fails+1};
+  if(str.eq(str.slice(big;39996;40000);"abab")){io.println("PASS str.join 20k parts suffix")}el{io.println("FAIL str.join 20k parts suffix");fails=fails+1};
+
+  let bigsep=str.join("|";build(1000));
+  if(str.len(bigsep)==2999){io.println("PASS str.join 1k parts with sep len")}el{io.println("FAIL str.join 1k parts with sep len");fails=fails+1};
+  if(str.split(bigsep;"|").len==1000){io.println("PASS str.join 1k parts round-trips split")}el{io.println("FAIL str.join 1k parts round-trips split");fails=fails+1};
+
+  <fails
+};
