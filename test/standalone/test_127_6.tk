@@ -1,0 +1,46 @@
+(* test_127_6.tk -- Epic 127.6: method-style str and array verbs that had
+ * runtime glue but no dispatch entry (upper lower ends replace fields join
+ * pop) plus the fold alias of reduce (127.4). Each used to type-check and
+ * then fail at link with an undefined user-function symbol. *)
+m=test.m1276;
+i=io:std.io;
+i=s:std.str;
+
+f=ck(name:str;got:i64;want:i64):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");s.fromint(got))) };
+  <0
+};
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+f=addf(acc:i64;x:i64):i64{ <acc+x };
+
+f=main():$i64{
+  let x="ab";
+  let line="  Hello World  ";
+  let p=@("a";"b";"c");
+  let a=@(3;1;2);
+  cks("upper";x.upper();"AB");
+  cks("lower";"AB".lower();"ab");
+  ck("ends-true";x.ends("b");1);
+  ck("ends-false";x.ends("a");0);
+  cks("replace";"a-b".replace("-";"+");"a+b");
+  cks("replace-module";s.replace("a-b";"-";"+");"a+b");
+  cks("fields-join";s.join(",";"a b  c".fields());"a,b,c");
+  ck("fields-len";"a b  c".fields().len;3);
+  cks("join";p.join("-");"a-b-c");
+  cks("join-empty-sep";p.join("");"abc");
+  let b=a.pop();
+  ck("pop-len";b.len;2);
+  ck("pop-first";b.get(0);3);
+  ck("pop-orig-unchanged";a.len;3);
+  ck("fold";a.fold(0;&addf);6);
+  ck("reduce";a.reduce(0;&addf);6);
+  cks("chain-trim-upper";line.trim().upper();"HELLO WORLD");
+  cks("chain-lower-replace-module";s.replace(line.trim().lower();" ";"-");"hello-world");
+  io.println("RESULT done");
+  <0
+};

@@ -1935,6 +1935,17 @@ static const char *len_recv_kind(Ctx *c, const Node *recv) {
     }
     return NULL;
 }
+/* 127.6: method-style verbs added to the instance dispatch table. They had
+ * glue but no dispatch entry, so `x.upper()` fell through to the user-function
+ * path and failed at link (E9003 undefined `_upper`). Kept as a list so the
+ * result-tagging helpers (127.7) and the dispatch gate agree. Like the rest of
+ * the table these take precedence over a same-named user function (UFCS to
+ * user functions does not link on 2.8.0 anyway). */
+static int is_127_6_method(const char *m) {
+    return !strcmp(m, "upper") || !strcmp(m, "lower") || !strcmp(m, "ends") ||
+           !strcmp(m, "replace") || !strcmp(m, "fields") || !strcmp(m, "join") ||
+           !strcmp(m, "pop") || !strcmp(m, "fold");
+}
 /* 127.8: emit `tk_str_len_w` / `tk_map_len_w` on an already-evaluated
  * receiver value `v` of LLVM type `vty` (pointers are coerced to the i64 ABI). */
 static int emit_len_call(Ctx *c, int v, const char *vty, const char *rk) {
@@ -3175,10 +3186,26 @@ static int emit_expr(Ctx *c, const Node *n)
                  !strcmp(method_im, "starts") || !strcmp(method_im, "indexof") ||
                  !strcmp(method_im, "substr") || !strcmp(method_im, "concat") ||
                  !strcmp(method_im, "chars") || !strcmp(method_im, "sub") ||
-                 !strcmp(method_im, "substring") || !strcmp(method_im, "eq"))) {
+                 !strcmp(method_im, "substring") || !strcmp(method_im, "eq") ||
+                 is_127_6_method(method_im))) {
                 const char *fn_im;
                 if (!strcmp(method_im, "append"))      fn_im = "tk_array_append_w";
                 else if (!strcmp(method_im, "push"))    fn_im = "tk_array_append_w";
+                /* 127.6: glue already existed for all of these (str_glue.c /
+                 * collections_glue.c); only the dispatch entries were missing. */
+                else if (!strcmp(method_im, "upper"))   fn_im = "tk_str_upper_w";
+                else if (!strcmp(method_im, "lower"))   fn_im = "tk_str_lower_w";
+                else if (!strcmp(method_im, "ends"))    fn_im = "tk_str_ends_w";
+                else if (!strcmp(method_im, "replace")) fn_im = "tk_str_replace_w";
+                else if (!strcmp(method_im, "fields"))  fn_im = "tk_str_fields_w";
+                else if (!strcmp(method_im, "pop"))     fn_im = "tk_array_pop_w";
+                else if (!strcmp(method_im, "fold"))    fn_im = "tk_arr_reduce"; /* 127.4 alias */
+                else if (!strcmp(method_im, "join")) {
+                    /* `arr.join(sep)` → tk_arr_join_w(arr, sep); a str receiver
+                     * (`sep.join(arr)`) keeps the std.str (sep, arr) order. */
+                    const char *jk = len_recv_kind(c, n->children[0]->children[0]);
+                    fn_im = (jk && !strcmp(jk, "str")) ? "tk_str_join_w" : "tk_arr_join_w";
+                }
                 else if (!strcmp(method_im, "get"))     fn_im = "tk_str_arrayget_w";
                 else if (!strcmp(method_im, "set")) {
                     /* Issue 112.3: dispatch array.set to tk_array_set_w (new

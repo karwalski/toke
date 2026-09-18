@@ -63,6 +63,7 @@ Every entry has exactly these keys (validated by `scripts/patterns/validate_cata
 | `bug_caveats` | array | `{issue: "127.x", effect, preferred_when_fixed: <form id or null>}` — may be empty |
 | `lint` | object or null | `{rule, severity ∈ error\|warning\|hint, fixable: bool}` — the rule 131.9 emits for the non-canonical forms |
 | `measured_at` | object | `{tkc_sha, tkc_version, proxy_sha, corpus_sha, bench_result, date}` |
+| `card_rule` | string | ≤ 40 chars, imperative, the one-line rule the syntax card carries for this entry (e.g. "expr-if, never a mut flag"); added 2026-09-18 so 40–60 entries fit the ≤ 20-line card block at 2–3 rules per line |
 
 Each **candidate**:
 
@@ -123,6 +124,9 @@ runs per form; median wall + bootstrap 95% CI (1000 resamples); median peak RSS;
 `liballoccount.dylib` (`DYLD_INTERPOSE` on malloc/calloc/realloc/free) for `allocs`; one run at 4N for
 `bigO_ratio`; records `hw.model`, thermal state, tkc version + sha, date. Results are immutable files under
 `bench/patterns/results/` and are ingested into the catalogue by `render_catalogue.py --ingest`.
+**Timeouts** (a form exceeding the harness ceiling, 30 s, at the pattern's `pat_n`) are ingested deterministically
+as `wall_ms_median = 30000`, `wall_ci95 = [30000, 30000]`, `bigO_ratio = 99`, `rss_kb_median`/`allocs` as measured
+or `null`, so the verdict re-derives to `worse-bigO` and the entry is never left unmeasured (added 2026-09-18).
 
 ### 5.3 Runtime gate (per candidate, relative to the best form of the same pattern)
 
