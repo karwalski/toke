@@ -1,0 +1,38 @@
+(* test_127_38.tk -- Epic 127.38: `s.charat(x;i)` was tagged as a str-returning
+ * wrapper, so its i64 byte value was dereferenced as a pointer (SIGSEGV).
+ * Covers module-style s.charat / s.charcode, the instance form x.charat(i),
+ * out-of-range → 0, arithmetic on the result, ASCII and UTF-8 byte reads,
+ * and s.bytes(x) (declared in str.tki; must link and count bytes). *)
+m=test.m12738;
+i=io:std.io;
+i=s:std.str;
+
+f=ck(name:str;got:i64;want:i64):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");s.fromint(got))) };
+  <0
+};
+
+f=main():$i64{
+  let a="Az9";
+  ck("charat-ascii-0";s.charat(a;0);65);
+  ck("charat-ascii-1";s.charat(a;1);122);
+  ck("charat-ascii-2";s.charat(a;2);57);
+  ck("charat-oob";s.charat(a;3);0);
+  ck("charat-neg";s.charat(a;0-1);0);
+  ck("charat-method";a.charat(1);122);
+  let c=s.charat(a;0);
+  ck("charat-arith";c+1;66);
+  ck("charat-interp-len";s.len("\(s.charat(a;2))");2);
+  ck("charcode-ascii";s.charcode(a;2);57);
+  ck("charcode-oob";s.charcode(a;9);0);
+  let u="héllo";
+  ck("charat-utf8-lead";s.charat(u;1);195);
+  ck("charat-utf8-cont";s.charat(u;2);169);
+  ck("charat-utf8-after";s.charat(u;3);108);
+  ck("charcode-utf8-lead";s.charcode(u;1);195);
+  ck("charcode-utf8-cont";s.charcode(u;2);169);
+  ck("bytes-ascii-len";s.bytes(a).len;3);
+  ck("bytes-utf8-len";s.bytes(u).len;6);
+  <0
+};

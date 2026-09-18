@@ -5354,7 +5354,9 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                 static const char *str_wrappers[] = {
                     "tk_str_concat_w","tk_str_trim_w","tk_str_upper_w","tk_str_lower_w",
                     "tk_str_slice_w","tk_str_replace_w","tk_str_trimprefix_w","tk_str_trimsuffix_w",
-                    "tk_str_charat_w","tk_str_substr_w","tk_str_chars_w","tk_str_sub_w",
+                    /* 127.38: tk_str_charat_w returns the byte value (i64), not a
+                     * str — tagging it $str made `s.charat(x;i)` deref an int. */
+                    "tk_str_substr_w","tk_str_chars_w","tk_str_sub_w",
                     "tk_str_fromint_w","tk_str_fromfloat_w","tk_str_fromf64_w","tk_str_fromf32_w",
                     "tk_str_format_w","tk_io_readln_w","tk_str_join_w","tk_str_interpolate_w",
                     /* 126.8: more scalar->string / string->string wrappers so a
@@ -5405,7 +5407,7 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                     if (!strcmp(method, "trim") || !strcmp(method, "concat") ||
                         !strcmp(method, "slice") || !strcmp(method, "substr") ||
                         !strcmp(method, "sub") || !strcmp(method, "substring") ||
-                        !strcmp(method, "charat") || !strcmp(method, "upper") ||
+                        !strcmp(method, "upper") ||   /* 127.38: charat is i64 */
                         !strcmp(method, "lower") || !strcmp(method, "replace") ||
                         !strcmp(method, "join"))
                         return "$str";
