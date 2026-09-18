@@ -152,10 +152,14 @@ For each pattern, over its non-blocked candidates:
 2. Compute `runtime_verdict` per §5.3.
 3. **Canonical** = the form that is `best`-or-`tied` on **both**. If several qualify, choose the one with the
    fewer `proxy8k` tokens, then fewer `min_bytes`, then fewer `allocs.calls`.
-4. If **no** form qualifies on both axes: `canonical` = the token-best form *provided* it is not `worse-bigO`;
-   `hot_path` = the runtime-best form; `choose_hot_path_when` must be written (e.g. "input > 10k elements or
-   inside a loop body executed > 1k times"). If the token-best form *is* `worse-bigO`, the runtime-best form
-   is canonical and there is no hot path — a quadratic default is never taught.
+4. If **no** form qualifies on both axes: `canonical` = the token-best form *provided* it is not `worse-bigO`
+   **and** its median wall is < 10 × the runtime-best form's (the **order-of-magnitude rule**, added
+   2026-09-18 after 131.7: a same-big-O form that is ≥ 10 × slower — e.g. one syscall per line instead of one
+   write — is a constant-factor disaster the model must not learn as the default); `hot_path` = the
+   runtime-best form; `choose_hot_path_when` must be written (e.g. "input > 10k elements or inside a loop body
+   executed > 1k times"). If the token-best form *is* `worse-bigO` or ≥ 10 × slower, the runtime-best form is
+   canonical and the token-best form is recorded as `hot_path: null` with the loss stated in `applicability` —
+   a quadratic or order-of-magnitude-slower default is never taught.
 5. `status` = `provisional` on first measurement (§8); `measured` after 131.25 confirms it under a proxy
    trained on the rewritten corpus; `blocked` when the preferred form is a `.blocked.tk` (then the canonical
    is the best *available* form and `bug_caveats.preferred_when_fixed` names the blocked one).

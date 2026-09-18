@@ -133,32 +133,33 @@ def _measured(c: dict) -> bool:
     )
 
 
-def check_verdict_consistency(v: V, e: dict) -> None:
-    """Re-derive token/runtime verdicts and the canonical choice from the numbers (protocol §4–§6)."""
-    eid = e["id"]
+def derive_verdicts(e: dict) -> dict | None:
+    """Re-derive every verdict of an entry from its candidates' numbers (protocol §4–§6).
+
+    Single source of the verdict rules: check_verdict_consistency() compares the
+    catalogue against this, and render_catalogue.py ingest writes what this returns.
+    Returns None when any non-blocked candidate lacks measurements (verdict math is
+    then undefined); otherwise
+        {"token": {form: best|tied|more}, "runtime": {form: best|tied|slower|worse-bigO},
+         "canonical": form, "hot_path": form|None, "conflict": bool, "best_tok": int}
+    `conflict` is True when no form is best-or-tied on both axes (§6 step 4).
+    Blocked candidates are absent from the per-form maps (they stay `blocked`).
+    """
     cands = [c for c in e["candidates"] if isinstance(c, dict)]
     live = [c for c in cands if c.get("runtime_verdict") != "blocked"]
-    if not live:
-        return
-    if not all(_measured(c) for c in live):
-        # unmeasured entries may only be provisional/blocked; verdict math is skipped
-        if e["verdict"].get("status") == "measured":
-            v.err(eid, "status 'measured' but some candidates lack measurements")
-        return
+    if not live or not all(_measured(c) for c in live):
+        return None
     # --- token axis
     best_tok = min(c["tokens"]["proxy8k"] for c in live)
-    tok_ok = set()
+    token: dict = {}
     for c in live:
         t = c["tokens"]["proxy8k"]
         tied = (t - best_tok) <= TOKEN_TIE_ABS or (t - best_tok) <= TOKEN_TIE_REL * max(best_tok, 1)
-        exp = "best" if t == best_tok else ("tied" if tied else "more")
-        if c["token_verdict"] != exp:
-            v.err(f"{eid}/{c['form']}", f"token_verdict {c['token_verdict']!r} but numbers say {exp!r} (proxy8k={t}, best={best_tok})")
-        if exp in ("best", "tied"):
-            tok_ok.add(c["form"])
+        token[c["form"]] = "best" if t == best_tok else ("tied" if tied else "more")
+    tok_ok = {f for f, x in token.items() if x in ("best", "tied")}
     # --- runtime axis
     best_rt = min(live, key=lambda c: c["wall_ms_median"])
-    rt_ok = set()
+    runtime: dict = {}
     for c in live:
         same_bigo = c["bigO_ratio"] <= best_rt["bigO_ratio"] * BIGO_FACTOR and c["bigO_ratio"] * BIGO_FACTOR >= best_rt["bigO_ratio"]
         if not same_bigo:
@@ -173,34 +174,57 @@ def check_verdict_consistency(v: V, e: dict) -> None:
                 and c["rss_kb_median"] <= RSS_REL * best_rt["rss_kb_median"]
             )
             exp = "tied" if tied else "slower"
-        if c["runtime_verdict"] != exp:
-            v.err(f"{eid}/{c['form']}", f"runtime_verdict {c['runtime_verdict']!r} but numbers say {exp!r}")
-        if exp in ("best", "tied"):
-            rt_ok.add(c["form"])
+        runtime[c["form"]] = exp
+    rt_ok = {f for f, x in runtime.items() if x in ("best", "tied")}
     # --- canonical choice (§6 step 3/4)
     both = tok_ok & rt_ok
-    vd = e["verdict"]
     if both:
         ranked = sorted(
             (c for c in live if c["form"] in both),
             key=lambda c: (c["tokens"]["proxy8k"], c["min_bytes"] or 0, (c["allocs"] or {}).get("calls", 0)),
         )
-        exp_canon = ranked[0]["form"]
-        if vd.get("canonical") != exp_canon:
-            v.err(eid, f"canonical should be {exp_canon!r} (best-or-tied on both axes); got {vd.get('canonical')!r}")
+        canonical, hot = ranked[0]["form"], None
+    else:
+        tok_best = min(live, key=lambda c: (c["tokens"]["proxy8k"], c["min_bytes"] or 0))
+        if runtime[tok_best["form"]] == "worse-bigO":
+            canonical, hot = best_rt["form"], None
+        else:
+            canonical, hot = tok_best["form"], best_rt["form"]
+    return {"token": token, "runtime": runtime, "canonical": canonical, "hot_path": hot,
+            "conflict": not both, "best_tok": best_tok}
+
+
+def check_verdict_consistency(v: V, e: dict) -> None:
+    """Compare the recorded verdicts with derive_verdicts() (protocol §4–§6)."""
+    eid = e["id"]
+    d = derive_verdicts(e)
+    if d is None:
+        # unmeasured entries may only be provisional/blocked; verdict math is skipped
+        if e["verdict"].get("status") == "measured" and any(
+            c.get("runtime_verdict") != "blocked" for c in e["candidates"] if isinstance(c, dict)
+        ):
+            v.err(eid, "status 'measured' but some candidates lack measurements")
+        return
+    live = [c for c in e["candidates"] if isinstance(c, dict) and c.get("runtime_verdict") != "blocked"]
+    for c in live:
+        exp = d["token"][c["form"]]
+        if c["token_verdict"] != exp:
+            v.err(f"{eid}/{c['form']}", f"token_verdict {c['token_verdict']!r} but numbers say {exp!r} (proxy8k={c['tokens']['proxy8k']}, best={d['best_tok']})")
+        exp = d["runtime"][c["form"]]
+        if c["runtime_verdict"] != exp:
+            v.err(f"{eid}/{c['form']}", f"runtime_verdict {c['runtime_verdict']!r} but numbers say {exp!r}")
+    vd = e["verdict"]
+    if not d["conflict"]:
+        if vd.get("canonical") != d["canonical"]:
+            v.err(eid, f"canonical should be {d['canonical']!r} (best-or-tied on both axes); got {vd.get('canonical')!r}")
         if vd.get("hot_path") is not None:
             v.err(eid, "hot_path must be null when a form is best-or-tied on both axes")
     else:
-        tok_best = min(live, key=lambda c: (c["tokens"]["proxy8k"], c["min_bytes"] or 0))
-        if tok_best["runtime_verdict"] == "worse-bigO":
-            exp_canon, exp_hot = best_rt["form"], None
-        else:
-            exp_canon, exp_hot = tok_best["form"], best_rt["form"]
-        if vd.get("canonical") != exp_canon:
-            v.err(eid, f"conflict case: canonical should be {exp_canon!r}; got {vd.get('canonical')!r}")
-        if vd.get("hot_path") != exp_hot:
-            v.err(eid, f"conflict case: hot_path should be {exp_hot!r}; got {vd.get('hot_path')!r}")
-        if exp_hot is not None and not (isinstance(vd.get("choose_hot_path_when"), str) and vd["choose_hot_path_when"].strip()):
+        if vd.get("canonical") != d["canonical"]:
+            v.err(eid, f"conflict case: canonical should be {d['canonical']!r}; got {vd.get('canonical')!r}")
+        if vd.get("hot_path") != d["hot_path"]:
+            v.err(eid, f"conflict case: hot_path should be {d['hot_path']!r}; got {vd.get('hot_path')!r}")
+        if d["hot_path"] is not None and not (isinstance(vd.get("choose_hot_path_when"), str) and vd["choose_hot_path_when"].strip()):
             v.err(eid, "choose_hot_path_when must be written when a hot_path exists")
 
 
@@ -289,29 +313,35 @@ def check_entry(v: V, e: dict, root: str, strict: bool, seen: set) -> None:
             v.err(eid, f"could not re-derive verdict ({exc.__class__.__name__}: {exc})")
 
 
-def validate(path: str, strict: bool = False) -> list[str]:
+def validate_doc(doc, root: str, strict: bool = False, where: str = "catalogue") -> list[str]:
+    """Validate an already-loaded catalogue object. `root` is the repo root (fixture paths are
+    relative to it; pass "" to skip the fixture-exists check)."""
     v = V()
+    if not isinstance(doc, dict) or set(doc) != {"protocol", "entries"}:
+        return [f"{where}: top level must be {{protocol, entries}}"]
+    if doc["protocol"] != "0.4":
+        v.err(where, f"protocol must be '0.4' (got {doc['protocol']!r})")
+    if not isinstance(doc["entries"], list):
+        return [f"{where}: entries must be a list"]
+    seen: set = set()
+    for e in doc["entries"]:
+        if isinstance(e, dict):
+            check_entry(v, e, root, strict, seen)
+        else:
+            v.err(where, "entry must be an object")
+    if len(doc["entries"]) > 60:
+        v.err(where, f"hard cap is 60 patterns (got {len(doc['entries'])})")
+    return v.errors
+
+
+def validate(path: str, strict: bool = False) -> list[str]:
     try:
         with open(path, encoding="utf-8") as fh:
             doc = json.load(fh)
     except (OSError, json.JSONDecodeError) as exc:
         return [f"{path}: cannot read/parse ({exc})"]
     root = os.path.dirname(os.path.dirname(os.path.abspath(path)))  # repo root = parent of patterns/
-    if not isinstance(doc, dict) or set(doc) != {"protocol", "entries"}:
-        return [f"{path}: top level must be {{protocol, entries}}"]
-    if doc["protocol"] != "0.4":
-        v.err(path, f"protocol must be '0.4' (got {doc['protocol']!r})")
-    if not isinstance(doc["entries"], list):
-        return [f"{path}: entries must be a list"]
-    seen: set = set()
-    for e in doc["entries"]:
-        if isinstance(e, dict):
-            check_entry(v, e, root, strict, seen)
-        else:
-            v.err(path, "entry must be an object")
-    if len(doc["entries"]) > 60:
-        v.err(path, f"hard cap is 60 patterns (got {len(doc['entries'])})")
-    return v.errors
+    return validate_doc(doc, root, strict, where=path)
 
 
 def main(argv: list[str]) -> int:
