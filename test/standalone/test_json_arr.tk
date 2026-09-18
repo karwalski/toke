@@ -1,0 +1,28 @@
+m=t;
+i=io:std.io;
+i=json:std.json;
+f=main():i64{
+  let fails=mut.0;
+  io.println("--- 127.29 json.arr ---");
+  let top=mt json.dec("[10, 20, 30]"){$ok:v v;$err:e <1};
+  let ta=mt json.arr(top;""){$ok:v v;$err:e <2};
+  if(ta.len==3){io.println("PASS top-level array len 3")}el{io.println("FAIL top-level array len \(ta.len)");fails=fails+1};
+  let doc=mt json.dec("{\"name\":\"n\",\"nums\":[1,2,3],\"rows\":[{\"a\":5,\"s\":\"x\"},{\"a\":7,\"s\":\"yz\"}],\"none\":[]}"){$ok:v v;$err:e <3};
+  let nums=mt json.arr(doc;"nums"){$ok:v v;$err:e <4};
+  if(nums.len==3){io.println("PASS keyed array len 3")}el{io.println("FAIL keyed array len \(nums.len)");fails=fails+1};
+  let rows=mt json.arr(doc;"rows"){$ok:v v;$err:e <5};
+  if(rows.len==2){io.println("PASS nested object array len 2")}el{io.println("FAIL nested object array len \(rows.len)");fails=fails+1};
+  let a1=mt json.i64(rows.get(1);"a"){$ok:v v;$err:e -1};
+  if(a1==7){io.println("PASS element i64 accessor")}el{io.println("FAIL element i64 accessor \(a1)");fails=fails+1};
+  let s1=mt json.str(rows.get(1);"s"){$ok:v v;$err:e "ERR"};
+  if(s1=="yz"){io.println("PASS element str accessor")}el{io.println("FAIL element str accessor \(s1)");fails=fails+1};
+  let empty=mt json.arr(doc;"none"){$ok:v v.len;$err:e -1};
+  if(empty==0){io.println("PASS empty array is ok with len 0")}el{io.println("FAIL empty array \(empty)");fails=fails+1};
+  let wrong=mt json.arr(doc;"name"){$ok:v 0;$err:e 1};
+  if(wrong==1){io.println("PASS wrong type is err")}el{io.println("FAIL wrong type not err");fails=fails+1};
+  let missing=mt json.arr(doc;"nope"){$ok:v 0;$err:e 1};
+  if(missing==1){io.println("PASS missing key is err")}el{io.println("FAIL missing key not err");fails=fails+1};
+  let notarr=mt json.arr(doc;""){$ok:v 0;$err:e 1};
+  if(notarr==1){io.println("PASS object as top-level array is err")}el{io.println("FAIL object as top-level array not err");fails=fails+1};
+  <fails
+};

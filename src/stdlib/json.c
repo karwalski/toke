@@ -274,13 +274,10 @@ BoolJsonResult json_bool(Json j, const char *key) {
     r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "not a bool"); return r;
 }
 
-/* json_arr — extract a JSON array as JsonArray of Json elements */
-JsonArrayResult json_arr(Json j, const char *key) {
+/* collect_array — single-pass walk of the JSON array text starting at `vs`
+ * ('[' expected), producing a JsonArray of owned raw-text elements. */
+static JsonArrayResult collect_array(const char *vs) {
     JsonArrayResult r;
-    const char *vs, *ve;
-    if (!find_json_key(j.raw, key, &vs, &ve)) {
-        r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
-    }
     if (*vs != '[') {
         r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "not an array"); return r;
     }
@@ -319,6 +316,25 @@ JsonArrayResult json_arr(Json j, const char *key) {
         if (*p == ',') p++;
     }
     r.is_err = 0; r.ok.data = arr; r.ok.len = count; return r;
+}
+
+/* json_arr — extract the JSON array under `key` as JsonArray of Json elements */
+JsonArrayResult json_arr(Json j, const char *key) {
+    JsonArrayResult r;
+    const char *vs, *ve;
+    if (!find_json_key(j.raw, key, &vs, &ve)) {
+        r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, key); return r;
+    }
+    return collect_array(vs);
+}
+
+/* json_arr_top — 127.29: the document itself is the JSON array */
+JsonArrayResult json_arr_top(Json j) {
+    JsonArrayResult r;
+    if (!j.raw) {
+        r.is_err = 1; r.err = make_err(JSON_ERR_TYPE, "not an array"); return r;
+    }
+    return collect_array(skip_ws(j.raw));
 }
 
 /* ------------------------------------------------------------------ */

@@ -345,25 +345,38 @@ int64_t tk_json_obj_w(int64_t raw) {
     return (int64_t)(intptr_t)jp;
 }
 
-/* json.arr(raw) — parse a JSON array string into a toke array of Json* */
-int64_t tk_json_arr_w(int64_t raw) {
-    if (!raw) return 0;
-    /* Parse as a top-level JSON, then get its length and index elements */
-    Json j = { (const char *)(intptr_t)raw };
-    U64JsonResult lenr = json_len(j);
-    if (lenr.is_err || lenr.ok == 0) return 0;
-    uint64_t count = lenr.ok;
+/* json.arr(doc, key) — [Json]!JsonErr (127.29).
+ *
+ * `doc` is the Json* handle returned by json.dec (NOT a raw string — the
+ * pre-127.29 wrapper took a single raw-string argument while the compiler,
+ * per stdlib/json.tki, passes (Json*, key); the Json* was read as a C string,
+ * json_len failed on the garbage, and every call collapsed to `$err`).
+ *
+ *   key == ""  → the document itself must be a JSON array (top-level form)
+ *   key != ""  → `doc` must be an object and `key` must hold a JSON array
+ *
+ * Returns a toke array handle of heap Json* elements (each element's raw is
+ * an owned copy of its JSON text, so the sibling accessors json.str/i64/...
+ * work on it), or 0 (`$err`) when the value is missing or not an array.
+ * An empty array is a valid non-zero handle of length 0, never `$err`.
+ */
+int64_t tk_json_arr_w(int64_t obj, int64_t key) {
+    if (!obj) return 0;
+    Json *jp = (Json *)(intptr_t)obj;
+    const char *k = key ? (const char *)(intptr_t)key : "";
+    JsonArrayResult r = k[0] ? json_arr(*jp, k) : json_arr_top(*jp);
+    if (r.is_err) return 0;
+    uint64_t count = r.ok.len;
     int64_t h = tk_arr_alloc((int64_t)count, (int64_t)count);
-    if (!h) return 0;
+    if (!h) { free(r.ok.data); return 0; }
     int64_t *block = (int64_t *)(intptr_t)h;
     for (uint64_t i = 0; i < count; i++) {
-        JsonResult r = json_index(j, i);
-        if (r.is_err) { tk_arr_setlen(h, (int64_t)i); break; }
         Json *elem = (Json *)malloc(sizeof(Json));
         if (!elem) { tk_arr_setlen(h, (int64_t)i); break; }
-        *elem = r.ok;
+        *elem = r.ok.data[i];
         block[i] = (int64_t)(intptr_t)elem;
     }
+    free(r.ok.data);
     return h;
 }
 

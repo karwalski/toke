@@ -53,6 +53,8 @@ I64JsonResult  json_i64(Json j, const char *key);
 F64JsonResult  json_f64(Json j, const char *key);
 BoolJsonResult json_bool(Json j, const char *key);
 JsonArrayResult json_arr(Json j, const char *key);
+/* json_arr_top — 127.29: the document itself is the array (json.arr(doc;"")) */
+JsonArrayResult json_arr_top(Json j);
 
 /* ------------------------------------------------------------------ */
 /* Object inspection and manipulation — Story 29.1.1                  */
