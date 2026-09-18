@@ -1,0 +1,13 @@
+M=brtypes;
+T=$user{name:str;tags:[str];scores:[i64];lookup:[str:i64]};
+F=total(xs:[i64]):i64{
+  let n=mut.0;
+  lp(let i=0;i<xs.len;i=i+1){n=n+xs[i];};
+  <n
+};
+F=main():i64{
+  let raw=[3;4;5];
+  let arr=raw as [i64];
+  let empty:[i64]=[];
+  <total(arr)+total(empty)
+};

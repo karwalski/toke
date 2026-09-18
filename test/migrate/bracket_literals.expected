@@ -1,0 +1,14 @@
+m=brlits;
+f=main():i64{
+  let result=mut.@();
+  let sum=mut.0;
+  let arr=@(1;2;3);
+  lp(let i=0;i<arr.len;i=i+1){
+    sum=sum+arr.get(i);
+    result=result+@(sum);
+  };
+  let grid=@(@(1;2);@(3;4));
+  let both=result+@(grid.get(1).get(0);grid.get(0).get(1));
+  if(both.get(0)==1&&both.len==5){<both.get(4)};
+  <sum
+};

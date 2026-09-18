@@ -54,6 +54,34 @@ static int is_idchar(char c) {
     return (c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_';
 }
 
+/* 127.19: copy src[from..to) into out, rewriting every bracket type inside
+ * it in one go — `[T]` → `@T`, `[K:V]` → `@(K:V)`, nested `[[T]]` → `@@T`.
+ * Returns bytes written; `cap` is the remaining room. */
+static int copy_type_brackets(const char *src, int from, int to, char *out, int cap)
+{
+    int w = 0;
+    for (int k = from; k < to && w < cap - 4; k++) {
+        if (src[k] == '[') {
+            int d = 1, m = k + 1, colon = 0;
+            while (m < to && d > 0) {
+                if (src[m] == '[') d++;
+                else if (src[m] == ']') d--;
+                else if (src[m] == ':' && d == 1) colon = 1;
+                if (d > 0) m++;
+            }
+            if (d != 0) { out[w++] = src[k]; continue; }
+            out[w++] = '@';
+            if (colon) out[w++] = '(';
+            w += copy_type_brackets(src, k + 1, m, out + w, cap - w);
+            if (colon && w < cap - 1) out[w++] = ')';
+            k = m;
+            continue;
+        }
+        out[w++] = src[k];
+    }
+    return w;
+}
+
 /* camelCase → lowercase normalization for common LLM-generated patterns.
  * LLMs frequently produce Python/JS-style camelCase for toke stdlib functions. */
 static const struct { const char *from; const char *to; } CAMEL_MAP[] = {
@@ -100,6 +128,10 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
     if (!o) return NULL;
     int w = 0, in_str = 0;
     *inserted_module = 0;
+    /* 127.19: open index/literal brackets awaiting their ']' */
+    enum { BK_LIT = 1, BK_GET = 2, BK_SET = 3 };
+    int bstack[128]; int bdepth = 0;
+    int set_close_at = -1;   /* src offset where a pending a.set(...) closes */
     #define OENSURE(need) do { \
         if ((long)w + (long)(need) + 1 > cap) { \
             long nc = cap * 2 + (long)(need) + 16; \
@@ -164,6 +196,9 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
         }
         if (in_str) { o[w++] = src[i]; continue; }
 
+        /* 127.19: close a pending a.set(i;RHS) at the end of its RHS */
+        if (set_close_at >= 0 && i >= set_close_at) { o[w++] = ')'; set_close_at = -1; }
+
         /* Strip // line comments (including UTF-8 content) */
         if (src[i] == '/' && i+1 < slen && src[i+1] == '/') {
             while (i < slen && src[i] != '\n') i++;
@@ -215,7 +250,16 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             i++; continue;
         }
 
-        /* [] empty array → @() (but handle preceding @ or @(...)) */
+        /* ── 127.19: bracket forms (Profile-2 rules, docs/reference/phase2) ──
+         *   [T] / [$t] type        → @T / @$t        (after ':', '@', 'as')
+         *   [K:V] map type         → @(K:V)
+         *   [] empty literal       → @()
+         *   [a;b;c] literal        → @(a;b;c)        (incl. +[x], mut.[..], <[..])
+         *   a[i] index read        → a.get(i)
+         *   a[i]=v statement       → a.set(i;v)
+         * Index/literal brackets are pushed on a small stack and closed when
+         * the matching ']' is reached, so their contents flow through every
+         * other prepass rule (nested brackets, ',' → ';', camelCase...). */
         if (src[i] == '[' && i+1 < slen && src[i+1] == ']') {
             if (w > 0 && o[w-1] == '@') {
                 /* @[] → @() */
@@ -231,69 +275,114 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             i++; continue;
         }
 
-        /* [Type] or [$type] in type positions → @Type or @$type
-         * Heuristic: [ after ':' or after '[' (nested) is a type bracket */
-        if (src[i] == '[' && !in_str) {
+        if (src[i] == '[') {
             /* Find matching ] */
             int depth = 1, end = i + 1;
-            int has_semi = 0;
             while (end < slen && depth > 0) {
                 if (src[end] == '[') depth++;
                 else if (src[end] == ']') depth--;
-                else if (src[end] == ';' && depth == 1) has_semi = 1;
                 if (depth > 0) end++;
             }
-            if (depth == 0 && !has_semi) {
-                /* Single-element brackets — check if type position (after : or in type decl) */
-                int prev_colon = 0;
-                if (i > 0) {
-                    int j = i - 1;
-                    while (j >= 0 && (src[j]==' '||src[j]=='\t')) j--;
-                    if (j >= 0 && (src[j] == ':' || src[j] == '@' || src[j] == '['))
-                        prev_colon = 1;
-                }
-                /* Also: [expr] after identifier is indexing → .get(expr) */
-                int prev_ident = 0;
-                if (i > 0 && is_idchar(src[i-1])) prev_ident = 1;
-                if (i > 0 && src[i-1] == ')') prev_ident = 1;
+            if (depth == 0) {
+                /* Preceding non-blank char and whether the preceding word is `as` */
+                int j = i - 1;
+                while (j >= 0 && (src[j]==' '||src[j]=='\t')) j--;
+                char pc = j >= 0 ? src[j] : '\0';
+                int after_as = (j >= 1 && src[j]=='s' && src[j-1]=='a' &&
+                                (j < 2 || !is_idchar(src[j-2])));
+                /* Does the inner text look like a type ([i64], [$user],
+                 * [[str]], [str:i64]) rather than a value ([1], [x+1])? */
+                int typeish = 1, k = i + 1;
+                while (k < end && (src[k]==' '||src[k]=='\t')) k++;
+                if (k >= end || !(src[k]=='$'||src[k]=='['||src[k]=='@'||
+                                  (src[k]>='a'&&src[k]<='z')||(src[k]>='A'&&src[k]<='Z')||src[k]=='_'))
+                    typeish = 0;
+                for (; typeish && k < end; k++)
+                    if (!(is_idchar(src[k])||src[k]=='$'||src[k]=='['||src[k]==']'||
+                          src[k]==':'||src[k]=='.'||src[k]=='@'||src[k]==' '||src[k]=='\t'))
+                        typeish = 0;
+                int type_pos = (pc == ':' || pc == '@' || after_as) && typeish;
+                int index_pos = (i > 0 && (is_idchar(src[i-1]) || src[i-1]==')' || src[i-1]==']'));
 
-                if (prev_colon) {
-                    /* Type position: [str] → @str (skip @ if already preceded by @) */
-                    if (!(w > 0 && o[w-1] == '@')) o[w++] = '@';
-                    for (int k = i+1; k < end; k++) { OENSURE(1); o[w++] = src[k]; }
+                if (type_pos) {
+                    /* [str] → @str, [str:i64] → @(str:i64), [[i64]] → @@i64.
+                     * A half-migrated `@[T]` (an `@` already in the source)
+                     * is the same type as `[T]`, so the leading @ is not
+                     * doubled in that one case. */
+                    OENSURE((end - i) * 2 + 4);
+                    if (pc == '@' && w > 0 && o[w-1] == '@') w--;
+                    w += copy_type_brackets(src, i, end + 1, o + w, (int)(cap - w - 1));
                     i = end; continue;
-                } else if (prev_ident) {
-                    /* Indexing: a[expr] → a.get(expr) */
-                    o[w++] = '.'; o[w++] = 'g'; o[w++] = 'e'; o[w++] = 't'; o[w++] = '(';
-                    for (int k = i+1; k < end; k++) { OENSURE(1); o[w++] = src[k]; }
-                    o[w++] = ')';
-                    i = end; continue;
+                }
+                if (bdepth < (int)(sizeof bstack / sizeof bstack[0])) {
+                    if (index_pos) {
+                        /* a[i]=v at statement level → a.set(i;v); otherwise .get( */
+                        int is_set = 0;
+                        int q = end + 1;
+                        while (q < slen && (src[q]==' '||src[q]=='\t')) q++;
+                        if (q < slen && src[q] == '=' && (q+1 >= slen || src[q+1] != '=')) {
+                            /* walk back over the indexed lvalue (idents, '.',
+                             * balanced (..) / [..]) to a statement boundary */
+                            int b = i - 1;
+                            while (b >= 0) {
+                                if (src[b] == ']' || src[b] == ')') {
+                                    char open = src[b] == ']' ? '[' : '(';
+                                    char close = src[b];
+                                    int d = 1; b--;
+                                    while (b >= 0 && d > 0) {
+                                        if (src[b] == close) d++;
+                                        else if (src[b] == open) d--;
+                                        if (d > 0) b--;
+                                    }
+                                    if (b < 0) break;
+                                    b--; continue;
+                                }
+                                if (is_idchar(src[b]) || src[b]=='.' || src[b]=='$') { b--; continue; }
+                                break;
+                            }
+                            while (b >= 0 && (src[b]==' '||src[b]=='\t')) b--;
+                            if (b < 0 || src[b]==';' || src[b]=='{' || src[b]=='}' || src[b]=='\n')
+                                is_set = 1;
+                        }
+                        const char *m = is_set ? ".set(" : ".get(";
+                        memcpy(o+w, m, 5); w += 5;
+                        bstack[bdepth++] = is_set ? BK_SET : BK_GET;
+                    } else {
+                        o[w++] = '@'; o[w++] = '(';
+                        bstack[bdepth++] = BK_LIT;
+                    }
+                    continue;
                 }
             }
         }
 
-        /* [expr] indexing → .get(expr)  (NOT [Type] which is handled in token phase)
-         * Heuristic: [ after identifier or ) is indexing; [ after : or @ is type */
-        if (src[i] == '[' && i > 0 && !is_in_string(src, i)) {
-            char pc = src[i-1];
-            int is_index = (pc == ')' || (pc >= 'a' && pc <= 'z') || (pc >= '0' && pc <= '9'));
-            if (is_index) {
-                /* Find matching ] */
-                int depth = 1, end = i + 1;
-                while (end < slen && depth > 0) {
-                    if (src[end] == '[') depth++;
-                    else if (src[end] == ']') depth--;
-                    if (depth > 0) end++;
+        if (src[i] == ']' && bdepth > 0) {
+            int kind = bstack[--bdepth];
+            if (kind == BK_SET) {
+                /* a.set(i; ...RHS...) — emit ';', drop the '=', and remember
+                 * where the RHS ends so the ')' is emitted there. */
+                o[w++] = ';';
+                int q = i + 1;
+                while (q < slen && (src[q]==' '||src[q]=='\t')) q++;
+                /* q is at '=' (checked when the bracket was opened) */
+                int r = q + 1, d = 0, qs = 0;
+                while (r < slen) {
+                    char ch = src[r];
+                    if (ch == '"' && (r == 0 || src[r-1] != '\\')) qs = !qs;
+                    else if (!qs) {
+                        if (ch=='('||ch=='['||ch=='{') d++;
+                        else if (ch==')'||ch==']') d--;
+                        else if (ch=='}') { if (d == 0) break; d--; }
+                        else if (ch==';' && d == 0) break;
+                        if (d < 0) break;
+                    }
+                    r++;
                 }
-                if (depth == 0) {
-                    o[w++] = '.'; o[w++] = 'g'; o[w++] = 'e'; o[w++] = 't'; o[w++] = '(';
-                    /* Copy the index expression */
-                    for (int k = i+1; k < end; k++) { OENSURE(1); o[w++] = src[k]; }
-                    o[w++] = ')';
-                    i = end; /* skip past ] */
-                    continue;
-                }
+                set_close_at = r;
+                i = q; continue;
             }
+            o[w++] = ')';
+            continue;
         }
 
         /* @($type) handling — strip parens ONLY in type positions (after :)
@@ -369,9 +458,10 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
                         if (!is_primitive(clean)) o[w++] = '$';
                         OENSURE(cl); memcpy(o+w, clean, (size_t)cl); w += cl;
                     } else {
-                        /* Expr: keep parens @(str) or @($item) */
+                        /* Expr: keep parens and the bare ident — in v0.4
+                         * `@(x)` is a one-element literal (`arr=arr+@(x)` is
+                         * the append idiom), so no `$` is added (127.19). */
                         o[w++] = '@'; o[w++] = '(';
-                        if (!is_primitive(clean)) o[w++] = '$';
                         OENSURE(cl); memcpy(o+w, clean, (size_t)cl); w += cl;
                         o[w++] = ')';
                     }
@@ -937,7 +1027,9 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
 
         o[w++] = src[i];
     }
-    OENSURE(1); o[w] = '\0'; *out_len = w;
+    OENSURE(2);
+    if (set_close_at >= 0) o[w++] = ')';   /* RHS ran to end of input */
+    o[w] = '\0'; *out_len = w;
     return o;
     #undef OENSURE
 }
