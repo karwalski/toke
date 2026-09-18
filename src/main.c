@@ -1346,6 +1346,19 @@ done:
         fclose(f);
         diag_set_source(sbuf, (size_t)slen);
 
+        /* 131.36: --min is token-only — minify this file and move on, like
+         * `--check a b`. Without this the batch loop fell through to the full
+         * compile+link pipeline for every file after the first. */
+        if (min_only) {
+            char *m = tkc_minify(sbuf, (int)slen);
+            free(sbuf);
+            if (!m) return EINTERNAL;
+            fputs(m, stdout);
+            fputc('\n', stdout);
+            free(m);
+            continue;
+        }
+
         arena = arena_init();
         if (!arena) { free(sbuf); fputs("tkc: arena_init failed\n", stderr); return EINTERNAL; }
 
