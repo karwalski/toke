@@ -124,6 +124,12 @@ int64_t tk_map_keys_w(int64_t map) {
         out[i] = m->entries[i].key;
     return h;
 }
+/* 127.8: map.len — entry count of a TkMapImpl. A map is not an array block,
+ * so the ptr[-1] header load the backend used for `.len` read garbage (0). */
+int64_t tk_map_len_w(int64_t map) {
+    if (!map) return 0;
+    return ((TkMapImpl *)(intptr_t)map)->len;
+}
 int64_t tk_map_getor_w(int64_t map, int64_t key, int64_t def) { (void)map; (void)key; return def; }
 int64_t tk_map_put_w(int64_t map, int64_t key, int64_t val) {
     if (map) tk_map_put((void *)(intptr_t)map, key, val);

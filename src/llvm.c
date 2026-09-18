@@ -1912,6 +1912,42 @@ static void set_local_type(Ctx *c, const char *name, const char *ty);
 static const char *get_local_type(Ctx *c, const char *name);
 static const char *expr_llvm_type(Ctx *c, const Node *n);
 static const char *get_llvm_name(Ctx *c, const char *toke_name);
+static const char *expr_struct_type(Ctx *c, const Node *n);
+
+/* 127.8: classify the receiver of `.len` / `.len()`. Returns "str", "map", or
+ * NULL (array / unknown → the legacy ptr[-1] header-word load). The checker's
+ * rtype is authoritative; the backend's $str / __map__ local tags are the
+ * fallback for values the checker typed TY_UNKNOWN (stdlib call results). A
+ * str is a bare char* (no header) and a map is a TkMapImpl*, so the array
+ * header load returned garbage (1 / 0) for both. */
+static const char *len_recv_kind(Ctx *c, const Node *recv) {
+    if (!recv) return NULL;
+    if (recv->rtype) {
+        if (recv->rtype->kind == TY_STR) return "str";
+        if (recv->rtype->kind == TY_MAP) return "map";
+        if (recv->rtype->kind == TY_ARRAY) return NULL;
+    }
+    if (recv->kind == NODE_STR_LIT) return "str";
+    const char *st = expr_struct_type(c, recv);
+    if (st) {
+        if (!strcmp(st, "$str") || !strcmp(st, "str")) return "str";
+        if (!strcmp(st, "__map__")) return "map";
+    }
+    return NULL;
+}
+/* 127.8: emit `tk_str_len_w` / `tk_map_len_w` on an already-evaluated
+ * receiver value `v` of LLVM type `vty` (pointers are coerced to the i64 ABI). */
+static int emit_len_call(Ctx *c, int v, const char *vty, const char *rk) {
+    if (vty && strchr(vty, '*')) {
+        int z = next_tmp(c);
+        fprintf(c->out, "  %%t%d = ptrtoint %s %%t%d to i64\n", z, vty, v);
+        v = z;
+    }
+    int t = next_tmp(c);
+    fprintf(c->out, "  %%t%d = call i64 @%s(i64 %%t%d) ; .len (%s)\n", t,
+            !strcmp(rk, "map") ? "tk_map_len_w" : "tk_str_len_w", v, rk);
+    return t;
+}
 
 /* 124.0a: build the LLVM function type of a closure's lifted function —
  *   "<ret> (i8*, <pty0>, <pty1>, ...)"  (the env pointer is the first param).
@@ -3088,6 +3124,9 @@ static int emit_expr(Ctx *c, const Node *n)
             if (!is_mod_im && !strcmp(method_im, "len")) {
                 int obj_v = emit_expr(c, n->children[0]->children[0]);
                 const char *obj_ty = expr_llvm_type(c, n->children[0]->children[0]);
+                /* 127.8: str / map receivers have no array header word. */
+                const char *lrk = len_recv_kind(c, n->children[0]->children[0]);
+                if (lrk) return emit_len_call(c, obj_v, obj_ty, lrk);
                 int ptr_v;
                 if (!strcmp(obj_ty, "i8*")) {
                     ptr_v = next_tmp(c);
@@ -3753,6 +3792,10 @@ static int emit_expr(Ctx *c, const Node *n)
         /* .len on arrays: length is stored at ptr[-1] */
         if (!strcmp(fn, "len")) {
             const char *bty = expr_llvm_type(c, n->children[0]);
+            /* 127.8: `x.len` on a str (bare char*) or a map (TkMapImpl*) must
+             * not read the array header word — route to the length glue. */
+            const char *lrk = len_recv_kind(c, n->children[0]);
+            if (lrk) return emit_len_call(c, base, bty, lrk);
             if (!strcmp(bty, "i64")) {
                 int conv = next_tmp(c);
                 fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", conv, base);
@@ -6990,6 +7033,7 @@ static const StdlibDecl g_stdlib_decls[] = {
     /* std.str wrappers */
     {"tk_str_concat_w", "declare i64 @tk_str_concat_w(i64, i64)", 0},
     {"tk_str_len_w", "declare i64 @tk_str_len_w(i64)", 0},
+    {"tk_map_len_w", "declare i64 @tk_map_len_w(i64)", 0},  /* 127.8: map.len */
     {"tk_str_trim_w", "declare i64 @tk_str_trim_w(i64)", 0},
     {"tk_str_upper_w", "declare i64 @tk_str_upper_w(i64)", 0},
     {"tk_str_lower_w", "declare i64 @tk_str_lower_w(i64)", 0},

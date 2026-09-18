@@ -1,0 +1,37 @@
+(* test_127_8.tk -- Epic 127.8: .len and .len() on a str or map receiver.
+ * Before the fix both forms loaded the array header word for every receiver
+ * so a str reported 1 and a map reported 0. Receiver kind now dispatches to
+ * the str length glue or the map length glue; arrays are unchanged. *)
+m=test.len127;
+i=io:std.io;
+i=s:std.str;
+
+f=ck(name:str;got:i64;want:i64):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");s.fromint(got))) };
+  <0
+};
+
+f=plen(x:str):i64{ <x.len };
+
+f=main():$i64{
+  let x="abcdef";
+  let a=@(3;1;2);
+  let m=@("a":1;"b":2);
+  let t=s.trim("  hi  ");
+  let w=x.split("c");
+  ck("str-prop";x.len;6);
+  ck("str-method";x.len();6);
+  ck("str-lit";"abcdef".len;6);
+  ck("str-param";plen("xyz");3);
+  ck("str-stdlib-result";t.len;2);
+  ck("str-empty";"".len;0);
+  ck("arr-prop";a.len;3);
+  ck("arr-method";a.len();3);
+  ck("arr-from-split";w.len;2);
+  ck("map-prop";m.len;2);
+  ck("map-method";m.len();2);
+  ck("interp";"\(x.len)\(a.len)\(m.len)".len;3);
+  io.println("RESULT done");
+  <0
+};
