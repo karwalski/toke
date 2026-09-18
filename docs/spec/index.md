@@ -11,6 +11,7 @@ Normative specification documents for the toke language, including grammar, sema
 
 - [Error Code Registry](/docs/spec/errors/) -- canonical error codes and their meanings
 - [Pattern catalogue protocol v0.4](/docs/spec/patterns-protocol-v0.4/) -- Epic 131: how canonical (token-minimal AND runtime-best) forms are measured, decided and enforced; catalogue schema
+- [Pattern catalogue v0.4](/docs/spec/patterns-v0.4/) -- **generated** from `patterns/catalogue.json`: every measured pattern, its candidate forms, numbers and verdict (canonical / hot path); do not hand-edit
 - [Formal Semantics](/docs/spec/semantics/) -- type rules and evaluation semantics
 - [Spec-Implementation Delta](/docs/spec/spec-implementation-delta/) -- known differences between spec and compiler
 - [Standard Library Signatures](/docs/spec/stdlib-signatures/) -- normative function signatures for `std.*`

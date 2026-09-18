@@ -26,6 +26,7 @@ A structured, hands-on introduction to toke -- a statically typed, compiled lang
 8. [Advanced Topics](/docs/learn/08-advanced/) -- casts, arena blocks, and FFI
 9. [Standard Library](/docs/learn/09-stdlib/) -- a tour of `std.*` modules
 10. [Build a Complete Project](/docs/learn/10-project/) -- putting it all together
+11. [Patterns and Efficiency](/docs/learn/11-patterns-and-efficiency/) -- the measured canonical form of each everyday construct, verbose vs canonical (generated from the pattern catalogue)
 
 ## Reference
 

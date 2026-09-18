@@ -11,6 +11,7 @@ fixtures are `patterns/<id>/<form>.tk` (or `.blocked.tk` for compiler-broken pre
 | `train_proxy.py` | 131.4 | trains the `proxy8k` token proxy from the frozen corpus → `patterns/proxy/` |
 | `count_tokens.py` | 131.4 | token table for one function / all forms of a pattern |
 | `recheck_caveats.py` | 131.26 | re-check `bug_caveats` after a 127.x closure; `--stale` lists entries measured on an older tkc |
+| `render_catalogue.py` | 131.11 | generates `docs/spec/patterns-v0.4.md`, `docs/guide/11-patterns-and-efficiency.md` and `patterns/card_snippet.md` from the catalogue (`make render-patterns`; `make check-patterns` fails on drift); `ingest --results <bench json>` copies runtime numbers in and re-derives verdicts; `merge --in <wave file>` appends new entries — both dry-run unless `--write` |
 
 Tests: `python3 -m pytest scripts/patterns/tests -q` (stdlib + pytest; `test_count_tokens.py` needs `./tkc`, the rest mock it).
 

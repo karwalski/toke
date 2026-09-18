@@ -7,6 +7,9 @@ section: spec
 **Status:** normative (Epic 116 / Workstream B). **Audience:** the generation
 prompt (Workstream C), the idiom judge (`toke-model/corpus/judge`), the `--min`
 canonical formatter, and human authors.
+**Companion:** the [pattern catalogue](/docs/spec/patterns-v0.4/) (Epic 131,
+generated from `patterns/catalogue.json`) turns these prose rules into measured
+token + runtime verdicts per construct; where the two disagree the catalogue wins.
 
 ## Why
 
