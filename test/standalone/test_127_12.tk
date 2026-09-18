@@ -1,0 +1,30 @@
+(* test_127_12.tk -- Epic 127.12 (the `m.len` half): `.len` on a map must be
+ * the entry count (127.8 routed it to tk_map_len_w; before that the array
+ * header load read 0). Str-keyed literal, after set/overwrite on a mut map,
+ * and agreement with m.keys().len. Int-keyed maps: test_127_35.tk. The
+ * `m.keys` property form is in test_127_12.blocked.tk (needs src/llvm.c). *)
+m=test.m12712;
+i=io:std.io;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=main():$i64{
+  let m=@("a":1;"b":2);
+  cks("map-len-literal";"\(m.len)";"2");
+  let ks=m.keys();
+  cks("map-len-eq-keys-len";"\(ks.len)";"2");
+  let n=mut.@("x":1);
+  n=n.set("y";2);
+  n=n.set("z";3);
+  cks("map-len-after-set";"\(n.len)";"3");
+  n=n.set("x";9);
+  cks("map-len-after-overwrite";"\(n.len)";"3");
+  if(m.len==2){ io.println("PASS map-len-in-condition") }
+  el{ io.println("FAIL map-len-in-condition") };
+  <0
+};

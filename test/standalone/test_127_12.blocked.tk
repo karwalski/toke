@@ -1,0 +1,27 @@
+(* test_127_12.blocked.tk -- Epic 127.12: the syntax-card property form
+ * `let k=m.keys;` (no parens) must yield the key array exactly like
+ * `m.keys()`. The checker types it (types.c NODE_FIELD_EXPR: array of the key
+ * type); codegen (src/llvm.c NODE_FIELD_EXPR, held) still treats it as a
+ * struct field load and yields a garbage pointer. Rename to test_127_12b.tk
+ * once `keys` on a map receiver is routed to tk_map_keys_w there. *)
+m=test.m12712b;
+i=io:std.io;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=main():$i64{
+  let m=@("a":1;"b":2);
+  let k=m.keys;
+  cks("keys-property-len";"\(m.len) \(k.len)";"2 2");
+  cks("keys-property-order";s.join(",";k);"a,b");
+  cks("keys-property-eq-call";"\(k.len==m.keys().len)";"1");
+  let n=@(7:70;8:80);
+  let nk=n.keys;
+  cks("keys-property-int";"\(nk.0) \(nk.1)";"7 8");
+  <0
+};

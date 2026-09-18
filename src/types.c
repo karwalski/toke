@@ -1334,6 +1334,14 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         /* .len on arrays and maps returns u64 */
         if ((base->kind==TY_ARRAY||base->kind==TY_MAP) && strcmp(fname,"len")==0)
             return mk_type(A,TY_U64);
+        /* 127.12: `m.keys` (property form, per the syntax card) is an array of
+         * the map's key type — what `m.keys()` yields at runtime (tk_map_keys_w). */
+        if (base->kind==TY_MAP && strcmp(fname,"keys")==0) {
+            Type *at=mk_type(A,TY_ARRAY);
+            if (!at) return mk_type(A,TY_UNKNOWN);
+            at->elem=base->elem?base->elem:mk_type(A,TY_UNKNOWN);
+            return at;
+        }
         if (base->kind!=TY_STRUCT) return mk_type(A,TY_UNKNOWN);
         for (int i=0;i<base->field_count;i++)
             if (base->field_names[i]&&strcmp(base->field_names[i],fname)==0)
