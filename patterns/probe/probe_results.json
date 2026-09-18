@@ -1,0 +1,2677 @@
+{
+ "story": "131.2",
+ "tkc_version": "toke 2.8.0",
+ "tkc_sha": "67db04aa0017586a98041f0bde6c2d7483c851f0",
+ "generated": "2026-09-18",
+ "summary": {
+  "probes": 130,
+  "check_ok": 125,
+  "build_ok": 87,
+  "run_ok": 78,
+  "correct": 58
+ },
+ "results": [
+  {
+   "probe": "all_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "all"
+   },
+   "run": null,
+   "expected": "0",
+   "correct": false
+  },
+  {
+   "probe": "all_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_all_w"
+   },
+   "run": null,
+   "expected": "0",
+   "correct": false
+  },
+  {
+   "probe": "any_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "any"
+   },
+   "run": null,
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "any_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_any_w"
+   },
+   "run": null,
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "append_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4 9"
+   },
+   "expected": "4 9",
+   "correct": true
+  },
+  {
+   "probe": "append_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": null
+   },
+   "run": null,
+   "expected": "4 9",
+   "correct": false
+  },
+  {
+   "probe": "arr_contains_let",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 139,
+    "ok": false,
+    "stdout": ""
+   },
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "arrconcat_op",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4 9"
+   },
+   "expected": "4 9",
+   "correct": true
+  },
+  {
+   "probe": "bool_native_interp",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
+   "expected": "1",
+   "correct": true
+  },
+  {
+   "probe": "bool_userfn_interp",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
+   "expected": "1",
+   "correct": true
+  },
+  {
+   "probe": "concat_append_dfio",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1: a\n2: b"
+   },
+   "expected": "1: a\n2: b",
+   "correct": true
+  },
+  {
+   "probe": "concat_append_interp_read",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4385201056\n4385201136\n4385201232"
+   },
+   "expected": "0: item\n1: item\n2: item",
+   "correct": false
+  },
+  {
+   "probe": "concat_append_loop",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "0: item\n1: item\n2: item"
+   },
+   "expected": "0: item\n1: item\n2: item",
+   "correct": true
+  },
+  {
+   "probe": "concat_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "ab"
+   },
+   "expected": "ab",
+   "correct": true
+  },
+  {
+   "probe": "concat_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "ab"
+   },
+   "expected": "ab",
+   "correct": true
+  },
+  {
+   "probe": "contains_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 139,
+    "ok": false,
+    "stdout": ""
+   },
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "contains_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_contains_w"
+   },
+   "run": null,
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "count_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "count"
+   },
+   "run": null,
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "count_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_count_w"
+   },
+   "run": null,
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "each_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "each"
+   },
+   "run": null,
+   "expected": "3\n1\n2",
+   "correct": false
+  },
+  {
+   "probe": "each_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_each_w"
+   },
+   "run": null,
+   "expected": "3\n1\n2",
+   "correct": false
+  },
+  {
+   "probe": "ends_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "ends"
+   },
+   "run": null,
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "endswith_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
+   "expected": "1",
+   "correct": true
+  },
+  {
+   "probe": "fields_get_direct",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "a"
+   },
+   "expected": "a",
+   "correct": true
+  },
+  {
+   "probe": "fields_interp",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4302625632"
+   },
+   "expected": "a",
+   "correct": false
+  },
+  {
+   "probe": "fields_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "fields"
+   },
+   "run": null,
+   "expected": "3 b",
+   "correct": false
+  },
+  {
+   "probe": "fields_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "3 4312603536"
+   },
+   "expected": "3 b",
+   "correct": false
+  },
+  {
+   "probe": "filter_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1 2"
+   },
+   "expected": "1 2",
+   "correct": true
+  },
+  {
+   "probe": "filter_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_filter_w"
+   },
+   "run": null,
+   "expected": "1 2",
+   "correct": false
+  },
+  {
+   "probe": "find_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 139,
+    "ok": false,
+    "stdout": ""
+   },
+   "expected": "2",
+   "correct": false
+  },
+  {
+   "probe": "find_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_find_w"
+   },
+   "run": null,
+   "expected": "2",
+   "correct": false
+  },
+  {
+   "probe": "first_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "first"
+   },
+   "run": null,
+   "expected": "3",
+   "correct": false
+  },
+  {
+   "probe": "first_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_first_w"
+   },
+   "run": null,
+   "expected": "3",
+   "correct": false
+  },
+  {
+   "probe": "fold_loop_control",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "6"
+   },
+   "expected": "6",
+   "correct": true
+  },
+  {
+   "probe": "fold_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "fold"
+   },
+   "run": null,
+   "expected": "6",
+   "correct": false
+  },
+  {
+   "probe": "fold_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_fold_w"
+   },
+   "run": null,
+   "expected": "6",
+   "correct": false
+  },
+  {
+   "probe": "get_const_let",
+   "check": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E2002",
+     "E2003"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E2002",
+     "E2003"
+    ],
+    "undefined_symbol": null
+   },
+   "run": null,
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "get_const",
+   "check": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E2002",
+     "E2003",
+     "E4032"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E2002",
+     "E2003",
+     "E4032"
+    ],
+    "undefined_symbol": null
+   },
+   "run": null,
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "get_const0_let",
+   "check": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E2002",
+     "E2003"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E2002",
+     "E2003"
+    ],
+    "undefined_symbol": null
+   },
+   "run": null,
+   "expected": "3",
+   "correct": false
+  },
+  {
+   "probe": "get_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
+   "expected": "1",
+   "correct": true
+  },
+  {
+   "probe": "get_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
+   "expected": "1",
+   "correct": true
+  },
+  {
+   "probe": "indexof_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 139,
+    "ok": false,
+    "stdout": ""
+   },
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "indexof_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_indexof_w"
+   },
+   "run": null,
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "interp_append_dfio",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4351122496: a\n4351122576: b"
+   },
+   "expected": "1: a\n2: b",
+   "correct": false
+  },
+  {
+   "probe": "interp_append_direct",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "0: item\n1: item\n2: item"
+   },
+   "expected": "0: item\n1: item\n2: item",
+   "correct": true
+  },
+  {
+   "probe": "interp_append_interp_read",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4343192416\n4343192512\n4343192624"
+   },
+   "expected": "0: item\n1: item\n2: item",
+   "correct": false
+  },
+  {
+   "probe": "interp_append_lit_get",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4298496992\n4298497072"
+   },
+   "expected": "1\n2",
+   "correct": false
+  },
+  {
+   "probe": "interp_append_loop",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "0: item\n1: item\n2: item"
+   },
+   "expected": "0: item\n1: item\n2: item",
+   "correct": true
+  },
+  {
+   "probe": "interp_append_seeded",
+   "check": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4070"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4070"
+    ],
+    "undefined_symbol": null
+   },
+   "run": null,
+   "expected": "1\n2",
+   "correct": false
+  },
+  {
+   "probe": "interp_concat_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4350418032"
+   },
+   "expected": "ab",
+   "correct": false
+  },
+  {
+   "probe": "interp_replace_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "a+b"
+   },
+   "expected": "a+b",
+   "correct": true
+  },
+  {
+   "probe": "interp_slice_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4353514400"
+   },
+   "expected": "bc",
+   "correct": false
+  },
+  {
+   "probe": "interp_split_get",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4344388672"
+   },
+   "expected": "b",
+   "correct": false
+  },
+  {
+   "probe": "interp_trim_let",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "[4375862384]"
+   },
+   "expected": "[a]",
+   "correct": false
+  },
+  {
+   "probe": "interp_trim_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "[4330265504]"
+   },
+   "expected": "[a]",
+   "correct": false
+  },
+  {
+   "probe": "interp_trim_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "[a]"
+   },
+   "expected": "[a]",
+   "correct": true
+  },
+  {
+   "probe": "interp_upper_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "AB"
+   },
+   "expected": "AB",
+   "correct": true
+  },
+  {
+   "probe": "join_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "join"
+   },
+   "run": null,
+   "expected": "a-b",
+   "correct": false
+  },
+  {
+   "probe": "join_module_arr",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_join_w"
+   },
+   "run": null,
+   "expected": "a-b",
+   "correct": false
+  },
+  {
+   "probe": "join_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "a-b"
+   },
+   "expected": "a-b",
+   "correct": true
+  },
+  {
+   "probe": "join_swapped",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 139,
+    "ok": false,
+    "stdout": ""
+   },
+   "expected": "#checkfail",
+   "correct": false
+  },
+  {
+   "probe": "keys_method_direct",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "a"
+   },
+   "expected": "a",
+   "correct": true
+  },
+  {
+   "probe": "keys_method_len",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "2"
+   },
+   "expected": "2",
+   "correct": true
+  },
+  {
+   "probe": "keys_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "2 4332082124"
+   },
+   "expected": "2 a",
+   "correct": false
+  },
+  {
+   "probe": "keys_prop_len",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "0"
+   },
+   "expected": "2",
+   "correct": false
+  },
+  {
+   "probe": "keys_prop",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 1,
+    "ok": false,
+    "stdout": ""
+   },
+   "expected": "2 a",
+   "correct": false
+  },
+  {
+   "probe": "last_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "last"
+   },
+   "run": null,
+   "expected": "2",
+   "correct": false
+  },
+  {
+   "probe": "last_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_last_w"
+   },
+   "run": null,
+   "expected": "2",
+   "correct": false
+  },
+  {
+   "probe": "len_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "3"
+   },
+   "expected": "3",
+   "correct": true
+  },
+  {
+   "probe": "len_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "3"
+   },
+   "expected": "3",
+   "correct": true
+  },
+  {
+   "probe": "len_prop",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "3"
+   },
+   "expected": "3",
+   "correct": true
+  },
+  {
+   "probe": "lit_append_interp_read",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4329165840\n4329165840\n4329165840"
+   },
+   "expected": "x\nx\nx",
+   "correct": false
+  },
+  {
+   "probe": "lower_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "lower"
+   },
+   "run": null,
+   "expected": "ab",
+   "correct": false
+  },
+  {
+   "probe": "lower_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "ab"
+   },
+   "expected": "ab",
+   "correct": true
+  },
+  {
+   "probe": "map_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "6 2 4"
+   },
+   "expected": "6 2 4",
+   "correct": true
+  },
+  {
+   "probe": "map_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_map_w"
+   },
+   "run": null,
+   "expected": "6 2 4",
+   "correct": false
+  },
+  {
+   "probe": "max_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "max"
+   },
+   "run": null,
+   "expected": "3",
+   "correct": false
+  },
+  {
+   "probe": "max_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_max_w"
+   },
+   "run": null,
+   "expected": "3",
+   "correct": false
+  },
+  {
+   "probe": "min_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "min"
+   },
+   "run": null,
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "min_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_min_w"
+   },
+   "run": null,
+   "expected": "1",
+   "correct": false
+  },
+  {
+   "probe": "plusat_append_interp_read",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "0: item\n1: item\n2: item"
+   },
+   "expected": "0: item\n1: item\n2: item",
+   "correct": true
+  },
+  {
+   "probe": "pop_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "pop"
+   },
+   "run": null,
+   "expected": "2 3",
+   "correct": false
+  },
+  {
+   "probe": "pop_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "2 3"
+   },
+   "expected": "2 3",
+   "correct": true
+  },
+  {
+   "probe": "push_bare_empty",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "0"
+   },
+   "expected": "0",
+   "correct": true
+  },
+  {
+   "probe": "push_bare",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "3"
+   },
+   "expected": "3",
+   "correct": true
+  },
+  {
+   "probe": "push_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4 9"
+   },
+   "expected": "4 9",
+   "correct": true
+  },
+  {
+   "probe": "push_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4 9"
+   },
+   "expected": "4 9",
+   "correct": true
+  },
+  {
+   "probe": "reduce_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "6"
+   },
+   "expected": "6",
+   "correct": true
+  },
+  {
+   "probe": "reduce_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_reduce_w"
+   },
+   "run": null,
+   "expected": "6",
+   "correct": false
+  },
+  {
+   "probe": "replace_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "replace"
+   },
+   "run": null,
+   "expected": "a+b",
+   "correct": false
+  },
+  {
+   "probe": "replace_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "a+b"
+   },
+   "expected": "a+b",
+   "correct": true
+  },
+  {
+   "probe": "set_bare",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "3"
+   },
+   "expected": "3",
+   "correct": true
+  },
+  {
+   "probe": "set_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "7"
+   },
+   "expected": "7",
+   "correct": true
+  },
+  {
+   "probe": "set_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "7"
+   },
+   "expected": "7",
+   "correct": true
+  },
+  {
+   "probe": "slice_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 139,
+    "ok": false,
+    "stdout": ""
+   },
+   "expected": "1 2",
+   "correct": false
+  },
+  {
+   "probe": "slice_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_slice_w"
+   },
+   "run": null,
+   "expected": "1 2",
+   "correct": false
+  },
+  {
+   "probe": "sort_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1 2 3"
+   },
+   "expected": "1 2 3",
+   "correct": true
+  },
+  {
+   "probe": "sort_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_sort_w"
+   },
+   "run": null,
+   "expected": "1 2 3",
+   "correct": false
+  },
+  {
+   "probe": "split_chain_direct",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "b"
+   },
+   "expected": "b",
+   "correct": true
+  },
+  {
+   "probe": "split_interp",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4352432960"
+   },
+   "expected": "b",
+   "correct": false
+  },
+  {
+   "probe": "split_method_direct",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "b"
+   },
+   "expected": "b",
+   "correct": true
+  },
+  {
+   "probe": "split_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "3 4342094720"
+   },
+   "expected": "3 b",
+   "correct": false
+  },
+  {
+   "probe": "split_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "3 b"
+   },
+   "expected": "3 b",
+   "correct": true
+  },
+  {
+   "probe": "starts_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
+   "expected": "1",
+   "correct": true
+  },
+  {
+   "probe": "startswith_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
+   "expected": "1",
+   "correct": true
+  },
+  {
+   "probe": "strcontains_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
+   "expected": "1",
+   "correct": true
+  },
+  {
+   "probe": "strcontains_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
+   "expected": "1",
+   "correct": true
+  },
+  {
+   "probe": "strfind_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "2"
+   },
+   "expected": "2",
+   "correct": true
+  },
+  {
+   "probe": "strfind_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "2"
+   },
+   "expected": "2",
+   "correct": true
+  },
+  {
+   "probe": "strindexof_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "2"
+   },
+   "expected": "2",
+   "correct": true
+  },
+  {
+   "probe": "strindexof_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "2"
+   },
+   "expected": "2",
+   "correct": true
+  },
+  {
+   "probe": "strlen_lit_prop",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
+   "expected": "6",
+   "correct": false
+  },
+  {
+   "probe": "strlen_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
+   "expected": "6",
+   "correct": false
+  },
+  {
+   "probe": "strlen_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "6"
+   },
+   "expected": "6",
+   "correct": true
+  },
+  {
+   "probe": "strlen_prop_direct",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 139,
+    "ok": false,
+    "stdout": ""
+   },
+   "expected": "6",
+   "correct": false
+  },
+  {
+   "probe": "strlen_prop",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
+   "expected": "6",
+   "correct": false
+  },
+  {
+   "probe": "strslice_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "bc"
+   },
+   "expected": "bc",
+   "correct": true
+  },
+  {
+   "probe": "strslice_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "bc"
+   },
+   "expected": "bc",
+   "correct": true
+  },
+  {
+   "probe": "sum_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "sum"
+   },
+   "run": null,
+   "expected": "6",
+   "correct": false
+  },
+  {
+   "probe": "sum_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "tk_array_sum_w"
+   },
+   "run": null,
+   "expected": "6",
+   "correct": false
+  },
+  {
+   "probe": "trim_let_direct",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "a"
+   },
+   "expected": "a",
+   "correct": true
+  },
+  {
+   "probe": "trim_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "a"
+   },
+   "expected": "a",
+   "correct": true
+  },
+  {
+   "probe": "trim_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "[a]"
+   },
+   "expected": "[a]",
+   "correct": true
+  },
+  {
+   "probe": "ufcs_extra_arg_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "xxA"
+   },
+   "expected": "#checkfail",
+   "correct": false
+  },
+  {
+   "probe": "ufcs_extra_arg",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "xxA"
+   },
+   "expected": "#checkfail",
+   "correct": false
+  },
+  {
+   "probe": "upper_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "upper"
+   },
+   "run": null,
+   "expected": "AB",
+   "correct": false
+  },
+  {
+   "probe": "upper_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "AB"
+   },
+   "expected": "AB",
+   "correct": true
+  },
+  {
+   "probe": "user_fn_extra_arg",
+   "check": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4026"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4026"
+    ],
+    "undefined_symbol": null
+   },
+   "run": null,
+   "expected": "#checkfail",
+   "correct": true
+  },
+  {
+   "probe": "values_method",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 2,
+    "ok": false,
+    "codes": [
+     "E9003"
+    ],
+    "undefined_symbol": "values"
+   },
+   "run": null,
+   "expected": "2 1",
+   "correct": false
+  },
+  {
+   "probe": "values_prop",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 1,
+    "ok": false,
+    "stdout": ""
+   },
+   "expected": "2 1",
+   "correct": false
+  }
+ ]
+}

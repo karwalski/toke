@@ -1,0 +1,2 @@
+m=probe;i=io:std.io;i=s:std.str;f=dbl(x:i64):i64{<x*2};f=iseven(x:i64):bool{<x%2==0};f=addf(acc:i64;x:i64):i64{<acc+x};f=cmp(a:i64;b:i64):i64{<a-b};f=pr(x:i64):i64{io.println("\(x)");<0};
+f=main():i64{let lines=s.split("a\nb";"\n");let labels=mut.@();lp(let i=0;i<lines.len;i=i+1){labels=labels.append(s.fromint(i+1))};let tagged=mut.@();lp(let i=0;i<lines.len;i=i+1){tagged=tagged.append(s.concat(s.concat(labels.get(i);": ");lines.get(i)))};io.println(s.join("\n";tagged));<0};
