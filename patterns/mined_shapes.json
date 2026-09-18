@@ -1,7 +1,7 @@
 {
  "story": "131.3",
- "generated": "2026-09-18T22:22:37",
- "runtime_sec": 129.2,
+ "generated": "2026-09-18T22:28:39",
+ "runtime_sec": 312.0,
  "tkc": "/Users/matthew.watt/tk/toke/tkc",
  "tkc_version": "toke 2.8.0",
  "dump_ast_from": "toke-corpus/regen/metrics.py",
@@ -33,8 +33,8 @@
   "D-TST": 1713,
   "D-WEB": 1661
  },
- "unique_signatures": 34783,
- "total_occurrences": 870766,
+ "unique_signatures": 34780,
+ "total_occurrences": 745383,
  "signature_scheme": "S-expression over tkc --dump-ast node kinds; identifiers/literals erased to their kind; BIN[op]/UN[op]/ASSIGN[op] keep the operator; depth-limited to 3 with '(...)' marking elided children; roots are every *_STMT/*_EXPR/ARRAY_LIT/STRUCT_LIT node plus SEQ2 statement pairs. See the docstring of scripts/patterns/mine_shapes.py.",
  "shapes": [
   {
@@ -64,17 +64,17 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
      "snippet": "i=i+1"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
      "snippet": "i=i+1"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
      "snippet": "i=i+1"
     }
@@ -128,19 +128,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(r)\")"
+     "snippet": "io.println(\"\\(sum(@(1;2;3;4;5)))\")"
     },
     {
-     "task_id": "A-ARR-0051v5",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(r.get(i))\")"
+     "snippet": "io.println(\"\\(sum(@(1;2;3)))\")"
     },
     {
-     "task_id": "A-ARR-0051v65",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(r.get(i))\")"
+     "snippet": "io.println(\"\\(sum(@(1;2;3;4)))\")"
     }
    ]
   },
@@ -176,19 +176,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0054v7",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(showarr(arrslice(@(1;2;3;4;5);1;4)))\"); io.println(\"\\(showarr(arrslice(@(10;20;30);0;2)))\")"
+     "snippet": "io.println(\"\\(sum(@(1;2;3;4;5)))\"); io.println(\"\\(sum(@(-3;7;-4)))\")"
     },
     {
-     "task_id": "A-ARR-0055v17",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(render(arrslice(data;1;4)))\"); io.println(\"\\(render(arrslice(data;0;2)))\")"
+     "snippet": "io.println(\"\\(sum(@(1;2;3)))\"); io.println(\"\\(sum(@()))\")"
     },
     {
-     "task_id": "A-ARR-0055v2",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(r.len)\"); io.println(\"\\(r.get(0))\")"
+     "snippet": "io.println(\"\\(sum(@(1;2;3;4)))\"); io.println(\"\\(sum(@()))\")"
     }
    ]
   },
@@ -240,19 +240,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v61",
+     "task_id": "A-ARR-0014v14",
      "category": "A-ARR",
-     "snippet": "io.println(fmtarr(unique(@(1 as u64;2 as u64;1 as u64;3 as u64;2 as u64)))); io.println(fmtarr(unique(@(5 as u64;5 as u64;5 as u64))))"
+     "snippet": "io.println(first(@(\"a\";\"b\";\"c\"))); io.println(first(@(\"only\")))"
     },
     {
-     "task_id": "A-ARR-0051v68",
+     "task_id": "A-ARR-0014v3",
      "category": "A-ARR",
-     "snippet": "io.println(fmtarr(unique(@(1;2;1;3;2;4) as @u64))); io.println(fmtarr(unique(@(7;7;7) as @u64)))"
+     "snippet": "io.println(first(@(\"apple\";\"banana\";\"cherry\"))); io.println(first(@(\"solo\")))"
     },
     {
-     "task_id": "A-ARR-0052",
+     "task_id": "A-ARR-0014v34",
      "category": "A-ARR",
-     "snippet": "io.println(fmt(unique(@(1.0;2.0;1.0;3.0;2.0)))); io.println(fmt(unique(@(5.5;5.5))))"
+     "snippet": "io.println(first(@(\"alpha\";\"beta\";\"gamma\"))); io.println(first(@(\"solo\")))"
     }
    ]
   },
@@ -304,17 +304,17 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0027v24",
      "category": "A-ARR",
-     "snippet": "out.append(cur)"
+     "snippet": "out.append(y)"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0027v33",
      "category": "A-ARR",
-     "snippet": "out.append(v)"
+     "snippet": "s.build(b)"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0027v34",
      "category": "A-ARR",
      "snippet": "out.append(v)"
     }
@@ -347,19 +347,19 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "i<val.len"
+     "snippet": "i<x.len"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "i<arr.len"
+     "snippet": "i<first.len"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v37",
      "category": "A-ARR",
-     "snippet": "j<out.len"
+     "snippet": "i<p.len"
     }
    ]
   },
@@ -395,19 +395,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(r)\"); <0"
+     "snippet": "io.println(\"\\(sum(@()))\"); <0"
     },
     {
-     "task_id": "A-ARR-0053v2",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(r.len)\"); <0"
+     "snippet": "io.println(\"\\(sum(@(-4;10;-6)))\"); <0"
     },
     {
-     "task_id": "A-ARR-0054v7",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(showarr(arrslice(@(1;2;3);2;2)))\"); <0"
+     "snippet": "io.println(\"\\(sum(@(-5;5)))\"); <0"
     }
    ]
   },
@@ -458,19 +458,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v61",
+     "task_id": "A-ARR-0019v27",
      "category": "A-ARR",
-     "snippet": "io.println(fmtarr(unique(@(1 as u64;2 as u64;1 as u64;3 as u64;2 as u64))))"
+     "snippet": "io.println(fmtbool(arrcontains(@(1;2;3);2)))"
     },
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0020v50",
      "category": "A-ARR",
-     "snippet": "io.println(showint(unique(data)))"
+     "snippet": "io.println(booltostr(arrcontains(@(1 as u64;2 as u64;3 as u64);2 as u64)))"
     },
     {
-     "task_id": "A-ARR-0051v68",
+     "task_id": "A-ARR-0022v65",
      "category": "A-ARR",
-     "snippet": "io.println(fmtarr(unique(@(1;2;1;3;2;4) as @u64)))"
+     "snippet": "io.println(booltostr(arrcontains(arr;\"b\")))"
     }
    ]
   },
@@ -522,19 +522,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v61",
+     "task_id": "A-ARR-0014v14",
      "category": "A-ARR",
-     "snippet": "io.println(fmtarr(unique(@(7 as u64)))); <0"
+     "snippet": "io.println(first(@(\"only\"))); <0"
     },
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0014v3",
      "category": "A-ARR",
-     "snippet": "io.println(showint(unique(data))); <0"
+     "snippet": "io.println(first(@(\"solo\"))); <0"
     },
     {
-     "task_id": "A-ARR-0051v68",
+     "task_id": "A-ARR-0014v34",
      "category": "A-ARR",
-     "snippet": "io.println(fmtarr(unique(@(7;7;7) as @u64))); <0"
+     "snippet": "io.println(first(@())); <0"
     }
    ]
   },
@@ -586,19 +586,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v61",
+     "task_id": "A-ARR-0027v39",
+     "category": "A-ARR",
+     "snippet": "q.append(\"\\(a.get(i))\")"
+    },
+    {
+     "task_id": "A-ARR-0029v20",
      "category": "A-ARR",
      "snippet": "parts.append(\"\\(a.get(i))\")"
     },
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0035v41",
      "category": "A-ARR",
-     "snippet": "out.concat(\"]\")"
-    },
-    {
-     "task_id": "A-ARR-0053v61",
-     "category": "A-ARR",
-     "snippet": "out.concat(\",\")"
+     "snippet": "parts.append(\"\\(m.get(i))\")"
     }
    ]
   },
@@ -649,14 +649,14 @@
      "snippet": "io.println(describe(\"123\"))"
     },
     {
-     "task_id": "A-ERR-0029v29",
+     "task_id": "A-ERR-0046v11",
      "category": "A-ERR",
-     "snippet": "io.println(describe(\"ab\"))"
+     "snippet": "io.println(describe(\"true\"))"
     },
     {
-     "task_id": "A-ERR-0029v35",
+     "task_id": "A-ERR-0046v26",
      "category": "A-ERR",
-     "snippet": "io.println(check(\"ab\"))"
+     "snippet": "io.println(show(\"true\"))"
     }
    ]
   },
@@ -687,17 +687,17 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "let cur=val.get(i)"
+     "snippet": "let v=first.get(i)"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0001v64",
      "category": "A-ARR",
-     "snippet": "let v=arr.get(i)"
+     "snippet": "let cur=arr.get(i)"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v68",
      "category": "A-ARR",
      "snippet": "let v=arr.get(i)"
     }
@@ -759,9 +759,9 @@
      "snippet": "s.concat(out;\"\\(scaled/p)\")"
     },
     {
-     "task_id": "A-ERR-0029v43",
+     "task_id": "A-ERR-0041v67",
      "category": "A-ERR",
-     "snippet": "s.split(lhs;\" \")"
+     "snippet": "s.concat(out;\",\")"
     }
    ]
   },
@@ -792,19 +792,19 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0001v54",
      "category": "A-ARR",
-     "snippet": "a.len==0"
+     "snippet": "num1.len==0"
     },
     {
-     "task_id": "A-ARR-0051v68",
+     "task_id": "A-ARR-0002v39",
      "category": "A-ARR",
      "snippet": "arr.len==0"
     },
     {
-     "task_id": "A-ARR-0052v15",
+     "task_id": "A-ARR-0003v34",
      "category": "A-ARR",
-     "snippet": "left.len==0"
+     "snippet": "val.len==0"
     }
    ]
   },
@@ -855,19 +855,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v5",
+     "task_id": "A-ARR-0027v21",
      "category": "A-ARR",
-     "snippet": "out.append(arr.get(i))"
+     "snippet": "q.append(p.get(i))"
     },
     {
-     "task_id": "A-ARR-0052v15",
+     "task_id": "A-ARR-0027v33",
+     "category": "A-ARR",
+     "snippet": "out.append(n.get(i))"
+    },
+    {
+     "task_id": "A-ARR-0027v39",
      "category": "A-ARR",
      "snippet": "out.append(left.get(i))"
-    },
-    {
-     "task_id": "A-ARR-0052v44",
-     "category": "A-ARR",
-     "snippet": "r.append(arr.get(i))"
     }
    ]
   },
@@ -933,47 +933,6 @@
   },
   {
    "rank": 17,
-   "signature": "SEQ2(FIELD(TYPE_EXPR) FIELD(TYPE_EXPR))",
-   "count": 1932,
-   "programs": 1504,
-   "program_share": 0.0643,
-   "depth": 2,
-   "node_count": 5,
-   "per_category": {
-    "A-ARR": 5,
-    "A-CND": 14,
-    "A-ERR": 1894,
-    "A-MTH": 2,
-    "A-SRT": 3,
-    "D-CFG": 2,
-    "D-CLI": 1,
-    "D-CRY": 2,
-    "D-DAT": 2,
-    "D-FIO": 3,
-    "D-TST": 3,
-    "D-WEB": 1
-   },
-   "top_callees": [],
-   "examples": [
-    {
-     "task_id": "A-ARR-0008v54",
-     "category": "A-ARR",
-     "snippet": "empty:bool;$count:i64"
-    },
-    {
-     "task_id": "A-ARR-0093v14",
-     "category": "A-ARR",
-     "snippet": "some:f64;$none:bool"
-    },
-    {
-     "task_id": "MIG-P2-A-A-ARR-0096v13-053a94db",
-     "category": "A-ARR",
-     "snippet": "p:f64;q:f64"
-    }
-   ]
-  },
-  {
-   "rank": 18,
    "signature": "BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) STR_LIT))",
    "count": 1878,
    "programs": 1743,
@@ -1034,7 +993,7 @@
    ]
   },
   {
-   "rank": 19,
+   "rank": 18,
    "signature": "BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT))",
    "count": 1857,
    "programs": 1539,
@@ -1085,19 +1044,19 @@
      "snippet": "let la=s.len(a)"
     },
     {
-     "task_id": "A-CND-0052v40",
+     "task_id": "A-CND-0058v28",
      "category": "A-CND",
-     "snippet": "let result=s.build(b)"
+     "snippet": "let c=s.lower(first)"
     },
     {
-     "task_id": "A-CND-0052v64",
+     "task_id": "A-CND-0058v33",
      "category": "A-CND",
-     "snippet": "let result=s.build(b)"
+     "snippet": "let lc=s.lower(c)"
     }
    ]
   },
   {
-   "rank": 20,
+   "rank": 19,
    "signature": "ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT))",
    "count": 1790,
    "programs": 1492,
@@ -1144,24 +1103,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0027v24",
      "category": "A-ARR",
-     "snippet": "out=out.append(cur)"
+     "snippet": "out=out.append(y)"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0027v34",
      "category": "A-ARR",
      "snippet": "out=out.append(v)"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0027v68",
      "category": "A-ARR",
      "snippet": "out=out.append(v)"
     }
    ]
   },
   {
-   "rank": 21,
+   "rank": 20,
    "signature": "CALL_EXPR(IDENT CALL_EXPR(IDENT STR_LIT))",
    "count": 1747,
    "programs": 578,
@@ -1203,24 +1162,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-CND-0057v2",
-     "category": "A-CND",
-     "snippet": "render(ishexdigit(\"7\"))"
-    },
-    {
-     "task_id": "A-CND-0058v11",
-     "category": "A-CND",
-     "snippet": "render(isvowel(\"a\"))"
-    },
-    {
      "task_id": "A-CND-0058v42",
      "category": "A-CND",
      "snippet": "show(isvowel(\"a\"))"
+    },
+    {
+     "task_id": "A-CND-0058v45",
+     "category": "A-CND",
+     "snippet": "b2s(isvowel(\"a\"))"
+    },
+    {
+     "task_id": "A-CND-0058v48",
+     "category": "A-CND",
+     "snippet": "fmtbool(isvowel(\"a\"))"
     }
    ]
   },
   {
-   "rank": 22,
+   "rank": 21,
    "signature": "BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT STR_LIT))",
    "count": 1717,
    "programs": 1411,
@@ -1279,7 +1238,7 @@
    ]
   },
   {
-   "rank": 23,
+   "rank": 22,
    "signature": "BIND_STMT(IDENT FIELD_EXPR(IDENT IDENT))",
    "count": 1673,
    "programs": 1472,
@@ -1305,24 +1264,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0002v40",
+     "category": "A-ARR",
+     "snippet": "let n=x.len"
+    },
+    {
+     "task_id": "A-ARR-0003v12",
      "category": "A-ARR",
      "snippet": "let n=arr.len"
     },
     {
-     "task_id": "A-ARR-0051v58",
-     "category": "A-ARR",
-     "snippet": "let n=arr.len"
-    },
-    {
-     "task_id": "A-ARR-0052v19",
+     "task_id": "A-ARR-0003v16",
      "category": "A-ARR",
      "snippet": "let n=arr.len"
     }
    ]
   },
   {
-   "rank": 24,
+   "rank": 23,
    "signature": "CAST_EXPR(FIELD_EXPR(IDENT IDENT) TYPE_EXPR)",
    "count": 1667,
    "programs": 1346,
@@ -1348,24 +1307,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v63",
-     "category": "A-ARR",
-     "snippet": "left.len as i64"
-    },
-    {
-     "task_id": "A-ARR-0053v33",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
      "snippet": "arr.len as i64"
     },
     {
-     "task_id": "A-ARR-0054v25",
+     "task_id": "A-ARR-0003v55",
+     "category": "A-ARR",
+     "snippet": "left.len as i64"
+    },
+    {
+     "task_id": "A-ARR-0006v47",
      "category": "A-ARR",
      "snippet": "arr.len as i64"
     }
    ]
   },
   {
-   "rank": 25,
+   "rank": 24,
    "signature": "IF_STMT(IDENT STMT_LIST(EXPR_STMT(STR_LIT)) STMT_LIST(EXPR_STMT(STR_LIT)))",
    "count": 1595,
    "programs": 1462,
@@ -1407,7 +1366,7 @@
    ]
   },
   {
-   "rank": 26,
+   "rank": 25,
    "signature": "ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(IDENT IDENT) INDEX_EXPR(IDENT IDENT)))",
    "count": 1518,
    "programs": 1128,
@@ -1452,24 +1411,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v5",
+     "task_id": "A-ARR-0027v21",
      "category": "A-ARR",
-     "snippet": "out=out.append(arr.get(i))"
+     "snippet": "q=q.append(p.get(i))"
     },
     {
-     "task_id": "A-ARR-0052v15",
+     "task_id": "A-ARR-0027v33",
+     "category": "A-ARR",
+     "snippet": "out=out.append(n.get(i))"
+    },
+    {
+     "task_id": "A-ARR-0027v39",
      "category": "A-ARR",
      "snippet": "out=out.append(left.get(i))"
-    },
-    {
-     "task_id": "A-ARR-0052v44",
-     "category": "A-ARR",
-     "snippet": "r=r.append(arr.get(i))"
     }
    ]
   },
   {
-   "rank": 27,
+   "rank": 26,
    "signature": "BIN[==](CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT) INT_LIT)",
    "count": 1506,
    "programs": 1322,
@@ -1514,11 +1473,6 @@
    ],
    "examples": [
     {
-     "task_id": "A-CND-0057v55",
-     "category": "A-CND",
-     "snippet": "s.len(left)==1"
-    },
-    {
      "task_id": "A-CND-0058v42",
      "category": "A-CND",
      "snippet": "s.len(val)==0"
@@ -1527,11 +1481,16 @@
      "task_id": "A-CND-0060",
      "category": "A-CND",
      "snippet": "s.len(c)==1"
+    },
+    {
+     "task_id": "A-CND-0061v32",
+     "category": "A-CND",
+     "snippet": "s.len(x)==1"
     }
    ]
   },
   {
-   "rank": 28,
+   "rank": 27,
    "signature": "CALL_EXPR(IDENT IDENT STR_LIT)",
    "count": 1476,
    "programs": 1054,
@@ -1592,7 +1551,7 @@
    ]
   },
   {
-   "rank": 29,
+   "rank": 28,
    "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT STR_LIT))",
    "count": 1467,
    "programs": 543,
@@ -1638,24 +1597,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v68",
+     "task_id": "A-ARR-0027v33",
      "category": "A-ARR",
-     "snippet": "s.add(b;\" \")"
-    },
-    {
-     "task_id": "A-ARR-0054v7",
-     "category": "A-ARR",
-     "snippet": "s.add(b;\";\")"
+     "snippet": "s.add(b;\"\\(a.get(i)) \")"
     },
     {
      "task_id": "A-ARR-0035v6",
      "category": "A-ARR",
      "snippet": "s.add(b;\"\\(arr.get(i)) \")"
+    },
+    {
+     "task_id": "A-ARR-0042v38",
+     "category": "A-ARR",
+     "snippet": "s.add(b;\"[\")"
     }
    ]
   },
   {
-   "rank": 30,
+   "rank": 29,
    "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) IF_STMT(CALL_EXPR(...) STMT_LIST(...) STMT_LIST(...))))",
    "count": 1431,
    "programs": 471,
@@ -1717,7 +1676,7 @@
    ]
   },
   {
-   "rank": 31,
+   "rank": 30,
    "signature": "RETURN_STMT(IF_STMT(IDENT STMT_LIST(EXPR_STMT(...)) STMT_LIST(EXPR_STMT(...))))",
    "count": 1405,
    "programs": 1403,
@@ -1781,7 +1740,7 @@
    ]
   },
   {
-   "rank": 32,
+   "rank": 31,
    "signature": "CALL_EXPR(IDENT STR_LIT INT_LIT)",
    "count": 1347,
    "programs": 453,
@@ -1841,7 +1800,7 @@
    ]
   },
   {
-   "rank": 33,
+   "rank": 32,
    "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT IDENT)",
    "count": 1338,
    "programs": 1109,
@@ -1893,19 +1852,19 @@
      "snippet": "out.set(i;cur)"
     },
     {
+     "task_id": "A-ARR-0098v10",
+     "category": "A-ARR",
+     "snippet": "r.set(i;sum)"
+    },
+    {
      "task_id": "A-ARR-0086v45",
      "category": "A-ARR",
      "snippet": "s.concat(out;piece)"
-    },
-    {
-     "task_id": "A-ARR-0110v15",
-     "category": "A-ARR",
-     "snippet": "r.set(j;tmp)"
     }
    ]
   },
   {
-   "rank": 34,
+   "rank": 33,
    "signature": "SEQ2(BIND_STMT(IDENT MATCH_STMT(CALL_EXPR(...) MATCH_ARM(...) MATCH_ARM(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)))",
    "count": 1314,
    "programs": 553,
@@ -1939,24 +1898,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ERR-0012v43",
+     "task_id": "A-ERR-0001v2",
      "category": "A-ERR",
-     "snippet": "let r1=mt safelast(@(1;2;3)) {$ok:v v;$err:e -1}; io.println(\"\\(r1)\")"
+     "snippet": "let r=mt safediv(10;2) {$ok:v v;$err:e -1}; io.println(\"\\(r)\")"
     },
     {
-     "task_id": "A-ERR-0012v58",
+     "task_id": "A-ERR-0001v46",
      "category": "A-ERR",
-     "snippet": "let filled=mt safelast(@(4;8;15)) {$ok:v v;$err:e -1}; io.println(\"\\(filled)\")"
+     "snippet": "let r1=mt safediv(10;2) {$ok:v v;$err:e -1}; io.println(\"\\(r1)\")"
     },
     {
-     "task_id": "A-ERR-0012v60",
+     "task_id": "A-ERR-0001v70",
      "category": "A-ERR",
-     "snippet": "let a=mt safelast(@(1;2;3)) {$ok:v v;$err:e -1}; io.println(\"\\(a)\")"
+     "snippet": "let r1=mt safediv(10;2) {$ok:v v;$err:e -1}; io.println(\"\\(r1)\")"
     }
    ]
   },
   {
-   "rank": 35,
+   "rank": 34,
    "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) CALL_EXPR(IDENT INT_LIT)))",
    "count": 1311,
    "programs": 334,
@@ -2014,7 +1973,7 @@
    ]
   },
   {
-   "rank": 36,
+   "rank": 35,
    "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT BIN[+](IDENT INT_LIT))",
    "count": 1308,
    "programs": 912,
@@ -2076,7 +2035,7 @@
    ]
   },
   {
-   "rank": 37,
+   "rank": 36,
    "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))) RETURN_STMT(IDENT))",
    "count": 1255,
    "programs": 1247,
@@ -2123,24 +2082,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v5",
+     "task_id": "A-ARR-0003v63",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(!contains(out;arr.get(i))){out=out.append(arr.get(i))} }; <out"
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(arr.len>0){ total=total+arr.get(i); }el{ total=total; }; }; <total"
     },
     {
-     "task_id": "A-ARR-0053v61",
+     "task_id": "A-ARR-0014v3",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(arr.get(i)==v){found=true}; }; <found"
+     "snippet": "lp(let i=0;i<lhs.len;i=i+1){ if(i==0){ out=lhs.get(i); br } }; <out"
     },
     {
-     "task_id": "A-ARR-0053v62",
+     "task_id": "A-ARR-0019v31",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(!hasitem(out;arr.get(i))){out=out.append(arr.get(i))} }; <out"
+     "snippet": "lp(let i=0;i<left.len;i=i+1){ if(!found){ if(left.get(i)==right){ found=true; }; }; }; <found"
     }
    ]
   },
   {
-   "rank": 38,
+   "rank": 37,
    "signature": "INDEX_EXPR(IDENT BIN[+](IDENT INT_LIT))",
    "count": 1199,
    "programs": 663,
@@ -2178,7 +2137,7 @@
    ]
   },
   {
-   "rank": 39,
+   "rank": 38,
    "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) CALL_EXPR(IDENT STR_LIT STR_LIT)))",
    "count": 1135,
    "programs": 378,
@@ -2236,7 +2195,7 @@
    ]
   },
   {
-   "rank": 40,
+   "rank": 39,
    "signature": "RETURN_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT))",
    "count": 1091,
    "programs": 1061,
@@ -2283,12 +2242,7 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v68",
-     "category": "A-ARR",
-     "snippet": "<s.build(b)"
-    },
-    {
-     "task_id": "A-ARR-0054v7",
+     "task_id": "A-ARR-0027v33",
      "category": "A-ARR",
      "snippet": "<s.build(b)"
     },
@@ -2296,11 +2250,16 @@
      "task_id": "A-ARR-0035v6",
      "category": "A-ARR",
      "snippet": "<s.build(b)"
+    },
+    {
+     "task_id": "A-ARR-0042v38",
+     "category": "A-ARR",
+     "snippet": "<s.build(b)"
     }
    ]
   },
   {
-   "rank": 41,
+   "rank": 40,
    "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))) RETURN_STMT(IDENT))",
    "count": 1054,
    "programs": 1038,
@@ -2346,24 +2305,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0052",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){ acc=if(i==0){\"\\(a.get(0))\"}el{\"\\(acc) \\(a.get(i))\"} }; <acc"
+     "snippet": "lp(let i=0;i<x.len;i=i+1){ total=total+x.get(i) }; <total"
     },
     {
-     "task_id": "A-ARR-0054v25",
+     "task_id": "A-ARR-0001v37",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){ text=if(i==0){\"\\(a.get(i))\"}el{\"\\(text) \\(a.get(i))\"} }; <text"
+     "snippet": "lp(let i=0;i<p.len;i=i+1){ q=q+p.get(i); }; <q"
     },
     {
-     "task_id": "A-ARR-0055v17",
+     "task_id": "A-ARR-0001v41",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){ out=if(i==0){\"\\(a.get(i))\"}el{\"\\(out) \\(a.get(i))\"} }; <out"
+     "snippet": "lp(let m=0;m<n.len;m=m+1){ acc=acc+n.get(m); }; <acc"
     }
    ]
   },
   {
-   "rank": 42,
+   "rank": 41,
    "signature": "LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(IDENT IDENT)) ASSIGN[=](IDENT BIN[+](IDENT INT_LIT)) STMT_LIST(IF_STMT(BIN[==](...) STMT_LIST(...))))",
    "count": 1039,
    "programs": 995,
@@ -2409,24 +2368,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0014v3",
      "category": "A-ARR",
-     "snippet": "lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==cur){seen=true;br}}"
+     "snippet": "lp(let i=0;i<lhs.len;i=i+1){ if(i==0){ out=lhs.get(i); br}}"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0019",
      "category": "A-ARR",
-     "snippet": "lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==v){seen=true;br}}"
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(arr.get(i)==val){<true}}"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0019v17",
      "category": "A-ARR",
-     "snippet": "lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==v){ seen=true}}"
+     "snippet": "lp(let i=0;i<n.len;i=i+1){ if(n.get(i)-m==0){<true}}"
     }
    ]
   },
   {
-   "rank": 43,
+   "rank": 42,
    "signature": "CALL_EXPR(FIELD_EXPR(IDENT IDENT) IDENT IDENT BIN[+](IDENT INT_LIT))",
    "count": 1035,
    "programs": 756,
@@ -2472,24 +2431,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-CND-0058v19",
-     "category": "A-CND",
-     "snippet": "s.slice(vowels;i;i+1)"
-    },
-    {
      "task_id": "A-CND-0062v51",
      "category": "A-CND",
      "snippet": "s.slice(chars;i;i+1)"
     },
     {
-     "task_id": "A-ERR-0016v69",
-     "category": "A-ERR",
-     "snippet": "s.slice(p;i;i+1)"
+     "task_id": "A-CND-0058v19",
+     "category": "A-CND",
+     "snippet": "s.slice(vowels;i;i+1)"
+    },
+    {
+     "task_id": "MIG-P2-A-A-CND-0061v3-7ba2f3da",
+     "category": "A-CND",
+     "snippet": "s.slice(lowercase;j;j+1)"
     }
    ]
   },
   {
-   "rank": 44,
+   "rank": 43,
    "signature": "BIN[==](INDEX_EXPR(IDENT IDENT) IDENT)",
    "count": 1032,
    "programs": 991,
@@ -2513,24 +2472,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0019",
      "category": "A-ARR",
-     "snippet": "out.get(j)==cur"
+     "snippet": "arr.get(i)==val"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0019v27",
      "category": "A-ARR",
-     "snippet": "out.get(j)==v"
+     "snippet": "lhs.get(i)==rhs"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0019v31",
      "category": "A-ARR",
-     "snippet": "out.get(j)==v"
+     "snippet": "left.get(i)==right"
     }
    ]
   },
   {
-   "rank": 45,
+   "rank": 44,
    "signature": "CALL_EXPR(IDENT INT_LIT INT_LIT)",
    "count": 1029,
    "programs": 365,
@@ -2586,7 +2545,7 @@
    ]
   },
   {
-   "rank": 46,
+   "rank": 45,
    "signature": "LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(IDENT IDENT)) ASSIGN[=](IDENT BIN[+](IDENT INT_LIT)) STMT_LIST(ASSIGN[=](IDENT CALL_EXPR(...))))",
    "count": 1024,
    "programs": 894,
@@ -2633,24 +2592,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v61",
+     "task_id": "A-ARR-0004v57",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\")}"
+     "snippet": "lp(let i=0;i<n.len;i=i+1){acc=mul(acc;n.get(i))}"
     },
     {
-     "task_id": "A-ARR-0054v8",
+     "task_id": "A-ARR-0027v39",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\")}"
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ q=q.append(\"\\(a.get(i))\")}"
     },
     {
-     "task_id": "A-ARR-0055v30",
+     "task_id": "A-ARR-0027v57",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){parts=parts.append(\"\\(a.get(i))\")}"
+     "snippet": "lp(let i=0;i<n.len;i=i+1){ result=result.append(n.get(n.len-1-i))}"
     }
    ]
   },
   {
-   "rank": 47,
+   "rank": 46,
    "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IF_STMT(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IF_STMT(...))))",
    "count": 959,
    "programs": 464,
@@ -2712,7 +2671,7 @@
    ]
   },
   {
-   "rank": 48,
+   "rank": 47,
    "signature": "BIN[-](FIELD_EXPR(IDENT IDENT) INT_LIT)",
    "count": 954,
    "programs": 903,
@@ -2736,24 +2695,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0027v24",
+     "task_id": "A-ARR-0015v14",
      "category": "A-ARR",
      "snippet": "arr.len-1"
     },
     {
-     "task_id": "A-ARR-0027v33",
+     "task_id": "A-ARR-0015v15",
      "category": "A-ARR",
-     "snippet": "n.len-1"
+     "snippet": "left.len-1"
     },
     {
-     "task_id": "A-ARR-0027v57",
+     "task_id": "A-ARR-0015v18",
      "category": "A-ARR",
-     "snippet": "n.len-1"
+     "snippet": "arr.len-1"
     }
    ]
   },
   {
-   "rank": 49,
+   "rank": 48,
    "signature": "CALL_EXPR(IDENT IDENT IDENT)",
    "count": 951,
    "programs": 740,
@@ -2800,24 +2759,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0034v9",
      "category": "A-ARR",
-     "snippet": "seen(result;v)"
+     "snippet": "arrconcat(x;y)"
     },
     {
-     "task_id": "A-ARR-0051v65",
+     "task_id": "A-ARR-0032v46",
      "category": "A-ARR",
-     "snippet": "contains(result;v)"
+     "snippet": "arrconcat(a;b)"
     },
     {
-     "task_id": "A-ARR-0053v13",
+     "task_id": "A-ARR-0032v50",
      "category": "A-ARR",
-     "snippet": "contains(acc;v)"
+     "snippet": "arreq(val;other)"
     }
    ]
   },
   {
-   "rank": 50,
+   "rank": 49,
    "signature": "BIN[&&](BIN[>=](IDENT INT_LIT) BIN[<=](IDENT INT_LIT))",
    "count": 933,
    "programs": 495,
@@ -2840,14 +2799,72 @@
      "snippet": "m>=1&&m<=12"
     },
     {
-     "task_id": "A-CND-0053v19",
+     "task_id": "A-CND-0061v38",
      "category": "A-CND",
-     "snippet": "code>=100 && code<=199"
+     "snippet": "code>=97&&code<=122"
     },
     {
-     "task_id": "A-CND-0053v20",
+     "task_id": "A-CND-0061v53",
      "category": "A-CND",
-     "snippet": "code>=100&&code<=199"
+     "snippet": "c>=97&&c<=122"
+    }
+   ]
+  },
+  {
+   "rank": 50,
+   "signature": "EXPR_STMT(CALL_EXPR(FIELD_EXPR(IDENT IDENT) CALL_EXPR(IDENT STR_LIT INT_LIT)))",
+   "count": 916,
+   "programs": 305,
+   "program_share": 0.013,
+   "depth": 3,
+   "node_count": 9,
+   "per_category": {
+    "A-STR": 208,
+    "D-CLI": 117,
+    "D-CRY": 93,
+    "D-DAT": 117,
+    "D-FIO": 102,
+    "D-NET": 81,
+    "D-TST": 90,
+    "D-WEB": 108
+   },
+   "top_callees": [
+    [
+     "io.println",
+     916
+    ],
+    [
+     "nthline",
+     78
+    ],
+    [
+     "nthfield",
+     60
+    ],
+    [
+     "padleft",
+     57
+    ],
+    [
+     "repeatstr",
+     57
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-STR-0007v10",
+     "category": "A-STR",
+     "snippet": "io.println(repeat(\"ab\";3))"
+    },
+    {
+     "task_id": "A-STR-0007v24",
+     "category": "A-STR",
+     "snippet": "io.println(repeat(\"ab\";3))"
+    },
+    {
+     "task_id": "A-STR-0007v32",
+     "category": "A-STR",
+     "snippet": "io.println(repeat(\"ab\";3))"
     }
    ]
   }
@@ -2880,17 +2897,17 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
      "snippet": "i=i+1"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
      "snippet": "i=i+1"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
      "snippet": "i=i+1"
     }
@@ -2944,19 +2961,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(r)\")"
+     "snippet": "io.println(\"\\(sum(@(1;2;3;4;5)))\")"
     },
     {
-     "task_id": "A-ARR-0051v5",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(r.get(i))\")"
+     "snippet": "io.println(\"\\(sum(@(1;2;3)))\")"
     },
     {
-     "task_id": "A-ARR-0051v65",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(r.get(i))\")"
+     "snippet": "io.println(\"\\(sum(@(1;2;3;4)))\")"
     }
    ]
   },
@@ -3008,17 +3025,17 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0027v24",
      "category": "A-ARR",
-     "snippet": "out.append(cur)"
+     "snippet": "out.append(y)"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0027v33",
      "category": "A-ARR",
-     "snippet": "out.append(v)"
+     "snippet": "s.build(b)"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0027v34",
      "category": "A-ARR",
      "snippet": "out.append(v)"
     }
@@ -3051,19 +3068,19 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "i<val.len"
+     "snippet": "i<x.len"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "i<arr.len"
+     "snippet": "i<first.len"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v37",
      "category": "A-ARR",
-     "snippet": "j<out.len"
+     "snippet": "i<p.len"
     }
    ]
   },
@@ -3114,19 +3131,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v61",
+     "task_id": "A-ARR-0019v27",
      "category": "A-ARR",
-     "snippet": "io.println(fmtarr(unique(@(1 as u64;2 as u64;1 as u64;3 as u64;2 as u64))))"
+     "snippet": "io.println(fmtbool(arrcontains(@(1;2;3);2)))"
     },
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0020v50",
      "category": "A-ARR",
-     "snippet": "io.println(showint(unique(data)))"
+     "snippet": "io.println(booltostr(arrcontains(@(1 as u64;2 as u64;3 as u64);2 as u64)))"
     },
     {
-     "task_id": "A-ARR-0051v68",
+     "task_id": "A-ARR-0022v65",
      "category": "A-ARR",
-     "snippet": "io.println(fmtarr(unique(@(1;2;1;3;2;4) as @u64)))"
+     "snippet": "io.println(booltostr(arrcontains(arr;\"b\")))"
     }
    ]
   },
@@ -3178,19 +3195,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v61",
+     "task_id": "A-ARR-0027v39",
+     "category": "A-ARR",
+     "snippet": "q.append(\"\\(a.get(i))\")"
+    },
+    {
+     "task_id": "A-ARR-0029v20",
      "category": "A-ARR",
      "snippet": "parts.append(\"\\(a.get(i))\")"
     },
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0035v41",
      "category": "A-ARR",
-     "snippet": "out.concat(\"]\")"
-    },
-    {
-     "task_id": "A-ARR-0053v61",
-     "category": "A-ARR",
-     "snippet": "out.concat(\",\")"
+     "snippet": "parts.append(\"\\(m.get(i))\")"
     }
    ]
   },
@@ -3241,14 +3258,14 @@
      "snippet": "io.println(describe(\"123\"))"
     },
     {
-     "task_id": "A-ERR-0029v29",
+     "task_id": "A-ERR-0046v11",
      "category": "A-ERR",
-     "snippet": "io.println(describe(\"ab\"))"
+     "snippet": "io.println(describe(\"true\"))"
     },
     {
-     "task_id": "A-ERR-0029v35",
+     "task_id": "A-ERR-0046v26",
      "category": "A-ERR",
-     "snippet": "io.println(check(\"ab\"))"
+     "snippet": "io.println(show(\"true\"))"
     }
    ]
   },
@@ -3279,17 +3296,17 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "let cur=val.get(i)"
+     "snippet": "let v=first.get(i)"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0001v64",
      "category": "A-ARR",
-     "snippet": "let v=arr.get(i)"
+     "snippet": "let cur=arr.get(i)"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v68",
      "category": "A-ARR",
      "snippet": "let v=arr.get(i)"
     }
@@ -3351,9 +3368,9 @@
      "snippet": "s.concat(out;\"\\(scaled/p)\")"
     },
     {
-     "task_id": "A-ERR-0029v43",
+     "task_id": "A-ERR-0041v67",
      "category": "A-ERR",
-     "snippet": "s.split(lhs;\" \")"
+     "snippet": "s.concat(out;\",\")"
     }
    ]
   },
@@ -3384,19 +3401,19 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0001v54",
      "category": "A-ARR",
-     "snippet": "a.len==0"
+     "snippet": "num1.len==0"
     },
     {
-     "task_id": "A-ARR-0051v68",
+     "task_id": "A-ARR-0002v39",
      "category": "A-ARR",
      "snippet": "arr.len==0"
     },
     {
-     "task_id": "A-ARR-0052v15",
+     "task_id": "A-ARR-0003v34",
      "category": "A-ARR",
-     "snippet": "left.len==0"
+     "snippet": "val.len==0"
     }
    ]
   },
@@ -3447,19 +3464,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v5",
+     "task_id": "A-ARR-0027v21",
      "category": "A-ARR",
-     "snippet": "out.append(arr.get(i))"
+     "snippet": "q.append(p.get(i))"
     },
     {
-     "task_id": "A-ARR-0052v15",
+     "task_id": "A-ARR-0027v33",
+     "category": "A-ARR",
+     "snippet": "out.append(n.get(i))"
+    },
+    {
+     "task_id": "A-ARR-0027v39",
      "category": "A-ARR",
      "snippet": "out.append(left.get(i))"
-    },
-    {
-     "task_id": "A-ARR-0052v44",
-     "category": "A-ARR",
-     "snippet": "r.append(arr.get(i))"
     }
    ]
   },
@@ -3636,14 +3653,14 @@
      "snippet": "let la=s.len(a)"
     },
     {
-     "task_id": "A-CND-0052v40",
+     "task_id": "A-CND-0058v28",
      "category": "A-CND",
-     "snippet": "let result=s.build(b)"
+     "snippet": "let c=s.lower(first)"
     },
     {
-     "task_id": "A-CND-0052v64",
+     "task_id": "A-CND-0058v33",
      "category": "A-CND",
-     "snippet": "let result=s.build(b)"
+     "snippet": "let lc=s.lower(c)"
     }
    ]
   },
@@ -3695,17 +3712,17 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0027v24",
      "category": "A-ARR",
-     "snippet": "out=out.append(cur)"
+     "snippet": "out=out.append(y)"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0027v34",
      "category": "A-ARR",
      "snippet": "out=out.append(v)"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0027v68",
      "category": "A-ARR",
      "snippet": "out=out.append(v)"
     }
@@ -3754,19 +3771,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-CND-0057v2",
-     "category": "A-CND",
-     "snippet": "render(ishexdigit(\"7\"))"
-    },
-    {
-     "task_id": "A-CND-0058v11",
-     "category": "A-CND",
-     "snippet": "render(isvowel(\"a\"))"
-    },
-    {
      "task_id": "A-CND-0058v42",
      "category": "A-CND",
      "snippet": "show(isvowel(\"a\"))"
+    },
+    {
+     "task_id": "A-CND-0058v45",
+     "category": "A-CND",
+     "snippet": "b2s(isvowel(\"a\"))"
+    },
+    {
+     "task_id": "A-CND-0058v48",
+     "category": "A-CND",
+     "snippet": "fmtbool(isvowel(\"a\"))"
     }
    ]
   },
@@ -3856,17 +3873,17 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0002v40",
+     "category": "A-ARR",
+     "snippet": "let n=x.len"
+    },
+    {
+     "task_id": "A-ARR-0003v12",
      "category": "A-ARR",
      "snippet": "let n=arr.len"
     },
     {
-     "task_id": "A-ARR-0051v58",
-     "category": "A-ARR",
-     "snippet": "let n=arr.len"
-    },
-    {
-     "task_id": "A-ARR-0052v19",
+     "task_id": "A-ARR-0003v16",
      "category": "A-ARR",
      "snippet": "let n=arr.len"
     }
@@ -3899,17 +3916,17 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v63",
-     "category": "A-ARR",
-     "snippet": "left.len as i64"
-    },
-    {
-     "task_id": "A-ARR-0053v33",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
      "snippet": "arr.len as i64"
     },
     {
-     "task_id": "A-ARR-0054v25",
+     "task_id": "A-ARR-0003v55",
+     "category": "A-ARR",
+     "snippet": "left.len as i64"
+    },
+    {
+     "task_id": "A-ARR-0006v47",
      "category": "A-ARR",
      "snippet": "arr.len as i64"
     }
@@ -4003,19 +4020,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v5",
+     "task_id": "A-ARR-0027v21",
      "category": "A-ARR",
-     "snippet": "out=out.append(arr.get(i))"
+     "snippet": "q=q.append(p.get(i))"
     },
     {
-     "task_id": "A-ARR-0052v15",
+     "task_id": "A-ARR-0027v33",
+     "category": "A-ARR",
+     "snippet": "out=out.append(n.get(i))"
+    },
+    {
+     "task_id": "A-ARR-0027v39",
      "category": "A-ARR",
      "snippet": "out=out.append(left.get(i))"
-    },
-    {
-     "task_id": "A-ARR-0052v44",
-     "category": "A-ARR",
-     "snippet": "r=r.append(arr.get(i))"
     }
    ]
   },
@@ -4065,11 +4082,6 @@
    ],
    "examples": [
     {
-     "task_id": "A-CND-0057v55",
-     "category": "A-CND",
-     "snippet": "s.len(left)==1"
-    },
-    {
      "task_id": "A-CND-0058v42",
      "category": "A-CND",
      "snippet": "s.len(val)==0"
@@ -4078,6 +4090,11 @@
      "task_id": "A-CND-0060",
      "category": "A-CND",
      "snippet": "s.len(c)==1"
+    },
+    {
+     "task_id": "A-CND-0061v32",
+     "category": "A-CND",
+     "snippet": "s.len(x)==1"
     }
    ]
   },
@@ -4189,19 +4206,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v68",
+     "task_id": "A-ARR-0027v33",
      "category": "A-ARR",
-     "snippet": "s.add(b;\" \")"
-    },
-    {
-     "task_id": "A-ARR-0054v7",
-     "category": "A-ARR",
-     "snippet": "s.add(b;\";\")"
+     "snippet": "s.add(b;\"\\(a.get(i)) \")"
     },
     {
      "task_id": "A-ARR-0035v6",
      "category": "A-ARR",
      "snippet": "s.add(b;\"\\(arr.get(i)) \")"
+    },
+    {
+     "task_id": "A-ARR-0042v38",
+     "category": "A-ARR",
+     "snippet": "s.add(b;\"[\")"
     }
    ]
   },
@@ -4444,14 +4461,14 @@
      "snippet": "out.set(i;cur)"
     },
     {
+     "task_id": "A-ARR-0098v10",
+     "category": "A-ARR",
+     "snippet": "r.set(i;sum)"
+    },
+    {
      "task_id": "A-ARR-0086v45",
      "category": "A-ARR",
      "snippet": "s.concat(out;piece)"
-    },
-    {
-     "task_id": "A-ARR-0110v15",
-     "category": "A-ARR",
-     "snippet": "r.set(j;tmp)"
     }
    ]
   },
@@ -4719,17 +4736,17 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v68",
-     "category": "A-ARR",
-     "snippet": "<s.build(b)"
-    },
-    {
-     "task_id": "A-ARR-0054v7",
+     "task_id": "A-ARR-0027v33",
      "category": "A-ARR",
      "snippet": "<s.build(b)"
     },
     {
      "task_id": "A-ARR-0035v6",
+     "category": "A-ARR",
+     "snippet": "<s.build(b)"
+    },
+    {
+     "task_id": "A-ARR-0042v38",
      "category": "A-ARR",
      "snippet": "<s.build(b)"
     }
@@ -4782,19 +4799,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0014v3",
      "category": "A-ARR",
-     "snippet": "lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==cur){seen=true;br}}"
+     "snippet": "lp(let i=0;i<lhs.len;i=i+1){ if(i==0){ out=lhs.get(i); br}}"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0019",
      "category": "A-ARR",
-     "snippet": "lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==v){seen=true;br}}"
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(arr.get(i)==val){<true}}"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0019v17",
      "category": "A-ARR",
-     "snippet": "lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==v){ seen=true}}"
+     "snippet": "lp(let i=0;i<n.len;i=i+1){ if(n.get(i)-m==0){<true}}"
     }
    ]
   },
@@ -4845,19 +4862,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-CND-0058v19",
-     "category": "A-CND",
-     "snippet": "s.slice(vowels;i;i+1)"
-    },
-    {
      "task_id": "A-CND-0062v51",
      "category": "A-CND",
      "snippet": "s.slice(chars;i;i+1)"
     },
     {
-     "task_id": "A-ERR-0016v69",
-     "category": "A-ERR",
-     "snippet": "s.slice(p;i;i+1)"
+     "task_id": "A-CND-0058v19",
+     "category": "A-CND",
+     "snippet": "s.slice(vowels;i;i+1)"
+    },
+    {
+     "task_id": "MIG-P2-A-A-CND-0061v3-7ba2f3da",
+     "category": "A-CND",
+     "snippet": "s.slice(lowercase;j;j+1)"
     }
    ]
   },
@@ -4886,19 +4903,19 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0019",
      "category": "A-ARR",
-     "snippet": "out.get(j)==cur"
+     "snippet": "arr.get(i)==val"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0019v27",
      "category": "A-ARR",
-     "snippet": "out.get(j)==v"
+     "snippet": "lhs.get(i)==rhs"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0019v31",
      "category": "A-ARR",
-     "snippet": "out.get(j)==v"
+     "snippet": "left.get(i)==right"
     }
    ]
   },
@@ -5006,19 +5023,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v61",
+     "task_id": "A-ARR-0004v57",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\")}"
+     "snippet": "lp(let i=0;i<n.len;i=i+1){acc=mul(acc;n.get(i))}"
     },
     {
-     "task_id": "A-ARR-0054v8",
+     "task_id": "A-ARR-0027v39",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\")}"
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ q=q.append(\"\\(a.get(i))\")}"
     },
     {
-     "task_id": "A-ARR-0055v30",
+     "task_id": "A-ARR-0027v57",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){parts=parts.append(\"\\(a.get(i))\")}"
+     "snippet": "lp(let i=0;i<n.len;i=i+1){ result=result.append(n.get(n.len-1-i))}"
     }
    ]
   },
@@ -5047,19 +5064,19 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0027v24",
+     "task_id": "A-ARR-0015v14",
      "category": "A-ARR",
      "snippet": "arr.len-1"
     },
     {
-     "task_id": "A-ARR-0027v33",
+     "task_id": "A-ARR-0015v15",
      "category": "A-ARR",
-     "snippet": "n.len-1"
+     "snippet": "left.len-1"
     },
     {
-     "task_id": "A-ARR-0027v57",
+     "task_id": "A-ARR-0015v18",
      "category": "A-ARR",
-     "snippet": "n.len-1"
+     "snippet": "arr.len-1"
     }
    ]
   },
@@ -5111,19 +5128,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0034v9",
      "category": "A-ARR",
-     "snippet": "seen(result;v)"
+     "snippet": "arrconcat(x;y)"
     },
     {
-     "task_id": "A-ARR-0051v65",
+     "task_id": "A-ARR-0032v46",
      "category": "A-ARR",
-     "snippet": "contains(result;v)"
+     "snippet": "arrconcat(a;b)"
     },
     {
-     "task_id": "A-ARR-0053v13",
+     "task_id": "A-ARR-0032v50",
      "category": "A-ARR",
-     "snippet": "contains(acc;v)"
+     "snippet": "arreq(val;other)"
     }
    ]
   },
@@ -5151,14 +5168,14 @@
      "snippet": "m>=1&&m<=12"
     },
     {
-     "task_id": "A-CND-0053v19",
+     "task_id": "A-CND-0061v38",
      "category": "A-CND",
-     "snippet": "code>=100 && code<=199"
+     "snippet": "code>=97&&code<=122"
     },
     {
-     "task_id": "A-CND-0053v20",
+     "task_id": "A-CND-0061v53",
      "category": "A-CND",
-     "snippet": "code>=100&&code<=199"
+     "snippet": "c>=97&&c<=122"
     }
    ]
   },
@@ -5268,17 +5285,17 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v68",
-     "category": "A-ARR",
-     "snippet": "s.builder()"
-    },
-    {
-     "task_id": "A-ARR-0054v7",
+     "task_id": "A-ARR-0027v33",
      "category": "A-ARR",
      "snippet": "s.builder()"
     },
     {
      "task_id": "A-ARR-0035v6",
+     "category": "A-ARR",
+     "snippet": "s.builder()"
+    },
+    {
+     "task_id": "A-ARR-0042v38",
      "category": "A-ARR",
      "snippet": "s.builder()"
     }
@@ -5300,19 +5317,19 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ERR-0016v11",
+     "task_id": "A-ERR-0004v16",
      "category": "A-ERR",
-     "snippet": "<$parseerr{$invalidformat:\"not a number\"}"
+     "snippet": "<$lookuperr{$notfound:\"index out of bounds\"}"
     },
     {
-     "task_id": "A-ERR-0016v19",
+     "task_id": "A-ERR-0004v24",
      "category": "A-ERR",
-     "snippet": "<$parseerr{$invalidformat:\"no digits after sign\"}"
+     "snippet": "<$lookuperr{$notfound:\"index out of range\"}"
     },
     {
-     "task_id": "A-ERR-0016v40",
+     "task_id": "A-ERR-0004v34",
      "category": "A-ERR",
-     "snippet": "<$parseerr{$invalidformat:\"not a valid integer\"}"
+     "snippet": "<$lookuperr{$notfound:\"index out of bounds\"}"
     }
    ]
   },
@@ -5364,17 +5381,17 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v68",
-     "category": "A-ARR",
-     "snippet": "let b=s.builder()"
-    },
-    {
-     "task_id": "A-ARR-0054v7",
+     "task_id": "A-ARR-0027v33",
      "category": "A-ARR",
      "snippet": "let b=s.builder()"
     },
     {
      "task_id": "A-ARR-0035v6",
+     "category": "A-ARR",
+     "snippet": "let b=s.builder()"
+    },
+    {
+     "task_id": "A-ARR-0042v38",
      "category": "A-ARR",
      "snippet": "let b=s.builder()"
     }
@@ -5400,19 +5417,19 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v68",
+     "task_id": "A-ARR-0004v38",
      "category": "A-ARR",
-     "snippet": "@(7;7;7)"
+     "snippet": "@(2;3;4)"
     },
     {
-     "task_id": "A-ARR-0051v7",
+     "task_id": "A-ARR-0015v60",
      "category": "A-ARR",
-     "snippet": "@(5;5;5)"
+     "snippet": "@(1;2;3)"
     },
     {
-     "task_id": "A-ARR-0054v8",
+     "task_id": "A-ARR-0016v45",
      "category": "A-ARR",
-     "snippet": "@(7;8;9)"
+     "snippet": "@(1;2;3)"
     }
    ]
   },
@@ -5599,6 +5616,11 @@
    "top_callees": [],
    "examples": [
     {
+     "task_id": "A-ARR-0001v54",
+     "category": "A-ARR",
+     "snippet": "<$sumerr{$empty:true}"
+    },
+    {
      "task_id": "A-ARR-0008v54",
      "category": "A-ARR",
      "snippet": "<$lenres{$empty:true}"
@@ -5607,11 +5629,6 @@
      "task_id": "A-ARR-0011v6",
      "category": "A-ARR",
      "snippet": "<$emptyerr{$empty:true}"
-    },
-    {
-     "task_id": "A-ARR-0001v54",
-     "category": "A-ARR",
-     "snippet": "<$sumerr{$empty:true}"
     }
    ]
   }
@@ -5649,19 +5666,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0054v7",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(showarr(arrslice(@(1;2;3;4;5);1;4)))\"); io.println(\"\\(showarr(arrslice(@(10;20;30);0;2)))\")"
+     "snippet": "io.println(\"\\(sum(@(1;2;3;4;5)))\"); io.println(\"\\(sum(@(-3;7;-4)))\")"
     },
     {
-     "task_id": "A-ARR-0055v17",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(render(arrslice(data;1;4)))\"); io.println(\"\\(render(arrslice(data;0;2)))\")"
+     "snippet": "io.println(\"\\(sum(@(1;2;3)))\"); io.println(\"\\(sum(@()))\")"
     },
     {
-     "task_id": "A-ARR-0055v2",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(r.len)\"); io.println(\"\\(r.get(0))\")"
+     "snippet": "io.println(\"\\(sum(@(1;2;3;4)))\"); io.println(\"\\(sum(@()))\")"
     }
    ]
   },
@@ -5713,19 +5730,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v61",
+     "task_id": "A-ARR-0014v14",
      "category": "A-ARR",
-     "snippet": "io.println(fmtarr(unique(@(1 as u64;2 as u64;1 as u64;3 as u64;2 as u64)))); io.println(fmtarr(unique(@(5 as u64;5 as u64;5 as u64))))"
+     "snippet": "io.println(first(@(\"a\";\"b\";\"c\"))); io.println(first(@(\"only\")))"
     },
     {
-     "task_id": "A-ARR-0051v68",
+     "task_id": "A-ARR-0014v3",
      "category": "A-ARR",
-     "snippet": "io.println(fmtarr(unique(@(1;2;1;3;2;4) as @u64))); io.println(fmtarr(unique(@(7;7;7) as @u64)))"
+     "snippet": "io.println(first(@(\"apple\";\"banana\";\"cherry\"))); io.println(first(@(\"solo\")))"
     },
     {
-     "task_id": "A-ARR-0052",
+     "task_id": "A-ARR-0014v34",
      "category": "A-ARR",
-     "snippet": "io.println(fmt(unique(@(1.0;2.0;1.0;3.0;2.0)))); io.println(fmt(unique(@(5.5;5.5))))"
+     "snippet": "io.println(first(@(\"alpha\";\"beta\";\"gamma\"))); io.println(first(@(\"solo\")))"
     }
    ]
   },
@@ -5761,19 +5778,19 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(r)\"); <0"
+     "snippet": "io.println(\"\\(sum(@()))\"); <0"
     },
     {
-     "task_id": "A-ARR-0053v2",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(r.len)\"); <0"
+     "snippet": "io.println(\"\\(sum(@(-4;10;-6)))\"); <0"
     },
     {
-     "task_id": "A-ARR-0054v7",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
-     "snippet": "io.println(\"\\(showarr(arrslice(@(1;2;3);2;2)))\"); <0"
+     "snippet": "io.println(\"\\(sum(@(-5;5)))\"); <0"
     }
    ]
   },
@@ -5825,65 +5842,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v61",
+     "task_id": "A-ARR-0014v14",
      "category": "A-ARR",
-     "snippet": "io.println(fmtarr(unique(@(7 as u64)))); <0"
+     "snippet": "io.println(first(@(\"only\"))); <0"
     },
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0014v3",
      "category": "A-ARR",
-     "snippet": "io.println(showint(unique(data))); <0"
+     "snippet": "io.println(first(@(\"solo\"))); <0"
     },
     {
-     "task_id": "A-ARR-0051v68",
+     "task_id": "A-ARR-0014v34",
      "category": "A-ARR",
-     "snippet": "io.println(fmtarr(unique(@(7;7;7) as @u64))); <0"
+     "snippet": "io.println(first(@())); <0"
     }
    ]
   },
   {
    "rank": 5,
-   "signature": "SEQ2(FIELD(TYPE_EXPR) FIELD(TYPE_EXPR))",
-   "count": 1932,
-   "programs": 1504,
-   "program_share": 0.0643,
-   "depth": 2,
-   "node_count": 5,
-   "per_category": {
-    "A-ARR": 5,
-    "A-CND": 14,
-    "A-ERR": 1894,
-    "A-MTH": 2,
-    "A-SRT": 3,
-    "D-CFG": 2,
-    "D-CLI": 1,
-    "D-CRY": 2,
-    "D-DAT": 2,
-    "D-FIO": 3,
-    "D-TST": 3,
-    "D-WEB": 1
-   },
-   "top_callees": [],
-   "examples": [
-    {
-     "task_id": "A-ARR-0008v54",
-     "category": "A-ARR",
-     "snippet": "empty:bool;$count:i64"
-    },
-    {
-     "task_id": "A-ARR-0093v14",
-     "category": "A-ARR",
-     "snippet": "some:f64;$none:bool"
-    },
-    {
-     "task_id": "MIG-P2-A-A-ARR-0096v13-053a94db",
-     "category": "A-ARR",
-     "snippet": "p:f64;q:f64"
-    }
-   ]
-  },
-  {
-   "rank": 6,
    "signature": "SEQ2(BIND_STMT(IDENT MATCH_STMT(CALL_EXPR(...) MATCH_ARM(...) MATCH_ARM(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)))",
    "count": 1314,
    "programs": 553,
@@ -5917,24 +5893,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ERR-0012v43",
+     "task_id": "A-ERR-0001v2",
      "category": "A-ERR",
-     "snippet": "let r1=mt safelast(@(1;2;3)) {$ok:v v;$err:e -1}; io.println(\"\\(r1)\")"
+     "snippet": "let r=mt safediv(10;2) {$ok:v v;$err:e -1}; io.println(\"\\(r)\")"
     },
     {
-     "task_id": "A-ERR-0012v58",
+     "task_id": "A-ERR-0001v46",
      "category": "A-ERR",
-     "snippet": "let filled=mt safelast(@(4;8;15)) {$ok:v v;$err:e -1}; io.println(\"\\(filled)\")"
+     "snippet": "let r1=mt safediv(10;2) {$ok:v v;$err:e -1}; io.println(\"\\(r1)\")"
     },
     {
-     "task_id": "A-ERR-0012v60",
+     "task_id": "A-ERR-0001v70",
      "category": "A-ERR",
-     "snippet": "let a=mt safelast(@(1;2;3)) {$ok:v v;$err:e -1}; io.println(\"\\(a)\")"
+     "snippet": "let r1=mt safediv(10;2) {$ok:v v;$err:e -1}; io.println(\"\\(r1)\")"
     }
    ]
   },
   {
-   "rank": 7,
+   "rank": 6,
    "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))) RETURN_STMT(IDENT))",
    "count": 1255,
    "programs": 1247,
@@ -5981,24 +5957,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v5",
+     "task_id": "A-ARR-0003v63",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(!contains(out;arr.get(i))){out=out.append(arr.get(i))} }; <out"
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(arr.len>0){ total=total+arr.get(i); }el{ total=total; }; }; <total"
     },
     {
-     "task_id": "A-ARR-0053v61",
+     "task_id": "A-ARR-0014v3",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(arr.get(i)==v){found=true}; }; <found"
+     "snippet": "lp(let i=0;i<lhs.len;i=i+1){ if(i==0){ out=lhs.get(i); br } }; <out"
     },
     {
-     "task_id": "A-ARR-0053v62",
+     "task_id": "A-ARR-0019v31",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(!hasitem(out;arr.get(i))){out=out.append(arr.get(i))} }; <out"
+     "snippet": "lp(let i=0;i<left.len;i=i+1){ if(!found){ if(left.get(i)==right){ found=true; }; }; }; <found"
     }
    ]
   },
   {
-   "rank": 8,
+   "rank": 7,
    "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))) RETURN_STMT(IDENT))",
    "count": 1054,
    "programs": 1038,
@@ -6044,24 +6020,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0052",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){ acc=if(i==0){\"\\(a.get(0))\"}el{\"\\(acc) \\(a.get(i))\"} }; <acc"
+     "snippet": "lp(let i=0;i<x.len;i=i+1){ total=total+x.get(i) }; <total"
     },
     {
-     "task_id": "A-ARR-0054v25",
+     "task_id": "A-ARR-0001v37",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){ text=if(i==0){\"\\(a.get(i))\"}el{\"\\(text) \\(a.get(i))\"} }; <text"
+     "snippet": "lp(let i=0;i<p.len;i=i+1){ q=q+p.get(i); }; <q"
     },
     {
-     "task_id": "A-ARR-0055v17",
+     "task_id": "A-ARR-0001v41",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){ out=if(i==0){\"\\(a.get(i))\"}el{\"\\(out) \\(a.get(i))\"} }; <out"
+     "snippet": "lp(let m=0;m<n.len;m=m+1){ acc=acc+n.get(m); }; <acc"
     }
    ]
   },
   {
-   "rank": 9,
+   "rank": 8,
    "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IF_STMT(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IF_STMT(...))))",
    "count": 959,
    "programs": 464,
@@ -6123,7 +6099,7 @@
    ]
   },
   {
-   "rank": 10,
+   "rank": 9,
    "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(BIND_STMT(...) IF_STMT(...))) RETURN_STMT(IDENT))",
    "count": 878,
    "programs": 874,
@@ -6170,24 +6146,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<arr.len;i=i+1){ let v=arr.get(i); if(!seen(result;v)){result=result.append(v)} }; <result"
+     "snippet": "lp(let i=0;i<first.len;i=i+1){ let v=first.get(i); if(v<0){ total=total-(0-v) }el{ total=total+v } }; <total"
     },
     {
-     "task_id": "A-ARR-0051v65",
+     "task_id": "A-ARR-0001v7",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<arr.len;i=i+1){ let v=arr.get(i); if(!(contains(result;v))){ result=result.append(v) } }; <result"
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ let v=arr.get(i); if(v>=0){ total=total+v; }el{ if(v<0){total=total+v}; }; }; <total"
     },
     {
-     "task_id": "A-ARR-0053v13",
+     "task_id": "A-ARR-0004v44",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<p.len;i=i+1){ let v=p.get(i); if(!contains(acc;v)){acc=acc.append(v)} }; <acc"
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ let cur=arr.get(i); if(cur<0){ result=result*cur }el{ result=result*cur } }; <result"
     }
    ]
   },
   {
-   "rank": 11,
+   "rank": 10,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT ARRAY_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))))",
    "count": 834,
    "programs": 754,
@@ -6234,24 +6210,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v61",
+     "task_id": "A-ARR-0027v39",
      "category": "A-ARR",
-     "snippet": "let parts=mut.@(); lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\")}"
+     "snippet": "let q=mut.@(); lp(let i=0;i<a.len;i=i+1){ q=q.append(\"\\(a.get(i))\")}"
     },
     {
-     "task_id": "A-ARR-0054v8",
+     "task_id": "A-ARR-0027v57",
      "category": "A-ARR",
-     "snippet": "let parts=mut.@(); lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\")}"
+     "snippet": "let result=mut.@(); lp(let i=0;i<n.len;i=i+1){ result=result.append(n.get(n.len-1-i))}"
     },
     {
-     "task_id": "A-ARR-0055v30",
+     "task_id": "A-ARR-0029v20",
      "category": "A-ARR",
      "snippet": "let parts=mut.@(); lp(let i=0;i<a.len;i=i+1){parts=parts.append(\"\\(a.get(i))\")}"
     }
    ]
   },
   {
-   "rank": 12,
+   "rank": 11,
    "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)) BIND_STMT(IDENT MATCH_STMT(CALL_EXPR(...) MATCH_ARM(...) MATCH_ARM(...))))",
    "count": 747,
    "programs": 501,
@@ -6271,11 +6247,11 @@
      26
     ],
     [
-     "safelast",
+     "safefirst",
      21
     ],
     [
-     "safefirst",
+     "safelast",
      21
     ],
     [
@@ -6285,24 +6261,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ERR-0012v43",
+     "task_id": "A-ERR-0001v2",
      "category": "A-ERR",
-     "snippet": "io.println(\"\\(r1)\"); let r2=mt safelast(@(7)) {$ok:v v;$err:e -1}"
+     "snippet": "io.println(\"\\(r)\"); let r2=mt safediv(9;0) {$ok:v v;$err:e -1}"
     },
     {
-     "task_id": "A-ERR-0012v58",
+     "task_id": "A-ERR-0001v46",
      "category": "A-ERR",
-     "snippet": "io.println(\"\\(filled)\"); let single=mt safelast(@(7)) {$ok:v v;$err:e -1}"
+     "snippet": "io.println(\"\\(r1)\"); let r2=mt safediv(7;0) {$ok:v v;$err:e -1}"
     },
     {
-     "task_id": "A-ERR-0012v60",
+     "task_id": "A-ERR-0001v70",
      "category": "A-ERR",
-     "snippet": "io.println(\"\\(a)\"); let b=mt safelast(@()) {$ok:v v;$err:e -1}"
+     "snippet": "io.println(\"\\(r1)\"); let r2=mt safediv(7;0) {$ok:v v;$err:e -1}"
     }
    ]
   },
   {
-   "rank": 13,
+   "rank": 12,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT INT_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))))",
    "count": 739,
    "programs": 730,
@@ -6365,7 +6341,7 @@
    ]
   },
   {
-   "rank": 14,
+   "rank": 13,
    "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT IDENT) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))) RETURN_STMT(IDENT))",
    "count": 671,
    "programs": 666,
@@ -6411,24 +6387,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0027v10",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<n;i=i+1){ res=res.append(arr.get(n-1-i)); }; <res"
+     "snippet": "lp(let i=0;i<n;i=i+1){ total=total+arr.get(i as u64); }; <total"
     },
     {
-     "task_id": "A-ARR-0027v4",
+     "task_id": "A-ARR-0003v16",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<n;i=i+1){ res=res.append(first.get(n-1-i)) }; <res"
+     "snippet": "lp(let i=0;i<n;i=i+1){ total=total+arr.get(i); }; <total"
     },
     {
-     "task_id": "A-ARR-0028v19",
+     "task_id": "A-ARR-0006v13",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<n;i=i+1){out=out.set(i;arr.get(n-1-i))}; <out"
+     "snippet": "lp(let i=0;i<n;i=i+1){ acc=acc*arr.get(i) }; <acc"
     }
    ]
   },
   {
-   "rank": 15,
+   "rank": 14,
    "signature": "SEQ2(BIND_STMT(IDENT INDEX_EXPR(IDENT IDENT)) ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(...) IDENT INDEX_EXPR(...))))",
    "count": 610,
    "programs": 589,
@@ -6467,6 +6443,11 @@
    ],
    "examples": [
     {
+     "task_id": "A-ARR-0110v66",
+     "category": "A-ARR",
+     "snippet": "let tmp=r.get(val); r=r.set(val;r.get(other))"
+    },
+    {
      "task_id": "A-ARR-0110v15",
      "category": "A-ARR",
      "snippet": "let tmp=r.get(i); r=r.set(i;r.get(j))"
@@ -6475,16 +6456,11 @@
      "task_id": "A-ARR-0110v22",
      "category": "A-ARR",
      "snippet": "let tmp=r.get(i); r=r.set(i;r.get(j))"
-    },
-    {
-     "task_id": "A-ARR-0110v24",
-     "category": "A-ARR",
-     "snippet": "let tmp=r.get(i); r=r.set(i;r.get(j))"
     }
    ]
   },
   {
-   "rank": 16,
+   "rank": 15,
    "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IF_STMT(...))) RETURN_STMT(INT_LIT))",
    "count": 537,
    "programs": 537,
@@ -6547,7 +6523,7 @@
    ]
   },
   {
-   "rank": 17,
+   "rank": 16,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT INT_LIT) MUT_BIND_STMT(IDENT INT_LIT))",
    "count": 504,
    "programs": 413,
@@ -6590,7 +6566,7 @@
    ]
   },
   {
-   "rank": 18,
+   "rank": 17,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT BOOL_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))))",
    "count": 494,
    "programs": 459,
@@ -6636,24 +6612,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0019v31",
      "category": "A-ARR",
-     "snippet": "let seen=mut.false; lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==cur){seen=true;br}}"
+     "snippet": "let found=mut.false; lp(let i=0;i<left.len;i=i+1){ if(!found){ if(left.get(i)==right){ found=true}}}"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0019v32",
      "category": "A-ARR",
-     "snippet": "let seen=mut.false; lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==v){seen=true;br}}"
+     "snippet": "let found=mut.false; lp(let i=0;i<arr.len;i=i+1){ if(arr.get(i)==val){found=true}}"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0019v64",
      "category": "A-ARR",
-     "snippet": "let seen=mut.false; lp(let j=0;j<out.len;j=j+1){ if(out.get(j)==v){ seen=true}}"
+     "snippet": "let found=mut.false; lp(let i=0;i<arr.len;i=i+1){ if(arr.get(i)==val){ found=true; br}}"
     }
    ]
   },
   {
-   "rank": 19,
+   "rank": 18,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT ARRAY_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT IDENT) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))))",
    "count": 454,
    "programs": 451,
@@ -6714,7 +6690,7 @@
    ]
   },
   {
-   "rank": 20,
+   "rank": 19,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT ARRAY_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(BIND_STMT(...) IF_STMT(...))))",
    "count": 452,
    "programs": 451,
@@ -6757,24 +6733,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0037v63",
      "category": "A-ARR",
-     "snippet": "let result=mut.@(); lp(let i=0;i<arr.len;i=i+1){ let v=arr.get(i); if(!seen(result;v)){result=result.append(v)}}"
+     "snippet": "let acc=mut.@(); lp(let i=0;i<left.len;i=i+1){ let v=left.get(i); if(v>=0.0){ acc=acc.append(v*2.0) }el{ acc=acc.append(v*2.0)}}"
     },
     {
-     "task_id": "A-ARR-0051v65",
+     "task_id": "A-ARR-0041v15",
      "category": "A-ARR",
-     "snippet": "let result=mut.@(); lp(let i=0;i<arr.len;i=i+1){ let v=arr.get(i); if(!(contains(result;v))){ result=result.append(v)}}"
+     "snippet": "let out=mut.@(); lp(let i=0;i<left.len;i=i+1){ let v=left.get(i); if(v>0){ out=out.append(v); }el{ out=out}}"
     },
     {
-     "task_id": "A-ARR-0053v13",
+     "task_id": "A-ARR-0041v32",
      "category": "A-ARR",
-     "snippet": "let acc=mut.@(); lp(let i=0;i<p.len;i=i+1){ let v=p.get(i); if(!contains(acc;v)){acc=acc.append(v)}}"
+     "snippet": "let outv=mut.@(); lp(let i=0;i<x.len;i=i+1){ let v=x.get(i); if(v>0){outv=outv.append(v)}}"
     }
    ]
   },
   {
-   "rank": 21,
+   "rank": 20,
    "signature": "SEQ2(BIND_STMT(IDENT CALL_EXPR(IDENT STR_LIT)) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)))",
    "count": 426,
    "programs": 147,
@@ -6816,6 +6792,11 @@
    ],
    "examples": [
     {
+     "task_id": "A-CND-0059v61",
+     "category": "A-CND",
+     "snippet": "let a=isconsonant(\"b\"); io.println(\"\\(a)\")"
+    },
+    {
      "task_id": "A-CND-0057v33",
      "category": "A-CND",
      "snippet": "let r1=ishexdigit(\"7\"); io.println(\"\\(r1)\")"
@@ -6824,16 +6805,11 @@
      "task_id": "A-CND-0058v13",
      "category": "A-CND",
      "snippet": "let r1=isvowel(\"a\"); io.println(\"\\(r1)\")"
-    },
-    {
-     "task_id": "A-CND-0059v61",
-     "category": "A-CND",
-     "snippet": "let a=isconsonant(\"b\"); io.println(\"\\(a)\")"
     }
    ]
   },
   {
-   "rank": 22,
+   "rank": 21,
    "signature": "SEQ2(ASSIGN[=](IDENT BOOL_LIT) BREAK_STMT)",
    "count": 422,
    "programs": 388,
@@ -6859,24 +6835,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0019v64",
      "category": "A-ARR",
-     "snippet": "seen=true;br"
+     "snippet": "found=true; br"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0020v13",
      "category": "A-ARR",
-     "snippet": "seen=true;br"
+     "snippet": "found=true;br"
     },
     {
-     "task_id": "A-ARR-0051v58",
+     "task_id": "A-ARR-0020v38",
      "category": "A-ARR",
-     "snippet": "seen=true;br"
+     "snippet": "found=true;br"
     }
    ]
   },
   {
-   "rank": 23,
+   "rank": 22,
    "signature": "SEQ2(ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(...) IDENT INDEX_EXPR(...))) ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(...) BIN[+](...) IDENT)))",
    "count": 422,
    "programs": 416,
@@ -6930,7 +6906,7 @@
    ]
   },
   {
-   "rank": 24,
+   "rank": 23,
    "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(EXPR_STMT(...))) RETURN_STMT(INT_LIT))",
    "count": 410,
    "programs": 410,
@@ -6966,30 +6942,30 @@
      2
     ],
     [
-     "grouptostr",
+     "fmt",
      1
     ]
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v5",
+     "task_id": "A-ARR-0004v14",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<r.len;i=i+1){ io.println(\"\\(r.get(i))\") }; <0"
+     "snippet": "lp(let i=0;i<cases.len;i=i+1){ io.println(\"\\(product(cases.get(i)))\") }; <0"
     },
     {
-     "task_id": "A-ARR-0051v65",
+     "task_id": "A-ARR-0028v19",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<r.len;i=i+1){ io.println(\"\\(r.get(i))\") }; <0"
+     "snippet": "lp(let i=0;i<r.len;i=i+1){io.println(\"\\(r.get(i))\")}; <0"
     },
     {
-     "task_id": "A-ARR-0051v67",
+     "task_id": "A-ARR-0028v31",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<r.len;i=i+1){ io.println(\"\\(r.get(i))\"); }; <0"
+     "snippet": "lp(let i=0;i<rev.len;i=i+1){io.println(\"\\(rev.get(i))\")}; <0"
     }
    ]
   },
   {
-   "rank": 25,
+   "rank": 24,
    "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))) RETURN_STMT(BOOL_LIT))",
    "count": 401,
    "programs": 391,
@@ -7035,24 +7011,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v5",
+     "task_id": "A-ARR-0019",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<p.len;i=i+1){ if(p.get(i)==q){<true} }; <false"
+     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(arr.get(i)==val){<true} }; <false"
     },
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0019v17",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<acc.len;i=i+1){ if(acc.get(i)==v){<true} }; <false"
+     "snippet": "lp(let i=0;i<n.len;i=i+1){ if(n.get(i)-m==0){<true}; }; <false"
     },
     {
-     "task_id": "A-ARR-0051v65",
+     "task_id": "A-ARR-0019v27",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<arr.len;i=i+1){ if(arr.get(i)==v){<true} }; <false"
+     "snippet": "lp(let i=0;i<lhs.len;i=i+1){ if(lhs.get(i)==rhs){<true} }; <false"
     }
    ]
   },
   {
-   "rank": 26,
+   "rank": 25,
    "signature": "SEQ2(BIND_STMT(IDENT MATCH_STMT(CALL_EXPR(...) MATCH_ARM(...) MATCH_ARM(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IDENT)))",
    "count": 351,
    "programs": 141,
@@ -7086,24 +7062,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ERR-0015v46",
+     "task_id": "A-ERR-0005v16",
      "category": "A-ERR",
-     "snippet": "let r=mt safelast(@(\"a\";\"b\")) {$ok:v v;$err:e \"empty\"}; io.println(r)"
+     "snippet": "let r1=mt safeget(a;1) {$ok:v \"\\(v)\";$err:e \"error\"}; io.println(r1)"
     },
     {
-     "task_id": "A-ERR-0015v54",
+     "task_id": "A-ERR-0007v3",
      "category": "A-ERR",
-     "snippet": "let r=mt safelast(@(\"alpha\";\"beta\";\"gamma\")) {$ok:v v;$err:e \"empty\"}; io.println(r)"
+     "snippet": "let a=mt safeget(items;1) {$ok:v v;$err:e \"notfound\"}; io.println(a)"
     },
     {
-     "task_id": "A-ERR-0015v55",
+     "task_id": "A-ERR-0007v72",
      "category": "A-ERR",
-     "snippet": "let r1=mt safelast(@(\"a\";\"b\";\"c\")) {$ok:v v;$err:e \"empty\"}; io.println(r1)"
+     "snippet": "let r=mt safeget(a;1){$ok:v v;$err:e \"err\"}; io.println(r)"
     }
    ]
   },
   {
-   "rank": 27,
+   "rank": 26,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT STR_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))))",
    "count": 344,
    "programs": 342,
@@ -7149,24 +7125,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0052",
+     "task_id": "A-ARR-0018v29",
      "category": "A-ARR",
-     "snippet": "let acc=mut.\"\"; lp(let i=0;i<a.len;i=i+1){ acc=if(i==0){\"\\(a.get(0))\"}el{\"\\(acc) \\(a.get(i))\"}}"
+     "snippet": "let res=mut.\"\"; lp(let i=0;i<arr.len;i=i+1){ res=arr.get(i)}"
     },
     {
-     "task_id": "A-ARR-0054v25",
+     "task_id": "A-ARR-0018v35",
      "category": "A-ARR",
-     "snippet": "let text=mut.\"\"; lp(let i=0;i<a.len;i=i+1){ text=if(i==0){\"\\(a.get(i))\"}el{\"\\(text) \\(a.get(i))\"}}"
+     "snippet": "let lhs=mut.\"\"; lp(let rhs=0;rhs<arr.len;rhs=rhs+1){ lhs=arr.get(rhs)}"
     },
     {
-     "task_id": "A-ARR-0055v17",
+     "task_id": "A-ARR-0029v11",
      "category": "A-ARR",
      "snippet": "let out=mut.\"\"; lp(let i=0;i<a.len;i=i+1){ out=if(i==0){\"\\(a.get(i))\"}el{\"\\(out) \\(a.get(i))\"}}"
     }
    ]
   },
   {
-   "rank": 28,
+   "rank": 27,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT INT_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))))",
    "count": 339,
    "programs": 338,
@@ -7212,24 +7188,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0007v25",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "let count=mut.0; lp(let i=0;i<n.len;i=i+1){ count=count+1}"
+     "snippet": "let total=mut.0; lp(let i=0;i<x.len;i=i+1){ total=total+x.get(i)}"
     },
     {
-     "task_id": "A-ARR-0007v37",
+     "task_id": "A-ARR-0001v37",
      "category": "A-ARR",
-     "snippet": "let p=mut.0; lp(let q=0;q<arr.len;q=q+1){ p=p+1}"
+     "snippet": "let q=mut.0; lp(let i=0;i<p.len;i=i+1){ q=q+p.get(i)}"
     },
     {
-     "task_id": "A-ARR-0007v49",
+     "task_id": "A-ARR-0001v41",
      "category": "A-ARR",
-     "snippet": "let total=mut.0; lp(let i=0;i<n.len;i=i+1){ total=total+1}"
+     "snippet": "let acc=mut.0; lp(let m=0;m<n.len;m=m+1){ acc=acc+n.get(m)}"
     }
    ]
   },
   {
-   "rank": 29,
+   "rank": 28,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT INT_LIT) MUT_BIND_STMT(IDENT IDENT))",
    "count": 326,
    "programs": 305,
@@ -7267,7 +7243,7 @@
    ]
   },
   {
-   "rank": 30,
+   "rank": 29,
    "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT IDENT) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(BIND_STMT(...) IF_STMT(...))) RETURN_STMT(IDENT))",
    "count": 325,
    "programs": 325,
@@ -7313,6 +7289,11 @@
    ],
    "examples": [
     {
+     "task_id": "A-ARR-0063v60",
+     "category": "A-ARR",
+     "snippet": "lp(let i=1;i<n;i=i+1){ let v=first.get(i); if(v<m){m=v} }; <m"
+    },
+    {
      "task_id": "A-ARR-0059v27",
      "category": "A-ARR",
      "snippet": "lp(let i=1;i<n;i=i+1){ let v=arr.get(i); if(v<m){m=v}; }; <m"
@@ -7321,16 +7302,11 @@
      "task_id": "A-ARR-0060v15",
      "category": "A-ARR",
      "snippet": "lp(let i=1;i<n;i=i+1){ let cur=left.get(i); if(cur>best){best=cur}el{} }; <best"
-    },
-    {
-     "task_id": "A-ARR-0060v59",
-     "category": "A-ARR",
-     "snippet": "lp(let i=1;i<n;i=i+1){ let cur=arr.get(i); if(cur>best){best=cur} }; <best"
     }
    ]
   },
   {
-   "rank": 31,
+   "rank": 30,
    "signature": "SEQ2(ASSIGN[=](IDENT IDENT) ASSIGN[=](IDENT IDENT))",
    "count": 315,
    "programs": 225,
@@ -7350,11 +7326,6 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0092v59",
-     "category": "A-ARR",
-     "snippet": "rhs=best;best=v"
-    },
-    {
      "task_id": "A-ARR-0093v52",
      "category": "A-ARR",
      "snippet": "first=second; second=tmp"
@@ -7363,11 +7334,16 @@
      "task_id": "A-ARR-0096v23",
      "category": "A-ARR",
      "snippet": "right=left;left=v"
+    },
+    {
+     "task_id": "A-ARR-0092v59",
+     "category": "A-ARR",
+     "snippet": "rhs=best;best=v"
     }
    ]
   },
   {
-   "rank": 32,
+   "rank": 31,
    "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(ASSIGN[=](...))) RETURN_STMT(STR_LIT))",
    "count": 304,
    "programs": 302,
@@ -7408,24 +7384,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v61",
-     "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\") }; <\"[\\(s.join(\", \";parts))]\""
-    },
-    {
-     "task_id": "A-ARR-0054v8",
-     "category": "A-ARR",
-     "snippet": "lp(let i=0;i<a.len;i=i+1){ parts=parts.append(\"\\(a.get(i))\") }; <\"[\\(s.join(\", \";parts))]\""
-    },
-    {
-     "task_id": "A-ARR-0055v30",
+     "task_id": "A-ARR-0029v20",
      "category": "A-ARR",
      "snippet": "lp(let i=0;i<a.len;i=i+1){parts=parts.append(\"\\(a.get(i))\")}; <\"[\\(s.join(\", \";parts))]\""
+    },
+    {
+     "task_id": "A-ARR-0042v34",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<a.len;i=i+1){ out=out.append(\"\\(a.get(i))\"); }; <\"[\\(s.join(\", \";out))]\""
+    },
+    {
+     "task_id": "A-ARR-0043v64",
+     "category": "A-ARR",
+     "snippet": "lp(let i=0;i<items.len;i=i+1){ parts=parts.append(\"\\(items.get(i))\") }; <\"[\\(s.join(\", \";parts))]\""
     }
    ]
   },
   {
-   "rank": 33,
+   "rank": 32,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT STR_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(BIND_STMT(...) ASSIGN[=](...))))",
    "count": 285,
    "programs": 283,
@@ -7469,24 +7445,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0027v57",
      "category": "A-ARR",
-     "snippet": "let out=mut.\"[\"; lp(let i=0;i<a.len;i=i+1){ let piece=if(i==0){\"\\(a.get(i))\"}el{\", \\(a.get(i))\"}; out=out.concat(piece)}"
+     "snippet": "let out=mut.\"\"; lp(let i=0;i<arr.len;i=i+1){ let sep=if(i==0){\"\"}el{\" \"}; out=\"\\(out)\\(sep)\\(arr.get(i))\"}"
+    },
+    {
+     "task_id": "A-ARR-0028v46",
+     "category": "A-ARR",
+     "snippet": "let inner=mut.\"\"; lp(let i=0;i<a.len;i=i+1){ let piece=if(i==0){\"\\(a.get(i))\"}el{\", \\(a.get(i))\"}; inner=inner.concat(piece)}"
     },
     {
      "task_id": "A-ARR-0035v36",
      "category": "A-ARR",
      "snippet": "let out=mut.\"\"; lp(let i=0;i<arr.len;i=i+1){ let v=arr.get(i); out=if(i==0){\"\\(v)\"}el{\"\\(out) \\(v)\"}}"
-    },
-    {
-     "task_id": "A-ARR-0037v16",
-     "category": "A-ARR",
-     "snippet": "let out=mut.\"[\"; lp(let i=0;i<a.len;i=i+1){ let sep=if(i==0){\"\"}el{\", \"}; out=\"\\(out)\\(sep)\\(a.get(i))\"}"
     }
    ]
   },
   {
-   "rank": 34,
+   "rank": 33,
    "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)) BIND_STMT(IDENT CALL_EXPR(IDENT STR_LIT)))",
    "count": 285,
    "programs": 142,
@@ -7528,6 +7504,11 @@
    ],
    "examples": [
     {
+     "task_id": "A-CND-0059v61",
+     "category": "A-CND",
+     "snippet": "io.println(\"\\(a)\"); let b=isconsonant(\"a\")"
+    },
+    {
      "task_id": "A-CND-0057v33",
      "category": "A-CND",
      "snippet": "io.println(\"\\(r2)\"); let r3=ishexdigit(\"g\")"
@@ -7536,16 +7517,11 @@
      "task_id": "A-CND-0058v13",
      "category": "A-CND",
      "snippet": "io.println(\"\\(r1)\"); let r2=isvowel(\"E\")"
-    },
-    {
-     "task_id": "A-CND-0059v61",
-     "category": "A-CND",
-     "snippet": "io.println(\"\\(a)\"); let b=isconsonant(\"a\")"
     }
    ]
   },
   {
-   "rank": 35,
+   "rank": 34,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT IDENT) MUT_BIND_STMT(IDENT INT_LIT))",
    "count": 284,
    "programs": 283,
@@ -7585,7 +7561,7 @@
    ]
   },
   {
-   "rank": 36,
+   "rank": 35,
    "signature": "SEQ2(BIND_STMT(IDENT FIELD_EXPR(IDENT IDENT)) IF_STMT(BIN[==](IDENT INT_LIT) STMT_LIST(RETURN_STMT(...))))",
    "count": 282,
    "programs": 280,
@@ -7615,14 +7591,14 @@
    ],
    "examples": [
     {
+     "task_id": "A-ARR-0018v38",
+     "category": "A-ARR",
+     "snippet": "let n=arr.len; if(n==0){<\"\"}"
+    },
+    {
      "task_id": "A-ARR-0027v10",
      "category": "A-ARR",
      "snippet": "let n=arr.len; if(n==0){<arr}"
-    },
-    {
-     "task_id": "A-ARR-0057v37",
-     "category": "A-ARR",
-     "snippet": "let n=a.len; if(n==0){<\"[]\"}"
     },
     {
      "task_id": "A-ARR-0031v5",
@@ -7632,7 +7608,7 @@
    ]
   },
   {
-   "rank": 37,
+   "rank": 36,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT ARRAY_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))))",
    "count": 262,
    "programs": 262,
@@ -7675,24 +7651,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v5",
-     "category": "A-ARR",
-     "snippet": "let out=mut.@(); lp(let i=0;i<arr.len;i=i+1){ if(!contains(out;arr.get(i))){out=out.append(arr.get(i))}}"
-    },
-    {
-     "task_id": "A-ARR-0053v62",
-     "category": "A-ARR",
-     "snippet": "let out=mut.@(); lp(let i=0;i<arr.len;i=i+1){ if(!hasitem(out;arr.get(i))){out=out.append(arr.get(i))}}"
-    },
-    {
      "task_id": "A-ARR-0041v37",
      "category": "A-ARR",
      "snippet": "let q=mut.@(); lp(let i=0;i<p.len;i=i+1){ if(p.get(i)>0){ q=q.append(p.get(i))}}"
+    },
+    {
+     "task_id": "A-ARR-0041v43",
+     "category": "A-ARR",
+     "snippet": "let out=mut.@(); lp(let i=0;i<lhs.len;i=i+1){ if(lhs.get(i)>0){out=out.append(lhs.get(i))}}"
+    },
+    {
+     "task_id": "A-ARR-0041v45",
+     "category": "A-ARR",
+     "snippet": "let out=mut.@(); lp(let i=0;i<p.len;i=i+1){ if(p.get(i)>0){out=out.append(p.get(i))}}"
     }
    ]
   },
   {
-   "rank": 38,
+   "rank": 37,
    "signature": "SEQ2(IF_STMT(BIN[==](FIELD_EXPR(...) INT_LIT) STMT_LIST(RETURN_STMT(...))) MUT_BIND_STMT(IDENT ARRAY_LIT))",
    "count": 261,
    "programs": 257,
@@ -7721,6 +7697,11 @@
    ],
    "examples": [
     {
+     "task_id": "A-ARR-0029v34",
+     "category": "A-ARR",
+     "snippet": "if(arr.len==0){<@()}; let out=mut.@()"
+    },
+    {
      "task_id": "A-ARR-0036v12",
      "category": "A-ARR",
      "snippet": "if(first.len==0){<@()}; let out=mut.@()"
@@ -7729,16 +7710,11 @@
      "task_id": "A-ARR-0036v50",
      "category": "A-ARR",
      "snippet": "if(val.len==0){<@()}; let out=mut.@()"
-    },
-    {
-     "task_id": "A-ARR-0029v34",
-     "category": "A-ARR",
-     "snippet": "if(arr.len==0){<@()}; let out=mut.@()"
     }
    ]
   },
   {
-   "rank": 39,
+   "rank": 38,
    "signature": "SEQ2(LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT IDENT) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))) RETURN_STMT(IDENT))",
    "count": 259,
    "programs": 258,
@@ -7785,24 +7761,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0028v63",
+     "task_id": "A-ARR-0019v56",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<n;i=i+1){ if(n>0){ if(i<n){out=out.append(left.get(n-1-i))}el{} }el{} }; <out"
+     "snippet": "lp(let i=0;i<n;i=i+1){ if(x.get(i)==y){ found=true } }; <found"
     },
     {
-     "task_id": "A-ARR-0060v28",
+     "task_id": "A-ARR-0021v23",
      "category": "A-ARR",
-     "snippet": "lp(let i=1;i<len;i=i+1){ if(arr.get(i)>m){m=arr.get(i)}; }; <m"
+     "snippet": "lp(let i=0;i<n;i=i+1){ if(!found){ if(arr.get(i)==val){found=true} } }; <found"
     },
     {
-     "task_id": "A-ARR-0042v7",
+     "task_id": "A-ARR-0021v3",
      "category": "A-ARR",
-     "snippet": "lp(let i=0;i<n;i=i+1){ if(left.get(i)<0){ if(left.get(i)!=0){ out=out.append(left.get(i)) } } }; <out"
+     "snippet": "lp(let i=0;i<n;i=i+1){ if(arr.get(i)==val){ found=true } }; <found"
     }
    ]
   },
   {
-   "rank": 40,
+   "rank": 39,
    "signature": "SEQ2(ASSIGN[=](IDENT CALL_EXPR(FIELD_EXPR(...) INDEX_EXPR(...))) ASSIGN[=](IDENT BIN[+](IDENT INT_LIT)))",
    "count": 255,
    "programs": 95,
@@ -7854,7 +7830,7 @@
    ]
   },
   {
-   "rank": 41,
+   "rank": 40,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT INT_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT IDENT) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(IF_STMT(...))))",
    "count": 246,
    "programs": 242,
@@ -7918,7 +7894,7 @@
    ]
   },
   {
-   "rank": 42,
+   "rank": 41,
    "signature": "SEQ2(BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IDENT STR_LIT)))",
    "count": 241,
    "programs": 241,
@@ -7960,11 +7936,6 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0057v19",
-     "category": "A-ARR",
-     "snippet": "let b=s.builder(); s.add(b;\"[\")"
-    },
-    {
      "task_id": "A-ARR-0042v38",
      "category": "A-ARR",
      "snippet": "let b=s.builder(); s.add(b;\"[\")"
@@ -7973,11 +7944,120 @@
      "task_id": "A-ARR-0042v7",
      "category": "A-ARR",
      "snippet": "let b=s.builder(); s.add(b;\"@(\")"
+    },
+    {
+     "task_id": "A-ARR-0044v23",
+     "category": "A-ARR",
+     "snippet": "let b=s.builder(); s.add(b;\"[\")"
+    }
+   ]
+  },
+  {
+   "rank": 42,
+   "signature": "SEQ2(BIND_STMT(IDENT CALL_EXPR(IDENT ARRAY_LIT(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)))",
+   "count": 240,
+   "programs": 115,
+   "program_share": 0.0049,
+   "depth": 3,
+   "node_count": 10,
+   "per_category": {
+    "A-ARR": 77,
+    "A-MTH": 7,
+    "A-SRT": 90,
+    "A-STR": 2,
+    "D-CLI": 15,
+    "D-DAT": 34,
+    "D-TST": 15
+   },
+   "top_callees": [
+    [
+     "io.println",
+     240
+    ],
+    [
+     "arrmin",
+     12
+    ],
+    [
+     "countflags",
+     12
+    ],
+    [
+     "findmin",
+     12
+    ],
+    [
+     "product",
+     11
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0004v38",
+     "category": "A-ARR",
+     "snippet": "let r1=product(@(2;3;4)); io.println(\"\\(r1)\")"
+    },
+    {
+     "task_id": "A-ARR-0004v57",
+     "category": "A-ARR",
+     "snippet": "let r1=product(@(1;2;3;4)); io.println(\"\\(r1)\")"
+    },
+    {
+     "task_id": "A-ARR-0004v66",
+     "category": "A-ARR",
+     "snippet": "let r1=product(@(1;2;3;4)); io.println(\"\\(r1)\")"
     }
    ]
   },
   {
    "rank": 43,
+   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IDENT)) RETURN_STMT(INT_LIT))",
+   "count": 240,
+   "programs": 240,
+   "program_share": 0.0103,
+   "depth": 3,
+   "node_count": 7,
+   "per_category": {
+    "A-ARR": 8,
+    "A-CND": 8,
+    "A-ERR": 141,
+    "A-SRT": 2,
+    "A-STR": 8,
+    "D-CFG": 15,
+    "D-CLI": 11,
+    "D-CRY": 6,
+    "D-DAT": 5,
+    "D-FIO": 11,
+    "D-NET": 9,
+    "D-TST": 6,
+    "D-WEB": 10
+   },
+   "top_callees": [
+    [
+     "io.println",
+     240
+    ]
+   ],
+   "examples": [
+    {
+     "task_id": "A-ARR-0029v11",
+     "category": "A-ARR",
+     "snippet": "io.println(r2); <0"
+    },
+    {
+     "task_id": "A-ARR-0031v18",
+     "category": "A-ARR",
+     "snippet": "io.println(r2); <0"
+    },
+    {
+     "task_id": "A-ARR-0056v66",
+     "category": "A-ARR",
+     "snippet": "io.println(r2); <0"
+    }
+   ]
+  },
+  {
+   "rank": 44,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT INT_LIT) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(BIND_STMT(...) IF_STMT(...))))",
    "count": 240,
    "programs": 238,
@@ -8040,111 +8120,7 @@
    ]
   },
   {
-   "rank": 44,
-   "signature": "SEQ2(BIND_STMT(IDENT CALL_EXPR(IDENT ARRAY_LIT(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) STR_LIT)))",
-   "count": 240,
-   "programs": 115,
-   "program_share": 0.0049,
-   "depth": 3,
-   "node_count": 10,
-   "per_category": {
-    "A-ARR": 77,
-    "A-MTH": 7,
-    "A-SRT": 90,
-    "A-STR": 2,
-    "D-CLI": 15,
-    "D-DAT": 34,
-    "D-TST": 15
-   },
-   "top_callees": [
-    [
-     "io.println",
-     240
-    ],
-    [
-     "arrmin",
-     12
-    ],
-    [
-     "countflags",
-     12
-    ],
-    [
-     "findmin",
-     12
-    ],
-    [
-     "product",
-     11
-    ]
-   ],
-   "examples": [
-    {
-     "task_id": "A-ARR-0053v2",
-     "category": "A-ARR",
-     "snippet": "let r=unique(@(\"a\";\"b\";\"a\";\"c\";\"b\")); io.println(\"\\(r.len)\")"
-    },
-    {
-     "task_id": "A-ARR-0037v8",
-     "category": "A-ARR",
-     "snippet": "let r=mapdouble(@(1.0;2.5;3.0)); io.println(\"\\(r.get(0))\")"
-    },
-    {
-     "task_id": "A-ARR-0041v37",
-     "category": "A-ARR",
-     "snippet": "let a=filterpositive(@(1;-2;3;0;-5;7)); io.println(\"\\(a)\")"
-    }
-   ]
-  },
-  {
    "rank": 45,
-   "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IDENT)) RETURN_STMT(INT_LIT))",
-   "count": 240,
-   "programs": 240,
-   "program_share": 0.0103,
-   "depth": 3,
-   "node_count": 7,
-   "per_category": {
-    "A-ARR": 8,
-    "A-CND": 8,
-    "A-ERR": 141,
-    "A-SRT": 2,
-    "A-STR": 8,
-    "D-CFG": 15,
-    "D-CLI": 11,
-    "D-CRY": 6,
-    "D-DAT": 5,
-    "D-FIO": 11,
-    "D-NET": 9,
-    "D-TST": 6,
-    "D-WEB": 10
-   },
-   "top_callees": [
-    [
-     "io.println",
-     240
-    ]
-   ],
-   "examples": [
-    {
-     "task_id": "A-ARR-0029v11",
-     "category": "A-ARR",
-     "snippet": "io.println(r2); <0"
-    },
-    {
-     "task_id": "A-ARR-0056v66",
-     "category": "A-ARR",
-     "snippet": "io.println(r2); <0"
-    },
-    {
-     "task_id": "A-ARR-0031v18",
-     "category": "A-ARR",
-     "snippet": "io.println(r2); <0"
-    }
-   ]
-  },
-  {
-   "rank": 46,
    "signature": "SEQ2(IF_STMT(BIN[==](CALL_EXPR(...) INT_LIT) STMT_LIST(RETURN_STMT(...))) BIND_STMT(IDENT CALL_EXPR(FIELD_EXPR(...) IDENT STR_LIT)))",
    "count": 240,
    "programs": 240,
@@ -8202,7 +8178,7 @@
    ]
   },
   {
-   "rank": 47,
+   "rank": 46,
    "signature": "SEQ2(MUT_BIND_STMT(IDENT IDENT) MUT_BIND_STMT(IDENT IDENT))",
    "count": 235,
    "programs": 221,
@@ -8240,7 +8216,7 @@
    ]
   },
   {
-   "rank": 48,
+   "rank": 47,
    "signature": "SEQ2(BIND_STMT(IDENT CALL_EXPR(IDENT ARRAY_LIT(...))) LOOP_STMT(LOOP_INIT(IDENT INT_LIT) BIN[<](IDENT FIELD_EXPR(...)) ASSIGN[=](IDENT BIN[+](...)) STMT_LIST(EXPR_STMT(...))))",
    "count": 234,
    "programs": 215,
@@ -8275,24 +8251,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v5",
+     "task_id": "A-ARR-0028v31",
      "category": "A-ARR",
-     "snippet": "let r=unique(@(3 as u64;1 as u64;3 as u64;2 as u64;1 as u64)); lp(let i=0;i<r.len;i=i+1){ io.println(\"\\(r.get(i))\")}"
+     "snippet": "let rev=arrreverse(@(1 as u64;2 as u64;3 as u64)); lp(let i=0;i<rev.len;i=i+1){io.println(\"\\(rev.get(i))\")}"
     },
     {
-     "task_id": "A-ARR-0051v65",
+     "task_id": "A-ARR-0029v32",
      "category": "A-ARR",
-     "snippet": "let r=unique(@(1 as u64;2 as u64;2 as u64;3 as u64;1 as u64;4 as u64)); lp(let i=0;i<r.len;i=i+1){ io.println(\"\\(r.get(i))\")}"
+     "snippet": "let a=arrreverse(@(1.5;2.5;3.5)); lp(let i=0;i<a.len;i=i+1){ io.println(showf(a.get(i)))}"
     },
     {
-     "task_id": "A-ARR-0052v53",
+     "task_id": "A-ARR-0029v34",
      "category": "A-ARR",
-     "snippet": "let r1=unique(@(1.5;2.5;1.5;3.5)); lp(let i=0;i<r1.len;i=i+1){ io.println(\"\\(r1.get(i))\")}"
+     "snippet": "let r=arrreverse(@(1.5;2.5;3.5)); lp(let i=0;i<r.len;i=i+1){ io.println(\"\\(r.get(i))\")}"
     }
    ]
   },
   {
-   "rank": 49,
+   "rank": 48,
    "signature": "SEQ2(IF_STMT(BIN[>](IDENT INT_LIT) STMT_LIST(EXPR_STMT(...))) EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IDENT STR_LIT)))",
    "count": 234,
    "programs": 234,
@@ -8330,24 +8306,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0051v68",
+     "task_id": "A-ARR-0042v38",
      "category": "A-ARR",
-     "snippet": "if(i>0){s.add(b;\" \")}; s.add(b;\"\\(arr.get(i))\")"
+     "snippet": "if(i>0){s.add(b;\", \")}; s.add(b;\"\\(arr.get(i))\")"
     },
     {
-     "task_id": "A-ARR-0054v7",
+     "task_id": "A-ARR-0044v23",
      "category": "A-ARR",
-     "snippet": "if(i>0){s.add(b;\";\")}; s.add(b;\"\\(a.get(i))\")"
+     "snippet": "if(i>0){s.add(b;\", \")}; s.add(b;\"\\(a.get(i))\")"
     },
     {
-     "task_id": "A-ARR-0056v66",
+     "task_id": "A-ARR-0044v70",
      "category": "A-ARR",
-     "snippet": "if(i>0){s.add(b;\" \")}; s.add(b;\"\\(a.get(i))\")"
+     "snippet": "if(i>0){s.add(b;\", \")}; s.add(b;\"\\(a.get(i))\")"
     }
    ]
   },
   {
-   "rank": 50,
+   "rank": 49,
    "signature": "SEQ2(EXPR_STMT(CALL_EXPR(FIELD_EXPR(...) IDENT STR_LIT)) RETURN_STMT(CALL_EXPR(FIELD_EXPR(...) IDENT)))",
    "count": 232,
    "programs": 229,
@@ -8389,11 +8365,6 @@
    ],
    "examples": [
     {
-     "task_id": "A-ARR-0057v19",
-     "category": "A-ARR",
-     "snippet": "s.add(b;\"]\"); <s.build(b)"
-    },
-    {
      "task_id": "A-ARR-0042v38",
      "category": "A-ARR",
      "snippet": "s.add(b;\"]\"); <s.build(b)"
@@ -8402,6 +8373,48 @@
      "task_id": "A-ARR-0042v7",
      "category": "A-ARR",
      "snippet": "s.add(b;\")\"); <s.build(b)"
+    },
+    {
+     "task_id": "A-ARR-0044v23",
+     "category": "A-ARR",
+     "snippet": "s.add(b;\"]\"); <s.build(b)"
+    }
+   ]
+  },
+  {
+   "rank": 50,
+   "signature": "SEQ2(IF_STMT(BIN[==](IDENT STR_LIT) STMT_LIST(RETURN_STMT(...))) IF_STMT(BIN[==](IDENT STR_LIT) STMT_LIST(RETURN_STMT(...))))",
+   "count": 227,
+   "programs": 78,
+   "program_share": 0.0033,
+   "depth": 3,
+   "node_count": 13,
+   "per_category": {
+    "A-ERR": 13,
+    "A-STR": 1,
+    "D-CFG": 13,
+    "D-CRY": 119,
+    "D-FIO": 14,
+    "D-NET": 30,
+    "D-TST": 7,
+    "D-WEB": 30
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ERR-0046v11",
+     "category": "A-ERR",
+     "snippet": "if(lhs==\"\"){<$parseerr{$emptyinput:true}}; if(lhs==\"true\"){<true}"
+    },
+    {
+     "task_id": "A-ERR-0046v19",
+     "category": "A-ERR",
+     "snippet": "if(s==\"true\"){<true}; if(s==\"false\"){<false}"
+    },
+    {
+     "task_id": "A-ERR-0046v26",
+     "category": "A-ERR",
+     "snippet": "if(val==\"\"){<$parseerr{$emptyinput:true}}; if(val==\"true\"){<true}"
     }
    ]
   }
@@ -8409,49 +8422,6 @@
  "small_shapes": [
   {
    "rank": 1,
-   "signature": "TYPE_EXPR",
-   "count": 123450,
-   "programs": 23382,
-   "program_share": 1.0,
-   "depth": 0,
-   "node_count": 1,
-   "per_category": {
-    "A-ARR": 7212,
-    "A-CND": 6578,
-    "A-ERR": 10551,
-    "A-MTH": 6535,
-    "A-SRT": 8547,
-    "A-STR": 6516,
-    "D-CFG": 9324,
-    "D-CLI": 9525,
-    "D-CRY": 10336,
-    "D-DAT": 9504,
-    "D-FIO": 7738,
-    "D-NET": 10264,
-    "D-TST": 11602,
-    "D-WEB": 9218
-   },
-   "top_callees": [],
-   "examples": [
-    {
-     "task_id": "A-ARR-0051v34",
-     "category": "A-ARR",
-     "snippet": "u64"
-    },
-    {
-     "task_id": "A-ARR-0051v38",
-     "category": "A-ARR",
-     "snippet": "u64"
-    },
-    {
-     "task_id": "A-ARR-0051v48",
-     "category": "A-ARR",
-     "snippet": "u64"
-    }
-   ]
-  },
-  {
-   "rank": 2,
    "signature": "FIELD_EXPR(IDENT IDENT)",
    "count": 91967,
    "programs": 20143,
@@ -8477,24 +8447,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "val.len"
+     "snippet": "x.len"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "arr.len"
+     "snippet": "first.len"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
      "snippet": "arr.len"
     }
    ]
   },
   {
-   "rank": 3,
+   "rank": 2,
    "signature": "BIN[+](IDENT INT_LIT)",
    "count": 26628,
    "programs": 12622,
@@ -8520,24 +8490,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
      "snippet": "i+1"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
      "snippet": "i+1"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
      "snippet": "i+1"
     }
    ]
   },
   {
-   "rank": 4,
+   "rank": 3,
    "signature": "RETURN_STMT(INT_LIT)",
    "count": 18183,
    "programs": 15361,
@@ -8563,24 +8533,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
      "snippet": "<0"
     },
     {
-     "task_id": "A-ARR-0051v5",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
      "snippet": "<0"
     },
     {
-     "task_id": "A-ARR-0051v61",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
      "snippet": "<0"
     }
    ]
   },
   {
-   "rank": 5,
+   "rank": 4,
    "signature": "RETURN_STMT(IDENT)",
    "count": 14720,
    "programs": 12776,
@@ -8606,24 +8576,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "<val"
+     "snippet": "<total"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "<out"
+     "snippet": "<total"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
-     "snippet": "<out"
+     "snippet": "<total"
     }
    ]
   },
   {
-   "rank": 6,
+   "rank": 5,
    "signature": "INDEX_EXPR(IDENT IDENT)",
    "count": 13584,
    "programs": 8081,
@@ -8649,24 +8619,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "val.get(i)"
+     "snippet": "x.get(i)"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "arr.get(i)"
+     "snippet": "first.get(i)"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v37",
      "category": "A-ARR",
-     "snippet": "arr.get(i)"
+     "snippet": "p.get(i)"
     }
    ]
   },
   {
-   "rank": 7,
+   "rank": 6,
    "signature": "EXPR_STMT(STR_LIT)",
    "count": 12316,
    "programs": 3822,
@@ -8692,24 +8662,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0014v14",
      "category": "A-ARR",
-     "snippet": "\"\\(a.get(i))\""
+     "snippet": "\"\""
     },
     {
-     "task_id": "A-ARR-0052",
+     "task_id": "A-ARR-0014v9",
      "category": "A-ARR",
-     "snippet": "\"\\(a.get(0))\""
+     "snippet": "\"\""
     },
     {
-     "task_id": "A-ARR-0054v25",
+     "task_id": "A-ARR-0019v27",
      "category": "A-ARR",
-     "snippet": "\"\\(a.get(i))\""
+     "snippet": "\"true\""
     }
    ]
   },
   {
-   "rank": 8,
+   "rank": 7,
    "signature": "RETURN_STMT(STR_LIT)",
    "count": 10792,
    "programs": 6536,
@@ -8735,24 +8705,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v61",
+     "task_id": "A-ARR-0014v2",
      "category": "A-ARR",
-     "snippet": "<\"[\\(s.join(\", \";parts))]\""
+     "snippet": "<\"\""
     },
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0014v26",
      "category": "A-ARR",
-     "snippet": "<\"[]\""
+     "snippet": "<\"\""
     },
     {
-     "task_id": "A-ARR-0054v8",
+     "task_id": "A-ARR-0014v34",
      "category": "A-ARR",
-     "snippet": "<\"[\\(s.join(\", \";parts))]\""
+     "snippet": "<\"\""
     }
    ]
   },
   {
-   "rank": 9,
+   "rank": 8,
    "signature": "RETURN_STMT(BOOL_LIT)",
    "count": 8283,
    "programs": 4259,
@@ -8778,24 +8748,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v5",
+     "task_id": "A-ARR-0019",
      "category": "A-ARR",
      "snippet": "<true"
     },
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0019v17",
      "category": "A-ARR",
      "snippet": "<true"
     },
     {
-     "task_id": "A-ARR-0051v65",
+     "task_id": "A-ARR-0019v27",
      "category": "A-ARR",
      "snippet": "<true"
     }
    ]
   },
   {
-   "rank": 10,
+   "rank": 9,
    "signature": "ARRAY_LIT",
    "count": 7787,
    "programs": 5752,
@@ -8821,24 +8791,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0004v14",
      "category": "A-ARR",
      "snippet": "@()"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0004v69",
      "category": "A-ARR",
      "snippet": "@()"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0005v10",
      "category": "A-ARR",
      "snippet": "@()"
     }
    ]
   },
   {
-   "rank": 11,
+   "rank": 10,
    "signature": "CALL_EXPR(IDENT STR_LIT)",
    "count": 7547,
    "programs": 2528,
@@ -8882,24 +8852,24 @@
    ],
    "examples": [
     {
-     "task_id": "A-CND-0057v2",
+     "task_id": "A-CND-0058v28",
      "category": "A-CND",
-     "snippet": "ishexdigit(\"7\")"
+     "snippet": "isvowel(\"a\")"
     },
     {
-     "task_id": "A-CND-0057v33",
+     "task_id": "A-CND-0058v33",
      "category": "A-CND",
-     "snippet": "ishexdigit(\"7\")"
+     "snippet": "isvowel(\"a\")"
     },
     {
-     "task_id": "A-CND-0058v11",
+     "task_id": "A-CND-0058v42",
      "category": "A-CND",
      "snippet": "isvowel(\"a\")"
     }
    ]
   },
   {
-   "rank": 12,
+   "rank": 11,
    "signature": "BIN[<](IDENT IDENT)",
    "count": 5835,
    "programs": 4516,
@@ -8925,24 +8895,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
      "snippet": "i<n"
     },
     {
-     "task_id": "A-ARR-0051v58",
+     "task_id": "A-ARR-0002v40",
      "category": "A-ARR",
      "snippet": "i<n"
     },
     {
-     "task_id": "A-ARR-0052v19",
+     "task_id": "A-ARR-0003v12",
      "category": "A-ARR",
      "snippet": "i<n"
     }
    ]
   },
   {
-   "rank": 13,
+   "rank": 12,
    "signature": "BIN[<](IDENT INT_LIT)",
    "count": 5604,
    "programs": 4175,
@@ -8968,24 +8938,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v63",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "found<0"
+     "snippet": "v<0"
     },
     {
-     "task_id": "A-ARR-0053v42",
+     "task_id": "A-ARR-0001v68",
      "category": "A-ARR",
-     "snippet": "n<2"
+     "snippet": "v<0"
     },
     {
-     "task_id": "A-ARR-0054v25",
+     "task_id": "A-ARR-0001v7",
      "category": "A-ARR",
-     "snippet": "start<0"
+     "snippet": "v<0"
     }
    ]
   },
   {
-   "rank": 14,
+   "rank": 13,
    "signature": "BIN[==](IDENT INT_LIT)",
    "count": 5542,
    "programs": 3115,
@@ -9011,24 +8981,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v64",
+     "task_id": "A-ARR-0005v63",
+     "category": "A-ARR",
+     "snippet": "v==0"
+    },
+    {
+     "task_id": "A-ARR-0014v3",
      "category": "A-ARR",
      "snippet": "i==0"
     },
     {
-     "task_id": "A-ARR-0052",
-     "category": "A-ARR",
-     "snippet": "i==0"
-    },
-    {
-     "task_id": "A-ARR-0053v7",
+     "task_id": "A-ARR-0016v23",
      "category": "A-ARR",
      "snippet": "n==0"
     }
    ]
   },
   {
-   "rank": 15,
+   "rank": 14,
    "signature": "MUT_BIND_STMT(IDENT INT_LIT)",
    "count": 5012,
    "programs": 4196,
@@ -9054,24 +9024,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0038v1",
+     "task_id": "A-ARR-0001v24",
      "category": "A-ARR",
-     "snippet": "let sq=mut.0"
+     "snippet": "let total=mut.0"
     },
     {
-     "task_id": "A-ARR-0007v25",
+     "task_id": "A-ARR-0001v28",
      "category": "A-ARR",
-     "snippet": "let count=mut.0"
+     "snippet": "let total=mut.0"
     },
     {
-     "task_id": "A-ARR-0007v37",
+     "task_id": "A-ARR-0001v30",
      "category": "A-ARR",
-     "snippet": "let p=mut.0"
+     "snippet": "let total=mut.0"
     }
    ]
   },
   {
-   "rank": 16,
+   "rank": 15,
    "signature": "BIN[==](IDENT STR_LIT)",
    "count": 4321,
    "programs": 1836,
@@ -9100,19 +9070,19 @@
      "snippet": "out==\"\""
     },
     {
-     "task_id": "A-CND-0058v13",
+     "task_id": "A-CND-0058v26",
      "category": "A-CND",
      "snippet": "c==\"a\""
     },
     {
-     "task_id": "A-CND-0058v26",
+     "task_id": "A-CND-0058v28",
      "category": "A-CND",
      "snippet": "c==\"a\""
     }
    ]
   },
   {
-   "rank": 17,
+   "rank": 16,
    "signature": "MUT_BIND_STMT(IDENT ARRAY_LIT)",
    "count": 4021,
    "programs": 3361,
@@ -9138,24 +9108,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v34",
+     "task_id": "A-ARR-0016v52",
      "category": "A-ARR",
-     "snippet": "let out=mut.@()"
+     "snippet": "let a=mut.@()"
     },
     {
-     "task_id": "A-ARR-0051v38",
+     "task_id": "A-ARR-0027v10",
      "category": "A-ARR",
-     "snippet": "let out=mut.@()"
+     "snippet": "let res=mut.@()"
     },
     {
-     "task_id": "A-ARR-0051v48",
+     "task_id": "A-ARR-0027v21",
      "category": "A-ARR",
-     "snippet": "let out=mut.@()"
+     "snippet": "let q=mut.@()"
     }
    ]
   },
   {
-   "rank": 18,
+   "rank": 17,
    "signature": "EXPR_STMT(IDENT)",
    "count": 3273,
    "programs": 1881,
@@ -9181,24 +9151,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0054v25",
+     "task_id": "A-ARR-0001v68",
      "category": "A-ARR",
-     "snippet": "start"
+     "snippet": "v"
     },
     {
-     "task_id": "A-ARR-0054v44",
+     "task_id": "A-ARR-0003v12",
      "category": "A-ARR",
-     "snippet": "start"
+     "snippet": "v"
     },
     {
-     "task_id": "A-ARR-0054v52",
+     "task_id": "A-ARR-0004v57",
      "category": "A-ARR",
-     "snippet": "start"
+     "snippet": "b"
     }
    ]
   },
   {
-   "rank": 19,
+   "rank": 18,
    "signature": "MUT_BIND_STMT(IDENT IDENT)",
    "count": 2975,
    "programs": 2395,
@@ -9224,24 +9194,24 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0034v53",
-     "category": "A-ARR",
-     "snippet": "let out=mut.p"
-    },
-    {
-     "task_id": "A-ARR-0035v23",
+     "task_id": "A-ARR-0028v19",
      "category": "A-ARR",
      "snippet": "let out=mut.arr"
     },
     {
-     "task_id": "A-ARR-0037v35",
+     "task_id": "A-ARR-0028v25",
      "category": "A-ARR",
-     "snippet": "let r=mut.out"
+     "snippet": "let out=mut.n"
+    },
+    {
+     "task_id": "A-ARR-0028v53",
+     "category": "A-ARR",
+     "snippet": "let out=mut.p"
     }
    ]
   },
   {
-   "rank": 20,
+   "rank": 19,
    "signature": "UN[-](INT_LIT)",
    "count": 2786,
    "programs": 1631,
@@ -9267,19 +9237,58 @@
    "top_callees": [],
    "examples": [
     {
-     "task_id": "A-ARR-0051v63",
+     "task_id": "A-ARR-0004v14",
      "category": "A-ARR",
-     "snippet": "-1"
+     "snippet": "-3"
     },
     {
-     "task_id": "A-ARR-0055v68",
+     "task_id": "A-ARR-0004v38",
      "category": "A-ARR",
      "snippet": "-2"
     },
     {
-     "task_id": "A-ARR-0035v21",
+     "task_id": "A-ARR-0004v57",
      "category": "A-ARR",
-     "snippet": "-4"
+     "snippet": "-2"
+    }
+   ]
+  },
+  {
+   "rank": 20,
+   "signature": "RETURN_STMT(ARRAY_LIT)",
+   "count": 2781,
+   "programs": 2694,
+   "program_share": 0.1152,
+   "depth": 1,
+   "node_count": 2,
+   "per_category": {
+    "A-ARR": 108,
+    "A-ERR": 17,
+    "A-SRT": 71,
+    "D-CFG": 388,
+    "D-CLI": 201,
+    "D-DAT": 496,
+    "D-FIO": 382,
+    "D-NET": 429,
+    "D-TST": 219,
+    "D-WEB": 470
+   },
+   "top_callees": [],
+   "examples": [
+    {
+     "task_id": "A-ARR-0029v15",
+     "category": "A-ARR",
+     "snippet": "<@()"
+    },
+    {
+     "task_id": "A-ARR-0029v34",
+     "category": "A-ARR",
+     "snippet": "<@()"
+    },
+    {
+     "task_id": "A-ARR-0035v31",
+     "category": "A-ARR",
+     "snippet": "<@()"
     }
    ]
   }

@@ -33,7 +33,8 @@ kinds (`tkc --dump-ast` `kind` field), rooted at one statement or expression:
     level 3 render as `KIND(...)` when they have children.  So a shape shows
     the root, its children, grandchildren and great-grandchildren kinds.
   * ROOTS are every node whose kind ends in `_STMT` or `_EXPR`, plus
-    `ARRAY_LIT`/`STRUCT_LIT`, i.e. every statement and every expression — an
+    `ARRAY_LIT`/`STRUCT_LIT` (but not `TYPE_EXPR`, a type despite its
+    suffix), i.e. every statement and every expression — an
     expression nested in a statement is counted both as part of the statement's
     shape and as its own root, EXCEPT the sole child of an EXPR_STMT (that
     would duplicate the statement shape exactly).  Declarations, types, params
@@ -41,7 +42,8 @@ kinds (`tkc --dump-ast` `kind` field), rooted at one statement or expression:
   * Additionally, every pair of CONSECUTIVE statements in a STMT_LIST is a
     root of kind `SEQ2` (`SEQ2(sigA sigB)`), so two-statement idioms such as
     `let g=mut.0; if(c){g=1}el{g=2}` (idiom rule 1 mut-flag) surface as one
-    shape.  A SEQ2 root spends one depth level on itself.
+    shape.  A SEQ2 root spends one depth level on itself; both members must
+    be statement/expression roots (struct FIELD lists are skipped).
 
   Structural facts worth knowing when reading shapes:
     IF_STMT(cond STMT_LIST)                    bare `if`
@@ -178,7 +180,12 @@ def signature(node, src, depth_limit, level=0):
     return "%s(%s)" % (head, " ".join(parts)), d, n
 
 
+NOT_ROOT = {"TYPE_EXPR"}  # a type, despite the _EXPR suffix
+
+
 def is_root(kind):
+    if kind in NOT_ROOT:
+        return False
     return kind.endswith("_STMT") or kind.endswith("_EXPR") or kind in ROOT_EXTRA
 
 
@@ -247,6 +254,8 @@ def walk_roots(node, src, depth_limit, on_root, parent_kind=None):
     ch = node.get("children") or []
     if kind == "STMT_LIST" and len(ch) >= 2:
         for a, b in zip(ch, ch[1:]):
+            if not (is_root(a.get("kind", "?")) and is_root(b.get("kind", "?"))):
+                continue  # e.g. struct FIELD lists also live in a STMT_LIST
             sa, da, na = signature(a, src, depth_limit, 1)
             sb, db, nb = signature(b, src, depth_limit, 1)
             on_root({"kind": "SEQ2", "children": [a, b], "span": a.get("span")},
