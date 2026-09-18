@@ -596,6 +596,483 @@ cleanup:
     return rc;
 }
 
+/* ── Per-file pipeline (131.37) ──────────────────────────────────── */
+
+/* RunOpts — the mode flags and paths every positional source file shares. */
+typedef struct {
+    int emit_iface, check_only, djson, dtext, dsarif;
+    int emit_ll, emit_asm, opt_level, fmt_only, debug_info;
+    int pretty, expand, sourcemap, dump_ast, migrate, min_only;
+    int do_lint, do_fix, lint_dry_run, emit_tkir_flag, emit_deps, companion;
+    const char *companion_out, *companion_diff_comp, *tgt, *out;
+    int out_is_dir;
+    const char **search_paths; int search_path_count;
+    TkcLimits limits;
+    Profile profile;
+} RunOpts;
+
+/*
+ * process_file — run ONE source file through the pipeline in the mode
+ * selected by `o`. This is the single per-file dispatch: every positional
+ * file goes through here in argument order, so a non-compile mode
+ * (--fmt, --pretty, --expand, --dump-ast, --lint, --migrate, --check,
+ * --min, ...) applies to every file and never falls through to
+ * compile+link (131.36/131.37: the old batch loop only honoured the mode
+ * flag for the first file).
+ *
+ * Returns 0, EUSAGE, ECOMPILE or EINTERNAL for this file.
+ */
+static int process_file(const char *src, const RunOpts *o)
+{
+    const int emit_iface = o->emit_iface, check_only = o->check_only;
+    const int djson = o->djson, dtext = o->dtext, dsarif = o->dsarif;
+    const int emit_ll = o->emit_ll, emit_asm = o->emit_asm, opt_level = o->opt_level;
+    const int fmt_only = o->fmt_only, debug_info = o->debug_info;
+    const int pretty = o->pretty, expand = o->expand, sourcemap = o->sourcemap;
+    const int dump_ast = o->dump_ast, migrate = o->migrate, min_only = o->min_only;
+    const int do_lint = o->do_lint, do_fix = o->do_fix, lint_dry_run = o->lint_dry_run;
+    const int emit_tkir_flag = o->emit_tkir_flag, emit_deps = o->emit_deps, companion = o->companion;
+    const char *companion_out = o->companion_out, *companion_diff_comp = o->companion_diff_comp;
+    const char *tgt = o->tgt, *out = o->out;
+    const int out_is_dir = o->out_is_dir;
+    const char **search_paths = o->search_paths;
+    const int search_path_count = o->search_path_count;
+    TkcLimits limits = o->limits;
+    const Profile profile = o->profile;
+
+    diag_set_format(dsarif ? DIAG_FMT_SARIF :
+                    djson  ? DIAG_FMT_JSON  :
+                    dtext  ? DIAG_FMT_TEXT  :
+                    isatty(STDOUT_FILENO) ? DIAG_FMT_TEXT : DIAG_FMT_JSON);
+    diag_set_source_file(src);
+
+    /* Progress bar: skip for fast-path modes */
+    int fast_path = fmt_only || min_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp || do_lint || emit_deps;
+    progress_init(fast_path);
+
+    /* Read source file — only malloc in the pipeline */
+    FILE *f = fopen(src, "rb");
+    if (!f) { fprintf(stderr, "tkc: cannot open '%s'\n", src); return EUSAGE; }
+    fseek(f, 0, SEEK_END);
+    long slen = ftell(f);
+    rewind(f);
+    char *sbuf = malloc((size_t)slen + 1);
+    if (!sbuf || (long)fread(sbuf, 1, (size_t)slen, f) != slen) {
+        fclose(f); free(sbuf);
+        fprintf(stderr, "tkc: failed to read '%s'\n", src);
+        return sbuf ? EUSAGE : EINTERNAL;
+    }
+    sbuf[slen] = '\0';
+    fclose(f);
+    diag_set_source(sbuf, (size_t)slen);
+
+    Arena *arena = arena_init();
+    if (!arena) { free(sbuf); fputs("tkc: arena_init failed\n", stderr); return EINTERNAL; }
+
+    int rc = 0;
+
+    /* Lex */
+    int tcap = (int)(slen + 16);
+    Token *toks = arena_alloc(arena, tcap * (int)sizeof(Token));
+    if (!toks) { rc = EINTERNAL; goto done; }
+    int tc;
+    if (migrate) {
+        /* --migrate does its own prepass + re-lex internally.
+         * Pass raw source directly — no external lex needed. */
+        if (tkc_migrate(sbuf, (int)slen, NULL, 0, stdout) < 0) {
+            rc = EINTERNAL;
+        }
+        goto done;
+    }
+    if (min_only) {
+        /* --min: single-line canonical (minified) form. Token-based — needs
+         * only the source, so it works even when later stages would fail. */
+        char *m = tkc_minify(sbuf, (int)slen);
+        if (!m) { rc = EINTERNAL; goto done; }
+        fputs(m, stdout);
+        fputc('\n', stdout);
+        free(m);
+        goto done;
+    }
+    tc = lex(sbuf, (int)slen, toks, tcap, profile);
+    if (tc < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
+    progress_update(10);
+
+    /* Parse */
+    Node *ast = parse(toks, tc, sbuf, arena, profile);
+    if (!ast || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
+    progress_update(30);
+
+    /* --companion-diff: compare source AST against existing companion */
+    if (companion_diff_comp) {
+        rc = companion_diff(src, sbuf, slen, ast, companion_diff_comp);
+        goto done;
+    }
+
+    /* --dump-ast: serialise AST as JSON to stdout, then exit */
+    if (dump_ast) {
+        ast_dump_json(ast, sbuf, stdout);
+        goto done;
+    }
+
+    /* --lint (and optionally --fix / --dry-run): run lint rules, report/fix, exit */
+    if (do_lint) {
+        int lint_json = dsarif || djson || (!dtext && !isatty(STDOUT_FILENO));
+        rc = run_lint_mode(src, sbuf, slen, ast, profile, do_fix, lint_dry_run, lint_json);
+        goto done;
+    }
+
+    /* --fmt: format and print to stdout, then exit */
+    if (fmt_only) {
+        char *formatted = tkc_format(ast, sbuf);
+        if (!formatted) { rc = EINTERNAL; goto done; }
+        fputs(formatted, stdout);
+        if (sourcemap) {
+            FmtOptions sm_opts = { 1, 0 };
+            char *expanded = tkc_format_pretty(ast, sbuf, sm_opts);
+            if (expanded) {
+                SourceMap sm;
+                sourcemap_init(&sm);
+                build_sourcemap(&sm, formatted, expanded);
+                char map_path[PATH_BUF];
+                snprintf(map_path, sizeof(map_path), "%s.map", src);
+                sourcemap_emit_json(&sm, map_path);
+                sourcemap_free(&sm);
+                free(expanded);
+            }
+        }
+        free(formatted);
+        goto done;
+    }
+
+    /* --pretty / --expand: pretty-print and/or expand, then exit */
+    if (pretty || expand) {
+        FmtOptions opts = { pretty, expand };
+        char *formatted = tkc_format_pretty(ast, sbuf, opts);
+        if (!formatted) { rc = EINTERNAL; goto done; }
+        fputs(formatted, stdout);
+        if (sourcemap) {
+            char *compact = tkc_format(ast, sbuf);
+            if (compact) {
+                SourceMap sm;
+                sourcemap_init(&sm);
+                build_sourcemap(&sm, compact, formatted);
+                char map_path[PATH_BUF];
+                snprintf(map_path, sizeof(map_path), "%s.map", src);
+                sourcemap_emit_json(&sm, map_path);
+                sourcemap_free(&sm);
+                free(compact);
+            }
+        }
+        free(formatted);
+        goto done;
+    }
+
+    /* Resolve imports */
+    SymbolTable st;
+    if (resolve_imports(ast, sbuf, search_paths, search_path_count, &limits, &st) < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
+
+    /* Resolve names */
+    NameEnv ne;
+    if (resolve_names(ast, sbuf, &st, arena, &ne, search_paths, search_path_count) < 0 || diag_error_count() > 0) {
+        symtab_free(&st); rc = ECOMPILE; goto done;
+    }
+    progress_update(50);
+
+    /* Type check */
+    TypeEnv te;
+    if (type_check(ast, sbuf, &ne, arena, &te) < 0 || diag_error_count() > 0) {
+        symtab_free(&st); rc = ECOMPILE; goto done;
+    }
+
+    progress_update(70);
+
+    /* Emit .tki before --check exit so --check --emit-interface works.
+     * The .tki is named after the module declaration, placed in the
+     * same directory as --out (or the source file directory). */
+    if (emit_iface) {
+        char mod_name[256];
+        char tki[PATH_BUF];
+        if (extract_module_name(ast, sbuf, mod_name, (int)sizeof(mod_name)) && mod_name[0]) {
+            /* Place .tki in --out directory (if given and is a dir), else source dir */
+            const char *dir_src = (out && out_is_dir) ? out : src;
+            if (out_is_dir) {
+                /* Strip trailing slash for clean path construction */
+                int dlen = (int)strlen(dir_src);
+                while (dlen > 1 && dir_src[dlen - 1] == '/') dlen--;
+                snprintf(tki, sizeof(tki), "%.*s/%s.tki", dlen, dir_src, mod_name);
+            } else {
+                const char *slash = strrchr(dir_src, '/');
+                if (slash) {
+                    int dlen = (int)(slash - dir_src);
+                    snprintf(tki, sizeof(tki), "%.*s/%s.tki", dlen, dir_src, mod_name);
+                } else {
+                    snprintf(tki, sizeof(tki), "%s.tki", mod_name);
+                }
+            }
+        } else {
+            /* Fallback: use output stem if no module declaration */
+            char tki_stem[MSG_BUF];
+            stem(src, tki_stem, (int)sizeof(tki_stem));
+            if (out && !out_is_dir) {
+                snprintf(tki, sizeof(tki), "%s.tki", out);
+            } else if (out_is_dir) {
+                char out_clean[PATH_BUF];
+                strncpy(out_clean, out, sizeof(out_clean) - 1); out_clean[sizeof(out_clean) - 1] = '\0';
+                int oclen = (int)strlen(out_clean);
+                while (oclen > 1 && out_clean[oclen - 1] == '/') out_clean[--oclen] = '\0';
+                snprintf(tki, sizeof(tki), "%s/%s.tki", out_clean, tki_stem);
+            } else {
+                snprintf(tki, sizeof(tki), "%s.tki", tki_stem);
+            }
+        }
+        if (emit_interface(ast, sbuf, &te, tki) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
+    }
+
+    if (check_only) { symtab_free(&st); goto done; }
+
+    /* --emit-deps: print stdlib C sources and linker flags, then exit */
+    if (emit_deps) {
+        /* Locate stdlib directory (same probe logic as compile_binary) */
+        const char *stdlib_dir = getenv("TKC_STDLIB_DIR");
+        if (!stdlib_dir) {
+            /* Try common relative paths from the toke binary */
+            static const char *candidates[] = {
+                "src/stdlib", "stdlib", "../src/stdlib", NULL
+            };
+            for (int ci = 0; candidates[ci]; ci++) {
+                char probe[PATH_BUF];
+                snprintf(probe, sizeof probe, "%s/tk_runtime.c", candidates[ci]);
+                FILE *pf = fopen(probe, "r");
+                if (pf) { fclose(pf); stdlib_dir = candidates[ci]; break; }
+            }
+        }
+        if (!stdlib_dir) {
+            fputs("tkc: cannot locate stdlib directory (set TKC_STDLIB_DIR)\n", stderr);
+            symtab_free(&st); rc = EUSAGE; goto done;
+        }
+
+        ResolvedDeps deps;
+        if (resolve_stdlib_deps_imports_only(stdlib_dir, &st, &deps) < 0) {
+            fputs("tkc: failed to resolve stdlib dependencies\n", stderr);
+            symtab_free(&st); rc = EINTERNAL; goto done;
+        }
+
+        /* Print sources: one full path per line */
+        {
+            char buf[8192];
+            snprintf(buf, sizeof buf, "%s", deps.sources);
+            char *save = NULL;
+            char *tok = strtok_r(buf, " ", &save);
+            while (tok) {
+                puts(tok);
+                tok = strtok_r(NULL, " ", &save);
+            }
+        }
+
+        /* Print separator and flags (if any) */
+        if (deps.flags[0]) {
+            puts("---");
+            char buf[512];
+            snprintf(buf, sizeof buf, "%s", deps.flags);
+            char *save = NULL;
+            char *tok = strtok_r(buf, " ", &save);
+            while (tok) {
+                puts(tok);
+                tok = strtok_r(NULL, " ", &save);
+            }
+        }
+
+        /* Print user module deps (non-std imports) as .ll files */
+        {
+            int has_user_deps = 0;
+            for (int ui = 0; ui < st.count; ui++) {
+                const char *mp = st.entries[ui].module_path;
+                if (!mp || !st.entries[ui].resolved) continue;
+                if (strncmp(mp, "std.", 4) == 0 || strcmp(mp, "std") == 0) continue;
+                if (!has_user_deps) { puts("---"); has_user_deps = 1; }
+                /* Convert dots to slashes for nested module paths */
+                char mod_ll[PATH_BUF];
+                strncpy(mod_ll, mp, sizeof(mod_ll) - 4);
+                mod_ll[sizeof(mod_ll) - 4] = '\0';
+                for (char *p = mod_ll; *p; p++) { if (*p == '.') *p = '/'; }
+                strcat(mod_ll, ".ll");
+                puts(mod_ll);
+            }
+        }
+
+        symtab_free(&st);
+        goto done;
+    }
+
+    /* --companion: generate .tkc.md skeleton and exit */
+    if (companion) {
+        FILE *comp_out = stdout;
+        if (companion_out) {
+            comp_out = fopen(companion_out, "w");
+            if (!comp_out) {
+                fprintf(stderr, "tkc: cannot open '%s' for writing\n", companion_out);
+                symtab_free(&st); rc = EUSAGE; goto done;
+            }
+        }
+        emit_companion(comp_out, src, sbuf, slen, ast, &limits);
+        if (companion_out) fclose(comp_out);
+        symtab_free(&st);
+        goto done;
+    }
+
+    /* Story 76.1.5: derive source filename and directory for debug metadata */
+    const char *dbg_file = src;
+    char dbg_dir[PATH_BUF];
+    dbg_dir[0] = '\0';
+    if (debug_info) {
+        const char *slash = strrchr(src, '/');
+        if (slash) {
+            int dlen = (int)(slash - src);
+            if (dlen >= (int)sizeof(dbg_dir)) dlen = (int)sizeof(dbg_dir) - 1;
+            memcpy(dbg_dir, src, (size_t)dlen);
+            dbg_dir[dlen] = '\0';
+            dbg_file = slash + 1;
+        } else {
+            dbg_dir[0] = '.'; dbg_dir[1] = '\0';
+        }
+    }
+
+    /* Derive output path */
+    char obin[PATH_BUF], ostm[MSG_BUF];
+    if (out && !out_is_dir) {
+        strncpy(obin, out, sizeof(obin) - 1); obin[sizeof(obin) - 1] = '\0';
+    } else if (out_is_dir) {
+        /* For directory output, derive basename from source stem */
+        stem(src, ostm, (int)sizeof(ostm));
+        /* Strip trailing slash from out for clean path */
+        char out_clean[PATH_BUF];
+        strncpy(out_clean, out, sizeof(out_clean) - 1); out_clean[sizeof(out_clean) - 1] = '\0';
+        int oclen = (int)strlen(out_clean);
+        while (oclen > 1 && out_clean[oclen - 1] == '/') out_clean[--oclen] = '\0';
+        snprintf(obin, sizeof(obin), "%s/%s", out_clean, ostm);
+    } else {
+        stem(src, ostm, (int)sizeof(ostm));
+        snprintf(obin, sizeof(obin), "%s", ostm);
+    }
+
+    /* .tki already emitted above (before --check exit) */
+
+    /* --emit-tkir: write .tkir binary IR and exit (story 76.1.6a) */
+    if (emit_tkir_flag) {
+        char tkir_path[PATH_BUF];
+        if (out && !out_is_dir) { strncpy(tkir_path, out, sizeof(tkir_path) - 1); tkir_path[sizeof(tkir_path) - 1] = '\0'; }
+        else { snprintf(tkir_path, sizeof(tkir_path), "%s.tkir", obin); }
+        if (emit_tkir(ast, sbuf, &te, &ne, tgt, tkir_path) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
+        progress_update(90);
+        symtab_free(&st);
+        goto done;
+    }
+
+    /* Emit LLVM IR */
+    if (emit_ll) {
+        /* --emit-llvm: write .ll to output path (or stdout) */
+        char ll_path[PATH_BUF];
+        if (out && !out_is_dir) {
+            strncpy(ll_path, out, sizeof(ll_path) - 1); ll_path[sizeof(ll_path) - 1] = '\0';
+        } else {
+            snprintf(ll_path, sizeof(ll_path), "%s.ll", obin);
+        }
+        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
+        if (emit_llvm_ir(ast, sbuf, &cg, ll_path) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
+        progress_update(90);
+        symtab_free(&st);
+        goto done;
+    }
+
+    if (emit_asm) {
+        /* --emit-asm: emit IR to temp, then clang -S to produce .s */
+        char tmp[] = "/tmp/tkc_XXXXXX.ll";
+        int fd = mkstemps(tmp, 3);
+        if (fd < 0) { fputs("tkc: failed to create temp file\n", stderr); symtab_free(&st); rc = EINTERNAL; goto done; }
+        close(fd);
+        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
+        if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
+        progress_update(90);
+        char asm_path[PATH_BUF];
+        if (out && !out_is_dir) {
+            strncpy(asm_path, out, sizeof(asm_path) - 1); asm_path[sizeof(asm_path) - 1] = '\0';
+        } else {
+            snprintf(asm_path, sizeof(asm_path), "%s.s", obin);
+        }
+        int r = run_clang_emit_asm(opt_level, tmp, asm_path, tgt);
+        unlink(tmp);
+        symtab_free(&st);
+        if (r != 0) { rc = EINTERNAL; goto done; }
+        goto done;
+    }
+
+    /* Default: compile to binary */
+    {
+        /* Story 111.14: an executable binary requires `f=main()`. Detect the
+         * absence here and emit a clear E9020 before the linker fails with
+         * a cryptic "_main not found" message that the model can't act on. */
+        int has_main = 0;
+        for (int i = 0; ast && i < ast->child_count; i++) {
+            const Node *ch = ast->children[i];
+            if (!ch) continue;
+            const Node *fn_scope = ch;
+            /* Functions may sit inside a NODE_MODULE wrapper or directly under PROGRAM */
+            if (ch->kind == NODE_MODULE) {
+                for (int j = 0; j < ch->child_count; j++) {
+                    const Node *c2 = ch->children[j];
+                    if (c2 && c2->kind == NODE_FUNC_DECL && c2->child_count > 0) {
+                        char fnb[64];
+                        int tlen = c2->children[0]->tok_len < (int)sizeof(fnb) - 1
+                                   ? c2->children[0]->tok_len : (int)sizeof(fnb) - 1;
+                        memcpy(fnb, sbuf + c2->children[0]->tok_start, (size_t)tlen);
+                        fnb[tlen] = '\0';
+                        if (!strcmp(fnb, "main")) { has_main = 1; break; }
+                    }
+                }
+                if (has_main) break;
+                continue;
+            }
+            if (fn_scope->kind == NODE_FUNC_DECL && fn_scope->child_count > 0) {
+                char fnb[64];
+                int tlen = fn_scope->children[0]->tok_len < (int)sizeof(fnb) - 1
+                           ? fn_scope->children[0]->tok_len : (int)sizeof(fnb) - 1;
+                memcpy(fnb, sbuf + fn_scope->children[0]->tok_start, (size_t)tlen);
+                fnb[tlen] = '\0';
+                if (!strcmp(fnb, "main")) { has_main = 1; break; }
+            }
+        }
+        if (!has_main) {
+            diag_emit(DIAG_ERROR, 9020, 0, 1, 1,
+                      "no main function defined — every executable toke program needs an entry point",
+                      "fix", "add `f=main():$i64{<0}` (or a body that calls your helper functions)",
+                      NULL);
+            symtab_free(&st);
+            rc = ECOMPILE;
+            goto done;
+        }
+        char tmp[] = "/tmp/tkc_XXXXXX.ll";
+        int fd = mkstemps(tmp, 3);
+        if (fd < 0) { fputs("tkc: failed to create temp file\n", stderr); symtab_free(&st); rc = EINTERNAL; goto done; }
+        close(fd);
+        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
+        if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
+        progress_update(90);
+        if (compile_binary(tmp, obin, tgt, opt_level, &st, debug_info) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
+        progress_update(100);
+        unlink(tmp);
+        symtab_free(&st);
+    }
+
+done:
+    progress_done();
+    diag_flush_sarif();
+    arena_free(arena);
+    free(sbuf);
+    return rc;
+}
+
+
 int main(int argc, char **argv)
 {
     const char *tgt = NULL, *out = NULL;
@@ -887,611 +1364,28 @@ int main(int argc, char **argv)
         search_paths[search_path_count++] = out;
     }
 
-    /* For backward compatibility, set src to point to the first (or only)
-     * source file.  The multi-file loop below uses source_files[si]. */
-    const char *src = source_files[0];
-
-    diag_set_format(dsarif ? DIAG_FMT_SARIF :
-                    djson  ? DIAG_FMT_JSON  :
-                    dtext  ? DIAG_FMT_TEXT  :
-                    isatty(STDOUT_FILENO) ? DIAG_FMT_TEXT : DIAG_FMT_JSON);
-    diag_set_source_file(src);
-
-    /* --migrate: try default profile first (handles partially migrated files),
-     * fall back to legacy if too many lex errors. Actual migration is
-     * idempotent — already-migrated constructs pass through unchanged. */
-
-    /* Progress bar: skip for fast-path modes */
-    int fast_path = fmt_only || min_only || pretty || expand || check_only || dump_ast || migrate || companion || companion_diff_comp || do_compress || do_decompress || do_compress_stream || do_lint || emit_deps;
-    progress_init(fast_path);
-
-    /* Read source file — only malloc in the pipeline */
-    FILE *f = fopen(src, "rb");
-    if (!f) { fprintf(stderr, "tkc: cannot open '%s'\n", src); return EUSAGE; }
-    fseek(f, 0, SEEK_END);
-    long slen = ftell(f);
-    rewind(f);
-    char *sbuf = malloc((size_t)slen + 1);
-    if (!sbuf || (long)fread(sbuf, 1, (size_t)slen, f) != slen) {
-        fclose(f); free(sbuf);
-        fprintf(stderr, "tkc: failed to read '%s'\n", src);
-        return sbuf ? EUSAGE : EINTERNAL;
-    }
-    sbuf[slen] = '\0';
-    fclose(f);
-    diag_set_source(sbuf, (size_t)slen);
-
-    Arena *arena = arena_init();
-    if (!arena) { free(sbuf); fputs("tkc: arena_init failed\n", stderr); return EINTERNAL; }
-
+    /* 131.37: single per-file dispatch — every positional file, in order,
+     * through the same pipeline in the same mode. A file that fails with
+     * diagnostics (ECOMPILE) does not stop the batch (like `--check a b`);
+     * usage/internal failures do. */
+    RunOpts o = {
+        emit_iface, check_only, djson, dtext, dsarif,
+        emit_ll, emit_asm, opt_level, fmt_only, debug_info,
+        pretty, expand, sourcemap, dump_ast, migrate, min_only,
+        do_lint, do_fix, lint_dry_run, emit_tkir_flag, emit_deps, companion,
+        companion_out, companion_diff_comp, tgt, out,
+        out_is_dir,
+        search_paths, search_path_count,
+        limits,
+        profile
+    };
     int rc = 0;
-
-    /* Lex */
-    int tcap = (int)(slen + 16);
-    Token *toks = arena_alloc(arena, tcap * (int)sizeof(Token));
-    if (!toks) { rc = EINTERNAL; goto done; }
-    int tc;
-    if (migrate) {
-        /* --migrate does its own prepass + re-lex internally.
-         * Pass raw source directly — no external lex needed. */
-        if (tkc_migrate(sbuf, (int)slen, NULL, 0, stdout) < 0) {
-            rc = EINTERNAL;
-        }
-        goto done;
+    for (int si = 0; si < source_file_count; si++) {
+        if (si > 0) diag_reset();
+        int r = process_file(source_files[si], &o);
+        if (r == 0) continue;
+        if (r != ECOMPILE) return r;
+        if (!rc) rc = r;
     }
-    if (min_only) {
-        /* --min: single-line canonical (minified) form. Token-based — needs
-         * only the source, so it works even when later stages would fail. */
-        char *m = tkc_minify(sbuf, (int)slen);
-        if (!m) { rc = EINTERNAL; goto done; }
-        fputs(m, stdout);
-        fputc('\n', stdout);
-        free(m);
-        goto done;
-    }
-    tc = lex(sbuf, (int)slen, toks, tcap, profile);
-    if (tc < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
-    progress_update(10);
-
-    /* Parse */
-    Node *ast = parse(toks, tc, sbuf, arena, profile);
-    if (!ast || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
-    progress_update(30);
-
-    /* --companion-diff: compare source AST against existing companion */
-    if (companion_diff_comp) {
-        rc = companion_diff(src, sbuf, slen, ast, companion_diff_comp);
-        goto done;
-    }
-
-    /* --dump-ast: serialise AST as JSON to stdout, then exit */
-    if (dump_ast) {
-        ast_dump_json(ast, sbuf, stdout);
-        goto done;
-    }
-
-    /* --lint (and optionally --fix / --dry-run): run lint rules, report/fix, exit */
-    if (do_lint) {
-        int lint_json = dsarif || djson || (!dtext && !isatty(STDOUT_FILENO));
-        rc = run_lint_mode(src, sbuf, slen, ast, profile, do_fix, lint_dry_run, lint_json);
-        goto done;
-    }
-
-    /* --fmt: format and print to stdout, then exit */
-    if (fmt_only) {
-        char *formatted = tkc_format(ast, sbuf);
-        if (!formatted) { rc = EINTERNAL; goto done; }
-        fputs(formatted, stdout);
-        if (sourcemap) {
-            FmtOptions sm_opts = { 1, 0 };
-            char *expanded = tkc_format_pretty(ast, sbuf, sm_opts);
-            if (expanded) {
-                SourceMap sm;
-                sourcemap_init(&sm);
-                build_sourcemap(&sm, formatted, expanded);
-                char map_path[PATH_BUF];
-                snprintf(map_path, sizeof(map_path), "%s.map", src);
-                sourcemap_emit_json(&sm, map_path);
-                sourcemap_free(&sm);
-                free(expanded);
-            }
-        }
-        free(formatted);
-        goto done;
-    }
-
-    /* --pretty / --expand: pretty-print and/or expand, then exit */
-    if (pretty || expand) {
-        FmtOptions opts = { pretty, expand };
-        char *formatted = tkc_format_pretty(ast, sbuf, opts);
-        if (!formatted) { rc = EINTERNAL; goto done; }
-        fputs(formatted, stdout);
-        if (sourcemap) {
-            char *compact = tkc_format(ast, sbuf);
-            if (compact) {
-                SourceMap sm;
-                sourcemap_init(&sm);
-                build_sourcemap(&sm, compact, formatted);
-                char map_path[PATH_BUF];
-                snprintf(map_path, sizeof(map_path), "%s.map", src);
-                sourcemap_emit_json(&sm, map_path);
-                sourcemap_free(&sm);
-                free(compact);
-            }
-        }
-        free(formatted);
-        goto done;
-    }
-
-    /* Resolve imports */
-    SymbolTable st;
-    if (resolve_imports(ast, sbuf, search_paths, search_path_count, &limits, &st) < 0 || diag_error_count() > 0) { rc = ECOMPILE; goto done; }
-
-    /* Resolve names */
-    NameEnv ne;
-    if (resolve_names(ast, sbuf, &st, arena, &ne, search_paths, search_path_count) < 0 || diag_error_count() > 0) {
-        symtab_free(&st); rc = ECOMPILE; goto done;
-    }
-    progress_update(50);
-
-    /* Type check */
-    TypeEnv te;
-    if (type_check(ast, sbuf, &ne, arena, &te) < 0 || diag_error_count() > 0) {
-        symtab_free(&st); rc = ECOMPILE; goto done;
-    }
-
-    progress_update(70);
-
-    /* Emit .tki before --check exit so --check --emit-interface works.
-     * The .tki is named after the module declaration, placed in the
-     * same directory as --out (or the source file directory). */
-    if (emit_iface) {
-        char mod_name[256];
-        char tki[PATH_BUF];
-        if (extract_module_name(ast, sbuf, mod_name, (int)sizeof(mod_name)) && mod_name[0]) {
-            /* Place .tki in --out directory (if given and is a dir), else source dir */
-            const char *dir_src = (out && out_is_dir) ? out : src;
-            if (out_is_dir) {
-                /* Strip trailing slash for clean path construction */
-                int dlen = (int)strlen(dir_src);
-                while (dlen > 1 && dir_src[dlen - 1] == '/') dlen--;
-                snprintf(tki, sizeof(tki), "%.*s/%s.tki", dlen, dir_src, mod_name);
-            } else {
-                const char *slash = strrchr(dir_src, '/');
-                if (slash) {
-                    int dlen = (int)(slash - dir_src);
-                    snprintf(tki, sizeof(tki), "%.*s/%s.tki", dlen, dir_src, mod_name);
-                } else {
-                    snprintf(tki, sizeof(tki), "%s.tki", mod_name);
-                }
-            }
-        } else {
-            /* Fallback: use output stem if no module declaration */
-            char odir[PATH_BUF], ostm_tki[MSG_BUF];
-            if (out) {
-                strncpy(odir, out, sizeof(odir) - 1); odir[sizeof(odir) - 1] = '\0';
-            } else {
-                stem(src, ostm_tki, (int)sizeof(ostm_tki));
-                snprintf(odir, sizeof(odir), "%s", ostm_tki);
-            }
-            snprintf(tki, sizeof(tki), "%s.tki", odir);
-        }
-        if (emit_interface(ast, sbuf, &te, tki) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
-    }
-
-    if (check_only) { symtab_free(&st); goto done; }
-
-    /* --emit-deps: print stdlib C sources and linker flags, then exit */
-    if (emit_deps) {
-        /* Locate stdlib directory (same probe logic as compile_binary) */
-        const char *stdlib_dir = getenv("TKC_STDLIB_DIR");
-        if (!stdlib_dir) {
-            /* Try common relative paths from the toke binary */
-            static const char *candidates[] = {
-                "src/stdlib", "stdlib", "../src/stdlib", NULL
-            };
-            for (int ci = 0; candidates[ci]; ci++) {
-                char probe[PATH_BUF];
-                snprintf(probe, sizeof probe, "%s/tk_runtime.c", candidates[ci]);
-                FILE *pf = fopen(probe, "r");
-                if (pf) { fclose(pf); stdlib_dir = candidates[ci]; break; }
-            }
-        }
-        if (!stdlib_dir) {
-            fputs("tkc: cannot locate stdlib directory (set TKC_STDLIB_DIR)\n", stderr);
-            symtab_free(&st); rc = EUSAGE; goto done;
-        }
-
-        ResolvedDeps deps;
-        if (resolve_stdlib_deps_imports_only(stdlib_dir, &st, &deps) < 0) {
-            fputs("tkc: failed to resolve stdlib dependencies\n", stderr);
-            symtab_free(&st); rc = EINTERNAL; goto done;
-        }
-
-        /* Print sources: one full path per line */
-        {
-            char buf[8192];
-            snprintf(buf, sizeof buf, "%s", deps.sources);
-            char *save = NULL;
-            char *tok = strtok_r(buf, " ", &save);
-            while (tok) {
-                puts(tok);
-                tok = strtok_r(NULL, " ", &save);
-            }
-        }
-
-        /* Print separator and flags (if any) */
-        if (deps.flags[0]) {
-            puts("---");
-            char buf[512];
-            snprintf(buf, sizeof buf, "%s", deps.flags);
-            char *save = NULL;
-            char *tok = strtok_r(buf, " ", &save);
-            while (tok) {
-                puts(tok);
-                tok = strtok_r(NULL, " ", &save);
-            }
-        }
-
-        /* Print user module deps (non-std imports) as .ll files */
-        {
-            int has_user_deps = 0;
-            for (int ui = 0; ui < st.count; ui++) {
-                const char *mp = st.entries[ui].module_path;
-                if (!mp || !st.entries[ui].resolved) continue;
-                if (strncmp(mp, "std.", 4) == 0 || strcmp(mp, "std") == 0) continue;
-                if (!has_user_deps) { puts("---"); has_user_deps = 1; }
-                /* Convert dots to slashes for nested module paths */
-                char mod_ll[PATH_BUF];
-                strncpy(mod_ll, mp, sizeof(mod_ll) - 4);
-                mod_ll[sizeof(mod_ll) - 4] = '\0';
-                for (char *p = mod_ll; *p; p++) { if (*p == '.') *p = '/'; }
-                strcat(mod_ll, ".ll");
-                puts(mod_ll);
-            }
-        }
-
-        symtab_free(&st);
-        goto done;
-    }
-
-    /* --companion: generate .tkc.md skeleton and exit */
-    if (companion) {
-        FILE *comp_out = stdout;
-        if (companion_out) {
-            comp_out = fopen(companion_out, "w");
-            if (!comp_out) {
-                fprintf(stderr, "tkc: cannot open '%s' for writing\n", companion_out);
-                symtab_free(&st); rc = EUSAGE; goto done;
-            }
-        }
-        emit_companion(comp_out, src, sbuf, slen, ast, &limits);
-        if (companion_out) fclose(comp_out);
-        symtab_free(&st);
-        goto done;
-    }
-
-    /* Story 76.1.5: derive source filename and directory for debug metadata */
-    const char *dbg_file = src;
-    char dbg_dir[PATH_BUF];
-    dbg_dir[0] = '\0';
-    if (debug_info) {
-        const char *slash = strrchr(src, '/');
-        if (slash) {
-            int dlen = (int)(slash - src);
-            if (dlen >= (int)sizeof(dbg_dir)) dlen = (int)sizeof(dbg_dir) - 1;
-            memcpy(dbg_dir, src, (size_t)dlen);
-            dbg_dir[dlen] = '\0';
-            dbg_file = slash + 1;
-        } else {
-            dbg_dir[0] = '.'; dbg_dir[1] = '\0';
-        }
-    }
-
-    /* Derive output path */
-    char obin[PATH_BUF], ostm[MSG_BUF];
-    if (out && !out_is_dir) {
-        strncpy(obin, out, sizeof(obin) - 1); obin[sizeof(obin) - 1] = '\0';
-    } else if (out_is_dir) {
-        /* For directory output, derive basename from source stem */
-        stem(src, ostm, (int)sizeof(ostm));
-        /* Strip trailing slash from out for clean path */
-        char out_clean[PATH_BUF];
-        strncpy(out_clean, out, sizeof(out_clean) - 1); out_clean[sizeof(out_clean) - 1] = '\0';
-        int oclen = (int)strlen(out_clean);
-        while (oclen > 1 && out_clean[oclen - 1] == '/') out_clean[--oclen] = '\0';
-        snprintf(obin, sizeof(obin), "%s/%s", out_clean, ostm);
-    } else {
-        stem(src, ostm, (int)sizeof(ostm));
-        snprintf(obin, sizeof(obin), "%s", ostm);
-    }
-
-    /* .tki already emitted above (before --check exit) */
-
-    /* --emit-tkir: write .tkir binary IR and exit (story 76.1.6a) */
-    if (emit_tkir_flag) {
-        char tkir_path[PATH_BUF];
-        if (out && !out_is_dir) { strncpy(tkir_path, out, sizeof(tkir_path) - 1); tkir_path[sizeof(tkir_path) - 1] = '\0'; }
-        else { snprintf(tkir_path, sizeof(tkir_path), "%s.tkir", obin); }
-        if (emit_tkir(ast, sbuf, &te, &ne, tgt, tkir_path) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
-        progress_update(90);
-        symtab_free(&st);
-        goto done;
-    }
-
-    /* Emit LLVM IR */
-    if (emit_ll) {
-        /* --emit-llvm: write .ll to output path (or stdout) */
-        char ll_path[PATH_BUF];
-        if (out && !out_is_dir) {
-            strncpy(ll_path, out, sizeof(ll_path) - 1); ll_path[sizeof(ll_path) - 1] = '\0';
-        } else {
-            snprintf(ll_path, sizeof(ll_path), "%s.ll", obin);
-        }
-        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
-        if (emit_llvm_ir(ast, sbuf, &cg, ll_path) < 0) { symtab_free(&st); rc = EINTERNAL; goto done; }
-        progress_update(90);
-        symtab_free(&st);
-        goto done;
-    }
-
-    if (emit_asm) {
-        /* --emit-asm: emit IR to temp, then clang -S to produce .s */
-        char tmp[] = "/tmp/tkc_XXXXXX.ll";
-        int fd = mkstemps(tmp, 3);
-        if (fd < 0) { fputs("tkc: failed to create temp file\n", stderr); symtab_free(&st); rc = EINTERNAL; goto done; }
-        close(fd);
-        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
-        if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
-        progress_update(90);
-        char asm_path[PATH_BUF];
-        if (out && !out_is_dir) {
-            strncpy(asm_path, out, sizeof(asm_path) - 1); asm_path[sizeof(asm_path) - 1] = '\0';
-        } else {
-            snprintf(asm_path, sizeof(asm_path), "%s.s", obin);
-        }
-        int r = run_clang_emit_asm(opt_level, tmp, asm_path, tgt);
-        unlink(tmp);
-        symtab_free(&st);
-        if (r != 0) { rc = EINTERNAL; goto done; }
-        goto done;
-    }
-
-    /* Default: compile to binary */
-    {
-        /* Story 111.14: an executable binary requires `f=main()`. Detect the
-         * absence here and emit a clear E9020 before the linker fails with
-         * a cryptic "_main not found" message that the model can't act on. */
-        int has_main = 0;
-        for (int i = 0; ast && i < ast->child_count; i++) {
-            const Node *ch = ast->children[i];
-            if (!ch) continue;
-            const Node *fn_scope = ch;
-            /* Functions may sit inside a NODE_MODULE wrapper or directly under PROGRAM */
-            if (ch->kind == NODE_MODULE) {
-                for (int j = 0; j < ch->child_count; j++) {
-                    const Node *c2 = ch->children[j];
-                    if (c2 && c2->kind == NODE_FUNC_DECL && c2->child_count > 0) {
-                        char fnb[64];
-                        int tlen = c2->children[0]->tok_len < (int)sizeof(fnb) - 1
-                                   ? c2->children[0]->tok_len : (int)sizeof(fnb) - 1;
-                        memcpy(fnb, sbuf + c2->children[0]->tok_start, (size_t)tlen);
-                        fnb[tlen] = '\0';
-                        if (!strcmp(fnb, "main")) { has_main = 1; break; }
-                    }
-                }
-                if (has_main) break;
-                continue;
-            }
-            if (fn_scope->kind == NODE_FUNC_DECL && fn_scope->child_count > 0) {
-                char fnb[64];
-                int tlen = fn_scope->children[0]->tok_len < (int)sizeof(fnb) - 1
-                           ? fn_scope->children[0]->tok_len : (int)sizeof(fnb) - 1;
-                memcpy(fnb, sbuf + fn_scope->children[0]->tok_start, (size_t)tlen);
-                fnb[tlen] = '\0';
-                if (!strcmp(fnb, "main")) { has_main = 1; break; }
-            }
-        }
-        if (!has_main) {
-            diag_emit(DIAG_ERROR, 9020, 0, 1, 1,
-                      "no main function defined — every executable toke program needs an entry point",
-                      "fix", "add `f=main():$i64{<0}` (or a body that calls your helper functions)",
-                      NULL);
-            symtab_free(&st);
-            rc = ECOMPILE;
-            goto done;
-        }
-        char tmp[] = "/tmp/tkc_XXXXXX.ll";
-        int fd = mkstemps(tmp, 3);
-        if (fd < 0) { fputs("tkc: failed to create temp file\n", stderr); symtab_free(&st); rc = EINTERNAL; goto done; }
-        close(fd);
-        CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
-        if (emit_llvm_ir(ast, sbuf, &cg, tmp) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
-        progress_update(90);
-        if (compile_binary(tmp, obin, tgt, opt_level, &st, debug_info) < 0) { unlink(tmp); symtab_free(&st); rc = EINTERNAL; goto done; }
-        progress_update(100);
-        unlink(tmp);
-        symtab_free(&st);
-    }
-
-done:
-    progress_done();
-    diag_flush_sarif();
-    arena_free(arena);
-    free(sbuf);
-
-    /* ── Multi-file batch: process remaining source files (index 1+) ── */
-    for (int si = 1; si < source_file_count; si++) {
-        src = source_files[si];
-        diag_reset();
-        diag_set_format(dsarif ? DIAG_FMT_SARIF :
-                        djson  ? DIAG_FMT_JSON  :
-                        dtext  ? DIAG_FMT_TEXT  :
-                        isatty(STDOUT_FILENO) ? DIAG_FMT_TEXT : DIAG_FMT_JSON);
-        diag_set_source_file(src);
-
-        /* Read source file */
-        f = fopen(src, "rb");
-        if (!f) { fprintf(stderr, "tkc: cannot open '%s'\n", src); return EUSAGE; }
-        fseek(f, 0, SEEK_END);
-        slen = ftell(f);
-        rewind(f);
-        sbuf = malloc((size_t)slen + 1);
-        if (!sbuf || (long)fread(sbuf, 1, (size_t)slen, f) != slen) {
-            fclose(f); free(sbuf);
-            fprintf(stderr, "tkc: failed to read '%s'\n", src);
-            return EINTERNAL;
-        }
-        sbuf[slen] = '\0';
-        fclose(f);
-        diag_set_source(sbuf, (size_t)slen);
-
-        /* 131.36: --min is token-only — minify this file and move on, like
-         * `--check a b`. Without this the batch loop fell through to the full
-         * compile+link pipeline for every file after the first. */
-        if (min_only) {
-            char *m = tkc_minify(sbuf, (int)slen);
-            free(sbuf);
-            if (!m) return EINTERNAL;
-            fputs(m, stdout);
-            fputc('\n', stdout);
-            free(m);
-            continue;
-        }
-
-        arena = arena_init();
-        if (!arena) { free(sbuf); fputs("tkc: arena_init failed\n", stderr); return EINTERNAL; }
-
-        /* Lex */
-        tcap = (int)(slen + 16);
-        toks = arena_alloc(arena, tcap * (int)sizeof(Token));
-        if (!toks) { arena_free(arena); free(sbuf); return EINTERNAL; }
-        tc = lex(sbuf, (int)slen, toks, tcap, profile);
-        if (tc < 0 || diag_error_count() > 0) { arena_free(arena); free(sbuf); return ECOMPILE; }
-
-        /* Parse */
-        ast = parse(toks, tc, sbuf, arena, profile);
-        if (!ast || diag_error_count() > 0) { arena_free(arena); free(sbuf); return ECOMPILE; }
-
-        /* Resolve imports */
-        if (resolve_imports(ast, sbuf, search_paths, search_path_count, &limits, &st) < 0 || diag_error_count() > 0) {
-            arena_free(arena); free(sbuf); return ECOMPILE;
-        }
-
-        /* Resolve names */
-        if (resolve_names(ast, sbuf, &st, arena, &ne, search_paths, search_path_count) < 0 || diag_error_count() > 0) {
-            symtab_free(&st); arena_free(arena); free(sbuf); return ECOMPILE;
-        }
-
-        /* Type check */
-        if (type_check(ast, sbuf, &ne, arena, &te) < 0 || diag_error_count() > 0) {
-            symtab_free(&st); arena_free(arena); free(sbuf); return ECOMPILE;
-        }
-
-        /* Emit .tki if requested */
-        if (emit_iface) {
-            char mod_name[256];
-            char tki[PATH_BUF];
-            if (extract_module_name(ast, sbuf, mod_name, (int)sizeof(mod_name)) && mod_name[0]) {
-                const char *dir_src = (out && out_is_dir) ? out : src;
-                if (out_is_dir) {
-                    int dlen = (int)strlen(dir_src);
-                    while (dlen > 1 && dir_src[dlen - 1] == '/') dlen--;
-                    snprintf(tki, sizeof(tki), "%.*s/%s.tki", dlen, dir_src, mod_name);
-                } else {
-                    const char *slash = strrchr(dir_src, '/');
-                    if (slash) {
-                        int dlen = (int)(slash - dir_src);
-                        snprintf(tki, sizeof(tki), "%.*s/%s.tki", dlen, dir_src, mod_name);
-                    } else {
-                        snprintf(tki, sizeof(tki), "%s.tki", mod_name);
-                    }
-                }
-            } else {
-                char tki_stem[MSG_BUF];
-                stem(src, tki_stem, (int)sizeof(tki_stem));
-                if (out_is_dir) {
-                    char out_clean[PATH_BUF];
-                    strncpy(out_clean, out, sizeof(out_clean) - 1); out_clean[sizeof(out_clean) - 1] = '\0';
-                    int oclen = (int)strlen(out_clean);
-                    while (oclen > 1 && out_clean[oclen - 1] == '/') out_clean[--oclen] = '\0';
-                    snprintf(tki, sizeof(tki), "%s/%s.tki", out_clean, tki_stem);
-                } else {
-                    snprintf(tki, sizeof(tki), "%s.tki", tki_stem);
-                }
-            }
-            if (emit_interface(ast, sbuf, &te, tki) < 0) {
-                symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL;
-            }
-        }
-
-        if (check_only) { symtab_free(&st); arena_free(arena); free(sbuf); continue; }
-
-        /* Derive per-file output path */
-        stem(src, ostm, (int)sizeof(ostm));
-        if (out_is_dir) {
-            char out_clean[PATH_BUF];
-            strncpy(out_clean, out, sizeof(out_clean) - 1); out_clean[sizeof(out_clean) - 1] = '\0';
-            int oclen = (int)strlen(out_clean);
-            while (oclen > 1 && out_clean[oclen - 1] == '/') out_clean[--oclen] = '\0';
-            snprintf(obin, sizeof(obin), "%s/%s", out_clean, ostm);
-        } else {
-            snprintf(obin, sizeof(obin), "%s", ostm);
-        }
-
-        /* Debug metadata for this file */
-        dbg_file = src;
-        dbg_dir[0] = '\0';
-        if (debug_info) {
-            const char *slash = strrchr(src, '/');
-            if (slash) {
-                int dlen = (int)(slash - src);
-                if (dlen >= (int)sizeof(dbg_dir)) dlen = (int)sizeof(dbg_dir) - 1;
-                memcpy(dbg_dir, src, (size_t)dlen);
-                dbg_dir[dlen] = '\0';
-                dbg_file = slash + 1;
-            } else {
-                dbg_dir[0] = '.'; dbg_dir[1] = '\0';
-            }
-        }
-
-        /* Emit LLVM IR */
-        if (emit_ll) {
-            char ll_path[PATH_BUF];
-            snprintf(ll_path, sizeof(ll_path), "%s.ll", obin);
-            CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
-            if (emit_llvm_ir(ast, sbuf, &cg, ll_path) < 0) {
-                symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL;
-            }
-        } else if (emit_asm) {
-            char tmp_asm[] = "/tmp/tkc_XXXXXX.ll";
-            int fd = mkstemps(tmp_asm, 3);
-            if (fd < 0) { symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
-            close(fd);
-            CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
-            if (emit_llvm_ir(ast, sbuf, &cg, tmp_asm) < 0) { unlink(tmp_asm); symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
-            char asm_path[PATH_BUF];
-            snprintf(asm_path, sizeof(asm_path), "%s.s", obin);
-            int r = run_clang_emit_asm(opt_level, tmp_asm, asm_path, tgt);
-            unlink(tmp_asm);
-            if (r != 0) { symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
-        } else {
-            /* Default: compile to binary */
-            char tmp_bin[] = "/tmp/tkc_XXXXXX.ll";
-            int fd = mkstemps(tmp_bin, 3);
-            if (fd < 0) { symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
-            close(fd);
-            CodegenEnv cg = { &te, &ne, arena, tgt, limits, debug_info, dbg_file, dbg_dir, search_paths, search_path_count };
-            if (emit_llvm_ir(ast, sbuf, &cg, tmp_bin) < 0) { unlink(tmp_bin); symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
-            if (compile_binary(tmp_bin, obin, tgt, opt_level, &st, debug_info) < 0) { unlink(tmp_bin); symtab_free(&st); arena_free(arena); free(sbuf); return EINTERNAL; }
-            unlink(tmp_bin);
-        }
-
-        symtab_free(&st);
-        diag_flush_sarif();
-        arena_free(arena);
-        free(sbuf);
-    }
-
     return rc;
 }
