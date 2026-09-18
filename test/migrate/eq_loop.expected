@@ -1,0 +1,9 @@
+m=eqloop;
+f=main():i64{
+  let n=mut.0;
+  lp(let i=0;i<10;i=i+1){n=n+i;};
+  lp(let k=0;!(k==5);k=k+1){n=n+k;};
+  let done=mut.false;
+  lp(let j=0;done==false;j=j+1){if(j==3){done=true;};};
+  <n
+};

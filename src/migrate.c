@@ -13,6 +13,8 @@
 
 #include "migrate.h"
 #include "lexer.h"
+#include "parser.h"
+#include "arena.h"
 #include "diag.h"
 #include <string.h>
 #include <stdlib.h>
@@ -733,21 +735,12 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             }
         }
 
-        /* == comparison → = (toke uses single = for equality) */
-        if (src[i] == '=' && i+1 < slen && src[i+1] == '=' && !in_str) {
-            o[w++] = '=';
-            i++; continue;
-        }
-
-        /* >= comparison → not valid in toke, convert to !(a<b) pattern
-         * Actually >= is not in the char set but > and = are used separately.
-         * For now just strip the = after > to avoid charset error — the
-         * semantics change but at least it compiles. */
-        if (src[i] == '>' && i+1 < slen && src[i+1] == '=' && !in_str) {
-            /* >= → > (lossy but prevents charset error) */
-            o[w++] = '>';
-            i++; continue;
-        }
+        /* 127.18: `==` passes through unchanged — v0.4 equality IS `==`
+         * (a bare `=` in expression position is E2002).  The legacy v0.3
+         * `==` → `=` rewrite that lived here has been removed; legacy `=`
+         * equality is rewritten to `==` in postpass_equality() below.
+         * Likewise `>=` / `<=` / `!=` are lexed as TK_GE / TK_LE / TK_NE in
+         * both profiles, so the old lossy `>=` → `>` rewrite is gone too. */
 
         /* }else{ or }else { → }el{ */
         if (src[i] == '}' && !in_str) {
@@ -764,7 +757,7 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
 
         /* loop{ → lp(let lv=0;true;lv=lv){ (v3 three-part infinite loop) */
         if (src[i] == 'l' && i+4 < slen && !strncmp(src+i, "loop", 4) &&
-            !is_idchar(src[i+4]) && !in_str) {
+            !is_idchar(src[i+4]) && (i == 0 || !is_idchar(src[i-1])) && !in_str) {
             const char *inf = "lp(let lv=0;true;lv=lv)";
             int il = (int)strlen(inf);
             OENSURE(il); memcpy(o+w, inf, (size_t)il); w += il;
@@ -851,8 +844,15 @@ static char *prepass(const char *src, int slen, int *out_len, int *inserted_modu
             /* Walk back over identifier */
             int ie = j;
             while (j >= 0 && is_idchar(src[j])) j--;
-            /* Check for = before identifier */
-            if (j >= 0 && src[j] == '=' && ie > j) {
+            /* Check for = before identifier — but `let g=if(c){..}` /
+             * `x=mt v{..}` are expression bindings, not declarations
+             * (127.18: the old rule turned `if(c){` into `if(c):i64{`). */
+            int kw_len = ie - j;
+            int is_expr_kw = (kw_len == 2 && (!strncmp(src+j+1, "if", 2) ||
+                                              !strncmp(src+j+1, "lp", 2) ||
+                                              !strncmp(src+j+1, "mt", 2) ||
+                                              !strncmp(src+j+1, "el", 2)));
+            if (j >= 0 && src[j] == '=' && ie > j && !is_expr_kw) {
                 /* This is a function declaration — add :i64 */
                 o[w++] = ')'; o[w++] = ':'; o[w++] = 'i'; o[w++] = '6'; o[w++] = '4';
                 continue;
@@ -982,6 +982,121 @@ static void postpass_semicolons(char *buf, int *blen_p)
 }
 
 /* ── Public API ────────────────────────────────────��──────────────── */
+
+/* ── 127.18: legacy `=` equality → `==` ─────────────────────────── */
+
+/* Byte offsets of every bare `=` the parser saw in expression position.
+ *
+ * parse_compare() recovers from a bare `=` by building a NODE_BINARY_EXPR
+ * whose op is TK_EQ and whose token is the 1-byte `=` (a real `==` has
+ * tok_len 2, and is normalised to TK_EQ too — the length is what separates
+ * them). Bindings, assignment statements and loop steps are NODE_LET /
+ * NODE_ASSIGN_STMT / NODE_LOOP_INIT children — never a BINARY_EXPR — so this
+ * walk yields exactly the positions the checker reports as E2002 "`=` is
+ * assignment; use `==` for equality": every boolean-context `=` (if / el if /
+ * lp conditions, both sides of && and ||, under !, mt arm guards, nested
+ * parentheses) and nothing else.
+ *
+ * One exclusion: a bare `=` that is the top of a NODE_EXPR_STMT is a
+ * statement-level assignment to a non-identifier target (`a.get(i)=v`,
+ * `p.x=v`). That is an assignment the compiler must reject, not an equality
+ * test — leave it alone rather than silently turn it into a comparison. */
+#define EQ_MAX_PER_PASS 4096
+
+static void collect_bare_eq(const Node *n, const char *src, int *offs, int *cnt)
+{
+    if (!n) return;
+    if (n->kind == NODE_BINARY_EXPR && n->op == TK_EQ && n->tok_len == 1 &&
+        src[n->tok_start] == '=' && *cnt < EQ_MAX_PER_PASS)
+        offs[(*cnt)++] = n->tok_start;
+    for (int i = 0; i < n->child_count; i++) {
+        const Node *c = n->children[i];
+        if (n->kind == NODE_EXPR_STMT && c && c->kind == NODE_BINARY_EXPR &&
+            c->op == TK_EQ && c->tok_len == 1) {
+            /* statement-level `lhs=rhs` with a non-ident lhs: skip the node
+             * itself but still visit its operands (they may hold conditions). */
+            for (int k = 0; k < c->child_count; k++)
+                collect_bare_eq(c->children[k], src, offs, cnt);
+            continue;
+        }
+        collect_bare_eq(c, src, offs, cnt);
+    }
+}
+
+/* Error-driven loop: lex + parse the migrated text, double every bare `=`
+ * the parser flagged, and repeat until a pass finds none. Bounded at 10
+ * passes — the parser stops after MAX_PARSE_ERRORS (20) diagnostics, so a
+ * file with many legacy conditions needs several passes; each pass fixes at
+ * least one position or the loop exits. The buffer is reallocated as it
+ * grows; *bufp / *blen_p are updated in place. */
+#define EQ_MAX_PASSES 10
+
+static void postpass_equality(char **bufp, int *blen_p)
+{
+    for (int pass = 0; pass < EQ_MAX_PASSES; pass++) {
+        char *buf = *bufp; int blen = *blen_p;
+        int ncap = blen + 256;
+        Token *toks = malloc((size_t)ncap * sizeof(Token));
+        if (!toks) return;
+
+        diag_suppress(1);
+        int tc = lex(buf, blen, toks, ncap, PROFILE_DEFAULT);
+        int lex_errs = diag_error_count();
+        diag_reset_counts();
+        Profile prof = PROFILE_DEFAULT;
+        if (tc < 0 || lex_errs > 0) {
+            /* Not yet clean in default mode (e.g. a stray bracket) — the
+             * legacy lexer accepts a superset, and parse_compare() is
+             * profile-independent, so the `=` positions are still exact. */
+            tc = lex(buf, blen, toks, ncap, PROFILE_LEGACY);
+            diag_reset_counts();
+            prof = PROFILE_LEGACY;
+        }
+        if (tc <= 0) { diag_suppress(0); free(toks); return; }
+
+        int *offs = malloc(EQ_MAX_PER_PASS * sizeof(int));
+        int cnt = 0;
+        Arena *ar = arena_init();
+        if (ar && offs) {
+            Node *ast = parse(toks, tc, buf, ar, prof);
+            collect_bare_eq(ast, buf, offs, &cnt);
+        }
+        diag_reset_counts();
+        diag_suppress(0);
+        if (ar) arena_free(ar);
+        free(toks);
+        if (!offs) return;
+        if (cnt == 0) { free(offs); return; }
+
+        /* Insert right-to-left so earlier offsets stay valid. AST order is
+         * not strictly ascending (a && b visits the operator token after the
+         * operands), so sort descending first. */
+        for (int a = 1; a < cnt; a++) {
+            int v = offs[a], b = a - 1;
+            while (b >= 0 && offs[b] < v) { offs[b+1] = offs[b]; b--; }
+            offs[b+1] = v;
+        }
+        char *nb = malloc((size_t)blen + (size_t)cnt + 1);
+        if (!nb) { free(offs); return; }
+        int w = 0, prev = 0, done = 0;
+        for (int a = cnt - 1; a >= 0; a--) {          /* ascending order */
+            int o = offs[a];
+            if (o < prev || o >= blen || buf[o] != '=') continue;
+            memcpy(nb + w, buf + prev, (size_t)(o + 1 - prev)); w += o + 1 - prev;
+            nb[w++] = '=';
+            prev = o + 1; done++;
+        }
+        memcpy(nb + w, buf + prev, (size_t)(blen - prev)); w += blen - prev;
+        nb[w] = '\0';
+        free(offs);
+        if (done == 0) { free(nb); return; }
+        fprintf(stderr, "migrate: note: %d equality `=` → `==` (pass %d)\n", done, pass + 1);
+        free(*bufp);
+        *bufp = nb; *blen_p = w;
+    }
+}
+
+/* ── Public API ─────────────────────────────────────────────────── */
 
 static int s_migrate_depth = 0;  /* recursion guard */
 
@@ -1216,6 +1331,10 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
 
     /* Step 6: Add missing }; terminators */
     postpass_semicolons(buf2, &b2);
+
+    /* Step 7 (127.18): legacy `=` equality → `==` in every boolean-context
+     * position, driven by the parser's own E2002 recovery. */
+    postpass_equality(&buf2, &b2);
 
     /* Output — strip inserted module if needed */
     if (inserted_module) {

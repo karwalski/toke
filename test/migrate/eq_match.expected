@@ -1,0 +1,11 @@
+m=eqmatch;
+t=$shape{$circle:i64;$square:i64};
+f=area(s:$shape;k:i64):i64{
+  <mt s{$circle:r if(r==k){r*r*3}el{0};$square:w if(w==0||k==w){0}el{w*w}}
+};
+f=main():i64{
+  let s=$shape{$circle:2};
+  let x=area(s;2);
+  let ok=x==12;
+  <if(ok){0}el{1}
+};

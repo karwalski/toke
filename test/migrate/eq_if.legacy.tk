@@ -1,0 +1,10 @@
+M=eqif;
+F=main():i64{
+  let a=3;
+  let b=mut.4;
+  b=a;
+  if(a=b){<1};
+  if(a<b){<2}el{if(b=0){<3}};
+  let g=if(a=1){1}el if(b=0){2}el{3};
+  <if((a=3)){g}el if(b=a){0}el{4}
+};

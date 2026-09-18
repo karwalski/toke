@@ -1,0 +1,12 @@
+M=eqlogic;
+F=main():i64{
+  let a=1;
+  let b=2;
+  let c=mut.0;
+  if(a=1&&b=2){c=1;};
+  if(a=2||b=2){c=c+1;};
+  if(!(a=b)){c=c+1;};
+  if((a=1)&&(b=2||c=0)){c=c+1;};
+  if(a<b&&!(c=0)){c=c+1;};
+  <c
+};
