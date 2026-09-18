@@ -1,4 +1,1783 @@
 {
   "protocol": "0.4",
-  "entries": []
+  "entries": [
+    {
+      "id": "cond-bind-if",
+      "family": "cond",
+      "intent": "Bind a value that depends on a condition and use it afterwards.",
+      "applicability": "Two-way choice whose result feeds a later expression. Form c (return in each branch) only applies when the value is returned immediately and the continuation is tiny (here `*x+g`, 5 bytes); it duplicates the continuation, so with any reused or longer continuation the expression-if bind (a) wins. Form b is the mut-flag anti-pattern (idiom rule 1).",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "expression-if bound with let — expected: tied (branch only, no alloc)",
+          "fixture": "patterns/cond-bind-if/a.tk",
+          "min_bytes": 46,
+          "tokens": {
+            "proxy8k": 17,
+            "byte256": 46,
+            "v03": 17,
+            "qwen25coder": 32,
+            "cl100k": 30
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        },
+        {
+          "form": "b",
+          "label": "mut-flag then if/el assigns — expected: tied",
+          "fixture": "patterns/cond-bind-if/b.tk",
+          "min_bytes": 56,
+          "tokens": {
+            "proxy8k": 20,
+            "byte256": 56,
+            "v03": 19,
+            "qwen25coder": 39,
+            "cl100k": 37
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        },
+        {
+          "form": "c",
+          "label": "statement-if returning from each branch — expected: tied",
+          "fixture": "patterns/cond-bind-if/c.tk",
+          "min_bytes": 43,
+          "tokens": {
+            "proxy8k": 15,
+            "byte256": 43,
+            "v03": 15,
+            "qwen25coder": 31,
+            "cl100k": 29
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "best"
+        }
+      ],
+      "verdict": {
+        "canonical": "c",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "idiom-v0.4#1",
+        "card:NEVER write `let x=mut.0; if(c){x=a}el{x=b}`",
+        "ast-mine:30",
+        "ast-mine:24"
+      ],
+      "bug_caveats": [],
+      "lint": {
+        "rule": "mut-flag-if",
+        "severity": "warning",
+        "fixable": false
+      },
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "cond-elif-chain",
+      "family": "cond",
+      "intent": "Choose one of several values from an ordered set of threshold tests.",
+      "applicability": "Three or more mutually exclusive conditions tested in order (grades, buckets, tiers). Form c (a ladder of independent ifs overwriting one mut) is only equivalent when later tests subsume earlier ones, so it is fragile as well as verbose.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "`el if` chain as one expression — expected: tied",
+          "fixture": "patterns/cond-elif-chain/a.tk",
+          "min_bytes": 63,
+          "tokens": {
+            "proxy8k": 21,
+            "byte256": 63,
+            "v03": 26,
+            "qwen25coder": 43,
+            "cl100k": 38
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "best"
+        },
+        {
+          "form": "b",
+          "label": "nested if/el expressions — expected: tied",
+          "fixture": "patterns/cond-elif-chain/b.tk",
+          "min_bytes": 65,
+          "tokens": {
+            "proxy8k": 22,
+            "byte256": 65,
+            "v03": 22,
+            "qwen25coder": 46,
+            "cl100k": 41
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "tied"
+        },
+        {
+          "form": "c",
+          "label": "mut-flag ladder of independent ifs — expected: tied (evaluates every test)",
+          "fixture": "patterns/cond-elif-chain/c.tk",
+          "min_bytes": 74,
+          "tokens": {
+            "proxy8k": 28,
+            "byte256": 74,
+            "v03": 27,
+            "qwen25coder": 51,
+            "cl100k": 46
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "idiom-v0.4#1",
+        "card:expression-if with el if chains"
+      ],
+      "bug_caveats": [],
+      "lint": {
+        "rule": "mut-flag-if",
+        "severity": "warning",
+        "fixable": false
+      },
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "cond-bool-combine",
+      "family": "cond",
+      "intent": "Compute a value from the OR of two tests.",
+      "applicability": "Any boolean combination; `&&`/`||` short-circuit. Form b (flag soup) evaluates every test; form c (sequential early returns) works only when the result is returned directly.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "`||` inside one expression-if — expected: tied (short-circuits)",
+          "fixture": "patterns/cond-bool-combine/a.tk",
+          "min_bytes": 45,
+          "tokens": {
+            "proxy8k": 10,
+            "byte256": 45,
+            "v03": 16,
+            "qwen25coder": 32,
+            "cl100k": 29
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "best"
+        },
+        {
+          "form": "b",
+          "label": "flag soup: two ifs setting one mut — expected: tied",
+          "fixture": "patterns/cond-bool-combine/b.tk",
+          "min_bytes": 68,
+          "tokens": {
+            "proxy8k": 17,
+            "byte256": 68,
+            "v03": 20,
+            "qwen25coder": 43,
+            "cl100k": 40
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        },
+        {
+          "form": "c",
+          "label": "sequential guard returns — expected: tied",
+          "fixture": "patterns/cond-bool-combine/c.tk",
+          "min_bytes": 50,
+          "tokens": {
+            "proxy8k": 13,
+            "byte256": 50,
+            "v03": 13,
+            "qwen25coder": 35,
+            "cl100k": 32
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "idiom-v0.4#2",
+        "card:Never simulate OR/AND with if-flags",
+        "ast-mine:49"
+      ],
+      "bug_caveats": [],
+      "lint": {
+        "rule": "flag-soup",
+        "severity": "warning",
+        "fixable": false
+      },
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "cond-clamp",
+      "family": "cond",
+      "intent": "Clamp a value into [lo,hi] (min/max).",
+      "applicability": "Any bounded value; the stdlib has no min/max combinators (ABSENT per combinator-status), so an expression-if chain is the primitive. A helper-function form was not measured because helper bodies fall outside the counted `pat` region.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "`el if` chain expression — expected: tied",
+          "fixture": "patterns/cond-clamp/a.tk",
+          "min_bytes": 65,
+          "tokens": {
+            "proxy8k": 11,
+            "byte256": 65,
+            "v03": 19,
+            "qwen25coder": 41,
+            "cl100k": 37
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "best"
+        },
+        {
+          "form": "b",
+          "label": "mut copy then two clamping ifs — expected: tied",
+          "fixture": "patterns/cond-clamp/b.tk",
+          "min_bytes": 76,
+          "tokens": {
+            "proxy8k": 18,
+            "byte256": 76,
+            "v03": 22,
+            "qwen25coder": 48,
+            "cl100k": 44
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        },
+        {
+          "form": "c",
+          "label": "two guard returns then value — expected: tied",
+          "fixture": "patterns/cond-clamp/c.tk",
+          "min_bytes": 62,
+          "tokens": {
+            "proxy8k": 17,
+            "byte256": 62,
+            "v03": 8,
+            "qwen25coder": 41,
+            "cl100k": 37
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "idiom-v0.4#1",
+        "card:expression-if with el if chains"
+      ],
+      "bug_caveats": [],
+      "lint": {
+        "rule": "mut-flag-if",
+        "severity": "warning",
+        "fixable": false
+      },
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "cond-bool-render",
+      "family": "cond",
+      "intent": "Render a boolean test as the text `true`/`false`.",
+      "applicability": "Printing or storing a bool as text. Interpolating a bool prints `1`/`0` on tkc 2.8.0 (127.15), so form b changes the output and is blocked; 8.5% of corpus programs hand-write a boolstr helper for this (131.30).",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "expression-if selecting the literal — expected: tied (no alloc: literal returned)",
+          "fixture": "patterns/cond-bool-render/a.tk",
+          "min_bytes": 48,
+          "tokens": {
+            "proxy8k": 8,
+            "byte256": 41,
+            "v03": 15,
+            "qwen25coder": 25,
+            "cl100k": 24
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "best"
+        },
+        {
+          "form": "b",
+          "label": "interpolate the bool `\"\\(c)\"`",
+          "fixture": "patterns/cond-bool-render/b.blocked.tk",
+          "min_bytes": null,
+          "tokens": {
+            "proxy8k": null,
+            "byte256": null,
+            "v03": null,
+            "qwen25coder": null,
+            "cl100k": null
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "blocked",
+          "token_verdict": "blocked"
+        },
+        {
+          "form": "c",
+          "label": "mut string flag overwritten by an if — expected: tied",
+          "fixture": "patterns/cond-bool-render/c.tk",
+          "min_bytes": 59,
+          "tokens": {
+            "proxy8k": 13,
+            "byte256": 52,
+            "v03": 17,
+            "qwen25coder": 29,
+            "cl100k": 28
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "blocked"
+      },
+      "source": [
+        "ast-mine:24",
+        "ast-mine:30",
+        "ast-mine:29"
+      ],
+      "bug_caveats": [
+        {
+          "issue": "127.15",
+          "effect": "`\"\\(x%2==0)\"` prints 1/0, not true/false — checksum differs (len=1000 vs 4500 at PAT_N=1000)",
+          "preferred_when_fixed": "b"
+        }
+      ],
+      "lint": {
+        "rule": "mut-flag-if",
+        "severity": "warning",
+        "fixable": false
+      },
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "acc-sum",
+      "family": "acc",
+      "intent": "Sum the elements of an @i64.",
+      "applicability": "Numeric reduction over an array. The reduce form needs a two-arg helper function (`addf`) declared outside `pat`; its tokens are not counted in the measured region, so the token tie flatters b. `fold` is ABSENT (127.4); `reduce` is the canonical combinator.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "lp accumulating into a mut — expected: best (inlined add, no calls)",
+          "fixture": "patterns/acc-sum/a.tk",
+          "min_bytes": 76,
+          "tokens": {
+            "proxy8k": 16,
+            "byte256": 76,
+            "v03": 17,
+            "qwen25coder": 44,
+            "cl100k": 42
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "best",
+          "token_verdict": "best"
+        },
+        {
+          "form": "b",
+          "label": "`xs.reduce(0;&addf)` — expected: slower (indirect call per element through tk_arr_reduce; helper not inlined)",
+          "fixture": "patterns/acc-sum/b.tk",
+          "min_bytes": 39,
+          "tokens": {
+            "proxy8k": 16,
+            "byte256": 39,
+            "v03": 16,
+            "qwen25coder": 22,
+            "cl100k": 20
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "slower",
+          "token_verdict": "best"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "idiom-v0.4#7",
+        "ast-mine:40",
+        "ast-mine:36"
+      ],
+      "bug_caveats": [
+        {
+          "issue": "127.4",
+          "effect": "`xs.fold` links against an undefined symbol; `xs.reduce(init;&f)` is the working equivalent and is what form b uses",
+          "preferred_when_fixed": null
+        }
+      ],
+      "lint": null,
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "acc-count-if",
+      "family": "acc",
+      "intent": "Count the elements satisfying a predicate.",
+      "applicability": "Count with a per-element test. Forms b and c need a helper predicate/step function outside `pat` (not counted). b materialises the filtered array just to take its length.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "lp with if and counter — expected: best (no alloc, no calls)",
+          "fixture": "patterns/acc-count-if/a.tk",
+          "min_bytes": 88,
+          "tokens": {
+            "proxy8k": 16,
+            "byte256": 88,
+            "v03": 20,
+            "qwen25coder": 51,
+            "cl100k": 49
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "best",
+          "token_verdict": "tied"
+        },
+        {
+          "form": "b",
+          "label": "`xs.filter(&p).len` — expected: slower (allocates an N-slot result array + indirect call per element)",
+          "fixture": "patterns/acc-count-if/b.tk",
+          "min_bytes": 41,
+          "tokens": {
+            "proxy8k": 15,
+            "byte256": 41,
+            "v03": 16,
+            "qwen25coder": 22,
+            "cl100k": 20
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "slower",
+          "token_verdict": "best"
+        },
+        {
+          "form": "c",
+          "label": "`xs.reduce(0;&step)` with expr-if step — expected: slower (indirect call per element)",
+          "fixture": "patterns/acc-count-if/c.tk",
+          "min_bytes": 39,
+          "tokens": {
+            "proxy8k": 16,
+            "byte256": 39,
+            "v03": 16,
+            "qwen25coder": 22,
+            "cl100k": 20
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "slower",
+          "token_verdict": "tied"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "idiom-v0.4#7",
+        "ast-mine:36",
+        "ast-mine:5"
+      ],
+      "bug_caveats": [],
+      "lint": null,
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "acc-min-max",
+      "family": "acc",
+      "intent": "Find the minimum (symmetrically maximum) of a non-empty @i64.",
+      "applicability": "Non-empty arrays only (all forms index element 0). `min`/`max` combinators are ABSENT. Form c sorts a copy (qsort, O(N log N), one N-word allocation) to read element 0; its 4N/N ratio stays within 1.5x of linear so the protocol classes it `slower`, not `worse-bigO` — hence the hot_path rule.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "lp tracking the running minimum — expected: best (O(N), no alloc)",
+          "fixture": "patterns/acc-min-max/a.tk",
+          "min_bytes": 99,
+          "tokens": {
+            "proxy8k": 18,
+            "byte256": 99,
+            "v03": 22,
+            "qwen25coder": 53,
+            "cl100k": 51
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "best",
+          "token_verdict": "more"
+        },
+        {
+          "form": "b",
+          "label": "`xs.reduce(xs.get(0);&mn)` — expected: slower (indirect call per element)",
+          "fixture": "patterns/acc-min-max/b.tk",
+          "min_bytes": 45,
+          "tokens": {
+            "proxy8k": 18,
+            "byte256": 45,
+            "v03": 17,
+            "qwen25coder": 24,
+            "cl100k": 22
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "slower",
+          "token_verdict": "more"
+        },
+        {
+          "form": "c",
+          "label": "`xs.sort(&cmp).get(0)` — expected: slower (qsort O(N log N) + full copy)",
+          "fixture": "patterns/acc-min-max/c.tk",
+          "min_bytes": 41,
+          "tokens": {
+            "proxy8k": 14,
+            "byte256": 41,
+            "v03": 14,
+            "qwen25coder": 23,
+            "cl100k": 21
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "slower",
+          "token_verdict": "best"
+        }
+      ],
+      "verdict": {
+        "canonical": "c",
+        "hot_path": "a",
+        "choose_hot_path_when": "arrays larger than ~1k elements, or the minimum is taken inside a loop body: sort is O(N log N) plus a full copy, the loop is O(N) with no allocation",
+        "status": "provisional"
+      },
+      "source": [
+        "idiom-v0.4#7",
+        "ast-mine:40"
+      ],
+      "bug_caveats": [],
+      "lint": null,
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "acc-array",
+      "family": "acc",
+      "intent": "Accumulate values into a new @i64 in a loop.",
+      "applicability": "Any loop that collects results. `x=x.append(v)` at a self-update site is lowered to the in-place amortised append (ADR-0006 D2); `x=x+@(v)` calls tk_array_concat, which mallocs and copies the whole array every iteration (O(N^2) bytes, never freed). std.vec is a separate handle type needing `vec.toarray` at the end.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "`x=x.append(v)` — expected: best (in-place amortised)",
+          "fixture": "patterns/acc-array/a.tk",
+          "min_bytes": 74,
+          "tokens": {
+            "proxy8k": 13,
+            "byte256": 74,
+            "v03": 15,
+            "qwen25coder": 41,
+            "cl100k": 39
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "best",
+          "token_verdict": "best"
+        },
+        {
+          "form": "b",
+          "label": "`x=x+@(v)` — expected: worse-bigO (concat copies the array each step)",
+          "fixture": "patterns/acc-array/b.tk",
+          "min_bytes": 69,
+          "tokens": {
+            "proxy8k": 13,
+            "byte256": 69,
+            "v03": 14,
+            "qwen25coder": 42,
+            "cl100k": 40
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "worse-bigO",
+          "token_verdict": "best"
+        },
+        {
+          "form": "c",
+          "label": "std.vec push then toarray — expected: tied (amortised push, one final copy)",
+          "fixture": "patterns/acc-array/c.tk",
+          "min_bytes": 95,
+          "tokens": {
+            "proxy8k": 27,
+            "byte256": 95,
+            "v03": 26,
+            "qwen25coder": 47,
+            "cl100k": 45
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "card:arr=arr.append(v) — PREFERRED accumulator idiom",
+        "ast-mine:19",
+        "ast-mine:25"
+      ],
+      "bug_caveats": [],
+      "lint": null,
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "acc-map-build",
+      "family": "acc",
+      "intent": "Accumulate per-key totals for a small fixed key set.",
+      "applicability": "Keys drawn from a known set of ~4 strings. Both forms are a linear key scan (the 2.8.0 map is an unsorted entry list searched with strcmp; `m.set` updates in place). Form b only applies when the key set is fixed and small; with an open key set the map is the only correct form. Int-keyed maps crash on 2.8.0, so keys must be str.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "seeded map, `m=m.set(k;m.get(k)+v)` — expected: tied (in-place put, strcmp scan of 4 entries)",
+          "fixture": "patterns/acc-map-build/a.tk",
+          "min_bytes": 180,
+          "tokens": {
+            "proxy8k": 50,
+            "byte256": 180,
+            "v03": 50,
+            "qwen25coder": 87,
+            "cl100k": 85
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "tied"
+        },
+        {
+          "form": "b",
+          "label": "parallel arrays + linear key search + `c=c.set(j;…)` — expected: tied (4 string compares, in-place set)",
+          "fixture": "patterns/acc-map-build/b.tk",
+          "min_bytes": 209,
+          "tokens": {
+            "proxy8k": 48,
+            "byte256": 209,
+            "v03": 51,
+            "qwen25coder": 108,
+            "cl100k": 106
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "best"
+        }
+      ],
+      "verdict": {
+        "canonical": "b",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "card:m2=m2.set(k;v) map write — MUST reassign",
+        "ast-mine:32"
+      ],
+      "bug_caveats": [],
+      "lint": null,
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "acc-dedupe",
+      "family": "acc",
+      "intent": "Remove duplicate values from an @i64 (order not significant).",
+      "applicability": "Dedupe where result order is free (checksum is len+sum). Form a (array `.contains`) is the natural form but segfaults on 2.8.0 (127.11). Form d keys a map by the interpolated value: one interpolation alloc per element and a linear strcmp scan of the seen-set, so it is quadratic like b.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "`if(!out.contains(v)){out=out.append(v)}`",
+          "fixture": "patterns/acc-dedupe/a.blocked.tk",
+          "min_bytes": null,
+          "tokens": {
+            "proxy8k": null,
+            "byte256": null,
+            "v03": null,
+            "qwen25coder": null,
+            "cl100k": null
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "blocked",
+          "token_verdict": "blocked"
+        },
+        {
+          "form": "b",
+          "label": "inner lp scan with flag+br, then append — expected: worse-bigO (O(N·distinct))",
+          "fixture": "patterns/acc-dedupe/b.tk",
+          "min_bytes": 186,
+          "tokens": {
+            "proxy8k": 25,
+            "byte256": 186,
+            "v03": 38,
+            "qwen25coder": 89,
+            "cl100k": 87
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "worse-bigO",
+          "token_verdict": "best"
+        },
+        {
+          "form": "c",
+          "label": "sort a copy, append when != previous — expected: best (qsort O(N log N) + in-place appends)",
+          "fixture": "patterns/acc-dedupe/c.tk",
+          "min_bytes": 150,
+          "tokens": {
+            "proxy8k": 31,
+            "byte256": 150,
+            "v03": 38,
+            "qwen25coder": 69,
+            "cl100k": 67
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "best",
+          "token_verdict": "more"
+        },
+        {
+          "form": "d",
+          "label": "seen-map keyed by `\"\\(v)\"` — expected: worse-bigO (linear-scan map + 1 alloc per element)",
+          "fixture": "patterns/acc-dedupe/d.tk",
+          "min_bytes": 176,
+          "tokens": {
+            "proxy8k": 31,
+            "byte256": 176,
+            "v03": 43,
+            "qwen25coder": 81,
+            "cl100k": 79
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "worse-bigO",
+          "token_verdict": "more"
+        }
+      ],
+      "verdict": {
+        "canonical": "c",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "blocked"
+      },
+      "source": [
+        "ast-mine:27",
+        "ast-mine:8",
+        "ast-mine:43"
+      ],
+      "bug_caveats": [
+        {
+          "issue": "127.11",
+          "effect": "array receiver `.contains` is routed to the str glue and SIGSEGVs with a clean check",
+          "preferred_when_fixed": "a"
+        }
+      ],
+      "lint": null,
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "str-build-loop",
+      "family": "str",
+      "intent": "Build one string from N parts in a loop.",
+      "applicability": "Any loop that appends text. `s.concat` allocates a fresh copy of the whole accumulator each step (O(N^2) bytes, never freed); the builder grows one buffer; append+join appends in place and allocates once at join.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "`r=s.concat(r;part)` chain — expected: worse-bigO (copies the accumulator per step)",
+          "fixture": "patterns/str-build-loop/a.tk",
+          "min_bytes": 96,
+          "tokens": {
+            "proxy8k": 15,
+            "byte256": 96,
+            "v03": 25,
+            "qwen25coder": 46,
+            "cl100k": 45
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "worse-bigO",
+          "token_verdict": "more"
+        },
+        {
+          "form": "b",
+          "label": "`s.builder` / `s.add` / `s.build` — expected: best (single growing buffer)",
+          "fixture": "patterns/str-build-loop/b.tk",
+          "min_bytes": 105,
+          "tokens": {
+            "proxy8k": 13,
+            "byte256": 105,
+            "v03": 28,
+            "qwen25coder": 46,
+            "cl100k": 45
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "best",
+          "token_verdict": "best"
+        },
+        {
+          "form": "c",
+          "label": "`acc=acc.append(part)` then `s.join(\"\";acc)` — expected: tied (in-place append + one join alloc)",
+          "fixture": "patterns/str-build-loop/c.tk",
+          "min_bytes": 114,
+          "tokens": {
+            "proxy8k": 15,
+            "byte256": 114,
+            "v03": 28,
+            "qwen25coder": 49,
+            "cl100k": 48
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        }
+      ],
+      "verdict": {
+        "canonical": "b",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "idiom-v0.4#5",
+        "ast-mine:13",
+        "ast-mine:28",
+        "ast-mine:39"
+      ],
+      "bug_caveats": [],
+      "lint": {
+        "rule": "string-concat-chain",
+        "severity": "warning",
+        "fixable": false
+      },
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "str-interp-vs-join",
+      "family": "str",
+      "intent": "Assemble a 3-5 part string from values of mixed type.",
+      "applicability": "Templating a fixed number of parts. Interpolation lowers to one tk_str_join_n call (1 alloc); `s.join` needs an array literal plus `s.fromint` for the number (3 allocs); nested `s.concat` allocates per step (5 allocs).",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "interpolation `\"\\(a)-\\(b)-\\(c)\"` — expected: best (1 alloc)",
+          "fixture": "patterns/str-interp-vs-join/a.tk",
+          "min_bytes": 47,
+          "tokens": {
+            "proxy8k": 13,
+            "byte256": 47,
+            "v03": 20,
+            "qwen25coder": 26,
+            "cl100k": 25
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "best",
+          "token_verdict": "best"
+        },
+        {
+          "form": "b",
+          "label": "`s.join(\"-\";@(a;b;s.fromint(c)))` — expected: slower (array literal + fromint + join)",
+          "fixture": "patterns/str-interp-vs-join/b.tk",
+          "min_bytes": 62,
+          "tokens": {
+            "proxy8k": 15,
+            "byte256": 62,
+            "v03": 20,
+            "qwen25coder": 28,
+            "cl100k": 27
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "slower",
+          "token_verdict": "more"
+        },
+        {
+          "form": "c",
+          "label": "nested `s.concat` chain — expected: slower (alloc per concat)",
+          "fixture": "patterns/str-interp-vs-join/c.tk",
+          "min_bytes": 95,
+          "tokens": {
+            "proxy8k": 20,
+            "byte256": 95,
+            "v03": 28,
+            "qwen25coder": 37,
+            "cl100k": 36
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "slower",
+          "token_verdict": "more"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "idiom-v0.4#5",
+        "card:interpolation — PREFERRED for all templating and multi-part strings",
+        "ast-mine:13"
+      ],
+      "bug_caveats": [],
+      "lint": {
+        "rule": "string-concat-chain",
+        "severity": "warning",
+        "fixable": false
+      },
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "str-num-format",
+      "family": "str",
+      "intent": "Convert an i64 to its decimal string.",
+      "applicability": "Number to text with no width/precision. All three forms reach tk_str_fromi64 (1 alloc). `n as str` is accepted by 2.8.0 although the card lists only numeric casts.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "interpolation `\"\\(n)\"` — expected: tied (1 alloc)",
+          "fixture": "patterns/str-num-format/a.tk",
+          "min_bytes": 25,
+          "tokens": {
+            "proxy8k": 7,
+            "byte256": 25,
+            "v03": 12,
+            "qwen25coder": 16,
+            "cl100k": 15
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "best"
+        },
+        {
+          "form": "b",
+          "label": "`s.fromint(n)` — expected: tied (1 alloc)",
+          "fixture": "patterns/str-num-format/b.tk",
+          "min_bytes": 31,
+          "tokens": {
+            "proxy8k": 8,
+            "byte256": 31,
+            "v03": 12,
+            "qwen25coder": 16,
+            "cl100k": 15
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "tied"
+        },
+        {
+          "form": "c",
+          "label": "`n as str` — expected: tied (1 alloc)",
+          "fixture": "patterns/str-num-format/c.tk",
+          "min_bytes": 27,
+          "tokens": {
+            "proxy8k": 8,
+            "byte256": 27,
+            "v03": 11,
+            "qwen25coder": 15,
+            "cl100k": 14
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "tied"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "card:io.println(\"\\(value)\")",
+        "ast-mine:10",
+        "ast-mine:2"
+      ],
+      "bug_caveats": [],
+      "lint": null,
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "str-repeat-pad",
+      "family": "str",
+      "intent": "Left-pad a number's text to a fixed width with spaces.",
+      "applicability": "Fixed-width formatting (tables, ids). Widths are small constants, so every form is a handful of allocations; `s.repeat(str;u64)` exists in 2.8.0 and interpolates correctly. Forms c/d guard `p>0` because `s.repeat` takes a u64.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "lp prepending with `s.concat` — expected: tied (≤w small allocs)",
+          "fixture": "patterns/str-repeat-pad/a.tk",
+          "min_bytes": 97,
+          "tokens": {
+            "proxy8k": 25,
+            "byte256": 97,
+            "v03": 29,
+            "qwen25coder": 48,
+            "cl100k": 46
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "best"
+        },
+        {
+          "form": "b",
+          "label": "builder: add spaces then the digits — expected: tied",
+          "fixture": "patterns/str-repeat-pad/b.tk",
+          "min_bytes": 126,
+          "tokens": {
+            "proxy8k": 25,
+            "byte256": 126,
+            "v03": 39,
+            "qwen25coder": 58,
+            "cl100k": 56
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "best"
+        },
+        {
+          "form": "c",
+          "label": "`s.concat(s.repeat(\" \";p);d)` — expected: tied (2 allocs)",
+          "fixture": "patterns/str-repeat-pad/c.tk",
+          "min_bytes": 102,
+          "tokens": {
+            "proxy8k": 28,
+            "byte256": 102,
+            "v03": 33,
+            "qwen25coder": 49,
+            "cl100k": 47
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        },
+        {
+          "form": "d",
+          "label": "interpolate `\"\\(s.repeat(\" \";p))\\(d)\"` — expected: tied (2 allocs)",
+          "fixture": "patterns/str-repeat-pad/d.tk",
+          "min_bytes": 99,
+          "tokens": {
+            "proxy8k": 28,
+            "byte256": 99,
+            "v03": 35,
+            "qwen25coder": 51,
+            "cl100k": 49
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "ast-mine:50",
+        "idiom-v0.4#5"
+      ],
+      "bug_caveats": [],
+      "lint": null,
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "str-array-render",
+      "family": "str",
+      "intent": "Collect N labels into a @str, then render each one.",
+      "applicability": "The collect-then-format shape of CLI/report tasks. Interpolating an element of a `.append`-built `mut.@()` prints an address on 2.8.0 (127.10: the array is never inferred `@str`), so the natural form a is blocked; form b uses the only append form that tags the array (`+@()`) but copies the array every iteration; form c keeps `.append` and reads elements directly into the builder.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "`.append`-built, interpolated read `\"[\\(labels.get(i))]\"`",
+          "fixture": "patterns/str-array-render/a.blocked.tk",
+          "min_bytes": null,
+          "tokens": {
+            "proxy8k": null,
+            "byte256": null,
+            "v03": null,
+            "qwen25coder": null,
+            "cl100k": null
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "blocked",
+          "token_verdict": "blocked"
+        },
+        {
+          "form": "b",
+          "label": "`+@()`-built, interpolated read — expected: worse-bigO (array concat copies per append)",
+          "fixture": "patterns/str-array-render/b.tk",
+          "min_bytes": 176,
+          "tokens": {
+            "proxy8k": 24,
+            "byte256": 176,
+            "v03": 42,
+            "qwen25coder": 75,
+            "cl100k": 74
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "worse-bigO",
+          "token_verdict": "tied"
+        },
+        {
+          "form": "c",
+          "label": "`.append`-built, direct `s.add(b;labels.get(i))` reads — expected: best (in-place append, builder)",
+          "fixture": "patterns/str-array-render/c.tk",
+          "min_bytes": 200,
+          "tokens": {
+            "proxy8k": 23,
+            "byte256": 200,
+            "v03": 45,
+            "qwen25coder": 82,
+            "cl100k": 81
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "best",
+          "token_verdict": "best"
+        }
+      ],
+      "verdict": {
+        "canonical": "c",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "blocked"
+      },
+      "source": [
+        "ast-mine:10",
+        "ast-mine:15",
+        "card:Strings built BY interpolation then stored with arr.append in a loop DANGLE"
+      ],
+      "bug_caveats": [
+        {
+          "issue": "127.10",
+          "effect": "`\"\\(labels.get(i))\"` on a `.append`-built array prints pointers (len=12872 vs 5890 at PAT_N=1000); reclassified in 127-disposition-131.md as a missing @str inference, fix in progress",
+          "preferred_when_fixed": "a"
+        }
+      ],
+      "lint": null,
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "err-propagate",
+      "family": "err",
+      "intent": "Call a T!Err function and propagate its error to the caller.",
+      "applicability": "Only inside a function that itself returns T!Err (else E3020). Form b re-wraps the error by hand; `!` is the direct form.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "`let v=chk(x)!$myerr` — expected: tied",
+          "fixture": "patterns/err-propagate/a.tk",
+          "min_bytes": 49,
+          "tokens": {
+            "proxy8k": 21,
+            "byte256": 49,
+            "v03": 23,
+            "qwen25coder": 30,
+            "cl100k": 28
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "best"
+        },
+        {
+          "form": "b",
+          "label": "`mt … {$ok:v v;$err:e <$myerr{…}}` re-raise — expected: tied",
+          "fixture": "patterns/err-propagate/b.tk",
+          "min_bytes": 79,
+          "tokens": {
+            "proxy8k": 24,
+            "byte256": 79,
+            "v03": 29,
+            "qwen25coder": 42,
+            "cl100k": 40
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "idiom-v0.4#9",
+        "card:! propagates — ONLY inside functions that themselves return T!Err"
+      ],
+      "bug_caveats": [],
+      "lint": null,
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "err-default",
+      "family": "err",
+      "intent": "Turn a T!Err result into a plain value with a default on error.",
+      "applicability": "Consuming an error union where a sentinel is acceptable. Form b avoids the union by re-checking the precondition and calling a non-failing helper (duplicates the check, only possible when the failure condition is known to the caller). Form c is the single-use-let anti-pattern (mined rank 33).",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "`<mt chk(x){$ok:v v;$err:e -1}` — expected: tied",
+          "fixture": "patterns/err-default/a.tk",
+          "min_bytes": 46,
+          "tokens": {
+            "proxy8k": 11,
+            "byte256": 46,
+            "v03": 14,
+            "qwen25coder": 27,
+            "cl100k": 25
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "best"
+        },
+        {
+          "form": "b",
+          "label": "precondition if + plain call — expected: tied",
+          "fixture": "patterns/err-default/b.tk",
+          "min_bytes": 41,
+          "tokens": {
+            "proxy8k": 12,
+            "byte256": 41,
+            "v03": 13,
+            "qwen25coder": 26,
+            "cl100k": 24
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "tied"
+        },
+        {
+          "form": "c",
+          "label": "`let r=mt …; <r` — expected: tied",
+          "fixture": "patterns/err-default/c.tk",
+          "min_bytes": 54,
+          "tokens": {
+            "proxy8k": 13,
+            "byte256": 54,
+            "v03": 16,
+            "qwen25coder": 32,
+            "cl100k": 30
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "idiom-v0.4#9",
+        "ast-mine:33",
+        "card:let r=mt safediv(10;2) {$ok:v v;$err:e -1}"
+      ],
+      "bug_caveats": [],
+      "lint": {
+        "rule": "single-use-let",
+        "severity": "hint",
+        "fixable": true
+      },
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    },
+    {
+      "id": "err-validate-early",
+      "family": "err",
+      "intent": "Validate arguments and return sentinels before the main computation.",
+      "applicability": "Guard clauses at the top of a function. Form b nests each guard in the previous one's else; form c is a single expression-if chain — equal in tokens to a, slightly longer in bytes.",
+      "candidates": [
+        {
+          "form": "a",
+          "label": "sequential guard returns `if(..){<-1};` — expected: tied",
+          "fixture": "patterns/err-validate-early/a.tk",
+          "min_bytes": 55,
+          "tokens": {
+            "proxy8k": 13,
+            "byte256": 55,
+            "v03": 16,
+            "qwen25coder": 36,
+            "cl100k": 33
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "best"
+        },
+        {
+          "form": "b",
+          "label": "nested if/el with returns — expected: tied",
+          "fixture": "patterns/err-validate-early/b.tk",
+          "min_bytes": 61,
+          "tokens": {
+            "proxy8k": 15,
+            "byte256": 61,
+            "v03": 16,
+            "qwen25coder": 40,
+            "cl100k": 37
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "more"
+        },
+        {
+          "form": "c",
+          "label": "`<if … el if … el{…}` expression — expected: tied",
+          "fixture": "patterns/err-validate-early/c.tk",
+          "min_bytes": 58,
+          "tokens": {
+            "proxy8k": 13,
+            "byte256": 58,
+            "v03": 20,
+            "qwen25coder": 39,
+            "cl100k": 36
+          },
+          "wall_ms_median": null,
+          "wall_ci95": null,
+          "rss_kb_median": null,
+          "allocs": null,
+          "bigO_ratio": null,
+          "pat_n": null,
+          "runtime_verdict": "tied",
+          "token_verdict": "best"
+        }
+      ],
+      "verdict": {
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
+        "status": "provisional"
+      },
+      "source": [
+        "idiom-v0.4#9",
+        "card:if(b==0){<$matherr{$divzero:true}}"
+      ],
+      "bug_caveats": [],
+      "lint": null,
+      "measured_at": {
+        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_version": "toke 2.8.0",
+        "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+        "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+        "bench_result": "deferred-load",
+        "date": "2026-09-18"
+      }
+    }
+  ]
 }

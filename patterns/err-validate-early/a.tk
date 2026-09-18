@@ -1,0 +1,17 @@
+m=main;
+i=io:std.io;
+i=env:std.env;
+f=pat(a:i64;b:i64):i64{
+  if(a<0){<-1};
+  if(b==0){<-2};
+  <a/b
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let acc=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    acc=acc+pat(i%13-3;i%5-1)
+  };
+  io.println("acc=\(acc)");
+  <0
+};

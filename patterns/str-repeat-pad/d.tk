@@ -1,0 +1,19 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(n:i64;w:i64):str{
+  let d=s.fromint(n);
+  let p=w-s.len(d);
+  <if(p>0){"\(s.repeat(" ";p))\(d)"}el{d}
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let acc=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    let r=pat(i%1000;6);
+    acc=acc+s.len(r)*10+s.indexof(r;"9")
+  };
+  io.println("chk=\(acc)");
+  <0
+};

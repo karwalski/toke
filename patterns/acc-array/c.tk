@@ -1,0 +1,21 @@
+m=main;
+i=io:std.io;
+i=env:std.env;
+i=vec:std.vec;
+f=pat(n:i64):@i64{
+  let v=mut.vec.new();
+  lp(let i=0;i<n;i=i+1){
+    v=vec.push(v;i*3)
+  };
+  <vec.toarray(v)
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let r=pat(n);
+  let sum=mut.0;
+  lp(let i=0;i<r.len;i=i+1){
+    sum=sum+r.get(i)
+  };
+  io.println("len=\(r.len) sum=\(sum)");
+  <0
+};

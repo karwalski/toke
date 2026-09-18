@@ -1,0 +1,27 @@
+m=main;
+i=io:std.io;
+i=env:std.env;
+f=pat(xs:@i64):@i64{
+  let seen=mut.@("":0);
+  let out=mut.@();
+  lp(let i=0;i<xs.len;i=i+1){
+    let v=xs.get(i);
+    let k="\(v)";
+    if(seen.get(k)==0){seen=seen.set(k;1);out=out.append(v)}
+  };
+  <out
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){
+    xs=xs.append((i*7919)%(n/4+1))
+  };
+  let r=pat(xs);
+  let sum=mut.0;
+  lp(let i=0;i<r.len;i=i+1){
+    sum=sum+r.get(i)
+  };
+  io.println("len=\(r.len) sum=\(sum)");
+  <0
+};

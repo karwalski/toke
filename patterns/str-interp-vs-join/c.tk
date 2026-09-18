@@ -1,0 +1,16 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(a:str;b:str;c:i64):str{
+  <s.concat(s.concat(s.concat(s.concat(a;"-");b);"-");s.fromint(c))
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let acc=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    acc=acc+s.len(pat("ab";"cd";i))
+  };
+  io.println("len=\(acc)");
+  <0
+};

@@ -1,0 +1,18 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(x:i64):str{
+  let r=mut."false";
+  if(x%2==0){r="true"};
+  <r
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let acc=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    acc=acc+s.len(pat(i))
+  };
+  io.println("len=\(acc)");
+  <0
+};

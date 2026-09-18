@@ -1,0 +1,21 @@
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(n:i64):str{
+  let labels=mut.@();
+  lp(let i=0;i<n;i=i+1){
+    labels=labels+@("l\(i)")
+  };
+  let b=s.builder();
+  lp(let i=0;i<labels.len;i=i+1){
+    s.add(b;"[\(labels.get(i))]")
+  };
+  <s.build(b)
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let r=pat(n);
+  io.println("len=\(s.len(r)) n=\(s.split(r;"]").len)");
+  <0
+};

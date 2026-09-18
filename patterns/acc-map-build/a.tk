@@ -1,0 +1,17 @@
+m=main;
+i=io:std.io;
+i=env:std.env;
+f=pat(keys:@str;n:i64):i64{
+  let m=mut.@("a":0;"b":0;"c":0;"d":0);
+  lp(let i=0;i<n;i=i+1){
+    let k=keys.get(i%4);
+    m=m.set(k;m.get(k)+i)
+  };
+  <m.get("a")+2*m.get("b")+3*m.get("c")+4*m.get("d")
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let keys=@("a";"b";"c";"d");
+  io.println("chk=\(pat(keys;n))");
+  <0
+};

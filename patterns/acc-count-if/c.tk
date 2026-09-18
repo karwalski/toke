@@ -1,0 +1,16 @@
+m=main;
+i=io:std.io;
+i=env:std.env;
+f=cnt3(a:i64;x:i64):i64{<if(x%3==0){a+1}el{a}};
+f=pat(xs:@i64):i64{
+  <xs.reduce(0;&cnt3)
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){
+    xs=xs.append((i*7919)%1013+1)
+  };
+  io.println("r=\(pat(xs))");
+  <0
+};
