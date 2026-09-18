@@ -3481,7 +3481,7 @@ static int emit_expr(Ctx *c, const Node *n)
                      !strcmp(tb, "round") || !strcmp(tb, "sqrt") || !strcmp(tb, "floor") ||
                      !strcmp(tb, "ceil") || !strcmp(tb, "pow")) {
                 callee_ret = "double";
-            } else if (!strcmp(tb, "tk_map_get") || !strcmp(tb, "tk_map_new") ||
+            } else if (!strcmp(tb, "tk_map_get") || !strcmp(tb, "tk_map_new") || !strcmp(tb, "tk_map_new_int") ||
                      !strcmp(tb, "tk_array_append_w") ||
                      !strcmp(tb, "tk_str_from_float") ||
                      !strcmp(tb, "tk_http_client_w") || !strcmp(tb, "tk_http_get_w") ||
@@ -3540,7 +3540,7 @@ static int emit_expr(Ctx *c, const Node *n)
                         "tk_log_open_access_w", "tk_log_open_error_w", "tk_log_accessformat_w",
                         "tk_log_info_w", "tk_log_error_w",
                         "tk_log_warn_w", "tk_log_debug_w", "tk_router_new_w",
-                        "tk_map_new", "tk_map_put", "tk_map_get",
+                        "tk_map_new", "tk_map_new_int", "tk_map_put", "tk_map_get",
                         "tk_array_append_w", "tk_array_set_w", "tk_map_set_w",
                         "tk_arr_map", "tk_arr_filter", "tk_arr_reduce", "tk_arr_sort",
                         "tk_str_from_float",
@@ -4503,9 +4503,28 @@ static int emit_expr(Ctx *c, const Node *n)
         }
     }
     case NODE_MAP_LIT: {
-        /* Emit calls to tk_map_new and tk_map_put — runtime stubs. */
+        /* Emit calls to tk_map_new / tk_map_new_int and tk_map_put. */
+        /* 127.35: an int-keyed literal (`@(1:"a")`) must build the int-keyed
+         * map from 127.20 — tk_map_new() treats every key as a char*, so the
+         * first lookup strcmp'd an integer (RT006 trap). The checker's key
+         * type is authoritative; an untyped key falls back to its literal /
+         * LLVM type, never calling a $str-tagged value an int. */
+        int int_keys = 0;
+        if (n->child_count > 0 && n->children[0]->child_count >= 1) {
+            const Node *k0 = n->children[0]->children[0];
+            const Type *kt = k0->rtype;
+            if (kt && kt->kind != TY_UNKNOWN)
+                int_keys = (kt->kind == TY_I64 || kt->kind == TY_U64 ||
+                            kt->kind == TY_I8 || kt->kind == TY_I16 || kt->kind == TY_I32 ||
+                            kt->kind == TY_U8 || kt->kind == TY_U16 || kt->kind == TY_U32);
+            else if (k0->kind == NODE_INT_LIT)
+                int_keys = 1;
+            else if (k0->kind != NODE_STR_LIT && !expr_struct_type(c, k0) &&
+                     !strcmp(expr_llvm_type(c, k0), "i64"))
+                int_keys = 1;
+        }
         t = next_tmp(c);
-        fprintf(c->out, "  %%t%d = call i8* @tk_map_new()\n", t);
+        fprintf(c->out, "  %%t%d = call i8* @%s()\n", t, int_keys ? "tk_map_new_int" : "tk_map_new");
         for (int i = 0; i < n->child_count; i++) {
             const Node *entry = n->children[i];
             if (entry->child_count >= 2) {
@@ -7359,6 +7378,7 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_router_new_w", "declare i64 @tk_router_new_w()", 0},
     /* Array/map runtime */
     {"tk_map_new", "declare i8* @tk_map_new()", 0},
+    {"tk_map_new_int", "declare i8* @tk_map_new_int()", 0}, /* 127.35: int-keyed map literal */
     {"tk_map_put", "declare void @tk_map_put(i8*, i64, i64)", 0},
     {"tk_map_get", "declare i64 @tk_map_get(i8*, i64)", 0},
     {"tk_array_append_w", "declare i64 @tk_array_append_w(i64, i64)", 0},

@@ -1,0 +1,37 @@
+(* test_127_35.tk -- Epic 127.35: an int-keyed map literal must build the
+ * int-keyed map (127.20 runtime). NODE_MAP_LIT always called tk_map_new(),
+ * which treats every key as a char*, so the first lookup on @(1:10) was
+ * strcmp on an integer (RT006 trap). Covers literal, mut literal + set,
+ * missing key, keys(), and that str-keyed literals are unchanged. *)
+m=test.m12735;
+i=io:std.io;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=main():$i64{
+  let m=@(1:10;2:20;3:30);
+  cks("int-lit-get";"\(m.get(2)) \(m.get(3))";"20 30");
+  cks("int-lit-len";"\(m.len)";"3");
+  cks("int-lit-missing";"\(m.get(9))";"0");
+  let n=mut.@(1:100);
+  n=n.set(2;200);
+  n=n.set(1;101);
+  cks("int-mut-set-get";"\(n.get(1)) \(n.get(2)) \(n.len)";"101 200 2");
+  let ks=m.keys();
+  cks("int-keys-len";"\(ks.len)";"3");
+  let k=7;
+  let v=@(k:70);
+  cks("int-ident-key";"\(v.get(7))";"70");
+  let big=mut.@(0:0);
+  lp(let i=1;i<200;i=i+1){ big=big.set(i;i*2) };
+  cks("int-many";"\(big.get(150)) \(big.len)";"300 200");
+  let z=@("x":1;"y":2);
+  cks("str-lit-unchanged";"\(z.get("y")) \(z.len)";"2 2");
+  io.println("RESULT done");
+  <0
+};
