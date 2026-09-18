@@ -48,6 +48,8 @@ TOKEN_TIE_REL = 0.05
 WALL_REL = 1.05
 RSS_REL = 1.05
 BIGO_FACTOR = 1.5
+# order-of-magnitude rule (protocol §6 step 4, added 2026-09-18): a same-big-O form >= 10x slower is never canonical
+OOM_FACTOR = 10.0
 
 
 class V:
@@ -186,7 +188,8 @@ def derive_verdicts(e: dict) -> dict | None:
         canonical, hot = ranked[0]["form"], None
     else:
         tok_best = min(live, key=lambda c: (c["tokens"]["proxy8k"], c["min_bytes"] or 0))
-        if runtime[tok_best["form"]] == "worse-bigO":
+        oom = tok_best["wall_ms_median"] >= OOM_FACTOR * max(best_rt["wall_ms_median"], 1e-9)
+        if runtime[tok_best["form"]] == "worse-bigO" or oom:
             canonical, hot = best_rt["form"], None
         else:
             canonical, hot = tok_best["form"], best_rt["form"]
