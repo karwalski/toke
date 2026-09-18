@@ -78,3 +78,25 @@ Baseline comparison (Gate 1): the fine-tuned-7B baseline was **63.7% Pass@1**,
   publish a number that isn't reflected here first.
 - The `--min` measurement machinery is `tkc --min` (`src/fmt.c`); the idiom/efficiency
   gate is `qwen_judge.py` (116/B3).
+
+## 2026-09-18 — v0.4 tokenizer baseline (Epic 131.20, PRE-rewrite)
+
+Measured on 2,000 stratified records from the 2026-08-19 freeze (ids + SHAs in
+`toke-tokenizer/data/baseline_sample_ids_v04.txt`), canonical `tkc --min` text with
+string bodies masked to `"_"`, per TEMSpec. Report: `toke-tokenizer/docs/baseline_v04_pre131.md`.
+
+| tokenizer | total tokens | tokens/program | vs cl100k |
+|---|---:|---:|---:|
+| cl100k_base | 242,427 | 121.2 [118.9, 123.6] | 1.000 |
+| o200k_base | 245,217 | 122.6 | 1.012 |
+| Qwen2.5-Coder | 250,287 | 125.1 | 1.032 |
+| SentencePiece 8k (shipped) | 279,672 | 139.8 | **1.154** |
+| SentencePiece 32k | 279,143 | 139.6 | 1.152 (13,605 unk) |
+| tokenizer_v03 (16,384) | 131,998 | 66.0 | 0.545 — **lossy: drops 2,606 `\` chars** |
+
+**Reading:** the shipped 8k tokenizer needs 15.4% *more* tokens than cl100k on v0.4 text, and the
+v0.3 HF tokenizer only appears to win because its null `unk_token` silently deletes every backslash.
+No "purpose-built tokenizer beats cl100k" claim is supportable until 116.9 trains and locks the v0.4
+tokenizer; the Phase-3 gate anchors on cl100k = 242,427 on this exact sample. Cross-language density
+(toke vs Python under cl100k) is a separate, informational number — see the KERN review
+(`docs/about/reviews/kern-2026-08.md`): on the 60 Gate-1 tasks toke/Python ≈ 1.76 under cl100k.
