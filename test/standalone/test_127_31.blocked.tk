@@ -1,0 +1,31 @@
+(* test_127_31.blocked.tk -- Epic 127.31: m.contains(k) must be a hash-lookup
+ * membership test on maps (1 for present keys, 0 otherwise, value-agnostic).
+ * The glue (tk_map_contains_w, collections_glue.c) is implemented and covered
+ * by test/stdlib/test_map.c; this file stays .blocked.tk until src/llvm.c
+ * routes `contains` on a map receiver to it (today it goes to
+ * tk_str_contains_w and segfaults). Rename to test_127_31.tk once that lands. *)
+m=test.m12731;
+i=io:std.io;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=main():$i64{
+  let m=@("a":1;"z":0);
+  cks("contains-present";"\(m.contains("a"))";"1");
+  cks("contains-stored-zero";"\(m.contains("z"))";"1");
+  cks("contains-absent";"\(m.contains("nope"))";"0");
+  let n=@(1:10;2:0);
+  cks("contains-int";"\(n.contains(2)) \(n.contains(3))";"1 0");
+  let e=mut.@("k":1);
+  e=e.set("new";5);
+  cks("contains-after-set";"\(e.contains("new"))";"1");
+  if(m.contains("a")){ io.println("PASS contains-in-if") }
+  el{ io.println("FAIL contains-in-if") };
+  cks("str-contains-unchanged";"\(s.contains("hello";"ell"))";"1");
+  <0
+};

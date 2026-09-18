@@ -261,6 +261,16 @@ int64_t tk_map_getor_w(int64_t map, int64_t key, int64_t def) {
     int e = tk_map_find(m, key, tk_map_hash(m, key));
     return e >= 0 ? m->entries[e].val : def;
 }
+/* 127.31: map.contains(k) — 1 when k is a key of the map, else 0. Hash lookup
+ * (O(1) after 127.22); the value is not consulted, so a stored 0 still counts
+ * as present. Codegen routed `m.contains(k)` to tk_str_contains_w, which
+ * strcmp'd the map struct — a segfault or a silent 0. */
+int64_t tk_map_contains_w(int64_t map, int64_t key) {
+    TkMapImpl *m = (TkMapImpl *)(intptr_t)map;
+    if (!m) return 0;
+    tk_map_check_key(m, key);
+    return tk_map_find(m, key, tk_map_hash(m, key)) >= 0;
+}
 int64_t tk_map_put_w(int64_t map, int64_t key, int64_t val) {
     if (map) tk_map_put((void *)(intptr_t)map, key, val);
     return 0;

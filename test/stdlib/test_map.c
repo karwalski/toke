@@ -4,6 +4,7 @@
  * Build and run: make test-stdlib-map
  * Stories: 127.22 (open-addressing hash map, insertion-ordered keys()),
  *          127.34 (tk_map_getor_w: stored value when present, else default),
+ *          127.31 (tk_map_contains_w: hash-lookup membership),
  *          127.20 (int-keyed maps via tk_map_new_int; RT006 trap is exit(1)
  *          so it is covered by the standalone repro, not in-process here)
  */
@@ -19,6 +20,7 @@ void    tk_map_put(void *m, int64_t key, int64_t val);
 int64_t tk_map_get(void *m, int64_t key);
 int64_t tk_map_keys_w(int64_t map);
 int64_t tk_map_getor_w(int64_t map, int64_t key, int64_t def);
+int64_t tk_map_contains_w(int64_t map, int64_t key);
 
 /* collections_glue.c also defines tk_arr_join_w, which calls into str_glue.c;
  * the map runtime does not, so stub it to keep this test's link line short. */
@@ -121,6 +123,17 @@ int main(void) {
     ASSERT(tk_map_getor_w(S(gim), 9, -1) == -1, "int getor absent -> default");
     ASSERT(tk_map_getor_w(S(tk_map_new()), S("x"), 5) == 5, "getor on empty map -> default");
     ASSERT(tk_map_getor_w(0, S("x"), 5) == 5, "NULL map getor -> default");
+
+    /* ── 127.31: contains — membership by hash lookup, value-agnostic ── */
+    ASSERT(tk_map_contains_w(S(gm), S("hit")) == 1, "str contains present -> 1");
+    ASSERT(tk_map_contains_w(S(gm), S("zero")) == 1, "str contains key with stored 0 -> 1");
+    ASSERT(tk_map_contains_w(S(gm), S("nope")) == 0, "str contains absent -> 0");
+    ASSERT(tk_map_contains_w(S(gm), S(hcopy)) == 1, "str contains matches by content");
+    ASSERT(tk_map_contains_w(S(gim), 8) == 1 && tk_map_contains_w(S(gim), 9) == 0, "int contains present/absent");
+    ASSERT(tk_map_contains_w(S(big), S("k0")) == 1 && tk_map_contains_w(S(big), S("k99999")) == 1 &&
+           tk_map_contains_w(S(big), S("k100000")) == 0, "str contains after 100k-key growth");
+    ASSERT(tk_map_contains_w(S(tk_map_new()), S("x")) == 0, "contains on empty map -> 0");
+    ASSERT(tk_map_contains_w(0, S("x")) == 0, "NULL map contains -> 0");
 
     /* ── NULL map handle ── */
     ASSERT(tk_map_get(NULL, S("a")) == 0, "NULL map get -> 0");
