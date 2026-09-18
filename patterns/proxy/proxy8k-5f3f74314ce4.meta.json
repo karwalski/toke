@@ -1,0 +1,73 @@
+{
+  "artifact": "proxy8k-5f3f74314ce4.json",
+  "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+  "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
+  "corpus_sha_algorithm": "sha256 over task_id-sorted lines 'task_id\\tsha256(masked_min_utf8)\\n'",
+  "corpus_dir": "/Users/matthew.watt/tk/toke-corpus/corpus/regen_v04",
+  "records_scanned": 23382,
+  "records_not_accepted": 0,
+  "records_used": 23382,
+  "min_failures": {
+    "count": 0,
+    "items": []
+  },
+  "limit": null,
+  "vocab_size_requested": 8192,
+  "vocab_size": 8192,
+  "min_frequency": 2,
+  "model": "HF tokenizers BPE, pre_tokenizer ByteLevel(add_prefix_space=False, use_regex=False), decoder ByteLevel, no special tokens",
+  "masking": "string-literal bodies -> '_' (scripts/patterns/mask_strings.py), \\(...) interiors kept",
+  "vocab_signature_sha256": "2ff06122e7d9a3291a03135d25ac6d6bf2821b289407c9205b1d62575ff45956",
+  "determinism": {
+    "checked": true,
+    "identical": true,
+    "sig1": "2ff06122e7d9a3291a03135d25ac6d6bf2821b289407c9205b1d62575ff45956",
+    "sig2": "2ff06122e7d9a3291a03135d25ac6d6bf2821b289407c9205b1d62575ff45956"
+  },
+  "holdout": {
+    "n": 500,
+    "train_n": 22882,
+    "task_ids_sha256": "2c1791a73649c62077411460c9664d30ae9ce397329ec62f76c8962d2c51aefd",
+    "sample": "deterministic stride over task_id-sorted records",
+    "utilisation": {
+      "vocab_entries_used": 4540,
+      "vocab_size": 8192,
+      "share": 0.5542,
+      "tokens_total": 15924,
+      "bytes_total": 148063
+    },
+    "train_seconds": 14.1,
+    "note": "throw-away tokenizer trained WITHOUT these records; shipped artefact uses all records"
+  },
+  "utilisation_train": {
+    "vocab_entries_used": 7608,
+    "vocab_size": 8192,
+    "share": 0.9287,
+    "tokens_total": 721030,
+    "bytes_total": 6834473
+  },
+  "timing_seconds": {
+    "min": 101.6,
+    "train": 13.5,
+    "total": 235.0
+  },
+  "tkc": {
+    "path": "/Users/matthew.watt/tk/toke/tkc",
+    "version": "toke 2.8.0",
+    "binary_sha256": "b16d98fa063498e2bfc047b142d486d5102801f3548d7991ff7f1b8d3b8cd5bb",
+    "git_sha": "d70082223996d352e0d27f1f967deacd64e758ee"
+  },
+  "script": {
+    "path": "scripts/patterns/train_proxy.py",
+    "sha256": "02db3dc0e4e78bf275130d6134bb984a94774eb4d57f06c25e4a5ece26d9feec",
+    "repo_git_sha_at_run": "d70082223996d352e0d27f1f967deacd64e758ee",
+    "mask_strings_sha256": "053af034fbf657a5680513dc9f39fcf2fab99b11586f504b73f0b390625d9e7e"
+  },
+  "env": {
+    "python": "3.14.7",
+    "tokenizers": "0.22.2",
+    "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+    "jobs": 12
+  },
+  "date": "2026-09-18T12:35:00Z"
+}
