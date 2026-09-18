@@ -65,6 +65,8 @@ static const StdlibModule stdlib_table[] = {
     { "md",            "md.c md_glue.c",                        "",                                                                 "" },  /* vendor sources appended separately */
     { "db",            "db.c db_glue.c",                        "",                                                                 "-lsqlite3" },
     { "collections",   "collections.c collections_glue.c",      "",                                                                 "" },
+    { "xml",           "xml.c xml_glue.c",                       "",                                                                 "" },  /* 131.46 */
+    { "soap",          "soap.c soap_glue.c",                     "",                                                                 "" },  /* 131.46 */
     { "vecstore",      "vecstore.c vecstore_glue.c",             "",                                                                 "-lpthread" },
     { "secure_mem",    "secure_mem.c securemem_glue.c",          "",                                                                 "" },
     { "securemem",     "securemem.c securemem_glue.c",           "",                                                                 "" },

@@ -1,12 +1,38 @@
-m=test;
+(* test_xml.tk -- Story 131.46: std.xml links and runs.
+ * Every std.xml program failed at link (`_tk_xml_element_w` undefined)
+ * because xml_glue.c was missing from src/stdlib_deps.c. Each check
+ * compares against the exact text std.xml must produce; PASS/FAIL lines
+ * are tallied by test/standalone/run_all.sh and main() exits with the
+ * failure count. xml.get takes a dotted tag path ("root.name"). *)
+m=test.xml;
+i=io:std.io;
+i=s:std.str;
 i=xml:std.xml;
-i=str:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)); <0 };
+  io.println(s.concat(s.concat(s.concat(s.concat("FAIL ";name);" got=[");got);"]"));
+  <1
+};
+
 f=main():i64{
   let fails=mut.0;
-  let elem=xml.element("name";"John";"");
-  if(!str.contains(elem;"<name>")){ fails=fails+1 };
-  if(!str.contains(elem;"John")){ fails=fails+1 };
-  let esc=xml.escape("<>&");
-  if(!str.contains(esc;"&lt;")){ fails=fails+1 };
+  fails=fails+cks("element";xml.element("name";"John";"");"<name>John</name>");
+  fails=fails+cks("element-attrs";xml.element("a";"x";"href=\"/\"");"<a href=\"/\">x</a>");
+  fails=fails+cks("element-empty";xml.element("br";"";"");"<br></br>");
+  fails=fails+cks("elementns";xml.elementns("soap";"Body";"b";"");"<soap:Body>b</soap:Body>");
+  fails=fails+cks("elementns-empty-ns";xml.elementns("";"Body";"b";"");"<Body>b</Body>");
+  fails=fails+cks("escape";xml.escape("<a&b>\"c\"");"&lt;a&amp;b&gt;&quot;c&quot;");
+  fails=fails+cks("escape-plain";xml.escape("plain");"plain");
+  fails=fails+cks("cdata";xml.cdata("x<y");"<![CDATA[x<y]]>");
+  fails=fails+cks("declaration";xml.declaration("1.0";"UTF-8");"<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+  fails=fails+cks("comment";xml.comment("note");"<!-- note -->");
+  let doc=xml.element("root";xml.element("name";"John";"");"");
+  fails=fails+cks("nested";doc;"<root><name>John</name></root>");
+  fails=fails+cks("get-path";xml.get(doc;"root.name");"John");
+  fails=fails+cks("get-flat";xml.get("<name>John</name>";"name");"John");
+  fails=fails+cks("get-sibling";xml.get("<a><b>1</b><c>2</c></a>";"a.c");"2");
+  fails=fails+cks("attr";xml.attr("href=\"/x\" id='7'";"id");"7");
+  fails=fails+cks("attr-first";xml.attr("href=\"/x\" id='7'";"href");"/x");
   <fails
 };
