@@ -31,6 +31,7 @@ Options:
 from __future__ import annotations
 
 import argparse
+import atexit
 import datetime as _dt
 import hashlib
 import json
@@ -47,8 +48,10 @@ HERE = Path(__file__).resolve().parent
 TOKE_ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 from mask_strings import mask_strings  # noqa: E402
+import tkc_pin  # noqa: E402  (131.39)
 
-TKC = Path(os.environ.get("TKC", TOKE_ROOT / "tkc"))
+# 131.39: main() pins a private copy (a `make` mid-run relinks the tkc symlink)
+TKC = Path(tkc_pin.default_tkc())
 DEFAULT_CORPUS = Path.home() / "tk" / "toke-corpus" / "corpus" / "regen_v04"
 DEFAULT_OUT = TOKE_ROOT / "patterns" / "proxy"
 VOCAB = 8192
@@ -194,6 +197,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--check-determinism", action="store_true")
     a = ap.parse_args(argv)
 
+    pinned = tkc_pin.pin(toke_repo=TOKE_ROOT).install(sys.modules[__name__])   # 131.39
+    atexit.register(pinned.close)
+    print(f"tkc: {pinned.version} sha256 {pinned.sha256[:12]} (pinned copy of {pinned.source})", file=sys.stderr)
     t0 = time.time()
     files = list_records(a.corpus, a.limit)
     records, rejected = load_accepted(files)
@@ -272,8 +278,10 @@ def main(argv: list[str] | None = None) -> int:
         "holdout": holdout,
         "utilisation_train": utilisation(tok, train_texts),
         "timing_seconds": {"min": round(t_min, 1), "train": round(t_tr, 1), "total": round(time.time() - t0, 1)},
-        "tkc": {"path": str(TKC), "version": tkc_version(), "binary_sha256": sha256_file(TKC),
-                "git_sha": git_sha(TOKE_ROOT)},
+        "tkc_bin_sha": pinned.sha256,   # 131.39
+        "tkc": {"path": pinned.source, "pinned_copy": str(TKC), "version": tkc_version(),
+                "binary_sha256": sha256_file(TKC), "tkc_bin_sha": pinned.sha256,
+                "git_sha": git_sha(TOKE_ROOT), "git_src_dirty": pinned.toke_dirty},
         "script": {"path": str(Path(__file__).resolve().relative_to(TOKE_ROOT)),
                    "sha256": sha256_file(Path(__file__).resolve()),
                    "repo_git_sha_at_run": git_sha(TOKE_ROOT),

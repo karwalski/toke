@@ -21,6 +21,7 @@ Wall time includes fork/exec of the child (~1-2 ms, identical for all forms).
 Results: bench/patterns/results/<YYYYMMDD-HHMMSS>.json. Stdlib only. macOS only.
 """
 import argparse
+import atexit
 import datetime as dt
 import hashlib
 import json
@@ -38,7 +39,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent            # bench/patterns
 ROOT = HERE.parents[1]                             # repo root
-TKC = ROOT / "tkc"
+sys.path.insert(0, str(ROOT / "scripts" / "patterns"))
+import tkc_pin  # noqa: E402  (131.39)
+
+TKC = ROOT / "tkc"          # 131.39: main() replaces this with a pinned private copy
+PIN = None
 PATTERNS = ROOT / "patterns"
 BUILD = HERE / "build"
 RESULTS = HERE / "results"
@@ -484,6 +489,8 @@ def collect_meta(args):
         "tkc_git_sha": git_sha,
         "tkc_git_dirty": dirty,
         "tkc_binary_sha256": sha256_file(TKC) if TKC.exists() else None,
+        "tkc_bin_sha": PIN.sha256 if PIN else None,          # 131.39: the pinned copy every form was compiled with
+        "tkc_pinned_copy": PIN.path if PIN else None,
         "harness": "bench/patterns/run_patterns.py",
         "runs": args.runs, "warmup": args.warmup, "bigo_runs": args.bigo_runs,
         "gate": {"floor_ms": FLOOR_MS, "wall_tol": WALL_TOL, "rss_tol": RSS_TOL,
@@ -551,6 +558,9 @@ def main():
     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
     if not TKC.exists():
         die(f"tkc not found at {TKC}")
+    global PIN
+    PIN = tkc_pin.pin(toke_repo=ROOT).install(sys.modules[__name__])   # 131.39: TKC -> private copy
+    atexit.register(PIN.close)
     load = os.getloadavg()[0]
     if load > args.max_load and not args.allow_load:
         die(f"1-min loadavg {load:.2f} > {args.max_load} — machine busy; retry later, "

@@ -83,6 +83,7 @@ toke-corpus/regen/metrics.py's `dump_ast` when importable, otherwise an
 identical subprocess call).
 """
 import argparse
+import atexit
 import collections
 import glob
 import json
@@ -94,7 +95,10 @@ import tempfile
 import time
 
 HOME = os.path.expanduser("~")
-TKC = os.path.join(HOME, "tk/toke/tkc")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import tkc_pin  # noqa: E402  (131.39; twin of toke-corpus/regen/tkc_pin.py)
+
+TKC = tkc_pin.default_tkc()   # 131.39: main() pins a private copy
 CORPUS_ROOT = os.path.join(HOME, "tk/toke-corpus/corpus/regen_v04")
 LIB_ROOT = os.path.join(HOME, "tk/toke-test-programs/results")
 METRICS_DIR = os.path.join(HOME, "tk/toke-corpus/regen")
@@ -103,10 +107,12 @@ DEFAULT_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 sys.path.insert(0, METRICS_DIR)
 try:
+    import metrics as _metrics                              # noqa: E402
     from metrics import dump_ast, _extent, TKC as _MTKC  # noqa: E402
     TKC = _MTKC
     DUMP_SRC = "toke-corpus/regen/metrics.py"
 except Exception:  # replicate metrics.dump_ast exactly
+    _metrics = None
     DUMP_SRC = "replicated"
 
     def dump_ast(path):
@@ -423,6 +429,9 @@ def main():
     ap.add_argument("--out", default=os.path.normpath(DEFAULT_OUT))
     args = ap.parse_args()
 
+    # 131.39: one private copy of tkc for both passes; pool workers pick it up from $TOKE_TKC_PIN
+    pinned = tkc_pin.pin().install(sys.modules[__name__], *([_metrics] if _metrics else []))
+    atexit.register(pinned.close)
     t_start = time.time()
     cats = set(c.strip() for c in args.categories.split(",") if c.strip())
     recs = corpus_records(cats, args.limit)
@@ -487,7 +496,9 @@ def main():
         "story": "131.3",
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "runtime_sec": runtime,
-        "tkc": TKC, "tkc_version": tkc_version(), "dump_ast_from": DUMP_SRC,
+        "tkc": pinned.source, "tkc_pinned_copy": TKC, "tkc_version": tkc_version(),
+        "tkc_bin_sha": pinned.sha256, "toke_head": pinned.toke_head,   # 131.39
+        "dump_ast_from": DUMP_SRC,
         "corpus_root": CORPUS_ROOT,
         "params": {"depth": args.depth, "min_nodes": args.min_nodes, "top": args.top,
                    "limit": args.limit, "categories": sorted(cats), "library": args.library},

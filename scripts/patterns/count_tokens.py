@@ -43,6 +43,7 @@ Library:
 from __future__ import annotations
 
 import argparse
+import atexit
 import glob
 import hashlib
 import json
@@ -57,8 +58,10 @@ HERE = Path(__file__).resolve().parent
 TOKE_ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 from mask_strings import mask_strings, skip_string  # noqa: E402
+import tkc_pin  # noqa: E402  (131.39)
 
-TKC = Path(os.environ.get("TKC", TOKE_ROOT / "tkc"))
+# 131.39: pinned private copy when a harness set $TOKE_TKC_PIN; main() pins one itself
+TKC = Path(tkc_pin.default_tkc())
 PROXY_DIR = TOKE_ROOT / "patterns" / "proxy"
 V03_PATH = Path(os.environ.get("TOKE_V03", Path.home() / "tk" / "toke-tokenizer" / "tokenizer_v03.json"))
 QWEN_ID = "Qwen/Qwen2.5-Coder-7B"
@@ -239,6 +242,7 @@ class Counter:
         masked = mask_strings(min_function)
         return {"min_bytes": len(min_function.encode("utf-8")), "tokens": self.count(masked),
                 "proxy_sha": self.proxy_sha, "proxy_file": self.proxy_path.name,
+                "tkc_bin_sha": tkc_pin.bin_sha(TKC),          # 131.39
                 "masked_min": masked, "unavailable": dict(self.unavailable)}
 
     def measure_min_text(self, mtext: str, function: str | None) -> dict:
@@ -284,6 +288,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--show-masked", action="store_true", help="include masked_min in the output")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s", stream=sys.stderr)
+    pinned = tkc_pin.pin(toke_repo=TOKE_ROOT).install(sys.modules[__name__])   # 131.39
+    atexit.register(pinned.close)
 
     ctr = Counter(a.proxy, external=not a.no_external)
     func = None if a.whole else a.function
@@ -307,11 +313,12 @@ def main(argv: list[str] | None = None) -> int:
             rows.append(r)
         if a.json:
             print(json.dumps({"dir": str(d), "function": func, "proxy_sha": ctr.proxy_sha,
-                              "proxy_file": ctr.proxy_path.name, "forms": rows,
+                              "proxy_file": ctr.proxy_path.name, "tkc_bin_sha": pinned.sha256, "forms": rows,
                               "blocked": [b.name for b in blocked], "unavailable": ctr.unavailable},
                              indent=2 if a.pretty else None))
         else:
-            print(f"{d}  function={func or '<whole>'}  proxy={ctr.proxy_path.name}  proxy_sha={ctr.proxy_sha[:12]}")
+            print(f"{d}  function={func or '<whole>'}  proxy={ctr.proxy_path.name}  proxy_sha={ctr.proxy_sha[:12]}"
+                  f"  tkc_bin_sha={pinned.sha256[:12]}")
             print(_table(rows))
             for b in blocked:
                 print(f"{b.stem.split('.')[0]:<5} blocked ({b.name}; not measured)")
