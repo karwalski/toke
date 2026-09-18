@@ -9,6 +9,7 @@
 #include "collections.h"
 #include "tk_array.h"
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -23,9 +24,93 @@ void tk_array_retain(int64_t h) {
 }
 
 /* ── Map runtime (tk_map_new / tk_map_put / tk_map_get) ────────────── */
+/*
+ * 127.22: open-addressing hash map over an insertion-ordered dense entry
+ * array (the "compact dict" layout). Replaces the 2.8.0 linear strcmp list,
+ * which made m.get/m.set O(N) and a build loop O(N^2).
+ *
+ *   entries[0..len)  dense {key,val} pairs in insertion order. keys() and
+ *                    template_glue.c (which mirrors the first three fields as
+ *                    TkMapImplT) iterate this exactly as they did on 2.8.0, so
+ *                    keys() order is unchanged: insertion order, overwrite
+ *                    keeps the original position.
+ *   hashes[i]        64-bit FNV-1a hash of entries[i].key. A parallel array,
+ *                    kept out of TkMapEntry so the mirrored 16-byte entry
+ *                    stays intact.
+ *   slots[]          power-of-two index table of int32 indices into entries
+ *                    (-1 = empty); linear probing; load factor <= 0.7; doubled
+ *                    and rebuilt from entries/hashes on growth. The ABI has no
+ *                    remove op, so there are no tombstones.
+ *
+ * The first three fields (entries, len, cap) are a layout contract shared with
+ * template_glue.c and tk_map_len_w — do not reorder them.
+ *
+ * Keys are NUL-terminated char* compared by content (a NULL key is a valid
+ * key equal only to NULL, as on 2.8.0).
+ *
+ * Value semantics are unchanged from 2.8.0: tk_map_put mutates in place and
+ * tk_map_set_w returns the same handle (maps have no copy-on-write yet; the
+ * language's `m=m.set(k;v)` reassignment idiom is what makes this safe).
+ */
+#define TK_MAP_MIN_SLOTS 16
+#define TK_MAP_MIN_CAP   8
 
 typedef struct { int64_t key; int64_t val; } TkMapEntry;
-typedef struct { TkMapEntry *entries; int len; int cap; } TkMapImpl;
+typedef struct {
+    TkMapEntry *entries;   /* dense, insertion order  (mirrored by template_glue.c) */
+    int len;               /* entry count             (mirrored) */
+    int cap;               /* entries/hashes capacity (mirrored) */
+    int64_t nslots;        /* slots[] length, power of two (0 until first put) */
+    int32_t *slots;        /* index into entries, or -1 when empty */
+    uint64_t *hashes;      /* hashes[i] == hash of entries[i].key */
+} TkMapImpl;
+
+static uint64_t tk_map_hash_str(const char *s) {
+    uint64_t h = 1469598103934665603ULL;               /* FNV-1a 64 */
+    if (!s) return h;
+    for (; *s; s++) { h ^= (unsigned char)*s; h *= 1099511628211ULL; }
+    return h;
+}
+static uint64_t tk_map_hash(const TkMapImpl *m, int64_t key) {
+    (void)m;
+    return tk_map_hash_str((const char *)(intptr_t)key);
+}
+static int tk_map_key_eq(const TkMapImpl *m, int64_t a, int64_t b) {
+    (void)m;
+    const char *sa = (const char *)(intptr_t)a, *sb = (const char *)(intptr_t)b;
+    if (!sa || !sb) return sa == sb;                   /* NULL key == NULL key, as on 2.8.0 */
+    return strcmp(sa, sb) == 0;
+}
+
+/* Index into entries of `key` (with hash h), or -1. Load <= 0.7 guarantees
+ * an empty slot, so the probe loop always terminates. */
+static int tk_map_find(const TkMapImpl *m, int64_t key, uint64_t h) {
+    if (m->nslots == 0) return -1;
+    uint64_t mask = (uint64_t)m->nslots - 1;
+    for (uint64_t i = h & mask;; i = (i + 1) & mask) {
+        int32_t e = m->slots[i];
+        if (e < 0) return -1;
+        if (m->hashes[e] == h && tk_map_key_eq(m, m->entries[e].key, key)) return e;
+    }
+}
+
+static void tk_map_slot_insert(TkMapImpl *m, int e) {
+    uint64_t mask = (uint64_t)m->nslots - 1;
+    uint64_t i = m->hashes[e] & mask;
+    while (m->slots[i] >= 0) i = (i + 1) & mask;
+    m->slots[i] = (int32_t)e;
+}
+
+/* Rebuild slots[] at `nslots` (a power of two) from entries/hashes. */
+static int tk_map_rehash(TkMapImpl *m, int64_t nslots) {
+    int32_t *ns = (int32_t *)malloc((size_t)nslots * sizeof(int32_t));
+    if (!ns) return 0;
+    memset(ns, 0xff, (size_t)nslots * sizeof(int32_t));   /* every slot = -1 */
+    free(m->slots);
+    m->slots = ns; m->nslots = nslots;
+    for (int e = 0; e < m->len; e++) tk_map_slot_insert(m, e);
+    return 1;
+}
 
 void *tk_map_new(void) {
     TkMapImpl *m = (TkMapImpl *)calloc(1, sizeof(TkMapImpl));
@@ -35,35 +120,36 @@ void *tk_map_new(void) {
 void tk_map_put(void *m_ptr, int64_t key, int64_t val) {
     TkMapImpl *m = (TkMapImpl *)m_ptr;
     if (!m) return;
-    const char *ks = (const char *)(intptr_t)key;
-    for (int i = 0; i < m->len; i++) {
-        const char *ki = (const char *)(intptr_t)m->entries[i].key;
-        if ((ks && ki && strcmp(ks, ki) == 0) || (!ks && !ki)) {
-            m->entries[i].val = val;
-            return;
-        }
-    }
+    uint64_t h = tk_map_hash(m, key);
+    int e = tk_map_find(m, key, h);
+    if (e >= 0) { m->entries[e].val = val; return; }   /* overwrite keeps position */
     if (m->len >= m->cap) {
-        int nc = m->cap ? m->cap * 2 : 8;
+        int nc = m->cap ? m->cap * 2 : TK_MAP_MIN_CAP;
         TkMapEntry *ne = (TkMapEntry *)realloc(m->entries, (size_t)nc * sizeof(TkMapEntry));
         if (!ne) return;
-        m->entries = ne; m->cap = nc;
+        m->entries = ne;
+        uint64_t *nh = (uint64_t *)realloc(m->hashes, (size_t)nc * sizeof(uint64_t));
+        if (!nh) return;
+        m->hashes = nh; m->cap = nc;
     }
-    m->entries[m->len].key = key;
-    m->entries[m->len].val = val;
+    /* keep load <= 0.7 after this insert: (len+1)/nslots <= 7/10 */
+    if ((int64_t)(m->len + 1) * 10 > m->nslots * 7) {
+        int64_t ns = m->nslots ? m->nslots * 2 : TK_MAP_MIN_SLOTS;
+        if (!tk_map_rehash(m, ns)) return;
+    }
+    e = m->len;
+    m->entries[e].key = key;
+    m->entries[e].val = val;
+    m->hashes[e] = h;
     m->len++;
+    tk_map_slot_insert(m, e);
 }
 
 int64_t tk_map_get(void *m_ptr, int64_t key) {
     TkMapImpl *m = (TkMapImpl *)m_ptr;
     if (!m) return 0;
-    const char *ks = (const char *)(intptr_t)key;
-    for (int i = 0; i < m->len; i++) {
-        const char *ki = (const char *)(intptr_t)m->entries[i].key;
-        if ((ks && ki && strcmp(ks, ki) == 0) || (!ks && !ki))
-            return m->entries[i].val;
-    }
-    return 0;
+    int e = tk_map_find(m, key, tk_map_hash(m, key));
+    return e >= 0 ? m->entries[e].val : 0;             /* missing -> 0, as on 2.8.0 */
 }
 
 /* ── Array/map instance method wrappers ──────────────────────────────── */
@@ -123,12 +209,6 @@ int64_t tk_map_keys_w(int64_t map) {
     for (int i = 0; i < m->len; i++)
         out[i] = m->entries[i].key;
     return h;
-}
-/* 127.8: map.len — entry count of a TkMapImpl. A map is not an array block,
- * so the ptr[-1] header load the backend used for `.len` read garbage (0). */
-int64_t tk_map_len_w(int64_t map) {
-    if (!map) return 0;
-    return ((TkMapImpl *)(intptr_t)map)->len;
 }
 int64_t tk_map_getor_w(int64_t map, int64_t key, int64_t def) { (void)map; (void)key; return def; }
 int64_t tk_map_put_w(int64_t map, int64_t key, int64_t val) {

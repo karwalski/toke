@@ -527,6 +527,11 @@ test-stdlib-args:
 	    test/stdlib/test_args.c src/stdlib/args.c
 	$(RUN_TEST) ./test/stdlib/test_args
 
+test-stdlib-map:
+	$(CC) $(CFLAGS) -o test/stdlib/test_map \
+	    test/stdlib/test_map.c src/stdlib/collections_glue.c src/stdlib/collections.c
+	$(RUN_TEST) ./test/stdlib/test_map
+
 test-stdlib-md:
 	$(CC) $(CFLAGS) $(CMARK_FLAGS) -o test/stdlib/test_md \
 	    test/stdlib/test_md.c src/stdlib/md.c $(CMARK_SRCS)

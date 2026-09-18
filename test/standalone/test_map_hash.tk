@@ -1,0 +1,43 @@
+m=test.maphash;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let m=mut.@("a":1;"b":2;"c":3);
+  if(m.get("a")==1){io.println("PASS get first key")}el{io.println("FAIL get first key")};
+  if(m.get("c")==3){io.println("PASS get last key")}el{io.println("FAIL get last key")};
+  if(m.get("zz")==0){io.println("PASS missing key -> 0")}el{io.println("FAIL missing key -> 0")};
+  m=m.set("b";20);
+  if(m.get("b")==20){io.println("PASS overwrite value")}el{io.println("FAIL overwrite value")};
+  let ks0=m.keys();
+  if(ks0.len==3){io.println("PASS overwrite keeps len 3")}el{io.println("FAIL overwrite keeps len 3 (got \(ks0.len))")};
+  m=m.set("d";4);
+  let ks=m.keys();
+  if(ks.len==4){io.println("PASS keys len 4 after insert")}el{io.println("FAIL keys len 4 after insert (got \(ks.len))")};
+  let joined=str.join(",";ks);
+  if(joined=="a,b,c,d"){io.println("PASS keys insertion order")}el{io.println("FAIL keys insertion order (got \(joined))")};
+  m=m.set("";99);
+  let ks5=m.keys();
+  if(m.get("")==99&&ks5.len==5){io.println("PASS empty-string key")}el{io.println("FAIL empty-string key")};
+
+  let big=mut.@("k0":0);
+  lp(let i=1;i<5000;i=i+1){
+    let k=str.concat("k";str.fromint(i));
+    big=big.set(k;i*2)
+  };
+  let s=mut.0;
+  lp(let i=0;i<5000;i=i+1){
+    let k=str.concat("k";str.fromint(i));
+    s=s+big.get(k)
+  };
+  if(s==24995000){io.println("PASS 5000 distinct keys sum")}el{io.println("FAIL 5000 distinct keys sum (got \(s))")};
+  let bk=big.keys();
+  let bk0=bk.get(0);
+  let bk1=bk.get(4999);
+  if(bk.len==5000&&bk0=="k0"&&bk1=="k4999"){io.println("PASS keys order preserved across growth")}el{io.println("FAIL keys order preserved across growth (\(bk.len) \(bk0) \(bk1))")};
+  if(big.get("k99999")==0){io.println("PASS missing key after growth -> 0")}el{io.println("FAIL missing key after growth -> 0")};
+  big=big.set("k7";1);
+  let bk2=big.keys();
+  if(bk2.len==5000&&big.get("k7")==1){io.println("PASS overwrite in big map keeps len")}el{io.println("FAIL overwrite in big map keeps len")};
+  <0
+};
