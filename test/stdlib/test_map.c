@@ -3,6 +3,7 @@
  *
  * Build and run: make test-stdlib-map
  * Stories: 127.22 (open-addressing hash map, insertion-ordered keys()),
+ *          127.34 (tk_map_getor_w: stored value when present, else default),
  *          127.20 (int-keyed maps via tk_map_new_int; RT006 trap is exit(1)
  *          so it is covered by the standalone repro, not in-process here)
  */
@@ -17,6 +18,7 @@ void   *tk_map_new_int(void);
 void    tk_map_put(void *m, int64_t key, int64_t val);
 int64_t tk_map_get(void *m, int64_t key);
 int64_t tk_map_keys_w(int64_t map);
+int64_t tk_map_getor_w(int64_t map, int64_t key, int64_t def);
 
 /* collections_glue.c also defines tk_arr_join_w, which calls into str_glue.c;
  * the map runtime does not, so stub it to keep this test's link line short. */
@@ -101,6 +103,24 @@ int main(void) {
     for (int i = 0; i < N && ok; i++)
         if (tk_map_get(im, (int64_t)i * 7919) != i) ok = 0;
     ASSERT(ok, "100k int keys round-trip after growth");
+
+    /* ── 127.34: getor — present -> stored value (even 0), absent -> default ── */
+    void *gm = tk_map_new();
+    tk_map_put(gm, S("hit"), 42);
+    tk_map_put(gm, S("zero"), 0);
+    ASSERT(tk_map_getor_w(S(gm), S("hit"), 99) == 42, "str getor present -> stored value");
+    ASSERT(tk_map_getor_w(S(gm), S("zero"), 99) == 0, "str getor stored 0 is not the default");
+    ASSERT(tk_map_getor_w(S(gm), S("nope"), 99) == 99, "str getor absent -> default");
+    char hcopy[] = "hit";
+    ASSERT(tk_map_getor_w(S(gm), S(hcopy), 99) == 42, "str getor matches by content");
+    void *gim = tk_map_new_int();
+    tk_map_put(gim, 7, 70);
+    tk_map_put(gim, 8, 0);
+    ASSERT(tk_map_getor_w(S(gim), 7, -1) == 70, "int getor present -> stored value");
+    ASSERT(tk_map_getor_w(S(gim), 8, -1) == 0, "int getor stored 0 is not the default");
+    ASSERT(tk_map_getor_w(S(gim), 9, -1) == -1, "int getor absent -> default");
+    ASSERT(tk_map_getor_w(S(tk_map_new()), S("x"), 5) == 5, "getor on empty map -> default");
+    ASSERT(tk_map_getor_w(0, S("x"), 5) == 5, "NULL map getor -> default");
 
     /* ── NULL map handle ── */
     ASSERT(tk_map_get(NULL, S("a")) == 0, "NULL map get -> 0");

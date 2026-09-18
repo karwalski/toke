@@ -1,0 +1,30 @@
+(* test_127_34.blocked.tk -- Epic 127.34: m.getor(k;d) must return the stored
+ * value when k is present (even when that value is 0) and d otherwise.
+ * The glue (tk_map_getor_w, collections_glue.c) is implemented and covered by
+ * test/stdlib/test_map.c; this file stays .blocked.tk until src/llvm.c gains a
+ * `getor` dispatch entry (it currently links against an undefined `_getor`).
+ * Rename to test_127_34.tk once that lands. *)
+m=test.m12734;
+i=io:std.io;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=main():$i64{
+  let m=@("a":1;"z":0);
+  cks("getor-present";"\(m.getor("a";99))";"1");
+  cks("getor-stored-zero";"\(m.getor("z";99))";"0");
+  cks("getor-absent";"\(m.getor("nope";99))";"99");
+  let n=@(1:10;2:0);
+  cks("getor-int-present";"\(n.getor(1;-1))";"10");
+  cks("getor-int-stored-zero";"\(n.getor(2;-1))";"0");
+  cks("getor-int-absent";"\(n.getor(3;-1))";"-1");
+  let e=mut.@("k":1);
+  e=e.set("k";5);
+  cks("getor-after-set";"\(e.getor("k";0))";"5");
+  <0
+};

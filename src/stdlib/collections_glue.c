@@ -251,7 +251,16 @@ int64_t tk_map_len_w(int64_t map) {
     if (!map) return 0;
     return ((TkMapImpl *)(intptr_t)map)->len;
 }
-int64_t tk_map_getor_w(int64_t map, int64_t key, int64_t def) { (void)map; (void)key; return def; }
+/* 127.34: map.getor(k; d) — the stored value when k is present, else d.
+ * Unlike tk_map_get (missing -> 0) this distinguishes "absent" from "stored 0",
+ * which is what `coll-lookup-default` needs. Same O(1) hash lookup as get. */
+int64_t tk_map_getor_w(int64_t map, int64_t key, int64_t def) {
+    TkMapImpl *m = (TkMapImpl *)(intptr_t)map;
+    if (!m) return def;
+    tk_map_check_key(m, key);
+    int e = tk_map_find(m, key, tk_map_hash(m, key));
+    return e >= 0 ? m->entries[e].val : def;
+}
 int64_t tk_map_put_w(int64_t map, int64_t key, int64_t val) {
     if (map) tk_map_put((void *)(intptr_t)map, key, val);
     return 0;

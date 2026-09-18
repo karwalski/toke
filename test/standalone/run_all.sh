@@ -11,6 +11,10 @@ DIR=$(dirname "$0")
 TOTAL_PASS=0; TOTAL_FAIL=0
 
 for tk in "$DIR"/test_*.tk; do
+  # *.blocked.tk: a test whose fix still needs a src/llvm.c change held by
+  # another story (127.12/127.31/127.34/127.16). Kept next to the live tests so
+  # it is picked up by renaming once that change lands; never auto-run.
+  case "$tk" in *.blocked.tk) continue;; esac
   name=$(basename "$tk" .tk)
   echo "=== $name ==="
 
