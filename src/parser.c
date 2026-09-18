@@ -672,7 +672,7 @@ static Node *parse_get_postfix(Parser *p, Node *base, Token *d, Token *f) {
     return call;
 }
 
-/* PostfixExpr = PrimaryExpr ('.' IDENT | '.' 'get' '(' Expr ')' | '[' Expr ']')* */
+/* PostfixExpr = PrimaryExpr ('.' IDENT | '.' INT_LIT | '.' 'get' '(' Expr ')' | '[' Expr ']')* */
 static Node *parse_postfix(Parser *p) {
     Node *l=parse_primary(p);
     if(!l) return NULL;
@@ -689,6 +689,16 @@ static Node *parse_postfix(Parser *p) {
              * function call instead of an array index (Story 82.2.1). */
             if(peek(p)==TK_IDENT&&teq(p,f,"get")&&peek_at(p,1)==TK_LPAREN){
                 l=parse_get_postfix(p,l,d,f);   /* A4: no backtracking */
+            } else if(peek(p)==TK_INT_LIT){
+                /* 127.13: `a.0` / `a.1` — constant-index sugar for `a.get(0)`
+                 * (syntax card: "constant index may use arr.0"). Still LL(1):
+                 * after '.' the next token decides (IDENT = field, INT_LIT =
+                 * index) and FLOAT_LIT needs a leading digit, so `a.0` never
+                 * lexes as a float. Same NODE_INDEX_EXPR as parse_get_postfix,
+                 * so checker and codegen are untouched. Limit: `a.0.1` lexes
+                 * as `a` `.` `0.1` (maximal munch) — chain with `.get(1)`. */
+                adv(p);
+                Node *n=mk(p,NODE_INDEX_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_INT_LIT,f));l=n;
             } else {
                 if(!xp(p,TK_IDENT,"field"))break;
                 Node *n=mk(p,NODE_FIELD_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_IDENT,f));l=n;
@@ -735,6 +745,16 @@ static Node *parse_call(Parser *p) {
             Token *d=adv(p);Token *f=cur(p);
             if(peek(p)==TK_IDENT&&teq(p,f,"get")&&peek_at(p,1)==TK_LPAREN){
                 l=parse_get_postfix(p,l,d,f);   /* A4: no backtracking */
+            } else if(peek(p)==TK_INT_LIT){
+                /* 127.13: `a.0` / `a.1` — constant-index sugar for `a.get(0)`
+                 * (syntax card: "constant index may use arr.0"). Still LL(1):
+                 * after '.' the next token decides (IDENT = field, INT_LIT =
+                 * index) and FLOAT_LIT needs a leading digit, so `a.0` never
+                 * lexes as a float. Same NODE_INDEX_EXPR as parse_get_postfix,
+                 * so checker and codegen are untouched. Limit: `a.0.1` lexes
+                 * as `a` `.` `0.1` (maximal munch) — chain with `.get(1)`. */
+                adv(p);
+                Node *n=mk(p,NODE_INDEX_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_INT_LIT,f));l=n;
             } else {
                 if(!xp(p,TK_IDENT,"field"))break;
                 Node *n=mk(p,NODE_FIELD_EXPR,d);ch(p,n,l);ch(p,n,mk(p,NODE_IDENT,f));l=n;

@@ -149,7 +149,7 @@ PropagateExpr = CallExpr [ '!' TypeExpr ] ;
 
 CallExpr     = PostfixExpr { '(' [ ArgList ] ')' } ;
 
-PostfixExpr  = PrimaryExpr { '.' IDENT } ;
+PostfixExpr  = PrimaryExpr { '.' ( IDENT | INT_LIT ) } ;   (* '.' INT_LIT: constant index, sugar for .get(N) (127.13) *)
 
 PrimaryExpr  = IDENT
              | LiteralExpr

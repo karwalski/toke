@@ -1,0 +1,38 @@
+(* test_127_13.tk -- Epic 127.13: `a.0` / `a.1` constant-index postfix form
+ * (syntax card: "constant index may use arr.0") was E2002 at parser.c
+ * parse_postfix. It is now sugar for `a.get(0)` (same NODE_INDEX_EXPR).
+ * Covers int and str arrays, nested use, mut. binding, and that field access
+ * and float literals are unaffected. *)
+m=test.m12713;
+i=io:std.io;
+i=s:std.str;
+
+t=$pt{x:i64;y:i64};
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=main():$i64{
+  let a=@(10;20;30);
+  cks("const-index-0";"\(a.0)";"10");
+  cks("const-index-1";"\(a.1)";"20");
+  cks("const-index-2";"\(a.2)";"30");
+  cks("const-index-eq-get";"\(a.1==a.get(1))";"1");
+  cks("const-index-in-arith";"\(a.0+a.2)";"40");
+  let names=@("ann";"bob");
+  cks("const-index-str";names.1;"bob");
+  let x=mut.a.0;
+  x=x+1;
+  cks("mut-const-index";"\(x)";"11");
+  let p=$pt{x:a.1;y:a.2};
+  cks("field-access-unaffected";"\(p.x) \(p.y)";"20 30");
+  let fl=1.5;
+  cks("float-literal-unaffected";"\(fl>1.0)";"1");
+  let nested=@(@(1;2);@(3;4));
+  let inner=nested.1;
+  cks("nested-const-index";"\(inner.0)";"3");
+  <0
+};
