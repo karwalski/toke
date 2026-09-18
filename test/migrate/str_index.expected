@@ -1,0 +1,21 @@
+m=stridx;
+i=s:std.str;
+f=first(v:str):str{<v.slice(0;1)};
+f=same(a:str;b:str):bool{<a.slice(0;1)==b.slice(1;2)};
+f=isspace(v:str;i:i64):bool{<v.charat(i)==32};
+f=rev(v:str):str{
+  let r=mut."";
+  let m=mut.v.len-1;
+  lp(let i=0;i<v.len;i=i+1){r="\(r)\(v.slice(m;m+1))";m=m-1};
+  <r
+};
+f=digit(v:str):i64{let c=v.charat(0);<c-48};
+f=main():i64{
+  let w="a b";
+  s.print(first(w));
+  s.print(rev(w));
+  s.print(w.slice(2;3));
+  if(same(w;"ba")){s.print("same")};
+  if(isspace(w;1)){s.print("space")};
+  <digit("7")
+};

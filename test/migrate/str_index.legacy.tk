@@ -1,0 +1,21 @@
+M=stridx;
+I=s:std.str;
+F=first(v:Str):Str{<v[0]};
+F=same(a:Str;b:Str):bool{<a[0]=b[1]};
+F=isspace(v:Str;i:i64):bool{<v[i]=32};
+F=rev(v:Str):Str{
+  let r=mut."";
+  let m=mut.v.len-1;
+  lp(let i=0;i<v.len;i=i+1){r=r+v[m];m=m-1};
+  <r
+};
+F=digit(v:Str):i64{let c=v[0];<c-48};
+F=main():void{
+  let w="a b";
+  s.print(first(w));
+  s.print(rev(w));
+  s.print(w[2]);
+  if(same(w;"ba")){s.print("same")};
+  if(isspace(w;1)){s.print("space")};
+  <digit("7")
+};

@@ -1231,7 +1231,7 @@ static void mig_parse_free(MigParse *mp)
 /* A text edit: delete `del` bytes at `off`, insert `ins` there. Edits must
  * not overlap; they are applied in ascending offset order so every offset
  * refers to the *original* text. */
-typedef struct { int off; int del; char ins[8]; } MigEdit;
+typedef struct { int off; int del; char ins[8]; char *dyn; } MigEdit;  /* dyn (127.36): heap text, wins over ins */
 #define MIG_MAX_EDITS 4096
 
 static int mig_apply_edits(char **bufp, int *blen_p, MigEdit *ed, int n)
@@ -1244,7 +1244,7 @@ static int mig_apply_edits(char **bufp, int *blen_p, MigEdit *ed, int n)
         ed[b+1] = v;
     }
     long need = blen + 1;
-    for (int a = 0; a < n; a++) need += (long)strlen(ed[a].ins);
+    for (int a = 0; a < n; a++) need += (long)strlen(ed[a].dyn ? ed[a].dyn : ed[a].ins);
     char *nb = malloc((size_t)need);
     if (!nb) return 0;
     int w = 0, prev = 0, done = 0;
@@ -1252,12 +1252,14 @@ static int mig_apply_edits(char **bufp, int *blen_p, MigEdit *ed, int n)
         int o = ed[a].off;
         if (o < prev || o + ed[a].del > blen) continue;
         memcpy(nb + w, buf + prev, (size_t)(o - prev)); w += o - prev;
-        int il = (int)strlen(ed[a].ins);
-        memcpy(nb + w, ed[a].ins, (size_t)il); w += il;
+        const char *it = ed[a].dyn ? ed[a].dyn : ed[a].ins;
+        int il = (int)strlen(it);
+        memcpy(nb + w, it, (size_t)il); w += il;
         prev = o + ed[a].del; done++;
     }
     memcpy(nb + w, buf + prev, (size_t)(blen - prev)); w += blen - prev;
     nb[w] = '\0';
+    for (int a = 0; a < n; a++) { free(ed[a].dyn); ed[a].dyn = NULL; }
     if (done == 0) { free(nb); return 0; }
     free(*bufp);
     *bufp = nb; *blen_p = w;
@@ -1357,6 +1359,65 @@ static const Node *find_binding_value(const Node *n, const char *src, const Node
 }
 
 static int classify_expr(const Node *n, const Node *fn, const Node *prog,
+                         const char *src, int depth);
+
+/* 127.36: the import alias of std.str in the file being migrated ("" if none). */
+static char s_str_alias[64];
+
+static void find_str_alias(const Node *prog, const char *src)
+{
+    s_str_alias[0] = '\0';
+    if (!prog) return;
+    for (int i = 0; i < prog->child_count; i++) {
+        const Node *im = prog->children[i];
+        if (!im || im->kind != NODE_IMPORT || im->child_count < 2) continue;
+        const Node *al = im->children[0], *mp = im->children[1];
+        if (!al || al->kind != NODE_IDENT || !mp || mp->kind != NODE_MODULE_PATH ||
+            mp->child_count != 2) continue;
+        if (node_text_is(mp->children[0], src, "std") && node_text_is(mp->children[1], src, "str") &&
+            al->tok_len < (int)sizeof s_str_alias) {
+            memcpy(s_str_alias, src + al->tok_start, (size_t)al->tok_len);
+            s_str_alias[al->tok_len] = '\0';
+            return;
+        }
+    }
+}
+
+static int name_in(const Node *id, const char *src, const char *const *list)
+{
+    for (int i = 0; list[i]; i++) if (node_text_is(id, src, list[i])) return 1;
+    return 0;
+}
+
+/* `base.method(...)`: a str-returning method on a str-typed base, or a
+ * str-returning function of the std.str alias, classifies as str. */
+static int classify_method_call(const Node *fld, const Node *fn, const Node *prog,
+                                const char *src, int depth)
+{
+    static const char *const str_methods[] = { "slice", "substr", "trim", "upper", "lower",
+        "replace", "repeat", "concat", "trimprefix", "trimsuffix", "join", NULL };
+    static const char *const i64_methods[] = { "charat", "charcode", "indexof", "lastindex", NULL };
+    static const char *const bool_methods[] = { "contains", "startswith", "endswith", "eq",
+        "gt", "lt", "ge", "le", NULL };
+    static const char *const alias_str[] = { "argv", "concat", "fromint", "fromfloat", "trim",
+        "upper", "lower", "replace", "repeat", "join", "slice", "substr", "trimprefix",
+        "trimsuffix", "interpolate", "done", "build", NULL };
+    if (fld->child_count < 2 || !fld->children[1] || fld->children[1]->kind != NODE_IDENT)
+        return RK_UNK;
+    const Node *base = fld->children[0], *m = fld->children[1];
+    if (base && base->kind == NODE_IDENT && s_str_alias[0] && node_text_is(base, src, s_str_alias)) {
+        const Node *type = NULL, *found = NULL;
+        find_binding_value(fn, src, base, &type, &found);
+        if (!found) return name_in(m, src, alias_str) ? RK_STR : RK_UNK;
+    }
+    if (classify_expr(base, fn, prog, src, depth + 1) != RK_STR) return RK_UNK;
+    if (name_in(m, src, str_methods))  return RK_STR;
+    if (name_in(m, src, i64_methods))  return RK_I64;
+    if (name_in(m, src, bool_methods)) return RK_BOOL;
+    return RK_UNK;
+}
+
+static int classify_expr(const Node *n, const Node *fn, const Node *prog,
                          const char *src, int depth)
 {
     if (!n || depth > 6) return RK_UNK;
@@ -1375,7 +1436,8 @@ static int classify_expr(const Node *n, const Node *fn, const Node *prog,
         if (n->child_count < 2) return RK_UNK;
         int a = classify_expr(n->children[0], fn, prog, src, depth + 1);
         int b = classify_expr(n->children[1], fn, prog, src, depth + 1);
-        if (a == RK_STR || b == RK_STR) return RK_STR;
+        if (a == RK_STR || b == RK_STR)          /* 127.36: only `+` concatenates */
+            return n->op == TK_PLUS ? RK_STR : RK_UNK;
         if (a == RK_F64 || b == RK_F64) return RK_F64;
         if (a == RK_I64 && b == RK_I64) return RK_I64;
         return RK_UNK;
@@ -1394,9 +1456,14 @@ static int classify_expr(const Node *n, const Node *fn, const Node *prog,
         if (type) { int k = kind_of_type_node(type, src); return k == RK_OTHER ? RK_UNK : k; }
         return classify_expr(val, fn, prog, src, depth + 1);
     }
+    case NODE_INDEX_EXPR:   /* 127.36: `a.get(i)` on a str → 1-char str (slice form) */
+        if (n->child_count < 1) return RK_UNK;
+        return classify_expr(n->children[0], fn, prog, src, depth + 1) == RK_STR ? RK_STR : RK_UNK;
     case NODE_CALL_EXPR: {
-        if (n->child_count == 0 || !n->children[0] || n->children[0]->kind != NODE_IDENT)
-            return RK_UNK;
+        if (n->child_count == 0 || !n->children[0]) return RK_UNK;
+        if (n->children[0]->kind == NODE_FIELD_EXPR)   /* 127.36: str method / std.str alias call */
+            return classify_method_call(n->children[0], fn, prog, src, depth);
+        if (n->children[0]->kind != NODE_IDENT) return RK_UNK;
         const Node *f = find_user_func(prog, src, n->children[0]);
         if (!f || f == fn) return RK_UNK;
         int k = kind_of_type_node(fn_rettype_node(f), src);
@@ -1431,7 +1498,7 @@ static void postpass_return_types(char **bufp, int *blen_p)
         MigParse mp;
         if (!mig_parse(*bufp, *blen_p, &mp)) return;
         const char *src = *bufp;
-        MigEdit *ed = malloc(MIG_MAX_EDITS * sizeof(MigEdit));
+        MigEdit *ed = calloc(MIG_MAX_EDITS, sizeof(MigEdit));
         int ne = 0, retyped = 0, bares = 0;
         const Node *prog = mp.ast;
         for (int i = 0; ed && i < prog->child_count; i++) {
@@ -1554,7 +1621,7 @@ static void postpass_mut_bindings(char **bufp, int *blen_p)
     MigParse mp;
     if (!mig_parse(*bufp, *blen_p, &mp)) return;
     MutCtx *c = calloc(1, sizeof *c);
-    MigEdit *ed = malloc(MIG_MAX_EDITS * sizeof(MigEdit));
+    MigEdit *ed = calloc(MIG_MAX_EDITS, sizeof(MigEdit));
     int ne = 0;
     if (c && ed) {
         c->src = *bufp;
@@ -1592,7 +1659,7 @@ static void postpass_mut_bindings(char **bufp, int *blen_p)
 static void postpass_missing_rettype(char **bufp, int *blen_p)
 {
     const char *src = *bufp; int blen = *blen_p;
-    MigEdit *ed = malloc(MIG_MAX_EDITS * sizeof(MigEdit));
+    MigEdit *ed = calloc(MIG_MAX_EDITS, sizeof(MigEdit));
     if (!ed) return;
     int ne = 0, in_str = 0;
     for (int i = 0; i + 1 < blen; i++) {
@@ -1630,6 +1697,318 @@ static void postpass_missing_rettype(char **bufp, int *blen_p)
 }
 
 /* ── Public API ─────────────────────────────────────────────────── */
+
+/* ── 127.36: `a.get(i)` on a str, and legacy `str + str` ─────────────── */
+
+/* Source span [lo,hi) of an expression node: the extent of its tokens,
+ * widened to keep parentheses balanced (call / index argument lists) and
+ * to include an empty `()` argument list of a method call. */
+static void span_leaves(const Node *n, int *lo, int *hi)
+{
+    if (!n) return;
+    if (n->tok_len > 0 && n->tok_start >= 0) {
+        if (n->tok_start < *lo) *lo = n->tok_start;
+        if (n->tok_start + n->tok_len > *hi) *hi = n->tok_start + n->tok_len;
+    }
+    for (int i = 0; i < n->child_count; i++) span_leaves(n->children[i], lo, hi);
+}
+
+static int node_span(const Node *n, const char *src, int blen, int *lo_out, int *hi_out)
+{
+    int lo = blen, hi = 0;
+    span_leaves(n, &lo, &hi);
+    if (lo >= hi) return 0;
+    int depth = 0, q = 0;
+    for (int p = lo; p < hi; p++) {
+        char c = src[p];
+        if (q) { if (c == '\\') p++; else if (c == '"') q = 0; continue; }
+        if (c == '"') q = 1;
+        else if (c == '(') depth++;
+        else if (c == ')') depth--;
+    }
+    while (depth > 0) {                     /* close what the span opened */
+        while (hi < blen && (src[hi] == ' ' || src[hi] == '\t')) hi++;
+        if (hi >= blen || src[hi] != ')') return 0;
+        hi++; depth--;
+    }
+    while (depth < 0) {                     /* `(…)` leading paren of a call */
+        while (lo > 0 && (src[lo-1] == ' ' || src[lo-1] == '\t')) lo--;
+        if (lo <= 0 || src[lo-1] != '(') return 0;
+        lo--; depth++;
+    }
+    if (n->kind == NODE_CALL_EXPR && n->child_count == 1) {   /* `x.f()` */
+        int p = hi;
+        while (p < blen && (src[p] == ' ' || src[p] == '\t')) p++;
+        if (p < blen && src[p] == '(') {
+            int d = 0;
+            for (; p < blen; p++) {
+                if (src[p] == '(') d++;
+                else if (src[p] == ')' && --d == 0) { hi = p + 1; break; }
+            }
+        }
+    }
+    *lo_out = lo; *hi_out = hi;
+    return 1;
+}
+
+/* Does the context that consumes `child` (its parent node) want a string
+ * (+1), a byte value (-1), or give no evidence (0)? */
+static int uses_want_str(const Node *fn, const Node *prog, const char *src,
+                         const Node *name, int depth);
+
+static int ctx_wants_str(const Node *parent, const Node *child, const Node *fn,
+                         const Node *prog, const char *src, int depth)
+{
+    if (!parent || depth > 4) return 0;
+    switch (parent->kind) {
+    case NODE_BINARY_EXPR: {
+        const Node *sib = parent->child_count == 2 ?
+            (parent->children[0] == child ? parent->children[1] : parent->children[0]) : NULL;
+        switch (parent->op) {
+        case TK_PLUS: return 1;
+        case TK_EQEQ: case TK_EQ: case TK_NE: {
+            int k = classify_expr(sib, fn, prog, src, 0);
+            if (k == RK_STR) return 1;
+            if (k == RK_I64) return -1;
+            if (sib && sib->kind == NODE_IDENT) return uses_want_str(fn, prog, src, sib, depth + 1);
+            return 0;
+        }
+        case TK_LT: case TK_GT: case TK_LE: case TK_GE:
+        case TK_MINUS: case TK_STAR: case TK_SLASH: case TK_PERCENT:
+            return -1;
+        default: return 0;
+        }
+    }
+    case NODE_CAST_EXPR: {
+        int k = parent->child_count > 1 ? kind_of_type_node(parent->children[1], src) : RK_OTHER;
+        if (k == RK_STR) return 1;
+        if (k == RK_I64 || k == RK_F64) return -1;
+        if (parent->child_count > 1 && node_text_is(parent->children[1], src, "u64")) return -1;
+        return 0;
+    }
+    case NODE_RETURN_STMT: {
+        int k = kind_of_type_node(fn_rettype_node(fn), src);
+        return k == RK_STR ? 1 : (k == RK_I64 ? -1 : 0);
+    }
+    case NODE_BIND_STMT: case NODE_MUT_BIND_STMT:
+        if (parent->child_count > 0 && parent->children[0] != child)
+            return uses_want_str(fn, prog, src, parent->children[0], depth + 1);
+        return 0;
+    case NODE_ASSIGN_STMT: {
+        if (parent->child_count < 2 || parent->children[0] == child ||
+            !parent->children[0] || parent->children[0]->kind != NODE_IDENT) return 0;
+        int k = classify_expr(parent->children[0], fn, prog, src, 0);
+        if (k == RK_STR) return 1;
+        if (k == RK_I64) return -1;
+        return uses_want_str(fn, prog, src, parent->children[0], depth + 1);
+    }
+    case NODE_INDEX_EXPR:
+        return (parent->child_count > 1 && parent->children[1] == child) ? -1 : 0;
+    case NODE_UNARY_EXPR:
+        return parent->op == TK_MINUS ? -1 : 0;
+    default: return 0;
+    }
+}
+
+/* Scan every use of `name` in the function; string evidence wins. */
+static void uses_walk(const Node *n, const Node *parent, const Node *fn, const Node *prog,
+                      const char *src, const Node *name, int depth, int *want_s, int *want_b)
+{
+    if (!n || n->kind == NODE_CLOSURE) return;
+    if (n->kind == NODE_IDENT && parent && node_name_eq(n, name, src)) {
+        int declares = (parent->kind == NODE_BIND_STMT || parent->kind == NODE_MUT_BIND_STMT ||
+                        parent->kind == NODE_LOOP_INIT || parent->kind == NODE_PARAM ||
+                        parent->kind == NODE_ASSIGN_STMT) && parent->children[0] == n;
+        if (!declares) {
+            int v = ctx_wants_str(parent, n, fn, prog, src, depth);
+            if (v > 0) *want_s = 1; else if (v < 0) *want_b = 1;
+        }
+    }
+    for (int i = 0; i < n->child_count; i++)
+        uses_walk(n->children[i], n, fn, prog, src, name, depth, want_s, want_b);
+}
+
+static int uses_want_str(const Node *fn, const Node *prog, const char *src,
+                         const Node *name, int depth)
+{
+    if (depth > 4) return 0;
+    int ws = 0, wb = 0;
+    uses_walk(fn_body_node(fn), fn, fn, prog, src, name, depth, &ws, &wb);
+    return ws ? 1 : (wb ? -1 : 0);
+}
+
+typedef struct { MigEdit *ed; int ne; int nstr; int nbyte; const char *src; int blen; } IdxCtx;
+
+static void index_walk(IdxCtx *c, const Node *n, const Node *parent, const Node *fn, const Node *prog)
+{
+    if (!n) return;
+    if (n->kind == NODE_INDEX_EXPR && n->child_count == 2 && fn &&
+        n->tok_start + 5 <= c->blen && !strncmp(c->src + n->tok_start, ".get(", 5) &&
+        classify_expr(n->children[0], fn, prog, c->src, 0) == RK_STR && c->ne + 2 <= MIG_MAX_EDITS) {
+        int w = ctx_wants_str(parent, n, fn, prog, c->src, 0);
+        const Node *idx = n->children[1];
+        int ilo, ihi;
+        if (w >= 0 && node_span(idx, c->src, c->blen, &ilo, &ihi)) {
+            int p = ihi;
+            while (p < c->blen && (c->src[p] == ' ' || c->src[p] == '\t')) p++;
+            if (p < c->blen && c->src[p] == ')') {
+                int atomic = (idx->kind == NODE_IDENT || idx->kind == NODE_INT_LIT);
+                int il = ihi - ilo;
+                char *dyn = malloc((size_t)il + 32);
+                if (dyn) {
+                    char *end = NULL;
+                    long v = idx->kind == NODE_INT_LIT ? strtol(c->src + ilo, &end, 10) : -1;
+                    if (idx->kind == NODE_INT_LIT && end == c->src + ihi && v >= 0)
+                        snprintf(dyn, (size_t)il + 32, ";%ld", v + 1);       /* `.slice(0;1)` */
+                    else
+                        snprintf(dyn, (size_t)il + 32, atomic ? ";%.*s+1" : ";(%.*s)+1", il, c->src + ilo);
+                    c->ed[c->ne].off = n->tok_start; c->ed[c->ne].del = 4; c->ed[c->ne].dyn = NULL;
+                    snprintf(c->ed[c->ne].ins, sizeof c->ed[c->ne].ins, ".slice"); c->ne++;
+                    c->ed[c->ne].off = ihi; c->ed[c->ne].del = 0; c->ed[c->ne].ins[0] = '\0';
+                    c->ed[c->ne].dyn = dyn; c->ne++;
+                    c->nstr++;
+                }
+            }
+        } else if (w < 0) {
+            c->ed[c->ne].off = n->tok_start; c->ed[c->ne].del = 4; c->ed[c->ne].dyn = NULL;
+            snprintf(c->ed[c->ne].ins, sizeof c->ed[c->ne].ins, ".charat"); c->ne++;
+            c->nbyte++;
+        }
+    }
+    if (n->kind == NODE_FUNC_DECL) fn = n;
+    if (n->kind == NODE_CLOSURE) return;
+    for (int i = 0; i < n->child_count; i++) index_walk(c, n->children[i], n, fn, prog);
+}
+
+/* `s.get(i)` on a str (legacy v0.2 char indexing): the value is a 1-char
+ * str when it is concatenated, compared with a str, cast to str, returned
+ * from a str function or bound to a name used that way → `s.slice(i;i+1)`;
+ * when it is compared/combined with a number → `s.charat(i)` (byte code). */
+static void postpass_str_index(char **bufp, int *blen_p)
+{
+    MigParse mp;
+    if (!mig_parse(*bufp, *blen_p, &mp)) return;
+    IdxCtx c; memset(&c, 0, sizeof c);
+    c.ed = calloc(MIG_MAX_EDITS, sizeof(MigEdit)); c.src = *bufp; c.blen = *blen_p;
+    if (c.ed) {
+        find_str_alias(mp.ast, *bufp);
+        index_walk(&c, mp.ast, NULL, NULL, mp.ast);
+    }
+    mig_parse_free(&mp);
+    int done = c.ed ? mig_apply_edits(bufp, blen_p, c.ed, c.ne) : 0;
+    free(c.ed);
+    if (done > 0)
+        fprintf(stderr, "migrate: note: %d str index(es) → .slice(i;i+1), %d → .charat(i)\n",
+                c.nstr, c.nbyte);
+}
+
+/* ── legacy `a + b` on strings → "\(a)\(b)" / alias.concat(a;b) ──────── */
+
+typedef struct { MigEdit *ed; int ne; int ninterp; int nconcat; const char *src; int blen; } CatCtx;
+
+static void flatten_plus(const Node *n, const Node *fn, const Node *prog, const char *src,
+                         const Node **ops, int *nops)
+{
+    if (!n || *nops >= 64) return;
+    if (n->kind == NODE_BINARY_EXPR && n->op == TK_PLUS && n->child_count == 2 &&
+        classify_expr(n, fn, prog, src, 0) == RK_STR) {
+        flatten_plus(n->children[0], fn, prog, src, ops, nops);
+        flatten_plus(n->children[1], fn, prog, src, ops, nops);
+        return;
+    }
+    ops[(*nops)++] = n;
+}
+
+/* Returns 1 when the node was rewritten (its subtree is then skipped). */
+static int concat_rewrite(CatCtx *c, const Node *n, const Node *fn, const Node *prog)
+{
+    if (n->child_count != 2 || c->ne >= MIG_MAX_EDITS) return 0;
+    int kl = classify_expr(n->children[0], fn, prog, c->src, 0);
+    int kr = classify_expr(n->children[1], fn, prog, c->src, 0);
+    if (kl != RK_STR && kr != RK_STR) return 0;
+    const Node *ops[64]; int nops = 0;
+    flatten_plus(n, fn, prog, c->src, ops, &nops);
+    if (nops < 2) return 0;
+    int lo, hi;
+    if (!node_span(n, c->src, c->blen, &lo, &hi)) return 0;
+    int all_str = 1;
+    for (int i = 0; i < nops; i++)
+        if (classify_expr(ops[i], fn, prog, c->src, 0) != RK_STR) all_str = 0;
+    int use_interp = all_str || !s_str_alias[0];
+    size_t cap = (size_t)(hi - lo) * 2 + 64 * (size_t)nops + 16;
+    char *out = malloc(cap);
+    if (!out) return 0;
+    size_t w = 0;
+    if (use_interp) {
+        out[w++] = '"';
+        for (int i = 0; i < nops; i++) {
+            int olo, ohi;
+            if (!node_span(ops[i], c->src, c->blen, &olo, &ohi)) { free(out); return 0; }
+            if (ops[i]->kind == NODE_STR_LIT && ohi - olo >= 2 &&
+                c->src[olo] == '"' && c->src[ohi-1] == '"') {
+                memcpy(out + w, c->src + olo + 1, (size_t)(ohi - olo - 2)); w += (size_t)(ohi - olo - 2);
+            } else {
+                for (int p = olo; p < ohi; p++)
+                    if (c->src[p] == '"' || c->src[p] == '\n') { free(out); return 0; }
+                memcpy(out + w, "\\(", 2); w += 2;
+                memcpy(out + w, c->src + olo, (size_t)(ohi - olo)); w += (size_t)(ohi - olo);
+                out[w++] = ')';
+            }
+        }
+        out[w++] = '"';
+        c->ninterp++;
+    } else {
+        /* alias.concat(alias.concat(a;b);c) */
+        size_t al = strlen(s_str_alias);
+        for (int i = 1; i < nops; i++) {
+            memcpy(out + w, s_str_alias, al); w += al;
+            memcpy(out + w, ".concat(", 8); w += 8;
+        }
+        for (int i = 0; i < nops; i++) {
+            int olo, ohi;
+            if (!node_span(ops[i], c->src, c->blen, &olo, &ohi)) { free(out); return 0; }
+            if (i > 0) out[w++] = ';';
+            memcpy(out + w, c->src + olo, (size_t)(ohi - olo)); w += (size_t)(ohi - olo);
+            if (i > 0) out[w++] = ')';
+        }
+        c->nconcat++;
+    }
+    out[w] = '\0';
+    c->ed[c->ne].off = lo; c->ed[c->ne].del = hi - lo; c->ed[c->ne].ins[0] = '\0';
+    c->ed[c->ne].dyn = out; c->ne++;
+    return 1;
+}
+
+static void concat_walk(CatCtx *c, const Node *n, const Node *fn, const Node *prog)
+{
+    if (!n || n->kind == NODE_CLOSURE) return;
+    if (n->kind == NODE_FUNC_DECL) fn = n;
+    if (fn && n->kind == NODE_BINARY_EXPR && n->op == TK_PLUS && concat_rewrite(c, n, fn, prog))
+        return;
+    for (int i = 0; i < n->child_count; i++) concat_walk(c, n->children[i], fn, prog);
+}
+
+#define CAT_MAX_PASSES 3
+
+static void postpass_str_concat(char **bufp, int *blen_p)
+{
+    for (int pass = 0; pass < CAT_MAX_PASSES; pass++) {
+        MigParse mp;
+        if (!mig_parse(*bufp, *blen_p, &mp)) return;
+        CatCtx c; memset(&c, 0, sizeof c);
+        c.ed = calloc(MIG_MAX_EDITS, sizeof(MigEdit)); c.src = *bufp; c.blen = *blen_p;
+        if (c.ed) {
+            find_str_alias(mp.ast, *bufp);
+            concat_walk(&c, mp.ast, NULL, mp.ast);
+        }
+        mig_parse_free(&mp);
+        int done = c.ed ? mig_apply_edits(bufp, blen_p, c.ed, c.ne) : 0;
+        free(c.ed);
+        if (done == 0) return;
+        fprintf(stderr, "migrate: note: %d str concat(s) → interpolation, %d → concat (pass %d)\n",
+                c.ninterp, c.nconcat, pass + 1);
+    }
+}
 
 static int s_migrate_depth = 0;  /* recursion guard */
 
@@ -1757,10 +2136,14 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
                  * since false positives in struct literals are worse than
                  * missing $ in type positions (compiler tells user to add $). */
                 /* After t= or T= (type declaration name) */
+                /* 127.36: only when that `t` heads the statement — `let t=name(…)`
+                 * is a variable named t, not a type declaration. */
                 if (pk == TK_EQ && i >= 2 &&
                     (nt[i-2].kind == TK_KW_T ||
                      (nt[i-2].kind == TK_IDENT && nt[i-2].len == 1 &&
-                      (c[nt[i-2].start] == 't' || c[nt[i-2].start] == 'T'))))
+                      (c[nt[i-2].start] == 't' || c[nt[i-2].start] == 'T'))) &&
+                    (i < 3 || nt[i-3].kind == TK_SEMI || nt[i-3].kind == TK_LBRACE ||
+                     nt[i-3].kind == TK_RBRACE))
                     in_type_pos = 1;
             }
             if (in_type_pos && !is_primitive(tmp) && cl > 0 &&
@@ -1873,6 +2256,10 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
     /* Step 8 (127.32): `:void`/`:i64` → inferred return type; bare `<` → `<0`;
      * `let x=…` that is reassigned later → `let x=mut.…`. */
     postpass_return_types(&buf2, &b2);
+    /* Step 9 (127.36): `s.get(i)` on a str → slice/charat; `str + str` →
+     * interpolation / alias.concat. */
+    postpass_str_index(&buf2, &b2);
+    postpass_str_concat(&buf2, &b2);
     postpass_mut_bindings(&buf2, &b2);
 
     /* Output — strip inserted module if needed */

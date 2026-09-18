@@ -1,0 +1,17 @@
+m=strcat;
+i=s:std.str;
+t=$rec{name:str};
+f=greet(name:str):str{<"hi \(name)!"};
+f=label(r:$rec):str{<s.concat("name=";r.name)};
+f=main():i64{
+  let a="x";
+  let b=mut."";
+  b="\(b)\(a)";
+  b="[\(b)]";
+  let n=s.argv(1);
+  let both="\(a)\(n)";
+  s.print(greet(a));
+  s.print(label($rec{name:"r"}));
+  s.print(b);
+  s.print(both)
+};

@@ -1,0 +1,17 @@
+M=strcat;
+I=s:std.str;
+T=$rec{name:str};
+F=greet(name:Str):Str{<"hi "+name+"!"};
+F=label(r:$rec):Str{<"name="+r.name};
+F=main():void{
+  let a="x";
+  let b=mut."";
+  b=b+a;
+  b="["+b+"]";
+  let n=s.argv(1);
+  let both=a+n;
+  s.print(greet(a));
+  s.print(label($rec{name:"r"}));
+  s.print(b);
+  s.print(both)
+};

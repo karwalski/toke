@@ -1,0 +1,8 @@
+m=lett;
+t=$pair{a:i64;b:i64};
+f=make(x:i64):$pair{<$pair{a:x;b:x+1}};
+f=main():i64{
+  let t=make(1);
+  let u=t.a;
+  <u+t.b
+};
