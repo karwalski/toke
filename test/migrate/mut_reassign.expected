@@ -1,0 +1,11 @@
+m=mutre;
+f=main():i64{
+  let total=mut.0;
+  let step=mut.1;
+  let fixed=7;
+  let already=mut.0;
+  lp(let i=0;i<5;i=i+1){total=total+i;};
+  step=step*2;
+  already=already+fixed;
+  <total+step+already
+};

@@ -1188,6 +1188,447 @@ static void postpass_equality(char **bufp, int *blen_p)
     }
 }
 
+/* ── 127.32: shared re-parse + edit helpers for the AST post-passes ── */
+
+typedef struct { Token *toks; Arena *ar; Node *ast; } MigParse;
+
+/* Lex + parse the migrated text with diagnostics suppressed (default
+ * profile, legacy fallback — same trick as postpass_equality()). Returns 1
+ * and fills *mp on success; the caller frees with mig_parse_free(). */
+static int mig_parse(const char *buf, int blen, MigParse *mp)
+{
+    memset(mp, 0, sizeof *mp);
+    int ncap = blen + 256;
+    Token *toks = malloc((size_t)ncap * sizeof(Token));
+    if (!toks) return 0;
+    diag_suppress(1);
+    int tc = lex(buf, blen, toks, ncap, PROFILE_DEFAULT);
+    int lex_errs = diag_error_count();
+    diag_reset_counts();
+    Profile prof = PROFILE_DEFAULT;
+    if (tc < 0 || lex_errs > 0) {
+        tc = lex(buf, blen, toks, ncap, PROFILE_LEGACY);
+        diag_reset_counts();
+        prof = PROFILE_LEGACY;
+    }
+    if (tc <= 0) { diag_suppress(0); free(toks); return 0; }
+    Arena *ar = arena_init();
+    Node *ast = ar ? parse(toks, tc, buf, ar, prof) : NULL;
+    diag_reset_counts();
+    diag_suppress(0);
+    if (!ast) { if (ar) arena_free(ar); free(toks); return 0; }
+    mp->toks = toks; mp->ar = ar; mp->ast = ast;
+    return 1;
+}
+
+static void mig_parse_free(MigParse *mp)
+{
+    if (mp->ar) arena_free(mp->ar);
+    free(mp->toks);
+    mp->ar = NULL; mp->toks = NULL; mp->ast = NULL;
+}
+
+/* A text edit: delete `del` bytes at `off`, insert `ins` there. Edits must
+ * not overlap; they are applied in ascending offset order so every offset
+ * refers to the *original* text. */
+typedef struct { int off; int del; char ins[8]; } MigEdit;
+#define MIG_MAX_EDITS 4096
+
+static int mig_apply_edits(char **bufp, int *blen_p, MigEdit *ed, int n)
+{
+    if (n <= 0) return 0;
+    char *buf = *bufp; int blen = *blen_p;
+    for (int a = 1; a < n; a++) {              /* ascending by offset */
+        MigEdit v = ed[a]; int b = a - 1;
+        while (b >= 0 && ed[b].off > v.off) { ed[b+1] = ed[b]; b--; }
+        ed[b+1] = v;
+    }
+    long need = blen + 1;
+    for (int a = 0; a < n; a++) need += (long)strlen(ed[a].ins);
+    char *nb = malloc((size_t)need);
+    if (!nb) return 0;
+    int w = 0, prev = 0, done = 0;
+    for (int a = 0; a < n; a++) {
+        int o = ed[a].off;
+        if (o < prev || o + ed[a].del > blen) continue;
+        memcpy(nb + w, buf + prev, (size_t)(o - prev)); w += o - prev;
+        int il = (int)strlen(ed[a].ins);
+        memcpy(nb + w, ed[a].ins, (size_t)il); w += il;
+        prev = o + ed[a].del; done++;
+    }
+    memcpy(nb + w, buf + prev, (size_t)(blen - prev)); w += blen - prev;
+    nb[w] = '\0';
+    if (done == 0) { free(nb); return 0; }
+    free(*bufp);
+    *bufp = nb; *blen_p = w;
+    return done;
+}
+
+static int node_text_is(const Node *n, const char *src, const char *s)
+{
+    int l = (int)strlen(s);
+    return n && n->tok_len == l && !strncmp(src + n->tok_start, s, (size_t)l);
+}
+
+static int node_name_eq(const Node *a, const Node *b, const char *src)
+{
+    return a && b && a->tok_len == b->tok_len &&
+           !strncmp(src + a->tok_start, src + b->tok_start, (size_t)a->tok_len);
+}
+
+/* ── 127.32 (a): return-type inference for `:void` / `:i64` functions ── */
+
+/* The prepass turns a C-style `:void` into `:i64`; a legacy body that then
+ * returns `true`/`false`, a string or a float fails E4031. This pass
+ * re-parses the migrated text and, for every user function declared `:i64`
+ * (or a stray `:void`), classifies each `<expr` in the body lexically —
+ * literals, comparison / logic operators, `!`, `as T` casts, identifiers via
+ * their `let` initialiser or parameter type, calls to other user functions
+ * via their declared type. When every classifiable return agrees on bool,
+ * str or f64 the declared type is rewritten; a bare `<` in a function that
+ * stays `i64` becomes `<0` (E4031 "got 'void'"). Mixed or unknown returns
+ * leave the declaration alone. */
+enum { RK_UNK = 0, RK_I64 = 1, RK_BOOL = 2, RK_STR = 4, RK_F64 = 8, RK_OTHER = 16 };
+
+static int kind_of_type_node(const Node *t, const char *src)
+{
+    if (!t || t->kind != NODE_TYPE_EXPR) return RK_OTHER;
+    if (node_text_is(t, src, "i64"))  return RK_I64;
+    if (node_text_is(t, src, "bool")) return RK_BOOL;
+    if (node_text_is(t, src, "str"))  return RK_STR;
+    if (node_text_is(t, src, "f64"))  return RK_F64;
+    return RK_OTHER;
+}
+
+static const Node *fn_rettype_node(const Node *fn)
+{
+    for (int i = 0; i < fn->child_count; i++) {
+        const Node *c = fn->children[i];
+        if (c && c->kind == NODE_RETURN_SPEC)
+            return c->child_count > 0 ? c->children[0] : NULL;
+    }
+    return NULL;
+}
+
+static const Node *fn_body_node(const Node *fn)
+{
+    if (fn->child_count == 0) return NULL;
+    const Node *last = fn->children[fn->child_count - 1];
+    return (last && last->kind == NODE_STMT_LIST) ? last : NULL;
+}
+
+static const Node *find_user_func(const Node *prog, const char *src, const Node *name)
+{
+    if (!prog) return NULL;
+    for (int i = 0; i < prog->child_count; i++) {
+        const Node *c = prog->children[i];
+        if (c && c->kind == NODE_FUNC_DECL && c->child_count > 0 &&
+            c->children[0] && c->children[0]->kind == NODE_IDENT &&
+            node_name_eq(c->children[0], name, src))
+            return c;
+    }
+    return NULL;
+}
+
+/* Last binding of `name` in the function (let / mut let / loop init / param).
+ * *type_out receives an explicit type annotation when there is one. */
+static const Node *find_binding_value(const Node *n, const char *src, const Node *name,
+                                      const Node **type_out, const Node **found)
+{
+    if (!n) return NULL;
+    if ((n->kind == NODE_BIND_STMT || n->kind == NODE_MUT_BIND_STMT ||
+         n->kind == NODE_LOOP_INIT || n->kind == NODE_PARAM) &&
+        n->child_count > 0 && node_name_eq(n->children[0], name, src)) {
+        *found = n;
+        *type_out = NULL;
+        if (n->kind == NODE_PARAM) {
+            if (n->child_count > 1) *type_out = n->children[1];
+            return NULL;
+        }
+        if (n->child_count == 3) { *type_out = n->children[1]; return n->children[2]; }
+        return n->child_count > 1 ? n->children[1] : NULL;
+    }
+    if (n->kind == NODE_CLOSURE) return NULL;
+    for (int i = 0; i < n->child_count; i++)
+        find_binding_value(n->children[i], src, name, type_out, found);
+    return *found ? ((*found)->kind == NODE_PARAM ? NULL :
+                     ((*found)->child_count == 3 ? (*found)->children[2] :
+                      ((*found)->child_count > 1 ? (*found)->children[1] : NULL))) : NULL;
+}
+
+static int classify_expr(const Node *n, const Node *fn, const Node *prog,
+                         const char *src, int depth)
+{
+    if (!n || depth > 6) return RK_UNK;
+    switch (n->kind) {
+    case NODE_BOOL_LIT:  return RK_BOOL;
+    case NODE_STR_LIT:   return RK_STR;
+    case NODE_FLOAT_LIT: return RK_F64;
+    case NODE_INT_LIT:   return RK_I64;
+    case NODE_BINARY_EXPR: {
+        switch (n->op) {
+        case TK_EQ: case TK_NE: case TK_LT: case TK_GT: case TK_LE: case TK_GE:
+        case TK_AND: case TK_OR:
+            return RK_BOOL;
+        default: break;
+        }
+        if (n->child_count < 2) return RK_UNK;
+        int a = classify_expr(n->children[0], fn, prog, src, depth + 1);
+        int b = classify_expr(n->children[1], fn, prog, src, depth + 1);
+        if (a == RK_STR || b == RK_STR) return RK_STR;
+        if (a == RK_F64 || b == RK_F64) return RK_F64;
+        if (a == RK_I64 && b == RK_I64) return RK_I64;
+        return RK_UNK;
+    }
+    case NODE_UNARY_EXPR:
+        if (n->op == TK_BANG) return RK_BOOL;
+        return n->child_count > 0 ? classify_expr(n->children[0], fn, prog, src, depth + 1) : RK_UNK;
+    case NODE_CAST_EXPR: {
+        int k = n->child_count > 1 ? kind_of_type_node(n->children[1], src) : RK_OTHER;
+        return k == RK_OTHER ? RK_UNK : k;
+    }
+    case NODE_IDENT: {
+        const Node *type = NULL, *found = NULL;
+        const Node *val = find_binding_value(fn, src, n, &type, &found);
+        if (!found) return RK_UNK;
+        if (type) { int k = kind_of_type_node(type, src); return k == RK_OTHER ? RK_UNK : k; }
+        return classify_expr(val, fn, prog, src, depth + 1);
+    }
+    case NODE_CALL_EXPR: {
+        if (n->child_count == 0 || !n->children[0] || n->children[0]->kind != NODE_IDENT)
+            return RK_UNK;
+        const Node *f = find_user_func(prog, src, n->children[0]);
+        if (!f || f == fn) return RK_UNK;
+        int k = kind_of_type_node(fn_rettype_node(f), src);
+        return k == RK_OTHER ? RK_UNK : k;
+    }
+    default: return RK_UNK;
+    }
+}
+
+/* Collect the return kinds of a body: `*mask` ORs the classified kinds of
+ * valued returns; bare `<` offsets go to `bare`. Closures are skipped. */
+static void collect_returns(const Node *n, const Node *fn, const Node *prog, const char *src,
+                            int *mask, int *bare, int *nbare)
+{
+    if (!n || n->kind == NODE_CLOSURE) return;
+    if (n->kind == NODE_RETURN_STMT) {
+        if (n->child_count > 0 && n->children[0])
+            *mask |= classify_expr(n->children[0], fn, prog, src, 0);
+        else if (*nbare < 256 && src[n->tok_start] == '<')
+            bare[(*nbare)++] = n->tok_start;
+        return;
+    }
+    for (int i = 0; i < n->child_count; i++)
+        collect_returns(n->children[i], fn, prog, src, mask, bare, nbare);
+}
+
+#define RET_MAX_PASSES 3
+
+static void postpass_return_types(char **bufp, int *blen_p)
+{
+    for (int pass = 0; pass < RET_MAX_PASSES; pass++) {
+        MigParse mp;
+        if (!mig_parse(*bufp, *blen_p, &mp)) return;
+        const char *src = *bufp;
+        MigEdit *ed = malloc(MIG_MAX_EDITS * sizeof(MigEdit));
+        int ne = 0, retyped = 0, bares = 0;
+        const Node *prog = mp.ast;
+        for (int i = 0; ed && i < prog->child_count; i++) {
+            const Node *fn = prog->children[i];
+            if (!fn || fn->kind != NODE_FUNC_DECL) continue;
+            const Node *rt = fn_rettype_node(fn);
+            const Node *body = fn_body_node(fn);
+            if (!rt || !body || rt->kind != NODE_TYPE_EXPR) continue;
+            int is_void = node_text_is(rt, src, "void");
+            if (!is_void && !node_text_is(rt, src, "i64")) continue;
+            int mask = 0, bare[256], nbare = 0;
+            collect_returns(body, fn, prog, src, &mask, bare, &nbare);
+            int known = mask & (RK_I64 | RK_BOOL | RK_STR | RK_F64);
+            const char *target = NULL, *bare_lit = "0";
+            if (known == RK_BOOL)      { target = "bool"; bare_lit = "false"; }
+            else if (known == RK_STR)  { target = "str";  bare_lit = "\"\""; }
+            else if (known == RK_F64)  { target = "f64";  bare_lit = "0.0"; }
+            else if (is_void)          { target = "i64"; }
+            if (target && ne < MIG_MAX_EDITS) {
+                ed[ne].off = rt->tok_start; ed[ne].del = rt->tok_len;
+                snprintf(ed[ne].ins, sizeof ed[ne].ins, "%s", target); ne++; retyped++;
+            }
+            for (int b = 0; b < nbare && ne < MIG_MAX_EDITS; b++) {
+                ed[ne].off = bare[b] + 1; ed[ne].del = 0;
+                snprintf(ed[ne].ins, sizeof ed[ne].ins, "%s", bare_lit); ne++; bares++;
+            }
+        }
+        mig_parse_free(&mp);
+        int done = ed ? mig_apply_edits(bufp, blen_p, ed, ne) : 0;
+        free(ed);
+        if (done == 0) return;
+        fprintf(stderr, "migrate: note: %d return type(s) inferred, %d bare `<` given a value (pass %d)\n",
+                retyped, bares, pass + 1);
+    }
+}
+
+/* ── 127.32 (b): `let x=…` reassigned later → `let x=mut.…` ─────────── */
+
+/* Scope-aware walk of each function body mirroring the checker's E4070
+ * rule: an assignment (`x=…`, a loop step, `x=x+…`) whose innermost visible
+ * binding is an immutable `let` marks that binding; `mut.` is then inserted
+ * after its `=`. Loop-init variables and `mut.` bindings are already
+ * mutable; parameters are never rewritten (E4070 stays, by design). */
+typedef struct { const Node *ident; const Node *bind; int mutable_; } MutEntry;
+#define MUT_MAX_ENTRIES 4096
+#define MUT_MAX_FRAMES  256
+typedef struct {
+    const char *src;
+    MutEntry ent[MUT_MAX_ENTRIES]; int n;
+    int frames[MUT_MAX_FRAMES]; int nf;
+    const Node *marked[MIG_MAX_EDITS]; int nmarked;
+} MutCtx;
+
+static void mut_push(MutCtx *c) { if (c->nf < MUT_MAX_FRAMES) c->frames[c->nf++] = c->n; }
+static void mut_pop(MutCtx *c)  { if (c->nf > 0) c->n = c->frames[--c->nf]; }
+static void mut_add(MutCtx *c, const Node *ident, const Node *bind, int mutable_)
+{
+    if (!ident || c->n >= MUT_MAX_ENTRIES) return;
+    c->ent[c->n].ident = ident; c->ent[c->n].bind = bind; c->ent[c->n].mutable_ = mutable_;
+    c->n++;
+}
+static void mut_assign(MutCtx *c, const Node *name)
+{
+    for (int i = c->n - 1; i >= 0; i--) {
+        if (!node_name_eq(c->ent[i].ident, name, c->src)) continue;
+        const Node *b = c->ent[i].bind;
+        if (c->ent[i].mutable_ || !b) return;      /* mutable, or a parameter */
+        for (int k = 0; k < c->nmarked; k++) if (c->marked[k] == b) return;
+        if (c->nmarked < MIG_MAX_EDITS) c->marked[c->nmarked++] = b;
+        return;
+    }
+}
+
+static void mut_walk(MutCtx *c, const Node *n)
+{
+    if (!n) return;
+    switch (n->kind) {
+    case NODE_STMT_LIST:
+        mut_push(c);
+        for (int i = 0; i < n->child_count; i++) mut_walk(c, n->children[i]);
+        mut_pop(c);
+        return;
+    case NODE_BIND_STMT: case NODE_MUT_BIND_STMT:
+        for (int i = 1; i < n->child_count; i++) mut_walk(c, n->children[i]);
+        if (n->child_count > 0) mut_add(c, n->children[0], n, n->kind == NODE_MUT_BIND_STMT);
+        return;
+    case NODE_LOOP_STMT:
+        mut_push(c);
+        for (int i = 0; i < n->child_count; i++) {
+            const Node *ch = n->children[i];
+            if (ch && ch->kind == NODE_LOOP_INIT) {
+                for (int k = 1; k < ch->child_count; k++) mut_walk(c, ch->children[k]);
+                if (ch->child_count > 0) mut_add(c, ch->children[0], ch, 1);
+            } else mut_walk(c, ch);
+        }
+        mut_pop(c);
+        return;
+    case NODE_ASSIGN_STMT:
+        if (n->child_count > 0 && n->children[0] && n->children[0]->kind == NODE_IDENT)
+            mut_assign(c, n->children[0]);
+        for (int i = 1; i < n->child_count; i++) mut_walk(c, n->children[i]);
+        return;
+    case NODE_FUNC_DECL: case NODE_CLOSURE:
+        mut_push(c);
+        for (int i = 0; i < n->child_count; i++) {
+            const Node *ch = n->children[i];
+            if (ch && ch->kind == NODE_PARAM) { if (ch->child_count > 0) mut_add(c, ch->children[0], NULL, 0); }
+            else mut_walk(c, ch);
+        }
+        mut_pop(c);
+        return;
+    default:
+        for (int i = 0; i < n->child_count; i++) mut_walk(c, n->children[i]);
+        return;
+    }
+}
+
+static void postpass_mut_bindings(char **bufp, int *blen_p)
+{
+    MigParse mp;
+    if (!mig_parse(*bufp, *blen_p, &mp)) return;
+    MutCtx *c = calloc(1, sizeof *c);
+    MigEdit *ed = malloc(MIG_MAX_EDITS * sizeof(MigEdit));
+    int ne = 0;
+    if (c && ed) {
+        c->src = *bufp;
+        mut_walk(c, mp.ast);
+        const char *src = *bufp; int blen = *blen_p;
+        for (int k = 0; k < c->nmarked && ne < MIG_MAX_EDITS; k++) {
+            const Node *b = c->marked[k];
+            const Node *id = b->children[0];
+            /* `let name[:type] = value` — find the '=' after the name, then
+             * insert `mut.` after it and any following blanks. */
+            int p = id->tok_start + id->tok_len;
+            while (p < blen && src[p] != '=' && src[p] != ';' && src[p] != '{' && src[p] != '}') p++;
+            if (p >= blen || src[p] != '=') continue;
+            p++;
+            while (p < blen && (src[p] == ' ' || src[p] == '\t')) p++;
+            if (p + 3 < blen && !strncmp(src + p, "mut", 3)) continue;
+            ed[ne].off = p; ed[ne].del = 0;
+            snprintf(ed[ne].ins, sizeof ed[ne].ins, "mut.");
+            ne++;
+        }
+    }
+    mig_parse_free(&mp);
+    int done = (c && ed) ? mig_apply_edits(bufp, blen_p, ed, ne) : 0;
+    free(ed); free(c);
+    if (done > 0)
+        fprintf(stderr, "migrate: note: %d reassigned `let` binding(s) made `mut.`\n", done);
+}
+
+/* ── 127.32: `f=name(...){` with no return type → `f=name(...):i64{` ── */
+
+/* A missing return type is a parse error (E2002 "expected ':'"), which
+ * would also hide the function's body from the AST passes above — so this
+ * text-level fix runs before them and the inference pass may still refine
+ * the `i64` afterwards. */
+static void postpass_missing_rettype(char **bufp, int *blen_p)
+{
+    const char *src = *bufp; int blen = *blen_p;
+    MigEdit *ed = malloc(MIG_MAX_EDITS * sizeof(MigEdit));
+    if (!ed) return;
+    int ne = 0, in_str = 0;
+    for (int i = 0; i + 1 < blen; i++) {
+        if (src[i] == '"' && (i == 0 || src[i-1] != '\\')) { in_str = !in_str; continue; }
+        if (in_str || src[i] != 'f' || src[i+1] != '=') continue;
+        int j = i - 1;
+        while (j >= 0 && (src[j] == ' ' || src[j] == '\t' || src[j] == '\n' || src[j] == '\r')) j--;
+        if (j >= 0 && src[j] != ';' && src[j] != '}' && src[j] != '{') continue;
+        int p = i + 2;
+        while (p < blen && (src[p] == ' ' || src[p] == '\t')) p++;
+        if (p >= blen || !is_idchar(src[p])) continue;
+        while (p < blen && is_idchar(src[p])) p++;
+        while (p < blen && (src[p] == ' ' || src[p] == '\t')) p++;
+        if (p >= blen || src[p] != '(') continue;
+        int d = 0, qs = 0;
+        for (; p < blen; p++) {
+            if (src[p] == '"' && src[p-1] != '\\') qs = !qs;
+            if (qs) continue;
+            if (src[p] == '(') d++;
+            else if (src[p] == ')') { if (--d == 0) break; }
+        }
+        if (p >= blen) break;
+        int q = p + 1;
+        while (q < blen && (src[q] == ' ' || src[q] == '\t' || src[q] == '\n')) q++;
+        if (q < blen && src[q] == '{' && ne < MIG_MAX_EDITS) {
+            ed[ne].off = p + 1; ed[ne].del = 0;
+            snprintf(ed[ne].ins, sizeof ed[ne].ins, ":i64"); ne++;
+        }
+        i = p;
+    }
+    int done = mig_apply_edits(bufp, blen_p, ed, ne);
+    free(ed);
+    if (done > 0)
+        fprintf(stderr, "migrate: note: %d function(s) given a missing return type (:i64)\n", done);
+}
+
 /* ── Public API ─────────────────────────────────────────────────── */
 
 static int s_migrate_depth = 0;  /* recursion guard */
@@ -1426,7 +1867,13 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
 
     /* Step 7 (127.18): legacy `=` equality → `==` in every boolean-context
      * position, driven by the parser's own E2002 recovery. */
+    postpass_missing_rettype(&buf2, &b2);   /* 127.32: before the AST passes */
     postpass_equality(&buf2, &b2);
+
+    /* Step 8 (127.32): `:void`/`:i64` → inferred return type; bare `<` → `<0`;
+     * `let x=…` that is reassigned later → `let x=mut.…`. */
+    postpass_return_types(&buf2, &b2);
+    postpass_mut_bindings(&buf2, &b2);
 
     /* Output — strip inserted module if needed */
     if (inserted_module) {

@@ -1,0 +1,19 @@
+M=voidstr;
+F=label(n:i64):void{
+  if(n=0){<"zero"};
+  let s="n";
+  <s
+};
+F=half(x:f64):void{
+  if(x<0.0){<0.0};
+  <x/2.0
+};
+F=count(a:i64):void{
+  if(a<0){<};
+  <a*2
+};
+F=main():void{
+  let lbl=label(0);
+  let h=half(3.0);
+  <count(2)
+};

@@ -1,0 +1,18 @@
+M=voidbool;
+F=is_even(n:i64):void{
+  if(n-n/2*2=0){<true};
+  <false
+};
+F=both(a:i64;b:i64):void{
+  let ok=a<b;
+  if(!ok){<false};
+  <is_even(a)&&is_even(b)
+};
+F=neg(a:i64):void{
+  <!is_even(a)
+};
+F=main():void{
+  if(both(2;4)){<1};
+  if(neg(3)){<2};
+  <0
+};

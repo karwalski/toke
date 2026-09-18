@@ -1,0 +1,17 @@
+M=mutnest;
+F=main():void{
+  let outer=0;
+  let same=1;
+  let inner=10;
+  if(same=1){
+    let same=2;
+    same=same+1;
+    outer=outer+same;
+  };
+  lp(let k=0;k<3;k=k+1){
+    let inner=k;
+    if(k=1){inner=inner+1;};
+    outer=outer+inner;
+  };
+  <outer+same+inner
+};
