@@ -97,7 +97,9 @@ with a stand-in now and re-measured later (§8).
   that equals UTF-8 length; kept so a verdict can never depend on a proxy artefact alone.
 - **Informational — `v03`, `qwen25coder`, `cl100k`.** Reported, never used for verdicts.
 - **Tie-break — `min_bytes`.** Two forms are token-*tied* when their `proxy8k` counts differ by ≤ 1 token
-  **and** by ≤ 5%; the tie is then broken by `min_bytes`, then left tied.
+  **or** by ≤ 5% (whichever is looser — at the 13–17 tokens typical of a `pat` function a single token is
+  measurement noise, not a verdict; amended 2026-09-18 after the first 131.4 measurements); the tie is then
+  broken by `min_bytes`, then left tied.
 - **Region.** Only the `f=pat` function is counted (its extent from `tkc --dump-ast`), on its `--min` text.
 - **Known bias.** The proxy is trained on the *current, verbose* corpus, so verbose shapes have cheaper merges
   and canonical forms are measured pessimistically. This is the safe direction: a form that wins under a

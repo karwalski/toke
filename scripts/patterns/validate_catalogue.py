@@ -41,7 +41,7 @@ FORM_RE = re.compile(r"^[a-z]$")
 SOURCE_RE = re.compile(r"^(idiom-v0\.4#\d+|card:.+|ast-mine:\d+|126\.1-pair:.+)$")
 ISSUE_RE = re.compile(r"^127\.\d+$")
 
-# token tie rule (protocol §4): <=1 token AND <=5%
+# token tie rule (protocol §4): <=1 token OR <=5% (amended 2026-09-18)
 TOKEN_TIE_ABS = 1
 TOKEN_TIE_REL = 0.05
 # runtime gate (protocol §5.3)
@@ -150,7 +150,7 @@ def check_verdict_consistency(v: V, e: dict) -> None:
     tok_ok = set()
     for c in live:
         t = c["tokens"]["proxy8k"]
-        tied = (t - best_tok) <= TOKEN_TIE_ABS and (t - best_tok) <= TOKEN_TIE_REL * max(best_tok, 1)
+        tied = (t - best_tok) <= TOKEN_TIE_ABS or (t - best_tok) <= TOKEN_TIE_REL * max(best_tok, 1)
         exp = "best" if t == best_tok else ("tied" if tied else "more")
         if c["token_verdict"] != exp:
             v.err(f"{eid}/{c['form']}", f"token_verdict {c['token_verdict']!r} but numbers say {exp!r} (proxy8k={t}, best={best_tok})")
