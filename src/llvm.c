@@ -42,6 +42,7 @@
 #include <stdarg.h>
 #include <unistd.h>     /* 121.1b: fork/execvp/_exit for argv-exec */
 #include <sys/wait.h>   /* 121.1b: waitpid/WEXITSTATUS */
+#include <dirent.h>     /* 127.80: scan the stdlib dir for .tki interfaces */
 
 /* 121.1b: split a whitespace-separated string, in place, into argv elements
  * (each token becomes one argv entry). Bounded by `max` so argv can't overflow.
@@ -944,7 +945,12 @@ static const char *tki_type_to_llvm_abi(const char *toke_type) {
  *   wrapper_name:  the tk_<module>_<method>_w symbol name.
  *   llvm_ret:      corresponding LLVM type ("i8*", "i64", "double", "void").
  */
-#define TKI_CACHE_MAX 512
+/* 127.80: the cache now holds every export of every stdlib interface file
+ * (518 at the time of writing, and the directory grows), not the 26
+ * hand-listed modules it used to.  512 was already under that total, and an
+ * overflow silently drops the tail — which is how a return type goes missing
+ * again. */
+#define TKI_CACHE_MAX 2048
 
 typedef struct {
     char wrapper_name[128]; /* e.g. "tk_str_concat_w" */
@@ -959,6 +965,9 @@ typedef struct {
 static TkiCacheEntry g_tki_cache[TKI_CACHE_MAX];
 static int g_tki_cache_count = 0;
 static int g_tki_cache_loaded = 0;
+/* 127.80: set when TKI_CACHE_MAX was hit, so a missing return type can be
+ * reported as "the cache overflowed" rather than guessed at. */
+static int g_tki_cache_overflow = 0;
 
 /*
  * tki_base_return_type — Strip error union suffix from a toke return type.
@@ -1007,7 +1016,7 @@ static void load_stdlib_tki(const char *module) {
         int is_func = kv_func && (!next_kind || kv_func < next_kind);
         int is_extern_c = kv_extern && (!next_kind || kv_extern < next_kind);
         if (!is_func && !is_extern_c) { p = next_kind ? next_kind : p + 6; continue; }
-        if (g_tki_cache_count >= TKI_CACHE_MAX) break;
+        if (g_tki_cache_count >= TKI_CACHE_MAX) { g_tki_cache_overflow = 1; break; }
 
         char *nk = strstr(p, "\"name\"");
         if (!nk || (next_kind && nk > next_kind)) { p += 6; continue; }
@@ -1112,15 +1121,41 @@ static void load_stdlib_tki(const char *module) {
 static void ensure_tki_cache_loaded(void) {
     if (g_tki_cache_loaded) return;
     g_tki_cache_loaded = 1;
-    static const char *stdlib_modules[] = {
-        "str", "env", "file", "path", "args", "toml", "md", "log",
-        "http", "router", "json", "toon", "yaml", "i18n", "math",
-        "time", "crypto", "net", "sys", "ws", "os", "mem", "process",
-        "db", "task", "vec",
-        NULL
-    };
-    for (int i = 0; stdlib_modules[i]; i++)
-        load_stdlib_tki(stdlib_modules[i]);
+    /*
+     * 127.80: scan stdlib/ for *.tki rather than consulting a hand-written
+     * list of module names.
+     *
+     * The list held 26 of the 54 interface files.  A module absent from it had
+     * no return types in the cache at all, so `\(path.join(a;b))` — a `"str"`
+     * return declared in stdlib/path.tki, sitting on disk, unread — fell
+     * through every type test to the integer default and printed the string's
+     * address as a decimal.  A name list that must be extended by hand every
+     * time a module is added is the same defect shape as the str_wrappers
+     * table in expr_struct_type: the authoritative answer exists, and the
+     * lookup key is a name somebody has to remember to add.
+     *
+     * The directory IS the list.  A new stdlib module is now typed correctly
+     * the moment its .tki lands.
+     */
+    char dir_path[512];
+    const char *env_dir = getenv("TKC_STDLIB_DIR");
+    const char *base = env_dir ? env_dir : TKC_STDLIB_DIR;
+    snprintf(dir_path, sizeof dir_path, "%s/../../stdlib", base);
+    DIR *d = opendir(dir_path);
+    if (!d) return;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        const char *nm = de->d_name;
+        size_t nl = strlen(nm);
+        if (nl < 5 || strcmp(nm + nl - 4, ".tki")) continue;
+        char mod[64];
+        size_t ml = nl - 4;
+        if (ml >= sizeof mod) continue;
+        memcpy(mod, nm, ml);
+        mod[ml] = '\0';
+        load_stdlib_tki(mod);
+    }
+    closedir(d);
 }
 
 /*
@@ -1999,6 +2034,10 @@ static void emit_match_arm_body(Ctx *c, const Node *body, const char *res_ty,
 static const Node *block_tail_expr(const Node *blk);
 static void emit_if_branch_value(Ctx *c, const Node *blk, const char *res_ty,
                                  int res_slot, int end_lbl);
+/* 127.80: "is this interpolation operand of a type the compiler cannot
+ * establish?" — see the definition below expr_struct_type. */
+static int interp_operand_type_unknown(Ctx *c, const Node *e,
+                                       const char *ety, const char *est);
 
 /* True when a match arm's body is exactly its own binding ident (`$ok:v v`),
  * i.e. the arm yields the bound ok value unchanged. Used by result-type
@@ -2469,6 +2508,10 @@ static int emit_expr(Ctx *c, const Node *n)
                         seg_val = emit_expr(c, expr_node);
                         const char *ety = expr_llvm_type(c, expr_node);
                         const char *est = expr_struct_type(c, expr_node);
+                        /* 127.80: must be asked while c->src still points at
+                         * the wrapper buffer — it reads the sub-expression's
+                         * tokens. */
+                        int unknown_ret = interp_operand_type_unknown(c, expr_node, ety, est);
                         c->src = saved_src;
                         /* 114.32: interpolation of a non-string value. Previously
                          * any i64 was inttoptr'd to i8* on the assumption it
@@ -2526,6 +2569,30 @@ static int emit_expr(Ctx *c, const Node *n)
                             int z = next_tmp(c);
                             fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, cv);
                             seg_val = z;
+                        } else if (unknown_ret) {
+                            /*
+                             * 127.80: the last resort used to be "assume it is
+                             * an integer and print it in decimal".  For a
+                             * stdlib call the compiler has no declared return
+                             * type for, that assumption is a coin flip, and
+                             * when it loses it prints a heap address as a
+                             * plausible-looking number at exit 0 — the exact
+                             * failure this story exists to remove.  If the
+                             * type cannot be established, say so.
+                             */
+                            /* position from the enclosing literal: expr_node's
+                             * offsets index the synthetic wrapper buffer, not
+                             * the user's file. */
+                            diag_emit(DIAG_ERROR, E4032, n->start, n->line, n->col,
+                                      "cannot interpolate a value whose type the compiler cannot determine",
+                                      "this stdlib call declares no return type in its .tki interface; "
+                                      "bind it to a typed local first, or add the `return` entry to the interface file",
+                                      NULL);
+                            int alenu = 1;
+                            int siu = emit_str_global(c, "\"\"", 2, &alenu);
+                            seg_val = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+                                    seg_val, alenu, alenu, c->module_prefix, siu);
                         } else {
                             /* raw int / bool → decimal string */
                             if (ety && !strcmp(ety, "i1")) {
@@ -5673,6 +5740,51 @@ static int emit_expr(Ctx *c, const Node *n)
  *   NODE_IDENT      — looks up the variable's struct type from ptrs registry.
  *   NODE_CALL_EXPR  — uses the callee's ret_type_name from the FnSig.
  */
+/*
+ * tki_entry_for / tki_declared_tag (127.80) — the interface-file declaration
+ * for `<alias>.<method>`, and the expr_struct_type tag its return type implies.
+ *
+ * Keyed on (module, method), NOT on the derived `tk_<mod>_<meth>_w` symbol.
+ * resolve_stdlib_call hand-maps a long tail of methods to symbols that do not
+ * follow that spelling (`os.getcwd` → tk_os_getcwd, `str.fromint` →
+ * tk_str_from_int, `json.parse` → tk_json_parse), and a symbol-keyed lookup
+ * misses every one of them — the same "registry keyed on a name somebody has
+ * to keep in sync" defect this story is about, one level down.  The module and
+ * the method are what the interface file is actually indexed by.
+ *
+ * Every caller goes through here so the CALL_EXPR spelling (`s.trim(x)`) and
+ * the INDEX_EXPR spelling (`env.get(k)` — `.get` parses as a subscript, not a
+ * call) cannot give different answers for the same function.
+ */
+static const TkiCacheEntry *tki_entry_for(Ctx *c, const char *alias,
+                                          const char *method) {
+    if (!alias || !method) return NULL;
+    const char *mod = NULL;
+    for (int i = 0; i < c->import_count; i++)
+        if (!strcmp(c->imports[i].alias, alias)) { mod = c->imports[i].module; break; }
+    if (!mod) return NULL;
+    if (!strncmp(mod, "std.", 4)) mod += 4;
+    ensure_tki_cache_loaded();
+    for (int ci = 0; ci < g_tki_cache_count; ci++)
+        if (!strcmp(g_tki_cache[ci].module, mod) &&
+            !strcmp(g_tki_cache[ci].method, method))
+            return &g_tki_cache[ci];
+    return NULL;
+}
+
+static const char *tki_declared_tag(Ctx *c, const char *alias, const char *method) {
+    const TkiCacheEntry *e = tki_entry_for(c, alias, method);
+    if (!e) return NULL;
+    char tbase[64];
+    tki_base_return_type(e->toke_ret, tbase, sizeof tbase);
+    if (!strcmp(tbase, "str") || !strcmp(tbase, "$str")) return "$str";
+    if (!strcmp(tbase, "[str]") || !strcmp(tbase, "@str") ||
+        !strcmp(tbase, "@$str") || !strcmp(tbase, "[$str]")) return "@str";
+    const StructInfo *vsi = lookup_struct(c, tbase);
+    if (vsi) return vsi->name;
+    return NULL;
+}
+
 static const char *expr_struct_type(Ctx *c, const Node *n) {
     if (!n) return NULL;
     /* Bug 111.10: string literals must be marked "$str" so that locals
@@ -5775,6 +5887,23 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         const char *ist = ptr_local_struct_type(c, iln);
         if (ist && !strcmp(ist, "@str")) return "$str";
     }
+    /*
+     * 127.80: `<module>.get(k)` — `env.get("HOME")`, `db.get(id)` — parses as
+     * a SUBSCRIPT, not a call, so it never reached the stdlib-call branch
+     * below and carried no tag at all.  `"\(env.get(k))"` printed the
+     * environment string's address as a decimal.  Route it through the same
+     * declared-return-type lookup the call spelling uses.
+     */
+    if (n->kind == NODE_INDEX_EXPR && n->child_count >= 1 &&
+        n->children[0]->kind == NODE_IDENT) {
+        char ma[128]; tok_cp(c->src, n->children[0], ma, sizeof ma);
+        for (int ii = 0; ii < c->import_count; ii++) {
+            if (strcmp(c->imports[ii].alias, ma)) continue;
+            const char *dt = tki_declared_tag(c, ma, "get");
+            if (dt) return dt;
+            break;
+        }
+    }
     /* 127.7: the same element load on a call result — the card's chain idiom
      * `x.split(",").get(1)` — has no local to consult; ask the base. */
     if (n->kind == NODE_INDEX_EXPR && n->child_count >= 1 &&
@@ -5821,6 +5950,41 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                             return "$str";
             }
         }
+    }
+    /*
+     * 127.80: `mt` and `if` used as EXPRESSIONS carry the tag of the value they
+     * produce.
+     *
+     * expr_llvm_type has had this since 114.x (NODE_MATCH_STMT / NODE_IF_STMT
+     * below); expr_struct_type never did, so the ABI type survived the match
+     * and the *toke* type did not.  Every string that reaches its use site
+     * through a match — which is every fallible string in the language, since
+     * `mt` is how an error union is opened — arrived untagged:
+     *
+     *     let g = mt m.get(k)      {$ok:v v; $err:e "none"};  "\(g)"  -> 4296189966
+     *     let u = mt risky(1)      {$ok:v v; $err:e "E"};     "\(u)"  -> 4296189956
+     *
+     * Same rule as expr_llvm_type, so the two answers cannot diverge: take the
+     * first arm that yields a value, and for a bare-binding ok arm
+     * (`$ok:v v`) take the SCRUTINEE's tag rather than the binding's, because
+     * the binding is not in scope yet when this runs.
+     */
+    if (n->kind == NODE_MATCH_STMT && n->child_count >= 1) {
+        for (int i = 1; i < n->child_count; i++) {
+            const Node *arm = n->children[i];
+            if (!arm || arm->child_count < 3 || !arm->children[2]) continue;
+            const Node *ab = arm->children[2];
+            if (ab->kind == NODE_RETURN_STMT) continue;  /* 114.47 */
+            if (ab->kind == NODE_IDENT && arm->children[1] &&
+                match_arm_body_is_binding(c, ab, arm->children[1]))
+                return expr_struct_type(c, n->children[0]);
+            return expr_struct_type(c, ab);
+        }
+        return NULL;
+    }
+    if (n->kind == NODE_IF_STMT && n->child_count >= 2) {
+        const Node *tail = block_tail_expr(n->children[1]);
+        return tail ? expr_struct_type(c, tail) : NULL;
     }
     if (n->kind == NODE_CALL_EXPR && n->child_count >= 1) {
         /* 127.56: `$variant(payload)` is a value of the sum type that declares
@@ -5922,16 +6086,25 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                  * .tki return-type cache so any call whose .tki return is a
                  * registered type (vec.new()->Vec, encrypt.x25519keypair()->
                  * Keypair) tags the bound local with that struct name. */
-                ensure_tki_cache_loaded();
-                for (int ci = 0; ci < g_tki_cache_count; ci++) {
-                    if (!strcmp(g_tki_cache[ci].wrapper_name, resolved)) {
-                        char tbase[64];
-                        tki_base_return_type(g_tki_cache[ci].toke_ret, tbase, sizeof tbase);
-                        const StructInfo *vsi = lookup_struct(c, tbase);
-                        if (vsi) return vsi->name;
-                        break;
-                    }
-                }
+                /*
+                 * 127.80: the interface file IS the declared return type — ask
+                 * it about strings too, not only about structs.
+                 *
+                 * The str_wrappers table above names 25 symbols by hand.
+                 * stdlib declares 102 functions returning `str`, across 30
+                 * modules.  The other 77 — path.join, path.dir, fmt.*,
+                 * encoding.*, template.*, time.format, env.getor, … — matched
+                 * nothing here, fell past every test in the interpolation
+                 * lowering, and were printed through tk_str_fromi64_w: the
+                 * pointer, as a decimal, exit 0, no diagnostic.  The declared
+                 * type was on disk the whole time; only the lookup key was
+                 * wrong.
+                 *
+                 * Placed after the hand table so the two can disagree only in
+                 * the direction of MORE typing, never less: a symbol in
+                 * str_wrappers with no interface entry keeps its tag.
+                 */
+                { const char *dt = tki_declared_tag(c, alias, method); if (dt) return dt; }
             }
             /* 127.7 / 127.28: instance-method calls on a non-import receiver
              * (`x.trim()`, `line.split(",")`, `m.keys()`, `a.append(e)`) never
@@ -6066,6 +6239,73 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         return NULL;
     }
     return NULL;
+}
+
+/*
+ * interp_operand_type_unknown (127.80) — true when `"\(e)"` would fall through
+ * to the integer default WITHOUT the compiler having any grounds to believe
+ * `e` is an integer.
+ *
+ * The integer default is correct for a literal, a local of an int type, an
+ * arithmetic expression — every operand the front end actually typed.  It was
+ * also, silently, the answer for a stdlib call whose declared return type the
+ * compiler had never read: `path.join` returns `str` in stdlib/path.tki, the
+ * cache did not hold that module, so the tag came back NULL and the string
+ * pointer was handed to tk_str_fromi64_w and printed as a decimal.
+ *
+ * The cache now reads every interface file, so the honest residue is small: a
+ * `<alias>.<method>(…)` where the alias is an import, the call resolves to a
+ * stdlib symbol, and NO interface file declares that method.  There the
+ * compiler is guessing, and a wrong guess is indistinguishable from a correct
+ * answer in the output.  Say so instead.
+ *
+ * Deliberately narrow: an untagged i64 that is not a stdlib call keeps the
+ * integer default, because for those the front end's type is the i64 and a
+ * diagnostic would be a false positive on correct programs.
+ */
+static int interp_operand_type_unknown(Ctx *c, const Node *e,
+                                       const char *ety, const char *est) {
+    if (!e || est) return 0;                       /* already typed */
+    if (!ety || strcmp(ety, "i64")) return 0;      /* only the erased ABI slot */
+    char alias[128], method[128];
+    if (e->kind == NODE_CALL_EXPR && e->child_count >= 1 &&
+        e->children[0] && e->children[0]->kind == NODE_FIELD_EXPR &&
+        e->children[0]->child_count >= 2 &&
+        e->children[0]->children[0]->kind == NODE_IDENT) {
+        tok_cp(c->src, e->children[0]->children[0], alias, sizeof alias);
+        tok_cp(c->src, e->children[0]->children[1], method, sizeof method);
+    } else if (e->kind == NODE_INDEX_EXPR && e->child_count >= 1 &&
+               e->children[0] && e->children[0]->kind == NODE_IDENT) {
+        /* `<alias>.get(k)` parses as a subscript. */
+        tok_cp(c->src, e->children[0], alias, sizeof alias);
+        snprintf(method, sizeof method, "get");
+    } else {
+        return 0;
+    }
+    const char *mod = NULL;
+    for (int i = 0; i < c->import_count; i++)
+        if (!strcmp(c->imports[i].alias, alias)) { mod = c->imports[i].module; break; }
+    if (!mod) return 0;                            /* instance method, not a module */
+    if (!strncmp(mod, "std.", 4)) mod += 4;
+    if (!resolve_stdlib_call(c, alias, method)) return 0;  /* user module — FnSig decides */
+    ensure_tki_cache_loaded();
+    /* An overflowed cache means "we stopped reading", not "it is not declared". */
+    if (g_tki_cache_overflow) return 0;
+    int module_declared = 0;
+    for (int i = 0; i < g_tki_cache_count; i++) {
+        if (strcmp(g_tki_cache[i].module, mod)) continue;
+        module_declared = 1;
+        if (!strcmp(g_tki_cache[i].method, method)) return 0;  /* declared */
+    }
+    /*
+     * Only complain when the module HAS an interface file and that file does
+     * not declare this method — there the interface is the record and the
+     * record is silent, so a guess is unjustifiable.  A module with no
+     * interface file at all (std.array, std.io: native glue, no .tki) is not
+     * evidence of anything, and erroring on `\(arr.contains(a;3))` — a working
+     * call — would be exactly the false diagnostic AGENTS.md §2 forbids.
+     */
+    return module_declared;
 }
 
 /*
