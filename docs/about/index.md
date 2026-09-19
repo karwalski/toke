@@ -12,6 +12,7 @@ Background, design philosophy, and project information for the toke language.
 - [Why toke?](/docs/about/why/) -- the LLM code generation problem and how toke addresses it
 - [Design Principles](/docs/about/design/) -- the core principles behind the language
 - [Competitive Differentiation](/docs/about/competitive-matrix/) -- how toke compares to other languages
+- [The Landscape and the Evidence Against Us](/docs/about/landscape-2026-09/) -- the eight lanes attacking the same problem, the adjacent projects, and the published evidence against toke's thesis
 
 ## Ecosystem
 
