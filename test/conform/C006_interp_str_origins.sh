@@ -25,7 +25,8 @@
 #   6. control           — std.str / literals / numbers, which always worked
 #                          and must keep working
 #   7. loud failure      — an interpolation the compiler genuinely cannot type
-#                          must be a diagnostic, never a plausible number
+#                          must be a diagnostic, never a plausible number; and
+#                          the cases it CAN type must not be diagnosed
 #
 # Story: 127.80
 
@@ -170,30 +171,63 @@ f=main():i64{
 };'
 
 # ── 7: LOUD FAILURE — an untypeable interpolation must diagnose, not guess ──
-#   `s.index` does not exist (std.str declares `indexof`).  The compiler used
-#   to invent tk_str_index_w, type it i64, and print whatever came back as a
-#   decimal.  It must now refuse.
+#   Two layers now stand here and the case is pinned against BOTH, because
+#   which one speaks first is an implementation detail: 136.1's member check
+#   (E4027) rejects a call spelled `alias.method(...)` that neither the
+#   interface nor the runtime declares, and 127.80's codegen backstop (E4032)
+#   catches what reaches lowering still untyped — notably the `.get(k)`
+#   SUBSCRIPT spelling, which the member check does not see.  Either code is a
+#   pass; a clean compile is not.
 loud_case() {
     local name="$1" src="$2"
     printf '%s\n' "${src}" > "loud.tk"
     local out rc=0
     out="$("${TKC}" --allow-all -O0 --out "loud_bin" "loud.tk" 2>&1)" || rc=$?
-    if [ "${rc}" -ne 0 ] && printf '%s' "${out}" | grep -q 'E4032'; then
+    if [ "${rc}" -ne 0 ] && printf '%s' "${out}" | grep -qE 'E4027|E4032'; then
         echo "  PASS: ${name}"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: ${name}: expected a non-zero exit with E4032, got rc ${rc}"
+        echo "  FAIL: ${name}: expected a non-zero exit with E4027 or E4032, got rc ${rc}"
         printf '%s\n' "${out}" | sed 's/^/      /'
         FAIL=$((FAIL + 1))
     fi
 }
 
-loud_case "undeclared stdlib method in an interpolation is E4032, not a number" '
+#   `s.index` does not exist (std.str declares `indexof`).  The compiler used
+#   to invent tk_str_index_w, type it i64, and print whatever came back as a
+#   decimal.
+loud_case "undeclared stdlib method in an interpolation is refused, not guessed" '
 m=t;
 i=io:std.io;
 i=s:std.str;
 f=main():i64{
   io.println("v=\(s.index("hello";"l"))");
+  <0
+};'
+
+#   The same, through the subscript spelling.  `path.get` does not exist; this
+#   parses as an INDEX_EXPR, so only the codegen backstop sees it.
+loud_case "undeclared member via the .get(k) subscript is refused, not guessed" '
+m=t;
+i=io:std.io;
+i=p:std.path;
+f=main():i64{
+  io.println("v=\(p.get("x"))");
+  <0
+};'
+
+#   COUNTERPART — the loud path must not eat correct programs.  `str.lastindexof`
+#   is declared by the runtime glue and NOT by stdlib/str.tki (which declares
+#   `lastindex`).  It links, it runs, and its i64 return makes the integer
+#   default right.  An error here would be a false diagnostic on working code,
+#   which is worse than the missing type: the interface gap is check-tki'"'"'s to
+#   report, not this lowering'"'"'s.
+run_case "runtime-declared, interface-silent method still compiles" "v=3" '
+m=t;
+i=io:std.io;
+i=s:std.str;
+f=main():i64{
+  io.println("v=\(s.lastindexof("hello";"l"))");
   <0
 };'
 

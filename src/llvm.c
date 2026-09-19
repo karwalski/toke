@@ -6287,7 +6287,16 @@ static int interp_operand_type_unknown(Ctx *c, const Node *e,
         if (!strcmp(c->imports[i].alias, alias)) { mod = c->imports[i].module; break; }
     if (!mod) return 0;                            /* instance method, not a module */
     if (!strncmp(mod, "std.", 4)) mod += 4;
-    if (!resolve_stdlib_call(c, alias, method)) return 0;  /* user module — FnSig decides */
+    const char *resolved = resolve_stdlib_call(c, alias, method);
+    if (!resolved) return 0;                       /* user module — FnSig decides */
+    /*
+     * The runtime glue table declares this symbol: the call links and runs, so
+     * the program is correct and an error here would be a false diagnostic on
+     * working code (`s.lastindexof(h;n)` returns i64 from tk_str_lastindexof_w
+     * with no interface entry, and the integer default is right for it).  The
+     * interface gap is real but it is check-tki's to report, not this one's.
+     */
+    if (stdlib_glue_arity(resolved) >= 0) return 0;
     ensure_tki_cache_loaded();
     /* An overflowed cache means "we stopped reading", not "it is not declared". */
     if (g_tki_cache_overflow) return 0;
