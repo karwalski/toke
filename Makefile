@@ -212,7 +212,9 @@ check-canonical:
 # tree disagree; check-metrics rule 4 then fails any doc that states a different
 # number. Run without --check to print the sheet, --json for the machine-readable
 # form, --probe to re-derive the character set against the built compiler.
-check-facts:
+# 132.19 — --check also gates the counts stated in src/** and in `tkc --help`,
+# so the binary's own strings cannot drift from the lexer table.
+check-facts: $(BIN)
 	python3 scripts/verify_project_facts.py --check
 
 # 123.12 — drift-gate: every diagnostic code the compiler emits must be

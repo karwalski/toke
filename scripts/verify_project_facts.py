@@ -21,7 +21,10 @@ facts" table, and `--check` fails when the two drift apart.
 Usage:
     python3 scripts/verify_project_facts.py              # human-readable table
     python3 scripts/verify_project_facts.py --json       # machine-readable sheet
-    python3 scripts/verify_project_facts.py --check      # diff against metrics-baseline.md
+    python3 scripts/verify_project_facts.py --check      # diff against metrics-baseline.md,
+                                                         # and gate the counts stated in
+                                                         # src/** and in `tkc --help`
+    python3 scripts/verify_project_facts.py --check-src  # only the src/** + --help gate
     python3 scripts/verify_project_facts.py --probe      # cross-check the character
                                                          # set against the built tkc
 Exit: 0 clean, 1 on drift (--check) or on an internal inconsistency (--probe).
@@ -41,6 +44,7 @@ CORPUS = os.path.normpath(os.path.join(ROOT, "..", "toke-corpus"))
 # Printable ASCII that the default profile rejects in structural position.
 # Derived below from src/lexer.c; asserted against the binary under --probe.
 LOWERCASE = 26
+UPPERCASE = 26    # legacy profile only; the parser rejects A-Z in default
 DIGITS = 10
 
 
@@ -77,7 +81,7 @@ def charset_facts():
     body = src[start:end]
 
     arms = [m for m in re.finditer(r"case '(\\?.)':", body)]
-    members, rejected = [], []
+    members, rejected, legacy_members = [], [], []
     for i, m in enumerate(arms):
         ch = m.group(1).replace("\\", "")
         arm = body[m.end():arms[i + 1].start() if i + 1 < len(arms) else len(body)]
@@ -87,15 +91,29 @@ def charset_facts():
             rejected.append(ch)
         else:
             members.append(ch)
+        # The same arms, read for PROFILE_LEGACY: `$` and `@` are the pair that
+        # E1003 there, and `[` / `]` are members again.
+        if "LEX_E1003" in arm and "PROFILE_LEGACY" in arm:
+            legacy_rejects = True
+        else:
+            legacy_rejects = False
+        if not legacy_rejects:
+            legacy_members.append(ch)
 
     symbols = sorted(set(members) | {'"'})
     total = LOWERCASE + DIGITS + len(symbols)
+    # Legacy adds A-Z (the parser accepts an uppercase identifier there:
+    # is_ident_start_legacy) and `_` (is_ident_cont_legacy), and drops $ @.
+    legacy_symbols = sorted(set(legacy_members) | {'"', "_"})
     return {
         "charset_symbols": len(symbols),
         "charset_symbol_list": "".join(symbols),
         "charset_total": total,
         "charset_lowercase": LOWERCASE,
         "charset_digits": DIGITS,
+        "charset_legacy_symbols": len(legacy_symbols),
+        "charset_legacy_symbol_list": "".join(legacy_symbols),
+        "charset_legacy_total": LOWERCASE + UPPERCASE + DIGITS + len(legacy_symbols),
         "charset_rejected_in_default": "".join(sorted(set(rejected) | set("_\\'`,?"))),
         # `^` and `~` were reserved-and-unassigned in the March 2026 RFC draft;
         # story 114.8 assigned them.  Nothing in the set is reserved today.
@@ -130,6 +148,142 @@ def probe_charset(facts):
         return 1
     print("probe OK: src/lexer.c and the built tkc agree on %d symbols (%s)"
           % (len(derived), "".join(sorted(derived))))
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Story 132.19 — the compiler's own strings may not drift from the lexer table
+# ---------------------------------------------------------------------------
+#
+# Fixing the comments once was not enough: they had already rotted into "56-char"
+# (and a list of 26 symbols under a label of 24, including `[` and `]`, which the
+# default profile rejects).  These assertions re-derive the alphabet from
+# src/lexer.c and then require that every count the compiler *states* — in any
+# src/ comment or string, and in the `--help` text the user actually reads —
+# agrees with it.
+
+# Every "<N>-char" / "<N>-character" claim in src/** and in --help — but only
+# where the line is talking about the language surface.  src/ is full of
+# unrelated widths ("1-char str", "a 60-char string", "64-character hex"), so a
+# claim counts only when the same line also says syntax / character set /
+# alphabet, which every real claim site does.
+CHAR_CLAIM = re.compile(r"(\d+)-char(?:acter)?\b")
+CHAR_CLAIM_CONTEXT = re.compile(r"syntax|character set|charset|alphabet", re.I)
+SRC_EXT = (".c", ".h")
+
+
+def _expected_for(line, facts):
+    """Which profile is this line talking about?"""
+    legacy = "legacy" in line.lower()
+    key = "charset_legacy_total" if legacy else "charset_total"
+    return key, facts[key]
+
+
+def _scan_char_claims(where, text, facts, bad):
+    for n, line in enumerate(text.split("\n"), 1):
+        if not CHAR_CLAIM_CONTEXT.search(line):
+            continue
+        for m in CHAR_CLAIM.finditer(line):
+            key, expected = _expected_for(line, facts)
+            if int(m.group(1)) != expected:
+                bad.append((where, n, "states %r; the lexer table gives %s = %d"
+                            % (m.group(0), key, expected)))
+
+
+def _lexer_comment_facts(src):
+    """Pull the counts the lexer.c header comment states, so they can be checked.
+
+    Returns (default_symbols, legacy_symbols, rejected) where each symbol entry
+    is (declared_count, listed_characters) or None when the line is missing.
+    """
+    head = src[src.index("* Character sets"):src.index("* Token storage")]
+    out = {}
+    profile = None
+    for line in head.split("\n"):
+        body = line.lstrip(" *")
+        if body.startswith("Default mode"):
+            profile = "default"
+        elif body.startswith("Legacy mode"):
+            profile = "legacy"
+        m = re.match(r"- Symbols\s+(.*?)\s*\((\d+)\)\s*$", body)
+        if m and profile:
+            out[profile] = (int(m.group(2)), "".join(m.group(1).split()))
+        m = re.search(r"rejects exactly (\d+) with E1003 in structural "
+                      r"position:\s*(\S.*?)\s*$", body)
+        if m:
+            out["rejected"] = (int(m.group(1)), "".join(m.group(2).split()))
+    return out
+
+
+def check_compiler_strings(facts):
+    """Story 132.19: src/** and `tkc --help` must state the derived counts."""
+    bad = []
+
+    # 1. The lexer.c header comment: declared counts and listed characters.
+    lexer = _read(os.path.join(ROOT, "src", "lexer.c"))
+    stated = _lexer_comment_facts(lexer)
+    for profile, (count_key, list_key) in (
+            ("default", ("charset_symbols", "charset_symbol_list")),
+            ("legacy", ("charset_legacy_symbols", "charset_legacy_symbol_list"))):
+        if profile not in stated:
+            bad.append(("src/lexer.c", 0,
+                        "the header comment has no '- Symbols ... (N)' line for "
+                        "the %s profile" % profile))
+            continue
+        declared, listed = stated[profile]
+        if declared != facts[count_key]:
+            bad.append(("src/lexer.c", 0, "%s profile comment labels its symbol "
+                        "list (%d); the lexer table has %d"
+                        % (profile, declared, facts[count_key])))
+        if len(listed) != declared:
+            bad.append(("src/lexer.c", 0, "%s profile comment lists %d symbols "
+                        "under a label of %d (%s)"
+                        % (profile, len(listed), declared, listed)))
+        if set(listed) != set(facts[list_key]):
+            missing = "".join(sorted(set(facts[list_key]) - set(listed)))
+            extra = "".join(sorted(set(listed) - set(facts[list_key])))
+            bad.append(("src/lexer.c", 0, "%s profile comment lists the wrong "
+                        "symbols: missing %r, should not list %r"
+                        % (profile, missing, extra)))
+    if "rejected" in stated:
+        declared, listed = stated["rejected"]
+        derived = facts["charset_rejected_in_default"]
+        if set(listed) != set(derived) or declared != len(derived):
+            bad.append(("src/lexer.c", 0, "the comment says the default profile "
+                        "rejects %d characters (%s); the lexer rejects %d (%s)"
+                        % (declared, listed, len(derived), derived)))
+    else:
+        bad.append(("src/lexer.c", 0, "the header comment no longer states which "
+                    "printable ASCII characters the default profile rejects"))
+
+    # 2. Every "<N>-char" claim anywhere under src/.
+    for dirpath, _dirs, names in os.walk(os.path.join(ROOT, "src")):
+        for name in sorted(names):
+            if not name.endswith(SRC_EXT):
+                continue
+            path = os.path.join(dirpath, name)
+            _scan_char_claims(os.path.relpath(path, ROOT), _read(path), facts, bad)
+
+    # 3. The --help text the user actually reads.
+    tkc = os.path.join(ROOT, "tkc")
+    if os.path.exists(tkc):
+        r = subprocess.run([tkc, "--help"], capture_output=True, text=True)
+        _scan_char_claims("tkc --help", r.stdout + r.stderr, facts, bad)
+    else:
+        print("compiler strings: tkc not built — skipping --help (run `make`)")
+
+    if bad:
+        print("ERROR: the compiler states a character-set count that src/lexer.c "
+              "does not support (story 132.19):\n")
+        for where, line, msg in bad:
+            print("  %s%s: %s" % (where, ":%d" % line if line else "", msg))
+        print("\nThe lexer table is the ground truth. Re-derive with:\n"
+              "  python3 scripts/verify_project_facts.py --probe\n"
+              "then correct the comment / help string — never the table.")
+        return 1
+    print("compiler strings OK: src/** and tkc --help state %d (default) and "
+          "%d (legacy), matching the lexer table."
+          % (facts["charset_total"], facts["charset_legacy_total"]))
     return 0
 
 
@@ -320,7 +474,9 @@ def main():
                          sort_keys=True))
         return 0
     if "--check" in sys.argv:
-        return check_against_baseline(facts)
+        return check_against_baseline(facts) | check_compiler_strings(facts)
+    if "--check-src" in sys.argv:
+        return check_compiler_strings(facts)
     if "--probe" in sys.argv:
         return probe_charset(facts)
     width = max(len(k) for k in facts)

@@ -3,7 +3,7 @@
  * compiler.
  *
  * Reads a token stream produced in PROFILE_LEGACY mode and emits
- * equivalent default (56-char, lowercase) syntax to a FILE stream.
+ * equivalent default (59-char, lowercase) syntax to a FILE stream.
  *
  * Story: 11.3.5
  */

@@ -8,8 +8,8 @@
 
 /* Profile selects the character set and keyword recognition rules. */
 typedef enum {
-    PROFILE_DEFAULT = 0,   /* 56-char syntax: lowercase keywords, $ for types, @ */
-    PROFILE_LEGACY  = 1    /* 80-char syntax: uppercase keywords, TK_TYPE_IDENT  */
+    PROFILE_DEFAULT = 0,   /* 59-char syntax: lowercase keywords, $ for types, @ */
+    PROFILE_LEGACY  = 1    /* 86-char syntax: uppercase keywords, TK_TYPE_IDENT  */
 } Profile;
 
 typedef enum {

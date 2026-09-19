@@ -272,7 +272,7 @@ toke [flags] <source-files>
   --emit-interface      emit .tki interface files
   --check               type-check only, no code generation
   --min                 emit the canonical minimal form
-  --legacy              legacy syntax: 80-character set
+  --legacy              legacy syntax: 86-character set
   --diag-json           structured JSON diagnostics (default)
   --diag-text           human-readable diagnostics
 ```

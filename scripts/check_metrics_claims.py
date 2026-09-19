@@ -54,11 +54,6 @@ DEFAULT_TARGETS = ["docs", "README.md", "PROJECT_STATUS.md"]
 # always keyed to a story number.
 PENDING = {
     "docs/whitepaper/toke-research-language.md": "132.8 — whitepaper v2 + RFC alignment",
-    # 132.14 found two stale counts here but may not edit the file while 132.10
-    # is rewriting it: the canonical paragraph's character set (55 -> 59) and
-    # `--legacy`'s "80-character set" (the legacy profile is 86 — measured with
-    # `tkc --legacy`). Delete this entry when 132.10 lands.
-    "README.md": "132.10 — README rewrite; carries 55-char and 80-char, both stale",
     "docs/about/positioning-2026-09.md": "132.7 — repositioning brief (in flight)",
 }
 

@@ -12,21 +12,32 @@
  * =========================================================================
  * Character sets
  * =========================================================================
- * Default mode (56-char syntax):
- *   - Letters        a-z  A-Z                (52)
+ * Default mode (59-char syntax).  src/lexer.c is the ground truth for the
+ * alphabet (E1003 is the character-set diagnostic); the counts below are
+ * derived from this file, and asserted back against it — and against the
+ * binary's --help text — by scripts/verify_project_facts.py (make check-facts).
+ *   - Lowercase      a-z                     (26)
  *   - Digits         0-9                     (10)
- *   - Symbols        ( ) { } [ ] = : . ; + - * / < > ! | " \ $ @ & ^ ~ %   (24)
+ *   - Symbols        ( ) { } = : . ; + - * / < > ! | & ^ ~ % $ @ "   (23)
+ *   Of the 94 non-space printable ASCII characters, the default profile
+ *   rejects exactly 8 with E1003 in structural position:  ' , ? [ \ ] _ `
+ *   ('[' and ']' ask for @() instead; '_' is the no-underscore rule of story
+ *   113.2a; '\' is legal only inside a string literal, as is each of the
+ *   other six.)  A-Z are tolerated by the lexer but rejected by the parser
+ *   (E2002), so uppercase is not in the alphabet; '#' is accepted only to
+ *   emit W1020 and skip the line, which is error recovery and not language
+ *   surface, so it is not a member either.
  *   Keywords are lowercase (m=, f=, t=, i=); uppercase produces E1006.
  *   $ prefixes type references; @ is a valid token.
  *   Uppercase-initial identifiers are plain TK_IDENT (not TK_TYPE_IDENT).
  *
- * Legacy mode (80-char syntax, PROFILE_LEGACY):
+ * Legacy mode (86-char syntax, PROFILE_LEGACY):
  *   - Letters        a-z  A-Z                (52)
  *   - Digits         0-9                     (10)
- *   - Symbols        ( ) { } [ ] = : . ; + - * / < > ! | " \   (18)
+ *   - Symbols        ( ) { } [ ] = : . ; + - * / < > ! | & ^ ~ % " _   (24)
  *   Keywords are uppercase (M=, F=, T=, I=).
  *   Uppercase-initial identifiers produce TK_TYPE_IDENT.
- *   $ and @ produce E1003.
+ *   $ and @ produce E1003, as do ' , ? \ and ` outside a string literal.
  *
  * Any character outside the active set (after whitespace is excluded)
  * triggers diagnostic E1003.

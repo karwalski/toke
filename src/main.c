@@ -126,7 +126,7 @@ static const char HELP[] =
     "  --fix               With --lint, auto-fix mechanical violations in-place\n"
     "  --dry-run           With --lint --fix, print the diff instead of writing\n"
     "  --migrate           Migrate legacy .tk file to default syntax (stdout)\n"
-    "  --legacy            Legacy mode (80-char syntax, uppercase keywords)\n"
+    "  --legacy            Legacy mode (86-char syntax, uppercase keywords)\n"
     "  --profile1          Deprecated alias for --legacy\n"
     "  --profile2          Deprecated alias for default mode\n"
     "  --diag-json         Emit diagnostics as JSON (default when not a tty)\n"
