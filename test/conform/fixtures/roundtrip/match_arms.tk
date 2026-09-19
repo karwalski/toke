@@ -1,0 +1,25 @@
+(* 131.58 regression: --fmt must render `mt` in the v0.4 form
+   `mt x {$ok:v ..; $err:e ..}` -- never the removed v0.2 pipe-match
+   form, which does not re-parse.  The pipe form is not spelled out
+   here on purpose: F003 greps the formatted text for it. *)
+m=fmtmt;
+i=io:std.io;
+t=$res{$ok:$i64;$err:$str};
+f=parse(n:$i64):$res{
+  if(n<0){<$res{$err:"neg"}};
+  <$res{$ok:n*2}
+};
+f=one(n:$i64):$i64{
+  let v=mt parse(n) {$ok:v v; $err:e 0-1};
+  <v
+};
+f=two(n:$i64):$str{
+  <mt parse(n) {
+    $ok:v "ok \(v)";
+    $err:e "err \(e)"
+  }
+};
+f=main():$i64{
+  io.println("\(one(3)) \(one(0-5)) \(two(4)) \(two(0-1))");
+  <0
+};

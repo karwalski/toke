@@ -19,7 +19,19 @@
 #   6. (131.46) `--pretty` output is a program too: --check clean and the same
 #      --min (covers the expression-`if` case the pretty walker lacked).
 #
-# Story: 131.37, 131.46
+# 131.58 adds two targeted regressions on top of the generic round-trip, for
+# the two defects the 131.8 macro-check wave hit before 131.46a landed.  Both
+# slipped past --check, so a --check-clean round-trip does not catch them:
+#   A. typed_empty_array.tk -- `--fmt` dropped the type sigil from an empty
+#      typed array literal (`mut.@($str)` -> `@(str)`, `@($i64)` -> `@(i64)`).
+#      The result passes --check and then fails codegen with
+#      `use of undefined value '%str'`.  Asserted by counting `@($` and by
+#      COMPILING the formatted text, not just checking it.
+#   B. match_arms.tk -- `--fmt` rendered `mt` as the removed v0.2 pipe form
+#      `x | {ok:v ..}`, which does not re-parse.  Asserted by requiring `mt `
+#      in the output and forbidding a `| {` arm block.
+#
+# Story: 131.37, 131.46, 131.58
 
 set -euo pipefail
 
@@ -85,10 +97,49 @@ roundtrip() {
           "$("${TKC}" --min "${WORK}/pretty.tk" 2>/dev/null | norm_min)"
 }
 
+# 131.58: the formatted text must also CODEGEN, and must keep the two surface
+# forms --fmt used to destroy.  `--check` passed on both defects, so these go
+# beyond the generic round-trip above.
+regression_131_58() {
+    local src="$1" name
+    name="$(basename "${src}")"
+    "${TKC}" --fmt "${src}" > "${WORK}/r.tk" 2>/dev/null || true
+
+    # A: every `@($T)` type sigil survives (dropping it yields `@(i64)`, a
+    #    one-element literal naming an undefined value).
+    check "${name}: 131.58 empty typed-array sigils kept" \
+          "$(grep -o '@(\$' "${src}" | wc -l | tr -d ' ')" \
+          "$(grep -o '@(\$' "${WORK}/r.tk" | wc -l | tr -d ' ')"
+
+    # B: `mt` keeps the v0.4 head and never becomes the v0.2 `x | {ok:v ..}`.
+    check "${name}: 131.58 mt heads kept" \
+          "$(grep -o 'mt ' "${src}" | wc -l | tr -d ' ')" \
+          "$(grep -o 'mt ' "${WORK}/r.tk" | wc -l | tr -d ' ')"
+    check "${name}: 131.58 no v0.2 pipe-match form" "0" \
+          "$(grep -o '| *{' "${WORK}/r.tk" | wc -l | tr -d ' ')"
+
+    # The defect both shared: --check clean, codegen broken.  Compile it.
+    local rc=0
+    "${TKC}" -o "${WORK}/r.bin" "${WORK}/r.tk" >/dev/null 2>"${WORK}/cerr" || rc=$?
+    check "${name}: 131.58 formatted output codegens" "0" "${rc}"
+    [ "${rc}" -eq 0 ] || head -3 "${WORK}/cerr" | sed 's/^/      /'
+
+    # Same program: the formatted build must print what the original prints.
+    rc=0
+    "${TKC}" -o "${WORK}/o.bin" "${src}" >/dev/null 2>&1 || rc=$?
+    if [ "${rc}" -eq 0 ]; then
+        check "${name}: 131.58 formatted build output matches original" \
+              "$("${WORK}/o.bin" 2>&1 || true)" "$("${WORK}/r.bin" 2>&1 || true)"
+    fi
+}
+
 roundtrip "${REPO_ROOT}/test/standalone/test_expr_if.tk"
 for rec in "${SCRIPT_DIR}"/fixtures/roundtrip/*.tk; do
     roundtrip "${rec}"
 done
+
+regression_131_58 "${SCRIPT_DIR}/fixtures/roundtrip/typed_empty_array.tk"
+regression_131_58 "${SCRIPT_DIR}/fixtures/roundtrip/match_arms.tk"
 
 echo "--------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"

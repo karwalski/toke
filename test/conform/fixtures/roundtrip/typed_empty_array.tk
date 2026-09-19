@@ -1,0 +1,21 @@
+(* 131.58 regression: --fmt must keep the type sigil inside an empty
+   typed array literal -- `@($i64)` must not become `@(i64)`, which
+   passes --check and then fails codegen with `use of undefined value`. *)
+m=fmtempty;
+i=io:std.io;
+f=names():@($str){
+  let xs=mut.@($str);
+  xs=xs+@("a");
+  <xs
+};
+f=nums(n:$i64):@($i64){
+  let ys=mut.@($i64);
+  let zs=mut.@($f64);
+  zs=zs+@(1.5);
+  lp(let i=0;i<n;i=i+1){ys=ys+@(i)};
+  <ys
+};
+f=main():$i64{
+  io.println("\(names().len()) \(nums(3).len()) \(names().get(0))");
+  <0
+};
