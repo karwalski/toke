@@ -9,7 +9,15 @@ order: 15
 
 The `std.file` module provides functions for reading, writing, and managing files and directories on the local file system. All paths are UTF-8 strings. Operations that can fail return a result type with `$fileerr`.
 
-> **Implemented functions (from `file.tki`):** `file.read`, `file.write`, `file.append`, `file.exists`, `file.delete`, `file.list`, `file.isdir`, `file.mkdir`, `file.copy`, `file.listall`. Functions documented in earlier versions (`mkdir_p`, `rmdir`, `rmdir_r`, `is_file`, `move`, `size`, `mtime`, `join`, `basename`, `dirname`, `absolute`, `ext`, `readlines`, `glob`) are not in the current tki.
+> **Text or bytes — pick deliberately.** `file.read` and `file.write` carry a
+> `$str`, which is NUL-terminated. They stop at the first zero byte, and they
+> do it **silently**: a 12 MB PDF read with `file.read` comes back as a few
+> bytes with no error. Use them for text only. For anything binary — an
+> archive, a PDF, an image, a spreadsheet, a compiled artefact — use
+> **`file.readbytes` / `file.writebytes`**, which carry an exact `@(byte)` with
+> the length beside the data.
+
+> **Implemented functions (from `file.tki`):** `file.read`, `file.write`, `file.append`, `file.exists`, `file.delete`, `file.list`, `file.isdir`, `file.mkdir`, `file.copy`, `file.listall`, `file.readbytes`, `file.writebytes`, `file.lasterr`, `file.lasterrkind`. Functions documented in earlier versions (`mkdir_p`, `rmdir`, `rmdir_r`, `is_file`, `move`, `size`, `mtime`, `join`, `basename`, `dirname`, `absolute`, `ext`, `readlines`, `glob`) are not in the current tki.
 
 ## Types
 
@@ -181,6 +189,125 @@ f=copyfile():i64{
   }
 };
 ```
+
+### file.readbytes(path: $str): @(byte)!$fileerr
+
+Reads the whole file at `path` and returns its exact bytes. Nothing is
+interpreted, nothing terminates the data, and a zero byte is just a zero byte.
+
+**An empty result is never a failure.** A file of length zero reads back as a
+zero-length `@(byte)` with `file.lasterrkind()` equal to `"ok"`. Failure takes
+the `$err` arm, which the compiled `T!E` ABI gives no payload, so the reason is
+read back with the two accessors below. The nine outcomes:
+
+| `file.lasterrkind()` | Meaning |
+|---|---|
+| `ok` | the bytes are exact; length may legitimately be 0 |
+| `notfound` | no such path, or a component of it is not a directory |
+| `permission` | the process may not open it |
+| `isdir` | the path is a directory |
+| `notregular` | a fifo, socket or device — its size is not its content |
+| `symlink` | the final component is a symlink, which `std.file` does not follow (AMB-07) |
+| `toolarge` | over the 64 MiB limit (see below) |
+| `nomem` | it fits the limit, but the allocation failed |
+| `io` | `read(2)` failed, or the file changed size mid-read |
+
+**The 64 MiB limit is real, not a formality.** A toke `@(byte)` stores one
+`i64` per byte, so an *N*-byte file costs *8N* in the array plus *N* while it is
+staged: at the limit that is roughly 576 MiB resident for one call. A larger
+file is **refused** with `toolarge` rather than read partially — a short read is
+reported as `io`, never returned as a shorter array.
+
+```toke
+m=example;
+i=file:std.file;
+i=io:std.io;
+i=s:std.str;
+
+f=loadblob(path:$str):i64{
+  mt file.readbytes(path) {
+    $ok:b  io.println(s.concat("bytes=";s.fromint(b.len)));
+    $err:e io.println(s.concat("failed: ";file.lasterr()))
+  };
+  <0
+};
+```
+
+Branch on `file.lasterrkind()`, not on the message: the kind is the interface
+and the wording is not.
+
+```toke
+m=example;
+i=file:std.file;
+i=str:std.str;
+
+f=report(path:$str):i64{
+  mt file.readbytes(path) {
+    $ok:b  0;
+    $err:e classify(file.lasterrkind())
+  }
+};
+
+f=classify(kind:$str):i64{
+  if(str.eq(kind;"notfound")){ <1 };
+  if(str.eq(kind;"permission")){ <2 };
+  <3
+};
+```
+
+### file.writebytes(path: $str; data: @(byte)): bool!$fileerr
+
+Writes the exact bytes of `data` to `path`, creating the file if it does not
+exist and truncating it if it does. Zero bytes are written like any other. This
+is the counterpart to `file.readbytes`: without it a decompressed archive entry
+(`zip.read` hands back an exact `@(byte)`) could be read but not saved, because
+`file.write` would stop at the first zero.
+
+A zero-length `@(byte)` writes an empty file and succeeds. Outcomes are the same
+set as above: `notfound` (a parent directory is missing), `permission`, `isdir`,
+`notregular`, `symlink`, `io`, `badarg`.
+
+**There is no atomic replace.** The file is opened create-or-truncate, mode
+`0644`, and written in place, exactly like `file.write`. A failure partway
+through therefore leaves a partially written file; `file.lasterr()` says how
+many bytes reached the disk, and deleting the remains is the caller's decision.
+
+```toke
+m=example;
+i=file:std.file;
+
+f=copyexact(src:$str;dst:$str):i64{
+  mt file.readbytes(src) {
+    $ok:b  save(dst;b);
+    $err:e 1
+  }
+};
+
+f=save(dst:$str;b:@(byte)):i64{
+  mt file.writebytes(dst;b) {
+    $ok:v  0;
+    $err:e 1
+  }
+};
+```
+
+### file.lasterr(): $str
+
+The message for the most recent `file.readbytes` / `file.writebytes` failure,
+or `""` if the last one succeeded. It names the path and, where it helps, the
+numbers — the size that exceeded the limit, how many bytes were written before
+the write failed. **The wording is for reporting and is not an interface**;
+branch on `file.lasterrkind()` instead.
+
+### file.lasterrkind(): $str
+
+One of `ok`, `notfound`, `permission`, `isdir`, `notregular`, `symlink`,
+`toolarge`, `nomem`, `io`, `badarg` — the outcome of the most recent
+`file.readbytes` / `file.writebytes` call. These tokens are stable.
+
+Both accessors describe the last **byte** call only; the older text and
+directory calls do not set them. The value is process-wide, so read it
+immediately on taking the `$err` arm.
 
 ## Usage Examples
 

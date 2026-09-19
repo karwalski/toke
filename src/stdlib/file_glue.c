@@ -8,6 +8,7 @@
 #include "file.h"
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include "capabilities.h"   /* 124.4c: fs.read / fs.write capability gates */
+#include "bytes_rt.h"       /* 135.10: @(byte) <-> contiguous uint8_t buffer */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -246,4 +247,80 @@ int64_t tk_file_tempdir_w(int64_t dummy) {
     const char *tmp = getenv("TMPDIR");
     if (!tmp) tmp = "/tmp";
     return (int64_t)(intptr_t)tmp;
+}
+
+
+/* ══ 135.10 — binary file access ═════════════════════════════════════════
+ *
+ * ABI (docs/runtime-abi.md): a `@(byte)` is an i64 array with ONE BYTE PER
+ * I64 SLOT (bytes_rt.h), so the buffer is packed rather than handed over.
+ *
+ * The error arm of a compiled `T!E` is a bare 0 and binds no payload (127.97),
+ * so these wrappers return 0 on failure and file.lasterrkind() / file.lasterr()
+ * carry which of the nine outcomes it was.  0 is NOT reachable for a success:
+ * tk_bytes_pack of an empty buffer returns a real zero-length array handle,
+ * so "the file is empty" and "the file could not be read" are different
+ * values — the whole point of the story.
+ */
+
+int64_t tk_file_readbytes_w(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_READ);
+    if (!path) {
+        file_setlasterr(FILE_ERR_BAD_ARG, "file.readbytes: null path");
+        return 0;
+    }
+    BytesFileResult r = file_readbytes((const char *)(intptr_t)path);
+    if (r.is_err) return 0;
+
+    int64_t h = tk_bytes_pack(r.ok.data, r.ok.len);
+    free(r.ok.data);
+    if (!h) {
+        /* tk_arr_alloc failed: 8 bytes per byte, so this is reachable for a
+         * file that passed the cap.  Do not return an empty array for it. */
+        file_setlasterr(FILE_ERR_NO_MEM,
+                        "file.readbytes: byte array allocation failed");
+        return 0;
+    }
+    return h;
+}
+
+int64_t tk_file_writebytes_w(int64_t path, int64_t data) {
+    TK_REQUIRE(TK_CAP_FS_WRITE);
+    if (!path) {
+        file_setlasterr(FILE_ERR_BAD_ARG, "file.writebytes: null path");
+        return 0;
+    }
+    if (!data) {
+        /* A genuinely empty `@(byte)` is a real zero-length handle, never 0.
+         * A 0 here is an unchecked error value from upstream, and writing an
+         * empty file for it would turn someone else's failure into a
+         * successful-looking truncation. */
+        file_setlasterr(FILE_ERR_BAD_ARG,
+                        "file.writebytes: null byte array (an unchecked error value?)");
+        return 0;
+    }
+    uint8_t *buf = NULL;
+    uint64_t n = tk_bytes_unpack(data, &buf);
+    if (!buf) {
+        file_setlasterr(FILE_ERR_NO_MEM, "file.writebytes: staging buffer allocation failed");
+        return 0;
+    }
+    BoolFileResult r = file_writebytes((const char *)(intptr_t)path, buf, n);
+    free(buf);
+    return r.is_err ? 0 : (int64_t)r.ok;
+}
+
+/* file.lasterr() -> str  — the message for the last byte-call failure, "" if
+ * the last one succeeded.  file.lasterrkind() -> str — one of the documented
+ * tokens (ok notfound permission isdir notregular symlink toolarge nomem io
+ * badarg), which is what a caller should branch on; the message is for
+ * reporting, and its wording is not an interface. */
+int64_t tk_file_lasterr_w(void) {
+    const char *m = file_lasterr();
+    return (int64_t)(intptr_t)(m ? m : "");
+}
+
+int64_t tk_file_lasterrkind_w(void) {
+    const char *m = file_lasterrkind();
+    return (int64_t)(intptr_t)(m ? m : "io");
 }

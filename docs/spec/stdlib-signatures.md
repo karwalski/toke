@@ -21,7 +21,7 @@ Changes here require coordinated updates to the stdlib and toke-eval/benchmark.
 - `std.ws` — WebSocket client/server: connect, send, recv, broadcast
 - `std.sse` — Server-Sent Events: emit, keepalive, connection lifecycle
 - `std.db` — database queries (SQLite3 backend)
-- `std.file` — file I/O (read, write, append, list, delete)
+- `std.file` — file I/O (read, write, append, list, delete) and byte-exact binary access (`readbytes`/`writebytes`)
 - `std.env` — environment variable access
 - `std.fmt` — value formatting for print (bool, i64/str arrays, fixed-decimal f64, padding)
 - `std.process` — subprocess spawning and control
@@ -162,7 +162,21 @@ f=write(path:$str;data:$str):void
 f=append(path:$str;data:$str):void
 f=list(dir:$str):@$str
 f=delete(path:$str):void
+f=readbytes(path:$str):@(byte)!$fileerr
+f=writebytes(path:$str;data:@(byte)):bool!$fileerr
+f=lasterr():$str
+f=lasterrkind():$str
 ```
+
+`read` and `write` carry a `$str`, which is NUL-terminated: they truncate at
+the first zero byte and are therefore **text-only**. `readbytes`/`writebytes`
+(135.10) are the byte-exact pair and are what every binary format — archives,
+PDFs, images, spreadsheets — must use. An empty `@(byte)` means an empty file,
+never a failure; the `$err` arm carries no payload (the compiled `T!E` ABI has
+none), so `file.lasterrkind` reports which of `notfound permission isdir
+notregular symlink toolarge nomem io badarg` occurred and `file.lasterr` gives
+the message. `readbytes` refuses a file over 64 MiB rather than attempting it,
+because a `@(byte)` costs one i64 per byte. See [std.file](/docs/stdlib/file).
 
 ### std.env
 

@@ -9,6 +9,7 @@
 
 #include "file.h"
 #include <stdio.h>
+#include <stdarg.h>   /* 135.10: formatted last-error messages */
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -676,5 +677,323 @@ StrArrayFileResult file_listall(const char *dir) {
     }
     r.ok.data = _listall_acc.data;
     r.ok.len  = _listall_acc.len;
+    return r;
+}
+
+/* ══ 135.10 — binary file access ═════════════════════════════════════════
+ *
+ * file_read() above returns a NUL-terminated char*.  For text that is fine;
+ * for a zip, a PDF, a PNG or an xlsx it silently returns the bytes before the
+ * first zero, and a caller has no way to notice.  std.zip had to open its own
+ * file descriptor to work around it (135.1); 135.3 and 135.4 would each have
+ * invented the same workaround.
+ *
+ * THE RULE THESE TWO CALLS ARE BUILT AROUND: an empty result must never stand
+ * for a failure.  A zero-length `@(byte)` means the file was read and is
+ * empty; the error arm is a bare 0 (the compiled T!E ABI carries no payload —
+ * 127.97), and file_lasterrkind() says which of the nine outcomes occurred.
+ */
+
+/* Last-error channel.  Messages are formatted (they name the path and the
+ * numbers), so unlike zip's literal-only channel this needs storage; the
+ * buffer is static and overwritten by the next failure, which is exactly the
+ * lifetime the accessor documents. */
+static char        g_file_err_msg[1024] = "";
+static const char *g_file_err_kind      = "ok";
+
+static const char *file_kind_token(FileErrKind k)
+{
+    switch (k) {
+        case FILE_ERR_NOT_FOUND:   return "notfound";
+        case FILE_ERR_PERMISSION:  return "permission";
+        case FILE_ERR_IS_DIR:      return "isdir";
+        case FILE_ERR_NOT_REGULAR: return "notregular";
+        case FILE_ERR_SYMLINK:     return "symlink";
+        case FILE_ERR_TOO_LARGE:   return "toolarge";
+        case FILE_ERR_NO_MEM:      return "nomem";
+        case FILE_ERR_BAD_ARG:     return "badarg";
+        case FILE_ERR_INVALID:     return "invalid";
+        case FILE_ERR_IO:          return "io";
+    }
+    return "io";
+}
+
+void file_setlasterr(FileErrKind kind, const char *msg)
+{
+    g_file_err_kind = file_kind_token(kind);
+    snprintf(g_file_err_msg, sizeof g_file_err_msg, "%s", msg ? msg : "");
+}
+
+const char *file_lasterr(void)     { return g_file_err_msg; }
+const char *file_lasterrkind(void) { return g_file_err_kind; }
+
+static void file_clear_lasterr(void)
+{
+    g_file_err_kind  = "ok";
+    g_file_err_msg[0] = '\0';
+}
+
+/* Record a failure and build the FileErr the result carries. */
+static FileErr file_fail(FileErrKind kind, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(g_file_err_msg, sizeof g_file_err_msg, fmt, ap);
+    va_end(ap);
+    g_file_err_kind = file_kind_token(kind);
+
+    FileErr e;
+    e.kind = kind;
+    e.msg  = g_file_err_msg;
+    return e;
+}
+
+/*
+ * Classify an errno from open(2) on a path that is being read or written.
+ * EISDIR and ELOOP are pulled out of the generic I/O bucket deliberately:
+ * "it is a directory" and "it is a symlink and std.file does not follow the
+ * final component (AMB-07)" are both things a caller can act on, and both
+ * would otherwise arrive as an undifferentiated I/O error.
+ */
+static FileErrKind file_open_kind(int err_no)
+{
+    switch (err_no) {
+        case ENOENT:  return FILE_ERR_NOT_FOUND;
+        case ENOTDIR: return FILE_ERR_NOT_FOUND;
+        case EACCES:  return FILE_ERR_PERMISSION;
+        case EPERM:   return FILE_ERR_PERMISSION;
+        case EISDIR:  return FILE_ERR_IS_DIR;
+        case ELOOP:   return FILE_ERR_SYMLINK;
+        default:      return FILE_ERR_IO;
+    }
+}
+
+/*
+ * file_readbytes — read a whole file as bytes, exactly, or say why not.
+ *
+ * Nine distinct outcomes, every one of them reportable:
+ *
+ *   ok          a byte-exact copy; length 0 for an empty file (NOT an error)
+ *   notfound    no such path, or a component of it is not a directory
+ *   permission  EACCES/EPERM on open
+ *   isdir       the path is a directory
+ *   notregular  fifo, socket, device — st_size is meaningless, so reading it
+ *               as "the whole file" would return a plausible wrong answer
+ *   symlink     final component is a symlink; AMB-07 forbids following it
+ *   toolarge    over TK_FILE_MAX_BYTES (see the note on the 8x array cost)
+ *   nomem       the file fits the cap but the allocation failed
+ *   io          read(2) failed, or the file changed size mid-read
+ *
+ * The size is taken with fstat on the SAME descriptor that is read, so there
+ * is no stat/open race, and a short read is an error rather than a quietly
+ * truncated buffer — which is the defect this whole story exists to remove.
+ */
+BytesFileResult file_readbytes(const char *path)
+{
+    BytesFileResult r = {{NULL, 0}, 0, {0, NULL}};
+
+    if (!path) {
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_BAD_ARG, "file.readbytes: null path");
+        return r;
+    }
+
+    /* O_NONBLOCK is load-bearing, not defensive: open(2) on a FIFO with no
+     * writer BLOCKS FOREVER without it, so a std.file call would hang on a
+     * path that this function is going to refuse anyway.  On a regular file
+     * it changes nothing — reads never return EAGAIN. */
+    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) {
+        int saved = errno;
+        FileErrKind k = file_open_kind(saved);
+        r.is_err = 1;
+        r.err = file_fail(k, "file.readbytes: %s: %s",
+                          k == FILE_ERR_SYMLINK
+                              ? "final path component is a symlink and std.file does not follow it (AMB-07)"
+                              : strerror(saved),
+                          path);
+        return r;
+    }
+
+    struct stat st;
+    if (fstat(fd, &st) != 0) {
+        int saved = errno;
+        close(fd);
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_IO, "file.readbytes: fstat failed: %s: %s",
+                          strerror(saved), path);
+        return r;
+    }
+
+    if (S_ISDIR(st.st_mode)) {
+        close(fd);
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_IS_DIR, "file.readbytes: is a directory: %s", path);
+        return r;
+    }
+    if (!S_ISREG(st.st_mode)) {
+        close(fd);
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_NOT_REGULAR,
+                          "file.readbytes: not a regular file (fifo, socket or device): %s",
+                          path);
+        return r;
+    }
+
+    uint64_t want = (uint64_t)st.st_size;
+    if (want > TK_FILE_MAX_BYTES) {
+        close(fd);
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_TOO_LARGE,
+                          "file.readbytes: %llu bytes exceeds the %llu-byte limit: %s",
+                          (unsigned long long)want,
+                          (unsigned long long)TK_FILE_MAX_BYTES, path);
+        return r;
+    }
+
+    /* +1 so an empty file still gets a non-NULL buffer; the length, not the
+     * pointer and never a NUL, is what says how much there is. */
+    uint8_t *buf = (uint8_t *)malloc((size_t)want + 1);
+    if (!buf) {
+        close(fd);
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_NO_MEM,
+                          "file.readbytes: allocation of %llu bytes failed: %s",
+                          (unsigned long long)want, path);
+        return r;
+    }
+
+    uint64_t got = 0;
+    while (got < want) {
+        ssize_t n = read(fd, buf + got, (size_t)(want - got));
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            int saved = errno;
+            close(fd); free(buf);
+            r.is_err = 1;
+            r.err = file_fail(file_open_kind(saved) == FILE_ERR_PERMISSION
+                                  ? FILE_ERR_PERMISSION : FILE_ERR_IO,
+                              "file.readbytes: read failed after %llu of %llu bytes: %s: %s",
+                              (unsigned long long)got, (unsigned long long)want,
+                              strerror(saved), path);
+            return r;
+        }
+        if (n == 0) break;           /* file shrank under us */
+        got += (uint64_t)n;
+    }
+    close(fd);
+
+    if (got != want) {
+        free(buf);
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_IO,
+                          "file.readbytes: short read, %llu of %llu bytes "
+                          "(the file changed size during the read): %s",
+                          (unsigned long long)got, (unsigned long long)want, path);
+        return r;
+    }
+
+    buf[want] = 0;   /* convenience for C callers only; never a terminator */
+    file_clear_lasterr();
+    r.ok.data = buf;
+    r.ok.len  = want;
+    return r;
+}
+
+/*
+ * file_writebytes — write bytes exactly, or say why not.
+ *
+ * The write side has the same defect as the read side: file_write() takes a
+ * char* and calls fputs, so it stops at the first zero.  Without this call
+ * there is no way to put a decompressed zip entry (135.1 hands back an exact
+ * `@(byte)`) back on disk, and a caller who tried would get a file truncated
+ * at the first zero with a successful return value.
+ *
+ * Outcomes: ok, notfound (a parent directory is missing), permission, isdir,
+ * symlink, io (including a short write — ENOSPC), badarg (null path).
+ *
+ * Semantics match file.write deliberately: create-or-truncate, mode 0644,
+ * O_NOFOLLOW, no atomic temp-file-and-rename.  A failure partway through
+ * therefore leaves a partially written file, and the message says how many
+ * bytes reached the disk; the caller decides whether to delete it.
+ */
+BoolFileResult file_writebytes(const char *path, const uint8_t *data, uint64_t len)
+{
+    BoolFileResult r = {0, 0, {0, NULL}};
+
+    if (!path) {
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_BAD_ARG, "file.writebytes: null path");
+        return r;
+    }
+    if (!data && len > 0) {
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_BAD_ARG,
+                          "file.writebytes: null buffer with length %llu",
+                          (unsigned long long)len);
+        return r;
+    }
+
+    /* O_NONBLOCK for the same reason as the read side: opening a FIFO for
+     * writing with no reader blocks, and ENXIO is the non-blocking form of
+     * that — reported as "not a regular file", which is what it means. */
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_NONBLOCK, 0644);
+    if (fd < 0) {
+        int saved = errno;
+        FileErrKind k = (saved == ENXIO) ? FILE_ERR_NOT_REGULAR : file_open_kind(saved);
+        r.is_err = 1;
+        r.err = file_fail(k, "file.writebytes: %s: %s",
+                          k == FILE_ERR_SYMLINK
+                              ? "final path component is a symlink and std.file does not follow it (AMB-07)"
+                              : (k == FILE_ERR_NOT_REGULAR
+                                     ? "not a regular file (fifo, socket or device)"
+                                     : strerror(saved)),
+                          path);
+        return r;
+    }
+
+    /* The destination must be a regular file.  Writing bytes into a device or
+     * a fifo through a call named "write this file" would succeed and mean
+     * something entirely different. */
+    struct stat wst;
+    if (fstat(fd, &wst) == 0 && !S_ISREG(wst.st_mode)) {
+        close(fd);
+        r.is_err = 1;
+        r.err = file_fail(S_ISDIR(wst.st_mode) ? FILE_ERR_IS_DIR : FILE_ERR_NOT_REGULAR,
+                          "file.writebytes: %s: %s",
+                          S_ISDIR(wst.st_mode) ? "is a directory"
+                                               : "not a regular file (fifo, socket or device)",
+                          path);
+        return r;
+    }
+
+    uint64_t done = 0;
+    while (done < len) {
+        ssize_t n = write(fd, data + done, (size_t)(len - done));
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            int saved = errno;
+            close(fd);
+            r.is_err = 1;
+            r.err = file_fail(FILE_ERR_IO,
+                              "file.writebytes: write failed after %llu of %llu bytes "
+                              "(file left partially written): %s: %s",
+                              (unsigned long long)done, (unsigned long long)len,
+                              strerror(saved), path);
+            return r;
+        }
+        done += (uint64_t)n;
+    }
+
+    if (close(fd) != 0) {
+        int saved = errno;
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_IO, "file.writebytes: close failed: %s: %s",
+                          strerror(saved), path);
+        return r;
+    }
+
+    file_clear_lasterr();
+    r.ok = 1;
     return r;
 }

@@ -21,6 +21,11 @@
     {"kind": "func", "name": "file.isdir",   "params": ["str"],         "return": "bool"},
     {"kind": "func", "name": "file.mkdir",   "params": ["str"],         "return": "bool!FileErr"},
     {"kind": "func", "name": "file.copy",    "params": ["str", "str"],  "return": "bool!FileErr"},
-    {"kind": "func", "name": "file.listall", "params": ["str"],         "return": "[str]!FileErr"}
+    {"kind": "func", "name": "file.listall", "params": ["str"],         "return": "[str]!FileErr"},
+
+    {"kind": "func", "name": "file.readbytes",   "params": ["str"],            "return": "@(byte)!FileErr"},
+    {"kind": "func", "name": "file.writebytes",  "params": ["str", "@(byte)"], "return": "bool!FileErr"},
+    {"kind": "func", "name": "file.lasterr",     "params": [],                 "return": "str"},
+    {"kind": "func", "name": "file.lasterrkind", "params": [],                 "return": "str"}
   ]
 }
