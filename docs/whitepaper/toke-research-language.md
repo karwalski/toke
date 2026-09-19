@@ -1,385 +1,621 @@
-# Not Another AI-Generated Sloplang
+# toke: a compiled language designed for LLM code generation
 
-**A Case Study in AI-Assisted Language Research**
+**A research whitepaper, and an accounting of what the evidence actually supports**
 
 Matthew Watt (karwalski)
-v0.1, v0.2, v0.3 (syntax locked)
-2026-05-24 (revised)
+Whitepaper v2 — spec v0.4, compiler `tkc` toke 2.8.0
+2026-09-19 (supersedes the 2026-05-24 revision; see §9, Corrections)
 
 ---
 
 ## Abstract
 
-toke is a compiled, statically typed programming language investigating whether purpose-built languages can reduce large language model inference costs through structural token efficiency. This paper — like significant portions of the toke implementation — was produced through iterative human-AI collaboration. We disclose this upfront: AI was used extensively throughout this project to assist language design iteration, generate the training corpus, write implementation code, produce research documents including this whitepaper, and run multi-model reasoning and review. This is far from one-shot AI slop. It represents months of iterative collaboration with extensive review, testing, and falsification. The human provides direction, criteria, and judgment; AI provides implementation velocity and multi-perspective analysis.
+> toke is a compiled programming language designed for LLM code generation. It has 14
+> keywords, a 55-character set, a backtrack-free grammar with bounded lookahead, and one
+> canonical form per construct, chosen by measurement in a 46-pattern catalogue and
+> reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding,
+> cheap for a compiler to verify afterwards, and compact to emit. Token efficiency is one
+> measured property of toke, always reported with its tokenizer and its baseline, not the
+> whole claim.
 
-Over three months of systematic research, toke has progressed through two formal falsification gates with pre-registered success criteria. Using the same tokenizer (cl100k_base) for both languages, toke achieves a 12.5% token reduction over equivalent Python programs — a modest but real signal that justified continuation. A purpose-built 16K BPE tokenizer achieves 52% fewer tokens (upper bound, purpose-built BPE trained on toke's own corpus — methodological limitations discussed below). A fine-tuned 7B parameter model produces syntactically valid toke 100% of the time on 700 evaluation tasks.
+The first version of this paper argued a token-count thesis: that a purpose-built language
+plus a purpose-built tokenizer would cut the token cost of AI-generated code far enough to
+matter. A year of external evidence and our own re-measurement have moved the load-bearing
+argument off the tokenizer and onto the grammar, the canonical form and the compiler. This
+version states that argument, states the measured numbers with the lane each was measured
+in, states the four strongest arguments against the project in our own words, and lists the
+tests that would retire the thesis.
 
-The project employs a falsification-first methodology where any gate failure terminates the research programme. toke is backed by a reference compiler in C with LLVM backend, a formal EBNF grammar (65 productions, LL(1) verified), 38 standard library modules, and three production codebases. Gate 3 criteria are pre-registered and locked. This paper presents both the evidence for toke's viability and an honest accounting of what remains unproven.
+The headline corrections are in §9 and are not hedged: the grammar is **not** LL(1); there
+are **14** keywords, not 13; the "52% fewer tokens" figure is **withdrawn**, not requalified;
+under a shared tokenizer toke currently costs **more** tokens than Python, not fewer; and
+there was **no August 2026 gate result** — August produced a corpus-quality freeze, so the
+most recent model gate remains Gate 2 of 2026-05-22.
 
----
+This paper, like significant parts of the toke implementation, was produced through
+iterative human-AI collaboration. We disclose that up front: AI was used throughout for
+design iteration, corpus generation, implementation, document drafting and multi-model
+review. The human provides direction, criteria and judgement.
 
-## 1. Introduction
-
-Large language model inference costs scale linearly with token count. Every token consumed by syntactic overhead — verbose keywords, comments, whitespace conventions, case-sensitive identifiers, redundant separators — is a token not spent on semantic reasoning. Existing programming languages were not designed with tokenizer efficiency in mind; their syntax evolved for human readability under constraints that predate the era of AI-generated code.
-
-toke asks a direct question: **can we design a programming language that reduces LLM inference cost by producing fewer tokens per unit of functionality, without sacrificing compilability or correctness?**
-
-This is not a rhetorical question. It is a falsifiable hypothesis with pre-registered criteria. If the answer is no — if token reduction does not translate to improved generation quality or reduced cost — the project terminates and publishes an honest post-mortem.
-
-### 1.1 The AI-Language Landscape
-
-2025-2026 has seen a measurable proliferation of AI-targeted languages: Mog (3,200-token spec, QBE backend), Sigil (polysynthetic, LLVM), Pel (homoiconic, minimal grammar), Quasar (42% execution-time reduction), Plang, EnCompass, and PayPal's agent workflow DSL — among many others. Most ship a spec and a toy interpreter and stop there.
-
-toke must be judged against this cohort on the evidence, not on intent. This paper presents that evidence — including the gaps.
-
-### 1.2 The Agent-Internal-IR Hypothesis
-
-We state explicitly the most likely adoption path: **humans never write toke directly.** Agents write toke when token budget matters — expensive inference, limited context windows — with automatic compilation verification. The human interface remains natural language or their preferred language; toke is the efficient intermediate representation the agent chooses when cost optimization matters.
-
-This reframes the evaluation question. toke does not need to be ergonomic for human developers. It needs to be learnable by models, verifiable by compilers, and cheaper than alternatives measured in tokens per unit of correct functionality.
-
-### 1.3 Relationship to Constrained Decoding and In-Context Specification
-
-Two alternative approaches deserve comparison:
-
-**Constrained decoding** (grammar-guided generation) can achieve 100% syntactic validity on any language by restricting the output distribution at each token step. This is orthogonal to toke's goal: constrained decoding ensures validity but does not reduce token count. A Python program generated under grammar constraints still costs the same number of tokens. toke targets the token budget itself.
-
-**In-context specification** (e.g., Mog's 3,200-token spec fits entirely in a system prompt) allows models to generate valid code without fine-tuning. toke's richer type system, LLVM backend, and 38-module standard library require more than a system prompt can teach. The fine-tuning requirement is a feature — it enables a richer language surface — not a bug. A spec that fits in-context necessarily constrains the language to what can be described in that context budget.
+**Every number in this paper is sourced from [`docs/metrics-baseline.md`](../metrics-baseline.md)**,
+which carries the metric, the basis, the caveat and the origin story for each. A number
+without its lane — which tokenizer measured which text against which baseline, at what N —
+is a misquotation of our own work.
 
 ---
 
-## 2. Methodology
+## 1. The claim
 
-### 2.1 Falsification-First Design
+### 1.1 What toke is
 
-toke follows a gated research methodology where each stage must pass pre-registered criteria before the project advances. Criteria are locked before experiments run. Thresholds cannot be adjusted after the first training run starts. The document is append-only.
+The claim, in one sentence:
 
-### 2.2 Gate 1: Does a Restricted Character Set Reduce Tokens?
+> toke is a compiled programming language designed for LLM code generation: small,
+> strictly structured, and canonical, so that generated code is cheap to constrain while
+> it is being produced, cheap for a compiler to verify once it is, and compact in whatever
+> unit the model generates in.
 
-- **Pre-registered criterion:** Measurable token reduction vs cl100k_base on equivalent programs.
-- **Result:** 12.5% average token reduction. 63.7% compilation Pass@1. **PASS** (2026-04-03).
-- **Honest assessment:** 12.5% is modest. SimPy (arXiv:2404.16333, ISSTA '24) reported 13.5%/10.4% with a different approach. This result justified continuation but is not transformative by itself.
+It names the audience (LLM code generation), the three mechanical properties (small,
+structured, canonical), and the three things they buy (constrain, verify, compact). It does
+not depend on the BPE token being the unit of account, which is the property the first
+version of this paper lacked. The authoritative wording is
+[`docs/about/positioning-2026-09.md`](../about/positioning-2026-09.md); this paper quotes it
+rather than restating it.
 
-### 2.3 Gate 2: Can an LLM Learn to Generate Valid toke?
+### 1.2 What changed, and why
 
-- **Pre-registered criterion:** Fine-tuned 7B model outperforms Gate 1 baseline on compilation Pass@1.
-- **Result:** 100% compilation Pass@1 on 700 tasks. **PASS** (2026-05-22).
-- **Additionally measured:** 55.6% functional correctness (272/489) after 2026-05-25 stdlib fix. Originally reported as ~8% due to missing io.readln() C glue. See Section 10.
+Three things forced the rewrite.
 
-### 2.4 Gate 3: Does Functional Correctness Follow? (Pre-Registered, Locked)
+1. **Our own re-measurement.** Re-running the token comparison on canonical v0.4 text
+   showed that no shipped toke tokenizer beats a general-purpose one, and that under one
+   shared tokenizer toke costs more tokens than Python, not fewer (§3). The old headline
+   could not be requalified; it had to be withdrawn.
+2. **The landscape.** Superword tokenizers now deliver generically much of what a
+   purpose-built tokenizer delivered, and tokenizer-free architectures threaten the token
+   as a unit at all (§4).
+3. **The spec.** v0.4 (2026-07-02) retired the strict-LL(1) claim as inaccurate and
+   corrected the keyword count. Both had already propagated into third-party descriptions
+   of toke because we published them (§9).
 
-- **Pre-registered criteria (locked 2026-05-24):**
-  - C1: Functional Pass@1 >= 35% on 500-task hidden benchmark
-  - C2: Compilation Pass@1 >= 95%
-  - C3: argv-generalisation >= 50% (defined in Section 2.5)
-  - C4: Multi-model coverage >= 2 families
-  - C5: Self-improvement demonstrated (defined in Section 2.6)
-- **Decision rule:** Point estimate >= 35% required for PASS. If point estimate is 30-34% (borderline fail), we publish the exact number with 95% confidence interval and let the community assess. No post-hoc threshold adjustment permitted.
-- **Failure mode:** If functional Pass@1 < 15%, project triggers post-mortem and pivot evaluation.
-- **Timeline:** Training starts 2026-06-02. GO/NO-GO by mid-August 2026.
+What did **not** change is the language: not the character set, not the keywords, not the
+grammar, not the semantics, not the canonical `--min` form, and not the "designed for LLMs"
+framing. The repositioning is a change to what we claim and how we measure it, not a
+redesign.
 
-### 2.5 Defining argv-generalisation and the 67% Hardcoding Problem
+### 1.3 The adoption hypothesis: agents, not humans
 
-The dominant failure mode observed in Gate 2 functional evaluation: the model hardcodes test inputs rather than reading from argv and computing. For example, when asked to write a program that doubles its input, the model writes `<42` (the expected output for input 21) instead of reading argv, parsing, and computing `n * 2`.
-
-67% of "functional" failures in Gate 2 exhibit this pattern. The model has learned to produce syntactically valid code that embeds memorized expected outputs rather than implementing the specified algorithm.
-
-**C3 requires:** >= 50% of programs correctly read and process dynamic inputs (inputs not seen during training) rather than memorizing expected outputs. This is measured by running each task with 3 novel input values not present in any training example.
-
-### 2.6 Operationalizing Self-Improvement (C5)
-
-C5 is satisfied when: **Iteration N+1 achieves >= 5 percentage points higher functional Pass@1 than iteration N on the same held-out benchmark, same model family, same decoding parameters.**
-
-Concretely: if iteration 1 achieves 20% functional Pass@1, iteration 2 must achieve >= 25% on the identical 500-task benchmark using the same base model, same LoRA rank, same temperature, same top-p. The only variable is the training corpus (enriched by the self-improvement loop).
-
----
-
-## 3. The stdlib Fix: From 8% to 55.6%
-
-The corrected 55.6% functional correctness already exceeds Gate 3 C1 (35% threshold) requires explanation. Three mechanisms provide the training signal that Gate 2 lacked:
-
-**1. Execution feedback in the self-improvement loop.** Gate 2 was trained on compilation correctness only — the model learned syntax, not semantics. The self-improvement loop adds functional signal: only programs that produce correct output on test inputs enter the training corpus. The model learns from its own successes, progressively enriching the corpus with execution-verified examples.
-
-**2. Curriculum training pairing specs with implementations.** Gate 3 training pairs functional specifications (natural-language intent + expected I/O) with compiler-verified implementations. This teaches the intent-to-code mapping — not just "produce valid syntax" but "produce code that does what was asked." Gate 2 had no such pairing; it trained on code alone without functional context.
-
-**3. Functional correctness as the optimization target.** The original 8% was a measurement error (missing io.readln() C glue). The model actually produces functionally correct code at 55.6%. Gate 3 C1 (>=35%) is likely already met. Gate 3 training makes functional correctness the explicit optimization target through the self-improvement loop's selection pressure.
-
-We do not claim 35% is guaranteed. We claim these mechanisms provide training signal that was entirely absent in Gate 2, making substantial improvement plausible. If these mechanisms fail to deliver >= 35%, that is itself an informative negative result about the learnability of functional semantics through self-play.
+We state the likely adoption path plainly: **humans never write toke directly.** An agent
+emits toke when the program is going to be compiled and checked anyway, and the human
+interface stays natural language or the human's preferred language. toke does not need to
+be ergonomic for people. It needs to be learnable by models, cheap to constrain, cheap to
+verify, and competitive on cost per solved task. Every claim in this paper should be read
+against that bar, and §7 states what would fail it.
 
 ---
 
-## 4. Language Design
+## 2. The argument: grammar, canonical form, compiler
 
-### 4.1 Design Process: Iterative Human-AI Collaboration
+Each property below is a fact about the language paired with the mechanism it buys a model.
+The mechanisms survive a change of generation unit; the numbers attached to any one
+tokenizer do not.
 
-toke was designed by a human engineer through iterative specification work spanning 31 normative sections, with AI used extensively for design iteration, trade-off analysis, and implementation. The language *design decisions* — character set, keyword selection, grammar structure, type system — are human-directed with documented rationale. AI contributed implementation velocity, alternative exploration, and multi-perspective analysis at each decision point. This workflow is itself the thesis in action: human judgment directing AI execution.
+### 2.1 Small: 14 keywords, a 55-character set
 
-| Property | Value | Rationale |
-|----------|-------|-----------|
-| Character set | 55 (a-z, 0-9, 19 symbols) | Eliminates tokenizer ambiguity from uppercase |
-| Keywords | 13 (m, f, t, i, if, el, lp, br, let, mut, as, rt, mt) | Minimal control flow vocabulary |
-| Grammar | LL(1), 65 productions | Deterministic parsing from one token lookahead |
-| Comments | None in source | Documentation in companion files (.tkc) |
-| Naming | Lowercase concatenated only | Reduces tokenizer vocabulary pressure |
-| Separators | Semicolons exclusively | Eliminates common LLM generation errors |
-| Compilation | LLVM backend, native binaries | Real programs on x86-64 and ARM64 |
+`docs/spec/toke-spec-v0.4.md` §A fixes the keyword set at **14** — `m i t f let if el lp br
+rt as mt sc mut` — verified against the lexer keyword table. The default syntax uses a
+**55-character** alphabet: 26 lowercase letters, 10 digits and 19 symbols. No uppercase, no
+underscores, no comment syntax (documentation lives in companion `.tkc` files), and
+whitespace is not syntax.
 
-### 4.2 Formal Specification
+*Mechanically:* a small terminal alphabet is a small vocabulary for any generation unit. At
+the byte level it means the model chooses among a few dozen live bytes at most positions
+rather than 256 — the narrowest hypothesis space we can offer a tokenizer-free model.
+Whether that narrowness converts into measurably better byte-level generation is
+**unproven**, and is exactly what story 131.51 exists to test (§7, F1).
 
-- **3,400+ lines** across 31 sections (normative and informative)
-- **65 EBNF productions**, verified LL(1)
-- **70+ diagnostic codes** in structured JSON schema
-- Available at github.com/karwalski/toke/docs/spec/toke-spec-v0.3.md
+### 2.2 Structured: backtrack-free, bounded lookahead
 
-### 4.3 Reference Compiler
+`docs/spec/toke-spec-v0.4.md` §E states the verified property:
 
-Written in C. Lexer, parser, type checker, LLVM IR code generation. Compiles to native binaries for x86-64 Linux, ARM64 Linux, ARM64 macOS. 62+ conformance tests. Structured JSON diagnostics. Migration mode for legacy syntax.
+> The toke grammar is **backtrack-free**: the parser never rescans input it has already
+> consumed. It is **not** pure LL(1); a small, **enumerated** set of productions require
+> **bounded lookahead of up to 3 tokens** (never more). An implementation that backtracks,
+> or that requires unbounded lookahead at any production, is non-conforming.
 
-### 4.4 Target Domain: Small Tools and Services
+The exceptions are enumerated normatively in Appendix A of
+[`grammar.ebnf`](../spec/grammar.ebnf) with the FIRST-sets;
+[`toke.gbnf`](../spec/toke.gbnf) is the GBNF form for constrained decoding. The v0.4
+`=`/`==` split removed the worst former offender (the loop-init unbounded forward scan).
 
-toke targets the "small tools and services" space where its 38-module stdlib is sufficient: CLI tools, HTTP services, data pipelines, file processing. For tasks requiring numpy, pandas, or torch, the agent should emit Python. toke is not a Python replacement — it is a compilation target for the subset of tasks where token cost dominates and stdlib coverage is adequate.
+*Mechanically:* grammar-constrained decoding builds a token mask at every step from a
+pushdown automaton over the grammar. A small, backtrack-free grammar makes that automaton
+small and its masks cheap. XGrammar (arXiv 2411.15100, now in vLLM, SGLang, TensorRT-LLM
+and MLC-LLM) reports up to 100x speedup with near-zero per-token overhead on this
+construction; type-constrained code generation (Mündler et al., PLDI 2025, arXiv 2504.09246)
+extends it to type-level constraints and cuts compile errors and hallucinated methods.
 
-This is a deliberate scope constraint, not a limitation to be fixed. The stdlib long-tail problem (no language can cover every domain) is addressed by honest scoping rather than aspirational coverage claims.
+**The same evidence cuts against us, and we say so first.** XGrammar works on *any*
+grammar, including Python's. The advantage of a purpose-built grammar is one of degree — a
+cheaper mask, a smaller invalid space — not of kind. Measuring that degree is story 131.52:
+mask-construction cost and per-token overhead for toke against a mainstream-language
+grammar. Until it reports, "cheaper to constrain" is a mechanical argument, not a
+measurement.
 
----
+### 2.3 Canonical: one measured form per construct
 
-## 5. Training Infrastructure
+`docs/spec/idiom-v0.4.md` states the idiom rules; `docs/spec/patterns-protocol-v0.4.md`
+turns them into measured verdicts; `patterns/catalogue.json` holds **46 entries across 10
+families**. A form becomes canonical only by being best-or-tied on tokens *and* runtime, and
+all candidate forms of a pattern must print byte-identical output. `tkc --min` reproduces
+the canonical text, and it is the basis on which every efficiency number in this paper is
+measured — measuring readable source instead understated toke by **28.2%** (116/B2).
 
-### 5.1 Model Training (Gate 2 Configuration)
+Here is a canonical program. It is terse, there is one way to write it, the compiler
+accepts or rejects it before it runs, and `tkc --min` reproduces it byte for byte:
 
-| Parameter | Value |
-|-----------|-------|
-| Base model | Qwen 2.5 Coder 7B-Instruct |
-| Method | QLoRA (rank 64, alpha 128) |
-| Training corpus | 25,953 records |
-| Hardware | NVIDIA A10G 24GB, 37 hours |
-| Result | 100% compilation Pass@1 |
+```toke
+m=main;
+i=io:std.io;
+f=sumpos(ns:@i64):i64{
+  let t=mut.0;
+  lp(let i=0;i<ns.len();i=i+1){
+    let v=ns.get(i);
+    if(v>0){t=t+v}
+  };
+  <t
+};
+f=main():i64{ io.print("\(sumpos(@(1;-2;3)))"); <0 };
+```
 
-### 5.2 Purpose-Built Tokenizer
+*Mechanically:* one canonical form collapses the set of correct-but-different programs a
+model must choose among, and it makes evaluation exact rather than fuzzy. Two
+implementations either produce identical canonical text or they do not — which is what makes
+a diff format well defined and a reward signal unambiguous.
 
-- **16,384-token BPE vocabulary** trained on normalised v0.3 toke programs
-- **52% average token reduction** vs cl100k_base (measured on 42 benchmark programs)
-- Available: PyPI (`pip install toke-tokenizer`), HuggingFace (`karwalski/toke-tokenizer`)
+### 2.4 Compiler-verified: structured diagnostics as a reward signal
 
-### 5.3 Corpus Provenance (73,643 Records)
+`tkc` emits diagnostics with stable codes, machine-parseable spans and a `fix` field. That
+is what a repair loop consumes, and what an RLVR reward function can score for the cost of
+one compiler invocation.
 
-The Gate 3 training corpus of 73,643 records was transformed from the 46,754-record base corpus. The base corpus is sourced from loke production code (698 .tk files) and execution-verified generated programs. Each record is compiler-verified (passes lexing, parsing, and type-checking).
+*Mechanically:* it is a verifiable signal, and it is demonstrably **insufficient on its
+own**. Gate 2 reached **100% compile Pass@1** with **55.6% functional correctness (272/489)**
+on the same curated set (§5). Compile-checking removes one error class and leaves algorithmic
+correctness untouched. Execution feedback is what moves the rest, which is why the training
+lanes are scored on functional deltas rather than compile deltas.
 
-The transformation from 46,754 to 73,643 is mechanical: splitting complete programs into progressive-difficulty training pairs across 6 curriculum phases (token completion, function completion, spec-to-implementation, error correction, multi-file context, full application). This is structural rearrangement for pedagogical ordering, not new generation. No record enters the corpus without compiler verification.
+### 2.5 Learnable without pretraining
 
-### 5.4 Curriculum Design (Gate 3)
-
-6 progressive phases spanning token completion through full application synthesis. The self-improvement loop generates execution-verified training data from the model's own correct outputs — programs that compile AND produce correct output on test inputs are added to subsequent training iterations.
-
----
-
-## 6. Real-World Applications
-
-### 6.1 Production Codebases
-
-- **ooke:** CMS/web framework serving tokelang.dev in production. Native HTTP server, template engine, markdown rendering. One compiled binary.
-- **loke:** Privacy and AI platform. 698 .tk files, 87,318 lines. All compiling. Covers HTTP, crypto, JSON, database, ML.
-- **moke:** Data analysis application exercising governance and LLM integration.
-
-### 6.2 Developer Infrastructure (Published)
-
-| Platform | Package | Install |
-|----------|---------|---------|
-| Ollama | karwalski/toke | `ollama run karwalski/toke` |
-| npm | @tokelang/mcp-server | `npx @tokelang/mcp-server` |
-| npm | @tokelang/lsp | `npm i -g @tokelang/lsp` |
-| PyPI | toke-tokenizer | `pip install toke-tokenizer` |
-| VS Code | tokelang.toke-language | Extensions → "Toke" |
-| Open VSX | tokelang.toke-language | VS Codium/Gitpod |
-| HuggingFace | karwalski/toke | Model + tokenizer |
-| Docker | docker-compose.yml | Self-hosted inference |
-| API | api.tokelang.dev | Free tier, live |
-| Console | console.tokelang.dev | Keys, usage, admin |
-
----
-
-## 7. Measured Results
-
-| Metric | Value | Caveat |
-|--------|-------|--------|
-| Token reduction (same tokenizer, cl100k) | **12.5%** | Honest baseline; isolates language design effect |
-| Token reduction (toke BPE vs cl100k) | **52%** | Upper bound, purpose-built BPE; see Section 10.2 |
-| Compilation Pass@1 (Gate 2) | **100%** | On training-adjacent tasks; see Section 10.3 |
-| Compilation via production API | **84%** | With system prompt guidance; see Section 7.1 |
-| Functional correctness | **55.6%** (272/489) | Corrected from ~8% — see Section 10.1 |
-| Production codebase size | **87,318 lines** | loke, all compiling |
-
-### 7.1 The 100% vs 84% API Gap
-
-100% compilation is measured on the fine-tuned model running in the evaluation harness: controlled conditions, temperature 0.2, no system prompt, deterministic task formatting. 84% is the same model behind the production API (api.tokelang.dev) with a system prompt and post-processing pipeline.
-
-The 16-point gap comes from three sources: (1) system prompt interactions that shift the model's output distribution away from the fine-tuned behaviour, (2) diverse user prompts that fall outside the training distribution's formatting conventions, and (3) occasional post-processing truncation that breaks syntactic validity. The eval harness number measures the model's capability ceiling; the API number measures real-world deployment performance.
+The standing objection to a new language is that it starts as the lowest-resource language
+in existence (§4.4). The strongest evidence against that objection is Anka
+(arXiv 2512.23214): a novel DSL with **zero prior training exposure** on which Claude 3.5
+Haiku reached 99.9% parse success and 95.8% overall task accuracy, with GPT-4o-mini
+cross-validation. A model can learn a new language from an in-context spec. Our own
+regeneration waves show the same effect — agent workers writing accepted v0.4 from the
+syntax card alone — but **that rate is not yet recorded in `docs/metrics-baseline.md`** and
+is therefore not quoted here as a number.
 
 ---
 
-## 8. Research Review
+## 3. Token efficiency: one measured property, with its lane
 
-### 8.1 Structured Multi-Perspective Internal Review
+Token efficiency is a property of toke, not the thesis. It is never stated without naming
+the tokenizer, the text it was applied to, the baseline, and N (TEMSpec §6.3).
 
-Eight structured review perspectives (T1-T8) were applied across distinct focus areas: reproducibility, compiler engineering, training methodology, specification quality, translation/readability, documentation, external credibility, and gate governance.
+### 3.1 What is measured today
 
-**Disclosure:** These were internal multi-perspective reviews conducted through AI-assisted analysis, not independent external peer review. They are useful for improving rigour but should not be confused with external validation. We welcome and invite genuine external review.
+**Tokenizer lane — same text, two tokenizers** (canonical `tkc --min` v0.4 text, string
+bodies masked, N = 2,000 stratified records from the 2026-08-19 freeze; 131.20):
 
-### 8.2 Feedback Incorporated
+| tokenizer | tokens/program | vs cl100k_base |
+|---|---:|---:|
+| cl100k_base | 121.2 [118.9, 123.6] | 1.000 |
+| o200k_base | 122.6 | 1.012 |
+| Qwen2.5-Coder | 125.1 | 1.032 |
+| SentencePiece 8k (shipped) | 139.8 | **1.154** |
+| SentencePiece 32k | 139.6 | 1.152 (13,605 unk) |
+| the v0.3 16,384-vocab HF tokenizer | 66.0 | 0.545 — **lossy**, its null `unk_token` silently drops every backslash (2,606 in this sample) |
 
-- Reasoning channel mandated (companion files)
-- Curriculum training adopted
-- Gate 3 pre-registration required
-- Quality over quantity (execution-verified corpus)
+Read it plainly: **the shipped 8k tokenizer needs 15.4% more tokens than cl100k_base on
+canonical v0.4 text**, and the only toke tokenizer that appears to win does so by deleting
+characters. No "purpose-built tokenizer beats cl100k" claim is supportable until story 116.9
+trains and locks a v0.4 tokenizer against the Phase-3 anchor of cl100k = 242,427 tokens on
+that exact sample.
 
----
+**Cross-language density — one shared tokenizer, two languages** (TEMSpec §2.3,
+informational):
 
-## 9. What Distinguishes toke
+| comparison | cl100k_base | N | source |
+|---|---:|---:|---|
+| 60 Gate-1 tasks, hand-written v0.4 toke vs equivalent Python | 4,787 vs 3,565 → **1.34× [1.22, 1.48]** | 60 | 133.4, `toke-eval/docs/gate1-60-v04.md` |
+| four execution-verified sample pairs, toke `--min` vs Python | 344 vs 264 → **1.30×** (o200k 1.32×) | 4 | 132.0(b), `docs/about/samples-v04.md` |
+| the same four pairs, raw UTF-8 bytes | 693 vs 753 → **0.92×** | 4 | 132.0(b) |
 
-Five things genuinely separate toke from low-effort AI-targeted novelty languages:
+**Under the general-purpose tokenizers models actually use — cl100k_base, o200k_base,
+Qwen2.5-Coder — toke currently costs about 30% more tokens than Python on these N = 4 sample
+pairs, and 34% more on the N = 60 task set. More, not fewer.** The v0.3-era text measured 1.76×, so the v0.4 rewrite closed most of
+the gap but did not cross it. The one lane with no tokenizer assumption — raw bytes — has
+toke at 0.92× Python, the narrowest margin in the table and the honest shape of the result
+at N = 4.
 
-1. **A real backend.** LLVM IR codegen to native binaries is materially harder than a tree-walking interpreter.
-2. **Pre-registered falsification with stated failure mode.** Most novelty PLs have no exit criteria. toke will publish a post-mortem if it fails.
-3. **Trained tokenizer + trained model on an engineered corpus.** Most novelty PLs don't train anything; they rely on zero-shot generalization.
-4. **Honest separation between "compiles" and "works."** We do not claim functional correctness. We gate the project on achieving it.
-5. **Published, installable artifacts.** Not README-ware. Working tools on npm, PyPI, Ollama, VS Code Marketplace, and a live API.
+**The toke-to-toke lane is where the real win is.** Re-expressing the same 60 Gate-1 tasks
+in v0.4 cut them from 6,347 to 4,787 cl100k tokens, a **24.6% reduction** (N = 60, same
+tokenizer on both sides, 133.4), while every program passes `tkc --check` (60/60) and all
+120 hidden test cases per task (60/60), lint clean. That set is hand-written, not
+model-generated — 27 ids are pure `--migrate` output and 33 were hand-repaired — so it
+measures what the *language* can express, not what a *model* produces
+(`docs/about/toke-eval-drift-decision.md` states what it may and may not claim).
 
----
+**Never cross the lanes.** The toke-trained tokenizers in the first table were trained on
+toke text; applied to Python they measure their own training bias, not the language. Quoting
+a toke-trained tokenizer on the toke side against a general-purpose tokenizer on the Python
+side is a methodology error, and it is the error behind the withdrawn claims in §9. Any
+cross-language number uses **one** tokenizer on both sides.
 
-## 10. What toke Still Needs to Prove
+### 3.2 The ceiling, even when the tokenizer wins
 
-This section is the most important in the paper. We do not yet have sufficient evidence for the thesis.
+Suppose the tokenizer programme succeeds. The ceiling is still low, and it is better that we
+publish the arithmetic than that someone else does.
 
-### 10.1 Functional Correctness
+Take a representative agentic task: 100,000 input tokens and 10,000 output tokens, with
+output half code and half reasoning plus tool calls, and input 40% code. A syntax-level
+saving reaches only the code slices. An aggressive 40% cut on those yields roughly 18,000 of
+110,000 tokens — about 16% of raw tokens, and that already assumes the whole codebase in
+context is already toke. Now re-price it cache-aware: cached input reads bill at roughly
+0.1x, so the largest slice is also the cheapest per dollar and the input-code saving is
+worth about a tenth of its face value.
 
-At 55.6% functional Pass@1, the toke model writes correct programs at roughly 63% the rate of than the same base model (Qwen 2.5 Coder 7B) writes correct Python (88.4% HumanEval pass@1, Hui et al. 2024). The remaining 44.4% gap represents genuine algorithmic errors and edge cases that further training can address — retry loops and debugging tokens would obliterate the structural advantage. **Gate 3 must pass for the thesis to hold.**
-
-### 10.2 Fair Tokenizer Comparison
-
-The 52% reduction compares toke under a *toke-trained BPE* against other languages under cl100k_base. This is structurally biased: any language with a custom BPE trained on its own corpus will dominate a general-purpose tokenizer. The honest comparison requires:
-
-- toke under cl100k_base vs Python under cl100k_base (isolates language design)
-- toke under toke BPE vs Python under a Python-trained 16K BPE (controls for tokenizer)
-
-We commit to publishing all four cells before Gate 3 evaluation. The 12.5% Gate 1 result (same tokenizer for both) is the fairer measure of language design impact.
-
-### 10.3 End-to-End Cost in Agent Workflows
-
-Source-side tokens != total inference cost. A coding agent's context window is dominated by retrieved files, tool outputs, error traces, and chain-of-thought — not just the lines being generated. A 50% reduction in source tokens may translate to only 5-15% reduction in a real agent workflow. We need to measure and publish end-to-end round-trip token costs on realistic tasks.
-
-### 10.4 The Macro Headwind: Inference Cost Decline
-
-LLM inference costs are falling ~10x/year (Appenzeller, a16z "LLMflation" Nov 2024) or up to 50x/year median (Epoch AI). A 52% structural reduction is roughly equivalent to ~3 months of natural price decline. If this rate holds, toke's advantage erodes within months. Counter-argument: cost decline applies uniformly; structural efficiency compounds on top of it. But the adoption-friction cost of a new language may not amortize fast enough.
-
-### 10.5 External Usage
-
-As of 2026-05-24, all toke usage is within the author's own repositories and projects. No external developers are building production applications in toke. **This is the strongest current basis for skepticism about real-world value** — a language nobody else uses, regardless of its technical merits, has not demonstrated practical utility. Gate 3 is the resolution point: either the functional correctness results justify adoption friction, or they don't.
-
-### 10.6 Benchmark Provenance
-
-The 700-task benchmark used for Gate 2 evaluation was derived from the same categories as the training corpus. While 500 tasks are "hidden" (not in training data), they share the same distribution. If the model has learned to pattern-match categories rather than generalise, 100% compilation may be partly tautological. Gate 3 must demonstrate transfer to genuinely novel tasks.
-
-### 10.7 The LL(1) Claim
-
-The claim that "LL(1) eliminates ambiguity that confuses LLMs" is plausible but not literature-backed. Research on constrained decoding (TokDrift, arXiv:2510.14972) suggests tokenizer-grammar misalignment matters more than parser class. We state this as a design hypothesis, not a proven advantage.
-
----
-
-## 11. Project Scale
-
-| Metric | Value |
-|--------|-------|
-| Tracked epics | 99 |
-| Tracked stories | 500+ |
-| Active repositories | 6 |
-| Duration | 3 months daily development |
-| Compiler diagnostic codes | 70+ |
-| Standard library modules | 38 |
-| Conformance tests | 62+ |
-| Formal gate decisions | 2 passed, 1 pre-registered |
+The conclusion we adopt from the September 2026 landscape review: **a 30 to 50 percent cut
+in code tokens nets only single-digit to low-double-digit percent of total agentic token
+spend**, and is dominated by prompt caching, reasoning-length control and multi-token
+prediction. That decomposition is an estimate built on assumed splits, not a measurement —
+nobody has published the real one, which is why story 131.56 instruments a real session and
+publishes it. The direction, though, is not in doubt: syntax savings are real and
+second-order, and no claim in this project may contradict that.
 
 ---
 
-## 12. Call for External Validation
+## 4. The evidence against us
 
-toke needs external users and independent assessment to move beyond "one person's research project." We specifically invite:
+Four findings argue against the project. We state them in our own words, without softening,
+and answer each. The full survey is `docs/about/landscape-2026-09.md`; the archived external
+review is `docs/about/reviews/landscape-2026-09-18.md`.
 
-### 12.1 Application Developers
+### 4.1 Superword tokenizers commoditise the tokenizer gain
 
-Build something in toke. The compiler, standard library, and tooling are ready:
-- `ollama run karwalski/toke` — generate toke code locally
-- VS Code extension with syntax highlighting and LSP diagnostics
-- 38 stdlib modules (HTTP, crypto, JSON, database, file I/O, ML)
-- `api.tokelang.dev` — free tier API for code generation
+**The threat.** SuperBPE (arXiv 2503.13423, ICML 2025) bridges whitespace to form superword
+units: at a fixed 200k vocabulary it encodes text with up to 33% fewer tokens than BPE (6.63
+vs 4.45 bytes per token), with a +4.0% absolute average gain across 30 downstream tasks
+(+8.2% MMLU) and 27% less inference compute at 8B scale. It delivers the bulk of what a
+purpose-built tokenizer delivers, generically, inside ordinary model training, with an
+accuracy *gain* rather than a cost. A bespoke tokenizer, by contrast, requires a bespoke
+model, which forfeits prompt caching and shared-infrastructure economics.
 
-We want to see toke used for:
-- CLI tools
-- Web services
-- Data processing pipelines
-- Any application where token cost matters for AI-assisted development
+**Our answer.** We concede the lane. The purpose-built tokenizer was never the durable part
+of the argument, and on our own v0.4 numbers it is not currently a win at all (§3.1). What a
+superword tokenizer does not deliver is a grammar a decoder can be constrained to, a
+canonical form that makes rewards and diffs exact, or a compiler that answers in structured
+diagnostics. Training lane 128.12 puts the question to a controlled test: on one frozen
+corpus, compare our purpose-built BPE, a SuperBPE-class tokenizer, the base model's own
+tokenizer, and the base tokenizer plus toke-specific added tokens — scored on tokens per
+program *and* on downstream correctness after an identical fine-tune. If the superword lane
+wins, we stop building tokenizers, and the language is unaffected.
 
-### 12.2 Researchers
+### 4.2 Tokenizer-free architectures threaten the unit itself
 
-Reproduce our measurements. All artifacts are published:
-- Tokenizer: `pip install toke-tokenizer` — verify the 52% claim on your own programs
-- Model: `ollama run karwalski/toke` — measure compilation and correctness rates
-- Compiler: `github.com/karwalski/toke` — run the conformance suite
+**The threat.** H-Net (arXiv 2507.07955) learns chunking end-to-end from raw bytes, matches
+a transformer of twice its size, and reports nearly 4x data-efficiency improvement on code.
+Byte Latent Transformer (Pagnoni et al., ACL 2025, arXiv 2412.09232) matches Llama 3 at 8B
+and is reported strongest exactly where tokenisation is weakest, including code. If models
+consume bytes or learned dynamic chunks, "tokens per program" stops being a stable figure of
+merit, terse ASCII loses its tokenizer arbitrage, and **every ranking built on BPE counts,
+ours included, is void.**
 
-We specifically invite:
-- Independent like-for-like tokenizer benchmarks (controlled comparisons)
-- End-to-end agent-workflow token-cost measurement
-- Cross-model evaluation (run the eval harness on Llama, DeepSeek, etc.)
+**Our answer.** We would say so on the day, not defend it. What survives is the grammar (a
+byte-level model still has to emit a syntactically valid program, and byte-granularity
+constraint machinery pays *more* for a large grammar, not less), the compiler (an error
+filter and reward signal that do not care how the text was produced), the canonical form,
+and byte compactness — 0.92x Python on the v0.4 samples, much less than a tokenizer win but
+not zero. The preparation is already done rather than promised: story 131.50 adds a raw-byte
+lane and a BLT-style byte-patch lane to every benchmark, so this pivot costs a column rather
+than a rewrite, and lane 128.13 runs a byte-level model on toke directly. The claim that a
+small grammar makes byte-level generation cheaper is **not proven**; 131.51 is the test, and
+F1 in §7 states what we do if it fails.
 
-### 12.3 Skeptics
+### 4.3 The task-level evaluation says terse-language advantages evaporate
 
-Tell us what would change your mind. We have pre-registered criteria that define failure. If Gate 3 fails (functional Pass@1 < 15%), we publish a post-mortem. If the like-for-like tokenizer comparison shows no significant advantage, we say so.
+**The threat.** danluu's 2026 evaluation ran frontier agents on non-trivial work (a zstd
+decoder from spec; Pandoc ProgramBench). At medium reasoning effort the terse and
+dynamic-language token advantage appears; **at high reasoning effort it disappears**, with
+static languages among the best. Obscure and dense languages (J, Assembly) do poorly.
+Language *popularity* correlates weakly-to-moderately with both higher correctness and lower
+cost. This is the best independent, task-level evidence in our lane and it points against us
+— it is also the evidence that should be trusted over RosettaCode-style token rankings,
+which count existing snippets rather than end-to-end task cost. The same evaluation observed
+agents repeating an identical compiler error before fixing it, which is a direct hit on
+"faster compiler feedback means fewer iterations".
 
-The strongest form of this project is not toke succeeding — it is toke producing a clear, honest answer to whether purpose-built languages improve LLM inference. A rigorous negative result would be at least as valuable as a positive one.
+**Our answer.** The result attacks the terseness half of the design, not the grammar half,
+and it is measured in the right unit: cost per solved task, not tokens per program. We adopt
+that unit rather than arguing with it. Story 131.55 runs the four-arm comparison with the
+same accounting — toke plus our model, toke plus a frontier model plus constrained decoding,
+Python plus a frontier model, and Python plus a frontier model plus type-constrained
+decoding — with failed attempts priced and input priced cache-aware. F4 in §7 states the
+consequence if toke loses it. We would rather run danluu's experiment on ourselves than wait
+for someone else to.
+
+### 4.4 A new language starts as the lowest-resource language in existence
+
+**The threat.** Pass@1 for genuinely low-resource languages — R, Racket, Perl, Swift, Go —
+sits at or below 30% against 50-75% for Python, JavaScript and Java (Giagnorio et al.,
+January 2025; MultiPL-E and MultiPL-T, arXiv 2308.09895). toke has no pretraining presence,
+no RL environments and no Stack Overflow. Our own honest floor is consistent with the
+penalty rather than with any headline: the full-local re-audit of all 1,748 v0.3.9 corpus
+programs gives **37.5% compile (655/1,748) and about 2.2% fully correct (38 PASS)**.
+
+**Our answer.** Anka partly rebuts this for *syntax* — 99.9% parse success from an
+in-context spec, zero prior exposure — but not for *reasoning* in the language, and we do
+not pretend otherwise. The structural answer is that toke is designed so the model does not
+have to carry the language: the grammar artefacts constrain generation, the compiler
+supplies the error signal, and the canonical form is short enough to fit in a syntax card.
+Lane 128.10 is the honest test of whether that is enough: a frontier model, the syntax card
+and the grammar artefacts, **with no training at all**, is the baseline every trained lane
+must beat.
+
+### 4.5 (And the one that attacks the design directly) Verbosity beat terseness
+
+Anka is *deliberately verbose* with one canonical form, and it beat Python by **40
+percentage points** on multi-step pipeline tasks (100% vs 60%), with GPT-4o-mini confirming
++26.7 points. toke bets on terse *and* canonical and has never separated the two. It is
+entirely possible that the canonical-form half is doing the work and the terse half is
+costing accuracy. Story 131.54 A/Bs exactly this on our own 46-entry catalogue, which
+already holds measured terse and verbose forms of identical behaviour. F2 in §7 states the
+consequence: "compact" drops out of the claim, and the idiom standard is rewritten. The
+language base still does not change; the canonical form does.
+
+### 4.6 The nearest substitute
+
+KERN/KERN-py (Oscar Martinez) compresses Python's surface syntax reversibly and keeps
+Python's semantics, runtime and tests — so it has no cold-start problem at all, since every
+Python program is training data for it. It is the first third party to benchmark against
+toke, and their cl100k numbers stand: Kern Compact 3,012 tokens against our 4,787 on the 60
+Gate-1 tasks (Kern/toke 0.63). We reproduced their work from source (story 133.1) and our
+corrections are qualifications, not rebuttals: the toke programs they measured were
+April-2026 Gate-1-era output in a syntax three revisions old, and on migrated `--min` text
+the equal-vocabulary lane narrows to parity within the confidence interval (ratio 0.971,
+bootstrap 95% CI [0.759, 1.155], N = 60). Publishing this is the point.
 
 ---
 
-## 13. Conclusion
+## 5. Correctness: what has actually been measured
 
-toke is a falsifiable research hypothesis, not a vanity project. The hypothesis is specific: purpose-built languages can reduce LLM inference costs through structural token efficiency.
+This is the weak half of the project and always has been.
 
-**What we have demonstrated:**
-- A compiled language with formal grammar, LLVM backend, and conformance tests
-- 100% compilation from a fine-tuned model
-- Published, installable tools on every major platform
-- Production codebases totalling 87,000+ lines
+| Evaluation | Compile Pass@1 | Functional | Set / model |
+|---|---|---|---|
+| Gate 1 (2026-04-03) | 63.7% | n/a | fine-tuned 7B baseline; ~2.5% illegal-char |
+| Gate 2 (2026-05-22) | **100%** | **55.6%** (272/489) | curated 500 hidden + 200 eval; Qwen 2.5 Coder 7B + QLoRA, **v0.3 syntax** |
+| Full-local re-audit (honest floor) | **37.5%** (655/1,748) | **~2.2%** (38 PASS) | all 1,748 programs, v0.3.9 |
+| `toke_generate` sample (71.5.4) | 84% (21/25) | 78% (18/23) | 25-prompt benchmark |
+| Corpus after v0.4 mechanical migration | 84.3% (1,781/2,112) | n/a | `=`→`==` only, not yet idiomatic |
 
-**What we have not yet demonstrated:**
-- Functional correctness competitive with Python baselines
-- Fair like-for-like tokenizer comparison
-- End-to-end cost reduction in agent workflows
-- External adoption beyond the author's projects
-- Transfer to genuinely novel tasks
+Four caveats do the work here, and none of them may be dropped when a number is quoted.
 
-**What will settle it:**
-- Gate 3 (mid-August 2026): functional Pass@1 >= 35%, multi-model coverage, self-improvement
-- Or: functional Pass@1 < 15% → post-mortem and honest negative result
+1. **Every trained-model number above is from a v0.3-syntax model.** v0.4 is a breaking
+   change. No v0.4-native model has been trained, and no from-scratch ~1B model — the actual
+   north-star deliverable — exists.
+2. **The Gate 2 100% is on a curated set the model was optimised against.** The 37.5% /
+   2.2% re-audit over all 1,748 programs is the honest real-world floor. Quoting the 100%
+   without the floor is a misrepresentation of our own work.
+3. **The 55.6% is a correction, not a revision of convenience.** It was originally reported
+   as about 8% because the `io.readln` C glue was missing; fixing the stdlib link on
+   2026-05-25 moved it to 55.6% (272/489). External descriptions of toke still quote the 8%,
+   and that figure is stale in our favour as well as against us — we state it here so that
+   neither version circulates uncorrected.
+4. **Passing a test is not evidence of correctness when the test can be gamed.** The
+   clearest finding in the project is story 131.42: of 576 A-ERR error-union corpus records,
+   **429 across 69 bases are gamed** — 424 build the harness's expected marker as a string
+   literal, 5 construct it at run time — against 147 correct. A companion re-authoring
+   recheck (131.47) found 68 of 336 records genuinely wrong against corrected tests. The
+   generation model learned to defeat a literal-matching test. Any "% pass" figure taken
+   from corpus data has to be read against that.
 
-The distinction between a research language and a novelty project is not the outcome — it is the methodology. toke has pre-registered criteria, formal gates, published artifacts, and an explicit failure mode. We invite you to watch Gate 3, reproduce our measurements, and build something. Let the data decide.
+**There was no August 2026 gate.** August produced a training-data quality freeze — 23,382
+audited v0.4 corpus records, 14,727 passing every execution gate, 1,583/1,583 library
+programs, 631 A-category bases given execution-verified tests for the first time, 2,639
+records repaired — and that is a statement about data quality, not about what a model can
+generate. Every Epic 128 training story remains planned and compute-gated, so the most
+recent model gate is still Gate 2 of 2026-05-22. The freeze was itself reopened by Epic 131
+in September, so even those corpus numbers are a superseded snapshot.
+
+---
+
+## 6. Methodology
+
+### 6.1 Falsification-first, and what that has cost us
+
+Each stage must pass pre-registered criteria before the project advances; criteria are
+locked before experiments run; the decision document is append-only; a gate failure
+terminates or re-scopes the programme rather than moving the threshold.
+
+The methodology has been honoured in the places where it hurt. Gate 1's modest result was
+published as modest. The 8% functional result was published before the cause was known. The
+52% headline was withdrawn when it could not be reproduced from its own source data, rather
+than requalified into survival. The corpus freeze was reopened a month after it was
+announced because a pattern sweep found systematic gaming. The value of a gated research
+project is exactly this: the negative results are load-bearing, and they are published.
+
+### 6.2 Gate 3, and the reason there is no date on it
+
+Gate 3's criteria were locked on 2026-05-24 and are unchanged: functional Pass@1 >= 35% on a
+500-task hidden benchmark; compile Pass@1 >= 95%; argv-generalisation >= 50%; multi-model
+coverage across >= 2 families; and demonstrated self-improvement (iteration N+1 beating
+iteration N by >= 5 percentage points on the identical benchmark, same base model, same
+decoding parameters). The failure mode is pre-registered too: functional Pass@1 < 15%
+triggers a post-mortem and a pivot evaluation.
+
+The original timeline said mid-August 2026. That date passed without a training run, because
+the corpus was not trustworthy enough to train on — which the audit and pattern sweeps
+proved rather than assumed — and because the training lanes are compute-gated. We state the
+slip plainly instead of quietly re-dating it. Gate 3 now runs against the 128.15 scorecard:
+compile Pass@1, functional Pass@1 by execution, tokens per solved task in every 131.50 lane,
+cost and energy per solved task, repair-loop convergence within 3 rounds, and first-shot
+validity under constrained decoding — with the rule that **no lane advances without beating
+the no-training baseline**.
+
+### 6.3 The dominant failure mode: hardcoding
+
+The failure mode Gate 3's argv criterion exists for: the model emits syntactically valid
+code that embeds a memorised expected output instead of implementing the algorithm — writing
+`<42` rather than reading argv, parsing and computing. 67% of Gate 2's functional failures
+had this shape, and 131.42 shows the same instinct applied to error-union tests. The fix is
+not more syntax training; it is execution feedback and tests that cannot be satisfied by a
+literal. Both are now structural: the corpus driver executes, and a hard `return_type` gate
+blocks the gamed shape.
+
+---
+
+## 7. What would falsify this
+
+Each test is filed work with a stated decision rule, so the answer is not a matter of
+argument when it arrives. The authoritative table is `docs/about/positioning-2026-09.md` §8.
+
+| # | Test | Result that falsifies | Consequence |
+|---|---|---|---|
+| F1 | **131.51** — byte-level durability spike | Byte-level generation constrained by toke's grammar is no cheaper and no more reliable than the same setup on a mainstream-language grammar: first-shot valid-program rate within noise, and no byte-per-solved-task advantage whose 95% CI excludes zero | The "durable under tokenizer-free architectures" claim in §4.2 is **retired**, not softened; the language-level claim narrows to constrained decoding under BPE only |
+| F2 | **131.54** — terseness vs reliability, A/B over the 46-entry catalogue | The canonical terse form scores *lower* on first-shot functional correctness than the most verbose measured form of the same pattern, 95% CI excluding zero | Terseness is demoted below reliability; the efficiency protocol gains a correctness term, verdicts flip, and "compact" drops out of the claim |
+| F3 | **128.10 + 128.15** — the no-training baseline | No trained lane beats a frontier model with the syntax card and the grammar artefacts and **no training** on cost per solved task | The bespoke-model programme **stops**; we ship the grammar, the compiler and the tooling and say publicly that training was not justified |
+| F4 | **131.55** — cost per solved task, four arms | toke plus its best lane does not beat Python plus a frontier model plus type-constrained decoding, same tasks, failed attempts priced, input priced cache-aware | The language-level claim fails on the metric we chose ourselves; toke is then a research result about grammar design, not a production proposal |
+| F5 | **116.9** — v0.4 tokenizer Phase-3 gate | The retrained, locked v0.4 tokenizer does not beat cl100k_base = 242,427 tokens on the 2,000-record baseline sample | The tokenizer half is dead; every token-reduction claim is withdrawn from every surface and §3 is deleted rather than requalified |
+| F6 | **131.56** — agentic token decomposition | Cache-weighted code tokens are under 5% of billable spend in an instrumented session | Token efficiency stops being a headline property anywhere; it stays in the metrics file as a measured fact and leaves the positioning entirely |
+
+Two results would strengthen the thesis enough to move the emphasis back: a 131.51 finding
+that grammar-constrained byte-level generation is materially cheaper on toke, and a 131.55
+finding that toke plus constrained decoding beats Python plus type-constrained decoding on
+cost per solved task with no training at all. Neither is assumed here.
+
+---
+
+## 8. What we borrow
+
+Three things the field does better than we do, taken rather than competed with.
+
+1. **Constrained decoding as the delivery mechanism.** XGrammar-class grammar-constrained
+   decoding and PLDI 2025 type-constrained generation, wired to our own grammar artefacts,
+   with mask-construction cost benchmarked against a mainstream-language grammar and grammar
+   drift breaking the build (131.52). Caveat carried: constraints applied naively can reduce
+   reasoning ability, and validity is not correctness.
+2. **Execution-feedback and RLVR training.** The compile gate is necessary and not
+   sufficient; execution feedback is what moves functional correctness, our open weakness on
+   every honest number we have (128.11). The reasoning-channel A/B (131.53) tests whether our
+   reasoning-light corpus stance is costing correctness; efficient-reasoning results
+   (TokenSkip, EMNLP 2025: 40% fewer reasoning tokens for under 0.4% accuracy loss) suggest
+   it might. The language does not change; the record shape might.
+3. **Diff and patch output formats.** Edit formats capture much of the output-token saving on
+   any language — aider's unified-diff format raised GPT-4 Turbo from 20% to 61% on its own
+   benchmark — and a diff of toke is still a diff. Story 131.57 defines the canonical toke
+   edit format and maps `tkc --fix` and `--migrate` spans to patches.
+
+---
+
+## 9. Corrections to the previous version of this paper
+
+The 2026-05-24 revision of this paper published five things that were wrong. They are listed
+here, in full, because they propagated: an independent September 2026 review describes toke
+as "LL(1), 13 keywords" with "about 8% functional correctness" precisely because that is what
+we published.
+
+| Published claim | Status | Correct statement |
+|---|---|---|
+| "a formal EBNF grammar, LL(1) verified" | **Wrong** | `toke-spec-v0.4.md` §E (2026-07-02) states the strict-LL(1) claim "was **not accurate** for the real grammar". The grammar is backtrack-free with an enumerated set of productions needing bounded lookahead of up to 3 tokens |
+| "13 keywords" | **Wrong** | 14: `m i t f let if el lp br rt as mt sc mut` (spec §A, verified against the lexer keyword table). `mut` and `sc` are keywords |
+| "a purpose-built 16K BPE tokenizer achieves 52% fewer tokens" | **Withdrawn, not requalified** | The figure could not be traced to a primary artefact. Its only published N = 42 dataset re-aggregates to 61.6% (sum-ratio) / 62.6% (per-task mean) for that tokenizer against cl100k_base on the *same toke text*, while reproducing exactly the two withdrawn cross-tokenizer headlines it sits beside. It was never a comparison with Python, and it rests on a lossy tokenizer. It may be described as a withdrawn past claim; it must not be restated as a measurement |
+| "using the same tokenizer (cl100k_base) for both languages, toke achieves a 12.5% token reduction over equivalent Python programs" | **Wrong lane** | The Gate 1 12.5% was an 8K purpose-built BPE vocabulary against its baseline on toke text, not a same-tokenizer comparison with Python. The same-tokenizer cross-language number runs the other way: toke costs **1.34× [1.22, 1.48]** the cl100k_base tokens of equivalent Python on the 60 Gate-1 tasks (N = 60) |
+| "Gate 3 GO/NO-GO by mid-August 2026" | **Did not happen** | No model gate ran in August 2026. August produced a corpus-quality freeze. The most recent model gate is Gate 2 of 2026-05-22 |
+
+Two further claims from that version are withdrawn on the same methodology ground: **"42%
+reduction vs Python"** and **"56% vs Java"** counted the toke side with a toke-trained
+tokenizer and the other side with a general-purpose one, which measures the tokenizer's
+training bias rather than the language; and every per-example variant of it ("14 tokens vs
+27 for Python", and similar) fails the same way. `docs/about/samples-v04.md` replaces them
+with every lane reported side by side.
+
+Finally, several project-scale figures in the previous version — corpus record counts,
+production line counts, stdlib module counts, conformance-test counts, diagnostic-code
+counts — were quoted without a source that survives re-checking. They are removed rather
+than re-quoted. Nothing in this paper is asserted unless `docs/metrics-baseline.md` carries
+it.
+
+---
+
+## 10. What toke has not shown
+
+- **Functional correctness.** 55.6% on a curated v0.3 set, about 2.2% on the honest floor.
+  This is the open weakness and the reason execution feedback is the priority lane.
+- **Any v0.4 model result.** None exists. Every model number in this paper is v0.3-era.
+- **A token win under the tokenizers models actually use.** Today toke costs more (§3.1).
+- **End-to-end cost advantage.** Not measured; 131.55 and 131.56 are the instruments.
+- **That a small grammar helps byte-level generation.** A mechanical argument, not a result
+  (131.51).
+- **External adoption.** All toke usage remains within the author's own repositories.
+  A language nobody else uses has not demonstrated practical utility, and that is the
+  strongest current basis for scepticism regardless of its technical merits.
+
+---
+
+## 11. Reproduce it, or break it
+
+Everything above is reproducible from published artefacts, and the fastest way to help is to
+find an error in it.
+
+- **The numbers:** [`docs/metrics-baseline.md`](../metrics-baseline.md) — metric, basis,
+  caveat and origin for each. Cite the row and its caveat, never a headline.
+- **The v0.4 sample pairs:** `docs/about/samples-v04.md` and `samples-v04.json`; regenerate
+  with `python3 scripts/about/samples_v04.py`. Every pair is execution-verified — the toke
+  binary and the Python program must print byte-identical output before any number is
+  emitted.
+- **The 60 Gate-1 tasks:** `toke-eval/docs/gate1-60-v04.md`, with the harness commands and
+  per-task counts, and `docs/about/toke-eval-drift-decision.md` for what that set may and
+  may not claim.
+- **The KERN comparison:** `docs/about/reviews/kern-2026-08.repro.py` re-runs it end to end
+  from pinned commits and wheel SHAs with bootstrap CIs.
+- **The tokenizer baseline:** sample ids and SHAs in
+  `toke-tokenizer/data/baseline_sample_ids_v04.txt`.
+- **The compiler and grammar:** `github.com/karwalski/toke`; `docs/spec/grammar.ebnf` and
+  `docs/spec/toke.gbnf` are the artefacts to wire a constrained decoder to.
+
+What we most want from readers, in order: an independent cost-per-solved-task measurement on
+our four arms; a byte-level or dynamic-chunking model run against the toke grammar; a
+constrained-decoding benchmark of our grammar against a mainstream-language grammar; and a
+programme written in toke by someone who is not the author.
+
+The strongest form of this project is not toke succeeding. It is toke producing a clear,
+honest answer to whether a purpose-built language helps a model write correct code cheaply.
+A rigorous negative result is worth as much as a positive one, and §7 says exactly what one
+would look like.
 
 ---
 
 ## References
 
-1. Gate 2 Decision. 2026-05-22. `docs/spec/gate2-decision.md`
-2. Gate 3 Pre-Registration. 2026-05-24. `docs/spec/gate3-criteria.md`
-3. Training Next Phase. 2026-05-23. `docs/spec/training-next-phase.md`
-4. Research Feedback Request. 2026-05-23. `docs/spec/research-feedback-request.md`
-5. Reasoning Channel Spec. 2026-05-23. `docs/spec/reasoning-channel.md`
-6. toke Language Spec v0.3. `docs/spec/toke-spec-v0.3.md`
-7. SimPy: arXiv:2404.16333 (ISSTA '24). 13.5% token reduction via simplified grammar.
-8. Token Sugar: arXiv:2512.08266. 15.1% reduction via tokenizer-aware syntax transforms.
-9. TokDrift: arXiv:2510.14972. Tokenizer-grammar misalignment as obstacle to code generation.
-10. Appenzeller, G. "Welcome to LLMflation." a16z.com, 12 November 2024. ~10x/year cost decline.
-11. Epoch AI. "LLM inference prices have fallen rapidly but unequally." Median ~50x/year.
-12. Hui et al. "Qwen2.5-Coder Technical Report." arXiv:2409.12186. 88.4% HumanEval pass@1.
-13. GitHub Blog. "Why AI is pushing developers toward typed languages." 8 January 2026.
-14. Project: https://github.com/karwalski/toke
-15. Model: https://huggingface.co/karwalski/toke
-16. Tokenizer: https://huggingface.co/karwalski/toke-tokenizer
-17. API: https://api.tokelang.dev
-18. Ollama: https://ollama.com/karwalski/toke
+1. toke Language Specification v0.4 (normative amendment). `docs/spec/toke-spec-v0.4.md`
+2. Honest metrics baseline — the source for every number in this paper. `docs/metrics-baseline.md`
+3. Repositioning brief: the durable claim. `docs/about/positioning-2026-09.md`
+4. The landscape and the evidence against us. `docs/about/landscape-2026-09.md`
+5. Landscape review, September 2026 (archived, unedited). `docs/about/reviews/landscape-2026-09-18.md`
+6. KERN review and reproduction. `docs/about/reviews/kern-2026-08.md`, `kern-2026-08.repro.py`
+7. v0.4 code samples, every tokenizer lane. `docs/about/samples-v04.md`
+8. Gate-1 60, v0.4 re-delivery. `toke-eval/docs/gate1-60-v04.md`
+9. Gate 2 decision (2026-05-22). `docs/spec/gate2-decision.md`
+10. Gate 3 pre-registration (2026-05-24). `docs/spec/gate3-criteria.md`
+11. Liu et al. "SuperBPE: Space Travel for Language Models." arXiv 2503.13423, ICML 2025.
+12. Hwang, Wang and Gu. "Dynamic Chunking for End-to-End Hierarchical Sequence Modeling" (H-Net). arXiv 2507.07955.
+13. Pagnoni et al. "Byte Latent Transformer." arXiv 2412.09232, ACL 2025.
+14. Dong et al. "XGrammar: Flexible and Efficient Structured Generation." arXiv 2411.15100.
+15. Mündler et al. "Type-Constrained Code Generation with Language Models." arXiv 2504.09246, PLDI 2025.
+16. Al Mazrouei. "Anka: a verbose DSL for reliable LLM code generation." arXiv 2512.23214.
+17. Giagnorio et al. "Enhancing Code Generation for Low-Resource Languages." January 2025; MultiPL-E / MultiPL-T, arXiv 2308.09895.
+18. Xia et al. "TokenSkip: Controllable Chain-of-Thought Compression." arXiv 2502.12067, EMNLP 2025.
+19. danluu. "Cost and correctness of LLM agents across programming languages." 2026.
+20. Gauthier, P. "Unified diffs make GPT-4 Turbo 3x less lazy." aider.chat benchmark.
+21. Project: https://github.com/karwalski/toke

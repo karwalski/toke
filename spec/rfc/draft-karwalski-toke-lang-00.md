@@ -18,11 +18,13 @@ Abstract
    machine-readable compiler diagnostics.  It compiles to native machine
    code via LLVM with no runtime dependency.
 
-   toke uses a 56-character source alphabet: lowercase letters, digits,
-   and 20 symbols.  Uppercase letters are eliminated through sigil-
-   based encoding ($type for type names, @() for array literals),
-   yielding highly predictable co-occurrence patterns that merge
-   efficiently under BPE tokenization.
+   toke uses a restricted lowercase source alphabet: letters, digits
+   and a fixed symbol set (Section 5).  Uppercase letters are
+   eliminated through sigil-based encoding ($type for type names, @()
+   for array literals), which is intended to produce predictable
+   co-occurrence patterns for a tokenizer to merge.  That intent is a
+   design rationale, not a measured result; Section 5.3 states what
+   has been measured.
 
    The language was developed iteratively: an initial 80-character
    legacy profile (using uppercase keywords and bracket arrays)
@@ -138,6 +140,75 @@ Table of Contents
    Appendix A.  Acknowledgements ................................... 47
    Author's Address ................................................ 47
 ```
+
+---
+
+## 0.  Document Status and Errata (2026-09-19)
+
+   This draft was written in March 2026 against language version v0.3.
+   The normative specification of record is now
+   `docs/spec/toke-spec-v0.4.md` (2026-07-02), a delta amendment that
+   makes breaking changes to the surface grammar.  Where this document
+   and that specification disagree, **the specification governs**.  The
+   corrections below have been applied in place; the remaining v0.4
+   deltas are listed so that no reader takes an uncorrected section as
+   normative.
+
+   Corrections applied in this revision:
+
+   a)  **The grammar is not LL(1).**  toke-spec-v0.4 §E records that the
+       v0.3 claim of a strict LL(1) grammar decidable with exactly one
+       token of lookahead "was not accurate for the real grammar".  The
+       verified property is that the grammar is *backtrack-free* — the
+       parser never rescans consumed input — with an enumerated set of
+       productions requiring bounded lookahead of up to 3 tokens, listed
+       normatively in Appendix A of `docs/spec/grammar.ebnf` with the
+       FIRST-sets.  Sections 4.2, 10, 21 and 22 are corrected.
+
+   b)  **There are 14 keywords, not 12 or 13.**  toke-spec-v0.4 §A fixes
+       the set at `m i t f let if el lp br rt as mt sc mut`, verified
+       against the lexer keyword table.  Section 6.2 is corrected: `mt`
+       (match expression) and `sc` (structured-concurrency block) were
+       omitted from this draft's table.
+
+   c)  **Projected token-density figures are withdrawn.**  The "3x to 4x
+       density versus Python" projection in Section 5.3 and the "2.5-4x
+       fewer LLM tokens" expectation in Section 15.4 were never
+       measured, and measurement since has run the other way: under one
+       shared tokenizer toke costs *more* tokens than equivalent Python
+       (Section 5.3).  Every quantitative claim about toke now cites
+       `docs/metrics-baseline.md`, which carries the metric type,
+       tokenizer, baseline and sample size for each figure per
+       TEMSpec §6.3.  The "52% average token reduction" headline
+       attached to earlier toke material is withdrawn, not requalified.
+
+   Remaining v0.4 deltas NOT rewritten in this draft (see
+   toke-spec-v0.4 §§B-D and F; a -01 revision will fold them in):
+
+   o  `=` is binding and assignment only; `==` is equality and `!=` is
+      inequality.  The Section 6.1 symbol table and the Section 7
+      examples still show the v0.3 overload, in which `=` served as an
+      equality test.  A bare `=` in comparison position is now the hard
+      parse error E2002.
+   o  `if` is an expression and yields a value when it carries an `el`
+      arm (Section 7.6 describes the statement form only).
+   o  `&&` and `||` are normative short-circuit logical operators.
+   o  `str.fields` is added to the `str` module.
+   o  The character-set count in Section 5 (56, counting the two
+      reserved and unusable characters `^` and `~`) does not reconcile
+      with the 55-character count in the language specification, which
+      counts 26 lowercase letters, 10 digits and 19 symbols.  The
+      specification's count governs; the reconciliation is an open
+      editorial item for the -01 revision.
+
+   Sections 11, 13, 15, 17, 18, 19, 20 and 22 describe a research and
+   engineering programme rather than the language, and are historical as
+   of this revision: their dates, costs and projections have not been
+   re-run.  The current positioning, evidence and falsification criteria
+   live in `docs/about/positioning-2026-09.md` and
+   `docs/whitepaper/toke-research-language.md`; the current numbers live
+   in `docs/metrics-baseline.md`.  Nothing in this paragraph is
+   normative for an implementation.
 
 ---
 
@@ -356,8 +427,15 @@ Table of Contents
 ### 4.2.  Deterministic Structure
 
    A valid toke source unit SHALL parse to exactly one unambiguous
-   syntax tree under the normative grammar.  The grammar is LL(1):
-   the parser SHALL NOT require more than one token of lookahead.
+   syntax tree under the normative grammar.  The grammar SHALL be
+   backtrack-free: a conforming parser SHALL NOT rescan input it has
+   already consumed.  A conforming parser SHALL NOT require unbounded
+   lookahead at any production; the enumerated productions that require
+   lookahead SHALL require at most three tokens.  Those exceptions are
+   listed normatively, with the FIRST-sets, in Appendix A of
+   `docs/spec/grammar.ebnf`.  An implementation that backtracks, or
+   that requires unbounded lookahead at any production, is
+   non-conforming.
 
 ### 4.3.  Token Efficiency
 
@@ -491,29 +569,48 @@ Table of Contents
    Gate 1 benchmark results, which were measured using the development
    profile corpus.
 
-### 5.3.  Token Count Estimates
+### 5.3.  Token Count
 
-   Illustrative token counts for a typical HTTP handler across profiles
-   and tokenizers.
+   The per-construct estimates and the "3x to 4x density versus
+   Python" projection published in the March 2026 draft of this
+   section are withdrawn: they were projections, not measurements, and
+   measurement has since run the other way.  This section states only
+   what has been measured, with the reporting fields TEMSpec §6.3
+   requires — metric type, tokenizer, baseline and sample size.  The
+   source of record is `docs/metrics-baseline.md`.
+
+   Cross-language density, one shared tokenizer applied to both sides
+   (TEMSpec §2.3, informational):
 
 ```
-   Configuration                          Estimated Tokens
-   --------------------------------------------------------
-   tk (development profile), cl100k_base  ~38
-   tk (production), cl100k_base            ~43  (+5, sigil overhead)
-   tk (dev profile), purpose-built        ~26  (common patterns merge)
-   tk (production), purpose-built         ~22  (sigils merge)
-
-   Python (benchmark baseline)            ~85
-   TypeScript (benchmark baseline)        ~92
-   --------------------------------------------------------
+   Comparison                                       cl100k_base     N
+   ----------------------------------------------------------------- 
+   toke v0.4 (tkc --min) vs Python, 60 Gate-1 tasks  4,787 : 3,565   60
+      ratio                                          1.34x
+      [bootstrap 95% CI 1.22, 1.48]
+   toke v0.4 (tkc --min) vs Python, sample pairs        344 : 264     4
+      ratio                                          1.30x
+   the same pairs, raw UTF-8 bytes                      693 : 753     4
+      ratio                                          0.92x
+   ----------------------------------------------------------------- 
 ```
 
-   The toke production profile with purpose-built tokenizer is
-   projected to achieve approximately 4x token density versus the
-   Python baseline for equivalent logic.  Token efficiency values
-   were validated at Gate 1 (2026-04-03): 12.5% token reduction vs
-   cl100k_base confirmed, 3x density vs Python confirmed.
+   Under the general-purpose tokenizers that deployed models use, toke
+   currently costs roughly 30 percent MORE tokens than equivalent
+   Python, not fewer.  The one lane with no tokenizer assumption —
+   raw bytes — has toke at 0.92x Python on the same four pairs.
+
+   Tokenizer lane, one text measured by two tokenizers (N = 2,000
+   stratified corpus records, canonical `tkc --min` text): the shipped
+   8k SentencePiece tokenizer requires 15.4 percent MORE tokens than
+   cl100k_base (139.8 against 121.2 tokens per program).  No
+   "purpose-built tokenizer beats cl100k_base" claim is supportable
+   until a v0.4 tokenizer is trained and locked.
+
+   A tokenizer trained on toke text MUST NOT be applied to a baseline
+   in another language: doing so measures the tokenizer's training
+   bias rather than the language.  Every cross-language figure uses
+   one tokenizer on both sides.
 
 ---
 
@@ -562,8 +659,11 @@ Table of Contents
 
 ### 6.2.  Keywords
 
-   Twelve identifiers are reserved as keywords.  They MUST NOT be used
-   as user-defined identifiers.
+   Fourteen identifiers are reserved as keywords.  They MUST NOT be
+   used as user-defined identifiers.  The set is normative in
+   toke-spec-v0.4 §A and is verified against the lexer keyword table;
+   the "12 keywords" list in the March 2026 draft and the "13 keywords"
+   wording in v0.3 are both retired (see Section 0).
 
 ```
    Keyword  Role
@@ -580,6 +680,8 @@ Table of Contents
    mut      Mutable qualifier on binding
    as       Explicit type cast
    rt       Return (long form; equivalent to <)
+   mt       Match expression
+   sc       Structured-concurrency block
 ```
 
    All keywords are lowercase.  The declaration keywords f, t, i, and m
@@ -1080,8 +1182,8 @@ Table of Contents
          v             character.
 
    Parser              AST.  Structured error on grammar violation.
-         |             LL(1): one token of lookahead maximum.
-         v
+         |             Backtrack-free; bounded lookahead, at most three
+         v             tokens at the enumerated productions.
 
    Import resolver     Resolves all imports to interface files.
          |             Fails fast on missing module with available
@@ -1580,9 +1682,15 @@ Table of Contents
    6.  Manually inspect and correct pathological merges.
    7.  Freeze vocabulary.
 
-   Expected token density improvement: 2.5-4x fewer LLM tokens per
-   tk program compared to cl100k_base, arising from the highly
-   repetitive and structurally constrained nature of toke source.
+   The "2.5-4x fewer LLM tokens" expectation published here in the
+   March 2026 draft is withdrawn.  It was a projection; the measured
+   result is the opposite.  On canonical v0.4 text (N = 2,000
+   stratified corpus records) every toke tokenizer shipped to date
+   needs more tokens than cl100k_base — the 8k SentencePiece model by
+   15.4 percent — and the one apparent exception is lossy, its null
+   `unk_token` silently discarding characters.  A purpose-built
+   tokenizer for toke remains an open question, not a result; see
+   `docs/metrics-baseline.md`.
 
 ---
 
@@ -1938,7 +2046,7 @@ Table of Contents
 ```
    Metric                    toke          Python       C            Notes
    -----------------------   -----------   ----------   ----------   ------
-   Token efficiency          12.5% better  Baseline     Baseline     Gate 1 PASS
+   Token density (cl100k)    1.34x cost    Baseline     n/m          See 5.3
    First-pass compile (LLM)  92.3%         High         Medium       1000 tasks
    Pass@1 (held-out)         63.7%         N/A          N/A          Gate 1 PASS
    Repair iterations         Measuring     Medium       Medium       Phase 2
@@ -1951,11 +2059,22 @@ Table of Contents
    Compiler size             ~3,700 LOC    N/A          N/A          C99
 ```
 
-   Gate 1 results: Token reduction 12.5% (8K vocab) / 13.1% (32K
-   vocab) vs cl100k_base.  Pass@1 63.7% (588/923 compilable tasks)
-   on 1,000 held-out benchmark tasks using Qwen 2.5 Coder 7B with
-   QLoRA adapter.  Both criteria exceeded the required thresholds
-   (>10% token reduction AND >=60% Pass@1).
+   Gate 1 results (2026-04-03): Pass@1 63.7% (588/923 compilable
+   tasks) on 1,000 held-out benchmark tasks using Qwen 2.5 Coder 7B
+   with a QLoRA adapter.  The accompanying 12.5% token-reduction
+   figure was an 8K purpose-built BPE vocabulary measured against
+   cl100k_base on *toke* text — a comparison of two tokenizers on one
+   text, not a comparison with Python — and it is superseded by the
+   v0.4 measurements in Section 5.3.  The Gate 1 token criterion is
+   therefore recorded as met on the tokenizer lane only.
+
+   Later results supersede the compile and correctness figures in the
+   table above.  Gate 2 (2026-05-22, v0.3-syntax fine-tune) reached
+   100% compile Pass@1 with 55.6% functional correctness (272/489) on
+   a curated hidden-plus-eval set; a full local re-audit of all 1,748
+   corpus programs gives the honest floor of 37.5% compile and about
+   2.2% fully correct.  No model has been trained on v0.4 syntax.  All
+   figures: `docs/metrics-baseline.md`.
 
    Full Gate 1 decision document: docs/gate1-decision.md
 
@@ -1967,7 +2086,7 @@ Table of Contents
    tokelang/
    |-- tkc/
    |   |-- lexer.c            Lexer (~300 lines)
-   |   |-- parser.c           Parser (~400 lines), LL(1)
+   |   |-- parser.c           Parser (~400 lines), backtrack-free
    |   |-- type_checker.c     Type checking and arena validation
    |   |-- ir_lower.c         AST to toke IR (SSA form)
    |   |-- llvm_backend.c     toke IR to LLVM IR
@@ -2019,7 +2138,7 @@ Table of Contents
    M0    Spec locked: legacy character set, symbols, keywords, EBNF  1    DONE
    M0.5  Mac Studio purchased and configured                      1    DONE
    M0.5  Qwen 2.5 Coder 32B running locally, pipeline tested     1    DONE
-   M1    tkc lexer + parser, zero dependencies, LL(1)             2    DONE
+   M1    tkc lexer + parser, zero deps, backtrack-free          2    DONE
    M2    Type checker + structured error output                   3    DONE
    M3    LLVM IR backend, hello world to native binary            4    DONE
    M4    stdlib core: http, db, json, file                        6    DONE
@@ -2042,9 +2161,13 @@ Table of Contents
    M1 through M6 were completed ahead of schedule.  The 7B fine-tune
    (M6) was completed using QLoRA via Apple MLX on the development
    profile corpus (73K training examples, eval loss 0.158).  Gate 1
-   evaluation completed 2026-04-03: PASS.  Token reduction 12.5%
-   (threshold >10%), Pass@1 63.7% (threshold >=60%) on 1,000 held-out
-   tasks.  The project proceeds to default syntax implementation.
+   evaluation completed 2026-04-03: PASS on Pass@1 63.7% (threshold
+   >=60%) over 1,000 held-out tasks; its token criterion was met on
+   the tokenizer lane only and is superseded (Sections 5.3 and 20).
+   The milestone table above is historical: the dates after M6 have
+   not been re-run since March 2026, GATE 3 has not been evaluated,
+   and no model has been trained on v0.4 syntax.  Current status:
+   `docs/metrics-baseline.md`.
 
 ---
 
