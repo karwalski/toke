@@ -65,6 +65,8 @@ See `spec/toke-spec-v0.3.md` Appendix A for the diagnostic JSON schema.
 | E4025 | error | type_check | Struct has no field with that name | -- |
 | E4026 | error | type_check | Array index type error | -- |
 | E4031 | error | type_check | Type mismatch / implicit coercion | -- |
+| E4033 | error | type_check | Member access on a type name rather than a value | T003 |
+| E4034 | error | codegen | Field access on a layout the compiler cannot establish | T003 |
 | E4040 | error | type_check | Map key type mismatch | -- |
 | E4041 | error | type_check | Map value type mismatch | -- |
 | E4042 | error | type_check | Method on non-collection type | -- |
@@ -731,6 +733,42 @@ f=bad():i64{let a=@(1;2;3);<a.get("x")};
 expressions, mismatched function arguments, mismatched binding annotations,
 mismatched assignment sides, and mismatched return values. The fix field, when
 present, suggests an explicit `as` cast.
+
+---
+
+### E4033 -- Member access on a type name rather than a value
+
+| Field | Value |
+|-------|-------|
+| **Code** | E4033 |
+| **Stage** | type_check |
+| **Severity** | error |
+| **Message** | `'<T>' is a type name, not a value: '<T>.<f>' has no meaning` |
+| **Fix field** | present (`"bind an instance first and take the field of that"`) |
+| **Conformance test** | T003 |
+
+**Notes:** Story 127.90. `Point.x` names the TYPE, not an instance. The
+expression has no meaning, but it type-checked and lowered to a field load off
+a null base, yielding a plausible-looking `0`.
+
+---
+
+### E4034 -- Field access on a layout the compiler cannot establish
+
+| Field | Value |
+|-------|-------|
+| **Code** | E4034 |
+| **Stage** | codegen |
+| **Severity** | error |
+| **Message** | `no struct in scope declares a field '<f>', and the type of this value is not established` / `field '<f>' is declared at different offsets by more than one struct, ...` |
+| **Fix field** | absent (deliberately -- no repair is correct for every shape) |
+| **Conformance test** | T003 |
+
+**Notes:** Stories 127.86 / 127.89 / 136.28. Lowering used to answer an
+unestablished layout with a guess: `struct_field_index()` returns `0` for "not
+found", and an unresolved base took the first registered struct declaring a
+field of that name. Both guesses produce a value of the right type from the
+wrong place.
 
 ---
 

@@ -372,6 +372,27 @@ static const char *map_tag(int int_keys, int str_vals);     /* 127.39/127.41 */
  * (getelementptr i64, ptr %base, i32 <field_index>), so the index must
  * match the declaration order exactly.
  */
+/*
+ * record_elem_spelling (136.28) — append an array field's ELEMENT type to the
+ * recorded field-type spelling.
+ *
+ * A NODE_ARRAY_TYPE's own token is just the `@`; the element name lives in its
+ * child.  Recording only "@" threw away the one thing that establishes the
+ * layout of `r.errors.get(i)`, so that element fell through to the
+ * field-owner search — right by declaration order, wrong the moment two
+ * structs share a field name.  "@Valerror" keeps both readings: every existing
+ * comparison is against "$str"/"str", which "@…" never matched anyway.
+ */
+static void record_elem_spelling(const char *src, const Node *ty, char *out) {
+    if (!ty || ty->kind != NODE_ARRAY_TYPE || ty->child_count < 1 || !ty->children[0])
+        return;
+    char el[64]; tok_cp(src, ty->children[0], el, sizeof el);
+    if (!el[0]) return;
+    size_t cur = strlen(out);
+    if (cur + strlen(el) + 1 >= 128) return;
+    memcpy(out + cur, el, strlen(el) + 1);
+}
+
 static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, const char *src) {
     if (c->struct_count >= c->struct_cap) {
         diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many struct types", "fix", NULL);
@@ -399,6 +420,7 @@ static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, 
             if (ch->op == TK_DOLLAR) si->is_sum = 1;
             if (ch->child_count >= 1 && ch->children[0]) {
                 tok_cp(src, ch->children[0], si->field_types[fi], 128);
+                record_elem_spelling(src, ch->children[0], si->field_types[fi]);
                 if (ch->children[0]->kind == NODE_MAP_TYPE) si->field_is_map[fi] = 1;
             }
             fi++;
@@ -412,6 +434,7 @@ static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, 
                     if (fj->op == TK_DOLLAR) si->is_sum = 1;
                     if (fj->child_count >= 1 && fj->children[0]) {
                         tok_cp(src, fj->children[0], si->field_types[fi], 128);
+                        record_elem_spelling(src, fj->children[0], si->field_types[fi]);
                         if (fj->children[0]->kind == NODE_MAP_TYPE) si->field_is_map[fi] = 1;
                     }
                     fi++;
@@ -453,6 +476,138 @@ static int struct_field_index(const StructInfo *si, const char *fname) {
     for (int i = 0; i < si->field_count; i++)
         if (!strcmp(si->field_names[i], fname)) return i;
     return 0; /* fallback */
+}
+
+/*
+ * struct_has_field — membership, as distinct from struct_field_index()'s
+ * answer (127.86 / 127.89 / 136.29).
+ *
+ * struct_field_index() returns 0 for "not found", which is indistinguishable
+ * from field 0.  Every silent wrong value in this family comes out of that
+ * one ambiguity:
+ *
+ *   - securemem's SecureBuf is an opaque C handle (`"fields": []`), and
+ *     `buf.size` GEP'd slot 0 — the first eight bytes of a `char id[24]` —
+ *     so buffers of 128/256/512 bytes reported sizes of 49/50/51, the ASCII
+ *     codes of the allocation ids "1", "2" and "3";
+ *   - a nonexistent field on a `.tki`-imported type returned field 0;
+ *   - a struct literal naming a nonexistent field STORED over field 0.
+ *
+ * Callers that must not guess ask this first.
+ */
+static int struct_has_field(const StructInfo *si, const char *fname) {
+    if (!si || !fname) return 0;
+    for (int i = 0; i < si->field_count; i++)
+        if (!strcmp(si->field_names[i], fname)) return 1;
+    return 0;
+}
+
+/*
+ * field_owner_unambiguous (136.28) — the struct to use when the base's own
+ * type could not be established, or NULL when no single answer exists.
+ *
+ * The old fallback took the FIRST registered struct declaring a field of that
+ * name and indexed through it, which is how matching on a result came to be
+ * typed from a different struct entirely and documented field reads landed in
+ * the wrong slots.  The fallback is retained — it is load-bearing for chained
+ * and subscripted bases — but narrowed to the case where it cannot change the
+ * answer: every registered struct declaring the name must agree on the slot
+ * AND on whether that slot is a float or a string, since those decide the
+ * bitcast.  Disagreement means the layout is genuinely unestablished, and
+ * `*out_ambig` says so, so the caller can be loud instead of plausible.
+ */
+/*
+ * annotated_struct_name (136.28) — the struct named by a binding's explicit
+ * type annotation, or NULL when the annotation does not name a registered
+ * struct.  An annotation is the source STATING the layout; it outranks any
+ * inference from the initialiser's shape, and it is what makes E4034's
+ * suggested fix an instruction that actually works.
+ */
+static const StructInfo *lookup_struct(Ctx *c, const char *name);
+static const char *annotated_struct_name(Ctx *c, const Node *ty) {
+    if (!ty) return NULL;
+    if (ty->kind != NODE_TYPE_IDENT && ty->kind != NODE_TYPE_EXPR) return NULL;
+    static char tn[128]; tok_cp(c->src, ty, tn, sizeof tn);
+    const StructInfo *si = lookup_struct(c, tn);
+    return si ? si->name : NULL;
+}
+
+/*
+ * struct_field_elem_struct (136.28) — the struct a field's DECLARED type
+ * names, with any array/optional/sigil spelling stripped.
+ *
+ * `t=Valresult{errors:@Valerror}` states the element layout on the page, so
+ * `r.errors.get(i)` has an establishable type and must not fall through to
+ * the field-owner search.  ooke reads exactly this shape, and today it gets
+ * the right slot only because `$valerror` happens to be declared before
+ * `$validateerr`; reordering the two declarations would have moved `.msg`
+ * from slot 2 to slot 0 with no diagnostic.
+ */
+static const StructInfo *lookup_struct(Ctx *c, const char *name);
+static const char *struct_field_elem_struct(Ctx *c, const StructInfo *si, int fidx) {
+    if (!si || fidx < 0 || fidx >= si->field_count) return NULL;
+    const char *t = si->field_types[fidx];
+    if (!t || !t[0]) return NULL;
+    char b[128]; int bl = 0;
+    for (const char *p = t; *p && bl < 127; p++)
+        if (*p != '@' && *p != '[' && *p != ']' && *p != '$' &&
+            *p != '(' && *p != ')' && *p != '?' && *p != ' ')
+            b[bl++] = *p;
+    b[bl] = '\0';
+    if (!bl) return NULL;
+    const StructInfo *es = lookup_struct(c, b);
+    return es ? es->name : NULL;
+}
+
+/*
+ * array_elem_struct_name / array_struct_tag (136.28) — read and write the
+ * "@<Struct>" tag for an array whose elements are a registered struct.
+ *
+ * `@str` has had an element rule since 113.B.21; an array of STRUCTS had
+ * none, so `mk().get(0).body` — where mk returns `@(Content)` — arrived with
+ * no layout and fell to the field-owner search.  With a second struct
+ * declaring `body` at another offset, that search answered from the wrong
+ * struct: the probe printed the slug where the source says `.body`.
+ */
+static const char *array_elem_struct_name(Ctx *c, const char *spelling) {
+    if (!spelling || (spelling[0] != '@' && spelling[0] != '[')) return NULL;
+    char b[128]; int bl = 0;
+    for (const char *p = spelling; *p && bl < 127; p++)
+        if (*p != '@' && *p != '[' && *p != ']' && *p != '$' &&
+            *p != '(' && *p != ')' && *p != ' ')
+            b[bl++] = *p;
+    b[bl] = '\0';
+    if (!bl) return NULL;
+    const StructInfo *si = lookup_struct(c, b);
+    return si ? si->name : NULL;
+}
+static const char *array_struct_tag(const char *elem) {
+    static char t[132];
+    snprintf(t, sizeof t, "@%s", elem);
+    return t;
+}
+
+static int struct_field_is_float(const StructInfo *si, int fidx);
+static int struct_field_is_str(const StructInfo *si, int fidx);
+static const StructInfo *field_owner_unambiguous(Ctx *c, const char *fname,
+                                                 int *out_ambig) {
+    if (out_ambig) *out_ambig = 0;
+    if (!fname) return NULL;
+    const StructInfo *hit = NULL;
+    int hidx = -1;
+    for (int si = 0; si < c->struct_count; si++) {
+        const StructInfo *cand = &c->structs[si];
+        if (!struct_has_field(cand, fname)) continue;
+        int idx = struct_field_index(cand, fname);
+        if (!hit) { hit = cand; hidx = idx; continue; }
+        if (idx != hidx ||
+            struct_field_is_float(cand, idx) != struct_field_is_float(hit, hidx) ||
+            struct_field_is_str(cand, idx)   != struct_field_is_str(hit, hidx)) {
+            if (out_ambig) *out_ambig = 1;
+            return NULL;
+        }
+    }
+    return hit;
 }
 
 /*
@@ -2301,9 +2456,27 @@ static const StructInfo *resolve_base_struct(Ctx *c, const Node *base) {
     /* For a NODE_IDENT, check if it's a ptr-local with a known struct type */
     if (base->kind == NODE_IDENT) {
         char nb[128]; tok_cp(c->src, base, nb, sizeof nb);
-        const char *stype = ptr_local_struct_type(c, nb);
+        /* 136.36: consult the UNIQUIFIED name first.  A shadowing re-bind
+         * (`$ok:g g` in a match arm, then `let g=…` in the loop below) is
+         * registered as `g.4`, while the outer `g` still carries the old tag;
+         * reading the outer one here resolved the field against the wrong
+         * layout — or, for an "@Struct" tag, against nothing at all.
+         * expr_struct_type has had this since 127.46. */
+        const char *aln = get_llvm_name(c, nb);
+        const char *stype = (aln && strcmp(aln, nb)) ? ptr_local_struct_type(c, aln) : NULL;
+        if (!stype) stype = ptr_local_struct_type(c, nb);
         if (stype) return lookup_struct(c, stype);
+        return NULL;
     }
+    /*
+     * 136.28: anything else — an element load, a chained access, a call
+     * result — asks the expression for its own tag.  This is where an
+     * established layout comes from for the shapes that used to reach the
+     * field-owner search, which answered from whichever struct happened to be
+     * declared first.
+     */
+    { const char *st = expr_struct_type(c, base);
+      if (st && st[0] != '@' && st[0] != '$') return lookup_struct(c, st); }
     return NULL;
 }
 
@@ -4336,21 +4509,54 @@ static int emit_expr(Ctx *c, const Node *n)
         /* Struct field access */
         int fidx = 0;
         const StructInfo *si = resolve_base_struct(c, n->children[0]);
-        if (si) fidx = struct_field_index(si, fn);
-        /* Heuristic fallback: when struct type is unknown (base is an array
-         * subscript, a chained field access, or an ident whose type wasn't
-         * tracked), search all registered structs for the field name.
-         * Correct when field names are unique across the module's structs. */
-        if (!si) {
-            for (int _si = 0; _si < c->struct_count; _si++) {
-                int _found = 0;
-                for (int _fi = 0; _fi < c->structs[_si].field_count; _fi++)
-                    if (!strcmp(c->structs[_si].field_names[_fi], fn)) { _found = 1; break; }
-                if (_found) {
-                    si = &c->structs[_si];
-                    fidx = struct_field_index(si, fn);
-                    break;
-                }
+        /*
+         * 127.86/127.89/136.28: the layout has to be ESTABLISHED before a slot
+         * index means anything.  Both of the old answers were guesses that
+         * looked like data: a field the struct does not declare took
+         * struct_field_index()'s 0 fallback, and a base whose own type was
+         * unknown took the first struct anywhere that happened to declare a
+         * field of that name.  Both now refuse rather than invent.
+         */
+        if (si && !struct_has_field(si, fn)) {
+            char msg[256];
+            snprintf(msg, sizeof msg, "struct '%s' has no field '%s'", si->name, fn);
+            diag_emit(DIAG_ERROR, E4025, n->start, n->line, n->col, msg,
+                      "expected", "a valid field name", "got", fn,
+                      "fix", "check the struct definition for available fields",
+                      (const char *)NULL);
+            si = NULL;
+        } else if (si) {
+            fidx = struct_field_index(si, fn);
+        } else {
+            /* Heuristic fallback: when struct type is unknown (base is an array
+             * subscript, a chained field access, or an ident whose type wasn't
+             * tracked), search all registered structs for the field name.
+             * Narrowed by 136.28 to the case where every candidate agrees, so
+             * it cannot change the answer; disagreement, or no candidate at
+             * all, is reported instead of guessed. */
+            int ambig = 0;
+            si = field_owner_unambiguous(c, fn, &ambig);
+            if (si) {
+                fidx = struct_field_index(si, fn);
+            } else if (c->struct_count > 0 && !recv_is_map(c, n->children[0])) {
+                /* A map receiver's `.values` / other property spellings are
+                 * map operations, not struct fields; they are lowered (or
+                 * not) elsewhere, and inventing a layout complaint for them
+                 * would be a false diagnostic on a map. */
+                char msg[256];
+                snprintf(msg, sizeof msg,
+                         ambig ? "field '%s' is declared at different offsets by more than one struct, and the type of this value is not established"
+                               : "no struct in scope declares a field '%s', and the type of this value is not established",
+                         fn);
+                /* No `fix`: the obvious instruction — annotate the binding —
+                 * is not deterministically correct.  An annotated binding off
+                 * an array element still mis-lowers (filed separately), so
+                 * naming it here would hand the repair loop a repair that
+                 * does not repair.  AGENTS.md §3.1: when unsure, omit. */
+                diag_emit(DIAG_ERROR, E4034, n->start, n->line, n->col, msg,
+                          "expected", "a value of an established struct type",
+                          "got", fn,
+                          (const char *)NULL);
             }
         }
         {
@@ -4800,6 +5006,19 @@ static int emit_expr(Ctx *c, const Node *n)
             int fidx = i; /* default: positional */
             if (si && fi->tok_len > 0) {
                 char fname[128]; tok_cp(c->src, fi, fname, sizeof fname);
+                /* 136.29: a name the struct does not declare took
+                 * struct_field_index()'s 0 fallback and STORED over field 0.
+                 * The checker rejects this now; this is the backstop for any
+                 * path that reaches lowering anyway. */
+                if (!struct_has_field(si, fname) && si->field_count > 0) {
+                    char msg[256];
+                    snprintf(msg, sizeof msg, "struct '%s' has no field '%s'",
+                             si->name, fname);
+                    diag_emit(DIAG_ERROR, E4025, fi->start, fi->line, fi->col, msg,
+                              "expected", "a valid field name", "got", fname,
+                              "fix", "check the struct definition for available fields",
+                              (const char *)NULL);
+                }
                 fidx = struct_field_index(si, fname);
             }
             if (fi->child_count >= 1) {
@@ -5782,6 +6001,17 @@ static const char *tki_declared_tag(Ctx *c, const char *alias, const char *metho
         !strcmp(tbase, "@$str") || !strcmp(tbase, "[$str]")) return "@str";
     const StructInfo *vsi = lookup_struct(c, tbase);
     if (vsi) return vsi->name;
+    /*
+     * 136.36: an ARRAY of a declared record — `analytics.groupstats` states
+     * `[groupstat]!dferr`.  Only the scalar record case was read, so an
+     * element of the returned array arrived with no layout and `.mean` was
+     * resolved by the field-owner search: `statsrow` is registered first and
+     * declares `mean` at slot 2, so `g.mean` on a `groupstat`
+     * (`{group,count,sum,mean}`) emitted slot 2 — the SUM.  Both are f64, so
+     * the answer was a plausible number from the wrong field.
+     */
+    { const char *es = array_elem_struct_name(c, tbase);
+      if (es) return array_struct_tag(es); }
     return NULL;
 }
 
@@ -5886,6 +6116,10 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         const char *iln = get_llvm_name(c, ia);
         const char *ist = ptr_local_struct_type(c, iln);
         if (ist && !strcmp(ist, "@str")) return "$str";
+        /* 136.28: the same rule for an array of STRUCTS — `col.get(k)` on a
+         * local tagged "@Content" is a Content, so its fields resolve against
+         * Content's layout instead of the first struct declaring the name. */
+        { const char *es = array_elem_struct_name(c, ist); if (es) return es; }
     }
     /*
      * 127.80: `<module>.get(k)` — `env.get("HOME")`, `db.get(id)` — parses as
@@ -5910,6 +6144,29 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         n->children[0]->kind != NODE_IDENT) {
         const char *bst = expr_struct_type(c, n->children[0]);
         if (bst && !strcmp(bst, "@str")) return "$str";
+        /* 136.28: `mk().get(0)` where mk returns `@(Aye)` is an Aye. */
+        { const char *es = array_elem_struct_name(c, bst); if (es) return es; }
+    }
+    /*
+     * 136.28: `r.errors.get(i)` — an element of a struct field DECLARED as an
+     * array of structs.  The layout is stated in the type declaration, so
+     * establish it here rather than letting the element reach the field-owner
+     * search, where two structs sharing a field name at different offsets
+     * would make it either a silent wrong slot (before) or a diagnostic on
+     * correct code (after).
+     */
+    if (n->kind == NODE_INDEX_EXPR && n->child_count >= 1 &&
+        n->children[0] && n->children[0]->kind == NODE_FIELD_EXPR &&
+        n->children[0]->child_count >= 2) {
+        const StructInfo *bsi = resolve_base_struct(c, n->children[0]->children[0]);
+        if (bsi) {
+            char bfn[128]; tok_cp(c->src, n->children[0]->children[1], bfn, sizeof bfn);
+            if (struct_has_field(bsi, bfn)) {
+                const char *es = struct_field_elem_struct(c, bsi,
+                                     struct_field_index(bsi, bfn));
+                if (es) return es;
+            }
+        }
     }
     /* 126.6: a $str struct field access (`rec.name`) — the field stores an i8*
      * pointer at the i64 ABI, so tag it "$str" so string interpolation and
@@ -5939,15 +6196,14 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             } else {
                 /* 126.8: the base didn't resolve to a struct instance (e.g.
                  * `json.getobj(...).raw` — the stale getobj's Json return isn't
-                 * tracked). Fall back to searching all structs for a str field of
-                 * this name, so `.raw` (Json.raw:str) tags $str — else its result
-                 * is an untagged i8* and `@(x)` mis-spreads it (AIA-100). Mirrors
-                 * the float heuristic in expr_llvm_type NODE_FIELD_EXPR. */
-                for (int _si = 0; _si < c->struct_count; _si++)
-                    for (int _fi = 0; _fi < c->structs[_si].field_count; _fi++)
-                        if (!strcmp(c->structs[_si].field_names[_fi], fld) &&
-                            struct_field_is_str(&c->structs[_si], _fi))
-                            return "$str";
+                 * tracked). Fall back to the unique field owner, so `.raw`
+                 * (Json.raw:str) tags $str — else its result is an untagged
+                 * i8* and `@(x)` mis-spreads it (AIA-100).  136.28 narrowed
+                 * this from "any struct declaring the name" to the unambiguous
+                 * one, so it agrees with the slot the GEP site picks. */
+                const StructInfo *osi = field_owner_unambiguous(c, fld, NULL);
+                if (osi && struct_field_is_str(osi, struct_field_index(osi, fld)))
+                    return "$str";
             }
         }
     }
@@ -6106,6 +6362,24 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                  */
                 { const char *dt = tki_declared_tag(c, alias, method); if (dt) return dt; }
             }
+            /*
+             * 136.36: ask the interface even when resolve_stdlib_call could
+             * not name a glue symbol.  `resolved` is about which SYMBOL to
+             * call; the interface is about what the call RETURNS, and the two
+             * are independent — 136.34 counts 456 runtime symbols no
+             * interface declares, and the reverse case (declared, no glue
+             * name the resolver recognises) is how `analytics.groupstats`
+             * reached lowering with no layout at all.  Gated on the alias
+             * being an import, so an instance method is untouched.
+             */
+            if (!resolved) {
+                for (int ii = 0; ii < c->import_count; ii++) {
+                    if (strcmp(c->imports[ii].alias, alias)) continue;
+                    const char *dt = tki_declared_tag(c, alias, method);
+                    if (dt) return dt;
+                    break;
+                }
+            }
             /* 127.7 / 127.28: instance-method calls on a non-import receiver
              * (`x.trim()`, `line.split(",")`, `m.keys()`, `a.append(e)`) never
              * reach resolve_stdlib_call (it needs an import alias), so the
@@ -6201,11 +6475,37 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             }
             /* Cross-module user calls: check FnSig by method name */
             const FnSig *sig2 = lookup_fn(c, method);
+            /*
+             * 127.89/136.28: a `.tki` export is registered under its MANGLED
+             * name ("ooke_store_storeall"), so the bare-method lookup above
+             * misses every cross-module call and the declared return type —
+             * which load_tki_funcs read off the interface and stored — was
+             * never consulted.  That is why `mt store.storeall(..) {$ok:c c}`
+             * bound a value with no layout at all: the answer was on disk and
+             * the lookup key was the wrong spelling, one more time.
+             */
+            if (!sig2 || !sig2->ret_type_name[0]) {
+                for (int ii = 0; ii < c->import_count; ii++) {
+                    if (strcmp(c->imports[ii].alias, alias)) continue;
+                    char mg[256]; int mp = 0; const char *mod = c->imports[ii].module;
+                    for (int k = 0; mod[k] && mp < (int)sizeof(mg) - 2; k++)
+                        mg[mp++] = (mod[k] == '.') ? '_' : mod[k];
+                    if (mp < (int)sizeof(mg) - 1) mg[mp++] = '_';
+                    mg[mp] = '\0';
+                    strncat(mg, method, sizeof(mg) - strlen(mg) - 1);
+                    const FnSig *ms = lookup_fn(c, mg);
+                    if (ms && ms->ret_type_name[0]) sig2 = ms;
+                    break;
+                }
+            }
             if (sig2 && sig2->ret_type_name[0] && lookup_struct(c, sig2->ret_type_name))
                 return sig2->ret_type_name;
             if (sig2 && (!strcmp(sig2->ret_type_name, "@$str") ||
                          !strcmp(sig2->ret_type_name, "@str")))
                 return "@str";
+            /* 136.28: a function returning an array of structs */
+            if (sig2) { const char *es = array_elem_struct_name(c, sig2->ret_type_name);
+                        if (es) return array_struct_tag(es); }
             /* 127.28 (+127.39/127.41 suffixes: "__map__i" / "__map__S") */
             if (sig2 && !strncmp(sig2->ret_type_name, "__map__", 7)) return sig2->ret_type_name;
             /* 114.56: a cross-module user fn returning a scalar string — tag
@@ -6228,6 +6528,9 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         if (sig && (!strcmp(sig->ret_type_name, "@$str") ||
                     !strcmp(sig->ret_type_name, "@str")))
             return "@str";
+        /* 136.28: a function returning an array of structs */
+        if (sig) { const char *es = array_elem_struct_name(c, sig->ret_type_name);
+                   if (es) return array_struct_tag(es); }
         if (sig && !strncmp(sig->ret_type_name, "__map__", 7)) return sig->ret_type_name; /* 127.28 */
         /* 114.56: a user fn returning a scalar string — tag "$str" so the
          * comparison and var-to-var `=` codegen route to strcmp, not a
@@ -6687,13 +6990,13 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         /* Check if the field has a known f64 type */
         {
             const StructInfo *si = resolve_base_struct(c, n->children[0]);
+            if (si && !struct_has_field(si, fn)) si = NULL;
             if (!si) {
-                /* Heuristic: search all structs */
-                for (int _si = 0; _si < c->struct_count; _si++) {
-                    for (int _fi = 0; _fi < c->structs[_si].field_count; _fi++)
-                        if (!strcmp(c->structs[_si].field_names[_fi], fn)) { si = &c->structs[_si]; break; }
-                    if (si) break;
-                }
+                /* Heuristic: the unique field owner (136.28 — the old "first
+                 * struct declaring the name" answered from the wrong struct).
+                 * Kept in step with the GEP site so the reported type and the
+                 * emitted slot cannot disagree. */
+                si = field_owner_unambiguous(c, fn, NULL);
             }
             if (si) {
                 int fidx = struct_field_index(si, fn);
@@ -7356,11 +7659,19 @@ static void emit_stmt(Ctx *c, const Node *n)
                                ? expr_struct_type(c, init_node) : "__map__"));
             } else if (!strcmp(vty, "i8*")) {
                 const char *stype = expr_struct_type(c, init_node);
-                mark_ptr_with_type(c, tb, stype);
+                /* 136.28: an explicit annotation STATES the layout; prefer it
+                 * over what the initialiser's shape suggests.  Without this
+                 * `let a:Aye = mk().get(0)` left `a` untracked, so `a.shared`
+                 * fell to the field-owner search — and E4034's `fix` ("annotate
+                 * the binding") would have been an instruction that does not
+                 * work, which AGENTS.md §3.1 forbids outright. */
+                const char *ann = has_ann ? annotated_struct_name(c, n->children[1]) : NULL;
+                mark_ptr_with_type(c, tb, ann ? ann : stype);
             } else if (!strcmp(vty, "i64")) {
                 /* Struct-returning functions use i64 ABI (ptrtoint) but still
                  * need struct type tracking for field-index resolution. */
-                const char *stype = expr_struct_type(c, init_node);
+                const char *ann = has_ann ? annotated_struct_name(c, n->children[1]) : NULL;
+                const char *stype = ann ? ann : expr_struct_type(c, init_node);
                 if (stype) mark_ptr_with_type(c, tb, stype);
             }
             /* 126.8: a mut.@() array proven to hold strings (compute_str_arrays) is

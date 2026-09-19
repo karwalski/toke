@@ -642,6 +642,34 @@ The check is deliberately narrow. A `std.*` member that the hand-written interfa
 
 Emitted when a `\(expr)` interpolates an array, struct, or map. Convert it to a string first (e.g. its fields/elements). Fires at code generation.
 
+### E4033
+
+**Member access on a type name rather than a value**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | typecheck |
+
+Emitted for `Type.member` where `Type` names a struct type rather than an instance of it. There is no value to take a field of, so the expression has no meaning. Before 127.90 it type-checked and lowered to a field load off a null base, producing a plausible-looking `0`.
+
+**Fix:** Bind an instance first and take the field of that.
+
+### E4034
+
+**Field access on a layout the compiler cannot establish**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+Emitted when a `.field` access reaches lowering and the base's struct type is not established, and the field name does not resolve to one unambiguous layout — either no struct in scope declares it, or several declare it at different offsets.
+
+Codegen used to answer both cases with a guess that looked like data: `struct_field_index()` returns `0` for "not found", and an unresolved base took the first registered struct declaring a field of that name. That is how a 512-byte secure buffer reported its size as `51` (127.86), a nonexistent field returned the first field (127.89), and a documented field read landed in another struct's slot (136.28).
+
+No `fix` is supplied: the obvious instruction — annotate the binding — is not correct for every shape.
+
 ### E4070
 
 **Assignment to immutable binding**

@@ -157,8 +157,35 @@ static const char *type_name(const Type *t) {
  *
  * Returns 0 if either pointer is NULL (defensive).
  */
+/*
+ * opaque_handle_type (136.36) — a `.tki` record declared with NO fields.
+ *
+ * `std.vec`'s Vec and `std.securemem`'s SecureBuf are C handles: the
+ * interface states `"fields": []` because their real C layout is not toke's
+ * i64-slot layout and nothing in them is readable from toke.  At the ABI such
+ * a value simply IS the i64 handle, and idiomatic code passes it where `i64`
+ * is declared.  Keying imported_func_ret on the call spelling made those
+ * returns typed for the first time, so the arity/return checks began
+ * rejecting that working code.  Field ACCESS on such a record stays an error
+ * (that is 127.86); only the scalar compatibility is restored.
+ */
+static int opaque_handle_type(const Type *t) {
+    return t && t->kind==TY_STRUCT && t->field_count==0 && t->name && t->name[0];
+}
+static int scalar_int_type(const Type *t) {
+    if (!t) return 0;
+    switch (t->kind) {
+    case TY_I64: case TY_U64: case TY_I8: case TY_I16: case TY_I32:
+    case TY_U8: case TY_U16: case TY_U32: case TY_BOOL: return 1;
+    default: return 0;
+    }
+}
+
 static int types_equal(const Type *a, const Type *b) {
-    if (!a||!b) return 0; if (a==b) return 1; if (a->kind!=b->kind) return 0;
+    if (!a||!b) return 0; if (a==b) return 1;
+    if ((opaque_handle_type(a)&&scalar_int_type(b))||
+        (opaque_handle_type(b)&&scalar_int_type(a))) return 1;
+    if (a->kind!=b->kind) return 0;
     if (a->kind==TY_STRUCT) return a->name&&b->name&&strcmp(a->name,b->name)==0;
     if (a->kind==TY_PTR) return types_equal(a->elem, b->elem);
     if (a->kind==TY_MAP) {
@@ -266,6 +293,9 @@ typedef struct {
 /* Maximum number of type errors to collect per function before
  * suppressing further diagnostics.  Story 84.1.9. */
 #define MAX_TYPE_ERRORS 20
+/* 136.36: cap on the "already reported" set; beyond it a repeat may double-report,
+ * which is far better than dropping a real diagnostic. */
+#define TKC_MAX_TYPE_REPORTED 512
 
 typedef struct { TypeEnv *env; const char *src;
                  Type *fn_ret; int had_error;
@@ -276,7 +306,23 @@ typedef struct { TypeEnv *env; const char *src;
                  int fn_error_count;           /* errors in current function (story 84.1.9) */
                  int bind_infer_depth;         /* 127.40: recursion guard for binding-init inference */
                  const Node *root;             /* 127.14: NODE_PROGRAM, for import-alias lookup */
+                 /* 136.36: nodes already reported on.  infer() has no memo —
+                  * it re-walks — and bind_init_type() re-enters an
+                  * initialiser, so a diagnostic raised on a binding's RHS was
+                  * emitted twice.  Pre-existing checks never noticed because
+                  * they sit on nodes the binding path does not re-enter. */
+                 const Node *reported[TKC_MAX_TYPE_REPORTED]; int reported_count;
                } Ctx;
+
+/* tc_first_report — 1 the first time `n` is reported on, 0 afterwards. */
+static int tc_first_report(Ctx *cx, const Node *n) {
+    if (!n) return 1;
+    for (int i = 0; i < cx->reported_count; i++)
+        if (cx->reported[i] == n) return 0;
+    if (cx->reported_count < TKC_MAX_TYPE_REPORTED)
+        cx->reported[cx->reported_count++] = n;
+    return 1;
+}
 
 /* 127.40: an un-annotated binding's type is recovered by re-inferring its
  * initialiser. A self-referential initialiser (`let x=f(x)`) would otherwise
@@ -1376,11 +1422,50 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_STRUCT_LIT: {
         Type *st = resolve_type(cx, node);
+        /*
+         * 136.29: a literal naming a field the struct does not declare was
+         * accepted and WROTE somewhere it should not — struct_field_index()
+         * answers 0 for "not found", so `Point{x:1;y:2;z:3}` stored 3 over
+         * slot 0 and `p.x` read back 3.  With 127.89 (the read side) that
+         * meant neither direction of struct field access was checked.
+         *
+         * Only a struct whose layout is actually established is checked; a
+         * sum-type literal names a VARIANT, not a field, and its layout is
+         * the 2-slot box, so it is left to the variant checks.  A zero-field
+         * record (an opaque .tki handle) has no writable slot at all, which
+         * the same message states correctly.
+         */
+        int is_sum_lit = 0;
+        if (st && st->kind == TY_STRUCT && st->name) {
+            const ImportedType *it = cx->env->names
+                ? imported_type_lookup(cx->env->names, st->name) : NULL;
+            if (it && it->is_sum) is_sum_lit = 1;
+        }
         /* Infer types of field init value expressions so they are type-checked. */
         for (int i=0;i<node->child_count;i++) {
             const Node *fi = node->children[i];
-            if (fi && fi->kind == NODE_FIELD_INIT && fi->child_count > 0)
-                infer(cx, fi->children[0]);
+            if (!fi || fi->kind != NODE_FIELD_INIT) continue;
+            if (fi->child_count > 0) infer(cx, fi->children[0]);
+            if (is_sum_lit || !st || st->kind != TY_STRUCT || fi->tok_len <= 0) continue;
+            char fnb[128]; TOKSTR(fnb,cx->src,fi);
+            if (!fnb[0]) continue;
+            int found = 0;
+            for (int f=0; f<st->field_count && !found; f++)
+                if (st->field_names[f] && strcmp(st->field_names[f],fnb)==0) found = 1;
+            if (found) continue;
+            /* A struct declared with no fields at all is a shape this checker
+             * cannot speak for (a forward/opaque declaration); only complain
+             * when the layout names something. */
+            if (st->field_count <= 0) continue;
+            if (tc_first_report(cx, fi) && tc_can_emit(cx)) {
+                char msg[256];
+                snprintf(msg,sizeof(msg),"struct '%s' has no field '%s'",
+                         st->name?st->name:"?",fnb);
+                diag_emit(DIAG_ERROR,E4025,fi->start,fi->line,fi->col,msg,
+                          "expected","a valid field name","got",fnb,
+                          "fix","check the struct definition for available fields",
+                          (const char*)NULL);
+            }
         }
         return st;
     }
@@ -1883,6 +1968,20 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             }
             return (base->field_count>0&&base->field_types&&base->field_types[0])?base->field_types[0]:mk_type(A,TY_UNKNOWN);
         }
+        /*
+         * 136.36 narrowing: `v.get(i)` on a value whose type came from a .tki
+         * record is a declared METHOD spelled as a subscript — `.get` parses
+         * as NODE_INDEX_EXPR, which is the same spelling 127.80 had to route
+         * specially.  Keying imported_func_ret on the call spelling made those
+         * returns typed for the first time, and this check, which had only
+         * ever seen locally declared structs, started rejecting working
+         * `std.vec` code as "cannot index into 'Vec'".  A false diagnostic on
+         * a correct program is worse than the missing type (AGENTS.md §2), so
+         * an imported record stays permissive here and codegen routes it.
+         */
+        if (base->kind==TY_STRUCT&&base->name&&cx->env->names&&
+            imported_type_lookup(cx->env->names,base->name))
+            return mk_type(A,TY_UNKNOWN);
         if (base->kind!=TY_UNKNOWN&&base->kind!=TY_ARRAY) {
             if (tc_can_emit(cx)) {
                 char msg[256];
@@ -1935,6 +2034,33 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         Type *base=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         if (node->child_count<2||!node->children[1]) return mk_type(A,TY_UNKNOWN);
         char fname[128]; TOKSTR(fname,cx->src,node->children[1]);
+        /*
+         * 127.90: `Point.x` names the TYPE, not an instance.  There is no
+         * value to take a field of, so the expression has no meaning — yet it
+         * type-checked clean and codegen lowered it to a GEP off a null base,
+         * i.e. it produced a plausible-looking 0.  The base parses as a
+         * NODE_TYPE_IDENT (a module alias is a plain NODE_IDENT), so the two
+         * spellings are distinguishable here.  Gated on the name actually
+         * resolving to a struct layout: an unknown `$X.y` is somebody else's
+         * diagnostic, and firing here too would double-report it.
+         */
+        if (node->children[0] && node->children[0]->kind == NODE_TYPE_IDENT) {
+            char tnb[128]; TOKSTR(tnb,cx->src,node->children[0]);
+            Type *named = resolve_type(cx, node->children[0]);
+            if (named && named->kind == TY_STRUCT) {
+                if (tc_first_report(cx, node) && tc_can_emit(cx)) {
+                    char msg[256];
+                    snprintf(msg,sizeof(msg),
+                             "'%s' is a type name, not a value: '%s.%s' has no meaning",
+                             tnb,tnb,fname);
+                    diag_emit(DIAG_ERROR,E4033,node->start,node->line,node->col,msg,
+                              "expected","a value of that type","got",tnb,
+                              "fix","bind an instance first and take the field of that",
+                              (const char*)NULL);
+                }
+                return mk_type(A,TY_UNKNOWN);
+            }
+        }
         /* .len on arrays and maps returns u64 */
         if ((base->kind==TY_ARRAY||base->kind==TY_MAP) && strcmp(fname,"len")==0)
             return mk_type(A,TY_U64);
@@ -2463,6 +2589,7 @@ int type_check(const Node *ast, const char *src,
     out->names=names; out->arena=arena; out->arena_depth=0;
     Ctx cx; cx.env=out; cx.src=src; cx.fn_ret=NULL; cx.had_error=0; cx.fn_node=NULL;
     cx.scope_depth=0; cx.bind_count=0; cx.fn_error_count=0; cx.bind_infer_depth=0;
+    cx.reported_count=0;
     cx.root=ast;
     for (int i=0;i<ast->child_count;i++) infer(&cx,ast->children[i]);
     return cx.had_error?-1:0;
