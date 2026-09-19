@@ -231,12 +231,19 @@ STALE = [
      "bounded lookahead of up to 3 tokens on an enumerated set of productions"),
 ]
 
+# Story 132.29 — a NEGATION of the retired fact itself: "it is NOT strict LL(1)",
+# "there are not 13 keywords". This is built per stale fact from that fact's own
+# pattern (see negation_of), so it is the claim being denied and not some other
+# "not" in the paragraph: the negator has to sit within 40 characters of the
+# claim with no sentence boundary between them.
+NEGATOR = r"\b(?:not|no longer|never|isn['’]?t|aren['’]?t|wasn['’]?t|weren['’]?t)\b"
+
 # A marker that the claim is being retired, quoted or historicised rather than
 # made. It has to be *about* the claim: a bare "not" or "never" elsewhere in the
 # sentence ("no backtracking", "the parser never needs...") is not a correction,
 # and treating it as one is exactly how the stale wording survived.
 CORRECTION = re.compile(
-    r"\bnot\b[^.\n]{0,40}LL\(1\)|never write|"
+    r"never write|"
     r"\bretire(d|s)?\b|\bsupersede(d|s)?\b|\bwithdraw(n|s)?\b|"
     r"(is|was|were|as) wrong\b|\|\s*wrong\s*\||"
     r"\binaccurate\b|not accurate|\bhistorical(ly)?\b|\bformerly\b|"
@@ -244,6 +251,47 @@ CORRECTION = re.compile(
     r"editor.s note|\b132\.12\b|except a small|except a closed|\bquot(e|ed|es)\b|"
     r"propagated|describe[sd] toke as|as published|\bassert(s|ed)\b|\bclaim(s|ed)?\b|"
     r"\bis 14\b|\bare 14\b|14 keywords|inherited|no longer", re.I)
+
+_NEGATION_CACHE = {}
+
+
+def negation_of(pat):
+    """Regex matching an explicit denial of `pat`'s claim, wrapped or not."""
+    if pat.pattern not in _NEGATION_CACHE:
+        _NEGATION_CACHE[pat.pattern] = re.compile(
+            NEGATOR + r"[^.\n]{0,40}(?:" + pat.pattern + ")", re.I)
+    return _NEGATION_CACHE[pat.pattern]
+
+
+def near_text(lines, i):
+    """The window around line `i`, re-joined into the paragraph it belongs to.
+
+    Story 132.29. Prose is hard-wrapped, so a sentence that retires a fact puts
+    the negation and the fact on different lines:
+
+        The grammar is backtrack-free with bounded lookahead of up to 3 tokens
+        — it is NOT strict LL(1) (spec v0.4 §A keywords, §E grammar).
+
+    Scoring each line on its own cannot see that "NOT", so the gate failed the
+    one document that stated the retirement correctly. Re-joining the window
+    restores the sentence. What keeps this from excusing real drift is that the
+    proximity rules are unchanged: a negator still has to sit within 40
+    characters of the claim with no `.` between them, so a "not" belonging to a
+    neighbouring sentence is still not a correction — and a blank line is a
+    paragraph boundary that is never joined across.
+    """
+    lo = max(0, i - CORRECTION_LINES)
+    hi = min(len(lines), i + CORRECTION_LINES + 1)
+    window = lines[lo:hi]
+    k = i - lo                                   # the matched line, in `window`
+    start = k
+    while start > 0 and window[start - 1].strip():
+        start -= 1
+    end = k + 1
+    while end < len(window) and window[end].strip():
+        end += 1
+    text = " ".join(ln.strip() for ln in window[start:end])
+    return text.replace("*", "").replace("_", "")   # emphasis is not content
 
 
 def load_canonical():
@@ -401,13 +449,15 @@ def check_stale(path, rel):
     for i, line in enumerate(lines):
         if (i + 1) in table_lines:
             continue
-        near = "\n".join(lines[max(0, i - CORRECTION_LINES):i + CORRECTION_LINES + 1])
-        near = near.replace("*", "").replace("_", "")   # markdown emphasis is not content
+        near = near_text(lines, i)
         for pat, label, fix in STALE:
-            if pat.search(line) and not CORRECTION.search(near):
-                findings.append((rel, i + 1, 'stale fact "%s" — write %s' % (label, fix),
-                                 line.strip()[:200], owner_of(rel)))
-                break
+            if not pat.search(line):
+                continue
+            if CORRECTION.search(near) or negation_of(pat).search(near):
+                continue
+            findings.append((rel, i + 1, 'stale fact "%s" — write %s' % (label, fix),
+                             line.strip()[:200], owner_of(rel)))
+            break
     return findings
 
 
@@ -433,7 +483,79 @@ def relpath(path):
     return rel if not rel.startswith("..") else "../" + os.path.relpath(path, WORKSPACE)
 
 
+# --------------------------------------------------------------- selftest ----
+# Story 132.29. Rule 2 was loosened so that a sentence which explicitly retires
+# a fact stops being reported as that fact. A loosened gate is only worth having
+# if it still fails on real drift, so the cases below pin BOTH halves, and the
+# negative half is the point: every ACCEPT case here is a correction the gate
+# must let through, and every REJECT case is wording that must keep failing.
+SELFTEST = [
+    # (accepted?, name, text)
+    (True, "wrapped negation (toke-corpus/regen/syntax_card.md:26-27)",
+     "The grammar is backtrack-free with bounded lookahead of up to 3 tokens — it is NOT\n"
+     "strict LL(1) (spec v0.4 §A keywords, §E grammar, §G character set)."),
+    (True, "negation on one line",
+     "The grammar is not LL(1)."),
+    (True, "explicitly retired",
+     "The LL(1) claim was retired by the v0.4 spec."),
+    (True, "wrapped keyword-count negation",
+     "There are 14 keywords, so the v0.3 wording was not\n"
+     "13 keywords as published."),
+
+    # ---- the negative half: genuine drift, which must still fail ----
+    (False, "bare claim", "The grammar is LL(1)."),
+    (False, "bare claim, wrapped",
+     "The grammar is context-free and\nLL(1) (every production is decidable)."),
+    (False, "bare keyword count", "toke has 13 keywords."),
+    (False, "one-token lookahead", "The parser needs exactly one token of lookahead."),
+    (False, "negation of something else in the previous sentence",
+     "The parser does not backtrack. The grammar is LL(1)."),
+    (False, "negation of something else, wrapped",
+     "The parser does not backtrack over the token stream\n"
+     "and the grammar is LL(1)."),
+    (False, "negation across a paragraph break",
+     "That is not what we do\n\nThe grammar is LL(1)."),
+    (False, "negation too far from the claim",
+     "It is not the case that the grammar described in ADR-0001 is strict LL(1)."),
+    (False, "correction two lines away, outside the window",
+     "The v0.3 spec said the grammar is LL(1).\n"
+     "It shipped that way for months.\n"
+     "That claim was retired."),
+]
+
+
+def selftest():
+    import tempfile
+    bad = 0
+    for accept, name, text in SELFTEST:
+        with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8",
+                                         delete=False) as fh:
+            fh.write(text + "\n")
+            tmp = fh.name
+        try:
+            found = check_stale(tmp, "selftest.md")
+        finally:
+            os.unlink(tmp)
+        ok = (not found) if accept else bool(found)
+        if not ok:
+            bad += 1
+            print("SELFTEST FAIL [%s] %s: %s"
+                  % ("accept" if accept else "reject", name,
+                     "flagged: %s" % found[0][2] if found else "not flagged"))
+    if bad:
+        print("\nselftest: %d of %d Rule 2 cases wrong — the stale-fact gate is not "
+              "behaving as documented." % (bad, len(SELFTEST)))
+        return 1
+    print("selftest: %d Rule 2 cases OK (%d corrections accepted, %d stale claims "
+          "still rejected)."
+          % (len(SELFTEST), sum(1 for c in SELFTEST if c[0]),
+             sum(1 for c in SELFTEST if not c[0])))
+    return 0
+
+
 def main():
+    if "--selftest" in sys.argv:
+        return selftest()
     argv = [a for a in sys.argv[1:] if not a.startswith("--")]
     strict = "--strict" in sys.argv
     targets = argv or DEFAULT_TARGETS
