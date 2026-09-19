@@ -58,9 +58,42 @@ out.txt
 output.txt
 stress_chained_functions
 
-# Vendor submodule build artifacts (source is tracked)
-stdlib/vendor/cmark/
-stdlib/vendor/tomlc99/
+# ── Vendored third-party sources (stdlib/vendor) ────────────────────────────
+# These sources really ARE tracked, and must stay tracked: `tkc --out` compiles
+# stdlib/vendor/tomlc99/toml.c and stdlib/vendor/cmark/src/*.c directly into
+# every binary that imports std.toml or std.md, so a clone missing them cannot
+# build those programs at all.  (Before story 127.85 the two directories were
+# ignored outright while this comment claimed the opposite — a fresh clone had
+# zero vendored files and failed with an opaque clang E9003.)
+#
+# Only the files the build consumes are tracked.  Upstream test suites, docs,
+# build systems, benchmarks and any local clone metadata stay ignored, which is
+# why this is a whitelist: each directory is excluded, then re-included
+# file-by-file (git cannot re-include a path under an excluded directory).
+#
+# Provenance, pinned upstream commits and the update procedure:
+#   stdlib/vendor/README.md
+stdlib/vendor/*
+!stdlib/vendor/README.md
+
+# cmark (CommonMark reference implementation) — backs src/stdlib/md.c
+!stdlib/vendor/cmark/
+stdlib/vendor/cmark/*
+!stdlib/vendor/cmark/COPYING
+!stdlib/vendor/cmark/src/
+stdlib/vendor/cmark/src/*
+!stdlib/vendor/cmark/src/*.c
+!stdlib/vendor/cmark/src/*.h
+!stdlib/vendor/cmark/src/*.inc
+# main.c defines its own main(); the build filters it out, so it is not tracked.
+stdlib/vendor/cmark/src/main.c
+
+# tomlc99 — backs src/stdlib/toml.c
+!stdlib/vendor/tomlc99/
+stdlib/vendor/tomlc99/*
+!stdlib/vendor/tomlc99/LICENSE
+!stdlib/vendor/tomlc99/toml.c
+!stdlib/vendor/tomlc99/toml.h
 
 # Logs
 logs/

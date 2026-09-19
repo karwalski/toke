@@ -14,6 +14,18 @@ CMARK_FLAGS = -Istdlib/vendor/cmark/src -Wno-pedantic
 TOML_SRCS   = stdlib/vendor/tomlc99/toml.c
 TOML_FLAGS  = -Istdlib/vendor/tomlc99
 
+# ── Story 127.85: vendored-source preflight ──────────────────────────────────
+# stdlib/vendor/{cmark,tomlc99} are tracked in this repository (see
+# stdlib/vendor/README.md).  If they are ever absent, every std.toml / std.md
+# compile fails at the clang stage as an opaque E9003 that names neither the
+# dependency nor the reason.  Stop here instead, by name.
+VENDOR_SENTINELS = stdlib/vendor/tomlc99/toml.c \
+                   stdlib/vendor/tomlc99/toml.h \
+                   stdlib/vendor/cmark/src/cmark.c \
+                   stdlib/vendor/cmark/src/cmark.h \
+                   stdlib/vendor/cmark/src/cmark_export.h \
+                   stdlib/vendor/cmark/src/cmark_version.h
+
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/config.c src/fmt.c src/progress.c \
           src/sourcemap.c src/ast_json.c src/migrate.c src/companion.c src/compress.c \
@@ -64,7 +76,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all clean lint conform conform-sh conform-check build-all ci check-docs check-patterns render-patterns check-error-codes check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint conform conform-sh conform-check build-all ci check-docs check-patterns render-patterns check-error-codes check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -77,13 +89,42 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-stdlib-http-form test-stdlib-http-tls \
 	test-stdlib-file test-stdlib-runtime \
 	test-stdlib-path test-stdlib-args test-stdlib-md test-stdlib-toml \
-	test-stdlib-vecstore test-stdlib-keychain \
+	test-stdlib-vecstore test-stdlib-vecstore-binding test-stdlib-keychain \
+	test-stdlib-securemem \
 	test-tkir-encoder \
 	install-man \
 	test-standalone \
 	check-tki
 
-all: $(BIN) tkc
+all: vendor-check $(BIN) tkc
+
+# Fails loudly and by name if a vendored dependency is missing.  Cheap enough
+# to run on every build (six stat calls).
+vendor-check:
+	@missing=""; \
+	for f in $(VENDOR_SENTINELS); do \
+	  [ -f "$$f" ] || missing="$$missing $$f"; \
+	done; \
+	if [ -n "$$missing" ]; then \
+	  echo "" >&2; \
+	  echo "ERROR: vendored third-party sources are missing from this checkout." >&2; \
+	  echo "" >&2; \
+	  for f in $$missing; do echo "  missing: $$f" >&2; done; \
+	  echo "" >&2; \
+	  echo "  cmark backs std.md and tomlc99 backs std.toml.  tkc compiles these" >&2; \
+	  echo "  .c files directly into every binary that imports those modules, so" >&2; \
+	  echo "  without them any such program fails at the clang stage with an" >&2; \
+	  echo "  opaque E9003 naming no dependency." >&2; \
+	  echo "" >&2; \
+	  echo "  These files are TRACKED in this repository - they are not a" >&2; \
+	  echo "  submodule and there is no fetch step.  If they are missing, the" >&2; \
+	  echo "  checkout is incomplete or they were deleted locally.  Try:" >&2; \
+	  echo "      git checkout -- stdlib/vendor" >&2; \
+	  echo "" >&2; \
+	  echo "  See stdlib/vendor/README.md (provenance and update procedure)." >&2; \
+	  echo "" >&2; \
+	  exit 1; \
+	fi
 
 $(BIN): $(OBJS)
 	$(CC) $(CFLAGS) $(REPRO_FLAGS) -o $@ $^ $(LDLIBS)
@@ -645,6 +686,29 @@ test-stdlib-vecstore:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_vecstore \
 	    test/stdlib/test_vecstore.c src/stdlib/vecstore.c -lpthread
 	$(RUN_TEST) ./test/stdlib/test_vecstore
+
+# ── Story 136.4: std.vecstore binding, end to end ────────────────────────────
+# test-stdlib-vecstore above drives the C core in one process and passed all the
+# way through the period when the module was unusable from toke. This target
+# compiles and RUNS a real .tk consumer and re-execs between the write and the
+# read, so a pass proves the vectors reached disk rather than surviving in
+# process memory -- which is exactly what they were not doing before 136.4.
+test-stdlib-vecstore-binding: $(BIN)
+	@bash test/stdlib/vecstore_binding.sh
+
+# ── Story 136.5: std.securemem, core + binding ───────────────────────────────
+# test/stdlib/test_securemem.c existed but had NO make target and so had never
+# run -- the same pattern 136.10 is chasing. It runs here now, and the .tk
+# consumer alongside it imports std.securemem by the name the documentation
+# publishes, which is the part 136.5 was actually about: the capability worked
+# throughout, under a name no consumer had been given.
+test-stdlib-securemem: $(BIN)
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_securemem \
+	    test/stdlib/test_securemem.c src/stdlib/securemem.c -lpthread
+	$(RUN_TEST) ./test/stdlib/test_securemem
+	@TKC_STDLIB_DIR=$(PWD)/src/stdlib ./$(BIN) test/stdlib/securemem_roundtrip.tk -o test/stdlib/securemem_roundtrip.bin
+	$(RUN_TEST) ./test/stdlib/securemem_roundtrip.bin
+	@rm -f test/stdlib/securemem_roundtrip.bin
 
 # ── Story 136.3: std.keychain binding, end to end ────────────────────────────
 # Compiles and RUNS a real .tk consumer, because that is the layer that was

@@ -7,6 +7,7 @@
 #include "stdlib_deps.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* ── Static dependency table ────────────────────────────────────────── */
 /*
@@ -88,7 +89,10 @@ static const StdlibModule stdlib_table[] = {
     { "xml",           "xml.c xml_glue.c",                       "",                                                                 "" },  /* 131.46 */
     { "soap",          "soap.c soap_glue.c",                     "",                                                                 "" },  /* 131.46 */
     { "vecstore",      "vecstore.c vecstore_glue.c",             "",                                                                 "-lpthread" },
-    { "secure_mem",    "secure_mem.c securemem_glue.c",          "",                                                                 "" },
+    /* 136.5: the "secure_mem" row that sat here was doubly dead. Its module
+     * name could never be imported (the lexer rejects the underscore, E1003),
+     * and it paired secure_mem.c with securemem_glue.c -- two different symbol
+     * families -- so it could not have linked had anything reached it. */
     { "securemem",     "securemem.c securemem_glue.c",           "",                                                                 "" },
     { "tls",           "tls.c tls_glue.c",                       "",                                                                 "-lssl -lcrypto" },
     { "keychain",      "keychain.c keychain_glue.c",             "",                                                                 TK_KEYCHAIN_FLAGS },
@@ -230,6 +234,37 @@ void stdlib_deps_append_flags(char *flags, size_t flagsz, const char *extra) {
 
 /* ── Helper: append vendor sources for toml/md ─────────────────────── */
 
+/*
+ * require_vendor_file — Story 127.85.
+ *
+ * tkc hands these vendored .c files straight to clang.  When they are absent
+ * the only symptom used to be an opaque E9003 listing "no such file or
+ * directory" for up to nineteen cmark paths, naming neither the dependency nor
+ * the reason — which is how stdlib/vendor stayed untracked and invisible for
+ * as long as it did.  Stop here instead, name the dependency, and say where to
+ * read about it.  There is no way to carry on: the compile cannot succeed and
+ * the caller in llvm.c ignores a non-zero return from dep resolution.
+ */
+static void require_vendor_file(const char *path, const char *lib,
+                                const char *module) {
+    FILE *f = fopen(path, "r");
+    if (f) { fclose(f); return; }
+
+    fprintf(stderr,
+        "\ntoke: missing vendored dependency '%s', required by module std.%s\n"
+        "  expected: %s\n\n"
+        "  tkc compiles this source directly into every binary that imports\n"
+        "  std.%s, so the compile cannot proceed without it.\n\n"
+        "  stdlib/vendor is TRACKED in the toke repository — it is not a\n"
+        "  submodule and there is no fetch step.  If it is missing, this\n"
+        "  checkout is incomplete or the files were deleted locally:\n"
+        "      git checkout -- stdlib/vendor\n\n"
+        "  See stdlib/vendor/README.md for provenance and the update\n"
+        "  procedure, and `make vendor-check` to test a checkout.\n\n",
+        lib, module, path, module);
+    exit(1);
+}
+
 static void append_vendor_sources(char *buf, size_t bufsz, const char *dir,
                                   const char *module) {
     char vendor[512];
@@ -237,8 +272,15 @@ static void append_vendor_sources(char *buf, size_t bufsz, const char *dir,
 
     if (!strcmp(module, "toml")) {
         size_t cur = strlen(buf);
-        snprintf(buf + cur, bufsz - cur, " %s/tomlc99/toml.c", vendor);
+        char path[640];
+        snprintf(path, sizeof path, "%s/tomlc99/toml.c", vendor);
+        require_vendor_file(path, "tomlc99", "toml");
+        snprintf(buf + cur, bufsz - cur, " %s", path);
     } else if (!strcmp(module, "md")) {
+        /* One probe is enough: the nineteen cmark sources ship together. */
+        char path[640];
+        snprintf(path, sizeof path, "%s/cmark/src/cmark.c", vendor);
+        require_vendor_file(path, "cmark", "md");
         for (int i = 0; cmark_files[i]; i++) {
             size_t cur = strlen(buf);
             snprintf(buf + cur, bufsz - cur,
