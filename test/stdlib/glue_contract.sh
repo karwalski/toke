@@ -151,6 +151,24 @@ fi
 stop_llm
 
 echo
+echo "=== 136.19 -- i18n.load honours the locale, accessors honour the bundle ==="
+if build i18n_locales test/stdlib/i18n_locales.tk; then
+    out="$(I18NBASE="$PWD/test/stdlib/i18n/ui" "$TMP/i18n_locales" --allow-read)"
+    # EN and FR are live at the same time and interleaved. A file-static
+    # bundle answers French to every line after the second load; a discarded
+    # locale argument answers with the environment's locale to both.
+    expect "en bundle answers English"     "$(line "$out" en.greeting)" "Hello"
+    expect "fr bundle answers French"      "$(line "$out" fr.greeting)" "Bonjour"
+    expect "en still English after fr load" "$(line "$out" en.farewell)" "Goodbye"
+    expect "fr still French"               "$(line "$out" fr.farewell)" "Au revoir"
+    expect "i18n.fmt uses the en bundle"   "$(line "$out" en.welcome)" "Welcome, Alice!"
+    expect "i18n.fmt uses the fr bundle"   "$(line "$out" fr.welcome)" "Bienvenue, Alice!"
+    expect "i18n.get takes the bundle too" "$(line "$out" en.get)"     "Hello"
+    expect "an absent key returns the key" "$(line "$out" missing)"    "nosuchkey"
+    expect "an absent locale errs"         "$(line "$out" absent)"     "NOTFOUND"
+fi
+
+echo
 echo "glue_contract: $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
 exit 0

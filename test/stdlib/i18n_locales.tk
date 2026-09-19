@@ -1,0 +1,39 @@
+(* i18n_locales.tk -- story 136.19.
+
+   i18n.tki, docs/stdlib/i18n.md and i18n.h all declare i18n.load(base; locale)
+   and the accessors as taking the bundle. The glue dropped both: load ignored
+   the locale and used i18n_locale() ($LC_ALL/$LANG), then stashed the bundle
+   in a file-static g_i18n_bundle that str, get and fmt answered from. Two
+   locales in one process could not be expressed -- the second load silently
+   repointed the first one's handle.
+
+   So this program loads EN and FR in the same process, interleaves reads from
+   both, and re-reads EN after FR was loaded. A global bundle gives French for
+   every line after the second load; a discarded locale argument gives the
+   environment's locale for both. *)
+m=i18nlocales;
+i=i18n:std.i18n;
+i=io:std.io;
+i=str:std.str;
+i=env:std.env;
+
+f=main():i64{
+  let base=env.get("I18NBASE");
+  let en=mt i18n.load(base;"en") {$ok:b b;$err:e i18n.empty()};
+  let fr=mt i18n.load(base;"fr") {$ok:b b;$err:e i18n.empty()};
+
+  io.println(str.concat("en.greeting=";i18n.str(en;"greeting")));
+  io.println(str.concat("fr.greeting=";i18n.str(fr;"greeting")));
+  io.println(str.concat("en.farewell=";i18n.str(en;"farewell")));
+  io.println(str.concat("fr.farewell=";i18n.str(fr;"farewell")));
+
+  io.println(str.concat("en.welcome=";i18n.fmt(en;"welcome";"name=Alice")));
+  io.println(str.concat("fr.welcome=";i18n.fmt(fr;"welcome";"name=Alice")));
+
+  io.println(str.concat("en.get=";i18n.get(en;"greeting")));
+  io.println(str.concat("missing=";i18n.str(en;"nosuchkey")));
+
+  let none=mt i18n.load(base;"zz") {$ok:b "LOADED";$err:e "NOTFOUND"};
+  io.println(str.concat("absent=";none));
+  <0
+};

@@ -1,0 +1,4 @@
+strings[3]{key,value}:
+greeting|Hello
+farewell|Goodbye
+welcome|Welcome, {name}!
