@@ -1,43 +1,122 @@
 # toke
 
-toke is a compiled programming language designed to reduce the token cost of AI-generated code. A purpose-built BPE tokenizer trained on toke programs achieves **52% fewer tokens** on average compared to cl100k_base (GPT-4/Claude's tokenizer) across 42 benchmark programs, and a fine-tuned 7B model writes toke that compiles correctly **100% of the time**.
+toke is a compiled programming language designed for LLM code generation. It has 14
+keywords, a 55-character set, a backtrack-free grammar with bounded lookahead, and one
+canonical form per construct, chosen by measurement in a 46-pattern catalogue and
+reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding,
+cheap for a compiler to verify afterwards, and compact to emit. Token efficiency is one
+measured property of toke, always reported with its tokenizer and its baseline, not the
+whole claim.
 
-The token reduction comes from three reinforcing design choices:
+*This paragraph is the canonical description. It is reproduced word for word from
+[`docs/about/canonical.md`](docs/about/canonical.md); every number in this README comes
+from [`docs/metrics-baseline.md`](docs/metrics-baseline.md) and nowhere else.*
 
-1. **A purpose-built tokenizer** trained on real toke code, so common patterns like `f=main():i64{` and `i=j:std.json` merge into single tokens
-2. **Structural choices that eliminate overhead** -- no comments in source (documentation lives in companion files), semicolons as the only separator, errors as values not exceptions
-3. **A constrained character set and grammar** (55 characters, 13 keywords, LL(1)) that reduces the space of valid programs, making it easier for both the tokenizer and the model to learn
+## Why the grammar comes first
 
-The character set and syntax are means to an end. The goal is measurable: fewer tokens per unit of functionality, validated by compilation and execution.
+The argument for toke is mechanical, and it is about the grammar and the compiler, not
+about a tokenizer.
 
-## Key Features
+1. **Small.** `docs/spec/toke-spec-v0.4.md` §A fixes the keyword set at 14 (`m i t f let
+   if el lp br rt as mt sc mut`) over a closed alphabet of printable ASCII characters,
+   lowercase only, with no underscores. A small terminal alphabet is a small vocabulary
+   for whatever unit a model generates in. *The exact size of that alphabet is in
+   dispute: the canonical paragraph above says 55, and the project-facts table in
+   [`docs/metrics-baseline.md`](docs/metrics-baseline.md) (story 132.14) derives **59**
+   from `src/lexer.c` and recommends "a closed alphabet of 59 printable ASCII
+   characters, lowercase only" over a bare figure. `docs/about/canonical.md` and
+   `canonical.json` are owned by story 132.1 and must be re-cut before the paragraph is
+   re-copied anywhere; until then the verbatim block is reproduced as it stands.*
+2. **Structured.** §E: the parser never rescans input it has already consumed, and a
+   small, enumerated set of productions require bounded lookahead of up to 3 tokens, never
+   more. An implementation that backtracks, or that needs unbounded lookahead at any
+   production, is non-conforming. Grammar-constrained decoding builds a token mask at
+   every step from a pushdown automaton over the grammar; a small, backtrack-free grammar
+   keeps that automaton small and its masks cheap. Machine-readable artefacts ship with
+   the compiler: [`docs/spec/grammar.ebnf`](docs/spec/grammar.ebnf) and
+   [`docs/spec/toke.gbnf`](docs/spec/toke.gbnf).
+3. **Canonical.** One measured form per construct. `patterns/catalogue.json` holds 46
+   entries across 10 families; a form becomes canonical only by being best-or-tied on
+   tokens *and* runtime, and all candidate forms of a pattern must print byte-identical
+   output. `tkc --min` reproduces the canonical text, which makes comparison exact rather
+   than fuzzy.
+4. **Compiler-verified.** `tkc` emits structured diagnostics with stable error codes,
+   machine-parseable spans and a fix field — the input a repair loop or a verifiable
+   reward function consumes. This is necessary and demonstrably not sufficient on its
+   own: see the correctness numbers below.
 
-- **52% token reduction** -- measured with a 16K BPE tokenizer trained on 25,953 toke programs. [Try the live tokenizer](https://tokelang.dev/tokenizer/)
-- **100% compilation Pass@1** -- a fine-tuned Qwen 2.5 Coder 7B produces valid toke on every attempt (Gate 2, May 2026)
-- **Compiled to native code** via LLVM -- standalone binaries for x86-64 and ARM64, sub-second compile times for fast feedback loops
-- **70+ structured diagnostic codes** -- machine-readable JSON errors with fix suggestions, designed for automated repair loops
-- **38 standard library modules** with C runtime backing -- strings, JSON, HTTP server/client, database, crypto, ML, and more
-- **Error handling with result types** -- no exceptions; errors are values handled explicitly with `mt` (match)
+The honest caveat on point 2, stated first: grammar-constrained decoding works on *any*
+grammar, including Python's. The advantage a purpose-built grammar has is one of degree —
+a cheaper mask, a smaller invalid space — not of kind, and measuring that degree is open
+work. The full argument, the counter-evidence and the falsification tests are in
+[`docs/about/positioning-2026-09.md`](docs/about/positioning-2026-09.md).
 
-## Project Status
+## Token efficiency
 
-| Milestone | Date | Result |
-|-----------|------|--------|
-| Gate 1 | 2026-04-03 | 63.7% compilation Pass@1, 12.5% token reduction vs cl100k_base |
-| Gate 2 | 2026-05-22 | **100% compilation Pass@1** on 700 tasks. **55.6% functional correctness** (corrected from 8% — stdlib bug; model masters both syntax and semantics) |
-| Tokenizer | 2026-05-22 | 16K BPE trained on 25,953 programs. **52% avg token reduction** vs cl100k across 42 benchmarks |
+**Token efficiency, measured:** under one shared tokenizer (cl100k_base) toke costs
+**1.34× [1.22, 1.48]** the tokens of equivalent Python on the 60 Gate-1 tasks (N = 60,
+2026-09-19) — more, not fewer. The v0.3-era "52% fewer tokens" figure was a
+*tokenizer-vs-tokenizer* measurement on identical toke text (Toke-16K v0.3 vs cl100k_base,
+N = 42) and is superseded: on canonical v0.4 text the shipped 8K tokenizer needs **15.4%
+more** tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.
 
-**What works:** the model writes syntactically valid toke every time. The tokenizer compresses toke code significantly. The compiler provides 70+ structured diagnostic codes for automated repair.
+## Key features
 
-**What doesn't yet:** functional correctness is 55.6% (corrected from 8% — the original figure was caused by a missing `io.readln()` C glue function that prevented programs from linking). The remaining gap is a mix of argv-hardcoding patterns and algorithmic errors. Next phase: execution-verified RLVR training with randomised inputs. See [training-next-phase.md](docs/spec/training-next-phase.md).
+- **Compiled to native code** via LLVM — standalone binaries for x86-64 and ARM64,
+  single-pass C99 compiler with no dependencies beyond LLVM
+- **Structured diagnostics** — stable error codes, machine-parseable spans and a fix
+  field, emitted as JSON by default, designed for automated repair loops
+  ([`docs/reference/errors.md`](docs/reference/errors.md))
+- **One canonical form** per construct, reproduced by `tkc --min`, so two implementations
+  either produce identical canonical text or they do not
+- **Machine-readable grammar** — EBNF and GBNF artefacts for constrained decoding
+- **57 standard library modules** (`stdlib/*.tki`) with C runtime backing — strings,
+  JSON, TOON, HTTP server/client, database, crypto, ML, and more
+- **Error handling with result types** — no exceptions; errors are values handled
+  explicitly with `mt` (match)
 
-Three production codebases validate the language and standard library:
+## Project status
 
-- **ooke** -- static site generator and web framework, built in toke, serving [tokelang.dev](https://tokelang.dev)
-- **loke** -- privacy and AI platform: 698 files, 87,000 lines of toke across security, networking, and ML
-- **moke** -- data analysis demo exercising privacy pipeline, governance, and LLM integration
+Current compiler: **toke 2.8.0** (`tkc --version`). Spec: **v0.4** —
+[`docs/spec/toke-spec-v0.4.md`](docs/spec/toke-spec-v0.4.md) is the authority; v0.3 is
+historical.
 
-## Quick Start
+**No v0.4-native model exists, and every model number below is from a v0.3-syntax model.**
+The corpus, tokenizer and model must be refreshed before any of these carry forward.
+
+| Evaluation | Date | Result |
+|---|---|---|
+| Gate 1 | 2026-04-03 | 63.7% compile Pass@1, fine-tuned 7B on v0.3 syntax |
+| Gate 2 (curated set) | 2026-05-22 | **100% compile Pass@1** and **55.6% functional** (272/489) on the curated 500-hidden + 200-eval set; Qwen 2.5 Coder 7B + QLoRA, v0.3 syntax |
+| Full-local re-audit (the honest floor) | 2026-05-28 | **37.5% compile** (655/1,748) and **about 2.2% fully correct** (38 PASS) across all 1,748 v0.3.9 corpus programs |
+| Gate-1 60 re-delivered on v0.4 | 2026-09-19 | 60/60 `tkc --check`, 60/60 hidden tests (120 cases each), lint 0/0 |
+
+Never quote the 100% without the curated set it was measured on. The 2026-09-19
+re-delivery is **hand-written, not model-generated** — 27 ids are pure `--migrate` output
+and 33 were hand-repaired — so it measures what the *language* can express, not what a
+*model* produces, and it may not be quoted as a model result or as a Pass@1.
+
+**What works:** the compiler is stable at 2.8.0, the conformance suite passes, and
+compile-checking removes an entire error class cheaply. **What does not yet:** functional
+correctness is the open weakness on every honest number in
+[`docs/metrics-baseline.md`](docs/metrics-baseline.md), and no toke tokenizer currently
+beats a general-purpose one. Next: execution-verified training and the falsification tests
+listed in the positioning brief.
+
+## Sub-projects
+
+ooke, loke and moke are toke sub-projects, not separate products: ooke is toke's web
+framework and static site generator, and it serves tokelang.dev; loke is toke's local
+intelligence layer; moke is loke's data-analysis demo. All three are written in toke.
+
+## Not to be confused with
+
+toke is a programming language. It is not the slang word for a draw on a cigarette, not
+the cannabis brands that use the name, not the TOKE crypto tokens, not Tokelau or its
+`.tk` country-code domain, and not tokelang.com, which is an unrelated third-party
+project. The language is at tokelang.dev and github.com/karwalski/toke.
+
+## Quick start
 
 ```bash
 # Build the compiler
@@ -66,7 +145,7 @@ Or use the `toke` wrapper to compile and run in one step:
 ./toke hello.tk
 ```
 
-## Install & Use
+## Install & use
 
 **Build from source** (current primary method):
 
@@ -89,6 +168,9 @@ brew tap karwalski/toke && brew install tkc
 ollama run karwalski/toke
 ```
 
+The published model is the Gate 2 v0.3-syntax model described above; it does not write
+v0.4.
+
 **Generate toke via API** (free tier, no credit card):
 
 ```bash
@@ -97,11 +179,11 @@ curl -X POST https://api.tokelang.dev/v1/generate \
   -d '{"description": "Sum an array"}'
 ```
 
-## Tooling & Integrations
+## Tooling & integrations
 
 | Platform | Package | Install |
 |----------|---------|---------|
-| VS Code | `tokelang.toke-language` | Extensions: search "Toke" |
+| VS Code | `tokelang.toke-language` | Extensions: search "toke" |
 | Open VSX | `tokelang.toke-language` | [open-vsx.org/extension/tokelang/toke-language](https://open-vsx.org/extension/tokelang/toke-language) |
 | npm (MCP) | `@tokelang/mcp-server` | `npx @tokelang/mcp-server` |
 | npm (LSP) | `@tokelang/lsp` | `npm install -g @tokelang/lsp` |
@@ -113,27 +195,34 @@ curl -X POST https://api.tokelang.dev/v1/generate \
 | API | REST | [api.tokelang.dev](https://api.tokelang.dev) |
 | Console | Web UI | [console.tokelang.dev](https://console.tokelang.dev) |
 
-## Project Structure
+## Project structure
 
 | Directory | Contents |
 |-----------|----------|
-| `src/` | Reference compiler (`toke`) -- lexer, parser, type checker, LLVM backend |
+| `src/` | Reference compiler (`tkc`) -- lexer, parser, type checker, LLVM backend |
 | `src/stdlib/` | C runtime implementations for standard library modules |
 | `spec/` | Language specification, formal grammar (EBNF), and semantics |
 | `stdlib/` | Standard library interface files (`.tki`) and documentation |
+| `patterns/` | The pattern catalogue that decides the canonical form of each construct |
 | `test/` | Conformance tests, end-to-end tests, stdlib unit tests, fuzz tests |
 | `docs/` | Architecture docs, project tracking, security policies |
 | `examples/` | Complete example programs (CLI tools, web apps, REST APIs) |
 | `bench/` | Compiler benchmark programs and performance scripts |
 | `tree-sitter-toke/` | Tree-sitter grammar for editor syntax highlighting |
-| `scripts/` | Build and deployment helper scripts |
+| `scripts/` | Build, deployment and claim-guard helper scripts |
 | `wasm/` | WebAssembly playground (experimental) |
 
 ## Documentation
 
-- **Language specification:** [docs/spec/toke-spec-v0.3.md](docs/spec/toke-spec-v0.3.md)
-- **Formal grammar:** [docs/spec/grammar.ebnf](docs/spec/grammar.ebnf)
-- **Standard library reference:** each module has a `.md` doc in [docs/stdlib/](docs/stdlib/) (e.g., [docs/stdlib/str.md](docs/stdlib/str.md), [docs/stdlib/http.md](docs/stdlib/http.md))
+- **Language specification:** [docs/spec/toke-spec-v0.4.md](docs/spec/toke-spec-v0.4.md)
+  (v0.4 is normative; [v0.3](docs/spec/toke-spec-v0.3.md) is historical)
+- **Formal grammar:** [docs/spec/grammar.ebnf](docs/spec/grammar.ebnf),
+  [docs/spec/toke.gbnf](docs/spec/toke.gbnf)
+- **Canonical description of toke:** [docs/about/canonical.md](docs/about/canonical.md)
+- **Every published number:** [docs/metrics-baseline.md](docs/metrics-baseline.md)
+- **Positioning and falsification tests:** [docs/about/positioning-2026-09.md](docs/about/positioning-2026-09.md)
+- **Standard library reference:** each module has a `.md` doc in [docs/stdlib/](docs/stdlib/)
+  (e.g., [docs/stdlib/str.md](docs/stdlib/str.md), [docs/stdlib/http.md](docs/stdlib/http.md))
 - **Example programs:** [examples/](examples/)
 - **Architecture decisions:** [docs/architecture/](docs/architecture/)
 - **Conventions:** [docs/conventions.md](docs/conventions.md)
@@ -149,7 +238,7 @@ curl -X POST https://api.tokelang.dev/v1/generate \
 **Build commands:**
 
 ```bash
-make            # Build toke compiler
+make            # Build the toke compiler
 make clean      # Remove build artifacts
 make lint       # Run static analysis (cppcheck + clang-tidy)
 ```
@@ -157,14 +246,19 @@ make lint       # Run static analysis (cppcheck + clang-tidy)
 ## Testing
 
 ```bash
-make conform    # Run the full conformance suite (must pass at 100%)
-make test-e2e   # Run end-to-end integration tests
-make test-stdlib # Run standard library unit tests
-make fuzz       # Run the fuzzer
-make bench      # Run compiler benchmarks
+make conform         # Run the full conformance suite (must pass at 100%)
+make test-e2e        # Run end-to-end integration tests
+make test-stdlib     # Run standard library unit tests
+make fuzz            # Run the fuzzer
+make bench           # Run compiler benchmarks
+make check-canonical # Fail if a published copy of the canonical block has drifted
+make check-metrics   # Fail if a number is published without its tokenizer and its N
 ```
 
-## Supported Targets
+The last two are claim guards and run in `make ci`. Any new number published in this
+repository must appear in `docs/metrics-baseline.md` first.
+
+## Supported targets
 
 - x86-64 Linux (ELF)
 - ARM64 Linux (ELF)
@@ -179,14 +273,16 @@ toke [flags] <source-files>
   --out <path>          output binary path
   --emit-interface      emit .tki interface files
   --check               type-check only, no code generation
+  --min                 emit the canonical minimal form
   --legacy              legacy syntax: 80-character set
   --diag-json           structured JSON diagnostics (default)
   --diag-text           human-readable diagnostics
 ```
 
-## Standard Library
+## Standard library
 
-toke ships with 38 standard library modules backed by C runtime implementations:
+toke ships 57 standard library modules (`stdlib/*.tki`) backed by C runtime
+implementations. The most used:
 
 | Module | Description |
 |--------|-------------|
@@ -226,17 +322,23 @@ toke ships with 38 standard library modules backed by C runtime implementations:
 | `std.llm` | LLM API client (tool calling, streaming) |
 | `std.args` | Command-line argument parsing |
 
-## Related Repositories
+The full list is `stdlib/*.tki`; see [docs/stdlib/](docs/stdlib/) for per-module reference.
+
+## Related repositories
 
 | Repository | Description |
 |-----------|-------------|
-| [toke-model](https://github.com/karwalski/toke-model) | Corpus generation, BPE tokeniser, and model fine-tuning pipeline |
+| [toke-spec](https://github.com/karwalski/toke-spec) | Specification, RFC draft and measurement specs |
+| [toke-corpus](https://github.com/karwalski/toke-corpus) | Training corpus: generation, audit and freeze pipeline |
+| [toke-model](https://github.com/karwalski/toke-model) | Model fine-tuning and evaluation pipeline |
+| [toke-tokenizer](https://github.com/karwalski/toke-tokenizer) | Tokenizer training and the token-efficiency baselines |
 | [toke-eval](https://github.com/karwalski/toke-eval) | Benchmark tasks and evaluation harness |
+| [toke-test-programs](https://github.com/karwalski/toke-test-programs) | Hand-written programs exercising the language and stdlib |
 | [toke-mcp](https://github.com/karwalski/toke-mcp) | Model Context Protocol server for toke |
-| [toke-ooke](https://github.com/karwalski/toke-ooke) | Static site generator and web framework, built in toke |
-| [toke-website](https://github.com/karwalski/toke-website) | Project website (tokelang.dev) |
+| [toke-ooke](https://github.com/karwalski/toke-ooke) | ooke -- web framework and static site generator, written in toke |
+| [toke-website](https://github.com/karwalski/toke-website) | tokelang.dev, built and served by ooke |
+| [homebrew-toke](https://github.com/karwalski/homebrew-toke) | Homebrew tap for `tkc` |
 | [toke on HuggingFace](https://huggingface.co/karwalski/toke) | Gate 2 model, tokenizer, and model card |
-| [Developer Console](https://console.tokelang.dev) | Free API access for testing toke code generation |
 
 ## Licence
 
@@ -248,7 +350,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute, including branch n
 
 All contributions require a `Signed-off-by` trailer in every commit (`git commit -s`).
 
-## Code of Conduct
+## Code of conduct
 
 This project follows the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md).
 
@@ -258,6 +360,6 @@ See [SECURITY.md](SECURITY.md) for the vulnerability disclosure policy.
 
 To report a security issue, email security@tokelang.dev or use GitHub's private vulnerability reporting.
 
-## Reporting Issues
+## Reporting issues
 
 Please use [GitHub Issues](https://github.com/karwalski/toke/issues) to report bugs, request features, or ask questions.

@@ -55,23 +55,30 @@ SURFACES = [
                 "disambiguation", "subprojects"],
      "facts": ["purpose_one_sentence"]},
 
-    {"path": "README.md", "blocks": ["paragraph"],
-     "story": "132.10 — READMEs carry the repositioned first paragraph"},
+    {"path": "README.md", "blocks": ["paragraph"]},
 
     {"path": "../toke-website/templates/index.tkt", "blocks": ["one_liner", "disambiguation"],
      "story": "132.2 — site home page + disambiguation + llms.txt"},
     {"path": "../toke-website/sites/tokelang.dev/llms.txt", "blocks": ["paragraph"],
      "story": "132.2 — site home page + disambiguation + llms.txt"},
 
-    {"path": "../toke-model/README.md", "blocks": ["paragraph"], "story": "132.4 — registries"},
-    {"path": "../toke-eval/README.md", "blocks": ["paragraph"], "story": "132.4 — registries"},
-    {"path": "../toke-mcp/README.md", "blocks": ["paragraph"], "story": "132.4 — registries"},
-    {"path": "../toke-ooke/README.md", "blocks": ["paragraph"], "story": "132.4 — registries"},
-    {"path": "../toke-tokenizer/README.md", "blocks": ["paragraph"], "story": "132.4 — registries"},
-    {"path": "../toke-corpus/README.md", "blocks": ["paragraph"], "story": "132.4 — registries"},
-    {"path": "../toke-spec/README.md", "blocks": ["paragraph"], "story": "132.4 — registries"},
-    {"path": "../toke-website/README.md", "blocks": ["paragraph"], "story": "132.4 — registries"},
-    {"path": "../toke-console/README.md", "blocks": ["paragraph"], "story": "132.4 — registries"},
+    # repo READMEs, rewritten from the canonical block by story 132.10. These are
+    # repository front pages, not registry descriptions: 132.4 owns the PyPI, npm,
+    # VS Code, Ollama and Hugging Face fields, which are not files in this workspace.
+    {"path": "../toke-model/README.md", "blocks": ["paragraph"]},
+    {"path": "../toke-eval/README.md", "blocks": ["paragraph"]},
+    {"path": "../toke-mcp/README.md", "blocks": ["paragraph"]},
+    {"path": "../toke-ooke/README.md", "blocks": ["paragraph"]},
+    {"path": "../toke-tokenizer/README.md", "blocks": ["paragraph"]},
+    {"path": "../toke-corpus/README.md", "blocks": ["paragraph"]},
+    {"path": "../toke-spec/README.md", "blocks": ["paragraph"]},
+    {"path": "../toke-console/README.md", "blocks": ["paragraph"]},
+    {"path": "../toke-test-programs/README.md", "blocks": ["paragraph"]},
+    {"path": "../homebrew-toke/README.md", "blocks": ["one_liner"]},
+
+    # toke-website is owned by the website stories; 132.10 may not edit that tree.
+    {"path": "../toke-website/README.md", "blocks": ["paragraph"],
+     "story": "132.9 / 132.2 — website roadmap + home page"},
 ]
 
 NEAR_MISS = 0.55        # similarity above which an absent block is "drifted"
@@ -83,7 +90,6 @@ SCAN_EXT = (".md", ".txt", ".tkt", ".html", ".json", ".ebnf", ".gbnf")
 # Files owned by another story: warn, never fail, until that story lands and the
 # entry is deleted. Keep this list SHORT and always keyed to a story number.
 PENDING = {
-    "README.md": "132.10 — READMEs carry the repositioned first paragraph",
     "docs/whitepaper/toke-research-language.md": "132.8 — whitepaper v2 + RFC alignment",
     "spec/rfc/draft-karwalski-toke-lang-00.md": "132.8 — whitepaper v2 + RFC alignment",
 }

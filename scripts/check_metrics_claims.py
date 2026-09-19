@@ -44,7 +44,6 @@ DEFAULT_TARGETS = ["docs", "README.md", "PROJECT_STATUS.md"]
 # until that story lands and the entry is deleted. Keep this list SHORT and
 # always keyed to a story number.
 PENDING = {
-    "README.md": "132.10 — READMEs carry the repositioned first paragraph",
     "docs/whitepaper/toke-research-language.md": "132.8 — whitepaper v2 + RFC alignment",
     "docs/about/positioning-2026-09.md": "132.7 — repositioning brief (in flight)",
 }
