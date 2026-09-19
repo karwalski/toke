@@ -209,6 +209,29 @@ if build chart_title test/stdlib/chart_title.tk; then
 fi
 
 echo
+echo "=== 136.24 -- html.table(headers; rows) keeps them apart ==="
+if build html_table test/stdlib/html_table.tk; then
+    out="$("$TMP/html_table")"
+    # Rendering is the only place the distinction is visible: headers become
+    # <th> inside <thead>, data becomes <td> inside <tbody>. The old wrapper
+    # took ONE array and recovered the header row by position.
+    expect "the headers become the thead row" \
+           "$(printf '%s' "$out" | grep -c '<thead><tr><th>Quarter</th><th>Revenue</th></tr></thead>')" "1"
+    expect "all three data rows become tbody rows" \
+           "$(printf '%s' "$out" | grep -o '<tr><td>' | wc -l | tr -d ' ')" "3"
+    expect "no data value was promoted to a header" \
+           "$(printf '%s' "$out" | grep -c '<th>Q1</th>')" "0"
+    expect "the first data row is still data" \
+           "$(printf '%s' "$out" | grep -c '<tr><td>Q1</td><td>100k</td></tr>')" "1"
+    expect "the last data row survives" \
+           "$(printf '%s' "$out" | grep -c '<tr><td>Q3</td><td>300k</td></tr>')" "1"
+    # 136.24 side-finding: html.doc() is declared with no parameters and was
+    # DEFINED with one, so it read a garbage register and crashed on line 1.
+    expect "html.doc/render produce a document" \
+           "$(printf '%s' "$out" | grep -c '<title>Report</title>')" "1"
+fi
+
+echo
 echo "glue_contract: $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
 exit 0

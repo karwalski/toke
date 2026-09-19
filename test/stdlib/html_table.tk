@@ -1,0 +1,29 @@
+(* html_table.tk -- story 136.24.
+
+   stdlib/html.tki, the function table in docs/stdlib/html.md and html_table()
+   in html.h all take headers and rows as two arguments, and html_table()
+   builds <thead> from the first and <tbody> from the second. The wrapper took
+   ONE array and recovered the header row by position, so a caller could not
+   distinguish a header from data.
+
+   Rendering the document is the only way to see which cells became <th> and
+   which became <td>, so the check is on the HTML, not on the call succeeding.
+   The header text is deliberately NOT a plausible data value, and the first
+   data row is deliberately NOT the headers, so a flattened single array would
+   produce visibly different output. *)
+m=htmltable;
+i=html:std.html;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let doc=html.doc();
+  html.title(doc;"Report");
+  html.append(doc;html.table(
+    @("Quarter";"Revenue");
+    @(@("Q1";"100k");@("Q2";"200k");@("Q3";"300k"))
+  ));
+  let out=html.render(doc);
+  io.println(str.concat("html=";out));
+  <0
+};

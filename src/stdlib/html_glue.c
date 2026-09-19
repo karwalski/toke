@@ -9,10 +9,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-int64_t tk_html_doc_w(int64_t title) {
+/*
+ * html.doc() takes no arguments -- stdlib/html.tki says so, docs/stdlib/html.md
+ * says so, and llvm.c DECLARES it so ("declare i64 @tk_html_doc_w()"). The
+ * definition took an int64_t title and dereferenced it when non-zero, so the
+ * callee read whatever the ABI's first argument register happened to hold and
+ * passed it to html_title as a char *. Every `let doc = html.doc();` -- the
+ * first line of the module's only documented example -- segfaulted. Found
+ * while proving 136.24; reported for its own row.
+ */
+int64_t tk_html_doc_w(void) {
     TkHtmlDoc *doc = html_doc();
     if (!doc) return 0;
-    if (title) html_title(doc, (const char *)(intptr_t)title);
     return (int64_t)(intptr_t)doc;
 }
 
@@ -21,45 +29,56 @@ int64_t tk_html_h1_w(int64_t text) {
     return (int64_t)(intptr_t)node;
 }
 
-int64_t tk_html_table_w(int64_t data) {
-    /* data is a toke array of string arrays (rows).
-     * Layout: ptr[-1] = row count, ptr[0..n-1] = row pointers.
-     * Each row is itself a toke array: rptr[-1] = col count, rptr[0..m-1] = strings.
-     * The first row is treated as headers. */
-    if (!data) return 0;
-    int64_t *rows = (int64_t *)(intptr_t)data;
-    int64_t nrows = rows[-1];
-    if (nrows <= 0) return 0;
-
-    /* Extract headers from first row */
-    int64_t *hdr_row = (int64_t *)(intptr_t)rows[0];
-    int64_t ncols = hdr_row[-1];
+/*
+ * Story 136.24 — html.table(headers; rows).
+ *
+ * stdlib/html.tki, the function table in docs/stdlib/html.md and html_table()
+ * in html.h all take the headers and the row data as two separate arguments,
+ * and html_table() builds <thead> from the first and <tbody> from the second.
+ * The wrapper took ONE array and treated its first element as the header row,
+ * so a caller had no way to say "this table has these headers and these
+ * rows" -- the two were flattened into one list and the distinction was
+ * recovered by position. A table whose first data row happened to be passed
+ * first silently became its own header.
+ *
+ * html_table() strdup()s every cell, so the two index arrays are ours to free.
+ */
+int64_t tk_html_table_w(int64_t headers_i64, int64_t rows_i64) {
+    /* headers_i64: toke array of strings   (hp[-1]=ncols, hp[0..]=str ptrs)
+     * rows_i64:    toke array of arrays    (rp[-1]=nrows, each element is a
+     *              toke array of strings)  */
+    if (!headers_i64) return 0;
+    int64_t *hp = (int64_t *)(intptr_t)headers_i64;
+    int64_t ncols = hp[-1];
     if (ncols <= 0) return 0;
+
     const char **headers = (const char **)malloc((size_t)ncols * sizeof(const char *));
     if (!headers) return 0;
     for (int64_t c = 0; c < ncols; c++)
-        headers[c] = (const char *)(intptr_t)hdr_row[c];
+        headers[c] = (const char *)(intptr_t)hp[c];
 
-    /* Extract data rows (rows 1..n-1) */
-    int64_t data_nrows = nrows - 1;
-    int64_t total_cells = data_nrows * ncols;
+    int64_t nrows = 0;
+    int64_t *rows = NULL;
+    if (rows_i64) {
+        rows = (int64_t *)(intptr_t)rows_i64;
+        nrows = rows[-1];
+        if (nrows < 0) nrows = 0;
+    }
+
     const char **cells = NULL;
-    if (total_cells > 0) {
-        cells = (const char **)malloc((size_t)total_cells * sizeof(const char *));
+    if (nrows > 0) {
+        cells = (const char **)malloc((size_t)(nrows * ncols) * sizeof(const char *));
         if (!cells) { free(headers); return 0; }
-        for (int64_t r = 0; r < data_nrows; r++) {
-            int64_t *rp = (int64_t *)(intptr_t)rows[r + 1];
-            int64_t rc = rp[-1];
-            for (int64_t c = 0; c < ncols; c++) {
-                if (c < rc)
-                    cells[r * ncols + c] = (const char *)(intptr_t)rp[c];
-                else
-                    cells[r * ncols + c] = "";
-            }
+        for (int64_t r = 0; r < nrows; r++) {
+            int64_t *rp = (int64_t *)(intptr_t)rows[r];
+            int64_t rc = rp ? rp[-1] : 0;
+            for (int64_t c = 0; c < ncols; c++)
+                cells[r * ncols + c] = (c < rc) ? (const char *)(intptr_t)rp[c] : "";
         }
     }
+
     TkHtmlNode *node = html_table(headers, (uint64_t)ncols,
-                                   cells, (uint64_t)data_nrows);
+                                  cells, (uint64_t)nrows);
     free(headers);
     free(cells);
     return (int64_t)(intptr_t)node;
