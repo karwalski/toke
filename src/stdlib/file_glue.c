@@ -84,8 +84,16 @@ int64_t tk_file_list_w(int64_t dir) {
     return h;
 }
 
-int64_t tk_file_append_w(int64_t path, int64_t content, int64_t extra) {
-    (void)extra;
+/*
+ * Story 136.23 — file.append(path; content).
+ *
+ * This wrapper carried a third parameter it discarded with `(void)extra;`.
+ * stdlib/file.tki, docs/stdlib/file.md and file_append() in file.c have all
+ * only ever had two, nothing in the tree ever passed a third, and the surplus
+ * parameter was the sole failure in `make check-patterns`: the io-write-
+ * accumulate catalogue entry calls file.append with the documented two.
+ */
+int64_t tk_file_append_w(int64_t path, int64_t content) {
     TK_REQUIRE(TK_CAP_FS_WRITE);
     if (!path || !content) return 0;
     BoolFileResult r = file_append((const char *)(intptr_t)path, (const char *)(intptr_t)content);

@@ -1,0 +1,26 @@
+(* file_append.tk -- story 136.23.
+
+   tk_file_append_w carried a third parameter it threw away with
+   `(void)extra;`. stdlib/file.tki, docs/stdlib/file.md and file_append() in
+   file.c all take two, and the surplus parameter was the only failure in
+   make check-patterns.
+
+   Arity alone proves nothing about behaviour, so this program APPENDS one
+   line to the path named in APPENDPATH and reads the file back. The harness
+   runs it twice in separate processes: the second run must see both lines,
+   which is what distinguishes an append that reached the filesystem from one
+   that truncated, no-opped, or only ever lived in this process. *)
+m=fileappend;
+i=file:std.file;
+i=io:std.io;
+i=env:std.env;
+i=str:std.str;
+
+f=main():i64{
+  let path=env.get("APPENDPATH");
+  let ok=mt file.append(path;"line\n") {$ok:v 1;$err:e 0-1};
+  io.println("append.rc=\(ok)");
+  let body=mt file.read(path) {$ok:s s;$err:e ""};
+  io.println("bytes=\(str.len(body))");
+  <0
+};

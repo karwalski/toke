@@ -91,6 +91,21 @@ if build toon_accessors test/stdlib/toon_accessors.tk; then
 fi
 
 echo
+echo "=== 136.23 -- file.append(path; content), across two processes ==="
+if build file_append test/stdlib/file_append.tk; then
+    APPEND_FILE="$TMP/append.txt"
+    rm -f "$APPEND_FILE"
+    out1="$(APPENDPATH="$APPEND_FILE" "$TMP/file_append" --allow-write --allow-read)"
+    # A SECOND process, so a pass means the bytes reached the filesystem
+    # rather than an in-process buffer, and that append did not truncate.
+    out2="$(APPENDPATH="$APPEND_FILE" "$TMP/file_append" --allow-write --allow-read)"
+    expect "file.append reports success"        "$(line "$out1" append.rc)" "1"
+    expect "first process leaves 5 bytes"       "$(line "$out1" bytes)"     "5"
+    expect "second process appends, not truncates" "$(line "$out2" bytes)"  "10"
+    expect "the file holds both lines"          "$(wc -l < "$APPEND_FILE" | tr -d ' ')" "2"
+fi
+
+echo
 echo "glue_contract: $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
 exit 0

@@ -153,7 +153,7 @@
     {"tk_env_getor_w", "declare i64 @tk_env_getor_w(i64, i64)", 0},
     {"tk_error_log_close", "declare void @tk_error_log_close(i64)", 0},
     {"tk_error_log_set_global", "declare void @tk_error_log_set_global(i64)", 0},
-    {"tk_file_append_w", "declare i64 @tk_file_append_w(i64, i64, i64)", 0},
+    {"tk_file_append_w", "declare i64 @tk_file_append_w(i64, i64)", 0},
     {"tk_file_appendline_w", "declare i64 @tk_file_appendline_w(i64, i64)", 0},
     {"tk_file_delete_w", "declare i64 @tk_file_delete_w(i64)", 0},
     {"tk_file_ensuredir_w", "declare i64 @tk_file_ensuredir_w(i64)", 0},
