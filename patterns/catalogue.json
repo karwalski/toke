@@ -20,12 +20,18 @@
             "qwen25coder": 32,
             "cl100k": 30
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 73.911,
+          "wall_ci95": [
+            72.092,
+            76.08
+          ],
+          "rss_kb_median": 1456,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28507
+          },
+          "bigO_ratio": 3.558,
+          "pat_n": 64000000,
           "runtime_verdict": "tied",
           "token_verdict": "more"
         },
@@ -41,13 +47,19 @@
             "qwen25coder": 39,
             "cl100k": 37
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 72.884,
+          "wall_ci95": [
+            70.111,
+            76.674
+          ],
+          "rss_kb_median": 1456,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28507
+          },
+          "bigO_ratio": 3.507,
+          "pat_n": 64000000,
+          "runtime_verdict": "best",
           "token_verdict": "more"
         },
         {
@@ -62,12 +74,18 @@
             "qwen25coder": 31,
             "cl100k": 29
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 75.155,
+          "wall_ci95": [
+            70.896,
+            80.707
+          ],
+          "rss_kb_median": 1440,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28507
+          },
+          "bigO_ratio": 3.263,
+          "pat_n": 64000000,
           "runtime_verdict": "tied",
           "token_verdict": "best"
         }
@@ -91,12 +109,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -118,12 +137,18 @@
             "qwen25coder": 43,
             "cl100k": 38
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 69.302,
+          "wall_ci95": [
+            64.486,
+            70.69
+          ],
+          "rss_kb_median": 1440,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28520
+          },
+          "bigO_ratio": 3.551,
+          "pat_n": 64000000,
           "runtime_verdict": "tied",
           "token_verdict": "best"
         },
@@ -139,13 +164,19 @@
             "qwen25coder": 46,
             "cl100k": 41
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 66.732,
+          "wall_ci95": [
+            65.495,
+            67.922
+          ],
+          "rss_kb_median": 1440,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28520
+          },
+          "bigO_ratio": 3.835,
+          "pat_n": 64000000,
+          "runtime_verdict": "best",
           "token_verdict": "tied"
         },
         {
@@ -160,12 +191,18 @@
             "qwen25coder": 51,
             "cl100k": 46
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 68.911,
+          "wall_ci95": [
+            65.738,
+            70.913
+          ],
+          "rss_kb_median": 1456,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28520
+          },
+          "bigO_ratio": 3.903,
+          "pat_n": 64000000,
           "runtime_verdict": "tied",
           "token_verdict": "more"
         }
@@ -187,12 +224,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -214,13 +252,19 @@
             "qwen25coder": 32,
             "cl100k": 29
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 99.858,
+          "wall_ci95": [
+            96.412,
+            101.728
+          ],
+          "rss_kb_median": 1456,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28527
+          },
+          "bigO_ratio": 3.556,
+          "pat_n": 64000000,
+          "runtime_verdict": "slower",
           "token_verdict": "best"
         },
         {
@@ -235,13 +279,19 @@
             "qwen25coder": 43,
             "cl100k": 40
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 96.267,
+          "wall_ci95": [
+            95.292,
+            99.577
+          ],
+          "rss_kb_median": 1440,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28527
+          },
+          "bigO_ratio": 3.813,
+          "pat_n": 64000000,
+          "runtime_verdict": "slower",
           "token_verdict": "more"
         },
         {
@@ -256,20 +306,26 @@
             "qwen25coder": 35,
             "cl100k": 32
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 91.479,
+          "wall_ci95": [
+            90.41,
+            92.896
+          ],
+          "rss_kb_median": 1440,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28527
+          },
+          "bigO_ratio": 3.915,
+          "pat_n": 64000000,
+          "runtime_verdict": "best",
           "token_verdict": "more"
         }
       ],
       "verdict": {
         "canonical": "a",
-        "hot_path": null,
-        "choose_hot_path_when": null,
+        "hot_path": "c",
+        "choose_hot_path_when": "the combined result is returned straight out of the function and the test sits in a hot loop: sequential guard returns measured 91.5 ms against 99.9 ms for the single `||` expression (+9.2%), for 3 tokens more",
         "status": "provisional"
       },
       "source": [
@@ -284,12 +340,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -311,13 +368,19 @@
             "qwen25coder": 41,
             "cl100k": 37
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 59.051,
+          "wall_ci95": [
+            58.62,
+            60.143
+          ],
+          "rss_kb_median": 1456,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28501
+          },
+          "bigO_ratio": 4.308,
+          "pat_n": 64000000,
+          "runtime_verdict": "best",
           "token_verdict": "best"
         },
         {
@@ -332,13 +395,19 @@
             "qwen25coder": 48,
             "cl100k": 44
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 72.24,
+          "wall_ci95": [
+            69.124,
+            81.381
+          ],
+          "rss_kb_median": 1456,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28501
+          },
+          "bigO_ratio": 3.578,
+          "pat_n": 64000000,
+          "runtime_verdict": "slower",
           "token_verdict": "more"
         },
         {
@@ -353,13 +422,19 @@
             "qwen25coder": 41,
             "cl100k": 37
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 64.304,
+          "wall_ci95": [
+            59.506,
+            66.132
+          ],
+          "rss_kb_median": 1456,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28501
+          },
+          "bigO_ratio": 3.569,
+          "pat_n": 64000000,
+          "runtime_verdict": "slower",
           "token_verdict": "more"
         }
       ],
@@ -380,12 +455,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -407,13 +483,19 @@
             "qwen25coder": 25,
             "cl100k": 24
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 81.056,
+          "wall_ci95": [
+            79.904,
+            82.165
+          ],
+          "rss_kb_median": 1424,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28524
+          },
+          "bigO_ratio": 3.66,
+          "pat_n": 32000000,
+          "runtime_verdict": "best",
           "token_verdict": "best"
         },
         {
@@ -449,13 +531,19 @@
             "qwen25coder": 29,
             "cl100k": 28
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 92.724,
+          "wall_ci95": [
+            88.834,
+            97.944
+          ],
+          "rss_kb_median": 1424,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28524
+          },
+          "bigO_ratio": 3.256,
+          "pat_n": 32000000,
+          "runtime_verdict": "slower",
           "token_verdict": "more"
         }
       ],
@@ -483,12 +571,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -510,12 +599,18 @@
             "qwen25coder": 44,
             "cl100k": 42
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 63.222,
+          "wall_ci95": [
+            62.855,
+            65.198
+          ],
+          "rss_kb_median": 232896,
+          "allocs": {
+            "calls": 225,
+            "bytes": 268464559
+          },
+          "bigO_ratio": 4.011,
+          "pat_n": 12800000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -531,12 +626,18 @@
             "qwen25coder": 22,
             "cl100k": 20
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 73.118,
+          "wall_ci95": [
+            71.587,
+            73.946
+          ],
+          "rss_kb_median": 232896,
+          "allocs": {
+            "calls": 225,
+            "bytes": 268464559
+          },
+          "bigO_ratio": 3.679,
+          "pat_n": 12800000,
           "runtime_verdict": "slower",
           "token_verdict": "best"
         }
@@ -561,12 +662,13 @@
       ],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -588,12 +690,18 @@
             "qwen25coder": 51,
             "cl100k": 49
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 71.631,
+          "wall_ci95": [
+            68.693,
+            75.754
+          ],
+          "rss_kb_median": 232896,
+          "allocs": {
+            "calls": 225,
+            "bytes": 268464576
+          },
+          "bigO_ratio": 3.67,
+          "pat_n": 12800000,
           "runtime_verdict": "best",
           "token_verdict": "tied"
         },
@@ -609,12 +717,18 @@
             "qwen25coder": 22,
             "cl100k": 20
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 86.389,
+          "wall_ci95": [
+            84.42,
+            89.273
+          ],
+          "rss_kb_median": 266192,
+          "allocs": {
+            "calls": 226,
+            "bytes": 370864600
+          },
+          "bigO_ratio": 3.675,
+          "pat_n": 12800000,
           "runtime_verdict": "slower",
           "token_verdict": "best"
         },
@@ -630,12 +744,18 @@
             "qwen25coder": 22,
             "cl100k": 20
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 84.659,
+          "wall_ci95": [
+            83.364,
+            85.691
+          ],
+          "rss_kb_median": 232896,
+          "allocs": {
+            "calls": 225,
+            "bytes": 268464576
+          },
+          "bigO_ratio": 3.69,
+          "pat_n": 12800000,
           "runtime_verdict": "slower",
           "token_verdict": "tied"
         }
@@ -654,12 +774,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -681,12 +802,18 @@
             "qwen25coder": 53,
             "cl100k": 51
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 60.404,
+          "wall_ci95": [
+            59.477,
+            61.277
+          ],
+          "rss_kb_median": 232880,
+          "allocs": {
+            "calls": 225,
+            "bytes": 268464566
+          },
+          "bigO_ratio": 3.668,
+          "pat_n": 12800000,
           "runtime_verdict": "best",
           "token_verdict": "more"
         },
@@ -702,12 +829,18 @@
             "qwen25coder": 24,
             "cl100k": 22
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 68.389,
+          "wall_ci95": [
+            67.612,
+            70.693
+          ],
+          "rss_kb_median": 232880,
+          "allocs": {
+            "calls": 225,
+            "bytes": 268464566
+          },
+          "bigO_ratio": 3.827,
+          "pat_n": 12800000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         },
@@ -723,12 +856,18 @@
             "qwen25coder": 23,
             "cl100k": 21
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 591.294,
+          "wall_ci95": [
+            587.829,
+            593.74
+          ],
+          "rss_kb_median": 332928,
+          "allocs": {
+            "calls": 226,
+            "bytes": 370864590
+          },
+          "bigO_ratio": 3.908,
+          "pat_n": 12800000,
           "runtime_verdict": "slower",
           "token_verdict": "best"
         }
@@ -746,12 +885,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -773,12 +913,18 @@
             "qwen25coder": 41,
             "cl100k": 39
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 77.43,
+          "wall_ci95": [
+            74.848,
+            78.414
+          ],
+          "rss_kb_median": 260896,
+          "allocs": {
+            "calls": 228,
+            "bytes": 268464642
+          },
+          "bigO_ratio": 3.95,
+          "pat_n": 16384000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -794,12 +940,15 @@
             "qwen25coder": 42,
             "cl100k": 40
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
+          "wall_ms_median": 30000,
+          "wall_ci95": [
+            30000,
+            30000
+          ],
           "rss_kb_median": null,
           "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "bigO_ratio": 99,
+          "pat_n": 16384000,
           "runtime_verdict": "worse-bigO",
           "token_verdict": "best"
         },
@@ -815,13 +964,19 @@
             "qwen25coder": 47,
             "cl100k": 45
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 83.957,
+          "wall_ci95": [
+            80.01,
+            85.396
+          ],
+          "rss_kb_median": 259632,
+          "allocs": {
+            "calls": 225,
+            "bytes": 399535946
+          },
+          "bigO_ratio": 3.597,
+          "pat_n": 16384000,
+          "runtime_verdict": "slower",
           "token_verdict": "more"
         }
       ],
@@ -839,12 +994,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -866,13 +1022,19 @@
             "qwen25coder": 87,
             "cl100k": 85
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 74.356,
+          "wall_ci95": [
+            73.837,
+            75.279
+          ],
+          "rss_kb_median": 1424,
+          "allocs": {
+            "calls": 204,
+            "bytes": 28877
+          },
+          "bigO_ratio": 3.744,
+          "pat_n": 6400000,
+          "runtime_verdict": "slower",
           "token_verdict": "tied"
         },
         {
@@ -887,13 +1049,19 @@
             "qwen25coder": 108,
             "cl100k": 106
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 55.171,
+          "wall_ci95": [
+            54.779,
+            55.485
+          ],
+          "rss_kb_median": 1440,
+          "allocs": {
+            "calls": 201,
+            "bytes": 28629
+          },
+          "bigO_ratio": 3.653,
+          "pat_n": 6400000,
+          "runtime_verdict": "best",
           "token_verdict": "best"
         }
       ],
@@ -910,12 +1078,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -923,7 +1092,7 @@
       "family": "acc",
       "intent": "Remove duplicate values from an @i64 (order not significant).",
       "applicability": "Dedupe where result order is free (checksum is len+sum). Form a (array `.contains`) is the natural form but segfaults on 2.8.0 (127.11). Form d keys a map by the interpolated value: one interpolation alloc per element and a linear strcmp scan of the seen-set, so it is quadratic like b.",
-      "card_rule": "dedupe: sort a copy, append if != prev",
+      "card_rule": "dedupe: inner lp scan, append if new",
       "candidates": [
         {
           "form": "a",
@@ -958,13 +1127,19 @@
             "qwen25coder": 89,
             "cl100k": 87
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "worse-bigO",
+          "wall_ms_median": 141.656,
+          "wall_ci95": [
+            136.796,
+            146.125
+          ],
+          "rss_kb_median": 1111664,
+          "allocs": {
+            "calls": 16217,
+            "bytes": 1024542442
+          },
+          "bigO_ratio": 24.986,
+          "pat_n": 16000,
+          "runtime_verdict": "slower",
           "token_verdict": "best"
         },
         {
@@ -979,13 +1154,19 @@
             "qwen25coder": 69,
             "cl100k": 67
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "best",
+          "wall_ms_median": 127.726,
+          "wall_ci95": [
+            123.377,
+            131.586
+          ],
+          "rss_kb_median": 1111792,
+          "allocs": {
+            "calls": 16218,
+            "bytes": 1024670466
+          },
+          "bigO_ratio": 25.831,
+          "pat_n": 16000,
+          "runtime_verdict": "tied",
           "token_verdict": "more"
         },
         {
@@ -1000,20 +1181,26 @@
             "qwen25coder": 81,
             "cl100k": 79
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "worse-bigO",
+          "wall_ms_median": 127.05,
+          "wall_ci95": [
+            125.062,
+            131.85
+          ],
+          "rss_kb_median": 1112704,
+          "allocs": {
+            "calls": 48248,
+            "bytes": 1025263943
+          },
+          "bigO_ratio": 26.238,
+          "pat_n": 16000,
+          "runtime_verdict": "best",
           "token_verdict": "more"
         }
       ],
       "verdict": {
-        "canonical": "c",
-        "hot_path": null,
-        "choose_hot_path_when": null,
+        "canonical": "b",
+        "hot_path": "d",
+        "choose_hot_path_when": "the seen-set scan dominates and a constant factor is worth 6 tokens: the seen-map measured 127.1 ms against 141.7 ms for the inner-loop scan (+11.5%) but allocates 3x as much (48k calls vs 16k) and is just as quadratic (bigO 26.2 vs 25.0) — neither form fixes the class; 127.11 (`.contains`) does",
         "status": "blocked"
       },
       "source": [
@@ -1030,12 +1217,13 @@
       ],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -1057,12 +1245,15 @@
             "qwen25coder": 46,
             "cl100k": 45
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
+          "wall_ms_median": 30000,
+          "wall_ci95": [
+            30000,
+            30000
+          ],
           "rss_kb_median": null,
           "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "bigO_ratio": 99,
+          "pat_n": 2048000,
           "runtime_verdict": "worse-bigO",
           "token_verdict": "more"
         },
@@ -1078,12 +1269,18 @@
             "qwen25coder": 46,
             "cl100k": 45
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 58.859,
+          "wall_ci95": [
+            53.333,
+            66.329
+          ],
+          "rss_kb_median": 23792,
+          "allocs": {
+            "calls": 512225,
+            "bytes": 30941677
+          },
+          "bigO_ratio": 2.512,
+          "pat_n": 2048000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -1099,13 +1296,16 @@
             "qwen25coder": 49,
             "cl100k": 48
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
+          "wall_ms_median": 30000,
+          "wall_ci95": [
+            30000,
+            30000
+          ],
           "rss_kb_median": null,
           "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "bigO_ratio": 99,
+          "pat_n": 2048000,
+          "runtime_verdict": "worse-bigO",
           "token_verdict": "more"
         }
       ],
@@ -1128,12 +1328,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -1155,13 +1356,19 @@
             "qwen25coder": 26,
             "cl100k": 25
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "best",
+          "wall_ms_median": 96.137,
+          "wall_ci95": [
+            94.696,
+            101.763
+          ],
+          "rss_kb_median": 45424,
+          "allocs": {
+            "calls": 2400199,
+            "bytes": 22717420
+          },
+          "bigO_ratio": 3.361,
+          "pat_n": 400000,
+          "runtime_verdict": "slower",
           "token_verdict": "best"
         },
         {
@@ -1176,13 +1383,19 @@
             "qwen25coder": 28,
             "cl100k": 27
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "slower",
+          "wall_ms_median": 73.323,
+          "wall_ci95": [
+            67.281,
+            77.548
+          ],
+          "rss_kb_median": 39184,
+          "allocs": {
+            "calls": 1200199,
+            "bytes": 33917420
+          },
+          "bigO_ratio": 3.4,
+          "pat_n": 400000,
+          "runtime_verdict": "best",
           "token_verdict": "more"
         },
         {
@@ -1197,20 +1410,26 @@
             "qwen25coder": 37,
             "cl100k": 36
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 90.041,
+          "wall_ci95": [
+            85.084,
+            93.745
+          ],
+          "rss_kb_median": 39136,
+          "allocs": {
+            "calls": 2000199,
+            "bytes": 21517420
+          },
+          "bigO_ratio": 3.075,
+          "pat_n": 400000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         }
       ],
       "verdict": {
         "canonical": "a",
-        "hot_path": null,
-        "choose_hot_path_when": null,
+        "hot_path": "b",
+        "choose_hot_path_when": "the same 3-5 part string is assembled millions of times: `s.join` measured 73.3 ms against 96.1 ms for interpolation (+31%) with half the allocations (1.2M calls vs 2.4M), for 2 tokens more",
         "status": "provisional"
       },
       "source": [
@@ -1225,12 +1444,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -1238,7 +1458,7 @@
       "family": "str",
       "intent": "Convert an i64 to its decimal string.",
       "applicability": "Number to text with no width/precision. All three forms reach tk_str_fromi64 (1 alloc). `n as str` is accepted by 2.8.0 although the card lists only numeric casts.",
-      "card_rule": "int to text: \"\\(n)\", not s.fromint",
+      "card_rule": "int to text: n as str, not s.fromint",
       "candidates": [
         {
           "form": "a",
@@ -1252,13 +1472,19 @@
             "qwen25coder": 16,
             "cl100k": 15
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 109.554,
+          "wall_ci95": [
+            103.34,
+            113.293
+          ],
+          "rss_kb_median": 48544,
+          "allocs": {
+            "calls": 2000199,
+            "bytes": 34888203
+          },
+          "bigO_ratio": 3.495,
+          "pat_n": 1000000,
+          "runtime_verdict": "slower",
           "token_verdict": "best"
         },
         {
@@ -1273,12 +1499,18 @@
             "qwen25coder": 16,
             "cl100k": 15
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 86.5,
+          "wall_ci95": [
+            80.967,
+            91.332
+          ],
+          "rss_kb_median": 32848,
+          "allocs": {
+            "calls": 1000199,
+            "bytes": 24028514
+          },
+          "bigO_ratio": 3.405,
+          "pat_n": 1000000,
           "runtime_verdict": "tied",
           "token_verdict": "tied"
         },
@@ -1294,18 +1526,24 @@
             "qwen25coder": 15,
             "cl100k": 14
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 83.946,
+          "wall_ci95": [
+            76.83,
+            87.645
+          ],
+          "rss_kb_median": 32832,
+          "allocs": {
+            "calls": 1000199,
+            "bytes": 24028514
+          },
+          "bigO_ratio": 3.428,
+          "pat_n": 1000000,
+          "runtime_verdict": "best",
           "token_verdict": "tied"
         }
       ],
       "verdict": {
-        "canonical": "a",
+        "canonical": "c",
         "hot_path": null,
         "choose_hot_path_when": null,
         "status": "provisional"
@@ -1318,12 +1556,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -1345,13 +1584,19 @@
             "qwen25coder": 48,
             "cl100k": 46
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 78.635,
+          "wall_ci95": [
+            76.187,
+            79.874
+          ],
+          "rss_kb_median": 33552,
+          "allocs": {
+            "calls": 1644199,
+            "bytes": 17000515
+          },
+          "bigO_ratio": 3.744,
+          "pat_n": 400000,
+          "runtime_verdict": "slower",
           "token_verdict": "best"
         },
         {
@@ -1366,13 +1611,19 @@
             "qwen25coder": 58,
             "cl100k": 56
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 70.615,
+          "wall_ci95": [
+            68.094,
+            72.751
+          ],
+          "rss_kb_median": 39168,
+          "allocs": {
+            "calls": 1200199,
+            "bytes": 44828515
+          },
+          "bigO_ratio": 3.648,
+          "pat_n": 400000,
+          "runtime_verdict": "slower",
           "token_verdict": "best"
         },
         {
@@ -1387,13 +1638,19 @@
             "qwen25coder": 49,
             "cl100k": 47
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 67.847,
+          "wall_ci95": [
+            62.009,
+            68.39
+          ],
+          "rss_kb_median": 26592,
+          "allocs": {
+            "calls": 1200199,
+            "bytes": 14072515
+          },
+          "bigO_ratio": 3.554,
+          "pat_n": 400000,
+          "runtime_verdict": "best",
           "token_verdict": "more"
         },
         {
@@ -1408,20 +1665,26 @@
             "qwen25coder": 51,
             "cl100k": 49
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 88.783,
+          "wall_ci95": [
+            86.95,
+            93.579
+          ],
+          "rss_kb_median": 39168,
+          "allocs": {
+            "calls": 2000199,
+            "bytes": 17360515
+          },
+          "bigO_ratio": 3.459,
+          "pat_n": 400000,
+          "runtime_verdict": "slower",
           "token_verdict": "more"
         }
       ],
       "verdict": {
         "canonical": "a",
-        "hot_path": null,
-        "choose_hot_path_when": null,
+        "hot_path": "c",
+        "choose_hot_path_when": "every row of a large table is padded: `s.concat(s.repeat(\" \";p);d)` measured 67.8 ms against 78.6 ms for the prepend loop (+16%) and 26.6 MB peak RSS against 32.8 MB, for 3 tokens more",
         "status": "provisional"
       },
       "source": [
@@ -1431,12 +1694,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -1479,12 +1743,15 @@
             "qwen25coder": 75,
             "cl100k": 74
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
+          "wall_ms_median": 30000,
+          "wall_ci95": [
+            30000,
+            30000
+          ],
           "rss_kb_median": null,
           "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "bigO_ratio": 99,
+          "pat_n": 128000,
           "runtime_verdict": "worse-bigO",
           "token_verdict": "tied"
         },
@@ -1500,12 +1767,18 @@
             "qwen25coder": 82,
             "cl100k": 81
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 51.335,
+          "wall_ci95": [
+            46.957,
+            58.092
+          ],
+          "rss_kb_median": 14896,
+          "allocs": {
+            "calls": 384240,
+            "bytes": 11387887
+          },
+          "bigO_ratio": 1.377,
+          "pat_n": 128000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         }
@@ -1530,12 +1803,13 @@
       ],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -1557,13 +1831,19 @@
             "qwen25coder": 30,
             "cl100k": 28
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 80.984,
+          "wall_ci95": [
+            79.402,
+            85.438
+          ],
+          "rss_kb_median": 73184,
+          "allocs": {
+            "calls": 4571628,
+            "bytes": 73171382
+          },
+          "bigO_ratio": 3.543,
+          "pat_n": 32000000,
+          "runtime_verdict": "best",
           "token_verdict": "best"
         },
         {
@@ -1578,13 +1858,19 @@
             "qwen25coder": 42,
             "cl100k": 40
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 85.219,
+          "wall_ci95": [
+            77.604,
+            88.303
+          ],
+          "rss_kb_median": 73184,
+          "allocs": {
+            "calls": 4571628,
+            "bytes": 73171382
+          },
+          "bigO_ratio": 3.704,
+          "pat_n": 32000000,
+          "runtime_verdict": "slower",
           "token_verdict": "more"
         }
       ],
@@ -1601,12 +1887,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -1614,7 +1901,7 @@
       "family": "err",
       "intent": "Turn a T!Err result into a plain value with a default on error.",
       "applicability": "Consuming an error union where a sentinel is acceptable. Form b avoids the union by re-checking the precondition and calling a non-failing helper (duplicates the check, only possible when the failure condition is known to the caller). Form c is the single-use-let anti-pattern (mined rank 33).",
-      "card_rule": "error default: <mt {$ok:v v;$err:e d}",
+      "card_rule": "error default: precondition if, not mt",
       "candidates": [
         {
           "form": "a",
@@ -1628,13 +1915,19 @@
             "qwen25coder": 27,
             "cl100k": 25
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 149.742,
+          "wall_ci95": [
+            145.286,
+            156.527
+          ],
+          "rss_kb_median": 144880,
+          "allocs": {
+            "calls": 9143057,
+            "bytes": 146314239
+          },
+          "bigO_ratio": 3.907,
+          "pat_n": 64000000,
+          "runtime_verdict": "slower",
           "token_verdict": "best"
         },
         {
@@ -1649,13 +1942,19 @@
             "qwen25coder": 26,
             "cl100k": 24
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 87.908,
+          "wall_ci95": [
+            84.943,
+            90.656
+          ],
+          "rss_kb_median": 1456,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28511
+          },
+          "bigO_ratio": 3.42,
+          "pat_n": 64000000,
+          "runtime_verdict": "best",
           "token_verdict": "tied"
         },
         {
@@ -1670,18 +1969,24 @@
             "qwen25coder": 32,
             "cl100k": 30
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 149.163,
+          "wall_ci95": [
+            144.465,
+            158.495
+          ],
+          "rss_kb_median": 144896,
+          "allocs": {
+            "calls": 9143057,
+            "bytes": 146314239
+          },
+          "bigO_ratio": 3.921,
+          "pat_n": 64000000,
+          "runtime_verdict": "slower",
           "token_verdict": "more"
         }
       ],
       "verdict": {
-        "canonical": "a",
+        "canonical": "b",
         "hot_path": null,
         "choose_hot_path_when": null,
         "status": "provisional"
@@ -1698,12 +2003,13 @@
         "fixable": true
       },
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -1725,12 +2031,18 @@
             "qwen25coder": 36,
             "cl100k": 33
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 57.559,
+          "wall_ci95": [
+            55.54,
+            61.921
+          ],
+          "rss_kb_median": 1456,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28531
+          },
+          "bigO_ratio": 3.094,
+          "pat_n": 32000000,
           "runtime_verdict": "tied",
           "token_verdict": "best"
         },
@@ -1746,13 +2058,19 @@
             "qwen25coder": 40,
             "cl100k": 37
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 55.349,
+          "wall_ci95": [
+            53.111,
+            56.929
+          ],
+          "rss_kb_median": 1456,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28531
+          },
+          "bigO_ratio": 3.409,
+          "pat_n": 32000000,
+          "runtime_verdict": "best",
           "token_verdict": "more"
         },
         {
@@ -1767,12 +2085,18 @@
             "qwen25coder": 39,
             "cl100k": 36
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 58.021,
+          "wall_ci95": [
+            56.331,
+            60.05
+          ],
+          "rss_kb_median": 1456,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28531
+          },
+          "bigO_ratio": 3.02,
+          "pat_n": 32000000,
           "runtime_verdict": "tied",
           "token_verdict": "best"
         }
@@ -1790,12 +2114,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d11f109fe8d876dea485cb168dbf831db1",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -1817,12 +2142,18 @@
             "qwen25coder": 76,
             "cl100k": 74
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 66.616,
+          "wall_ci95": [
+            63.178,
+            70.841
+          ],
+          "rss_kb_median": 27712,
+          "allocs": {
+            "calls": 1024199,
+            "bytes": 16608079
+          },
+          "bigO_ratio": 3.028,
+          "pat_n": 128000,
           "runtime_verdict": "slower",
           "token_verdict": "best"
         },
@@ -1838,12 +2169,18 @@
             "qwen25coder": 77,
             "cl100k": 76
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 58.854,
+          "wall_ci95": [
+            58.252,
+            61.114
+          ],
+          "rss_kb_median": 27632,
+          "allocs": {
+            "calls": 1024199,
+            "bytes": 16240974
+          },
+          "bigO_ratio": 3.309,
+          "pat_n": 128000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         },
@@ -1859,12 +2196,18 @@
             "qwen25coder": 131,
             "cl100k": 125
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 50.607,
+          "wall_ci95": [
+            48.546,
+            53.149
+          ],
+          "rss_kb_median": 23616,
+          "allocs": {
+            "calls": 768199,
+            "bytes": 15072079
+          },
+          "bigO_ratio": 3.329,
+          "pat_n": 128000,
           "runtime_verdict": "best",
           "token_verdict": "more"
         }
@@ -1872,7 +2215,7 @@
       "verdict": {
         "canonical": "a",
         "hot_path": "c",
-        "choose_hot_path_when": "Fixed, machine-generated layout parsed inside a loop body executed > 100k times AND profiling shows json.dec on the hot path; never for external input (hand scans are incorrect on reordered/escaped JSON). (expected; runtime deferred, loadavg>100)",
+        "choose_hot_path_when": "the layout is fixed and machine-generated, the parse sits in a loop body executed > 100k times AND profiling shows `json.dec` on the hot path; never for external input (hand scans are wrong on reordered or escaped JSON). The charcode scan measured 50.6 ms against 66.6 ms for `json.dec` (-24%), for 11 tokens more",
         "status": "provisional"
       },
       "source": [
@@ -1886,12 +2229,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -1913,12 +2257,18 @@
             "qwen25coder": 95,
             "cl100k": 92
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 73.541,
+          "wall_ci95": [
+            70.006,
+            75.04
+          ],
+          "rss_kb_median": 97008,
+          "allocs": {
+            "calls": 2560235,
+            "bytes": 102491453
+          },
+          "bigO_ratio": 3.54,
+          "pat_n": 256000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         },
@@ -1934,12 +2284,18 @@
             "qwen25coder": 93,
             "cl100k": 90
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 70.365,
+          "wall_ci95": [
+            67.929,
+            71.662
+          ],
+          "rss_kb_median": 61792,
+          "allocs": {
+            "calls": 2304219,
+            "bytes": 44439092
+          },
+          "bigO_ratio": 3.571,
+          "pat_n": 256000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         }
@@ -1963,12 +2319,13 @@
       ],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -1990,12 +2347,18 @@
             "qwen25coder": 16,
             "cl100k": 16
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 83.336,
+          "wall_ci95": [
+            79.465,
+            88.974
+          ],
+          "rss_kb_median": 57856,
+          "allocs": {
+            "calls": 2304199,
+            "bytes": 40143196
+          },
+          "bigO_ratio": 3.704,
+          "pat_n": 256000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -2011,13 +2374,19 @@
             "qwen25coder": 93,
             "cl100k": 93
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "worse-bigO",
+          "wall_ms_median": 111.521,
+          "wall_ci95": [
+            108.156,
+            121.121
+          ],
+          "rss_kb_median": 94000,
+          "allocs": {
+            "calls": 3840199,
+            "bytes": 66433866
+          },
+          "bigO_ratio": 3.565,
+          "pat_n": 256000,
+          "runtime_verdict": "slower",
           "token_verdict": "more"
         },
         {
@@ -2032,12 +2401,18 @@
             "qwen25coder": 76,
             "cl100k": 75
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 107.927,
+          "wall_ci95": [
+            102.133,
+            111.706
+          ],
+          "rss_kb_median": 94064,
+          "allocs": {
+            "calls": 3072199,
+            "bytes": 70863196
+          },
+          "bigO_ratio": 3.707,
+          "pat_n": 256000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         }
@@ -2059,12 +2434,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -2086,12 +2462,18 @@
             "qwen25coder": 14,
             "cl100k": 14
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 79.254,
+          "wall_ci95": [
+            76.375,
+            85.851
+          ],
+          "rss_kb_median": 53808,
+          "allocs": {
+            "calls": 2048199,
+            "bytes": 32975176
+          },
+          "bigO_ratio": 3.558,
+          "pat_n": 256000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -2107,12 +2489,18 @@
             "qwen25coder": 55,
             "cl100k": 55
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 153.064,
+          "wall_ci95": [
+            147.677,
+            160.181
+          ],
+          "rss_kb_median": 154512,
+          "allocs": {
+            "calls": 4864199,
+            "bytes": 106191176
+          },
+          "bigO_ratio": 3.83,
+          "pat_n": 256000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         },
@@ -2128,12 +2516,18 @@
             "qwen25coder": 100,
             "cl100k": 99
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 134.456,
+          "wall_ci95": [
+            132.152,
+            137.72
+          ],
+          "rss_kb_median": 94080,
+          "allocs": {
+            "calls": 3072199,
+            "bytes": 69839176
+          },
+          "bigO_ratio": 3.468,
+          "pat_n": 256000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         }
@@ -2161,12 +2555,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -2188,13 +2583,19 @@
             "qwen25coder": 27,
             "cl100k": 26
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "best",
+          "wall_ms_median": 77.352,
+          "wall_ci95": [
+            71.538,
+            81.649
+          ],
+          "rss_kb_median": 25616,
+          "allocs": {
+            "calls": 1024199,
+            "bytes": 16142654
+          },
+          "bigO_ratio": 3.058,
+          "pat_n": 256000,
+          "runtime_verdict": "slower",
           "token_verdict": "best"
         },
         {
@@ -2209,20 +2610,26 @@
             "qwen25coder": 78,
             "cl100k": 73
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "slower",
+          "wall_ms_median": 72.726,
+          "wall_ci95": [
+            70.976,
+            76.274
+          ],
+          "rss_kb_median": 25600,
+          "allocs": {
+            "calls": 1024199,
+            "bytes": 16142654
+          },
+          "bigO_ratio": 3.021,
+          "pat_n": 256000,
+          "runtime_verdict": "best",
           "token_verdict": "more"
         }
       ],
       "verdict": {
         "canonical": "a",
-        "hot_path": null,
-        "choose_hot_path_when": null,
+        "hot_path": "b",
+        "choose_hot_path_when": "millions of fields are parsed and the text is known to be unsigned ASCII digits: the charcode loop measured 72.7 ms against 77.4 ms (+6.4%) — 16 tokens more for 6%, and it handles neither sign nor overflow",
         "status": "provisional"
       },
       "source": [
@@ -2237,12 +2644,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -2264,12 +2672,18 @@
             "qwen25coder": 74,
             "cl100k": 73
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 74.746,
+          "wall_ci95": [
+            71.347,
+            82.53
+          ],
+          "rss_kb_median": 48640,
+          "allocs": {
+            "calls": 1408269,
+            "bytes": 42635471
+          },
+          "bigO_ratio": 4.082,
+          "pat_n": 128000,
           "runtime_verdict": "slower",
           "token_verdict": "best"
         },
@@ -2285,12 +2699,18 @@
             "qwen25coder": 86,
             "cl100k": 85
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 67.252,
+          "wall_ci95": [
+            65.931,
+            70.413
+          ],
+          "rss_kb_median": 40736,
+          "allocs": {
+            "calls": 1152266,
+            "bytes": 35467430
+          },
+          "bigO_ratio": 4.044,
+          "pat_n": 128000,
           "runtime_verdict": "best",
           "token_verdict": "more"
         }
@@ -2298,7 +2718,7 @@
       "verdict": {
         "canonical": "a",
         "hot_path": "b",
-        "choose_hot_path_when": "Millions of lines: b allocates two strings per line, a allocates a 2-element array plus two strings per line. (expected; runtime deferred, loadavg>100)",
+        "choose_hot_path_when": "millions of lines are parsed: `b` allocates two strings per line where `a` allocates a 2-element array plus two strings, and measured 67.3 ms against 74.7 ms (-10%), for 12 tokens more",
         "status": "provisional"
       },
       "source": [
@@ -2314,12 +2734,13 @@
       ],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -2341,13 +2762,19 @@
             "qwen25coder": 20,
             "cl100k": 18
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "best",
+          "wall_ms_median": 52.647,
+          "wall_ci95": [
+            49.962,
+            57.127
+          ],
+          "rss_kb_median": 293136,
+          "allocs": {
+            "calls": 8204,
+            "bytes": 256316590
+          },
+          "bigO_ratio": 13.994,
+          "pat_n": 8000,
+          "runtime_verdict": "tied",
           "token_verdict": "best"
         },
         {
@@ -2362,13 +2789,19 @@
             "qwen25coder": 46,
             "cl100k": 44
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "slower",
+          "wall_ms_median": 51.885,
+          "wall_ci95": [
+            47.315,
+            52.189
+          ],
+          "rss_kb_median": 293248,
+          "allocs": {
+            "calls": 8218,
+            "bytes": 256383990
+          },
+          "bigO_ratio": 12.748,
+          "pat_n": 8000,
+          "runtime_verdict": "best",
           "token_verdict": "more"
         }
       ],
@@ -2390,12 +2823,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -2417,13 +2851,19 @@
             "qwen25coder": 21,
             "cl100k": 19
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "best",
+          "wall_ms_median": 154.767,
+          "wall_ci95": [
+            148.539,
+            159.515
+          ],
+          "rss_kb_median": 1111632,
+          "allocs": {
+            "calls": 16204,
+            "bytes": 1024604602
+          },
+          "bigO_ratio": 23.497,
+          "pat_n": 16000,
+          "runtime_verdict": "tied",
           "token_verdict": "best"
         },
         {
@@ -2438,13 +2878,19 @@
             "qwen25coder": 54,
             "cl100k": 52
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "slower",
+          "wall_ms_median": 148.828,
+          "wall_ci95": [
+            143.436,
+            157.913
+          ],
+          "rss_kb_median": 1111744,
+          "allocs": {
+            "calls": 16218,
+            "bytes": 1024608002
+          },
+          "bigO_ratio": 24.086,
+          "pat_n": 16000,
+          "runtime_verdict": "best",
           "token_verdict": "more"
         }
       ],
@@ -2465,12 +2911,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -2492,12 +2939,18 @@
             "qwen25coder": 26,
             "cl100k": 24
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 73.505,
+          "wall_ci95": [
+            67.479,
+            78.38
+          ],
+          "rss_kb_median": 163360,
+          "allocs": {
+            "calls": 225,
+            "bytes": 199782863
+          },
+          "bigO_ratio": 3.482,
+          "pat_n": 8192000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         },
@@ -2513,12 +2966,18 @@
             "qwen25coder": 53,
             "cl100k": 51
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 54.7,
+          "wall_ci95": [
+            51.183,
+            56.844
+          ],
+          "rss_kb_median": 131344,
+          "allocs": {
+            "calls": 224,
+            "bytes": 134246839
+          },
+          "bigO_ratio": 3.533,
+          "pat_n": 8192000,
           "runtime_verdict": "best",
           "token_verdict": "more"
         },
@@ -2534,12 +2993,18 @@
             "qwen25coder": 22,
             "cl100k": 20
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 63.535,
+          "wall_ci95": [
+            61.369,
+            65.308
+          ],
+          "rss_kb_median": 131328,
+          "allocs": {
+            "calls": 224,
+            "bytes": 134246839
+          },
+          "bigO_ratio": 3.69,
+          "pat_n": 8192000,
           "runtime_verdict": "slower",
           "token_verdict": "best"
         }
@@ -2547,7 +3012,7 @@
       "verdict": {
         "canonical": "c",
         "hot_path": "b",
-        "choose_hot_path_when": "Arrays > 100k elements or a loop body executed > 1k times: the inline loop avoids the per-element indirect call of reduce and the intermediate array of filter. (expected; runtime deferred, loadavg>100)",
+        "choose_hot_path_when": "arrays run past ~100k elements or the loop body is executed > 1k times: the inline loop avoids the per-element indirect call of `reduce` and measured 54.7 ms against 63.5 ms (-14%), for 2 tokens more",
         "status": "provisional"
       },
       "source": [
@@ -2557,12 +3022,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -2584,12 +3050,18 @@
             "qwen25coder": 45,
             "cl100k": 41
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 82.451,
+          "wall_ci95": [
+            80.718,
+            83.555
+          ],
+          "rss_kb_median": 260896,
+          "allocs": {
+            "calls": 225,
+            "bytes": 268464584
+          },
+          "bigO_ratio": 3.83,
+          "pat_n": 16384000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -2605,12 +3077,18 @@
             "qwen25coder": 38,
             "cl100k": 36
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 107.672,
+          "wall_ci95": [
+            106.963,
+            108.701
+          ],
+          "rss_kb_median": 262096,
+          "allocs": {
+            "calls": 226,
+            "bytes": 399536608
+          },
+          "bigO_ratio": 3.845,
+          "pat_n": 16384000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         },
@@ -2626,12 +3104,18 @@
             "qwen25coder": 56,
             "cl100k": 52
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 90.272,
+          "wall_ci95": [
+            87.495,
+            93.951
+          ],
+          "rss_kb_median": 260912,
+          "allocs": {
+            "calls": 225,
+            "bytes": 268464584
+          },
+          "bigO_ratio": 3.716,
+          "pat_n": 16384000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         }
@@ -2653,12 +3137,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -2680,12 +3165,18 @@
             "qwen25coder": 22,
             "cl100k": 20
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 64.503,
+          "wall_ci95": [
+            63.83,
+            67.831
+          ],
+          "rss_kb_median": 163360,
+          "allocs": {
+            "calls": 225,
+            "bytes": 199782840
+          },
+          "bigO_ratio": 3.362,
+          "pat_n": 8192000,
           "runtime_verdict": "slower",
           "token_verdict": "best"
         },
@@ -2701,12 +3192,18 @@
             "qwen25coder": 51,
             "cl100k": 49
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 54.357,
+          "wall_ci95": [
+            52.642,
+            56.947
+          ],
+          "rss_kb_median": 131328,
+          "allocs": {
+            "calls": 224,
+            "bytes": 134246816
+          },
+          "bigO_ratio": 3.34,
+          "pat_n": 8192000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -2722,12 +3219,18 @@
             "qwen25coder": 22,
             "cl100k": 20
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 60.32,
+          "wall_ci95": [
+            59.025,
+            62.057
+          ],
+          "rss_kb_median": 131328,
+          "allocs": {
+            "calls": 224,
+            "bytes": 134246816
+          },
+          "bigO_ratio": 3.66,
+          "pat_n": 8192000,
           "runtime_verdict": "slower",
           "token_verdict": "tied"
         }
@@ -2745,12 +3248,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -2772,13 +3276,19 @@
             "qwen25coder": 67,
             "cl100k": 63
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "best",
+          "wall_ms_median": 55.15,
+          "wall_ci95": [
+            52.7,
+            56.76
+          ],
+          "rss_kb_median": 9776,
+          "allocs": {
+            "calls": 220,
+            "bytes": 8417649
+          },
+          "bigO_ratio": 3.239,
+          "pat_n": 512000,
+          "runtime_verdict": "tied",
           "token_verdict": "best"
         },
         {
@@ -2793,13 +3303,19 @@
             "qwen25coder": 82,
             "cl100k": 78
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 52.847,
+          "wall_ci95": [
+            51.698,
+            54.451
+          ],
+          "rss_kb_median": 9760,
+          "allocs": {
+            "calls": 220,
+            "bytes": 8417649
+          },
+          "bigO_ratio": 3.386,
+          "pat_n": 512000,
+          "runtime_verdict": "best",
           "token_verdict": "more"
         }
       ],
@@ -2820,12 +3336,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -2847,12 +3364,18 @@
             "qwen25coder": 68,
             "cl100k": 66
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 134.279,
+          "wall_ci95": [
+            133.556,
+            140.438
+          ],
+          "rss_kb_median": 1114288,
+          "allocs": {
+            "calls": 96235,
+            "bytes": 1027014082
+          },
+          "bigO_ratio": 26.114,
+          "pat_n": 16000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -2868,12 +3391,18 @@
             "qwen25coder": 70,
             "cl100k": 68
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 138.37,
+          "wall_ci95": [
+            132.638,
+            141.822
+          ],
+          "rss_kb_median": 1114384,
+          "allocs": {
+            "calls": 96235,
+            "bytes": 1027014082
+          },
+          "bigO_ratio": 24.566,
+          "pat_n": 16000,
           "runtime_verdict": "tied",
           "token_verdict": "more"
         }
@@ -2891,12 +3420,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -2918,12 +3448,18 @@
             "qwen25coder": 105,
             "cl100k": 102
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 117.227,
+          "wall_ci95": [
+            114.541,
+            122.352
+          ],
+          "rss_kb_median": 45568,
+          "allocs": {
+            "calls": 1024288,
+            "bytes": 40974484
+          },
+          "bigO_ratio": 3.457,
+          "pat_n": 256000,
           "runtime_verdict": "best",
           "token_verdict": "more"
         },
@@ -2939,12 +3475,18 @@
             "qwen25coder": 73,
             "cl100k": 70
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 20037.722,
+          "wall_ci95": [
+            19209.787,
+            20693.157
+          ],
+          "rss_kb_median": 9904,
+          "allocs": {
+            "calls": 239,
+            "bytes": 8418066
+          },
+          "bigO_ratio": 99,
+          "pat_n": 256000,
           "runtime_verdict": "worse-bigO",
           "token_verdict": "best"
         },
@@ -2989,12 +3531,13 @@
       ],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -3016,12 +3559,18 @@
             "qwen25coder": 55,
             "cl100k": 52
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 141.897,
+          "wall_ci95": [
+            136.96,
+            146.763
+          ],
+          "rss_kb_median": 1111712,
+          "allocs": {
+            "calls": 16210,
+            "bytes": 1024604997
+          },
+          "bigO_ratio": 31.303,
+          "pat_n": 16000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -3037,12 +3586,18 @@
             "qwen25coder": 106,
             "cl100k": 97
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 147.369,
+          "wall_ci95": [
+            144.864,
+            150.823
+          ],
+          "rss_kb_median": 1112864,
+          "allocs": {
+            "calls": 16219,
+            "bytes": 1025757213
+          },
+          "bigO_ratio": 29.062,
+          "pat_n": 16000,
           "runtime_verdict": "tied",
           "token_verdict": "more"
         },
@@ -3086,12 +3641,13 @@
       ],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -3113,12 +3669,18 @@
             "qwen25coder": 136,
             "cl100k": 129
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 55.346,
+          "wall_ci95": [
+            54.278,
+            58.67
+          ],
+          "rss_kb_median": 358512,
+          "allocs": {
+            "calls": 96238,
+            "bytes": 317402549
+          },
+          "bigO_ratio": 21.079,
+          "pat_n": 32000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -3134,13 +3696,19 @@
             "qwen25coder": 181,
             "cl100k": 174
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "slower",
+          "wall_ms_median": 55.395,
+          "wall_ci95": [
+            54.045,
+            59.631
+          ],
+          "rss_kb_median": 358512,
+          "allocs": {
+            "calls": 96249,
+            "bytes": 317403133
+          },
+          "bigO_ratio": 23.077,
+          "pat_n": 32000,
+          "runtime_verdict": "tied",
           "token_verdict": "more"
         }
       ],
@@ -3157,12 +3725,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -3184,12 +3753,18 @@
             "qwen25coder": 47,
             "cl100k": 45
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 148.286,
+          "wall_ci95": [
+            139.914,
+            150.569
+          ],
+          "rss_kb_median": 1111872,
+          "allocs": {
+            "calls": 16219,
+            "bytes": 1024739107
+          },
+          "bigO_ratio": 23.458,
+          "pat_n": 16000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -3205,13 +3780,19 @@
             "qwen25coder": 70,
             "cl100k": 68
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 449.675,
+          "wall_ci95": [
+            433.048,
+            475.587
+          ],
+          "rss_kb_median": 3119888,
+          "allocs": {
+            "calls": 32203,
+            "bytes": 3072860587
+          },
+          "bigO_ratio": 47.069,
+          "pat_n": 16000,
+          "runtime_verdict": "worse-bigO",
           "token_verdict": "more"
         },
         {
@@ -3226,13 +3807,19 @@
             "qwen25coder": 46,
             "cl100k": 44
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "worse-bigO",
+          "wall_ms_median": 280.158,
+          "wall_ci95": [
+            272.287,
+            294.176
+          ],
+          "rss_kb_median": 2222224,
+          "allocs": {
+            "calls": 48204,
+            "bytes": 2049436611
+          },
+          "bigO_ratio": 30.567,
+          "pat_n": 16000,
+          "runtime_verdict": "slower",
           "token_verdict": "best"
         }
       ],
@@ -3253,12 +3840,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -3280,13 +3868,19 @@
             "qwen25coder": 68,
             "cl100k": 66
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 109.464,
+          "wall_ci95": [
+            106.676,
+            113.942
+          ],
+          "rss_kb_median": 807072,
+          "allocs": {
+            "calls": 16203,
+            "bytes": 768444572
+          },
+          "bigO_ratio": 23.662,
+          "pat_n": 8000,
+          "runtime_verdict": "slower",
           "token_verdict": "tied"
         },
         {
@@ -3301,12 +3895,18 @@
             "qwen25coder": 63,
             "cl100k": 61
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 102.115,
+          "wall_ci95": [
+            99.979,
+            105.282
+          ],
+          "rss_kb_median": 807072,
+          "allocs": {
+            "calls": 16203,
+            "bytes": 768444572
+          },
+          "bigO_ratio": 24.319,
+          "pat_n": 8000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         }
@@ -3328,12 +3928,13 @@
         "fixable": true
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -3355,12 +3956,18 @@
             "qwen25coder": 94,
             "cl100k": 92
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 58.818,
+          "wall_ci95": [
+            57.316,
+            64.373
+          ],
+          "rss_kb_median": 37632,
+          "allocs": {
+            "calls": 896268,
+            "bytes": 34623588
+          },
+          "bigO_ratio": 4.57,
+          "pat_n": 256000,
           "runtime_verdict": "best",
           "token_verdict": "more"
         },
@@ -3376,12 +3983,18 @@
             "qwen25coder": 84,
             "cl100k": 82
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 6719.097,
+          "wall_ci95": [
+            6678.051,
+            6786.808
+          ],
+          "rss_kb_median": 9392,
+          "allocs": {
+            "calls": 239,
+            "bytes": 8418051
+          },
+          "bigO_ratio": 17.108,
+          "pat_n": 256000,
           "runtime_verdict": "worse-bigO",
           "token_verdict": "best"
         }
@@ -3402,12 +4015,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -3429,12 +4043,18 @@
             "qwen25coder": 23,
             "cl100k": 23
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 62.19,
+          "wall_ci95": [
+            61.544,
+            62.744
+          ],
+          "rss_kb_median": 1424,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28490
+          },
+          "bigO_ratio": 3.65,
+          "pat_n": 16384000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -3450,12 +4070,18 @@
             "qwen25coder": 22,
             "cl100k": 22
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 64.032,
+          "wall_ci95": [
+            62.482,
+            64.784
+          ],
+          "rss_kb_median": 1424,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28490
+          },
+          "bigO_ratio": 3.582,
+          "pat_n": 16384000,
           "runtime_verdict": "tied",
           "token_verdict": "more"
         }
@@ -3479,12 +4105,13 @@
       ],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -3506,12 +4133,18 @@
             "qwen25coder": 17,
             "cl100k": 17
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 132.061,
+          "wall_ci95": [
+            131.143,
+            134.566
+          ],
+          "rss_kb_median": 1113024,
+          "allocs": {
+            "calls": 64204,
+            "bytes": 1025649505
+          },
+          "bigO_ratio": 26.45,
+          "pat_n": 16000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -3527,13 +4160,19 @@
             "qwen25coder": 53,
             "cl100k": 53
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "slower",
+          "wall_ms_median": 201.852,
+          "wall_ci95": [
+            200.934,
+            211.425
+          ],
+          "rss_kb_median": 1622704,
+          "allocs": {
+            "calls": 85536,
+            "bytes": 1481215689
+          },
+          "bigO_ratio": 40.399,
+          "pat_n": 16000,
+          "runtime_verdict": "worse-bigO",
           "token_verdict": "more"
         }
       ],
@@ -3560,12 +4199,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -3587,13 +4227,19 @@
             "qwen25coder": 22,
             "cl100k": 21
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "best",
+          "wall_ms_median": 97.097,
+          "wall_ci95": [
+            96.12,
+            98.471
+          ],
+          "rss_kb_median": 65776,
+          "allocs": {
+            "calls": 3072199,
+            "bytes": 35271051
+          },
+          "bigO_ratio": 3.832,
+          "pat_n": 512000,
+          "runtime_verdict": "slower",
           "token_verdict": "best"
         },
         {
@@ -3608,13 +4254,19 @@
             "qwen25coder": 28,
             "cl100k": 27
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "slower",
+          "wall_ms_median": 84.457,
+          "wall_ci95": [
+            83.14,
+            86.072
+          ],
+          "rss_kb_median": 57792,
+          "allocs": {
+            "calls": 2560199,
+            "bytes": 33735051
+          },
+          "bigO_ratio": 3.687,
+          "pat_n": 512000,
+          "runtime_verdict": "best",
           "token_verdict": "more"
         },
         {
@@ -3629,20 +4281,26 @@
             "qwen25coder": 42,
             "cl100k": 41
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 93.482,
+          "wall_ci95": [
+            91.516,
+            101.276
+          ],
+          "rss_kb_median": 73840,
+          "allocs": {
+            "calls": 2560199,
+            "bytes": 71196524
+          },
+          "bigO_ratio": 3.763,
+          "pat_n": 512000,
           "runtime_verdict": "slower",
           "token_verdict": "more"
         }
       ],
       "verdict": {
         "canonical": "a",
-        "hot_path": null,
-        "choose_hot_path_when": null,
+        "hot_path": "b",
+        "choose_hot_path_when": "the line is formatted inside a loop executed millions of times: `s.concat` + `s.fromint` measured 84.5 ms against 97.1 ms for interpolation (+15%) with 0.5M fewer allocation calls, for 5 tokens more",
         "status": "provisional"
       },
       "source": [
@@ -3668,12 +4326,13 @@
         "fixable": true
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -3695,12 +4354,18 @@
             "qwen25coder": 50,
             "cl100k": 48
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 64.966,
+          "wall_ci95": [
+            62.911,
+            66.603
+          ],
+          "rss_kb_median": 131328,
+          "allocs": {
+            "calls": 224,
+            "bytes": 134246852
+          },
+          "bigO_ratio": 3.425,
+          "pat_n": 8192000,
           "runtime_verdict": "tied",
           "token_verdict": "best"
         },
@@ -3716,12 +4381,18 @@
             "qwen25coder": 59,
             "cl100k": 57
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 64.881,
+          "wall_ci95": [
+            63.446,
+            67.051
+          ],
+          "rss_kb_median": 131344,
+          "allocs": {
+            "calls": 224,
+            "bytes": 134246852
+          },
+          "bigO_ratio": 3.338,
+          "pat_n": 8192000,
           "runtime_verdict": "best",
           "token_verdict": "more"
         }
@@ -3739,12 +4410,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -3766,12 +4438,18 @@
             "qwen25coder": 24,
             "cl100k": 23
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 66.462,
+          "wall_ci95": [
+            65.19,
+            70.89
+          ],
+          "rss_kb_median": 49792,
+          "allocs": {
+            "calls": 2048199,
+            "bytes": 34255186
+          },
+          "bigO_ratio": 3.781,
+          "pat_n": 256000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -3787,13 +4465,19 @@
             "qwen25coder": 31,
             "cl100k": 30
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "tied",
+          "wall_ms_median": 74.278,
+          "wall_ci95": [
+            69.045,
+            79.802
+          ],
+          "rss_kb_median": 49808,
+          "allocs": {
+            "calls": 2048199,
+            "bytes": 34255186
+          },
+          "bigO_ratio": 3.134,
+          "pat_n": 256000,
+          "runtime_verdict": "slower",
           "token_verdict": "best"
         }
       ],
@@ -3815,12 +4499,13 @@
         "fixable": true
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -3842,12 +4527,18 @@
             "qwen25coder": 33,
             "cl100k": 28
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 112.597,
+          "wall_ci95": [
+            103.217,
+            116.566
+          ],
+          "rss_kb_median": 1440,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28538
+          },
+          "bigO_ratio": 3.546,
+          "pat_n": 8192000,
           "runtime_verdict": "slower",
           "token_verdict": "best"
         },
@@ -3863,12 +4554,18 @@
             "qwen25coder": 55,
             "cl100k": 51
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 77.191,
+          "wall_ci95": [
+            72.353,
+            81.683
+          ],
+          "rss_kb_median": 1424,
+          "allocs": {
+            "calls": 199,
+            "bytes": 28538
+          },
+          "bigO_ratio": 4.084,
+          "pat_n": 8192000,
           "runtime_verdict": "best",
           "token_verdict": "more"
         }
@@ -3876,7 +4573,7 @@
       "verdict": {
         "canonical": "a",
         "hot_path": "b",
-        "choose_hot_path_when": "The call sits in a loop executed > 1M times, or the recursion depth is data-dependent (stack safety). (expected; runtime deferred, loadavg>100)",
+        "choose_hot_path_when": "the call sits in a loop executed > 1M times, or the recursion depth is data-dependent (stack safety): the `lp` accumulator measured 77.2 ms against 112.6 ms (-31%), for 5 tokens more",
         "status": "provisional"
       },
       "source": [
@@ -3886,12 +4583,13 @@
       "bug_caveats": [],
       "lint": null,
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -3913,12 +4611,18 @@
             "qwen25coder": 35,
             "cl100k": 35
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 68.143,
+          "wall_ci95": [
+            64.449,
+            74.485
+          ],
+          "rss_kb_median": 47152,
+          "allocs": {
+            "calls": 1024227,
+            "bytes": 55179103
+          },
+          "bigO_ratio": 3.282,
+          "pat_n": 256000,
           "runtime_verdict": "best",
           "token_verdict": "best"
         },
@@ -3934,13 +4638,16 @@
             "qwen25coder": 95,
             "cl100k": 94
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
+          "wall_ms_median": 30000,
+          "wall_ci95": [
+            30000,
+            30000
+          ],
           "rss_kb_median": null,
           "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "slower",
+          "bigO_ratio": 99,
+          "pat_n": 256000,
+          "runtime_verdict": "worse-bigO",
           "token_verdict": "more"
         }
       ],
@@ -3961,12 +4668,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     },
     {
@@ -3974,7 +4682,7 @@
       "family": "io",
       "intent": "Write N lines to a file.",
       "applicability": "Append-per-line is token-best (23 vs 27) but reopens the file on every call (a syscall per line, same asymptotic class); the protocol therefore makes it canonical with a hot path - flagged for owner review: a 10-100x constant-factor loss with identical bigO is exactly the case rule 6.4 does not catch. Fixture deletes the file first because file.append accumulates across runs.",
-      "card_rule": "file.append per line; loops: builder",
+      "card_rule": "file write: builder + one file.write",
       "candidates": [
         {
           "form": "a",
@@ -3988,12 +4696,18 @@
             "qwen25coder": 61,
             "cl100k": 59
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
-          "rss_kb_median": null,
-          "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
+          "wall_ms_median": 59.18,
+          "wall_ci95": [
+            54.407,
+            65.227
+          ],
+          "rss_kb_median": 31200,
+          "allocs": {
+            "calls": 1024232,
+            "bytes": 30587474
+          },
+          "bigO_ratio": 3.394,
+          "pat_n": 256000,
           "runtime_verdict": "best",
           "token_verdict": "more"
         },
@@ -4009,20 +4723,23 @@
             "qwen25coder": 53,
             "cl100k": 51
           },
-          "wall_ms_median": null,
-          "wall_ci95": null,
+          "wall_ms_median": 30000,
+          "wall_ci95": [
+            30000,
+            30000
+          ],
           "rss_kb_median": null,
           "allocs": null,
-          "bigO_ratio": null,
-          "pat_n": null,
-          "runtime_verdict": "slower",
+          "bigO_ratio": 99,
+          "pat_n": 256000,
+          "runtime_verdict": "worse-bigO",
           "token_verdict": "best"
         }
       ],
       "verdict": {
-        "canonical": "b",
-        "hot_path": "a",
-        "choose_hot_path_when": "More than a handful of lines, or any loop: file.append opens/closes the file per call. (expected; runtime deferred, loadavg>100)",
+        "canonical": "a",
+        "hot_path": null,
+        "choose_hot_path_when": null,
         "status": "provisional"
       },
       "source": [
@@ -4036,12 +4753,13 @@
         "fixable": false
       },
       "measured_at": {
-        "tkc_sha": "386cf3d",
+        "tkc_sha": "5811622433be7504c70c73b5ec8042c93a5f63f7",
         "tkc_version": "toke 2.8.0",
         "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
         "corpus_sha": "5f3f74314ce4affdaf7cae11b9c6fde8fe1b4ff7312f118c64ac6f561e8f7f78",
-        "bench_result": "deferred-load",
-        "date": "2026-09-18"
+        "bench_result": "20260919-030507.json",
+        "date": "2026-09-18",
+        "load_warning": true
       }
     }
   ]

@@ -5,7 +5,7 @@ section: learn
 order: 11
 ---
 
-> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `015cb73f4a2c`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
+> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `874f0fd4985a`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
 
 **Estimated time: ~40 minutes**
 
@@ -43,15 +43,14 @@ f=main():i64{
 };
 ```
 
-**Not this** — mut-flag then if/el assigns (`patterns/cond-bind-if/b.tk`):
+**Not this** — expression-if bound with let (`patterns/cond-bind-if/a.tk`):
 
 ```toke
 m=main;
 i=io:std.io;
 i=env:std.env;
 f=pat(x:i64):i64{
-  let g=mut.0;
-  if(x>0){g=1}el{g=2};
+  let g=if(x>0){1}el{2};
   <g*x+g
 };
 f=main():i64{
@@ -67,9 +66,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 17 | 46 | pending | pending |
-| `b` — avoid | 20 | 56 | pending | pending |
-| `c` — canonical | 15 | 43 | pending | pending |
+| `a` — avoid | 17 | 46 | 73.91 | 1456 |
+| `b` — avoid | 20 | 56 | 72.88 | 1456 |
+| `c` — canonical | 15 | 43 | 75.16 | 1440 |
 
 `tkc --lint` reports the non-canonical forms as `mut-flag-if`.
 
@@ -125,9 +124,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 21 | 63 | pending | pending |
-| `b` — avoid | 22 | 65 | pending | pending |
-| `c` — avoid | 28 | 74 | pending | pending |
+| `a` — canonical | 21 | 63 | 69.30 | 1440 |
+| `b` — avoid | 22 | 65 | 66.73 | 1440 |
+| `c` — avoid | 28 | 74 | 68.91 | 1456 |
 
 `tkc --lint` reports the non-canonical forms as `mut-flag-if`.
 
@@ -180,11 +179,33 @@ f=main():i64{
 };
 ```
 
+**Hot path** — sequential guard returns (`patterns/cond-bool-combine/c.tk`). Choose it when the combined result is returned straight out of the function and the test sits in a hot loop: sequential guard returns measured 91.5 ms against 99.9 ms for the single `||` expression (+9.2%), for 3 tokens more.
+
+```toke
+m=main;
+i=io:std.io;
+i=env:std.env;
+f=pat(a:i64;b:i64):i64{
+  if(a>0){<1};
+  if(b>0){<1};
+  <0
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let acc=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    acc=acc+pat(i%3-1;i%7-3)
+  };
+  io.println("acc=\(acc)");
+  <0
+};
+```
+
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 10 | 45 | pending | pending |
-| `b` — avoid | 17 | 68 | pending | pending |
-| `c` — avoid | 13 | 50 | pending | pending |
+| `a` — canonical | 10 | 45 | 99.86 | 1456 |
+| `b` — avoid | 17 | 68 | 96.27 | 1440 |
+| `c` — hot path | 13 | 50 | 91.48 | 1440 |
 
 `tkc --lint` reports the non-canonical forms as `flag-soup`.
 
@@ -239,9 +260,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 11 | 65 | pending | pending |
-| `b` — avoid | 18 | 76 | pending | pending |
-| `c` — avoid | 17 | 62 | pending | pending |
+| `a` — canonical | 11 | 65 | 59.05 | 1456 |
+| `b` — avoid | 18 | 76 | 72.24 | 1456 |
+| `c` — avoid | 17 | 62 | 64.30 | 1456 |
 
 `tkc --lint` reports the non-canonical forms as `mut-flag-if`.
 
@@ -305,8 +326,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 8 | 48 | pending | pending |
-| `c` — avoid | 13 | 59 | pending | pending |
+| `a` — canonical | 8 | 48 | 81.06 | 1424 |
+| `c` — avoid | 13 | 59 | 92.72 | 1424 |
 
 `tkc --lint` reports the non-canonical forms as `mut-flag-if`.
 
@@ -367,8 +388,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 16 | 76 | pending | pending |
-| `b` — avoid | 16 | 39 | pending | pending |
+| `a` — canonical | 16 | 76 | 63.22 | 232896 |
+| `b` — avoid | 16 | 39 | 73.12 | 232896 |
 
 ### acc-count-if
 
@@ -423,9 +444,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 16 | 88 | pending | pending |
-| `b` — avoid | 15 | 41 | pending | pending |
-| `c` — avoid | 16 | 39 | pending | pending |
+| `a` — canonical | 16 | 88 | 71.63 | 232896 |
+| `b` — avoid | 15 | 41 | 86.39 | 266192 |
+| `c` — avoid | 16 | 39 | 84.66 | 232896 |
 
 ### acc-min-max
 
@@ -501,9 +522,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — hot path | 18 | 99 | pending | pending |
-| `b` — avoid | 18 | 45 | pending | pending |
-| `c` — canonical | 14 | 41 | pending | pending |
+| `a` — hot path | 18 | 99 | 60.40 | 232880 |
+| `b` — avoid | 18 | 45 | 68.39 | 232880 |
+| `c` — canonical | 14 | 41 | 591.29 | 332928 |
 
 ### acc-array
 
@@ -563,9 +584,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 13 | 74 | pending | pending |
-| `b` — avoid | 13 | 69 | pending | pending |
-| `c` — avoid | 27 | 95 | pending | pending |
+| `a` — canonical | 13 | 74 | 77.43 | 260896 |
+| `b` — avoid | 13 | 69 | 30000.00 | pending |
+| `c` — avoid | 27 | 95 | 83.96 | 259632 |
 
 ### acc-map-build
 
@@ -621,8 +642,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 50 | 180 | pending | pending |
-| `b` — canonical | 48 | 209 | pending | pending |
+| `a` — avoid | 50 | 180 | 74.36 | 1424 |
+| `b` — canonical | 48 | 209 | 55.17 | 1440 |
 
 ### acc-dedupe
 
@@ -643,7 +664,41 @@ f=pat(xs:@i64):@i64{
 };
 ```
 
-**Write this** — sort a copy, append when != previous (`patterns/acc-dedupe/c.tk`):
+**Write this** — inner lp scan with flag+br, then append (`patterns/acc-dedupe/b.tk`):
+
+```toke
+m=main;
+i=io:std.io;
+i=env:std.env;
+f=pat(xs:@i64):@i64{
+  let out=mut.@();
+  lp(let i=0;i<xs.len;i=i+1){
+    let v=xs.get(i);
+    let dup=mut.0;
+    lp(let j=0;j<out.len;j=j+1){
+      if(out.get(j)==v){dup=1;br}
+    };
+    if(dup==0){out=out.append(v)}
+  };
+  <out
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){
+    xs=xs.append((i*7919)%(n/4+1))
+  };
+  let r=pat(xs);
+  let sum=mut.0;
+  lp(let i=0;i<r.len;i=i+1){
+    sum=sum+r.get(i)
+  };
+  io.println("len=\(r.len) sum=\(sum)");
+  <0
+};
+```
+
+**Not this** — sort a copy, append when != previous (`patterns/acc-dedupe/c.tk`):
 
 ```toke
 m=main;
@@ -674,7 +729,7 @@ f=main():i64{
 };
 ```
 
-**Not this** — seen-map keyed by `"\(v)"` (`patterns/acc-dedupe/d.tk`):
+**Hot path** — seen-map keyed by `"\(v)"` (`patterns/acc-dedupe/d.tk`). Choose it when the seen-set scan dominates and a constant factor is worth 6 tokens: the seen-map measured 127.1 ms against 141.7 ms for the inner-loop scan (+11.5%) but allocates 3x as much (48k calls vs 16k) and is just as quadratic (bigO 26.2 vs 25.0) — neither form fixes the class; 127.11 (`.contains`) does.
 
 ```toke
 m=main;
@@ -708,9 +763,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `b` — avoid | 25 | 186 | pending | pending |
-| `c` — canonical | 31 | 150 | pending | pending |
-| `d` — avoid | 31 | 176 | pending | pending |
+| `b` — canonical | 25 | 186 | 141.66 | 1111664 |
+| `c` — avoid | 31 | 150 | 127.73 | 1111792 |
+| `d` — hot path | 31 | 176 | 127.05 | 1112704 |
 
 ## Strings (`str`)
 
@@ -745,7 +800,7 @@ f=main():i64{
 };
 ```
 
-**Not this** — `r=s.concat(r;part)` chain (`patterns/str-build-loop/a.tk`):
+**Not this** — `acc=acc.append(part)` then `s.join("";acc)` (`patterns/str-build-loop/c.tk`):
 
 ```toke
 m=main;
@@ -753,11 +808,11 @@ i=io:std.io;
 i=s:std.str;
 i=env:std.env;
 f=pat(parts:@str;n:i64):str{
-  let r=mut."";
+  let acc=mut.@();
   lp(let i=0;i<n;i=i+1){
-    r=s.concat(r;parts.get(i%4))
+    acc=acc.append(parts.get(i%4))
   };
-  <r
+  <s.join("";acc)
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);
@@ -770,9 +825,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 15 | 96 | pending | pending |
-| `b` — canonical | 13 | 105 | pending | pending |
-| `c` — avoid | 15 | 114 | pending | pending |
+| `a` — avoid | 15 | 96 | 30000.00 | pending |
+| `b` — canonical | 13 | 105 | 58.86 | 23792 |
+| `c` — avoid | 15 | 114 | 30000.00 | pending |
 
 `tkc --lint` reports the non-canonical forms as `string-concat-chain`.
 
@@ -824,11 +879,32 @@ f=main():i64{
 };
 ```
 
+**Hot path** — `s.join("-";@(a;b;s.fromint(c)))` (`patterns/str-interp-vs-join/b.tk`). Choose it when the same 3-5 part string is assembled millions of times: `s.join` measured 73.3 ms against 96.1 ms for interpolation (+31%) with half the allocations (1.2M calls vs 2.4M), for 2 tokens more.
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(a:str;b:str;c:i64):str{
+  <s.join("-";@(a;b;s.fromint(c)))
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let acc=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    acc=acc+s.len(pat("ab";"cd";i))
+  };
+  io.println("len=\(acc)");
+  <0
+};
+```
+
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 13 | 47 | pending | pending |
-| `b` — avoid | 15 | 62 | pending | pending |
-| `c` — avoid | 20 | 95 | pending | pending |
+| `a` — canonical | 13 | 47 | 96.14 | 45424 |
+| `b` — hot path | 15 | 62 | 73.32 | 39184 |
+| `c` — avoid | 20 | 95 | 90.04 | 39136 |
 
 `tkc --lint` reports the non-canonical forms as `string-concat-chain`.
 
@@ -838,7 +914,28 @@ Convert an i64 to its decimal string.
 
 Number to text with no width/precision. All three forms reach tk_str_fromi64 (1 alloc). `n as str` is accepted by 2.8.0 although the card lists only numeric casts.
 
-**Write this** — interpolation `"\(n)"` (`patterns/str-num-format/a.tk`):
+**Write this** — `n as str` (`patterns/str-num-format/c.tk`):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(n:i64):str{
+  <n as str
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let acc=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    acc=acc+s.len(pat(i*7919-1000))
+  };
+  io.println("len=\(acc)");
+  <0
+};
+```
+
+**Not this** — interpolation `"\(n)"` (`patterns/str-num-format/a.tk`):
 
 ```toke
 m=main;
@@ -859,32 +956,11 @@ f=main():i64{
 };
 ```
 
-**Not this** — `s.fromint(n)` (`patterns/str-num-format/b.tk`):
-
-```toke
-m=main;
-i=io:std.io;
-i=s:std.str;
-i=env:std.env;
-f=pat(n:i64):str{
-  <s.fromint(n)
-};
-f=main():i64{
-  let n=env.getint("PAT_N";1000);
-  let acc=mut.0;
-  lp(let i=0;i<n;i=i+1){
-    acc=acc+s.len(pat(i*7919-1000))
-  };
-  io.println("len=\(acc)");
-  <0
-};
-```
-
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 7 | 25 | pending | pending |
-| `b` — avoid | 8 | 31 | pending | pending |
-| `c` — avoid | 8 | 27 | pending | pending |
+| `a` — avoid | 7 | 25 | 109.55 | 48544 |
+| `b` — avoid | 8 | 31 | 86.50 | 32848 |
+| `c` — canonical | 8 | 27 | 83.95 | 32832 |
 
 ### str-repeat-pad
 
@@ -918,7 +994,31 @@ f=main():i64{
 };
 ```
 
-**Not this** — `s.concat(s.repeat(" ";p);d)` (`patterns/str-repeat-pad/c.tk`):
+**Not this** — interpolate `"\(s.repeat(" ";p))\(d)"` (`patterns/str-repeat-pad/d.tk`):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(n:i64;w:i64):str{
+  let d=s.fromint(n);
+  let p=w-s.len(d);
+  <if(p>0){"\(s.repeat(" ";p))\(d)"}el{d}
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let acc=mut.0;
+  lp(let i=0;i<n;i=i+1){
+    let r=pat(i%1000;6);
+    acc=acc+s.len(r)*10+s.indexof(r;"9")
+  };
+  io.println("chk=\(acc)");
+  <0
+};
+```
+
+**Hot path** — `s.concat(s.repeat(" ";p);d)` (`patterns/str-repeat-pad/c.tk`). Choose it when every row of a large table is padded: `s.concat(s.repeat(" ";p);d)` measured 67.8 ms against 78.6 ms for the prepend loop (+16%) and 26.6 MB peak RSS against 32.8 MB, for 3 tokens more.
 
 ```toke
 m=main;
@@ -944,10 +1044,10 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 25 | 97 | pending | pending |
-| `b` — avoid | 25 | 126 | pending | pending |
-| `c` — avoid | 28 | 102 | pending | pending |
-| `d` — avoid | 28 | 99 | pending | pending |
+| `a` — canonical | 25 | 97 | 78.64 | 33552 |
+| `b` — avoid | 25 | 126 | 70.61 | 39168 |
+| `c` — hot path | 28 | 102 | 67.85 | 26592 |
+| `d` — avoid | 28 | 99 | 88.78 | 39168 |
 
 ### str-array-render
 
@@ -1027,8 +1127,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `b` — avoid | 24 | 176 | pending | pending |
-| `c` — canonical | 23 | 200 | pending | pending |
+| `b` — avoid | 24 | 176 | 30000.00 | pending |
+| `c` — canonical | 23 | 200 | 51.34 | 14896 |
 
 ## Errors (`err`)
 
@@ -1096,8 +1196,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 21 | 49 | pending | pending |
-| `b` — avoid | 24 | 79 | pending | pending |
+| `a` — canonical | 21 | 49 | 80.98 | 73184 |
+| `b` — avoid | 24 | 79 | 85.22 | 73184 |
 
 ### err-default
 
@@ -1105,7 +1205,7 @@ Turn a T!Err result into a plain value with a default on error.
 
 Consuming an error union where a sentinel is acceptable. Form b avoids the union by re-checking the precondition and calling a non-failing helper (duplicates the check, only possible when the failure condition is known to the caller). Form c is the single-use-let anti-pattern (mined rank 33).
 
-**Write this** — `<mt chk(x){$ok:v v;$err:e -1}` (`patterns/err-default/a.tk`):
+**Write this** — precondition if + plain call (`patterns/err-default/b.tk`):
 
 ```toke
 m=main;
@@ -1118,7 +1218,8 @@ f=chk(x:i64):i64!$myerr{
 };
 f=raw(x:i64):i64{<x*2};
 f=pat(x:i64):i64{
-  <mt chk(x){$ok:v v;$err:e -1}
+  if(x%7==0){<-1};
+  <raw(x)
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);
@@ -1160,9 +1261,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 11 | 46 | pending | pending |
-| `b` — avoid | 12 | 41 | pending | pending |
-| `c` — avoid | 13 | 54 | pending | pending |
+| `a` — avoid | 11 | 46 | 149.74 | 144880 |
+| `b` — canonical | 12 | 41 | 87.91 | 1456 |
+| `c` — avoid | 13 | 54 | 149.16 | 144896 |
 
 `tkc --lint` reports the non-canonical forms as `single-use-let`.
 
@@ -1194,14 +1295,14 @@ f=main():i64{
 };
 ```
 
-**Not this** — nested if/el with returns (`patterns/err-validate-early/b.tk`):
+**Not this** — `<if … el if … el{…}` expression (`patterns/err-validate-early/c.tk`):
 
 ```toke
 m=main;
 i=io:std.io;
 i=env:std.env;
 f=pat(a:i64;b:i64):i64{
-  if(a<0){<-1}el{if(b==0){<-2}el{<a/b}}
+  <if(a<0){-1}el if(b==0){-2}el{a/b}
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);
@@ -1216,9 +1317,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 13 | 55 | pending | pending |
-| `b` — avoid | 15 | 61 | pending | pending |
-| `c` — avoid | 13 | 58 | pending | pending |
+| `a` — canonical | 13 | 55 | 57.56 | 1456 |
+| `b` — avoid | 15 | 61 | 55.35 | 1456 |
+| `c` — avoid | 13 | 58 | 58.02 | 1456 |
 
 ## Parsing (`parse`)
 
@@ -1280,7 +1381,7 @@ f=main():i64{
 };
 ```
 
-**Hot path** — per-char charcode scan loop (sketch) (`patterns/parse-json/c.tk`). Choose it when Fixed, machine-generated layout parsed inside a loop body executed > 100k times AND profiling shows json.dec on the hot path; never for external input (hand scans are incorrect on reordered/escaped JSON). (expected; runtime deferred, loadavg>100).
+**Hot path** — per-char charcode scan loop (sketch) (`patterns/parse-json/c.tk`). Choose it when the layout is fixed and machine-generated, the parse sits in a loop body executed > 100k times AND profiling shows `json.dec` on the hot path; never for external input (hand scans are wrong on reordered or escaped JSON). The charcode scan measured 50.6 ms against 66.6 ms for `json.dec` (-24%), for 11 tokens more.
 
 ```toke
 m=main;
@@ -1320,9 +1421,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 40 | 161 | pending | pending |
-| `b` — avoid | 46 | 198 | pending | pending |
-| `c` — hot path | 51 | 244 | pending | pending |
+| `a` — canonical | 40 | 161 | 66.62 | 27712 |
+| `b` — avoid | 46 | 198 | 58.85 | 27632 |
+| `c` — hot path | 51 | 244 | 50.61 | 23616 |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
 
@@ -1390,8 +1491,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 54 | 209 | pending | pending |
-| `b` — canonical | 50 | 200 | pending | pending |
+| `a` — avoid | 54 | 209 | 73.54 | 97008 |
+| `b` — canonical | 50 | 200 | 70.36 | 61792 |
 
 ### parse-delim-split
 
@@ -1456,9 +1557,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 7 | 40 | pending | pending |
-| `b` — avoid | 50 | 219 | pending | pending |
-| `c` — avoid | 35 | 185 | pending | pending |
+| `a` — canonical | 7 | 40 | 83.34 | 57856 |
+| `b` — avoid | 50 | 219 | 111.52 | 94000 |
+| `c` — avoid | 35 | 185 | 107.93 | 94064 |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
 
@@ -1524,9 +1625,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 9 | 37 | pending | pending |
-| `b` — avoid | 22 | 132 | pending | pending |
-| `c` — avoid | 49 | 230 | pending | pending |
+| `a` — canonical | 9 | 37 | 79.25 | 53808 |
+| `b` — avoid | 22 | 132 | 153.06 | 154512 |
+| `c` — avoid | 49 | 230 | 134.46 | 94080 |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
 
@@ -1555,7 +1656,7 @@ f=main():i64{
 };
 ```
 
-**Not this** — charcode digit loop (`patterns/parse-int/b.tk`):
+**Hot path** — charcode digit loop (`patterns/parse-int/b.tk`). Choose it when millions of fields are parsed and the text is known to be unsigned ASCII digits: the charcode loop measured 72.7 ms against 77.4 ms (+6.4%) — 16 tokens more for 6%, and it handles neither sign nor overflow.
 
 ```toke
 m=main;
@@ -1584,8 +1685,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 9 | 54 | pending | pending |
-| `b` — avoid | 25 | 144 | pending | pending |
+| `a` — canonical | 9 | 54 | 77.35 | 25616 |
+| `b` — hot path | 25 | 144 | 72.73 | 25600 |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
 
@@ -1626,7 +1727,7 @@ f=main():i64{
 };
 ```
 
-**Hot path** — s.indexof "=" + s.slice -> m.set (`patterns/parse-kv-lines/b.tk`). Choose it when Millions of lines: b allocates two strings per line, a allocates a 2-element array plus two strings per line. (expected; runtime deferred, loadavg>100).
+**Hot path** — s.indexof "=" + s.slice -> m.set (`patterns/parse-kv-lines/b.tk`). Choose it when millions of lines are parsed: `b` allocates two strings per line where `a` allocates a 2-element array plus two strings, and measured 67.3 ms against 74.7 ms (-10%), for 12 tokens more.
 
 ```toke
 m=main;
@@ -1660,8 +1761,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 33 | 173 | pending | pending |
-| `b` — hot path | 45 | 195 | pending | pending |
+| `a` — canonical | 33 | 173 | 74.75 | 48640 |
+| `b` — hot path | 45 | 195 | 67.25 | 40736 |
 
 ## Iteration (`iter`)
 
@@ -1723,8 +1824,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 13 | 34 | pending | pending |
-| `b` — avoid | 16 | 89 | pending | pending |
+| `a` — canonical | 13 | 34 | 52.65 | 293136 |
+| `b` — avoid | 16 | 89 | 51.88 | 293248 |
 
 `tkc --lint` reports the non-canonical forms as `loop-is-map`.
 
@@ -1786,8 +1887,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 14 | 38 | pending | pending |
-| `b` — avoid | 18 | 107 | pending | pending |
+| `a` — canonical | 14 | 38 | 154.77 | 1111632 |
+| `b` — avoid | 18 | 107 | 148.83 | 1111744 |
 
 `tkc --lint` reports the non-canonical forms as `loop-is-filter`.
 
@@ -1841,7 +1942,7 @@ f=main():i64{
 };
 ```
 
-**Hot path** — single loop with if (`patterns/iter-filter-sum/b.tk`). Choose it when Arrays > 100k elements or a loop body executed > 1k times: the inline loop avoids the per-element indirect call of reduce and the intermediate array of filter. (expected; runtime deferred, loadavg>100).
+**Hot path** — single loop with if (`patterns/iter-filter-sum/b.tk`). Choose it when arrays run past ~100k elements or the loop body is executed > 1k times: the inline loop avoids the per-element indirect call of `reduce` and measured 54.7 ms against 63.5 ms (-14%), for 2 tokens more.
 
 ```toke
 m=main;
@@ -1869,9 +1970,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 21 | 52 | pending | pending |
-| `b` — hot path | 19 | 96 | pending | pending |
-| `c` — canonical | 17 | 40 | pending | pending |
+| `a` — avoid | 21 | 52 | 73.50 | 163360 |
+| `b` — hot path | 19 | 96 | 54.70 | 131344 |
+| `c` — canonical | 17 | 40 | 63.53 | 131328 |
 
 ### iter-find-first
 
@@ -1928,9 +2029,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 17 | 81 | pending | pending |
-| `b` — avoid | 22 | 79 | pending | pending |
-| `c` — avoid | 22 | 99 | pending | pending |
+| `a` — canonical | 17 | 81 | 82.45 | 260896 |
+| `b` — avoid | 22 | 79 | 107.67 | 262096 |
+| `c` — avoid | 22 | 99 | 90.27 | 260912 |
 
 `tkc --lint` reports the non-canonical forms as `scan-without-break`.
 
@@ -1988,9 +2089,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 15 | 41 | pending | pending |
-| `b` — canonical | 15 | 88 | pending | pending |
-| `c` — avoid | 16 | 40 | pending | pending |
+| `a` — avoid | 15 | 41 | 64.50 | 163360 |
+| `b` — canonical | 15 | 88 | 54.36 | 131328 |
+| `c` — avoid | 16 | 40 | 60.32 | 131328 |
 
 ### iter-nested-early-exit
 
@@ -2050,8 +2151,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 27 | 124 | pending | pending |
-| `b` — avoid | 35 | 153 | pending | pending |
+| `a` — canonical | 27 | 124 | 55.15 | 9776 |
+| `b` — avoid | 35 | 153 | 52.85 | 9760 |
 
 `tkc --lint` reports the non-canonical forms as `flag-break-is-return`.
 
@@ -2120,8 +2221,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 26 | 125 | pending | pending |
-| `b` — avoid | 28 | 127 | pending | pending |
+| `a` — canonical | 26 | 125 | 134.28 | 1114288 |
+| `b` — avoid | 28 | 127 | 138.37 | 1114384 |
 
 ### coll-membership
 
@@ -2196,8 +2297,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 45 | 205 | pending | pending |
-| `b` — avoid | 24 | 133 | pending | pending |
+| `a` — canonical | 45 | 205 | 117.23 | 45568 |
+| `b` — avoid | 24 | 133 | 20037.72 | 9904 |
 
 ### coll-sort-take
 
@@ -2274,8 +2375,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 24 | 109 | pending | pending |
-| `b` — avoid | 52 | 207 | pending | pending |
+| `a` — canonical | 24 | 109 | 141.90 | 1111712 |
+| `b` — avoid | 52 | 207 | 147.37 | 1112864 |
 
 ### coll-group-by
 
@@ -2356,8 +2457,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 64 | 279 | pending | pending |
-| `b` — avoid | 89 | 408 | pending | pending |
+| `a` — canonical | 64 | 279 | 55.35 | 358512 |
+| `b` — avoid | 89 | 408 | 55.40 | 358512 |
 
 ### coll-reverse
 
@@ -2389,7 +2490,7 @@ f=main():i64{
 };
 ```
 
-**Not this** — prepend with @(x)+r (`patterns/coll-reverse/c.tk`):
+**Not this** — copy + set swap to the middle (`patterns/coll-reverse/b.tk`):
 
 ```toke
 m=main;
@@ -2397,8 +2498,13 @@ i=io:std.io;
 i=s:std.str;
 i=env:std.env;
 f=pat(xs:@i64):@i64{
-  let r=mut.@();
-  lp(let i=0;i<xs.len;i=i+1){r=@(xs.get(i))+r};
+  let r=mut.xs;
+  let n=xs.len;
+  lp(let i=0;i<n/2;i=i+1){
+    let t=r.get(i);
+    r=r.set(i;r.get(n-1-i));
+    r=r.set(n-1-i;t)
+  };
   <r
 };
 f=main():i64{
@@ -2415,9 +2521,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 16 | 90 | pending | pending |
-| `b` — avoid | 24 | 130 | pending | pending |
-| `c` — avoid | 16 | 82 | pending | pending |
+| `a` — canonical | 16 | 90 | 148.29 | 1111872 |
+| `b` — avoid | 24 | 130 | 449.68 | 3119888 |
+| `c` — avoid | 16 | 82 | 280.16 | 2222224 |
 
 `tkc --lint` reports the non-canonical forms as `quadratic-prepend`.
 
@@ -2485,8 +2591,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 26 | 126 | pending | pending |
-| `b` — canonical | 25 | 114 | pending | pending |
+| `a` — avoid | 26 | 126 | 109.46 | 807072 |
+| `b` — canonical | 25 | 114 | 102.11 | 807072 |
 
 `tkc --lint` reports the non-canonical forms as `swap-tmp-let`.
 
@@ -2552,8 +2658,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 41 | 187 | pending | pending |
-| `b` — avoid | 34 | 182 | pending | pending |
+| `a` — canonical | 41 | 187 | 58.82 | 37632 |
+| `b` — avoid | 34 | 182 | 6719.10 | 9392 |
 
 `tkc --lint` reports the non-canonical forms as `quadratic-dedupe`.
 
@@ -2609,8 +2715,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 8 | 53 | pending | pending |
-| `b` — avoid | 15 | 58 | pending | pending |
+| `a` — canonical | 8 | 53 | 62.19 | 1424 |
+| `b` — avoid | 15 | 58 | 64.03 | 1424 |
 
 ### cli-flag-filter
 
@@ -2670,8 +2776,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 14 | 41 | pending | pending |
-| `b` — avoid | 18 | 117 | pending | pending |
+| `a` — canonical | 14 | 41 | 132.06 | 1113024 |
+| `b` — avoid | 18 | 117 | 201.85 | 1622704 |
 
 `tkc --lint` reports the non-canonical forms as `loop-is-filter`.
 
@@ -2723,11 +2829,30 @@ f=main():i64{
 };
 ```
 
+**Hot path** — nested s.concat + s.fromint (`patterns/cli-print-results/b.tk`). Choose it when the line is formatted inside a loop executed millions of times: `s.concat` + `s.fromint` measured 84.5 ms against 97.1 ms for interpolation (+15%) with 0.5M fewer allocation calls, for 5 tokens more.
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=pat(k:str;v:i64):str{
+  <s.concat(s.concat(k;"=");s.fromint(v))
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let t=mut.0;
+  lp(let i=0;i<n;i=i+1){t=t+s.len(pat("r\(i%5)";i*13))};
+  io.println("t=\(t)");
+  <0
+};
+```
+
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 10 | 36 | pending | pending |
-| `b` — avoid | 15 | 63 | pending | pending |
-| `c` — avoid | 16 | 99 | pending | pending |
+| `a` — canonical | 10 | 36 | 97.10 | 65776 |
+| `b` — hot path | 15 | 63 | 84.46 | 57792 |
+| `c` — avoid | 16 | 99 | 93.48 | 73840 |
 
 `tkc --lint` reports the non-canonical forms as `nested-concat`.
 
@@ -2791,8 +2916,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 16 | 89 | pending | pending |
-| `b` — avoid | 21 | 104 | pending | pending |
+| `a` — canonical | 16 | 89 | 64.97 | 131328 |
+| `b` — avoid | 21 | 104 | 64.88 | 131344 |
 
 ### fn-chain-vs-let
 
@@ -2842,8 +2967,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 11 | 53 | pending | pending |
-| `b` — avoid | 11 | 87 | pending | pending |
+| `a` — canonical | 11 | 53 | 66.46 | 49792 |
+| `b` — avoid | 11 | 87 | 74.28 | 49808 |
 
 `tkc --lint` reports the non-canonical forms as `single-use-let`.
 
@@ -2872,7 +2997,7 @@ f=main():i64{
 };
 ```
 
-**Hot path** — lp with mut accumulator (`patterns/fn-recursion-vs-loop/b.tk`). Choose it when The call sits in a loop executed > 1M times, or the recursion depth is data-dependent (stack safety). (expected; runtime deferred, loadavg>100).
+**Hot path** — lp with mut accumulator (`patterns/fn-recursion-vs-loop/b.tk`). Choose it when the call sits in a loop executed > 1M times, or the recursion depth is data-dependent (stack safety): the `lp` accumulator measured 77.2 ms against 112.6 ms (-31%), for 5 tokens more.
 
 ```toke
 m=main;
@@ -2896,8 +3021,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 15 | 48 | pending | pending |
-| `b` — hot path | 20 | 83 | pending | pending |
+| `a` — canonical | 15 | 48 | 112.60 | 1440 |
+| `b` — hot path | 20 | 83 | 77.19 | 1424 |
 
 ## Files (`io`)
 
@@ -2969,8 +3094,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 19 | 87 | pending | pending |
-| `b` — avoid | 45 | 228 | pending | pending |
+| `a` — canonical | 19 | 87 | 68.14 | 47152 |
+| `b` — avoid | 45 | 228 | 30000.00 | pending |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
 
@@ -2980,7 +3105,31 @@ Write N lines to a file.
 
 Append-per-line is token-best (23 vs 27) but reopens the file on every call (a syscall per line, same asymptotic class); the protocol therefore makes it canonical with a hot path - flagged for owner review: a 10-100x constant-factor loss with identical bigO is exactly the case rule 6.4 does not catch. Fixture deletes the file first because file.append accumulates across runs.
 
-**Write this** — file.append per line (`patterns/io-write-accumulate/b.tk`):
+**Write this** — s.builder then one file.write (`patterns/io-write-accumulate/a.tk`):
+
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+i=file:std.file;
+f=pat(path:str;n:i64):i64{
+  let b=s.builder();
+  lp(let i=0;i<n;i=i+1){s.add(b;"row \(i)\n")};
+  <mt file.write(path;s.build(b)) {$ok:v 1;$err:e 0}
+};
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let path="/tmp/pat-io-write-acc-\(n).txt";
+  if(file.exists(path)){let d=mt file.delete(path) {$ok:v 1;$err:e <1}};
+  let ok=pat(path;n);
+  let txt=mt file.read(path) {$ok:v v;$err:e <2};
+  io.println("ok=\(ok) len=\(s.len(txt)) lines=\(s.split(txt;"\n").len)");
+  <0
+};
+```
+
+**Not this** — file.append per line (`patterns/io-write-accumulate/b.tk`):
 
 ```toke
 m=main;
@@ -3005,34 +3154,10 @@ f=main():i64{
 };
 ```
 
-**Hot path** — s.builder then one file.write (`patterns/io-write-accumulate/a.tk`). Choose it when More than a handful of lines, or any loop: file.append opens/closes the file per call. (expected; runtime deferred, loadavg>100).
-
-```toke
-m=main;
-i=io:std.io;
-i=s:std.str;
-i=env:std.env;
-i=file:std.file;
-f=pat(path:str;n:i64):i64{
-  let b=s.builder();
-  lp(let i=0;i<n;i=i+1){s.add(b;"row \(i)\n")};
-  <mt file.write(path;s.build(b)) {$ok:v 1;$err:e 0}
-};
-f=main():i64{
-  let n=env.getint("PAT_N";1000);
-  let path="/tmp/pat-io-write-acc-\(n).txt";
-  if(file.exists(path)){let d=mt file.delete(path) {$ok:v 1;$err:e <1}};
-  let ok=pat(path;n);
-  let txt=mt file.read(path) {$ok:v v;$err:e <2};
-  io.println("ok=\(ok) len=\(s.len(txt)) lines=\(s.split(txt;"\n").len)");
-  <0
-};
-```
-
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — hot path | 27 | 139 | pending | pending |
-| `b` — canonical | 23 | 111 | pending | pending |
+| `a` — canonical | 27 | 139 | 59.18 | 31200 |
+| `b` — avoid | 23 | 111 | 30000.00 | pending |
 
 `tkc --lint` reports the non-canonical forms as `append-in-loop`.
 
