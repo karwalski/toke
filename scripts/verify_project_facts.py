@@ -369,6 +369,65 @@ def corpus_facts():
     return out
 
 
+def repo_facts():
+    """Story 132.25: the repository map, derived rather than retyped.
+
+    `scripts/about/github_repo_descriptions.py` is the verified inventory — it is
+    the file the owner runs against the live account (`--check`), so it is the one
+    place in this tree that already knows every repository and its visibility.
+    Derive the map from it and gate `docs/about/repos.md` against it, so the
+    published map cannot drift back to a repo list that no longer exists (it
+    claimed six repositories and named four that 404).
+    """
+    sys.path.insert(0, os.path.join(ROOT, "scripts", "about"))
+    import github_repo_descriptions as grd
+    private = {"toke-cloud", "toke-console"}
+    archived = {"toke-benchmark", "toke-stdlib"}
+    # Prepared but not yet created on GitHub (story 132.18): the Homebrew tap
+    # exists only as a local working copy, so `brew tap karwalski/toke` fails.
+    # It belongs in the map — as unpublished — until the owner creates it.
+    unpublished = {"homebrew-toke"}
+    names = [r[0] for r in grd.REPOS]
+    public = [n for n in names if n not in private and n not in archived]
+    return {
+        "repos_public": len(public),
+        "repos_private": len(private),
+        "repos_archived": len(archived),
+        "repos_undescribed": len(grd.UNDECIDED),
+        "repo_list_public": sorted(public),
+        "repo_list_private": sorted(private),
+        "repo_list_archived": sorted(archived),
+        "repo_list_undescribed": sorted(grd.UNDECIDED),
+        "repos_unpublished": len(unpublished),
+        "repo_list_unpublished": sorted(unpublished),
+    }
+
+
+def check_repo_map(facts):
+    """docs/about/repos.md must name exactly the repositories the inventory knows."""
+    path = os.path.join(ROOT, "docs", "about", "repos.md")
+    text = _read(path)
+    named = set(re.findall(r"karwalski/([A-Za-z0-9][A-Za-z0-9._-]*)", text))
+    expected = set(facts["repo_list_public"]) | set(facts["repo_list_private"]) \
+        | set(facts["repo_list_archived"]) | set(facts["repo_list_undescribed"]) \
+        | set(facts["repo_list_unpublished"])
+    missing = sorted(expected - named)
+    extra = sorted(n for n in named - expected if n != "karwalski")
+    if missing or extra:
+        print("ERROR: docs/about/repos.md has drifted from the verified repository "
+              "inventory in scripts/about/github_repo_descriptions.py:\n")
+        for n in missing:
+            print("  missing   karwalski/%s" % n)
+        for n in extra:
+            print("  not a repository in the inventory: karwalski/%s" % n)
+        print("\nFix: update docs/about/repos.md, or the inventory if a repository "
+              "was really added or removed. Story 132.25.")
+        return 1
+    print("repo map OK: docs/about/repos.md names all %d repositories in the inventory."
+          % len(expected))
+    return 0
+
+
 def tracker_facts():
     t = _read(os.path.join(ROOT, "docs", "progress.md"))
     epics = {h.split(".")[0] for h in
@@ -408,6 +467,8 @@ COMMANDS = {
         "grep -oE '^#{2,3} Epic [0-9]+' docs/progress.md | awk '{print $3}' | sort -u | wc -l",
     "stories":
         "grep -oE '^\\| [0-9]+\\.[0-9]+[a-z0-9.]* \\|' docs/progress.md | sort -u | wc -l",
+    "repos_public":
+        "python3 scripts/about/github_repo_descriptions.py --check  # verified inventory vs the live account",
 }
 
 # Facts that the "Project facts" table in docs/metrics-baseline.md must carry
@@ -429,7 +490,8 @@ CHECKED = [
 def collect():
     facts = {}
     for fn in (charset_facts, keyword_facts, grammar_facts, stdlib_facts,
-               conformance_facts, diagnostic_facts, corpus_facts, tracker_facts):
+               conformance_facts, diagnostic_facts, corpus_facts, tracker_facts,
+               repo_facts):
         facts.update(fn())
     return facts
 
@@ -474,7 +536,8 @@ def main():
                          sort_keys=True))
         return 0
     if "--check" in sys.argv:
-        return check_against_baseline(facts) | check_compiler_strings(facts)
+        return (check_against_baseline(facts) | check_compiler_strings(facts)
+                | check_repo_map(facts))
     if "--check-src" in sys.argv:
         return check_compiler_strings(facts)
     if "--probe" in sys.argv:

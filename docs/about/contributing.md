@@ -34,16 +34,26 @@ Expand the conformance suite, write edge-case tests for the lexer or parser, or 
 
 ## Repository Overview
 
-The toke project spans six repositories, each with a focused role:
+The toke project spans eleven public repositories, plus two private ones. The full
+map — including the private, archived and undescribed repositories, and the local
+directory names that differ from the GitHub names — is
+[`docs/about/repos.md`](repos.md).
 
 | Repository | Role |
 |------------|------|
-| [karwalski/toke](https://github.com/karwalski/toke) | Compiler, specification, standard library, documentation |
-| [karwalski/toke-model](https://github.com/karwalski/toke-model) | Corpus, tokenizer, and model training |
-| [karwalski/toke-eval](https://github.com/karwalski/toke-eval) | Benchmark and evaluation pipeline |
-| [karwalski/toke-mcp](https://github.com/karwalski/toke-mcp) | MCP server for IDE integration |
-| [karwalski/toke-web](https://github.com/karwalski/toke-web) | Website and documentation site |
+| [karwalski/toke](https://github.com/karwalski/toke) | Compiler, standard library, documentation, story tracker |
+| [karwalski/toke-spec](https://github.com/karwalski/toke-spec) | Language specification, grammars, RFC draft |
+| [karwalski/toke-corpus](https://github.com/karwalski/toke-corpus) | Training corpus generation and audit pipeline |
+| [karwalski/toke-models](https://github.com/karwalski/toke-models) | Model fine-tuning, evaluation and packaging |
+| [karwalski/toke-tokenizer](https://github.com/karwalski/toke-tokenizer) | BPE tokenizer training and evaluation |
+| [karwalski/toke-eval](https://github.com/karwalski/toke-eval) | Benchmark and evaluation harness |
+| [karwalski/toke-test-programs](https://github.com/karwalski/toke-test-programs) | Executable regression and conformance programs |
+| [karwalski/toke-mcp](https://github.com/karwalski/toke-mcp) | MCP server, language server, VS Code extension |
+| [karwalski/ooke](https://github.com/karwalski/ooke) | ooke — web framework and static site generator |
+| [karwalski/loke](https://github.com/karwalski/loke) | loke — toke's local intelligence layer |
+| [karwalski/toke-web](https://github.com/karwalski/toke-web) | Source for tokelang.dev |
 | karwalski/toke-cloud (private) | Infrastructure, billing, authentication |
+| karwalski/toke-console (private) | Console: accounts, billing, API keys |
 
 Most contributors start with **toke** (the compiler and stdlib).
 

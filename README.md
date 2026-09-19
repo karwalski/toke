@@ -324,19 +324,26 @@ The full list is `stdlib/*.tki`; see [docs/stdlib/](docs/stdlib/) for per-module
 
 ## Related repositories
 
+The GitHub name is the only correct one for a link or a clone URL; several of these
+are checked out locally under a different name. The full map, including the private
+and archived repositories, is [docs/about/repos.md](docs/about/repos.md).
+
 | Repository | Description |
 |-----------|-------------|
 | [toke-spec](https://github.com/karwalski/toke-spec) | Specification, RFC draft and measurement specs |
 | [toke-corpus](https://github.com/karwalski/toke-corpus) | Training corpus: generation, audit and freeze pipeline |
-| [toke-model](https://github.com/karwalski/toke-model) | Model fine-tuning and evaluation pipeline |
+| [toke-models](https://github.com/karwalski/toke-models) | Model fine-tuning and evaluation pipeline |
 | [toke-tokenizer](https://github.com/karwalski/toke-tokenizer) | Tokenizer training and the token-efficiency baselines |
 | [toke-eval](https://github.com/karwalski/toke-eval) | Benchmark tasks and evaluation harness |
 | [toke-test-programs](https://github.com/karwalski/toke-test-programs) | Hand-written programs exercising the language and stdlib |
-| [toke-mcp](https://github.com/karwalski/toke-mcp) | Model Context Protocol server for toke |
-| [toke-ooke](https://github.com/karwalski/toke-ooke) | ooke -- web framework and static site generator, written in toke |
-| [toke-website](https://github.com/karwalski/toke-website) | tokelang.dev, built and served by ooke |
-| [homebrew-toke](https://github.com/karwalski/homebrew-toke) | Homebrew tap for `tkc` |
+| [toke-mcp](https://github.com/karwalski/toke-mcp) | Model Context Protocol server, language server and VS Code extension |
+| [ooke](https://github.com/karwalski/ooke) | ooke -- web framework and static site generator, written in toke |
+| [loke](https://github.com/karwalski/loke) | loke -- toke's local intelligence layer, written in toke |
+| [toke-web](https://github.com/karwalski/toke-web) | tokelang.dev, built and served by ooke |
 | [toke on HuggingFace](https://huggingface.co/karwalski/toke) | Gate 2 model, tokenizer, and model card |
+
+The Homebrew tap (`brew tap karwalski/toke`) is not published yet; see
+[docs/about/repos.md](docs/about/repos.md) § Not published.
 
 ## Licence
 

@@ -87,7 +87,7 @@
     "source": "docs/metrics-baseline.md § Correctness; § 2026-08 (story 132.0(a))"
   },
   "source_code": {
-    "value": "github.com/karwalski/toke — compiler, specification and standard library, Apache-2.0. The project is six repositories under github.com/karwalski; the site is tokelang.dev, built and served by ooke.",
+    "value": "github.com/karwalski/toke — compiler, specification and standard library, Apache-2.0. The project is eleven public repositories under github.com/karwalski, plus two private ones; the site is tokelang.dev, built and served by ooke.",
     "source": "docs/about/repos.md"
   },
   "author": {

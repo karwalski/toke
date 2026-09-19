@@ -5,69 +5,86 @@ section: about
 order: 9
 ---
 
-The toke project is organised across six repositories under the [karwalski](https://github.com/karwalski) GitHub account.
+The toke project is sixteen repositories under the
+[karwalski](https://github.com/karwalski) GitHub account: eleven public and active,
+one public but undescribed pending an owner decision, two private, and two archived.
 
-## toke
+Several repositories are checked out locally under a different name from their
+GitHub name. The **GitHub name in the table below is the only correct one** for a
+link, a clone URL or a registry field; the local name is listed only so the two can
+be told apart.
 
-**Compiler, specification, and standard library.** The reference toke compiler (C99), language specification (EBNF grammar, RFC draft), and 57 standard library modules with C runtime implementations. Includes 228 conformance cases and full documentation. Counts: `docs/metrics-baseline.md` § Project facts.
+## Public repositories
 
-- **Status:** Active — Phase 1 complete, Phase 2 on hold (waiting for local compute)
-- **License:** Apache 2.0
-- **Link:** [github.com/karwalski/toke](https://github.com/karwalski/toke)
-- **Contains:** compiler, spec, stdlib
+| Repository | Role | Licence | Local directory |
+|---|---|---|---|
+| [toke](https://github.com/karwalski/toke) | Reference compiler (`tkc`), standard library, documentation, and the cross-repo story tracker. Root of trust. | Apache-2.0 | `toke` |
+| [toke-spec](https://github.com/karwalski/toke-spec) | The language specification: the normative v0.4 text, the EBNF and GBNF grammars, the tree-sitter grammar, and the RFC draft. | Apache-2.0 | `toke-spec` |
+| [toke-corpus](https://github.com/karwalski/toke-corpus) | Training corpus: generation, audit and execution-verification pipeline, regen harness and ledgers. | Apache-2.0 | `toke-corpus` |
+| [toke-models](https://github.com/karwalski/toke-models) | Fine-tuning, evaluation and packaging for toke code-generation models (QLoRA, MLX). | Apache-2.0 | `toke-model` (singular) |
+| [toke-tokenizer](https://github.com/karwalski/toke-tokenizer) | BPE tokenizer training and evaluation, and the token-efficiency baselines. | Apache-2.0 | `toke-tokenizer` |
+| [toke-eval](https://github.com/karwalski/toke-eval) | Held-out benchmark and evaluation harness. Owns `benchmark/hidden_tests/`. | Apache-2.0 | `toke-eval` |
+| [toke-test-programs](https://github.com/karwalski/toke-test-programs) | Executable toke programs used as regression and conformance material for the compiler. | Apache-2.0 | `toke-test-programs` |
+| [toke-mcp](https://github.com/karwalski/toke-mcp) | MCP server, language server and VS Code extension. | MIT | `toke-mcp` |
+| [ooke](https://github.com/karwalski/ooke) | ooke, toke's web framework and static site generator, written in toke; it builds and serves tokelang.dev. | MIT | `toke-ooke` |
+| [loke](https://github.com/karwalski/loke) | loke, toke's local intelligence layer, written in toke. | MIT | `loke` |
+| [toke-web](https://github.com/karwalski/toke-web) | Source for tokelang.dev, built and served by ooke. | MIT | `toke-website` |
 
-## toke-model
+ooke and loke are toke sub-projects, not separate products — see
+[`docs/about/ecosystem.md`](ecosystem.md).
 
-**Corpus, tokenizer, and model training.** The training corpus (46,754 verified programs), BPE tokenizer (8K/32K vocabularies), training scripts (QLoRA/DoRA), and model weights. Covers the full pipeline from data generation to fine-tuned model.
+## Private repositories
 
-- **Status:** Active — corpus complete, tokenizer trained, model training round 2 pending
-- **License:** Apache 2.0
-- **Link:** [github.com/karwalski/toke-model](https://github.com/karwalski/toke-model)
-- **Contains:** corpus, tokenizer, models
+Not public, and never to be made public.
 
-## toke-eval
+| Repository | Role |
+|---|---|
+| `karwalski/toke-cloud` | Billing, authentication, tiered rate limiting, and deployment infrastructure for toke services. |
+| `karwalski/toke-console` | The toke console: accounts, billing, API keys. |
 
-**Benchmark and evaluation.** Held-out benchmark suite (1,000 tasks) and evaluation scripts for measuring Pass@1 rates, token efficiency, and gate criteria.
+## Archived repositories
 
-- **Status:** Active — Gate 1 complete (63.7% Pass@1; token reduction 12.5%, 8K toke BPE vs cl100k_base on the same toke source, N = 46,754 programs — superseded, see `docs/metrics-baseline.md`)
-- **License:** Apache 2.0
-- **Link:** [github.com/karwalski/toke-eval](https://github.com/karwalski/toke-eval)
-- **Contains:** benchmarks, evaluation pipeline
+Kept public for provenance; no longer developed.
 
-## toke-mcp
+| Repository | Superseded by |
+|---|---|
+| [toke-benchmark](https://github.com/karwalski/toke-benchmark) | [toke-eval](https://github.com/karwalski/toke-eval) |
+| [toke-stdlib](https://github.com/karwalski/toke-stdlib) | `stdlib/` in [toke](https://github.com/karwalski/toke) |
 
-**MCP server for IDE integration.** Public, self-hostable MCP server providing toke tools (check, compile, explain, spec, stdlib, generate, bench) for use with Claude, VS Code, and other MCP-compatible clients.
+## Undescribed
 
-- **Status:** Active
-- **License:** MIT
-- **Link:** [github.com/karwalski/toke-mcp](https://github.com/karwalski/toke-mcp)
+| Repository | State |
+|---|---|
+| [tkc](https://github.com/karwalski/tkc) | Public, with no description, no homepage, and no role in the map above. It holds an early copy of the compiler tree. It must be given a description or archived; until then it is not part of the project's published surface. |
 
-## toke-web
+## Not published
 
-**This website.** Public-facing documentation, learning course, API reference, and development timeline. Built with Astro Starlight.
-
-- **Status:** Active
-- **License:** MIT
-- **Link:** [github.com/karwalski/toke-web](https://github.com/karwalski/toke-web)
-
-## toke-cloud
-
-**Private infrastructure.** Billing, authentication, tiered rate limiting, and deployment infrastructure. Not public.
-
-- **Status:** Active (private)
+`homebrew-toke`, the Homebrew tap that would serve `brew tap karwalski/toke`,
+exists only as a local working copy. There is no `karwalski/homebrew-toke`
+repository on GitHub, so the tap cannot be tapped and the install instructions
+that name it do not yet work.
 
 ---
 
 ## Dependency Order
 
-When a change in one repository affects another, the downstream repository must be updated. The critical dependency chains:
+When a change in one repository affects another, the downstream repository must be
+updated. The critical dependency chains:
 
 | If you change... | Then update... |
 |---|---|
-| `toke` spec/grammar | `toke` conformance tests |
-| `toke` stdlib signatures (.tki) | `toke` stdlib C implementations |
-| `toke` compiler diagnostics | `toke-model` corpus pipeline |
-| `toke-model` corpus schema | `toke-model` training data prep |
-| `toke-eval` benchmark tasks | `toke-model` evaluation scripts |
+| `toke-spec` grammar or normative text | `toke` compiler and conformance tests |
+| `toke` stdlib signatures (`.tki`) | `toke` stdlib C implementations |
+| `toke` compiler diagnostics | `toke-corpus` generation and audit pipeline |
+| `toke-corpus` corpus schema | `toke-models` training data preparation |
+| `toke-tokenizer` vocabulary | `toke-models` training and `toke-eval` token counts |
+| `toke-eval` benchmark tasks | `toke-models` evaluation scripts |
+| `toke` language surface | `toke-mcp` server, LSP and VS Code extension |
 
 The general rule: open the downstream PR first, merge the downstream PR last.
+
+---
+
+This map is derived from the verified repository inventory in
+`scripts/about/github_repo_descriptions.py` and is checked against it by
+`make check-facts`.

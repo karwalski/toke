@@ -208,8 +208,9 @@ site once — in this line — and nowhere else in new content.*
 ## 10. Source and author
 
 **Source.** github.com/karwalski/toke — compiler, specification and standard library,
-Apache-2.0. The project is six repositories under github.com/karwalski
-(`docs/about/repos.md`); the site is tokelang.dev, built and served by ooke.
+Apache-2.0. The project is eleven public repositories under github.com/karwalski, plus
+two private ones (`docs/about/repos.md`); the site is tokelang.dev, built and served by
+ooke.
 
 **Author.** Matthew Watt (github.com/karwalski), sole maintainer.
 
