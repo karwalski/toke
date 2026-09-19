@@ -315,7 +315,8 @@ static int is_ptr_local(Ctx *c, const char *name) {
 static int is_map_var(Ctx *c, const char *name) {
     for (int i = 0; i < c->ptr_count; i++)
         if (!strcmp(c->ptrs[i].name, name) &&
-            !strcmp(c->ptrs[i].struct_type, "__map__")) return 1;
+            /* 127.41: "__map__" or the int-keyed variant "__map__i" */
+            !strncmp(c->ptrs[i].struct_type, "__map__", 7)) return 1;
     return 0;
 }
 /*
@@ -1938,9 +1939,61 @@ static const char *len_recv_kind(Ctx *c, const Node *recv) {
     const char *st = expr_struct_type(c, recv);
     if (st) {
         if (!strcmp(st, "$str") || !strcmp(st, "str")) return "str";
-        if (!strcmp(st, "__map__")) return "map";
+        if (!strncmp(st, "__map__", 7)) return "map";  /* incl. "__map__i" */
     }
     return NULL;
+}
+/* 127.35/127.41: does this map literal have integer keys? Factored out of the
+ * NODE_MAP_LIT lowering (which picks tk_map_new_int over tk_map_new) so the
+ * let-binding can record the key kind in the local's tag — `m.keys` yields
+ * i64 keys for an int-keyed map and str pointers otherwise, and the two must
+ * not be confused (an i64 key inttoptr'd as a str segfaults on print). */
+static int map_lit_int_keys(Ctx *c, const Node *n) {
+    if (!n || n->kind != NODE_MAP_LIT) return 0;
+    if (n->child_count > 0 && n->children[0]->child_count >= 1) {
+        const Node *k0 = n->children[0]->children[0];
+        const Type *kt = k0->rtype;
+        if (kt && kt->kind != TY_UNKNOWN)
+            return (kt->kind == TY_I64 || kt->kind == TY_U64 ||
+                    kt->kind == TY_I8 || kt->kind == TY_I16 || kt->kind == TY_I32 ||
+                    kt->kind == TY_U8 || kt->kind == TY_U16 || kt->kind == TY_U32);
+        if (k0->kind == NODE_INT_LIT) return 1;
+        if (k0->kind != NODE_STR_LIT && !expr_struct_type(c, k0) &&
+            !strcmp(expr_llvm_type(c, k0), "i64")) return 1;
+    }
+    return 0;
+}
+/* 127.41: is this receiver a map? The checker's rtype (via len_recv_kind) is
+ * authoritative; the backend's __map__ ptr-local tag is the fallback for
+ * values the checker typed TY_UNKNOWN. Used to route the method-name verbs
+ * that exist on BOTH strings and maps (`contains`) and the map-only ones
+ * (`getor`, the `keys` property) to the map glue instead of the str glue,
+ * which read the map pointer as a char* and segfaulted. */
+static int recv_is_map(Ctx *c, const Node *recv) {
+    if (!recv) return 0;
+    const char *rk = len_recv_kind(c, recv);
+    if (rk) return !strcmp(rk, "map");
+    if (recv->kind == NODE_IDENT) {
+        char nb[NAME_BUF]; tok_cp(c->src, recv, nb, sizeof nb);
+        if (is_map_var(c, nb)) return 1;
+        const char *ln = get_llvm_name(c, nb);
+        if (ln && is_map_var(c, ln)) return 1;
+    }
+    return 0;
+}
+/* 127.41: the element tag of `m.keys` / `m.keys()`. tk_map_keys_w returns the
+ * keys as stored: an int-keyed map (127.20/127.35) yields i64s, every other
+ * map yields str pointers. The checker's rtype is authoritative (TY_MAP keeps
+ * the key type in ->elem); the backend's "__map__i" local tag is the fallback
+ * for a receiver the checker typed TY_UNKNOWN. Getting this wrong inttoptr'd
+ * an integer key and segfaulted on print. */
+static const char *map_keys_elem_tag(Ctx *c, const Node *recv) {
+    if (recv && recv->rtype && recv->rtype->kind == TY_MAP &&
+        recv->rtype->elem && recv->rtype->elem->kind != TY_UNKNOWN)
+        return recv->rtype->elem->kind == TY_STR ? "@str" : "@i64";
+    const char *st = expr_struct_type(c, recv);
+    if (st && !strcmp(st, "__map__i")) return "@i64";
+    return "@str";
 }
 /* 127.6: method-style verbs added to the instance dispatch table. They had
  * glue but no dispatch entry, so `x.upper()` fell through to the user-function
@@ -3196,6 +3249,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 (!strcmp(method_im, "append") || !strcmp(method_im, "push") ||
                  !strcmp(method_im, "set") ||
                  !strcmp(method_im, "get") ||
+                 !strcmp(method_im, "getor") ||
                  !strcmp(method_im, "map") || !strcmp(method_im, "filter") ||
                  !strcmp(method_im, "reduce") || !strcmp(method_im, "sort") ||
                  !strcmp(method_im, "split") || !strcmp(method_im, "trim") ||
@@ -3225,6 +3279,11 @@ static int emit_expr(Ctx *c, const Node *n)
                     fn_im = (jk && !strcmp(jk, "str")) ? "tk_str_join_w" : "tk_arr_join_w";
                 }
                 else if (!strcmp(method_im, "get"))     fn_im = "tk_str_arrayget_w";
+                /* 127.41/127.34: m.getor(k;d) — stored value when present (even
+                 * when that value is 0), else the default. Map-only verb; with
+                 * no dispatch entry it fell through to the user-function path
+                 * and failed at link (undefined `_getor`). */
+                else if (!strcmp(method_im, "getor")) fn_im = "tk_map_getor_w";
                 else if (!strcmp(method_im, "set")) {
                     /* Issue 112.3: dispatch array.set to tk_array_set_w (new
                      * immutable replace), and only route map.set to the existing
@@ -3244,7 +3303,11 @@ static int emit_expr(Ctx *c, const Node *n)
                 else if (!strcmp(method_im, "sort"))    fn_im = "tk_arr_sort";
                 else if (!strcmp(method_im, "split"))   fn_im = "tk_str_split_w";
                 else if (!strcmp(method_im, "trim"))    fn_im = "tk_str_trim_w";
-                else if (!strcmp(method_im, "contains"))fn_im = "tk_str_contains_w";
+                else if (!strcmp(method_im, "contains"))
+                    /* 127.41/127.31: membership on a map is a hash lookup; the
+                     * str glue strcmp'd the TkMapImpl pointer and segfaulted. */
+                    fn_im = recv_is_map(c, n->children[0]->children[0])
+                                ? "tk_map_contains_w" : "tk_str_contains_w";
                 else if (!strcmp(method_im, "charat"))  fn_im = "tk_str_charat_w";
                 else if (!strcmp(method_im, "slice"))   fn_im = "tk_str_slice_w";
                 else if (!strcmp(method_im, "find"))    fn_im = "tk_str_find_w";
@@ -3488,7 +3551,9 @@ static int emit_expr(Ctx *c, const Node *n)
                      !strcmp(tb, "ceil") || !strcmp(tb, "pow")) {
                 callee_ret = "double";
             } else if (!strcmp(tb, "tk_map_get") || !strcmp(tb, "tk_map_new") || !strcmp(tb, "tk_map_new_int") ||
-                     !strcmp(tb, "tk_array_append_w") ||
+                     /* 127.41/127.16: tk_array_append_w is declared i64 (see the
+                      * decl table); typing the call site i8* made the module
+                      * form `arr.append(a;v)` emit ill-typed IR. */
                      !strcmp(tb, "tk_str_from_float") ||
                      !strcmp(tb, "tk_http_client_w") || !strcmp(tb, "tk_http_get_w") ||
                      !strcmp(tb, "tk_http_post_w") || !strcmp(tb, "tk_http_put_w") ||
@@ -3854,6 +3919,24 @@ static int emit_expr(Ctx *c, const Node *n)
             t2 = next_tmp(c); t = next_tmp(c);
             fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 -1 ; .len\n", t2, base);
             fprintf(c->out, "  %%t%d = load i64, i64* %%t%d\n", t, t2);
+            return t;
+        }
+
+        /* 127.41/127.12: the syntax-card property form `m.keys` (no parens)
+         * must yield the key array exactly like `m.keys()`. Mirrors the 127.8
+         * `.len` routing above: gated on a map receiver, so a user struct with
+         * a `keys` field is unaffected. Without this the field path loaded a
+         * struct slot and returned a garbage pointer. */
+        if (!strcmp(fn, "keys") && recv_is_map(c, n->children[0])) {
+            const char *kbty = expr_llvm_type(c, n->children[0]);
+            int kv = base;
+            if (kbty && strchr(kbty, '*')) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ptrtoint %s %%t%d to i64\n", z, kbty, kv);
+                kv = z;
+            }
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = call i64 @tk_map_keys_w(i64 %%t%d) ; .keys\n", t, kv);
             return t;
         }
 
@@ -4515,20 +4598,7 @@ static int emit_expr(Ctx *c, const Node *n)
          * first lookup strcmp'd an integer (RT006 trap). The checker's key
          * type is authoritative; an untyped key falls back to its literal /
          * LLVM type, never calling a $str-tagged value an int. */
-        int int_keys = 0;
-        if (n->child_count > 0 && n->children[0]->child_count >= 1) {
-            const Node *k0 = n->children[0]->children[0];
-            const Type *kt = k0->rtype;
-            if (kt && kt->kind != TY_UNKNOWN)
-                int_keys = (kt->kind == TY_I64 || kt->kind == TY_U64 ||
-                            kt->kind == TY_I8 || kt->kind == TY_I16 || kt->kind == TY_I32 ||
-                            kt->kind == TY_U8 || kt->kind == TY_U16 || kt->kind == TY_U32);
-            else if (k0->kind == NODE_INT_LIT)
-                int_keys = 1;
-            else if (k0->kind != NODE_STR_LIT && !expr_struct_type(c, k0) &&
-                     !strcmp(expr_llvm_type(c, k0), "i64"))
-                int_keys = 1;
-        }
+        int int_keys = map_lit_int_keys(c, n);
         t = next_tmp(c);
         fprintf(c->out, "  %%t%d = call i8* @%s()\n", t, int_keys ? "tk_map_new_int" : "tk_map_new");
         for (int i = 0; i < n->child_count; i++) {
@@ -5290,6 +5360,12 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
     if (n->kind == NODE_FIELD_EXPR && n->child_count >= 2 &&
         n->children[1]->kind == NODE_IDENT) {
         char fld[128]; tok_cp(c->src, n->children[1], fld, sizeof fld);
+        /* 127.41/127.12: the property form `m.keys` yields the same key array
+         * as `m.keys()` (see the NODE_FIELD_EXPR lowering), so it carries the
+         * same tag — else `s.join(",";m.keys)` / `\(k.get(0))` treat the
+         * element str pointers as integers. */
+        if (!strcmp(fld, "keys") && recv_is_map(c, n->children[0]))
+            return map_keys_elem_tag(c, n->children[0]);
         if (strcmp(fld, "len") != 0) {
             const StructInfo *si = resolve_base_struct(c, n->children[0]);
             if (si) {
@@ -5436,14 +5512,7 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                     if (!strcmp(method, "split") || !strcmp(method, "chars") ||
                         !strcmp(method, "fields"))
                         return "@str";
-                    if (!strcmp(method, "keys")) {
-                        /* tk_map_keys_w returns the keys as stored: an
-                         * int-keyed map (127.20) yields i64s, else str ptrs. */
-                        if (recv->rtype && recv->rtype->kind == TY_MAP &&
-                            recv->rtype->elem && recv->rtype->elem->kind == TY_I64)
-                            return "@i64";
-                        return "@str";
-                    }
+                    if (!strcmp(method, "keys")) return map_keys_elem_tag(c, recv);
                     if (!strcmp(method, "append") || !strcmp(method, "push") ||
                         !strcmp(method, "pop")) {
                         /* the result array has the receiver's element type; an
@@ -6529,7 +6598,8 @@ static void emit_stmt(Ctx *c, const Node *n)
                 !expr_struct_type(c, init_node))
                 clear_ptr_local(c, tb_raw);
             if (init_is_map) {
-                mark_ptr_with_type(c, tb, "__map__");
+                mark_ptr_with_type(c, tb,
+                    map_lit_int_keys(c, init_node) ? "__map__i" : "__map__");
             } else if (!strcmp(vty, "i8*")) {
                 const char *stype = expr_struct_type(c, init_node);
                 mark_ptr_with_type(c, tb, stype);
@@ -7292,6 +7362,8 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_str_concat_w", "declare i64 @tk_str_concat_w(i64, i64)", 0},
     {"tk_str_len_w", "declare i64 @tk_str_len_w(i64)", 0},
     {"tk_map_len_w", "declare i64 @tk_map_len_w(i64)", 0},  /* 127.8: map.len */
+    {"tk_map_contains_w", "declare i64 @tk_map_contains_w(i64, i64)", 0},  /* 127.41: m.contains(k) */
+    {"tk_map_getor_w", "declare i64 @tk_map_getor_w(i64, i64, i64)", 0},   /* 127.41: m.getor(k;d) */
     {"tk_str_trim_w", "declare i64 @tk_str_trim_w(i64)", 0},
     {"tk_str_upper_w", "declare i64 @tk_str_upper_w(i64)", 0},
     {"tk_str_lower_w", "declare i64 @tk_str_lower_w(i64)", 0},
