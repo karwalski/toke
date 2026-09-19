@@ -1,0 +1,31 @@
+(* test_asserts.tk -- story 136.21.
+
+   stdlib/test.tki, docs/stdlib/test.md and tk_test.h declare
+   asserteq(a; b; msg) and assertne(a; b; msg), and tk_test_assert_eq /
+   tk_test_assert_ne in tk_test.c strcmp the strings, print the caller's
+   message in a structured DIAGNOSTIC line and mark the test failed.
+
+   The wrappers took two arguments, compared the two i64s -- for str values
+   that is a comparison of POINTERS, so two equal strings at different
+   addresses reported a failure -- printed the addresses as decimal, and
+   discarded the message entirely.
+
+   The harness checks both the returned booleans and the text on STDERR, so
+   the message has to survive the boundary rather than merely be accepted. *)
+m=testasserts;
+i=test:std.test;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  (* equal strings built separately: the same bytes at different addresses,
+     which is the case the pointer compare got wrong *)
+  let up=str.upper("hello");
+  io.println("eq.same=\(test.asserteq(up;"HELLO";"upper should produce HELLO"))");
+  io.println("eq.empty=\(test.asserteq("";"";"empty strings are equal"))");
+  io.println("eq.diff=\(test.asserteq("foo";"bar";"foo is not bar"))");
+
+  io.println("ne.diff=\(test.assertne("foo";"bar";"foo and bar should differ"))");
+  io.println("ne.same=\(test.assertne("x";"x";"x equals x so this must fail"))");
+  <0
+};

@@ -169,6 +169,29 @@ if build i18n_locales test/stdlib/i18n_locales.tk; then
 fi
 
 echo
+echo "=== 136.21 -- test.asserteq / assertne carry the message ==="
+if build test_asserts test/stdlib/test_asserts.tk; then
+    out="$("$TMP/test_asserts" 2>"$TMP/asserts.err")"
+    err="$(cat "$TMP/asserts.err")"
+    # str.upper("hello") and the literal "HELLO" are equal bytes at DIFFERENT
+    # addresses. The old wrapper compared the two i64 pointers, so this was 0.
+    expect "asserteq on equal strings at different addresses" "$(line "$out" eq.same)"  "1"
+    expect "asserteq on two empty strings"                    "$(line "$out" eq.empty)" "1"
+    expect "asserteq on different strings fails"              "$(line "$out" eq.diff)"  "0"
+    expect "assertne on different strings"                    "$(line "$out" ne.diff)"  "1"
+    expect "assertne on equal strings fails"                  "$(line "$out" ne.same)"  "0"
+    # The message is the whole point of the story: it must reach stderr.
+    expect "the asserteq message reaches stderr" \
+           "$(printf '%s\n' "$err" | grep -c 'msg="foo is not bar"')" "1"
+    expect "asserteq reports both values" \
+           "$(printf '%s\n' "$err" | grep -cF 'assert_eq: \"foo\" != \"bar\"')" "1"
+    expect "the assertne message reaches stderr" \
+           "$(printf '%s\n' "$err" | grep -c 'msg="x equals x so this must fail"')" "1"
+    expect "a passing assertion prints nothing" \
+           "$(printf '%s\n' "$err" | grep -c 'upper should produce HELLO')" "0"
+fi
+
+echo
 echo "glue_contract: $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
 exit 0
