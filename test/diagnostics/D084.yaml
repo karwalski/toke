@@ -1,0 +1,20 @@
+id: D084
+series: D
+description: "127.40: an un-annotated `let` bound to a user-function call carries the callee's declared return type — `let m=mk(); let q:i64=m;` is the same E4031 as `let q:i64=mk();`, and the type survives a `let b=a;` chain"
+input: |
+  m=t;
+  f=mk():str{
+    <"hi"
+  };
+  f=main():i64{
+    let m=mk();
+    let q:i64=m;
+    let b=m;
+    let r:i64=b;
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_diag_field:
+  field: got
+  value: str

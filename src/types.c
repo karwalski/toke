@@ -273,7 +273,13 @@ typedef struct { TypeEnv *env; const char *src;
                  BindDepth binds[MAX_BIND_DEPTH];
                  int bind_count;
                  int fn_error_count;           /* errors in current function (story 84.1.9) */
+                 int bind_infer_depth;         /* 127.40: recursion guard for binding-init inference */
                } Ctx;
+
+/* 127.40: an un-annotated binding's type is recovered by re-inferring its
+ * initialiser. A self-referential initialiser (`let x=f(x)`) would otherwise
+ * recurse forever, so cap the depth of that specific re-entry. */
+#define MAX_BIND_INFER_DEPTH 8
 
 /*
  * record_bind_depth — record the scope depth at which a binding is created.
@@ -759,6 +765,77 @@ static void emit_mm(Ctx *cx, const Node *n, const Type *exp,
  * infer() recurses through this wrapper, so every expression node visited by
  * the type checker gets its rtype set. The cast drops const only to write the
  * memoization cache field. */
+/*
+ * call_decl_ret_type (127.40) — resolve a call expression's *declared* return
+ * type, without re-walking the call (which would re-run the argument checks and
+ * duplicate their diagnostics at every reference to the binding).
+ *
+ * Returns the resolved NODE_RETURN_SPEC type for a callee that resolves to a
+ * user NODE_FUNC_DECL — covering `@T`, `@(k:v)`, `T!Err` and user struct types,
+ * because resolve_return_spec is the same routine NODE_CALL_EXPR uses.
+ *
+ * Returns NULL when the callee is not a visible user function (stdlib calls
+ * such as `io.println(...)` resolve to no module-scope Decl) or declares no
+ * return spec (a void call carries no value).
+ */
+static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
+    if (!call || call->child_count < 1 || !call->children[0]) return NULL;
+    char nb[128]; TOKSTR(nb, cx->src, call->children[0]);
+    Decl *d = tc_lookup(cx->env->names->module_scope, nb, (int)strlen(nb));
+    if (!d || !d->def_node || d->def_node->kind != NODE_FUNC_DECL) return NULL;
+    const Node *fn = d->def_node;
+    for (int i = 0; i < fn->child_count; i++) {
+        const Node *ch = fn->children[i];
+        if (ch && ch->kind == NODE_RETURN_SPEC && ch->child_count > 0)
+            return resolve_return_spec(cx, ch);
+    }
+    return NULL;
+}
+
+/*
+ * bind_init_type — the type of an *un-annotated* binding `let x = init`,
+ * recovered from its initialiser, or NULL when the checker must keep the
+ * binding unknown.
+ *
+ *   NODE_STRUCT_LIT / NODE_FIELD_EXPR → adopted when map/struct (113.B.12).
+ *   NODE_CALL_EXPR                    → the callee's declared return type
+ *                                       (127.40); stdlib and void calls stay
+ *                                       unknown.
+ *   NODE_IDENT                        → the source binding's type, so a chain
+ *                                       `let a=mk(); let b=a;` stays typed
+ *                                       (127.40). Depth-capped: `let a=a;`
+ *                                       would otherwise recurse forever.
+ *
+ * `bn` is the binding node; children are [name, init] (un-annotated form).
+ */
+static Type *infer(Ctx *cx, const Node *node);
+static Type *bind_init_type(Ctx *cx, const Node *bn) {
+    if (!bn || bn->child_count < 2 || !bn->children[1]) return NULL;
+    const Node *initN = bn->children[1];
+    switch (initN->kind) {
+    case NODE_CALL_EXPR: {
+        Type *rt = call_decl_ret_type(cx, initN);
+        if (rt && rt->kind != TY_UNKNOWN && rt->kind != TY_VOID) return rt;
+        return NULL;
+    }
+    case NODE_IDENT: {
+        if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+        cx->bind_infer_depth++;
+        Type *it = infer(cx, initN);
+        cx->bind_infer_depth--;
+        if (it && it->kind != TY_UNKNOWN && it->kind != TY_VOID) return it;
+        return NULL;
+    }
+    case NODE_STRUCT_LIT: case NODE_FIELD_EXPR: {
+        Type *it = infer(cx, initN);
+        if (it && (it->kind == TY_MAP || it->kind == TY_STRUCT)) return it;
+        return NULL;
+    }
+    default:
+        return NULL;
+    }
+}
+
 static Type *infer_impl(Ctx *cx, const Node *node);
 static Type *infer(Ctx *cx, const Node *node) {
     Type *t = infer_impl(cx, node);
@@ -894,15 +971,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                  * TY_UNKNOWN behaviour to avoid surfacing latent E4031s on
                  * array returns etc. (narrow blast radius). */
                 if (bn->child_count>1&&bn->children[1]) {
-                    /* Only adopt the inferred type for struct-literal and
-                     * field-access inits (the B.12 chain: c=$s{...}; m=c.field).
-                     * Other inits (match results, calls) keep TY_UNKNOWN to
-                     * avoid codegen blast radius (113.B.12 follow-up). */
-                    NodeKind ik=bn->children[1]->kind;
-                    if (ik==NODE_STRUCT_LIT||ik==NODE_FIELD_EXPR) {
-                        Type *it=infer(cx,bn->children[1]);
-                        if (it&&(it->kind==TY_MAP||it->kind==TY_STRUCT)) return it;
-                    }
+                    /* Struct-literal / field-access inits (the B.12 chain),
+                     * plus 127.40: a call's declared return type and the
+                     * type of the binding an identifier init refers to. */
+                    Type *it=bind_init_type(cx,bn);
+                    if (it) return it;
                     return mk_type(A,TY_UNKNOWN);
                 }
             }
@@ -912,14 +985,12 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if ((def->kind==NODE_BIND_STMT||def->kind==NODE_MUT_BIND_STMT)) {
             /* Annotated `let x:T=init` → [name, type, init]: type is at [1]. */
             if (def->child_count>2&&def->children[1]) return resolve_type(cx,def->children[1]);
-            /* Un-annotated `let x=init`: infer, but adopt only MAP types
-             * (113.B.12); keep TY_UNKNOWN otherwise (narrow blast radius). */
+            /* Un-annotated `let x=init`: adopt map/struct (113.B.12) and, per
+             * 127.40, a user call's declared return type / an identifier
+             * init's binding type. */
             if (def->child_count>1&&def->children[1]) {
-                NodeKind ik=def->children[1]->kind;
-                if (ik==NODE_STRUCT_LIT||ik==NODE_FIELD_EXPR) {
-                    Type *it=infer(cx,def->children[1]);
-                    if (it&&(it->kind==TY_MAP||it->kind==TY_STRUCT)) return it;
-                }
+                Type *it=bind_init_type(cx,def);
+                if (it) return it;
                 return mk_type(A,TY_UNKNOWN);
             }
         }
@@ -1858,7 +1929,7 @@ int type_check(const Node *ast, const char *src,
     if (!ast||!src||!names||!arena||!out) return -1;
     out->names=names; out->arena=arena; out->arena_depth=0;
     Ctx cx; cx.env=out; cx.src=src; cx.fn_ret=NULL; cx.had_error=0; cx.fn_node=NULL;
-    cx.scope_depth=0; cx.bind_count=0; cx.fn_error_count=0;
+    cx.scope_depth=0; cx.bind_count=0; cx.fn_error_count=0; cx.bind_infer_depth=0;
     for (int i=0;i<ast->child_count;i++) infer(&cx,ast->children[i]);
     return cx.had_error?-1:0;
 }

@@ -1,0 +1,35 @@
+id: D085
+series: D
+description: "127.40 positive guard: correct use of a call-typed binding stays clean — str, @$i64, map and user-struct return types all propagate into the un-annotated binding and through a `let b=a;` chain without a spurious E4031"
+input: |
+  m=t;
+  i=io:std.io;
+  t=Pt{x:i64;y:i64};
+  f=mkstr():str{
+    <"hi"
+  };
+  f=mkarr():@$i64{
+    <@(1;2)
+  };
+  f=mkmap():@(str:i64){
+    <@("a":1)
+  };
+  f=mkpt():Pt{
+    <Pt{x:1;y:2}
+  };
+  f=main():i64{
+    let s=mkstr();
+    let s2=s;
+    let ok:str=s2;
+    let a=mkarr();
+    let ok2:@$i64=a;
+    let m=mkmap();
+    let ok3:@(str:i64)=m;
+    let p=mkpt();
+    let ok4:Pt=p;
+    io.println(ok);
+    io.println("\(ok2.len)\(ok3.len)");
+    <ok4.x
+  };
+expected_exit_code: 0
+expected_absent_codes: ["E4031"]

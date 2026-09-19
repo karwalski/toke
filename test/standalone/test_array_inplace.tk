@@ -22,7 +22,7 @@ f=build(nn:i64):@i64{
 f=main():$i64{
   (* linear build correctness *)
   let v=build(6);
-  check("build-len";v.len;6);
+  check("build-len";v.len as i64;6);
   check("build-elem";v.get(5);25);
 
   (* linear set loop on a pre-sized array *)
