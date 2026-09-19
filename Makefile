@@ -202,7 +202,18 @@ check-metrics:
 # facts our own spec retired — "LL(1)" (toke-spec-v0.4.md §E) and "13 keywords"
 # (§A) — from coming back. Surfaces owned by an in-flight story warn with that
 # story number instead of failing; `--strict` fails on those too.
+# 132.29 — --selftest runs first: Rule 2 was loosened so that a sentence which
+# explicitly retires a fact ("it is NOT strict LL(1)", wrapped across two lines)
+# stops being reported as that fact, and a loosened gate is only worth having if
+# it still fails on real drift. The selftest pins both halves, nine of its
+# thirteen cases being stale wordings that must keep failing.
+# 132.23 — the selftest now also pins MARKUP blindness, a different defect: the
+# claim and the correction are both read as a reader sees them, so `is
+# <strong>14</strong>` counts as the correction it is AND `<strong>13</strong>
+# keywords` counts as the drift it is. Nineteen of the 28 Rule 2 cases, and 2 of
+# the 5 Rule 1 cases, are wordings that must keep failing.
 check-canonical:
+	python3 scripts/check_canonical.py --selftest
 	python3 scripts/check_canonical.py
 
 # 132.15 — the same two gates, run across the sibling repos. Both guards scoped to

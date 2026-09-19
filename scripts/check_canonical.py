@@ -15,9 +15,10 @@ This gate stops a copy from drifting, and stops the two facts the spec has
 already retired from coming back.
 
 Rule 1 — BLOCK DRIFT. Every declared surface must reproduce the canonical blocks
-it carries, verbatim modulo line wrapping (and, for HTML/template surfaces, tags
-and entities). A near-miss is reported as drift with the first differing
-fragment; a total absence is reported as missing.
+it carries, verbatim modulo line wrapping, markdown code-span backticks (story
+132.23) and, for HTML/template surfaces, tags and entities. A near-miss is
+reported as drift with the first differing fragment; a total absence is reported
+as missing.
 
 Rule 1b — REGISTRY SURFACES (story 132.4). A registry description is a field on
 someone else's website. Where it is fed by a file we commit (a package manifest,
@@ -32,7 +33,9 @@ claim "was not accurate for the real grammar"; the verified property is
 backtrack-free with bounded lookahead of up to 3 tokens) and §A (the keyword set
 is 14: m i t f let if el lp br rt as mt sc mut). Either string fails unless the
 sentence — or a line within CORRECTION_LINES of it — marks it as retired,
-historical or quoted. The mechanical argument is unaffected and is what should be
+historical or quoted. Claim and correction are both read after inline markup is
+removed (story 132.23), so a tag, a code span, a link or an entity neither hides
+a correction nor smuggles a stale claim past the gate. The mechanical argument is unaffected and is what should be
 written instead: a small backtrack-free grammar with bounded lookahead is still
 cheap to constrain during decoding and cheap to parse.
 
@@ -41,6 +44,7 @@ Exit:   0 clean (pending-story surfaces and files warn only), 1 on a violation.
         --strict also fails on the pending-story entries.
 """
 import difflib
+import html
 import json
 import os
 import re
@@ -231,12 +235,19 @@ STALE = [
      "bounded lookahead of up to 3 tokens on an enumerated set of productions"),
 ]
 
+# Story 132.29 — a NEGATION of the retired fact itself: "it is NOT strict LL(1)",
+# "there are not 13 keywords". This is built per stale fact from that fact's own
+# pattern (see negation_of), so it is the claim being denied and not some other
+# "not" in the paragraph: the negator has to sit within 40 characters of the
+# claim with no sentence boundary between them.
+NEGATOR = r"\b(?:not|no longer|never|isn['’]?t|aren['’]?t|wasn['’]?t|weren['’]?t)\b"
+
 # A marker that the claim is being retired, quoted or historicised rather than
 # made. It has to be *about* the claim: a bare "not" or "never" elsewhere in the
 # sentence ("no backtracking", "the parser never needs...") is not a correction,
 # and treating it as one is exactly how the stale wording survived.
 CORRECTION = re.compile(
-    r"\bnot\b[^.\n]{0,40}LL\(1\)|never write|"
+    r"never write|"
     r"\bretire(d|s)?\b|\bsupersede(d|s)?\b|\bwithdraw(n|s)?\b|"
     r"(is|was|were|as) wrong\b|\|\s*wrong\s*\||"
     r"\binaccurate\b|not accurate|\bhistorical(ly)?\b|\bformerly\b|"
@@ -244,6 +255,84 @@ CORRECTION = re.compile(
     r"editor.s note|\b132\.12\b|except a small|except a closed|\bquot(e|ed|es)\b|"
     r"propagated|describe[sd] toke as|as published|\bassert(s|ed)\b|\bclaim(s|ed)?\b|"
     r"\bis 14\b|\bare 14\b|14 keywords|inherited|no longer", re.I)
+
+_NEGATION_CACHE = {}
+
+
+def negation_of(pat):
+    """Regex matching an explicit denial of `pat`'s claim, wrapped or not."""
+    if pat.pattern not in _NEGATION_CACHE:
+        _NEGATION_CACHE[pat.pattern] = re.compile(
+            NEGATOR + r"[^.\n]{0,40}(?:" + pat.pattern + ")", re.I)
+    return _NEGATION_CACHE[pat.pattern]
+
+
+# Story 132.23 — MARKUP BLINDNESS. This is a different defect from 132.29's
+# line-wrap blindness: there the correction was on another *line*, here it is
+# behind a *tag*. Rule 2 matched raw source text, so inline markup defeated both
+# halves of the test. The built v0.4 spec page states the correction as
+# `The keyword set is <strong>14</strong>` and the CORRECTION marker `\bis 14\b`
+# could not see it, so a page that gets the fact right was reported as drift.
+# The same blindness runs the other way and is the dangerous half: a genuinely
+# stale `<strong>13</strong> keywords`, `` `13 keywords` `` or `[LL(1)](...)`
+# slipped past the gate entirely. Markup is presentation; the claim is the text
+# a reader sees. Both the claim line and the correction window are de-marked-up
+# before matching, so emphasis, a code span, a link or an entity changes nothing
+# about what the gate reads — in either direction.
+INLINE_TAG = re.compile(r"</?[A-Za-z][A-Za-z0-9:.-]*(?:\s[^<>]*)?/?>")
+MD_LINK = re.compile(r"\[([^\]\n]*)\]\([^()\s]*\)")
+
+
+def demarkup(text):
+    """The text a reader sees: inline markup removed, entities resolved.
+
+    A tag becomes a space and the run is collapsed, so `is <strong>14</strong>`
+    reads as "is 14" and `<strong>13</strong> keywords` reads as "13 keywords".
+    Only a well-formed tag is stripped: a bare `<` in prose or code ("a < b > c")
+    is left alone, because deleting it could *hide* a claim, and this function
+    must never make the gate blinder than the raw text. Tags go before entities
+    are resolved, so an escaped, literal `&lt;strong&gt;` stays visible text.
+    """
+    text = INLINE_TAG.sub(" ", text)
+    text = MD_LINK.sub(r"\1", text)
+    text = text.replace("`", "")                    # a code span is a delimiter
+    text = html.unescape(text)
+    text = text.replace("*", "").replace("_", "")   # emphasis is not content
+    return re.sub(r"[^\S\n]+", " ", text.replace("\u00a0", " "))
+
+
+def near_text(lines, i):
+    """The window around line `i`, re-joined into the paragraph it belongs to.
+
+    Story 132.29. Prose is hard-wrapped, so a sentence that retires a fact puts
+    the negation and the fact on different lines:
+
+        The grammar is backtrack-free with bounded lookahead of up to 3 tokens
+        — it is NOT strict LL(1) (spec v0.4 §A keywords, §E grammar).
+
+    Scoring each line on its own cannot see that "NOT", so the gate failed the
+    one document that stated the retirement correctly. Re-joining the window
+    restores the sentence. What keeps this from excusing real drift is that the
+    proximity rules are unchanged: a negator still has to sit within 40
+    characters of the claim with no `.` between them, so a "not" belonging to a
+    neighbouring sentence is still not a correction — and a blank line is a
+    paragraph boundary that is never joined across.
+
+    Story 132.23 then de-marks-up the re-joined window, so a correction that
+    is emphasised, linked or written as a code span still reads as one.
+    """
+    lo = max(0, i - CORRECTION_LINES)
+    hi = min(len(lines), i + CORRECTION_LINES + 1)
+    window = lines[lo:hi]
+    k = i - lo                                   # the matched line, in `window`
+    start = k
+    while start > 0 and window[start - 1].strip():
+        start -= 1
+    end = k + 1
+    while end < len(window) and window[end].strip():
+        end += 1
+    text = " ".join(ln.strip() for ln in window[start:end])
+    return demarkup(text)                           # 132.23: markup is not content
 
 
 def load_canonical():
@@ -276,6 +365,13 @@ def normalise(text, markup=False):
         for ent, ch in ENTITIES.items():
             text = text.replace(ent, ch)
         text = re.sub(r"<[^>]+>", " ", text)
+    # Story 132.23 — a backtick is a markdown *delimiter*, not content. The
+    # canonical paragraph and disambiguation blocks write `.tk` as a code span;
+    # an HTML or template surface renders that as <code>.tk</code>, which the
+    # tag-strip above reduces to a bare `.tk`. Comparing the two left a faithful
+    # copy stuck at ~98% — indistinguishable from real drift, which is the whole
+    # point of the rule. Stripped from BOTH sides so the comparison is of words.
+    text = text.replace("`", "")
     text = re.sub(r"^[ \t]*>[ \t]?", "", text, flags=re.M)     # blockquote
     text = re.sub(r"^[ \t]*[-*][ \t]+", "", text, flags=re.M)  # bullet
     text = text.replace(" ", " ")
@@ -401,13 +497,19 @@ def check_stale(path, rel):
     for i, line in enumerate(lines):
         if (i + 1) in table_lines:
             continue
-        near = "\n".join(lines[max(0, i - CORRECTION_LINES):i + CORRECTION_LINES + 1])
-        near = near.replace("*", "").replace("_", "")   # markdown emphasis is not content
+        near = near_text(lines, i)
+        # 132.23 — match what a reader sees, not the source: `13 keywords` and
+        # <strong>13</strong> keywords are the same claim. The RAW line is still
+        # what gets reported, so the human sees the text that has to change.
+        claim = demarkup(line)
         for pat, label, fix in STALE:
-            if pat.search(line) and not CORRECTION.search(near):
-                findings.append((rel, i + 1, 'stale fact "%s" — write %s' % (label, fix),
-                                 line.strip()[:200], owner_of(rel)))
-                break
+            if not pat.search(claim):
+                continue
+            if CORRECTION.search(near) or negation_of(pat).search(near):
+                continue
+            findings.append((rel, i + 1, 'stale fact "%s" — write %s' % (label, fix),
+                             line.strip()[:200], owner_of(rel)))
+            break
     return findings
 
 
@@ -433,7 +535,167 @@ def relpath(path):
     return rel if not rel.startswith("..") else "../" + os.path.relpath(path, WORKSPACE)
 
 
+# --------------------------------------------------------------- selftest ----
+# Story 132.29. Rule 2 was loosened so that a sentence which explicitly retires
+# a fact stops being reported as that fact. A loosened gate is only worth having
+# if it still fails on real drift, so the cases below pin BOTH halves, and the
+# negative half is the point: every ACCEPT case here is a correction the gate
+# must let through, and every REJECT case is wording that must keep failing.
+SELFTEST = [
+    # (accepted?, name, text)
+    (True, "wrapped negation (toke-corpus/regen/syntax_card.md:26-27)",
+     "The grammar is backtrack-free with bounded lookahead of up to 3 tokens — it is NOT\n"
+     "strict LL(1) (spec v0.4 §A keywords, §E grammar, §G character set)."),
+    (True, "negation on one line",
+     "The grammar is not LL(1)."),
+    (True, "explicitly retired",
+     "The LL(1) claim was retired by the v0.4 spec."),
+    (True, "wrapped keyword-count negation",
+     "There are 14 keywords, so the v0.3 wording was not\n"
+     "13 keywords as published."),
+
+    # ---- the negative half: genuine drift, which must still fail ----
+    (False, "bare claim", "The grammar is LL(1)."),
+    (False, "bare claim, wrapped",
+     "The grammar is context-free and\nLL(1) (every production is decidable)."),
+    (False, "bare keyword count", "toke has 13 keywords."),
+    (False, "one-token lookahead", "The parser needs exactly one token of lookahead."),
+    (False, "negation of something else in the previous sentence",
+     "The parser does not backtrack. The grammar is LL(1)."),
+    (False, "negation of something else, wrapped",
+     "The parser does not backtrack over the token stream\n"
+     "and the grammar is LL(1)."),
+    (False, "negation across a paragraph break",
+     "That is not what we do\n\nThe grammar is LL(1)."),
+    (False, "negation too far from the claim",
+     "It is not the case that the grammar described in ADR-0001 is strict LL(1)."),
+    (False, "correction two lines away, outside the window",
+     "The v0.3 spec said the grammar is LL(1).\n"
+     "It shipped that way for months.\n"
+     "That claim was retired."),
+
+    # ---- story 132.23: the same two halves, now behind inline markup ----
+    # Accepted: a correction the reader can see but the raw source hides.
+    (True, "correction in a <strong> tag (toke-website built v0.4 spec page, 170-171)",
+     "<p>The keyword set is <strong>14</strong> (verified against the lexer keyword table):\n"
+     "<code>m i t f let if el lp br rt as mt sc mut</code>. The v0.3 &quot;13 keywords&quot; wording\n"
+     "(and the <code>grammar.ebnf</code> header) is retired."),
+    (True, "correction in a code span",
+     "The keyword set is `14` (verified against the lexer keyword table).\n"
+     "The v0.3 13 keywords list is the one that shipped."),
+    (True, "correction behind a markdown link",
+     "The keyword set is [14](/docs/spec/toke-spec-v0.4#a).\n"
+     "The v0.3 13 keywords list is the one that shipped."),
+    (True, "correction separated by a non-breaking space entity",
+     "The keyword set is&nbsp;14.\nThe v0.3 13 keywords list is the one that shipped."),
+    (True, "negation inside emphasis tags",
+     "The grammar is <em>not</em> <strong>LL(1)</strong>."),
+
+    # ---- and the half that matters: drift dressed up in markup still fails ----
+    (False, "stale claim in a <strong> tag",
+     "toke has <strong>13</strong> keywords."),
+    (False, "stale claim in a code span",
+     "toke has `13 keywords`."),
+    (False, "stale claim behind a markdown link",
+     "The grammar is [LL(1)](/docs/decisions/ADR-0001)."),
+    (False, "stale claim in emphasis, wrapped across a line",
+     "The grammar is context-free and\n<em>LL(1)</em> (every production is decidable)."),
+    (False, "stale claim as an HTML-entity quotation with no correction",
+     "The spec calls the grammar &quot;<b>LL(1)</b>&quot; throughout."),
+    (False, "markup negation of a different clause in the previous sentence",
+     "The parser does <strong>not</strong> backtrack. The grammar is <em>LL(1)</em>."),
+    (False, "markup negation too far from the claim",
+     "It is <strong>not</strong> the case that the grammar described in ADR-0001 "
+     "is strict <em>LL(1)</em>."),
+    (False, "a tag is not a paragraph break: the correction is still two lines away",
+     "<p>The v0.3 spec said the grammar is <em>LL(1)</em>.</p>\n"
+     "<p>It shipped that way for months.</p>\n"
+     "<p>That claim was retired.</p>"),
+    (False, "an escaped, literal tag is text and hides nothing",
+     "Write &lt;strong&gt;13 keywords&lt;/strong&gt; in the card."),
+    (False, "a bare less-than in prose is not a tag and must not eat the claim",
+     "When a < b > c holds, the grammar is LL(1)."),
+]
+
+# Rule 1 (story 132.23). The canonical blocks write `.tk` as a markdown code
+# span; an HTML surface renders it as <code>.tk</code>. Before the backtick was
+# dropped from both sides, a byte-faithful HTML copy scored ~98% and was
+# reported as DRIFTED, so the one signal the rule exists to give — this copy has
+# been re-worded — could not be told from a formatting artefact. The negative
+# case is the point: a copy that really has been re-worded must still be caught.
+SELFTEST_RULE1 = [
+    # (should_match?, name, canonical text, surface text, markup?)
+    (True, "code span vs <code> rendering",
+     "not Tokelau or its `.tk` country-code domain, and not tokelang.com",
+     "<p>not Tokelau or its <code>.tk</code> country-code domain, and not "
+     "tokelang.com</p>", True),
+    (True, "code span vs code span (markdown surface)",
+     "not Tokelau or its `.tk` country-code domain",
+     "Preamble.\n\nnot Tokelau or its `.tk` country-code domain\n", False),
+    (True, "entity and line wrapping are still not drift",
+     "toke — a language",
+     "<p>toke &mdash;\na language</p>", True),
+    (False, "a re-worded HTML copy is still drift",
+     "not Tokelau or its `.tk` country-code domain, and not tokelang.com",
+     "<p>not Tokelau or the <code>.tk</code> domain, and not tokelang.com</p>", True),
+    (False, "a changed number is still drift",
+     "It has 14 keywords and a 59-character set",
+     "<p>It has <strong>13</strong> keywords and a 59-character set</p>", True),
+]
+
+
+def selftest_rule1():
+    """Rule 1 — a faithful copy matches; a re-worded one still does not."""
+    bad = 0
+    for should, name, want_raw, surface, markup in SELFTEST_RULE1:
+        want = normalise(want_raw)
+        hay = normalise(surface, markup)
+        ok = (want in hay) if should else (want not in hay)
+        if not ok:
+            bad += 1
+            _, ratio = best_window(hay, want)
+            print("SELFTEST FAIL [rule 1 %s] %s: %.0f%% match"
+                  % ("match" if should else "drift", name, ratio * 100))
+    return bad
+
+
+def selftest():
+    import tempfile
+    bad = selftest_rule1()
+    for accept, name, text in SELFTEST:
+        with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8",
+                                         delete=False) as fh:
+            fh.write(text + "\n")
+            tmp = fh.name
+        try:
+            found = check_stale(tmp, "selftest.md")
+        finally:
+            os.unlink(tmp)
+        ok = (not found) if accept else bool(found)
+        if not ok:
+            bad += 1
+            print("SELFTEST FAIL [%s] %s: %s"
+                  % ("accept" if accept else "reject", name,
+                     "flagged: %s" % found[0][2] if found else "not flagged"))
+    total = len(SELFTEST) + len(SELFTEST_RULE1)
+    if bad:
+        print("\nselftest: %d of %d cases wrong — the canonical-facts gate is not "
+              "behaving as documented." % (bad, total))
+        return 1
+    print("selftest: %d cases OK — %d Rule 2 (%d corrections accepted, %d stale "
+          "claims still rejected) and %d Rule 1 (%d faithful copies matched, "
+          "%d re-wordings still caught)."
+          % (total, len(SELFTEST),
+             sum(1 for c in SELFTEST if c[0]), sum(1 for c in SELFTEST if not c[0]),
+             len(SELFTEST_RULE1),
+             sum(1 for c in SELFTEST_RULE1 if c[0]),
+             sum(1 for c in SELFTEST_RULE1 if not c[0])))
+    return 0
+
+
 def main():
+    if "--selftest" in sys.argv:
+        return selftest()
     argv = [a for a in sys.argv[1:] if not a.startswith("--")]
     strict = "--strict" in sys.argv
     targets = argv or DEFAULT_TARGETS
