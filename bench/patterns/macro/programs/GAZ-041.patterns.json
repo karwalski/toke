@@ -1,0 +1,35 @@
+{
+ "name": "GAZ-041",
+ "kind": "library",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "cond-bind-if",
+   "sites": 1,
+   "note": "daysfromcivil: `let y=mut.yy; if(m<=2){y=y-1}` -> expression-if bind"
+  },
+  {
+   "id": "str-build-loop",
+   "sites": 1,
+   "note": "readall: nested s.concat accumulation per line -> s.builder"
+  },
+  {
+   "id": "str-interp-vs-join",
+   "sites": 2,
+   "note": "main: nested s.concat + s.fromint prints -> interpolation (cli-print-results shape)"
+  },
+  {
+   "id": "str-num-format",
+   "sites": 2,
+   "note": "s.fromint(count.get(i)) / s.fromint(maxgap) folded into the interpolations"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "acc-min-max",
+   "issue": null,
+   "reason": "maxgap running max is already the lp hot-path form"
+  }
+ ],
+ "note": null
+}

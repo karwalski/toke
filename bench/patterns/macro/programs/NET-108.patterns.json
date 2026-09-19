@@ -1,0 +1,14 @@
+{
+ "name": "NET-108",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "cond-elif-chain",
+   "sites": 1,
+   "note": "mut-flag ladder of three independent ifs (form c) -> one el if chain expression; tests reversed so the last-writer-wins semantics of the ladder is preserved"
+  }
+ ],
+ "not_applied": [],
+ "note": null
+}

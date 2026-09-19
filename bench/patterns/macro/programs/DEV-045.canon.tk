@@ -1,0 +1,66 @@
+m=dockerlint;
+i=io:std.io;
+
+i=s:std.str;
+
+f=main():$i64 {
+  let lines=mut.@($str);
+  lp (1==1) {
+    if (io.eof()) {
+      br
+    };
+    lines=lines.append(s.trim(io.readln()))
+  };
+  let n=mut.lines.len();
+  lp (n>0) {
+    if (s.len(lines.get(n-1))==0) {
+      n=n-1
+    } el {
+      br
+    }
+  };
+  let count=mut.0;
+  let i=mut.0;
+  lp (i<n) {
+    let line=lines.get(i);
+    if (!(s.len(line)==0)&&!s.startswith(line; "#")) {
+      if (s.startswith(line; "FROM")) {
+        if (s.contains(line; ":latest")) {
+          io.println("line \(i+1): [WARN] DL3007 - Using latest tag");
+          count=count+1
+        }
+      };
+      if (s.startswith(line; "RUN")) {
+        if (s.contains(line; "apt-get update")&&!s.contains(line; "rm -rf /var/lib/apt/lists")) {
+          io.println("line \(i+1): [WARN] DL3009 - Delete apt-get lists after install");
+          count=count+1
+        }
+      };
+      if (s.startswith(line; "RUN")) {
+        let j=mut.i+1;
+        let found=mut.0;
+        lp (j<n) {
+          let nl=lines.get(j);
+          if (s.startswith(nl; "RUN")) {
+            found=1;
+            br
+          } el if (s.len(nl)==0) {
+
+          } el if (s.startswith(nl; "#")) {
+
+          } el {
+            br
+          };
+          j=j+1
+        };
+        if (found==1) {
+          io.println("line \(i+1): [INFO] DL3015 - Combine RUN commands");
+          count=count+1
+        }
+      }
+    };
+    i=i+1
+  };
+  io.println("\(count) issues found");
+  <0
+}

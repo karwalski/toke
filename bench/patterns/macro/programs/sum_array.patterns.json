@@ -1,0 +1,8 @@
+{
+ "name": "sum_array",
+ "kind": "bench",
+ "reformatted": false,
+ "applied": [],
+ "not_applied": [],
+ "note": "acc-sum already canonical (lp into a mut); no change"
+}

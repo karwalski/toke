@@ -1,0 +1,40 @@
+{
+ "name": "CRY-119",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "str-build-loop",
+   "sites": 2,
+   "note": "encstr body and main body: s.concat loops -> builder"
+  },
+  {
+   "id": "str-interp-vs-join",
+   "sites": 4,
+   "note": "hex2, encstr's two returns, main's println: s.concat -> interpolation"
+  },
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 3,
+   "note": "hex2 `lo`, encstr loop `ch`, main string-branch `inner`: single-use lets inlined"
+  },
+  {
+   "id": "acc-array",
+   "sites": 1,
+   "note": "items=items+@(cur) -> items.append(cur)"
+  },
+  {
+   "id": "cond-elif-chain",
+   "sites": 1,
+   "note": "list scanner: `}el{if(inq){...}}` -> `el if(inq)`"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "str-build-loop",
+   "issue": null,
+   "reason": "`cur=s.concat(cur;ch)` is reset to \"\" per item inside the loop; s.builder has no reset, so the concat accumulator stays"
+  }
+ ],
+ "note": "canon laid out from `tkc --fmt` of the original; the formatter's `@($str)`->`@(str)` (also f64/i64/bool) rewrite was reverted by hand because `@(str)` fails codegen (E9003 `use of undefined value '%str'`) \u2014 the fmt'd original itself does not build"
+}

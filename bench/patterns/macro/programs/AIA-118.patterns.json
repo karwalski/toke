@@ -1,0 +1,54 @@
+{
+ "name": "AIA-118",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "str-interp-vs-join",
+   "sites": 2,
+   "note": "parsestr/parsearr pat -> \"\\\"\\(key)\\\":\""
+  },
+  {
+   "id": "acc-array",
+   "sites": 10,
+   "note": "every x=x+@(v) -> x=x.append(v) (parselist out, rebuild, rebuilds, ids, depsstr, indeg, queue x2, newq, order)"
+  },
+  {
+   "id": "cond-bind-if",
+   "sites": 2,
+   "note": "rebuild/rebuilds: if(i==idx){append(val)}el{append(arr.get(i))} -> append(if(..){val}el{..})"
+  },
+  {
+   "id": "cond-elif-chain",
+   "sites": 1,
+   "note": "parselist: el{if(inq){..}} -> el if(inq){..}"
+  },
+  {
+   "id": "str-build-loop",
+   "sites": 2,
+   "note": "depends-on join `ds` and the valid-branch output -> s.builder"
+  },
+  {
+   "id": "str-array-render",
+   "sites": 2,
+   "note": "ids (.append-built @str) read into the builder with direct s.add, never interpolated (valid output; cycle line)"
+  },
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 1,
+   "note": "single-use `valid` inlined into the if"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "str-interp-vs-join",
+   "issue": "127.10",
+   "reason": "cycle line keeps builder adds: `first`/ids elements come from a .append-built @str and would print pointers under interpolation"
+  },
+  {
+   "id": "str-build-loop",
+   "issue": null,
+   "reason": "parselist `cur` is reset to \"\" mid-loop and cycle `cyc` reads its own length inside the loop; s.builder has neither reset nor len \u2014 kept as s.concat"
+  }
+ ]
+}

@@ -1,0 +1,19 @@
+(* source: bench/programs/fib_iterative.tk sha256 2b1a7afde89fe5c1afcdd53728d77c7c8d4bf494ba2cd44f2804d6ec50944972 *)
+m=bench;
+f=fib(n:i64):i64{
+  let a=mut.0;
+  let b=mut.1;
+  lp(let i=0;i<n;i=i+1){
+    let tmp=a+b;
+    a=b;
+    b=tmp
+  };
+  <a
+};
+f=main():i64{
+  let s=mut.0;
+  lp(let i=0;i<1000000;i=i+1){
+    s=s+fib(50)
+  };
+  <s
+};

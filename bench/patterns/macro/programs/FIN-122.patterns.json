@@ -1,0 +1,18 @@
+{
+ "name": "FIN-122",
+ "kind": "library",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "acc-array",
+   "sites": 2,
+   "note": "qtys/prices x=x+@(v) -> x=x.append(v)"
+  },
+  {
+   "id": "cond-elif-chain",
+   "sites": 1,
+   "note": "el{if(SELL){...}} -> el if(SELL){...}"
+  }
+ ],
+ "not_applied": []
+}

@@ -1,0 +1,19 @@
+{
+ "name": "prime_sieve",
+ "kind": "bench",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "err-validate-early",
+   "sites": 1,
+   "note": "guard `if(n<2){<0}` as a sequential early return instead of wrapping the body in el{}"
+  },
+  {
+   "id": "iter-find-first",
+   "sites": 1,
+   "note": "mut `found` flag + forced loop exit (d=n) -> direct `<0` return from the loop; `<1` after it"
+  }
+ ],
+ "not_applied": [],
+ "note": null
+}

@@ -1,0 +1,20 @@
+{
+ "name": "MED-036",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "str-build-loop",
+   "sites": 2,
+   "note": "stdin line accumulation and block accumulation, both s.concat chains in loops -> s.builder; the block's 3-deep s.concat nest became direct s.add pieces into that builder"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "str-interp-vs-join",
+   "issue": "127.7",
+   "reason": "\"lang: \\(lang)\\n\\(code)\" printed a heap address for `code` (a let bound to an expression-if over s.slice results); direct s.add reads used instead"
+  }
+ ],
+ "note": null
+}

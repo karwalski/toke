@@ -1,0 +1,19 @@
+{
+ "name": "MED-062",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "str-build-loop",
+   "sites": 1,
+   "note": "main: `out=s.concat(out;..)` per char (3 sites) -> s.builder/s.add/s.build"
+  },
+  {
+   "id": "cond-bool-combine",
+   "sites": 1,
+   "note": "main: `if(c==\"%\"){if(i+2<len){A}el{B}}el{B}` -> `if(c==\"%\"&&i+2<len){A}el{B}` (duplicate else bodies merged)"
+  }
+ ],
+ "not_applied": [],
+ "note": "tkc --fmt renders the `mt` expression as `| {ok:v ..; err:e ..}` which does not parse; restored to `mt \u2026 {$ok:v \u2026;$err:e \u2026}` by hand (formatter bug, reported to the parent)"
+}

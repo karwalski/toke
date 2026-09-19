@@ -1,0 +1,29 @@
+{
+ "name": "GAM-072",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "cond-bool-combine",
+   "sites": 5,
+   "note": "split test (c1eq2 && (c1A || 8)), hasAce flag soup -> `c1A||c2A`, `total==18&&dval>=9`, `total>=12&&total<=16`, and the total conditions"
+  },
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 1,
+   "note": "single-use `let c1eq2=s.equals(c1;c2)` inlined into its test"
+  },
+  {
+   "id": "cond-bind-if",
+   "sites": 1,
+   "note": "`let total=mut.\u2026` with two nested conditional reassignments -> one expression-if bind (mut dropped)"
+  },
+  {
+   "id": "cond-elif-chain",
+   "sites": 1,
+   "note": "the `total` bind is a flat `el if` chain rather than nested if/el"
+  }
+ ],
+ "not_applied": [],
+ "note": null
+}

@@ -1,0 +1,19 @@
+{
+ "name": "deep_recursion",
+ "kind": "bench",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "cond-elif-chain",
+   "sites": 1,
+   "note": "nested if/el -> one el if chain expression"
+  },
+  {
+   "id": "fn-recursion-vs-loop",
+   "sites": 1,
+   "note": "recursion kept as an expression-if (canonical a); Ackermann is not loop-convertible"
+  }
+ ],
+ "not_applied": [],
+ "note": null
+}

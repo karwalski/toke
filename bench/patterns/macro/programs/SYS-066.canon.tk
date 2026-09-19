@@ -1,0 +1,75 @@
+m=csv2json;
+i=io:std.io;
+
+i=s:std.str;
+
+f=parsecsv(line:$str):@$str {
+  let result=mut.@();
+  let cur=mut.s.builder();
+  let inquote=mut.0;
+  let i=mut.0;
+  lp (i<s.len(line)) {
+    let ch=s.slice(line; i; i+1);
+    if (s.equals(ch; "\"")) {
+      inquote=1-inquote
+    } el if (s.equals(ch; ",")&&inquote==0) {
+      result=result.append(s.build(cur));
+      cur=s.builder()
+    } el {
+      s.add(cur; ch)
+    };
+    i=i+1
+  };
+  result=result.append(s.build(cur));
+  <result
+};
+
+f=main():$i64 {
+  let header=mut.@();
+  let rows=mut.@();
+  let done=mut.0;
+  let first=mut.1;
+  lp (done<1) {
+    let line=io.readln();
+    if (s.len(line)==0) {
+      done=1
+    } el {
+      let trimmed=s.trimsuffix(line; "\n");
+      if (s.len(trimmed)==0) {
+        done=1
+      } el {
+        let fields=parsecsv(trimmed);
+        if (first==1) {
+          header=fields;
+          first=0
+        } el {
+          rows=rows.append(trimmed)
+        }
+      }
+    }
+  };
+  let out=s.builder();
+  s.add(out; "[");
+  lp (let r=0; r<rows.len(); r=r+1) {
+    if (r>0) {
+      s.add(out; ",")
+    };
+    s.add(out; "{");
+    let fields=parsecsv(rows.get(r));
+    lp (let c=0; c<header.len(); c=c+1) {
+      if (c>0) {
+        s.add(out; ",")
+      };
+      let val=if(c<fields.len()){fields.get(c)}el{""};
+      s.add(out; "\"");
+      s.add(out; header.get(c));
+      s.add(out; "\":\"");
+      s.add(out; val);
+      s.add(out; "\"")
+    };
+    s.add(out; "}")
+  };
+  s.add(out; "]");
+  io.println(s.build(out));
+  <0
+}

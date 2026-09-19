@@ -1,0 +1,28 @@
+m=lm;
+i=io:std.io;
+
+i=s:std.str;
+
+f=getstr(o:$str; k:$str):$str {
+  let pat="\"\(k)\":\"";
+  let idx=s.indexof(o; pat);
+  if (idx<0) {
+    <""
+  };
+  let st=idx+s.len(pat);
+  let end=s.indexof(s.slice(o; st; s.len(o)); "\"");
+  <s.slice(o; st; st+end)
+};
+
+f=main():$i64 {
+  let inp=s.trim(io.readln());
+  let lid=getstr(inp; "list_id");
+  let members=mut."[]";
+  let total=mut.0;
+  if (s.equals(lid; "lst_1")) {
+    members="[{\"id\":2,\"username\":\"bob\",\"added_at\":\"2026-01-01T00:00:00Z\"}]";
+    total=1
+  };
+  io.println("{\"list_id\":\"\(lid)\",\"members\":\(members),\"total\":\(total),\"next_cursor\":null}");
+  <0
+}

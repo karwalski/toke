@@ -1,0 +1,14 @@
+{
+ "name": "gcd_euler",
+ "kind": "bench",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "acc-count-if",
+   "sites": 1,
+   "note": "lp + if + counter; the no-op `el{count=count}` branch dropped"
+  }
+ ],
+ "not_applied": [],
+ "note": null
+}

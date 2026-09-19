@@ -1,0 +1,45 @@
+{
+ "name": "EDU-098",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 1,
+   "note": "ord: single-use `let idx=\u2026; <idx` -> `<s.indexof(tbl;c)`"
+  },
+  {
+   "id": "cond-bind-if",
+   "sites": 1,
+   "note": "strless: `let m=mut.la; if(lb<la){m=lb}` -> expression-if bind"
+  },
+  {
+   "id": "acc-array",
+   "sites": 2,
+   "note": "main: `terms=terms+@(term)`, `defs=defs+@(dval)` -> .append"
+  },
+  {
+   "id": "coll-swap",
+   "sites": 2,
+   "note": "bubble-sort swaps of terms and defs: tmp lets + two sets -> chained .set().set()"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "str-interp-vs-join",
+   "issue": "127.10",
+   "reason": "`io.println(s.concat(\"  \";defs.get(k)))` kept: defs is now an .append-built @str and interpolating its element would print a dangling pointer"
+  },
+  {
+   "id": "iter-find-first",
+   "issue": null,
+   "reason": "the two closing-quote scans (`te=e; e=n`) are inline in main, not their own function, so the direct-return canonical form does not apply"
+  },
+  {
+   "id": "parse-json",
+   "issue": null,
+   "reason": "hand JSON scan kept: replacing it with json.dec is a stdlib substitution, not a rewrite of an existing site into its canonical form"
+  }
+ ],
+ "note": "`tkc --fmt` rewrites `mut.@($str)` to `mut.@(str)`; that spelling passes --check but fails codegen (clang: use of undefined value %str) as soon as the array is appended/set/read, so the canon keeps the original `@($str)` spelling (reported to the parent)"
+}

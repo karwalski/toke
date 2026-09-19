@@ -1,0 +1,38 @@
+m=bubblesort;
+i=io:std.io;
+
+i=s:std.str;
+
+f=main():$i64 {
+  let line=s.trim(io.readln());
+  let parts=s.split(line; " ");
+  let arr=mut.@($i64);
+  lp (let i=0; i<parts.len(); i=i+1) {
+    let tok=s.trim(parts.get(i));
+    if (s.len(tok)>0) {
+      arr=arr.append(s.toint(tok))
+    }
+  };
+  let n=arr.len();
+  let cmp=mut.0;
+  let swp=mut.0;
+  lp (let pass=0; pass<n-1; pass=pass+1) {
+    lp (let idx=0; idx<n-pass-1; idx=idx+1) {
+      cmp=cmp+1;
+      if (arr.get(idx)>arr.get(idx+1)) {
+        swp=swp+1;
+        arr=arr.set(idx; arr.get(idx+1)).set(idx+1; arr.get(idx))
+      }
+    }
+  };
+  let out=s.builder();
+  s.add(out; "Sorted:");
+  lp (let i=0; i<n; i=i+1) {
+    s.add(out; " ");
+    s.add(out; "\(arr.get(i))")
+  };
+  io.println(s.build(out));
+  io.println("Comparisons: \(cmp)");
+  io.println("Swaps: \(swp)");
+  <0
+}

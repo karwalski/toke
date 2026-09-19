@@ -1,0 +1,29 @@
+{
+ "name": "DAT-045",
+ "kind": "library",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "str-build-loop",
+   "sites": 1,
+   "note": "hex8: s.concat accumulation loop -> s.builder"
+  },
+  {
+   "id": "iter-find-first",
+   "sites": 1,
+   "note": "main: mut `cont` loop flag -> `br` (inline loop, so br not return)"
+  },
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 1,
+   "note": "single-use `crc` inlined: hex8(crc32(line))"
+  },
+  {
+   "id": "str-interp-vs-join",
+   "sites": 1,
+   "note": "s.concat(s.concat(hx;\"\\t\");line) -> \"\\(hx)\\t\\(line)\"; the constant s.concat(\"00000000\";\"\\t\") has no parts to interpolate and is left"
+  }
+ ],
+ "not_applied": [],
+ "note": null
+}

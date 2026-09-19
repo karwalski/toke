@@ -1,0 +1,34 @@
+{
+ "name": "SYS-010",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "acc-array",
+   "sites": 2,
+   "note": "normalize: `ns=ns+@(..)`, `stack=stack+@(pt)` -> .append"
+  },
+  {
+   "id": "cond-elif-chain",
+   "sites": 2,
+   "note": "normalize: `el{if(..){if(..){}}}` -> `el if`; main: ladder of independent `if(s.equals(op;..))` -> `el if` chain"
+  },
+  {
+   "id": "cond-bool-combine",
+   "sites": 1,
+   "note": "normalize: `!s.equals(pt;\".\")&&!s.equals(pt;\"\")`"
+  },
+  {
+   "id": "str-build-loop",
+   "sites": 2,
+   "note": "normalize output join and main `join` op: s.concat loops -> s.builder"
+  },
+  {
+   "id": "str-array-render",
+   "sites": 1,
+   "note": "normalize: .append-built @str rendered by direct s.add reads (form c; no element interpolation, 127.10)"
+  }
+ ],
+ "not_applied": [],
+ "note": null
+}

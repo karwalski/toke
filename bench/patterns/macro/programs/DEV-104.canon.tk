@@ -1,0 +1,60 @@
+m=healthdashboard;
+i=io:std.io;
+
+i=str:std.str;
+
+f=field(obj:$str; key:$str):$str {
+  let pat="\"\(key)\":\"";
+  let idx=str.find(obj; pat);
+  let start=idx+str.len(pat);
+  let rest=str.slice(obj; start; str.len(obj));
+  let endidx=str.find(rest; "\"");
+  <str.slice(rest; 0; endidx)
+};
+
+f=numfield(obj:$str; key:$str):$str {
+  let pat="\"\(key)\":";
+  let idx=str.find(obj; pat);
+  let start=idx+str.len(pat);
+  let rest=str.slice(obj; start; str.len(obj));
+  let c1=str.find(rest; ",");
+  let c2=str.find(rest; "}");
+  let endidx=if (c1<0||(c2>=0&&c2<c1)) {c2} el {c1};
+  <str.slice(rest; 0; endidx)
+};
+
+f=pad(sa:$str; n:$i64):$str {
+  let result=mut.sa;
+  lp (let k=str.len(sa); k<n; k=k+1) {
+    result=str.concat(result; " ")
+  };
+  <result
+};
+
+f=main():$i64 {
+  let line=io.readln();
+  let body=str.slice(line; 1; str.len(line)-1);
+  let parts=str.split(body; "},{");
+  let out=str.builder();
+  str.add(out; "Service Health Dashboard\n\n");
+  let upcount=mut.0;
+  let total=parts.len();
+  lp (let j=0; j<total; j=j+1) {
+    let raw=parts.get(j);
+    let obj="{\(raw)}";
+    let svc=field(obj; "service");
+    let status=field(obj; "status");
+    let lat=numfield(obj; "latency_ms");
+    let up=numfield(obj; "uptime_pct");
+    let statusbox=if (status=="UP") {"[UP]  "} el {"[DOWN]"};
+    if (status=="UP") {
+      upcount=upcount+1
+    };
+    let svcpad=pad(svc; 6);
+    let latpad=pad("\(lat)ms"; 6);
+    str.add(out; "\(statusbox) \(svcpad) \(latpad) \(up)% uptime\n")
+  };
+  str.add(out; "\nAll UP: \(upcount)/\(total)");
+  io.println(str.build(out));
+  <0
+}

@@ -1,0 +1,54 @@
+{
+ "name": "DAT-121",
+ "kind": "library",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "cond-bool-combine",
+   "sites": 8,
+   "note": "isvowel/isalpha guard ladders -> one boolean; soundex H/W else -> c!=72&&c!=87; metaphone+dmetaphone `handled` mut flag -> c==prv&&c!=67 as first el-if arm; H rule prvvowel/nxtvowel nest -> !isvowel(prv)||isvowel(nxt) (x2); dmetaphone atend flag -> one boolean"
+  },
+  {
+   "id": "cond-elif-chain",
+   "sites": 3,
+   "note": "soundexcode 18-guard ladder -> el if chain expression; metaphone/dmetaphone nested if/el ladders -> el if chains"
+  },
+  {
+   "id": "cond-bind-if",
+   "sites": 5,
+   "note": "nxt/prv (x2 functions) and `after`: mut+if assign -> let x=if(..){..}el{0}"
+  },
+  {
+   "id": "str-num-format",
+   "sites": 1,
+   "note": "s.fromint(code) -> \\(code)"
+  },
+  {
+   "id": "str-build-loop",
+   "sites": 3,
+   "note": "lettersonly/metaphone/dmetaphone out=s.concat(out;..) loops -> s.builder"
+  },
+  {
+   "id": "str-interp-vs-join",
+   "sites": 1,
+   "note": "main: 6-step out=s.concat chain -> one interpolation"
+  },
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 2,
+   "note": "prvvowel/nxtvowel single-use lets inlined (metaphone, dmetaphone)"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "str-build-loop",
+   "issue": null,
+   "reason": "soundex `result` reads its own length inside the padding loop and is sliced afterwards; s.builder has no len \u2014 kept as s.concat"
+  },
+  {
+   "id": "err-default",
+   "issue": null,
+   "reason": "charat/soundex tails `let r=mt ..; <s.concat(r;\"\")` left as written: the trailing copy is not a catalogue form and removing it would be a change beyond the pattern"
+  }
+ ]
+}

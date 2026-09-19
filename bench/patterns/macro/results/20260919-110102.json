@@ -1,0 +1,9076 @@
+{
+ "meta": {
+  "story": "131.8",
+  "date": "2026-09-19T10:56:18",
+  "hw_model": "Mac14,10",
+  "ncpu": 12,
+  "os": "Darwin 25.5.0",
+  "loadavg_1min": 30.19,
+  "max_load": 2.0,
+  "load_warning": true,
+  "therm": [
+   "Note: No thermal warning level has been recorded",
+   "Note: No performance warning level has been recorded",
+   "Note: No CPU power status has been recorded"
+  ],
+  "tkc_bin_sha": "fe380d8d660d5eebe2dca050d11cd2f2683864fe2cef1cab5ec0d99726c38e45",
+  "tkc_version": "toke 2.8.0",
+  "tkc_path": "/Users/matthew.watt/tk/toke/tkc",
+  "tkc_resolved": "/Users/matthew.watt/tk/toke/toke",
+  "tkc_pinned_copy": "/var/folders/gf/4ylkzm4d3bg50537kywj3pph0000gp/T/tkc_pin_u5umrr7k/tkc",
+  "toke_head": "c22edaa000d9373bced523417f306b4c97ff3576",
+  "toke_src_dirty": true,
+  "proxy_file": "proxy8k-5f3f74314ce4.json",
+  "proxy_sha": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+  "token_region": "whole program (tkc --min, strings masked); orig_fmt measured for reformatted pairs",
+  "runs": 15,
+  "warmup": 2,
+  "interleaved": true,
+  "gate": {
+   "wall_tol": 0.05,
+   "rss_tol": 0.05,
+   "rule": "ok iff canon median wall <= orig+5% AND canon median RSS <= orig+5%; unchanged when tkc --min texts are equal; regressed names the applied pattern ids"
+  },
+  "workload": "bench: 1 exec, no stdin (exit status is the result); library: 1 exec per manifest test case with stdin, wall summed, RSS max"
+ },
+ "pairs": [
+  {
+   "name": "fib_recursive",
+   "kind": "bench",
+   "category": null,
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/fib_recursive.orig.tk",
+     "src_sha256": "e48657e5f229449de4efa2cdf4f76423ef12d46e866c21ffb95b98379d4c4316",
+     "min_sha256": "0f62ede0e074fba1e876503aecadc0a550e8f126f63f8979c694ededff714434",
+     "status": "ok",
+     "binary_bytes": 126752,
+     "tokens": {
+      "proxy8k": 23,
+      "byte256": 83,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 83
+     },
+     "wall_ms_samples": [
+      45.158,
+      42.762,
+      48.884,
+      43.816,
+      44.218,
+      41.89,
+      42.046,
+      42.384,
+      47.218,
+      41.159,
+      43.265,
+      42.389,
+      56.469,
+      42.365,
+      44.012
+     ],
+     "wall_ms_median": 43.265,
+     "wall_ci95": [
+      42.384,
+      45.158
+     ],
+     "cpu_ms_samples": [
+      37.956,
+      37.775,
+      38.444,
+      38.356,
+      38.621,
+      37.556,
+      37.369,
+      38.21,
+      39.114,
+      37.253,
+      37.176,
+      37.775,
+      43.614,
+      37.602,
+      38.33
+     ],
+     "cpu_ms_median": 37.956,
+     "cpu_ci95": [
+      37.602,
+      38.356
+     ],
+     "rss_kb_median": 1408,
+     "rss_kb_samples": [
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408
+     ],
+     "output_sigs": [
+      "b2a10f019cdef79a55d37dea76e622e5cf479d7f946682a0beb2851747f78d7d"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/fib_recursive.canon.tk",
+     "src_sha256": "93e68e76eb294e9153f8bfe1710c21fff8ae78eb0f3042dedee3883bdb7ffe1f",
+     "min_sha256": "99891bc6840aa99e42d07abc8b4e5854a606ed51ed6c53626b79306c2971aedc",
+     "status": "ok",
+     "binary_bytes": 126752,
+     "tokens": {
+      "proxy8k": 25,
+      "byte256": 82,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 82
+     },
+     "wall_ms_samples": [
+      46.947,
+      43.783,
+      42.916,
+      44.441,
+      44.101,
+      42.177,
+      43.125,
+      42.5,
+      43.59,
+      43.609,
+      41.957,
+      43.466,
+      43.629,
+      41.427,
+      42.111
+     ],
+     "wall_ms_median": 43.466,
+     "wall_ci95": [
+      42.5,
+      43.783
+     ],
+     "cpu_ms_samples": [
+      38.948,
+      38.019,
+      37.982,
+      38.501,
+      38.173,
+      37.864,
+      38.041,
+      37.814,
+      38.076,
+      38.058,
+      37.677,
+      37.781,
+      38.423,
+      37.179,
+      37.89
+     ],
+     "cpu_ms_median": 38.019,
+     "cpu_ci95": [
+      37.864,
+      38.173
+     ],
+     "rss_kb_median": 1408,
+     "rss_kb_samples": [
+      1408,
+      1408,
+      1408,
+      1392,
+      1392,
+      1392,
+      1408,
+      1408,
+      1408,
+      1392,
+      1408,
+      1392,
+      1408,
+      1408,
+      1408
+     ],
+     "output_sigs": [
+      "b2a10f019cdef79a55d37dea76e622e5cf479d7f946682a0beb2851747f78d7d"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "fn-recursion-vs-loop"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": 0.46,
+   "rss_pct": 0.0,
+   "cpu_pct": 0.17,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": 2,
+    "proxy8k_pct": 8.7,
+    "byte256": -1,
+    "min_bytes": -1
+   }
+  },
+  {
+   "name": "fib_iterative",
+   "kind": "bench",
+   "category": null,
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/fib_iterative.orig.tk",
+     "src_sha256": "8d325fb0d41df180fccbf42f9de3110bcaf79a1578b0f8d1c8d5445fff07b439",
+     "min_sha256": "78ab2abbad10b484473cb18aa6fd71dee5ca438bab3579c8754928ba49f488c3",
+     "status": "ok",
+     "binary_bytes": 126912,
+     "tokens": {
+      "proxy8k": 32,
+      "byte256": 168,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 168
+     },
+     "wall_ms_samples": [
+      25.209,
+      23.575,
+      26.268,
+      24.176,
+      25.695,
+      25.337,
+      24.027,
+      26.108,
+      24.533,
+      26.06,
+      25.728,
+      23.881,
+      24.352,
+      23.687,
+      24.286
+     ],
+     "wall_ms_median": 24.533,
+     "wall_ci95": [
+      24.176,
+      25.728
+     ],
+     "cpu_ms_samples": [
+      20.091,
+      19.185,
+      19.352,
+      19.277,
+      19.409,
+      19.432,
+      19.199,
+      20.29,
+      20.098,
+      20.44,
+      20.288,
+      19.711,
+      19.791,
+      19.777,
+      19.616
+     ],
+     "cpu_ms_median": 19.711,
+     "cpu_ci95": [
+      19.409,
+      20.098
+     ],
+     "rss_kb_median": 1408,
+     "rss_kb_samples": [
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408
+     ],
+     "output_sigs": [
+      "673d5df76d9dcacc165109e3da10172f51f4725cff1db22bb62f8ed58f09687f"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/fib_iterative.canon.tk",
+     "src_sha256": "2b1a7afde89fe5c1afcdd53728d77c7c8d4bf494ba2cd44f2804d6ec50944972",
+     "min_sha256": "78ab2abbad10b484473cb18aa6fd71dee5ca438bab3579c8754928ba49f488c3",
+     "status": "ok",
+     "binary_bytes": 126912,
+     "tokens": {
+      "proxy8k": 32,
+      "byte256": 168,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 168
+     },
+     "wall_ms_samples": [
+      25.604,
+      24.317,
+      23.476,
+      25.021,
+      26.458,
+      23.408,
+      24.043,
+      28.741,
+      25.845,
+      23.943,
+      23.956,
+      24.01,
+      23.383,
+      24.102,
+      23.856
+     ],
+     "wall_ms_median": 24.043,
+     "wall_ci95": [
+      23.943,
+      25.604
+     ],
+     "cpu_ms_samples": [
+      19.003,
+      19.519,
+      19.987,
+      19.192,
+      19.847,
+      19.437,
+      19.209,
+      20.699,
+      20.04,
+      19.539,
+      19.45,
+      19.881,
+      19.319,
+      19.126,
+      19.046
+     ],
+     "cpu_ms_median": 19.45,
+     "cpu_ci95": [
+      19.192,
+      19.847
+     ],
+     "rss_kb_median": 1408,
+     "rss_kb_samples": [
+      1392,
+      1392,
+      1408,
+      1408,
+      1408,
+      1392,
+      1392,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1392,
+      1408,
+      1392
+     ],
+     "output_sigs": [
+      "673d5df76d9dcacc165109e3da10172f51f4725cff1db22bb62f8ed58f09687f"
+     ]
+    }
+   },
+   "patterns_applied": [],
+   "verdict": "unchanged",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": true,
+   "wall_pct": -2.0,
+   "rss_pct": 0.0,
+   "cpu_pct": -1.32,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": 0,
+    "proxy8k_pct": 0.0,
+    "byte256": 0,
+    "min_bytes": 0
+   }
+  },
+  {
+   "name": "sum_array",
+   "kind": "bench",
+   "category": null,
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/sum_array.orig.tk",
+     "src_sha256": "a970431819fc2bdb5374f5d553ccb212c5c6a2556c2efaeb3a2bb4333b9aadee",
+     "min_sha256": "d0ad1db64fafa58287564f1850a49621d2b101b4a5c056360d343da78e2f8a5d",
+     "status": "ok",
+     "binary_bytes": 126848,
+     "tokens": {
+      "proxy8k": 104,
+      "byte256": 322,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 322
+     },
+     "wall_ms_samples": [
+      9.775,
+      10.986,
+      16.794,
+      9.353,
+      8.209,
+      7.718,
+      8.04,
+      10.047,
+      8.083,
+      10.299,
+      9.255,
+      8.455,
+      8.515,
+      8.258,
+      8.678
+     ],
+     "wall_ms_median": 8.678,
+     "wall_ci95": [
+      8.258,
+      10.047
+     ],
+     "cpu_ms_samples": [
+      4.687,
+      5.22,
+      5.192,
+      4.692,
+      4.698,
+      4.112,
+      4.313,
+      5.638,
+      4.122,
+      4.256,
+      4.239,
+      4.953,
+      4.434,
+      4.564,
+      4.579
+     ],
+     "cpu_ms_median": 4.579,
+     "cpu_ci95": [
+      4.313,
+      4.698
+     ],
+     "rss_kb_median": 1408,
+     "rss_kb_samples": [
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408
+     ],
+     "output_sigs": [
+      "a6a8ab659bd90269c0d7919a06b0f1f94e4078e811dbb984c593d5b24b97cd4f"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/sum_array.canon.tk",
+     "src_sha256": "b95a21acae36ec9689f87c9e1c0017dffab6a47f23ef90792290707000c56ab5",
+     "min_sha256": "d0ad1db64fafa58287564f1850a49621d2b101b4a5c056360d343da78e2f8a5d",
+     "status": "ok",
+     "binary_bytes": 126848,
+     "tokens": {
+      "proxy8k": 104,
+      "byte256": 322,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 322
+     },
+     "wall_ms_samples": [
+      11.117,
+      16.031,
+      17.6,
+      11.466,
+      9.732,
+      8.526,
+      8.237,
+      8.541,
+      8.051,
+      7.843,
+      8.955,
+      8.478,
+      8.918,
+      8.751,
+      8.136
+     ],
+     "wall_ms_median": 8.751,
+     "wall_ci95": [
+      8.237,
+      11.117
+     ],
+     "cpu_ms_samples": [
+      4.91,
+      5.634,
+      5.61,
+      5.509,
+      4.394,
+      4.457,
+      4.654,
+      4.413,
+      4.511,
+      4.429,
+      4.768,
+      4.654,
+      4.425,
+      4.58,
+      4.698
+     ],
+     "cpu_ms_median": 4.654,
+     "cpu_ci95": [
+      4.457,
+      4.91
+     ],
+     "rss_kb_median": 1392,
+     "rss_kb_samples": [
+      1408,
+      1392,
+      1392,
+      1392,
+      1408,
+      1408,
+      1408,
+      1392,
+      1408,
+      1392,
+      1392,
+      1392,
+      1392,
+      1408,
+      1408
+     ],
+     "output_sigs": [
+      "a6a8ab659bd90269c0d7919a06b0f1f94e4078e811dbb984c593d5b24b97cd4f"
+     ]
+    }
+   },
+   "patterns_applied": [],
+   "verdict": "unchanged",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": true,
+   "wall_pct": 0.84,
+   "rss_pct": -1.14,
+   "cpu_pct": 1.64,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": 0,
+    "proxy8k_pct": 0.0,
+    "byte256": 0,
+    "min_bytes": 0
+   }
+  },
+  {
+   "name": "nested_loops",
+   "kind": "bench",
+   "category": null,
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/nested_loops.orig.tk",
+     "src_sha256": "634490274a914486c7a486109b39b987595f047fb4e11a72cb99a19e7a3def59",
+     "min_sha256": "963e8ffa6097be3ea79887d28c432ecee4c11f75c98ebfaa8c78e8b1827717ab",
+     "status": "ok",
+     "binary_bytes": 126736,
+     "tokens": {
+      "proxy8k": 23,
+      "byte256": 97,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 97
+     },
+     "wall_ms_samples": [
+      8.188,
+      8.105,
+      9.267,
+      6.825,
+      9.631,
+      7.223,
+      9.536,
+      6.869,
+      7.971,
+      7.219,
+      10.316,
+      9.2,
+      7.642,
+      8.534,
+      10.656
+     ],
+     "wall_ms_median": 8.188,
+     "wall_ci95": [
+      7.223,
+      9.267
+     ],
+     "cpu_ms_samples": [
+      3.985,
+      4.093,
+      3.631,
+      3.277,
+      4.799,
+      3.142,
+      3.012,
+      3.171,
+      3.563,
+      3.253,
+      3.475,
+      3.914,
+      3.201,
+      3.618,
+      3.672
+     ],
+     "cpu_ms_median": 3.563,
+     "cpu_ci95": [
+      3.201,
+      3.914
+     ],
+     "rss_kb_median": 1392,
+     "rss_kb_samples": [
+      1392,
+      1408,
+      1408,
+      1392,
+      1392,
+      1392,
+      1392,
+      1392,
+      1408,
+      1392,
+      1392,
+      1392,
+      1392,
+      1408,
+      1392
+     ],
+     "output_sigs": [
+      "48214a072cc00ee73c1b13686f05ecda89732e4127bcc9f016e7d5d30d458227"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/nested_loops.canon.tk",
+     "src_sha256": "659ebf8720547d91729cbfa84ec2bb93365aa2f36f5565a50ed3432a17238d93",
+     "min_sha256": "963e8ffa6097be3ea79887d28c432ecee4c11f75c98ebfaa8c78e8b1827717ab",
+     "status": "ok",
+     "binary_bytes": 126736,
+     "tokens": {
+      "proxy8k": 23,
+      "byte256": 97,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 97
+     },
+     "wall_ms_samples": [
+      10.326,
+      11.184,
+      8.927,
+      7.194,
+      12.147,
+      8.507,
+      6.884,
+      6.57,
+      8.277,
+      8.776,
+      9.513,
+      10.246,
+      7.621,
+      7.257,
+      10.999
+     ],
+     "wall_ms_median": 8.776,
+     "wall_ci95": [
+      7.621,
+      10.246
+     ],
+     "cpu_ms_samples": [
+      4.76,
+      4.468,
+      3.733,
+      3.122,
+      4.364,
+      3.839,
+      3.109,
+      3.022,
+      3.982,
+      3.138,
+      4.652,
+      3.653,
+      3.329,
+      3.689,
+      5.546
+     ],
+     "cpu_ms_median": 3.733,
+     "cpu_ci95": [
+      3.138,
+      4.468
+     ],
+     "rss_kb_median": 1408,
+     "rss_kb_samples": [
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408
+     ],
+     "output_sigs": [
+      "48214a072cc00ee73c1b13686f05ecda89732e4127bcc9f016e7d5d30d458227"
+     ]
+    }
+   },
+   "patterns_applied": [],
+   "verdict": "unchanged",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": true,
+   "wall_pct": 7.18,
+   "rss_pct": 1.15,
+   "cpu_pct": 4.77,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": 0,
+    "proxy8k_pct": 0.0,
+    "byte256": 0,
+    "min_bytes": 0
+   }
+  },
+  {
+   "name": "binary_search",
+   "kind": "bench",
+   "category": null,
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/binary_search.orig.tk",
+     "src_sha256": "3bc2342b56a3d029e96a71b13f4e0ce24cf7593d2521e5b119554df34f004506",
+     "min_sha256": "72c883f3c6e9ea79dcf4843862a605e4a31f9b5b1ed3d01adbc2e6e33c6b3199",
+     "status": "ok",
+     "binary_bytes": 126944,
+     "tokens": {
+      "proxy8k": 97,
+      "byte256": 388,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 388
+     },
+     "wall_ms_samples": [
+      16.314,
+      19.298,
+      15.098,
+      15.516,
+      14.644,
+      15.382,
+      14.566,
+      17.999,
+      16.503,
+      18.232,
+      17.783,
+      14.626,
+      15.946,
+      23.082,
+      15.082
+     ],
+     "wall_ms_median": 15.946,
+     "wall_ci95": [
+      15.098,
+      17.783
+     ],
+     "cpu_ms_samples": [
+      11.392,
+      11.695,
+      10.61,
+      10.618,
+      10.887,
+      10.714,
+      10.751,
+      12.267,
+      10.498,
+      10.484,
+      11.346,
+      10.49,
+      11.354,
+      10.91,
+      10.903
+     ],
+     "cpu_ms_median": 10.887,
+     "cpu_ci95": [
+      10.618,
+      11.346
+     ],
+     "rss_kb_median": 1408,
+     "rss_kb_samples": [
+      1392,
+      1408,
+      1392,
+      1392,
+      1408,
+      1408,
+      1408,
+      1392,
+      1392,
+      1408,
+      1408,
+      1392,
+      1408,
+      1392,
+      1408
+     ],
+     "output_sigs": [
+      "fb2e7a0233b88fe73c2c4b03ba8ff962e860ed75a10de917ef7773453110e8bf"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/binary_search.canon.tk",
+     "src_sha256": "77e3abd536b4f7bb0673304a4a817fdfe80bf243140c2cf112e99da206e7e7ce",
+     "min_sha256": "ef6d707741d582c7c24d1047d37fc081a1c7bf69544fcc9ed7ec4d773c23758c",
+     "status": "ok",
+     "binary_bytes": 126944,
+     "tokens": {
+      "proxy8k": 97,
+      "byte256": 387,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 387
+     },
+     "wall_ms_samples": [
+      14.807,
+      17.229,
+      18.852,
+      16.298,
+      17.996,
+      14.854,
+      15.285,
+      14.821,
+      15.001,
+      14.581,
+      19.9,
+      16.57,
+      15.088,
+      18.353,
+      15.207
+     ],
+     "wall_ms_median": 15.285,
+     "wall_ci95": [
+      14.854,
+      17.229
+     ],
+     "cpu_ms_samples": [
+      10.606,
+      10.692,
+      11.985,
+      10.786,
+      12.187,
+      10.615,
+      10.842,
+      10.616,
+      10.849,
+      10.535,
+      13.959,
+      11.23,
+      10.571,
+      10.331,
+      10.64
+     ],
+     "cpu_ms_median": 10.692,
+     "cpu_ci95": [
+      10.615,
+      10.849
+     ],
+     "rss_kb_median": 1408,
+     "rss_kb_samples": [
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408
+     ],
+     "output_sigs": [
+      "fb2e7a0233b88fe73c2c4b03ba8ff962e860ed75a10de917ef7773453110e8bf"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "cond-elif-chain"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": -4.15,
+   "rss_pct": 0.0,
+   "cpu_pct": -1.79,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": 0,
+    "proxy8k_pct": 0.0,
+    "byte256": -1,
+    "min_bytes": -1
+   }
+  },
+  {
+   "name": "prime_sieve",
+   "kind": "bench",
+   "category": null,
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/prime_sieve.orig.tk",
+     "src_sha256": "636698540c5f3eb134befccb1d441e2ff19b23e0bfaa5c0867ae4ac4355eae23",
+     "min_sha256": "af44533e69686ef87e6eacecb2451d87177291a024d703b1d8441bad62c22850",
+     "status": "ok",
+     "binary_bytes": 127056,
+     "tokens": {
+      "proxy8k": 54,
+      "byte256": 237,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 237
+     },
+     "wall_ms_samples": [
+      10.372,
+      8.341,
+      9.185,
+      9.485,
+      8.88,
+      8.479,
+      16.121,
+      11.218,
+      9.47,
+      8.036,
+      8.289,
+      11.878,
+      8.9,
+      8.451,
+      11.248
+     ],
+     "wall_ms_median": 9.185,
+     "wall_ci95": [
+      8.479,
+      10.372
+     ],
+     "cpu_ms_samples": [
+      5.307,
+      4.493,
+      5.177,
+      4.206,
+      4.463,
+      4.416,
+      5.318,
+      5.523,
+      4.924,
+      4.509,
+      4.534,
+      4.843,
+      4.758,
+      4.536,
+      4.247
+     ],
+     "cpu_ms_median": 4.536,
+     "cpu_ci95": [
+      4.493,
+      4.924
+     ],
+     "rss_kb_median": 1392,
+     "rss_kb_samples": [
+      1392,
+      1392,
+      1408,
+      1392,
+      1408,
+      1392,
+      1408,
+      1392,
+      1408,
+      1392,
+      1408,
+      1392,
+      1392,
+      1392,
+      1408
+     ],
+     "output_sigs": [
+      "66776246eef1fc6eb41d99777ee5fc474a2ec6355f254cb80f71f47f583ad23b"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/prime_sieve.canon.tk",
+     "src_sha256": "b82e6d2a7f702a9a1bf80e1adf1581513c6c20b188a66291df946398f1fcc147",
+     "min_sha256": "dab79c77fa16e1506ce748ff3550cbee3c3b0d89f6c88e388d1c691d03f18924",
+     "status": "ok",
+     "binary_bytes": 127008,
+     "tokens": {
+      "proxy8k": 45,
+      "byte256": 202,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 202
+     },
+     "wall_ms_samples": [
+      9.89,
+      8.8,
+      8.309,
+      8.295,
+      9.107,
+      9.122,
+      10.887,
+      11.033,
+      8.153,
+      8.734,
+      7.62,
+      8.7,
+      7.259,
+      8.258,
+      8.52
+     ],
+     "wall_ms_median": 8.7,
+     "wall_ci95": [
+      8.295,
+      9.122
+     ],
+     "cpu_ms_samples": [
+      4.808,
+      4.322,
+      4.546,
+      3.907,
+      4.406,
+      4.664,
+      5.204,
+      4.288,
+      4.16,
+      3.774,
+      4.424,
+      3.84,
+      4.273,
+      3.765,
+      4.05
+     ],
+     "cpu_ms_median": 4.288,
+     "cpu_ci95": [
+      4.05,
+      4.424
+     ],
+     "rss_kb_median": 1408,
+     "rss_kb_samples": [
+      1408,
+      1408,
+      1408,
+      1392,
+      1408,
+      1408,
+      1408,
+      1408,
+      1392,
+      1392,
+      1408,
+      1408,
+      1408,
+      1392,
+      1392
+     ],
+     "output_sigs": [
+      "66776246eef1fc6eb41d99777ee5fc474a2ec6355f254cb80f71f47f583ad23b"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "err-validate-early",
+    "iter-find-first"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": -5.28,
+   "rss_pct": 1.15,
+   "cpu_pct": -5.47,
+   "cpu_ci_overlap": false,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -9,
+    "proxy8k_pct": -16.67,
+    "byte256": -35,
+    "min_bytes": -35
+   }
+  },
+  {
+   "name": "deep_recursion",
+   "kind": "bench",
+   "category": null,
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/deep_recursion.orig.tk",
+     "src_sha256": "0b182f64e37a131f4d1d842149ba7f4f81346280f66b54a99145592f0c82adde",
+     "min_sha256": "0127adc54ff09d5ecfbe0d744b75822a6a32f748bfbf7307a46a8d6b533e0cbf",
+     "status": "ok",
+     "binary_bytes": 126880,
+     "tokens": {
+      "proxy8k": 34,
+      "byte256": 121,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 121
+     },
+     "wall_ms_samples": [
+      169.299,
+      168.24,
+      172.725,
+      170.187,
+      167.122,
+      164.994,
+      171.406,
+      172.848,
+      167.638,
+      173.281,
+      174.609,
+      172.69,
+      165.065,
+      189.95,
+      178.344
+     ],
+     "wall_ms_median": 171.406,
+     "wall_ci95": [
+      168.24,
+      172.848
+     ],
+     "cpu_ms_samples": [
+      158.493,
+      158.629,
+      163.436,
+      161.231,
+      159.189,
+      157.991,
+      162.072,
+      160.054,
+      158.255,
+      163.629,
+      164.061,
+      160.898,
+      157.768,
+      165.853,
+      167.274
+     ],
+     "cpu_ms_median": 160.898,
+     "cpu_ci95": [
+      158.629,
+      163.436
+     ],
+     "rss_kb_median": 1648,
+     "rss_kb_samples": [
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648
+     ],
+     "output_sigs": [
+      "9019e9c085c1f80836d6d446d2c618731468522cf84ea49ff0f95c7c5df07899"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/deep_recursion.canon.tk",
+     "src_sha256": "3a70b13475700c77ad5f6083888de999a36b658978630370f8fbe126ff812ce6",
+     "min_sha256": "dba38a10658cd47cef28d39cab485a5766fc888d687a88903290abe2dc6c52d5",
+     "status": "ok",
+     "binary_bytes": 126888,
+     "tokens": {
+      "proxy8k": 35,
+      "byte256": 118,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 118
+     },
+     "wall_ms_samples": [
+      173.249,
+      168.129,
+      168.572,
+      172.09,
+      169.263,
+      168.671,
+      169.734,
+      174.196,
+      168.383,
+      178.847,
+      169.975,
+      170.851,
+      167.859,
+      172.733,
+      176.111
+     ],
+     "wall_ms_median": 169.975,
+     "wall_ci95": [
+      168.671,
+      172.733
+     ],
+     "cpu_ms_samples": [
+      162.333,
+      159.433,
+      158.957,
+      161.208,
+      160.32,
+      159.286,
+      158.752,
+      163.945,
+      158.81,
+      165.863,
+      160.108,
+      160.26,
+      159.146,
+      160.142,
+      163.427
+     ],
+     "cpu_ms_median": 160.142,
+     "cpu_ci95": [
+      159.286,
+      161.208
+     ],
+     "rss_kb_median": 1648,
+     "rss_kb_samples": [
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648,
+      1648
+     ],
+     "output_sigs": [
+      "9019e9c085c1f80836d6d446d2c618731468522cf84ea49ff0f95c7c5df07899"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "cond-elif-chain",
+    "fn-recursion-vs-loop"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": -0.83,
+   "rss_pct": 0.0,
+   "cpu_pct": -0.47,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": 1,
+    "proxy8k_pct": 2.94,
+    "byte256": -3,
+    "min_bytes": -3
+   }
+  },
+  {
+   "name": "struct_ops",
+   "kind": "bench",
+   "category": null,
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/struct_ops.orig.tk",
+     "src_sha256": "e9c771eeef2388d20a918e6f0fc3bd7d4dc99ad5a2cc513a5e593f2d0c8a7c78",
+     "min_sha256": "93eea256f606e5e28303888da027fe4400f1000d11177782907b8922e44be5eb",
+     "status": "ok",
+     "binary_bytes": 127632,
+     "tokens": {
+      "proxy8k": 172,
+      "byte256": 335,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 335
+     },
+     "wall_ms_samples": [
+      8.489,
+      8.462,
+      13.343,
+      8.861,
+      8.793,
+      7.099,
+      7.302,
+      7.477,
+      9.299,
+      10.91,
+      8.765,
+      12.32,
+      12.144,
+      11.72,
+      9.656
+     ],
+     "wall_ms_median": 8.861,
+     "wall_ci95": [
+      8.489,
+      10.91
+     ],
+     "cpu_ms_samples": [
+      3.403,
+      3.533,
+      3.102,
+      4.2,
+      4.317,
+      2.779,
+      3.364,
+      3.317,
+      3.698,
+      4.324,
+      3.61,
+      3.126,
+      4.354,
+      3.07,
+      3.432
+     ],
+     "cpu_ms_median": 3.432,
+     "cpu_ci95": [
+      3.317,
+      4.2
+     ],
+     "rss_kb_median": 1392,
+     "rss_kb_samples": [
+      1392,
+      1408,
+      1392,
+      1408,
+      1408,
+      1392,
+      1392,
+      1408,
+      1392,
+      1392,
+      1392,
+      1408,
+      1408,
+      1392,
+      1408
+     ],
+     "output_sigs": [
+      "f3256d81fef4798bd2e6a3278777acfa3aace68d9732dc1bf617b42ebb36fafd"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/struct_ops.canon.tk",
+     "src_sha256": "a175d3751dd42370dd7f65dd7500caf67591742ed12c447db63f8877296e749b",
+     "min_sha256": "93eea256f606e5e28303888da027fe4400f1000d11177782907b8922e44be5eb",
+     "status": "ok",
+     "binary_bytes": 127632,
+     "tokens": {
+      "proxy8k": 172,
+      "byte256": 335,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 335
+     },
+     "wall_ms_samples": [
+      7.36,
+      6.545,
+      8.919,
+      7.411,
+      7.152,
+      6.724,
+      6.691,
+      6.674,
+      9.47,
+      6.65,
+      11.631,
+      11.843,
+      11.126,
+      9.47,
+      15.687
+     ],
+     "wall_ms_median": 7.411,
+     "wall_ci95": [
+      6.691,
+      11.126
+     ],
+     "cpu_ms_samples": [
+      3.21,
+      2.809,
+      3.069,
+      3.299,
+      3.418,
+      2.942,
+      3.08,
+      2.898,
+      3.481,
+      3.222,
+      3.485,
+      3.241,
+      3.508,
+      4.371,
+      3.874
+     ],
+     "cpu_ms_median": 3.241,
+     "cpu_ci95": [
+      3.08,
+      3.481
+     ],
+     "rss_kb_median": 1408,
+     "rss_kb_samples": [
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408
+     ],
+     "output_sigs": [
+      "f3256d81fef4798bd2e6a3278777acfa3aace68d9732dc1bf617b42ebb36fafd"
+     ]
+    }
+   },
+   "patterns_applied": [],
+   "verdict": "unchanged",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": true,
+   "wall_pct": -16.36,
+   "rss_pct": 1.15,
+   "cpu_pct": -5.57,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": 0,
+    "proxy8k_pct": 0.0,
+    "byte256": 0,
+    "min_bytes": 0
+   }
+  },
+  {
+   "name": "large_expr",
+   "kind": "bench",
+   "category": null,
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/large_expr.orig.tk",
+     "src_sha256": "f434633beff2944770f98d1e5bad0422b142f871beaec3337bd39c8586baa2fc",
+     "min_sha256": "c8d53f185f7e0f9083f5dca4bc62ae1f77843a0b84bba4b5019f0988f0c33cb5",
+     "status": "ok",
+     "binary_bytes": 127792,
+     "tokens": {
+      "proxy8k": 76,
+      "byte256": 165,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 165
+     },
+     "wall_ms_samples": [
+      10.154,
+      8.954,
+      7.936,
+      8.457,
+      9.875,
+      12.191,
+      12.478,
+      8.598,
+      10.404,
+      8.134,
+      9.887,
+      8.055,
+      9.751,
+      6.581,
+      9.324
+     ],
+     "wall_ms_median": 9.324,
+     "wall_ci95": [
+      8.457,
+      9.887
+     ],
+     "cpu_ms_samples": [
+      4.707,
+      3.524,
+      3.999,
+      4.164,
+      4.737,
+      3.357,
+      4.303,
+      3.664,
+      4.326,
+      3.825,
+      4.361,
+      3.314,
+      3.851,
+      3.138,
+      3.297
+     ],
+     "cpu_ms_median": 3.851,
+     "cpu_ci95": [
+      3.524,
+      4.326
+     ],
+     "rss_kb_median": 1408,
+     "rss_kb_samples": [
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408
+     ],
+     "output_sigs": [
+      "f3256d81fef4798bd2e6a3278777acfa3aace68d9732dc1bf617b42ebb36fafd"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/large_expr.canon.tk",
+     "src_sha256": "e2efc4485de09715696352cd2392a3c068b5df6e2462b9f85eb66b6157f5e0d8",
+     "min_sha256": "c8d53f185f7e0f9083f5dca4bc62ae1f77843a0b84bba4b5019f0988f0c33cb5",
+     "status": "ok",
+     "binary_bytes": 127792,
+     "tokens": {
+      "proxy8k": 76,
+      "byte256": 165,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 165
+     },
+     "wall_ms_samples": [
+      11.753,
+      8.203,
+      7.715,
+      7.633,
+      7.815,
+      6.658,
+      9.442,
+      7.146,
+      9.264,
+      7.092,
+      9.218,
+      7.277,
+      7.762,
+      7.927,
+      8.121
+     ],
+     "wall_ms_median": 7.815,
+     "wall_ci95": [
+      7.633,
+      8.203
+     ],
+     "cpu_ms_samples": [
+      3.919,
+      4.118,
+      3.265,
+      3.693,
+      3.471,
+      3.184,
+      3.918,
+      3.501,
+      3.16,
+      3.456,
+      3.969,
+      3.628,
+      3.969,
+      3.576,
+      3.08
+     ],
+     "cpu_ms_median": 3.576,
+     "cpu_ci95": [
+      3.265,
+      3.919
+     ],
+     "rss_kb_median": 1408,
+     "rss_kb_samples": [
+      1408,
+      1392,
+      1392,
+      1392,
+      1408,
+      1408,
+      1408,
+      1392,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1392,
+      1408
+     ],
+     "output_sigs": [
+      "f3256d81fef4798bd2e6a3278777acfa3aace68d9732dc1bf617b42ebb36fafd"
+     ]
+    }
+   },
+   "patterns_applied": [],
+   "verdict": "unchanged",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": true,
+   "wall_pct": -16.18,
+   "rss_pct": 0.0,
+   "cpu_pct": -7.14,
+   "cpu_ci_overlap": true,
+   "ci_overlap": false,
+   "tokens_delta": {
+    "proxy8k": 0,
+    "proxy8k_pct": 0.0,
+    "byte256": 0,
+    "min_bytes": 0
+   }
+  },
+  {
+   "name": "chained_calls",
+   "kind": "bench",
+   "category": null,
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/chained_calls.orig.tk",
+     "src_sha256": "2251a50aa5c318520eb8665b1897bc0e46c5ac235a1bbfa824d1d493485616ec",
+     "min_sha256": "c35f21f74766015d34bd5cf79a9bf9f74acf00a155f494e7fb891ee19feaf247",
+     "status": "ok",
+     "binary_bytes": 127424,
+     "tokens": {
+      "proxy8k": 72,
+      "byte256": 247,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 247
+     },
+     "wall_ms_samples": [
+      13.271,
+      7.581,
+      7.878,
+      9.326,
+      7.661,
+      9.402,
+      8.237,
+      8.115,
+      8.884,
+      9.246,
+      9.875,
+      7.829,
+      8.486,
+      10.987,
+      8.15
+     ],
+     "wall_ms_median": 8.486,
+     "wall_ci95": [
+      8.115,
+      9.326
+     ],
+     "cpu_ms_samples": [
+      4.292,
+      4.054,
+      3.946,
+      3.979,
+      3.274,
+      4.76,
+      3.425,
+      3.517,
+      4.607,
+      3.885,
+      4.856,
+      3.122,
+      4.399,
+      4.08,
+      3.955
+     ],
+     "cpu_ms_median": 3.979,
+     "cpu_ci95": [
+      3.885,
+      4.292
+     ],
+     "rss_kb_median": 1408,
+     "rss_kb_samples": [
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408,
+      1408
+     ],
+     "output_sigs": [
+      "f3256d81fef4798bd2e6a3278777acfa3aace68d9732dc1bf617b42ebb36fafd"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/chained_calls.canon.tk",
+     "src_sha256": "8044810e99c829251f32897a32b46c1833989e790bd1db8177f9f691a1547fa4",
+     "min_sha256": "c35f21f74766015d34bd5cf79a9bf9f74acf00a155f494e7fb891ee19feaf247",
+     "status": "ok",
+     "binary_bytes": 127424,
+     "tokens": {
+      "proxy8k": 72,
+      "byte256": 247,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 247
+     },
+     "wall_ms_samples": [
+      8.819,
+      11.99,
+      8.723,
+      9.617,
+      7.52,
+      7.374,
+      8.904,
+      8.588,
+      8.06,
+      8.695,
+      10.531,
+      8.991,
+      9.302,
+      9.465,
+      7.091
+     ],
+     "wall_ms_median": 8.819,
+     "wall_ci95": [
+      8.588,
+      9.302
+     ],
+     "cpu_ms_samples": [
+      3.94,
+      4.662,
+      3.623,
+      3.151,
+      3.714,
+      3.564,
+      3.786,
+      4.097,
+      3.609,
+      3.821,
+      4.041,
+      3.757,
+      3.505,
+      3.778,
+      3.738
+     ],
+     "cpu_ms_median": 3.757,
+     "cpu_ci95": [
+      3.623,
+      3.94
+     ],
+     "rss_kb_median": 1392,
+     "rss_kb_samples": [
+      1408,
+      1392,
+      1408,
+      1408,
+      1392,
+      1408,
+      1408,
+      1392,
+      1392,
+      1392,
+      1408,
+      1392,
+      1392,
+      1408,
+      1392
+     ],
+     "output_sigs": [
+      "f3256d81fef4798bd2e6a3278777acfa3aace68d9732dc1bf617b42ebb36fafd"
+     ]
+    }
+   },
+   "patterns_applied": [],
+   "verdict": "unchanged",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": true,
+   "wall_pct": 3.92,
+   "rss_pct": -1.14,
+   "cpu_pct": -5.58,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": 0,
+    "proxy8k_pct": 0.0,
+    "byte256": 0,
+    "min_bytes": 0
+   }
+  },
+  {
+   "name": "collatz",
+   "kind": "bench",
+   "category": null,
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/collatz.orig.tk",
+     "src_sha256": "a2db08a36fc0689a81d63c0d6c840f8ca666d728d851209cddd797598cb9b836",
+     "min_sha256": "3682e14818a626759e6cc6ce8afb95cb9cff5bfa6b8afec47246737fc6cd0d41",
+     "status": "ok",
+     "binary_bytes": 127056,
+     "tokens": {
+      "proxy8k": 46,
+      "byte256": 229,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 229
+     },
+     "wall_ms_samples": [
+      99.141,
+      102.347,
+      106.773,
+      103.362,
+      101.041,
+      107.216,
+      100.442,
+      101.638,
+      100.673,
+      103.252,
+      99.211,
+      99.165,
+      98.937,
+      99.758,
+      99.528
+     ],
+     "wall_ms_median": 100.673,
+     "wall_ci95": [
+      99.528,
+      103.252
+     ],
+     "cpu_ms_samples": [
+      93.531,
+      92.985,
+      95.606,
+      94.143,
+      93.721,
+      95.725,
+      94.184,
+      94.448,
+      93.717,
+      94.102,
+      93.807,
+      92.865,
+      93.554,
+      93.941,
+      93.21
+     ],
+     "cpu_ms_median": 93.807,
+     "cpu_ci95": [
+      93.531,
+      94.143
+     ],
+     "rss_kb_median": 1392,
+     "rss_kb_samples": [
+      1392,
+      1408,
+      1392,
+      1392,
+      1408,
+      1392,
+      1392,
+      1392,
+      1392,
+      1408,
+      1408,
+      1408,
+      1408,
+      1392,
+      1408
+     ],
+     "output_sigs": [
+      "1ef2111a922f350a5d0bd78f6dee203e6714ba601ead1243728455096b357920"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/collatz.canon.tk",
+     "src_sha256": "809b4294a4c624d99ed305f612d2547aa917051ba202d965f12759864af6e4b7",
+     "min_sha256": "ceee26032a97f911e086d739c30b9865685622589ad94dd70bc7216bbf5fd8f0",
+     "status": "ok",
+     "binary_bytes": 127056,
+     "tokens": {
+      "proxy8k": 47,
+      "byte256": 227,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 227
+     },
+     "wall_ms_samples": [
+      101.853,
+      100.826,
+      97.732,
+      99.78,
+      103.216,
+      102.565,
+      103.989,
+      104.163,
+      102.116,
+      106.405,
+      102.828,
+      103.023,
+      99.037,
+      105.337,
+      98.963
+     ],
+     "wall_ms_median": 102.565,
+     "wall_ci95": [
+      99.78,
+      103.216
+     ],
+     "cpu_ms_samples": [
+      93.635,
+      94.225,
+      92.814,
+      93.224,
+      93.815,
+      94.162,
+      95.539,
+      94.814,
+      93.903,
+      94.943,
+      92.991,
+      93.607,
+      93.144,
+      95.113,
+      92.494
+     ],
+     "cpu_ms_median": 93.815,
+     "cpu_ci95": [
+      93.144,
+      94.225
+     ],
+     "rss_kb_median": 1392,
+     "rss_kb_samples": [
+      1392,
+      1408,
+      1408,
+      1392,
+      1392,
+      1392,
+      1392,
+      1408,
+      1392,
+      1408,
+      1392,
+      1408,
+      1392,
+      1408,
+      1408
+     ],
+     "output_sigs": [
+      "1ef2111a922f350a5d0bd78f6dee203e6714ba601ead1243728455096b357920"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "cond-bind-if"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": 1.88,
+   "rss_pct": 0.0,
+   "cpu_pct": 0.01,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": 1,
+    "proxy8k_pct": 2.17,
+    "byte256": -2,
+    "min_bytes": -2
+   }
+  },
+  {
+   "name": "gcd_euler",
+   "kind": "bench",
+   "category": null,
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/gcd_euler.orig.tk",
+     "src_sha256": "b4c6752b75725165fc66e19de024fde27253226694e2d8a85b9a1ced7fc14309",
+     "min_sha256": "b057efac8baee3f53efed098927b639e8eb9b34122b82ebc0ce40673e2ddb074",
+     "status": "ok",
+     "binary_bytes": 127312,
+     "tokens": {
+      "proxy8k": 64,
+      "byte256": 301,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 301
+     },
+     "wall_ms_samples": [
+      1609.391,
+      1590.393,
+      1638.069,
+      1626.824,
+      1583.709,
+      1587.949,
+      1576.853,
+      1596.061,
+      1611.36,
+      1594.781,
+      1603.126,
+      1599.249,
+      1601.984,
+      1623.839,
+      1603.523
+     ],
+     "wall_ms_median": 1601.984,
+     "wall_ci95": [
+      1594.781,
+      1611.36
+     ],
+     "cpu_ms_samples": [
+      1557.177,
+      1551.022,
+      1570.551,
+      1565.099,
+      1544.786,
+      1546.341,
+      1540.289,
+      1552.078,
+      1558.821,
+      1551.003,
+      1553.606,
+      1552.14,
+      1555.034,
+      1567.998,
+      1550.518
+     ],
+     "cpu_ms_median": 1552.14,
+     "cpu_ci95": [
+      1551.003,
+      1558.821
+     ],
+     "rss_kb_median": 1392,
+     "rss_kb_samples": [
+      1408,
+      1392,
+      1392,
+      1392,
+      1408,
+      1408,
+      1408,
+      1408,
+      1392,
+      1392,
+      1392,
+      1408,
+      1392,
+      1392,
+      1408
+     ],
+     "output_sigs": [
+      "a60aedd958e86ddde91007ff068872373d876e80c5b87169b2831f76a9775368"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/gcd_euler.canon.tk",
+     "src_sha256": "cc77f55f7cd0d1b0330d3f077e7cccd4a2cba4b8bf6230a6dbe3b97d7cddea30",
+     "min_sha256": "e5e85f92bbd4a5935ff83eaf9c3cd21955b6cf53a6173738ad08018ed8aefd08",
+     "status": "ok",
+     "binary_bytes": 127312,
+     "tokens": {
+      "proxy8k": 61,
+      "byte256": 286,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 286
+     },
+     "wall_ms_samples": [
+      1589.125,
+      1659.057,
+      1583.045,
+      1592.907,
+      1593.12,
+      1606.223,
+      1584.23,
+      1600.634,
+      1593.673,
+      1615.378,
+      1593.677,
+      1593.211,
+      1591.601,
+      1620.8,
+      1606.243
+     ],
+     "wall_ms_median": 1593.673,
+     "wall_ci95": [
+      1592.907,
+      1606.223
+     ],
+     "cpu_ms_samples": [
+      1548.451,
+      1555.612,
+      1542.785,
+      1548.925,
+      1551.442,
+      1557.298,
+      1542.953,
+      1552.973,
+      1549.489,
+      1560.088,
+      1549.92,
+      1548.524,
+      1551.117,
+      1563.604,
+      1554.592
+     ],
+     "cpu_ms_median": 1551.117,
+     "cpu_ci95": [
+      1548.925,
+      1554.592
+     ],
+     "rss_kb_median": 1392,
+     "rss_kb_samples": [
+      1408,
+      1408,
+      1408,
+      1408,
+      1392,
+      1392,
+      1408,
+      1392,
+      1392,
+      1408,
+      1392,
+      1392,
+      1392,
+      1408,
+      1392
+     ],
+     "output_sigs": [
+      "a60aedd958e86ddde91007ff068872373d876e80c5b87169b2831f76a9775368"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "acc-count-if"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": -0.52,
+   "rss_pct": 0.0,
+   "cpu_pct": -0.07,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -3,
+    "proxy8k_pct": -4.69,
+    "byte256": -15,
+    "min_bytes": -15
+   }
+  },
+  {
+   "name": "AIA-118",
+   "kind": "library",
+   "category": "ai-agents",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/AIA-118.orig.tk",
+     "src_sha256": "0747b2ce9f1cd413a6f3f5ccbe2fe0988804153565cf07c5b686b937687a71c9",
+     "min_sha256": "b6865572f2e69edd36866678b8e9cba239e64d637957c9a38658b2216f9fc916",
+     "status": "ok",
+     "binary_bytes": 144192,
+     "tokens": {
+      "proxy8k": 776,
+      "byte256": 2963,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 3114
+     },
+     "wall_ms_samples": [
+      15.549,
+      15.581,
+      17.143,
+      15.132,
+      20.846,
+      19.487,
+      16.168,
+      14.794,
+      13.566,
+      27.33,
+      14.114,
+      16.411,
+      15.503,
+      14.16,
+      17.223
+     ],
+     "wall_ms_median": 15.581,
+     "wall_ci95": [
+      15.132,
+      17.143
+     ],
+     "cpu_ms_samples": [
+      6.827,
+      7.036,
+      6.728,
+      5.932,
+      7.888,
+      6.103,
+      6.264,
+      6.696,
+      6.412,
+      5.665,
+      5.784,
+      6.92,
+      5.721,
+      5.471,
+      5.772
+     ],
+     "cpu_ms_median": 6.264,
+     "cpu_ci95": [
+      5.772,
+      6.827
+     ],
+     "rss_kb_median": 1472,
+     "rss_kb_samples": [
+      1456,
+      1456,
+      1456,
+      1456,
+      1472,
+      1472,
+      1472,
+      1472,
+      1472,
+      1472,
+      1472,
+      1472,
+      1456,
+      1456,
+      1472
+     ],
+     "output_sigs": [
+      "0afdce912ab422b5d9865cde2539f32ffa01b3b6b4426efdf4f91504b22d1a8d"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/AIA-118.canon.tk",
+     "src_sha256": "3fdba87c77d23e6dc8c0e702943a5d873ded61039912e3925904b85ebf79f5e2",
+     "min_sha256": "17226b1afa971fb96143b1cf8bad2e422080f3d2168683e046e968b543d02ca1",
+     "status": "ok",
+     "binary_bytes": 144192,
+     "tokens": {
+      "proxy8k": 778,
+      "byte256": 2967,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 3118
+     },
+     "wall_ms_samples": [
+      17.212,
+      18.886,
+      16.973,
+      15.682,
+      18.859,
+      15.591,
+      14.613,
+      15.183,
+      13.581,
+      14.737,
+      21.918,
+      24.85,
+      12.764,
+      15.829,
+      14.208
+     ],
+     "wall_ms_median": 15.682,
+     "wall_ci95": [
+      14.737,
+      18.859
+     ],
+     "cpu_ms_samples": [
+      6.5,
+      5.948,
+      6.67,
+      6.731,
+      6.432,
+      6.724,
+      6.276,
+      7.012,
+      6.017,
+      6.301,
+      7.732,
+      8.879,
+      5.578,
+      7.083,
+      6.29
+     ],
+     "cpu_ms_median": 6.5,
+     "cpu_ci95": [
+      6.276,
+      6.731
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1472,
+      1472,
+      1456,
+      1472,
+      1456,
+      1456,
+      1456,
+      1472,
+      1472,
+      1456,
+      1456,
+      1472,
+      1456,
+      1472,
+      1456
+     ],
+     "output_sigs": [
+      "0afdce912ab422b5d9865cde2539f32ffa01b3b6b4426efdf4f91504b22d1a8d"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/AIA-118.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "b6865572f2e69edd36866678b8e9cba239e64d637957c9a38658b2216f9fc916",
+     "tokens": {
+      "proxy8k": 776,
+      "byte256": 2963,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 3114
+     }
+    }
+   },
+   "patterns_applied": [
+    "str-interp-vs-join",
+    "acc-array",
+    "cond-bind-if",
+    "cond-elif-chain",
+    "str-build-loop",
+    "str-array-render",
+    "fn-chain-vs-let"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [
+    {
+     "id": "str-interp-vs-join",
+     "issue": "127.10",
+     "reason": "cycle line keeps builder adds: `first`/ids elements come from a .append-built @str and would print pointers under interpolation"
+    },
+    {
+     "id": "str-build-loop",
+     "issue": null,
+     "reason": "parselist `cur` is reset to \"\" mid-loop and cycle `cyc` reads its own length inside the loop; s.builder has neither reset nor len \u2014 kept as s.concat"
+    }
+   ],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": 0.65,
+   "rss_pct": -1.09,
+   "cpu_pct": 3.77,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": 2,
+    "proxy8k_pct": 0.26,
+    "byte256": 4,
+    "min_bytes": 4
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": 2,
+    "proxy8k_pct": 0.26,
+    "min_bytes": 4
+   }
+  },
+  {
+   "name": "AIA-100",
+   "kind": "library",
+   "category": "ai-agents",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/AIA-100.orig.tk",
+     "src_sha256": "5d5500857855c81917b449c2e7638c049c16a29271c5ea03058930c9f953771e",
+     "min_sha256": "a9e00e4f9338408c54fdd4943cf061cbe1f0ecf3599763b081d57ca65599ecd1",
+     "status": "ok",
+     "binary_bytes": 165584,
+     "tokens": {
+      "proxy8k": 1196,
+      "byte256": 3619,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 3887
+     },
+     "wall_ms_samples": [
+      16.736,
+      16.608,
+      16.049,
+      21.31,
+      17.12,
+      17.908,
+      16.621,
+      17.732,
+      22.266,
+      17.927,
+      20.668,
+      17.718,
+      17.255,
+      17.975,
+      19.391
+     ],
+     "wall_ms_median": 17.732,
+     "wall_ci95": [
+      17.12,
+      19.391
+     ],
+     "cpu_ms_samples": [
+      6.551,
+      7.096,
+      6.338,
+      5.721,
+      6.878,
+      6.384,
+      7.288,
+      6.538,
+      7.279,
+      7.126,
+      6.77,
+      7.621,
+      6.498,
+      6.21,
+      6.406
+     ],
+     "cpu_ms_median": 6.551,
+     "cpu_ci95": [
+      6.384,
+      7.096
+     ],
+     "rss_kb_median": 1488,
+     "rss_kb_samples": [
+      1488,
+      1488,
+      1472,
+      1488,
+      1472,
+      1488,
+      1488,
+      1488,
+      1488,
+      1504,
+      1488,
+      1488,
+      1472,
+      1488,
+      1488
+     ],
+     "output_sigs": [
+      "66d968b70f0b90844a8bb67ff9be165503b12b7902fb23ca117273cf9a658f0f"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/AIA-100.canon.tk",
+     "src_sha256": "ea1c57392d110c2f1e76c8bebc0db155649b83a21b7dede1ddd823fab6202f18",
+     "min_sha256": "f13ed53596715e1517ee32f9426e9be1e1b022be7b0fac342437c05f9c243e90",
+     "status": "ok",
+     "binary_bytes": 165584,
+     "tokens": {
+      "proxy8k": 1144,
+      "byte256": 3482,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 3750
+     },
+     "wall_ms_samples": [
+      19.171,
+      24.986,
+      18.211,
+      15.215,
+      17.201,
+      19.788,
+      23.434,
+      20.652,
+      22.687,
+      24.171,
+      20.568,
+      18.526,
+      14.848,
+      17.802,
+      14.718
+     ],
+     "wall_ms_median": 19.171,
+     "wall_ci95": [
+      17.802,
+      20.652
+     ],
+     "cpu_ms_samples": [
+      6.37,
+      5.953,
+      7.049,
+      5.908,
+      8.317,
+      5.724,
+      7.266,
+      7.381,
+      7.308,
+      8.018,
+      7.65,
+      7.002,
+      6.731,
+      5.956,
+      6.366
+     ],
+     "cpu_ms_median": 7.002,
+     "cpu_ci95": [
+      6.366,
+      7.308
+     ],
+     "rss_kb_median": 1488,
+     "rss_kb_samples": [
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1472,
+      1488,
+      1488,
+      1488,
+      1504,
+      1488,
+      1488,
+      1488
+     ],
+     "output_sigs": [
+      "66d968b70f0b90844a8bb67ff9be165503b12b7902fb23ca117273cf9a658f0f"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "cond-bind-if",
+    "iter-find-first",
+    "acc-array",
+    "fn-chain-vs-let",
+    "str-num-format"
+   ],
+   "verdict": "regressed",
+   "patterns_not_applied": [
+    {
+     "id": "acc-array",
+     "issue": "127.10",
+     "reason": "mkeys/mvals/mtype/magent/marrjoin and setstr's r are @str whose elements are later interpolated (\"\\(prev),\\(add)\", \"[\\(joined)]\"); .append-built @str elements print pointers under interpolation, so +@() is kept"
+    },
+    {
+     "id": "cond-elif-chain",
+     "issue": null,
+     "reason": "new: `let ty=if(f1==\"\\\"\"){\"s\"}el if(f1==\"[\"){\"a\"}el{\"n\"}; mtype=mtype+@(ty)` silently appends NOTHING (array length stays 0; mut-flag `ty` appends fine) \u2014 the two `ty` mut-flag ladders are kept"
+    },
+    {
+     "id": "cond-bind-if",
+     "issue": "127.7",
+     "reason": "`let joined=if(prev==\"\"){add}el if(add==\"\"){prev}el{\"\\(prev),\\(add)\"}` then \"[\\(joined)]\" prints a heap address (interpolating an expression-if-bound str, 127.7 class); the mut-flag nested if/el is kept (so cond-elif-chain is not applied there either)"
+    }
+   ],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": 8.12,
+   "rss_pct": 0.0,
+   "cpu_pct": 6.88,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -52,
+    "proxy8k_pct": -4.35,
+    "byte256": -137,
+    "min_bytes": -137
+   },
+   "suspects": [
+    "cond-bind-if",
+    "iter-find-first",
+    "acc-array",
+    "fn-chain-vs-let",
+    "str-num-format"
+   ],
+   "regression": {
+    "wall": true,
+    "rss": false,
+    "ci_overlap": true
+   }
+  },
+  {
+   "name": "FIN-072",
+   "kind": "library",
+   "category": "calculators-finance",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/FIN-072.orig.tk",
+     "src_sha256": "2eba531e5b3b325a10678e2ff00a3b3a21528f05ee488f59a3e504c5fb8a2894",
+     "min_sha256": "543be35f549d92a80b6fdafeb5666a29b6c9cb11d202516e09aca1e365b2ee95",
+     "status": "ok",
+     "binary_bytes": 127136,
+     "tokens": {
+      "proxy8k": 128,
+      "byte256": 499,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 560
+     },
+     "wall_ms_samples": [
+      15.066,
+      15.545,
+      13.075,
+      20.019,
+      19.87,
+      20.131,
+      18.971,
+      21.364,
+      17.509,
+      14.473,
+      13.761,
+      15.257,
+      16.937,
+      21.087,
+      16.42
+     ],
+     "wall_ms_median": 16.937,
+     "wall_ci95": [
+      15.066,
+      20.019
+     ],
+     "cpu_ms_samples": [
+      6.09,
+      6.746,
+      5.716,
+      7.767,
+      8.907,
+      7.254,
+      7.262,
+      8.384,
+      7.351,
+      6.51,
+      5.699,
+      5.756,
+      7.087,
+      6.699,
+      7.421
+     ],
+     "cpu_ms_median": 7.087,
+     "cpu_ci95": [
+      6.51,
+      7.351
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1440,
+      1424,
+      1424,
+      1456,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1456,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "ee78c639c7d8694598485d692797b95496f173c20208fea802d997ce13378de6"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/FIN-072.canon.tk",
+     "src_sha256": "8e7e5d614e467b2834b558a6f2f7ac6bd9dcf59d7005b3870b1ecfc1a97d6670",
+     "min_sha256": "bb90685e6a3529423ef5d7bf7a2013898835a3f1bcdb1f52776c513185dd2606",
+     "status": "ok",
+     "binary_bytes": 127136,
+     "tokens": {
+      "proxy8k": 128,
+      "byte256": 498,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 559
+     },
+     "wall_ms_samples": [
+      14.644,
+      16.837,
+      23.417,
+      14.709,
+      20.453,
+      18.511,
+      25.026,
+      27.096,
+      14.834,
+      21.513,
+      20.108,
+      16.519,
+      16.838,
+      15.213,
+      17.274
+     ],
+     "wall_ms_median": 17.274,
+     "wall_ci95": [
+      15.213,
+      21.513
+     ],
+     "cpu_ms_samples": [
+      6.446,
+      6.492,
+      6.302,
+      6.149,
+      8.391,
+      8.608,
+      9.579,
+      8.428,
+      6.712,
+      7.575,
+      5.487,
+      7.142,
+      5.868,
+      5.54,
+      7.151
+     ],
+     "cpu_ms_median": 6.712,
+     "cpu_ci95": [
+      6.149,
+      7.575
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1440,
+      1440,
+      1440,
+      1456,
+      1440,
+      1440,
+      1440,
+      1456
+     ],
+     "output_sigs": [
+      "ee78c639c7d8694598485d692797b95496f173c20208fea802d997ce13378de6"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "cond-elif-chain"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": 1.99,
+   "rss_pct": 0.0,
+   "cpu_pct": -5.29,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": 0,
+    "proxy8k_pct": 0.0,
+    "byte256": -1,
+    "min_bytes": -1
+   }
+  },
+  {
+   "name": "FIN-122",
+   "kind": "library",
+   "category": "calculators-finance",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/FIN-122.orig.tk",
+     "src_sha256": "8ad5348ccbcbd18ddc7c913c607d685b013d5399e92db2638f4b8edfc69054ed",
+     "min_sha256": "7dff1d55b070e29d7ae64c2b611f534fa4e6317de77e3dba3699ef34b4916616",
+     "status": "ok",
+     "binary_bytes": 127136,
+     "tokens": {
+      "proxy8k": 250,
+      "byte256": 832,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 840
+     },
+     "wall_ms_samples": [
+      33.12,
+      19.477,
+      16.535,
+      15.952,
+      17.947,
+      14.564,
+      19.527,
+      13.945,
+      13.004,
+      14.265,
+      16.104,
+      14.722,
+      16.132,
+      16.35,
+      16.653
+     ],
+     "wall_ms_median": 16.132,
+     "wall_ci95": [
+      14.722,
+      17.947
+     ],
+     "cpu_ms_samples": [
+      6.907,
+      6.152,
+      6.366,
+      5.546,
+      6.618,
+      6.24,
+      6.071,
+      5.636,
+      5.488,
+      5.947,
+      6.074,
+      5.752,
+      6.097,
+      6.046,
+      6.189
+     ],
+     "cpu_ms_median": 6.074,
+     "cpu_ci95": [
+      5.947,
+      6.189
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456
+     ],
+     "output_sigs": [
+      "a692f3086c50b18bd4ee94066af0353b88a335be37ad110cf5d26cb469cc6b22"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/FIN-122.canon.tk",
+     "src_sha256": "3f702f3fafd44a7868256bcdfff3ec6e06e32ff02cfae0eeb32758dfa036a39d",
+     "min_sha256": "9bb2a4c74ec2f04e77dfd469a8811641a05a2ed539ee98ede3dc411b79860ce4",
+     "status": "ok",
+     "binary_bytes": 127136,
+     "tokens": {
+      "proxy8k": 248,
+      "byte256": 840,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 848
+     },
+     "wall_ms_samples": [
+      14.477,
+      16.348,
+      19.519,
+      16.439,
+      19.256,
+      17.356,
+      14.152,
+      21.824,
+      17.341,
+      13.12,
+      13.568,
+      14.846,
+      28.526,
+      15.769,
+      23.247
+     ],
+     "wall_ms_median": 16.439,
+     "wall_ci95": [
+      14.477,
+      19.519
+     ],
+     "cpu_ms_samples": [
+      5.796,
+      7.369,
+      6.097,
+      6.366,
+      5.832,
+      5.208,
+      6.21,
+      6.626,
+      5.649,
+      5.174,
+      5.22,
+      5.409,
+      6.246,
+      6.121,
+      7.454
+     ],
+     "cpu_ms_median": 6.097,
+     "cpu_ci95": [
+      5.649,
+      6.366
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1440,
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1440,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456,
+      1440
+     ],
+     "output_sigs": [
+      "a692f3086c50b18bd4ee94066af0353b88a335be37ad110cf5d26cb469cc6b22"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "acc-array",
+    "cond-elif-chain"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": 1.9,
+   "rss_pct": 0.0,
+   "cpu_pct": 0.38,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -2,
+    "proxy8k_pct": -0.8,
+    "byte256": 8,
+    "min_bytes": 8
+   }
+  },
+  {
+   "name": "CRY-119",
+   "kind": "library",
+   "category": "crypto-blockchain",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/CRY-119.orig.tk",
+     "src_sha256": "c188246301514cfe3da2bad8f77372dd1ebe0b14f057445d667f1c1645ce08f5",
+     "min_sha256": "3ecccc4ad8b487364e677c300e2c84d56f95fb3f6ca1d997825dc6024f6f6ddb",
+     "status": "ok",
+     "binary_bytes": 143920,
+     "tokens": {
+      "proxy8k": 276,
+      "byte256": 1153,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1161
+     },
+     "wall_ms_samples": [
+      23.926,
+      24.37,
+      26.98,
+      26.346,
+      26.81,
+      20.544,
+      25.58,
+      30.721,
+      21.304,
+      22.059,
+      21.452,
+      26.818,
+      27.454,
+      24.769,
+      18.683
+     ],
+     "wall_ms_median": 24.769,
+     "wall_ci95": [
+      22.059,
+      26.81
+     ],
+     "cpu_ms_samples": [
+      9.992,
+      10.214,
+      10.735,
+      9.213,
+      9.273,
+      9.163,
+      10.699,
+      10.663,
+      9.149,
+      8.129,
+      9.236,
+      8.911,
+      10.746,
+      8.718,
+      8.171
+     ],
+     "cpu_ms_median": 9.236,
+     "cpu_ci95": [
+      9.149,
+      10.214
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1440,
+      1456,
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440
+     ],
+     "output_sigs": [
+      "754718f39f9e86353f28ff9ce056f69ec2640f9e2070b1bea1b88584e1f0fb6e"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/CRY-119.canon.tk",
+     "src_sha256": "d8f89b19790c51fe41bf82bc0fc8287fd82454b083317a306b4deba377dbe08b",
+     "min_sha256": "c6073aece382e2e7ef6a5ea89f41b5c885231e6a46cd34c4e935f3f3d3995f04",
+     "status": "ok",
+     "binary_bytes": 143920,
+     "tokens": {
+      "proxy8k": 264,
+      "byte256": 1126,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1134
+     },
+     "wall_ms_samples": [
+      29.768,
+      21.76,
+      25.336,
+      24.912,
+      24.474,
+      20.321,
+      26.042,
+      33.024,
+      22.922,
+      19.816,
+      21.221,
+      26.586,
+      19.394,
+      18.44,
+      27.061
+     ],
+     "wall_ms_median": 24.474,
+     "wall_ci95": [
+      20.321,
+      26.042
+     ],
+     "cpu_ms_samples": [
+      9.658,
+      9.563,
+      9.675,
+      10.721,
+      9.202,
+      8.877,
+      10.154,
+      13.57,
+      9.061,
+      8.45,
+      7.946,
+      9.032,
+      8.231,
+      8.257,
+      8.757
+     ],
+     "cpu_ms_median": 9.061,
+     "cpu_ci95": [
+      8.757,
+      9.675
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440
+     ],
+     "output_sigs": [
+      "754718f39f9e86353f28ff9ce056f69ec2640f9e2070b1bea1b88584e1f0fb6e"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/CRY-119.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "3ecccc4ad8b487364e677c300e2c84d56f95fb3f6ca1d997825dc6024f6f6ddb",
+     "tokens": {
+      "proxy8k": 276,
+      "byte256": 1153,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1161
+     }
+    }
+   },
+   "patterns_applied": [
+    "str-build-loop",
+    "str-interp-vs-join",
+    "fn-chain-vs-let",
+    "acc-array",
+    "cond-elif-chain"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [
+    {
+     "id": "str-build-loop",
+     "issue": null,
+     "reason": "`cur=s.concat(cur;ch)` is reset to \"\" per item inside the loop; s.builder has no reset, so the concat accumulator stays"
+    }
+   ],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": -1.19,
+   "rss_pct": 0.0,
+   "cpu_pct": -1.89,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -12,
+    "proxy8k_pct": -4.35,
+    "byte256": -27,
+    "min_bytes": -27
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -12,
+    "proxy8k_pct": -4.35,
+    "min_bytes": -27
+   }
+  },
+  {
+   "name": "CRY-041",
+   "kind": "library",
+   "category": "crypto-blockchain",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/CRY-041.orig.tk",
+     "src_sha256": "fc7c269b60770c6864af6cb2267b20383dfb404811bcb6fbf465e6f7bd749b8f",
+     "min_sha256": "320296f478b78df52ddb5c6818300b8973d40df74f1adc64bad802675007014b",
+     "status": "ok",
+     "binary_bytes": 145008,
+     "tokens": {
+      "proxy8k": 1771,
+      "byte256": 4071,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 4128
+     },
+     "wall_ms_samples": [
+      14.598,
+      14.158,
+      13.096,
+      13.441,
+      18.586,
+      20.365,
+      16.48,
+      12.908,
+      16.528,
+      13.727,
+      14.743,
+      19.153,
+      18.759,
+      15.343,
+      16.48
+     ],
+     "wall_ms_median": 15.343,
+     "wall_ci95": [
+      13.727,
+      16.528
+     ],
+     "cpu_ms_samples": [
+      5.637,
+      5.849,
+      5.895,
+      6.143,
+      5.912,
+      6.13,
+      7.678,
+      6.058,
+      6.763,
+      5.95,
+      5.43,
+      7.344,
+      9.356,
+      7.43,
+      6.511
+     ],
+     "cpu_ms_median": 6.13,
+     "cpu_ci95": [
+      5.895,
+      6.763
+     ],
+     "rss_kb_median": 2048,
+     "rss_kb_samples": [
+      2016,
+      2048,
+      2064,
+      2048,
+      2048,
+      2032,
+      2080,
+      2048,
+      2032,
+      2048,
+      2080,
+      2064,
+      2016,
+      2064,
+      2048
+     ],
+     "output_sigs": [
+      "536269652580294c94bf1caf15a6256bd39611518c8f4271a44ba37bf850724f"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/CRY-041.canon.tk",
+     "src_sha256": "21abab8f33bf4239960c73020da6807b1f360f748169424b4d2306b55f0f89d6",
+     "min_sha256": "3bc81d5405cd0a7c43b7c1ae00b3f4995870342138b24875eef1ab881871bdd3",
+     "status": "ok",
+     "binary_bytes": 145072,
+     "tokens": {
+      "proxy8k": 1744,
+      "byte256": 4088,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 4145
+     },
+     "wall_ms_samples": [
+      19.61,
+      21.743,
+      17.026,
+      14.431,
+      15.819,
+      15.47,
+      14.107,
+      13.485,
+      13.733,
+      12.679,
+      14.724,
+      15.81,
+      20.685,
+      15.784,
+      16.015
+     ],
+     "wall_ms_median": 15.784,
+     "wall_ci95": [
+      14.431,
+      17.026
+     ],
+     "cpu_ms_samples": [
+      8.799,
+      7.656,
+      6.606,
+      5.171,
+      5.838,
+      7.057,
+      6.225,
+      5.291,
+      5.074,
+      5.292,
+      6.854,
+      6.049,
+      7.355,
+      6.666,
+      7.329
+     ],
+     "cpu_ms_median": 6.606,
+     "cpu_ci95": [
+      5.838,
+      7.057
+     ],
+     "rss_kb_median": 2032,
+     "rss_kb_samples": [
+      2032,
+      2032,
+      2000,
+      2016,
+      2032,
+      2048,
+      2032,
+      2032,
+      2000,
+      2032,
+      2016,
+      2032,
+      2016,
+      2032,
+      2048
+     ],
+     "output_sigs": [
+      "536269652580294c94bf1caf15a6256bd39611518c8f4271a44ba37bf850724f"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "acc-array",
+    "str-build-loop",
+    "iter-find-first",
+    "fn-chain-vs-let"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": 2.87,
+   "rss_pct": -0.78,
+   "cpu_pct": 7.77,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -27,
+    "proxy8k_pct": -1.52,
+    "byte256": 17,
+    "min_bytes": 17
+   }
+  },
+  {
+   "name": "DAT-121",
+   "kind": "library",
+   "category": "data-processing",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/DAT-121.orig.tk",
+     "src_sha256": "d089f2d9c39e26716ba899e9c19e61693efe3d3b56ff3806be80b5d4918e8368",
+     "min_sha256": "48761e2b7a73142fb9ec638d7e090702ba9a78daa352e6a8d579e0c93c945260",
+     "status": "ok",
+     "binary_bytes": 144608,
+     "tokens": {
+      "proxy8k": 849,
+      "byte256": 3508,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 3508
+     },
+     "wall_ms_samples": [
+      13.872,
+      14.185,
+      12.719,
+      25.528,
+      15.322,
+      15.335,
+      14.946,
+      13.116,
+      13.991,
+      13.679,
+      15.905,
+      15.815,
+      12.551,
+      12.713,
+      12.471
+     ],
+     "wall_ms_median": 13.991,
+     "wall_ci95": [
+      13.116,
+      15.335
+     ],
+     "cpu_ms_samples": [
+      5.971,
+      6.027,
+      4.895,
+      8.579,
+      6.207,
+      5.504,
+      6.029,
+      5.61,
+      5.749,
+      5.323,
+      5.754,
+      6.08,
+      5.504,
+      5.718,
+      5.461
+     ],
+     "cpu_ms_median": 5.749,
+     "cpu_ci95": [
+      5.504,
+      6.027
+     ],
+     "rss_kb_median": 1504,
+     "rss_kb_samples": [
+      1504,
+      1504,
+      1488,
+      1504,
+      1520,
+      1536,
+      1488,
+      1504,
+      1504,
+      1488,
+      1504,
+      1504,
+      1504,
+      1488,
+      1472
+     ],
+     "output_sigs": [
+      "24df40f9acc9c2082b21fb509def49e4a6aaefb00cc6069aeb179e70d25b6ab4"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/DAT-121.canon.tk",
+     "src_sha256": "0f8b2fcccc49190ab41ab25f8f6dcc4eaa993081d0c0312a0eafa6603c902ba2",
+     "min_sha256": "8fa19b8f0d4ea868c9c29434a15902c984b44fd85b623afdcbf0d72d13d6d4bc",
+     "status": "ok",
+     "binary_bytes": 144608,
+     "tokens": {
+      "proxy8k": 743,
+      "byte256": 2783,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 2783
+     },
+     "wall_ms_samples": [
+      12.959,
+      12.597,
+      12.495,
+      12.36,
+      12.963,
+      14.919,
+      16.257,
+      18.305,
+      17.591,
+      15.163,
+      15.664,
+      17.716,
+      19.712,
+      15.211,
+      15.286
+     ],
+     "wall_ms_median": 15.211,
+     "wall_ci95": [
+      12.959,
+      16.257
+     ],
+     "cpu_ms_samples": [
+      5.429,
+      5.558,
+      5.147,
+      5.425,
+      5.687,
+      5.289,
+      4.935,
+      5.914,
+      6.097,
+      5.337,
+      5.745,
+      5.687,
+      6.138,
+      5.757,
+      6.181
+     ],
+     "cpu_ms_median": 5.687,
+     "cpu_ci95": [
+      5.425,
+      5.914
+     ],
+     "rss_kb_median": 1472,
+     "rss_kb_samples": [
+      1488,
+      1472,
+      1472,
+      1472,
+      1488,
+      1488,
+      1472,
+      1472,
+      1520,
+      1472,
+      1472,
+      1504,
+      1488,
+      1472,
+      1472
+     ],
+     "output_sigs": [
+      "24df40f9acc9c2082b21fb509def49e4a6aaefb00cc6069aeb179e70d25b6ab4"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "cond-bool-combine",
+    "cond-elif-chain",
+    "cond-bind-if",
+    "str-num-format",
+    "str-build-loop",
+    "str-interp-vs-join",
+    "fn-chain-vs-let"
+   ],
+   "verdict": "regressed",
+   "patterns_not_applied": [
+    {
+     "id": "str-build-loop",
+     "issue": null,
+     "reason": "soundex `result` reads its own length inside the padding loop and is sliced afterwards; s.builder has no len \u2014 kept as s.concat"
+    },
+    {
+     "id": "err-default",
+     "issue": null,
+     "reason": "charat/soundex tails `let r=mt ..; <s.concat(r;\"\")` left as written: the trailing copy is not a catalogue form and removing it would be a change beyond the pattern"
+    }
+   ],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": 8.72,
+   "rss_pct": -2.13,
+   "cpu_pct": -1.08,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -106,
+    "proxy8k_pct": -12.49,
+    "byte256": -725,
+    "min_bytes": -725
+   },
+   "suspects": [
+    "cond-bool-combine",
+    "cond-elif-chain",
+    "cond-bind-if",
+    "str-num-format",
+    "str-build-loop",
+    "str-interp-vs-join",
+    "fn-chain-vs-let"
+   ],
+   "regression": {
+    "wall": true,
+    "rss": false,
+    "ci_overlap": true
+   }
+  },
+  {
+   "name": "DAT-045",
+   "kind": "library",
+   "category": "data-processing",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/DAT-045.orig.tk",
+     "src_sha256": "6486ba7c178e6d92eb8f7ebcdc6537d7a27dc3a1e40ad38164a72a7b0830e967",
+     "min_sha256": "b801ec3ac9995869b52c745214b66612a07a3275ff7d61d1b4793f38731de363",
+     "status": "ok",
+     "binary_bytes": 127360,
+     "tokens": {
+      "proxy8k": 243,
+      "byte256": 731,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 755
+     },
+     "wall_ms_samples": [
+      16.921,
+      14.309,
+      19.225,
+      29.969,
+      16.581,
+      15.554,
+      14.979,
+      17.571,
+      12.725,
+      13.132,
+      12.728,
+      12.216,
+      14.185,
+      17.432,
+      19.601
+     ],
+     "wall_ms_median": 15.554,
+     "wall_ci95": [
+      14.185,
+      17.571
+     ],
+     "cpu_ms_samples": [
+      6.001,
+      5.401,
+      6.668,
+      7.294,
+      6.638,
+      6.52,
+      5.669,
+      6.422,
+      5.068,
+      5.528,
+      5.229,
+      5.338,
+      5.542,
+      5.813,
+      7.654
+     ],
+     "cpu_ms_median": 5.813,
+     "cpu_ci95": [
+      5.528,
+      6.638
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1424,
+      1424,
+      1440,
+      1424,
+      1440,
+      1424,
+      1440,
+      1440,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "aebfe35bdb4752dba07598d96757eaf1dcf546015f8f40f041759170d560af0b"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/DAT-045.canon.tk",
+     "src_sha256": "8c649e179b5f651573be88a740f1b03356fe06d9386fc1a43de99b6e90646c1a",
+     "min_sha256": "e625b6a27e96aa13fd52059b83c0c3b72cf7e42e58755c52fde5ee45f688cef9",
+     "status": "ok",
+     "binary_bytes": 127360,
+     "tokens": {
+      "proxy8k": 236,
+      "byte256": 689,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 713
+     },
+     "wall_ms_samples": [
+      16.183,
+      14.066,
+      18.891,
+      13.703,
+      16.112,
+      13.994,
+      15.822,
+      18.382,
+      14.865,
+      12.994,
+      12.779,
+      13.431,
+      12.293,
+      12.255,
+      20.173
+     ],
+     "wall_ms_median": 14.066,
+     "wall_ci95": [
+      13.431,
+      16.112
+     ],
+     "cpu_ms_samples": [
+      6.453,
+      6.124,
+      6.615,
+      5.893,
+      6.21,
+      5.431,
+      6.433,
+      7.209,
+      5.916,
+      5.197,
+      5.237,
+      5.516,
+      5.058,
+      4.879,
+      7.483
+     ],
+     "cpu_ms_median": 5.916,
+     "cpu_ci95": [
+      5.431,
+      6.433
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1440,
+      1440,
+      1456,
+      1440,
+      1456,
+      1456,
+      1440,
+      1440,
+      1440,
+      1440,
+      1456,
+      1440,
+      1440,
+      1456
+     ],
+     "output_sigs": [
+      "aebfe35bdb4752dba07598d96757eaf1dcf546015f8f40f041759170d560af0b"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "str-build-loop",
+    "iter-find-first",
+    "fn-chain-vs-let",
+    "str-interp-vs-join"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": -9.57,
+   "rss_pct": 0.0,
+   "cpu_pct": 1.77,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -7,
+    "proxy8k_pct": -2.88,
+    "byte256": -42,
+    "min_bytes": -42
+   }
+  },
+  {
+   "name": "DEV-104",
+   "kind": "library",
+   "category": "devtools",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/DEV-104.orig.tk",
+     "src_sha256": "aee47a9dce2b6ea95ec7efb77a8be4a896113945dcb62bfba8e1ecb18b0a32d5",
+     "min_sha256": "577b41f7c35e5304a30eb40c9598211085a5f007ca884d55a2d11c434398a2a7",
+     "status": "ok",
+     "binary_bytes": 144128,
+     "tokens": {
+      "proxy8k": 433,
+      "byte256": 1580,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1676
+     },
+     "wall_ms_samples": [
+      14.932,
+      12.413,
+      13.199,
+      13.48,
+      14.434,
+      14.175,
+      12.458,
+      12.775,
+      16.901,
+      18.226,
+      19.415,
+      12.595,
+      16.174,
+      17.424,
+      14.484
+     ],
+     "wall_ms_median": 14.434,
+     "wall_ci95": [
+      13.199,
+      16.174
+     ],
+     "cpu_ms_samples": [
+      5.293,
+      5.109,
+      5.757,
+      5.374,
+      5.457,
+      5.089,
+      5.126,
+      5.573,
+      5.218,
+      6.081,
+      6.499,
+      6.054,
+      5.679,
+      6.299,
+      6.315
+     ],
+     "cpu_ms_median": 5.573,
+     "cpu_ci95": [
+      5.293,
+      6.054
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1440,
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456,
+      1440,
+      1440,
+      1456,
+      1440,
+      1440,
+      1456
+     ],
+     "output_sigs": [
+      "1fd52f7d17f02de42986f5e78d3593f585090452fad77ab8e8b4599c88316e60"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/DEV-104.canon.tk",
+     "src_sha256": "b22685df120bff87ebacdf456fcec7223ab960a6c1cbd0ad0f782c6b3fed5bc1",
+     "min_sha256": "15605f4677f6739edec3e359d0d31962b192d18432bdd9c69ffadf62b948d451",
+     "status": "ok",
+     "binary_bytes": 144128,
+     "tokens": {
+      "proxy8k": 357,
+      "byte256": 1242,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1340
+     },
+     "wall_ms_samples": [
+      18.615,
+      13.817,
+      12.785,
+      12.237,
+      14.401,
+      13.54,
+      16.501,
+      11.742,
+      12.724,
+      15.06,
+      18.662,
+      13.437,
+      24.296,
+      18.168,
+      15.597
+     ],
+     "wall_ms_median": 14.401,
+     "wall_ci95": [
+      12.785,
+      18.168
+     ],
+     "cpu_ms_samples": [
+      5.76,
+      5.011,
+      5.16,
+      5.23,
+      5.291,
+      5.021,
+      4.792,
+      4.988,
+      5.63,
+      6.145,
+      6.123,
+      5.687,
+      7.843,
+      6.705,
+      5.752
+     ],
+     "cpu_ms_median": 5.63,
+     "cpu_ci95": [
+      5.16,
+      5.76
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456
+     ],
+     "output_sigs": [
+      "1fd52f7d17f02de42986f5e78d3593f585090452fad77ab8e8b4599c88316e60"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/DEV-104.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "577b41f7c35e5304a30eb40c9598211085a5f007ca884d55a2d11c434398a2a7",
+     "tokens": {
+      "proxy8k": 433,
+      "byte256": 1580,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1676
+     }
+    }
+   },
+   "patterns_applied": [
+    "str-interp-vs-join",
+    "str-num-format",
+    "cond-bind-if",
+    "cond-bool-combine",
+    "acc-count-if",
+    "fn-chain-vs-let",
+    "str-build-loop"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [
+    {
+     "id": "str-repeat-pad",
+     "issue": null,
+     "reason": "pad() is already the canonical lp+concat form; unchanged"
+    }
+   ],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": -0.23,
+   "rss_pct": 0.0,
+   "cpu_pct": 1.02,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -76,
+    "proxy8k_pct": -17.55,
+    "byte256": -338,
+    "min_bytes": -336
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -76,
+    "proxy8k_pct": -17.55,
+    "min_bytes": -336
+   }
+  },
+  {
+   "name": "DEV-045",
+   "kind": "library",
+   "category": "devtools",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/DEV-045.orig.tk",
+     "src_sha256": "c641c72135bb2462c46764367d5f422240f97da3091556a54c2e8a1683b95f71",
+     "min_sha256": "523485b6d0b554f7d61ffcda5083f31790f7bb109cfc1888af68301a2e16a58d",
+     "status": "ok",
+     "binary_bytes": 143888,
+     "tokens": {
+      "proxy8k": 186,
+      "byte256": 974,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1171
+     },
+     "wall_ms_samples": [
+      21.03,
+      12.703,
+      11.896,
+      12.842,
+      17.221,
+      16.892,
+      17.127,
+      16.059,
+      13.553,
+      13.646,
+      13.963,
+      15.116,
+      15.972,
+      16.049,
+      21.711
+     ],
+     "wall_ms_median": 15.972,
+     "wall_ci95": [
+      13.646,
+      17.127
+     ],
+     "cpu_ms_samples": [
+      5.964,
+      5.193,
+      4.874,
+      5.64,
+      5.251,
+      5.385,
+      5.811,
+      5.776,
+      5.69,
+      5.618,
+      5.191,
+      6.979,
+      5.996,
+      6.086,
+      7.038
+     ],
+     "cpu_ms_median": 5.69,
+     "cpu_ci95": [
+      5.385,
+      5.964
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1424,
+      1440
+     ],
+     "output_sigs": [
+      "52a622b14d0b531350d9174bd83e3dc6f26cc483bd966f5a0a5cdf21ddd44c77"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/DEV-045.canon.tk",
+     "src_sha256": "e890d7627b2958a9ba38cf9a9550982cf3faa300936cd86deaa63b945eb7104d",
+     "min_sha256": "68def630815fa4fc1ff09d61cbb64808a2551ddb4e6c1897024ee2e786670c4c",
+     "status": "ok",
+     "binary_bytes": 143888,
+     "tokens": {
+      "proxy8k": 155,
+      "byte256": 795,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 992
+     },
+     "wall_ms_samples": [
+      16.209,
+      14.995,
+      16.64,
+      16.125,
+      18.634,
+      13.097,
+      13.457,
+      14.69,
+      17.372,
+      13.918,
+      13.914,
+      17.353,
+      16.464,
+      13.13,
+      24.178
+     ],
+     "wall_ms_median": 16.125,
+     "wall_ci95": [
+      13.918,
+      17.353
+     ],
+     "cpu_ms_samples": [
+      7.365,
+      6.249,
+      7.661,
+      4.984,
+      6.152,
+      5.777,
+      4.81,
+      5.154,
+      5.283,
+      5.547,
+      5.767,
+      5.881,
+      5.609,
+      5.876,
+      7.488
+     ],
+     "cpu_ms_median": 5.777,
+     "cpu_ci95": [
+      5.283,
+      6.152
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1440,
+      1440,
+      1440,
+      1440,
+      1456,
+      1456,
+      1440,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456
+     ],
+     "output_sigs": [
+      "52a622b14d0b531350d9174bd83e3dc6f26cc483bd966f5a0a5cdf21ddd44c77"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/DEV-045.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "523485b6d0b554f7d61ffcda5083f31790f7bb109cfc1888af68301a2e16a58d",
+     "tokens": {
+      "proxy8k": 186,
+      "byte256": 974,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1171
+     }
+    }
+   },
+   "patterns_applied": [
+    "acc-array",
+    "fn-chain-vs-let",
+    "cond-bool-combine",
+    "cond-elif-chain",
+    "str-interp-vs-join",
+    "str-num-format"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [
+    {
+     "id": "iter-find-first",
+     "issue": null,
+     "reason": "`found` flag + br in the RUN look-ahead is inline in main; direct return needs its own function"
+    }
+   ],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": 0.96,
+   "rss_pct": 1.11,
+   "cpu_pct": 1.53,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -31,
+    "proxy8k_pct": -16.67,
+    "byte256": -179,
+    "min_bytes": -179
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -31,
+    "proxy8k_pct": -16.67,
+    "min_bytes": -179
+   }
+  },
+  {
+   "name": "EDU-098",
+   "kind": "library",
+   "category": "education",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/EDU-098.orig.tk",
+     "src_sha256": "53158909cf883bc4572c202e187a0f58d647ff68e26e9ae192356f7ae56fce55",
+     "min_sha256": "5f9813b2715620338454239ff3c29fa7fcc4717a64949a8404e382489e4fa2a2",
+     "status": "ok",
+     "binary_bytes": 144144,
+     "tokens": {
+      "proxy8k": 383,
+      "byte256": 1271,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1362
+     },
+     "wall_ms_samples": [
+      17.617,
+      12.928,
+      15.412,
+      18.786,
+      13.151,
+      18.338,
+      15.828,
+      15.777,
+      21.301,
+      15.157,
+      16.555,
+      12.649,
+      12.645,
+      13.128,
+      13.015
+     ],
+     "wall_ms_median": 15.412,
+     "wall_ci95": [
+      13.128,
+      16.555
+     ],
+     "cpu_ms_samples": [
+      7.702,
+      5.749,
+      6.312,
+      6.239,
+      5.641,
+      5.364,
+      6.133,
+      5.636,
+      6.917,
+      6.835,
+      6.034,
+      5.298,
+      5.316,
+      5.487,
+      5.451
+     ],
+     "cpu_ms_median": 5.749,
+     "cpu_ci95": [
+      5.487,
+      6.312
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1456,
+      1440,
+      1456,
+      1440,
+      1456,
+      1456,
+      1440,
+      1440,
+      1440,
+      1456,
+      1440,
+      1456,
+      1456,
+      1440
+     ],
+     "output_sigs": [
+      "842af6bdffbe0f5f5e5961c746038608940b8c825e7e9feca0f1a3bf15d6283c"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/EDU-098.canon.tk",
+     "src_sha256": "245b2637a63d6b37d9e61763f80f8142d89bf43332a14d054b765ca6274fdabe",
+     "min_sha256": "7d2182cdf1d166300bcac2f0a9685dbbf19b5623b5923da3d85530ffc1449fe3",
+     "status": "ok",
+     "binary_bytes": 144144,
+     "tokens": {
+      "proxy8k": 357,
+      "byte256": 1204,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1295
+     },
+     "wall_ms_samples": [
+      14.613,
+      13.713,
+      18.298,
+      13.767,
+      14.408,
+      12.235,
+      19.301,
+      14.84,
+      18.817,
+      18.347,
+      14.471,
+      13.248,
+      15.741,
+      13.687,
+      12.588
+     ],
+     "wall_ms_median": 14.471,
+     "wall_ci95": [
+      13.713,
+      15.741
+     ],
+     "cpu_ms_samples": [
+      6.118,
+      5.212,
+      5.824,
+      5.723,
+      6.286,
+      4.821,
+      8.425,
+      6.414,
+      5.682,
+      6.866,
+      5.297,
+      5.93,
+      6.951,
+      5.372,
+      5.422
+     ],
+     "cpu_ms_median": 5.824,
+     "cpu_ci95": [
+      5.422,
+      6.414
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1424,
+      1440,
+      1424,
+      1440,
+      1424,
+      1440,
+      1440,
+      1424,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440,
+      1424,
+      1440
+     ],
+     "output_sigs": [
+      "842af6bdffbe0f5f5e5961c746038608940b8c825e7e9feca0f1a3bf15d6283c"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/EDU-098.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "5f9813b2715620338454239ff3c29fa7fcc4717a64949a8404e382489e4fa2a2",
+     "tokens": {
+      "proxy8k": 383,
+      "byte256": 1271,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1362
+     }
+    }
+   },
+   "patterns_applied": [
+    "fn-chain-vs-let",
+    "cond-bind-if",
+    "acc-array",
+    "coll-swap"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [
+    {
+     "id": "str-interp-vs-join",
+     "issue": "127.10",
+     "reason": "`io.println(s.concat(\"  \";defs.get(k)))` kept: defs is now an .append-built @str and interpolating its element would print a dangling pointer"
+    },
+    {
+     "id": "iter-find-first",
+     "issue": null,
+     "reason": "the two closing-quote scans (`te=e; e=n`) are inline in main, not their own function, so the direct-return canonical form does not apply"
+    },
+    {
+     "id": "parse-json",
+     "issue": null,
+     "reason": "hand JSON scan kept: replacing it with json.dec is a stdlib substitution, not a rewrite of an existing site into its canonical form"
+    }
+   ],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": -6.11,
+   "rss_pct": -1.1,
+   "cpu_pct": 1.3,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -26,
+    "proxy8k_pct": -6.79,
+    "byte256": -67,
+    "min_bytes": -67
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -26,
+    "proxy8k_pct": -6.79,
+    "min_bytes": -67
+   }
+  },
+  {
+   "name": "EDU-085",
+   "kind": "library",
+   "category": "education",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/EDU-085.orig.tk",
+     "src_sha256": "2406e0390eda919c83d839b5d659f8b957bb828bbfb164e99a747d040db98510",
+     "min_sha256": "8dd7d9f9c22f9285ba50ea9b75b2623fa17e586f1c063f7fda4bf7f05238cd10",
+     "status": "ok",
+     "binary_bytes": 144304,
+     "tokens": {
+      "proxy8k": 580,
+      "byte256": 2107,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 2133
+     },
+     "wall_ms_samples": [
+      12.564,
+      21.121,
+      18.335,
+      20.789,
+      21.672,
+      18.949,
+      15.553,
+      22.513,
+      15.794,
+      14.223,
+      16.583,
+      13.876,
+      13.166,
+      17.834,
+      27.446
+     ],
+     "wall_ms_median": 17.834,
+     "wall_ci95": [
+      15.553,
+      20.789
+     ],
+     "cpu_ms_samples": [
+      5.157,
+      7.797,
+      6.513,
+      7.429,
+      8.104,
+      7.439,
+      6.619,
+      6.778,
+      5.985,
+      5.606,
+      6.057,
+      5.144,
+      5.431,
+      5.776,
+      7.9
+     ],
+     "cpu_ms_median": 6.513,
+     "cpu_ci95": [
+      5.776,
+      7.429
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1440,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1472,
+      1456,
+      1456,
+      1472,
+      1456
+     ],
+     "output_sigs": [
+      "303f80f7760333501529874b0a00e7f92788d9bd96098a164c467187949c7ca0"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/EDU-085.canon.tk",
+     "src_sha256": "c346399f03b26887784099642c428ed48325535257b25d403441863165d5b19c",
+     "min_sha256": "ba9a5b3e21114fa5ab2d9ada81dfce98d75d6b380bbaffdead84a39c1adfa4a5",
+     "status": "ok",
+     "binary_bytes": 144304,
+     "tokens": {
+      "proxy8k": 563,
+      "byte256": 2060,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 2086
+     },
+     "wall_ms_samples": [
+      13.721,
+      20.833,
+      17.402,
+      14.306,
+      15.754,
+      16.515,
+      12.827,
+      14.963,
+      13.568,
+      14.07,
+      13.742,
+      12.666,
+      12.469,
+      12.184,
+      19.308
+     ],
+     "wall_ms_median": 14.07,
+     "wall_ci95": [
+      13.568,
+      15.754
+     ],
+     "cpu_ms_samples": [
+      5.313,
+      5.879,
+      5.758,
+      6.203,
+      6.377,
+      7.006,
+      5.49,
+      6.708,
+      5.691,
+      6.172,
+      5.981,
+      5.321,
+      5.293,
+      4.896,
+      7.023
+     ],
+     "cpu_ms_median": 5.879,
+     "cpu_ci95": [
+      5.49,
+      6.203
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1472,
+      1472,
+      1456,
+      1472,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1472,
+      1456,
+      1456,
+      1456,
+      1456
+     ],
+     "output_sigs": [
+      "303f80f7760333501529874b0a00e7f92788d9bd96098a164c467187949c7ca0"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/EDU-085.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "8dd7d9f9c22f9285ba50ea9b75b2623fa17e586f1c063f7fda4bf7f05238cd10",
+     "tokens": {
+      "proxy8k": 580,
+      "byte256": 2107,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 2133
+     }
+    }
+   },
+   "patterns_applied": [
+    "str-build-loop",
+    "fn-chain-vs-let",
+    "acc-array",
+    "cond-bool-combine",
+    "str-interp-vs-join",
+    "str-num-format"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [
+    {
+     "id": "iter-find-first",
+     "issue": null,
+     "reason": "the `found` scan is inline in main and (deliberately) keeps the last match; no direct-return form"
+    },
+    {
+     "id": "parse-json",
+     "issue": null,
+     "reason": "the program is a hand-rolled scanner over nested subject_scores objects; replacing it with json.dec would rewrite the whole program, not a pattern site (json.arr returns $err per the catalogue's applicability note)"
+    }
+   ],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": -21.11,
+   "rss_pct": 0.0,
+   "cpu_pct": -9.73,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -17,
+    "proxy8k_pct": -2.93,
+    "byte256": -47,
+    "min_bytes": -47
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -17,
+    "proxy8k_pct": -2.93,
+    "min_bytes": -47
+   }
+  },
+  {
+   "name": "GAM-117",
+   "kind": "library",
+   "category": "games",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/GAM-117.orig.tk",
+     "src_sha256": "a18330501282d8dfb2dca0e7ccf3f64a99e7e7e263f543bda778debe9fad23b5",
+     "min_sha256": "d3909f95efeafadb7d8b762bbc7e3a956df8233e7ca0ce209deeeab53a44e8df",
+     "status": "ok",
+     "binary_bytes": 143744,
+     "tokens": {
+      "proxy8k": 264,
+      "byte256": 1028,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1062
+     },
+     "wall_ms_samples": [
+      15.995,
+      11.9,
+      15.441,
+      14.378,
+      16.654,
+      14.584,
+      12.552,
+      17.97,
+      15.161,
+      15.855,
+      18.216,
+      16.381,
+      14.585,
+      18.31,
+      14.03
+     ],
+     "wall_ms_median": 15.441,
+     "wall_ci95": [
+      14.378,
+      16.381
+     ],
+     "cpu_ms_samples": [
+      5.127,
+      4.528,
+      5.332,
+      5.332,
+      4.773,
+      5.826,
+      5.583,
+      6.651,
+      5.938,
+      6.374,
+      5.814,
+      5.62,
+      6.1,
+      8.285,
+      5.953
+     ],
+     "cpu_ms_median": 5.814,
+     "cpu_ci95": [
+      5.332,
+      6.1
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1424,
+      1424,
+      1424,
+      1424,
+      1440,
+      1424,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440,
+      1424,
+      1440,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "8e7c0f85c033cb519f5499bc45cf0230ef3a2ba9fcbebed46773eebfff8dbe9d"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/GAM-117.canon.tk",
+     "src_sha256": "4f43749538b9854ed0e27347fa91dc89e93a5694abef38dcc57eccc656189515",
+     "min_sha256": "63dbb58ebe11b1a9985634079f26f8d9bb3cd4fe110efbdc00785354b633c7fb",
+     "status": "ok",
+     "binary_bytes": 143744,
+     "tokens": {
+      "proxy8k": 252,
+      "byte256": 999,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1033
+     },
+     "wall_ms_samples": [
+      12.804,
+      12.789,
+      12.966,
+      14.658,
+      16.925,
+      12.517,
+      13.204,
+      14.172,
+      13.889,
+      20.866,
+      21.023,
+      15.464,
+      26.233,
+      30.127,
+      15.071
+     ],
+     "wall_ms_median": 14.658,
+     "wall_ci95": [
+      13.204,
+      16.925
+     ],
+     "cpu_ms_samples": [
+      5.39,
+      5.184,
+      5.266,
+      5.582,
+      5.347,
+      5.152,
+      5.037,
+      6.541,
+      5.388,
+      9.241,
+      6.931,
+      6.501,
+      7.465,
+      11.066,
+      5.191
+     ],
+     "cpu_ms_median": 5.39,
+     "cpu_ci95": [
+      5.266,
+      6.541
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1440,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440
+     ],
+     "output_sigs": [
+      "8e7c0f85c033cb519f5499bc45cf0230ef3a2ba9fcbebed46773eebfff8dbe9d"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/GAM-117.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "d3909f95efeafadb7d8b762bbc7e3a956df8233e7ca0ce209deeeab53a44e8df",
+     "tokens": {
+      "proxy8k": 264,
+      "byte256": 1028,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1062
+     }
+    }
+   },
+   "patterns_applied": [
+    "acc-array",
+    "str-build-loop",
+    "fn-chain-vs-let",
+    "cond-bool-combine",
+    "str-interp-vs-join"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [
+    {
+     "id": "iter-find-first",
+     "issue": null,
+     "reason": "isFound scan is inline in main (needs br/flag); not its own function"
+    }
+   ],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": -5.07,
+   "rss_pct": 1.11,
+   "cpu_pct": -7.29,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -12,
+    "proxy8k_pct": -4.55,
+    "byte256": -29,
+    "min_bytes": -29
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -12,
+    "proxy8k_pct": -4.55,
+    "min_bytes": -29
+   }
+  },
+  {
+   "name": "GAM-072",
+   "kind": "library",
+   "category": "games",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/GAM-072.orig.tk",
+     "src_sha256": "eb87bc9d286e421f8f019b82bbf1d2eb213d762a1f589a3d25b77809082e0ca5",
+     "min_sha256": "dee09b5ce4ff8f703eead4f34eca3ac64b10ee62711a6ed266a5629b1652328c",
+     "status": "ok",
+     "binary_bytes": 143968,
+     "tokens": {
+      "proxy8k": 263,
+      "byte256": 907,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 937
+     },
+     "wall_ms_samples": [
+      28.749,
+      21.49,
+      27.322,
+      26.785,
+      22.912,
+      30.746,
+      28.683,
+      24.304,
+      27.41,
+      23.174,
+      43.698,
+      29.919,
+      26.316,
+      27.779,
+      28.964
+     ],
+     "wall_ms_median": 27.41,
+     "wall_ci95": [
+      26.316,
+      28.749
+     ],
+     "cpu_ms_samples": [
+      10.624,
+      9.465,
+      9.941,
+      9.93,
+      8.63,
+      11.457,
+      12.437,
+      10.368,
+      9.177,
+      10.087,
+      13.65,
+      11.699,
+      11.22,
+      11.901,
+      13.19
+     ],
+     "cpu_ms_median": 10.624,
+     "cpu_ci95": [
+      9.941,
+      11.901
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1440,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456
+     ],
+     "output_sigs": [
+      "ad2dd2a8ecde14114c506ac08a54d7026dcd5e6c0615be98da1442ffce4f2236"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/GAM-072.canon.tk",
+     "src_sha256": "df359fe5fba2af37172753453c2a787b574270a19f6d5406cd974992a152b23b",
+     "min_sha256": "cdb16233e6354601ea3d8a588ab6a08f292af8c139685eaf1626f835d9e644c6",
+     "status": "ok",
+     "binary_bytes": 144000,
+     "tokens": {
+      "proxy8k": 250,
+      "byte256": 809,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 835
+     },
+     "wall_ms_samples": [
+      28.618,
+      24.318,
+      29.612,
+      36.404,
+      24.043,
+      25.354,
+      25.838,
+      22.934,
+      24.627,
+      23.008,
+      34.562,
+      30.051,
+      26.173,
+      33.555,
+      36.606
+     ],
+     "wall_ms_median": 26.173,
+     "wall_ci95": [
+      24.627,
+      30.051
+     ],
+     "cpu_ms_samples": [
+      10.233,
+      9.849,
+      10.468,
+      11.006,
+      8.698,
+      9.296,
+      9.16,
+      8.308,
+      9.052,
+      9.944,
+      11.988,
+      11.838,
+      12.395,
+      12.788,
+      13.109
+     ],
+     "cpu_ms_median": 10.233,
+     "cpu_ci95": [
+      9.296,
+      11.838
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1456,
+      1456
+     ],
+     "output_sigs": [
+      "ad2dd2a8ecde14114c506ac08a54d7026dcd5e6c0615be98da1442ffce4f2236"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/GAM-072.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "dee09b5ce4ff8f703eead4f34eca3ac64b10ee62711a6ed266a5629b1652328c",
+     "tokens": {
+      "proxy8k": 263,
+      "byte256": 907,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 937
+     }
+    }
+   },
+   "patterns_applied": [
+    "cond-bool-combine",
+    "fn-chain-vs-let",
+    "cond-bind-if",
+    "cond-elif-chain"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": -4.51,
+   "rss_pct": 0.0,
+   "cpu_pct": -3.68,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -13,
+    "proxy8k_pct": -4.94,
+    "byte256": -98,
+    "min_bytes": -102
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -13,
+    "proxy8k_pct": -4.94,
+    "min_bytes": -102
+   }
+  },
+  {
+   "name": "GAZ-041",
+   "kind": "library",
+   "category": "gazeta",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/GAZ-041.orig.tk",
+     "src_sha256": "29594c7d8c1d5e1c7349e5bb524d47145edc5440feaa0d055d2bd777e8ad53e4",
+     "min_sha256": "c63b6b2de8133a9f70032a0e644131338042207eb3cc98fbf02371d31a58f51d",
+     "status": "ok",
+     "binary_bytes": 144768,
+     "tokens": {
+      "proxy8k": 432,
+      "byte256": 1326,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1349
+     },
+     "wall_ms_samples": [
+      40.441,
+      41.326,
+      43.171,
+      51.408,
+      46.572,
+      45.806,
+      39.115,
+      48.07,
+      40.131,
+      55.024,
+      58.26,
+      66.207,
+      46.372,
+      45.669,
+      49.373
+     ],
+     "wall_ms_median": 46.372,
+     "wall_ci95": [
+      43.171,
+      51.408
+     ],
+     "cpu_ms_samples": [
+      17.886,
+      16.467,
+      18.643,
+      18.836,
+      16.46,
+      16.368,
+      17.497,
+      18.851,
+      17.826,
+      22.849,
+      22.968,
+      21.584,
+      18.471,
+      16.942,
+      18.462
+     ],
+     "cpu_ms_median": 18.462,
+     "cpu_ci95": [
+      17.497,
+      18.836
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1456,
+      1440,
+      1440,
+      1440,
+      1456,
+      1440,
+      1440,
+      1440,
+      1440,
+      1456,
+      1456,
+      1440,
+      1456,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "f5c2730623294b8d6f17a5a179ab4d15c05d9d3558d8f43579b3e51f281b542b"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/GAZ-041.canon.tk",
+     "src_sha256": "67025260f9bcb2cb01e8c9aa4eb5d50d5cf806ad2925fd2a20847d87d687f7be",
+     "min_sha256": "3c22bf4b9e71039ff761a8eb89c7fcfe14019b828c6b8a7fbb4ab49b78602e6b",
+     "status": "ok",
+     "binary_bytes": 144784,
+     "tokens": {
+      "proxy8k": 427,
+      "byte256": 1286,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1309
+     },
+     "wall_ms_samples": [
+      55.188,
+      44.261,
+      45.527,
+      45.845,
+      40.952,
+      46.106,
+      37.401,
+      41.875,
+      56.621,
+      64.364,
+      59.548,
+      71.026,
+      53.371,
+      42.799,
+      52.543
+     ],
+     "wall_ms_median": 46.106,
+     "wall_ci95": [
+      42.799,
+      55.188
+     ],
+     "cpu_ms_samples": [
+      17.964,
+      18.286,
+      14.886,
+      16.934,
+      15.859,
+      15.975,
+      14.091,
+      14.578,
+      17.806,
+      20.679,
+      20.229,
+      23.243,
+      16.756,
+      16.261,
+      20.0
+     ],
+     "cpu_ms_median": 16.934,
+     "cpu_ci95": [
+      15.975,
+      18.286
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1424,
+      1456,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "f5c2730623294b8d6f17a5a179ab4d15c05d9d3558d8f43579b3e51f281b542b"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "cond-bind-if",
+    "str-build-loop",
+    "str-interp-vs-join",
+    "str-num-format"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [
+    {
+     "id": "acc-min-max",
+     "issue": null,
+     "reason": "maxgap running max is already the lp hot-path form"
+    }
+   ],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": -0.57,
+   "rss_pct": 0.0,
+   "cpu_pct": -8.28,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -5,
+    "proxy8k_pct": -1.16,
+    "byte256": -40,
+    "min_bytes": -40
+   }
+  },
+  {
+   "name": "GAZ-012",
+   "kind": "library",
+   "category": "gazeta",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/GAZ-012.orig.tk",
+     "src_sha256": "9c6512f159485f817b9f65e26d2df668b40566e2ed172d5ef366801c9d811abd",
+     "min_sha256": "087cc4e9c01973257d42298a63289177b3a2c4f6eb2f995595641fafdec1f4f0",
+     "status": "ok",
+     "binary_bytes": 144848,
+     "tokens": {
+      "proxy8k": 697,
+      "byte256": 2537,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 2602
+     },
+     "wall_ms_samples": [
+      109.653,
+      93.072,
+      120.237,
+      110.836,
+      96.126,
+      120.477,
+      96.734,
+      82.893,
+      97.216,
+      137.22,
+      112.396,
+      106.19,
+      89.899,
+      92.761,
+      114.841
+     ],
+     "wall_ms_median": 106.19,
+     "wall_ci95": [
+      93.072,
+      112.396
+     ],
+     "cpu_ms_samples": [
+      48.502,
+      41.555,
+      44.28,
+      46.377,
+      44.605,
+      45.766,
+      41.764,
+      36.498,
+      40.806,
+      52.131,
+      46.576,
+      42.69,
+      40.289,
+      38.518,
+      46.527
+     ],
+     "cpu_ms_median": 44.28,
+     "cpu_ci95": [
+      40.806,
+      46.527
+     ],
+     "rss_kb_median": 39808,
+     "rss_kb_samples": [
+      39840,
+      39872,
+      39808,
+      39808,
+      39840,
+      39824,
+      39808,
+      39776,
+      39808,
+      39808,
+      39856,
+      39792,
+      39840,
+      39840,
+      39808
+     ],
+     "output_sigs": [
+      "3b790b42ad77c5f13e4dff6140fba1a610445444331d3304fd61cb9be8f65a11"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/GAZ-012.canon.tk",
+     "src_sha256": "0f114e59f20ff1f9df0bac7b56a1cb396a12aa2f7f9658ee7029f0dca8557364",
+     "min_sha256": "dfc0412e20170c923023be12c3a27d5af9ac42bd83d30c716166a07b883a7e9f",
+     "status": "ok",
+     "binary_bytes": 144848,
+     "tokens": {
+      "proxy8k": 680,
+      "byte256": 2472,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 2537
+     },
+     "wall_ms_samples": [
+      86.0,
+      96.063,
+      107.259,
+      102.483,
+      93.01,
+      112.0,
+      107.647,
+      85.884,
+      117.384,
+      116.274,
+      104.772,
+      104.256,
+      126.813,
+      94.526,
+      125.236
+     ],
+     "wall_ms_median": 104.772,
+     "wall_ci95": [
+      94.526,
+      116.274
+     ],
+     "cpu_ms_samples": [
+      39.25,
+      41.825,
+      49.03,
+      43.883,
+      41.489,
+      50.388,
+      45.382,
+      37.698,
+      46.127,
+      45.641,
+      46.779,
+      46.074,
+      45.413,
+      37.639,
+      51.055
+     ],
+     "cpu_ms_median": 45.413,
+     "cpu_ci95": [
+      41.489,
+      46.779
+     ],
+     "rss_kb_median": 36032,
+     "rss_kb_samples": [
+      36064,
+      36016,
+      36000,
+      36016,
+      36016,
+      36016,
+      36016,
+      36016,
+      36032,
+      36064,
+      36032,
+      36064,
+      36080,
+      36032,
+      36064
+     ],
+     "output_sigs": [
+      "3b790b42ad77c5f13e4dff6140fba1a610445444331d3304fd61cb9be8f65a11"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "str-build-loop",
+    "str-num-format",
+    "str-interp-vs-join",
+    "fn-chain-vs-let",
+    "cond-bool-combine",
+    "cond-elif-chain",
+    "cond-bind-if"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [
+    {
+     "id": "iter-find-first",
+     "issue": null,
+     "reason": "the `done` flag loop and bge scans are inline/statement-position (not their own function); the catalogue form needs a direct `<` return"
+    },
+    {
+     "id": "acc-array",
+     "issue": null,
+     "reason": "no `x=x+@(v)` sites; the program already uses reassigned `.push`"
+    }
+   ],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": -1.34,
+   "rss_pct": -9.49,
+   "cpu_pct": 2.56,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -17,
+    "proxy8k_pct": -2.44,
+    "byte256": -65,
+    "min_bytes": -65
+   }
+  },
+  {
+   "name": "MFG-051",
+   "kind": "library",
+   "category": "manufacturing-ml",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/MFG-051.orig.tk",
+     "src_sha256": "185fea905dab8c75c89c99b134dfb6a57a9fcb28ac49f33093f550aa6f2e7b20",
+     "min_sha256": "eec399bb8addb7e5b4ccca80e2d2a1aa33db0be93a5bf45bfdbd86755a67a32d",
+     "status": "ok",
+     "binary_bytes": 147488,
+     "tokens": {
+      "proxy8k": 640,
+      "byte256": 2159,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 2243
+     },
+     "wall_ms_samples": [
+      6.455,
+      7.498,
+      6.691,
+      6.417,
+      8.176,
+      10.974,
+      6.982,
+      6.472,
+      6.616,
+      6.532,
+      6.613,
+      6.304,
+      7.816,
+      7.259,
+      8.84
+     ],
+     "wall_ms_median": 6.691,
+     "wall_ci95": [
+      6.472,
+      7.498
+     ],
+     "cpu_ms_samples": [
+      2.995,
+      3.135,
+      3.036,
+      2.987,
+      2.437,
+      2.748,
+      3.196,
+      2.765,
+      2.919,
+      2.542,
+      2.936,
+      2.679,
+      3.409,
+      3.019,
+      3.152
+     ],
+     "cpu_ms_median": 2.987,
+     "cpu_ci95": [
+      2.765,
+      3.135
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1456,
+      1456,
+      1472,
+      1456,
+      1456,
+      1456,
+      1456,
+      1472,
+      1472,
+      1472,
+      1456,
+      1472,
+      1456,
+      1472
+     ],
+     "output_sigs": [
+      "f0f111ed2b8ad10297b842dc65c18f56eca2a48ce28703edda1de82d2442a798"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/MFG-051.canon.tk",
+     "src_sha256": "b8352dcdb925c78e398f71a51fc37d69f34169267675f6589fb7536234bb2941",
+     "min_sha256": "d6c99d7a26c2f50dd147a720df6dd0d4420cb50f0c142eb7a380546e1864f341",
+     "status": "ok",
+     "binary_bytes": 147472,
+     "tokens": {
+      "proxy8k": 579,
+      "byte256": 1874,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1958
+     },
+     "wall_ms_samples": [
+      8.718,
+      9.642,
+      6.572,
+      6.718,
+      7.86,
+      6.631,
+      7.908,
+      7.965,
+      8.688,
+      8.83,
+      6.749,
+      7.486,
+      8.909,
+      6.378,
+      11.264
+     ],
+     "wall_ms_median": 7.908,
+     "wall_ci95": [
+      6.718,
+      8.83
+     ],
+     "cpu_ms_samples": [
+      2.97,
+      3.209,
+      3.036,
+      3.072,
+      2.485,
+      2.789,
+      2.769,
+      3.113,
+      2.799,
+      2.744,
+      2.785,
+      2.701,
+      4.021,
+      2.64,
+      2.466
+     ],
+     "cpu_ms_median": 2.789,
+     "cpu_ci95": [
+      2.744,
+      3.072
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1456,
+      1440,
+      1456,
+      1456,
+      1440,
+      1440,
+      1440,
+      1440,
+      1456,
+      1440,
+      1456,
+      1456,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "f0f111ed2b8ad10297b842dc65c18f56eca2a48ce28703edda1de82d2442a798"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "fn-chain-vs-let",
+    "acc-array",
+    "cond-bind-if",
+    "cond-bool-combine",
+    "cond-elif-chain",
+    "str-build-loop",
+    "str-array-render",
+    "str-interp-vs-join"
+   ],
+   "verdict": "regressed",
+   "patterns_not_applied": [
+    {
+     "id": "iter-find-first",
+     "issue": null,
+     "reason": "`pos` key scan is inline in main (finds last match; no br)"
+    },
+    {
+     "id": "cond-bind-if",
+     "issue": null,
+     "reason": "fstr/pstr conditional `.0` suffix reads the value it rewrites; an expression-if would evaluate s.fromfloat twice \u2014 left as is"
+    }
+   ],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": 18.19,
+   "rss_pct": -1.1,
+   "cpu_pct": -6.63,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -61,
+    "proxy8k_pct": -9.53,
+    "byte256": -285,
+    "min_bytes": -285
+   },
+   "suspects": [
+    "fn-chain-vs-let",
+    "acc-array",
+    "cond-bind-if",
+    "cond-bool-combine",
+    "cond-elif-chain",
+    "str-build-loop",
+    "str-array-render",
+    "str-interp-vs-join"
+   ],
+   "regression": {
+    "wall": true,
+    "rss": false,
+    "ci_overlap": true
+   }
+  },
+  {
+   "name": "MFG-007",
+   "kind": "library",
+   "category": "manufacturing-ml",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/MFG-007.orig.tk",
+     "src_sha256": "1fa19499ff9f7076cb7e74b7c31038ddd26c2ba5b97dd448af78978c18f463c0",
+     "min_sha256": "7c8d436b4c089fc798653fb9726275c2c79060f2028259c944edcedf878441a9",
+     "status": "ok",
+     "binary_bytes": 143936,
+     "tokens": {
+      "proxy8k": 399,
+      "byte256": 1338,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1365
+     },
+     "wall_ms_samples": [
+      6.92,
+      12.299,
+      8.577,
+      10.129,
+      10.029,
+      7.576,
+      7.097,
+      6.287,
+      6.574,
+      6.087,
+      9.311,
+      6.676,
+      7.386,
+      6.032,
+      8.809
+     ],
+     "wall_ms_median": 7.386,
+     "wall_ci95": [
+      6.676,
+      8.809
+     ],
+     "cpu_ms_samples": [
+      3.126,
+      4.272,
+      3.213,
+      4.134,
+      2.921,
+      3.487,
+      2.835,
+      2.97,
+      2.796,
+      2.408,
+      4.016,
+      2.593,
+      3.1,
+      2.338,
+      2.726
+     ],
+     "cpu_ms_median": 2.97,
+     "cpu_ci95": [
+      2.796,
+      3.487
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1440,
+      1440,
+      1456,
+      1456,
+      1440,
+      1440,
+      1456,
+      1456,
+      1440,
+      1456
+     ],
+     "output_sigs": [
+      "e02bdf580f7398d54131d5e114c1b38aaaeb2ea45669e229e812e680ec793b64"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/MFG-007.canon.tk",
+     "src_sha256": "1d9e0afe2a5258c86ee5506dcc150f9176fbc25649cc58fcee6922c28d6c1e2e",
+     "min_sha256": "b69f282583db27a6db68dc64054740f3dc3ead1e6d255d1bb3484f824d633bb9",
+     "status": "ok",
+     "binary_bytes": 143984,
+     "tokens": {
+      "proxy8k": 370,
+      "byte256": 1109,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1136
+     },
+     "wall_ms_samples": [
+      7.595,
+      13.222,
+      13.696,
+      15.26,
+      10.575,
+      10.166,
+      8.464,
+      12.184,
+      8.643,
+      6.339,
+      10.929,
+      7.727,
+      6.346,
+      6.292,
+      6.411
+     ],
+     "wall_ms_median": 8.643,
+     "wall_ci95": [
+      6.411,
+      12.184
+     ],
+     "cpu_ms_samples": [
+      3.291,
+      4.114,
+      3.41,
+      3.136,
+      3.591,
+      5.087,
+      2.727,
+      2.472,
+      2.692,
+      2.399,
+      4.404,
+      3.252,
+      2.886,
+      2.555,
+      2.615
+     ],
+     "cpu_ms_median": 3.136,
+     "cpu_ci95": [
+      2.692,
+      3.41
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1440,
+      1440,
+      1440,
+      1456,
+      1456,
+      1456,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "e02bdf580f7398d54131d5e114c1b38aaaeb2ea45669e229e812e680ec793b64"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/MFG-007.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "7c8d436b4c089fc798653fb9726275c2c79060f2028259c944edcedf878441a9",
+     "tokens": {
+      "proxy8k": 399,
+      "byte256": 1338,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1365
+     }
+    }
+   },
+   "patterns_applied": [
+    "cond-bind-if",
+    "str-num-format",
+    "str-interp-vs-join"
+   ],
+   "verdict": "regressed",
+   "patterns_not_applied": [
+    {
+     "id": "cond-elif-chain",
+     "issue": null,
+     "reason": "d3of/d4of are sequential guard returns (err-validate-early canonical form a); left as they are"
+    }
+   ],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": 17.02,
+   "rss_pct": -1.1,
+   "cpu_pct": 5.59,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -29,
+    "proxy8k_pct": -7.27,
+    "byte256": -229,
+    "min_bytes": -229
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -29,
+    "proxy8k_pct": -7.27,
+    "min_bytes": -229
+   },
+   "suspects": [
+    "cond-bind-if",
+    "str-num-format",
+    "str-interp-vs-join"
+   ],
+   "regression": {
+    "wall": true,
+    "rss": false,
+    "ci_overlap": true
+   }
+  },
+  {
+   "name": "MED-062",
+   "kind": "library",
+   "category": "media-content",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/MED-062.orig.tk",
+     "src_sha256": "4166bb3ecce5a5cfbc468c40bcda1674f7bc4a12dc5921cbcf0478bfb4783d06",
+     "min_sha256": "506fd4601c27ed244420b8ae8bf28ad71196740973f073e8be448aed637b9fb8",
+     "status": "ok",
+     "binary_bytes": 143856,
+     "tokens": {
+      "proxy8k": 182,
+      "byte256": 848,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 849
+     },
+     "wall_ms_samples": [
+      18.395,
+      18.502,
+      24.984,
+      13.344,
+      13.233,
+      26.105,
+      20.973,
+      22.277,
+      19.635,
+      23.93,
+      18.197,
+      21.314,
+      18.999,
+      19.265,
+      17.897
+     ],
+     "wall_ms_median": 19.265,
+     "wall_ci95": [
+      18.395,
+      22.277
+     ],
+     "cpu_ms_samples": [
+      8.405,
+      7.111,
+      8.675,
+      6.025,
+      5.97,
+      10.47,
+      8.423,
+      7.058,
+      8.204,
+      6.914,
+      7.416,
+      5.754,
+      6.875,
+      8.904,
+      7.45
+     ],
+     "cpu_ms_median": 7.416,
+     "cpu_ci95": [
+      6.914,
+      8.405
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456
+     ],
+     "output_sigs": [
+      "ddf8e10a23524f35e39ef9ac0bd95797da9c920385fa2d8d86c69f07251f144e"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/MED-062.canon.tk",
+     "src_sha256": "dc6433c3dfd59351813fbf6648b1cab47355fb27a70f21ff714530d3bf50f2a2",
+     "min_sha256": "a79cea09d8303b70cf5f792c3e238e9a022e2879518ce4b9aaca470fff18640b",
+     "status": "ok",
+     "binary_bytes": 143856,
+     "tokens": {
+      "proxy8k": 178,
+      "byte256": 815,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 816
+     },
+     "wall_ms_samples": [
+      18.176,
+      16.715,
+      17.97,
+      15.465,
+      15.91,
+      19.948,
+      17.13,
+      18.933,
+      22.479,
+      36.422,
+      24.519,
+      17.641,
+      20.769,
+      18.844,
+      14.486
+     ],
+     "wall_ms_median": 18.176,
+     "wall_ci95": [
+      17.13,
+      20.769
+     ],
+     "cpu_ms_samples": [
+      7.745,
+      7.136,
+      7.279,
+      6.715,
+      6.879,
+      8.12,
+      8.151,
+      8.415,
+      9.403,
+      7.586,
+      9.042,
+      7.16,
+      8.041,
+      7.243,
+      6.969
+     ],
+     "cpu_ms_median": 7.586,
+     "cpu_ci95": [
+      7.16,
+      8.12
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456,
+      1456,
+      1440,
+      1456,
+      1440,
+      1456
+     ],
+     "output_sigs": [
+      "ddf8e10a23524f35e39ef9ac0bd95797da9c920385fa2d8d86c69f07251f144e"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/MED-062.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "506fd4601c27ed244420b8ae8bf28ad71196740973f073e8be448aed637b9fb8",
+     "tokens": {
+      "proxy8k": 182,
+      "byte256": 848,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 849
+     }
+    }
+   },
+   "patterns_applied": [
+    "str-build-loop",
+    "cond-bool-combine"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": -5.65,
+   "rss_pct": 0.0,
+   "cpu_pct": 2.29,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -4,
+    "proxy8k_pct": -2.2,
+    "byte256": -33,
+    "min_bytes": -33
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -4,
+    "proxy8k_pct": -2.2,
+    "min_bytes": -33
+   }
+  },
+  {
+   "name": "MED-036",
+   "kind": "library",
+   "category": "media-content",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/MED-036.orig.tk",
+     "src_sha256": "d7daccb84972fa562d94fa2d427e37ef8a3650e83945bab4e8513802bcb93cf6",
+     "min_sha256": "63ef66145ce0fad82be0afc21026fb94f676623025187fbf3fc075744f3375dd",
+     "status": "ok",
+     "binary_bytes": 144080,
+     "tokens": {
+      "proxy8k": 252,
+      "byte256": 924,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 943
+     },
+     "wall_ms_samples": [
+      21.426,
+      14.278,
+      19.12,
+      21.195,
+      17.2,
+      24.119,
+      19.29,
+      23.918,
+      22.16,
+      20.301,
+      18.029,
+      20.554,
+      29.422,
+      23.095,
+      17.357
+     ],
+     "wall_ms_median": 20.554,
+     "wall_ci95": [
+      19.12,
+      22.16
+     ],
+     "cpu_ms_samples": [
+      7.162,
+      6.458,
+      7.981,
+      9.376,
+      7.749,
+      6.635,
+      7.981,
+      8.098,
+      7.893,
+      6.107,
+      7.42,
+      8.101,
+      7.153,
+      9.518,
+      6.997
+     ],
+     "cpu_ms_median": 7.749,
+     "cpu_ci95": [
+      7.153,
+      7.981
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456
+     ],
+     "output_sigs": [
+      "ff5b04885597e72ee2846d49f3132f9de9ec336c52ce2749130a2af5e6a6be35"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/MED-036.canon.tk",
+     "src_sha256": "0d109565c58e40060e50a70076f0fe7bda30e49f92ace9de7b954dbcaa30d9a1",
+     "min_sha256": "1ee425fa34e63b6c63d91c05624586c851d44e1b3172bd7770a0b1382dbfcbae",
+     "status": "ok",
+     "binary_bytes": 144080,
+     "tokens": {
+      "proxy8k": 248,
+      "byte256": 916,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 935
+     },
+     "wall_ms_samples": [
+      20.417,
+      18.617,
+      19.502,
+      17.705,
+      20.583,
+      30.208,
+      18.758,
+      25.727,
+      21.738,
+      17.37,
+      18.011,
+      19.841,
+      14.808,
+      19.108,
+      16.658
+     ],
+     "wall_ms_median": 19.108,
+     "wall_ci95": [
+      17.705,
+      20.417
+     ],
+     "cpu_ms_samples": [
+      8.865,
+      6.796,
+      8.254,
+      7.623,
+      8.161,
+      8.685,
+      8.6,
+      10.139,
+      9.827,
+      6.799,
+      8.249,
+      6.998,
+      6.499,
+      6.82,
+      6.644
+     ],
+     "cpu_ms_median": 8.161,
+     "cpu_ci95": [
+      6.799,
+      8.6
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1424,
+      1456,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "ff5b04885597e72ee2846d49f3132f9de9ec336c52ce2749130a2af5e6a6be35"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/MED-036.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "63ef66145ce0fad82be0afc21026fb94f676623025187fbf3fc075744f3375dd",
+     "tokens": {
+      "proxy8k": 252,
+      "byte256": 924,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 943
+     }
+    }
+   },
+   "patterns_applied": [
+    "str-build-loop"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [
+    {
+     "id": "str-interp-vs-join",
+     "issue": "127.7",
+     "reason": "\"lang: \\(lang)\\n\\(code)\" printed a heap address for `code` (a let bound to an expression-if over s.slice results); direct s.add reads used instead"
+    }
+   ],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": -7.04,
+   "rss_pct": -1.1,
+   "cpu_pct": 5.32,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -4,
+    "proxy8k_pct": -1.59,
+    "byte256": -8,
+    "min_bytes": -8
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -4,
+    "proxy8k_pct": -1.59,
+    "min_bytes": -8
+   }
+  },
+  {
+   "name": "MSG-061",
+   "kind": "library",
+   "category": "messaging",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/MSG-061.orig.tk",
+     "src_sha256": "906dc02fe3ec9c6ad95c20ac3a587ea9e5d45ac4f1e3cb8c03dc1e820ea23cc0",
+     "min_sha256": "983baad2440277c5025c603bff6bc73ea89316085b179c3cc8732fdfff0af966",
+     "status": "ok",
+     "binary_bytes": 143920,
+     "tokens": {
+      "proxy8k": 266,
+      "byte256": 1093,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1122
+     },
+     "wall_ms_samples": [
+      21.77,
+      15.468,
+      13.926,
+      15.721,
+      16.672,
+      16.94,
+      22.025,
+      15.903,
+      16.826,
+      16.384,
+      15.135,
+      16.518,
+      16.398,
+      20.509,
+      18.523
+     ],
+     "wall_ms_median": 16.518,
+     "wall_ci95": [
+      15.903,
+      16.94
+     ],
+     "cpu_ms_samples": [
+      8.013,
+      6.515,
+      5.488,
+      5.876,
+      6.736,
+      7.513,
+      6.135,
+      6.777,
+      5.417,
+      5.51,
+      6.362,
+      5.993,
+      6.152,
+      7.55,
+      6.837
+     ],
+     "cpu_ms_median": 6.362,
+     "cpu_ci95": [
+      5.993,
+      6.777
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1424,
+      1440,
+      1424,
+      1424,
+      1440,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440,
+      1424,
+      1440,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "1f5fedc45e1fae8b88aa5f4442566567cc8794fd32fade37501984406920840d"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/MSG-061.canon.tk",
+     "src_sha256": "d7cdb9770d3d55c91b46369342f770034c12b381fbe85e4541457832ee55fb52",
+     "min_sha256": "91121fed61165c3c5971730a1e29afc9dac1554cd2c69f8729aa27c1decc40b9",
+     "status": "ok",
+     "binary_bytes": 143920,
+     "tokens": {
+      "proxy8k": 253,
+      "byte256": 993,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1022
+     },
+     "wall_ms_samples": [
+      26.116,
+      17.117,
+      19.111,
+      13.796,
+      16.285,
+      16.539,
+      16.248,
+      18.758,
+      16.637,
+      16.508,
+      16.487,
+      15.606,
+      15.474,
+      17.802,
+      15.751
+     ],
+     "wall_ms_median": 16.508,
+     "wall_ci95": [
+      15.751,
+      17.117
+     ],
+     "cpu_ms_samples": [
+      9.085,
+      7.274,
+      6.44,
+      6.296,
+      5.759,
+      5.882,
+      6.074,
+      9.045,
+      7.87,
+      6.358,
+      6.19,
+      5.19,
+      5.605,
+      6.08,
+      6.937
+     ],
+     "cpu_ms_median": 6.296,
+     "cpu_ci95": [
+      6.074,
+      7.274
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1456,
+      1440,
+      1456,
+      1440,
+      1440,
+      1456,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1456,
+      1456,
+      1456,
+      1440
+     ],
+     "output_sigs": [
+      "1f5fedc45e1fae8b88aa5f4442566567cc8794fd32fade37501984406920840d"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "str-build-loop",
+    "cond-bind-if",
+    "acc-array",
+    "cond-bool-combine",
+    "str-interp-vs-join",
+    "str-num-format"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": -0.06,
+   "rss_pct": 0.0,
+   "cpu_pct": -1.04,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -13,
+    "proxy8k_pct": -4.89,
+    "byte256": -100,
+    "min_bytes": -100
+   }
+  },
+  {
+   "name": "MSG-038",
+   "kind": "library",
+   "category": "messaging",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/MSG-038.orig.tk",
+     "src_sha256": "9f6a810405582477cbbbc25def186d42eab8f3930bfc78738990311b7b57ae97",
+     "min_sha256": "3bd53d7fea2719ab23e9fd6607556803fc365061a8f8053f346f27e0032ee8d9",
+     "status": "ok",
+     "binary_bytes": 144096,
+     "tokens": {
+      "proxy8k": 285,
+      "byte256": 1157,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1192
+     },
+     "wall_ms_samples": [
+      15.297,
+      14.969,
+      15.495,
+      17.599,
+      21.405,
+      21.671,
+      21.23,
+      33.382,
+      23.213,
+      18.422,
+      15.323,
+      18.139,
+      18.61,
+      24.865,
+      19.265
+     ],
+     "wall_ms_median": 18.61,
+     "wall_ci95": [
+      15.495,
+      21.405
+     ],
+     "cpu_ms_samples": [
+      6.851,
+      6.655,
+      6.649,
+      7.587,
+      6.654,
+      7.989,
+      8.47,
+      10.295,
+      7.919,
+      8.929,
+      6.152,
+      7.056,
+      6.404,
+      8.262,
+      6.725
+     ],
+     "cpu_ms_median": 7.056,
+     "cpu_ci95": [
+      6.655,
+      7.989
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456,
+      1456,
+      1440,
+      1456
+     ],
+     "output_sigs": [
+      "42fda7e51d740a42603bdb976d3c4f69b0251b0c95674d681f3b565872660f6a"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/MSG-038.canon.tk",
+     "src_sha256": "571498df5885f2f766418a6f43ec0e457f1d46b2b952ab4ad6e8717506824b48",
+     "min_sha256": "4f6a61f078dd2c2aa0afea82e79b96ae97240fd63b21b82045909170b6fce823",
+     "status": "ok",
+     "binary_bytes": 144096,
+     "tokens": {
+      "proxy8k": 275,
+      "byte256": 1106,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1141
+     },
+     "wall_ms_samples": [
+      18.665,
+      15.64,
+      14.604,
+      17.328,
+      15.922,
+      17.255,
+      17.443,
+      22.373,
+      19.838,
+      20.746,
+      16.747,
+      17.628,
+      17.237,
+      22.936,
+      18.818
+     ],
+     "wall_ms_median": 17.443,
+     "wall_ci95": [
+      17.237,
+      18.818
+     ],
+     "cpu_ms_samples": [
+      5.207,
+      6.92,
+      6.384,
+      6.971,
+      6.331,
+      5.724,
+      6.91,
+      8.432,
+      7.58,
+      7.622,
+      7.332,
+      7.015,
+      7.147,
+      8.1,
+      6.978
+     ],
+     "cpu_ms_median": 6.978,
+     "cpu_ci95": [
+      6.91,
+      7.332
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1456,
+      1440,
+      1424,
+      1440,
+      1440,
+      1440,
+      1456,
+      1440
+     ],
+     "output_sigs": [
+      "42fda7e51d740a42603bdb976d3c4f69b0251b0c95674d681f3b565872660f6a"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/MSG-038.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "3bd53d7fea2719ab23e9fd6607556803fc365061a8f8053f346f27e0032ee8d9",
+     "tokens": {
+      "proxy8k": 285,
+      "byte256": 1157,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1192
+     }
+    }
+   },
+   "patterns_applied": [
+    "cond-elif-chain",
+    "cond-bool-combine",
+    "str-interp-vs-join",
+    "fn-chain-vs-let"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [
+    {
+     "id": "parse-json",
+     "issue": null,
+     "reason": "hand JSON scan kept (stdlib substitution, not a site rewrite)"
+    }
+   ],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": -6.27,
+   "rss_pct": -1.1,
+   "cpu_pct": -1.11,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -10,
+    "proxy8k_pct": -3.51,
+    "byte256": -51,
+    "min_bytes": -51
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -10,
+    "proxy8k_pct": -3.51,
+    "min_bytes": -51
+   }
+  },
+  {
+   "name": "NET-111",
+   "kind": "library",
+   "category": "networking-rest",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/NET-111.orig.tk",
+     "src_sha256": "566d290cb699a04a33524b47d34570ef89852ac94755207d2f64078e08b98522",
+     "min_sha256": "cfd0deda60a90703755bbf2375be52be299c73e9a8e688d9a52ad6f70239b8c9",
+     "status": "ok",
+     "binary_bytes": 127232,
+     "tokens": {
+      "proxy8k": 116,
+      "byte256": 520,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 538
+     },
+     "wall_ms_samples": [
+      16.883,
+      19.25,
+      16.602,
+      19.593,
+      17.314,
+      37.509,
+      21.778,
+      14.665,
+      20.253,
+      20.095,
+      24.837,
+      21.884,
+      16.464,
+      17.46,
+      16.767
+     ],
+     "wall_ms_median": 19.25,
+     "wall_ci95": [
+      16.767,
+      20.253
+     ],
+     "cpu_ms_samples": [
+      5.667,
+      6.175,
+      6.499,
+      6.998,
+      6.71,
+      7.587,
+      6.291,
+      6.032,
+      5.867,
+      7.471,
+      7.422,
+      6.958,
+      6.589,
+      6.775,
+      6.524
+     ],
+     "cpu_ms_median": 6.589,
+     "cpu_ci95": [
+      6.175,
+      6.998
+     ],
+     "rss_kb_median": 1424,
+     "rss_kb_samples": [
+      1440,
+      1424,
+      1424,
+      1424,
+      1424,
+      1424,
+      1424,
+      1424,
+      1408,
+      1424,
+      1424,
+      1408,
+      1424,
+      1408,
+      1424
+     ],
+     "output_sigs": [
+      "49a089d93c3b90f07f3fcd1b1cbed7b7de6e6b00d953ed4027870492002d4a0f"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/NET-111.canon.tk",
+     "src_sha256": "326495ef34b0817524af2848079a78e4ebb479b2bfc6c422527e972df2b1fc75",
+     "min_sha256": "27dff4577b407fb2d6c2a5d1290d90275cdbcf323eeae9c93a9df091f57c8145",
+     "status": "ok",
+     "binary_bytes": 127232,
+     "tokens": {
+      "proxy8k": 105,
+      "byte256": 474,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 492
+     },
+     "wall_ms_samples": [
+      21.421,
+      15.395,
+      17.112,
+      17.53,
+      20.246,
+      16.787,
+      16.345,
+      16.825,
+      17.585,
+      18.62,
+      17.064,
+      15.932,
+      16.62,
+      18.36,
+      22.056
+     ],
+     "wall_ms_median": 17.112,
+     "wall_ci95": [
+      16.787,
+      18.36
+     ],
+     "cpu_ms_samples": [
+      7.42,
+      6.243,
+      6.148,
+      5.546,
+      6.543,
+      6.242,
+      6.761,
+      5.781,
+      6.646,
+      7.795,
+      7.159,
+      7.189,
+      6.852,
+      6.871,
+      8.05
+     ],
+     "cpu_ms_median": 6.761,
+     "cpu_ci95": [
+      6.242,
+      7.159
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1424,
+      1424,
+      1440,
+      1440,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1424,
+      1424
+     ],
+     "output_sigs": [
+      "49a089d93c3b90f07f3fcd1b1cbed7b7de6e6b00d953ed4027870492002d4a0f"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/NET-111.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "cfd0deda60a90703755bbf2375be52be299c73e9a8e688d9a52ad6f70239b8c9",
+     "tokens": {
+      "proxy8k": 116,
+      "byte256": 520,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 538
+     }
+    }
+   },
+   "patterns_applied": [
+    "cond-bind-if",
+    "cond-bool-render"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": -11.11,
+   "rss_pct": 1.12,
+   "cpu_pct": 2.61,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -11,
+    "proxy8k_pct": -9.48,
+    "byte256": -46,
+    "min_bytes": -46
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -11,
+    "proxy8k_pct": -9.48,
+    "min_bytes": -46
+   }
+  },
+  {
+   "name": "NET-108",
+   "kind": "library",
+   "category": "networking-rest",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/NET-108.orig.tk",
+     "src_sha256": "b10c716a3456816fad5176cde38d4e3632a137c85c5e97e9d48c3ffd6bf714d3",
+     "min_sha256": "230841ee3ef72846dba4ccd3f70d0307e906395372e554e1264e398897ba7182",
+     "status": "ok",
+     "binary_bytes": 127232,
+     "tokens": {
+      "proxy8k": 49,
+      "byte256": 242,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 276
+     },
+     "wall_ms_samples": [
+      14.253,
+      15.198,
+      16.678,
+      14.655,
+      23.82,
+      25.545,
+      17.904,
+      14.383,
+      20.519,
+      17.869,
+      19.69,
+      16.563,
+      21.748,
+      15.729,
+      15.259
+     ],
+     "wall_ms_median": 16.678,
+     "wall_ci95": [
+      15.198,
+      19.69
+     ],
+     "cpu_ms_samples": [
+      5.495,
+      6.108,
+      5.888,
+      6.365,
+      5.835,
+      8.009,
+      6.884,
+      6.285,
+      6.622,
+      7.029,
+      6.725,
+      6.775,
+      7.659,
+      5.405,
+      6.179
+     ],
+     "cpu_ms_median": 6.365,
+     "cpu_ci95": [
+      5.888,
+      6.884
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1424,
+      1440,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1424,
+      1440,
+      1424,
+      1440
+     ],
+     "output_sigs": [
+      "daf88abe86ee8b1c27b122097e5530777232dd3c23a0cdf325fb875261f67566"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/NET-108.canon.tk",
+     "src_sha256": "72fdd698562fbf08504c307723e29a8a212efbd59b96db284f2e373ef0969f0c",
+     "min_sha256": "781610b8ac7796a80785de30659bc1bf076f1ef6bd3686e8665cf772f67a8caf",
+     "status": "ok",
+     "binary_bytes": 127232,
+     "tokens": {
+      "proxy8k": 42,
+      "byte256": 230,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 264
+     },
+     "wall_ms_samples": [
+      19.451,
+      16.288,
+      21.32,
+      22.194,
+      22.725,
+      30.139,
+      17.515,
+      20.114,
+      16.863,
+      17.787,
+      22.36,
+      18.073,
+      22.464,
+      16.202,
+      16.477
+     ],
+     "wall_ms_median": 19.451,
+     "wall_ci95": [
+      16.863,
+      22.194
+     ],
+     "cpu_ms_samples": [
+      6.168,
+      6.475,
+      5.727,
+      6.322,
+      6.953,
+      7.81,
+      7.014,
+      6.315,
+      7.103,
+      6.356,
+      7.113,
+      6.718,
+      6.856,
+      6.642,
+      6.362
+     ],
+     "cpu_ms_median": 6.642,
+     "cpu_ci95": [
+      6.322,
+      6.953
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1424,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1424,
+      1440,
+      1440,
+      1424,
+      1440,
+      1440,
+      1424,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "daf88abe86ee8b1c27b122097e5530777232dd3c23a0cdf325fb875261f67566"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/NET-108.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "230841ee3ef72846dba4ccd3f70d0307e906395372e554e1264e398897ba7182",
+     "tokens": {
+      "proxy8k": 49,
+      "byte256": 242,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 276
+     }
+    }
+   },
+   "patterns_applied": [
+    "cond-elif-chain"
+   ],
+   "verdict": "regressed",
+   "patterns_not_applied": [],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": 16.63,
+   "rss_pct": 0.0,
+   "cpu_pct": 4.35,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -7,
+    "proxy8k_pct": -14.29,
+    "byte256": -12,
+    "min_bytes": -12
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -7,
+    "proxy8k_pct": -14.29,
+    "min_bytes": -12
+   },
+   "suspects": [
+    "cond-elif-chain"
+   ],
+   "regression": {
+    "wall": true,
+    "rss": false,
+    "ci_overlap": true
+   }
+  },
+  {
+   "name": "SCI-024",
+   "kind": "library",
+   "category": "scientific-math",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/SCI-024.orig.tk",
+     "src_sha256": "6589237082faa116177179dd48f7e1e6fd0962cbb79cecbd9502fce43645ae9f",
+     "min_sha256": "089e32b049a259969a7c5311a7f587b655ffb3006752b8cde53c0436c52b3e68",
+     "status": "ok",
+     "binary_bytes": 144016,
+     "tokens": {
+      "proxy8k": 121,
+      "byte256": 682,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 706
+     },
+     "wall_ms_samples": [
+      25.034,
+      18.788,
+      19.746,
+      22.322,
+      23.276,
+      16.08,
+      17.013,
+      19.027,
+      21.115,
+      20.017,
+      20.175,
+      21.094,
+      30.068,
+      21.625,
+      21.622
+     ],
+     "wall_ms_median": 21.094,
+     "wall_ci95": [
+      19.746,
+      22.322
+     ],
+     "cpu_ms_samples": [
+      6.747,
+      7.298,
+      8.234,
+      7.791,
+      7.16,
+      6.633,
+      6.139,
+      5.852,
+      8.383,
+      7.451,
+      7.387,
+      6.387,
+      6.87,
+      9.311,
+      8.977
+     ],
+     "cpu_ms_median": 7.298,
+     "cpu_ci95": [
+      6.747,
+      8.234
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1440,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1440,
+      1440,
+      1456,
+      1456
+     ],
+     "output_sigs": [
+      "7f377f58f2b455266f3ff077f906eaa71033e9bf9a52fe9044fbc1274284e706"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/SCI-024.canon.tk",
+     "src_sha256": "95eef73a2bc37691e3d70ebae3ab363fe283e678ba4e901fcdc2547e99c73f1e",
+     "min_sha256": "cced15c814a89af049ea8beac7a46a86d1a6be6efa6dc68fda15d9b6a16d4c6e",
+     "status": "ok",
+     "binary_bytes": 144016,
+     "tokens": {
+      "proxy8k": 119,
+      "byte256": 637,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 661
+     },
+     "wall_ms_samples": [
+      19.784,
+      16.565,
+      22.182,
+      24.01,
+      16.188,
+      20.591,
+      15.646,
+      18.138,
+      16.36,
+      17.735,
+      17.943,
+      19.985,
+      20.782,
+      23.833,
+      33.743
+     ],
+     "wall_ms_median": 19.784,
+     "wall_ci95": [
+      17.735,
+      20.782
+     ],
+     "cpu_ms_samples": [
+      8.165,
+      6.81,
+      7.754,
+      8.174,
+      6.737,
+      7.082,
+      5.764,
+      7.029,
+      6.099,
+      6.806,
+      7.133,
+      7.605,
+      9.046,
+      10.8,
+      12.034
+     ],
+     "cpu_ms_median": 7.133,
+     "cpu_ci95": [
+      6.81,
+      8.165
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1440,
+      1456,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "7f377f58f2b455266f3ff077f906eaa71033e9bf9a52fe9044fbc1274284e706"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/SCI-024.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "089e32b049a259969a7c5311a7f587b655ffb3006752b8cde53c0436c52b3e68",
+     "tokens": {
+      "proxy8k": 121,
+      "byte256": 682,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 706
+     }
+    }
+   },
+   "patterns_applied": [
+    "acc-array",
+    "coll-swap",
+    "str-build-loop",
+    "str-num-format",
+    "str-interp-vs-join"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": -6.21,
+   "rss_pct": -1.1,
+   "cpu_pct": -2.26,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -2,
+    "proxy8k_pct": -1.65,
+    "byte256": -45,
+    "min_bytes": -45
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -2,
+    "proxy8k_pct": -1.65,
+    "min_bytes": -45
+   }
+  },
+  {
+   "name": "SCI-086",
+   "kind": "library",
+   "category": "scientific-math",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/SCI-086.orig.tk",
+     "src_sha256": "0aab98c28f06cfe7609174c773a778df57623a3dcfb61a91270a81f00ab5ce55",
+     "min_sha256": "e03a7308c6cb4e90a6faec905cef57b3f935485d50230e502698d36cc6a57ad2",
+     "status": "ok",
+     "binary_bytes": 143808,
+     "tokens": {
+      "proxy8k": 205,
+      "byte256": 812,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 816
+     },
+     "wall_ms_samples": [
+      17.683,
+      18.367,
+      19.512,
+      19.622,
+      21.269,
+      22.005,
+      22.153,
+      16.275,
+      22.369,
+      34.542,
+      26.979,
+      17.462,
+      27.137,
+      18.787,
+      18.137
+     ],
+     "wall_ms_median": 19.622,
+     "wall_ci95": [
+      18.367,
+      22.369
+     ],
+     "cpu_ms_samples": [
+      7.263,
+      8.002,
+      7.633,
+      9.077,
+      7.075,
+      6.692,
+      7.665,
+      7.14,
+      8.917,
+      9.487,
+      9.662,
+      6.25,
+      8.579,
+      7.458,
+      6.972
+     ],
+     "cpu_ms_median": 7.633,
+     "cpu_ci95": [
+      7.14,
+      8.579
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1424,
+      1424,
+      1440,
+      1440,
+      1424,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "96ed62152f30b69f9579b004c8ac009da9f4739fc9315eb85a8cd1b9e2260d47"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/SCI-086.canon.tk",
+     "src_sha256": "d6fa9138e33596e86c4f41e890cdc8a333a58f452b54c539c7274884fe06c3db",
+     "min_sha256": "9385d4f493be0fed202d0b36b3062d54be182b4ef9a2d32c97326248187c5460",
+     "status": "ok",
+     "binary_bytes": 143808,
+     "tokens": {
+      "proxy8k": 190,
+      "byte256": 725,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 729
+     },
+     "wall_ms_samples": [
+      17.36,
+      18.542,
+      22.329,
+      23.912,
+      16.882,
+      22.373,
+      19.689,
+      24.556,
+      27.358,
+      25.72,
+      25.043,
+      16.267,
+      20.22,
+      18.174,
+      25.563
+     ],
+     "wall_ms_median": 22.329,
+     "wall_ci95": [
+      18.174,
+      25.043
+     ],
+     "cpu_ms_samples": [
+      7.203,
+      6.512,
+      8.331,
+      8.657,
+      6.848,
+      9.372,
+      8.076,
+      5.926,
+      10.586,
+      11.061,
+      8.287,
+      6.865,
+      7.187,
+      7.214,
+      8.747
+     ],
+     "cpu_ms_median": 8.076,
+     "cpu_ci95": [
+      7.187,
+      8.657
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1440,
+      1456,
+      1440,
+      1440,
+      1456,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1456
+     ],
+     "output_sigs": [
+      "96ed62152f30b69f9579b004c8ac009da9f4739fc9315eb85a8cd1b9e2260d47"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/SCI-086.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "e03a7308c6cb4e90a6faec905cef57b3f935485d50230e502698d36cc6a57ad2",
+     "tokens": {
+      "proxy8k": 205,
+      "byte256": 812,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 816
+     }
+    }
+   },
+   "patterns_applied": [
+    "fn-chain-vs-let",
+    "str-build-loop",
+    "str-num-format",
+    "acc-array",
+    "str-interp-vs-join"
+   ],
+   "verdict": "regressed",
+   "patterns_not_applied": [],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": 13.8,
+   "rss_pct": 0.0,
+   "cpu_pct": 5.8,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -15,
+    "proxy8k_pct": -7.32,
+    "byte256": -87,
+    "min_bytes": -87
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -15,
+    "proxy8k_pct": -7.32,
+    "min_bytes": -87
+   },
+   "suspects": [
+    "fn-chain-vs-let",
+    "str-build-loop",
+    "str-num-format",
+    "acc-array",
+    "str-interp-vs-join"
+   ],
+   "regression": {
+    "wall": true,
+    "rss": false,
+    "ci_overlap": true
+   }
+  },
+  {
+   "name": "SEC-024",
+   "kind": "library",
+   "category": "security",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/SEC-024.orig.tk",
+     "src_sha256": "f86d1d3be614149ea8f05059f1125bd97715af4f5ea453412ba71ae9214ce48c",
+     "min_sha256": "1de73eb1d4491d8dc301a7b3123aef18b27225840857f37244ef34ebcca1275f",
+     "status": "ok",
+     "binary_bytes": 127232,
+     "tokens": {
+      "proxy8k": 46,
+      "byte256": 235,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 262
+     },
+     "wall_ms_samples": [
+      21.815,
+      16.271,
+      23.639,
+      21.033,
+      22.637,
+      31.743,
+      22.991,
+      18.696,
+      19.501,
+      22.412,
+      17.059,
+      50.576,
+      56.234,
+      30.174,
+      25.053
+     ],
+     "wall_ms_median": 22.637,
+     "wall_ci95": [
+      19.501,
+      25.053
+     ],
+     "cpu_ms_samples": [
+      8.521,
+      5.604,
+      7.041,
+      8.83,
+      9.953,
+      11.545,
+      9.283,
+      6.832,
+      7.472,
+      7.454,
+      6.661,
+      8.956,
+      10.22,
+      7.901,
+      8.009
+     ],
+     "cpu_ms_median": 8.009,
+     "cpu_ci95": [
+      7.041,
+      8.956
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1424,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "49a116bd9b04437b5375b0bb4d1f1e8c19a33cee202e120b59a688d8c4256469"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/SEC-024.canon.tk",
+     "src_sha256": "3523352b7d1a5ecfa879bc395c03e6e1177fd630b5aa7cb96797908d160e0679",
+     "min_sha256": "47858ba059c9f71e0cf24a63cf60aa12bd7d0fa6e6d179bc3d4260e7e54c39c2",
+     "status": "ok",
+     "binary_bytes": 127232,
+     "tokens": {
+      "proxy8k": 38,
+      "byte256": 182,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 204
+     },
+     "wall_ms_samples": [
+      17.677,
+      14.504,
+      22.473,
+      21.512,
+      22.429,
+      29.438,
+      19.716,
+      22.962,
+      20.334,
+      17.838,
+      17.114,
+      19.119,
+      26.814,
+      25.659,
+      22.625
+     ],
+     "wall_ms_median": 21.512,
+     "wall_ci95": [
+      19.119,
+      22.625
+     ],
+     "cpu_ms_samples": [
+      6.82,
+      6.506,
+      7.109,
+      8.915,
+      9.751,
+      9.502,
+      7.808,
+      7.391,
+      7.706,
+      8.017,
+      8.099,
+      8.017,
+      9.02,
+      9.332,
+      8.35
+     ],
+     "cpu_ms_median": 8.017,
+     "cpu_ci95": [
+      7.391,
+      8.915
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1424,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "49a116bd9b04437b5375b0bb4d1f1e8c19a33cee202e120b59a688d8c4256469"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/SEC-024.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "1de73eb1d4491d8dc301a7b3123aef18b27225840857f37244ef34ebcca1275f",
+     "tokens": {
+      "proxy8k": 46,
+      "byte256": 235,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 262
+     }
+    }
+   },
+   "patterns_applied": [
+    "fn-chain-vs-let",
+    "cond-bool-combine",
+    "cond-bool-render"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": -4.97,
+   "rss_pct": 0.0,
+   "cpu_pct": 0.1,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -8,
+    "proxy8k_pct": -17.39,
+    "byte256": -53,
+    "min_bytes": -58
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -8,
+    "proxy8k_pct": -17.39,
+    "min_bytes": -58
+   }
+  },
+  {
+   "name": "SEC-010",
+   "kind": "library",
+   "category": "security",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/SEC-010.orig.tk",
+     "src_sha256": "cda2a4368f151a15e9b05a7215f63b042f5530363ff7a67b113fb9fc6f81c217",
+     "min_sha256": "e394b24180341dcbe79872e77fc83bdc913d4b874f685f2a53099e36e578547e",
+     "status": "ok",
+     "binary_bytes": 143888,
+     "tokens": {
+      "proxy8k": 335,
+      "byte256": 1148,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1364
+     },
+     "wall_ms_samples": [
+      36.212,
+      39.607,
+      47.49,
+      38.597,
+      39.378,
+      43.47,
+      42.355,
+      41.7,
+      39.951,
+      41.503,
+      44.905,
+      49.517,
+      48.416,
+      42.223,
+      37.032
+     ],
+     "wall_ms_median": 41.7,
+     "wall_ci95": [
+      39.378,
+      44.905
+     ],
+     "cpu_ms_samples": [
+      13.815,
+      14.091,
+      15.892,
+      14.463,
+      15.629,
+      13.292,
+      13.823,
+      16.438,
+      15.394,
+      15.578,
+      16.824,
+      14.2,
+      16.171,
+      17.924,
+      13.993
+     ],
+     "cpu_ms_median": 15.394,
+     "cpu_ci95": [
+      14.091,
+      15.892
+     ],
+     "rss_kb_median": 1488,
+     "rss_kb_samples": [
+      1472,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1472,
+      1472,
+      1488,
+      1472,
+      1488,
+      1488,
+      1488
+     ],
+     "output_sigs": [
+      "1c8f0fb8bc77e7c9cf27ef99139b25d2d8fb15317fec198f5e86daecc64e0098"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/SEC-010.canon.tk",
+     "src_sha256": "1b29ec8888132625cfc47702361c9febcb4e9b535123c9c7b64caecbe8ed2094",
+     "min_sha256": "99afcbeeeaf7f6a17f5d43fca7acacdc42d448566c1a296e953a93d2f8b450c7",
+     "status": "ok",
+     "binary_bytes": 143888,
+     "tokens": {
+      "proxy8k": 320,
+      "byte256": 1073,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1289
+     },
+     "wall_ms_samples": [
+      42.432,
+      39.689,
+      58.888,
+      53.887,
+      36.548,
+      35.592,
+      44.579,
+      39.646,
+      45.658,
+      45.6,
+      38.882,
+      57.494,
+      40.956,
+      38.099,
+      39.85
+     ],
+     "wall_ms_median": 40.956,
+     "wall_ci95": [
+      39.646,
+      45.6
+     ],
+     "cpu_ms_samples": [
+      15.723,
+      15.367,
+      14.261,
+      16.483,
+      12.906,
+      14.098,
+      15.767,
+      15.853,
+      18.546,
+      17.322,
+      15.623,
+      16.789,
+      15.882,
+      14.755,
+      15.252
+     ],
+     "cpu_ms_median": 15.723,
+     "cpu_ci95": [
+      15.252,
+      15.882
+     ],
+     "rss_kb_median": 1488,
+     "rss_kb_samples": [
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1488,
+      1472
+     ],
+     "output_sigs": [
+      "1c8f0fb8bc77e7c9cf27ef99139b25d2d8fb15317fec198f5e86daecc64e0098"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/SEC-010.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "e394b24180341dcbe79872e77fc83bdc913d4b874f685f2a53099e36e578547e",
+     "tokens": {
+      "proxy8k": 335,
+      "byte256": 1148,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1364
+     }
+    }
+   },
+   "patterns_applied": [
+    "fn-chain-vs-let",
+    "str-interp-vs-join"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [
+    {
+     "id": "cond-elif-chain",
+     "issue": null,
+     "reason": "hv's 15 guards are already sequential returns (err-validate-early canonical)"
+    }
+   ],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": -1.78,
+   "rss_pct": 0.0,
+   "cpu_pct": 2.14,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -15,
+    "proxy8k_pct": -4.48,
+    "byte256": -75,
+    "min_bytes": -75
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -15,
+    "proxy8k_pct": -4.48,
+    "min_bytes": -75
+   }
+  },
+  {
+   "name": "SOC-139",
+   "kind": "library",
+   "category": "social-media",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/SOC-139.orig.tk",
+     "src_sha256": "70e28e46f3377fbd2df6ae5b3b0f774f89947ac464ed0a9604ad91587ee3ae34",
+     "min_sha256": "59e3a57dee6e02e91c1178608a92a8050b04d509b6db32d006aa189b8ae65a90",
+     "status": "ok",
+     "binary_bytes": 127360,
+     "tokens": {
+      "proxy8k": 127,
+      "byte256": 556,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 702
+     },
+     "wall_ms_samples": [
+      7.658,
+      10.903,
+      8.203,
+      8.33,
+      9.244,
+      11.291,
+      8.813,
+      7.612,
+      9.007,
+      7.806,
+      7.516,
+      9.412,
+      10.854,
+      7.412,
+      8.705
+     ],
+     "wall_ms_median": 8.705,
+     "wall_ci95": [
+      7.806,
+      9.244
+     ],
+     "cpu_ms_samples": [
+      3.488,
+      3.91,
+      4.073,
+      3.594,
+      3.624,
+      5.752,
+      3.552,
+      3.323,
+      4.015,
+      3.168,
+      3.122,
+      2.768,
+      3.158,
+      3.694,
+      3.467
+     ],
+     "cpu_ms_median": 3.552,
+     "cpu_ci95": [
+      3.323,
+      3.694
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1440,
+      1440,
+      1440,
+      1424,
+      1440,
+      1424,
+      1424,
+      1440,
+      1440,
+      1440,
+      1440,
+      1424,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "504a23c99bc8108cf2f09d3e8feb75122160e7d032c1d0d102418e53590e9916"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/SOC-139.canon.tk",
+     "src_sha256": "b0dede16d54b0ffda018a3648261ea73d00502f067b3246556552f1be98f47f4",
+     "min_sha256": "a32da13438c080c607d71292bad80a3d8d7574622e3cb1d347aef8476cf082be",
+     "status": "ok",
+     "binary_bytes": 127360,
+     "tokens": {
+      "proxy8k": 113,
+      "byte256": 397,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 543
+     },
+     "wall_ms_samples": [
+      10.11,
+      10.494,
+      10.221,
+      9.218,
+      7.47,
+      8.033,
+      10.102,
+      10.545,
+      11.089,
+      9.188,
+      7.223,
+      8.621,
+      9.889,
+      8.608,
+      8.818
+     ],
+     "wall_ms_median": 9.218,
+     "wall_ci95": [
+      8.621,
+      10.11
+     ],
+     "cpu_ms_samples": [
+      4.531,
+      3.653,
+      4.038,
+      4.078,
+      3.0,
+      3.368,
+      3.34,
+      3.673,
+      4.285,
+      3.391,
+      3.11,
+      3.601,
+      2.908,
+      3.384,
+      2.948
+     ],
+     "cpu_ms_median": 3.391,
+     "cpu_ci95": [
+      3.11,
+      4.038
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1440,
+      1424,
+      1440,
+      1440,
+      1424,
+      1424,
+      1440,
+      1424,
+      1440,
+      1440,
+      1456,
+      1440,
+      1440,
+      1440
+     ],
+     "output_sigs": [
+      "504a23c99bc8108cf2f09d3e8feb75122160e7d032c1d0d102418e53590e9916"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/SOC-139.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "59e3a57dee6e02e91c1178608a92a8050b04d509b6db32d006aa189b8ae65a90",
+     "tokens": {
+      "proxy8k": 127,
+      "byte256": 556,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 702
+     }
+    }
+   },
+   "patterns_applied": [
+    "str-interp-vs-join",
+    "str-num-format"
+   ],
+   "verdict": "regressed",
+   "patterns_not_applied": [],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": 5.89,
+   "rss_pct": 0.0,
+   "cpu_pct": -4.53,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -14,
+    "proxy8k_pct": -11.02,
+    "byte256": -159,
+    "min_bytes": -159
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": -14,
+    "proxy8k_pct": -11.02,
+    "min_bytes": -159
+   },
+   "suspects": [
+    "str-interp-vs-join",
+    "str-num-format"
+   ],
+   "regression": {
+    "wall": true,
+    "rss": false,
+    "ci_overlap": true
+   }
+  },
+  {
+   "name": "SOC-037",
+   "kind": "library",
+   "category": "social-media",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/SOC-037.orig.tk",
+     "src_sha256": "196f75bde9f5e040dbd8f55f6816f2327c7c12cc637ba3d70ec360f3c12de241",
+     "min_sha256": "0cf3542c72b913b8e2eeac010205ea8e7a5d77510a50fd4503a43b091aa4e8d6",
+     "status": "ok",
+     "binary_bytes": 165360,
+     "tokens": {
+      "proxy8k": 258,
+      "byte256": 828,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1229
+     },
+     "wall_ms_samples": [
+      11.624,
+      13.922,
+      13.728,
+      16.67,
+      15.814,
+      8.202,
+      10.534,
+      11.46,
+      26.085,
+      16.831,
+      10.29,
+      11.783,
+      27.943,
+      10.408,
+      13.199
+     ],
+     "wall_ms_median": 13.199,
+     "wall_ci95": [
+      11.46,
+      15.814
+     ],
+     "cpu_ms_samples": [
+      4.848,
+      5.274,
+      5.92,
+      4.44,
+      5.188,
+      3.816,
+      3.835,
+      3.846,
+      4.343,
+      4.382,
+      3.782,
+      3.772,
+      3.888,
+      3.114,
+      3.284
+     ],
+     "cpu_ms_median": 3.888,
+     "cpu_ci95": [
+      3.816,
+      4.44
+     ],
+     "rss_kb_median": 1488,
+     "rss_kb_samples": [
+      1488,
+      1488,
+      1472,
+      1488,
+      1472,
+      1472,
+      1472,
+      1472,
+      1488,
+      1488,
+      1488,
+      1488,
+      1472,
+      1488,
+      1488
+     ],
+     "output_sigs": [
+      "671fb1485c9fc75fa89fe48b70196defeb3682a2a23439b783e51c403a231bd0"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/SOC-037.canon.tk",
+     "src_sha256": "c2c895511b2976092fe2ac409847a1160e49e6f344d063ba9fefec257b3c3e18",
+     "min_sha256": "433167b6bffd87717c3a743860b7dfd6a70e6c9c2db96deb1e81313a69609d24",
+     "status": "ok",
+     "binary_bytes": 165360,
+     "tokens": {
+      "proxy8k": 220,
+      "byte256": 662,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1063
+     },
+     "wall_ms_samples": [
+      12.304,
+      13.163,
+      11.88,
+      13.288,
+      14.17,
+      10.806,
+      8.098,
+      8.116,
+      9.875,
+      11.101,
+      8.884,
+      9.846,
+      13.841,
+      14.928,
+      11.454
+     ],
+     "wall_ms_median": 11.454,
+     "wall_ci95": [
+      9.875,
+      13.163
+     ],
+     "cpu_ms_samples": [
+      3.768,
+      3.948,
+      3.707,
+      4.641,
+      4.826,
+      4.67,
+      3.787,
+      3.763,
+      3.677,
+      3.229,
+      3.929,
+      4.0,
+      3.593,
+      4.637,
+      3.893
+     ],
+     "cpu_ms_median": 3.893,
+     "cpu_ci95": [
+      3.763,
+      4.0
+     ],
+     "rss_kb_median": 1472,
+     "rss_kb_samples": [
+      1456,
+      1472,
+      1456,
+      1472,
+      1456,
+      1472,
+      1472,
+      1472,
+      1456,
+      1472,
+      1472,
+      1456,
+      1456,
+      1456,
+      1472
+     ],
+     "output_sigs": [
+      "671fb1485c9fc75fa89fe48b70196defeb3682a2a23439b783e51c403a231bd0"
+     ]
+    }
+   },
+   "patterns_applied": [
+    "str-interp-vs-join",
+    "fn-chain-vs-let"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": false,
+   "min_identical": false,
+   "wall_pct": -13.22,
+   "rss_pct": -1.08,
+   "cpu_pct": 0.13,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": -38,
+    "proxy8k_pct": -14.73,
+    "byte256": -166,
+    "min_bytes": -166
+   }
+  },
+  {
+   "name": "SYS-066",
+   "kind": "library",
+   "category": "system-tools",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/SYS-066.orig.tk",
+     "src_sha256": "cae43df6bf01bad3f5db5d94aa9fe80847cb9522d0e100a9ef8567ac7fe706ff",
+     "min_sha256": "83e04e51dbe741a9708725a30c8f060bdd6b0b486bd02eeba43816b8337bd862",
+     "status": "ok",
+     "binary_bytes": 143808,
+     "tokens": {
+      "proxy8k": 222,
+      "byte256": 1097,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1105
+     },
+     "wall_ms_samples": [
+      35.499,
+      35.886,
+      43.269,
+      36.878,
+      44.744,
+      39.357,
+      36.962,
+      38.293,
+      40.647,
+      37.101,
+      37.768,
+      60.783,
+      50.496,
+      44.769,
+      42.908
+     ],
+     "wall_ms_median": 39.357,
+     "wall_ci95": [
+      36.962,
+      43.269
+     ],
+     "cpu_ms_samples": [
+      15.108,
+      15.157,
+      16.747,
+      15.924,
+      17.348,
+      13.828,
+      15.601,
+      15.299,
+      12.87,
+      14.228,
+      15.931,
+      17.307,
+      17.528,
+      16.492,
+      15.732
+     ],
+     "cpu_ms_median": 15.732,
+     "cpu_ci95": [
+      15.157,
+      16.492
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456
+     ],
+     "output_sigs": [
+      "0bccb8a3dbb1b1bfff20908c255d309fbb24ddc8ee8ff84bde46e0691fb272d3"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/SYS-066.canon.tk",
+     "src_sha256": "73e3093c98741074203f4651684a141910ef8f42dc4ba1f6d646aed1d4bea071",
+     "min_sha256": "ee5cbfd802f174716b75db10661a177b1e2995f7b561bcaf3347c1b5907be509",
+     "status": "ok",
+     "binary_bytes": 143808,
+     "tokens": {
+      "proxy8k": 232,
+      "byte256": 1070,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1078
+     },
+     "wall_ms_samples": [
+      34.713,
+      47.963,
+      49.798,
+      53.601,
+      36.307,
+      43.224,
+      40.596,
+      38.432,
+      43.022,
+      42.014,
+      43.897,
+      39.834,
+      41.942,
+      36.949,
+      45.455
+     ],
+     "wall_ms_median": 42.014,
+     "wall_ci95": [
+      38.432,
+      45.455
+     ],
+     "cpu_ms_samples": [
+      12.863,
+      15.822,
+      16.951,
+      17.54,
+      15.354,
+      16.794,
+      13.62,
+      13.108,
+      14.469,
+      15.26,
+      14.988,
+      15.807,
+      15.984,
+      15.868,
+      16.612
+     ],
+     "cpu_ms_median": 15.807,
+     "cpu_ci95": [
+      14.988,
+      16.612
+     ],
+     "rss_kb_median": 1472,
+     "rss_kb_samples": [
+      1456,
+      1456,
+      1456,
+      1472,
+      1472,
+      1472,
+      1456,
+      1472,
+      1472,
+      1456,
+      1472,
+      1472,
+      1472,
+      1456,
+      1472
+     ],
+     "output_sigs": [
+      "0bccb8a3dbb1b1bfff20908c255d309fbb24ddc8ee8ff84bde46e0691fb272d3"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/SYS-066.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "83e04e51dbe741a9708725a30c8f060bdd6b0b486bd02eeba43816b8337bd862",
+     "tokens": {
+      "proxy8k": 222,
+      "byte256": 1097,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1105
+     }
+    }
+   },
+   "patterns_applied": [
+    "acc-array",
+    "str-build-loop",
+    "cond-elif-chain",
+    "cond-bool-combine",
+    "str-array-render"
+   ],
+   "verdict": "regressed",
+   "patterns_not_applied": [
+    {
+     "id": "cond-elif-chain",
+     "issue": null,
+     "reason": "main read loop `if(len(line)==0){}el{let trimmed=..; if(len(trimmed)==0)..}` kept nested: a binding sits between the two tests"
+    },
+    {
+     "id": "parse-csv-line",
+     "issue": null,
+     "reason": "hand quote-aware CSV scanner kept: the canonical s.split form is only correct for unquoted fields and this task quotes fields"
+    }
+   ],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": 6.75,
+   "rss_pct": 1.1,
+   "cpu_pct": 0.48,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": 10,
+    "proxy8k_pct": 4.5,
+    "byte256": -27,
+    "min_bytes": -27
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": 10,
+    "proxy8k_pct": 4.5,
+    "min_bytes": -27
+   },
+   "suspects": [
+    "acc-array",
+    "str-build-loop",
+    "cond-elif-chain",
+    "cond-bool-combine",
+    "str-array-render"
+   ],
+   "regression": {
+    "wall": true,
+    "rss": false,
+    "ci_overlap": true
+   }
+  },
+  {
+   "name": "SYS-010",
+   "kind": "library",
+   "category": "system-tools",
+   "status": "ok",
+   "sides": {
+    "orig": {
+     "file": "bench/patterns/macro/programs/SYS-010.orig.tk",
+     "src_sha256": "336b80705a52d84704e1f679007f28d40efc8247f88311fd7f9f684706e82524",
+     "min_sha256": "b10a9fe4dcaa054641ceb4026b93b081f741404bfd0707188bdd4cd151284466",
+     "status": "ok",
+     "binary_bytes": 144048,
+     "tokens": {
+      "proxy8k": 282,
+      "byte256": 1239,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1268
+     },
+     "wall_ms_samples": [
+      18.387,
+      23.326,
+      28.349,
+      20.222,
+      17.264,
+      20.984,
+      21.287,
+      23.152,
+      22.203,
+      77.537,
+      22.337,
+      23.521,
+      30.232,
+      19.817,
+      24.842
+     ],
+     "wall_ms_median": 22.337,
+     "wall_ci95": [
+      20.222,
+      24.842
+     ],
+     "cpu_ms_samples": [
+      7.61,
+      8.549,
+      9.616,
+      8.219,
+      7.497,
+      9.26,
+      8.404,
+      8.413,
+      8.542,
+      10.882,
+      8.942,
+      8.044,
+      8.722,
+      7.832,
+      9.127
+     ],
+     "cpu_ms_median": 8.542,
+     "cpu_ci95": [
+      8.044,
+      8.942
+     ],
+     "rss_kb_median": 1440,
+     "rss_kb_samples": [
+      1440,
+      1456,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1440,
+      1424,
+      1424
+     ],
+     "output_sigs": [
+      "1aac63369ab0b305571cbd0c5501e22c3b9201f574957cfbd572746ce3634f34"
+     ]
+    },
+    "canon": {
+     "file": "bench/patterns/macro/programs/SYS-010.canon.tk",
+     "src_sha256": "75997a0a24ec7ac5ec0337101798782b0f742856459a45f0426ba9965bc63dc7",
+     "min_sha256": "8b4586d90a2413b24aeedd22974846f8b3b926909ad0a94019f3a1ea09254b70",
+     "status": "ok",
+     "binary_bytes": 144048,
+     "tokens": {
+      "proxy8k": 284,
+      "byte256": 1268,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1297
+     },
+     "wall_ms_samples": [
+      21.124,
+      21.487,
+      22.654,
+      21.519,
+      23.969,
+      23.249,
+      23.217,
+      42.266,
+      20.098,
+      23.635,
+      27.725,
+      22.862,
+      26.905,
+      19.88,
+      21.372
+     ],
+     "wall_ms_median": 22.862,
+     "wall_ci95": [
+      21.487,
+      23.635
+     ],
+     "cpu_ms_samples": [
+      6.979,
+      8.022,
+      7.915,
+      7.728,
+      6.764,
+      8.01,
+      8.115,
+      8.501,
+      8.219,
+      8.517,
+      8.411,
+      9.234,
+      9.518,
+      8.586,
+      7.875
+     ],
+     "cpu_ms_median": 8.115,
+     "cpu_ci95": [
+      7.875,
+      8.501
+     ],
+     "rss_kb_median": 1456,
+     "rss_kb_samples": [
+      1440,
+      1456,
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1440,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456,
+      1456
+     ],
+     "output_sigs": [
+      "1aac63369ab0b305571cbd0c5501e22c3b9201f574957cfbd572746ce3634f34"
+     ]
+    },
+    "orig_fmt": {
+     "file": "bench/patterns/macro/build/SYS-010.origfmt.tk",
+     "status": "ok",
+     "min_sha256": "b10a9fe4dcaa054641ceb4026b93b081f741404bfd0707188bdd4cd151284466",
+     "tokens": {
+      "proxy8k": 282,
+      "byte256": 1239,
+      "v03": null,
+      "qwen25coder": null,
+      "cl100k": null,
+      "min_bytes": 1268
+     }
+    }
+   },
+   "patterns_applied": [
+    "acc-array",
+    "cond-elif-chain",
+    "cond-bool-combine",
+    "str-build-loop",
+    "str-array-render"
+   ],
+   "verdict": "ok",
+   "patterns_not_applied": [],
+   "reformatted": true,
+   "min_identical": false,
+   "wall_pct": 2.35,
+   "rss_pct": 1.11,
+   "cpu_pct": -5.0,
+   "cpu_ci_overlap": true,
+   "ci_overlap": true,
+   "tokens_delta": {
+    "proxy8k": 2,
+    "proxy8k_pct": 0.71,
+    "byte256": 29,
+    "min_bytes": 29
+   },
+   "tokens_delta_vs_fmt": {
+    "proxy8k": 2,
+    "proxy8k_pct": 0.71,
+    "min_bytes": 29
+   }
+  }
+ ],
+ "summary": {
+  "pairs": 44,
+  "measured": 44,
+  "verdicts": {
+   "ok": 30,
+   "regressed": 8,
+   "unchanged": 6,
+   "output_mismatch": 0,
+   "compile_error": 0,
+   "timeout": 0
+  },
+  "changed_pairs": 38,
+  "tokens_proxy8k_sum_delta": -628,
+  "tokens_proxy8k_median_delta": -10.5,
+  "tokens_proxy8k_median_pct": -4.35,
+  "tokens_orig_sum": 12830,
+  "tokens_canon_sum": 12202,
+  "wall_pct_median_changed": -0.5449999999999999,
+  "rss_pct_median_changed": 0.0,
+  "wall_pct_median_unchanged": -0.5800000000000001,
+  "cpu_pct_median_changed": 0.115,
+  "regressed": [
+   {
+    "name": "AIA-100",
+    "wall_pct": 8.12,
+    "cpu_pct": 6.88,
+    "rss_pct": 0.0,
+    "ci_overlap": true,
+    "cpu_ci_overlap": true,
+    "suspects": [
+     "cond-bind-if",
+     "iter-find-first",
+     "acc-array",
+     "fn-chain-vs-let",
+     "str-num-format"
+    ]
+   },
+   {
+    "name": "DAT-121",
+    "wall_pct": 8.72,
+    "cpu_pct": -1.08,
+    "rss_pct": -2.13,
+    "ci_overlap": true,
+    "cpu_ci_overlap": true,
+    "suspects": [
+     "cond-bool-combine",
+     "cond-elif-chain",
+     "cond-bind-if",
+     "str-num-format",
+     "str-build-loop",
+     "str-interp-vs-join",
+     "fn-chain-vs-let"
+    ]
+   },
+   {
+    "name": "MFG-051",
+    "wall_pct": 18.19,
+    "cpu_pct": -6.63,
+    "rss_pct": -1.1,
+    "ci_overlap": true,
+    "cpu_ci_overlap": true,
+    "suspects": [
+     "fn-chain-vs-let",
+     "acc-array",
+     "cond-bind-if",
+     "cond-bool-combine",
+     "cond-elif-chain",
+     "str-build-loop",
+     "str-array-render",
+     "str-interp-vs-join"
+    ]
+   },
+   {
+    "name": "MFG-007",
+    "wall_pct": 17.02,
+    "cpu_pct": 5.59,
+    "rss_pct": -1.1,
+    "ci_overlap": true,
+    "cpu_ci_overlap": true,
+    "suspects": [
+     "cond-bind-if",
+     "str-num-format",
+     "str-interp-vs-join"
+    ]
+   },
+   {
+    "name": "NET-108",
+    "wall_pct": 16.63,
+    "cpu_pct": 4.35,
+    "rss_pct": 0.0,
+    "ci_overlap": true,
+    "cpu_ci_overlap": true,
+    "suspects": [
+     "cond-elif-chain"
+    ]
+   },
+   {
+    "name": "SCI-086",
+    "wall_pct": 13.8,
+    "cpu_pct": 5.8,
+    "rss_pct": 0.0,
+    "ci_overlap": true,
+    "cpu_ci_overlap": true,
+    "suspects": [
+     "fn-chain-vs-let",
+     "str-build-loop",
+     "str-num-format",
+     "acc-array",
+     "str-interp-vs-join"
+    ]
+   },
+   {
+    "name": "SOC-139",
+    "wall_pct": 5.89,
+    "cpu_pct": -4.53,
+    "rss_pct": 0.0,
+    "ci_overlap": true,
+    "cpu_ci_overlap": true,
+    "suspects": [
+     "str-interp-vs-join",
+     "str-num-format"
+    ]
+   },
+   {
+    "name": "SYS-066",
+    "wall_pct": 6.75,
+    "cpu_pct": 0.48,
+    "rss_pct": 1.1,
+    "ci_overlap": true,
+    "cpu_ci_overlap": true,
+    "suspects": [
+     "acc-array",
+     "str-build-loop",
+     "cond-elif-chain",
+     "cond-bool-combine",
+     "str-array-render"
+    ]
+   }
+  ]
+ }
+}

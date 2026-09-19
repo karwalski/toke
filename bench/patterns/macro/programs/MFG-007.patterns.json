@@ -1,0 +1,30 @@
+{
+ "name": "MFG-007",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "cond-bind-if",
+   "sites": 3,
+   "note": "fmt2: `h` clamp-to-0 and `fs` mut+if/el -> expression-if binds; main: `lcl` mut+if -> expression-if bind"
+  },
+  {
+   "id": "str-num-format",
+   "sites": 1,
+   "note": "fmt2: `s.fromint(whole)` -> \"\\(whole)\" (the other fromint sites folded into interpolations)"
+  },
+  {
+   "id": "str-interp-vs-join",
+   "sites": 4,
+   "note": "fmt2: three nested s.concat returns + `fs` build -> interpolation; main: six-step s.concat chain -> one interpolated io.println"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "cond-elif-chain",
+   "issue": null,
+   "reason": "d3of/d4of are sequential guard returns (err-validate-early canonical form a); left as they are"
+  }
+ ],
+ "note": "`let h0=x*100.0+0.5 as i64` (no mut.) fails --check with E4031 while the original `let h=mut.x*100.0+0.5 as i64` passes; the canon parenthesises the cast operand (reported to the parent as a parser quirk)"
+}

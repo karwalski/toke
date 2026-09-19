@@ -1,0 +1,148 @@
+m=rank;
+i=io:std.io;
+
+i=s:std.str;
+
+f=findFrom(hay:$str; needle:$str; start:$i64):$i64 {
+  let n=s.len(hay);
+  let m=s.len(needle);
+  lp (let idx=start; idx+m<=n; idx=idx+1) {
+    if (s.slice(hay; idx; idx+m)==needle) {
+      <idx
+    }
+  };
+  <0-1
+};
+
+f=fmtavg(v:$f64):$str {
+  let raw=s.format(v; "%.10f");
+  let n=s.len(raw);
+  let end=mut.n;
+  lp (end>0) {
+    let c=s.slice(raw; end-1; end);
+    if (c=="0") {
+      end=end-1
+    } el {
+      br
+    }
+  };
+  if (end>0) {
+    let last=s.slice(raw; end-1; end);
+    if (last==".") {
+      end=end+1
+    }
+  };
+  <s.slice(raw; 0; end)
+};
+
+f=main():$i64 {
+  let jb=s.builder();
+  lp (!io.eof()) {
+    s.add(jb; io.readln());
+    if (io.eof()) {
+      br
+    }
+  };
+  let js=s.build(jb);
+  let n=s.len(js);
+  let names=mut.@($str);
+  let sums=mut.@($f64);
+  let counts=mut.@($i64);
+  let pos=mut.0;
+  lp (true) {
+    let ss=findFrom(js; "\"subject_scores\":"; pos);
+    if (ss<0) {
+      br
+    };
+    let bs=findFrom(js; "{"; ss+17);
+    let be=mut.bs+1;
+    let depth=mut.1;
+    lp (be<n) {
+      let c=s.slice(js; be; be+1);
+      if (c=="{") {
+        depth=depth+1
+      };
+      if (c=="}") {
+        depth=depth-1;
+        if (depth==0) {
+          br
+        }
+      };
+      be=be+1
+    };
+    let seg=s.slice(js; bs; be);
+    let slen=s.len(seg);
+    let p=mut.0;
+    lp (p<slen) {
+      let c=s.slice(seg; p; p+1);
+      if (c=="\"") {
+        let ks=p+1;
+        let ke=mut.ks;
+        lp (ke<slen) {
+          if (s.slice(seg; ke; ke+1)=="\"") {
+            br
+          };
+          ke=ke+1
+        };
+        let key=s.slice(seg; ks; ke);
+        let col=mut.ke+1;
+        lp (col<slen) {
+          if (s.slice(seg; col; col+1)==":") {
+            br
+          };
+          col=col+1
+        };
+        let vs=col+1;
+        let ve=mut.vs;
+        lp (ve<slen) {
+          let vc=s.slice(seg; ve; ve+1);
+          if (vc==","||vc=="}") {
+            br
+          };
+          ve=ve+1
+        };
+        let val=s.tofloat(s.trim(s.slice(seg; vs; ve)));
+        let found=mut.0-1;
+        lp (let fi=0; fi<names.len(); fi=fi+1) {
+          if (names.get(fi)==key) {
+            found=fi
+          }
+        };
+        if (found<0) {
+          names=names.append(key);
+          sums=sums.append(val);
+          counts=counts.append(1)
+        } el {
+          sums=sums.set(found; sums.get(found)+val);
+          counts=counts.set(found; counts.get(found)+1)
+        };
+        p=ve
+      } el {
+        p=p+1
+      }
+    };
+    pos=be+1
+  };
+  let cnt=names.len();
+  let avgs=mut.@($f64);
+  lp (let idx=0; idx<cnt; idx=idx+1) {
+    avgs=avgs.append(sums.get(idx)/s.tofloat(s.fromint(counts.get(idx))))
+  };
+  let used=mut.@($bool);
+  lp (let idx=0; idx<cnt; idx=idx+1) {
+    used=used.append(false)
+  };
+  let rank=mut.1;
+  lp (let k=0; k<cnt; k=k+1) {
+    let best=mut.0-1;
+    lp (let j=0; j<cnt; j=j+1) {
+      if (!used.get(j)&&(best<0||avgs.get(j)>avgs.get(best))) {
+        best=j
+      }
+    };
+    used=used.set(best; true);
+    io.println("\(rank). \(names.get(best)): \(fmtavg(avgs.get(best)))");
+    rank=rank+1
+  };
+  <0
+}

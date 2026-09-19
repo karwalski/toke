@@ -1,0 +1,257 @@
+(* source: ~/tk/toke-test-programs/results/solutions/data-processing/DAT-121/solution.tk sha256 83867b355aa4437fac016a74a1f76cedda344933312fb2183bca5a28608e244d manifest ~/tk/toke-test-programs/results/library/data-processing.json *)
+m=phonetic;
+i=io:std.io;
+i=s:std.str;
+f=byteat(x:$str;i:i64):i64{ let b=s.bytes(x); <b.get(i as u64) as i64 };
+f=charat(x:$str;i:i64):$str{
+  let r=mt s.slice(x;i as u64;(i+1) as u64){ $ok:v v; $err:e "" };
+  <s.concat(r;"")
+};
+f=isvowel(c:i64):bool{
+  if(c==65){<true};
+  if(c==69){<true};
+  if(c==73){<true};
+  if(c==79){<true};
+  if(c==85){<true};
+  if(c==89){<true};
+  <false
+};
+f=isalpha(c:i64):bool{
+  if(c<65){<false};
+  if(c>90){<false};
+  <true
+};
+f=soundexcode(c:i64):i64{
+  if(c==66){<1};
+  if(c==70){<1};
+  if(c==80){<1};
+  if(c==86){<1};
+  if(c==67){<2};
+  if(c==71){<2};
+  if(c==74){<2};
+  if(c==75){<2};
+  if(c==81){<2};
+  if(c==83){<2};
+  if(c==88){<2};
+  if(c==90){<2};
+  if(c==68){<3};
+  if(c==84){<3};
+  if(c==76){<4};
+  if(c==77){<5};
+  if(c==78){<5};
+  if(c==82){<6};
+  <0
+};
+f=soundex(word:$str):$str{
+  let u=s.upper(word);
+  let n=s.len(u) as i64;
+  let first=charat(u;0);
+  let result=mut.first;
+  let prev=mut.soundexcode(byteat(u;0));
+  let count=mut.1;
+  lp(let i=1;i<n;i=i+1){
+    if(count<4){
+      let c=byteat(u;i);
+      let code=soundexcode(c);
+      if(code>0){
+        if(code!=prev){
+          result=s.concat(result;s.fromint(code));
+          count=count+1;
+        };
+        prev=code;
+      }el{
+        if(c==72){
+        }el{
+          if(c==87){
+          }el{
+            prev=0;
+          };
+        };
+      };
+    };
+  };
+  lp(true){
+    if(s.len(result) as i64>=4){br};
+    result=s.concat(result;"0");
+  };
+  let out=mt s.slice(result;0 as u64;4 as u64){ $ok:v v; $err:e "" };
+  <s.concat(out;"")
+};
+f=lettersonly(word:$str):$str{
+  let u=s.upper(word);
+  let n=s.len(u) as i64;
+  let out=mut."";
+  lp(let i=0;i<n;i=i+1){
+    let c=byteat(u;i);
+    if(isalpha(c)){
+      out=s.concat(out;charat(u;i));
+    };
+  };
+  <out
+};
+f=metaphone(word:$str):$str{
+  let w=lettersonly(word);
+  let n=s.len(w) as i64;
+  let out=mut."";
+  let i=mut.0;
+  lp(true){
+    if(i>=n){br};
+    let c=byteat(w;i);
+    let nxt=mut.0;
+    if(i+1<n){ nxt=byteat(w;i+1); };
+    let prv=mut.0;
+    if(i>0){ prv=byteat(w;i-1); };
+    let handled=mut.false;
+    if(c==prv){
+      if(c!=67){
+        i=i+1;
+        handled=true;
+      };
+    };
+    if(!(handled)){
+      if(isvowel(c)){
+        if(i==0){ out=s.concat(out;charat(w;i)); };
+        i=i+1;
+      }el{
+        if(c==83){
+          if(nxt==72){
+            out=s.concat(out;"X");
+            i=i+2;
+          }el{
+            out=s.concat(out;"S");
+            i=i+1;
+          };
+        }el{
+          if(c==84){
+            if(nxt==72){
+              out=s.concat(out;"0");
+              i=i+2;
+            }el{
+              out=s.concat(out;"T");
+              i=i+1;
+            };
+          }el{
+            if(c==72){
+              let prvvowel=isvowel(prv);
+              let nxtvowel=isvowel(nxt);
+              if(prvvowel){
+                if(!(nxtvowel)){
+                }el{
+                  out=s.concat(out;"H");
+                };
+              }el{
+                out=s.concat(out;"H");
+              };
+              i=i+1;
+            }el{
+              out=s.concat(out;charat(w;i));
+              i=i+1;
+            };
+          };
+        };
+      };
+    };
+  };
+  <out
+};
+f=dmetaphone(word:$str):$str{
+  let w=lettersonly(word);
+  let n=s.len(w) as i64;
+  let out=mut."";
+  let i=mut.0;
+  lp(true){
+    if(i>=n){br};
+    let c=byteat(w;i);
+    let nxt=mut.0;
+    if(i+1<n){ nxt=byteat(w;i+1); };
+    let prv=mut.0;
+    if(i>0){ prv=byteat(w;i-1); };
+    let handled=mut.false;
+    if(c==prv){
+      if(c!=67){
+        i=i+1;
+        handled=true;
+      };
+    };
+    if(!(handled)){
+      if(isvowel(c)){
+        if(i==0){ out=s.concat(out;charat(w;i)); };
+        i=i+1;
+      }el{
+        if(c==83){
+          if(nxt==72){
+            out=s.concat(out;"X");
+            i=i+2;
+          }el{
+            out=s.concat(out;"S");
+            i=i+1;
+          };
+        }el{
+          if(c==84){
+            if(nxt==72){
+              let after=mut.0;
+              if(i+2<n){ after=byteat(w;i+2); };
+              let atend=mut.false;
+              if(i+2>=n){ atend=true; };
+              if(after==69){
+                if(i+3>=n){ atend=true; };
+              };
+              if(!(atend)){
+                out=s.concat(out;"0");
+              };
+              i=i+2;
+            }el{
+              out=s.concat(out;"T");
+              i=i+1;
+            };
+          }el{
+            if(c==72){
+              let prvvowel=isvowel(prv);
+              let nxtvowel=isvowel(nxt);
+              if(prvvowel){
+                if(!(nxtvowel)){
+                }el{
+                  out=s.concat(out;"H");
+                };
+              }el{
+                out=s.concat(out;"H");
+              };
+              i=i+1;
+            }el{
+              out=s.concat(out;charat(w;i));
+              i=i+1;
+            };
+          };
+        };
+      };
+    };
+  };
+  <out
+};
+f=tabchar():$str{
+  let bytes=mut.@();
+  bytes=bytes.push(9 as byte);
+  <mt s.frombytes(bytes){ $ok:v v; $err:e " " }
+};
+f=main():i64{
+  let t=tabchar();
+  lp(true){
+    let line=io.readln();
+    if(io.eof()){br};
+    let w=s.trim(line);
+    if(s.len(w)>0 as u64){
+      let sx=soundex(w);
+      let mp=metaphone(w);
+      let dm=dmetaphone(w);
+      let out=mut.w;
+      out=s.concat(out;t);
+      out=s.concat(out;sx);
+      out=s.concat(out;t);
+      out=s.concat(out;mp);
+      out=s.concat(out;t);
+      out=s.concat(out;dm);
+      io.println(out);
+    };
+  };
+  <0
+};

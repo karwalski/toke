@@ -1,0 +1,52 @@
+m=packet;
+i=io:std.io;
+i=s:std.str;
+f=main():$i64{
+  let line1=io.readln();
+  let maxb=mt s.toint(s.trim(line1)){$ok:v v;$err:e 0};
+  let db=s.builder();
+  lp(1==1){
+    let line=io.readln();
+    if(io.eof()){br};
+    s.add(db;s.trim(line));
+  };
+  let texts=mut.@();
+  let parts=s.split(s.build(db);"\"text\":\"");
+  let np=parts.len;
+  lp(let i=1;i<np;i=i+1){
+    let seg=parts.get(i);
+    let q=s.indexof(seg;"\"");
+    let t=if(q<0){seg}el{mt s.slice(seg;0;q as$u64){$ok:v v;$err:e seg}};
+    texts=texts.append(t);
+  };
+  let nt=texts.len;
+  let out=s.builder();
+  let batchno=mut.0;
+  let i=mut.0;
+  lp(i<nt){
+    let curtexts=mut.@();
+    let curcap=mut.0;
+    let curbytes=mut.0;
+    lp(i<nt){
+      let t=texts.get(i);
+      let tl=s.len(t) as$i64;
+      let jl=tl+11;
+      let willcap=curcap+jl;
+      if(curtexts.len>0&&willcap>maxb){br};
+      curtexts=curtexts.append(t);
+      curcap=curcap+jl;
+      curbytes=curbytes+tl;
+      i=i+1;
+    };
+    batchno=batchno+1;
+    let nb=s.builder();
+    lp(let k=0;k<curtexts.len;k=k+1){
+      if(k>0){s.add(nb;", ")};
+      s.add(nb;curtexts.get(k));
+    };
+    let names=s.build(nb);
+    s.add(out;"batch \(batchno) (\(curbytes) bytes): [\(names)]\n");
+  };
+  io.print(s.build(out));
+  <0
+};

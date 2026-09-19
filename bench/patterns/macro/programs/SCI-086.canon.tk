@@ -1,0 +1,52 @@
+m=pascal;
+i=io:std.io;
+
+i=s:std.str;
+
+f=main():$i64 {
+  let n=s.toint(s.trim(io.readln()));
+  let prev=mut.@(1);
+  let row=mut.0;
+  lp (row<n) {
+    let line=s.builder();
+    let i=mut.0;
+    lp (i<prev.len()) {
+      if (i>0) {
+        s.add(line; " ")
+      };
+      s.add(line; "\(prev.get(i))");
+      i=i+1
+    };
+    io.println(s.build(line));
+    let next=mut.@(1);
+    let j=mut.1;
+    lp (j<prev.len()) {
+      next=next.append(prev.get(j-1)+prev.get(j));
+      j=j+1
+    };
+    next=next.append(1);
+    prev=next;
+    row=row+1
+  };
+  let q=s.trim(io.readln());
+  if (s.len(q)>0) {
+    let parts=s.split(q; " ");
+    let nn=s.toint(parts.get(0));
+    let kk=s.toint(parts.get(1));
+    let r=mut.@(1);
+    let i2=mut.0;
+    lp (i2<nn) {
+      let nx=mut.@(1);
+      let j2=mut.1;
+      lp (j2<r.len()) {
+        nx=nx.append(r.get(j2-1)+r.get(j2));
+        j2=j2+1
+      };
+      nx=nx.append(1);
+      r=nx;
+      i2=i2+1
+    };
+    io.println("C(\(nn),\(kk)) = \(r.get(kk))")
+  };
+  <0
+}

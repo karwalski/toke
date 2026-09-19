@@ -1,0 +1,50 @@
+{
+ "name": "AIA-100",
+ "kind": "library",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "cond-bind-if",
+   "sites": 4,
+   "note": "setstr/setint branch-appends and two marrjoin branch-appends -> expression-if arguments"
+  },
+  {
+   "id": "iter-find-first",
+   "sites": 2,
+   "note": "indexof: mut `r` + full scan -> direct `<i` return; insertion-sort inner loop: `placed` flag + forced exit -> br (inline)"
+  },
+  {
+   "id": "acc-array",
+   "sites": 6,
+   "note": "@i64 accumulators (setint r, mwrites, mts, order) x=x+@(v) -> .append; @str accumulators kept as +@() (see not_applied)"
+  },
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 1,
+   "note": "single-use vn/inner inlined into json.enc(s.slice(val;1;s.len(val)-1))"
+  },
+  {
+   "id": "str-num-format",
+   "sites": 1,
+   "note": "s.fromint(x as $i64) -> \"\\(x as $i64)\""
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "acc-array",
+   "issue": "127.10",
+   "reason": "mkeys/mvals/mtype/magent/marrjoin and setstr's r are @str whose elements are later interpolated (\"\\(prev),\\(add)\", \"[\\(joined)]\"); .append-built @str elements print pointers under interpolation, so +@() is kept"
+  },
+  {
+   "id": "cond-elif-chain",
+   "issue": null,
+   "reason": "new: `let ty=if(f1==\"\\\"\"){\"s\"}el if(f1==\"[\"){\"a\"}el{\"n\"}; mtype=mtype+@(ty)` silently appends NOTHING (array length stays 0; mut-flag `ty` appends fine) \u2014 the two `ty` mut-flag ladders are kept"
+  },
+  {
+   "id": "cond-bind-if",
+   "issue": "127.7",
+   "reason": "`let joined=if(prev==\"\"){add}el if(add==\"\"){prev}el{\"\\(prev),\\(add)\"}` then \"[\\(joined)]\" prints a heap address (interpolating an expression-if-bound str, 127.7 class); the mut-flag nested if/el is kept (so cond-elif-chain is not applied there either)"
+  }
+ ],
+ "note": null
+}

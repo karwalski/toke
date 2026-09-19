@@ -1,0 +1,40 @@
+{
+ "name": "GAM-117",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "acc-array",
+   "sites": 3,
+   "note": "taboos, cleanWords, found: `+@(v)` -> `.append(v)`"
+  },
+  {
+   "id": "str-build-loop",
+   "sites": 2,
+   "note": "desc accumulation and per-word cw: s.concat loops -> builder"
+  },
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 1,
+   "note": "`descUp` single-use let inlined into s.split(s.upper(...))"
+  },
+  {
+   "id": "cond-bool-combine",
+   "sites": 1,
+   "note": "taboo match: three nested ifs -> one `&&` chain"
+  },
+  {
+   "id": "str-interp-vs-join",
+   "sites": 1,
+   "note": "`let outl=mut.\"Taboo: \"; outl=s.concat(...)` -> `\"Taboo: \\(found.get(i))\"` (element of an .append-built typed @($str) interpolates correctly)"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "iter-find-first",
+   "issue": null,
+   "reason": "isFound scan is inline in main (needs br/flag); not its own function"
+  }
+ ],
+ "note": "canon laid out from `tkc --fmt` of the original; the formatter's `@($str)`->`@(str)` (also f64/i64/bool) rewrite was reverted by hand because `@(str)` fails codegen (E9003 `use of undefined value '%str'`) \u2014 the fmt'd original itself does not build"
+}

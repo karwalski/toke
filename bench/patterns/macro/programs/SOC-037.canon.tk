@@ -1,0 +1,58 @@
+m=listfeed;
+i=io:std.io;
+i=j:std.json;
+i=s:std.str;
+
+t=$apperr{$bad:$str};
+
+(* Fixture: user-created lists keyed by list_id.
+   Returns the human-readable list name for a known id, or "" if unknown. *)
+f=listname(id:$str):$str{
+  if(s.eq(id;"lst_1")){<"Tech People"};
+  if(s.eq(id;"lst_2")){<"Foodies"};
+  if(s.eq(id;"lst_3")){<"Travel Buddies"};
+  <""
+};
+
+(* Fixture: posts authored by members of a list, rendered as a JSON array.
+   Each list owns a distinct set of member posts. *)
+f=listposts(id:$str):$str{
+  if(s.eq(id;"lst_1")){
+    <"[{\"id\":20,\"author\":\"techie\",\"content\":\"New framework\"}]"
+  };
+  if(s.eq(id;"lst_2")){
+    <"[{\"id\":31,\"author\":\"chef\",\"content\":\"Fresh pasta\"}]"
+  };
+  if(s.eq(id;"lst_3")){
+    <"[{\"id\":42,\"author\":\"nomad\",\"content\":\"Lisbon sunset\"}]"
+  };
+  <"[]"
+};
+
+(* Build the list-feed response object for a known list. *)
+f=feedresponse(id:$str):$str{
+  <"{\"list_id\":\(j.enc(id)),\"list_name\":\(j.enc(listname(id))),\"posts\":\(listposts(id)),\"next_cursor\":null}"
+};
+
+(* Parse the request and dispatch by action.
+   Errors from JSON decoding/lookup propagate as $apperr. *)
+f=handle(raw:$str):$str!$apperr{
+  let req=j.dec(raw)!$apperr;
+  let action=j.str(req;"action")!$apperr;
+  if(s.eq(action;"list_feed")==(1==0)){
+    <"{\"error\":\"Unknown action\"}"
+  };
+  let listid=j.str(req;"list_id")!$apperr;
+  if(s.eq(listname(listid);"")){
+    <"{\"error\":\"List not found\"}"
+  };
+  <feedresponse(listid)
+};
+
+f=main():$i64{
+  io.println(mt handle(s.trim(io.readln())){
+    $str:v v;
+    $apperr:e "{\"error\":\"Bad request\"}"
+  });
+  <0
+};

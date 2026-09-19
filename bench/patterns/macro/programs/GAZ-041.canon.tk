@@ -1,0 +1,60 @@
+m=tue13;i=io:std.io;i=s:std.str;
+f=daysfromcivil(yy:i64;m:i64;d:i64):i64{
+  let y=if(m<=2){yy-1}el{yy};
+  let era=y/400;
+  let yoe=y-era*400;
+  let mm=if(m>2){m-3}el{m+9};
+  let doy=(153*mm+2)/5+d-1;
+  let doe=yoe*365+yoe/4-yoe/100+doy;
+  <era*146097+doe-719468
+};
+f=weekday(y:i64;m:i64;d:i64):i64{
+  let r=(daysfromcivil(y;m;d)+3)%7;
+  <if(r<0){r+7}el{r}
+};
+f=name(i:i64):$str{
+  if(i==0){<"Mon"}; if(i==1){<"Tue"}; if(i==2){<"Wed"}; if(i==3){<"Thu"};
+  if(i==4){<"Fri"}; if(i==5){<"Sat"}; <"Sun"
+};
+f=readall():$str{
+  let all=s.builder();
+  lp(1==1){ let ln=io.readln(); s.add(all;ln); s.add(all;" "); if(io.eof()){br} };
+  <s.build(all)
+};
+f=main():i64{
+  let toks=s.fields(readall());
+  let sy=s.toint(toks.get(0));
+  let sm=s.toint(toks.get(1));
+  let sd=s.toint(toks.get(2));
+  let ey=s.toint(toks.get(3));
+  let em=s.toint(toks.get(4));
+  let ed=s.toint(toks.get(5));
+  let start=daysfromcivil(sy;sm;sd);
+  let end=daysfromcivil(ey;em;ed);
+  let count=mut.@(0;0;0;0;0;0;0);
+  let prevtue=mut.-1;
+  let maxgap=mut.0;
+  let y=mut.sy;
+  let m=mut.sm;
+  lp(y<ey||(y==ey&&m<=em)){
+    let d13=daysfromcivil(y;m;13);
+    if(start<=d13&&d13<=end){
+      let w=weekday(y;m;13);
+      count=count.set(w;count.get(w)+1);
+      if(w==1){
+        if(prevtue!=-1){
+          let gap=d13-prevtue;
+          if(gap>maxgap){ maxgap=gap };
+        };
+        prevtue=d13;
+      };
+    };
+    m=m+1;
+    if(m>12){ m=1; y=y+1 };
+  };
+  lp(let i=0;i<7;i=i+1){
+    io.println("\(name(i)) \(count.get(i))");
+  };
+  io.println("MaxTueGap \(maxgap)");
+  <0
+};

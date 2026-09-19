@@ -1,0 +1,39 @@
+{
+ "name": "MSG-061",
+ "kind": "library",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "str-build-loop",
+   "sites": 3,
+   "note": "data/names/out s.concat accumulation loops -> s.builder"
+  },
+  {
+   "id": "cond-bind-if",
+   "sites": 1,
+   "note": "mut `t` assigned in both branches -> expression-if bind"
+  },
+  {
+   "id": "acc-array",
+   "sites": 2,
+   "note": "texts/curtexts x=x+@(v) -> x=x.append(v) (elements read directly via .get into s.add, no interpolation)"
+  },
+  {
+   "id": "cond-bool-combine",
+   "sites": 1,
+   "note": "nested if(a){if(b){br}} -> if(a&&b){br}"
+  },
+  {
+   "id": "str-interp-vs-join",
+   "sites": 1,
+   "note": "6-deep s.concat nest for the batch line -> one interpolation (its `lineo` single-use let folded in)"
+  },
+  {
+   "id": "str-num-format",
+   "sites": 2,
+   "note": "s.fromint(batchno)/s.fromint(curbytes) -> interpolation"
+  }
+ ],
+ "not_applied": [],
+ "note": null
+}

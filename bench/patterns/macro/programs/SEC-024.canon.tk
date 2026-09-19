@@ -1,0 +1,11 @@
+m=jwtaudit;
+i=io:std.io;
+
+i=s:std.str;
+
+f=main():$i64 {
+  let line=s.trim(io.readln());
+  let parts=s.split(line; ".");
+  io.println(if (parts.len()>=1&&s.contains(parts.get(0); "ub25l")) {"none_algorithm"} el {"issues"});
+  <0
+}

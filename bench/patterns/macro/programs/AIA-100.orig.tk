@@ -1,0 +1,175 @@
+(* source: ~/tk/toke-test-programs/results/solutions/ai-agents/AIA-100/solution.tk sha256 6ec7c5c2ce50c0f505aa11f2fd3af9019ce3f7fe4500d1f04e6dd17b6e656d0d manifest ~/tk/toke-test-programs/results/library/ai-agents.json *)
+m=mergestate;i=io:std.io;i=s:std.str;i=json:std.json;
+f=pdoc(x:$str):Json{<mt json.dec(x){$ok:d d;$err:e pdoc("{}")}};
+f=first(x:$str):$str{ if(s.len(x)==0){<""}; <s.slice(x;0;1) };
+f=innerarr(raw:$str):$str{ let n=s.len(raw); if(n<=2){<""}; <s.slice(raw;1;n-1) };
+f=setstr(a:@($str);idx:$i64;v:$str):@($str){
+let r=mut.@(); let n=a.len(); let i=mut.0;
+lp(i<n){ if(i==idx){r=r+@(v)}el{r=r+@(a.get(i))}; i=i+1; };
+<r};
+f=setint(a:@($i64);idx:$i64;v:$i64):@($i64){
+let r=mut.@(); let n=a.len(); let i=mut.0;
+lp(i<n){ if(i==idx){r=r+@(v)}el{r=r+@(a.get(i))}; i=i+1; };
+<r};
+f=indexof(a:@($str);v:$str):$i64{
+let n=a.len(); let i=mut.0; let r=mut.0-1;
+lp(i<n){ if(a.get(i)==v){if(r<0){r=i}}; i=i+1; };
+<r};
+f=main():$i64{
+let line=io.readln();
+let d=pdoc(line);
+let base=json.getobj(d;"base_state");
+let basekeys=json.keys(base);
+let updates=json.getarr(d;"updates");
+let nu=updates.len();
+
+
+let mkeys=mut.@();
+let mvals=mut.@();
+let mwrites=mut.@();
+let mtype=mut.@();
+let magent=mut.@();
+let mts=mut.@();
+let marrjoin=mut.@();
+
+let bk=mut.0;
+let nbk=basekeys.len();
+lp(bk<nbk){
+let k="\(basekeys.get(bk))";
+let raw=json.getobj(base;k).raw;
+mkeys=mkeys+@(k);
+mvals=mvals+@(raw);
+mwrites=mwrites+@(0);
+let f1=first(raw);
+let ty=mut."n";
+if(f1=="\""){ty="s"};
+if(f1=="["){ty="a"};
+mtype=mtype+@(ty);
+magent=magent+@("");
+mts=mts+@(0);
+if(ty=="a"){marrjoin=marrjoin+@(innerarr(raw))}el{marrjoin=marrjoin+@("")};
+bk=bk+1;
+};
+
+
+let order=mut.@();
+let ui=mut.0;
+lp(ui<nu){ order=order+@(ui); ui=ui+1; };
+let oi=mut.1;
+lp(oi<nu){
+let cur=order.get(oi);
+let curts=json.getint(updates.get(cur);"timestamp");
+let jj=mut.oi-1;
+let inspos=mut.0;
+let placed=mut.false;
+lp(jj>=0){
+if(placed){jj=jj}el{
+let pj=order.get(jj);
+let pts=json.getint(updates.get(pj);"timestamp");
+if(pts>curts){
+order=setint(order;jj+1;pj);
+jj=jj-1;
+}el{inspos=jj+1;placed=true;jj=0-1};
+};
+};
+order=setint(order;inspos;cur);
+oi=oi+1;
+};
+
+
+let s2=mut.0;
+lp(s2<nu){
+let upi=order.get(s2);
+let upd=updates.get(upi);
+let agentid=json.getobj(upd;"agent_id").raw;
+let ts=json.getint(upd;"timestamp");
+let changes=json.getobj(upd;"changes");
+let cks=json.keys(changes);
+let ci=mut.0;
+let nck=cks.len();
+lp(ci<nck){
+let ck="\(cks.get(ci))";
+let raw=json.getobj(changes;ck).raw;
+let f1=first(raw);
+let ty=mut."n";
+if(f1=="\""){ty="s"};
+if(f1=="["){ty="a"};
+let pos=indexof(mkeys;ck);
+if(pos<0){
+mkeys=mkeys+@(ck);
+mvals=mvals+@(raw);
+mwrites=mwrites+@(1);
+mtype=mtype+@(ty);
+magent=magent+@(agentid);
+mts=mts+@(ts);
+if(ty=="a"){marrjoin=marrjoin+@(innerarr(raw))}el{marrjoin=marrjoin+@("")};
+}el{
+mwrites=setint(mwrites;pos;mwrites.get(pos)+1);
+mtype=setstr(mtype;pos;ty);
+magent=setstr(magent;pos;agentid);
+mts=setint(mts;pos;ts);
+if(ty=="a"){
+let prev=marrjoin.get(pos);
+let add=innerarr(raw);
+let joined=mut."";
+if(prev==""){joined=add}el{ if(add==""){joined=prev}el{joined="\(prev),\(add)"} };
+marrjoin=setstr(marrjoin;pos;joined);
+mvals=setstr(mvals;pos;"[\(joined)]");
+}el{
+mvals=setstr(mvals;pos;raw);
+};
+};
+ci=ci+1;
+};
+s2=s2+1;
+};
+
+
+let b=s.buf();
+s.add(b;"{\"merged_state\":{");
+let mk=mut.0;
+let nmk=mkeys.len();
+lp(mk<nmk){
+if(mk>0){s.add(b;",")};
+s.add(b;json.enc(mkeys.get(mk)));
+s.add(b;":");
+s.add(b;mvals.get(mk));
+mk=mk+1;
+};
+s.add(b;"},\"conflicts\":[");
+let cf=mut.0;
+let firstc=mut.true;
+let mk2=mut.0;
+lp(mk2<nmk){
+let writes=mwrites.get(mk2);
+let ty=mtype.get(mk2);
+if(writes>=2){
+if(ty=="a"){
+if(firstc==false){s.add(b;",")};
+firstc=false;
+s.add(b;"{\"key\":");
+s.add(b;json.enc(mkeys.get(mk2)));
+s.add(b;",\"resolution\":\"merged arrays\",\"reason\":\"Concurrent array updates combined\"}");
+};
+if(ty=="s"){
+if(firstc==false){s.add(b;",")};
+firstc=false;
+s.add(b;"{\"key\":");
+s.add(b;json.enc(mkeys.get(mk2)));
+s.add(b;",\"resolution\":");
+let val=mvals.get(mk2);
+let vn=s.len(val);
+let inner=s.slice(val;1;vn-1);
+s.add(b;json.enc(inner));
+s.add(b;",\"reason\":\"Latest timestamp (");
+s.add(b;s.slice(magent.get(mk2);1;s.len(magent.get(mk2))-1));
+s.add(b;" at ");
+s.add(b;s.fromint(mts.get(mk2) as $i64));
+s.add(b;") wins for conflicting scalar\"}");
+};
+};
+mk2=mk2+1;
+};
+s.add(b;"]}");
+io.println(s.done(b));
+<0};

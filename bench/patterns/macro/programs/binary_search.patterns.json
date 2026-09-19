@@ -1,0 +1,14 @@
+{
+ "name": "binary_search",
+ "kind": "bench",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "cond-elif-chain",
+   "sites": 1,
+   "note": "nested if/el in the else branch -> el if chain"
+  }
+ ],
+ "not_applied": [],
+ "note": null
+}

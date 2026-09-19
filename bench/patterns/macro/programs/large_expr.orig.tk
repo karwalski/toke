@@ -1,0 +1,12 @@
+(* source: bench/programs/large_expr.tk sha256 e2efc4485de09715696352cd2392a3c068b5df6e2462b9f85eb66b6157f5e0d8 *)
+m=bench;
+f=compute(x:i64):i64{
+  <x*x+x*3-x/2+x*x*x-x*5+x*7-x*x+x*11-x*13+x*17+x*x*2-x*19+x*23
+};
+f=main():i64{
+  let s=mut.0;
+  lp(let i=1;i<5000000;i=i+1){
+    s=s+compute(i)
+  };
+  <s
+};

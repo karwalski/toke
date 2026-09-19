@@ -1,0 +1,11 @@
+(* source: bench/programs/nested_loops.tk sha256 659ebf8720547d91729cbfa84ec2bb93365aa2f36f5565a50ed3432a17238d93 *)
+m=bench;
+f=main():i64{
+  let s=mut.0;
+  lp(let i=0;i<1000;i=i+1){
+    lp(let j=0;j<1000;j=j+1){
+      s=s+i*j
+    }
+  };
+  <s
+};

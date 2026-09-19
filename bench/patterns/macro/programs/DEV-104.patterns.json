@@ -1,0 +1,49 @@
+{
+ "name": "DEV-104",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "str-interp-vs-join",
+   "sites": 5,
+   "note": "field/numfield pat, obj=\"{\\(raw)}\", the row (7 nested concats), the All UP tail"
+  },
+  {
+   "id": "str-num-format",
+   "sites": 2,
+   "note": "str.fromint(upcount)/str.fromint(total) -> interpolation"
+  },
+  {
+   "id": "cond-bind-if",
+   "sites": 2,
+   "note": "numfield endidx and statusbox mut+if/el -> let x=if(..)"
+  },
+  {
+   "id": "cond-bool-combine",
+   "sites": 1,
+   "note": "endidx: if(c1<0){..}el{if(c2>=0){if(c2<c1){..}}} -> c1<0||(c2>=0&&c2<c1)"
+  },
+  {
+   "id": "acc-count-if",
+   "sites": 1,
+   "note": "upcount: separate if + counter (was inside the statusbox if/el)"
+  },
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 2,
+   "note": "pad: single-use `len` into the lp init; latstr inlined into pad(\"\\(lat)ms\";6)"
+  },
+  {
+   "id": "str-build-loop",
+   "sites": 1,
+   "note": "main out: str.concat per row -> str.builder/add/build"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "str-repeat-pad",
+   "issue": null,
+   "reason": "pad() is already the canonical lp+concat form; unchanged"
+  }
+ ]
+}

@@ -1,0 +1,59 @@
+{
+ "name": "MFG-051",
+ "kind": "library",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 6,
+   "note": "`line`, `gm`, `rm`+`rounded`, `dfb`, `dfw` single-use lets inlined"
+  },
+  {
+   "id": "acc-array",
+   "sites": 6,
+   "note": "keys/gsum/gcount/rowgi/rowval/gmean: `+@(v)` -> `.append(v)`"
+  },
+  {
+   "id": "cond-bind-if",
+   "sites": 2,
+   "note": "msw and fcomp: `let x=mut.0.0; if(c){x=v}` -> `let x=if(c){v}el{0.0}`"
+  },
+  {
+   "id": "cond-bool-combine",
+   "sites": 1,
+   "note": "`matched` flag from two nested ifs -> one `&&` test"
+  },
+  {
+   "id": "cond-elif-chain",
+   "sites": 1,
+   "note": "significance ladder: nested if/el -> el if chain"
+  },
+  {
+   "id": "str-build-loop",
+   "sites": 1,
+   "note": "group_means loop: s.concat accumulator -> builder"
+  },
+  {
+   "id": "str-array-render",
+   "sites": 1,
+   "note": "keys.get(mi) added to the builder directly (no interpolation of an .append-built element)"
+  },
+  {
+   "id": "str-interp-vs-join",
+   "sites": 1,
+   "note": "final JSON: 9 sequential s.concat -> one interpolation"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "iter-find-first",
+   "issue": null,
+   "reason": "`pos` key scan is inline in main (finds last match; no br)"
+  },
+  {
+   "id": "cond-bind-if",
+   "issue": null,
+   "reason": "fstr/pstr conditional `.0` suffix reads the value it rewrites; an expression-if would evaluate s.fromfloat twice \u2014 left as is"
+  }
+ ]
+}

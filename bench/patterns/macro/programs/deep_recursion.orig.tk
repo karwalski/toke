@@ -1,0 +1,16 @@
+(* source: bench/programs/deep_recursion.tk sha256 49a6f34622c64e0483b5e9f739423152a3fa6fd8c09c260c944af9d61b26ae6c *)
+m=bench;
+f=ack(m:i64;n:i64):i64{
+  if(m==0){
+    <n+1
+  }el{
+    if(n==0){
+      <ack(m-1;1)
+    }el{
+      <ack(m-1;ack(m;n-1))
+    }
+  }
+};
+f=main():i64{
+  <ack(3;10)
+};

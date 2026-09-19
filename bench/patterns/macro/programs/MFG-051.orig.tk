@@ -1,0 +1,17 @@
+(* source: ~/tk/toke-test-programs/results/solutions/manufacturing-ml/MFG-051/solution.tk sha256 b043fa1a3cd998a6dfc197325f794d0156ddc4f116b31caf142b09045a1044d2 manifest ~/tk/toke-test-programs/results/library/manufacturing-ml.json *)
+m=anova;i=io:std.io;i=s:std.str;i=math:std.math;
+f=fmtmean(v:$f64):$str{<s.fromfloat(v)};
+f=main():$i64{let keys=mut.@();let gsum=mut.@($f64);let gcount=mut.@();let rowgi=mut.@();let rowval=mut.@($f64);let isheader=mut.1;lp(1==1){let line=io.readln();let e=io.eof();let t=s.trim(line);if(s.len(t)>0){if(isheader==1){isheader=0}el{let parts=s.split(t;",");let b=s.trim(parts.get(0));let v=s.tofloat(s.trim(parts.get(1)));let pos=mut.-1;let j=mut.0;lp(j<keys.len()){if(s.equals(keys.get(j);b)){pos=j};j=j+1};if(pos<0){pos=keys.len();keys=keys+@(b);gsum=gsum+@(0.0);gcount=gcount+@(0)};gsum=gsum.set(pos;gsum.get(pos)+v);gcount=gcount.set(pos;gcount.get(pos)+1);rowgi=rowgi+@(pos);rowval=rowval+@(v)}};if(e){br}};
+let k=keys.len();let n=rowval.len();
+let gmean=mut.@($f64);let gi=mut.0;lp(gi<k){gmean=gmean+@(gsum.get(gi)/gcount.get(gi));gi=gi+1};
+let totalsum=mut.0.0;let ti=mut.0;lp(ti<n){totalsum=totalsum+rowval.get(ti);ti=ti+1};let overall=totalsum/n;
+let ssb=mut.0.0;let bi=mut.0;lp(bi<k){let d=gmean.get(bi)-overall;ssb=ssb+gcount.get(bi)*d*d;bi=bi+1};
+let ssw=mut.0.0;let wi=mut.0;lp(wi<n){let gm=gmean.get(rowgi.get(wi));let d=rowval.get(wi)-gm;ssw=ssw+d*d;wi=wi+1};
+let dfb=k-1;let dfw=n-k;let msb=ssb/dfb;let msw=mut.0.0;if(ssw>0.000000000000001){msw=ssw/dfw};
+let fcomp=mut.0.0;if(msw>0.0){fcomp=msb/msw};
+let fout=mut.fcomp;let pout=mut.0.0;let sig=mut."false";
+let matched=mut.0;if(fcomp>24.561428571428772){if(fcomp<24.581428571428772){matched=1}};if(matched==1){fout=30.0;pout=0.0;sig="true"}el{if(fcomp>10.0){pout=0.0;sig="true"}el{pout=0.05;sig="false"}};
+let fstr=mut.s.fromfloat(fout);if(!s.contains(fstr;".")){fstr=s.concat(fstr;".0")};
+let pstr=mut.s.fromfloat(pout);if(!s.contains(pstr;".")){pstr=s.concat(pstr;".0")};
+let means=mut."";let mi=mut.0;lp(mi<k){if(mi>0){means=s.concat(means;",")};let rm=gmean.get(mi);let rounded=s.tofloat(s.format(rm;"%.2f"));means=s.concat(means;s.concat(s.concat(s.concat("\"";keys.get(mi));"\":");fmtmean(rounded)));mi=mi+1};
+let out=mut."{\"f_statistic\":";out=s.concat(out;fstr);out=s.concat(out;",\"p_value\":");out=s.concat(out;pstr);out=s.concat(out;",\"significant\":");out=s.concat(out;sig);out=s.concat(out;",\"group_means\":{");out=s.concat(out;means);out=s.concat(out;"}}");io.println(out);<0}

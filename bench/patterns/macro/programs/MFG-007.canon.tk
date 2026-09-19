@@ -1,0 +1,104 @@
+m=rangechart;
+i=io:std.io;
+
+i=s:std.str;
+
+f=fmt2(x:$f64):$str {
+  let h0=(x*100.0+0.5) as i64;
+  let h=if (h0<0) {0} el {h0};
+  let whole=h/100;
+  let frac=h-whole*100;
+  let ws="\(whole)";
+  if (frac==0) {
+    <"\(ws).0"
+  };
+  if (frac-frac/10*10==0) {
+    <"\(ws).\(frac/10)"
+  };
+  let fs=if (frac<10) {"0\(frac)"} el {"\(frac)"};
+  <"\(ws).\(fs)"
+};
+
+f=d3of(n:$i64):$f64 {
+  if (n==7) {
+    <0.076
+  };
+  if (n==8) {
+    <0.136
+  };
+  if (n==9) {
+    <0.184
+  };
+  if (n==10) {
+    <0.223
+  };
+  <0.0
+};
+
+f=d4of(n:$i64):$f64 {
+  if (n==2) {
+    <3.267
+  };
+  if (n==3) {
+    <2.574
+  };
+  if (n==4) {
+    <2.282
+  };
+  if (n==5) {
+    <2.114
+  };
+  if (n==6) {
+    <2.004
+  };
+  if (n==7) {
+    <1.924
+  };
+  if (n==8) {
+    <1.864
+  };
+  if (n==9) {
+    <1.816
+  };
+  if (n==10) {
+    <1.777
+  };
+  <2.574
+};
+
+f=main():$i64 {
+  let ss=mut.0;
+  let total=mut.0.0;
+  let rn=mut.0;
+  lp (1==1) {
+    let line=s.trim(io.readln());
+    if (s.len(line)==0) {
+      br
+    };
+    let cells=s.split(line; ",");
+    let cn=cells.len as i64;
+    if (cn>0) {
+      ss=cn;
+      let mn=mut.s.tofloat(cells.get(0));
+      let mx=mut.s.tofloat(cells.get(0));
+      lp (let i=1; i<cn; i=i+1) {
+        let v=s.tofloat(cells.get(i));
+        if (v<mn) {
+          mn=v
+        };
+        if (v>mx) {
+          mx=v
+        }
+      };
+      total=total+(mx-mn);
+      rn=rn+1
+    }
+  };
+  let rbar=total/rn as f64;
+  let d3=d3of(ss);
+  let d4=d4of(ss);
+  let ucl=d4*rbar;
+  let lcl=if (d3*rbar<0.0) {0.0} el {d3*rbar};
+  io.println("{\"r_bar\":\(fmt2(rbar)),\"ucl\":\(fmt2(ucl)),\"lcl\":\(fmt2(lcl))}");
+  <0
+}

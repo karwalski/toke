@@ -1,0 +1,2 @@
+(* source: ~/tk/toke-test-programs/results/solutions/security/SEC-024/solution.tk sha256 17a12892052f52cae6e71dc4f5e23ebd26f52138d856ee2582b90850de7393ad manifest ~/tk/toke-test-programs/results/library/security.json *)
+m=jwtaudit;i=io:std.io;i=s:std.str;f=main():$i64{let line=s.trim(io.readln());let parts=s.split(line;".");if(parts.len()>=1){let header=parts.get(0);if(s.contains(header;"ub25l")){io.println("none_algorithm")}el{io.println("issues")}}el{io.println("issues")};<0}

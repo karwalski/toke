@@ -1,0 +1,35 @@
+{
+ "name": "MSG-038",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "cond-elif-chain",
+   "sites": 1,
+   "note": "evalQ: three-deep nested if/el on p -> `el if` chain"
+  },
+  {
+   "id": "cond-bool-combine",
+   "sites": 3,
+   "note": "evalQ: `if(mode==X){if(has){..}}` -> `if(mode==X&&has)`"
+  },
+  {
+   "id": "str-interp-vs-join",
+   "sites": 1,
+   "note": "extractstr: nested s.concat building the key pattern -> interpolation"
+  },
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 1,
+   "note": "extractstr: single-use `rest0` inlined into s.indexof"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "parse-json",
+   "issue": null,
+   "reason": "hand JSON scan kept (stdlib substitution, not a site rewrite)"
+  }
+ ],
+ "note": null
+}

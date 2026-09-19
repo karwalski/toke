@@ -1,0 +1,25 @@
+{
+ "name": "SEC-010",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 3,
+   "note": "`mac`, `tok`, `expected` single-use lets inlined"
+  },
+  {
+   "id": "str-interp-vs-join",
+   "sites": 2,
+   "note": "s.concat(sid;\"1700000000\") and the token JSON line -> interpolation"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "cond-elif-chain",
+   "issue": null,
+   "reason": "hv's 15 guards are already sequential returns (err-validate-early canonical)"
+  }
+ ],
+ "note": "canon laid out from `tkc --fmt` of the original; the formatter's `@($str)`->`@(str)` (also f64/i64/bool) rewrite was reverted by hand because `@(str)` fails codegen (E9003 `use of undefined value '%str'`) \u2014 the fmt'd original itself does not build"
+}

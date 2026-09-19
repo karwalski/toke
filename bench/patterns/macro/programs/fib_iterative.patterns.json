@@ -1,0 +1,8 @@
+{
+ "name": "fib_iterative",
+ "kind": "bench",
+ "reformatted": false,
+ "applied": [],
+ "not_applied": [],
+ "note": "no catalogue pattern applies (already in canonical form)"
+}

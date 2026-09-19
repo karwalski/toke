@@ -1,0 +1,14 @@
+{
+ "name": "collatz",
+ "kind": "bench",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "cond-bind-if",
+   "sites": 1,
+   "note": "if/el assigning the same mut in both branches -> one expression-if assignment (form a; form c return-per-branch does not apply: the value is not returned)"
+  }
+ ],
+ "not_applied": [],
+ "note": null
+}

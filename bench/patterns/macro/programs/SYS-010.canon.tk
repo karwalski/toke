@@ -1,0 +1,93 @@
+m=path;
+i=io:std.io;
+
+i=s:std.str;
+
+f=basename(p:$str):$str {
+  let idx=mut.s.len(p)-1;
+  lp (idx>=0) {
+    if (s.equals(s.slice(p; idx; idx+1); "/")) {
+      <s.slice(p; idx+1; s.len(p))
+    };
+    idx=idx-1
+  };
+  <p
+};
+
+f=ext(p:$str):$str {
+  let bn=basename(p);
+  let idx=mut.s.len(bn)-1;
+  lp (idx>=0) {
+    if (s.equals(s.slice(bn; idx; idx+1); ".")) {
+      <s.slice(bn; idx; s.len(bn))
+    };
+    idx=idx-1
+  };
+  <""
+};
+
+f=normalize(p:$str):$str {
+  let parts=s.split(p; "/");
+  let stack=mut.@();
+  let i=mut.0;
+  lp (i<parts.len) {
+    let pt=parts.get(i);
+    if (s.equals(pt; "..")) {
+      if (stack.len>0) {
+        let ns=mut.@();
+        let k=mut.0;
+        lp (k<stack.len-1) {
+          ns=ns.append(stack.get(k));
+          k=k+1
+        };
+        stack=ns
+      }
+    } el if (!s.equals(pt; ".")&&!s.equals(pt; "")) {
+      stack=stack.append(pt)
+    };
+    i=i+1
+  };
+  let b=s.builder();
+  let j=mut.0;
+  lp (j<stack.len) {
+    s.add(b; "/");
+    s.add(b; stack.get(j));
+    j=j+1
+  };
+  let out=s.build(b);
+  if (s.len(out)==0) {
+    <"/"
+  };
+  <out
+};
+
+f=main():$i64 {
+  lp (1==1) {
+    let line=io.readln();
+    if (s.len(line)==0) {
+      br
+    };
+    let parts=s.split(line; " ");
+    let op=parts.get(0);
+    if (s.equals(op; "normalize")) {
+      io.println(normalize(parts.get(1)))
+    } el if (s.equals(op; "basename")) {
+      io.println(basename(parts.get(1)))
+    } el if (s.equals(op; "ext")) {
+      io.println(ext(parts.get(1)))
+    } el if (s.equals(op; "join")) {
+      let b=s.builder();
+      s.add(b; parts.get(1));
+      let k=mut.2;
+      lp (k<parts.len) {
+        s.add(b; "/");
+        s.add(b; parts.get(k));
+        k=k+1
+      };
+      io.println(s.build(b))
+    } el if (s.equals(op; "exists")) {
+      io.println("true")
+    }
+  };
+  <0
+}

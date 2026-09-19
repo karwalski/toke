@@ -1,0 +1,18 @@
+{
+ "name": "NET-111",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "cond-bind-if",
+   "sites": 2,
+   "note": "status/expected: mut+if/el assigns -> let x=if(..){block}el{..} (block-bodied expression-if, inner if gets el{0})"
+  },
+  {
+   "id": "cond-bool-render",
+   "sites": 1,
+   "note": "println PASS/FAIL -> io.println(if(..){\"PASS\"}el{\"FAIL\"})"
+  }
+ ],
+ "not_applied": []
+}

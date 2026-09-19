@@ -1,0 +1,40 @@
+m=crypto;i=io:std.io;i=s:std.str;
+f=main():$i64{
+  let totalprofit=mut.0.0;
+  let qtys=mut.@($f64);
+  let prices=mut.@($f64);
+  let head=mut.0;
+  lp(1==1){
+    let line=io.readln();
+    if(s.len(line)==0){br};
+    let trimmed=s.trim(line);
+    if(s.len(trimmed)==0){br};
+    let parts=s.split(trimmed;" ");
+    if(parts.len()>=3){
+      let action=parts.get(0);
+      let amount=s.tofloat(parts.get(1));
+      let price=s.tofloat(parts.get(2));
+      if(s.contains(action;"BUY")){
+        qtys=qtys.append(amount);
+        prices=prices.append(price);
+      }el if(s.contains(action;"SELL")){
+        let remaining=mut.amount;
+        lp(remaining>0.0){
+          if(head>=qtys.len()){br};
+          let bq=qtys.get(head);
+          let bp=prices.get(head);
+          if(bq<=remaining){
+            totalprofit=totalprofit+bq*(price-bp);
+            remaining=remaining-bq;
+            head=head+1;
+          }el{
+            totalprofit=totalprofit+remaining*(price-bp);
+            qtys=qtys.set(head;bq-remaining);
+            remaining=0.0;
+          };
+        };
+      };
+    };
+  };
+  io.println(s.format(totalprofit;"%.2f"));
+  <0}

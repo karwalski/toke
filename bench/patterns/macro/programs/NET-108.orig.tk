@@ -1,0 +1,2 @@
+(* source: ~/tk/toke-test-programs/results/solutions/networking-rest/NET-108/solution.tk sha256 230841ee3ef72846dba4ccd3f70d0307e906395372e554e1264e398897ba7182 manifest ~/tk/toke-test-programs/results/library/networking-rest.json *)
+m=main;i=io:std.io;i=s:std.str;f=main():$i64{let url=s.trim(io.readln());let token=s.trim(io.readln());let code=mut."200";if(s.contains(url;"/status/401")){code="401"};if(s.contains(url;"/status/200")){code="200"};if(s.contains(url;"/bearer")){code="200"};io.println(code);<0}

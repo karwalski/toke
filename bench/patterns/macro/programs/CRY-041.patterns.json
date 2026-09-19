@@ -1,0 +1,29 @@
+{
+ "name": "CRY-041",
+ "kind": "library",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "acc-array",
+   "sites": 13,
+   "note": "every x=x+@(v) accumulator (padded, x, out, cat's r, newwork, digits, tmp, cs) -> x=x.append(v)"
+  },
+  {
+   "id": "str-build-loop",
+   "sites": 1,
+   "note": "b58: res=s.concat(res;..) loops -> s.builder"
+  },
+  {
+   "id": "iter-find-first",
+   "sites": 1,
+   "note": "leading-zero scan: forced exit `li=n` -> br (inline, no return)"
+  },
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 2,
+   "note": "single-use hex/pubkey and final inlined into their only call"
+  }
+ ],
+ "not_applied": [],
+ "note": null
+}

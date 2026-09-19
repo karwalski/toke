@@ -1,0 +1,68 @@
+m=extractcode;
+i=io:std.io;
+
+i=s:std.str;
+
+f=findfrom(hay:$str; needle:$str; start:$i64):$i64 {
+  let hl=s.len(hay);
+  let nl=s.len(needle);
+  let i=mut.start;
+  lp (i+nl<=hl) {
+    if (s.eq(s.slice(hay; i; i+nl); needle)) {
+      <i
+    };
+    i=i+1
+  };
+  <0-1
+};
+
+f=main():$i64 {
+  let tb=s.builder();
+  let first=mut.true;
+  lp (1==1) {
+    if (io.eof()) {
+      br
+    };
+    let l=io.readln();
+    if (first) {
+      first=false
+    } el {
+      s.add(tb; "\n")
+    };
+    s.add(tb; l)
+  };
+  let text=s.build(tb);
+  let out=s.builder();
+  let nblocks=mut.0;
+  let pos=mut.0;
+  lp (1==1) {
+    let open=findfrom(text; "```"; pos);
+    if (open<0) {
+      br
+    };
+    let nl=findfrom(text; "\n"; open+3);
+    if (nl<0) {
+      br
+    };
+    let lang=s.slice(text; open+3; nl);
+    let cstart=nl+1;
+    let close=findfrom(text; "```"; cstart);
+    if (close<0) {
+      br
+    };
+    let raw=s.slice(text; cstart; close);
+    let cl=s.len(raw);
+    let code=if(cl>0&&s.eq(s.slice(raw; cl-1; cl); "\n")){s.slice(raw; 0; cl-1)}el{raw};
+    if (nblocks>0) {
+      s.add(out; "\n---\n")
+    };
+    s.add(out; "lang: ");
+    s.add(out; lang);
+    s.add(out; "\n");
+    s.add(out; code);
+    nblocks=nblocks+1;
+    pos=close+3
+  };
+  io.println(s.build(out));
+  <0
+}

@@ -1,0 +1,71 @@
+(* source: ~/tk/toke-test-programs/results/solutions/social-media/SOC-037/solution.tk sha256 f8c6f0c69bae22733ec326ca9350be4ce2f0343a4717201c3f6424d8d25e4832 manifest ~/tk/toke-test-programs/results/library/social-media.json *)
+m=listfeed;
+i=io:std.io;
+i=j:std.json;
+i=s:std.str;
+
+t=$apperr{$bad:$str};
+
+(* Fixture: user-created lists keyed by list_id.
+   Returns the human-readable list name for a known id, or "" if unknown. *)
+f=listname(id:$str):$str{
+  if(s.eq(id;"lst_1")){<"Tech People"};
+  if(s.eq(id;"lst_2")){<"Foodies"};
+  if(s.eq(id;"lst_3")){<"Travel Buddies"};
+  <""
+};
+
+(* Fixture: posts authored by members of a list, rendered as a JSON array.
+   Each list owns a distinct set of member posts. *)
+f=listposts(id:$str):$str{
+  if(s.eq(id;"lst_1")){
+    <"[{\"id\":20,\"author\":\"techie\",\"content\":\"New framework\"}]"
+  };
+  if(s.eq(id;"lst_2")){
+    <"[{\"id\":31,\"author\":\"chef\",\"content\":\"Fresh pasta\"}]"
+  };
+  if(s.eq(id;"lst_3")){
+    <"[{\"id\":42,\"author\":\"nomad\",\"content\":\"Lisbon sunset\"}]"
+  };
+  <"[]"
+};
+
+(* Build the list-feed response object for a known list. *)
+f=feedresponse(id:$str):$str{
+  let name=listname(id);
+  let posts=listposts(id);
+  let out=mut.s.buf();
+  s.add(out;"{\"list_id\":");
+  s.add(out;j.enc(id));
+  s.add(out;",\"list_name\":");
+  s.add(out;j.enc(name));
+  s.add(out;",\"posts\":");
+  s.add(out;posts);
+  s.add(out;",\"next_cursor\":null}");
+  <s.done(out)
+};
+
+(* Parse the request and dispatch by action.
+   Errors from JSON decoding/lookup propagate as $apperr. *)
+f=handle(raw:$str):$str!$apperr{
+  let req=j.dec(raw)!$apperr;
+  let action=j.str(req;"action")!$apperr;
+  if(s.eq(action;"list_feed")==(1==0)){
+    <"{\"error\":\"Unknown action\"}"
+  };
+  let listid=j.str(req;"list_id")!$apperr;
+  if(s.eq(listname(listid);"")){
+    <"{\"error\":\"List not found\"}"
+  };
+  <feedresponse(listid)
+};
+
+f=main():$i64{
+  let raw=s.trim(io.readln());
+  let res=mt handle(raw){
+    $str:v v;
+    $apperr:e "{\"error\":\"Bad request\"}"
+  };
+  io.println(res);
+  <0
+};

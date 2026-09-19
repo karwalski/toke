@@ -1,0 +1,34 @@
+{
+ "name": "SCI-086",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 1,
+   "note": "single-use `first` inlined into s.toint(s.trim(io.readln()))"
+  },
+  {
+   "id": "str-build-loop",
+   "sites": 1,
+   "note": "row line s.concat loop -> s.builder"
+  },
+  {
+   "id": "str-num-format",
+   "sites": 4,
+   "note": "s.fromint -> interpolation"
+  },
+  {
+   "id": "acc-array",
+   "sites": 4,
+   "note": "next/nx=x+@(v) -> .append(v)"
+  },
+  {
+   "id": "str-interp-vs-join",
+   "sites": 1,
+   "note": "5-deep s.concat nest -> one interpolation"
+  }
+ ],
+ "not_applied": [],
+ "note": null
+}

@@ -1,0 +1,32 @@
+m=healthcheck;
+i=io:std.io;
+
+i=s:std.str;
+
+f=main():$i64 {
+  let url=s.trim(io.readln());
+  let line2=s.trim(io.readln());
+  let condition=s.trim(io.readln());
+  let status=if (s.contains(url; "status/")) {
+    let parts=s.split(url; "status/");
+    if (parts.len()>=2) {
+      s.toint(s.trim(parts.get(1)))
+    } el {
+      0
+    }
+  } el {
+    200
+  };
+  let expected=if (s.contains(condition; "=")) {
+    let cparts=s.split(condition; "=");
+    if (cparts.len()>=2) {
+      s.toint(s.trim(cparts.get(1)))
+    } el {
+      0
+    }
+  } el {
+    s.toint(condition)
+  };
+  io.println(if (status==expected) {"PASS"} el {"FAIL"});
+  <0
+}

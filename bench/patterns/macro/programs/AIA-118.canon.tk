@@ -1,0 +1,218 @@
+m=dag;
+i=io:std.io;
+
+i=s:std.str;
+
+f=parsestr(line:$str; key:$str):$str {
+  let pat="\"\(key)\":";
+  let idx=s.indexof(line; pat);
+  if (idx<0) {
+    <""
+  };
+  let start=idx+s.len(pat);
+  let after=s.slice(line; start; s.len(line));
+  if (s.startswith(after; "\"")) {
+    let inner=s.slice(after; 1; s.len(after));
+    let cl=s.indexof(inner; "\"");
+    <s.slice(inner; 0; cl)
+  };
+  <""
+};
+
+f=parsearr(line:$str; key:$str):$str {
+  let pat="\"\(key)\":[";
+  let idx=s.indexof(line; pat);
+  if (idx<0) {
+    <""
+  };
+  let start=idx+s.len(pat);
+  let after=s.slice(line; start; s.len(line));
+  let bk=s.indexof(after; "]");
+  <s.slice(after; 0; bk)
+};
+
+f=parselist(arr:$str):@$str {
+  let out=mut.@();
+  let n=s.len(arr);
+  let i=mut.0;
+  let cur=mut."";
+  let inq=mut.false;
+  lp (i<n) {
+    let ch=s.slice(arr; i; i+1);
+    if (ch=="\"") {
+      if (inq) {
+        out=out.append(cur);
+        cur="";
+        inq=false
+      } el {
+        inq=true
+      }
+    } el if (inq) {
+      cur=s.concat(cur; ch)
+    };
+    i=i+1
+  };
+  <out
+};
+
+f=findidx(arr:@$str; v:$str):$i64 {
+  let i=mut.0;
+  lp (i<arr.len()) {
+    if (s.equals(arr.get(i); v)) {
+      <i
+    };
+    i=i+1
+  };
+  <0-1
+};
+
+f=rebuild(arr:@$i64; idx:$i64; val:$i64):@$i64 {
+  let out=mut.@();
+  let i=mut.0;
+  lp (i<arr.len()) {
+    out=out.append(if (i==idx) {val} el {arr.get(i)});
+    i=i+1
+  };
+  <out
+};
+
+f=rebuilds(arr:@$str; idx:$i64; val:$str):@$str {
+  let out=mut.@();
+  let i=mut.0;
+  lp (i<arr.len()) {
+    out=out.append(if (i==idx) {val} el {arr.get(i)});
+    i=i+1
+  };
+  <out
+};
+
+f=main():$i64 {
+  let line=s.trim(io.readln());
+  let n=s.len(line);
+  let i=mut.0;
+  let ids=mut.@();
+  let depsstr=mut.@();
+  lp (i<n) {
+    let c=s.slice(line; i; i+1);
+    if (c=="{") {
+      let e=s.indexof(s.slice(line; i; n); "}");
+      if (e<0) {
+        br
+      };
+      let obj=s.slice(line; i; i+e+1);
+      let id=parsestr(obj; "id");
+      let darr=parsearr(obj; "depends_on");
+      let dl=parselist(darr);
+      let ds=s.builder();
+      let j=mut.0;
+      lp (j<dl.len()) {
+        if (j>0) {
+          s.add(ds; ",")
+        };
+        s.add(ds; dl.get(j));
+        j=j+1
+      };
+      ids=ids.append(id);
+      depsstr=depsstr.append(s.build(ds));
+      i=i+e+1
+    } el {
+      i=i+1
+    }
+  };
+  let nn=ids.len();
+  let indeg=mut.@();
+  let k=mut.0;
+  lp (k<nn) {
+    indeg=indeg.append(0);
+    k=k+1
+  };
+  let p=mut.0;
+  lp (p<nn) {
+    let ds=depsstr.get(p);
+    if (s.len(ds)>0) {
+      let parts=s.split(ds; ",");
+      let q=mut.0;
+      lp (q<parts.len()) {
+        indeg=rebuild(indeg; p; indeg.get(p)+1);
+        q=q+1
+      }
+    };
+    p=p+1
+  };
+  let queue=mut.@();
+  let qi=mut.0;
+  lp (qi<nn) {
+    if (indeg.get(qi)==0) {
+      queue=queue.append(qi)
+    };
+    qi=qi+1
+  };
+  let order=mut.@();
+  lp (queue.len()>0) {
+    let cur=queue.get(0);
+    let newq=mut.@();
+    let r=mut.1;
+    lp (r<queue.len()) {
+      newq=newq.append(queue.get(r));
+      r=r+1
+    };
+    queue=newq;
+    order=order.append(cur);
+    let m=mut.0;
+    lp (m<nn) {
+      let ds=depsstr.get(m);
+      if (s.len(ds)>0) {
+        let parts=s.split(ds; ",");
+        let q=mut.0;
+        lp (q<parts.len()) {
+          let pi=findidx(ids; parts.get(q));
+          if (pi==cur) {
+            indeg=rebuild(indeg; m; indeg.get(m)-1);
+            if (indeg.get(m)==0) {
+              queue=queue.append(m)
+            }
+          };
+          q=q+1
+        }
+      };
+      m=m+1
+    }
+  };
+  if (order.len()==nn) {
+    let out=s.builder();
+    s.add(out; "{\"valid\":true,\"errors\":[],\"execution_order\":[");
+    let oi=mut.0;
+    lp (oi<order.len()) {
+      if (oi>0) {
+        s.add(out; ",")
+      };
+      s.add(out; "\"");
+      s.add(out; ids.get(order.get(oi)));
+      s.add(out; "\"");
+      oi=oi+1
+    };
+    s.add(out; "]}");
+    io.println(s.build(out))
+  } el {
+    let cyc=mut."";
+    let oi=mut.0;
+    lp (oi<nn) {
+      if (indeg.get(oi)>0) {
+        if (s.len(cyc)>0) {
+          cyc=s.concat(cyc; " -> ")
+        };
+        cyc=s.concat(cyc; ids.get(oi))
+      };
+      oi=oi+1
+    };
+    let first=ids.get(0);
+    let out=s.builder();
+    s.add(out; "{\"valid\":false,\"errors\":[\"Cycle detected: ");
+    s.add(out; cyc);
+    s.add(out; " -> ");
+    s.add(out; first);
+    s.add(out; "\"],\"execution_order\":[]}");
+    io.println(s.build(out))
+  };
+  <0
+}

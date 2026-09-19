@@ -1,0 +1,2147 @@
+{
+ "meta": {
+  "date": "2026-09-19T10:53:07",
+  "tkc_bin_sha": "73ca0f76175ccab787c00c1aff42bcc11adff28e1cc0afc6d4c62f7c4cd0e8be",
+  "tkc_version": "toke 2.8.0",
+  "tkc_path": "/Users/matthew.watt/tk/toke/tkc",
+  "tkc_resolved": "/Users/matthew.watt/tk/toke/toke",
+  "tkc_pinned_copy": "/var/folders/gf/4ylkzm4d3bg50537kywj3pph0000gp/T/tkc_pin_o1t2ai_b/tkc",
+  "toke_head": "1da7d9cd1aab07143e1dbb73110dce205d2f481b",
+  "toke_src_dirty": true,
+  "stdin_runner": "toke-corpus/regen/validate.py",
+  "orig_only": false,
+  "rule": "identical iff raw stdout bytes AND exit status equal on every workload run; library pairs must also pass their manifest (norm_stdout, exit 0)",
+  "identical": 44,
+  "total": 44
+ },
+ "pairs": [
+  {
+   "name": "fib_recursive",
+   "kind": "bench",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "e48657e5f229449de4efa2cdf4f76423ef12d46e866c21ffb95b98379d4c4316",
+   "orig_check": true,
+   "orig_min_sha256": "0f62ede0e074fba1e876503aecadc0a550e8f126f63f8979c694ededff714434",
+   "canon_sha256": "93e68e76eb294e9153f8bfe1710c21fff8ae78eb0f3042dedee3883bdb7ffe1f",
+   "canon_check": true,
+   "canon_min_sha256": "99891bc6840aa99e42d07abc8b4e5854a606ed51ed6c53626b79306c2971aedc",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 201,
+      "canon": 201
+     },
+     "stdout_sha256": {
+      "orig": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canon": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     },
+     "stdout_bytes": {
+      "orig": 0,
+      "canon": 0
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "fib_iterative",
+   "kind": "bench",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "8d325fb0d41df180fccbf42f9de3110bcaf79a1578b0f8d1c8d5445fff07b439",
+   "orig_check": true,
+   "orig_min_sha256": "78ab2abbad10b484473cb18aa6fd71dee5ca438bab3579c8754928ba49f488c3",
+   "canon_sha256": "2b1a7afde89fe5c1afcdd53728d77c7c8d4bf494ba2cd44f2804d6ec50944972",
+   "canon_check": true,
+   "canon_min_sha256": "78ab2abbad10b484473cb18aa6fd71dee5ca438bab3579c8754928ba49f488c3",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 64,
+      "canon": 64
+     },
+     "stdout_sha256": {
+      "orig": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canon": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     },
+     "stdout_bytes": {
+      "orig": 0,
+      "canon": 0
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "sum_array",
+   "kind": "bench",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "a970431819fc2bdb5374f5d553ccb212c5c6a2556c2efaeb3a2bb4333b9aadee",
+   "orig_check": true,
+   "orig_min_sha256": "d0ad1db64fafa58287564f1850a49621d2b101b4a5c056360d343da78e2f8a5d",
+   "canon_sha256": "b95a21acae36ec9689f87c9e1c0017dffab6a47f23ef90792290707000c56ab5",
+   "canon_check": true,
+   "canon_min_sha256": "d0ad1db64fafa58287564f1850a49621d2b101b4a5c056360d343da78e2f8a5d",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 224,
+      "canon": 224
+     },
+     "stdout_sha256": {
+      "orig": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canon": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     },
+     "stdout_bytes": {
+      "orig": 0,
+      "canon": 0
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "nested_loops",
+   "kind": "bench",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "634490274a914486c7a486109b39b987595f047fb4e11a72cb99a19e7a3def59",
+   "orig_check": true,
+   "orig_min_sha256": "963e8ffa6097be3ea79887d28c432ecee4c11f75c98ebfaa8c78e8b1827717ab",
+   "canon_sha256": "659ebf8720547d91729cbfa84ec2bb93365aa2f36f5565a50ed3432a17238d93",
+   "canon_check": true,
+   "canon_min_sha256": "963e8ffa6097be3ea79887d28c432ecee4c11f75c98ebfaa8c78e8b1827717ab",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 144,
+      "canon": 144
+     },
+     "stdout_sha256": {
+      "orig": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canon": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     },
+     "stdout_bytes": {
+      "orig": 0,
+      "canon": 0
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "binary_search",
+   "kind": "bench",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "3bc2342b56a3d029e96a71b13f4e0ce24cf7593d2521e5b119554df34f004506",
+   "orig_check": true,
+   "orig_min_sha256": "72c883f3c6e9ea79dcf4843862a605e4a31f9b5b1ed3d01adbc2e6e33c6b3199",
+   "canon_sha256": "77e3abd536b4f7bb0673304a4a817fdfe80bf243140c2cf112e99da206e7e7ce",
+   "canon_check": true,
+   "canon_min_sha256": "ef6d707741d582c7c24d1047d37fc081a1c7bf69544fcc9ed7ec4d773c23758c",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 128,
+      "canon": 128
+     },
+     "stdout_sha256": {
+      "orig": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canon": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     },
+     "stdout_bytes": {
+      "orig": 0,
+      "canon": 0
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "prime_sieve",
+   "kind": "bench",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "636698540c5f3eb134befccb1d441e2ff19b23e0bfaa5c0867ae4ac4355eae23",
+   "orig_check": true,
+   "orig_min_sha256": "af44533e69686ef87e6eacecb2451d87177291a024d703b1d8441bad62c22850",
+   "canon_sha256": "b82e6d2a7f702a9a1bf80e1adf1581513c6c20b188a66291df946398f1fcc147",
+   "canon_check": true,
+   "canon_min_sha256": "dab79c77fa16e1506ce748ff3550cbee3c3b0d89f6c88e388d1c691d03f18924",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 13,
+      "canon": 13
+     },
+     "stdout_sha256": {
+      "orig": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canon": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     },
+     "stdout_bytes": {
+      "orig": 0,
+      "canon": 0
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "deep_recursion",
+   "kind": "bench",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "0b182f64e37a131f4d1d842149ba7f4f81346280f66b54a99145592f0c82adde",
+   "orig_check": true,
+   "orig_min_sha256": "0127adc54ff09d5ecfbe0d744b75822a6a32f748bfbf7307a46a8d6b533e0cbf",
+   "canon_sha256": "3a70b13475700c77ad5f6083888de999a36b658978630370f8fbe126ff812ce6",
+   "canon_check": true,
+   "canon_min_sha256": "dba38a10658cd47cef28d39cab485a5766fc888d687a88903290abe2dc6c52d5",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 253,
+      "canon": 253
+     },
+     "stdout_sha256": {
+      "orig": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canon": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     },
+     "stdout_bytes": {
+      "orig": 0,
+      "canon": 0
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "struct_ops",
+   "kind": "bench",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "e9c771eeef2388d20a918e6f0fc3bd7d4dc99ad5a2cc513a5e593f2d0c8a7c78",
+   "orig_check": true,
+   "orig_min_sha256": "93eea256f606e5e28303888da027fe4400f1000d11177782907b8922e44be5eb",
+   "canon_sha256": "a175d3751dd42370dd7f65dd7500caf67591742ed12c447db63f8877296e749b",
+   "canon_check": true,
+   "canon_min_sha256": "93eea256f606e5e28303888da027fe4400f1000d11177782907b8922e44be5eb",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 1,
+      "canon": 1
+     },
+     "stdout_sha256": {
+      "orig": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canon": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     },
+     "stdout_bytes": {
+      "orig": 0,
+      "canon": 0
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "large_expr",
+   "kind": "bench",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "f434633beff2944770f98d1e5bad0422b142f871beaec3337bd39c8586baa2fc",
+   "orig_check": true,
+   "orig_min_sha256": "c8d53f185f7e0f9083f5dca4bc62ae1f77843a0b84bba4b5019f0988f0c33cb5",
+   "canon_sha256": "e2efc4485de09715696352cd2392a3c068b5df6e2462b9f85eb66b6157f5e0d8",
+   "canon_check": true,
+   "canon_min_sha256": "c8d53f185f7e0f9083f5dca4bc62ae1f77843a0b84bba4b5019f0988f0c33cb5",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 1,
+      "canon": 1
+     },
+     "stdout_sha256": {
+      "orig": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canon": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     },
+     "stdout_bytes": {
+      "orig": 0,
+      "canon": 0
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "chained_calls",
+   "kind": "bench",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "2251a50aa5c318520eb8665b1897bc0e46c5ac235a1bbfa824d1d493485616ec",
+   "orig_check": true,
+   "orig_min_sha256": "c35f21f74766015d34bd5cf79a9bf9f74acf00a155f494e7fb891ee19feaf247",
+   "canon_sha256": "8044810e99c829251f32897a32b46c1833989e790bd1db8177f9f691a1547fa4",
+   "canon_check": true,
+   "canon_min_sha256": "c35f21f74766015d34bd5cf79a9bf9f74acf00a155f494e7fb891ee19feaf247",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 1,
+      "canon": 1
+     },
+     "stdout_sha256": {
+      "orig": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canon": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     },
+     "stdout_bytes": {
+      "orig": 0,
+      "canon": 0
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "collatz",
+   "kind": "bench",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "a2db08a36fc0689a81d63c0d6c840f8ca666d728d851209cddd797598cb9b836",
+   "orig_check": true,
+   "orig_min_sha256": "3682e14818a626759e6cc6ce8afb95cb9cff5bfa6b8afec47246737fc6cd0d41",
+   "canon_sha256": "809b4294a4c624d99ed305f612d2547aa917051ba202d965f12759864af6e4b7",
+   "canon_check": true,
+   "canon_min_sha256": "ceee26032a97f911e086d739c30b9865685622589ad94dd70bc7216bbf5fd8f0",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 116,
+      "canon": 116
+     },
+     "stdout_sha256": {
+      "orig": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canon": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     },
+     "stdout_bytes": {
+      "orig": 0,
+      "canon": 0
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "gcd_euler",
+   "kind": "bench",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "b4c6752b75725165fc66e19de024fde27253226694e2d8a85b9a1ced7fc14309",
+   "orig_check": true,
+   "orig_min_sha256": "b057efac8baee3f53efed098927b639e8eb9b34122b82ebc0ce40673e2ddb074",
+   "canon_sha256": "cc77f55f7cd0d1b0330d3f077e7cccd4a2cba4b8bf6230a6dbe3b97d7cddea30",
+   "canon_check": true,
+   "canon_min_sha256": "e5e85f92bbd4a5935ff83eaf9c3cd21955b6cf53a6173738ad08018ed8aefd08",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 141,
+      "canon": 141
+     },
+     "stdout_sha256": {
+      "orig": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canon": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+     },
+     "stdout_bytes": {
+      "orig": 0,
+      "canon": 0
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "AIA-118",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "0747b2ce9f1cd413a6f3f5ccbe2fe0988804153565cf07c5b686b937687a71c9",
+   "orig_check": true,
+   "orig_min_sha256": "b6865572f2e69edd36866678b8e9cba239e64d637957c9a38658b2216f9fc916",
+   "canon_sha256": "3fdba87c77d23e6dc8c0e702943a5d873ded61039912e3925904b85ebf79f5e2",
+   "canon_check": true,
+   "canon_min_sha256": "17226b1afa971fb96143b1cf8bad2e422080f3d2168683e046e968b543d02ca1",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "24c07a41d91a3465930320901e8a417037bac902bddb111832b17314a37736bb",
+      "canon": "24c07a41d91a3465930320901e8a417037bac902bddb111832b17314a37736bb"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "5000264e65c1953ac6fae73b302d9cd591d4056d8af5ef615f9f3b6d66c5870a",
+      "canon": "5000264e65c1953ac6fae73b302d9cd591d4056d8af5ef615f9f3b6d66c5870a"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "AIA-100",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "5d5500857855c81917b449c2e7638c049c16a29271c5ea03058930c9f953771e",
+   "orig_check": true,
+   "orig_min_sha256": "a9e00e4f9338408c54fdd4943cf061cbe1f0ecf3599763b081d57ca65599ecd1",
+   "canon_sha256": "ea1c57392d110c2f1e76c8bebc0db155649b83a21b7dede1ddd823fab6202f18",
+   "canon_check": true,
+   "canon_min_sha256": "f13ed53596715e1517ee32f9426e9be1e1b022be7b0fac342437c05f9c243e90",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "44933d97545d2d50edc80cb884a1f2fe50c8bf63f6eb7557be40c1daaa851773",
+      "canon": "44933d97545d2d50edc80cb884a1f2fe50c8bf63f6eb7557be40c1daaa851773"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "d473077a3fd6fb57309111f176fb44cf63aaed930c64a53c754b9a9763aa9ac1",
+      "canon": "d473077a3fd6fb57309111f176fb44cf63aaed930c64a53c754b9a9763aa9ac1"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "FIN-072",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "2eba531e5b3b325a10678e2ff00a3b3a21528f05ee488f59a3e504c5fb8a2894",
+   "orig_check": true,
+   "orig_min_sha256": "543be35f549d92a80b6fdafeb5666a29b6c9cb11d202516e09aca1e365b2ee95",
+   "canon_sha256": "8e7e5d614e467b2834b558a6f2f7ac6bd9dcf59d7005b3870b1ecfc1a97d6670",
+   "canon_check": true,
+   "canon_min_sha256": "bb90685e6a3529423ef5d7bf7a2013898835a3f1bcdb1f52776c513185dd2606",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "fddf5f50947c92199b678562cad0b7a20564e3916b8c9d309a0621f5b30fc068",
+      "canon": "fddf5f50947c92199b678562cad0b7a20564e3916b8c9d309a0621f5b30fc068"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "613fe72b35b0aea6ac0d1ceef6d6a1d118aaafbb2a2680ee1beb1815d9cad11d",
+      "canon": "613fe72b35b0aea6ac0d1ceef6d6a1d118aaafbb2a2680ee1beb1815d9cad11d"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "FIN-122",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "8ad5348ccbcbd18ddc7c913c607d685b013d5399e92db2638f4b8edfc69054ed",
+   "orig_check": true,
+   "orig_min_sha256": "7dff1d55b070e29d7ae64c2b611f534fa4e6317de77e3dba3699ef34b4916616",
+   "canon_sha256": "3f702f3fafd44a7868256bcdfff3ec6e06e32ff02cfae0eeb32758dfa036a39d",
+   "canon_check": true,
+   "canon_min_sha256": "9bb2a4c74ec2f04e77dfd469a8811641a05a2ed539ee98ede3dc411b79860ce4",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "98cc76ec94e81c3156f71cbf1be5e32dea7db6dbd256868ed1d01cc3d35d6928",
+      "canon": "98cc76ec94e81c3156f71cbf1be5e32dea7db6dbd256868ed1d01cc3d35d6928"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "7ce30f906db5522333f6efc6d81507dfd1108a0d19ae552d12d196b63a5a9083",
+      "canon": "7ce30f906db5522333f6efc6d81507dfd1108a0d19ae552d12d196b63a5a9083"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "CRY-119",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "c188246301514cfe3da2bad8f77372dd1ebe0b14f057445d667f1c1645ce08f5",
+   "orig_check": true,
+   "orig_min_sha256": "3ecccc4ad8b487364e677c300e2c84d56f95fb3f6ca1d997825dc6024f6f6ddb",
+   "canon_sha256": "d8f89b19790c51fe41bf82bc0fc8287fd82454b083317a306b4deba377dbe08b",
+   "canon_check": true,
+   "canon_min_sha256": "c6073aece382e2e7ef6a5ea89f41b5c885231e6a46cd34c4e935f3f3d3995f04",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "279adab25b56aaf218cd4ef1881e7fdd79a221dd4084717b5760b038329e3196",
+      "canon": "279adab25b56aaf218cd4ef1881e7fdd79a221dd4084717b5760b038329e3196"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "31225b587cbf4dfbdbd6aebb0c789255499b1974f8567570299697887764c3d7",
+      "canon": "31225b587cbf4dfbdbd6aebb0c789255499b1974f8567570299697887764c3d7"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 2,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "95aebc97bc646c67fdcd923a5965b001f3c8a5c4d3a77075112e12a3a311d760",
+      "canon": "95aebc97bc646c67fdcd923a5965b001f3c8a5c4d3a77075112e12a3a311d760"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "CRY-041",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "fc7c269b60770c6864af6cb2267b20383dfb404811bcb6fbf465e6f7bd749b8f",
+   "orig_check": true,
+   "orig_min_sha256": "320296f478b78df52ddb5c6818300b8973d40df74f1adc64bad802675007014b",
+   "canon_sha256": "21abab8f33bf4239960c73020da6807b1f360f748169424b4d2306b55f0f89d6",
+   "canon_check": true,
+   "canon_min_sha256": "3bc81d5405cd0a7c43b7c1ae00b3f4995870342138b24875eef1ab881871bdd3",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "da3f8aa00c6b3f87770a50c15af6c050468dbfd59d49f0694d98d445fc9b9ea4",
+      "canon": "da3f8aa00c6b3f87770a50c15af6c050468dbfd59d49f0694d98d445fc9b9ea4"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "03311a85bc946670d12853101ad59626bdda5871daecccd921199d18846b3c3d",
+      "canon": "03311a85bc946670d12853101ad59626bdda5871daecccd921199d18846b3c3d"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "DAT-121",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "d089f2d9c39e26716ba899e9c19e61693efe3d3b56ff3806be80b5d4918e8368",
+   "orig_check": true,
+   "orig_min_sha256": "48761e2b7a73142fb9ec638d7e090702ba9a78daa352e6a8d579e0c93c945260",
+   "canon_sha256": "0f8b2fcccc49190ab41ab25f8f6dcc4eaa993081d0c0312a0eafa6603c902ba2",
+   "canon_check": true,
+   "canon_min_sha256": "8fa19b8f0d4ea868c9c29434a15902c984b44fd85b623afdcbf0d72d13d6d4bc",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "1f02a0342bd0c5bdb081f02a207dc7257036e2293f0880cb1495c0e1d94a554c",
+      "canon": "1f02a0342bd0c5bdb081f02a207dc7257036e2293f0880cb1495c0e1d94a554c"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "54fe5c7e21824d9492d17075171b2e74a7c3236f62a6bb3afd70b77316fde3ac",
+      "canon": "54fe5c7e21824d9492d17075171b2e74a7c3236f62a6bb3afd70b77316fde3ac"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "DAT-045",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "6486ba7c178e6d92eb8f7ebcdc6537d7a27dc3a1e40ad38164a72a7b0830e967",
+   "orig_check": true,
+   "orig_min_sha256": "b801ec3ac9995869b52c745214b66612a07a3275ff7d61d1b4793f38731de363",
+   "canon_sha256": "8c649e179b5f651573be88a740f1b03356fe06d9386fc1a43de99b6e90646c1a",
+   "canon_check": true,
+   "canon_min_sha256": "e625b6a27e96aa13fd52059b83c0c3b72cf7e42e58755c52fde5ee45f688cef9",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "92175fe707b548f11435c5a4f04e572a0a9658a732adca64533c390dffcf3bf2",
+      "canon": "92175fe707b548f11435c5a4f04e572a0a9658a732adca64533c390dffcf3bf2"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "abde0a88962373ed0e7efe5c09a2976060ca335be58fa67bf9133805df989380",
+      "canon": "abde0a88962373ed0e7efe5c09a2976060ca335be58fa67bf9133805df989380"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "DEV-104",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "aee47a9dce2b6ea95ec7efb77a8be4a896113945dcb62bfba8e1ecb18b0a32d5",
+   "orig_check": true,
+   "orig_min_sha256": "577b41f7c35e5304a30eb40c9598211085a5f007ca884d55a2d11c434398a2a7",
+   "canon_sha256": "b22685df120bff87ebacdf456fcec7223ab960a6c1cbd0ad0f782c6b3fed5bc1",
+   "canon_check": true,
+   "canon_min_sha256": "15605f4677f6739edec3e359d0d31962b192d18432bdd9c69ffadf62b948d451",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "d94ca4024d583b3eab79d259bf1adc67b001a67e84045a3c7deab080556eb55d",
+      "canon": "d94ca4024d583b3eab79d259bf1adc67b001a67e84045a3c7deab080556eb55d"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "f005e9d55333a7bd3abf45deba9e83b0197ed2c47edf04a361c67e227986d21a",
+      "canon": "f005e9d55333a7bd3abf45deba9e83b0197ed2c47edf04a361c67e227986d21a"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "DEV-045",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "c641c72135bb2462c46764367d5f422240f97da3091556a54c2e8a1683b95f71",
+   "orig_check": true,
+   "orig_min_sha256": "523485b6d0b554f7d61ffcda5083f31790f7bb109cfc1888af68301a2e16a58d",
+   "canon_sha256": "e890d7627b2958a9ba38cf9a9550982cf3faa300936cd86deaa63b945eb7104d",
+   "canon_check": true,
+   "canon_min_sha256": "68def630815fa4fc1ff09d61cbb64808a2551ddb4e6c1897024ee2e786670c4c",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "42c084fb79bdb810a844cbbacbda2ac8033adc4c6e836335baee9953d4b4e52e",
+      "canon": "42c084fb79bdb810a844cbbacbda2ac8033adc4c6e836335baee9953d4b4e52e"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "92300addfe24c0572a1284f87dded3600c4148aab07b0d1ad6972ceda85b9cd8",
+      "canon": "92300addfe24c0572a1284f87dded3600c4148aab07b0d1ad6972ceda85b9cd8"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "EDU-098",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "53158909cf883bc4572c202e187a0f58d647ff68e26e9ae192356f7ae56fce55",
+   "orig_check": true,
+   "orig_min_sha256": "5f9813b2715620338454239ff3c29fa7fcc4717a64949a8404e382489e4fa2a2",
+   "canon_sha256": "245b2637a63d6b37d9e61763f80f8142d89bf43332a14d054b765ca6274fdabe",
+   "canon_check": true,
+   "canon_min_sha256": "7d2182cdf1d166300bcac2f0a9685dbbf19b5623b5923da3d85530ffc1449fe3",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "df92da09ed78f7c5fca4a10512e5f6ed417c91fbfc43a0fc6f6483996cafee0b",
+      "canon": "df92da09ed78f7c5fca4a10512e5f6ed417c91fbfc43a0fc6f6483996cafee0b"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "8ce71e741b09c4457aa00305188a34f12374298b521404e23f04b097e67fef24",
+      "canon": "8ce71e741b09c4457aa00305188a34f12374298b521404e23f04b097e67fef24"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "EDU-085",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "2406e0390eda919c83d839b5d659f8b957bb828bbfb164e99a747d040db98510",
+   "orig_check": true,
+   "orig_min_sha256": "8dd7d9f9c22f9285ba50ea9b75b2623fa17e586f1c063f7fda4bf7f05238cd10",
+   "canon_sha256": "c346399f03b26887784099642c428ed48325535257b25d403441863165d5b19c",
+   "canon_check": true,
+   "canon_min_sha256": "ba9a5b3e21114fa5ab2d9ada81dfce98d75d6b380bbaffdead84a39c1adfa4a5",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "5873d10f208cf6c6b984d72143fccf8392068ed444bddb0cc8b5df5d8ecf5db8",
+      "canon": "5873d10f208cf6c6b984d72143fccf8392068ed444bddb0cc8b5df5d8ecf5db8"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "750ee5c567a9e8cff41b802eb389e7b1ae90e77cb7a98e86503429aeec051d04",
+      "canon": "750ee5c567a9e8cff41b802eb389e7b1ae90e77cb7a98e86503429aeec051d04"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "GAM-117",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "a18330501282d8dfb2dca0e7ccf3f64a99e7e7e263f543bda778debe9fad23b5",
+   "orig_check": true,
+   "orig_min_sha256": "d3909f95efeafadb7d8b762bbc7e3a956df8233e7ca0ce209deeeab53a44e8df",
+   "canon_sha256": "4f43749538b9854ed0e27347fa91dc89e93a5694abef38dcc57eccc656189515",
+   "canon_check": true,
+   "canon_min_sha256": "63dbb58ebe11b1a9985634079f26f8d9bb3cd4fe110efbdc00785354b633c7fb",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "2cd32943ed7c20939bae52fddba69fe79d79e45185e6e01190da82b6c7dc8636",
+      "canon": "2cd32943ed7c20939bae52fddba69fe79d79e45185e6e01190da82b6c7dc8636"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "be74f37819ffb11ffad06d49783004b660971ca7970cc3617eefcc96c1b083af",
+      "canon": "be74f37819ffb11ffad06d49783004b660971ca7970cc3617eefcc96c1b083af"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "GAM-072",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "eb87bc9d286e421f8f019b82bbf1d2eb213d762a1f589a3d25b77809082e0ca5",
+   "orig_check": true,
+   "orig_min_sha256": "dee09b5ce4ff8f703eead4f34eca3ac64b10ee62711a6ed266a5629b1652328c",
+   "canon_sha256": "df359fe5fba2af37172753453c2a787b574270a19f6d5406cd974992a152b23b",
+   "canon_check": true,
+   "canon_min_sha256": "cdb16233e6354601ea3d8a588ab6a08f292af8c139685eaf1626f835d9e644c6",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "c39218f919a695cc19fd725586b8b294e64af58ee4c7842485cead4db0218d6c",
+      "canon": "c39218f919a695cc19fd725586b8b294e64af58ee4c7842485cead4db0218d6c"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "f2b8ba01dfdd5d9f28b4d4f0c7682d43cdaa6a248aea30d13e3c3bb1fcc54d1e",
+      "canon": "f2b8ba01dfdd5d9f28b4d4f0c7682d43cdaa6a248aea30d13e3c3bb1fcc54d1e"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 2,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "a8a9b8d9c0cc9f9c829bc43fbdc404ef71a01bd15f650acc49547c7bfabbdd77",
+      "canon": "a8a9b8d9c0cc9f9c829bc43fbdc404ef71a01bd15f650acc49547c7bfabbdd77"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "GAZ-041",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "29594c7d8c1d5e1c7349e5bb524d47145edc5440feaa0d055d2bd777e8ad53e4",
+   "orig_check": true,
+   "orig_min_sha256": "c63b6b2de8133a9f70032a0e644131338042207eb3cc98fbf02371d31a58f51d",
+   "canon_sha256": "67025260f9bcb2cb01e8c9aa4eb5d50d5cf806ad2925fd2a20847d87d687f7be",
+   "canon_check": true,
+   "canon_min_sha256": "3c22bf4b9e71039ff761a8eb89c7fcfe14019b828c6b8a7fbb4ab49b78602e6b",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "4c63bc6508bca46e8e4925d41559960725941897aaf9c621affc593b76f44026",
+      "canon": "4c63bc6508bca46e8e4925d41559960725941897aaf9c621affc593b76f44026"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "4e3c2d957829707d6eb1ea7d80123c2f0f54725fb4dd51a2438cc9db6761c69a",
+      "canon": "4e3c2d957829707d6eb1ea7d80123c2f0f54725fb4dd51a2438cc9db6761c69a"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 2,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "2cc9b28554aba60cd0110d4dbea8c2ab7c6023bdca148eef9a30d73835172921",
+      "canon": "2cc9b28554aba60cd0110d4dbea8c2ab7c6023bdca148eef9a30d73835172921"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 3,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "4a7caa86c9090d0f23a8177a4e136bb27887f9ebc68cb2789ed3dd4ec05be698",
+      "canon": "4a7caa86c9090d0f23a8177a4e136bb27887f9ebc68cb2789ed3dd4ec05be698"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 4,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "372ab83650cb5c63d4d105a78bfa322d5fc2cf64a254d3c381138ac7322cf236",
+      "canon": "372ab83650cb5c63d4d105a78bfa322d5fc2cf64a254d3c381138ac7322cf236"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "GAZ-012",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "9c6512f159485f817b9f65e26d2df668b40566e2ed172d5ef366801c9d811abd",
+   "orig_check": true,
+   "orig_min_sha256": "087cc4e9c01973257d42298a63289177b3a2c4f6eb2f995595641fafdec1f4f0",
+   "canon_sha256": "0f114e59f20ff1f9df0bac7b56a1cb396a12aa2f7f9658ee7029f0dca8557364",
+   "canon_check": true,
+   "canon_min_sha256": "dfc0412e20170c923023be12c3a27d5af9ac42bd83d30c716166a07b883a7e9f",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "b983c444e57992b7de8b05f37514c746b9c0ac63deb6fcc043b5bf89c2949e81",
+      "canon": "b983c444e57992b7de8b05f37514c746b9c0ac63deb6fcc043b5bf89c2949e81"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "canon": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 2,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "97b912eb4a61df5f806ca6239dde3e1a4f51ad20aced1642cbb83dc510a5fa6b",
+      "canon": "97b912eb4a61df5f806ca6239dde3e1a4f51ad20aced1642cbb83dc510a5fa6b"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 3,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "f551c07779341d481bba0720a48046fd9077b7725ae46a5f25655335c91d9548",
+      "canon": "f551c07779341d481bba0720a48046fd9077b7725ae46a5f25655335c91d9548"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 4,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "6d972f658d2fdc094cee20d92cefb23c912f81f9f5c34e6399a2fb3377d61a7d",
+      "canon": "6d972f658d2fdc094cee20d92cefb23c912f81f9f5c34e6399a2fb3377d61a7d"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 5,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "2cee805f4f646fb7c2b5127612951e4d4987d0de9cc03e3c69aa06da8a3f62dc",
+      "canon": "2cee805f4f646fb7c2b5127612951e4d4987d0de9cc03e3c69aa06da8a3f62dc"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 6,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "2cee805f4f646fb7c2b5127612951e4d4987d0de9cc03e3c69aa06da8a3f62dc",
+      "canon": "2cee805f4f646fb7c2b5127612951e4d4987d0de9cc03e3c69aa06da8a3f62dc"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 7,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "7b6cc4a0786dee63e1028998a2f061a1827efab1fe3aac1734839d4d338c3247",
+      "canon": "7b6cc4a0786dee63e1028998a2f061a1827efab1fe3aac1734839d4d338c3247"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 8,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "canon": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 9,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "0161aca5eff2c941f66b69e57ac24bfff76cd2e8209ec10de2216ede9d223121",
+      "canon": "0161aca5eff2c941f66b69e57ac24bfff76cd2e8209ec10de2216ede9d223121"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "MFG-051",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "185fea905dab8c75c89c99b134dfb6a57a9fcb28ac49f33093f550aa6f2e7b20",
+   "orig_check": true,
+   "orig_min_sha256": "eec399bb8addb7e5b4ccca80e2d2a1aa33db0be93a5bf45bfdbd86755a67a32d",
+   "canon_sha256": "b8352dcdb925c78e398f71a51fc37d69f34169267675f6589fb7536234bb2941",
+   "canon_check": true,
+   "canon_min_sha256": "d6c99d7a26c2f50dd147a720df6dd0d4420cb50f0c142eb7a380546e1864f341",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "a102f722d71d06700301b27c614dfd0b742fe899eb2528a92d44abc1e90fac5b",
+      "canon": "a102f722d71d06700301b27c614dfd0b742fe899eb2528a92d44abc1e90fac5b"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "MFG-007",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "1fa19499ff9f7076cb7e74b7c31038ddd26c2ba5b97dd448af78978c18f463c0",
+   "orig_check": true,
+   "orig_min_sha256": "7c8d436b4c089fc798653fb9726275c2c79060f2028259c944edcedf878441a9",
+   "canon_sha256": "1d9e0afe2a5258c86ee5506dcc150f9176fbc25649cc58fcee6922c28d6c1e2e",
+   "canon_check": true,
+   "canon_min_sha256": "b69f282583db27a6db68dc64054740f3dc3ead1e6d255d1bb3484f824d633bb9",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "b96d0f26de6d986e6ca818244c1307293f834fde74e9aa6db8a1511db1d3feb8",
+      "canon": "b96d0f26de6d986e6ca818244c1307293f834fde74e9aa6db8a1511db1d3feb8"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "MED-062",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "4166bb3ecce5a5cfbc468c40bcda1674f7bc4a12dc5921cbcf0478bfb4783d06",
+   "orig_check": true,
+   "orig_min_sha256": "506fd4601c27ed244420b8ae8bf28ad71196740973f073e8be448aed637b9fb8",
+   "canon_sha256": "dc6433c3dfd59351813fbf6648b1cab47355fb27a70f21ff714530d3bf50f2a2",
+   "canon_check": true,
+   "canon_min_sha256": "a79cea09d8303b70cf5f792c3e238e9a022e2879518ce4b9aaca470fff18640b",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447",
+      "canon": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "f93b188047f6cb4995e4ee8d9818f27310186fd1deebc8c58e234e495d36ddf8",
+      "canon": "f93b188047f6cb4995e4ee8d9818f27310186fd1deebc8c58e234e495d36ddf8"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "MED-036",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "d7daccb84972fa562d94fa2d427e37ef8a3650e83945bab4e8513802bcb93cf6",
+   "orig_check": true,
+   "orig_min_sha256": "63ef66145ce0fad82be0afc21026fb94f676623025187fbf3fc075744f3375dd",
+   "canon_sha256": "0d109565c58e40060e50a70076f0fe7bda30e49f92ace9de7b954dbcaa30d9a1",
+   "canon_check": true,
+   "canon_min_sha256": "1ee425fa34e63b6c63d91c05624586c851d44e1b3172bd7770a0b1382dbfcbae",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "11e35d3148b6b4048ec91b1ee5dec57827fe546bf55c126bcf97dca90ad44cc8",
+      "canon": "11e35d3148b6b4048ec91b1ee5dec57827fe546bf55c126bcf97dca90ad44cc8"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "fe05f169c931e349ddfb1d252d4041c1a84eebf3963a33f01b30dd5d331a5945",
+      "canon": "fe05f169c931e349ddfb1d252d4041c1a84eebf3963a33f01b30dd5d331a5945"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "MSG-061",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "906dc02fe3ec9c6ad95c20ac3a587ea9e5d45ac4f1e3cb8c03dc1e820ea23cc0",
+   "orig_check": true,
+   "orig_min_sha256": "983baad2440277c5025c603bff6bc73ea89316085b179c3cc8732fdfff0af966",
+   "canon_sha256": "d7cdb9770d3d55c91b46369342f770034c12b381fbe85e4541457832ee55fb52",
+   "canon_check": true,
+   "canon_min_sha256": "91121fed61165c3c5971730a1e29afc9dac1554cd2c69f8729aa27c1decc40b9",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "ed3909ec439e9b79a9161e9403b69a21d6c0832c4e70cf813b79abcd264d891d",
+      "canon": "ed3909ec439e9b79a9161e9403b69a21d6c0832c4e70cf813b79abcd264d891d"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "b8f5a265764de11f470753f766b941a449159f9bd0919705d12e64d490f26a1a",
+      "canon": "b8f5a265764de11f470753f766b941a449159f9bd0919705d12e64d490f26a1a"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "MSG-038",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "9f6a810405582477cbbbc25def186d42eab8f3930bfc78738990311b7b57ae97",
+   "orig_check": true,
+   "orig_min_sha256": "3bd53d7fea2719ab23e9fd6607556803fc365061a8f8053f346f27e0032ee8d9",
+   "canon_sha256": "571498df5885f2f766418a6f43ec0e457f1d46b2b952ab4ad6e8717506824b48",
+   "canon_check": true,
+   "canon_min_sha256": "4f6a61f078dd2c2aa0afea82e79b96ae97240fd63b21b82045909170b6fce823",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+      "canon": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "fcb9cc30b0f3e4715d032f3a0ce158e4d6bea8c618bda0f5d1f167300a087b8a",
+      "canon": "fcb9cc30b0f3e4715d032f3a0ce158e4d6bea8c618bda0f5d1f167300a087b8a"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "NET-111",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "566d290cb699a04a33524b47d34570ef89852ac94755207d2f64078e08b98522",
+   "orig_check": true,
+   "orig_min_sha256": "cfd0deda60a90703755bbf2375be52be299c73e9a8e688d9a52ad6f70239b8c9",
+   "canon_sha256": "326495ef34b0817524af2848079a78e4ebb479b2bfc6c422527e972df2b1fc75",
+   "canon_check": true,
+   "canon_min_sha256": "27dff4577b407fb2d6c2a5d1290d90275cdbcf323eeae9c93a9df091f57c8145",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "c26de83abdc9496cd1301470918ec39ecca1cf389ef0ae1c6504da1800d1c431",
+      "canon": "c26de83abdc9496cd1301470918ec39ecca1cf389ef0ae1c6504da1800d1c431"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "4f8e9e45f8a9e1843b81eaf3bdf52a6b778d415d23bf985774a9d34a43f69bd5",
+      "canon": "4f8e9e45f8a9e1843b81eaf3bdf52a6b778d415d23bf985774a9d34a43f69bd5"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "NET-108",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "b10c716a3456816fad5176cde38d4e3632a137c85c5e97e9d48c3ffd6bf714d3",
+   "orig_check": true,
+   "orig_min_sha256": "230841ee3ef72846dba4ccd3f70d0307e906395372e554e1264e398897ba7182",
+   "canon_sha256": "72fdd698562fbf08504c307723e29a8a212efbd59b96db284f2e373ef0969f0c",
+   "canon_check": true,
+   "canon_min_sha256": "781610b8ac7796a80785de30659bc1bf076f1ef6bd3686e8665cf772f67a8caf",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "c11e3f4837efde2441e23a7b9da02131f53bf59fddeb7147c4ab81afe400460f",
+      "canon": "c11e3f4837efde2441e23a7b9da02131f53bf59fddeb7147c4ab81afe400460f"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "5d94ef1d04a57469912deb42e29ecee5168b983c775efa906cb9268596ba9f84",
+      "canon": "5d94ef1d04a57469912deb42e29ecee5168b983c775efa906cb9268596ba9f84"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "SCI-024",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "6589237082faa116177179dd48f7e1e6fd0962cbb79cecbd9502fce43645ae9f",
+   "orig_check": true,
+   "orig_min_sha256": "089e32b049a259969a7c5311a7f587b655ffb3006752b8cde53c0436c52b3e68",
+   "canon_sha256": "95eef73a2bc37691e3d70ebae3ab363fe283e678ba4e901fcdc2547e99c73f1e",
+   "canon_check": true,
+   "canon_min_sha256": "cced15c814a89af049ea8beac7a46a86d1a6be6efa6dc68fda15d9b6a16d4c6e",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "55d38a2223a414811d01c41310484081cdff22577cf28c4e998aedc03cf2fc5b",
+      "canon": "55d38a2223a414811d01c41310484081cdff22577cf28c4e998aedc03cf2fc5b"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "2e90a3ceae0d1390e610f4e71039baf3e5e2937020e9bf28d3380823a86ba263",
+      "canon": "2e90a3ceae0d1390e610f4e71039baf3e5e2937020e9bf28d3380823a86ba263"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "SCI-086",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "0aab98c28f06cfe7609174c773a778df57623a3dcfb61a91270a81f00ab5ce55",
+   "orig_check": true,
+   "orig_min_sha256": "e03a7308c6cb4e90a6faec905cef57b3f935485d50230e502698d36cc6a57ad2",
+   "canon_sha256": "d6fa9138e33596e86c4f41e890cdc8a333a58f452b54c539c7274884fe06c3db",
+   "canon_check": true,
+   "canon_min_sha256": "9385d4f493be0fed202d0b36b3062d54be182b4ef9a2d32c97326248187c5460",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "e1ed27376c2c230e8477b187d470ea6f6a6a9af11c5e2a1e00a4ecd14f9f8b2e",
+      "canon": "e1ed27376c2c230e8477b187d470ea6f6a6a9af11c5e2a1e00a4ecd14f9f8b2e"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "965e1eff016c1b49977576743a684396c603b6b9661848fa0b20e190401b162e",
+      "canon": "965e1eff016c1b49977576743a684396c603b6b9661848fa0b20e190401b162e"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "SEC-024",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "f86d1d3be614149ea8f05059f1125bd97715af4f5ea453412ba71ae9214ce48c",
+   "orig_check": true,
+   "orig_min_sha256": "1de73eb1d4491d8dc301a7b3123aef18b27225840857f37244ef34ebcca1275f",
+   "canon_sha256": "3523352b7d1a5ecfa879bc395c03e6e1177fd630b5aa7cb96797908d160e0679",
+   "canon_check": true,
+   "canon_min_sha256": "47858ba059c9f71e0cf24a63cf60aa12bd7d0fa6e6d179bc3d4260e7e54c39c2",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "fe5b8869c54a23526563bb49cf228cd6186a898c4003cfeffe6534b882f31626",
+      "canon": "fe5b8869c54a23526563bb49cf228cd6186a898c4003cfeffe6534b882f31626"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "9714d8d4b6eb15c9ff0ab67beadf4f527511d914f95e5b3e4770c9b41bb69f6c",
+      "canon": "9714d8d4b6eb15c9ff0ab67beadf4f527511d914f95e5b3e4770c9b41bb69f6c"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "SEC-010",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "cda2a4368f151a15e9b05a7215f63b042f5530363ff7a67b113fb9fc6f81c217",
+   "orig_check": true,
+   "orig_min_sha256": "e394b24180341dcbe79872e77fc83bdc913d4b874f685f2a53099e36e578547e",
+   "canon_sha256": "1b29ec8888132625cfc47702361c9febcb4e9b535123c9c7b64caecbe8ed2094",
+   "canon_check": true,
+   "canon_min_sha256": "99afcbeeeaf7f6a17f5d43fca7acacdc42d448566c1a296e953a93d2f8b450c7",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "58a8104d341733fa8ef68bb239153e20afec9ead48b33007366328d9fdd53aab",
+      "canon": "58a8104d341733fa8ef68bb239153e20afec9ead48b33007366328d9fdd53aab"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "f13f56a87ec803cf4da26594617f0641481f9c009cd364cec386200491c9d25e",
+      "canon": "f13f56a87ec803cf4da26594617f0641481f9c009cd364cec386200491c9d25e"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 2,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "9bf89788ee51f3a6a4a5f2fcf80af2010cfaa555a98465dad337f8c1a4e6c362",
+      "canon": "9bf89788ee51f3a6a4a5f2fcf80af2010cfaa555a98465dad337f8c1a4e6c362"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 3,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "98d51512a2404467f82fbe3828f847b7099b73d17d605a4b4043d6793015b731",
+      "canon": "98d51512a2404467f82fbe3828f847b7099b73d17d605a4b4043d6793015b731"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "SOC-139",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "70e28e46f3377fbd2df6ae5b3b0f774f89947ac464ed0a9604ad91587ee3ae34",
+   "orig_check": true,
+   "orig_min_sha256": "59e3a57dee6e02e91c1178608a92a8050b04d509b6db32d006aa189b8ae65a90",
+   "canon_sha256": "b0dede16d54b0ffda018a3648261ea73d00502f067b3246556552f1be98f47f4",
+   "canon_check": true,
+   "canon_min_sha256": "a32da13438c080c607d71292bad80a3d8d7574622e3cb1d347aef8476cf082be",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "252d6d2256f5d10712c9d2935eb517dfc84203ab1f49feb95cc4399d672f68f2",
+      "canon": "252d6d2256f5d10712c9d2935eb517dfc84203ab1f49feb95cc4399d672f68f2"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "SOC-037",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "196f75bde9f5e040dbd8f55f6816f2327c7c12cc637ba3d70ec360f3c12de241",
+   "orig_check": true,
+   "orig_min_sha256": "0cf3542c72b913b8e2eeac010205ea8e7a5d77510a50fd4503a43b091aa4e8d6",
+   "canon_sha256": "c2c895511b2976092fe2ac409847a1160e49e6f344d063ba9fefec257b3c3e18",
+   "canon_check": true,
+   "canon_min_sha256": "433167b6bffd87717c3a743860b7dfd6a70e6c9c2db96deb1e81313a69609d24",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "5f1647c4cd50946684b8d30389adc008c6cecae1632caa668a5e6d08ef0f5cef",
+      "canon": "5f1647c4cd50946684b8d30389adc008c6cecae1632caa668a5e6d08ef0f5cef"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "SYS-066",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "cae43df6bf01bad3f5db5d94aa9fe80847cb9522d0e100a9ef8567ac7fe706ff",
+   "orig_check": true,
+   "orig_min_sha256": "83e04e51dbe741a9708725a30c8f060bdd6b0b486bd02eeba43816b8337bd862",
+   "canon_sha256": "73e3093c98741074203f4651684a141910ef8f42dc4ba1f6d646aed1d4bea071",
+   "canon_check": true,
+   "canon_min_sha256": "ee5cbfd802f174716b75db10661a177b1e2995f7b561bcaf3347c1b5907be509",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "2cb6dea3b52cbf33d00314373b775adc1b2e56214fd86c86865a1d734b70b1f4",
+      "canon": "2cb6dea3b52cbf33d00314373b775adc1b2e56214fd86c86865a1d734b70b1f4"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "b2d954ea7c74eef266ff3581b07ccb8adc0bf0dc2e8c3e1b76f6ad451b82551f",
+      "canon": "b2d954ea7c74eef266ff3581b07ccb8adc0bf0dc2e8c3e1b76f6ad451b82551f"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 2,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "1fbea744fb980fd67084f98b5419a691e34e28c0b5f47bd238a6396a2e9da633",
+      "canon": "1fbea744fb980fd67084f98b5419a691e34e28c0b5f47bd238a6396a2e9da633"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 3,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "a0882cdfec2cb2a1478148cef75040e00888ae9717a91fb812743982e51cbe8e",
+      "canon": "a0882cdfec2cb2a1478148cef75040e00888ae9717a91fb812743982e51cbe8e"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  },
+  {
+   "name": "SYS-010",
+   "kind": "library",
+   "identical": true,
+   "reasons": [],
+   "orig_sha256": "336b80705a52d84704e1f679007f28d40efc8247f88311fd7f9f684706e82524",
+   "orig_check": true,
+   "orig_min_sha256": "b10a9fe4dcaa054641ceb4026b93b081f741404bfd0707188bdd4cd151284466",
+   "canon_sha256": "75997a0a24ec7ac5ec0337101798782b0f742856459a45f0426ba9965bc63dc7",
+   "canon_check": true,
+   "canon_min_sha256": "8b4586d90a2413b24aeedd22974846f8b3b926909ad0a94019f3a1ea09254b70",
+   "orig_build": true,
+   "canon_build": true,
+   "cases": [
+    {
+     "case": 0,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "2696b3b46f62b0ce9fb671fcf3ce33b8f97d51b0d1fe2922c0a7de94a368b39e",
+      "canon": "2696b3b46f62b0ce9fb671fcf3ce33b8f97d51b0d1fe2922c0a7de94a368b39e"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    },
+    {
+     "case": 1,
+     "exit": {
+      "orig": 0,
+      "canon": 0
+     },
+     "stdout_sha256": {
+      "orig": "30c41c20bd6cd9108b76f4f011faf0130666ee2c6ce565284c89945794022672",
+      "canon": "30c41c20bd6cd9108b76f4f011faf0130666ee2c6ce565284c89945794022672"
+     },
+     "manifest_pass": {
+      "orig": true,
+      "canon": true
+     },
+     "identical": true
+    }
+   ]
+  }
+ ]
+}

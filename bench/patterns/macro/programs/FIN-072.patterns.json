@@ -1,0 +1,13 @@
+{
+ "name": "FIN-072",
+ "kind": "library",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "cond-elif-chain",
+   "sites": 1,
+   "note": "el{if(EXPENSE)} -> el if(EXPENSE)"
+  }
+ ],
+ "not_applied": []
+}

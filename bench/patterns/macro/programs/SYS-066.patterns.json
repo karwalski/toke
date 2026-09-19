@@ -1,0 +1,45 @@
+{
+ "name": "SYS-066",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "acc-array",
+   "sites": 3,
+   "note": "parsecsv `result=result+@(cur)` x2, main `rows=rows+@(trimmed)` -> .append"
+  },
+  {
+   "id": "str-build-loop",
+   "sites": 2,
+   "note": "parsecsv per-char `cur=s.concat(cur;ch)` -> builder (fresh builder after each field); main JSON output s.concat chain in loops -> one builder"
+  },
+  {
+   "id": "cond-elif-chain",
+   "sites": 1,
+   "note": "parsecsv: nested `el{if(..){if(..){}el{}}el{}}` -> flat `el if` chain"
+  },
+  {
+   "id": "cond-bool-combine",
+   "sites": 1,
+   "note": "parsecsv: `s.equals(ch;\",\")&&inquote==0`"
+  },
+  {
+   "id": "str-array-render",
+   "sites": 1,
+   "note": "main: .append-built header/fields read into the builder by direct s.add (form c; no element interpolation, 127.10)"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "cond-elif-chain",
+   "issue": null,
+   "reason": "main read loop `if(len(line)==0){}el{let trimmed=..; if(len(trimmed)==0)..}` kept nested: a binding sits between the two tests"
+  },
+  {
+   "id": "parse-csv-line",
+   "issue": null,
+   "reason": "hand quote-aware CSV scanner kept: the canonical s.split form is only correct for unquoted fields and this task quotes fields"
+  }
+ ],
+ "note": null
+}

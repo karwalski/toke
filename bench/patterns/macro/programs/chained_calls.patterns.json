@@ -1,0 +1,8 @@
+{
+ "name": "chained_calls",
+ "kind": "bench",
+ "reformatted": false,
+ "applied": [],
+ "not_applied": [],
+ "note": "fn-chain-vs-let already canonical (nested calls, no interim let); no change"
+}

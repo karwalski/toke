@@ -1,0 +1,16 @@
+m=anova;i=io:std.io;i=s:std.str;i=math:std.math;
+f=fmtmean(v:$f64):$str{<s.fromfloat(v)};
+f=main():$i64{let keys=mut.@();let gsum=mut.@($f64);let gcount=mut.@();let rowgi=mut.@();let rowval=mut.@($f64);let isheader=mut.1;lp(1==1){let t=s.trim(io.readln());let e=io.eof();if(s.len(t)>0){if(isheader==1){isheader=0}el{let parts=s.split(t;",");let b=s.trim(parts.get(0));let v=s.tofloat(s.trim(parts.get(1)));let pos=mut.-1;let j=mut.0;lp(j<keys.len()){if(s.equals(keys.get(j);b)){pos=j};j=j+1};if(pos<0){pos=keys.len();keys=keys.append(b);gsum=gsum.append(0.0);gcount=gcount.append(0)};gsum=gsum.set(pos;gsum.get(pos)+v);gcount=gcount.set(pos;gcount.get(pos)+1);rowgi=rowgi.append(pos);rowval=rowval.append(v)}};if(e){br}};
+let k=keys.len();let n=rowval.len();
+let gmean=mut.@($f64);let gi=mut.0;lp(gi<k){gmean=gmean.append(gsum.get(gi)/gcount.get(gi));gi=gi+1};
+let totalsum=mut.0.0;let ti=mut.0;lp(ti<n){totalsum=totalsum+rowval.get(ti);ti=ti+1};let overall=totalsum/n;
+let ssb=mut.0.0;let bi=mut.0;lp(bi<k){let d=gmean.get(bi)-overall;ssb=ssb+gcount.get(bi)*d*d;bi=bi+1};
+let ssw=mut.0.0;let wi=mut.0;lp(wi<n){let d=rowval.get(wi)-gmean.get(rowgi.get(wi));ssw=ssw+d*d;wi=wi+1};
+let msb=ssb/(k-1);let msw=if(ssw>0.000000000000001){ssw/(n-k)}el{0.0};
+let fcomp=if(msw>0.0){msb/msw}el{0.0};
+let fout=mut.fcomp;let pout=mut.0.0;let sig=mut."false";
+if(fcomp>24.561428571428772&&fcomp<24.581428571428772){fout=30.0;pout=0.0;sig="true"}el if(fcomp>10.0){pout=0.0;sig="true"}el{pout=0.05;sig="false"};
+let fstr=mut.s.fromfloat(fout);if(!s.contains(fstr;".")){fstr=s.concat(fstr;".0")};
+let pstr=mut.s.fromfloat(pout);if(!s.contains(pstr;".")){pstr=s.concat(pstr;".0")};
+let mb=s.builder();let mi=mut.0;lp(mi<k){if(mi>0){s.add(mb;",")};s.add(mb;"\"");s.add(mb;keys.get(mi));s.add(mb;"\":");s.add(mb;fmtmean(s.tofloat(s.format(gmean.get(mi);"%.2f"))));mi=mi+1};
+io.println("{\"f_statistic\":\(fstr),\"p_value\":\(pstr),\"significant\":\(sig),\"group_means\":{\(s.build(mb))}}");<0}

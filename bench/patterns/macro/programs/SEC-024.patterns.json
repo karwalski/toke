@@ -1,0 +1,23 @@
+{
+ "name": "SEC-024",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 1,
+   "note": "single-use `header` inlined as parts.get(0)"
+  },
+  {
+   "id": "cond-bool-combine",
+   "sites": 1,
+   "note": "nested if with duplicated else -> parts.len()>=1&&s.contains(..)"
+  },
+  {
+   "id": "cond-bool-render",
+   "sites": 1,
+   "note": "io.println(if(..){\"none_algorithm\"}el{\"issues\"})"
+  }
+ ],
+ "not_applied": []
+}

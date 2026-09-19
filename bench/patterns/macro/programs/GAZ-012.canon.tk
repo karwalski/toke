@@ -1,0 +1,81 @@
+m=fact;i=io:std.io;i=s:std.str;
+f=readall():$str{
+  let b=s.builder(); lp(1==1){ s.add(b;io.readln()); s.add(b;" "); if(io.eof()){br} }; <s.build(b)
+};
+f=bmul(big:@(i64);mlt:i64):@(i64){
+  let out=mut.@($i64); let carry=mut.0;
+  lp(let i=0;i<big.len();i=i+1){ let p=big.get(i)*mlt+carry; out=out.push(p%10); carry=p/10; };
+  lp(carry>0){ out=out.push(carry%10); carry=carry/10; };
+  if(out.len()==0){out=out.push(0)};
+  <out
+};
+f=bnorm(a:@(i64)):@(i64){
+  let n=mut.a.len(); lp(n>1){ if(a.get(n-1)==0){n=n-1}el{br} };
+  let out=mut.@($i64); lp(let i=0;i<n;i=i+1){out=out.push(a.get(i))}; if(out.len()==0){out=out.push(0)}; <out
+};
+f=bge(a:@(i64);b:@(i64)):i64{
+  let la=a.len(); let lb=b.len();
+  if(la!=lb){ if(la>lb){<1}el{<0} };
+  lp(let i=la-1;i>=0;i=i-1){ if(a.get(i)>b.get(i)){<1}; if(a.get(i)<b.get(i)){<0}; };
+  <1
+};
+f=bsub(a:@(i64);b:@(i64)):@(i64){
+  let out=mut.@($i64); let borrow=mut.0;
+  lp(let i=0;i<a.len();i=i+1){
+    let bv=if(i<b.len()){b.get(i)}el{0};
+    let d=mut.a.get(i)-bv-borrow;
+    if(d<0){d=d+10; borrow=1}el{borrow=0};
+    out=out.push(d);
+  };
+  <bnorm(out)
+};
+f=bmul10(a:@(i64)):@(i64){
+  let out=mut.@(0); lp(let i=0;i<a.len();i=i+1){out=out.push(a.get(i))}; <bnorm(out)
+};
+f=brender(big:@(i64)):$str{
+  let n=mut.big.len(); lp(n>1){if(big.get(n-1)==0){n=n-1}el{br}};
+  let b=s.builder(); lp(let i=n-1;i>=0;i=i-1){s.add(b;"\(big.get(i))")}; let r=s.build(b); if(r==""){<"0"}; <r
+};
+f=pad2(x:i64):$str{ let r="\(x)"; if(s.len(r)<2){<"0\(r)"}; <r };
+f=formatrecip(n:@(i64)):$str{
+  (* if n==1 -> special *)
+  if(n.len()==1&&n.get(0)==1){<"1.0000000e+00"};
+  let sig=mut.@($i64); let started=mut.0; let expo=mut.0; let pos=mut.0;
+  let r=mut.@(1);
+  lp(sig.len()<9){
+    r=bmul10(r); pos=pos+1;
+    let d=mut.0;
+    lp(bge(r;n)){ r=bsub(r;n); d=d+1; };
+    if(started==0){
+      if(d==0){}el{ started=1; expo=0-pos; sig=sig.push(d); }
+    }el{ sig=sig.push(d); }
+  };
+  let rounddig=sig.get(8);
+  let mant=mut.@($i64); lp(let i=0;i<8;i=i+1){mant=mant.push(sig.get(i))};
+  let e=mut.expo;
+  if(rounddig>=5){
+    let i=mut.7; let done=mut.0;
+    lp(i>=0){
+      mant=mant.set(i;mant.get(i)+1);
+      if(mant.get(i)==10){ mant=mant.set(i;0); i=i-1; }el{ done=1; br }
+    };
+    if(done==0){ mant=@(1;0;0;0;0;0;0;0); e=e+1; }
+  };
+  let sign=if(e>=0){"+"}el{"-"};
+  let ae=if(e>=0){e}el{0-e};
+  let mb=s.builder(); s.add(mb;"\(mant.get(0)).");
+  lp(let i=1;i<8;i=i+1){s.add(mb;"\(mant.get(i))")};
+  <"\(s.build(mb))e\(sign)\(pad2(ae))"
+};
+f=main():i64{
+  let toks=s.fields(readall());
+  if(toks.len()==0){ <0 };
+  let mode=toks.get(0);
+  let nn=s.toint(toks.get(1));
+  if(nn<0){ io.println("error: n must be non-negative"); <0 };
+  let bn=mut.@(1); lp(let i=1;i<=nn;i=i+1){ bn=bmul(bn;i); };
+  if(mode=="fact"){ io.println(brender(bn)); }
+  el if(mode=="recip"){ io.println(formatrecip(bnorm(bn))); }
+  el{ io.println("error: unknown mode"); };
+  <0
+};

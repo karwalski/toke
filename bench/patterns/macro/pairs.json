@@ -1,0 +1,959 @@
+{
+ "seed": 131,
+ "per_category": 2,
+ "pairs": [
+  {
+   "name": "fib_recursive",
+   "kind": "bench",
+   "source": "bench/programs/fib_recursive.tk",
+   "source_sha256": "3d62e6b65ac2cad2b00dba6f8ae2146ba8f6173ead42d847a2953d4d5db40944",
+   "orig": "programs/fib_recursive.orig.tk",
+   "canon": "programs/fib_recursive.canon.tk",
+   "patterns": "programs/fib_recursive.patterns.json",
+   "cases": null
+  },
+  {
+   "name": "fib_iterative",
+   "kind": "bench",
+   "source": "bench/programs/fib_iterative.tk",
+   "source_sha256": "2b1a7afde89fe5c1afcdd53728d77c7c8d4bf494ba2cd44f2804d6ec50944972",
+   "orig": "programs/fib_iterative.orig.tk",
+   "canon": "programs/fib_iterative.canon.tk",
+   "patterns": "programs/fib_iterative.patterns.json",
+   "cases": null
+  },
+  {
+   "name": "sum_array",
+   "kind": "bench",
+   "source": "bench/programs/sum_array.tk",
+   "source_sha256": "b95a21acae36ec9689f87c9e1c0017dffab6a47f23ef90792290707000c56ab5",
+   "orig": "programs/sum_array.orig.tk",
+   "canon": "programs/sum_array.canon.tk",
+   "patterns": "programs/sum_array.patterns.json",
+   "cases": null
+  },
+  {
+   "name": "nested_loops",
+   "kind": "bench",
+   "source": "bench/programs/nested_loops.tk",
+   "source_sha256": "659ebf8720547d91729cbfa84ec2bb93365aa2f36f5565a50ed3432a17238d93",
+   "orig": "programs/nested_loops.orig.tk",
+   "canon": "programs/nested_loops.canon.tk",
+   "patterns": "programs/nested_loops.patterns.json",
+   "cases": null
+  },
+  {
+   "name": "binary_search",
+   "kind": "bench",
+   "source": "bench/programs/binary_search.tk",
+   "source_sha256": "c0dcb2148309ea9ee3762ad558def725d7ba9265f2060b8c7e0a578cd73aaab5",
+   "orig": "programs/binary_search.orig.tk",
+   "canon": "programs/binary_search.canon.tk",
+   "patterns": "programs/binary_search.patterns.json",
+   "cases": null
+  },
+  {
+   "name": "prime_sieve",
+   "kind": "bench",
+   "source": "bench/programs/prime_sieve.tk",
+   "source_sha256": "8d7a10ce9282f80f250ea7612da02a04db458bc6ed8f83e3b71c163eb5a94b32",
+   "orig": "programs/prime_sieve.orig.tk",
+   "canon": "programs/prime_sieve.canon.tk",
+   "patterns": "programs/prime_sieve.patterns.json",
+   "cases": null
+  },
+  {
+   "name": "deep_recursion",
+   "kind": "bench",
+   "source": "bench/programs/deep_recursion.tk",
+   "source_sha256": "49a6f34622c64e0483b5e9f739423152a3fa6fd8c09c260c944af9d61b26ae6c",
+   "orig": "programs/deep_recursion.orig.tk",
+   "canon": "programs/deep_recursion.canon.tk",
+   "patterns": "programs/deep_recursion.patterns.json",
+   "cases": null
+  },
+  {
+   "name": "struct_ops",
+   "kind": "bench",
+   "source": "bench/programs/struct_ops.tk",
+   "source_sha256": "a175d3751dd42370dd7f65dd7500caf67591742ed12c447db63f8877296e749b",
+   "orig": "programs/struct_ops.orig.tk",
+   "canon": "programs/struct_ops.canon.tk",
+   "patterns": "programs/struct_ops.patterns.json",
+   "cases": null
+  },
+  {
+   "name": "large_expr",
+   "kind": "bench",
+   "source": "bench/programs/large_expr.tk",
+   "source_sha256": "e2efc4485de09715696352cd2392a3c068b5df6e2462b9f85eb66b6157f5e0d8",
+   "orig": "programs/large_expr.orig.tk",
+   "canon": "programs/large_expr.canon.tk",
+   "patterns": "programs/large_expr.patterns.json",
+   "cases": null
+  },
+  {
+   "name": "chained_calls",
+   "kind": "bench",
+   "source": "bench/programs/chained_calls.tk",
+   "source_sha256": "8044810e99c829251f32897a32b46c1833989e790bd1db8177f9f691a1547fa4",
+   "orig": "programs/chained_calls.orig.tk",
+   "canon": "programs/chained_calls.canon.tk",
+   "patterns": "programs/chained_calls.patterns.json",
+   "cases": null
+  },
+  {
+   "name": "collatz",
+   "kind": "bench",
+   "source": "bench/programs/collatz.tk",
+   "source_sha256": "9f39f198b46dc37c09ca7275fbc7e61b3dfcd838a1c000e81e0e1c2a67eb0722",
+   "orig": "programs/collatz.orig.tk",
+   "canon": "programs/collatz.canon.tk",
+   "patterns": "programs/collatz.patterns.json",
+   "cases": null
+  },
+  {
+   "name": "gcd_euler",
+   "kind": "bench",
+   "source": "bench/programs/gcd_euler.tk",
+   "source_sha256": "6faa2b803eddfbfc7886910baf5df2df1fe680f0f387583ecdf0272fd9ba55fb",
+   "orig": "programs/gcd_euler.orig.tk",
+   "canon": "programs/gcd_euler.canon.tk",
+   "patterns": "programs/gcd_euler.patterns.json",
+   "cases": null
+  },
+  {
+   "name": "AIA-118",
+   "kind": "library",
+   "category": "ai-agents",
+   "title": "Workflow DAG validator",
+   "source": "~/tk/toke-test-programs/results/solutions/ai-agents/AIA-118/solution.tk",
+   "source_sha256": "b6865572f2e69edd36866678b8e9cba239e64d637957c9a38658b2216f9fc916",
+   "orig": "programs/AIA-118.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/ai-agents.json",
+   "canon": "programs/AIA-118.canon.tk",
+   "patterns": "programs/AIA-118.patterns.json",
+   "cases": [
+    {
+     "input": "{\"nodes\":[{\"id\":\"a\",\"depends_on\":[]},{\"id\":\"b\",\"depends_on\":[\"a\"]},{\"id\":\"c\",\"depends_on\":[\"a\"]},{\"id\":\"d\",\"depends_on\":[\"b\",\"c\"]}]}",
+     "expected_output": "{\"valid\":true,\"errors\":[],\"execution_order\":[\"a\",\"b\",\"c\",\"d\"]}",
+     "fixtures": null
+    },
+    {
+     "input": "{\"nodes\":[{\"id\":\"a\",\"depends_on\":[\"b\"]},{\"id\":\"b\",\"depends_on\":[\"a\"]}]}",
+     "expected_output": "{\"valid\":false,\"errors\":[\"Cycle detected: a -> b -> a\"],\"execution_order\":[]}",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "AIA-100",
+   "kind": "library",
+   "category": "ai-agents",
+   "title": "Agent state synchronisation",
+   "source": "~/tk/toke-test-programs/results/solutions/ai-agents/AIA-100/solution.tk",
+   "source_sha256": "6ec7c5c2ce50c0f505aa11f2fd3af9019ce3f7fe4500d1f04e6dd17b6e656d0d",
+   "orig": "programs/AIA-100.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/ai-agents.json",
+   "canon": "programs/AIA-100.canon.tk",
+   "patterns": "programs/AIA-100.patterns.json",
+   "cases": [
+    {
+     "input": "{\"base_state\":{\"status\":\"pending\",\"count\":0},\"updates\":[{\"agent_id\":\"a1\",\"timestamp\":100,\"changes\":{\"status\":\"active\",\"count\":5}},{\"agent_id\":\"a2\",\"timestamp\":110,\"changes\":{\"status\":\"complete\",\"count\":10}}]}",
+     "expected_output": "{\"merged_state\":{\"status\":\"complete\",\"count\":10},\"conflicts\":[{\"key\":\"status\",\"resolution\":\"complete\",\"reason\":\"Latest timestamp (a2 at 110) wins for conflicting scalar\"}]}",
+     "fixtures": null
+    },
+    {
+     "input": "{\"base_state\":{\"items\":[]},\"updates\":[{\"agent_id\":\"a1\",\"timestamp\":100,\"changes\":{\"items\":[\"x\"]}},{\"agent_id\":\"a2\",\"timestamp\":100,\"changes\":{\"items\":[\"y\"]}}]}",
+     "expected_output": "{\"merged_state\":{\"items\":[\"x\",\"y\"]},\"conflicts\":[{\"key\":\"items\",\"resolution\":\"merged arrays\",\"reason\":\"Concurrent array updates combined\"}]}",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "FIN-072",
+   "kind": "library",
+   "category": "calculators-finance",
+   "title": "Profit and Loss Statement",
+   "source": "~/tk/toke-test-programs/results/solutions/calculators-finance/FIN-072/solution.tk",
+   "source_sha256": "ccf570166d7832acdcac1b4c4e652864ff48259b23f4370de43291842633649c",
+   "orig": "programs/FIN-072.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/calculators-finance.json",
+   "canon": "programs/FIN-072.canon.tk",
+   "patterns": "programs/FIN-072.patterns.json",
+   "cases": [
+    {
+     "input": "REVENUE sales 50000\nREVENUE services 10000\nEXPENSE wages 30000\nEXPENSE rent 5000",
+     "expected_output": "REVENUE: 60000.00\nEXPENSES: 35000.00\nNET PROFIT: 25000.00",
+     "fixtures": null
+    },
+    {
+     "input": "REVENUE sales 20000\nEXPENSE wages 15000\nEXPENSE materials 8000",
+     "expected_output": "REVENUE: 20000.00\nEXPENSES: 23000.00\nNET LOSS: 3000.00",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "FIN-122",
+   "kind": "library",
+   "category": "calculators-finance",
+   "title": "Crypto Profit Calculator",
+   "source": "~/tk/toke-test-programs/results/solutions/calculators-finance/FIN-122/solution.tk",
+   "source_sha256": "bf491de14d21d9ca77c8bdc07b66c760bafddfb6a5583ab67f06a013aeccd6dc",
+   "orig": "programs/FIN-122.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/calculators-finance.json",
+   "canon": "programs/FIN-122.canon.tk",
+   "patterns": "programs/FIN-122.patterns.json",
+   "cases": [
+    {
+     "input": "BUY 1.0 30000\nBUY 0.5 35000\nSELL 1.2 40000",
+     "expected_output": "11000.00",
+     "fixtures": null
+    },
+    {
+     "input": "BUY 2.0 50000\nSELL 1.0 45000",
+     "expected_output": "-5000.00",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "CRY-119",
+   "kind": "library",
+   "category": "crypto-blockchain",
+   "title": "RLP Encoding",
+   "source": "~/tk/toke-test-programs/results/solutions/crypto-blockchain/CRY-119/solution.tk",
+   "source_sha256": "3ecccc4ad8b487364e677c300e2c84d56f95fb3f6ca1d997825dc6024f6f6ddb",
+   "orig": "programs/CRY-119.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/crypto-blockchain.json",
+   "canon": "programs/CRY-119.canon.tk",
+   "patterns": "programs/CRY-119.patterns.json",
+   "cases": [
+    {
+     "input": "\"dog\"",
+     "expected_output": "83646f67",
+     "fixtures": null
+    },
+    {
+     "input": "[\"cat\",\"dog\"]",
+     "expected_output": "c88363617483646f67",
+     "fixtures": null
+    },
+    {
+     "input": "\"\"",
+     "expected_output": "80",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "CRY-041",
+   "kind": "library",
+   "category": "crypto-blockchain",
+   "title": "Bitcoin Address from Public Key",
+   "source": "~/tk/toke-test-programs/results/solutions/crypto-blockchain/CRY-041/solution.tk",
+   "source_sha256": "78814f6ddb4d29a5aa270ac76dd3c06449191fe4f35b2c521c4dc56900aafcee",
+   "orig": "programs/CRY-041.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/crypto-blockchain.json",
+   "canon": "programs/CRY-041.canon.tk",
+   "patterns": "programs/CRY-041.patterns.json",
+   "cases": [
+    {
+     "input": "0250863ad64a87ae8a2fe83c1af1a8403cb53f53e486d8511dad8a04887e5b2352",
+     "expected_output": "1PMycacnJaSqwwJqjawXBErnLsZ7RkXUAs",
+     "fixtures": null
+    },
+    {
+     "input": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+     "expected_output": "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "DAT-121",
+   "kind": "library",
+   "category": "data-processing",
+   "title": "Soundex and Phonetic Encoder",
+   "source": "~/tk/toke-test-programs/results/solutions/data-processing/DAT-121/solution.tk",
+   "source_sha256": "83867b355aa4437fac016a74a1f76cedda344933312fb2183bca5a28608e244d",
+   "orig": "programs/DAT-121.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/data-processing.json",
+   "canon": "programs/DAT-121.canon.tk",
+   "patterns": "programs/DAT-121.patterns.json",
+   "cases": [
+    {
+     "input": "Smith\nSmythe\nJohnson",
+     "expected_output": "Smith\tS530\tSM0\tSM\nSmythe\tS530\tSM0\tSM\nJohnson\tJ525\tJNSN\tJNSN",
+     "fixtures": null
+    },
+    {
+     "input": "Robert\nRupert",
+     "expected_output": "Robert\tR163\tRBRT\tRBRT\nRupert\tR163\tRPRT\tRPRT",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "DAT-045",
+   "kind": "library",
+   "category": "data-processing",
+   "title": "CRC32 Checksum Calculator",
+   "source": "~/tk/toke-test-programs/results/solutions/data-processing/DAT-045/solution.tk",
+   "source_sha256": "28a637d79c5b90622115a454e0723c528f7f50d20a92776a57f17f6816ff78c7",
+   "orig": "programs/DAT-045.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/data-processing.json",
+   "canon": "programs/DAT-045.canon.tk",
+   "patterns": "programs/DAT-045.patterns.json",
+   "cases": [
+    {
+     "input": "hello world\nfoo bar",
+     "expected_output": "0d4a1185\thello world\nbe460134\tfoo bar",
+     "fixtures": null
+    },
+    {
+     "input": "",
+     "expected_output": "00000000\t",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "DEV-104",
+   "kind": "library",
+   "category": "devtools",
+   "title": "Service Health Dashboard",
+   "source": "~/tk/toke-test-programs/results/solutions/devtools/DEV-104/solution.tk",
+   "source_sha256": "cbae185e3c1a0a57930e5cb2b9163a1fef3fe03ab4ad3b4c21de3260d37b79ee",
+   "orig": "programs/DEV-104.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/devtools.json",
+   "canon": "programs/DEV-104.canon.tk",
+   "patterns": "programs/DEV-104.patterns.json",
+   "cases": [
+    {
+     "input": "[{\"service\":\"api\",\"status\":\"UP\",\"last_check\":\"2024-01-15T10:00:00\",\"latency_ms\":45,\"uptime_pct\":99.9},{\"service\":\"db\",\"status\":\"DOWN\",\"last_check\":\"2024-01-15T10:00:00\",\"latency_ms\":0,\"uptime_pct\":95.0}]",
+     "expected_output": "Service Health Dashboard\n\n[UP]   api    45ms   99.9% uptime\n[DOWN] db     0ms    95.0% uptime\n\nAll UP: 1/2",
+     "fixtures": null
+    },
+    {
+     "input": "[{\"service\":\"cache\",\"status\":\"UP\",\"last_check\":\"2024-01-15T09:00:00\",\"latency_ms\":2,\"uptime_pct\":100.0}]",
+     "expected_output": "Service Health Dashboard\n\n[UP]   cache  2ms    100.0% uptime\n\nAll UP: 1/1",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "DEV-045",
+   "kind": "library",
+   "category": "devtools",
+   "title": "Dockerfile Linter",
+   "source": "~/tk/toke-test-programs/results/solutions/devtools/DEV-045/solution.tk",
+   "source_sha256": "523485b6d0b554f7d61ffcda5083f31790f7bb109cfc1888af68301a2e16a58d",
+   "orig": "programs/DEV-045.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/devtools.json",
+   "canon": "programs/DEV-045.canon.tk",
+   "patterns": "programs/DEV-045.patterns.json",
+   "cases": [
+    {
+     "input": "FROM ubuntu:latest\nRUN apt-get update\nRUN apt-get install -y git",
+     "expected_output": "line 1: [WARN] DL3007 - Using latest tag\nline 2: [WARN] DL3009 - Delete apt-get lists after install\nline 2: [INFO] DL3015 - Combine RUN commands\n3 issues found",
+     "fixtures": null
+    },
+    {
+     "input": "FROM ubuntu:22.04\nRUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*",
+     "expected_output": "0 issues found",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "EDU-098",
+   "kind": "library",
+   "category": "education",
+   "title": "Concept Glossary Formatter",
+   "source": "~/tk/toke-test-programs/results/solutions/education/EDU-098/solution.tk",
+   "source_sha256": "b5937e76c7e9bd89641bd6c410b4f62aea3912dd6b36bce2e89bc5b29d852c80",
+   "orig": "programs/EDU-098.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/education.json",
+   "canon": "programs/EDU-098.canon.tk",
+   "patterns": "programs/EDU-098.patterns.json",
+   "cases": [
+    {
+     "input": "[{\"term\":\"photosynthesis\",\"definition\":\"Process of converting light to energy\"},{\"term\":\"cell\",\"definition\":\"Basic unit of life\"}]",
+     "expected_output": "cell\n  Basic unit of life\n\nphotosynthesis\n  Process of converting light to energy",
+     "fixtures": null
+    },
+    {
+     "input": "[{\"term\":\"orbit\",\"definition\":\"Path of a planet around a star\"}]",
+     "expected_output": "orbit\n  Path of a planet around a star",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "EDU-085",
+   "kind": "library",
+   "category": "education",
+   "title": "Subject Difficulty Ranker",
+   "source": "~/tk/toke-test-programs/results/solutions/education/EDU-085/solution.tk",
+   "source_sha256": "8dd7d9f9c22f9285ba50ea9b75b2623fa17e586f1c063f7fda4bf7f05238cd10",
+   "orig": "programs/EDU-085.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/education.json",
+   "canon": "programs/EDU-085.canon.tk",
+   "patterns": "programs/EDU-085.patterns.json",
+   "cases": [
+    {
+     "input": "[{\"student\":\"A\",\"subject_scores\":{\"Math\":8,\"English\":5}},{\"student\":\"B\",\"subject_scores\":{\"Math\":6,\"English\":7}}]",
+     "expected_output": "1. Math: 7.0\n2. English: 6.0",
+     "fixtures": null
+    },
+    {
+     "input": "[{\"student\":\"X\",\"subject_scores\":{\"Art\":3}}]",
+     "expected_output": "1. Art: 3.0",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "GAM-117",
+   "kind": "library",
+   "category": "games",
+   "title": "Taboo Word Checker",
+   "source": "~/tk/toke-test-programs/results/solutions/games/GAM-117/solution.tk",
+   "source_sha256": "d3909f95efeafadb7d8b762bbc7e3a956df8233e7ca0ce209deeeab53a44e8df",
+   "orig": "programs/GAM-117.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/games.json",
+   "canon": "programs/GAM-117.canon.tk",
+   "patterns": "programs/GAM-117.patterns.json",
+   "cases": [
+    {
+     "input": "BEACH\nSAND\nSEA\nSUN\nWAVE\n\nGo to the seaside for some sun",
+     "expected_output": "Taboo: SUN",
+     "fixtures": null
+    },
+    {
+     "input": "CAR\nDRIVE\nROAD\n\nA vehicle with four wheels",
+     "expected_output": "Pass",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "GAM-072",
+   "kind": "library",
+   "category": "games",
+   "title": "Blackjack Strategy Advisor",
+   "source": "~/tk/toke-test-programs/results/solutions/games/GAM-072/solution.tk",
+   "source_sha256": "dee09b5ce4ff8f703eead4f34eca3ac64b10ee62711a6ed266a5629b1652328c",
+   "orig": "programs/GAM-072.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/games.json",
+   "canon": "programs/GAM-072.canon.tk",
+   "patterns": "programs/GAM-072.patterns.json",
+   "cases": [
+    {
+     "input": "8 8\n6",
+     "expected_output": "Split",
+     "fixtures": null
+    },
+    {
+     "input": "A 7\n9",
+     "expected_output": "Hit",
+     "fixtures": null
+    },
+    {
+     "input": "K Q\n5",
+     "expected_output": "Stand",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "GAZ-041",
+   "kind": "library",
+   "category": "gazeta",
+   "title": "Tuesday The 13th",
+   "source": "~/tk/toke-test-programs/results/solutions/gazeta/GAZ-041/solution.tk",
+   "source_sha256": "59537d04c49a0e621dd2c7373f548247cc0973b3aaf24c741a9c5d7771f85d5a",
+   "orig": "programs/GAZ-041.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/gazeta.json",
+   "canon": "programs/GAZ-041.canon.tk",
+   "patterns": "programs/GAZ-041.patterns.json",
+   "cases": [
+    {
+     "input": "1990 1 1 1990 12 31\n",
+     "expected_output": "Mon 1\nTue 3\nWed 1\nThu 2\nFri 2\nSat 2\nSun 1\nMaxTueGap 245\n",
+     "fixtures": null
+    },
+    {
+     "input": "1582 10 15 1991 12 31\n",
+     "expected_output": "Mon 700\nTue 700\nWed 704\nThu 699\nFri 705\nSat 699\nSun 703\nMaxTueGap 427\n",
+     "fixtures": null
+    },
+    {
+     "input": "2020 1 14 2020 2 12\n",
+     "expected_output": "Mon 0\nTue 0\nWed 0\nThu 0\nFri 0\nSat 0\nSun 0\nMaxTueGap 0\n",
+     "fixtures": null
+    },
+    {
+     "input": "2020 3 13 2020 3 13\n",
+     "expected_output": "Mon 0\nTue 0\nWed 0\nThu 0\nFri 1\nSat 0\nSun 0\nMaxTueGap 0\n",
+     "fixtures": null
+    },
+    {
+     "input": "2015 1 1 2015 12 31\n",
+     "expected_output": "Mon 2\nTue 2\nWed 1\nThu 1\nFri 3\nSat 1\nSun 2\nMaxTueGap 273\n",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "GAZ-012",
+   "kind": "library",
+   "category": "gazeta",
+   "title": "Product Of First N",
+   "source": "~/tk/toke-test-programs/results/solutions/gazeta/GAZ-012/solution.tk",
+   "source_sha256": "268a69a4dd911bbdf0d8234a3650d2730dbccf661541016ba7cf119039b07736",
+   "orig": "programs/GAZ-012.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/gazeta.json",
+   "canon": "programs/GAZ-012.canon.tk",
+   "patterns": "programs/GAZ-012.patterns.json",
+   "cases": [
+    {
+     "input": "fact 10\n",
+     "expected_output": "3628800\n",
+     "fixtures": null
+    },
+    {
+     "input": "fact 0\n",
+     "expected_output": "1\n",
+     "fixtures": null
+    },
+    {
+     "input": "fact 5\n",
+     "expected_output": "120\n",
+     "fixtures": null
+    },
+    {
+     "input": "recip 10\n",
+     "expected_output": "2.7557319e-07\n",
+     "fixtures": null
+    },
+    {
+     "input": "fact 13\n",
+     "expected_output": "6227020800\n",
+     "fixtures": null
+    },
+    {
+     "input": "recip 0\n",
+     "expected_output": "1.0000000e+00\n",
+     "fixtures": null
+    },
+    {
+     "input": "recip 1\n",
+     "expected_output": "1.0000000e+00\n",
+     "fixtures": null
+    },
+    {
+     "input": "recip 5\n",
+     "expected_output": "8.3333333e-03\n",
+     "fixtures": null
+    },
+    {
+     "input": "fact 1\n",
+     "expected_output": "1\n",
+     "fixtures": null
+    },
+    {
+     "input": "fact 1000\n",
+     "expected_output": "402387260077093773543702433923003985719374864210714632543799910429938512398629020592044208486969404800479988610197196058631666872994808558901323829669944590997424504087073759918823627727188732519779505950995276120874975462497043601418278094646496291056393887437886487337119181045825783647849977012476632889835955735432513185323958463075557409114262417474349347553428646576611667797396668820291207379143853719588249808126867838374559731746136085379534524221586593201928090878297308431392844403281231558611036976801357304216168747609675871348312025478589320767169132448426236131412508780208000261683151027341827977704784635868170164365024153691398281264810213092761244896359928705114964975419909342221566832572080821333186116811553615836546984046708975602900950537616475847728421889679646244945160765353408198901385442487984959953319101723355556602139450399736280750137837615307127761926849034352625200015888535147331611702103968175921510907788019393178114194545257223865541461062892187960223838971476088506276862967146674697562911234082439208160153780889893964518263243671616762179168909779911903754031274622289988005195444414282012187361745992642956581746628302955570299024324153181617210465832036786906117260158783520751516284225540265170483304226143974286933061690897968482590125458327168226458066526769958652682272807075781391858178889652208164348344825993266043367660176999612831860788386150279465955131156552036093988180612138558600301435694527224206344631797460594682573103790084024432438465657245014402821885252470935190620929023136493273497565513958720559654228749774011413346962715422845862377387538230483865688976461927383814900140767310446640259899490222221765904339901886018566526485061799702356193897017860040811889729918311021171229845901641921068884387121855646124960798722908519296819372388642614839657382291123125024186649353143970137428531926649875337218940694281434118520158014123344828015051399694290153483077644569099073152433278288269864602789864321139083506217095002597389863554277196742822248757586765752344220207573630569498825087968928162753848863396909959826280956121450994871701244516461260379029309120889086942028510640182154399457156805941872748998094254742173582401063677404595741785160829230135358081840096996372524230560855903700624271243416909004153690105933983835777939410970027753472000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\n",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "MFG-051",
+   "kind": "library",
+   "category": "manufacturing-ml",
+   "title": "ANOVA - Multi-Batch Comparison",
+   "source": "~/tk/toke-test-programs/results/solutions/manufacturing-ml/MFG-051/solution.tk",
+   "source_sha256": "b043fa1a3cd998a6dfc197325f794d0156ddc4f116b31caf142b09045a1044d2",
+   "orig": "programs/MFG-051.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/manufacturing-ml.json",
+   "canon": "programs/MFG-051.canon.tk",
+   "patterns": "programs/MFG-051.patterns.json",
+   "cases": [
+    {
+     "input": "batch,value\nA,10.0\nA,10.1\nA,10.2\nB,10.5\nB,10.6\nB,10.4\nC,10.0\nC,10.1\nC,10.0",
+     "expected_output": "{\"f_statistic\":30.0,\"p_value\":0.0,\"significant\":true,\"group_means\":{\"A\":10.1,\"B\":10.5,\"C\":10.03}}",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "MFG-007",
+   "kind": "library",
+   "category": "manufacturing-ml",
+   "title": "R Chart Values",
+   "source": "~/tk/toke-test-programs/results/solutions/manufacturing-ml/MFG-007/solution.tk",
+   "source_sha256": "41b72c5dfd5dbf59acb19bf66a7599ec01bd986dd2d5ef8672e9a721366cfcaa",
+   "orig": "programs/MFG-007.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/manufacturing-ml.json",
+   "canon": "programs/MFG-007.canon.tk",
+   "patterns": "programs/MFG-007.patterns.json",
+   "cases": [
+    {
+     "input": "10.0,10.1,10.2\n9.9,10.0,10.1\n10.1,10.0,9.9\n10.0,10.2,10.1",
+     "expected_output": "{\"r_bar\":0.2,\"ucl\":0.51,\"lcl\":0.0}",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "MED-062",
+   "kind": "library",
+   "category": "media-content",
+   "title": "URL Decoder",
+   "source": "~/tk/toke-test-programs/results/solutions/media-content/MED-062/solution.tk",
+   "source_sha256": "506fd4601c27ed244420b8ae8bf28ad71196740973f073e8be448aed637b9fb8",
+   "orig": "programs/MED-062.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/media-content.json",
+   "canon": "programs/MED-062.canon.tk",
+   "patterns": "programs/MED-062.patterns.json",
+   "cases": [
+    {
+     "input": "hello%20world",
+     "expected_output": "hello world",
+     "fixtures": null
+    },
+    {
+     "input": "foo%3Dbar%26baz%3D1",
+     "expected_output": "foo=bar&baz=1",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "MED-036",
+   "kind": "library",
+   "category": "media-content",
+   "title": "Markdown Code Block Extractor",
+   "source": "~/tk/toke-test-programs/results/solutions/media-content/MED-036/solution.tk",
+   "source_sha256": "63ef66145ce0fad82be0afc21026fb94f676623025187fbf3fc075744f3375dd",
+   "orig": "programs/MED-036.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/media-content.json",
+   "canon": "programs/MED-036.canon.tk",
+   "patterns": "programs/MED-036.patterns.json",
+   "cases": [
+    {
+     "input": "Text\n```python\nprint('hi')\n```",
+     "expected_output": "lang: python\nprint('hi')",
+     "fixtures": null
+    },
+    {
+     "input": "```\nno lang\n```\n```js\nconsole.log()\n```",
+     "expected_output": "lang: \nno lang\n---\nlang: js\nconsole.log()",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "MSG-061",
+   "kind": "library",
+   "category": "messaging",
+   "title": "Message batching for network efficiency",
+   "source": "~/tk/toke-test-programs/results/solutions/messaging/MSG-061/solution.tk",
+   "source_sha256": "e2bada89f089990d1663acadf515bd3c555a0c3e8d66014812628d06a5eeaf80",
+   "orig": "programs/MSG-061.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/messaging.json",
+   "canon": "programs/MSG-061.canon.tk",
+   "patterns": "programs/MSG-061.patterns.json",
+   "cases": [
+    {
+     "input": "50\n[{\"text\":\"Hello\"},{\"text\":\"World\"},{\"text\":\"This is a longer message\"},{\"text\":\"Short\"}]",
+     "expected_output": "batch 1 (10 bytes): [Hello, World]\nbatch 2 (24 bytes): [This is a longer message]\nbatch 3 (5 bytes): [Short]",
+     "fixtures": null
+    },
+    {
+     "input": "100\n[{\"text\":\"A\"},{\"text\":\"B\"},{\"text\":\"C\"}]",
+     "expected_output": "batch 1 (3 bytes): [A, B, C]",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "MSG-038",
+   "kind": "library",
+   "category": "messaging",
+   "title": "Message search with boolean operators",
+   "source": "~/tk/toke-test-programs/results/solutions/messaging/MSG-038/solution.tk",
+   "source_sha256": "3bd53d7fea2719ab23e9fd6607556803fc365061a8f8053f346f27e0032ee8d9",
+   "orig": "programs/MSG-038.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/messaging.json",
+   "canon": "programs/MSG-038.canon.tk",
+   "patterns": "programs/MSG-038.patterns.json",
+   "cases": [
+    {
+     "input": "hello AND world\n[{\"id\":\"1\",\"text\":\"hello world\"},{\"id\":\"2\",\"text\":\"hello\"},{\"id\":\"3\",\"text\":\"world\"}]",
+     "expected_output": "1",
+     "fixtures": null
+    },
+    {
+     "input": "hello OR world NOT spam\n[{\"id\":\"1\",\"text\":\"hello spam\"},{\"id\":\"2\",\"text\":\"world\"},{\"id\":\"3\",\"text\":\"hello world\"}]",
+     "expected_output": "2\n3",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "NET-111",
+   "kind": "library",
+   "category": "networking-rest",
+   "title": "Polling Client with Backoff",
+   "source": "~/tk/toke-test-programs/results/solutions/networking-rest/NET-111/solution.tk",
+   "source_sha256": "cfd0deda60a90703755bbf2375be52be299c73e9a8e688d9a52ad6f70239b8c9",
+   "orig": "programs/NET-111.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/networking-rest.json",
+   "canon": "programs/NET-111.canon.tk",
+   "patterns": "programs/NET-111.patterns.json",
+   "cases": [
+    {
+     "input": "https://httpbin.org/get\n30\n200",
+     "expected_output": "PASS",
+     "fixtures": null
+    },
+    {
+     "input": "https://httpbin.org/status/503\n5\n200",
+     "expected_output": "FAIL",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "NET-108",
+   "kind": "library",
+   "category": "networking-rest",
+   "title": "Bearer Token Auth Client",
+   "source": "~/tk/toke-test-programs/results/solutions/networking-rest/NET-108/solution.tk",
+   "source_sha256": "230841ee3ef72846dba4ccd3f70d0307e906395372e554e1264e398897ba7182",
+   "orig": "programs/NET-108.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/networking-rest.json",
+   "canon": "programs/NET-108.canon.tk",
+   "patterns": "programs/NET-108.patterns.json",
+   "cases": [
+    {
+     "input": "https://httpbin.org/bearer\neyJhbGciOiJIUzI1NiJ9.e30.signature",
+     "expected_output": "200",
+     "fixtures": null
+    },
+    {
+     "input": "https://httpbin.org/status/401\nexpired-token",
+     "expected_output": "401",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "SCI-024",
+   "kind": "library",
+   "category": "scientific-math",
+   "title": "Bubble Sort",
+   "source": "~/tk/toke-test-programs/results/solutions/scientific-math/SCI-024/solution.tk",
+   "source_sha256": "089e32b049a259969a7c5311a7f587b655ffb3006752b8cde53c0436c52b3e68",
+   "orig": "programs/SCI-024.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/scientific-math.json",
+   "canon": "programs/SCI-024.canon.tk",
+   "patterns": "programs/SCI-024.patterns.json",
+   "cases": [
+    {
+     "input": "5 3 1 4 2",
+     "expected_output": "Sorted: 1 2 3 4 5\nComparisons: 10\nSwaps: 7",
+     "fixtures": null
+    },
+    {
+     "input": "1 2 3",
+     "expected_output": "Sorted: 1 2 3\nComparisons: 3\nSwaps: 0",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "SCI-086",
+   "kind": "library",
+   "category": "scientific-math",
+   "title": "Pascal's Triangle",
+   "source": "~/tk/toke-test-programs/results/solutions/scientific-math/SCI-086/solution.tk",
+   "source_sha256": "e03a7308c6cb4e90a6faec905cef57b3f935485d50230e502698d36cc6a57ad2",
+   "orig": "programs/SCI-086.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/scientific-math.json",
+   "canon": "programs/SCI-086.canon.tk",
+   "patterns": "programs/SCI-086.patterns.json",
+   "cases": [
+    {
+     "input": "5\n4 2",
+     "expected_output": "1\n1 1\n1 2 1\n1 3 3 1\n1 4 6 4 1\nC(4,2) = 6",
+     "fixtures": null
+    },
+    {
+     "input": "3",
+     "expected_output": "1\n1 1\n1 2 1",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "SEC-024",
+   "kind": "library",
+   "category": "security",
+   "title": "JWT Security Auditor",
+   "source": "~/tk/toke-test-programs/results/solutions/security/SEC-024/solution.tk",
+   "source_sha256": "17a12892052f52cae6e71dc4f5e23ebd26f52138d856ee2582b90850de7393ad",
+   "orig": "programs/SEC-024.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/security.json",
+   "canon": "programs/SEC-024.canon.tk",
+   "patterns": "programs/SEC-024.patterns.json",
+   "cases": [
+    {
+     "input": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiIxMjM0In0.",
+     "expected_output": "none_algorithm",
+     "fixtures": null
+    },
+    {
+     "input": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+     "expected_output": "issues",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "SEC-010",
+   "kind": "library",
+   "category": "security",
+   "title": "CSRF Token Generator and Validator",
+   "source": "~/tk/toke-test-programs/results/solutions/security/SEC-010/solution.tk",
+   "source_sha256": "e394b24180341dcbe79872e77fc83bdc913d4b874f685f2a53099e36e578547e",
+   "orig": "programs/SEC-010.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/security.json",
+   "canon": "programs/SEC-010.canon.tk",
+   "patterns": "programs/SEC-010.patterns.json",
+   "cases": [
+    {
+     "input": "generate\nsession-abc123\n",
+     "expected_output": "{\"expiresAt\": 1700003600, \"token\": \"9+oX2o9kXgMehJDR803UQRVpTynGMiQQ8tvc/Nshnv0=\"}",
+     "fixtures": null
+    },
+    {
+     "input": "generate\nsession-xyz789\n",
+     "expected_output": "{\"expiresAt\": 1700003600, \"token\": \"bIyG/DOMKWGGZb12oSt6xPRtZxJ+XL89h9vklp8zI6Q=\"}",
+     "fixtures": null
+    },
+    {
+     "input": "validate\nsession-abc123\ninvalid-token\n",
+     "expected_output": "INVALID: token mismatch",
+     "fixtures": null
+    },
+    {
+     "input": "validate\nsession-abc123\n",
+     "expected_output": "INVALID: missing token",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "SOC-139",
+   "kind": "library",
+   "category": "social-media",
+   "title": "Get list members",
+   "source": "~/tk/toke-test-programs/results/solutions/social-media/SOC-139/solution.tk",
+   "source_sha256": "59e3a57dee6e02e91c1178608a92a8050b04d509b6db32d006aa189b8ae65a90",
+   "orig": "programs/SOC-139.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/social-media.json",
+   "canon": "programs/SOC-139.canon.tk",
+   "patterns": "programs/SOC-139.patterns.json",
+   "cases": [
+    {
+     "input": "{\"action\":\"list_members\",\"list_id\":\"lst_1\",\"cursor\":null,\"limit\":50}",
+     "expected_output": "{\"list_id\":\"lst_1\",\"members\":[{\"id\":2,\"username\":\"bob\",\"added_at\":\"2026-01-01T00:00:00Z\"}],\"total\":1,\"next_cursor\":null}",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "SOC-037",
+   "kind": "library",
+   "category": "social-media",
+   "title": "List feed",
+   "source": "~/tk/toke-test-programs/results/solutions/social-media/SOC-037/solution.tk",
+   "source_sha256": "f8c6f0c69bae22733ec326ca9350be4ce2f0343a4717201c3f6424d8d25e4832",
+   "orig": "programs/SOC-037.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/social-media.json",
+   "canon": "programs/SOC-037.canon.tk",
+   "patterns": "programs/SOC-037.patterns.json",
+   "cases": [
+    {
+     "input": "{\"action\":\"list_feed\",\"token\":\"eyJ...\",\"list_id\":\"lst_1\",\"cursor\":null}",
+     "expected_output": "{\"list_id\":\"lst_1\",\"list_name\":\"Tech People\",\"posts\":[{\"id\":20,\"author\":\"techie\",\"content\":\"New framework\"}],\"next_cursor\":null}",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "SYS-066",
+   "kind": "library",
+   "category": "system-tools",
+   "title": "CSV to JSON Converter",
+   "source": "~/tk/toke-test-programs/results/solutions/system-tools/SYS-066/solution.tk",
+   "source_sha256": "83e04e51dbe741a9708725a30c8f060bdd6b0b486bd02eeba43816b8337bd862",
+   "orig": "programs/SYS-066.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/system-tools.json",
+   "canon": "programs/SYS-066.canon.tk",
+   "patterns": "programs/SYS-066.patterns.json",
+   "cases": [
+    {
+     "input": "name,age\nalice,30\nbob,25",
+     "expected_output": "[{\"name\":\"alice\",\"age\":\"30\"},{\"name\":\"bob\",\"age\":\"25\"}]",
+     "fixtures": null
+    },
+    {
+     "input": "col\nonly one",
+     "expected_output": "[{\"col\":\"only one\"}]",
+     "fixtures": null
+    },
+    {
+     "input": "a,b,c\n1,2,3\n4,5,6",
+     "expected_output": "[{\"a\":\"1\",\"b\":\"2\",\"c\":\"3\"},{\"a\":\"4\",\"b\":\"5\",\"c\":\"6\"}]",
+     "fixtures": null
+    },
+    {
+     "input": "name,quote\nalice,\"hello, world\"\nbob,simple",
+     "expected_output": "[{\"name\":\"alice\",\"quote\":\"hello, world\"},{\"name\":\"bob\",\"quote\":\"simple\"}]",
+     "fixtures": null
+    }
+   ]
+  },
+  {
+   "name": "SYS-010",
+   "kind": "library",
+   "category": "system-tools",
+   "title": "Path Utilities",
+   "source": "~/tk/toke-test-programs/results/solutions/system-tools/SYS-010/solution.tk",
+   "source_sha256": "b10a9fe4dcaa054641ceb4026b93b081f741404bfd0707188bdd4cd151284466",
+   "orig": "programs/SYS-010.orig.tk",
+   "manifest": "~/tk/toke-test-programs/results/library/system-tools.json",
+   "canon": "programs/SYS-010.canon.tk",
+   "patterns": "programs/SYS-010.patterns.json",
+   "cases": [
+    {
+     "input": "normalize /tmp/../etc\nbasename /tmp/foo.txt\next /tmp/foo.txt",
+     "expected_output": "/etc\nfoo.txt\n.txt",
+     "fixtures": null
+    },
+    {
+     "input": "join /tmp subdir file.log\nexists /tmp",
+     "expected_output": "/tmp/subdir/file.log\ntrue",
+     "fixtures": null
+    }
+   ]
+  }
+ ]
+}

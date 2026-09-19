@@ -1,0 +1,14 @@
+{
+ "name": "fib_recursive",
+ "kind": "bench",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "fn-recursion-vs-loop",
+   "sites": 1,
+   "note": "expression-if recursion (canonical a); cond-bind-if's return-per-branch is the pre-existing form; hot_path (lp) not applied: fib is non-linear recursion"
+  }
+ ],
+ "not_applied": [],
+ "note": null
+}

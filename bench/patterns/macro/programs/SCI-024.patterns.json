@@ -1,0 +1,34 @@
+{
+ "name": "SCI-024",
+ "kind": "library",
+ "reformatted": true,
+ "applied": [
+  {
+   "id": "acc-array",
+   "sites": 1,
+   "note": "arr=arr+@(v) -> arr=arr.append(v)"
+  },
+  {
+   "id": "coll-swap",
+   "sites": 1,
+   "note": "tmp + two set statements -> chained .set().set()"
+  },
+  {
+   "id": "str-build-loop",
+   "sites": 1,
+   "note": "s.concat accumulation of the Sorted: line -> s.builder"
+  },
+  {
+   "id": "str-num-format",
+   "sites": 3,
+   "note": "s.fromint(n) -> \"\\(n)\""
+  },
+  {
+   "id": "str-interp-vs-join",
+   "sites": 2,
+   "note": "s.concat(label;s.fromint(n)) -> interpolation"
+  }
+ ],
+ "not_applied": [],
+ "note": "tkc --fmt rewrote the original's `mut.@($i64)` as `mut.@(i64)`, which passes --check but fails codegen (E9003: use of undefined value '%i64') at build; the canon restores `@($i64)` by hand \u2014 a formatter bug worth a story."
+}

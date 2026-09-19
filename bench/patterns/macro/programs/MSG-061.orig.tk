@@ -1,0 +1,56 @@
+(* source: ~/tk/toke-test-programs/results/solutions/messaging/MSG-061/solution.tk sha256 e2bada89f089990d1663acadf515bd3c555a0c3e8d66014812628d06a5eeaf80 manifest ~/tk/toke-test-programs/results/library/messaging.json *)
+m=packet;
+i=io:std.io;
+i=s:std.str;
+f=main():$i64{
+  let line1=io.readln();
+  let maxb=mt s.toint(s.trim(line1)){$ok:v v;$err:e 0};
+  let data=mut."";
+  lp(1==1){
+    let line=io.readln();
+    if(io.eof()){br};
+    data=s.concat(data;s.trim(line));
+  };
+  let texts=mut.@();
+  let parts=s.split(data;"\"text\":\"");
+  let np=parts.len;
+  lp(let i=1;i<np;i=i+1){
+    let seg=parts.get(i);
+    let q=s.indexof(seg;"\"");
+    let t=mut."";
+    if(q<0){t=seg}el{t=mt s.slice(seg;0;q as$u64){$ok:v v;$err:e seg}};
+    texts=texts+@(t);
+  };
+  let nt=texts.len;
+  let out=mut."";
+  let batchno=mut.0;
+  let i=mut.0;
+  lp(i<nt){
+    let curtexts=mut.@();
+    let curcap=mut.0;
+    let curbytes=mut.0;
+    lp(i<nt){
+      let t=texts.get(i);
+      let tl=s.len(t) as$i64;
+      let jl=tl+11;
+      let willcap=curcap+jl;
+      if(curtexts.len>0){
+        if(willcap>maxb){br};
+      };
+      curtexts=curtexts+@(t);
+      curcap=curcap+jl;
+      curbytes=curbytes+tl;
+      i=i+1;
+    };
+    batchno=batchno+1;
+    let names=mut."";
+    lp(let k=0;k<curtexts.len;k=k+1){
+      if(k>0){names=s.concat(names;", ")};
+      names=s.concat(names;curtexts.get(k));
+    };
+    let lineo=s.concat(s.concat(s.concat(s.concat(s.concat(s.concat("batch ";s.fromint(batchno));" (");s.fromint(curbytes));" bytes): [");names);"]\n");
+    out=s.concat(out;lineo);
+  };
+  io.print(out);
+  <0
+};

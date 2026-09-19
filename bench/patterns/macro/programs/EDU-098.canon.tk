@@ -1,0 +1,84 @@
+m=gl;
+i=io:std.io;
+
+i=s:std.str;
+
+f=ord(c:$str):$i64 {
+  let tbl="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ";
+  <s.indexof(tbl; c)
+};
+
+f=strless(a:$str; b:$str):$bool {
+  let la=s.len(a);
+  let lb=s.len(b);
+  let m=if (lb<la) {lb} el {la};
+  lp (let i=0; i<m; i=i+1) {
+    let ca=ord(s.slice(a; i; i+1));
+    let cb=ord(s.slice(b; i; i+1));
+    if (ca<cb) {
+      <true
+    };
+    if (ca>cb) {
+      <false
+    }
+  };
+  if (la<lb) {
+    <true
+  };
+  <false
+};
+
+f=main():$i64 {
+  let json=s.trim(io.readln());
+  let n=s.len(json);
+  let terms=mut.@($str);
+  let defs=mut.@($str);
+  let i=mut.0;
+  lp (true) {
+    let tk="\"term\":\"";
+    let tp=s.indexof(s.slice(json; i; n); tk);
+    if (tp<0) {
+      br
+    };
+    let ts=i+tp+s.len(tk);
+    let te=mut.ts;
+    lp (let e=ts; e<n; e=e+1) {
+      if (s.slice(json; e; e+1)=="\"") {
+        te=e;
+        e=n
+      }
+    };
+    let term=s.slice(json; ts; te);
+    let dk="\"definition\":\"";
+    let dp=s.indexof(s.slice(json; te; n); dk);
+    let ds=te+dp+s.len(dk);
+    let de=mut.ds;
+    lp (let e=ds; e<n; e=e+1) {
+      if (s.slice(json; e; e+1)=="\"") {
+        de=e;
+        e=n
+      }
+    };
+    let dval=s.slice(json; ds; de);
+    terms=terms.append(term);
+    defs=defs.append(dval);
+    i=de+1
+  };
+  let cnt=terms.len();
+  lp (let a=0; a<cnt; a=a+1) {
+    lp (let b=0; b<cnt-1-a; b=b+1) {
+      if (strless(terms.get(b+1); terms.get(b))) {
+        terms=terms.set(b; terms.get(b+1)).set(b+1; terms.get(b));
+        defs=defs.set(b; defs.get(b+1)).set(b+1; defs.get(b))
+      }
+    }
+  };
+  lp (let k=0; k<cnt; k=k+1) {
+    io.println(terms.get(k));
+    io.println(s.concat("  "; defs.get(k)));
+    if (k<cnt-1) {
+      io.println("")
+    }
+  };
+  <0
+}

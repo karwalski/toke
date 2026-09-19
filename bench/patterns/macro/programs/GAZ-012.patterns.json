@@ -1,0 +1,54 @@
+{
+ "name": "GAZ-012",
+ "kind": "library",
+ "reformatted": false,
+ "applied": [
+  {
+   "id": "str-build-loop",
+   "sites": 3,
+   "note": "readall, brender digit loop, formatrecip mantissa: s.concat accumulators -> s.builder/s.add/s.build"
+  },
+  {
+   "id": "str-num-format",
+   "sites": 4,
+   "note": "s.fromint(x) -> \"\\(x)\" in brender, pad2, formatrecip (2)"
+  },
+  {
+   "id": "str-interp-vs-join",
+   "sites": 2,
+   "note": "pad2 `\"0\\(r)\"`; formatrecip final s.concat chain -> one interpolation"
+  },
+  {
+   "id": "fn-chain-vs-let",
+   "sites": 1,
+   "note": "readall: single-use `let ln` inlined into s.add"
+  },
+  {
+   "id": "cond-bool-combine",
+   "sites": 1,
+   "note": "formatrecip: nested `if(n.len()==1){if(n.get(0)==1)` -> one `&&` test"
+  },
+  {
+   "id": "cond-elif-chain",
+   "sites": 1,
+   "note": "main mode dispatch: nested if/el -> el if chain"
+  },
+  {
+   "id": "cond-bind-if",
+   "sites": 1,
+   "note": "brender tail: `if(r==\"\"){r=\"0\"}; <r` -> return per branch `if(r==\"\"){<\"0\"}; <r`"
+  }
+ ],
+ "not_applied": [
+  {
+   "id": "iter-find-first",
+   "issue": null,
+   "reason": "the `done` flag loop and bge scans are inline/statement-position (not their own function); the catalogue form needs a direct `<` return"
+  },
+  {
+   "id": "acc-array",
+   "issue": null,
+   "reason": "no `x=x+@(v)` sites; the program already uses reassigned `.push`"
+  }
+ ]
+}
