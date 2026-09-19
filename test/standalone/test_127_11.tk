@@ -1,0 +1,53 @@
+(* test_127_11.tk -- Epic 127.11: `contains` / `find` / `indexof` / `slice` on
+ * an ARRAY receiver were routed to the std.str glue, which read the array's
+ * backing block as a NUL-terminated string (SIGSEGV, check-clean). They now
+ * dispatch on the receiver's element type; str arrays compare by content. *)
+m=test.m12711;
+i=io:std.io;
+i=s:std.str;
+i=arr:std.array;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=cmp(a:i64;b:i64):i64{<a-b};
+
+f=viaparam(xs:@i64;v:i64):i64{
+  <xs.indexof(v)
+};
+
+f=main():$i64{
+  let a=@(3;1;2);
+  cks("contains-present";"\(a.contains(2))";"1");
+  cks("contains-absent";"\(a.contains(9))";"0");
+  cks("indexof-present";"\(a.indexof(1))";"1");
+  cks("indexof-absent";"\(a.indexof(9))";"-1");
+  cks("find-by-value";"\(a.find(2))";"2");
+  let b=a.slice(1;3);
+  cks("slice-values";"\(b.get(0)) \(b.get(1))";"1 2");
+  cks("slice-len";"\(b.len)";"2");
+  cks("slice-clamped";"\(a.slice(0;99).len)";"3");
+  cks("slice-empty";"\(a.slice(2;1).len)";"0");
+  cks("indexof-via-param";"\(viaparam(a;2))";"2");
+  let srt=a.sort(&cmp).slice(0;2);
+  cks("chained-sort-slice";"\(srt.get(0)) \(srt.get(1))";"1 2");
+  let w=s.split("x,y,z";",");
+  cks("str-array-contains";"\(w.contains("y"))";"1");
+  cks("str-array-contains-absent";"\(w.contains("q"))";"0");
+  cks("str-array-indexof";"\(w.indexof("z"))";"2");
+  let ws=w.slice(1;3);
+  cks("str-array-slice";s.join(",";ws);"y,z");
+  cks("module-contains";"\(arr.contains(a;3))";"1");
+  cks("module-indexof";"\(arr.indexof(a;2))";"2");
+  cks("module-slice";"\(arr.slice(a;1;3).get(0))";"1");
+  cks("str-contains-unchanged";"\(s.contains("hello";"ell"))";"1");
+  cks("str-indexof-unchanged";"\(s.indexof("hello";"l"))";"2");
+  cks("str-slice-unchanged";s.slice("hello";1;3);"el");
+  let h="hello";
+  cks("str-method-slice-unchanged";h.slice(1;3);"el");
+  cks("str-method-contains-unchanged";"\(h.contains("ell"))";"1");
+  <0
+};

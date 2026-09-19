@@ -507,3 +507,46 @@ int64_t tk_arr_slice_w(int64_t arr, int64_t start, int64_t end_) {
 int64_t tk_array_slice_w(int64_t arr, int64_t start, int64_t end_) {
     return tk_arr_slice_w(arr, start, end_);
 }
+
+/* ── 127.11: membership / search on an ARRAY receiver ───────────────────
+ *
+ * `a.contains(v)` / `a.indexof(v)` / `a.find(v)` had no array glue at all, so
+ * codegen routed them to the std.str wrappers, which read the array's backing
+ * block as a NUL-terminated string (SIGSEGV — a check-clean silent-wrong
+ * class). These are the array targets: a linear scan over the i64 element
+ * words. `find` is by value, not by predicate — the same relation `find` has
+ * to `indexof` for strings (tk_str_find_w).
+ *
+ * The *str variants compare with strcmp so a `@str` array (from str.split,
+ * str.chars, …) matches on content rather than on pointer identity.
+ */
+int64_t tk_arr_indexof_w(int64_t arr, int64_t v) {
+    if (!arr) return -1;
+    int64_t len = tk_arr_len(arr);
+    const int64_t *el = (const int64_t *)(intptr_t)arr;
+    for (int64_t i = 0; i < len; i++)
+        if (el[i] == v) return i;
+    return -1;
+}
+int64_t tk_arr_indexofstr_w(int64_t arr, int64_t s) {
+    if (!arr || !s) return -1;
+    int64_t len = tk_arr_len(arr);
+    const int64_t *el = (const int64_t *)(intptr_t)arr;
+    const char *needle = (const char *)(intptr_t)s;
+    for (int64_t i = 0; i < len; i++) {
+        const char *cand = (const char *)(intptr_t)el[i];
+        if (cand && !strcmp(cand, needle)) return i;
+    }
+    return -1;
+}
+int64_t tk_arr_find_w(int64_t arr, int64_t v) { return tk_arr_indexof_w(arr, v); }
+int64_t tk_arr_findstr_w(int64_t arr, int64_t s) { return tk_arr_indexofstr_w(arr, s); }
+int64_t tk_arr_contains_w(int64_t arr, int64_t v) { return tk_arr_indexof_w(arr, v) >= 0; }
+int64_t tk_arr_containsstr_w(int64_t arr, int64_t s) { return tk_arr_indexofstr_w(arr, s) >= 0; }
+
+/* Module forms `arr.contains(a;v)` / `arr.indexof(a;v)` / `arr.find(a;v)`
+ * (`i=arr:std.array;`) resolve through the generic tk_<module>_<method>_w
+ * rule — same semantics (cf. 127.16 join, 127.45 slice). */
+int64_t tk_array_contains_w(int64_t arr, int64_t v) { return tk_arr_contains_w(arr, v); }
+int64_t tk_array_indexof_w(int64_t arr, int64_t v) { return tk_arr_indexof_w(arr, v); }
+int64_t tk_array_find_w(int64_t arr, int64_t v) { return tk_arr_find_w(arr, v); }

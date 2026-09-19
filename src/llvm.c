@@ -1995,6 +1995,31 @@ static int recv_is_map(Ctx *c, const Node *recv) {
     }
     return 0;
 }
+/* 127.11: is this receiver an array (as opposed to a str or a map)? The verbs
+ * `contains` / `find` / `indexof` / `slice` exist on both strings and arrays;
+ * with no array test they were all routed to the std.str glue, which read the
+ * array's backing block as a NUL-terminated string and segfaulted. The
+ * checker's rtype is authoritative; the backend's "@…" element tag is the
+ * fallback. Default (unknown) stays str, so no str path changes. */
+static int recv_is_array(Ctx *c, const Node *recv) {
+    if (!recv) return 0;
+    if (recv->rtype) {
+        if (recv->rtype->kind == TY_ARRAY) return 1;
+        if (recv->rtype->kind == TY_STR || recv->rtype->kind == TY_MAP) return 0;
+    }
+    if (recv->kind == NODE_STR_LIT) return 0;
+    const char *st = expr_struct_type(c, recv);
+    return st && st[0] == '@';
+}
+/* 127.11: does that array hold str elements (so membership must compare with
+ * strcmp rather than by element word)? */
+static int arr_recv_is_str_elem(Ctx *c, const Node *recv) {
+    if (recv && recv->rtype && recv->rtype->kind == TY_ARRAY &&
+        recv->rtype->elem && recv->rtype->elem->kind != TY_UNKNOWN)
+        return recv->rtype->elem->kind == TY_STR;
+    const char *st = expr_struct_type(c, recv);
+    return st && !strcmp(st, "@str");
+}
 /* 127.39: does this map literal have string VALUES? The backend's map tag
  * carries the value kind so `\(m.get(k))` on a str-valued map interpolates the
  * string rather than printing its address (the i64 ABI erases the pointer). */
@@ -3353,16 +3378,35 @@ static int emit_expr(Ctx *c, const Node *n)
                 else if (!strcmp(method_im, "sort"))    fn_im = "tk_arr_sort";
                 else if (!strcmp(method_im, "split"))   fn_im = "tk_str_split_w";
                 else if (!strcmp(method_im, "trim"))    fn_im = "tk_str_trim_w";
-                else if (!strcmp(method_im, "contains"))
+                else if (!strcmp(method_im, "contains")) {
                     /* 127.41/127.31: membership on a map is a hash lookup; the
-                     * str glue strcmp'd the TkMapImpl pointer and segfaulted. */
-                    fn_im = recv_is_map(c, n->children[0]->children[0])
-                                ? "tk_map_contains_w" : "tk_str_contains_w";
+                     * str glue strcmp'd the TkMapImpl pointer and segfaulted.
+                     * 127.11: on an array it is a linear scan of the elements. */
+                    const Node *cr = n->children[0]->children[0];
+                    fn_im = recv_is_map(c, cr)   ? "tk_map_contains_w"
+                          : !recv_is_array(c, cr) ? "tk_str_contains_w"
+                          : arr_recv_is_str_elem(c, cr) ? "tk_arr_containsstr_w"
+                                                        : "tk_arr_contains_w";
+                }
                 else if (!strcmp(method_im, "charat"))  fn_im = "tk_str_charat_w";
-                else if (!strcmp(method_im, "slice"))   fn_im = "tk_str_slice_w";
-                else if (!strcmp(method_im, "find"))    fn_im = "tk_str_find_w";
+                else if (!strcmp(method_im, "slice"))
+                    /* 127.11/127.45: `a.slice(i;j)` on an array copies elements;
+                     * tk_str_slice_w treated the block as a string (zeros). */
+                    fn_im = recv_is_array(c, n->children[0]->children[0])
+                                ? "tk_arr_slice_w" : "tk_str_slice_w";
+                else if (!strcmp(method_im, "find")) {
+                    const Node *fr = n->children[0]->children[0];
+                    fn_im = !recv_is_array(c, fr) ? "tk_str_find_w"
+                          : arr_recv_is_str_elem(c, fr) ? "tk_arr_findstr_w"
+                                                        : "tk_arr_find_w";
+                }
                 else if (!strcmp(method_im, "starts"))  fn_im = "tk_str_starts_w";
-                else if (!strcmp(method_im, "indexof")) fn_im = "tk_str_indexof_w";
+                else if (!strcmp(method_im, "indexof")) {
+                    const Node *ir = n->children[0]->children[0];
+                    fn_im = !recv_is_array(c, ir) ? "tk_str_indexof_w"
+                          : arr_recv_is_str_elem(c, ir) ? "tk_arr_indexofstr_w"
+                                                        : "tk_arr_indexof_w";
+                }
                 else if (!strcmp(method_im, "substr"))  fn_im = "tk_str_substr_w";
                 else if (!strcmp(method_im, "concat"))  fn_im = "tk_str_concat_w";
                 else if (!strcmp(method_im, "chars"))   fn_im = "tk_str_chars_w";
@@ -5567,6 +5611,15 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                     if (!strcmp(c->imports[ii].alias, alias)) { _imp = 1; break; }
                 if (!_imp) {
                     const Node *recv = n->children[0]->children[0];
+                    /* 127.11: `a.slice(i;j)` on an array yields an ARRAY of the
+                     * receiver's element type — it must not fall into the $str
+                     * list below (that tag made `\(b.get(0))` read the element
+                     * as a string pointer). */
+                    if (!strcmp(method, "slice") && recv_is_array(c, recv)) {
+                        const char *sst = expr_struct_type(c, recv);
+                        return (sst && sst[0] == '@') ? sst
+                             : (arr_recv_is_str_elem(c, recv) ? "@str" : "@i64");
+                    }
                     if (!strcmp(method, "trim") || !strcmp(method, "concat") ||
                         !strcmp(method, "slice") || !strcmp(method, "substr") ||
                         !strcmp(method, "sub") || !strcmp(method, "substring") ||
@@ -5578,6 +5631,17 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                         !strcmp(method, "fields"))
                         return "@str";
                     if (!strcmp(method, "keys")) return map_keys_elem_tag(c, recv);
+                    /* 127.11: `sort` / `filter` return an array of the
+                     * receiver's element type. Untagged, a chained
+                     * `xs.sort(&cmp).slice(0;k)` had no array receiver for the
+                     * slice and went to the str glue (segfault). */
+                    if (!strcmp(method, "sort") || !strcmp(method, "filter")) {
+                        const char *rst = expr_struct_type(c, recv);
+                        if (rst && rst[0] == '@') return rst;
+                        if (recv_is_array(c, recv))
+                            return arr_recv_is_str_elem(c, recv) ? "@str" : "@i64";
+                        return NULL;
+                    }
                     if (!strcmp(method, "append") || !strcmp(method, "push") ||
                         !strcmp(method, "pop")) {
                         /* the result array has the receiver's element type; an
