@@ -1326,57 +1326,10 @@ static int64_t encode_bytearray(ByteArray ba) {
 
 
 
-/* ── chart wrappers (chart.h) ─────────────────────────────────────── */
-int64_t tk_chart_new_w(int64_t dummy) {
-    /* Allocate an empty TkChartSpec (bar type, no labels/datasets).
-     * Caller populates it via tk_chart_bar_w or similar. */
-    (void)dummy;
-    TkChartSpec *spec = (TkChartSpec *)calloc(1, sizeof(TkChartSpec));
-    if (!spec) return 0;
-    spec->type = CHART_BAR;
-    return (int64_t)(intptr_t)spec;
-}
-
-int64_t tk_chart_bar_w(int64_t labels_i64, int64_t data_i64) {
-    /* labels_i64: toke array of strings (ptr[-1]=count, ptr[0..n-1]=str ptrs)
-     * data_i64:   toke array of f64 values (ptr[-1]=count, ptr[0..n-1]=f64 bits)
-     * Returns a TkChartSpec* for a bar chart. */
-    StrArray labels = { NULL, 0 };
-    if (labels_i64) {
-        int64_t *lp = (int64_t *)(intptr_t)labels_i64;
-        int64_t n = lp[-1];
-        if (n > 0) {
-            labels.data = (const char **)malloc((size_t)n * sizeof(const char *));
-            if (labels.data) {
-                labels.len = (uint64_t)n;
-                for (int64_t i = 0; i < n; i++)
-                    labels.data[i] = (const char *)(intptr_t)lp[i];
-            }
-        }
-    }
-    TkDataset ds;
-    memset(&ds, 0, sizeof(ds));
-    ds.label = "data";
-    ds.color = NULL;
-    if (data_i64) {
-        int64_t *dp = (int64_t *)(intptr_t)data_i64;
-        int64_t n = dp[-1];
-        if (n > 0) {
-            double *vals = (double *)malloc((size_t)n * sizeof(double));
-            if (vals) {
-                for (int64_t i = 0; i < n; i++)
-                    memcpy(&vals[i], &dp[i], sizeof(double));
-                ds.values = vals;
-                ds.nvalues = (uint64_t)n;
-            }
-        }
-    }
-    TkChartSpec *spec = chart_bar(labels, &ds, 1, NULL);
-    free((void *)labels.data);
-    free((void *)ds.values);
-    return (int64_t)(intptr_t)spec;
-}
-
+/* ── chart/dashboard bridge wrappers (chart.* names, dashboard.h bodies) ──
+ * chart.new / chart.bar / chart.tojson moved to chart_glue.c in 136.22 so a
+ * standalone `i=chart:std.chart` links. These two call dashboard_*, so they
+ * stay with the http/dashboard translation unit. */
 int64_t tk_chart_addchart_w(int64_t dash, int64_t chart) {
     if (!dash || !chart) return 0;
     dashboard_addchart((TkDashboard *)(intptr_t)dash, NULL, NULL,
@@ -1389,12 +1342,6 @@ int64_t tk_chart_serve_w(int64_t dash, int64_t port) {
     TkRouterErr err = dashboard_serve((TkDashboard *)(intptr_t)dash,
                                        (uint64_t)port);
     return err.failed ? -1 : 0;
-}
-
-int64_t tk_chart_tojson_w(int64_t chart) {
-    if (!chart) return 0;
-    const char *s = chart_tojson((TkChartSpec *)(intptr_t)chart);
-    return (int64_t)(intptr_t)s;
 }
 
 /* ── dataframe wrappers (dataframe.h) ─────────────────────────────── */

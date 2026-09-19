@@ -1,0 +1,23 @@
+(* chart_title.tk -- story 136.22.
+
+   stdlib/chart.tki, docs/stdlib/chart.md and chart_bar() in chart.h all take a
+   title, make_spec() stores it and chart_tojson() emits it under
+   options.plugins.title.text. The wrapper declared two parameters and passed a
+   hard NULL in the title's place, so the title could not be written at all.
+
+   Exercised through chart.tojson, because the title is only observable in the
+   serialised chart -- a wrapper that accepted the argument and dropped it
+   would still build a chart object that looked fine. *)
+m=charttitle;
+i=chart:std.chart;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  let titled=chart.bar(@("Mon";"Tue";"Wed");@(10.0;20.0;15.0);"Daily Hits");
+  io.println(str.concat("titled=";chart.tojson(titled)));
+
+  let other=chart.bar(@("Q1";"Q2");@(1.5;2.5);"Revenue by Quarter");
+  io.println(str.concat("other=";chart.tojson(other)));
+  <0
+};

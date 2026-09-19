@@ -68,7 +68,7 @@ static const StdlibModule stdlib_table[] = {
     { "sys",           "sys.c sys_glue.c",                       "",                                                                 "" },
     { "image",         "image.c",                               "",                                                                 "" },
     { "canvas",        "canvas.c canvas_glue.c",                              "",                                                                 "" },
-    { "chart",         "chart.c",                               "",                                                                 "" },
+    { "chart",         "chart.c chart_glue.c",                  "",                                                                 "" },
     { "html",          "html.c html_glue.c",                                "",                                                                 "" },
     { "svg",           "svg.c svg_glue.c",                                 "",                                                                 "-lm" },
     { "llm",           "llm.c llm_glue.c",                      "",                                                                 "" },

@@ -192,6 +192,23 @@ if build test_asserts test/stdlib/test_asserts.tk; then
 fi
 
 echo
+echo "=== 136.22 -- chart.bar carries the title ==="
+if build chart_title test/stdlib/chart_title.tk; then
+    out="$("$TMP/chart_title")"
+    t1="$(line "$out" titled)"
+    t2="$(line "$out" other)"
+    # The title is only observable in the serialised chart. Two DIFFERENT
+    # titles in one process also rule out a constant or a global.
+    expect "chart.bar emits the title it was given" \
+           "$(printf '%s' "$t1" | grep -c '"title":{"display":true,"text":"Daily Hits"}')" "1"
+    expect "a second chart gets its own title" \
+           "$(printf '%s' "$t2" | grep -c '"title":{"display":true,"text":"Revenue by Quarter"}')" "1"
+    expect "labels survive to the json"  "$(printf '%s' "$t1" | grep -c '"labels":\["Mon","Tue","Wed"\]')" "1"
+    expect "data survives to the json"   "$(printf '%s' "$t1" | grep -c '"data":\[10,20,15\]')" "1"
+    expect "the second chart keeps its own data" "$(printf '%s' "$t2" | grep -c '"data":\[1.5,2.5\]')" "1"
+fi
+
+echo
 echo "glue_contract: $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
 exit 0

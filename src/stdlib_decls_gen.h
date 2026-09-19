@@ -60,7 +60,7 @@
     {"tk_cap_init", "declare void @tk_cap_init(i32, i64)", 0},
     {"tk_cap_is_grant_flag", "declare i32 @tk_cap_is_grant_flag(i64)", 0},
     {"tk_chart_addchart_w", "declare i64 @tk_chart_addchart_w(i64, i64)", 0},
-    {"tk_chart_bar_w", "declare i64 @tk_chart_bar_w(i64, i64)", 0},
+    {"tk_chart_bar_w", "declare i64 @tk_chart_bar_w(i64, i64, i64)", 0},
     {"tk_chart_new_w", "declare i64 @tk_chart_new_w(i64)", 0},
     {"tk_chart_serve_w", "declare i64 @tk_chart_serve_w(i64, i64)", 0},
     {"tk_chart_tojson_w", "declare i64 @tk_chart_tojson_w(i64)", 0},
