@@ -11,7 +11,10 @@
  * as a `char *` -- so `j.print(4294967296)` is a SIGSEGV (exit 139) and
  * `j.enc(2147483648)` is garbage. The dispatch must pick the typed wrapper from
  * the argument's checker type (see the 127.41 bundle notes). Rename to
- * test_127_43.tk once that lands. *)
+ * test_127_43.tk once that lands.
+ *
+ * Today this binary dies on the FIRST j.enc with no output at all (exit 139),
+ * because tk_json_enc_w dereferences the literal as a char *. *)
 m=test.j12743;
 i=io:std.io;
 i=j:std.json;

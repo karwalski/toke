@@ -566,6 +566,33 @@ int main(void) {
         CHECK(gn && strcmp(gn, "null") == 0, "127.44 encarr: nil handle is null");
     }
 
+    /* --- 127.45: nested array encoding (@@i64 printed pointers) --- */
+    {
+        int64_t a = tk_arr_alloc(2, 2), b2 = tk_arr_alloc(1, 1);
+        ((int64_t *)(intptr_t)a)[0] = 1; ((int64_t *)(intptr_t)a)[1] = 2;
+        ((int64_t *)(intptr_t)b2)[0] = 3;
+        int64_t outer = tk_arr_alloc(2, 2);
+        ((int64_t *)(intptr_t)outer)[0] = a; ((int64_t *)(intptr_t)outer)[1] = b2;
+        const char *got = (const char *)(intptr_t)tk_json_encarr_w(outer, 2, 0);
+        CHECK(got && strcmp(got, "[[1,2],[3]]") == 0,
+              "127.45 encarr: @@i64 nests, no element addresses");
+
+        /* depth 3, and a nil inner handle */
+        int64_t o3 = tk_arr_alloc(2, 2);
+        ((int64_t *)(intptr_t)o3)[0] = outer; ((int64_t *)(intptr_t)o3)[1] = 0;
+        const char *g3 = (const char *)(intptr_t)tk_json_encarr_w(o3, 3, 0);
+        CHECK(g3 && strcmp(g3, "[[[1,2],[3]],null]") == 0,
+              "127.45 encarr: depth 3 and a nil inner handle");
+
+        int64_t so = tk_arr_alloc(1, 1), si = tk_arr_alloc(2, 2);
+        ((int64_t *)(intptr_t)si)[0] = (int64_t)(intptr_t)"x";
+        ((int64_t *)(intptr_t)si)[1] = (int64_t)(intptr_t)"y";
+        ((int64_t *)(intptr_t)so)[0] = si;
+        const char *gs = (const char *)(intptr_t)tk_json_encarr_w(so, 2, 1);
+        CHECK(gs && strcmp(gs, "[[\"x\",\"y\"]]") == 0,
+              "127.45 encarr: @@str nests with quoting");
+    }
+
     /* --- summary --- */
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

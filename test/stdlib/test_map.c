@@ -5,6 +5,7 @@
  * Stories: 127.22 (open-addressing hash map, insertion-ordered keys()),
  *          127.34 (tk_map_getor_w: stored value when present, else default),
  *          127.31 (tk_map_contains_w: hash-lookup membership),
+ *          127.45 (tk_arr_slice_w: half-open, clamped array slice),
  *          127.20 (int-keyed maps via tk_map_new_int; RT006 trap is exit(1)
  *          so it is covered by the standalone repro, not in-process here)
  */
@@ -21,6 +22,8 @@ int64_t tk_map_get(void *m, int64_t key);
 int64_t tk_map_keys_w(int64_t map);
 int64_t tk_map_getor_w(int64_t map, int64_t key, int64_t def);
 int64_t tk_map_contains_w(int64_t map, int64_t key);
+int64_t tk_arr_slice_w(int64_t arr, int64_t start, int64_t end_);   /* 127.45 */
+int64_t tk_array_append_w(int64_t arr, int64_t elem);
 
 /* collections_glue.c also defines tk_arr_join_w, which calls into str_glue.c;
  * the map runtime does not, so stub it to keep this test's link line short. */
@@ -138,6 +141,34 @@ int main(void) {
     /* ── NULL map handle ── */
     ASSERT(tk_map_get(NULL, S("a")) == 0, "NULL map get -> 0");
     ASSERT(tk_map_keys_w(0) == 0, "NULL map keys -> 0");
+
+    /* ── 127.45: arr.slice on an @i64 (was routed to the str glue -> zeros) ── */
+    {
+        int64_t xs = 0;
+        for (int64_t i = 1; i <= 5; i++) xs = tk_array_append_w(xs, i * 10);  /* 10..50 */
+        int64_t mid = tk_arr_slice_w(xs, 1, 3);
+        ASSERT(arr_len(mid) == 2, "slice(1;3) length 2");
+        ASSERT(((int64_t *)(intptr_t)mid)[0] == 20 &&
+               ((int64_t *)(intptr_t)mid)[1] == 30, "slice(1;3) copies elements, not zeros");
+        ASSERT(arr_len(xs) == 5 && ((int64_t *)(intptr_t)xs)[1] == 20,
+               "slice leaves the source untouched");
+        ASSERT(arr_len(tk_arr_slice_w(xs, 0, 5)) == 5, "slice(0;len) is the whole array");
+        ASSERT(arr_len(tk_arr_slice_w(xs, 3, 3)) == 0, "slice(i;i) is empty");
+        ASSERT(arr_len(tk_arr_slice_w(xs, 4, 2)) == 0, "start > end is empty, not negative");
+        ASSERT(arr_len(tk_arr_slice_w(xs, -2, 2)) == 2, "negative start clamps to 0");
+        ASSERT(arr_len(tk_arr_slice_w(xs, 2, 99)) == 3, "end past len clamps to len");
+        ASSERT(arr_len(tk_arr_slice_w(xs, 99, 99)) == 0, "start past len is empty");
+        ASSERT(arr_len(tk_arr_slice_w(0, 0, 2)) == 0, "NULL array slice -> empty");
+        /* one word per element: str / nested-array elements slice too */
+        int64_t ss = 0;
+        ss = tk_array_append_w(ss, S("a"));
+        ss = tk_array_append_w(ss, S("b"));
+        ss = tk_array_append_w(ss, S("c"));
+        int64_t sl = tk_arr_slice_w(ss, 1, 3);
+        ASSERT(arr_len(sl) == 2 &&
+               strcmp((const char *)(intptr_t)((int64_t *)(intptr_t)sl)[0], "b") == 0,
+               "slice of a @str array keeps the pointers");
+    }
 
     printf("%s: %d failure(s)\n", failures ? "FAIL" : "OK", failures);
     return failures ? 1 : 0;

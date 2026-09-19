@@ -472,3 +472,38 @@ int64_t tk_vec_set_w(int64_t v, int64_t idx, int64_t val) { return tk_vec_set(v,
 int64_t tk_vec_len_w(int64_t v)                           { return tk_vec_len(v); }
 int64_t tk_vec_tovec_w(int64_t arr)                       { return tk_vec_tovec(arr); }
 int64_t tk_vec_toarray_w(int64_t v)                       { return tk_vec_toarray(v); }
+
+/* ── 127.45: arr.slice(start;end) ───────────────────────────────────────
+ *
+ * There was no array slice glue at all: `xs.slice(a;b)` on an @i64 resolved to
+ * tk_str_slice_w (the UFCS `slice` entry in src/llvm.c is unconditional), which
+ * ran strlen over the backing block and returned 0 / garbage — `j.print` of the
+ * result showed zeros. This is the array receiver's target.
+ *
+ * Half-open [start, end), clamped to [0, len]; start >= end yields an empty
+ * array. Elements are copied one word each, so str / f64 / nested-array
+ * elements slice exactly like i64 ones. The result is a fresh block (rc 1);
+ * the source is untouched, matching toke's value semantics for arrays.
+ */
+int64_t tk_arr_slice_w(int64_t arr, int64_t start, int64_t end_) {
+    int64_t len = tk_arr_len(arr);
+    if (start < 0) start = 0;
+    if (end_ > len) end_ = len;
+    if (start > len) start = len;
+    int64_t n = end_ - start;
+    if (n < 0) n = 0;
+    int64_t h = tk_arr_alloc(n, n);
+    if (!h) return 0;
+    if (n > 0) {
+        const int64_t *src = (const int64_t *)(intptr_t)arr;
+        int64_t *dst = (int64_t *)(intptr_t)h;
+        memcpy(dst, src + start, (size_t)n * sizeof(int64_t));
+    }
+    return h;
+}
+
+/* Module form `arr.slice(a;start;end)` (`i=arr:std.array;`) resolves through
+ * the generic tk_<module>_<method>_w rule — same semantics (cf. 127.16 join). */
+int64_t tk_array_slice_w(int64_t arr, int64_t start, int64_t end_) {
+    return tk_arr_slice_w(arr, start, end_);
+}

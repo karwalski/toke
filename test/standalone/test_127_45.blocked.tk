@@ -1,0 +1,54 @@
+(* test_127_45.blocked.tk -- Epic 127.45: two faults on the same @@i64 path.
+ *
+ * (a) `j.print(@(@(1;2);@(3)))` printed element addresses ([4297005928,...]):
+ *     the flat printer walked the outer block and printed each word verbatim,
+ *     whether the nesting came from a literal, from main, or from json handles
+ *     (id 0057, chunk).
+ * (b) `xs.slice(a;b)` on an @i64 returned zeros: there was no array slice glue
+ *     at all, and the UFCS `slice` entry in src/llvm.c resolves to
+ *     tk_str_slice_w unconditionally, which ran strlen over the backing block
+ *     (the 127.11 routing class -- the element size was never the problem).
+ *
+ * Glue side (DONE): tk_json_encarr_w / tk_json_printarr_w recurse per nesting
+ * level (127.44 commit) and tk_arr_slice_w (src/stdlib/collections_glue.c) is
+ * the array receiver's slice -- half-open, clamped, one word per element.
+ * Covered by test/stdlib/test_json.c and test/stdlib/test_map.c.
+ *
+ * Still blocked on src/llvm.c: the j.print/j.enc dispatch must pass the nesting
+ * depth, and `slice` must route to tk_arr_slice_w for a proven-array receiver.
+ * See the 127.41 bundle notes. Rename to test_127_45.tk once that lands. *)
+m=test.j12745;
+i=io:std.io;
+i=j:std.json;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=chunk(arr:@i64;k:i64):@@i64{
+  let n=arr.len;
+  let result=mut.@();
+  lp(let i=0;i<n;i=i+k){
+    let e=mut.0;
+    e=i+k;
+    if(e>n){e=n};
+    result=result+@(arr.slice(i;e));
+  };
+  <result
+};
+
+f=main():$i64{
+  cks("enc-nested-lit";j.enc(@(@(1;2);@(3)));"[[1,2],[3]]");
+  let xs=@(10;20;30;40);
+  cks("slice-mid";j.enc(xs.slice(1;3));"[20,30]");
+  cks("slice-all";j.enc(xs.slice(0;4));"[10,20,30,40]");
+  cks("slice-empty";j.enc(xs.slice(2;2));"[]");
+  cks("slice-src-intact";j.enc(xs);"[10,20,30,40]");
+  cks("chunk";j.enc(chunk(@(1;2;3;4;5);2));"[[1,2],[3,4],[5]]");
+  (* must print nested arrays, not addresses *)
+  j.print(@(@(1;2);@(3)));
+  <0
+};
