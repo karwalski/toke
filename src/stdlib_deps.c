@@ -96,7 +96,13 @@ static const StdlibModule stdlib_table[] = {
     { "infer_stream",  "infer_stream.c",                         "",                                                                 "" },
     { "mlx",           "mlx.c mlx_glue.c",                       "",                                                                 "" },
     { "mdns",          "mdns.c mdns_glue.c",                     "",                                                                 "" },
-    { "webview",       "webview.c",                             "",                                                                 "" },
+    /* 136.2: "webview" is withdrawn — stdlib/webview.tki is deleted, so
+     * `i=wv:std.webview;` now fails at the import with E2030 naming the module
+     * and line instead of producing a link error over mangled symbols. The C
+     * core (webview.c, webview.h) is kept, unbuilt, for whoever restores it.
+     * Restoring the row needs "-framework WebKit -framework Cocoa -lobjc"
+     * alongside webview_glue.c; the objc runtime symbols are not on the default
+     * link line either. */
     { "mem",           "mem.c",                                 "",                                                                 "" },
     { "os",            "os.c",                                  "",                                                                 "" },
     { "stack",         "collections.c collections_glue.c",      "",                                                                 "" },

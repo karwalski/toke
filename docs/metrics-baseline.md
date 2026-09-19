@@ -51,7 +51,7 @@ sheet, `--probe` to re-derive the character set against the built compiler).
 | `charset_symbols` | **23** | `!"$%&()*+-./:;<=>@^{|}~` — the `case` arms of the symbol switch in `src/lexer.c` that do not emit E1003 in `PROFILE_DEFAULT`, plus `"` |
 | `keywords` | **14** | `sed -n '/KEYWORDS_DEFAULT/,/};/p' src/lexer.c` — 10 reserved words (`if el lp br let mut as rt sc mt`) plus the 4 declaration heads `m= i= t= f=` |
 | `grammar_productions` | **53** | `grep -cE '^[A-Za-z][A-Za-z0-9_]*[[:space:]]*=' docs/spec/grammar.ebnf` |
-| `stdlib_modules` | **57** | `ls stdlib/*.tki \| wc -l` |
+| `stdlib_modules` | **56** | `ls stdlib/*.tki \| wc -l` |
 | `conformance_cases_yaml` | **224** | `find test -name '*.yaml' \| wc -l` (grammar 98, diagnostics 91, lexical 35) |
 | `conformance_cases_shell` | **15** | `ls test/conform/*.sh \| wc -l` |
 | `conformance_cases_total` | **239** | the two rows above; `make conform` runs both |

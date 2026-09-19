@@ -1,4 +1,63 @@
-# std.webview -- Native Browser Window
+# std.webview -- WITHDRAWN (story 136.2)
+
+> **This module is not part of the standard library. It cannot be imported and
+> it never worked.** `stdlib/webview.tki` was deleted on 2026-09-19 and
+> `i=wv:std.webview;` now fails at the import with `E2030 standard-library
+> module 'std.webview' not found`, naming the module and the line.
+>
+> Everything below the horizontal rule is the 72.4 design, kept as the record
+> of what a restored module should do. **Do not write against it.**
+
+## Why it was withdrawn rather than implemented
+
+72.4 recorded eight functions as done and "16/16 pass". No `webview_glue.c` was
+ever written, so not one of the eight had a `_w` symbol, and the platform
+frameworks were absent from the link line. A consumer importing it got a linker
+error over `_tk_webview_*` plus eleven undefined Objective-C runtime symbols
+(`_objc_msgSend`, `_sel_getUid`, `_objc_allocateClassPair`, ...). loke wrote
+`packages/browser/src/shell.tk` against it and it has never linked.
+
+Implementing it was weighed and rejected for now, on four grounds:
+
+1. **It cannot be verified here.** `webview.open` creates an `NSWindow` and a
+   `WKWebView`; `webview.runeventloop` starts the `NSApplication` run loop.
+   Exercising it means putting a window on screen from an unsigned CLI process
+   and loading a URL, which raises system-level prompts. Shipping it unexercised
+   would repeat exactly the defect this epic exists to correct — Epic 136 is the
+   record of a surface that reported 306 passing tests while four of its modules
+   were unusable.
+2. **Two of the eight need a language decision, not glue.** `onclose` and
+   `registerhandler` take toke function references (`fn():void`, `fn(str):str`)
+   and the C callbacks carry a `void *userdata` the toke side has no slot for,
+   so they need a per-handle trampoline registry and a callback ABI that toke
+   does not have. 131.38 already quarantined them on exactly this ground. An
+   implementation of the other six is not a usable module: loke's own consumer
+   calls `wv.onclose` on the line after `wv.open`.
+3. **The handle type needs an ABI decision too.** `tk_webview_open` returns
+   `TkWebviewHandle` by value and `tk_webview_close` takes its address and frees
+   the `id` but not the struct, so the glue must own a handle table rather than
+   cast a pointer.
+4. **A known-unsafe surface would ship ahead of its fix.** 121.38 and 122.11 are
+   open: the `WKWebView` bridge loads an arbitrary URL with JS enabled, exposes
+   native `messageHandlers`, host `evaluateJavaScript:` and a custom `loke://`
+   scheme, with no origin restriction. `registerhandler` is the function that
+   exposes it.
+
+The C core (`src/stdlib/webview.c`, `src/stdlib/webview.h`) is retained and
+unbuilt, so restoring the module costs a `webview_glue.c`, the link flags
+`-framework WebKit -framework Cocoa -lobjc`, and the two decisions above.
+
+## Correction to the published signature
+
+Restore it with the **requested** parameter order. loke asked for
+`open(url; title; width; height)` (`docs/archive/ooke-bindings-required.md`) and
+its consumer calls it that way. The deleted `.tki` agreed. The **spec**
+(`docs/spec/toke-spec-v0.3.md` §16.44) had it reversed as
+`open(title; url; ...)`, and also used the pre-113.2a underscore spellings
+(`set_title`, `is_available`) that the `.tki` had already dropped. Two
+documents, two different interfaces, neither of them callable.
+
+---
 
 ## Overview
 

@@ -130,15 +130,6 @@ toon.tki::toon.fromjson                # 2026-09-19 no _w glue (toon.tojson exis
 # ── vecstore ──
 vecstore.tki::vecstore.close               # 2026-09-19 no _w glue; core=vecstore_close [131.38-followup]
 vecstore.tki::vecstore.count               # 2026-09-19 no _w glue; core=vecstore_count [131.38-followup]
-# ── webview ──
-webview.tki::webview.open                 # 2026-09-19 C API tk_webview_* (underscore, non-_w, callback params) has no _w glue; needs closure-ABI decision for onclose/registerhandler; core=tk_webview_open [131.38-followup]
-webview.tki::webview.close                # 2026-09-19 C API tk_webview_* (underscore, non-_w, callback params) has no _w glue; needs closure-ABI decision for onclose/registerhandler; core=tk_webview_close [131.38-followup]
-webview.tki::webview.settitle             # 2026-09-19 C API tk_webview_* (underscore, non-_w, callback params) has no _w glue; needs closure-ABI decision for onclose/registerhandler; core=tk_webview_set_title [131.38-followup]
-webview.tki::webview.onclose              # 2026-09-19 C API tk_webview_* (underscore, non-_w, callback params) has no _w glue; needs closure-ABI decision for onclose/registerhandler; core=tk_webview_on_close [131.38-followup]
-webview.tki::webview.registerhandler      # 2026-09-19 C API tk_webview_* (underscore, non-_w, callback params) has no _w glue; needs closure-ABI decision for onclose/registerhandler; core=tk_webview_register_handler [131.38-followup]
-webview.tki::webview.evaljs               # 2026-09-19 C API tk_webview_* (underscore, non-_w, callback params) has no _w glue; needs closure-ABI decision for onclose/registerhandler; core=tk_webview_eval_js [131.38-followup]
-webview.tki::webview.runeventloop         # 2026-09-19 C API tk_webview_* (underscore, non-_w, callback params) has no _w glue; needs closure-ABI decision for onclose/registerhandler; core=tk_webview_run_event_loop [131.38-followup]
-webview.tki::webview.isavailable          # 2026-09-19 C API tk_webview_* (underscore, non-_w, callback params) has no _w glue; needs closure-ABI decision for onclose/registerhandler; core=tk_webview_is_available [131.38-followup]
 # ── ws ──
 ws.tki::ws.sendbytes                 # 2026-09-19 no _w glue; core=ws_sendbytes [131.38-followup]
 ws.tki::ws.broadcast                 # 2026-09-19 no _w glue; core=ws_broadcast [131.38-followup]

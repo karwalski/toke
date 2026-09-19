@@ -2031,22 +2031,25 @@ Image decoding, encoding, and pixel manipulation.
 - `image.pixel_at(img:imgbuf;x:u32;y:u32):[byte]!str` — read pixel RGBA
 - `image.from_raw(data:[byte];w:u32;h:u32;ch:u8):imgbuf` — construct from raw bytes
 
-#### 16.44 std.webview [I]
+#### 16.44 std.webview — WITHDRAWN
 
-Native webview window for desktop UI.
+**Withdrawn 2026-09-19 (story 136.2). `std.webview` is not part of the standard
+library and cannot be imported.** `stdlib/webview.tki` has been deleted;
+`i=wv:std.webview;` fails with `E2030 standard-library module 'std.webview' not
+found`.
 
-**Types:** `$webviewhandle{id:str}`
+The eight functions this section used to list never had a single `_w` symbol
+behind them, and the WebKit, Cocoa and Objective-C runtime symbols were absent
+from the link line, so no program that called them has ever linked. The
+signatures printed here were also wrong twice over: `open` was documented
+`(title;url;...)` where both the consumer request and the `.tki` said
+`(url;title;...)`, and the member names kept the pre-113.2a underscores
+(`set_title`, `is_available`) that the `.tki` had already dropped.
 
-**Functions:**
-
-- `webview.open(title:str;url:str;w:i32;h:i32):webviewhandle` — open webview window
-- `webview.close(wv:webviewhandle):bool` — close window
-- `webview.set_title(wv:webviewhandle;title:str):bool` — update title
-- `webview.on_close(wv:webviewhandle;cb:fn():void):void` — register close callback
-- `webview.register_handler(wv:webviewhandle;name:str;cb:fn(str):str):bool` — register JS-callable handler
-- `webview.eval_js(wv:webviewhandle;js:str):bool` — evaluate JavaScript in webview
-- `webview.run_event_loop():void` — run event loop (blocks)
-- `webview.is_available():bool` — check webview availability
+`stdlib/webview.md` keeps the design and records what restoring it requires —
+a `webview_glue.c`, the link flags, a callback ABI for `onclose` and
+`registerhandler`, and the bridge hardening of 121.38 / 122.11. The C core
+(`src/stdlib/webview.c`) is retained and unbuilt.
 
 ### System
 
