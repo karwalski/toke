@@ -12,7 +12,10 @@ Stdlib only (no jsonschema dependency) so it runs anywhere tkc builds.
 
 --strict additionally requires that every non-blocked candidate carries real
 measurements (no nulls) — used once 131.6/131.7 have measured entries; the
-default mode lets an entry be authored before its bench run.
+default mode lets an entry be authored before its bench run. The single
+exception is a timeout sentinel (protocol §5.2, `bigO_ratio == 99`): the
+harness kills such a form before it reports peak RSS or allocation counts, so
+`rss_kb_median`/`allocs` may stay null there. Everything else stays strict.
 """
 from __future__ import annotations
 
@@ -32,6 +35,9 @@ CANDIDATE_KEYS = {
 }
 TOKEN_KEYS = {"proxy8k", "byte256", "v03", "qwen25coder", "cl100k"}
 MEASURED_AT_KEYS = {"tkc_sha", "tkc_version", "proxy_sha", "corpus_sha", "bench_result", "date"}
+# optional provenance (protocol §8): present and true when the bench results were recorded on a loaded
+# machine (meta.load_warning) — the verdicts stay provisional until 131.25 re-measures
+MEASURED_AT_OPTIONAL = {"load_warning"}
 RUNTIME_VERDICTS = {"best", "tied", "slower", "worse-bigO", "blocked"}
 TOKEN_VERDICTS = {"best", "tied", "more", "blocked"}
 STATUSES = {"measured", "provisional", "blocked"}
@@ -342,8 +348,13 @@ def check_entry(v: V, e: dict, root: str, strict: bool, seen: set) -> None:
     ):
         v.err(eid, "lint must be null or {rule, severity ∈ error|warning|hint, fixable: bool}")
     ma = e.get("measured_at")
-    if not (isinstance(ma, dict) and set(ma) == MEASURED_AT_KEYS):
-        v.err(eid, f"measured_at must have exactly keys {sorted(MEASURED_AT_KEYS)}")
+    if not (isinstance(ma, dict) and set(ma) - MEASURED_AT_OPTIONAL == MEASURED_AT_KEYS):
+        v.err(eid, f"measured_at must have exactly keys {sorted(MEASURED_AT_KEYS)} "
+                   f"(optional: {sorted(MEASURED_AT_OPTIONAL)})")
+    elif ma.get("load_warning") is not None and not isinstance(ma["load_warning"], bool):
+        v.err(eid, "measured_at.load_warning must be a bool when present")
+    elif isinstance(ma.get("load_warning"), bool) and ma["load_warning"] and isinstance(vd, dict) and vd.get("status") == "measured":
+        v.err(eid, "measured_at.load_warning is true — status cannot be 'measured' before the 131.25 re-measure (protocol §8)")
     if isinstance(vd, dict) and isinstance(cands, list) and "canonical" in vd:
         try:
             check_verdict_consistency(v, e)

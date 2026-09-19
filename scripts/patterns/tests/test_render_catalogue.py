@@ -135,12 +135,21 @@ def test_rendered_docs_contain_no_blocked_source_in_toke_fence():
         assert any(f.startswith("m=main;") for f in fences)  # the full-program fences are really there
 
 
-def _results(forms, pat_n=1000, status="ok", load_warning=False):
+def _real_entry(cands, **kw):
+    """_entry() with a schema-legal id, so the full validator can run on the result."""
+    e = _entry(cands, **kw)
+    e["id"] = "str-y"
+    for c in e["candidates"]:
+        c["fixture"] = c["fixture"].replace("x-y", "str-y")
+    return e
+
+
+def _results(forms, pat_n=1000, status="ok", load_warning=False, pid="x-y"):
     def form(w, ci, rss, ratio):
         return {"status": "ok", "wall_ms_median": w, "wall_ci95": ci, "rss_kb_median": rss,
                 "allocs": {"calls": 1, "bytes": 2, "malloc": 1, "free": 1}, "bigO_ratio": ratio}
     return {"meta": {"date": "2026-09-19T00:00:00+00:00", "tkc_version": "v", "tkc_git_sha": "s", "load_warning": load_warning},
-            "patterns": {"x-y": {"status": status, "pat_n": pat_n, "forms": {k: form(*v) for k, v in forms.items()}}}}
+            "patterns": {pid: {"status": status, "pat_n": pat_n, "forms": {k: form(*v) for k, v in forms.items()}}}}
 
 
 def test_ingest_copies_numbers_and_rederives_conflict_verdict(tmp_path):
@@ -202,6 +211,50 @@ def test_ingest_refuses_results_recorded_under_load(tmp_path):
     res.write_text(json.dumps(_results({}, load_warning=True)))
     with pytest.raises(SystemExit):
         rc.ingest({"protocol": "0.4", "entries": []}, str(res))
+
+
+def test_ingest_accepts_load_flagged_results_and_stamps_provenance(tmp_path):
+    e = _real_entry([_cand("a", 10, 40), _cand("b", 14, 60)], canonical="a")
+    doc = {"protocol": "0.4", "entries": [e]}
+    res = tmp_path / "r.json"
+    res.write_text(json.dumps(_results({"a": (100.0, [99, 101], 1000, 4.0), "b": (50.0, [49, 51], 1000, 4.0)},
+                                       pid="str-y", load_warning=True)))
+    rc.ingest(doc, str(res), accept_load_warning=True)
+    e["verdict"]["choose_hot_path_when"] = "measured 50.0 ms against 100.0 ms"
+    assert e["measured_at"]["load_warning"] is True   # protocol §8 provenance, visible in the rendered spec
+    assert e["verdict"]["status"] == "provisional"
+    assert vc.validate_doc(doc, "") == []             # the optional key is schema-legal
+    e["verdict"]["status"] = "measured"               # ... but never promotable before the 131.25 re-measure
+    assert any("load_warning" in x for x in vc.validate_doc(doc, ""))
+
+
+def test_ingest_clears_load_warning_on_a_clean_remeasure(tmp_path):
+    e = _entry([_cand("a", 10, 40), _cand("b", 14, 60)], canonical="a")
+    e["measured_at"]["load_warning"] = True
+    doc = {"protocol": "0.4", "entries": [e]}
+    res = tmp_path / "r.json"
+    res.write_text(json.dumps(_results({"a": (100.0, [99, 101], 1000, 4.0), "b": (50.0, [49, 51], 1000, 4.0)})))
+    rc.ingest(doc, str(res))
+    assert "load_warning" not in e["measured_at"]
+
+
+def test_ingest_bigo_timeout_at_4n_uses_the_sentinel(tmp_path):
+    """protocol §5.2: the form finished at N but its 4N big-O run hit the ceiling — the ratio is unbounded,
+    so it takes the terminal sentinel while keeping its real wall/RSS/allocs (coll-membership/b, 131.11)."""
+    e = _real_entry([_cand("a", 14, 40), _cand("b", 10, 60)], canonical="b")
+    doc = {"protocol": "0.4", "entries": [e]}
+    res = tmp_path / "r.json"
+    r = _results({"a": (100.0, [99, 101], 1000, 4.0), "b": (20000.0, [19000, 21000], 900, 4.0)}, pid="str-y")
+    fb = r["patterns"]["str-y"]["forms"]["b"]
+    fb["bigO_ratio"], fb["bigO"] = None, "timeout(>120s at 4N)"
+    res.write_text(json.dumps(r))
+    _, warnings = rc.ingest(doc, str(res))
+    b = e["candidates"][1]
+    assert b["bigO_ratio"] == vc.TIMEOUT_BIGO and b["rss_kb_median"] == 900 and b["wall_ms_median"] == 20000.0
+    assert b["runtime_verdict"] == "worse-bigO"
+    assert e["verdict"]["canonical"] == "a"  # token-best form is worse-bigO -> runtime-best wins (§6 step 4)
+    assert any("big-O run timed out" in w for w in warnings)
+    assert vc.validate_doc(doc, "", strict=True) == []
 
 
 def test_merge_appends_only_new_ids(tmp_path):

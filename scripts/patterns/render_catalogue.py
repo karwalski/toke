@@ -19,6 +19,8 @@ Subcommands
                      with validate_catalogue.derive_verdicts (the one implementation of protocol §6);
                      a harness `timeout` form is ingested deterministically (protocol §5.2: wall 30000,
                      ci [30000,30000], bigO 99 -> worse-bigO); status stays `provisional` (or `blocked`).
+                     A results file with meta.load_warning is refused unless --accept-load-warning is
+                     passed, which stamps measured_at.load_warning on every entry it touches.
                      Dry-run unless --write.
     merge --in patterns/catalogue.wave2.json [--write]
                   -> append entries whose id is not yet present, validate. Dry-run unless --write.
@@ -337,9 +339,11 @@ def render_spec(doc: dict, sha: str) -> str:
             else:
                 L += ["**Lint.** none — the non-canonical forms are not AST-decidable with low false positives.", ""]
             ma = e["measured_at"]
+            load_note = (" Timed on a machine under load (`meta.load_warning`) — every verdict here stays "
+                         "`provisional` until story 131.25 re-measures (protocol §8)." if ma.get("load_warning") else "")
             L += [
                 f"**Measured at.** tkc `{ma['tkc_version']}` @ `{str(ma['tkc_sha'])[:12]}`; proxy `{str(ma['proxy_sha'])[:12]}`; "
-                f"corpus `{str(ma['corpus_sha'])[:12]}`; bench result `{ma['bench_result']}`; date {ma['date']}.",
+                f"corpus `{str(ma['corpus_sha'])[:12]}`; bench result `{ma['bench_result']}`; date {ma['date']}.{load_note}",
                 "",
             ]
     return "\n".join(L).rstrip("\n") + "\n"
@@ -478,13 +482,20 @@ def render_card(doc: dict, sha: str) -> str:
 
 
 # ─────────────────────────── ingest / merge ─────────────────────────────────
-def ingest(doc: dict, results_path: str) -> tuple[list[str], list[str]]:
-    """Copy runtime numbers per (id, form) and re-derive verdicts. Returns (changes, warnings)."""
+def ingest(doc: dict, results_path: str, accept_load_warning: bool = False) -> tuple[list[str], list[str]]:
+    """Copy runtime numbers per (id, form) and re-derive verdicts. Returns (changes, warnings).
+
+    A results file recorded under load (`meta.load_warning`) is refused by default; passing
+    `accept_load_warning` ingests it anyway and stamps `measured_at.load_warning = true` on every
+    entry touched, so the rendered spec carries the provenance and protocol §8's re-measure (131.25)
+    knows exactly which entries were timed on a loaded machine."""
     with open(results_path, encoding="utf-8") as fh:
         res = json.load(fh)
     meta = res.get("meta", {})
-    if meta.get("load_warning"):
-        sys.exit(f"ingest: {results_path} was recorded under load (meta.load_warning) and must not feed the catalogue")
+    load_flagged = bool(meta.get("load_warning"))
+    if load_flagged and not accept_load_warning:
+        sys.exit(f"ingest: {results_path} was recorded under load (meta.load_warning) and must not feed the catalogue "
+                 "(pass --accept-load-warning to ingest as provisional; protocol §8 requires a 131.25 re-measure)")
     changes, warnings = [], []
     by_id = {e["id"]: e for e in doc["entries"]}
     bench_name = os.path.basename(results_path)
@@ -497,6 +508,10 @@ def ingest(doc: dict, results_path: str) -> tuple[list[str], list[str]]:
             warnings.append(f"{pid}: bench status {pr.get('status')!r} — entry skipped")
             continue
         forms = pr.get("forms", {})
+        for f in sorted(set(forms) - {c["form"] for c in e["candidates"]}):
+            # e.g. the std.fmt probes cond-bool-render/d, cli-print-results/d (127.48): measured on purpose,
+            # not candidates — never silently dropped, so fixture drift is visible in the ingest log
+            warnings.append(f"{pid}/{f}: measured but not a catalogue candidate — ignored")
         for c in e["candidates"]:
             fr = forms.get(c["form"])
             if is_blocked(c):
@@ -525,12 +540,19 @@ def ingest(doc: dict, results_path: str) -> tuple[list[str], list[str]]:
                 warnings.append(f"{pid}/{c['form']}: form status {fr.get('status')!r} — numbers left null, verdicts not re-derived")
                 continue
             else:
+                bigo = fr.get("bigO_ratio")
+                if bigo is None and "timeout" in str(fr.get("bigO", "")):
+                    # protocol §5.2: the form itself finished at N but the 4N big-O run hit the ceiling, so the
+                    # ratio is unbounded — the same terminal sentinel, with the real wall/RSS/allocs kept
+                    warnings.append(f"{pid}/{c['form']}: big-O run timed out at 4N ({fr.get('bigO')}) — "
+                                    f"bigO_ratio ingested as {vc.TIMEOUT_BIGO} (worse-bigO)")
+                    bigo = vc.TIMEOUT_BIGO
                 new = {
                     "wall_ms_median": fr["wall_ms_median"],
                     "wall_ci95": fr.get("wall_ci95"),
                     "rss_kb_median": fr.get("rss_kb_median"),
                     "allocs": allocs,
-                    "bigO_ratio": fr.get("bigO_ratio"),
+                    "bigO_ratio": bigo,
                     "pat_n": pr.get("pat_n"),
                 }
             for k, v in new.items():
@@ -538,6 +560,14 @@ def ingest(doc: dict, results_path: str) -> tuple[list[str], list[str]]:
                     changes.append(f"{pid}/{c['form']}.{k}: {c.get(k)!r} -> {v!r}")
                     c[k] = v
         ma = e["measured_at"]
+        # provenance for protocol §8: a load-flagged run marks the entries it timed; a clean re-measure clears it
+        if load_flagged:
+            if ma.get("load_warning") is not True:
+                changes.append(f"{pid}.measured_at.load_warning: {ma.get('load_warning')!r} -> True")
+                ma["load_warning"] = True
+        elif "load_warning" in ma:
+            changes.append(f"{pid}.measured_at.load_warning: {ma['load_warning']!r} -> (cleared)")
+            del ma["load_warning"]
         for k, v in (
             ("bench_result", bench_name),
             ("date", str(meta.get("date", ma["date"]))[:10]),
@@ -669,6 +699,7 @@ def main(argv: list[str]) -> int:
     sub.add_parser("check")
     p = sub.add_parser("ingest")
     p.add_argument("--results", required=True)
+    p.add_argument("--accept-load-warning", action="store_true", help="ingest load-flagged results as provisional (stamps measured_at.load_warning)")
     p.add_argument("--write", action="store_true")
     p = sub.add_parser("merge")
     p.add_argument("--in", dest="incoming", required=True)
@@ -695,7 +726,7 @@ def main(argv: list[str]) -> int:
     if a.cmd == "check":
         return check(doc, sha)
     if a.cmd == "ingest":
-        changes, warnings = ingest(doc, a.results)
+        changes, warnings = ingest(doc, a.results, accept_load_warning=a.accept_load_warning)
         return report_and_write(doc, a.catalogue, changes, warnings, a.write, "ingest")
     if a.cmd == "merge":
         added, skipped = merge(doc, a.incoming)

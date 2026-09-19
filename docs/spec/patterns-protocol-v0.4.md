@@ -62,7 +62,7 @@ Every entry has exactly these keys (validated by `scripts/patterns/validate_cata
 | `source` | array ≥ 1 | provenance strings: `idiom-v0.4#<rule>`, `card:<line-hint>`, `ast-mine:<rank>`, `126.1-pair:<task_id>` |
 | `bug_caveats` | array | `{issue: "127.x", effect, preferred_when_fixed: <form id or null>}` — may be empty |
 | `lint` | object or null | `{rule, severity ∈ error\|warning\|hint, fixable: bool}` — the rule 131.9 emits for the non-canonical forms |
-| `measured_at` | object | `{tkc_sha, tkc_version, proxy_sha, corpus_sha, bench_result, date}` |
+| `measured_at` | object | `{tkc_sha, tkc_version, proxy_sha, corpus_sha, bench_result, date}`, plus optional `load_warning: true` when the bench run that produced the numbers was recorded on a loaded machine (§8) |
 | `card_rule` | string | ≤ 40 chars, imperative, the one-line rule the syntax card carries for this entry (e.g. "expr-if, never a mut flag"); added 2026-09-18 so 40–60 entries fit the ≤ 20-line card block at 2–3 rules per line |
 
 Each **candidate**:
@@ -127,6 +127,11 @@ runs per form; median wall + bootstrap 95% CI (1000 resamples); median peak RSS;
 **Timeouts** (a form exceeding the harness ceiling, 30 s, at the pattern's `pat_n`) are ingested deterministically
 as `wall_ms_median = 30000`, `wall_ci95 = [30000, 30000]`, `bigO_ratio = 99`, `rss_kb_median`/`allocs` as measured
 or `null`, so the verdict re-derives to `worse-bigO` and the entry is never left unmeasured (added 2026-09-18).
+A form that finishes at `pat_n` but whose 4N big-O run hits the ceiling is ingested with the same
+`bigO_ratio = 99` sentinel — the ratio is unbounded — keeping its measured wall, RSS and allocs (added 2026-09-19).
+Because the harness kills a timed-out form before it reports peak RSS or allocation counts, `--strict` validation
+exempts `rss_kb_median` and `allocs` — and only those two fields, and only for a timeout sentinel
+(`bigO_ratio == 99`) — from its no-nulls requirement (added 2026-09-19).
 
 ### 5.3 Runtime gate (per candidate, relative to the best form of the same pattern)
 
@@ -188,7 +193,11 @@ gate, as in `quality_rubric.md`; the catalogue itself has no exemptions.
 ## 8. Provisional-until-remeasured rule
 
 Every verdict is `provisional` when first recorded. It becomes `measured` only after 131.25 re-runs the token
-proxy (retrained on the *rewritten* corpus) and the runtime harness and the verdict is unchanged. It is
+proxy (retrained on the *rewritten* corpus) and the runtime harness and the verdict is unchanged. The harness
+refuses to run above a 1-minute loadavg of 2; when that floor is unreachable on the measuring machine, a run may
+be ingested anyway with `render_catalogue.py ingest --accept-load-warning`, which stamps
+`measured_at.load_warning = true` on every entry it touches — such an entry may never be promoted to `measured`
+without the 131.25 re-measure, and the validator enforces that. It is
 re-run once more when 116.9 Phase 3 locks the real v0.4 tokenizer (TEMSpec). Any flip is **listed and
 re-opened** — never silently changed. Compiler-bug closures trigger `scripts/patterns/recheck_caveats.py`
 (131.26), which re-measures every entry whose `bug_caveats` name the closed issue.
