@@ -97,6 +97,120 @@ void         csv_writer_use_crlf(TkCsvWriter *w, int enabled);
 StrArray    *csv_parse(const char *data, uint64_t len, uint64_t *nrows_out);
 
 /* -----------------------------------------------------------------------
+ * 135.2 — hardening for real-world exports
+ *
+ * `csv_reader_new` is the LAX path and keeps its behaviour exactly: it
+ * validates nothing, so a CP1252 byte, a BOM, an unterminated quote and a
+ * short row all come back as content.  That is what every existing caller
+ * already depends on, and it is also this module's own negative control —
+ * test/conform/C008 runs the awkward fixtures through it and asserts they are
+ * accepted, because a check that cannot be seen failing proves nothing.
+ *
+ * `csv_reader_open` is the STRICT path.  Everything below exists so that a
+ * bank or government export is either parsed correctly or REFUSED with a
+ * message naming the line and the problem.  Silence is the failure mode.
+ * ----------------------------------------------------------------------- */
+
+/* What csv_sniff found.  Mirrors the $csvdialect struct in stdlib/csv.tki,
+ * field for field and in order — csv_glue.c builds that block from this. */
+typedef struct {
+    char        delim;      /* the delimiter that fits every examined line   */
+    char        quote;      /* quote character (only '"' is ever detected)   */
+    int         has_header; /* 1 if row 0 looks like a header — A GUESS      */
+    const char *encoding;   /* static token, see TK_CSV_ENC_* below          */
+    int         bom;        /* 1 if the buffer starts with a UTF-8 BOM       */
+} TkCsvDialect;
+
+/* Encoding tokens.  Static strings, so a caller may compare pointers or text. */
+#define TK_CSV_ENC_UTF8     "utf-8"
+#define TK_CSV_ENC_UTF8_BOM "utf-8-bom"
+#define TK_CSV_ENC_UNKNOWN  "not-utf-8"
+#define TK_CSV_ENC_UTF16LE  "utf-16le"
+#define TK_CSV_ENC_UTF16BE  "utf-16be"
+
+/* Options for csv_reader_open.  Mirrors the $csvopts struct in
+ * stdlib/csv.tki, field for field and in order.
+ *
+ * Every field is a token rather than an enum so that an unrecognised value is
+ * a REJECTION with the offending text in the message, not a silent fallback
+ * to a default.  NULL or "" selects the documented default.
+ *
+ *   delim    one character, or "" to sniff it (the result is reported back by
+ *            csv_reader_dialect, so a sniffed delimiter is never invisible)
+ *   quote    one character; default '"'
+ *   encoding "utf-8" (default, STRICT — invalid sequences are refused),
+ *            "cp1252", "latin-1" / "iso-8859-1" (both transcoded to UTF-8),
+ *            or "binary" (no validation, bytes pass through unchanged)
+ *   bom      "strip" (default) | "keep" | "error"
+ *   ragged   "error" (default) | "pad" | "report"
+ *   has_header  whether row 0 is a header.  NEVER guessed by the reader:
+ *            csv_sniff reports a guess, the caller decides.
+ */
+typedef struct {
+    const char *delim;
+    const char *quote;
+    const char *encoding;
+    const char *bom;
+    const char *ragged;
+    int         has_header;
+} TkCsvOpts;
+
+/* Fill opts with the documented defaults. */
+void csv_opts_defaults(TkCsvOpts *opts);
+
+/* csv_sniff: examine the first TK_CSV_SNIFF_LINES lines and report the
+ * dialect.  Returns 1 and fills *out on success; returns 0 and sets the
+ * last-error state (csv_lasterr / csv_lasterrkind / csv_lasterrline) when the
+ * delimiter cannot be determined, when two delimiters fit equally well, when
+ * the buffer is empty, or when it carries a UTF-16 byte-order mark.
+ *
+ * Non-UTF-8 bytes are NOT a sniff failure: they are reported as encoding
+ * "not-utf-8" so that a caller can choose an encoding and try again. */
+#define TK_CSV_SNIFF_LINES 10
+int csv_sniff(const char *data, uint64_t len, TkCsvDialect *out);
+
+/* csv_reader_open: the strict reader.  Copies and, where the declared
+ * encoding requires it, transcodes the buffer, so the caller need not keep
+ * `data` alive.  Returns NULL and sets the last-error state on any refusal.
+ * Free with csv_reader_free() as usual. */
+TkCsvReader *csv_reader_open(const char *data, uint64_t len,
+                             const TkCsvOpts *opts);
+
+/* The dialect this reader is actually using, including a sniffed delimiter. */
+TkCsvDialect csv_reader_dialect(const TkCsvReader *r);
+
+/* 1 once every record has been consumed.  Distinguishes end-of-data from a
+ * refusal: both make csv_reader_next return an empty row. */
+int csv_reader_at_end(const TkCsvReader *r);
+
+/* Ragged-row reports accumulated under the "report" policy: one
+ * heap-allocated line per ragged row, e.g. "line 4: 2 fields, expected 3".
+ * The reader owns them; they are freed by csv_reader_free. */
+uint64_t     csv_reader_ragged_count(const TkCsvReader *r);
+const char  *csv_reader_ragged_at(const TkCsvReader *r, uint64_t i);
+
+/* Last-error state.  The compiled T!E ABI carries no payload (127.97), so the
+ * $err arm binds nothing readable and these accessors ARE the error value.
+ *
+ * csv_lasterrkind returns one stable token:
+ *   "ok"        nothing has failed
+ *   "eof"       csv_reader_next returned empty because the data ran out
+ *   "opts"      an option token was not recognised
+ *   "empty"     there was nothing to sniff
+ *   "bom"       a byte-order mark, and the policy or encoding refuses it
+ *   "encoding"  the bytes are not valid in the declared encoding
+ *   "delimiter" no delimiter fits, or two fit equally well
+ *   "quote"     an unterminated quoted field, or text after a closing quote
+ *   "ragged"    a row's field count disagrees with the header's
+ *
+ * csv_lasterr returns the full message, which NAMES THE LINE.  Its exact
+ * wording is not interface; the kind and the line number are.
+ * csv_lasterrline returns the 1-based physical line, or 0 if not applicable. */
+const char *csv_lasterr(void);
+const char *csv_lasterrkind(void);
+uint64_t    csv_lasterrline(void);
+
+/* -----------------------------------------------------------------------
  * .tki-aligned aliases (Story 35.1.11)
  *
  * The std.csv .tki contract uses csv.reader, csv.next, etc.  The compiler
