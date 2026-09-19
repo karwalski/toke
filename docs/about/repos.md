@@ -29,7 +29,7 @@ The toke project is organised across six repositories under the [karwalski](http
 
 **Benchmark and evaluation.** Held-out benchmark suite (1,000 tasks) and evaluation scripts for measuring Pass@1 rates, token efficiency, and gate criteria.
 
-- **Status:** Active — Gate 1 complete (63.7% Pass@1, 12.5% token reduction)
+- **Status:** Active — Gate 1 complete (63.7% Pass@1; token reduction 12.5%, 8K toke BPE vs cl100k_base on the same toke source, N = 46,754 programs — superseded, see `docs/metrics-baseline.md`)
 - **License:** Apache 2.0
 - **Link:** [github.com/karwalski/toke-eval](https://github.com/karwalski/toke-eval)
 - **Contains:** benchmarks, evaluation pipeline

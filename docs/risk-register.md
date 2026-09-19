@@ -31,7 +31,7 @@
 
 ### Overall risk posture
 
-**Moderate.** The project passed Gate 1 with a 12.5% token reduction and 63.7% Pass@1, providing early evidence that the core thesis holds. The highest residual risk is the single-developer bus factor, which is accepted given the project's research nature. Technical and research risks are actively managed through conformance testing, held-out evaluation sets, and incremental gating. Cloud cost exposure is bounded by an MLX-first hardware strategy with cloud as contingency only.
+**Moderate.** The project passed Gate 1 with a token reduction of 12.5% (8K toke BPE vs cl100k_base on the same toke source, N = 46,754 programs -- a tokenizer-lane figure, since superseded: `docs/metrics-baseline.md`) and 63.7% Pass@1, early evidence for part of the thesis. The efficiency half of the thesis is currently *unsupported*: under one shared tokenizer toke costs more tokens than Python (1.34x, N = 60), which raises this risk rather than lowering it. The highest residual risk is the single-developer bus factor, which is accepted given the project's research nature. Technical and research risks are actively managed through conformance testing, held-out evaluation sets, and incremental gating. Cloud cost exposure is bounded by an MLX-first hardware strategy with cloud as contingency only.
 
 ---
 

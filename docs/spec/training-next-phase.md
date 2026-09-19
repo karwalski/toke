@@ -15,9 +15,9 @@ These decisions are made and documented. They can be revisited for v1.0 but are 
 |----------|--------|-----------|-----------------|
 | v0.3 syntax frozen | **LOCKED** | 100% compilation proves syntax works | Community feedback for v1.0 |
 | No inline comments | **LOCKED** | Token efficiency; reasoning via `.tkc` companion files ([reasoning-channel.md](reasoning-channel.md)) | If functional Pass@1 stalls below 30% AND reasoning is identified as root cause |
-| 55-char alphabet | **LOCKED** | BPE tokenizer trained on this; 52% reduction measured | v1.0 RFC only |
+| 55-char alphabet | **LOCKED** | BPE tokenizer trained on this (v0.3 Toke-16K measured 52% fewer tokens than cl100k_base on the same toke source, N = 42 -- superseded, see `docs/metrics-baseline.md`) | v1.0 RFC only |
 | 13 keywords | **LOCKED** | Compiler, spec, training all aligned | v1.0 RFC only |
-| Purpose-built BPE | **LOCKED** | 16K vocab, 52% measured reduction | Retrain on expanded corpus (same approach) |
+| Purpose-built BPE | **LOCKED** | 16K vocab; the v0.3 52% figure (Toke-16K vs cl100k_base on the same toke source, N = 42) is superseded -- no shipped toke tokenizer beats cl100k_base on v0.4 text (N = 2,000) | Retrain on expanded corpus (116.9) -- and re-test the approach itself |
 | Qwen base model | **OPEN** | Gate 2 used Qwen 2.5 Coder 7B; other bases viable | If Qwen3-Coder-Next or DeepSeek outperforms |
 | GRPO/RLVR vs SFT-only | **OPEN** | Research strongly recommends GRPO for functional correctness | Adopt GRPO in next training run |
 | Strict vs adaptive curriculum | **OPEN** | Research recommends adaptive over strict-phased | Try adaptive; keep strict as fallback |
@@ -41,7 +41,7 @@ These are explicitly not decided yet. Each has a decision deadline and fallback.
 | Asset | Status |
 |-------|--------|
 | Compiler (toke 0.3.1) | Production — 22 W1020 hints, --migrate for LLM patterns |
-| BPE tokenizer (16,384 tokens) | Trained on normalised v0.3 code. 52% avg reduction vs cl100k |
+| BPE tokenizer (16,384 tokens) | Trained on normalised v0.3 code. 52% fewer tokens than cl100k_base on the same toke source (N = 42, v0.3 text); superseded on v0.4 text -- see `docs/metrics-baseline.md` |
 | QLoRA adapter (Gate 2) | 100% compile rate, 55.6% functional (corrected from ~8% after io.readln() fix) |
 | Corpus | 25,953 records (canonical prompt) |
 | loke codebase | 698 .tk files, 87,318 lines — production, tested |
@@ -72,7 +72,7 @@ The following recommendations from external research review are adopted:
 
 8. **DeepSeek V3.2 at $0.42/Mtok for bulk corpus generation.** 60x cheaper than Opus. Default to DeepSeek for volume; reserve frontier models for hard curriculum tiers and LLM-judge work.
 
-9. **The strongest parts of the project are the tokenizer and structured diagnostics.** Lead with measurable token reduction (52%) and the 70+ diagnostic codes. The syntax is instrumental — a means to achieve token reduction — not the core thesis.
+9. **The strongest parts of the project are the tokenizer and structured diagnostics.** *(2026-09-19: the tokenizer half of this is superseded by measurement — on canonical v0.4 text every shipped toke tokenizer needs more tokens than cl100k_base (8K: +15.4%, N = 2,000), and the v0.3 "52%" was a tokenizer-vs-tokenizer figure on v0.3 text, N = 42. Lead with the structured diagnostics, the LL(1) grammar and compiler verification; the tokenizer claim is re-opened by 116.9.)* The syntax is instrumental — a means to achieve token reduction — not the core thesis.
 
 10. **Pre-register success criteria before training.** Functional Pass@1 ≥ 35% and argv-generalisation ≥ 50% as the week-12 GO/NO-GO call.
 

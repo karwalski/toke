@@ -72,7 +72,7 @@ The `(* ... *)` comment syntax is tolerated by the lexer (silently discarded) sp
 | `(* *)` in source | Discarded by lexer | LLM reasoning during generation |
 | MCP `reasoning` field | Separate from source | Chain-of-thought for repair loops |
 
-The token reduction claim (52% vs cl100k) applies to the `.tk` source only. The reasoning channel is unlimited — use as many reasoning tokens as needed.
+Any token-efficiency claim applies to the `.tk` source only (and the v0.3 "52% vs cl100k" tokenizer-vs-tokenizer figure, N = 42, is superseded — see `docs/metrics-baseline.md`). The reasoning channel is unlimited — use as many reasoning tokens as needed.
 
 ## v0.4 Roadmap
 

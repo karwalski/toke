@@ -45,6 +45,79 @@ stories; each row cites its origin.
 
 ---
 
+## Canonical wording for token-efficiency claims (story 132.6)
+
+**These two blocks are the only approved public wording for the "52% token reduction"
+and "42% reduction vs Python" claims.** Stories 132.1, 132.8, 132.9, 132.10 and 132.13
+copy them **verbatim**; do not paraphrase, do not drop a qualifier, do not quote a bare
+percentage. Both carry the four TEMSpec §6.3 reporting fields — metric type, tokenizer(s),
+baseline, and N.
+
+### Long form (documentation, whitepaper, site pages)
+
+> **Token efficiency, stated per TEMSpec §6.3 (metric type · tokenizer · baseline · N).**
+>
+> - **Tokenizer-level reduction — same text, two tokenizers.** The v0.3 Toke-16K BPE
+>   (16,384 vocab, trained on 25,953 v0.3-syntax programs) encoded toke source in **~52%
+>   fewer tokens than cl100k_base encoded the same toke source** — N = 42 v0.3 benchmark
+>   programs, 2026-05-22. It compares two tokenizers on one text; it was never a comparison
+>   with Python. **It is superseded and must not be republished as a headline:** on
+>   canonical v0.4 `--min` text (N = 2,000 stratified corpus records, 2026-09-18) every
+>   shipped toke tokenizer is *worse* than cl100k_base — the 8K SentencePiece needs **15.4%
+>   more** tokens (ratio 1.154 [1.147, 1.160]) — and `tokenizer_v03.json` only appears to
+>   win (ratio 0.545) because its null `unk_token` silently drops every backslash (2,606 in
+>   that sample). No "purpose-built tokenizer beats cl100k" claim is supportable until the
+>   v0.4 tokenizer is trained and locked (116.9).
+> - **Cross-language density — one shared tokenizer, two languages (TEMSpec §2.3,
+>   informational).** On the 60 Gate-1 tasks, hand-written v0.4 toke costs **1.34×
+>   [1.22, 1.48]** the cl100k_base tokens of equivalent Python (4,787 vs 3,565; N = 60,
+>   2026-09-19); on the four execution-verified v0.4 sample pairs it is **1.30×** under
+>   cl100k_base and 1.32× under o200k (N = 4). **toke currently costs about 30% more tokens
+>   than Python under the tokenizers models actually use**, not fewer. The v0.3-era text
+>   measured 1.76×.
+> - **Never cross the lanes.** `proxy8k` and `tokenizer_v03` are trained on toke text;
+>   applied to Python they measure their own training bias, not the language. Quoting a
+>   toke-trained tokenizer on the toke side against cl100k on the Python side is the
+>   methodology error behind the withdrawn "42% reduction vs Python" (story 132.13). Any
+>   cross-language number uses **one** tokenizer on both sides.
+>
+> Sources: `docs/metrics-baseline.md`, `docs/about/samples-v04.md`,
+> `toke-eval/docs/gate1-60-v04.md`, `toke-tokenizer/docs/baseline_v04_pre131.md`.
+> Methodology: TEMSpec §2.1, §2.3, §6.3.
+
+### Short form (READMEs, registry descriptions, cards, one-liners)
+
+> **Token efficiency, measured:** under one shared tokenizer (cl100k_base) toke costs
+> **1.34× [1.22, 1.48]** the tokens of equivalent Python on the 60 Gate-1 tasks (N = 60,
+> 2026-09-19) — more, not fewer. The v0.3-era "52% fewer tokens" figure was a
+> *tokenizer-vs-tokenizer* measurement on identical toke text (Toke-16K v0.3 vs cl100k_base,
+> N = 42) and is superseded: on canonical v0.4 text the shipped 8K tokenizer needs **15.4%
+> more** tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.
+
+### What is withdrawn outright
+
+| Claim | Why it cannot be requalified | Replacement |
+|---|---|---|
+| "42% reduction vs Python" (and "56% vs Java") | Applies a **toke-trained** tokenizer to the toke side and cl100k to the Python/Java side — it measures tokenizer training bias, not the language | The §2.3 density ratios above (1.30×/1.34×), stated as toke costing *more* |
+| "*N* toke BPE tokens vs *M* for Python on cl100k" (fibonacci 14 vs 27, 24 vs 41, …) | Same two-tokenizer error in per-example form | `docs/about/samples-v04.md`, which reports every lane side by side |
+| "52% average token reduction vs cl100k" with no metric type / tokenizer / N | Reads as "52% fewer than Python", which is false by a factor of ~2 | The long or short form above, verbatim |
+
+**Provenance check on the 52% itself (2026-09-19, story 132.6).** The number could not be
+traced to a primary artefact in any repo. The only published N = 42 dataset behind the
+headline is `docs/reference/token-comparison.md`, and re-aggregating it gives **61.6%**
+(sum-ratio) / **62.6%** (per-task mean) / 63.8% (median) for Toke-16K vs cl100k_base on the
+same toke text — not 52%. That table *does* reproduce the two withdrawn cross-tokenizer
+headlines exactly (Toke-16K-on-toke vs cl100k-on-Python = 31.1%; vs Go = 48.2%), which is
+how those got published. So "52%" is a v0.3-era headline with no reproducible basis **and**
+a superseded one. It may be described as a withdrawn past claim; it must not be restated as
+a measurement.
+
+The guard `scripts/check_metrics_claims.py` (`make check-metrics`, wired into `make ci`)
+fails CI on any percentage stated next to "token" without a tokenizer name and an N, and on
+any toke-trained tokenizer named alongside a non-toke baseline.
+
+---
+
 ## Correctness (compile + functional Pass@1)
 
 | Evaluation | Compile Pass@1 | Functional | Set / model | Source |

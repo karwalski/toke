@@ -13,7 +13,7 @@ A reverse-chronological record of major project milestones.
 - **(2026-04-15)** **Documentation consolidation**: All documentation merged into `~/tk/docs/` as single source of truth. Research and planning documents moved to `~/tk/research/`.
 - **(2026-04-12)** **Corpus overhaul complete**: 188,830 deduplicated records, 18,890 train + 994 eval rows in chat format with quality gates. Phase 1 data archived.
 - **(2026-04-05)** **Syntax frozen** at `v0.2-syntax-lock`. 55-char profile is the default ("toke"). 80-char profile available under `--legacy`.
-- **(2026-04-03)** **Gate 1 PASS**: 12.5% token reduction vs. Python/Go/Rust equivalents; 63.7% Pass@1 (Qwen 2.5 Coder 7B + LoRA, 1,000 held-out tasks). Both thresholds exceeded (spec requires >= 10% reduction, >= 60% Pass@1).
+- **(2026-04-03)** **Gate 1 PASS**: 12.5% token reduction (8K purpose-built BPE vs cl100k_base on the **same toke source** -- mean 172.9 vs 197.6 tokens/program over 46,754 validated toke programs; a tokenizer-lane figure, not a comparison with Python, and superseded on v0.4 text -- `docs/metrics-baseline.md`); 63.7% Pass@1 (Qwen 2.5 Coder 7B + LoRA, 1,000 held-out tasks). *(The original entry read "vs. Python/Go/Rust equivalents" -- corrected 2026-09-19, story 132.6: the figure never compared toke with another language.)* Both thresholds exceeded (spec requires >= 10% reduction, >= 60% Pass@1).
 
 ## Q1 2026
 

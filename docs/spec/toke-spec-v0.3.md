@@ -354,7 +354,7 @@ The purpose-built toke BPE tokenizer is trained on the default-syntax corpus and
 
 **Common compound patterns:** `io.println(`, `main():i64{`, `.len`, `.get(`
 
-The Phase 1 tokenizer (8K vocab, trained on legacy corpus) achieved 12.5% token reduction vs cl100k_base. The v0.3 purpose-built BPE tokenizer (16K vocab, trained on 25,953 normalised programs) achieves 52% average token reduction vs cl100k_base across 42 benchmarks. For example, a recursive fibonacci program uses 14 toke BPE tokens vs 27 for Python on cl100k. Patterns like `m=`, `f=main():i64{`, and `i=j:std.json` merge into single tokens. See Section 24.7 for the full normative vocabulary specification.
+The Phase 1 tokenizer (8K vocab, trained on legacy corpus) measured 12.5% token reduction vs cl100k_base. The v0.3 purpose-built BPE tokenizer (16K vocab, trained on 25,953 normalised programs) encoded toke source in 52% fewer tokens than cl100k_base encoded **the same toke source** -- a tokenizer-vs-tokenizer comparison, N = 42 benchmark programs, v0.3 text. **Both figures are superseded and neither is a comparison with Python:** on canonical v0.4 `--min` text the shipped 8K tokenizer needs 15.4% *more* tokens than cl100k_base (N = 2,000) and the v0.3 file's margin is inflated by a lossy `unk_token` that drops backslashes (`docs/metrics-baseline.md`). Patterns like `m=`, `f=main():i64{`, and `i=j:std.json` merge into single tokens. See Section 24.7 for the full normative vocabulary specification.
 
 ---
 
@@ -2976,9 +2976,11 @@ The authoritative tokenizer artifact is published at:
 
 #### 24.7.5 Measured Performance
 
-The v0.3 tokenizer achieves approximately 52% fewer tokens than OpenAI's cl100k_base tokenizer when encoding toke source code, measured across 42 benchmark programs. For comparison, the Phase 1 tokenizer (8K vocab, legacy corpus) achieved 12.5% reduction.
+The v0.3 tokenizer encodes toke source in approximately 52% fewer tokens than OpenAI's cl100k_base encodes **the same toke source** -- one text, two tokenizers (TEMSpec §2.2 compression-ratio form), N = 42 v0.3 benchmark programs. For comparison, the Phase 1 tokenizer (8K vocab, legacy corpus) measured 12.5%.
 
-Example: a recursive Fibonacci implementation uses 14 toke BPE tokens vs 27 tokens for equivalent Python under cl100k_base.
+**Superseded (2026-09-18, story 131.20).** On canonical v0.4 `--min` text (N = 2,000 stratified corpus records) every shipped toke tokenizer is worse than cl100k_base -- the 8K SentencePiece needs 15.4% more tokens -- and `tokenizer_v03.json` only appears to win because its null `unk_token` silently drops every backslash. Treat the 52% as a v0.3 historical record, not a current property. The v0.4 retrain is story 116.9; see `docs/metrics-baseline.md`.
+
+The per-example comparison previously printed here ("14 toke BPE tokens vs 27 tokens for equivalent Python under cl100k_base") is **withdrawn**: it counted the toke side with a toke-trained tokenizer and the Python side with cl100k_base, which measures the tokenizer's training bias rather than the two languages. Under one shared tokenizer toke costs *more* than Python (cl100k_base, 60 Gate-1 tasks: 1.34x [1.22, 1.48], N = 60). All lanes side by side: `docs/about/samples-v04.md`.
 
 #### 24.7.6 Use Cases
 

@@ -11,7 +11,7 @@
 
 toke is a compiled programming language designed as a code generation target for large language models (LLMs). It uses a 55-character alphabet, 13 keywords, and a strict LL(1) grammar to produce programs that are shorter, cheaper, and more likely to compile correctly on the first pass than equivalent programs in Python, C, or Java.
 
-The toke project has completed its first validation gate. At Gate 1, the language demonstrated 12.5% token reduction versus GPT-4's cl100k_base tokenizer and 63.7% first-pass compilation accuracy on 1,000 held-out tasks using a fine-tuned 7B model. These results exceeded the pre-registered go/no-go thresholds.
+The toke project has completed its first validation gate. At Gate 1, the language demonstrated 12.5% token reduction (8K purpose-built BPE vs cl100k_base on the **same toke source** -- mean 172.9 vs 197.6 tokens/program over 46,754 validated toke programs; a tokenizer-lane figure, not a comparison with Python, and superseded on v0.4 text -- `docs/metrics-baseline.md`) and 63.7% first-pass compilation accuracy on 1,000 held-out tasks using a fine-tuned 7B model. These results exceeded the pre-registered go/no-go thresholds.
 
 This document proposes the formation of a **toke Language Consortium** to govern the language specification, steward its evolution toward version 1.0, establish a conformance certification program, and coordinate enterprise adoption. The consortium provides a neutral home for the specification and tooling, ensures no single organisation controls the language's future, and gives adopters confidence that their investment in toke integration is protected by transparent governance and compatibility guarantees.
 
@@ -31,7 +31,7 @@ Current target languages (Python, TypeScript, Go, Java) were designed for human 
 
 toke eliminates this overhead at the language level:
 
-- **52% average token reduction** vs cl100k_base across 42 benchmarks with the purpose-built BPE tokenizer (16K vocab, trained on 25,953 programs).
+- **Token efficiency is a measured, open question, not a settled claim.** Under one shared tokenizer (cl100k_base) toke currently costs **1.34x [1.22, 1.48]** the tokens of equivalent Python over the 60 Gate-1 tasks (N = 60, 2026-09-19) -- more, not fewer; and no shipped toke tokenizer yet beats cl100k_base on canonical v0.4 text (the 8K SentencePiece needs 15.4% more tokens, N = 2,000). The v0.3-era "52% reduction" was a tokenizer-vs-tokenizer figure on identical toke text (Toke-16K v0.3 vs cl100k_base, N = 42) and is superseded. A consortium-funded v0.4 tokenizer retrain (116.9) is precisely what would settle it. See `docs/metrics-baseline.md`.
 - **63.7% first-pass compilation accuracy** (Pass@1) measured at Gate 1 -- reducing the costly generate-compile-repair loop.
 - **Structured JSON diagnostics** with stable error codes enable mechanical repair without parsing English prose.
 - **No comment syntax** -- documentation lives outside source files, so token cost is fixed regardless of coding standards.
@@ -89,7 +89,7 @@ The consortium maintains and expands the validated training corpus:
 - Currently 46,754 validated programs generated across 4 stages with differential testing against 3 models.
 - Compiler-in-the-loop validation ensures every program in the corpus compiles and produces correct output.
 - Shared corpus enables member organisations to fine-tune their own models without duplicating the expensive generation and validation pipeline.
-- Purpose-built BPE tokenizer (16K vocabulary, trained on 25,953 programs, 52% average token reduction vs cl100k_base) shared across members.
+- Purpose-built BPE tokenizer shared across members (v0.3: 16K vocabulary, 25,953 programs; the v0.4 retrain under 116.9 is unfunded and is the work that would establish whether a toke-native tokenizer beats cl100k_base -- today none does, see `docs/metrics-baseline.md`).
 
 ### 3.6 Enterprise Support Tiers
 
@@ -159,7 +159,7 @@ A C99 compiler with an LLVM backend producing native binaries for x86-64 and ARM
 
 ### 5.5 Purpose-Built Tokenizer
 
-BPE tokenizer trained on the toke corpus. Phase 2 purpose-built tokenizer: 16K vocabulary, trained on 25,953 programs, 52% average token reduction vs cl100k_base across 42 benchmarks. Phase 1 tokenizer (8K vocab) achieved 70.2% utilisation, fertility 0.374 at Gate 1.
+BPE tokenizer trained on the toke corpus. Phase 2 purpose-built tokenizer: 16K vocabulary, trained on 25,953 v0.3-syntax programs; measured at 52% fewer tokens than cl100k_base **on the same toke source** (a tokenizer-vs-tokenizer comparison, N = 42 benchmark programs, 2026-05-22) -- superseded, since on canonical v0.4 `--min` text every shipped toke tokenizer is worse than cl100k_base (8K SentencePiece: 15.4% more tokens, N = 2,000) and the v0.3 file's apparent margin is inflated by a lossy `unk_token`. Phase 1 tokenizer (8K vocab) achieved 70.2% utilisation, fertility 0.374 at Gate 1. See `docs/metrics-baseline.md`.
 
 ### 5.6 MCP Server for IDE Integration
 
@@ -264,7 +264,7 @@ This proposal is aspirational but grounded. Transparency about where the project
 - A working compiler that passes 600+ conformance tests at 100%.
 - A formal specification at v0.2 (draft) covering 30 sections.
 - A validated training corpus of 46,754 programs.
-- Gate 1 results (12.5% token reduction, 63.7% Pass@1) that exceeded pre-registered thresholds.
+- Gate 1 results (token reduction 12.5% -- 8K toke BPE vs cl100k_base on the same toke source, N = 46,754 programs, superseded; Pass@1 63.7%) that exceeded pre-registered thresholds.
 - Published governance, contribution, security, and licensing documents.
 - 38 standard library modules with C runtime implementations.
 - An MCP server, tree-sitter grammar, web playground, and evaluation harness.

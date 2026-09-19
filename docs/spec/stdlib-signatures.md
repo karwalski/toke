@@ -32,7 +32,7 @@ Changes here require coordinated updates to the stdlib and toke-eval/benchmark.
 
 ## Serialization Strategy
 
-toke uses a **TOON-first serialization strategy**: TOON for tabular data (30-60% fewer tokens than JSON), YAML and JSON as secondary formats. String externalisation for internationalisation via `std.i18n`. See [ADR-0003](../docs/architecture/ADR-0003.md).
+toke uses a **TOON-first serialization strategy**: TOON for tabular data, YAML and JSON as secondary formats. The TOON project reports 30-60% fewer tokens than equivalent JSON for uniform arrays (their published benchmark; not reproduced here). String externalisation for internationalisation via `std.i18n`. See [ADR-0003](../docs/architecture/ADR-0003.md).
 
 ## Function Signatures
 

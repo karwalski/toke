@@ -192,8 +192,8 @@ Do not worry about getting the syntax perfectly right yet -- the next lesson cov
 - LLMs pay per token. Verbose languages waste tokens on syntax, not logic.
 - toke source is comment-free by design. There are no comments in `.tk` files -- documentation for human readers lives in companion files (`.tkc`). Other languages double in token cost when documentation is added; toke's cost is fixed.
 - On cl100k_base, toke matches C and beats Java for complete programs. Python is cheaper on cl100k because the tokenizer was trained on Python.
-- The Phase 2 purpose-built BPE tokenizer (16K vocab, trained on 25,953 programs) merges toke-specific patterns into single tokens, achieving 52% average token reduction vs cl100k_base across 42 benchmarks.
-- Gate 1 benchmark: 12.5% token reduction and 63.7% Pass@1 across 1,000 held-out tasks.
+- A purpose-built BPE tokenizer merges toke-specific patterns into single tokens. Measured: the v0.3 Toke-16K encoded toke source in 52% fewer tokens than cl100k_base encoded the *same toke source* (N = 42 benchmark programs) -- a tokenizer-vs-tokenizer figure, not a comparison with Python, and superseded, because on canonical v0.4 text the shipped 8K tokenizer needs 15.4% more tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.
+- Gate 1 benchmark: token reduction 12.5% (8K toke BPE vs cl100k_base on the same toke source, N = 46,754 programs -- superseded, see `docs/metrics-baseline.md`) and 63.7% Pass@1 across 1,000 held-out tasks.
 - toke is a compilation target for LLM workflows, not a general-purpose replacement.
 - Fewer tokens means lower cost, faster generation, and fewer errors.
 - The language has 14 keywords, 55 characters, and one canonical form for every construct.

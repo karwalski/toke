@@ -9,7 +9,7 @@ A layered stack of tools, frameworks, and runtimes -- each named with the `*oke`
 
 ## toke — language
 
-The core programming language. Compiles to native code via LLVM. 55-character alphabet, 13 keywords, LL(1) grammar. Purpose-built 16K BPE tokenizer achieves 52% token reduction vs cl100k_base. Gate 2 PASS: 100% compilation Pass@1 on a fine-tuned 7B model.
+The core programming language. Compiles to native code via LLVM. 55-character alphabet, 13 keywords, LL(1) grammar. Token efficiency is measured, not assumed: under cl100k_base toke costs 1.34x the tokens of equivalent Python on the 60 Gate-1 tasks (N = 60) and no shipped toke tokenizer yet beats cl100k_base on v0.4 text (N = 2,000) -- see `docs/metrics-baseline.md`. Gate 2 PASS: 100% compilation Pass@1 on a fine-tuned 7B model (curated set, v0.3 model).
 
 - [Documentation](/docs)
 - [GitHub](https://github.com/karwalski/toke)
