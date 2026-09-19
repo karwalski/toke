@@ -30,7 +30,7 @@ The grammar defines `source.toke` as the TextMate scope and `.tk` as the file ty
 ## Repositories using toke
 
 - https://github.com/karwalski/toke -- main language repository (compiler, spec, stdlib, docs)
-- https://github.com/karwalski/toke-ooke -- companion AI training corpus in toke
+- https://github.com/karwalski/ooke -- companion AI training corpus in toke
 - https://github.com/karwalski/loke -- toke standard library and runtime
 
 ## Extension conflicts

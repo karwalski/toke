@@ -168,7 +168,7 @@ Model Context Protocol (MCP) server providing toke language support to IDE exten
 ### 5.7 Additional Tooling
 
 - **Tree-sitter grammar** for editor syntax highlighting.
-- **WebAssembly playground** ([toke-ooke](https://github.com/karwalski/toke-ooke)) for interactive experimentation.
+- **WebAssembly playground** ([ooke](https://github.com/karwalski/ooke)) for interactive experimentation.
 - **Evaluation harness** ([toke-eval](https://github.com/karwalski/toke-eval)) for benchmarking model performance on toke generation tasks.
 
 ---

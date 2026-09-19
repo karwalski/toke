@@ -20,7 +20,7 @@ The core programming language. Compiles to native code via LLVM. 59-character al
 Static site generator and web framework built in toke. File-system routing, flat-file content store, template engine with Markdown, build and serve modes. Zero dependencies. Ships as a single binary. Serves [tokelang.dev](https://tokelang.dev) in production.
 
 - [Project page](/ooke)
-- [GitHub](https://github.com/karwalski/toke-ooke)
+- [GitHub](https://github.com/karwalski/ooke)
 
 ## loke — intelligence layer
 
