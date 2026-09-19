@@ -169,7 +169,23 @@ NEAR_MISS = 0.55        # similarity above which an absent block is "drifted"
 
 # ---------------------------------------------------------------- Rule 2 ----
 DEFAULT_TARGETS = ["docs", "README.md", "PROJECT_STATUS.md", "AGENTS.md"]
-SCAN_EXT = (".md", ".txt", ".tkt", ".html", ".json", ".ebnf", ".gbnf")
+SCAN_EXT = (".md", ".txt", ".tkt", ".html", ".json", ".ebnf", ".gbnf",
+            # story 132.15: the sibling repos publish facts from code too — MCP tool
+            # descriptions (`toke-mcp/tools/*.js`), generator system prompts
+            # (`toke-corpus/scripts/*.py`) and console page copy (`*.php`).
+            ".py", ".js", ".php")
+
+# Story 132.15: the guard also runs across the sibling repos, by passing their
+# paths (absolute, or relative to this repo: `../toke-spec`). Claim surfaces are
+# prose and metadata, so the walk prunes dependency trees and generated data —
+# `../toke-corpus` alone holds 493,593 corpus JSON records.
+EXCLUDE_DIRS = {
+    ".git", ".hg", ".svn", "node_modules", "__pycache__", "site-packages",
+    ".venv", "venv", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".cache", ".next", "dist", "build", "target", "vendor", "coverage",
+    "corpus", "clean", "data", "store", "logs", "results", "output", "outputs",
+    "checkpoints", "training-data",
+}
 
 # Files owned by another story: warn, never fail, until that story lands and the
 # entry is deleted. Keep this list SHORT and always keyed to a story number.
@@ -181,8 +197,9 @@ PENDING_PREFIXES = (
     ("docs/whitepaper/", "132.8 — whitepaper v2 + RFC alignment"),
     ("spec/rfc/", "132.8 — whitepaper v2 + RFC alignment"),
     ("../toke-website/", "132.9 / 132.2 — website roadmap + home page"),
-    ("../toke-spec/", "132.8 — RFC alignment; the other toke-spec documents are "
-                      "historical archives of v0.2/v0.3"),
+    # 132.15 swept the rest of toke-spec: the v0.2/v0.3 documents now carry dated
+    # archive banners and the live ones were corrected, so only the RFC is still pending.
+    ("../toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec RFC draft is v0.3-era)"),
 )
 
 # Not live claim surfaces: the tracker, historical backlogs, third-party reviews
@@ -199,6 +216,9 @@ SKIP_PREFIXES = (
     "docs/about/canonical.json",      # the rule table names the forbidden strings
     "docs/about/canonical.md",        # ditto, with its correction note
 )
+
+ARCHIVE_BANNER = re.compile(r"\*\*Archived\s+20\d\d-\d\d-\d\d", re.I)
+ARCHIVE_HEAD = 40
 
 STALE = [
     (re.compile(r"\bLL\(1\)"), "LL(1)",
@@ -356,6 +376,13 @@ def check_stale(path, rel):
     """Rule 2 — the two retired facts, unless the line marks them as retired."""
     findings = []
     lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+    # Story 132.15: a document that opens with `**Archived YYYY-MM-DD ...**` declares
+    # itself a dated record rather than a live claim surface, the way
+    # `docs/spec/toke-spec-v0.3.md` does. The banner has to name the correction — the
+    # sibling-repo banners written by 132.15 all do — and it lives in the document,
+    # where a reader sees it.
+    if ARCHIVE_BANNER.search("\n".join(lines[:ARCHIVE_HEAD])):
+        return findings
     for i, line in enumerate(lines):
         near = "\n".join(lines[max(0, i - CORRECTION_LINES):i + CORRECTION_LINES + 1])
         near = near.replace("*", "").replace("_", "")   # markdown emphasis is not content
@@ -377,7 +404,7 @@ def scan_files(targets):
             out.append(p)
         elif os.path.isdir(p):
             for dirpath, dirs, files in os.walk(p):
-                dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "__pycache__")]
+                dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
                 for f in sorted(files):
                     if f.endswith(SCAN_EXT):
                         out.append(os.path.join(dirpath, f))

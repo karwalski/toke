@@ -64,7 +64,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all clean lint conform conform-sh conform-check build-all ci check-docs check-patterns render-patterns check-error-codes check-metrics check-canonical diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all clean lint conform conform-sh conform-check build-all ci check-docs check-patterns render-patterns check-error-codes check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -167,7 +167,7 @@ stress: $(BIN)
 check-tki:
 	python3 scripts/check_tki_coverage.py
 
-ci: lint conform conform-sh conform-check check-tki check-docs check-error-codes check-patterns check-facts check-metrics check-canonical
+ci: lint conform conform-sh conform-check check-tki check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -203,6 +203,28 @@ check-metrics:
 # story number instead of failing; `--strict` fails on those too.
 check-canonical:
 	python3 scripts/check_canonical.py
+
+# 132.15 — the same two gates, run across the sibling repos. Both guards scoped to
+# this repo plus toke-tokenizer until 132.15, so nothing else was ever swept:
+# toke-spec published "12.5% reduction vs Python (cl100k)", the toke-mcp server served
+# models a 56-character alphabet and 12 keywords, a Hugging Face Space synthesised a
+# Python token count by dividing by 0.875, and the console told users the toke BPE
+# count was "52% fewer". The guards take paths, so there is one copy of each rule here
+# rather than a fork per repo; a repo that is not checked out is skipped. Rule 4
+# (counts of things, story 132.14) travels with check_metrics_claims.py — but
+# check-facts stays local, because it derives the counts from THIS tree.
+# toke-website warns rather than fails (owned by 132.2/132.9/132.16), as does the
+# toke-spec RFC draft (132.8).
+SIBLING_REPOS := ../toke-spec ../toke-corpus ../toke-model ../toke-eval ../toke-mcp \
+                 ../toke-console ../toke-ooke ../toke-test-programs ../toke-tokenizer \
+                 ../toke-website ../homebrew-toke
+check-claims-all:
+	@repos=""; for r in $(SIBLING_REPOS); do \
+	  if [ -d "$$r" ]; then repos="$$repos $$r"; else echo "skip (not checked out): $$r"; fi; \
+	done; \
+	echo "checking claims across:$$repos"; \
+	python3 scripts/check_metrics_claims.py $$repos --list && \
+	python3 scripts/check_canonical.py $$repos --list
 
 # 132.14 — project-facts gate. Every countable project-scale number (character
 # set, keywords, EBNF productions, stdlib modules, conformance cases, diagnostic

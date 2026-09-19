@@ -49,6 +49,29 @@ CONTEXT_LINES = 30
 # Default scan set: the published doc tree plus the repo's front-page files.
 DEFAULT_TARGETS = ["docs", "README.md", "PROJECT_STATUS.md"]
 
+# Story 132.15: the guard is run across the sibling repos too, by passing their
+# paths (absolute, or relative to this repo: `../toke-spec`). Claim surfaces are
+# prose and metadata, so the walk prunes dependency trees and generated data —
+# without this, `../toke-corpus` alone is 493,593 corpus JSON records and
+# `../toke-mcp/node_modules` reports a third party's "415 error code".
+EXCLUDE_DIRS = {
+    ".git", ".hg", ".svn", "node_modules", "__pycache__", "site-packages",
+    ".venv", "venv", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".cache", ".next", "dist", "build", "target", "vendor", "coverage",
+    # generated data, not claims: corpus shards, run outputs, checkpoints
+    "corpus", "clean", "data", "store", "logs", "results", "output", "outputs",
+    "checkpoints", "training-data",
+}
+
+# Prose and metadata surfaces. `.json` catches package metadata and tool
+# descriptions (`toke-mcp/package.json`, plugin manifests); the code extensions catch
+# the places 132.15 actually found withdrawn claims still shipping — MCP tool
+# descriptions (`toke-mcp/tools/*.js`), generator system prompts
+# (`toke-corpus/scripts/*.py`), a Hugging Face Space that synthesised toke token counts
+# from Python's by multiplying by 0.875, and console page copy (`*.php`).
+SCAN_EXT = (".md", ".txt", ".tkt", ".html", ".json", ".py", ".js", ".php",
+            ".yaml", ".yml", ".toml")
+
 # Files owned by another story: reported as warnings, never fail the build,
 # until that story lands and the entry is deleted. Keep this list SHORT and
 # always keyed to a story number.
@@ -56,6 +79,21 @@ PENDING = {
     "docs/whitepaper/toke-research-language.md": "132.8 — whitepaper v2 + RFC alignment",
     "docs/about/positioning-2026-09.md": "132.7 — repositioning brief (in flight)",
 }
+
+# Same idea, by prefix — used for the sibling repos swept by story 132.15.
+PENDING_PREFIXES = (
+    ("../toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec draft is v0.3-era)"),
+    ("../toke-website/", "132.2 / 132.9 / 132.16 — website copy"),
+)
+
+
+def pending_owner(rel):
+    if rel in PENDING:
+        return PENDING[rel]
+    for prefix, story in PENDING_PREFIXES:
+        if rel.startswith(prefix):
+            return story
+    return None
 
 # Not public claim surfaces: internal trackers, third-party review records that
 # quote someone else's numbers verbatim, and the measurement records that define
@@ -68,6 +106,7 @@ SKIP_PREFIXES = (
     "docs/metrics-baseline.md",      # the source of truth; it defines the wording
     "docs/about/samples-v04.md",     # the per-lane dataset, with its own do-not rules
     "docs/reference/token-comparison.md",  # v0.3 dataset, requalified in place by 132.6
+    "docs/about/canonical.json",     # the rule table names the forbidden strings
 )
 
 PCT = re.compile(r"(?<![\w.])\d{1,3}(?:\.\d+)?\s?%")
@@ -107,7 +146,9 @@ N_FIELD = re.compile(
 # Rule 2: tokenizers trained on toke text — valid on the toke side only.
 TOKE_TRAINED = re.compile(
     r"\b(toke-?16k|toke-?bpe|tokenizer_v03|proxy8k|toke's own (BPE|tokenizer)|"
-    r"toke BPE|purpose-built (16K )?(BPE|tokenizer)|toke tokenizer)\b", re.I)
+    r"toke BPE|purpose-built (16K |8K )?(BPE|SentencePiece|tokenizer)|toke tokenizer|"
+    # 132.15: TEMSpec v1.0 §6.2 wrote it as "the toke-specific BPE tokenizer"
+    r"toke-specific (BPE )?tokenizer|custom SentencePiece)\b", re.I)
 BASELINE_LANG = r"(Python|Java|JavaScript|TypeScript|Go|Rust|C\+\+|C#)"
 # the crossing is only a crossing when the two are actually compared
 CROSS_COMPARE = re.compile(
@@ -127,6 +168,16 @@ WITHDRAWN = [
     (re.compile(r"\b42\s?%\s*(token\s*)?(reduction|fewer)"), "the \"42% reduction vs Python\" claim"),
     (re.compile(r"\b31\s?%\s*(fewer|token)"), "the \"31% fewer tokens than Python\" claim"),
     (re.compile(r"\b48\s?%\s*(fewer|token)"), "the \"48% fewer tokens than Go\" claim"),
+    # 132.15: the Gate-2 review package published "63.0% fewer tokens than Python",
+    # "73.5% vs Java", "84.9% vs C" and a "73.8% mean reduction" — all with a tokenizer
+    # and an N attached, so rules 1 and 2 passed them. The direction is what is wrong:
+    # under one shared tokenizer toke costs 1.34x [1.22, 1.48] the tokens of equivalent
+    # Python (N = 60). No "toke needs fewer tokens than <baseline language>" claim is
+    # supportable at any percentage.
+    (re.compile(r"\b\d{1,3}(\.\d+)?\s?%\s*(fewer|less)\s+tokens?\s+than\s+"
+                r"(equivalent\s+|the\s+|a\s+)*" + BASELINE_LANG, re.I),
+     "a \"N% fewer tokens than <baseline language>\" claim — the measured direction is "
+     "the opposite (toke costs 1.34x the cl100k_base tokens of equivalent Python, N = 60)"),
 ]
 # a third party's own published figure is theirs to state; Rule 3 polices *our*
 # withdrawn headlines, so an attributed number is exempt from it (Rules 1 and 2
@@ -197,8 +248,30 @@ def _accepted(facts):
     }
 
 
+# "Phase 2 keywords", "Gate 1 stories", "Tier 0 modules" are labels, not counts
+# (story 132.15 — `toke-corpus/scripts/phase2_syntax_audit.py` read as "2 keywords").
+NOT_LABEL = (r"(?<!Phase )(?<!phase )(?<!Profile )(?<!profile )(?<!Tier )(?<!tier )"
+             r"(?<!Gate )(?<!gate )(?<!Epic )(?<!epic )(?<!Wave )(?<!wave )")
+
+# A count scoped to a subset is not a claim about the project's total: "ooke depends on
+# 11 stdlib modules", "completed 15 of 20 stories" (story 132.15).
+SUBSET_PREFIX = re.compile(
+    r"\b(depends? on|depend on|uses|using|imports?|requires?|only|just|of|out of|"
+    r"remaining|missing|adds?|added|covers?|needs?|touch(es|ed)?)\s+(the\s+)?[*_`\s]*$", re.I)
+
+# `epics`/`stories` are common words; only police them where the sentence is actually
+# talking about this project's tracker.
+TRACKER_CUE = re.compile(
+    r"\b(progress\.md|backlog|tracker|roadmap|this project|the project|toke|epics and "
+    r"stories|delivered|shipped|closed)\b", re.I)
+
 COUNT_RULES = [
-    (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:reserved\s+)?keywords?\b", re.I),
+    (re.compile(r"(?<![\w.])" + NOT_LABEL + r"(?P<n>\d[\d,]*)\s*\+?\s*(?:reserved\s+)?keywords?\b", re.I),
+     "keywords", "keywords"),
+    # 132.14 found "keywords (13)" slipping past the rule above because the number
+    # follows the noun; 132.15 found the same shape in a live generation prompt
+    # (`toke-test-programs/infra/worker-generate.py`: "KEYWORDS (13)").
+    (re.compile(r"\bkeywords?\s*\(\s*(?P<n>\d[\d,]*)\s*\)", re.I),
      "keywords", "keywords"),
     (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:EBNF\s+|grammar\s+)?productions?\b", re.I),
      "EBNF productions", "productions"),
@@ -210,8 +283,8 @@ COUNT_RULES = [
      "conformance tests", "conformance"),
     (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:distinct\s+)?(?:diagnostic|error)\s+codes?\b", re.I),
      "diagnostic codes", "diagnostic_codes"),
-    (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*epics\b", re.I), "epics", "epics"),
-    (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*stories\b", re.I), "stories", "stories"),
+    (re.compile(r"(?<![\w.])" + NOT_LABEL + r"(?P<n>\d[\d,]*)\s*\+?\s*epics\b", re.I), "epics", "epics"),
+    (re.compile(r"(?<![\w.])" + NOT_LABEL + r"(?P<n>\d[\d,]*)\s*\+?\s*stories\b", re.I), "stories", "stories"),
     (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:corpus\s+records?|validated\s+(?:training\s+)?programs?|audited\s+records?)\b", re.I),
      "corpus records", "corpus_records"),
     (re.compile(r"(?<![\w.])(?<!Phase )(?<!Profile )(?<!phase )(?<!profile )"
@@ -239,6 +312,15 @@ FUTURE_TARGET = re.compile(
 
 # A dated exemption marks a number as a deliberate historical snapshot.
 FACTS_EXEMPT = re.compile(r"facts-exempt:\s*20\d\d-\d\d-\d\d", re.I)
+# ...as does a whole-file archive banner (story 132.15). A document that opens with
+# `**Archived YYYY-MM-DD ...**` in its first ARCHIVE_HEAD lines declares itself a dated
+# record of what was true then — the sibling repos are full of them (toke-spec is an
+# archive by charter). The banner must say so in the document, where a reader sees it;
+# a skip list in a script in another repo would not. It exempts counts and withdrawn
+# headlines, NOT rule 1 or rule 2: a live token-efficiency claim stays a live claim,
+# and a lane crossing is a methodology error at any date.
+ARCHIVE_BANNER = re.compile(r"\*\*Archived\s+20\d\d-\d\d-\d\d", re.I)
+ARCHIVE_HEAD = 40
 # ...as does an explicit era label next to the number.
 DATED_SNAPSHOT = re.compile(
     r"\b(v0\.[123][- ]era|as of \d|snapshot|superseded|withdrawn|historical|"
@@ -284,6 +366,11 @@ def count_findings(line, near):
                     and not MEASURED.search(line):
                 continue
             if OTHER_LANG.search(line[:m.start()]):
+                continue
+            if SUBSET_PREFIX.search(line[max(0, m.start() - 30):m.start()]):
+                continue
+            if key in ("epics", "stories") and not TRACKER_CUE.search(line) \
+                    and not TRACKER_CUE.search(near):
                 continue
             out.append((
                 "%s: %d does not match the fact sheet (%s)" % (
@@ -335,18 +422,28 @@ def md_files(targets):
         if os.path.isfile(p):
             out.append(p)
         else:
-            for dirpath, _dirs, files in os.walk(p):
+            for dirpath, dirs, files in os.walk(p):
+                dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
                 for f in sorted(files):
-                    if f.endswith(".md"):
+                    if f.endswith(SCAN_EXT):
                         out.append(os.path.join(dirpath, f))
     return sorted(set(out))
+
+
+def is_archived(lines):
+    """True when the document opens with a dated archive banner (story 132.15)."""
+    return bool(ARCHIVE_BANNER.search("\n".join(lines[:ARCHIVE_HEAD])))
 
 
 def check_file(path):
     rel = os.path.relpath(path, ROOT)
     if rel.startswith(SKIP_PREFIXES):
         return []
-    lines = open(path, encoding="utf-8").read().splitlines()
+    try:
+        lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+    except OSError:
+        return []
+    archived = is_archived(lines)
     findings = []
     for i, line in enumerate(lines):
         ctx_start = max(0, i - CONTEXT_LINES)
@@ -365,7 +462,7 @@ def check_file(path):
                 if missing:
                     findings.append((i + 1, "missing " + " and ".join(missing), s))
             # Rule 3 — a withdrawn headline restated without its supersession
-            if TOKE_SUBJECT.search(s) and TOKEN_WORD.search(s):
+            if TOKE_SUBJECT.search(s) and TOKEN_WORD.search(s) and not archived:
                 for pat, label in WITHDRAWN:
                     if ATTRIBUTED.search(s):
                         break
@@ -382,7 +479,7 @@ def check_file(path):
                      "lane crossing: a toke-trained tokenizer compared against a "
                      "non-toke baseline", s))
         # Rule 4 — a count of things that disagrees with the tree
-        if not rel.startswith(FACTS_SKIP):
+        if not archived and not rel.startswith(FACTS_SKIP):
             for why, frag in count_findings(line, near):
                 findings.append((i + 1, why, frag))
     return findings
@@ -400,8 +497,9 @@ def main():
             continue
         scanned += 1
         for lineno, why, sent in check_file(path):
-            item = (rel, lineno, why, sent)
-            if rel in PENDING and not strict:
+            owner = pending_owner(rel)
+            item = (rel, lineno, why, sent, owner)
+            if owner and not strict:
                 warnings.append(item)
             else:
                 failures.append(item)
@@ -409,14 +507,14 @@ def main():
     if "--list" in sys.argv:
         print(f"scanned {scanned} markdown files")
 
-    for rel, lineno, why, sent in warnings:
+    for rel, lineno, why, sent, owner in warnings:
         print(f"WARN  {rel}:{lineno}: {why}\n      {sent[:200]}")
-        print(f"      (owned by story {PENDING[rel]})")
+        print(f"      (owned by story {owner})")
 
     if failures:
         print("\nERROR: token-efficiency claims without TEMSpec §6.3 qualifiers, "
               "crossing tokenizer lanes, or counts that disagree with the tree:\n")
-        for rel, lineno, why, sent in failures:
+        for rel, lineno, why, sent, _owner in failures:
             print(f"  {rel}:{lineno}: {why}")
             print(f"    {sent[:240]}")
         print("\nFix: copy the approved long or short form from "
