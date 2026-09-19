@@ -65,6 +65,9 @@ SURFACES = [
     # repo READMEs, rewritten from the canonical block by story 132.10. These are
     # repository front pages, not registry descriptions: 132.4 owns the PyPI, npm,
     # VS Code, Ollama and Hugging Face fields, which are not files in this workspace.
+    #
+    # 132.14 corrected the paragraph's character-set count (55 -> 59) at the source and
+    # 132.10 re-copied it into every README below, so these are enforced, not pending.
     {"path": "../toke-model/README.md", "blocks": ["paragraph"]},
     {"path": "../toke-eval/README.md", "blocks": ["paragraph"]},
     {"path": "../toke-mcp/README.md", "blocks": ["paragraph"]},
