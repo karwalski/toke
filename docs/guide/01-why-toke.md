@@ -66,7 +66,7 @@ Fewer output tokens means faster generation. A program that costs 77 tokens in t
 
 ### 3. Reliability
 
-Shorter programs have fewer opportunities for the model to make mistakes. toke's LL(1) grammar and structured diagnostics mean the compiler can give the LLM precise, machine-readable feedback when something goes wrong -- enabling automated repair loops.
+Shorter programs have fewer opportunities for the model to make mistakes. toke's backtrack-free grammar and structured diagnostics mean the compiler can give the LLM precise, machine-readable feedback when something goes wrong -- enabling automated repair loops.
 
 ## More comparisons
 

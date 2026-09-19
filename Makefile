@@ -64,7 +64,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all clean lint conform conform-sh conform-check build-all ci check-docs check-patterns render-patterns check-error-codes check-metrics diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all clean lint conform conform-sh conform-check build-all ci check-docs check-patterns render-patterns check-error-codes check-metrics check-canonical diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -167,7 +167,7 @@ stress: $(BIN)
 check-tki:
 	python3 scripts/check_tki_coverage.py
 
-ci: lint conform conform-sh conform-check check-tki check-docs check-error-codes check-patterns check-metrics
+ci: lint conform conform-sh conform-check check-tki check-docs check-error-codes check-patterns check-metrics check-canonical
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -193,6 +193,16 @@ render-patterns:
 # `--strict` fails on those too.
 check-metrics:
 	python3 scripts/check_metrics_claims.py
+
+# 132.1 / 132.12 — canonical facts gate. One block (docs/about/canonical.md +
+# canonical.json) is the source of truth for how toke is named, described and
+# measured; every README, llms.txt, home page and registry description copies it
+# word for word, and this fails CI when a copy has drifted. It also blocks the two
+# facts our own spec retired — "LL(1)" (toke-spec-v0.4.md §E) and "13 keywords"
+# (§A) — from coming back. Surfaces owned by an in-flight story warn with that
+# story number instead of failing; `--strict` fails on those too.
+check-canonical:
+	python3 scripts/check_canonical.py
 
 # 123.12 — drift-gate: every diagnostic code the compiler emits must be
 # documented in docs/reference/errors.md, and errors.md must not list dead codes.

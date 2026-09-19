@@ -16,7 +16,7 @@ These decisions are made and documented. They can be revisited for v1.0 but are 
 | v0.3 syntax frozen | **LOCKED** | 100% compilation proves syntax works | Community feedback for v1.0 |
 | No inline comments | **LOCKED** | Token efficiency; reasoning via `.tkc` companion files ([reasoning-channel.md](reasoning-channel.md)) | If functional Pass@1 stalls below 30% AND reasoning is identified as root cause |
 | 55-char alphabet | **LOCKED** | BPE tokenizer trained on this (v0.3 Toke-16K measured 52% fewer tokens than cl100k_base on the same toke source, N = 42 -- superseded, see `docs/metrics-baseline.md`) | v1.0 RFC only |
-| 13 keywords | **LOCKED** | Compiler, spec, training all aligned | v1.0 RFC only |
+| 14 keywords (`m i t f let if el lp br rt as mt sc mut`) | **LOCKED** | Compiler, spec, training all aligned; the earlier "13 keywords" count omitted `sc` and is retired (spec v0.4 §A) | v1.0 RFC only |
 | Purpose-built BPE | **LOCKED** | 16K vocab; the v0.3 52% figure (Toke-16K vs cl100k_base on the same toke source, N = 42) is superseded -- no shipped toke tokenizer beats cl100k_base on v0.4 text (N = 2,000) | Retrain on expanded corpus (116.9) -- and re-test the approach itself |
 | Qwen base model | **OPEN** | Gate 2 used Qwen 2.5 Coder 7B; other bases viable | If Qwen3-Coder-Next or DeepSeek outperforms |
 | GRPO/RLVR vs SFT-only | **OPEN** | Research strongly recommends GRPO for functional correctness | Adopt GRPO in next training run |

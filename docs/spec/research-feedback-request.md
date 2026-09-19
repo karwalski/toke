@@ -31,8 +31,8 @@ LLMs waste tokens on syntactic overhead that provides no semantic value. Comment
 | Property | Value | Rationale |
 |----------|-------|-----------|
 | Character set | 55 (a-z, 0-9, 19 symbols) | Eliminates tokenizer ambiguity from uppercase, underscore, most special chars |
-| Keywords | 13 (m, f, t, i, if, el, lp, br, let, mut, as, rt, mt) | Minimal control flow vocabulary |
-| Grammar | LL(1), deterministic | Every parse decision from one token of lookahead |
+| Keywords | 14 (m, i, t, f, let, if, el, lp, br, rt, as, mt, sc, mut) | Minimal control flow vocabulary |
+| Grammar | Backtrack-free, deterministic | The parser never rescans consumed input; a small, enumerated set of productions need bounded lookahead of up to 3 tokens (spec §E) |
 | Comments | None | Documentation lives in companion files (.tkc), never in source |
 | Naming | Lowercase concatenated only | No case conventions, no underscores |
 | Type system | Static, structural, with sum types | Errors are values, not exceptions |
@@ -43,7 +43,7 @@ LLMs waste tokens on syntactic overhead that provides no semantic value. Comment
 
 The full normative specification is available at:
 - **Spec:** [toke-spec-v0.3.md](toke-spec-v0.3.md) (142KB, 31 sections)
-- **Grammar:** [grammar.ebnf](grammar.ebnf) (LL(1) EBNF, 90 productions)
+- **Grammar:** [grammar.ebnf](grammar.ebnf) (EBNF, 90 productions; Appendix A gives the FIRST-sets and the enumerated bounded-lookahead exceptions)
 - **Gate 1 decision:** [gate1-decision.md](../docs/gate1-decision.md)
 - **Gate 2 decision:** [gate2-decision.md](gate2-decision.md)
 

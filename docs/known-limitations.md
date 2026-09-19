@@ -169,8 +169,9 @@ operation. It does not extend the existing array.
 ### 6. ~~`=` is equality, not assignment~~ — CHANGED (A3, 116.3)
 
 As of v0.4 (Epic 116 / A3), **`=` is assignment/binding and `==` is equality**
-(the conventional split, and strict-LL(1) — it removed the `=`-overload's
-unbounded loop-init lookahead). `let x=5`, `x=10`, `lp(let i=0;i<n;i=i+1)` use
+(the conventional split — it removed the `=`-overload's unbounded loop-init
+lookahead, the worst offender against the grammar's backtrack-free property;
+see `docs/spec/toke-spec-v0.4.md` §E). `let x=5`, `x=10`, `lp(let i=0;i<n;i=i+1)` use
 `=`; comparisons use `==` (`if(x==5)`). A bare `=` in expression position is a
 compile error (E2002, "use `==`"). Migrate old sources with
 `scripts/migrate_eq.py`.

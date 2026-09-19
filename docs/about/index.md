@@ -9,6 +9,7 @@ Background, design philosophy, and project information for the toke language.
 
 ## Overview
 
+- [Canonical facts](/docs/about/canonical/) -- the single source of truth for how toke is named, described and measured; every public surface copies it word for word
 - [Why toke?](/docs/about/why/) -- the LLM code generation problem and how toke addresses it
 - [Design Principles](/docs/about/design/) -- the core principles behind the language
 - [Competitive Differentiation](/docs/about/competitive-matrix/) -- how toke compares to other languages

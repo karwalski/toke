@@ -44,7 +44,7 @@ No offensive, trademarked, or culturally sensitive meanings were found for `oke`
 These names are actively in use or committed for development.
 
 ### toke — the language
-The core programming language. 55-character alphabet, 13 keywords, LL(1) grammar. Purpose-built 16K BPE tokenizer (v0.3): 52% fewer tokens than cl100k_base on the same toke source, N = 42 benchmark programs -- a tokenizer-vs-tokenizer figure, superseded on v0.4 text (`docs/metrics-baseline.md`). Gate 2 PASS (2026-05-22): 100% compilation Pass@1 on fine-tuned 7B model (curated set). 38 stdlib modules.
+The core programming language. 55-character alphabet, 14 keywords, backtrack-free grammar with bounded lookahead of up to 3 tokens. Purpose-built 16K BPE tokenizer (v0.3): 52% fewer tokens than cl100k_base on the same toke source, N = 42 benchmark programs -- a tokenizer-vs-tokenizer figure, superseded on v0.4 text (`docs/metrics-baseline.md`). Gate 2 PASS (2026-05-22): 100% compilation Pass@1 on fine-tuned 7B model (curated set). 38 stdlib modules.
 **Traditional stack equivalent:** Programming language and compiler (Rust, Go, TypeScript).
 
 ### ooke — static site generator and web framework

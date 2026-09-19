@@ -68,8 +68,9 @@ stdlib API surface, and idiomatic constructs. Dropout would fight this goal.
 Toke's language surface is vastly smaller than general-purpose languages:
 
 - **55 characters** (no uppercase, no underscore in default syntax)
-- **13 keywords**
-- **LL(1) grammar** — deterministic, no ambiguity
+- **14 keywords** (`m i t f let if el lp br rt as mt sc mut`)
+- **Backtrack-free grammar** — deterministic, never rescans consumed input,
+  bounded lookahead of up to 3 tokens on an enumerated set of productions
 - **No competing knowledge** — the model learns only toke, not Python/C/JS
 
 A 1B model can fully memorise the grammar and stdlib API surface. A 7B model is

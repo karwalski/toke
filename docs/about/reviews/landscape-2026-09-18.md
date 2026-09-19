@@ -1,5 +1,26 @@
 # Token-Efficiency Approaches for LLM Code Generation: A Landscape Review (September 2025 to September 2026)
 
+> **Editor's note, 2026-09-19 (story 132.12).** This review describes toke as "LL(1), 13
+> keywords" (§ "Adjacent and competing projects"). Both are wrong, and both are our fault:
+> that is what we published, and the reviewer took it from our own README, whitepaper and
+> site. The corrections are:
+>
+> - **Not LL(1).** `docs/spec/toke-spec-v0.4.md` §E retired the strict-LL(1) claim on
+>   2026-07-02 — it "was **not accurate** for the real grammar". The verified property is
+>   **backtrack-free** (the parser never rescans consumed input) with an **enumerated** set
+>   of productions requiring **bounded lookahead of up to 3 tokens**, listed with their
+>   FIRST-sets in Appendix A of `docs/spec/grammar.ebnf`.
+> - **14 keywords, not 13.** §A fixes the set at `m i t f let if el lp br rt as mt sc mut`;
+>   both `mut` and `sc` are keywords.
+>
+> Neither correction touches the review's argument: the mechanical claim it evaluates — that
+> a small grammar makes a constrained-decoding mask cheap — holds for a backtrack-free
+> grammar with bounded lookahead exactly as it held for the label. The review body below is
+> **unedited**, deliberately, because it is the record of what an external reader concluded
+> from what we published. The accurate wording is in
+> [`docs/about/canonical.md`](../canonical.md); the repositioning it prompted is in
+> [`docs/about/positioning-2026-09.md`](../positioning-2026-09.md).
+
 ## TL;DR
 - The thesis that a purpose-built language plus a purpose-built tokenizer is a worthwhile route to token efficiency is partly weakened and partly re-confirmed by a year of evidence: the tokenizer half is real but is being commoditised by superword BPE (SuperBPE, up to 33% fewer tokens with an accuracy gain) and threatened at the root by tokenizer-free architectures (H-Net, Byte Latent Transformer); the strict-compiler half is largely reproducible today with constrained decoding plus type-constrained generation on an existing language, without a new language.
 - Syntax-level savings touch only the code fraction of tokens, and that slice is shrinking relative to the two things that actually grew in the past year: input tokens (average prompt length up nearly fourfold since early 2024) and reasoning/agentic output tokens. On realistic agentic workloads a 30 to 52% cut in code tokens nets only single-digit to low-double-digit percent of total token spend, and is dominated by prompt caching, multi-token prediction and reasoning-length control.

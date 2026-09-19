@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary
 
-toke is a compiled programming language designed as a code generation target for large language models (LLMs). It uses a 55-character alphabet, 13 keywords, and a strict LL(1) grammar to produce programs that are shorter, cheaper, and more likely to compile correctly on the first pass than equivalent programs in Python, C, or Java.
+toke is a compiled programming language designed as a code generation target for large language models (LLMs). It uses a 55-character alphabet, 14 keywords, and a backtrack-free grammar with bounded lookahead of up to 3 tokens to produce programs that are shorter, cheaper, and more likely to compile correctly on the first pass than equivalent programs in Python, C, or Java.
 
 The toke project has completed its first validation gate. At Gate 1, the language demonstrated 12.5% token reduction (8K purpose-built BPE vs cl100k_base on the **same toke source** -- mean 172.9 vs 197.6 tokens/program over 46,754 validated toke programs; a tokenizer-lane figure, not a comparison with Python, and superseded on v0.4 text -- `docs/metrics-baseline.md`) and 63.7% first-pass compilation accuracy on 1,000 held-out tasks using a fine-tuned 7B model. These results exceeded the pre-registered go/no-go thresholds.
 

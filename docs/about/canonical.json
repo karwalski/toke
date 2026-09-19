@@ -1,0 +1,147 @@
+{
+  "schema": "toke-canonical-facts/1",
+  "story": "132.1",
+  "updated": "2026-09-19",
+  "companion": "docs/about/canonical.md",
+  "rules": [
+    "Every downstream surface (site, llms.txt, every repo README, registry descriptions, model cards) copies the strings in `blocks` word for word. Do not paraphrase.",
+    "No number appears without its tokenizer and its N. Numbers come from docs/metrics-baseline.md only.",
+    "The name is `toke`, lower case, always. `Token-Optimised Language` is a descriptor, never the name.",
+    "Change this file first; downstream surfaces are then re-copied and `make check-canonical` re-run."
+  ],
+  "name": {
+    "value": "toke",
+    "casing": "lower case in every heading, sentence, description, README and registry field, including sentence-initial position",
+    "descriptor": "Token-Optimised Language",
+    "descriptor_rule": "a descriptor only, never the name; never write \"Toke\" or \"TOKE\"",
+    "source": "docs/progress.md Epic 132, acceptance criterion 1"
+  },
+  "type": {
+    "value": "a compiled, statically typed, general-purpose programming language with an LLVM backend, designed as a code-generation target for large language models",
+    "not": "not a DSL, not a template language, not a serialization format, not a prompt syntax",
+    "source": "docs/about/positioning-2026-09.md §1; docs/spec/toke-spec-v0.4.md"
+  },
+  "purpose_one_sentence": {
+    "value": "toke is a compiled programming language designed for LLM code generation: small, strictly structured, and canonical, so that generated code is cheap to constrain while it is being produced, cheap for a compiler to verify once it is, and compact in whatever unit the model generates in.",
+    "verbatim": true,
+    "source": "docs/about/positioning-2026-09.md §1 (story 132.7, commit 33f72e8)"
+  },
+  "spec_version": {
+    "value": "v0.4",
+    "normative_document": "docs/spec/toke-spec-v0.4.md",
+    "machine_readable": ["docs/spec/grammar.ebnf", "docs/spec/toke.gbnf"],
+    "note": "v0.3 (docs/spec/toke-spec-v0.3.md) is historical and superseded; v0.4 is the authority for every fact on this page.",
+    "source": "docs/spec/toke-spec-v0.4.md"
+  },
+  "language_facts": {
+    "keywords": {
+      "count": 14,
+      "list": ["m", "i", "t", "f", "let", "if", "el", "lp", "br", "rt", "as", "mt", "sc", "mut"],
+      "note": "Supersedes the v0.3 \"13 keywords\" wording: both `mut` and `sc` are keywords, verified against the lexer keyword table. The logical operators are lexical, not keywords.",
+      "source": "docs/spec/toke-spec-v0.4.md §A"
+    },
+    "character_set": {
+      "count": 55,
+      "composition": "26 lowercase letters, 10 digits, 19 symbols; no uppercase, no underscores",
+      "source": "docs/spec/toke-spec-v0.4.md; docs/reference/grammar.md § Character Set"
+    },
+    "grammar": {
+      "value": "backtrack-free with bounded lookahead of up to 3 tokens",
+      "long_form": "The grammar is backtrack-free: the parser never rescans input it has already consumed. A small, enumerated set of productions (E1-E5) require bounded lookahead of up to 3 tokens, never more; an implementation that backtracks, or that requires unbounded lookahead at any production, is non-conforming.",
+      "not": "not LL(1)",
+      "retired_claim": {
+        "claim": "strict LL(1), one token of lookahead",
+        "retired_on": "2026-07-02",
+        "why": "the v0.3 claim \"was not accurate for the real grammar\"",
+        "source": "docs/spec/toke-spec-v0.4.md §E (story 116.5 / ADR-0009)"
+      },
+      "mechanical_argument": "A small backtrack-free grammar with bounded lookahead is still cheap to constrain during decoding and cheap to parse: the pushdown automaton behind a token mask stays small and the masks stay cheap. The argument never depended on the label.",
+      "source": "docs/spec/toke-spec-v0.4.md §E; docs/spec/grammar.ebnf Appendix A (FIRST-sets and the enumerated exceptions)"
+    },
+    "canonical_form": {
+      "value": "one canonical form per construct, chosen by measurement in a 46-entry pattern catalogue and reproduced by `tkc --min`",
+      "note": "46 entries across 10 families (41 provisional, 5 blocked; 11 carry a distinct hot-path form). A form becomes canonical only by being best-or-tied on tokens and runtime, and all candidate forms must print byte-identical output.",
+      "source": "docs/spec/idiom-v0.4.md; docs/spec/patterns-protocol-v0.4.md §5.1, §6; patterns/catalogue.json"
+    }
+  },
+  "compiler": {
+    "name": "tkc",
+    "version": "toke 2.8.0",
+    "value": "tkc, the reference compiler: single-pass C99, zero dependencies beyond LLVM, native binaries for x86-64 and ARM64, and structured diagnostics with stable error codes, machine-parseable spans and a fix field.",
+    "licence": "Apache-2.0",
+    "source": "src/main.c (`VERSION`, printed by `tkc --version`); docs/about/repos.md"
+  },
+  "tokenizer": {
+    "value": "No toke tokenizer currently beats a general-purpose one. The shipped 8K SentencePiece model needs 15.4% more tokens than cl100k_base on canonical v0.4 `tkc --min` text (N = 2,000 stratified corpus records, 2026-09-18); the v0.3 16,384-vocab tokenizer only appears to win (0.545x) because a null `unk_token` silently deletes every backslash. No \"purpose-built tokenizer beats cl100k\" claim is supportable until the v0.4 tokenizer is trained and locked against the Phase-3 anchor of cl100k_base = 242,427 tokens on that exact sample (story 116.9).",
+    "source": "docs/metrics-baseline.md § 2026-09-18 v0.4 tokenizer baseline (story 131.20)"
+  },
+  "benchmark": {
+    "value": "toke-eval. The 60 Gate-1 JSON-CLI tasks were re-delivered on v0.4 on 2026-09-19: 60/60 `tkc --check`, 60/60 hidden tests (120 cases each), lint 0/0, and 4,787 cl100k_base tokens of `--min` text against 3,565 for equivalent Python (N = 60).",
+    "caveat": "The programs are hand-written, not model-generated (27 ids are pure `--migrate` output, 33 were hand-repaired), so the set measures what the language can express, not what a model produces. It may not be quoted as a model result or as a reduction against Python.",
+    "source": "docs/metrics-baseline.md (2026-09 rows, story 133.4); docs/about/toke-eval-drift-decision.md"
+  },
+  "models": {
+    "value": "No v0.4-native model exists and none has been trained since April 2026. The most recent model gate is Gate 2, 2026-05-22: Qwen 2.5 Coder 7B + QLoRA on v0.3 syntax, 100% compile Pass@1 and 55.6% functional (272/489) on the curated 500-hidden + 200-eval set. The honest floor is the full-local re-audit of all 1,748 v0.3.9 corpus programs: 37.5% compile (655/1,748) and about 2.2% fully correct (38 PASS).",
+    "rule": "Never quote the 100% without the curated set it was measured on, and never present the August 2026 corpus freeze as a model gate.",
+    "source": "docs/metrics-baseline.md § Correctness; § 2026-08 (story 132.0(a))"
+  },
+  "source_code": {
+    "value": "github.com/karwalski/toke — compiler, specification and standard library, Apache-2.0. The project is six repositories under github.com/karwalski; the site is tokelang.dev, built and served by ooke.",
+    "source": "docs/about/repos.md"
+  },
+  "author": {
+    "value": "Matthew Watt (github.com/karwalski), sole maintainer.",
+    "source": "docs/about/repos.md; docs/about/contributing.md"
+  },
+  "blocks": {
+    "one_liner": {
+      "words": 19,
+      "value": "toke: a compiled language designed for LLM code generation, with a small grammar, one canonical form and compiler verification.",
+      "verbatim": true,
+      "source": "docs/about/positioning-2026-09.md §9 (story 132.7)"
+    },
+    "paragraph": {
+      "words": 82,
+      "value": "toke is a compiled programming language designed for LLM code generation. It has 14 keywords, a 55-character set, a backtrack-free grammar with bounded lookahead, and one canonical form per construct, chosen by measurement in a 46-pattern catalogue and reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding, cheap for a compiler to verify afterwards, and compact to emit. Token efficiency is one measured property of toke, always reported with its tokenizer and its baseline, not the whole claim.",
+      "verbatim": true,
+      "source": "docs/about/positioning-2026-09.md §9 (story 132.7)"
+    },
+    "token_efficiency_short_form": {
+      "value": "**Token efficiency, measured:** under one shared tokenizer (cl100k_base) toke costs **1.34× [1.22, 1.48]** the tokens of equivalent Python on the 60 Gate-1 tasks (N = 60, 2026-09-19) — more, not fewer. The v0.3-era \"52% fewer tokens\" figure was a *tokenizer-vs-tokenizer* measurement on identical toke text (Toke-16K v0.3 vs cl100k_base, N = 42) and is superseded: on canonical v0.4 text the shipped 8K tokenizer needs **15.4% more** tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.",
+      "verbatim": true,
+      "source": "docs/metrics-baseline.md § Canonical wording for token-efficiency claims, short form (story 132.6)"
+    },
+    "disambiguation": {
+      "value": "toke is a programming language. It is not the slang word for a draw on a cigarette, not the cannabis brands that use the name, not the TOKE crypto tokens, not Tokelau or its `.tk` country-code domain, and not tokelang.com, which is an unrelated third-party project. The language is at tokelang.dev and github.com/karwalski/toke.",
+      "verbatim": true,
+      "source": "docs/progress.md Epic 132, acceptance criterion 5"
+    },
+    "subprojects": {
+      "value": "ooke, loke and moke are toke sub-projects, not separate products: ooke is toke's web framework and static site generator, and it serves tokelang.dev; loke is toke's local intelligence layer; moke is loke's data-analysis demo. All three are written in toke.",
+      "verbatim": true,
+      "source": "docs/progress.md Epic 132, acceptance criterion 4; docs/about/ecosystem.md"
+    }
+  },
+  "forbidden": {
+    "LL(1)": {
+      "instead": "backtrack-free, or backtrack-free with bounded lookahead",
+      "source": "docs/spec/toke-spec-v0.4.md §E",
+      "story": "132.12"
+    },
+    "13 keywords": {
+      "instead": "14 keywords",
+      "source": "docs/spec/toke-spec-v0.4.md §A",
+      "story": "132.12"
+    },
+    "52% fewer tokens (unqualified)": {
+      "instead": "the token-efficiency short form above, verbatim",
+      "source": "docs/metrics-baseline.md",
+      "story": "132.6"
+    },
+    "42% reduction vs Python": {
+      "instead": "withdrawn outright; toke costs about 1.34x Python's cl100k_base tokens",
+      "source": "docs/metrics-baseline.md § What is withdrawn outright",
+      "story": "132.13"
+    }
+  }
+}

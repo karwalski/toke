@@ -109,7 +109,7 @@ Privacy is excluded (toke does not process personal data in the compilation pipe
 
 | Control | Status | Notes |
 |---------|--------|-------|
-| PI1.1 Input validation | LL(1) parser rejects invalid input deterministically | Hosted service needs rate limiting and input size limits |
+| PI1.1 Input validation | Backtrack-free parser rejects invalid input deterministically | Hosted service needs rate limiting and input size limits |
 | PI1.2 Processing accuracy | Conformance tests, differential testing, Gate 1 benchmark | Compiler is the root of trust |
 | PI1.3 Output completeness | Structured JSON diagnostics; deterministic output | No data loss risk in compilation |
 

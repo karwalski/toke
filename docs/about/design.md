@@ -36,9 +36,9 @@ This matters for two reasons:
 1. **Single-pass parsing.** The compiler processes source in one forward pass. No multi-pass resolution, no deferred disambiguation. Compilation is fast and predictable.
 2. **Reduced generation space.** At every syntactic position, there is exactly one valid interpretation. The set of syntactically invalid programs the model can generate is as small as the grammar allows.
 
-## 13 Keywords
+## 14 Keywords
 
-toke reserves exactly 13 identifiers as keywords. For comparison, Python has 35 and JavaScript has 64.
+toke reserves exactly 14 identifiers as keywords (`docs/spec/toke-spec-v0.4.md` §A, verified against the lexer keyword table). For comparison, Python has 35 and JavaScript has 64. The v0.3 "13 keywords" wording is retired -- both `mut` and `sc` are keywords.
 
 | Keyword | Role | Why it exists |
 |---|---|---|
@@ -55,8 +55,9 @@ toke reserves exactly 13 identifiers as keywords. For comparison, Python has 35 
 | `as` | Explicit type cast | No implicit conversions. Every cast is visible in the source. |
 | `rt` | Return (long form) | Equivalent to the `<` operator. Two characters instead of six. |
 | `mt` | Match expression | `mt expr{$variant:binding result; ...}` -- exhaustive pattern matching on sum types and error results. |
+| `sc` | Scope block (structured concurrency) | Reserved in the lexer keyword table; the construct is specified in `docs/spec/memory-model.md` and lands in v0.5. |
 
-Single lowercase characters for declarations (`m`, `f`, `t`, `i`). Two-character lowercase for control flow and match (`if`, `el`, `lp`, `br`, `mt`). Three-character lowercase for bindings (`let`, `mut`). Every keyword is as short as it can be while remaining unambiguous.
+Single lowercase characters for declarations (`m`, `f`, `t`, `i`). Two-character lowercase for control flow, match and scope (`if`, `el`, `lp`, `br`, `mt`, `sc`). Three-character lowercase for bindings (`let`, `mut`). Every keyword is as short as it can be while remaining unambiguous.
 
 ## Explicit Everything
 

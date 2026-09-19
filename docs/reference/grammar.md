@@ -330,7 +330,7 @@ let m=@("a":1;"b":2);           (* map entries: semicolons *)
 
 ## Keywords
 
-toke has 13 keywords. 4 are context-sensitive (only special when followed by `=` at the top level), 9 are reserved everywhere.
+toke has 14 keywords (`docs/spec/toke-spec-v0.4.md` §A). 4 are context-sensitive (only special when followed by `=` at the top level), 10 are reserved everywhere.
 
 ### Context keywords (declaration prefixes)
 
@@ -356,6 +356,7 @@ Inside function bodies, `m`, `f`, `t`, `i` are valid variable names.
 | `rt` | Return (long form) | `rt expr;` |
 | `as` | Type cast | `x as f64` |
 | `mt` | Match expression | `mt expr {...}` |
+| `sc` | Scope block (structured concurrency) | reserved in the lexer; specified for v0.5 |
 
 ---
 

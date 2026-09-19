@@ -99,7 +99,7 @@ When you ran `tkc hello.tk -o hello`, the compiler executed a five-stage pipelin
 
 1. **Lexing** -- The source text is converted into a flat stream of tokens. Whitespace separates tokens but has no other structural role -- indentation, line breaks, and spacing between tokens are all equivalent, and whitespace is discarded after tokenisation. The lexer identifies keywords like `m`, `f`, `i`, identifiers like `main` and `io`, literals like `"Hello, world!"` and `0`, and symbols like `=`, `:`, `{`, `<`, `;`.
 
-2. **Parsing** -- The token stream is parsed into an abstract syntax tree (AST). toke's grammar is LL(1), meaning the parser never needs more than one token of lookahead to decide what production to apply. This makes parsing fast and deterministic.
+2. **Parsing** -- The token stream is parsed into an abstract syntax tree (AST). toke's grammar is backtrack-free, meaning the parser never rescans input it has already consumed; only a small, enumerated set of productions need more than one token of lookahead to decide what production to apply, and never more than three (`docs/spec/toke-spec-v0.4.md` §E). This makes parsing fast and deterministic.
 
 3. **Type checking** -- The compiler verifies that every expression has a valid type. It checks that `main` returns `i64`, that `io.println` receives a `$str` argument, and that every code path returns a value.
 
