@@ -27,7 +27,7 @@ Privacy is excluded (toke does not process personal data in the compilation pipe
 | Security audit scope | Documented | 4 scope areas; codebase map; accepted-risk register (Story 4.6.1) |
 | Model safety eval | Implemented | LlamaGuard adversarial evaluation; 50 templates across 5 categories (Story 3.7.4) |
 | CVE process | Documented | GitHub Security Advisories; CVSS thresholds defined (docs/security/cve-process.md) |
-| Structured diagnostics | Implemented | 70+ error codes; JSON schema; no user data in errors |
+| Structured diagnostics | Implemented | 52 documented diagnostic codes (`docs/reference/errors.md`, gated by `scripts/check_error_codes.py`); JSON schema; no user data in errors |
 | DCO enforcement | Implemented | All commits signed off; CONTRIBUTING.md |
 
 ---
@@ -101,7 +101,7 @@ Privacy is excluded (toke does not process personal data in the compilation pipe
 |---------|--------|-------|
 | A1.1 Capacity planning | Not applicable | No hosted service yet |
 | A1.2 Recovery | Compiler is stateless; no data to recover | Hosted service will need backup/DR plan |
-| A1.3 Testing | Conformance suite (90/90); e2e tests (9/9) | Add availability testing for hosted service |
+| A1.3 Testing | Conformance suite (228/228: 222 YAML + 6 shell); e2e tests (9/9) | Add availability testing for hosted service |
 
 ---
 

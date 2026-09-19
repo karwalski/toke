@@ -2,20 +2,21 @@
 
 File ext: .tk | Compiler: tkc | All lowercase, no uppercase anywhere.
 
-## character set (55)
+## character set (59)
 
 26 lowercase: a-z
 10 digits: 0-9
-19 symbols: ( ) { } = : . ; + - * / < > ! | $ @ %
+23 symbols: ( ) { } = : . ; + - * / < > ! | $ @ % & ^ ~ "
 String delimiter `"` consumed by lexer, not structural.
 `&` appears as function reference prefix (`&name`), consumed by lexer.
 Whitespace is insignificant (token separator only).
-No underscores. No `^` or `~` (bitwise deferred to v0.5+).
+No underscores. `^` (bitwise XOR) and `~` (bitwise NOT) are live operators as of
+story 114.8; the "deferred to v0.5+" note was stale.
 
-## keywords (13)
+## keywords (14)
 
 Context keywords (top-level + `=`): m f t i
-Reserved keywords: if el lp br let mut as rt mt
+Reserved keywords: if el lp br let mut as rt mt sc
 
 ## no comments
 

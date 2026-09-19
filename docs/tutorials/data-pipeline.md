@@ -58,7 +58,7 @@ previous output.
 
 **prompt 1 -- project scaffold and types**
 
-> write a toke program in 55-char default mode. define a module
+> write a toke program in 59-char default mode. define a module
 > `datapipe.main`. import `std.io`, `std.file`, `std.csv`, `std.str`,
 > `std.args`. define two types: `$colstats` -- a product type with fields
 > `name:$str`, `count:u64`, `sum:f64`, `min:f64`, `max:f64`, `avg:f64`; and

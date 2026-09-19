@@ -97,7 +97,7 @@ only appears to win because its null `unk_token` silently drops every backslash.
 
 ## Methodology
 
-- **Toke-16K (v0.3):** 16,384-token vocabulary trained on 25,953 v0.3 corpus records + 698 loke production .tk files. Trained on toke text, so it may only ever be applied to the **toke** column -- never to the Python or Go source.
+- **Toke-16K (v0.3):** 16,384-token vocabulary trained on 25,953 v0.3 corpus records plus a set of loke production `.tk` files whose size was published as 698 files but is not reproducible from any artefact in this workspace (withdrawn 2026-09-19, story 132.14). Trained on toke text, so it may only ever be applied to the **toke** column -- never to the Python or Go source.
 - **cl100k_base:** OpenAI's 100,277-token vocabulary (used by GPT-4, Claude via tiktoken). The only tokenizer in this table that is valid on all three languages, and therefore the only basis for a cross-language ratio here.
 - All toke examples are single-line v0.3 source (optimal for BPE), not canonical `tkc --min` v0.4 text. Multi-line adds ~50% more tokens due to whitespace.
 - Python and Go examples are idiomatic (not golfed), representing what a developer would actually write.

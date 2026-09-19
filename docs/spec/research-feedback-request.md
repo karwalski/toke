@@ -30,7 +30,7 @@ LLMs waste tokens on syntactic overhead that provides no semantic value. Comment
 
 | Property | Value | Rationale |
 |----------|-------|-----------|
-| Character set | 55 (a-z, 0-9, 19 symbols) | Eliminates tokenizer ambiguity from uppercase, underscore, most special chars |
+| Character set | 59 (a-z, 0-9, 23 symbols) | Eliminates tokenizer ambiguity from uppercase, underscore, most special chars |
 | Keywords | 14 (m, i, t, f, let, if, el, lp, br, rt, as, mt, sc, mut) | Minimal control flow vocabulary |
 | Grammar | Backtrack-free, deterministic | The parser never rescans consumed input; a small, enumerated set of productions need bounded lookahead of up to 3 tokens (spec §E) |
 | Comments | None | Documentation lives in companion files (.tkc), never in source |
@@ -43,7 +43,7 @@ LLMs waste tokens on syntactic overhead that provides no semantic value. Comment
 
 The full normative specification is available at:
 - **Spec:** [toke-spec-v0.3.md](toke-spec-v0.3.md) (142KB, 31 sections)
-- **Grammar:** [grammar.ebnf](grammar.ebnf) (EBNF, 90 productions; Appendix A gives the FIRST-sets and the enumerated bounded-lookahead exceptions)
+- **Grammar:** [grammar.ebnf](grammar.ebnf) (EBNF, 53 productions; Appendix A gives the FIRST-sets and the enumerated bounded-lookahead exceptions)
 - **Gate 1 decision:** [gate1-decision.md](../docs/gate1-decision.md)
 - **Gate 2 decision:** [gate2-decision.md](gate2-decision.md)
 
@@ -51,7 +51,7 @@ The full normative specification is available at:
 
 ## Training Results
 
-### Gate 1 (Legacy 80-character syntax)
+### Gate 1 (Legacy 86-character syntax)
 
 | Metric | Result |
 |--------|--------|
@@ -61,7 +61,7 @@ The full normative specification is available at:
 | Compilation Pass@1 | 63.7% (588/923 compilable tasks) |
 | Token reduction | 12.5% vs cl100k_base (8K vocab BPE) |
 
-### Gate 2 (Default 55-character syntax)
+### Gate 2 (Default syntax)
 
 | Metric | Result |
 |--------|--------|

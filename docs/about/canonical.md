@@ -68,12 +68,12 @@ is the sentence every downstream surface quotes.*
 |---|---|---|
 | Spec version | **v0.4** — `docs/spec/toke-spec-v0.4.md` is the authority; v0.3 is historical and superseded | `docs/spec/toke-spec-v0.4.md` |
 | Keywords | **14**: `m i t f let if el lp br rt as mt sc mut` | `toke-spec-v0.4.md` §A |
-| Character set | **55** — 26 lowercase letters, 10 digits, 19 symbols; no uppercase, no underscores | `toke-spec-v0.4.md`; `docs/reference/grammar.md` |
+| Character set | **59** — 26 lowercase letters, 10 digits, 23 symbols; no uppercase, no underscores | `src/lexer.c` (ground truth); `docs/metrics-baseline.md` § Project facts |
 | Grammar | **backtrack-free with bounded lookahead of up to 3 tokens** on a small, enumerated set of productions (E1–E5) | `toke-spec-v0.4.md` §E; `docs/spec/grammar.ebnf` Appendix A |
 | Canonical form | one canonical form per construct, chosen by measurement in a **46-entry** pattern catalogue and reproduced by `tkc --min` | `docs/spec/idiom-v0.4.md`; `docs/spec/patterns-protocol-v0.4.md`; `patterns/catalogue.json` |
 | Machine-readable grammar | `docs/spec/grammar.ebnf`, `docs/spec/toke.gbnf` | `toke-spec-v0.4.md` |
 
-**Two corrections that this file exists to hold in place (story 132.12).**
+**Three corrections that this file exists to hold in place (stories 132.12, 132.14).**
 
 - **toke is not LL(1).** `toke-spec-v0.4.md` §E retired the v0.3 strict-LL(1) claim on
   2026-07-02: it "was **not accurate** for the real grammar". The verified property is that
@@ -88,6 +88,18 @@ is the sentence every downstream surface quotes.*
 - **The keyword count is 14, not 13.** §A fixes the set at `m i t f let if el lp br rt as
   mt sc mut`, verified against the lexer keyword table: both `mut` and `sc` are keywords.
   The logical operators are lexical, not keywords.
+- **The character set is 59, not 55 and not 56 (story 132.14).** Two normative documents
+  disagreed and neither matched the compiler. `src/lexer.c` is the ground truth: in
+  `PROFILE_DEFAULT` it rejects exactly eight printable ASCII characters in structural
+  position with E1003 — `` ' , ? [ \ ] _ ` `` — and accepts every other symbol, giving 26
+  lowercase + 10 digits + **23** symbols. The RFC's 56 omitted `%` and `&`, which are live
+  operators, and called `^` and `~` "reserved and unassigned" after story **114.8** had
+  assigned them bitwise XOR and bitwise NOT; the 55 wording omitted all four. Reproduce
+  with `python3 scripts/verify_project_facts.py --probe`. The design property was never the
+  number — it is that the alphabet is small and **closed** — so prefer "a closed alphabet
+  of 59 printable ASCII characters, lowercase only" to a bare figure. See
+  `docs/metrics-baseline.md` § Project facts, which is the single source for this and every
+  other project-scale count.
 
 ## 5. Compiler
 
@@ -153,7 +165,7 @@ compares each copy against `canonical.json`.
 ### Paragraph (82 words)
 
 > toke is a compiled programming language designed for LLM code generation. It has 14
-> keywords, a 55-character set, a backtrack-free grammar with bounded lookahead, and one
+> keywords, a 59-character set, a backtrack-free grammar with bounded lookahead, and one
 > canonical form per construct, chosen by measurement in a 46-pattern catalogue and
 > reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding,
 > cheap for a compiler to verify afterwards, and compact to emit. Token efficiency is one

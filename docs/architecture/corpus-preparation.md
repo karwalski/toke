@@ -10,7 +10,7 @@
 
 All programs in the training corpus must conform to the current toke default syntax:
 
-- **55-char alphabet** — no characters outside the defined set
+- **59-char alphabet** — no characters outside the defined set
 - **No comments** — toke is comment-free by design; no `(* ... *)` blocks
 - **No underscores in identifiers** — concatenated lowercase only (e.g. `getvalue`, not `get_value`)
 - **`mt expr {...}` match syntax** — not the legacy `|{` form

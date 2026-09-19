@@ -122,10 +122,55 @@ lives in `stdlib/str.tki`.
 
 ---
 
+## G. Character set is 59 (supersedes v0.3 §7.1 and the RFC's "56")
+
+The default-profile alphabet is **59 characters**: 26 lowercase letters `a-z`,
+10 digits `0-9`, and **23 symbols**
+
+```
+( ) { } = : . ; + - * / < > ! | " $ @ % & ^ ~
+```
+
+No character outside this set SHALL appear in a structural position. Arbitrary
+UTF-8 is permitted inside string literal content, where `\` is the escape
+introducer.
+
+**Normatively excluded** from structural positions: uppercase `A-Z` (the parser
+rejects an uppercase identifier with E2002), underscore `_` (no-underscore rule,
+story 113.2a), and `` ' , ? [ ] ` `` — together with `\` outside a string
+literal. The lexer accepts `#` only to emit W1020 ("Python comment detected") and
+skip the line; that is error recovery, not language surface, and `#` is **not** a
+member of the alphabet.
+
+**Why this supersedes two published counts.** v0.3 §7.1 and the derived
+documentation stated **55** (19 symbols) and
+`spec/rfc/draft-karwalski-toke-lang-00.md` §5.1 stated **56** (a table listing 21
+symbols under a total of 20). Neither matched the reference compiler:
+
+- `^` and `~` were described as "reserved and unassigned, MUST NOT be used".
+  Story **114.8** assigned them **bitwise XOR** and **bitwise NOT**. They are
+  live operators and `let e=a^b; let g=~a;` compiles.
+- `%` (modulo) and `&` / `&&` (bitwise and, short-circuit and) were listed as
+  excluded symbols while being live operators — `&&` is normative in §D of this
+  document.
+
+`src/lexer.c` is the ground truth for the alphabet, as E1003 is the character-set
+diagnostic. The count is derived mechanically by
+`scripts/verify_project_facts.py` (`--probe` re-derives it against the built
+compiler) and recorded once in `docs/metrics-baseline.md` § Project facts, which
+is the single source for it. Resolved by story **132.14**, 2026-09-19.
+
+The **legacy** profile (`--legacy`, non-normative, historical) is **86**
+characters: 26 lowercase + 26 uppercase + 10 digits + 24 symbols. `tkc --legacy`
+rejects only `` $ @ ' , ? \ ` ``. The "80-character" figure in earlier
+documentation was never measured.
+
+---
+
 ## Conformance & migration
 
-- `make conform` remains the gate (180 passed, 0 failed) and now encodes the v0.4
-  forms.
+- `make conform` remains the gate (228 cases: 222 YAML + 6 shell, 0 failed as of
+  2026-09-19) and now encodes the v0.4 forms.
 - Source migration `=`→`==` (equality only) is mechanical and compiler-driven:
   the compiler emits E2002 at the exact byte offset of every equality `=`, so
   migration is a precise, false-positive-free rewrite (`scripts/migrate_eq*.py`).
@@ -139,3 +184,6 @@ lives in `stdlib/str.tki`.
   backtrack-free with bounded ≤3-token lookahead (retires the inaccurate strict
   "one-token LL(1)" claim and the undelivered "Appendix X"); `str.fields`;
   keyword count corrected to 14.
+- **2026-09-19 (story 132.14):** §G added — the character set is **59**, not the
+  55 stated in v0.3 §7.1 or the 56 stated in the RFC. Resolved against
+  `src/lexer.c`; `^ ~ % &` are live operators, none is reserved.

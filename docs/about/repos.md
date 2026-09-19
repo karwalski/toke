@@ -9,7 +9,7 @@ The toke project is organised across six repositories under the [karwalski](http
 
 ## toke
 
-**Compiler, specification, and standard library.** The reference toke compiler (C99), language specification (EBNF grammar, RFC draft), and 30+ standard library modules with C runtime implementations. Includes 600+ conformance tests and full documentation.
+**Compiler, specification, and standard library.** The reference toke compiler (C99), language specification (EBNF grammar, RFC draft), and 57 standard library modules with C runtime implementations. Includes 228 conformance cases and full documentation. Counts: `docs/metrics-baseline.md` § Project facts.
 
 - **Status:** Active — Phase 1 complete, Phase 2 on hold (waiting for local compute)
 - **License:** Apache 2.0

@@ -51,7 +51,7 @@ All named types — user-defined structs, sum types, and the built-in `$str` —
 **Why `$`?**
 
 - It makes type positions unambiguous in the grammar without requiring a keyword.
-- At 55-char density, it acts as a single-character signal that the following token is a type name, not a variable or function name.
+- At 59-char density, it acts as a single-character signal that the following token is a type name, not a variable or function name.
 - There are no bare named types without `$`. `point` is always a variable; `$point` is always a type.
 
 ```toke

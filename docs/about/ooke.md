@@ -69,7 +69,7 @@ Content lives as `.md` files with YAML frontmatter. `store.all("posts")`, `store
 
 ### LLM-first scaffolding
 
-toke's 55-char syntax means an LLM generates a complete ooke site in fewer tokens with higher correctness. `ooke gen page`, `ooke gen type`, `ooke gen api` scaffold common patterns instantly.
+toke's 59-char syntax means an LLM generates a complete ooke site in fewer tokens with higher correctness. `ooke gen page`, `ooke gen type`, `ooke gen api` scaffold common patterns instantly.
 
 ### Native binary output
 

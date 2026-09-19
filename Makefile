@@ -167,7 +167,7 @@ stress: $(BIN)
 check-tki:
 	python3 scripts/check_tki_coverage.py
 
-ci: lint conform conform-sh conform-check check-tki check-docs check-error-codes check-patterns check-metrics check-canonical
+ci: lint conform conform-sh conform-check check-tki check-docs check-error-codes check-patterns check-facts check-metrics check-canonical
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -203,6 +203,17 @@ check-metrics:
 # story number instead of failing; `--strict` fails on those too.
 check-canonical:
 	python3 scripts/check_canonical.py
+
+# 132.14 — project-facts gate. Every countable project-scale number (character
+# set, keywords, EBNF productions, stdlib modules, conformance cases, diagnostic
+# codes, corpus records, epics, stories) is derived from the tree by
+# scripts/verify_project_facts.py and recorded once, with its deriving command, in
+# docs/metrics-baseline.md § Project facts. This fails CI when the table and the
+# tree disagree; check-metrics rule 4 then fails any doc that states a different
+# number. Run without --check to print the sheet, --json for the machine-readable
+# form, --probe to re-derive the character set against the built compiler.
+check-facts:
+	python3 scripts/verify_project_facts.py --check
 
 # 123.12 — drift-gate: every diagnostic code the compiler emits must be
 # documented in docs/reference/errors.md, and errors.md must not list dead codes.

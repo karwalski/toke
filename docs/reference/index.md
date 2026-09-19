@@ -5,7 +5,7 @@ section: reference
 order: 7
 ---
 
-toke is a statically typed, compiled language with a 55-character set, explicit error handling, and a strict declaration order. This page is a structured overview of the language. Each section links to a dedicated reference page.
+toke is a statically typed, compiled language with a 59-character set, explicit error handling, and a strict declaration order. This page is a structured overview of the language. Each section links to a dedicated reference page.
 
 ## Module System
 

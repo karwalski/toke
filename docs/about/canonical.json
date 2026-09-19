@@ -41,9 +41,10 @@
       "source": "docs/spec/toke-spec-v0.4.md §A"
     },
     "character_set": {
-      "count": 55,
-      "composition": "26 lowercase letters, 10 digits, 19 symbols; no uppercase, no underscores",
-      "source": "docs/spec/toke-spec-v0.4.md; docs/reference/grammar.md § Character Set"
+      "count": 59,
+      "composition": "26 lowercase letters, 10 digits, 23 symbols; no uppercase, no underscores",
+      "note": "Story 132.14 resolved this against `src/lexer.c`, which is the ground truth: in PROFILE_DEFAULT the lexer rejects exactly eight printable ASCII characters in structural position (' , ? [ \\ ] _ `) and accepts every other symbol. The earlier counts were both wrong \u2014 the RFC's 56 omitted `%` and `&` (live operators) and called `^`/`~` reserved (story 114.8 assigned them bitwise XOR and NOT); the 55 wording omitted `^`, `~`, `%` and `&`. Reproduce with `python3 scripts/verify_project_facts.py --probe`.",
+      "source": "src/lexer.c (ground truth); docs/metrics-baseline.md § Project facts (story 132.14)"
     },
     "grammar": {
       "value": "backtrack-free with bounded lookahead of up to 3 tokens",
@@ -102,7 +103,7 @@
     },
     "paragraph": {
       "words": 82,
-      "value": "toke is a compiled programming language designed for LLM code generation. It has 14 keywords, a 55-character set, a backtrack-free grammar with bounded lookahead, and one canonical form per construct, chosen by measurement in a 46-pattern catalogue and reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding, cheap for a compiler to verify afterwards, and compact to emit. Token efficiency is one measured property of toke, always reported with its tokenizer and its baseline, not the whole claim.",
+      "value": "toke is a compiled programming language designed for LLM code generation. It has 14 keywords, a 59-character set, a backtrack-free grammar with bounded lookahead, and one canonical form per construct, chosen by measurement in a 46-pattern catalogue and reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding, cheap for a compiler to verify afterwards, and compact to emit. Token efficiency is one measured property of toke, always reported with its tokenizer and its baseline, not the whole claim.",
       "verbatim": true,
       "source": "docs/about/positioning-2026-09.md §9 (story 132.7)"
     },

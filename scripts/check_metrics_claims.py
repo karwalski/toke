@@ -21,6 +21,15 @@ tokens than ...") must name a tokenizer and a sample size. N may come from the
 sentence itself or from the surrounding context block (same section, up to
 CONTEXT_LINES above).
 
+Rule 4 — COUNTS OF THINGS (story 132.14). "65 EBNF productions" (53), "38
+standard library modules" (57), "62+ conformance tests" (228), "12 keywords"
+(14), "a 55-character set" (59) — every one of these shipped, every one was
+checkable in seconds, and none of them was checked. A number immediately
+preceding one of the counted nouns must match the fact sheet derived by
+`scripts/verify_project_facts.py`, or carry a dated exemption
+(`facts-exempt: YYYY-MM-DD ...` on the line or within two lines of it) marking
+it as a historical snapshot.
+
 Rule 2 — LANE CROSSING (story 132.13). A toke-trained tokenizer (Toke-16K,
 tokenizer_v03, proxy8k, the toke SentencePiece models) must never be named in a
 comparison alongside a non-toke baseline language. Sentences that *forbid* the
@@ -45,6 +54,11 @@ DEFAULT_TARGETS = ["docs", "README.md", "PROJECT_STATUS.md"]
 # always keyed to a story number.
 PENDING = {
     "docs/whitepaper/toke-research-language.md": "132.8 — whitepaper v2 + RFC alignment",
+    # 132.14 found two stale counts here but may not edit the file while 132.10
+    # is rewriting it: the canonical paragraph's character set (55 -> 59) and
+    # `--legacy`'s "80-character set" (the legacy profile is 86 — measured with
+    # `tkc --legacy`). Delete this entry when 132.10 lands.
+    "README.md": "132.10 — README rewrite; carries 55-char and 80-char, both stale",
     "docs/about/positioning-2026-09.md": "132.7 — repositioning brief (in flight)",
 }
 
@@ -127,7 +141,7 @@ ATTRIBUTED = re.compile(
     r"(claim|figure|number|report))\b", re.I)
 
 SUPERSEDED = re.compile(
-    r"\b(superseded|withdraw(n|s)?|no longer|historical|does not reconcile|"
+    r"\b(supersede[sd]?|withdraw(n|s)?|no longer|historical|does not reconcile|"
     r"not reproducible|not creditable|not supportable|retired|corrected|formerly|"
     r"used to|previously|invites the misreading|against ourselves|lossy)\b", re.I)
 
@@ -140,6 +154,147 @@ THRESHOLD_PREFIX = re.compile(
 SENTENCE_SPLIT = re.compile(
     r"(?<![Vv]s\.)(?<!e\.g\.)(?<!i\.e\.)(?<!etc\.)(?<!cf\.)(?<!approx\.)"
     r"(?<=[.!?])\s+(?=[A-Z(`*\"])")
+
+
+# ---------------------------------------------------------------- Rule 4 ----
+# Counts of things (story 132.14). The authority is the tree, read by
+# scripts/verify_project_facts.py; docs/metrics-baseline.md § Project facts
+# holds the same numbers and is gated by `verify_project_facts.py --check`.
+#
+# Each entry is (pattern, label, accepted-values-key). The pattern must capture
+# the number in group "n". Patterns are deliberately narrow — they require the
+# qualifying noun phrase ("conformance tests", not "tests") so that a tutorial
+# saying "3 modules" or a benchmark saying "42 programs" does not fire.
+import functools
+
+
+@functools.lru_cache(maxsize=1)
+def _facts():
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    try:
+        import verify_project_facts as vpf
+        return vpf.collect()
+    except Exception as exc:                       # pragma: no cover
+        print("WARN  rule 4 disabled: %s" % exc)
+        return {}
+
+
+def _accepted(facts):
+    """noun-key -> the set of numbers that may legitimately appear."""
+    if not facts:
+        return {}
+    return {
+        "keywords": {facts["keywords"], facts["keywords_lexer_reserved"]},
+        "productions": {facts["grammar_productions"]},
+        "stdlib_modules": {facts["stdlib_modules"]},
+        "conformance": {facts["conformance_cases_yaml"],
+                        facts["conformance_cases_shell"],
+                        facts["conformance_cases_total"]} |
+                       set(facts.get("conformance_by_series", {}).values()),
+        "diagnostic_codes": {facts["diagnostic_codes_documented"],
+                             facts["diagnostic_codes_in_src"]},
+        "epics": {facts["epics"]},
+        "stories": {facts["stories"]},
+        "corpus_records": {facts.get("corpus_records_v04_frozen"),
+                           facts.get("corpus_records_v02_2026_04"),
+                           25953, 1583},
+        "charset": {facts["charset_total"], 86},   # 86 = the legacy profile
+    }
+
+
+COUNT_RULES = [
+    (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:reserved\s+)?keywords?\b", re.I),
+     "keywords", "keywords"),
+    (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:EBNF\s+|grammar\s+)?productions?\b", re.I),
+     "EBNF productions", "productions"),
+    (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:stdlib|standard[- ]library)\s+modules?\b", re.I),
+     "standard library modules", "stdlib_modules"),
+    (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*conformance\s+(?:tests?|cases?)\b", re.I),
+     "conformance tests", "conformance"),
+    (re.compile(r"conformance\s+(?:suite|tests?|cases?)[^.|]{0,20}?\((?P<n>\d[\d,]*)\s*(?:tests?|cases?)?\)", re.I),
+     "conformance tests", "conformance"),
+    (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:distinct\s+)?(?:diagnostic|error)\s+codes?\b", re.I),
+     "diagnostic codes", "diagnostic_codes"),
+    (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*epics\b", re.I), "epics", "epics"),
+    (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*stories\b", re.I), "stories", "stories"),
+    (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:corpus\s+records?|validated\s+(?:training\s+)?programs?|audited\s+records?)\b", re.I),
+     "corpus records", "corpus_records"),
+    (re.compile(r"(?<![\w.])(?<!Phase )(?<!Profile )(?<!phase )(?<!profile )"
+                r"(?P<n>\d[\d,]*)[- ]character(?:s)?\b"
+                r"(?=[^.|]{0,60}\b(?:alphabet|character set|charset|profile|syntax|"
+                r"ASCII|default mode|set\b)|\s*(?:default|legacy)\b)", re.I),
+     "character set", "charset"),
+    (re.compile(r"(?<![\w.])(?<!Phase )(?<!Profile )(?<!phase )(?<!profile )"
+                r"(?P<n>\d[\d,]*)\s*\+?\s*characters?\b"
+                r"(?=[^.|]{0,60}\b(?:alphabet|character set|charset|profile|syntax|"
+                r"ASCII)\b)", re.I),
+     "character set", "charset"),
+]
+
+# A count attributed to another language ("Python has 35 keywords") is a
+# comparison, not a claim about toke.
+OTHER_LANG = re.compile(
+    r"\b(Python|JavaScript|Java|Go|Rust|C\+\+|C#|TypeScript|Ruby|Swift|Kotlin|"
+    r"Mojo|Kern|KERN)\b[^.|]{0,40}$", re.I)
+
+# Rule 4 only: a stated intention to reach a number is a plan, not a count.
+FUTURE_TARGET = re.compile(
+    r"\b(expand|grow|scale|increase|extend|reach|raise|plan to|roadmap|"
+    r"by 20[3-9]\d|will (be|have|reach))\b", re.I)
+
+# A dated exemption marks a number as a deliberate historical snapshot.
+FACTS_EXEMPT = re.compile(r"facts-exempt:\s*20\d\d-\d\d-\d\d", re.I)
+# ...as does an explicit era label next to the number.
+DATED_SNAPSHOT = re.compile(
+    r"\b(v0\.[123][- ]era|as of \d|snapshot|superseded|withdrawn|historical|"
+    r"formerly|used to|no longer|retired|was measured|April 2026|March 2026|"
+    r"20\d\d-\d\d-\d\d)\b", re.I)
+
+# Rule 4 only polices live claim surfaces. Trackers, dated decision records,
+# third-party reviews and the superseded v0.3 spec record what was believed at
+# the time and are not claims being made today.
+FACTS_SKIP = SKIP_PREFIXES + (
+    "docs/audits/",
+    "docs/security/audit-120/",
+    "docs/spec/toke-spec-v0.3.md",
+    "docs/about/changelog.md",
+    "docs/whitepaper/",
+)
+
+
+def count_findings(line, near):
+    out = []
+    accepted = _accepted(_facts())
+    if not accepted:
+        return out
+    if FACTS_EXEMPT.search(near):
+        return out
+    for pat, label, key in COUNT_RULES:
+        for m in pat.finditer(line):
+            try:
+                n = int(m.group("n").replace(",", ""))
+            except ValueError:
+                continue
+            ok = accepted.get(key, set())
+            if n in ok:
+                continue
+            # a number given as an explicitly dated or superseded snapshot, a
+            # stated target, or another language's figure is a record or a
+            # comparison, not a claim about toke today
+            if DATED_SNAPSHOT.search(line) or DATED_SNAPSHOT.search(near):
+                continue
+            if SUPERSEDED.search(line) or SUPERSEDED.search(near):
+                continue
+            if (UNMEASURED.search(line) or FUTURE_TARGET.search(line)) \
+                    and not MEASURED.search(line):
+                continue
+            if OTHER_LANG.search(line[:m.start()]):
+                continue
+            out.append((
+                "%s: %d does not match the fact sheet (%s)" % (
+                    label, n, ", ".join(str(v) for v in sorted(x for x in ok if x))),
+                m.group(0).strip()))
+    return out
 
 
 def sentences(line):
@@ -231,6 +386,10 @@ def check_file(path):
                     (i + 1,
                      "lane crossing: a toke-trained tokenizer compared against a "
                      "non-toke baseline", s))
+        # Rule 4 — a count of things that disagrees with the tree
+        if not rel.startswith(FACTS_SKIP):
+            for why, frag in count_findings(line, near):
+                findings.append((i + 1, why, frag))
     return findings
 
 
@@ -261,7 +420,7 @@ def main():
 
     if failures:
         print("\nERROR: token-efficiency claims without TEMSpec §6.3 qualifiers, "
-              "or crossing tokenizer lanes:\n")
+              "crossing tokenizer lanes, or counts that disagree with the tree:\n")
         for rel, lineno, why, sent in failures:
             print(f"  {rel}:{lineno}: {why}")
             print(f"    {sent[:240]}")
@@ -269,7 +428,11 @@ def main():
               "docs/metrics-baseline.md ('Canonical wording for token-efficiency "
               "claims'). Every published number states metric type, tokenizer(s), "
               "baseline and N; a toke-trained tokenizer is never applied to a "
-              "non-toke baseline. See story 132.6 / 132.13, TEMSpec §6.3.")
+              "non-toke baseline. See story 132.6 / 132.13, TEMSpec §6.3.\n"
+              "For a counts-of-things failure (rule 4): re-derive with "
+              "`python3 scripts/verify_project_facts.py`, correct the number, or — "
+              "if it is a deliberate historical snapshot — mark it "
+              "`facts-exempt: YYYY-MM-DD <why>`. Story 132.14.")
         return 1
 
     print(f"metrics claims OK: {scanned} files scanned, "

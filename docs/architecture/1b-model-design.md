@@ -26,7 +26,7 @@ encode.
 | Context length         | 2048 tokens          |
 | Vocabulary size        | 8K–16K (BPE)        |
 
-Context length rationale: toke programs are short. The 55-character alphabet and
+Context length rationale: toke programs are short. The 59-character alphabet and
 compact syntax mean 2K tokens covers very long programs comfortably.
 
 Vocabulary size rationale: a purpose-built BPE tokenizer trained exclusively on
@@ -67,7 +67,7 @@ stdlib API surface, and idiomatic constructs. Dropout would fight this goal.
 
 Toke's language surface is vastly smaller than general-purpose languages:
 
-- **55 characters** (no uppercase, no underscore in default syntax)
+- **59 characters** (no uppercase, no underscore in default syntax)
 - **14 keywords** (`m i t f let if el lp br rt as mt sc mut`)
 - **Backtrack-free grammar** — deterministic, never rescans consumed input,
   bounded lookahead of up to 3 tokens on an enumerated set of productions
@@ -94,7 +94,7 @@ for Python, JavaScript, or natural language.
 
 ### Data
 
-Comment-free toke programs in 55-character default syntax (mt match, no
+Comment-free toke programs in 59-character default syntax (mt match, no
 underscore). Programs are stripped of comments to focus the model on code
 structure rather than natural language.
 
@@ -134,7 +134,7 @@ Standard cross-entropy on next-token prediction. No auxiliary losses needed.
 programs on the first attempt more than 80% of the time on a held-out benchmark.
 
 **Illegal character rate < 0.1%** ensures the model has internalised toke's
-55-character alphabet. The fine-tuned 7B achieved ~2.5% — a purpose-built model
+59-character alphabet. The fine-tuned 7B achieved ~2.5% — a purpose-built model
 trained only on legal toke should do far better.
 
 **Token efficiency within 10%** means generated programs are close in length to

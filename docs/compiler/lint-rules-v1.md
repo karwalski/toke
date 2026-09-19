@@ -279,9 +279,9 @@ category: hint
 fixable: no
 ```
 
-**Description:** A user-defined type name does not follow the `$lowercase` convention used in the default 55-char syntax.
+**Description:** A user-defined type name does not follow the `$lowercase` convention used in the default 59-char syntax.
 
-**Rationale:** toke's default syntax uses `$lowercase` for user-defined struct types (e.g. `t=$user{...}`, `t=$httpreq{...}`). The `$` sigil is the visual signal that an identifier is a named type. In the legacy 80-char syntax, PascalCase was used instead (e.g. `T=UserRecord{...}`). The default syntax uses all-lowercase to stay within the 55-character set which excludes uppercase letters.
+**Rationale:** toke's default syntax uses `$lowercase` for user-defined struct types (e.g. `t=$user{...}`, `t=$httpreq{...}`). The `$` sigil is the visual signal that an identifier is a named type. In the legacy 86-character syntax, PascalCase was used instead (e.g. `T=UserRecord{...}`). The default syntax uses all-lowercase to stay within the 59-character set which excludes uppercase letters.
 
 **Example violation:**
 
@@ -305,7 +305,7 @@ t=$userrecord{name:$str;age:i64};
 
 - Built-in primitive type names (`i64`, `u64`, `$str`, `bool`, `void`, `f64`, etc.) are not flagged — they are defined by the language, not the user.
 - Stdlib-defined types (`$req`, `$res`, `$httperr`, etc.) are not flagged — the user does not control stdlib naming.
-- In legacy 80-char syntax, the convention is PascalCase (`T=UserRecord{...}`). This rule applies the convention appropriate to the active syntax profile.
+- In the legacy 86-character syntax, the convention is PascalCase (`T=UserRecord{...}`). This rule applies the convention appropriate to the active syntax profile.
 
 ---
 

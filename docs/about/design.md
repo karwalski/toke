@@ -11,9 +11,9 @@ toke's design follows a single rule: where any implementation decision conflicts
 
 The language defines exactly one canonical syntactic form for each construct. Synonym constructs, optional delimiters, and style-variant spellings are prohibited. There is one way to declare a function, one way to return a value, one way to define a type. The model never chooses between equivalent forms.
 
-## The 55-Character Minimal ASCII Subset
+## The 59-Character Minimal ASCII Subset
 
-toke uses exactly 55 structural ASCII characters. No character outside this set may appear in a structural position. Arbitrary UTF-8 is permitted inside string literal content.
+toke uses exactly 59 structural ASCII characters (26 lowercase, 10 digits, 23 symbols; derived from `src/lexer.c` — `docs/metrics-baseline.md` § Project facts). No character outside this set may appear in a structural position. Arbitrary UTF-8 is permitted inside string literal content.
 
 | Class | Characters | Count |
 |---|---|---|

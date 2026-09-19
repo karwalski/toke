@@ -2,7 +2,7 @@
 
 Single source of truth for all toke language documentation. Served as the project website (tokelang.dev) via ooke symlinks.
 
-All content uses **default syntax** (v0.3-syntax-lock, 55-char set). All code samples pass `tkc --check` (370 tested, 364 pass, 6 intentional legacy skips).
+All content uses **default syntax** (v0.3-syntax-lock, 59-char set). All code samples pass `tkc --check` (370 tested, 364 pass, 6 intentional legacy skips).
 
 ## Structure
 

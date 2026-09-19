@@ -15,7 +15,7 @@ These thresholds are fixed. They cannot be adjusted after the first training run
 |---|-----------|-----------|-----------|
 | C1 | Functional Pass@1 | ≥ 35% on 500-task hidden benchmark | Proves the model reasons about algorithms, not just syntax |
 | C2 | Compilation Pass@1 | ≥ 95% | Maintain Gate 2 level (100% achieved; 95% floor allows tokenizer/model changes) |
-| C3 | argv-generalisation | ≥ 50% of solutions read from argv | Addresses the 67% hardcoding problem identified in Gate 2 |
+| C3 | argv-generalisation | ≥ 50% of solutions read from argv | Addresses the argv-hardcoding problem identified in Gate 2. The "67%" rate this row used to cite was withdrawn on 2026-09-19 (story 132.14): it has no baseline row and no script reproduces it. The criterion is a forward threshold and does not depend on it. |
 | C4 | Multi-model coverage | ≥ 2 model families tested (Qwen + one other) | Proves toke is learnable, not an artefact of one architecture |
 | C5 | Self-improvement | Iteration N+1 > Iteration N on held-out eval set | Validates the compile-filter-retrain loop described in training-next-phase.md |
 

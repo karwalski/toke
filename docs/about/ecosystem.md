@@ -9,7 +9,7 @@ A layered stack of tools, frameworks, and runtimes -- each named with the `*oke`
 
 ## toke — language
 
-The core programming language. Compiles to native code via LLVM. 55-character alphabet, 14 keywords, backtrack-free grammar with bounded lookahead. Token efficiency is measured, not assumed: under cl100k_base toke costs 1.34x the tokens of equivalent Python on the 60 Gate-1 tasks (N = 60) and no shipped toke tokenizer yet beats cl100k_base on v0.4 text (N = 2,000) -- see `docs/metrics-baseline.md`. Gate 2 PASS: 100% compilation Pass@1 on a fine-tuned 7B model (curated set, v0.3 model).
+The core programming language. Compiles to native code via LLVM. 59-character alphabet, 14 keywords, backtrack-free grammar with bounded lookahead. Token efficiency is measured, not assumed: under cl100k_base toke costs 1.34x the tokens of equivalent Python on the 60 Gate-1 tasks (N = 60) and no shipped toke tokenizer yet beats cl100k_base on v0.4 text (N = 2,000) -- see `docs/metrics-baseline.md`. Gate 2 PASS: 100% compilation Pass@1 on a fine-tuned 7B model (curated set, v0.3 model).
 
 - [Documentation](/docs)
 - [GitHub](https://github.com/karwalski/toke)
@@ -24,7 +24,7 @@ Static site generator and web framework built in toke. File-system routing, flat
 
 ## loke — intelligence layer
 
-A locally-run intelligence layer that sits between users, their data, and external LLMs. 698 files, 87,000 lines of toke. Multi-layer PII detection, token optimisation, intelligent routing, governance controls, memory palace, MCP framework. All processing on-device.
+A locally-run intelligence layer that sits between users, their data, and external LLMs. Multi-layer PII detection, token optimisation, intelligent routing, governance controls, memory palace, MCP framework. All processing on-device.
 
 - [Project page](/loke)
 - [GitHub](https://github.com/karwalski/loke)
@@ -50,7 +50,7 @@ Every tool in the toke ecosystem uses a single consonant prefix followed by `oke
 | Layer | Name | Status | Description |
 |-------|------|--------|-------------|
 | Human experience | aoke | Reserved | UX, design systems, accessibility |
-| Intelligence | loke | **Production** | Privacy, token optimisation, routing (87K lines) |
+| Intelligence | loke | **Production** | Privacy, token optimisation, routing |
 | Web | ooke | **Production** | Static site gen, web framework (serves tokelang.dev) |
 | Language | toke | **Production** | Compiler, spec, stdlib (38 modules) |
 | Data/demo | moke | **Active** | Analysis demo (in loke) |

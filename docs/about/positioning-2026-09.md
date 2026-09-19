@@ -62,7 +62,7 @@ being the unit of account.
 | "A language LLMs can be forced to write correctly." | Overclaims. Constrained decoding guarantees syntactic validity, not correctness. Our own Gate 2 is the counterexample: 100% compile Pass@1 on the curated set and 55.6% functional. |
 | "toke makes AI-generated code cheaper." | Marketing register, no mechanism, and second-order on the evidence: a 30 to 52% cut in code tokens nets only single-digit to low-double-digit percent of total agentic spend (see §3). |
 | "toke is a DSL for agents." | Wrong category. toke is a general-purpose compiled language with an LLVM backend and three production codebases (ooke, loke, moke). Calling it a DSL concedes ground the language does not need to concede. |
-| "toke is a compiled language designed to be written by language models: 14 keywords, a 55-character set, a backtrack-free grammar and one canonical form." | Accurate, and it is the boilerplate paragraph's opening (§9). Rejected as *the* sentence because it lists the properties without saying what they buy, which is the part that has to survive an architecture shift. |
+| "toke is a compiled language designed to be written by language models: 14 keywords, a 59-character set, a backtrack-free grammar and one canonical form." | Accurate, and it is the boilerplate paragraph's opening (§9). Rejected as *the* sentence because it lists the properties without saying what they buy, which is the part that has to survive an architecture shift. |
 
 ---
 
@@ -72,11 +72,13 @@ Each property below is a fact about the language, paired with the mechanism it b
 model. The mechanisms are what survive a change of generation unit; the numbers attached
 to any one tokenizer do not.
 
-### Small: 14 keywords, a 55-character set
+### Small: 14 keywords, a 59-character set
 
 `toke-spec-v0.4.md` §A fixes the keyword set at **14** (`m i t f let if el lp br rt as mt
-sc mut`); the default syntax uses a **55-character** alphabet (26 lowercase, 10 digits, 19
-symbols), no uppercase and no underscores.
+sc mut`); the default syntax uses a **59-character** alphabet (26 lowercase, 10 digits, 23
+symbols), no uppercase and no underscores. (The brief originally said 55; story 132.14
+resolved the count against `src/lexer.c` -- the 55 and the RFC's 56 both omitted live
+operators. See `docs/metrics-baseline.md` § Project facts.)
 
 *Mechanically:* a small terminal alphabet is a small vocabulary for any generation unit. At
 the byte level it means the model is choosing among a few dozen live bytes at most
@@ -319,7 +321,7 @@ Three things the landscape does better than we do, taken directly.
 
 ## 7. What explicitly does not change
 
-**The language base does not move.** Not the 55-character set, not the 14 keywords, not the
+**The language base does not move.** Not the 59-character set, not the 14 keywords, not the
 grammar, not the semantics, not the type system, not the error-union model, not the
 canonical `--min` form, not the "designed for LLMs" framing. This brief changes no `.tk`
 file, no production in `grammar.ebnf`, and nothing in `src/`.
@@ -380,7 +382,7 @@ it here first.
 ### Paragraph (82 words)
 
 > toke is a compiled programming language designed for LLM code generation. It has 14
-> keywords, a 55-character set, a backtrack-free grammar with bounded lookahead, and one
+> keywords, a 59-character set, a backtrack-free grammar with bounded lookahead, and one
 > canonical form per construct, chosen by measurement in a 46-pattern catalogue and
 > reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding,
 > cheap for a compiler to verify afterwards, and compact to emit. Token efficiency is one

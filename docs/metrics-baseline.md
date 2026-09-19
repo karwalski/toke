@@ -32,6 +32,81 @@ stories; each row cites its origin.
 
 ---
 
+## Project facts (story 132.14)
+
+**These are the only sanctioned project-scale counts.** Every one is derived from
+the tree by `scripts/verify_project_facts.py`; the command in each row reproduces
+it in one line. `make ci` runs `verify_project_facts.py --check`, which fails if
+this table and the tree disagree, so the table cannot silently rot.
+
+Measured on tkc **toke 2.8.0**, regenerate with
+`python3 scripts/verify_project_facts.py` (add `--json` for the machine-readable
+sheet, `--probe` to re-derive the character set against the built compiler).
+
+<!-- PROJECT-FACTS BEGIN -->
+
+| Fact | Value | Derived by |
+|---|---:|---|
+| `charset_total` | **59** | `python3 scripts/verify_project_facts.py --probe` — 26 lowercase + 10 digits + 23 symbols, from `src/lexer.c` |
+| `charset_symbols` | **23** | `!"$%&()*+-./:;<=>@^{|}~` — the `case` arms of the symbol switch in `src/lexer.c` that do not emit E1003 in `PROFILE_DEFAULT`, plus `"` |
+| `keywords` | **14** | `sed -n '/KEYWORDS_DEFAULT/,/};/p' src/lexer.c` — 10 reserved words (`if el lp br let mut as rt sc mt`) plus the 4 declaration heads `m= i= t= f=` |
+| `grammar_productions` | **53** | `grep -cE '^[A-Za-z][A-Za-z0-9_]*[[:space:]]*=' docs/spec/grammar.ebnf` |
+| `stdlib_modules` | **57** | `ls stdlib/*.tki \| wc -l` |
+| `conformance_cases_yaml` | **222** | `find test -name '*.yaml' \| wc -l` (grammar 98, diagnostics 89, lexical 35) |
+| `conformance_cases_shell` | **6** | `ls test/conform/*.sh \| wc -l` |
+| `conformance_cases_total` | **228** | the two rows above; `make conform` runs both |
+| `diagnostic_codes_documented` | **52** | `grep -cE '^### [EW][0-9]{4}' docs/reference/errors.md` |
+| `diagnostic_codes_in_src` | **52** | `python3 scripts/check_error_codes.py --list` — codes `src/` defines or emits; the gate fails on any divergence from the documented set |
+| `corpus_records_v04_frozen` | **23,382** | `jq .total ../toke-corpus/regen/freeze/freeze_129_summary.json` — freeze `129-freeze-2026-08-19`, reopened by Epic 131 |
+| `corpus_records_v02_2026_04` | **46,754** | `jq .total_entries ../toke-corpus/corpus/manifest.json` — the **v0.2-era** corpus of 2026-04-01, historical |
+| `epics` | **132** | `grep -oE '^#{2,3} Epic [0-9]+' docs/progress.md \| awk '{print $3}' \| sort -u \| wc -l` — *live, not gated: re-derive before citing* |
+| `stories` | **2,374** | `grep -oE '^\| [0-9]+\.[0-9]+[a-z0-9.]* \|' docs/progress.md \| sort -u \| wc -l` — *live, not gated: moves with every tracker commit, re-derive before citing* |
+
+<!-- PROJECT-FACTS END -->
+
+### The character set: 59, not 55 and not 56
+
+Two normative documents disagreed and **neither matched the compiler**. The RFC
+(`spec/rfc/draft-karwalski-toke-lang-00.md` §5.1) said 56 — and its own table
+listed 21 symbols while totalling 20, so 56 was wrong even on its own arithmetic.
+`docs/about/positioning-2026-09.md` and `docs/glossary.md` said 55 (19 symbols),
+which is the RFC's list minus `^` and `~`.
+
+`src/lexer.c` settles it. In `PROFILE_DEFAULT` the lexer rejects exactly eight
+printable ASCII characters in structural position with E1003 — `` ' , ? [ \ ] _ ` ``
+— and accepts every other symbol. Three of the accepted ones are absent from both
+documents:
+
+- **`^` and `~` are not reserved.** Story **114.8** assigned them bitwise XOR and
+  bitwise NOT. `let e=a^b; let g=~a;` compiles today. The RFC's "reserved and
+  unassigned … MUST NOT be used in toke source" is simply out of date.
+- **`%` and `&` are live operators** (modulo, bitwise-and, and `&&` short-circuit),
+  yet the RFC's §5.1 exclusion list names both as excluded.
+
+That gives 26 lowercase + 10 digits + 23 symbols = **59**. Uppercase `A-Z` is
+excluded because the parser rejects an uppercase identifier (E2002), and `_` is
+excluded by the no-underscore rule (113.2a); `#` is accepted with W1020 only as
+Python-comment *recovery* and is not a member of the alphabet; `\` is legal inside
+string literals but not in structural position.
+
+59 is also the number this project already ratified once: story **75.1.1**
+(2026-04-30) decided "recount to 59, retire the 56 branding", and the count
+regressed to 55/56 during the v0.3 documentation rewrite. The design property was
+never the number — it is that the set is small and closed — so prefer "a closed
+alphabet of 59 printable ASCII characters, lowercase only" to a bare figure.
+
+### Claims deleted rather than corrected (132.14)
+
+These were published, are not derivable from any artefact in any repo, and have
+been removed rather than re-stated: loke's "698 `.tk` files / 87,318 lines" (the
+loke tree is not in this workspace and no manifest records it), "3 months of daily
+development", "84% compilation via production API" and its gap analysis (a 21/25
+sample from 71.5.4, published as a project-scale capability figure), and the "67%
+of Gate 2 functional failures hardcode their inputs" rate (no baseline row and no
+script reproduces it). A claim nobody can reproduce is worse than no claim.
+
+---
+
 ## Efficiency (token reduction)
 
 | Metric | Value | Basis / caveat | Source |

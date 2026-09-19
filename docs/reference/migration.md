@@ -5,14 +5,14 @@ section: reference
 order: 8
 ---
 
-This guide is for users who wrote toke code under the early 80-char profile, or who are reading documentation that predates the default syntax decision. It covers every syntactic change between the two profiles.
+This guide is for users who wrote toke code under the early 86-character legacy profile, or who are reading documentation that predates the default syntax decision. It covers every syntactic change between the two profiles.
 
 ## Background
 
 toke has two syntax profiles:
 
-- **Default (55-char)** — the current standard, adopted after Gate 1. All new code and documentation uses this profile.
-- **Legacy (80-char)** — the earlier profile, retained for backwards compatibility under the `--legacy` flag.
+- **Default (59-char)** — the current standard, adopted after Gate 1. All new code and documentation uses this profile.
+- **Legacy (86-char)** — the earlier profile, retained for backwards compatibility under the `--legacy` flag.
 
 Run legacy code without changes:
 
@@ -327,7 +327,7 @@ All named types carry the `$` sigil. Fields are separated by semicolons.
 
 ## Quick reference table
 
-| Feature | Legacy (80-char) | Default (55-char) |
+| Feature | Legacy (86-char) | Default (59-char) |
 |---------|-----------------|-------------------|
 | Array literal | `[1, 2, 3]` | `@(1;2;3)` |
 | Array subscript | `arr[0]` | `arr.get(0)` |

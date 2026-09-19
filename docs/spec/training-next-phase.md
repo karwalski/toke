@@ -15,7 +15,7 @@ These decisions are made and documented. They can be revisited for v1.0 but are 
 |----------|--------|-----------|-----------------|
 | v0.3 syntax frozen | **LOCKED** | 100% compilation proves syntax works | Community feedback for v1.0 |
 | No inline comments | **LOCKED** | Token efficiency; reasoning via `.tkc` companion files ([reasoning-channel.md](reasoning-channel.md)) | If functional Pass@1 stalls below 30% AND reasoning is identified as root cause |
-| 55-char alphabet | **LOCKED** | BPE tokenizer trained on this (v0.3 Toke-16K measured 52% fewer tokens than cl100k_base on the same toke source, N = 42 -- superseded, see `docs/metrics-baseline.md`) | v1.0 RFC only |
+| 59-char alphabet | **LOCKED** | BPE tokenizer trained on this (v0.3 Toke-16K measured 52% fewer tokens than cl100k_base on the same toke source, N = 42 -- superseded, see `docs/metrics-baseline.md`) | v1.0 RFC only |
 | 14 keywords (`m i t f let if el lp br rt as mt sc mut`) | **LOCKED** | Compiler, spec, training all aligned; the earlier "13 keywords" count omitted `sc` and is retired (spec v0.4 §A) | v1.0 RFC only |
 | Purpose-built BPE | **LOCKED** | 16K vocab; the v0.3 52% figure (Toke-16K vs cl100k_base on the same toke source, N = 42) is superseded -- no shipped toke tokenizer beats cl100k_base on v0.4 text (N = 2,000) | Retrain on expanded corpus (116.9) -- and re-test the approach itself |
 | Qwen base model | **OPEN** | Gate 2 used Qwen 2.5 Coder 7B; other bases viable | If Qwen3-Coder-Next or DeepSeek outperforms |
@@ -44,7 +44,6 @@ These are explicitly not decided yet. Each has a decision deadline and fallback.
 | BPE tokenizer (16,384 tokens) | Trained on normalised v0.3 code. 52% fewer tokens than cl100k_base on the same toke source (N = 42, v0.3 text); superseded on v0.4 text -- see `docs/metrics-baseline.md` |
 | QLoRA adapter (Gate 2) | 100% compile rate, 55.6% functional (corrected from ~8% after io.readln() fix) |
 | Corpus | 25,953 records (canonical prompt) |
-| loke codebase | 698 .tk files, 87,318 lines — production, tested |
 | MCP server | Built, not deployed — can collect new training data |
 | Benchmark | 500 hidden tasks with test I/O, 200 eval tasks |
 
@@ -56,7 +55,7 @@ The model now writes perfect toke syntax. This is a **force multiplier**: we can
 
 The following recommendations from external research review are adopted:
 
-1. **Randomise input values per training record.** The 67% argv-hardcoding rate is a corpus problem. Generate 5–20 distinct `(stdin, expected_stdout)` pairs per problem template. Embed expected behaviour in the prompt, not the code.
+1. **Randomise input values per training record.** Argv-hardcoding is a corpus problem. (The "67%" rate published here was withdrawn on 2026-09-19, story 132.14: no baseline row and no script reproduces it. The recommendation stands on its own.) Generate 5–20 distinct `(stdin, expected_stdout)` pairs per problem template. Embed expected behaviour in the prompt, not the code.
 
 2. **GRPO/RLVR is the default post-training method for code.** Binary pass/fail reward from `toke --check` + test execution. ACECoder achieved +25pp on HumanEval-plus with 48 H100-hours. Adopt this approach.
 
@@ -94,7 +93,7 @@ The following recommendations from external research review are adopted:
 | Estimated cost | $1,800–4,200 (compute only) |
 
 **Corpus generation strategy:**
-1. **Seed:** Current 25,953 records + loke (87K lines) + moke patterns
+1. **Seed:** Current 25,953 records + loke + moke patterns
 2. **Self-play:** Use Gate 2 model to generate 100K candidates, filter by compile+test
 3. **Multi-model:** Generate with Claude/GPT-4/Llama, verify with toke --check
 4. **Execution-verified:** Run each solution against test cases, keep only functionally correct
@@ -128,7 +127,7 @@ The following recommendations from external research review are adopted:
 **Corpus generation strategy:**
 1. **Self-improvement loop:** Use Gate 2 model to generate 50K candidates, compile-filter
 2. **Execution filter:** Run compiled solutions against test I/O, keep correct ones
-3. **loke mining:** Extract more patterns from the 698-file codebase with context
+3. **loke mining:** Extract more patterns from the loke codebase with context
 4. **Synthetic expansion:** Vary existing correct solutions (rename vars, reorder, refactor)
 5. **MCP collection:** Deploy model via MCP, collect user-verified code over time
 
@@ -425,7 +424,7 @@ Developer using toke
 
 | Version | Scope | Status |
 |---------|-------|--------|
-| v0.3 | Syntax, spec, compiler, 38 stdlib modules | **LOCKED** — no changes |
+| v0.3 | Syntax, spec, compiler, stdlib (57 `.tki` modules as of 2026-09-19) | **LOCKED** — no changes |
 | v0.3.x | Bug fixes, new stdlib modules, compiler improvements | Active |
 | v0.4 | `.tkc` companion file format, `toke --python-view`, MCP v1 | Planned (post-Gate 3) |
 | v1.0 | Community RFC process for syntax changes, formal governance | After community feedback |

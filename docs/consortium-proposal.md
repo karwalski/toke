@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary
 
-toke is a compiled programming language designed as a code generation target for large language models (LLMs). It uses a 55-character alphabet, 14 keywords, and a backtrack-free grammar with bounded lookahead of up to 3 tokens to produce programs that are shorter, cheaper, and more likely to compile correctly on the first pass than equivalent programs in Python, C, or Java.
+toke is a compiled programming language designed as a code generation target for large language models (LLMs). It uses a 59-character alphabet, 14 keywords, and a backtrack-free grammar with bounded lookahead of up to 3 tokens to produce programs that are shorter, cheaper, and more likely to compile correctly on the first pass than equivalent programs in Python, C, or Java.
 
 The toke project has completed its first validation gate. At Gate 1, the language demonstrated 12.5% token reduction (8K purpose-built BPE vs cl100k_base on the **same toke source** -- mean 172.9 vs 197.6 tokens/program over 46,754 validated toke programs; a tokenizer-lane figure, not a comparison with Python, and superseded on v0.4 text -- `docs/metrics-baseline.md`) and 63.7% first-pass compilation accuracy on 1,000 held-out tasks using a fine-tuned 7B model. These results exceeded the pre-registered go/no-go thresholds.
 
@@ -68,7 +68,7 @@ The consortium owns and maintains the toke language specification. Responsibilit
 
 The consortium establishes and operates a conformance certification program for toke implementations:
 
-- A conformance test suite (currently 600+ tests, targeting comprehensive coverage of the specification).
+- A conformance test suite (currently 228 cases, targeting comprehensive coverage of the specification).
 - Certified implementations may use the "toke Certified" mark.
 - Annual recertification against the latest specification version.
 - Public registry of certified implementations.
@@ -86,7 +86,7 @@ The consortium funds and coordinates maintenance of the reference compiler (`tkc
 
 The consortium maintains and expands the validated training corpus:
 
-- Currently 46,754 validated programs generated across 4 stages with differential testing against 3 models.
+- The current v0.4 corpus is 23,382 audited records (freeze `129-freeze-2026-08-19`, reopened by Epic 131) plus 1,583 verified library programs. The 46,754-program figure below is the **v0.2-era** corpus of 2026-04-01, retained because the Gate 1 result was measured on it.
 - Compiler-in-the-loop validation ensures every program in the corpus compiles and produces correct output.
 - Shared corpus enables member organisations to fine-tune their own models without duplicating the expensive generation and validation pipeline.
 - Purpose-built BPE tokenizer shared across members (v0.3: 16K vocabulary, 25,953 programs; the v0.4 retrain under 116.9 is unfunded and is the work that would establish whether a toke-native tokenizer beats cl100k_base -- today none does, see `docs/metrics-baseline.md`).
@@ -141,7 +141,7 @@ The consortium stewards the following technical assets, all of which exist today
 
 ### 5.1 Language Specification
 
-The toke specification (currently v0.2, draft) is a comprehensive document covering 30 sections: character set, lexical rules, formal EBNF grammar (65 productions), type system, error model, memory model, module structure, standard library interface, compiler requirements, structured diagnostics specification, tooling protocol, conformance criteria, and security requirements.
+The toke specification (currently v0.4) is a comprehensive document covering character set, lexical rules, formal EBNF grammar (53 productions), type system, error model, memory model, module structure, standard library interface, compiler requirements, structured diagnostics specification, tooling protocol, conformance criteria, and security requirements.
 
 **Path to 1.0:** Resolve all deferred items. Achieve conformance suite passage by two independent implementations. Complete ecosystem proof. Estimated timeline: 12--18 months after consortium formation, subject to Gate 2 completion.
 
@@ -151,11 +151,11 @@ A C99 compiler with an LLVM backend producing native binaries for x86-64 and ARM
 
 ### 5.3 Conformance Test Suite
 
-600+ tests covering lexical analysis, parsing, type checking, code generation, error handling, and standard library behaviour. The conformance suite is the normative definition of language behaviour where the specification is ambiguous.
+228 conformance cases (222 YAML: 98 grammar, 89 diagnostics, 35 lexical; plus 6 shell scripts) covering lexical analysis, parsing, type checking, code generation, error handling, and standard library behaviour. The conformance suite is the normative definition of language behaviour where the specification is ambiguous.
 
 ### 5.4 Training Corpus
 
-46,754 validated programs generated through a 4-stage compiler-in-the-loop pipeline with differential testing against 3 models (GPT-4o, Claude 3.5 Sonnet, Qwen 2.5 Coder 7B). Every program compiles, runs, and produces verified output.
+The v0.2-era corpus of 2026-04-01 holds 46,754 validated programs generated through a 4-stage compiler-in-the-loop pipeline with differential testing against 3 models (GPT-4o, Claude 3.5 Sonnet, Qwen 2.5 Coder 7B). The current v0.4 corpus is 23,382 audited records. Every program compiles, runs, and produces verified output. Counts: `docs/metrics-baseline.md` § Project facts.
 
 ### 5.5 Purpose-Built Tokenizer
 
@@ -261,12 +261,12 @@ toke is and will remain open source under Apache 2.0. There are no licence fees,
 This proposal is aspirational but grounded. Transparency about where the project stands today:
 
 **What exists:**
-- A working compiler that passes 600+ conformance tests at 100%.
-- A formal specification at v0.2 (draft) covering 30 sections.
-- A validated training corpus of 46,754 programs.
+- A working compiler that passes 228 conformance cases at 100%.
+- A formal specification at v0.4.
+- A validated training corpus: 23,382 audited v0.4 records today; 46,754 programs in the v0.2-era corpus on which Gate 1 was measured.
 - Gate 1 results (token reduction 12.5% -- 8K toke BPE vs cl100k_base on the same toke source, N = 46,754 programs, superseded; Pass@1 63.7%) that exceeded pre-registered thresholds.
 - Published governance, contribution, security, and licensing documents.
-- 38 standard library modules with C runtime implementations.
+- 57 standard library modules (`stdlib/*.tki`) with C runtime implementations.
 - An MCP server, tree-sitter grammar, web playground, and evaluation harness.
 
 **What does not yet exist:**
@@ -322,9 +322,9 @@ We are looking for organisations willing to invest in the formation phase -- not
 | Pass@1 (7B model, 1,000 tasks) | 63.7% | Gate 1 evaluation |
 | Tokenizer fertility | 0.374 | Phase 1 BPE tokenizer |
 | Tokenizer vocabulary utilisation | 70.2% | 8K vocab, Phase 1 |
-| Conformance tests | 600+ | Reference compiler (tkc) |
-| Training corpus size | 46,754 programs | 4-stage compiler-in-the-loop pipeline |
-| Standard library modules | 38 | C runtime backed |
-| Keywords | 12 | Language specification |
-| Character set | 56 | Language specification |
-| Specification sections | 30 | v0.2 draft |
+| Conformance tests | 228 | Reference compiler (tkc); 222 YAML + 6 shell |
+| Training corpus size | 23,382 records (v0.4, 2026-08-19 freeze); 46,754 programs in the v0.2-era corpus Gate 1 used | `toke-corpus` freeze manifests |
+| Standard library modules | 57 | C runtime backed; `ls stdlib/*.tki` |
+| Keywords | 14 | `m i t f let if el lp br rt as mt sc mut` -- toke-spec-v0.4 §A |
+| Character set | 59 | `src/lexer.c`; 26 lowercase + 10 digits + 23 symbols |
+| Specification version | v0.4 | `docs/spec/toke-spec-v0.4.md` |

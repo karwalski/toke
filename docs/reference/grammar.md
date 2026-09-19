@@ -362,13 +362,14 @@ Inside function bodies, `m`, `f`, `t`, `i` are valid variable names.
 
 ## Character Set
 
-toke source uses exactly 55 ASCII characters:
+toke source uses exactly 59 ASCII characters (corrected 2026-09-19, story 132.14;
+derived from `src/lexer.c` by `scripts/verify_project_facts.py --probe`):
 
 | Category | Characters | Count |
 |----------|-----------|-------|
 | Letters | `a` through `z` | 26 |
 | Digits | `0` through `9` | 10 |
-| Symbols | `( ) { } = : . ; + - * / < > ! \| & $ @ % "` | 19 |
+| Symbols | `( ) { } = : . ; + - * / < > ! \| & $ @ % " ^ ~` | 23 |
 
 Plus space and newline as whitespace. No uppercase letters, no underscores, no square brackets, no commas.
 
@@ -376,7 +377,7 @@ Plus space and newline as whitespace. No uppercase letters, no underscores, no s
 
 ## Syntax Profiles
 
-| Feature | Default (55-char) | Legacy (`--legacy`, 80-char) |
+| Feature | Default (59-char) | Legacy (`--legacy`, 86-char) |
 |---------|-------------------|------------------------------|
 | Declaration keywords | `m=` `f=` `t=` `i=` | `M=` `F=` `T=` `I=` |
 | Type names | `$user` | `User` |
