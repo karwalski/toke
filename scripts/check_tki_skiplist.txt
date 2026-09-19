@@ -76,8 +76,6 @@ json.tki::json.streamnext              # 2026-09-19 C core json_stream*/json_new
 json.tki::json.streamemit              # 2026-09-19 C core json_stream*/json_newwriter in json.c, no _w glue (102.16 residual gap); json*.c owned by another stream, not touched here; core=json_streamemit [102.16]
 json.tki::json.newwriter               # 2026-09-19 C core json_stream*/json_newwriter in json.c, no _w glue (102.16 residual gap); json*.c owned by another stream, not touched here; core=json_newwriter [102.16]
 json.tki::json.writerbytes             # 2026-09-19 C core json_stream*/json_newwriter in json.c, no _w glue (102.16 residual gap); json*.c owned by another stream, not touched here; core=json_writerbytes [102.16]
-# ── keychain ──
-keychain.tki::keychain.isavailable         # 2026-09-19 no _w glue; core=keychain_is_available [131.38-followup]
 # ── llm ──
 llm.tki::llm.client                   # 2026-09-19 no _w glue (llm.c has chat/complete only); core=llm_client [131.38-followup]
 llm.tki::llm.chatstream               # 2026-09-19 no _w glue (llm.c has chat/complete only); core=llm_chatstream [131.38-followup]

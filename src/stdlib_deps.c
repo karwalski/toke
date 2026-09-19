@@ -10,6 +10,26 @@
 
 /* ── Static dependency table ────────────────────────────────────────── */
 /*
+ * Platform-dependent link flags (136.3).
+ *
+ * The table is a compile-time constant, so the platform is the host the
+ * compiler was built for — the same assumption compile_binary() already makes
+ * for its Homebrew include/lib paths.
+ *
+ * keychain.c dispatches on __APPLE__ / _WIN32 and its Apple path references
+ * Security.framework (SecItem*) and CoreFoundation (CFString/CFData/CFDictionary).
+ * Before 136.3 this entry carried empty flags, so every keychain consumer
+ * failed to link on ~20 undefined _kSec* / _CF* symbols.
+ */
+#if defined(__APPLE__)
+#  define TK_KEYCHAIN_FLAGS "-framework Security -framework CoreFoundation"
+#elif defined(_WIN32)
+#  define TK_KEYCHAIN_FLAGS "-ladvapi32"   /* Cred{Write,Read,Delete}A */
+#else
+#  define TK_KEYCHAIN_FLAGS ""             /* no-op stubs; isavailable() is false */
+#endif
+
+/*
  * Each entry maps a stdlib module name to:
  *   - c_files:     space-separated basenames of .c files it provides
  *   - deps:        space-separated module names it depends on
@@ -71,7 +91,7 @@ static const StdlibModule stdlib_table[] = {
     { "secure_mem",    "secure_mem.c securemem_glue.c",          "",                                                                 "" },
     { "securemem",     "securemem.c securemem_glue.c",           "",                                                                 "" },
     { "tls",           "tls.c tls_glue.c",                       "",                                                                 "-lssl -lcrypto" },
-    { "keychain",      "keychain.c keychain_glue.c",             "",                                                                 "" },
+    { "keychain",      "keychain.c keychain_glue.c",             "",                                                                 TK_KEYCHAIN_FLAGS },
     { "infer",         "infer.c infer_glue.c",                   "",                                                                 "" },
     { "infer_stream",  "infer_stream.c",                         "",                                                                 "" },
     { "mlx",           "mlx.c mlx_glue.c",                       "",                                                                 "" },
@@ -127,6 +147,16 @@ static int word_in_list(const char *list, const char *word) {
     return 0;
 }
 
+/* ── Helper: is a whole flag (possibly "-framework X") already present? ── */
+
+static int flag_in_list(const char *list, const char *flag) {
+    /* Space-pad both sides so a substring match is a whole-token match. */
+    char hay[1024], needle[160];
+    snprintf(hay, sizeof hay, " %s ", list);
+    snprintf(needle, sizeof needle, " %s ", flag);
+    return strstr(hay, needle) != NULL;
+}
+
 /* ── Helper: append .c files for a module to the sources buffer ────── */
 
 static void append_module_sources(char *buf, size_t bufsz, const char *dir,
@@ -157,15 +187,30 @@ static void append_module_sources(char *buf, size_t bufsz, const char *dir,
 
 static void append_flags(char *flags, size_t flagsz, const char *extra) {
     if (!extra || !extra[0]) return;
-    /* Parse space-separated flags and add each if not already present */
+    /* Parse space-separated flags and add each if not already present.
+     *
+     * 136.3: "-framework X" is two whitespace-separated words but one
+     * indivisible flag.  Deduplicating word-by-word dropped the second
+     * "-framework" of a pair, so "-framework Security -framework CoreFoundation"
+     * degraded to "-framework Security CoreFoundation" and clang then treated
+     * "CoreFoundation" as an input filename.  Consume the operand with the
+     * flag and dedupe the pair as a unit. */
     char tmp[256];
     snprintf(tmp, sizeof tmp, "%s", extra);
     char *save = NULL;
     char *tok = strtok_r(tmp, " ", &save);
     while (tok) {
-        if (!word_in_list(flags, tok)) {
+        char pair[128];
+        const char *item = tok;
+        if (!strcmp(tok, "-framework")) {
+            char *operand = strtok_r(NULL, " ", &save);
+            if (!operand) break;   /* malformed: no framework name follows */
+            snprintf(pair, sizeof pair, "-framework %s", operand);
+            item = pair;
+        }
+        if (!flag_in_list(flags, item)) {
             size_t cur = strlen(flags);
-            snprintf(flags + cur, flagsz - cur, " %s", tok);
+            snprintf(flags + cur, flagsz - cur, " %s", item);
         }
         tok = strtok_r(NULL, " ", &save);
     }

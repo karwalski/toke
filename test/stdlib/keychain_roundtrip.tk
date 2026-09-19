@@ -1,0 +1,88 @@
+m=keychainroundtrip;
+i=kc:std.keychain;
+i=env:std.env;
+i=io:std.io;
+i=str:std.str;
+
+f=secret():str{
+  <"136.3-round-trip-value"
+};
+
+f=phasewrite(svc:str;acct:str):bool{
+  let ok=kc.set(svc;acct;secret());
+  let present=kc.exists(svc;acct);
+  io.print(str.concat("write: set=";str.concat(str.fromint(ok);str.concat(" exists=";str.fromint(present)))));
+  <ok&&present
+};
+
+f=phasecheck(svc:str;acct:str):bool{
+  let present=kc.exists(svc;acct);
+  let got=kc.get(svc;acct);
+  let matches=got==secret();
+  io.print(str.concat("check: exists=";str.concat(str.fromint(present);str.concat(" matches=";str.fromint(matches)))));
+  <present&&matches
+};
+
+f=phaseoverwrite(svc:str;acct:str):bool{
+  let ok=kc.set(svc;acct;"second-value");
+  let got=kc.get(svc;acct);
+  let matches=got=="second-value";
+  io.print(str.concat("overwrite: set=";str.concat(str.fromint(ok);str.concat(" matches=";str.fromint(matches)))));
+  <ok&&matches
+};
+
+f=phasecleanup(svc:str;acct:str):bool{
+  let removed=kc.delete(svc;acct);
+  let present=kc.exists(svc;acct);
+  io.print(str.concat("cleanup: delete=";str.concat(str.fromint(removed);str.concat(" exists=";str.fromint(present)))));
+  <removed&&present==0
+};
+
+f=phaseabsent(svc:str;acct:str):bool{
+  let present=kc.exists(svc;acct);
+  let got=kc.get(svc;acct);
+  let empty=str.len(got)==0;
+  io.print(str.concat("absent: exists=";str.concat(str.fromint(present);str.concat(" getlen=";str.fromint(str.len(got))))));
+  <present==0&&empty
+};
+
+f=phaseall(svc:str;acct:str):bool{
+  let before=kc.exists(svc;acct);
+  io.print(str.concat("all: exists-before=";str.fromint(before)));
+  <before==0&&phasewrite(svc;acct)&&phasecheck(svc;acct)&&phaseoverwrite(svc;acct)&&phasecleanup(svc;acct)
+};
+
+f=run(phase:str;svc:str;acct:str):bool{
+  if(phase=="write"){
+    <phasewrite(svc;acct)
+  };
+  if(phase=="check"){
+    <phasecheck(svc;acct)
+  };
+  if(phase=="cleanup"){
+    <phasecleanup(svc;acct)
+  };
+  if(phase=="absent"){
+    <phaseabsent(svc;acct)
+  };
+  <phaseall(svc;acct)
+};
+
+f=main():i64{
+  let svc=env.getor("TKKCSERVICE";"toke.keychain.roundtrip.default");
+  let acct=env.getor("TKKCACCOUNT";"probe-account");
+  let phase=env.getor("TKKCPHASE";"all");
+
+  if(kc.isavailable()==0){
+    io.print("SKIP: no OS credential store on this platform");
+    <0
+  };
+
+  if(run(phase;svc;acct)){
+    io.print("PASS");
+    <0
+  }el{
+    io.print("FAIL");
+    <1
+  }
+};
