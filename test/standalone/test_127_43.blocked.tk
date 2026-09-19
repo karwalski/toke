@@ -1,0 +1,40 @@
+(* test_127_43.blocked.tk -- Epic 127.43: json.print / json.enc of an i64
+ * whose value is >= 2^32 must print the number, not walk the value as a
+ * pointer.
+ *
+ * Glue side (DONE, src/stdlib/json_glue.c): tk_json_encnum_w / tk_json_encbool_w
+ * / tk_json_encf64_w encode the full i64 range without dereferencing the value;
+ * covered by test/stdlib/test_json.c (make test-stdlib-json).
+ *
+ * Still blocked on src/llvm.c: `j.enc(x)` resolves to tk_json_enc_w and
+ * `j.print(x)` to tk_json_print for EVERY argument type, and both read the i64
+ * as a `char *` -- so `j.print(4294967296)` is a SIGSEGV (exit 139) and
+ * `j.enc(2147483648)` is garbage. The dispatch must pick the typed wrapper from
+ * the argument's checker type (see the 127.41 bundle notes). Rename to
+ * test_127_43.tk once that lands. *)
+m=test.j12743;
+i=io:std.io;
+i=j:std.json;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=main():$i64{
+  cks("enc-small";j.enc(1);"1");
+  cks("enc-2p31-1";j.enc(2147483647);"2147483647");
+  cks("enc-2p31";j.enc(2147483648);"2147483648");
+  cks("enc-2p32";j.enc(4294967296);"4294967296");
+  cks("enc-7e13";j.enc(73000000000000);"73000000000000");
+  cks("enc-i64max";j.enc(9223372036854775807);"9223372036854775807");
+  cks("enc-neg32";j.enc(0-2147483648);"-2147483648");
+  cks("enc-neg2p32";j.enc(0-4294967296);"-4294967296");
+  (* these must print the number and not SIGSEGV *)
+  j.print(4294967296);
+  j.print(0-4294967296);
+  j.print(9223372036854775807);
+  <0
+};

@@ -547,3 +547,56 @@ int64_t tk_json_getregulations_w(int64_t obj) {
     (void)obj;
     return tk_arr_alloc(0, 0);
 }
+
+/* ── 127.43: typed JSON number / bool encoding ──────────────────────────
+ *
+ * `j.enc(x)` and `j.print(x)` reach the untyped i64 ABI, where an integer and
+ * a heap pointer are indistinguishable. The pre-127.43 path sent *every*
+ * argument through tk_json_enc_w / tk_json_print, which read the i64 as a
+ * `char *`: an i64 whose value happens to be a valid-looking address (or, for
+ * tk_json_print, any value outside +-1e9) was dereferenced, so
+ * `j.print(4294967296)` walked into unmapped memory (SIGSEGV, exit 139) and
+ * `j.enc(2147483648)` returned garbage.
+ *
+ * These wrappers are the typed targets the j.enc/j.print dispatch selects once
+ * the argument's checker type is known (i64 / bool / f64). They never
+ * dereference the value, so the full i64 range — 2^31, 2^32, 2^63-1 and the
+ * negatives — encodes exactly.
+ */
+
+/* json.encnum(v) — encode an i64 as a JSON number (no quotes, full range). */
+int64_t tk_json_encnum_w(int64_t v) {
+    char buf[24];  /* -9223372036854775808 = 20 chars + NUL */
+    int n = snprintf(buf, sizeof buf, "%lld", (long long)v);
+    if (n < 0) return (int64_t)(intptr_t)"0";
+    char *out = (char *)malloc((size_t)n + 1);
+    if (!out) return (int64_t)(intptr_t)"0";
+    memcpy(out, buf, (size_t)n + 1);
+    return (int64_t)(intptr_t)out;
+}
+
+/* json.encbool(b) — encode a bool as the JSON literal true/false. */
+int64_t tk_json_encbool_w(int64_t b) {
+    const char *s = b ? "true" : "false";
+    char *out = (char *)malloc(strlen(s) + 1);
+    if (!out) return (int64_t)(intptr_t)"false";
+    strcpy(out, s);
+    return (int64_t)(intptr_t)out;
+}
+
+/* json.encf64(bits) — encode a double (passed as its i64 bit pattern, the
+ * float ABI used throughout this glue) as a JSON number. Uses the shortest of
+ * %.15g/%.16g/%.17g that round-trips, so no precision is lost and ordinary
+ * values stay readable (1.5 -> "1.5", not "1.5000000000000000"). */
+int64_t tk_json_encf64_w(int64_t bits) {
+    double v = i64_to_f64(bits);
+    char buf[40];
+    for (int prec = 15; prec <= 17; prec++) {
+        snprintf(buf, sizeof buf, "%.*g", prec, v);
+        if (strtod(buf, NULL) == v) break;
+    }
+    char *out = (char *)malloc(strlen(buf) + 1);
+    if (!out) return (int64_t)(intptr_t)"0";
+    strcpy(out, buf);
+    return (int64_t)(intptr_t)out;
+}

@@ -315,7 +315,7 @@ test-stdlib-toon:
 
 test-stdlib-json:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_json \
-	    test/stdlib/test_json.c src/stdlib/json.c
+	    test/stdlib/test_json.c src/stdlib/json.c src/stdlib/json_glue.c
 	$(RUN_TEST) ./test/stdlib/test_json
 
 test-stdlib-yaml:

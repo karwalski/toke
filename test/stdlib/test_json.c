@@ -12,6 +12,11 @@
 #include <string.h>
 #include <stdint.h>
 
+/* json_glue.c — typed encoders under test from 127.43 onward. */
+int64_t tk_json_encnum_w(int64_t v);
+int64_t tk_json_encbool_w(int64_t b);
+int64_t tk_json_encf64_w(int64_t bits);
+
 static int g_pass = 0;
 static int g_fail = 0;
 
@@ -477,6 +482,43 @@ int main(void) {
             CHECK(strstr(fp.raw, "\"hello\"") != NULL, "json_from_pairs: has value hello");
             free((void *)fp.raw);
         }
+    }
+
+    /* --- 127.43: typed number / bool encoding (json_glue.c) --- */
+    {
+        struct { int64_t v; const char *want; } nums[] = {
+            { 0,                     "0" },
+            { 2147483647LL,          "2147483647" },          /* 2^31-1 */
+            { 2147483648LL,          "2147483648" },          /* 2^31   */
+            { 4294967296LL,          "4294967296" },          /* 2^32   */
+            { 73000000000000LL,      "73000000000000" },      /* 7.3e13 */
+            { 9223372036854775807LL, "9223372036854775807" }, /* 2^63-1 */
+            { -2147483648LL,         "-2147483648" },
+            { -4294967296LL,         "-4294967296" },
+            { -9223372036854775807LL - 1, "-9223372036854775808" },
+        };
+        int ok = 1;
+        for (size_t i = 0; i < sizeof nums / sizeof nums[0]; i++) {
+            const char *got = (const char *)(intptr_t)tk_json_encnum_w(nums[i].v);
+            if (!got || strcmp(got, nums[i].want) != 0) {
+                printf("      encnum(%lld) = %s, want %s\n",
+                       (long long)nums[i].v, got ? got : "(null)", nums[i].want);
+                ok = 0;
+            }
+        }
+        CHECK(ok, "127.43 tk_json_encnum_w: full i64 range, no truncation");
+
+        const char *bt = (const char *)(intptr_t)tk_json_encbool_w(1);
+        const char *bf = (const char *)(intptr_t)tk_json_encbool_w(0);
+        CHECK(bt && strcmp(bt, "true") == 0 && bf && strcmp(bf, "false") == 0,
+              "127.43 tk_json_encbool_w: true/false literals");
+
+        double d1 = 1.5, d2 = 0.1; int64_t b1, b2;
+        memcpy(&b1, &d1, sizeof b1); memcpy(&b2, &d2, sizeof b2);
+        const char *f1 = (const char *)(intptr_t)tk_json_encf64_w(b1);
+        const char *f2 = (const char *)(intptr_t)tk_json_encf64_w(b2);
+        CHECK(f1 && strcmp(f1, "1.5") == 0, "127.43 tk_json_encf64_w: 1.5 stays short");
+        CHECK(f2 && strtod(f2, NULL) == 0.1, "127.43 tk_json_encf64_w: 0.1 round-trips");
     }
 
     /* --- summary --- */
