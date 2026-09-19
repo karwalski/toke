@@ -19,6 +19,13 @@ it carries, verbatim modulo line wrapping (and, for HTML/template surfaces, tags
 and entities). A near-miss is reported as drift with the first differing
 fragment; a total absence is reported as missing.
 
+Rule 1b — REGISTRY SURFACES (story 132.4). A registry description is a field on
+someone else's website. Where it is fed by a file we commit (a package manifest,
+a PyPI long description, a model card) that file is an enforced surface above.
+Where it is only a web form, it is listed in AWAITING_PUBLISH and warns until the
+owner publishes it — the nine entries there are the standing record that prepared
+text is not the same thing as live text. `--strict` fails on them.
+
 Rule 2 — STALE FACTS (story 132.12). "LL(1)" and "13 keywords" are contradicted
 by our own normative spec: `docs/spec/toke-spec-v0.4.md` §E (the v0.3 strict-LL(1)
 claim "was not accurate for the real grammar"; the verified property is
@@ -82,6 +89,80 @@ SURFACES = [
     # toke-website is owned by the website stories; 132.10 may not edit that tree.
     {"path": "../toke-website/README.md", "blocks": ["paragraph"],
      "story": "132.9 / 132.2 — website roadmap + home page"},
+
+    # ------------------------------------------------------------ registries --
+    # Story 132.4. A registry description is not a repo README: it is a field on
+    # someone else's website. Where that field is fed by a file we commit — a
+    # package manifest, a long description, a model card — the file is an
+    # enforced surface here, so the text cannot drift between releases and a
+    # publish is a release rather than a retype. Where the field exists only as a
+    # web form (every GitHub description, and each registry's live page until the
+    # next release), it is in AWAITING_PUBLISH below and warns instead.
+    {"path": "../toke-tokenizer/python/pyproject.toml", "blocks": ["one_liner"]},
+    {"path": "../toke-tokenizer/python/README.md", "blocks": ["one_liner"]},
+    {"path": "../toke-tokenizer/docs/hf-model-card.md",
+     "blocks": ["one_liner", "paragraph"]},
+    {"path": "../toke-mcp/package.json", "blocks": ["one_liner"]},
+    {"path": "../toke-mcp/npm-tkc/package.json", "blocks": ["one_liner"]},
+    {"path": "../toke-mcp/vscode-toke/package.json", "blocks": ["one_liner"]},
+    {"path": "../toke-mcp/vscode-toke/README.md", "blocks": ["one_liner", "paragraph"]},
+    {"path": "../toke-model/huggingface/README.md", "blocks": ["one_liner", "paragraph"]},
+    {"path": "../toke-model/ollama/README.md", "blocks": ["one_liner"]},
+]
+
+# ------------------------------------------------------- awaiting publish ----
+# Story 132.4 prepared the text for nine registry surfaces; publishing any of
+# them is an outward-facing action the owner has to take, with credentials this
+# repository does not hold. Each entry warns — naming what is live today, where
+# the prepared text lives, and the command that applies it — and keeps warning
+# until the owner publishes and the entry is deleted. Under --strict they fail,
+# which is how story 132.5 can assert "every registry surface is live".
+#
+# The prose, the live text each one replaces and the owner checklist are in
+# docs/about/registry-descriptions.md.
+AWAITING_PUBLISH = [
+    {"surface": "GitHub karwalski/toke — description, homepage, 5 topics",
+     "live": "description empty, no topics, no homepage (2026-09-19)",
+     "source": "docs/about/registry-descriptions.md §1",
+     "apply": "gh repo edit karwalski/toke --description ... (see §1)"},
+    {"surface": "GitHub — the other 14 toke repos",
+     "live": "every public repo description empty (2026-09-19)",
+     "source": "scripts/about/github_repo_descriptions.py",
+     "apply": "python3 scripts/about/github_repo_descriptions.py | sh"},
+    {"surface": "PyPI toke-tokenizer",
+     "live": "0.1.0 still advertises the withdrawn \"approximately 52% token "
+             "reduction\" and does not say the wheel is the v0.3 tokenizer",
+     "source": "../toke-tokenizer/python/pyproject.toml + python/README.md (0.1.1)",
+     "apply": "python3 -m build && python3 -m twine upload dist/toke_tokenizer-0.1.1*"},
+    {"surface": "npm @tokelang/mcp-server",
+     "live": "0.1.0 description capitalises \"Toke\" and carries no one-liner",
+     "source": "../toke-mcp/package.json (0.1.1)",
+     "apply": "cd ~/tk/toke-mcp && npm publish --access public"},
+    {"surface": "npm @tokelang/tkc",
+     "live": "never published",
+     "source": "../toke-mcp/npm-tkc/package.json (0.3.0)",
+     "apply": "cd ~/tk/toke-mcp/npm-tkc && npm publish --access public"},
+    {"surface": "VS Code marketplace tokelang.toke-language",
+     "live": "0.2.2 display name and description capitalise \"Toke\"; listing "
+             "never says what toke is",
+     "source": "../toke-mcp/vscode-toke/package.json + README.md (0.2.3)",
+     "apply": "cd ~/tk/toke-mcp/vscode-toke && npx vsce publish"},
+    {"surface": "Hugging Face karwalski/toke (model card)",
+     "live": "card carries the withdrawn 52% headline, the retired keyword count, "
+             "a 55-character alphabet and an unqualified 100%",
+     "source": "../toke-model/huggingface/README.md",
+     "apply": "huggingface-cli upload karwalski/toke "
+              "~/tk/toke-model/huggingface/README.md README.md"},
+    {"surface": "Hugging Face karwalski/toke-tokenizer (model card)",
+     "live": "card carries the withdrawn 52% and the per-example 19-vs-49 figure",
+     "source": "../toke-tokenizer/docs/hf-model-card.md",
+     "apply": "huggingface-cli upload karwalski/toke-tokenizer "
+              "~/tk/toke-tokenizer/docs/hf-model-card.md README.md"},
+    {"surface": "Ollama karwalski/toke",
+     "live": "not published (404, 2026-09-19)",
+     "source": "../toke-model/ollama/README.md § Registry description",
+     "apply": "ollama push karwalski/toke, then paste the description from the "
+              "source file"},
 ]
 
 NEAR_MISS = 0.55        # similarity above which an absent block is "drifted"
@@ -214,6 +295,23 @@ def resolve(path):
     return os.path.join(ROOT, path)
 
 
+def check_awaiting():
+    """Story 132.4 — registry fields whose publish the owner still has to run.
+
+    These are not drifted copies; they are correct text that is not live yet.
+    Reported in the warning shape used everywhere else so that --strict turns
+    them into failures once story 132.5 expects them all published.
+    """
+    out = []
+    for entry in AWAITING_PUBLISH:
+        out.append((entry["surface"], 0,
+                    "awaiting an owner-executed publish — live today: %s" % entry["live"],
+                    "prepared text: %s\n      apply:         %s"
+                    % (entry["source"], entry["apply"]),
+                    "132.4 — registry descriptions (publish, then delete this entry)"))
+    return out
+
+
 def check_surfaces(canon):
     """Rule 1 — every declared surface reproduces its blocks verbatim."""
     failures, warnings = [], []
@@ -298,6 +396,7 @@ def main():
 
     canon = load_canonical()
     failures, warnings = check_surfaces(canon)
+    warnings += check_awaiting()
 
     scanned = 0
     for path in scan_files(targets):
@@ -338,7 +437,9 @@ def main():
         return 1
 
     print("canonical facts OK: %d surface(s) checked, %d files scanned, "
-          "%d pending-story warning(s)." % (len(SURFACES), scanned, len(warnings)))
+          "%d pending-story warning(s) (%d of them registry fields awaiting an "
+          "owner-executed publish, story 132.4)."
+          % (len(SURFACES), scanned, len(warnings), len(AWAITING_PUBLISH)))
     return 0
 
 
