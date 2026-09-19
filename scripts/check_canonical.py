@@ -213,8 +213,10 @@ SKIP_PREFIXES = (
     "docs/decisions/",
     "docs/audits/",
     "docs/spec/toke-spec-v0.3.md",
-    "docs/about/canonical.json",      # the rule table names the forbidden strings
-    "docs/about/canonical.md",        # ditto, with its correction note
+    # canonical.json is NOT skipped: its "forbidden" object names the retired strings,
+    # and only that object is exempt (see claims_table_lines below) — the rest of the
+    # file is a live claim surface and is scanned like any other.
+    "docs/about/canonical.md",        # the rule table, with its correction note
 )
 
 ARCHIVE_BANNER = re.compile(r"\*\*Archived\s+20\d\d-\d\d-\d\d", re.I)
@@ -383,7 +385,22 @@ def check_stale(path, rel):
     # where a reader sees it.
     if ARCHIVE_BANNER.search("\n".join(lines[:ARCHIVE_HEAD])):
         return findings
+    # Story 132.15: a JSON claims table (canonical.json's "forbidden" object, a
+    # "retired_claim" record) names the strings being retired — "LL(1)" and "13
+    # keywords" are its KEYS. Only the table's own lines are exempt, located by brace
+    # matching in check_metrics_claims.claims_table_lines, so the same wording asserted
+    # anywhere else in the file still fails.
+    table_lines = frozenset()
+    if path.endswith(".json"):
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from check_metrics_claims import claims_table_lines
+            table_lines = claims_table_lines(path)
+        except Exception:                                    # pragma: no cover
+            table_lines = frozenset()
     for i, line in enumerate(lines):
+        if (i + 1) in table_lines:
+            continue
         near = "\n".join(lines[max(0, i - CORRECTION_LINES):i + CORRECTION_LINES + 1])
         near = near.replace("*", "").replace("_", "")   # markdown emphasis is not content
         for pat, label, fix in STALE:

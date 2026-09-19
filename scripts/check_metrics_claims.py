@@ -106,7 +106,6 @@ SKIP_PREFIXES = (
     "docs/metrics-baseline.md",      # the source of truth; it defines the wording
     "docs/about/samples-v04.md",     # the per-lane dataset, with its own do-not rules
     "docs/reference/token-comparison.md",  # v0.3 dataset, requalified in place by 132.6
-    "docs/about/canonical.json",     # the rule table names the forbidden strings
 )
 
 PCT = re.compile(r"(?<![\w.])\d{1,3}(?:\.\d+)?\s?%")
@@ -375,7 +374,7 @@ def count_findings(line, near):
             out.append((
                 "%s: %d does not match the fact sheet (%s)" % (
                     label, n, ", ".join(str(v) for v in sorted(x for x in ok if x))),
-                m.group(0).strip()))
+                m.group(0).strip(), m.span()))
     return out
 
 
@@ -430,6 +429,68 @@ def md_files(targets):
     return sorted(set(out))
 
 
+# A claims table names the strings it is retiring. `docs/about/canonical.json`'s
+# "forbidden" object has "LL(1)" and "13 keywords" as KEYS, each paired with an
+# "instead" and a source; a withdrawn-claims table does the same. Those strings are the
+# claims being retired, not claims being made — but the rest of the file is a live claim
+# surface and must still be scanned, so this exempts the strings, not the file.
+CLAIMS_TABLE = re.compile(r"forbidden|withdrawn|retired|deprecated|banned|do[ _-]?not",
+                          re.I)
+CLAIM_VALUE_KEY = re.compile(r"^(claim|claims|withdrawn|retired_claim|stale|was|not)$",
+                             re.I)
+# a claim record's own fields — never the claim
+METADATA_KEY = re.compile(
+    r"^(instead|replacement|fix|source|sources|story|stories|why|reason|note|notes|"
+    r"date|retired_on|withdrawn_on|superseded_on)$", re.I)
+
+
+@functools.lru_cache(maxsize=128)
+def claims_table_lines(path):
+    """1-based line numbers that fall inside a claims table in a JSON file.
+
+    A claims table is an object under a key like "forbidden" / "withdrawn" /
+    "retired_claim": its keys ARE the retired claims and its values quote them, so a
+    string there is a claim being retired, not one being made. The region is located
+    by brace matching, so the same string asserted anywhere else in the file is still
+    checked — the exemption is the table, not the wording.
+    """
+    try:
+        text = open(path, encoding="utf-8").read()
+        import json
+        json.loads(text)                      # only trust well-formed JSON
+    except Exception:
+        return frozenset()
+    lines = set()
+    for m in re.finditer(r'"([A-Za-z0-9_ -]+)"\s*:\s*[{\[]', text):
+        if not CLAIMS_TABLE.search(m.group(1)):
+            continue
+        open_ch = text[m.end() - 1]
+        close_ch = "}" if open_ch == "{" else "]"
+        depth, i, in_str, esc = 0, m.end() - 1, False, False
+        while i < len(text):
+            c = text[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif c == "\\":
+                    esc = True
+                elif c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c == open_ch:
+                depth += 1
+            elif c == close_ch:
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        first = text.count("\n", 0, m.start()) + 1
+        last = text.count("\n", 0, min(i, len(text) - 1)) + 1
+        lines.update(range(first, last + 1))
+    return frozenset(lines)
+
+
 def is_archived(lines):
     """True when the document opens with a dated archive banner (story 132.15)."""
     return bool(ARCHIVE_BANNER.search("\n".join(lines[:ARCHIVE_HEAD])))
@@ -444,14 +505,18 @@ def check_file(path):
     except OSError:
         return []
     archived = is_archived(lines)
+    table_lines = claims_table_lines(path) if path.endswith(".json") else frozenset()
     findings = []
     for i, line in enumerate(lines):
+        in_claims_table = (i + 1) in table_lines
         ctx_start = max(0, i - CONTEXT_LINES)
         context = "\n".join(lines[ctx_start:i + 1])
         # a supersession note may sit just after the sentence it qualifies, but it
         # has to be adjacent to count — a marker 20 lines away qualifies nothing.
         near = "\n".join(lines[max(0, i - 4):i + 5])
         for s in sentences(line):
+            if in_claims_table:
+                continue          # this line is inside the file's own claims table
             # Rule 1 — unqualified percentage claim about tokens
             if claims_token_percentage(s):
                 missing = []
@@ -480,7 +545,9 @@ def check_file(path):
                      "non-toke baseline", s))
         # Rule 4 — a count of things that disagrees with the tree
         if not archived and not rel.startswith(FACTS_SKIP):
-            for why, frag in count_findings(line, near):
+            for why, frag, _span in count_findings(line, near):
+                if in_claims_table:
+                    continue
                 findings.append((i + 1, why, frag))
     return findings
 
