@@ -1,0 +1,26 @@
+id: D090
+series: D
+description: "127.42 positive guard: every real std.* module still imports — glue-only modules that ship no .tki (io, str, array, collections, vec, xml, soap, fs, fmt) alongside .tki-backed ones (json, time, math, file, env, path)"
+input: |
+  m=t;
+  i=io:std.io;
+  i=s:std.str;
+  i=arr:std.array;
+  i=c:std.collections;
+  i=v:std.vec;
+  i=x:std.xml;
+  i=so:std.soap;
+  i=fsm:std.fs;
+  i=fm:std.fmt;
+  i=j:std.json;
+  i=tm:std.time;
+  i=mth:std.math;
+  i=fl:std.file;
+  i=ev:std.env;
+  i=ph:std.path;
+  f=main():i64{
+    io.println("ok");
+    <0
+  };
+expected_exit_code: 0
+expected_absent_codes: ["E2030"]

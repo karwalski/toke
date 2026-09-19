@@ -83,6 +83,7 @@ static const StdlibModule stdlib_table[] = {
     { "queue",         "collections.c collections_glue.c",      "",                                                                 "" },
     { "set",           "collections.c collections_glue.c",      "",                                                                 "" },
     { "vec",           "collections.c collections_glue.c",      "",                                                                 "" },
+    { "array",         "collections.c collections_glue.c",      "",                                                                 "" },  /* 127.42: tk_array_* glue, no .tki */
     { "task",          "task.c",                                "",                                                                 "-lpthread" },
     { "clipboard",     "clipboard_glue.c",                      "",                                                                 "" },
     { "fs",            "file.c file_glue.c",                    "",                                                                 "" },
@@ -422,4 +423,20 @@ int resolve_stdlib_deps_imports_only(const char *stdlib_dir,
     }
 
     return 0;
+}
+
+/*
+ * stdlib_module_registered (127.42) — is `name` a real std.* module?
+ *
+ * The import resolver uses this as one half of its existence gate: a
+ * `std.<name>` import is accepted when the module is registered here (native
+ * glue) or ships a .tki interface. Without it the resolver accepted any
+ * `std.<anything>` and the generic `tk_<mod>_<m>_w` call rule fabricated
+ * symbols, so a typo surfaced only at link time — or never, under --check.
+ *
+ * Returns 1 if the module is in the dependency table, 0 otherwise.
+ */
+int stdlib_module_registered(const char *name) {
+    if (!name || !*name) return 0;
+    return find_module(name) != NULL;
 }

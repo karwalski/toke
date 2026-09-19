@@ -67,4 +67,14 @@ int resolve_stdlib_deps_imports_only(const char *stdlib_dir,
  */
 void stdlib_deps_append_flags(char *flags, size_t flagsz, const char *extra);
 
+/*
+ * stdlib_module_registered — 1 if `name` (a bare module name such as "io" or
+ * "vec", i.e. the tail of "std.<name>") has a row in the dependency table.
+ *
+ * Story 127.42: the import resolver gates `std.*` imports on this registry
+ * plus the .tki interface files, so an unknown module is an E2030 instead of
+ * a silently fabricated `tk_<mod>_<m>_w` symbol.
+ */
+int stdlib_module_registered(const char *name);
+
 #endif /* TK_STDLIB_DEPS_H */

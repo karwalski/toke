@@ -1,0 +1,12 @@
+id: D089
+series: D
+description: "127.42: a misspelled stdlib module name within edit distance 2 of exactly one known module carries the deterministic `did you mean 'std.json'?` fix on its E2030"
+input: |
+  m=t;
+  i=j:std.jsonn;
+  f=main():i64{
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E2030"]
+expected_fix: "did you mean 'std.json'?"

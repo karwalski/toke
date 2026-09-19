@@ -26,6 +26,7 @@
  * (diag_emit) and return 0 on success or -1 on any failure.
  */
 #include "names.h"
+#include "stdlib_deps.h"   /* 127.42: std.* module existence gate */
 #include "tkc_limits.h"
 #include <ctype.h>
 #include <dirent.h>
@@ -307,6 +308,44 @@ static const char * const s_known_modules[] = {
 };
 
 /*
+ * std_module_exists (127.42) — does `tail` name a real standard-library
+ * module?  `tail` is everything after "std." in an import path.
+ *
+ * A std.* module is real when EITHER
+ *   1. it has a row in the native-glue registry (src/stdlib_deps.c) — this
+ *      covers the glue-only modules that ship no interface file (io,
+ *      collections, array, xml, soap, …); OR
+ *   2. it ships a .tki interface file — either in the repo stdlib directory
+ *      (located the same way as the .tki loader further down this file and in
+ *      llvm.c: TKC_STDLIB_DIR points at src/stdlib, so ../../stdlib/<m>.tki is
+ *      the repo-root stdlib dir) or in one of the user's -I search paths.
+ *
+ * Before this gate every `std.<anything>` import was accepted unconditionally
+ * and the generic `tk_<mod>_<m>_w` call rule fabricated symbols for it, so a
+ * typo (`std.bogus`) surfaced only as a link failure — or not at all under
+ * `--check`.
+ */
+static int std_module_exists(const char *tail,
+                             const char **sp_list, int sp_count) {
+    if (!tail || !*tail) return 0;
+    if (stdlib_module_registered(tail)) return 1;
+
+    const char *env_dir = getenv("TKC_STDLIB_DIR");
+    const char *base = env_dir ? env_dir : TKC_STDLIB_DIR;
+    char tki_path[TKC_MAX_PATH * 2];
+    snprintf(tki_path, sizeof tki_path, "%s/../../stdlib/%s.tki", base, tail);
+    FILE *f = fopen(tki_path, "r");
+    if (f) { fclose(f); return 1; }
+
+    /* Also honour the user's -I search paths (a vendored or overridden
+     * stdlib interface). */
+    for (int i = 0; i < sp_count; i++)
+        if (tki_exists(sp_list[i], tail)) return 1;
+
+    return 0;
+}
+
+/*
  * is_known_module — return 1 if the lowercase form of seg (length slen)
  * matches one of the known stdlib module names.
  */
@@ -525,9 +564,31 @@ int resolve_imports(const Node *ast, const char *src,
             }
         }
 
-        /* std.* — always resolved, no file needed */
+        /* std.* — resolved without a file lookup, but the module must exist
+         * (127.42): gate on the native-glue registry + the .tki interfaces. */
         if (strncmp(mpath, "std.", 4) == 0 || strcmp(mpath, "std") == 0) {
-            st_push(out, alias, mpath, ver, 1);
+            const char *tail = (mpath[3] == '.') ? mpath + 4 : NULL;
+            if (!tail || std_module_exists(tail, sp_list, sp_count)) {
+                st_push(out, alias, mpath, ver, 1);
+                continue;
+            }
+            char msg[TKC_MAX_PATH + 128];
+            snprintf(msg, sizeof(msg),
+                     "standard-library module '%s' not found", mpath);
+            const char *suggestion = find_closest_module(tail);
+            if (suggestion && strcmp(suggestion, tail) != 0) {
+                /* Deterministic: a single closest known module name within
+                 * edit distance 2 (AGENTS §6 — `fix` only when unambiguous). */
+                char fix[256];
+                snprintf(fix, sizeof(fix), "did you mean 'std.%s'?", suggestion);
+                diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col,
+                          msg, "fix", fix, NULL);
+            } else {
+                diag_emit(DIAG_ERROR, E2030, d->start, d->line, d->col,
+                          msg, "fix", NULL);
+            }
+            err = 1;
+            st_push(out, alias, mpath, ver, 0);
             continue;
         }
 

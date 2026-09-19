@@ -1,0 +1,13 @@
+id: D088
+series: D
+description: "127.42: an unknown `std.*` module is E2030 at import time instead of being accepted silently and having `tk_<mod>_<m>_w` symbols fabricated for it — a near-miss name gets a deterministic `did you mean` fix, `std.bogus` gets none"
+input: |
+  m=t;
+  i=b:std.bogus;
+  f=main():i64{
+    let z=b.frobnicate(1);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E2030"]
+expected_fix_absent_for: ["E2030"]
