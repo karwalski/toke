@@ -62,7 +62,7 @@ API reference for every module in the toke standard library. Each page documents
 - [std.dataframe](/docs/reference/stdlib/dataframe/) -- tabular data
 - [std.analytics](/docs/reference/stdlib/analytics/) -- analytics utilities
 - [std.llm](/docs/reference/stdlib/llm/) -- LLM integration
-- [std.llm_tool](/docs/reference/stdlib/llm_tool/) -- LLM tool definitions
+- [std.llmtool](/docs/reference/stdlib/llmtool/) -- LLM tool definitions
 - [std.ml](/docs/reference/stdlib/ml/) -- machine learning
 
 ## Internationalisation

@@ -1831,7 +1831,7 @@ LLM client for chat, completion, and streaming (imports std.http, std.json).
 - `llm.complete(c:llmclient;prompt:str):str!llmerr` — single-prompt completion
 - `llm.countokens(c:llmclient;text:str):u64` — count tokens
 
-#### 16.32 std.llm_tool [I]
+#### 16.32 std.llmtool [I]
 
 LLM tool-use / function-calling protocol (imports std.llm).
 
@@ -1839,11 +1839,11 @@ LLM tool-use / function-calling protocol (imports std.llm).
 
 **Functions:**
 
-- `llm.withtools(c:llmclient;tools:[tooldecl]):llmclient` — attach tool declarations
-- `llm.chatwithtools(c:llmclient;msgs:[llmmsg]):toolcall!llmerr` — chat expecting tool call
-- `llm.submitresult(c:llmclient;msgs:[llmmsg];result:toolresult):llmresp!llmerr` — submit tool result
-- `llm.parsetoolcalls(s:str):toolcall!llmerr` — parse tool call from string
-- `llm.resultmsgs(results:[toolresult]):[llmmsg]` — convert tool results to messages
+- `llmtool.withtools(c:llmclient;tools:[tooldecl]):llmclient` — attach tool declarations
+- `llmtool.chatwithtools(c:llmclient;msgs:[llmmsg]):toolcall!llmerr` — chat expecting tool call
+- `llmtool.submitresult(c:llmclient;msgs:[llmmsg];result:toolresult):llmresp!llmerr` — submit tool result
+- `llmtool.parsetoolcalls(s:str):toolcall!llmerr` — parse tool call from string
+- `llmtool.resultmsgs(results:[toolresult]):[llmmsg]` — convert tool results to messages
 
 #### 16.33 std.ml [I]
 

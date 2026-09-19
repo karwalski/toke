@@ -223,4 +223,4 @@ f=main():i64{
 
 ## See Also
 
-- `std.llm_tool` -- tool/function-calling support built on top of this module.
+- `std.llmtool` -- tool/function-calling support built on top of this module.

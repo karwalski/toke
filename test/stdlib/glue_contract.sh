@@ -148,6 +148,29 @@ elif build llm_clients test/stdlib/llm_clients.tk; then
     expect "no call leaked from A to B"         "$(grep -c 'modelA' "$LOG_B")" "0"
     expect "llm.countokens uses the client"     "$(line "$out" tokens)" "2"
 fi
+
+echo
+echo "=== 136.17 -- std.llmtool is importable and its runtime is reachable ==="
+if [ "$ready" -ne 1 ]; then
+    echo "FAIL [llmtool] the local endpoint never came up -- NOT skipped"
+    fail=$((fail + 1))
+elif build llmtool_calls test/stdlib/llmtool_calls.tk; then
+    out="$(LLMA="http://127.0.0.1:$PORT_A" "$TMP/llmtool_calls" --allow-net)"
+    # The import line is half the assertion: neither std.llm.tool nor
+    # std.llm_tool could be written before this.
+    expect "parsetoolcalls reads the tool name" "$(line "$out" call.name)" "getweather"
+    expect "parsetoolcalls reads the call id"   "$(line "$out" call.id)"   "call-1"
+    expect "the arguments object becomes pairs" "$(line "$out" call.args)" "1"
+    expect "junk input takes the err arm"       "$(line "$out" bad)"       "ERR"
+    expect "resultmsgs returns one message per result" "$(line "$out" msgs.len)" "1"
+    expect "the message is tool-role"           "$(line "$out" msgs.role)" "tool"
+    expect "the message carries id and content" "$(line "$out" msgs.body)" \
+           '{"tool_call_id":"call-1","content":{"ok":true}}'
+    expect "two results give two messages"      "$(line "$out" two.len)"   "2"
+    # withtools returns a NEW client; the original must be untouched.
+    expect "the original client still works"    "$(line "$out" base)"  "ALPHA|model=modelA|auth=Bearer keyA"
+    expect "the tool-carrying client works too" "$(line "$out" armed)" "ALPHA|model=modelA|auth=Bearer keyA"
+fi
 stop_llm
 
 echo

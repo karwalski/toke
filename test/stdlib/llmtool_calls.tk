@@ -1,0 +1,69 @@
+(* llmtool_calls.tk -- story 136.17.
+
+   The tool-calling runtime was built and unreachable. llm_tool.c has
+   implemented these since 17.1.2, but the interface named the module
+   `std.llm.tool` -- a dotted sub-namespace that resolves to nothing -- the
+   documentation headlined `std.llm_tool`, which the lexer rejects under
+   113.2a, and there were no _w wrappers at all. The module is now
+   `std.llmtool`, which is the name src/stdlib/llmtool.h already used.
+
+   The import lines below are half the assertion: before this, neither
+   spelling could be written.
+
+   Every field is read through a function with a DECLARED $toolcall or
+   $llmmsg parameter rather than off the mt result directly. That is not
+   stylistic: the compiler infers the struct type of an mt result from the
+   wrong struct, so `call.id` on the binding itself lowers to slot 0 and
+   returns the tool name. Reported separately; passing through a typed
+   parameter gives the right slot. *)
+m=llmtoolcalls;
+i=llm:std.llm;
+i=tool:std.llmtool;
+i=io:std.io;
+i=str:std.str;
+i=env:std.env;
+
+f=cname(c:$toolcall):str{ <c.name };
+f=cid(c:$toolcall):str{ <c.id };
+f=mrole(m:$llmmsg):str{ <m.role };
+f=mbody(m:$llmmsg):str{ <m.content };
+
+f=rawcall():str{
+  <"{\"choices\":[{\"message\":{\"tool_calls\":[{\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"getweather\",\"arguments\":\"{\\\"city\\\": \\\"Sydney\\\"}\"}}]}}]}"
+};
+
+f=main():i64{
+  let empty=$toolcall{name:"";args:@();id:""};
+
+  (* parsetoolcalls: a real provider response *)
+  let call=mt tool.parsetoolcalls(rawcall()) {$ok:tc tc;$err:e empty};
+  io.println(str.concat("call.name=";cname(call)));
+  io.println(str.concat("call.id=";cid(call)));
+  io.println("call.args=\(call.args.len())");
+
+  (* junk must take the err arm, not return a half-built call *)
+  let bad=mt tool.parsetoolcalls("not json at all") {$ok:tc "OK";$err:e "ERR"};
+  io.println(str.concat("bad=";bad));
+
+  (* resultmsgs: one tool-role message per result, ready to append *)
+  let r1=$toolresult{id:"call-1";content:"{\"ok\":true}";error:false};
+  let msgs=tool.resultmsgs(@(r1));
+  io.println("msgs.len=\(msgs.len())");
+  io.println(str.concat("msgs.role=";mrole(msgs.get(0))));
+  io.println(str.concat("msgs.body=";mbody(msgs.get(0))));
+
+  let r2=$toolresult{id:"call-2";content:"{\"ok\":false}";error:true};
+  let two=tool.resultmsgs(@(r1;r2));
+  io.println("two.len=\(two.len())");
+
+  (* withtools returns a NEW client; the original must still work *)
+  let base=llm.client(env.get("LLMA");"keyA";"modelA");
+  let p=$toolparam{name:"city";type:"string";desc:"City name";required:true};
+  let decl=$tooldecl{name:"getweather";desc:"Return weather";params:@(p)};
+  let armed=tool.withtools(base;@(decl));
+  let viabase=mt llm.complete(base;"ping") {$ok:s s;$err:e "ERR"};
+  io.println(str.concat("base=";viabase));
+  let viaarmed=mt llm.complete(armed;"ping") {$ok:s s;$err:e "ERR"};
+  io.println(str.concat("armed=";viaarmed));
+  <0
+};

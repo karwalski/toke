@@ -25,10 +25,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             req = {}
         auth = self.headers.get("Authorization", "none")
         text = "%s|model=%s|auth=%s" % (TAG, req.get("model", "?"), auth)
+        tools = req.get("tools") or []
+        if tools:
+            # Story 136.17: name every tool the request carried, so the log
+            # proves llm.withtools actually attached them, then answer with a
+            # tool call the way an OpenAI-compatible provider does.
+            names = ",".join(
+                (t.get("function") or {}).get("name", "?") for t in tools)
+            text = "%s|tools=%s" % (text, names)
+            message = {"tool_calls": [{
+                "id": "call-1",
+                "type": "function",
+                "function": {"name": "getweather",
+                             "arguments": "{\"city\": \"Sydney\"}"},
+            }]}
+        else:
+            message = {"content": text}
         with open(LOGFILE, "a") as fh:
             fh.write(text + "\n")
         body = json.dumps({
-            "choices": [{"message": {"content": text}}],
+            "choices": [{"message": message}],
             "usage": {"prompt_tokens": 11, "completion_tokens": 22},
         }).encode()
         self.send_response(200)

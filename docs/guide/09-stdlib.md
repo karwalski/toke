@@ -709,10 +709,10 @@ let res=llm.chat($chatreq{
 io.println(res.content);
 ```
 
-### std.llm_tool -- Function calling
+### std.llmtool -- Function calling
 
 ```
-i=tool:std.llm_tool;
+i=tool:std.llmtool;
 ```
 
 OpenAI-compatible function calling support: build tool JSON schemas, parse `tool_calls` from responses, and dispatch to toke functions.
@@ -820,7 +820,7 @@ Write a program that:
 - Security modules (std.crypto, std.encrypt, std.auth) handle hashing, encryption, JWT, and API keys
 - Web modules (std.http, std.router, std.ws, std.sse, std.template, std.net) support full-stack server development
 - Data modules (std.json, std.csv, std.dataframe, std.analytics) handle parsing, columnar storage, and statistical analysis
-- LLM modules (std.llm, std.llm_tool) integrate with OpenAI, Anthropic, and Ollama APIs
+- LLM modules (std.llm, std.llmtool) integrate with OpenAI, Anthropic, and Ollama APIs
 - Visualization modules (std.chart, std.html, std.svg, std.canvas, std.image, std.dashboard, std.ml) generate charts, graphics, and dashboards
 - Fallible stdlib functions return `T!$err` types -- always handle the error
 - Each module is self-contained with a small, focused API

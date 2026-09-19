@@ -77,16 +77,8 @@ json.tki::json.streamemit              # 2026-09-19 C core json_stream*/json_new
 json.tki::json.newwriter               # 2026-09-19 C core json_stream*/json_newwriter in json.c, no _w glue (102.16 residual gap); json*.c owned by another stream, not touched here; core=json_newwriter [102.16]
 json.tki::json.writerbytes             # 2026-09-19 C core json_stream*/json_newwriter in json.c, no _w glue (102.16 residual gap); json*.c owned by another stream, not touched here; core=json_writerbytes [102.16]
 # ── llm ──
-llm.tki::llm.client                   # 2026-09-19 no _w glue (llm.c has chat/complete only); core=llm_client [131.38-followup]
 llm.tki::llm.chatstream               # 2026-09-19 no _w glue (llm.c has chat/complete only); core=llm_chatstream [131.38-followup]
 llm.tki::llm.streamnext               # 2026-09-19 no _w glue (llm.c has chat/complete only); core=llm_streamnext [131.38-followup]
-llm.tki::llm.countokens               # 2026-09-19 no _w glue (llm.c has chat/complete only); core=llm_countokens [131.38-followup]
-# ── llm_tool ──
-llm_tool.tki::llm.withtools                # 2026-09-19 module "std.llm.tool" yields dotted symbol tk_llm.tool_*_w (invalid C identifier); needs module rename (std.llmtool?) + glue; tk_tool_register_w/call_w exist; no C impl [131.38-followup]
-llm_tool.tki::llm.chatwithtools            # 2026-09-19 module "std.llm.tool" yields dotted symbol tk_llm.tool_*_w (invalid C identifier); needs module rename (std.llmtool?) + glue; tk_tool_register_w/call_w exist; no C impl [131.38-followup]
-llm_tool.tki::llm.submitresult             # 2026-09-19 module "std.llm.tool" yields dotted symbol tk_llm.tool_*_w (invalid C identifier); needs module rename (std.llmtool?) + glue; tk_tool_register_w/call_w exist; no C impl [131.38-followup]
-llm_tool.tki::llm.parsetoolcalls           # 2026-09-19 module "std.llm.tool" yields dotted symbol tk_llm.tool_*_w (invalid C identifier); needs module rename (std.llmtool?) + glue; tk_tool_register_w/call_w exist; no C impl [131.38-followup]
-llm_tool.tki::llm.resultmsgs               # 2026-09-19 module "std.llm.tool" yields dotted symbol tk_llm.tool_*_w (invalid C identifier); needs module rename (std.llmtool?) + glue; tk_tool_register_w/call_w exist; core=llm_tool_result_msgs [131.38-followup]
 # ── math ──
 math.tki::math.hypot                   # 2026-09-19 no _w glue and not in llvm.c libc map; core=math_hypot [131.38-followup]
 # ── md ──

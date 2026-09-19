@@ -42,7 +42,7 @@ Tracks the gap between specified (.tki), implemented (.h/.c), and tested
 | 17 | image      | yes | yes | yes | complete | Integration test also present |
 | 18 | json       | yes | yes | yes | complete | |
 | 19 | llm        | yes | yes | yes | complete | Live test also present |
-| 20 | llm_tool   | yes | yes | yes | complete | |
+| 20 | llmtool    | yes | yes | yes | complete | |
 | 21 | log        | yes | yes | yes | complete | |
 | 22 | math       | yes | yes | yes | complete | |
 | 23 | ml         | yes | yes | yes | complete | Integration test also present |
