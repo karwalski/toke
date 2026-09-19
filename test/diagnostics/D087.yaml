@@ -1,0 +1,23 @@
+id: D087
+series: D
+description: "127.14 positive guard: the str forms still pass — `\"\\(x.len)\"` interpolation, a str literal, a str local, a str-returning stdlib call and a str-returning user function all satisfy the declared str parameter of io.println with no E4031"
+input: |
+  m=t;
+  i=io:std.io;
+  i=s:std.str;
+  f=name():str{
+    <"toke"
+  };
+  f=main():i64{
+    let x=@(1;2;3);
+    let t="hello";
+    io.println("\(x.len)");
+    io.println("literal");
+    io.println(t);
+    io.println(s.concat(t;"!"));
+    io.println(name());
+    io.eprintln("\(s.contains(t;"ell"))");
+    <0
+  };
+expected_exit_code: 0
+expected_absent_codes: ["E4031"]

@@ -1,0 +1,21 @@
+id: D086
+series: D
+description: "127.14: a non-str argument where a stdlib parameter is declared str is E4031 at check time, not a segfault at runtime — `io.println(x.len)` (u64), `io.println(s.contains(..))` (bool) and bare scalar literals all report, with the interpolation fix only where the rewrite is deterministic"
+input: |
+  m=t;
+  i=io:std.io;
+  i=s:std.str;
+  f=main():i64{
+    let x=@(1;2;3);
+    let t="hello";
+    io.println(x.len);
+    io.println(s.contains(t;"ell"));
+    io.println(42);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix: "wrap the argument in a string interpolation"
+expected_diag_field:
+  field: expected
+  value: str

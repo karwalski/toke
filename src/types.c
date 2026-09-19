@@ -274,6 +274,7 @@ typedef struct { TypeEnv *env; const char *src;
                  int bind_count;
                  int fn_error_count;           /* errors in current function (story 84.1.9) */
                  int bind_infer_depth;         /* 127.40: recursion guard for binding-init inference */
+                 const Node *root;             /* 127.14: NODE_PROGRAM, for import-alias lookup */
                } Ctx;
 
 /* 127.40: an un-annotated binding's type is recovered by re-inferring its
@@ -836,6 +837,170 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
     }
 }
 
+/* ── 127.14: stdlib parameters declared `str` ───────────────────────────
+ *
+ * `io.println(x.len)` / `io.println(s.contains(..))` passed a non-str value
+ * straight through to glue that dereferences it as a string handle: a clean
+ * `--check` followed by a segfault at runtime (the "check-blind" class).
+ *
+ * std.io ships native glue and no .tki, so the checker has no signature source
+ * for it. The str-typed parameters of the print family are declared here and
+ * enforced at the call site against the argument types the checker already
+ * computed. `str_params` is a bitmask of 0-based argument positions that must
+ * be `str`; an argument the checker cannot type (TY_UNKNOWN) is left alone.
+ *
+ * `ret` is the declared return type, used only to type an argument that is
+ * itself one of these calls — `io.println(s.contains(a;b))` is the second
+ * shape 127.14 reports. It is deliberately NOT returned from NODE_CALL_EXPR,
+ * so stdlib return types do not leak into general inference here.
+ */
+typedef struct {
+    const char *module;
+    const char *fn;
+    unsigned    str_params;   /* bitmask of 0-based args declared `str` */
+    TypeKind    ret;          /* declared return type (TY_UNKNOWN = not modelled) */
+} StdStrSig;
+
+static const StdStrSig s_std_str_sigs[] = {
+    /* std.io ships native glue and no .tki — declared here. */
+    { "std.io",  "print",      0x1u, TY_UNKNOWN },
+    { "std.io",  "println",    0x1u, TY_UNKNOWN },
+    { "std.io",  "eprint",     0x1u, TY_UNKNOWN },
+    { "std.io",  "eprintln",   0x1u, TY_UNKNOWN },
+    /* std.str predicates (stdlib/str.tki: params ["str","str"] → bool). */
+    { "std.str", "contains",   0x3u, TY_BOOL },
+    { "std.str", "eq",         0x3u, TY_BOOL },
+    { "std.str", "gt",         0x3u, TY_BOOL },
+    { "std.str", "lt",         0x3u, TY_BOOL },
+    { "std.str", "ge",         0x3u, TY_BOOL },
+    { "std.str", "le",         0x3u, TY_BOOL },
+    { "std.str", "startswith", 0x3u, TY_BOOL },
+    { "std.str", "endswith",   0x3u, TY_BOOL },
+    { NULL,      NULL,         0u,   TY_UNKNOWN }
+};
+
+/*
+ * import_module_path — the dotted module path an import alias names
+ * (`io` → "std.io"), or NULL when the identifier is not an import alias.
+ *
+ * Name resolution registers aliases with def_node == NULL, so the NODE_IMPORT
+ * is found by scanning the program root instead.
+ */
+static const char *import_module_path(Ctx *cx, const char *alias,
+                                      char *buf, size_t bufsz) {
+    if (!cx->root || !alias) return NULL;
+    for (int i = 0; i < cx->root->child_count; i++) {
+        const Node *imp = cx->root->children[i];
+        if (!imp || imp->kind != NODE_IMPORT || imp->child_count < 2) continue;
+        const Node *an = imp->children[0];
+        const Node *pn = imp->children[1];
+        if (!an || !pn || pn->kind != NODE_MODULE_PATH) continue;
+        char ab[128]; TOKSTR(ab, cx->src, an);
+        if (strcmp(ab, alias) != 0) continue;
+        size_t used = 0; buf[0] = '\0';
+        for (int j = 0; j < pn->child_count; j++) {
+            const Node *seg = pn->children[j];
+            if (!seg) continue;
+            char sb[128]; TOKSTR(sb, cx->src, seg);
+            size_t need = strlen(sb) + (used ? 1u : 0u);
+            if (used + need + 1 >= bufsz) return NULL;
+            if (used) buf[used++] = '.';
+            memcpy(buf + used, sb, strlen(sb));
+            used += strlen(sb);
+            buf[used] = '\0';
+        }
+        return used ? buf : NULL;
+    }
+    return NULL;
+}
+
+/*
+ * std_sig_for — the modelled signature of a `alias.method(...)` call, or NULL.
+ */
+static const StdStrSig *std_sig_for(Ctx *cx, const Node *call) {
+    if (!call || call->child_count < 1) return NULL;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2) return NULL;
+    if (!callee->children[0] || callee->children[0]->kind != NODE_IDENT) return NULL;
+    if (!callee->children[1]) return NULL;
+
+    char alias[128]; TOKSTR(alias, cx->src, callee->children[0]);
+    char method[128]; TOKSTR(method, cx->src, callee->children[1]);
+    char mbuf[256];
+    const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
+    if (!mpath) return NULL;
+
+    for (int i = 0; s_std_str_sigs[i].module; i++)
+        if (strcmp(s_std_str_sigs[i].module, mpath) == 0 &&
+            strcmp(s_std_str_sigs[i].fn, method) == 0)
+            return &s_std_str_sigs[i];
+    return NULL;
+}
+
+/*
+ * check_std_str_args — enforce the str-typed stdlib parameters above.
+ *
+ * Called for a `alias.method(...)` call the checker could not resolve to a
+ * user function. Argument types are read from the rtype the caller's infer()
+ * pass has already stored, so no diagnostic is emitted twice; an argument that
+ * is itself a modelled stdlib call is typed from its `ret`.
+ */
+static void check_std_str_args(Ctx *cx, const Node *call) {
+    const StdStrSig *sig = std_sig_for(cx, call);
+    if (!sig) return;
+    unsigned mask = sig->str_params;
+    {
+        for (int a = 1; a < call->child_count; a++) {
+            if (!(mask & (1u << (a - 1)))) continue;
+            const Node *arg = call->children[a];
+            if (!arg) continue;
+            Type *at = arg->rtype;
+            if ((!at || at->kind == TY_UNKNOWN) && arg->kind == NODE_CALL_EXPR) {
+                const StdStrSig *asig = std_sig_for(cx, arg);
+                if (asig && asig->ret != TY_UNKNOWN)
+                    at = mk_type(cx->env->arena, asig->ret);
+            }
+            /* `.len` is the universal length property (arrays, maps, strings
+             * all answer u64), so it is never a str — even on a receiver the
+             * checker could not type. Applied here only: typing every `.len`
+             * globally would surface a corpus-wide u64-vs-i64 migration that
+             * is not this story. A struct may declare a field named `len`,
+             * which NODE_FIELD_EXPR resolves properly. */
+            if ((!at || at->kind == TY_UNKNOWN) &&
+                arg->kind == NODE_FIELD_EXPR && arg->child_count > 1 &&
+                arg->children[0] && arg->children[1]) {
+                char fnm[128]; TOKSTR(fnm, cx->src, arg->children[1]);
+                Type *bt = arg->children[0]->rtype;
+                if (strcmp(fnm, "len") == 0 && (!bt || bt->kind != TY_STRUCT))
+                    at = mk_type(cx->env->arena, TY_U64);
+            }
+            if (!at || at->kind == TY_UNKNOWN || at->kind == TY_STR) continue;
+            if (!tc_can_emit(cx)) return;
+            char msg[256];
+            snprintf(msg, sizeof(msg),
+                     "type mismatch: expected 'str', got '%s'", type_name(at));
+            /* AGENTS §6 — a `fix` only where the rewrite is deterministic.
+             * Wrapping a *scalar* in an interpolation always yields a str;
+             * wrapping a composite would just trip E4032 instead, so no fix
+             * is offered there. */
+            int scalar = (at->kind == TY_I64 || at->kind == TY_U64 ||
+                          at->kind == TY_F64 || at->kind == TY_BOOL ||
+                          at->kind == TY_I8  || at->kind == TY_I16 ||
+                          at->kind == TY_I32 || at->kind == TY_U8  ||
+                          at->kind == TY_U16);
+            if (scalar)
+                diag_emit(DIAG_ERROR, E4031, arg->start, arg->line, arg->col, msg,
+                          "expected", "str", "got", type_name(at),
+                          "fix", "wrap the argument in a string interpolation",
+                          (const char *)NULL);
+            else
+                diag_emit(DIAG_ERROR, E4031, arg->start, arg->line, arg->col, msg,
+                          "expected", "str", "got", type_name(at),
+                          (const char *)NULL);
+        }
+    }
+}
+
 static Type *infer_impl(Ctx *cx, const Node *node);
 static Type *infer(Ctx *cx, const Node *node) {
     Type *t = infer_impl(cx, node);
@@ -1200,6 +1365,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         Decl *d=tc_lookup(cx->env->names->module_scope,nb,(int)strlen(nb));
         if (!d||!d->def_node||d->def_node->kind!=NODE_FUNC_DECL) {
             for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
+            /* 127.14: a `alias.method(...)` stdlib call the checker cannot
+             * resolve — enforce the declared str parameters against the
+             * argument types just inferred. */
+            check_std_str_args(cx,node);
             return mk_type(A,TY_UNKNOWN);
         }
         const Node *fn=d->def_node; int pi=0;
@@ -1930,6 +2099,7 @@ int type_check(const Node *ast, const char *src,
     out->names=names; out->arena=arena; out->arena_depth=0;
     Ctx cx; cx.env=out; cx.src=src; cx.fn_ret=NULL; cx.had_error=0; cx.fn_node=NULL;
     cx.scope_depth=0; cx.bind_count=0; cx.fn_error_count=0; cx.bind_infer_depth=0;
+    cx.root=ast;
     for (int i=0;i<ast->child_count;i++) infer(&cx,ast->children[i]);
     return cx.had_error?-1:0;
 }
