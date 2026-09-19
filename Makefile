@@ -213,7 +213,21 @@ ci: lint conform conform-sh conform-check check-tki check-docs check-error-codes
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
+#
+# 136.26 — this BUILDS each example to a binary instead of stopping at
+# `--check`. Until 136.26 it type-checked only, so a documented call to a
+# function that exists NOWHERE passed the gate; that is how it read 432/432
+# while shipping examples that cannot be built. Measured cost at 12 jobs:
+# 1.7s to type-check all 432, 148s to build all 432. That is affordable in CI,
+# so there is no fast/slow split — use `--check-only` for a 2-second local
+# loop, and never in CI (the script prints a warning in that mode).
+#
+# --self-test runs FIRST and is the gate's negative control: it builds a
+# program whose only fault is a call to a function that does not exist and
+# fails unless the gate rejects it. A gate nobody has watched fail is not a
+# gate. Reads nothing outside this repository (cf. 127.88).
 check-docs: $(BIN)
+	python3 scripts/check_doc_examples.py --self-test
 	python3 scripts/check_doc_examples.py docs
 
 # 131.11 — pattern catalogue drift gate. Validates patterns/catalogue.json, regenerates
