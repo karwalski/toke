@@ -27,8 +27,8 @@
       "name": "llmresp",
       "fields": [
         {"name": "content",    "type": "str"},
-        {"name": "tokens_in",  "type": "u64"},
-        {"name": "tokens_out", "type": "u64"},
+        {"name": "tokensin",   "type": "u64"},
+        {"name": "tokensout",  "type": "u64"},
         {"name": "model",      "type": "str"}
       ]
     },

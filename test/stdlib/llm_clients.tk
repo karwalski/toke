@@ -1,0 +1,44 @@
+(* llm_clients.tk -- story 136.18.
+
+   stdlib/llm.tki and docs/stdlib/llm.md declare llm.chat(client; msgs) and
+   llm.complete(client; prompt), and llm_chat/llm_complete in llm.c have always
+   taken a TkLlmClient *. The wrappers took only the payload and called
+   llm_ensure_client(), a lazily-built process-wide singleton read from
+   $LLM_BASE_URL / $LLM_API_KEY / $LLM_MODEL -- and llm.client had no wrapper at
+   all, so there was no client to pass. Two endpoints in one process were
+   impossible.
+
+   This program builds TWO clients pointing at two different local endpoints
+   with two different keys and models, and calls each. The harness checks the
+   answers came from the right servers, which a single global cannot produce.
+
+   It does NOT read a field off the $llmresp: the mt result of a .tki function
+   is typed from the wrong struct by the compiler, so `r.content` lowers to the
+   wrong slot index. That is reported separately, not worked around here. *)
+m=llmclients;
+i=llm:std.llm;
+i=io:std.io;
+i=str:std.str;
+i=env:std.env;
+
+f=main():i64{
+  let urla=env.get("LLMA");
+  let urlb=env.get("LLMB");
+  let a=llm.client(urla;"keyA";"modelA");
+  let b=llm.client(urlb;"keyB";"modelB");
+
+  let ca=mt llm.complete(a;"ping") {$ok:s s;$err:e "ERR"};
+  io.println(str.concat("complete.a=";ca));
+  let cb=mt llm.complete(b;"ping") {$ok:s s;$err:e "ERR"};
+  io.println(str.concat("complete.b=";cb));
+
+  let msg=$llmmsg{role:"user";content:"hi"};
+  let msgs=@(msg);
+  let ra=mt llm.chat(a;msgs) {$ok:x "ok";$err:e "ERR"};
+  io.println(str.concat("chat.a=";ra));
+  let rb=mt llm.chat(b;msgs) {$ok:x "ok";$err:e "ERR"};
+  io.println(str.concat("chat.b=";rb));
+
+  io.println("tokens=\(llm.countokens(a;"abcdefgh"))");
+  <0
+};

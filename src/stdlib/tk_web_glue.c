@@ -18,6 +18,9 @@
 
 #include "http.h"
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
+/* 114.53/114.54/127.67: a wrapper reports failure through this flag and still
+ * returns the real value; defined in tk_runtime.c. */
+extern int64_t tk_current_error;
 #include "router.h"
 #include <netdb.h>
 #include <sys/socket.h>
@@ -1966,21 +1969,6 @@ int64_t tk_yaml_splitstr_w(int64_t s, int64_t delim) {
 
 /* ── llm / tool wrappers (llm.h, llm_tool.h) ──────────────────────── */
 
-/* Global LLM client — initialised lazily from LLM_BASE_URL, LLM_API_KEY,
- * LLM_MODEL env vars (or sensible defaults for local Ollama). */
-static TkLlmClient *g_llm_client = NULL;
-
-static TkLlmClient *llm_ensure_client(void) {
-    if (g_llm_client) return g_llm_client;
-    const char *url   = getenv("LLM_BASE_URL");
-    const char *key   = getenv("LLM_API_KEY");
-    const char *model = getenv("LLM_MODEL");
-    if (!url) url = "http://localhost:11434/v1";
-    if (!model) model = "llama3";
-    g_llm_client = llm_client(url, key, model);
-    return g_llm_client;
-}
-
 /* Tool registry for tk_tool_register_w / tk_tool_call_w */
 #define TK_MAX_TOOLS 64
 
@@ -2011,54 +1999,6 @@ int64_t tk_tool_call_w(int64_t name, int64_t args) {
         }
     }
     return 0; /* tool not found */
-}
-
-int64_t tk_llm_complete_w(int64_t prompt) {
-    if (!prompt) return 0;
-    TkLlmClient *c = llm_ensure_client();
-    if (!c) return 0;
-    TkLlmResp r = llm_complete(c, (const char *)(intptr_t)prompt, 0.7);
-    if (r.is_err || !r.content) return 0;
-    return (int64_t)(intptr_t)r.content;
-}
-
-int64_t tk_llm_chat_w(int64_t messages) {
-    /* messages is a toke array of message structs.
-     * Each message struct is a 2-element i64 block: [role_ptr, content_ptr].
-     * The array layout: ptr[-1] = count, ptr[0..n-1] = struct pointers.
-     * If messages is a plain string (not an array), treat as single user msg. */
-    if (!messages) return 0;
-    TkLlmClient *c = llm_ensure_client();
-    if (!c) return 0;
-
-    /* Try to interpret as an array of structs.
-     * Heuristic: if ptr[-1] looks like a small positive count (1..100),
-     * treat as an array; otherwise treat as a raw string. */
-    int64_t *ptr = (int64_t *)(intptr_t)messages;
-    int64_t count = ptr[-1];
-    if (count >= 1 && count <= 100) {
-        TkLlmMsg *msgs = (TkLlmMsg *)malloc((size_t)count * sizeof(TkLlmMsg));
-        if (!msgs) return 0;
-        for (int64_t i = 0; i < count; i++) {
-            /* Each element is a pointer to a struct with two i64 fields:
-             * field[0] = role (const char *), field[1] = content (const char *) */
-            int64_t *sp = (int64_t *)(intptr_t)ptr[i];
-            msgs[i].role    = (const char *)(intptr_t)sp[0];
-            msgs[i].content = (const char *)(intptr_t)sp[1];
-        }
-        TkLlmResp r = llm_chat(c, msgs, (uint64_t)count, 0.7);
-        free(msgs);
-        if (r.is_err || !r.content) return 0;
-        return (int64_t)(intptr_t)r.content;
-    }
-
-    /* Fallback: treat as a single user-message string */
-    TkLlmMsg msg;
-    msg.role    = "user";
-    msg.content = (const char *)(intptr_t)messages;
-    TkLlmResp r = llm_chat(c, &msg, 1, 0.7);
-    if (r.is_err || !r.content) return 0;
-    return (int64_t)(intptr_t)r.content;
 }
 
 /* ── fmt wrapper ──────────────────────────────────────────────────── */

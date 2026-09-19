@@ -106,6 +106,51 @@ if build file_append test/stdlib/file_append.tk; then
 fi
 
 echo
+echo "=== 136.18 -- llm.client / llm.chat / llm.complete honour the client ==="
+LLM_PIDS=""
+stop_llm() { for p in $LLM_PIDS; do kill "$p" 2>/dev/null; wait "$p" 2>/dev/null; done; LLM_PIDS=""; }
+trap 'stop_llm; cleanup' EXIT
+PORT_A=18811
+PORT_B=18812
+LOG_A="$TMP/llm_a.log"
+LOG_B="$TMP/llm_b.log"
+: > "$LOG_A"; : > "$LOG_B"
+python3 test/stdlib/fake_llm_endpoint.py "$PORT_A" ALPHA "$LOG_A" >/dev/null 2>&1 &
+LLM_PIDS="$LLM_PIDS $!"
+python3 test/stdlib/fake_llm_endpoint.py "$PORT_B" BETA "$LOG_B" >/dev/null 2>&1 &
+LLM_PIDS="$LLM_PIDS $!"
+# Wait for both to accept connections rather than sleeping a guessed interval.
+ready=0
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if curl -s -o /dev/null --max-time 1 -X POST -d '{}' "http://127.0.0.1:$PORT_A/v1/chat/completions" \
+    && curl -s -o /dev/null --max-time 1 -X POST -d '{}' "http://127.0.0.1:$PORT_B/v1/chat/completions"; then
+        ready=1; break
+    fi
+    perl -e 'select(undef,undef,undef,0.25)'
+done
+if [ "$ready" -ne 1 ]; then
+    echo "FAIL [llm] the two local endpoints never came up -- NOT skipped, this is a failure"
+    fail=$((fail + 1))
+elif build llm_clients test/stdlib/llm_clients.tk; then
+    : > "$LOG_A"; : > "$LOG_B"
+    out="$(LLMA="http://127.0.0.1:$PORT_A" LLMB="http://127.0.0.1:$PORT_B" \
+           "$TMP/llm_clients" --allow-net)"
+    # Each answer names the server that produced it, the model that client was
+    # built with, and that client's key. One process-wide client cannot do this.
+    expect "llm.complete on client A reaches A" "$(line "$out" complete.a)" \
+           "ALPHA|model=modelA|auth=Bearer keyA"
+    expect "llm.complete on client B reaches B" "$(line "$out" complete.b)" \
+           "BETA|model=modelB|auth=Bearer keyB"
+    expect "llm.chat on client A succeeds"      "$(line "$out" chat.a)" "ok"
+    expect "llm.chat on client B succeeds"      "$(line "$out" chat.b)" "ok"
+    expect "endpoint A saw exactly its 2 calls" "$(grep -c '^ALPHA|model=modelA|auth=Bearer keyA$' "$LOG_A")" "2"
+    expect "endpoint B saw exactly its 2 calls" "$(grep -c '^BETA|model=modelB|auth=Bearer keyB$' "$LOG_B")" "2"
+    expect "no call leaked from A to B"         "$(grep -c 'modelA' "$LOG_B")" "0"
+    expect "llm.countokens uses the client"     "$(line "$out" tokens)" "2"
+fi
+stop_llm
+
+echo
 echo "glue_contract: $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
 exit 0

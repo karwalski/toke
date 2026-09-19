@@ -71,7 +71,7 @@ static const StdlibModule stdlib_table[] = {
     { "chart",         "chart.c",                               "",                                                                 "" },
     { "html",          "html.c html_glue.c",                                "",                                                                 "" },
     { "svg",           "svg.c svg_glue.c",                                 "",                                                                 "-lm" },
-    { "llm",           "llm.c",                                 "",                                                                 "" },
+    { "llm",           "llm.c llm_glue.c",                      "",                                                                 "" },
     { "llm_tool",      "llm_tool.c",                            "llm",                                                              "" },
     { "ml",            "ml.c",                                  "",                                                                 "-lm" },
     { "encrypt",       "encrypt.c encrypt_glue.c",              "crypto encoding str",                                              "" },
