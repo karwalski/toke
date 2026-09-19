@@ -5,7 +5,7 @@ section: learn
 order: 11
 ---
 
-> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `874f0fd4985a`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
+> **GENERATED** by `scripts/patterns/render_catalogue.py guide` from `patterns/catalogue.json` (sha256 `6dad9e907cfb`). Do not hand-edit: change the catalogue, run `make render-patterns`; `make check-patterns` fails CI on drift.
 
 **Estimated time: ~40 minutes**
 
@@ -66,9 +66,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 17 | 46 | 73.91 | 1456 |
-| `b` — avoid | 20 | 56 | 72.88 | 1456 |
-| `c` — canonical | 15 | 43 | 75.16 | 1440 |
+| `a` — avoid | 17 | 46 | 66.92 | 1440 |
+| `b` — avoid | 20 | 56 | 63.24 | 1440 |
+| `c` — canonical | 15 | 43 | 62.39 | 1424 |
 
 `tkc --lint` reports the non-canonical forms as `mut-flag-if`.
 
@@ -124,9 +124,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 21 | 63 | 69.30 | 1440 |
-| `b` — avoid | 22 | 65 | 66.73 | 1440 |
-| `c` — avoid | 28 | 74 | 68.91 | 1456 |
+| `a` — canonical | 21 | 63 | 63.55 | 1424 |
+| `b` — avoid | 22 | 65 | 65.13 | 1440 |
+| `c` — avoid | 28 | 74 | 65.99 | 1424 |
 
 `tkc --lint` reports the non-canonical forms as `mut-flag-if`.
 
@@ -179,33 +179,11 @@ f=main():i64{
 };
 ```
 
-**Hot path** — sequential guard returns (`patterns/cond-bool-combine/c.tk`). Choose it when the combined result is returned straight out of the function and the test sits in a hot loop: sequential guard returns measured 91.5 ms against 99.9 ms for the single `||` expression (+9.2%), for 3 tokens more.
-
-```toke
-m=main;
-i=io:std.io;
-i=env:std.env;
-f=pat(a:i64;b:i64):i64{
-  if(a>0){<1};
-  if(b>0){<1};
-  <0
-};
-f=main():i64{
-  let n=env.getint("PAT_N";1000);
-  let acc=mut.0;
-  lp(let i=0;i<n;i=i+1){
-    acc=acc+pat(i%3-1;i%7-3)
-  };
-  io.println("acc=\(acc)");
-  <0
-};
-```
-
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 10 | 45 | 99.86 | 1456 |
-| `b` — avoid | 17 | 68 | 96.27 | 1440 |
-| `c` — hot path | 13 | 50 | 91.48 | 1440 |
+| `a` — canonical | 10 | 45 | 94.24 | 1440 |
+| `b` — avoid | 17 | 68 | 91.24 | 1440 |
+| `c` — avoid | 13 | 50 | 90.25 | 1440 |
 
 `tkc --lint` reports the non-canonical forms as `flag-soup`.
 
@@ -260,9 +238,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 11 | 65 | 59.05 | 1456 |
-| `b` — avoid | 18 | 76 | 72.24 | 1456 |
-| `c` — avoid | 17 | 62 | 64.30 | 1456 |
+| `a` — canonical | 11 | 65 | 54.50 | 1424 |
+| `b` — avoid | 18 | 76 | 68.43 | 1440 |
+| `c` — avoid | 17 | 62 | 54.67 | 1440 |
 
 `tkc --lint` reports the non-canonical forms as `mut-flag-if`.
 
@@ -326,8 +304,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 8 | 48 | 81.06 | 1424 |
-| `c` — avoid | 13 | 59 | 92.72 | 1424 |
+| `a` — canonical | 8 | 48 | 56.93 | 1408 |
+| `c` — avoid | 13 | 59 | 55.06 | 1424 |
 
 `tkc --lint` reports the non-canonical forms as `mut-flag-if`.
 
@@ -388,8 +366,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 16 | 76 | 63.22 | 232896 |
-| `b` — avoid | 16 | 39 | 73.12 | 232896 |
+| `a` — canonical | 16 | 76 | 63.20 | 232896 |
+| `b` — avoid | 16 | 39 | 69.71 | 232896 |
 
 ### acc-count-if
 
@@ -444,9 +422,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 16 | 88 | 71.63 | 232896 |
-| `b` — avoid | 15 | 41 | 86.39 | 266192 |
-| `c` — avoid | 16 | 39 | 84.66 | 232896 |
+| `a` — canonical | 16 | 88 | 73.58 | 232896 |
+| `b` — avoid | 15 | 41 | 89.16 | 266192 |
+| `c` — avoid | 16 | 39 | 86.99 | 232896 |
 
 ### acc-min-max
 
@@ -522,9 +500,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — hot path | 18 | 99 | 60.40 | 232880 |
-| `b` — avoid | 18 | 45 | 68.39 | 232880 |
-| `c` — canonical | 14 | 41 | 591.29 | 332928 |
+| `a` — hot path | 18 | 99 | 60.29 | 232896 |
+| `b` — avoid | 18 | 45 | 69.16 | 232896 |
+| `c` — canonical | 14 | 41 | 583.35 | 332928 |
 
 ### acc-array
 
@@ -584,9 +562,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 13 | 74 | 77.43 | 260896 |
+| `a` — canonical | 13 | 74 | 81.94 | 260912 |
 | `b` — avoid | 13 | 69 | 30000.00 | pending |
-| `c` — avoid | 27 | 95 | 83.96 | 259632 |
+| `c` — avoid | 27 | 95 | 86.59 | 259664 |
 
 ### acc-map-build
 
@@ -642,29 +620,16 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 50 | 180 | 74.36 | 1424 |
-| `b` — canonical | 48 | 209 | 55.17 | 1440 |
+| `a` — avoid | 50 | 180 | 77.18 | 1456 |
+| `b` — canonical | 48 | 209 | 56.64 | 1456 |
 
 ### acc-dedupe
 
 Remove duplicate values from an @i64 (order not significant).
 
-Dedupe where result order is free (checksum is len+sum). Form a (array `.contains`) is the natural form but segfaults on 2.8.0 (127.11). Form d keys a map by the interpolated value: one interpolation alloc per element and a linear strcmp scan of the seen-set, so it is quadratic like b.
+Dedupe where result order is free (checksum is len+sum). Form a (array `.contains`) is the natural form and, since 127.11 closed (2026-09-19), it compiles, runs and matches its siblings — it is token-best (16 vs 25/31) and the same quadratic class as every other form here, 11.5% behind the seen-map. Form d keys a map by the interpolated value: one interpolation alloc per element (48.2k calls vs 16.2k) and still quadratic.
 
-The preferred way to write this — `if(!out.contains(v)){out=out.append(v)}` — is blocked on compiler story 127.11, so today's canonical form is the best form that works. The blocked form, for reference (not compiled):
-
-```text
-f=pat(xs:@i64):@i64{
-  let out=mut.@();
-  lp(let i=0;i<xs.len;i=i+1){
-    let v=xs.get(i);
-    if(!out.contains(v)){out=out.append(v)}
-  };
-  <out
-};
-```
-
-**Write this** — inner lp scan with flag+br, then append (`patterns/acc-dedupe/b.tk`):
+**Write this** — `if(!out.contains(v)){out=out.append(v)}` (`patterns/acc-dedupe/a.tk`):
 
 ```toke
 m=main;
@@ -674,11 +639,7 @@ f=pat(xs:@i64):@i64{
   let out=mut.@();
   lp(let i=0;i<xs.len;i=i+1){
     let v=xs.get(i);
-    let dup=mut.0;
-    lp(let j=0;j<out.len;j=j+1){
-      if(out.get(j)==v){dup=1;br}
-    };
-    if(dup==0){out=out.append(v)}
+    if(!out.contains(v)){out=out.append(v)}
   };
   <out
 };
@@ -729,7 +690,7 @@ f=main():i64{
 };
 ```
 
-**Hot path** — seen-map keyed by `"\(v)"` (`patterns/acc-dedupe/d.tk`). Choose it when the seen-set scan dominates and a constant factor is worth 6 tokens: the seen-map measured 127.1 ms against 141.7 ms for the inner-loop scan (+11.5%) but allocates 3x as much (48k calls vs 16k) and is just as quadratic (bigO 26.2 vs 25.0) — neither form fixes the class; 127.11 (`.contains`) does.
+**Hot path** — seen-map keyed by `"\(v)"` (`patterns/acc-dedupe/d.tk`). Choose it when the seen-set scan dominates and a constant factor is worth 15 tokens: the seen-map (d) measured 120.7 ms against 134.6 ms for `out.contains(v)` (+11.5%) at N=16000, but allocates 3x as much (48.2k calls vs 16.2k) and is just as quadratic (bigO 26.8 vs 26.0) — neither form fixes the class, so prefer `a` unless the profile shows the membership scan on top..
 
 ```toke
 m=main;
@@ -763,9 +724,10 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `b` — canonical | 25 | 186 | 141.66 | 1111664 |
-| `c` — avoid | 31 | 150 | 127.73 | 1111792 |
-| `d` — hot path | 31 | 176 | 127.05 | 1112704 |
+| `a` — canonical | 16 | 125 | 134.62 | 1111648 |
+| `b` — avoid | 25 | 186 | 129.17 | 1111648 |
+| `c` — avoid | 31 | 150 | 127.72 | 1111808 |
+| `d` — hot path | 31 | 176 | 120.71 | 1112672 |
 
 ## Strings (`str`)
 
@@ -800,7 +762,7 @@ f=main():i64{
 };
 ```
 
-**Not this** — `acc=acc.append(part)` then `s.join("";acc)` (`patterns/str-build-loop/c.tk`):
+**Not this** — `r=s.concat(r;part)` chain (`patterns/str-build-loop/a.tk`):
 
 ```toke
 m=main;
@@ -808,11 +770,11 @@ i=io:std.io;
 i=s:std.str;
 i=env:std.env;
 f=pat(parts:@str;n:i64):str{
-  let acc=mut.@();
+  let r=mut."";
   lp(let i=0;i<n;i=i+1){
-    acc=acc.append(parts.get(i%4))
+    r=s.concat(r;parts.get(i%4))
   };
-  <s.join("";acc)
+  <r
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);
@@ -826,8 +788,8 @@ f=main():i64{
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
 | `a` — avoid | 15 | 96 | 30000.00 | pending |
-| `b` — canonical | 13 | 105 | 58.86 | 23792 |
-| `c` — avoid | 15 | 114 | 30000.00 | pending |
+| `b` — canonical | 13 | 105 | 58.83 | 44832 |
+| `c` — avoid | 15 | 114 | 86.66 | 108720 |
 
 `tkc --lint` reports the non-canonical forms as `string-concat-chain`.
 
@@ -879,32 +841,11 @@ f=main():i64{
 };
 ```
 
-**Hot path** — `s.join("-";@(a;b;s.fromint(c)))` (`patterns/str-interp-vs-join/b.tk`). Choose it when the same 3-5 part string is assembled millions of times: `s.join` measured 73.3 ms against 96.1 ms for interpolation (+31%) with half the allocations (1.2M calls vs 2.4M), for 2 tokens more.
-
-```toke
-m=main;
-i=io:std.io;
-i=s:std.str;
-i=env:std.env;
-f=pat(a:str;b:str;c:i64):str{
-  <s.join("-";@(a;b;s.fromint(c)))
-};
-f=main():i64{
-  let n=env.getint("PAT_N";1000);
-  let acc=mut.0;
-  lp(let i=0;i<n;i=i+1){
-    acc=acc+s.len(pat("ab";"cd";i))
-  };
-  io.println("len=\(acc)");
-  <0
-};
-```
-
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 13 | 47 | 96.14 | 45424 |
-| `b` — hot path | 15 | 62 | 73.32 | 39184 |
-| `c` — avoid | 20 | 95 | 90.04 | 39136 |
+| `a` — canonical | 13 | 47 | 82.40 | 39136 |
+| `b` — avoid | 15 | 62 | 85.03 | 76864 |
+| `c` — avoid | 20 | 95 | 104.09 | 76784 |
 
 `tkc --lint` reports the non-canonical forms as `string-concat-chain`.
 
@@ -958,9 +899,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 7 | 25 | 109.55 | 48544 |
-| `b` — avoid | 8 | 31 | 86.50 | 32848 |
-| `c` — canonical | 8 | 27 | 83.95 | 32832 |
+| `a` — avoid | 7 | 25 | 77.50 | 48544 |
+| `b` — avoid | 8 | 31 | 55.62 | 32832 |
+| `c` — canonical | 8 | 27 | 55.78 | 32816 |
 
 ### str-repeat-pad
 
@@ -1044,32 +985,16 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 25 | 97 | 78.64 | 33552 |
-| `b` — avoid | 25 | 126 | 70.61 | 39168 |
-| `c` — hot path | 28 | 102 | 67.85 | 26592 |
-| `d` — avoid | 28 | 99 | 88.78 | 39168 |
+| `a` — canonical | 25 | 97 | 100.69 | 65616 |
+| `b` — avoid | 25 | 126 | 95.56 | 76784 |
+| `c` — hot path | 28 | 102 | 85.29 | 51696 |
+| `d` — avoid | 28 | 99 | 96.77 | 51744 |
 
 ### str-array-render
 
 Collect N labels into a @str, then render each one.
 
-The collect-then-format shape of CLI/report tasks. Interpolating an element of a `.append`-built `mut.@()` prints an address on 2.8.0 (127.10: the array is never inferred `@str`), so the natural form a is blocked; form b uses the only append form that tags the array (`+@()`) but copies the array every iteration; form c keeps `.append` and reads elements directly into the builder.
-
-The preferred way to write this — `.append`-built, interpolated read `"[\(labels.get(i))]"` — is blocked on compiler story 127.10, so today's canonical form is the best form that works. The blocked form, for reference (not compiled):
-
-```text
-f=pat(n:i64):str{
-  let labels=mut.@();
-  lp(let i=0;i<n;i=i+1){
-    labels=labels.append("l\(i)")
-  };
-  let b=s.builder();
-  lp(let i=0;i<labels.len;i=i+1){
-    s.add(b;"[\(labels.get(i))]")
-  };
-  <s.build(b)
-};
-```
+The collect-then-format shape of CLI/report tasks. Form a (interpolating an element of a `.append`-built `mut.@()`) printed an address until 127.10 closed; since 2026-09-19 it runs and matches its siblings, and it ties c on tokens (23) but is 10.2% slower and allocates 33% more (2.05M vs 1.54M calls). Form b uses the only append form that tags the array (`+@()`) but copies the array every iteration and is quadratic (timeout at 4N). Form c keeps `.append` and reads elements directly into the builder.
 
 **Write this** — `.append`-built, direct `s.add(b;labels.get(i))` reads (`patterns/str-array-render/c.tk`):
 
@@ -1127,8 +1052,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
+| `a` — avoid | 23 | 181 | 76.21 | 63680 |
 | `b` — avoid | 24 | 176 | 30000.00 | pending |
-| `c` — canonical | 23 | 200 | 51.34 | 14896 |
+| `c` — canonical | 23 | 200 | 69.14 | 55600 |
 
 ## Errors (`err`)
 
@@ -1196,8 +1122,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 21 | 49 | 80.98 | 73184 |
-| `b` — avoid | 24 | 79 | 85.22 | 73184 |
+| `a` — canonical | 21 | 49 | 63.67 | 73184 |
+| `b` — avoid | 24 | 79 | 66.54 | 73168 |
 
 ### err-default
 
@@ -1261,9 +1187,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 11 | 46 | 149.74 | 144880 |
-| `b` — canonical | 12 | 41 | 87.91 | 1456 |
-| `c` — avoid | 13 | 54 | 149.16 | 144896 |
+| `a` — avoid | 11 | 46 | 115.74 | 144896 |
+| `b` — canonical | 12 | 41 | 64.72 | 1456 |
+| `c` — avoid | 13 | 54 | 115.62 | 144896 |
 
 `tkc --lint` reports the non-canonical forms as `single-use-let`.
 
@@ -1295,14 +1221,14 @@ f=main():i64{
 };
 ```
 
-**Not this** — `<if … el if … el{…}` expression (`patterns/err-validate-early/c.tk`):
+**Not this** — nested if/el with returns (`patterns/err-validate-early/b.tk`):
 
 ```toke
 m=main;
 i=io:std.io;
 i=env:std.env;
 f=pat(a:i64;b:i64):i64{
-  <if(a<0){-1}el if(b==0){-2}el{a/b}
+  if(a<0){<-1}el{if(b==0){<-2}el{<a/b}}
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);
@@ -1317,9 +1243,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 13 | 55 | 57.56 | 1456 |
-| `b` — avoid | 15 | 61 | 55.35 | 1456 |
-| `c` — avoid | 13 | 58 | 58.02 | 1456 |
+| `a` — canonical | 13 | 55 | 79.03 | 1440 |
+| `b` — avoid | 15 | 61 | 77.24 | 1440 |
+| `c` — avoid | 13 | 58 | 76.60 | 1440 |
 
 ## Parsing (`parse`)
 
@@ -1421,9 +1347,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 40 | 161 | 66.62 | 27712 |
-| `b` — avoid | 46 | 198 | 58.85 | 27632 |
-| `c` — hot path | 51 | 244 | 50.61 | 23616 |
+| `a` — canonical | 40 | 161 | 67.18 | 33696 |
+| `b` — avoid | 46 | 198 | 66.45 | 33648 |
+| `c` — hot path | 51 | 244 | 56.18 | 25600 |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
 
@@ -1491,8 +1417,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 54 | 209 | 73.54 | 97008 |
-| `b` — canonical | 50 | 200 | 70.36 | 61792 |
+| `a` — avoid | 54 | 209 | 59.07 | 92992 |
+| `b` — canonical | 50 | 200 | 58.58 | 56528 |
 
 ### parse-delim-split
 
@@ -1557,9 +1483,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 7 | 40 | 83.34 | 57856 |
-| `b` — avoid | 50 | 219 | 111.52 | 94000 |
-| `c` — avoid | 35 | 185 | 107.93 | 94064 |
+| `a` — canonical | 7 | 40 | 60.06 | 53808 |
+| `b` — avoid | 50 | 219 | 79.77 | 90048 |
+| `c` — avoid | 35 | 185 | 75.98 | 90016 |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
 
@@ -1625,9 +1551,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 9 | 37 | 79.25 | 53808 |
-| `b` — avoid | 22 | 132 | 153.06 | 154512 |
-| `c` — avoid | 49 | 230 | 134.46 | 94080 |
+| `a` — canonical | 9 | 37 | 97.69 | 97952 |
+| `b` — avoid | 22 | 132 | 211.39 | 299232 |
+| `c` — avoid | 49 | 230 | 169.29 | 178400 |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
 
@@ -1685,8 +1611,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 9 | 54 | 77.35 | 25616 |
-| `b` — hot path | 25 | 144 | 72.73 | 25600 |
+| `a` — canonical | 9 | 54 | 99.10 | 49680 |
+| `b` — hot path | 25 | 144 | 91.47 | 49680 |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
 
@@ -1761,8 +1687,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 33 | 173 | 74.75 | 48640 |
-| `b` — hot path | 45 | 195 | 67.25 | 40736 |
+| `a` — canonical | 33 | 173 | 85.07 | 80560 |
+| `b` — hot path | 45 | 195 | 76.78 | 64080 |
 
 ## Iteration (`iter`)
 
@@ -1797,7 +1723,7 @@ f=main():i64{
 };
 ```
 
-**Not this** — index loop + append (`patterns/iter-map/b.tk`):
+**Hot path** — index loop + append (`patterns/iter-map/b.tk`). Choose it when not established: the index loop measured 118.0 ms against 128.4 ms for `xs.map(&dbl)` (+8.9%) at N=16000, but the ordering is not reproducible — the same compiler binary measured `a` fastest 70 minutes earlier on the same machine (112.1 ms vs 117.1 ms, run 20260919-140946), so the gap is inside this machine's run-to-run variance (measured_at.load_warning). Both forms are the same big-O and allocate identically (16.2k calls, 977 MB). Do not act on this hot_path until a loadavg <= 2 re-measure confirms it..
 
 ```toke
 m=main;
@@ -1824,8 +1750,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 13 | 34 | 52.65 | 293136 |
-| `b` — avoid | 16 | 89 | 51.88 | 293248 |
+| `a` — canonical | 13 | 34 | 128.44 | 1111696 |
+| `b` — hot path | 16 | 89 | 117.98 | 1111856 |
 
 `tkc --lint` reports the non-canonical forms as `loop-is-map`.
 
@@ -1887,8 +1813,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 14 | 38 | 154.77 | 1111632 |
-| `b` — avoid | 18 | 107 | 148.83 | 1111744 |
+| `a` — canonical | 14 | 38 | 138.70 | 1111616 |
+| `b` — avoid | 18 | 107 | 146.20 | 1111712 |
 
 `tkc --lint` reports the non-canonical forms as `loop-is-filter`.
 
@@ -1970,9 +1896,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 21 | 52 | 73.50 | 163360 |
-| `b` — hot path | 19 | 96 | 54.70 | 131344 |
-| `c` — canonical | 17 | 40 | 63.53 | 131328 |
+| `a` — avoid | 21 | 52 | 100.73 | 324912 |
+| `b` — hot path | 19 | 96 | 78.27 | 260880 |
+| `c` — canonical | 17 | 40 | 99.09 | 260880 |
 
 ### iter-find-first
 
@@ -2003,7 +1929,7 @@ f=main():i64{
 };
 ```
 
-**Not this** — mut result + full scan (`patterns/iter-find-first/c.tk`):
+**Not this** — filter(&p) then .get(0) guarded by .len (`patterns/iter-find-first/b.tk`):
 
 ```toke
 m=main;
@@ -2012,11 +1938,8 @@ i=s:std.str;
 i=env:std.env;
 f=big(x:i64):bool{<x>990};
 f=pat(xs:@i64):i64{
-  let r=mut.-1;
-  lp(let i=0;i<xs.len;i=i+1){
-    if(r<0&&xs.get(i)>990){r=xs.get(i)}
-  };
-  <r
+  let hits=xs.filter(&big);
+  <if(hits.len>0){hits.get(0)}el{-1}
 };
 f=main():i64{
   let n=env.getint("PAT_N";1000);
@@ -2029,9 +1952,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 17 | 81 | 82.45 | 260896 |
-| `b` — avoid | 22 | 79 | 107.67 | 262096 |
-| `c` — avoid | 22 | 99 | 90.27 | 260912 |
+| `a` — canonical | 17 | 81 | 68.47 | 260880 |
+| `b` — avoid | 22 | 79 | 83.76 | 262064 |
+| `c` — avoid | 22 | 99 | 70.65 | 260880 |
 
 `tkc --lint` reports the non-canonical forms as `scan-without-break`.
 
@@ -2089,9 +2012,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 15 | 41 | 64.50 | 163360 |
-| `b` — canonical | 15 | 88 | 54.36 | 131328 |
-| `c` — avoid | 16 | 40 | 60.32 | 131328 |
+| `a` — avoid | 15 | 41 | 107.70 | 324928 |
+| `b` — canonical | 15 | 88 | 88.02 | 260880 |
+| `c` — avoid | 16 | 40 | 107.11 | 260880 |
 
 ### iter-nested-early-exit
 
@@ -2151,8 +2074,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 27 | 124 | 55.15 | 9776 |
-| `b` — avoid | 35 | 153 | 52.85 | 9760 |
+| `a` — canonical | 27 | 124 | 81.50 | 17888 |
+| `b` — avoid | 35 | 153 | 79.07 | 17888 |
 
 `tkc --lint` reports the non-canonical forms as `flag-break-is-return`.
 
@@ -2221,26 +2144,14 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 26 | 125 | 134.28 | 1114288 |
-| `b` — avoid | 28 | 127 | 138.37 | 1114384 |
+| `a` — canonical | 26 | 125 | 118.37 | 1114368 |
+| `b` — avoid | 28 | 127 | 120.26 | 1114352 |
 
 ### coll-membership
 
 Count how many query values occur in a reference array.
 
-Repeated membership tests. b (linear scan per query) is O(N*Q) and worse-bigO; a builds a str-keyed map once (int-keyed map literals @(0:1) segfault on .set - 131.30 gap - so keys are "\(x)"). The preferred xs.contains(v) form is blocked by 127.11 (routed to the string glue, SIGSEGV) and would still be O(N*Q).
-
-The preferred way to write this — xs.contains(q) per query (blocked 127.11) — is blocked on compiler story 127.11, so today's canonical form is the best form that works. The blocked form, for reference (not compiled):
-
-```text
-f=pat(xs:@i64;qs:@i64):i64{
-  let c=mut.0;
-  lp(let i=0;i<qs.len;i=i+1){
-    if(xs.contains(qs.get(i))){c=c+1}
-  };
-  <c
-};
-```
+Repeated membership tests. a builds a str-keyed map once (int-keyed map literals @(0:1) segfault on .set - 131.30 gap - so keys are "\(x)"). Forms b (hand-rolled linear scan per query) and c (`xs.contains(q)` per query, unblocked when 127.11 closed) are both O(N*Q): measured 15.3 s and 15.0 s against 64 ms for a at N=256000, and both time out at 4N. c is token-best (18 vs 45) but the quadratic class is never taught as the default, so a stays canonical.
 
 **Write this** — map-as-set + mt get (`patterns/coll-membership/a.tk`):
 
@@ -2297,24 +2208,40 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 45 | 205 | 117.23 | 45568 |
-| `b` — avoid | 24 | 133 | 20037.72 | 9904 |
+| `a` — canonical | 45 | 205 | 64.25 | 44048 |
+| `b` — avoid | 24 | 133 | 15348.13 | 9888 |
+| `c` — avoid | 18 | 104 | 14984.45 | 9888 |
 
 ### coll-sort-take
 
 Sort ascending and take the first k elements.
 
-Top-k. a sorts (comparator &cmp returns a-b) then copies k elements; b does k selection passes (O(N*k), linear for fixed k but 2x the tokens). The natural xs.sort(&cmp).slice(0;k) is blocked by 127.11.
+Top-k. c (`xs.sort(&cmp).slice(0;k)`) is the natural form and was blocked until 127.11 closed; since 2026-09-19 it runs, matches its siblings, is token-best (18 vs 24/52) and is runtime-tied with a and b, so it is canonical. a sorts then copies k elements by hand; b does k selection passes (O(N*k), linear for fixed k but 2.9x the tokens).
 
-The preferred way to write this — xs.sort(&cmp).slice(0;k) (blocked 127.11) — is blocked on compiler story 127.11, so today's canonical form is the best form that works. The blocked form, for reference (not compiled):
+**Write this** — xs.sort(&cmp).slice(0;k) (127.11 fixed; unblocked 131.25) (`patterns/coll-sort-take/c.tk`):
 
-```text
+```toke
+m=main;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+f=cmp(a:i64;b:i64):i64{<a-b};
 f=pat(xs:@i64;k:i64):@i64{
   <xs.sort(&cmp).slice(0;k)
 };
+f=main():i64{
+  let n=env.getint("PAT_N";1000);
+  let xs=mut.@();
+  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7919)%10007)};
+  let r=pat(xs;10);
+  let t=mut.0;
+  lp(let i=0;i<r.len;i=i+1){t=t*3+r.get(i)};
+  io.println("len=\(r.len) t=\(t)");
+  <0
+};
 ```
 
-**Write this** — xs.sort(&cmp) + append first k (`patterns/coll-sort-take/a.tk`):
+**Not this** — xs.sort(&cmp) + append first k (`patterns/coll-sort-take/a.tk`):
 
 ```toke
 m=main;
@@ -2340,43 +2267,11 @@ f=main():i64{
 };
 ```
 
-**Not this** — k selection passes with set-sentinel (`patterns/coll-sort-take/b.tk`):
-
-```toke
-m=main;
-i=io:std.io;
-i=s:std.str;
-i=env:std.env;
-f=cmp(a:i64;b:i64):i64{<a-b};
-f=pat(xs:@i64;k:i64):@i64{
-  let src=mut.xs;
-  let r=mut.@();
-  lp(let t=0;t<k;t=t+1){
-    let bi=mut.0;
-    lp(let i=1;i<src.len;i=i+1){
-      if(src.get(i)<src.get(bi)){bi=i}
-    };
-    r=r.append(src.get(bi));
-    src=src.set(bi;1000000000)
-  };
-  <r
-};
-f=main():i64{
-  let n=env.getint("PAT_N";1000);
-  let xs=mut.@();
-  lp(let i=0;i<n;i=i+1){xs=xs.append((i*7919)%10007)};
-  let r=pat(xs;10);
-  let t=mut.0;
-  lp(let i=0;i<r.len;i=i+1){t=t*3+r.get(i)};
-  io.println("len=\(r.len) t=\(t)");
-  <0
-};
-```
-
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 24 | 109 | 141.90 | 1111712 |
-| `b` — avoid | 52 | 207 | 147.37 | 1112864 |
+| `a` — avoid | 24 | 109 | 117.32 | 1111680 |
+| `b` — avoid | 52 | 207 | 115.75 | 1112848 |
+| `c` — canonical | 18 | 52 | 119.00 | 1111680 |
 
 ### coll-group-by
 
@@ -2457,8 +2352,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 64 | 279 | 55.35 | 358512 |
-| `b` — avoid | 89 | 408 | 55.40 | 358512 |
+| `a` — canonical | 64 | 279 | 165.85 | 1479184 |
+| `b` — avoid | 89 | 408 | 162.90 | 1479184 |
 
 ### coll-reverse
 
@@ -2521,9 +2416,9 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 16 | 90 | 148.29 | 1111872 |
-| `b` — avoid | 24 | 130 | 449.68 | 3119888 |
-| `c` — avoid | 16 | 82 | 280.16 | 2222224 |
+| `a` — canonical | 16 | 90 | 117.23 | 1111840 |
+| `b` — avoid | 24 | 130 | 327.17 | 3167552 |
+| `c` — avoid | 16 | 82 | 223.81 | 2222192 |
 
 `tkc --lint` reports the non-canonical forms as `quadratic-prepend`.
 
@@ -2591,8 +2486,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — avoid | 26 | 126 | 109.46 | 807072 |
-| `b` — canonical | 25 | 114 | 102.11 | 807072 |
+| `a` — avoid | 26 | 126 | 85.62 | 807040 |
+| `b` — canonical | 25 | 114 | 85.30 | 807040 |
 
 `tkc --lint` reports the non-canonical forms as `swap-tmp-let`.
 
@@ -2658,8 +2553,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 41 | 187 | 58.82 | 37632 |
-| `b` — avoid | 34 | 182 | 6719.10 | 9392 |
+| `a` — canonical | 41 | 187 | 53.16 | 36848 |
+| `b` — avoid | 34 | 182 | 6064.13 | 9376 |
 
 `tkc --lint` reports the non-canonical forms as `quadratic-dedupe`.
 
@@ -2715,8 +2610,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 8 | 53 | 62.19 | 1424 |
-| `b` — avoid | 15 | 58 | 64.03 | 1424 |
+| `a` — canonical | 8 | 53 | 64.43 | 1408 |
+| `b` — avoid | 15 | 58 | 64.52 | 1408 |
 
 ### cli-flag-filter
 
@@ -2776,8 +2671,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 14 | 41 | 132.06 | 1113024 |
-| `b` — avoid | 18 | 117 | 201.85 | 1622704 |
+| `a` — canonical | 14 | 41 | 121.60 | 1113008 |
+| `b` — avoid | 18 | 117 | 170.89 | 1622656 |
 
 `tkc --lint` reports the non-canonical forms as `loop-is-filter`.
 
@@ -2829,30 +2724,11 @@ f=main():i64{
 };
 ```
 
-**Hot path** — nested s.concat + s.fromint (`patterns/cli-print-results/b.tk`). Choose it when the line is formatted inside a loop executed millions of times: `s.concat` + `s.fromint` measured 84.5 ms against 97.1 ms for interpolation (+15%) with 0.5M fewer allocation calls, for 5 tokens more.
-
-```toke
-m=main;
-i=io:std.io;
-i=s:std.str;
-i=env:std.env;
-f=pat(k:str;v:i64):str{
-  <s.concat(s.concat(k;"=");s.fromint(v))
-};
-f=main():i64{
-  let n=env.getint("PAT_N";1000);
-  let t=mut.0;
-  lp(let i=0;i<n;i=i+1){t=t+s.len(pat("r\(i%5)";i*13))};
-  io.println("t=\(t)");
-  <0
-};
-```
-
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 10 | 36 | 97.10 | 65776 |
-| `b` — hot path | 15 | 63 | 84.46 | 57792 |
-| `c` — avoid | 16 | 99 | 93.48 | 73840 |
+| `a` — canonical | 10 | 36 | 89.91 | 49664 |
+| `b` — avoid | 15 | 63 | 86.21 | 57712 |
+| `c` — avoid | 16 | 99 | 92.37 | 73808 |
 
 `tkc --lint` reports the non-canonical forms as `nested-concat`.
 
@@ -2916,8 +2792,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 16 | 89 | 64.97 | 131328 |
-| `b` — avoid | 21 | 104 | 64.88 | 131344 |
+| `a` — canonical | 16 | 89 | 86.08 | 260880 |
+| `b` — avoid | 21 | 104 | 85.54 | 260864 |
 
 ### fn-chain-vs-let
 
@@ -2967,8 +2843,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 11 | 53 | 66.46 | 49792 |
-| `b` — avoid | 11 | 87 | 74.28 | 49808 |
+| `a` — canonical | 11 | 53 | 51.90 | 45840 |
+| `b` — avoid | 11 | 87 | 52.06 | 45856 |
 
 `tkc --lint` reports the non-canonical forms as `single-use-let`.
 
@@ -3021,8 +2897,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 15 | 48 | 112.60 | 1440 |
-| `b` — hot path | 20 | 83 | 77.19 | 1424 |
+| `a` — canonical | 15 | 48 | 80.76 | 1424 |
+| `b` — hot path | 20 | 83 | 58.07 | 1424 |
 
 ## Files (`io`)
 
@@ -3094,7 +2970,7 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 19 | 87 | 68.14 | 47152 |
+| `a` — canonical | 19 | 87 | 84.12 | 83152 |
 | `b` — avoid | 45 | 228 | 30000.00 | pending |
 
 `tkc --lint` reports the non-canonical forms as `hand-rolled-parser`.
@@ -3156,8 +3032,8 @@ f=main():i64{
 
 | form | proxy tokens | `--min` bytes | wall ms | RSS KB |
 |---|---|---|---|---|
-| `a` — canonical | 27 | 139 | 59.18 | 31200 |
-| `b` — avoid | 23 | 111 | 30000.00 | pending |
+| `a` — canonical | 27 | 139 | 72.48 | 53760 |
+| `b` — avoid | 23 | 111 | 36823.43 | 28528 |
 
 `tkc --lint` reports the non-canonical forms as `append-in-loop`.
 

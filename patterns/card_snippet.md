@@ -1,8 +1,8 @@
-## Patterns — measured canonical forms (catalogue 874f0fd4985a; 46 entries, 46 provisional)
+## Patterns — measured canonical forms (catalogue 6dad9e907cfb; 46 entries, 46 provisional)
 - cond: if: return per branch, never mut flag [cond-bind-if] · el if chain, never nested if/el [cond-elif-chain] · combine tests in one expr-if, no flags [cond-bool-combine]
 - cond: clamp: one el if chain expression [cond-clamp] · bool text: expr-if picks the literal [cond-bool-render]
 - acc: sum: lp into a mut, not reduce [acc-sum] · count-if: lp + if + counter [acc-count-if] · min: xs.sort(&cmp).get(0); big N: lp [acc-min-max]
-- acc: x=x.append(v), never x=x+@(v) [acc-array] · small key set: parallel arrays + .set [acc-map-build] · dedupe: inner lp scan, append if new [acc-dedupe]
+- acc: x=x.append(v), never x=x+@(v) [acc-array] · small key set: parallel arrays + .set [acc-map-build] · dedupe: if(!out.contains(v)) append [acc-dedupe]
 - str: loops: s.builder, not concat [str-build-loop] · assemble strings by interpolation [str-interp-vs-join] · int to text: n as str, not s.fromint [str-num-format]
 - str: pad: lp prepending with s.concat [str-repeat-pad] · @str: build .append, render s.add [str-array-render]
 - err: propagate errors with !$err, not mt [err-propagate] · error default: precondition if, not mt [err-default] · validate: sequential guard returns [err-validate-early]
@@ -10,7 +10,7 @@
 - parse: whitespace fields: s.fields(line) [parse-fields] · parse int: mt s.toint(txt) with default [parse-int] · k=v lines: s.split twice, then m.set [parse-kv-lines]
 - iter: transform: xs.map(&f), not a loop [iter-map] · select: xs.filter(&p), not a loop [iter-filter] · filter+sum: one reduce(0;&f) with if [iter-filter-sum]
 - iter: find-first: lp with direct < return [iter-find-first] · count: lp counter, not filter.len [iter-count] · nested lp: return directly, no flag [iter-nested-early-exit]
-- coll: map lookup default: mt m.get(k) [coll-lookup-default] · membership: map-as-set + mt get [coll-membership] · top-k: xs.sort(&cmp), append first k [coll-sort-take]
+- coll: map lookup default: mt m.get(k) [coll-lookup-default] · membership: map-as-set + mt get [coll-membership] · top-k: xs.sort(&cmp).slice(0;k) [coll-sort-take]
 - coll: group-by: map of arrays, mt get + set [coll-group-by] · reverse: lp from the end, append [coll-reverse]
 - coll: swap: chained .set(i;b).set(j;a) [coll-swap] · distinct: str-keyed map-as-set [coll-dedupe]
 - cli: argv: mt args.get(1) with default [cli-argv] · drop flags: av.filter(&notflag) [cli-flag-filter] · print k=v by interpolation "\(k)=\(v)" [cli-print-results]
