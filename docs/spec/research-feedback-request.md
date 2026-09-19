@@ -12,7 +12,7 @@
 
 toke is a statically typed, compiled programming language designed from first principles so that large language models can write better code. After 18 months of development, we have achieved:
 
-- **Gate 1 (2026-04-03):** 63.7% Pass@1 compilation rate with legacy syntax
+- **Gate 1 (2026-04-03):** **58.8%** functional Pass@1 with legacy syntax (588 of 1,000 solutions generated); 92.3% compiled. *Published as "63.7% Pass@1 compilation rate" until 2026-09-19 (story 128.19) — wrong twice over: 63.7% was 588/**923**, computed after the 77 non-compiling solutions had been dropped from the denominator, and it is the functional rate, not the compilation rate. 58.8% is below Gate 1's own >= 60% minimum, so that verdict is re-opened and has not been re-decided.*
 - **Gate 2 (2026-05-22):** 100% Pass@1 compilation rate with default syntax (7B model)
 - **Functional correctness:** 55.6% (corrected from ~8% after stdlib fix — see gate2-decision.md)
 
@@ -58,7 +58,8 @@ The full normative specification is available at:
 | Base model | Qwen 2.5 Coder 7B-Instruct |
 | Method | QLoRA (rank 64, alpha 128) |
 | Corpus | 73,000 records (synthetic, multi-format) |
-| Compilation Pass@1 | 63.7% (588/923 compilable tasks) |
+| Compilation Pass@1 | 92.3% (923/1,000 generated) |
+| Functional Pass@1 | **58.8%** (588/1,000 generated) — published as "63.7% (588/923 compilable tasks)" until 2026-09-19, story 128.19 |
 | Token reduction | 12.5% vs cl100k_base (8K vocab BPE) |
 
 ### Gate 2 (Default syntax)
@@ -204,7 +205,7 @@ We welcome feedback in any form:
 
 | Date | Milestone |
 |------|-----------|
-| 2026-04-03 | Gate 1 PASS (63.7% compile) |
+| 2026-04-03 | Gate 1 recorded PASS (63.7% compile) — **verdict re-opened 2026-09-19**: the figure is 58.8% functional Pass@1 (588/1,000), below the >= 60% minimum (story 128.19) |
 | 2026-05-22 | Gate 2 PASS (100% compile) |
 | 2026-06 (target) | Self-improvement loop: 30K execution-verified records |
 | 2026-07 (target) | Gate 3 attempt (>50% functional) |

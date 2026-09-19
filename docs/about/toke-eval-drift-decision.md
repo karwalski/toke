@@ -101,8 +101,11 @@ faults.
 - **Any model capability, Pass@1, or generation quality.** These 60 programs are
   *hand-repaired by a human-directed agent*, not generated: 33 of 60 were edited. The set
   measures what the language and the compiler can do, not what a model produces. It is not
-  comparable to Gate 1's 63.7% Pass@1 or Gate 2's 55.6% functional correctness, and must
-  never be presented beside them as progress.
+  comparable to Gate 1's 58.8% Pass@1 or Gate 2's 55.6% functional correctness, and must
+  never be presented beside them as progress. (This line quoted Gate 1 as 63.7% until
+  2026-09-19; that was 588/**923**, computed after the non-compiling solutions had been
+  dropped from the denominator. On the 1,000 generated it is 588/1,000 = 58.8% -- story
+  128.19, `docs/decisions/gate1-decision.md`.)
 - **A token reduction versus Python.** Under a shared general-purpose tokenizer toke costs
   **more** than Python here (1.34×). toke-vs-Python is a cross-language density ratio
   (TEMSpec §2.3), informational only — never a reduction.

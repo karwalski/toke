@@ -202,8 +202,18 @@ any toke-trained tokenizer named alongside a non-toke baseline.
 | `toke_generate` sample | 84% (21/25) | 78% (18/23) | 25-prompt benchmark, new model | 71.5.4 (2026-05-24) |
 | Corpus after v0.4 mechanical migration | **84.3%** (1781/2112) | n/a | `=`→`==` only, not yet idiomatic | 118.2 (2026-07-02) |
 
-Baseline comparison (Gate 1): the fine-tuned-7B baseline was **63.7% Pass@1**,
-~2.5% illegal-char, ~15 tok/s on an M4.
+Baseline comparison (Gate 1): the fine-tuned-7B baseline was **58.8% Pass@1**
+(588 of 1,000 solutions generated), ~2.5% illegal-char, ~15 tok/s on an M4.
+
+*Pass@1 corrected 2026-09-19 (story 128.19): 58.8%, not 63.7%.* 1,000 solutions were
+generated, 923 compiled, 588 passed every hidden test. The published 63.7% was
+588/**923**: the 77 solutions that failed to compile were dropped from the
+denominator, which measures Pass@1 *given that the solution compiled* — a different
+and strictly more generous quantity. The denominator is the 1,000 generated:
+588/1,000 = **58.8%**. No re-run was needed; the correction is arithmetic.
+**58.8% is below the `pass_at_1_minimum: 0.60` Gate 1 declared, so the Gate 1
+verdict is re-opened and has not been re-decided here.** See
+`docs/decisions/gate1-decision.md` and `toke-eval/docs/suspect-numbers-128-1c.md` §1.
 
 ---
 

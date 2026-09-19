@@ -6,7 +6,7 @@ order: 4
 ---
 
 **Date:** 2026-04-03
-**Status:** PASS
+**Status:** recorded PASS 2026-04-03 — **verdict RE-OPENED 2026-09-19** (story 128.19)
 **Deciders:** Matt Watt
 **Story:** 1.6.4
 
@@ -17,11 +17,36 @@ order: 4
 | # | Criterion | Threshold | Result | Verdict |
 |---|-----------|-----------|--------|---------|
 | 1 | Token reduction on held-out D2C tasks using legacy character set | >= 10% | 12.5% (8K vocab) / 13.1% (32K vocab) | **PASS** |
-| 2 | First-pass compile success (Pass@1) | >= 60% | 63.7% (588/923 tasks) | **PASS** |
+| 2 | Functional Pass@1 on held-out tasks | >= 60% | **58.8%** (588/1,000) | **NOT MET — open** |
+
+> **Pass@1 corrected 2026-09-19 (story 128.19): 58.8%, not 63.7%.**
+> 1,000 solutions were generated, 923 compiled, 588 passed every hidden test. The
+> figure published as 63.7% was 588/**923**: `load_toke_solutions()` dropped the 77
+> solutions that failed to compile out of the denominator, so it measured Pass@1
+> *given that the solution compiled* — a different and strictly more generous
+> quantity. A solution that fails to compile is a failed attempt, not an absent
+> one, so the denominator is the 1,000 generated: 588/1,000 = **58.8%**. No re-run
+> was needed; the correction is arithmetic over `toke-eval/benchmark/solutions/*.toke`.
+> **58.8% is below the declared `pass_at_1_minimum: 0.60`, so the Gate 1 verdict is
+> re-opened and has not been re-decided here.** Derivation:
+> `toke-eval/docs/suspect-numbers-128-1c.md` §1.
+
+(The criterion was also mislabelled "first-pass compile success". 58.8% is the
+*functional* Pass@1 — solutions passing every hidden test. The compile rate was
+92.3%, 923/1,000.)
+
+As published until 2026-09-19 this row read `63.7% (588/923 tasks)` with a verdict
+of **PASS**. That is the withdrawn figure and it is kept here, not erased.
 
 **Failure consequence (not triggered):** Halt language development and pivot to typed-IR approach only.
 
-**Decision: Gate 1 passes. Phase 1 (Falsification) is complete. The project proceeds to Phase 2.**
+**Decision as recorded 2026-04-03: Gate 1 passes. Phase 1 (Falsification) is complete. The project proceeds to Phase 2.**
+
+**Re-opened 2026-09-19 (story 128.19).** That decision rested on a Pass@1 of
+63.7%, which was computed on the wrong denominator. The corrected figure, 58.8%,
+is below the gate's own >= 60% threshold. Whether Gate 1 passes on the corrected
+number is the owner's decision and is **not** made here. The original decision is
+left above as the record of what was concluded at the time.
 
 ---
 
@@ -55,10 +80,12 @@ Cross-language comparison (cl100k_base, complete programs):
 
 | Metric | Value |
 |--------|-------|
-| Tasks evaluated | 923 |
-| Pass@1 | **588 (63.7%)** |
-| Mean Pass@1 | **0.637** |
-| Compile success | 923/1000 (92.3%) |
+| Solutions generated | 1,000 |
+| Solutions compiled | 923 (92.3%) |
+| Solutions passing every hidden test | 588 |
+| Pass@1 | **588/1,000 = 58.8%** |
+| Mean Pass@1 | **0.588** |
+| Pass@1 as published until 2026-09-19 | 588/923 = 63.7% — **withdrawn, wrong denominator** |
 | Inference time | 41.7 minutes (1000 tasks) |
 | Model | Qwen 2.5 Coder 7B + LoRA adapter |
 | Platform | Mac Studio M4 Max (local) |
@@ -70,7 +97,14 @@ Cross-language comparison (cl100k_base, complete programs):
 | v1 | 2026-04-03 | 500 | 183 (37%) | 153 (31%) | Baseline |
 | v2 | 2026-04-03 | 500 | 293 (59%) | 217 (43%) | String globals + loop SSA + ptr tracking |
 | v3 | 2026-04-03 | 500 | 435 (87%) | 312 (62%) | Bool print + nested JSON + i1 coercion |
-| v5 (final) | 2026-04-03 | 1000 | 923 (92%) | 588 (64%) | 500 new diverse tasks, full re-inference |
+| v5 (final) | 2026-04-03 | 1000 | 923 (92%) | 588 (**59%**) | 500 new diverse tasks, full re-inference |
+
+The v5 row read `588 (64%)` until 2026-09-19. Note that every other row in this
+table computes its Pass@1 percentage against the **generated** count in the Tasks
+column — 153/500 = 31%, 217/500 = 43%, 312/500 = 62% — and only the v5 row was
+computed against the *compiled* count (588/923 = 64%). The corrected v5 figure,
+588/1000 = 59%, is the one consistent with the rest of its own table. (The same
+anomaly is visible in `toke-spec/docs/gate1-decision.md`, independently.)
 
 ### Codegen Fixes Applied (Epic 2.8)
 
@@ -86,7 +120,11 @@ Seven compiler codegen bugs were identified and fixed during benchmark iteration
 
 All fixes validated with zero regressions across 90 conformance tests and 9 e2e tests.
 
-### Remaining Failures (36.3%)
+### Remaining Failures (41.2%)
+
+(This heading read 36.3% until 2026-09-19 — the complement of the withdrawn
+63.7%. The complement of the corrected 58.8% is 41.2%. The ~335 failures counted
+below exclude the 77 solutions that never compiled; those are failures too.)
 
 | Category | ~Count | Nature |
 |----------|--------|--------|

@@ -3155,7 +3155,7 @@ No formal protocol for the division is specified in v0.3. Implementations may us
 
 The long-term target for toke AI code generation is a 1B parameter model trained from scratch on the toke corpus — not fine-tuned from an existing LLM. The phased approach is:
 
-- **Phase 1 (complete):** Fine-tune existing LLMs (7B Qwen) on toke corpus. Gate 1 PASS: 63.7% Pass@1.
+- **Phase 1 (complete):** Fine-tune existing LLMs (7B Qwen) on toke corpus. Gate 1 recorded PASS 2026-04-03 at 63.7% Pass@1; **that Pass@1 was corrected on 2026-09-19 to 58.8%** (588 of 1,000 solutions generated — 63.7% was 588/923, computed after the non-compiling solutions had been dropped from the denominator), which is below the gate's own >= 60% minimum, so the verdict is re-opened and has not been re-decided (story 128.19).
 - **Phase 2 (in progress):** Retrain tokenizer on default syntax, regenerate corpus, curriculum learning. Gate 2: fine-tuned 7B outperforms baseline on default-syntax generation.
 - **Phase 3 (planned):** Train a 1B parameter model from scratch on comment-free, 55-character default-syntax toke programs using the purpose-built tokenizer.
 

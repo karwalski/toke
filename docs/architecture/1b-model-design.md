@@ -125,10 +125,17 @@ Standard cross-entropy on next-token prediction. No auxiliary losses needed.
 
 | Metric                | Target               | Baseline (fine-tuned 7B) |
 |-----------------------|----------------------|--------------------------|
-| Pass@1 (held-out)     | > 80%               | 63.7%                    |
+| Pass@1 (held-out)     | > 80%               | 58.8%                    |
 | Illegal character rate| < 0.1%              | ~2.5%                    |
 | Token efficiency      | within 10% of ref   | not measured              |
 | Inference speed (M4)  | > 100 tok/s         | ~15 tok/s                |
+
+Both baseline Pass@1 cells read 63.7% until 2026-09-19. That figure was 588/**923**:
+the Gate 1 harness dropped the 77 generated solutions that failed to compile out of the
+denominator, which measures Pass@1 *given that the solution compiled*. On the 1,000
+solutions generated it is 588/1,000 = **58.8%** (story 128.19). 58.8% is below Gate 1's
+own >= 60% minimum, so the Gate 1 verdict is re-opened; see
+`docs/decisions/gate1-decision.md`.
 
 **Pass@1 > 80%** is the primary gate. The model must generate correct toke
 programs on the first attempt more than 80% of the time on a held-out benchmark.
@@ -149,7 +156,7 @@ interactive use (IDE completion, REPL assistance).
 |------------------|------------------------|---------------------------|
 | Parameters       | 7B                     | 1B                        |
 | Training data    | toke + Python/C/etc contamination | toke only        |
-| Pass@1           | 63.7%                  | > 80%                     |
+| Pass@1           | 58.8%                  | > 80%                     |
 | Illegal chars    | ~2.5%                  | < 0.1%                    |
 | Inference speed  | ~15 tok/s (M4)         | > 100 tok/s (M4)          |
 | Memory           | ~14 GB                 | ~2 GB                     |
