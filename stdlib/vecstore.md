@@ -163,11 +163,9 @@ dimension mismatches, the collection is empty, or no entry clears `minscore`.
 **Example:**
 ```toke
 let results=vecstore.search(col;queryemb;5;0.7);
-let i=mut.0;
-while(i<results.len()){
+lp(let i=0;i<results.len();i=i+1){
   let r=results.get(i);
-  log.info(str.concat(r.id;str.concat(" score=";str.fromfloat(r.score))));
-  i=i+1
+  io.println(str.concat(r.id;str.concat(" score=";str.fromfloat(r.score))))
 };
 ```
 
@@ -195,7 +193,7 @@ entries older than `ttl_seconds`.
 (* Expire entries older than 7 days *)
 let cutoff=(time.now()/1000)-(7*86400);
 let removed=vecstore.deletebefore(col;cutoff);
-log.info(str.concat("expired ";str.concat(str.fromint(removed);" entries")));
+io.println(str.concat("expired ";str.concat(str.fromint(removed);" entries")));
 ```
 
 ### vecstore.count(col: VecCollection): i32
@@ -205,7 +203,7 @@ Returns the number of entries currently in the collection.
 **Example:**
 ```toke
 let n=vecstore.count(col);
-log.info(str.concat("collection has ";str.concat(str.fromint(n);" entries")));
+io.println(str.concat("collection has ";str.concat(str.fromint(n);" entries")));
 ```
 
 ---
@@ -266,6 +264,6 @@ let col=vecstore.collection(vs;"sessioncontext");
 (* Remove anything older than 1 hour *)
 let cutoff=(time.now()/1000)-3600;
 let n=vecstore.deletebefore(col;cutoff);
-log.info(str.concat("evicted ";str.concat(str.fromint(n);" stale entries")));
+io.println(str.concat("evicted ";str.concat(str.fromint(n);" stale entries")));
 vecstore.close(vs);
 ```

@@ -99,9 +99,9 @@ expired, been wiped, or does not exist.
 ```toke
 let s=securemem.read(buf);
 if(str.len(s)>0){
-  log.info(str.concat("secret: ";s))
+  io.println(str.concat("secret: ";s))
 }el{
-  log.warn("buffer expired or wiped")
+  io.println("buffer expired or wiped")
 };
 ```
 
@@ -140,7 +140,7 @@ accumulating in memory.
 **Example:**
 ```toke
 let freed=securemem.sweep();
-log.info(str.concat("swept ";str.concat(str.fromint(freed);" expired buffers")));
+io.println(str.concat("swept ";str.concat(str.fromint(freed);" expired buffers")));
 ```
 
 ---
@@ -156,7 +156,7 @@ Use this to detect whether the current process has the `CAP_IPC_LOCK` privilege
 **Example:**
 ```toke
 if(securemem.isavailable()==0){
-  log.warn("mlock unavailable: secrets may be paged to disk")
+  io.println("mlock unavailable: secrets may be paged to disk")
 };
 ```
 
