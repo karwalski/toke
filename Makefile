@@ -73,6 +73,7 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-stdlib-security-integration test-stdlib-network-integration \
 	test-stdlib-viz-integration test-stdlib-data-pipeline test-stdlib-llm-live \
 	test-stdlib-http test-stdlib-http-cookies test-stdlib-http-multipart \
+	test-stdlib-http-leak test-stdlib-toml-glue \
 	test-stdlib-http-form test-stdlib-http-tls \
 	test-stdlib-file test-stdlib-runtime \
 	test-stdlib-path test-stdlib-args test-stdlib-md test-stdlib-toml \
@@ -280,6 +281,16 @@ test-stdlib-http:
 	    test/stdlib/test_http.c src/stdlib/http.c \
 	    src/stdlib/encoding.c src/stdlib/str.c
 	$(RUN_TEST) ./test/stdlib/test_http
+
+# Story 127.65: the keep-alive loop must free the parsed request each
+# iteration.  Drives the real server loop over a loopback connection and
+# reads the heap's in-use byte count either side of it.
+test-stdlib-http-leak:
+	$(CC) $(CFLAGS) -o test/stdlib/test_http_keepalive_leak \
+	    test/stdlib/test_http_keepalive_leak.c src/stdlib/http.c \
+	    src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c \
+	    src/stdlib/capabilities.c -lz -lpthread
+	$(RUN_TEST) ./test/stdlib/test_http_keepalive_leak
 
 test-stdlib-http-cookies:
 	$(CC) $(CFLAGS) -o test/stdlib/test_http_cookies \
@@ -610,6 +621,13 @@ test-stdlib-toml:
 	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml \
 	    test/stdlib/test_toml.c src/stdlib/toml.c $(TOML_SRCS)
 	$(RUN_TEST) ./test/stdlib/test_toml
+
+# Story 127.67: the std.toml wrappers must distinguish a value of false/0
+# from an error, and a missing section must not resolve to its parent.
+test-stdlib-toml-glue:
+	$(CC) $(CFLAGS) $(TOML_FLAGS) -o test/stdlib/test_toml_glue \
+	    test/stdlib/test_toml_glue.c src/stdlib/toml.c src/stdlib/toml_glue.c $(TOML_SRCS)
+	$(RUN_TEST) ./test/stdlib/test_toml_glue
 
 # ── Epic 72.5: std.vecstore ──────────────────────────────────────────────────
 test-stdlib-vecstore:

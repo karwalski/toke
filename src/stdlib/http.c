@@ -158,6 +158,33 @@ static int match_pattern(const char *pat, const char *path,
 
 /* ── Request parsing ────────────────────────────────────────────────── */
 
+#define HTTP_MAX_REQ_HEADERS 64
+
+/*
+ * count_req_headers — how many `Key: value` header lines the header block of
+ * `raw` actually carries, capped at HTTP_MAX_REQ_HEADERS.
+ *
+ * Story 127.65: parse_request used to allocate HTTP_MAX_REQ_HEADERS StrPairs
+ * (1024 B on a 64-bit target) for every request regardless of how many
+ * headers arrived.  A typical request carries 4-8, so ~90% of that block was
+ * never written.  Sizing the block to the real count is a straight win now
+ * that the block is freed per request.
+ */
+static int count_req_headers(const char *raw)
+{
+    const char *p = strstr(raw, "\r\n");
+    int n = 0;
+    if (!p) return 0;
+    p += 2;                       /* skip the request line */
+    while (n < HTTP_MAX_REQ_HEADERS) {
+        const char *e = strstr(p, "\r\n");
+        if (!e || e == p) break;  /* end of buffer, or the blank line */
+        if (memchr(p, ':', (size_t)(e - p))) n++;
+        p = e + 2;
+    }
+    return n;
+}
+
 static Req parse_request(const char *raw) {
     Req req; memset(&req, 0, sizeof(req));
     char *buf = malloc(strlen(raw) + 1); if (!buf) return req;
@@ -168,13 +195,16 @@ static Req parse_request(const char *raw) {
     *sp1 = '\0'; req.method = strdup(buf);
     char *sp2 = strchr(sp1+1, ' '); if (sp2) *sp2 = '\0';
     req.path = strdup(sp1+1);
-    StrPair *hdrs = malloc(64 * sizeof(StrPair)); int hc = 0;
+    /* 127.65: size the header block to the headers that actually arrived. */
+    int hmax = count_req_headers(raw);
+    StrPair *hdrs = hmax > 0 ? malloc((size_t)hmax * sizeof(StrPair)) : NULL;
+    int hc = 0;
     char *p = nl + 2;
-    while (1) {
+    while (hdrs) {
         char *e = strstr(p, "\r\n"); if (!e || e == p) break;
         *e = '\0';
         char *col = strchr(p, ':');
-        if (col && hc < 64) {
+        if (col && hc < hmax) {
             *col = '\0';
             hdrs[hc].key = strdup(p);
             hdrs[hc].val = strdup(col+1 + (*(col+1)==' ' ? 1 : 0));
@@ -186,6 +216,31 @@ static Req parse_request(const char *raw) {
     const char *bs = strstr(raw, "\r\n\r\n");
     req.body = bs ? strdup(bs+4) : strdup("");
     free(buf); return req;
+}
+
+/*
+ * free_req — release everything parse_request() allocated.
+ *
+ * Story 127.65: handle_connection()'s keep-alive loop called parse_request()
+ * once per request and never released the result, so a long-lived server grew
+ * by ~1.1-1.3 KB per request with no plateau — reproducible on a 404 path
+ * where no toke code runs at all, which is what rules out the runtime arena.
+ *
+ * req.params is deliberately NOT touched: handle_connection points it at a
+ * stack array of StrPair whose key/val strings are owned by match_pattern.
+ */
+static void free_req(Req *req)
+{
+    if (!req) return;
+    free((void *)(uintptr_t)req->method);
+    free((void *)(uintptr_t)req->path);
+    free((void *)(uintptr_t)req->body);
+    for (uint64_t i = 0; i < req->headers.len; i++) {
+        free((void *)(uintptr_t)req->headers.data[i].key);
+        free((void *)(uintptr_t)req->headers.data[i].val);
+    }
+    free(req->headers.data);
+    memset(req, 0, sizeof(*req));
 }
 
 /* ── Gzip response compression (Story 59.4.5) ────────────────────────── */
@@ -876,6 +931,7 @@ static void handle_connection(int fd)
                     "Upgrade: h2c\r\n\r\n";
                 write(fd, resp101, strlen(resp101));
                 handle_h2_connection(fd, NULL, client_ip);
+                free_req(&req);                 /* 127.65 */
                 free(raw);
                 close(fd);
                 return;
@@ -915,6 +971,7 @@ static void handle_connection(int fd)
             res.headers.len  = 0;
             send_response(fd, res, keep_alive);
             log_request(client_ip, &req, res.status, 0);
+            free_req(&req);                     /* 127.65 */
             if (!keep_alive) break;
             continue;
         }
@@ -932,6 +989,7 @@ static void handle_connection(int fd)
             Res res = make_res(405, "Method Not Allowed");
             send_response(fd, res, keep_alive);
             log_request(client_ip, &req, res.status, 0);
+            free_req(&req);                     /* 127.65 */
             if (!keep_alive) break;
             continue;
         }
@@ -1032,6 +1090,11 @@ static void handle_connection(int fd)
         }
         }
 
+        /* 127.65: release the parsed request before the next keep-alive
+         * iteration.  Everything that may alias it (res.body, the gzip
+         * buffer, the access/error log lines) has already been written. */
+        free_req(&req);
+
         if (!keep_alive) break;
     }
 
@@ -1040,6 +1103,29 @@ static void handle_connection(int fd)
 }
 
 /* ── Server ─────────────────────────────────────────────────────────── */
+
+/*
+ * install_shutdown_handler — install `h` for `sig` via sigaction() with
+ * sa_flags deliberately left at 0, i.e. WITHOUT SA_RESTART.
+ *
+ * Story 127.69: signal() on macOS/BSD (and glibc) installs the handler with
+ * SA_RESTART, so the blocking accept() in worker_loop()/tls_worker_loop()
+ * was transparently restarted by the kernel instead of returning EINTR.  A
+ * worker parked in accept() therefore never reached its
+ * `if (g_shutdown_requested) break;` check, so SIGTERM was only observed
+ * when the next connection happened to arrive — and http_serve_workers took
+ * the full HTTP_DRAIN_TIMEOUT_SECS and then SIGKILLed its own workers.
+ * Without SA_RESTART accept() returns -1/EINTR and the loop exits at once.
+ */
+static void install_shutdown_handler(int sig, void (*h)(int))
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = h;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;   /* NOT SA_RESTART — see above */
+    sigaction(sig, &sa, NULL);
+}
 
 static void serve_sighandler(int sig)
 {
@@ -1069,8 +1155,8 @@ int http_serve(uint16_t port) {
         close(srv);return -1;
     }
 
-    signal(SIGTERM, serve_sighandler);
-    signal(SIGINT,  serve_sighandler);
+    install_shutdown_handler(SIGTERM, serve_sighandler);   /* 127.69 */
+    install_shutdown_handler(SIGINT,  serve_sighandler);   /* 127.69 */
 
     for (;;) {
         int fd = accept(srv, NULL, NULL);
@@ -1184,6 +1270,12 @@ static int bind_listen(const char *host, uint64_t port)
 /* worker_loop — accept and handle connections; exits when shutdown is set. */
 static void worker_loop(int srv_fd, TkHttpRouter *r)
 {
+    /* 127.69: own the shutdown disposition explicitly.  A forked worker
+     * inherits it from http_serve_workers(), but the nworkers<=1 path runs
+     * this loop in a process that never installed one. */
+    install_shutdown_handler(SIGTERM, serve_sighandler);
+    install_shutdown_handler(SIGINT,  serve_sighandler);
+
     /* If a router is provided, copy its routes into the global table.
      * If NULL, use the global route_table as-is (already populated by
      * http_GET/http_POST/tk_http_get_handler calls). */
@@ -1234,9 +1326,9 @@ TkHttpErr http_serve_workers(TkHttpRouter *r, const char *host,
     if (srv < 0) return TK_HTTP_ERR_BIND;
 
     g_nworkers_global = nworkers;
-    signal(SIGTERM, workers_parent_sighandler);
-    signal(SIGINT,  workers_parent_sighandler);
-    signal(SIGHUP,  workers_parent_sighandler);
+    install_shutdown_handler(SIGTERM, workers_parent_sighandler);  /* 127.69 */
+    install_shutdown_handler(SIGINT,  workers_parent_sighandler);  /* 127.69 */
+    install_shutdown_handler(SIGHUP,  workers_parent_sighandler);  /* 127.69 */
 
     for (uint64_t i = 0; i < nworkers; i++) {
         pid_t pid = fork();
@@ -4009,6 +4101,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
             write_cors_headers_ssl(ssl);
             SSL_write(ssl, "\r\n", 2);
             log_request(client_ip, &req, 204, 0);
+            free_req(&req);                     /* 127.65 */
             if (!keep_alive) break;
             continue;
         }
@@ -4039,6 +4132,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                 if (bl) SSL_write(ssl, bad.body, (int)bl);
                 log_request(client_ip, &req, 405, bl);
             }
+            free_req(&req);                     /* 127.65 */
             if (!keep_alive) break;
             continue;
         }
@@ -4168,6 +4262,10 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         }
         }
 
+        /* 127.65: release the parsed request before the next keep-alive
+         * iteration (same reasoning as the cleartext loop above). */
+        free_req(&req);
+
         if (!keep_alive) break;
     }
 
@@ -4182,6 +4280,9 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
  */
 static void tls_worker_loop(int srv_fd, TkHttpRouter *r, SSL_CTX *ssl_ctx)
 {
+    install_shutdown_handler(SIGTERM, serve_sighandler);   /* 127.69 */
+    install_shutdown_handler(SIGINT,  serve_sighandler);   /* 127.69 */
+
     if (r) {
         route_count = r->count;
         memcpy(route_table, r->routes, (size_t)r->count * sizeof(Route));
@@ -4231,8 +4332,8 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
     int srv = bind_listen(host, port);
     if (srv < 0) return TK_HTTP_ERR_BIND;
 
-    signal(SIGTERM, workers_parent_sighandler);
-    signal(SIGINT,  workers_parent_sighandler);
+    install_shutdown_handler(SIGTERM, workers_parent_sighandler);  /* 127.69 */
+    install_shutdown_handler(SIGINT,  workers_parent_sighandler);  /* 127.69 */
 
     pid_t tls_pids[TK_MAX_WORKERS];
     for (uint64_t i = 0; i < nworkers; i++) {
