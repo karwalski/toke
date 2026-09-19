@@ -239,6 +239,121 @@
   0,
   "e3b0c44298fc1c14"
  ],
+ "test/standalone/test_127_10.tk": [
+  true,
+  0,
+  "afa2854f1bc7c2b1"
+ ],
+ "test/standalone/test_127_11.tk": [
+  true,
+  0,
+  "49b76740c7b42147"
+ ],
+ "test/standalone/test_127_12.tk": [
+  true,
+  0,
+  "a676843389644f8f"
+ ],
+ "test/standalone/test_127_12b.tk": [
+  true,
+  0,
+  "e5fcf32d80988e70"
+ ],
+ "test/standalone/test_127_13.tk": [
+  true,
+  0,
+  "dfeebda068ffa82c"
+ ],
+ "test/standalone/test_127_16.tk": [
+  true,
+  0,
+  "5f0ed0dd2cb2b27b"
+ ],
+ "test/standalone/test_127_16b.tk": [
+  true,
+  0,
+  "9836f732b117ed80"
+ ],
+ "test/standalone/test_127_25.tk": [
+  true,
+  0,
+  "4ae7065d1b02e42f"
+ ],
+ "test/standalone/test_127_26.tk": [
+  true,
+  0,
+  "3c71278747d2f718"
+ ],
+ "test/standalone/test_127_27.tk": [
+  true,
+  0,
+  "3d81edbaf2f6acd7"
+ ],
+ "test/standalone/test_127_31.tk": [
+  true,
+  0,
+  "96a88e4392e08f58"
+ ],
+ "test/standalone/test_127_34.tk": [
+  true,
+  0,
+  "3f4df7fff97d02bb"
+ ],
+ "test/standalone/test_127_35.tk": [
+  true,
+  0,
+  "3c412fec07847766"
+ ],
+ "test/standalone/test_127_38.tk": [
+  true,
+  0,
+  "9212fbca87cfdea9"
+ ],
+ "test/standalone/test_127_39.tk": [
+  true,
+  0,
+  "4e578d1a4ca6f76c"
+ ],
+ "test/standalone/test_127_43.tk": [
+  true,
+  0,
+  "371575b554514b9b"
+ ],
+ "test/standalone/test_127_44.tk": [
+  true,
+  0,
+  "4bd5a32c859ac43d"
+ ],
+ "test/standalone/test_127_45.tk": [
+  true,
+  0,
+  "758f74036c2b9fac"
+ ],
+ "test/standalone/test_127_46.tk": [
+  true,
+  0,
+  "2f95e671a3813b47"
+ ],
+ "test/standalone/test_127_6.tk": [
+  true,
+  0,
+  "a35be38620829123"
+ ],
+ "test/standalone/test_127_7.tk": [
+  true,
+  0,
+  "3233b3c65ed24b9d"
+ ],
+ "test/standalone/test_127_8.tk": [
+  true,
+  0,
+  "9b1bea2033b4d8bc"
+ ],
+ "test/standalone/test_127_9.tk": [
+  true,
+  0,
+  "563a3f0c47970491"
+ ],
  "test/standalone/test_args.tk": [
   true,
   0,
@@ -289,6 +404,11 @@
   null,
   null
  ],
+ "test/standalone/test_elif_stmt.tk": [
+  true,
+  0,
+  "de58da62963e3325"
+ ],
  "test/standalone/test_encoding.tk": [
   true,
   2,
@@ -329,6 +449,11 @@
   0,
   "172f59ae5dece329"
  ],
+ "test/standalone/test_fmt.tk": [
+  true,
+  0,
+  "115bf8eb676305ff"
+ ],
  "test/standalone/test_io.tk": [
   true,
   0,
@@ -344,10 +469,20 @@
   0,
   "20fa845d7815bcb9"
  ],
+ "test/standalone/test_json_arr.tk": [
+  true,
+  0,
+  "2bcd584960f55575"
+ ],
  "test/standalone/test_json_full.tk": [
   true,
   1,
   "d444e6ac6653e3ba"
+ ],
+ "test/standalone/test_map_hash.tk": [
+  true,
+  0,
+  "5a0fc7e89d8ece77"
  ],
  "test/standalone/test_math.tk": [
   true,
@@ -358,6 +493,11 @@
   true,
   4,
   "43ad5e5400ad54a8"
+ ],
+ "test/standalone/test_nested_arr_compare.tk": [
+  true,
+  1,
+  "e3b0c44298fc1c14"
  ],
  "test/standalone/test_path.tk": [
   true,
@@ -384,10 +524,15 @@
   0,
   "f64bc877f806c275"
  ],
+ "test/standalone/test_shadow_retype.tk": [
+  true,
+  1,
+  "e3b0c44298fc1c14"
+ ],
  "test/standalone/test_soap.tk": [
-  false,
-  null,
-  null
+  true,
+  0,
+  "e3b0c44298fc1c14"
  ],
  "test/standalone/test_split_append.tk": [
   true,
@@ -409,6 +554,16 @@
   0,
   "1536fc4be882e458"
  ],
+ "test/standalone/test_str_join.tk": [
+  true,
+  0,
+  "242076d3a9abce8d"
+ ],
+ "test/standalone/test_strarray_interp.tk": [
+  true,
+  0,
+  "4ac3a9ebfff62559"
+ ],
  "test/standalone/test_time.tk": [
   true,
   0,
@@ -425,9 +580,9 @@
   "3f19fe714c391be3"
  ],
  "test/standalone/test_xml.tk": [
-  false,
-  null,
-  null
+  true,
+  0,
+  "d64fff2041fe5f10"
  ],
  "test/standalone/test_xml_stress.tk": [
   true,
