@@ -232,6 +232,19 @@ if build html_table test/stdlib/html_table.tk; then
 fi
 
 echo
+echo "=== 136.25 -- ml.accuracy is reachable and correct ==="
+if build ml_accuracy test/stdlib/ml_accuracy.tk; then
+    out="$("$TMP/ml_accuracy")"
+    # 0.75 is neither 1.0 nor 0.0: a wrapper comparing the wrong things or
+    # misreading the array lengths cannot land on it by accident.
+    expect "3 of 4 correct is 0.75"  "$(line "$out" three.of.four)" "0.75"
+    expect "all correct is 1"        "$(line "$out" all.right)"     "1"
+    expect "none correct is 0"       "$(line "$out" none.right)"    "0"
+    expect "1 of 2 correct is 0.5"   "$(line "$out" half)"          "0.5"
+    expect "ragged lengths use the shorter" "$(line "$out" ragged)" "1"
+fi
+
+echo
 echo "glue_contract: $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
 exit 0

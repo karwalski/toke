@@ -1415,36 +1415,8 @@ int64_t tk_dataframe_tocsv_w(int64_t df) {
     return (int64_t)(intptr_t)s;
 }
 
-/* ── ml wrappers (ml.h) ──────────────────────────────────────────── */
-int64_t tk_ml_linregfit_w(int64_t data, int64_t targets) {
-    if (!data || !targets) return 0;
-    /* Decode toke F64Array layout: ptr[-1] = count, ptr[0..] = doubles */
-    int64_t *dptr = (int64_t *)(intptr_t)data;
-    int64_t *tptr = (int64_t *)(intptr_t)targets;
-    F64Array xs = { (const double *)dptr, (uint64_t)dptr[-1] };
-    F64Array ys = { (const double *)tptr, (uint64_t)tptr[-1] };
-    LinearModel m = ml_linregfit(xs, ys);
-    /* Pack slope + intercept into heap block */
-    double *block = (double *)malloc(2 * sizeof(double));
-    if (!block) return 0;
-    block[0] = m.slope;
-    block[1] = m.intercept;
-    return (int64_t)(intptr_t)block;
-}
-
-int64_t tk_ml_linregpredict_w(int64_t model, int64_t input) {
-    if (!model) return 0;
-    double *block = (double *)(intptr_t)model;
-    LinearModel m;
-    m.slope = block[0];
-    m.intercept = block[1];
-    double x;
-    memcpy(&x, &input, sizeof(double));
-    double result = ml_linregpredict(m, x);
-    int64_t r;
-    memcpy(&r, &result, sizeof(r));
-    return r;
-}
+/* ml wrappers moved to src/stdlib/ml_glue.c in 136.25 so `i=ml:std.ml` links
+ * on its own. */
 
 /* ── i18n wrappers (i18n.h) ───────────────────────────────────────── */
 

@@ -1,0 +1,34 @@
+(* ml_accuracy.tk -- story 136.25.
+
+   ml_accuracy() has been in ml.c and declared in ml.h since the module
+   shipped, and docs/stdlib/ml.md documents ml.accuracy(ytrue; ypred): f64.
+   It had no _w wrapper and no .tki export, so nothing in toke could reach it:
+   the documented call raised E4027, and past that would have looked for a
+   tk_ml_accuracy_w that did not exist. The implementation was complete and
+   unreachable.
+
+   The results are read back through math.frombits, NOT because the wrapper is
+   doing anything unusual -- every f64 crosses the _w boundary as its bit
+   pattern -- but because llvm.c's is_f64_returning_wrapper only consults the
+   .tki cache for a hardcoded list of modules in ensure_tki_cache_loaded, and
+   "ml" is not on it. So a .tki that says `"return": "f64"` is not honoured for
+   this module and the caller receives the bits. Reported separately; the value
+   itself is correct.
+
+   3 of 4 is 0.75 -- neither 1.0 nor 0.0 -- so a wrapper that compared the
+   wrong things or misread the lengths cannot land on it by accident. *)
+m=mlaccuracy;
+i=ml:std.ml;
+i=io:std.io;
+i=math:std.math;
+
+f=main():i64{
+  io.println("three.of.four=\(math.frombits(ml.accuracy(@(1;0;1;1);@(1;0;0;1))))");
+  io.println("all.right=\(math.frombits(ml.accuracy(@(1;0;1);@(1;0;1))))");
+  io.println("none.right=\(math.frombits(ml.accuracy(@(1;1;1);@(0;0;0))))");
+  io.println("half=\(math.frombits(ml.accuracy(@(1;0);@(1;1))))");
+  (* mismatched lengths: the shorter array governs, rather than reading past
+     the end of the longer one *)
+  io.println("ragged=\(math.frombits(ml.accuracy(@(1;0;1;1);@(1;0))))");
+  <0
+};
