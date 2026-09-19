@@ -1,0 +1,21 @@
+id: D092
+series: D
+description: "127.66: field access on a name the struct does not declare is E4025, and the documented `fix` is pinned exactly (AGENTS.md §6). The near-miss `logaccess` for the declared `logaccessformat` must not be silently accepted"
+input: |
+  m=t;
+  i=io:std.io;
+  t=Cfg{host:str;logaccessformat:str};
+  f=mkcfg():Cfg{
+    <Cfg{host:"h";logaccessformat:"combined"}
+  };
+  f=main():i64{
+    let cfg=mkcfg();
+    io.println(cfg.logaccess);
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4025"]
+expected_fix: "check the struct definition for available fields"
+expected_diag_field:
+  field: got
+  value: logaccess

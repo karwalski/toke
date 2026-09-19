@@ -573,6 +573,88 @@ static int contains_ptr(const Type *t) {
  * Returns TY_UNKNOWN if the node is NULL or the type name is not
  * recognised — this prevents cascading errors.
  */
+/* ── Imported .tki struct layouts (story 127.66) ───────────────────────
+ *
+ * `seed_predefined()` in names.c registered an imported type's *name* so
+ * `$ookecfg` parsed, but nothing carried its fields across the boundary, so
+ * resolve_type() returned TY_UNKNOWN and NODE_FIELD_EXPR's E4025 check —
+ * which requires TY_STRUCT — never ran.  `cfg.logaccess` on a .tki-imported
+ * type therefore type-checked clean and codegen lowered the unknown field to
+ * struct slot 0 (struct_field_index returns 0 for not-found), reading a
+ * neighbouring field's bytes: a type-safety hole, not a missing diagnostic.
+ *
+ * names.c now records the `"kind":"type"` records; these two helpers turn one
+ * into the same TY_STRUCT a local `t=` declaration would produce.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/* tki_scalar_type — a .tki type spelling that names a built-in scalar. */
+static Type *tki_scalar_type(Arena *A, const char *s) {
+    if (!s || !*s) return NULL;
+    if (!strcmp(s,"void")) return mk_type(A,TY_VOID);
+    if (!strcmp(s,"bool")) return mk_type(A,TY_BOOL);
+    if (!strcmp(s,"str") ) return mk_type(A,TY_STR);
+    if (!strcmp(s,"i64") ) return mk_type(A,TY_I64);
+    if (!strcmp(s,"u64") ) return mk_type(A,TY_U64);
+    if (!strcmp(s,"f64") ) return mk_type(A,TY_F64);
+    if (!strcmp(s,"f32") ) return mk_type(A,TY_F32);
+    if (!strcmp(s,"i8")  ) return mk_type(A,TY_I8);
+    if (!strcmp(s,"i16") ) return mk_type(A,TY_I16);
+    if (!strcmp(s,"i32") ) return mk_type(A,TY_I32);
+    if (!strcmp(s,"u8")  ) return mk_type(A,TY_U8);
+    if (!strcmp(s,"u16") ) return mk_type(A,TY_U16);
+    if (!strcmp(s,"u32") ) return mk_type(A,TY_U32);
+    if (!strcmp(s,"byte")||!strcmp(s,"Byte")) return mk_type(A,TY_U8);
+    return NULL;
+}
+
+/*
+ * imported_struct_type — the TY_STRUCT for a type declared in an imported
+ * .tki, or NULL when `tname` is not such a type.
+ *
+ * Sum types are deliberately excluded: their .tki "fields" are variant tags,
+ * not struct members, and handing them to the checker as a TY_STRUCT would
+ * route them into the E4010 variant-exhaustiveness path from the far side of
+ * an import.  They stay TY_UNKNOWN, exactly as before this story.
+ *
+ * A field whose .tki spelling is a collection (`[T]`, `@(...)`) or another
+ * module's qualified type keeps TY_UNKNOWN — the field *name* is what E4025
+ * needs, and leaving those types unknown keeps the change to the hole.
+ * `depth` caps the recursion for a type whose field names its own type.
+ */
+static Type *imported_struct_type(Ctx *cx, const char *tname, int depth) {
+    Arena *A = cx->env->arena;
+    if (!tname || !*tname || !cx->env->names) return NULL;
+    const ImportedType *it = imported_type_lookup(cx->env->names, tname);
+    if (!it || it->is_sum) return NULL;
+    Type *st = mk_type(A, TY_STRUCT);
+    if (!st) return NULL;
+    /* it->name and it->field_names are already interned in the NameEnv arena,
+     * which outlives the checker; reuse them rather than re-interning `tname`
+     * (a caller stack buffer, which ty_intern hands straight back when the
+     * arena is exhausted — a dangling pointer the analyser flags). */
+    st->name = it->name;
+    if (it->field_count > 0 && it->field_names) {
+        st->field_names = (const char **)arena_alloc(
+            A, it->field_count * (int)sizeof(char *));
+        st->field_types = (Type **)arena_alloc(
+            A, it->field_count * (int)sizeof(Type *));
+        if (st->field_names && st->field_types) {
+            st->field_count = it->field_count;
+            for (int i = 0; i < it->field_count; i++) {
+                st->field_names[i] = it->field_names[i]
+                                   ? it->field_names[i] : "";
+                const char *sp = it->field_types ? it->field_types[i] : NULL;
+                Type *ft = tki_scalar_type(A, sp);
+                if (!ft && sp && *sp && depth < 4 && sp[0] != '[' &&
+                    sp[0] != '@' && !strchr(sp, '!') && !strchr(sp, '.'))
+                    ft = imported_struct_type(cx, sp, depth + 1);
+                st->field_types[i] = ft ? ft : mk_type(A, TY_UNKNOWN);
+            }
+        }
+    }
+    return st;
+}
+
 static Type *resolve_type(Ctx *cx, const Node *n) {
     if (!n) return mk_type(cx->env->arena, TY_UNKNOWN);
     char nb[128]; TOKSTR(nb, cx->src, n);
@@ -658,6 +740,13 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
             }
         }
         return st;
+    }
+    /* 127.66: the name was not declared locally — it may name a type an
+     * imported .tki exports.  Without this the checker had no structure for
+     * it and every field access on it went unchecked. */
+    {
+        Type *ist = imported_struct_type(cx, nb, 0);
+        if (ist) return ist;
     }
     return mk_type(cx->env->arena, TY_UNKNOWN);
 }
@@ -781,6 +870,27 @@ static void emit_mm(Ctx *cx, const Node *n, const Type *exp,
  */
 static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1 || !call->children[0]) return NULL;
+    /* 127.66: `alias.fn(...)` crosses a .tki boundary, so there is no local
+     * NODE_FUNC_DECL to read a return spec from.  The interface states the
+     * return type; adopt it when it names an imported struct, so the result
+     * of `let cfg = cli.cfgdefault();` carries a field list and E4025 applies.
+     * Scalars, collections and error unions are deliberately left unknown —
+     * typing those would change inference far beyond this hole. */
+    {
+        const Node *callee = call->children[0];
+        if (callee && callee->kind == NODE_FIELD_EXPR && callee->child_count >= 2
+            && callee->children[0] && callee->children[0]->kind == NODE_IDENT
+            && callee->children[1]) {
+            char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
+            char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+            const char *ret = imported_func_ret(cx->env->names, ab, mb);
+            if (ret && !strchr(ret, '!')) {
+                Type *ist = imported_struct_type(cx, ret, 0);
+                if (ist) return ist;
+            }
+            return NULL;
+        }
+    }
     char nb[128]; TOKSTR(nb, cx->src, call->children[0]);
     Decl *d = tc_lookup(cx->env->names->module_scope, nb, (int)strlen(nb));
     if (!d || !d->def_node || d->def_node->kind != NODE_FUNC_DECL) return NULL;

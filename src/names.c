@@ -846,6 +846,291 @@ static int scope_insert(Scope *s, Arena *arena, const char *src,
  *   arena — memory arena.
  *   name  — the predefined identifier as a C string literal.
  */
+
+/* Field cap for a .tki type record — matches the 64-field cap the type
+ * checker applies to a local `t=` declaration (types.c resolve_type). */
+#define TKC_MAX_TKI_FIELDS 64
+
+/* ── Imported .tki export recording (story 127.66) ─────────────────────
+ *
+ * Registering an imported type name as a predefined identifier is enough to
+ * make `$ookecfg` parse, but it tells the type checker nothing about the
+ * type's shape.  resolve_type() then produced TY_UNKNOWN and the E4025
+ * "struct has no field" check — which only runs on TY_STRUCT — was skipped
+ * for every type that crossed a `.tki` boundary: `cfg.logaccess` type-checked
+ * clean and codegen lowered the unknown field to slot 0.  The helpers below
+ * lift the `"kind":"type"` field lists and the `"kind":"func"` return types
+ * out of each imported .tki into the NameEnv, where types.c reads them.
+ *
+ * The .tki grammar is a small, machine-generated JSON subset (no escapes in
+ * names or type spellings, no nested objects inside a field entry), so a
+ * brace-matched scan over the "exports" array is sufficient and keeps the
+ * compiler frontend free of a JSON dependency (AGENTS.md §6).
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/*
+ * tki_scan_value — the position just past the JSON value starting at p.
+ *
+ * Quote-aware and depth-aware.  The first cut of this scanner looked for the
+ * next `]` to end a "fields" array, which truncated every type whose first
+ * field is spelled with brackets (`"type": "[valerror]"`) and made the
+ * checker believe a real field did not exist.  The .tki writer (ir.c) never
+ * emits an escaped quote in a name or type spelling, so a plain quote scan is
+ * exact here.
+ */
+static const char *tki_scan_value(const char *p, const char *end) {
+    if (!p || p >= end) return NULL;
+    if (*p == '"') {
+        const char *q = (const char *)memchr(p + 1, '"', (size_t)(end - p - 1));
+        return q ? q + 1 : NULL;
+    }
+    if (*p == '{' || *p == '[') {
+        int depth = 0;
+        while (p < end) {
+            if (*p == '"') {
+                const char *q = (const char *)memchr(p + 1, '"',
+                                                     (size_t)(end - p - 1));
+                if (!q) return NULL;
+                p = q + 1;
+                continue;
+            }
+            if (*p == '{' || *p == '[') depth++;
+            else if (*p == '}' || *p == ']') {
+                depth--;
+                if (depth == 0) return p + 1;
+            }
+            p++;
+        }
+        return NULL;
+    }
+    while (p < end && *p != ',' && *p != '}' && *p != ']') p++;
+    return p;
+}
+
+/*
+ * tki_obj_key — value position of `key` in the JSON object at [obj,end),
+ * or NULL.  Only the object's own keys are considered: a nested object's
+ * "name" can never be mistaken for the record's own.
+ */
+static const char *tki_obj_key(const char *obj, const char *end,
+                               const char *key) {
+    if (!obj || obj >= end || *obj != '{') return NULL;
+    size_t klen = strlen(key);
+    const char *p = obj + 1;
+    while (p < end) {
+        while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' ||
+                           *p == '\r' || *p == ',')) p++;
+        if (p >= end || *p == '}') return NULL;
+        if (*p != '"') return NULL;
+        const char *k1 = p + 1;
+        const char *k2 = (const char *)memchr(k1, '"', (size_t)(end - k1));
+        if (!k2) return NULL;
+        p = k2 + 1;
+        while (p < end && (*p == ' ' || *p == '\t')) p++;
+        if (p >= end || *p != ':') return NULL;
+        p++;
+        while (p < end && (*p == ' ' || *p == '\t')) p++;
+        if ((size_t)(k2 - k1) == klen && memcmp(k1, key, klen) == 0) return p;
+        p = tki_scan_value(p, end);
+        if (!p) return NULL;
+    }
+    return NULL;
+}
+
+/* tki_str_value — copy the quoted string starting at p into out. */
+static int tki_str_value(const char *p, const char *end, char *out, int outsz) {
+    if (!p) return 0;
+    while (p < end && (*p == ' ' || *p == '\t')) p++;
+    if (p >= end || *p != '"') return 0;
+    const char *q1 = p + 1;
+    const char *q2 = (const char *)memchr(q1, '"', (size_t)(end - q1));
+    if (!q2) return 0;
+    int len = (int)(q2 - q1);
+    if (len >= outsz) len = outsz - 1;
+    memcpy(out, q1, (size_t)len);
+    out[len] = '\0';
+    return 1;
+}
+
+static void nameenv_add_itype(NameEnv *env, Arena *arena,
+                              const ImportedType *it) {
+    if (!env || !it) return;
+    /* First declaration wins: a module imported twice must not be recorded
+     * twice, and a locally declared `t=` type is resolved before this table
+     * is consulted at all. */
+    for (int i = 0; i < env->itype_count; i++)
+        if (env->itypes[i].name && strcmp(env->itypes[i].name, it->name) == 0)
+            return;
+    if (env->itype_count >= env->itype_cap) {
+        int nc = env->itype_cap == 0 ? 16 : env->itype_cap * 2;
+        ImportedType *na = (ImportedType *)arena_alloc(
+            arena, nc * (int)sizeof(ImportedType));
+        if (!na) return;
+        if (env->itypes && env->itype_count > 0)
+            memcpy(na, env->itypes,
+                   (size_t)env->itype_count * sizeof(ImportedType));
+        env->itypes = na;
+        env->itype_cap = nc;
+    }
+    env->itypes[env->itype_count++] = *it;
+}
+
+static void nameenv_add_ifunc(NameEnv *env, Arena *arena, const char *alias,
+                              const char *fn, const char *ret) {
+    if (!env || !alias || !fn || !ret) return;
+    if (env->ifunc_count >= env->ifunc_cap) {
+        int nc = env->ifunc_cap == 0 ? 32 : env->ifunc_cap * 2;
+        ImportedFunc *na = (ImportedFunc *)arena_alloc(
+            arena, nc * (int)sizeof(ImportedFunc));
+        if (!na) return;
+        if (env->ifuncs && env->ifunc_count > 0)
+            memcpy(na, env->ifuncs,
+                   (size_t)env->ifunc_count * sizeof(ImportedFunc));
+        env->ifuncs = na;
+        env->ifunc_cap = nc;
+    }
+    env->ifuncs[env->ifunc_count].alias = arena_intern(arena, alias,
+                                                       (int)strlen(alias));
+    env->ifuncs[env->ifunc_count].fn    = arena_intern(arena, fn,
+                                                       (int)strlen(fn));
+    env->ifuncs[env->ifunc_count].ret   = arena_intern(arena, ret,
+                                                       (int)strlen(ret));
+    env->ifunc_count++;
+}
+
+/*
+ * tki_record_exports — walk one .tki buffer's "exports" array and record
+ * every type layout and function return type into the NameEnv.
+ *
+ * `alias` is the name the module was imported under, so `alias.fn` can be
+ * resolved later; it may be NULL for a sub-namespace scan.
+ */
+static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
+                               const char *buf) {
+    if (!env || !buf) return;
+    const char *bufend = buf + strlen(buf);
+    const char *ex = strstr(buf, "\"exports\"");
+    if (!ex) return;
+    const char *arr = (const char *)memchr(ex, '[', (size_t)(bufend - ex));
+    if (!arr) return;
+    const char *p = arr + 1;
+    while (p < bufend) {
+        while (p < bufend && (*p == ' ' || *p == '\t' || *p == '\n' ||
+                              *p == '\r' || *p == ',')) p++;
+        if (p >= bufend || *p == ']') return;
+        if (*p != '{') return;
+        const char *rec = p;
+        const char *end = tki_scan_value(rec, bufend);
+        if (!end) return;
+        p = end;
+
+        char kind[32] = {0};
+        if (!tki_str_value(tki_obj_key(rec, end, "kind"), end,
+                           kind, (int)sizeof kind))
+            continue;
+        char name[128] = {0};
+        if (!tki_str_value(tki_obj_key(rec, end, "name"), end,
+                           name, (int)sizeof name))
+            continue;
+
+        if (strcmp(kind, "func") == 0) {
+            char ret[128] = {0};
+            /* A `T!E` return is spelled as a separate "error" key alongside
+             * "return" (ir.c), NOT as `T!E` in the return string. Such a call
+             * yields an error union, not a T, so it must stay untyped here —
+             * adopting T would put a record struct in `mt` scrutinee position
+             * and trip the E4010 variant-exhaustiveness check. */
+            if (tki_obj_key(rec, end, "error")) continue;
+            if (alias && tki_str_value(tki_obj_key(rec, end, "return"), end,
+                                       ret, (int)sizeof ret))
+                nameenv_add_ifunc(env, arena, alias, name, ret);
+            continue;
+        }
+        if (strcmp(kind, "type") != 0) continue;
+
+        ImportedType it;
+        it.name        = arena_intern(arena, name, (int)strlen(name));
+        it.is_sum      = 0;
+        it.field_count = 0;
+        it.field_names = NULL;
+        it.field_types = NULL;
+        {
+            const char *sv = tki_obj_key(rec, end, "is_sum");
+            if (sv && sv < end && strncmp(sv, "true", 4) == 0) it.is_sum = 1;
+        }
+
+        const char *fa = tki_obj_key(rec, end, "fields");
+        if (fa && fa < end && *fa == '[') {
+            const char *fe = tki_scan_value(fa, end);
+            if (fe) {
+                const char *names_buf[TKC_MAX_TKI_FIELDS];
+                const char *types_buf[TKC_MAX_TKI_FIELDS];
+                int fc = 0;
+                const char *fp = fa + 1;
+                while (fp < fe && fc < TKC_MAX_TKI_FIELDS) {
+                    while (fp < fe && (*fp == ' ' || *fp == '\t' ||
+                                       *fp == '\n' || *fp == '\r' ||
+                                       *fp == ',')) fp++;
+                    if (fp >= fe || *fp != '{') break;
+                    const char *fend = tki_scan_value(fp, fe);
+                    if (!fend) break;
+                    char fn[128] = {0}, ft[128] = {0};
+                    if (tki_str_value(tki_obj_key(fp, fend, "name"),
+                                      fend, fn, (int)sizeof fn)) {
+                        /* A sum-type variant is spelled `$red` in the .tki;
+                         * the parser adds the `$`, so store the bare name. */
+                        const char *bare = (fn[0] == '$') ? fn + 1 : fn;
+                        if (!tki_str_value(tki_obj_key(fp, fend, "type"),
+                                           fend, ft, (int)sizeof ft))
+                            ft[0] = '\0';
+                        names_buf[fc] = arena_intern(arena, bare,
+                                                     (int)strlen(bare));
+                        types_buf[fc] = arena_intern(arena, ft,
+                                                     (int)strlen(ft));
+                        fc++;
+                    }
+                    fp = fend;
+                }
+                if (fc > 0) {
+                    const char **fn_arr = (const char **)arena_alloc(
+                        arena, fc * (int)sizeof(const char *));
+                    const char **ft_arr = (const char **)arena_alloc(
+                        arena, fc * (int)sizeof(const char *));
+                    if (fn_arr && ft_arr) {
+                        memcpy(fn_arr, names_buf,
+                               (size_t)fc * sizeof(const char *));
+                        memcpy(ft_arr, types_buf,
+                               (size_t)fc * sizeof(const char *));
+                        it.field_names = fn_arr;
+                        it.field_types = ft_arr;
+                        it.field_count = fc;
+                    }
+                }
+            }
+        }
+        nameenv_add_itype(env, arena, &it);
+    }
+}
+
+const ImportedType *imported_type_lookup(const NameEnv *env, const char *name) {
+    if (!env || !name) return NULL;
+    for (int i = 0; i < env->itype_count; i++)
+        if (env->itypes[i].name && strcmp(env->itypes[i].name, name) == 0)
+            return &env->itypes[i];
+    return NULL;
+}
+
+const char *imported_func_ret(const NameEnv *env, const char *alias,
+                              const char *fn) {
+    if (!env || !alias || !fn) return NULL;
+    for (int i = 0; i < env->ifunc_count; i++)
+        if (env->ifuncs[i].alias && env->ifuncs[i].fn &&
+            strcmp(env->ifuncs[i].alias, alias) == 0 &&
+            strcmp(env->ifuncs[i].fn, fn) == 0)
+            return env->ifuncs[i].ret;
+    return NULL;
+}
+
 static void seed_predefined(Scope *s, Arena *arena, const char *name) {
     int len = (int)strlen(name);
     Decl *d = (Decl *)arena_alloc(arena, (int)sizeof(Decl));
@@ -1487,6 +1772,13 @@ int resolve_names(const Node *ast, const char *src,
     out->captures      = NULL;
     out->capture_count = 0;
     out->capture_cap   = 0;
+    /* 127.66: imported .tki type layouts / function return types */
+    out->itypes        = NULL;
+    out->itype_count   = 0;
+    out->itype_cap     = 0;
+    out->ifuncs        = NULL;
+    out->ifunc_count   = 0;
+    out->ifunc_cap     = 0;
 
     /* Make NameEnv available to resolve_closure via file-static pointer */
     s_name_env = out;
@@ -1556,6 +1848,10 @@ int resolve_names(const Node *ast, const char *src,
         if (!tbuf) { fclose(tf); continue; }
         size_t trd = fread(tbuf, 1, (size_t)tsz, tf); fclose(tf);
         tbuf[trd] = '\0';
+        /* 127.66: record the full export surface (type layouts + function
+         * return types) so the type checker can apply E4025 across the
+         * import boundary instead of falling through to TY_UNKNOWN. */
+        tki_record_exports(out, arena, ie->alias_name, tbuf);
         /* Parse type exports */
         char *tp = tbuf;
         while ((tp = strstr(tp, "\"kind\"")) != NULL) {
@@ -1647,6 +1943,12 @@ int resolve_names(const Node *ast, const char *src,
         size_t rd = fread(tki_buf, 1, (size_t)fsz, tkf);
         fclose(tkf);
         tki_buf[rd] = '\0';
+
+        /* 127.66: std.* .tki files are found only by this loop (the loop above
+         * probes module-path / -I dirs, not TKC_STDLIB_DIR), so record their
+         * export surface here — an unchecked field on `http.res` or
+         * `time.TimeParts` is the same type-safety hole. */
+        tki_record_exports(out, arena, ie->alias_name, tki_buf);
 
         /* Story 114.18: register "kind":"type" names (e.g. Vec, JwtClaims) as
          * predefined identifiers so they're usable in `:Type` annotations on

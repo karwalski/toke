@@ -5245,7 +5245,18 @@ static int emit_expr(Ctx *c, const Node *n)
                 int vidx = struct_field_index(ssi, tag);
                 if (arm->child_count >= 2 && arm->children[1]) {
                     char vname[NAME_BUF]; tok_cp(c->src, arm->children[1], vname, sizeof vname);
+                    /* 127.71: the pointer registry is keyed on the RAW source
+                     * name, but a shadowing arm binding is stored under the
+                     * uniquified one (`v.1`), so an outer `let v = <str>`
+                     * leaves `v` tagged "$str" and the arm's i64 payload
+                     * lowers `v == 7` to strcmp(inttoptr 7, …).  Same class as
+                     * 126.7 (let) and 127.64 (loop init).  Drop the stale tag
+                     * and re-record this binding's own tag under the raw name,
+                     * which is what every use looks up. */
+                    char vraw[NAME_BUF];
+                    strncpy(vraw, vname, sizeof vraw - 1); vraw[sizeof vraw - 1] = '\0';
                     const char *uname = make_unique_name(c, vname);
+                    int vshadow = (uname != vname);
                     if (uname != vname) { strncpy(vname, uname, sizeof vname - 1); vname[sizeof vname - 1] = '\0'; }
                     const char *vty = ssi->field_types[vidx];
                     int is_f = (!strcmp(vty, "f64") || !strcmp(vty, "f32"));
@@ -5253,6 +5264,10 @@ static int emit_expr(Ctx *c, const Node *n)
                     const char *slot_ty = is_f ? "double" : (is_str ? "i8*" : "i64");
                     set_local_type(c, vname, slot_ty);
                     if (is_str) mark_ptr_with_type(c, vname, "$str");
+                    if (vshadow) {
+                        clear_ptr_local(c, vraw);
+                        if (is_str) mark_ptr_with_type(c, vraw, "$str");
+                    }
                     fprintf(c->out, "  %%%s = alloca %s\n", vname, slot_ty);
                     int payp = next_tmp(c);
                     fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 1\n", payp, sbase);
@@ -5350,12 +5365,28 @@ static int emit_expr(Ctx *c, const Node *n)
                 /* Bind arm variable to scrutinee */
                 if (arm->child_count >= 2 && arm->children[1]) {
                     char vname[NAME_BUF]; tok_cp(c->src, arm->children[1], vname, sizeof vname);
+                    /* 127.71: this arm always binds the string scrutinee, but
+                     * the binding was never entered in the pointer registry,
+                     * so `w.len` inside the arm fell through to the array
+                     * header load and returned garbage — and when the arm name
+                     * shadows an outer binding the raw name kept the OUTER
+                     * tag (`@str`, a struct name), which is the same silent
+                     * wrong answer 127.64 produced as a crash.  Record the
+                     * binding under both names. */
+                    char vraw[NAME_BUF];
+                    strncpy(vraw, vname, sizeof vraw - 1); vraw[sizeof vraw - 1] = '\0';
                     const char *uname = make_unique_name(c, vname);
+                    int vshadow = (uname != vname);
                     if (uname != vname) {
                         strncpy(vname, uname, sizeof vname - 1);
                         vname[sizeof vname - 1] = '\0';
                     }
                     set_local_type(c, vname, scr_ty);
+                    if (!strcmp(scr_ty, "i8*")) mark_ptr_with_type(c, vname, "$str");
+                    if (vshadow) {
+                        clear_ptr_local(c, vraw);
+                        if (!strcmp(scr_ty, "i8*")) mark_ptr_with_type(c, vraw, "$str");
+                    }
                     fprintf(c->out, "  %%%s = alloca %s\n", vname, scr_ty);
                     fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", scr_ty, str_val, scr_ty, vname);
                 }
@@ -5502,13 +5533,33 @@ static int emit_expr(Ctx *c, const Node *n)
              * typed error payload (114.41) or 0/null. */
             if (arm->child_count >= 2 && arm->children[1]) {
                 char vname[NAME_BUF]; tok_cp(c->src, arm->children[1], vname, sizeof vname);
+                /* 127.71: same stale-tag class as 126.7 / 127.64.  `let v =
+                 * toks.get(0)` tags `v` "$str"; `mt s.toint(x) {$ok:v …}` then
+                 * binds `v` to an i64 under the uniquified name `v.1`, so
+                 * `v == 5` in the arm body read the raw name's stale "$str"
+                 * and lowered to strcmp on the integer — SIGSEGV. */
+                char vraw[NAME_BUF];
+                strncpy(vraw, vname, sizeof vraw - 1); vraw[sizeof vraw - 1] = '\0';
                 const char *uname = make_unique_name(c, vname);
+                int vshadow = (uname != vname);
                 if (uname != vname) {
                     strncpy(vname, uname, sizeof vname - 1);
                     vname[sizeof vname - 1] = '\0';
                 }
                 const char *bind_ty = (!is_ok && eu_err_type) ? "i64" : scr_ty;
                 set_local_type(c, vname, bind_ty);
+                /* 127.71: the $ok arm binds the scrutinee's value, so it earns
+                 * the scrutinee's tag ("$str", "@str", a struct name).  It was
+                 * never entered in the registry at all, so `v.len` on a str
+                 * result fell through to the array-header load — a str
+                 * returned through the i64 ABI is not spotted by bind_ty. */
+                const char *ok_st = is_ok ? expr_struct_type(c, n->children[0])
+                                          : NULL;
+                if (ok_st) mark_ptr_with_type(c, vname, ok_st);
+                if (vshadow) {
+                    clear_ptr_local(c, vraw);
+                    if (ok_st) mark_ptr_with_type(c, vraw, ok_st);
+                }
                 fprintf(c->out, "  %%%s = alloca %s\n", vname, bind_ty);
                 if (is_ok)
                     fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", scr_ty, sv, scr_ty, vname);
@@ -5517,6 +5568,11 @@ static int emit_expr(Ctx *c, const Node *n)
                     fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error\n", ev);
                     fprintf(c->out, "  store i64 %%t%d, i64* %%%s\n", ev, vname);
                     mark_ptr_with_type(c, vname, eu_err_type);
+                    /* 127.71: field access on the error payload looks the raw
+                     * name up, so a shadowing $err binding needs its type
+                     * there too — otherwise `e.msg` resolves against whatever
+                     * the outer binding of that name was. */
+                    if (vshadow) mark_ptr_with_type(c, vraw, eu_err_type);
                 } else {
                     if (!strcmp(scr_ty, "i8*"))
                         fprintf(c->out, "  store i8* null, i8** %%%s\n", vname);
@@ -7035,8 +7091,15 @@ static void emit_stmt(Ctx *c, const Node *n)
             fprintf(c->out, "  %%%s = alloca %s\n", tb, vty);
             fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", vty, v, vty, tb);
         } else {
+            /* 127.71: the initialiser-less form binds an i64, so a shadowed
+             * name's stale pointer tag must go, exactly as the branch above
+             * does (126.7).  The default-mode parser requires `let x = …`, so
+             * this branch is unreachable from current source; the clear is
+             * here so the class cannot come back through it. */
+            char tb_raw0[256];
+            strncpy(tb_raw0, tb, sizeof tb_raw0 - 1); tb_raw0[sizeof tb_raw0 - 1] = '\0';
             { const char *uname = make_unique_name(c, tb);
-              if (uname != tb) strncpy(tb, uname, sizeof tb - 1);
+              if (uname != tb) { strncpy(tb, uname, sizeof tb - 1); clear_ptr_local(c, tb_raw0); }
             }
             set_local_type(c, tb, "i64");
             fprintf(c->out, "  %%%s = alloca i64\n", tb);
@@ -7417,8 +7480,19 @@ static void emit_stmt(Ctx *c, const Node *n)
         c->term = 0;
         emit_stmt(c, body);
         c->break_lbl = save_break;
-        /* emit loop step (e.g. i=i+1) before branching back to header */
-        if (n->child_count >= 3) {
+        /* emit loop step (e.g. i=i+1) before branching back to header.
+         *
+         * 127.70: only when the body did not already terminate its block.  A
+         * body ending in an early return (`<expr`) emits `ret`, and the step
+         * was then written straight after that terminator — invalid IR that
+         * clang rejects ("Terminator found in the middle of a basic block" /
+         * "expected instruction opcode"), surfacing as E9003 after a clean
+         * `--check`.  A step that itself opens blocks (`w = toks.get(i)`
+         * emits the RT003 bounds-check labels) turns it into a parse error at
+         * the following `loop_exit` label.  The back-edge below was already
+         * guarded the same way; the step was not.  A terminated body reaches
+         * the header by that terminator, so its step is dead code. */
+        if (!c->term && n->child_count >= 3) {
             const Node *maybe_step = n->children[n->child_count - 2];
             if (maybe_step->kind == NODE_ASSIGN_STMT)
                 emit_stmt(c, maybe_step);

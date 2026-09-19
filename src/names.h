@@ -126,6 +126,40 @@ typedef struct {
     int           cap_count;
 } CaptureInfo;
 
+/* ── Imported .tki type layouts (story 127.66) ──────────────────────
+ *
+ * A type declared in an imported `.tki` interface used to reach the type
+ * checker as a bare name with no structure: `seed_predefined()` registered
+ * the identifier so `$ookecfg` parsed, but nothing recorded what fields the
+ * type has.  resolve_type() therefore fell through to TY_UNKNOWN and the
+ * E4025 field check — which requires TY_STRUCT — could not run, so
+ * `cfg.logaccess` on an imported type compiled and codegen read field slot 0.
+ * The layouts below carry the .tki `"kind":"type"` records across the import
+ * boundary so the checker sees the same struct a local `t=` declaration
+ * would give it.
+ *
+ *   field_types hold the *toke* type spelling from the .tki ("str", "i64",
+ *   "@$str", …); types.c maps them onto Type values.
+ */
+typedef struct {
+    const char  *name;          /* interned type name (e.g. "ookecfg")   */
+    int          is_sum;        /* 1 for sum types — no field check      */
+    int          field_count;
+    const char **field_names;   /* arena array of interned names          */
+    const char **field_types;   /* arena array of interned toke types     */
+} ImportedType;
+
+/*
+ * ImportedFunc — one `"kind":"func"` export of an imported module, keyed by
+ * the alias it was imported under, so `cli.cfgdefault()` can be given the
+ * declared return type its .tki states (story 127.66).
+ */
+typedef struct {
+    const char  *alias;         /* import alias (e.g. "cli")             */
+    const char  *fn;            /* export name (e.g. "cfgdefault")       */
+    const char  *ret;           /* declared toke return type spelling    */
+} ImportedFunc;
+
 typedef struct {
     Scope        *module_scope;
     Arena        *arena;
@@ -133,7 +167,20 @@ typedef struct {
     CaptureInfo  *captures;      /* arena-allocated array */
     int           capture_count;
     int           capture_cap;
+    /* Imported .tki interface surface (story 127.66) */
+    ImportedType *itypes;        /* arena-allocated array */
+    int           itype_count;
+    int           itype_cap;
+    ImportedFunc *ifuncs;        /* arena-allocated array */
+    int           ifunc_count;
+    int           ifunc_cap;
 } NameEnv;
+
+/* Look up an imported .tki type layout by name; NULL when not imported. */
+const ImportedType *imported_type_lookup(const NameEnv *env, const char *name);
+/* Look up the declared return type of `alias.fn`; NULL when not known. */
+const char *imported_func_ret(const NameEnv *env, const char *alias,
+                              const char *fn);
 
 /* Error codes for name resolution */
 #define E3011 3011  /* identifier not declared    */
