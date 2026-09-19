@@ -1995,6 +1995,43 @@ static int recv_is_map(Ctx *c, const Node *recv) {
     }
     return 0;
 }
+/* 127.44/127.45: the shape of a json argument — nesting depth (0 = not an
+ * array, 1 = flat, 2 = array of arrays, …) and the element kind at the
+ * innermost level (0=i64, 1=str, 2=f64, 3=bool, matching TK_JKIND_* in
+ * json_glue.c). An array reaches the i64 ABI as a bare backing-block handle,
+ * so `j.print`/`j.enc` had to guess: tk_json_print's byte heuristic printed
+ * `j.print(f(@(122;5)))` as "z", and the flat printer rendered an @@i64 as a
+ * list of addresses. Passing the shape from the compiler removes the guess.
+ * The checker's rtype is authoritative; the backend's "@…" tag is the fallback
+ * and knows one level only. */
+static int json_arr_shape(Ctx *c, const Node *n, int *kind_out) {
+    *kind_out = 0;
+    if (!n) return 0;
+    if (n->rtype && n->rtype->kind == TY_ARRAY) {
+        int depth = 0;
+        const Type *t = n->rtype;
+        while (t && t->kind == TY_ARRAY) { depth++; t = t->elem; }
+        if (t) {
+            switch (t->kind) {
+            case TY_STR:  *kind_out = 1; break;
+            case TY_F64: case TY_F32: *kind_out = 2; break;
+            case TY_BOOL: *kind_out = 3; break;
+            default: *kind_out = 0; break;
+            }
+        }
+        return depth;
+    }
+    if (n->rtype && n->rtype->kind != TY_UNKNOWN) return 0;
+    {
+        const char *st = expr_struct_type(c, n);
+        if (st && st[0] == '@') {
+            if (!strcmp(st, "@str")) *kind_out = 1;
+            else if (!strcmp(st, "@f64")) *kind_out = 2;
+            return 1;  /* the backend tag records one level only */
+        }
+    }
+    return 0;
+}
 /* 127.11: is this receiver an array (as opposed to a str or a map)? The verbs
  * `contains` / `find` / `indexof` / `slice` exist on both strings and arrays;
  * with no array test they were all routed to the std.str glue, which read the
@@ -3756,6 +3793,24 @@ static int emit_expr(Ctx *c, const Node *n)
         /* Type-aware j.print dispatch: redirect to typed print function */
         if (!strcmp(tb, "tk_json_print") && na >= 1) {
             const char *aty0 = arg_tys[0];
+            /* 127.44/127.45: an array argument carries no shape at the i64 ABI,
+             * so hand tk_json_printarr_w the nesting depth and element kind
+             * rather than letting the printer guess (it printed `@(122;5)` as
+             * the string "z", and an @@i64 as a list of addresses). */
+            int jk0 = 0, jdepth0 = json_arr_shape(c, n->children[1], &jk0);
+            if (jdepth0 > 0) {
+                int hv = args[0];
+                if (!strcmp(aty0, "i8*")) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, hv);
+                    hv = z;
+                }
+                fprintf(c->out, "  call void @tk_json_printarr_w(i64 %%t%d, i64 %d, i64 %d)\n",
+                        hv, jdepth0, jk0);
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
+                return t;
+            }
             if (!strcmp(aty0, "i1")) {
                 int z = next_tmp(c);
                 fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, args[0]);
@@ -3764,7 +3819,26 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
                 return t;
             } else if (!strcmp(aty0, "i8*")) {
-                fprintf(c->out, "  call void @tk_json_print_arr(i8* %%t%d)\n", args[0]);
+                /* 127.43: a str argument is a string, not an array block —
+                 * tk_json_print_arr walked `j.print("hello")` as one and
+                 * printed garbage. */
+                const Node *jn0 = n->children[1];
+                int j_is_str = (jn0->rtype && jn0->rtype->kind == TY_STR) ||
+                               jn0->kind == NODE_STR_LIT;
+                if (!j_is_str) {
+                    const char *jst = expr_struct_type(c, jn0);
+                    j_is_str = jst && (!strcmp(jst, "$str") || !strcmp(jst, "str"));
+                }
+                fprintf(c->out, "  call void @%s(i8* %%t%d)\n",
+                        j_is_str ? "tk_json_print_str" : "tk_json_print_arr", args[0]);
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
+                return t;
+            } else if (!strcmp(aty0, "i64")) {
+                /* 127.43: tk_json_print treats any value over 1e9 as a pointer,
+                 * so `j.print(4294967296)` walked the number as a char* and
+                 * segfaulted. A checker-typed i64 prints as a number. */
+                fprintf(c->out, "  call void @tk_json_print_i64(i64 %%t%d)\n", args[0]);
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
                 return t;
@@ -3772,6 +3846,57 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  call void @tk_json_print_f64(double %%t%d)\n", args[0]);
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
+                return t;
+            }
+        }
+
+        /* 127.43/127.44/127.45: the same shape problem on the encode side —
+         * tk_json_enc_w casts its argument to char * unconditionally, so a
+         * number was walked as a pointer and an array was encoded as whatever
+         * its first bytes looked like. Pick the typed wrapper from the
+         * argument's checker type; an unknown/str argument keeps tk_json_enc_w. */
+        if (!strcmp(tb, "tk_json_enc_w") && na >= 1) {
+            const char *ety0 = arg_tys[0];
+            const Node *en0 = n->children[1];
+            int ek0 = 0, edepth0 = json_arr_shape(c, en0, &ek0);
+            const char *efn = NULL;
+            int ev = args[0];
+            if (edepth0 > 0) {
+                if (!strcmp(ety0, "i8*")) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, ev);
+                    ev = z;
+                }
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i64 @tk_json_encarr_w(i64 %%t%d, i64 %d, i64 %d)\n",
+                        t, ev, edepth0, ek0);
+                return t;
+            }
+            if (!strcmp(ety0, "i1")) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, ev);
+                ev = z; efn = "tk_json_encbool_w";
+            } else if (!strcmp(ety0, "double")) {
+                int z = next_tmp(c);
+                fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", z, ev);
+                ev = z; efn = "tk_json_encf64_w";
+            } else if (!strcmp(ety0, "i64")) {
+                /* i64 at the ABI is a number unless the checker / the backend
+                 * tag says the value is a string pointer. */
+                int e_is_str = (en0->rtype && en0->rtype->kind == TY_STR) ||
+                               en0->kind == NODE_STR_LIT;
+                if (!e_is_str) {
+                    const char *est0 = expr_struct_type(c, en0);
+                    e_is_str = est0 && (!strcmp(est0, "$str") || !strcmp(est0, "str"));
+                }
+                if (!e_is_str && en0->rtype && en0->rtype->kind == TY_BOOL)
+                    efn = "tk_json_encbool_w";
+                else if (!e_is_str)
+                    efn = "tk_json_encnum_w";
+            }
+            if (efn) {
+                t = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i64 @%s(i64 %%t%d)\n", t, efn, ev);
                 return t;
             }
         }
@@ -5661,6 +5786,28 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                         if (recv_is_array(c, recv))
                             return arr_recv_is_str_elem(c, recv) ? "@str" : "@i64";
                         return NULL;
+                    }
+                    /* 127.44: `xs.map(&f)` is an array of f's RETURN type — the
+                     * one combinator that can change the element type. Untagged,
+                     * `j.enc(xs.map(&dbl))` had no shape and encoded the handle
+                     * as a number. */
+                    if (!strcmp(method, "map") && recv_is_array(c, recv)) {
+                        if (n->child_count >= 2 &&
+                            n->children[1]->kind == NODE_FUNC_REF) {
+                            char mfn[NAME_BUF];
+                            tok_cp(c->src, n->children[1], mfn, sizeof mfn);
+                            const char *mp = mfn;
+                            while (*mp == '&') mp++;
+                            const FnSig *msig = lookup_fn(c, mp);
+                            if (msig && msig->ret_type_name[0]) {
+                                if (!strcmp(msig->ret_type_name, "str") ||
+                                    !strcmp(msig->ret_type_name, "$str")) return "@str";
+                                if (strstr(msig->ret_type_name, "f64") ||
+                                    strstr(msig->ret_type_name, "f32")) return "@f64";
+                                return "@i64";
+                            }
+                        }
+                        return arr_recv_is_str_elem(c, recv) ? "@str" : "@i64";
                     }
                     if (!strcmp(method, "append") || !strcmp(method, "push") ||
                         !strcmp(method, "pop")) {

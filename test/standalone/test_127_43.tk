@@ -35,7 +35,19 @@ f=main():$i64{
   cks("enc-i64max";j.enc(9223372036854775807);"9223372036854775807");
   cks("enc-neg32";j.enc(0-2147483648);"-2147483648");
   cks("enc-neg2p32";j.enc(0-4294967296);"-4294967296");
-  (* these must print the number and not SIGSEGV *)
+  (* 127.43 (found with the codegen half): a str argument was handed to
+   * tk_json_print_arr, which walked it as an array block and printed garbage;
+   * it now goes to tk_json_print_str. *)
+  cks("enc-str";j.enc("hi");"\"hi\"");
+  let h="wor ld";
+  cks("enc-str-local";j.enc(h);"\"wor ld\"");
+  cks("enc-bool";j.enc(true);"true");
+  cks("enc-f64";j.enc(1.5);"1.5");
+  (* these must print the number / the quoted string and not SIGSEGV *)
+  j.print("hello");
+  j.print(h);
+  j.print(true);
+  j.print(1.5);
   j.print(4294967296);
   j.print(0-4294967296);
   j.print(9223372036854775807);
