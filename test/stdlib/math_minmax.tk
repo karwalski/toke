@@ -1,0 +1,36 @@
+(* math_minmax.tk -- stories 136.20 and 127.84.
+
+   math.min and math.max are declared in stdlib/math.tki, in the spec and in
+   docs/stdlib/math.md as taking ONE @(f64) array, and math.c has always
+   implemented them that way. The _w glue was `a < b ? a : b` over two i64s:
+   a scalar integer compare that never reached the array implementation.
+
+   Because every f64 crossing the boundary is a bitcast double, that integer
+   compare also read the sign bit as the top value bit, which REVERSES the
+   order of negative doubles: -5.0 is 0xc014000000000000 and -1.0 is
+   0xbff0000000000000, so as signed i64 -5.0 is the greater, and min of a
+   negative set came back as its maximum. Silent and plausible.
+
+   The negative cases below are the ones that were wrong. *)
+m=mathminmax;
+i=math:std.math;
+i=io:std.io;
+
+f=main():i64{
+  let neg=@(-1.0;-5.0;-3.0);
+  io.println("neg.min=\(math.min(neg))");
+  io.println("neg.max=\(math.max(neg))");
+
+  let mixed=@(3.0;-2.5;7.0;0.0);
+  io.println("mixed.min=\(math.min(mixed))");
+  io.println("mixed.max=\(math.max(mixed))");
+
+  let pos=@(3.0;1.0;4.0;1.0;5.0);
+  io.println("pos.min=\(math.min(pos))");
+  io.println("pos.max=\(math.max(pos))");
+
+  let one=@(-42.0);
+  io.println("one.min=\(math.min(one))");
+  io.println("one.max=\(math.max(one))");
+  <0
+};

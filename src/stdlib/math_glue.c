@@ -23,8 +23,6 @@ static int64_t f64_to_i64(double d) {
 }
 
 int64_t tk_math_abs_w(int64_t x) { return f64_to_i64(math_abs(i64_to_f64(x))); }
-int64_t tk_math_max_w(int64_t a, int64_t b) { return a > b ? a : b; }
-int64_t tk_math_min_w(int64_t a, int64_t b) { return a < b ? a : b; }
 int64_t tk_math_pow_w(int64_t base, int64_t exp) {
     return f64_to_i64(math_pow(i64_to_f64(base), i64_to_f64(exp)));
 }
@@ -46,6 +44,28 @@ static F64Array decode_f64_array(int64_t arr) {
     fa.data = (const double *)ptr;
     fa.len  = (uint64_t)count;
     return fa;
+}
+
+/*
+ * Story 136.20 / 127.84 — min and max take the array, as math.tki, the spec,
+ * docs/stdlib/math.md and math_min/math_max in math.c have always said.
+ *
+ * These were `a < b ? a : b` over two i64s: a scalar integer compare that
+ * never reached the array implementation at all.  Every f64 arriving here is
+ * a bitcast double, so the integer compare also read the sign bit as the most
+ * significant value bit — which orders negative doubles backwards.  For
+ * -5.0 and -1.0 the i64 patterns are 0xC014.. and 0xBFF0.., and as signed
+ * integers -5.0 compares *greater*, so "min" returned -1.0: the maximum of
+ * the pair, silently.
+ */
+int64_t tk_math_min_w(int64_t arr) {
+    F64Array fa = decode_f64_array(arr);
+    return f64_to_i64(math_min(fa));
+}
+
+int64_t tk_math_max_w(int64_t arr) {
+    F64Array fa = decode_f64_array(arr);
+    return f64_to_i64(math_max(fa));
 }
 
 int64_t tk_math_mean_w(int64_t arr) {

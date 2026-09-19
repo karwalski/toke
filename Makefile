@@ -90,7 +90,7 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-stdlib-file test-stdlib-runtime \
 	test-stdlib-path test-stdlib-args test-stdlib-md test-stdlib-toml \
 	test-stdlib-vecstore test-stdlib-vecstore-binding test-stdlib-keychain \
-	test-stdlib-securemem \
+	test-stdlib-securemem test-stdlib-glue-contract \
 	test-tkir-encoder \
 	install-man \
 	test-standalone \
@@ -717,6 +717,15 @@ test-stdlib-securemem: $(BIN)
 # OS credential store. Skips itself where no credential store exists.
 test-stdlib-keychain: $(BIN)
 	@bash test/stdlib/keychain_binding.sh
+
+# ── Epic 136.16-136.25: the _w glue honours the documented contract ──────────
+# check-docs proves a documented example COMPILES. It cannot prove the call
+# does what the page says, and every defect in this group compiled cleanly
+# while dropping an argument. This target compiles and RUNS real .tk consumers
+# and compares their output against the documented values, so a pass is about
+# behaviour rather than linkage.
+test-stdlib-glue-contract: $(BIN)
+	@bash test/stdlib/glue_contract.sh
 
 # ── Story 76.1.6a: .tkir encoder test ────────────────────────────────────────
 test-tkir-encoder: $(BIN)
