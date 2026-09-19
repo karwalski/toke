@@ -68,7 +68,7 @@ more** tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.
 - **One canonical form** per construct, reproduced by `tkc --min`, so two implementations
   either produce identical canonical text or they do not
 - **Machine-readable grammar** — EBNF and GBNF artefacts for constrained decoding
-- **57 standard library modules** (`stdlib/*.tki`) with C runtime backing — strings,
+- **56 standard library modules** (`stdlib/*.tki`) with C runtime backing — strings,
   JSON, TOON, HTTP server/client, database, crypto, ML, and more
 - **Error handling with result types** — no exceptions; errors are values handled
   explicitly with `mt` (match)
@@ -84,7 +84,7 @@ The corpus, tokenizer and model must be refreshed before any of these carry forw
 
 | Evaluation | Date | Result |
 |---|---|---|
-| Gate 1 | 2026-04-03 | 63.7% compile Pass@1, fine-tuned 7B on v0.3 syntax |
+| Gate 1 | 2026-04-03 | **58.8% functional Pass@1** (588 of 1,000 generated), fine-tuned 7B on v0.3 syntax; compile rate 92.3% (923/1,000). Published as "63.7% compile Pass@1" until 2026-09-19 — wrong on both counts: the number was 588/**923**, which drops non-compiling solutions from the denominator, and the label was wrong (the figure is functional, not compile). 58.8% is below Gate 1's declared 60% minimum, so **the Gate 1 verdict is re-opened and has not been re-decided** (story 128.19). |
 | Gate 2 (curated set) | 2026-05-22 | **100% compile Pass@1** and **55.6% functional** (272/489) on the curated 500-hidden + 200-eval set; Qwen 2.5 Coder 7B + QLoRA, v0.3 syntax |
 | Full-local re-audit (the honest floor) | 2026-05-28 | **37.5% compile** (655/1,748) and **about 2.2% fully correct** (38 PASS) across all 1,748 v0.3.9 corpus programs |
 | Gate-1 60 re-delivered on v0.4 | 2026-09-19 | 60/60 `tkc --check`, 60/60 hidden tests (120 cases each), lint 0/0 |
@@ -279,7 +279,7 @@ toke [flags] <source-files>
 
 ## Standard library
 
-toke ships 57 standard library modules (`stdlib/*.tki`) backed by C runtime
+toke ships 56 standard library modules (`stdlib/*.tki`) backed by C runtime
 implementations. The most used:
 
 | Module | Description |
