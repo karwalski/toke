@@ -1,0 +1,119 @@
+(* vecstore_roundtrip.tk -- story 136.4: a real std.vecstore consumer.
+
+   The phases are driven by VSPHASE so that the harness can run the write and
+   the read as SEPARATE PROCESSES of this same binary. That separation is the
+   whole point: before 136.4 this module accepted upserts, reported a healthy
+   count, and wrote nothing to disk, because vecstore.close -- the only caller
+   of the save path -- had no _w symbol and could not be reached from toke. A
+   single-process round trip passes against a pure memory cache and would not
+   have caught it. *)
+m=vecstoreroundtrip;
+i=vs:std.vecstore;
+i=io:std.io;
+i=str:std.str;
+i=env:std.env;
+
+(* Two orthogonal unit vectors, so cosine scores are exactly 1.0 and 0.0. *)
+f=veca():@(f64){
+  <@(1.0;0.0;0.0)
+};
+
+f=vecb():@(f64){
+  <@(0.0;1.0;0.0)
+};
+
+f=phasewrite(dir:str):bool{
+  let s=vs.open(dir);
+  let c=vs.collection(s;"docs");
+  let ok1=vs.upsert(c;"doc-1";veca();"payload-one");
+  let ok2=vs.upsert(c;"doc-2";vecb();"payload-two");
+  let n=vs.count(c);
+  io.println(str.concat("write: upserts=";str.concat(str.fromint(ok1+ok2);str.concat(" count=";str.fromint(n)))));
+  vs.close(s);
+  <ok1&&ok2&&n==2
+};
+
+(* Runs in a process that never saw the writes. Anything it observes came off
+   disk. *)
+f=phaseread(dir:str):bool{
+  let s=vs.open(dir);
+  let c=vs.collection(s;"docs");
+  let n=vs.count(c);
+  let r=vs.search(c;veca();5;0.0);
+  let hits=r.len();
+  let top=r.get(0);
+  let idok=top.id=="doc-1";
+  let payok=top.payload=="payload-one";
+  let scoreok=top.score>0.99;
+  io.println(str.concat("read: count=";str.concat(str.fromint(n);str.concat(" hits=";str.concat(str.fromint(hits);str.concat(" id=";str.concat(top.id;str.concat(" payload=";str.concat(top.payload;str.concat(" score=";str.fromfloat(top.score)))))))))));
+  vs.close(s);
+  <n==2&&hits==2&&idok&&payok&&scoreok
+};
+
+(* min_score is a real filter, not a decoration: doc-2 is orthogonal to the
+   query and scores 0.0, so a floor of 0.5 must drop it. The glue hard-coded
+   0.0 before 136.4 and dropped the argument entirely. *)
+f=phasefilter(dir:str):bool{
+  let s=vs.open(dir);
+  let c=vs.collection(s;"docs");
+  let all=vs.search(c;veca();5;0.0);
+  let some=vs.search(c;veca();5;0.5);
+  io.println(str.concat("filter: all=";str.concat(str.fromint(all.len());str.concat(" above0.5=";str.fromint(some.len())))));
+  vs.close(s);
+  <all.len()==2&&some.len()==1
+};
+
+(* Deletes must reach disk too, by the same route. *)
+f=phasedelete(dir:str):bool{
+  let s=vs.open(dir);
+  let c=vs.collection(s;"docs");
+  let removed=vs.delete(c;"doc-2");
+  let n=vs.count(c);
+  io.println(str.concat("delete: removed=";str.concat(str.fromint(removed);str.concat(" count=";str.fromint(n)))));
+  vs.close(s);
+  <removed&&n==1
+};
+
+f=phaseafterdelete(dir:str):bool{
+  let s=vs.open(dir);
+  let c=vs.collection(s;"docs");
+  let n=vs.count(c);
+  io.println(str.concat("afterdelete: count=";str.fromint(n)));
+  vs.close(s);
+  <n==1
+};
+
+(* An empty collection must hand back a real zero-length array, not a null the
+   consumer then indexes. *)
+f=phaseempty(dir:str):bool{
+  let s=vs.open(dir);
+  let c=vs.collection(s;"fresh");
+  let n=vs.count(c);
+  let r=vs.search(c;veca();5;0.0);
+  io.println(str.concat("empty: count=";str.concat(str.fromint(n);str.concat(" hits=";str.fromint(r.len())))));
+  vs.close(s);
+  <n==0&&r.len()==0
+};
+
+f=run(phase:str;dir:str):bool{
+  if(phase=="write"){<phasewrite(dir)};
+  if(phase=="read"){<phaseread(dir)};
+  if(phase=="filter"){<phasefilter(dir)};
+  if(phase=="delete"){<phasedelete(dir)};
+  if(phase=="afterdelete"){<phaseafterdelete(dir)};
+  if(phase=="empty"){<phaseempty(dir)};
+  io.println(str.concat("unknown phase: ";phase));
+  <1==0
+};
+
+f=main():i64{
+  let dir=env.getor("VSDIR";"/tmp/toke-vecstore-roundtrip");
+  let phase=env.getor("VSPHASE";"write");
+  if(run(phase;dir)){
+    io.println("PASS");
+    <0
+  }el{
+    io.println("FAIL");
+    <1
+  }
+};

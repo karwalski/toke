@@ -103,13 +103,6 @@ ml.tki::ml.knnpredict                # 2026-09-19 no _w glue (ml.c has linreg on
 # ── mlx ──
 mlx.tki::mlx.unload                   # 2026-09-19 no _w glue; core=mlx_unload [131.38-followup]
 mlx.tki::mlx.embed                    # 2026-09-19 no _w glue; core=mlx_embed [131.38-followup]
-# ── secure_mem ──
-secure_mem.tki::secure_mem.alloc             # 2026-09-19 module name has underscore: not importable under Profile-1 (E1003); glue exists as tk_securemem_*_w; needs module rename to std.securemem + secure_mem.c/securemem.c dedupe; core=tk_securemem_alloc [131.38-followup]
-secure_mem.tki::secure_mem.write             # 2026-09-19 module name has underscore: not importable under Profile-1 (E1003); glue exists as tk_securemem_*_w; needs module rename to std.securemem + secure_mem.c/securemem.c dedupe; core=tk_securemem_write [131.38-followup]
-secure_mem.tki::secure_mem.read              # 2026-09-19 module name has underscore: not importable under Profile-1 (E1003); glue exists as tk_securemem_*_w; needs module rename to std.securemem + secure_mem.c/securemem.c dedupe; core=tk_securemem_read [131.38-followup]
-secure_mem.tki::secure_mem.wipe              # 2026-09-19 module name has underscore: not importable under Profile-1 (E1003); glue exists as tk_securemem_*_w; needs module rename to std.securemem + secure_mem.c/securemem.c dedupe; core=tk_securemem_wipe [131.38-followup]
-secure_mem.tki::secure_mem.sweep             # 2026-09-19 module name has underscore: not importable under Profile-1 (E1003); glue exists as tk_securemem_*_w; needs module rename to std.securemem + secure_mem.c/securemem.c dedupe; core=tk_securemem_sweep [131.38-followup]
-secure_mem.tki::secure_mem.is_available      # 2026-09-19 module name has underscore: not importable under Profile-1 (E1003); glue exists as tk_securemem_*_w; needs module rename to std.securemem + secure_mem.c/securemem.c dedupe; core=tk_securemem_isavailable [131.38-followup]
 # ── sse ──
 sse.tki::sse.emit                     # 2026-09-19 C core sse_* in sse.c, no _w glue; core=sse_emit [131.38-followup]
 sse.tki::sse.emitdata                 # 2026-09-19 C core sse_* in sse.c, no _w glue; core=sse_emitdata [131.38-followup]
@@ -127,9 +120,6 @@ tls.tki::tls.pairingcode              # 2026-09-19 no _w glue (tls_glue.c expose
 toml.tki::toml.loadfile                # 2026-09-19 no _w glue; core=toml_load_file [131.38-followup]
 # ── toon ──
 toon.tki::toon.fromjson                # 2026-09-19 no _w glue (toon.tojson exists, fromjson does not); core=toon_from_json [131.38-followup]
-# ── vecstore ──
-vecstore.tki::vecstore.close               # 2026-09-19 no _w glue; core=vecstore_close [131.38-followup]
-vecstore.tki::vecstore.count               # 2026-09-19 no _w glue; core=vecstore_count [131.38-followup]
 # ── ws ──
 ws.tki::ws.sendbytes                 # 2026-09-19 no _w glue; core=ws_sendbytes [131.38-followup]
 ws.tki::ws.broadcast                 # 2026-09-19 no _w glue; core=ws_broadcast [131.38-followup]

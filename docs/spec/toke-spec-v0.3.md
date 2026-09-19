@@ -1709,20 +1709,20 @@ OS keychain/credential store access.
 - `keychain.exists(service:str;account:str):bool` — test if credential exists
 - `keychain.is_available():bool` — check keychain availability
 
-#### 16.25 std.secure_mem [I]
+#### 16.25 std.securemem [I]
 
 Secure memory allocation with auto-wipe.
 
-**Types:** `$SecureBuf{id:str;size:i32;expires_at:i64}`
+**Types:** `$SecureBuf` — an opaque handle with no readable fields (136.5).
 
 **Functions:**
 
-- `secure_mem.alloc(size:i32;ttl_sec:i32):SecureBuf` — allocate secure buffer with TTL
-- `secure_mem.write(buf:SecureBuf;data:str):bool` — write to secure buffer
-- `secure_mem.read(buf:SecureBuf):?(str)` — read from secure buffer
-- `secure_mem.wipe(buf:SecureBuf):bool` — explicitly wipe buffer
-- `secure_mem.sweep():i32` — wipe all expired buffers, return count
-- `secure_mem.is_available():bool` — check platform support
+- `securemem.alloc(size:i32;ttlsec:i32):SecureBuf` — allocate secure buffer with TTL
+- `securemem.write(buf:SecureBuf;data:str):bool` — write to secure buffer
+- `securemem.read(buf:SecureBuf):?(str)` — read from secure buffer
+- `securemem.wipe(buf:SecureBuf):bool` — explicitly wipe buffer
+- `securemem.sweep():i32` — wipe all expired buffers, return count
+- `securemem.isavailable():bool` — check platform support
 
 ### Data
 
@@ -1799,17 +1799,19 @@ Statistical analysis on dataframes (imports std.dataframe, std.math).
 
 Embedded vector store for similarity search.
 
-**Types:** `$VecStore{path:str}` `$VecCollection{name:str}` `$VecEntry{id:str;embedding:@(f32);payload:str;created_at:i64}` `$SearchResult{id:str;score:f64;payload:str}` `$VecErr{$IoErr:str;$DimMismatch:str;$NotFound:str}`
+**Types:** `$VecStore{path:str}` `$VecCollection{name:str}` `$VecEntry{id:str;embedding:@(f64);payload:str;createdat:i64}` `$SearchResult{id:str;score:f64;payload:str}` `$VecErr{$IoErr:str;$DimMismatch:str;$NotFound:str}`
+
+Nothing is written to disk until `vecstore.close` runs; it is the only flush point.
 
 **Functions:**
 
 - `vecstore.open(path:str):VecStore!VecErr` — open or create store
 - `vecstore.close(s:VecStore):void` — close store
 - `vecstore.collection(s:VecStore;name:str):VecCollection!VecErr` — get or create collection
-- `vecstore.upsert(c:VecCollection;id:str;embedding:@(f32);dim:i32;payload:str):bool` — insert or update vector
-- `vecstore.search(c:VecCollection;query:@(f32);dim:i32;k:i32;threshold:f64):[SearchResult]` — nearest-neighbour search
+- `vecstore.upsert(c:VecCollection;id:str;embedding:@(f64);payload:str):bool` — insert or update vector
+- `vecstore.search(c:VecCollection;query:@(f64);k:i32;minscore:f64):@(SearchResult)` — nearest-neighbour search
 - `vecstore.delete(c:VecCollection;id:str):bool` — delete entry
-- `vecstore.delete_before(c:VecCollection;before:i64):i32` — delete entries older than timestamp
+- `vecstore.deletebefore(c:VecCollection;before:i64):i32` — delete entries older than timestamp
 - `vecstore.count(c:VecCollection):i32` — entry count
 
 ### AI/ML

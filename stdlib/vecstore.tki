@@ -21,9 +21,9 @@
       "name": "VecEntry",
       "fields": [
         {"name": "id",         "type": "str"},
-        {"name": "embedding",  "type": "@(f32)"},
+        {"name": "embedding",  "type": "@(f64)"},
         {"name": "payload",    "type": "str"},
-        {"name": "created_at", "type": "i64"}
+        {"name": "createdat",  "type": "i64"}
       ]
     },
     {
@@ -44,13 +44,13 @@
         {"name": "NotFound",   "type": "str"}
       ]
     },
-    {"kind": "func", "name": "vecstore.open",          "params": ["str"],                                "return": "VecStore!VecErr"},
-    {"kind": "func", "name": "vecstore.close",          "params": ["VecStore"],                          "return": "void"},
-    {"kind": "func", "name": "vecstore.collection",     "params": ["VecStore", "str"],                   "return": "VecCollection!VecErr"},
-    {"kind": "func", "name": "vecstore.upsert",         "params": ["VecCollection", "str", "@(f32)", "i32", "str"], "return": "bool"},
-    {"kind": "func", "name": "vecstore.search",         "params": ["VecCollection", "@(f32)", "i32", "i32", "f64"], "return": "[SearchResult]"},
-    {"kind": "func", "name": "vecstore.delete",         "params": ["VecCollection", "str"],              "return": "bool"},
-    {"kind": "func", "name": "vecstore.deletebefore",  "params": ["VecCollection", "i64"],              "return": "i32"},
-    {"kind": "func", "name": "vecstore.count",          "params": ["VecCollection"],                     "return": "i32"}
+    {"kind": "func", "name": "vecstore.open",         "params": ["str"],                                     "return": "VecStore!VecErr"},
+    {"kind": "func", "name": "vecstore.close",        "params": ["VecStore"],                                "return": "void"},
+    {"kind": "func", "name": "vecstore.collection",   "params": ["VecStore", "str"],                         "return": "VecCollection!VecErr"},
+    {"kind": "func", "name": "vecstore.upsert",       "params": ["VecCollection", "str", "@(f64)", "str"],   "return": "bool"},
+    {"kind": "func", "name": "vecstore.search",       "params": ["VecCollection", "@(f64)", "i32", "f64"],   "return": "@(SearchResult)"},
+    {"kind": "func", "name": "vecstore.delete",       "params": ["VecCollection", "str"],                    "return": "bool"},
+    {"kind": "func", "name": "vecstore.deletebefore", "params": ["VecCollection", "i64"],                    "return": "i32"},
+    {"kind": "func", "name": "vecstore.count",        "params": ["VecCollection"],                           "return": "i32"}
   ]
 }

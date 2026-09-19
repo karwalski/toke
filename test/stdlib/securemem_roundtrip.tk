@@ -1,0 +1,69 @@
+(* securemem_roundtrip.tk -- story 136.5: a real std.securemem consumer.
+
+   The capability was sound the whole time; the published NAME was not.
+   std.secure_mem is rejected by the lexer (E1003, underscore, per 113.2a) and
+   the module only ever answered to std.securemem, which appeared in no
+   documentation. This file imports the name the documentation now publishes,
+   so the import line itself is the assertion.
+
+   read() returns the ?(str) none sentinel after a wipe. Comparing that
+   sentinel with `==` segfaults (127.83), so every probe below uses str.len(),
+   which is null-safe. *)
+m=securememroundtrip;
+i=sm:std.securemem;
+i=io:std.io;
+i=str:std.str;
+
+f=secret():str{
+  <"136.5-round-trip-value"
+};
+
+f=roundtrip():bool{
+  let b=sm.alloc(64;300);
+  let wrote=sm.write(b;secret());
+  let got=sm.read(b);
+  let matches=got==secret();
+  io.println(str.concat("roundtrip: write=";str.concat(str.fromint(wrote);str.concat(" len=";str.concat(str.fromint(str.len(got));str.concat(" matches=";str.fromint(matches)))))));
+  let wiped=sm.wipe(b);
+  <wrote&&matches&&wiped
+};
+
+(* After a wipe the buffer must read back as absent, not as stale plaintext. *)
+f=wipeclears():bool{
+  let b=sm.alloc(64;300);
+  sm.write(b;secret());
+  let before=str.len(sm.read(b));
+  sm.wipe(b);
+  let after=str.len(sm.read(b));
+  io.println(str.concat("wipe: lenbefore=";str.concat(str.fromint(before);str.concat(" lenafter=";str.fromint(after)))));
+  <before>0&&after==0
+};
+
+(* Oversized writes are rejected outright rather than silently truncated,
+   which would hand the caller a corrupted secret. *)
+f=rejectsoversize():bool{
+  let b=sm.alloc(8;300);
+  let ok=sm.write(b;"123456789012345");
+  let len=str.len(sm.read(b));
+  io.println(str.concat("oversize: accepted=";str.concat(str.fromint(ok);str.concat(" len=";str.fromint(len)))));
+  sm.wipe(b);
+  <ok==0&&len==0
+};
+
+(* isavailable had no _w symbol until 136.5, so this call is itself the test. *)
+f=availability():bool{
+  let a=sm.isavailable();
+  let swept=sm.sweep();
+  io.println(str.concat("availability: isavailable=";str.concat(str.fromint(a);str.concat(" sweep=";str.fromint(swept)))));
+  <a==0||a==1
+};
+
+f=main():i64{
+  if(roundtrip()&&wipeclears()&&rejectsoversize()&&availability()){
+    io.println("PASS");
+    <0
+  }el{
+    io.println("FAIL");
+    <1
+  }
+};

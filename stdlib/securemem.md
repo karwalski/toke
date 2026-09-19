@@ -1,8 +1,8 @@
-# std.secure_mem — Secure Ephemeral Memory
+# std.securemem — Secure Ephemeral Memory
 
 ## Overview
 
-The `std.secure_mem` module provides mlock'd, zero-on-free, TTL-expiring memory
+The `std.securemem` module provides mlock'd, zero-on-free, TTL-expiring memory
 buffers for storing short-lived secrets (tokens, passwords, private keys) safely
 in memory.
 
@@ -19,7 +19,7 @@ Key properties:
   `pthread_mutex_t`; all public functions are safe to call from multiple threads.
 
 On platforms where `mlock()` is unavailable or fails (e.g. very high memory
-pressure), `is_available()` returns `false` and a warning is logged, but
+pressure), `isavailable()` returns `false` and a warning is logged, but
 allocation still succeeds — secrets are stored in ordinary heap memory without
 swap protection.
 
@@ -27,43 +27,49 @@ swap protection.
 
 ## Types
 
-### $secure_buf
+### SecureBuf
 
-```toke
-type $secure_buf {
-  id:         str   (* opaque unique identifier *)
-  size:       i32   (* capacity in bytes *)
-  expires_at: i64   (* Unix epoch seconds; 0 = no expiry *)
-}
-```
+`SecureBuf` is an **opaque handle**. Pass it whole to `write`, `read` and
+`wipe`; it has no readable fields.
 
-The `$secure_buf` handle is a lightweight descriptor. The actual locked memory
+> **136.5 — fields withdrawn, not forgotten.** The interface used to publish
+> `id`, `size` and `expires_at` on this type. None of the three worked. The glue
+> hands toke a raw C `TkSecureBuf` (`char id[24]` at 0, `size` at 24,
+> `expires_at` at 32, 40 bytes total), while the compiler lays a struct out as
+> one i64 slot per field at 0/8/16 — so `buf.size` read bytes out of the middle
+> of the id character array and returned the id's first byte. Three consecutive
+> `alloc(128)`, `alloc(256)`, `alloc(512)` calls reported sizes 49, 50, 51:
+> the ASCII codes of the ids "1", "2", "3". `expires_at` could not even be
+> named, the lexer rejecting the underscore. The fields are withdrawn rather
+> than left as a trap; restoring them needs a glue change and has its own story.
+
+The `SecureBuf` handle is a lightweight descriptor. The actual locked memory
 is managed internally and is keyed by `id`.
 
 ---
 
 ## Functions
 
-### secure_mem.alloc(size_bytes: i32; ttl_seconds: i32) -> $secure_buf
+### securemem.alloc(sizebytes: i32; ttlseconds: i32) -> SecureBuf
 
 Allocates a locked memory region of `size_bytes` bytes with a TTL of
 `ttl_seconds` seconds from the time of allocation.
 
 - `ttl_seconds = 0` means no expiry (the buffer lives until explicitly wiped or
   the process exits).
-- Returns a `$secure_buf` handle. The underlying memory is zeroed immediately
+- Returns a `SecureBuf` handle. The underlying memory is zeroed immediately
   after allocation.
 - Locks the page with `mlock()` where available; logs a warning and continues
   if locking fails.
 
 **Example:**
 ```toke
-let buf = secure_mem.alloc(64; 300);   (* 64-byte buffer, 5-minute TTL *)
+let buf=securemem.alloc(64;300);   (* 64-byte buffer, 5-minute TTL *)
 ```
 
 ---
 
-### secure_mem.write(buf: $secure_buf; data: str) -> bool
+### securemem.write(buf: SecureBuf; data: str) -> bool
 
 Copies `data` into the secure buffer identified by `buf.id`.
 
@@ -75,12 +81,12 @@ Copies `data` into the secure buffer identified by `buf.id`.
 
 **Example:**
 ```toke
-let ok = secure_mem.write(buf; "s3cr3t-tok3n");
+let ok=securemem.write(buf;"s3cr3t-tok3n");
 ```
 
 ---
 
-### secure_mem.read(buf: $secure_buf) -> ?(str)
+### securemem.read(buf: SecureBuf) -> ?(str)
 
 Returns the contents of the buffer as a string, or `None` if the buffer has
 expired, been wiped, or does not exist.
@@ -91,15 +97,24 @@ expired, been wiped, or does not exist.
 
 **Example:**
 ```toke
-match secure_mem.read(buf) {
-  Some(s) -> log.info("secret: " + s)
-  None    -> log.warn("buffer expired or wiped")
-}
+let s=securemem.read(buf);
+if(str.len(s)>0){
+  log.info(str.concat("secret: ";s))
+}el{
+  log.warn("buffer expired or wiped")
+};
 ```
+
+> **Do not test the result with `==`.** `read` returns the `?(str)` none
+> sentinel when the buffer has expired or been wiped, and comparing that
+> sentinel with `==` segfaults the caller (story 127.83). `str.len()` is
+> null-safe and is the probe to use until that is fixed. Returning `""` instead
+> would be the wrong fix: it would make a wiped secret indistinguishable from
+> an empty one.
 
 ---
 
-### secure_mem.wipe(buf: $secure_buf) -> bool
+### securemem.wipe(buf: SecureBuf) -> bool
 
 Immediately zeros the buffer contents and releases the memory region.
 
@@ -109,12 +124,12 @@ Immediately zeros the buffer contents and releases the memory region.
 
 **Example:**
 ```toke
-let wiped = secure_mem.wipe(buf);
+let wiped=securemem.wipe(buf);
 ```
 
 ---
 
-### secure_mem.sweep() -> i32
+### securemem.sweep() -> i32
 
 Walks all live allocations, zeros and frees every buffer whose TTL has elapsed,
 and returns the count of buffers that were freed.
@@ -124,13 +139,13 @@ accumulating in memory.
 
 **Example:**
 ```toke
-let freed = secure_mem.sweep();
-log.info("swept " + str(freed) + " expired buffers");
+let freed=securemem.sweep();
+log.info(str.concat("swept ";str.concat(str.fromint(freed);" expired buffers")));
 ```
 
 ---
 
-### secure_mem.is_available() -> bool
+### securemem.isavailable() -> bool
 
 Returns `true` if `mlock()` succeeds on a one-page test allocation, `false`
 otherwise.
@@ -140,9 +155,9 @@ Use this to detect whether the current process has the `CAP_IPC_LOCK` privilege
 
 **Example:**
 ```toke
-if !secure_mem.is_available() {
+if(securemem.isavailable()==0){
   log.warn("mlock unavailable: secrets may be paged to disk")
-}
+};
 ```
 
 ---
@@ -154,7 +169,7 @@ if !secure_mem.is_available() {
 | Linux    | `mlock(2)`                   | Requires `CAP_IPC_LOCK` or `RLIMIT_MEMLOCK` headroom |
 | macOS    | `mlock(2)`                   | Available without special privileges for small regions |
 | Windows  | `VirtualLock()`              | Enabled via `<memoryapi.h>`                |
-| Other    | None (graceful degradation)  | `is_available()` returns `false`; allocation still works |
+| Other    | None (graceful degradation)  | `isavailable()` returns `false`; allocation still works |
 
 ## Security Considerations
 

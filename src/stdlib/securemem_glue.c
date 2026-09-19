@@ -53,3 +53,12 @@ int64_t tk_securemem_sweep_w(int64_t dummy) {
     (void)dummy;
     return (int64_t)tk_securemem_sweep();
 }
+
+/* securemem.isavailable() — 1 if mlock() works on a probe page, else 0.
+ * 136.5: the core has existed since 72.3.3 as tk_securemem_isavailable(); only
+ * this wrapper was missing, so the .tki exported a name with no symbol behind
+ * it. Same shape as keychain.isavailable in 136.3. */
+int64_t tk_securemem_isavailable_w(int64_t dummy) {
+    (void)dummy;
+    return (int64_t)tk_securemem_isavailable();
+}

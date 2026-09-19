@@ -17,7 +17,7 @@ Key properties:
 - **Dimension-agnostic** — a collection accepts embeddings of any fixed
   dimension (e.g. 384 or 768).  The dimension is locked in on the first
   upsert and validated on every subsequent upsert.
-- **TTL sweeps** — `vecstore.delete_before` removes entries older than a
+- **TTL sweeps** — `vecstore.deletebefore` removes entries older than a
   given Unix timestamp, enabling time-based expiry.
 - **Thread-safe** — a per-store mutex serialises all mutations.
 
@@ -44,9 +44,9 @@ Represents a single stored embedding.
 | Field        | Type     | Description                                 |
 |--------------|----------|---------------------------------------------|
 | `id`         | `str`    | Application-defined unique identifier       |
-| `embedding`  | `@(f32)` | Raw embedding vector (before normalisation) |
+| `embedding`  | `@(f64)` | Raw embedding vector (before normalisation) |
 | `payload`    | `str`    | Arbitrary string payload (JSON, text, etc.) |
-| `created_at` | `i64`    | Unix timestamp (seconds) set on upsert      |
+| `createdat`  | `i64`    | Unix timestamp (seconds) set on upsert      |
 
 ### SearchResult
 
@@ -82,7 +82,7 @@ Returns `VecErr.IoErr` if `data_dir` does not exist or cannot be accessed.
 
 **Example:**
 ```toke
-let vs = vecstore.open("/var/data/embeddings");
+let vs=vecstore.open("/var/data/embeddings");
 ```
 
 ### vecstore.close(vs: VecStore): void
@@ -96,6 +96,10 @@ after `vecstore.close` is undefined behaviour.
 ```toke
 vecstore.close(vs);
 ```
+
+`vecstore.close` is the **only** path to disk.  Nothing is persisted before it
+runs, so a long-lived process should close and reopen the store at the points
+where it needs its writes to survive a crash.
 
 ---
 
@@ -114,50 +118,56 @@ Collection names must be non-empty and must not contain path separators.
 
 **Example:**
 ```toke
-let col = vecstore.collection(vs; "documents");
+let col=vecstore.collection(vs;"documents");
 ```
 
-### vecstore.upsert(col: VecCollection, id: str, embedding: @(f32), dim: i32, payload: str): bool
+### vecstore.upsert(col: VecCollection, id: str, embedding: @(f64), payload: str): bool
 
 Inserts a new entry or replaces an existing entry with the given `id`.
-`embedding` must point to an array of `dim` `f32` values.  `payload` is an
+`embedding` is an `f64` array; toke arrays carry their own length, so the
+dimension is taken from the array and is **not** a parameter.  `payload` is an
 arbitrary string stored alongside the vector (typically serialised JSON).
+
+Entries are held in memory until `vecstore.close` writes them out — see
+Persistence Format below.  A consumer that never calls `vecstore.close` loses
+everything it wrote.
 
 The embedding is normalised to unit length on storage.  Cosine similarity
 queries therefore reduce to a dot product, keeping search fast.
 
 Returns `true` on success.  Returns `false` if:
-- `dim` does not match the collection's established dimension (first upsert
-  locks the dimension).
-- `dim` is less than 1.
+- the embedding's length does not match the collection's established dimension
+  (the first upsert locks the dimension).
+- the embedding is empty.
 - `embedding` is the zero vector (cannot be normalised).
 
-`created_at` is set to the current Unix time (seconds) on every upsert,
+The creation timestamp is set to the current Unix time (seconds) on every upsert,
 whether inserting or replacing.
 
 **Example:**
 ```toke
-let emb = @(0.1_f32; 0.9_f32; 0.4_f32);
-let ok = vecstore.upsert(col; "doc-1"; emb; 3; "{\"title\":\"hello\"}");
+let emb=@(0.1;0.9;0.4);
+let ok=vecstore.upsert(col;"doc-1";emb;"{\"title\":\"hello\"}");
 ```
 
-### vecstore.search(col: VecCollection, query: @(f32), dim: i32, top_k: i32, min_score: f64): [SearchResult]
+### vecstore.search(col: VecCollection, query: @(f64), topk: i32, minscore: f64): @(SearchResult)
 
 Performs a brute-force cosine similarity search over all entries in `col`.
-`query` must point to an array of `dim` `f32` values.  The query is normalised
-before comparison.
+`query` is an `f64` array whose length must match the collection's dimension;
+it is normalised before comparison.
 
-Returns up to `top_k` results with score >= `min_score`, sorted by descending
-score.  Returns an empty array if `dim` mismatches, the collection is empty,
-or no entry exceeds `min_score`.
+Returns up to `topk` `SearchResult` values with score >= `minscore`, sorted by
+descending score.  Returns a zero-length array — never a null — if the
+dimension mismatches, the collection is empty, or no entry clears `minscore`.
 
 **Example:**
 ```toke
-let results = vecstore.search(col; query_emb; 768; 5; 0.7_f64);
-let i = 0;
-while i < arr.len(results) {
-    log.info(str.concat(results[i].id; str.concat(" score="; str.from_float(results[i].score))));
-    i = i + 1;
+let results=vecstore.search(col;queryemb;5;0.7);
+let i=mut.0;
+while(i<results.len()){
+  let r=results.get(i);
+  log.info(str.concat(r.id;str.concat(" score=";str.fromfloat(r.score))));
+  i=i+1
 };
 ```
 
@@ -169,13 +179,13 @@ found.
 
 **Example:**
 ```toke
-let removed = vecstore.delete(col; "doc-1");
+let removed=vecstore.delete(col;"doc-1");
 ```
 
-### vecstore.delete_before(col: VecCollection, before_ts: i64): i32
+### vecstore.deletebefore(col: VecCollection, beforets: i64): i32
 
-Removes all entries whose `created_at` timestamp (Unix seconds) is strictly
-less than `before_ts`.  Returns the number of entries removed.
+Removes all entries whose creation timestamp (Unix seconds) is strictly less
+than `beforets`.  Returns the number of entries removed.
 
 Useful for TTL sweeps: pass `time.now() / 1000 - ttl_seconds` to expire
 entries older than `ttl_seconds`.
@@ -183,9 +193,9 @@ entries older than `ttl_seconds`.
 **Example:**
 ```toke
 (* Expire entries older than 7 days *)
-let cutoff = (time.now() / 1000) - (7 * 86400);
-let removed = vecstore.delete_before(col; cutoff);
-log.info(str.concat("expired "; str.concat(str.from_int(removed); " entries")));
+let cutoff=(time.now()/1000)-(7*86400);
+let removed=vecstore.deletebefore(col;cutoff);
+log.info(str.concat("expired ";str.concat(str.fromint(removed);" entries")));
 ```
 
 ### vecstore.count(col: VecCollection): i32
@@ -194,8 +204,8 @@ Returns the number of entries currently in the collection.
 
 **Example:**
 ```toke
-let n = vecstore.count(col);
-log.info(str.concat("collection has "; str.concat(str.from_int(n); " entries")));
+let n=vecstore.count(col);
+log.info(str.concat("collection has ";str.concat(str.fromint(n);" entries")));
 ```
 
 ---
@@ -232,28 +242,30 @@ are not portable across architectures of differing endianness.
 ### RAG Pipeline
 
 ```toke
-let vs  = vecstore.open("/var/embeddings");
-let col = vecstore.collection(vs; "chunks");
+let vs=vecstore.open("/var/embeddings");
+let col=vecstore.collection(vs;"chunks");
 
 (* Ingest *)
-let emb = llm.embed(model; "The quick brown fox");
-vecstore.upsert(col; "chunk-42"; emb; 768; "{\"text\":\"The quick brown fox\"}");
+let emb=llm.embed(model;"The quick brown fox");
+vecstore.upsert(col;"chunk-42";emb;"{\"text\":\"The quick brown fox\"}");
 
 (* Query *)
-let q       = llm.embed(model; "fast animals");
-let results = vecstore.search(col; q; 768; 3; 0.6_f64);
+let q=llm.embed(model;"fast animals");
+let results=vecstore.search(col;q;3;0.6);
 
+(* Without this close the ingest above never reaches disk. *)
 vecstore.close(vs);
 ```
 
 ### TTL Sweep on Startup
 
 ```toke
-let vs  = vecstore.open("/var/cache/embeddings");
-let col = vecstore.collection(vs; "session_context");
+let vs=vecstore.open("/var/cache/embeddings");
+let col=vecstore.collection(vs;"sessioncontext");
 
 (* Remove anything older than 1 hour *)
-let cutoff = (time.now() / 1000) - 3600;
-let n = vecstore.delete_before(col; cutoff);
-log.info(str.concat("evicted "; str.concat(str.from_int(n); " stale entries")));
+let cutoff=(time.now()/1000)-3600;
+let n=vecstore.deletebefore(col;cutoff);
+log.info(str.concat("evicted ";str.concat(str.fromint(n);" stale entries")));
+vecstore.close(vs);
 ```
