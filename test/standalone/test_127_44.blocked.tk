@@ -1,0 +1,45 @@
+(* test_127_44.blocked.tk -- Epic 127.44: an @i64 that came back from a user
+ * function or from .map/.filter must print as an array, not as a byte string.
+ *
+ * `f=f2(a:@i64):@i64{<a};  j.print(f2(@(122;5)))` printed "z" on 2.8.0: the
+ * array handle reaches the i64 ABI bare, and tk_json_print's byte heuristic
+ * saw a printable first byte (122 = 'z') and treated the block as a C string.
+ * The same array built inline in main prints [122,5], which is the tell.
+ *
+ * Glue side (DONE, src/stdlib/json_glue.c): tk_json_encarr_w / tk_json_printarr_w
+ * take (handle, depth, kind) from the compiler instead of guessing the shape;
+ * covered by test/stdlib/test_json.c (make test-stdlib-json).
+ *
+ * Still blocked on src/llvm.c: the j.print/j.enc dispatch must read the
+ * argument's array-ness from the checker (node->rtype TY_ARRAY, else
+ * expr_struct_type "@...") and call the typed wrapper -- for a user-call and
+ * a .map/.filter result, not just for a plain local. See the 127.41 bundle
+ * notes. Rename to test_127_44.tk once that lands. *)
+m=test.j12744;
+i=io:std.io;
+i=j:std.json;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=idarr(a:@i64):@i64{<a};
+f=dbl(x:i64):i64{<x*2};
+f=pos(x:i64):bool{<x>0};
+
+f=main():$i64{
+  let xs=@(122;5);
+  cks("enc-inline";j.enc(xs);"[122,5]");
+  cks("enc-user-fn";j.enc(idarr(xs));"[122,5]");
+  cks("enc-map";j.enc(xs.map(&dbl));"[244,10]");
+  cks("enc-filter";j.enc(@(0-3;7;0;9).filter(&pos));"[7,9]");
+  let ss=@("a";"b");
+  cks("enc-str-arr";j.enc(ss);"[\"a\",\"b\"]");
+  (* must print arrays, not a byte string *)
+  j.print(idarr(xs));
+  j.print(xs.map(&dbl));
+  <0
+};

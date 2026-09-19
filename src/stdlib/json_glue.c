@@ -588,15 +588,132 @@ int64_t tk_json_encbool_w(int64_t b) {
  * float ABI used throughout this glue) as a JSON number. Uses the shortest of
  * %.15g/%.16g/%.17g that round-trips, so no precision is lost and ordinary
  * values stay readable (1.5 -> "1.5", not "1.5000000000000000"). */
-int64_t tk_json_encf64_w(int64_t bits) {
-    double v = i64_to_f64(bits);
-    char buf[40];
+static void j_fmt_f64(char *buf, size_t n, double v) {
     for (int prec = 15; prec <= 17; prec++) {
-        snprintf(buf, sizeof buf, "%.*g", prec, v);
-        if (strtod(buf, NULL) == v) break;
+        snprintf(buf, n, "%.*g", prec, v);
+        if (strtod(buf, NULL) == v) return;
     }
+}
+int64_t tk_json_encf64_w(int64_t bits) {
+    char buf[40];
+    j_fmt_f64(buf, sizeof buf, i64_to_f64(bits));
     char *out = (char *)malloc(strlen(buf) + 1);
     if (!out) return (int64_t)(intptr_t)"0";
     strcpy(out, buf);
     return (int64_t)(intptr_t)out;
+}
+
+/* ── 127.44 / 127.45: typed JSON array printing and encoding ────────────
+ *
+ * A toke array reaches the i64 ABI as a bare backing-block handle, so an
+ * array returned by a user function or by .map/.filter was indistinguishable
+ * from an i64 or a `char *` at the call boundary. tk_json_print's byte
+ * heuristic guessed "string" whenever the first element's low byte happened to
+ * be printable ASCII — `j.print(f(@(122;5)))` printed "z" — and the flat
+ * tk_json_print_arr printed the element words verbatim, so an @@i64 came out
+ * as a list of addresses.
+ *
+ * These wrappers take the shape from the compiler instead of guessing it:
+ *
+ *   depth  1 = flat array, 2 = array of arrays, ... (recursion per level)
+ *   kind   element kind at the innermost level (TK_JKIND_* below)
+ *
+ * A 0 handle at any level encodes as JSON null. The encoder builds the text in
+ * one growable buffer and returns an owned NUL-terminated string; the printer
+ * writes the same text plus a newline, matching the other tk_json_print_*.
+ */
+
+#define TK_JKIND_I64  0
+#define TK_JKIND_STR  1
+#define TK_JKIND_F64  2
+#define TK_JKIND_BOOL 3
+
+typedef struct { char *p; size_t len, cap; } JBuf;
+
+static int jbuf_more(JBuf *b, size_t need) {
+    if (b->len + need + 1 <= b->cap) return 1;
+    size_t cap = b->cap ? b->cap : 64;
+    while (cap < b->len + need + 1) cap *= 2;
+    char *np = (char *)realloc(b->p, cap);
+    if (!np) return 0;
+    b->p = np; b->cap = cap;
+    return 1;
+}
+static void jbuf_put(JBuf *b, const char *s, size_t n) {
+    if (!jbuf_more(b, n)) return;
+    memcpy(b->p + b->len, s, n);
+    b->len += n;
+    b->p[b->len] = '\0';
+}
+static void jbuf_puts(JBuf *b, const char *s) { jbuf_put(b, s, strlen(s)); }
+
+/* One element at the innermost level, by kind. */
+static void jbuf_elem(JBuf *b, int64_t v, int64_t kind) {
+    char num[40];
+    switch (kind) {
+    case TK_JKIND_STR: {
+        const char *s = (const char *)(intptr_t)v;
+        if (!s) { jbuf_puts(b, "null"); return; }
+        /* json_enc returns an owned, quoted, escaped string for non-NULL. */
+        const char *enc = json_enc(s);
+        jbuf_puts(b, enc);
+        free((void *)enc);
+        return;
+    }
+    case TK_JKIND_F64:
+        j_fmt_f64(num, sizeof num, i64_to_f64(v));
+        jbuf_puts(b, num);
+        return;
+    case TK_JKIND_BOOL:
+        jbuf_puts(b, v ? "true" : "false");
+        return;
+    default:
+        snprintf(num, sizeof num, "%lld", (long long)v);
+        jbuf_puts(b, num);
+        return;
+    }
+}
+
+static void jbuf_arr(JBuf *b, int64_t h, int64_t depth, int64_t kind) {
+    if (!h) { jbuf_puts(b, "null"); return; }
+    if (depth <= 1) {
+        int64_t len = tk_arr_len(h);
+        const int64_t *data = (const int64_t *)(intptr_t)h;
+        jbuf_puts(b, "[");
+        for (int64_t i = 0; i < len; i++) {
+            if (i) jbuf_puts(b, ",");
+            jbuf_elem(b, data[i], kind);
+        }
+        jbuf_puts(b, "]");
+        return;
+    }
+    int64_t len = tk_arr_len(h);
+    const int64_t *data = (const int64_t *)(intptr_t)h;
+    jbuf_puts(b, "[");
+    for (int64_t i = 0; i < len; i++) {
+        if (i) jbuf_puts(b, ",");
+        jbuf_arr(b, data[i], depth - 1, kind);
+    }
+    jbuf_puts(b, "]");
+}
+
+/* json.encarr(h, depth, kind) — JSON text of an array, as an owned string. */
+int64_t tk_json_encarr_w(int64_t h, int64_t depth, int64_t kind) {
+    JBuf b = { NULL, 0, 0 };
+    jbuf_arr(&b, h, depth, kind);
+    if (!b.p) {
+        char *empty = (char *)malloc(3);
+        if (!empty) return (int64_t)(intptr_t)"[]";
+        strcpy(empty, "[]");
+        return (int64_t)(intptr_t)empty;
+    }
+    return (int64_t)(intptr_t)b.p;
+}
+
+/* json.printarr(h, depth, kind) — the same text, to stdout, with a newline. */
+void tk_json_printarr_w(int64_t h, int64_t depth, int64_t kind) {
+    int64_t s = tk_json_encarr_w(h, depth, kind);
+    const char *text = (const char *)(intptr_t)s;
+    printf("%s\n", text ? text : "null");
+    if (text) free((void *)(intptr_t)s);
 }

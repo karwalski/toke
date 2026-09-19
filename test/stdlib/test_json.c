@@ -7,6 +7,7 @@
  */
 
 #include "json.h"
+#include "tk_array.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +17,7 @@
 int64_t tk_json_encnum_w(int64_t v);
 int64_t tk_json_encbool_w(int64_t b);
 int64_t tk_json_encf64_w(int64_t bits);
+int64_t tk_json_encarr_w(int64_t h, int64_t depth, int64_t kind);
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -519,6 +521,49 @@ int main(void) {
         const char *f2 = (const char *)(intptr_t)tk_json_encf64_w(b2);
         CHECK(f1 && strcmp(f1, "1.5") == 0, "127.43 tk_json_encf64_w: 1.5 stays short");
         CHECK(f2 && strtod(f2, NULL) == 0.1, "127.43 tk_json_encf64_w: 0.1 round-trips");
+    }
+
+    /* --- 127.44: typed array encoding (flat) --- */
+    {
+        /* the exact regression: [122,5] printed as "z" by the byte heuristic */
+        int64_t h = tk_arr_alloc(2, 2);
+        int64_t *d = (int64_t *)(intptr_t)h;
+        d[0] = 122; d[1] = 5;
+        const char *got = (const char *)(intptr_t)tk_json_encarr_w(h, 1, 0);
+        CHECK(got && strcmp(got, "[122,5]") == 0,
+              "127.44 encarr: @i64 [122,5] is an array, not \"z\"");
+
+        int64_t big = tk_arr_alloc(3, 3);
+        int64_t *bd = (int64_t *)(intptr_t)big;
+        bd[0] = 4294967296LL; bd[1] = -4294967296LL; bd[2] = 9223372036854775807LL;
+        const char *gb = (const char *)(intptr_t)tk_json_encarr_w(big, 1, 0);
+        CHECK(gb && strcmp(gb, "[4294967296,-4294967296,9223372036854775807]") == 0,
+              "127.44 encarr: @i64 elements keep the full i64 range");
+
+        int64_t sa = tk_arr_alloc(2, 2);
+        int64_t *sd = (int64_t *)(intptr_t)sa;
+        sd[0] = (int64_t)(intptr_t)"a"; sd[1] = (int64_t)(intptr_t)"b\"c";
+        const char *gs = (const char *)(intptr_t)tk_json_encarr_w(sa, 1, 1);
+        CHECK(gs && strcmp(gs, "[\"a\",\"b\\\"c\"]") == 0,
+              "127.44 encarr: @str elements are quoted and escaped");
+
+        int64_t ba = tk_arr_alloc(2, 2);
+        int64_t *bb = (int64_t *)(intptr_t)ba;
+        bb[0] = 1; bb[1] = 0;
+        const char *gbo = (const char *)(intptr_t)tk_json_encarr_w(ba, 1, 3);
+        CHECK(gbo && strcmp(gbo, "[true,false]") == 0, "127.44 encarr: @bool elements");
+
+        int64_t fa = tk_arr_alloc(2, 2);
+        int64_t *fd = (int64_t *)(intptr_t)fa;
+        double f0 = 1.5, f1v = -0.25;
+        memcpy(&fd[0], &f0, sizeof f0); memcpy(&fd[1], &f1v, sizeof f1v);
+        const char *gf = (const char *)(intptr_t)tk_json_encarr_w(fa, 1, 2);
+        CHECK(gf && strcmp(gf, "[1.5,-0.25]") == 0, "127.44 encarr: @f64 elements");
+
+        const char *ge = (const char *)(intptr_t)tk_json_encarr_w(tk_arr_alloc(0, 0), 1, 0);
+        CHECK(ge && strcmp(ge, "[]") == 0, "127.44 encarr: empty array");
+        const char *gn = (const char *)(intptr_t)tk_json_encarr_w(0, 1, 0);
+        CHECK(gn && strcmp(gn, "null") == 0, "127.44 encarr: nil handle is null");
     }
 
     /* --- summary --- */
