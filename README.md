@@ -1,7 +1,7 @@
 # toke
 
 toke is a compiled programming language designed for LLM code generation. It has 14
-keywords, a 55-character set, a backtrack-free grammar with bounded lookahead, and one
+keywords, a 59-character set, a backtrack-free grammar with bounded lookahead, and one
 canonical form per construct, chosen by measurement in a 46-pattern catalogue and
 reproduced by `tkc --min`. That makes generated code cheap to constrain during decoding,
 cheap for a compiler to verify afterwards, and compact to emit. Token efficiency is one
@@ -18,15 +18,13 @@ The argument for toke is mechanical, and it is about the grammar and the compile
 about a tokenizer.
 
 1. **Small.** `docs/spec/toke-spec-v0.4.md` §A fixes the keyword set at 14 (`m i t f let
-   if el lp br rt as mt sc mut`) over a closed alphabet of printable ASCII characters,
-   lowercase only, with no underscores. A small terminal alphabet is a small vocabulary
-   for whatever unit a model generates in. *The exact size of that alphabet is in
-   dispute: the canonical paragraph above says 55, and the project-facts table in
-   [`docs/metrics-baseline.md`](docs/metrics-baseline.md) (story 132.14) derives **59**
-   from `src/lexer.c` and recommends "a closed alphabet of 59 printable ASCII
-   characters, lowercase only" over a bare figure. `docs/about/canonical.md` and
-   `canonical.json` are owned by story 132.1 and must be re-cut before the paragraph is
-   re-copied anywhere; until then the verbatim block is reproduced as it stands.*
+   if el lp br rt as mt sc mut`), over a closed alphabet of 59 printable ASCII
+   characters — 26 lowercase letters, 10 digits, 23 symbols — lowercase only, with no
+   underscores. The design property is not the number but that the alphabet is small and
+   closed: a small terminal alphabet is a small vocabulary for whatever unit a model
+   generates in. The count is derived from `src/lexer.c` by
+   `scripts/verify_project_facts.py`; earlier published figures of 55 and 56 were both
+   wrong (see [`docs/metrics-baseline.md`](docs/metrics-baseline.md) § Project facts).
 2. **Structured.** §E: the parser never rescans input it has already consumed, and a
    small, enumerated set of productions require bounded lookahead of up to 3 tokens, never
    more. An implementation that backtracks, or that needs unbounded lookahead at any
