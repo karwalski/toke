@@ -7305,37 +7305,14 @@ static void emit_stmt(Ctx *c, const Node *n)
     case NODE_LOOP_INIT: {
         /* lp(let i=0; ...) — alloca + store for the loop variable */
         tok_cp(c->src, n->children[0], tb, sizeof tb);
-        /* 127.64: a loop variable that shadows an earlier binding of the same
-         * name must drop that binding's stale pointer tag, exactly as NODE_LET
-         * does for `let` (126.7). The registry stores the new binding under a
-         * uniquified name (`a.1`) but expr_struct_type / the `==`,`<` lowering
-         * look up the RAW source name, so
-         *     let a = toks.get(i);        (* a tagged "$str" *)
-         *     lp(let a=0; a<n; a=a+1){ }  (* a is an i64 counter *)
-         * lowered `a<n` to strcmp(inttoptr 0, ...) and segfaulted at runtime.
-         * Type the initialiser BEFORE uniquifying/clearing so an init that
-         * reads the outer binding still sees it (mirrors 80.2.8 in NODE_LET). */
-        const char *li_vty = NULL, *li_stype = NULL;
-        if (n->child_count >= 2) {
-            li_vty = expr_llvm_type(c, n->children[1]);
-            li_stype = expr_struct_type(c, n->children[1]);
-        }
-        char li_raw[256];
-        strncpy(li_raw, tb, sizeof li_raw - 1); li_raw[sizeof li_raw - 1] = '\0';
-        int li_shadow;
         { const char *uname = make_unique_name(c, tb);
-          li_shadow = (uname != tb);
           if (uname != tb) strncpy(tb, uname, sizeof tb - 1);
         }
         if (n->child_count >= 2) {
-            const char *vty = li_vty;
-            /* Same guard as 126.7: a re-bind to a genuine string keeps the tag
-             * (the raw name is what its uses look up); only a non-pointer,
-             * non-string re-bind clears it. */
-            if (li_shadow && strcmp(vty, "i8*") != 0 && !li_stype)
-                clear_ptr_local(c, li_raw);
+            const char *vty = expr_llvm_type(c, n->children[1]);
             if (!strcmp(vty, "i8*")) {
-                mark_ptr_with_type(c, tb, li_stype);
+                const char *stype = expr_struct_type(c, n->children[1]);
+                mark_ptr_with_type(c, tb, stype);
             }
             set_local_type(c, tb, vty);
             fprintf(c->out, "  %%%s = alloca %s\n", tb, vty);

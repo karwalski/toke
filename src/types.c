@@ -1336,22 +1336,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 return mk_type(A,TY_UNKNOWN);
             }
             if ((arith&&(!is_numeric(l)||!types_equal(l,r)))||(cmp&&!types_equal(l,r))) {
-                char fix[96];
-                /* 127.64: toke has no implicit int->float promotion (ADR: "no
-                 * implicit coercions"), so a mixed int/float pair is a genuine
-                 * E4031 — but "cast RHS to i64" is the WRONG remedy for
-                 * `bytes/1048576.0`: truncating the float makes it integer
-                 * division and silently changes the result, and the i64 then
-                 * fails the f64 parameter it feeds. Name the operand that has
-                 * to widen instead. AGENTS.md §6: the `fix` field is populated
-                 * only when it is correct in every case the error is emitted. */
-                if (is_numeric(l)&&is_numeric(r)&&is_integer(l)&&!is_integer(r))
-                    snprintf(fix,sizeof(fix),
-                             "cast LHS to %s using 'as' "
-                             "(toke has no implicit int/float promotion)",
-                             type_name(r));
-                else
-                    snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(l));
+                char fix[64];
+                snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(l));
                 emit_mm(cx,node,l,r,fix);
                 return cmp?mk_type(A,TY_BOOL):mk_type(A,TY_UNKNOWN);
             }
