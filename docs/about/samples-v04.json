@@ -1,0 +1,194 @@
+{
+  "story": "132.0(b)",
+  "generated": "2026-09-19",
+  "tkc": "toke 2.8.0",
+  "tkc_sha256": "9f7e3e4efa29d8797570d844679c1709b9d6b5d698862dd1b6ab9d0078ff2f77",
+  "proxy8k_artefact": "proxy8k-5f3f74314ce4.json",
+  "proxy8k_sha256": "3c6fbf1909bb775b0ad4ecc697db0934e0b32cc7ef4382b1c6e248a1e821c160",
+  "tokenizer_v03_sha256": "42631f3afddbc9c911770cffbf14e25a59b43485c6e4b12ff93a56dab1330a74",
+  "lanes": [
+    "bytes",
+    "proxy8k",
+    "tokenizer_v03",
+    "qwen25coder",
+    "cl100k",
+    "o200k"
+  ],
+  "basis": {
+    "toke": "tkc --min canonical form, counted unmasked; tokens_masked applies TEMSpec string-body masking",
+    "python": "source as written (PEP 8, no comments or docstrings) \u2014 Python has no canonical minimal form"
+  },
+  "caveat": "Every toke-vs-Python column is a CROSS-LANGUAGE DENSITY RATIO under one shared tokenizer (TEMSpec \u00a72.3, informational). It is not a same-tokenizer token reduction and must never be quoted as one.",
+  "samples": [
+    {
+      "id": "fib",
+      "description": "10th Fibonacci number (recursive)",
+      "output_verified": true,
+      "stdout": "55\n",
+      "toke": {
+        "basis": "tkc --min canonical form",
+        "text": "m=fib;i=io:std.io;f=fib(n:i64):i64{if(n<2){<n;}<fib(n-1)+fib(n-2);};f=main():i64{io.println(\"\\(fib(10))\");<0;};",
+        "tokens": {
+          "bytes": 111,
+          "proxy8k": 23,
+          "tokenizer_v03": 26,
+          "qwen25coder": 63,
+          "cl100k": 59,
+          "o200k": 60
+        },
+        "tokens_masked": {
+          "bytes": 111,
+          "proxy8k": 23,
+          "tokenizer_v03": 26,
+          "qwen25coder": 63,
+          "cl100k": 59,
+          "o200k": 60
+        }
+      },
+      "python": {
+        "basis": "source as written (PEP 8, no comments or docstrings)",
+        "text": "def fib(n: int) -> int:\n    if n < 2:\n        return n\n    return fib(n - 1) + fib(n - 2)\n\n\ndef main() -> None:\n    print(fib(10))\n\n\nmain()\n",
+        "tokens": {
+          "bytes": 140,
+          "proxy8k": 99,
+          "tokenizer_v03": 92,
+          "qwen25coder": 51,
+          "cl100k": 50,
+          "o200k": 50
+        }
+      }
+    },
+    {
+      "id": "fizzbuzz",
+      "description": "FizzBuzz, 1..15",
+      "output_verified": true,
+      "stdout": "1\n2\nFizz\n4\nBuzz\nFizz\n7\n8\nFizz\nBuzz\n11\nFizz\n13\n14\nFizzBuzz\n",
+      "toke": {
+        "basis": "tkc --min canonical form",
+        "text": "m=fizzbuzz;i=io:std.io;f=main():i64{lp(let n=1;n<=15;n=n+1){if(n%15==0){io.println(\"FizzBuzz\");}el if(n%3==0){io.println(\"Fizz\");}el if(n%5==0){io.println(\"Buzz\");}el{io.println(\"\\(n)\");}}<0;};",
+        "tokens": {
+          "bytes": 193,
+          "proxy8k": 55,
+          "tokenizer_v03": 59,
+          "qwen25coder": 89,
+          "cl100k": 86,
+          "o200k": 87
+        },
+        "tokens_masked": {
+          "bytes": 180,
+          "proxy8k": 37,
+          "tokenizer_v03": 47,
+          "qwen25coder": 85,
+          "cl100k": 82,
+          "o200k": 83
+        }
+      },
+      "python": {
+        "basis": "source as written (PEP 8, no comments or docstrings)",
+        "text": "def main() -> None:\n    for n in range(1, 16):\n        if n % 15 == 0:\n            print(\"FizzBuzz\")\n        elif n % 3 == 0:\n            print(\"Fizz\")\n        elif n % 5 == 0:\n            print(\"Buzz\")\n        else:\n            print(n)\n\n\nmain()\n",
+        "tokens": {
+          "bytes": 247,
+          "proxy8k": 189,
+          "tokenizer_v03": 193,
+          "qwen25coder": 74,
+          "cl100k": 72,
+          "o200k": 72
+        }
+      }
+    },
+    {
+      "id": "sumeven",
+      "description": "Sum of the squares of the even numbers in a list",
+      "output_verified": true,
+      "stdout": "220\n",
+      "toke": {
+        "basis": "tkc --min canonical form",
+        "text": "m=sumeven;i=io:std.io;f=main():i64{let xs=@(1;2;3;4;5;6;7;8;9;10);let t=mut.0;lp(let i=0;i<xs.len();i=i+1){let v=xs.get(i);if(v%2==0){t=t+v*v;}}io.println(\"\\(t)\");<0;};",
+        "tokens": {
+          "bytes": 168,
+          "proxy8k": 37,
+          "tokenizer_v03": 43,
+          "qwen25coder": 95,
+          "cl100k": 93,
+          "o200k": 96
+        },
+        "tokens_masked": {
+          "bytes": 168,
+          "proxy8k": 37,
+          "tokenizer_v03": 43,
+          "qwen25coder": 95,
+          "cl100k": 93,
+          "o200k": 96
+        }
+      },
+      "python": {
+        "basis": "source as written (PEP 8, no comments or docstrings)",
+        "text": "def main() -> None:\n    xs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\n    total = 0\n    for v in xs:\n        if v % 2 == 0:\n            total += v * v\n    print(total)\n\n\nmain()\n",
+        "tokens": {
+          "bytes": 168,
+          "proxy8k": 132,
+          "tokenizer_v03": 118,
+          "qwen25coder": 75,
+          "cl100k": 74,
+          "o200k": 74
+        }
+      }
+    },
+    {
+      "id": "vowels",
+      "description": "Count the vowels in a string",
+      "output_verified": true,
+      "stdout": "5\n",
+      "toke": {
+        "basis": "tkc --min canonical form",
+        "text": "m=vowels;i=io:std.io;f=count(t:str):i64{let n=mut.0;lp(let i=0;i<t.len();i=i+1){let c=t.slice(i;i+1);if(c==\"a\"||c==\"e\"||c==\"i\"||c==\"o\"||c==\"u\"){n=n+1;}}<n;};f=main():i64{io.println(\"\\(count(\"the quick brown fox\"))\");<0;};",
+        "tokens": {
+          "bytes": 221,
+          "proxy8k": 63,
+          "tokenizer_v03": 75,
+          "qwen25coder": 108,
+          "cl100k": 106,
+          "o200k": 106
+        },
+        "tokens_masked": {
+          "bytes": 203,
+          "proxy8k": 27,
+          "tokenizer_v03": 47,
+          "qwen25coder": 100,
+          "cl100k": 98,
+          "o200k": 98
+        }
+      },
+      "python": {
+        "basis": "source as written (PEP 8, no comments or docstrings)",
+        "text": "def count(t: str) -> int:\n    n = 0\n    for c in t:\n        if c in (\"a\", \"e\", \"i\", \"o\", \"u\"):\n            n += 1\n    return n\n\n\ndef main() -> None:\n    print(count(\"the quick brown fox\"))\n\n\nmain()\n",
+        "tokens": {
+          "bytes": 198,
+          "proxy8k": 147,
+          "tokenizer_v03": 135,
+          "qwen25coder": 68,
+          "cl100k": 68,
+          "o200k": 68
+        }
+      }
+    }
+  ],
+  "totals": {
+    "toke": {
+      "bytes": 693,
+      "proxy8k": 178,
+      "tokenizer_v03": 203,
+      "qwen25coder": 355,
+      "cl100k": 344,
+      "o200k": 349
+    },
+    "python": {
+      "bytes": 753,
+      "proxy8k": 567,
+      "tokenizer_v03": 538,
+      "qwen25coder": 268,
+      "cl100k": 264,
+      "o200k": 264
+    }
+  }
+}

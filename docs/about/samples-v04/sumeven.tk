@@ -1,0 +1,12 @@
+m=sumeven;
+i=io:std.io;
+f=main():i64{
+  let xs=@(1;2;3;4;5;6;7;8;9;10);
+  let t=mut.0;
+  lp(let i=0;i<xs.len();i=i+1){
+    let v=xs.get(i);
+    if(v%2==0){t=t+v*v;}
+  }
+  io.println("\(t)");
+  <0;
+};

@@ -1,0 +1,11 @@
+m=fizzbuzz;
+i=io:std.io;
+f=main():i64{
+  lp(let n=1;n<=15;n=n+1){
+    if(n%15==0){io.println("FizzBuzz");}
+    el if(n%3==0){io.println("Fizz");}
+    el if(n%5==0){io.println("Buzz");}
+    el{io.println("\(n)");}
+  }
+  <0;
+};

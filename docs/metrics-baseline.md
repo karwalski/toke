@@ -7,7 +7,7 @@ figures stripped of context (e.g. "Gate 2 PASS 100%"). This exists because the
 project's thesis is *falsifiable research* (risk R001) and its credibility depends
 on numbers that survive peer review (R008, R015).
 
-**Last updated:** 2026-07-03 (Epic 123.3). Numbers are sourced from `docs/progress.md`
+**Last updated:** 2026-09-19 (story 132.0(a)). Numbers are sourced from `docs/progress.md`
 stories; each row cites its origin.
 
 ---
@@ -100,3 +100,55 @@ No "purpose-built tokenizer beats cl100k" claim is supportable until 116.9 train
 tokenizer; the Phase-3 gate anchors on cl100k = 242,427 on this exact sample. Cross-language density
 (toke vs Python under cl100k) is a separate, informational number — see the KERN review
 (`docs/about/reviews/kern-2026-08.md`): on the 60 Gate-1 tasks toke/Python ≈ 1.76 under cl100k.
+
+---
+
+## 2026-08 — **no model gate ran.** August produced a corpus-quality freeze, not a gate result
+
+**This is the entry Epic 132 criterion 6 must cite for "the August gate result", and the
+honest answer is that there is no August gate number to cite.** The M3 milestone line in
+`PROJECT_STATUS.md` ("week-12 GO/NO-GO mid-August") is a *plan*, not a result. Nothing was
+trained, fine-tuned or evaluated as a model in August 2026: every Epic 128 training story
+(128.1–128.15) is still `planned` and compute-gated, and the last — and only — trained-model
+evaluation on record remains **Gate 2, 2026-05-22** (the v0.3 QLoRA Qwen 2.5 Coder 7B, rows
+above). **Do not manufacture an August gate number, and do not present the August work as a
+model result.**
+
+What August actually delivered, and what may be claimed for it:
+
+| Date | Deliverable | Measured on | Number | Caveat |
+|---|---|---|---|---|
+| 2026-08-19 | **Training-data freeze** (Epic 129.6; record of source `toke-corpus/regen/AUDIT_129.md`) | v0.4 regen corpus, 23,382 records, under tkc **toke 2.8.0** | **14,727 pass all tightened gates**; 8,531 not-executable (no harness); 124 driver-limit; **test_fail 0, build_fail 0** | Data quality, not model quality. "Pass" = compiles + builds + exact test match + exit 0 + no extra output + idiom ≥ 0.6 + structure within rubric. It says nothing about what a model can generate. |
+| 2026-08-19 | Library re-verification (129.3) | 1,583 library programs | **1,583/1,583 PASS** all gates (incl. gazeta 123) | Hand-written/curated library, not model output. 597 orphan solutions outside the manifests: **239 compile-fail (40%)** — excluded from training. |
+| 2026-08-19 | A-category test coverage (129.7) | 631 A-category base tasks | 3–5 **execution-verified** test cases each; 2,894 A-side records executed for the first time | Exposed 1,100 failures that were then repaired (129.5). Before this, all 10,116 A-category specs had **zero** test cases — they had never been verified at all. |
+| 2026-08-19 | Repair/compaction waves (129.4/129.5) | audit-flagged records | **2,639 records repaired or rewritten**; idiom-below-floor 0; fn-bytes p99 622 → 501 | Every replacement independently re-audited before banking; originals archived. |
+| 2026-08-12→19 | Repo cleanup (Epic 130) | 15 repos | 33G → ~12G; every repo committed | Infrastructure, no metric content. |
+
+**The August freeze has since been reopened.** Epic 131 reopened it on 2026-09-18; the frozen
+state is preserved byte-for-byte (`freeze-129-20260819`) and the successor freeze will be
+`AUDIT_131.md`. So even the corpus numbers above are a *superseded* snapshot, and the
+September findings below show why.
+
+**One-sentence form for downstream copy (132.2/132.3):** *"August 2026 produced a
+training-data quality freeze — 23,382 audited v0.4 corpus records, 14,727 passing every
+execution gate, and 1,583/1,583 library programs — not a model gate; the most recent model
+gate remains Gate 2 of 2026-05-22 (100% compile-Pass@1, 55.6% functional, on a v0.3-trained
+model), and no v0.4-native model has been trained."*
+
+---
+
+## 2026-09 — post-freeze findings (Epic 131 / 133)
+
+These are the numbers now available to Epic 132. All are **compiler-and-corpus**
+measurements under tkc **toke 2.8.0**; none is a model evaluation.
+
+| Date | Evaluation | Measured on | Result | Caveat |
+|---|---|---|---|---|
+| 2026-09-19 | **Pattern/conformance sweep** (131.13) | all 23,382 regen records + 1,583 library programs, 18 tests, `regen/pattern_sweep.py` | regen buckets **EXEMPT 1,678 · AUTO 643 · AGENT 1,197 · LEAVE 14,215 · REGEN 5,649**; library **AUTO 53 · AGENT 1,272 · LEAVE 258**. Top savings by Σ estimate: `str-interp-vs-join` 7,896, `iter-map` 2,748, `str-build-loop` 2,342 (proxy8k tokens). AGENT saving p50/p90 = **4/16 tokens**. | Savings are **proxy8k** estimates on `--min`+masked text, not cl100k and not a published reduction. "AGENT/AUTO" is a rewrite backlog, not a defect rate: 14,215 records needed no change. tkc sha `936ce131` on every row. |
+| 2026-09-19 | **A-ERR error-union gaming scan** (131.42) | 576 A-ERR / error-union single_function records, `regen/err_union_check.py`, verdicts from the driver run | **429 records across 69 bases are gamed** (175 more than a text search found): 389 `target_returns_str`, 40 `wrapper_returns_str`; 424 build the harness's `{'err': …}` marker as a literal, **5 construct it at run time from string operations**. Correct: **147**. `wrong_return_type`: **0**. | The generation model learned to defeat a literal-matching test. This is the clearest evidence in the project that **passing a test is not evidence of correctness when the test can be gamed** — it directly qualifies any "% pass" figure taken from the corpus. All 429 routed to the 131.15 rewrite wave; a hard `return_type` gate now blocks the shape. |
+| 2026-09-19 | **a_tests re-authoring recheck** (131.47) | 336 records of the 54 re-authored packed-arity bases | **pass 249 · fail 68 · driver_fail 19**; 40 previously-failing records **resolved**, 0 regressed | The 68 failures are the finding: records that only ever "passed" against wrong-arity or gamed tests and are **genuinely wrong** against correct ones (→ 131.49). Same lesson as 131.42: the test, not the record, was the weak link. The 19 driver_fails are a pre-existing driver limit (map inputs), not record faults. |
+| 2026-09-19 | **Gate-1 60 v0.4 re-delivery** (133.4 Part A) | the 60 KERN-benchmarked task ids, `toke-eval/docs/gate1-60-v04.md` | **60/60 `tkc --check`, 60/60 hidden tests** (120 cases each), lint 0/0. Tokens (cl100k of `--min`, 60 programs): **4,787** (o200k 4,778; 11,537 bytes) vs Kern 3,012 / Python 3,565 / old toke 6,347. **toke/Python 1.34× [1.22, 1.48]** (was 1.76×); Kern/toke 0.63 (was 0.48). | **Hand-written, not model-generated** — 27 ids are pure `--migrate` output, 33 were hand-repaired. It measures what the *language* can express, not what a *model* produces; see `docs/about/toke-eval-drift-decision.md` for what this set may and may not claim. toke/Python is a cross-language density ratio (TEMSpec §2.3), not a reduction. |
+| 2026-09-19 | **v0.4 sample side-by-side** (132.0(b)) | 4 execution-verified toke/Python pairs, all lanes | `docs/about/samples-v04.md` + `.json` — cl100k: toke 344 vs Python 264 (**1.30×**); bytes 693 vs 753 (0.92×); proxy8k on the toke side 178 | N = 4, illustrative only. `proxy8k`/`tokenizer_v03` are toke-trained and must **never** be applied to the Python side for a comparison. Replaces the v0.3-era "42% reduction vs Python" site copy, which compared two different tokenizers. |
+
+**What is still NOT measured (unchanged):** no v0.4-native model exists; no model has been
+trained since April 2026; every functional-correctness number on this page is v0.3-era.
