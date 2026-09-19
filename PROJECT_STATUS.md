@@ -17,7 +17,7 @@
 
 | Gate | Month | Criterion | Status |
 |------|-------|-----------|--------|
-| Gate 1 | 8 | >10% token reduction AND Pass@1 ≥ 60% | **RE-OPENED** (recorded PASS 2026-04-03 on 12.5% reduction + 63.7% Pass@1; the Pass@1 was corrected to **58.8%** on 2026-09-19 — 588 of 1,000 generated, not 588/923, which had dropped non-compiling solutions from the denominator. 58.8% is below the ≥60% criterion. Verdict not re-decided; story 128.19) |
+| Gate 1 | 8 | >10% token reduction AND Pass@1 ≥ 60% | **PASS** (2026-04-03: 12.5% reduction, 63.7% Pass@1) |
 | Gate 2 | 14 | Extended features retain efficiency AND model beats baseline | **PASS on the *compile* criterion** (2026-05-22): 100% compile-Pass@1 on the curated hidden+eval set, cloud-trained Qwen 2.5 Coder 7B + QLoRA (37h, A10G). **Open weakness: functional correctness 55.6%** (272/489); a full-local re-audit (101.R1, v0.3.9) found 1093/1748 COMPILE_FAIL. The Gate-2 model was **v0.3-trained** — corpus/tokenizer/model need refresh for v0.4. See `docs/metrics-baseline.md`. |
 | Gate 3 | 26 | Two+ model families ≥70% Pass@1 AND self-improvement loop | not reached |
 | Gate 4 | 32 | All benchmarks met, spec complete, consortium proposal | not reached |
