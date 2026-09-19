@@ -354,6 +354,7 @@ static int name_is_local(Ctx *c, const char *name) {
     return 0;
 }
 static const char *expr_struct_type(Ctx *c, const Node *n); /* defined later */
+static const char *map_tag(int int_keys, int str_vals);     /* 127.39/127.41 */
 
 /* ── Struct type registry ──────────────────────────────────────────── */
 
@@ -638,8 +639,21 @@ static void prepass_funcs(Ctx *c, const Node *n) {
                  * FnSig; expr_struct_type turns it into the "__map__" local tag
                  * and .keys()/.get/.len take the map runtime path (they linked
                  * against `_keys` / read an array header before). */
-                if (rs->children[0]->kind == NODE_MAP_TYPE)
-                    snprintf(ret_tn, sizeof ret_tn, "__map__");
+                if (rs->children[0]->kind == NODE_MAP_TYPE) {
+                    /* 127.39: carry the key/value kinds too — `f=mk():@(str:str)`
+                     * must tag `let u=mk()` so `\(u.get(k))` interpolates the
+                     * string instead of its address. */
+                    int mk_int = 0, mv_str = 0;
+                    if (rs->children[0]->child_count > 0) {
+                        char kt[64]; tok_cp(c->src, rs->children[0]->children[0], kt, sizeof kt);
+                        mk_int = !strstr(kt, "str");
+                    }
+                    if (rs->children[0]->child_count > 1) {
+                        char vt[64]; tok_cp(c->src, rs->children[0]->children[1], vt, sizeof vt);
+                        mv_str = strstr(vt, "str") != NULL;
+                    }
+                    snprintf(ret_tn, sizeof ret_tn, "%s", map_tag(mk_int, mv_str));
+                }
             }
         }
     }
@@ -1980,6 +1994,42 @@ static int recv_is_map(Ctx *c, const Node *recv) {
         if (ln && is_map_var(c, ln)) return 1;
     }
     return 0;
+}
+/* 127.39: does this map literal have string VALUES? The backend's map tag
+ * carries the value kind so `\(m.get(k))` on a str-valued map interpolates the
+ * string rather than printing its address (the i64 ABI erases the pointer). */
+static int map_lit_str_vals(Ctx *c, const Node *n) {
+    if (!n || n->kind != NODE_MAP_LIT) return 0;
+    if (n->child_count > 0 && n->children[0]->child_count >= 2) {
+        const Node *v0 = n->children[0]->children[1];
+        const Type *vt = v0->rtype;
+        if (vt && vt->kind != TY_UNKNOWN) return vt->kind == TY_STR;
+        if (v0->kind == NODE_STR_LIT) return 1;
+        const char *vst = expr_struct_type(c, v0);
+        if (vst && (!strcmp(vst, "$str") || !strcmp(vst, "str"))) return 1;
+    }
+    return 0;
+}
+/* 127.39/127.41: the backend tag for a map local. "__map__" is the legacy
+ * (str keys, non-str values) form; the suffix letters record what the tag has
+ * to distinguish — 'i' = integer keys (127.41, `m.keys` element type),
+ * 'S' = string values (127.39, `m.get(k)` result type). Everything that tests
+ * for map-ness uses the "__map__" prefix, so the suffix is free-form. */
+static const char *map_tag(int int_keys, int str_vals) {
+    if (int_keys) return str_vals ? "__map__iS" : "__map__i";
+    return str_vals ? "__map__S" : "__map__";
+}
+/* 127.39: does this receiver's map tag / checker type say the VALUES are
+ * strings? (TY_MAP holds the key type in ->elem and the value type in
+ * ->field_types[0].) */
+static int map_has_str_values(Ctx *c, const Node *recv) {
+    if (recv && recv->rtype && recv->rtype->kind == TY_MAP &&
+        recv->rtype->field_count > 0 && recv->rtype->field_types &&
+        recv->rtype->field_types[0] &&
+        recv->rtype->field_types[0]->kind != TY_UNKNOWN)
+        return recv->rtype->field_types[0]->kind == TY_STR;
+    const char *st = expr_struct_type(c, recv);
+    return st && !strncmp(st, "__map__", 7) && strchr(st + 7, 'S') != NULL;
 }
 /* 127.41: the element tag of `m.keys` / `m.keys()`. tk_map_keys_w returns the
  * keys as stored: an int-keyed map (127.20/127.35) yields i64s, every other
@@ -5337,6 +5387,12 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
      * string for an array base (`arr + @(x)` reads x[-1] as a length and
      * drops the append, leaving len 0 / SIGBUS). Mirrors the @str→i8* case
      * in expr_llvm_type (NODE_INDEX_EXPR, 113.B.11). */
+    /* 127.39: `m.get(k)` parses as NODE_INDEX_EXPR (like `a.get(i)`), so the
+     * str-valued-map case is tagged here: the i64 ABI erases the value's
+     * pointer-ness, and without the tag `\(m.get(k))` printed its address. */
+    if (n->kind == NODE_INDEX_EXPR && n->child_count >= 1 &&
+        recv_is_map(c, n->children[0]) && map_has_str_values(c, n->children[0]))
+        return "$str";
     if (n->kind == NODE_INDEX_EXPR && n->child_count >= 1 &&
         n->children[0]->kind == NODE_IDENT) {
         char ia[128]; tok_cp(c->src, n->children[0], ia, sizeof ia);
@@ -5403,6 +5459,15 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
              * string; otherwise the array-literal/append codegen (`arr+@(x)`)
              * mis-lowers the untyped element and silently drops the append.
              * Mirrors the @str → i8* case in expr_llvm_type. */
+            /* 127.39: `m.get(k)` / `m.getor(k;d)` on a str-valued map yield a
+             * string; the i64 ABI erases the pointer, so without this tag the
+             * interpolation printed its address. (`.get` usually parses as
+             * NODE_INDEX_EXPR — handled above — `.getor` lands here.) */
+            if (!strcmp(method, "get") || !strcmp(method, "getor")) {
+                const Node *_grecv = n->children[0]->children[0];
+                if (recv_is_map(c, _grecv) && map_has_str_values(c, _grecv))
+                    return "$str";
+            }
             if (!strcmp(method, "get")) {
                 int _is_mod = 0;
                 for (int ii = 0; ii < c->import_count; ii++)
@@ -5537,7 +5602,8 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             if (sig2 && (!strcmp(sig2->ret_type_name, "@$str") ||
                          !strcmp(sig2->ret_type_name, "@str")))
                 return "@str";
-            if (sig2 && !strcmp(sig2->ret_type_name, "__map__")) return "__map__"; /* 127.28 */
+            /* 127.28 (+127.39/127.41 suffixes: "__map__i" / "__map__S") */
+            if (sig2 && !strncmp(sig2->ret_type_name, "__map__", 7)) return sig2->ret_type_name;
             /* 114.56: a cross-module user fn returning a scalar string — tag
              * "$str" so the result is recognised as a string (the ABI lowers
              * str returns to i64, erasing the i8* type), routing `<`/`<=`/`>`/
@@ -5558,7 +5624,7 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         if (sig && (!strcmp(sig->ret_type_name, "@$str") ||
                     !strcmp(sig->ret_type_name, "@str")))
             return "@str";
-        if (sig && !strcmp(sig->ret_type_name, "__map__")) return "__map__"; /* 127.28 */
+        if (sig && !strncmp(sig->ret_type_name, "__map__", 7)) return sig->ret_type_name; /* 127.28 */
         /* 114.56: a user fn returning a scalar string — tag "$str" so the
          * comparison and var-to-var `=` codegen route to strcmp, not a
          * pointer-address compare (the str return is lowered to i64 at the ABI,
@@ -6599,7 +6665,12 @@ static void emit_stmt(Ctx *c, const Node *n)
                 clear_ptr_local(c, tb_raw);
             if (init_is_map) {
                 mark_ptr_with_type(c, tb,
-                    map_lit_int_keys(c, init_node) ? "__map__i" : "__map__");
+                    init_node->kind == NODE_MAP_LIT
+                        ? map_tag(map_lit_int_keys(c, init_node),
+                                  map_lit_str_vals(c, init_node))
+                        : (expr_struct_type(c, init_node) &&
+                           !strncmp(expr_struct_type(c, init_node), "__map__", 7)
+                               ? expr_struct_type(c, init_node) : "__map__"));
             } else if (!strcmp(vty, "i8*")) {
                 const char *stype = expr_struct_type(c, init_node);
                 mark_ptr_with_type(c, tb, stype);
@@ -7230,7 +7301,18 @@ static void emit_toplevel(Ctx *c, const Node *n)
             if (!strcmp(pty, "i8*")) {
                 const Node *tyn = (n->children[i]->child_count > 1) ? n->children[i]->children[1] : NULL;
                 if (tyn && tyn->kind == NODE_MAP_TYPE) {
-                    mark_ptr_with_type(c, pn, "__map__");
+                    /* 127.39: a declared map param carries its key/value kinds
+                     * (`f=g(m:@(str:str))` → `\(m.get(k))` is a string). */
+                    int pk_int = 0, pv_str = 0;
+                    if (tyn->child_count > 0) {
+                        char kt[64]; tok_cp(c->src, tyn->children[0], kt, sizeof kt);
+                        pk_int = !strstr(kt, "str");
+                    }
+                    if (tyn->child_count > 1) {
+                        char vt[64]; tok_cp(c->src, tyn->children[1], vt, sizeof vt);
+                        pv_str = strstr(vt, "str") != NULL;
+                    }
+                    mark_ptr_with_type(c, pn, map_tag(pk_int, pv_str));
                 } else if (tyn && tyn->kind == NODE_ARRAY_TYPE &&
                            tyn->child_count >= 1 && tyn->children[0]) {
                     /* Bug 110.9: propagate @$f64/@$f32 element-type marker to

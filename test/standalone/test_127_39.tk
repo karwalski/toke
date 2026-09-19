@@ -1,0 +1,39 @@
+(* test_127_39.tk -- Epic 127.39: a str-valued map's `.get` must interpolate
+ * the stored string, not its address. The i64 ABI erases the pointer, so the
+ * backend's map tag has to carry the VALUE kind (map literal, a map returned
+ * by a user fn (127.28), and a declared map parameter). *)
+m=test.m12739;
+i=io:std.io;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=mkmap():@(str:str){
+  <@("k":"v";"k2":"v2")
+};
+
+f=viaparam(m:@(str:str);k:str):str{
+  <m.get(k)
+};
+
+f=main():$i64{
+  let z=@("x":"y");
+  cks("get-str-value";"\(z.get("x"))";"y");
+  cks("get-str-concat";s.concat(z.get("x");"!");"y!");
+  let n=@("a":1);
+  cks("get-int-value-unchanged";"\(n.get("a"))";"1");
+  let u=mkmap();
+  cks("get-str-from-user-fn";"\(u.get("k"))";"v");
+  cks("get-str-from-user-fn-2";"\(u.get("k2"))";"v2");
+  cks("get-str-via-param";"\(viaparam(u;"k"))";"v");
+  let e=mut.@("p":"q");
+  e=e.set("r";"s");
+  cks("get-str-after-set";"\(e.get("r"))";"s");
+  cks("getor-str-present";"\(z.getor("x";"d"))";"y");
+  cks("str-map-len-unchanged";"\(z.len) \(u.len)";"1 2");
+  <0
+};
