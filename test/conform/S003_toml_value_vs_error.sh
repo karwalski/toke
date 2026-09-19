@@ -19,9 +19,10 @@
 #
 #   2. The codegen half — llvm.c's is_num_parse_wrapper() lists the wrappers
 #      whose $ok/$err arm is chosen from @tk_current_error instead of the 0
-#      sentinel.  tk_toml_bool_w and tk_toml_i64_w still need adding there
-#      before `mt toml.bool(cfg; "minify")` takes the $ok arm for a false
-#      value.  That edit is held back by the 127.64 bisect on llvm.c.
+#      sentinel.  tk_toml_bool_w and tk_toml_i64_w were added there once the
+#      127.64 bisect released llvm.c, so `mt toml.bool(cfg; "minify")` now
+#      takes the $ok arm for a false value.  Pinned by
+#      test/conform/C005_toml_false_zero_vs_missing.sh.
 #
 # Story: 127.67
 

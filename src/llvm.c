@@ -1182,7 +1182,21 @@ static int is_f64_returning_wrapper(const char *name) {
 /* 114.53/114.54: the string→number parse wrappers signal failure via
  * tk_current_error, not the 0 sentinel — which a parsed 0.0 (f64) or 0 (int)
  * collides with. A match on one of these discriminates ok/err on
- * tk_current_error instead of comparing the value to zero. */
+ * tk_current_error instead of comparing the value to zero.
+ *
+ * 127.67: the same collision, and the same cure, for the two std.toml
+ * accessors whose value domain includes 0 — `minify = false` and
+ * `retries = 0` were reported as errors, so callers read them as "key
+ * absent" and substituted their default, obeying a key that says false as
+ * true. Their wrappers now keep @tk_current_error truthful (see
+ * src/stdlib/toml_glue.c) and always return the real value.
+ *
+ * Only bool and i64 belong here. tk_toml_load_w / tk_toml_section_w /
+ * tk_toml_str_w return a table handle or a string pointer, never 0 on
+ * success, so the 0/null sentinel is already exact for them and listing
+ * them would change working behaviour for no gain. Stdlib non-parse
+ * error-union wrappers (json.dec/file.read/csv.parse/…) likewise stay on
+ * the sentinel. */
 static int is_num_parse_wrapper(const char *name) {
     if (!name) return 0;
     return !strcmp(name, "tk_str_tofloat_w")    ||
@@ -1194,7 +1208,9 @@ static int is_num_parse_wrapper(const char *name) {
            !strcmp(name, "tk_str_toint_w")      ||
            !strcmp(name, "tk_str_parseint_w")   ||
            !strcmp(name, "tk_str_toi64_w")      ||
-           !strcmp(name, "tk_str_toint64_w");
+           !strcmp(name, "tk_str_toint64_w")    ||
+           !strcmp(name, "tk_toml_bool_w")      ||  /* 127.67 */
+           !strcmp(name, "tk_toml_i64_w");          /* 127.67 */
 }
 
 /*
