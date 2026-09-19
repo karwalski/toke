@@ -544,6 +544,52 @@ static const FnSig *lookup_fn(Ctx *c, const char *name) {
     return NULL;
 }
 
+/*
+ * sum_has_variant — 1 if `si` is a discriminated sum type declaring a variant
+ * named `v`.  (struct_field_index returns 0 for "not found", which is
+ * indistinguishable from field 0, so membership needs its own predicate.)
+ */
+static int sum_has_variant(const StructInfo *si, const char *v) {
+    if (!si || !si->is_sum) return 0;
+    for (int i = 0; i < si->field_count; i++)
+        if (!strcmp(si->field_names[i], v)) return 1;
+    return 0;
+}
+
+/*
+ * variant_ctor_sum (127.56) — resolve the `$variant(payload)` constructor-call
+ * form to the sum type that declares `variant`, or NULL if it names none.
+ *
+ * Before 114.41 a sum value WAS its payload, so this form lowered to the bare
+ * argument.  114.41 made sum values a tagged [tag,payload] box but left this
+ * path alone, so `<$bad("x")` in a `T!$err` function returned an untagged
+ * payload that the return lowering did not recognise as an error return: it
+ * cleared @tk_current_error and the caller's `mt` took the $ok arm.  The same
+ * untagged value also broke `mt v {$variants}` (tag read out of the payload).
+ *
+ * Resolution prefers the enclosing function's error type, then the unique sum
+ * type declaring the variant.  An unresolved name keeps the legacy
+ * pass-through — stdlib `$ok(..)`/`$err(..)` name no user sum type.
+ */
+static const StructInfo *variant_ctor_sum(Ctx *c, const Node *n) {
+    if (!n || n->kind != NODE_CALL_EXPR || n->child_count != 2) return NULL;
+    const Node *callee = n->children[0];
+    if (!callee || callee->kind != NODE_TYPE_IDENT) return NULL;
+    char v[NAME_BUF]; tok_cp(c->src, callee, v, sizeof v);
+    if (!v[0]) return NULL;
+    { char mb[NAME_BUF]; snprintf(mb, sizeof mb, "%s", v);
+      mangle_fn_name(c, mb, sizeof mb);
+      if (lookup_fn(c, mb)) return NULL; }   /* a real function of that name wins */
+    if (c->cur_fn_err[0]) {
+        const StructInfo *si = lookup_struct(c, c->cur_fn_err);
+        if (sum_has_variant(si, v)) return si;
+    }
+    const StructInfo *hit = NULL; int nh = 0;
+    for (int i = 0; i < c->struct_count; i++)
+        if (sum_has_variant(&c->structs[i], v)) { hit = &c->structs[i]; nh++; }
+    return nh == 1 ? hit : NULL;
+}
+
 /* ── Prepass: collect struct type declarations ─────────────────────── */
 
 /*
@@ -3633,6 +3679,35 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, val);
                 val = z;
             }
+            /* 127.56: when the variant names a real sum type, build the same
+             * tagged [tag,payload] box a `$T{$variant:payload}` literal builds
+             * (114.41) — otherwise the tag is lost, the value is just the
+             * payload, and both `mt v {$variants}` and the `T!$err` return
+             * detection read it wrong. */
+            const StructInfo *vsi = variant_ctor_sum(c, n);
+            if (vsi) {
+                if (!strcmp(vty, "double")) {          /* box the f64 bit pattern */
+                    int bc = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = bitcast double %%t%d to i64\n", bc, val);
+                    val = bc;
+                } else if (strcmp(vty, "i8*")) {
+                    val = coerce_value(c, val, vty, "i64");
+                }
+                int box = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i8* @malloc(i64 16) ; sum_ctor %s\n", box, vsi->name);
+                int sbase = next_tmp(c);
+                fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", sbase, box);
+                char vn[NAME_BUF]; tok_cp(c->src, n->children[0], vn, sizeof vn);
+                int vtag = struct_field_index(vsi, vn);
+                int tg = next_tmp(c);
+                fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 0 ; .$tag(%s)\n", tg, sbase, vn);
+                fprintf(c->out, "  store i64 %d, i64* %%t%d\n", vtag, tg);
+                int pg = next_tmp(c);
+                fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 1 ; .$payload\n", pg, sbase);
+                fprintf(c->out, "  store i64 %%t%d, i64* %%t%d\n", val, pg);
+                return box;
+            }
+            /* Legacy pass-through: the name is not a known sum variant. */
             return val;
         }
 
@@ -4927,6 +5002,36 @@ static int emit_expr(Ctx *c, const Node *n)
         fprintf(c->out, "  br i1 %%t%d, label %%prop_ok%d, label %%prop_err%d\n",
                 prop_cond, prop_lbl, prop_lbl);
         fprintf(c->out, "prop_err%d:\n", prop_lbl);
+        /* 127.56: the enclosing `T!$err` function signals failure to ITS caller
+         * through @tk_current_error (114.55) — every other error exit sets it.
+         * When the propagated-from callee used the 0/null sentinel ABI instead
+         * (json.dec / file.read / db.* / …), nothing had set the flag, so the
+         * caller's `mt` read 0, took the $ok arm and used the 0/null "value":
+         * a failure silently became a success.  Stash a tagged box of the
+         * declared error type (payload 0, tag -1 = "no named variant", so a
+         * nested `mt e {$variants}` reads a real box and falls to its
+         * catch-all arm rather than dereferencing a sentinel). */
+        if (c->cur_fn_err[0] && !prop_cur_err) {
+            const StructInfo *pesi = lookup_struct(c, c->cur_fn_err);
+            if (pesi && pesi->is_sum) {
+                int box = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i8* @malloc(i64 16) ; 127.56 propagated %s\n",
+                        box, c->cur_fn_err);
+                int pb = next_tmp(c);
+                fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", pb, box);
+                int ptg = next_tmp(c);
+                fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 0 ; .$tag(propagated)\n", ptg, pb);
+                fprintf(c->out, "  store i64 -1, i64* %%t%d\n", ptg);
+                int ppg = next_tmp(c);
+                fprintf(c->out, "  %%t%d = getelementptr inbounds i64, i64* %%t%d, i32 1 ; .$payload\n", ppg, pb);
+                fprintf(c->out, "  store i64 0, i64* %%t%d\n", ppg);
+                int pi = next_tmp(c);
+                fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", pi, box);
+                fprintf(c->out, "  store i64 %%t%d, i64* @tk_current_error\n", pi);
+            } else {
+                fprintf(c->out, "  store i64 1, i64* @tk_current_error ; 127.56 propagated error flag\n");
+            }
+        }
         { const char *rt = c->cur_fn_ret ? c->cur_fn_ret : "i8*";
           if (!strcmp(rt, "i64"))
               fprintf(c->out, "  ret i64 0\n");
@@ -5627,6 +5732,10 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         }
     }
     if (n->kind == NODE_CALL_EXPR && n->child_count >= 1) {
+        /* 127.56: `$variant(payload)` is a value of the sum type that declares
+         * the variant — so a `<$bad(x)` return in a `T!$err` fn is recognised
+         * as an error return, and `mt` on it dispatches on the real tag. */
+        { const StructInfo *vsi = variant_ctor_sum(c, n); if (vsi) return vsi->name; }
         /* Check for qualified module.method calls (e.g. time.toparts) */
         if (n->children[0]->kind == NODE_FIELD_EXPR && n->children[0]->child_count >= 2) {
             char alias[128], method[128];
@@ -6050,6 +6159,9 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         return "i64";
     case NODE_CALL_EXPR: {
         if (n->child_count < 1) return "i64";
+        /* 127.56: `$variant(payload)` on a known sum type builds a tagged box
+         * (an i8* malloc), exactly like the `$T{$variant:payload}` literal. */
+        if (variant_ctor_sum(c, n)) return "i8*";
         /* Bug 102.29b: instance .get() on @f64 arrays returns double */
         if (n->children[0]->kind == NODE_FIELD_EXPR &&
             n->children[0]->child_count >= 2) {
