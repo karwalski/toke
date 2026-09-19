@@ -1,0 +1,40 @@
+(* test_127_46.tk -- Epic 127.46: a FRESH binding of a `.set` result
+ * (`let m2=m.set(k;v)`) was untagged, so m2's later map ops dispatched as
+ * arrays and trapped RT003. The assign form `m=m.set(…)` always worked. The
+ * result now carries the receiver's map tag, key and value kinds included. *)
+m=test.m12746;
+i=io:std.io;
+i=s:std.str;
+
+f=cks(name:str;got:str;want:str):i64{
+  if(got==want){ io.println(s.concat("PASS ";name)) }
+  el{ io.println(s.concat(s.concat(s.concat("FAIL ";name);" got=");got)) };
+  <0
+};
+
+f=main():$i64{
+  let m=@("a":1);
+  let m2=m.set("b";2);
+  cks("fresh-set-len";"\(m2.len)";"2");
+  cks("fresh-set-get";"\(m2.get("b"))";"2");
+  (* NB: `m.len` is deliberately not asserted here — tk_map_set_w mutates the
+   * receiver in place, so the old binding sees the new key. That is a separate
+   * (map value-semantics) question from 127.46's result tagging. *)
+  cks("fresh-set-contains";"\(m2.contains("b"))";"1");
+  cks("fresh-set-getor";"\(m2.getor("zz";7))";"7");
+  cks("fresh-set-keys";"\(m2.keys.len)";"2");
+  let t=@("x":"y");
+  let t2=t.set("p";"q");
+  cks("fresh-set-str-value";"\(t2.get("p"))";"q");
+  cks("fresh-set-str-value-kept";"\(t2.get("x"))";"y");
+  let n=@(1:10);
+  let n2=n.set(2;20);
+  cks("fresh-set-int-key";"\(n2.get(2)) \(n2.len)";"20 2");
+  cks("fresh-set-int-keys-prop";"\(n2.keys.0)";"1");
+  let m3=m2.set("c";3);
+  cks("chained-fresh-set";"\(m3.len) \(m3.get("c"))";"3 3");
+  let a=mut.@("k":1);
+  a=a.set("k2";2);
+  cks("assign-form-unchanged";"\(a.len)";"2");
+  <0
+};

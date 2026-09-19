@@ -3364,12 +3364,9 @@ static int emit_expr(Ctx *c, const Node *n)
                      * immutable replace), and only route map.set to the existing
                      * tk_map_set_w. Without this gate the array path treated the
                      * numeric index as a string pointer and crashed in strcmp(). */
-                    int base_is_map = 0;
-                    if (n->children[0]->children[0]->kind == NODE_IDENT) {
-                        char nb_set[128];
-                        tok_cp(c->src, n->children[0]->children[0], nb_set, sizeof nb_set);
-                        if (is_map_var(c, nb_set)) base_is_map = 1;
-                    }
+                    /* 127.46: recv_is_map covers the checker's rtype and a
+                     * uniquified LLVM name, not just the source name. */
+                    int base_is_map = recv_is_map(c, n->children[0]->children[0]);
                     fn_im = base_is_map ? "tk_map_set_w" : "tk_array_set_w";
                 }
                 else if (!strcmp(method_im, "map"))     fn_im = "tk_arr_map";
@@ -4205,8 +4202,12 @@ static int emit_expr(Ctx *c, const Node *n)
                 fprintf(c->out, "  %%t%d = call fastcc i64 @%s( i64 %%t%d)\n", t, fn_name, arg);
                 return t;
             }
-            /* Map variable: emit tk_map_get(map_ptr, key_i64) */
-            if (is_map_var(c, base_alias)) {
+            /* Map variable: emit tk_map_get(map_ptr, key_i64).
+             * 127.46: recv_is_map (not is_map_var on the source name) — a local
+             * whose LLVM name was uniquified (`t2` → `t2.1`, colliding with a
+             * temp) is registered under that name, so the source-name lookup
+             * missed it and `t2.get(k)` took the array path (RT003). */
+            if (recv_is_map(c, n->children[0])) {
                 int base_map = emit_expr(c, n->children[0]);
                 /* base is a ptr local — emit as ptr. A map sourced from a
                  * struct field (113.B.12) is held in an i64-ABI slot, so
@@ -4272,10 +4273,8 @@ static int emit_expr(Ctx *c, const Node *n)
         {
             int base_is_map = 0;
             /* Direct map variable */
-            if (n->children[0]->kind == NODE_IDENT) {
-                char bn[128]; tok_cp(c->src, n->children[0], bn, sizeof bn);
-                if (is_map_var(c, bn)) base_is_map = 1;
-            }
+            if (n->children[0]->kind == NODE_IDENT && recv_is_map(c, n->children[0]))
+                base_is_map = 1;  /* 127.46: uniquified LLVM names too */
             /* Field access result: check if the field type starts with "@(" (map) */
             if (!base_is_map && n->children[0]->kind == NODE_FIELD_EXPR &&
                 n->children[0]->child_count >= 2) {
@@ -5416,6 +5415,17 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         char nb[128]; tok_cp(c->src, n, nb, sizeof nb);
         const char *lst = ptr_local_struct_type(c, nb);
         if (lst) return lst;
+        /* 127.46: a local whose LLVM name was uniquified (`t2` → `t2.1`, because
+         * `%t2` is already a temp) is registered under THAT name; without this
+         * fallback its tag ($str / @… / __map__) was invisible to every caller
+         * and the value took the untagged path. */
+        {
+            const char *aln = get_llvm_name(c, nb);
+            if (aln && strcmp(aln, nb)) {
+                const char *alst = ptr_local_struct_type(c, aln);
+                if (alst) return alst;
+            }
+        }
         /* 114.44: a module-level mutable global's struct type (for .field) */
         if (!name_is_local(c, nb)) {
             const char *gst = global_struct_type(c, nb);
@@ -5631,6 +5641,16 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                         !strcmp(method, "fields"))
                         return "@str";
                     if (!strcmp(method, "keys")) return map_keys_elem_tag(c, recv);
+                    /* 127.46: `m.set(k;v)` on a map returns the map. The
+                     * assign form `m=m.set(…)` kept the receiver's tag, but a
+                     * fresh `let m2=m.set(…)` was untagged, so m2's later map
+                     * ops dispatched as arrays and trapped RT003. Carries the
+                     * receiver's key/value kinds (127.39/127.41) with it. */
+                    if (!strcmp(method, "set") && recv_is_map(c, recv)) {
+                        const char *mst = expr_struct_type(c, recv);
+                        if (mst && !strncmp(mst, "__map__", 7)) return mst;
+                        return map_tag(0, map_has_str_values(c, recv));
+                    }
                     /* 127.11: `sort` / `filter` return an array of the
                      * receiver's element type. Untagged, a chained
                      * `xs.sort(&cmp).slice(0;k)` had no array receiver for the
