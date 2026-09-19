@@ -54,4 +54,28 @@ int emit_llvm_ir(const Node *ast, const char *src,
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
                    int opt_level, const SymbolTable *st, int debug);
 
+/*
+ * stdlib_glue_arity — the parameter count of a stdlib/runtime glue symbol the
+ * compiler knows how to declare, or -1 when no such symbol is known (136.1).
+ *
+ * The declaration table this reads (g_stdlib_decls plus the generated
+ * stdlib_decls_gen.h) is the compiler's only record of what the native side
+ * actually provides. The type checker consults it so a call can be validated
+ * against the *implementation* as well as the `.tki`: the two disagree across
+ * nine functions on the bindings surface (Epic 136), and it is the ABI, not
+ * the interface, that decides whether a call corrupts.
+ */
+int stdlib_glue_arity(const char *sym);
+
+/*
+ * stdlib_symbol_for — the C symbol a `<module>.<method>` stdlib call lowers
+ * to, or NULL when `mod` is not a stdlib module (136.1).
+ *
+ * `mod` is the dotted module path with or without its "std." prefix;
+ * `is_std` selects the generic `tk_<module>_<method>_w` fallback the emitter
+ * applies to stdlib modules with no explicit mapping.  The returned pointer
+ * may address a static buffer that the next call overwrites.
+ */
+const char *stdlib_symbol_for(const char *mod, int is_std, const char *method);
+
 #endif /* TK_LLVM_H */

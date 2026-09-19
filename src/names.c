@@ -851,6 +851,11 @@ static int scope_insert(Scope *s, Arena *arena, const char *src,
  * checker applies to a local `t=` declaration (types.c resolve_type). */
 #define TKC_MAX_TKI_FIELDS 64
 
+/* 136.1: parameter cap for a .tki func record. Generously above
+ * TKC_MAX_PARAMS (16) so a declaration the compiler would reject anyway is
+ * still read in full rather than silently truncated into a false arity. */
+#define TKC_MAX_TKI_PARAMS 64
+
 /* ── Imported .tki export recording (story 127.66) ─────────────────────
  *
  * Registering an imported type name as a predefined identifier is enough to
@@ -976,7 +981,8 @@ static void nameenv_add_itype(NameEnv *env, Arena *arena,
 }
 
 static void nameenv_add_ifunc(NameEnv *env, Arena *arena, const char *alias,
-                              const char *fn, const char *ret) {
+                              const char *fn, const char *ret,
+                              const char **ptypes, int pcount) {
     if (!env || !alias || !fn || !ret) return;
     if (env->ifunc_count >= env->ifunc_cap) {
         int nc = env->ifunc_cap == 0 ? 32 : env->ifunc_cap * 2;
@@ -995,6 +1001,17 @@ static void nameenv_add_ifunc(NameEnv *env, Arena *arena, const char *alias,
                                                        (int)strlen(fn));
     env->ifuncs[env->ifunc_count].ret   = arena_intern(arena, ret,
                                                        (int)strlen(ret));
+    /* 136.1: the call spelling is the export name past its last '.', because
+     * a handwritten stdlib interface namespaces its exports ("infer.load",
+     * "row.str") while ir.c's generated ones do not. */
+    {
+        const char *dot = strrchr(fn, '.');
+        const char *mem = dot ? dot + 1 : fn;
+        env->ifuncs[env->ifunc_count].member =
+            arena_intern(arena, mem, (int)strlen(mem));
+    }
+    env->ifuncs[env->ifunc_count].param_types = ptypes;
+    env->ifuncs[env->ifunc_count].param_count = ptypes ? pcount : 0;
     env->ifunc_count++;
 }
 
@@ -1039,11 +1056,53 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
              * "return" (ir.c), NOT as `T!E` in the return string. Such a call
              * yields an error union, not a T, so it must stay untyped here —
              * adopting T would put a record struct in `mt` scrutinee position
-             * and trip the E4010 variant-exhaustiveness check. */
-            if (tki_obj_key(rec, end, "error")) continue;
-            if (alias && tki_str_value(tki_obj_key(rec, end, "return"), end,
-                                       ret, (int)sizeof ret))
-                nameenv_add_ifunc(env, arena, alias, name, ret);
+             * and trip the E4010 variant-exhaustiveness check.  136.1: the
+             * record is still *recorded*, with an empty return spelling, so
+             * its arity is checkable; imported_func_ret() reports nothing for
+             * it exactly as before. */
+            if (!alias) continue;
+            if (!tki_obj_key(rec, end, "error"))
+                (void)tki_str_value(tki_obj_key(rec, end, "return"), end,
+                                    ret, (int)sizeof ret);
+            /* 136.1: lift the declared parameter list. A record with no
+             * "params" key leaves param_types NULL — arity unknown, and the
+             * call is not checked; an empty list is a real zero-arity
+             * declaration and gets a (never-read) one-slot array so it is
+             * still distinguishable from "not declared". */
+            const char **ptypes = NULL;
+            int pcount = 0;
+            const char *pa = tki_obj_key(rec, end, "params");
+            if (pa && pa < end && *pa == '[') {
+                const char *pe = tki_scan_value(pa, end);
+                if (pe) {
+                    const char *pbuf[TKC_MAX_TKI_PARAMS];
+                    const char *pp = pa + 1;
+                    while (pp < pe && pcount < TKC_MAX_TKI_PARAMS) {
+                        while (pp < pe && (*pp == ' ' || *pp == '\t' ||
+                                           *pp == '\n' || *pp == '\r' ||
+                                           *pp == ',')) pp++;
+                        if (pp >= pe || *pp != '"') break;
+                        char pt[128] = {0};
+                        if (!tki_str_value(pp, pe, pt, (int)sizeof pt)) break;
+                        pbuf[pcount++] = arena_intern(arena, pt,
+                                                      (int)strlen(pt));
+                        pp = tki_scan_value(pp, pe);
+                        if (!pp) break;
+                    }
+                    int slots = pcount > 0 ? pcount : 1;
+                    const char **pa_arr = (const char **)arena_alloc(
+                        arena, slots * (int)sizeof(const char *));
+                    if (pa_arr) {
+                        if (pcount > 0)
+                            memcpy(pa_arr, pbuf,
+                                   (size_t)pcount * sizeof(const char *));
+                        else
+                            pa_arr[0] = NULL;
+                        ptypes = pa_arr;
+                    }
+                }
+            }
+            nameenv_add_ifunc(env, arena, alias, name, ret, ptypes, pcount);
             continue;
         }
         if (strcmp(kind, "type") != 0) continue;
@@ -1126,9 +1185,33 @@ const char *imported_func_ret(const NameEnv *env, const char *alias,
     for (int i = 0; i < env->ifunc_count; i++)
         if (env->ifuncs[i].alias && env->ifuncs[i].fn &&
             strcmp(env->ifuncs[i].alias, alias) == 0 &&
-            strcmp(env->ifuncs[i].fn, fn) == 0)
-            return env->ifuncs[i].ret;
+            strcmp(env->ifuncs[i].fn, fn) == 0) {
+            /* 136.1 records error-returning exports too, with an empty return
+             * spelling. Keep reporting *nothing* for those: 127.66 left them
+             * unadopted on purpose (a T!E is not a T). */
+            const char *r = env->ifuncs[i].ret;
+            return (r && r[0]) ? r : NULL;
+        }
     return NULL;
+}
+
+const ImportedFunc *imported_func_lookup(const NameEnv *env, const char *alias,
+                                         const char *member) {
+    if (!env || !alias || !member) return NULL;
+    for (int i = 0; i < env->ifunc_count; i++)
+        if (env->ifuncs[i].alias && env->ifuncs[i].member &&
+            strcmp(env->ifuncs[i].alias, alias) == 0 &&
+            strcmp(env->ifuncs[i].member, member) == 0)
+            return &env->ifuncs[i];
+    return NULL;
+}
+
+int imported_alias_has_funcs(const NameEnv *env, const char *alias) {
+    if (!env || !alias) return 0;
+    for (int i = 0; i < env->ifunc_count; i++)
+        if (env->ifuncs[i].alias && strcmp(env->ifuncs[i].alias, alias) == 0)
+            return 1;
+    return 0;
 }
 
 static void seed_predefined(Scope *s, Arena *arena, const char *name) {

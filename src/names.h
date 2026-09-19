@@ -154,10 +154,30 @@ typedef struct {
  * the alias it was imported under, so `cli.cfgdefault()` can be given the
  * declared return type its .tki states (story 127.66).
  */
+/*
+ * 136.1 extends the record with the declared parameter list, so a call can be
+ * checked against the interface that introduced it.  Before this, nothing
+ * compared a call to its `.tki`: a call that disagreed on arity compiled, then
+ * linked against whatever symbol happened to exist and corrupted silently
+ * (9 documented functions on the bindings surface are in exactly that state),
+ * and a member the interface never declared surfaced as a linker error naming
+ * a mangled symbol rather than a diagnostic naming the function and the line.
+ *
+ *   fn     — the export name exactly as the .tki spells it. Handwritten stdlib
+ *            interfaces carry a namespace prefix ("infer.load", "row.str"),
+ *            machine-generated ones do not ("cfgdefault"). `fn` is the key
+ *            imported_func_ret() has always matched on and is left untouched.
+ *   member — the call spelling: `fn` after its last '.'. This is what
+ *            `alias.member(...)` actually writes, and what the 136.1 checks
+ *            match on.
+ */
 typedef struct {
     const char  *alias;         /* import alias (e.g. "cli")             */
     const char  *fn;            /* export name (e.g. "cfgdefault")       */
+    const char  *member;        /* `fn` past its last '.' (e.g. "load")  */
     const char  *ret;           /* declared toke return type spelling    */
+    int          param_count;   /* declared arity                        */
+    const char **param_types;   /* arena array of toke type spellings    */
 } ImportedFunc;
 
 typedef struct {
@@ -181,6 +201,18 @@ const ImportedType *imported_type_lookup(const NameEnv *env, const char *name);
 /* Look up the declared return type of `alias.fn`; NULL when not known. */
 const char *imported_func_ret(const NameEnv *env, const char *alias,
                               const char *fn);
+
+/* 136.1 — the declaration `alias.member(...)` was introduced by, or NULL.
+ * Matches on the *call* spelling (ImportedFunc.member), so it resolves the
+ * namespaced stdlib exports ("infer.load") as well as generated bare ones. */
+const ImportedFunc *imported_func_lookup(const NameEnv *env, const char *alias,
+                                         const char *member);
+
+/* 136.1 — non-zero when `alias` named an interface whose function exports were
+ * recorded.  The "no such member" check is gated on this: an alias with no
+ * recorded exports means the .tki was absent or carried none, which is an
+ * absence of knowledge, not evidence that the member does not exist. */
+int imported_alias_has_funcs(const NameEnv *env, const char *alias);
 
 /* Error codes for name resolution */
 #define E3011 3011  /* identifier not declared    */

@@ -57,6 +57,7 @@
  *   E4011 — Match arms have inconsistent types.
  *   E4025 — Struct field access on a field name that does not exist.
  *   E4026 — Wrong argument count in function call.
+ *   E4027 — Module has no exported member with that name (136.1).
  *   E4031 — Type mismatch (the general-purpose type error code).
  *   E4043 — Inconsistent key or value types in a map literal.
  *   E5001 — Value escapes arena scope.
@@ -1111,6 +1112,242 @@ static void check_std_str_args(Ctx *cx, const Node *call) {
     }
 }
 
+/* ── 136.1: check a call against the interface that declares it ────────
+ *
+ * Nothing used to compare `alias.member(...)` with anything at all.  A call
+ * that disagreed on arity type-checked clean, reached codegen, and linked
+ * against whatever symbol happened to exist — arguments landed in the wrong
+ * places and the program **corrupted silently** rather than failing.  A member
+ * nothing provides fell through to the generic `tk_<mod>_<method>_w` symbol
+ * name and surfaced as an E9003 link failure naming a mangled symbol, instead
+ * of a diagnostic naming the function and the line (the 127.77 shape).
+ *
+ * There are two declarations of a stdlib function and they do not agree.  The
+ * `.tki` is the published interface; g_stdlib_decls (llvm.c, plus the
+ * generated stdlib_decls_gen.h) is what the native side actually provides.
+ * Epic 136 exists because nine functions on the bindings surface have one
+ * arity in the interface and another in the implementation, and toke's own
+ * hand-written stdlib interfaces have drifted the same way (`math.max` is
+ * declared to take one argument and implemented to take two; `db.close` is
+ * declared to take none and implemented to take one).  So the check is
+ * grounded on the ABI wherever the ABI is known, because the ABI is what
+ * decides whether a call corrupts, and falls back to the interface only where
+ * the compiler has no symbol to consult:
+ *
+ *   1. the glue symbol's declared arity, when the compiler knows the symbol;
+ *   2. otherwise the `.tki` parameter list, for a *generated* interface —
+ *      ir.c writes one record per top-level `f=`, so its export list is
+ *      derived from the module source and is complete by construction;
+ *   3. a member declared by neither → E4027.
+ *
+ * What is deliberately NOT checked, because this runs against every call in
+ * every program and a check that fires wrongly is worse than one that is
+ * incomplete — the same boundary 127.66 drew for sum types and error unions:
+ *
+ *   * A `std.*` member the hand-written `.tki` does not declare but the glue
+ *     does provide (`str.equals`, `str.format`, `test.eq`, `json.getobj`,
+ *     `file.tempdir` — 46 distinct members across the four codebases swept
+ *     for this story).  Those calls work; the interface is the incomplete
+ *     side.  Enforcing the interface there would reject hundreds of correct
+ *     programs, so the gap is reported as a finding rather than diagnosed.
+ *   * A `std.*` member with no glue symbol under either spelling this file
+ *     tries — resolve_stdlib_call (llvm.c) carries roughly two hundred
+ *     special-case mappings that are not reproduced here, so "I could not
+ *     find a symbol" is not evidence that none exists.  E4027 therefore fires
+ *     only on a generated interface, where the export list is authoritative.
+ *   * Parameter *types*.  A `.tki` spells them as toke source text
+ *     (`@(f32)`, `?(TlsConn)`, `fn($discovered):void`, `[byte]`), a grammar
+ *     resolve_type() does not consume; the glue table spells every one of
+ *     them `i64`, which carries no information at all; and the checker leaves
+ *     most arguments to an unresolved call TY_UNKNOWN, so the comparison
+ *     would be made against a poison type.  The str-typed stdlib parameters
+ *     that *are* modelled keep being enforced by check_std_str_args() above.
+ *   * Return types — 127.66 owns those and left scalars, collections and
+ *     error unions alone on purpose.
+ *   * Sub-namespace calls (`row.str(...)`, `df.head(...)`, `tpl.render(...)`).
+ *     Those prefixes are registered as aliases by the .tki scan but are not
+ *     `I=` aliases, so import_module_path() does not resolve them and the
+ *     call is skipped.  Their declarations are recorded under the *import*
+ *     alias, so widening this later is a lookup change, not a data change.
+ *   * Any alias whose interface recorded no function exports at all: a
+ *     missing or export-less `.tki` is an absence of knowledge.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/* 136.1: the compiler's record of the native side, and the same module.method
+ * → symbol mapping codegen uses. Forward-declared rather than pulled in
+ * through llvm.h, which would put the codegen header in the type checker's
+ * include graph for two functions. */
+int stdlib_glue_arity(const char *sym);
+const char *stdlib_symbol_for(const char *mod, int is_std, const char *method);
+
+/*
+ * tki_glue_arity_for — the implementation arity of `<mpath>.<member>`, or -1
+ * when the compiler knows no symbol for it.
+ *
+ * Asks llvm.c for the symbol the call will actually lower to, then reads that
+ * symbol's declared arity out of the same table the emitter declares it from,
+ * so "unknown" here means exactly what it means at codegen.
+ */
+static int tki_glue_arity_for(const char *mpath, const char *member,
+                              const char **out_sym) {
+    if (out_sym) *out_sym = NULL;
+    if (!mpath || strncmp(mpath, "std.", 4) != 0) return -1;
+    const char *sym = stdlib_symbol_for(mpath, 1, member);
+    if (!sym) return -1;
+    if (out_sym) *out_sym = sym;
+    return stdlib_glue_arity(sym);
+}
+
+/*
+ * tki_member_sig — render a declaration the way the source writes it, so the
+ * diagnostic names both signatures instead of two bare counts.
+ */
+static void tki_member_sig(const ImportedFunc *f, const char *alias,
+                           const char *member, char *out, size_t outsz) {
+    int n = snprintf(out, outsz, "%s.%s(", alias, member);
+    if (n < 0) { out[0] = '\0'; return; }
+    size_t used = (size_t)n < outsz ? (size_t)n : outsz - 1;
+    for (int i = 0; i < f->param_count && used + 2 < outsz; i++) {
+        const char *pt = f->param_types[i] ? f->param_types[i] : "?";
+        n = snprintf(out + used, outsz - used, "%s%s", i ? "; " : "", pt);
+        if (n < 0) break;
+        used += (size_t)n < outsz - used ? (size_t)n : outsz - used - 1;
+    }
+    if (used + 2 < outsz) { out[used++] = ')'; out[used] = '\0'; }
+}
+
+static void tki_arity_error(const Node *call, const char *what,
+                            const char *mpath, const char *member,
+                            const char *decl, int expected, int actual) {
+    char msg[512], exp_str[16], got_str[16];
+    snprintf(exp_str, sizeof exp_str, "%d", expected);
+    snprintf(got_str, sizeof got_str, "%d", actual);
+    if (decl && decl[0])
+        snprintf(msg, sizeof msg,
+                 "wrong number of arguments for '%s.%s': the %s declares "
+                 "%s — %d argument%s, the call passes %d",
+                 mpath, member, what, decl, expected,
+                 expected == 1 ? "" : "s", actual);
+    else
+        snprintf(msg, sizeof msg,
+                 "wrong number of arguments for '%s.%s': the %s takes %d "
+                 "argument%s, the call passes %d",
+                 mpath, member, what, expected,
+                 expected == 1 ? "" : "s", actual);
+    /* AGENTS.md §6 — the `fix` is guidance that holds in every case this
+     * fires. It must not say "add an argument": the interface and the
+     * implementation may be the two things that disagree (Epic 136), and then
+     * changing the call is the wrong remedy. */
+    diag_emit(DIAG_ERROR, E4026, call->start, call->line, call->col, msg,
+              "expected", exp_str, "got", got_str,
+              "fix", "match the call to the declaration, or reconcile the "
+                     "interface with the implementation if they disagree",
+              (const char *)NULL);
+}
+
+static void check_tki_call(Ctx *cx, const Node *call) {
+    if (!call || call->child_count < 1) return;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2)
+        return;
+    if (!callee->children[0] || callee->children[0]->kind != NODE_IDENT) return;
+    if (!callee->children[1]) return;
+    if (!cx->env || !cx->env->names) return;
+
+    char alias[128];  TOKSTR(alias, cx->src, callee->children[0]);
+    char member[128]; TOKSTR(member, cx->src, callee->children[1]);
+
+    /* The base identifier must be an `I=` alias of *this* file. A module-scope
+     * declaration of the same name (a function, type or const) means the
+     * identifier is not the module, so the call is not ours to judge. */
+    char mbuf[256];
+    const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
+    if (!mpath) return;
+    {
+        Decl *d = tc_lookup(cx->env->names->module_scope, alias,
+                            (int)strlen(alias));
+        if (d && d->kind != DECL_IMPORT_ALIAS) return;
+    }
+    if (!imported_alias_has_funcs(cx->env->names, alias)) return;
+
+    int is_std = (strncmp(mpath, "std.", 4) == 0);
+    int actual = call->child_count - 1;
+    const ImportedFunc *f = imported_func_lookup(cx->env->names, alias, member);
+
+    /* 1. The implementation, where the compiler knows it. This is the arity
+     *    that decides whether the call corrupts. */
+    const char *sym = NULL;
+    int abi = tki_glue_arity_for(mpath, member, &sym);
+    if (abi >= 0) {
+        /* A zero-argument toke function is written in glue as a single
+         * ignored `int64_t dummy` — 23 functions in the stdlib glue sources use
+         * that idiom (tk_file_tempdir_w, tk_mlx_isavailable_w,
+         * tk_time_nowms_w, …), each opening with `(void)dummy`. The caller
+         * sets no register and the callee reads none, so it is a convention,
+         * not a disagreement, and flagging it would reject correct calls. */
+        int dummy_param = (actual == 0 && abi == 1);
+        if (actual != abi && !dummy_param && tc_can_emit(cx))
+            tki_arity_error(call, "implementation", mpath, member,
+                            NULL, abi, actual);
+        return;
+    }
+
+    /* 2. A std.* member that *neither* side declares is the 127.77 shape: the
+     *    name is a mistake, codegen emits a call to it anyway, and the user
+     *    gets an E9003 naming the mangled symbol. Name the member instead.
+     *
+     *    A member the INTERFACE publishes and the runtime does not implement
+     *    is deliberately left alone. The consumer wrote exactly what the
+     *    documentation told them to; the defect is in the stdlib, and
+     *    blaming their call site puts it in the wrong place. That belongs in
+     *    a stdlib-side gate (136.7 — eighteen documented functions have no
+     *    symbol at all), and unlike an arity mismatch it already fails
+     *    loudly at link rather than corrupting. It accounts for 52 of the
+     *    call sites swept for this story, reported as a finding instead. */
+    if (is_std && sym && !f) {
+        if (!tc_can_emit(cx)) return;
+        char msg[384];
+        snprintf(msg, sizeof msg,
+                 "module '%s' has no member '%s': neither the interface "
+                 "nor the runtime declares it (the call would link "
+                 "against '%s')",
+                 mpath, member, sym);
+        /* diag.c records only "fix", "expected" and "got", so the member is
+         * carried in "got" — that is the structured field a consumer greps. */
+        diag_emit(DIAG_ERROR, E4027, call->start, call->line, call->col, msg,
+                  "got", member,
+                  "fix", "check the module's interface for the correct "
+                         "member name",
+                  (const char *)NULL);
+        return;
+    }
+
+    /* 3. The interface, for a generated one. A hand-written std.* interface is
+     *    a partial, drifted document (see the header comment) and is not
+     *    enforced against calls beyond what the runtime already settled. */
+    if (is_std) return;
+
+    if (!f) {
+        if (!tc_can_emit(cx)) return;
+        char msg[320];
+        snprintf(msg, sizeof msg,
+                 "module '%s' has no exported member '%s'", mpath, member);
+        diag_emit(DIAG_ERROR, E4027, call->start, call->line, call->col, msg,
+                  "got", member,
+                  "fix", "check the module's interface for the correct "
+                         "member name",
+                  (const char *)NULL);
+        return;
+    }
+    if (!f->param_types) return;   /* record states no parameter list */
+    if (actual == f->param_count) return;
+    if (!tc_can_emit(cx)) return;
+
+    char decl[320]; tki_member_sig(f, alias, member, decl, sizeof decl);
+    tki_arity_error(call, "interface", mpath, member, decl,
+                    f->param_count, actual);
+}
+
 static Type *infer_impl(Ctx *cx, const Node *node);
 static Type *infer(Ctx *cx, const Node *node) {
     Type *t = infer_impl(cx, node);
@@ -1493,6 +1730,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * resolve — enforce the declared str parameters against the
              * argument types just inferred. */
             check_std_str_args(cx,node);
+            /* 136.1: and enforce the .tki the alias was imported from —
+             * arity and the member's existence, nothing wider. */
+            check_tki_call(cx,node);
             return mk_type(A,TY_UNKNOWN);
         }
         const Node *fn=d->def_node; int pi=0;

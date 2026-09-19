@@ -1613,6 +1613,25 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
         }
     }
     if (!mod) return NULL;
+    return stdlib_symbol_for(mod, is_std, method);
+}
+
+/*
+ * stdlib_symbol_for (136.1) — the C symbol a `<module>.<method>` call lowers
+ * to, or NULL when the module is not a stdlib module.
+ *
+ * This is the whole body resolve_stdlib_call() used to be; only the
+ * alias → module lookup, which needs the codegen Ctx, stays behind.  Splitting
+ * it makes the mapping answerable *before* codegen, so the type checker can
+ * ask the same question the emitter will ask rather than re-deriving the name
+ * and getting a different answer: roughly two hundred methods here map to a
+ * symbol that the generic `tk_<module>_<method>_w` spelling would miss
+ * (`json.parse` → tk_json_parse, `str.fromint` → tk_str_from_int,
+ * `http.patch` → tk_http_patch_handler), and guessing those wrong is how a
+ * member-existence check invents diagnostics on correct programs.
+ */
+const char *stdlib_symbol_for(const char *mod, int is_std, const char *method) {
+    if (!mod || !method) return NULL;
     /* Strip "std." prefix for stdlib imports (Story 49.4.5) */
     if (!strncmp(mod, "std.", 4)) mod = mod + 4;
 
@@ -8135,6 +8154,37 @@ static int body_references_symbol(const char *body, long body_len, const char *n
         p++;
     }
     return 0;
+}
+
+/*
+ * stdlib_glue_arity (136.1) — the parameter count declared for `sym` in
+ * g_stdlib_decls, or -1 when the compiler knows no such symbol.
+ *
+ * The declaration text is LLVM IR ("declare i64 @tk_str_slice_w(i64, i64,
+ * i64)"), so the arity is the comma count of the argument list, and an empty
+ * list is zero. This table is the compiler's whole record of the native side:
+ * the type checker uses it to judge a call against the implementation, which
+ * is what actually decides whether the call corrupts, rather than against a
+ * `.tki` that may itself be the side that drifted.
+ */
+int stdlib_glue_arity(const char *sym) {
+    if (!sym || !*sym) return -1;
+    for (int i = 0; g_stdlib_decls[i].name; i++) {
+        if (strcmp(g_stdlib_decls[i].name, sym) != 0) continue;
+        const char *d = g_stdlib_decls[i].decl;
+        if (!d) return -1;
+        const char *open = strchr(d, '(');
+        if (!open) return -1;
+        const char *close = strrchr(open, ')');
+        if (!close || close <= open) return -1;
+        int n = 1, empty = 1;
+        for (const char *p = open + 1; p < close; p++) {
+            if (*p == ',') n++;
+            if (*p != ' ' && *p != '\t') empty = 0;
+        }
+        return empty ? 0 : n;
+    }
+    return -1;
 }
 
 /*

@@ -612,6 +612,25 @@ Reserved. Planned for type mismatches at FFI boundaries.
 
 Emitted when a call passes too few or too many arguments.
 
+Since 136.1 this also covers a call through an import alias, `alias.member(...)`. Such a call is judged against the *implementation* where the compiler knows the glue symbol — that is what decides whether the call corrupts — and against the `.tki` interface otherwise. The message names the function and, for the interface case, the declared signature, because a bare count does not say which side is wrong: an interface and its implementation can be the two things that disagree.
+
+**Fix:** Match the call to the declaration, or reconcile the interface with the implementation if they disagree.
+
+### E4027
+
+**Module has no exported member with that name**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | typecheck |
+
+Emitted for `alias.member(...)` when neither the imported module's `.tki` interface nor the runtime declares `member`. Before 136.1 such a call was lowered to a symbol name anyway and surfaced as an E9003 link failure naming a mangled symbol, with no file and no line.
+
+The check is deliberately narrow. A `std.*` member that the hand-written interface omits but the runtime does provide (`str.equals`, `test.eq`, `json.getobj`, …) is accepted: the call works and the interface is the incomplete side. A member of a module whose `.tki` is machine-generated is enforced in full, because `--emit-interface` writes one record per top-level `f=` and that export list is complete by construction.
+
+**Fix:** Check the module's interface for the correct member name.
+
 ### E4032
 
 **Cannot interpolate a composite value into a string**

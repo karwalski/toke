@@ -18,6 +18,7 @@
 #define E4010 4010  /* non-exhaustive match                              */
 #define E4011 4011  /* match arms have inconsistent types                */
 #define E4025 4025  /* struct has no field with that name                */
+#define E4027 4027  /* module has no exported member with that name      */
 #define E4031 4031  /* type mismatch / implicit coercion                 */
 #define E4032 4032  /* cannot interpolate a composite value into a string */
 #define E4026 4026  /* wrong argument count in function call             */

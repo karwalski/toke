@@ -1,0 +1,16 @@
+id: D093
+series: D
+description: "136.1: a module member that neither the interface nor the runtime declares is E4027 at the call site, not an E9003 link failure naming a mangled symbol. `ne` is the near-miss for the declared `str.eq` (127.77); the documented `fix` is pinned exactly (AGENTS.md §6)"
+input: |
+  m=t;
+  i=s:std.str;
+  f=main():i64{
+    s.ne("a";"b");
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4027"]
+expected_fix: "check the module's interface for the correct member name"
+expected_diag_field:
+  field: got
+  value: ne
