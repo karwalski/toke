@@ -44,7 +44,7 @@ f=notfoundbody():$str{
 };
 
 f=main():i64!$err{
-  log.info("starting notes-api on port 8080");
+  log.info("starting notes-api on port 8080"; @());
 
   let notesfile="data/notes.json";
   let notesbody=mt loadnotes(notesfile) {
@@ -56,7 +56,7 @@ f=main():i64!$err{
   http.getstatic("/api/notes"; notesbody);
   http.getstatic("/404"; notfoundbody());
 
-  log.info("routes registered: /health /api/notes /404");
+  log.info("routes registered: /health /api/notes /404"; @());
   http.serveworkers(8080; 4)!$err;
 
   < 0

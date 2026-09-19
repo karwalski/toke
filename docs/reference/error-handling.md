@@ -143,8 +143,8 @@ f=processfile(path:$str):i64!$err{
 f=main():void{
   let result=processfile("input.txt");
   mt result {
-    $ok:n log.info("size: ");
-    $err:e log.error("failed")
+    $ok:n log.info("size: "; @());
+    $err:e log.error("failed"; @())
   }
 };
 ```
@@ -173,7 +173,7 @@ f=fetch(url:$str):$str{
 
 f=main():void{
   let body=fetch("https://api.example.com/data");
-  if(!(body=="")){ log.info("got data") }el{ log.warn("no data") }
+  if(!(body=="")){ log.info("got data"; @()) }el{ log.warn("no data"; @()) }
 };
 ```
 

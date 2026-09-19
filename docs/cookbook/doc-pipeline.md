@@ -12,7 +12,7 @@ A batch processing pipeline that walks a directory of text files, counts words a
 - Listing directory contents with `file.list`
 - Reading each file with `file.read`
 - Splitting and measuring strings with `str.split`, `str.len`
-- Building summary strings with `str.concat` and `str.fromInt`
+- Building summary strings with `str.concat` and `str.fromint`
 - Emitting structured log output with `log.info` and `log.warn`
 - A `lp` loop over an array with `.len` and `.get(i)`
 
@@ -38,8 +38,8 @@ f=countwords(content:$str):i64{
 };
 
 f=summarise(name:$str;lines:i64;words:i64):$str{
-  let lstr=str.fromInt(lines);
-  let wstr=str.fromInt(words);
+  let lstr=str.fromint(lines);
+  let wstr=str.fromint(words);
   < str.concat(name;
        str.concat(" lines=";
          str.concat(lstr;
@@ -50,12 +50,12 @@ f=processfile(name:$str;content:$str):i64{
   let lines=countlines(content);
   let words=countwords(content);
   let summary=summarise(name; lines; words);
-  log.info(summary);
+  log.info(summary; @());
   < 1
 };
 
 f=skipfile(name:$str):i64{
-  log.warn(str.concat("skipped: "; name));
+  log.warn(str.concat("skipped: "; name); @());
   < 0
 };
 
@@ -71,13 +71,13 @@ f=processdir(dir:$str):i64!$err{
     };
     total=total+counted
   };
-  log.info(str.concat("processed "; str.fromInt(total)));
+  log.info(str.concat("processed "; str.fromint(total)); @());
   < 0
 };
 
 f=main():i64!$err{
   let dir="docs";
-  log.info(str.concat("scanning: "; dir));
+  log.info(str.concat("scanning: "; dir); @());
   processdir(dir)!$err;
   < 0
 };
@@ -89,7 +89,7 @@ f=main():i64!$err{
 
 **`f=countwords`** — Same approach with a space delimiter. This is a simple whitespace split, adequate for plain prose files.
 
-**`f=summarise`** — Assembles the log line for one file. `str.fromInt` converts the integer counts to strings, then a chain of `str.concat` calls builds the final message. toke has no string interpolation, so nesting `str.concat` is the idiomatic approach.
+**`f=summarise`** — Assembles the log line for one file. `str.fromint` converts the integer counts to strings, then a chain of `str.concat` calls builds the final message. toke has no string interpolation, so nesting `str.concat` is the idiomatic approach.
 
 **`f=processfile`** — Called in the `Ok` match arm when a file is successfully read. Computes and logs the word and line counts, then returns `1` so the caller can accumulate a total.
 
@@ -131,5 +131,5 @@ Sample output:
 | Loop | `lp(let i=0; i<n; i=i+1){body}` |
 | Array length | `arr.len` |
 | Array subscript | `arr.get(i)` |
-| Int to string | `str.fromInt(n)` |
+| Int to string | `str.fromint(n)` |
 | Split string | `str.split(s; delim)` |

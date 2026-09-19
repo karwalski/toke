@@ -51,9 +51,9 @@ f=countmatches(rows:@$str;col:i64;target:$str):i64{
 f=buildreport(target:$str;total:i64;cnt:i64):$str{
   let pct=cnt*100/total;
   let line1=str.concat("filter: "; target);
-  let line2=str.concat("total rows: "; str.fromInt(total));
-  let line3=str.concat("matching: "; str.fromInt(cnt));
-  let line4=str.concat("percent: "; str.concat(str.fromInt(pct); "%"));
+  let line2=str.concat("total rows: "; str.fromint(total));
+  let line3=str.concat("matching: "; str.fromint(cnt));
+  let line4=str.concat("percent: "; str.concat(str.fromint(pct); "%"));
   < str.concat(line1;
     str.concat("\n";
       str.concat(line2;
@@ -72,9 +72,9 @@ f=run(csvpath:$str;col:i64;target:$str;outpath:$str):i64!$err{
   };
   let matched=countmatches(allrows; col; target);
   let report=buildreport(target; datarows; matched);
-  log.info(report);
+  log.info(report; @());
   file.write(outpath; report)!$err;
-  log.info(str.concat("report written to "; outpath));
+  log.info(str.concat("report written to "; outpath); @());
   < 0
 };
 

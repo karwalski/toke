@@ -239,7 +239,7 @@ t=$err{msg:$str};
 
 f=firstline(path:$str):$str!$err{
   let content = io.readfile(path)!$err;
-  let lines = str.splitlines(content);
+  let lines = str.split(content; "\n");
   if(lines.len==0 as u64){
     < $err{msg:"empty file"}
   }el{

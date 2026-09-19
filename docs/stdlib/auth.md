@@ -49,7 +49,7 @@ The `std.auth` module provides authentication primitives: JWT creation and valid
 | `auth.jwtsign` | `claims: $jwtclaims; secret: @($byte); alg: $jwtalg` | `$str!$autherr` | Sign claims into a JWT string |
 | `auth.jwtverify` | `token: $str; secret: @($byte)` | `$jwtclaims!$autherr` | Verify a JWT and extract its claims |
 | `auth.jwtexpired` | `claims: $jwtclaims` | `bool` | Check whether a JWT's claims have expired |
-| `auth.apikeygenerate` | `prefix: $str` | `$str` | Generate a random API key with the given prefix |
+| `auth.apikeygenerate` | (none) | `$str` | Generate a random API key (32 random bytes, base64url-encoded) |
 | `auth.apikeyvalidate` | `key: $str; store: $keystore` | `bool!$autherr` | Validate an API key against a key store |
 | `auth.bearerextract` | `header: $str` | `$str!$autherr` | Extract the token from a `Bearer <token>` header value |
 
@@ -62,7 +62,7 @@ i=str:std.str;
 
 f=main():i64{
   let key = str.bytes("mysecret");
-  let apikey = auth.apikeygenerate("app");
+  let apikey = auth.apikeygenerate();
   let header = "Bearer sometoken";
   let tok = mt auth.bearerextract(header) {$ok:t t;$err:e ""};
   <0;

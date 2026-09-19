@@ -162,7 +162,7 @@ f=newuser(id:i64;name:$str;email:$str):$user{
   < $user{id:id;name:name;email:email}
 };
 f=greet(u:$user):void{
-  log.info(u.name)
+  log.info(u.name; @())
 };
 f=main():void{
   let u=newuser(1;"alice";"alice@example.com");
