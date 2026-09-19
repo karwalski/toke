@@ -10,7 +10,26 @@
 #include <string.h>
 #include <stdio.h>
 #include "file.h"
+#include "tk_array.h"
 static int64_t f64_to_i64(double d){int64_t i;memcpy(&i,&d,sizeof(i));return i;}
+
+/*
+ * Story 136.16 — the five typed accessors take (Toon; key).
+ *
+ * stdlib/toon.tki, docs/stdlib/toon.md and toon.h have always declared
+ * toon.str / toon.i64 / toon.f64 / toon.bool / toon.arr as (Toon, str), and
+ * toon.c implements all five that way.  The wrappers below took only the
+ * handle and never called them: str returned t->raw whole, i64 ran strtoll
+ * over the entire document, f64 strtod, bool strcmp'd the document against
+ * "true", and arr took NO arguments at all and returned a freshly calloc'd
+ * empty ToonArray — structurally incapable of returning data.  A caller who
+ * asked for one field got the whole document or nothing, silently.
+ *
+ * Errors are reported the way 114.53/114.54 and 127.67 established: set
+ * tk_current_error and still return the real value, because 0 and false are
+ * legitimate results that the 0 sentinel cannot distinguish from failure.
+ */
+extern int64_t tk_current_error;
 
 int64_t tk_toon_parse_w(int64_t s) {
     if (!s) return 0;
@@ -70,12 +89,12 @@ int64_t tk_toon_tojson_w(int64_t v) {
     return (int64_t)(intptr_t)json;
 }
 
-int64_t tk_toon_i64_w(int64_t v) {
-    /* v is a Toon handle; extract .raw as an integer string */
-    if (!v) return 0;
+int64_t tk_toon_i64_w(int64_t v, int64_t key) {
+    if (!v || !key) { tk_current_error = 1; return 0; }
     Toon *t = (Toon *)(intptr_t)v;
-    if (!t->raw) return 0;
-    return (int64_t)strtoll(t->raw, NULL, 10);
+    I64ToonResult r = toon_i64(*t, (const char *)(intptr_t)key);
+    tk_current_error = r.is_err ? 1 : 0;
+    return r.is_err ? 0 : r.ok;
 }
 
 int64_t tk_toon_getint_w(int64_t obj, int64_t key) {
@@ -99,13 +118,12 @@ int64_t tk_toon_fromstr_w(int64_t s) {
     return tk_toon_dec_w(s);
 }
 
-int64_t tk_toon_bool_w(int64_t v) {
-    if (!v) return 0;
+int64_t tk_toon_bool_w(int64_t v, int64_t key) {
+    if (!v || !key) { tk_current_error = 1; return 0; }
     Toon *t = (Toon *)(intptr_t)v;
-    if (!t->raw) return 0;
-    /* Parse raw value as boolean */
-    if (strcmp(t->raw, "true") == 0 || strcmp(t->raw, "1") == 0) return 1;
-    return 0;
+    BoolToonResult r = toon_bool(*t, (const char *)(intptr_t)key);
+    tk_current_error = r.is_err ? 1 : 0;
+    return r.is_err ? 0 : (int64_t)r.ok;
 }
 
 int64_t tk_toon_deserialize_w(int64_t s) {
@@ -119,28 +137,49 @@ int64_t tk_toon_tostr_w(int64_t v) {
     return (int64_t)(intptr_t)s;
 }
 
-int64_t tk_toon_arr_w(void) {
-    /* Create an empty ToonArray on the heap and return it as a
-     * toke-format array pointer (block[-1]=count, block[0..n-1]=elements).
-     * An empty array has count=0, so we allocate a 1-element block where
-     * block[0] = count = 0, and return &block[1]. */
-    ToonArray *ta = (ToonArray *)calloc(1, sizeof(ToonArray));
-    if (!ta) return 0;
-    ta->data = NULL;
-    ta->len  = 0;
-    return (int64_t)(intptr_t)ta;
+/*
+ * toon.arr(t; key) : @($toon)!$toonerr — every row's value for one field.
+ *
+ * Returns a real toke array (tk_array.h layout) whose elements are heap Toon
+ * handles of the same shape tk_toon_dec_w hands out, so each element can be
+ * fed straight back into toon.str/i64/f64/bool.  The old wrapper took no
+ * arguments and returned a bare `ToonArray *` that toke would have read as an
+ * array handle — its [-1] length word would have been whatever preceded the
+ * calloc block.
+ */
+int64_t tk_toon_arr_w(int64_t v, int64_t key) {
+    if (!v || !key) { tk_current_error = 1; return tk_arr_alloc(0, 0); }
+    Toon *t = (Toon *)(intptr_t)v;
+    ToonArrayResult r = toon_arr(*t, (const char *)(intptr_t)key);
+    if (r.is_err) { tk_current_error = 1; return tk_arr_alloc(0, 0); }
+    tk_current_error = 0;
+
+    int64_t n = (int64_t)r.ok.len;
+    int64_t h = tk_arr_alloc(n, n);
+    if (!h) { tk_current_error = 1; return tk_arr_alloc(0, 0); }
+    int64_t *slots = (int64_t *)(intptr_t)h;
+    for (int64_t i = 0; i < n; i++) {
+        Toon *elem = (Toon *)malloc(sizeof(Toon));
+        if (!elem) { tk_arr_setlen(h, i); tk_current_error = 1; return h; }
+        *elem = r.ok.data[i];
+        slots[i] = (int64_t)(intptr_t)elem;
+    }
+    free(r.ok.data);
+    return h;
 }
 
-int64_t tk_toon_f64_w(int64_t v) {
-    if (!v) return 0;
+int64_t tk_toon_f64_w(int64_t v, int64_t key) {
+    if (!v || !key) { tk_current_error = 1; return f64_to_i64(0.0); }
     Toon *t = (Toon *)(intptr_t)v;
-    if (!t->raw) return 0;
-    double d = strtod(t->raw, NULL);
-    return f64_to_i64(d);
+    F64ToonResult r = toon_f64(*t, (const char *)(intptr_t)key);
+    tk_current_error = r.is_err ? 1 : 0;
+    return f64_to_i64(r.is_err ? 0.0 : r.ok);
 }
 
-int64_t tk_toon_str_w(int64_t v) {
-    if (!v) return 0;
+int64_t tk_toon_str_w(int64_t v, int64_t key) {
+    if (!v || !key) { tk_current_error = 1; return 0; }
     Toon *t = (Toon *)(intptr_t)v;
-    return (int64_t)(intptr_t)t->raw;
+    StrToonResult r = toon_str(*t, (const char *)(intptr_t)key);
+    tk_current_error = r.is_err ? 1 : 0;
+    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
 }

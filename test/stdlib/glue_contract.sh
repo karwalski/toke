@@ -75,6 +75,22 @@ if build math_minmax test/stdlib/math_minmax.tk; then
 fi
 
 echo
+echo "=== 136.16 -- std.toon typed accessors take (Toon; key) ==="
+if build toon_accessors test/stdlib/toon_accessors.tk; then
+    out="$("$TMP/toon_accessors")"
+    expect "toon.str(t; \"name\") == Alice"  "$(line "$out" str.name)"       "Alice"
+    expect "toon.i64(t; \"id\") == 1"        "$(line "$out" i64.id)"         "1"
+    expect "toon.f64(t; \"score\") == 1.5"   "$(line "$out" f64.score)"      "1.5"
+    expect "toon.bool(t; \"active\") is ok"  "$(line "$out" bool.active)"    "1"
+    # A key that is absent must take the \$err arm, not return the document.
+    expect "toon.str of an absent key errs"  "$(line "$out" str.missing)"    "ERR"
+    # arr returned a freshly calloc'd EMPTY array for every input before this.
+    expect "toon.arr(t; \"name\") has 3 rows" "$(line "$out" arr.name.len)"  "3"
+    expect "toon.arr(t; \"id\") has 3 rows"   "$(line "$out" arr.id.len)"    "3"
+    expect "toon.arr of an absent key is empty" "$(line "$out" arr.missing.len)" "0"
+fi
+
+echo
 echo "glue_contract: $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
 exit 0

@@ -1,0 +1,49 @@
+(* toon_accessors.tk -- story 136.16.
+
+   The five typed accessors are declared (Toon; key) by stdlib/toon.tki, by
+   docs/stdlib/toon.md and by toon.h, and toon.c implements all five that way.
+   The _w glue took the handle alone and never called them: str handed back
+   t->raw entire, i64 ran strtoll over the whole document, f64 strtod, bool
+   compared the document against "true", and arr took NO arguments at all and
+   returned an empty ToonArray -- it could not return data under any input.
+
+   This program asks for named fields of a real TOON document and prints what
+   comes back, so a pass means the key reached toon.c rather than being
+   discarded. *)
+m=toonaccessors;
+i=toon:std.toon;
+i=io:std.io;
+i=str:std.str;
+
+f=doc():str{
+  <"users[3]{id,name,active,score}:\n1|Alice|true|1.5\n2|Bob|false|2.5\n3|Carol|true|3.5\n"
+};
+
+f=main():i64{
+  let t=mt toon.dec(doc()) {$ok:v v;$err:e toon.dec("e[0]{x}:\n")};
+
+  let name=mt toon.str(t;"name") {$ok:s s;$err:e "ERR"};
+  io.println("str.name=\(str.concat(name;""))");
+
+  let id=mt toon.i64(t;"id") {$ok:n n;$err:e 0-1};
+  io.println("i64.id=\(id)");
+
+  let score=mt toon.f64(t;"score") {$ok:f f;$err:e 0.0};
+  io.println("f64.score=\(score)");
+
+  let active=mt toon.bool(t;"active") {$ok:b 1;$err:e 0-1};
+  io.println("bool.active=\(active)");
+
+  let missing=mt toon.str(t;"nosuchfield") {$ok:s s;$err:e "ERR"};
+  io.println("str.missing=\(str.concat(missing;""))");
+
+  let names=mt toon.arr(t;"name") {$ok:a a;$err:e @()};
+  io.println("arr.name.len=\(names.len())");
+
+  let ids=mt toon.arr(t;"id") {$ok:a a;$err:e @()};
+  io.println("arr.id.len=\(ids.len())");
+
+  let badarr=mt toon.arr(t;"nosuchfield") {$ok:a a;$err:e @()};
+  io.println("arr.missing.len=\(badarr.len())");
+  <0
+};
