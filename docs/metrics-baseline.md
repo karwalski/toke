@@ -108,10 +108,16 @@ script reproduces it). A claim nobody can reproduce is worse than no claim.
 Added 2026-09-19 (story 132.22, measured by 134.6): loke's **"a lightweight local
 classifier analyses each prompt in under 10ms"**
 (`toke-website/templates/loke.tkt`). It is a claim about loke's prompt intent
-classifier, not about web serving; loke is not in this workspace, no artefact in
-any repo measures classifier latency, and the 134.6 serving benchmark cannot
-source it. Deleted on the same grounds as loke's "698 `.tk` files / 87,318
-lines".
+classifier, not about web serving, and the 134.6 serving benchmark measures a
+different thing entirely. **This claim does have a source, and the source
+retires it:** loke's own withdrawn-claims table (`loke/docs/metrics-baseline.md`)
+lists "**< 10ms** (intent classification) | README, design-principles, website |
+No timing test exists anywhere. The classifier is a keyword and pattern
+cascade", and `loke/README.md` already restates it and the "< 1 second" pipeline
+overhead as "**Targets, not measurements** … Neither is currently benchmarked".
+So the figure was never a measurement in the first place; our site published a
+design target as an observed latency. Deleting it from the site is the correct
+outcome and loke's register is where it is recorded.
 
 Also 2026-09-19 (132.22): the **`<5ms TTFB`** stat tile on `/ooke`
 (`toke-website/templates/ooke.tkt`). Unlike the others this number is not false —
@@ -126,6 +132,28 @@ Also 2026-09-19 (132.22): three surviving copies of loke's withdrawn scale, foun
 by re-grepping after the 132.14 deletion above — "+ 698 loke production modules"
 in `toke-website/templates/tokenizer.tkt` and its `static/tokenizer.html` mirror,
 and "(87K lines of working toke)" in `toke-console/templates/home.php`. Removed.
+
+**Correction to the grounds, same day.** 132.14 and the first version of this
+entry said loke could not be counted because "the loke tree is not in this
+workspace". True of `~/tk`, and the wrong reason to give: a working copy of
+`github.com/karwalski/loke` exists outside this workspace, it was counted
+(read-only) at commit `b9bc9a9`, and loke keeps its own claims register. The
+published figures split three ways rather than all being unsourceable:
+
+| Published | Status |
+|---|---|
+| **172 modules** | **Sourced.** `loke/docs/epics-and-stories.md` and `loke/docs/linker-gaps.md` both state "all 172 modules compile" — a count of loke's own modules, which is *not* the same unit as a `.tk` file count. Age unverified. |
+| **80,000+ lines** | **True.** `git ls-files '*.tk'` at `b9bc9a9` gives **85,059** lines. |
+| **698 `.tk` files** / "698 loke production modules" | **Does not reproduce: 692 tracked.** It also conflates the two units above — loke has 172 modules, not 698 — so the site was quoting a file count under the word "modules". |
+| **87,318 lines** / "87K lines" | **Does not reproduce: 85,059 tracked.** |
+| **699 companion files** | 703 in the working tree (`docs/spec/toke-spec-v0.3.md`, historical). |
+
+The working copy is **dirty — 554 modified paths** — so the untracked-inclusive
+counts (702 files / 85,646 lines) are not a citable basis, and none of these is
+restored to a public surface: the counts move with the tree and no manifest pins
+them. The two site withdrawals stand on their own numbers failing to reproduce,
+not on loke being unreachable.
+
 The two surviving statements of the corpus split ("25,953 v0.3 toke programs +
 698 loke modules" and "25,953 records — 18,890 synthetic + 6,069 from loke")
 **contradict each other** about whether the 25,953 includes loke at all; the
@@ -263,11 +291,13 @@ verdict is re-opened and has not been re-decided here.** See
 - **Sustained-load behaviour.** The longest load window in 134.6 is 3 s, and RSS
   is still climbing at 20,000 requests. Nothing measures an hour, a day, or
   production hardware.
-- **loke's scale, and anything else about loke.** The loke tree is not in this
-  workspace and no manifest in any repo records its file count, line count or
-  classifier latency. Every loke figure any surface has ever published is
-  withdrawn (above); none can be restored until the tree is checked out and
-  counted.
+- **loke's scale, and anything else about loke.** A working copy exists outside
+  this workspace and was counted on 2026-09-19 (above): the published figures do
+  not reproduce against it, the tree is dirty, and no manifest in any repo
+  defines "module" or "production" or records classifier latency. Every loke
+  figure any surface has ever published stays withdrawn. What would lift this is
+  a pinned manifest in the loke repo — a commit, a file glob and a count — not
+  another ad-hoc `find`.
 
 ---
 
