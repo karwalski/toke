@@ -113,3 +113,62 @@ int64_t tk_llm_countokens_w(int64_t client, int64_t text) {
     TkLlmClient *c = (TkLlmClient *)(intptr_t)client;
     return (int64_t)llm_countokens(c, (const char *)(intptr_t)text);
 }
+
+/*
+ * Story 136.32 — llm.chatstream / llm.streamnext.
+ *
+ * llm_chatstream() and llm_streamnext() have been in llm.c and declared in
+ * llm.h since the module shipped, and stdlib/llm.tki exports both; neither
+ * had a wrapper, so all three streaming examples on docs/stdlib/llm.md —
+ * the feature the page spends a third of its length on — failed at link.
+ *
+ * `$llmstream{id:u64}` is a one-slot struct, so the C TkLlmStream (a chunk
+ * array) and the read cursor live in a small process-local registry keyed by
+ * that id. Ids start at 1, which makes the empty `$llmstream{}` the documented
+ * $err arm constructs (id 0) an already-exhausted stream: llm.streamnext on it
+ * returns "" and the documented `if(str.len(chunk)==0){br;}` loop exits at
+ * once, rather than reading through a null pointer.
+ */
+#define TK_LLM_MAX_STREAMS 32
+
+typedef struct { TkLlmStream s; uint64_t cursor; int used; } TkLlmStreamSlot;
+static TkLlmStreamSlot g_llm_streams[TK_LLM_MAX_STREAMS];
+static int             g_llm_nstreams = 0;
+
+int64_t tk_llm_chatstream_w(int64_t client, int64_t messages) {
+    if (!client) { tk_current_error = 1; return 0; }
+    TkLlmClient *c = (TkLlmClient *)(intptr_t)client;
+    uint64_t n = 0;
+    TkLlmMsg *msgs = decode_llm_msgs(messages, &n);
+    if (!msgs) { tk_current_error = 1; return 0; }
+    TkLlmStream s = llm_chatstream(c, msgs, n, 0.7);
+    free(msgs);
+    if (s.is_err || g_llm_nstreams >= TK_LLM_MAX_STREAMS) {
+        tk_current_error = 1;
+        return 0;
+    }
+    tk_current_error = 0;
+    int idx = g_llm_nstreams++;
+    g_llm_streams[idx].s      = s;
+    g_llm_streams[idx].cursor = 0;
+    g_llm_streams[idx].used   = 1;
+
+    int64_t *block = (int64_t *)malloc(sizeof(int64_t));
+    if (!block) { tk_current_error = 1; return 0; }
+    block[0] = (int64_t)idx + 1;          /* $llmstream.id, 1-based */
+    return (int64_t)(intptr_t)block;
+}
+
+int64_t tk_llm_streamnext_w(int64_t stream) {
+    if (!stream) { tk_current_error = 1; return (int64_t)(intptr_t)""; }
+    int64_t id = ((int64_t *)(intptr_t)stream)[0];
+    if (id <= 0 || id > g_llm_nstreams || !g_llm_streams[id - 1].used) {
+        /* the empty $llmstream{} of the documented $err arm: nothing to read */
+        tk_current_error = 0;
+        return (int64_t)(intptr_t)"";
+    }
+    TkLlmStreamSlot *slot = &g_llm_streams[id - 1];
+    const char *chunk = llm_streamnext(&slot->s, &slot->cursor);
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)(chunk ? chunk : "");
+}

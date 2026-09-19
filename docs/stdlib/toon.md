@@ -56,6 +56,21 @@ f=main():i64{
 }
 ```
 
+### toon.empty(): $toon
+
+Returns the empty TOON document. Use it as the `$err` arm of a `mt` over
+`toon.dec`, where the match has to produce a `$toon` and the only other
+constructor is the call that has just failed.
+
+```toke
+m=app;
+i=toon:std.toon;
+f=demo():i64{
+  let empty=toon.empty();
+  < 0
+};
+```
+
 ### toon.dec(s: $str): $toon!$toonerr
 
 Parses a TOON string into a `Toon` value. Returns `$toonerr.$parse` if the input is not valid TOON.

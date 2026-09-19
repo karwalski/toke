@@ -47,6 +47,21 @@ f=demo():i64{
 };
 ```
 
+### yaml.empty(): $yaml
+
+Returns the empty YAML document. Use it as the `$err` arm of a `mt` over
+`yaml.dec`, where the match has to produce a `$yaml` and the only other
+constructor is the call that has just failed.
+
+```toke
+m=app;
+i=yaml:std.yaml;
+f=demo():i64{
+  let empty=yaml.empty();
+  < 0
+};
+```
+
 ### yaml.dec(s: $str): $yaml!$yamlerr
 
 Parses a YAML string into a `Yaml` value. Returns `$yamlerr.$parse` if the input is empty or invalid.

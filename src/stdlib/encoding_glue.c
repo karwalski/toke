@@ -146,3 +146,17 @@ int64_t tk_encoding_jsonfieldint_w(int64_t json_str, int64_t key) {
     }
     return 0;
 }
+
+/*
+ * Story 136.32 — encoding.b64urlencode([byte]) : $str.
+ *
+ * encoding_b64urlencode() has always been in encoding.c, and the wrapper
+ * above (tk_encoding_base64urlencodenopad_w) already calls it — under a name
+ * stdlib/encoding.tki does not export. The DOCUMENTED spelling,
+ * `enc.b64urlencode`, had no symbol, so the example on
+ * docs/stdlib/encoding.md failed at link one line after a b64encode that
+ * worked.
+ */
+int64_t tk_encoding_b64urlencode_w(int64_t data) {
+    return tk_encoding_base64urlencodenopad_w(data);
+}

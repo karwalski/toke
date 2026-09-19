@@ -9,15 +9,6 @@
 # defined in src/stdlib/*.c, and closing the gap needs an implementation or
 # naming decision rather than a mechanical fix.
 
-# ── analytics ──
-analytics.tki::analytics.describe           # 2026-09-19 C core analytics_* in analytics.c, no _w glue; core=analytics_describe [131.38-followup]
-analytics.tki::analytics.groupstats         # 2026-09-19 C core analytics_* in analytics.c, no _w glue; core=analytics_groupstats [131.38-followup]
-analytics.tki::analytics.timeseries         # 2026-09-19 C core analytics_* in analytics.c, no _w glue; core=analytics_timeseries [131.38-followup]
-analytics.tki::analytics.anomalies          # 2026-09-19 C core analytics_* in analytics.c, no _w glue; core=analytics_anomalies [131.38-followup]
-analytics.tki::analytics.pivot              # 2026-09-19 C core analytics_* in analytics.c, no _w glue; core=analytics_pivot [131.38-followup]
-analytics.tki::analytics.corr               # 2026-09-19 C core analytics_* in analytics.c, no _w glue; core=analytics_corr [131.38-followup]
-# ── args ──
-args.tki::args.all                     # 2026-09-19 C core args_all in args.c, no _w glue; core=args_all [131.38-followup]
 # ── canvas ──
 canvas.tki::canvas.strokerect            # 2026-09-19 C core canvas_* in canvas.c, canvas_glue.c only wraps new/fillrect/filltext/tohtml; core=canvas_stroke_rect [101.R3c]
 canvas.tki::canvas.clearrect             # 2026-09-19 C core canvas_* in canvas.c, canvas_glue.c only wraps new/fillrect/filltext/tohtml; core=canvas_clear_rect [101.R3c]
@@ -40,14 +31,12 @@ chart.tki::chart.tovega                 # 2026-09-19 no _w glue; core=chart_tove
 dashboard.tki::dashboard.addtable           # 2026-09-19 no _w glue; core=dashboard_addtable [101.R3c]
 dashboard.tki::dashboard.update             # 2026-09-19 no _w glue; core=dashboard_update [101.R3c]
 # ── dataframe ──
-dataframe.tki::df.fromrows                  # 2026-09-19 no _w glue; no C impl [101.R3c]
 dataframe.tki::df.column                    # 2026-09-19 no _w glue; no C impl [101.R3c]
 dataframe.tki::df.join                      # 2026-09-19 no _w glue; no C impl [101.R3c]
 dataframe.tki::df.head                      # 2026-09-19 no _w glue; no C impl [101.R3c]
 dataframe.tki::df.tojson                    # 2026-09-19 no _w glue; no C impl [101.R3c]
 dataframe.tki::df.schema                    # 2026-09-19 no _w glue; no C impl [101.R3c]
 # ── encoding ──
-encoding.tki::encoding.b64urlencode        # 2026-09-19 C core encoding_b64urlencode lives in acme.c, no _w glue (only base64urlencodenopad_w exists) [131.38-followup]
 encoding.tki::encoding.b64urldecode        # 2026-09-19 C core encoding_b64urldecode lives in acme.c, no _w glue [131.38-followup]
 # ── html ──
 html.tki::html.script                  # 2026-09-19 no _w glue; core=html_script [131.38-followup]
@@ -61,45 +50,23 @@ http.tki::http.res.json                # 2026-09-19 spec spelling http.res.* is 
 http.tki::http.res.bad                 # 2026-09-19 spec spelling http.res.* is a dotted export the resolver cannot reach; callable form is http.resok/resjson/resbad/reserr (llvm.c map) — pick one spelling; no C impl [131.38-followup]
 http.tki::http.res.err                 # 2026-09-19 spec spelling http.res.* is a dotted export the resolver cannot reach; callable form is http.resok/resjson/resbad/reserr (llvm.c map) — pick one spelling; no C impl [131.38-followup]
 # ── image ──
-image.tki::image.decode                 # 2026-09-19 C core image_* in image.c, no _w glue; core=image_decode [131.38-followup]
-image.tki::image.encode                 # 2026-09-19 C core image_* in image.c, no _w glue; core=image_encode [131.38-followup]
-image.tki::image.resize                 # 2026-09-19 C core image_* in image.c, no _w glue; core=image_resize [131.38-followup]
-image.tki::image.crop                   # 2026-09-19 C core image_* in image.c, no _w glue; core=image_crop [131.38-followup]
 image.tki::image.tograyscale            # 2026-09-19 C core image_* in image.c, no _w glue; core=image_to_grayscale [131.38-followup]
 image.tki::image.fliph                  # 2026-09-19 C core image_* in image.c, no _w glue; core=image_flip_h [131.38-followup]
 image.tki::image.flipv                  # 2026-09-19 C core image_* in image.c, no _w glue; core=image_flip_v [131.38-followup]
-image.tki::image.pixelat                # 2026-09-19 C core image_* in image.c, no _w glue; core=image_pixel_at [131.38-followup]
-image.tki::image.fromraw                # 2026-09-19 C core image_* in image.c, no _w glue; core=image_from_raw [131.38-followup]
 # ── json ──
 json.tki::json.streamparser            # 2026-09-19 C core json_stream*/json_newwriter in json.c, no _w glue (102.16 residual gap); json*.c owned by another stream, not touched here; core=json_streamparser [102.16]
 json.tki::json.streamnext              # 2026-09-19 C core json_stream*/json_newwriter in json.c, no _w glue (102.16 residual gap); json*.c owned by another stream, not touched here; core=json_streamnext [102.16]
 json.tki::json.streamemit              # 2026-09-19 C core json_stream*/json_newwriter in json.c, no _w glue (102.16 residual gap); json*.c owned by another stream, not touched here; core=json_streamemit [102.16]
 json.tki::json.newwriter               # 2026-09-19 C core json_stream*/json_newwriter in json.c, no _w glue (102.16 residual gap); json*.c owned by another stream, not touched here; core=json_newwriter [102.16]
 json.tki::json.writerbytes             # 2026-09-19 C core json_stream*/json_newwriter in json.c, no _w glue (102.16 residual gap); json*.c owned by another stream, not touched here; core=json_writerbytes [102.16]
-# ── llm ──
-llm.tki::llm.chatstream               # 2026-09-19 no _w glue (llm.c has chat/complete only); core=llm_chatstream [131.38-followup]
-llm.tki::llm.streamnext               # 2026-09-19 no _w glue (llm.c has chat/complete only); core=llm_streamnext [131.38-followup]
 # ── math ──
 math.tki::math.hypot                   # 2026-09-19 no _w glue and not in llvm.c libc map; core=math_hypot [131.38-followup]
-# ── md ──
-md.tki::md.renderfile                # 2026-09-19 no _w glue; core=md_render_file [131.38-followup]
 # ── mdns ──
 mdns.tki::mdns.resolve                 # 2026-09-19 no _w glue; core=mdns_resolve [131.38-followup]
 mdns.tki::mdns.isavailable             # 2026-09-19 no _w glue; core=mdns_is_available [131.38-followup]
-# ── ml ──
-ml.tki::ml.kmeanstrain               # 2026-09-19 no _w glue (ml.c has linreg only); core=ml_kmeanstrain [131.38-followup]
-ml.tki::ml.kmeansassign              # 2026-09-19 no _w glue (ml.c has linreg only); core=ml_kmeansassign [131.38-followup]
-ml.tki::ml.dtreefit                  # 2026-09-19 no _w glue (ml.c has linreg only); core=ml_dtreefit [131.38-followup]
-ml.tki::ml.dtreepredict              # 2026-09-19 no _w glue (ml.c has linreg only); core=ml_dtreepredict [131.38-followup]
-ml.tki::ml.knnpredict                # 2026-09-19 no _w glue (ml.c has linreg only); core=ml_knnpredict [131.38-followup]
 # ── mlx ──
 mlx.tki::mlx.unload                   # 2026-09-19 no _w glue; core=mlx_unload [131.38-followup]
 mlx.tki::mlx.embed                    # 2026-09-19 no _w glue; core=mlx_embed [131.38-followup]
-# ── sse ──
-sse.tki::sse.emit                     # 2026-09-19 C core sse_* in sse.c, no _w glue; core=sse_emit [131.38-followup]
-sse.tki::sse.emitdata                 # 2026-09-19 C core sse_* in sse.c, no _w glue; core=sse_emitdata [131.38-followup]
-sse.tki::sse.close                    # 2026-09-19 C core sse_* in sse.c, no _w glue; core=sse_close [131.38-followup]
-sse.tki::sse.keepalive                # 2026-09-19 C core sse_* in sse.c, no _w glue; core=sse_keepalive [131.38-followup]
 # ── template ──
 template.tki::tpl.html                     # 2026-09-19 no _w glue for tpl.html; no C impl [131.38-followup]
 # ── tls ──
@@ -108,20 +75,5 @@ tls.tki::tls.connect                  # 2026-09-19 no _w glue (tls_glue.c expose
 tls.tki::tls.peercert                 # 2026-09-19 no _w glue (tls_glue.c exposes listentls/connecttls/read/write/close/tlsconfig/genselfsigned); core=tls_peer_cert [131.38-followup]
 tls.tki::tls.fingerprint              # 2026-09-19 no _w glue (tls_glue.c exposes listentls/connecttls/read/write/close/tlsconfig/genselfsigned); core=tls_fingerprint [131.38-followup]
 tls.tki::tls.pairingcode              # 2026-09-19 no _w glue (tls_glue.c exposes listentls/connecttls/read/write/close/tlsconfig/genselfsigned); core=tls_pairing_code [131.38-followup]
-# ── toml ──
-toml.tki::toml.loadfile                # 2026-09-19 no _w glue; core=toml_load_file [131.38-followup]
-# ── toon ──
-toon.tki::toon.fromjson                # 2026-09-19 no _w glue (toon.tojson exists, fromjson does not); core=toon_from_json [131.38-followup]
 # ── ws ──
 ws.tki::ws.sendbytes                 # 2026-09-19 no _w glue; core=ws_sendbytes [131.38-followup]
-ws.tki::ws.broadcast                 # 2026-09-19 no _w glue; core=ws_broadcast [131.38-followup]
-# ── yaml ──
-yaml.tki::yaml.enc                     # 2026-09-19 yaml.tki declares enc/dec/str/i64/f64/bool/arr/fromjson/tojson (yaml.h core) but tk_web_glue.c exposes a different API (load/parse/getstring/getrootmap/...); .tki and glue describe different APIs — decide canonical; core=yaml_enc [131.38-followup]
-yaml.tki::yaml.dec                     # 2026-09-19 yaml.tki declares enc/dec/str/i64/f64/bool/arr/fromjson/tojson (yaml.h core) but tk_web_glue.c exposes a different API (load/parse/getstring/getrootmap/...); .tki and glue describe different APIs — decide canonical; core=yaml_dec [131.38-followup]
-yaml.tki::yaml.str                     # 2026-09-19 yaml.tki declares enc/dec/str/i64/f64/bool/arr/fromjson/tojson (yaml.h core) but tk_web_glue.c exposes a different API (load/parse/getstring/getrootmap/...); .tki and glue describe different APIs — decide canonical; core=yaml_str [131.38-followup]
-yaml.tki::yaml.i64                     # 2026-09-19 yaml.tki declares enc/dec/str/i64/f64/bool/arr/fromjson/tojson (yaml.h core) but tk_web_glue.c exposes a different API (load/parse/getstring/getrootmap/...); .tki and glue describe different APIs — decide canonical; core=yaml_i64 [131.38-followup]
-yaml.tki::yaml.f64                     # 2026-09-19 yaml.tki declares enc/dec/str/i64/f64/bool/arr/fromjson/tojson (yaml.h core) but tk_web_glue.c exposes a different API (load/parse/getstring/getrootmap/...); .tki and glue describe different APIs — decide canonical; core=yaml_f64 [131.38-followup]
-yaml.tki::yaml.bool                    # 2026-09-19 yaml.tki declares enc/dec/str/i64/f64/bool/arr/fromjson/tojson (yaml.h core) but tk_web_glue.c exposes a different API (load/parse/getstring/getrootmap/...); .tki and glue describe different APIs — decide canonical; core=yaml_bool [131.38-followup]
-yaml.tki::yaml.arr                     # 2026-09-19 yaml.tki declares enc/dec/str/i64/f64/bool/arr/fromjson/tojson (yaml.h core) but tk_web_glue.c exposes a different API (load/parse/getstring/getrootmap/...); .tki and glue describe different APIs — decide canonical; core=yaml_arr [131.38-followup]
-yaml.tki::yaml.fromjson                # 2026-09-19 yaml.tki declares enc/dec/str/i64/f64/bool/arr/fromjson/tojson (yaml.h core) but tk_web_glue.c exposes a different API (load/parse/getstring/getrootmap/...); .tki and glue describe different APIs — decide canonical; core=yaml_from_json [131.38-followup]
-yaml.tki::yaml.tojson                  # 2026-09-19 yaml.tki declares enc/dec/str/i64/f64/bool/arr/fromjson/tojson (yaml.h core) but tk_web_glue.c exposes a different API (load/parse/getstring/getrootmap/...); .tki and glue describe different APIs — decide canonical; core=yaml_to_json [131.38-followup]

@@ -133,7 +133,7 @@ f=demo():void{
   lp(let n=0;n<4096;n=n+1){
     let chunk=mt llm.streamnext(stream) {$ok:t t;$err:e ""};
     if(str.len(chunk)==0){br;};
-    io.write(chunk);
+    io.print(chunk);
   };
 };
 ```
@@ -210,13 +210,13 @@ f=main():i64{
   let c=llm.client("https://api.openai.com/v1";key;"gpt-4o");
   let msgusr=$llmmsg{role:"user";content:"Write a haiku about compilers."};
   let msgs=@(msgusr;msgusr);
-  let stream=mt llm.chatstream(c;msgs) {$ok:s s;$err:e llm.emptystream()};
+  let stream=mt llm.chatstream(c;msgs) {$ok:s s;$err:e $llmstream{}};
   lp(let n=0;n<4096;n=n+1){
     let chunk=mt llm.streamnext(stream) {$ok:t t;$err:e ""};
     if(str.len(chunk)==0){br;};
-    io.write(chunk);
+    io.print(chunk);
   };
-  io.writeln("");
+  io.println("");
   <0;
 };
 ```

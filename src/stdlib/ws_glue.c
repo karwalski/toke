@@ -49,3 +49,32 @@ int64_t tk_ws_close_w(int64_t conn) {
     ws_conn_free((WsConn *)(intptr_t)conn);
     return 0;
 }
+
+/*
+ * Story 136.32 — ws.broadcast(conns: @($wsconn); text: $str) : void.
+ *
+ * ws_broadcast() has been in ws.c and declared in ws.h since the module
+ * shipped and stdlib/ws.tki exports it; the wrapper was missing, so the
+ * multi-connection example on docs/stdlib/ws.md failed at link. A toke
+ * `@($wsconn)` is an array handle whose slots are the same connection
+ * handles tk_ws_connect_w returns, so the slot block is already the
+ * `WsConn **` ws_broadcast wants — but a slot can be 0 when a connect failed
+ * and the caller took the $err arm, so nulls are compacted out first rather
+ * than handed to ws_send.
+ */
+#include "tk_array.h"
+
+int64_t tk_ws_broadcast_w(int64_t conns, int64_t text) {
+    if (!conns || !text) return 0;
+    int64_t n = tk_arr_len(conns);
+    if (n <= 0) return 0;
+    int64_t *slots = (int64_t *)(intptr_t)conns;
+    WsConn **live = (WsConn **)malloc((size_t)n * sizeof(WsConn *));
+    if (!live) return 0;
+    uint64_t count = 0;
+    for (int64_t i = 0; i < n; i++)
+        if (slots[i]) live[count++] = (WsConn *)(intptr_t)slots[i];
+    if (count) ws_broadcast(live, count, (const char *)(intptr_t)text);
+    free(live);
+    return 0;
+}

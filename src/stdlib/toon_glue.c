@@ -183,3 +183,31 @@ int64_t tk_toon_str_w(int64_t v, int64_t key) {
     tk_current_error = r.is_err ? 1 : 0;
     return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
 }
+
+/*
+ * Story 136.32 — toon.fromjson and toon.empty.
+ *
+ * toon.fromjson has been in stdlib/toon.tki and documented on
+ * docs/stdlib/toon.md since the module shipped, and toon_from_json() has been
+ * in toon.c beside toon_to_json() all along; only the wrapper was missing, so
+ * two documented examples could not be built. tk_toon_tojson_w was here; its
+ * twin never was.
+ *
+ * toon.empty() is the other half of the same omission. Three documented
+ * examples write `mt toon.dec(...) {$ok:v v; $err:e toon.empty()}` because the
+ * $err arm has to produce a $toon and toon.dec — the call that just failed —
+ * was the module's only constructor. Declared in stdlib/toon.tki alongside
+ * this wrapper. std.yaml carries the identical pair.
+ */
+int64_t tk_toon_fromjson_w(int64_t json) {
+    if (!json) return 0;
+    const char *s = toon_from_json((const char *)(intptr_t)json);
+    return (int64_t)(intptr_t)s;
+}
+
+int64_t tk_toon_empty_w(void) {
+    Toon *heap = (Toon *)malloc(sizeof(Toon));
+    if (!heap) return 0;
+    heap->raw = "";
+    return (int64_t)(intptr_t)heap;
+}

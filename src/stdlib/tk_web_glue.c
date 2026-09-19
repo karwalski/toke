@@ -43,7 +43,6 @@ extern int64_t tk_current_error;
 #include "ws.h"
 #include "auth.h"
 #include "task.h"
-#include "yaml.h"
 #include "toon.h"
 #include "llm.h"
 #include "llm_tool.h"
@@ -1781,89 +1780,9 @@ int64_t tk_uuid_v4_w(void) {
     return (int64_t)(intptr_t)uuid;
 }
 
-/* ── yaml wrappers (yaml.h) ────────────────────────────────────────── */
-
-/* Yaml handles are stored as heap-allocated Yaml structs cast to i64. */
-
-int64_t tk_yaml_parse_w(int64_t s) {
-    if (!s) return 0;
-    YamlResult r = yaml_dec((const char *)(intptr_t)s);
-    if (r.is_err) return 0;
-    Yaml *heap = (Yaml *)malloc(sizeof(Yaml));
-    if (!heap) return 0;
-    *heap = r.ok;
-    return (int64_t)(intptr_t)heap;
-}
-
-int64_t tk_yaml_stringify_w(int64_t val) {
-    if (!val) return 0;
-    const char *s = yaml_enc((const char *)(intptr_t)val);
-    return (int64_t)(intptr_t)s;
-}
-
-int64_t tk_yaml_load_w(int64_t path) {
-    if (!path) return 0;
-    StrFileResult fr = file_read((const char *)(intptr_t)path);
-    if (fr.is_err || !fr.ok) return 0;
-    YamlResult r = yaml_dec(fr.ok);
-    if (r.is_err) return 0;
-    Yaml *heap = (Yaml *)malloc(sizeof(Yaml));
-    if (!heap) return 0;
-    *heap = r.ok;
-    return (int64_t)(intptr_t)heap;
-}
-
-int64_t tk_yaml_print_w(int64_t v) {
-    if (!v) return 0;
-    const char *s = yaml_enc((const char *)(intptr_t)v);
-    if (s) printf("%s\n", s);
-    return 0;
-}
-
-int64_t tk_yaml_getnestedmap_w(int64_t m, int64_t key) {
-    if (!m || !key) return 0;
-    Yaml *y = (Yaml *)(intptr_t)m;
-    StrYamlResult r = yaml_str(*y, (const char *)(intptr_t)key);
-    if (r.is_err || !r.ok) return 0;
-    /* Treat the string value as raw YAML for a nested map */
-    YamlResult nested = yaml_dec(r.ok);
-    if (nested.is_err) return 0;
-    Yaml *heap = (Yaml *)malloc(sizeof(Yaml));
-    if (!heap) return 0;
-    *heap = nested.ok;
-    return (int64_t)(intptr_t)heap;
-}
-
-int64_t tk_yaml_getrootmap_w(int64_t doc) {
-    /* The parsed Yaml IS the root map; return it as-is */
-    return doc;
-}
-
-int64_t tk_yaml_getstring_w(int64_t m, int64_t key) {
-    if (!m || !key) return 0;
-    Yaml *y = (Yaml *)(intptr_t)m;
-    StrYamlResult r = yaml_str(*y, (const char *)(intptr_t)key);
-    if (r.is_err) return 0;
-    return (int64_t)(intptr_t)r.ok;
-}
-
-int64_t tk_yaml_maphaskey_w(int64_t m, int64_t key) {
-    if (!m || !key) return 0;
-    Yaml *y = (Yaml *)(intptr_t)m;
-    StrYamlResult r = yaml_str(*y, (const char *)(intptr_t)key);
-    return r.is_err ? 0 : 1;
-}
-
-int64_t tk_yaml_splitstr_w(int64_t s, int64_t delim) {
-    if (!s) return 0;
-    const char *str = (const char *)(intptr_t)s;
-    const char *d = delim ? (const char *)(intptr_t)delim : ",";
-    StrArray parts = str_split(str, d);
-    StrArray *heap = (StrArray *)malloc(sizeof(StrArray));
-    if (!heap) return 0;
-    *heap = parts;
-    return (int64_t)(intptr_t)heap;
-}
+/* yaml wrappers moved to src/stdlib/yaml_glue.c in 136.32 so
+ * `i=yaml:std.yaml` links on its own, and so the nine documented
+ * entry points (which had no wrapper at all) live beside them. */
 
 /* ── toon wrappers (toon.h) ────────────────────────────────────────── */
 

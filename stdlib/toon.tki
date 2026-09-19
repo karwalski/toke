@@ -8,6 +8,7 @@
       {"name": "Type",    "type": "str"},
       {"name": "Missing", "type": "str"}
     ]},
+    {"kind": "func", "name": "toon.empty",   "params": [],                    "return": "Toon"},
     {"kind": "func", "name": "toon.enc",     "params": ["str"],              "return": "str"},
     {"kind": "func", "name": "toon.dec",     "params": ["str"],              "return": "Toon!ToonErr"},
     {"kind": "func", "name": "toon.str",     "params": ["Toon", "str"],      "return": "str!ToonErr"},

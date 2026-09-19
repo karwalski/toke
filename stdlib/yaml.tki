@@ -8,6 +8,7 @@
       {"name": "Type",    "type": "str"},
       {"name": "Missing", "type": "str"}
     ]},
+    {"kind": "func", "name": "yaml.empty",   "params": [],                    "return": "Yaml"},
     {"kind": "func", "name": "yaml.enc",     "params": ["str"],              "return": "str"},
     {"kind": "func", "name": "yaml.dec",     "params": ["str"],              "return": "Yaml!YamlErr"},
     {"kind": "func", "name": "yaml.str",     "params": ["Yaml", "str"],      "return": "str!YamlErr"},

@@ -57,16 +57,16 @@ static const StdlibModule stdlib_table[] = {
     { "math",          "math.c math_glue.c",                    "",                                                                 "-lm" },
     { "json",          "json.c json_glue.c",                    "",                                                                 "" },
     { "toon",          "toon.c toon_glue.c",                                "file",                                                                 "" },
-    { "yaml",          "yaml.c",                                "",                                                                 "" },
+    { "yaml",          "yaml.c yaml_glue.c",                    "file str",                                                         "" },  /* 136.32 */
     { "i18n",          "i18n.c i18n_glue.c",                                "collections str",                                                                 "" },
     { "time",          "tk_time.c time_glue.c",                 "",                                                                 "" },
     { "test",          "tk_test.c test_glue.c",                 "",                                                                 "" },
     { "log",           "log.c log_glue.c",                      "time",                                                             "-lz" },
     { "ws",            "ws.c ws_glue.c",                                  "",                                                                 "" },
-    { "sse",           "sse.c",                                 "",                                                                 "" },
+    { "sse",           "sse.c sse_glue.c",                      "",                                                                 "" },  /* 136.32 */
     { "net",           "net.c net_glue.c",                      "",                                                                 "" },
     { "sys",           "sys.c sys_glue.c",                       "",                                                                 "" },
-    { "image",         "image.c",                               "",                                                                 "" },
+    { "image",         "image.c image_glue.c",                  "",                                                                 "" },  /* 136.32 */
     { "canvas",        "canvas.c canvas_glue.c",                              "",                                                                 "" },
     { "chart",         "chart.c chart_glue.c",                  "",                                                                 "" },
     { "html",          "html.c html_glue.c",                                "",                                                                 "" },
@@ -76,8 +76,8 @@ static const StdlibModule stdlib_table[] = {
     { "ml",            "ml.c ml_glue.c",                        "",                                                                 "-lm" },
     { "encrypt",       "encrypt.c encrypt_glue.c",              "crypto encoding str",                                              "" },
     { "auth",          "auth.c auth_glue.c",                    "encoding crypto str",                                              "" },
-    { "dataframe",     "dataframe.c",                           "csv str",                                                          "" },
-    { "analytics",     "analytics.c",                           "dataframe csv str math",                                           "-lm" },
+    { "dataframe",     "dataframe.c dataframe_glue.c",          "csv str",                                                          "" },  /* 136.32 */
+    { "analytics",     "analytics.c analytics_glue.c",          "dataframe csv str math",                                           "-lm" },  /* 136.32 */
     { "router",        "router.c router_glue.c",                "ws",                                                               "-lz" },
     { "dashboard",     "dashboard.c",                           "chart html router",                                                "-lz" },
     { "http",          "http.c http2.c acme.c proxy.c cache.c content.c metrics.c server_ops.c ws_server.c hooks.c tk_web_glue.c",

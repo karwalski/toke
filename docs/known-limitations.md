@@ -338,3 +338,47 @@ Unresolved name errors (E3011) do not suggest similar names via fuzzy matching.
 There is no package manager. The `tkc pkg` CLI commands (init, add, remove,
 resolve, fetch, list) are backlogged (Stories 76.1.3a-d). Package registry is
 deferred to v0.6+.
+
+---
+
+## Documented calls that never existed (story 136.32, 2026-09-20)
+
+Until story 136.26 the documentation gate only type-checked its examples; it
+never linked them. A documented call to a function that exists nowhere
+type-checks cleanly, so 42 functions were documented across the reference
+pages with no implementation reachable behind them. All 42 turned out to have
+a complete C implementation in `src/stdlib/*.c` and a normative declaration in
+the module's `.tki` — what was missing in every case was the i64-ABI wrapper
+that maps the toke call to the C symbol. **Nothing was withdrawn**: the
+wrappers were written, and the modules below now work as their pages describe.
+
+Newly reachable: the whole of **std.yaml** (nine functions — the module was
+documented end to end and entirely uncallable), all six of **std.analytics**,
+five of **std.ml** (k-means, decision tree, KNN), all four of **std.sse**, the
+streaming half of **std.llm**, six of **std.image**, `args.all`,
+`encoding.b64urlencode`, `md.renderfile`, `toml.loadfile`, `ws.broadcast`,
+`toon.fromjson` and `df.fromrows`.
+
+Four documented calls were names that had never been part of any interface
+file. They were corrected to the calls that do exist, so if you copied one of
+these from an earlier version of the docs, here is where it went:
+
+| Written as | Use instead | Why |
+|-----------|-------------|-----|
+| `io.readfile(path)` | `file.read(path)` (`i=file:std.file`) | std.io is the console module; reading files is std.file's job and always was |
+| `io.write(s)` | `io.print(s)` | `io.print` is the no-newline write; `io.write` was never declared |
+| `io.writeln(s)` | `io.println(s)` | as above |
+| `http.ok(body)` | `http.resok(body)` | `http.resok` is the spelling `stdlib/http.tki` exports |
+| `llm.emptystream()` | `$llmstream{}` | the struct literal the same page already used twice |
+
+`yaml.empty()` and `toon.empty()` went the other way: the pages had always
+used them for the `$err` arm of a `mt` over `yaml.dec`/`toon.dec`, where the
+match must produce a document and the only other constructor is the call that
+just failed. Both are now declared in their `.tki` and implemented.
+
+**Still unreachable:** `analytics`, `dataframe` and `dashboard` examples that
+call `df.fromcsv`, `df.filter`, `df.tocsv`, `df.columnstr`, `df.groupby`,
+`df.shape` or the `dashboard.*` constructors need `i=http:std.http` added to
+the program to link. Those nine wrappers exist and are correct but live in
+`tk_web_glue.c`, which the build system registers against the HTTP module
+(story 136.33).

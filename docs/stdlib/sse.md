@@ -40,7 +40,7 @@ The `std.sse` module provides Server-Sent Events (SSE) support. Emit structured 
 | `sse.emit` | `ctx: $ssectx; event: $sseevent` | `void!$sseerr` | Emit a structured SSE event |
 | `sse.emitdata` | `ctx: $ssectx; data: $str` | `void!$sseerr` | Emit a data-only event (no type or id) |
 | `sse.close` | `ctx: $ssectx` | `void` | Close the SSE connection |
-| `sse.keepalive` | `ctx: $ssectx; interval_ms: u64` | `void` | Send periodic keep-alive comments at the given interval |
+| `sse.keepalive` | `ctx: $ssectx; intervalms: u64` | `void` | Emit one `: keepalive` comment. `intervalms` is the cadence the caller's own loop is keeping; this function schedules nothing |
 
 ## Usage
 

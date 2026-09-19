@@ -46,7 +46,7 @@ One bucket of a time series returned by `analytics.timeseries`.
 |-------|------|---------|
 | ts | u64 | Bucket start time as Unix epoch milliseconds |
 | value | f64 | Mean (or count) of the value column within this bucket |
-| rollingmean | f64 | Trailing rolling average centred on this bucket |
+| rollingmean | f64 | Trailing mean of this bucket and the two before it (a 3-bucket window) |
 
 ## Functions
 

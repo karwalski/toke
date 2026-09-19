@@ -76,3 +76,19 @@ int64_t tk_toml_bool_w(int64_t tab, int64_t key) {
     tk_current_error = r.is_err ? 1 : 0;
     return r.is_err ? 0 : (int64_t)r.ok;
 }
+
+/*
+ * Story 136.32 — toml.loadfile(path) : $tomlval!$tomlerr.
+ *
+ * toml_load_file() sat beside toml_load() in toml.h from the start and
+ * stdlib/toml.tki exports both; only toml.load got a wrapper, so the two
+ * examples on docs/stdlib/toml.md that read a config file off disk — the
+ * ordinary way to use the module — failed at link. Same error protocol as
+ * tk_toml_load_w above.
+ */
+int64_t tk_toml_loadfile_w(int64_t path) {
+    if (!path) { tk_current_error = 1; return 0; }
+    TomlResult r = toml_load_file((const char *)(intptr_t)path);
+    tk_current_error = r.is_err ? 1 : 0;
+    return r.is_err ? 0 : (int64_t)(intptr_t)r.ok;
+}
