@@ -1,0 +1,19 @@
+id: D091
+series: D
+description: "127.64: mixed int/float arithmetic through an un-annotated binding is E4031 (toke has no implicit promotion), and the `fix` names the operand that must widen — truncating the float RHS would silently change the result"
+input: |
+  m=t;
+  i=s:std.str;
+  f=fmtbytes(v:$i64):$str{
+    let f=v;
+    <s.format(f/1048576.0;"%.1f")
+  };
+  f=main():$i64{
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
+expected_fix: "cast LHS to f64 using 'as' (toke has no implicit int/float promotion)"
+expected_diag_field:
+  field: got
+  value: f64
