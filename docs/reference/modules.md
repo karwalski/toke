@@ -132,6 +132,7 @@ The toke standard library is a set of built-in modules available on every instal
 | `process` | `std.process` | Process execution |
 | `crypto` | `std.crypto` | Cryptographic primitives |
 | `toon` | `std.toon` | TOON format encode/decode |
+| `zip` | `std.zip` | Read-only zip archive access |
 | `test` | `std.test` | Test framework |
 
 ---

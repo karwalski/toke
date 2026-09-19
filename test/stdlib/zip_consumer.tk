@@ -1,0 +1,108 @@
+(* zip_consumer.tk -- story 135.1: a real std.zip consumer, run by
+   test/stdlib/zip.sh against fixtures that script generates.
+
+   WHY THIS EXISTS RATHER THAN A COMPILE CHECK. `make check-docs` proves a
+   documented example COMPILES; six checks did that today while proving
+   nothing about behaviour. So every line below reads a value back and the
+   shell compares it against a number computed independently in Python. The
+   two halves that matter:
+
+     - the happy path reads every field of every $zipentry and the bytes of
+       an entry, because a struct whose .tki and glue disagree still compiles
+       and then returns whatever sits at that offset (127.86);
+     - each malicious fixture is opened and must be REJECTED BY NAME. An
+       archive that is accepted is the failure mode here, so "it returned an
+       error" is not enough -- the script asserts WHICH rule fired, which is
+       why zip.lasterr() exists. *)
+m=zipconsumer;
+i=io:std.io;
+i=s:std.str;
+i=env:std.env;
+i=zip:std.zip;
+
+f=fixdir():str{
+  <env.getor("ZIPFIX";"/tmp/zipfix")
+};
+
+f=fix(name:str):str{
+  <s.concat(s.concat(fixdir();"/");name)
+};
+
+(* Opens a fixture that MUST be refused, and prints the reason the reader
+   gave. Prints ACCEPTED when the archive opened, which is the failure the
+   whole story is about. *)
+f=mustreject(label:str;file:str):i64{
+  let a=zip.openfile(fix(file));
+  mt a {
+    $ok:z io.println(s.concat(s.concat("reject-";label);"=ACCEPTED"));
+    $err:e io.println(s.concat(s.concat(s.concat("reject-";label);"=");zip.lasterr()))
+  };
+  <0
+};
+
+(* name|size|compressedsize|isdir for one entry -- every declared field, so a
+   slot-order mismatch between zip.tki and zip_glue.c cannot hide. *)
+f=entryline(e:$zipentry):str{
+  let d=if(e.isdir){"1"}el{"0"};
+  <s.concat(s.concat(s.concat(s.concat(s.concat(s.concat(e.name;"|");s.fromint(e.size));"|");s.fromint(e.compressedsize));"|");d)
+};
+
+f=readentry(a:$ziparchive;name:str):i64{
+  let r=zip.read(a;name);
+  mt r {
+    $ok:b io.println(s.concat(s.concat(s.concat(s.concat(s.concat("read-";name);"=");s.fromint(b.len));"|");zipbytes(b)));
+    $err:e io.println(s.concat(s.concat(s.concat("read-";name);"=ERR|");zip.lasterr()))
+  };
+  <0
+};
+
+(* Renders the bytes as their decimal values joined by commas. Deliberately
+   NOT str.frombytes: this must show that a @(byte) really carries byte
+   values, and it stays correct for data that is not valid UTF-8. *)
+f=zipbytes(b:@(byte)):str{
+  let out=mut."";
+  lp(let i=0;i<b.len;i=i+1){
+    if(i>0){ out=s.concat(out;",") };
+    out=s.concat(out;s.fromint(b.get(i)))
+  };
+  <out
+};
+
+f=happy():i64{
+  let a=zip.openfile(fix("good.zip"));
+  mt a {
+    $ok:z happybody(z);
+    $err:e io.println(s.concat("open-good=ERR|";zip.lasterr()))
+  };
+  <0
+};
+
+f=happybody(z:$ziparchive):i64{
+  io.println("open-good=ok");
+  let es=zip.entries(z);
+  io.println(s.concat("count=";s.fromint(es.len)));
+  lp(let i=0;i<es.len;i=i+1){
+    io.println(s.concat(s.concat(s.concat("e";s.fromint(i));"=");entryline(es.get(i))))
+  };
+  readentry(z;"hello.txt");
+  readentry(z;"empty.txt");
+  readentry(z;"nested/deep.bin");
+  (* A name that is not in the archive must be an error, not empty bytes. *)
+  readentry(z;"absent.txt");
+  (* A directory record is not readable content. *)
+  readentry(z;"nested/");
+  zip.close(z);
+  <0
+};
+
+f=main():i64{
+  happy();
+  mustreject("traversal";"traversal.zip");
+  mustreject("absolute";"absolute.zip");
+  mustreject("backslash";"backslash.zip");
+  mustreject("size";"bombsize.zip");
+  mustreject("ratio";"bombratio.zip");
+  mustreject("count";"manyentries.zip");
+  mustreject("notzip";"notazip.zip");
+  <0
+};

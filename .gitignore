@@ -95,6 +95,13 @@ stdlib/vendor/tomlc99/*
 !stdlib/vendor/tomlc99/toml.c
 !stdlib/vendor/tomlc99/toml.h
 
+# miniz (single-file DEFLATE + zip reader) — backs src/stdlib/zip.c (135.1)
+!stdlib/vendor/miniz/
+stdlib/vendor/miniz/*
+!stdlib/vendor/miniz/LICENSE
+!stdlib/vendor/miniz/miniz.c
+!stdlib/vendor/miniz/miniz.h
+
 # Logs
 logs/
 

@@ -30,6 +30,7 @@ API reference for every module in the toke standard library. Each page documents
 - [std.toon](/docs/reference/stdlib/toon/) -- TOON (toke object notation)
 - [std.encoding](/docs/reference/stdlib/encoding/) -- base64 and hex encoding
 - [std.md](/docs/reference/stdlib/md/) -- Markdown processing
+- [std.zip](/docs/reference/stdlib/zip/) -- read-only zip archive access
 
 ## Networking
 

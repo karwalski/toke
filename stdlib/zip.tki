@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0",
+  "module": "std.zip",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "ziparchive",
+      "fields": []
+    },
+    {
+      "kind": "type",
+      "name": "zipentry",
+      "fields": [
+        {"name": "name",           "type": "str"},
+        {"name": "size",           "type": "i64"},
+        {"name": "compressedsize", "type": "i64"},
+        {"name": "isdir",          "type": "bool"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "ziperr",
+      "is_sum": true,
+      "fields": [
+        {"name": "$badarchive",  "type": "str"},
+        {"name": "$badentry",    "type": "str"},
+        {"name": "$notfound",    "type": "str"},
+        {"name": "$toolarge",    "type": "str"},
+        {"name": "$unsupported", "type": "str"},
+        {"name": "$io",          "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "zip.open",     "params": ["@(byte)"],           "return": "ziparchive!ziperr"},
+    {"kind": "func", "name": "zip.openfile", "params": ["str"],               "return": "ziparchive!ziperr"},
+    {"kind": "func", "name": "zip.entries",  "params": ["ziparchive"],        "return": "@(zipentry)"},
+    {"kind": "func", "name": "zip.read",     "params": ["ziparchive", "str"], "return": "@(byte)!ziperr"},
+    {"kind": "func", "name": "zip.close",    "params": ["ziparchive"],        "return": "void"},
+    {"kind": "func", "name": "zip.lasterr",  "params": [],                    "return": "str"}
+  ]
+}

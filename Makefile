@@ -19,12 +19,16 @@ TOML_FLAGS  = -Istdlib/vendor/tomlc99
 # stdlib/vendor/README.md).  If they are ever absent, every std.toml / std.md
 # compile fails at the clang stage as an opaque E9003 that names neither the
 # dependency nor the reason.  Stop here instead, by name.
+# 135.1 adds miniz, which backs std.zip; src/stdlib/zip.c #includes miniz.c
+# directly, so a missing checkout fails as a clang "file not found" instead.
 VENDOR_SENTINELS = stdlib/vendor/tomlc99/toml.c \
                    stdlib/vendor/tomlc99/toml.h \
                    stdlib/vendor/cmark/src/cmark.c \
                    stdlib/vendor/cmark/src/cmark.h \
                    stdlib/vendor/cmark/src/cmark_export.h \
-                   stdlib/vendor/cmark/src/cmark_version.h
+                   stdlib/vendor/cmark/src/cmark_version.h \
+                   stdlib/vendor/miniz/miniz.c \
+                   stdlib/vendor/miniz/miniz.h
 
 SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/arena.c src/ir.c src/llvm.c src/diag.c src/config.c src/fmt.c src/progress.c \
@@ -90,7 +94,7 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-stdlib-file test-stdlib-runtime \
 	test-stdlib-path test-stdlib-args test-stdlib-md test-stdlib-toml \
 	test-stdlib-vecstore test-stdlib-vecstore-binding test-stdlib-keychain \
-	test-stdlib-securemem test-stdlib-glue-contract \
+	test-stdlib-securemem test-stdlib-glue-contract test-stdlib-zip \
 	test-tkir-encoder \
 	install-man \
 	test-standalone \
@@ -99,7 +103,7 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 all: vendor-check $(BIN) tkc
 
 # Fails loudly and by name if a vendored dependency is missing.  Cheap enough
-# to run on every build (six stat calls).
+# to run on every build (eight stat calls).
 vendor-check:
 	@missing=""; \
 	for f in $(VENDOR_SENTINELS); do \
@@ -111,8 +115,9 @@ vendor-check:
 	  echo "" >&2; \
 	  for f in $$missing; do echo "  missing: $$f" >&2; done; \
 	  echo "" >&2; \
-	  echo "  cmark backs std.md and tomlc99 backs std.toml.  tkc compiles these" >&2; \
-	  echo "  .c files directly into every binary that imports those modules, so" >&2; \
+	  echo "  cmark backs std.md, tomlc99 backs std.toml and miniz backs" >&2; \
+	  echo "  std.zip.  tkc compiles these .c files directly into every binary" >&2; \
+	  echo "  that imports those modules, so" >&2; \
 	  echo "  without them any such program fails at the clang stage with an" >&2; \
 	  echo "  opaque E9003 naming no dependency." >&2; \
 	  echo "" >&2; \
@@ -709,6 +714,16 @@ test-stdlib-vecstore:
 # process memory -- which is exactly what they were not doing before 136.4.
 test-stdlib-vecstore-binding: $(BIN)
 	@bash test/stdlib/vecstore_binding.sh
+
+# ── Story 135.1: std.zip, read-only archive access ───────────────────────────
+# Behavioural, not compile-only. It builds a program importing std.zip and
+# NOTHING else (136.33: wrong-module glue registration is invisible unless the
+# module is the sole import), reads every $zipentry field and the exact bytes
+# of a text and a binary entry, and then opens seven hostile archives that must
+# each be refused BY NAME -- traversal, absolute path, backslash path, the size
+# cap, the ratio cap, the entry-count cap, and a file that is not an archive.
+test-stdlib-zip: $(BIN)
+	@bash test/stdlib/zip.sh
 
 # ── Story 136.5: std.securemem, core + binding ───────────────────────────────
 # test/stdlib/test_securemem.c existed but had NO make target and so had never

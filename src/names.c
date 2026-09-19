@@ -303,7 +303,7 @@ static const char * const s_known_modules[] = {
     "db", "crypto", "encrypt", "auth", "ws", "sse", "router", "template",
     "csv", "math", "llm", "tool", "chart", "html", "dashboard", "svg",
     "canvas", "image", "dataframe", "analytics", "ml", "toon", "yaml",
-    "i18n", "encoding", "gpu", "net", "sys", "std", "fmt",
+    "i18n", "encoding", "gpu", "net", "sys", "std", "fmt", "zip",
     NULL
 };
 
@@ -1182,10 +1182,29 @@ const ImportedType *imported_type_lookup(const NameEnv *env, const char *name) {
 const char *imported_func_ret(const NameEnv *env, const char *alias,
                               const char *fn) {
     if (!env || !alias || !fn) return NULL;
-    for (int i = 0; i < env->ifunc_count; i++)
-        if (env->ifuncs[i].alias && env->ifuncs[i].fn &&
-            strcmp(env->ifuncs[i].alias, alias) == 0 &&
-            strcmp(env->ifuncs[i].fn, fn) == 0) {
+    /*
+     * 136.36: match the CALL spelling, not only the export spelling.
+     *
+     * `fn` is the export name exactly as the .tki writes it.  A handwritten
+     * stdlib interface namespaces it ("time.toparts"); a generated one does
+     * not ("cfgdefault").  Every caller passes what the source writes —
+     * `tm.toparts(0)` passes "toparts" — so for the whole stdlib this loop
+     * matched nothing and the call's declared record return was dropped on
+     * the floor.  `let p = tm.toparts(0); p.yearr` therefore type-checked
+     * clean and codegen lowered the unknown field to slot 0.
+     *
+     * This is 127.80's defect one more time: the authoritative answer is in
+     * the interface file, and the lookup key is a spelling somebody has to
+     * keep in sync.  136.1 already computes `member` (fn past its last '.'),
+     * which IS the call spelling; key on it, with the exact `fn` preferred so
+     * a generated bare export still wins its own name.
+     */
+    for (int pass = 0; pass < 2; pass++)
+        for (int i = 0; i < env->ifunc_count; i++) {
+            const char *key = pass == 0 ? env->ifuncs[i].fn : env->ifuncs[i].member;
+            if (!env->ifuncs[i].alias || !key) continue;
+            if (strcmp(env->ifuncs[i].alias, alias) != 0) continue;
+            if (strcmp(key, fn) != 0) continue;
             /* 136.1 records error-returning exports too, with an empty return
              * spelling. Keep reporting *nothing* for those: 127.66 left them
              * unadopted on purpose (a T!E is not a T). */

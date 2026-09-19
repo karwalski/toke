@@ -84,6 +84,13 @@ static const StdlibModule stdlib_table[] = {
                                                                 "encoding log str crypto ws router net yaml toon i18n html svg canvas chart dashboard dataframe template toml file auth encrypt llm ml task", "-lssl -lcrypto -lz -lm -lpthread" },
     { "toml",          "toml.c toml_glue.c",                    "",                                                                 "" },  /* vendor sources appended separately */
     { "md",            "md.c md_glue.c",                        "",                                                                 "" },  /* vendor sources appended separately */
+    /* 135.1: zip.c #includes the vendored miniz.c into its own translation
+     * unit (see the header comment there), so miniz is NOT listed as a
+     * separate vendor source the way tomlc99 and cmark are — but it is still
+     * probed at compile time by append_vendor_sources() so a missing checkout
+     * is named rather than surfacing as an opaque clang E9003. std.zip has no
+     * module deps: it needs nothing but libc. */
+    { "zip",           "zip.c zip_glue.c",                      "",                                                                 "" },
     { "db",            "db.c db_glue.c",                        "",                                                                 "-lsqlite3" },
     { "collections",   "collections.c collections_glue.c",      "",                                                                 "" },
     { "xml",           "xml.c xml_glue.c",                       "",                                                                 "" },  /* 131.46 */
@@ -286,6 +293,20 @@ static void append_vendor_sources(char *buf, size_t bufsz, const char *dir,
             snprintf(buf + cur, bufsz - cur,
                      " %s/cmark/src/%s", vendor, cmark_files[i]);
         }
+    } else if (!strcmp(module, "zip")) {
+        /* 135.1: nothing is APPENDED here — src/stdlib/zip.c #includes the
+         * vendored miniz.c into its own translation unit so that miniz's four
+         * required -D switches live in one place (see zip.c).  But the probe
+         * still belongs here: without it a checkout missing stdlib/vendor/miniz
+         * fails as `fatal error: '../../stdlib/vendor/miniz/miniz.c' file not
+         * found` wrapped in E9003, which is exactly the opaque failure 127.85
+         * was filed to remove.  Both files are probed because zip.c includes
+         * the .c and the .c includes the .h. */
+        char path[640];
+        snprintf(path, sizeof path, "%s/miniz/miniz.c", vendor);
+        require_vendor_file(path, "miniz", "zip");
+        snprintf(path, sizeof path, "%s/miniz/miniz.h", vendor);
+        require_vendor_file(path, "miniz", "zip");
     }
 }
 
