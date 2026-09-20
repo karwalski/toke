@@ -84,8 +84,34 @@ echo "C007: file.readbytes / file.writebytes are byte-exact, and say why not"
 echo "--------------------------------------"
 
 # ── Fixtures, and the reference values, both derived in Python ───────────
+#
+# 131.79. Everything below this block is compared against values this
+# generator writes into ref.sh. If the generator dies, the script used to run
+# on regardless and fall over 200 lines later on `REF_ALLBYTES: unbound
+# variable` — a message that points at the shell, names nothing that failed,
+# and cost three wrong diagnoses. So: the generator's exit status is checked,
+# its output is shown, and every name it is supposed to define is verified
+# before a single assertion runs. A harness failure must announce itself as a
+# harness failure, here, not masquerade as a file.readbytes failure later.
+GEN_LOG="${WORK}/generate.log"
+REF_NAMES="REF_ALLBYTES REF_ALLBYTESDIG REF_NUL REF_LARGE REF_EMPTY REF_PAYLOAD REF_NULTRUNC"
+
+gen_died() {
+    echo "FAIL generate-reference: $1"
+    echo "    HARNESS FAILURE, not a file.readbytes failure. The Python fixture"
+    echo "    and reference generator did not produce the values every assertion"
+    echo "    in this script is compared against, so nothing below was tested."
+    if [ -s "${GEN_LOG}" ]; then
+        echo "    generator output:"
+        sed 's/^/        /' "${GEN_LOG}"
+    fi
+    echo "--------------------------------------"
+    echo "Results: ${PASS} passed, $((FAIL + 1)) failed"
+    exit 1
+}
+
 mkdir -p "${FIX}"
-python3 - "${FIX}" <<'PY'
+if ! python3 - "${FIX}" > "${GEN_LOG}" 2>&1 <<'PY'
 import os, sys, zipfile
 F = sys.argv[1]
 
@@ -116,9 +142,19 @@ with open(F + '/huge.bin', 'wb') as f:
     f.write(b'x')
 
 payload = bytes(range(256)) * 4 + b'\x00' * 16 + b'\xff' * 16
+# Every entry is stamped with an explicit date_time, as test/stdlib/zip_fixtures.py
+# does. Without one, zipfile timestamps entries from the environment, and under
+# `make` the environment carries SOURCE_DATE_EPOCH=0 (exported for reproducible
+# compiler builds). 1970 is before the 1980 DOS epoch a zip header can express,
+# so struct.pack raised and the whole generator died — only under the runner.
+# A fixed stamp also makes the fixture byte-identical from run to run.
+ZTIME = (1980, 1, 1, 0, 0, 0)
 with zipfile.ZipFile(F + '/good.zip', 'w', zipfile.ZIP_DEFLATED) as z:
-    z.writestr('hello.txt', 'hello world\n')
-    z.writestr('bin/payload.dat', payload)
+    for name, data in (('hello.txt', b'hello world\n'),
+                       ('bin/payload.dat', payload)):
+        zi = zipfile.ZipInfo(name, ZTIME)
+        zi.compress_type = zipfile.ZIP_DEFLATED
+        z.writestr(zi, data)
 
 def digest(b):
     roll = 0
@@ -135,8 +171,18 @@ with open(F + '/../ref.sh', 'w') as r:
     r.write("REF_PAYLOAD='%s'\n" % digest(payload))
     r.write("REF_NULTRUNC='%d'\n" % nul.index(0))
 PY
+then
+    gen_died "python3 exited non-zero"
+fi
+
+[ -s "${WORK}/ref.sh" ] || gen_died "no reference file was written at ${WORK}/ref.sh"
+for _n in ${REF_NAMES}; do
+    grep -q "^${_n}=" "${WORK}/ref.sh" || gen_died "the reference file does not set ${_n}"
+done
 # shellcheck disable=SC1091
-. "${WORK}/ref.sh"
+if ! . "${WORK}/ref.sh"; then
+    gen_died "the reference file could not be sourced"
+fi
 
 # ── The consumer ─────────────────────────────────────────────────────────
 cat > "${WORK}/rb.tk" <<'TKEOF'

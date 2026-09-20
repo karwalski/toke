@@ -174,13 +174,19 @@ conform:
 
 # 131.37: shell-script conformance cases (test/conform/*.sh) — each script
 # prints its own PASS/FAIL lines and exits non-zero on any failure.
+# 131.79: the per-suite log used to be one fixed /tmp path shared by every
+# invocation, so two concurrent runs of this target overwrote each other's
+# output and each reported the other's failures. mktemp per run, removed on
+# the way out.
 conform-sh:
 	@pass=0; fail=0; \
+	log="$$(mktemp "$${TMPDIR:-/tmp}/tkc_conform_sh.XXXXXX")" || exit 1; \
+	trap 'rm -f "$$log"' EXIT INT TERM; \
 	for s in test/conform/*.sh; do \
-	  if bash "$$s" > /tmp/tkc_conform_sh.log 2>&1; then \
-	    pass=$$((pass+1)); echo "PASS $$s: $$(grep -E '^Results:' /tmp/tkc_conform_sh.log | tail -1)"; \
+	  if bash "$$s" > "$$log" 2>&1; then \
+	    pass=$$((pass+1)); echo "PASS $$s: $$(grep -E '^Results:' "$$log" | tail -1)"; \
 	  else \
-	    fail=$$((fail+1)); echo "FAIL $$s"; tail -25 /tmp/tkc_conform_sh.log | sed 's/^/    /'; \
+	    fail=$$((fail+1)); echo "FAIL $$s"; tail -25 "$$log" | sed 's/^/    /'; \
 	  fi; \
 	done; \
 	echo "conform-sh: $$pass scripts passed, $$fail failed"; \
