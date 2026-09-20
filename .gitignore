@@ -29,27 +29,23 @@ cmake-build-*/
 test/output/
 test/*.out
 
-# Compiled test binaries (but NOT test source .c/.tk/.sh files)
-test/stdlib/test_toon
-test/stdlib/test_yaml
-test/stdlib/test_i18n
-test/stdlib/test_analytics
-test/stdlib/test_auth
-test/stdlib/test_auth_flow_integration
-test/stdlib/test_dataframe
-test/stdlib/test_file
-test/stdlib/test_http
-test/stdlib/test_http_cookies
-test/stdlib/test_http_form
-test/stdlib/test_http_json_integration
-test/stdlib/test_http_multipart
-test/stdlib/test_http_tls
-test/stdlib/test_http2
-test/stdlib/test_json
-test/stdlib/test_ml_pipeline_integration
-test/stdlib/test_svg_diagram_integration
-test/stdlib/test_template_email_integration
-test/stdlib/test_tk_runtime
+# Compiled test binaries in test/stdlib/ — ignore the extensionless build
+# outputs, keep every source file. Written as a pattern, not a list: the
+# hand-maintained list this replaces had drifted by six binaries, which is the
+# same failure mode as 134.21 (a build input untracked because an ignore rule
+# was written for output) and 127.85 (a vendored source tree ignored while its
+# comment claimed otherwise). A list somebody must remember to update is the
+# recurring root cause in this repo — see also 127.80, where an interface cache
+# read 26 of 56 files from a hand-written list.
+test/stdlib/*
+!test/stdlib/*.c
+!test/stdlib/*.h
+!test/stdlib/*.tk
+!test/stdlib/*.sh
+!test/stdlib/*.py
+!test/stdlib/*.md
+!test/stdlib/*.d
+!test/stdlib/*/
 **/*.dSYM/
 
 # Temporary / generated files
