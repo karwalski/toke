@@ -1,14 +1,16 @@
 {
  "story": "131.2",
  "tkc_version": "toke 2.8.0",
- "tkc_sha": "67db04aa0017586a98041f0bde6c2d7483c851f0",
- "generated": "2026-09-18",
+ "tkc_sha": "64527e67ad7565113d46f1fb4d6647c7c7baa38d",
+ "tkc_bin_sha": "110256fcd250695e92f11edf2ae4bf0b656aeeabedb0421c4dccd7fcb8b556b9",
+ "tkc_path": "/Users/matthew.watt/tk/toke/tkc",
+ "generated": "2026-09-19",
  "summary": {
   "probes": 130,
-  "check_ok": 125,
-  "build_ok": 87,
-  "run_ok": 78,
-  "correct": 58
+  "check_ok": 127,
+  "build_ok": 103,
+  "run_ok": 102,
+  "correct": 100
  },
  "results": [
   {
@@ -116,16 +118,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
+    "exit": 0,
+    "ok": true,
+    "codes": [],
     "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "4 9"
+   },
    "expected": "4 9",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "arr_contains_let",
@@ -141,12 +145,12 @@
     "undefined_symbol": null
    },
    "run": {
-    "exit": 139,
-    "ok": false,
-    "stdout": ""
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
    },
    "expected": "1",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "arrconcat_op",
@@ -248,10 +252,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "4385201056\n4385201136\n4385201232"
+    "stdout": "0: item\n1: item\n2: item"
    },
    "expected": "0: item\n1: item\n2: item",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "concat_append_loop",
@@ -330,12 +334,12 @@
     "undefined_symbol": null
    },
    "run": {
-    "exit": 139,
-    "ok": false,
-    "stdout": ""
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
    },
    "expected": "1",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "contains_module",
@@ -345,16 +349,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
-    "undefined_symbol": "tk_array_contains_w"
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
    "expected": "1",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "count_method",
@@ -440,16 +446,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
-    "undefined_symbol": "ends"
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
    "expected": "1",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "endswith_module",
@@ -509,10 +517,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "4302625632"
+    "stdout": "a"
    },
    "expected": "a",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "fields_method",
@@ -522,16 +530,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
-    "undefined_symbol": "fields"
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "3 b"
+   },
    "expected": "3 b",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "fields_module",
@@ -549,10 +559,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "3 4312603536"
+    "stdout": "3 b"
    },
    "expected": "3 b",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "filter_method",
@@ -608,12 +618,12 @@
     "undefined_symbol": null
    },
    "run": {
-    "exit": 139,
-    "ok": false,
-    "stdout": ""
+    "exit": 0,
+    "ok": true,
+    "stdout": "2"
    },
    "expected": "2",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "find_module",
@@ -623,16 +633,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
-    "undefined_symbol": "tk_array_find_w"
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "2"
+   },
    "expected": "2",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "first_method",
@@ -701,16 +713,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
-    "undefined_symbol": "fold"
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "6"
+   },
    "expected": "6",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "fold_module",
@@ -734,73 +748,65 @@
   {
    "probe": "get_const_let",
    "check": {
-    "exit": 1,
-    "ok": false,
-    "codes": [
-     "E2002",
-     "E2003"
-    ]
+    "exit": 0,
+    "ok": true,
+    "codes": []
    },
    "build": {
-    "exit": 1,
-    "ok": false,
-    "codes": [
-     "E2002",
-     "E2003"
-    ],
+    "exit": 0,
+    "ok": true,
+    "codes": [],
     "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
    "expected": "1",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "get_const",
    "check": {
-    "exit": 1,
-    "ok": false,
-    "codes": [
-     "E2002",
-     "E2003",
-     "E4032"
-    ]
+    "exit": 0,
+    "ok": true,
+    "codes": []
    },
    "build": {
-    "exit": 1,
-    "ok": false,
-    "codes": [
-     "E2002",
-     "E2003",
-     "E4032"
-    ],
+    "exit": 0,
+    "ok": true,
+    "codes": [],
     "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
    "expected": "1",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "get_const0_let",
    "check": {
-    "exit": 1,
-    "ok": false,
-    "codes": [
-     "E2002",
-     "E2003"
-    ]
+    "exit": 0,
+    "ok": true,
+    "codes": []
    },
    "build": {
-    "exit": 1,
-    "ok": false,
-    "codes": [
-     "E2002",
-     "E2003"
-    ],
+    "exit": 0,
+    "ok": true,
+    "codes": [],
     "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "3"
+   },
    "expected": "3",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "get_method",
@@ -858,12 +864,12 @@
     "undefined_symbol": null
    },
    "run": {
-    "exit": 139,
-    "ok": false,
-    "stdout": ""
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
    },
    "expected": "1",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "indexof_module",
@@ -873,16 +879,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
-    "undefined_symbol": "tk_array_indexof_w"
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1"
+   },
    "expected": "1",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "interp_append_dfio",
@@ -900,10 +908,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "4351122496: a\n4351122576: b"
+    "stdout": "1: a\n2: b"
    },
    "expected": "1: a\n2: b",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "interp_append_direct",
@@ -942,10 +950,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "4343192416\n4343192512\n4343192624"
+    "stdout": "0: item\n1: item\n2: item"
    },
    "expected": "0: item\n1: item\n2: item",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "interp_append_lit_get",
@@ -963,10 +971,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "4298496992\n4298497072"
+    "stdout": "1\n2"
    },
    "expected": "1\n2",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "interp_append_loop",
@@ -1026,10 +1034,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "4350418032"
+    "stdout": "ab"
    },
    "expected": "ab",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "interp_replace_module",
@@ -1068,10 +1076,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "4353514400"
+    "stdout": "bc"
    },
    "expected": "bc",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "interp_split_get",
@@ -1089,10 +1097,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "4344388672"
+    "stdout": "b"
    },
    "expected": "b",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "interp_trim_let",
@@ -1110,10 +1118,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "[4375862384]"
+    "stdout": "[a]"
    },
    "expected": "[a]",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "interp_trim_method",
@@ -1131,10 +1139,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "[4330265504]"
+    "stdout": "[a]"
    },
    "expected": "[a]",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "interp_trim_module",
@@ -1186,16 +1194,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
-    "undefined_symbol": "join"
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "a-b"
+   },
    "expected": "a-b",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "join_module_arr",
@@ -1205,16 +1215,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
-    "undefined_symbol": "tk_array_join_w"
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "a-b"
+   },
    "expected": "a-b",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "join_module",
@@ -1316,10 +1328,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "2 4332082124"
+    "stdout": "2 a"
    },
    "expected": "2 a",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "keys_prop_len",
@@ -1337,10 +1349,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "0"
+    "stdout": "2"
    },
    "expected": "2",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "keys_prop",
@@ -1356,12 +1368,12 @@
     "undefined_symbol": null
    },
    "run": {
-    "exit": 1,
-    "ok": false,
-    "stdout": ""
+    "exit": 0,
+    "ok": true,
+    "stdout": "2 a"
    },
    "expected": "2 a",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "last_method",
@@ -1480,10 +1492,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "4329165840\n4329165840\n4329165840"
+    "stdout": "x\nx\nx"
    },
    "expected": "x\nx\nx",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "lower_method",
@@ -1493,16 +1505,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
-    "undefined_symbol": "lower"
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "ab"
+   },
    "expected": "ab",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "lower_module",
@@ -1670,16 +1684,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
-    "undefined_symbol": "pop"
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "2 3"
+   },
    "expected": "2 3",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "pop_module",
@@ -1834,16 +1850,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
-    "undefined_symbol": "replace"
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "a+b"
+   },
    "expected": "a+b",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "replace_module",
@@ -1943,12 +1961,12 @@
     "undefined_symbol": null
    },
    "run": {
-    "exit": 139,
-    "ok": false,
-    "stdout": ""
+    "exit": 0,
+    "ok": true,
+    "stdout": "1 2"
    },
    "expected": "1 2",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "slice_module",
@@ -1958,16 +1976,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
-    "undefined_symbol": "tk_array_slice_w"
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "1 2"
+   },
    "expected": "1 2",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "sort_method",
@@ -2046,10 +2066,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "4352432960"
+    "stdout": "b"
    },
    "expected": "b",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "split_method_direct",
@@ -2088,10 +2108,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "3 4342094720"
+    "stdout": "3 b"
    },
    "expected": "3 b",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "split_module",
@@ -2298,10 +2318,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "6"
    },
    "expected": "6",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "strlen_method",
@@ -2319,10 +2339,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "6"
    },
    "expected": "6",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "strlen_module",
@@ -2348,21 +2368,21 @@
   {
    "probe": "strlen_prop_direct",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4031"
+    ]
    },
    "build": {
-    "exit": 0,
-    "ok": true,
-    "codes": [],
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4031"
+    ],
     "undefined_symbol": null
    },
-   "run": {
-    "exit": 139,
-    "ok": false,
-    "stdout": ""
-   },
+   "run": null,
    "expected": "6",
    "correct": false
   },
@@ -2382,10 +2402,10 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "6"
    },
    "expected": "6",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "strslice_method",
@@ -2580,16 +2600,18 @@
     "codes": []
    },
    "build": {
-    "exit": 2,
-    "ok": false,
-    "codes": [
-     "E9003"
-    ],
-    "undefined_symbol": "upper"
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
    },
-   "run": null,
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "AB"
+   },
    "expected": "AB",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "upper_module",
@@ -2666,9 +2688,9 @@
     "undefined_symbol": null
    },
    "run": {
-    "exit": 1,
-    "ok": false,
-    "stdout": ""
+    "exit": 0,
+    "ok": true,
+    "stdout": "4349010944 4340015260"
    },
    "expected": "2 1",
    "correct": false
