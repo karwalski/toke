@@ -386,14 +386,12 @@ int tk_infer_is_loaded(const TkModelHandle *h)
 }
 
 /* -------------------------------------------------------------------------
- * tk_infer_load_streaming  (Epic 72.7 — not yet implemented)
+ * tk_infer_load_streaming — NOT defined here (story 127.99)
+ *
+ * Epic 72.7 landed the real layer-by-layer loader in infer_stream.c, which
+ * carries both the TK_HAVE_LLAMACPP implementation and its stub.  The
+ * "not yet implemented" placeholder that used to sit here was left behind
+ * and became a second definition of the same symbol: invisible to a build
+ * that links a curated list without infer_stream.c, fatal to one that links
+ * the whole directory.  infer_stream.h declares it.
  * ------------------------------------------------------------------------- */
-
-TkModelHandleResult tk_infer_load_streaming(const char  *model_dir,
-                                              TkStreamOpts opts)
-{
-    (void)model_dir;
-    (void)opts;
-    return handle_err(
-        "infer.load_streaming: not yet implemented (Epic 72.7)", -2);
-}

@@ -131,7 +131,12 @@ static const char *g_default_404 =
 static StrPair g_mime_ct_hdr;
 
 static Res tk_static_dispatch(Req req) {
-    const char *rpath = req.path ? req.path : "/";
+    /* 127.100: getstatic/getstaticmime register an exact path; compare it
+     * against the path component, not the raw target.  "/style.css?v=abc"
+     * must find the route registered as "/style.css". */
+    char pathbuf[2048];
+    const char *rpath = http_path_only(req.path ? req.path : "/",
+                                       pathbuf, sizeof pathbuf);
     for (int i = 0; i < g_static_route_count; i++) {
         if (g_static_routes[i].path &&
             strcmp(g_static_routes[i].path, rpath) == 0) {
@@ -240,7 +245,10 @@ static TkGetHandlerRoute g_get_handler_routes[TK_MAX_GET_HANDLERS];
 static int               g_get_handler_count = 0;
 
 static Res tk_get_handler_dispatch(Req req) {
-    const char *rpath = req.path ? req.path : "/";
+    /* 127.100: match on the path component, not the raw request target. */
+    char pathbuf[2048];
+    const char *rpath = http_path_only(req.path ? req.path : "/",
+                                       pathbuf, sizeof pathbuf);
     StrPair params[32]; int pc = 0;
     for (int i = 0; i < g_get_handler_count; i++) {
         if (g_get_handler_routes[i].path &&
@@ -401,7 +409,10 @@ static TkPostRoute g_post_routes[TK_MAX_POST_ROUTES];
 static int          g_post_route_count = 0;
 
 static Res tk_post_dispatch(Req req) {
-    const char *rpath = req.path ? req.path : "/";
+    /* 127.100: match on the path component, not the raw request target. */
+    char pathbuf[2048];
+    const char *rpath = http_path_only(req.path ? req.path : "/",
+                                       pathbuf, sizeof pathbuf);
     for (int i = 0; i < g_post_route_count; i++) {
         if (g_post_routes[i].path &&
             strcmp(g_post_routes[i].path, rpath) == 0) {
@@ -478,7 +489,10 @@ static TkPostHandlerRoute g_post_handler_routes[TK_MAX_POST_HANDLERS];
 static int                 g_post_handler_count = 0;
 
 static Res tk_post_handler_dispatch(Req req) {
-    const char *rpath = req.path ? req.path : "/";
+    /* 127.100: match on the path component, not the raw request target. */
+    char pathbuf[2048];
+    const char *rpath = http_path_only(req.path ? req.path : "/",
+                                       pathbuf, sizeof pathbuf);
     StrPair params[32]; int pc = 0;
     for (int i = 0; i < g_post_handler_count; i++) {
         if (g_post_handler_routes[i].path &&
@@ -537,7 +551,10 @@ static TkPutHandlerRoute g_put_handler_routes[TK_MAX_PUT_HANDLERS];
 static int                g_put_handler_count = 0;
 
 static Res tk_put_handler_dispatch(Req req) {
-    const char *rpath = req.path ? req.path : "/";
+    /* 127.100: match on the path component, not the raw request target. */
+    char pathbuf[2048];
+    const char *rpath = http_path_only(req.path ? req.path : "/",
+                                       pathbuf, sizeof pathbuf);
     StrPair params[32]; int pc = 0;
     for (int i = 0; i < g_put_handler_count; i++) {
         if (g_put_handler_routes[i].path &&
@@ -584,7 +601,10 @@ static TkDeleteHandlerRoute g_delete_handler_routes[TK_MAX_DELETE_HANDLERS];
 static int                   g_delete_handler_count = 0;
 
 static Res tk_delete_handler_dispatch(Req req) {
-    const char *rpath = req.path ? req.path : "/";
+    /* 127.100: match on the path component, not the raw request target. */
+    char pathbuf[2048];
+    const char *rpath = http_path_only(req.path ? req.path : "/",
+                                       pathbuf, sizeof pathbuf);
     StrPair params[32]; int pc = 0;
     for (int i = 0; i < g_delete_handler_count; i++) {
         if (g_delete_handler_routes[i].path &&
@@ -631,7 +651,10 @@ static TkPatchHandlerRoute g_patch_handler_routes[TK_MAX_PATCH_HANDLERS];
 static int                  g_patch_handler_count = 0;
 
 static Res tk_patch_handler_dispatch(Req req) {
-    const char *rpath = req.path ? req.path : "/";
+    /* 127.100: match on the path component, not the raw request target. */
+    char pathbuf[2048];
+    const char *rpath = http_path_only(req.path ? req.path : "/",
+                                       pathbuf, sizeof pathbuf);
     StrPair params[32]; int pc = 0;
     for (int i = 0; i < g_patch_handler_count; i++) {
         if (g_patch_handler_routes[i].path &&
@@ -724,11 +747,17 @@ static Res mk404(void) {
 
 static Res staticdir_handler(Req req) {
     if (!req.path) return mk404();
+    /* 127.100: a versioned asset URL — /static/css/style.css?v=<hash> — is
+     * the standard way to make a cache-bust reliable.  Resolve the file from
+     * the path component; appending the query to the root produced a
+     * filename no filesystem holds, so every such URL 404'd. */
+    char pathbuf[2048];
+    const char *rpath = http_path_only(req.path, pathbuf, sizeof pathbuf);
     size_t pfxlen = strlen(g_staticdir_prefix);
-    if (strncmp(req.path, g_staticdir_prefix, pfxlen) != 0)
+    if (strncmp(rpath, g_staticdir_prefix, pfxlen) != 0)
         return mk404();
     char filepath[2048];
-    snprintf(filepath, sizeof filepath, "%s%s", g_staticdir_root, req.path);
+    snprintf(filepath, sizeof filepath, "%s%s", g_staticdir_root, rpath);
     if (strstr(filepath, "..")) {
         Res r; r.status = 403; r.body = "Forbidden";
         r.headers.data = NULL; r.headers.len = 0; return r;
@@ -818,7 +847,11 @@ static TkPageRoute g_page_routes[TK_MAX_PAGES];
 static int         g_page_count = 0;
 
 static Res tk_page_dispatch(Req req) {
-    const char *rpath = req.path ? req.path : "/";
+    /* 127.100: page routes are exact paths; a query string must not stop
+     * /docs?from=nav from finding the /docs page. */
+    char pathbuf[2048];
+    const char *rpath = http_path_only(req.path ? req.path : "/",
+                                       pathbuf, sizeof pathbuf);
 
     for (int i = 0; i < g_page_count; i++) {
         if (strcmp(g_page_routes[i].route, rpath) == 0) {
@@ -996,7 +1029,11 @@ static Res vhost_catchall_handler(Req req) {
         return r;
     }
 
-    const char *url_path = req.path ? req.path : "/";
+    /* 127.100: a vhost docroot is a static-file root like any other — the
+     * query string is not part of the filename. */
+    char vpathbuf[2048];
+    const char *url_path = http_path_only(req.path ? req.path : "/",
+                                          vpathbuf, sizeof vpathbuf);
     const char *rel_path = (url_path[0] == '/') ? url_path + 1 : url_path;
 
     HttpResult inm_r = http_header(req, "If-None-Match");

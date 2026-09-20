@@ -5,7 +5,8 @@
    `std.llm.tool` -- a dotted sub-namespace that resolves to nothing -- the
    documentation headlined `std.llm_tool`, which the lexer rejects under
    113.2a, and there were no _w wrappers at all. The module is now
-   `std.llmtool`, which is the name src/stdlib/llmtool.h already used.
+   `std.llmtool`, the name a stale twin header src/stdlib/llmtool.h already
+   used; 127.99 removed that twin, leaving llm_tool.c/.h as the one source.
 
    The import lines below are half the assertion: before this, neither
    spelling could be written.

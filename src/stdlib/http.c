@@ -128,6 +128,33 @@ HttpResult http_header(Req req, const char *name) {
     HttpResult r = {NULL, 1, {HTTP_ERR_NOT_FOUND, "header not found", 0}}; return r;
 }
 
+/* ── Request-target path component (story 127.100) ──────────── */
+
+/*
+ * http_path_only — copy the request target up to the first '?' or '#'.
+ *
+ * Route matching and static-file resolution both need the path alone.  Before
+ * this existed every dispatch loop matched patterns against the raw target,
+ * so http.getstatic("/style.css") never matched "/style.css?v=abc" and
+ * http.servedir's wildcard handler built the filename "…/style.css?v=abc",
+ * which no filesystem has.  Either way: 404 on a versioned asset URL.
+ *
+ * req.path itself is deliberately left raw — it is the only access a toke
+ * handler has to the query string — so the stripping happens at each point
+ * of use, not in parse_request.
+ */
+const char *http_path_only(const char *target, char *buf, size_t buflen)
+{
+    if (!target) return "";
+    size_t n = strcspn(target, "?#");
+    if (target[n] == '\0') return target;   /* no query, no fragment */
+    if (!buf || buflen == 0) return target;
+    if (n > buflen - 1) n = buflen - 1;
+    memcpy(buf, target, n);
+    buf[n] = '\0';
+    return buf;
+}
+
 /* ── Pattern matching ───────────────────────────────────────────────── */
 
 static int match_pattern(const char *pat, const char *path,
@@ -1006,6 +1033,11 @@ static void handle_connection(int fd)
         }
         Res res = make_res(404, "Not Found");
         StrPair params[32]; int pc = 0;
+        /* 127.100: route on the path component; the query string is not
+         * part of the path and must not take part in matching. */
+        char pathbuf_h1[2048];
+        const char *rpath_h1 =
+            http_path_only(req.path, pathbuf_h1, sizeof pathbuf_h1);
         int path_matched = 0;
         int handler_called = 0;
         /* Two-pass routing: exact matches first, then wildcard/param routes.
@@ -1014,7 +1046,7 @@ static void handle_connection(int fd)
         int best = -1;
         for (int i = 0; i < route_count; i++) {
             if (match_pattern(route_table[i].pattern,
-                              req.path ? req.path : "", params, &pc)) {
+                              rpath_h1, params, &pc)) {
                 path_matched = 1;
                 const char *check_method = is_head ? "GET" : req.method;
                 if (check_method &&
@@ -1030,7 +1062,7 @@ static void handle_connection(int fd)
         }
         if (best >= 0) {
             match_pattern(route_table[best].pattern,
-                          req.path ? req.path : "", params, &pc);
+                          rpath_h1, params, &pc);
             req.params.data = params; req.params.len = (uint64_t)pc;
             res = route_table[best].h(req);
             handler_called = 1;
@@ -3663,13 +3695,17 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
              * over wildcard, same logic as HTTP/1.1 TLS path (Story 75.2) */
             Res res = make_res(404, "Not Found");
             StrPair h2_params[32]; int h2_pc = 0;
+            /* 127.100: :path carries the query string; route on the path. */
+            char pathbuf_h2[2048];
+            const char *rpath_h2 =
+                http_path_only(path, pathbuf_h2, sizeof pathbuf_h2);
             int h2_path_matched = 0;
             int h2_handler_called = 0;
             int h2_is_head = (strcmp(method, "HEAD") == 0);
             int h2_best = -1;
             for (int r = 0; r < route_count; r++) {
                 if (match_pattern(route_table[r].pattern,
-                                  path ? path : "", h2_params, &h2_pc)) {
+                                  rpath_h2, h2_params, &h2_pc)) {
                     h2_path_matched = 1;
                     const char *cm = h2_is_head ? "GET" : method;
                     if (cm && strcmp(route_table[r].method, cm) == 0) {
@@ -3683,7 +3719,7 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             }
             if (h2_best >= 0) {
                 match_pattern(route_table[h2_best].pattern,
-                              path ? path : "", h2_params, &h2_pc);
+                              rpath_h2, h2_params, &h2_pc);
                 req.params.data = h2_params;
                 req.params.len  = (uint64_t)h2_pc;
                 res = route_table[h2_best].h(req);
@@ -4149,12 +4185,17 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         }
         Res res = make_res(404, "Not Found");
         StrPair params[32]; int pc = 0;
+        /* 127.100: route on the path component; the query string is not
+         * part of the path and must not take part in matching. */
+        char pathbuf_tls[2048];
+        const char *rpath_tls =
+            http_path_only(req.path, pathbuf_tls, sizeof pathbuf_tls);
         int tls_path_matched = 0;
         int tls_handler_called = 0;
         int tls_best = -1;
         for (int i = 0; i < route_count; i++) {
             if (match_pattern(route_table[i].pattern,
-                              req.path ? req.path : "", params, &pc)) {
+                              rpath_tls, params, &pc)) {
                 tls_path_matched = 1;
                 const char *check_method = tls_is_head ? "GET" : req.method;
                 if (check_method &&
@@ -4169,7 +4210,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         }
         if (tls_best >= 0) {
             match_pattern(route_table[tls_best].pattern,
-                          req.path ? req.path : "", params, &pc);
+                          rpath_tls, params, &pc);
             req.params.data = params; req.params.len = (uint64_t)pc;
             res = route_table[tls_best].h(req);
             tls_handler_called = 1;

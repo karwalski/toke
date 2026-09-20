@@ -52,6 +52,22 @@ typedef struct {
 
 typedef Res (*RouteHandler)(Req req);
 
+/*
+ * http_path_only — the path component of a request target (story 127.100).
+ *
+ * A request target is `absolute-path [ "?" query ]` (RFC 9110 4.1); a
+ * fragment is never sent on the wire but is cheap to defend against.  Routing
+ * and static-file resolution must both see the path alone, or
+ * `/static/css/style.css?v=<hash>` — the standard way to make a cache-bust
+ * reliable — resolves to a filename that does not exist and 404s.
+ *
+ * `target` is copied into `buf` up to the first '?' or '#'.  Returns `target`
+ * itself when there is no delimiter (no copy, no truncation risk), otherwise
+ * `buf`.  A target longer than `buflen` is truncated, which can only turn a
+ * hit into a 404, never a miss into a traversal.  NULL target yields "".
+ */
+const char *http_path_only(const char *target, char *buf, size_t buflen);
+
 /* Route registration */
 void http_GET   (const char *pattern, RouteHandler h);
 void http_POST  (const char *pattern, RouteHandler h);

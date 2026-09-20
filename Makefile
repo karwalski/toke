@@ -37,6 +37,16 @@ SRCS    = src/lexer.c src/parser.c src/names.c src/types.c \
           src/main.c src/stdlib/str.c
 
 # ── Story 19.1.4: stdlib modules linked into tkc for i= imports ──────────
+#
+# 127.99 — WHAT THE STANDARD LIBRARY IS, is stated by the manifest, not by
+# a directory glob.  The module table in src/stdlib_deps.c (printed by
+# `tkc --emit-deps`) is authoritative for what ships in a compiled program;
+# this list and find_stdlib_sources() in src/llvm.c are the two curated
+# subsets built from it.  A build that globs the directory instead is
+# guessing, and the guess was wrong: a rename left two copies of a module
+# tracked, invisible here and fatal at link there.  test/conform/T004
+# (scripts/check_stdlib_link_set.py) keeps the directory a faithful
+# derivation of the manifest so a glob can no longer disagree with it.
 STDLIB_SRCS = \
           src/stdlib/crypto.c \
           src/stdlib/encoding.c src/stdlib/encrypt.c src/stdlib/auth.c \

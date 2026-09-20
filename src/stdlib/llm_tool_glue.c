@@ -14,8 +14,10 @@
  *
  * The same class as the secure-memory defect closed in 0fa50e5 (136.5): a
  * working capability published under a name no consumer can write. The module
- * is now `std.llmtool`, which is what src/stdlib/llmtool.h had already called
- * it, and the wrappers below are the door.
+ * is now `std.llmtool`, which is what a stale twin header llmtool.h had
+ * already called it, and the wrappers below are the door.  That twin — and
+ * llmtool.c beside it — broke every globbing build with multiple definitions
+ * and were removed by 127.99; llm_tool.c/.h is the one source.
  *
  * Struct marshalling follows the rule 136.4 established: the compiler gives a
  * struct one i64 slot per field, so every value handed back to toke is built
