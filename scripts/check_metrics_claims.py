@@ -66,15 +66,6 @@ EXCLUDE_DIRS = {
     ".git", ".hg", ".svn", "node_modules", "__pycache__", "site-packages",
     ".venv", "venv", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
     ".cache", ".next", "dist", "build", "target", "vendor", "coverage",
-    # Story 132.36: `build-docs/` is the website's RENDERED copy of ~/tk/toke/docs
-    # (scripts/sync_docs_content.sh + `ooke build`; `make clean` deletes it). It was
-    # scanned only because it is not spelled "build": the same page was reported
-    # twice, once as the source this gate already checks and once as generated HTML
-    # nobody can edit, and the mirror even lost the FACTS_SKIP exemptions its
-    # sources carry (docs/about/changelog.md, docs/audits/, the v0.3 spec). The
-    # claim surfaces of the website — templates/, static/, sites/, content/ — are
-    # still scanned; only the build artefact is pruned.
-    "build-docs",
     # generated data, not claims: corpus shards, run outputs, checkpoints
     "corpus", "clean", "data", "store", "logs", "results", "output", "outputs",
     "checkpoints", "training-data",
@@ -457,6 +448,30 @@ def claims_token_percentage(s):
     return False
 
 
+# ---------------------------------------------------------------------------
+# Generated mirrors (story 132.36)
+# ---------------------------------------------------------------------------
+# A directory that is a RENDERED OR COPIED mirror of docs this guard already
+# scans at their source. Scanning the mirror reports the same page twice and —
+# worse — the copy loses the FACTS_SKIP exemptions its source carries, so a
+# changelog or the superseded v0.3 spec comes back as a live claim just because
+# it was copied to a different path. Both mirrors below are written by a script
+# and by nothing else (`scripts/sync_docs_content.sh`, `ooke build`), so there is
+# nowhere in them to make a correction: the fix always belongs upstream.
+#
+# This is a path list, not a name list: `content/docs` cannot be excluded by the
+# directory name `docs` without blinding the guard to every real doc tree.
+GENERATED_MIRRORS = (
+    os.path.join("toke-website", "content", "docs"),   # copy of ~/tk/toke/docs
+    os.path.join("toke-website", "build-docs"),        # ooke-rendered HTML of the same
+)
+
+
+def is_generated_mirror(path):
+    norm = os.path.normpath(os.path.abspath(path))
+    return any((os.sep + m + os.sep) in norm or norm.endswith(os.sep + m)
+               for m in GENERATED_MIRRORS)
+
 def md_files(targets):
     out = []
     for t in targets:
@@ -469,7 +484,8 @@ def md_files(targets):
             out.append(p)
         else:
             for dirpath, dirs, files in os.walk(p):
-                dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+                dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS
+                           and not is_generated_mirror(os.path.join(dirpath, d))]
                 for f in sorted(files):
                     if f.endswith(SCAN_EXT):
                         out.append(os.path.join(dirpath, f))
