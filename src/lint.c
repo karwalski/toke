@@ -628,6 +628,71 @@ static int rule_empty_fn_body(const Node *node, const char *src,
     return 0;
 }
 
+/* ── Qualified-type references to an import alias (127.81) ───────────── */
+
+/*
+ * AST GAP. `parse_type_expr` lowers a qualified type `alias.$name` to a
+ * single NODE_TYPE_IDENT whose token is *name*, marked `op == TK_DOT`
+ * (src/parser.c:413).  The three tokens it consumed for `alias`, `.` and
+ * `$` are dropped on the floor, so the alias has no node anywhere in the
+ * tree and `ident_used_in` — which compares node tokens — can never see it.
+ *
+ * That gap made `unused-import` advise deleting an import that the program
+ * genuinely depends on, and the import list is not merely a name-resolution
+ * scope: it is the compiler's module manifest.  Three codegen consumers key
+ * off it directly —
+ *   - resolve_stdlib_deps_imports_only (src/stdlib_deps.c) picks the C
+ *     runtime files to compile in, so a dropped import silently drops the
+ *     module's implementation out of the link set;
+ *   - register_tki_struct_types (src/llvm.c) loads stdlib/<mod>.tki to get
+ *     record field -> GEP indices, so a dropped import makes field access
+ *     fall back to index 0 — a silently wrong field, not a diagnostic;
+ *   - prepass_load_tki / resolve_stdlib_call map the alias to a C symbol.
+ * Deleting an import is therefore a semantic change to the emitted binary.
+ *
+ * Until the parser preserves the alias (filed separately), recover it from
+ * the source text that precedes the type token: `alias . $ name`.
+ */
+static int qual_type_alias_is(const Node *n, const char *name, int name_len,
+                              const char *src)
+{
+    int p;
+    int end, s;
+
+    if (!n || n->kind != NODE_TYPE_IDENT || n->op != TK_DOT) return 0;
+
+    /* Step back over the '$' that precedes the type name. */
+    p = n->tok_start - 1;
+    while (p >= 0 && (src[p] == ' ' || src[p] == '\t')) p--;
+    if (p < 0 || src[p] != '$') return 0;
+    p--;
+    while (p >= 0 && (src[p] == ' ' || src[p] == '\t')) p--;
+    if (p < 0 || src[p] != '.') return 0;
+    p--;
+    while (p >= 0 && (src[p] == ' ' || src[p] == '\t')) p--;
+
+    /* Scan back over the alias identifier. */
+    end = p + 1;
+    s = end;
+    while (s > 0 && (isalnum((unsigned char)src[s - 1]) || src[s - 1] == '_'))
+        s--;
+    if (end - s != name_len) return 0;
+    return memcmp(src + s, name, (size_t)name_len) == 0;
+}
+
+/* Does (name, name_len) appear as the qualifier of any qualified type? */
+static int qual_type_used_in(const Node *node, const char *name, int name_len,
+                             const char *src)
+{
+    int i;
+    if (!node) return 0;
+    if (qual_type_alias_is(node, name, name_len, src)) return 1;
+    for (i = 0; i < node->child_count; i++)
+        if (qual_type_used_in(node->children[i], name, name_len, src))
+            return 1;
+    return 0;
+}
+
 /* ── Rule: unused-import ──────────────────────────────────────────────── */
 
 /*
@@ -659,6 +724,8 @@ static int rule_unused_import(const Node *root, const char *src,
             const Node *decl = root->children[j];
             if (!decl || decl->kind == NODE_IMPORT) continue;
             if (ident_used_in(decl, name, name_len, src)) { used = 1; break; }
+            /* 127.81: a type-only use (`p:alias.$rec`) leaves no ident node. */
+            if (qual_type_used_in(decl, name, name_len, src)) { used = 1; break; }
         }
 
         if (!used && rule_enabled("unused-import", opts)) {
@@ -707,6 +774,65 @@ static int rule_redundant_bind(const Node *node, const char *src,
     return 0;
 }
 
+/* ── Initialiser inertness (127.82) ──────────────────────────────────── */
+
+/*
+ * An unused *name* is not an unused *expression*.  `unused-let` used to
+ * offer a fix that deleted the whole statement — initialiser included — so
+ * `let ok=fs.mkdir(dir);` and `let st=proc.wait(pid);` had the directory
+ * creation and the process wait deleted along with the name nobody read.
+ * The diagnostic is right (the binding really is dead); the rewrite was not.
+ *
+ * So the fix is now offered only for an initialiser that is provably inert:
+ * an allowlist of node kinds that cannot do anything but compute a value.
+ * Anything else — every call, propagate, spawn, closure, index or cast, and
+ * any node kind added after this was written — keeps the warning and loses
+ * the automatic fix, which a human can still apply by hand after reading it.
+ *
+ * Deliberately an allowlist, not a denylist: a new effectful node kind must
+ * be opted *in* to auto-deletion rather than silently inheriting it.
+ */
+static int expr_is_inert(const Node *n)
+{
+    int i;
+    if (!n) return 0;
+
+    switch (n->kind) {
+    /* Leaves: literals and plain names. */
+    case NODE_INT_LIT:
+    case NODE_FLOAT_LIT:
+    case NODE_STR_LIT:
+    case NODE_BOOL_LIT:
+    case NODE_IDENT:
+    case NODE_TYPE_IDENT:
+    case NODE_TYPE_EXPR:
+        return 1;
+
+    /* Pure structure over inert operands. */
+    case NODE_BINARY_EXPR:
+    case NODE_UNARY_EXPR:
+    case NODE_ARRAY_LIT:
+    case NODE_MAP_LIT:
+    case NODE_MAP_ENTRY:
+    case NODE_STRUCT_LIT:
+    case NODE_FIELD_INIT:
+    case NODE_FIELD_EXPR:
+        break;
+
+    /*
+     * Everything else is treated as effectful.  NODE_CALL_EXPR is the case
+     * this rule exists for; NODE_INDEX_EXPR is excluded because `a.get(i)`
+     * parses as one (see the header note) and a user `get` may do anything.
+     */
+    default:
+        return 0;
+    }
+
+    for (i = 0; i < n->child_count; i++)
+        if (!expr_is_inert(n->children[i])) return 0;
+    return 1;
+}
+
 /* ── Rule: unused-let ─────────────────────────────────────────────────── */
 
 /*
@@ -738,11 +864,27 @@ static int check_unused_binds(const Node *body, const char *src,
 
         if (!used && rule_enabled("unused-let", opts)) {
             char msg[256];
-            snprintf(msg, sizeof msg, "binding '%.*s' is never used", name_len, name);
+            /*
+             * 127.82: only delete the statement automatically when its
+             * initialiser cannot have done anything.  Otherwise warn and
+             * leave the rewrite to a human — deleting the name would also
+             * delete the effect the call was there for.
+             */
+            const Node *init = stmt->children[stmt->child_count - 1];
+            int inert = (stmt->child_count >= 2) && expr_is_inert(init);
+
+            snprintf(msg, sizeof msg,
+                     inert ? "binding '%.*s' is never used"
+                           : "binding '%.*s' is never used, but its "
+                             "initialiser may have an effect: remove the "
+                             "binding by hand, or keep the call as a "
+                             "statement",
+                     name_len, name);
             if (lint_push(out, "unused-let", msg,
                           stmt->start, stmt->line, stmt->col, LINT_WARNING,
-                          1, span_start_of_stmt(stmt, src),
-                          span_end_of_stmt(stmt, src, src_len), "") < 0)
+                          inert, span_start_of_stmt(stmt, src),
+                          span_end_of_stmt(stmt, src, src_len),
+                          inert ? "" : NULL) < 0)
                 return -1;
         }
     }

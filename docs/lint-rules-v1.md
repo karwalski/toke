@@ -96,7 +96,11 @@ f=main():i64{
 
 Remove the unused binding entirely.
 
-**Auto-fix (`toke lint --fix`):** Yes. The `let` statement is removed. The fix is applied only when the right-hand side expression has no side effects (i.e. is a literal, a variable reference, or a pure arithmetic expression). If the right-hand side is a function call, the binding is rewritten to a bare call statement rather than removed, because the call may have side effects.
+**Auto-fix (`toke lint --fix`):** Partial. The `let` statement is removed **only** when the right-hand side is provably inert — a literal, a variable reference, a field access, or pure arithmetic/aggregate structure over those. The implementation is an allowlist of AST node kinds (`expr_is_inert` in `src/lint.c`), so a node kind added later is treated as effectful until it is opted in.
+
+If the right-hand side contains a call, **no fix is offered**: the diagnostic still fires (the binding really is dead) and the rewrite is left to a human. An unused *name* is not an unused *expression* — until story 127.82 the fix deleted the initialiser along with the name, so `let ok=fs.mkdir(dir);` and `let st=proc.wait(pid);` lost the directory creation and the process wait. `test/conform/C010_lint_fix_keeps_side_effects.sh` compiles and runs the fixed program and checks the directory on disk.
+
+The stronger rewrite this section used to promise — turning `let x=f();` into a bare `f();` statement rather than dropping the fix — is **not implemented**. It is well defined only when the initialiser is exactly one call, and discarding an error-union result as a statement rather than as a binding is not yet verified to lower identically. Withdrawing the fix is the safe half of that behaviour; the rewrite is tracked as a separate story.
 
 **Edge cases:**
 
@@ -151,6 +155,15 @@ f=main():i64{
 
 - If an import alias appears only in a comment companion file (`.md`), it is still flagged — toke has no source-level comments, so the alias is unused from the compiler's perspective.
 - Wildcard or re-exported imports (if supported in future versions) are exempt.
+- **A type-only use counts as a use** (story 127.81). `f=g(r:c.$csvreader)` references `c`, but `parse_type_expr` lowers `alias.$rec` to a single `NODE_TYPE_IDENT` carrying the *type* token and discards the alias token, so the alias has no node in the AST. The rule recovers it from the source text preceding the type token; `test/conform/C009_lint_import_is_load_bearing.sh` pins this.
+
+**Why a wrong answer here is dangerous.** The import list is the compiler's module manifest, not only a name-resolution scope, so deleting an import changes the emitted program:
+
+- `resolve_stdlib_deps_imports_only` (`src/stdlib_deps.c`) selects which C runtime files are compiled into the binary — a dropped import silently drops the module's implementation from the link set;
+- `register_tki_struct_types` (`src/llvm.c`) reads `stdlib/<mod>.tki` for record field → GEP indices — a dropped import makes field access fall back to index 0, the wrong field, with no diagnostic;
+- `prepass_load_tki` / `resolve_stdlib_call` map the alias to a C symbol.
+
+A false positive here therefore produces a binary that builds, reports success, and does not work. C009 asserts the damage (dependency set and emitted field index) and not merely the absence of the warning.
 
 ---
 
