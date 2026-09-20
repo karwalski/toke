@@ -66,6 +66,15 @@ EXCLUDE_DIRS = {
     ".git", ".hg", ".svn", "node_modules", "__pycache__", "site-packages",
     ".venv", "venv", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
     ".cache", ".next", "dist", "build", "target", "vendor", "coverage",
+    # Story 132.36: `build-docs/` is the website's RENDERED copy of ~/tk/toke/docs
+    # (scripts/sync_docs_content.sh + `ooke build`; `make clean` deletes it). It was
+    # scanned only because it is not spelled "build": the same page was reported
+    # twice, once as the source this gate already checks and once as generated HTML
+    # nobody can edit, and the mirror even lost the FACTS_SKIP exemptions its
+    # sources carry (docs/about/changelog.md, docs/audits/, the v0.3 spec). The
+    # claim surfaces of the website — templates/, static/, sites/, content/ — are
+    # still scanned; only the build artefact is pruned.
+    "build-docs",
     # generated data, not claims: corpus shards, run outputs, checkpoints
     "corpus", "clean", "data", "store", "logs", "results", "output", "outputs",
     "checkpoints", "training-data",
@@ -205,6 +214,9 @@ ATTRIBUTED = re.compile(
     r"\b(KERN|KARN|NERD|Sigil|Vyxal|third[- ]party|they publish|their (own )?"
     r"(claim|figure|number|report))\b", re.I)
 
+# Markdown strikethrough around a percentage: `~~"40-75% fewer tokens"~~`.
+STRUCK = re.compile(r"~~[^~]*\d[\d.,]*\s?%[^~]*~~")
+
 SUPERSEDED = re.compile(
     r"\b(supersede[sd]?|withdraw(n|s)?|no longer|historical|does not reconcile|"
     r"not reproducible|not creditable|not supportable|retired|corrected|formerly|"
@@ -269,8 +281,13 @@ def _accepted(facts):
 
 # "Phase 2 keywords", "Gate 1 stories", "Tier 0 modules" are labels, not counts
 # (story 132.15 — `toke-corpus/scripts/phase2_syntax_audit.py` read as "2 keywords").
-NOT_LABEL = (r"(?<!Phase )(?<!phase )(?<!Profile )(?<!profile )(?<!Tier )(?<!tier )"
-             r"(?<!Gate )(?<!gate )(?<!Epic )(?<!epic )(?<!Wave )(?<!wave )")
+# 132.36: the separator may be a HYPHEN. `toke-ooke/docs/public-api.md` says
+# "toke's Profile-1 character set excludes `_`" and this gate read it as a claim
+# of a ONE-character alphabet — a label the list below already exempts, missed
+# only because it was written `Profile-1` rather than `Profile 1`.
+_LABEL_WORDS = ("Phase", "Profile", "Tier", "Gate", "Epic", "Wave")
+NOT_LABEL = "".join("(?<!%s%s)" % (w, sep)          # re.I makes these case-blind
+                    for w in _LABEL_WORDS for sep in (" ", "-"))
 
 # A count scoped to a subset is not a claim about the project's total: "ooke depends on
 # 11 stdlib modules", "completed 15 of 20 stories" (story 132.15).
@@ -306,12 +323,12 @@ COUNT_RULES = [
     (re.compile(r"(?<![\w.])" + NOT_LABEL + r"(?P<n>\d[\d,]*)\s*\+?\s*stories\b", re.I), "stories", "stories"),
     (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:corpus\s+records?|validated\s+(?:training\s+)?programs?|audited\s+records?)\b", re.I),
      "corpus records", "corpus_records"),
-    (re.compile(r"(?<![\w.])(?<!Phase )(?<!Profile )(?<!phase )(?<!profile )"
+    (re.compile(r"(?<![\w.])" + NOT_LABEL +
                 r"(?P<n>\d[\d,]*)[- ]character(?:s)?\b"
                 r"(?=[^.|]{0,60}\b(?:alphabet|character set|charset|profile|syntax|"
                 r"ASCII|default mode|set\b)|\s*(?:default|legacy)\b)", re.I),
      "character set", "charset"),
-    (re.compile(r"(?<![\w.])(?<!Phase )(?<!Profile )(?<!phase )(?<!profile )"
+    (re.compile(r"(?<![\w.])" + NOT_LABEL +
                 r"(?P<n>\d[\d,]*)\s*\+?\s*characters?\b"
                 r"(?=[^.|]{0,60}\b(?:alphabet|character set|charset|profile|syntax|"
                 r"ASCII)\b)", re.I),
@@ -418,6 +435,16 @@ def claims_token_percentage(s):
     if CITATION.search(s) and not re.search(r"\btoke\b", s, re.I):
         return False
     if UNMEASURED.search(s) and not MEASURED.search(s):
+        return False
+    # 132.36: a figure the sentence has STRUCK THROUGH and calls withdrawn is a
+    # withdrawal notice, not a published claim. `toke-website/design/
+    # handoff-20260623/README.md` opens with a withdrawal banner naming the
+    # stories, strikes both figures, and says no replacement belongs in a design
+    # pack — and this gate still demanded a tokenizer and an N for the struck
+    # text, i.e. it asked the document to requalify a number it had just
+    # retired. Both halves are required: strikethrough AND a supersession word
+    # in the same sentence. A live percentage stays a live claim.
+    if STRUCK.search(s) and SUPERSEDED.search(s):
         return False
     for m in PCT.finditer(s):
         before = s[max(0, m.start() - 24):m.start()]

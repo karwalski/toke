@@ -255,7 +255,12 @@ re-entrant, and composes. It was **not** chosen here, because it changes
 the LLVM signature of every fallible function: 132 fallible functions
 across 33 stdlib modules, every C glue wrapper behind them, all 63
 error-union declarations in ooke, and the 1,253 corpus records that
-call them. That is a coordinated break of the whole tree, and the
+call them.
+<!-- facts-exempt: 2026-09-20 the counts in the paragraph above are the tree as
+     it stood when this decision was taken (114.41-era: 33 stdlib modules, 1,253
+     corpus records). They size a decision already made, so re-deriving them to
+     today's numbers would rewrite the record rather than correct it. Story
+     132.36. --> That is a coordinated break of the whole tree, and the
 compiler is the root of trust for the corpus (AGENTS.md §1).
 
 The split-channel form, by contrast, is **already the ABI** — the return

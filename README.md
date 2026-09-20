@@ -154,11 +154,9 @@ make
 ./build/tkc --version
 ```
 
-**Homebrew** (coming soon):
-
-```bash
-brew tap karwalski/toke && brew install tkc
-```
+**Homebrew** — *not published yet.* The tap `github.com/karwalski/homebrew-toke`
+does not exist, so `brew tap karwalski/toke` returns 404 today. The formula is
+written and waiting on a publish step (story 132.18); build from source until then.
 
 **Run the model locally** via Ollama:
 
@@ -166,16 +164,24 @@ brew tap karwalski/toke && brew install tkc
 ollama run karwalski/toke
 ```
 
-The published model is the Gate 2 v0.3-syntax model described above; it does not write
+Verified 2026-09-20: the manifest resolves and the model layer is 4.7 GB. The
+published model is the Gate 2 v0.3-syntax model described above; it does not write
 v0.4.
 
-**Generate toke via API** (free tier, no credit card):
+**Hosted API — withdrawn, 2026-09-20.** This section used to publish a working
+`curl` against `https://api.tokelang.dev/v1/generate` with a free-tier signup at
+`console.tokelang.dev`. **Neither is available.** The inference endpoint behind the
+API (the SageMaker endpoint `toke-cloud-qwen-endpoint`) was deleted on 2026-09-18,
+so a caller holding a valid key gets *"Endpoint not found. The SageMaker endpoint
+has not been deployed."*; the gateway still answers, which makes the failure look
+like a key problem rather than a withdrawn service. `console.tokelang.dev` resolves
+but its origin does not answer at all.
 
-```bash
-curl -X POST https://api.tokelang.dev/v1/generate \
-  -H "X-Api-Key: YOUR_KEY" \
-  -d '{"description": "Sum an array"}'
-```
+The example is **withdrawn rather than deleted**, because deleting it silently
+would leave the same impression the broken example did — that a hosted channel
+exists. It does not, and there is no date for one. To run the model today, use
+Ollama above, or the weights on
+[HuggingFace](https://huggingface.co/karwalski/toke).
 
 ## Tooling & integrations
 
@@ -190,8 +196,10 @@ curl -X POST https://api.tokelang.dev/v1/generate \
 | HuggingFace | Model | [huggingface.co/karwalski/toke](https://huggingface.co/karwalski/toke) |
 | HuggingFace | Tokenizer | [huggingface.co/karwalski/toke-tokenizer](https://huggingface.co/karwalski/toke-tokenizer) |
 | Docker | Self-host | `docker compose up` (see `toke-model/docker/`) |
-| API | REST | [api.tokelang.dev](https://api.tokelang.dev) |
-| Console | Web UI | [console.tokelang.dev](https://console.tokelang.dev) |
+| ~~API~~ | ~~REST~~ | **withdrawn 2026-09-20** — the inference endpoint was deleted 2026-09-18 |
+| ~~Console~~ | ~~Web UI~~ | **withdrawn 2026-09-20** — the origin does not answer |
+
+Every row above except the two struck ones was re-checked on 2026-09-20 and resolves.
 
 ## Project structure
 

@@ -27,6 +27,9 @@ Usage:
     python3 scripts/verify_project_facts.py --check-src  # only the src/** + --help gate
     python3 scripts/verify_project_facts.py --probe      # cross-check the character
                                                          # set against the built tkc
+    python3 scripts/verify_project_facts.py --sync       # FILL every <!--fact:KEY--> span
+                                                         # on the published surfaces
+    python3 scripts/verify_project_facts.py --sync-check # fail if a span has drifted
 Exit: 0 clean, 1 on drift (--check) or on an internal inconsistency (--probe).
 """
 import glob
@@ -529,15 +532,100 @@ def check_against_baseline(facts):
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Story 132.36 — derived surfaces: the number is WRITTEN by this script
+# ---------------------------------------------------------------------------
+#
+# Rule 4 of check_metrics_claims.py catches a published count that disagrees with
+# the tree, but it only ever says "this is wrong" — a human then retypes the
+# number, and that is where the drift comes from. The stdlib module count drifted
+# TWICE in one day: 57 -> 56 when the window module was withdrawn, then back to 57
+# when the archive module landed, with three surfaces left saying three different
+# things (README 56, toke-model 56, the website "30+").
+#
+# A span marked `<!--fact:stdlib_modules-->57<!--/fact-->` is not typed. This
+# script fills it from the tree, and `--sync-check` fails when a surface has
+# drifted from what the tree says. Markdown and HTML both hide the comments, so
+# the reader sees only the number.
+FACT_SPAN = re.compile(
+    r"(?P<open><!--\s*fact:(?P<key>[a-z0-9_]+)(?P<fmt>\|,)?\s*-->)"
+    r"(?P<value>[^<]*)"
+    r"(?P<close><!--\s*/fact\s*-->)")
+
+# Surfaces that carry a derived span. A sibling repo that is not checked out is
+# skipped, exactly as check-claims-all does.
+SYNC_SURFACES = [
+    "README.md",
+    "../toke-model/docs/training-reset-128.md",
+    "../toke-website/templates/index.tkt",
+]
+
+
+def sync_surfaces(facts, targets=None, write=False):
+    """Fill (or check) every `<!--fact:KEY-->…<!--/fact-->` span."""
+    paths = targets or SYNC_SURFACES
+    drift, spans, files = [], 0, 0
+    for rel in paths:
+        path = rel if os.path.isabs(rel) else os.path.join(ROOT, rel)
+        if not os.path.exists(path):
+            print("skip (not checked out): %s" % rel)
+            continue
+        files += 1
+        text = _read(path)
+
+        def fill(m):
+            nonlocal spans
+            spans += 1
+            key = m.group("key")
+            if key not in facts:
+                drift.append((rel, key, m.group("value"),
+                              "no such fact — run the script with no arguments "
+                              "to list the fact sheet"))
+                return m.group(0)
+            value = facts[key]
+            shown = "{:,}".format(value) if m.group("fmt") else str(value)
+            if m.group("value") != shown:
+                drift.append((rel, key, m.group("value"), shown))
+            return m.group("open") + shown + m.group("close")
+
+        new = FACT_SPAN.sub(fill, text)
+        if write and new != text:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(new)
+
+    if drift and not write:
+        print("ERROR: a published count has drifted from the tree (story "
+              "132.36):\n")
+        for rel, key, was, now in drift:
+            print("  %s: %s is published as %r; the tree says %s"
+                  % (rel, key, was, now))
+            if key in COMMANDS:
+                print("      derive with: %s" % COMMANDS[key])
+        print("\nDo not retype the number — re-derive it:\n"
+              "  python3 scripts/verify_project_facts.py --sync")
+        return 1
+    if write:
+        print("derived facts: filled %d span(s) across %d surface(s)%s"
+              % (spans, files, "; %d were stale" % len(drift) if drift else ""))
+    else:
+        print("derived facts OK: %d span(s) across %d surface(s) match the tree."
+              % (spans, files))
+    return 0
+
+
 def main():
     facts = collect()
+    if "--sync" in sys.argv or "--sync-check" in sys.argv:
+        targets = [a for a in sys.argv[1:] if not a.startswith("-")]
+        return sync_surfaces(facts, targets or None,
+                             write="--sync" in sys.argv)
     if "--json" in sys.argv:
         print(json.dumps({"facts": facts, "commands": COMMANDS}, indent=2,
                          sort_keys=True))
         return 0
     if "--check" in sys.argv:
         return (check_against_baseline(facts) | check_compiler_strings(facts)
-                | check_repo_map(facts))
+                | check_repo_map(facts) | sync_surfaces(facts))
     if "--check-src" in sys.argv:
         return check_compiler_strings(facts)
     if "--probe" in sys.argv:

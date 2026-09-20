@@ -188,6 +188,13 @@ EXCLUDE_DIRS = {
     ".git", ".hg", ".svn", "node_modules", "__pycache__", "site-packages",
     ".venv", "venv", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
     ".cache", ".next", "dist", "build", "target", "vendor", "coverage",
+    # Story 132.36: `build-docs/` is the website's gitignored, RENDERED copy of
+    # ~/tk/toke/docs (sync_docs_content.sh + `ooke build`; `make clean` deletes
+    # it). It was scanned only because it is not spelled "build", so the same
+    # page was reported twice — once as the source this guard already checks and
+    # once as generated HTML nobody can edit. The website's real claim surfaces
+    # (templates/, static/, sites/, content/) are still scanned.
+    "build-docs",
     "corpus", "clean", "data", "store", "logs", "results", "output", "outputs",
     "checkpoints", "training-data",
 }
