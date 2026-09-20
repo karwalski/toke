@@ -150,9 +150,9 @@
   null
  ],
  "test/e2e/e2e_narrow_int.tk": [
-  false,
-  null,
-  null
+  true,
+  42,
+  "e3b0c44298fc1c14"
  ],
  "test/e2e/e2e_network_port.tk": [
   true,

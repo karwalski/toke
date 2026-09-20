@@ -1263,6 +1263,17 @@ static void load_stdlib_tki(const char *module) {
         char base_ret[64];
         tki_base_return_type(toke_ret, base_ret, sizeof base_ret);
         e->llvm_ret = tki_type_to_llvm_abi(base_ret);
+        /* 127.95: `void!$err` is NOT void.  Stripping the error union left
+         * base "void", so the call was lowered as `call void @f(...)`, its
+         * result discarded, and a literal `add i64 0, 0` substituted for the
+         * discriminant the wrapper had just returned — the same shape as
+         * 127.80 and 127.86, a default standing in for an answer the compiler
+         * had and threw away.  Every void!$err wrapper in the tree returns
+         * 0 on success and -1 on failure (sse.emit/emitdata, ws.send,
+         * router.serve, dashboard.serve), so the ABI is i64 and the arm test
+         * is `== 0`, not `!= 0`. */
+        if (!strcmp(e->llvm_ret, "void") && strchr(toke_ret, '!'))
+            e->llvm_ret = "i64";
         g_tki_cache_count++;
 
         p = next_kind ? next_kind : p + 6;
@@ -1323,6 +1334,56 @@ static const char *tki_lookup_return_type(const char *wrapper_name) {
     for (int i = 0; i < g_tki_cache_count; i++) {
         if (!strcmp(g_tki_cache[i].wrapper_name, wrapper_name))
             return g_tki_cache[i].llvm_ret;
+    }
+    return NULL;
+}
+
+/*
+ * is_void_err_union_wrapper — 1 if this resolved stdlib wrapper's DECLARED
+ * toke return type is `void!<E>` (story 127.95).
+ *
+ * Such a call has no value to test: the i64 it returns is a pure status word,
+ * 0 for success and -1 for failure, which is the inverse of the 0/null
+ * sentinel every other error union uses.  A `mt` over one therefore tests
+ * `== 0` for the $ok arm.  Asking the interface file rather than listing the
+ * five wrappers by hand is deliberate — 127.80 is what a hand-written name
+ * list costs.
+ */
+static int is_void_err_union_wrapper(const char *name) {
+    if (!name) return 0;
+    ensure_tki_cache_loaded();
+    for (int i = 0; i < g_tki_cache_count; i++) {
+        if (strcmp(g_tki_cache[i].wrapper_name, name)) continue;
+        if (!strchr(g_tki_cache[i].toke_ret, '!')) return 0;
+        char b[64];
+        tki_base_return_type(g_tki_cache[i].toke_ret, b, sizeof b);
+        return !strcmp(b, "void");
+    }
+    return 0;
+}
+
+/*
+ * resolve_sub_namespace_call — a stdlib SUB-namespace call (`row.f64(r;"p")`
+ * from std.db) resolves to tk_<alias>_<method>_w even though the alias is not
+ * an import (story 127.93).
+ *
+ * This list used to sit inline in emit_expr and nowhere else, so expr_llvm_type
+ * answered "i64" for a wrapper emit_expr bitcasts to double — and `mt
+ * row.f64(...)` emitted `icmp ne i64 %t, 0` against a double operand: IR that
+ * neither `--check` nor `--emit-llvm` rejected and only clang's verifier
+ * caught.  That is 127.80's shape again — one registry, two readers, one of
+ * them not consulting it — so both now ask this function.
+ *
+ * Returns the wrapper symbol written into buf, or NULL if the alias is not a
+ * sub-namespace.
+ */
+static const char *resolve_sub_namespace_call(const char *alias, const char *method,
+                                              char *buf, size_t bufsz) {
+    static const char *const sub_namespaces[] = { "row", NULL };
+    for (int si = 0; sub_namespaces[si]; si++) {
+        if (strcmp(alias, sub_namespaces[si])) continue;
+        snprintf(buf, bufsz, "tk_%s_%s_w", alias, method);
+        return buf;
     }
     return NULL;
 }
@@ -3857,16 +3918,12 @@ static int emit_expr(Ctx *c, const Node *n)
             if (!resolved_fn) {
                 /* Check if alias is a known sub-namespace (e.g. "row" from std.db).
                  * Sub-namespaces are not in c->imports[] but should generate
-                 * tk_<alias>_<method>_w wrappers like regular stdlib modules. */
-                static const char *sub_namespaces[] = { "row", NULL };
-                int is_sub_ns = 0;
-                for (int si = 0; sub_namespaces[si]; si++)
-                    if (!strcmp(alias, sub_namespaces[si])) { is_sub_ns = 1; break; }
-                if (is_sub_ns) {
-                    static char sub_buf[256];
-                    snprintf(sub_buf, sizeof sub_buf, "tk_%s_%s_w", alias, method);
-                    resolved_fn = sub_buf;
-                } else {
+                 * tk_<alias>_<method>_w wrappers like regular stdlib modules.
+                 * 127.93: shared with expr_llvm_type so the two answers cannot
+                 * diverge — they did, and the divergence was invalid IR. */
+                static char sub_buf[256];
+                resolved_fn = resolve_sub_namespace_call(alias, method, sub_buf, sizeof sub_buf);
+                if (!resolved_fn) {
                     /* Check if alias is a module import */
                     for (int ii = 0; ii < c->import_count; ii++)
                         if (!strcmp(c->imports[ii].alias, alias)) {
@@ -5743,6 +5800,12 @@ static int emit_expr(Ctx *c, const Node *n)
          * Stdlib non-parse error-union wrappers (json.dec/file.read/csv.parse/…)
          * still use the 0/null sentinel and are NOT matched here. */
         int use_current_error = 0;
+        /* 127.95: a `void!$err` scrutinee carries a status word, not a value:
+         * 0 is success and -1 is failure, the inverse of the 0/null sentinel.
+         * Before this the call was lowered as void and the test ran against a
+         * literal 0, so the $err arm was taken unconditionally — on every
+         * sse.emit and every ws.send that has ever shipped. */
+        int zero_is_ok = 0;
         if (n->children[0]->kind == NODE_CALL_EXPR && n->children[0]->child_count >= 1) {
             const Node *sc = n->children[0]->children[0];
             if (sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
@@ -5750,6 +5813,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 tok_cp(c->src, sc->children[0], pal, sizeof pal);
                 tok_cp(c->src, sc->children[1], pme, sizeof pme);
                 const char *prv = resolve_stdlib_call(c, pal, pme);
+                if (is_void_err_union_wrapper(prv)) zero_is_ok = 1;          /* 127.95 */
                 if (is_num_parse_wrapper(prv)) use_current_error = 1;       /* 114.53/54 */
                 else if (!prv) {                                            /* 114.55: qualified user call */
                     const FnSig *ucs = lookup_fn(c, pme);
@@ -5781,7 +5845,11 @@ static int emit_expr(Ctx *c, const Node *n)
 
         /* 2-arm ok/err bifurcation (original path) */
         int cond = next_tmp(c);
-        if (use_current_error) {
+        if (zero_is_ok) {
+            fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0 ; 127.95 void!$err: 0 = ok, -1 = err\n",
+                    cond, sv);
+        }
+        else if (use_current_error) {
             int ev = next_tmp(c);
             fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error\n", ev);
             fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0 ; 114.53/54/55 ok = no error\n", cond, ev);
@@ -6866,6 +6934,10 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
             tok_cp(c->src, n->children[0]->children[0], alias, sizeof alias);
             tok_cp(c->src, n->children[0]->children[1], method, sizeof method);
             const char *resolved = resolve_stdlib_call(c, alias, method);
+            /* 127.93: ask the same sub-namespace resolver emit_expr asks. */
+            char sub_buf2[256];
+            if (!resolved)
+                resolved = resolve_sub_namespace_call(alias, method, sub_buf2, sizeof sub_buf2);
             if (resolved) {
                 if (!strcmp(resolved, "tk_str_argv")) return "i8*";
                 if (!strcmp(resolved, "tk_json_print")) return "i64"; /* void, but wrapped */
@@ -7638,7 +7710,15 @@ static void emit_stmt(Ctx *c, const Node *n)
              * so that shadowed name references resolve to the OLD binding.
              * e.g. `let ds=str.arraypush(ds;x)` — the `ds` in the RHS
              * must resolve to the previous `ds`, not the new one. */
-            const char *init_ty = has_ann ? vty : expr_llvm_type(c, init_node);
+            /* 127.93: ask what the initialiser ACTUALLY lowers to; do not
+             * assume the annotation describes it.  `has_ann ? vty : …` made
+             * the coercion a no-op whenever the binding was annotated, so
+             * `let b:u8 = big as u8` — where the cast re-extends to i64 for
+             * storage (80.2.1) — emitted `store i8 %t` for an i64 %t, IR that
+             * does not verify.  Both `--check` and `--emit-llvm` passed it;
+             * only clang's verifier objected.  Same shape as 127.80 and
+             * 127.86: a stated type standing in for an established one. */
+            const char *init_ty = expr_llvm_type(c, init_node);
             int v = emit_expr(c, init_node);
             v = coerce_value(c, v, init_ty, vty);
             /* 126.7: remember the raw source name (pre-uniquification) — when a
