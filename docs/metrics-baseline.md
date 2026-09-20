@@ -7,7 +7,7 @@ figures stripped of context (e.g. "Gate 2 PASS 100%"). This exists because the
 project's thesis is *falsifiable research* (risk R001) and its credibility depends
 on numbers that survive peer review (R008, R015).
 
-**Last updated:** 2026-09-19 (story 132.0(a)). Numbers are sourced from `docs/progress.md`
+**Last updated:** 2026-09-20 (stories 127.24, 127.51, 127.55 — three conformance scripts added). Numbers are sourced from `docs/progress.md`
 stories; each row cites its origin.
 
 ---
@@ -53,8 +53,8 @@ sheet, `--probe` to re-derive the character set against the built compiler).
 | `grammar_productions` | **53** | `grep -cE '^[A-Za-z][A-Za-z0-9_]*[[:space:]]*=' docs/spec/grammar.ebnf` |
 | `stdlib_modules` | **57** | `ls stdlib/*.tki \| wc -l` |
 | `conformance_cases_yaml` | **225** | `find test -name '*.yaml' \| wc -l` (grammar 98, diagnostics 92, lexical 35) |
-| `conformance_cases_shell` | **27** | `ls test/conform/*.sh \| wc -l` |
-| `conformance_cases_total` | **252** | the two rows above; `make conform` runs both |
+| `conformance_cases_shell` | **30** | `ls test/conform/*.sh \| wc -l` |
+| `conformance_cases_total` | **255** | the two rows above; `make conform` runs both |
 | `diagnostic_codes_documented` | **55** | `grep -cE '^### [EW][0-9]{4}' docs/reference/errors.md` |
 | `diagnostic_codes_in_src` | **55** | `python3 scripts/check_error_codes.py --list` — codes `src/` defines or emits; the gate fails on any divergence from the documented set |
 | `corpus_records_v04_frozen` | **23,382** | `jq .total ../toke-corpus/regen/freeze/freeze_129_summary.json` — freeze `129-freeze-2026-08-19`, reopened by Epic 131 |

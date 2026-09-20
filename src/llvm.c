@@ -7380,7 +7380,9 @@ static int la_self_update_call(Ctx *c, const Node *call, const char *x, char *ou
  * These are exactly the producers that yield an unshared block for x. */
 static int la_fresh_rhs(Ctx *c, const Node *rhs, const char *x) {
     if (!rhs) return 0;
-    if (rhs->kind == NODE_ARRAY_LIT) return 1;
+    /* 127.55: a map literal is a fresh container for exactly the same reason an
+     * array literal is, so a map accumulator can be linearly owned too. */
+    if (rhs->kind == NODE_ARRAY_LIT || rhs->kind == NODE_MAP_LIT) return 1;
     return la_self_update_call(c, rhs, x, NULL);
 }
 
@@ -7831,10 +7833,33 @@ static void emit_stmt(Ctx *c, const Node *n)
          * in-place runtime variant (amortised O(1)) rather than copy-on-write,
          * turning an O(N) loop of appends/sets from O(N^2) into O(N). Only fires
          * when compute_linear_arrays proved x is never aliased. */
-        if (is_linear_arr(c, tb) && !is_map_var(c, tb)) {
+        if (is_linear_arr(c, tb)) {
             char mname[NAME_BUF];
             const Node *rhs = n->children[1];
-            if (la_self_update_call(c, rhs, tb, mname)) {
+            /* 127.55: a map receiver takes the SAME linear fast path as an
+             * array. tk_map_set_w now copies (value semantics), so the
+             * accumulator idiom `m = m.set(k;v)` would otherwise have become
+             * O(N^2); here the receiver is proven unaliased, so mutate it. */
+            int mapv = is_map_var(c, tb);
+            if (mapv && la_self_update_call(c, rhs, tb, mname) &&
+                !strcmp(mname, "set") && rhs->child_count >= 3) {
+                const char *ln = get_llvm_name(c, tb);
+                const char *lty = get_local_type(c, ln);
+                const Node *recv_node = rhs->children[0]->children[0];
+                int recv = emit_expr(c, recv_node);
+                recv = coerce_value(c, recv, expr_llvm_type(c, recv_node), "i64");
+                int kv = emit_expr(c, rhs->children[1]);
+                kv = coerce_value(c, kv, expr_llvm_type(c, rhs->children[1]), "i64");
+                int ev = emit_expr(c, rhs->children[2]);
+                ev = coerce_value(c, ev, expr_llvm_type(c, rhs->children[2]), "i64");
+                int res = next_tmp(c);
+                fprintf(c->out, "  %%t%d = call i64 @tk_map_set_inplace_w(i64 %%t%d, i64 %%t%d, i64 %%t%d) ; 127.55 in-place map set\n",
+                        res, recv, kv, ev);
+                int rv = coerce_value(c, res, "i64", lty);
+                fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", lty, rv, lty, ln);
+                break;
+            }
+            if (!mapv && la_self_update_call(c, rhs, tb, mname)) {
                 const char *ln = get_llvm_name(c, tb);
                 const char *lty = get_local_type(c, ln);
                 const Node *recv_node = rhs->children[0]->children[0];

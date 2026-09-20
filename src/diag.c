@@ -159,6 +159,22 @@ void diag_reset(void)
     s_seq         = 0;
 }
 
+/*
+ * diag_suppress — while on, diagnostics are neither printed NOR counted.
+ *
+ * Callers use this around a SPECULATIVE parse: migrate.c re-parses candidate
+ * rewrites to see whether they hold together, and parser.c (127.24) parses the
+ * inside of a `"\(…)"` interpolation to hand the name resolver real AST nodes.
+ * Such a parse is a question, not a compilation, and its failures belong to
+ * nobody.
+ *
+ * update_counters() used to run BEFORE the suppression check, so a failed
+ * speculative parse silently incremented s_error_count: the compiler printed
+ * nothing and then exited 1 on the strength of an error it had decided not to
+ * report. `io.println("v \(a=1)")` produced exit 1 with zero diagnostics.
+ * Counting now happens after the check — a suppressed diagnostic did not
+ * happen, so it cannot decide the exit status.
+ */
 void diag_suppress(int on) { s_suppress = on; }
 void diag_reset_counts(void) { s_error_count = 0; s_warn_count = 0; }
 
@@ -414,8 +430,8 @@ diag_emit(DiagSeverity sev, int code,
     DiagFields fields = extract_fields(ap);
     va_end(ap);
 
-    update_counters(sev);
     if (s_suppress) return;
+    update_counters(sev);
     if (s_int_mode == DIAG_INT_TEXT)
         emit_text(sev, code, byte_offset, line, col, 0, message, &fields);
     else if (s_int_mode == DIAG_INT_SARIF)
@@ -434,8 +450,8 @@ diag_emit_span(DiagSeverity sev, int code,
     DiagFields fields = extract_fields(ap);
     va_end(ap);
 
-    update_counters(sev);
     if (s_suppress) return;
+    update_counters(sev);
     if (s_int_mode == DIAG_INT_TEXT)
         emit_text(sev, code, byte_offset, line, col, span_len, message, &fields);
     else if (s_int_mode == DIAG_INT_SARIF)

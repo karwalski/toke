@@ -455,12 +455,146 @@ static Node *parse_type_expr(Parser *p) {
  * Error recovery: emits E2002 and returns NULL if the current token is
  * not a recognised literal kind.
  */
+/* ── String interpolation → AST (story 127.24) ────────────────────────
+ *
+ * A `"...\(EXPR)..."` literal used to be a pure leaf: the interpolated
+ * EXPR existed only as bytes inside the token text, so the name resolver
+ * never saw it.  `io.println("\(zz)")` with `zz` undeclared therefore
+ * passed `--check` clean and died at the clang stage as an opaque E9003
+ * naming no identifier.  Three separate hand-rolled scanners had grown up
+ * to compensate (lint.c interp_ident_count, types.c check_interp_composites,
+ * the llvm.c segment splitter), each re-deriving the same facts.
+ *
+ * Now the parser parses each `\(…)` segment once and hangs the resulting
+ * expression off the STR_LIT as a child, with every offset relocated into
+ * REAL source coordinates.  Downstream passes that walk children generically
+ * — name resolution above all — see interpolated identifiers for free, and
+ * diagnostics point at the identifier inside the string rather than at the
+ * string.
+ *
+ * The STR_LIT's own tok_start/tok_len are untouched, so every consumer that
+ * renders a literal from its token text (fmt.c, tkir.c, ast_json.c, the
+ * llvm.c interpolation lowering) is unaffected.
+ */
+
+/* Wrapper program the segment is parsed inside.  Its length is the offset
+ * of EXPR within the wrapper, which is what makes `delta` below exact. */
+static const char INTERP_WRAP[] = "m=i;f=e():$str{<";
+#define INTERP_WRAP_LEN ((int)(sizeof(INTERP_WRAP) - 1))
+#define INTERP_MAX_SEGS  128
+#define INTERP_MAX_DEPTH 8
+
+/* Re-base a freshly parsed sub-AST onto the real source buffer.  `delta`
+ * converts wrapper offsets to source offsets; line/col are derived from the
+ * enclosing string token, which is exact for a single-line literal and the
+ * best available anchor otherwise. */
+static void interp_reloc(Node *n, int delta, int line, int str_start, int str_col)
+{
+    if (!n) return;
+    n->tok_start += delta;
+    n->start     += delta;
+    n->line       = line;
+    n->col        = str_col + (n->tok_start - str_start);
+    for (int i = 0; i < n->child_count; i++)
+        interp_reloc(n->children[i], delta, line, str_start, str_col);
+}
+
+/* Pull the returned expression out of `m=i;f=e():$str{<EXPR;};`. */
+static Node *interp_unwrap(Node *ast)
+{
+    Node *fn = NULL;
+    if (!ast) return NULL;
+    for (int k = 0; k < ast->child_count && !fn; k++) {
+        Node *c = ast->children[k];
+        if (!c) continue;
+        if (c->kind == NODE_FUNC_DECL) { fn = c; break; }
+        if (c->kind == NODE_MODULE)
+            for (int m = 0; m < c->child_count && !fn; m++)
+                if (c->children[m] && c->children[m]->kind == NODE_FUNC_DECL)
+                    fn = c->children[m];
+    }
+    if (!fn) return NULL;
+    for (int k = 0; k < fn->child_count; k++) {
+        Node *c = fn->children[k];
+        if (!c || c->kind != NODE_STMT_LIST) continue;
+        for (int m = 0; m < c->child_count; m++) {
+            Node *st = c->children[m];
+            if (st && st->kind == NODE_RETURN_STMT && st->child_count > 0)
+                return st->children[0];
+        }
+    }
+    return NULL;
+}
+
+/* Depth guard: a string may interpolate an expression containing another
+ * string, which re-enters parse_literal.  Bounded, not forbidden. */
+static int s_interp_depth = 0;
+
+static void attach_interp(Parser *p, Node *sn)
+{
+    if (!sn || p->profile != PROFILE_DEFAULT) return;
+    if (s_interp_depth >= INTERP_MAX_DEPTH) return;
+
+    const char *raw = p->src + sn->tok_start;
+    int rlen = sn->tok_len, nseg = 0;
+
+    for (int i = 1; i + 1 < rlen - 1 && nseg < INTERP_MAX_SEGS; i++) {
+        if (raw[i] != '\\') continue;
+        if (raw[i + 1] != '(') { i++; continue; }   /* ordinary escape */
+
+        /* Matching ')' by paren depth, ignoring parens inside nested strings. */
+        int depth = 1, j = i + 2, instr = 0, end = rlen - 1;
+        for (; j < end && depth > 0; j++) {
+            char c = raw[j];
+            if (c == '\\' && j + 1 < end) { j++; continue; }
+            if (instr) { if (c == '"') instr = 0; continue; }
+            if (c == '"') instr = 1;
+            else if (c == '(') depth++;
+            else if (c == ')') { depth--; if (depth == 0) break; }
+        }
+        if (depth != 0) break;                      /* unbalanced — codegen reports it */
+
+        int elen = j - (i + 2);
+        if (elen <= 0) { i = j; continue; }         /* `\()` — nothing to resolve */
+
+        int wrap_cap = elen + (int)sizeof(INTERP_WRAP) + 8;
+        char *wrap = (char *)arena_alloc(p->a, wrap_cap);
+        Token *toks = (Token *)arena_alloc(p->a, (elen + 32) * (int)sizeof(Token));
+        if (!wrap || !toks) break;
+        int wlen = snprintf(wrap, (size_t)wrap_cap, "%s%.*s;};",
+                            INTERP_WRAP, elen, raw + i + 2);
+
+        /* A malformed segment must not double-report: the existing codegen
+         * path already diagnoses it, and this parse is speculative. */
+        diag_suppress(1);
+        int tc = lex(wrap, wlen, toks, elen + 32, PROFILE_DEFAULT);
+        Node *expr = NULL;
+        if (tc > 0) {
+            s_interp_depth++;
+            expr = interp_unwrap(parse(toks, tc, wrap, p->a, PROFILE_DEFAULT));
+            s_interp_depth--;
+        }
+        diag_suppress(0);
+
+        if (expr) {
+            interp_reloc(expr, (sn->tok_start + i + 2) - INTERP_WRAP_LEN,
+                         sn->line, sn->tok_start, sn->col);
+            ch(p, sn, expr);
+            nseg++;
+        }
+        i = j;
+    }
+}
+
 static Node *parse_literal(Parser *p) {
     Token *t=cur(p); NodeKind k;
     switch(peek(p)){case TK_INT_LIT:k=NODE_INT_LIT;break;case TK_FLOAT_LIT:k=NODE_FLOAT_LIT;break;
     case TK_STR_LIT:k=NODE_STR_LIT;break;case TK_BOOL_LIT:k=NODE_BOOL_LIT;break;
     default:eerr_got(p,E2002,t,"unexpected token in expression");return NULL;}
-    adv(p); return mk(p,k,t);
+    adv(p);
+    Node *n = mk(p,k,t);
+    if (k == NODE_STR_LIT) attach_interp(p, n);
+    return n;
 }
 
 /* ── Primary ──────────────────────────────────────────────────────── */

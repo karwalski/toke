@@ -228,7 +228,76 @@ int64_t tk_array_append_inplace_w(int64_t arr_i64, int64_t elem) {
     return h;
 }
 
+/*
+ * tk_map_clone — a fresh TkMapImpl holding the same entries as `src`.
+ *
+ * Entries are copied by value (the i64 key/val slots), exactly as
+ * tk_array_append_w copies an array block: the keys and values themselves are
+ * shared, only the container is new.  slots[] is rebuilt rather than copied so
+ * the clone owns every allocation it points at.
+ */
+static void *tk_map_clone(const TkMapImpl *src) {
+    TkMapImpl *d = (TkMapImpl *)calloc(1, sizeof(TkMapImpl));
+    if (!d) return NULL;
+    d->kind = src->kind;
+    if (src->len > 0) {
+        int cap = src->len > TK_MAP_MIN_CAP ? src->len : TK_MAP_MIN_CAP;
+        d->entries = (TkMapEntry *)malloc((size_t)cap * sizeof(TkMapEntry));
+        d->hashes  = (uint64_t *)malloc((size_t)cap * sizeof(uint64_t));
+        if (!d->entries || !d->hashes) {
+            free(d->entries); free(d->hashes); free(d);
+            return NULL;
+        }
+        memcpy(d->entries, src->entries, (size_t)src->len * sizeof(TkMapEntry));
+        memcpy(d->hashes,  src->hashes,  (size_t)src->len * sizeof(uint64_t));
+        d->len = src->len;
+        d->cap = cap;
+        int64_t ns = TK_MAP_MIN_SLOTS;
+        while ((double)d->len > 0.7 * (double)ns) ns *= 2;
+        if (!tk_map_rehash(d, ns)) {
+            free(d->entries); free(d->hashes); free(d);
+            return NULL;
+        }
+    }
+    return d;
+}
+
+/*
+ * tk_map_set_w — `m.set(k; v)` VALUE SEMANTICS (story 127.55).
+ *
+ * Returns a NEW map; the receiver is untouched.  This mirrors
+ * tk_array_append_w, which has always copied: `docs/spec/semantics.md` gives
+ * maps and arrays the same value semantics, and `let m2 = m.set(k;v)` must
+ * therefore leave `m` as it was.
+ *
+ * Until 127.55 this function called tk_map_put on the receiver and returned
+ * the same handle, so every binding derived from a map aliased it — `m`, `m2`
+ * and `m3` in a chain were one object, and `m` could be observed to contain a
+ * key added two statements after it was bound.  Nothing diagnosed it.
+ *
+ * The accumulator idiom `m = m.set(k;v)` does NOT pay for the copy: codegen
+ * recognises that self-update on a linearly-owned local and emits
+ * tk_map_set_inplace_w instead (llvm.c, ADR-0006 D2), which is the same
+ * arrangement arrays have had since 114.18.
+ */
 int64_t tk_map_set_w(int64_t map_i64, int64_t key, int64_t val) {
+    TkMapImpl *src = (TkMapImpl *)(intptr_t)map_i64;
+    if (!src) return map_i64;
+    void *cp = tk_map_clone(src);
+    if (!cp) return map_i64;            /* OOM: degrade to the old aliasing behaviour */
+    tk_map_put(cp, key, val);
+    return (int64_t)(intptr_t)cp;
+}
+
+/*
+ * tk_map_set_inplace_w — `m = m.set(k; v)` where the compiler has PROVEN the
+ * receiver is linearly owned (never aliased) in this function.  Amortised
+ * O(1); turns an N-set accumulation loop from O(N^2) back into O(N).
+ * Emitted by codegen only at a self-update assignment — see
+ * compute_linear_arrays / la_self_update_call in llvm.c.  The exact
+ * counterpart of tk_array_append_inplace_w.
+ */
+int64_t tk_map_set_inplace_w(int64_t map_i64, int64_t key, int64_t val) {
     tk_map_put((void *)(intptr_t)map_i64, key, val);
     return map_i64;
 }
