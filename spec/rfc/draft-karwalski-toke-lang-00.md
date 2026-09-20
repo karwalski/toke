@@ -1849,7 +1849,12 @@ Table of Contents
    o  Training: QLoRA fine-tune of Qwen 2.5 Coder 7B Instruct
       completed (eval loss 0.158, 73K training examples, 1 epoch).
    o  Benchmark: 1,000 held-out test tasks (120 inputs each).
-      Gate 1 result: 63.7% Pass@1 (588/923 compilable tasks).
+      Gate 1 result: 58.8% Pass@1 (588 passed / 1,000 generated).
+      Published as 63.7% (588/923 compilable tasks) until
+      2026-09-19; that denominator dropped the 77 generated
+      solutions that failed to compile, which measures Pass@1
+      given that the solution compiled, not Pass@1.  See
+      Section 20.
 
    Go/No-Go Gate 1 (Month 8):
       tk shows greater than 10% token reduction AND equal or better
@@ -2083,14 +2088,16 @@ Table of Contents
 ## 20.  Benchmark Targets
 
    The following table presents targets, evaluation context, and
-   measured values.  Gate 1 evaluation completed 2026-04-03: PASS.
+   measured values.  Gate 1 evaluation completed 2026-04-03 and was
+   recorded as PASS; its Pass@1 was corrected on 2026-09-19 to 58.8%
+   and the verdict is re-opened (Section 20).
 
 ```
    Metric                    toke          Python       C            Notes
    -----------------------   -----------   ----------   ----------   ------
    Token density (cl100k)    1.34x cost    Baseline     n/m          See 5.3
    First-pass compile (LLM)  92.3%         High         Medium       1000 tasks
-   Pass@1 (held-out)         63.7%         N/A          N/A          Gate 1 PASS
+   Pass@1 (held-out)         58.8%         N/A          N/A          See 20
    Repair iterations         Measuring     Medium       Medium       Phase 2
    End-to-end gen. cost      Measuring     Medium       Medium       Phase 2
    Binary performance        Native        Interpreted  Native       LLVM
@@ -2103,9 +2110,21 @@ Table of Contents
     as of 2026-09-19 — docs/metrics-baseline.md § Project facts)
 ```
 
-   Gate 1 results (2026-04-03): Pass@1 63.7% (588/923 compilable
-   tasks) on 1,000 held-out benchmark tasks using Qwen 2.5 Coder 7B
-   with a QLoRA adapter.  The accompanying 12.5% token-reduction
+   Gate 1 results (2026-04-03): Pass@1 58.8% (588 of 1,000 generated
+   solutions) on 1,000 held-out benchmark tasks using Qwen 2.5 Coder
+   7B with a QLoRA adapter.
+
+   Pass@1 correction (2026-09-19).  This was published as 63.7%
+   until that date.  1,000 solutions were generated, 923 compiled,
+   588 passed every hidden test.  The published 63.7% was 588/923:
+   the harness dropped every solution that failed to compile out of
+   the denominator, so it measured Pass@1 given that the solution
+   compiled -- a different and strictly more generous quantity.  A
+   solution that fails to compile is a failed attempt, not an absent
+   one, so the denominator is the 1,000 generated: 588/1,000 =
+   58.8%.  No re-evaluation was performed; the correction is
+   arithmetic.  58.8% is BELOW the >=60% threshold Gate 1 declared,
+   so the Gate 1 verdict is re-opened and has not been re-decided.  The accompanying 12.5% token-reduction
    figure was an 8K purpose-built BPE vocabulary measured against
    cl100k_base on *toke* text — a comparison of two tokenizers on one
    text, not a comparison with Python — and it is superseded by the
@@ -2205,9 +2224,14 @@ Table of Contents
    M1 through M6 were completed ahead of schedule.  The 7B fine-tune
    (M6) was completed using QLoRA via Apple MLX on the development
    profile corpus (73K training examples, eval loss 0.158).  Gate 1
-   evaluation completed 2026-04-03: PASS on Pass@1 63.7% (threshold
-   >=60%) over 1,000 held-out tasks; its token criterion was met on
-   the tokenizer lane only and is superseded (Sections 5.3 and 20).
+   evaluation completed 2026-04-03 and was recorded as PASS on a
+   Pass@1 of 63.7% (threshold >=60%) over 1,000 held-out tasks.  That
+   Pass@1 was corrected on 2026-09-19 to 58.8% (588 of 1,000
+   generated; 63.7% was 588/923, after non-compiling solutions had
+   been dropped from the denominator), which is BELOW the threshold,
+   so the verdict is re-opened and has not been re-decided.  Its
+   token criterion was met on the tokenizer lane only and is
+   superseded (Sections 5.3 and 20).
    The milestone table above is historical: the dates after M6 have
    not been re-run since March 2026, GATE 3 has not been evaluated,
    and no model has been trained on v0.4 syntax.  Current status:
