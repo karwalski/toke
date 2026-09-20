@@ -111,3 +111,8 @@ __pycache__/
 *.pyc
 bench/patterns/results/
 patterns/probe/*.before.json
+
+# 127.107 — the compiler is build output. It was tracked, so it showed as
+# modified after every build and could be swept into an unrelated commit.
+# `make` produces it; the reproducible artefact is the pinned build (131.73).
+/toke
