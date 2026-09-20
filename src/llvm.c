@@ -3225,10 +3225,15 @@ static int emit_expr(Ctx *c, const Node *n)
                 rhs_p = next_tmp(c);
                 fprintf(c->out, "  %%t%d = inttoptr i64 0 to i8* ; i1->ptr fallback\n", rhs_p);
             }
+            /* 127.83: @strcmp dereferences both operands, so comparing the
+             * `?(T)` NULL sentinel — which keychain.get / tls.read /
+             * tls.peercert / securemem.read / mdns.resolve all return on a
+             * miss — segfaulted the caller.  @tk_str_cmp is NULL-safe and
+             * keeps NULL distinct from "" (see tk_runtime.h). */
             int cmpres = next_tmp(c);
-            fprintf(c->out, "  %%t%d = call i32 @strcmp(i8* %%t%d, i8* %%t%d)\n", cmpres, lhs_p, rhs_p);
+            fprintf(c->out, "  %%t%d = call i64 @tk_str_cmp(i8* %%t%d, i8* %%t%d)\n", cmpres, lhs_p, rhs_p);
             t = next_tmp(c);
-            fprintf(c->out, "  %%t%d = icmp %s i32 %%t%d, 0\n", t, n->op == TK_NE ? "ne" : "eq", cmpres);
+            fprintf(c->out, "  %%t%d = icmp %s i64 %%t%d, 0\n", t, n->op == TK_NE ? "ne" : "eq", cmpres);
             return t;
         }
         /* Non-string pointer equality (arrays, structs): use icmp eq/ne (80.2.9) */
@@ -3250,12 +3255,14 @@ static int emit_expr(Ctx *c, const Node *n)
             int lhs_p = lhs, rhs_p = rhs;
             if (!strcmp(lty, "i64")) { lhs_p = next_tmp(c); fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", lhs_p, lhs); }
             if (!strcmp(rty, "i64")) { rhs_p = next_tmp(c); fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", rhs_p, rhs); }
+            /* 127.83: NULL-safe (see the ==/!= path above).  The NULL
+             * sentinel orders before every string, "" included. */
             int cmpres = next_tmp(c);
-            fprintf(c->out, "  %%t%d = call i32 @strcmp(i8* %%t%d, i8* %%t%d)\n", cmpres, lhs_p, rhs_p);
+            fprintf(c->out, "  %%t%d = call i64 @tk_str_cmp(i8* %%t%d, i8* %%t%d)\n", cmpres, lhs_p, rhs_p);
             const char *pred = n->op == TK_LT ? "slt" : n->op == TK_GT ? "sgt" :
                                n->op == TK_LE ? "sle" : "sge";
             t = next_tmp(c);
-            fprintf(c->out, "  %%t%d = icmp %s i32 %%t%d, 0\n", t, pred, cmpres);
+            fprintf(c->out, "  %%t%d = icmp %s i64 %%t%d, 0\n", t, pred, cmpres);
             return t;
         }
         /* ptr < ptr, ptr > ptr, ptr <= ptr, ptr >= ptr: compare pointers directly */
@@ -5662,11 +5669,12 @@ static int emit_expr(Ctx *c, const Node *n)
                     if (wrote > 0 && glen + wrote < TKC_STR_GLOBALS_SIZE)
                         c->str_globals_len += wrote;
 
-                    /* strcmp(scrutinee, tag) */
+                    /* tk_str_cmp(scrutinee, tag) — 127.83: NULL-safe, because
+                     * the scrutinee may be the `?(T)` miss sentinel. */
                     int cmp = next_tmp(c);
-                    fprintf(c->out, "  %%t%d = call i32 @strcmp(i8* %%t%d, i8* %%t%d)\n", cmp, str_val, tag_tmp);
+                    fprintf(c->out, "  %%t%d = call i64 @tk_str_cmp(i8* %%t%d, i8* %%t%d)\n", cmp, str_val, tag_tmp);
                     int eq = next_tmp(c);
-                    fprintf(c->out, "  %%t%d = icmp eq i32 %%t%d, 0\n", eq, cmp);
+                    fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0\n", eq, cmp);
 
                     int next_check_lbl = next_lbl(c);
                     fprintf(c->out, "  br i1 %%t%d, label %%marm%d, label %%mcheck%d\n", eq, this_arm_lbl, next_check_lbl);
@@ -5833,9 +5841,20 @@ static int emit_expr(Ctx *c, const Node *n)
                     }
                 }
             }
-            if (cs && cs->err_type_name[0]) {
+            /* 127.97: bind the boxed payload for EVERY declared error type,
+             * not only discriminated sums.  The return path (NODE_RETURN_STMT)
+             * already stashes a malloc'd box for any `<$E{...}` whose name
+             * matches the function's declared error type — record-style types
+             * included — but this gate only read it back for `is_sum`, so a
+             * plain `t=$myerr{msg:$str}` bound nil and `e.msg` trapped RT005
+             * (127.78).  That is why six distinct zip rejections, ten file
+             * error kinds and nine csv kinds each needed an out-of-band
+             * lasterr accessor: the payload was written and then dropped.
+             * $none is excluded — it declares no fields and its slot value is
+             * the literal flag 1 (124.0a), not a pointer. */
+            if (cs && cs->err_type_name[0] && strcmp(cs->err_type_name, "none")) {
                 const StructInfo *esi = lookup_struct(c, cs->err_type_name);
-                if (esi && esi->is_sum) eu_err_type = cs->err_type_name;
+                if (esi) eu_err_type = cs->err_type_name;
             }
         }
 
@@ -5885,8 +5904,21 @@ static int emit_expr(Ctx *c, const Node *n)
                 if (is_ok)
                     fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", scr_ty, sv, scr_ty, vname);
                 else if (eu_err_type) {
+                    /* 127.97: @tk_current_error is tri-valued (runtime-abi §7):
+                     * 0 = ok, 1 = failed with no payload, anything else = a
+                     * pointer to the error record.  The bare 1 is what the C
+                     * glue stores (analytics_glue.c, image_glue.c, …) and what
+                     * a `$none` return stores (124.0a).  Binding it verbatim
+                     * would hand the arm the address 1 and turn a clean RT005
+                     * nil trap into a wild dereference, so normalise it to nil
+                     * here: the payload is genuinely absent. */
                     int ev = next_tmp(c);
                     fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error\n", ev);
+                    int isflag = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 1 ; 127.97 payload-less error flag\n", isflag, ev);
+                    int boxed = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = select i1 %%t%d, i64 0, i64 %%t%d\n", boxed, isflag, ev);
+                    ev = boxed;
                     fprintf(c->out, "  store i64 %%t%d, i64* %%%s\n", ev, vname);
                     mark_ptr_with_type(c, vname, eu_err_type);
                     /* 127.71: field access on the error payload looks the raw
@@ -8471,6 +8503,7 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_str_concat", "declare i8* @tk_str_concat(i8*, i8*)", 0},
     {"tk_str_join_n", "declare i8* @tk_str_join_n(i64, ...)", 0},  /* 127.26: interpolation */
     {"tk_str_len", "declare i64 @tk_str_len(i8*)", 0},
+    {"tk_str_cmp", "declare i64 @tk_str_cmp(i8*, i8*)", 0},  /* 127.83: NULL-safe ==/!=/ordering */
     {"tk_str_char_at", "declare i64 @tk_str_char_at(i8*, i64)", 0},
     {"tk_json_print_bool", "declare void @tk_json_print_bool(i64)", 0},
     {"tk_json_print_arr", "declare void @tk_json_print_arr(i8*)", 0},

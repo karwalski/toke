@@ -320,6 +320,18 @@ int64_t tk_str_len(const char *s) {
     return s ? (int64_t)strlen(s) : 0;
 }
 
+/*
+ * NULL-safe three-way string comparison (story 127.83).  See tk_runtime.h for
+ * why NULL is ordered before "" rather than being treated as equal to it.
+ */
+int64_t tk_str_cmp(const char *a, const char *b) {
+    if (a == b) return 0;          /* covers NULL==NULL and pointer identity */
+    if (!a) return -1;             /* missing sorts before every string      */
+    if (!b) return 1;
+    int r = strcmp(a, b);
+    return r < 0 ? -1 : (r > 0 ? 1 : 0);
+}
+
 /* Character at index for C strings (returns the char code as i64). */
 int64_t tk_str_char_at(const char *s, int64_t idx) {
     if (!s || idx < 0 || idx >= (int64_t)strlen(s)) return 0;

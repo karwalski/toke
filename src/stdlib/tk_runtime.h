@@ -54,6 +54,23 @@ char   *tk_str_join_n(int64_t n, ...);  /* 127.26: one-alloc interpolation */
 int64_t tk_str_len(const char *s);
 int64_t tk_str_char_at(const char *s, int64_t idx);
 
+/*
+ * tk_str_cmp — NULL-safe three-way string comparison (story 127.83).
+ *
+ * `==`, `!=` and the ordering operators on $str lowered straight to strcmp(),
+ * which dereferences its arguments.  An optional `?(T)` yields the NULL
+ * sentinel on a miss, so the documented way to test for a missing value
+ * (`keychain.get(...) == ""`) segfaulted the caller.
+ *
+ * NULL is the "missing" sentinel and is NOT the empty string: a wiped secret
+ * must stay distinguishable from an empty one (see stdlib/securemem.md), and
+ * TOML/JSON "absent" must stay distinguishable from "present but empty"
+ * (test/conform/C005).  NULL therefore sorts before every string, "" included.
+ *
+ * Returns <0, 0 or >0 like strcmp().
+ */
+int64_t tk_str_cmp(const char *a, const char *b);
+
 /* Generic print: prints i64 by default (most benchmark tasks). */
 void    tk_json_print(int64_t val);
 

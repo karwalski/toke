@@ -112,10 +112,18 @@ Structs are emitted as flat `i64` arrays (not LLVM named struct types).
 All fields are `i64`-typed, with non-integer values stored via pointer
 casts.
 
-**Allocation**: stack-allocated via `alloca`:
+**Allocation**: heap-allocated via `malloc`, eight bytes per field. The
+local that names the struct is an `alloca` holding the *pointer*, not the
+fields:
 ```llvm
-%t0 = alloca i64, i32 3  ; struct with 3 fields
+%t0 = call i8* @malloc(i64 24)  ; struct with 3 fields
+%p  = alloca i8*                ; the binding, pointing at %t0
 ```
+
+Struct values are therefore safe to return and to outlive the frame that
+built them — which is what lets an error record survive the return that
+raised it (§7.3). (Corrected 127.97: this section previously described an
+`alloca i64, i32 N` layout that the compiler has never emitted.)
 
 **Field access**: via `getelementptr` with a compile-time field index
 determined by `struct_field_index()`:
@@ -143,9 +151,119 @@ but do not yet have a codegen representation in `llvm.c`.
 
 ## 7. Error Union Layout
 
-**[TODO]** -- Error unions (`T!Err`) are defined in the type system
-(`TY_ERROR_TYPE`) but do not yet have a codegen representation in
-`llvm.c`.
+Error unions (`T!Err`) are **split across two channels**: the ordinary
+return register carries the success value, and a separate runtime slot
+carries the error. There is no two-word return and no tagged value.
+
+Stories: 114.41, 114.55, 124.0a, 127.56, 127.97.
+
+### 7.1 The two channels
+
+| Channel | Symbol | Type | Carries |
+|---------|--------|------|---------|
+| Value | the function's own return register | `T` lowered per §2–§6 | the success value, or a zero/null filler on the error path |
+| Error | `@tk_current_error` | `i64` | the discriminant **and** the payload |
+
+A `T!Err` function lowers to a plain `T`-returning function. Nothing in
+its LLVM signature records that it is fallible; the error type is known
+statically at every call site from the declaration, and that is what the
+consumer uses to decode the slot.
+
+### 7.2 `@tk_current_error` is tri-valued
+
+This single `i64` is both the discriminant and the payload pointer:
+
+| Value | Meaning |
+|-------|---------|
+| `0` | **Success.** The value channel holds a real `T`. |
+| `1` | **Failure with no payload.** The reason is not recoverable. |
+| anything else | **Failure with a payload.** The value is a pointer to an error record (§7.3), cast through `ptrtoint`. |
+
+`1` is reserved and is never a valid payload pointer, because every
+payload is `malloc`'d. It is what the C glue stores (`analytics_glue.c`,
+`image_glue.c`, …), what a `<$none{}` return stores (124.0a — `$none`
+declares no fields, and storing its natural box value of `0` would read
+back as success), and what `!` propagation stores when the callee it
+propagated from used the older value-sentinel convention (127.56).
+
+**The zero filler is not the discriminant.** An ok return of `0`, `0.0`,
+`false`, `""` or an empty array is indistinguishable from the error
+filler in the value channel, so consumers must decide on the slot, never
+on the value. This is why every ok return from a fallible function
+explicitly stores `0` into the slot (114.55) — the clear happens *after*
+the return expression is evaluated, so a call inside that expression
+cannot leave a stale error behind.
+
+### 7.3 Error record layout
+
+The payload is a heap record, allocated with `malloc` and never freed
+(the error path is not hot, and the record may outlive the frame that
+raised it — it must not be an `alloca`).
+
+**Sum-typed errors** (`t=$err{$bad:$str;$worse:i64}`) are a 2-slot box:
+
+```llvm
+%box = call i8* @malloc(i64 16)
+; slot 0: i64 tag     — the variant's declaration index
+; slot 1: i64 payload — the variant's value, bitcast/ptrtoint to i64
+```
+
+The tag `-1` is reserved: it marks an error synthesised by `!`
+propagation from a callee that carried no variant of its own, so a
+nested `mt e {$variants}` reads a well-formed box and falls through to
+its last arm rather than dereferencing a sentinel (127.56).
+
+**Record-typed errors** (`t=$myerr{code:i64;msg:$str}`) are an ordinary
+struct per §5 — a `malloc`'d flat `i64` array, one slot per field, in
+declaration order.
+
+### 7.4 Consuming an error union
+
+`mt call() {$ok:v …;$err:e …}` lowers to a branch on the slot. The
+`$ok` arm binds the value channel. The `$err` arm binds the slot, after
+normalising the reserved `1` to nil — so an arm that reads a field of a
+payload-less error takes a clean RT005 nil trap (§9) rather than
+dereferencing the address `1`.
+
+`expr!$Err` propagates: it branches on the same slot, and on the error
+path re-raises into the caller's declared error type and returns the
+zero filler.
+
+### 7.5 Restrictions (as implemented)
+
+These are limitations of the current lowering, not of the design:
+
+1. **The payload is bound only when the `mt` scrutinee is the call
+   itself.** `let r = f(x); mt r {…}` binds nil in the `$err` arm,
+   because the slot is a single global and any call between the `let`
+   and the `mt` overwrites it. Match on the call directly.
+2. **The slot is process-wide, not thread-local.** `tk_current_error` is
+   a plain global in `tk_runtime.c` (`int64_t tk_current_error = 0;`)
+   despite compiler comments describing it as thread-local. Two threads
+   in `std.task` raising errors concurrently will clobber each other.
+3. **Nothing enforces that every error exit sets the slot** (127.59).
+4. **The declared error type is not checked against what is
+   observable.** `FileErr` declares three variants while
+   `file.lasterrkind()` distinguishes ten; `MdnsErr` declares five and
+   no function returns it.
+
+### 7.6 Why this representation
+
+The obvious alternative is a two-word return — `{i64 tag, i64 payload}`
+by value, or an `sret` out-parameter — which needs no global, is
+re-entrant, and composes. It was **not** chosen here, because it changes
+the LLVM signature of every fallible function: 132 fallible functions
+across 33 stdlib modules, every C glue wrapper behind them, all 63
+error-union declarations in ooke, and the 1,253 corpus records that
+call them. That is a coordinated break of the whole tree, and the
+compiler is the root of trust for the corpus (AGENTS.md §1).
+
+The split-channel form, by contrast, is **already the ABI** — the return
+path has stashed a typed box since 114.41. What was missing was only
+that the consumer read it back, and a written definition of the slot's
+three states. Both are supplied above. Section 7.6 should be revisited
+if `std.task` grows real concurrent error reporting, at which point
+restriction 2 forces the question.
 
 ---
 
@@ -169,7 +287,8 @@ All functions are declared in `tk_runtime.h` and linked from
 | `tk_json_print_arr_str` | `void (ptr, i64)` | Print string array as JSON (takes data ptr + len) | None |
 | `tk_array_concat` | `ptr (ptr, ptr)` | Concatenate two length-prefixed i64 arrays | malloc -- caller owns result |
 | `tk_str_concat` | `ptr (ptr, ptr)` | Concatenate two C strings | malloc -- caller owns result |
-| `tk_str_len` | `i64 (ptr)` | Return byte length of a C string | None |
+| `tk_str_len` | `i64 (ptr)` | Return byte length of a C string (`0` for NULL) | None |
+| `tk_str_cmp` | `i64 (ptr, ptr)` | NULL-safe three-way string compare; backs `==` `!=` `<` `>` `<=` `>=` on `$str`. NULL is the `?(T)` miss sentinel, is **not** equal to `""`, and orders before every string | None |
 | `tk_str_char_at` | `i64 (ptr, i64)` | Return char code at index (unsigned byte) | None |
 | `tk_overflow_trap` | `void (i32)` | Print RT002 diagnostic and exit(1) | None (terminates) |
 
