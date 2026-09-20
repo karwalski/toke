@@ -26,6 +26,74 @@ jobs:
       - name: Verify LLVM IR (llvm-as + opt -verify)
         run: make verify-ir
 
+  # Story 132.41. Until this job existed, every gate below was a LOCAL `make`
+  # target: `make ci` ran them, this workflow did not, and nothing on a push or
+  # a pull request ever read them. The documentation gate in particular
+  # compiles AND LINKS 437 full-program ```toke blocks out of the canonical
+  # docs — the one check in the project that can prove a documented call
+  # reaches a symbol that exists — and it had never run automatically once.
+  #
+  # Each step here runs its own negative control FIRST where the gate has one
+  # (`--self-test` / `--selftest`), so a green tick means "the gate was watched
+  # to reject a deliberately broken input, then found nothing", not "the gate
+  # ran". A gate nobody has watched fail is not a gate; seven checks audited on
+  # 2026-09-20 reported success while testing nothing, and this one step would
+  # have caught every one of them.
+  docs-and-claims:
+    name: Documentation and claim gates
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev llvm-dev clang
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build tkc
+        run: make
+
+      # Negative control, then the sweep. --self-test builds a program whose
+      # only fault is a call to a function that exists nowhere and fails unless
+      # the gate rejects it at link. Do not split these two steps apart.
+      - name: Documentation examples compile and link
+        run: make check-docs
+
+      # Every diagnostic the compiler emits is documented, and errors.md lists
+      # no dead code.
+      - name: Diagnostic codes are documented
+        run: make check-error-codes
+
+      # The pattern catalogue's generated docs match the catalogue.
+      - name: Pattern catalogue is in sync
+        run: make check-patterns
+
+      # Every countable project-scale number is re-derived from the tree and
+      # compared against docs/metrics-baseline.md and the compiler's own strings.
+      - name: Project facts match the tree
+        run: make check-facts
+
+      # Claim guard 1 of 2: no published percentage without its TEMSpec §6.3
+      # fields, no withdrawn headline restated, no tokenizer lane crossing.
+      - name: Token-efficiency claims are qualified
+        run: make check-metrics
+
+      # Claim guard 2 of 2, with its --selftest negative control: the canonical
+      # facts block has not drifted in any copy, and neither retired fact is back.
+      - name: Canonical facts have not drifted
+        run: make check-canonical
+
+      # The same two guards across every sibling repo checked out beside this
+      # one. On a GitHub runner none are, so this proves the runner works and
+      # reports each skip by name; it is the local `make ci` that sweeps them
+      # for real. Wiring the sibling checkouts in is story 132.46.
+      - name: Claim guards across sibling repos
+        run: make check-claims-all
+
   lint:
     name: Lint and static analysis
     runs-on: ubuntu-latest

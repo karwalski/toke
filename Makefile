@@ -262,7 +262,14 @@ render-patterns:
 # may never be compared against a non-toke baseline (132.13). Approved wording lives in
 # docs/metrics-baseline.md. Files owned by an in-flight story warn instead of failing;
 # `--strict` fails on those too.
+# 132.41 — --selftest runs FIRST and is this gate's negative control, added
+# because it had none: eleven cases, six of them real defects this guard has
+# shipped past (a bare percentage, a lane crossing, the withdrawn 52% headline,
+# a stdlib count that is not the tree's) that must keep failing, and five
+# wordings that must keep passing. Watched to fail by switching rule 1 off. Do
+# not split the two lines apart: a gate nobody has watched fail is not a gate.
 check-metrics:
+	python3 scripts/check_metrics_claims.py --selftest
 	python3 scripts/check_metrics_claims.py
 
 # 132.1 / 132.12 — canonical facts gate. One block (docs/about/canonical.md +
@@ -297,9 +304,17 @@ check-canonical:
 # check-facts stays local, because it derives the counts from THIS tree.
 # toke-website warns rather than fails (owned by 132.2/132.9/132.16), as does the
 # toke-spec RFC draft (132.8).
+# 132.42 added ../toke-cloud: it is a public repository that powers the published
+# API, and it had never been swept by either guard. Two repositories named in
+# docs/about/repos.md still cannot be swept because they are not checked out in
+# this workspace — karwalski/loke (the local intelligence layer) and
+# karwalski/tkc (an early copy of the compiler tree, public with no description).
+# A repo that is absent is reported by name as a skip, not silently passed over;
+# cloning them into the workspace is story 132.46.
 SIBLING_REPOS := ../toke-spec ../toke-corpus ../toke-model ../toke-eval ../toke-mcp \
-                 ../toke-console ../toke-ooke ../toke-test-programs ../toke-tokenizer \
-                 ../toke-website ../homebrew-toke
+                 ../toke-console ../toke-cloud ../toke-ooke ../toke-test-programs \
+                 ../toke-tokenizer ../toke-website ../homebrew-toke \
+                 ../loke ../tkc
 check-claims-all:
 	@repos=""; for r in $(SIBLING_REPOS); do \
 	  if [ -d "$$r" ]; then repos="$$repos $$r"; else echo "skip (not checked out): $$r"; fi; \

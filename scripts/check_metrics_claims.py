@@ -36,8 +36,16 @@ comparison alongside a non-toke baseline language. Sentences that *forbid* the
 practice are recognised and allowed.
 
 Usage:  python3 scripts/check_metrics_claims.py [paths...] [--strict] [--list]
+        python3 scripts/check_metrics_claims.py --selftest
 Exit:   0 clean (pending-story files warn only), 1 on a violation.
         --strict also fails on the pending-story files.
+
+--selftest (story 132.41) is the gate's negative control and `make check-metrics`
+runs it first. It feeds eleven fixed inputs through check_file(): six real
+defects this guard has shipped past, which must keep failing, and five wordings
+that must keep passing. Run it after any change to a rule — switching rule 1 off
+makes it exit 1, which is how it was verified. A gate nobody has watched fail is
+not a gate.
 """
 import os
 import re
@@ -81,9 +89,21 @@ PENDING = {
 }
 
 # Same idea, by prefix — used for the sibling repos swept by story 132.15.
+#
+# Story 132.42 removed ("../toke-website/", "132.2 / 132.9 / 132.16 — website
+# copy"). That one line exempted THE ENTIRE PUBLIC WEBSITE — every template,
+# every static page, every rendered doc — from rule one. It passed with 44
+# detected, permitted failures, among them a live "30+ standard library
+# modules" on the home page and a withdrawn 52% headline in built HTML. A
+# pending entry is meant to be one file with one owner for one sprint; a
+# whole-repo prefix aimed at the most public surface the project has is not a
+# pending entry, it is an exemption, and it held for long enough that the
+# findings it was hiding were rediscovered by a separate audit.
+#
+# Do not re-add a repository-wide prefix here. If a specific file is mid-story,
+# name that file in PENDING above, with its story number.
 PENDING_PREFIXES = (
     ("../toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec draft is v0.3-era)"),
-    ("../toke-website/", "132.2 / 132.9 / 132.16 — website copy"),
 )
 
 
@@ -552,7 +572,99 @@ def check_file(path):
     return findings
 
 
+# ------------------------------------------------------------- self-test ----
+# Story 132.41/132.42. This guard had NO negative control. It was read as proof
+# for months on the strength of an exit code, in a session where seven separate
+# checks were found reporting success while testing nothing — including a doc
+# gate iterating over a directory that does not exist. An exit code proves the
+# process ran; only a deliberately broken input proves the gate can still fail.
+#
+# Each case is (accept?, name, text). `accept` cases are wordings that MUST pass
+# — they are what stops the gate being tightened into noise nobody can satisfy.
+# The rest are real defects this guard has actually shipped past or caught, one
+# per rule, and they MUST keep failing.
+SELFTEST = [
+    # -- Rule 1: a token percentage needs its tokenizer and its N --------------
+    (False, "rule 1: bare percentage about tokens",
+     "toke is 52% fewer tokens than Python."),
+    (False, "rule 1: tokenizer named, N missing",
+     "Measured with the toke-16K tokenizer, toke is 31.1% denser than Python."),
+    (True, "rule 1: fully qualified",
+     "Tokenizer-vs-tokenizer on identical toke source: toke-16K vs cl100k, "
+     "12.5% reduction, N = 500 programs."),
+    (True, "rule 1: a threshold, not a result",
+     "Gate 2 requires token reduction >= 15% on the held-out suite."),
+    (True, "rule 1: a percentage that is not about tokens",
+     "The conformance suite passes 100% of its cases."),
+
+    # -- Rule 2: a toke-trained tokenizer against a non-toke baseline ----------
+    (False, "rule 2: lane crossing",
+     "toke-16K on toke source uses 48.2% fewer tokens than cl100k on Go."),
+
+    # -- Rule 3: a withdrawn headline restated with no supersession note -------
+    (False, "rule 3: the withdrawn 52% headline, restated bare",
+     "toke needs 52% fewer tokens than Python."),
+    # NOTE the qualifiers: a supersession note excuses rule 3 and nothing else.
+    # Written bare ("toke needs 52% fewer tokens than Python. (Withdrawn...)")
+    # this case FAILS rule 1, which is correct and was pinned here by watching
+    # it happen.
+    (True, "rule 3: the same headline, marked superseded and still qualified",
+     "toke-16K vs cl100k on identical source, N = 500: 52% fewer tokens. "
+     "(Withdrawn; superseded by the Gate 1 re-measurement.)"),
+
+    # -- Rule 4: a count of things that disagrees with the tree ----------------
+    (False, "rule 4: a stdlib module count that is not the tree's",
+     "toke ships 30+ standard library modules."),
+
+    # -- the exemptions, which must stay narrow -------------------------------
+    # An archive banner exempts rules 3 and 4 (a dated record may restate what
+    # was believed, and may carry a count from the day it was written). It does
+    # NOT exempt rule 1: a percentage still has to say what measured it. Pinned
+    # here because the two guards differ — check_canonical.py exempts an
+    # archived document outright — and a difference nobody has written down is
+    # a difference that gets "simplified" away.
+    (True, "archived: rule 3 excused, rule 1 still satisfied",
+     "**Archived 2026-09-15 — superseded by the Gate 1 re-measurement.**\n\n"
+     "toke-16K vs cl100k on identical source, N = 500: 52% fewer tokens."),
+    (False, "archived does NOT excuse an unqualified percentage",
+     "**Archived 2026-09-15 — superseded by the Gate 1 re-measurement.**\n\n"
+     "toke needs 52% fewer tokens than Python."),
+]
+
+
+def selftest():
+    import tempfile
+    bad = 0
+    for accept, name, text in SELFTEST:
+        with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8",
+                                         delete=False) as fh:
+            fh.write(text + "\n")
+            tmp = fh.name
+        try:
+            found = check_file(tmp)
+        finally:
+            os.unlink(tmp)
+        ok = (not found) if accept else bool(found)
+        if not ok:
+            bad += 1
+            print("SELFTEST FAIL [%s] %s: %s"
+                  % ("accept" if accept else "reject", name,
+                     ("flagged: %s" % found[0][1]) if found else "not flagged"))
+    if bad:
+        print("\nselftest: %d of %d cases wrong — the metrics-claim gate is not "
+              "behaving as documented. Do NOT trust a green run from it."
+              % (bad, len(SELFTEST)))
+        return 1
+    print("selftest: %d cases OK — %d wordings accepted, %d real defects still "
+          "rejected (one per rule, plus the archive exemption)."
+          % (len(SELFTEST), sum(1 for c in SELFTEST if c[0]),
+             sum(1 for c in SELFTEST if not c[0])))
+    return 0
+
+
 def main():
+    if "--selftest" in sys.argv:
+        return selftest()
     argv = [a for a in sys.argv[1:] if not a.startswith("--")]
     strict = "--strict" in sys.argv
     targets = argv or DEFAULT_TARGETS

@@ -68,7 +68,7 @@ more** tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.
 - **One canonical form** per construct, reproduced by `tkc --min`, so two implementations
   either produce identical canonical text or they do not
 - **Machine-readable grammar** — EBNF and GBNF artefacts for constrained decoding
-- **56 standard library modules** (`stdlib/*.tki`) with C runtime backing — strings,
+- **<!--fact:stdlib_modules-->57<!--/fact--> standard library modules** (`stdlib/*.tki`) with C runtime backing — strings,
   JSON, TOON, HTTP server/client, database, crypto, ML, and more
 - **Error handling with result types** — no exceptions; errors are values handled
   explicitly with `mt` (match)
@@ -251,10 +251,25 @@ make fuzz            # Run the fuzzer
 make bench           # Run compiler benchmarks
 make check-canonical # Fail if a published copy of the canonical block has drifted
 make check-metrics   # Fail if a number is published without its tokenizer and its N
+make check-facts     # Fail if a countable project number disagrees with the tree
+make check-claims-all # The two guards above, across every sibling repository
 ```
 
-The last two are claim guards and run in `make ci`. Any new number published in this
-repository must appear in `docs/metrics-baseline.md` first.
+Those four are the claim guards. All four run in `make ci` and, since story 132.41,
+in the GitHub workflow. Any new number published in this repository must appear in
+`docs/metrics-baseline.md` first.
+
+`check-claims-all` is the one that reaches outside this repository: it runs the same
+two rule sets over every sibling repo checked out beside this one — the website, the
+spec, the model and tokenizer repos, the MCP server, the console and the cloud repo —
+and reports any it cannot find by name rather than passing over them. Until story
+132.42 the website was exempt from it, so the site could publish a number this repo
+would have rejected.
+
+Documentation is gated separately, by `make check-docs`: every full-program ```toke
+block in `docs/` is compiled **and linked**, so a documented call to a function that
+exists nowhere fails. It runs its own negative control first (`--self-test`), which
+builds a deliberately broken program and fails unless the gate rejects it.
 
 ## Supported targets
 
@@ -279,7 +294,7 @@ toke [flags] <source-files>
 
 ## Standard library
 
-toke ships 56 standard library modules (`stdlib/*.tki`) backed by C runtime
+toke ships <!--fact:stdlib_modules-->57<!--/fact--> standard library modules (`stdlib/*.tki`) backed by C runtime
 implementations. The most used:
 
 | Module | Description |

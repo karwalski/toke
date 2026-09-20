@@ -90,9 +90,10 @@ SURFACES = [
     {"path": "../toke-test-programs/README.md", "blocks": ["paragraph"]},
     {"path": "../homebrew-toke/README.md", "blocks": ["one_liner"]},
 
-    # toke-website is owned by the website stories; 132.10 may not edit that tree.
-    {"path": "../toke-website/README.md", "blocks": ["paragraph"],
-     "story": "132.9 / 132.2 — website roadmap + home page"},
+    # Story 132.42: this carried "story": "132.9 / 132.2" and therefore warned.
+    # The website README is a published README like every other one above and is
+    # now enforced the same way.
+    {"path": "../toke-website/README.md", "blocks": ["paragraph"]},
 
     # ------------------------------------------------------------ registries --
     # Story 132.4. A registry description is not a repo README: it is a field on
@@ -200,7 +201,10 @@ PENDING = {
 PENDING_PREFIXES = (
     ("docs/whitepaper/", "132.8 — whitepaper v2 + RFC alignment"),
     ("spec/rfc/", "132.8 — whitepaper v2 + RFC alignment"),
-    ("../toke-website/", "132.9 / 132.2 — website roadmap + home page"),
+    # Story 132.42 removed ("../toke-website/", "132.9 / 132.2 — website roadmap
+    # + home page"): a single prefix that took the whole public website out of
+    # rule one. See the matching note in check_metrics_claims.py. Name
+    # individual files with their story, never a repository.
     # 132.15 swept the rest of toke-spec: the v0.2/v0.3 documents now carry dated
     # archive banners and the live ones were corrected, so only the RFC is still pending.
     ("../toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec RFC draft is v0.3-era)"),
