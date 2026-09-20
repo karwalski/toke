@@ -103,3 +103,11 @@ logs/
 
 # header-dependency files from -MMD
 *.d
+
+# 127.107 — Python bytecode and benchmark run output. These appeared in
+# `git status` on every run and are exactly the noise that let three separate
+# commits sweep in another agent's work today (131.66).
+__pycache__/
+*.pyc
+bench/patterns/results/
+patterns/probe/*.before.json
