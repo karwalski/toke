@@ -381,14 +381,29 @@ static const Node *find_binding_node(const Node *root, const char *src,
                                      const char *name, int nlen);
 
 /* Shift a freshly-parsed sub-AST's token offsets by `delta` so they point into
- * the real source instead of the throwaway wrap buffer (123.11-fu). Safe only
- * for single-use arena nodes. */
-static void shift_tok_offsets(Node *n, int delta) {
+ * the real source instead of the throwaway wrap buffer (123.11-fu).
+ *
+ * 127.116: the offsets were the only thing rebased.  `line` and `col` stayed
+ * as the throwaway wrapper's own counters — which start at line 1 — so every
+ * diagnostic infer() raised on this sub-AST (E4025, E4033, E4035, and any
+ * future one) reported `line 1` and a column measured from the wrapper
+ * prefix, while `offset` and `source_line` stayed correct and disagreed with
+ * them.  A confidently wrong location is worse than none: it is what points
+ * the automated repair loop at the wrong line, the same harm AGENTS.md §3.1
+ * guards against for the `fix` field.  `anchor` is the enclosing string
+ * literal, whose line/col are real; a column is recovered from the (now
+ * real) offset, exactly as parser.c's interp_reloc does for the sub-AST it
+ * attaches.  Safe only for single-use arena nodes. */
+static void shift_tok_offsets(Node *n, int delta, const Node *anchor) {
     if (!n) return;
     n->tok_start += delta;
     n->start     += delta;
+    if (anchor) {
+        n->line = anchor->line;
+        n->col  = anchor->col + (n->tok_start - anchor->tok_start);
+    }
     for (int i = 0; i < n->child_count; i++)
-        shift_tok_offsets(n->children[i], delta);
+        shift_tok_offsets(n->children[i], delta, anchor);
 }
 
 /*
@@ -471,7 +486,7 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
             if (expr) {
                 /* Re-home the sub-expression onto the real source, then infer
                  * against the real environment (no src swap). */
-                shift_tok_offsets(expr, delta);
+                shift_tok_offsets(expr, delta, strnode);
                 Type *t = infer(cx, expr);
                 int composite = t && (t->kind == TY_ARRAY || t->kind == TY_MAP ||
                                       t->kind == TY_STRUCT);
