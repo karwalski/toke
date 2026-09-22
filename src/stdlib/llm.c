@@ -498,8 +498,21 @@ void llm_client_free(TkLlmClient *c)
     free(c);
 }
 
+/* defined further down beside llm_json_mode, its first consumer */
+static const char *build_request_extra(TkLlmMsg *msgs, uint64_t nmsgs,
+                                        const char *model, double temperature,
+                                        const char *extra_json);
+
 TkLlmResp llm_chat(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs, double temperature)
 {
+    return llm_chat_extra(c, msgs, nmsgs, temperature, NULL, NULL);
+}
+
+TkLlmResp llm_chat_extra(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs,
+                          double temperature, const char *extra_json,
+                          char **raw_out)
+{
+    if (raw_out) *raw_out = NULL;
     if (!c) return err_resp("null client");
 
     /* reject HTTPS when TLS is not compiled in */
@@ -514,7 +527,8 @@ TkLlmResp llm_chat(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs, double temper
         return err_resp("failed to parse base_url");
     }
 
-    const char *body = llm_build_request(msgs, nmsgs, c->model, temperature, 0);
+    const char *body = build_request_extra(msgs, nmsgs, c->model, temperature,
+                                           extra_json);
     if (!body) return err_resp("failed to build request JSON");
 
     uint32_t timeout  = c->timeout_ms  ? c->timeout_ms  : 30000;
@@ -568,7 +582,10 @@ TkLlmResp llm_chat(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs, double temper
     uint64_t prompt_tokens     = find_json_uint64(resp_body, "prompt_tokens");
     uint64_t completion_tokens = find_json_uint64(resp_body, "completion_tokens");
 
-    free(resp_body);
+    /* Hand the raw body to a caller that asked for it — the tool-calling
+     * layer reads choices[0].message.tool_calls, which `content` does not
+     * contain — otherwise discard it exactly as before. */
+    if (raw_out) *raw_out = resp_body; else free(resp_body);
 
     /* accumulate usage into client */
     c->total_input_tokens  += prompt_tokens;

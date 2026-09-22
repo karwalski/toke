@@ -69,6 +69,25 @@ void         llm_client_free(TkLlmClient *c);
  * temperature 0.0–2.0; typical default 0.7. */
 TkLlmResp    llm_chat(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs, double temperature);
 
+/* llm_chat_extra — llm_chat plus the two things the tool-calling layer needs
+ * and llm_chat cannot express (story 136.27):
+ *
+ *   extra_json  top-level members to merge into the request body, without
+ *               the enclosing braces — e.g. "\"tools\":[…]". NULL or "" for
+ *               none, which makes this byte-identical to llm_chat.
+ *   raw_out     when non-NULL, receives the raw unparsed response body
+ *               (caller frees) instead of it being discarded.
+ *
+ * Why raw_out exists: llm_chat returns only choices[0].message.content, and
+ * `tool_calls` is that message's SIBLING. A caller holding only the content
+ * string cannot see the tool calls at all, however well the request was
+ * built. Both halves are needed, which is why they are one function.
+ *
+ * llm_chat is exactly llm_chat_extra(c, msgs, n, temp, NULL, NULL). */
+TkLlmResp    llm_chat_extra(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs,
+                             double temperature, const char *extra_json,
+                             char **raw_out);
+
 /* llm_chatstream — send msgs with stream:true, collect all SSE delta chunks. */
 TkLlmStream  llm_chatstream(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs, double temperature);
 
