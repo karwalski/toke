@@ -105,7 +105,7 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-stdlib-path test-stdlib-args test-stdlib-md test-stdlib-toml \
 	test-stdlib-vecstore test-stdlib-vecstore-binding test-stdlib-keychain \
 	test-stdlib-securemem test-stdlib-glue-contract test-stdlib-zip \
-	test-tkir-encoder \
+	test-tkir-encoder test-tkir-reader \
 	install-man \
 	test-standalone \
 	check-tki
@@ -790,6 +790,18 @@ test-stdlib-glue-contract: $(BIN)
 # ── Story 76.1.6a: .tkir encoder test ────────────────────────────────────────
 test-tkir-encoder: $(BIN)
 	@bash test/tkir/test_tkir_encoder.sh ./$(BIN)
+
+# ── 136.42: .tkir binary reader unit test ────────────────────────────────────
+# test/tkir/test_tkir_reader.c had NO build rule and NO caller anywhere in the
+# repo, so the only trace of it was a committed 113 KB binary that no target
+# had ever produced. It is not a spare test:
+# docs/security/audit-120/compiler-codegen.md cites the .tkir reader's bounds
+# checks as audited *precisely because* this test reaches them — a citation
+# resting on 15 cases nothing ran. Needs src/diag.c: tkir.c calls diag_emit.
+test-tkir-reader:
+	$(CC) $(CFLAGS) -o test/tkir/test_tkir_reader \
+	    test/tkir/test_tkir_reader.c src/tkir.c src/diag.c
+	$(RUN_TEST) ./test/tkir/test_tkir_reader
 
 test-standalone: $(BIN)
 	@test/standalone/run_all.sh
