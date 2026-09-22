@@ -123,6 +123,24 @@
     },
     {
       "kind": "func",
+      "name": "file.readrange",
+      "params": [
+        "str",
+        "i64",
+        "i64"
+      ],
+      "return": "@(byte)!FileErr"
+    },
+    {
+      "kind": "func",
+      "name": "file.size",
+      "params": [
+        "str"
+      ],
+      "return": "i64!FileErr"
+    },
+    {
+      "kind": "func",
       "name": "file.lasterr",
       "params": [],
       "return": "str"

@@ -9,6 +9,7 @@
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 #include "capabilities.h"   /* 124.4c: fs.read / fs.write capability gates */
 #include "bytes_rt.h"       /* 135.10: @(byte) <-> contiguous uint8_t buffer */
+#include "tk_runtime.h"     /* 135.12: tk_current_error + tk_err_box (127.109) */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -166,6 +167,18 @@ int64_t tk_file_writelines_w(int64_t path, int64_t lines) {
     return r.is_err ? 0 : (int64_t)r.ok;
 }
 
+/*
+ * file.stat(path) — the size, through the same file_size() that file.size
+ * uses.  135.12 replaced that function's 28.2-era stat(2) body rather than
+ * adding a second one, so this call changed with it and in the same
+ * direction: it no longer follows a symlink whose target the read calls would
+ * refuse, and it no longer reports st_size for a DIRECTORY or a FIFO, where
+ * the number was never a count of readable bytes.  Those now return 0 here.
+ *
+ * file.stat keeps the value sentinel, and file.size does not.  One C answer,
+ * two error channels, which is 127.102b's business and not this story's; use
+ * file.size, which can tell an empty file from a failure.
+ */
 int64_t tk_file_stat_w(int64_t path) {
     TK_REQUIRE(TK_CAP_FS_READ);
     if (!path) return 0;
@@ -308,6 +321,89 @@ int64_t tk_file_writebytes_w(int64_t path, int64_t data) {
     BoolFileResult r = file_writebytes((const char *)(intptr_t)path, buf, n);
     free(buf);
     return r.is_err ? 0 : (int64_t)r.ok;
+}
+
+/* ══ 135.12 — the bounded read, and a real error box ═════════════════════
+ *
+ * These two wrappers do NOT signal failure with a value sentinel, and they
+ * are the first in this module not to.  runtime-abi.md §7.2 states the reason
+ * outright: "the zero filler is not the discriminant ... consumers must decide
+ * on the slot, never on the value."
+ *
+ * For file.size that is not a style point, it is the whole call.  An EMPTY
+ * FILE HAS SIZE 0, and 0 is what the sentinel convention means by "it
+ * failed".  Under the sentinel, `mt file.size(p)` on an empty file takes the
+ * $err arm — the C005 family of defect, and exactly the one 135.10 went out
+ * of its way to avoid on the read side ("an empty file returns a real
+ * zero-length array marked ok, never a bare zero").  No arrangement of the
+ * return value fixes it; the answer has to move to the slot.
+ *
+ * So both wrappers store a real box built through tk_err_box() (127.109) on
+ * failure, and store 0 on success.  The success store is not optional: it is
+ * the 127.123 defect if it is missing — a call that plainly succeeds reports
+ * failure because an EARLIER call left the slot set.  llvm.c's
+ * is_file_errbox_wrapper() is the other half; without it the compiler still
+ * discriminates on the value and the box is decoration.
+ *
+ * WHAT IS NOT DONE HERE, deliberately.  The box's payload is a {tag, msg}
+ * pair whose tag is a FileErr variant index, and FileErr still carries only
+ * three variants where file.c distinguishes ten.  Widening it and retiring
+ * file.lasterr()/file.lasterrkind() is 127.102b — an owner-authorised
+ * BREAKING stdlib API change that is to land in ONE release with 127.102a and
+ * 127.102c.  Landing a third of it here would ship that break out of band.
+ * These calls therefore set the slot AND keep the accessors, so the module
+ * stays self-consistent and 127.102b inherits a working shape, not a design.
+ */
+
+/* The box: slot 0 = FileErr variant index, slot 1 = the message pointer.
+ * tk_err_box never returns null (a null would be stored as 0, and 0 is
+ * success), so there is no failure path to write here. */
+static int64_t file_raise(FileErrKind kind, const char *msg) {
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    switch (kind) {
+        case FILE_ERR_NOT_FOUND:  box[0] = 0; break;   /* FileErr.NotFound   */
+        case FILE_ERR_PERMISSION: box[0] = 1; break;   /* FileErr.Permission */
+        default:                  box[0] = 2; break;   /* FileErr.IO         */
+    }
+    box[1] = (int64_t)(intptr_t)(msg ? msg : "");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
+/* file.readrange(path; offset; len) -> @(byte)!FileErr */
+int64_t tk_file_readrange_w(int64_t path, int64_t offset, int64_t len) {
+    TK_REQUIRE(TK_CAP_FS_READ);
+    if (!path) {
+        file_setlasterr(FILE_ERR_BAD_ARG, "file.readrange: null path");
+        return file_raise(FILE_ERR_BAD_ARG, file_lasterr());
+    }
+    BytesFileResult r = file_readrange((const char *)(intptr_t)path, offset, len);
+    if (r.is_err) return file_raise(r.err.kind, r.err.msg);
+
+    int64_t h = tk_bytes_pack(r.ok.data, r.ok.len);
+    free(r.ok.data);
+    if (!h) {
+        /* tk_arr_alloc failed: 8 bytes per byte, so this is reachable for a
+         * window that passed the cap.  Do not return an empty array for it. */
+        file_setlasterr(FILE_ERR_NO_MEM,
+                        "file.readrange: byte array allocation failed");
+        return file_raise(FILE_ERR_NO_MEM, file_lasterr());
+    }
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
+    return h;
+}
+
+/* file.size(path) -> i64!FileErr — 0 is a real size, never a failure. */
+int64_t tk_file_size_w(int64_t path) {
+    TK_REQUIRE(TK_CAP_FS_READ);
+    if (!path) {
+        file_setlasterr(FILE_ERR_BAD_ARG, "file.size: null path");
+        return file_raise(FILE_ERR_BAD_ARG, file_lasterr());
+    }
+    U64FileResult r = file_size((const char *)(intptr_t)path);
+    if (r.is_err) return file_raise(r.err.kind, r.err.msg);
+    tk_current_error = 0;   /* 127.123: an ok return MUST clear the slot. */
+    return (int64_t)r.ok;
 }
 
 /* file.lasterr() -> str  — the message for the last byte-call failure, "" if

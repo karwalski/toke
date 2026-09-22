@@ -17,7 +17,7 @@ The `std.file` module provides functions for reading, writing, and managing file
 > **`file.readbytes` / `file.writebytes`**, which carry an exact `@(byte)` with
 > the length beside the data.
 
-> **Implemented functions (from `file.tki`):** `file.read`, `file.write`, `file.append`, `file.exists`, `file.delete`, `file.list`, `file.isdir`, `file.mkdir`, `file.copy`, `file.listall`, `file.readbytes`, `file.writebytes`, `file.lasterr`, `file.lasterrkind`. Functions documented in earlier versions (`mkdir_p`, `rmdir`, `rmdir_r`, `is_file`, `move`, `size`, `mtime`, `join`, `basename`, `dirname`, `absolute`, `ext`, `readlines`, `glob`) are not in the current tki.
+> **Implemented functions (from `file.tki`):** `file.read`, `file.write`, `file.append`, `file.exists`, `file.delete`, `file.list`, `file.isdir`, `file.mkdir`, `file.copy`, `file.listall`, `file.readbytes`, `file.writebytes`, `file.readrange`, `file.size`, `file.lasterr`, `file.lasterrkind`. Functions documented in earlier versions (`mkdir_p`, `rmdir`, `rmdir_r`, `is_file`, `move`, `mtime`, `join`, `basename`, `dirname`, `absolute`, `ext`, `readlines`, `glob`) are not in the current tki. (`size` returned to the interface in 135.12, with an implementation that refuses what it cannot measure.)
 
 ## Types
 
@@ -218,6 +218,9 @@ staged: at the limit that is roughly 576 MiB resident for one call. A larger
 file is **refused** with `toolarge` rather than read partially — a short read is
 reported as `io`, never returned as a shorter array.
 
+To read a file bigger than that, use **`file.readrange`** below, which caps the
+*window* and not the *file*.
+
 ```toke
 m=example;
 i=file:std.file;
@@ -290,6 +293,84 @@ f=save(dst:$str;b:@(byte)):i64{
   }
 };
 ```
+
+### file.readrange(path: $str; offset: i64; len: i64): @(byte)!$fileerr
+
+Reads at most `len` bytes starting at `offset`, **without reading the rest of
+the file**. This is how to read a file that `file.readbytes` refuses.
+
+**The window is capped; the file is not.** `file.readbytes` caps the file
+because it materialises all of it, and those two limits used to be one number.
+They are not the same thing, and only the window costs memory — so `len` is
+refused above 64 MiB with `toolarge`, and **the file's own size is not checked
+at all**. A 2 GiB PDF is readable, in windows, at the same peak cost per call.
+
+**A short result is an end, not a failure.** If the range runs past the end of
+the file, the bytes that exist are returned and `b.len` says how many. An
+`offset` at or beyond the end returns a real zero-length `@(byte)` with kind
+`ok` — never a failure, and never confusable with one, which is what lets a
+caller walk to the end of a file without knowing its size first. A short read
+from *inside* the file (it shrank mid-read) is still `io`, because that is a
+wrong answer rather than an end.
+
+Outcomes add `badarg` for a negative `offset` or `len` and re-use `toolarge`
+for an over-cap **window**; the rest are `file.readbytes`' outcomes exactly.
+
+**Why a range and not a stream.** The formats this exists for are indexed from
+their own end and reached by byte offset — a PDF through the `startxref`
+pointer in its trailer, a zip (so every XLSX) through the end-of-central-
+directory record. Neither can be parsed by reading forward from the start. A
+sequential scan is four lines of toke on top of this call; random access cannot
+be built on top of a stream at all.
+
+```toke
+m=example;
+i=file:std.file;
+i=io:std.io;
+i=s:std.str;
+
+(* The trailer-first access pattern: find the end, then read backwards from
+   it. This is what a PDF or zip parser does, and why file.size exists. *)
+f=readtrailer(path:$str):i64{
+  <mt file.size(path) {
+    $ok:n  tail(path;n);
+    $err:e 1
+  }
+};
+
+f=tail(path:$str;n:i64):i64{
+  let from=mut.0;
+  if(n>1024){ from=n-1024 };
+  <mt file.readrange(path;from;1024) {
+    $ok:b  io.println(s.concat("trailer bytes=";s.fromint(b.len)));
+    $err:e 1
+  }
+};
+```
+
+### file.size(path: $str): i64!$fileerr
+
+The number of bytes `file.readrange` can return from `path`, taken by `fstat`
+on an opened descriptor rather than by `stat` on the path — so it cannot
+disagree with the read calls about which file it measured, and it does not
+follow a final symlink that those calls would refuse (AMB-07).
+
+**Zero is a real size.** An empty file returns `0` on the `$ok` arm. This is
+the one call in the module whose success value collides with the value-sentinel
+convention the others use for failure, so it is discriminated on the error slot
+instead ([`runtime-abi.md` §7.2](../runtime-abi.md): *"the zero filler is not
+the discriminant"*). A directory and a fifo are **refused** rather than
+measured — `st_size` on either is not a count of readable bytes, and returning
+it would be a plausible wrong answer.
+
+Outcomes: `ok`, `notfound`, `permission`, `isdir`, `notregular`, `symlink`,
+`io`, `badarg`. `toolarge` and `nomem` cannot occur, because nothing is
+allocated and nothing is read.
+
+> `file.stat` shares this same implementation, so the two cannot disagree about
+> the answer. They still differ in how they report failure — `file.stat` keeps
+> the value sentinel, so it cannot tell an empty file from an error. Prefer
+> `file.size`.
 
 ### file.lasterr(): $str
 
