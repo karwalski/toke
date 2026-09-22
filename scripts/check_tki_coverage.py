@@ -75,23 +75,34 @@ def load_resolver_tables(llvm_path: Path):
         return explicit, patterns, subns
     src = llvm_path.read_text(errors="replace")
 
-    m = re.search(r'^static const char \*resolve_stdlib_call\(', src, re.M)
+    # 136.39 — the tables live in stdlib_symbol_for(), NOT in
+    # resolve_stdlib_call(). 136.1 split the body out: resolve_stdlib_call()
+    # kept only the alias -> module lookup and delegates. This anchor still
+    # MATCHED that six-line husk, so the parse silently yielded zero explicit
+    # mappings and zero patterns and every export fell back to the generic
+    # tk_<mod>_<method>_w rule -- which is wrong for the ~39 methods the
+    # compiler maps by hand (os.open -> tk_os_open, math.sin -> sin,
+    # mem.alloc -> tk_mem_alloc). Those were reported as missing wrappers when
+    # the symbol they really lower to has existed all along.
+    m = re.search(r'^(?:static\s+)?const char \*stdlib_symbol_for\(', src, re.M)
     if not m:
-        print("WARNING: resolve_stdlib_call() not found in llvm.c; using generic rule only")
-    else:
-        end = src.find("\n}\n", m.start())
-        body = src[m.start():end if end > 0 else len(src)]
-        cur = None
-        for line in body.splitlines():
-            mm = re.search(r'!strcmp\(mod,\s*"([\w.]+)"\)', line)
-            if mm:
-                cur = mm.group(1)
-            mm = re.search(r'!strcmp\(method,\s*"([\w.]+)"\)\)\s*return\s*"(\w+)"', line)
-            if mm and cur:
-                explicit[(cur, mm.group(1))] = mm.group(2)
-            mm = re.search(r'snprintf\(\w+,\s*sizeof \w+,\s*"(tk_\w+%s(?:_w)?)",\s*method\)', line)
-            if mm and cur:
-                patterns[cur] = mm.group(1)
+        print("ERROR: stdlib_symbol_for() not found in llvm.c; refusing to "
+              "fall back to the generic rule (that is how 136.39 hid 39 "
+              "bogus failures and an unknown number of bogus passes)")
+        raise SystemExit(2)
+    end = src.find("\n}\n", m.start())
+    body = src[m.start():end if end > 0 else len(src)]
+    cur = None
+    for line in body.splitlines():
+        mm = re.search(r'!strcmp\(mod,\s*"([\w.]+)"\)', line)
+        if mm:
+            cur = mm.group(1)
+        mm = re.search(r'!strcmp\(method,\s*"([\w.]+)"\)\)\s*return\s*"(\w+)"', line)
+        if mm and cur:
+            explicit[(cur, mm.group(1))] = mm.group(2)
+        mm = re.search(r'snprintf\(\w+,\s*sizeof \w+,\s*"(tk_\w+%s(?:_w)?)",\s*method\)', line)
+        if mm and cur:
+            patterns[cur] = mm.group(1)
 
     mm = re.search(r'sub_namespaces\[\]\s*=\s*\{([^}]*)\}', src)
     if mm:

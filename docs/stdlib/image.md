@@ -24,10 +24,10 @@ The `std.image` module provides functions for decoding, encoding, and transformi
 
 | Variant | Meaning |
 |---------|---------|
-| $png | PNG format |
-| $jpeg | JPEG format |
-| $webp | WebP format |
-| $bmp | BMP format |
+| $Png | PNG format |
+| $Jpeg | JPEG format |
+| $Webp | WebP format |
+| $Bmp | BMP format |
 
 ## Functions
 
@@ -48,14 +48,13 @@ The `std.image` module provides functions for decoding, encoding, and transformi
 ```toke
 m=example;
 i=image:std.image;
-i=imgfmt:std.image;
 i=file:std.file;
 
 f=main():i64{
   let raw = mt file.read("photo.jpg") {$ok:d d;$err:e ""};
   let img = mt image.decode(raw) {$ok:i i;$err:e $imgbuf{width:0;height:0;channels:0;data:@()}};
   let thumb = image.resize(img; 128; 128);
-  let out = mt image.encode(thumb; $imgfmt.png; 90) {$ok:b b;$err:e @()};
+  let out = mt image.encode(thumb; $imgfmt{$Png:true}; 90) {$ok:b b;$err:e @()};
   let res = file.write("thumb.png"; out);
   <0;
 }

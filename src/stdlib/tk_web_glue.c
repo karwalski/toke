@@ -1380,76 +1380,11 @@ int64_t tk_chart_serve_w(int64_t dash, int64_t port) {
     return err.failed ? -1 : 0;
 }
 
-/* ── dataframe wrappers (dataframe.h) ─────────────────────────────── */
-static int64_t df_fromcsv_impl(int64_t csv) {
-    if (!csv) return 0;
-    const char *s = (const char *)(intptr_t)csv;
-    uint64_t len = strlen(s);
-    DfResult r = df_fromcsv(s, len, 1);
-    if (r.is_err || !r.ok) return 0;
-    return (int64_t)(intptr_t)r.ok;
-}
-
-static int64_t df_shape_impl(int64_t df_ptr) {
-    if (!df_ptr) return 0;
-    TkDataframe *d = (TkDataframe *)(intptr_t)df_ptr;
-    uint64_t nrows, ncols;
-    df_shape(d, &nrows, &ncols);
-    /* Pack nrows and ncols into a heap block */
-    int64_t *block = (int64_t *)malloc(2 * sizeof(int64_t));
-    if (!block) return 0;
-    block[0] = (int64_t)nrows;
-    block[1] = (int64_t)ncols;
-    return (int64_t)(intptr_t)block;
-}
-
-static int64_t df_filter_impl(int64_t df_ptr, int64_t col, int64_t op, int64_t val) {
-    if (!df_ptr || !col) return 0;
-    TkDataframe *d = (TkDataframe *)(intptr_t)df_ptr;
-    double threshold;
-    memcpy(&threshold, &val, sizeof(double));
-    TkDataframe *result = df_filter(d, (const char *)(intptr_t)col,
-                                     threshold, (int)op);
-    return (int64_t)(intptr_t)result;
-}
-
-static int64_t df_groupby_impl(int64_t df_ptr, int64_t col) {
-    if (!df_ptr || !col) return 0;
-    TkDataframe *d = (TkDataframe *)(intptr_t)df_ptr;
-    /* Default: group by col, aggregate count on first numeric column */
-    DfGroupResult gr = df_groupby(d, (const char *)(intptr_t)col, NULL, 0);
-    if (!gr.rows) return 0;
-    /* Return pointer to the result (caller can iterate) */
-    DfGroupResult *heap = (DfGroupResult *)malloc(sizeof(DfGroupResult));
-    if (!heap) return 0;
-    *heap = gr;
-    return (int64_t)(intptr_t)heap;
-}
-
-static int64_t df_columnstr_impl(int64_t df_ptr, int64_t col) {
-    if (!df_ptr || !col) return 0;
-    TkDataframe *d = (TkDataframe *)(intptr_t)df_ptr;
-    uint64_t out_len = 0;
-    char **strs = df_columnstr(d, (const char *)(intptr_t)col, &out_len);
-    if (!strs) return 0;
-    return (int64_t)(intptr_t)strs;
-}
-
-int64_t tk_df_fromcsv_w(int64_t csv) { return df_fromcsv_impl(csv); }
-int64_t tk_df_shape_w(int64_t df) { return df_shape_impl(df); }
-int64_t tk_df_filter_w(int64_t df, int64_t col, int64_t op, int64_t val) { return df_filter_impl(df, col, op, val); }
-int64_t tk_df_groupby_w(int64_t df, int64_t col) { return df_groupby_impl(df, col); }
-int64_t tk_df_columnstr_w(int64_t df, int64_t col) { return df_columnstr_impl(df, col); }
-int64_t tk_dataframe_fromcsv_w(int64_t csv) { return df_fromcsv_impl(csv); }
-int64_t tk_dataframe_shape_w(int64_t df) { return df_shape_impl(df); }
-int64_t tk_dataframe_filter_w(int64_t df, int64_t col, int64_t op, int64_t val) { return df_filter_impl(df, col, op, val); }
-int64_t tk_dataframe_groupby_w(int64_t df, int64_t col) { return df_groupby_impl(df, col); }
-int64_t tk_dataframe_columnstr_w(int64_t df, int64_t col) { return df_columnstr_impl(df, col); }
-int64_t tk_dataframe_tocsv_w(int64_t df) {
-    if (!df) return 0;
-    const char *s = df_tocsv((TkDataframe *)(intptr_t)df);
-    return (int64_t)(intptr_t)s;
-}
+/* 136.40 — the dataframe wrappers that lived here are now in
+ * src/stdlib/dataframe_glue.c. Registered against std.http, they only
+ * linked when a program happened to import HTTP too, so every documented
+ * std.dataframe and std.analytics example failed at link (136.33).
+ * Same extraction 136.32 did for yaml, 136.25 for ml, 114.35 for toon. */
 
 /* ml wrappers moved to src/stdlib/ml_glue.c in 136.25 so `i=ml:std.ml` links
  * on its own. */
@@ -1470,26 +1405,9 @@ extern int64_t tk_str_slice_w(int64_t s, int64_t start, int64_t end_);
 /* i18n_localize/translate — delegate to i18n_get on the global bundle.
  * The locale/lang argument is ignored (bundle already loaded). */
 
-/* ── dashboard wrappers (dashboard.h) ─────────────────────────────── */
-int64_t tk_dashboard_new_w(int64_t title) {
-    const char *t = title ? (const char *)(intptr_t)title : "Dashboard";
-    TkDashboard *d = dashboard_new(t, 12);
-    return (int64_t)(intptr_t)d;
-}
-
-int64_t tk_dashboard_addchart_w(int64_t dash, int64_t chart) {
-    if (!dash || !chart) return 0;
-    dashboard_addchart((TkDashboard *)(intptr_t)dash, NULL, NULL,
-                        (TkChartSpec *)(intptr_t)chart, 0, 0, 1, 1);
-    return dash;
-}
-
-int64_t tk_dashboard_serve_w(int64_t dash, int64_t port) {
-    if (!dash) return -1;
-    TkRouterErr err = dashboard_serve((TkDashboard *)(intptr_t)dash,
-                                       (uint64_t)port);
-    return err.failed ? -1 : 0;
-}
+/* 136.40 — the dashboard wrappers that lived here are now in
+ * src/stdlib/dashboard_glue.c, for the same reason as the dataframe
+ * block above: std.dashboard could not link without std.http. */
 
 /* ── svg wrappers (svg.h) ─────────────────────────────────────────── */
 

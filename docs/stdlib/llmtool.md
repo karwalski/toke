@@ -131,7 +131,7 @@ f=demo():void{
   let call=mt tool.chatwithtools(c2;msgs) {$ok:tc tc;$err:e emptycall};
   let result=$toolresult{id:call.id;content:"{\"temp_c\": 22, \"condition\": \"sunny\"}";error:false};
   let emptyresp=$llmresp{content:"";tokensin:0;tokensout:0;model:""};
-  let resp=mt tool.submitresult(c2;msgs;result) {$ok:r r;$err:e emptyresp};
+  let resp:$llmresp=mt tool.submitresult(c2;msgs;result) {$ok:r r;$err:e emptyresp};
   log.info(resp.content;@());
 };
 ```
@@ -201,7 +201,7 @@ f=main():i64{
   let weatherjson="{\"city\":\"Sydney\",\"temp_c\":22,\"condition\":\"partly cloudy\"}";
   let result=$toolresult{id:call.id;content:weatherjson;error:false};
   let emptyresp=$llmresp{content:"";tokensin:0;tokensout:0;model:""};
-  let resp=mt tool.submitresult(c;msgs;result) {$ok:r r;$err:e emptyresp};
+  let resp:$llmresp=mt tool.submitresult(c;msgs;result) {$ok:r r;$err:e emptyresp};
   log.info(resp.content;@());
   <0;
 };
