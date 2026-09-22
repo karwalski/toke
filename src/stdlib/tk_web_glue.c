@@ -20,7 +20,14 @@
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
 /* 114.53/114.54/127.67: a wrapper reports failure through this flag and still
  * returns the real value; defined in tk_runtime.c. */
-extern int64_t tk_current_error;
+/* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
+ * A plain-global declaration here links with no diagnostic and then SIGBUSes
+ * on the first access, so the spelling must match the definition. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+extern _Thread_local int64_t tk_current_error;
+#else
+extern __thread int64_t tk_current_error;
+#endif
 #include "router.h"
 #include <netdb.h>
 #include <sys/socket.h>

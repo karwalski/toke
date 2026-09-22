@@ -196,9 +196,28 @@ cannot leave a stale error behind.
 
 ### 7.3 Error record layout
 
-The payload is a heap record, allocated with `malloc` and never freed
-(the error path is not hot, and the record may outlive the frame that
-raised it — it must not be an `alloca`).
+The payload is a heap record. It must not be an `alloca` — it may
+outlive the frame that raised it.
+
+**Ownership (127.109).** It is *not* `malloc`'d per error. Each thread owns
+exactly one error-box buffer (`tk_err_box`, `tk_runtime.c`), grown on demand
+and **reused by every raise on that thread**. A box is valid until the next
+raise on the same thread, which is exactly the window restriction 1 in §7.5
+already defines for the `$err` arm's binding — so the rule adds no
+restriction, and there is nothing to free per error. The buffer is released
+at exit for the main thread; a worker that raised leaves one buffer behind at
+thread exit, which is constant, not workload-proportional.
+
+Until 127.109 every error return and every `!` propagation called `malloc`
+and the emitted code contained **no `free` at all**: 16 bytes per error ever
+raised. `patterns/err-default` at N=64e6 allocated 9,142,858 boxes and
+146 MB, with the free count constant in N. It is now 32 allocations and
+1.4 MB peak, constant in N — at parity with the precondition-guard form it
+used to lose to by five orders of magnitude (127.49).
+
+The cost is on the raise path only: the same benchmark moves from 0.12 s to
+0.16 s at N=64e6, which is the thread-local slot access the fix to §7.5
+restriction 2 requires.
 
 **Sum-typed errors** (`t=$err{$bad:$str;$worse:i64}`) are a 2-slot box:
 
@@ -237,10 +256,20 @@ These are limitations of the current lowering, not of the design:
    itself.** `let r = f(x); mt r {…}` binds nil in the `$err` arm,
    because the slot is a single global and any call between the `let`
    and the `mt` overwrites it. Match on the call directly.
-2. **The slot is process-wide, not thread-local.** `tk_current_error` is
-   a plain global in `tk_runtime.c` (`int64_t tk_current_error = 0;`)
-   despite compiler comments describing it as thread-local. Two threads
-   in `std.task` raising errors concurrently will clobber each other.
+2. ~~**The slot is process-wide, not thread-local.**~~ **Fixed, 127.101.**
+   It is thread-local, as the compiler comments always claimed and this
+   document previously denied. `tk_runtime.c` defines it `TK_TLS` and
+   `llvm.c` emits `@tk_current_error = external thread_local global i64`.
+   The two spellings are load-bearing: a plain-global declaration against a
+   TLS definition links with **no diagnostic** and then takes SIGBUS on the
+   first access, so every translation unit that declares the slot — the
+   twelve glue files included — must use the macro. `TK_TLS`, not C11
+   `_Thread_local`, because `tk_runtime.c` is built with `-std=c99
+   -Wpedantic -Werror`, under which `_Thread_local` is a hard error.
+
+   This was reachable, not theoretical: `task.c`'s `pool_worker` calls a
+   toke function pointer (`t->result = t->fn()`) on a pool thread, so two
+   `std.task` tasks raising errors really did overwrite each other's.
 3. **Nothing enforces that every error exit sets the slot** (127.59).
 4. **The declared error type is not checked against what is
    observable.** `FileErr` declares three variants while
@@ -266,9 +295,13 @@ compiler is the root of trust for the corpus (AGENTS.md §1).
 The split-channel form, by contrast, is **already the ABI** — the return
 path has stashed a typed box since 114.41. What was missing was only
 that the consumer read it back, and a written definition of the slot's
-three states. Both are supplied above. Section 7.6 should be revisited
-if `std.task` grows real concurrent error reporting, at which point
-restriction 2 forces the question.
+three states. Both are supplied above.
+
+Restriction 2 was named here as the trigger that would force the question.
+127.101 answered it the cheaper way — a thread-local slot — so the trigger
+is spent and the two-word return is **not** required for concurrent error
+reporting. What would still force it is a caller needing two error payloads
+live at once, which restriction 1 forbids independently of this.
 
 ---
 

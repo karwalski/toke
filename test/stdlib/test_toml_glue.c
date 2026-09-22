@@ -34,8 +34,17 @@
 
 /* Defined in src/stdlib/tk_runtime.c in a real program; provided here so the
  * unit test links without dragging the runtime in.  The wrappers declare it
- * extern and are the things under test. */
-int64_t tk_current_error = 0;
+ * extern and are the things under test.
+ *
+ * 127.101: this stand-in MUST use the same thread-local spelling as the real
+ * definition.  A plain global here against toml_glue.c's thread-local extern
+ * links with no diagnostic and then takes SIGBUS on the first wrapper call —
+ * which is exactly how this test failed when the slot became thread-local. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+_Thread_local int64_t tk_current_error = 0;
+#else
+__thread int64_t tk_current_error = 0;
+#endif
 
 int64_t tk_toml_load_w   (int64_t src);
 int64_t tk_toml_section_w(int64_t tab, int64_t key);

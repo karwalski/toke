@@ -173,7 +173,30 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; } Ctx;
+
+/*
+ * box_alloc (127.109) — which allocator the box about to be emitted comes
+ * from, consuming the one-shot flag set by an error return.
+ *
+ * Every error-union box used to come from malloc() and the emitted code
+ * contained no free at all, so a program leaked 16 bytes per error EVER
+ * raised — 9,142,858 boxes / 146 MB at N=64e6 in patterns/err-default
+ * (127.49, re-measured).  An error box does not need its own allocation: it
+ * is only valid until the next raise on the same thread anyway, which is the
+ * window runtime-abi.md §7.5 restriction 1 already documents for the $err
+ * binding.  So it comes from the thread's single reused error buffer.
+ *
+ * The flag is one-shot and consumed by the FIRST box emitted after it is
+ * set, which is the outer one: every literal site below emits its
+ * allocation before evaluating its field initialisers, so a nested literal
+ * inside an error literal's fields cannot steal it.
+ */
+static const char *box_alloc(Ctx *c)
+{
+    if (c->err_box_pending) { c->err_box_pending = 0; return "tk_err_box"; }
+    return "malloc";
+}
 
 /* ── SSA counter helpers ───────────────────────────────────────────── */
 /* next_tmp: allocate the next SSA temporary (%tN).
@@ -4033,7 +4056,7 @@ static int emit_expr(Ctx *c, const Node *n)
                     val = coerce_value(c, val, vty, "i64");
                 }
                 int box = next_tmp(c);
-                fprintf(c->out, "  %%t%d = call i8* @malloc(i64 16) ; sum_ctor %s\n", box, vsi->name);
+                fprintf(c->out, "  %%t%d = call i8* @%s(i64 16) ; sum_ctor %s\n", box, box_alloc(c), vsi->name);
                 int sbase = next_tmp(c);
                 fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", sbase, box);
                 char vn[NAME_BUF]; tok_cp(c->src, n->children[0], vn, sizeof vn);
@@ -5042,7 +5065,7 @@ static int emit_expr(Ctx *c, const Node *n)
          * is the tag, and its value is stored in the payload slot. */
         if (si && si->is_sum) {
             int box = next_tmp(c);
-            fprintf(c->out, "  %%t%d = call i8* @malloc(i64 16) ; sum_lit %s\n", box, sn);
+            fprintf(c->out, "  %%t%d = call i8* @%s(i64 16) ; sum_lit %s\n", box, box_alloc(c), sn);
             int sbase = next_tmp(c);
             fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", sbase, box);
             int vtag = 0, vpay = -1; const char *vname = "?";
@@ -5081,7 +5104,7 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         int nfields = si ? si->field_count : (n->child_count > 0 ? n->child_count : 1);
         t = next_tmp(c);
-        fprintf(c->out, "  %%t%d = call i8* @malloc(i64 %d) ; struct_lit %s\n", t, nfields * 8, sn);
+        fprintf(c->out, "  %%t%d = call i8* @%s(i64 %d) ; struct_lit %s\n", t, box_alloc(c), nfields * 8, sn);
         /* 80.2.3: bitcast malloc result (i8*) to i64* for field GEP */
         int struct_base_i64 = next_tmp(c);
         fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", struct_base_i64, t);
@@ -5423,7 +5446,10 @@ static int emit_expr(Ctx *c, const Node *n)
             const StructInfo *pesi = lookup_struct(c, c->cur_fn_err);
             if (pesi && pesi->is_sum) {
                 int box = next_tmp(c);
-                fprintf(c->out, "  %%t%d = call i8* @malloc(i64 16) ; 127.56 propagated %s\n",
+                /* 127.109: the propagated box leaked exactly like the
+                 * returned one.  It is an error box by construction, so it
+                 * takes the thread buffer unconditionally. */
+                fprintf(c->out, "  %%t%d = call i8* @tk_err_box(i64 16) ; 127.56 propagated %s\n",
                         box, c->cur_fn_err);
                 int pb = next_tmp(c);
                 fprintf(c->out, "  %%t%d = bitcast i8* %%t%d to i64*\n", pb, box);
@@ -5589,6 +5615,18 @@ static int emit_expr(Ctx *c, const Node *n)
         /* Emit scrutinee and get its type */
         int sv = emit_expr(c, n->children[0]);
         const char *scr_ty = expr_llvm_type(c, n->children[0]);
+        /* 127.111: a `void!$E` scrutinee has NO success value.  The call path
+         * already synthesises an i64 filler for it ("void call result"), so
+         * `sv` is an i64 while expr_llvm_type still reports "void" — and the
+         * $ok arm's binding was emitted as `%v = alloca void`, which clang
+         * rejects outright ("void type only allowed for function results").
+         * A user-declared fallible void function therefore could not be
+         * compiled at all, while the shape the standard library declares
+         * seven times over went through the interface cache and so came back
+         * as i64 (127.95 fixed only that path).  Normalise to the filler's
+         * real type: `$ok:v` binds the i64 filler, exactly as it binds the
+         * i64 status word on the imported path.  One rule for both. */
+        if (!strcmp(scr_ty, "void")) scr_ty = "i64";
 
         /* Count real arms (skip children[0] which is the scrutinee) */
         int num_arms = 0;
@@ -7936,7 +7974,13 @@ static void emit_stmt(Ctx *c, const Node *n)
                     if (est) { strncpy(rsn, est, sizeof rsn - 1); rsn[sizeof rsn - 1] = '\0'; }
                 }
                 if (rsn[0] && !strcmp(rsn, c->cur_fn_err)) {
+                    /* 127.109: this literal IS the error box.  Tell the
+                     * literal sites to take it from the thread's reused error
+                     * buffer instead of malloc; box_alloc() consumes the flag
+                     * at the first (outermost) allocation it reaches. */
+                    c->err_box_pending = 1;
                     int box = emit_expr(c, n->children[0]);
+                    c->err_box_pending = 0;   /* not a literal after all */
                     const char *bt = expr_llvm_type(c, n->children[0]);
                     if (!strcmp(bt, "i8*")) {
                         int iv = next_tmp(c);
@@ -8084,6 +8128,10 @@ static void emit_stmt(Ctx *c, const Node *n)
                 }
             }
         } else {
+            /* 127.112: a bare `<` in a fallible void function is an ok return
+             * and must clear the slot, exactly like `<expr` does above. */
+            if (c->cur_fn_err[0])
+                fprintf(c->out, "  store i64 0, i64* @tk_current_error ; 127.112 valueless ok return clears the slot\n");
             fputs("  ret void\n", c->out);
         }
         c->term = 1;
@@ -8580,6 +8628,18 @@ static void emit_toplevel(Ctx *c, const Node *n)
         compute_str_arrays(c, n);
         if (body_i >= 0) emit_stmt(c, n->children[body_i]);
         if (!c->term) {
+            /* 127.112: the IMPLICIT return is an ok return, and 114.55 says
+             * every ok return from a fallible function clears the slot — but
+             * only the explicit `<expr` paths did.  A `void!$E` function has
+             * no `<` at all on its success path, so it never cleared, and the
+             * caller's `mt` then decoded whatever error was left in the slot
+             * by some EARLIER call: a call that plainly succeeded reported
+             * failure, order-dependently and silently.  Uncovered by 127.111,
+             * which until now made this shape uncompilable and so unreachable.
+             * A valued fallible function that falls off the end is the same
+             * case, returning the zero filler as its ok value. */
+            if (c->cur_fn_err[0])
+                fprintf(c->out, "  store i64 0, i64* @tk_current_error ; 127.112 implicit ok return clears the slot\n");
             if (!strcmp(ret, "void")) fputs("  ret void\n", c->out);
             else if (!strcmp(ret, "i8*")) fputs("  ret i8* null ; implicit return\n", c->out);
             else fprintf(c->out, "  ret %s 0 ; implicit return\n", ret);
@@ -8623,6 +8683,9 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"puts", "declare i32 @puts(i8*)", 0},
     {"strcmp", "declare i32 @strcmp(i8*, i8*)", 0},
     {"malloc", "declare i8* @malloc(i64)", 0},
+    /* 127.109: the per-thread error box.  Error-union boxes come from here,
+     * not malloc — one buffer per thread, reused, never leaked. */
+    {"tk_err_box", "declare i8* @tk_err_box(i64)", 0},
     /* Runtime: json/str */
     {"tk_json_parse", "declare i64 @tk_json_parse(i8*)", 0},
     {"tk_json_print", "declare void @tk_json_print(i64)", 0},
@@ -9304,8 +9367,11 @@ int emit_llvm_ir(const Node *ast, const char *src,
         fputs("declare void @exit(i32) noreturn\n", f);
     }
     /* 114.41: thread-local side channel carrying a T!$E error's typed payload
-     * (set on an error return, read by the matching $err arm). */
-    fputs("@tk_current_error = external global i64\n", f);
+     * (set on an error return, read by the matching $err arm).
+     * 127.101: `thread_local` in the IR too.  tk_runtime.c defines it TK_TLS;
+     * declaring it as a plain global here links WITHOUT a diagnostic and then
+     * takes SIGBUS on the first access, so the two spellings must agree. */
+    fputs("@tk_current_error = external thread_local global i64\n", f);
     fputs("\n", f);
 
     /* Copy body to final output */

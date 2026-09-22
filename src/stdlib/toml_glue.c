@@ -31,7 +31,14 @@
 
 /* Set to 1 by a wrapper that failed, 0 by one that succeeded.  Defined in
  * tk_runtime.c; see str_glue.c for the same protocol on str.toint. */
-extern int64_t tk_current_error;
+/* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
+ * A plain-global declaration here links with no diagnostic and then SIGBUSes
+ * on the first access, so the spelling must match the definition. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+extern _Thread_local int64_t tk_current_error;
+#else
+extern __thread int64_t tk_current_error;
+#endif
 
 int64_t tk_toml_load_w(int64_t src) {
     if (!src) { tk_current_error = 1; return 0; }

@@ -31,7 +31,14 @@
 
 static int64_t f64_to_i64(double d) { int64_t i; memcpy(&i, &d, sizeof(i)); return i; }
 
-extern int64_t tk_current_error;
+/* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
+ * A plain-global declaration here links with no diagnostic and then SIGBUSes
+ * on the first access, so the spelling must match the definition. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+extern _Thread_local int64_t tk_current_error;
+#else
+extern __thread int64_t tk_current_error;
+#endif
 
 /* Yaml handles are stored as heap-allocated Yaml structs cast to i64. */
 
