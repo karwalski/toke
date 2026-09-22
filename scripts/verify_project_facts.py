@@ -474,6 +474,12 @@ COMMANDS = {
         "python3 scripts/about/github_repo_descriptions.py --check  # verified inventory vs the live account",
 }
 
+# Rows that `--sync` writes but no gate pins: they move with every commit to
+# docs/progress.md, so failing on them would make the table permanently red for
+# reasons that are never a defect. Written so the table stays honest, excluded
+# from drift reporting so --sync-check has a reachable green state (132.50).
+LIVE_ROWS = {"epics", "stories"}
+
 # Facts that the "Project facts" table in docs/metrics-baseline.md must carry
 # verbatim.  --check fails when the file and the tree disagree.
 CHECKED = [
@@ -499,17 +505,43 @@ def collect():
     return facts
 
 
+BASELINE_MD = os.path.join(ROOT, "docs", "metrics-baseline.md")
+BASELINE_BLOCK = re.compile(
+    r"<!-- PROJECT-FACTS BEGIN -->(.*?)<!-- PROJECT-FACTS END -->", re.S)
+# One row of the "Project facts" table: | `key` | **value** | derived by ... |
+# The value cell is the only part this script writes; the "Derived by" prose is
+# genuine hand-written documentation and is left alone.
+BASELINE_ROW = re.compile(
+    r"(?P<open>`(?P<key>[a-z0-9_]+)`\s*\|\s*\*\*)"
+    r"(?P<value>[\d,]+)"
+    r"(?P<close>\*\*)")
+# The conformance row's prose carries the per-series split, which drifts for the
+# same reason the values do, so it is derived too (story 132.50).
+BASELINE_SERIES = re.compile(
+    r"\(grammar (\d+), diagnostics (\d+), lexical (\d+)\)")
+
+
+def _shown(value):
+    """Render a fact the way the table renders it: thousands get commas."""
+    return "{:,}".format(value) if value >= 1000 else str(value)
+
+
+def _baseline_block(text):
+    """The text of the PROJECT-FACTS block, or None if the markers are gone."""
+    m = BASELINE_BLOCK.search(text)
+    return m.group(1) if m else None
+
+
 def check_against_baseline(facts):
-    path = os.path.join(ROOT, "docs", "metrics-baseline.md")
+    path = BASELINE_MD
     text = _read(path)
-    m = re.search(r"<!-- PROJECT-FACTS BEGIN -->(.*?)<!-- PROJECT-FACTS END -->",
-                  text, re.S)
-    if not m:
+    block = _baseline_block(text)
+    if block is None:
         print("ERROR: docs/metrics-baseline.md has no PROJECT-FACTS block.\n"
               "Regenerate it: python3 scripts/verify_project_facts.py --json")
         return 1
-    block = m.group(1)
-    stated = dict(re.findall(r"`([a-z0-9_]+)`\s*\|\s*\*\*([\d,]+)\*\*", block))
+    stated = {m.group("key"): m.group("value")
+              for m in BASELINE_ROW.finditer(block)}
     bad = []
     for key in CHECKED:
         if key not in facts:
@@ -524,8 +556,9 @@ def check_against_baseline(facts):
         for key, actual, claimed in bad:
             print("  %-30s tree says %-8s file says %s" % (key, actual, claimed))
             print("      derive with: %s" % COMMANDS.get(key, "(see script)"))
-        print("\nFix: re-run `python3 scripts/verify_project_facts.py` and update "
-              "the table in docs/metrics-baseline.md. Story 132.14.")
+        print("\nDo not retype the number — re-derive it:\n"
+              "  python3 scripts/verify_project_facts.py --sync\n"
+              "Story 132.14; single write path, story 132.50.")
         return 1
     print("project facts OK: %d counts in docs/metrics-baseline.md match the tree."
           % len(CHECKED))
@@ -613,12 +646,101 @@ def sync_surfaces(facts, targets=None, write=False):
     return 0
 
 
+def sync_baseline(facts, write=False):
+    """Fill (or check) the value cells of the "Project facts" table.
+
+    Story 132.50: this table used to be the one derived surface with no write
+    path — `--check` gated it but nothing filled it, so every legitimate change
+    to the tree (a new conformance suite, a new error code) turned the gate red
+    until a human retyped a number the tree already knew. It went red six times
+    on 2026-09-22 alone, never once for a real defect. Now `--sync` writes it
+    and `--check` verifies it, like every other derived surface.
+    """
+    text = _read(BASELINE_MD)
+    m = BASELINE_BLOCK.search(text)
+    if not m:
+        print("ERROR: docs/metrics-baseline.md has no PROJECT-FACTS block.\n"
+              "Regenerate it: python3 scripts/verify_project_facts.py --json")
+        return 1
+    block = m.group(1)
+    drift, unknown, rows = [], [], 0
+
+    def fill(row):
+        nonlocal rows
+        rows += 1
+        key, was = row.group("key"), row.group("value")
+        if key not in facts:
+            unknown.append((key, was))
+            return row.group(0)
+        now = _shown(facts[key])
+        if was != now:
+            drift.append((key, was, now))
+        return row.group("open") + now + row.group("close")
+
+    new_block = BASELINE_ROW.sub(fill, block)
+
+    # The conformance row states the per-series split in prose; derive it too.
+    series = facts.get("conformance_by_series") or {}
+    if series:
+        def fill_series(sm):
+            now = "(grammar %d, diagnostics %d, lexical %d)" % (
+                series.get("grammar", 0), series.get("diagnostics", 0),
+                series.get("lexical", 0))
+            if sm.group(0) != now:
+                drift.append(("conformance_by_series", sm.group(0), now))
+            return now
+        new_block = BASELINE_SERIES.sub(fill_series, new_block)
+
+    # A gated fact with no row at all cannot be written — say so either way.
+    present = {r.group("key") for r in BASELINE_ROW.finditer(block)}
+    absent = [k for k in CHECKED if k in facts and k not in present]
+
+    if write:
+        if new_block != block:
+            with open(BASELINE_MD, "w", encoding="utf-8") as fh:
+                fh.write(text[:m.start(1)] + new_block + text[m.end(1):])
+        print("derived facts: filled %d row(s) in docs/metrics-baseline.md%s"
+              % (rows, "; %d were stale" % len(drift) if drift else ""))
+    else:
+        drift = [d for d in drift if d[0] not in LIVE_ROWS]
+    if not write and drift:
+        print("ERROR: the 'Project facts' table in docs/metrics-baseline.md has "
+              "drifted from the tree (story 132.50):\n")
+        for key, was, now in drift:
+            print("  %-30s file says %-10s tree says %s" % (key, was, now))
+            if key in COMMANDS:
+                print("      derive with: %s" % COMMANDS[key])
+        print("\nDo not retype the number — re-derive it:\n"
+              "  python3 scripts/verify_project_facts.py --sync")
+    elif not write:
+        print("derived facts OK: %d row(s) in docs/metrics-baseline.md match "
+              "the tree." % rows)
+
+    if unknown:
+        print("\nERROR: the table states facts this script cannot derive:")
+        for key, was in unknown:
+            print("  %s (stated %s) — no such fact; run the script with no "
+                  "arguments to list the fact sheet" % (key, was))
+    if absent:
+        print("\nERROR: gated facts with no row in the table (add the row; "
+              "--sync cannot create one):")
+        for key in absent:
+            print("  %s — tree says %s" % (key, _shown(facts[key])))
+
+    if unknown or absent:
+        return 1
+    return 1 if (drift and not write) else 0
+
+
 def main():
     facts = collect()
     if "--sync" in sys.argv or "--sync-check" in sys.argv:
         targets = [a for a in sys.argv[1:] if not a.startswith("-")]
-        return sync_surfaces(facts, targets or None,
-                             write="--sync" in sys.argv)
+        write = "--sync" in sys.argv
+        rc = sync_surfaces(facts, targets or None, write=write)
+        if not targets:
+            rc |= sync_baseline(facts, write=write)
+        return rc
     if "--json" in sys.argv:
         print(json.dumps({"facts": facts, "commands": COMMANDS}, indent=2,
                          sort_keys=True))
