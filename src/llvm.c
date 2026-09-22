@@ -4838,14 +4838,13 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
                 int idx = emit_expr(c, n->children[1]);
                 const char *ity = expr_llvm_type(c, n->children[1]);
-                if (strcmp(ity, "i64")) {
-                    int z = next_tmp(c);
-                    if (!strcmp(ity, "i8*"))
-                        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, idx);
-                    else
-                        fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, idx);
-                    idx = z;
-                }
+                /* 137.3: this was a two-way if/else that treated EVERY
+                 * non-i64, non-i8* index as an i1 — so an i8/i16/i32 index
+                 * (and a double, and a float) got `zext i1` on a value of
+                 * that width and clang rejected the module.  The coercion
+                 * must consult the operand's actual type, so defer to the one
+                 * place that already knows every pair (coerce_value, 57.13.1). */
+                idx = coerce_value(c, idx, ity, "i64");
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = call i64 @tk_map_get(i8* %%t%d, i64 %%t%d)\n",
                         t, base_map, idx);
@@ -4873,14 +4872,9 @@ static int emit_expr(Ctx *c, const Node *n)
             if (resolved_get) {
                 int idx = emit_expr(c, n->children[1]);
                 const char *ity = expr_llvm_type(c, n->children[1]);
-                if (strcmp(ity, "i64")) {
-                    int z = next_tmp(c);
-                    if (!strcmp(ity, "i1"))
-                        fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, idx);
-                    else
-                        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, idx);
-                    idx = z;
-                }
+                /* 137.3: the mirror of the same blind default — anything
+                 * that was not i1 was assumed to be i8*.  Same fix. */
+                idx = coerce_value(c, idx, ity, "i64");
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = call i64 @%s( i64 %%t%d)\n", t, resolved_get, idx);
                 return t;
@@ -4938,14 +4932,13 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
                 int idx = emit_expr(c, n->children[1]);
                 const char *ity = expr_llvm_type(c, n->children[1]);
-                if (strcmp(ity, "i64")) {
-                    int z = next_tmp(c);
-                    if (!strcmp(ity, "i8*"))
-                        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, idx);
-                    else
-                        fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, idx);
-                    idx = z;
-                }
+                /* 137.3: this was a two-way if/else that treated EVERY
+                 * non-i64, non-i8* index as an i1 — so an i8/i16/i32 index
+                 * (and a double, and a float) got `zext i1` on a value of
+                 * that width and clang rejected the module.  The coercion
+                 * must consult the operand's actual type, so defer to the one
+                 * place that already knows every pair (coerce_value, 57.13.1). */
+                idx = coerce_value(c, idx, ity, "i64");
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = call i64 @tk_map_get(i8* %%t%d, i64 %%t%d)\n",
                         t, base_map, idx);
@@ -4982,14 +4975,9 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         int idx  = emit_expr(c, n->children[1]);
         { const char *ity = expr_llvm_type(c, n->children[1]);
-          if (strcmp(ity, "i64")) {
-            int z = next_tmp(c);
-            if (!strcmp(ity, "i8*"))
-                fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, idx);
-            else
-                fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, idx);
-            idx = z;
-          }
+          /* 137.3: see the matching note on the map .get paths — a blind
+           * `zext i1` default on an index of any other width. */
+          idx = coerce_value(c, idx, ity, "i64");
         }
         /* 124.2a: RT003 bounds check on the real array-subscript path (Vec, map,
          * module-alias, and stdlib `.get` were all dispatched earlier). The array
