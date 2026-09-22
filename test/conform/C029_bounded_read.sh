@@ -310,6 +310,23 @@ f=rdexact(label:str;path:str;off:i64;n:i64):i64{
   <0
 };
 
+(* Two spellings of the same call, and they do not agree. `szd` makes the
+   call the DIRECT scrutinee of the mt; `sz` binds it to a let first. The
+   compiler's use_current_error gate (114.53/54/55, extended here) only
+   inspects the scrutinee when it is itself a call, so the let-bound form
+   falls back to the value sentinel and reports an empty file's size as a
+   failure. That gap is PRE-EXISTING and not this story's: `s.toint("0")`
+   behaves identically on a compiler built before any of this. Both spellings
+   are pinned below so the gap is visible and so closing it fails this suite
+   loudly rather than silently. *)
+f=szd(label:str;path:str):i64{
+  mt file.size(path) {
+    $ok:n io.println(s.concat(s.concat(label;"=ok|");s.fromint(n)));
+    $err:e io.println(s.concat(s.concat(label;"=err|");file.lasterrkind()))
+  };
+  <0
+};
+
 f=sz(label:str;path:str):i64{
   let r=file.size(path);
   mt r {
@@ -393,7 +410,9 @@ f=main():i64{
          szmissing FAILS first, on purpose: it leaves the error slot set, so
          a success that forgets to clear it is caught here (127.123). ----- *)
   sz("szmissing";fix("nosuch.bin"));
+  szd("szdempty";fix("empty.bin"));
   sz("szempty";fix("empty.bin"));
+  szd("szdlarge";fix("large.bin"));
   rd("rdempty";fix("empty.bin");0;64);
 
   (* --- every refusal keeps its own kind ------------------------------ *)
@@ -458,10 +477,21 @@ expect "allbytes-upper-half" "$(line "$OUT" allhi)" \
 # This is the assertion the error box exists for. Under the value-sentinel
 # convention the size of an empty file IS the failure signal, so this line
 # reads "err|..." and there is no way to write the call that fixes it.
-expect "empty-size-is-ok-and-zero" "$(line "$OUT" szempty)" "ok|0"
+expect "empty-size-is-ok-and-zero" "$(line "$OUT" szdempty)" "ok|0"
 # ... and it is asked immediately after a failure, so a success that does not
 # clear the slot (127.123) fails here rather than silently.
 expect "failure-before-it-was-real" "$(line "$OUT" szmissing)" "err|notfound"
+expect "large-size-through-the-slot" "$(line "$OUT" szdlarge)" "ok|${REF_SIZE}"
+
+# PINNED GAP, NOT AN ENDORSEMENT. The same call bound to a `let` first still
+# reports an empty file's size as a failure -- note the kind is "ok", so the
+# C side succeeded and it is the COMPILER that chose the $err arm. The
+# use_current_error gate (114.53/54/55) only inspects the mt's scrutinee when
+# the scrutinee is itself a call, so `let r=f(); mt r` falls back to the value
+# sentinel. This is PRE-EXISTING and wider than std.file: `s.toint("0")`
+# behaves identically on a compiler built before 135.12, which was checked
+# rather than assumed. Pinned so that fixing it fails here loudly.
+expect "KNOWNGAP-let-bound-empty-size" "$(line "$OUT" szempty)" "err|ok"
 expect "empty-range-is-ok-not-error" "$(line "$OUT" rdempty)" "ok|0|0|0|ok"
 
 # ── 5. an end is not a failure ───────────────────────────────────────────
