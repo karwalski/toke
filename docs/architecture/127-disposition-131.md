@@ -16,6 +16,18 @@ source. Line numbers below refer to that tree. (HEAD advanced to `67db04a`
 while the probes ran — `git diff --stat 439068b..67db04a -- src/` is empty,
 so the pin is unaffected; `probe_results.json` records the SHA at run time.)
 
+> **Most of the defects analysed below have since been fixed (136.53,
+> 2026-09-22).** This remains an accurate record *of its pin* (`439068b`), but
+> do not read it as current status. On `toke 2.8.0` / binary sha256
+> `a620f201b58c…` / tree `445f5199`, 101 of 130 probes are correct, and
+> **127.4, 127.6, 127.7, 127.8, 127.9 and 127.10 no longer reproduce** — 127.4
+> in particular was fixed exactly as the two-line change proposed below, so
+> `a.fold(0;&addf)` builds and returns 6. Still open: **127.5** (`s.join` with
+> swapped arguments segfaults with no check-time diagnostic) and **127.1**
+> (surplus arguments unchecked in receiver/UFCS position; the module form and
+> user functions now both give E4026). Current status lives in
+> `docs/reference/combinator-status.md`.
+
 ## Summary table
 
 | story | reproduced on 439068b | disposition | size | root cause (file:line) |
