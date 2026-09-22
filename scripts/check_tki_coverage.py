@@ -278,9 +278,24 @@ def load_skiplist(path: Path) -> dict[str, str]:
 def main() -> int:
     verbose = "-v" in sys.argv or "--verbose" in sys.argv
 
-    tki_files = sorted(TKI_DIR.glob("*.tki"))
+    # `--tki-dir PATH` reads the interfaces from somewhere other than
+    # stdlib/, against the same real C sources and skip-list.
+    #
+    # It exists for the negative control in T007.  A gate nobody has watched
+    # fail is not known to work, and the only way to watch the 136.47 gate
+    # fail is to take an interface away -- but the first version of that
+    # control did it by DELETING stdlib/csv.tki from the working tree and
+    # restoring it from a trap.  A kill -9, a full disk, or a second `make`
+    # reading the tree in that window (the 131.39/131.79 concurrency class,
+    # which has bitten this repo twice) loses a tracked file.  A test must
+    # not be able to destroy the thing it is testing.
+    tki_dir = TKI_DIR
+    if "--tki-dir" in sys.argv:
+        tki_dir = Path(sys.argv[sys.argv.index("--tki-dir") + 1]).resolve()
+
+    tki_files = sorted(tki_dir.glob("*.tki"))
     if not tki_files:
-        print(f"ERROR: No .tki files found in {TKI_DIR}")
+        print(f"ERROR: No .tki files found in {tki_dir}")
         return 1
 
     explicit, patterns, subns = load_resolver_tables(LLVM_C)

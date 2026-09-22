@@ -87,17 +87,26 @@ done
 #      module's interface and the gate must go red NAMING that module. A gate
 #      nobody has watched fail is not known to work. ──
 echo "  ---- negative control: strip an interface, watch the gate go red ----"
-VICTIM="${REPO_ROOT}/stdlib/csv.tki"
-STASH="$(mktemp /tmp/tkc_t007_victim_XXXXXX)"
-restore() { [ -f "${STASH}" ] && cp "${STASH}" "${VICTIM}" && rm -f "${STASH}"; }
-trap restore EXIT
-cp "${VICTIM}" "${STASH}"
-rm -f "${VICTIM}"
-STRIPPED="$(cd "${REPO_ROOT}" && ${GATE} 2>&1)"
+# The interfaces are copied to a scratch directory and the victim removed
+# THERE, against the real C sources and the real skip-list.  An earlier form
+# of this control deleted stdlib/csv.tki from the working tree and restored
+# it from a trap; a kill -9 in that window, or a concurrent `make` reading
+# the tree (131.39/131.79, the same hazard twice already), loses a tracked
+# file.  A test must not be able to destroy what it is testing.
+SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/tkc_t007_iface_XXXXXX")"
+trap 'rm -rf "${SCRATCH}"' EXIT
+cp "${REPO_ROOT}"/stdlib/*.tki "${SCRATCH}/"
+rm -f "${SCRATCH}/csv.tki"
+STRIPPED="$(cd "${REPO_ROOT}" && ${GATE} --tki-dir "${SCRATCH}" 2>&1)"
 STRIPPED_RC=$?
-restore
+rm -rf "${SCRATCH}"
 trap - EXIT
 
+if git -C "${REPO_ROOT}" diff --quiet -- stdlib/ 2>/dev/null; then
+    ok "the negative control left the working tree untouched"
+else
+    bad "the negative control modified stdlib/ — it must not mutate the repo"
+fi
 if [ "${STRIPPED_RC}" -ne 0 ]; then
     ok "the gate fails when a registered module loses its interface"
 else
