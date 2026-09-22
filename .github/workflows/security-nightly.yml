@@ -1,19 +1,36 @@
 name: Security nightly
 
 # Story 120.24 (Epic 120): recurring security scanning.
-#   * fuzz-120-22    — nightly (03:00 UTC), parser + runtime-WAF fuzzing under
-#                      ASAN/UBSAN (harnesses/targets from Story 120.22).
-#   * deps-cve-sbom  — weekly (Mon 04:00 UTC), SBOM refresh + grype CVE recheck.
-# Each cron fires only its own job (see the `if:` guards); both are also
-# runnable on demand via workflow_dispatch. Existing workflows are untouched.
+#   * deps-cve-sbom — weekly (Mon 04:00 UTC), SBOM refresh + grype CVE recheck.
+# Also runnable on demand via workflow_dispatch. Existing workflows untouched.
 #
-# NOTE: the make targets referenced below (fuzz-120-22, fuzz-120-22-run, sbom,
-# cve-scan) are specified in docs/security/audit-120/ci-security.md and land in
-# a follow-up Makefile change; this workflow goes green once they are merged.
+# 123.10a (2026-09-22): this workflow shipped calling four make targets that
+# did not exist — fuzz-120-22, fuzz-120-22-run, sbom, cve-scan — with a note
+# saying they would "land in a follow-up Makefile change". They never did, so
+# the nightly was red by construction and failing for a reason unrelated to
+# security: output people learn to ignore.
+#
+# sbom and cve-scan now exist in the Makefile (Section 3 of
+# docs/security/audit-120/ci-security.md specifies them completely), so the
+# weekly job below is real and can go red only for a real finding.
+#
+# The nightly 120.22 fuzz job is REMOVED rather than left failing, because it
+# cannot be made to pass without work that Story 123.10 owns. Section 2 of
+# ci-security.md is stale: its paste-ready text builds test/fuzz/fuzz_md.c and
+# fuzz_security.c, NEITHER OF WHICH EXISTS, omits four harnesses that do
+# (multipart, template, toml, ws_frame), and points its runners at
+# test/fuzz/corpus/<format>/ subdirectories that do not exist either — the
+# corpus directory holds .tk files. Adding those targets verbatim would leave
+# the job just as red.
+#
+# 123.10 already owns the 8 orphaned fuzz harnesses (json, multipart,
+# template, toml, toon, ws_frame, xml, yaml — exactly the set with no Makefile
+# rule). Re-add this job there, in the same change that lands the targets,
+# corpora and a corrected Section 2, so the workflow and the harnesses arrive
+# together and the result means something on day one.
 
 on:
   schedule:
-    - cron: '0 3 * * *'    # 03:00 UTC daily — 120.22 fuzzing
     - cron: '0 4 * * 1'    # 04:00 UTC Monday — dependency CVE + SBOM refresh
   workflow_dispatch:
 
@@ -21,35 +38,9 @@ permissions:
   contents: read
 
 jobs:
-  fuzz-120-22:
-    name: 120.22 parser + WAF fuzzing (ASAN/UBSAN)
-    runs-on: ubuntu-latest
-    # Runs on the nightly cron and on manual dispatch, not on the weekly cron.
-    if: github.event.schedule != '0 4 * * 1'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install toolchain
-        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev libcmark-dev
-
-      - name: Build 120.22 fuzz targets
-        run: make CC=clang fuzz-120-22
-
-      - name: Run 120.22 fuzzers (120s each, ASAN/UBSAN)
-        run: make fuzz-120-22-run
-
-      - name: Upload crash artifacts
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fuzz-120-22-crashes
-          path: crash-*
-
   deps-cve-sbom:
     name: Dependency CVE recheck + SBOM refresh
     runs-on: ubuntu-latest
-    # Runs on the weekly cron and on manual dispatch, not on the nightly cron.
-    if: github.event.schedule != '0 3 * * *'
     steps:
       - uses: actions/checkout@v4
 

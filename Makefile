@@ -108,7 +108,8 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-tkir-encoder test-tkir-reader \
 	install-man \
 	test-standalone \
-	check-tki
+	check-tki \
+	sbom cve-scan
 
 all: vendor-check $(BIN) tkc
 
@@ -438,16 +439,26 @@ test-stdlib-http-form:
 ifdef TK_OPENSSL
 TLS_CFLAGS  = -I/opt/homebrew/include -DTK_HAVE_OPENSSL \
               -Wno-deprecated-declarations
-TLS_LDFLAGS = -L/opt/homebrew/Cellar/openssl@3/3.6.1/lib -lssl -lcrypto
+# 136.57: was pinned to openssl@3/3.6.1, a Cellar version not installed here
+# (3.6.2 and 3.6.4 are), so this target could not link at all.  Use the same
+# -L/opt/homebrew/lib that src/llvm.c passes when it links a real std.tls
+# program, so the two link paths agree and neither pins a point release.
+TLS_LDFLAGS = -L/opt/homebrew/lib -lssl -lcrypto
 else
 TLS_CFLAGS  =
 TLS_LDFLAGS =
 endif
 
+# 136.57: http.c gained calls into log.c (tk_access_log_write,
+# tk_error_log_*) and capabilities.c (tk_cap_check/deny); only
+# test-stdlib-http-leak, written afterwards, had its source list updated.
+# Without these this rule failed to link in BOTH configurations -- the
+# OpenSSL pin was only the first of two independent blockers.
 test-stdlib-http-tls:
 	$(CC) $(CFLAGS) $(TLS_CFLAGS) -o test/stdlib/test_http_tls \
 	    test/stdlib/test_http_tls.c src/stdlib/http.c \
-	    src/stdlib/encoding.c src/stdlib/str.c \
+	    src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c \
+	    src/stdlib/capabilities.c src/stdlib/http2.c -lz -lpthread \
 	    $(TLS_LDFLAGS)
 	$(RUN_TEST) ./test/stdlib/test_http_tls
 
@@ -460,8 +471,8 @@ test-stdlib-http-tls:
 # <openssl/x509.h> directly and tests the real TLS 1.3 core that 136.44 landed,
 # so OpenSSL is unconditional. The paths mirror what src/llvm.c passes when it
 # links a toke program against std.tls (-L/opt/homebrew/lib plus the two macOS
-# frameworks) rather than the pinned Cellar path in TLS_LDFLAGS, which names
-# openssl@3/3.6.1 — a version no longer installed here.
+# frameworks).  TLS_LDFLAGS above now uses the same -L/opt/homebrew/lib;
+# it named openssl@3/3.6.1, an uninstalled version, until 136.57.
 #
 # --allow-net is the grant, not a bypass: tls_connect is behind
 # TK_REQUIRE(TK_CAP_NET) and still denies with CAP001 if the flag is dropped.
@@ -850,7 +861,12 @@ test-tkir-reader:
 test-standalone: $(BIN)
 	@test/standalone/run_all.sh
 
+# 127.118: `clean` removed every .o but not one .d, so the -MMD dependency
+# files -- which are gitignored and therefore survive every checkout --
+# were `-include`d on the next build describing a different commit's
+# include graph.  `clean` now means clean.
 clean:
+	rm -f $(OBJS:.o=.d)
 	rm -f $(OBJS) $(BIN) tkc test/stdlib/test_str test/stdlib/test_db \
 	    test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto \
 	    test/stdlib/test_time test/stdlib/test_tktest test/stdlib/test_log \
@@ -892,6 +908,26 @@ fuzz: fuzz-lexer fuzz-parser
 fuzz-http: fuzz-http-parse fuzz-url-route
 	./fuzz-http-parse -max_total_time=120
 	./fuzz-url-route -max_total_time=120
+
+# ── 123.10a: SBOM refresh + dependency CVE recheck ────────────────────────
+# security-nightly.yml's weekly job called `make sbom` and `make cve-scan`
+# and neither target existed, so the job was red by construction.  Text is
+# Section 3 of docs/security/audit-120/ci-security.md, which specifies them
+# completely; the same syft invocation as release.yml, so SBOMs taken
+# between releases stay comparable.
+#
+# syft and grype are installed by the workflow, not vendored here; run
+# locally only if you have them.  --fail-on high honours the
+# dependency-tracking.md SLA: Medium/Low are reported, not gated.
+sbom: $(BIN)
+	syft packages file:./$(BIN) -o spdx-json > tkc-sbom.spdx.json
+	sha256sum tkc-sbom.spdx.json > tkc-sbom.spdx.json.sha256
+	@echo "Wrote tkc-sbom.spdx.json (+ .sha256)"
+
+cve-scan: sbom
+	grype sbom:tkc-sbom.spdx.json \
+	      --fail-on high \
+	      --output table
 
 # ── Man page ────────────────────────────────────────────────────────────
 MANDIR ?= /usr/local/share/man/man1

@@ -4,7 +4,12 @@
 
 set -e
 
-TOKE="/Users/matthew.watt/tk/toke/toke"
+# 127.130: default to the main checkout, as before, but overridable.  This was
+# a hard absolute path, so running from a git worktree silently measured the
+# MAIN checkout's compiler and reported a pass for a binary the branch had
+# never built.  Unset, the behaviour below is byte-identical to before.
+TOKE_ROOT=${TOKE_ROOT:-/Users/matthew.watt/tk/toke}
+TOKE=${TOKE:-$TOKE_ROOT/toke}
 SERVER_SRC="/tmp/toke_test_server.tk"
 SERVER_BIN="/tmp/toke_test_server"
 PORT=18923

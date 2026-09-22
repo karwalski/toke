@@ -23,8 +23,12 @@ from typing import Any
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-LOKE_DIR = Path("/Users/matthew.watt/loke/loke")
-OUTPUT_DIR = Path("/Users/matthew.watt/tk/toke-model/corpus-loke")
+# 127.130: hard absolute paths here meant a run from a git worktree read the
+# MAIN checkout's compiler and wrote to the MAIN output directory, whatever
+# tree it was launched from.  Overridable now; unset, behaviour is identical.
+LOKE_DIR = Path(os.environ.get("LOKE_DIR", "/Users/matthew.watt/loke/loke"))
+OUTPUT_DIR = Path(os.environ.get(
+    "LOKE_CORPUS_OUT", "/Users/matthew.watt/tk/toke-model/corpus-loke"))
 OUTPUT_FILE = OUTPUT_DIR / "patterns.jsonl"
 MIN_LINES = 3
 

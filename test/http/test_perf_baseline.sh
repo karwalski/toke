@@ -4,8 +4,10 @@
 
 set -e
 
-OOKE_DIR="/Users/matthew.watt/tk/toke-ooke"
-OOKE_BIN="$OOKE_DIR/ooke-toke"
+# 127.130: defaults kept as they were, but overridable so a worktree run can
+# point at the ooke build it actually produced rather than the main one.
+OOKE_DIR=${OOKE_DIR:-/Users/matthew.watt/tk/toke-ooke}
+OOKE_BIN=${OOKE_BIN:-$OOKE_DIR/ooke-toke}
 PORT=3000
 BASE="http://localhost:$PORT"
 REQUESTS=100
