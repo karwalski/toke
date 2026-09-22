@@ -1,84 +1,97 @@
-# std.keychain -- OS Keychain / Credential Store
+---
+title: std.keychain
+slug: keychain
+section: reference/stdlib
+order: 46
+---
 
-## Overview
+**Status: Implemented** -- C runtime backing, over the operating system's own credential store. Exercised end to end by `make test-stdlib-keychain`, which writes in one process and reads in another.
 
-The `std.keychain` module provides secure storage and retrieval of secrets (passwords, tokens, API keys) using the operating system's native credential store. On macOS the backend is the Keychain Services API (`Security.framework`). On Windows the backend is the Windows Credential Manager (`wincred`). On unsupported platforms all operations are no-ops and `keychain.is_available()` returns `false`.
+`std.keychain` stores and retrieves short secrets -- passwords, tokens, API keys -- in the OS credential store rather than in a file your program owns. On macOS the backend is Keychain Services (`Security.framework`); on Windows it is the Credential Manager (`wincred`). On every other platform there is no store, `keychain.isavailable` returns `false`, and the other four functions are no-ops.
 
-Secrets are indexed by a **service** name (e.g. `"myapp"`) and an **account** name (e.g. `"api_key"`). Neither service nor account names are treated as sensitive; only the **secret** value is protected by the OS credential store.
+Secrets are indexed by a **service** name (`"myapp"`) and an **account** name (`"apikey"`). Neither is treated as sensitive -- they are lookup keys and may appear in logs. Only the secret value is protected.
 
-The module never logs or exposes secret values. If the keychain is locked or otherwise unavailable, `keychain.get()` returns `?(none)` rather than crashing.
+## The two-process property is the point
+
+A credential store that only looks right inside one process is a cache, not a store. The value of this module is that a secret written by one run of your program is readable by the next, because it left your address space and reached the OS. `test/stdlib/keychain_roundtrip.tk` is driven by `TKKCPHASE` precisely so the harness can run the write and the read as separate processes of the same binary; a single-process round trip would pass against a hash map.
+
+## Names, not underscores
+
+The published call-names are `isavailable`, `set`, `get`, `delete` and `exists`. There is no `is_available`: toke's default 59-character profile excludes `_`, so a call-name containing one cannot be written in a toke program at all. Service and account strings are string literals, so underscores in *those* are fine.
 
 ## Functions
 
-### keychain.is_available(): bool
+### keychain.isavailable(): bool
 
-Returns `true` if the OS credential store is available on the current platform, `false` otherwise.
+`true` if the current platform has a credential store this module can reach, `false` otherwise. On macOS and Windows this is `true` unless the security framework fails to load; on Linux and other POSIX systems it is `false`.
 
-On macOS and Windows this always returns `true` at runtime unless the security framework itself fails to load. On Linux and other POSIX systems this returns `false`.
-
-**Example:**
-```toke
-if keychain.is_available() {
-    (* safe to use keychain operations *)
-}
-```
+Call it first. The other four functions do not distinguish "no store on this platform" from "the write failed" -- both come back `false` -- so the availability check is what makes a failure legible.
 
 ### keychain.set(service: str; account: str; secret: str): bool
 
-Stores or updates the secret for the given service/account pair. Returns `true` on success, `false` if the write failed (e.g. permission denied, keychain locked).
+Stores or replaces the secret for the service/account pair. Returns `true` on success, `false` on failure (permission denied, keychain locked, unsupported platform). An existing entry is updated in place rather than duplicated.
 
-If an entry for the service/account pair already exists it is updated in place. The secret must be a valid UTF-8 string and must not be empty.
+### keychain.get(service: str; account: str): str
 
-**Example:**
-```toke
-let ok = keychain.set("myapp"; "db_password"; "s3cr3t");
-```
+Returns the stored secret, or an empty string if no entry exists, the keychain is locked, or the platform has no store.
 
-### keychain.get(service: str; account: str): ?(str)
-
-Retrieves the secret for the given service/account pair. Returns `?(none)` if no matching entry exists, the keychain is locked, or the platform is unsupported.
-
-The returned string is a heap-allocated copy; the caller owns it.
-
-**Example:**
-```toke
-let pw = keychain.get("myapp"; "db_password");
-match pw {
-    ?(some s) -> (* use s *)
-    ?(none)   -> (* not found or unavailable *)
-}
-```
+The interface declares this as `?(str)`. Probe the result with `str.len` rather than comparing it against a sentinel -- the same null-safety rule `std.securemem` documents for its `read`.
 
 ### keychain.delete(service: str; account: str): bool
 
-Removes the entry for the given service/account pair from the credential store. Returns `true` if the entry was deleted, `false` if it did not exist or the delete failed.
-
-**Example:**
-```toke
-let removed = keychain.delete("myapp"; "db_password");
-```
+Removes the entry. Returns `true` if an entry was deleted, `false` if there was none or the delete failed.
 
 ### keychain.exists(service: str; account: str): bool
 
-Returns `true` if an entry for the given service/account pair exists in the credential store, `false` otherwise. Does not retrieve or expose the secret value.
+`true` if an entry exists for the pair. Does not retrieve or expose the secret.
 
-**Example:**
+## A complete round trip
+
 ```toke
-if keychain.exists("myapp"; "api_key") {
-    (* entry is present, safe to call keychain.get *)
-}
+m=keychaindemo;
+i=kc:std.keychain;
+i=io:std.io;
+i=str:std.str;
+
+f=main():i64{
+  if(kc.isavailable()==0){
+    io.println("no OS credential store on this platform");
+    <0
+  };
+
+  let wrote=kc.set("tokedemo";"apikey";"s3cr3t-value");
+  io.println(str.concat("set=";str.fromint(wrote)));
+
+  let present=kc.exists("tokedemo";"apikey");
+  io.println(str.concat("exists=";str.fromint(present)));
+
+  let got=kc.get("tokedemo";"apikey");
+  io.println(str.concat("length=";str.fromint(str.len(got))));
+
+  let removed=kc.delete("tokedemo";"apikey");
+  let after=kc.exists("tokedemo";"apikey");
+  io.println(str.concat("deleted=";str.concat(str.fromint(removed);str.concat(" exists=";str.fromint(after)))));
+  <0
+};
 ```
 
-## Platform Notes
+Note what the example prints: the length of the secret, never the secret. A documented example gets copied, and one that prints a credential teaches printing credentials.
 
-| Platform | Backend | `is_available()` |
-|----------|---------|-----------------|
-| macOS    | Security.framework (`SecItemAdd`, `SecItemCopyMatching`, `SecItemUpdate`, `SecItemDelete`) | `true` |
-| Windows  | `wincred.h` (`CredWriteA`, `CredReadA`, `CredDeleteA`) | `true` |
-| Other    | No-op stub | `false` |
+## Platform notes
 
-## Security Notes
+| Platform | Backend | `isavailable()` |
+|---|---|---|
+| macOS | `Security.framework` (`SecItemAdd`, `SecItemCopyMatching`, `SecItemUpdate`, `SecItemDelete`) | `true` |
+| Windows | `wincred.h` (`CredWriteA`, `CredReadA`, `CredDeleteA`) | `true` |
+| Other | none | `false` |
 
-- Secret values are never written to logs, error messages, or standard output by this module.
-- The `service` and `account` parameters are treated as non-sensitive identifiers.
-- If the OS keychain is locked (e.g. user has not yet authenticated), `keychain.get()` returns `?(none)` and `keychain.set()` returns `false`.
+## Security notes
+
+- This module never writes a secret value to a log, an error message or standard output. Your program can, so do not.
+- `service` and `account` are non-sensitive identifiers by design; do not encode anything secret in them.
+- A locked keychain is indistinguishable from an absent entry: `get` returns empty and `set` returns `false`. If that distinction matters to your program, you need a platform call this module does not wrap.
+
+## See Also
+
+- `std.securemem` -- holding a secret in RAM once you have fetched it, locked out of swap and wiped on release.
+- `std.env` -- the usual alternative, and the one to move away from: environment variables are readable from the process table and inherited by every child.
