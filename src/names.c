@@ -27,6 +27,7 @@
  */
 #include "names.h"
 #include "stdlib_deps.h"   /* 127.42: std.* module existence gate */
+#include "types.h"        /* 137.4: E4033 — a type name is not a value */
 #include "tkc_limits.h"
 #include <ctype.h>
 #include <dirent.h>
@@ -1357,7 +1358,45 @@ static void resolve_ident(const Node *node, const char *src,
                           Scope *scope, int *had_error) {
     const char *name = src + node->tok_start;
     int         len  = node->tok_len;
-    if (!scope_lookup(scope, name, len)) {
+    const Decl *found = scope_lookup(scope, name, len);
+    /*
+     * 137.4 — a BARE type name standing in a value position.
+     *
+     * toke keeps type names and value names in one namespace (see the note
+     * above), and this function used to accept whatever scope_lookup
+     * returned without ever inspecting its DeclKind.  So `take(thing)` and
+     * `thing.n`, where `thing` is a declared type and no local of that name
+     * exists, resolved clean, type-checked clean, and were handed to clang —
+     * which failed on `use of undefined value '%thing'`, naming an LLVM
+     * temporary rather than the program.  A field access on the `$`-prefixed
+     * spelling was already E4033 (types.c, 127.90); the bare spelling was
+     * unchecked in EVERY value position.  In the 137 migration it hid a
+     * genuinely missing parameter and three functions referencing a `store`
+     * declared nowhere, while the sibling function took `store:$store`
+     * correctly — the two sat side by side for months.
+     *
+     * Restricted to NODE_IDENT: a NODE_TYPE_IDENT ($thing) IS a type
+     * reference and is resolved through this same function from type
+     * positions, so applying it there would reject every annotation.
+     */
+    if (found && found->kind == DECL_TYPE && node->kind == NODE_IDENT) {
+        s_name_error_count++;
+        if (s_name_error_count <= MAX_NAME_ERRORS) {
+            char nbuf[201];
+            int mlen = len < 200 ? len : 200;
+            memcpy(nbuf, name, (size_t)mlen); nbuf[mlen] = '\0';
+            char msg[300];
+            snprintf(msg, sizeof msg,
+                     "'%s' is a type name, not a value", nbuf);
+            diag_emit(DIAG_ERROR, E4033, node->start, node->line, node->col,
+                      msg, "expected", "a value", "got", nbuf,
+                      "fix", "bind an instance of that type and use the binding",
+                      (const char *)NULL);
+        }
+        *had_error = 1;
+        return;
+    }
+    if (!found) {
         /* Only emit a diagnostic if we have not yet reached the error limit.
          * The diagnostic is emitted BEFORE inserting the error-marker decl so
          * that the Levenshtein "did you mean?" search does not match the very

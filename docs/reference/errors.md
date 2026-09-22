@@ -652,16 +652,46 @@ Emitted when a `\(expr)` interpolates an array, struct, or map. Convert it to a 
 
 ### E4033
 
-**Member access on a type name rather than a value**
+**A type name used where a value is required**
 
 | Field    | Value |
 |----------|-------|
 | Severity | error |
 | Stage    | typecheck |
 
-Emitted for `Type.member` where `Type` names a struct type rather than an instance of it. There is no value to take a field of, so the expression has no meaning. Before 127.90 it type-checked and lowered to a field load off a null base, producing a plausible-looking `0`.
+Emitted when a declared type's name stands in a value position. Two spellings
+reach it, from two stages:
 
-**Fix:** Bind an instance first and take the field of that.
+- **`$Type.member`** (typecheck, 127.90) — member access on a type rather than
+  an instance. There is no value to take a field of, so the expression has no
+  meaning. Before 127.90 it type-checked and lowered to a field load off a null
+  base, producing a plausible-looking `0`.
+- **a bare `Type` in any value position** (name resolution, 137.4) — a call
+  argument, the right-hand side of a `let`, an operand, a condition, a
+  return value, or a field-access base. toke keeps type names and value names
+  in one namespace, and `resolve_ident` used to accept whatever the scope
+  lookup returned without inspecting its kind, so these resolved clean,
+  type-checked clean, and failed at clang as `use of undefined value '%Type'`
+  — naming an LLVM temporary rather than the program. In the 137 migration
+  this hid a genuinely missing parameter and three functions referencing a
+  binding declared nowhere.
+
+A name that is not also a type is still `E3011` (undefined identifier), and
+the legitimate bare-type positions — `as Type` casts, `$Type{…}` struct
+literals, `:Type` annotations, sum-type variant constructors and module
+aliases — are unaffected.
+
+<!-- skip-check -->
+```text
+m=test;
+t=thing{n:i64};
+f=take(v:i64):i64{<v};
+f=main():i64{ <take(thing) };
+```
+
+Triggers E4033 on `thing`.
+
+**Fix:** Bind an instance of that type and use the binding.
 
 ### E4034
 
