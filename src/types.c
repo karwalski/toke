@@ -1041,19 +1041,26 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         return NULL;
     }
     /*
-     * 127.106: NODE_MAP_LIT is deliberately NOT here, though `let m=@("a":1)`
-     * is the commonest way to make a map.  It means the binding stays
-     * TY_UNKNOWN and every map-typed rule in this file is dead code for it —
-     * the `.len`/`.keys` properties of 127.12 and the map-key type check
-     * NODE_INDEX_EXPR has carried since 113.B.12.  That is a real defect, and
-     * it is filed separately rather than fixed here, because switching those
-     * rules on is not a no-op: it makes `m.len` a u64 and a bool-valued
-     * `m.get` a bool at every call site that was previously unknown, and
-     * test_127_8 and test_127_27 — both correct programs — are then rejected
-     * for passing those where an i64 is declared.  Deciding that is a
-     * u64/i64 coercion question, not part of making a bad map property loud.
-     * 127.106 is covered without it: the llvm.c site refuses a map property
-     * on the receiver kind the backend already tracks.
+     * 127.114 (landed 2026-09-22) — NODE_MAP_LIT is now in the case above.
+     *
+     * It was held out here from 127.106 until the coercion question it
+     * depends on was settled, and that history is worth keeping: typing the
+     * binding is not a no-op, because it makes `m.len` a u64 and a
+     * bool-valued `m.get` a bool at call sites that were previously
+     * TY_UNKNOWN — which rejected test_127_8 and test_127_27, both correct
+     * programs.  The owner's u64/bool -> i64 widening rule (int_widens_to,
+     * above) is what makes those two legal again, so the case could land.
+     * Both tests are green and C028 covers the whole rule.
+     *
+     * What this switched on, all of it dead code for `let m=@(…)` until now:
+     * 127.12's `.len`/`.keys` properties, 127.106's E4035 unknown-property
+     * diagnostic at --check, and the map-key type check NODE_INDEX_EXPR has
+     * carried since 113.B.12.
+     *
+     * STILL MISSING, and the reason 127.52 is not unblocked by this alone:
+     * NODE_ARRAY_LIT and NODE_CAST_EXPR have no case either, so `let
+     * a=@(1;2;3)` and `let n=mut.0 as u64` are both still TY_UNKNOWN.  The
+     * `__map__` retirement needs a string fallback for exactly those.
      */
     default:
         return NULL;
