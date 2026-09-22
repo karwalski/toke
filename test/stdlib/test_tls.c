@@ -45,6 +45,7 @@
 #include <openssl/objects.h>
 
 #include "../../src/stdlib/tls.h"
+#include "../../src/stdlib/capabilities.h"
 
 static int failures = 0;
 
@@ -380,8 +381,16 @@ static void test_gen_self_signed_mldsa(void)
  * main
  * ========================================================================= */
 
-int main(void)
+int main(int argc, char **argv)
 {
+    /* 136.51: tls_connect is gated by TK_REQUIRE(TK_CAP_NET). Without this
+     * call the capability layer holds its static deny-by-default state, so the
+     * first connect test printed CAP001 and exit(1)ed after 24 passing asserts
+     * — and because nothing built or ran this file, nobody saw it. Grants come
+     * from argv, so the make target passes --allow-net; the gate itself is
+     * still live and still denies if the flag is dropped. */
+    tk_cap_init(argc, argv);
+
     /* gen_self_signed */
     test_gen_self_signed_success();
     test_gen_self_signed_pem_prefix();
