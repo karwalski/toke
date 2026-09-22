@@ -366,10 +366,19 @@ if [ "${built}" -eq 1 ]; then
         diff <(head -n "${before}" srv.log) srv.log | sed 's/^/      /' | head -8
     fi
 
-    if echo "${anonout}" | grep -qE '^(connect=fail|reply=none)$'; then
-        ok "and the anonymous client got no application data back: [$(echo "${anonout}" | tail -1)]"
+    # ASSERT THE ABSENCE OF DATA, NOT A PARTICULAR FAILURE MESSAGE.  A rejected
+    # client can end three ways and all three are correct: tls.connect returns
+    # 0, tls.read returns none, or the process takes SIGPIPE writing into a
+    # connection the server has already torn down — which under a pipe loses its
+    # block-buffered stdout entirely, so the output is empty.  Asserting
+    # "prints reply=none" made this flaky: it passed on a terminal and failed
+    # under `make conform-sh`, where stdout is a file.  What must be true in
+    # every one of those endings is that no application data came back, and the
+    # authenticated arm above proves the same binary can get some.
+    if echo "${anonout}" | grep -q 'reply=echo:'; then
+        bad "the anonymous client got application data back: [${anonout}]"
     else
-        bad "the anonymous client got a reply it should not have: [${anonout}]"
+        ok "and the anonymous client got no application data back: [${anonout:-<killed before flushing>}]"
     fi
 fi
 
