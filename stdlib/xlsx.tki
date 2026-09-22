@@ -12,12 +12,30 @@
       "kind": "type",
       "name": "xlsxcell",
       "fields": [
-        {"name": "ref",   "type": "str"},
-        {"name": "row",   "type": "i64"},
-        {"name": "col",   "type": "i64"},
-        {"name": "kind",  "type": "str"},
-        {"name": "raw",   "type": "str"},
-        {"name": "value", "type": "str"}
+        {
+          "name": "ref",
+          "type": "str"
+        },
+        {
+          "name": "row",
+          "type": "i64"
+        },
+        {
+          "name": "col",
+          "type": "i64"
+        },
+        {
+          "name": "celltype",
+          "type": "str"
+        },
+        {
+          "name": "raw",
+          "type": "str"
+        },
+        {
+          "name": "value",
+          "type": "str"
+        }
       ]
     },
     {
@@ -25,29 +43,51 @@
       "name": "xlsxerr",
       "is_sum": true,
       "fields": [
-        {"name": "$badworkbook", "type": "str"},
-        {"name": "$badpart",     "type": "str"},
-        {"name": "$nosheet",     "type": "str"},
-        {"name": "$toolarge",    "type": "str"},
-        {"name": "$io",          "type": "str"}
+        {
+          "name": "$badworkbook",
+          "type": "str"
+        },
+        {
+          "name": "$badpart",
+          "type": "str"
+        },
+        {
+          "name": "$nosheet",
+          "type": "str"
+        },
+        {
+          "name": "$toolarge",
+          "type": "str"
+        },
+        {
+          "name": "$io",
+          "type": "str"
+        }
       ]
     },
     {
       "kind": "func",
       "name": "xlsx.close",
-      "params": ["xlsxbook"],
+      "params": [
+        "xlsxbook"
+      ],
       "return": "void"
     },
     {
       "kind": "func",
       "name": "xlsx.datefromserial",
-      "params": ["str", "str"],
+      "params": [
+        "str",
+        "str"
+      ],
       "return": "str"
     },
     {
       "kind": "func",
       "name": "xlsx.datesystem",
-      "params": ["xlsxbook"],
+      "params": [
+        "xlsxbook"
+      ],
       "return": "str"
     },
     {
@@ -59,25 +99,34 @@
     {
       "kind": "func",
       "name": "xlsx.open",
-      "params": ["@(byte)"],
+      "params": [
+        "@(byte)"
+      ],
       "return": "xlsxbook!xlsxerr"
     },
     {
       "kind": "func",
       "name": "xlsx.openfile",
-      "params": ["str"],
+      "params": [
+        "str"
+      ],
       "return": "xlsxbook!xlsxerr"
     },
     {
       "kind": "func",
       "name": "xlsx.rows",
-      "params": ["xlsxbook", "str"],
+      "params": [
+        "xlsxbook",
+        "str"
+      ],
       "return": "@(@(xlsxcell))!xlsxerr"
     },
     {
       "kind": "func",
       "name": "xlsx.sheets",
-      "params": ["xlsxbook"],
+      "params": [
+        "xlsxbook"
+      ],
       "return": "@(str)"
     }
   ]

@@ -68,7 +68,7 @@ more** tokens than cl100k_base (N = 2,000). See `docs/metrics-baseline.md`.
 - **One canonical form** per construct, reproduced by `tkc --min`, so two implementations
   either produce identical canonical text or they do not
 - **Machine-readable grammar** — EBNF and GBNF artefacts for constrained decoding
-- **<!--fact:stdlib_modules-->65<!--/fact--> standard library modules** (`stdlib/*.tki`) with C runtime backing — strings,
+- **<!--fact:stdlib_modules-->66<!--/fact--> standard library modules** (`stdlib/*.tki`) with C runtime backing — strings,
   JSON, TOON, HTTP server/client, database, crypto, ML, and more
 - **Error handling with result types** — no exceptions; errors are values handled
   explicitly with `mt` (match)
@@ -307,7 +307,7 @@ toke [flags] <source-files>
 
 ## Standard library
 
-toke ships <!--fact:stdlib_modules-->65<!--/fact--> standard library modules (`stdlib/*.tki`) backed by C runtime
+toke ships <!--fact:stdlib_modules-->66<!--/fact--> standard library modules (`stdlib/*.tki`) backed by C runtime
 implementations. The most used:
 
 | Module | Description |

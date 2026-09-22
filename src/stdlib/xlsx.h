@@ -21,7 +21,7 @@
  *      xl/sharedStrings.xml, not the text.  A reader that parses only the
  *      worksheet gets `4` where the column says `Opening balance`, and the
  *      numbers it gets are plausible, so nothing announces the mistake.
- *      Handled in xlsx_cell_resolve().
+ *      Handled in resolve_cell() in xlsx.c.
  *
  *   2. DATES ARE SERIAL NUMBERS, AND THE 1900 SYSTEM'S LEAP-YEAR BUG IS
  *      REPRODUCED ON PURPOSE.  Lotus 1-2-3 treated 1900 as a leap year,
@@ -31,7 +31,7 @@
  *      1900-02-28 by one day relative to Excel — and the shift is silent,
  *      because 1899-12-31 is as plausible a date as 1900-01-01.  We are
  *      decoding someone else's encoding, so we reproduce it.  See
- *      xlsx_serial_to_civil().
+ *      xlsx_serial_to_text() in xlsx.c, and section 4 of that file.
  *
  *   3. ROWS AND COLUMNS ARE SPARSE.  A cell carries its own reference
  *      (`r="C7"`) and an empty cell is simply ABSENT from the file.  Counting
@@ -40,7 +40,7 @@
  *      is placed by its parsed reference, and xlsx_read_sheet() returns a
  *      RECTANGLE with the holes filled in as TK_XLSX_EMPTY cells, so that a
  *      consumer indexing by position is right by construction rather than by
- *      remembering to check.  See xlsx_place_cell().
+ *      remembering to check.  See xlsx_read_sheet() in xlsx.c.
  *
  * SCOPE.  Cell values only.  No formula evaluation (the cached `<v>` of a
  * formula cell is returned, which is what a data-import consumer wants), no
@@ -93,9 +93,21 @@
 
 /* ── Cell kinds ──────────────────────────────────────────────────────────
  *
- * These are the strings the toke surface reports in `$xlsxcell.kind`.  They
+ * These are the strings the toke surface reports in `$xlsxcell.celltype`.
+ * They
  * are a CLOSED set and they are stable: a consumer switching on them is the
  * intended use, so adding to this list is a breaking change.
+ *
+ * WHY `celltype` AND NOT `kind`.  A `.tki` type field named `kind` silently
+ * TRUNCATES its own type's field list: the export-record scanners in
+ * src/llvm.c delimit one record from the next with
+ * `strstr(p + 6, "\"kind\"")`, which matches the VALUE `"kind"` of a
+ * `"name"` key just as happily as the `"kind"` key itself, so every field
+ * declared after it is lost.  Measured here: with `kind` fourth of six,
+ * `tkc --check` accepted `.raw` and `.value` and `tkc --out` rejected both
+ * as fields that do not exist.  That is a compiler defect and it is filed as
+ * one; `celltype` is also the word the consumer's own request uses ("raw
+ * string, type, and resolved value"), so this is not merely dodging it.
  */
 #define TK_XLSX_EMPTY   "empty"   /* absent from the file; a hole we filled in */
 #define TK_XLSX_STR     "str"     /* text, from the shared pool or inline     */
@@ -128,7 +140,7 @@ typedef struct {
     char    *ref;    /* "C7"; never NULL                                   */
     int64_t  row;    /* 1-based                                            */
     int64_t  col;    /* 1-based; 3 for "C7"                                */
-    char    *kind;   /* one of the TK_XLSX_* strings above; never NULL     */
+    char    *celltype; /* one of the TK_XLSX_* strings above; never NULL   */
     char    *raw;    /* pre-resolution text; "" for an empty cell          */
     char    *value;  /* resolved text; "" for an empty cell                */
 } TkXlsxCell;

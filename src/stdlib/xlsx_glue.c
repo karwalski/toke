@@ -19,12 +19,12 @@
  * §5 is the one that bites.  A `$xlsxcell` built here MUST have exactly the
  * six slots stdlib/xlsx.tki declares, in that order:
  *
- *     slot 0  ref    str
- *     slot 1  row    i64
- *     slot 2  col    i64
- *     slot 3  kind   str
- *     slot 4  raw    str
- *     slot 5  value  str
+ *     slot 0  ref      str
+ *     slot 1  row      i64
+ *     slot 2  col      i64
+ *     slot 3  celltype str
+ *     slot 4  raw      str
+ *     slot 5  value    str
  *
  * If the shapes disagree the program still compiles and then reads whatever
  * sits at the offset — 127.86 read the first eight bytes of an id string as a
@@ -116,21 +116,21 @@ static int64_t build_cell(const TkXlsxCell *c)
     int64_t *slot = (int64_t *)malloc(TK_XLSXCELL_SLOTS * sizeof(int64_t));
     if (!slot) return 0;
     int64_t ref   = dup_str(c->ref);
-    int64_t kind  = dup_str(c->kind);
+    int64_t ctype = dup_str(c->celltype);
     int64_t raw   = dup_str(c->raw);
     int64_t value = dup_str(c->value);
-    if (!ref || !kind || !raw || !value) {
-        free((void *)(intptr_t)ref);   free((void *)(intptr_t)kind);
+    if (!ref || !ctype || !raw || !value) {
+        free((void *)(intptr_t)ref);   free((void *)(intptr_t)ctype);
         free((void *)(intptr_t)raw);   free((void *)(intptr_t)value);
         free(slot);
         return 0;
     }
-    slot[0] = ref;       /* .ref   */
-    slot[1] = c->row;    /* .row   */
-    slot[2] = c->col;    /* .col   */
-    slot[3] = kind;      /* .kind  */
-    slot[4] = raw;       /* .raw   */
-    slot[5] = value;     /* .value */
+    slot[0] = ref;       /* .ref      */
+    slot[1] = c->row;    /* .row      */
+    slot[2] = c->col;    /* .col      */
+    slot[3] = ctype;     /* .celltype */
+    slot[4] = raw;       /* .raw      */
+    slot[5] = value;     /* .value    */
     return (int64_t)(intptr_t)slot;
 }
 

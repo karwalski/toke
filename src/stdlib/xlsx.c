@@ -1133,7 +1133,7 @@ static void cell_free(TkXlsxCell *c)
 /* A cell as it is collected in pass 1, before placement. */
 typedef struct {
     int64_t row, col;
-    char   *kind;   /* static */
+    char   *celltype;   /* static */
     char   *raw;    /* owned  */
     char   *value;  /* owned  */
 } RawCell;
@@ -1148,7 +1148,7 @@ typedef struct {
  */
 static int resolve_cell(TkXlsxBook *wb, const char *tattr, size_t tlen,
                         int has_style, unsigned styleidx,
-                        const char *raw, char **kind, char **value)
+                        const char *raw, char **celltype, char **value)
 {
     char tmp[64];
 
@@ -1159,7 +1159,7 @@ static int resolve_cell(TkXlsxBook *wb, const char *tattr, size_t tlen,
             xfail("xlsx: shared-string index out of range");
             return 0;
         }
-        *kind = TK_XLSX_STR;
+        *celltype = TK_XLSX_STR;
         *value = xdup(wb->shared[idx]);
         return *value != NULL;
     }
@@ -1167,24 +1167,24 @@ static int resolve_cell(TkXlsxBook *wb, const char *tattr, size_t tlen,
         (tlen == 3 && !memcmp(tattr, "str", 3))) {
         /* inlineStr text and a formula's cached STRING result are already
          * text; `raw` holds it. */
-        *kind = TK_XLSX_STR;
+        *celltype = TK_XLSX_STR;
         *value = xdup(raw);
         return *value != NULL;
     }
     if (tlen == 1 && tattr[0] == 'b') {
-        *kind = TK_XLSX_BOOL;
+        *celltype = TK_XLSX_BOOL;
         *value = xdup((raw[0] == '0' || raw[0] == '\0') ? "false" : "true");
         return *value != NULL;
     }
     if (tlen == 1 && tattr[0] == 'e') {
-        *kind = TK_XLSX_ERR;
+        *celltype = TK_XLSX_ERR;
         *value = xdup(raw);
         return *value != NULL;
     }
     if (tlen == 1 && tattr[0] == 'd') {
         /* ECMA-376 transitional: an ISO-8601 date written out literally.
          * No serial, no date system, nothing to reproduce. */
-        *kind = TK_XLSX_DATE;
+        *celltype = TK_XLSX_DATE;
         *value = xdup(raw);
         return *value != NULL;
     }
@@ -1196,11 +1196,11 @@ static int resolve_cell(TkXlsxBook *wb, const char *tattr, size_t tlen,
         if (has_style && styleidx < wb->nxf) fk = (FmtKind)wb->xfkind[styleidx];
         if (fk != FMT_NONE &&
             xlsx_serial_to_text(raw, wb->date1904, fk == FMT_TIME, tmp, sizeof tmp)) {
-            *kind = TK_XLSX_DATE;
+            *celltype = TK_XLSX_DATE;
             *value = xdup(tmp);
             return *value != NULL;
         }
-        *kind = TK_XLSX_NUM;
+        *celltype = TK_XLSX_NUM;
         *value = xdup(raw);
         return *value != NULL;
     }
@@ -1264,9 +1264,9 @@ TkXlsxSheet *xlsx_read_sheet(TkXlsxBook *wb, const char *sheet)
                     free(raw);
                     continue;
                 }
-                char *kind = NULL, *value = NULL;
+                char *celltype = NULL, *value = NULL;
                 if (!resolve_cell(wb, ctype, ctlen, chas_style, cstyle,
-                                  raw, &kind, &value)) {
+                                  raw, &celltype, &value)) {
                     free(raw); ok = 0; break;
                 }
                 if (n == cap) {
@@ -1276,7 +1276,8 @@ TkXlsxSheet *xlsx_read_sheet(TkXlsxBook *wb, const char *sheet)
                     cells = nn; cap = nc;
                 }
                 cells[n].row = crow; cells[n].col = ccol;
-                cells[n].kind = kind; cells[n].raw = raw; cells[n].value = value;
+                cells[n].celltype = celltype;
+                cells[n].raw = raw; cells[n].value = value;
                 n++;
                 if (crow > maxrow) maxrow = crow;
                 if (ccol > maxcol) maxcol = ccol;
@@ -1374,7 +1375,7 @@ TkXlsxSheet *xlsx_read_sheet(TkXlsxBook *wb, const char *sheet)
                 d->ref = xdup(ref);
                 d->row = (int64_t)r + 1;
                 d->col = (int64_t)c + 1;
-                d->kind = TK_XLSX_EMPTY;
+                d->celltype = TK_XLSX_EMPTY;
                 d->raw = xdup("");
                 d->value = xdup("");
                 if (!d->ref || !d->raw || !d->value) ok = 0;
@@ -1390,7 +1391,7 @@ TkXlsxSheet *xlsx_read_sheet(TkXlsxBook *wb, const char *sheet)
             if (r >= sh->nrows || c >= sh->ncols) continue;
             TkXlsxCell *d = &sh->cells[(size_t)r * sh->ncols + c];
             free(d->raw); free(d->value);
-            d->kind  = cells[i].kind;
+            d->celltype = cells[i].celltype;
             d->raw   = cells[i].raw;
             d->value = cells[i].value;
             cells[i].raw = NULL;
