@@ -108,7 +108,8 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-tkir-encoder test-tkir-reader \
 	install-man \
 	test-standalone \
-	check-tki
+	check-tki \
+	sbom cve-scan
 
 all: vendor-check $(BIN) tkc
 
@@ -892,6 +893,26 @@ fuzz: fuzz-lexer fuzz-parser
 fuzz-http: fuzz-http-parse fuzz-url-route
 	./fuzz-http-parse -max_total_time=120
 	./fuzz-url-route -max_total_time=120
+
+# ── 123.10a: SBOM refresh + dependency CVE recheck ────────────────────────
+# security-nightly.yml's weekly job called `make sbom` and `make cve-scan`
+# and neither target existed, so the job was red by construction.  Text is
+# Section 3 of docs/security/audit-120/ci-security.md, which specifies them
+# completely; the same syft invocation as release.yml, so SBOMs taken
+# between releases stay comparable.
+#
+# syft and grype are installed by the workflow, not vendored here; run
+# locally only if you have them.  --fail-on high honours the
+# dependency-tracking.md SLA: Medium/Low are reported, not gated.
+sbom: $(BIN)
+	syft packages file:./$(BIN) -o spdx-json > tkc-sbom.spdx.json
+	sha256sum tkc-sbom.spdx.json > tkc-sbom.spdx.json.sha256
+	@echo "Wrote tkc-sbom.spdx.json (+ .sha256)"
+
+cve-scan: sbom
+	grype sbom:tkc-sbom.spdx.json \
+	      --fail-on high \
+	      --output table
 
 # ── Man page ────────────────────────────────────────────────────────────
 MANDIR ?= /usr/local/share/man/man1
