@@ -1196,11 +1196,6 @@ static void check_std_str_args(Ctx *cx, const Node *call) {
  *     for this story).  Those calls work; the interface is the incomplete
  *     side.  Enforcing the interface there would reject hundreds of correct
  *     programs, so the gap is reported as a finding rather than diagnosed.
- *   * A `std.*` member with no glue symbol under either spelling this file
- *     tries — resolve_stdlib_call (llvm.c) carries roughly two hundred
- *     special-case mappings that are not reproduced here, so "I could not
- *     find a symbol" is not evidence that none exists.  E4027 therefore fires
- *     only on a generated interface, where the export list is authoritative.
  *   * Parameter *types*.  A `.tki` spells them as toke source text
  *     (`@(f32)`, `?(TlsConn)`, `fn($discovered):void`, `[byte]`), a grammar
  *     resolve_type() does not consume; the glue table spells every one of
@@ -1215,8 +1210,27 @@ static void check_std_str_args(Ctx *cx, const Node *call) {
  *     `I=` aliases, so import_module_path() does not resolve them and the
  *     call is skipped.  Their declarations are recorded under the *import*
  *     alias, so widening this later is a lookup change, not a data change.
- *   * Any alias whose interface recorded no function exports at all: a
- *     missing or export-less `.tki` is an absence of knowledge.
+ *   * Any USER alias whose interface recorded no function exports at all: a
+ *     missing or export-less `.tki` is an absence of knowledge about the
+ *     interface.  127.61 narrowed this: it is not an absence of knowledge
+ *     about the *runtime*, and six std modules (std.io, std.array,
+ *     std.collections, std.fs, std.soap, std.xml) ship no `.tki` at all, so
+ *     the branches grounded on the glue table now run for them too.
+ *
+ * Two exemptions 136.1 recorded here were removed by 127.61, both of them
+ * defaults standing in for facts that turned out to be establishable:
+ *
+ *   * "A `std.*` member with no glue symbol under either spelling this file
+ *     tries" was exempt because resolve_stdlib_call carries roughly two
+ *     hundred special-case mappings and "I could not find a symbol" was not
+ *     evidence that none exists.  But this file no longer guesses the
+ *     spelling — it asks stdlib_symbol_for(), which IS the emitter's mapping
+ *     — and every `_w` wrapper defined in the glue sources is now known to be
+ *     in g_stdlib_decls (a check_tki gate holds that invariant).  So an
+ *     undeclared arity for the emitter's own symbol is evidence of absence.
+ *   * The zero-argument dummy-parameter convention was exempt for every
+ *     one-parameter symbol.  The symbols that actually ignore their parameter
+ *     are now generated from the glue sources into stdlib_dummyarg_gen.h.
  * ──────────────────────────────────────────────────────────────────────── */
 
 /* 136.1: the compiler's record of the native side, and the same module.method
@@ -1224,6 +1238,7 @@ static void check_std_str_args(Ctx *cx, const Node *call) {
  * through llvm.h, which would put the codegen header in the type checker's
  * include graph for two functions. */
 int stdlib_glue_arity(const char *sym);
+int stdlib_glue_ignores_only_arg(const char *sym);   /* 127.61 */
 const char *stdlib_symbol_for(const char *mod, int is_std, const char *method);
 
 /*
@@ -1314,29 +1329,52 @@ static void check_tki_call(Ctx *cx, const Node *call) {
                             (int)strlen(alias));
         if (d && d->kind != DECL_IMPORT_ALIAS) return;
     }
-    if (!imported_alias_has_funcs(cx->env->names, alias)) return;
-
     int is_std = (strncmp(mpath, "std.", 4) == 0);
     int actual = call->child_count - 1;
-    const ImportedFunc *f = imported_func_lookup(cx->env->names, alias, member);
 
     /* 1. The implementation, where the compiler knows it. This is the arity
-     *    that decides whether the call corrupts. */
+     *    that decides whether the call corrupts.
+     *
+     *    127.61: this branch consults nothing but the glue table, so it runs
+     *    BEFORE the interface-presence gate below. 136.1 put the gate first,
+     *    which meant a std.* module with no hand-written `.tki` at all was
+     *    exempt from the one check that does not need one — `std.io` has no
+     *    interface file, so `io.println()` and `io.println(a;b)` were never
+     *    looked at even though tk_io_println_w's arity is known exactly. */
     const char *sym = NULL;
     int abi = tki_glue_arity_for(mpath, member, &sym);
     if (abi >= 0) {
         /* A zero-argument toke function is written in glue as a single
-         * ignored `int64_t dummy` — 23 functions in the stdlib glue sources use
-         * that idiom (tk_file_tempdir_w, tk_mlx_isavailable_w,
+         * ignored `int64_t dummy` (tk_file_tempdir_w, tk_mlx_isavailable_w,
          * tk_time_nowms_w, …), each opening with `(void)dummy`. The caller
          * sets no register and the callee reads none, so it is a convention,
-         * not a disagreement, and flagging it would reject correct calls. */
-        int dummy_param = (actual == 0 && abi == 1);
+         * not a disagreement, and flagging it would reject correct calls.
+         *
+         * 127.61: which symbols those are is now ESTABLISHED, from the glue
+         * sources, by scripts/gen_stdlib_decls.py. 136.1 had no such list and
+         * so exempted `actual == 0 && abi == 1` for every one-parameter
+         * symbol in the compiler — the default-for-an-unestablished-fact that
+         * let `s.len()`, `s.trim()`, `s.upper()`, `s.fromint()` and
+         * `io.println()` pass `--check` and then read an unset register. */
+        int dummy_param = (actual == 0 && abi == 1 &&
+                           stdlib_glue_ignores_only_arg(sym));
         if (actual != abi && !dummy_param && tc_can_emit(cx))
             tki_arity_error(call, "implementation", mpath, member,
                             NULL, abi, actual);
         return;
     }
+
+    /* An alias with no recorded exports is an absence of knowledge for the
+     * INTERFACE, not for the runtime — so it does not disqualify branch 2,
+     * which asks only whether the runtime declares the member. Six std
+     * modules ship no `.tki` at all (std.io, std.array, std.collections,
+     * std.fs, std.soap, std.xml), and gating branch 2 on the interface meant
+     * every member name on all six was unchecked: `io.printline("x")` passed
+     * `--check` and failed at link with an undefined `tk_io_printline_w`,
+     * which is the 127.62 / 127.77 symptom exactly. */
+    int have_iface = imported_alias_has_funcs(cx->env->names, alias);
+    const ImportedFunc *f =
+        have_iface ? imported_func_lookup(cx->env->names, alias, member) : NULL;
 
     /* 2. A std.* member that *neither* side declares is the 127.77 shape: the
      *    name is a mistake, codegen emits a call to it anyway, and the user
@@ -1349,7 +1387,15 @@ static void check_tki_call(Ctx *cx, const Node *call) {
      *    a stdlib-side gate (136.7 — eighteen documented functions have no
      *    symbol at all), and unlike an arity mismatch it already fails
      *    loudly at link rather than corrupting. It accounts for 52 of the
-     *    call sites swept for this story, reported as a finding instead. */
+     *    call sites swept for this story, reported as a finding instead.
+     *
+     *    127.61: reaching here means branch 1 found no declared arity for
+     *    `sym`, and `sym` is the emitter's own mapping — so the runtime does
+     *    not declare this member under the name codegen will emit. Every `_w`
+     *    wrapper defined in the glue sources is in g_stdlib_decls (a check_tki
+     *    gate now holds that invariant, after five wrapped C signatures were
+     *    found missing from the table), so "no declared arity" is evidence of
+     *    absence here rather than merely absence of evidence. */
     if (is_std && sym && !f) {
         if (!tc_can_emit(cx)) return;
         char msg[384];
@@ -1372,6 +1418,7 @@ static void check_tki_call(Ctx *cx, const Node *call) {
      *    a partial, drifted document (see the header comment) and is not
      *    enforced against calls beyond what the runtime already settled. */
     if (is_std) return;
+    if (!have_iface) return;   /* a user module with no interface records */
 
     if (!f) {
         if (!tc_can_emit(cx)) return;

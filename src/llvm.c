@@ -8886,6 +8886,34 @@ int stdlib_glue_arity(const char *sym) {
 }
 
 /*
+ * g_stdlib_dummy_arg (127.61) — the one-parameter glue symbols whose body
+ * provably never reads that parameter, generated from the glue sources by
+ * scripts/gen_stdlib_decls.py.
+ *
+ * A zero-argument toke function is written in glue as a single ignored
+ * `int64_t`, so a zero-argument call into one of *these* symbols is the
+ * convention (136.14), not a mistake. 136.1 could not name them and so
+ * exempted every one-parameter symbol instead — which is why `s.len()` and
+ * `io.println()` passed `--check` and then read an unset register. The set is
+ * now established from the source rather than assumed.
+ */
+static const char *g_stdlib_dummy_arg[] = {
+#include "stdlib_dummyarg_gen.h"
+    NULL
+};
+
+/*
+ * stdlib_glue_ignores_only_arg (127.61) — 1 when `sym` takes exactly one
+ * parameter and never reads it, so calling it with no arguments is safe.
+ */
+int stdlib_glue_ignores_only_arg(const char *sym) {
+    if (!sym || !*sym) return 0;
+    for (int i = 0; g_stdlib_dummy_arg[i]; i++)
+        if (!strcmp(g_stdlib_dummy_arg[i], sym)) return 1;
+    return 0;
+}
+
+/*
  * emit_llvm_ir — Main entry point: emit a complete LLVM IR module (.ll file).
  *
  * Orchestrates the full emission pipeline:

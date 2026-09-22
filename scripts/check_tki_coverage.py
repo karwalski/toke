@@ -137,6 +137,37 @@ def load_c_definitions(c_dir: Path) -> dict[str, str]:
     return defs
 
 
+# ── g_stdlib_decls completeness (story 127.61) ──────────────────────────────
+
+def load_compiler_declarations() -> set[str]:
+    """Symbols the compiler has an IR declaration for (g_stdlib_decls)."""
+    decls: set[str] = set()
+    for rel in ("src/llvm.c", "src/stdlib_decls_gen.h"):
+        p = REPO_ROOT / rel
+        if not p.exists():
+            continue
+        for line in p.read_text(errors="replace").splitlines():
+            m = re.match(r'\s*\{"(\w+)",\s*"declare', line)
+            if m:
+                decls.add(m.group(1))
+    return decls
+
+
+def undeclared_wrappers(defs: dict[str, str], decls: set[str]) -> list[str]:
+    """`_w` wrappers DEFINED in glue but absent from g_stdlib_decls.
+
+    An absent entry is invisible, not broken: emit_llvm_ir() also declares
+    symbols it sees referenced, so codegen still works and nothing goes red.
+    What stops working is the *check* — stdlib_glue_arity() answers -1 for a
+    symbol it has no entry for, so 136.1's call-site arity check silently
+    skips every call into it.  That is how `an.pivot(d)`, one argument of
+    four, passed `--check`: gen_stdlib_decls.py matched a single line, so five
+    wrappers whose C parameter list wrapped onto a second line were never in
+    the table (127.61).  This invariant is the gate on that class of hole.
+    """
+    return sorted(s for s in defs if s.endswith("_w") and s not in decls)
+
+
 # ── skip-list ───────────────────────────────────────────────────────────────
 
 def load_skiplist(path: Path) -> dict[str, str]:
@@ -168,6 +199,7 @@ def main() -> int:
     explicit, patterns, subns = load_resolver_tables(LLVM_C)
     defs = load_c_definitions(C_DIR)
     skips = load_skiplist(SKIPLIST)
+    undecl = undeclared_wrappers(defs, load_compiler_declarations())
 
     total = passed = 0
     failures: list[tuple[str, str, str, list[str]]] = []
@@ -255,16 +287,25 @@ def main() -> int:
             print(f"  {s} ({defs[s]})")
         print()
 
+    if undecl:
+        print("FAIL (defined in glue, absent from g_stdlib_decls — the compiler")
+        print("      cannot check the arity of any call into these; regenerate")
+        print("      with `python3 scripts/gen_stdlib_decls.py`):")
+        for s in undecl:
+            print(f"  {s} ({defs[s]})")
+        print()
+
     print("=" * 60)
     print(f"check-tki: {total} .tki func exports, {len(defs)} tk_* definitions in src/stdlib/*.c")
     print(f"  PASS:        {passed}")
     print(f"  FAIL:        {len(failures)}")
     print(f"  quarantined: {len(quarantined)}  ({SKIPLIST.relative_to(REPO_ROOT)})")
     print(f"  stale skips: {len(stale_skips)}")
+    print(f"  _w glue defined but not in g_stdlib_decls (arity unchecked): {len(undecl)}")
     print(f"  undeclared _w glue (no .tki export resolves to it): {len(undeclared)}  [informational, -v to list]")
     print("=" * 60)
 
-    if failures or stale_skips:
+    if failures or stale_skips or undecl:
         return 1
     print(f"All non-quarantined .tki declarations resolve to defined C symbols "
           f"({passed} pass, {len(quarantined)} quarantined).")
