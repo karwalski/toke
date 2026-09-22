@@ -99,6 +99,15 @@ static const StdlibModule stdlib_table[] = {
      * failure mode and is invisible unless std.xlsx is the SOLE import.
      * test/conform/C031 compiles such a program as its first case. */
     { "xlsx",          "xlsx.c xlsx_glue.c",                    "zip",                                                              "" },
+    /* 135.3: std.pdf has NO module dependencies -- unlike std.xlsx, a PDF is
+     * not a zip.  FlateDecode goes through zlib, which is already on every
+     * toke binary's link line (LDLIBS in the Makefile), so the "-lz" here is
+     * belt and braces for a link line that ever stops carrying it rather
+     * than a new dependency.  Three C files, because the object/xref layer
+     * (pdf.c), the content-stream interpreter (pdftext.c) and the generated
+     * standard-14 metric tables (pdffont.c) are three separable concerns and
+     * the last of them is machine-written. */
+    { "pdf",           "pdf.c pdftext.c pdffont.c pdf_glue.c",  "",                                                                 "-lz" },
     { "db",            "db.c db_glue.c",                      "",                                                                 "-lsqlite3" },
     { "collections",   "collections.c collections_glue.c",      "",                                                                 "" },
     { "xml",           "xml.c xml_glue.c",                       "",                                                                 "" },  /* 131.46 */
