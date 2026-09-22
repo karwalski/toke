@@ -851,7 +851,12 @@ test-tkir-reader:
 test-standalone: $(BIN)
 	@test/standalone/run_all.sh
 
+# 127.118: `clean` removed every .o but not one .d, so the -MMD dependency
+# files -- which are gitignored and therefore survive every checkout --
+# were `-include`d on the next build describing a different commit's
+# include graph.  `clean` now means clean.
 clean:
+	rm -f $(OBJS:.o=.d)
 	rm -f $(OBJS) $(BIN) tkc test/stdlib/test_str test/stdlib/test_db \
 	    test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto \
 	    test/stdlib/test_time test/stdlib/test_tktest test/stdlib/test_log \

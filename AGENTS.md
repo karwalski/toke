@@ -258,6 +258,54 @@ If validation fails:
 - fix the issue before claiming the story is done
 - if the failure is a pre-existing bug unrelated to your change, log it in `docs/progress.md` as a blocker with an issue reference and continue only if the CI failure is proven pre-existing on `main`
 
+### 7.1 Every `git bisect` must build clean — no exceptions
+
+**An incremental `make` across commits can produce a compiler that runs and is
+wrong.** At commit `e11b371`, `make -j8` after checking out from another commit
+produced a `tkc` that compiled a probe to **exit 0 printing pointers**;
+`make clean && make` at the *identical* commit produced the correct RT003 trap.
+
+This is not a nuisance — **it silently corrupted a real investigation.** The
+first `git bisect run` pass over that range returned a **docs-only commit as
+"first bad"**, which is a result that looks like an answer. Two independent
+bisect passes each blamed a docs-only commit (see the note in
+`test/conform/C017_map_property_is_not_a_field.sh`).
+
+So:
+
+```bash
+# CORRECT — the only supported shape
+git bisect run sh -c 'make clean >/dev/null 2>&1 && make -j8 >/dev/null 2>&1 || exit 125; ./probe.sh'
+```
+
+`exit 125` tells git the commit is untestable (build failure) rather than good
+or bad; without it a broken build is scored as "good" and the bisect lies again.
+
+**Treat any past bisect result obtained without a clean build as unproven.**
+
+**Why `-MMD -MP` does not save you.** The header dependency tracking in
+`CFLAGS` is real and it works — but it can only ever cover *which files a
+translation unit included*. It cannot cover:
+
+- **The compile command line itself.** `make` compares file mtimes and nothing
+  else; it has no record of the flags an existing `.o` was built with. When a
+  checkout changes `CFLAGS`, a `-D`, or `SRCS`, **zero objects rebuild** — the
+  sources are byte-identical and their mtimes did not move — and the link step
+  mixes objects compiled under two different flag sets. `CFLAGS` here bakes in
+  `-DTKC_STDLIB_DIR='"$(CURDIR)/src/stdlib"'` and
+  `-ffile-prefix-map=$(CURDIR)=.`, and the Makefile's `SRCS` list changes often.
+  This is the structural root cause, and no dependency-file scheme can detect it.
+- **`.d` files left behind by `clean`.** Until 127.118, `make clean` removed
+  every `.o` and not one `.d`. The `.d` files are gitignored, so they survived
+  every checkout and were `-include`d on the next build while describing a
+  different commit's include graph. `clean` now removes them too.
+
+A stamp file that forces a rebuild when the command line changes would close
+the first gap properly; it is not yet implemented, because it changes rebuild
+behaviour repo-wide and wants a validated full build to land safely.
+
+---
+
 ---
 
 ## 8. Folder Structure
