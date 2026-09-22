@@ -229,6 +229,20 @@ static int types_equal(const Type *a, const Type *b) {
  *
  * f64 is NOT here: int <-> float has no implicit promotion (ADR-0004), 127.64
  * depends on that staying an error, and it is not width, it is representation.
+ *
+ * The narrower widths (i8/i16/i32, u8/u16/u32) are NOT here either, and that
+ * is a deliberate narrowing of the decision to what evidence supports: the
+ * slot argument would cover them too, but a --check sweep of all 23,382
+ * regen_v04 records produces no E4031 that wants them, so nothing is being
+ * kept broken by leaving them out.  Adding them later is a strict superset of
+ * this rule and needs no re-decision -- the direction is the load-bearing
+ * part, not the source list.
+ *
+ * BOOL IS A VALUE-FLOW-ONLY SOURCE.  types_compat() is the only caller that
+ * sees it; the binary arithmetic/comparison path below gates on is_integer(),
+ * which excludes TY_BOOL on purpose.  Otherwise `exp&1==1` -- which parses as
+ * `exp & (1==1)`, a real precedence bug present in corpus record
+ * A-MTH-0058v52 -- would silently become `exp & true` instead of E4031.
  */
 static int int_widens_to(const Type *from, const Type *to) {
     if (!from||!to||to->kind!=TY_I64) return 0;
