@@ -1,232 +1,250 @@
-# std.tls — Standalone TLS 1.3 Connections
+---
+title: std.tls
+slug: tls
+section: reference/stdlib
+order: 50
+---
 
-## Overview
+**Status: Implemented** -- C runtime backing over OpenSSL, reachable from toke since story 136.44. Proved on the wire by conformance test `C022_tls_is_not_a_facade.sh`, which negotiates a real TLS 1.3 session against Python's `ssl` module and asserts mutual auth fails closed.
 
-The `std.tls` module provides a standalone TLS 1.3 interface for building
-encrypted peer-to-peer and client-server connections. It covers key and
-certificate generation, server-side listening, client-side connections, I/O,
-certificate pinning, and human-friendly pairing codes for out-of-band
-verification.
+`std.tls` builds encrypted peer-to-peer and client-server connections directly: key and certificate generation, server listening, client connecting, I/O, certificate pinning, and a human-readable pairing code for out-of-band verification. It is independent of `std.http` -- for HTTPS, use `std.http`.
 
-All connections enforce **TLS 1.3 only**. No fallback to TLS 1.2 or earlier
-is permitted. This module is independent of `std.http`; if you need HTTPS, use
-`http.serve_tls` from `std.http` instead.
+Every connection is **TLS 1.3 only**. There is no fallback to 1.2 or earlier: the OpenSSL context sets `TLS1_3_VERSION` as both the minimum and the maximum, so a downgrade is not a policy you can misconfigure, it is absent.
 
-Certificates are represented as PEM strings throughout the API, making them
-easy to persist, log, and inspect. Private keys are also PEM strings — treat
-them as secrets.
+Certificates and keys are PEM strings throughout, which makes them easy to persist and inspect. Treat the key half as a secret; `std.securemem` is the place to hold one in memory.
 
-The underlying implementation uses OpenSSL (already a dependency of the toke
-runtime).
+## It was a façade, and that shaped the interface
+
+Before 136.44 none of this was reachable. `src/stdlib/tls.c` was ~910 lines of working TLS 1.3 -- the version floor, `SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT`, peer pinning, an X25519MLKEM768 hybrid key exchange -- linked against `-lssl -lcrypto`, and every wrapper in `tls_glue.c` was `(void)arg; return 0;`. `tls.listen` returned before it bound a socket. `tls.connect` and `tls.listen` resolved to symbols that did not exist. `peercert`, `fingerprint` and `pairingcode` had no wrapper at all.
+
+That history explains two things about the interface below that otherwise look redundant.
+
+**The constructor functions exist because the struct literals cannot be written.** `TlsConfig` carries `cert_pem`, `key_pem`, `peer_cert_pem` and `require_mutual`; `TlsKeypair` carries `cert_pem` and `key_pem`. Every one of those names contains an underscore, and toke's default 59-character profile excludes `_` -- so `$TlsConfig{cert_pem: ...}` is not merely discouraged, it cannot be lexed. `tls.tlsconfig`, `tls.pinconfig` and `tls.mutualconfig` are how you build a config, and `tls.certof` and `tls.keyof` are how you read a keypair. Do not try to name the fields.
+
+**The handles are opaque i64.** A `TlsConn` or `TlsKeypair` arrives in toke as an integer handle; `0` is the failure and none sentinel. Test with `==0`, and write callbacks as `f=name(conn:i64):i64`.
 
 ## Types
 
 ### TlsConfig
 
-Configuration record for both server and client endpoints.
+Configuration for either end of a connection. Opaque in practice -- build it with `tls.tlsconfig`, `tls.pinconfig` or `tls.mutualconfig`, and release it with `tls.freeconfig`.
 
-| Field           | Type | Meaning |
-|-----------------|------|---------|
-| cert_pem        | str  | PEM-encoded certificate for this endpoint (may be empty for anonymous clients) |
-| key_pem         | str  | PEM-encoded private key matching `cert_pem` (required when `cert_pem` is set) |
-| peer_cert_pem   | str  | PEM-encoded certificate to pin the remote peer against (empty = no pinning) |
-| require_mutual  | bool | When `true`, enforce mutual TLS: the remote must present a certificate |
-
-```toke
-let cfg = $TlsConfig{
-    cert_pem      = my_cert;
-    key_pem       = my_key;
-    peer_cert_pem = "";
-    require_mutual = false;
-};
-```
+| Field | Type | Meaning | Readable from toke |
+|---|---|---|---|
+| `cert_pem` | `str` | this endpoint's certificate (empty for an anonymous client) | no -- underscore |
+| `key_pem` | `str` | the matching private key | no -- underscore |
+| `peer_cert_pem` | `str` | certificate to pin the peer against (empty = no pinning) | no -- underscore |
+| `require_mutual` | `bool` | demand a certificate from the peer | no -- underscore |
 
 ### TlsConn
 
-An opaque handle to an established TLS connection. Pass this to `tls.read`,
-`tls.write`, `tls.close`, `tls.peer_cert`, and `tls.pairing_code`.
-
-| Field | Type | Meaning |
-|-------|------|---------|
-| id    | str  | Opaque connection identifier (implementation-defined; do not parse) |
+An opaque handle to an established connection, as an `i64`. `0` means no connection. Pass it to `tls.read`, `tls.write`, `tls.close`, `tls.protocol`, `tls.peercert` and `tls.pairingcode`.
 
 ### TlsKeypair
 
-A freshly generated certificate and private key, both as PEM strings.
-
-| Field    | Type | Meaning |
-|----------|------|---------|
-| cert_pem | str  | PEM-encoded self-signed X.509 certificate |
-| key_pem  | str  | PEM-encoded EC private key (P-384) |
+A freshly generated certificate and its private key. Opaque as an `i64`; read the two halves with `tls.certof` and `tls.keyof`, and release it with `tls.freekeypair`.
 
 ### TlsErr
 
-Sum type for errors returned by fallible TLS operations.
+The error side of the fallible calls: `CertErr` (generation, parsing or verification), `ConnErr` (handshake or peer rejection), `PinErr` (the peer presented a different certificate), `IoErr` (socket failure).
 
-| Variant | Meaning |
-|---------|---------|
-| CertErr | Certificate generation, parsing, or verification error |
-| ConnErr | Connection-level failure (handshake failure, peer rejection) |
-| PinErr  | Certificate pinning mismatch: peer presented a different certificate |
-| IoErr   | Underlying socket or I/O error |
+## Key and certificate generation
 
-## Functions
+### tls.genselfsigned(commonname: str; validdays: i32): TlsKeypair!TlsErr
 
-### tls.gen_self_signed(common_name: str; valid_days: i32): TlsKeypair!TlsErr
+Generates a P-384 EC keypair and a self-signed X.509 certificate with `commonname` as both subject and issuer CN, valid for `validdays` days from now. Returns `0` on failure.
 
-Generates a fresh P-384 EC keypair and a self-signed X.509 certificate with
-the given `common_name` as both the subject CN and the issuer CN. The
-certificate is valid for `valid_days` days from the moment of generation.
+### tls.certof(kp: TlsKeypair): str
 
-Returns a `TlsKeypair` containing both the certificate and private key as PEM
-strings. Returns `TlsErr.CertErr` if certificate generation fails.
+The PEM-encoded certificate from a keypair.
 
-**Example:**
+### tls.keyof(kp: TlsKeypair): str
+
+The PEM-encoded private key from a keypair. This is secret material.
+
+### tls.freekeypair(kp: TlsKeypair): bool
+
+Releases the keypair and zeroes the key. The handle is dangling afterwards.
+
 ```toke
-let kp = tls.gen_self_signed("my-device"; 365);
-(* kp.cert_pem  -- "-----BEGIN CERTIFICATE-----\n..." *)
-(* kp.key_pem   -- "-----BEGIN EC PRIVATE KEY-----\n..." *)
-```
+m=tlskeygen;
+i=tls:std.tls;
+i=file:std.file;
+i=io:std.io;
 
-### tls.listen(port: i32; cfg: TlsConfig; cb: fn(TlsConn): void): bool
-
-Binds a TCP listening socket on `port` and accepts TLS connections in a loop.
-Each accepted connection is wrapped with TLS using `cfg`, and `cb` is invoked
-in a new thread with the resulting `TlsConn`.
-
-When `cfg.require_mutual` is `true`, the server demands a client certificate.
-When `cfg.peer_cert_pem` is non-empty, only clients presenting exactly that
-certificate are accepted.
-
-Returns `false` immediately if the socket cannot be bound or if the TLS
-context cannot be created. Does not return once successfully listening (runs
-until the process exits).
-
-**Example:**
-```toke
-let kp = tls.gen_self_signed("server"; 365);
-let cfg = $TlsConfig{
-    cert_pem = kp.cert_pem; key_pem = kp.key_pem;
-    peer_cert_pem = ""; require_mutual = false;
+f=emit(cn:str;certp:str;keyp:str):i64{
+  let kp=tls.genselfsigned(cn;365);
+  if(kp==0){ io.println("keygen failed"); <1 };
+  let a=mt file.write(certp;tls.certof(kp)){$ok:v v;$err:e false};
+  let b=mt file.write(keyp;tls.keyof(kp)){$ok:v v;$err:e false};
+  io.println(tls.fingerprint(tls.certof(kp)));
+  tls.freekeypair(kp);
+  if(a==false){ <1 };
+  if(b==false){ <1 };
+  <0
 };
-tls.listen(8443; cfg; fn(conn) {
-    let msg = tls.read(conn);
-    tls.write(conn; "hello back");
-    tls.close(conn);
-});
+
+f=main():i64{
+  <emit("toke-demo-server";"/tmp/toke-tls-s.crt";"/tmp/toke-tls-s.key")
+};
 ```
 
-### tls.connect(host: str; port: i32; cfg: TlsConfig): ?(TlsConn)
+## Building a configuration
 
-Opens a TCP connection to `host:port` and performs a TLS 1.3 handshake.
-Returns `?(TlsConn)` on success, or `none` if the connection or handshake
-fails.
+### tls.tlsconfig(certpem: str; keypem: str): TlsConfig
 
-If `cfg.cert_pem` and `cfg.key_pem` are non-empty, the client presents them
-as its certificate during the handshake (required for mutual TLS servers).
+A plain endpoint configuration: present this certificate and key, pin nothing, require nothing of the peer.
 
-If `cfg.peer_cert_pem` is non-empty, the server's certificate is pinned
-against it; the connection is rejected if the server presents a different
-certificate.
+### tls.pinconfig(certpem: str; keypem: str; peercertpem: str): TlsConfig
 
-**Example:**
-```toke
-let conn = tls.connect("127.0.0.1"; 8443; cfg);
-if conn {
-    tls.write(conn!; "hello");
-    let reply = tls.read(conn!);
-    tls.close(conn!);
-}
-```
+As above, plus: accept the peer **only** if it presents exactly `peercertpem`. A client may pass `""` for its own certificate and key and still pin the server.
 
-### tls.read(conn: TlsConn): ?(str)
+### tls.mutualconfig(certpem: str; keypem: str; peercertpem: str): TlsConfig
 
-Reads available data from `conn` and returns it as a string. Returns `none`
-if the connection has been closed by the peer or if an error occurs.
+As `pinconfig`, and additionally demands a certificate from the peer. A peer that presents none never reaches your handler -- the handshake fails first. That is the fail-closed behaviour `C022` witnesses with an independent TLS implementation.
 
-**Example:**
-```toke
-let data = tls.read(conn);
-(* data = some("hello world") or none *)
-```
+### tls.freeconfig(cfg: TlsConfig): bool
+
+Releases the configuration and zeroes any key material in it.
+
+## Connections
+
+### tls.listen(port: i32; cfg: TlsConfig; cb: fn): bool
+
+Binds a TCP socket on `port` and accepts TLS connections in a loop, invoking `cb` with each accepted `TlsConn`. Pass the callback by reference, `&handler`.
+
+Returns `false` at once if the socket cannot be bound or the TLS context cannot be created. Otherwise it does not return: it runs until the process exits.
+
+### tls.connect(host: str; port: i32; cfg: TlsConfig): TlsConn
+
+Connects to `host:port` and performs a TLS 1.3 handshake. Returns the connection handle, or `0` if the connection, the handshake or the pin check fails.
+
+### tls.read(conn: TlsConn): str
+
+Reads available data. Returns `0` (the none sentinel) when the peer has closed the connection or an error occurred, so test with `==0` before use.
 
 ### tls.write(conn: TlsConn; data: str): bool
 
-Writes `data` to `conn`. Returns `true` on success, `false` if the write
-fails (e.g. because the connection was closed).
-
-**Example:**
-```toke
-let ok = tls.write(conn; "ping");
-```
+Writes `data`. `false` if the write failed, typically because the connection is closed.
 
 ### tls.close(conn: TlsConn): bool
 
-Performs a clean TLS shutdown on `conn` and closes the underlying socket.
-Returns `true` on success, `false` if the connection was already closed or an
-error occurred. After `tls.close`, the `TlsConn` handle must not be used.
+Clean TLS shutdown followed by socket close. The handle must not be used afterwards.
 
-**Example:**
-```toke
-tls.close(conn);
-```
+### tls.protocol(conn: TlsConn): str
 
-### tls.peer_cert(conn: TlsConn): ?(str)
+The protocol **negotiated on the wire**, read back through `SSL_get_version` -- `"TLSv1.3"` on any successful connection. This is a fact about the session, not a claim about the source, which is why `C022` asserts on it.
 
-Returns the peer's PEM-encoded X.509 certificate as presented during the TLS
-handshake. Returns `none` if the peer did not present a certificate (e.g. when
-mutual TLS was not required on the server side and the client chose not to
-present one).
+### tls.peercert(conn: TlsConn): str
 
-**Example:**
-```toke
-let pem = tls.peer_cert(conn);
-if pem {
-    let fp = tls.fingerprint(pem!);
-    log.info("peer fingerprint: " + fp);
-}
-```
+The peer's PEM certificate as presented during the handshake, or `0` if the peer presented none.
 
 ### tls.fingerprint(pem: str): str
 
-Parses the PEM-encoded X.509 certificate in `pem`, converts it to DER, and
-returns the SHA-256 hash of the DER encoding as a lowercase hex string (64
-characters). Returns an empty string if `pem` cannot be parsed.
+SHA-256 of the DER encoding of a PEM certificate, as 64 lowercase hex characters. Empty string if `pem` cannot be parsed. This is the same value as `openssl x509 -fingerprint -sha256`.
 
-This is the same fingerprint shown by `openssl x509 -fingerprint -sha256`.
+### tls.pairingcode(conn: TlsConn): str
 
-**Example:**
+A six-digit decimal code derived from the XOR of the local and peer certificate fingerprints. Both ends of a correctly established connection compute the same code, so it can be read aloud or displayed to confirm out of band that nobody is in the middle. Returns `"000000"` if either certificate is unavailable.
+
+## A server
+
 ```toke
-let fp = tls.fingerprint(kp.cert_pem);
-(* fp = "3a4f...b2c1" (64 hex chars) *)
+m=tlsserver;
+i=tls:std.tls;
+i=file:std.file;
+i=io:std.io;
+i=str:std.str;
+
+f=rd(p:str):str{
+  <mt file.read(p){$ok:v v;$err:e ""}
+};
+
+f=onconn(conn:i64):i64{
+  io.println(str.concat("proto=";tls.protocol(conn)));
+
+  let pc=tls.peercert(conn);
+  if(pc==0){
+    io.println("peercert=none")
+  }el{
+    io.println(str.concat("peerfp=";tls.fingerprint(pc)))
+  };
+  io.println(str.concat("pairing=";tls.pairingcode(conn)));
+
+  let msg=tls.read(conn);
+  if(msg==0){
+    io.println("read=none")
+  }el{
+    tls.write(conn;str.concat("echo:";msg))
+  };
+  tls.close(conn);
+  <0
+};
+
+(* mutualconfig, not three field assignments: peer_cert_pem and require_mutual
+   carry underscores the default profile cannot express, so a toke program
+   cannot name them. *)
+f=main():i64{
+  let cfg=tls.mutualconfig(rd("/tmp/toke-tls-s.crt");rd("/tmp/toke-tls-s.key");rd("/tmp/toke-tls-c.crt"));
+  io.println("listening on 8443");
+  tls.listen(8443;cfg;&onconn);
+  tls.freeconfig(cfg);
+  <0
+};
 ```
 
-### tls.pairing_code(conn: TlsConn): str
+## A client
 
-Derives a 6-digit decimal pairing code from the XOR of the local and peer
-certificate SHA-256 fingerprints. Both endpoints on a correctly established
-connection will produce the same code, so it can be read aloud or displayed
-for out-of-band confirmation that no man-in-the-middle is present.
-
-Returns `"000000"` if either certificate is unavailable.
-
-**Example:**
 ```toke
-let code = tls.pairing_code(conn);
-log.info("confirm pairing code: " + code);
-(* user compares this with the remote display *)
+m=tlsclient;
+i=tls:std.tls;
+i=file:std.file;
+i=io:std.io;
+i=str:std.str;
+
+f=rd(p:str):str{
+  <mt file.read(p){$ok:v v;$err:e ""}
+};
+
+f=main():i64{
+  (* present our own certificate AND pin the server's *)
+  let cfg=tls.pinconfig(rd("/tmp/toke-tls-c.crt");rd("/tmp/toke-tls-c.key");rd("/tmp/toke-tls-s.crt"));
+
+  let conn=tls.connect("127.0.0.1";8443;cfg);
+  if(conn==0){
+    io.println("connect=fail");
+    tls.freeconfig(cfg);
+    <1
+  };
+
+  io.println(str.concat("proto=";tls.protocol(conn)));
+  io.println(str.concat("pairing=";tls.pairingcode(conn)));
+  tls.write(conn;"ping");
+
+  let r=tls.read(conn);
+  if(r==0){
+    io.println("reply=none")
+  }el{
+    io.println(str.concat("reply=";r))
+  };
+
+  tls.close(conn);
+  tls.freeconfig(cfg);
+  <0
+};
 ```
 
-## Security Notes
+## Security notes
 
-- **TLS 1.3 only.** No protocol downgrade is possible.
-- **Certificate pinning** (`peer_cert_pem`) provides strong identity
-  guarantees beyond the standard CA chain. Use it for device-to-device or
-  service-to-service connections where you control both endpoints.
-- **Mutual TLS** (`require_mutual = true`) ensures both sides are
-  authenticated. Combine with pinning for the strongest guarantee.
-- **Pairing codes** are a 6-digit approximation for human verification — they
-  are not a substitute for full fingerprint comparison in high-security
-  contexts.
-- Generated keys use **P-384** (NIST secp384r1), which provides ~192-bit
-  security. This is the recommended curve for new deployments as of 2024.
+- **TLS 1.3 only**, enforced as a version floor and ceiling. No downgrade is reachable.
+- **Pinning** (`tls.pinconfig`) gives an identity guarantee stronger than a CA chain, and is the right choice for device-to-device or service-to-service links where you control both ends.
+- **Mutual TLS** (`tls.mutualconfig`) authenticates both ends. Combined with pinning it is the strongest configuration here, and it fails closed: an unauthenticated peer never reaches your handler.
+- **Pairing codes** are six digits. They are a human-verification convenience, not a substitute for comparing full fingerprints where the stakes justify it.
+- Generated keys are **P-384** (NIST secp384r1), about 192-bit security, and the recommended curve for new deployments.
+- `tls.keyof` returns private key material. Do not log it; prefer writing it straight to a file with restrictive permissions, or holding it in `std.securemem`.
+
+## See Also
+
+- `std.http` -- HTTPS, when you want a protocol on top rather than a raw encrypted stream.
+- `std.securemem` -- holding the private key in locked, wiped memory.
+- `std.crypto` -- hashing and signing primitives.
