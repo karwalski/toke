@@ -69,7 +69,7 @@ diagnostic.
 
 **It has been withdrawn rather than stubbed** (toke `8a0d879`). `i=wv:std.webview;` now fails at the
 import line with `E2030 standard-library module 'std.webview' not found`, naming the module and the
-line, instead of failing at link. The 72.4 design is retained in `stdlib/webview.md` as a record,
+line, instead of failing at link. The 72.4 design is retained in `docs/stdlib/webview.md` as a record,
 marked WITHDRAWN and explicitly not to be written against.
 
 **Why withdrawn and not built,** since F1.2 depends on it and you are entitled to the reasoning:

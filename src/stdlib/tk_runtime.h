@@ -114,7 +114,7 @@ int64_t tk_str_char_at(const char *s, int64_t idx);
  * (`keychain.get(...) == ""`) segfaulted the caller.
  *
  * NULL is the "missing" sentinel and is NOT the empty string: a wiped secret
- * must stay distinguishable from an empty one (see stdlib/securemem.md), and
+ * must stay distinguishable from an empty one (see docs/stdlib/securemem.md), and
  * TOML/JSON "absent" must stay distinguishable from "present but empty"
  * (test/conform/C005).  NULL therefore sorts before every string, "" included.
  *
