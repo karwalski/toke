@@ -670,6 +670,42 @@ Codegen used to answer both cases with a guess that looked like data: `struct_fi
 
 No `fix` is supplied: the obvious instruction — annotate the binding — is not correct for every shape.
 
+### E4035
+
+**Map has no property with that name**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | typecheck (also codegen) |
+
+Emitted for `m.name` on a map where `name` is not one of the two map
+properties, `len` and `keys`. A map has no fields, so there is no layout to
+resolve `name` against.
+
+Before 127.106 the checker returned "unknown" for such an access and said
+nothing, after which lowering took the struct-field path with no layout
+established, `struct_field_index()` returned its `0` fallback, and the program
+loaded word 0 of the map's runtime block and printed it. `m.values` — the
+spelling that was reported — came out as a pointer rendered as a decimal at
+exit 0 with no diagnostic; `m.size`, `m.count`, `m.entries`, `m.items` and any
+misspelling were the same undefined read. The value that a given build
+happened to print was not stable, which is why the earlier record of this
+defect as a loud runtime trap and the later record of it as silent wrong output
+are two observations of one bug rather than a regression between them.
+
+The checker reports it, so `tkc --check` sees it. Lowering reports it too, for
+a map whose type the checker cannot recover — `let m2 = m.set(k;v)` is typed by
+the backend's map tag and by nothing in the checker.
+
+Note that `m.values()`, the call form, is not this diagnostic: it has no
+implementation at all and currently fails at link time as an undefined symbol.
+
+No `fix` is supplied. There is no deterministic repair: `values` has no method
+form and no runtime support, so "add the parentheses" would be wrong — the
+lesson of 131.78 — and a did-you-mean for an arbitrary misspelling is a guess.
+The two property names that do exist are reported in `expected`.
+
 ### E4070
 
 **Assignment to immutable binding**

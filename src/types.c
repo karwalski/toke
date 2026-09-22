@@ -989,6 +989,21 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         if (it && (it->kind == TY_MAP || it->kind == TY_STRUCT)) return it;
         return NULL;
     }
+    /*
+     * 127.106: NODE_MAP_LIT is deliberately NOT here, though `let m=@("a":1)`
+     * is the commonest way to make a map.  It means the binding stays
+     * TY_UNKNOWN and every map-typed rule in this file is dead code for it —
+     * the `.len`/`.keys` properties of 127.12 and the map-key type check
+     * NODE_INDEX_EXPR has carried since 113.B.12.  That is a real defect, and
+     * it is filed separately rather than fixed here, because switching those
+     * rules on is not a no-op: it makes `m.len` a u64 and a bool-valued
+     * `m.get` a bool at every call site that was previously unknown, and
+     * test_127_8 and test_127_27 — both correct programs — are then rejected
+     * for passing those where an i64 is declared.  Deciding that is a
+     * u64/i64 coercion question, not part of making a bad map property loud.
+     * 127.106 is covered without it: the llvm.c site refuses a map property
+     * on the receiver kind the backend already tracks.
+     */
     default:
         return NULL;
     }
@@ -2071,6 +2086,42 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (!at) return mk_type(A,TY_UNKNOWN);
             at->elem=base->elem?base->elem:mk_type(A,TY_UNKNOWN);
             return at;
+        }
+        /*
+         * 127.106: a map has exactly the two property spellings handled above.
+         * Every other name used to fall through to the TY_STRUCT test, return
+         * TY_UNKNOWN, and type-check clean — after which codegen took the
+         * struct-field path with no layout established, `fidx` took its 0
+         * fallback, and the program printed word 0 of the TkMapImpl as a
+         * decimal at exit 0.  `m.values` is the spelling that was reported,
+         * but `m.size`, `m.count`, `m.entries`, `m.items` and any misspelling
+         * were the same undefined read.
+         *
+         * The struct-layout work (127.86/127.89/136.28) added the equivalent
+         * diagnostic in llvm.c and then exempted map receivers from it, on the
+         * reasoning that map properties are lowered elsewhere.  That holds for
+         * `len` and `keys`; nothing lowers the rest.  Refusing here rather
+         * than there also makes `tkc --check` see it, which a codegen-only
+         * diagnostic would not.
+         *
+         * No `fix`: there is no deterministic repair.  `values` has no method
+         * form and no glue either, so "add parentheses" would be wrong (the
+         * 131.78 lesson), and a did-you-mean for an arbitrary misspelling is a
+         * guess.  AGENTS.md 3.1: when unsure, omit.  The two names that do
+         * exist go in `expected`, which is a statement of fact, not an
+         * instruction to the repair loop.
+         */
+        if (base->kind==TY_MAP) {
+            if (tc_first_report(cx,node) && tc_can_emit(cx)) {
+                char msg[256];
+                snprintf(msg,sizeof(msg),
+                         "a map has no property '%s'",fname);
+                diag_emit(DIAG_ERROR,E4035,node->start,node->line,node->col,msg,
+                          "expected","one of the map properties 'len' or 'keys'",
+                          "got",fname,
+                          (const char*)NULL);
+            }
+            return mk_type(A,TY_UNKNOWN);
         }
         if (base->kind!=TY_STRUCT) return mk_type(A,TY_UNKNOWN);
         for (int i=0;i<base->field_count;i++)

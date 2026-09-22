@@ -4602,11 +4602,34 @@ static int emit_expr(Ctx *c, const Node *n)
             si = field_owner_unambiguous(c, fn, &ambig);
             if (si) {
                 fidx = struct_field_index(si, fn);
-            } else if (c->struct_count > 0 && !recv_is_map(c, n->children[0])) {
-                /* A map receiver's `.values` / other property spellings are
-                 * map operations, not struct fields; they are lowered (or
-                 * not) elsewhere, and inventing a layout complaint for them
-                 * would be a false diagnostic on a map. */
+            } else if (recv_is_map(c, n->children[0])) {
+                /*
+                 * 127.106: this exemption used to be blanket — every field
+                 * name on a map receiver skipped the diagnostic, on the
+                 * reasoning that map properties "are lowered (or not)
+                 * elsewhere".  Only `len` and `keys` are, and both return
+                 * earlier in this case, so anything arriving HERE on a map
+                 * receiver is lowered by nobody: it fell through to the GEP
+                 * below with si == NULL and fidx == 0 and loaded word 0 of
+                 * the TkMapImpl as a field.  That is what printed a pointer
+                 * as a decimal at exit 0.
+                 *
+                 * The checker refuses this first (E4035 in types.c), which is
+                 * where a user sees it, since `tkc --check` does not run
+                 * codegen.  This is not redundant: a map the checker cannot
+                 * type still reaches here — `let m2=m.set(k;v)` is typed by
+                 * the backend's 127.46 map tag and by nothing in types.c — so
+                 * without this the commonest derived map keeps the defect.
+                 *
+                 * No `fix`, for the reason given at the types.c site.
+                 */
+                char msg[256];
+                snprintf(msg, sizeof msg, "a map has no property '%s'", fn);
+                diag_emit(DIAG_ERROR, E4035, n->start, n->line, n->col, msg,
+                          "expected", "one of the map properties 'len' or 'keys'",
+                          "got", fn,
+                          (const char *)NULL);
+            } else if (c->struct_count > 0) {
                 char msg[256];
                 snprintf(msg, sizeof msg,
                          ambig ? "field '%s' is declared at different offsets by more than one struct, and the type of this value is not established"
