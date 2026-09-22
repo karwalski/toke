@@ -238,9 +238,9 @@ f=say(k:str;v:i64):i64{
 };
 
 f=dump(img:\$imgbuf;name:str):i64{
-  say(str.concat(name; ".w="); img.width);
-  say(str.concat(name; ".h="); img.height);
-  say(str.concat(name; ".c="); img.channels);
+  say(str.concat(name; ".w="); img.width as i64);
+  say(str.concat(name; ".h="); img.height as i64);
+  say(str.concat(name; ".c="); img.channels as i64);
   let wrote = mt file.writebytes(str.concat("${WORK}/"; str.concat(name; ".raw")); img.data) {\$ok:v v;\$err:e false};
   <0
 };
@@ -476,7 +476,7 @@ f=main():i64{
   let empty = \$imgbuf{width:0;height:0;channels:0;data:@()};
   let d = mt file.readbytes("${WORK}/lzw.tif") {\$ok:v v;\$err:e @()};
   let p = mt image.tiffdecode(d; 0) {\$ok:i i;\$err:e empty};
-  io.println(str.concat("lzw.w="; str.fromint(p.width)));
+  io.println(str.concat("lzw.w="; str.fromint(p.width as i64)));
   let w = mt file.writebytes("${WORK}/lzw.raw"; p.data) {\$ok:v v;\$err:e false};
   <0
 };
