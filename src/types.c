@@ -872,6 +872,143 @@ static void emit_mm(Ctx *cx, const Node *n, const Type *exp,
                   "fix",(const char*)NULL);
 }
 
+/* ── E4071: a function body's tail must return, not evaluate-and-discard ──
+ *
+ * Story 127.113.  `f=arith():i64{ 1+2+3 }` compiled clean and returned 0:
+ * codegen evaluated the tail, dropped it, and emitted `ret i64 0`.  `<` is
+ * toke's return operator and a function body must use it, so a value
+ * expression in tail position is now a hard error rather than a silent 0.
+ * (56.10.2 diagnosed the same defect for pointers four months ago and worked
+ * around it at the call site; this is the compiler diagnostic that should
+ * have been written then.)
+ *
+ * Scope is deliberately narrow — only what is provably a discarded *value*:
+ *   - the enclosing function's return type is neither void nor unknown, and
+ *   - the tail statement is an expression / if / match statement, and
+ *   - the type it evaluates to is neither void nor unknown.
+ * A void tail call (`io.println(..)`) is not a discarded value and is left
+ * alone; a non-void function that simply has no return at all is a different
+ * defect and is not this code's business.
+ */
+
+/* is_fn_body — 1 when `sl` is the enclosing function's own body statement
+ * list, rather than an if/loop/arena/match block nested inside it. */
+static int is_fn_body(Ctx *cx, const Node *sl) {
+    if (!cx->fn_node || !sl) return 0;
+    for (int i=0;i<cx->fn_node->child_count;i++)
+        if (cx->fn_node->children[i]==sl) return 1;
+    return 0;
+}
+
+/* tail_fix_is_certain — 1 only when prefixing `<` is the one repair the
+ * source can mean.  AGENTS.md 3.1: an incorrect `fix` breaks the automated
+ * repair loop, so anything with a second plausible reading gets none.
+ *   - a call may be there for its side effect, with the result discarded
+ *     on purpose — `<` would change behaviour, not restore it;
+ *   - `!` propagation reads as an error-handling statement;
+ *   - an if/match wants `<` inside each arm, not in front of the construct,
+ *     and the two are not interchangeable.
+ * What is left — arithmetic, a literal, a binding, a field or index read,
+ * a cast, a composite literal — computes a value and does nothing with it,
+ * which has exactly one meaning. */
+static int tail_fix_is_certain(const Node *expr) {
+    if (!expr) return 0;
+    switch (expr->kind) {
+    case NODE_BINARY_EXPR: case NODE_UNARY_EXPR:
+    case NODE_INT_LIT: case NODE_FLOAT_LIT:
+    case NODE_STR_LIT: case NODE_BOOL_LIT:
+    case NODE_IDENT: case NODE_FIELD_EXPR: case NODE_INDEX_EXPR:
+    case NODE_CAST_EXPR:
+    case NODE_ARRAY_LIT: case NODE_MAP_LIT: case NODE_STRUCT_LIT:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* match_arms_all_pure — 1 when every arm of `m` has a pure value expression
+ * for its body.  Such a match cannot be there for its side effects, so in
+ * tail position it is computing a value and dropping it.  An arm written
+ * `<expr` is a NODE_RETURN_STMT and fails this test, as it should: that arm
+ * does return. */
+static int match_arms_all_pure(const Node *m) {
+    int arms=0;
+    if (!m) return 0;
+    for (int i=0;i<m->child_count;i++) {
+        const Node *a=m->children[i];
+        if (!a||a->kind!=NODE_MATCH_ARM||a->child_count<1) continue;
+        arms++;
+        if (!tail_fix_is_certain(a->children[a->child_count-1])) return 0;
+    }
+    return arms>0;
+}
+
+static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
+    if (!cx->fn_ret || cx->fn_ret->kind==TY_VOID || cx->fn_ret->kind==TY_UNKNOWN)
+        return;
+
+    const Node *expr=NULL;
+    int known = tail_ty && tail_ty->kind!=TY_VOID && tail_ty->kind!=TY_UNKNOWN;
+
+    switch (tail->kind) {
+    case NODE_EXPR_STMT:
+        if (tail->child_count<1) return;
+        expr=tail->children[0];
+        /* A tail `mt` parses as an expression statement wrapping the match —
+         * this is 56.10.2's shape.  Its type is often unresolved (arm-body
+         * inference is narrow), so fall back on the arms: if every arm body
+         * is a pure value expression the match's only effect is to compute a
+         * value, and that value is being thrown away. */
+        if (expr->kind==NODE_MATCH_STMT) {
+            if (!known && !match_arms_all_pure(expr)) return;
+            expr=NULL;                     /* never a certain `<` repair */
+            break;
+        }
+        /* A pure value expression is a discarded value whether or not its
+         * type resolves: evaluating it is its only effect.  infer() answers
+         * TY_UNKNOWN for an un-annotated local (113.B.12 / 127.40 kept that
+         * narrow on purpose), so requiring a known type here would let
+         * `let y=x*2; y` through — the very shape 127.113 is about. */
+        if (!known && !tail_fix_is_certain(expr)) return;
+        break;
+    case NODE_IF_STMT:
+        /* Only a complete if/else yields a value on every path.  An `if`
+         * with no `el` falls through, which is a missing return, not a
+         * discarded value. */
+        if (tail->child_count<3 || !known) return;
+        break;
+    case NODE_MATCH_STMT:
+        if (!known && !match_arms_all_pure(tail)) return;
+        break;
+    default:
+        return;
+    }
+    if (!tc_first_report(cx,tail)) return;
+    if (!tc_can_emit(cx)) return;
+
+    char msg[256];
+    if (known)
+        snprintf(msg,sizeof(msg),
+            "function body ends in a value expression of type '%s' with no '<': "
+            "the value is computed and discarded, and the function returns 0",
+            type_name(tail_ty));
+    else
+        snprintf(msg,sizeof(msg),
+            "function body ends in a value expression with no '<': the value is "
+            "computed and discarded, and the function returns 0");
+
+    const char *got = known ? type_name(tail_ty) : "unknown";
+    if (expr && tail_fix_is_certain(expr))
+        diag_emit(DIAG_ERROR,E4071,tail->start,tail->line,tail->col,msg,
+                  "expected",type_name(cx->fn_ret),"got",got,
+                  "fix","prefix the expression with '<' to return it",
+                  (const char*)NULL);
+    else
+        diag_emit(DIAG_ERROR,E4071,tail->start,tail->line,tail->col,msg,
+                  "expected",type_name(cx->fn_ret),"got",got,
+                  "fix",(const char*)NULL);
+}
+
 /*
  * infer — recursively infer the type of an AST node.
  *
@@ -2571,6 +2708,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_STMT_LIST: {
         Type *last=mk_type(A,TY_VOID);
+        const Node *tail=NULL;
         int saw_return=0;
         for (int i=0;i<node->child_count;i++) {
             const Node *ch=node->children[i];
@@ -2582,8 +2720,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 break; /* stop checking after first unreachable */
             }
             last=infer(cx,ch);
+            tail=ch;
             if (ch->kind==NODE_RETURN_STMT) saw_return=1;
         }
+        if (!saw_return && tail && is_fn_body(cx,node))
+            check_tail_expr(cx,tail,last);
         return last;
     }
 

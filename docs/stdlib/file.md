@@ -43,7 +43,7 @@ i=file:std.file;
 
 f=readfile():$str{
   let r=file.read("/tmp/data.txt");
-  mt r {
+  <mt r {
     $ok:s  s;
     $err:e ""
   }
@@ -59,7 +59,7 @@ m=example;
 i=file:std.file;
 
 f=writefile():i64{
-  mt file.write("/tmp/data.txt";"hello world") {
+  <mt file.write("/tmp/data.txt";"hello world") {
     $ok:ok 0;
     $err:e 1
   }
@@ -75,7 +75,7 @@ m=example;
 i=file:std.file;
 
 f=appendfile():i64{
-  mt file.append("/tmp/log.txt";"new line\n") {
+  <mt file.append("/tmp/log.txt";"new line\n") {
     $ok:ok 0;
     $err:e 1
   }
@@ -105,7 +105,7 @@ m=example;
 i=file:std.file;
 
 f=delfile():i64{
-  mt file.delete("/tmp/temp.txt") {
+  <mt file.delete("/tmp/temp.txt") {
     $ok:ok 0;
     $err:e 1
   }
@@ -121,7 +121,7 @@ m=example;
 i=file:std.file;
 
 f=listdir():i64{
-  mt file.list("/tmp") {
+  <mt file.list("/tmp") {
     $ok:entries 0;
     $err:e      1
   }
@@ -137,7 +137,7 @@ m=example;
 i=file:std.file;
 
 f=listrecursive():i64{
-  mt file.listall("/tmp") {
+  <mt file.listall("/tmp") {
     $ok:entries 0;
     $err:e      1
   }
@@ -167,7 +167,7 @@ m=example;
 i=file:std.file;
 
 f=makedir():i64{
-  mt file.mkdir("/tmp/mydir") {
+  <mt file.mkdir("/tmp/mydir") {
     $ok:ok 0;
     $err:e 1
   }
@@ -183,7 +183,7 @@ m=example;
 i=file:std.file;
 
 f=copyfile():i64{
-  mt file.copy("/tmp/original.txt";"/tmp/backup.txt") {
+  <mt file.copy("/tmp/original.txt";"/tmp/backup.txt") {
     $ok:ok 0;
     $err:e 1
   }
@@ -242,7 +242,7 @@ i=file:std.file;
 i=str:std.str;
 
 f=report(path:$str):i64{
-  mt file.readbytes(path) {
+  <mt file.readbytes(path) {
     $ok:b  0;
     $err:e classify(file.lasterrkind())
   }
@@ -277,14 +277,14 @@ m=example;
 i=file:std.file;
 
 f=copyexact(src:$str;dst:$str):i64{
-  mt file.readbytes(src) {
+  <mt file.readbytes(src) {
     $ok:b  save(dst;b);
     $err:e 1
   }
 };
 
 f=save(dst:$str;b:@(byte)):i64{
-  mt file.writebytes(dst;b) {
+  <mt file.writebytes(dst;b) {
     $ok:v  0;
     $err:e 1
   }

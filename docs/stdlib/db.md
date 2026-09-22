@@ -44,7 +44,7 @@ i=db:std.db;
 
 f=setup():i64{
   let n=db.exec("CREATE TABLE t(id INTEGER; name TEXT)";@());
-  mt n {$ok:v 0;$err:e 1}
+  <mt n {$ok:v 0;$err:e 1}
 };
 ```
 
@@ -58,7 +58,7 @@ i=db:std.db;
 
 f=finduser(id:$str):i64{
   let r=db.one("SELECT id,name FROM t WHERE id=?";@(id));
-  mt r {$ok:v 0;$err:e 1}
+  <mt r {$ok:v 0;$err:e 1}
 };
 ```
 
@@ -72,7 +72,7 @@ i=db:std.db;
 
 f=allrows():i64{
   let rows=db.many("SELECT * FROM t";@());
-  mt rows {$ok:v 0;$err:e 1}
+  <mt rows {$ok:v 0;$err:e 1}
 };
 ```
 

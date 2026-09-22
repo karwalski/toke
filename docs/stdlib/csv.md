@@ -49,7 +49,7 @@ i=str:std.str;
 
 f=parsedemo():i64{
   let raw=str.bytes("name,score\nAlice,95\nBob,87");
-  mt csv.parse(raw) {
+  <mt csv.parse(raw) {
     $ok:rows 0;
     $err:e   1
   }
@@ -84,7 +84,7 @@ i=str:std.str;
 f=headerdemo():i64{
   let data=str.bytes("name,age\nAlice,30\nBob,25");
   let r=csv.reader(data;44);
-  mt csv.header(r) {
+  <mt csv.header(r) {
     $ok:hdr 0;
     $err:e  1
   }
@@ -103,7 +103,7 @@ i=str:std.str;
 f=nextdemo():i64{
   let data=str.bytes("1,2\n3,4\n");
   let r=csv.reader(data;44);
-  mt csv.next(r) {
+  <mt csv.next(r) {
     $ok:row 0;
     $err:e  1
   }
@@ -202,7 +202,7 @@ f=filterscores(inpath:$str;outpath:$str;threshold:$str):i64{
   };
 
   let out=csv.flush(w);
-  mt file.write(outpath;str.frombytes(out)) {
+  <mt file.write(outpath;str.frombytes(out)) {
     $ok:ok 0;
     $err:e 1
   }

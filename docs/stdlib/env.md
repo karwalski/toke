@@ -34,7 +34,7 @@ i=env:std.env;
 
 f=showpath():i64{
   let r=env.get("PATH");
-  mt r {
+  <mt r {
     $ok:v  0;
     $err:e 1
   }

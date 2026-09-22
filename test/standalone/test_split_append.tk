@@ -45,6 +45,6 @@ f=main():i64{
     fail=fail+1
   };
 
-  io.println(str.concat("RESULT pass=";str.concat(str.fromint(pass);str.concat(" fail=";str.fromint(fail)))))
+  io.println(str.concat("RESULT pass=";str.concat(str.fromint(pass);str.concat(" fail=";str.fromint(fail)))));
   <0
 }

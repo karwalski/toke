@@ -717,6 +717,70 @@ The two property names that do exist are reported in `expected`.
 
 Emitted when code assigns to a `let` binding that was not declared mutable.
 
+### E4071
+
+**Function body ends in a value expression with no `<`**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | typecheck |
+
+`<` is toke's return operator. A function body that ends in a *value*
+expression without one computes the value, discards it, and returns `0` —
+so this is a hard error, not an implicit tail return.
+
+<!-- skip-check -->
+```text
+m=test;
+f=arith(): i64 { 1+2+3 };
+```
+
+Until 127.113 that program compiled clean, `--lint` said nothing, and
+`arith()` returned **0** while `<1+2+3` returned **6**. The IR showed the
+shape exactly: the exit block loaded the computed value and then threw it
+away — `%t16 = load i64, i64* %t0` followed by `ret i64 0 ; implicit return`.
+The same held for `if(x>0){7}el{9}`, for a tail `mt`, and for `str`. 56.10.2
+diagnosed this in 2026-05 for pointers ("all content items stored as NULL
+pointers"), worked around it at the call site with `let r=...; <r`, and
+logged the codegen bug; this is the diagnostic that should have been written
+then.
+
+The repair is to say what the function returns:
+
+<!-- skip-check -->
+```text
+m=test;
+f=arith(): i64 { <1+2+3 };
+f=tailif(x: i64): i64 { if(x>0){<7}el{<9} };
+```
+
+**Scope.** The check fires only on a discarded *value*, where the silent `0`
+is a wrong answer:
+
+* the function's return type is neither `void` nor unresolved, **and**
+* the last statement of the body is an expression statement, a complete
+  `if`/`el`, or a `mt`, **and**
+* that statement evaluates to a value — either a type the checker resolved,
+  or an expression whose only possible effect is to compute one.
+
+A tail call returning `void` (`io.println(..)`) discards nothing and is not
+this diagnostic. Neither is a non-void function that simply never returns at
+all; that is a separate defect.
+
+**`fix` field.** Populated only where prefixing `<` is the sole reading the
+source can have: arithmetic, a literal, a binding, a field or index read, a
+cast, or a composite literal. It is deliberately **absent** for
+
+* a **call** — the result may be discarded on purpose, and `<` would change
+  behaviour rather than restore it;
+* a **`!` propagation** — it reads as error handling, not a return value;
+* an **`if`/`mt`** — the repair is a `<` inside each arm, not one in front of
+  the construct, and the two are not interchangeable.
+
+Per `AGENTS.md` §3.1 an incorrect `fix` breaks the automated repair loop, and
+131.78 is the standing example of an "obvious" suggested fix that was wrong.
+
 ## Arena Errors (E5xxx)
 
 ### E5001

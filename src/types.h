@@ -60,6 +60,7 @@ typedef enum {
 /* E4050-E4052 removed: spawn/await removed per D4=B */
 #define E4060 4060  /* FFI type mismatch                              */
 #define E4070 4070  /* assignment to immutable binding                 */
+#define E4071 4071  /* function body ends in a value expression with no '<' */
 
 typedef struct Type {
     TypeKind      kind;
