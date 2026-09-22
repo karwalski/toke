@@ -195,13 +195,19 @@ f=main():i64{
 
 ## Large workbooks
 
-Two separate ceilings apply, and only one of them is `std.xlsx`'s.
+Measured, on workbooks written by openpyxl with eight columns per row:
 
-**The container.** `std.zip` refuses an archive over 128 MiB and caps the *cumulative uncompressed* size of its entries at 64 MiB. A worksheet's XML is the entry that grows, and it is verbose -- roughly 40-80 bytes per populated cell -- so the uncompressed cap, not the file size, is what a very large workbook meets first.
+| Cells | File | Uncompressed XML | Parse | Peak RSS |
+|---|---|---|---|---|
+| 200,000 | 936 KB | 8.1 MB | 0.09 s | 59 MiB |
+| 480,000 | 2.2 MB | 19.7 MB | 0.22 s | 138 MiB |
+| 1,040,000 | 4.8 MB | 43.3 MB | refused | -- |
 
-**The toke side.** `xlsx.open` takes `@(byte)`, which costs eight bytes per byte. `xlsx.openfile` exists so that a workbook on disk never pays that: the container is read and parsed in C and only the resolved cells cross into toke.
+**`TK_XLSX_MAX_CELLS` is what a large workbook meets first, not the archive caps.** The 1,040,000-cell workbook is refused with `xlsx: sheet cell cap exceeded (rows x columns)` while its 43 MB of XML is still comfortably inside `std.zip`'s 64 MiB cumulative-uncompressed ceiling -- at roughly 41 bytes of XML per populated cell, that ceiling would not bind until about 1.6 million cells. So the archive caps are the *second* line of defence here, and the cell cap is the one to raise if a real input needs more.
 
-It follows that [`file.readrange`](/docs/stdlib/file) (story 135.12) is **not** on the path for a workbook on disk -- `xlsx.openfile` does not route through it, and does not need to. `file.readrange` is what a *toke-level* consumer needs to window a large file; a C-side reader seeks with the C library directly. The bounded read remains the right tool for a toke program handling a large input by hand.
+**The toke side is the reason `xlsx.openfile` exists.** `xlsx.open` takes `@(byte)`, which costs eight bytes per byte, so a 5 MB workbook routed through it would want 40 MB of toke array before a cell is read -- and anything over 64 MiB could not be read into one at all. `xlsx.openfile` reads and parses the container in C; only the resolved cells cross into toke.
+
+**[`file.readrange`](/docs/stdlib/file) (story 135.12) is not on this path.** `xlsx.openfile` does not route through it and does not need to: `std.zip` reads the archive with the C library, which already seeks. The bounded read is what a *toke-level* consumer needs to window a large file by hand; it is not what makes a large workbook readable here.
 
 ## Limits, in one place
 
