@@ -4838,14 +4838,13 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
                 int idx = emit_expr(c, n->children[1]);
                 const char *ity = expr_llvm_type(c, n->children[1]);
-                if (strcmp(ity, "i64")) {
-                    int z = next_tmp(c);
-                    if (!strcmp(ity, "i8*"))
-                        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, idx);
-                    else
-                        fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, idx);
-                    idx = z;
-                }
+                /* 137.3: this was a two-way if/else that treated EVERY
+                 * non-i64, non-i8* index as an i1 — so an i8/i16/i32 index
+                 * (and a double, and a float) got `zext i1` on a value of
+                 * that width and clang rejected the module.  The coercion
+                 * must consult the operand's actual type, so defer to the one
+                 * place that already knows every pair (coerce_value, 57.13.1). */
+                idx = coerce_value(c, idx, ity, "i64");
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = call i64 @tk_map_get(i8* %%t%d, i64 %%t%d)\n",
                         t, base_map, idx);
@@ -4873,14 +4872,9 @@ static int emit_expr(Ctx *c, const Node *n)
             if (resolved_get) {
                 int idx = emit_expr(c, n->children[1]);
                 const char *ity = expr_llvm_type(c, n->children[1]);
-                if (strcmp(ity, "i64")) {
-                    int z = next_tmp(c);
-                    if (!strcmp(ity, "i1"))
-                        fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, idx);
-                    else
-                        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, idx);
-                    idx = z;
-                }
+                /* 137.3: the mirror of the same blind default — anything
+                 * that was not i1 was assumed to be i8*.  Same fix. */
+                idx = coerce_value(c, idx, ity, "i64");
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = call i64 @%s( i64 %%t%d)\n", t, resolved_get, idx);
                 return t;
@@ -4938,14 +4932,13 @@ static int emit_expr(Ctx *c, const Node *n)
                 }
                 int idx = emit_expr(c, n->children[1]);
                 const char *ity = expr_llvm_type(c, n->children[1]);
-                if (strcmp(ity, "i64")) {
-                    int z = next_tmp(c);
-                    if (!strcmp(ity, "i8*"))
-                        fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, idx);
-                    else
-                        fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, idx);
-                    idx = z;
-                }
+                /* 137.3: this was a two-way if/else that treated EVERY
+                 * non-i64, non-i8* index as an i1 — so an i8/i16/i32 index
+                 * (and a double, and a float) got `zext i1` on a value of
+                 * that width and clang rejected the module.  The coercion
+                 * must consult the operand's actual type, so defer to the one
+                 * place that already knows every pair (coerce_value, 57.13.1). */
+                idx = coerce_value(c, idx, ity, "i64");
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = call i64 @tk_map_get(i8* %%t%d, i64 %%t%d)\n",
                         t, base_map, idx);
@@ -4982,14 +4975,9 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         int idx  = emit_expr(c, n->children[1]);
         { const char *ity = expr_llvm_type(c, n->children[1]);
-          if (strcmp(ity, "i64")) {
-            int z = next_tmp(c);
-            if (!strcmp(ity, "i8*"))
-                fprintf(c->out, "  %%t%d = ptrtoint i8* %%t%d to i64\n", z, idx);
-            else
-                fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", z, idx);
-            idx = z;
-          }
+          /* 137.3: see the matching note on the map .get paths — a blind
+           * `zext i1` default on an index of any other width. */
+          idx = coerce_value(c, idx, ity, "i64");
         }
         /* 124.2a: RT003 bounds check on the real array-subscript path (Vec, map,
          * module-alias, and stdlib `.get` were all dispatched earlier). The array
@@ -5902,6 +5890,50 @@ static int emit_expr(Ctx *c, const Node *n)
                     if (ucs && ucs->err_type_name[0]) use_current_error = 1;
                 }
             }
+        }
+
+        /* 137.2: everything below is the RESULT-match lowering — structurally
+         * binary.  It dispatches once on `br i1` and then labels arm 0 rm_okN
+         * and EVERY later arm rm_errN, so a third arm re-opens a block that is
+         * already terminated: "Terminator found in the middle of a basic
+         * block!".  The loke report's suggested fix — make the label counter
+         * per-arm — is the wrong mechanism: unique labels would give
+         * unreachable blocks and a dispatch that still only ever chooses
+         * between two of them, because there is exactly one condition
+         * (@tk_current_error) and no tag to switch on.
+         *
+         * Reaching here with 3+ arms means the two lowerings that CAN handle
+         * them both declined: the sum-tag switch (the scrutinee's sum type did
+         * not resolve, or the first arm names no variant of it) and the
+         * 3+-arm string chain (the scrutinee is not i8*).  So the compiler has
+         * not established what it is matching on.  Diagnose that, which is the
+         * report's own secondary suggestion and the condition that makes the
+         * defect reachable at all — rather than emit IR for a dispatch that
+         * cannot exist. */
+        if (num_arms >= 3) {
+            char mmsg[320], mfix[320];
+            char t0[128] = "";
+            if (n->children[1] && n->children[1]->child_count >= 1)
+                tok_cp(c->src, n->children[1]->children[0], t0, sizeof t0);
+            if (scr_sum)
+                snprintf(mmsg, sizeof mmsg,
+                    "match has %d arms, but '$%s' is not a variant of sum type '%s'",
+                    num_arms, t0, scr_sum);
+            else
+                snprintf(mmsg, sizeof mmsg,
+                    "match has %d arms, but the sum type of the matched value is not established",
+                    num_arms);
+            snprintf(mfix, sizeof mfix,
+                "annotate the matched value with its sum type, or match it in a "
+                "function that takes it as a typed parameter; a match of 3 or "
+                "more arms needs the type to dispatch on");
+            diag_emit(DIAG_ERROR, E9005,
+                      n->tok_start, n->line, n->col, mmsg, "fix", mfix, NULL);
+            /* Emit nothing further for this match: the result slot is already
+             * allocated, so load it and let the (failed) build stop here. */
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = load %s, %s* %%t%d\n", t, res_ty, res_ty, res_slot);
+            return t;
         }
 
         /* 2-arm ok/err bifurcation (original path) */
@@ -7047,6 +7079,30 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         mangle_fn_name(c, fn, sizeof fn);
         const FnSig *sig = lookup_fn(c, fn);
         if (sig) return sig->ret;
+        /* 137.1: a one-argument call to a name that is not a function and not
+         * a known sum variant is the variant-constructor PASS-THROUGH in
+         * emit_expr — `$ok(x)`, `$err(x)`, any unresolved `$name(x)`.  That
+         * branch returns the ARGUMENT's value unchanged (ptrtoint'ing only an
+         * i8*), so the expression's type is the argument's type.  This tail
+         * answered "i64" for all of them, and every caller that coerces on the
+         * strength of that answer then emitted a conversion whose operand was
+         * a different width: `<$ok(x>10)` in a `bool!$err` function produced
+         * `trunc i64 %t to i1` on an i1 (the loke T-1 report), and an f64
+         * payload produced the same trunc on a double.  Mirror emit_expr
+         * exactly — the same rule 127.93 established for sub-namespace calls,
+         * where the two answers diverging was likewise invalid IR.
+         *
+         * Note this is NOT the loke report's stated mechanism (a missing
+         * `zext` before an `inttoptr`).  Adding a widening instruction would
+         * not have helped: the coercion site is correct and complete, it was
+         * being told the wrong source type. */
+        if (n->child_count == 2 && strncmp(fn, "tk_", 3) != 0 &&
+            !variant_ctor_sum(c, n)) {
+            const char *aty = expr_llvm_type(c, n->children[1]);
+            /* emit_expr ptrtoints an i8* argument into the i64 slot. */
+            if (!strcmp(aty, "i8*")) return "i64";
+            return aty;
+        }
         return "i64";
     }
     case NODE_CAST_EXPR: {
