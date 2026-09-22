@@ -406,11 +406,100 @@ TkLlmMsg *llm_tool_result_msgs(TkToolResult *results, uint64_t nresults,
 }
 
 /* -----------------------------------------------------------------------
+ * tools_extra — the "tools" member of the request body, as
+ * `"tools":[…]` without the enclosing braces, ready for llm_chat_extra.
+ *
+ * Returns NULL when there are no tools to send. That is deliberate and is
+ * not an error: an OpenAI-compatible provider rejects `"tools":[]` as too
+ * short, and a request with no tools is exactly a plain chat.
+ * ----------------------------------------------------------------------- */
+static char *tools_extra(TkToolDecl *tools, uint64_t ntools)
+{
+    if (!tools || ntools == 0) return NULL;
+    const char *tools_json = llm_tool_build_tools_json(tools, ntools);
+    if (!tools_json) return NULL;
+    size_t n = strlen(tools_json) + sizeof("\"tools\":");
+    char  *out = malloc(n);
+    if (!out) { free((char *)tools_json); return NULL; }
+    snprintf(out, n, "\"tools\":%s", tools_json);
+    free((char *)tools_json);
+    return out;
+}
+
+/* -----------------------------------------------------------------------
  * llm_chatwithtools
  *
- * Build a full OpenAI request body with "tools" injected, send it via the
- * HTTP layer, then parse tool_calls from the response.
+ * Send the conversation with the tool declarations attached, and return the
+ * tool calls the model asked for.
+ *
+ * Story 136.27. Both halves of this used to be broken in the same place.
+ * The old body built the full request with "tools" injected, then
+ *
+ *     free(full);  / * not yet usable via the current public API * /
+ *     TkLlmResp resp = llm_chat(c, msgs, nmsgs, 0.7);
+ *
+ * — it discarded the request it had just built and sent a plain chat, so
+ * the tools never reached the wire. And even had they, it then parsed
+ * tool_calls out of `resp.content`; tool_calls is content's SIBLING in
+ * choices[0].message, so it is not in that string and never can be. A
+ * caller asking for tool use therefore got a toolless answer, and where a
+ * caller ignores ncalls (llm_agentic_loop did) that answer reads as final.
+ *
+ * The comment claiming this needed "the lower-level send API … exposed in a
+ * future story" was the whole defect: it is llm_chat_extra, added with this
+ * fix, and it carries both the extra request members and the raw response.
  * ----------------------------------------------------------------------- */
+/* -----------------------------------------------------------------------
+ * tktool_tools_extra — the same `"tools":[…]` member, built from the
+ * handler-carrying TkTool form used by llm_parallel_tool_calls and
+ * llm_agentic_loop. TkTool carries its parameters as a ready-made JSON
+ * schema object rather than a TkToolParam list, so it is emitted verbatim.
+ *
+ * Story 136.27: both of those functions called llm_chat, which sends no
+ * tools at all, so neither could ever see a tool call — llm_agentic_loop in
+ * particular then read the toolless prose as its FINAL ANSWER and returned
+ * it, which is the "plausible reply with no tool use" the story describes.
+ * ----------------------------------------------------------------------- */
+static char *tktool_tools_extra(TkTool *tools, uint64_t ntools)
+{
+    if (!tools || ntools == 0) return NULL;
+
+    size_t cap = 512, len = 0;
+    char  *buf = malloc(cap);
+    if (!buf) return NULL;
+    buf[0] = '\0';
+
+#define XEMIT(str) do { \
+    if (buf_append(&buf, &len, &cap, (str)) != 0) { free(buf); return NULL; } \
+} while (0)
+#define XEMIT_ESC(str) do { \
+    char *_e = json_escape(str); \
+    if (!_e) { free(buf); return NULL; } \
+    int _r = buf_append(&buf, &len, &cap, _e); \
+    free(_e); \
+    if (_r != 0) { free(buf); return NULL; } \
+} while (0)
+
+    XEMIT("\"tools\":[");
+    for (uint64_t i = 0; i < ntools; i++) {
+        if (i > 0) XEMIT(",");
+        XEMIT("{\"type\":\"function\",\"function\":{\"name\":\"");
+        XEMIT_ESC(tools[i].name);
+        XEMIT("\",\"description\":\"");
+        XEMIT_ESC(tools[i].description);
+        XEMIT("\"");
+        if (tools[i].parameters_json && tools[i].parameters_json[0]) {
+            XEMIT(",\"parameters\":");
+            XEMIT(tools[i].parameters_json);
+        }
+        XEMIT("}}");
+    }
+    XEMIT("]");
+#undef XEMIT
+#undef XEMIT_ESC
+    return buf;
+}
+
 ToolCallResult llm_chatwithtools(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs,
                                   TkToolDecl *tools, uint64_t ntools)
 {
@@ -420,80 +509,31 @@ ToolCallResult llm_chatwithtools(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs,
     err_res.is_err  = 1;
     err_res.err_msg = NULL;
 
-    /* Build the base request (without tools) using llm_build_request */
-    const char *base = llm_build_request(msgs, nmsgs,
-                                          c->model ? c->model : "gpt-4o",
-                                          0.7, 0);
-    if (!base) {
-        err_res.err_msg = strdup("llm_build_request failed");
+    if (!c) {
+        err_res.err_msg = strdup("null client");
         return err_res;
     }
 
-    /* Build tools JSON */
-    const char *tools_json = llm_tool_build_tools_json(tools, ntools);
-    if (!tools_json) {
-        free((char *)base);
+    char *extra = tools_extra(tools, ntools);
+    if (!extra && tools && ntools > 0) {
         err_res.err_msg = strdup("llm_tool_build_tools_json failed");
         return err_res;
     }
 
-    /* Inject "tools":[...] into the request JSON.
-     * The base JSON ends with '}'; we insert before that closing brace. */
-    size_t base_len  = strlen(base);
-    size_t tools_len = strlen(tools_json);
-    /* find last '}' */
-    size_t last_brace = base_len;
-    while (last_brace > 0 && base[last_brace - 1] != '}') last_brace--;
+    char     *raw  = NULL;
+    TkLlmResp resp = llm_chat_extra(c, msgs, nmsgs, 0.7, extra, &raw);
+    free(extra);
 
-    size_t full_len = base_len + tools_len + 32;
-    char  *full     = malloc(full_len);
-    if (!full) {
-        free((char *)base);
-        free((char *)tools_json);
-        err_res.err_msg = strdup("out of memory");
+    if (resp.is_err) {
+        free(raw);
+        err_res.err_msg = resp.err_msg ? strdup(resp.err_msg)
+                                       : strdup("llm_chat failed");
         return err_res;
     }
 
-    /* Copy base up to (but not including) the last '}' */
-    size_t prefix_len = last_brace - 1; /* exclude trailing '}' */
-    memcpy(full, base, prefix_len);
-    /* append ,"tools":[...]} */
-    size_t written = prefix_len;
-    memcpy(full + written, ",\"tools\":", 9); written += 9;
-    memcpy(full + written, tools_json, tools_len); written += tools_len;
-    memcpy(full + written, "}", 1); written += 1;
-    full[written] = '\0';
-
-    free((char *)base);
-    free((char *)tools_json);
-
-    /* Use llm_chat to send the extended request.  We pass an empty msgs array
-     * and rely on the fact that llm_chat calls llm_build_request internally —
-     * but we need the raw HTTP send path.  Since llm_chat does not accept a
-     * pre-built body, we build a synthetic single-message conversation that
-     * contains the pre-built JSON embedded as the system prompt, then re-parse.
-     *
-     * Simpler approach: call llm_chat with the original msgs (which builds a
-     * standard body), then note that tool_calls will only be present in the
-     * response if the server honours the tools field.  Because we cannot inject
-     * the pre-built body through the public API without modifying llm.c, we use
-     * llm_chat here and note this limitation in the story.  The full-body
-     * injection path is handled by the caller constructing the HTTP request
-     * directly when the lower-level send API is exposed in a future story.
-     */
-    free(full); /* not yet usable via the current public API */
-
-    TkLlmResp resp = llm_chat(c, msgs, nmsgs, 0.7);
-    if (resp.is_err) {
-        ToolCallResult r;
-        r.calls   = NULL;
-        r.ncalls  = 0;
-        r.is_err  = 1;
-        r.err_msg = resp.err_msg ? strdup(resp.err_msg) : strdup("llm_chat failed");
-        return r;
-    }
-
-    ToolCallResult tc = llm_parse_tool_calls(resp.content);
+    /* Parse the RAW body: tool_calls sits beside "content", not inside it. */
+    ToolCallResult tc = llm_parse_tool_calls(raw ? raw : resp.content);
+    free(raw);
     return tc;
 }
 
@@ -534,8 +574,14 @@ TkLlmResp llm_submitresult(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs,
     memcpy(all, msgs, nmsgs * sizeof(TkLlmMsg));
     memcpy(all + nmsgs, result_msgs, nresult_msgs * sizeof(TkLlmMsg));
 
-    /* Send with tools in the request (same approach as llm_chatwithtools) */
-    TkLlmResp resp = llm_chat(c, all, total, 0.7);
+    /* Send with tools in the request -- genuinely, now. 136.27: this said
+     * "same approach as llm_chatwithtools" while that approach dropped the
+     * tools, and the two `(void)` casts below were the give-away. A provider
+     * told about no tools may not emit a further tool call, so a tool
+     * conversation could not continue past one round. */
+    char     *extra = tools_extra(tools, ntools);
+    TkLlmResp resp  = llm_chat_extra(c, all, total, 0.7, extra, NULL);
+    free(extra);
 
     /* Free extended structures */
     free(all);
@@ -544,9 +590,6 @@ TkLlmResp llm_submitresult(TkLlmClient *c, TkLlmMsg *msgs, uint64_t nmsgs,
         free((char *)result_msgs[i].content);
     }
     free(result_msgs);
-
-    (void)tools;
-    (void)ntools;
 
     return resp;
 }
@@ -697,14 +740,21 @@ ToolCallResultArray llm_parallel_tool_calls(TkLlmClient *client,
     if (!client || !messages || nmsg == 0) return out;
     if (!client->base_url || client->base_url[0] == '\0') return out;
 
-    /* Call llm_chat to get a response */
-    TkLlmResp resp = llm_chat(client, messages, nmsg, 0.7);
+    /* Send the tools, and read tool_calls out of the RAW response body —
+     * resp.content is only choices[0].message.content, and tool_calls is
+     * that message's sibling (136.27). */
+    char     *extra = tktool_tools_extra(tools, ntools);
+    char     *raw   = NULL;
+    TkLlmResp resp  = llm_chat_extra(client, messages, nmsg, 0.7, extra, &raw);
+    free(extra);
     if (resp.is_err || !resp.content) {
+        free(raw);
         return out; /* network/config error — return empty */
     }
 
     /* Parse tool_calls from the response */
-    ToolCallResult tc = llm_parse_tool_calls(resp.content);
+    ToolCallResult tc = llm_parse_tool_calls(raw ? raw : resp.content);
+    free(raw);
     if (tc.is_err || tc.ncalls == 0) {
         /* No tool calls — return empty array */
         if (tc.calls) free(tc.calls);
@@ -823,9 +873,19 @@ const char *llm_agentic_loop(TkLlmClient *client,
 
     const char *final_answer = NULL;
 
+    /* 136.27: built once, sent on EVERY iteration. Without it the model is
+     * never told the tools exist, the first reply carries no tool_calls, and
+     * the loop below takes that prose as the final answer on iteration 0 —
+     * a plausible reply with no tool use, and no error anywhere. */
+    char *tools_json_extra = tktool_tools_extra(tools, ntools);
+
     for (uint64_t iter = 0; iter < max_iterations; iter++) {
-        TkLlmResp resp = llm_chat(client, conv, conv_len, 0.7);
+        char     *raw  = NULL;
+        TkLlmResp resp = llm_chat_extra(client, conv, conv_len, 0.7,
+                                        tools_json_extra, &raw);
         if (resp.is_err || !resp.content) {
+            free(raw);
+            free(tools_json_extra);
             /* Error from LLM — return error string */
             const char *msg = resp.err_msg ? resp.err_msg : "llm_chat failed";
             size_t mlen = strlen(msg) + 32;
@@ -838,8 +898,10 @@ const char *llm_agentic_loop(TkLlmClient *client,
             return err ? err : strdup("[error]");
         }
 
-        /* Parse tool_calls from response */
-        ToolCallResult tc = llm_parse_tool_calls(resp.content);
+        /* Parse tool_calls from the raw body, not from content: tool_calls
+         * is content's sibling in choices[0].message (136.27). */
+        ToolCallResult tc = llm_parse_tool_calls(raw ? raw : resp.content);
+        free(raw);
 
         if (tc.ncalls == 0 || tc.is_err) {
             /* No tool calls — this is the final answer */
@@ -857,6 +919,7 @@ const char *llm_agentic_loop(TkLlmClient *client,
                 for (uint64_t h = 0; h < heap_count; h++) free(heap_contents[h]);
                 free(heap_contents);
                 free(conv);
+                free(tools_json_extra);
                 if (tc.calls) free(tc.calls);
                 return strdup("[error: out of memory]");
             }
@@ -920,6 +983,7 @@ const char *llm_agentic_loop(TkLlmClient *client,
                     for (uint64_t h = 0; h < heap_count; h++) free(heap_contents[h]);
                     free(heap_contents);
                     free(conv);
+                    free(tools_json_extra);
                     for (uint64_t cc = 0; cc < tc.ncalls; cc++) {
                         free((char *)tc.calls[cc].call_id);
                         free((char *)tc.calls[cc].tool_name);
@@ -948,6 +1012,7 @@ const char *llm_agentic_loop(TkLlmClient *client,
     for (uint64_t h = 0; h < heap_count; h++) free(heap_contents[h]);
     free(heap_contents);
     free(conv);
+    free(tools_json_extra);
 
     if (final_answer) return final_answer;
     return strdup("[max iterations reached]");
