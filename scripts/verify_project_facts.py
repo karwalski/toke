@@ -290,6 +290,55 @@ def check_compiler_strings(facts):
     return 0
 
 
+def check_version_sources():
+    """Story 136.60: VERSION, src/main.c and the release tag are three
+    independently maintained statements of one fact, with nothing linking
+    them.  That is how `2.8.0` survived the entire v0.4 language break --
+    the `=`/`==` split, expression-`if`, the capability broker and every
+    127.x fix all shipped under a version number nobody moved.
+
+    The file is the ground truth.  `src/main.c` must agree with it, and the
+    release workflow must derive its artefact version from the tag rather
+    than from a third copy.
+    """
+    bad = []
+    vpath = os.path.join(ROOT, "VERSION")
+    version = _read(vpath).strip()
+    if not version:
+        print("ERROR: VERSION is empty or missing")
+        return 1
+
+    main_c = _read(os.path.join(ROOT, "src", "main.c"))
+    m = re.search(r'#define\s+VERSION\s+"toke\s+([^"]+)"', main_c)
+    if not m:
+        bad.append(('src/main.c', 'no `#define VERSION "toke <x>"` found'))
+    elif m.group(1).strip() != version:
+        bad.append(('src/main.c',
+                    'states %r; VERSION says %r' % (m.group(1).strip(), version)))
+
+    wf = os.path.join(ROOT, ".github", "workflows", "release.yml")
+    if os.path.exists(wf):
+        text = _read(wf)
+        # A literal semver in the workflow is a third source of the fact.
+        for lit in set(re.findall(r'(?<![\w.])(\d+\.\d+\.\d+)(?![\w.])', text)):
+            if lit != version and 'GITHUB_REF_NAME' not in text:
+                bad.append(('.github/workflows/release.yml',
+                            'hard-codes %r instead of deriving from the tag' % lit))
+
+    if bad:
+        print("ERROR: the version is stated in more than one place and they "
+              "disagree (story 136.60):\n")
+        for where, msg in bad:
+            print("  %s: %s" % (where, msg))
+        print("\nVERSION is the ground truth. Correct the other statement, "
+              "never the file,\nand remember the built binary keeps the old "
+              "string until `make` reruns.")
+        return 1
+    print("version sources OK: VERSION, src/main.c and the release workflow "
+          "all state %s." % version)
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # The rest of the fact sheet
 # ---------------------------------------------------------------------------
@@ -747,9 +796,10 @@ def main():
         return 0
     if "--check" in sys.argv:
         return (check_against_baseline(facts) | check_compiler_strings(facts)
+                | check_version_sources()
                 | check_repo_map(facts) | sync_surfaces(facts))
     if "--check-src" in sys.argv:
-        return check_compiler_strings(facts)
+        return check_compiler_strings(facts) | check_version_sources()
     if "--probe" in sys.argv:
         return probe_charset(facts)
     width = max(len(k) for k in facts)
