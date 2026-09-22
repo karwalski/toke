@@ -68,15 +68,15 @@ and build clean, binary dies; **WRONG** = runs, wrong output.
 | first | `a.first()` / `arr.first(a)` | ok | E9003 | – | no | ABSENT (both forms) — **WITHDRAWN 136.47** |
 | last | `a.last()` / `arr.last(a)` | ok | E9003 | – | no | ABSENT (both forms) — **WITHDRAWN 136.47** |
 | find | `a.find(2)` | ok | ok | SIGSEGV | no | **NEW** CRASH: array receiver dispatched to `tk_str_find_w` (string glue) |
-| find | `arr.find(a;2)` | ok | E9003 | – | no | ABSENT module-style |
+| find | `arr.find(a;2)` | ok | ok | ok | yes | **re-measured 2026-09-22**: links and runs correctly against the generated `array.tki` surface (`tk_array_*_w` in `collections_glue.c`, linked for std.array via `stdlib_deps.c:132`). The ABSENT verdict was stale — `@(3;1;2)` gives 2 |
 | indexof | `a.indexof(1)` | ok | ok | SIGSEGV | no | **NEW** CRASH: routed to `tk_str_indexof_w` |
-| indexof | `arr.indexof(a;1)` | ok | E9003 | – | no | ABSENT module-style |
+| indexof | `arr.indexof(a;1)` | ok | ok | ok | yes | **re-measured 2026-09-22**: links and runs correctly against the generated `array.tki` surface (`tk_array_*_w` in `collections_glue.c`, linked for std.array via `stdlib_deps.c:132`). The ABSENT verdict was stale — gives 1 |
 | contains | `a.contains(2)` | ok | ok | SIGSEGV | no | **NEW** CRASH: routed to `tk_str_contains_w` |
-| contains | `arr.contains(a;2)` | ok | E9003 | – | no | ABSENT module-style |
+| contains | `arr.contains(a;2)` | ok | ok | ok | yes | **re-measured 2026-09-22**: links and runs correctly against the generated `array.tki` surface (`tk_array_*_w` in `collections_glue.c`, linked for std.array via `stdlib_deps.c:132`). The ABSENT verdict was stale — gives 1, and 0 for an absent value |
 | slice | `a.slice(1;3)` | ok | ok | SIGSEGV | no | **NEW** CRASH: routed to `tk_str_slice_w` |
-| slice | `arr.slice(a;1;3)` | ok | E9003 | – | no | ABSENT module-style |
+| slice | `arr.slice(a;1;3)` | ok | ok | ok | yes | **re-measured 2026-09-22**: links and runs correctly against the generated `array.tki` surface (`tk_array_*_w` in `collections_glue.c`, linked for std.array via `stdlib_deps.c:132`). The ABSENT verdict was stale — gives `@(1;2)` |
 | append | `a=a.append(9)` | ok | ok | ok | yes | canonical accumulator |
-| append | `a=arr.append(a;9)` | ok | E9003 | – | no | **NEW** (low): ill-typed IR (`ptr` where `i64` expected) — module form only |
+| append | `a=arr.append(a;9)` | ok | ok | ok | yes | **re-measured 2026-09-22**: links and runs correctly against the generated `array.tki` surface (`tk_array_*_w` in `collections_glue.c`, linked for std.array via `stdlib_deps.c:132`). The ABSENT verdict was stale; the ill-typed-IR verdict did not reproduce — `len` goes 3 → 4 |
 | `+@()` | `a=a+@(9)` | ok | ok | ok | yes | canonical alternative; the ONLY append form whose element type is inferred for interpolation (see 127.10) |
 | push | `a=a.push(9)` | ok | ok | ok | yes | alias of append |
 | push | `a.push(9);` (bare) | ok | ok | ok | yes* | **127.2 NOT reproducible** on this SHA: silent no-op (`len` unchanged), exit 0, also for `mut.@()` and inside loops. *Correct only in the value-semantics sense; see 127.3 |
