@@ -1,16 +1,16 @@
 {
  "story": "131.2",
  "tkc_version": "toke 2.8.0",
- "tkc_sha": "64527e67ad7565113d46f1fb4d6647c7c7baa38d",
- "tkc_bin_sha": "110256fcd250695e92f11edf2ae4bf0b656aeeabedb0421c4dccd7fcb8b556b9",
- "tkc_path": "/Users/matthew.watt/tk/toke/tkc",
- "generated": "2026-09-19",
+ "tkc_sha": "445f5199a444e4c84f84e7f56e262b2e693012ac",
+ "tkc_bin_sha": "a620f201b58c03c94325feb60b745f205710194af555a4fc169665cff3dd8058",
+ "tkc_path": "/Users/matthew.watt/tk/toke/toke",
+ "generated": "2026-09-22",
  "summary": {
   "probes": 130,
-  "check_ok": 127,
-  "build_ok": 103,
-  "run_ok": 102,
-  "correct": 100
+  "check_ok": 111,
+  "build_ok": 101,
+  "run_ok": 100,
+  "correct": 101
  },
  "results": [
   {
@@ -35,17 +35,19 @@
   {
    "probe": "all_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_all_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "0",
@@ -73,17 +75,19 @@
   {
    "probe": "any_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_any_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "1",
@@ -384,17 +388,19 @@
   {
    "probe": "count_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_count_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "1",
@@ -422,17 +428,19 @@
   {
    "probe": "each_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_each_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "3\n1\n2",
@@ -588,17 +596,19 @@
   {
    "probe": "filter_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_filter_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "1 2",
@@ -668,17 +678,19 @@
   {
    "probe": "first_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_first_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "3",
@@ -729,17 +741,19 @@
   {
    "probe": "fold_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_fold_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "6",
@@ -1397,17 +1411,19 @@
   {
    "probe": "last_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_last_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "2",
@@ -1563,17 +1579,19 @@
   {
    "probe": "map_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_map_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "6 2 4",
@@ -1601,17 +1619,19 @@
   {
    "probe": "max_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_max_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "3",
@@ -1639,17 +1659,19 @@
   {
    "probe": "min_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_min_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "1",
@@ -1826,17 +1848,19 @@
   {
    "probe": "reduce_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_reduce_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "6",
@@ -2013,17 +2037,19 @@
   {
    "probe": "sort_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_sort_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "1 2 3",
@@ -2471,17 +2497,19 @@
   {
    "probe": "sum_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4027"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4027"
     ],
-    "undefined_symbol": "tk_array_sum_w"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "6",
@@ -2553,23 +2581,23 @@
   {
    "probe": "ufcs_extra_arg_module",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4026"
+    ]
    },
    "build": {
-    "exit": 0,
-    "ok": true,
-    "codes": [],
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4026"
+    ],
     "undefined_symbol": null
    },
-   "run": {
-    "exit": 0,
-    "ok": true,
-    "stdout": "xxA"
-   },
+   "run": null,
    "expected": "#checkfail",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "ufcs_extra_arg",
@@ -2677,21 +2705,21 @@
   {
    "probe": "values_prop",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4035"
+    ]
    },
    "build": {
-    "exit": 0,
-    "ok": true,
-    "codes": [],
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4035"
+    ],
     "undefined_symbol": null
    },
-   "run": {
-    "exit": 0,
-    "ok": true,
-    "stdout": "4349010944 4340015260"
-   },
+   "run": null,
    "expected": "2 1",
    "correct": false
   }
