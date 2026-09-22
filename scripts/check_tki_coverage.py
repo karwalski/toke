@@ -333,15 +333,28 @@ def main() -> int:
 
     # 136.47 — a registered module with no interface.
     tki_modules = set()
+    tki_callable = set()   # interfaces that export at least one {"kind":"func"}
     for f in tki_files:
         try:
-            mod = json.loads(f.read_text()).get("module", "")
+            data = json.loads(f.read_text())
         except (json.JSONDecodeError, OSError):
             continue
-        tki_modules.add(mod[4:] if mod.startswith("std.") else mod)
+        mod = data.get("module", "")
+        short = mod[4:] if mod.startswith("std.") else mod
+        tki_modules.add(short)
+        if any(e.get("kind") == "func" for e in (data.get("exports") or [])):
+            tki_callable.add(short)
     registered = registered_modules()
     no_iface = [m for m in registered if m not in tki_modules]
-    orphan_iface = sorted(m for m in tki_modules if m and m not in set(registered))
+    # 136.55 — an interface with no `func` export has no callable surface, so
+    # "the module cannot be imported" is not a defect: there is nothing to
+    # import. std.option is such a file — it documents the T!$none convention
+    # and declares only `type` and `convention`. Warning about it forever made
+    # a state nobody can ever clear, which is how the AWAITING_PUBLISH and
+    # pending-story warnings came to sit unread. Report it, do not warn.
+    unregistered = [m for m in sorted(tki_modules) if m and m not in set(registered)]
+    orphan_iface = [m for m in unregistered if m in tki_callable]
+    iface_no_funcs = [m for m in unregistered if m not in tki_callable]
 
     # 137.12 — the compiler's own two halves disagreeing about a signature.
     c_ar = c_definition_arities()
@@ -505,6 +518,13 @@ def main() -> int:
             print(f"  std.{m}")
         print()
 
+    if iface_no_funcs:
+        print("note: convention-only interface, no stdlib_table[] row needed "
+              "(no `func` export, so nothing to import — 136.55):")
+        for m in iface_no_funcs:
+            print(f"  std.{m}")
+        print()
+
     print("=" * 60)
     print(f"check-tki: {total} .tki func exports, {len(defs)} tk_* definitions in src/stdlib/*.c")
     print(f"  PASS:        {passed}")
@@ -515,6 +535,8 @@ def main() -> int:
     print(f"  undeclared _w glue (no .tki export resolves to it): {len(undeclared)}  [informational, -v to list]")
     print(f"  registered modules: {len(registered)}, interfaces: {len(tki_files)}, "
           f"registered without one: {len(no_iface)}")
+    print(f"  unregistered interfaces with a callable surface: {len(orphan_iface)}"
+          f"  (convention-only, exempt: {len(iface_no_funcs)})")
     print(f"  names declared under two kinds in one file: {len(cross_kind)}")
     print(f"  g_stdlib_decls entries disagreeing with the C definition: {len(decl_drift)}")
     print(f"  glue symbols declared twice in g_stdlib_decls: {len(decl_dupes)}")
