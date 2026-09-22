@@ -218,9 +218,11 @@ f=onconn(conn:i64):i64{
   <0
 };
 
-(* mutualconfig, not three field assignments: TlsConfig's peer_cert_pem and
-   require_mutual carry underscores the default profile cannot express, so a
-   toke program cannot name them (136.46) *)
+(* mutualconfig, not three field assignments. Until 136.46 these fields were
+   spelled peer_cert_pem and require_mutual, which the default profile cannot
+   express, so a toke program could not name them at all; they are peercertpem
+   and requiremutual now. The constructor remains the documented route, and
+   this suite keeps using it: it is the one shape that was always writeable *)
 f=main():i64{
   let cfg=tls.mutualconfig(rd("${WORK}/s.crt"); rd("${WORK}/s.key"); rd("${WORK}/c.crt"));
   say("listening");
