@@ -2189,7 +2189,14 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         for (int i=0;i<base->field_count;i++)
             if (base->field_names[i]&&strcmp(base->field_names[i],fname)==0)
                 return base->field_types[i];
-        if (tc_can_emit(cx)) {
+        /* 127.117: guarded, like the E4033 and E4035 checks a few lines up.
+         * infer() has no memo and bind_init_type() re-enters a binding's
+         * initialiser to recover its type, so `let q=p.zz` followed by any
+         * USE of q reported this field error twice, as two diagnostic records
+         * with different ids and identical content.  That inflates the
+         * diagnostic counts that feed published figures, and it invites the
+         * repair loop to apply the same fix twice. */
+        if (tc_first_report(cx,node) && tc_can_emit(cx)) {
             char msg[256];
             snprintf(msg,sizeof(msg),"struct '%s' has no field '%s'",
                      base->name?base->name:"?",fname);
