@@ -177,14 +177,52 @@ for c in ${COMBINATORS}; do
 done
 [ "${MISSING_OK}" = 1 ] && ok "generated array.tki carries none of the 14 absent combinators"
 
-if grep -rqE '^\s*\|?\s*`?arr\.(map|fold|filter|reduce)`?' "${REPO_ROOT}/docs/reference/combinator-status.md" 2>/dev/null; then
-    if grep -q "WITHDRAWN" "${REPO_ROOT}/docs/reference/combinator-status.md"; then
-        ok "combinator-status.md marks the absent combinators WITHDRAWN"
-    else
-        bad "combinator-status.md still presents the absent combinators as available"
-    fi
+# The original form of this check grepped for a line STARTING with `arr.`,
+# which no row in this table does -- the first cell is the bare symbol name
+# -- so it always took the "no longer lists them" branch and asserted
+# nothing.  Assert the thing that matters instead: every module-style row
+# for one of the fourteen carries the marker, and none is missed.
+CS="${REPO_ROOT}/docs/reference/combinator-status.md"
+UNMARKED=""
+for c in ${COMBINATORS}; do
+    ROW="$(grep -F "\`arr.${c}(" "${CS}" || true)"
+    [ -z "${ROW}" ] && continue
+    printf '%s' "${ROW}" | grep -q "WITHDRAWN 136.47" || UNMARKED="${UNMARKED} ${c}"
+done
+if [ -z "${UNMARKED}" ]; then
+    ok "every module-style arr.* row in combinator-status.md is marked WITHDRAWN 136.47"
 else
-    ok "combinator-status.md no longer lists the absent combinators"
+    bad "combinator-status.md still presents these as available:${UNMARKED}"
+fi
+
+# The markdown table must stay a table: the marker goes INSIDE the notes
+# column.  A checkpoint of this change appended it as an extra cell, which
+# gave those rows an eighth column and broke the render.
+# BOTH failure shapes count: an eighth cell, and -- the shape the checkpoint
+# actually produced -- a trailing cell with no closing pipe.  A guard of the
+# form `/\|$/` would skip the second, which is the one that happened.
+BADCOLS="$(awk '
+    /^\| / && /arr\./ {
+        line = $0
+        sub(/[ \t]+$/, "", line)
+        n = gsub(/\|/, "|", line)
+        if (line !~ /\|$/ || n - 1 != 7) printf "%s ", NR
+    }' "${CS}")"
+if [ -z "${BADCOLS}" ]; then
+    ok "no combinator row has drifted off the table's 7 columns"
+else
+    bad "malformed table row(s) at line(s): ${BADCOLS}"
+fi
+
+# 136.47's other half: the idiom guide must no longer tell authors to prefer
+# the module spelling.  That sentence is why the form kept reaching new code.
+IG="${REPO_ROOT}/docs/spec/idiom-v0.4.md"
+if grep -qE 'Prefer `arr\.' "${IG}"; then
+    bad "idiom-v0.4.md still tells authors to prefer module-style arr.* combinators"
+elif grep -q 'Do not use the module-style' "${IG}"; then
+    ok "idiom-v0.4.md withdraws the module-style spelling and names the receiver form"
+else
+    bad "idiom-v0.4.md neither promises nor withdraws the module-style spelling"
 fi
 
 # ── 7. 136.6, the two the row put first. Their interfaces now state the
