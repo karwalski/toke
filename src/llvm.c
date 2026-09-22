@@ -5892,6 +5892,50 @@ static int emit_expr(Ctx *c, const Node *n)
             }
         }
 
+        /* 137.2: everything below is the RESULT-match lowering — structurally
+         * binary.  It dispatches once on `br i1` and then labels arm 0 rm_okN
+         * and EVERY later arm rm_errN, so a third arm re-opens a block that is
+         * already terminated: "Terminator found in the middle of a basic
+         * block!".  The loke report's suggested fix — make the label counter
+         * per-arm — is the wrong mechanism: unique labels would give
+         * unreachable blocks and a dispatch that still only ever chooses
+         * between two of them, because there is exactly one condition
+         * (@tk_current_error) and no tag to switch on.
+         *
+         * Reaching here with 3+ arms means the two lowerings that CAN handle
+         * them both declined: the sum-tag switch (the scrutinee's sum type did
+         * not resolve, or the first arm names no variant of it) and the
+         * 3+-arm string chain (the scrutinee is not i8*).  So the compiler has
+         * not established what it is matching on.  Diagnose that, which is the
+         * report's own secondary suggestion and the condition that makes the
+         * defect reachable at all — rather than emit IR for a dispatch that
+         * cannot exist. */
+        if (num_arms >= 3) {
+            char mmsg[320], mfix[320];
+            char t0[128] = "";
+            if (n->children[1] && n->children[1]->child_count >= 1)
+                tok_cp(c->src, n->children[1]->children[0], t0, sizeof t0);
+            if (scr_sum)
+                snprintf(mmsg, sizeof mmsg,
+                    "match has %d arms, but '$%s' is not a variant of sum type '%s'",
+                    num_arms, t0, scr_sum);
+            else
+                snprintf(mmsg, sizeof mmsg,
+                    "match has %d arms, but the sum type of the matched value is not established",
+                    num_arms);
+            snprintf(mfix, sizeof mfix,
+                "annotate the matched value with its sum type, or match it in a "
+                "function that takes it as a typed parameter; a match of 3 or "
+                "more arms needs the type to dispatch on");
+            diag_emit(DIAG_ERROR, E9005,
+                      n->tok_start, n->line, n->col, mmsg, "fix", mfix, NULL);
+            /* Emit nothing further for this match: the result slot is already
+             * allocated, so load it and let the (failed) build stop here. */
+            t = next_tmp(c);
+            fprintf(c->out, "  %%t%d = load %s, %s* %%t%d\n", t, res_ty, res_ty, res_slot);
+            return t;
+        }
+
         /* 2-arm ok/err bifurcation (original path) */
         int cond = next_tmp(c);
         if (zero_is_ok) {

@@ -793,6 +793,26 @@ The clang/linker sub-process returned a non-zero exit status.
 
 A `module.fn()` call refers to a stdlib module that was not imported.
 
+### E9005
+
+**Match on a value whose sum type is not established**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+A `mt` of three or more arms was written over a value whose sum type the
+compiler could not determine. Two arms lower to the result-match form
+(`$ok`/`$err`), which dispatches once on the error flag; three or more arms
+need the value's sum type so the tag can be switched on. Annotate the matched
+value with its sum type, or match it inside a function that takes it as a
+typed parameter.
+
+Before story 137.2 this shape emitted LLVM IR with a duplicated basic-block
+label and was rejected by clang with "Terminator found in the middle of a
+basic block!" — a backend crash rather than a diagnostic.
+
 ### E9010
 
 **Compiler limit exceeded**
