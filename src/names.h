@@ -26,6 +26,7 @@
 #define E2036 2036  /* no compatible version found                       */
 #define E2037 2037  /* version conflict between imports                  */
 #define W2038 2038  /* module name normalised from wrong capitalisation   */
+#define W3013 3013  /* let shadows a binding in an enclosing scope (137.6)  */
 
 /* ── ImportEntry ──────────────────────────────────────────────────────── */
 

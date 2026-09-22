@@ -2480,6 +2480,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * checking.  Returns TY_VOID.
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_ARENA_STMT: {
+        int saved_bc=cx->bind_count;   /* 137.6: see NODE_IF_STMT */
         cx->env->arena_depth++;
         cx->scope_depth++;
         for (int i=0;i<node->child_count;i++) {
@@ -2501,6 +2502,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         }
         cx->scope_depth--;
         cx->env->arena_depth--;
+        cx->bind_count=saved_bc;
         return mk_type(A,TY_VOID);
     }
 
@@ -2601,7 +2603,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     case NODE_IF_STMT: {
         /* Infer condition at current depth */
         if (node->child_count>0) infer(cx,node->children[0]);
-        /* Infer then/else branches at increased depth */
+        /* Infer then/else branches at increased depth.
+         * 137.6: the bind side-table is popped with the scope.  Nothing used
+         * to pop it, so a `let x` inside the branch left a depth-1 entry
+         * behind, and lookup_bind_depth — which searches BACKWARDS so the
+         * most recent wins — answered "depth 1" for the OUTER x afterwards.
+         * W5001 then told the reader that a function-body binding "escapes
+         * its scope: bound in a nested block", naming the wrong binding for
+         * a program that has no escape at all. */
+        int saved_bc=cx->bind_count;
         cx->scope_depth++;
         Type *then_ty=mk_type(A,TY_VOID);
         for (int i=1;i<node->child_count;i++) {
@@ -2609,6 +2619,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (i==1) then_ty=bt;   /* A1: expression-if yields the then-branch tail type */
         }
         cx->scope_depth--;
+        cx->bind_count=saved_bc;
         /* As an expression, the if yields its then-branch tail value's type.
          * Statement-position `if` callers discard the returned type. */
         return then_ty;
@@ -2625,9 +2636,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      *   children[3] = NODE_STMT_LIST body (deeper scope)
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_LOOP_STMT: {
+        int saved_bc=cx->bind_count;   /* 137.6: see NODE_IF_STMT */
         cx->scope_depth++;
         for (int i=0;i<node->child_count;i++) infer(cx,node->children[i]);
         cx->scope_depth--;
+        cx->bind_count=saved_bc;
         return mk_type(A,TY_VOID);
     }
 

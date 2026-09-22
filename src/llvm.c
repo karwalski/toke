@@ -43,6 +43,7 @@
 #include <unistd.h>     /* 121.1b: fork/execvp/_exit for argv-exec */
 #include <sys/wait.h>   /* 121.1b: waitpid/WEXITSTATUS */
 #include <dirent.h>     /* 127.80: scan the stdlib dir for .tki interfaces */
+#include <ctype.h>      /* 137.6: isalnum() in the alloca-hoisting line scan */
 
 /* 121.1b: split a whitespace-separated string, in place, into argv elements
  * (each token becomes one argv entry). Bounded by `max` so argv can't overflow.
@@ -8347,9 +8348,27 @@ static void emit_stmt(Ctx *c, const Node *n)
         fprintf(c->out, "mend%d:\n", ML);
         break;
     }
-    case NODE_STMT_LIST:
+    case NODE_STMT_LIST: {
+        /* 137.6: a block is a lexical scope, so the name aliases minted
+         * inside it end with it.
+         *
+         * make_unique_name gives a shadowing `let x` the fresh LLVM slot
+         * %x.1 and pushes the alias x -> x.1.  Nothing ever popped it, so
+         * every LATER read of the OUTER x also resolved to %x.1 — the
+         * alloca-hoisting half of this story turns that from an invalid
+         * module into a silently wrong answer, which is worse.  Dropping the
+         * aliases minted inside the block restores the frontend's own
+         * scoping (names.c pushes a Scope for exactly this node).
+         *
+         * The `locals` table is deliberately NOT truncated: it is what
+         * make_unique_name consults to decide a name is already taken, and
+         * a re-entered block must still mint a distinct slot rather than
+         * redefine %x.1. */
+        int saved_aliases = c->alias_count;
         for (int i = 0; i < n->child_count; i++) emit_stmt(c, n->children[i]);
+        c->alias_count = saved_aliases;
         break;
+    }
     case NODE_EXPR_STMT:
         if (n->child_count > 0) (void)emit_expr(c, n->children[0]);
         break;
@@ -8912,6 +8931,118 @@ static const StdlibDecl g_stdlib_decls[] = {
 };
 
 /*
+ * ── 137.6: hoist every alloca to its function's entry block ────────────
+ *
+ * The emitter writes LLVM IR as text, in source order, so an `alloca` for a
+ * `let` inside an `if` or a `lp` body was emitted inside that branch's basic
+ * block.  Nothing else moved: the *uses* of that slot — and, after 6807's
+ * unique-local renaming, the uses of an OUTER binding of the same name — sit
+ * in blocks the branch does not dominate.  clang then refused the whole
+ * module with `Instruction does not dominate all uses!`, so every cross-scope
+ * shadowing `let` was a build break, whether or not the inner value escaped
+ * the branch.  Story 75.1.7 decided shadowing is legal; this is what makes
+ * the IR agree.
+ *
+ * The transform is a permutation of whole lines, so the buffer length is
+ * unchanged.  It is safe because EVERY alloca this backend emits has the
+ * shape `  %name = alloca <type>` — a fixed type and no dynamic element
+ * count (grep: there is no `alloca T, i64 %t` form anywhere in this file).
+ * An instruction with no operands depends on nothing, so moving it to the
+ * top of the entry block can never break dominance, and moving it OUT of a
+ * loop body is a second, free fix: an alloca executed per iteration grew the
+ * frame without bound until the function returned.
+ *
+ * A function body here is unambiguously line-structured: `define ...{` at
+ * column 0 opens it, `}` at column 0 closes it, and no line inside carries a
+ * raw newline (string globals are escaped `\0A` and live at module scope).
+ */
+static int ll_line_is_alloca(const char *p, const char *eol)
+{
+    /* "  %<name> = alloca " with <name> a non-empty LLVM local identifier. */
+    if (eol - p < 13) return 0;
+    if (p[0] != ' ' || p[1] != ' ' || p[2] != '%') return 0;
+    const char *q = p + 3;
+    while (q < eol && (isalnum((unsigned char)*q) || *q == '_' || *q == '.'))
+        q++;
+    if (q == p + 3) return 0;
+    if (eol - q < 10) return 0;
+    return memcmp(q, " = alloca ", 10) == 0;
+}
+
+/* A basic-block label line: starts at column 0, ends with ':'. */
+static int ll_line_is_label(const char *p, const char *eol)
+{
+    const char *e = eol;
+    while (e > p && (e[-1] == '\n' || e[-1] == '\r')) e--;
+    if (e <= p) return 0;
+    if (p[0] == ' ' || p[0] == '\t' || p[0] == ';') return 0;
+    return e[-1] == ':';
+}
+
+/* Advance past one line; returns a pointer one past its '\n' (or `end`). */
+static const char *ll_next_line(const char *p, const char *end)
+{
+    const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
+    return nl ? nl + 1 : end;
+}
+
+/*
+ * hoist_allocas — rewrite `buf` in place so that every alloca in a function
+ * body sits at the top of that function's entry block, in first-emitted
+ * order.  Returns 0 on success, -1 if the scratch allocation failed (in
+ * which case `buf` is left untouched and the caller simply emits what it
+ * had — a build that fails at clang, not a wrong program).
+ */
+static int hoist_allocas(char *buf, long len)
+{
+    char *out = (char *)malloc((size_t)len + 1);
+    if (!out) return -1;
+    const char *p = buf, *end = buf + len;
+    char *w = out;
+    while (p < end) {
+        const char *eol = ll_next_line(p, end);
+        if ((size_t)(end - p) < 7 || memcmp(p, "define ", 7) != 0) {
+            memcpy(w, p, (size_t)(eol - p)); w += eol - p; p = eol;
+            continue;
+        }
+        /* Copy the `define ...{` line, and the entry label if there is one
+         * (the C `main` wrapper has none — its entry block is implicit). */
+        memcpy(w, p, (size_t)(eol - p)); w += eol - p; p = eol;
+        if (p < end) {
+            const char *e2 = ll_next_line(p, end);
+            if (ll_line_is_label(p, e2)) {
+                memcpy(w, p, (size_t)(e2 - p)); w += e2 - p; p = e2;
+            }
+        }
+        /* Locate the closing `}` line, emitting the allocas as we scan. */
+        const char *fn_end = end;
+        for (const char *q = p; q < end; ) {
+            const char *e2 = ll_next_line(q, end);
+            if (q[0] == '}') { fn_end = e2; break; }
+            if (ll_line_is_alloca(q, e2)) {
+                memcpy(w, q, (size_t)(e2 - q)); w += e2 - q;
+            }
+            q = e2;
+        }
+        /* Re-emit the body without them. */
+        for (const char *q = p; q < fn_end; ) {
+            const char *e2 = ll_next_line(q, fn_end);
+            if (!ll_line_is_alloca(q, e2)) {
+                memcpy(w, q, (size_t)(e2 - q)); w += e2 - q;
+            }
+            q = e2;
+        }
+        p = fn_end;
+    }
+    /* A permutation of lines: the length must be identical, or the scan
+     * above misread the buffer and the original is the safer output. */
+    if (w - out != len) { free(out); return -1; }
+    memcpy(buf, out, (size_t)len);
+    free(out);
+    return 0;
+}
+
+/*
  * body_references_symbol — Check if an IR body buffer contains a reference
  * to @name.  Searches for the pattern "@name(" or "@name " or "@name\n"
  * to avoid false positives from substring matches (e.g. @tk_str matching
@@ -9357,6 +9488,14 @@ int emit_llvm_ir(const Node *ast, const char *src,
     fread(body_buf, 1, (size_t)body_len, body_file);
     body_buf[body_len] = '\0';
     fclose(body_file);
+
+    /* 137.6: every alloca moves to the top of its function's entry block.
+     * Until this ran, a `let` inside an if/lp body emitted its alloca inside
+     * that branch, and any use from a block the branch does not dominate —
+     * including a read of the outer binding it shadows — made the module
+     * invalid ("Instruction does not dominate all uses!").  Line-permuting,
+     * so body_len is unchanged and the reference scan below is unaffected. */
+    hoist_allocas(body_buf, body_len);
 
     /* Emit only the declarations whose symbols are referenced in the body
      * AND not already declared (e.g. via fwd_decls from resolve_stdlib_call) */

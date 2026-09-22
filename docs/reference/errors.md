@@ -428,16 +428,24 @@ Triggers E3011.
 | Severity | error           |
 | Stage    | name_resolution |
 
-A second declaration of the same name in the same scope. Shadowing across scope boundaries is allowed; duplicate declaration within one scope is not.
+A second declaration of the same name in the same scope, for a kind that may
+not be redeclared: `f=` functions, `t=` types, `i=` imports, consts and
+parameters.
+
+`let` and `let mut` are **excluded**: story 75.1.7 chose "allow same-scope
+and cross-scope shadowing", and §11.8.1 of the spec publishes
+`let x = 1; let x = x + 1;` as a valid program that yields 2. A re-binding
+`let` never triggers E3012; a cross-scope one raises the W3013 warning.
 <!-- skip-check -->
 ```text
 m=test;
-f=bad(): i64 { let x = 1; let x = 2; < x };
+t=box{n: i64};
+t=box{m: i64};
 ```
 
-Triggers E3012.
+Triggers E3012 on the second `t=box`.
 
-**Fix:** Use a different name for the second binding, or remove the duplicate.
+**Fix:** Use a different name for the second declaration, or remove the duplicate.
 
 ---
 
@@ -826,7 +834,7 @@ The compiler could not write the `.tkir` artifact.
 
 The compiler could not read a `.tkir` artifact.
 
-## Semantic Warnings (W2xxx / W5xxx / W8xxx)
+## Semantic Warnings (W2xxx / W3xxx / W5xxx / W8xxx)
 
 Non-fatal diagnostics from later stages.
 
@@ -873,6 +881,40 @@ A construct idiomatic to another language was detected.
 | Stage    | parse |
 
 A module name was normalised from a non-canonical capitalisation.
+
+### W3013
+
+**`let` shadows a binding in an enclosing scope**
+
+| Field    | Value           |
+|----------|-----------------|
+| Severity | warning         |
+| Stage    | name_resolution |
+
+A `let` (or `let mut`, or a `lp` loop variable) introduces a name that is
+already bound by an enclosing scope — an outer block, or a parameter.
+
+This is **legal**: story 75.1.7 chose "allow same-scope and cross-scope
+shadowing", and §11.8.1 of the spec publishes `let x = x + 1;` as a valid
+program. The warning exists because the same source also reads exactly like
+an assignment that it is not: a `let x = …` inside an `if` or a `lp` body
+declares a *second* x, and the outer one is unchanged when the block ends.
+
+Same-scope shadowing — the spec's own example, where the two bindings are
+adjacent and visibly sequential — does **not** warn.
+
+<!-- skip-check -->
+```text
+m=test;
+f=bad(n: i64): i64 { let x = 1; if(n>0){ let x = 2; }; < x };
+```
+
+Triggers W3013 on the inner `let`; the function returns 1.
+
+**Fix:** If an assignment was meant, declare the outer binding `let x =
+mut.1` and write `x = 2`. If a distinct binding was meant, rename it.
+
+---
 
 ### W5001
 

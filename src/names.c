@@ -755,6 +755,58 @@ static const char *arena_intern(Arena *arena, const char *s, int len) {
 }
 
 /*
+ * warn_enclosing_shadow (137.6) — a `let`/`let mut` that introduces a name
+ * already bound in an ENCLOSING scope.
+ *
+ * Shadowing stays legal: story 75.1.7 chose Option A ("allow same-scope and
+ * cross-scope shadowing") and the spec publishes `let x = x + 1;` as a valid
+ * program.  75.1.7 also reserved the other half — "optional lint rule:
+ * mixed-mut-shadow" — and this is it.  Legal is not the same as silent.
+ *
+ * What it catches is a mistake that reads exactly like the correct code: a
+ * `let x = …` inside an `if` or a `lp` body does not assign to the outer x,
+ * it declares a second one, and the outer value is unchanged when the block
+ * ends.  The 137 migration found 52 of these across 18 files — a privacy
+ * opt-out that was never honoured, four job-queue counters (`let i=i+1`)
+ * that never advanced, a model registry that could never find a model — and
+ * every one of them compiled.
+ *
+ * Deliberately NOT warned:
+ *   - same-scope shadowing (`let p=x; let p=p+1;`), which is the spec's own
+ *     published example and cannot be mistaken for an assignment: the two
+ *     bindings are adjacent and visibly sequential;
+ *   - shadowing a function, type, const or import name — a different
+ *     question (E3012 already governs re-declaration) and not the mistake
+ *     this rule is about.
+ */
+static void warn_enclosing_shadow(const Scope *scope, const char *src,
+                                  const Node *bname)
+{
+    if (!scope || !scope->parent || !bname) return;
+    const char *name = src + bname->tok_start;
+    int len = bname->tok_len;
+    if (len <= 0 || len > 200) return;
+    /* Same-scope re-binding is the spec's example, not this warning. */
+    if (scope_lookup_local(scope, name, len)) return;
+    const Decl *outer = scope_lookup(scope->parent, name, len);
+    if (!outer) return;
+    if (outer->kind != DECL_LET && outer->kind != DECL_MUT &&
+        outer->kind != DECL_PARAM && outer->kind != DECL_CLOSURE_PARAM)
+        return;
+    char nbuf[201];
+    memcpy(nbuf, name, (size_t)len); nbuf[len] = '\0';
+    char msg[320];
+    snprintf(msg, sizeof msg,
+             "this 'let' shadows a binding named '%s' in an enclosing scope; "
+             "did you mean an assignment to a 'mut'?", nbuf);
+    /* No `fix`: the repair depends on which one was meant.  AGENTS.md 3.1 —
+     * a confidently wrong fix is worse than none, and both readings
+     * ("`%s=…`" and "rename this binding") are real programs. */
+    diag_emit(DIAG_WARNING, W3013, bname->start, bname->line, bname->col,
+              msg, "got", nbuf, (const char *)NULL);
+}
+
+/*
  * scope_insert — declare a new identifier in the current scope.
  *
  * First checks for a duplicate in the same scope via scope_lookup_local;
@@ -1718,6 +1770,7 @@ static int resolve_node(const Node *node, const char *src,
             resolve_node(node->children[i], src, scope, arena, had_error);
         const Node *bname = node->child_count > 0 ? node->children[0] : NULL;
         if (bname) {
+            warn_enclosing_shadow(scope, src, bname);   /* 137.6 */
             DeclKind dk = (node->kind == NODE_MUT_BIND_STMT) ? DECL_MUT : DECL_LET;
             int r = scope_insert(scope, arena, src,
                                  bname->start, bname->tok_len,
@@ -1789,6 +1842,7 @@ static int resolve_node(const Node *node, const char *src,
                 if (vname) {
                     /* Loop variables are implicitly mutable — the loop
                      * step reassigns them on every iteration. */
+                    warn_enclosing_shadow(lp_scope, src, vname);   /* 137.6 */
                     DeclKind dk = DECL_MUT;
                     int r = scope_insert(lp_scope, arena, src,
                                          vname->start, vname->tok_len,
