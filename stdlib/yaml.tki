@@ -2,21 +2,201 @@
   "schema_version": "1.0",
   "module": "std.yaml",
   "exports": [
-    {"kind": "type", "name": "Yaml",    "fields": [{"name": "raw", "type": "str"}]},
-    {"kind": "type", "name": "YamlErr", "fields": [
-      {"name": "Parse",   "type": "str"},
-      {"name": "Type",    "type": "str"},
-      {"name": "Missing", "type": "str"}
-    ]},
-    {"kind": "func", "name": "yaml.empty",   "params": [],                    "return": "Yaml"},
-    {"kind": "func", "name": "yaml.enc",     "params": ["str"],              "return": "str"},
-    {"kind": "func", "name": "yaml.dec",     "params": ["str"],              "return": "Yaml!YamlErr"},
-    {"kind": "func", "name": "yaml.str",     "params": ["Yaml", "str"],      "return": "str!YamlErr"},
-    {"kind": "func", "name": "yaml.i64",     "params": ["Yaml", "str"],      "return": "i64!YamlErr"},
-    {"kind": "func", "name": "yaml.f64",     "params": ["Yaml", "str"],      "return": "f64!YamlErr"},
-    {"kind": "func", "name": "yaml.bool",    "params": ["Yaml", "str"],      "return": "bool!YamlErr"},
-    {"kind": "func", "name": "yaml.arr",     "params": ["Yaml", "str"],      "return": "[Yaml]!YamlErr"},
-    {"kind": "func", "name": "yaml.fromjson", "params": ["str"],            "return": "str"},
-    {"kind": "func", "name": "yaml.tojson",   "params": ["str"],            "return": "str"}
+    {
+      "kind": "type",
+      "name": "Yaml",
+      "fields": [
+        {
+          "name": "raw",
+          "type": "str"
+        }
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "YamlErr",
+      "fields": [
+        {
+          "name": "Parse",
+          "type": "str"
+        },
+        {
+          "name": "Type",
+          "type": "str"
+        },
+        {
+          "name": "Missing",
+          "type": "str"
+        }
+      ]
+    },
+    {
+      "kind": "func",
+      "name": "yaml.empty",
+      "params": [],
+      "return": "Yaml"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.enc",
+      "params": [
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.dec",
+      "params": [
+        "str"
+      ],
+      "return": "Yaml!YamlErr"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.str",
+      "params": [
+        "Yaml",
+        "str"
+      ],
+      "return": "str!YamlErr"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.i64",
+      "params": [
+        "Yaml",
+        "str"
+      ],
+      "return": "i64!YamlErr"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.f64",
+      "params": [
+        "Yaml",
+        "str"
+      ],
+      "return": "f64!YamlErr"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.bool",
+      "params": [
+        "Yaml",
+        "str"
+      ],
+      "return": "bool!YamlErr"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.arr",
+      "params": [
+        "Yaml",
+        "str"
+      ],
+      "return": "[Yaml]!YamlErr"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.fromjson",
+      "params": [
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.tojson",
+      "params": [
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.getnestedmap",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.getrootmap",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.getstring",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.load",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.maphaskey",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.parse",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.print",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.splitstr",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "yaml.stringify",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
   ]
 }

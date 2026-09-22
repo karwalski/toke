@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "module": "std.clipboard",
+  "generated": "scripts/gen_tki.py (137.12) -- arity is derived from the glue; ABI parameter types on entries tagged \"gen\":\"abi\" are not",
+  "exports": [
+    {
+      "kind": "func",
+      "name": "clipboard.read",
+      "params": [],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "clipboard.write",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
+  ]
+}

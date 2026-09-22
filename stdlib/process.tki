@@ -2,12 +2,174 @@
   "schema_version": "1.0",
   "module": "std.process",
   "exports": [
-    {"kind": "func", "name": "process.spawn",  "params": ["[str]"],          "return": "Handle!ProcessErr"},
-    {"kind": "func", "name": "process.wait",   "params": ["Handle"],         "return": "i32"},
-    {"kind": "func", "name": "process.stdout", "params": ["Handle"],         "return": "str!ProcessErr"},
-    {"kind": "func", "name": "process.stderr", "params": ["Handle"],         "return": "str!ProcessErr"},
-    {"kind": "func", "name": "process.kill",   "params": ["Handle"],         "return": "bool"},
-    {"kind": "type", "name": "Handle",         "fields": []},
-    {"kind": "sum",  "name": "ProcessErr",     "variants": ["NotFound", "Permission", "IO"]}
+    {
+      "kind": "func",
+      "name": "process.spawn",
+      "params": [
+        "[str]"
+      ],
+      "return": "Handle!ProcessErr"
+    },
+    {
+      "kind": "func",
+      "name": "process.wait",
+      "params": [
+        "Handle"
+      ],
+      "return": "i32"
+    },
+    {
+      "kind": "func",
+      "name": "process.stdout",
+      "params": [
+        "Handle"
+      ],
+      "return": "str!ProcessErr"
+    },
+    {
+      "kind": "func",
+      "name": "process.stderr",
+      "params": [
+        "Handle"
+      ],
+      "return": "str!ProcessErr"
+    },
+    {
+      "kind": "func",
+      "name": "process.kill",
+      "params": [
+        "Handle"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "type",
+      "name": "Handle",
+      "fields": []
+    },
+    {
+      "kind": "sum",
+      "name": "ProcessErr",
+      "variants": [
+        "NotFound",
+        "Permission",
+        "IO"
+      ]
+    },
+    {
+      "kind": "func",
+      "name": "process.badhandle",
+      "params": [],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "process.env",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "process.exec",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "process.exit",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "process.exitcode",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "process.hasexited",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "process.homedir",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "process.isalive",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "process.poll",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "process.print",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "process.readlines",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "process.sleep",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "process.spawndetached",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
   ]
 }

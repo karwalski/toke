@@ -1,129 +1,11 @@
 {
   "schema_version": "1.0",
-  "module": "std.encoding",
+  "module": "std.array",
+  "generated": "scripts/gen_tki.py (137.12) -- arity is derived from the glue; ABI parameter types on entries tagged \"gen\":\"abi\" are not",
   "exports": [
     {
-      "kind": "type",
-      "name": "EncodingErr",
-      "fields": [
-        {
-          "name": "msg",
-          "type": "str"
-        }
-      ]
-    },
-    {
       "kind": "func",
-      "name": "encoding.b64encode",
-      "params": [
-        "[byte]"
-      ],
-      "return": "str"
-    },
-    {
-      "kind": "func",
-      "name": "encoding.b64urlencode",
-      "params": [
-        "[byte]"
-      ],
-      "return": "str"
-    },
-    {
-      "kind": "func",
-      "name": "encoding.b64decode",
-      "params": [
-        "str"
-      ],
-      "return": "[byte]!EncodingErr"
-    },
-    {
-      "kind": "func",
-      "name": "encoding.b64urldecode",
-      "params": [
-        "str"
-      ],
-      "return": "[byte]!EncodingErr"
-    },
-    {
-      "kind": "func",
-      "name": "encoding.hexencode",
-      "params": [
-        "[byte]"
-      ],
-      "return": "str"
-    },
-    {
-      "kind": "func",
-      "name": "encoding.hexdecode",
-      "params": [
-        "str"
-      ],
-      "return": "[byte]!EncodingErr"
-    },
-    {
-      "kind": "func",
-      "name": "encoding.urlencode",
-      "params": [
-        "str"
-      ],
-      "return": "str"
-    },
-    {
-      "kind": "func",
-      "name": "encoding.urldecode",
-      "params": [
-        "str"
-      ],
-      "return": "str!EncodingErr"
-    },
-    {
-      "kind": "func",
-      "name": "encoding.base64decode",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "encoding.base64encode",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "encoding.base64urlencodenopad",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "encoding.bytes",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "encoding.frombytes",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "encoding.jsonfield",
+      "name": "array.append",
       "params": [
         "i64",
         "i64"
@@ -133,7 +15,7 @@
     },
     {
       "kind": "func",
-      "name": "encoding.jsonfieldint",
+      "name": "array.appendarray",
       "params": [
         "i64",
         "i64"
@@ -143,7 +25,67 @@
     },
     {
       "kind": "func",
-      "name": "encoding.tobytes",
+      "name": "array.arrayappend",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.contains",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.find",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.get",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.indexof",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.join",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.len",
       "params": [
         "i64"
       ],
@@ -152,8 +94,95 @@
     },
     {
       "kind": "func",
-      "name": "encoding.toint",
+      "name": "array.length",
       "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.list",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.new",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.newarray",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.newstrarray",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.pop",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.push",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.set",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.slice",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "array.strarrayappend",
+      "params": [
+        "i64",
         "i64"
       ],
       "return": "i64",

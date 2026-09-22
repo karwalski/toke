@@ -2,27 +2,117 @@
   "schema_version": "1.0",
   "module": "std.json",
   "exports": [
-    {"kind": "type", "name": "Json",    "fields": [{"name": "raw", "type": "str"}]},
-    {"kind": "type", "name": "JsonErr", "sum": true, "variants": [
-      {"name": "Parse",   "type": "str"},
-      {"name": "Type",    "type": "str"},
-      {"name": "Missing", "type": "str"}
-    ]},
-    {"kind": "func", "name": "json.enc",  "params": ["str"],             "return": "str"},
-    {"kind": "func", "name": "json.dec",  "params": ["str"],             "return": "Json!JsonErr"},
-    {"kind": "func", "name": "json.str",  "params": ["Json", "str"],     "return": "str!JsonErr"},
-    {"kind": "func", "name": "json.u64",  "params": ["Json", "str"],     "return": "u64!JsonErr"},
-    {"kind": "func", "name": "json.i64",  "params": ["Json", "str"],     "return": "i64!JsonErr"},
-    {"kind": "func", "name": "json.f64",  "params": ["Json", "str"],     "return": "f64!JsonErr"},
-    {"kind": "func", "name": "json.bool", "params": ["Json", "str"],     "return": "bool!JsonErr"},
-    {"kind": "func", "name": "json.arr",  "params": ["Json", "str"],     "return": "[Json]!JsonErr"},
-
+    {
+      "kind": "type",
+      "name": "Json",
+      "fields": [
+        {
+          "name": "raw",
+          "type": "str"
+        }
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "JsonErr",
+      "sum": true,
+      "variants": [
+        {
+          "name": "Parse",
+          "type": "str"
+        },
+        {
+          "name": "Type",
+          "type": "str"
+        },
+        {
+          "name": "Missing",
+          "type": "str"
+        }
+      ]
+    },
+    {
+      "kind": "func",
+      "name": "json.enc",
+      "params": [
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "json.dec",
+      "params": [
+        "str"
+      ],
+      "return": "Json!JsonErr"
+    },
+    {
+      "kind": "func",
+      "name": "json.str",
+      "params": [
+        "Json",
+        "str"
+      ],
+      "return": "str!JsonErr"
+    },
+    {
+      "kind": "func",
+      "name": "json.u64",
+      "params": [
+        "Json",
+        "str"
+      ],
+      "return": "u64!JsonErr"
+    },
+    {
+      "kind": "func",
+      "name": "json.i64",
+      "params": [
+        "Json",
+        "str"
+      ],
+      "return": "i64!JsonErr"
+    },
+    {
+      "kind": "func",
+      "name": "json.f64",
+      "params": [
+        "Json",
+        "str"
+      ],
+      "return": "f64!JsonErr"
+    },
+    {
+      "kind": "func",
+      "name": "json.bool",
+      "params": [
+        "Json",
+        "str"
+      ],
+      "return": "bool!JsonErr"
+    },
+    {
+      "kind": "func",
+      "name": "json.arr",
+      "params": [
+        "Json",
+        "str"
+      ],
+      "return": "[Json]!JsonErr"
+    },
     {
       "kind": "type",
       "name": "JsonWriter",
       "fields": [
-        {"name": "buf", "type": "[byte]"},
-        {"name": "pos", "type": "u64"}
+        {
+          "name": "buf",
+          "type": "[byte]"
+        },
+        {
+          "name": "pos",
+          "type": "u64"
+        }
       ]
     },
     {
@@ -30,10 +120,22 @@
       "name": "JsonStream",
       "opaque": true,
       "fields": [
-        {"name": "buf",    "type": "[byte]"},
-        {"name": "pos",    "type": "u64"},
-        {"name": "depth",  "type": "u64"},
-        {"name": "state",  "type": "u64"}
+        {
+          "name": "buf",
+          "type": "[byte]"
+        },
+        {
+          "name": "pos",
+          "type": "u64"
+        },
+        {
+          "name": "depth",
+          "type": "u64"
+        },
+        {
+          "name": "state",
+          "type": "u64"
+        }
       ]
     },
     {
@@ -41,18 +143,54 @@
       "name": "JsonToken",
       "sum": true,
       "variants": [
-        {"name": "ObjectStart", "type": "void"},
-        {"name": "ObjectEnd",   "type": "void"},
-        {"name": "ArrayStart",  "type": "void"},
-        {"name": "ArrayEnd",    "type": "void"},
-        {"name": "Key",         "type": "str"},
-        {"name": "Str",         "type": "str"},
-        {"name": "U64",         "type": "u64"},
-        {"name": "I64",         "type": "i64"},
-        {"name": "F64",         "type": "f64"},
-        {"name": "Bool",        "type": "bool"},
-        {"name": "Null",        "type": "void"},
-        {"name": "End",         "type": "void"}
+        {
+          "name": "ObjectStart",
+          "type": "void"
+        },
+        {
+          "name": "ObjectEnd",
+          "type": "void"
+        },
+        {
+          "name": "ArrayStart",
+          "type": "void"
+        },
+        {
+          "name": "ArrayEnd",
+          "type": "void"
+        },
+        {
+          "name": "Key",
+          "type": "str"
+        },
+        {
+          "name": "Str",
+          "type": "str"
+        },
+        {
+          "name": "U64",
+          "type": "u64"
+        },
+        {
+          "name": "I64",
+          "type": "i64"
+        },
+        {
+          "name": "F64",
+          "type": "f64"
+        },
+        {
+          "name": "Bool",
+          "type": "bool"
+        },
+        {
+          "name": "Null",
+          "type": "void"
+        },
+        {
+          "name": "End",
+          "type": "void"
+        }
       ]
     },
     {
@@ -60,16 +198,600 @@
       "name": "JsonStreamErr",
       "sum": true,
       "variants": [
-        {"name": "Truncated",  "type": "str"},
-        {"name": "Invalid",    "type": "str"},
-        {"name": "Overflow",   "type": "str"}
+        {
+          "name": "Truncated",
+          "type": "str"
+        },
+        {
+          "name": "Invalid",
+          "type": "str"
+        },
+        {
+          "name": "Overflow",
+          "type": "str"
+        }
       ]
     },
-
-    {"kind": "func", "name": "json.streamparser", "params": ["[byte]"],              "return": "JsonStream"},
-    {"kind": "func", "name": "json.streamnext",   "params": ["JsonStream"],           "return": "JsonToken!JsonStreamErr"},
-    {"kind": "func", "name": "json.streamemit",   "params": ["JsonWriter", "Json"],   "return": "void!JsonStreamErr"},
-    {"kind": "func", "name": "json.newwriter",    "params": ["u64"],                  "return": "JsonWriter"},
-    {"kind": "func", "name": "json.writerbytes",  "params": ["JsonWriter"],           "return": "[byte]"}
+    {
+      "kind": "func",
+      "name": "json.streamparser",
+      "params": [
+        "[byte]"
+      ],
+      "return": "JsonStream"
+    },
+    {
+      "kind": "func",
+      "name": "json.streamnext",
+      "params": [
+        "JsonStream"
+      ],
+      "return": "JsonToken!JsonStreamErr"
+    },
+    {
+      "kind": "func",
+      "name": "json.streamemit",
+      "params": [
+        "JsonWriter",
+        "Json"
+      ],
+      "return": "void!JsonStreamErr"
+    },
+    {
+      "kind": "func",
+      "name": "json.newwriter",
+      "params": [
+        "u64"
+      ],
+      "return": "JsonWriter"
+    },
+    {
+      "kind": "func",
+      "name": "json.writerbytes",
+      "params": [
+        "JsonWriter"
+      ],
+      "return": "[byte]"
+    },
+    {
+      "kind": "func",
+      "name": "json.arrget",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.arrlen",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.decode",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.encarr",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.encbool",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.encf64",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.encnum",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.encode",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.encstr",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.entries",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.err",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.get",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.getarr",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.getarray",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.getbool",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.getf32",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.getfloat",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.geti32",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.geti64",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.getint",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.getobj",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.getopt",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.getregulations",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.getstr",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.getstring",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.getval",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.has",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.haskey",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.isnullkey",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.keys",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.kv",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.len",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.obj",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.ok",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.parse",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.parsearray",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.parseobj",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.print",
+      "params": [
+        "i64"
+      ],
+      "return": "void",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.printarr",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "void",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.quote",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.serialize",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.set",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.setint",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.strarr",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.strarray",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.stringify",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.tryarr",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.trybool",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.tryboolkey",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.tryfloat",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.tryfloatkey",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.tryint",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.tryintkey",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.trystr",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.trystrkey",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "json.values",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
   ]
 }

@@ -7,25 +7,242 @@
       "name": "FileErr",
       "sum": true,
       "variants": [
-        {"name": "NotFound",   "type": "str"},
-        {"name": "Permission", "type": "str"},
-        {"name": "IO",         "type": "str"}
+        {
+          "name": "NotFound",
+          "type": "str"
+        },
+        {
+          "name": "Permission",
+          "type": "str"
+        },
+        {
+          "name": "IO",
+          "type": "str"
+        }
       ]
     },
-    {"kind": "func", "name": "file.read",   "params": ["str"],         "return": "str!FileErr"},
-    {"kind": "func", "name": "file.write",  "params": ["str", "str"],  "return": "bool!FileErr"},
-    {"kind": "func", "name": "file.append", "params": ["str", "str"],  "return": "bool!FileErr"},
-    {"kind": "func", "name": "file.exists", "params": ["str"],         "return": "bool"},
-    {"kind": "func", "name": "file.delete", "params": ["str"],         "return": "bool!FileErr"},
-    {"kind": "func", "name": "file.list",    "params": ["str"],         "return": "[str]!FileErr"},
-    {"kind": "func", "name": "file.isdir",   "params": ["str"],         "return": "bool"},
-    {"kind": "func", "name": "file.mkdir",   "params": ["str"],         "return": "bool!FileErr"},
-    {"kind": "func", "name": "file.copy",    "params": ["str", "str"],  "return": "bool!FileErr"},
-    {"kind": "func", "name": "file.listall", "params": ["str"],         "return": "[str]!FileErr"},
-
-    {"kind": "func", "name": "file.readbytes",   "params": ["str"],            "return": "@(byte)!FileErr"},
-    {"kind": "func", "name": "file.writebytes",  "params": ["str", "@(byte)"], "return": "bool!FileErr"},
-    {"kind": "func", "name": "file.lasterr",     "params": [],                 "return": "str"},
-    {"kind": "func", "name": "file.lasterrkind", "params": [],                 "return": "str"}
+    {
+      "kind": "func",
+      "name": "file.read",
+      "params": [
+        "str"
+      ],
+      "return": "str!FileErr"
+    },
+    {
+      "kind": "func",
+      "name": "file.write",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "bool!FileErr"
+    },
+    {
+      "kind": "func",
+      "name": "file.append",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "bool!FileErr"
+    },
+    {
+      "kind": "func",
+      "name": "file.exists",
+      "params": [
+        "str"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "file.delete",
+      "params": [
+        "str"
+      ],
+      "return": "bool!FileErr"
+    },
+    {
+      "kind": "func",
+      "name": "file.list",
+      "params": [
+        "str"
+      ],
+      "return": "[str]!FileErr"
+    },
+    {
+      "kind": "func",
+      "name": "file.isdir",
+      "params": [
+        "str"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "file.mkdir",
+      "params": [
+        "str"
+      ],
+      "return": "bool!FileErr"
+    },
+    {
+      "kind": "func",
+      "name": "file.copy",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "bool!FileErr"
+    },
+    {
+      "kind": "func",
+      "name": "file.listall",
+      "params": [
+        "str"
+      ],
+      "return": "[str]!FileErr"
+    },
+    {
+      "kind": "func",
+      "name": "file.readbytes",
+      "params": [
+        "str"
+      ],
+      "return": "@(byte)!FileErr"
+    },
+    {
+      "kind": "func",
+      "name": "file.writebytes",
+      "params": [
+        "str",
+        "@(byte)"
+      ],
+      "return": "bool!FileErr"
+    },
+    {
+      "kind": "func",
+      "name": "file.lasterr",
+      "params": [],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "file.lasterrkind",
+      "params": [],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "file.appendline",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "file.ensuredir",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "file.err",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "file.listdir",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "file.listglob",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "file.parsetoml",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "file.readlines",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "file.remove",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "file.rename",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "file.stat",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "file.tempdir",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "file.writelines",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
   ]
 }

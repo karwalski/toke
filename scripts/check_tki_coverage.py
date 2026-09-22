@@ -153,6 +153,121 @@ def load_compiler_declarations() -> set[str]:
     return decls
 
 
+def registered_modules() -> list[str]:
+    """Module names in stdlib_table[] — exactly what stdlib_module_registered() accepts.
+
+    Story 136.47.  A registered module with no `.tki` is a surface nothing
+    gates in either direction: the import resolver accepts it because the glue
+    table has a row, and the generic `tk_<mod>_<method>_w` rule then answers a
+    symbol for any spelling at all.  That is 127.61's second cause — eight
+    interface-less modules meant no member of any of them was checked in
+    either direction — which is why this is a gate and not a report.
+    """
+    src = (REPO_ROOT / "src" / "stdlib_deps.c").read_text(errors="replace")
+    m = re.search(r"static const StdlibModule stdlib_table\[\] = \{(.*?)\n\};", src, re.S)
+    if not m:
+        print("ERROR: stdlib_table[] not found in src/stdlib_deps.c")
+        raise SystemExit(2)
+    return re.findall(r'^\s*\{\s*"(\w+)",', m.group(1), re.M)
+
+
+def _param_count_at(text: str, popen: int) -> int | None:
+    """Parameter count of the C parameter list opening at `popen`, if it is a
+    definition (body follows) rather than a prototype."""
+    depth, pclose = 0, -1
+    for i in range(popen, len(text)):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                pclose = i
+                break
+    if pclose < 0:
+        return None
+    if not text[pclose + 1:pclose + 64].lstrip().startswith("{"):
+        return None  # prototype or attribute form, not a definition
+    raw = text[popen + 1:pclose].strip()
+    if not raw or raw == "void":
+        return 0
+    return len([p for p in raw.split(",") if p.strip()])
+
+
+_C_DEF_HEAD = re.compile(
+    r"(?:^|\n)(?:(?:static|inline|extern)\s+)*(?:const\s+)?"
+    r"(?:int64_t|void|double|float|uint64_t|int32_t|int|char)\s*\**\s*"
+    r"(tk_\w+)\s*\(")
+
+
+def c_definition_arities() -> dict[str, int]:
+    """Parameter count of every tk_* function DEFINED in src/stdlib/*.c.
+
+    Story 137.12.  `g_stdlib_decls` is the arity 136.1 checks every call
+    against, and half of it is hand-written in llvm.c — gen_stdlib_decls.py
+    excludes from generation anything already declared there, so a wrong
+    hand-written entry is never regenerated and never noticed.  `tk_os_read`
+    was declared `(i64, i64, i64)` over a two-parameter C definition, and a
+    call matching BOTH the interface and the C was rejected E4026.  The
+    project's signature defect — a hand-maintained list that drifts — was
+    sitting inside the generator meant to end it.  This holds the halves
+    together.
+    """
+    out: dict[str, int] = {}
+    for c_file in sorted(C_DIR.glob("*.c")):
+        text = c_file.read_text(errors="replace")
+        for m in _C_DEF_HEAD.finditer(text):
+            n = _param_count_at(text, text.index("(", m.end() - 1))
+            if n is not None:
+                out.setdefault(m.group(1), n)
+    return out
+
+
+def declared_arities() -> tuple[dict[str, tuple[int, str]], list[str]]:
+    """({symbol: (arity, "file:line")}, [duplicate rows]) for g_stdlib_decls.
+
+    FIRST WIN, not last, because that is what the compiler does.
+    `stdlib_glue_arity()` (llvm.c) walks g_stdlib_decls[] and returns on the
+    first `strcmp` match, and llvm.c's hand-written rows are laid down before
+    `#include "stdlib_decls_gen.h"` at llvm.c:8919 -- so a hand-written row
+    always beats a generated one of the same name.
+
+    An earlier form of this function iterated llvm.c then the generated
+    header and assigned unconditionally, letting the GENERATED row win. That
+    inverts the compiler's precedence, and it is blind in exactly the case
+    this gate exists for: re-add `{"tk_os_read", "declare i64
+    @tk_os_read(i64, i64, i64)"}` to llvm.c over the two-parameter C
+    definition and the compiler rejects `o.read(0;16)` E4026 again while the
+    gate stays green, because it read the correct generated row instead.
+    Measured, not reasoned: rebuilt with that row restored, the diagnostic
+    came back and check_tki_coverage.py still exited 0.
+
+    A symbol declared twice is reported in its own right. It is always a
+    mistake -- gen_stdlib_decls.py excludes whatever llvm.c declares, so the
+    two halves cannot legitimately both carry a name -- and the second row is
+    dead weight that will mislead the next reader of the table.
+    """
+    out: dict[str, tuple[int, str]] = {}
+    dupes: list[str] = []
+    for rel in ("src/llvm.c", "src/stdlib_decls_gen.h"):
+        p = REPO_ROOT / rel
+        if not p.exists():
+            continue
+        for i, line in enumerate(p.read_text(errors="replace").splitlines(), 1):
+            m = re.match(r'\s*\{"(\w+)",\s*"(declare[^"]*)"', line)
+            if not m:
+                continue
+            pm = re.search(r"\(([^)]*)\)", m.group(2))
+            ps = pm.group(1).strip() if pm else ""
+            n = 0 if not ps else len([x for x in ps.split(",") if x.strip()])
+            sym = m.group(1)
+            if sym in out:
+                dupes.append(f"{sym}: {out[sym][1]} and {rel}:{i} "
+                             f"(the compiler uses {out[sym][1]})")
+                continue
+            out[sym] = (n, f"{rel}:{i}")
+    return out, dupes
+
+
 def undeclared_wrappers(defs: dict[str, str], decls: set[str]) -> list[str]:
     """`_w` wrappers DEFINED in glue but absent from g_stdlib_decls.
 
@@ -191,15 +306,49 @@ def load_skiplist(path: Path) -> dict[str, str]:
 def main() -> int:
     verbose = "-v" in sys.argv or "--verbose" in sys.argv
 
-    tki_files = sorted(TKI_DIR.glob("*.tki"))
+    # `--tki-dir PATH` reads the interfaces from somewhere other than
+    # stdlib/, against the same real C sources and skip-list.
+    #
+    # It exists for the negative control in T007.  A gate nobody has watched
+    # fail is not known to work, and the only way to watch the 136.47 gate
+    # fail is to take an interface away -- but the first version of that
+    # control did it by DELETING stdlib/csv.tki from the working tree and
+    # restoring it from a trap.  A kill -9, a full disk, or a second `make`
+    # reading the tree in that window (the 131.39/131.79 concurrency class,
+    # which has bitten this repo twice) loses a tracked file.  A test must
+    # not be able to destroy the thing it is testing.
+    tki_dir = TKI_DIR
+    if "--tki-dir" in sys.argv:
+        tki_dir = Path(sys.argv[sys.argv.index("--tki-dir") + 1]).resolve()
+
+    tki_files = sorted(tki_dir.glob("*.tki"))
     if not tki_files:
-        print(f"ERROR: No .tki files found in {TKI_DIR}")
+        print(f"ERROR: No .tki files found in {tki_dir}")
         return 1
 
     explicit, patterns, subns = load_resolver_tables(LLVM_C)
     defs = load_c_definitions(C_DIR)
     skips = load_skiplist(SKIPLIST)
     undecl = undeclared_wrappers(defs, load_compiler_declarations())
+
+    # 136.47 — a registered module with no interface.
+    tki_modules = set()
+    for f in tki_files:
+        try:
+            mod = json.loads(f.read_text()).get("module", "")
+        except (json.JSONDecodeError, OSError):
+            continue
+        tki_modules.add(mod[4:] if mod.startswith("std.") else mod)
+    registered = registered_modules()
+    no_iface = [m for m in registered if m not in tki_modules]
+    orphan_iface = sorted(m for m in tki_modules if m and m not in set(registered))
+
+    # 137.12 — the compiler's own two halves disagreeing about a signature.
+    c_ar = c_definition_arities()
+    d_ar, decl_dupes = declared_arities()
+    decl_drift = [(sym, d_ar[sym][0], n, d_ar[sym][1])
+                  for sym, n in sorted(c_ar.items())
+                  if sym in d_ar and d_ar[sym][0] != n]
 
     total = passed = 0
     failures: list[tuple[str, str, str, list[str]]] = []
@@ -208,6 +357,7 @@ def main() -> int:
     duplicates: list[str] = []
     resolved_symbols: set[str] = set()
     seen_keys: set[str] = set()
+    all_names: dict[tuple[str, str], list[str]] = {}
 
     for tki_file in tki_files:
         try:
@@ -220,6 +370,10 @@ def main() -> int:
         mod = module[4:] if module.startswith("std.") else module  # mirrors llvm.c
         for export in data.get("exports", []):
             if export.get("kind") != "func":
+                if export.get("name"):
+                    all_names.setdefault(
+                        (tki_file.name, export["name"]), []).append(
+                            export.get("kind", "?"))
                 continue
             name = export.get("name", "")
             prefix, _, method = name.partition(".")
@@ -229,6 +383,7 @@ def main() -> int:
             if key in seen_keys:
                 duplicates.append(key)
             seen_keys.add(key)
+            all_names.setdefault((tki_file.name, name), []).append("func")
 
             symbol = expected_symbol(mod, prefix, method, explicit, patterns, subns)
             resolved_symbols.add(symbol)
@@ -295,6 +450,61 @@ def main() -> int:
             print(f"  {s} ({defs[s]})")
         print()
 
+    # 137.10 — one name declared under two kinds in one interface.
+    #
+    # `http.tki` declares http.get/post/put/delete as BOTH a route and a func.
+    # stdlib_symbol_for() answers the route symbol for all four, so no
+    # argument list can reach the function form, and for post/put — where the
+    # two arities differ — the diagnostic confidently names the route's arity
+    # for a four-parameter function and sends the reader to the wrong place.
+    # Deleting the four lines fixes today's files; rejecting the shape is what
+    # stops the next one.
+    cross_kind = sorted(
+        (f, n, kinds) for (f, n), kinds in all_names.items() if len(set(kinds)) > 1)
+    if cross_kind:
+        print("FAIL (one name declared under two kinds in the same .tki — the")
+        print("      resolver answers ONE symbol, so every later declaration is")
+        print("      unreachable and its arity is what diagnostics will cite):")
+        for f, n, kinds in cross_kind:
+            print(f"  {f} :: {n}  declared as {' + '.join(sorted(set(kinds)))}")
+        print()
+
+    if no_iface:
+        print("FAIL (registered in stdlib_table[] with no stdlib/<mod>.tki — the")
+        print("      import is accepted and the generic tk_<mod>_<method>_w rule")
+        print("      then answers a symbol for ANY spelling, so no member of the")
+        print("      module is checked in either direction — 127.61, 136.47):")
+        for m in no_iface:
+            print(f"  std.{m}")
+        print()
+
+    if decl_drift:
+        print("FAIL (g_stdlib_decls disagrees with the C definition — this is the")
+        print("      arity 136.1 checks every call against, so a call matching the")
+        print("      real C signature is rejected; fix the declaration, and if it")
+        print("      is hand-written in llvm.c consider deleting it so")
+        print("      gen_stdlib_decls.py can generate it — 137.12):")
+        for sym, decl_n, c_n, where in decl_drift:
+            print(f"  {sym}: declared {decl_n} at {where}, C definition takes {c_n}")
+        print()
+
+    if decl_dupes:
+        print("FAIL (a glue symbol is declared twice in g_stdlib_decls — the")
+        print("      compiler returns on the FIRST match, so the second row is")
+        print("      dead and will mislead whoever reads it; gen_stdlib_decls.py")
+        print("      already excludes whatever llvm.c declares, so the two halves")
+        print("      should never both carry a name — 137.12):")
+        for d in decl_dupes:
+            print(f"  {d}")
+        print()
+
+    if orphan_iface:
+        print("WARNING interface with no stdlib_table[] row (the module cannot be")
+        print("        imported; withdraw the .tki or register the module):")
+        for m in orphan_iface:
+            print(f"  std.{m}")
+        print()
+
     print("=" * 60)
     print(f"check-tki: {total} .tki func exports, {len(defs)} tk_* definitions in src/stdlib/*.c")
     print(f"  PASS:        {passed}")
@@ -303,9 +513,15 @@ def main() -> int:
     print(f"  stale skips: {len(stale_skips)}")
     print(f"  _w glue defined but not in g_stdlib_decls (arity unchecked): {len(undecl)}")
     print(f"  undeclared _w glue (no .tki export resolves to it): {len(undeclared)}  [informational, -v to list]")
+    print(f"  registered modules: {len(registered)}, interfaces: {len(tki_files)}, "
+          f"registered without one: {len(no_iface)}")
+    print(f"  names declared under two kinds in one file: {len(cross_kind)}")
+    print(f"  g_stdlib_decls entries disagreeing with the C definition: {len(decl_drift)}")
+    print(f"  glue symbols declared twice in g_stdlib_decls: {len(decl_dupes)}")
     print("=" * 60)
 
-    if failures or stale_skips or undecl:
+    if (failures or stale_skips or undecl or cross_kind or no_iface
+            or decl_drift or decl_dupes):
         return 1
     print(f"All non-quarantined .tki declarations resolve to defined C symbols "
           f"({passed} pass, {len(quarantined)} quarantined).")

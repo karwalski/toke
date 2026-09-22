@@ -2,10 +2,91 @@
   "schema_version": "1.0",
   "module": "std.log",
   "exports": [
-    {"kind": "func", "name": "log.info",  "params": ["str", "[[str]]"], "return": "bool"},
-    {"kind": "func", "name": "log.warn",  "params": ["str", "[[str]]"], "return": "bool"},
-    {"kind": "func", "name": "log.error", "params": ["str", "[[str]]"], "return": "bool"},
-    {"kind": "func", "name": "log.openerror", "params": ["str", "i64", "i64", "i64"], "return": "i64"},
-    {"kind": "func", "name": "log.accessformat", "params": ["str"], "return": "i64"}
+    {
+      "kind": "func",
+      "name": "log.info",
+      "params": [
+        "str",
+        "[[str]]"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "log.warn",
+      "params": [
+        "str",
+        "[[str]]"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "log.error",
+      "params": [
+        "str",
+        "[[str]]"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "log.openerror",
+      "params": [
+        "str",
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64"
+    },
+    {
+      "kind": "func",
+      "name": "log.accessformat",
+      "params": [
+        "str"
+      ],
+      "return": "i64"
+    },
+    {
+      "kind": "func",
+      "name": "log.debug",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "log.openaccess",
+      "params": [
+        "i64",
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "log.setformat",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "log.setlevel",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
   ]
 }

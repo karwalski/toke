@@ -1,18 +1,18 @@
 {
   "schema_version": "1.0",
-  "module": "std.net",
+  "module": "std.io",
+  "generated": "scripts/gen_tki.py (137.12) -- arity is derived from the glue; ABI parameter types on entries tagged \"gen\":\"abi\" are not",
   "exports": [
     {
       "kind": "func",
-      "name": "net.portavailable",
-      "params": [
-        "int"
-      ],
-      "return": "int"
+      "name": "io.eof",
+      "params": [],
+      "return": "i64",
+      "gen": "abi"
     },
     {
       "kind": "func",
-      "name": "net.accept",
+      "name": "io.eprintln",
       "params": [
         "i64"
       ],
@@ -21,7 +21,7 @@
     },
     {
       "kind": "func",
-      "name": "net.close",
+      "name": "io.print",
       "params": [
         "i64"
       ],
@@ -30,29 +30,27 @@
     },
     {
       "kind": "func",
-      "name": "net.listen",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "net.read",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "net.write",
+      "name": "io.printf",
       "params": [
         "i64",
         "i64"
       ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "io.println",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "io.readln",
+      "params": [],
       "return": "i64",
       "gen": "abi"
     }

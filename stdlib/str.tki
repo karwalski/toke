@@ -2,52 +2,1115 @@
   "schema_version": "1.0",
   "module": "std.str",
   "exports": [
-    {"kind": "func", "name": "str.len", "params": ["str"], "return": "u64"},
-    {"kind": "func", "name": "str.concat", "params": ["str", "str"], "return": "str"},
-    {"kind": "func", "name": "str.slice", "params": ["str", "u64", "u64"], "return": "str!SliceErr"},
-    {"kind": "func", "name": "str.fromint", "params": ["i64"], "return": "str"},
-    {"kind": "func", "name": "str.fromfloat", "params": ["f64"], "return": "str"},
-    {"kind": "func", "name": "str.toint", "params": ["str"], "return": "i64!ParseErr"},
-    {"kind": "func", "name": "str.tofloat", "params": ["str"], "return": "f64!ParseErr",
-     "note": "parse a decimal string to f64 (Story 114.39)"},
-    {"kind": "func", "name": "str.contains", "params": ["str", "str"], "return": "bool"},
-    {"kind": "func", "name": "str.eq", "params": ["str", "str"], "return": "bool",
-     "note": "content equality for heap strings (str.split results etc.); see str = operator (Epic 112.2)"},
-    {"kind": "func", "name": "str.gt", "params": ["str", "str"], "return": "bool"},
-    {"kind": "func", "name": "str.lt", "params": ["str", "str"], "return": "bool"},
-    {"kind": "func", "name": "str.ge", "params": ["str", "str"], "return": "bool"},
-    {"kind": "func", "name": "str.le", "params": ["str", "str"], "return": "bool"},
-    {"kind": "func", "name": "str.charcode", "params": ["str", "i64"], "return": "i64"},
-    {"kind": "func", "name": "str.charat", "params": ["str", "i64"], "return": "i64",
-     "note": "byte value at index i (0 when out of range); same as str.charcode — 127.38"},
-    {"kind": "func", "name": "str.split", "params": ["str", "str"], "return": "[str]"},
-    {"kind": "func", "name": "str.fields", "params": ["str"], "return": "[str]"},
-    {"kind": "func", "name": "str.trim", "params": ["str"], "return": "str"},
-    {"kind": "func", "name": "str.upper", "params": ["str"], "return": "str"},
-    {"kind": "func", "name": "str.lower", "params": ["str"], "return": "str"},
-    {"kind": "func", "name": "str.bytes", "params": ["str"], "return": "[byte]"},
-    {"kind": "func", "name": "str.frombytes", "params": ["[byte]"], "return": "str!EncodingErr"},
-    {"kind": "type", "name": "SliceErr", "fields": [{"name": "msg", "type": "str"}]},
-    {"kind": "type", "name": "ParseErr", "fields": [{"name": "msg", "type": "str"}]},
-    {"kind": "type", "name": "EncodingErr", "fields": [{"name": "msg", "type": "str"}]},
-    {"kind": "func", "name": "str.startswith", "params": ["str", "str"], "return": "bool"},
-    {"kind": "func", "name": "str.endswith",   "params": ["str", "str"], "return": "bool"},
-    {"kind": "func", "name": "str.replace",    "params": ["str", "str", "str"], "return": "str"},
-    {"kind": "func", "name": "str.indexof",    "params": ["str", "str"], "return": "i64"},
-    {"kind": "func", "name": "str.repeat",     "params": ["str", "u64"], "return": "str"},
-    {"kind": "func", "name": "str.join",       "params": ["str", "[str]"], "return": "str"},
-    {"kind": "type", "name": "StrBuf", "fields": []},
-    {"kind": "func", "name": "str.buf",        "params": [], "return": "StrBuf"},
-    {"kind": "func", "name": "str.add",        "params": ["StrBuf", "str"], "return": "void"},
-    {"kind": "func", "name": "str.addbyte",    "params": ["StrBuf", "byte"], "return": "void"},
-    {"kind": "func", "name": "str.done",       "params": ["StrBuf"], "return": "str"},
-    {"kind": "func", "name": "str.builder",    "params": [], "return": "StrBuf"},
-    {"kind": "func", "name": "str.build",      "params": ["StrBuf"], "return": "str"},
-    {"kind": "func", "name": "str.interpolate","params": ["[str]"], "return": "str"},
-    {"kind": "func", "name": "str.trimprefix", "params": ["str", "str"], "return": "str"},
-    {"kind": "func", "name": "str.trimsuffix", "params": ["str", "str"], "return": "str"},
-    {"kind": "func", "name": "str.lastindex",  "params": ["str", "str"], "return": "i64"},
-    {"kind": "func", "name": "str.matchbracket", "params": ["str"], "return": "str!BracketErr"},
-    {"kind": "type", "name": "BracketErr", "fields": [{"name": "msg", "type": "str"}]}
+    {
+      "kind": "func",
+      "name": "str.len",
+      "params": [
+        "str"
+      ],
+      "return": "u64"
+    },
+    {
+      "kind": "func",
+      "name": "str.concat",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "str.slice",
+      "params": [
+        "str",
+        "u64",
+        "u64"
+      ],
+      "return": "str!SliceErr"
+    },
+    {
+      "kind": "func",
+      "name": "str.fromint",
+      "params": [
+        "i64"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "str.fromfloat",
+      "params": [
+        "f64"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "str.toint",
+      "params": [
+        "str"
+      ],
+      "return": "i64!ParseErr"
+    },
+    {
+      "kind": "func",
+      "name": "str.tofloat",
+      "params": [
+        "str"
+      ],
+      "return": "f64!ParseErr",
+      "note": "parse a decimal string to f64 (Story 114.39)"
+    },
+    {
+      "kind": "func",
+      "name": "str.contains",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "str.eq",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "bool",
+      "note": "content equality for heap strings (str.split results etc.); see str = operator (Epic 112.2)"
+    },
+    {
+      "kind": "func",
+      "name": "str.gt",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "str.lt",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "str.ge",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "str.le",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "str.charcode",
+      "params": [
+        "str",
+        "i64"
+      ],
+      "return": "i64"
+    },
+    {
+      "kind": "func",
+      "name": "str.charat",
+      "params": [
+        "str",
+        "i64"
+      ],
+      "return": "i64",
+      "note": "byte value at index i (0 when out of range); same as str.charcode \u2014 127.38"
+    },
+    {
+      "kind": "func",
+      "name": "str.split",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "[str]"
+    },
+    {
+      "kind": "func",
+      "name": "str.fields",
+      "params": [
+        "str"
+      ],
+      "return": "[str]"
+    },
+    {
+      "kind": "func",
+      "name": "str.trim",
+      "params": [
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "str.upper",
+      "params": [
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "str.lower",
+      "params": [
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "str.bytes",
+      "params": [
+        "str"
+      ],
+      "return": "[byte]"
+    },
+    {
+      "kind": "func",
+      "name": "str.frombytes",
+      "params": [
+        "[byte]"
+      ],
+      "return": "str!EncodingErr"
+    },
+    {
+      "kind": "type",
+      "name": "SliceErr",
+      "fields": [
+        {
+          "name": "msg",
+          "type": "str"
+        }
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "ParseErr",
+      "fields": [
+        {
+          "name": "msg",
+          "type": "str"
+        }
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "EncodingErr",
+      "fields": [
+        {
+          "name": "msg",
+          "type": "str"
+        }
+      ]
+    },
+    {
+      "kind": "func",
+      "name": "str.startswith",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "str.endswith",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "str.replace",
+      "params": [
+        "str",
+        "str",
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "str.indexof",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "i64"
+    },
+    {
+      "kind": "func",
+      "name": "str.repeat",
+      "params": [
+        "str",
+        "u64"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "str.join",
+      "params": [
+        "str",
+        "[str]"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "type",
+      "name": "StrBuf",
+      "fields": []
+    },
+    {
+      "kind": "func",
+      "name": "str.buf",
+      "params": [],
+      "return": "StrBuf"
+    },
+    {
+      "kind": "func",
+      "name": "str.add",
+      "params": [
+        "StrBuf",
+        "str"
+      ],
+      "return": "void"
+    },
+    {
+      "kind": "func",
+      "name": "str.addbyte",
+      "params": [
+        "StrBuf",
+        "byte"
+      ],
+      "return": "void"
+    },
+    {
+      "kind": "func",
+      "name": "str.done",
+      "params": [
+        "StrBuf"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "str.builder",
+      "params": [],
+      "return": "StrBuf"
+    },
+    {
+      "kind": "func",
+      "name": "str.build",
+      "params": [
+        "StrBuf"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "str.interpolate",
+      "params": [
+        "[str]"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "str.trimprefix",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "str.trimsuffix",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "str.lastindex",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "i64"
+    },
+    {
+      "kind": "func",
+      "name": "str.matchbracket",
+      "params": [
+        "str"
+      ],
+      "return": "str!BracketErr"
+    },
+    {
+      "kind": "type",
+      "name": "BracketErr",
+      "fields": [
+        {
+          "name": "msg",
+          "type": "str"
+        }
+      ]
+    },
+    {
+      "kind": "func",
+      "name": "str.append",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.appendarray",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.appenditem",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.argv",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.arrappend",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.arrayappend",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.arrayget",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.arraylen",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.arraypush",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.arrof",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.bytelen",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.chars",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.compare",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.containsignorecase",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.containsre",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.countre",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.emptyarr",
+      "params": [],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.emptylist",
+      "params": [],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.emptyof",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.ends",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.equals",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.find",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.findall",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.format",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.frombool",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.fromf32",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.fromf64",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.fromi32",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.fromi64",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.fromint64",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.fromu16",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.fromu32",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.fromu64",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.get",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.hexid",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.i64tof64",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.isdigit",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.isempty",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.lastindexof",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.length",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.matches",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.newarr",
+      "params": [],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.newarray",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.nowiso8601",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.nowunix",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.pad",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.padleft",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.padright",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.parsef64",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.parsefloat",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.parseint",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.print",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.push",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.randhex",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.replaceall",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.replaceitem",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.replacere",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.reverse",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.set",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.setat",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.sha256prefix",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.splitfirst",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.splitwhitespace",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.starts",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.strip",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.sub",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.substr",
+      "params": [
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.tobytes",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.tof32",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.tof64",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.toi32",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.toi64",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.toint64",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.tolower",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.toupper",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.trimws",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "str.wordcount",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
   ]
 }

@@ -24,39 +24,59 @@ Legend: **ABSENT** = no compiler dispatch entry and no runtime glue symbol
 for that call form (link fails with an undefined symbol); **CRASH** = check
 and build clean, binary dies; **WRONG** = runs, wrong output.
 
+> **WITHDRAWN (136.47, 2026-09-22).** Every module-style `arr.*` row marked
+> ABSENT below is **withdrawn from the documentation** until it is
+> implemented. The fourteen — `arr.map`, `fold`, `filter`, `each`, `all`,
+> `any`, `count`, `first`, `last`, `max`, `min`, `reduce`, `sort`, `sum` —
+> resolve to `tk_array_*_w` symbols that exist nowhere in `src/stdlib`, so a
+> call type-checks clean and dies at `ld`. Documented-and-broken is worse than
+> absent: this table recorded them as ABSENT for months while
+> `docs/spec/idiom-v0.4.md` section 7 told authors to *prefer* them, so the
+> form kept reaching new code.  The rows are kept here, marked, because this
+> file's job is to record what a probe measured — but nothing else in the docs
+> should present them as available.
+>
+> **The receiver form is unaffected and is the spelling to use**: `a.map(&f)`,
+> `a.filter(&p)`, `a.reduce(0;&f)` are implemented and correct (rows below).
+>
+> The generated `stdlib/array.tki` (137.12) carries the 19 `std.array` members
+> that have glue and none of these fourteen — `scripts/gen_tki.py` can only
+> declare a method whose symbol is defined, so the interface cannot drift back
+> into promising them.
+
 ## Arrays (`@i64` receiver `a=@(3;1;2)`)
 
 | symbol | call form | --check | build | runs | correct | notes / 127.x cross-ref |
 |---|---|---|---|---|---|---|
 | map | `a.map(&dbl)` | ok | ok | ok | yes | canonical |
-| map | `arr.map(a;&dbl)` (`i=arr:std.array;`) | ok | E9003 | – | no | ABSENT module-style (`tk_array_map_w` undefined) |
+| map | `arr.map(a;&dbl)` (`i=arr:std.array;`) | ok | E9003 | – | no | ABSENT module-style (`tk_array_map_w` undefined) — **WITHDRAWN 136.47** |
 | filter | `a.filter(&iseven)` | ok | ok | ok | yes | canonical |
-| filter | `arr.filter(a;&p)` | ok | E9003 | – | no | ABSENT module-style |
+| filter | `arr.filter(a;&p)` | ok | E9003 | – | no | ABSENT module-style — **WITHDRAWN 136.47** |
 | reduce | `a.reduce(0;&addf)` | ok | ok | ok | yes | canonical reduction form — works today (`tk_arr_reduce`) |
-| reduce | `arr.reduce(a;0;&f)` | ok | E9003 | – | no | ABSENT module-style |
-| fold | `a.fold(0;&addf)` | ok | E9003 | – | no | **127.4** — ABSENT: no dispatch entry; links to an undefined user fn `fold` (not malformed IR). `reduce` has the same signature and works |
-| fold | `arr.fold(a;0;&f)` | ok | E9003 | – | no | ABSENT |
+| reduce | `arr.reduce(a;0;&f)` | ok | E9003 | – | no | ABSENT module-style — **WITHDRAWN 136.47** |
+| fold | `a.fold(0;&addf)` | ok | ok | ok | yes | **127.4 closed** — re-measured 2026-09-22: `llvm.c` aliases receiver `fold` to `tk_arr_reduce`, and `@(3;1;2).fold(0;&addf)` returns 6. This row previously read ABSENT/E9003 and was stale; `syntax_card.md` already said so |
+| fold | `arr.fold(a;0;&f)` | ok | E9003 | – | no | ABSENT — **WITHDRAWN 136.47** |
 | sort | `a.sort(&cmp)` | ok | ok | ok | yes | canonical (comparator returns `a-b`) |
-| sort | `arr.sort(a;&cmp)` | ok | E9003 | – | no | ABSENT module-style |
-| each | `a.each(&pr)` / `arr.each(a;&pr)` | ok | E9003 | – | no | ABSENT (both forms) |
-| all | `a.all(&p)` / `arr.all(a;&p)` | ok | E9003 | – | no | ABSENT (both forms) |
-| any | `a.any(&p)` / `arr.any(a;&p)` | ok | E9003 | – | no | ABSENT (both forms) |
-| count | `a.count(&p)` / `arr.count(a;&p)` | ok | E9003 | – | no | ABSENT (both forms) |
-| sum | `a.sum()` / `arr.sum(a)` | ok | E9003 | – | no | ABSENT (both forms) |
-| min | `a.min()` / `arr.min(a)` | ok | E9003 | – | no | ABSENT (both forms) |
-| max | `a.max()` / `arr.max(a)` | ok | E9003 | – | no | ABSENT (both forms) |
-| first | `a.first()` / `arr.first(a)` | ok | E9003 | – | no | ABSENT (both forms) |
-| last | `a.last()` / `arr.last(a)` | ok | E9003 | – | no | ABSENT (both forms) |
+| sort | `arr.sort(a;&cmp)` | ok | E9003 | – | no | ABSENT module-style — **WITHDRAWN 136.47** |
+| each | `a.each(&pr)` / `arr.each(a;&pr)` | ok | E9003 | – | no | ABSENT (both forms) — **WITHDRAWN 136.47** |
+| all | `a.all(&p)` / `arr.all(a;&p)` | ok | E9003 | – | no | ABSENT (both forms) — **WITHDRAWN 136.47** |
+| any | `a.any(&p)` / `arr.any(a;&p)` | ok | E9003 | – | no | ABSENT (both forms) — **WITHDRAWN 136.47** |
+| count | `a.count(&p)` / `arr.count(a;&p)` | ok | E9003 | – | no | ABSENT (both forms) — **WITHDRAWN 136.47** |
+| sum | `a.sum()` / `arr.sum(a)` | ok | E9003 | – | no | ABSENT (both forms) — **WITHDRAWN 136.47** |
+| min | `a.min()` / `arr.min(a)` | ok | E9003 | – | no | ABSENT (both forms) — **WITHDRAWN 136.47** |
+| max | `a.max()` / `arr.max(a)` | ok | E9003 | – | no | ABSENT (both forms) — **WITHDRAWN 136.47** |
+| first | `a.first()` / `arr.first(a)` | ok | E9003 | – | no | ABSENT (both forms) — **WITHDRAWN 136.47** |
+| last | `a.last()` / `arr.last(a)` | ok | E9003 | – | no | ABSENT (both forms) — **WITHDRAWN 136.47** |
 | find | `a.find(2)` | ok | ok | SIGSEGV | no | **NEW** CRASH: array receiver dispatched to `tk_str_find_w` (string glue) |
-| find | `arr.find(a;2)` | ok | E9003 | – | no | ABSENT module-style |
+| find | `arr.find(a;2)` | ok | ok | ok | yes | **re-measured 2026-09-22**: links and runs correctly against the generated `array.tki` surface (`tk_array_*_w` in `collections_glue.c`, linked for std.array via `stdlib_deps.c:132`). The ABSENT verdict was stale — `@(3;1;2)` gives 2 |
 | indexof | `a.indexof(1)` | ok | ok | SIGSEGV | no | **NEW** CRASH: routed to `tk_str_indexof_w` |
-| indexof | `arr.indexof(a;1)` | ok | E9003 | – | no | ABSENT module-style |
+| indexof | `arr.indexof(a;1)` | ok | ok | ok | yes | **re-measured 2026-09-22**: links and runs correctly against the generated `array.tki` surface (`tk_array_*_w` in `collections_glue.c`, linked for std.array via `stdlib_deps.c:132`). The ABSENT verdict was stale — gives 1 |
 | contains | `a.contains(2)` | ok | ok | SIGSEGV | no | **NEW** CRASH: routed to `tk_str_contains_w` |
-| contains | `arr.contains(a;2)` | ok | E9003 | – | no | ABSENT module-style |
+| contains | `arr.contains(a;2)` | ok | ok | ok | yes | **re-measured 2026-09-22**: links and runs correctly against the generated `array.tki` surface (`tk_array_*_w` in `collections_glue.c`, linked for std.array via `stdlib_deps.c:132`). The ABSENT verdict was stale — gives 1, and 0 for an absent value |
 | slice | `a.slice(1;3)` | ok | ok | SIGSEGV | no | **NEW** CRASH: routed to `tk_str_slice_w` |
-| slice | `arr.slice(a;1;3)` | ok | E9003 | – | no | ABSENT module-style |
+| slice | `arr.slice(a;1;3)` | ok | ok | ok | yes | **re-measured 2026-09-22**: links and runs correctly against the generated `array.tki` surface (`tk_array_*_w` in `collections_glue.c`, linked for std.array via `stdlib_deps.c:132`). The ABSENT verdict was stale — gives `@(1;2)` |
 | append | `a=a.append(9)` | ok | ok | ok | yes | canonical accumulator |
-| append | `a=arr.append(a;9)` | ok | E9003 | – | no | **NEW** (low): ill-typed IR (`ptr` where `i64` expected) — module form only |
+| append | `a=arr.append(a;9)` | ok | ok | ok | yes | **re-measured 2026-09-22**: links and runs correctly against the generated `array.tki` surface (`tk_array_*_w` in `collections_glue.c`, linked for std.array via `stdlib_deps.c:132`). The ABSENT verdict was stale; the ill-typed-IR verdict did not reproduce — `len` goes 3 → 4 |
 | `+@()` | `a=a+@(9)` | ok | ok | ok | yes | canonical alternative; the ONLY append form whose element type is inferred for interpolation (see 127.10) |
 | push | `a=a.push(9)` | ok | ok | ok | yes | alias of append |
 | push | `a.push(9);` (bare) | ok | ok | ok | yes* | **127.2 NOT reproducible** on this SHA: silent no-op (`len` unchanged), exit 0, also for `mut.@()` and inside loops. *Correct only in the value-semantics sense; see 127.3 |
