@@ -131,7 +131,6 @@ f=count(a:@i64):i64{
   <n
 };
 f=main():i64{
-  i=io:std.io;
   io.println("\(count(@(10;20;30)))");
   <0
 };'
@@ -360,11 +359,18 @@ reject "return i64 from a u64 function" "E4031" \
 f=bad(k:i64):u64{<k};
 f=main():i64{<0};'
 
+# The binding is ANNOTATED `:u64`, not left to `let n=mut.0 as u64`.  That
+# spelling looks equivalent and is not: `bind_init_type()` has no cast case
+# either (the third sibling of the map/array holes above), so the binding came
+# out TY_UNKNOWN and this case passed `--check` while asserting nothing.  It is
+# the same shape of hole this story closes for NODE_MAP_LIT, still open for
+# NODE_CAST_EXPR and NODE_ARRAY_LIT — worth its own story, not widened into
+# this one.  The W1001 on the initialiser is a warning and does not set rc.
 reject "assign i64 to a u64 binding" "E4031" \
 'm=main;
 i=io:std.io;
 f=main():i64{
-  let n=mut.0 as u64;
+  let n:u64=mut.0 as u64;
   let k:i64=2;
   n=k;
   io.println("\(n)");
