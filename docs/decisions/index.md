@@ -23,4 +23,5 @@ Architectural decisions for the toke project, recorded as ADRs.
 - [ADR-0012 — Spatial memory safety of emitted code: bounds-checked indexing + guarded division](/docs/decisions/ADR-0012/) -- **ACCEPTED 2026-07-03** (Epic 124); bounds/div/nil/canary; bounds-default flips bundled with `-O2` + `@nobounds`; option-type split to ADR-0014
 - [ADR-0013 — Cryptographic agility: versioned formats, JWT alg-dispatch, hybrid post-quantum KEX](/docs/decisions/ADR-0013/) -- **ACCEPTED 2026-07-03** (Epic 124); envelope + JWT dispatch + hybrid KEX + committed signature PQC
 - [ADR-0014 — Option / non-null as a first-class type (null-safety by construction)](/docs/decisions/ADR-0014/) -- **proposed, gated on Epic 123.5** ($none codegen fix); reuse `T!$none`+`mt`, no new syntax unless measurement forces it
+- [ADR-0015 — The toke toolchain is C99 only; no vendored C++ dependencies](/docs/decisions/ADR-0015/) -- **ACCEPTED 2026-09-22** (Epic 135/135.0); `-std=c99`, zero C++ TUs; pdfium/podofo/Tesseract disqualified as vendored deps; escape hatches = C shim, or separate optional component
 - [Gate 1 Decision Document](/docs/decisions/gate1-decision/) -- Gate 1 review and outcome
