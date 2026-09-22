@@ -1,39 +1,39 @@
 {
   "schema_version": "1.0",
-  "module": "std.test",
+  "module": "std.soap",
+  "generated": "scripts/gen_tki.py (137.12) -- arity is derived from the glue; ABI parameter types on entries tagged \"gen\":\"abi\" are not",
   "exports": [
     {
       "kind": "func",
-      "name": "test.assert",
+      "name": "soap.envelope",
       "params": [
-        "bool",
-        "str"
+        "i64",
+        "i64"
       ],
-      "return": "bool"
+      "return": "i64",
+      "gen": "abi"
     },
     {
       "kind": "func",
-      "name": "test.asserteq",
+      "name": "soap.extractbody",
       "params": [
-        "str",
-        "str",
-        "str"
+        "i64"
       ],
-      "return": "bool"
+      "return": "i64",
+      "gen": "abi"
     },
     {
       "kind": "func",
-      "name": "test.assertne",
+      "name": "soap.extractfault",
       "params": [
-        "str",
-        "str",
-        "str"
+        "i64"
       ],
-      "return": "bool"
+      "return": "i64",
+      "gen": "abi"
     },
     {
       "kind": "func",
-      "name": "test.assertequal",
+      "name": "soap.fault",
       "params": [
         "i64",
         "i64",
@@ -44,7 +44,7 @@
     },
     {
       "kind": "func",
-      "name": "test.eq",
+      "name": "soap.wssetimestamp",
       "params": [
         "i64",
         "i64"
@@ -54,35 +54,9 @@
     },
     {
       "kind": "func",
-      "name": "test.fail",
+      "name": "soap.wsseusernametoken",
       "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "test.ok",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "test.report",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "test.run",
-      "params": [
+        "i64",
         "i64"
       ],
       "return": "i64",

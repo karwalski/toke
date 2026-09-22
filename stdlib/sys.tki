@@ -2,7 +2,75 @@
   "schema_version": "1.0",
   "module": "std.sys",
   "exports": [
-    {"kind": "func", "name": "sys.configdir", "params": ["str"], "return": "str"},
-    {"kind": "func", "name": "sys.datadir",   "params": ["str"], "return": "str"}
+    {
+      "kind": "func",
+      "name": "sys.configdir",
+      "params": [
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "sys.datadir",
+      "params": [
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "sys.chipname",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "sys.cpucount",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "sys.diskfreegb",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "sys.isarm64",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "sys.platform",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "sys.totalramgb",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
   ]
 }

@@ -2,14 +2,109 @@
   "schema_version": "1.0",
   "module": "std.crypto",
   "exports": [
-    {"kind": "func", "name": "crypto.sha256",      "params": ["[byte]"],            "return": "[byte]"},
-    {"kind": "func", "name": "crypto.sha512",      "params": ["[byte]"],            "return": "[byte]"},
-    {"kind": "func", "name": "crypto.hmacsha256",  "params": ["[byte]", "[byte]"],  "return": "[byte]"},
-    {"kind": "func", "name": "crypto.hmacsha512",  "params": ["[byte]", "[byte]"],  "return": "[byte]"},
-    {"kind": "func", "name": "crypto.constanteq",  "params": ["[byte]", "[byte]"],  "return": "bool"},
-    {"kind": "func", "name": "crypto.randombytes", "params": ["u64"],               "return": "[byte]"},
-    {"kind": "func", "name": "crypto.tohex",      "params": ["[byte]"],            "return": "str"},
-    {"kind": "func", "name": "crypto.sha256file",   "params": ["str"],               "return": "str"},
-    {"kind": "func", "name": "crypto.sha256verify", "params": ["str", "str"],        "return": "bool"}
+    {
+      "kind": "func",
+      "name": "crypto.sha256",
+      "params": [
+        "[byte]"
+      ],
+      "return": "[byte]"
+    },
+    {
+      "kind": "func",
+      "name": "crypto.sha512",
+      "params": [
+        "[byte]"
+      ],
+      "return": "[byte]"
+    },
+    {
+      "kind": "func",
+      "name": "crypto.hmacsha256",
+      "params": [
+        "[byte]",
+        "[byte]"
+      ],
+      "return": "[byte]"
+    },
+    {
+      "kind": "func",
+      "name": "crypto.hmacsha512",
+      "params": [
+        "[byte]",
+        "[byte]"
+      ],
+      "return": "[byte]"
+    },
+    {
+      "kind": "func",
+      "name": "crypto.constanteq",
+      "params": [
+        "[byte]",
+        "[byte]"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "crypto.randombytes",
+      "params": [
+        "u64"
+      ],
+      "return": "[byte]"
+    },
+    {
+      "kind": "func",
+      "name": "crypto.tohex",
+      "params": [
+        "[byte]"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "crypto.sha256file",
+      "params": [
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "crypto.sha256verify",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "crypto.constanttimeequal",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "crypto.randombase64url",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "crypto.randomhex",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
   ]
 }

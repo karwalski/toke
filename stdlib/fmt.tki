@@ -2,10 +2,69 @@
   "schema_version": "1.0",
   "module": "std.fmt",
   "exports": [
-    {"kind": "func", "name": "fmt.bool", "params": ["bool"],          "return": "str"},
-    {"kind": "func", "name": "fmt.arr",  "params": ["[i64]", "str"],  "return": "str"},
-    {"kind": "func", "name": "fmt.strs", "params": ["[str]", "str"],  "return": "str"},
-    {"kind": "func", "name": "fmt.f64",  "params": ["f64", "i64"],    "return": "str"},
-    {"kind": "func", "name": "fmt.pad",  "params": ["str", "i64", "bool"], "return": "str"}
+    {
+      "kind": "func",
+      "name": "fmt.bool",
+      "params": [
+        "bool"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "fmt.arr",
+      "params": [
+        "[i64]",
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "fmt.strs",
+      "params": [
+        "[str]",
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "fmt.f64",
+      "params": [
+        "f64",
+        "i64"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "fmt.pad",
+      "params": [
+        "str",
+        "i64",
+        "bool"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "fmt.print",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "fmt.sprintf",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
   ]
 }

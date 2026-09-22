@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "module": "std.fs",
+  "generated": "scripts/gen_tki.py (137.12) -- arity is derived from the glue; ABI parameter types on entries tagged \"gen\":\"abi\" are not",
+  "exports": [
+    {
+      "kind": "func",
+      "name": "fs.read",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "fs.write",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "fs.writetext",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
+  ]
+}

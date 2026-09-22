@@ -8862,10 +8862,20 @@ static const StdlibDecl g_stdlib_decls[] = {
     {"tk_str_containsre_w", "declare i64 @tk_str_containsre_w(i64, i64)", 0},
     {"tk_str_i64tof64_w", "declare i64 @tk_str_i64tof64_w(i64)", 0},
     /* std.os — POSIX syscall bridge */
+    /* 137.12: tk_os_read and tk_os_write are NOT declared here. Both were,
+     * as (i64, i64, i64), over two-parameter definitions in stdlib/os.c —
+     * and because gen_stdlib_decls.py excludes whatever llvm.c already
+     * declares (load_manual_decls), the generator deferred to the wrong
+     * entry forever. 136.1 made this table the arity every std call is
+     * judged against, so `o.read(fd; n)` — matching os.tki AND os.c — was
+     * rejected E4026 claiming the implementation takes 3. Deleting the rows
+     * lets the generator derive both from the C, which is the fix; editing
+     * the counts would have left the hand-maintained row in place. The gate
+     * is scripts/check_tki_coverage.py (declared_arities vs
+     * c_definition_arities). Do not re-add a row here for a symbol that
+     * gen_stdlib_decls.py can see. */
     {"tk_os_open", "declare i64 @tk_os_open(i64, i64, i64)", 0},
     {"tk_os_close", "declare i64 @tk_os_close(i64)", 0},
-    {"tk_os_read", "declare i64 @tk_os_read(i64, i64, i64)", 0},
-    {"tk_os_write", "declare i64 @tk_os_write(i64, i64, i64)", 0},
     {"tk_os_lseek", "declare i64 @tk_os_lseek(i64, i64, i64)", 0},
     {"tk_os_stat", "declare i64 @tk_os_stat(i64)", 0},
     {"tk_os_unlink", "declare i64 @tk_os_unlink(i64)", 0},

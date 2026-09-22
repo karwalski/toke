@@ -2,21 +2,199 @@
   "schema_version": "1.0",
   "module": "std.toon",
   "exports": [
-    {"kind": "type", "name": "Toon",    "fields": [{"name": "raw", "type": "str"}]},
-    {"kind": "type", "name": "ToonErr", "fields": [
-      {"name": "Parse",   "type": "str"},
-      {"name": "Type",    "type": "str"},
-      {"name": "Missing", "type": "str"}
-    ]},
-    {"kind": "func", "name": "toon.empty",   "params": [],                    "return": "Toon"},
-    {"kind": "func", "name": "toon.enc",     "params": ["str"],              "return": "str"},
-    {"kind": "func", "name": "toon.dec",     "params": ["str"],              "return": "Toon!ToonErr"},
-    {"kind": "func", "name": "toon.str",     "params": ["Toon", "str"],      "return": "str!ToonErr"},
-    {"kind": "func", "name": "toon.i64",     "params": ["Toon", "str"],      "return": "i64!ToonErr"},
-    {"kind": "func", "name": "toon.f64",     "params": ["Toon", "str"],      "return": "f64!ToonErr"},
-    {"kind": "func", "name": "toon.bool",    "params": ["Toon", "str"],      "return": "bool!ToonErr"},
-    {"kind": "func", "name": "toon.arr",     "params": ["Toon", "str"],      "return": "[Toon]!ToonErr"},
-    {"kind": "func", "name": "toon.fromjson", "params": ["str"],            "return": "str"},
-    {"kind": "func", "name": "toon.tojson",   "params": ["str"],            "return": "str"}
+    {
+      "kind": "type",
+      "name": "Toon",
+      "fields": [
+        {
+          "name": "raw",
+          "type": "str"
+        }
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "ToonErr",
+      "fields": [
+        {
+          "name": "Parse",
+          "type": "str"
+        },
+        {
+          "name": "Type",
+          "type": "str"
+        },
+        {
+          "name": "Missing",
+          "type": "str"
+        }
+      ]
+    },
+    {
+      "kind": "func",
+      "name": "toon.empty",
+      "params": [],
+      "return": "Toon"
+    },
+    {
+      "kind": "func",
+      "name": "toon.enc",
+      "params": [
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "toon.dec",
+      "params": [
+        "str"
+      ],
+      "return": "Toon!ToonErr"
+    },
+    {
+      "kind": "func",
+      "name": "toon.str",
+      "params": [
+        "Toon",
+        "str"
+      ],
+      "return": "str!ToonErr"
+    },
+    {
+      "kind": "func",
+      "name": "toon.i64",
+      "params": [
+        "Toon",
+        "str"
+      ],
+      "return": "i64!ToonErr"
+    },
+    {
+      "kind": "func",
+      "name": "toon.f64",
+      "params": [
+        "Toon",
+        "str"
+      ],
+      "return": "f64!ToonErr"
+    },
+    {
+      "kind": "func",
+      "name": "toon.bool",
+      "params": [
+        "Toon",
+        "str"
+      ],
+      "return": "bool!ToonErr"
+    },
+    {
+      "kind": "func",
+      "name": "toon.arr",
+      "params": [
+        "Toon",
+        "str"
+      ],
+      "return": "[Toon]!ToonErr"
+    },
+    {
+      "kind": "func",
+      "name": "toon.fromjson",
+      "params": [
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "toon.tojson",
+      "params": [
+        "str"
+      ],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "toon.deserialize",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "toon.fromstr",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "toon.getint",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "toon.getstring",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "toon.load",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "toon.parse",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "toon.print",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "toon.stringify",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "toon.tostr",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
   ]
 }

@@ -104,7 +104,16 @@ static const StdlibModule stdlib_table[] = {
     { "tls",           "tls.c tls_glue.c",                       "",                                                                 "-lssl -lcrypto" },
     { "keychain",      "keychain.c keychain_glue.c",             "",                                                                 TK_KEYCHAIN_FLAGS },
     { "infer",         "infer.c infer_glue.c",                   "",                                                                 "" },
-    { "infer_stream",  "infer_stream.c",                         "",                                                                 "" },
+    /* 137.12/136.47: the "infer_stream" row is withdrawn. It was dead in
+     * exactly the way 136.5's "secure_mem" row was dead: the lexer rejects an
+     * underscore in an identifier, so `i=x:std.infer_stream;` cannot be
+     * written at all -- it is E1003 before any of this is consulted. The row
+     * also carried no glue, so not one symbol was reachable through it even
+     * if the name had been spellable. It was the ninth of the nine modules
+     * registered with no .tki, and the only one where generating an interface
+     * would have documented a module nobody can import. Disk-streaming
+     * inference lives on std.infer (`infer.loadstreaming`); infer_stream.c is
+     * kept and unbuilt for whoever implements it. */
     { "mlx",           "mlx.c mlx_glue.c",                       "",                                                                 "" },
     { "mdns",          "mdns.c mdns_glue.c",                     "",                                                                 "" },
     /* 136.2: "webview" is withdrawn — stdlib/webview.tki is deleted, so

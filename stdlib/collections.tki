@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "module": "std.collections",
+  "generated": "scripts/gen_tki.py (137.12) -- arity is derived from the glue; ABI parameter types on entries tagged \"gen\":\"abi\" are not",
+  "exports": [
+    {
+      "kind": "func",
+      "name": "collections.append",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "collections.newarray",
+      "params": [],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "collections.push",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
+  ]
+}

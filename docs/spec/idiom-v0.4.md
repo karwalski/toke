@@ -77,9 +77,17 @@ interpolate. (`+` is numeric-only, ADR-0004 — it is not string concat.)
 not bind an intermediate `let parts=…; parts.get(0)` unless `parts` is reused.
 
 ### 7. Stdlib combinators over manual loops (where it reads clearly)
-Prefer `arr.map`/`filter`/`fold` to a `lp` that rebuilds an array, when the
-transform is a simple per-element function. Keep an explicit `lp` when the body
-is stateful or early-exits.
+Prefer the **receiver** form — `a.map(&dbl)`, `a.filter(&p)`, `a.reduce(0;&f)` —
+to a `lp` that rebuilds an array, when the transform is a simple per-element
+function. Keep an explicit `lp` when the body is stateful or early-exits.
+
+**Do not use the module-style `arr.map(a;&dbl)` spelling** (`i=arr:std.array;`).
+It is withdrawn as of 136.47: `arr.map`, `fold`, `filter`, `each`, `all`, `any`,
+`count`, `first`, `last`, `max`, `min`, `reduce`, `sort` and `sum` type-check
+clean and then fail at link on an undefined `tk_array_*_w` symbol, because no
+such symbol exists anywhere in the runtime. This section previously told authors
+to prefer exactly that spelling, which is how the form kept reaching new code.
+See `docs/reference/combinator-status.md`; implementing them is still open.
 
 ### 8. No dead `mut`, no redundant bindings
 `let x=mut.v` only when `x` is actually reassigned (lint: `mutable-never-mutated`).

@@ -1,75 +1,11 @@
 {
   "schema_version": "1.0",
-  "module": "std.i18n",
+  "module": "std.string",
+  "generated": "scripts/gen_tki.py (137.12) -- arity is derived from the glue; ABI parameter types on entries tagged \"gen\":\"abi\" are not",
   "exports": [
     {
-      "kind": "type",
-      "name": "I18nBundle",
-      "fields": [
-        {
-          "name": "data",
-          "type": "str"
-        }
-      ]
-    },
-    {
-      "kind": "type",
-      "name": "I18nErr",
-      "fields": [
-        {
-          "name": "NotFound",
-          "type": "str"
-        },
-        {
-          "name": "Parse",
-          "type": "str"
-        }
-      ]
-    },
-    {
       "kind": "func",
-      "name": "i18n.load",
-      "params": [
-        "str",
-        "str"
-      ],
-      "return": "I18nBundle!I18nErr"
-    },
-    {
-      "kind": "func",
-      "name": "i18n.get",
-      "params": [
-        "I18nBundle",
-        "str"
-      ],
-      "return": "str"
-    },
-    {
-      "kind": "func",
-      "name": "i18n.fmt",
-      "params": [
-        "I18nBundle",
-        "str",
-        "str"
-      ],
-      "return": "str"
-    },
-    {
-      "kind": "func",
-      "name": "i18n.locale",
-      "params": [],
-      "return": "str"
-    },
-    {
-      "kind": "func",
-      "name": "i18n.empty",
-      "params": [],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "i18n.localize",
+      "name": "string.arrayget",
       "params": [
         "i64",
         "i64"
@@ -79,7 +15,7 @@
     },
     {
       "kind": "func",
-      "name": "i18n.newstrarray",
+      "name": "string.arraylen",
       "params": [
         "i64"
       ],
@@ -88,16 +24,7 @@
     },
     {
       "kind": "func",
-      "name": "i18n.print",
-      "params": [
-        "i64"
-      ],
-      "return": "i64",
-      "gen": "abi"
-    },
-    {
-      "kind": "func",
-      "name": "i18n.str",
+      "name": "string.charat",
       "params": [
         "i64",
         "i64"
@@ -107,7 +34,7 @@
     },
     {
       "kind": "func",
-      "name": "i18n.strarrayappend",
+      "name": "string.concat",
       "params": [
         "i64",
         "i64"
@@ -117,7 +44,54 @@
     },
     {
       "kind": "func",
-      "name": "i18n.substr",
+      "name": "string.contains",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "string.fromi32",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "string.fromi64",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "string.len",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "string.startswith",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "string.substr",
       "params": [
         "i64",
         "i64",
@@ -128,9 +102,17 @@
     },
     {
       "kind": "func",
-      "name": "i18n.translate",
+      "name": "string.trim",
       "params": [
-        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "string.uuid",
+      "params": [
         "i64"
       ],
       "return": "i64",

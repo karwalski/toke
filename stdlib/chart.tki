@@ -6,33 +6,136 @@
       "kind": "type",
       "name": "dataset",
       "fields": [
-        {"name": "label", "type": "str"},
-        {"name": "data",  "type": "[f64]"},
-        {"name": "color", "type": "str"}
+        {
+          "name": "label",
+          "type": "str"
+        },
+        {
+          "name": "data",
+          "type": "[f64]"
+        },
+        {
+          "name": "color",
+          "type": "str"
+        }
       ]
     },
     {
       "kind": "type",
       "name": "chartspec",
       "fields": [
-        {"name": "type",     "type": "str"},
-        {"name": "labels",   "type": "[str]"},
-        {"name": "datasets", "type": "[dataset]"},
-        {"name": "title",    "type": "str"}
+        {
+          "name": "type",
+          "type": "str"
+        },
+        {
+          "name": "labels",
+          "type": "[str]"
+        },
+        {
+          "name": "datasets",
+          "type": "[dataset]"
+        },
+        {
+          "name": "title",
+          "type": "str"
+        }
       ]
     },
     {
       "kind": "type",
       "name": "charterr",
       "fields": [
-        {"name": "msg", "type": "str"}
+        {
+          "name": "msg",
+          "type": "str"
+        }
       ]
     },
-    {"kind": "func", "name": "chart.bar",     "params": ["[str]", "[f64]", "str"],             "return": "chartspec"},
-    {"kind": "func", "name": "chart.line",    "params": ["[str]", "[dataset]", "str"],          "return": "chartspec"},
-    {"kind": "func", "name": "chart.scatter", "params": ["[f64]", "[f64]", "str"],              "return": "chartspec"},
-    {"kind": "func", "name": "chart.pie",     "params": ["[str]", "[f64]", "str"],              "return": "chartspec"},
-    {"kind": "func", "name": "chart.tojson",  "params": ["chartspec"],                          "return": "[byte]"},
-    {"kind": "func", "name": "chart.tovega",  "params": ["chartspec"],                          "return": "[byte]"}
+    {
+      "kind": "func",
+      "name": "chart.bar",
+      "params": [
+        "[str]",
+        "[f64]",
+        "str"
+      ],
+      "return": "chartspec"
+    },
+    {
+      "kind": "func",
+      "name": "chart.line",
+      "params": [
+        "[str]",
+        "[dataset]",
+        "str"
+      ],
+      "return": "chartspec"
+    },
+    {
+      "kind": "func",
+      "name": "chart.scatter",
+      "params": [
+        "[f64]",
+        "[f64]",
+        "str"
+      ],
+      "return": "chartspec"
+    },
+    {
+      "kind": "func",
+      "name": "chart.pie",
+      "params": [
+        "[str]",
+        "[f64]",
+        "str"
+      ],
+      "return": "chartspec"
+    },
+    {
+      "kind": "func",
+      "name": "chart.tojson",
+      "params": [
+        "chartspec"
+      ],
+      "return": "[byte]"
+    },
+    {
+      "kind": "func",
+      "name": "chart.tovega",
+      "params": [
+        "chartspec"
+      ],
+      "return": "[byte]"
+    },
+    {
+      "kind": "func",
+      "name": "chart.addchart",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "chart.new",
+      "params": [
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    },
+    {
+      "kind": "func",
+      "name": "chart.serve",
+      "params": [
+        "i64",
+        "i64"
+      ],
+      "return": "i64",
+      "gen": "abi"
+    }
   ]
 }
