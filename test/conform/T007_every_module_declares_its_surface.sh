@@ -9,11 +9,23 @@
 # ── 1. REGISTERED WITH NO INTERFACE (136.47) ────────────────────────────────
 # `stdlib_module_registered()` accepts any module with a row in
 # stdlib_table[], and `stdlib_symbol_for()` then falls through to the generic
-# `tk_<mod>_<method>_w` rule, which answers a symbol for ANY spelling.  With
-# no `.tki` there is nothing to check a member against in either direction, so
-# a misspelling becomes a link error over a mangled name.  Nine modules were
-# in that state (127.61's second cause).  The measured count matters here:
-# the report said eight, and `infer_stream` is the ninth.
+# `tk_<mod>_<method>_w` rule, which answers a symbol for ANY spelling.  Nine
+# modules were in that state (127.61's second cause).  The measured count
+# matters here: the report said eight, and `infer_stream` is the ninth.
+#
+# BE PRECISE ABOUT WHAT THIS BUYS, because an earlier draft of this comment
+# was wrong and the wrong version is the tempting one.  It claimed that with
+# no `.tki` a misspelled member becomes a link error over a mangled name.
+# It does not, and has not since 136.1: types.c emits E4027 off
+# `g_stdlib_decls` -- the RUNTIME's record -- and never consults a std `.tki`
+# at all (`if (is_std) return;`, types.c:1434).  Measured both ways on this
+# build: `x.definitelynotamember(1)` is E4027 for all eight modules, and
+# still E4027 with stdlib/array.tki moved out of the tree entirely.
+#
+# So generating these interfaces does NOT change call-site checking.  What it
+# gates is the OTHER direction, which nothing held: that everything a `.tki`
+# declares is implemented, and everything the builtin table reaches is
+# declared.  For eight modules there was no document to hold to either.
 #
 # ── 2. ONE NAME, TWO KINDS (137.10) ─────────────────────────────────────────
 # `http.tki` declared http.get/post/put/delete as BOTH a `route` and a `func`.
