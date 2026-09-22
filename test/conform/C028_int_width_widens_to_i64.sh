@@ -239,6 +239,36 @@ f=main():i64{
   <0
 };'
 
+# The three str accept-cases above are necessary and NOT sufficient, and that
+# is worth stating because the file previously claimed otherwise.  When `.len`
+# is untyped on a str the field expression is TY_UNKNOWN, every check is
+# skipped, and the program compiles and prints the right number anyway — so an
+# accept-case passes identically whether or not 127.53 landed.  Reverting the
+# TY_STR arm of the NODE_FIELD_EXPR rule leaves all twelve of those assertions
+# green.  Only a REJECT discriminates: these three are errors exactly when
+# `s.len` is really typed u64, and pass silently when it is TY_UNKNOWN.
+
+reject "str .len is genuinely u64, not untyped (f64 annotation)" "E4031" \
+'m=main;
+i=io:std.io;
+f=hand(s:str):i64{let x:f64=s.len;io.println("\(x)");<0};
+f=main():i64{<hand("abcdef")};'
+
+reject "str .len is genuinely u64, not untyped (float division)" "E4031" \
+'m=main;
+i=io:std.io;
+f=hand(s:str):i64{io.println("\(s.len/2.0)");<0};
+f=main():i64{<hand("abcdef")};'
+
+# And the widened result is i64, not u64: `s.len+k` must NOT then satisfy a
+# u64 parameter.  This pins the direction at a str receiver too.
+reject "str .len widened with an i64 does not fit a u64 parameter" "E4031" \
+'m=main;
+i=io:std.io;
+f=takes(n:u64):i64{<0};
+f=hand(s:str):i64{let k:i64=2;<takes(s.len+k)};
+f=main():i64{<hand("abcdef")};'
+
 accept "map .len widens at a call site" "2" \
 'm=main;
 i=io:std.io;
