@@ -183,11 +183,19 @@ fi
 echo "  ---- negative control: put the 137.12 defect back, watch the gate ----"
 NCDIR="$(mktemp -d "${TMPDIR:-/tmp}/tkc_t006_nc_XXXXXX")"
 mkdir -p "${NCDIR}/src" "${NCDIR}/scripts" "${NCDIR}/stdlib"
+# 135.17 added two more inputs the gate cannot run without: the generated
+# dummy-arg set (an exemption that must not be able to fail open, so a missing
+# file now exits 2) and the arity skiplist. A scratch tree missing either one
+# makes the gate red for a reason that has nothing to do with the defect this
+# control reintroduces, which would leave `NC_RC -ne 0` passing while the two
+# assertions below — the ones that check it names tk_os_read — fail.
 cp "${REPO_ROOT}/src/llvm.c" "${REPO_ROOT}/src/stdlib_decls_gen.h" \
-   "${REPO_ROOT}/src/stdlib_deps.c" "${NCDIR}/src/"
+   "${REPO_ROOT}/src/stdlib_deps.c" "${REPO_ROOT}/src/stdlib_dummyarg_gen.h" \
+   "${NCDIR}/src/"
 cp -R "${REPO_ROOT}/src/stdlib" "${NCDIR}/src/stdlib"
 cp "${REPO_ROOT}"/scripts/check_tki_coverage.py \
-   "${REPO_ROOT}"/scripts/check_tki_skiplist.txt "${NCDIR}/scripts/"
+   "${REPO_ROOT}"/scripts/check_tki_skiplist.txt \
+   "${REPO_ROOT}"/scripts/check_tki_arity_skiplist.txt "${NCDIR}/scripts/"
 cp "${REPO_ROOT}"/stdlib/*.tki "${NCDIR}/stdlib/"
 python3 - "${NCDIR}/src/llvm.c" <<'NCPY'
 import sys
