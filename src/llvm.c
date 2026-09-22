@@ -1489,6 +1489,36 @@ static int is_num_parse_wrapper(const char *name) {
 }
 
 /*
+ * is_file_errbox_wrapper — 135.12.
+ *
+ * std.file's byte calls signal failure with a value sentinel: 0 means it
+ * failed, and file.lasterrkind() says which failure it was.  file.readrange
+ * and file.size do not, because for file.size the sentinel is WRONG, not
+ * merely weak: an empty file's size IS 0, so `mt file.size(p)` on an empty
+ * file would take the $err arm every time.  That is runtime-abi.md §7.2 in
+ * one line — "the zero filler is not the discriminant" — and the C005 family
+ * of defect: a zero standing in for a failure, which a reader cannot tell
+ * from a legitimate zero.
+ *
+ * So those two wrappers build a real error box (tk_err_box, 127.109) and
+ * clear the slot on success (127.123), and this predicate is what makes the
+ * slot AUTHORITATIVE rather than decorative: without it the compiler still
+ * tests the returned value, and file.size of an empty file is still reported
+ * as a failure.  C029 asserts exactly that, in both directions.
+ *
+ * The rest of the module is deliberately NOT listed here.  Migrating it is
+ * 127.102b — a breaking API change the owner scheduled to land in ONE release
+ * across three modules — and adding file.read or file.readbytes to this list
+ * without also retiring the accessors would ship a third of that break out of
+ * band.
+ */
+static int is_file_errbox_wrapper(const char *name) {
+    if (!name) return 0;
+    return !strcmp(name, "tk_file_readrange_w") ||
+           !strcmp(name, "tk_file_size_w");
+}
+
+/*
  * json_array_end — Given a pointer to the opening '[' of a JSON array,
  * return a pointer to its MATCHING ']', honoring nested brackets and
  * brackets that appear inside JSON string values.
@@ -5374,6 +5404,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 tok_cp(c->src, sc->children[1], pme, sizeof pme);
                 const char *prv = resolve_stdlib_call(c, pal, pme);
                 if (is_num_parse_wrapper(prv)) prop_cur_err = 1;
+                else if (is_file_errbox_wrapper(prv)) prop_cur_err = 1;  /* 135.12 */
                 else if (!prv) {
                     const FnSig *ucs = lookup_fn(c, pme);
                     if (!ucs || !ucs->err_type_name[0]) {
@@ -5865,6 +5896,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 const char *prv = resolve_stdlib_call(c, pal, pme);
                 if (is_void_err_union_wrapper(prv)) zero_is_ok = 1;          /* 127.95 */
                 if (is_num_parse_wrapper(prv)) use_current_error = 1;       /* 114.53/54 */
+                else if (is_file_errbox_wrapper(prv)) use_current_error = 1; /* 135.12 */
                 else if (!prv) {                                            /* 114.55: qualified user call */
                     const FnSig *ucs = lookup_fn(c, pme);
                     if (!ucs || !ucs->err_type_name[0]) {

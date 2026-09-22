@@ -351,16 +351,13 @@ BoolFileResult file_move(const char *src, const char *dst)
     return r;
 }
 
-U64FileResult file_size(const char *path)
-{
-    U64FileResult r = {0, 0, {0, NULL}};
-    struct stat st;
-    if (stat(path, &st) != 0) {
-        r.is_err = 1; r.err = make_err(errno, "stat failed"); return r;
-    }
-    r.ok = (uint64_t)st.st_size;
-    return r;
-}
+/*
+ * file_size lived here, beside file_mtime, as a bare stat(2) wrapper.  135.12
+ * REPLACED it in place rather than adding a second one — see the 135.12
+ * section at the foot of this file for the implementation and for why the
+ * original could not answer the question a bounded reader asks.  There is
+ * still exactly one file_size; only its body and its position moved.
+ */
 
 U64FileResult file_mtime(const char *path)
 {
@@ -788,6 +785,9 @@ static FileErrKind file_open_kind(int err_no)
  * is no stat/open race, and a short read is an error rather than a quietly
  * truncated buffer — which is the defect this whole story exists to remove.
  */
+static int file_open_for_read(const char *path, const char *who,
+                              struct stat *st, FileErr *err);
+
 BytesFileResult file_readbytes(const char *path)
 {
     BytesFileResult r = {{NULL, 0}, 0, {0, NULL}};
@@ -798,47 +798,15 @@ BytesFileResult file_readbytes(const char *path)
         return r;
     }
 
-    /* O_NONBLOCK is load-bearing, not defensive: open(2) on a FIFO with no
-     * writer BLOCKS FOREVER without it, so a std.file call would hang on a
-     * path that this function is going to refuse anyway.  On a regular file
-     * it changes nothing — reads never return EAGAIN. */
-    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
-    if (fd < 0) {
-        int saved = errno;
-        FileErrKind k = file_open_kind(saved);
-        r.is_err = 1;
-        r.err = file_fail(k, "file.readbytes: %s: %s",
-                          k == FILE_ERR_SYMLINK
-                              ? "final path component is a symlink and std.file does not follow it (AMB-07)"
-                              : strerror(saved),
-                          path);
-        return r;
-    }
-
+    /* 135.12: the open-and-classify prologue is now shared with
+     * file_readrange and file_size (file_open_for_read, below).  It was
+     * duplicated first and shared second, which is the wrong order: the
+     * O_NONBLOCK that stops a FIFO open blocking forever was found by running
+     * 135.10, and a second hand-written copy would not have had it. */
     struct stat st;
-    if (fstat(fd, &st) != 0) {
-        int saved = errno;
-        close(fd);
-        r.is_err = 1;
-        r.err = file_fail(FILE_ERR_IO, "file.readbytes: fstat failed: %s: %s",
-                          strerror(saved), path);
-        return r;
-    }
-
-    if (S_ISDIR(st.st_mode)) {
-        close(fd);
-        r.is_err = 1;
-        r.err = file_fail(FILE_ERR_IS_DIR, "file.readbytes: is a directory: %s", path);
-        return r;
-    }
-    if (!S_ISREG(st.st_mode)) {
-        close(fd);
-        r.is_err = 1;
-        r.err = file_fail(FILE_ERR_NOT_REGULAR,
-                          "file.readbytes: not a regular file (fifo, socket or device): %s",
-                          path);
-        return r;
-    }
+    FileErr e;
+    int fd = file_open_for_read(path, "file.readbytes", &st, &e);
+    if (fd < 0) { r.is_err = 1; r.err = e; return r; }
 
     uint64_t want = (uint64_t)st.st_size;
     if (want > TK_FILE_MAX_BYTES) {
@@ -995,5 +963,261 @@ BoolFileResult file_writebytes(const char *path, const uint8_t *data, uint64_t l
 
     file_clear_lasterr();
     r.ok = 1;
+    return r;
+}
+
+/*
+ * ══ 135.12 — reading a file that does not fit ═══════════════════════════
+ *
+ * file_readbytes() refuses anything over 64 MiB, and the refusal is correct:
+ * a toke @(byte) costs 8 bytes per byte, so the cap already stands for
+ * ~576 MiB resident.  The refusal is also a dead end for this epic, because
+ * the inputs it exists to read — PDF statements, XLSX exports, bulk
+ * government downloads — go past it.
+ *
+ * WHY A BOUNDED READ AND NOT A STREAM.  The two stories this unblocks parse
+ * formats whose INDEX IS AT THE END and whose contents are reached by byte
+ * offset: a PDF is found through the startxref pointer in its trailer, and a
+ * zip (so every XLSX) through the end-of-central-directory record, which then
+ * gives a local-header offset per entry.  Neither can be parsed by reading
+ * forward from the start, so a sequential stream would be the wrong primitive
+ * for both of the two consumers named in the story.  A bounded read is also
+ * the more primitive of the two: a caller can build a sequential scan out of
+ * `offset += n` in four lines of toke, and cannot build random access out of
+ * a stream at all.  Shipping this does not foreclose a stream later; shipping
+ * a stream would have foreclosed the parsers.
+ *
+ * It is also stateless — no handle, no close, no lifetime to get wrong, and
+ * nothing to leak if a caller forgets.  135.1 needed a handle and so needed a
+ * close and a last-error accessor with it; this needs neither.
+ *
+ * The price is one open()+fstat() per call, which for a parser making many
+ * small reads is real.  That is a fair trade for a call with no lifetime, and
+ * if it ever measures as the bottleneck the answer is a cached descriptor
+ * behind the SAME signature, not a different interface.
+ */
+
+/*
+ * Open a path for reading and fstat it, applying every refusal the byte calls
+ * share: symlink (AMB-07), directory, non-regular, permission, missing.  On
+ * success returns the fd (>= 0) and fills *st.  On failure returns -1 and
+ * fills *err, tagged with `who` so the message still names the caller.
+ *
+ * Factored out of file_readbytes' body rather than reimplemented: the fifo
+ * hang that 135.10 found by running it (open(2) on a FIFO with no writer
+ * blocks forever without O_NONBLOCK) would otherwise have to be remembered
+ * separately here, and it would not have been.
+ */
+static int file_open_for_read(const char *path, const char *who,
+                              struct stat *st, FileErr *err)
+{
+    /* O_NONBLOCK is load-bearing, not defensive: open(2) on a FIFO with no
+     * writer BLOCKS FOREVER without it, so a std.file call would hang on a
+     * path this function is going to refuse anyway.  On a regular file it
+     * changes nothing — reads never return EAGAIN. */
+    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) {
+        int saved = errno;
+        FileErrKind k = file_open_kind(saved);
+        *err = file_fail(k, "%s: %s: %s", who,
+                         k == FILE_ERR_SYMLINK
+                             ? "final path component is a symlink and std.file does not follow it (AMB-07)"
+                             : strerror(saved),
+                         path);
+        return -1;
+    }
+    if (fstat(fd, st) != 0) {
+        int saved = errno;
+        close(fd);
+        *err = file_fail(FILE_ERR_IO, "%s: fstat failed: %s: %s",
+                         who, strerror(saved), path);
+        return -1;
+    }
+    if (S_ISDIR(st->st_mode)) {
+        close(fd);
+        *err = file_fail(FILE_ERR_IS_DIR, "%s: is a directory: %s", who, path);
+        return -1;
+    }
+    if (!S_ISREG(st->st_mode)) {
+        close(fd);
+        *err = file_fail(FILE_ERR_NOT_REGULAR,
+                         "%s: not a regular file (fifo, socket or device): %s",
+                         who, path);
+        return -1;
+    }
+    return fd;
+}
+
+/*
+ * file_size — how big is it, without reading any of it.
+ *
+ * The first call a bounded reader makes, because the formats this epic reads
+ * are indexed from their own end.  Its outcomes are file_readbytes' outcomes
+ * minus the ones only a read can hit: nomem, io-short and toolarge cannot
+ * occur, because nothing is allocated and nothing is read.
+ *
+ * THIS REPLACES THE 28.2-ERA file_size, IT IS NOT A SECOND ONE.  A parallel
+ * implementation of a file operation beside the real one is exactly what
+ * 135.11 is removing and what Epic 136's wrapper-versus-core drift cost 31
+ * defects, so the old body is gone rather than left to disagree with this.
+ * Four things the original could not do, each of which a bounded reader needs:
+ *
+ *   1. It used stat(2), which FOLLOWS SYMLINKS, while every read path in this
+ *      module refuses to follow the final component (AMB-07, O_NOFOLLOW).  So
+ *      file.size(link) reported the target's size while file.readrange(link)
+ *      refused the link — two calls disagreeing about one path, which is the
+ *      drift itself and not a hypothetical.
+ *   2. It collapsed every failure into one generic error and never touched
+ *      the last-error slot, so file.lasterrkind() after it returned whatever
+ *      some EARLIER call had left there.
+ *   3. It reported st_size for a DIRECTORY and for a FIFO.  A fifo's st_size
+ *      is not its content — 135.10 made that its own refusal (notregular)
+ *      precisely because returning it is a plausible wrong answer, and a
+ *      reader that trusted it would then read a range that does not exist.
+ *   4. It stat'd a PATH rather than the descriptor that gets read, so the
+ *      size a caller plans with could race the file it then opens.
+ *
+ * A size of ZERO is a legitimate answer.  See the note in file.h and the
+ * wrapper in file_glue.c: this is the one call in the module whose ok value
+ * collides with the failure sentinel, and so the one that forces the error to
+ * be carried in the slot rather than in the value.
+ */
+U64FileResult file_size(const char *path)
+{
+    U64FileResult r = {0, 0, {0, NULL}};
+
+    if (!path) {
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_BAD_ARG, "file.size: null path");
+        return r;
+    }
+
+    struct stat st;
+    FileErr e;
+    int fd = file_open_for_read(path, "file.size", &st, &e);
+    if (fd < 0) { r.is_err = 1; r.err = e; return r; }
+    close(fd);
+
+    file_clear_lasterr();
+    r.ok = (uint64_t)st.st_size;
+    return r;
+}
+
+/*
+ * file_readrange — the bounded read.
+ *
+ * Outcomes, and which of them differ from file_readbytes:
+ *
+ *   ok          `len` bytes from `offset`, or FEWER if the range runs past
+ *               the end — a short result is an end, not a failure, and an
+ *               offset at or beyond the end is a real zero-length ok result
+ *   badarg      null path, or a negative offset or length
+ *   toolarge    LEN over TK_FILE_MAX_WINDOW.  Note what is NOT checked: the
+ *               file's own size.  That is the whole story — the window is
+ *               what costs memory, and the file is not.
+ *   notfound / permission / isdir / notregular / symlink / nomem
+ *               exactly as file_readbytes, through the shared open above
+ *   io          pread(2) failed, or it stopped short INSIDE the file
+ *
+ * The size is taken by fstat on the SAME descriptor that is read, so the
+ * clamp is not racing an independent stat; and pread is used rather than
+ * lseek+read so the offset is part of the call and there is no seek position
+ * to be wrong about.
+ */
+BytesFileResult file_readrange(const char *path, int64_t offset, int64_t len)
+{
+    BytesFileResult r = {{NULL, 0}, 0, {0, NULL}};
+
+    if (!path) {
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_BAD_ARG, "file.readrange: null path");
+        return r;
+    }
+    if (offset < 0) {
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_BAD_ARG,
+                          "file.readrange: negative offset %lld: %s",
+                          (long long)offset, path);
+        return r;
+    }
+    if (len < 0) {
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_BAD_ARG,
+                          "file.readrange: negative length %lld: %s",
+                          (long long)len, path);
+        return r;
+    }
+    if ((uint64_t)len > TK_FILE_MAX_WINDOW) {
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_TOO_LARGE,
+                          "file.readrange: a %llu-byte window exceeds the "
+                          "%llu-byte per-call limit (the FILE may be any size; "
+                          "read it in windows): %s",
+                          (unsigned long long)len,
+                          (unsigned long long)TK_FILE_MAX_WINDOW, path);
+        return r;
+    }
+
+    struct stat st;
+    FileErr e;
+    int fd = file_open_for_read(path, "file.readrange", &st, &e);
+    if (fd < 0) { r.is_err = 1; r.err = e; return r; }
+
+    uint64_t size = (uint64_t)st.st_size;
+    uint64_t want = 0;
+    if ((uint64_t)offset < size) {
+        uint64_t avail = size - (uint64_t)offset;
+        want = ((uint64_t)len < avail) ? (uint64_t)len : avail;
+    }
+    /* offset >= size leaves want == 0: a real empty result, marked ok. */
+
+    /* +1 so an empty window still gets a non-NULL buffer; the length, not the
+     * pointer and never a NUL, is what says how much there is. */
+    uint8_t *buf = (uint8_t *)malloc((size_t)want + 1);
+    if (!buf) {
+        close(fd);
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_NO_MEM,
+                          "file.readrange: allocation of %llu bytes failed: %s",
+                          (unsigned long long)want, path);
+        return r;
+    }
+
+    uint64_t got = 0;
+    while (got < want) {
+        ssize_t n = pread(fd, buf + got, (size_t)(want - got),
+                          (off_t)((uint64_t)offset + got));
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            int saved = errno;
+            close(fd); free(buf);
+            r.is_err = 1;
+            r.err = file_fail(FILE_ERR_IO,
+                              "file.readrange: read failed after %llu of %llu bytes "
+                              "at offset %lld: %s: %s",
+                              (unsigned long long)got, (unsigned long long)want,
+                              (long long)offset, strerror(saved), path);
+            return r;
+        }
+        if (n == 0) break;   /* the file shrank under us */
+        got += (uint64_t)n;
+    }
+    close(fd);
+
+    if (got != want) {
+        free(buf);
+        r.is_err = 1;
+        r.err = file_fail(FILE_ERR_IO,
+                          "file.readrange: short read, %llu of %llu bytes at "
+                          "offset %lld (the file changed size during the read): %s",
+                          (unsigned long long)got, (unsigned long long)want,
+                          (long long)offset, path);
+        return r;
+    }
+
+    buf[want] = 0;   /* convenience for C callers only; never a terminator */
+    file_clear_lasterr();
+    r.ok.data = buf;
+    r.ok.len  = want;
     return r;
 }
