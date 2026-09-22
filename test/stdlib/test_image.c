@@ -534,6 +534,420 @@ static void test_text_draw(void)
  * main
  * ========================================================================= */
 
+/* =========================================================================
+ * Story 135.5 — adaptive threshold, convolution, TIFF.
+ *
+ * Every assertion below is on PIXEL VALUES.  A dimensions-only check (which
+ * is what the pre-existing test_rotate was) passes on a function that returns
+ * its input untouched, and that is the failure mode these functions are most
+ * likely to have.
+ * ========================================================================= */
+
+/* ---- 1. adaptive threshold ---------------------------------------------- */
+
+/*
+ * The point of Sauvola is that it survives uneven illumination, so the
+ * fixture is a page lit from one side: the background ramps from 40 on the
+ * left to 220 on the right, and two ink bars sit at x=8..12 and x=50..54,
+ * each 60% of the LOCAL background.
+ *
+ * That makes the fixture adversarial to any global threshold by construction:
+ * the ink on the bright side (about 113) is lighter than the paper on the
+ * dark side (about 40), so no single cut separates ink from paper.  The test
+ * asserts that impossibility first — otherwise a global threshold would pass
+ * this test and it would prove nothing about adaptivity.
+ */
+#define AT_W 64
+#define AT_H 32
+
+static int at_bg(uint32_t x) { return 40 + (int)((x * 180) / (AT_W - 1)); }
+static int at_is_ink(uint32_t x, uint32_t y)
+{
+    return (y >= 8 && y <= 24) && ((x >= 8 && x <= 12) || (x >= 50 && x <= 54));
+}
+
+static void test_adaptive_threshold(void)
+{
+    uint8_t *raw = (uint8_t *)malloc(AT_W * AT_H);
+    for (uint32_t y = 0; y < AT_H; y++)
+        for (uint32_t x = 0; x < AT_W; x++)
+            raw[y * AT_W + x] = (uint8_t)(at_is_ink(x, y)
+                                          ? (at_bg(x) * 6) / 10 : at_bg(x));
+    TkImgBuf src = image_from_raw(raw, AT_W, AT_H, 1);
+    free(raw);
+
+    /* -- the control: prove NO global threshold can succeed here -- */
+    int darkest_paper = 255, brightest_ink = 0;
+    for (uint32_t y = 0; y < AT_H; y++)
+        for (uint32_t x = 0; x < AT_W; x++) {
+            int v = src.data[y * AT_W + x];
+            if (at_is_ink(x, y)) { if (v > brightest_ink)  brightest_ink  = v; }
+            else                 { if (v < darkest_paper)  darkest_paper  = v; }
+        }
+    ASSERT(brightest_ink > darkest_paper,
+           "adaptivethreshold fixture: ink on the lit side is brighter than "
+           "paper on the dark side, so no global threshold can separate them");
+
+    ImgResult r = image_adaptive_threshold(src, 15, 0.2);
+    ASSERT(!r.is_err, "adaptivethreshold: 64x32 ramp succeeds");
+    if (r.is_err) { image_buf_free(&src); return; }
+
+    ASSERT(r.ok.channels == 1, "adaptivethreshold: result is single-channel");
+    ASSERT(r.ok.width == AT_W && r.ok.height == AT_H,
+           "adaptivethreshold: dimensions preserved");
+
+    int only_binary = 1;
+    for (uint64_t i = 0; i < r.ok.data_len; i++)
+        if (r.ok.data[i] != 0 && r.ok.data[i] != 255) only_binary = 0;
+    ASSERT(only_binary, "adaptivethreshold: every pixel is exactly 0 or 255");
+
+    /* Ink must come out black on BOTH sides of the illumination ramp. */
+    int ink_bad = 0;
+    for (uint32_t y = 12; y <= 20; y++) {
+        if (r.ok.data[y * AT_W + 10] != 0) ink_bad++;
+        if (r.ok.data[y * AT_W + 52] != 0) ink_bad++;
+    }
+    ASSERT(ink_bad == 0,
+           "adaptivethreshold: ink is black at x=10 (dark side) AND x=52 "
+           "(lit side) — the case a global threshold cannot do");
+
+    /* Paper well away from the bars must come out white, on both sides. */
+    int paper_bad = 0;
+    for (uint32_t y = 4; y < AT_H - 4; y++)
+        for (uint32_t x = 22; x <= 42; x++)
+            if (r.ok.data[y * AT_W + x] != 255) paper_bad++;
+    ASSERT(paper_bad == 0,
+           "adaptivethreshold: blank paper between the bars stays white "
+           "(Sauvola's variance term is what stops it speckling)");
+
+    /* And the result is not the input: a passthrough would keep the ramp. */
+    ASSERT(r.ok.data[16 * AT_W + 30] != src.data[16 * AT_W + 30],
+           "adaptivethreshold: output differs from input (not a passthrough)");
+
+    image_buf_free(&r.ok);
+
+    /* window 0 selects the default, and an even window is made odd. */
+    ImgResult d = image_adaptive_threshold(src, 0, 0.2);
+    ASSERT(!d.is_err && d.ok.data != NULL,
+           "adaptivethreshold: window 0 selects the default window");
+    image_buf_free(&d.ok);
+
+    ImgResult e = image_adaptive_threshold(src, 15, 99.0);
+    ASSERT(e.is_err, "adaptivethreshold: k out of range is an error");
+
+    image_buf_free(&src);
+}
+
+/* ---- 2. convolution ------------------------------------------------------ */
+
+static void test_convolve(void)
+{
+    /* A single bright pixel at the centre of a 5x5 black field: the response
+     * of any kernel to an impulse is the kernel itself, which is the
+     * strongest statement available about a convolution. */
+    uint8_t *raw = (uint8_t *)calloc(25, 1);
+    raw[2 * 5 + 2] = 255;
+    TkImgBuf src = image_from_raw(raw, 5, 5, 1);
+    free(raw);
+
+    /* Identity kernel: output must equal input, byte for byte. */
+    double ident[9] = {0,0,0, 0,1,0, 0,0,0};
+    ImgResult id = image_convolve(src, ident, 3, 1.0, 0.0);
+    ASSERT(!id.is_err, "convolve: identity kernel succeeds");
+    if (!id.is_err) {
+        ASSERT(memcmp(id.ok.data, src.data, 25) == 0,
+               "convolve: identity kernel reproduces the input exactly");
+        image_buf_free(&id.ok);
+    }
+
+    /* Box blur, divisor 0 => normalise by the kernel sum (9).
+     * 255/9 = 28.33, rounded to 28, over exactly the 3x3 neighbourhood. */
+    double box[9] = {1,1,1, 1,1,1, 1,1,1};
+    ImgResult b = image_convolve(src, box, 3, 0.0, 0.0);
+    ASSERT(!b.is_err, "convolve: box kernel with divisor 0 succeeds");
+    if (!b.is_err) {
+        int wrong = 0;
+        for (uint32_t y = 0; y < 5; y++)
+            for (uint32_t x = 0; x < 5; x++) {
+                int want = (x >= 1 && x <= 3 && y >= 1 && y <= 3) ? 28 : 0;
+                if (b.ok.data[y * 5 + x] != want) wrong++;
+            }
+        ASSERT(wrong == 0,
+               "convolve: impulse response is the kernel — 28 over the 3x3 "
+               "neighbourhood, 0 everywhere else (divisor 0 took the sum, 9)");
+        image_buf_free(&b.ok);
+    }
+
+    /* A zero-sum kernel must NOT be divided by zero: divisor 0 leaves it
+     * unscaled.  Sobel-x over a vertical step edge, offset 128. */
+    uint8_t *edge = (uint8_t *)malloc(25);
+    for (uint32_t y = 0; y < 5; y++)
+        for (uint32_t x = 0; x < 5; x++) edge[y * 5 + x] = (x < 2) ? 0 : 200;
+    TkImgBuf es = image_from_raw(edge, 5, 5, 1);
+    free(edge);
+
+    double sobel[9] = {-1,0,1, -2,0,2, -1,0,1};
+    ImgResult s = image_convolve(es, sobel, 3, 0.0, 128.0);
+    ASSERT(!s.is_err, "convolve: zero-sum kernel is not divided by zero");
+    if (!s.is_err) {
+        /* At x=1 the window straddles the step: columns 0,1 are 0 and
+         * column 2 is 200, so the response is 4*200 = 800, clamped to 255. */
+        ASSERT(s.ok.data[2 * 5 + 1] == 255,
+               "convolve: Sobel-x saturates on the step edge at x=1");
+        /* At x=4 (flat, clamp-to-edge) the response is 0, so offset shows. */
+        ASSERT(s.ok.data[2 * 5 + 4] == 128,
+               "convolve: flat region returns the offset (128), so offset is "
+               "applied after the divisor");
+        image_buf_free(&s.ok);
+    }
+    image_buf_free(&es);
+
+    ImgResult bad = image_convolve(src, box, 2, 1.0, 0.0);
+    ASSERT(bad.is_err, "convolve: an even kernel size is an error");
+
+    image_buf_free(&src);
+}
+
+/* ---- 3. rotation, on pixel values --------------------------------------- */
+
+static void test_rotate_pixels(void)
+{
+    /* make_test_rgba: pixel (X,Y) = {X*10, Y*10, (X+Y)*5, 255}, so adjacent
+     * pixels differ by 10 per channel and a +-1 tolerance still pins down
+     * exactly which source pixel was sampled. */
+    TkImgBuf src = make_test_rgba(8, 8);
+    TkImgBuf out = image_rotate(src, 180.0);
+    ASSERT(out.data != NULL, "rotate(180): produced a buffer");
+    if (!out.data) { image_buf_free(&src); return; }
+
+    struct { uint32_t ox, oy, sx, sy; } cases[3] = {
+        {3, 3, 5, 5}, {2, 5, 6, 3}, {5, 2, 3, 6}
+    };
+    int wrong = 0;
+    for (int i = 0; i < 3; i++) {
+        const uint8_t *p = out.data + ((uint64_t)cases[i].oy * 8 + cases[i].ox) * 4;
+        int wr = (int)(cases[i].sx * 10), wg = (int)(cases[i].sy * 10);
+        if (abs((int)p[0] - wr) > 1 || abs((int)p[1] - wg) > 1) wrong++;
+    }
+    ASSERT(wrong == 0,
+           "rotate(180): each output pixel carries the value of the source "
+           "pixel opposite the centre (bilinear inverse mapping)");
+
+    /* A passthrough would leave (2,5) at R=20; the rotation puts R=60 there. */
+    ASSERT(abs((int)out.data[(5 * 8 + 2) * 4] - 60) <= 1,
+           "rotate(180): output is not the input");
+
+    image_buf_free(&out);
+    image_buf_free(&src);
+}
+
+/* ---- 4. TIFF, including multi-page -------------------------------------- */
+
+typedef struct { uint8_t *b; uint64_t len, cap; } TBuf;
+
+static void tb_put(TBuf *t, const void *src, uint64_t n)
+{
+    if (t->len + n > t->cap) {
+        t->cap = (t->len + n) * 2 + 64;
+        t->b = (uint8_t *)realloc(t->b, (size_t)t->cap);
+    }
+    memcpy(t->b + t->len, src, (size_t)n);
+    t->len += n;
+}
+static void tb_u16(TBuf *t, uint16_t v) { uint8_t q[2] = {(uint8_t)(v & 0xFF), (uint8_t)(v >> 8)}; tb_put(t, q, 2); }
+static void tb_u32(TBuf *t, uint32_t v) { uint8_t q[4] = {(uint8_t)(v), (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24)}; tb_put(t, q, 4); }
+static void tb_patch32(TBuf *t, uint64_t at, uint32_t v)
+{
+    t->b[at] = (uint8_t)v; t->b[at+1] = (uint8_t)(v >> 8);
+    t->b[at+2] = (uint8_t)(v >> 16); t->b[at+3] = (uint8_t)(v >> 24);
+}
+
+typedef struct {
+    uint32_t w, h, bps, spp, photo, comp;
+    const uint8_t *strip;
+    uint32_t striplen;
+} TPage;
+
+/* A deliberately small little-endian TIFF writer, so the multi-page fixture
+ * comes from this test rather than from the decoder under test. */
+static uint8_t *tiff_build(const TPage *pages, int np, uint64_t *out_len)
+{
+    TBuf t; memset(&t, 0, sizeof t);
+    tb_put(&t, "II", 2); tb_u16(&t, 42); tb_u32(&t, 0);   /* first-IFD slot */
+
+    uint64_t *bpsoff = (uint64_t *)calloc((size_t)np, sizeof(uint64_t));
+    uint64_t *stroff = (uint64_t *)calloc((size_t)np, sizeof(uint64_t));
+    for (int i = 0; i < np; i++) {
+        if (pages[i].spp > 1) {
+            bpsoff[i] = t.len;
+            for (uint32_t s = 0; s < pages[i].spp; s++) tb_u16(&t, (uint16_t)pages[i].bps);
+        }
+        stroff[i] = t.len;
+        tb_put(&t, pages[i].strip, pages[i].striplen);
+    }
+
+    uint64_t prev_next = 4;                 /* where the next-IFD pointer goes */
+    for (int i = 0; i < np; i++) {
+        tb_patch32(&t, prev_next, (uint32_t)t.len);
+        tb_u16(&t, 9);                      /* nine directory entries */
+        #define ENT(tag, ty, cnt, val) do { \
+            tb_u16(&t, (uint16_t)(tag)); tb_u16(&t, (uint16_t)(ty)); \
+            tb_u32(&t, (uint32_t)(cnt)); \
+            if ((ty) == 3 && (cnt) == 1) { tb_u16(&t, (uint16_t)(val)); tb_u16(&t, 0); } \
+            else tb_u32(&t, (uint32_t)(val)); \
+        } while (0)
+        ENT(256, 4, 1, pages[i].w);                       /* ImageWidth */
+        ENT(257, 4, 1, pages[i].h);                       /* ImageLength */
+        if (pages[i].spp > 1) ENT(258, 3, pages[i].spp, bpsoff[i]);
+        else                  ENT(258, 3, 1, pages[i].bps);
+        ENT(259, 3, 1, pages[i].comp);                    /* Compression */
+        ENT(262, 3, 1, pages[i].photo);                   /* Photometric */
+        ENT(273, 4, 1, stroff[i]);                        /* StripOffsets */
+        ENT(277, 3, 1, pages[i].spp);                     /* SamplesPerPixel */
+        ENT(278, 4, 1, pages[i].h);                       /* RowsPerStrip */
+        ENT(279, 4, 1, pages[i].striplen);                /* StripByteCounts */
+        #undef ENT
+        prev_next = t.len;
+        tb_u32(&t, 0);
+    }
+    free(bpsoff); free(stroff);
+    *out_len = t.len;
+    return t.b;
+}
+
+/* PackBits encoder: runs of three or more become a repeat, everything else a
+ * literal.  Both branches of the decoder are therefore exercised. */
+static uint32_t packbits_encode(const uint8_t *src, uint32_t n, uint8_t *dst)
+{
+    uint32_t i = 0, o = 0;
+    while (i < n) {
+        uint32_t run = 1;
+        while (i + run < n && run < 128 && src[i + run] == src[i]) run++;
+        if (run >= 3) {
+            dst[o++] = (uint8_t)(int8_t)(1 - (int)run);
+            dst[o++] = src[i];
+            i += run;
+        } else {
+            uint32_t lit = 0;
+            while (i + lit < n && lit < 128) {
+                uint32_t r2 = 1;
+                while (i + lit + r2 < n && r2 < 4 && src[i + lit + r2] == src[i + lit]) r2++;
+                if (r2 >= 3) break;
+                lit++;
+            }
+            if (lit == 0) lit = 1;
+            dst[o++] = (uint8_t)(lit - 1);
+            memcpy(dst + o, src + i, lit);
+            o += lit; i += lit;
+        }
+    }
+    return o;
+}
+
+static void test_tiff_multipage(void)
+{
+    /* page 0: 2x2 8-bit grey, BlackIsZero, uncompressed */
+    static const uint8_t g[4] = {0, 64, 128, 255};
+    /* page 1: 3x1 RGB, uncompressed */
+    static const uint8_t rgb[9] = {255,0,0, 0,255,0, 0,0,255};
+
+    TPage pages[2];
+    pages[0].w = 2; pages[0].h = 2; pages[0].bps = 8; pages[0].spp = 1;
+    pages[0].photo = 1; pages[0].comp = 1; pages[0].strip = g; pages[0].striplen = 4;
+    pages[1].w = 3; pages[1].h = 1; pages[1].bps = 8; pages[1].spp = 3;
+    pages[1].photo = 2; pages[1].comp = 1; pages[1].strip = rgb; pages[1].striplen = 9;
+
+    uint64_t len = 0;
+    uint8_t *tif = tiff_build(pages, 2, &len);
+
+    ASSERT(image_tiff_pages(tif, len) == 2,
+           "tiffpages: a two-IFD TIFF reports 2 pages (multi-page is the "
+           "part that is easy to leave out)");
+
+    ImgResult p0 = image_tiff_decode(tif, len, 0);
+    ASSERT(!p0.is_err, "tiffdecode: page 0 decodes");
+    if (!p0.is_err) {
+        ASSERT(p0.ok.width == 2 && p0.ok.height == 2 && p0.ok.channels == 1,
+               "tiffdecode: page 0 is 2x2 single-channel");
+        ASSERT(memcmp(p0.ok.data, g, 4) == 0,
+               "tiffdecode: page 0 pixels are exactly {0, 64, 128, 255}");
+        image_buf_free(&p0.ok);
+    }
+
+    ImgResult p1 = image_tiff_decode(tif, len, 1);
+    ASSERT(!p1.is_err, "tiffdecode: page 1 decodes");
+    if (!p1.is_err) {
+        ASSERT(p1.ok.width == 3 && p1.ok.height == 1 && p1.ok.channels == 3,
+               "tiffdecode: page 1 is 3x1 RGB — a SECOND page with different "
+               "dimensions, so page 0 was not returned twice");
+        ASSERT(memcmp(p1.ok.data, rgb, 9) == 0,
+               "tiffdecode: page 1 pixels are exactly red, green, blue");
+        image_buf_free(&p1.ok);
+    }
+
+    ImgResult p2 = image_tiff_decode(tif, len, 2);
+    ASSERT(p2.is_err, "tiffdecode: page 2 of a 2-page file is an error");
+
+    /* image.decode auto-detects TIFF and yields page 0. */
+    ImgResult ad = image_decode(tif, len);
+    ASSERT(!ad.is_err && ad.ok.width == 2 && ad.ok.height == 2 &&
+           memcmp(ad.ok.data, g, 4) == 0,
+           "decode: a TIFF buffer is auto-detected and yields page 0");
+    if (!ad.is_err) image_buf_free(&ad.ok);
+
+    free(tif);
+}
+
+static void test_tiff_packbits_and_bilevel(void)
+{
+    /* 8x2 grey with a long run and some literals, PackBits-compressed. */
+    uint8_t raw[16];
+    for (int i = 0; i < 16; i++) raw[i] = (i < 6) ? 77 : (uint8_t)(i * 7);
+    uint8_t enc[64];
+    uint32_t enclen = packbits_encode(raw, 16, enc);
+    ASSERT(enclen < 16, "packbits fixture: the run actually compressed");
+
+    TPage p;
+    p.w = 8; p.h = 2; p.bps = 8; p.spp = 1; p.photo = 1; p.comp = 32773;
+    p.strip = enc; p.striplen = enclen;
+    uint64_t len = 0;
+    uint8_t *tif = tiff_build(&p, 1, &len);
+
+    ImgResult r = image_tiff_decode(tif, len, 0);
+    ASSERT(!r.is_err, "tiffdecode: PackBits page decodes");
+    if (!r.is_err) {
+        ASSERT(memcmp(r.ok.data, raw, 16) == 0,
+               "tiffdecode: PackBits round-trips every one of the 16 pixels");
+        image_buf_free(&r.ok);
+    }
+    free(tif);
+
+    /* Bilevel, WhiteIsZero: bit 1 means ink.  0xB2 = 1011 0010. */
+    static const uint8_t bits[1] = {0xB2};
+    TPage bp;
+    bp.w = 8; bp.h = 1; bp.bps = 1; bp.spp = 1; bp.photo = 0; bp.comp = 1;
+    bp.strip = bits; bp.striplen = 1;
+    uint64_t blen = 0;
+    uint8_t *btif = tiff_build(&bp, 1, &blen);
+
+    ImgResult b = image_tiff_decode(btif, blen, 0);
+    ASSERT(!b.is_err, "tiffdecode: 1-bit WhiteIsZero page decodes");
+    if (!b.is_err) {
+        static const uint8_t want[8] = {0, 255, 0, 0, 255, 255, 0, 255};
+        ASSERT(b.ok.width == 8 && b.ok.channels == 1 &&
+               memcmp(b.ok.data, want, 8) == 0,
+               "tiffdecode: 0xB2 as WhiteIsZero bilevel expands to "
+               "black/white/black/black/white/white/black/white");
+        image_buf_free(&b.ok);
+    }
+    free(btif);
+
+    /* A PNG is not a TIFF, and must be reported as such rather than guessed. */
+    static const uint8_t png_sig[8] = {137,80,78,71,13,10,26,10};
+    ASSERT(image_tiff_pages(png_sig, 8) == -1,
+           "tiffpages: a PNG signature reports -1, not a page count");
+}
+
 int main(void)
 {
     printf("=== test_image (Story 18.1.6) ===\n\n");
@@ -564,6 +978,14 @@ int main(void)
     test_histogram();
     test_quantize();
     test_text_draw();
+
+    printf("\n=== Story 135.5: adaptive threshold, convolution, TIFF ===\n\n");
+
+    test_adaptive_threshold();
+    test_convolve();
+    test_rotate_pixels();
+    test_tiff_multipage();
+    test_tiff_packbits_and_bilevel();
 
     printf("\n=== Results: %d passed, %d failed ===\n", passes, failures);
     return failures ? 1 : 0;
