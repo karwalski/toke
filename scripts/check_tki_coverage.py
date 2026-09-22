@@ -222,9 +222,32 @@ def c_definition_arities() -> dict[str, int]:
     return out
 
 
-def declared_arities() -> dict[str, tuple[int, str]]:
-    """{symbol: (arity, "file:line")} for every g_stdlib_decls entry."""
+def declared_arities() -> tuple[dict[str, tuple[int, str]], list[str]]:
+    """({symbol: (arity, "file:line")}, [duplicate rows]) for g_stdlib_decls.
+
+    FIRST WIN, not last, because that is what the compiler does.
+    `stdlib_glue_arity()` (llvm.c) walks g_stdlib_decls[] and returns on the
+    first `strcmp` match, and llvm.c's hand-written rows are laid down before
+    `#include "stdlib_decls_gen.h"` at llvm.c:8919 -- so a hand-written row
+    always beats a generated one of the same name.
+
+    An earlier form of this function iterated llvm.c then the generated
+    header and assigned unconditionally, letting the GENERATED row win. That
+    inverts the compiler's precedence, and it is blind in exactly the case
+    this gate exists for: re-add `{"tk_os_read", "declare i64
+    @tk_os_read(i64, i64, i64)"}` to llvm.c over the two-parameter C
+    definition and the compiler rejects `o.read(0;16)` E4026 again while the
+    gate stays green, because it read the correct generated row instead.
+    Measured, not reasoned: rebuilt with that row restored, the diagnostic
+    came back and check_tki_coverage.py still exited 0.
+
+    A symbol declared twice is reported in its own right. It is always a
+    mistake -- gen_stdlib_decls.py excludes whatever llvm.c declares, so the
+    two halves cannot legitimately both carry a name -- and the second row is
+    dead weight that will mislead the next reader of the table.
+    """
     out: dict[str, tuple[int, str]] = {}
+    dupes: list[str] = []
     for rel in ("src/llvm.c", "src/stdlib_decls_gen.h"):
         p = REPO_ROOT / rel
         if not p.exists():
@@ -236,8 +259,13 @@ def declared_arities() -> dict[str, tuple[int, str]]:
             pm = re.search(r"\(([^)]*)\)", m.group(2))
             ps = pm.group(1).strip() if pm else ""
             n = 0 if not ps else len([x for x in ps.split(",") if x.strip()])
-            out[m.group(1)] = (n, f"{rel}:{i}")
-    return out
+            sym = m.group(1)
+            if sym in out:
+                dupes.append(f"{sym}: {out[sym][1]} and {rel}:{i} "
+                             f"(the compiler uses {out[sym][1]})")
+                continue
+            out[sym] = (n, f"{rel}:{i}")
+    return out, dupes
 
 
 def undeclared_wrappers(defs: dict[str, str], decls: set[str]) -> list[str]:
@@ -316,7 +344,8 @@ def main() -> int:
     orphan_iface = sorted(m for m in tki_modules if m and m not in set(registered))
 
     # 137.12 — the compiler's own two halves disagreeing about a signature.
-    c_ar, d_ar = c_definition_arities(), declared_arities()
+    c_ar = c_definition_arities()
+    d_ar, decl_dupes = declared_arities()
     decl_drift = [(sym, d_ar[sym][0], n, d_ar[sym][1])
                   for sym, n in sorted(c_ar.items())
                   if sym in d_ar and d_ar[sym][0] != n]
@@ -459,6 +488,16 @@ def main() -> int:
             print(f"  {sym}: declared {decl_n} at {where}, C definition takes {c_n}")
         print()
 
+    if decl_dupes:
+        print("FAIL (a glue symbol is declared twice in g_stdlib_decls — the")
+        print("      compiler returns on the FIRST match, so the second row is")
+        print("      dead and will mislead whoever reads it; gen_stdlib_decls.py")
+        print("      already excludes whatever llvm.c declares, so the two halves")
+        print("      should never both carry a name — 137.12):")
+        for d in decl_dupes:
+            print(f"  {d}")
+        print()
+
     if orphan_iface:
         print("WARNING interface with no stdlib_table[] row (the module cannot be")
         print("        imported; withdraw the .tki or register the module):")
@@ -478,9 +517,11 @@ def main() -> int:
           f"registered without one: {len(no_iface)}")
     print(f"  names declared under two kinds in one file: {len(cross_kind)}")
     print(f"  g_stdlib_decls entries disagreeing with the C definition: {len(decl_drift)}")
+    print(f"  glue symbols declared twice in g_stdlib_decls: {len(decl_dupes)}")
     print("=" * 60)
 
-    if failures or stale_skips or undecl or cross_kind or no_iface or decl_drift:
+    if (failures or stale_skips or undecl or cross_kind or no_iface
+            or decl_drift or decl_dupes):
         return 1
     print(f"All non-quarantined .tki declarations resolve to defined C symbols "
           f"({passed} pass, {len(quarantined)} quarantined).")

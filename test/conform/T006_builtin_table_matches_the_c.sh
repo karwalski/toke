@@ -160,6 +160,71 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+if printf '%s' "${GATE_OUT}" | grep -q "glue symbols declared twice in g_stdlib_decls: 0"; then
+    echo "  PASS: no glue symbol is declared twice in g_stdlib_decls"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: a glue symbol is declared twice"
+    printf '%s' "${GATE_OUT}" | grep -A4 "declared twice" | sed 's/^/      /'
+    FAIL=$((FAIL + 1))
+fi
+
+# ── 4b. THE NEGATIVE CONTROL, and it is not decoration: the first version of
+#      this gate STAYED GREEN when the defect was put back.
+#
+#      declared_arities() read llvm.c then stdlib_decls_gen.h and assigned
+#      unconditionally, so the GENERATED row won.  The compiler does the
+#      opposite -- stdlib_glue_arity() returns on the first strcmp match and
+#      llvm.c's rows precede `#include "stdlib_decls_gen.h"` (llvm.c:8919) --
+#      so restoring the wrong hand-written tk_os_read row brought E4026 back
+#      while the gate reported "disagreeing: 0".  Measured that way before it
+#      was fixed.  Reintroduce the row HERE, in a scratch copy of the two
+#      files, and require the gate to name it.
+echo "  ---- negative control: put the 137.12 defect back, watch the gate ----"
+NCDIR="$(mktemp -d "${TMPDIR:-/tmp}/tkc_t006_nc_XXXXXX")"
+mkdir -p "${NCDIR}/src" "${NCDIR}/scripts" "${NCDIR}/stdlib"
+cp "${REPO_ROOT}/src/llvm.c" "${REPO_ROOT}/src/stdlib_decls_gen.h" \
+   "${REPO_ROOT}/src/stdlib_deps.c" "${NCDIR}/src/"
+cp -R "${REPO_ROOT}/src/stdlib" "${NCDIR}/src/stdlib"
+cp "${REPO_ROOT}"/scripts/check_tki_coverage.py \
+   "${REPO_ROOT}"/scripts/check_tki_skiplist.txt "${NCDIR}/scripts/"
+cp "${REPO_ROOT}"/stdlib/*.tki "${NCDIR}/stdlib/"
+python3 - "${NCDIR}/src/llvm.c" <<'NCPY'
+import sys
+p = sys.argv[1]
+t = open(p).read()
+anchor = '    {"tk_os_close", "declare i64 @tk_os_close(i64)", 0},'
+assert anchor in t, "T006 negative control lost its anchor in llvm.c"
+open(p, "w").write(t.replace(
+    anchor,
+    anchor + '\n    {"tk_os_read", "declare i64 @tk_os_read(i64, i64, i64)", 0},'))
+NCPY
+NC_OUT="$(cd "${NCDIR}" && python3 scripts/check_tki_coverage.py 2>&1)"
+NC_RC=$?
+rm -rf "${NCDIR}"
+if [ "${NC_RC}" -ne 0 ]; then
+    echo "  PASS: the gate fails when the wrong tk_os_read row is restored"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: the gate stayed GREEN with the 137.12 defect reintroduced"
+    FAIL=$((FAIL + 1))
+fi
+if printf '%s' "${NC_OUT}" | grep -q "tk_os_read: declared 3 at src/llvm.c"; then
+    echo "  PASS: it names tk_os_read, its arity and the hand-written row"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: the failure did not name tk_os_read at llvm.c"
+    printf '%s' "${NC_OUT}" | grep -A4 "disagrees with the C" | sed 's/^/      /'
+    FAIL=$((FAIL + 1))
+fi
+if printf '%s' "${NC_OUT}" | grep -q "glue symbols declared twice in g_stdlib_decls: 1"; then
+    echo "  PASS: the duplicate row is reported in its own right"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: the duplicate row was not reported"
+    FAIL=$((FAIL + 1))
+fi
+
 # ── 5. The interface surface 137.12 was filed for: names that are reachable
 #      from toke source and were absent from their .tki. Each must compile
 #      (they always did) AND now be declared (scripts/gen_tki.py --check is

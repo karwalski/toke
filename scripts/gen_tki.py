@@ -116,7 +116,17 @@ def registered_modules() -> list[str]:
 
 
 def decl_arity() -> dict[str, int]:
-    """Parameter count the compiler has on record for each glue symbol."""
+    """Parameter count the compiler has on record for each glue symbol.
+
+    FIRST WIN.  stdlib_glue_arity() returns on the first match in
+    g_stdlib_decls[], and llvm.c's hand-written rows are laid down before
+    `#include "stdlib_decls_gen.h"`, so a hand-written row beats a generated
+    one of the same name.  Assigning unconditionally over both files lets the
+    generated row win instead, which is the compiler's precedence inverted --
+    this script would then correct a `.tki` to an arity the compiler does not
+    use.  (check_tki_coverage.py had the same inversion and was measured
+    staying green over a restored wrong tk_os_read row.)
+    """
     out: dict[str, int] = {}
     for path in (LLVM_C, DECLS_H):
         if not path.exists():
@@ -127,7 +137,8 @@ def decl_arity() -> dict[str, int]:
                 continue
             pm = re.search(r"\(([^)]*)\)", m.group(2))
             ps = pm.group(1).strip() if pm else ""
-            out[m.group(1)] = 0 if not ps else len([x for x in ps.split(",") if x.strip()])
+            out.setdefault(m.group(1),
+                           0 if not ps else len([x for x in ps.split(",") if x.strip()]))
     return out
 
 
@@ -145,7 +156,7 @@ def decl_types() -> dict[str, tuple[list[str], str]]:
             if not m:
                 continue
             ps = [tki_type(x) for x in m.group(3).split(",") if x.strip()]
-            out[m.group(1)] = (ps, tki_type(m.group(2)))
+            out.setdefault(m.group(1), (ps, tki_type(m.group(2))))  # first wins
     return out
 
 
