@@ -116,3 +116,17 @@ patterns/probe/*.before.json
 # modified after every build and could be swept into an unrelated commit.
 # `make` produces it; the reproducible artefact is the pinned build (131.73).
 /toke
+
+# 136.42 — compiled test binaries in test/tkir/, same pattern shape as
+# test/stdlib/ above. `test/tkir/test_tkir_reader` was tracked with no ignore
+# rule at all, so nothing even flagged it; `git rm --cached` alone would have
+# let the next build re-add it.
+test/tkir/*
+!test/tkir/*.c
+!test/tkir/*.h
+!test/tkir/*.tk
+!test/tkir/*.sh
+!test/tkir/*.py
+!test/tkir/*.md
+!test/tkir/*.d
+!test/tkir/*/
