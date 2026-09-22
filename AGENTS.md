@@ -615,6 +615,59 @@ When coordinating parallel sprints:
 
 ---
 
+## 12.4 Git discipline for concurrent workers
+
+Several workers share one repository. These rules exist because each was
+broken in practice, and the consequence is recorded beside it.
+
+**Never `git add -A`, `git add .`, or `git commit -a`.** On 2026-09-21 three
+commits silently reverted other workers' in-flight edits this way — one
+undid an entire fix, 226 deletions, and nobody noticed for hours.
+
+**Commit by explicit pathspec:**
+
+```bash
+git commit -m "…" -- src/foo.c test/conform/C0NN_thing.sh
+git show --stat          # ALWAYS: confirm only your paths landed
+```
+
+A pathspec commit takes the **working-tree** content of the named paths and
+ignores the index, which is what makes it safe when someone else has staged
+work.
+
+**But that same property makes it wrong for `git rm --cached`.** Untracking a
+file stages a deletion; a pathspec commit naming that file re-commits its
+working-tree content and silently undoes the untracking. Found 2026-09-22
+while untracking 2.9 MB of build output — all 19 paths came straight back, and
+only `git show --stat` caught it. For an untracking change: stage it, verify
+the staged set is exactly what you intend, then commit with **no** pathspec.
+
+**Nothing reads the index but you.** Every gate in this repo reads the working
+tree, so a staged-but-uncommitted change is invisible to all of them. On
+2026-09-22 three sibling repositories were each found holding a staged revert
+of a factual correction, worktrees identical to HEAD, while twelve green gates
+said nothing. Sweep before trusting a green result and before any push:
+
+```bash
+for d in ~/tk/*/; do [ -d "$d/.git" ] || continue
+  n=$(git -C "$d" diff --cached --name-only | wc -l)
+  [ "$n" != 0 ] && echo "ARMED: $d ($n)"; done
+```
+
+Defuse with `git restore --staged <paths>`, which leaves the working tree
+alone.
+
+**Commit early and often.** On 2026-09-22 five workers were killed mid-task by
+infrastructure; four had hours of uncommitted work, one of them 47 modified
+paths. A WIP commit you later amend is recoverable; an uncommitted tree is
+not.
+
+**Never commit build output.** `toke` and the `test/**/test_*` binaries were
+tracked until 2026-09-22 (136.42) — 2.9 MB that made `git status` permanently
+dirty, which is precisely what let the silent reverts above go unread.
+
+---
+
 ## 13. Behaviour to Avoid
 
 Do not:
