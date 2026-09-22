@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0",
+  "module": "std.xlsx",
+  "generated": "scripts/gen_tki.py (137.12) created this file and derives every arity here from the glue. Parameter and return TYPES are not derivable -- every pointer and every integer is i64 in the toke ABI -- so the types below were written over the generated skeleton, which is exactly the contract that script documents: it is additive and arity-correcting, and an export that already exists keeps its hand-written types verbatim. Re-running it leaves this file unchanged. Story 135.4.",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "xlsxbook",
+      "fields": []
+    },
+    {
+      "kind": "type",
+      "name": "xlsxcell",
+      "fields": [
+        {"name": "ref",   "type": "str"},
+        {"name": "row",   "type": "i64"},
+        {"name": "col",   "type": "i64"},
+        {"name": "kind",  "type": "str"},
+        {"name": "raw",   "type": "str"},
+        {"name": "value", "type": "str"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "xlsxerr",
+      "is_sum": true,
+      "fields": [
+        {"name": "$badworkbook", "type": "str"},
+        {"name": "$badpart",     "type": "str"},
+        {"name": "$nosheet",     "type": "str"},
+        {"name": "$toolarge",    "type": "str"},
+        {"name": "$io",          "type": "str"}
+      ]
+    },
+    {
+      "kind": "func",
+      "name": "xlsx.close",
+      "params": ["xlsxbook"],
+      "return": "void"
+    },
+    {
+      "kind": "func",
+      "name": "xlsx.datefromserial",
+      "params": ["str", "str"],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "xlsx.datesystem",
+      "params": ["xlsxbook"],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "xlsx.lasterr",
+      "params": [],
+      "return": "str"
+    },
+    {
+      "kind": "func",
+      "name": "xlsx.open",
+      "params": ["@(byte)"],
+      "return": "xlsxbook!xlsxerr"
+    },
+    {
+      "kind": "func",
+      "name": "xlsx.openfile",
+      "params": ["str"],
+      "return": "xlsxbook!xlsxerr"
+    },
+    {
+      "kind": "func",
+      "name": "xlsx.rows",
+      "params": ["xlsxbook", "str"],
+      "return": "@(@(xlsxcell))!xlsxerr"
+    },
+    {
+      "kind": "func",
+      "name": "xlsx.sheets",
+      "params": ["xlsxbook"],
+      "return": "@(str)"
+    }
+  ]
+}
