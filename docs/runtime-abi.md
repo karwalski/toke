@@ -200,24 +200,29 @@ The payload is a heap record. It must not be an `alloca` — it may
 outlive the frame that raised it.
 
 **Ownership (127.109).** It is *not* `malloc`'d per error. Each thread owns
-exactly one error-box buffer (`tk_err_box`, `tk_runtime.c`), grown on demand
-and **reused by every raise on that thread**. A box is valid until the next
-raise on the same thread, which is exactly the window restriction 1 in §7.5
-already defines for the `$err` arm's binding — so the rule adds no
-restriction, and there is nothing to free per error. The buffer is released
-at exit for the main thread; a worker that raised leaves one buffer behind at
-thread exit, which is constant, not workload-proportional.
+exactly one error-box buffer (`tk_err_box`, `tk_runtime.c`), **reused by every
+raise on that thread**. A box is valid until the next raise on the same
+thread, which is exactly the window restriction 1 in §7.5 already defines for
+the `$err` arm's binding — so the rule adds no restriction, and there is
+nothing to free per error.
 
-Until 127.109 every error return and every `!` propagation called `malloc`
-and the emitted code contained **no `free` at all**: 16 bytes per error ever
+The buffer is an inline thread-local array sized for the common box (a 2-slot
+sum, or a record of up to 8 fields), so the usual error return performs **no
+allocation at all** and cannot fail. Only a wider error type reaches the heap;
+that buffer is released at exit for the main thread, and a worker that raised
+one leaves a single buffer at thread exit — constant, not
+workload-proportional. `tk_err_box` never returns null, because a null box
+would be stored into the slot as `0`, and `0` is success: an out-of-memory
+error return would read back as a successful one.
+
+Until 127.109 every error return and every `!` propagation called `malloc` and
+the emitted code contained **no `free` at all**: 16 bytes per error ever
 raised. `patterns/err-default` at N=64e6 allocated 9,142,858 boxes and
-146 MB, with the free count constant in N. It is now 32 allocations and
-1.4 MB peak, constant in N — at parity with the precondition-guard form it
-used to lose to by five orders of magnitude (127.49).
-
-The cost is on the raise path only: the same benchmark moves from 0.12 s to
-0.16 s at N=64e6, which is the thread-local slot access the fix to §7.5
-restriction 2 requires.
+146 MB, with the free count constant in N. It is now 0 allocations for the
+error channel — 32 for the whole process, the same as a program that raises
+nothing — and 1.4 MB peak, constant in N. The idiom is at parity with the
+precondition-guard form it used to lose to by five orders of magnitude
+(127.49), on both allocations and wall time (0.12 s either way at N=64e6).
 
 **Sum-typed errors** (`t=$err{$bad:$str;$worse:i64}`) are a 2-slot box:
 

@@ -23,12 +23,14 @@
 # allocates nothing.  It was never the success path and never allocator churn.
 #
 # THE FIX IS AN OWNERSHIP RULE, NOT A free().  Each thread owns ONE error-box
-# buffer (tk_err_box, tk_runtime.c), grown on demand and reused by every raise
-# on that thread.  A box is valid until the next raise on the same thread —
-# which is exactly the window runtime-abi.md §7.5 restriction 1 ALREADY
-# documents for the $err arm's binding.  So the rule adds no restriction: it
-# makes the allocation's lifetime equal to the reference's already-documented
-# lifetime.  There is then nothing to free per error at all.
+# buffer (tk_err_box, tk_runtime.c), reused by every raise on that thread.  A
+# box is valid until the next raise on the same thread — which is exactly the
+# window runtime-abi.md §7.5 restriction 1 ALREADY documents for the $err arm's
+# binding.  So the rule adds no restriction: it makes the allocation's lifetime
+# equal to the reference's already-documented lifetime.  There is then nothing
+# to free per error at all, and because the buffer is an inline thread-local
+# array for the common box sizes, nothing to allocate either — which is why the
+# counts below are the counts of a program that raises no errors.
 #
 # Stories: 127.109, 127.49
 

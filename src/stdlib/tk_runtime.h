@@ -54,8 +54,12 @@ extern TK_TLS int64_t tk_current_error;
  * raised, unbounded (127.49 measured 9,142,858 boxes / 146 MB at N=64e6).
  * Now it is one buffer per thread, and there is nothing to free per error.
  *
- * Returns NULL only if the growth allocation fails, in which case the caller
- * must fall back to the payload-less flag 1 rather than store a null box. */
+ * NEVER returns NULL.  The common box — a 2-slot sum, or a record of up to 8
+ * fields — comes from an inline thread-local array and cannot fail at all;
+ * only a wider error type reaches the heap, and a failed growth there falls
+ * back to that inline array.  A null return would be stored into the slot as
+ * 0, and 0 is SUCCESS (§7.2), so an out-of-memory error return would have read
+ * back as a successful one. */
 void   *tk_err_box(int64_t nbytes);
 
 /* Release this thread's error-box buffer.  Registered via atexit() for the
