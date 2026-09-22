@@ -77,7 +77,10 @@ def collect_emitted(defined):
 
 
 def collect_documented():
-    return set(re.findall(r"^###\s+([EW]\d{4})", read(ERRORS_MD), re.M))
+    # The trailing \b matters: without it `### E4071x` or
+    # `### E9005_TEMPORARILY_BROKEN` would satisfy the check for E4071/E9005,
+    # because a prefix match is not a documented section (Story 127.124).
+    return set(re.findall(r"^###\s+([EW]\d{4})\b", read(ERRORS_MD), re.M))
 
 
 def main():
