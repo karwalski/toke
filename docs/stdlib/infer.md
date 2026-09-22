@@ -1,115 +1,131 @@
-# std.infer -- In-Process LLM Inference
+---
+title: std.infer
+slug: infer
+section: reference/stdlib
+order: 45
+---
 
-## Overview
+> **Status: FAÇADE -- do not write against this page's API.** All six published functions have a `_w` wrapper, so a call links; every one of those wrappers is a stub that ignores its arguments. `infer.load` returns 0 unconditionally, so no handle is ever produced, so nothing else can do anything useful. `src/stdlib/infer.c` is 397 lines implementing `tk_infer_load`, `tk_infer_unload`, `tk_infer_generate` and `tk_infer_embed`; `src/stdlib/infer_glue.c` calls none of them. Same class as story 136.44 (`std.tls`) and 136.16 (`std.toon`): a finished core behind glue that returns 0.
 
-The `std.infer` module provides in-process large language model inference via llama.cpp. Models are loaded from GGUF files (by convention stored in `~/.loke/models/`) and accessed through an opaque `model_handle`. The module supports text generation, embedding extraction, and streaming disk-based model loading for hardware-constrained environments.
+`std.infer` is intended to provide in-process LLM inference via llama.cpp. Models are GGUF files (by convention under `~/.loke/models/`) reached through an opaque handle, with text generation, embedding extraction, and a disk-streaming loader for machines that cannot hold the whole model in RAM.
 
-The real implementation requires llama.cpp compiled in (`TK_HAVE_LLAMACPP`). Without it, all functions return an `infererr` with a clear "not available" message, so programs compile and fail gracefully at runtime.
+## What is actually reachable today
 
-## Types
+Measured against the built compiler, not read off the interface. Every row links -- this module's failure mode is quieter than `std.mlx`'s, because nothing errors, it simply does nothing.
 
-### model_handle
+| Published call | `.tki` arity | Glue arity | Behaviour today |
+|---|---|---|---|
+| `infer.load` | 2 | **1** | drops `infer_opts`; returns 0, never a handle |
+| `infer.loadstreaming` | 2 | **1** | drops `stream_opts`; returns 0 |
+| `infer.unload` | 1 | 1 | returns 0 |
+| `infer.generate` | 3 | **2** | drops the token limit; returns the literal `"[infer: not available]"` |
+| `infer.embed` | 2 | 2 | returns a zero-length array |
+| `infer.isloaded` | 1 | 1 | returns 0. Added by 131.38, which found it declared with no wrapper at all -- and made it a stub consistent with the rest rather than a working function, because `load` never hands out a handle for it to check |
 
-An opaque handle referencing a loaded model. Obtain one from `infer.load` or `infer.load_streaming`. Pass to all other functions. Release with `infer.unload`.
+A call written the way the interface publishes it is rejected before the linker:
 
-| Field | Type | Meaning |
-|-------|------|---------|
-| id | Str | Unique identifier for the loaded model instance |
-
-### infer_opts
-
-Options controlling how a model is loaded into memory.
-
-| Field | Type | Meaning |
-|-------|------|---------|
-| n_gpu_layers | i32 | Number of transformer layers to offload to GPU (0 = CPU only) |
-| n_threads | i32 | Number of CPU threads used for inference (0 = use llama.cpp default) |
-| seed | i32 | RNG seed for reproducible sampling (-1 = random) |
-
-### stream_opts
-
-Options for disk-streaming model loading (Epic 72.7). Used with `infer.load_streaming`.
-
-| Field | Type | Meaning |
-|-------|------|---------|
-| ram_ceiling_gb | f32 | Maximum RAM the streaming loader may use (gigabytes) |
-| prefetch_layers | i32 | Number of layers to prefetch ahead of the active decode window |
-| requires_nvme | bool | If true, refuse to stream from spinning-disk paths |
-
-### infererr
-
-| Field | Type | Meaning |
-|-------|------|---------|
-| msg  | Str  | Human-readable error description |
-| code | i32  | Internal error code (0 if not applicable) |
-
-## Functions
-
-### infer.load(model_path: Str; opts: infer_opts): model_handle!infererr
-
-Loads a GGUF model file from `model_path` into memory. By convention, models live in `~/.loke/models/`. Returns a `model_handle` on success or `infererr` on failure (path not found, out of memory, llama.cpp unavailable, etc.).
-
-`infer_opts` fields default to safe values when zero: GPU layers default to 0 (CPU-only), threads default to the llama.cpp heuristic, seed defaults to a random value.
-
-**Example:**
-```toke
-let opts = $infer_opts{n_gpu_layers: 32; n_threads: 8; seed: -1};
-let h = infer.load("~/.loke/models/mistral-7b.Q4_K_M.gguf"; opts)?;
+```
+E4026 wrong number of arguments for 'std.infer.generate':
+      the implementation takes 2 arguments, the call passes 3
 ```
 
-### infer.unload(h: model_handle): bool
+The three arity drops are not cosmetic. `infer_opts` carries the GPU-layer count, the thread count and the RNG seed; `stream_opts` carries the RAM ceiling and the prefetch depth; `generate`'s third argument is the token limit. A restored module that kept the current wrapper signatures would compile every caller and honour none of their configuration -- which is exactly the defect class Epic 136 was opened to close.
 
-Frees all resources associated with `h`. Returns `true` on success, `false` if the handle was already unloaded or invalid. After calling `infer.unload`, the handle must not be used again.
+Because `isloaded` is the only call whose stub answer is *honest* (nothing is loaded, and that is true), the single compiling example below is a guard, and that is all it can be.
 
-**Example:**
 ```toke
-let ok = infer.unload(h);
+m=inferprobe;
+i=infer:std.infer;
+i=io:std.io;
+
+f=main():i64{
+  (* load is a stub that returns 0, so this handle is never valid and
+     isloaded is correspondingly false. The else branch is what runs. *)
+  let h=infer.load("/models/mistral-7b.Q4KM.gguf");
+  if(infer.isloaded(h)){
+    io.println("model loaded")
+  }el{
+    io.println("no local inference: std.infer glue is a stub")
+  };
+  <0
+};
 ```
 
-### infer.generate(h: model_handle; prompt: Str; max_tokens: i32): Str!infererr
+## The underscore problem, on top of the glue problem
 
-Runs autoregressive text generation starting from `prompt`, stopping after at most `max_tokens` new tokens. Returns the generated text only (not including the prompt). Generate and embed calls on the same handle are serialised internally.
+Several published names cannot be written in a toke program at all, because toke's default 59-character profile excludes `_`:
 
-**Example:**
-```toke
-let reply = infer.generate(h; "The capital of France is"; 64)?;
-log.info(reply);  (* " Paris." *)
-```
+| Name | Kind | Why it cannot be written |
+|---|---|---|
+| `model_handle` | type | `$model_handle` will not lex |
+| `infer_opts` | type | `$infer_opts{...}` will not lex |
+| `stream_opts` | type | `$stream_opts{...}` will not lex |
+| `n_gpu_layers`, `n_threads` | field | cannot be named in a struct literal or a field read |
+| `ram_ceiling_gb`, `prefetch_layers`, `requires_nvme` | field | as above |
+| `infer.load_streaming`, `infer.is_loaded` | call-name | as this page previously documented them. The interface already spells them `loadstreaming` and `isloaded`; the prose had not caught up |
 
-### infer.embed(h: model_handle; text: Str): @(f32)!infererr
+So the options types are doubly unreachable: no wrapper takes them, *and* no toke program could construct one if a wrapper did. Restoring the module needs the `std.tls` treatment from 136.44 -- constructor functions (`infer.opts(gpulayers; threads; seed)`) instead of struct literals, and handles kept opaque as `i64`.
 
-Encodes `text` through the model's embedding layer and returns a float array of the embedding vector. The array is heap-allocated; **the caller is responsible for freeing it** when done.
+## The design, kept as the record
 
-**Example:**
-```toke
-let vec = infer.embed(h; "hello world")?;
-(* use vec, then free when done *)
-```
+Everything below describes what `src/stdlib/infer.c` already implements and what a restored module should expose. **It is not callable as written.**
 
-### infer.is_loaded(h: model_handle): bool
+### Types
 
-Returns `true` if `h` refers to an active, loaded model; `false` if it has been unloaded or was never successfully loaded.
+#### modelhandle
 
-**Example:**
-```toke
-if infer.is_loaded(h) {
-    let reply = infer.generate(h; prompt; 256)?;
-}
-```
+An opaque handle to a loaded model, carrying the model instance id. Published today as `model_handle`, which is unspellable.
 
-### infer.load_streaming(model_dir: Str; opts: stream_opts): model_handle!infererr
+#### inferopts
 
-**(Epic 72.7 — not yet implemented.)** Loads a model from `model_dir` using disk-streaming so that only the active layer window needs to reside in RAM. This allows running models larger than available RAM at the cost of latency. Returns `infererr` with code -2 in the current release.
+How to load: GPU layers to offload (0 = CPU only), CPU threads (0 = the llama.cpp heuristic), RNG seed (-1 = random). Published today as `infer_opts` with underscore fields.
 
-**Example:**
-```toke
-let opts = $stream_opts{ram_ceiling_gb: 8.0; prefetch_layers: 4; requires_nvme: true};
-let h = infer.load_streaming("~/.loke/models/llama-70b-Q4/"; opts)?;
-```
+#### streamopts
 
-## Notes
+Disk-streaming load (Epic 72.7): RAM ceiling in gigabytes, layers to prefetch ahead of the decode window, and whether to refuse a spinning disk. Published today as `stream_opts` with underscore fields.
 
-- Model files must be in GGUF format. The llama.cpp project provides quantised GGUF downloads.
-- `infer.embed` returns a raw `@(f32)` whose length equals the model's embedding dimension. Check `infererr` before accessing the array.
-- Thread safety: concurrent `infer.generate` and `infer.embed` calls on the **same** handle are serialised via an internal per-handle mutex. Calls on **different** handles may proceed concurrently.
-- When `TK_HAVE_LLAMACPP` is not defined at compile time, all functions return `infererr{msg: "std.infer: llama.cpp not compiled in"; code: -1}`.
+#### infererr
+
+`msg: str` and `code: i32`.
+
+### Functions
+
+#### infer.load(modelpath: str; opts: inferopts): modelhandle!infererr
+
+Loads a GGUF file into memory. `tk_infer_load` in the core does this and takes the options; the wrapper takes the path alone and returns 0.
+
+#### infer.unload(h: modelhandle): bool
+
+Frees the model. `tk_infer_unload` exists; the wrapper returns 0.
+
+#### infer.generate(h: modelhandle; prompt: str; maxtokens: i32): str!infererr
+
+Autoregressive generation from `prompt`, at most `maxtokens` new tokens, returning only the continuation. `tk_infer_generate` in the core takes the limit and serialises generate and embed calls on one handle through a per-handle mutex. The wrapper takes two arguments and returns a literal.
+
+#### infer.embed(h: modelhandle; text: str): @(f32)!infererr
+
+Runs `text` through the embedding layer. `tk_infer_embed` exists; the wrapper returns an empty array, which is indistinguishable from a model whose embedding dimension is zero.
+
+#### infer.isloaded(h: modelhandle): bool
+
+Whether `h` refers to a live model.
+
+#### infer.loadstreaming(modeldir: str; opts: streamopts): modelhandle!infererr
+
+Streams layers from disk so only the active window is resident, trading latency for the ability to run a model larger than RAM. Not implemented in the core either -- this one is unbuilt at both layers, not merely unwired.
+
+### Notes on the intended design
+
+- Models must be GGUF. The real implementation is conditional on `TK_HAVE_LLAMACPP`; without it the core itself returns `infererr{msg: "std.infer: llama.cpp not compiled in"; code: -1}`, which is a *different* failure from the glue stub and worth keeping distinguishable.
+- `infer.embed` returns an array whose length is the model's embedding dimension. Check the error side before reading it.
+- Concurrent `generate` and `embed` on the **same** handle are serialised internally; different handles proceed concurrently.
+
+## Restoring it
+
+A real `infer_glue.c`: six wrappers calling the four core functions, widened to the published arities, plus constructor functions for the two options types and a rename of the three underscore type names. `loadstreaming` additionally needs a core. Nothing here is blocked on a language feature.
+
+## See Also
+
+- `std.mlx` -- the Apple Silicon sibling, in the same state and for the same reason.
+- `std.llm` -- reaching a remote provider, and the working option today.
+- `std.vecstore` -- where embeddings go once a module can produce them.

@@ -1,196 +1,128 @@
-# std.mdns -- mDNS/Bonjour Service Advertisement and Discovery
+---
+title: std.mdns
+slug: mdns
+section: reference/stdlib
+order: 47
+---
 
-## Overview
+> **Status: FAÇADE -- do not write against this page's API.** `src/stdlib/mdns.c` is 788 lines of Bonjour/DNS-SD implementation. `src/stdlib/mdns_glue.c` is 46 lines and calls none of it: every wrapper is `(void)arg; return 0;`. Two published functions -- `mdns.isavailable` and `mdns.resolve` -- have **no wrapper at all** and fail at link. Two more are published with one arity and implemented with another, so the call you write is not the call the interface documents. Nothing on this page has ever discovered or advertised a service from a toke program. Same class as story 136.44 (`std.tls`) and 136.16 (`std.toon`).
 
-The `std.mdns` module provides mDNS (Multicast DNS) service advertisement and
-discovery, compatible with Apple Bonjour and the wider zero-configuration
-networking ecosystem (RFC 6762 / RFC 6763).
+`std.mdns` is intended to provide mDNS (Multicast DNS) service advertisement and discovery, compatible with Apple Bonjour and the wider zero-configuration networking ecosystem (RFC 6762 / RFC 6763).
 
-**Platform support:**
+## What is actually reachable today
 
-| Platform | Status |
-|----------|--------|
-| macOS    | Full — uses the system `dns_sd` Bonjour API |
-| Linux    | Stub — Avahi support planned; `mdns.is_available()` returns `false` |
-| Windows  | Stub — future implementation; `mdns.is_available()` returns `false` |
+Measured against the built compiler, not read off the interface.
 
-Always call `mdns.is_available()` before using other functions when writing
-cross-platform toke programs.
+| Published call | `.tki` signature | Glue signature | Reachable | Behaviour |
+|---|---|---|---|---|
+| `mdns.isavailable` | `(): bool` | — | **no** | `E9003`, undefined symbol `_tk_mdns_isavailable_w` |
+| `mdns.resolve` | `(str; str): ?($discovered)` | — | **no** | `E9003`, undefined symbol `_tk_mdns_resolve_w` |
+| `mdns.advertise` | `($service_record): bool` | `(i64; i64; i64)` | at **3** args | returns 0 |
+| `mdns.browse` | `(str; fn($discovered): void): bool` | `(i64)` | at **1** arg | **the callback parameter does not exist in the implementation**; returns an empty array |
+| `mdns.stopadvertise` | `(str): bool` | `(i64)` | links | returns 0 |
+| `mdns.stopbrowse` | `(str): bool` | `(i64)` | links | returns 0 |
+| `mdns.servicerecord` | `(i64; i64; i64): i64` | `(i64; i64; i64)` | links | returns 0 -- it constructs nothing |
 
-**Service types used by loke:**
+Two of these are worse than a stub that returns the wrong answer.
 
-- `_loke-mcp._tcp` — loke MCP server advertisement
-- `_loke-companion._tcp` — loke companion service advertisement
+**`mdns.browse` has lost its callback.** The interface publishes `browse(type; cb)` where `cb` is invoked per discovered service. The wrapper takes the service type alone and returns an empty array. A program cannot register a discovery callback at all, so the module has no discovery path even in principle — and a caller writing the documented two-argument form gets `E4026` rather than a runtime surprise, which is the one mercy here.
 
-## Types
+**`mdns.servicerecord` constructs nothing.** It exists because `$service_record` cannot be written in toke — see below — so it is the only way to build the argument `advertise` wants. It returns 0.
 
-### $service_record
+Because `isavailable` does not link, a toke program cannot even perform the availability check this page used to open with. The only compiling example is the shape a consumer must take today: assume no mDNS, and configure the host and port by hand.
 
-Describes a service to advertise on the local network.
-
-| Field | Type    | Meaning |
-|-------|---------|---------|
-| name  | str     | Human-readable service instance name (e.g. `"My Server"`) |
-| type  | str     | DNS-SD service type (e.g. `"_http._tcp"`) |
-| port  | i32     | TCP or UDP port the service listens on |
-| txt   | @(str)  | TXT record entries in `"key=value"` format |
-
-### $discovered
-
-Describes a service instance discovered on the network.
-
-| Field | Type   | Meaning |
-|-------|--------|---------|
-| name  | str    | Service instance name |
-| host  | str    | Resolved hostname |
-| port  | i32    | Port the service is listening on |
-| txt   | @(str) | TXT record entries in `"key=value"` format |
-
-## Functions
-
-### mdns.is_available(): bool
-
-Returns `true` if mDNS is supported on the current platform. On macOS this
-always returns `true`. On Linux and Windows it returns `false` until native
-support is implemented.
-
-**Example:**
 ```toke
-import std.mdns;
+m=mdnsfallback;
+i=io:std.io;
+i=env:std.env;
+i=str:std.str;
 
-if !mdns.is_available() {
-  (* fall back to manual host/port configuration *)
-}
-```
-
-### mdns.advertise(svc: $service_record): bool
-
-Registers a service for advertisement on the local network. Returns `true` on
-success. The service remains advertised until `mdns.stop_advertise` is called
-or the process exits.
-
-TXT record entries must be in `"key=value"` format. Empty `txt` arrays are
-allowed.
-
-Returns `false` if:
-- mDNS is not available on this platform
-- A service with the same `name` is already being advertised
-- The underlying Bonjour call fails
-
-**Example:**
-```toke
-import std.mdns;
-
-let svc = $service_record {
-  name: "My MCP Server",
-  type: "_loke-mcp._tcp",
-  port: 8080,
-  txt: @("version=1", "proto=toke")
+(* std.mdns is not imported. isavailable() has no wrapper and fails at link,
+   so there is no way to ask whether discovery is possible -- a consumer has
+   to take the manual path unconditionally. *)
+f=main():i64{
+  let host=env.getor("SERVICEHOST";"127.0.0.1");
+  let port=env.getor("SERVICEPORT";"8080");
+  io.println(str.concat("using configured endpoint ";str.concat(host;str.concat(":";port))));
+  <0
 };
-
-let ok = mdns.advertise(svc);
 ```
 
-### mdns.stop_advertise(name: str): bool
+## The underscore problem, on top of the glue problem
 
-Stops advertising the service with the given instance `name`. Returns `true` if
-the registration was found and removed, `false` otherwise.
+Toke's default 59-character profile excludes `_`, so these published names cannot be written in a toke program at all:
 
-**Example:**
-```toke
-import std.mdns;
+| Name | Kind | Why it cannot be written |
+|---|---|---|
+| `service_record` | type | `$service_record{...}` will not lex |
+| `mdns.is_available` | call-name | as this page previously documented it; the interface already spells it `isavailable` |
+| `mdns.stop_advertise`, `mdns.stop_browse` | call-name | as above; the interface spells them `stopadvertise`, `stopbrowse` |
 
-let stopped = mdns.stop_advertise("My MCP Server");
-```
+`$discovered` is fine, and so are all eight field names on the two record types (`name`, `type`, `port`, `txt`, `host`) -- the problem is confined to `service_record` and the prose's stale call-names. That one unspellable type name is why `mdns.servicerecord` exists as a constructor, the same pattern `std.tls` uses for `TlsConfig`.
 
-### mdns.browse(service_type: str, cb: fn($discovered): void): bool
+Two further things this page previously got wrong independently of the glue: the examples opened with `import std.mdns;`, which is not toke's import syntax (`i=mdns:std.mdns;` is), and built struct literals with `,` separators rather than `;`.
 
-Starts an asynchronous background browse for services of the given
-`service_type`. Each time a service is found or re-confirmed, `cb` is called
-with a `$discovered` value.
+## The design, kept as the record
 
-The browse runs on a background thread; `cb` may be called from that thread.
-Returns `true` if the browse was started, `false` on error or if browsing for
-`service_type` is already active.
+Everything below describes what a restored module should expose. **It is not callable as written.**
 
-Call `mdns.stop_browse` to cancel.
+### Types
 
-**Example:**
-```toke
-import std.mdns;
+#### servicerecord
 
-let found = mdns.browse("_loke-mcp._tcp", fn(d: $discovered): void {
-  (* called each time a service is found *)
-  let info = d.name ++ " at " ++ d.host;
-});
-```
+A service to advertise. Published today as `service_record`, which is unspellable.
 
-### mdns.stop_browse(service_type: str): bool
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | `str` | human-readable instance name, e.g. `"My Server"` |
+| `type` | `str` | DNS-SD service type, e.g. `"_http._tcp"` |
+| `port` | `i32` | port the service listens on |
+| `txt` | `@(str)` | TXT entries in `"key=value"` form |
 
-Stops the background browse for the given `service_type`. Returns `true` if a
-browse for that type was active and has been stopped, `false` otherwise.
+#### $discovered
 
-**Example:**
-```toke
-import std.mdns;
+A service instance found on the network: `name`, `host` (resolved), `port`, and `txt` in the same form.
 
-let stopped = mdns.stop_browse("_loke-mcp._tcp");
-```
+### Functions
 
-### mdns.resolve(name: str, service_type: str): ?($discovered)
+#### mdns.isavailable(): bool
 
-Synchronously resolves a named service instance. Blocks until the host and port
-are resolved or a 5-second timeout expires. Returns the resolved `$discovered`
-on success, or `none` on timeout or error.
+Whether mDNS is supported here. Intended to be `true` on macOS via the system `dns_sd` API, `false` on Linux (Avahi support planned) and Windows. Has no wrapper.
 
-**Example:**
-```toke
-import std.mdns;
+#### mdns.advertise(svc: servicerecord): bool
 
-let result = mdns.resolve("My MCP Server", "_loke-mcp._tcp");
-match result {
-  some(d) => (* connect to d.host:d.port *),
-  none    => (* service not found or timed out *)
-}
-```
+Registers a service for advertisement, which persists until `mdns.stopadvertise` or process exit. Intended to fail when mDNS is unavailable, when an instance of the same name is already advertised, or when the Bonjour call fails.
 
-## Usage pattern — advertise and browse
+#### mdns.stopadvertise(name: str): bool
 
-```toke
-import std.mdns;
+Withdraws a service previously advertised under `name`.
 
-(* Only proceed on supported platforms *)
-if mdns.is_available() {
+#### mdns.browse(type: str; cb: fn): bool
 
-  (* Advertise this process as an MCP server *)
-  let svc = $service_record {
-    name: "loke-mcp-local",
-    type: "_loke-mcp._tcp",
-    port: 9000,
-    txt: @("v=1")
-  };
-  mdns.advertise(svc);
+Starts browsing for instances of `type`, invoking `cb` for each one discovered. Browsing continues until `mdns.stopbrowse`. The wrapper has no callback parameter.
 
-  (* Browse for companion services *)
-  mdns.browse("_loke-companion._tcp", fn(d: $discovered): void {
-    let addr = d.host ++ ":" ++ str(d.port);
-    (* connect to companion *)
-  });
+#### mdns.stopbrowse(type: str): bool
 
-  (* ... run event loop ... *)
+Stops a browse started for `type`.
 
-  (* Clean up *)
-  mdns.stop_browse("_loke-companion._tcp");
-  mdns.stop_advertise("loke-mcp-local");
-}
-```
+#### mdns.resolve(name: str; type: str): ?($discovered)
 
-## Notes
+Resolves one named instance to a host and port without browsing. Has no wrapper.
 
-- Service instance names must be unique per type on the local network. If a
-  collision occurs, Bonjour may rename the service automatically (appending a
-  number). The C layer does not surface the renamed instance name; check
-  `mdns.stop_advertise` return values to confirm teardown.
-- TXT records are limited to 255 bytes per entry by the DNS-SD specification.
-- `mdns.resolve()` performs a one-shot lookup and does not keep a persistent
-  connection to Bonjour. For continuous monitoring, prefer `mdns.browse`.
+#### mdns.servicerecord(name; type; port): servicerecord
+
+Constructs a `servicerecord`, which exists because the type name cannot be written as a literal. Returns 0.
+
+### Service types used by loke
+
+- `_loke-mcp._tcp` -- loke MCP server advertisement
+- `_loke-companion._tcp` -- loke companion service advertisement
+
+## Restoring it
+
+A real `mdns_glue.c`: seven wrappers calling the core in `mdns.c`, at the published arities rather than the current ones; `_w` symbols for `isavailable` and `resolve`, which do not exist; a callback parameter on `browse`, which needs the same per-handle trampoline decision that blocked `std.webview`'s `registerhandler` and `onclose` (131.38); a `servicerecord` that builds something; and a rename of the `service_record` type. The core is written. The layer is not.
+
+## See Also
+
+- `std.net` -- the manual path: explicit host and port, which is what a consumer must use today.
+- `std.webview` -- withdrawn for a related reason, and the page that records why a toke callback ABI is the blocker.

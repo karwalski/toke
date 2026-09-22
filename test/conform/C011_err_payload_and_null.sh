@@ -126,7 +126,7 @@ f=main():i64{
 #   supported platform AND on an unsupported one, so this is portable.  Every
 #   operator below used to dereference the sentinel; `v==""` exited 139.
 #   The sentinel is NOT the empty string — a missing key and a key stored
-#   empty must stay distinguishable (stdlib/securemem.md, test C005).
+#   empty must stay distinguishable (docs/stdlib/securemem.md, test C005).
 run_case "null sentinel survives every comparison" \
 "len=0 eqempty=0 eqval=0 nefull=1 ltA=1 gtA=0
 survived" '
