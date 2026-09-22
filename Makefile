@@ -90,7 +90,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint conform conform-sh conform-check build-all ci check-docs check-patterns render-patterns check-error-codes check-glue-core check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-patterns render-patterns check-error-codes check-glue-core check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -229,6 +229,16 @@ stress: $(BIN)
 
 check-tki:
 	python3 scripts/check_tki_coverage.py
+	python3 scripts/check_tki_coverage.py --quarantine-md-check
+
+# 136.7 — the quarantine population had two hand-maintained records (this
+# skiplist and a prose list in the tracker) and they diverged: the prose named
+# three exports that resolve, and a module with no .tki at all, which cannot be
+# in this class. scripts/check_tki_skiplist.txt is now the single authoritative
+# record and docs/reference/tki-quarantine.md is generated from it; check-tki
+# fails on drift. Never hand-write a second list — link to the generated page.
+render-tki-quarantine:
+	python3 scripts/check_tki_coverage.py --quarantine-md
 
 # 136.50 — a *_glue.c that never #includes its own core's header cannot call
 # anything that core declares, so whatever it returns it did not compute. This
