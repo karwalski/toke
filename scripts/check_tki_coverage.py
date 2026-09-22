@@ -77,7 +77,7 @@ def require_population(what: str, got: int, floor: int, where: str) -> None:
     bogus passes) and the 13-line-husk defect before it.
 
     So every anchor gets a floor. The floors are set at roughly a quarter of
-    the population measured on 2026-09-22, which is far below any legitimate
+    the population measured on 2026-09-23, which is far below any legitimate
     shrinkage and far above the zero-or-near-zero that a broken anchor yields.
     If a floor ever fires on a real, deliberate shrink, lower the number in
     the same commit that shrinks the population — do not delete the check.
@@ -307,9 +307,10 @@ def dummy_arg_symbols() -> set[str]:
     function is written in glue as a single ignored `int64_t`, so for a symbol
     in this set a `.tki` declaring ZERO parameters over a ONE-parameter C
     definition is the convention (136.14), not drift:
-    `securemem.isavailable()` is correct as written. The 135.17 arity check
-    would otherwise report all 38 of them, and the only way to make it green
-    would be to write the lie into 38 interfaces.
+    `securemem.isavailable()` is correct as written. Three exports rely on it
+    today (mlx.isavailable, securemem.isavailable, securemem.sweep); without
+    the exemption the only way to make the gate green would be to write the
+    dummy slot into those interfaces, which is the opposite of the point.
 
     This is an exemption, so it must not be able to fail open: an empty set
     here would turn every one of those into a fake finding, and a set that
