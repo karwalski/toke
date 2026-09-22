@@ -148,10 +148,10 @@ tkc: $(BIN)
 	ln -sf $(BIN) tkc
 
 # Auto-generate stdlib IR declarations before compiling llvm.c (Story 103.11)
-src/stdlib_decls_gen.h: $(wildcard src/stdlib/*_glue.c) $(wildcard src/stdlib/*.c) scripts/gen_stdlib_decls.py
+src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h: $(wildcard src/stdlib/*_glue.c) $(wildcard src/stdlib/*.c) scripts/gen_stdlib_decls.py
 	python3 scripts/gen_stdlib_decls.py
 
-src/llvm.o: src/stdlib_decls_gen.h
+src/llvm.o: src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h
 
 %.o: %.c
 	$(CC) $(CFLAGS) $(REPRO_FLAGS) -c -o $@ $<
