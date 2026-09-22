@@ -6,26 +6,176 @@
       "kind": "type",
       "name": "imgbuf",
       "fields": [
-        {"name": "width",    "type": "u32"},
-        {"name": "height",   "type": "u32"},
-        {"name": "channels", "type": "u8"},
-        {"name": "data",     "type": "[byte]"}
+        {
+          "name": "width",
+          "type": "u32"
+        },
+        {
+          "name": "height",
+          "type": "u32"
+        },
+        {
+          "name": "channels",
+          "type": "u8"
+        },
+        {
+          "name": "data",
+          "type": "[byte]"
+        }
       ]
     },
     {
       "kind": "type",
       "name": "imgfmt",
       "sum": true,
-      "variants": ["Png", "Jpeg", "Webp", "Bmp"]
+      "variants": [
+        "Png",
+        "Jpeg",
+        "Webp",
+        "Bmp"
+      ]
     },
-    {"kind": "func", "name": "image.decode",       "params": ["[byte]"],                           "return": "imgbuf!str"},
-    {"kind": "func", "name": "image.encode",       "params": ["imgbuf", "imgfmt", "u8"],           "return": "[byte]!str"},
-    {"kind": "func", "name": "image.resize",       "params": ["imgbuf", "u32", "u32"],             "return": "imgbuf"},
-    {"kind": "func", "name": "image.crop",         "params": ["imgbuf", "u32", "u32", "u32", "u32"], "return": "imgbuf!str"},
-    {"kind": "func", "name": "image.tograyscale", "params": ["imgbuf"],                           "return": "imgbuf"},
-    {"kind": "func", "name": "image.fliph",       "params": ["imgbuf"],                           "return": "imgbuf"},
-    {"kind": "func", "name": "image.flipv",       "params": ["imgbuf"],                           "return": "imgbuf"},
-    {"kind": "func", "name": "image.pixelat",     "params": ["imgbuf", "u32", "u32"],             "return": "[byte]!str"},
-    {"kind": "func", "name": "image.fromraw",     "params": ["[byte]", "u32", "u32", "u8"],       "return": "imgbuf"}
+    {
+      "kind": "func",
+      "name": "image.decode",
+      "params": [
+        "[byte]"
+      ],
+      "return": "imgbuf!str"
+    },
+    {
+      "kind": "func",
+      "name": "image.encode",
+      "params": [
+        "imgbuf",
+        "imgfmt",
+        "u8"
+      ],
+      "return": "[byte]!str"
+    },
+    {
+      "kind": "func",
+      "name": "image.resize",
+      "params": [
+        "imgbuf",
+        "u32",
+        "u32"
+      ],
+      "return": "imgbuf"
+    },
+    {
+      "kind": "func",
+      "name": "image.crop",
+      "params": [
+        "imgbuf",
+        "u32",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "return": "imgbuf!str"
+    },
+    {
+      "kind": "func",
+      "name": "image.tograyscale",
+      "params": [
+        "imgbuf"
+      ],
+      "return": "imgbuf"
+    },
+    {
+      "kind": "func",
+      "name": "image.fliph",
+      "params": [
+        "imgbuf"
+      ],
+      "return": "imgbuf"
+    },
+    {
+      "kind": "func",
+      "name": "image.flipv",
+      "params": [
+        "imgbuf"
+      ],
+      "return": "imgbuf"
+    },
+    {
+      "kind": "func",
+      "name": "image.pixelat",
+      "params": [
+        "imgbuf",
+        "u32",
+        "u32"
+      ],
+      "return": "[byte]!str"
+    },
+    {
+      "kind": "func",
+      "name": "image.fromraw",
+      "params": [
+        "[byte]",
+        "u32",
+        "u32",
+        "u8"
+      ],
+      "return": "imgbuf"
+    },
+    {
+      "kind": "func",
+      "name": "image.adaptivethreshold",
+      "params": [
+        "imgbuf",
+        "u32",
+        "f64"
+      ],
+      "return": "imgbuf!str"
+    },
+    {
+      "kind": "func",
+      "name": "image.blur",
+      "params": [
+        "imgbuf",
+        "u32"
+      ],
+      "return": "imgbuf"
+    },
+    {
+      "kind": "func",
+      "name": "image.convolve",
+      "params": [
+        "imgbuf",
+        "[f64]",
+        "u32",
+        "f64",
+        "f64"
+      ],
+      "return": "imgbuf!str"
+    },
+    {
+      "kind": "func",
+      "name": "image.rotate",
+      "params": [
+        "imgbuf",
+        "f64"
+      ],
+      "return": "imgbuf"
+    },
+    {
+      "kind": "func",
+      "name": "image.tiffdecode",
+      "params": [
+        "[byte]",
+        "u32"
+      ],
+      "return": "imgbuf!str"
+    },
+    {
+      "kind": "func",
+      "name": "image.tiffpages",
+      "params": [
+        "[byte]"
+      ],
+      "return": "u32!str"
+    }
   ]
 }
