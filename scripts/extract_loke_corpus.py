@@ -26,9 +26,13 @@ from typing import Optional
 # Config
 # ---------------------------------------------------------------------------
 
-LOKE_DIR = Path("/Users/matthew.watt/loke/loke")
-TOKE_BIN = Path("/Users/matthew.watt/tk/toke/toke")
-OUTPUT_DIR = Path("/Users/matthew.watt/tk/toke-model/corpus-loke")
+# 127.130: hard absolute paths here meant a run from a git worktree read the
+# MAIN checkout's compiler and wrote to the MAIN output directory, whatever
+# tree it was launched from.  Overridable now; unset, behaviour is identical.
+LOKE_DIR = Path(os.environ.get("LOKE_DIR", "/Users/matthew.watt/loke/loke"))
+TOKE_BIN = Path(os.environ.get("TOKE_BIN", "/Users/matthew.watt/tk/toke/toke"))
+OUTPUT_DIR = Path(os.environ.get(
+    "LOKE_CORPUS_OUT", "/Users/matthew.watt/tk/toke-model/corpus-loke"))
 OUTPUT_JSONL = OUTPUT_DIR / "extracted.jsonl"
 
 MIN_BODY_LINES = 3  # skip trivial one-liners
