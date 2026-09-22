@@ -107,7 +107,7 @@ BUILD_WARNINGS=0
 BUILD_TIME=0
 BINARY_SIZE=0
 
-BUILD_LOG="$(mktemp /tmp/toke_build_XXXXXX.log)"
+BUILD_LOG="$(mktemp /tmp/toke_build.log.XXXXXX)"
 trap 'rm -f "${BUILD_LOG}"' EXIT
 
 BUILD_START="$(date +%s)"

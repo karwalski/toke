@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# C016_map_property_is_not_a_field.sh — a field name a map does not have is a
+# C017_map_property_is_not_a_field.sh — a field name a map does not have is a
 # diagnostic, not a raw byte read (story 127.106).
 #
 # `m.values` type-checked clean, compiled clean, exited 0 and printed a
@@ -53,7 +53,7 @@ WORK="$(mktemp -d /tmp/tkc_mapprop_XXXXXX)"
 trap 'rm -rf "${WORK}"' EXIT
 cd "${WORK}"
 
-echo "C016: a map property the language does not have is a diagnostic"
+echo "C017: a map property the language does not have is a diagnostic"
 echo "----------------------------------------------------------------"
 
 # reject_build NAME SOURCE — the compiler must REFUSE, with E4035.

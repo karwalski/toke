@@ -10,7 +10,7 @@ shift
 TIMEOUT=10
 WORKDIR=$(mktemp -d /tmp/toke-run-XXXXXX)
 
-PROFILE_FILE=$(mktemp /tmp/toke-sandbox-XXXXXX.sb)
+PROFILE_FILE=$(mktemp /tmp/toke-sandbox.sb.XXXXXX)
 
 cleanup() {
     rm -rf "$WORKDIR"

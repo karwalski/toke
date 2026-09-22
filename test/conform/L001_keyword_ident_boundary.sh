@@ -74,7 +74,7 @@ echo "----------------------------------------------------"
 # 'letx = 5' must be treated as: assign value 5 to identifier 'letx'.
 # It is NOT a let-binding. 'letx' is the variable name.
 
-T1=$(mktemp /tmp/tkc_L001_t1_XXXXXX.tk)
+T1=$(mktemp /tmp/tkc_L001_t1.tk.XXXXXX)
 cat > "${T1}" <<'EOF'
 m=test;
 f=main():i64{
@@ -90,7 +90,7 @@ rm -f "${T1}"
 # Whitespace between 'let' and 'x' forces two tokens. This is a normal
 # let-binding. The result must be 5.
 
-T2=$(mktemp /tmp/tkc_L001_t2_XXXXXX.tk)
+T2=$(mktemp /tmp/tkc_L001_t2.tk.XXXXXX)
 cat > "${T2}" <<'EOF'
 m=test;
 f=main():i64{
@@ -105,7 +105,7 @@ rm -f "${T2}"
 #
 # 'letmut' must lex as a single identifier token. It is NOT a let-mut binding.
 
-T3=$(mktemp /tmp/tkc_L001_t3_XXXXXX.tk)
+T3=$(mktemp /tmp/tkc_L001_t3.tk.XXXXXX)
 cat > "${T3}" <<'EOF'
 m=test;
 f=main():i64{
@@ -121,7 +121,7 @@ rm -f "${T3}"
 # 'mutantninjaturtles' must lex as one identifier regardless of the 'mut'
 # prefix. This demonstrates longest-match applies unconditionally.
 
-T4=$(mktemp /tmp/tkc_L001_t4_XXXXXX.tk)
+T4=$(mktemp /tmp/tkc_L001_t4.tk.XXXXXX)
 cat > "${T4}" <<'EOF'
 m=test;
 f=main():i64{
@@ -138,7 +138,7 @@ rm -f "${T4}"
 # 'letx' is the function name — a valid identifier. It is not parsed as
 # keyword 'let' + identifier 'x'.
 
-T5=$(mktemp /tmp/tkc_L001_t5_XXXXXX.tk)
+T5=$(mktemp /tmp/tkc_L001_t5.tk.XXXXXX)
 cat > "${T5}" <<'EOF'
 m=test;
 f=letx(a:i64):i64{
@@ -156,7 +156,7 @@ rm -f "${T5}"
 # With whitespace, 'let mutantninjaturtles' must produce keyword 'let' +
 # identifier 'mutantninjaturtles'. This is a normal let-binding.
 
-T6=$(mktemp /tmp/tkc_L001_t6_XXXXXX.tk)
+T6=$(mktemp /tmp/tkc_L001_t6.tk.XXXXXX)
 cat > "${T6}" <<'EOF'
 m=test;
 f=main():i64{
