@@ -106,7 +106,7 @@ t=$keypair{pubkey:@(u8);privkey:@(u8)};
 
 f=genx25519():$keypair{
   let kp=enc.x25519keypair();
-  < kp
+  < $keypair{pubkey:kp.pubkey;privkey:kp.privkey}
 };
 ```
 
@@ -137,7 +137,7 @@ t=$keypair{pubkey:@(u8);privkey:@(u8)};
 
 f=gened25519():$keypair{
   let kp=enc.ed25519keypair();
-  < kp
+  < $keypair{pubkey:kp.pubkey;privkey:kp.privkey}
 };
 ```
 
