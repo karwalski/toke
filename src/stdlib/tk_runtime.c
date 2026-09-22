@@ -17,11 +17,81 @@
 #include <stdarg.h>
 #include <ctype.h>
 
-/* 114.41: side channel carrying a T!$E error's typed sum-type payload.
- * An error return stores the box here and returns the 0 ok/err sentinel; the
- * matching $err arm loads it. (Plain global — adequate for the single-threaded
- * common case; revisit for cross-thread error propagation.) */
-int64_t tk_current_error = 0;
+/* 114.41: side channel carrying a T!$E error's typed payload.  An error
+ * return stores the box here and returns the 0 ok/err sentinel; the matching
+ * $err arm loads it.  runtime-abi.md §7.
+ *
+ * 127.101: thread-local, as llvm.c always claimed it was and as this file
+ * always denied.  std.task's pool_worker invokes a toke function pointer on a
+ * worker thread, so a shared slot really did let two threads overwrite each
+ * other's error. */
+TK_TLS int64_t tk_current_error = 0;
+
+/* ── 127.109/127.49: the per-thread error box ────────────────────────────────
+ * One buffer per thread, grown on demand, reused by every raise.  See the
+ * ownership rule on tk_err_box() in tk_runtime.h: a box is valid until the
+ * next raise on the same thread, which is the window §7.5 restriction 1
+ * already documents for the $err binding.
+ *
+ * `err_buf` is deliberately NOT freed on grow-in-place failure: realloc
+ * leaves the old block valid, so keeping it is correct and the raise falls
+ * back to the payload-less flag. */
+/* One TLS object, not two: on Darwin every distinct thread-local reference
+ * goes through a tlv_get_addr thunk, so folding the buffer and its capacity
+ * into one struct halves the lookups on the raise path. */
+/* The buffer starts as an INLINE thread-local array, so the overwhelmingly
+ * common error box — a 2-slot sum (16 bytes) or a record of up to 8 fields —
+ * needs no allocation at all and, more importantly, CANNOT FAIL.  A failed
+ * allocation here would hand codegen a null box, which it would store into the
+ * slot as 0 — and 0 is the SUCCESS value (§7.2), so an out-of-memory error
+ * return would have been read back as a successful one.  That hazard existed
+ * with the old per-error malloc() too; sizing the common case inline removes
+ * it rather than moving it.  Only an error type wider than this reaches the
+ * heap, and the null it can still return is handled by the caller below. */
+#define TK_ERR_INLINE 64
+typedef struct { void *buf; int64_t cap; } TkErrBuf;
+static TK_TLS TkErrBuf       err = { NULL, 0 };
+static TK_TLS unsigned char  err_inline[TK_ERR_INLINE];
+#define err_buf err.buf
+#define err_cap err.cap
+
+void tk_err_release(void)
+{
+    if (err_buf && err_buf != (void *)err_inline) free(err_buf);
+    err_buf = NULL;
+    err_cap = 0;
+}
+
+void *tk_err_box(int64_t nbytes)
+{
+    if (nbytes <= 0) nbytes = 16;
+    if (!err_buf) { err_buf = err_inline; err_cap = TK_ERR_INLINE; }
+    if (nbytes > err_cap) {
+        /* Round up so a mixed program of narrow and wide error types reaches a
+         * steady state instead of reallocating on every alternation. */
+        int64_t want = err_cap;
+        while (want < nbytes) {
+            if (want > (int64_t)1 << 20) { want = nbytes; break; }  /* no doubling runaway */
+            want *= 2;
+        }
+        /* The inline array is not realloc'able. */
+        void *grown = (err_buf == (void *)err_inline) ? malloc((size_t)want)
+                                                      : realloc(err_buf, (size_t)want);
+        if (!grown) {
+            /* Out of memory for an oversized error type.  Return the inline
+             * buffer rather than null: a short box risks a truncated payload,
+             * but a null box would be stored as 0 and read back as SUCCESS,
+             * turning a failure into a silent success. */
+            err_buf = err_inline; err_cap = TK_ERR_INLINE;
+            memset(err_buf, 0, TK_ERR_INLINE);
+            return err_buf;
+        }
+        err_buf = grown;
+        err_cap = want;
+    }
+    memset(err_buf, 0, (size_t)nbytes);
+    return err_buf;
+}
 
 /* ── Global argv storage ─────────────────────────────────────────── */
 
@@ -36,6 +106,11 @@ static char *g_path_snapshot;
 const char *tk_path_snapshot(void) { return g_path_snapshot; }
 
 void tk_runtime_init(int argc, char **argv) {
+    /* 127.109: release the main thread's error box at exit.  Registered HERE,
+     * not lazily from tk_err_box: atexit handlers run on the main thread, so a
+     * lazy registration from a std.task worker would enter the handler once
+     * per raising thread and each entry would act on the MAIN thread's TLS. */
+    atexit(tk_err_release);
     /* 124.4a/g: parse capability grants from the RAW argv first (tk_cap_init
      * must see the --allow-* flags). */
     tk_cap_init(argc, argv);
