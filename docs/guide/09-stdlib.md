@@ -135,6 +135,8 @@ i=file:std.file;
 | `delete` | `(path:$str):void!$fileerr` | Delete a file |
 | `readbytes` | `(path:$str):@u8!$fileerr` | Read file as byte array |
 | `writebytes` | `(path:$str;data:@u8):void!$fileerr` | Write byte array to file |
+| `readrange` | `(path:$str;offset:i64;len:i64):@(byte)!$fileerr` | Read a bounded window; the **file** may be any size, the window is capped |
+| `size` | `(path:$str):i64!$fileerr` | Bytes readable from the file — `0` is a real size, not a failure |
 | `listdir` | `(path:$str):@$str!$fileerr` | List directory entries |
 
 **Example: copy a file**

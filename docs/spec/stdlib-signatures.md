@@ -164,6 +164,8 @@ f=list(dir:$str):@$str
 f=delete(path:$str):void
 f=readbytes(path:$str):@(byte)!$fileerr
 f=writebytes(path:$str;data:@(byte)):bool!$fileerr
+f=readrange(path:$str;offset:i64;len:i64):@(byte)!$fileerr
+f=size(path:$str):i64!$fileerr
 f=lasterr():$str
 f=lasterrkind():$str
 ```
@@ -176,7 +178,19 @@ never a failure; the `$err` arm carries no payload (the compiled `T!E` ABI has
 none), so `file.lasterrkind` reports which of `notfound permission isdir
 notregular symlink toolarge nomem io badarg` occurred and `file.lasterr` gives
 the message. `readbytes` refuses a file over 64 MiB rather than attempting it,
-because a `@(byte)` costs one i64 per byte. See [std.file](/docs/stdlib/file).
+because a `@(byte)` costs one i64 per byte.
+
+`readrange`/`size` (135.12) are how a file bigger than that is read. The cap is
+not raised — the memory cost is the reason it exists — instead the two limits
+that were one number are separated: `readrange` caps the **window**, because
+the window is what is materialised, and does not check the **file's** size at
+all. A short result is an end rather than a failure, and an offset at or beyond
+the end is a real zero-length `@(byte)` marked ok. `size` is the call a parser
+makes first, because a PDF's xref table and a zip's end-of-central-directory
+record both live at the *end* of the file. These two are also the first calls
+in the module to report failure through the error slot rather than a value
+sentinel — an empty file's `size` **is** `0`, so no value could have carried
+it. See [std.file](/docs/stdlib/file).
 
 ### std.env
 
