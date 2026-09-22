@@ -381,14 +381,29 @@ static const Node *find_binding_node(const Node *root, const char *src,
                                      const char *name, int nlen);
 
 /* Shift a freshly-parsed sub-AST's token offsets by `delta` so they point into
- * the real source instead of the throwaway wrap buffer (123.11-fu). Safe only
- * for single-use arena nodes. */
-static void shift_tok_offsets(Node *n, int delta) {
+ * the real source instead of the throwaway wrap buffer (123.11-fu).
+ *
+ * 127.116: the offsets were the only thing rebased.  `line` and `col` stayed
+ * as the throwaway wrapper's own counters — which start at line 1 — so every
+ * diagnostic infer() raised on this sub-AST (E4025, E4033, E4035, and any
+ * future one) reported `line 1` and a column measured from the wrapper
+ * prefix, while `offset` and `source_line` stayed correct and disagreed with
+ * them.  A confidently wrong location is worse than none: it is what points
+ * the automated repair loop at the wrong line, the same harm AGENTS.md §3.1
+ * guards against for the `fix` field.  `anchor` is the enclosing string
+ * literal, whose line/col are real; a column is recovered from the (now
+ * real) offset, exactly as parser.c's interp_reloc does for the sub-AST it
+ * attaches.  Safe only for single-use arena nodes. */
+static void shift_tok_offsets(Node *n, int delta, const Node *anchor) {
     if (!n) return;
     n->tok_start += delta;
     n->start     += delta;
+    if (anchor) {
+        n->line = anchor->line;
+        n->col  = anchor->col + (n->tok_start - anchor->tok_start);
+    }
     for (int i = 0; i < n->child_count; i++)
-        shift_tok_offsets(n->children[i], delta);
+        shift_tok_offsets(n->children[i], delta, anchor);
 }
 
 /*
@@ -471,7 +486,7 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
             if (expr) {
                 /* Re-home the sub-expression onto the real source, then infer
                  * against the real environment (no src swap). */
-                shift_tok_offsets(expr, delta);
+                shift_tok_offsets(expr, delta, strnode);
                 Type *t = infer(cx, expr);
                 int composite = t && (t->kind == TY_ARRAY || t->kind == TY_MAP ||
                                       t->kind == TY_STRUCT);
@@ -2311,7 +2326,14 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         for (int i=0;i<base->field_count;i++)
             if (base->field_names[i]&&strcmp(base->field_names[i],fname)==0)
                 return base->field_types[i];
-        if (tc_can_emit(cx)) {
+        /* 127.117: guarded, like the E4033 and E4035 checks a few lines up.
+         * infer() has no memo and bind_init_type() re-enters a binding's
+         * initialiser to recover its type, so `let q=p.zz` followed by any
+         * USE of q reported this field error twice, as two diagnostic records
+         * with different ids and identical content.  That inflates the
+         * diagnostic counts that feed published figures, and it invites the
+         * repair loop to apply the same fix twice. */
+        if (tc_first_report(cx,node) && tc_can_emit(cx)) {
             char msg[256];
             snprintf(msg,sizeof(msg),"struct '%s' has no field '%s'",
                      base->name?base->name:"?",fname);
@@ -2617,6 +2639,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * checking.  Returns TY_VOID.
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_ARENA_STMT: {
+        int saved_bc=cx->bind_count;   /* 137.6: see NODE_IF_STMT */
         cx->env->arena_depth++;
         cx->scope_depth++;
         for (int i=0;i<node->child_count;i++) {
@@ -2638,6 +2661,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         }
         cx->scope_depth--;
         cx->env->arena_depth--;
+        cx->bind_count=saved_bc;
         return mk_type(A,TY_VOID);
     }
 
@@ -2742,7 +2766,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     case NODE_IF_STMT: {
         /* Infer condition at current depth */
         if (node->child_count>0) infer(cx,node->children[0]);
-        /* Infer then/else branches at increased depth */
+        /* Infer then/else branches at increased depth.
+         * 137.6: the bind side-table is popped with the scope.  Nothing used
+         * to pop it, so a `let x` inside the branch left a depth-1 entry
+         * behind, and lookup_bind_depth — which searches BACKWARDS so the
+         * most recent wins — answered "depth 1" for the OUTER x afterwards.
+         * W5001 then told the reader that a function-body binding "escapes
+         * its scope: bound in a nested block", naming the wrong binding for
+         * a program that has no escape at all. */
+        int saved_bc=cx->bind_count;
         cx->scope_depth++;
         Type *then_ty=mk_type(A,TY_VOID);
         for (int i=1;i<node->child_count;i++) {
@@ -2750,6 +2782,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (i==1) then_ty=bt;   /* A1: expression-if yields the then-branch tail type */
         }
         cx->scope_depth--;
+        cx->bind_count=saved_bc;
         /* As an expression, the if yields its then-branch tail value's type.
          * Statement-position `if` callers discard the returned type. */
         return then_ty;
@@ -2766,9 +2799,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      *   children[3] = NODE_STMT_LIST body (deeper scope)
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_LOOP_STMT: {
+        int saved_bc=cx->bind_count;   /* 137.6: see NODE_IF_STMT */
         cx->scope_depth++;
         for (int i=0;i<node->child_count;i++) infer(cx,node->children[i]);
         cx->scope_depth--;
+        cx->bind_count=saved_bc;
         return mk_type(A,TY_VOID);
     }
 

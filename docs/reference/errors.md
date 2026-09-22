@@ -428,16 +428,24 @@ Triggers E3011.
 | Severity | error           |
 | Stage    | name_resolution |
 
-A second declaration of the same name in the same scope. Shadowing across scope boundaries is allowed; duplicate declaration within one scope is not.
+A second declaration of the same name in the same scope, for a kind that may
+not be redeclared: `f=` functions, `t=` types, `i=` imports, consts and
+parameters.
+
+`let` and `let mut` are **excluded**: story 75.1.7 chose "allow same-scope
+and cross-scope shadowing", and §11.8.1 of the spec publishes
+`let x = 1; let x = x + 1;` as a valid program that yields 2. A re-binding
+`let` never triggers E3012; a cross-scope one raises the W3013 warning.
 <!-- skip-check -->
 ```text
 m=test;
-f=bad(): i64 { let x = 1; let x = 2; < x };
+t=box{n: i64};
+t=box{m: i64};
 ```
 
-Triggers E3012.
+Triggers E3012 on the second `t=box`.
 
-**Fix:** Use a different name for the second binding, or remove the duplicate.
+**Fix:** Use a different name for the second declaration, or remove the duplicate.
 
 ---
 
@@ -644,16 +652,46 @@ Emitted when a `\(expr)` interpolates an array, struct, or map. Convert it to a 
 
 ### E4033
 
-**Member access on a type name rather than a value**
+**A type name used where a value is required**
 
 | Field    | Value |
 |----------|-------|
 | Severity | error |
 | Stage    | typecheck |
 
-Emitted for `Type.member` where `Type` names a struct type rather than an instance of it. There is no value to take a field of, so the expression has no meaning. Before 127.90 it type-checked and lowered to a field load off a null base, producing a plausible-looking `0`.
+Emitted when a declared type's name stands in a value position. Two spellings
+reach it, from two stages:
 
-**Fix:** Bind an instance first and take the field of that.
+- **`$Type.member`** (typecheck, 127.90) — member access on a type rather than
+  an instance. There is no value to take a field of, so the expression has no
+  meaning. Before 127.90 it type-checked and lowered to a field load off a null
+  base, producing a plausible-looking `0`.
+- **a bare `Type` in any value position** (name resolution, 137.4) — a call
+  argument, the right-hand side of a `let`, an operand, a condition, a
+  return value, or a field-access base. toke keeps type names and value names
+  in one namespace, and `resolve_ident` used to accept whatever the scope
+  lookup returned without inspecting its kind, so these resolved clean,
+  type-checked clean, and failed at clang as `use of undefined value '%Type'`
+  — naming an LLVM temporary rather than the program. In the 137 migration
+  this hid a genuinely missing parameter and three functions referencing a
+  binding declared nowhere.
+
+A name that is not also a type is still `E3011` (undefined identifier), and
+the legitimate bare-type positions — `as Type` casts, `$Type{…}` struct
+literals, `:Type` annotations, sum-type variant constructors and module
+aliases — are unaffected.
+
+<!-- skip-check -->
+```text
+m=test;
+t=thing{n:i64};
+f=take(v:i64):i64{<v};
+f=main():i64{ <take(thing) };
+```
+
+Triggers E4033 on `thing`.
+
+**Fix:** Bind an instance of that type and use the binding.
 
 ### E4034
 
@@ -910,7 +948,7 @@ The compiler could not write the `.tkir` artifact.
 
 The compiler could not read a `.tkir` artifact.
 
-## Semantic Warnings (W2xxx / W5xxx / W8xxx)
+## Semantic Warnings (W2xxx / W3xxx / W5xxx / W8xxx)
 
 Non-fatal diagnostics from later stages.
 
@@ -957,6 +995,40 @@ A construct idiomatic to another language was detected.
 | Stage    | parse |
 
 A module name was normalised from a non-canonical capitalisation.
+
+### W3013
+
+**`let` shadows a binding in an enclosing scope**
+
+| Field    | Value           |
+|----------|-----------------|
+| Severity | warning         |
+| Stage    | name_resolution |
+
+A `let` (or `let mut`, or a `lp` loop variable) introduces a name that is
+already bound by an enclosing scope — an outer block, or a parameter.
+
+This is **legal**: story 75.1.7 chose "allow same-scope and cross-scope
+shadowing", and §11.8.1 of the spec publishes `let x = x + 1;` as a valid
+program. The warning exists because the same source also reads exactly like
+an assignment that it is not: a `let x = …` inside an `if` or a `lp` body
+declares a *second* x, and the outer one is unchanged when the block ends.
+
+Same-scope shadowing — the spec's own example, where the two bindings are
+adjacent and visibly sequential — does **not** warn.
+
+<!-- skip-check -->
+```text
+m=test;
+f=bad(n: i64): i64 { let x = 1; if(n>0){ let x = 2; }; < x };
+```
+
+Triggers W3013 on the inner `let`; the function returns 1.
+
+**Fix:** If an assignment was meant, declare the outer binding `let x =
+mut.1` and write `x = 2`. If a distinct binding was meant, rename it.
+
+---
 
 ### W5001
 

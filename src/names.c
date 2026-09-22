@@ -27,6 +27,7 @@
  */
 #include "names.h"
 #include "stdlib_deps.h"   /* 127.42: std.* module existence gate */
+#include "types.h"        /* 137.4: E4033 — a type name is not a value */
 #include "tkc_limits.h"
 #include <ctype.h>
 #include <dirent.h>
@@ -755,6 +756,58 @@ static const char *arena_intern(Arena *arena, const char *s, int len) {
 }
 
 /*
+ * warn_enclosing_shadow (137.6) — a `let`/`let mut` that introduces a name
+ * already bound in an ENCLOSING scope.
+ *
+ * Shadowing stays legal: story 75.1.7 chose Option A ("allow same-scope and
+ * cross-scope shadowing") and the spec publishes `let x = x + 1;` as a valid
+ * program.  75.1.7 also reserved the other half — "optional lint rule:
+ * mixed-mut-shadow" — and this is it.  Legal is not the same as silent.
+ *
+ * What it catches is a mistake that reads exactly like the correct code: a
+ * `let x = …` inside an `if` or a `lp` body does not assign to the outer x,
+ * it declares a second one, and the outer value is unchanged when the block
+ * ends.  The 137 migration found 52 of these across 18 files — a privacy
+ * opt-out that was never honoured, four job-queue counters (`let i=i+1`)
+ * that never advanced, a model registry that could never find a model — and
+ * every one of them compiled.
+ *
+ * Deliberately NOT warned:
+ *   - same-scope shadowing (`let p=x; let p=p+1;`), which is the spec's own
+ *     published example and cannot be mistaken for an assignment: the two
+ *     bindings are adjacent and visibly sequential;
+ *   - shadowing a function, type, const or import name — a different
+ *     question (E3012 already governs re-declaration) and not the mistake
+ *     this rule is about.
+ */
+static void warn_enclosing_shadow(const Scope *scope, const char *src,
+                                  const Node *bname)
+{
+    if (!scope || !scope->parent || !bname) return;
+    const char *name = src + bname->tok_start;
+    int len = bname->tok_len;
+    if (len <= 0 || len > 200) return;
+    /* Same-scope re-binding is the spec's example, not this warning. */
+    if (scope_lookup_local(scope, name, len)) return;
+    const Decl *outer = scope_lookup(scope->parent, name, len);
+    if (!outer) return;
+    if (outer->kind != DECL_LET && outer->kind != DECL_MUT &&
+        outer->kind != DECL_PARAM && outer->kind != DECL_CLOSURE_PARAM)
+        return;
+    char nbuf[201];
+    memcpy(nbuf, name, (size_t)len); nbuf[len] = '\0';
+    char msg[320];
+    snprintf(msg, sizeof msg,
+             "this 'let' shadows a binding named '%s' in an enclosing scope; "
+             "did you mean an assignment to a 'mut'?", nbuf);
+    /* No `fix`: the repair depends on which one was meant.  AGENTS.md 3.1 —
+     * a confidently wrong fix is worse than none, and both readings
+     * ("`%s=…`" and "rename this binding") are real programs. */
+    diag_emit(DIAG_WARNING, W3013, bname->start, bname->line, bname->col,
+              msg, "got", nbuf, (const char *)NULL);
+}
+
+/*
  * scope_insert — declare a new identifier in the current scope.
  *
  * First checks for a duplicate in the same scope via scope_lookup_local;
@@ -1305,7 +1358,45 @@ static void resolve_ident(const Node *node, const char *src,
                           Scope *scope, int *had_error) {
     const char *name = src + node->tok_start;
     int         len  = node->tok_len;
-    if (!scope_lookup(scope, name, len)) {
+    const Decl *found = scope_lookup(scope, name, len);
+    /*
+     * 137.4 — a BARE type name standing in a value position.
+     *
+     * toke keeps type names and value names in one namespace (see the note
+     * above), and this function used to accept whatever scope_lookup
+     * returned without ever inspecting its DeclKind.  So `take(thing)` and
+     * `thing.n`, where `thing` is a declared type and no local of that name
+     * exists, resolved clean, type-checked clean, and were handed to clang —
+     * which failed on `use of undefined value '%thing'`, naming an LLVM
+     * temporary rather than the program.  A field access on the `$`-prefixed
+     * spelling was already E4033 (types.c, 127.90); the bare spelling was
+     * unchecked in EVERY value position.  In the 137 migration it hid a
+     * genuinely missing parameter and three functions referencing a `store`
+     * declared nowhere, while the sibling function took `store:$store`
+     * correctly — the two sat side by side for months.
+     *
+     * Restricted to NODE_IDENT: a NODE_TYPE_IDENT ($thing) IS a type
+     * reference and is resolved through this same function from type
+     * positions, so applying it there would reject every annotation.
+     */
+    if (found && found->kind == DECL_TYPE && node->kind == NODE_IDENT) {
+        s_name_error_count++;
+        if (s_name_error_count <= MAX_NAME_ERRORS) {
+            char nbuf[201];
+            int mlen = len < 200 ? len : 200;
+            memcpy(nbuf, name, (size_t)mlen); nbuf[mlen] = '\0';
+            char msg[300];
+            snprintf(msg, sizeof msg,
+                     "'%s' is a type name, not a value", nbuf);
+            diag_emit(DIAG_ERROR, E4033, node->start, node->line, node->col,
+                      msg, "expected", "a value", "got", nbuf,
+                      "fix", "bind an instance of that type and use the binding",
+                      (const char *)NULL);
+        }
+        *had_error = 1;
+        return;
+    }
+    if (!found) {
         /* Only emit a diagnostic if we have not yet reached the error limit.
          * The diagnostic is emitted BEFORE inserting the error-marker decl so
          * that the Levenshtein "did you mean?" search does not match the very
@@ -1718,6 +1809,7 @@ static int resolve_node(const Node *node, const char *src,
             resolve_node(node->children[i], src, scope, arena, had_error);
         const Node *bname = node->child_count > 0 ? node->children[0] : NULL;
         if (bname) {
+            warn_enclosing_shadow(scope, src, bname);   /* 137.6 */
             DeclKind dk = (node->kind == NODE_MUT_BIND_STMT) ? DECL_MUT : DECL_LET;
             int r = scope_insert(scope, arena, src,
                                  bname->start, bname->tok_len,
@@ -1789,6 +1881,7 @@ static int resolve_node(const Node *node, const char *src,
                 if (vname) {
                     /* Loop variables are implicitly mutable — the loop
                      * step reassigns them on every iteration. */
+                    warn_enclosing_shadow(lp_scope, src, vname);   /* 137.6 */
                     DeclKind dk = DECL_MUT;
                     int r = scope_insert(lp_scope, arena, src,
                                          vname->start, vname->tok_len,
