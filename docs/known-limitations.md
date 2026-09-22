@@ -1,6 +1,6 @@
 # Known Limitations — toke compiler v0.4
 
-Last updated: 2026-07-03 (empirically re-verified against the reference compiler)
+Last updated: 2026-09-22 (empirically re-verified against the reference compiler)
 
 This document lists known limitations, workarounds, and planned fixes for the
 toke compiler v0.4 release. It covers the language, code generation, build
@@ -112,6 +112,65 @@ implemented.
 **Workaround:** None. All integer arithmetic is checked.
 
 **Planned fix:** Deferred to a future story (noted in 10.3.1b).
+
+### 9. Expression-`if` is not accepted as an operand of a binary operator
+
+Verified 2026-09-22 against `tkc` at `445f519` (story 127.21). Expression-`if`
+works in bind, return and argument position (Epic 116.1), but an `if`/`el`
+expression may not appear on either side of `+`, `-`, `*`, `/` or a comparison:
+
+```toke
+m=main;
+f=main():i64{
+  let c=true;
+  let x=1+if(c){2}el{3};   /* E2002: unexpected token in expression, got 'if' */
+  <x
+};
+```
+
+The leading position fails the same way — `let b=if(c){1}el{0}>0;` stops at the
+`>` with E2003 "missing semicolon", because the statement parser has already
+taken the `if` as a statement-`if`.
+
+**Workaround:** two rewrites, both `--check` clean.
+
+Bind the `if` first, then use the binding as the operand:
+
+```toke
+m=main;
+f=main():i64{
+  let a=10;
+  let c=true;
+  let d=if(c){2}el{3};
+  let x=a+d;
+  <x
+};
+```
+
+Or lift the whole expression into the branches — fewer bindings, more tokens
+when the operand expression is large:
+
+```toke
+m=main;
+f=main():i64{
+  let a=10;
+  let c=true;
+  let x=if(c){a+2}el{a+3};
+  <x
+};
+```
+
+**Planned fix:** none — this is a deliberate, permanent limitation (owner
+decision 2026-09-22, story 127.21). Accepting expression-`if` as a binary
+operand means making `IfExpr` a `PrimaryExpr`, which would put the grammar's
+backtrack-free property with at most 3 tokens of lookahead at risk. That
+property is a headline property of the language and the reason constrained
+decoding against `docs/spec/toke.gbnf` is cheap; it is worth more than the
+ergonomics of an unbound expression-`if` operand. A documented limitation with
+a mechanical rewrite is the accepted trade.
+
+The syntax card (`toke-corpus/regen/syntax_card.md`, STILL BROKEN block) carries
+the one-line form of this rule.
 
 ---
 
