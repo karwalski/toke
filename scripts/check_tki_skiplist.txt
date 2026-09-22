@@ -69,11 +69,5 @@ mlx.tki::mlx.unload                   # 2026-09-19 no _w glue; core=mlx_unload [
 mlx.tki::mlx.embed                    # 2026-09-19 no _w glue; core=mlx_embed [131.38-followup]
 # ── template ──
 template.tki::tpl.html                     # 2026-09-19 no _w glue for tpl.html; no C impl [131.38-followup]
-# ── tls ──
-tls.tki::tls.listen                   # 2026-09-19 no _w glue (tls_glue.c exposes listentls/connecttls/read/write/close/tlsconfig/genselfsigned); core=tls_listen [131.38-followup]
-tls.tki::tls.connect                  # 2026-09-19 no _w glue (tls_glue.c exposes listentls/connecttls/read/write/close/tlsconfig/genselfsigned); core=tls_connect [131.38-followup]
-tls.tki::tls.peercert                 # 2026-09-19 no _w glue (tls_glue.c exposes listentls/connecttls/read/write/close/tlsconfig/genselfsigned); core=tls_peer_cert [131.38-followup]
-tls.tki::tls.fingerprint              # 2026-09-19 no _w glue (tls_glue.c exposes listentls/connecttls/read/write/close/tlsconfig/genselfsigned); core=tls_fingerprint [131.38-followup]
-tls.tki::tls.pairingcode              # 2026-09-19 no _w glue (tls_glue.c exposes listentls/connecttls/read/write/close/tlsconfig/genselfsigned); core=tls_pairing_code [131.38-followup]
 # ── ws ──
 ws.tki::ws.sendbytes                 # 2026-09-19 no _w glue; core=ws_sendbytes [131.38-followup]

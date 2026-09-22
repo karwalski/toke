@@ -4,7 +4,7 @@
  * Story 127.61. One-parameter glue symbols whose body provably never reads
  * the parameter, so a zero-argument toke call into them cannot read an
  * unset register. Every other one-parameter symbol DOES read its argument,
- * and a zero-argument call into one is an arity error. 41 symbols.
+ * and a zero-argument call into one is an arity error. 38 symbols.
  */
 
     "tk_array_new_w",
@@ -45,6 +45,3 @@
     "tk_test_report_w",
     "tk_time_nowms_w",
     "tk_time_nowunix_w",
-    "tk_tls_close_w",
-    "tk_tls_genselfsigned_w",
-    "tk_tls_read_w",
