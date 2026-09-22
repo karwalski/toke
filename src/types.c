@@ -207,6 +207,57 @@ static int types_equal(const Type *a, const Type *b) {
 }
 
 /*
+ * int_widens_to (127.114 / 127.53) — the implicit integer-width coercion rule.
+ *
+ * OWNER DECISION 2026-09-22: toke widens implicitly to i64 rather than making
+ * authors spell a cast for a distinction the language does not otherwise
+ * surface.  i64 is toke's one arithmetic integer: every narrower or unsigned
+ * integer already occupies a full i64 slot at the ABI (map values, array
+ * elements and the `.len` header word alike), so the coercion is a no-op in
+ * codegen and cannot lose a value that toke can represent.
+ *
+ * Widening is DIRECTIONAL — only *to* i64.  i64 -> u64 stays an error,
+ * because that one can turn a negative into a huge positive silently, and
+ * nothing in the corpus asks for it.
+ *
+ * Sources:
+ *   u64  — `arr.len`, `map.len`, `str.len`.  This is the whole of 127.53:
+ *          `i<arr.len`, `p*(arr.len-1)/100`, `f(arr.len)`.
+ *   bool — a bool stored in an i64 slot and read back, which is what a
+ *          bool-valued map yields: `m=@("a":true); ck(...;m.get("a");1)`
+ *          (test_127_27).  Same slot argument, same no-op in codegen.
+ *
+ * f64 is NOT here: int <-> float has no implicit promotion (ADR-0004), 127.64
+ * depends on that staying an error, and it is not width, it is representation.
+ */
+static int int_widens_to(const Type *from, const Type *to) {
+    if (!from||!to||to->kind!=TY_I64) return 0;
+    switch (from->kind) {
+    case TY_U64: case TY_BOOL: return 1;
+    default: return 0;
+    }
+}
+
+/*
+ * types_compat(from, to) — "may a value of type `from` stand where `to` is
+ * declared".  types_equal, plus int_widens_to.
+ *
+ * DIRECTIONAL, and the argument order is load-bearing: this is the predicate
+ * every *value-flow* check uses (call argument -> parameter, initialiser ->
+ * `let x:T`, RHS -> LHS, returned value -> declared return type), and each of
+ * those has a source and a destination.  A symmetric version would accept
+ * `let n:u64 = someI64` as readily as `let n:i64 = someU64`, which is the one
+ * direction the decision deliberately does not take.
+ *
+ * types_equal stays the answer where identity is what is meant, not flow:
+ * map key/value agreement, match-arm agreement, binary-operand agreement
+ * (the binary case widens explicitly, before it reaches a reject).
+ */
+static int types_compat(const Type *from, const Type *to) {
+    return types_equal(from,to)||int_widens_to(from,to);
+}
+
+/*
  * is_numeric — return 1 if `t` is one of the three numeric types.
  *
  * Profile 1 numeric types are: i64 (signed 64-bit integer),
@@ -984,7 +1035,7 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         if (it && it->kind != TY_UNKNOWN && it->kind != TY_VOID) return it;
         return NULL;
     }
-    case NODE_STRUCT_LIT: case NODE_FIELD_EXPR: {
+    case NODE_STRUCT_LIT: case NODE_FIELD_EXPR: case NODE_MAP_LIT: {
         Type *it = infer(cx, initN);
         if (it && (it->kind == TY_MAP || it->kind == TY_STRUCT)) return it;
         return NULL;
@@ -1829,6 +1880,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         "array concatenation requires matching element types");
                 return mk_type(A,TY_UNKNOWN);
             }
+            /* 127.114/127.53: mixed integer widths widen to i64 rather than
+             * demanding a cast — `i<arr.len`, `p*(arr.len-1)/100`.  This is
+             * the comparison/arithmetic half of the owner's coercion decision;
+             * int_widens_to carries the reasoning and the direction. */
+            if ((arith||cmp) && is_integer(l) && is_integer(r)
+                && !types_equal(l,r)
+                && (int_widens_to(l,r)||int_widens_to(r,l))) {
+                return cmp?mk_type(A,TY_BOOL):(int_widens_to(l,r)?r:l);
+            }
             if ((arith&&(!is_numeric(l)||!types_equal(l,r)))||(cmp&&!types_equal(l,r))) {
                 char fix[96];
                 /* 127.64: toke has no implicit int->float promotion (ADR: "no
@@ -1920,7 +1980,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (ai<node->child_count) {
                 Type *at=infer(cx,node->children[ai]);
                 Type *pt=ch->child_count>1?resolve_type(cx,ch->children[1]):mk_type(A,TY_UNKNOWN);
-                if (at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN&&!types_equal(at,pt)) {
+                if (at->kind!=TY_UNKNOWN&&pt->kind!=TY_UNKNOWN&&!types_compat(at,pt)) {
                     char fix[128];
                     snprintf(fix,sizeof(fix),"cast argument to %s using 'as'",type_name(pt));
                     emit_mm(cx,node->children[ai],pt,at,fix);
@@ -2123,8 +2183,14 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 return mk_type(A,TY_UNKNOWN);
             }
         }
-        /* .len on arrays and maps returns u64 */
-        if ((base->kind==TY_ARRAY||base->kind==TY_MAP) && strcmp(fname,"len")==0)
+        /* 127.53: `.len` is u64 on every receiver that answers it — arrays,
+         * maps AND strings.  str was held back because typing it surfaced a
+         * corpus-wide u64-vs-i64 migration; the 127.114 widening rule above
+         * removes that cost, so the property is now typed globally and the
+         * one at check_std_str_args is a fallback for receivers the checker
+         * still cannot type, not the only place `.len` is known. */
+        if ((base->kind==TY_ARRAY||base->kind==TY_MAP||base->kind==TY_STR)
+            && strcmp(fname,"len")==0)
             return mk_type(A,TY_U64);
         /* 127.12: `m.keys` (property form, per the syntax card) is an array of
          * the map's key type — what `m.keys()` yields at runtime (tk_map_keys_w). */
@@ -2211,7 +2277,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         const Node *initN = has_ann ? node->children[2]
                           : (node->child_count >= 2 ? node->children[1] : NULL);
         Type *init = initN ? infer(cx, initN) : NULL;
-        if (ann&&init&&ann->kind!=TY_UNKNOWN&&init->kind!=TY_UNKNOWN&&!types_equal(ann,init)) {
+        if (ann&&init&&ann->kind!=TY_UNKNOWN&&init->kind!=TY_UNKNOWN&&!types_compat(init,ann)) {
             char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(ann));
             emit_mm(cx,node,ann,init,fix);
         }
@@ -2276,7 +2342,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         }
         Type *lhs=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_UNKNOWN);
         Type *rhs=node->child_count>1?infer(cx,node->children[1]):mk_type(A,TY_UNKNOWN);
-        if (lhs->kind!=TY_UNKNOWN&&rhs->kind!=TY_UNKNOWN&&!types_equal(lhs,rhs)) {
+        if (lhs->kind!=TY_UNKNOWN&&rhs->kind!=TY_UNKNOWN&&!types_compat(rhs,lhs)) {
             char fix[128]; snprintf(fix,sizeof(fix),"cast RHS to %s using 'as'",type_name(lhs));
             emit_mm(cx,node,lhs,rhs,fix);
         }
@@ -2311,12 +2377,12 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     "fix","remove the return value",(const char*)NULL);
             }
         } else if (cx->fn_ret&&cx->fn_ret->kind!=TY_UNKNOWN&&val->kind!=TY_UNKNOWN
-            &&!types_equal(cx->fn_ret,val)) {
+            &&!types_compat(val,cx->fn_ret)) {
             /* In error-union functions (T!Err), allow returning either
              * the success type T or the error type Err. */
             int ok=0;
             if (cx->fn_ret->kind==TY_ERROR_TYPE) {
-                if (cx->fn_ret->elem&&types_equal(cx->fn_ret->elem,val)) ok=1;
+                if (cx->fn_ret->elem&&types_compat(val,cx->fn_ret->elem)) ok=1;
                 if (val->kind==TY_STRUCT&&cx->fn_ret->name&&val->name
                     &&strcmp(cx->fn_ret->name,val->name)==0) ok=1;
             }
