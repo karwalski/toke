@@ -47,14 +47,11 @@ f=main():i64{
 };
 ```
 
-## The underscore problem, on top of the glue problem
+## The naming problem, now fixed
 
-Even with working glue, two names on the published interface cannot be written in a toke program at all: toke's default 59-character profile excludes `_`.
+Toke's default 59-character profile excludes `_`, so the published type `mlx_model` could not be written in a toke program at all -- `$mlx_model{...}` would not lex. Story 136.46 renamed it to `mlxmodel`, and `make check-tki-names` now rejects any interface identifier the profile cannot express. There were no call sites to migrate, because there could not be any.
 
-- the type `mlx_model` -- so `$mlx_model{...}` cannot be lexed;
-- `model_path` and `max_tokens`, used as parameter names throughout the original page.
-
-Restoring the module therefore needs the same treatment `std.tls` got in 136.44: rename the type (`mlxmodel`), and keep handles opaque as `i64` so no field is ever named.
+The prose defect this page carried independently was `model_path` and `max_tokens` as parameter names throughout; those are spelled `modelpath` and `maxtokens` below. A restored module should also keep handles opaque as `i64`, the way `std.tls` does since 136.44, so no field is ever named at a call site.
 
 ## The design, kept as the record
 
@@ -64,7 +61,7 @@ Everything below describes what the C core in `src/stdlib/mlx.c` already impleme
 
 #### mlxmodel
 
-An opaque handle to a loaded model. The core carries `id` (the bridge's handle identifier) and `path` (where the model was loaded from). Published today as `mlx_model`, which is unspellable; a restoration should rename it and keep it opaque as an `i64`.
+An opaque handle to a loaded model. The core carries `id` (the bridge's handle identifier) and `path` (where the model was loaded from). Spelled `mlx_model` before 136.46; a restoration should keep it opaque as an `i64`.
 
 #### mlxerr
 
@@ -113,7 +110,7 @@ The port is fixed at compile time; changing it means rebuilding with `-DMLX_BRID
 
 ## Restoring it
 
-The cost is a real `mlx_glue.c`: five wrappers calling the five core functions, `_w` symbols for `unload` and `embed` that do not exist yet, `generate` widened to three parameters to match the interface, and the `mlx_model` rename. No new C is needed -- the core is done. The work is the layer that was never written.
+The cost is a real `mlx_glue.c`: five wrappers calling the five core functions, `_w` symbols for `unload` and `embed` that do not exist yet, and `generate` widened to three parameters to match the interface. The type rename is already done (136.46). No new C is needed -- the core is done. The work is the layer that was never written.
 
 ## See Also
 

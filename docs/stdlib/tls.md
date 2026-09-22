@@ -19,7 +19,7 @@ Before 136.44 none of this was reachable. `src/stdlib/tls.c` was ~910 lines of w
 
 That history explains two things about the interface below that otherwise look redundant.
 
-**The constructor functions exist because the struct literals cannot be written.** `TlsConfig` carries `cert_pem`, `key_pem`, `peer_cert_pem` and `require_mutual`; `TlsKeypair` carries `cert_pem` and `key_pem`. Every one of those names contains an underscore, and toke's default 59-character profile excludes `_` -- so `$TlsConfig{cert_pem: ...}` is not merely discouraged, it cannot be lexed. `tls.tlsconfig`, `tls.pinconfig` and `tls.mutualconfig` are how you build a config, and `tls.certof` and `tls.keyof` are how you read a keypair. Do not try to name the fields.
+**Build a configuration with the constructors, not a struct literal.** `tls.tlsconfig`, `tls.pinconfig` and `tls.mutualconfig` are how you build a config; `tls.certof` and `tls.keyof` are how you read a keypair. 136.44 shipped them for a reason: until story 136.46 every field on `TlsConfig` and `TlsKeypair` was spelled with an underscore (`cert_pem`, `key_pem`, `peer_cert_pem`, `require_mutual`), and toke's default 59-character profile excludes `_`, so `$TlsConfig{cert_pem: ...}` could not be lexed at all. 136.46 renamed the fields to `certpem`, `keypem`, `peercertpem` and `requiremutual`, and `make check-tki-names` now rejects any interface identifier the default profile cannot express. The constructors remain the documented route: they are what the conformance test uses, and mutual auth should be a named intent rather than a boolean somebody forgets to set.
 
 **The handles are opaque i64.** A `TlsConn` or `TlsKeypair` arrives in toke as an integer handle; `0` is the failure and none sentinel. Test with `==0`, and write callbacks as `f=name(conn:i64):i64`.
 
@@ -27,14 +27,16 @@ That history explains two things about the interface below that otherwise look r
 
 ### TlsConfig
 
-Configuration for either end of a connection. Opaque in practice -- build it with `tls.tlsconfig`, `tls.pinconfig` or `tls.mutualconfig`, and release it with `tls.freeconfig`.
+Configuration for either end of a connection. Treat it as opaque: build it with `tls.tlsconfig`, `tls.pinconfig` or `tls.mutualconfig`, and release it with `tls.freeconfig`.
 
-| Field | Type | Meaning | Readable from toke |
-|---|---|---|---|
-| `cert_pem` | `str` | this endpoint's certificate (empty for an anonymous client) | no -- underscore |
-| `key_pem` | `str` | the matching private key | no -- underscore |
-| `peer_cert_pem` | `str` | certificate to pin the peer against (empty = no pinning) | no -- underscore |
-| `require_mutual` | `bool` | demand a certificate from the peer | no -- underscore |
+| Field | Type | Meaning |
+|---|---|---|
+| `certpem` | `str` | this endpoint's certificate (empty for an anonymous client) |
+| `keypem` | `str` | the matching private key |
+| `peercertpem` | `str` | certificate to pin the peer against (empty = no pinning) |
+| `requiremutual` | `bool` | demand a certificate from the peer |
+
+These four were `cert_pem`, `key_pem`, `peer_cert_pem` and `require_mutual` until story 136.46; no toke program could name them, so there are no callers to migrate.
 
 ### TlsConn
 
@@ -42,7 +44,7 @@ An opaque handle to an established connection, as an `i64`. `0` means no connect
 
 ### TlsKeypair
 
-A freshly generated certificate and its private key. Opaque as an `i64`; read the two halves with `tls.certof` and `tls.keyof`, and release it with `tls.freekeypair`.
+A freshly generated certificate (`certpem`) and its private key (`keypem`). Opaque as an `i64` in practice; read the two halves with `tls.certof` and `tls.keyof`, and release it with `tls.freekeypair`.
 
 ### TlsErr
 
@@ -181,9 +183,9 @@ f=onconn(conn:i64):i64{
   <0
 };
 
-(* mutualconfig, not three field assignments: peer_cert_pem and require_mutual
-   carry underscores the default profile cannot express, so a toke program
-   cannot name them. *)
+(* mutualconfig, not three field assignments: the constructor is the
+   documented route, and it makes "mutual auth" an intent rather than a
+   boolean somebody forgets to set. *)
 f=main():i64{
   let cfg=tls.mutualconfig(rd("/tmp/toke-tls-s.crt");rd("/tmp/toke-tls-s.key");rd("/tmp/toke-tls-c.crt"));
   io.println("listening on 8443");

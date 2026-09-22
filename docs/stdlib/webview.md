@@ -56,7 +56,7 @@ unbuilt, so restoring the module costs a `webview_glue.c`, the link flags
 
 ## Every name below is also unspellable
 
-Independently of the missing glue, the retained design cannot be expressed in toke as written. The default 59-character profile excludes `_`, so these will not lex:
+Independently of the missing glue, the retained design cannot be expressed in toke as written. The default 59-character profile excludes `_`, so these will not lex. Story 136.46 swept the interfaces that still exist; `std.webview` has no `.tki` to sweep, so this list is untouched and a restoration must fix it by hand:
 
 | Name | Kind |
 |---|---|

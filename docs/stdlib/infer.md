@@ -15,8 +15,8 @@ Measured against the built compiler, not read off the interface. Every row links
 
 | Published call | `.tki` arity | Glue arity | Behaviour today |
 |---|---|---|---|
-| `infer.load` | 2 | **1** | drops `infer_opts`; returns 0, never a handle |
-| `infer.loadstreaming` | 2 | **1** | drops `stream_opts`; returns 0 |
+| `infer.load` | 2 | **1** | drops `inferopts`; returns 0, never a handle |
+| `infer.loadstreaming` | 2 | **1** | drops `streamopts`; returns 0 |
 | `infer.unload` | 1 | 1 | returns 0 |
 | `infer.generate` | 3 | **2** | drops the token limit; returns the literal `"[infer: not available]"` |
 | `infer.embed` | 2 | 2 | returns a zero-length array |
@@ -29,7 +29,7 @@ E4026 wrong number of arguments for 'std.infer.generate':
       the implementation takes 2 arguments, the call passes 3
 ```
 
-The three arity drops are not cosmetic. `infer_opts` carries the GPU-layer count, the thread count and the RNG seed; `stream_opts` carries the RAM ceiling and the prefetch depth; `generate`'s third argument is the token limit. A restored module that kept the current wrapper signatures would compile every caller and honour none of their configuration -- which is exactly the defect class Epic 136 was opened to close.
+The three arity drops are not cosmetic. `inferopts` carries the GPU-layer count, the thread count and the RNG seed; `streamopts` carries the RAM ceiling and the prefetch depth; `generate`'s third argument is the token limit. A restored module that kept the current wrapper signatures would compile every caller and honour none of their configuration -- which is exactly the defect class Epic 136 was opened to close.
 
 Because `isloaded` is the only call whose stub answer is *honest* (nothing is loaded, and that is true), the single compiling example below is a guard, and that is all it can be.
 
@@ -51,20 +51,23 @@ f=main():i64{
 };
 ```
 
-## The underscore problem, on top of the glue problem
+## The naming problem, now half fixed
 
-Several published names cannot be written in a toke program at all, because toke's default 59-character profile excludes `_`:
+Toke's default 59-character profile excludes `_`, so until story 136.46 most of this module's published type and field names could not be written in a toke program at all. 136.46 renamed them, and `make check-tki-names` now rejects any interface identifier the profile cannot express:
 
-| Name | Kind | Why it cannot be written |
+| Was | Is now | Kind |
 |---|---|---|
-| `model_handle` | type | `$model_handle` will not lex |
-| `infer_opts` | type | `$infer_opts{...}` will not lex |
-| `stream_opts` | type | `$stream_opts{...}` will not lex |
-| `n_gpu_layers`, `n_threads` | field | cannot be named in a struct literal or a field read |
-| `ram_ceiling_gb`, `prefetch_layers`, `requires_nvme` | field | as above |
-| `infer.load_streaming`, `infer.is_loaded` | call-name | as this page previously documented them. The interface already spells them `loadstreaming` and `isloaded`; the prose had not caught up |
+| `model_handle` | `modelhandle` | type |
+| `infer_opts` | `inferopts` | type |
+| `stream_opts` | `streamopts` | type |
+| `n_gpu_layers`, `n_threads` | `ngpulayers`, `nthreads` | field |
+| `ram_ceiling_gb`, `prefetch_layers`, `requires_nvme` | `ramceilinggb`, `prefetchlayers`, `requiresnvme` | field |
 
-So the options types are doubly unreachable: no wrapper takes them, *and* no toke program could construct one if a wrapper did. Restoring the module needs the `std.tls` treatment from 136.44 -- constructor functions (`infer.opts(gpulayers; threads; seed)`) instead of struct literals, and handles kept opaque as `i64`.
+There were no call sites to migrate, because there could not be any.
+
+What 136.46 does **not** fix is the prose: this page previously documented `infer.load_streaming` and `infer.is_loaded`, which the interface has spelled `loadstreaming` and `isloaded` since 113.2a. That was a documentation defect independent of the glue, and it is corrected below.
+
+The options types remain unreachable for the other reason: no wrapper takes one. Restoring the module should follow the `std.tls` pattern from 136.44 and add constructor functions (`infer.opts(gpulayers; threads; seed)`) rather than relying on struct literals, keeping handles opaque as `i64`.
 
 ## The design, kept as the record
 
@@ -74,15 +77,15 @@ Everything below describes what `src/stdlib/infer.c` already implements and what
 
 #### modelhandle
 
-An opaque handle to a loaded model, carrying the model instance id. Published today as `model_handle`, which is unspellable.
+An opaque handle to a loaded model, carrying the model instance id. Spelled `model_handle` before 136.46.
 
 #### inferopts
 
-How to load: GPU layers to offload (0 = CPU only), CPU threads (0 = the llama.cpp heuristic), RNG seed (-1 = random). Published today as `infer_opts` with underscore fields.
+How to load: `ngpulayers` to offload (0 = CPU only), `nthreads` (0 = the llama.cpp heuristic), `seed` (-1 = random). Spelled `infer_opts` before 136.46.
 
 #### streamopts
 
-Disk-streaming load (Epic 72.7): RAM ceiling in gigabytes, layers to prefetch ahead of the decode window, and whether to refuse a spinning disk. Published today as `stream_opts` with underscore fields.
+Disk-streaming load (Epic 72.7): `ramceilinggb`, `prefetchlayers` ahead of the decode window, and `requiresnvme` to refuse a spinning disk. Spelled `stream_opts` before 136.46.
 
 #### infererr
 
@@ -122,7 +125,7 @@ Streams layers from disk so only the active window is resident, trading latency 
 
 ## Restoring it
 
-A real `infer_glue.c`: six wrappers calling the four core functions, widened to the published arities, plus constructor functions for the two options types and a rename of the three underscore type names. `loadstreaming` additionally needs a core. Nothing here is blocked on a language feature.
+A real `infer_glue.c`: six wrappers calling the four core functions, widened to the published arities, plus constructor functions for the two options types. The type and field renames are already done (136.46). `loadstreaming` additionally needs a core. Nothing here is blocked on a language feature.
 
 ## See Also
 
