@@ -4,6 +4,19 @@
 # An entry is STALE (and fails check-tki) once its export resolves to a defined
 # C symbol — remove the line when you implement the glue.
 #
+# THIS FILE IS THE SINGLE AUTHORITATIVE RECORD of the quarantine population
+# (story 136.7, re-scoped 2026-09-22). docs/reference/tki-quarantine.md is
+# GENERATED from it by `make render-tki-quarantine`, and `make check-tki` fails
+# on drift. Do not hand-write a second list of these facts anywhere — in a doc,
+# in the tracker, in a review — link to the generated page instead. 136.7 was
+# originally filed as a discovery of "18 documented functions with no symbol";
+# the true population was already entirely in this file, and the two records
+# had already diverged (the prose named three exports that resolve, and a
+# module with no .tki at all, which cannot be in this class).
+#
+# A module with no interface file is NOT a member of this class and must not be
+# added here: nothing declares it, so there is nothing to skip.
+#
 # Filed 2026-09-19 by story 131.38. Every export below is declared in a .tki but
 # the symbol the compiler emits for it (see check_tki_coverage.py) is not
 # defined in src/stdlib/*.c, and closing the gap needs an implementation or

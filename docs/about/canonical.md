@@ -105,7 +105,7 @@ is the sentence every downstream surface quotes.*
 
 **tkc**, the reference compiler: single-pass C99, zero dependencies beyond LLVM, native
 binaries for x86-64 and ARM64, and structured diagnostics with stable error codes,
-machine-parseable spans and a fix field. Current version: **toke 2.8.0** (`tkc --version`).
+machine-parseable spans and a fix field. Current version: **toke 3.0.0** (`tkc --version`).
 Apache-2.0.
 
 *Source: `src/main.c` (`VERSION`); `docs/about/repos.md`.*

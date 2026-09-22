@@ -170,3 +170,18 @@ Identifiers consist of lowercase ASCII letters and digits. They must start with 
 | `bool` | Boolean | `true` `false` |
 | `$str` | Immutable UTF-8 string | `"hello"` |
 | `void` | Unit type | (no literal) |
+
+## Standard Library Coverage
+
+Every stdlib module exposes a typed interface (`stdlib/*.tki`). Most `func`
+exports resolve to a defined C symbol and link. A small number are
+**quarantined**: declared in an interface but with no implementation behind
+them, so calling one does not link.
+
+See [Quarantined `.tki` Exports](/docs/reference/tki-quarantine/) for the
+current population and the per-export list — deliberately not restated here,
+because a count repeated by hand is a count that drifts. That page is generated from
+`scripts/check_tki_skiplist.txt`, which is the single authoritative record;
+`make check-tki` fails both on drift between the two and on a skiplist entry
+whose export has since been implemented. Do not restate the list here or
+anywhere else — link to the generated page (story 136.7).
