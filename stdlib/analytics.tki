@@ -37,7 +37,7 @@
       "fields": [
         {"name": "ts",           "type": "u64"},
         {"name": "value",        "type": "f64"},
-        {"name": "rolling_mean", "type": "f64"}
+        {"name": "rollingmean", "type": "f64"}
       ]
     },
     {"kind": "func", "name": "analytics.describe",    "params": ["dataframe"],                          "return": "[statsrow]!dferr"},

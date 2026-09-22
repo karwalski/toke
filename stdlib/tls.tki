@@ -6,10 +6,10 @@
       "kind": "type",
       "name": "TlsConfig",
       "fields": [
-        {"name": "cert_pem",       "type": "str"},
-        {"name": "key_pem",        "type": "str"},
-        {"name": "peer_cert_pem",  "type": "str"},
-        {"name": "require_mutual", "type": "bool"}
+        {"name": "certpem",       "type": "str"},
+        {"name": "keypem",        "type": "str"},
+        {"name": "peercertpem",  "type": "str"},
+        {"name": "requiremutual", "type": "bool"}
       ]
     },
     {
@@ -23,8 +23,8 @@
       "kind": "type",
       "name": "TlsKeypair",
       "fields": [
-        {"name": "cert_pem", "type": "str"},
-        {"name": "key_pem",  "type": "str"}
+        {"name": "certpem", "type": "str"},
+        {"name": "keypem",  "type": "str"}
       ]
     },
     {

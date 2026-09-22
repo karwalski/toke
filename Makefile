@@ -90,7 +90,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-patterns render-patterns check-error-codes check-glue-core check-parallel-stdlib check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-tki-names check-patterns render-patterns check-error-codes check-glue-core check-parallel-stdlib check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -241,6 +241,15 @@ check-tki:
 render-tki-quarantine:
 	python3 scripts/check_tki_coverage.py --quarantine-md
 
+# 136.46 — toke's default 59-character profile excludes `_`, so an underscored
+# type or field name in a .tki is unwriteable from toke source: E1003 at every
+# use site. The function stays reachable; the TYPE does not. .tki content never
+# reaches the lexer (a hand-rolled scanner in src/llvm.c reads it), so the
+# compiler cannot catch this and it has to be a gate. Nineteen had accumulated
+# across six interface files before anything looked.
+check-tki-names:
+	python3 scripts/check_tki_nameable.py
+
 # 136.50 — a *_glue.c that never #includes its own core's header cannot call
 # anything that core declares, so whatever it returns it did not compute. This
 # is the detector for "the glue returns a plausible value while the C core
@@ -260,7 +269,7 @@ check-glue-core:
 check-parallel-stdlib:
 	python3 scripts/check_parallel_stdlib.py
 
-ci: lint conform conform-sh conform-check check-tki check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
+ci: lint conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
