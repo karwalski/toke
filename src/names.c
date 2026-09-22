@@ -305,6 +305,7 @@ static const char * const s_known_modules[] = {
     "csv", "math", "llm", "tool", "chart", "html", "dashboard", "svg",
     "canvas", "image", "dataframe", "analytics", "ml", "toon", "yaml",
     "i18n", "encoding", "gpu", "net", "sys", "std", "fmt", "zip",
+    "xlsx",   /* 135.4 */
     NULL
 };
 

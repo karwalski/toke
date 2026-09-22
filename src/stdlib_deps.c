@@ -91,7 +91,15 @@ static const StdlibModule stdlib_table[] = {
      * is named rather than surfacing as an opaque clang E9003. std.zip has no
      * module deps: it needs nothing but libc. */
     { "zip",           "zip.c zip_glue.c",                      "",                                                                 "" },
-    { "db",            "db.c db_glue.c",                        "",                                                                 "-lsqlite3" },
+    /* 135.4: std.xlsx is a parser ON TOP of std.zip, not a second vendored
+     * library — an XLSX is a zip of XML, so the dep is "zip" and nothing
+     * else.  The dep is what drags zip.c, and through it miniz, into the
+     * link: without it a program importing only std.xlsx compiles and then
+     * fails at link on an undefined zip_open_mem, which is exactly 136.33's
+     * failure mode and is invisible unless std.xlsx is the SOLE import.
+     * test/conform/C031 compiles such a program as its first case. */
+    { "xlsx",          "xlsx.c xlsx_glue.c",                    "zip",                                                              "" },
+    { "db",            "db.c db_glue.c",                      "",                                                                 "-lsqlite3" },
     { "collections",   "collections.c collections_glue.c",      "",                                                                 "" },
     { "xml",           "xml.c xml_glue.c",                       "",                                                                 "" },  /* 131.46 */
     { "soap",          "soap.c soap_glue.c",                     "",                                                                 "" },  /* 131.46 */
