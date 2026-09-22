@@ -88,6 +88,7 @@ typedef struct {
     double  defwidth;         /* /DW for a composite font                */
     CidW   *cidw;
     uint32_t ncidw;
+    int     cidknown;         /* code == CID?  see font_load()           */
 
     const short *baseenc;     /* tk_pdf_enc_*; NULL for a composite font */
     short   diff[256];        /* /Differences: glyph index per code, -1  */
@@ -439,8 +440,13 @@ static Font *font_load(Ctx *cx, PdfObj *fontdict)
          * nowhere else — which is exactly the case pdf.h's trap 3 is about.
          */
         PdfObj *descf = pdf_arr_get(cx->doc, pdf_dget(cx->doc, fontdict, "DescendantFonts"), 0);
+        const char *encname = pdf_name_of(pdf_dget(cx->doc, fontdict, "Encoding"));
         f->twobyte = 1;
         f->baseenc = NULL;
+        /* Under Identity-H/V the two-byte code IS the CID, so /W can be
+         * indexed by it.  Under any other CMap it cannot — see code_width. */
+        f->cidknown = encname && (!strcmp(encname, "Identity-H") ||
+                                  !strcmp(encname, "Identity-V"));
         if (descf) {
             load_cid_widths(cx, f, descf);
             load_descriptor(cx, f, descf);
@@ -488,6 +494,22 @@ static double code_width(const Font *f, uint32_t code)
 {
     if (!f) return 500;
     if (f->twobyte) {
+        /*
+         * /W is indexed by CID, NOT by the code in the content stream.
+         * They are the same number only under Identity-H/V.  Under a
+         * predefined CMap (/UniJIS-UCS2-H and friends) the code is a
+         * UCS-2 unit and the CID is whatever that CMap maps it to — so
+         * indexing /W with the code returns a real width belonging to a
+         * DIFFERENT glyph.  That is a plausible wrong answer, which is the
+         * one kind of wrong this module refuses to produce: with no CMap
+         * to resolve the code, every glyph gets /DW and the width is
+         * uniformly approximate rather than selectively wrong.
+         *
+         * Measured on a reportlab UnicodeCIDFont page: indexing by code
+         * gave 94.094pt where the true width is 102.284pt, and nothing
+         * about the number looked wrong.
+         */
+        if (!f->cidknown) return f->defwidth;
         for (uint32_t i = 0; i < f->ncidw; i++)
             if (code >= f->cidw[i].lo && code <= f->cidw[i].hi) return f->cidw[i].w;
         return f->defwidth;
