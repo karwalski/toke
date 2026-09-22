@@ -23,6 +23,7 @@
 #define E4032 4032  /* cannot interpolate a composite value into a string */
 #define E4033 4033  /* member access on a type name rather than a value   */
 #define E4034 4034  /* field access on a layout the compiler cannot establish */
+#define E4035 4035  /* map has no property with that name                 */
 #define E4026 4026  /* wrong argument count in function call             */
 #define E5001 5001  /* value escapes arena scope                         */
 #define E5002 5002  /* unreachable code after return                     */
