@@ -1,0 +1,47 @@
+# check_tki_arity_skiplist.txt — .tki exports whose DECLARED ARITY disagrees
+# with the arity the compiler enforces (read by scripts/check_tki_coverage.py)
+#
+# One entry per line:  <file>.tki::<export>   # <date> <reason> [<story>]
+# An entry is STALE (and fails check-tki) once the .tki and g_stdlib_decls
+# agree — remove the line in the same commit that makes them agree.
+#
+# THIS IS NOT THE QUARANTINE LIST. scripts/check_tki_skiplist.txt records
+# exports whose SYMBOL does not exist in src/stdlib/*.c. Every export below
+# resolves to a real, defined symbol; what is wrong is the parameter count the
+# interface advertises for it. The two classes need separate records because
+# an entry in the other file is cleared by writing glue, and an entry here is
+# cleared by an interface or signature decision.
+#
+# Filed 2026-09-22 by story 135.17, which added the arity check. Nothing had
+# ever compared a .tki parameter list to anything: `check-tki` verified that
+# the symbol EXISTS, and 137.12 verified that g_stdlib_decls agrees with the C
+# definition, so the interface — the side a reader consults, and the side
+# 137.12's generator emits — was the one side nothing verified. Demonstrated
+# rather than suspected: `file.readrange` set to two parameters over a
+# three-parameter C function passed with exit 0, FAIL 0.
+#
+# All six entries below are the FIRST run of that check, and in every one of
+# them it is the INTERFACE that is wrong, not the glue: the .tki advertises a
+# parameter — an options record, a max-token count, a callback — that the C
+# wrapper has never had a slot for. These are not drift. They are declarations
+# that were written against an API that was planned and not built, and they
+# cannot be corrected by editing a number: each needs a decision about whether
+# to implement the parameter or withdraw it from the published surface. They
+# are therefore quarantined here rather than silently trimmed.
+#
+# std.infer, std.mlx and std.mdns are all stub modules (the glue returns
+# sentinels and ignores its arguments), which is how six lying declarations
+# survived: no program that calls them does anything useful, so no call ever
+# proved the signature wrong.
+
+# ── infer (glue: src/stdlib/infer_glue.c — stub, returns 0) ──
+infer.tki::infer.load            # 2026-09-22 .tki 2 (str;infer_opts) vs glue 1 (model_path); the options record has no slot in tk_infer_load_w — 135.17
+infer.tki::infer.loadstreaming   # 2026-09-22 .tki 2 (str;stream_opts) vs glue 1 (model_path); same missing options record — 135.17
+infer.tki::infer.generate        # 2026-09-22 .tki 3 (model_handle;str;i32) vs glue 2 (handle;prompt); the i32 token limit has no slot — 135.17
+
+# ── mlx (glue: src/stdlib/mlx_glue.c — stub, MLX never integrated) ──
+mlx.tki::mlx.generate            # 2026-09-22 .tki 3 (mlx_model;str;i32) vs glue 2 (handle;prompt); the i32 token limit has no slot — 135.17
+
+# ── mdns (glue: src/stdlib/mdns_glue.c — stub, no DNS-SD linked) ──
+mdns.tki::mdns.advertise         # 2026-09-22 .tki 1 ($service_record) vs glue 3 (service_type;name;port); the interface was written for the record form that mdns.servicerecord() builds, the glue for three scalars — a shape disagreement, not a count — 135.17
+mdns.tki::mdns.browse            # 2026-09-22 .tki 2 (str;fn($discovered):void) vs glue 1 (service_type); tk_mdns_browse_w returns an array and has no callback slot — 135.17
