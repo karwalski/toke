@@ -171,6 +171,19 @@ TlsStrResult tls_peer_cert(TlsConn conn);
 char *tls_fingerprint(const char *pem);
 
 /*
+ * tls.protocol(conn) -> str
+ *
+ * Returns the protocol version actually negotiated on `conn` — "TLSv1.3" for
+ * every connection this module can establish.  Returns an empty string for an
+ * id that is not in the registry.  Heap-allocated; caller frees.
+ *
+ * Added by story 136.44 so that "this connection really is TLS 1.3" is an
+ * observable runtime fact a test can assert, rather than a property of the
+ * source that only source inspection can check.
+ */
+char *tls_protocol(TlsConn conn);
+
+/*
  * tls.pairing_code(conn) -> str
  *
  * Derives a 6-digit decimal code from the XOR of the local and peer

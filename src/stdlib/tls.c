@@ -269,8 +269,27 @@ static SSL_CTX *build_ssl_ctx(int is_server, TlsConfig cfg)
         }
         X509_free(peer);
 
-        /* Verify peer cert */
-        SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+        /* Verify peer cert.
+         *
+         * 136.44: this used to be an unconditional
+         *     SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+         * which CLEARED the SSL_VERIFY_FAIL_IF_NO_PEER_CERT bit set a few
+         * lines above whenever a peer certificate was also pinned -- that is,
+         * in the ordinary mutual-TLS configuration.  On a server,
+         * SSL_VERIFY_PEER alone does not require the client to send a
+         * certificate at all.
+         *
+         * MEASURED, NOT ASSUMED: that did NOT open the door, because
+         * accept_thread runs verify_pin() after the handshake and a pinned
+         * peer with no certificate fails it -- so an anonymous client was
+         * still rejected.  What it cost was WHERE the rejection happened: the
+         * server completed a full TLS handshake with an unauthenticated peer
+         * and only then dropped it, instead of refusing during the handshake.
+         * Combining the two settings restores the intent and moves the
+         * rejection back into the handshake, where it belongs. */
+        int verify_mode = SSL_VERIFY_PEER;
+        if (cfg.require_mutual) verify_mode |= SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+        SSL_CTX_set_verify(ctx, verify_mode, NULL);
     } else if (!cfg.require_mutual) {
         /* No pinning, no mutual TLS: skip server cert verification on client.
          * This allows self-signed certs without a CA chain. */
@@ -907,4 +926,21 @@ char *tls_pairing_code(TlsConn conn)
     if (!out) return strdup(fallback);
     snprintf(out, 7, "%06u", code);
     return out;
+}
+
+/* =========================================================================
+ * tls_protocol (136.44)
+ * ========================================================================= */
+
+char *tls_protocol(TlsConn conn)
+{
+    if (!conn.id) return strdup("");
+
+    ConnEntry *e = registry_find(conn.id);
+    if (!e) return strdup("");
+
+    const char *v = SSL_get_version(e->ssl);
+    char *out = strdup(v ? v : "");
+    registry_unlock();
+    return out ? out : strdup("");
 }
