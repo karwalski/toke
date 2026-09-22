@@ -25,10 +25,10 @@
 # type" rule 127.27 applied to map-literal values and did not generalise.
 #
 # Cases 1-6: every narrow width, as an array index, must build and read right.
-# Case 7:    a bool index — the ONE case the old default got right — must not
-#            regress.  A fix that dropped the i1 arm would pass 1-6 and break
-#            this.
-# Case 8:    a map `.get` with a narrow key, the second of the four sites.
+# Case 7:    a str-keyed map `.get` — the OTHER arm of the same if/else
+#            (ptrtoint i8*).  A fix that routed everything through the integer
+#            path would pass 1-6 and break every string-keyed map.
+# Case 8:    a map held in a struct field, the third of the four sites.
 # Case 9:    an f64 index is still refused — widening it silently would be a
 #            worse bug than the one being fixed.
 #
@@ -117,34 +117,38 @@ f=main():i64{
 };"
 done
 
-# ── Case 7: a bool index — the one width the old default handled ────────
-# Regression guard.  `zext i1` was not wrong, it was merely the only arm;
-# removing it would trade this defect for its mirror image.
-run_case "bool index still widens" "20" \
+# ── Case 7: the i8* arm of the same four sites must not regress ────────
+# A str-keyed map .get is the OTHER branch of the if/else being replaced
+# (ptrtoint i8* -> i64).  A fix that routed everything through the integer
+# path would pass 1-6 and break every string-keyed map in the language.
+#
+# Note on the two cases NOT written here: a bool array index and a narrow
+# map key are both refused by the type checker (E4031, "array index must be
+# integer" / "map key must be 'i64'"), so the i1 arm and a narrow key are
+# unreachable at these sites from source.  The i1 arm is preserved inside
+# coerce_value regardless; it is simply not assertable from a .tk program.
+run_case "str-keyed map .get still widens its key" "77" \
 'm=main;
 i=io:std.io;
 i=s:std.str;
-f=pick(a:@(i64);flag:bool):i64{
-  <a.get(flag)
-};
-f=main():i64{
-  let arr=@(10;20;30);
-  io.println(s.fromint(pick(arr;1>0)));
-  <0
-};'
-
-# ── Case 8: a narrow key on a map .get — the second of the four sites ───
-# A fix applied only to the array subscript would pass 1-7 and leave this.
-run_case "map .get with an i32 key" "77" \
-'m=main;
-i=io:std.io;
-i=s:std.str;
-f=look(mm:@(i64:i64);k:i32):i64{
+f=look(mm:@(str:i64);k:str):i64{
   <mm.get(k)
 };
 f=main():i64{
-  let mm=@(1:77;2:88);
-  io.println(s.fromint(look(mm;1 as i32)));
+  let mm=@("a":77;"b":88);
+  io.println(s.fromint(look(mm;"a")));
+  <0
+};'
+
+# ── Case 8: a map held in a struct field — the third of the four sites ──
+run_case "map in a struct field, str key" "77" \
+'m=main;
+i=io:std.io;
+i=s:std.str;
+t=Box{mm:@(str:i64);n:i64};
+f=main():i64{
+  let b=Box{mm:@("a":77;"b":88);n:1};
+  io.println(s.fromint(b.mm.get("a")));
   <0
 };'
 
