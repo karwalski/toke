@@ -7035,6 +7035,30 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
         mangle_fn_name(c, fn, sizeof fn);
         const FnSig *sig = lookup_fn(c, fn);
         if (sig) return sig->ret;
+        /* 137.1: a one-argument call to a name that is not a function and not
+         * a known sum variant is the variant-constructor PASS-THROUGH in
+         * emit_expr — `$ok(x)`, `$err(x)`, any unresolved `$name(x)`.  That
+         * branch returns the ARGUMENT's value unchanged (ptrtoint'ing only an
+         * i8*), so the expression's type is the argument's type.  This tail
+         * answered "i64" for all of them, and every caller that coerces on the
+         * strength of that answer then emitted a conversion whose operand was
+         * a different width: `<$ok(x>10)` in a `bool!$err` function produced
+         * `trunc i64 %t to i1` on an i1 (the loke T-1 report), and an f64
+         * payload produced the same trunc on a double.  Mirror emit_expr
+         * exactly — the same rule 127.93 established for sub-namespace calls,
+         * where the two answers diverging was likewise invalid IR.
+         *
+         * Note this is NOT the loke report's stated mechanism (a missing
+         * `zext` before an `inttoptr`).  Adding a widening instruction would
+         * not have helped: the coercion site is correct and complete, it was
+         * being told the wrong source type. */
+        if (n->child_count == 2 && strncmp(fn, "tk_", 3) != 0 &&
+            !variant_ctor_sum(c, n)) {
+            const char *aty = expr_llvm_type(c, n->children[1]);
+            /* emit_expr ptrtoints an i8* argument into the i64 slot. */
+            if (!strcmp(aty, "i8*")) return "i64";
+            return aty;
+        }
         return "i64";
     }
     case NODE_CAST_EXPR: {
