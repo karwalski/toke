@@ -12,8 +12,9 @@
 # an entry in the other file is cleared by writing glue, and an entry here is
 # cleared by an interface or signature decision.
 #
-# Filed 2026-09-22 by story 135.17, which added the arity check. Nothing had
-# ever compared a .tki parameter list to anything: `check-tki` verified that
+# Story 135.17 was filed 2026-09-22 and added the arity check; this list is
+# the output of its first run, on 2026-09-23. Nothing had ever compared a
+# .tki parameter list to anything: `check-tki` verified that
 # the symbol EXISTS, and 137.12 verified that g_stdlib_decls agrees with the C
 # definition, so the interface — the side a reader consults, and the side
 # 137.12's generator emits — was the one side nothing verified. Demonstrated
@@ -35,13 +36,13 @@
 # proved the signature wrong.
 
 # ── infer (glue: src/stdlib/infer_glue.c — stub, returns 0) ──
-infer.tki::infer.load            # 2026-09-22 .tki 2 (str;infer_opts) vs glue 1 (model_path); the options record has no slot in tk_infer_load_w — 135.17
-infer.tki::infer.loadstreaming   # 2026-09-22 .tki 2 (str;stream_opts) vs glue 1 (model_path); same missing options record — 135.17
-infer.tki::infer.generate        # 2026-09-22 .tki 3 (model_handle;str;i32) vs glue 2 (handle;prompt); the i32 token limit has no slot — 135.17
+infer.tki::infer.load            # 2026-09-23 .tki 2 (str;infer_opts) vs glue 1 (model_path); the options record has no slot in tk_infer_load_w — 135.17
+infer.tki::infer.loadstreaming   # 2026-09-23 .tki 2 (str;stream_opts) vs glue 1 (model_path); same missing options record — 135.17
+infer.tki::infer.generate        # 2026-09-23 .tki 3 (model_handle;str;i32) vs glue 2 (handle;prompt); the i32 token limit has no slot — 135.17
 
 # ── mlx (glue: src/stdlib/mlx_glue.c — stub, MLX never integrated) ──
-mlx.tki::mlx.generate            # 2026-09-22 .tki 3 (mlx_model;str;i32) vs glue 2 (handle;prompt); the i32 token limit has no slot — 135.17
+mlx.tki::mlx.generate            # 2026-09-23 .tki 3 (mlx_model;str;i32) vs glue 2 (handle;prompt); the i32 token limit has no slot — 135.17
 
 # ── mdns (glue: src/stdlib/mdns_glue.c — stub, no DNS-SD linked) ──
-mdns.tki::mdns.advertise         # 2026-09-22 .tki 1 ($service_record) vs glue 3 (service_type;name;port); the interface was written for the record form that mdns.servicerecord() builds, the glue for three scalars — a shape disagreement, not a count — 135.17
-mdns.tki::mdns.browse            # 2026-09-22 .tki 2 (str;fn($discovered):void) vs glue 1 (service_type); tk_mdns_browse_w returns an array and has no callback slot — 135.17
+mdns.tki::mdns.advertise         # 2026-09-23 .tki 1 ($service_record) vs glue 3 (service_type;name;port); the interface was written for the record form that mdns.servicerecord() builds, the glue for three scalars — a shape disagreement, not a count — 135.17
+mdns.tki::mdns.browse            # 2026-09-23 .tki 2 (str;fn($discovered):void) vs glue 1 (service_type); tk_mdns_browse_w returns an array and has no callback slot — 135.17
