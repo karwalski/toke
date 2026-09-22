@@ -4,9 +4,15 @@
 # dependencies, and executed.  Output lines starting with PASS/FAIL
 # are tallied.
 
-TOKE=/Users/matthew.watt/tk/toke/toke
-STDLIB=/Users/matthew.watt/tk/toke/src/stdlib
-VENDOR=/Users/matthew.watt/tk/toke/stdlib/vendor
+# 127.53: these default to the main checkout, as they always have, but are
+# now overridable.  They were hard absolute paths, so running this script from
+# a git worktree silently measured the MAIN checkout's compiler and reported a
+# pass for a binary the branch had never built -- a gate that proves nothing.
+# Unset, the behaviour below is byte-identical to before.
+ROOT=${TOKE_ROOT:-/Users/matthew.watt/tk/toke}
+TOKE=${TOKE:-$ROOT/toke}
+STDLIB=${STDLIB:-$ROOT/src/stdlib}
+VENDOR=${VENDOR:-$ROOT/stdlib/vendor}
 DIR=$(dirname "$0")
 TOTAL_PASS=0; TOTAL_FAIL=0
 

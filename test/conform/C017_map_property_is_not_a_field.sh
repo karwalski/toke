@@ -80,16 +80,22 @@ reject_build() {
 
 # reject_check NAME SOURCE — `tkc --check` must ALSO reject.
 #
-# Only the shapes whose type the checker can recover are asserted here.  A
-# plain `let m=@("a":1)`, a `mut.@(...)` literal, and a `.set`-derived map stay
-# `--check`-clean because `bind_init_type()` in types.c has no NODE_MAP_LIT
-# case, so the binding is TY_UNKNOWN and every map rule in the checker is dead
-# code for it.  That is a real, separate defect, filed on its own: switching it
-# on makes `m.len` a u64 and a bool-valued `m.get` a bool at call sites that
-# were previously unknown, and rejects test_127_8 and test_127_27 — both
-# correct programs — which is a u64/i64 coercion decision, not part of this
-# fix.  Those three shapes are covered by reject_build above, so none of them
-# miscompiles; they are merely diagnosed one stage later than ideal.
+# Only the shapes whose type the checker can recover are asserted here.
+#
+# 127.114 (2026-09-22) landed the NODE_MAP_LIT case in bind_init_type(), so
+# two of the three shapes this comment used to excuse — a plain
+# `let m=@("a":1)` and a `mut.@(...)` literal — are now diagnosed at --check
+# and have been promoted below, as this comment said they should be the day
+# NODE_MAP_LIT was typed.  (It could only land once the u64/bool -> i64
+# widening rule existed: typing the binding makes `m.len` a u64 and a
+# bool-valued `m.get` a bool, which rejected test_127_8 and test_127_27, both
+# correct programs.  See C028.)
+#
+# The `.set`-derived map is still --check-clean and stays a reject_build:
+# bind_init_type's NODE_CALL_EXPR case resolves user functions only, so a
+# method call on a map is still TY_UNKNOWN and only the backend's 127.46 map
+# tag knows `m2` is a map.  It is covered by reject_build above, so it does
+# not miscompile; it is merely diagnosed one stage later than ideal.
 reject_check() {
     local name="$1" src="$2"
     printf '%s\n' "${src}" > "chk.tk"
@@ -181,8 +187,9 @@ i=io:std.io;
 f=main():i64{let m=mut.@("a":1);io.println("\(m.values)");<0};'
 
 # ── Case 5: a map derived through .set ───────────────────────────────────
-# The shape the checker cannot type at all: `bind_init_type` has no case for a
-# method call on a map, so only the backend's 127.46 map tag knows m2 is a map.
+# The shape the checker still cannot type, even after 127.114: `bind_init_type`
+# has no case for a method call on a map (its NODE_CALL_EXPR case resolves user
+# functions only), so only the backend's 127.46 map tag knows m2 is a map.
 # Without the llvm.c half of the fix this one keeps the defect.
 reject_build "m2 = m.set(k;v) then m2.values" \
 'm=main;
@@ -216,6 +223,15 @@ f=main():i64{let b=Box{m:@("a":1);n:1};io.println("\(b.m.values)");<0};'
 # ── The shapes the type checker can also catch, at --check ──────────────
 # Pinned separately so that the day NODE_MAP_LIT is typed, the remaining three
 # shapes can be promoted here rather than discovered by accident.
+# Promoted from reject_build by 127.114 (see the note on reject_check above).
+reject_check "a plain map literal" \
+'m=main;
+i=io:std.io;
+f=main():i64{let m=@("a":1);io.println("\(m.values)");<0};'
+reject_check "a mut.@() map literal" \
+'m=main;
+i=io:std.io;
+f=main():i64{let m=mut.@("a":1);io.println("\(m.values)");<0};'
 reject_check "annotated map binding" \
 'm=main;
 i=io:std.io;
