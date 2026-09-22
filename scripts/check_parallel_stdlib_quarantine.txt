@@ -1,0 +1,113 @@
+# check_parallel_stdlib_quarantine.txt — ungated parallel module descriptions
+# (read by scripts/check_parallel_stdlib.py; story 135.11)
+#
+# One repo-relative path per line. Every entry is a file that SHOULD NOT EXIST:
+# a second description of a stdlib module that no gate reads. The list exists
+# only so the gate can be switched on before the whole population is cleared.
+#
+# THIS LIST ONLY EVER SHRINKS. Adding a line is not a way to land a new
+# parallel file — the gate rejects new ones by design. An entry whose file has
+# been deleted is STALE and fails `make check-parallel-stdlib`, so removing the
+# file forces removing the line.
+#
+# Why each class is here (135.11, 2026-09-22):
+#
+#   stdlib/<m>.tk   A toke reimplementation of a module whose real
+#                   implementation is C in src/stdlib/. Nothing resolves these:
+#                   src/llvm.c resolves imports to .tki + C sources, and
+#                   TKC_STDLIB_DIR is src/stdlib. Measured 2026-09-22 with
+#                   `toke --check` (3.0.0): 18 of 21 did not even parse --
+#                   17 failing at lex/parse in a dialect the compiler no longer
+#                   accepts, 1 (path.tk) at type_check. sha256.tk and
+#                   strpure.tk have no .tki, no C core and no importer at all.
+#                   See also story 127.126, which found the same for toon.tk
+#                   and noted that no make target compiles the stdlib's own
+#                   toke sources -- which is why nobody noticed.
+#
+#   stdlib/<m>.md   The pre-move documentation location. These were validated
+#                   once by the 48.4 story series (2026-04-07) and then
+#                   superseded by docs/stdlib/<m>.md, which `make check-docs`
+#                   gates. Only files that HAVE a docs/stdlib counterpart are
+#                   listed; the ones that do not are live documentation in the
+#                   wrong place and must be MIGRATED, not deleted (see the
+#                   note at the end of this file).
+
+# --- parallel .tk implementations (20) ---
+stdlib/args.tk
+stdlib/auth.tk
+stdlib/crypto.tk
+stdlib/db.tk
+stdlib/encoding.tk
+stdlib/env.tk
+stdlib/http.tk
+stdlib/json.tk
+stdlib/log.tk
+stdlib/md.tk
+stdlib/net.tk
+stdlib/path.tk
+stdlib/process.tk
+stdlib/sha256.tk
+stdlib/str.tk
+stdlib/strpure.tk
+stdlib/test.tk
+stdlib/time.tk
+stdlib/toml.tk
+stdlib/toon.tk
+
+# --- duplicate module docs superseded by docs/stdlib/ (34) ---
+stdlib/args.md
+stdlib/auth.md
+stdlib/canvas.md
+stdlib/chart.md
+stdlib/crypto.md
+stdlib/crypto_ext.md
+stdlib/dashboard.md
+stdlib/db.md
+stdlib/encoding.md
+stdlib/encrypt.md
+stdlib/env.md
+stdlib/html.md
+stdlib/http.md
+stdlib/i18n.md
+stdlib/image.md
+stdlib/json.md
+stdlib/json_stream.md
+stdlib/llm.md
+stdlib/log.md
+stdlib/md.md
+stdlib/net.md
+stdlib/path.md
+stdlib/process.md
+stdlib/router.md
+stdlib/sse.md
+stdlib/str.md
+stdlib/svg.md
+stdlib/template.md
+stdlib/test.md
+stdlib/time.md
+stdlib/toml.md
+stdlib/toon.md
+stdlib/ws.md
+stdlib/yaml.md
+
+# --- NOT quarantined: live docs in the wrong place (11) ---
+# These stdlib/*.md have NO docs/stdlib counterpart, so they are the only copy
+# of that documentation and deleting them loses it. They are still ungated.
+# They need MIGRATING into docs/stdlib/ (where check-docs will then validate
+# their examples), not removing. The gate deliberately ignores them so it
+# cannot be satisfied by deleting real content.
+#
+#   stdlib/CONTRIBUTING.md
+#   stdlib/README.md
+#   stdlib/infer.md
+#   stdlib/keychain.md
+#   stdlib/llm_tool.md
+#   stdlib/mdns.md
+#   stdlib/mlx.md
+#   stdlib/securemem.md
+#   stdlib/tls.md
+#   stdlib/vecstore.md
+#   stdlib/webview.md
+
+# (stdlib/README.md and stdlib/CONTRIBUTING.md are ordinary directory READMEs,
+#  not module docs, and are not in this class.)

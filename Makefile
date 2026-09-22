@@ -90,7 +90,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-patterns render-patterns check-error-codes check-glue-core check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-patterns render-patterns check-error-codes check-glue-core check-parallel-stdlib check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -250,7 +250,17 @@ render-tki-quarantine:
 check-glue-core:
 	python3 scripts/check_glue_core_link.py
 
-ci: lint conform conform-sh conform-check check-tki check-glue-core check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
+# 135.11 — a stdlib module must have exactly ONE description of each kind:
+# stdlib/<m>.tki (interface), src/stdlib/<m>.c (implementation) and
+# docs/stdlib/<m>.md (docs). A stdlib/<m>.tk reimplementation or a
+# stdlib/<m>.md left behind by the docs move is a SECOND description that no
+# gate reads, so it drifts. That is the shape that produced the
+# wrapper-versus-core drift in Epic 136 and cost 31 defects. The quarantine
+# list only ever shrinks; deleting a file forces deleting its line.
+check-parallel-stdlib:
+	python3 scripts/check_parallel_stdlib.py
+
+ci: lint conform conform-sh conform-check check-tki check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
