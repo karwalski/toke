@@ -301,19 +301,19 @@ f=demo():i64{
 
 Result: `20` (zero-based index)
 
-### Map value access — `.get(index)`
+### Map value access — `.get(key)`
 
-Map values are accessed by integer index in insertion order. Use structs for named-field access.
+Map values are accessed by key. The key expression must have the map's key type; an index of a different type is rejected with `E4031`. Use structs for named-field access.
 
 ```toke
 m=exprs;
 f=demo():i64{
   let scores=@("alice":30;"bob":25);
-  < scores.get(0)
+  < scores.get("alice")
 };
 ```
 
-Result: `30` (first entry)
+Result: `30`
 
 ---
 
