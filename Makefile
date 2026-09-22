@@ -100,7 +100,7 @@ RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 	test-stdlib-viz-integration test-stdlib-data-pipeline test-stdlib-llm-live \
 	test-stdlib-http test-stdlib-http-cookies test-stdlib-http-multipart \
 	test-stdlib-http-leak test-stdlib-toml-glue \
-	test-stdlib-http-form test-stdlib-http-tls \
+	test-stdlib-http-form test-stdlib-http-tls test-stdlib-tls \
 	test-stdlib-file test-stdlib-runtime \
 	test-stdlib-path test-stdlib-args test-stdlib-md test-stdlib-toml \
 	test-stdlib-vecstore test-stdlib-vecstore-binding test-stdlib-keychain \
@@ -431,6 +431,31 @@ test-stdlib-http-tls:
 	    src/stdlib/encoding.c src/stdlib/str.c \
 	    $(TLS_LDFLAGS)
 	$(RUN_TEST) ./test/stdlib/test_http_tls
+
+# ── 136.51: std.tls core unit test ───────────────────────────────────────────
+# test/stdlib/test_tls.c had no build rule and no caller, so nothing ever
+# compiled or ran it — the third instance of that class after test_tkir_reader
+# (136.42) and the three files found on 2026-09-21.
+#
+# Unlike test-stdlib-http-tls above there is no stub build: this file includes
+# <openssl/x509.h> directly and tests the real TLS 1.3 core that 136.44 landed,
+# so OpenSSL is unconditional. The paths mirror what src/llvm.c passes when it
+# links a toke program against std.tls (-L/opt/homebrew/lib plus the two macOS
+# frameworks) rather than the pinned Cellar path in TLS_LDFLAGS, which names
+# openssl@3/3.6.1 — a version no longer installed here.
+#
+# --allow-net is the grant, not a bypass: tls_connect is behind
+# TK_REQUIRE(TK_CAP_NET) and still denies with CAP001 if the flag is dropped.
+# Without it the suite passed 24 asserts and exited 1 at the gate.
+TLS_TEST_CFLAGS  = -I/opt/homebrew/include -DTK_HAVE_OPENSSL -Wno-deprecated-declarations
+TLS_TEST_LDFLAGS = -L/opt/homebrew/lib -lssl -lcrypto \
+                   -framework Security -framework CoreFoundation
+
+test-stdlib-tls:
+	$(CC) $(CFLAGS) $(TLS_TEST_CFLAGS) -o test/stdlib/test_tls \
+	    test/stdlib/test_tls.c src/stdlib/tls.c src/stdlib/capabilities.c \
+	    $(TLS_TEST_LDFLAGS)
+	$(RUN_TEST) ./test/stdlib/test_tls --allow-net
 
 test-stdlib-process:
 	$(CC) $(CFLAGS) -o test/stdlib/test_process \
@@ -824,6 +849,7 @@ clean:
 	    test/stdlib/test_md test/stdlib/test_toml \
 	    test/stdlib/test_vecstore \
 	    test/stdlib/test_llm_live \
+	    test/stdlib/test_tls test/tkir/test_tkir_reader \
 	    fuzz-lexer fuzz-parser
 
 FUZZ_FLAGS = -fsanitize=address,undefined,fuzzer -g

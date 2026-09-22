@@ -128,5 +128,3 @@ test/tkir/*
 !test/tkir/*.sh
 !test/tkir/*.py
 !test/tkir/*.md
-!test/tkir/*.d
-!test/tkir/*/
