@@ -27,11 +27,21 @@
 #   * and MUTUAL AUTH FAILS CLOSED: a client with no certificate never reaches
 #     the server's handler at all.
 #
-# THE GATE ON THE LAST ONE.  "The anonymous client was rejected" proves nothing
-# unless something proves the server accepts anybody.  Part 4 therefore runs an
-# AUTHENTICATED client against the same server first; that one must get all the
-# way through.  If both arms were rejected the harness would be blind and the
-# fail-closed result worthless, so the pair is asserted together.
+# THE FAIL-CLOSED RESULT IS WITNESSED POSITIVELY, NOT INFERRED FROM SILENCE.
+# A test that passes because the client crashed before it could report is
+# indistinguishable from one that passes because mutual auth refused the
+# connection — see the note above Part 5, where the first version of this file
+# had exactly that fault.  So the refusal is observed by an INDEPENDENT TLS 1.3
+# implementation (Python's ssl module, not the code under test) which probes for
+# the refusal before writing anything and NAMES what happened; an empty
+# observation fails.  That peer also proves interoperability, which no amount of
+# toke-talking-to-toke can.
+#
+# AND IT IS A CONTROLLED EXPERIMENT.  The same peer runs twice against the same
+# running server, differing in exactly one thing: whether a client certificate
+# is presented.  The authenticated arm must reach the echo and the server's
+# handler must run for it.  If both arms were refused the harness would be blind
+# and the fail-closed result worthless, so the pair is asserted together.
 #
 # NO SECRETS.  Every certificate and key in this test is generated at run time
 # into a mktemp -d that is removed on exit; nothing is committed, and the test
@@ -347,38 +357,141 @@ if [ "${built}" -eq 1 ]; then
     fi
 fi
 
-# ── Part 5: mutual auth fails closed ─────────────────────────────────────────
+# ── Part 5: mutual auth fails closed, witnessed positively ───────────────────
 #
-# Same server, same port, same moment.  The only difference is that this client
-# presents no certificate.  With mutual auth working the server's handler must
-# never run for it — so srv.log must not grow.
+# THE FIRST VERSION OF THIS SECTION WAS NOT GOOD ENOUGH, AND THE REASON IS WORTH
+# KEEPING.  It ran the toke client with no certificate and asserted that it
+# printed "reply=none".  That was flaky — it passed on a terminal and failed
+# under `make conform-sh` — and chasing the flake exposed the deeper fault.  The
+# toke client dies of SIGPIPE when it writes into a connection the server has
+# already torn down, and under a pipe its block-buffered stdout is lost with it,
+# so the observation was an EMPTY STRING.  Relaxing the assertion to "no reply
+# came back" would have made it green and meaningless: a test that passes
+# because the client crashed before it could report is indistinguishable from
+# one that passes because mutual auth refused the connection.
+#
+# So the refusal is witnessed POSITIVELY, by a peer that survives to report it:
+# an independent TLS 1.3 implementation (Python's ssl module, i.e. not the code
+# under test) which probes for the refusal BEFORE it writes anything, so nothing
+# can race a SIGPIPE into the result.  It names what happened.
+#
+# And it is a CONTROLLED experiment.  The same peer script runs twice against
+# the same running server, differing in exactly one thing — whether a client
+# certificate is presented.  The authenticated arm must get all the way to the
+# echo.  If both arms were refused the harness would be blind and the refusal
+# would prove nothing, so the pair is asserted together.
+
+cat > peer.py <<'PYEOF'
+import socket, ssl, sys, os
+
+arm, port, d = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
+ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+if arm == "auth":
+    ctx.load_cert_chain(os.path.join(d, "c.crt"), os.path.join(d, "c.key"))
+
+raw = socket.create_connection(("127.0.0.1", port), 5)
+raw.settimeout(5)
+try:
+    s = ctx.wrap_socket(raw, suppress_ragged_eofs=False)
+except ssl.SSLError as e:
+    print("refused-at-handshake=%s" % str(e).replace("\n", " "))
+    raise SystemExit
+
+print("version=%s" % s.version())
+print("cipher=%s" % (s.cipher()[0],))
+
+# Probe for a refusal BEFORE speaking.  In TLS 1.3 the client finishes its half
+# of the handshake before the server has validated it, so a server that refuses
+# does so as a post-handshake alert landing on the client's first READ.  Writing
+# first races that alert: the write hits a socket the server has already torn
+# down and ECONNRESET masks the reason.  This server speaks only after the
+# client does, so a live connection simply times out here — which is itself the
+# signal that it was NOT refused.
+s.settimeout(1.5)
+try:
+    early = s.recv(4096)
+    if early == b"":
+        print("refused=server-closed-before-any-data")
+        raise SystemExit
+    print("unexpected-early-data=%r" % early)
+except ssl.SSLError as e:
+    print("refused-alert=%s" % str(e).replace("\n", " "))
+    raise SystemExit
+except socket.timeout:
+    pass
+except OSError as e:
+    print("refused-reset=%s" % e)
+    raise SystemExit
+
+s.settimeout(5)
+try:
+    s.sendall(b"ping")
+    data = s.recv(4096)
+    if not data:
+        print("refused=closed-after-request")
+    else:
+        print("reply=%s" % data.decode(errors="replace"))
+except ssl.SSLError as e:
+    print("refused-alert=%s" % str(e).replace("\n", " "))
+except OSError as e:
+    print("refused-reset=%s" % e)
+PYEOF
 
 if [ "${built}" -eq 1 ]; then
-    before="$(wc -l < srv.log 2>/dev/null | tr -d ' ')"
-    anonout="$(./cli.bin anon 2>&1)"
+    # -- the control arm: the same peer, WITH a certificate, must get in --
+    pbefore="$(wc -l < srv.log 2>/dev/null | tr -d ' ')"
+    peerauth="$(python3 peer.py auth "${PORT}" "${WORK}" 2>&1)"
     sleep 0.5
-    after="$(wc -l < srv.log 2>/dev/null | tr -d ' ')"
+    pafter="$(wc -l < srv.log 2>/dev/null | tr -d ' ')"
 
-    if [ "${before}" = "${after}" ]; then
-        ok "mutual auth fails closed: the anonymous client never reached the handler"
+    if echo "${peerauth}" | grep -q '^version=TLSv1.3$'; then
+        ok "an INDEPENDENT TLS 1.3 implementation interoperates: $(echo "${peerauth}" | grep '^cipher=')"
     else
-        bad "FAIL-OPEN: the anonymous client reached the server handler"
-        diff <(head -n "${before}" srv.log) srv.log | sed 's/^/      /' | head -8
+        bad "the independent peer did not negotiate TLS 1.3: [${peerauth}]"
     fi
 
-    # ASSERT THE ABSENCE OF DATA, NOT A PARTICULAR FAILURE MESSAGE.  A rejected
-    # client can end three ways and all three are correct: tls.connect returns
-    # 0, tls.read returns none, or the process takes SIGPIPE writing into a
-    # connection the server has already torn down — which under a pipe loses its
-    # block-buffered stdout entirely, so the output is empty.  Asserting
-    # "prints reply=none" made this flaky: it passed on a terminal and failed
-    # under `make conform-sh`, where stdout is a file.  What must be true in
-    # every one of those endings is that no application data came back, and the
-    # authenticated arm above proves the same binary can get some.
-    if echo "${anonout}" | grep -q 'reply=echo:'; then
-        bad "the anonymous client got application data back: [${anonout}]"
+    if echo "${peerauth}" | grep -q '^reply=echo:ping$'; then
+        ok "control arm: the authenticated peer completed the exchange"
     else
-        ok "and the anonymous client got no application data back: [${anonout:-<killed before flushing>}]"
+        bad "control arm: the authenticated peer was refused, so the next assertion would prove nothing: [${peerauth}]"
+    fi
+
+    if [ "${pbefore}" != "${pafter}" ]; then
+        ok "control arm: the server handler ran for the authenticated peer"
+    else
+        bad "control arm: the server handler did not run — the srv.log signal is blind"
+    fi
+
+    # -- the arm under test: the same peer, WITHOUT a certificate --
+    abefore="$(wc -l < srv.log 2>/dev/null | tr -d ' ')"
+    peeranon="$(python3 peer.py anon "${PORT}" "${WORK}" 2>&1)"
+    sleep 0.5
+    aafter="$(wc -l < srv.log 2>/dev/null | tr -d ' ')"
+
+    # POSITIVE: the peer ran to completion and NAMED the refusal.  An empty
+    # observation is now a failure, not a pass.
+    refusal="$(echo "${peeranon}" | grep -E '^refused' | head -1)"
+    if [ -n "${refusal}" ]; then
+        ok "mutual auth fails closed, and the peer reported it: [${refusal}]"
+    else
+        bad "the unauthenticated peer reported no refusal at all: [${peeranon:-<no output — the witness itself failed>}]"
+    fi
+
+    if echo "${peeranon}" | grep -q '^reply='; then
+        bad "FAIL-OPEN: the unauthenticated peer got application data: [${peeranon}]"
+    else
+        ok "the unauthenticated peer received no application data"
+    fi
+
+    if [ "${abefore}" = "${aafter}" ]; then
+        ok "and the server handler never ran for it (srv.log did not grow)"
+    else
+        bad "FAIL-OPEN: the unauthenticated peer reached the server handler"
+        diff <(head -n "${abefore}" srv.log) srv.log | sed 's/^/      /' | head -8
     fi
 fi
 
