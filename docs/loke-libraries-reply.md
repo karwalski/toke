@@ -11,10 +11,11 @@
 
 ## The position, stated first
 
-**Four of your six items are in the tree and under a conformance suite each. One — OCR — is answered
-with a decision and not with code, and the decision is not the obvious one. One item within PDF
-(embedded images) is declined for now, and was declined in advance rather than discovered missing at
-the end.**
+**Five of your six items are in the tree and under a conformance suite each.** The sixth, OCR, is
+answered in three parts — Tesseract refused, a platform binding **shipped**, and a standalone
+`toke-ocr` accepted as the long project — and the reasoning behind all three is not the obvious one.
+**One item within PDF (embedded images) is declined for now**, and was declined in advance rather
+than discovered missing at the end.
 
 Nothing here changes your MK21 position: it ships CSV only, states that limitation plainly, and
 handles extraction through a sidecar. That remains correct, and **this is a retire-the-sidecar
@@ -168,13 +169,30 @@ three different answers.
 
 - **Route: vendor Tesseract — refused.** See ADR-0015 above. Not a capacity judgement; a permanent
   change to what toke is.
-- **Route: platform OCR binding — accepted, not yet built.** This is the shippable short-term answer
-  and it is next. Portability is poor by construction — a different engine per platform and none on
-  bare Linux — and that is an accepted trade, because accuracy is high, it is maintained by someone
-  else, and it makes your scanned path shippable on macOS without committing to the long project.
-  **A relevant fact we confirmed while scoping it: toke already binds a macOS framework from plain C
-  via `objc_msgSend` (`src/stdlib/webview.c`), with no Objective-C compiler and no `.m` file**, so this
-  route costs no toolchain change either.
+- **Route: platform OCR binding — accepted, and now shipped as `std.ocr`.** macOS Vision, bound from
+  plain C99 via `objc_msgSend` with no Objective-C compiler and no `.m` file, following the
+  `src/stdlib/webview.c` precedent — so it cost no toolchain change and ADR-0015 is untouched. Twelve
+  exports, none of which spells "Vision"; off macOS every entry point returns `$noengine` rather than
+  empty text. `$ocrrun` is `$textrun` slot for slot — six of seven fields identical in name, type and
+  position, the seventh differing in name only — so **an OCR fallback on a page `pdf.hastext` says has
+  no text needs one record type, not two**.
+
+  **One finding you need before you design around this, and it is not the answer we expected.**
+  **Vision's confidence carries no signal.** Across 40+ images at the default accuracy level,
+  `confidence` was **1.0 for every recognised candidate, including flatly wrong output** — an image
+  reading `Illlll1I0O` came back as `I111111I00` at confidence 1.0; `ACME` at 6pt came back as `VOME`
+  at 1.0; `ACME BANK` rotated 45° came back as `= BANK` at 1.0. `topCandidates:` returns exactly one
+  candidate, so the top-two margin is not available either. **A `confidence < 0.9` check flags
+  nothing.** We surface the value unaveraged because it is what the platform reports, but treat it as a
+  per-level label, not a measurement.
+
+  **What to route on instead: refusal.** Vision returns zero observations rather than guessing, and the
+  fast level refuses a confusable fixture that the accurate level reads confidently and wrongly. An
+  empty result is informative here; a high confidence is not.
+
+  This also means **per-field confidence is an argument for `toke-ocr` rather than something this
+  binding lets you defer** — the opposite of how we had it sequenced. If confidence-gated extraction is
+  load-bearing for your statement reader, say so, because it changes which of the two we push on.
 - **Route: `toke-ocr` as a standalone repository — accepted as you argued it.** Your case for keeping
   it out of the standard library is the one we adopted: PDF and zip are bounded, deterministic,
   fixture-testable parsers; OCR is a recognition system with an accuracy distribution, model artefacts
@@ -233,8 +251,10 @@ Nothing urgent. Three things, in order of usefulness to us:
 2. **A real-document fixture, if you can share one that is safe to share.** Our PDF fixtures are all
    producer-generated. A redacted real bank statement — or just the name of the producer that generates
    yours — would tell us more about the font-encoding paths than any synthetic case can.
-3. **Which platform matters for the OCR binding.** macOS Vision is the assumed first target because it
-   makes your scanned path shippable soonest. If Windows or Linux matters more, that changes the order.
+3. **Whether confidence-gated extraction is load-bearing for you.** macOS Vision is shipped, but its
+   confidence cannot support a threshold (above). If your statement reader needs to flag a low-confidence
+   field rather than accept it, that pushes `toke-ocr` up rather than leaving it as the long project —
+   and if Windows or Linux matters more than macOS, that changes the order again.
 
 ## What we are not asking for
 
@@ -251,6 +271,6 @@ Any change on your side. These libraries are additive, the interfaces above are 
 | 2. PDF text extraction | `std.pdf` | 11 | `docs/stdlib/pdf.md` | `C032`, 92 assertions |
 | 3. Zip archive reading | `std.zip` | 6 | `docs/stdlib/zip.md` | existing suite |
 | 4. XLSX reading | `std.xlsx` | 8 | `docs/stdlib/xlsx.md` | `C031`, 52 assertions |
-| 5. OCR | — | — | `docs/decisions/ADR-0015.md` | — |
+| 5. OCR | `std.ocr` | 12 | `docs/stdlib/ocr.md` | `C033`, 76 assertions |
 | 6. Image preprocessing | `std.image` | 15 | `docs/stdlib/image.md` | `C030` |
 | Route reasoning for 2 | — | — | `docs/decisions/135.3-pdf-extraction-route.md` | — |
