@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# C032_let_bound_fallible.sh — a let-bound fallible value answers from the same
+# C034_let_bound_fallible.sh — a let-bound fallible value answers from the same
 # evidence the direct call does (story 135.16).
 #
 # THE DEFECT.  An ok/err `mt` picks its arm one of three ways: the error
@@ -68,7 +68,7 @@ WORK="$(mktemp -d /tmp/tkc_c032_XXXXXX)"
 trap 'rm -rf "${WORK}"' EXIT
 cd "${WORK}"
 
-echo "C032: a let-bound fallible value answers like the direct call"
+echo "C034: a let-bound fallible value answers like the direct call"
 echo "--------------------------------------"
 
 # run_case NAME EXPECTED_STDOUT SOURCE — compiles AND RUNS.  Only a run proves
