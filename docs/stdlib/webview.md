@@ -1,3 +1,10 @@
+---
+title: std.webview
+slug: webview
+section: reference/stdlib
+order: 52
+---
+
 # std.webview -- WITHDRAWN (story 136.2)
 
 > **This module is not part of the standard library. It cannot be imported and
@@ -47,6 +54,25 @@ The C core (`src/stdlib/webview.c`, `src/stdlib/webview.h`) is retained and
 unbuilt, so restoring the module costs a `webview_glue.c`, the link flags
 `-framework WebKit -framework Cocoa -lobjc`, and the two decisions above.
 
+## Every name below is also unspellable
+
+Independently of the missing glue, the retained design cannot be expressed in toke as written. The default 59-character profile excludes `_`, so these will not lex. Story 136.46 swept the interfaces that still exist; `std.webview` has no `.tki` to sweep, so this list is untouched and a restoration must fix it by hand:
+
+| Name | Kind |
+|---|---|
+| `webview_handle` | type |
+| `webview.set_title` | call-name |
+| `webview.on_close` | call-name |
+| `webview.register_handler` | call-name |
+| `webview.eval_js` | call-name |
+| `webview.run_event_loop` | call-name |
+| `webview.is_available` | call-name |
+| `"loke_scheme"` | handler name, in the `loke://` section |
+
+The deleted `.tki` had already dropped the underscores (113.2a); the prose below never did, so it documents eight names no toke program could have written even against a working module. A restoration should publish `settitle`, `onclose`, `registerhandler`, `evaljs`, `runeventloop`, `isavailable`, a `webviewhandle` kept opaque as an `i64`, and a scheme handler named without an underscore.
+
+The examples below also use `if cond { }` / `else { }` and `++` for concatenation, none of which is current toke syntax, and none of which was corrected because the module was withdrawn before anyone tried to compile them. They are left as the 72.4 record.
+
 ## Correction to the published signature
 
 Restore it with the **requested** parameter order. loke asked for
@@ -64,6 +90,8 @@ documents, two different interfaces, neither of them callable.
 The `std.webview` module embeds a native browser window (backed by the platform's system web engine) that can host an ooke HTTP server or any URL. JavaScript running inside the web view communicates with toke code exclusively through handlers registered via `webview.register_handler` — arbitrary toke functions are not reachable from JS. This sandboxing is enforced by the platform message-passing layer (WKScriptMessageHandler on macOS).
 
 The module is currently available on macOS (WKWebView). On other platforms `webview.is_available()` returns `false` and all other functions are safe no-ops.
+
+> **Not true today, on any platform.** This paragraph and the "Supported" row in the Platform Notes table below are the 72.4 design's claims. The module cannot be imported anywhere -- `i=wv:std.webview;` fails with `E2030` -- so `is_available()` does not return `false` on Linux, it does not return at all.
 
 ## Types
 

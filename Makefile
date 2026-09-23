@@ -90,7 +90,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-patterns render-patterns check-error-codes check-glue-core check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-parallel-stdlib check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -241,6 +241,30 @@ check-tki:
 render-tki-quarantine:
 	python3 scripts/check_tki_coverage.py --quarantine-md
 
+# 136.46 — toke's default 59-character profile excludes `_`, so an underscored
+# type or field name in a .tki is unwriteable from toke source: E1003 at every
+# use site. The function stays reachable; the TYPE does not. .tki content never
+# reaches the lexer (a hand-rolled scanner in src/llvm.c reads it), so the
+# compiler cannot catch this and it has to be a gate. Nineteen had accumulated
+# across six interface files before anything looked.
+check-tki-names:
+	python3 scripts/check_tki_nameable.py
+
+# 136.43 — three sibling repos were found holding a staged revert of the Gate 1
+# correction, each with a worktree identical to HEAD, so the file on disk looked
+# untouched and only `git diff --cached` showed what a bare `git commit` would
+# land. Three of exactly that shape DID fire on 2026-09-21. §12.4's pathspec
+# commit protects the paths you name and not a bare commit at all, and no other
+# gate reads the index.
+check-index:
+	python3 scripts/check_clean_index.py
+
+# The cross-repo form, for a periodic sweep: the three that were found were in
+# three DIFFERENT repositories, so checking only this one would have missed all
+# of them.
+check-index-all:
+	python3 scripts/check_clean_index.py --sweep ..
+
 # 136.50 — a *_glue.c that never #includes its own core's header cannot call
 # anything that core declares, so whatever it returns it did not compute. This
 # is the detector for "the glue returns a plausible value while the C core
@@ -250,7 +274,17 @@ render-tki-quarantine:
 check-glue-core:
 	python3 scripts/check_glue_core_link.py
 
-ci: lint conform conform-sh conform-check check-tki check-glue-core check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
+# 135.11 — a stdlib module must have exactly ONE description of each kind:
+# stdlib/<m>.tki (interface), src/stdlib/<m>.c (implementation) and
+# docs/stdlib/<m>.md (docs). A stdlib/<m>.tk reimplementation or a
+# stdlib/<m>.md left behind by the docs move is a SECOND description that no
+# gate reads, so it drifts. That is the shape that produced the
+# wrapper-versus-core drift in Epic 136 and cost 31 defects. The quarantine
+# list only ever shrinks; deleting a file forces deleting its line.
+check-parallel-stdlib:
+	python3 scripts/check_parallel_stdlib.py
+
+ci: check-index lint conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).

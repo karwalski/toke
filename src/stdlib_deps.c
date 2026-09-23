@@ -31,6 +31,33 @@
 #endif
 
 /*
+ * 135.6: std.ocr binds macOS Vision through the Objective-C runtime C API
+ * (objc_getClass / objc_msgSend) from a plain C99 translation unit -- the
+ * same technique src/stdlib/webview.c uses for WebKit, and the reason this
+ * story needs no toolchain change under ADR-0015.  None of these symbols is
+ * on the default link line:
+ *
+ *   Vision          VNImageRequestHandler, VNRecognizeTextRequest
+ *   ImageIO         CGImageSourceCreateWith{Data,URL}
+ *   CoreGraphics    CGImageCreate, CGColorSpaceCreateDevice*
+ *   CoreFoundation  CFData/CFString/CFURL
+ *   Foundation      NSArray/NSMutableArray/NSString, reached by name
+ *   -lobjc          objc_msgSend itself
+ *
+ * Omit -lobjc and the failure is ~6 undefined _objc_* symbols at link,
+ * which is exactly the 136.3 keychain failure mode this comment exists to
+ * stop repeating.  Off Apple the module is all NOENGINE stubs and needs no
+ * flags at all.
+ */
+#if defined(__APPLE__)
+#  define TK_OCR_FLAGS "-framework Vision -framework ImageIO " \
+                       "-framework CoreGraphics -framework CoreFoundation " \
+                       "-framework Foundation -lobjc"
+#else
+#  define TK_OCR_FLAGS ""            /* no-op stubs; isavailable() is false */
+#endif
+
+/*
  * Each entry maps a stdlib module name to:
  *   - c_files:     space-separated basenames of .c files it provides
  *   - deps:        space-separated module names it depends on
@@ -91,7 +118,32 @@ static const StdlibModule stdlib_table[] = {
      * is named rather than surfacing as an opaque clang E9003. std.zip has no
      * module deps: it needs nothing but libc. */
     { "zip",           "zip.c zip_glue.c",                      "",                                                                 "" },
-    { "db",            "db.c db_glue.c",                        "",                                                                 "-lsqlite3" },
+    /* 135.4: std.xlsx is a parser ON TOP of std.zip, not a second vendored
+     * library — an XLSX is a zip of XML, so the dep is "zip" and nothing
+     * else.  The dep is what drags zip.c, and through it miniz, into the
+     * link: without it a program importing only std.xlsx compiles and then
+     * fails at link on an undefined zip_open_mem, which is exactly 136.33's
+     * failure mode and is invisible unless std.xlsx is the SOLE import.
+     * test/conform/C031 compiles such a program as its first case. */
+    { "xlsx",          "xlsx.c xlsx_glue.c",                    "zip",                                                              "" },
+    /* 135.3: std.pdf has NO module dependencies -- unlike std.xlsx, a PDF is
+     * not a zip.  FlateDecode goes through zlib, which is already on every
+     * toke binary's link line (LDLIBS in the Makefile), so the "-lz" here is
+     * belt and braces for a link line that ever stops carrying it rather
+     * than a new dependency.  Three C files, because the object/xref layer
+     * (pdf.c), the content-stream interpreter (pdftext.c) and the generated
+     * standard-14 metric tables (pdffont.c) are three separable concerns and
+     * the last of them is machine-written. */
+    { "pdf",           "pdf.c pdftext.c pdffont.c pdf_glue.c",  "",                                                                 "-lz" },
+    /* 135.6: std.ocr is the OTHER END of the route std.pdf opens.  pdf.hastext
+     * tells a caller which pages have a text layer; the ones that do not come
+     * here.  There is deliberately NO module dependency on pdf: the two are
+     * used together but neither needs the other's symbols, and a dep would
+     * drag a PDF parser into a program that only recognises PNGs.  There is
+     * no dependency on image either -- ocr.runsraw takes the raw pixel buffer
+     * std.image already produces, which is composition without coupling. */
+    { "ocr",           "ocr.c ocr_glue.c",                      "",                                                                 TK_OCR_FLAGS },
+    { "db",            "db.c db_glue.c",                      "",                                                                 "-lsqlite3" },
     { "collections",   "collections.c collections_glue.c",      "",                                                                 "" },
     { "xml",           "xml.c xml_glue.c",                       "",                                                                 "" },  /* 131.46 */
     { "soap",          "soap.c soap_glue.c",                     "",                                                                 "" },  /* 131.46 */

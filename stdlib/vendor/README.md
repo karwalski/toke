@@ -135,3 +135,59 @@ The build fails early and by name rather than as an opaque `clang` error:
 `make` runs a `vendor-check` preflight, and `tkc --out` checks for the file
 before invoking clang. Both name the missing dependency and point here. See
 story 127.85.
+
+## Libraries considered and rejected for vendoring
+
+Read this before proposing a new vendored dependency. The governing constraint is
+**[ADR-0015](../../docs/decisions/ADR-0015.md) — the toke toolchain is C99 only**:
+`CFLAGS` is `-std=c99`, there is no `CXX` and no C++ link step, and every tracked
+source in the build is C. **A C++ library cannot be vendored here**, because doing so
+would add a C++ toolchain requirement to every build of toke on every platform,
+permanently — for every user, including those who never use the capability.
+
+That is a rejection of *vendoring*, not of the capability. ADR-0015 names the routes
+that remain open: a **C shim** around an out-of-tree C++ library, a **separate
+optional component** outside the default build, or a **platform binding** to an API
+the OS already exposes through C.
+
+| Library | For | Rejected because | Where the capability goes instead |
+|---|---|---|---|
+| **Tesseract** | OCR | **C++** (ADR-0015) — decisive. Plus: needs **Leptonica**, so it is two large dependencies, not one; ships **language model files of tens of megabytes each** that must be located, versioned and distributed; and its accuracy is highly sensitive to image preprocessing. | **135.6** platform OCR binding; **135.8** standalone `toke-ocr` repository |
+| **pdfium** | PDF text extraction | **C++** (ADR-0015). Also very large, and carries its own build system. | **135.3** — route chosen there, from the options ADR-0015 leaves open |
+| **podofo** | PDF text extraction | **C++** (ADR-0015). | **135.3**, as above |
+
+### Tesseract (story 135.7) — the long form
+
+Recorded explicitly so it is not re-proposed.
+
+**The decisive reason is that Tesseract is C++ and toke is C99 with zero C++ files.**
+Vendoring it is not a dependency choice, it is an architectural decision about what
+toke *is* — and it should not be made in order to read a bank statement. That alone
+settles it under ADR-0015; the reasons below are supporting, and none of them would
+be sufficient on its own.
+
+- **It is two dependencies, not one.** Tesseract requires **Leptonica** for image
+  handling. Both are substantial C++ codebases with their own build systems.
+- **It ships model files.** Tesseract needs trained data of **tens of megabytes per
+  language**, which must be located at runtime, versioned against the library, and
+  distributed somehow. Vendoring the code does not vendor the models, so the
+  distribution problem survives the vendoring.
+- **It does not remove the pipeline work.** Tesseract's accuracy depends heavily on
+  preprocessing — deskew, denoise, binarisation, DPI normalisation. Vendoring it
+  removes the *classifier* but **not** the pipeline that 135.5 and 135.8 have to
+  build regardless. The saving is smaller than it first appears.
+
+**This is a routing decision, not a refusal.** OCR is still wanted. It arrives by two
+routes that cost the build nothing:
+
+- **135.6 — platform OCR binding.** Use the OCR the operating system already provides
+  through its C interface (Vision on macOS, and the per-platform equivalent
+  elsewhere). No dependency, no models to ship, and generally better accuracy than a
+  default-configured Tesseract.
+- **135.8 — standalone `toke-ocr`.** A separate repository and binary, invoked as a
+  subprocess, for platforms and cases the platform binding does not cover. It may use
+  whatever implementation suits it — **including Tesseract** — precisely because it is
+  outside the toke build. Nothing in this rejection prevents `toke-ocr` from linking
+  Tesseract; the constraint is on the toke toolchain, not on separate components.
+
+Reopening this requires amending ADR-0015 first.

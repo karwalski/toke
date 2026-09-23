@@ -491,8 +491,8 @@
  ],
  "test/standalone/test_math_full.tk": [
   true,
-  4,
-  "43ad5e5400ad54a8"
+  0,
+  "936d16813758e0a3"
  ],
  "test/standalone/test_nested_arr_compare.tk": [
   true,

@@ -2,7 +2,25 @@
 
 **Story:** 77.1.6
 **Date:** 2026-05-01
-**Status:** Complete
+**Status:** Complete — with one half of section 1 left undone for four months; closed 2026-09-23 under story 136.46
+
+> **Closure note, 2026-09-23 (136.46).** This audit's function list was executed:
+> no `stdlib/*.tki` declares an underscored *export name* today. Its **"Struct
+> fields in .tki files (also need renaming)"** list, immediately below the
+> function table, was **not** — nineteen underscored type and field names were
+> still declared across six interface files on 2026-09-23, four months later,
+> including `TlsConfig.peer_cert_pem`, `TlsConfig.require_mutual`,
+> `httpclient.pool_size`, the `infer` option types and `mdns.service_record`.
+> Because the default profile excludes `_`, each raised **E1003 at every use
+> site**, so the types were unwriteable from toke source even though the
+> functions taking them were reachable — which is also why there were zero call
+> sites to break when they were finally renamed.
+>
+> The reason it went unnoticed is the part worth keeping: **`.tki` content never
+> reaches the lexer.** A hand-rolled scanner in `src/llvm.c` reads it, so the
+> compiler that enforces this rule everywhere else structurally cannot enforce it
+> here. An audit that names the work is not a gate. `make check-tki-names`
+> (`scripts/check_tki_nameable.py`) now is, and is wired into `ci`.
 
 ## Background
 

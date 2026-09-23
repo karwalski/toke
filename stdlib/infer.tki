@@ -4,7 +4,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "model_handle",
+      "name": "modelhandle",
       "opaque": true,
       "fields": [
         {
@@ -15,14 +15,14 @@
     },
     {
       "kind": "type",
-      "name": "infer_opts",
+      "name": "inferopts",
       "fields": [
         {
-          "name": "n_gpu_layers",
+          "name": "ngpulayers",
           "type": "i32"
         },
         {
-          "name": "n_threads",
+          "name": "nthreads",
           "type": "i32"
         },
         {
@@ -33,18 +33,18 @@
     },
     {
       "kind": "type",
-      "name": "stream_opts",
+      "name": "streamopts",
       "fields": [
         {
-          "name": "ram_ceiling_gb",
+          "name": "ramceilinggb",
           "type": "f32"
         },
         {
-          "name": "prefetch_layers",
+          "name": "prefetchlayers",
           "type": "i32"
         },
         {
-          "name": "requires_nvme",
+          "name": "requiresnvme",
           "type": "bool"
         }
       ]
@@ -68,15 +68,15 @@
       "name": "infer.load",
       "params": [
         "str",
-        "infer_opts"
+        "inferopts"
       ],
-      "return": "model_handle!infererr"
+      "return": "modelhandle!infererr"
     },
     {
       "kind": "func",
       "name": "infer.unload",
       "params": [
-        "model_handle"
+        "modelhandle"
       ],
       "return": "bool"
     },
@@ -84,7 +84,7 @@
       "kind": "func",
       "name": "infer.generate",
       "params": [
-        "model_handle",
+        "modelhandle",
         "str",
         "i32"
       ],
@@ -94,7 +94,7 @@
       "kind": "func",
       "name": "infer.embed",
       "params": [
-        "model_handle",
+        "modelhandle",
         "str"
       ],
       "return": "@(f32)!infererr"
@@ -103,7 +103,7 @@
       "kind": "func",
       "name": "infer.isloaded",
       "params": [
-        "model_handle"
+        "modelhandle"
       ],
       "return": "bool"
     },
@@ -112,9 +112,9 @@
       "name": "infer.loadstreaming",
       "params": [
         "str",
-        "stream_opts"
+        "streamopts"
       ],
-      "return": "model_handle!infererr"
+      "return": "modelhandle!infererr"
     }
   ]
 }

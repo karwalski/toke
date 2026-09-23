@@ -201,4 +201,65 @@ TkImgBuf     image_quantize(TkImgBuf buf, uint64_t ncolors);
 TkImgBuf     image_text_draw(TkImgBuf buf, const char *text,
                               int x, int y, int size, uint32_t color);
 
+
+/* -----------------------------------------------------------------------
+ * Document preprocessing: adaptive threshold and general convolution
+ * (Story 135.5)
+ * ----------------------------------------------------------------------- */
+
+/* image.adaptivethreshold(imgbuf, u32, f64) imgbuf!str
+ *
+ * Sauvola local thresholding.  For every pixel the threshold is computed from
+ * the mean m and standard deviation s of the `window` x `window` neighbourhood
+ * centred on it:
+ *
+ *     T = m * (1 + k * (s / 128 - 1))
+ *
+ * which is what makes it survive uneven illumination: the threshold tracks the
+ * local background instead of one global value.  The dynamic-range term is
+ * also why Sauvola is preferred to a plain local mean (Bradley/Wellner) for
+ * documents — in a blank region s is near zero, T falls well below m, and the
+ * region stays white instead of breaking up into speckle.
+ *
+ * Input of any channel count is reduced to luminance first.  The result is a
+ * single-channel image whose pixels are exactly 0 or 255.
+ *
+ * `window` is forced odd and to at least 3; 0 selects the default of 31.
+ * `k` is conventionally 0.2 and must lie in [-10, 10].
+ * Means and variances come from integral images, so cost is independent of
+ * the window size. */
+ImgResult    image_adaptive_threshold(TkImgBuf buf, uint32_t window, double k);
+
+/* image.convolve(imgbuf, [f64], u32, f64, f64) imgbuf!str
+ *
+ * Apply an arbitrary `ksize` x `ksize` kernel (row-major, ksize odd,
+ * ksize*ksize entries) to every channel:
+ *
+ *     out = sum(kernel[i] * src[i]) / divisor + offset,  clamped to [0,255]
+ *
+ * Borders use clamp-to-edge sampling, matching image_blur.  A `divisor` of 0
+ * means "normalise by the sum of the kernel", and a kernel summing to zero
+ * (Sobel, Laplacian) is then left unscaled rather than divided by zero.
+ * All channels are filtered, alpha included. */
+ImgResult    image_convolve(TkImgBuf buf, const double *kernel, uint32_t ksize,
+                             double divisor, double offset);
+
+/* -----------------------------------------------------------------------
+ * TIFF decode, including multi-page (Story 135.5)
+ * ----------------------------------------------------------------------- */
+
+/* Number of pages (IFDs) in a TIFF, or -1 if the buffer is not a TIFF.
+ * Multi-page is the point: scanners and fax gateways emit one IFD per page
+ * and a decoder that reads only the first silently drops the rest. */
+int64_t      image_tiff_pages(const uint8_t *bytes, uint64_t len);
+
+/* Decode one 0-based page of a TIFF.
+ * Baseline coverage: uncompressed (1), LZW (5), Deflate (8 / 32946) and
+ * PackBits (32773); bilevel, 4-bit, 8-bit and 16-bit samples; WhiteIsZero,
+ * BlackIsZero, RGB and Palette photometrics; horizontal differencing
+ * (Predictor 2).  CCITT G3/G4, JPEG-in-TIFF, tiled and planar layouts are
+ * rejected with a message naming what was found. */
+ImgResult    image_tiff_decode(const uint8_t *bytes, uint64_t len,
+                                uint32_t page);
+
 #endif /* TK_STDLIB_IMAGE_H */

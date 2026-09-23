@@ -4,7 +4,7 @@
   "exports": [
     {
       "kind": "type",
-      "name": "mlx_model",
+      "name": "mlxmodel",
       "fields": [
         {
           "name": "id",
@@ -38,13 +38,13 @@
       "params": [
         "str"
       ],
-      "return": "mlx_model!mlxerr"
+      "return": "mlxmodel!mlxerr"
     },
     {
       "kind": "func",
       "name": "mlx.unload",
       "params": [
-        "mlx_model"
+        "mlxmodel"
       ],
       "return": "bool"
     },
@@ -52,7 +52,7 @@
       "kind": "func",
       "name": "mlx.generate",
       "params": [
-        "mlx_model",
+        "mlxmodel",
         "str",
         "i32"
       ],
@@ -62,7 +62,7 @@
       "kind": "func",
       "name": "mlx.embed",
       "params": [
-        "mlx_model",
+        "mlxmodel",
         "str"
       ],
       "return": "@(f32)!mlxerr"

@@ -6,10 +6,10 @@
       "kind": "type",
       "name": "TlsConfig",
       "fields": [
-        {"name": "cert_pem",       "type": "str"},
-        {"name": "key_pem",        "type": "str"},
-        {"name": "peer_cert_pem",  "type": "str"},
-        {"name": "require_mutual", "type": "bool"}
+        {"name": "certpem",       "type": "str"},
+        {"name": "keypem",        "type": "str"},
+        {"name": "peercertpem",  "type": "str"},
+        {"name": "requiremutual", "type": "bool"}
       ]
     },
     {
@@ -23,8 +23,8 @@
       "kind": "type",
       "name": "TlsKeypair",
       "fields": [
-        {"name": "cert_pem", "type": "str"},
-        {"name": "key_pem",  "type": "str"}
+        {"name": "certpem", "type": "str"},
+        {"name": "keypem",  "type": "str"}
       ]
     },
     {
@@ -38,6 +38,7 @@
       ]
     },
     {"kind": "func", "name": "tls.genselfsigned", "params": ["str", "i32"],               "return": "TlsKeypair!TlsErr"},
+    {"kind": "func", "name": "tls.genselfsignedalg", "params": ["str", "i32", "str"], "return": "TlsKeypair!TlsErr"},
     {"kind": "func", "name": "tls.certof",           "params": ["TlsKeypair"],               "return": "str"},
     {"kind": "func", "name": "tls.keyof",            "params": ["TlsKeypair"],               "return": "str"},
     {"kind": "func", "name": "tls.freekeypair",      "params": ["TlsKeypair"],               "return": "bool"},

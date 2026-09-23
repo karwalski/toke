@@ -1,4 +1,11 @@
-# std.vecstore — Embedded Vector Store
+---
+title: std.vecstore
+slug: vecstore
+section: reference/stdlib
+order: 51
+---
+
+**Status: Implemented** -- C runtime backing. The glue was a façade until story 136.4; `test/stdlib/vecstore_roundtrip.tk` now writes in one process and reads in another, so a pass proves the data reached disk.
 
 ## Overview
 
@@ -237,33 +244,64 @@ are not portable across architectures of differing endianness.
 
 ## Patterns
 
-### RAG Pipeline
+### Ingest, query, persist
+
+The two orthogonal unit vectors make the scores exact: the query matches
+`doc-1` at 1.0 and `doc-2` at 0.0, so a floor of 0.5 must return exactly one
+hit. That is the same property `test/stdlib/vecstore_roundtrip.tk` asserts, and
+it is what a stub cannot fake.
 
 ```toke
-let vs=vecstore.open("/var/embeddings");
-let col=vecstore.collection(vs;"chunks");
+m=vecstoredemo;
+i=vs:std.vecstore;
+i=io:std.io;
+i=str:std.str;
 
-(* Ingest *)
-let emb=llm.embed(model;"The quick brown fox");
-vecstore.upsert(col;"chunk-42";emb;"{\"text\":\"The quick brown fox\"}");
+f=main():i64{
+  let s=vs.open("/tmp/tokevecdemo");
+  let col=vs.collection(s;"chunks");
 
-(* Query *)
-let q=llm.embed(model;"fast animals");
-let results=vecstore.search(col;q;3;0.6);
+  vs.upsert(col;"doc-1";@(1.0;0.0;0.0);"{\"text\":\"the quick brown fox\"}");
+  vs.upsert(col;"doc-2";@(0.0;1.0;0.0);"{\"text\":\"unrelated\"}");
+  io.println(str.concat("count=";str.fromint(vs.count(col))));
 
-(* Without this close the ingest above never reaches disk. *)
-vecstore.close(vs);
+  let hits=vs.search(col;@(1.0;0.0;0.0);5;0.5);
+  io.println(str.concat("above 0.5: ";str.fromint(hits.len())));
+  lp(let i=0;i<hits.len();i=i+1){
+    let r=hits.get(i);
+    io.println(str.concat(r.id;str.concat(" score=";str.fromfloat(r.score))))
+  };
+
+  (* Without this close nothing above reaches disk. *)
+  vs.close(s);
+  <0
+};
 ```
 
-### TTL Sweep on Startup
+### TTL sweep on startup
 
 ```toke
-let vs=vecstore.open("/var/cache/embeddings");
-let col=vecstore.collection(vs;"sessioncontext");
+m=vecstorettl;
+i=vs:std.vecstore;
+i=tm:std.time;
+i=io:std.io;
+i=str:std.str;
 
-(* Remove anything older than 1 hour *)
-let cutoff=(time.now()/1000)-3600;
-let n=vecstore.deletebefore(col;cutoff);
-io.println(str.concat("evicted ";str.concat(str.fromint(n);" stale entries")));
-vecstore.close(vs);
+f=main():i64{
+  let s=vs.open("/tmp/tokevecdemo");
+  let col=vs.collection(s;"sessioncontext");
+
+  (* remove anything created more than an hour ago *)
+  let cutoff=(tm.now()/1000)-3600;
+  let n=vs.deletebefore(col;cutoff);
+  io.println(str.concat("evicted ";str.concat(str.fromint(n);" stale entries")));
+
+  vs.close(s);
+  <0
+};
 ```
+
+## See Also
+
+- `std.llm` -- the usual source of the embeddings stored here.
+- `std.db` -- when the collection outgrows a brute-force flat index.

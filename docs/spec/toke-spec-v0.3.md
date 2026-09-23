@@ -2048,7 +2048,7 @@ signatures printed here were also wrong twice over: `open` was documented
 `(url;title;...)`, and the member names kept the pre-113.2a underscores
 (`set_title`, `is_available`) that the `.tki` had already dropped.
 
-`stdlib/webview.md` keeps the design and records what restoring it requires —
+`docs/stdlib/webview.md` keeps the design and records what restoring it requires —
 a `webview_glue.c`, the link flags, a callback ABI for `onclose` and
 `registerhandler`, and the bridge hardening of 121.38 / 122.11. The C core
 (`src/stdlib/webview.c`) is retained and unbuilt.

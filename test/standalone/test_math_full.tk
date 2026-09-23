@@ -5,32 +5,32 @@ i=io:std.io;
 
 f=main():i64{
   let fails=mut.0;
-  let mx=math.max(3;7);
-  if(mx==7){
-    io.println("PASS math.max(3;7) == 7")
+  let mx=math.max(@(3.0;7.0));
+  if(mx==7.0){
+    io.println("PASS math.max(@(3.0;7.0)) == 7")
   }el{
-    io.println("FAIL math.max(3;7)");
+    io.println("FAIL math.max(@(3.0;7.0))");
     fails=fails+1
   };
-  let mn=math.min(3;7);
-  if(mn==3){
-    io.println("PASS math.min(3;7) == 3")
+  let mn=math.min(@(3.0;7.0));
+  if(mn==3.0){
+    io.println("PASS math.min(@(3.0;7.0)) == 3")
   }el{
-    io.println("FAIL math.min(3;7)");
+    io.println("FAIL math.min(@(3.0;7.0))");
     fails=fails+1
   };
-  let mxeq=math.max(10;10);
-  if(mxeq==10){
-    io.println("PASS math.max(10;10) == 10")
+  let mxeq=math.max(@(10.0;10.0));
+  if(mxeq==10.0){
+    io.println("PASS math.max(@(10.0;10.0)) == 10")
   }el{
-    io.println("FAIL math.max(10;10)");
+    io.println("FAIL math.max(@(10.0;10.0))");
     fails=fails+1
   };
-  let mneq=math.min(5;5);
-  if(mneq==5){
-    io.println("PASS math.min(5;5) == 5")
+  let mneq=math.min(@(5.0;5.0));
+  if(mneq==5.0){
+    io.println("PASS math.min(@(5.0;5.0)) == 5")
   }el{
-    io.println("FAIL math.min(5;5)");
+    io.println("FAIL math.min(@(5.0;5.0))");
     fails=fails+1
   };
   io.println(str.concat("math_full: ";str.concat(str.fromi64(fails);" failed")));

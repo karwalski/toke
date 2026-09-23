@@ -77,11 +77,11 @@
           "type": "str"
         },
         {
-          "name": "pool_size",
+          "name": "poolsize",
           "type": "u64"
         },
         {
-          "name": "timeout_ms",
+          "name": "timeoutms",
           "type": "u64"
         }
       ]

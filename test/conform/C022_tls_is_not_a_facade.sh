@@ -218,9 +218,11 @@ f=onconn(conn:i64):i64{
   <0
 };
 
-(* mutualconfig, not three field assignments: TlsConfig's peer_cert_pem and
-   require_mutual carry underscores the default profile cannot express, so a
-   toke program cannot name them (136.46) *)
+(* mutualconfig, not three field assignments. Until 136.46 these fields were
+   spelled peer_cert_pem and require_mutual, which the default profile cannot
+   express, so a toke program could not name them at all; they are peercertpem
+   and requiremutual now. The constructor remains the documented route, and
+   this suite keeps using it: it is the one shape that was always writeable *)
 f=main():i64{
   let cfg=tls.mutualconfig(rd("${WORK}/s.crt"); rd("${WORK}/s.key"); rd("${WORK}/c.crt"));
   say("listening");
@@ -279,6 +281,123 @@ if [ "${built}" -eq 1 ] && ./gen.bin >/dev/null 2>&1 \
 else
     bad "tls.genselfsigned produced nothing — a stub returns 0 and writes no PEM"
     built=0
+fi
+
+# ── Part 3b: tls.genselfsignedalg, and that it does NOT fall back ────────────
+#
+# 136.44a. tls_gen_self_signed_alg has been implemented and linked in tls.c
+# since 124.1 shipped ADR-0013's crypto agility, and it had no wrapper and no
+# .tki export, so ML-DSA-65 certificate generation was unreachable from toke.
+# 136.44's sweep could not have found it: that sweep compared declared .tki
+# exports against the glue, and this one was never declared.
+#
+# The assertion that matters is NOT "it produced a certificate". It is that a
+# caller who asked for ML-DSA-65 got ML-DSA-65 -- a classical certificate
+# silently returned in its place is the worst outcome available here, because
+# the caller asked for post-quantum precisely because it matters to them.
+
+# Premise first: does the OpenSSL this machine links actually offer ML-DSA-65?
+# Everything below is asserted against the answer, so neither branch can pass
+# vacuously.
+OSSL=""
+for cand in /opt/homebrew/opt/openssl@3/bin/openssl \
+            /opt/homebrew/opt/openssl/bin/openssl \
+            /usr/local/opt/openssl@3/bin/openssl openssl; do
+    if command -v "${cand}" >/dev/null 2>&1; then OSSL="${cand}"; break; fi
+done
+MLDSA_AVAILABLE=0
+if [ -n "${OSSL}" ] && "${OSSL}" list -signature-algorithms 2>/dev/null \
+        | grep -qi 'ML-DSA-65'; then
+    MLDSA_AVAILABLE=1
+    ok "premise: this OpenSSL offers ML-DSA-65, so toke is the only thing under test"
+else
+    ok "premise: this OpenSSL does NOT offer ML-DSA-65 — the refusal path is what is asserted"
+fi
+
+cat > alg.tk <<EOF
+m=alg;
+i=tls:std.tls;
+i=file:std.file;
+i=io:std.io;
+
+f=emit(cn:str;alg:str;certp:str):i64{
+  let kp=tls.genselfsignedalg(cn; 1; alg);
+  if(kp==0){ <1 };
+  let a=mt file.write(certp; tls.certof(kp)){\$ok:v v;\$err:e false};
+  tls.freekeypair(kp);
+  if(a==false){ <1 };
+  <0
+};
+
+f=main():i64{
+  (* "" means the core's default, which is P-384, not an error *)
+  let d=emit("toke-c022-default"; ""; "${WORK}/d.crt");
+  let e=emit("toke-c022-p384"; "ecdsa-p384"; "${WORK}/e.crt");
+  let m=emit("toke-c022-mldsa"; "ml-dsa-65"; "${WORK}/m.crt");
+  (* an algorithm the core does not know must be refused, not defaulted *)
+  let b=emit("toke-c022-bogus"; "rsa-1024"; "${WORK}/b.crt");
+  io.println("d=\(d) e=\(e) m=\(m) b=\(b)");
+  <0
+};
+EOF
+if "${TKC}" --allow-all -o alg.bin alg.tk >alg.build 2>&1; then
+    ok "a toke program can call tls.genselfsignedalg"
+    ALG_OUT="$(./alg.bin 2>/dev/null)"
+
+    case "${ALG_OUT}" in
+        *"d=0"*) ok "genselfsignedalg with an empty algorithm produced a certificate (the default)" ;;
+        *)       bad "genselfsignedalg with an empty algorithm produced nothing: ${ALG_OUT}" ;;
+    esac
+    case "${ALG_OUT}" in
+        *"e=0"*) ok "genselfsignedalg('ecdsa-p384') produced a certificate" ;;
+        *)       bad "genselfsignedalg('ecdsa-p384') produced nothing: ${ALG_OUT}" ;;
+    esac
+    case "${ALG_OUT}" in
+        *"b=1"*) ok "genselfsignedalg('rsa-1024') was REFUSED — no silent default" ;;
+        *)       bad "genselfsignedalg('rsa-1024') did not fail; an unknown algorithm must not default" ;;
+    esac
+    if [ -s "${WORK}/b.crt" ]; then
+        bad "a refused algorithm still wrote ${WORK}/b.crt"
+    else
+        ok "a refused algorithm wrote no certificate"
+    fi
+
+    if [ "${MLDSA_AVAILABLE}" -eq 1 ]; then
+        case "${ALG_OUT}" in
+            *"m=0"*) ok "genselfsignedalg('ml-dsa-65') produced a certificate" ;;
+            *)       bad "genselfsignedalg('ml-dsa-65') produced nothing on an OpenSSL that has it: ${ALG_OUT}" ;;
+        esac
+        # The whole point: the certificate must really be ML-DSA, and the
+        # classical one must really be ECDSA. Reading the algorithm out of the
+        # DER is what distinguishes "it worked" from "it fell back".
+        if [ -s "${WORK}/m.crt" ] && \
+           "${OSSL}" x509 -in "${WORK}/m.crt" -noout -text 2>/dev/null \
+             | grep -qi 'ML-DSA-65'; then
+            ok "the ml-dsa-65 certificate really is signed with ML-DSA-65"
+        else
+            bad "the ml-dsa-65 certificate is not ML-DSA — a silent fallback to classical"
+        fi
+        if [ -s "${WORK}/e.crt" ] && \
+           "${OSSL}" x509 -in "${WORK}/e.crt" -noout -text 2>/dev/null \
+             | grep -qi 'ecdsa'; then
+            ok "the ecdsa-p384 certificate really is ECDSA — the two paths differ"
+        else
+            bad "the ecdsa-p384 certificate is not ECDSA"
+        fi
+    else
+        case "${ALG_OUT}" in
+            *"m=1"*) ok "genselfsignedalg('ml-dsa-65') was refused on an OpenSSL without it — no classical substitute" ;;
+            *)       bad "genselfsignedalg('ml-dsa-65') claimed success on an OpenSSL that has no ML-DSA: ${ALG_OUT}" ;;
+        esac
+        if [ -s "${WORK}/m.crt" ]; then
+            bad "ML-DSA is unavailable here yet ${WORK}/m.crt was written"
+        else
+            ok "ML-DSA unavailable: no certificate was written under that name"
+        fi
+    fi
+else
+    bad "alg.tk did not compile — tls.genselfsignedalg is not reachable from toke"
+    sed 's/^/      /' alg.build | head -5
 fi
 
 if [ "${built}" -eq 1 ]; then

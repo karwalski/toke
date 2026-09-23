@@ -215,5 +215,9 @@ It is arguably the most critical single character in toke's syntax.
 ## Open Questions / Action Items
 
 1. **`==` in file.tk** — The stdlib file `/Users/matthew.watt/tk/toke/stdlib/file.tk` uses `==` for equality (e.g., `if(buf==0)`). The spec says single `=` is equality. Either file.tk is non-conforming or the compiler accepts `==` as a compatibility form. Needs verification.
+
+   **RESOLVED (135.11, 2026-09-22): both horns were wrong, and the file is gone.** `stdlib/file.tk` was an unreachable parallel reimplementation of `std.file` — the real module is `stdlib/file.tki` + `src/stdlib/file.c`, and nothing ever compiled the `.tk`. It did not merely use a non-conforming operator: it **did not parse at all** (`toke --check` 3.0.0 → E2002 at line 12), being written in a dialect the compiler no longer accepts. It was removed in 135.11. Separately, this item's premise is itself superseded: per **ADR-0008**, `=` is assignment and `==` is equality, so `==` is now the conforming spelling.
 2. **`loop{` vs `lp()`** — file.tk line 41 uses bare `loop{` instead of `lp(init;cond;step)`. This may be an older form or a simplified infinite-loop variant not in the v0.3 grammar.
+
+   **RESOLVED (135.11, 2026-09-22):** same file, same cause — `stdlib/file.tk` was dead, unparseable legacy and has been removed. `lp(init;cond;step)` is the only loop form; the bare `loop{` seen here was legacy dialect, not a grammar variant.
 3. **Semicolon elision edge cases** — The trailing-semicolon elision rule in `opt_semi()` could interact subtly with match arms and struct literals. Current test coverage should verify these boundaries.

@@ -544,12 +544,19 @@ ImgResult image_decode(const uint8_t *bytes, uint64_t len)
 
     if (!bytes || len < 8) {
         res.is_err  = 1;
-        res.err_msg = "image_decode: buffer too short to be a valid PNG";
+        res.err_msg = "image_decode: buffer too short to be a valid image";
         return res;
+    }
+    /* 135.5: TIFF is auto-detected here so existing callers of image.decode
+     * gain it without changing.  A multi-page TIFF decodes to its FIRST page;
+     * image_tiff_pages / image_tiff_decode reach the rest. */
+    if ((bytes[0] == 'I' && bytes[1] == 'I' && bytes[2] == 42 && bytes[3] == 0) ||
+        (bytes[0] == 'M' && bytes[1] == 'M' && bytes[2] == 0 && bytes[3] == 42)) {
+        return image_tiff_decode(bytes, len, 0);
     }
     if (memcmp(bytes, PNG_SIG, 8) != 0) {
         res.is_err  = 1;
-        res.err_msg = "image_decode: not a PNG file (bad signature)";
+        res.err_msg = "image_decode: not a PNG or TIFF file (bad signature)";
         return res;
     }
 
@@ -1922,4 +1929,842 @@ TkImgBuf image_text_draw(TkImgBuf buf, const char *text,
     out.data     = data;
     out.data_len = npix * ch;
     return out;
+}
+
+/* =========================================================================
+ * Story 135.5 — document preprocessing: adaptive threshold, convolution,
+ * and TIFF decode.
+ *
+ * Note on what was already here.  The story listed arbitrary-angle rotation
+ * and a blur primitive as gaps.  image_rotate() (inverse-mapped bilinear)
+ * and image_blur() have been in this file since 34.3.1; what was missing was
+ * any way to reach them from toke — neither had a wrapper in image_glue.c
+ * nor an entry in stdlib/image.tki.  Those two are therefore an exposure
+ * change, not new C, and only the two below are new algorithms.
+ * ========================================================================= */
+
+/* Reduce any image to a single luminance plane of width*height bytes
+ * (BT.601, matching image_to_grayscale).  Caller frees. */
+static uint8_t *img_gray_plane(TkImgBuf buf)
+{
+    if (!buf.data || buf.width == 0 || buf.height == 0) return NULL;
+    uint8_t  ch = buf.channels ? buf.channels : 1;
+    uint64_t n  = (uint64_t)buf.width * buf.height;
+    if (buf.data_len < n * ch) return NULL;
+
+    uint8_t *g = (uint8_t *)malloc(n);
+    if (!g) return NULL;
+    for (uint64_t i = 0; i < n; i++) {
+        const uint8_t *p = buf.data + i * ch;
+        g[i] = (ch >= 3)
+            ? (uint8_t)((299 * (int)p[0] + 587 * (int)p[1] + 114 * (int)p[2]) / 1000)
+            : p[0];
+    }
+    return g;
+}
+
+static int img_finite(double v)
+{
+    return v == v && v > -1e308 && v < 1e308;
+}
+
+/* -------------------------------------------------------------------------
+ * image_adaptive_threshold — Sauvola
+ *
+ * WHY SAUVOLA AND NOT A GLOBAL THRESHOLD OR A LOCAL MEAN.
+ * A global threshold (Otsu and friends) picks one value for the whole page,
+ * so a scan whose left half is in shadow loses either the text on the dark
+ * side or the background on the light side.  That is the failure this
+ * function exists to remove.
+ * The cheapest local answer is Bradley/Wellner — threshold at the local mean
+ * less a fixed percentage — but it has no notion of contrast, so over a blank
+ * margin, where the mean is essentially the paper colour, roughly half the
+ * pixels fall on each side and the margin fills with speckle.
+ * Sauvola adds the local standard deviation: T = m(1 + k(s/R - 1)).  Where
+ * there is text, s is large, the bracket approaches 1 and T approaches m.
+ * Where the region is blank, s -> 0, the bracket falls to (1 - k) and T drops
+ * below the background, so the whole region stays white.  That is exactly the
+ * behaviour document binarisation needs, and it is why Sauvola is the
+ * standard choice for scanned text.
+ *
+ * Cost.  Integral images of the values and of their squares make every window
+ * mean and variance four array reads, so the running time does not depend on
+ * the window size and a 31x31 window is no more expensive than a 3x3 one.
+ * ------------------------------------------------------------------------- */
+
+ImgResult image_adaptive_threshold(TkImgBuf buf, uint32_t window, double k)
+{
+    ImgResult res;
+    memset(&res, 0, sizeof(res));
+
+    if (!buf.data || buf.width == 0 || buf.height == 0) {
+        res.is_err  = 1;
+        res.err_msg = "image_adaptive_threshold: empty image";
+        return res;
+    }
+    if (!img_finite(k) || k < -10.0 || k > 10.0) {
+        res.is_err  = 1;
+        res.err_msg = "image_adaptive_threshold: k must be finite and within "
+                      "[-10, 10] (0.2 is the usual value)";
+        return res;
+    }
+
+    if (window == 0)            window = 31;   /* default */
+    if ((window & 1u) == 0)     window += 1;   /* an even window has no centre */
+    if (window < 3)             window = 3;
+
+    uint32_t w = buf.width, h = buf.height;
+    uint64_t n = (uint64_t)w * h;
+
+    uint8_t *gray = img_gray_plane(buf);
+    if (!gray) {
+        res.is_err  = 1;
+        res.err_msg = "image_adaptive_threshold: pixel buffer shorter than "
+                      "width*height*channels, or out of memory";
+        return res;
+    }
+
+    /* (w+1) x (h+1) with a zero first row and column, so a window sum needs
+     * no special case at the image edge. */
+    uint64_t iw = (uint64_t)w + 1;
+    uint64_t *sum = (uint64_t *)calloc((size_t)(iw * ((uint64_t)h + 1)), sizeof(uint64_t));
+    uint64_t *sq  = (uint64_t *)calloc((size_t)(iw * ((uint64_t)h + 1)), sizeof(uint64_t));
+    uint8_t  *out = (uint8_t *)malloc((size_t)n);
+    if (!sum || !sq || !out) {
+        free(gray); free(sum); free(sq); free(out);
+        res.is_err  = 1;
+        res.err_msg = "image_adaptive_threshold: out of memory";
+        return res;
+    }
+
+    for (uint32_t y = 0; y < h; y++) {
+        for (uint32_t x = 0; x < w; x++) {
+            uint64_t v = gray[(uint64_t)y * w + x];
+            uint64_t i = ((uint64_t)y + 1) * iw + (x + 1);
+            sum[i] = v     + sum[i - 1] + sum[i - iw] - sum[i - iw - 1];
+            sq[i]  = v * v + sq[i - 1]  + sq[i - iw]  - sq[i - iw - 1];
+        }
+    }
+
+    int r = (int)(window / 2);
+    const double R = 128.0;   /* the dynamic range of the standard deviation */
+
+    for (uint32_t y = 0; y < h; y++) {
+        int y0 = (int)y - r; if (y0 < 0) y0 = 0;
+        int y1 = (int)y + r; if (y1 > (int)h - 1) y1 = (int)h - 1;
+        for (uint32_t x = 0; x < w; x++) {
+            int x0 = (int)x - r; if (x0 < 0) x0 = 0;
+            int x1 = (int)x + r; if (x1 > (int)w - 1) x1 = (int)w - 1;
+
+            uint64_t a = (uint64_t)y0 * iw + (uint64_t)x0;
+            uint64_t b = (uint64_t)y0 * iw + (uint64_t)x1 + 1;
+            uint64_t c = ((uint64_t)y1 + 1) * iw + (uint64_t)x0;
+            uint64_t d = ((uint64_t)y1 + 1) * iw + (uint64_t)x1 + 1;
+
+            /* Unsigned wraparound in the intermediate terms cancels: the
+             * true inclusion-exclusion result is non-negative and in range. */
+            double area = (double)(x1 - x0 + 1) * (double)(y1 - y0 + 1);
+            double s1   = (double)(sum[d] - sum[b] - sum[c] + sum[a]);
+            double s2   = (double)(sq[d]  - sq[b]  - sq[c]  + sq[a]);
+
+            double mean = s1 / area;
+            double var  = s2 / area - mean * mean;
+            if (var < 0.0) var = 0.0;          /* rounding only */
+            double t = mean * (1.0 + k * (sqrt(var) / R - 1.0));
+
+            out[(uint64_t)y * w + x] =
+                ((double)gray[(uint64_t)y * w + x] > t) ? 255 : 0;
+        }
+    }
+
+    free(gray); free(sum); free(sq);
+
+    res.ok.width    = w;
+    res.ok.height   = h;
+    res.ok.channels = 1;
+    res.ok.data     = out;
+    res.ok.data_len = n;
+    return res;
+}
+
+/* -------------------------------------------------------------------------
+ * image_convolve — arbitrary odd-sized kernel
+ *
+ * A general primitive rather than another fixed filter: image_blur and
+ * image_sharpen are each one hard-coded 3x3 kernel, and every further one a
+ * caller wants (Gaussian at a chosen sigma, unsharp mask, Sobel, Laplacian,
+ * a motion-deblur estimate) would otherwise be a new C function.  The cost of
+ * the general version is the same loop with the kernel read from memory.
+ * ------------------------------------------------------------------------- */
+
+#define IMG_KERNEL_MAX 63
+
+ImgResult image_convolve(TkImgBuf buf, const double *kernel, uint32_t ksize,
+                         double divisor, double offset)
+{
+    ImgResult res;
+    memset(&res, 0, sizeof(res));
+
+    if (!buf.data || buf.width == 0 || buf.height == 0) {
+        res.is_err = 1; res.err_msg = "image_convolve: empty image"; return res;
+    }
+    if (!kernel) {
+        res.is_err = 1; res.err_msg = "image_convolve: null kernel"; return res;
+    }
+    if (ksize == 0 || (ksize & 1u) == 0) {
+        res.is_err = 1;
+        res.err_msg = "image_convolve: kernel size must be odd (3, 5, 7, ...)";
+        return res;
+    }
+    if (ksize > IMG_KERNEL_MAX) {
+        res.is_err = 1;
+        res.err_msg = "image_convolve: kernel size must be at most 63";
+        return res;
+    }
+    if (!img_finite(divisor) || !img_finite(offset)) {
+        res.is_err = 1;
+        res.err_msg = "image_convolve: divisor and offset must be finite";
+        return res;
+    }
+
+    uint8_t  ch     = buf.channels ? buf.channels : 1;
+    uint32_t w      = buf.width, h = buf.height;
+    uint64_t need   = (uint64_t)w * h * ch;
+    if (buf.data_len < need) {
+        res.is_err = 1;
+        res.err_msg = "image_convolve: pixel buffer shorter than "
+                      "width*height*channels";
+        return res;
+    }
+
+    uint32_t kn = ksize * ksize;
+    double   ksum = 0.0;
+    for (uint32_t i = 0; i < kn; i++) {
+        if (!img_finite(kernel[i])) {
+            res.is_err = 1;
+            res.err_msg = "image_convolve: kernel contains a non-finite value";
+            return res;
+        }
+        ksum += kernel[i];
+    }
+    /* divisor == 0 means "normalise by the kernel sum".  An edge-detection
+     * kernel sums to zero, so that case is left unscaled instead of dividing
+     * by zero. */
+    if (divisor == 0.0) divisor = (ksum == 0.0) ? 1.0 : ksum;
+
+    uint8_t *out = (uint8_t *)malloc((size_t)need);
+    if (!out) {
+        res.is_err = 1; res.err_msg = "image_convolve: out of memory"; return res;
+    }
+
+    int      r      = (int)(ksize / 2);
+    uint64_t stride = (uint64_t)w * ch;
+
+    for (uint32_t y = 0; y < h; y++) {
+        for (uint32_t x = 0; x < w; x++) {
+            for (uint8_t c = 0; c < ch; c++) {
+                double acc = 0.0;
+                for (int ky = -r; ky <= r; ky++) {
+                    int sy = (int)y + ky;
+                    if (sy < 0) sy = 0;
+                    if (sy >= (int)h) sy = (int)h - 1;
+                    for (int kx = -r; kx <= r; kx++) {
+                        int sx = (int)x + kx;
+                        if (sx < 0) sx = 0;
+                        if (sx >= (int)w) sx = (int)w - 1;
+                        acc += kernel[(uint32_t)(ky + r) * ksize + (uint32_t)(kx + r)]
+                             * (double)buf.data[(uint64_t)sy * stride
+                                                + (uint64_t)sx * ch + c];
+                    }
+                }
+                out[(uint64_t)y * stride + (uint64_t)x * ch + c] =
+                    clamp_u8(acc / divisor + offset);
+            }
+        }
+    }
+
+    res.ok.width    = w;
+    res.ok.height   = h;
+    res.ok.channels = ch;
+    res.ok.data     = out;
+    res.ok.data_len = need;
+    return res;
+}
+
+/* =========================================================================
+ * TIFF decode, including multi-page (Story 135.5)
+ *
+ * WHY A DECODER IN THIS FILE RATHER THAN A VENDORED LIBRARY.
+ * ADR-0015 makes the toolchain C99-only, and libtiff is a large dependency
+ * with its own build system for a format whose baseline is small.  The
+ * subset a document pipeline actually meets — an IFD chain, four
+ * compressions, four photometric interpretations — is the code below, and it
+ * reuses the DEFLATE inflater this file already carries for PNG.  If a
+ * consumer later needs the parts that are genuinely large (CCITT G4, JPEG in
+ * TIFF), that is the point to reconsider, and ADR-0015 names the two routes.
+ *
+ * WHAT IS SUPPORTED
+ *   byte order      II and MM
+ *   pages           the full IFD chain, addressed by 0-based index
+ *   compression     1 (none), 5 (LZW), 8 / 32946 (Deflate), 32773 (PackBits)
+ *   samples         1, 4, 8 and 16 bits; 16-bit is reduced to its high byte
+ *   photometric     0 WhiteIsZero, 1 BlackIsZero, 2 RGB, 3 Palette
+ *   predictor       1 (none) and 2 (horizontal differencing, 8-bit)
+ *
+ * WHAT IS REFUSED, BY NAME
+ *   CCITT G3/G4 (2, 3, 4), JPEG (6, 7), tiled layouts, PlanarConfiguration 2
+ *   and BigTIFF.  Each returns a message saying which, because "decode
+ *   failed" on a fax-derived scan is the least useful answer available.
+ * ========================================================================= */
+
+typedef struct {
+    const uint8_t *p;
+    uint64_t       len;
+    int            be;     /* 1 = MM (big-endian), 0 = II (little-endian) */
+} TiffFile;
+
+typedef struct {
+    uint16_t tag;
+    uint16_t type;
+    uint32_t count;
+    uint64_t voff;         /* absolute offset of the first value */
+} TiffEntry;
+
+static uint16_t tf_u16(const TiffFile *t, uint64_t off)
+{
+    if (off + 2 > t->len) return 0;
+    const uint8_t *q = t->p + off;
+    return t->be ? (uint16_t)(((uint16_t)q[0] << 8) | q[1])
+                 : (uint16_t)(((uint16_t)q[1] << 8) | q[0]);
+}
+
+static uint32_t tf_u32(const TiffFile *t, uint64_t off)
+{
+    if (off + 4 > t->len) return 0;
+    const uint8_t *q = t->p + off;
+    return t->be
+        ? ((uint32_t)q[0] << 24) | ((uint32_t)q[1] << 16) | ((uint32_t)q[2] << 8) | q[3]
+        : ((uint32_t)q[3] << 24) | ((uint32_t)q[2] << 16) | ((uint32_t)q[1] << 8) | q[0];
+}
+
+/* 0 = not a baseline TIFF; 2 = BigTIFF (magic 43), which is a different
+ * container and is reported separately; 1 = usable. */
+static int tiff_open(const uint8_t *bytes, uint64_t len, TiffFile *t)
+{
+    if (!bytes || len < 8) return 0;
+    if      (bytes[0] == 'I' && bytes[1] == 'I') t->be = 0;
+    else if (bytes[0] == 'M' && bytes[1] == 'M') t->be = 1;
+    else return 0;
+    t->p = bytes; t->len = len;
+    uint16_t magic = tf_u16(t, 2);
+    if (magic == 43) return 2;
+    return (magic == 42) ? 1 : 0;
+}
+
+#define TIFF_MAX_PAGES 65536u
+
+/* Walk the IFD chain.  Returns the page count; if `want` >= 0 and `found` is
+ * non-NULL, *found receives the offset of that 0-based page (0 if absent). */
+static uint32_t tiff_walk(const TiffFile *t, int64_t want, uint64_t *found)
+{
+    if (found) *found = 0;
+    uint64_t off = tf_u32(t, 4);
+    uint32_t n   = 0;
+
+    while (off != 0 && off + 2 <= t->len && n < TIFF_MAX_PAGES) {
+        uint16_t nent         = tf_u16(t, off);
+        uint64_t next_off_pos = off + 2 + (uint64_t)nent * 12;
+        if (next_off_pos + 4 > t->len) break;     /* truncated IFD */
+
+        if (want >= 0 && (int64_t)n == want && found) *found = off;
+        n++;
+
+        uint64_t next = tf_u32(t, next_off_pos);
+        if (next == off) break;                   /* self-link: malformed */
+        off = next;
+    }
+    return n;
+}
+
+static uint32_t tiff_type_size(uint16_t ty)
+{
+    switch (ty) {
+        case 1: case 2: case 6: case 7:   return 1;  /* BYTE ASCII SBYTE UNDEF */
+        case 3: case 8:                   return 2;  /* SHORT SSHORT */
+        case 4: case 9: case 11:          return 4;  /* LONG SLONG FLOAT */
+        case 5: case 10: case 12:         return 8;  /* RATIONAL SRAT DOUBLE */
+        default:                          return 0;
+    }
+}
+
+static int tiff_find(const TiffFile *t, uint64_t ifd, uint16_t tag, TiffEntry *e)
+{
+    uint16_t nent = tf_u16(t, ifd);
+    for (uint16_t i = 0; i < nent; i++) {
+        uint64_t off = ifd + 2 + (uint64_t)i * 12;
+        if (off + 12 > t->len) return 0;
+        if (tf_u16(t, off) != tag) continue;
+
+        e->tag   = tag;
+        e->type  = tf_u16(t, off + 2);
+        e->count = tf_u32(t, off + 4);
+        uint32_t esz   = tiff_type_size(e->type);
+        uint64_t total = (uint64_t)esz * e->count;
+        /* Values of four bytes or fewer live in the entry itself. */
+        e->voff = (total <= 4) ? (off + 8) : (uint64_t)tf_u32(t, off + 8);
+        return 1;
+    }
+    return 0;
+}
+
+static uint32_t tiff_val(const TiffFile *t, const TiffEntry *e, uint32_t i)
+{
+    if (i >= e->count) return 0;
+    uint32_t esz = tiff_type_size(e->type);
+    uint64_t off = e->voff + (uint64_t)i * esz;
+    switch (esz) {
+        case 1:  return (off < t->len) ? t->p[off] : 0;
+        case 2:  return tf_u16(t, off);
+        case 4:  return tf_u32(t, off);
+        default: return 0;
+    }
+}
+
+static uint32_t tiff_tag1(const TiffFile *t, uint64_t ifd, uint16_t tag,
+                          uint32_t dflt)
+{
+    TiffEntry e;
+    if (!tiff_find(t, ifd, tag, &e) || e.count == 0) return dflt;
+    return tiff_val(t, &e, 0);
+}
+
+/* ---- decompressors ------------------------------------------------------ */
+
+/* PackBits (TIFF spec section 9): a run header n in [0,127] introduces n+1
+ * literal bytes; n in [-1,-127] repeats the next byte 1-n times; -128 is a
+ * no-op.  Short output is zero-filled rather than rejected — a trailing
+ * partial strip is common and recoverable. */
+static int tiff_packbits(const uint8_t *src, uint64_t srclen,
+                         uint8_t *dst, uint64_t dstlen)
+{
+    uint64_t si = 0, di = 0;
+    while (si < srclen && di < dstlen) {
+        int8_t n = (int8_t)src[si++];
+        if (n >= 0) {
+            uint64_t cnt = (uint64_t)n + 1;
+            if (si + cnt > srclen)  cnt = srclen - si;
+            if (di + cnt > dstlen)  cnt = dstlen - di;
+            memcpy(dst + di, src + si, (size_t)cnt);
+            si += cnt; di += cnt;
+        } else if (n != -128) {
+            if (si >= srclen) break;
+            uint64_t cnt = (uint64_t)(1 - (int)n);
+            uint8_t  v   = src[si++];
+            if (di + cnt > dstlen) cnt = dstlen - di;
+            memset(dst + di, v, (size_t)cnt);
+            di += cnt;
+        }
+    }
+    if (di == 0) return -1;
+    if (di < dstlen) memset(dst + di, 0, (size_t)(dstlen - di));
+    return 0;
+}
+
+/* TIFF LZW (spec section 13).  MSB-first codes of 9..12 bits, 256 = Clear,
+ * 257 = EndOfInformation, dictionary entries from 258.  TIFF's "early change"
+ * quirk is the one difference from GIF LZW: the code width grows one code
+ * sooner, when the next free code is 2^width - 1. */
+#define TIFF_LZW_CLEAR 256u
+#define TIFF_LZW_EOI   257u
+#define TIFF_LZW_MAX   4096u
+
+static int tiff_lzw(const uint8_t *src, uint64_t srclen,
+                    uint8_t *dst, uint64_t dstlen)
+{
+    uint16_t *prefix = (uint16_t *)malloc(TIFF_LZW_MAX * sizeof(uint16_t));
+    uint8_t  *suffix = (uint8_t  *)malloc(TIFF_LZW_MAX);
+    uint8_t  *stack  = (uint8_t  *)malloc(TIFF_LZW_MAX + 1);
+    if (!prefix || !suffix || !stack) {
+        free(prefix); free(suffix); free(stack);
+        return -1;
+    }
+
+    uint64_t di = 0, bitpos = 0, nbits = srclen * 8;
+    uint32_t next = 258, width = 9;
+    int64_t  prev = -1;
+
+    while (bitpos + width <= nbits) {
+        uint32_t code = 0;
+        for (uint32_t b = 0; b < width; b++) {
+            uint64_t bp = bitpos + b;
+            code = (code << 1) | ((src[bp >> 3] >> (7 - (bp & 7))) & 1u);
+        }
+        bitpos += width;
+
+        if (code == TIFF_LZW_EOI) break;
+        if (code == TIFF_LZW_CLEAR) {
+            next = 258; width = 9; prev = -1;
+            continue;
+        }
+
+        /* Build the code's string on `stack`, last character first. */
+        uint32_t sp = 0;
+        if (code < next) {
+            uint32_t c = code;
+            while (c >= 258) {
+                if (sp >= TIFF_LZW_MAX) goto lzw_fail;
+                stack[sp++] = suffix[c];
+                c = prefix[c];
+            }
+            stack[sp++] = (uint8_t)c;
+        } else if (code == next && prev >= 0) {
+            /* The KwKwK case: the code being read is the one this step is
+             * about to define, so its string is string(prev) + first(prev).
+             * Reversed, that is first(prev) followed by reverse(string(prev)),
+             * so slot 0 is reserved and filled once the walk finds it. */
+            sp = 1;
+            uint32_t c = (uint32_t)prev;
+            while (c >= 258) {
+                if (sp >= TIFF_LZW_MAX) goto lzw_fail;
+                stack[sp++] = suffix[c];
+                c = prefix[c];
+            }
+            stack[sp++] = (uint8_t)c;
+            stack[0] = stack[sp - 1];
+        } else {
+            goto lzw_fail;                 /* a code beyond the dictionary */
+        }
+
+        if (prev >= 0 && next < TIFF_LZW_MAX) {
+            prefix[next] = (uint16_t)prev;
+            suffix[next] = stack[sp - 1];  /* first character of this string */
+            next++;
+            if (next + 1 >= (1u << width) && width < 12) width++;  /* early change */
+        }
+
+        while (sp > 0) {
+            uint8_t v = stack[--sp];
+            if (di < dstlen) dst[di++] = v;
+        }
+        prev = (int64_t)code;
+    }
+
+    free(prefix); free(suffix); free(stack);
+    if (di == 0) return -1;
+    if (di < dstlen) memset(dst + di, 0, (size_t)(dstlen - di));
+    return 0;
+
+lzw_fail:
+    free(prefix); free(suffix); free(stack);
+    return -1;
+}
+
+/* Compression 8 and 32946 are both zlib streams (RFC 1950): a two-byte
+ * header in front of the RFC 1951 payload this file already inflates. */
+static int tiff_inflate(const uint8_t *src, uint64_t srclen,
+                        uint8_t *dst, uint64_t dstlen)
+{
+    if (srclen < 3) return -1;
+    OutBuf ob;
+    if (inflate_all(src + 2, srclen - 2, &ob) != 0 || !ob.buf) {
+        free(ob.buf);
+        return -1;
+    }
+    uint64_t n = ob.len < dstlen ? ob.len : dstlen;
+    memcpy(dst, ob.buf, (size_t)n);
+    if (n < dstlen) memset(dst + n, 0, (size_t)(dstlen - n));
+    free(ob.buf);
+    return 0;
+}
+
+/* ---- sample extraction -------------------------------------------------- */
+
+static uint32_t tiff_sample(const uint8_t *row, uint64_t row_len,
+                            uint64_t idx, uint32_t bps, int be)
+{
+    switch (bps) {
+        case 1:
+            return (idx >> 3) < row_len
+                 ? ((row[idx >> 3] >> (7 - (idx & 7))) & 1u) : 0;
+        case 4:
+            if ((idx >> 1) >= row_len) return 0;
+            return (idx & 1) ? (row[idx >> 1] & 0x0Fu) : (uint32_t)(row[idx >> 1] >> 4);
+        case 8:
+            return idx < row_len ? row[idx] : 0;
+        case 16:
+            /* Reduce to 8 bits by taking the high byte, which is the first
+             * byte in MM order and the second in II order. */
+            if (idx * 2 + 1 >= row_len) return 0;
+            return be ? row[idx * 2] : row[idx * 2 + 1];
+        default:
+            return 0;
+    }
+}
+
+static uint8_t tiff_scale8(uint32_t v, uint32_t bps)
+{
+    switch (bps) {
+        case 1:  return v ? 255 : 0;
+        case 4:  return (uint8_t)(v * 17);   /* 0..15 spread over 0..255 */
+        default: return (uint8_t)v;          /* 8, or the high byte of 16 */
+    }
+}
+
+/* ---- public entry points ------------------------------------------------ */
+
+int64_t image_tiff_pages(const uint8_t *bytes, uint64_t len)
+{
+    TiffFile t;
+    if (tiff_open(bytes, len, &t) != 1) return -1;
+    return (int64_t)tiff_walk(&t, -1, NULL);
+}
+
+ImgResult image_tiff_decode(const uint8_t *bytes, uint64_t len, uint32_t page)
+{
+    ImgResult res;
+    memset(&res, 0, sizeof(res));
+    res.is_err = 1;
+
+    TiffFile t;
+    int opened = tiff_open(bytes, len, &t);
+    if (opened == 2) {
+        res.err_msg = "image_tiff_decode: BigTIFF (magic 43) is not supported";
+        return res;
+    }
+    if (opened != 1) {
+        res.err_msg = "image_tiff_decode: not a TIFF file (expected II*\\0 or MM\\0*)";
+        return res;
+    }
+
+    uint64_t ifd = 0;
+    uint32_t npages = tiff_walk(&t, (int64_t)page, &ifd);
+    if (ifd == 0) {
+        res.err_msg = npages == 0
+            ? "image_tiff_decode: no readable IFD in this TIFF"
+            : "image_tiff_decode: page index is past the last page";
+        return res;
+    }
+
+    if (tiff_tag1(&t, ifd, 322, 0) != 0 || tiff_tag1(&t, ifd, 324, 0) != 0) {
+        res.err_msg = "image_tiff_decode: tiled TIFF is not supported "
+                      "(only strip layouts)";
+        return res;
+    }
+
+    uint32_t w      = tiff_tag1(&t, ifd, 256, 0);
+    uint32_t h      = tiff_tag1(&t, ifd, 257, 0);
+    uint32_t bps    = tiff_tag1(&t, ifd, 258, 1);
+    uint32_t comp   = tiff_tag1(&t, ifd, 259, 1);
+    uint32_t photo  = tiff_tag1(&t, ifd, 262, 1);
+    uint32_t spp    = tiff_tag1(&t, ifd, 277, 1);
+    uint32_t rps    = tiff_tag1(&t, ifd, 278, 0);
+    uint32_t planar = tiff_tag1(&t, ifd, 284, 1);
+    uint32_t pred   = tiff_tag1(&t, ifd, 317, 1);
+
+    if (w == 0 || h == 0) {
+        res.err_msg = "image_tiff_decode: page has zero width or height";
+        return res;
+    }
+    if ((uint64_t)w * h > (1ull << 28)) {
+        res.err_msg = "image_tiff_decode: page exceeds the 256-megapixel cap";
+        return res;
+    }
+    if (comp == 2 || comp == 3 || comp == 4) {
+        res.err_msg = "image_tiff_decode: CCITT G3/G4 fax compression is not "
+                      "supported; re-encode as LZW, Deflate or PackBits";
+        return res;
+    }
+    if (comp == 6 || comp == 7) {
+        res.err_msg = "image_tiff_decode: JPEG-in-TIFF is not supported";
+        return res;
+    }
+    if (comp != 1 && comp != 5 && comp != 8 && comp != 32946 && comp != 32773) {
+        res.err_msg = "image_tiff_decode: unrecognised compression "
+                      "(supported: 1 none, 5 LZW, 8/32946 Deflate, "
+                      "32773 PackBits)";
+        return res;
+    }
+    if (planar != 1) {
+        res.err_msg = "image_tiff_decode: PlanarConfiguration 2 (separate "
+                      "sample planes) is not supported";
+        return res;
+    }
+    if (bps != 1 && bps != 4 && bps != 8 && bps != 16) {
+        res.err_msg = "image_tiff_decode: only 1, 4, 8 and 16 bits per sample "
+                      "are supported";
+        return res;
+    }
+    if (spp == 0 || spp > 4) {
+        res.err_msg = "image_tiff_decode: SamplesPerPixel must be 1..4";
+        return res;
+    }
+    if (photo > 3) {
+        res.err_msg = "image_tiff_decode: only WhiteIsZero, BlackIsZero, RGB "
+                      "and Palette photometrics are supported";
+        return res;
+    }
+    if (pred == 2 && bps != 8) {
+        res.err_msg = "image_tiff_decode: Predictor 2 is supported only for "
+                      "8-bit samples";
+        return res;
+    }
+    if (pred != 1 && pred != 2) {
+        res.err_msg = "image_tiff_decode: unsupported Predictor "
+                      "(1 and 2 only)";
+        return res;
+    }
+
+    /* Every sample must be the same width; a mixed-depth file would silently
+     * decode as garbage otherwise. */
+    TiffEntry bpse;
+    if (tiff_find(&t, ifd, 258, &bpse)) {
+        for (uint32_t i = 1; i < bpse.count && i < spp; i++) {
+            if (tiff_val(&t, &bpse, i) != bps) {
+                res.err_msg = "image_tiff_decode: mixed bits-per-sample is "
+                              "not supported";
+                return res;
+            }
+        }
+    }
+
+    TiffEntry cmap;
+    int have_cmap = tiff_find(&t, ifd, 320, &cmap);
+    if (photo == 3) {
+        if (bps > 8) {
+            res.err_msg = "image_tiff_decode: palette images must be 8 bits "
+                          "per sample or fewer";
+            return res;
+        }
+        if (!have_cmap || cmap.count < 3u * (1u << bps)) {
+            res.err_msg = "image_tiff_decode: palette image with no usable "
+                          "ColorMap";
+            return res;
+        }
+    }
+
+    uint8_t outch = (photo == 3) ? 3
+                  : (photo == 2) ? (uint8_t)(spp >= 4 ? 4 : 3)
+                  : 1;
+    if (photo == 2 && spp < 3) {
+        res.err_msg = "image_tiff_decode: RGB photometric with fewer than 3 "
+                      "samples per pixel";
+        return res;
+    }
+
+    TiffEntry so, sbc;
+    if (!tiff_find(&t, ifd, 273, &so) || !tiff_find(&t, ifd, 279, &sbc)) {
+        res.err_msg = "image_tiff_decode: page has no StripOffsets / "
+                      "StripByteCounts";
+        return res;
+    }
+
+    if (rps == 0 || rps > h) rps = h;
+    uint32_t nstrips = (h + rps - 1) / rps;
+    if (so.count < nstrips || sbc.count < nstrips) {
+        res.err_msg = "image_tiff_decode: strip table is shorter than the "
+                      "image";
+        return res;
+    }
+
+    uint64_t src_row = ((uint64_t)w * spp * bps + 7) / 8;
+    uint64_t out_len = (uint64_t)w * h * outch;
+
+    uint8_t *out    = (uint8_t *)malloc((size_t)out_len);
+    uint8_t *rowbuf = (uint8_t *)malloc((size_t)(src_row * rps));
+    if (!out || !rowbuf) {
+        free(out); free(rowbuf);
+        res.err_msg = "image_tiff_decode: out of memory";
+        return res;
+    }
+    memset(out, 0, (size_t)out_len);
+
+    uint32_t ncol = (photo == 3) ? (1u << bps) : 0;
+
+    for (uint32_t s = 0; s < nstrips; s++) {
+        uint32_t rows = rps;
+        if ((uint64_t)s * rps + rows > h) rows = (uint32_t)(h - (uint64_t)s * rps);
+        uint64_t want = src_row * rows;
+
+        uint64_t soff = tiff_val(&t, &so,  s);
+        uint64_t scnt = tiff_val(&t, &sbc, s);
+        if (soff >= len || soff + scnt > len) {
+            free(out); free(rowbuf);
+            res.err_msg = "image_tiff_decode: strip runs past the end of the "
+                          "buffer";
+            return res;
+        }
+
+        const uint8_t *sp = t.p + soff;
+        int rc = 0;
+        memset(rowbuf, 0, (size_t)want);
+        if (comp == 1) {
+            uint64_t n = scnt < want ? scnt : want;
+            memcpy(rowbuf, sp, (size_t)n);
+        } else if (comp == 32773) {
+            rc = tiff_packbits(sp, scnt, rowbuf, want);
+        } else if (comp == 5) {
+            rc = tiff_lzw(sp, scnt, rowbuf, want);
+        } else {
+            rc = tiff_inflate(sp, scnt, rowbuf, want);
+        }
+        if (rc != 0) {
+            free(out); free(rowbuf);
+            res.err_msg = "image_tiff_decode: strip failed to decompress";
+            return res;
+        }
+
+        /* Predictor 2: each sample is stored as a difference from the sample
+         * one pixel to its left, so undo it before anything reads pixels. */
+        if (pred == 2) {
+            for (uint32_t ry = 0; ry < rows; ry++) {
+                uint8_t *rw = rowbuf + (uint64_t)ry * src_row;
+                for (uint64_t i = spp; i < src_row; i++)
+                    rw[i] = (uint8_t)(rw[i] + rw[i - spp]);
+            }
+        }
+
+        for (uint32_t ry = 0; ry < rows; ry++) {
+            uint32_t gy = (uint32_t)((uint64_t)s * rps + ry);
+            const uint8_t *rw = rowbuf + (uint64_t)ry * src_row;
+            uint8_t *dr = out + (uint64_t)gy * w * outch;
+
+            for (uint32_t x = 0; x < w; x++) {
+                uint64_t base = (uint64_t)x * spp;
+                if (photo == 3) {
+                    uint32_t idx = tiff_sample(rw, src_row, base, bps, t.be);
+                    if (idx >= ncol) idx = ncol - 1;
+                    /* ColorMap is 3 * 2^bps SHORTs: all reds, then all
+                     * greens, then all blues, each 0..65535. */
+                    dr[(uint64_t)x * 3 + 0] =
+                        (uint8_t)(tiff_val(&t, &cmap, idx) >> 8);
+                    dr[(uint64_t)x * 3 + 1] =
+                        (uint8_t)(tiff_val(&t, &cmap, ncol + idx) >> 8);
+                    dr[(uint64_t)x * 3 + 2] =
+                        (uint8_t)(tiff_val(&t, &cmap, 2 * ncol + idx) >> 8);
+                } else if (photo == 2) {
+                    for (uint8_t c = 0; c < outch; c++)
+                        dr[(uint64_t)x * outch + c] =
+                            tiff_scale8(tiff_sample(rw, src_row, base + c,
+                                                    bps, t.be), bps);
+                } else {
+                    uint8_t v = tiff_scale8(
+                        tiff_sample(rw, src_row, base, bps, t.be), bps);
+                    /* WhiteIsZero stores 0 for white, so invert to the
+                     * 0 = black convention the rest of this module uses. */
+                    dr[x] = (photo == 0) ? (uint8_t)(255 - v) : v;
+                }
+            }
+        }
+    }
+
+    free(rowbuf);
+
+    res.is_err      = 0;
+    res.err_msg     = NULL;
+    res.ok.width    = w;
+    res.ok.height   = h;
+    res.ok.channels = outch;
+    res.ok.data     = out;
+    res.ok.data_len = out_len;
+    return res;
 }

@@ -40,8 +40,8 @@ An opaque client handle created by `http.client`. Holds connection pool state an
 | Field | Type | Meaning |
 |-------|------|---------|
 | baseurl | $str | Base URL prepended to all request paths |
-| pool_size | u64 | Maximum number of pooled connections |
-| timeout_ms | u64 | Per-request timeout in milliseconds |
+| poolsize | u64 | Maximum number of pooled connections |
+| timeoutms | u64 | Per-request timeout in milliseconds |
 
 ### $httpresp
 

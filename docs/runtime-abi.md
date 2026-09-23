@@ -194,6 +194,19 @@ explicitly stores `0` into the slot (114.55) — the clear happens *after*
 the return expression is evaluated, so a call inside that expression
 cannot leave a stale error behind.
 
+**The slot belongs to one call, so a binding captures it (135.16).** The
+slot is live global state: by the time a consumer looks, any later
+fallible call has overwritten it. So when a fallible call is bound —
+`let r = file.size(p)` — the compiler spills the slot into a local of
+that binding's own, taken immediately after the call returns, and a
+later `mt r` decides on **that** copy. Without the capture the two
+spellings of one call disagree: `mt file.size(p)` read the slot and
+`let r = file.size(p); mt r` fell back to the value sentinel, so an
+empty file's size of `0` was reported as a failure — silently, for
+`str.toint`/`tofloat`, `toml.i64`/`bool`, `file.size` and every user
+`T!$err` whose ok value can be `0`. Re-assigning the binding re-points
+it at the new call's slot; a shadowing re-bind gets its own.
+
 ### 7.3 Error record layout
 
 The payload is a heap record. It must not be an `alloca` — it may

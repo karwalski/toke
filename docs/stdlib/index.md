@@ -46,6 +46,9 @@ API reference for every module in the toke standard library. Each page documents
 - [std.crypto_ext](/docs/reference/stdlib/crypto_ext/) -- extended cryptography
 - [std.encrypt](/docs/reference/stdlib/encrypt/) -- encryption utilities
 - [std.auth](/docs/reference/stdlib/auth/) -- authentication
+- [std.tls](/docs/reference/stdlib/tls/) -- standalone TLS 1.3 connections
+- [std.keychain](/docs/reference/stdlib/keychain/) -- OS credential store
+- [std.securemem](/docs/reference/stdlib/securemem/) -- mlock'd, wiped, TTL-expiring secret buffers
 
 ## UI and Visualisation
 
@@ -65,7 +68,17 @@ API reference for every module in the toke standard library. Each page documents
 - [std.llm](/docs/reference/stdlib/llm/) -- LLM integration
 - [std.llmtool](/docs/reference/stdlib/llmtool/) -- LLM tool definitions
 - [std.ml](/docs/reference/stdlib/ml/) -- machine learning
+- [std.vecstore](/docs/reference/stdlib/vecstore/) -- embedded vector store with cosine search
 
 ## Internationalisation
 
 - [std.i18n](/docs/reference/stdlib/i18n/) -- internationalisation support
+
+## Not usable today
+
+These modules are published but are not reachable from a toke program. Each page opens with a status banner saying exactly what links, what does not, and what restoring it costs. They are listed here so the gap is visible from the index rather than discovered at the linker.
+
+- [std.infer](/docs/reference/stdlib/infer/) -- local llama.cpp inference. Façade: complete C core, all-stub glue.
+- [std.mlx](/docs/reference/stdlib/mlx/) -- Apple Silicon MLX bridge. Façade: two functions have no wrapper and fail at link.
+- [std.mdns](/docs/reference/stdlib/mdns/) -- Bonjour/DNS-SD discovery. Façade: two functions have no wrapper; `browse` has lost its callback parameter.
+- [std.webview](/docs/reference/stdlib/webview/) -- native browser window. Withdrawn (136.2); cannot be imported at all.

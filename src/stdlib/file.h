@@ -67,6 +67,55 @@ typedef struct { FileBytes ok;  int is_err; FileErr err; } BytesFileResult;
 BytesFileResult  file_readbytes(const char *path);
 BoolFileResult   file_writebytes(const char *path, const uint8_t *data, uint64_t len);
 
+/*
+ * 135.12 — the bounded read, and the two limits that used to be one.
+ *
+ * TK_FILE_MAX_BYTES above bounds TWO different things at once, and that is
+ * why Epic 135 hit a ceiling: it bounds how big a FILE may be, and it bounds
+ * how much of a file is MATERIALISED.  For file_readbytes those are the same
+ * number, because it materialises the whole file.  They are not the same
+ * thing, and only the second one costs memory.
+ *
+ * file_readrange() separates them.  It materialises a WINDOW, so the window
+ * is capped -- TK_FILE_MAX_WINDOW, the same 64 MiB and the same 8x
+ * arithmetic -- and the file's own size is NOT checked at all.  A 2 GiB PDF
+ * is therefore readable, in windows, while the peak cost of any one call is
+ * exactly what it was before.
+ *
+ * Deliberately the same number rather than a new one: the per-call memory
+ * cost is what the cap is for, and that has not changed.  They are spelled
+ * separately because they now answer different questions, and a future change
+ * to one must not silently move the other.
+ */
+#define TK_FILE_MAX_WINDOW TK_FILE_MAX_BYTES
+
+/*
+ * file_readrange -- `len` bytes from `offset`, without reading the rest.
+ *
+ * A SHORT RESULT IS NOT AN ERROR.  If the range runs past the end of the
+ * file, the bytes that exist are returned and the length says how many; an
+ * offset at or beyond the end returns a real zero-length result marked ok,
+ * never a failure.  That is 135.10's rule -- "empty is not an error" --
+ * applied to the range case, and it is what lets a caller walk a file to its
+ * end.  A short read from INSIDE the file (it shrank under us) is still an io
+ * failure, because that one is a wrong answer rather than an end.
+ *
+ * file_size -- the file's size, by fstat on an opened descriptor.
+ *
+ * It is not a convenience.  A bounded read is useless for the two formats
+ * this epic is about without it: a PDF's xref table and a zip's
+ * end-of-central-directory record both live at the END of the file, so a
+ * parser's FIRST read is of the trailer, and it cannot ask for the trailer
+ * without knowing where the trailer is.
+ *
+ * NOTE for the wrappers: a size of 0 is a legitimate answer and collides with
+ * the value-sentinel used for failure everywhere else in this module, so
+ * file.size MUST be discriminated on tk_current_error (runtime-abi.md 7.2:
+ * "the zero filler is not the discriminant").  See file_glue.c.
+ */
+BytesFileResult  file_readrange(const char *path, int64_t offset, int64_t len);
+U64FileResult    file_size(const char *path);
+
 /* Why the last byte call failed, and which case it was.  The $err arm of a
  * compiled T!E binds nothing (127.97), so without these six distinct failures
  * would be one indistinguishable 0.  "" / "ok" after a call that succeeded. */
@@ -94,7 +143,9 @@ int              file_is_file(const char *path);
 /* 28.2.2 — copy, move, and metadata */
 BoolFileResult   file_copy(const char *src, const char *dst);
 BoolFileResult   file_move(const char *src, const char *dst);
-U64FileResult    file_size(const char *path);
+/* file_size is declared once, with the byte calls above: 135.12 replaced its
+ * 28.2-era stat(2) body in place, and a second declaration here is how a
+ * second implementation starts. */
 U64FileResult    file_mtime(const char *path);
 
 /* 28.2.3 — path utilities */

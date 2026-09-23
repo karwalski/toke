@@ -174,7 +174,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -1489,6 +1489,36 @@ static int is_num_parse_wrapper(const char *name) {
 }
 
 /*
+ * is_file_errbox_wrapper — 135.12.
+ *
+ * std.file's byte calls signal failure with a value sentinel: 0 means it
+ * failed, and file.lasterrkind() says which failure it was.  file.readrange
+ * and file.size do not, because for file.size the sentinel is WRONG, not
+ * merely weak: an empty file's size IS 0, so `mt file.size(p)` on an empty
+ * file would take the $err arm every time.  That is runtime-abi.md §7.2 in
+ * one line — "the zero filler is not the discriminant" — and the C005 family
+ * of defect: a zero standing in for a failure, which a reader cannot tell
+ * from a legitimate zero.
+ *
+ * So those two wrappers build a real error box (tk_err_box, 127.109) and
+ * clear the slot on success (127.123), and this predicate is what makes the
+ * slot AUTHORITATIVE rather than decorative: without it the compiler still
+ * tests the returned value, and file.size of an empty file is still reported
+ * as a failure.  C029 asserts exactly that, in both directions.
+ *
+ * The rest of the module is deliberately NOT listed here.  Migrating it is
+ * 127.102b — a breaking API change the owner scheduled to land in ONE release
+ * across three modules — and adding file.read or file.readbytes to this list
+ * without also retiring the accessors would ship a third of that break out of
+ * band.
+ */
+static int is_file_errbox_wrapper(const char *name) {
+    if (!name) return 0;
+    return !strcmp(name, "tk_file_readrange_w") ||
+           !strcmp(name, "tk_file_size_w");
+}
+
+/*
  * json_array_end — Given a pointer to the opening '[' of a JSON array,
  * return a pointer to its MATCHING ']', honoring nested brackets and
  * brackets that appear inside JSON string values.
@@ -2592,6 +2622,208 @@ static const StructInfo *resolve_base_struct(Ctx *c, const Node *base) {
  * Type coercion between i1/i64/double/ptr is handled inline where needed
  * (e.g. zext i1 to i64 for arithmetic, ptrtoint for comparisons).
  */
+/*
+ * 135.16 — the fallible-call classification, and the registry that carries it
+ * across a `let`.
+ *
+ * THE DEFECT.  An ok/err `mt` decides which arm to take in one of three ways:
+ * the error channel (@tk_current_error — 114.53/54/55), the void status word
+ * (0 = ok, -1 = err — 127.95), or the value-vs-0/null sentinel.  Which one it
+ * uses was decided by inspecting the SCRUTINEE, and only when the scrutinee
+ * was itself a NODE_CALL_EXPR.  So the two spellings of the same call did not
+ * agree:
+ *
+ *     mt file.size(p) { $ok:n … }          -> ok, 0        (error channel)
+ *     let r = file.size(p); mt r { … }     -> err          (value sentinel)
+ *
+ * and the let-bound spelling is the one users write.  It is a SILENT wrong
+ * answer for every fallible function whose ok value can be 0 or "" or nil:
+ * str.toint/tofloat, toml.i64/bool, file.size, and every user-defined
+ * `T!$err`.  The same gate also bound the $err arm's typed payload (127.97),
+ * so the let-bound form additionally handed `e.field` a nil (RT005) or, when
+ * the field name is ambiguous, a false E4034 on a correct program.
+ *
+ * THE FIX, AND WHY IT SNAPSHOTS.  The classification is propagated through the
+ * BINDING rather than re-derived at the `mt`: a fallible initialiser records
+ * its convention and its error type against the local.  But the convention
+ * alone is not enough, because @tk_current_error is live global state — by the
+ * time the `mt` runs, any later fallible call has overwritten it:
+ *
+ *     let a = s.toint("0");    (* ok  *)
+ *     let b = s.toint("zz");   (* err — clobbers the channel *)
+ *     mt a { … }               (* must still be ok *)
+ *
+ * so the binding also spills the channel into a per-binding i64 local, taken
+ * immediately after the call returns, and the `mt` reads THAT.  Reading the
+ * global at the `mt` would have traded one wrong answer for another.
+ */
+static void classify_fallible_call(Ctx *c, const Node *call,
+                                   int *out_uce, int *out_zok,
+                                   const char **out_err_type)
+{
+    *out_uce = 0;
+    *out_zok = 0;
+    *out_err_type = NULL;
+    if (!call || call->kind != NODE_CALL_EXPR || call->child_count < 1) return;
+    const Node *sc = call->children[0];
+    if (!sc) return;
+
+    /* (a) which discriminant.  Verbatim the gate that has always run for a
+     *     direct-call scrutinee; kept in one place so the two spellings
+     *     cannot drift apart again. */
+    if (sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
+        char pal[128], pme[128];
+        tok_cp(c->src, sc->children[0], pal, sizeof pal);
+        tok_cp(c->src, sc->children[1], pme, sizeof pme);
+        const char *prv = resolve_stdlib_call(c, pal, pme);
+        if (is_void_err_union_wrapper(prv)) *out_zok = 1;            /* 127.95 */
+        if (is_num_parse_wrapper(prv)) *out_uce = 1;                 /* 114.53/54 */
+        else if (is_file_errbox_wrapper(prv)) *out_uce = 1;          /* 135.12 */
+        else if (!prv) {                                             /* 114.55 */
+            const FnSig *ucs = lookup_fn(c, pme);
+            if (!ucs || !ucs->err_type_name[0]) {
+                for (int ii = 0; ii < c->import_count; ii++) {
+                    if (strcmp(c->imports[ii].alias, pal)) continue;
+                    char mg[256]; int mp = 0; const char *mod = c->imports[ii].module;
+                    for (int k = 0; mod[k] && mp < (int)sizeof(mg) - 2; k++)
+                        mg[mp++] = (mod[k] == '.') ? '_' : mod[k];
+                    if (mp < (int)sizeof(mg) - 1) mg[mp++] = '_';
+                    mg[mp] = '\0';
+                    strncat(mg, pme, sizeof(mg) - strlen(mg) - 1);
+                    const FnSig *cs2 = lookup_fn(c, mg);
+                    if (cs2) ucs = cs2;
+                    break;
+                }
+            }
+            if (ucs && ucs->err_type_name[0]) *out_uce = 1;
+        }
+    } else if (sc->kind == NODE_IDENT) {                             /* 114.55 */
+        char cn[256]; tok_cp(c->src, sc, cn, sizeof cn);
+        if (strcmp(cn, "main")) {
+            mangle_fn_name(c, cn, sizeof cn);
+            const FnSig *ucs = lookup_fn(c, cn);
+            if (ucs && ucs->err_type_name[0]) *out_uce = 1;
+        }
+    }
+
+    /* (b) the typed error payload the $err arm binds (114.41 / 127.97).  This
+     *     resolves the callee independently of (a) — it does not consult
+     *     resolve_stdlib_call — and that difference is deliberate and
+     *     pre-existing; it is preserved here rather than unified, because
+     *     unifying it would change what the DIRECT spelling does. */
+    {
+        char cn[256] = ""; const FnSig *cs = NULL;
+        if (sc->kind == NODE_IDENT) {
+            tok_cp(c->src, sc, cn, sizeof cn);
+            if (!strcmp(cn, "main")) strcpy(cn, "tk_main");
+            mangle_fn_name(c, cn, sizeof cn);
+            cs = lookup_fn(c, cn);
+        } else if (sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
+            char al[128], mth[128];
+            tok_cp(c->src, sc->children[0], al, sizeof al);
+            tok_cp(c->src, sc->children[1], mth, sizeof mth);
+            cs = lookup_fn(c, mth); /* same-module fallback */
+            if (!cs || !cs->err_type_name[0]) {
+                for (int ii = 0; ii < c->import_count; ii++) {
+                    if (strcmp(c->imports[ii].alias, al)) continue;
+                    char mangled[256]; int mp = 0;
+                    const char *mod = c->imports[ii].module;
+                    for (int k = 0; mod[k] && mp < (int)sizeof(mangled) - 2; k++)
+                        mangled[mp++] = (mod[k] == '.') ? '_' : mod[k];
+                    if (mp < (int)sizeof(mangled) - 1) mangled[mp++] = '_';
+                    mangled[mp] = '\0';
+                    strncat(mangled, mth, sizeof(mangled) - strlen(mangled) - 1);
+                    const FnSig *cs2 = lookup_fn(c, mangled);
+                    if (cs2) cs = cs2;
+                    break;
+                }
+            }
+        }
+        if (cs && cs->err_type_name[0] && strcmp(cs->err_type_name, "none")) {
+            const StructInfo *esi = lookup_struct(c, cs->err_type_name);
+            if (esi) *out_err_type = cs->err_type_name;
+        }
+    }
+}
+
+/* The registry is keyed on the UNIQUIFIED llvm name, so a shadowing re-bind
+ * (`let r = …` twice, or an inner block's `r`) cannot inherit the outer
+ * binding's error channel. */
+static int fallible_local_index(Ctx *c, const char *lname)
+{
+    if (!lname) return -1;
+    for (int i = c->fall_count - 1; i >= 0; i--)
+        if (!strcmp(c->fall_name[i], lname)) return i;
+    return -1;
+}
+
+/* Active = this binding currently holds a fallible value.  An entry that has
+ * been forgotten keeps its name and its snapshot slot — the slot's `alloca`
+ * is already in the IR text and a second one under the same name would be a
+ * redefinition — but discriminates on the value sentinel again, which is the
+ * pre-135.16 behaviour and therefore never a regression. */
+static int fallible_local_active(Ctx *c, int i)
+{
+    return i >= 0 && (c->fall_uce[i] || c->fall_zok[i] || c->fall_errty[i][0]);
+}
+
+static void fallible_local_forget(Ctx *c, const char *lname)
+{
+    int i = fallible_local_index(c, lname);
+    if (i < 0) return;
+    c->fall_uce[i] = 0;
+    c->fall_zok[i] = 0;
+    c->fall_errty[i][0] = '\0';
+}
+
+/* Record `lname` as fallible and spill the channel.  `errv` is the temporary
+ * already holding the load of @tk_current_error taken right after the call;
+ * -1 means there is nothing to spill (the void status-word convention reads
+ * the bound value itself and carries no payload). */
+static void fallible_local_record(Ctx *c, const char *lname, int uce, int zok,
+                                  const char *err_type, int errv)
+{
+    if (!lname) return;
+    int i = fallible_local_index(c, lname);
+    if (i < 0) {
+        if (c->fall_count >= TKC_MAX_FALLIBLE_LOCALS) return; /* sentinel fallback */
+        i = c->fall_count++;
+        strncpy(c->fall_name[i], lname, NAME_BUF - 1); c->fall_name[i][NAME_BUF - 1] = '\0';
+        c->fall_slot[i][0] = '\0';
+    }
+    c->fall_uce[i] = (unsigned char)(uce != 0);
+    c->fall_zok[i] = (unsigned char)(zok != 0);
+    c->fall_errty[i][0] = '\0';
+    if (err_type) {
+        strncpy(c->fall_errty[i], err_type, NAME_BUF - 1);
+        c->fall_errty[i][NAME_BUF - 1] = '\0';
+    }
+    if (errv >= 0) {
+        if (!c->fall_slot[i][0]) {
+            snprintf(c->fall_slot[i], NAME_BUF, "%s.tkerr", lname);
+            fprintf(c->out, "  %%%s = alloca i64\n", c->fall_slot[i]);
+        }
+        fprintf(c->out, "  store i64 %%t%d, i64* %%%s ; 135.16 error channel at the binding\n",
+                errv, c->fall_slot[i]);
+    }
+    /* The slot NAME is never cleared once minted: its `alloca` is already in
+     * the IR text, and re-minting it would be a redefinition.  errv < 0 only
+     * ever reaches here with uce and err_type both clear, so the stale
+     * snapshot is unreachable rather than merely unread.
+     */
+}
+
+/* One place both the `let` and the assignment path go through: classify the
+ * RHS, spill the channel if there is one, and update the registry.  Called
+ * AFTER the value has been stored, and with `errv` captured BEFORE anything
+ * else could have run. */
+static void fallible_local_update(Ctx *c, const char *lname, int uce, int zok,
+                                  const char *ety, int errv)
+{
+    if (uce || zok || ety) fallible_local_record(c, lname, uce, zok, ety, errv);
+    else                   fallible_local_forget(c, lname);
+}
+
 static int emit_expr(Ctx *c, const Node *n)
 {
     char tb[256]; int t, t2, t3;
@@ -5374,6 +5606,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 tok_cp(c->src, sc->children[1], pme, sizeof pme);
                 const char *prv = resolve_stdlib_call(c, pal, pme);
                 if (is_num_parse_wrapper(prv)) prop_cur_err = 1;
+                else if (is_file_errbox_wrapper(prv)) prop_cur_err = 1;  /* 135.12 */
                 else if (!prv) {
                     const FnSig *ucs = lookup_fn(c, pme);
                     if (!ucs || !ucs->err_type_name[0]) {
@@ -5856,40 +6089,32 @@ static int emit_expr(Ctx *c, const Node *n)
          * literal 0, so the $err arm was taken unconditionally — on every
          * sse.emit and every ws.send that has ever shipped. */
         int zero_is_ok = 0;
-        if (n->children[0]->kind == NODE_CALL_EXPR && n->children[0]->child_count >= 1) {
-            const Node *sc = n->children[0]->children[0];
-            if (sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
-                char pal[128], pme[128];
-                tok_cp(c->src, sc->children[0], pal, sizeof pal);
-                tok_cp(c->src, sc->children[1], pme, sizeof pme);
-                const char *prv = resolve_stdlib_call(c, pal, pme);
-                if (is_void_err_union_wrapper(prv)) zero_is_ok = 1;          /* 127.95 */
-                if (is_num_parse_wrapper(prv)) use_current_error = 1;       /* 114.53/54 */
-                else if (!prv) {                                            /* 114.55: qualified user call */
-                    const FnSig *ucs = lookup_fn(c, pme);
-                    if (!ucs || !ucs->err_type_name[0]) {
-                        for (int ii = 0; ii < c->import_count; ii++) {
-                            if (strcmp(c->imports[ii].alias, pal)) continue;
-                            char mg[256]; int mp = 0; const char *mod = c->imports[ii].module;
-                            for (int k = 0; mod[k] && mp < (int)sizeof(mg) - 2; k++)
-                                mg[mp++] = (mod[k] == '.') ? '_' : mod[k];
-                            if (mp < (int)sizeof(mg) - 1) mg[mp++] = '_';
-                            mg[mp] = '\0';
-                            strncat(mg, pme, sizeof(mg) - strlen(mg) - 1);
-                            const FnSig *cs2 = lookup_fn(c, mg);
-                            if (cs2) ucs = cs2;
-                            break;
-                        }
-                    }
-                    if (ucs && ucs->err_type_name[0]) use_current_error = 1;
-                }
-            } else if (sc->kind == NODE_IDENT) {                            /* 114.55: bare same-module user call */
-                char cn[256]; tok_cp(c->src, sc, cn, sizeof cn);
-                if (strcmp(cn, "main")) {
-                    mangle_fn_name(c, cn, sizeof cn);
-                    const FnSig *ucs = lookup_fn(c, cn);
-                    if (ucs && ucs->err_type_name[0]) use_current_error = 1;
-                }
+        /* 135.16: NULL = read the live @tk_current_error (the direct-call
+         * spelling, where the call that set it is the instruction before);
+         * otherwise the name of the i64 local the BINDING spilled it into. */
+        const char *err_src_slot = NULL;
+        /* 135.16: the error type whose payload the $err arm binds, when the
+         * scrutinee is a let-bound fallible value.  The direct-call spelling
+         * derives this below, from the call. */
+        const char *bound_err_type = NULL;
+        const char *call_err_payload_type = NULL;
+        if (n->children[0]->kind == NODE_CALL_EXPR) {
+            classify_fallible_call(c, n->children[0], &use_current_error,
+                                   &zero_is_ok, &call_err_payload_type);
+        } else if (n->children[0]->kind == NODE_IDENT) {
+            /* 135.16: `let r = f(); mt r`.  The convention and the channel
+             * both travelled with the binding, so this decides the arm on the
+             * same evidence `mt f()` does. */
+            char sn[NAME_BUF]; tok_cp(c->src, n->children[0], sn, sizeof sn);
+            int fi = fallible_local_index(c, get_llvm_name(c, sn));
+            if (fallible_local_active(c, fi)) {
+                use_current_error = c->fall_uce[fi];
+                zero_is_ok = c->fall_zok[fi];
+                if (c->fall_errty[fi][0]) bound_err_type = c->fall_errty[fi];
+                if (c->fall_slot[fi][0]) err_src_slot = c->fall_slot[fi];
+                /* No spilled channel means nothing to discriminate on but the
+                 * value; only the status-word convention can stand alone. */
+                if (!err_src_slot) { use_current_error = 0; bound_err_type = NULL; }
             }
         }
 
@@ -5945,7 +6170,11 @@ static int emit_expr(Ctx *c, const Node *n)
         }
         else if (use_current_error) {
             int ev = next_tmp(c);
-            fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error\n", ev);
+            if (err_src_slot)
+                fprintf(c->out, "  %%t%d = load i64, i64* %%%s ; 135.16 the channel this binding captured\n",
+                        ev, err_src_slot);
+            else
+                fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error\n", ev);
             fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 0 ; 114.53/54/55 ok = no error\n", cond, ev);
         }
         else if (!strcmp(scr_ty, "i8*"))
@@ -5972,53 +6201,14 @@ static int emit_expr(Ctx *c, const Node *n)
          * type is a discriminated sum type, the $err arm binds its variable to
          * the typed payload box stashed in tk_current_error (and tags it with
          * the sum type so a nested `mt e {$variants}` dispatches correctly). */
-        const char *eu_err_type = NULL;
-        if (n->children[0]->kind == NODE_CALL_EXPR && n->children[0]->child_count >= 1) {
-            const Node *callee = n->children[0]->children[0];
-            char cn[256] = ""; const FnSig *cs = NULL;
-            if (callee->kind == NODE_IDENT) {
-                tok_cp(c->src, callee, cn, sizeof cn);
-                if (!strcmp(cn, "main")) strcpy(cn, "tk_main");
-                mangle_fn_name(c, cn, sizeof cn);
-                cs = lookup_fn(c, cn);
-            } else if (callee->kind == NODE_FIELD_EXPR && callee->child_count >= 2) {
-                char al[128], mth[128];
-                tok_cp(c->src, callee->children[0], al, sizeof al);
-                tok_cp(c->src, callee->children[1], mth, sizeof mth);
-                cs = lookup_fn(c, mth); /* same-module fallback */
-                if (!cs || !cs->err_type_name[0]) {
-                    /* qualified cross-module call: alias -> module -> mangled name */
-                    for (int ii = 0; ii < c->import_count; ii++) {
-                        if (strcmp(c->imports[ii].alias, al)) continue;
-                        char mangled[256]; int mp = 0;
-                        const char *mod = c->imports[ii].module;
-                        for (int k = 0; mod[k] && mp < (int)sizeof(mangled) - 2; k++)
-                            mangled[mp++] = (mod[k] == '.') ? '_' : mod[k];
-                        if (mp < (int)sizeof(mangled) - 1) mangled[mp++] = '_';
-                        mangled[mp] = '\0';
-                        strncat(mangled, mth, sizeof(mangled) - strlen(mangled) - 1);
-                        const FnSig *cs2 = lookup_fn(c, mangled);
-                        if (cs2) cs = cs2;
-                        break;
-                    }
-                }
-            }
-            /* 127.97: bind the boxed payload for EVERY declared error type,
-             * not only discriminated sums.  The return path (NODE_RETURN_STMT)
-             * already stashes a malloc'd box for any `<$E{...}` whose name
-             * matches the function's declared error type — record-style types
-             * included — but this gate only read it back for `is_sum`, so a
-             * plain `t=$myerr{msg:$str}` bound nil and `e.msg` trapped RT005
-             * (127.78).  That is why six distinct zip rejections, ten file
-             * error kinds and nine csv kinds each needed an out-of-band
-             * lasterr accessor: the payload was written and then dropped.
-             * $none is excluded — it declares no fields and its slot value is
-             * the literal flag 1 (124.0a), not a pointer. */
-            if (cs && cs->err_type_name[0] && strcmp(cs->err_type_name, "none")) {
-                const StructInfo *esi = lookup_struct(c, cs->err_type_name);
-                if (esi) eu_err_type = cs->err_type_name;
-            }
-        }
+        /* 114.41/127.97: the typed error payload the $err arm binds.  The
+         * resolution lives in classify_fallible_call() — one implementation
+         * for both spellings, which is the whole point of 135.16: this gate
+         * and the discriminant above disagreed for five stories because each
+         * had its own copy of "which function is being called". */
+        const char *eu_err_type = bound_err_type;   /* 135.16: let-bound */
+        if (!eu_err_type && n->children[0]->kind == NODE_CALL_EXPR)
+            eu_err_type = call_err_payload_type;
 
         int arm_idx = 0;
         for (int i = 1; i < n->child_count; i++) {
@@ -6075,7 +6265,11 @@ static int emit_expr(Ctx *c, const Node *n)
                      * nil trap into a wild dereference, so normalise it to nil
                      * here: the payload is genuinely absent. */
                     int ev = next_tmp(c);
-                    fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error\n", ev);
+                    if (err_src_slot)
+                        fprintf(c->out, "  %%t%d = load i64, i64* %%%s ; 135.16 payload from the captured channel\n",
+                                ev, err_src_slot);
+                    else
+                        fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error\n", ev);
                     int isflag = next_tmp(c);
                     fprintf(c->out, "  %%t%d = icmp eq i64 %%t%d, 1 ; 127.97 payload-less error flag\n", isflag, ev);
                     int boxed = next_tmp(c);
@@ -7840,6 +8034,18 @@ static void emit_stmt(Ctx *c, const Node *n)
              * 127.86: a stated type standing in for an established one. */
             const char *init_ty = expr_llvm_type(c, init_node);
             int v = emit_expr(c, init_node);
+            /* 135.16: the error channel belongs to THIS call, so read it
+             * before anything else runs.  Taken after emit_expr and before
+             * coerce_value because coerce_value can emit a call
+             * (str conversions), and a call is exactly what overwrites it. */
+            int fall_uce = 0, fall_zok = 0, fall_errv = -1;
+            const char *fall_ety = NULL;
+            classify_fallible_call(c, init_node, &fall_uce, &fall_zok, &fall_ety);
+            if (fall_uce || fall_ety) {
+                fall_errv = next_tmp(c);
+                fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error ; 135.16 capture\n",
+                        fall_errv);
+            }
             v = coerce_value(c, v, init_ty, vty);
             /* 126.7: remember the raw source name (pre-uniquification) — when a
              * name is re-bound (shadowed), the registry stores the new binding
@@ -7917,6 +8123,10 @@ static void emit_stmt(Ctx *c, const Node *n)
             set_local_type(c, tb, vty);
             fprintf(c->out, "  %%%s = alloca %s\n", tb, vty);
             fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", vty, v, vty, tb);
+            /* 135.16: carry the fallible call's discrimination convention and
+             * its captured error channel onto the binding, so `let r=f();
+             * mt r` decides the arm on the same evidence as `mt f()`. */
+            fallible_local_update(c, tb, fall_uce, fall_zok, fall_ety, fall_errv);
         } else {
             /* 127.71: the initialiser-less form binds an i64, so a shadowed
              * name's stale pointer tag must go, exactly as the branch above
@@ -8008,10 +8218,37 @@ static void emit_stmt(Ctx *c, const Node *n)
             const char *ln = get_llvm_name(c, tb);
             const char *lty = get_local_type(c, ln);
             int v = emit_expr(c, n->children[1]);
+            /* 135.16: a re-bind replaces the binding's error channel.  Without
+             * this the assignment would leave the LET's snapshot in place and
+             * a later `mt` would answer for the wrong call — a regression this
+             * story must not introduce while fixing the let.
+             *
+             * It UPDATES an existing record and never creates one.  Creating
+             * one here would mint the spill slot inside whatever branch the
+             * assignment sits in, and 137.6 hoists every alloca to the entry
+             * block — so a `mt` reached with that branch not taken would read
+             * an undef i64 and answer at random.  Refusing to create leaves
+             * such a binding on the value sentinel, which is exactly what it
+             * did before this story: never an improvement, never a
+             * regression.  A slot only ever comes from a `let`, where the
+             * store is the instruction after it and dominates every use. */
+            int a_idx = fallible_local_index(c, ln);
+            int a_uce = 0, a_zok = 0, a_errv = -1;
+            const char *a_ety = NULL;
+            if (a_idx >= 0) {
+                classify_fallible_call(c, n->children[1], &a_uce, &a_zok, &a_ety);
+                if (a_uce || a_ety) {
+                    a_errv = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = load i64, i64* @tk_current_error ; 135.16 capture\n",
+                            a_errv);
+                }
+            }
             const char *ety2 = expr_llvm_type(c, n->children[1]);
             /* Coerce value to match the variable's declared type (Story 57.13.2) */
             v = coerce_value(c, v, ety2, lty);
             fprintf(c->out, "  store %s %%t%d, %s* %%%s\n", lty, v, lty, ln);
+            if (a_idx >= 0)
+                fallible_local_update(c, ln, a_uce, a_zok, a_ety, a_errv);
         }
         break;
     case NODE_RETURN_STMT:
@@ -8569,6 +8806,7 @@ static void emit_toplevel(Ctx *c, const Node *n)
             break;
         }
         c->ptr_count = 0; /* reset ptr-local tracking for each function */
+        c->fall_count = 0;  /* 135.16: let-bound fallible values are per-function */
         c->local_count = 0; /* reset local type tracking */
         c->alias_count = 0; c->name_scope = 0; /* reset variable scoping */
         c->cur_fn_ret = ret;
@@ -9222,7 +9460,7 @@ int stdlib_glue_ignores_only_arg(const char *sym) {
  * so `<expr` returns from the lifted function. Mirrors NODE_FUNC_DECL + the
  * globals-init ctor (both reset per-function state and write to c->out). */
 static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
-    c->ptr_count = 0; c->local_count = 0; c->alias_count = 0;
+    c->ptr_count = 0; c->local_count = 0; c->alias_count = 0; c->fall_count = 0;
     c->name_scope = 0; c->term = 0;
     const char *ret; char fpty[256];
     closure_sig(c, clos, fpty, sizeof fpty, &ret); (void)fpty;
@@ -9457,6 +9695,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
                  ctx.module_prefix[0] ? ctx.module_prefix : "tk_");
         ctx.cur_fn_ret = "void"; ctx.cur_fn_err[0] = '\0';
         ctx.ptr_count = 0; ctx.local_count = 0; ctx.alias_count = 0; ctx.name_scope = 0;
+        ctx.fall_count = 0;
         ctx.tmp = 0; ctx.term = 0;
         fprintf(body_file, "\ndefine internal void @%s() nounwind {\nbb.entry:\n", ctor_name);
         for (int gi = 0; gi < ctx.global_count; gi++) {
