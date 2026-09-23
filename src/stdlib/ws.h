@@ -88,12 +88,54 @@ void           ws_encode_result_free(WsEncodeResult *r);
  * Built on top of the low-level frame encode/decode functions above.
  * ----------------------------------------------------------------------- */
 
-/* Connection handle — wraps a TCP socket with WebSocket state. */
+/*
+ * Connection handle — wraps a TCP socket with WebSocket state.
+ *
+ * 127.112: `magic` is the FIRST field and it is load-bearing, not decoration.
+ * A toke `$wsconn` value is an opaque handle: the i64 that crosses the ABI is
+ * the address of one of these structs.  Nothing in the type system stopped a
+ * program handing `ws.send` the address of an ordinary toke struct instead —
+ * and `docs/stdlib/ws.md` used to *document* exactly that, as the `$err` arm
+ * of `ws.connect`:
+ *
+ *     $err:e $wsconn{id:0;ready:false}
+ *
+ * That literal is a zeroed block.  The old layout was fd@0 / mask@4 /
+ * closed@8, so the cast landed inside the block, never faulted, and read
+ * fd == 0, mask == 0, closed == 0.  `closed == 0` means OPEN, so ws_send
+ * wrote a real RFC 6455 text frame to file descriptor 0 — the caller's
+ * terminal on an interactive run — and returned success.  ws_close then
+ * close()d fd 0.
+ *
+ * With `magic` at offset 0 a zeroed block (and any other toke struct that is
+ * not a connection) fails ws_conn_valid() and every entry point returns an
+ * honest error instead of writing to a descriptor it does not own.
+ */
+#define WS_CONN_MAGIC 0x57534b43u   /* 'WSKC' */
+
 typedef struct {
+    uint32_t magic;     /* WS_CONN_MAGIC — see ws_conn_valid()     */
     int      fd;        /* underlying TCP socket descriptor        */
     int      mask;      /* 1 = client (mask outgoing frames)       */
     int      closed;    /* 1 = close frame sent or received        */
 } WsConn;
+
+/*
+ * Return 1 if `conn` is a WsConn this module handed out, 0 otherwise.
+ *
+ * Two independent checks, because either alone leaves a hole:
+ *   - magic == WS_CONN_MAGIC rejects a foreign struct;
+ *   - an open fd must be a socket, which rejects the residual case where a
+ *     foreign block happens to carry the magic and names a tty, a pipe or a
+ *     regular file.  A closed handle (fd < 0) is still a real handle and is
+ *     accepted, so ws_close() and ws_conn_free() stay idempotent.
+ *
+ * Reading `conn->magic` still dereferences the caller's pointer, which is the
+ * same trust the whole i64-ABI glue layer places in its arguments; what this
+ * rules out is the case that actually shipped — a *valid readable* toke
+ * struct being driven as a live connection.
+ */
+int            ws_conn_valid(const WsConn *conn);
 
 /* Result of ws_connect. */
 typedef struct {
