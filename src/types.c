@@ -120,13 +120,80 @@ static Type *mk_type(Arena *arena, TypeKind k) {
 /*
  * type_name — return a human-readable name for a Type.
  *
- * Used exclusively in diagnostic messages.  For primitives and built-in
- * composite kinds the name is a fixed string ("i64", "array", etc.).
- * For TY_STRUCT, returns the user-defined struct name if available.
- * For TY_ERROR_TYPE, recurses into the wrapped success type.
+ * Used exclusively in diagnostic messages.  For primitives the name is a
+ * fixed string ("i64", "str", ...).  For TY_STRUCT, returns the user-defined
+ * struct name if available.  For TY_ERROR_TYPE, recurses into the wrapped
+ * success type.
+ *
+ * 127.54 — composites are rendered STRUCTURALLY (`@(i64)`, `@(str:i64)`)
+ * rather than as the bare kind ("array", "map", "func").  The bare spelling
+ * is what produced `type mismatch: expected 'array', got 'array'`: a
+ * diagnostic that reports a mismatch between a type and itself, which gives
+ * an automated repair loop nothing to act on (AGENTS.md 2 — a wrong error
+ * message is worse than a missing feature).  Any two types that compare
+ * unequal must now print differently, unless they differ only in a detail
+ * the Type carries no record of.
+ *
+ * Composite renderings are built into a small rotating pool of static
+ * buffers, because callers routinely hold several results live at once
+ * (emit_mm passes type_name(exp) and type_name(got) to one snprintf and then
+ * to one diag_emit — four simultaneously).  Primitives and struct names
+ * return their own storage and consume no slot.
  *
  * Returns "unknown" for NULL or unrecognised kinds.
  */
+#define TN_SLOTS 8
+#define TN_LEN   192
+
+static const char *type_name(const Type *t);
+
+/* Render `t` into `buf`.  `depth` bounds recursion: a malformed or cyclic
+ * Type must not take the compiler down inside its own error path. */
+static void type_name_into(const Type *t, char *buf, size_t n, int depth) {
+    if (n == 0) return;
+    if (!t || depth > 6) { snprintf(buf, n, "%s", t ? "..." : "unknown"); return; }
+    switch (t->kind) {
+    case TY_ARRAY: {
+        char e[TN_LEN];
+        if (t->elem && t->elem->kind != TY_UNKNOWN) {
+            type_name_into(t->elem, e, sizeof e, depth + 1);
+            snprintf(buf, n, "@(%s)", e);
+        } else {
+            /* An empty or untyped array literal: the element type is genuinely
+             * not established, and saying so is the distinguishing detail. */
+            snprintf(buf, n, "@(?)");
+        }
+        return;
+    }
+    case TY_MAP: {
+        char k[TN_LEN], v[TN_LEN];
+        const Type *vt = (t->field_count > 0 && t->field_types) ? t->field_types[0] : NULL;
+        if (t->elem && t->elem->kind != TY_UNKNOWN)
+            type_name_into(t->elem, k, sizeof k, depth + 1);
+        else snprintf(k, sizeof k, "?");
+        if (vt && vt->kind != TY_UNKNOWN)
+            type_name_into(vt, v, sizeof v, depth + 1);
+        else snprintf(v, sizeof v, "?");
+        snprintf(buf, n, "@(%s:%s)", k, v);
+        return;
+    }
+    case TY_FUNC: {
+        /* TY_FUNC carries its return type in ->elem and nothing else, so the
+         * parameter list cannot be rendered.  Naming the return type still
+         * separates two func types the checker treats as different. */
+        if (t->elem && t->elem->kind != TY_UNKNOWN) {
+            char r[TN_LEN];
+            type_name_into(t->elem, r, sizeof r, depth + 1);
+            snprintf(buf, n, "func->%s", r);
+        } else snprintf(buf, n, "func");
+        return;
+    }
+    default:
+        snprintf(buf, n, "%s", type_name(t));
+        return;
+    }
+}
+
 static const char *type_name(const Type *t) {
     if (!t) return "unknown";
     switch (t->kind) {
@@ -135,9 +202,17 @@ static const char *type_name(const Type *t) {
     case TY_I8: return "i8";     case TY_I16: return "i16";   case TY_I32: return "i32";
     case TY_U8: return "u8";     case TY_U16: return "u16";   case TY_U32: return "u32";
     case TY_F32: return "f32";
-    case TY_STRUCT: return t->name?t->name:"struct"; case TY_ARRAY: return "array";
-    case TY_FUNC: return "func"; case TY_ERROR_TYPE: return t->elem?type_name(t->elem):"error";
-    case TY_PTR: return "ptr"; case TY_MAP: return "map";
+    case TY_STRUCT: return t->name?t->name:"struct";
+    case TY_ERROR_TYPE: return t->elem?type_name(t->elem):"error";
+    case TY_PTR: return "ptr";
+    case TY_ARRAY: case TY_MAP: case TY_FUNC: {
+        static char pool[TN_SLOTS][TN_LEN];
+        static int  slot;
+        char *buf = pool[slot];
+        slot = (slot + 1) % TN_SLOTS;
+        type_name_into(t, buf, TN_LEN, 0);
+        return buf;
+    }
     default: return "unknown";
     }
 }
@@ -1547,6 +1622,61 @@ static void tki_arity_error(const Node *call, const char *what,
               (const char *)NULL);
 }
 
+/*
+ * tki_closest_member — 127.122.  The "did you mean" candidate for an E4027,
+ * or NULL when there is not a good enough one.
+ *
+ * E4027 already names the module, the member and the symbol the call would
+ * have linked against, but its `fix` was the generic "check the module's
+ * interface for the correct member name" even when the answer was one
+ * transposition away: `str.concta` is edit distance 2 from `concat`, a real
+ * export of an imported module, and the compiler had the export list in hand.
+ *
+ * The guards are the point, because AGENTS.md §3.1 forbids a `fix` that is a
+ * guess and 131.78 is the case study of an "obvious" suggestion that was
+ * wrong:
+ *
+ *   - the candidate must be a REAL recorded export of THIS alias, never a
+ *     name invented from the spelling;
+ *   - distance ≤ 2, so a member sharing a prefix with an unrelated one does
+ *     not attract a suggestion;
+ *   - the best candidate must be STRICTLY better than every other. Two
+ *     exports at the same distance means the compiler does not know which was
+ *     meant, and the generic text is then the honest answer;
+ *   - names shorter than 4 characters are not scored: at length 3 a distance
+ *     of 2 relates almost any pair.
+ *
+ * When no candidate clears all four, the caller keeps the generic text. The
+ * suggestion is phrased as a question, matching E3011's existing
+ * "did you mean 'io'?", and it reuses that diagnostic's edit-distance routine
+ * (tk_edit_distance, names.c) rather than adding a second one.
+ */
+/* Defined below, next to the receiver-call checks that share it. 127.135 asks
+ * it the same question they do: is this identifier a VALUE at all? */
+static int recv_ident_is_bound(Ctx *cx, const char *name);
+
+static const char *tki_closest_member(const NameEnv *env, const char *alias,
+                                      const char *member) {
+    if (!env || !alias || !member) return NULL;
+    size_t mlen = strlen(member);
+    if (mlen < 4) return NULL;
+    const char *best = NULL;
+    int best_d = 3;          /* accept 1 and 2; 3 is already too loose */
+    int best_ties = 0;
+    for (int i = 0; i < env->ifunc_count; i++) {
+        const ImportedFunc *f = &env->ifuncs[i];
+        if (!f->alias || !f->member) continue;
+        if (strcmp(f->alias, alias) != 0) continue;
+        if (strlen(f->member) < 4) continue;
+        if (strcmp(f->member, member) == 0) continue;   /* not a miss */
+        int d = tk_edit_distance(member, f->member);
+        if (d < best_d) { best_d = d; best = f->member; best_ties = 1; }
+        else if (d == best_d && best) best_ties++;
+    }
+    if (!best || best_ties != 1) return NULL;
+    return best;
+}
+
 static void check_tki_call(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1) return;
     const Node *callee = call->children[0];
@@ -1564,11 +1694,123 @@ static void check_tki_call(Ctx *cx, const Node *call) {
      * identifier is not the module, so the call is not ours to judge. */
     char mbuf[256];
     const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
-    if (!mpath) return;
+    /* 127.135 — `str.concat("a";"b")` with `std.str` NOT imported.
+     *
+     * The filed row said name resolution gives nothing for an undefined
+     * alias. That is false, and the correction inverts the row: `zzz.frob(x)`
+     * already gets a correct E3011 with a `did you mean`. The failing set is
+     * the PRIMITIVE TYPE KEYWORDS — str, i64, u64, f64, bool, void — because
+     * names.c seeds them as DECL_PREDEFINED, and 137.4's "a type name is not
+     * a value" check keys on DECL_TYPE, so the keywords are exempt from it.
+     *
+     * The trigger is whether the member is REAL, which is why this was never
+     * noticed:
+     *
+     *   str.nosuchmember(...)  -> clean E9004 "module 'std.str' is not
+     *                             imported", right position, right fix;
+     *   str.concat(...)        -> --check exit 0, --lint exit 0, then clang
+     *                             fails with `use of undefined value '%str'`
+     *                             in a temp .ll file the author never saw.
+     *
+     * So the one case with no diagnostic is the common, correct-looking
+     * mistake: calling a REAL member of a module you forgot to import. A real
+     * member is recognised by codegen's receiver dispatch and lowered against
+     * the keyword as if it were a value; a fake one falls through to the
+     * unresolved-call path, which does have a diagnostic.
+     *
+     * Worse on i64/f64/bool, where no std module of that name exists: a fake
+     * member there emits an undefined C symbol NAMED AFTER IT at any arity,
+     * so a colliding symbol in the runtime would link and be called with the
+     * wrong signature.
+     *
+     * This is E4033's documented meaning — "a type name used where a value is
+     * required" — reaching a spelling it did not cover, not a new rule. It is
+     * checked here rather than in resolve_ident because only here is the AST
+     * shape known to be `keyword.member(...)`: a bare `str` in a cast or an
+     * annotation is a legitimate type position and must stay untouched. */
+    if (!mpath) {
+        static const char *prim[] = { "str", "i64", "u64", "f64", "bool",
+                                      "void", NULL };
+        /* A keyword can legitimately be a VALUE: names.c seeds the primitives
+         * into module scope, and scope_insert REPLACES a seed rather than
+         * rejecting it, so `let str="x"; str.len()` is a legal program with a
+         * str receiver. Firing on that would reject correct code to diagnose
+         * incorrect code, which is the 136.36 mistake (AGENTS.md §2). Ask the
+         * same question the receiver-call checks ask before saying anything. */
+        if (recv_ident_is_bound(cx, alias)) return;
+        for (int i = 0; prim[i]; i++) {
+            if (strcmp(alias, prim[i]) != 0) continue;
+            if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+            char msg[384];
+            /* Of the primitive keywords only `str` names a std module, so it
+             * is the only one where a missing import is a deterministic
+             * repair. For the others there is nothing to import and no
+             * deterministic fix, so the field stays absent (§3.1). */
+            if (strcmp(alias, "str") == 0) {
+                snprintf(msg, sizeof msg,
+                         "'str' here is the primitive type keyword, not a "
+                         "module alias: 'std.str' is not imported, so "
+                         "'str.%s(...)' is a member call on a type name",
+                         member);
+                diag_emit(DIAG_ERROR, E4033, call->start, call->line,
+                          call->col, msg,
+                          "expected", "an imported module alias or a value",
+                          "got", alias,
+                          "fix", "add i=str:std.str; to imports",
+                          (const char *)NULL);
+            } else {
+                snprintf(msg, sizeof msg,
+                         "'%s' is a type name, not a value: '%s.%s(...)' is a "
+                         "member call on a type, and no module is imported "
+                         "under that alias",
+                         alias, alias, member);
+                diag_emit(DIAG_ERROR, E4033, call->start, call->line,
+                          call->col, msg,
+                          "expected", "an imported module alias or a value",
+                          "got", alias,
+                          (const char *)NULL);
+            }
+            return;
+        }
+        return;
+    }
     {
         Decl *d = tc_lookup(cx->env->names->module_scope, alias,
                             (int)strlen(alias));
-        if (d && d->kind != DECL_IMPORT_ALIAS) return;
+        /* 136.63 — a colliding TYPE does not disqualify the alias.
+         *
+         * This guard exists so that a module-scope FUNCTION, CONST or binding
+         * named like the alias means the identifier is not the module, and
+         * the call is not ours to judge. A TYPE is different: toke has no
+         * value of a type's name (E4033 / C024 — "a type name used where a
+         * value is required"), so `alias.member(...)` in call position cannot
+         * be a reference to the type and must be the import.
+         *
+         * Treating a type as a shadow silently disabled the whole E4027
+         * member check for any module that exports a type named like its own
+         * alias — which is the most natural alias a user would pick. Nine std
+         * modules were swept and exactly one escaped: `i=canvas:std.canvas;`
+         * plus `canvas.nosuchmemberatall(c)` passed `--check` and died at the
+         * linker, while the identical program aliased `cv` got a correct
+         * E4027. std.canvas exports a type named `canvas`, and that was the
+         * entire reason. Same family as 127.62 / 127.77: a check that exists
+         * and is correct, bypassed by a path that reaches the linker.
+         *
+         * C035's link canary uses the alias `cv` deliberately and so does not
+         * depend on this hole.
+         *
+         * Stated as an allowlist of kinds that DO shadow, because the two
+         * spellings of "a type" are not adjacent: a type declared in this
+         * file is DECL_TYPE, while a type an IMPORT brought in is registered
+         * by seed_predefined as DECL_PREDEFINED (names.c, "Register type name
+         * as predefined so $typename is valid") — and the imported spelling
+         * is the one std.canvas produces. Both scope entries exist for
+         * `canvas`; scope insertion prepends, so the type is found before the
+         * alias and an exclusion list keyed on DECL_TYPE alone still missed
+         * it. Only a value can shadow a module alias. */
+        if (d && (d->kind == DECL_FUNC || d->kind == DECL_CONST ||
+                  d->kind == DECL_LET  || d->kind == DECL_MUT   ||
+                  d->kind == DECL_PARAM)) return;
     }
     int is_std = (strncmp(mpath, "std.", 4) == 0);
     int actual = call->child_count - 1;
@@ -1647,10 +1889,18 @@ static void check_tki_call(Ctx *cx, const Node *call) {
                  mpath, member, sym);
         /* diag.c records only "fix", "expected" and "got", so the member is
          * carried in "got" — that is the structured field a consumer greps. */
+        char fixbuf[256];
+        const char *fixtext = "check the module's interface for the correct "
+                              "member name";
+        const char *sugg = tki_closest_member(cx->env->names, alias, member);
+        if (sugg) {                                          /* 127.122 */
+            snprintf(fixbuf, sizeof fixbuf, "did you mean '%s.%s'?",
+                     alias, sugg);
+            fixtext = fixbuf;
+        }
         diag_emit(DIAG_ERROR, E4027, call->start, call->line, call->col, msg,
                   "got", member,
-                  "fix", "check the module's interface for the correct "
-                         "member name",
+                  "fix", fixtext,
                   (const char *)NULL);
         return;
     }
@@ -1666,10 +1916,18 @@ static void check_tki_call(Ctx *cx, const Node *call) {
         char msg[320];
         snprintf(msg, sizeof msg,
                  "module '%s' has no exported member '%s'", mpath, member);
+        char fixbuf[256];
+        const char *fixtext = "check the module's interface for the correct "
+                              "member name";
+        const char *sugg = tki_closest_member(cx->env->names, alias, member);
+        if (sugg) {                                          /* 127.122 */
+            snprintf(fixbuf, sizeof fixbuf, "did you mean '%s.%s'?",
+                     alias, sugg);
+            fixtext = fixbuf;
+        }
         diag_emit(DIAG_ERROR, E4027, call->start, call->line, call->col, msg,
                   "got", member,
-                  "fix", "check the module's interface for the correct "
-                         "member name",
+                  "fix", fixtext,
                   (const char *)NULL);
         return;
     }
@@ -2120,14 +2378,64 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
             snprintf(msg, sizeof msg,
                      "no receiver method '%s': no built-in receiver type "
                      "answers '%s'", member, member);
-        /* No `fix`: there is no deterministic repair. The member may be a
-         * misspelling, a method that does not exist on any receiver, or a
-         * function the author meant to call directly — and a did-you-mean for
-         * an arbitrary name is a guess (the 127.106 / 131.78 lesson). */
-        diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col, msg,
-                  "expected", "a member the receiver dispatch lowers",
-                  "got", member,
-                  (const char *)NULL);
+        /* 127.153 — the `fix`, and why it is CONDITIONAL.
+         *
+         * The row asked for this field to be filled with `pair(x;"A")`,
+         * because "the compiler already located that function, so it knows
+         * the answer". It knows the function exists; it does not know it was
+         * meant. toke has no UFCS, so `x.pair(a)` is not a spelling of
+         * `pair(x;a)` — the two share a name and nothing else, and 127.1 left
+         * the field empty for exactly that reason.
+         *
+         * An unconditional rewrite is a guess, so it stays refused. What is
+         * NOT a guess is the case where the module function's declared arity
+         * matches the receiver plus the supplied arguments: the rewrite is
+         * then guaranteed well-formed, the receiver is genuinely a candidate
+         * first argument, and the transformation is the only one toke admits.
+         * There the field is filled and the numbers that justify it are
+         * stated, so a repair loop can check the reasoning rather than trust
+         * it. When the arities disagree the rewrite would not even compile,
+         * and the field stays absent — AGENTS.md §3.1: if you are not
+         * certain, leave it out.
+         *
+         * The other ways into this diagnostic — a misspelling, or a method
+         * that exists on no receiver — still get no `fix`. A did-you-mean for
+         * an arbitrary member name is the 127.106 / 131.78 lesson. */
+        char fixbuf[320];
+        const char *fixtext = NULL;
+        if (fd && fd->def_node && fd->def_node->kind == NODE_FUNC_DECL) {
+            int declared = 0;
+            for (int i = 0; i < fd->def_node->child_count; i++) {
+                const Node *pc = fd->def_node->children[i];
+                if (pc && pc->kind == NODE_PARAM) declared++;
+            }
+            /* call->child_count counts the callee slot, which stands in for
+             * the receiver, plus one per argument — so it is exactly the
+             * argument count a direct call would supply. */
+            if (declared == call->child_count) {
+                snprintf(fixbuf, sizeof fixbuf,
+                         "toke has no UFCS: if you meant the module function "
+                         "'%s', call it directly with the receiver as its "
+                         "first argument — it declares %d parameter%s and this "
+                         "call supplies %d",
+                         member, declared, declared == 1 ? "" : "s",
+                         call->child_count);
+                fixtext = fixbuf;
+            }
+        }
+        if (fixtext)
+            diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col,
+                      msg,
+                      "expected", "a member the receiver dispatch lowers",
+                      "got", member,
+                      "fix", fixtext,
+                      (const char *)NULL);
+        else
+            diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col,
+                      msg,
+                      "expected", "a member the receiver dispatch lowers",
+                      "got", member,
+                      (const char *)NULL);
         return;
     }
 
@@ -2290,9 +2598,34 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     case NODE_IDENT: {
         char nb[128]; TOKSTR(nb,cx->src,node);
         int nlen=(int)strlen(nb);
-        Decl *d=tc_lookup(cx->env->names->module_scope,nb,nlen);
-        /* If not found at module scope, check current function's params and local binds. */
-        if ((!d||!d->def_node)&&cx->fn_node) {
+        /* 127.136 — PARAMETERS ARE LOOKED UP FIRST, before module scope.
+         *
+         * This lookup used to consult module scope first and fall back to the
+         * parameters only when module scope had nothing, which inverts
+         * lexical scoping: a parameter is in an inner scope and shadows a
+         * module-level declaration of the same name. The consequence was that
+         * `f=page(page:i64):i64{ <page+1 }` — a perfectly legal program, and
+         * `page` is not an exotic parameter name for a document library —
+         * resolved `page` in the body to the FUNCTION, inferred TY_FUNC, and
+         * failed with `E4031: expected 'func', got 'i64'` plus the
+         * unactionable fix "cast RHS to func using 'as'".
+         *
+         * Note where the defect was and was not: the NAME RESOLVER is
+         * correct. resolve_func (names.c) inserts each NODE_PARAM into
+         * fn_scope, whose parent is module_scope, so scope_lookup already
+         * finds the parameter first. The type checker keeps its own ad-hoc
+         * walk, and that walk had the two scopes the wrong way round.
+         *
+         * Only the PARAMETER lookup is moved ahead of module scope. Local
+         * `let` bindings are deliberately left where they were: they are
+         * found by find_binding_node, which searches the whole function body
+         * regardless of block nesting or position, so promoting them too
+         * would let a binding in a nested branch shadow a module function
+         * everywhere in the function — rejecting correct programs to fix
+         * incorrect ones (AGENTS.md §2; 136.36 is the case study). A local
+         * `let` that shadows a module-level function is a separate defect and
+         * is reported as one. */
+        if (cx->fn_node) {
             for (int pi=0;pi<cx->fn_node->child_count;pi++) {
                 const Node *pc=cx->fn_node->children[pi];
                 if (!pc) continue;
@@ -2302,6 +2635,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                         return resolve_type(cx,pc->children[1]);
                 }
             }
+        }
+        Decl *d=tc_lookup(cx->env->names->module_scope,nb,nlen);
+        /* If not found at module scope, check current function's local binds. */
+        if ((!d||!d->def_node)&&cx->fn_node) {
             /* Search the function body for local bindings with type annotations. */
             const Node *bn=find_binding_node(cx->fn_node,cx->src,nb,nlen);
             if (bn && (bn->kind==NODE_BIND_STMT||bn->kind==NODE_MUT_BIND_STMT)) {
@@ -2473,11 +2810,52 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * building patterns instead of the generic "cast RHS" message. */
             if (arith && node->op==TK_PLUS &&
                 l->kind==TY_STR && r->kind==TY_STR) {
-                emit_mm(cx, node, l, r,
-                        "`+` is numeric-only in toke. For string templates use "
-                        "interpolation \"\\(a)\\(b)\"; for delimiter-joined "
-                        "collections use s.join(arr;sep); for dynamic accumulation "
-                        "use s.builder()/s.add()/s.build(). See ADR-0004.");
+                /* 127.140 — TWO defects shipped here together in 111.2, and
+                 * both survived every gate because the headline was never
+                 * read and the `fix` was never executed.
+                 *
+                 * (1) The `fix` said `s.join(arr;sep)`. That is the REVERSED
+                 *     argument order. `str.join` is declared (stdlib/str.tki)
+                 *     as `str.join(str; [str])` — the receiver is the
+                 *     SEPARATOR and the array is the second argument. The
+                 *     reversed call passes `--check` and exits 139 at run
+                 *     time (127.5). AGENTS.md §3.1 forbids an incorrect `fix`
+                 *     outright, and this is the field an automated repair
+                 *     loop reads: the compiler was instructing the author
+                 *     into a segfault and then accepting the result.
+                 *     Verified correct order: `s.join(",";arr)` prints `a,b`.
+                 *
+                 * (2) The headline read `type mismatch: expected 'str', got
+                 *     'str'` — identical on both sides, because emit_mm
+                 *     formats the two OPERAND types and for `str + str` they
+                 *     are the same type. The information was carried only by
+                 *     the `fix`, and that one was wrong. Story 111.2 recorded
+                 *     that this "produces a clear diagnostic"; it never did —
+                 *     the headline has read that way since f20bc55, the
+                 *     commit that introduced it.
+                 *
+                 * So this no longer goes through emit_mm: the mismatch is not
+                 * between two operands, it is between what `+` requires and
+                 * what both operands are, and `expected`/`got` now say that.
+                 * The other three patterns in the `fix` were each executed
+                 * before being kept: interpolation, s.concat and
+                 * s.builder/s.add/s.build all produce "xy" for "x","y". */
+                if (tc_can_emit(cx)) {
+                    diag_emit(DIAG_ERROR, E4031, node->start, node->line,
+                              node->col,
+                              "'+' requires numeric operands: both sides are "
+                              "'str', and toke does not overload '+' for "
+                              "string concatenation",
+                              "expected", "a numeric type", "got", "str",
+                              "fix",
+                              "`+` is numeric-only in toke. For string "
+                              "templates use interpolation \"\\(a)\\(b)\"; for "
+                              "pairwise joining use s.concat(a;b); for "
+                              "delimiter-joined collections use "
+                              "s.join(sep;arr); for dynamic accumulation use "
+                              "s.builder()/s.add()/s.build(). See ADR-0004.",
+                              (const char *)NULL);
+                }
                 return mk_type(A,TY_UNKNOWN);
             }
             /* Untyped integer literals adopt the other operand's integer type:

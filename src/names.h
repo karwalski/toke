@@ -215,6 +215,12 @@ const ImportedFunc *imported_func_lookup(const NameEnv *env, const char *alias,
  * absence of knowledge, not evidence that the member does not exist. */
 int imported_alias_has_funcs(const NameEnv *env, const char *alias);
 
+/* 127.122 — case-insensitive Levenshtein distance, the compiler's single
+ * edit-distance routine.  It backs E3011's "did you mean 'io'?" and E4027's
+ * member suggestion; a second copy in types.c would drift from this one.
+ * Returns 99 when either operand is too long to score. */
+int tk_edit_distance(const char *a, const char *b);
+
 /* Error codes for name resolution */
 #define E3011 3011  /* identifier not declared    */
 #define E3012 3012  /* identifier already declared in this scope */
