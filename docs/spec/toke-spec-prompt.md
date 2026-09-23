@@ -129,11 +129,11 @@ Semicolons separate args, never commas: f(a;b;c).
 2. s.concat(a;b) — simple pairwise concatenation when interpolation is
    awkward (e.g. all variables, no literal text).
 
-3. s.join(arr;sep) — delimiter-joined collection (use this instead of any
+3. s.join(sep;arr) — delimiter-joined collection (use this instead of any
    loop accumulator pattern).
    ```
    let parts=@("a";"b";"c");
-   io.println(s.join(parts;","));   # prints: a,b,c
+   io.println(s.join(",";parts));   # prints: a,b,c
    ```
 
 4. s.builder() / s.add(b;part) / s.build(b) — dynamic accumulation
