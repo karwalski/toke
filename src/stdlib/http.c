@@ -206,11 +206,14 @@ void http_free_params(StrPair *out, int *cnt)
  * block goes out of scope while the Res they return is still travelling, so
  * the list is shared and exported.
  *
- * Capacity is one selected route's bindings from http.c plus one handler
- * dispatcher's — 2 x HTTP_MAX_PARAMS keys and values.  If it were ever to
- * overflow the pointer is freed immediately rather than dropped: a leak is
- * the failure this story is about, and the alternative is the dangling body
- * above.
+ * Capacity is twice what one request can produce: a selected route's bindings
+ * from http.c plus a handler dispatcher's is at most 2 x HTTP_MAX_PARAMS keys
+ * and values, so overflow is unreachable by construction.  Should it happen
+ * anyway — a drain missed because a connection was torn down between the
+ * handler and the write, twice over — the pointer is DROPPED, not freed.
+ * Freeing it would be freeing something the response in flight may be about
+ * to write, which is the exact failure this list exists to prevent; a bounded
+ * leak on an unreachable path is the cheaper of the two.
  */
 #define HTTP_MAX_DEFERRED (4 * HTTP_MAX_PARAMS)
 
@@ -220,7 +223,7 @@ static int   g_deferred_n;
 void http_defer_free(void *p)
 {
     if (!p) return;
-    if (g_deferred_n >= HTTP_MAX_DEFERRED) { free(p); return; }
+    if (g_deferred_n >= HTTP_MAX_DEFERRED) return;   /* drop, never free */
     g_deferred[g_deferred_n++] = p;
 }
 
