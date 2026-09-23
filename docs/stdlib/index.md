@@ -10,6 +10,7 @@ API reference for every module in the toke standard library. Each page documents
 ## Core
 
 - [std.str](/docs/reference/stdlib/str/) -- string manipulation
+- [std.fmt](/docs/reference/stdlib/fmt/) -- value formatting for output
 - [std.math](/docs/reference/stdlib/math/) -- mathematical functions
 - [std.time](/docs/reference/stdlib/time/) -- date, time, and duration
 - [std.file](/docs/reference/stdlib/file/) -- file system operations
@@ -31,6 +32,8 @@ API reference for every module in the toke standard library. Each page documents
 - [std.encoding](/docs/reference/stdlib/encoding/) -- base64 and hex encoding
 - [std.md](/docs/reference/stdlib/md/) -- Markdown processing
 - [std.zip](/docs/reference/stdlib/zip/) -- read-only zip archive access
+- [std.xlsx](/docs/reference/stdlib/xlsx/) -- read cell values out of an XLSX workbook
+- [std.pdf](/docs/reference/stdlib/pdf/) -- extract text runs with positions from a PDF
 
 ## Networking
 
@@ -59,6 +62,7 @@ API reference for every module in the toke standard library. Each page documents
 - [std.chart](/docs/reference/stdlib/chart/) -- chart generation
 - [std.dashboard](/docs/reference/stdlib/dashboard/) -- dashboard components
 - [std.image](/docs/reference/stdlib/image/) -- image processing
+- [std.ocr](/docs/reference/stdlib/ocr/) -- platform text recognition (macOS today; `$noengine` elsewhere)
 
 ## Data and AI
 
