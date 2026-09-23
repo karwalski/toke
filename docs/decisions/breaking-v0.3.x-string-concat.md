@@ -19,7 +19,7 @@ uses `+` on strings will fail at compile-time with `E4031`:
     type mismatch: expected 'str', got 'str'
 
     fix: `+` is numeric-only in toke. For string templates use interpolation
-    "\(a)\(b)"; for delimiter-joined collections use s.join(arr;sep); for
+    "\(a)\(b)"; for delimiter-joined collections use s.join(sep;arr); for
     dynamic accumulation use s.builder()/s.add()/s.build(). See ADR-0004.
 
 This applies to every form: `<a+b`, `let x=mut.""; x=a+b`, `f(a+b)`, etc.
@@ -45,7 +45,7 @@ See `docs/decisions/ADR-0004.md` for full rationale. Summary:
 | `"hi " + name` | `s.concat("hi "; name)` |
 | `"k=" + s.fromint(n) + " items"` | `s.concat(s.concat("k="; s.fromint(n)); " items")` |
 | Loop accumulator `r=r+part+sep` | `let b=s.builder(); lp(…){s.add(b;part);s.add(b;sep)}; let r=s.build(b);` |
-| Delimiter join over array | `s.join(parts; ",")` |
+| Delimiter join over array | `s.join(","; parts)` |
 
 (Once story 111.5a ships, `"k=\(s.fromint(n)) items"` interpolation will
 also be available; until then use `s.concat` chains.)

@@ -185,7 +185,7 @@ i=store:bm.store;
 i=m:bm.model;
 
 f=printbookmark(bm:m.$bookmark):void{
-  let tagsstr=str.join(bm.tags;", ");
+  let tagsstr=str.join(", ";bm.tags);
   io.println("  [\(bm.id as $str)] \(bm.title)");
   io.println("      \(bm.url)");
   if(bm.tags.len>0){

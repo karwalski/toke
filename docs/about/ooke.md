@@ -119,4 +119,4 @@ Each error template uses the same layout and syntax as any other ooke template. 
 
 When ooke encounters an error, it checks `templates/errors/<code>.tkt`. If the template exists, it renders it through the full template engine. If no custom template is found, ooke falls back to a plain-text response with the status code and standard reason phrase.
 
-This website is served by ooke. ooke is part of the [toke ecosystem](/ecosystem).
+This website is built with ooke: ooke renders its /docs pages at build time. It is served by a toke binary compiled from `main.tk`, which uses `std.http` directly, not ooke. ooke is part of the [toke ecosystem](/ecosystem).

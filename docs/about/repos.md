@@ -26,9 +26,9 @@ be told apart.
 | [toke-eval](https://github.com/karwalski/toke-eval) | Held-out benchmark and evaluation harness. Owns `benchmark/hidden_tests/`. | Apache-2.0 | `toke-eval` |
 | [toke-test-programs](https://github.com/karwalski/toke-test-programs) | Executable toke programs used as regression and conformance material for the compiler. | Apache-2.0 | `toke-test-programs` |
 | [toke-mcp](https://github.com/karwalski/toke-mcp) | MCP server, language server and VS Code extension. | MIT | `toke-mcp` |
-| [ooke](https://github.com/karwalski/ooke) | ooke, toke's web framework and static site generator, written in toke; it builds and serves tokelang.dev. | MIT | `toke-ooke` |
+| [ooke](https://github.com/karwalski/ooke) | ooke, toke's web framework and static site generator, written in toke; it builds tokelang.dev; a toke binary on std.http serves it. | MIT | `toke-ooke` |
 | [loke](https://github.com/karwalski/loke) | loke, toke's local intelligence layer, written in toke. | MIT | `loke` |
-| [toke-web](https://github.com/karwalski/toke-web) | Source for tokelang.dev, built and served by ooke. | MIT | `toke-website` |
+| [toke-web](https://github.com/karwalski/toke-web) | Source for tokelang.dev, built with ooke and served by a toke binary on std.http. | MIT | `toke-website` |
 
 ooke and loke are toke sub-projects, not separate products — see
 [`docs/about/ecosystem.md`](ecosystem.md).

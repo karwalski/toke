@@ -87,7 +87,7 @@
     "source": "docs/metrics-baseline.md § Correctness; § 2026-08 (story 132.0(a))"
   },
   "source_code": {
-    "value": "github.com/karwalski/toke — compiler, specification and standard library, Apache-2.0. The project is eleven public repositories under github.com/karwalski, plus two private ones; the site is tokelang.dev, built and served by ooke.",
+    "value": "github.com/karwalski/toke — compiler, specification and standard library, Apache-2.0. The project is eleven public repositories under github.com/karwalski, plus two private ones; the site is tokelang.dev, built with ooke and served by a toke binary on std.http.",
     "source": "docs/about/repos.md"
   },
   "author": {
@@ -118,7 +118,7 @@
       "source": "docs/progress.md Epic 132, acceptance criterion 5"
     },
     "subprojects": {
-      "value": "ooke, loke and moke are toke sub-projects, not separate products: ooke is toke's web framework and static site generator, and it serves tokelang.dev; loke is toke's local intelligence layer; moke is loke's data-analysis demo. All three are written in toke.",
+      "value": "ooke, loke and moke are toke sub-projects, not separate products: ooke is toke's web framework and static site generator, and it builds tokelang.dev (a toke binary on std.http serves it); loke is toke's local intelligence layer; moke is loke's data-analysis demo. All three are written in toke.",
       "verbatim": true,
       "source": "docs/progress.md Epic 132, acceptance criterion 4; docs/about/ecosystem.md"
     }

@@ -83,7 +83,7 @@ let result=str.replace("Hello, world!";"world";"toke");
 
 ```
 let parts=str.split("a,b,c";",");
-let joined=str.join(parts;"-");
+let joined=str.join("-";parts);
 ```
 
 ### Case conversion
