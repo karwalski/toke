@@ -5690,3 +5690,98 @@ Cross-refs: T-5 is **127.111**, T-7 is **127.62** and **127.77**, T-4 is the unf
 | 137.12 | Four stdlib `.tki` files disagree with the compiler's own builtin table | done — generated, and the gate meant to end this defect had the defect | **P1** | **DONE 2026-09-22, `a6afa55`. Interfaces generated from the builtin table: 57 → 65 modules, 541 → 878 func exports** (`json.tki` 13 → 69, `str.tki` 39 → 116). All four named instances now declared. `gen_tki.py` plus `--check` wired into CI through `T007`. **The finding that matters: a second instance of this row's own defect class was sitting inside the gate written to end it.** `declared_arities()` read `llvm.c` then `stdlib_decls_gen.h` and assigned unconditionally, so the **generated** row won — while the compiler does the opposite, since `stdlib_glue_arity()` returns on first match and `llvm.c`'s rows precede the `#include` at `llvm.c:8919`. Proved by restoring the 137.12 defect (`tk_os_read` declared three-parameter over a two-parameter C definition): **the compiler raised E4026 while the gate reported `disagreeing: 0` and exited 0.** Fixed, and now a watched negative control in T006. **The skiplist is byte-identical — 53 before, 53 after, nothing added to make a gate pass** — and by construction it cannot shrink, because generation only adds methods whose symbol is *defined*, so it can never resolve an already-broken declaration. `tls.tki` left untouched for 136.44 as instructed.  **OWNER DECISION 2026-09-22.** **Generate the `.tki` files from the builtin table.** `json.tki` exports 13 functions against **62** `tk_json_*_w` wrappers; `str.padright`, `file.listglob`, `process.spawndetached` and `file.parsetoml` are in the table and absent from their interfaces; and for `std.tls` the disagreement runs the *other* way, with five declared functions having no wrapper at all — which **136.1's contract check cannot catch**, because it validates against the implementation wherever the glue symbol is known. **Generation closes the whole family at once and is the right answer to the project's single most repeated defect: a hand-maintained list that drifts, now eleven instances.** Until generation lands, the `.tki` is not the source of truth and no document should imply it is.  **Verified 2026-09-22: every instance confirmed, with exact numbers, plus three the report missed.** `json.tki` exports **13** functions; the builtin table has **62** `tk_json_*_w` wrappers — the report said "30+". All the names it lists are present, including nine `try*` variants. `str.padright` → `tk_str_padright_w` at `stdlib_decls_gen.h:602`, not in `str.tki`; `process.spawndetached` single-argument as reported, not in `process.tki`; `file.listglob` not in `file.tki`. `json.getregulations` exists with the comment verbatim at `src/stdlib/json_glue.c:545`. **Not in the report, and the serious part:** `file.parsetoml` and `tls.tlsconfig` are both in the builtin table and absent from their `.tki`. And for std.tls **the disagreement runs the other way, which is not a documentation problem at all** — `tls.tki` declares `tls.listen`, `tls.connect`, `tls.peercert`, `tls.fingerprint` and `tls.pairingcode`, and **none has a wrapper**: `tl.connect("h";443;0)` type-checks clean off the `.tki` and dies at link on `"_tk_tls_connect_w"`. **136.1's contract check cannot catch this class**, because it validates against the implementation wherever the glue symbol is known, and here it is not — so this needs its own check, not a bigger skiplist. Generating the `.tki` from the builtin table would close the whole family.  **T-12.** The `.tki` files are **not** the source of truth — the compiler's builtin registry is — and they disagree, with nothing in the file to say so. `json.tki` lists 13 functions where the compiler has 30+; `str.tki` omits `str.padright`; `file.tki` omits `file.listglob`; `process.tki` omits `spawndetached`, which takes a single shell command string rather than the argument array its sibling takes. **Two of these cost loke a wrong migration before they read the C.** Worse, several names invite the wrong direction: `json.strarr` and `json.strarray` *encode* a string array as JSON text and are not getters, and loke used them as getters at three sites — `json.encodestrarray` would not have been misread. **And one item here is ours to be ashamed of:** `json.getregulations(obj)` is documented in our own `json_glue.c` as *"loke-specific, stub returning empty array"*, and loke's `policy/loader.tk` builds every `$policyset` from it, so **every policy set loads with zero regulations and the policy engine can never produce a violation.** loke will remove the dependency; the lesson is that **a stub named after one downstream consumer, living in another project's stdlib, is a trap for exactly that consumer.** Suggested fix: generate the `.tki` files from the builtin table, or state in each file that the table wins. Overlaps **136.7**. Related to this project's own recurring defect class: **a hand-maintained list that drifts** — this is the ninth instance. **Verified further 2026-09-22.** `json.getregulations` confirmed verbatim at `json_glue.c:545-549`, reachable at arity 1 via the builtin table, and measured: run against `{"regulations":[{"id":"GDPR-5"},{"id":"GDPR-6"}]}` it returns `len=0`. **One correction for loke:** their reported call shape `json.getregulations(data;"regulations")` **no longer compiles** — 136.1 rejects it E4026 (implementation takes 1, call passes 2) — but the single-argument form still silently returns empty, so their policy engine's behaviour is unchanged. **The general form of this is now its own story, 136.45:** ~39 undeclared symbols across `str_glue.c`, `file_glue.c` and `json_glue.c` exist solely because one consumer calls them, plus a hard-coded `loke://` URL scheme in `webview.c:415` and `~/.loke/models/` documented as a stdlib convention in `infer.h:91`. |
 | 137.13 | A codegen failure names no toke source file, function or line | filed | **P1 — the report's structural ask** | **The report's sixth and last request, and the one that would have saved the most time.** Five of its seven build-breaking issues surface only as LLVM's or ld's complaint about emitted IR, naming nothing in the user's program. The reporter's words: even a *"while compiling `f=x` at `file.tk:120"`* prefix on E9003 *"would change these from a day of bisection into a minute of reading."* **The evidence that this is the real cost:** three of the four quality sweeps loke now runs in its own gate — `check_match_labels.py`, `find_shadowed_lets.py`, `find_typename_values.py` — **exist only to recover information the compiler already had and discarded.** A downstream project has built a parallel static analyser because our diagnostics stop at the IR boundary. Attach the current function and source span to every codegen diagnostic, E9003 above all, and verify by building each of 137.1, 137.2, 137.3, 137.5 and 137.6 and confirming the message names the offending function and line. |
 | 137.14 | A discarded comparison is not warned about, and `<` being both return and less-than makes it look like a return | filed — unverified at HEAD | P2 | **The report's "one that turned out to be ours" — filed anyway, because the diagnostic is ours.** `<` is both the return operator and less-than, so a call followed by `<$ok(1)` with no semicolon parses as **one comparison expression** and the function returns the comparison rather than `$ok(1)`. toke is behaving as specified, and the reporter says so plainly. But it is only *reported* when the left operand is a void call, and then it arrives as `void type only allowed for function results` from clang — a message about nothing the user wrote. **A warning on a discarded comparison would catch it, and the `discarded-value-result` rule already covers the neighbouring case** (see 127.3, in progress, and 127.37). Extend that rule rather than adding a new one. Cheap, and it closes a trap created by the 59-char set's operator reuse — worth knowing about when weighing future operator choices. |
+
+---
+
+## Wave plan — post-3.0.0, written 2026-09-23
+
+**Where this comes from.** A full sweep of every open row across epics 122–137 after `v3.0.0` was cut:
+**201 open — 27 P0, 95 P1, 60 P2, 19 P3.** Six statuses were reconciled first, because three of them were
+advertising decisions ratified on 2026-07-03 and two had been completed without the row being closed; planning
+against those numbers would have been planning against fiction. The waves below are ordered by *what unblocks
+the most*, not by priority label — the same rule Epic 135 used.
+
+### Wave 1 — Re-verify Epic 127 at HEAD. **Do this first, and do not fix anything in it.**
+
+**49 open rows, and their premises are the oldest thing in the tracker that nobody has re-checked.** Every one
+was observed against a compiler that predates roughly fifteen fixes landed in the last week — map codegen,
+struct layout, the error-channel box, u64→i64 widening, the tail-expression error, the let-bound fallible call,
+cross-scope shadowing, `.tki` call checking. **Epic 137 is the precedent and the warning**: it re-verified a
+comparable set of twelve consumer-reported issues at HEAD and had to correct the premise on several of them,
+including one where the reported cause was false and one that was worse than reported.
+
+**Why it must go first rather than somewhere sensible later:** Epic 131's forty corpus rows are **held behind
+Epic 127 by owner decision**, so 127's true size is the gate on the largest remaining body of work in the
+project. Planning the corpus waves against 49 rows when the real number might be 30 or 55 is planning blind.
+
+- **Shape:** parallel workers, a block of rows each, one minimal repro per row at `v3.0.0`. Verdicts only —
+  **STILL REPRODUCES / FIXED SINCE / PREMISE WRONG** — with the repro and its actual output recorded.
+- **Explicitly not in scope:** fixing. A worker that fixes as it goes cannot be trusted to report what it found.
+- **Exit:** every open 127 row carries a dated verdict against 3.0.0, and the P1 count is re-derived from it.
+- **Cost:** cheap and almost perfectly parallel; no compiler changes, so nothing to merge or conflict.
+
+### Wave 2 — The silent-wrong-answer survivors
+
+Whatever Wave 1 confirms in this shape: **`--check` is clean and the program is then wrong or dead.** Today's
+known members include `127.1` (UFCS silently drops extra arguments), `127.2` (bare `.push` crashes), `127.5`
+(swapped `s.join` SIGSEGVs), `127.63` (interpolating an `mt` prints a heap pointer), `127.128` (`str.get` is not
+a real operation), `127.134` (a `.tki` field named `kind` truncates its own record), `127.59`, `127.60`, `127.75`.
+
+This is the family that makes a downstream consumer's program wrong **without telling them**, which is the exact
+harm Epic 135's consumer is now exposed to, having just been told the standard library is theirs to use.
+
+- **Exit:** each survivor is fixed with a conformance suite that fails on a compiler built before the fix, or
+  is given a diagnostic and written into `known-limitations.md`. **Silence is not an outcome.**
+
+### Wave 3 — Make the gates true (**15 rows, and they gate every other wave's evidence**)
+
+`135.3a`, `136.50a`, `136.56`, `136.62`, `132.43`, `132.46`, `136.41`, `136.48`, `127.88`, `127.125`, `127.131`,
+`132.52`, `131.22a`, `131.43`, `123.11`.
+
+**The argument for doing this early rather than last:** every other wave reports through these gates. This
+session alone found around twenty instances of a gate proving less than it claims — `make lint` analysing no
+stdlib module at all, `make build-all` building no platform branch of any of them, a doc gate that passed eight
+pages because every example was a fragment, a `.tki` gate that never read arity, no gate that read the git
+index, 132 finished C functions no gate can see, and a conformance log made unreadable to `grep` by one NUL byte
+the harness itself emits. **A green board assembled from gates like these is not evidence.**
+
+- **Exit:** each gate proves its stated property or is deleted. No gate silently excludes its own subject.
+  Where a backlog is exposed, it is quarantined in a checked-in, self-failing list — never hidden.
+
+### Wave 4 — Implement the security ADRs (**24 rows**)
+
+ADRs 0010–0013 were **ACCEPTED and ratified on 2026-07-03 and none is implemented eleven weeks later.**
+Bounds-checked emission, division guards, the capability subsystem and deny-by-default, the crypto envelope,
+ASAN/UBSAN and `make test-all` in PR CI, the safe-buffer migration.
+
+**This is more pressing now than it was last week, not less:** 3.0.0 is published, the standard library is
+statically linked into consumer binaries, and a downstream project has just been told to adopt it. The gap
+between the published safety posture and the emitted code is now a gap with users in it.
+
+- **Order inside the wave:** `123.8` + `123.9` + `122.1` first (CI hardening — cheap, and it is what makes the
+  rest measurable) → `123.4` / `124.2` (bounds checks and guards) → `124.4a–g` (capabilities) → `124.6a–e`
+  (the two breaking flips, **with 124.6e's measurement taken before and after, not after only**).
+- **Exit:** every ratified ADR is either implemented or explicitly deferred in its own file with a date.
+
+### Wave 5 — v3.0.0 follow-through
+
+The release is cut; the surfaces around it are not. `132.37` (**two published install instructions do not
+work** — the first thing a new user touches), `132.44` (the site publishes code that cannot compile),
+`132.4` (registries), `134.9` (relaunch the site on the uplifted ooke), the homebrew tap repository, which
+**has no remote and therefore does not exist**, and the real SHA-256s once the release artifacts are built.
+**ooke is still `3.0.0-rc.1` with zero commits since its rc tag**, while its own formula already declares
+`3.0.0` — so either ooke's final is cut or the formula is wrong; it cannot stay as it is.
+
+### Held, and not a wave
+
+- **Epic 128 (26 rows)** — training and evaluation. Blocked on compute and on the Gate 1 verdict.
+- **Epic 131 (40 rows)** — the corpus. Held behind Epic 127 by owner decision, which is what Wave 1 unblocks.
+- **Owner decisions:** `135.15a` (the stdlib is declared MIT with no MIT text covering it — now live, and
+  statically linked into consumer binaries), `135.14` (deletion permission), `130.21` (roll the Stripe key),
+  the Hugging Face Space, and whether ooke cuts 3.0.0.
+
+### One defect in the tracker itself, found while sweeping
+
+**`123.10` is used twice** — once live (`Repair security-nightly.yml + wire the 8 orphaned fuzz harnesses`) and
+once struck through. A duplicate ID means one of them cannot be addressed unambiguously. Renumber before either
+is worked.
