@@ -148,6 +148,18 @@ gen_died() {
     exit 1
 }
 
+# SOURCE_DATE_EPOCH: the Makefile exports it as 0 for reproducible compiler
+# builds (Makefile:85), and Python 3.14's zipfile honours it when stamping
+# entries.  0 is 1970, which is before the 1980 DOS epoch a zip local header
+# can express, so struct.pack raised inside zipfile.FileHeader and openpyxl's
+# save() died -- taking every fixture with it.  This test therefore FAILED
+# 100% of the time under `make` and passed 100% of the time when run by hand,
+# which reads as flakiness and is not: it is a clean dependency on how the
+# suite was invoked.  C007 hit the same trap and documents it; pinning the
+# stamp here to the DOS epoch itself fixes it in the one place openpyxl can be
+# reached, and keeps the fixtures byte-identical from run to run.
+export SOURCE_DATE_EPOCH=315532800   # 1980-01-01T00:00:00Z, the DOS zero
+
 # openpyxl is the independent encoder.  It is not a build dependency of this
 # repository, so a checkout without it SKIPS rather than fails — but it skips
 # LOUDLY, with a non-zero exit, because a silent skip of the only behavioural
