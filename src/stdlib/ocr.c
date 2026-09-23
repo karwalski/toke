@@ -291,10 +291,21 @@ static TkNSUInteger vision_revision(Class request_cls)
     id sr;
     TkNSUInteger want;
 
+    /*
+     * +supportedRevisions is a CLASS method, so the responds-check must be
+     * against the METACLASS.  class_respondsToSelector(cls, sel) asks about
+     * INSTANCE methods and answers "no" for every class method -- so the
+     * check in vision_classes() does not cover this one, and sending it
+     * unchecked is the fatal-exception hazard ocr.h warns about.
+     */
+    if (!class_respondsToSelector(object_getClass((id)request_cls),
+                                  sel_getUid("supportedRevisions")))
+        return 0;   /* 0 = do not call setRevision:, take the default */
+
     sr = ms0((id)request_cls, "supportedRevisions");
     if (!sr || !class_respondsToSelector(object_getClass(sr),
                                          sel_getUid("containsIndex:")))
-        return 0;   /* 0 = do not call setRevision:, take the default */
+        return 0;
 
     for (want = 8; want > 0; want--)
         if (((BOOL (*)(id, SEL, TkNSUInteger))objc_msgSend)(
@@ -316,7 +327,17 @@ static TkNSUInteger vision_revision(Class request_cls)
  * hard-returns 0 in BOTH arms of its #if, ignoring the real mlx_is_available()
  * probe sitting in the same module.  Nothing below is a constant.
  */
+static int ocr_is_available_pooled(void);
+
 int ocr_is_available(void)
+{
+    void *pool = objc_autoreleasePoolPush();
+    int ok = ocr_is_available_pooled();
+    objc_autoreleasePoolPop(pool);
+    return ok;
+}
+
+static int ocr_is_available_pooled(void)
 {
     VisionClasses vc;
     id req, langs;
@@ -341,7 +362,19 @@ const char *ocr_engine(void)
     return ocr_is_available() ? "vision" : "none";
 }
 
+static void ocr_languages_pooled(void);
+
+/* The result is copied into the static g_lang_list BEFORE the pool is
+ * popped, so the returned pointer outlives every object it was built from. */
 const char *ocr_languages(void)
+{
+    void *pool = objc_autoreleasePoolPush();
+    ocr_languages_pooled();
+    objc_autoreleasePoolPop(pool);
+    return g_lang_list;
+}
+
+static void ocr_languages_pooled(void)
 {
     VisionClasses vc;
     id req, langs;
@@ -349,17 +382,17 @@ const char *ocr_languages(void)
     size_t pos = 0;
 
     g_lang_list[0] = '\0';
-    if (!vision_classes(&vc)) return g_lang_list;
+    if (!vision_classes(&vc)) return;
 
     req = ms0(ms0((id)vc.request_cls, "alloc"), "init");
-    if (!req) return g_lang_list;
+    if (!req) return;
 
     langs = ((MsgErrOut)objc_msgSend)(
         req, sel_getUid("supportedRecognitionLanguagesAndReturnError:"), 0, NULL);
     n = langs ? msu(langs, "count") : 0;
 
     for (i = 0; i < n; i++) {
-        const char *tag = msutf8(ms0(msidx(langs, "objectAtIndex:", i), "self"));
+        const char *tag = msutf8(msidx(langs, "objectAtIndex:", i));
         size_t tl;
         if (!tag) continue;
         tl = strlen(tag);
@@ -370,7 +403,6 @@ const char *ocr_languages(void)
     }
     g_lang_list[pos] = '\0';
     ms0(req, "release");
-    return g_lang_list;
 }
 
 /*
