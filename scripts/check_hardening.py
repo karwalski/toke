@@ -236,6 +236,21 @@ def main() -> int:
         elif died_by_signal(rc):
             r.ok("fortify-active",
                  f"16-into-8 static overflow trapped (rc={rc})")
+            if platform.system() == "Darwin":
+                # Do not let a green tick here be read as "the flag is doing
+                # the work". Apple's SDK sets _FORTIFY_SOURCE=2 itself unless
+                # something explicitly turns it off, so on macOS this
+                # assertion passes with the flag REMOVED from CFLAGS and only
+                # fails when fortification is explicitly disabled. Verified
+                # 2026-09-24: `make HARDEN=0` (no -O2, no _FORTIFY_SOURCE at
+                # all) still trapped this overflow. The assertion is real on
+                # glibc, where -O0 genuinely disables the checks; here it is
+                # a floor, not evidence for the flag.
+                r.note("fortify-active",
+                       "on macOS this passes because the SDK defaults "
+                       "_FORTIFY_SOURCE to 2 on its own. It is NOT evidence "
+                       "that -D_FORTIFY_SOURCE in CFLAGS did anything. The "
+                       "assertion discriminates on glibc, not here.")
         else:
             r.fail("fortify-active",
                    "a 16-byte copy into an 8-byte buffer ran to completion "

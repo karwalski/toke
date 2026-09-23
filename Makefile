@@ -68,8 +68,15 @@ HARDEN_CFLAGS += $(call harden_cc_probe,-fcf-protection=full)
 # links fine and hardens nothing.  Every literal comma below goes through
 # $(COMMA) for that reason.
 COMMA := ,
+# -Werror in the probe, for the same reason as harden_cc_probe above and
+# caught the same way: Apple's ld makes every binary position-independent
+# already, so `-pie` LINKS FINE and then warns `argument unused during
+# compilation: '-pie' [-Wunused-command-line-argument]`, which the real build
+# promotes to an error. A probe that only checks the exit status accepts a
+# flag the build cannot use. Third occurrence of this shape in one afternoon;
+# if you add a probe here, put -Werror in it.
 harden_ld_probe = $(shell printf 'int main(void){return 0;}\n' > /tmp/tkc_ldprobe.c 2>/dev/null && \
-                    $(CC) $(1) -o /tmp/tkc_ldprobe /tmp/tkc_ldprobe.c >/dev/null 2>&1 && echo '$(1)'; \
+                    $(CC) -Werror $(1) -o /tmp/tkc_ldprobe /tmp/tkc_ldprobe.c >/dev/null 2>&1 && echo '$(1)'; \
                     rm -f /tmp/tkc_ldprobe.c /tmp/tkc_ldprobe)
 HARDEN_LDFLAGS = $(call harden_ld_probe,-pie)
 HARDEN_LDFLAGS += $(call harden_ld_probe,-Wl$(COMMA)-z$(COMMA)relro)
@@ -495,7 +502,139 @@ check-glue-core:
 check-parallel-stdlib:
 	python3 scripts/check_parallel_stdlib.py
 
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
+# ── Story 123.9: is the shipping build actually hardened? ───────────────────
+# Behavioural, not textual. See the HARDEN_CFLAGS block at the top of this
+# file and the header of scripts/check_hardening.py for why grepping the
+# flags would prove nothing. Runs its own two negative controls first.
+#
+# CFLAGS travels by environment because it contains both quote kinds
+# (-DTKC_STDLIB_DIR='"..."'), the same reason TKC_BUILD_FLAGS does.
+.PHONY: check-hardening
+check-hardening: $(BIN)
+	@TKC_HARDEN_CC="$(CC)" TKC_HARDEN_CFLAGS="$(CFLAGS)" \
+	    python3 scripts/check_hardening.py --binary $(BIN)
+
+# ── Story 123.9: sanitizers ────────────────────────────────────────────────
+#
+# ZERO sanitizers ran on a pull request before 2026-09-24. `-fsanitize`
+# appeared once in this Makefile, in FUZZ_FLAGS, which only the nightly fuzz
+# workflow reaches.
+#
+# These targets recursively re-make with the sanitizer flags in CFLAGS. That
+# rebuilds the tree, and it rebuilds it CORRECTLY only because 136.62 gave
+# objects a record of the flags they were built with: before the .build-flags
+# stamp existed, `make CFLAGS=<different>` on an up-to-date tree ran zero
+# compile commands and exited 0, so a "sanitizer build" would have been the
+# ordinary objects with a sanitizer runtime linked in and no instrumentation
+# in them whatsoever. That is precisely the false-green shape this wave is
+# clearing out, and it is worth knowing that these targets depend on that fix.
+#
+# _FORTIFY_SOURCE is forced OFF here: its interceptors and ASan's fight, and
+# the fortify checks mask the very overflows ASan is here to report.
+# -O1 rather than the hardened -O2 keeps stack traces readable.
+SAN_FLAGS  = -fsanitize=address,undefined -fno-omit-frame-pointer \
+             -fno-sanitize-recover=undefined -fno-optimize-sibling-calls \
+             -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -O1
+SAN_CFLAGS = $(CFLAGS) $(SAN_FLAGS)
+export ASAN_OPTIONS  ?= detect_leaks=0:abort_on_error=0:detect_stack_use_after_return=1
+export UBSAN_OPTIONS ?= print_stacktrace=1:halt_on_error=1
+
+.PHONY: asan asan-clean test-asan test-asan-compiler test-asan-stdlib
+asan-clean:
+	@$(MAKE) --no-print-directory clean >/dev/null
+
+# The compiler itself, instrumented, driven through the conformance suite.
+test-asan-compiler:
+	@echo "=== ASAN/UBSAN: tkc through the conformance suite ==="
+	$(MAKE) HARDEN=0 CFLAGS="$(SAN_CFLAGS)" $(BIN)
+	$(MAKE) HARDEN=0 CFLAGS="$(SAN_CFLAGS)" conform
+
+# The stdlib C unit tests, instrumented. These are where the known
+# use-after-free and free()-on-a-global live (json.c:670, json.c:941/949,
+# json_glue.c:718), so this target is EXPECTED TO BE RED until those are
+# fixed. A red result here is a true result: do not add suppressions to get
+# a tick.
+ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-json test-stdlib-encoding \
+                      test-stdlib-str-like test-stdlib-csv test-stdlib-math \
+                      test-stdlib-template test-stdlib-router
+test-asan-stdlib:
+	@echo "=== ASAN/UBSAN: stdlib C unit tests ==="
+	@fail=0; for t in $(ASAN_STDLIB_TARGETS); do \
+	  $(MAKE) -q $$t >/dev/null 2>&1; \
+	  if ! $(MAKE) --no-print-directory HARDEN=0 CFLAGS="$(SAN_CFLAGS)" $$t; then \
+	    echo "ASAN FAIL: $$t"; fail=$$((fail+1)); \
+	  fi; \
+	done; \
+	echo "test-asan-stdlib: $$fail target(s) reported a sanitizer finding"; \
+	[ $$fail -eq 0 ]
+
+test-asan: test-asan-compiler test-asan-stdlib
+
+# ── Story 123.9: coverage floor ────────────────────────────────────────────
+# There was no coverage measurement of any kind. COVERAGE_MIN is the floor;
+# `make check-coverage` fails below it. The floor is set from a measured
+# baseline, not from an aspiration -- a floor above the current number is a
+# gate that is red for a reason nobody will act on, and a floor of 0 is a
+# gate that cannot fail.
+COVERAGE_MIN ?= 0
+COV_FLAGS     = -fprofile-instr-generate -fcoverage-mapping -O0
+.PHONY: coverage check-coverage
+coverage:
+	$(MAKE) HARDEN=0 CFLAGS="$(CFLAGS) $(COV_FLAGS)" $(BIN)
+	@LLVM_PROFILE_FILE=$(CURDIR)/tkc-%p.profraw $(MAKE) --no-print-directory conform || true
+	@llvm-profdata merge -sparse $(CURDIR)/tkc-*.profraw -o $(CURDIR)/tkc.profdata
+	@llvm-cov report ./$(BIN) -instr-profile=$(CURDIR)/tkc.profdata $(SRCS) \
+	    | tail -3
+	@rm -f $(CURDIR)/tkc-*.profraw
+
+check-coverage: coverage
+	@pct=$$(llvm-cov report ./$(BIN) -instr-profile=$(CURDIR)/tkc.profdata $(SRCS) \
+	          | awk '/^TOTAL/{gsub(/%/,"",$$10); print $$10}'); \
+	echo "line coverage: $$pct%  floor: $(COVERAGE_MIN)%"; \
+	awk -v p="$$pct" -v m="$(COVERAGE_MIN)" \
+	    'BEGIN{ if (p=="" ) { print "could not read a coverage percentage"; exit 1 } \
+	            if (p+0 < m+0) { printf "BELOW FLOOR: %s%% < %s%%\n", p, m; exit 1 } \
+	            printf "at or above floor\n" }'
+
+# ── Story 123.8: the test families PR CI did not run ───────────────────────
+#
+# Before 2026-09-24 the pull-request workflow ran `make`, `make conform`,
+# `make verify-ir` and `make lint` and nothing else. Every target below was a
+# local-only `make` target: nothing on a push or a PR invoked one, which is
+# why four test-stdlib-http* rules could sit unable to LINK for long enough
+# that nobody noticed.
+#
+# The split is by MEASURED state at HEAD on 2026-09-24, not by theme. See
+# docs/progress.md 123.8 for the survey. A target belongs in -green only
+# while it passes; moving one out of -known-red is the fix landing, and
+# moving one INTO it needs a story number on the line.
+TEST_CI_GREEN = test-stdlib test-stdlib-db test-stdlib-encoding \
+                test-stdlib-encrypt test-stdlib-auth test-stdlib-env \
+                test-stdlib-csv test-stdlib-math test-stdlib-chart \
+                test-stdlib-html test-stdlib-dashboard test-stdlib-canvas \
+                test-stdlib-image test-stdlib-ml test-stdlib-dataframe \
+                test-stdlib-analytics test-stdlib-data-pipeline \
+                test-companion test-companion-diff test-migrate \
+                test-compress test-compress-stream
+
+.PHONY: test-ci test-ci-green
+test-ci-green:
+	@fail=0; for t in $(TEST_CI_GREEN); do \
+	  if $(MAKE) --no-print-directory RUN_TEST_TIMEOUT=$(RUN_TEST_TIMEOUT) $$t \
+	       > /tmp/tkc_test_ci_$$$$.log 2>&1; then \
+	    echo "PASS $$t"; \
+	  else \
+	    echo "FAIL $$t"; tail -25 /tmp/tkc_test_ci_$$$$.log | sed 's/^/    /'; \
+	    fail=$$((fail+1)); \
+	  fi; \
+	  rm -f /tmp/tkc_test_ci_$$$$.log; \
+	done; \
+	echo "test-ci-green: $$fail of $$(echo $(TEST_CI_GREEN) | wc -w | tr -d ' ') failed"; \
+	[ $$fail -eq 0 ]
+
+test-ci: test-ci-green
+
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
