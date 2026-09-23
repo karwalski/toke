@@ -796,47 +796,54 @@ static void send_error(int fd, uint16_t status, const char *client_ip)
     }
 }
 
-/* ── Per-IP rate limiting (Story 59.4.4) ──────────────────────────────── */
-
-#define RATE_LIMIT_BUCKETS 1024
-#define RATE_LIMIT_WINDOW  60     /* seconds */
-#define RATE_LIMIT_MAX     200    /* requests per window per IP */
-
-typedef struct {
-    char     ip[64];
-    uint32_t count;
-    time_t   window_start;
-} RateBucket;
-
-static RateBucket g_rate_table[RATE_LIMIT_BUCKETS];
-
-static uint32_t rate_hash(const char *ip)
-{
-    uint32_t h = 2166136261u;
-    for (const char *p = ip; *p; p++)
-        h = (h ^ (uint8_t)*p) * 16777619u;
-    return h % RATE_LIMIT_BUCKETS;
-}
-
-/* rate_check — return 1 if request is allowed, 0 if rate-limited */
-static int rate_check(const char *ip)
-{
-    uint32_t idx = rate_hash(ip);
-    RateBucket *b = &g_rate_table[idx];
-    time_t now = time(NULL);
-
-    if (strcmp(b->ip, ip) != 0 || (now - b->window_start) >= RATE_LIMIT_WINDOW) {
-        /* New IP in this bucket or window expired: reset */
-        strncpy(b->ip, ip, sizeof(b->ip) - 1);
-        b->ip[sizeof(b->ip) - 1] = '\0';
-        b->count = 1;
-        b->window_start = now;
-        return 1;
-    }
-
-    b->count++;
-    return b->count <= RATE_LIMIT_MAX;
-}
+/* ── Rate limiting: removed, deliberately (Story 127.60) ──────────────────
+ *
+ * A fixed-size per-IP rate limiter used to live here: a 200-per-60-seconds
+ * cap as two #defines, a 1024-bucket table, and a check at the top of
+ * handle_connection() and handle_tls_connection().  It is gone, and this note
+ * is here so nobody reinstates that shape.
+ *
+ * IT DID NOT THROTTLE.  Two things, both measured against the shipped code:
+ *
+ *   - It counted CONNECTIONS, not requests, despite its own comment reading
+ *     "requests per window per IP".  The check ran once before the keep-alive
+ *     loop, so one client on one socket was never limited: 886 of 900
+ *     requests served, zero 429s, while 199 separate connections from the
+ *     same address were enough to trip it.
+ *   - It reset the bucket whenever the stored address differed from the
+ *     caller's, so two addresses that hashed to the same bucket wiped each
+ *     other's window on every call and NEITHER was ever limited.  Driving the
+ *     real function: 10.0.1.172 and 10.0.2.78 collide in a 1024-bucket table,
+ *     and 100000 alternating calls each were allowed in full, where a single
+ *     address is cut off at 200.  Finding such a pair costs nothing.
+ *
+ * IT DID THROTTLE THE WRONG TRAFFIC.  Client identity came only from
+ * fd_peer_ip(), the peer of the socket.  There was no X-Forwarded-For
+ * handling anywhere, so behind a proxy or a CDN — the normal deployment —
+ * every client in the world shared one bucket and the whole site was capped
+ * at 200 connections a minute.
+ *
+ * AND THE NUMBER WAS NOT 200.  http_serve_workers() pre-forks N workers and
+ * the bucket table was copied into each, so the effective cap was 200 x N,
+ * decided by whichever worker happened to accept: measured at 400 with the
+ * two workers http.serve() uses.  HTTP/2 over TLS skipped the check entirely,
+ * because handle_tls_connection() dispatched to handle_h2_connection() before
+ * reaching it.  None of this appeared in http.tki, http.tk or http.md, and
+ * there was no env var and no setter, so nothing could rely on it and nothing
+ * could tune it.
+ *
+ * WHY REMOVED RATHER THAN FIXED.  Correct in-process rate limiting is not two
+ * #defines.  It needs state shared across the pre-fork workers, a table that
+ * does not evict on collision, per-request counting, and — the part that
+ * decides it — a TRUSTED-PROXY POLICY for client identity.  Reading
+ * X-Forwarded-For without one turns today's shared-bucket bug into a
+ * one-header total bypass, which is strictly worse than shipping nothing.
+ * That is a subsystem with its own security surface; it should be specified
+ * and designed, not bolted on inside a defect fix.  Until it exists the
+ * honest position is the one every production HTTP server takes: rate
+ * limiting belongs in front of the server, where the client identity is
+ * actually known.  See docs/stdlib/http.md, "Rate limiting".
+ */
 
 #ifdef TK_HAVE_OPENSSL
 /* Forward declaration for h2c upgrade path (60.1.7) */
@@ -848,12 +855,8 @@ static void handle_connection(int fd)
     char client_ip[64];
     fd_peer_ip(fd, client_ip, sizeof client_ip);
 
-    /* Rate limiting: reject with 429 if threshold exceeded */
-    if (!rate_check(client_ip)) {
-        send_error(fd, 429, client_ip);
-        close(fd);
-        return;
-    }
+    /* 127.60: the per-IP rate limiter that stood here is gone — see the note
+     * where it was defined.  Rate limiting belongs in front of the server. */
 
     /* Apply the (possibly user-overridden) receive timeout. */
     struct timeval tv;
@@ -4037,14 +4040,9 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         }
     }
 
-    if (!rate_check(client_ip)) {
-        const char *r429 = "HTTP/1.1 429 Too Many Requests\r\n"
-                           "Content-Length: 0\r\nConnection: close\r\n\r\n";
-        SSL_write(ssl, r429, (int)strlen(r429));
-        ssl_shutdown_quick(ssl, fd);
-        close(fd);
-        return;
-    }
+    /* 127.60: rate limiting removed here too.  Note that this call sat AFTER
+     * the ALPN branch above, so an h2 client never reached it — one more way
+     * the limit was not the limit. */
 
     /* Extend timeout for request/response processing */
     tv.tv_sec  = (long)srv_limits.timeout_secs;

@@ -144,6 +144,43 @@ f=main():void{
 };
 ```
 
+## Rate limiting
+
+**`std.http` does not rate limit, and deliberately so.** Put rate limiting in
+front of the server — in your reverse proxy, CDN or load balancer — where the
+client identity is actually known.
+
+Until story 127.60 the server carried a built-in per-IP limiter: 200 per 60
+seconds, as two compile-time constants with no setting, no environment
+variable and no mention on this page. It was removed rather than tuned,
+because it was wrong in both directions at once.
+
+It did not throttle. The check ran once per *connection*, not per request, so
+a client on a single keep-alive socket was never limited at all — 886 of 900
+requests served, no `429` — while 199 separate connections from the same
+address tripped it. And a bucket was reset whenever the address in it differed
+from the caller's, so any two addresses colliding in the 1024-bucket table
+wiped each other's window on every request and neither was ever limited.
+
+It did throttle the wrong traffic. Client identity came only from the socket's
+peer address; there was no `X-Forwarded-For` handling. Behind a proxy or a CDN
+— the normal deployment — every client in the world shared one bucket and the
+whole site was capped at 200 connections a minute.
+
+And the number was not 200. `http.serve` and `http.serveworkers` pre-fork
+worker processes, each with its own copy of the table, so the real cap was 200
+times the worker count, decided by whichever worker accepted: measured at 400
+with the two workers `http.serve` uses. HTTP/2 over TLS skipped the check
+entirely.
+
+Doing it properly is not a matter of exposing the two constants. It needs
+state shared across the pre-fork workers, a table that does not evict on
+collision, per-request counting, and a **trusted-proxy policy** for deciding
+which address to count — reading `X-Forwarded-For` without one replaces a
+shared-bucket bug with a one-header total bypass, which is worse than nothing.
+That is a subsystem to be specified and designed, not a default to be left in
+place because it exists.
+
 ### http.getstatic(path: $str; html: $str): void
 
 Registers a static HTML response for the given path. When the server receives a request matching `path`, it returns the pre-rendered `html` string as a `200 OK` response with `Content-Type: text/html`. Use this for pages whose content is known at startup.
