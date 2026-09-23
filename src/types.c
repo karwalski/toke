@@ -1680,6 +1680,225 @@ static void check_tki_call(Ctx *cx, const Node *call) {
                     f->param_count, actual);
 }
 
+/* ── 127.1 / 127.96 / 127.115 / 127.128: member calls on a VALUE receiver ──
+ *
+ * `recv.member(args)` where `recv` is not an import alias was checked by
+ * nothing at all.  infer_impl's NODE_CALL_EXPR case takes TOKSTR of
+ * `children[0]` to get a callee name; for a NODE_FIELD_EXPR callee that token
+ * is the '.', so the module-scope lookup fails, the call falls into the
+ * unresolved branch, and both checks that live there are gated on
+ * import_module_path() resolving the base — which it cannot, because the base
+ * is a value.  The callee subexpression is never inferred either, so even the
+ * E4025 / E4033 / E4035 field diagnostics are dead in callee position.
+ *
+ * Codegen then emitted a call to a BARE, unmangled symbol named after the
+ * member.  A toke function is mangled `<module>_<name>`, so:
+ *
+ *   x.pair("A")          --check exit 0, then ld: Undefined symbols: "_pair"
+ *   x.pair(), x.pair("A";"B")                       accepted identically
+ *   a.nosuch(), s.nosuch(), m.values(), p.nosuch()  same shape, `_nosuch`
+ *   http.res.ok("hi")    parsed as dispatch on the VALUE `http.res` -> `_ok`
+ *   s.push(1) on a str, s.slice(0;2), s.nosuchmember(1) on an untyped
+ *                        receiver                   all --check clean
+ *
+ * and, where the member IS a receiver method, surplus arguments were dropped
+ * silently on the way — `a.concat("A";"B")` returns "xxA", `a.len(1;2;3)`
+ * returns 5 — because the receiver path never compared the call to the
+ * signature it dispatches to.
+ *
+ * THE RULE.  A member call on a value receiver is an ERROR when the compiler
+ * can establish that the receiver dispatch has nothing to lower it to, and an
+ * E4026 when it can establish the arity and the call disagrees.  It is not
+ * deferred to the linker: deferral is the defect.  `E9003 "clang invocation
+ * failed with exit code 1"` arrives at line 0, col 0, with an empty `fix` and
+ * the module declaration as its source_line, and names a mangled symbol
+ * rather than the member — it cannot drive the repair loop, which is the one
+ * thing AGENTS.md §2 says a diagnostic is for.
+ *
+ * ESTABLISHED, not guessed.  The member set is g_recv_methods in llvm.c — the
+ * very gate the emitter's dispatch chain uses — so "the emitter cannot lower
+ * this" is read off the emitter rather than modelled beside it.  The arity
+ * comes from g_stdlib_decls and only when every symbol the member may lower
+ * to agrees; where they disagree, recv_method_arity() answers -1 and this
+ * says nothing.  That is 127.61's ground exactly.
+ *
+ * WHAT IS DELIBERATELY NOT CHECKED, because this runs against every member
+ * call in every program and a check that fires wrongly is worse than one that
+ * is incomplete:
+ *
+ *   * An `I=` alias receiver.  That is a module call and check_tki_call owns
+ *     it; judging it here as well would double-report.
+ *   * A stdlib SUB-NAMESPACE prefix — `row.f64(r;"c")`, `df.head(d;5)`,
+ *     `tpl.render(t;m)`.  Those prefixes are not `I=` aliases, so they look
+ *     exactly like value receivers, but an imported interface declares the
+ *     member under a dotted export name and the call works.  Recognised from
+ *     the interface records rather than from a list in this file.
+ *   * `alias.seg.member(...)` where the glue table has no symbol for the
+ *     concatenated spelling.  The three-segment form that IS declared now
+ *     lowers correctly (127.96); one that is not is an absence of knowledge
+ *     about a namespace this compiler barely models, not evidence of absence.
+ *   * A NODE_TYPE_IDENT receiver — `Point.x` is E4033's diagnostic.
+ *   * Receiver TYPES.  `s.push(1)` on a proven str is still accepted here:
+ *     `push` is a real receiver method, and refusing it needs type-directed
+ *     dispatch, which is a wider change than closing the hole.  Reported as a
+ *     finding rather than diagnosed.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/* llvm.c — the emitter's own record of the receiver-method set and of the
+ * sub-path spelling.  Forward-declared rather than pulled in through llvm.h,
+ * matching the 136.1 declarations above. */
+int recv_method_known(const char *member);
+int recv_method_arity(const char *member);
+const char *stdlib_subpath_symbol(const char *mpath, int is_std,
+                                  const char *seg, const char *member);
+
+/*
+ * tki_subnamespace_member — does some imported interface declare `<prefix>`
+ * as a namespace with a member `<member>`?
+ *
+ * Handwritten stdlib interfaces namespace their exports ("row.str",
+ * "infer.load", "http.res.ok"), and names.c records the export name verbatim
+ * in ImportedFunc.fn.  A match on the dotted tail is what distinguishes
+ * `row.f64(...)` — a working call through a prefix that is not an import
+ * alias — from `x.nosuch(...)`.
+ */
+static int tki_subnamespace_member(const NameEnv *env, const char *prefix,
+                                   const char *member) {
+    if (!env || !prefix || !member) return 0;
+    char tail[256];
+    int n = snprintf(tail, sizeof tail, "%s.%s", prefix, member);
+    if (n < 0 || n >= (int)sizeof tail) return 1;   /* too long to judge */
+    size_t tl = strlen(tail);
+    for (int i = 0; i < env->ifunc_count; i++) {
+        const char *fn = env->ifuncs[i].fn;
+        if (!fn) continue;
+        size_t fl = strlen(fn);
+        if (fl < tl) continue;
+        if (strcmp(fn + (fl - tl), tail) != 0) continue;
+        if (fl == tl || fn[fl - tl - 1] == '.') return 1;
+    }
+    return 0;
+}
+
+static void recv_arity_error(const Node *call, const char *member,
+                             int expected, int actual) {
+    char msg[384], exp_str[16], got_str[16];
+    snprintf(exp_str, sizeof exp_str, "%d", expected);
+    snprintf(got_str, sizeof got_str, "%d", actual);
+    snprintf(msg, sizeof msg,
+             "wrong number of arguments for '.%s': the implementation takes "
+             "%d argument%s including the receiver, the call passes %d",
+             member, expected, expected == 1 ? "" : "s", actual);
+    /* AGENTS.md §3.1 — the `fix` must hold in every case this fires. It must
+     * not say "remove an argument": too few is the same diagnostic as too
+     * many, and the surplus-argument form was silently DROPPING them, so the
+     * author's intent is not recoverable from the call site. */
+    diag_emit(DIAG_ERROR, E4026, call->start, call->line, call->col, msg,
+              "expected", exp_str, "got", got_str,
+              "fix", "match the call to the method's signature; the receiver "
+                     "is its first argument",
+              (const char *)NULL);
+}
+
+static void check_recv_method_call(Ctx *cx, const Node *call) {
+    if (!call || call->child_count < 1) return;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2)
+        return;
+    const Node *recv = callee->children[0];
+    if (!recv || !callee->children[1]) return;
+    if (!cx->env || !cx->env->names) return;
+
+    char member[128]; TOKSTR(member, cx->src, callee->children[1]);
+    if (!member[0]) return;
+
+    if (recv->kind == NODE_TYPE_IDENT) return;   /* E4033's business */
+
+    if (recv->kind == NODE_IDENT) {
+        char alias[128]; TOKSTR(alias, cx->src, recv);
+        char mbuf[256];
+        if (import_module_path(cx, alias, mbuf, sizeof mbuf)) return;
+        Decl *d = tc_lookup(cx->env->names->module_scope, alias,
+                            (int)strlen(alias));
+        if (d && d->kind == DECL_IMPORT_ALIAS) return;
+        if (tki_subnamespace_member(cx->env->names, alias, member)) return;
+    } else if (recv->kind == NODE_FIELD_EXPR && recv->child_count >= 2 &&
+               recv->children[0] && recv->children[1] &&
+               recv->children[0]->kind == NODE_IDENT) {
+        char alias[128]; TOKSTR(alias, cx->src, recv->children[0]);
+        char seg[128];   TOKSTR(seg,   cx->src, recv->children[1]);
+        char mbuf[256];
+        const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
+        if (mpath) {
+            /* `http.res.ok(body)` — a module sub-path, not a value receiver.
+             * It lowers through stdlib_subpath_symbol, so judge it against
+             * that symbol's arity; a spelling the glue table does not declare
+             * is left alone (see the header comment). */
+            int is_std = (strncmp(mpath, "std.", 4) == 0);
+            const char *sym = stdlib_subpath_symbol(mpath, is_std, seg, member);
+            int abi = sym ? stdlib_glue_arity(sym) : -1;
+            int actual = call->child_count - 1;
+            if (abi >= 0 && actual != abi && tc_first_report(cx, call) &&
+                tc_can_emit(cx)) {
+                char msg[384], exp_str[16], got_str[16];
+                snprintf(exp_str, sizeof exp_str, "%d", abi);
+                snprintf(got_str, sizeof got_str, "%d", actual);
+                snprintf(msg, sizeof msg,
+                         "wrong number of arguments for '%s.%s.%s': the "
+                         "implementation takes %d argument%s, the call "
+                         "passes %d",
+                         alias, seg, member, abi, abi == 1 ? "" : "s", actual);
+                diag_emit(DIAG_ERROR, E4026, call->start, call->line, call->col,
+                          msg, "expected", exp_str, "got", got_str,
+                          "fix", "match the call to the declaration, or "
+                                 "reconcile the interface with the "
+                                 "implementation if they disagree",
+                          (const char *)NULL);
+            }
+            return;
+        }
+        if (tki_subnamespace_member(cx->env->names, seg, member)) return;
+    }
+
+    if (!recv_method_known(member)) {
+        if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+        char msg[384];
+        /* 127.1: when a module-scope function of that name exists, say so.
+         * It is the commonest way into this diagnostic and it is a statement
+         * of fact, not an instruction — toke has no UFCS, so `x.pair(a)` is
+         * not `pair(x;a)` and telling the repair loop to rewrite it that way
+         * would be a `fix` that is not deterministically correct. */
+        Decl *fd = tc_lookup(cx->env->names->module_scope, member,
+                             (int)strlen(member));
+        if (fd && fd->def_node && fd->def_node->kind == NODE_FUNC_DECL)
+            snprintf(msg, sizeof msg,
+                     "no receiver method '%s': a value receiver has no member "
+                     "'%s' (a function '%s' is declared in this module, but a "
+                     "receiver call is not a call to it)",
+                     member, member, member);
+        else
+            snprintf(msg, sizeof msg,
+                     "no receiver method '%s': no built-in receiver type "
+                     "answers '%s'", member, member);
+        /* No `fix`: there is no deterministic repair. The member may be a
+         * misspelling, a method that does not exist on any receiver, or a
+         * function the author meant to call directly — and a did-you-mean for
+         * an arbitrary name is a guess (the 127.106 / 131.78 lesson). */
+        diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col, msg,
+                  "expected", "a member the receiver dispatch lowers",
+                  "got", member,
+                  (const char *)NULL);
+        return;
+    }
+
+    int want = recv_method_arity(member);
+    if (want < 0) return;                 /* no established arity */
+    int actual = call->child_count;       /* the receiver is argument 1 */
+    if (actual == want) return;
+    if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+    recv_arity_error(call, member, want, actual);
+}
+
 static Type *infer_impl(Ctx *cx, const Node *node);
 static Type *infer(Ctx *cx, const Node *node) {
     Type *t = infer_impl(cx, node);
@@ -2113,6 +2332,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             /* 136.1: and enforce the .tki the alias was imported from —
              * arity and the member's existence, nothing wider. */
             check_tki_call(cx,node);
+            /* 127.1/127.96/127.115/127.128: and, for a call whose receiver is
+             * a VALUE rather than a module, enforce the receiver dispatch. */
+            check_recv_method_call(cx,node);
             return mk_type(A,TY_UNKNOWN);
         }
         const Node *fn=d->def_node; int pi=0;

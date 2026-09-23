@@ -1906,6 +1906,43 @@ static void prepass_load_tki(Ctx *c, const Node *ast) {
  * Returns the C function name string, or NULL if the alias/method
  * combination does not match any known stdlib function.
  */
+/*
+ * resolve_module_subpath_call (127.96) — the glue symbol for a THREE-segment
+ * stdlib call, `alias.seg.member(...)`, or NULL.
+ *
+ * `callee` is the call's NODE_FIELD_EXPR callee, so the shape asked about is
+ * FIELD_EXPR(FIELD_EXPR(IDENT alias, seg), member).  That spelling is what
+ * stdlib/http.tki publishes — `http.res.ok`, `http.res.json`, `http.res.bad`,
+ * `http.res.err` — and the v0.3 specification uses it, but nothing resolved
+ * it: it parsed as receiver dispatch on the VALUE `http.res` and fell to the
+ * bare-name fallback, emitting `_ok`.  That is the whole of 127.96, which was
+ * filed as a missing symbol when tk_http_resok_w is defined in tk_web_glue.c
+ * and declared in stdlib_decls_gen.h.
+ *
+ * The interface names the two spellings of one function (`http.res.ok` and
+ * `http.resok`), so the sub-path resolves by concatenation — and only when
+ * g_stdlib_decls declares the symbol that names, so this cannot invent a call
+ * to something the native side does not provide.
+ */
+static const char *resolve_module_subpath_call(Ctx *c, const Node *callee) {
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2)
+        return NULL;
+    const Node *base = callee->children[0];
+    if (!base || base->kind != NODE_FIELD_EXPR || base->child_count < 2)
+        return NULL;
+    if (!base->children[0] || base->children[0]->kind != NODE_IDENT) return NULL;
+    char alias[128], seg[128], member[128];
+    tok_cp(c->src, base->children[0], alias, sizeof alias);
+    tok_cp(c->src, base->children[1], seg, sizeof seg);
+    tok_cp(c->src, callee->children[1], member, sizeof member);
+    for (int i = 0; i < c->import_count; i++) {
+        if (strcmp(c->imports[i].alias, alias)) continue;
+        return stdlib_subpath_symbol(c->imports[i].module,
+                                     c->imports[i].is_std, seg, member);
+    }
+    return NULL;
+}
+
 static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *method) {
     /* Find which module this alias refers to */
     const char *mod = NULL;
@@ -2497,16 +2534,162 @@ static const char *map_keys_elem_tag(Ctx *c, const Node *recv) {
     if (st && !strcmp(st, "__map__i")) return "@i64";
     return "@str";
 }
-/* 127.6: method-style verbs added to the instance dispatch table. They had
- * glue but no dispatch entry, so `x.upper()` fell through to the user-function
- * path and failed at link (E9003 undefined `_upper`). Kept as a list so the
- * result-tagging helpers (127.7) and the dispatch gate agree. Like the rest of
+/* 127.6's list (upper/lower/ends/replace/fields/join/pop/fold) used to live
+ * here as is_127_6_method(): verbs that had glue but no dispatch entry, so
+ * `x.upper()` fell through to the user-function path and failed at link
+ * (E9003, undefined `_upper`). They are now rows of the table below, which
+ * has the same property the separate list was kept for — one place the
+ * dispatch gate and every reader of the method set agree on. Like the rest of
  * the table these take precedence over a same-named user function (UFCS to
- * user functions does not link on 2.8.0 anyway). */
-static int is_127_6_method(const char *m) {
-    return !strcmp(m, "upper") || !strcmp(m, "lower") || !strcmp(m, "ends") ||
-           !strcmp(m, "replace") || !strcmp(m, "fields") || !strcmp(m, "join") ||
-           !strcmp(m, "pop") || !strcmp(m, "fold");
+ * user functions does not link, which is 127.1). */
+/* ── 127.1 / 127.96 / 127.115 / 127.128: the receiver-method set, as data ──
+ *
+ * `recv.member(args)` where `recv` is NOT a module alias lowers through the
+ * dispatch chain in emit_expr below.  Falling off the end of that chain used
+ * to mean emitting a call to a **bare, unmangled** symbol named after the
+ * member (`snprintf(fn_buf, sizeof fn_buf, "%s", method)`).  A toke function
+ * is mangled `<module>_<name>`, so that symbol never exists: `x.pair("A")`
+ * with `f=pair(a:str;b:str):str` in scope passed `--check` with exit 0 and
+ * then died at `ld` with `Undefined symbols: "_pair"`.  The same fallback
+ * swallowed `a.nosuch()`, `s.nosuch()`, `m.values()`, `p.nosuch()` on a user
+ * struct, and — via a receiver that is itself a field access — `http.res.ok`.
+ *
+ * This table names every member the chain can lower, and for each, every glue
+ * symbol the chain may pick for it.  The pick depends on the receiver's kind
+ * (`contains` is a hash lookup on a map, a linear scan on an array and a
+ * substring search on a str), which is why a member has a *set* of symbols
+ * and not one.
+ *
+ * It is a single registry with two readers, which is the shape this file keeps
+ * having to be corrected back into (127.80, 127.93): the emitter's own
+ * dispatch gate is `recv_method_in_chain()` below, and the type checker asks
+ * `recv_method_known()` / `recv_method_arity()`.  Neither can drift from the
+ * other, because there is only one list.
+ *
+ * `chain` distinguishes the members the big chain handles from the three that
+ * a special case above it returns for (`len` inline or via tk_*_len_w, `keys`
+ * on a map, `toarray` on a Vec).  Those must not enter the chain — its final
+ * `else` is `tk_str_eq_w` — but the checker must still accept them.
+ *
+ * ARITY IS NOT IN THIS TABLE.  It is read from g_stdlib_decls, the compiler's
+ * record of the native side, and only when EVERY candidate symbol agrees; a
+ * member whose variants disagree, or whose symbol the table does not declare,
+ * is left unchecked rather than judged against a guess.  That is the same
+ * ground 136.1/127.61 put the module-call arity check on.
+ */
+typedef struct {
+    const char *member;
+    int         chain;        /* 1 = dispatched by the big chain below */
+    const char *syms[5];      /* NULL-terminated; every symbol the chain may pick */
+} RecvMethod;
+
+static const RecvMethod g_recv_methods[] = {
+    /* handled by a special case ABOVE the chain */
+    {"len",       0, {"tk_str_len_w", "tk_map_len_w", "tk_vec_len_w", NULL}},
+    {"keys",      0, {"tk_map_keys_w", NULL}},
+    {"toarray",   0, {"tk_vec_toarray_w", NULL}},
+    /* handled by the chain */
+    {"append",    1, {"tk_array_append_w", NULL}},
+    {"push",      1, {"tk_array_append_w", "tk_vec_push_w", NULL}},
+    {"pop",       1, {"tk_array_pop_w", "tk_vec_pop_w", NULL}},
+    {"set",       1, {"tk_map_set_w", "tk_array_set_w", "tk_vec_set_w", NULL}},
+    {"get",       1, {"tk_str_arrayget_w", "tk_vec_get_w", NULL}},
+    {"getor",     1, {"tk_map_getor_w", NULL}},
+    {"map",       1, {"tk_arr_map", NULL}},
+    {"filter",    1, {"tk_arr_filter", NULL}},
+    {"reduce",    1, {"tk_arr_reduce", NULL}},
+    {"fold",      1, {"tk_arr_reduce", NULL}},
+    {"sort",      1, {"tk_arr_sort", NULL}},
+    {"split",     1, {"tk_str_split_w", NULL}},
+    {"trim",      1, {"tk_str_trim_w", NULL}},
+    {"contains",  1, {"tk_map_contains_w", "tk_str_contains_w",
+                      "tk_arr_contains_w", "tk_arr_containsstr_w", NULL}},
+    {"charat",    1, {"tk_str_charat_w", NULL}},
+    {"slice",     1, {"tk_str_slice_w", "tk_arr_slice_w", NULL}},
+    {"find",      1, {"tk_str_find_w", "tk_arr_find_w", "tk_arr_findstr_w", NULL}},
+    {"starts",    1, {"tk_str_starts_w", NULL}},
+    {"indexof",   1, {"tk_str_indexof_w", "tk_arr_indexof_w",
+                      "tk_arr_indexofstr_w", NULL}},
+    {"substr",    1, {"tk_str_substr_w", NULL}},
+    {"substring", 1, {"tk_str_substr_w", NULL}},
+    {"concat",    1, {"tk_str_concat_w", NULL}},
+    {"chars",     1, {"tk_str_chars_w", NULL}},
+    {"sub",       1, {"tk_str_sub_w", NULL}},
+    {"eq",        1, {"tk_str_eq_w", NULL}},
+    {"upper",     1, {"tk_str_upper_w", NULL}},
+    {"lower",     1, {"tk_str_lower_w", NULL}},
+    {"ends",      1, {"tk_str_ends_w", NULL}},
+    {"replace",   1, {"tk_str_replace_w", NULL}},
+    {"fields",    1, {"tk_str_fields_w", NULL}},
+    {"join",      1, {"tk_str_join_w", "tk_arr_join_w", NULL}},
+    {NULL, 0, {NULL}}
+};
+
+static const RecvMethod *recv_method_find(const char *m) {
+    if (!m) return NULL;
+    for (int i = 0; g_recv_methods[i].member; i++)
+        if (!strcmp(g_recv_methods[i].member, m)) return &g_recv_methods[i];
+    return NULL;
+}
+
+/* The emitter's own gate for the dispatch chain (was a 24-name `||` chain
+ * plus is_127_6_method). */
+static int recv_method_in_chain(const char *m) {
+    const RecvMethod *r = recv_method_find(m);
+    return r && r->chain;
+}
+
+/* 127.115: does the receiver dispatch lower this member at all? */
+int recv_method_known(const char *m) { return recv_method_find(m) != NULL; }
+
+/*
+ * recv_method_arity — the call arity (receiver included) every glue symbol
+ * this member may lower to agrees on, or -1 when they do not agree, when one
+ * of them is not declared, or when the member is not a receiver method.
+ *
+ * -1 means "the compiler has no single established arity here", and the
+ * checker must then say nothing: an unestablished fact is not a licence to
+ * guess, and a wrong E4026 on a correct call is worse than a missing one
+ * (AGENTS.md §2).
+ */
+int recv_method_arity(const char *m) {
+    const RecvMethod *r = recv_method_find(m);
+    if (!r) return -1;
+    int a = -1;
+    for (int i = 0; r->syms[i]; i++) {
+        int n = stdlib_glue_arity(r->syms[i]);
+        if (n < 0) return -1;
+        if (a < 0) a = n;
+        else if (a != n) return -1;
+    }
+    return a;
+}
+
+/*
+ * stdlib_subpath_symbol (127.96) — the glue symbol for the SUB-PATH spelling
+ * a stdlib interface publishes: `http.res.ok(body)`, declared in
+ * stdlib/http.tki as the export `http.res.ok`, is the same function as
+ * `http.resok(body)` and lowers to tk_http_resok_w.
+ *
+ * Nothing resolved the three-segment spelling.  `alias.seg.member(...)` parses
+ * as receiver dispatch on `alias.seg`, and the receiver path emitted a bare
+ * `_ok` — which is why 127.96 was filed as a missing symbol when
+ * tk_http_resok_w has been defined in tk_web_glue.c and declared in
+ * stdlib_decls_gen.h all along.
+ *
+ * Grounded on the glue table: the concatenated spelling is accepted only when
+ * g_stdlib_decls actually declares the symbol it names, so this cannot invent
+ * a call to something that does not exist.
+ */
+const char *stdlib_subpath_symbol(const char *mpath, int is_std,
+                                  const char *seg, const char *member) {
+    if (!mpath || !seg || !member) return NULL;
+    char joined[256];
+    if (snprintf(joined, sizeof joined, "%s%s", seg, member) >= (int)sizeof joined)
+        return NULL;
+    const char *sym = stdlib_symbol_for(mpath, is_std, joined);
+    if (!sym || stdlib_glue_arity(sym) < 0) return NULL;
+    return sym;
 }
 /* 127.8: emit `tk_str_len_w` / `tk_map_len_w` on an already-evaluated
  * receiver value `v` of LLVM type `vty` (pointers are coerced to the i64 ABI). */
@@ -4002,21 +4185,10 @@ static int emit_expr(Ctx *c, const Node *n)
                     return t;
                 }
             }
-            if (!is_mod_im &&
-                (!strcmp(method_im, "append") || !strcmp(method_im, "push") ||
-                 !strcmp(method_im, "set") ||
-                 !strcmp(method_im, "get") ||
-                 !strcmp(method_im, "getor") ||
-                 !strcmp(method_im, "map") || !strcmp(method_im, "filter") ||
-                 !strcmp(method_im, "reduce") || !strcmp(method_im, "sort") ||
-                 !strcmp(method_im, "split") || !strcmp(method_im, "trim") ||
-                 !strcmp(method_im, "contains") || !strcmp(method_im, "charat") ||
-                 !strcmp(method_im, "slice") || !strcmp(method_im, "find") ||
-                 !strcmp(method_im, "starts") || !strcmp(method_im, "indexof") ||
-                 !strcmp(method_im, "substr") || !strcmp(method_im, "concat") ||
-                 !strcmp(method_im, "chars") || !strcmp(method_im, "sub") ||
-                 !strcmp(method_im, "substring") || !strcmp(method_im, "eq") ||
-                 is_127_6_method(method_im))) {
+            /* The gate is the table (g_recv_methods): the same list the
+             * type checker reads, so the two cannot disagree about which
+             * member names the receiver path lowers. */
+            if (!is_mod_im && recv_method_in_chain(method_im)) {
                 const char *fn_im;
                 if (!strcmp(method_im, "append"))      fn_im = "tk_array_append_w";
                 else if (!strcmp(method_im, "push"))    fn_im = "tk_array_append_w";
@@ -4160,6 +4332,13 @@ static int emit_expr(Ctx *c, const Node *n)
             tok_cp(c->src, n->children[0]->children[0], alias, sizeof alias);
             tok_cp(c->src, n->children[0]->children[1], method, sizeof method);
             resolved_fn = resolve_stdlib_call(c, alias, method);
+            /* 127.96: `http.res.ok(body)` — the sub-path spelling the stdlib
+             * interfaces publish. Tried first because its receiver is itself
+             * a field access, so `alias` above is not an alias at all. */
+            if (!resolved_fn) {
+                const char *sp = resolve_module_subpath_call(c, n->children[0]);
+                if (sp) { resolved_fn = sp; }
+            }
             /* Disambiguate http.get/post by argument count:
              * 1 arg = HTTP client request, 2 args = route registration */
             if (resolved_fn) {
