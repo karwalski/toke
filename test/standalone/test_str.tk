@@ -40,7 +40,7 @@ f=main():i64{
   if(str.eq(sl;"ell")){io.println("PASS str.slice")}el{io.println("FAIL str.slice")};
   let idx=str.indexof("hello world";"world");
   if(idx==6){io.println("PASS str.indexof")}el{io.println("FAIL str.indexof")};
-  let j=str.join(@("a";"b";"c");",");
+  let j=str.join(",";@("a";"b";"c"));
   if(str.eq(j;"a,b,c")){io.println("PASS str.join")}el{io.println("FAIL str.join")};
   let pl=str.padleft("hi";5;48);
   if(str.eq(pl;"000hi")){io.println("PASS str.padleft")}el{io.println("FAIL str.padleft")};

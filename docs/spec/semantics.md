@@ -181,8 +181,12 @@ For a binary expression `lhs op rhs`:
   evaluate to `$str` (use `s.fromint(n)` / `s.format(f; "%.4f")` / `n as $str`
   for non-string values). Lowered to a single `tk_str_join_n` call regardless
   of segment count.
-- **`s.join(arr: @$str; sep: $str): $str`** — delimiter-joined collection.
-  Single allocation, O(N).
+- **`s.join(sep: $str; arr: @$str): $str`** — delimiter-joined collection.
+  Separator first, then the parts. Single allocation, O(N). (Corrected
+  2026-09-23 by story 127.5: this entry carried the arguments reversed,
+  and `stdlib/str.tki` (`["str","[str]"]`) with `str_join(sep, parts)` in
+  `src/stdlib/str.c` are the authority. The reversed form is accepted by
+  `--check` today and segfaults at run time — see story 127.5.)
 - **`s.builder(): $strbuilder`**, `b.add(part: $str)`, `b.build(): $str` —
   dynamic accumulation. Single backing buffer that grows; O(N) total.
 - **`s.concat(parts: @$str): $str`** — secondary variadic helper for when
