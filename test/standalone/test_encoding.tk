@@ -7,7 +7,7 @@ f=main():i64{
   let pass=mut.0;
   let fail=mut.0;
 
-  let encoded=enc.b64encode("hello");
+  let encoded=enc.b64encode(str.bytes("hello"));
   if(str.len(encoded)>0){
     io.println("PASS encoding.b64encode returns non-empty string");
     pass=pass+1
@@ -25,7 +25,7 @@ f=main():i64{
     fail=fail+1
   };
 
-  let encoded2=enc.b64encode("hello");
+  let encoded2=enc.b64encode(str.bytes("hello"));
   if(str.eq(encoded;encoded2)){
     io.println("PASS encoding.b64encode is deterministic");
     pass=pass+1

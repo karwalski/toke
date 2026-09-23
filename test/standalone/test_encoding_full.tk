@@ -6,7 +6,7 @@ i=str:std.str;
 f=main():i64{
   let fails=mut.0;
 
-  let b64=enc.b64encode("hello");
+  let b64=enc.b64encode(str.bytes("hello"));
   if(str.eq(b64;"aGVsbG8=")){
     io.println("PASS b64encode hello gives aGVsbG8=")
   }el{
@@ -38,7 +38,7 @@ f=main():i64{
     fails=fails+1
   };
 
-  let rt1=enc.b64decode(enc.b64encode("round trip test"));
+  let rt1=enc.b64decode(enc.b64encode(str.bytes("round trip test")));
   if(str.eq(rt1;"round trip test")){
     io.println("PASS b64 round-trip decode(encode(x)) == x")
   }el{
