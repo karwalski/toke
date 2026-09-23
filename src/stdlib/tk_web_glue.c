@@ -734,8 +734,53 @@ int64_t tk_http_servetls(int64_t port, int64_t cert_ptr, int64_t key_ptr) {
 
 /* ── Static file directory handler ───────────────────────────────────── */
 
-static char g_staticdir_prefix[512];
-static char g_staticdir_root[1024];
+/*
+ * 127.75 — http.servedir is a MOUNT, and a server may have several.
+ *
+ * THE DEFECT.  The prefix and root were two single globals, overwritten by
+ * every call, and `http_GET("*", staticdir_handler)` was re-registered on
+ * every call as well.  So two mounts collapsed to the last one, silently:
+ * confirmed on the wire with /a then /b registered, GET /a/f.txt answered
+ * 404 and GET /b/f.txt answered 200.  Nothing warned, nothing logged, and
+ * the first wildcard route still matched — it just ran the handler with the
+ * second mount's prefix, which no longer matched, so it fell through to 404.
+ *
+ * A registry with a fixed cap replaces them.  The wildcard route is
+ * registered exactly ONCE, on the first successful mount, because the route
+ * table has 512 slots and re-registering per call burned one each time.
+ * Mounts are matched longest-prefix-first so that servedir("/static";A) and
+ * servedir("/static/img";B) can coexist with the more specific one winning,
+ * which is the only sensible reading and was unreachable before.
+ *
+ * Re-mounting the SAME prefix replaces that mount's root rather than adding
+ * a second entry, so a caller that registers in a loop cannot exhaust the
+ * table.
+ */
+#define TK_MAX_STATICDIRS 32
+
+typedef struct {
+    char prefix[512];
+    char root[1024];
+} TkStaticMount;
+
+static TkStaticMount g_staticdirs[TK_MAX_STATICDIRS];
+static int           g_staticdir_count      = 0;
+static int           g_staticdir_registered = 0;
+
+/* staticdir_find — longest matching mount for a request path, or NULL. */
+static const TkStaticMount *staticdir_find(const char *rpath)
+{
+    const TkStaticMount *best = NULL;
+    size_t bestlen = 0;
+    for (int i = 0; i < g_staticdir_count; i++) {
+        size_t n = strlen(g_staticdirs[i].prefix);
+        if (strncmp(rpath, g_staticdirs[i].prefix, n) != 0) continue;
+        if (best && n <= bestlen) continue;
+        best = &g_staticdirs[i];
+        bestlen = n;
+    }
+    return best;
+}
 
 static const char *mime_for_ext(const char *path) {
     const char *dot = strrchr(path, '.');
@@ -775,11 +820,12 @@ static Res staticdir_handler(Req req) {
      * filename no filesystem holds, so every such URL 404'd. */
     char pathbuf[2048];
     const char *rpath = http_path_only(req.path, pathbuf, sizeof pathbuf);
-    size_t pfxlen = strlen(g_staticdir_prefix);
-    if (strncmp(rpath, g_staticdir_prefix, pfxlen) != 0)
-        return mk404();
+    /* 127.75: the longest mount whose prefix this path starts with, not
+     * "whichever root http.servedir was called with last". */
+    const TkStaticMount *mnt = staticdir_find(rpath);
+    if (!mnt) return mk404();
     char filepath[2048];
-    snprintf(filepath, sizeof filepath, "%s%s", g_staticdir_root, rpath);
+    snprintf(filepath, sizeof filepath, "%s%s", mnt->root, rpath);
     if (strstr(filepath, "..")) {
         Res r; r.status = 403; r.body = "Forbidden";
         r.headers.data = NULL; r.headers.len = 0; return r;
@@ -815,12 +861,18 @@ static Res staticdir_handler(Req req) {
     Res res;
     res.status = 200;
     res.body   = body;
+    /* 127.148: a Res does not own its body, and nothing downstream frees it.
+     * Every static file served leaked the whole file plus its header block.
+     * Hand both to the deferred list, which releases them after the
+     * response, the gzip buffer and the log line have been written. */
+    http_defer_free(body);
     StrPair *hdrs = malloc(sizeof(StrPair));
     if (hdrs) {
         hdrs[0].key = "Content-Type";
-        hdrs[0].val = mime;
+        hdrs[0].val = mime;   /* static storage from mime_for_ext */
         res.headers.data = hdrs;
         res.headers.len  = 1;
+        http_defer_free(hdrs);
     } else {
         res.headers.data = NULL;
         res.headers.len  = 0;
@@ -832,9 +884,32 @@ int64_t tk_http_serve_staticdir_w(int64_t prefix_i64, int64_t root_i64) {
     const char *prefix = (const char *)(intptr_t)prefix_i64;
     const char *root   = (const char *)(intptr_t)root_i64;
     if (!prefix || !root) return -1;
-    snprintf(g_staticdir_prefix, sizeof g_staticdir_prefix, "%s", prefix);
-    snprintf(g_staticdir_root,   sizeof g_staticdir_root,   "%s", root);
-    http_GET("*", staticdir_handler);
+
+    /* 127.75: re-mounting the same prefix replaces its root; a new prefix
+     * adds a mount; the wildcard route is registered once, not per call. */
+    for (int i = 0; i < g_staticdir_count; i++) {
+        if (strcmp(g_staticdirs[i].prefix, prefix) == 0) {
+            snprintf(g_staticdirs[i].root, sizeof g_staticdirs[i].root,
+                     "%s", root);
+            return 0;
+        }
+    }
+    if (g_staticdir_count >= TK_MAX_STATICDIRS) {
+        fprintf(stderr,
+                "error: http.servedir: more than %d static mounts; '%s' ignored\n",
+                TK_MAX_STATICDIRS, prefix);
+        return -1;
+    }
+    {
+        TkStaticMount *m = &g_staticdirs[g_staticdir_count];
+        snprintf(m->prefix, sizeof m->prefix, "%s", prefix);
+        snprintf(m->root,   sizeof m->root,   "%s", root);
+        g_staticdir_count++;
+    }
+    if (!g_staticdir_registered) {
+        http_GET("*", staticdir_handler);
+        g_staticdir_registered = 1;
+    }
     return 0;
 }
 
@@ -893,12 +968,17 @@ static Res tk_page_dispatch(Req req) {
             Res res;
             res.status = 200;
             res.body   = html;
+            /* 127.148: tmpl_renderpage returns heap memory and a Res does
+             * not own its body — every page render leaked the rendered
+             * HTML and its header block. */
+            http_defer_free((void *)(uintptr_t)html);
             StrPair *hdrs = malloc(sizeof(StrPair));
             if (hdrs) {
                 hdrs[0].key = "Content-Type";
                 hdrs[0].val = "text/html; charset=utf-8";
                 res.headers.data = hdrs;
                 res.headers.len  = 1;
+                http_defer_free(hdrs);
             } else {
                 res.headers.data = NULL;
                 res.headers.len  = 0;
@@ -1071,6 +1151,17 @@ static Res vhost_catchall_handler(Req req) {
     res.status = (uint16_t)rr.status;
     res.body   = rr.body;
 
+    /*
+     * 127.148: router_static_serve's own contract says "callers are
+     * responsible for freeing" resp.body and the header values — and no
+     * caller did.  On a 200 that is the ENTIRE FILE plus four strdup'd
+     * header values and two pointer arrays, leaked per request; this is the
+     * single largest instance of the unstated Res-body ownership rule.
+     * The header NAMES are string literals inside router.c and must not be
+     * freed; the arrays holding them are malloc'd and must.
+     */
+    http_defer_free((void *)(uintptr_t)rr.body);
+
     const char *ct = rr.content_type ? rr.content_type : "text/plain";
     uint64_t extra = rr.nheaders > 0 && rr.header_names && rr.header_values
                      ? rr.nheaders : 0;
@@ -1082,13 +1173,22 @@ static Res vhost_catchall_handler(Req req) {
         for (uint64_t i = 0; i < extra; i++) {
             pairs[1 + i].key = rr.header_names[i];
             pairs[1 + i].val = rr.header_values[i];
+            http_defer_free((void *)(uintptr_t)rr.header_values[i]);
         }
         res.headers.data = pairs;
         res.headers.len  = total;
+        http_defer_free(pairs);
     } else {
         res.headers.data = NULL;
         res.headers.len  = 0;
+        for (uint64_t i = 0; i < extra; i++)
+            http_defer_free((void *)(uintptr_t)rr.header_values[i]);
     }
+    /* The two pointer arrays are malloc'd by router_static_serve whether or
+     * not `pairs` was allocated.  content_type is static storage from
+     * mime_for_path and must not be freed. */
+    http_defer_free((void *)(uintptr_t)rr.header_names);
+    http_defer_free((void *)(uintptr_t)rr.header_values);
     return res;
 }
 

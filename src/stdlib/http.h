@@ -130,7 +130,33 @@ void http_PUT   (const char *pattern, RouteHandler h);
 void http_DELETE(const char *pattern, RouteHandler h);
 void http_PATCH (const char *pattern, RouteHandler h);
 
-/* Response constructors */
+/*
+ * ── Response constructors, and who owns the body (story 127.148) ──────
+ *
+ * A Res DOES NOT OWN ITS BODY.  All four constructors store the pointer as
+ * given; nothing here copies, and nothing downstream frees.  That is
+ * deliberate — it is what lets a handler return a string literal, and it is
+ * what makes `http.resok(http.param(req;"name"))` work, since a `:param`
+ * binding is request-lifetime memory released after the response is written.
+ *
+ * So the body a handler returns must be exactly one of:
+ *
+ *   (a) static storage — a literal, or a table like mime_for_ext()'s;
+ *   (b) memory owned by the REQUEST — a param binding, a header value.  It
+ *       outlives the response by construction: free_req() and
+ *       http_run_deferred_frees() both run after the response, the gzip
+ *       buffer and the log line have been written;
+ *   (c) heap the handler allocated, handed to http_defer_free() in the same
+ *       breath as the assignment.  Same release point as (b).
+ *
+ * There is no fourth case.  A heap body that is not deferred is leaked, not
+ * freed — no code path anywhere frees a Res body — and a heap body that is
+ * free()d before returning is a use-after-free the server will write out as
+ * an empty response.  Both were live in this tree: the second cost 127.72 a
+ * round of "every :param response came back EMPTY", and the first leaked the
+ * whole file on every static request until 127.148.  Conformance suite
+ * test/conform/S009_http_res_body_ownership.sh measures case (c).
+ */
 Res http_Res_ok  (const char *body);
 Res http_Res_json(uint16_t status, const char *body);
 Res http_Res_bad (const char *msg);

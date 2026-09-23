@@ -310,7 +310,16 @@ void http_free_params(StrPair *out, int *cnt)
  * to write, which is the exact failure this list exists to prevent; a bounded
  * leak on an unreachable path is the cheaper of the two.
  */
-#define HTTP_MAX_DEFERRED (4 * HTTP_MAX_PARAMS)
+/*
+ * 127.148 raised this.  The 4 x HTTP_MAX_PARAMS above is exactly what the
+ * two parameter blocks can produce, with nothing left over, so the moment a
+ * handler started handing its response body to this list as well the worst
+ * case could overflow and silently DROP — i.e. leak — the body.  The extra
+ * 16 slots are the per-request handler budget: the largest producer is the
+ * vhost static handler at nine pointers (body, five header values, two
+ * header arrays, the StrPair block).
+ */
+#define HTTP_MAX_DEFERRED (4 * HTTP_MAX_PARAMS + 16)
 
 static void *g_deferred[HTTP_MAX_DEFERRED];
 static int   g_deferred_n;
