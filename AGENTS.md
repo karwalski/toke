@@ -734,6 +734,37 @@ Do not:
 
 ## 14. Reporting Format
 
+### 14.0 The rule this section is built on
+
+**Report what the gate reported. Never translate it into a stronger claim.**
+
+Until 2026-09-24 the template below asked for two lines that *could not be
+written truthfully*:
+
+- **"make lint: 0 warnings"** — `make lint` had never printed zero and had
+  never returned non-zero. It was a single `--analyze` command, and clang's
+  `--analyze` does not honour `-Werror`: it printed 97 warnings and exited 0,
+  for as long as the target had existed, while sitting inside `make ci`
+  (135.3a). Every contributor who filled that line in either copied the
+  template or wrote something they had not checked.
+- **"make build-all: success on x86-64 and ARM64"** — `make build-all` had
+  never cross-compiled anything. Its three recursive makes passed three
+  `--target` triples and all wrote the same object files, so sub-makes 2 and 3
+  found the objects up to date and did nothing. Measured: 0.74 s, zero compile
+  commands, exit 0 (136.62).
+
+A template that cannot be satisfied honestly does not produce silence. It
+produces a plausible sentence, and the sentence is then read as evidence. Both
+lines above were quoted as evidence for months.
+
+So: **if a gate cannot give you the line the template asks for, write down what
+it actually gave you, including "did not run here" and "red on arrival".** A
+cycle report containing three honest red lines is worth more than one
+containing three green lines that nobody watched. Nothing in this section is
+improved by rounding a result up.
+
+### 14.1 Template
+
 At the end of each development cycle, report using this structure:
 
 ```
@@ -743,9 +774,8 @@ At the end of each development cycle, report using this structure:
 **Branch:** <branch name>
 
 **Files changed:**
-- tkc/src/types.c — added exhaustive match enforcement for E4010
-- tkc/test/types/T-042.yaml — new conformance test
-- docs/progress.md — updated story 1.2.5 to done
+- src/types.c — added exhaustive match enforcement for E4010
+- test/types/T-042.yaml — new conformance test
 
 **Implementation decisions:**
 - Exhaustive match check runs after all arm types are resolved to avoid
@@ -755,18 +785,75 @@ At the end of each development cycle, report using this structure:
 - T-042: non-exhaustive match emits E4010 with correct span
 - T-043: adding variant to sum type triggers E4010 on all existing matches
 
-**Validation:**
-- make conform: 447/447 pass
-- make lint: 0 warnings
-- make build-all: success on x86-64 and ARM64
+**Negative control:**
+- <the defect you injected, that the new check caught, and the before/after
+  output — see 14.2. "Not applicable" is an answer; "not done" is an answer.
+  Silence is not.>
+
+**Validation:** (copy each gate's own last line; do not paraphrase)
+- make conform: <e.g. "447/447 pass" — the suite prints this>
+- make conform-sh: <e.g. "N scripts passed, 0 failed">
+- make lint: <e.g. "OK against the 65-entry skiplist in
+  scripts/check_stdlib_analysis_skiplist.txt; M entries dated <date>">
+- make lint-nonhost: <same shape, 8-entry portion of the same file>
+- make check-hardening: <its own last line, plus every "Reported, not
+  asserted" note it printed — those notes are the point of the gate>
+- make build-all: <"not run: needs a sysroot for the two Linux triples
+  (build-preflight fails on this host)" is the honest answer on macOS.
+  See 14.3.>
+- host: <OS, arch, compiler version — every line above is host-specific>
+
+**Gates NOT run, and why:**
+- <name each one. "I did not run it" is a complete reason. An unrun gate
+  silently omitted reads as a passed gate.>
 
 **Risks or follow-up:**
 - E4010 fix field is currently empty. Story 1.2.6 covers diagnostic fix fields.
 
-**Tracker update:**
+**Tracker update:** (report these; do not edit docs/progress.md yourself if
+you are one of several concurrent workers — see §12.4)
 - Story 1.2.5: done
 - Story 1.2.6: next
 ```
+
+### 14.2 The negative control is part of the deliverable
+
+For any check, gate, test or assertion you add: **prove it can fail before you
+believe it works.** Inject a defect the check should catch, show it red, remove
+the defect, show it green. Report both outputs.
+
+**Assert the injection landed.** A control that silently did not apply produced
+a false green in this repository. Before running the gate, confirm the defect
+is really in the tree — read the file back, or have the injection step fail
+loudly if it edited nothing.
+
+A gate that has never been watched to fail is not evidence, and a gate that
+*cannot* fail is worse than no gate at all, because it is reported as evidence.
+Seven checks audited on 2026-09-20 reported success while testing nothing.
+
+### 14.3 What the two rewritten lines mean now
+
+**`make lint`** covers 153 sources in three passes and fails on anything not
+accounted for on a checked-in, dated skiplist. Green means *"nothing new, and
+the known backlog is unchanged"* — it does **not** mean zero warnings, and the
+skiplist is not empty. Report it as "OK against the N-entry skiplist", and if
+your change adds a line to that skiplist, say so in the same breath: the
+skiplist only ever shrinks, and every entry carries a date, a reason and a
+story number.
+
+**`make build-all`** is honestly red on any host without a sysroot for the two
+Linux triples; `make build-preflight` tells you by name whether this host is
+one. On macOS it is. **Do not report "build-all: success" from a host where
+the preflight fails** — write "not run: no sysroot for
+x86_64-linux-gnu / aarch64-linux-gnu". The cross-compilation claim in §2 is
+currently carried by CI's Linux runner and by nothing on a developer Mac.
+
+**`make check-hardening`** asserts that the exploit-mitigation flags are in
+*effect*, not that they are in `CFLAGS`. It deliberately **reports** rather
+than asserts the `_FORTIFY_SOURCE` level actually enforced, because macOS
+implements levels 1 and 2 only and `-D_FORTIFY_SOURCE=3` is inert there.
+Quote its "Reported, not asserted" lines verbatim; "hardened build" on its own
+is the kind of sentence this section exists to stop.
 
 ---
 
