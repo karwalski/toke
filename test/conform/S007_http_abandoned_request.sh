@@ -272,13 +272,14 @@ stray="$(awk '
   /n = write\(fd, p \+ off, len - off\);/ { next }          # http_write_all itself
   /[^_a-zA-Z]write\(fd,|write\(sse->fd,|write\(client_fd,|write\(backend_fd,|write\(w->fd,/ {
       print FILENAME":"FNR": "$0
-  }' "${REPO_ROOT}/src/stdlib/http.c" "${REPO_ROOT}/src/stdlib/ws_server.c")"
+  }' "${REPO_ROOT}/src/stdlib/http.c" "${REPO_ROOT}/src/stdlib/ws_server.c" \
+     "${REPO_ROOT}/src/stdlib/http2.c" "${REPO_ROOT}/src/stdlib/proxy.c")"
 if [ -n "${stray}" ]; then
     echo "  FAIL: a client-socket write bypasses http_write_all:"
     echo "${stray}" | sed 's/^/      /'
     FAIL=$((FAIL + 1))
 else
-    echo "  PASS: every client-socket write in http.c and ws_server.c goes through http_write_all"
+    echo "  PASS: every client-socket write in http.c, ws_server.c, http2.c and proxy.c goes through http_write_all"
     PASS=$((PASS + 1))
 fi
 
