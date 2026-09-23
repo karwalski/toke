@@ -157,8 +157,117 @@ const char *http_path_only(const char *target, char *buf, size_t buflen)
 
 /* ── Pattern matching ───────────────────────────────────────────────── */
 
-static int match_pattern(const char *pat, const char *path,
-                         StrPair *out, int *cnt)
+/*
+ * http_free_params — release the key/value pairs http_match_pattern bound
+ * into `out` and reset the count (story 127.72).
+ *
+ * Every `:param` segment costs two malloc()s.  Nothing released them: the
+ * routing loop dropped non-selected bindings with a bare `pc = 0`, the
+ * selected route's bindings were overwritten by a second match, and the
+ * bindings the handler actually used were abandoned when the request ended.
+ * A `:param` route therefore grew the server on every request while a plain
+ * route — which allocates nothing — showed no growth at all, which is why it
+ * went unread for so long.  Measured before the fix on macOS/arm64 with one
+ * four-parameter route: 266.4 bytes per request, and 764.6 with four
+ * path-matching routes ahead of the winner.
+ *
+ * Safe on an already-empty block, and leaves `out` re-usable.
+ */
+void http_free_params(StrPair *out, int *cnt)
+{
+    if (!out || !cnt) return;
+    for (int i = 0; i < *cnt; i++) {
+        free((void *)(uintptr_t)out[i].key);
+        free((void *)(uintptr_t)out[i].val);
+        out[i].key = NULL;
+        out[i].val = NULL;
+    }
+    *cnt = 0;
+}
+
+/*
+ * http_defer_free / http_run_deferred_frees — release a pointer once the
+ * response has been written (story 127.72).
+ *
+ * WHY THIS EXISTS, AND IT IS NOT DECORATION.  A `:param` value belongs to the
+ * matcher, but a handler may hand that exact pointer back as the response
+ * body: `http.resok(http.param(req;"name"))` is the obvious way to write a
+ * `:param` handler, and http_Res_ok stores the pointer without copying it.
+ * Freeing the bindings the moment the handler returns therefore turns the
+ * body into freed memory — measured while fixing this story: every response
+ * came back EMPTY, where the same handler with the value copied into a new
+ * string answered correctly.  Trading a leak for a use-after-free is not a
+ * fix, so the selected route's bindings are handed to this list and released
+ * at the same point free_req() releases the parsed request: after the
+ * response, the gzip buffer and the log line have all been written.
+ *
+ * The dispatchers in http.c keep their block on the stack and could simply
+ * free late; the handler dispatchers in tk_web_glue.c cannot, because their
+ * block goes out of scope while the Res they return is still travelling, so
+ * the list is shared and exported.
+ *
+ * Capacity is twice what one request can produce: a selected route's bindings
+ * from http.c plus a handler dispatcher's is at most 2 x HTTP_MAX_PARAMS keys
+ * and values, so overflow is unreachable by construction.  Should it happen
+ * anyway — a drain missed because a connection was torn down between the
+ * handler and the write, twice over — the pointer is DROPPED, not freed.
+ * Freeing it would be freeing something the response in flight may be about
+ * to write, which is the exact failure this list exists to prevent; a bounded
+ * leak on an unreachable path is the cheaper of the two.
+ */
+#define HTTP_MAX_DEFERRED (4 * HTTP_MAX_PARAMS)
+
+static void *g_deferred[HTTP_MAX_DEFERRED];
+static int   g_deferred_n;
+
+void http_defer_free(void *p)
+{
+    if (!p) return;
+    if (g_deferred_n >= HTTP_MAX_DEFERRED) return;   /* drop, never free */
+    g_deferred[g_deferred_n++] = p;
+}
+
+void http_run_deferred_frees(void)
+{
+    for (int i = 0; i < g_deferred_n; i++) free(g_deferred[i]);
+    g_deferred_n = 0;
+}
+
+/*
+ * http_defer_params — hand `out`'s bindings to the deferred list and reset
+ * the count.  Use this for the bindings the HANDLER saw; use
+ * http_free_params for bindings no handler ever received, which nothing can
+ * alias and which are cheaper to release at once.
+ */
+void http_defer_params(StrPair *out, int *cnt)
+{
+    if (!out || !cnt) return;
+    for (int i = 0; i < *cnt; i++) {
+        http_defer_free((void *)(uintptr_t)out[i].key);
+        http_defer_free((void *)(uintptr_t)out[i].val);
+        out[i].key = NULL;
+        out[i].val = NULL;
+    }
+    *cnt = 0;
+}
+
+/*
+ * http_match_pattern — match a route pattern against a request path,
+ * binding each `:param` segment into `out` (at most HTTP_MAX_PARAMS).
+ * Returns 1 on a match, 0 otherwise.
+ *
+ * On ANY non-match — a literal mismatch part way through, a length
+ * mismatch at the end, or a failed malloc — the bindings made so far are
+ * released before returning, so a caller only ever has to free after a 1.
+ *
+ * 127.72: this used to exist twice, once here and once as a verbatim static
+ * copy `tk_match_pattern` in tk_web_glue.c.  Both leaked, identically, and
+ * the copy had the HTTP_MAX_PARAMS bound this one was missing — so the two
+ * descriptions of one behaviour had already drifted in the direction of a
+ * stack overflow on a route with more than 32 parameters.  One function now.
+ */
+int http_match_pattern(const char *pat, const char *path,
+                       StrPair *out, int *cnt)
 {
     /* Wildcard catch-all: pattern "*" matches any path */
     if (strcmp(pat, "*") == 0) { *cnt = 0; return 1; }
@@ -168,19 +277,29 @@ static int match_pattern(const char *pat, const char *path,
             pat++;
             const char *ks = pat; while (*pat && *pat != '/') pat++;
             size_t kn = (size_t)(pat - ks);
-            char *key = malloc(kn + 1); if (!key) return 0;
+            char *key = malloc(kn + 1);
+            if (!key) { http_free_params(out, cnt); return 0; }
             memcpy(key, ks, kn); key[kn] = '\0';
             const char *vs = path; while (*path && *path != '/') path++;
             size_t vn = (size_t)(path - vs);
-            char *val = malloc(vn + 1); if (!val) { free(key); return 0; }
+            char *val = malloc(vn + 1);
+            if (!val) { free(key); http_free_params(out, cnt); return 0; }
             memcpy(val, vs, vn); val[vn] = '\0';
-            out[(*cnt)].key = key; out[(*cnt)].val = val; (*cnt)++;
+            /* Bound the write: `out` is a caller-owned HTTP_MAX_PARAMS block
+             * and this copy used to write past it without checking. */
+            if (*cnt < HTTP_MAX_PARAMS) {
+                out[(*cnt)].key = key; out[(*cnt)].val = val; (*cnt)++;
+            } else {
+                free(key); free(val);
+            }
         } else {
-            if (*pat != *path) return 0;
+            if (*pat != *path) { http_free_params(out, cnt); return 0; }
             pat++; path++;
         }
     }
-    return *pat == '\0' && *path == '\0';
+    if (*pat == '\0' && *path == '\0') return 1;
+    http_free_params(out, cnt);
+    return 0;
 }
 
 /* ── Request parsing ────────────────────────────────────────────────── */
@@ -253,8 +372,10 @@ static Req parse_request(const char *raw) {
  * by ~1.1-1.3 KB per request with no plateau — reproducible on a 404 path
  * where no toke code runs at all, which is what rules out the runtime arena.
  *
- * req.params is deliberately NOT touched: handle_connection points it at a
- * stack array of StrPair whose key/val strings are owned by match_pattern.
+ * req.params is deliberately NOT touched: the dispatchers point it at a
+ * stack array of StrPair whose key/val strings http_match_pattern owns, and
+ * each dispatcher releases them with http_free_params as soon as the handler
+ * has returned (127.72 — before that, nobody released them at all).
  */
 static void free_req(Req *req)
 {
@@ -741,47 +862,54 @@ static void send_error(int fd, uint16_t status, const char *client_ip)
     }
 }
 
-/* ── Per-IP rate limiting (Story 59.4.4) ──────────────────────────────── */
-
-#define RATE_LIMIT_BUCKETS 1024
-#define RATE_LIMIT_WINDOW  60     /* seconds */
-#define RATE_LIMIT_MAX     200    /* requests per window per IP */
-
-typedef struct {
-    char     ip[64];
-    uint32_t count;
-    time_t   window_start;
-} RateBucket;
-
-static RateBucket g_rate_table[RATE_LIMIT_BUCKETS];
-
-static uint32_t rate_hash(const char *ip)
-{
-    uint32_t h = 2166136261u;
-    for (const char *p = ip; *p; p++)
-        h = (h ^ (uint8_t)*p) * 16777619u;
-    return h % RATE_LIMIT_BUCKETS;
-}
-
-/* rate_check — return 1 if request is allowed, 0 if rate-limited */
-static int rate_check(const char *ip)
-{
-    uint32_t idx = rate_hash(ip);
-    RateBucket *b = &g_rate_table[idx];
-    time_t now = time(NULL);
-
-    if (strcmp(b->ip, ip) != 0 || (now - b->window_start) >= RATE_LIMIT_WINDOW) {
-        /* New IP in this bucket or window expired: reset */
-        strncpy(b->ip, ip, sizeof(b->ip) - 1);
-        b->ip[sizeof(b->ip) - 1] = '\0';
-        b->count = 1;
-        b->window_start = now;
-        return 1;
-    }
-
-    b->count++;
-    return b->count <= RATE_LIMIT_MAX;
-}
+/* ── Rate limiting: removed, deliberately (Story 127.60) ──────────────────
+ *
+ * A fixed-size per-IP rate limiter used to live here: a 200-per-60-seconds
+ * cap as two #defines, a 1024-bucket table, and a check at the top of
+ * handle_connection() and handle_tls_connection().  It is gone, and this note
+ * is here so nobody reinstates that shape.
+ *
+ * IT DID NOT THROTTLE.  Two things, both measured against the shipped code:
+ *
+ *   - It counted CONNECTIONS, not requests, despite its own comment reading
+ *     "requests per window per IP".  The check ran once before the keep-alive
+ *     loop, so one client on one socket was never limited: 886 of 900
+ *     requests served, zero 429s, while 199 separate connections from the
+ *     same address were enough to trip it.
+ *   - It reset the bucket whenever the stored address differed from the
+ *     caller's, so two addresses that hashed to the same bucket wiped each
+ *     other's window on every call and NEITHER was ever limited.  Driving the
+ *     real function: 10.0.1.172 and 10.0.2.78 collide in a 1024-bucket table,
+ *     and 100000 alternating calls each were allowed in full, where a single
+ *     address is cut off at 200.  Finding such a pair costs nothing.
+ *
+ * IT DID THROTTLE THE WRONG TRAFFIC.  Client identity came only from
+ * fd_peer_ip(), the peer of the socket.  There was no X-Forwarded-For
+ * handling anywhere, so behind a proxy or a CDN — the normal deployment —
+ * every client in the world shared one bucket and the whole site was capped
+ * at 200 connections a minute.
+ *
+ * AND THE NUMBER WAS NOT 200.  http_serve_workers() pre-forks N workers and
+ * the bucket table was copied into each, so the effective cap was 200 x N,
+ * decided by whichever worker happened to accept: measured at 400 with the
+ * two workers http.serve() uses.  HTTP/2 over TLS skipped the check entirely,
+ * because handle_tls_connection() dispatched to handle_h2_connection() before
+ * reaching it.  None of this appeared in http.tki, http.tk or http.md, and
+ * there was no env var and no setter, so nothing could rely on it and nothing
+ * could tune it.
+ *
+ * WHY REMOVED RATHER THAN FIXED.  Correct in-process rate limiting is not two
+ * #defines.  It needs state shared across the pre-fork workers, a table that
+ * does not evict on collision, per-request counting, and — the part that
+ * decides it — a TRUSTED-PROXY POLICY for client identity.  Reading
+ * X-Forwarded-For without one turns today's shared-bucket bug into a
+ * one-header total bypass, which is strictly worse than shipping nothing.
+ * That is a subsystem with its own security surface; it should be specified
+ * and designed, not bolted on inside a defect fix.  Until it exists the
+ * honest position is the one every production HTTP server takes: rate
+ * limiting belongs in front of the server, where the client identity is
+ * actually known.  See docs/stdlib/http.md, "Rate limiting".
+ */
 
 #ifdef TK_HAVE_OPENSSL
 /* Forward declaration for h2c upgrade path (60.1.7) */
@@ -793,12 +921,8 @@ static void handle_connection(int fd)
     char client_ip[64];
     fd_peer_ip(fd, client_ip, sizeof client_ip);
 
-    /* Rate limiting: reject with 429 if threshold exceeded */
-    if (!rate_check(client_ip)) {
-        send_error(fd, 429, client_ip);
-        close(fd);
-        return;
-    }
+    /* 127.60: the per-IP rate limiter that stood here is gone — see the note
+     * where it was defined.  Rate limiting belongs in front of the server. */
 
     /* Apply the (possibly user-overridden) receive timeout. */
     struct timeval tv;
@@ -1044,29 +1168,40 @@ static void handle_connection(int fd)
          * This ensures http.getstatic("/docs") takes priority over
          * http.servedir("*") even if registered later. */
         int best = -1;
+        /* 127.72: set when `params` already holds `best`'s bindings, so the
+         * winner is matched once rather than twice. */
+        int have_params = 0;
         for (int i = 0; i < route_count; i++) {
-            if (match_pattern(route_table[i].pattern,
-                              rpath_h1, params, &pc)) {
+            if (http_match_pattern(route_table[i].pattern,
+                                   rpath_h1, params, &pc)) {
                 path_matched = 1;
                 const char *check_method = is_head ? "GET" : req.method;
                 if (check_method &&
                     strcmp(route_table[i].method, check_method) == 0) {
                     /* Prefer non-wildcard routes over "*" */
                     if (strcmp(route_table[i].pattern, "*") != 0) {
-                        best = i; break; /* exact match — done */
+                        best = i; have_params = 1; break; /* exact — done */
                     }
                     if (best < 0) best = i; /* wildcard — keep as fallback */
                 }
-                pc = 0;
+                /* 127.72: was a bare `pc = 0`, which dropped one malloc'd
+                 * key and value per parameter of every route whose path
+                 * matched but whose method did not. */
+                http_free_params(params, &pc);
             }
         }
         if (best >= 0) {
-            match_pattern(route_table[best].pattern,
-                          rpath_h1, params, &pc);
+            if (!have_params)
+                http_match_pattern(route_table[best].pattern,
+                                   rpath_h1, params, &pc);
             req.params.data = params; req.params.len = (uint64_t)pc;
             res = route_table[best].h(req);
             handler_called = 1;
         }
+        /* 127.72: the bindings the handler borrowed are released with the
+         * request, not here — res.body may BE one of them. */
+        http_defer_params(params, &pc);
+        req.params.data = NULL; req.params.len = 0;
         /* Path existed but no method matched → 405 (only if handler wasn't called) */
         if (path_matched && !handler_called && res.status == 404) {
             res = make_res(405, "Method Not Allowed");
@@ -1124,8 +1259,11 @@ static void handle_connection(int fd)
 
         /* 127.65: release the parsed request before the next keep-alive
          * iteration.  Everything that may alias it (res.body, the gzip
-         * buffer, the access/error log lines) has already been written. */
+         * buffer, the access/error log lines) has already been written.
+         * 127.72: the route bindings go with it, for the same reason — a
+         * handler may return a :param value as the response body. */
         free_req(&req);
+        http_run_deferred_frees();
 
         if (!keep_alive) break;
     }
@@ -3703,29 +3841,33 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             int h2_handler_called = 0;
             int h2_is_head = (strcmp(method, "HEAD") == 0);
             int h2_best = -1;
+            int h2_have_params = 0;   /* 127.72 */
             for (int r = 0; r < route_count; r++) {
-                if (match_pattern(route_table[r].pattern,
-                                  rpath_h2, h2_params, &h2_pc)) {
+                if (http_match_pattern(route_table[r].pattern,
+                                       rpath_h2, h2_params, &h2_pc)) {
                     h2_path_matched = 1;
                     const char *cm = h2_is_head ? "GET" : method;
                     if (cm && strcmp(route_table[r].method, cm) == 0) {
                         if (strcmp(route_table[r].pattern, "*") != 0) {
-                            h2_best = r; break;
+                            h2_best = r; h2_have_params = 1; break;
                         }
                         if (h2_best < 0) h2_best = r;
                     }
-                    h2_pc = 0;
+                    http_free_params(h2_params, &h2_pc);   /* 127.72 */
                 }
             }
             if (h2_best >= 0) {
-                match_pattern(route_table[h2_best].pattern,
-                              rpath_h2, h2_params, &h2_pc);
+                if (!h2_have_params)
+                    http_match_pattern(route_table[h2_best].pattern,
+                                       rpath_h2, h2_params, &h2_pc);
                 req.params.data = h2_params;
                 req.params.len  = (uint64_t)h2_pc;
                 res = route_table[h2_best].h(req);
                 h2_handler_called = 1;
                 if (h2_is_head) res.body = NULL;
             }
+            http_defer_params(h2_params, &h2_pc);          /* 127.72 */
+            req.params.data = NULL; req.params.len = 0;
             if (h2_path_matched && !h2_handler_called && res.status == 404) {
                 res = make_res(405, "Method Not Allowed");
             }
@@ -3786,6 +3928,9 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             }
             free(names);
             free(values);
+            /* 127.72: response written and logged — the route bindings it
+             * may alias can go now. */
+            http_run_deferred_frees();
             break;
         }
 
@@ -3967,14 +4112,9 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         }
     }
 
-    if (!rate_check(client_ip)) {
-        const char *r429 = "HTTP/1.1 429 Too Many Requests\r\n"
-                           "Content-Length: 0\r\nConnection: close\r\n\r\n";
-        SSL_write(ssl, r429, (int)strlen(r429));
-        ssl_shutdown_quick(ssl, fd);
-        close(fd);
-        return;
-    }
+    /* 127.60: rate limiting removed here too.  Note that this call sat AFTER
+     * the ALPN branch above, so an h2 client never reached it — one more way
+     * the limit was not the limit. */
 
     /* Extend timeout for request/response processing */
     tv.tv_sec  = (long)srv_limits.timeout_secs;
@@ -4193,28 +4333,32 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         int tls_path_matched = 0;
         int tls_handler_called = 0;
         int tls_best = -1;
+        int tls_have_params = 0;   /* 127.72 */
         for (int i = 0; i < route_count; i++) {
-            if (match_pattern(route_table[i].pattern,
-                              rpath_tls, params, &pc)) {
+            if (http_match_pattern(route_table[i].pattern,
+                                   rpath_tls, params, &pc)) {
                 tls_path_matched = 1;
                 const char *check_method = tls_is_head ? "GET" : req.method;
                 if (check_method &&
                     strcmp(route_table[i].method, check_method) == 0) {
                     if (strcmp(route_table[i].pattern, "*") != 0) {
-                        tls_best = i; break;
+                        tls_best = i; tls_have_params = 1; break;
                     }
                     if (tls_best < 0) tls_best = i;
                 }
-                pc = 0;
+                http_free_params(params, &pc);   /* 127.72 */
             }
         }
         if (tls_best >= 0) {
-            match_pattern(route_table[tls_best].pattern,
-                          rpath_tls, params, &pc);
+            if (!tls_have_params)
+                http_match_pattern(route_table[tls_best].pattern,
+                                   rpath_tls, params, &pc);
             req.params.data = params; req.params.len = (uint64_t)pc;
             res = route_table[tls_best].h(req);
             tls_handler_called = 1;
         }
+        http_defer_params(params, &pc);          /* 127.72 */
+        req.params.data = NULL; req.params.len = 0;
         if (tls_path_matched && !tls_handler_called && res.status == 404) {
             res = make_res(405, "Method Not Allowed");
         }
@@ -4304,8 +4448,10 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         }
 
         /* 127.65: release the parsed request before the next keep-alive
-         * iteration (same reasoning as the cleartext loop above). */
+         * iteration (same reasoning as the cleartext loop above).
+         * 127.72: and the route bindings with it — res.body may be one. */
         free_req(&req);
+        http_run_deferred_frees();
 
         if (!keep_alive) break;
     }

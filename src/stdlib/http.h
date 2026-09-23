@@ -68,6 +68,41 @@ typedef Res (*RouteHandler)(Req req);
  */
 const char *http_path_only(const char *target, char *buf, size_t buflen);
 
+/*
+ * Route pattern matching (story 127.72).
+ *
+ * One implementation, used by every dispatcher in http.c and by the handler
+ * dispatchers in tk_web_glue.c.  It used to be two — a static match_pattern
+ * here and a verbatim static tk_match_pattern there — which leaked in exactly
+ * the same way and had already drifted apart on the bounds check.
+ *
+ * http_match_pattern binds each `:param` segment of `pat` into `out`, which
+ * the caller owns and which must hold HTTP_MAX_PARAMS entries.  It returns 1
+ * on a match with `*cnt` bindings to release, or 0 having already released
+ * whatever it bound.  After a 1 the caller MUST call http_free_params once
+ * it is done with the bindings — including when it goes on to match another
+ * route, because the next call overwrites the block.
+ */
+#define HTTP_MAX_PARAMS 32
+
+int  http_match_pattern(const char *pat, const char *path,
+                        StrPair *out, int *cnt);
+void http_free_params(StrPair *out, int *cnt);
+
+/*
+ * A handler may return a `:param` value AS the response body —
+ * `http.resok(http.param(req;"name"))` is the obvious spelling, and the Res
+ * constructors store the pointer without copying.  Bindings a handler saw
+ * must therefore NOT be freed when it returns: hand them to
+ * http_defer_params, which releases them at http_run_deferred_frees(), called
+ * once per request beside free_req() after the response, the gzip buffer and
+ * the log line have all been written.  http_free_params stays correct for
+ * bindings no handler ever received.
+ */
+void http_defer_params(StrPair *out, int *cnt);
+void http_defer_free(void *p);
+void http_run_deferred_frees(void);
+
 /* Route registration */
 void http_GET   (const char *pattern, RouteHandler h);
 void http_POST  (const char *pattern, RouteHandler h);

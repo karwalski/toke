@@ -581,6 +581,16 @@ test-stdlib-http-leak:
 	    src/stdlib/capabilities.c -lz -lpthread
 	$(RUN_TEST) ./test/stdlib/test_http_keepalive_leak
 
+# Story 127.72: the route matcher must release the key/value pairs it binds
+# for every `:param` segment.  Drives the real server loop over loopback
+# keep-alive connections and reads the heap's in-use byte count either side.
+test-stdlib-http-route-param-leak:
+	$(CC) $(CFLAGS) -o test/stdlib/test_http_route_param_leak \
+	    test/stdlib/test_http_route_param_leak.c src/stdlib/http.c \
+	    src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c \
+	    src/stdlib/capabilities.c -lz -lpthread
+	$(RUN_TEST) ./test/stdlib/test_http_route_param_leak
+
 test-stdlib-http-cookies:
 	$(CC) $(CFLAGS) -o test/stdlib/test_http_cookies \
 	    test/stdlib/test_http_cookies.c src/stdlib/http.c \

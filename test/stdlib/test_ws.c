@@ -352,6 +352,7 @@ static void test_send_closed_conn(void)
 {
     WsConn conn;
     WsSendResult r;
+    conn.magic  = WS_CONN_MAGIC;   /* 127.112: hand-built handle */
     conn.fd     = -1;
     conn.mask   = 1;
     conn.closed = 1;
@@ -386,6 +387,7 @@ static void test_recv_closed_conn(void)
 {
     WsConn conn;
     WsRecvResult r;
+    conn.magic  = WS_CONN_MAGIC;   /* 127.112: hand-built handle */
     conn.fd     = -1;
     conn.mask   = 1;
     conn.closed = 1;
@@ -409,6 +411,7 @@ static void test_close_null(void)
 static void test_close_double(void)
 {
     WsConn conn;
+    conn.magic  = WS_CONN_MAGIC;   /* 127.112: hand-built handle */
     conn.fd     = -1;
     conn.mask   = 1;
     conn.closed = 1;
@@ -443,6 +446,7 @@ static void test_send_null_text(void)
 {
     WsConn conn;
     WsSendResult r;
+    conn.magic  = WS_CONN_MAGIC;   /* 127.112: hand-built handle */
     conn.fd     = -1;
     conn.mask   = 1;
     conn.closed = 0;

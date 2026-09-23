@@ -673,6 +673,22 @@ static int ws_recv_all(int fd, uint8_t *buf, uint64_t len)
     return 0;
 }
 
+/*
+ * 127.112 — handle validation.  See the commentary on WsConn in ws.h for why
+ * this exists: without it a zeroed toke struct read as an OPEN connection on
+ * file descriptor 0 and ws_send wrote a real frame to the caller's terminal.
+ */
+int ws_conn_valid(const WsConn *conn)
+{
+    int       sotype;
+    socklen_t solen = (socklen_t)sizeof sotype;
+
+    if (!conn) return 0;
+    if (conn->magic != WS_CONN_MAGIC) return 0;
+    if (conn->fd < 0) return 1;   /* already closed: real handle, not writable */
+    return getsockopt(conn->fd, SOL_SOCKET, SO_TYPE, &sotype, &solen) == 0;
+}
+
 WsConnResult ws_connect(const char *url)
 {
     WsConnResult res;
@@ -849,6 +865,7 @@ WsConnResult ws_connect(const char *url)
         fd = -1;
         goto cleanup;
     }
+    res.conn->magic  = WS_CONN_MAGIC;
     res.conn->fd     = fd;
     res.conn->mask   = 1;   /* client always masks */
     res.conn->closed = 0;
@@ -872,7 +889,12 @@ WsSendResult ws_send(WsConn *conn, const char *text)
     res.is_err  = 0;
     res.err_msg = NULL;
 
-    if (!conn || conn->closed) {
+    if (!ws_conn_valid(conn)) {
+        res.is_err  = 1;
+        res.err_msg = "ws_send: not an open WebSocket connection handle";
+        return res;
+    }
+    if (conn->closed) {
         res.is_err  = 1;
         res.err_msg = "ws_send: connection closed or NULL";
         return res;
@@ -908,7 +930,12 @@ WsSendResult ws_sendbytes(WsConn *conn, const uint8_t *data, uint64_t len)
     res.is_err  = 0;
     res.err_msg = NULL;
 
-    if (!conn || conn->closed) {
+    if (!ws_conn_valid(conn)) {
+        res.is_err  = 1;
+        res.err_msg = "ws_sendbytes: not an open WebSocket connection handle";
+        return res;
+    }
+    if (conn->closed) {
         res.is_err  = 1;
         res.err_msg = "ws_sendbytes: connection closed or NULL";
         return res;
@@ -945,7 +972,12 @@ WsRecvResult ws_recv(WsConn *conn)
     res.is_err  = 0;
     res.err_msg = NULL;
 
-    if (!conn || conn->closed) {
+    if (!ws_conn_valid(conn)) {
+        res.is_err  = 1;
+        res.err_msg = "ws_recv: not an open WebSocket connection handle";
+        return res;
+    }
+    if (conn->closed) {
         res.is_err  = 1;
         res.err_msg = "ws_recv: connection closed or NULL";
         return res;
@@ -1052,7 +1084,10 @@ void ws_close(WsConn *conn)
 {
     WsEncodeResult enc;
 
-    if (!conn) return;
+    /* 127.112: never close() or write to a descriptor named by something
+     * that is not one of our handles — the documented bad example reached
+     * here with fd 0. */
+    if (!ws_conn_valid(conn)) return;
     if (!conn->closed) {
         /* Send close frame (best-effort) */
         enc = ws_encode_frame(WS_CLOSE, NULL, 0, conn->mask);
@@ -1073,14 +1108,19 @@ void ws_broadcast(WsConn **conns, uint64_t count, const char *text)
     uint64_t i;
     if (!conns || !text) return;
     for (i = 0; i < count; i++) {
-        if (conns[i] && !conns[i]->closed)
+        /* ws_send revalidates, but skipping invalid slots here keeps
+         * broadcast's "send to every live connection" contract honest. */
+        if (ws_conn_valid(conns[i]) && !conns[i]->closed)
             (void)ws_send(conns[i], text);
     }
 }
 
 void ws_conn_free(WsConn *conn)
 {
-    if (!conn) return;
+    /* 127.112: free()ing a pointer we did not malloc corrupts the caller's
+     * heap, so an unrecognised handle is left alone. */
+    if (!ws_conn_valid(conn)) return;
+    conn->magic = 0;   /* poison: a reused handle fails validation */
     if (conn->fd >= 0) {
         close(conn->fd);
         conn->fd = -1;

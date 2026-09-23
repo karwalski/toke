@@ -18,16 +18,32 @@ int64_t tk_ws_connect_w(int64_t url) {
     return (int64_t)(intptr_t)r.conn;
 }
 
+/*
+ * 127.112 — the handle a toke `$wsconn` carries is an address, and until this
+ * story nothing checked that the address was one WE handed out.  The
+ * `docs/stdlib/ws.md` example fabricated a `$wsconn{id:0;ready:false}` as the
+ * `$err` arm of ws.connect; that zeroed block read as an OPEN connection on
+ * fd 0, so ws.send wrote a real WebSocket frame to the caller's terminal and
+ * reported success.  ws_conn_valid() is the guard; it lives in ws.c so every
+ * caller of the C API gets it, and the wrappers below fail closed.
+ */
+static WsConn *ws_handle(int64_t h) {
+    WsConn *c = (WsConn *)(intptr_t)h;
+    return ws_conn_valid(c) ? c : NULL;
+}
+
 int64_t tk_ws_send_w(int64_t conn, int64_t msg) {
-    if (!conn || !msg) return -1;
-    WsSendResult r = ws_send((WsConn *)(intptr_t)conn,
-                              (const char *)(intptr_t)msg);
+    if (!msg) return -1;
+    WsConn *c = ws_handle(conn);
+    if (!c) return -1;
+    WsSendResult r = ws_send(c, (const char *)(intptr_t)msg);
     return r.is_err ? -1 : 0;
 }
 
 int64_t tk_ws_recv_w(int64_t conn) {
-    if (!conn) return 0;
-    WsRecvResult r = ws_recv((WsConn *)(intptr_t)conn);
+    WsConn *c = ws_handle(conn);
+    if (!c) return 0;
+    WsRecvResult r = ws_recv(c);
     if (r.is_err || !r.frame) return 0;
     /* Return the payload as a string (for text frames) */
     if (r.frame->opcode == WS_TEXT && r.frame->payload && r.frame->payload_len > 0) {
@@ -44,9 +60,12 @@ int64_t tk_ws_recv_w(int64_t conn) {
 }
 
 int64_t tk_ws_close_w(int64_t conn) {
-    if (!conn) return 0;
-    ws_close((WsConn *)(intptr_t)conn);
-    ws_conn_free((WsConn *)(intptr_t)conn);
+    /* Without the validation this close()d fd 0 and then free()d a pointer
+     * the toke runtime owns — a documented example reached both. */
+    WsConn *c = ws_handle(conn);
+    if (!c) return 0;
+    ws_close(c);
+    ws_conn_free(c);
     return 0;
 }
 
@@ -72,8 +91,10 @@ int64_t tk_ws_broadcast_w(int64_t conns, int64_t text) {
     WsConn **live = (WsConn **)malloc((size_t)n * sizeof(WsConn *));
     if (!live) return 0;
     uint64_t count = 0;
-    for (int64_t i = 0; i < n; i++)
-        if (slots[i]) live[count++] = (WsConn *)(intptr_t)slots[i];
+    for (int64_t i = 0; i < n; i++) {
+        WsConn *c = ws_handle(slots[i]);   /* 127.112: not just non-NULL */
+        if (c) live[count++] = c;
+    }
     if (count) ws_broadcast(live, count, (const char *)(intptr_t)text);
     free(live);
     return 0;
