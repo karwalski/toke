@@ -16,9 +16,9 @@ An entry below is declared as a `func` export in a `stdlib/*.tki` interface file
 
 ## Population
 
-| `.tki` func exports | 902 |
+| `.tki` func exports | 903 |
 |---|---|
-| Resolve to a defined symbol | 854 |
+| Resolve to a defined symbol | 855 |
 | **Quarantined (no defined symbol)** | **48** |
 | Stale skips (quarantined but now resolving) | 0 |
 

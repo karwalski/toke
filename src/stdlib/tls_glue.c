@@ -167,6 +167,58 @@ int64_t tk_tls_genselfsigned_w(int64_t common_name, int64_t valid_days)
     return (int64_t)(intptr_t)kp;
 }
 
+/*
+ * tls.genselfsignedalg(commonname; validdays; keyalg) — the same keypair with
+ * the signing algorithm chosen: "ecdsa-p384" (the default, broad interop) or
+ * "ml-dsa-65" (post-quantum, FIPS 204, OpenSSL 3.5+).
+ *
+ * WHY THIS EXISTS SEPARATELY FROM tls.genselfsigned.  tls_gen_self_signed_alg
+ * has been implemented and linked in tls.c since 124.1 shipped ADR-0013's
+ * crypto agility, and it had NO wrapper and NO .tki export, so ML-DSA-65
+ * certificate generation was unreachable from toke.  136.44's sweep could not
+ * have found it: that sweep compared declared .tki exports against the glue,
+ * and this one was never declared, so there was nothing to disagree with.
+ * Filed as 136.44a.
+ *
+ * The core FAILS CLOSED and this wrapper must not soften that: an unsupported
+ * algorithm name is an error, and an ML-DSA keygen failure is an error.
+ * Neither falls back to P-384.  A classical certificate silently returned in
+ * place of a post-quantum one is the worst outcome available here, because the
+ * caller asked for ML-DSA precisely because it matters to them.
+ *
+ * FAILURE CONVENTION.  This returns 0 on failure, matching every other
+ * std.tls wrapper, and therefore inherits the module's value-sentinel
+ * convention rather than the error box of 127.109.  That is deliberate and it
+ * is not a design: 0 is not a valid keypair handle here, so the sentinel is at
+ * least sound for THIS call, and migrating std.tls to the error channel is one
+ * change for the whole module (the err_msg tls.c already produces is thrown
+ * away by every wrapper in this file, not just this one).  Landing a fraction
+ * of it alongside a new entry point would ship that break out of band.
+ */
+int64_t tk_tls_genselfsignedalg_w(int64_t common_name, int64_t valid_days,
+                                  int64_t key_alg)
+{
+    const char *cn = as_str(common_name);
+    if (!cn || *cn == '\0') return 0;
+
+    int32_t days = (int32_t)valid_days;
+    if (days <= 0) days = 365;
+
+    /* A null or empty algorithm means "the default", which is what the core
+     * documents for a NULL key_alg — not an error. */
+    const char *alg = as_str(key_alg);
+    if (alg && *alg == '\0') alg = NULL;
+
+    TlsKeypairResult r = tls_gen_self_signed_alg(cn, days, alg);
+    if (r.is_err) return 0;
+
+    TkTlsKeypair *kp = calloc(1, sizeof *kp);
+    if (!kp) { free(r.cert_pem); free(r.key_pem); return 0; }
+    kp->cert = r.cert_pem;
+    kp->key  = r.key_pem;
+    return (int64_t)(intptr_t)kp;
+}
+
 /* tls.certof(keypair) — the certificate PEM (public material). */
 int64_t tk_tls_certof_w(int64_t keypair)
 {

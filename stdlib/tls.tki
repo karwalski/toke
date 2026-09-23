@@ -38,6 +38,7 @@
       ]
     },
     {"kind": "func", "name": "tls.genselfsigned", "params": ["str", "i32"],               "return": "TlsKeypair!TlsErr"},
+    {"kind": "func", "name": "tls.genselfsignedalg", "params": ["str", "i32", "str"], "return": "TlsKeypair!TlsErr"},
     {"kind": "func", "name": "tls.certof",           "params": ["TlsKeypair"],               "return": "str"},
     {"kind": "func", "name": "tls.keyof",            "params": ["TlsKeypair"],               "return": "str"},
     {"kind": "func", "name": "tls.freekeypair",      "params": ["TlsKeypair"],               "return": "bool"},

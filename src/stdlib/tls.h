@@ -21,7 +21,7 @@
 #include <stdint.h>
 
 /* -------------------------------------------------------------------------
- * TlsKeypair — result of tls.gen_self_signed
+ * TlsKeypair — result of tls.genselfsigned
  * ------------------------------------------------------------------------- */
 
 typedef struct {
@@ -88,7 +88,7 @@ typedef void (*TlsConnCallback)(TlsConn conn);
  * ========================================================================= */
 
 /*
- * tls.gen_self_signed(common_name, valid_days) -> TlsKeypair!TlsErr
+ * tls.genselfsigned(common_name, valid_days) -> TlsKeypair!TlsErr
  *
  * Generates a P-384 EC keypair and a self-signed X.509 v3 certificate.
  * On success: result.cert_pem and result.key_pem are heap-allocated PEM
@@ -99,7 +99,7 @@ typedef void (*TlsConnCallback)(TlsConn conn);
 TlsKeypairResult tls_gen_self_signed(const char *common_name, int32_t valid_days);
 
 /*
- * tls.gen_self_signed_alg(common_name, valid_days, key_alg) -> TlsKeypair!TlsErr
+ * tls.genselfsignedalg(common_name, valid_days, key_alg) -> TlsKeypair!TlsErr
  *
  * As tls_gen_self_signed, but selects the certificate signing key:
  *   NULL / "ecdsa-p384" -> classical P-384 ECDSA (default, broad interop)
@@ -153,7 +153,7 @@ int tls_write(TlsConn conn, const char *data);
 int tls_close(TlsConn conn);
 
 /*
- * tls.peer_cert(conn) -> ?(str)
+ * tls.peercert(conn) -> ?(str)
  *
  * Returns the peer's PEM-encoded X.509 certificate as presented during the
  * handshake.  Returns is_none == 1 if no peer certificate was presented.
@@ -184,7 +184,7 @@ char *tls_fingerprint(const char *pem);
 char *tls_protocol(TlsConn conn);
 
 /*
- * tls.pairing_code(conn) -> str
+ * tls.pairingcode(conn) -> str
  *
  * Derives a 6-digit decimal code from the XOR of the local and peer
  * certificate fingerprints.  Returns "000000" if either cert is unavailable.

@@ -56,6 +56,19 @@ The error side of the fallible calls: `CertErr` (generation, parsing or verifica
 
 Generates a P-384 EC keypair and a self-signed X.509 certificate with `commonname` as both subject and issuer CN, valid for `validdays` days from now. Returns `0` on failure.
 
+### tls.genselfsignedalg(commonname: str; validdays: i32; keyalg: str): TlsKeypair!TlsErr
+
+As `tls.genselfsigned`, but chooses the certificate's signing key:
+
+| `keyalg` | Key |
+|---|---|
+| `""` or `"ecdsa-p384"` | Classical P-384 ECDSA — the default, broad interoperability |
+| `"ml-dsa-65"` | Post-quantum ML-DSA-65 (FIPS 204). Requires OpenSSL 3.5 or later |
+
+**It does not fall back.** An algorithm name it does not recognise is refused, and an ML-DSA keygen that fails on an OpenSSL without ML-DSA support is refused — neither quietly returns a P-384 certificate. A caller asking for ML-DSA is asking because it matters to them, so a classical certificate handed back under that name would be the worst available answer. Returns `0` on failure, like every call in this module.
+
+ML-DSA certificates are opt-in for a reason: they will not verify against a classical-only peer. Use them where you control both ends.
+
 ### tls.certof(kp: TlsKeypair): str
 
 The PEM-encoded certificate from a keypair.
