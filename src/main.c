@@ -125,7 +125,9 @@ static const char HELP[] =
     "  --lint              Run lint rules and report diagnostics\n"
     "  --fix               With --lint, auto-fix mechanical violations in-place\n"
     "  --dry-run           With --lint --fix, print the diff instead of writing\n"
-    "  --migrate           Migrate legacy .tk file to default syntax (stdout)\n"
+    "  --migrate           Migrate legacy .tk file to default syntax (stdout).\n"
+    "                      Declines (echoes input, exits non-zero) on source\n"
+    "                      that already compiles; TKC_MIGRATE_FORCE=1 overrides\n"
     "  --legacy            Legacy mode (86-char syntax, uppercase keywords)\n"
     "  --profile1          Deprecated alias for --legacy\n"
     "  --profile2          Deprecated alias for default mode\n"
@@ -385,6 +387,14 @@ static void lint_print_diff(const char *path, const char *a, long alen,
  * to a fixpoint: fixes are applied, the result re-parsed and re-linted, and
  * the cycle repeats until no fix applies (so a second --fix is a no-op).
  * The file is written only if every intermediate result parses cleanly.
+ *
+ * EXIT CODE (127.137).  `--lint` used to return 0 unconditionally, including
+ * on diagnostics it had just labelled `"severity":"error"` in its own JSON.
+ * The exit code is the obvious way to gate CI on a linter, so any such step
+ * passed on a program the linter called erroneous.  The two spellings now
+ * agree: an unresolved LINT_ERROR exits ECOMPILE, hints and warnings exit 0.
+ * "Unresolved" matters under --fix — an error the fixpoint repaired is not
+ * a failure, so the count is taken from the FINAL state of the buffer.
  */
 static int run_lint_mode(const char *path, const char *sbuf, long slen,
                          const Node *ast, Profile profile,
@@ -396,6 +406,8 @@ static int run_lint_mode(const char *path, const char *sbuf, long slen,
     int rc = 0, total_applied = 0, total_skipped = 0;
     char *buf = NULL; long blen = slen;
     int *status = NULL;
+    int errors_left = 0;   /* 127.137: LINT_ERROR diagnostics still standing */
+    int errors_in_file = 0; /* …as the file stands on disk right now          */
 
     if (do_fix) {
         buf = malloc((size_t)slen + 1);
@@ -422,10 +434,17 @@ static int run_lint_mode(const char *path, const char *sbuf, long slen,
             if (do_fix && status && status[li] == 2) fprintf(stderr, " [fix skipped: overlaps an applied fix]");
             fprintf(stderr, "\n");
         }
+        /* 127.137: an error the --fix pass rewrote away is not left standing —
+         * but --dry-run writes nothing, so for that mode the file on disk
+         * still has every error round 0 found. */
+        if (d->severity == LINT_ERROR) {
+            errors_in_file++;
+            if (!(do_fix && status && status[li] == 1)) errors_left++;
+        }
     }
     free(status);
     lint_result_free(&lr);
-    if (!do_fix) return 0;
+    if (!do_fix) return errors_in_file ? ECOMPILE : 0;
 
     /* Fixpoint rounds: re-parse and re-lint the rewritten buffer. */
     int round = 0, ok = 1;
@@ -448,6 +467,11 @@ static int run_lint_mode(const char *path, const char *sbuf, long slen,
         }
         LintResult lr2;
         if (tkc_lint(ast2, buf, (int)blen, NULL, &lr2) < 0) { arena_free(ar); ok = 0; rc = EINTERNAL; break; }
+        /* 127.137: this round's lint IS the state of the buffer as it now
+         * stands, so it supersedes the previous round's error tally. */
+        errors_left = 0;
+        for (int li = 0; li < lr2.count; li++)
+            if (lr2.items[li].severity == LINT_ERROR) errors_left++;
         int applied = lint_apply_fixes(&buf, &blen, &lr2, NULL, &total_skipped);
         lint_result_free(&lr2);
         arena_free(ar);
@@ -476,6 +500,9 @@ static int run_lint_mode(const char *path, const char *sbuf, long slen,
         fprintf(stderr, "tkc: note: %d fix(es) skipped because they overlapped an applied fix\n",
                 total_skipped);
     free(buf);
+    /* 127.137: --dry-run leaves the file exactly as it was, so report on what
+     * is on disk; a real --fix run reports on what it wrote. */
+    if (rc == 0 && (dry_run ? errors_in_file : errors_left)) rc = ECOMPILE;
     return rc;
 }
 
@@ -612,6 +639,72 @@ typedef struct {
 } RunOpts;
 
 /*
+ * source_needs_migration — 1 when `sbuf` does NOT compile under the active
+ * profile, 0 when it already does.
+ *
+ * 127.57.  `--migrate` is a text rewriter with no notion of whether its input
+ * needs rewriting, so it ran its whole transform chain over source that was
+ * already valid v0.4 and damaged it: measured over this tree, 36 of 497 files
+ * that `--check` clean no longer compiled afterwards (stdlib/encoding.tk and
+ * stdlib/sha256.tk among them), and 124 of 124 files containing block comments
+ * lost 100% of them — 216 comment blocks, including the round-trip fixture
+ * named for the thing being destroyed.  Every one of those runs exited 0.
+ *
+ * Source that compiles under the current profile is, by definition, already in
+ * the syntax `--migrate` exists to produce.  There is nothing for the migrator
+ * to do to it and everything for it to lose, so the migrator now declines.
+ * Declining is NOT silence: the source is echoed to stdout byte-for-byte (so
+ * the redirect `--migrate` is designed for writes the original, comments and
+ * all, instead of a corrupted or empty file) and the exit code is non-zero.
+ *
+ * Diagnostics are suppressed — a clean parse here is not news, and a dirty one
+ * is exactly the case where the migrator should run and say nothing about it.
+ *
+ * TKC_MIGRATE_FORCE=1 overrides the decision and migrates anyway. It exists
+ * for two callers: someone who has decided they want the rewrite on valid
+ * source regardless, and test/conform/C041, whose negative control needs the
+ * old behaviour back to prove the gate can go red.
+ */
+static int source_needs_migration(const char *sbuf, long slen, const RunOpts *o)
+{
+    const char *force = getenv("TKC_MIGRATE_FORCE");
+    if (force && force[0] && strcmp(force, "0") != 0) return 1;
+    Arena *ar = arena_init();
+    if (!ar) return 1;                     /* cannot tell → let migrate run */
+    int needs = 1;
+    int tcap = (int)(slen + 16);
+    Token *toks = arena_alloc(ar, tcap * (int)sizeof(Token));
+    if (toks) {
+        diag_suppress(1);
+        diag_reset();
+        diag_set_source(sbuf, (size_t)slen);
+        int tc = lex(sbuf, (int)slen, toks, tcap, o->profile);
+        if (tc >= 0 && diag_error_count() == 0) {
+            Node *ast = parse(toks, tc, sbuf, ar, o->profile);
+            if (ast && diag_error_count() == 0) {
+                SymbolTable st;
+                TkcLimits lim = o->limits;
+                if (resolve_imports(ast, sbuf, o->search_paths, o->search_path_count,
+                                    &lim, &st) == 0 && diag_error_count() == 0) {
+                    NameEnv ne;
+                    if (resolve_names(ast, sbuf, &st, ar, &ne, o->search_paths,
+                                      o->search_path_count) == 0 && diag_error_count() == 0) {
+                        TypeEnv te;
+                        if (type_check(ast, sbuf, &ne, ar, &te) == 0 && diag_error_count() == 0)
+                            needs = 0;
+                    }
+                    symtab_free(&st);
+                }
+            }
+        }
+        diag_reset();
+        diag_suppress(0);
+    }
+    arena_free(ar);
+    return needs;
+}
+
+/*
  * process_file — run ONE source file through the pipeline in the mode
  * selected by `o`. This is the single per-file dispatch: every positional
  * file goes through here in argument order, so a non-compile mode
@@ -677,8 +770,21 @@ static int process_file(const char *src, const RunOpts *o)
     if (!toks) { rc = EINTERNAL; goto done; }
     int tc;
     if (migrate) {
+        /* 127.57: decline on source that already compiles — see
+         * source_needs_migration above. Echo the input verbatim so the
+         * redirect this mode is designed for keeps the original bytes. */
+        if (!source_needs_migration(sbuf, slen, o)) {
+            fwrite(sbuf, 1, (size_t)slen, stdout);
+            fprintf(stderr,
+                    "tkc: --migrate: '%s' already compiles under the current "
+                    "profile — nothing to migrate, source echoed unchanged\n", src);
+            rc = ECOMPILE;
+            goto done;
+        }
         /* --migrate does its own prepass + re-lex internally.
          * Pass raw source directly — no external lex needed. */
+        diag_reset();
+        diag_set_source(sbuf, (size_t)slen);
         if (tkc_migrate(sbuf, (int)slen, NULL, 0, stdout) < 0) {
             rc = EINTERNAL;
         }

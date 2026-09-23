@@ -2074,6 +2074,13 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
     char *buf = malloc((size_t)(clen * 3 + 2048));
     if (!buf) { free(c); free(nt); return -1; }
     int blen = 0, prev = 0;
+    /* 127.57: brace nesting depth at the *start* of the current token.  A type
+     * declaration (`t=$name{...}`) is a top-level form, so the "after t=" type
+     * position heuristic below is only valid at depth 0.  Without this, the
+     * reassignment `t=u+1;` inside a function body was read as a type
+     * declaration and `u` — the first identifier of the right-hand side — was
+     * given a `$` sigil it must not have. */
+    int brace_depth = 0;
 
     for (int i = 0; i < ntc; i++) {
         const Token *t = &nt[i];
@@ -2099,7 +2106,12 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
             /* Strip underscores from type name too */
             char clean_name[128];
             int cn = remove_underscores(lo, tl, clean_name, sizeof clean_name);
-            if (!is_primitive(clean_name)) buf[blen++] = '$';
+            /* 127.57: the sigil is *added* only when the source did not already
+             * carry one.  `@($E)` lexes as TK_DOLLAR TK_TYPE_IDENT; TK_DOLLAR
+             * has already written its '$', so prepending another produced the
+             * unparseable `@($$e)`.  Primitive names never take a sigil at all. */
+            int already_sigilled = (i >= 1 && nt[i-1].kind == TK_DOLLAR);
+            if (!is_primitive(clean_name) && !already_sigilled) buf[blen++] = '$';
             memcpy(buf+blen, clean_name, (size_t)cn); blen += cn;
             break;
         }
@@ -2137,8 +2149,13 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
                  * missing $ in type positions (compiler tells user to add $). */
                 /* After t= or T= (type declaration name) */
                 /* 127.36: only when that `t` heads the statement — `let t=name(…)`
-                 * is a variable named t, not a type declaration. */
-                if (pk == TK_EQ && i >= 2 &&
+                 * is a variable named t, not a type declaration.
+                 * 127.57: and only at top level.  A type declaration is a
+                 * top-level form; `t=u+1;` inside a function body is a
+                 * reassignment of a variable that happens to be called `t`,
+                 * and it also "heads a statement", so the 127.36 guard alone
+                 * let it through and `u` came back as `$u`. */
+                if (pk == TK_EQ && brace_depth == 0 && i >= 2 &&
                     (nt[i-2].kind == TK_KW_T ||
                      (nt[i-2].kind == TK_IDENT && nt[i-2].len == 1 &&
                       (c[nt[i-2].start] == 't' || c[nt[i-2].start] == 'T'))) &&
@@ -2172,6 +2189,10 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
             memcpy(buf+blen, c+t->start, (size_t)t->len); blen += t->len;
             break;
         }
+        /* 127.57: depth is updated *after* the token is emitted, so it reads
+         * as "nesting at the start of this token" throughout the switch. */
+        if (t->kind == TK_LBRACE) brace_depth++;
+        else if (t->kind == TK_RBRACE && brace_depth > 0) brace_depth--;
         prev = t->start + t->len;
     }
     for (int g = prev; g < clen; g++) buf[blen++] = c[g];

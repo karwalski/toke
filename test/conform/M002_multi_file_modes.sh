@@ -4,8 +4,10 @@
 #
 # Verifies, for --fmt --pretty --expand --dump-ast --lint (+ --fix --dry-run)
 # --migrate --check --min:
-#   1. `tkc MODE a.tk b.tk` exits 0 and its stdout carries file a's output
-#      BEFORE file b's output (per-file dispatch, in argument order).
+#   1. `tkc MODE a.tk b.tk` exits with the code that mode owes this input
+#      (0 everywhere but --migrate — see MODE_RC and 127.57 below) and its
+#      stdout carries file a's output BEFORE file b's output (per-file
+#      dispatch, in argument order).
 #   2. No stray binary (`a` / `b`) is left in the cwd — file 2 never falls
 #      through to the compile+link pipeline.
 #   3. The default (no-flag) invocation still compiles BOTH files to binaries.
@@ -54,13 +56,21 @@ printf 'm=alpha;f=main():i64{let x=1;<x};\n' > a.tk
 printf 'm=beta;\nf=main():i64{\n  <2\n};\n' > b.tk
 
 # mode_check NAME MARKER_A MARKER_B FLAGS...
-#   Runs `tkc FLAGS a.tk b.tk`, asserts rc 0, that MARKER_A appears before
-#   MARKER_B in stdout, and that no binary was produced.
+#   Runs `tkc FLAGS a.tk b.tk`, asserts rc ${MODE_RC:-0}, that MARKER_A appears
+#   before MARKER_B in stdout, and that no binary was produced.
+#
+# 127.57: MODE_RC exists for --migrate, the one mode whose correct behaviour on
+# these fixtures is NOT exit 0. a.tk and b.tk both compile as they stand, so
+# the migrator has nothing to do to either and declines — echoing each file
+# verbatim, which is what keeps the per-file ordering assertions below
+# meaningful, and reporting the refusal in the exit code instead of running a
+# rewrite that could only lose. Every other mode still expects 0.
 mode_check() {
     local name="$1" ma="$2" mb="$3"; shift 3
+    local want_rc="${MODE_RC:-0}"
     local out rc=0
     out="$("${RUN}" 20 "${TKC}" "$@" a.tk b.tk </dev/null 2>/dev/null)" || rc=$?
-    check "${name}: exit 0" "0" "${rc}"
+    check "${name}: exit ${want_rc}" "${want_rc}" "${rc}"
     local pa pb
     pa="$(printf '%s' "${out}" | grep -nF -m1 -- "${ma}" | cut -d: -f1)"
     pb="$(printf '%s' "${out}" | grep -nF -m1 -- "${mb}" | cut -d: -f1)"
@@ -77,7 +87,7 @@ mode_check "--fmt"      'm=alpha;' 'm=beta;'  --fmt
 mode_check "--pretty"   'm=alpha;' 'm=beta;'  --pretty
 mode_check "--expand"   'm=alpha;' 'm=beta;'  --expand
 mode_check "--dump-ast" '"alpha"'  '"beta"'   --dump-ast
-mode_check "--migrate"  'm=alpha;' 'm=beta;'  --migrate
+MODE_RC=1 mode_check "--migrate"  'm=alpha;' 'm=beta;'  --migrate
 mode_check "--min"      'm=alpha;' 'm=beta;'  --min
 
 # --lint: diagnostics go to stdout as JSON when not a tty; a.tk has one hint,

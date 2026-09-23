@@ -5,7 +5,15 @@
 #   1. Compares output against the .expected file (text diff).
 #   2. Verifies the migrated output compiles in default mode.
 #
-# Story: 11.3.5
+# 127.57: two of the fixtures here — migrate_add and migrate_struct — already
+# compile as they stand, and their .expected files are byte-identical copies of
+# their inputs. They are no-op cases, and since 2026-09-24 --migrate DECLINES
+# on source that compiles: it echoes the input verbatim (so the .expected
+# comparison still holds, exactly) and reports the refusal with a non-zero exit
+# code. The expected exit code is therefore derived from the fixture rather
+# than assumed to be 0 — `--check` decides, the same way the compiler does.
+#
+# Story: 11.3.5, 127.57
 set -uo pipefail
 PASS=0 FAIL=0
 TKC="$(cd "$(dirname "$0")/../.." && pwd)/tkc"
@@ -20,11 +28,15 @@ for legacy in "${DIR}"/*.legacy.tk; do
         continue
     fi
 
+    # 127.57: a fixture that already compiles is a no-op case; --migrate must
+    # decline it (non-zero) rather than rewrite source that needs no rewriting.
+    if "$TKC" --check "$legacy" >/dev/null 2>&1; then want_rc=1; else want_rc=0; fi
+
     # Run migration
     actual=$("$TKC" --migrate "$legacy" 2>/tmp/tkc_migrate_err)
     rc=$?
-    if [ "$rc" -ne 0 ]; then
-        echo "FAIL $name (tkc --migrate exited $rc)"
+    if [ "$rc" -ne "$want_rc" ]; then
+        echo "FAIL $name (tkc --migrate exited $rc, expected $want_rc)"
         cat /tmp/tkc_migrate_err
         FAIL=$((FAIL+1))
         continue
