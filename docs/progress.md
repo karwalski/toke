@@ -5519,6 +5519,36 @@ recent changes (diff-codegen 0; E2002 is a parse-stage v0.4-migration gap).
 
 **Nothing here blocks loke.** Its MK21 ships CSV only, states that limitation plainly, and handles extraction through a local sidecar process. These libraries let that sidecar be retired, which is the goal — the existing sidecar demonstrates the risk, since its checked-in virtualenv does not contain its own dependencies and cannot run.
 
+**DELIVERY RECORD — 2026-09-23, verified item by item rather than asserted.** Every capability the request
+document asks for maps to a `done` story with shipped exports, a documentation page under `docs/stdlib/`, and a
+passing conformance suite. Derived from the tree, not typed:
+
+| loke asked for | Priority | Story | Exports | Page | Suite | Result |
+|---|---|---|---|---|---|---|
+| 1. CSV hardening | P1 | 135.2 | 18 | `docs/stdlib/csv.md` | C008 | 62 passed, 0 failed |
+| 2. PDF text extraction | P1 | 135.3 | 11 | `docs/stdlib/pdf.md` | C032 | 92 passed, 0 failed |
+| 3. Zip archive reading | P1 | 135.1 | 6 | `docs/stdlib/zip.md` | C029 + C031 | exercised end to end by every XLSX assertion, since an XLSX *is* a zip |
+| 4. XLSX reading | P2 | 135.4 | 8 | `docs/stdlib/xlsx.md` | C031 | 52 passed, 0 failed |
+| 5. OCR | P2 | 135.6 + 135.7 + ADR-0015 | 12 | `docs/stdlib/ocr.md` | C033 | 76 passed, 0 failed |
+| 6. Image preprocessing | P3 | 135.5 | 15 | `docs/stdlib/image.md` | C030 | 34 passed, 0 failed |
+
+**316 assertions across the five dedicated suites, 0 failures**, each re-run in the main thread at delivery time
+rather than quoted from a worker's report.
+
+**What is deliberately NOT claimed as delivered.** Item 2's fifth sub-item, embedded image extraction, is
+**declined for now** and was declined in the route note before implementation, not discovered missing at the end.
+Item 5 is answered in three parts — Tesseract **refused** (135.7 / ADR-0015), the platform binding **shipped**
+(135.6), `toke-ocr` **accepted as a separate project** (135.8, not started). And 135.6's own delivery
+**disproved the row's reason for sequencing it first**: the platform recogniser's confidence is 1.0 for flatly
+wrong output, so it cannot support the confidence-gated extraction 135.8 was expected to defer.
+
+**The reply is `docs/loke-libraries-reply.md`**, following the `docs/loke-bindings-reply.md` precedent from the
+round before. It states per item what was accepted as specified, accepted with a changed interface and why,
+deferred with what would change that, and refused with the reason; it names the C99 decision explicitly; it
+restates that nothing here blocks MK21; and it corrects, before sending, a draft claim that `3.0.0` could be
+pinned — `v3.0.0` is **not tagged**, so the reply tells them to keep pinning the commit hash. **Delivery to the
+consumer is a push, which is an owner action and is not done by this record.**
+
 **Order is by unblocked-capability per unit of cost, not by priority label:** 135.1 zip first because it is smallest and unblocks the most, then 135.2 csv, 135.3 pdf, 135.4 xlsx, 135.6 platform OCR, 135.5 image, and 135.8 as a separate project begun deliberately rather than against a deadline. Cross-refs: Epic 127 (compiler and stdlib defects), 134.11 (the ooke native-bindings surface loke also needs).
 
 | ID | Story | Status | Priority | Notes |
