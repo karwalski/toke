@@ -1780,6 +1780,28 @@ static int tki_subnamespace_member(const NameEnv *env, const char *prefix,
     return 0;
 }
 
+/*
+ * recv_ident_is_bound — does `name` name a module-scope declaration, a
+ * parameter of the enclosing function, or a local binding in its body?
+ *
+ * Mirrors the three lookups infer_impl's NODE_IDENT case makes, and is asked
+ * only to decide whether an identifier is a VALUE at all.
+ */
+static int recv_ident_is_bound(Ctx *cx, const char *name) {
+    int nlen = (int)strlen(name);
+    if (!cx->env || !cx->env->names) return 1;   /* cannot tell: say nothing */
+    Decl *d = tc_lookup(cx->env->names->module_scope, name, nlen);
+    if (d && d->def_node) return 1;
+    if (!cx->fn_node) return 0;
+    for (int i = 0; i < cx->fn_node->child_count; i++) {
+        const Node *pc = cx->fn_node->children[i];
+        if (!pc || pc->kind != NODE_PARAM || pc->child_count < 1) continue;
+        char pn[128]; TOKSTR(pn, cx->src, pc->children[0]);
+        if (strcmp(pn, name) == 0) return 1;
+    }
+    return find_binding_node(cx->fn_node, cx->src, name, nlen) != NULL;
+}
+
 static void recv_arity_error(const Node *call, const char *member,
                              int expected, int actual) {
     char msg[384], exp_str[16], got_str[16];
@@ -1822,6 +1844,15 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
                             (int)strlen(alias));
         if (d && d->kind == DECL_IMPORT_ALIAS) return;
         if (tki_subnamespace_member(cx->env->names, alias, member)) return;
+        /* An identifier that names NOTHING is not a receiver: it is an
+         * unresolved name, and saying anything about its member would be
+         * confidently wrong about a program whose defect is elsewhere. The
+         * shape this guards is a stdlib call whose import is missing —
+         * `str.concat("a";"b")` with no `i=str:std.str;` — where the right
+         * diagnostic already exists and names the import (E9004, llvm.c
+         * story 84.1.5). C021's `semicolons.tk` fixture is exactly that, and
+         * without this guard it drew an E4026 about `.concat`'s arity. */
+        if (!recv_ident_is_bound(cx, alias)) return;
     } else if (recv->kind == NODE_FIELD_EXPR && recv->child_count >= 2 &&
                recv->children[0] && recv->children[1] &&
                recv->children[0]->kind == NODE_IDENT) {
