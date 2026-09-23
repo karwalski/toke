@@ -1615,34 +1615,67 @@ install-man: doc/toke.1
 
 # ── Epic 88: Comprehensive test suite ─────────────────────────────────────
 
-# Syntax-check all new e2e and standalone tests
-test-e2e-check:
-	@echo "=== E2E syntax check ==="
+# ── 123.8: NEITHER OF THESE TWO COULD FAIL ─────────────────────────────────
+#
+# Both ran `$(BIN) --check` -- the bare word `toke`, with no `./`. make does
+# not prepend `./`, so the shell resolved it through PATH, and the recipe
+# checked whatever compiler PATH happened to find. Measured here on
+# 2026-09-24: `which toke` in this worktree returned
+# /Users/matthew.watt/tk/toke/toke -- ANOTHER CHECKOUT's binary, a different
+# md5 from the one the same `make` had just built two lines earlier. The two
+# gates disagreed with each other about the same file for that reason alone.
+#
+# On a CI runner there is no `toke` on PATH at all, and that is worse, because
+# of the second defect: the verdict was "did the OUTPUT contain
+# severity":"error"", so NO output passed. The compiler's exit status was
+# discarded. Proven by substituting a command that does not exist:
+#
+#     $ for f in test/standalone/test_*_full.tk; do
+#     >   if nonexistent-toke --check "$f" 2>&1 | grep -q '"severity":"error"'
+#     >   then echo FAIL; else echo "  OK: $f"; fi; done
+#     ... OK for every file ...
+#     9 checked, 0 failed   <-- with a compiler that DOES NOT EXIST
+#
+# So these two targets would have reported "48 checked, 0 failed" from a CI
+# job forever. This is the third gate-that-cannot-fail of this epic, after
+# `make lint` (135.3a) and `make build-all` (136.62), and it was one `./`
+# away from being wired into PR CI by this very story.
+#
+# Fixed three ways: `./$(BIN)`, so the binary is the one in THIS tree; an
+# order-only-style prerequisite so it exists; and a verdict that fails on a
+# non-zero exit status as well as on a diagnostic, so silence is no longer a
+# pass.
+define check_tk_files
 	@fails=0; total=0; \
-	for f in test/e2e/e2e_*.tk; do \
+	for f in $(1); do \
+		[ -e "$$f" ] || { echo "  ERROR: no such file: $$f"; fails=$$((fails+1)); continue; }; \
 		total=$$((total + 1)); \
-		if $(BIN) --check "$$f" 2>&1 | grep -q '"severity":"error"'; then \
-			echo "  FAIL: $$f"; fails=$$((fails + 1)); \
+		out="$$(./$(BIN) --check "$$f" 2>&1)"; rc=$$?; \
+		if [ $$rc -ne 0 ]; then \
+			echo "  FAIL: $$f (tkc exited $$rc)"; \
+			echo "$$out" | head -3 | sed 's/^/        /'; \
+			fails=$$((fails + 1)); \
+		elif printf '%s' "$$out" | grep -q '"severity":"error"'; then \
+			echo "  FAIL: $$f"; \
+			printf '%s' "$$out" | head -2 | sed 's/^/        /'; \
+			fails=$$((fails + 1)); \
 		else \
 			echo "  OK: $$f"; \
 		fi; \
 	done; \
+	[ $$total -gt 0 ] || { echo "  ERROR: the glob matched no files at all"; exit 1; }; \
 	echo "$$total checked, $$fails failed"; \
 	test $$fails -eq 0
+endef
 
-test-standalone-check:
+# Syntax-check all new e2e and standalone tests
+test-e2e-check: $(BIN)
+	@echo "=== E2E syntax check ==="
+	$(call check_tk_files,test/e2e/e2e_*.tk)
+
+test-standalone-check: $(BIN)
 	@echo "=== Standalone syntax check ==="
-	@fails=0; total=0; \
-	for f in test/standalone/test_*_full.tk test/standalone/test_process_env.tk; do \
-		total=$$((total + 1)); \
-		if $(BIN) --check "$$f" 2>&1 | grep -q '"severity":"error"'; then \
-			echo "  FAIL: $$f"; fails=$$((fails + 1)); \
-		else \
-			echo "  OK: $$f"; \
-		fi; \
-	done; \
-	echo "$$total checked, $$fails failed"; \
-	test $$fails -eq 0
+	$(call check_tk_files,test/standalone/test_*_full.tk test/standalone/test_process_env.tk)
 
 # Run all test suites
 test-all: test-stdlib test-e2e-check test-standalone-check conform
