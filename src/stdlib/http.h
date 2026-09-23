@@ -13,6 +13,26 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/types.h>   /* ssize_t, for http_write_all */
+
+/*
+ * ── Writing to a client socket without dying (story 127.144) ─────────
+ *
+ * A client that sends a request and goes away before reading the answer is
+ * ordinary browser behaviour on navigation, not an attack.  The server then
+ * writes into a socket the peer has reset, and the DEFAULT disposition of
+ * SIGPIPE terminates the process.  Measured before this fix, from a single
+ * abandoned request: serveworkers(p;1) exited 141, servetls exited 141, and
+ * http.serve lost a worker per abandoned request while the supervisor
+ * respawned it.
+ *
+ * Every write to a client socket must therefore go through http_write_all,
+ * and every accepted socket must be handed to http_sock_nosigpipe first.
+ * See the long comment at the definitions in http.c for why the fix is
+ * per-socket and per-send rather than a process-wide signal(SIGPIPE,SIG_IGN).
+ */
+void    http_sock_nosigpipe(int fd);
+ssize_t http_write_all(int fd, const void *buf, size_t len);
 
 typedef struct { const char *key; const char *val; } StrPair;
 typedef struct { StrPair *data; uint64_t len; }       StrPairArray;

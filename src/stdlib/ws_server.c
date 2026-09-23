@@ -20,6 +20,12 @@
 #include <errno.h>
 #include <fcntl.h>
 
+/* 127.144: every write below goes to a client socket, so it goes through
+ * http_write_all — send() with MSG_NOSIGNAL, looped over partial writes.
+ * ws_server.c is part of the std.http module set (src/stdlib_deps.c), so
+ * http.c is always linked beside it; this is not a new dependency. */
+#include "http.h"
+
 /* ── WebSocket opcodes and close codes ──────────────────────────────── */
 
 #define WS_OP_TEXT    0x01
@@ -206,7 +212,7 @@ int ws_server_handshake(int fd, const char *client_key)
         "Sec-WebSocket-Accept: %s\r\n\r\n", accept);
     free(accept);
 
-    ssize_t w = write(fd, resp, (size_t)n);
+    ssize_t w = http_write_all(fd, resp, (size_t)n);
     return (w == n) ? 0 : -1;
 }
 
@@ -239,8 +245,8 @@ int ws_server_send_frame(int fd, uint8_t opcode,
         hlen = 10;
     }
 
-    if (write(fd, hdr, hlen) != (ssize_t)hlen) return -1;
-    if (len > 0 && write(fd, data, len) != (ssize_t)len) return -1;
+    if (http_write_all(fd, hdr, hlen) != (ssize_t)hlen) return -1;
+    if (len > 0 && http_write_all(fd, data, len) != (ssize_t)len) return -1;
     return 0;
 }
 
@@ -386,7 +392,7 @@ int ws_proxy_connect(const char *host, uint16_t port, const char *path)
         "Sec-WebSocket-Version: 13\r\n\r\n",
         path ? path : "/", host, (unsigned)port);
 
-    if (write(fd, req, (size_t)n) != n) { close(fd); return -1; }
+    if (http_write_all(fd, req, (size_t)n) != n) { close(fd); return -1; }
 
     /* Read 101 response (simplified — just check status line) */
     char resp[1024];
@@ -424,13 +430,13 @@ void ws_proxy_relay(int client_fd, int backend_fd)
         if (FD_ISSET(client_fd, &fds)) {
             ssize_t r = read(client_fd, buf, sizeof(buf));
             if (r <= 0) break;
-            if (write(backend_fd, buf, (size_t)r) != r) break;
+            if (http_write_all(backend_fd, buf, (size_t)r) != r) break;
         }
 
         if (FD_ISSET(backend_fd, &fds)) {
             ssize_t r = read(backend_fd, buf, sizeof(buf));
             if (r <= 0) break;
-            if (write(client_fd, buf, (size_t)r) != r) break;
+            if (http_write_all(client_fd, buf, (size_t)r) != r) break;
         }
     }
 
@@ -461,7 +467,7 @@ SseResponse *sse_response_begin(int fd)
         "X-Accel-Buffering: no\r\n\r\n";
 
     size_t hlen = strlen(headers);
-    if (write(fd, headers, hlen) != (ssize_t)hlen) return NULL;
+    if (http_write_all(fd, headers, hlen) != (ssize_t)hlen) return NULL;
 
     SseResponse *sse = calloc(1, sizeof(SseResponse));
     if (!sse) return NULL;
@@ -490,7 +496,7 @@ int sse_response_send(SseResponse *sse, const char *event_type,
     }
 
     sse->last_send = time(NULL);
-    ssize_t w = write(sse->fd, buf, (size_t)n);
+    ssize_t w = http_write_all(sse->fd, buf, (size_t)n);
     return (w == n) ? 0 : -1;
 }
 
@@ -517,7 +523,7 @@ int sse_response_keepalive(SseResponse *sse)
     const char *keepalive = ": keepalive\n\n";
     size_t len = strlen(keepalive);
     sse->last_send = now;
-    ssize_t w = write(sse->fd, keepalive, len);
+    ssize_t w = http_write_all(sse->fd, keepalive, len);
     return (w == (ssize_t)len) ? 0 : -1;
 }
 
@@ -577,8 +583,8 @@ size_t h2_stream_write(H2StreamWriter *w, const uint8_t *data, size_t len)
     hdr[7] = (uint8_t)(w->stream_id >> 8);
     hdr[8] = (uint8_t)(w->stream_id);
 
-    if (write(w->fd, hdr, 9) != 9) return 0;
-    ssize_t wr = write(w->fd, data, can_send);
+    if (http_write_all(w->fd, hdr, 9) != 9) return 0;
+    ssize_t wr = http_write_all(w->fd, data, can_send);
     if (wr <= 0) return 0;
 
     w->peer_window -= (uint32_t)wr;
