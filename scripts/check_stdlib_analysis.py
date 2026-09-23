@@ -95,6 +95,15 @@ BASE_FLAGS = [
     '-DTKC_STDLIB_DIR="%s"' % os.path.join(REPO_ROOT, "src", "stdlib"),
 ]
 
+# The Makefile's GCC_CHECK, repeated: GCC's -Wformat-truncation fires on
+# snprintf truncation that is by design here, and the Makefile suppresses it.
+# Without this the gate would be green under clang and red under GCC for
+# reasons that have nothing to do with the code.
+if subprocess.run([CC, "-Wno-format-truncation", "-x", "c", "-c", os.devnull,
+                   "-o", os.devnull],
+                  capture_output=True).returncode == 0:
+    BASE_FLAGS.append("-Wno-format-truncation")
+
 # Per-file extra flags.  KEEP IN SYNC with the Makefile: CMARK_FLAGS,
 # TOML_FLAGS and the src/stdlib/encrypt.o override are the same three
 # exceptions, for the same three reasons.
