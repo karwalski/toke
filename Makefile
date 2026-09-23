@@ -92,6 +92,22 @@ else
 HARDEN_LDFLAGS =
 endif
 
+# ── How a sub-make changes the build flags, and why not with CFLAGS= ────────
+#
+# CFLAGS contains -DTKC_STDLIB_DIR='"$(CURDIR)/src/stdlib"' -- single quotes
+# around double quotes -- and a `$(MAKE) CFLAGS="$(CFLAGS) ..."` round trip
+# loses the inner pair. The sub-make then compiles
+# `#define TKC_STDLIB_DIR /path/to/src/stdlib`, which is not a string literal,
+# and src/names.c fails with 11 errors that name neither the flag nor the
+# quoting. Hit while wiring up `make coverage` on 2026-09-24; it is the same
+# hazard the TKC_BUILD_FLAGS comment below describes, arriving from the other
+# direction.
+#
+# So the sanitizer and coverage builds APPEND through EXTRA_CFLAGS and turn
+# the hardening set off with HARDEN=0, and CFLAGS is never rewritten by a
+# recursive make.
+CFLAGS += $(EXTRA_CFLAGS)
+
 # ── Epic 55: vendor library flags ────────────────────────────────────────────
 CMARK_SRCS  = $(filter-out stdlib/vendor/cmark/src/main.c, \
                 $(wildcard stdlib/vendor/cmark/src/*.c))
@@ -548,6 +564,8 @@ SAN_FLAGS  = -fsanitize=address,undefined -fno-omit-frame-pointer \
 # for a reason nobody understands" failure this wave is here to remove, so the
 # flags come out of CFLAGS instead of being argued with.  -O1 likewise replaces
 # the hardened -O2 by filtering, to keep stack traces readable.
+# Used only where the compiler is invoked DIRECTLY from a recipe (the
+# self-test); recursive makes go through EXTRA_CFLAGS instead, see above.
 SAN_CFLAGS = $(filter-out $(HARDEN_CFLAGS),$(CFLAGS)) $(SAN_FLAGS)
 export ASAN_OPTIONS  ?= detect_leaks=0:abort_on_error=0:detect_stack_use_after_return=1
 export UBSAN_OPTIONS ?= print_stacktrace=1:halt_on_error=1
@@ -559,8 +577,8 @@ asan-clean:
 # The compiler itself, instrumented, driven through the conformance suite.
 test-asan-compiler: asan-selftest
 	@echo "=== ASAN/UBSAN: tkc through the conformance suite ==="
-	$(MAKE) HARDEN=0 CFLAGS="$(SAN_CFLAGS)" $(BIN)
-	$(MAKE) HARDEN=0 CFLAGS="$(SAN_CFLAGS)" conform
+	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" $(BIN)
+	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" conform
 
 # The stdlib C unit tests, instrumented. These are where the known
 # use-after-free and free()-on-a-global live (json.c:670, json.c:941/949,
@@ -628,7 +646,7 @@ test-asan-stdlib: asan-selftest
 	for t in $(ASAN_STDLIB_TARGETS); do \
 	  total=$$((total+1)); \
 	  log="$$(mktemp "$${TMPDIR:-/tmp}/tkc_asan.XXXXXX")"; \
-	  if $(MAKE) --no-print-directory HARDEN=0 CFLAGS="$(SAN_CFLAGS)" \
+	  if $(MAKE) --no-print-directory HARDEN=0 EXTRA_CFLAGS="$(SAN_FLAGS)" \
 	       RUN_TEST_TIMEOUT=$(RUN_TEST_TIMEOUT) $$t > "$$log" 2>&1; then \
 	    echo "clean  $$t"; \
 	  else \
@@ -646,30 +664,74 @@ test-asan-stdlib: asan-selftest
 test-asan: test-asan-compiler test-asan-stdlib
 
 # ── Story 123.9: coverage floor ────────────────────────────────────────────
-# There was no coverage measurement of any kind. COVERAGE_MIN is the floor;
-# `make check-coverage` fails below it. The floor is set from a measured
-# baseline, not from an aspiration -- a floor above the current number is a
-# gate that is red for a reason nobody will act on, and a floor of 0 is a
-# gate that cannot fail.
+#
+# There was no coverage measurement of any kind before 2026-09-24.
+#
+# COVERAGE_MIN is a FLOOR, and the number below is a MEASUREMENT of this tree,
+# rounded down -- not an aspiration. Both other shapes are gates that do not
+# work: a floor above the current number is red for a reason nobody can act on
+# in the pull request that trips it, and a floor of 0 is a gate that cannot
+# fail, which is the thing this wave exists to remove. Raise it when the
+# measured number rises, in a change that says what raised it.
 COVERAGE_MIN ?= 0
 COV_FLAGS     = -fprofile-instr-generate -fcoverage-mapping -O0
-.PHONY: coverage check-coverage
-coverage:
-	$(MAKE) HARDEN=0 CFLAGS="$(CFLAGS) $(COV_FLAGS)" $(BIN)
-	@LLVM_PROFILE_FILE=$(CURDIR)/tkc-%p.profraw $(MAKE) --no-print-directory conform || true
-	@llvm-profdata merge -sparse $(CURDIR)/tkc-*.profraw -o $(CURDIR)/tkc.profdata
-	@llvm-cov report ./$(BIN) -instr-profile=$(CURDIR)/tkc.profdata $(SRCS) \
+
+# llvm-profdata/llvm-cov are on PATH on the Linux runner and behind xcrun on
+# macOS. Resolve once, and FAIL BY NAME if absent -- a coverage target that
+# quietly reports nothing because a tool is missing is the exact shape of the
+# seven checks audited on 2026-09-20.
+LLVM_PROFDATA := $(shell command -v llvm-profdata 2>/dev/null || xcrun --find llvm-profdata 2>/dev/null)
+LLVM_COV      := $(shell command -v llvm-cov 2>/dev/null || xcrun --find llvm-cov 2>/dev/null)
+
+.PHONY: coverage-preflight coverage check-coverage
+coverage-preflight:
+	@missing=""; \
+	[ -x "$(LLVM_PROFDATA)" ] || missing="$$missing llvm-profdata"; \
+	[ -x "$(LLVM_COV)" ]      || missing="$$missing llvm-cov"; \
+	if [ -n "$$missing" ]; then \
+	  echo "ERROR: coverage needs:$$missing" >&2; \
+	  echo "  Install the llvm package (Linux) or Xcode command line tools." >&2; \
+	  echo "  Refusing to report a coverage number this host cannot measure." >&2; \
+	  exit 1; \
+	fi
+
+# Rebuilds the tree instrumented, drives it through the conformance suite,
+# and prints the summary. Kept separate from the floor check so the number
+# can be read without a pass/fail verdict attached.
+# %m, not %p.  %p is one .profraw per PROCESS, and `make conform` runs the
+# compiler thousands of times: the first attempt at this target left 635
+# untracked .profraw files in the repository root and was still going.  %m
+# keys the file on the instrumented module's signature instead, so every
+# invocation of the same binary merges into ONE file under a lock.
+COV_DIR      = $(CURDIR)/.coverage
+COV_PROFDATA = $(COV_DIR)/tkc.profdata
+
+coverage: coverage-preflight
+	@rm -rf $(COV_DIR) && mkdir -p $(COV_DIR)
+	$(MAKE) HARDEN=0 EXTRA_CFLAGS="$(COV_FLAGS)" $(BIN)
+	@LLVM_PROFILE_FILE="$(COV_DIR)/tkc-%m.profraw" \
+	   $(MAKE) --no-print-directory conform > /dev/null 2>&1 || true
+	@ls $(COV_DIR)/*.profraw >/dev/null 2>&1 || { \
+	   echo "ERROR: the instrumented build produced no .profraw files." >&2; \
+	   echo "  Nothing was measured, so there is no number to report." >&2; \
+	   exit 1; }
+	@"$(LLVM_PROFDATA)" merge -sparse $(COV_DIR)/*.profraw -o $(COV_PROFDATA)
+	@"$(LLVM_COV)" report ./$(BIN) -instr-profile=$(COV_PROFDATA) $(SRCS) \
 	    | tail -3
-	@rm -f $(CURDIR)/tkc-*.profraw
+	@rm -f $(COV_DIR)/*.profraw
 
 check-coverage: coverage
-	@pct=$$(llvm-cov report ./$(BIN) -instr-profile=$(CURDIR)/tkc.profdata $(SRCS) \
-	          | awk '/^TOTAL/{gsub(/%/,"",$$10); print $$10}'); \
-	echo "line coverage: $$pct%  floor: $(COVERAGE_MIN)%"; \
+	@pct=$$("$(LLVM_COV)" report ./$(BIN) -instr-profile=$(COV_PROFDATA) $(SRCS) \
+	          | awk '/^TOTAL/{ for (i=NF; i>0; i--) if ($$i ~ /%$$/) { gsub(/%/,"",$$i); print $$i; exit } }'); \
+	if [ -z "$$pct" ]; then \
+	  echo "ERROR: could not read a coverage percentage from llvm-cov." >&2; \
+	  echo "  Not reporting a pass on a number that was never parsed." >&2; \
+	  exit 1; \
+	fi; \
+	echo "line coverage: $$pct%   floor: $(COVERAGE_MIN)%"; \
 	awk -v p="$$pct" -v m="$(COVERAGE_MIN)" \
-	    'BEGIN{ if (p=="" ) { print "could not read a coverage percentage"; exit 1 } \
-	            if (p+0 < m+0) { printf "BELOW FLOOR: %s%% < %s%%\n", p, m; exit 1 } \
-	            printf "at or above floor\n" }'
+	    'BEGIN { if (p+0 < m+0) { printf "BELOW FLOOR: %s%% < %s%%\n", p, m; exit 1 } \
+	             printf "at or above floor\n" }'
 
 # ── Story 123.8: the test families PR CI did not run ───────────────────────
 #

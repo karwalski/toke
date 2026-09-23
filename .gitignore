@@ -131,3 +131,8 @@ test/tkir/*
 
 # 136.62: records the flags $(OBJS) were built with; build state, never tracked
 .build-flags
+
+# Story 123.9: llvm coverage working directory (make coverage / check-coverage)
+.coverage/
+*.profraw
+*.profdata
