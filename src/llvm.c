@@ -1916,8 +1916,10 @@ static void prepass_load_tki(Ctx *c, const Node *ast) {
  * `http.res.err` — and the v0.3 specification uses it, but nothing resolved
  * it: it parsed as receiver dispatch on the VALUE `http.res` and fell to the
  * bare-name fallback, emitting `_ok`.  That is the whole of 127.96, which was
- * filed as a missing symbol when tk_http_resok_w is defined in tk_web_glue.c
- * and declared in stdlib_decls_gen.h.
+ * filed as a missing symbol when the implementation was never missing: the
+ * `resok` mapping in stdlib_symbol_for answers tk_http_res_ok (declared at
+ * g_stdlib_decls), and tk_http_resok_w is declared too.  Two spellings, both
+ * present, and the compiler reached neither.
  *
  * The interface names the two spellings of one function (`http.res.ok` and
  * `http.resok`), so the sub-path resolves by concatenation — and only when
@@ -2669,13 +2671,14 @@ int recv_method_arity(const char *m) {
  * stdlib_subpath_symbol (127.96) — the glue symbol for the SUB-PATH spelling
  * a stdlib interface publishes: `http.res.ok(body)`, declared in
  * stdlib/http.tki as the export `http.res.ok`, is the same function as
- * `http.resok(body)` and lowers to tk_http_resok_w.
+ * `http.resok(body)`, and lowers through the `resok` mapping in
+ * stdlib_symbol_for to tk_http_res_ok.
  *
  * Nothing resolved the three-segment spelling.  `alias.seg.member(...)` parses
  * as receiver dispatch on `alias.seg`, and the receiver path emitted a bare
- * `_ok` — which is why 127.96 was filed as a missing symbol when
- * tk_http_resok_w has been defined in tk_web_glue.c and declared in
- * stdlib_decls_gen.h all along.
+ * `_ok` — which is why 127.96 was filed as a missing symbol when the symbol
+ * it names has been declared all along.  (The row cites tk_http_resok_w; the
+ * spelling the emitter picks is tk_http_res_ok.  Both are in the table.)
  *
  * Grounded on the glue table: the concatenated spelling is accepted only when
  * g_stdlib_decls actually declares the symbol it names, so this cannot invent
