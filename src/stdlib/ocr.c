@@ -191,6 +191,28 @@ static const char  *msutf8(id o)              { return o ? ((MsgStr)objc_msgSend
  * compiles a stdlib module .c file for a non-Apple target. */
 static void clear_err(void) { g_err_code = OCR_ERR_NONE; g_err_msg[0] = '\0'; }
 
+/*
+ * AUTORELEASE POOL.  A C program has no @autoreleasepool block and no pool
+ * of its own, so every autoreleased object Vision hands back -- the results
+ * array, each observation, each candidate, each NSString -- accumulates for
+ * the life of the process.  Measured before this was added: ~47 KB of
+ * permanent growth per recognition, which for the consumer this module
+ * exists for (a statement is dozens of pages, a batch is hundreds of
+ * statements) is a leak that ends in the OOM killer rather than a wrong
+ * answer.
+ *
+ * objc_autoreleasePoolPush/Pop are the C entry points to the same machinery
+ * the @autoreleasepool keyword compiles to, and they are what makes this
+ * fixable without an Objective-C compiler.  Declared here rather than
+ * included: they live in <objc/objc-internal.h>, which is not in the public
+ * SDK headers, while the symbols themselves are stable public API in
+ * libobjc.
+ *
+ * EVERY string is copied out of the pool's objects BEFORE the pop.
+ */
+extern void *objc_autoreleasePoolPush(void);
+extern void  objc_autoreleasePoolPop(void *pool);
+
 /* ── Configuration state ────────────────────────────────────────────── */
 
 #define OCR_MAX_LANGS 16
@@ -455,6 +477,16 @@ static CGImageRef image_from_bytes(const uint8_t *bytes, uint64_t len)
     return img;
 }
 
+/* CGDataProvider's release callback: the buffer handed to
+ * CGDataProviderCreateWithData is malloc'd by image_from_raw and freed here,
+ * once, when CoreGraphics drops its last reference. */
+static void free_owned(void *info, const void *data, size_t size)
+{
+    (void)info;
+    (void)size;
+    free((void *)(uintptr_t)data);
+}
+
 /*
  * Raw pixels, TOP row first (std.image's layout), tightly packed.
  *
@@ -510,8 +542,20 @@ static CGImageRef image_from_raw(const uint8_t *px, uint32_t w, uint32_t h,
         memcpy(owned, px, nbytes);
     }
 
-    /* The provider takes ownership; free_owned releases it when CG is done. */
-    prov = CGDataProviderCreateWithData(NULL, owned, nbytes, NULL);
+    /*
+     * The provider takes ownership of `owned` and free_owned() releases it
+     * when CoreGraphics is done with it.  Passing NULL here instead -- which
+     * this code did until the static analyser flagged the release below --
+     * leaks the whole pixel copy on EVERY call, silently, because nothing
+     * else in the process ever holds that pointer again.
+     *
+     * Ownership transfers at the CGDataProviderCreateWithData call that
+     * succeeds, so after it there is no `free(owned)` on any path: if
+     * CGImageCreate fails, CGDataProviderRelease runs the callback and the
+     * buffer is freed exactly once.  Freeing it here as well would be a
+     * double free on the failure path.
+     */
+    prov = CGDataProviderCreateWithData(NULL, owned, nbytes, free_owned);
     if (!prov) { free(owned); CGColorSpaceRelease(cs); return NULL; }
 
     img = CGImageCreate((size_t)w, (size_t)h, 8, bpp, bpr, cs,
@@ -520,7 +564,6 @@ static CGImageRef image_from_raw(const uint8_t *px, uint32_t w, uint32_t h,
                         prov, NULL, 0, kCGRenderingIntentDefault);
     CGDataProviderRelease(prov);
     CGColorSpaceRelease(cs);
-    if (!img) free(owned);
     return img;
 }
 
@@ -535,7 +578,17 @@ static CGImageRef image_from_raw(const uint8_t *px, uint32_t w, uint32_t h,
  */
 #define OCR_MIN_DIMENSION 20
 
+static TkOcrPage *recognize_cgimage_pooled(CGImageRef img);
+
 static TkOcrPage *recognize_cgimage(CGImageRef img)
+{
+    void *pool = objc_autoreleasePoolPush();
+    TkOcrPage *page = recognize_cgimage_pooled(img);
+    objc_autoreleasePoolPop(pool);
+    return page;
+}
+
+static TkOcrPage *recognize_cgimage_pooled(CGImageRef img)
 {
     VisionClasses vc;
     id handler, req, arr, err = NULL, results;
