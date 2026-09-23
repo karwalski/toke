@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "module": "std.pdf",
+  "generated": "scripts/gen_tki.py (137.12) created this file and derives every arity here from the glue. Parameter and return TYPES are not derivable -- every pointer, every integer and every f64 is i64 in the toke ABI -- so the types below were written over the generated skeleton, which is exactly the contract that script documents: it is additive and arity-correcting, and an export that already exists keeps its hand-written types verbatim. Re-running it leaves this file unchanged. Story 135.3.",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "pdfdoc",
+      "fields": []
+    },
+    {
+      "kind": "type",
+      "name": "textrun",
+      "fields": [
+        {"name": "text",     "type": "str"},
+        {"name": "page",     "type": "i64"},
+        {"name": "x",        "type": "f64"},
+        {"name": "y",        "type": "f64"},
+        {"name": "width",    "type": "f64"},
+        {"name": "height",   "type": "f64"},
+        {"name": "fontsize", "type": "f64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "pdferr",
+      "is_sum": true,
+      "fields": [
+        {"name": "$baddoc",      "type": "str"},
+        {"name": "$encrypted",   "type": "str"},
+        {"name": "$nopage",      "type": "str"},
+        {"name": "$toolarge",    "type": "str"},
+        {"name": "$unsupported", "type": "str"},
+        {"name": "$io",          "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "pdf.open",        "params": ["@(byte)"],       "return": "pdfdoc!pdferr"},
+    {"kind": "func", "name": "pdf.openfile",    "params": ["str"],           "return": "pdfdoc!pdferr"},
+    {"kind": "func", "name": "pdf.pagecount",   "params": ["pdfdoc"],        "return": "i64"},
+    {"kind": "func", "name": "pdf.pagewidth",   "params": ["pdfdoc", "i64"], "return": "f64"},
+    {"kind": "func", "name": "pdf.pageheight",  "params": ["pdfdoc", "i64"], "return": "f64"},
+    {"kind": "func", "name": "pdf.runs",        "params": ["pdfdoc", "i64"], "return": "@(textrun)!pdferr"},
+    {"kind": "func", "name": "pdf.pagetext",    "params": ["pdfdoc", "i64"], "return": "str!pdferr"},
+    {"kind": "func", "name": "pdf.hastext",     "params": ["pdfdoc", "i64"], "return": "bool"},
+    {"kind": "func", "name": "pdf.close",       "params": ["pdfdoc"],        "return": "void"},
+    {"kind": "func", "name": "pdf.lasterr",     "params": [],                "return": "str"},
+    {"kind": "func", "name": "pdf.lasterrkind", "params": [],                "return": "str"}
+  ]
+}
