@@ -87,7 +87,13 @@ int64_t tk_ws_recv_w(int64_t conn) {
     if (!payload) { ws_frame_free(r.frame); return 0; }
 
     int64_t msg = tk_arr_alloc(3, 3);
-    if (!msg) { ws_frame_free(r.frame); return 0; }
+    if (!msg) {
+        /* The payload block was never published, so release it rather than
+         * leaving it behind on the OOM path. */
+        free((int64_t *)(intptr_t)payload - TK_ARR_HDR);
+        ws_frame_free(r.frame);
+        return 0;
+    }
     int64_t *slot = (int64_t *)(intptr_t)msg;
     slot[0] = payload;                            /* payload : @($byte) */
     slot[1] = r.frame->is_final ? 1 : 0;          /* fin     : bool     */
