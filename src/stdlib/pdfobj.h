@@ -46,7 +46,15 @@ struct PdfObj {
         struct { PdfObj **v; uint32_t n, cap; }        arr;
         struct { char **k; PdfObj **v; uint32_t n, cap; } dict;
         struct { int32_t num, gen; }                   ref;
-        struct { PdfObj *dict; const uint8_t *raw; size_t rawlen; } stream;
+        /* `dec`/`declen` memoise pdf_stream_data's result.  Without the
+         * memo, every call re-inflates: `pdf.runs` then `pdf.pagetext` on
+         * one page inflates it twice, and a loop calling either repeatedly
+         * grows the document pool without bound — each round allocating up
+         * to TK_PDF_MAX_STREAM.  The decoded buffer is pooled and lives as
+         * long as the document anyway, so caching it costs nothing and
+         * removes the growth. */
+        struct { PdfObj *dict; const uint8_t *raw; size_t rawlen;
+                 const uint8_t *dec; size_t declen; int decoded; } stream;
     } u;
 };
 

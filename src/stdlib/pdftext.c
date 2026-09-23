@@ -791,7 +791,16 @@ static int run_content(Ctx *cx, PdfObj *resources, const uint8_t *content,
         if (pdf_starts_object(&L)) {
             PdfObj *o = pdf_parse(cx->doc, &L, 0);
             if (!o) { if (!pdf_token(&L, op, sizeof op)) break; continue; }
-            if (nstack < (int)(sizeof stack / sizeof stack[0])) stack[nstack++] = o;
+            /* Keep the LAST eight operands, not the first eight: every
+             * operator here reads its arguments from the END of the
+             * sequence, so dropping the newest ones would hand `Tm` the
+             * wrong six numbers whenever an operator is preceded by more
+             * operands than fit. */
+            if (nstack == (int)(sizeof stack / sizeof stack[0])) {
+                memmove(stack, stack + 1, (sizeof stack) - sizeof stack[0]);
+                nstack--;
+            }
+            stack[nstack++] = o;
             continue;
         }
         if (!pdf_token(&L, op, sizeof op)) break;

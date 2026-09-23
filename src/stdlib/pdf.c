@@ -724,6 +724,10 @@ const uint8_t *pdf_stream_data(TkPdfDoc *doc, PdfObj *st, size_t *outlen)
     uint32_t nfilters;
 
     if (!st || st->kind != PDF_STREAM) return NULL;
+    if (st->u.stream.decoded) {               /* memoised; see pdfobj.h */
+        *outlen = st->u.stream.declen;
+        return st->u.stream.dec;
+    }
     cur = (uint8_t *)(uintptr_t)st->u.stream.raw;
     curlen = st->u.stream.rawlen;
 
@@ -781,6 +785,9 @@ const uint8_t *pdf_stream_data(TkPdfDoc *doc, PdfObj *st, size_t *outlen)
             }
         }
     }
+    st->u.stream.dec = cur;
+    st->u.stream.declen = curlen;
+    st->u.stream.decoded = 1;
     *outlen = curlen;
     return cur;
 }
@@ -1313,6 +1320,7 @@ TkPdfPage *pdf_page_runs(TkPdfDoc *doc, uint32_t n)
         PdfObj *res = pdf_page_inherited(doc, page, "Resources");
         if (pdf_extract_runs(doc, res, content, clen, n, &runs, &nruns, &cap) != 0) {
             free(content);
+            for (uint32_t i = 0; i < nruns; i++) free(runs[i].text);
             free(runs);
             return NULL;
         }
@@ -1369,25 +1377,45 @@ int pdf_page_has_text(TkPdfDoc *doc, uint32_t n)
 /* ── Reading order ───────────────────────────────────────────────────── */
 
 /*
- * Sort key for reading order: down the page first (y DESCENDING, because
- * PDF's y grows upward), then left to right.
+ * Reading order is TWO passes, not one comparator.
  *
- * Baselines that differ by less than a third of the larger font's size are
- * treated as the SAME line — a superscript, a slightly-raised currency
- * symbol or a differently-sized cell in the same row would otherwise each
- * become their own line, which scrambles a table just as thoroughly as
- * content order does.
+ * The obvious comparator — "same line if the baselines differ by less than a
+ * third of an em, else compare y" — is NOT a strict weak ordering: with runs
+ * at y = 700.0, 700.3 and 700.6 and a 0.4 tolerance, a and b tie, b and c
+ * tie, and a and c do not. qsort's contract requires transitivity, and
+ * breaking it is undefined behaviour, not merely an odd order.
+ *
+ * So: sort strictly (y descending, then x), which is transitive because it
+ * compares exact doubles; then GROUP the sorted runs into lines with the
+ * tolerance; then sort each line by x.  Same intent, defined behaviour.
+ *
+ * The tolerance exists because a superscript, a raised currency symbol or a
+ * differently-sized cell in the same row would otherwise each become their
+ * own line, which scrambles a table as thoroughly as content order does.
  */
-static int run_cmp(const void *a, const void *b)
+static int run_cmp_strict(const void *a, const void *b)
 {
     const TkPdfRun *ra = (const TkPdfRun *)a, *rb = (const TkPdfRun *)b;
-    double tol = (ra->fontsize > rb->fontsize ? ra->fontsize : rb->fontsize) / 3.0;
-    if (tol < 0.5) tol = 0.5;
-    if (ra->y - rb->y > tol) return -1;
-    if (rb->y - ra->y > tol) return 1;
+    if (ra->y > rb->y) return -1;        /* PDF y grows UPWARD */
+    if (ra->y < rb->y) return 1;
     if (ra->x < rb->x) return -1;
     if (ra->x > rb->x) return 1;
     return 0;
+}
+
+static int run_cmp_x(const void *a, const void *b)
+{
+    const TkPdfRun *ra = (const TkPdfRun *)a, *rb = (const TkPdfRun *)b;
+    if (ra->x < rb->x) return -1;
+    if (ra->x > rb->x) return 1;
+    return 0;
+}
+
+/* How far two baselines may differ and still count as one line. */
+static double line_tol(const TkPdfRun *r)
+{
+    double t = r->fontsize / 3.0;
+    return t < 0.5 ? 0.5 : t;
 }
 
 char *pdf_page_text(TkPdfDoc *doc, uint32_t n)
@@ -1406,7 +1434,19 @@ char *pdf_page_text(TkPdfDoc *doc, uint32_t n)
     if (pg->n && !sorted) { free(out); pdf_page_free(pg); return NULL; }
     if (sorted) {
         memcpy(sorted, pg->runs, pg->n * sizeof(TkPdfRun));
-        qsort(sorted, pg->n, sizeof(TkPdfRun), run_cmp);
+        qsort(sorted, pg->n, sizeof(TkPdfRun), run_cmp_strict);
+        /* Group into lines, then order each line left to right. */
+        for (uint32_t i = 0; i < pg->n; ) {
+            uint32_t j = i + 1;
+            double tol = line_tol(&sorted[i]);
+            while (j < pg->n && sorted[i].y - sorted[j].y <= tol) {
+                double t2 = line_tol(&sorted[j]);
+                if (t2 > tol) tol = t2;
+                j++;
+            }
+            if (j - i > 1) qsort(sorted + i, j - i, sizeof(TkPdfRun), run_cmp_x);
+            i = j;
+        }
     }
 
     for (uint32_t i = 0; i < pg->n; i++) {
@@ -1415,8 +1455,7 @@ char *pdf_page_text(TkPdfDoc *doc, uint32_t n)
         size_t tl = strlen(r->text), sl;
         if (i > 0) {
             const TkPdfRun *p = &sorted[i - 1];
-            double tol = (p->fontsize > r->fontsize ? p->fontsize : r->fontsize) / 3.0;
-            if (tol < 0.5) tol = 0.5;
+            double tol = line_tol(p) > line_tol(r) ? line_tol(p) : line_tol(r);
             if (p->y - r->y > tol) sep = "\n";
             else if (r->x - (p->x + p->width) > r->fontsize * 0.25) sep = " ";
         }
