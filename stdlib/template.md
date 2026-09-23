@@ -188,7 +188,7 @@ F=render_items(items: @$str): $str!$tmplerr {
     parts = parts ++ @(rendered);
     i = i + 1;
   };
-  let body = str.join(parts; "");
+  let body = str.join(""; parts);
   <tpl.render(list_tpl; tpl.vars(@("items":body)))
 };
 ```
