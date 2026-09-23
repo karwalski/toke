@@ -332,7 +332,7 @@ check-glue-core:
 check-parallel-stdlib:
 	python3 scripts/check_parallel_stdlib.py
 
-ci: check-index lint conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
