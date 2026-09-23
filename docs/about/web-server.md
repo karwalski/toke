@@ -267,29 +267,47 @@ The binary is ~2 MB. No runtime, no container image, no reverse proxy needed for
 
 ### Performance
 
-Measured during Epic 59 load testing with `wrk` on a single machine (Apple M4 Max, 10 cores):
+**The cross-language throughput table that stood here is withdrawn (story
+132.38).** It compared toke against nginx, Go `net/http`, Node Express and
+Rust actix-web on throughput, p95 latency and memory. Nothing backed it:
 
-| Metric | toke std.http | nginx (static) | Go net/http | Node Express | Rust actix-web |
-|---|---|---|---|---|---|
-| Throughput (req/s) | **~366** | ~1,200 | ~340 | ~180 | ~450 |
-| p95 latency | **0.7 ms** | 0.3 ms | 0.8 ms | 2.1 ms | 0.5 ms |
-| Memory (16 workers) | **61.9 MB** | ~15 MB | ~25 MB | ~90 MB | ~18 MB |
-| Binary size | **~2 MB** | ~1.4 MB | ~7 MB | N/A (runtime) | ~4 MB |
-| Runtime deps | **0** | 0 | 0 | 30+ (npm) | 0 |
-| Lines for hello world | **10** | config file | 11 | 6 | 14 |
+- The nginx / Go / Node / Rust columns were never measured. The table's own
+  note described them as "representative of commonly published benchmarks",
+  naming no benchmark, no version, no hardware and no URL.
+- No `wrk` harness exists anywhere in this project, so the caption's stated
+  method could not be re-run.
+- The toke column traced only to a status-ledger line
+  (`docs/progress.md`, story 59.2.2), which records ~366 req/s at **10
+  concurrent connections** and p95 0.7 ms **on localhost** — not the "16
+  workers with keep-alive" the caption claimed. The 61.9 MB memory figure
+  appears in no measurement artefact at all, and the 16-worker configuration
+  it named was later rolled back after two OOM kills
+  (`toke-website/specs/production-config.md`), which set the deployed worker
+  count to 8.
 
-Notes:
-- toke numbers are from Epic 59 Gate 1 testing at 16 workers with keep-alive enabled.
-- nginx serves static files only (no application logic); included as a baseline for raw HTTP throughput.
-- Go, Node, and Rust numbers are representative of commonly published benchmarks for equivalent hello-world servers on similar hardware.
-- toke's throughput is competitive with Go and within range of Rust, while shipping as a fraction of the binary size with zero external dependencies.
+This project's rule is that an unsourced claim comes down rather than
+acquiring a plausible-looking source, so it is removed rather than rewritten.
+
+There **is** a real, reproducible serving baseline, and it measures something
+narrower than the withdrawn table: cold start and TTFB for the site binary
+against `caddy file-server`, recorded in `docs/metrics-baseline.md`
+(story 134.6) with its harness, raw results and reproduce command under
+`toke-ooke/bench/serving/`. It does not compare toke to Go, Node, Rust or
+nginx, and no such comparison should be published until one is measured.
+
+What can be stated without a benchmark: the binary is ~2 MB, it has no
+runtime dependencies, it terminates TLS itself, and it pre-forks workers that
+share the listening socket via `SO_REUSEPORT`.
 
 ### How it compares
 
+Capabilities only — these are properties of each stack, not measurements.
+The "hello world lines" and third-party binary sizes that stood in this table
+are withdrawn with the throughput table above (132.38): they were counted from
+unstated sources.
+
 | | toke | Go net/http | Node Express | Rust actix-web |
 |---|---|---|---|---|
-| Hello world lines | 10 | 11 | 6 | 14 |
-| Binary size | ~2 MB | ~7 MiB | N/A (runtime) | ~4 MiB |
 | Runtime deps | 0 | 0 | 30+ (npm) | 0 |
 | TLS built-in | Yes | Yes | No (needs proxy) | Yes |
 | Worker pool built-in | Yes | Yes (goroutines) | No (needs cluster) | Yes |
