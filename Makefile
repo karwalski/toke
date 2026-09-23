@@ -890,7 +890,7 @@ test-ci-known-red:
 
 test-ci: test-ci-green
 
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -1001,6 +1001,17 @@ check-claims-all:
 # so the binary's own strings cannot drift from the lexer table.
 check-facts: $(BIN)
 	python3 scripts/verify_project_facts.py --check
+
+# 132.58a — structural gate on docs/progress.md, the canonical tracker. Until
+# this existed the file that tracks every epic was checked by nothing at all,
+# which is how 234 rows with unescaped `|` (whose status column is therefore
+# not what it appears), 40 reused story IDs and 13 rows under no table header
+# accumulated. Those 287 are baselined in scripts/progress-baseline.txt and
+# are all in historical epics; the gate fails on anything NEW, and also on a
+# baseline entry that stops being produced, so the file cannot become a
+# blanket amnesty. Regenerate the baseline only deliberately: --record.
+check-progress:
+	python3 scripts/check_progress.py
 
 # 123.12 — drift-gate: every diagnostic code the compiler emits must be
 # documented in docs/reference/errors.md, and errors.md must not list dead codes.
