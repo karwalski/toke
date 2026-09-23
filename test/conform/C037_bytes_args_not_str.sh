@@ -140,6 +140,13 @@ accepts() {
         echo "  FAIL: ${name}: the byte-argument check rejected a correct program"
         printf '%s\n' "${out}" | sed 's/^/      /' | head -2
         FAIL=$((FAIL + 1))
+    elif printf '%s' "${out}" | grep -q '"stage":"parse"'; then
+        # A control that does not PARSE asserts nothing: the check under test
+        # runs in type_check and is never reached, so the case would pass for
+        # the wrong reason.  Caught while writing C8.
+        echo "  FAIL: ${name}: the control does not parse, so it asserts nothing"
+        printf '%s\n' "${out}" | sed 's/^/      /' | head -2
+        FAIL=$((FAIL + 1))
     else
         echo "  PASS: ${name} — not rejected"
         PASS=$((PASS + 1))
@@ -450,8 +457,11 @@ i=file:std.file;
 i=enc:std.encoding;
 i=io:std.io;
 f=main():i64{
-  let b=file.readbytes("x.bin")!;
-  io.println(enc.hexencode(cry.sha256(b)));
+  let rb=file.readbytes("x.bin");
+  mt rb {
+    $ok:b io.println(enc.hexencode(cry.sha256(b)));
+    $err:e io.println("err")
+  };
   <0
 };'
 
