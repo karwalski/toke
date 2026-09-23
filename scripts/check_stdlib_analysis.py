@@ -1,0 +1,343 @@
+#!/usr/bin/env python3
+"""check_stdlib_analysis.py — static-analysis and portability gate over every
+compiler and stdlib translation unit (story 135.3a).
+
+WHY THIS EXISTS
+---------------
+Until 135.3a the repository had two targets that claimed to be this gate and
+neither was:
+
+  * `make lint` ran `cc $(CFLAGS) --analyze $(SRCS)` in ONE command.  `$(SRCS)`
+    is the compiler plus a curated 28-module subset of `src/stdlib/`, so the
+    other 104 stdlib .c files were analysed by nothing.  Worse, clang's
+    `--analyze` does not honour `-Werror`: the target printed 97 analyzer
+    warnings and exited 0.  It had never failed and could not fail.
+
+  * `make build-all` cross-compiles `$(SRCS)` for three triples, so the same
+    104 modules are compiled with `-Wall -Wextra -Wpedantic -Werror` on no
+    platform at all.  Six of them do not survive that on the HOST, let alone
+    off it (see the skiplist).
+
+  * A stdlib module's `#else` platform branch is built by nothing anywhere.
+    `test/conform/C033_ocr_text_runs.sh` compiles exactly one file
+    (`src/stdlib/ocr.c`) with `-U__APPLE__` and says in its own comment that
+    it "is the only thing in this repository that does".  It earned its place
+    immediately — it caught `clear_err()` being unused off Apple.  `--nonhost`
+    below generalises that to every translation unit.
+
+WHAT A PASS PROVES
+------------------
+  * `--compile`: every source in the analysed set compiles on the HOST under
+    `-Wall -Wextra -Wpedantic -Werror`, or is on the `compile` skiplist.
+  * `--analyze`: clang's static analyzer reports no warning that is not
+    accounted for, by checker and count, on the `analyze` skiplist.
+  * `--nonhost`: every source compiles with the HOST platform macro UNDEFINED
+    (`-U__APPLE__` on Darwin, `-U__linux__` elsewhere), i.e. the `#else`
+    branch of every platform conditional is syntax- and warning-clean, or is
+    on the `nonhost` skiplist.
+
+WHAT A PASS DOES NOT PROVE
+--------------------------
+  * `--nonhost` undefines the host macro on the host SDK.  That reaches the
+    `#else` branch of first-party code, which is the point, but it is NOT a
+    cross-compile: the system headers are still the host's.  A module whose
+    non-host branch needs a foreign header (`sys/sysinfo.h`) cannot be built
+    this way and is skiplisted as such, with the reason recorded.  Real
+    cross-target coverage would need `build-all` to include these modules,
+    which it cannot until they link (see the `compile` skiplist).
+  * Nothing here runs anything.  Behaviour is other gates' job.
+
+THE SKIPLIST IS SELF-FAILING
+----------------------------
+`scripts/check_stdlib_analysis_skiplist.txt` follows the pattern
+`scripts/check_tki_skiplist.txt` uses for quarantine: an entry stops being a
+skip the moment it starts passing.  A `compile`/`nonhost` entry whose file now
+builds clean is STALE and FAILS the gate.  An `analyze` entry whose warning
+count has DROPPED is STALE and FAILS the gate — you must lower the number or
+delete the line.  An entry naming a file that is not in the analysed set is
+STALE.  A gate that is green because it looks away is the defect this
+replaces; a skiplist that cannot rot is what keeps it honest.
+
+Usage:
+    python3 scripts/check_stdlib_analysis.py [--compile] [--analyze]
+                                             [--nonhost] [--report]
+                                             [--jobs N] [--verbose]
+                                             <source.c> ...
+
+    With no mode flag, `--compile --analyze` is implied.  The source list is
+    passed BY THE MAKEFILE ($(ANALYZE_SRCS)) so that what the repository
+    builds and what it analyses cannot drift into two different lists here.
+
+    `--report` prints skiplist lines for everything currently failing and
+    exits 0.  It is a drafting aid: paste the lines in and write a real
+    reason and story next to each.  It deliberately does NOT write the file.
+"""
+import os
+import re
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SKIPLIST = os.path.join(REPO_ROOT, "scripts", "check_stdlib_analysis_skiplist.txt")
+
+CC = os.environ.get("CC", "cc")
+
+# Must mirror the Makefile's CFLAGS (minus -MMD -MP, which emit .d files we do
+# not want from a syntax-only run, and minus the repro flags, which do not
+# affect diagnostics).  Kept here rather than inherited so that a `make lint`
+# and a bare `python3 scripts/check_stdlib_analysis.py` see the same thing —
+# "works by hand, explodes under make" has cost this project real time.
+BASE_FLAGS = [
+    "-std=c99", "-D_GNU_SOURCE",
+    "-Wall", "-Wextra", "-Wpedantic", "-Werror",
+    "-Wno-misleading-indentation",
+    '-DTKC_STDLIB_DIR="%s"' % os.path.join(REPO_ROOT, "src", "stdlib"),
+]
+
+# Per-file extra flags.  KEEP IN SYNC with the Makefile: CMARK_FLAGS,
+# TOML_FLAGS and the src/stdlib/encrypt.o override are the same three
+# exceptions, for the same three reasons.
+EXTRA_FLAGS = {
+    "src/stdlib/md.c": ["-Istdlib/vendor/cmark/src", "-Wno-pedantic"],
+    "src/stdlib/toml.c": ["-Istdlib/vendor/tomlc99"],
+    # __int128 for Ed25519 arithmetic — allowed by GCC/clang, rejected by
+    # -Wpedantic.  Same suppression the Makefile applies to encrypt.o.
+    "src/stdlib/encrypt.c": ["-Wno-pedantic"],
+}
+
+# Which macro identifies "this host".  Undefining it is what reaches the #else
+# branch.  This is the C033 technique, generalised.
+HOST_MACRO = "__APPLE__" if sys.platform == "darwin" else "__linux__"
+
+WARN_RE = re.compile(r"^(.*?):(\d+):(\d+): warning: (.*?)\s*\[([A-Za-z0-9_.]+)\]\s*$")
+DIAG_RE = re.compile(r"^(.*?):(\d+):(\d+): (?:fatal )?error: (.*)$")
+
+
+def rel(path):
+    """Repo-relative, with ../ hops collapsed.
+
+    zip.c #includes the vendored miniz.c directly, so analyzer warnings in it
+    are reported as `src/stdlib/../../stdlib/vendor/miniz/miniz.c`.  Collapsing
+    that to `stdlib/vendor/miniz/miniz.c` is what lets one skiplist entry name
+    it regardless of which first-party file dragged it in.
+    """
+    p = os.path.normpath(os.path.join(REPO_ROOT, path))
+    try:
+        return os.path.relpath(p, REPO_ROOT)
+    except ValueError:
+        return path
+
+
+# ── skiplist ─────────────────────────────────────────────────────────────────
+
+def load_skiplist():
+    """Return ({(kind, key): (count, reason, lineno)}, [errors])."""
+    entries, errors = {}, []
+    if not os.path.exists(SKIPLIST):
+        return entries, ["skiplist missing: %s" % SKIPLIST]
+    with open(SKIPLIST) as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.split("#", 1)[0].strip()
+            reason = raw.split("#", 1)[1].strip() if "#" in raw else ""
+            if not line:
+                continue
+            parts = line.split()
+            kind = parts[0]
+            if kind in ("compile", "nonhost"):
+                if len(parts) != 2:
+                    errors.append("%s:%d: %s takes exactly one path" % (SKIPLIST, lineno, kind))
+                    continue
+                entries[(kind, parts[1])] = (None, reason, lineno)
+            elif kind == "analyze":
+                if len(parts) != 3 or "::" not in parts[1]:
+                    errors.append("%s:%d: analyze takes <path>::<checker> <count>"
+                                  % (SKIPLIST, lineno))
+                    continue
+                try:
+                    n = int(parts[2])
+                except ValueError:
+                    errors.append("%s:%d: count is not an integer" % (SKIPLIST, lineno))
+                    continue
+                entries[(kind, parts[1])] = (n, reason, lineno)
+            else:
+                errors.append("%s:%d: unknown record kind %r (compile|analyze|nonhost)"
+                              % (SKIPLIST, lineno, kind))
+    return entries, errors
+
+
+# ── the three passes ─────────────────────────────────────────────────────────
+
+def run_cc(src, mode):
+    """Compile/analyse one source.  Returns (ok, combined_output)."""
+    flags = list(BASE_FLAGS) + EXTRA_FLAGS.get(rel(src), [])
+    if mode == "analyze":
+        # clang's --analyze ignores -Werror entirely (this is the whole reason
+        # the old `make lint` could not fail).  Drop it so the exit status is
+        # about the COMPILE succeeding, and read the warnings out of the text.
+        flags = [f for f in flags if f != "-Werror"]
+        flags.append("--analyze")
+    else:
+        flags.append("-fsyntax-only")
+    if mode == "nonhost":
+        flags.append("-U" + HOST_MACRO)
+    r = subprocess.run([CC] + flags + [src], cwd=REPO_ROOT,
+                       capture_output=True, text=True)
+    return r.returncode == 0, (r.stdout or "") + (r.stderr or "")
+
+
+def analyze_counts(output):
+    """{(path, checker): count} from analyzer text output."""
+    counts = {}
+    for line in output.splitlines():
+        m = WARN_RE.match(line.strip())
+        if m:
+            key = (rel(m.group(1)), m.group(5))
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def first_errors(output, limit=4):
+    out = []
+    for line in output.splitlines():
+        m = DIAG_RE.match(line.strip())
+        if m:
+            out.append("%s:%s: %s" % (rel(m.group(1)), m.group(2), m.group(4)))
+            if len(out) >= limit:
+                break
+    return out or [output.strip().splitlines()[-1] if output.strip() else "failed"]
+
+
+# ── main ─────────────────────────────────────────────────────────────────────
+
+def main():
+    args = sys.argv[1:]
+    modes = [m for m in ("compile", "analyze", "nonhost") if "--" + m in args]
+    report = "--report" in args
+    verbose = "--verbose" in args
+    jobs = 4
+    if "--jobs" in args:
+        i = args.index("--jobs")
+        jobs = int(args[i + 1])
+        del args[i:i + 2]
+    sources = [a for a in args if not a.startswith("--")]
+    if not modes:
+        modes = ["compile", "analyze"]
+    if not sources:
+        print("check_stdlib_analysis: no sources given (the Makefile passes "
+              "$(ANALYZE_SRCS)); nothing to check — refusing to pass",
+              file=sys.stderr)
+        return 2
+
+    sources = sorted({rel(s) for s in sources})
+    missing = [s for s in sources if not os.path.exists(os.path.join(REPO_ROOT, s))]
+    if missing:
+        print("check_stdlib_analysis: sources do not exist: %s" % ", ".join(missing),
+              file=sys.stderr)
+        return 2
+
+    skips, skip_errors = load_skiplist()
+    failures = list(skip_errors)
+    stale = []
+    proposed = []
+    used = set()
+
+    for mode in modes:
+        with ThreadPoolExecutor(max_workers=jobs) as ex:
+            results = list(ex.map(lambda s: (s,) + run_cc(s, mode), sources))
+
+        if mode in ("compile", "nonhost"):
+            for src, ok, out in results:
+                key = (mode, src)
+                skipped = key in skips
+                if skipped:
+                    used.add(key)
+                if ok and skipped:
+                    stale.append("%s skip for %s is STALE — it now builds clean. "
+                                 "Remove the line from %s."
+                                 % (mode, src, os.path.relpath(SKIPLIST, REPO_ROOT)))
+                elif not ok and not skipped:
+                    for e in first_errors(out):
+                        failures.append("%s: %s" % (mode.upper(), e))
+                    proposed.append("%-8s %-44s # %s" % (mode, src, first_errors(out, 1)[0]))
+                elif verbose and ok:
+                    print("  ok   %s %s" % (mode, src))
+
+        else:  # analyze
+            actual = {}
+            for src, ok, out in results:
+                if not ok:
+                    key = ("compile", src)
+                    if key in skips:
+                        # already accounted for as a compile failure
+                        used.add(key)
+                        continue
+                    failures.append("ANALYZE: %s did not analyse: %s"
+                                    % (src, first_errors(out, 1)[0]))
+                    continue
+                for k, n in analyze_counts(out).items():
+                    actual[k] = actual.get(k, 0) + n
+            for (path, checker), n in sorted(actual.items()):
+                key = ("analyze", "%s::%s" % (path, checker))
+                if key in skips:
+                    used.add(key)
+                    allowed = skips[key][0]
+                    if n > allowed:
+                        failures.append(
+                            "ANALYZE: %s [%s]: %d warnings, skiplist allows %d"
+                            % (path, checker, n, allowed))
+                    elif n < allowed:
+                        stale.append(
+                            "analyze skip %s::%s is STALE — %d warnings now, "
+                            "skiplist says %d. Lower the number in %s."
+                            % (path, checker, n, allowed,
+                               os.path.relpath(SKIPLIST, REPO_ROOT)))
+                else:
+                    failures.append("ANALYZE: %s [%s]: %d warnings, not on the skiplist"
+                                    % (path, checker, n))
+                    proposed.append("%-8s %-44s %d  # " % ("analyze", "%s::%s" % (path, checker), n))
+            # an analyze skip that fired zero times is stale
+            for key, (allowed, _r, _ln) in skips.items():
+                if key[0] != "analyze" or key in used:
+                    continue
+                path = key[1].split("::")[0]
+                if path in sources or any(path.startswith("stdlib/vendor/") for _ in (0,)):
+                    stale.append("analyze skip %s is STALE — it reports nothing now. "
+                                 "Remove the line from %s."
+                                 % (key[1], os.path.relpath(SKIPLIST, REPO_ROOT)))
+
+    # entries naming files outside the analysed set are stale too
+    for (kind, key), (_n, _r, lineno) in sorted(skips.items()):
+        if (kind, key) in used:
+            continue
+        path = key.split("::")[0]
+        if kind in ("compile", "nonhost") and kind in modes and path not in sources:
+            stale.append("%s:%d: %s skip names %s, which is not in the analysed "
+                         "set — remove it." % (os.path.relpath(SKIPLIST, REPO_ROOT),
+                                               lineno, kind, path))
+
+    if report:
+        print("# ── proposed skiplist lines (write a real reason and story on each) ──")
+        for p in sorted(set(proposed)):
+            print(p)
+        return 0
+
+    n_skips = sum(1 for k in skips if k[0] in modes)
+    print("check_stdlib_analysis: %d sources, modes=%s, %d skiplist entries in play"
+          % (len(sources), ",".join(modes), n_skips))
+
+    for s in sorted(set(stale)):
+        print("  STALE: %s" % s)
+    for f in sorted(set(failures)):
+        print("  FAIL:  %s" % f)
+
+    if failures or stale:
+        print("check_stdlib_analysis: FAIL (%d unaccounted, %d stale)"
+              % (len(set(failures)), len(set(stale))))
+        return 1
+    print("check_stdlib_analysis: OK")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
