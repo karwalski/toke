@@ -58,7 +58,9 @@
  *   E4025 — Struct field access on a field name that does not exist.
  *   E4026 — Wrong argument count in function call.
  *   E4027 — Module has no exported member with that name (136.1).
- *   E4031 — Type mismatch (the general-purpose type error code).
+ *   E4031 — Type mismatch (the general-purpose type error code); also
+ *            a `str` in a stdlib parameter the runtime unpacks as a
+ *            toke `[byte]` array (124.2f).
  *   E4043 — Inconsistent key or value types in a map literal.
  *   E5001 — Value escapes arena scope.
  *   E5002 — Unreachable code after return statement.
@@ -1680,6 +1682,213 @@ static void check_tki_call(Ctx *cx, const Node *call) {
                     f->param_count, actual);
 }
 
+/* ── 124.2f: a `str` where the runtime unpacks a toke `[byte]` array ──────
+ *
+ * THE DEFECT.  `crypto.sha256("hello")` compiled clean, exited 0, and
+ * returned 32 bytes that looked like a digest.  It was the digest of the
+ * EMPTY STRING — e3b0c442…b855 — for every input, so every string hashed to
+ * one constant and everything built on it (signatures, content addressing,
+ * password hashing, HMAC) collapsed to a single value.  Shipped in 3.0.0.
+ *
+ * THE MECHANISM.  A toke `[byte]` is an i64-array whose backing block stores
+ * its element count at `ptr[-1]` (bytes_rt.h).  `tk_bytes_unpack` reads that
+ * word as the length.  A `str` handle is a bare `char *` with no such header,
+ * so the glue reads the eight bytes that happen to precede the literal in
+ * `__cstring` and uses them as a count:
+ *
+ *   * that word is usually 0 or negative → length 0 → the empty digest;
+ *   * when the preceding literal leaves a large value there, the unpack loop
+ *     walks `n` i64s off the end of the literal and past the mapped page →
+ *     SIGSEGV / SIGBUS.  Shifting the preceding literal by ONE byte flips
+ *     between the two, which is how the two-call reproduction crashes while
+ *     the same two calls with a marker string between them do not.
+ *
+ * The glue is not at fault and needs no change: given a real `[byte]` it
+ * produces the correct digest.  An i64 handle carries no tag that would let
+ * it tell a str pointer from an array pointer, so the call site is the only
+ * place this can be caught.
+ *
+ * THE RULE.  Ground the check on the IMPLEMENTATION, never on the `.tki`.
+ * This is the same principle check_tki_call states for arity — the ABI is
+ * what decides whether a call corrupts — and here it is load-bearing in both
+ * directions:
+ *
+ *   * `df.fromcsv` is declared `[byte]` in dataframe.tki and implemented as
+ *     `(const char *)csv; strlen(s)` — it takes a `str`.  Trusting the
+ *     interface would reject `df.fromcsv("a,b\n1,2")`, a program that works
+ *     today.  AGENTS.md §2, and 136.36's over-eager check, are exactly this.
+ *   * five exports (crypto.constanttimeequal, encoding.base64encode,
+ *     encoding.base64urlencodenopad, encoding.frombytes) spell a byte
+ *     parameter `i64` in the `.tki`, so the interface would have missed them.
+ *
+ * So the member is resolved to the symbol the EMITTER will lower it to
+ * (stdlib_symbol_for — the same mapping check_tki_call and codegen use), and
+ * that symbol is looked up in the table below, whose every row was read out
+ * of the glue source: parameter *i* is set when the body of that `_w` wrapper
+ * passes its *i*-th parameter to `tk_bytes_unpack`.  A symbol absent from the
+ * table is not checked at all.
+ *
+ * WHAT IS DELIBERATELY NOT CHECKED, because this runs against every call in
+ * every program and a check that fires wrongly is worse than one that is
+ * incomplete:
+ *
+ *   * An argument the checker could not type (TY_UNKNOWN).  Most arguments to
+ *     an unresolved call are exactly that — including every nested stdlib
+ *     call, since stdlib return types are deliberately not propagated here.
+ *     `enc.hexencode(cry.sha256(b))` is therefore silent, as it must be.
+ *   * Every type other than `str`.  An array, a map, a struct or a scalar in
+ *     a byte position is a different question and is not established here.
+ *   * Sub-namespace calls (`tpl.*`, `df.*`, `row.*`, `ocr.*` under an alias
+ *     that is not theirs).  Those prefixes are not `I=` aliases, so
+ *     import_module_path() does not resolve them and the call is skipped —
+ *     the same boundary check_tki_call draws.
+ *   * Receiver calls (`b.sha256()`).  check_recv_method_call owns those.
+ *
+ * TABLE PROVENANCE.  Derived by reading every `int64_t tk_*_w(...)` body in
+ * the src/stdlib glue sources and recording which parameters reach `tk_bytes_unpack`
+ * (following a wrapper that does nothing but delegate to another `_w`).  It
+ * belongs in scripts/gen_stdlib_decls.py beside stdlib_dummyarg_gen.h, which
+ * is generated from the same sources for the same reason; that script is
+ * another worker's territory this cycle, so the table is declared here — the
+ * precedent s_std_str_sigs above sets — and moving it is a follow-up.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+typedef struct {
+    const char *sym;          /* glue symbol, as the emitter names it      */
+    unsigned    byte_params;  /* bitmask of 0-based params unpacked [byte] */
+} GlueByteSig;
+
+static const GlueByteSig s_glue_byte_sigs[] = {
+    { "tk_auth_jwtsign_w", 0x2u },
+    { "tk_auth_jwtverify_w", 0x2u },
+    { "tk_base64_encode_w", 0x1u },
+    { "tk_crypto_constanteq_w", 0x3u },
+    { "tk_crypto_constanttimeequal_w", 0x3u },
+    { "tk_crypto_hmacsha256_w", 0x3u },
+    { "tk_crypto_hmacsha512_w", 0x3u },
+    { "tk_crypto_sha256_w", 0x1u },
+    { "tk_crypto_sha512_w", 0x1u },
+    { "tk_crypto_to_hex_w", 0x1u },
+    { "tk_crypto_tohex_w", 0x1u },
+    { "tk_csv_parse_w", 0x1u },
+    { "tk_csv_reader_w", 0x1u },
+    { "tk_csv_readeropts_w", 0x1u },
+    { "tk_csv_sniff_w", 0x1u },
+    { "tk_encoding_b64encode_w", 0x1u },
+    { "tk_encoding_b64urlencode_w", 0x1u },
+    { "tk_encoding_base64encode_w", 0x1u },
+    { "tk_encoding_base64urlencodenopad_w", 0x1u },
+    { "tk_encoding_frombytes_w", 0x1u },
+    { "tk_encoding_hexencode_w", 0x1u },
+    { "tk_encrypt_aes256gcmdecrypt_w", 0xfu },
+    { "tk_encrypt_aes256gcmencrypt_w", 0xfu },
+    { "tk_encrypt_ed25519sign_w", 0x3u },
+    { "tk_encrypt_ed25519verify_w", 0x7u },
+    { "tk_encrypt_hkdfsha256_w", 0x7u },
+    { "tk_encrypt_x25519dh_w", 0x3u },
+    { "tk_file_writebytes_w", 0x2u },
+    { "tk_image_decode_w", 0x1u },
+    { "tk_image_fromraw_w", 0x1u },
+    { "tk_image_tiffdecode_w", 0x1u },
+    { "tk_image_tiffpages_w", 0x1u },
+    { "tk_ocr_runs_w", 0x1u },
+    { "tk_ocr_runsraw_w", 0x1u },
+    { "tk_ocr_text_w", 0x1u },
+    { "tk_pdf_open_w", 0x1u },
+    { "tk_str_from_bytes_w", 0x1u },
+    { "tk_str_frombytes_w", 0x1u },
+    { "tk_xlsx_open_w", 0x1u },
+    { "tk_zip_open_w", 0x1u },
+    { NULL, 0u }
+};
+
+/* glue_byte_params — which parameters of `sym` the runtime unpacks as a toke
+ * [byte] array, or 0 when the symbol is not one the table establishes. */
+static unsigned glue_byte_params(const char *sym) {
+    if (!sym) return 0u;
+    for (int i = 0; s_glue_byte_sigs[i].sym; i++)
+        if (strcmp(s_glue_byte_sigs[i].sym, sym) == 0)
+            return s_glue_byte_sigs[i].byte_params;
+    return 0u;
+}
+
+/*
+ * byte_param_spelling — how the interface writes the declared type, so the
+ * diagnostic names the type the caller's documentation shows.  Both `[byte]`
+ * and `@(byte)` both appear across the stdlib interfaces; anything else (the five exports
+ * that spell it `i64`, or no record at all) falls back to the canonical form.
+ */
+static const char *byte_param_spelling(Ctx *cx, const char *alias,
+                                       const char *member, int idx) {
+    const ImportedFunc *f = imported_func_lookup(cx->env->names, alias, member);
+    if (f && f->param_types && idx < f->param_count && f->param_types[idx]) {
+        const char *t = f->param_types[idx];
+        if (strcmp(t, "[byte]") == 0 || strcmp(t, "@(byte)") == 0) return t;
+    }
+    return "[byte]";
+}
+
+static void check_stdlib_byte_args(Ctx *cx, const Node *call) {
+    if (!call || call->child_count < 1) return;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2)
+        return;
+    if (!callee->children[0] || callee->children[0]->kind != NODE_IDENT) return;
+    if (!callee->children[1]) return;
+    if (!cx->env || !cx->env->names) return;
+
+    char alias[128];  TOKSTR(alias, cx->src, callee->children[0]);
+    char member[128]; TOKSTR(member, cx->src, callee->children[1]);
+
+    /* The base must be an `I=` alias of this file and nothing else — the same
+     * gate check_tki_call applies, for the same reason: a module-scope
+     * declaration of that name means the identifier is not the module. */
+    char mbuf[256];
+    const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
+    if (!mpath) return;
+    {
+        Decl *d = tc_lookup(cx->env->names->module_scope, alias,
+                            (int)strlen(alias));
+        if (d && d->kind != DECL_IMPORT_ALIAS) return;
+    }
+    if (strncmp(mpath, "std.", 4) != 0) return;
+
+    const char *sym = stdlib_symbol_for(mpath, 1, member);
+    unsigned mask = glue_byte_params(sym);
+    if (!mask) return;
+
+    for (int a = 1; a < call->child_count; a++) {
+        int idx = a - 1;
+        if (idx >= 32 || !(mask & (1u << idx))) continue;
+        const Node *arg = call->children[a];
+        if (!arg) continue;
+        Type *at = arg->rtype;
+        /* Only a type the checker ESTABLISHED as str is diagnosed. */
+        if (!at || at->kind != TY_STR) continue;
+        if (!tc_can_emit(cx)) return;
+
+        const char *want = byte_param_spelling(cx, alias, member, idx);
+        char msg[448];
+        snprintf(msg, sizeof msg,
+                 "type mismatch: expected '%s', got 'str' — argument %d of "
+                 "'%s.%s' is unpacked as a byte array by the runtime, which "
+                 "reads its length from the handle; a str carries no such "
+                 "header, so the call reads a foreign length",
+                 want, idx + 1, mpath, member);
+        /* AGENTS.md §3.1 — a `fix` only where the rewrite is deterministic.
+         * `str.bytes(s:str):[byte]` (docs/spec/toke-spec-v0.3.md §1322) is
+         * the declared conversion and is total: it yields the string's UTF-8
+         * bytes for every str.  Verified against the SHA-256 vectors in
+         * test/conform/C037. */
+        diag_emit(DIAG_ERROR, E4031, arg->start, arg->line, arg->col, msg,
+                  "expected", want, "got", "str",
+                  "fix", "wrap the argument in str.bytes(...) — std.str's "
+                         "str.bytes(s:str):[byte] is the declared conversion "
+                         "from a string to its UTF-8 bytes",
+                  (const char *)NULL);
+    }
+}
+
 /* ── 127.1 / 127.96 / 127.115 / 127.128: member calls on a VALUE receiver ──
  *
  * `recv.member(args)` where `recv` is not an import alias was checked by
@@ -2363,6 +2572,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             /* 136.1: and enforce the .tki the alias was imported from —
              * arity and the member's existence, nothing wider. */
             check_tki_call(cx,node);
+            /* 124.2f: and reject a `str` in a parameter the runtime unpacks
+             * as a toke [byte] array — the shape that made every string hash
+             * to the digest of the empty string, and crashed on the second
+             * call. */
+            check_stdlib_byte_args(cx,node);
             /* 127.1/127.96/127.115/127.128: and, for a call whose receiver is
              * a VALUE rather than a module, enforce the receiver dispatch. */
             check_recv_method_call(cx,node);
