@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "module": "std.ocr",
+  "generated": "scripts/gen_tki.py (137.12) derives every arity here from the glue. Parameter and return TYPES are not derivable -- every pointer, every integer and every f64 is i64 in the toke ABI -- so the types below were written over the generated skeleton, which is exactly the contract that script documents: it is additive and arity-correcting, and an export that already exists keeps its hand-written types verbatim. Re-running it leaves this file unchanged. Story 135.6.",
+  "exports": [
+    {
+      "kind": "type",
+      "name": "ocrrun",
+      "comment": "std.pdf's $textrun, slot for slot. Six of the seven fields are identical in name, type and position; the seventh differs in name only, same type and same slot, so the two records are bit-identical under the flat-i64-block struct ABI. A PDF knows the font size and not the confidence; a recogniser knows the confidence and not the font size. x/y/width/height are PIXELS OF THE SOURCE IMAGE with the origin at the BOTTOM-LEFT and y increasing upward -- std.pdf's convention, not the raster one, so a consumer sorts $ocrrun and $textrun with the identical comparison.",
+      "fields": [
+        {"name": "text",       "type": "str"},
+        {"name": "page",       "type": "i64"},
+        {"name": "x",          "type": "f64"},
+        {"name": "y",          "type": "f64"},
+        {"name": "width",      "type": "f64"},
+        {"name": "height",     "type": "f64"},
+        {"name": "confidence", "type": "f64"}
+      ]
+    },
+    {
+      "kind": "type",
+      "name": "ocrerr",
+      "is_sum": true,
+      "comment": "$noengine is the one requirement 5 of story 135.6 turns on: on a platform with no recogniser this module fails, and never returns empty text. Empty text reads as 'no content', which is a different and wrong answer -- the same defect std.pdf refuses with a distinct $encrypted.",
+      "fields": [
+        {"name": "$noengine",   "type": "str"},
+        {"name": "$badimage",   "type": "str"},
+        {"name": "$toosmall",   "type": "str"},
+        {"name": "$nolanguage", "type": "str"},
+        {"name": "$failed",     "type": "str"},
+        {"name": "$io",         "type": "str"}
+      ]
+    },
+    {"kind": "func", "name": "ocr.isavailable",   "params": [],                                 "return": "bool"},
+    {"kind": "func", "name": "ocr.engine",        "params": [],                                 "return": "str"},
+    {"kind": "func", "name": "ocr.languages",     "params": [],                                 "return": "str"},
+    {"kind": "func", "name": "ocr.setlanguages",  "params": ["str"],                            "return": "bool"},
+    {"kind": "func", "name": "ocr.setfast",       "params": ["bool"],                           "return": "void"},
+    {"kind": "func", "name": "ocr.runs",          "params": ["@(byte)"],                        "return": "@(ocrrun)!ocrerr"},
+    {"kind": "func", "name": "ocr.runsfile",      "params": ["str"],                            "return": "@(ocrrun)!ocrerr"},
+    {"kind": "func", "name": "ocr.runsraw",       "params": ["@(byte)", "i64", "i64", "i64"],   "return": "@(ocrrun)!ocrerr"},
+    {"kind": "func", "name": "ocr.text",          "params": ["@(byte)"],                        "return": "str!ocrerr"},
+    {"kind": "func", "name": "ocr.textfile",      "params": ["str"],                            "return": "str!ocrerr"},
+    {"kind": "func", "name": "ocr.lasterr",       "params": [],                                 "return": "str"},
+    {"kind": "func", "name": "ocr.lasterrkind",   "params": [],                                 "return": "str"}
+  ]
+}
