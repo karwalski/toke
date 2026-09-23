@@ -39,6 +39,13 @@ functions; do not construct one and do not rely on its fields.
 | fin | bool | Whether this is the final fragment |
 | opcode | u64 | WebSocket frame opcode (1=text, 2=binary) |
 
+> **Do not read these fields yet.** `ws.recv` is declared to return
+> `$wsmsg!$wserr`, but the runtime does not currently return a `$wsmsg` —
+> reading `msg.payload` off the result traps (SIGBUS, exit 138), verified
+> against a live WebSocket server. Until that is resolved, match on `ws.recv`
+> to learn whether a message arrived; do not dereference the value. The
+> examples below are written that way. This is a defect, not a design.
+
 ### $wserr
 
 | Field | Type | Meaning |
