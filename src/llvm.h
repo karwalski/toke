@@ -79,4 +79,30 @@ int stdlib_glue_arity(const char *sym);
  */
 const char *stdlib_symbol_for(const char *mod, int is_std, const char *method);
 
+/*
+ * stdlib_subpath_symbol — the glue symbol for the three-segment stdlib call
+ * spelling `<module>.<seg>.<member>` (`http.res.ok`), or NULL (127.96).
+ *
+ * The interfaces publish both spellings of these functions — `http.res.ok`
+ * and `http.resok` — so the sub-path resolves by concatenating `seg` and
+ * `member`, and only when g_stdlib_decls declares the symbol that names.
+ */
+const char *stdlib_subpath_symbol(const char *mpath, int is_std,
+                                  const char *seg, const char *member);
+
+/*
+ * recv_method_known / recv_method_arity — the receiver-method dispatch set
+ * (127.1/127.115), read by the type checker so a member call on a value can
+ * be judged before codegen rather than at `ld`.
+ *
+ * recv_method_known is non-zero when `recv.<member>(...)` on a non-module
+ * receiver lowers to something at all.  recv_method_arity is the call arity
+ * (the receiver counts as the first argument) that every glue symbol the
+ * member may lower to agrees on, or -1 when they do not agree, when one is
+ * undeclared, or when the member is not a receiver method — "no established
+ * arity", on which the checker must say nothing.
+ */
+int recv_method_known(const char *member);
+int recv_method_arity(const char *member);
+
 #endif /* TK_LLVM_H */
