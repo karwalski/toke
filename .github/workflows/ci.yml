@@ -143,3 +143,246 @@ jobs:
 
       - name: Verify reproducible build
         run: make repro-check
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # Story 123.8 — the gates `make ci` runs that CI did not
+  #
+  # `make ci` has 17 members. Before this change the workflow above ran 10 of
+  # them. These are six of the other seven; the seventh, `conform-check`, is
+  # `make conform` plus an echo and is skipped as a duplicate rather than run
+  # twice. They are cheap, they were already green locally, and nothing on a
+  # push or a pull request had ever read one.
+  #
+  # STILL NOT IN CI, and not this story's to add: `diff-codegen`, which the
+  # corpus programme calls its root of trust. It is not a member of `make ci`
+  # either, so wiring it in is a change to what `make ci` means. Story
+  # 127.143 owns it and is open.
+  # ══════════════════════════════════════════════════════════════════════════
+  ci-gates:
+    name: make ci gates missing from CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev llvm-dev clang
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build tkc
+        run: make
+
+      # The shell-script conformance cases. test/conform/*.sh is 100+ scripts
+      # that `make conform` runs and the workflow's `make conform` step... also
+      # runs, since conform depends on conform-sh. Run explicitly so a failure
+      # is attributed to the right suite.
+      - name: Shell conformance cases
+        run: make conform-sh
+
+      # Static analysis of the #else branch of every platform conditional.
+      # Sibling of `make lint`, added by 135.3a, never run by CI.
+      - name: Non-host platform branches build
+        run: make lint-nonhost
+
+      - name: Index is in sync
+        run: make check-index
+
+      - name: .tki names resolve
+        run: make check-tki-names
+
+      # A stdlib module whose glue returns a plausible value while the C core
+      # beside it is a stub. 31 defects in Epic 136 had this shape.
+      - name: Glue reaches a real core
+        run: make check-glue-core
+
+      - name: No parallel stdlib descriptions
+        run: make check-parallel-stdlib
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # Story 123.8 — the test families no PR job has ever run
+  #
+  # Verbatim, the complete set of things the pull-request workflow ran before
+  # 2026-09-24: `make`, `make conform`, `make verify-ir`, `make lint`,
+  # cppcheck, clang-tidy, `make check-tki`, `make repro-check`, and the seven
+  # claim/doc gates in the docs-and-claims job. Not one `test-*` target.
+  #
+  # The cost of that: four test-stdlib-http* rules had been unable to LINK for
+  # long enough that nobody knew, along with test-stdlib-log,
+  # test-stdlib-coverage and test-stdlib-viz-integration. All seven are fixed
+  # in the same change that adds this job, because wiring a broken target into
+  # CI turns CI red for a reason nobody understands.
+  #
+  # TEST_CI_GREEN was MEASURED, target by target, on a clean tree before any
+  # of it was wired in: 57 of 72 passed. See the Makefile for the survey and
+  # for the two lists of what is NOT here and why.
+  # ══════════════════════════════════════════════════════════════════════════
+  stdlib-tests:
+    name: stdlib and integration tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zlib1g-dev llvm-dev clang libsqlite3-dev
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build tkc
+        run: make
+
+      # NOTE FOR THE FIRST RUN OF THIS JOB. The green list was measured on
+      # macOS/arm64 and this runner is Linux/x86-64, so a macOS-green target
+      # is evidence about macOS. This first run IS the Linux measurement.
+      # Anything red here belongs in TEST_CI_KNOWN_RED with a story number
+      # saying what is broken — not quietly deleted from the green list.
+      - name: Test targets measured green
+        run: make test-ci-green
+
+      # Allowed to fail, and it will. These are the targets measured RED at
+      # HEAD on 2026-09-24, listed with their reasons in the Makefile. They
+      # run so that the failures stay visible and so a target that starts
+      # passing can be promoted — the alternative is the four unlinkable http
+      # rules again.
+      - name: Test targets known red (allowed to fail)
+        continue-on-error: true
+        run: |
+          echo "::warning::These targets are KNOWN RED at HEAD. This step is"
+          echo "::warning::allowed to fail. It is not a pass, and a green tick"
+          echo "::warning::on this job does not mean these succeeded. See"
+          echo "::warning::TEST_CI_KNOWN_RED in the Makefile for each reason."
+          make test-ci-known-red
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # Story 123.9 (folds 122.1) — sanitizers and exploit-mitigation flags
+  #
+  # ZERO sanitizers ran on a pull request before 2026-09-24, and the shipping
+  # build carried no hardening flags at all.
+  # ══════════════════════════════════════════════════════════════════════════
+  hardening:
+    name: Exploit-mitigation flags are in effect
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev llvm-dev clang binutils
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build tkc (hardened — this is the default build)
+        run: make
+
+      # BLOCKING, and it is a real gate: it compiles behavioural probes with
+      # the actual CFLAGS and runs its own two negative controls FIRST, so a
+      # green tick means the probes were watched to catch an unprotected
+      # build and then found nothing.
+      #
+      # This job matters more than the local one. -D_FORTIFY_SOURCE=3 is
+      # INERT on macOS — Apple's SDK has levels 1 and 2 only — so a developer
+      # Mac cannot tell you whether level 3 works. glibc can, and this runner
+      # is where that claim is either earned or not. Read the gate's
+      # "Reported, not asserted" lines; they say which level is really on.
+      - name: make check-hardening
+        run: make check-hardening
+
+  sanitizers:
+    name: ASAN + UBSAN
+    runs-on: ubuntu-latest
+
+    # ┌──────────────────────────────────────────────────────────────────────┐
+    # │ THIS JOB IS NON-BLOCKING, ON PURPOSE, AND THAT IS A PROBLEM TO FIX   │
+    # │ RATHER THAN A SETTING TO LEAVE ALONE.                                │
+    # │                                                                      │
+    # │ It is `continue-on-error` because nothing had ever run a sanitizer   │
+    # │ here and the first run's job is to tell us what is in the tree, not  │
+    # │ to block every pull request on a backlog none of them created.      │
+    # │                                                                      │
+    # │ It is declared here, in the workflow, rather than arranged quietly   │
+    # │ by disabling checks or adding suppressions, so that "this job is     │
+    # │ allowed to fail" is a fact you can read instead of infer. A green    │
+    # │ tick on this job does NOT mean the sanitizers found nothing.        │
+    # │                                                                      │
+    # │ Remove continue-on-error once the findings are at zero. Do not make  │
+    # │ it green by narrowing what it checks.                                │
+    # └──────────────────────────────────────────────────────────────────────┘
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zlib1g-dev llvm-dev clang libsqlite3-dev
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Say plainly what a tick on this job means
+        run: |
+          echo "::warning::The ASAN+UBSAN job is continue-on-error. A green"
+          echo "::warning::tick here means the job RAN, not that it found"
+          echo "::warning::nothing. Read the step output."
+
+      # The negative control, first and unconditionally: a planted
+      # heap-use-after-free that this exact build configuration must catch.
+      # Without it, "0 findings" and "the instrumentation never made it into
+      # the binary" are the same output. Both test-asan targets depend on it,
+      # so it cannot be skipped; it is a separate step here only so that a
+      # failure is attributed to the control rather than to the tree.
+      - name: Sanitizer self-test (must catch a planted use-after-free)
+        run: make CC=clang asan-selftest
+
+      - name: ASAN + UBSAN — stdlib C unit tests
+        run: make CC=clang test-asan-stdlib
+
+      - name: ASAN + UBSAN — tkc through the conformance suite
+        run: make CC=clang test-asan-compiler
+
+  coverage:
+    name: Coverage floor
+    runs-on: ubuntu-latest
+    # Non-blocking for the same reason and on the same terms as the sanitizer
+    # job above: there was no coverage measurement at all before this, so the
+    # floor is a measurement of the tree rather than a target anyone has
+    # agreed to. Make it blocking in the change that sets a floor with intent
+    # behind it.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zlib1g-dev llvm-dev clang llvm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Say plainly what a tick on this job means
+        run: |
+          echo "::warning::The coverage job is continue-on-error. A green tick"
+          echo "::warning::means it ran. COVERAGE_MIN is a measurement of the"
+          echo "::warning::tree, not an agreed target."
+
+      - name: make check-coverage
+        run: make CC=clang check-coverage
