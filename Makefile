@@ -7,6 +7,84 @@ GCC_CHECK := $(shell $(CC) -Wno-format-truncation -x c -c /dev/null -o /dev/null
 ifeq ($(GCC_CHECK),yes)
 CFLAGS += -Wno-format-truncation
 endif
+
+# ── Story 123.9 (folds 122.1): exploit-mitigation flags ──────────────────────
+#
+# The shipping build carried NONE of these until 2026-09-24.  Searching this
+# Makefile and .github/workflows/ for FORTIFY, fsanitize or stack-protector
+# matched exactly one line before this change, and it was the fuzz harness.
+#
+# READ THIS BEFORE QUOTING ANY OF THESE FLAGS AS PROTECTION.  Two of them are
+# macros or defaults rather than switches, and can sit here doing nothing:
+#
+#   -D_FORTIFY_SOURCE=3   does nothing without optimisation on glibc (the
+#                         checks are built from __builtin_object_size(), which
+#                         folds to "unknown" at -O0), and does nothing AT ALL
+#                         on macOS, whose SDK implements levels 1 and 2, sets
+#                         the default to 2 itself, and has no level 3.
+#                         MEASURED 2026-09-24 on Apple clang 21 / macOS 15: a
+#                         16-byte memcpy into an 8-byte HEAP buffer runs to
+#                         completion under `-O2 -D_FORTIFY_SOURCE=3`.
+#
+#   -fstack-protector-strong  the compiler default already guards SOME
+#                         functions, so the presence of __stack_chk_fail in
+#                         the binary proves nothing about the level reached.
+#
+# `make check-hardening` therefore does not grep for these strings.  It
+# compiles behavioural probes with the real $(CFLAGS), runs its own negative
+# controls first, and reports the fortify LEVEL actually enforced rather than
+# the level requested.  Do not report "hardened build" from a host where that
+# gate has not run.
+#
+# -O2 is part of the mitigation set, not a performance choice: without it
+# _FORTIFY_SOURCE is inert.  It replaces nothing -- -g stays.
+HARDEN_CFLAGS = -O2 -D_FORTIFY_SOURCE=3 -fstack-protector-strong \
+                -fno-common -Wformat -Wformat-security -fPIE
+
+# Probe each remaining mitigation rather than assuming the toolchain has it:
+# -fstack-clash-protection is GCC/clang-on-Linux, -fcf-protection is x86-only,
+# and -Wl,-z,relro is ELF-only (Apple's ld rejects it outright).  A flag the
+# toolchain silently ignores is the exact failure mode this block is about, so
+# anything not accepted here is simply absent, and check-hardening reports
+# which mitigations the binary actually ended up with.
+#
+# The probe compiles a NON-EMPTY translation unit under -Werror, and both
+# halves of that are load-bearing.  The obvious probe -- the one GCC_CHECK
+# above uses, `$(CC) $(flag) -x c -c /dev/null` -- accepted
+# -fstack-clash-protection on Apple clang 21 and then every real compile died
+# with `argument unused during compilation: '-fstack-clash-protection'
+# [-Werror,-Wunused-command-line-argument]`.  clang only warns about an unused
+# codegen flag when there is code to generate, so an empty TU cannot tell an
+# accepted flag from an ignored one.  Caught 2026-09-24 by this probe turning
+# 29 working test targets red.
+harden_cc_probe = $(shell printf 'int tkp(void);int tkp(void){char a[4];a[0]=1;return a[0];}\n' \
+                    | $(CC) -Werror $(1) -x c -c - -o /dev/null >/dev/null 2>&1 && echo $(1))
+HARDEN_CFLAGS += $(call harden_cc_probe,-fstack-clash-protection)
+HARDEN_CFLAGS += $(call harden_cc_probe,-fcf-protection=full)
+
+# $(call) splits its arguments on commas, so `$(call f,-Wl,-z,relro)` passes
+# THREE arguments and $(1) is the string "-Wl".  Measured here before this
+# comma variable existed: HARDEN_LDFLAGS came out as `-pie -Wl -Wl`, which
+# links fine and hardens nothing.  Every literal comma below goes through
+# $(COMMA) for that reason.
+COMMA := ,
+harden_ld_probe = $(shell printf 'int main(void){return 0;}\n' > /tmp/tkc_ldprobe.c 2>/dev/null && \
+                    $(CC) $(1) -o /tmp/tkc_ldprobe /tmp/tkc_ldprobe.c >/dev/null 2>&1 && echo '$(1)'; \
+                    rm -f /tmp/tkc_ldprobe.c /tmp/tkc_ldprobe)
+HARDEN_LDFLAGS = $(call harden_ld_probe,-pie)
+HARDEN_LDFLAGS += $(call harden_ld_probe,-Wl$(COMMA)-z$(COMMA)relro)
+HARDEN_LDFLAGS += $(call harden_ld_probe,-Wl$(COMMA)-z$(COMMA)now)
+
+# HARDEN=0 turns the set off for one build.  It exists so check-hardening has
+# something to be run against as a control, and for bisecting a miscompile at
+# -O2.  It is not a supported way to ship.
+HARDEN ?= 1
+ifeq ($(HARDEN),1)
+CFLAGS += $(HARDEN_CFLAGS)
+else
+HARDEN_LDFLAGS =
+endif
+
 # ── Epic 55: vendor library flags ────────────────────────────────────────────
 CMARK_SRCS  = $(filter-out stdlib/vendor/cmark/src/main.c, \
                 $(wildcard stdlib/vendor/cmark/src/*.c))
@@ -163,7 +241,7 @@ vendor-check:
 	fi
 
 $(BIN): $(OBJS)
-	$(CC) $(CFLAGS) $(REPRO_FLAGS) -o $@ $^ $(LDLIBS)
+	$(CC) $(CFLAGS) $(REPRO_FLAGS) -o $@ $^ $(HARDEN_LDFLAGS) $(LDLIBS)
 
 tkc: $(BIN)
 	ln -sf $(BIN) tkc
@@ -212,7 +290,7 @@ src/llvm.o: src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h
 # same name inherited from the environment, so each recursive sub-make of
 # build-all recomputes this from ITS OWN CFLAGS, which is the whole point.
 BUILD_FLAGS_STAMP = .build-flags
-export TKC_BUILD_FLAGS = $(CC)|$(CFLAGS)|$(REPRO_FLAGS)|$(LDLIBS)|$(SOURCE_DATE_EPOCH)
+export TKC_BUILD_FLAGS = $(CC)|$(CFLAGS)|$(REPRO_FLAGS)|$(HARDEN_LDFLAGS)|$(LDLIBS)|$(SOURCE_DATE_EPOCH)
 
 .PHONY: FORCE
 FORCE:
