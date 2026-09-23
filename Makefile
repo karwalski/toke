@@ -65,6 +65,26 @@ STDLIB_SRCS = \
 
 SRCS    += $(STDLIB_SRCS)
 OBJS    = $(SRCS:.c=.o)
+
+# ── Story 135.3a: what gets STATICALLY ANALYSED is not what gets LINKED ──────
+#
+# $(SRCS) is the LINK set for tkc: the compiler plus the 28-module curated
+# subset above.  Using it as the ANALYSIS set left the other 104 files in
+# src/stdlib/ analysed by nothing and compiled under -Werror by nothing --
+# tkc builds them at PROGRAM link time, host-only, with clang's default
+# warning level.  Six of them do not survive -Wall -Wextra -Wpedantic -Werror
+# even on the host; the #else branch of every platform conditional in them is
+# built by no gate on any platform.  (C033 compiles exactly one such file,
+# src/stdlib/ocr.c, with -U__APPLE__, and says so in its own comment.)
+#
+# 127.99's rule -- the module manifest in src/stdlib_deps.c states what the
+# standard library IS, never a directory glob -- governs the LINK set and is
+# unchanged.  A glob is the right thing HERE and only here: analysis coverage
+# should include every file present, including one the manifest has not
+# reached yet.  A file this glob picks up that the manifest does not name is
+# a file nothing ships, which T004 already catches.
+ANALYZE_SRCS = $(sort $(SRCS) $(wildcard src/stdlib/*.c))
+
 LDLIBS  = -lm -lz -lpthread
 BIN     = toke
 
@@ -90,7 +110,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-parallel-stdlib check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-report conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-parallel-stdlib check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -162,12 +182,82 @@ src/llvm.o: src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h
 # corruption, e.g. adding a field to Node in parser.h). Silent if absent.
 -include $(OBJS:.o=.d)
 
+# ── Story 136.62: an object must remember the flags it was built with ───────
+#
+# -MMD made a .o depend on its headers.  Nothing made a .o depend on the
+# FLAGS, so changing them invalidated nothing and `make` reported a build it
+# had not done.  This is the mechanism behind 127.118 and 127.92 ("incremental
+# `make` produces a compiler that behaves like neither commit").
+#
+# Measured before this rule existed:
+#
+#   * `make CFLAGS="<host flags> -DW3_FLAG_PROBE=1"` on an up-to-date tree ran
+#     ZERO compile commands, left every .o byte-identical, and exited 0.
+#
+#   * `make build-all` -- three recursive makes for three different
+#     --target triples -- finished in 0.74s having run ZERO compile commands
+#     and exited 0.  Each sub-make found the HOST objects newer than their
+#     sources and did nothing.  AGENTS.md §14 asks contributors to report
+#     "make build-all: success on x86-64 and ARM64"; that is what "success"
+#     has meant.
+#
+# The fix is the standard one: write the flags to a file, make the objects
+# depend on that file.  The stamp is rewritten only when the text CHANGES
+# (cmp), so an unchanged build stays incremental.
+#
+# TKC_BUILD_FLAGS goes through the ENVIRONMENT rather than being interpolated
+# into the recipe because CFLAGS contains both single and double quotes
+# (-DTKC_STDLIB_DIR='"..."'), and every way of quoting that into a shell
+# command line mangles it.  A make variable defined in the makefile beats the
+# same name inherited from the environment, so each recursive sub-make of
+# build-all recomputes this from ITS OWN CFLAGS, which is the whole point.
+BUILD_FLAGS_STAMP = .build-flags
+export TKC_BUILD_FLAGS = $(CC)|$(CFLAGS)|$(REPRO_FLAGS)|$(LDLIBS)|$(SOURCE_DATE_EPOCH)
+
+.PHONY: FORCE
+FORCE:
+
+$(BUILD_FLAGS_STAMP): FORCE
+	@printf '%s\n' "$$TKC_BUILD_FLAGS" | cmp -s - $@ 2>/dev/null \
+	  || { printf '%s\n' "$$TKC_BUILD_FLAGS" > $@; \
+	       echo "build flags changed -- rebuilding all objects"; }
+
+$(OBJS): $(BUILD_FLAGS_STAMP)
+
 # encrypt.c uses __int128 for Ed25519 arithmetic — allowed under GCC but rejected by -Wpedantic
-src/stdlib/encrypt.o: src/stdlib/encrypt.c
+src/stdlib/encrypt.o: src/stdlib/encrypt.c $(BUILD_FLAGS_STAMP)
 	$(CC) $(CFLAGS) $(REPRO_FLAGS) -Wno-pedantic -c -o $@ $<
 
+# ── 135.3a ──────────────────────────────────────────────────────────────────
+# `lint` used to be one line:
+#
+#     $(CC) $(CFLAGS) --analyze $(SRCS)
+#
+# It could not fail.  clang's --analyze does NOT honour -Werror, so the target
+# printed 97 analyzer warnings across 19 files and exited 0, and AGENTS.md
+# §14's reporting template has been asking for "make lint: 0 warnings" against
+# a command that never reported zero and never returned non-zero.  It also
+# analysed $(SRCS) -- the link set -- so 104 of the 132 files in src/stdlib/
+# were not analysed at all.  Proven by injecting a null dereference into
+# src/stdlib/xlsx.c: clang reported it when xlsx.c was analysed directly;
+# `make lint` did not mention the file and still exited 0.
+#
+# scripts/check_stdlib_analysis.py now runs three passes over $(ANALYZE_SRCS)
+# and FAILS on anything not accounted for on a checked-in, self-failing
+# skiplist.  See its header for what a pass does and does not prove.
 lint:
-	$(CC) $(CFLAGS) --analyze $(SRCS)
+	@python3 scripts/check_stdlib_analysis.py --compile --analyze $(ANALYZE_SRCS)
+
+# The #else branch of every platform conditional, built.  Generalises what
+# test/conform/C033_ocr_text_runs.sh does for src/stdlib/ocr.c alone.
+lint-nonhost:
+	@python3 scripts/check_stdlib_analysis.py --nonhost $(ANALYZE_SRCS)
+
+# Drafting aid: print proposed skiplist lines for everything now failing.
+# Writes nothing — paste the lines in and put a real reason and story on each.
+lint-report:
+	@python3 scripts/check_stdlib_analysis.py --compile --analyze --nonhost \
+	    --report $(ANALYZE_SRCS)
 
 conform:
 	@bash test/run_conform.sh
@@ -196,7 +286,50 @@ conform-sh:
 conform-check:
 	@bash test/run_conform.sh && echo "CONFORMANCE: 100%"
 
-build-all:
+# ── 136.62 exposed this target ──────────────────────────────────────────────
+# Three recursive makes for three --target triples, all writing into the SAME
+# object files.  Before 136.62 gave objects a record of their flags, nothing
+# invalidated them between the three, so sub-makes 2 and 3 found the host
+# objects newer than their sources and did nothing.  MEASURED 2026-09-23 on an
+# up-to-date tree: `make build-all` finished in 0.74s, ran ZERO compile
+# commands, and exited 0.  AGENTS.md §14 asks contributors to report
+# "make build-all: success on x86-64 and ARM64"; that is what "success" meant.
+#
+# With the flag stamp in place it does recompile, and then fails honestly:
+# the two Linux triples need a sysroot this macOS host does not have
+# (`fatal error: 'stdio.h' file not found`).  The target has never
+# cross-compiled anything here.  build-preflight below says so by name rather
+# than letting it surface as a missing libc header; fixing it needs a real
+# sysroot (or a container), and per-triple object directories so the three
+# builds stop overwriting each other and the host build.  Reported, not
+# papered over.
+.PHONY: build-preflight
+build-preflight:
+	@bad=""; \
+	for t in x86_64-linux-gnu aarch64-linux-gnu aarch64-apple-macos; do \
+	  printf '#include <stdio.h>\nint main(void){return 0;}\n' > /tmp/tkc_triple_probe.c; \
+	  $(CC) --target=$$t -c -o /tmp/tkc_triple_probe.o /tmp/tkc_triple_probe.c \
+	    >/dev/null 2>&1 || bad="$$bad $$t"; \
+	done; \
+	rm -f /tmp/tkc_triple_probe.c /tmp/tkc_triple_probe.o; \
+	if [ -n "$$bad" ]; then \
+	  echo "" >&2; \
+	  echo "ERROR: build-all cannot cross-compile for:$$bad" >&2; \
+	  echo "" >&2; \
+	  echo "  $(CC) accepts the --target flag but has no sysroot for these" >&2; \
+	  echo "  triples, so the build fails on the first system header." >&2; \
+	  echo "  This is not new: until story 136.62 nothing invalidated the" >&2; \
+	  echo "  objects between the three sub-makes, so build-all compiled" >&2; \
+	  echo "  NOTHING and exited 0.  Do not report 'build-all: success'" >&2; \
+	  echo "  from a host where this preflight fails." >&2; \
+	  echo "" >&2; \
+	  echo "  Needs a sysroot for each triple, and per-triple object dirs" >&2; \
+	  echo "  so the three builds stop overwriting each other." >&2; \
+	  echo "" >&2; \
+	  exit 1; \
+	fi
+
+build-all: build-preflight
 	$(MAKE) CC=cc CFLAGS="$(CFLAGS) --target=x86_64-linux-gnu"
 	$(MAKE) CC=cc CFLAGS="$(CFLAGS) --target=aarch64-linux-gnu"
 	$(MAKE) CC=cc CFLAGS="$(CFLAGS) --target=aarch64-apple-macos"
@@ -284,7 +417,7 @@ check-glue-core:
 check-parallel-stdlib:
 	python3 scripts/check_parallel_stdlib.py
 
-ci: check-index lint conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -900,7 +1033,7 @@ test-standalone: $(BIN)
 # were `-include`d on the next build describing a different commit's
 # include graph.  `clean` now means clean.
 clean:
-	rm -f $(OBJS:.o=.d)
+	rm -f $(OBJS:.o=.d) $(BUILD_FLAGS_STAMP)
 	rm -f $(OBJS) $(BIN) tkc test/stdlib/test_str test/stdlib/test_db \
 	    test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto \
 	    test/stdlib/test_time test/stdlib/test_tktest test/stdlib/test_log \

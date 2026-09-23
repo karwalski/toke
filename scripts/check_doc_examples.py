@@ -42,10 +42,18 @@ build 148s. CI affords that, so there is no fast/slow split. `--check-only`
 exists for a 2-second local edit loop and prints a warning saying what it
 stops proving; it must not be what CI runs.
 
-`--self-test` is the gate's negative control: it builds a program whose only
-fault is a call to a function that does not exist, and fails unless the gate
-rejects it. `make check-docs` runs it before the docs sweep, so every run
-re-proves the gate can still fail.
+`--self-test` is the gate's negative control. `make check-docs` runs it before
+the docs sweep, so every run re-proves the gate can still fail. 136.48: it
+asserts TWO different properties, because the original single canary stopped
+proving the one it was added for --
+  * an undeclared name (`io.thisfunctiondoesnotexist`) must be rejected. The
+    front end now catches this at --check (E4027), so it is REPORTED and says
+    nothing about the link step;
+  * a QUARANTINED .tki export -- declared in the interface, no C symbol behind
+    it -- must pass --check and FAIL AT LINK. That is the only assertion here
+    that exercises the link backstop 136.26 added. Measured 2026-09-23: with
+    the link branch of build_one() deleted outright, the old self-test printed
+    byte-identical output and exited 0.
 
 Reads nothing outside this repository (cf. 127.88); it does need a built `tkc`
 and a working clang, which `make` already provides.
@@ -150,13 +158,41 @@ def build_one(src, link):
         shutil.rmtree(d, ignore_errors=True)
 
 
-# ── negative control (136.26) ────────────────────────────────────────────────
-# A gate nobody has watched fail is not a gate. This is the counter-example the
-# gate MUST reject: a program whose only fault is a call to a function that
-# exists nowhere. It type-checks (io's interface is handwritten and incomplete,
-# so 136.1's call-site checking cannot see the hole) and it must fail at link.
-# `--self-test` asserts exactly that, and `make check-docs` runs it first, so
-# every run of the gate re-proves the gate can still fail.
+# ── negative control (136.26, repaired by 136.48) ────────────────────────────
+# A gate nobody has watched fail is not a gate.
+#
+# 136.26 added CANARY_BAD: a call to a function that exists nowhere. At the
+# time it type-checked (io's interface is handwritten and incomplete) and
+# failed at link, so asserting "the gate rejects it" proved the LINK STEP was
+# the backstop, which is the property 136.26 was added to defend.
+#
+# It stopped proving that. The front end now rejects the same program at
+# `--check` with E4027, so the assertion became a test of the FRONT END and
+# the link backstop went untested — while `--self-test` still printed a pass.
+# 136.48 measured how far that had rotted: with the entire link branch of
+# build_one() deleted (`if not link: return None` followed by an
+# unconditional `return None`), `--self-test` produced BYTE-IDENTICAL output
+# and exited 0.
+#
+# So there are now two canaries, and they assert different things:
+#
+#   CANARY_BAD       — a call to a name no interface declares. Rejected at
+#                      --check today (E4027). Reported, never asserted as
+#                      proof of the link step; if the front end ever stops
+#                      catching it, the link step below still must.
+#
+#   CANARY_LINK_ONLY — a call that PASSES --check and CANNOT LINK. These are
+#                      quarantined .tki exports: declared in the interface
+#                      (so the front end is satisfied) with no defined C
+#                      symbol behind them (see scripts/check_tki_skiplist.txt).
+#                      This is the only thing that proves the link backstop.
+#
+# The link-only canary is a LIST, tried in order, because each candidate stops
+# working the day someone implements its glue — which is a good day, and must
+# not be a silent one. If every candidate has been implemented, the self-test
+# FAILS and says so: the link backstop has become untestable and this list
+# needs a new entry from the current quarantine population. It will not quietly
+# go back to proving nothing.
 CANARY_BAD = """m=canary;
 i=io:std.io;
 f=main():i64{ io.thisfunctiondoesnotexist(1); <0 };
@@ -165,6 +201,27 @@ CANARY_GOOD = """m=canary;
 i=io:std.io;
 f=main():i64{ io.println("ok"); <0 };
 """
+# NOTE the alias `cv`. Writing `i=canvas:std.canvas` makes the alias collide
+# with the opaque type `canvas` that the same module exports, and 136.48 found
+# that E4027's member check is then skipped ENTIRELY: `canvas.nosuchmember(c)`
+# passes --check and fails at link. That would make this canary pass for the
+# wrong reason — because of a front-end hole, not because the export is
+# quarantined. `cv` keeps it honest.
+_LINK_ONLY = """m=canary;
+i=cv:std.canvas;
+f=main():i64{{
+  let c=cv.new("x";1);
+  let d={call};
+  <0
+}};
+"""
+CANARY_LINK_ONLY = [
+    ("canvas.beginpath", _LINK_ONLY.format(call="cv.beginpath(c)")),
+    ("canvas.moveto", _LINK_ONLY.format(call="cv.moveto(c;0.0;0.0)")),
+    ("canvas.lineto", _LINK_ONLY.format(call="cv.lineto(c;1.0;1.0)")),
+    ("canvas.clearrect",
+     _LINK_ONLY.format(call="cv.clearrect(c;0.0;0.0;1.0;1.0)")),
+]
 
 
 def self_test():
@@ -176,23 +233,51 @@ def self_test():
     else:
         print("  self-test: known-good canary builds")
 
+    # ── 1. the undeclared-name canary: REPORTED, not relied on ──────────────
     checked = build_one(CANARY_BAD, link=False)
-    if checked is not None:
-        print("  SELF-TEST NOTE: the bad canary no longer type-checks "
-              f"({checked[1]}). The front end has closed this hole; the link "
-              "step is still the backstop for the ones it has not.")
-    else:
-        print("  self-test: the bad canary PASSES --check "
-              "(this is the hole 136.26 closed)")
-
     linked = build_one(CANARY_BAD, link=True)
     if linked is None:
         print("  SELF-TEST FAIL: a call to a function that exists nowhere "
               "BUILT. The gate proves nothing — fix it before trusting it.")
         ok = False
-    else:
-        print(f"  self-test: the bad canary is rejected at "
+    elif checked is not None:
+        print(f"  self-test: the undeclared-name canary is rejected at "
               f"{linked[0]} — {linked[1]}")
+        print("             (front-end enforced; this says NOTHING about the "
+              "link backstop — see the link-only canary below)")
+    else:
+        print("  self-test: the undeclared-name canary PASSES --check and is "
+              f"rejected at {linked[0]} — {linked[1]}")
+
+    # ── 2. the link-only canary: the actual proof of the link backstop ──────
+    tried = []
+    for name, src in CANARY_LINK_ONLY:
+        if build_one(src, link=False) is not None:
+            tried.append(name)          # front end now rejects it too
+            continue
+        built = build_one(src, link=True)
+        if built is None:
+            print(f"  SELF-TEST FAIL: {name} type-checks AND LINKS. It is on "
+                  "the .tki quarantine list, so either the glue landed (remove "
+                  "it from scripts/check_tki_skiplist.txt and from "
+                  "CANARY_LINK_ONLY) or the link step is no longer being run.")
+            ok = False
+        elif built[0] != "link":
+            print(f"  SELF-TEST FAIL: {name} failed at {built[0]}, not at "
+                  f"link — {built[1]}. This canary no longer isolates the "
+                  "link step.")
+            ok = False
+        else:
+            print(f"  self-test: the link-only canary {name} type-checks and "
+                  f"is rejected at link — {built[1]}")
+        break
+    else:
+        print("  SELF-TEST FAIL: every link-only canary is now rejected by the "
+              f"front end ({', '.join(tried)}), so nothing here exercises the "
+              "link step and a broken link backstop would pass unnoticed. Add "
+              "a new entry to CANARY_LINK_ONLY from the current quarantine "
+              "population in scripts/check_tki_skiplist.txt.")
+        ok = False
     return ok
 
 
