@@ -622,7 +622,9 @@ Emitted when a call passes too few or too many arguments.
 
 Since 136.1 this also covers a call through an import alias, `alias.member(...)`. Such a call is judged against the *implementation* where the compiler knows the glue symbol — that is what decides whether the call corrupts — and against the `.tki` interface otherwise. The message names the function and, for the interface case, the declared signature, because a bare count does not say which side is wrong: an interface and its implementation can be the two things that disagree.
 
-**Fix:** Match the call to the declaration, or reconcile the interface with the implementation if they disagree.
+Since 127.1 it also covers a member call on a VALUE receiver, `recv.member(args)`. The receiver counts as the method's first argument, and the arity is read from the compiler's record of the native side — but only when every glue symbol that member may lower to agrees on it, since the symbol chosen depends on the receiver's kind (`contains` is a hash lookup on a map, a linear scan on an array and a substring search on a string). Where they disagree the compiler has no established arity and says nothing. Before this, surplus arguments were **discarded in silence** on the method path: `a.concat("A";"B")` on `a="xx"` compiled clean and returned `"xxA"`, and `a.len(1;2;3)` returned the length.
+
+**Fix:** Match the call to the declaration, or reconcile the interface with the implementation if they disagree. For a receiver method, the receiver is the first argument.
 
 ### E4027
 
@@ -636,6 +638,8 @@ Since 136.1 this also covers a call through an import alias, `alias.member(...)`
 Emitted for `alias.member(...)` when neither the imported module's `.tki` interface nor the runtime declares `member`. Before 136.1 such a call was lowered to a symbol name anyway and surfaced as an E9003 link failure naming a mangled symbol, with no file and no line.
 
 The check is deliberately narrow. A `std.*` member that the hand-written interface omits but the runtime does provide (`str.equals`, `test.eq`, `json.getobj`, …) is accepted: the call works and the interface is the incomplete side. A member of a module whose `.tki` is machine-generated is enforced in full, because `--emit-interface` writes one record per top-level `f=` and that export list is complete by construction.
+
+E4036 is the receiver-call form of the same question: `recv.member(...)` where `recv` is a value rather than an import alias.
 
 **Fix:** Check the module's interface for the correct member name.
 
@@ -743,6 +747,57 @@ No `fix` is supplied. There is no deterministic repair: `values` has no method
 form and no runtime support, so "add the parentheses" would be wrong — the
 lesson of 131.78 — and a did-you-mean for an arbitrary misspelling is a guess.
 The two property names that do exist are reported in `expected`.
+
+Note that `m.values()`, the CALL form, is E4036 rather than this diagnostic:
+it is a member call, and the receiver dispatch is what refuses it.
+
+### E4036
+
+**Receiver has no method with that name**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | typecheck |
+
+Emitted for `recv.member(args)` where `recv` is a value rather than an import
+alias and `member` is not a member the receiver dispatch lowers.
+
+Until 127.115 this was checked by nothing at all. The type checker reads a
+call's callee name from the callee node's own token; for a field-access callee
+that token is the `.`, so the module-scope lookup failed, the call fell into
+the unresolved branch, and both checks that live there are gated on the base
+resolving to an imported module — which it cannot, because the base is a
+value. Code generation then emitted a call to a **bare, unmangled** symbol
+named after the member. A toke function is mangled `<module>_<name>`, so that
+symbol never existed:
+
+```
+f=pair(a:str;b:str):str{ ... };
+let y = x.pair("A");        (* correct arity *)
+```
+
+passed `tkc --check` at exit 0 and then failed at `ld` with `Undefined
+symbols: "_pair"`. So did `x.pair()` and `x.pair("A";"B")` — the arity was
+never the point, because the receiver path does not resolve user functions at
+all. toke has no uniform-function-call syntax: `x.pair(a)` is not `pair(x;a)`.
+The same fallback swallowed `a.nosuch()` on an array, `s.nosuch()` on a
+string, `m.values()` on a map, `p.nosuch()` on a user-declared struct, and any
+member call on a receiver the checker could not type.
+
+The set of members the receiver dispatch lowers is a table in the code
+generator, and it is the gate the emitter itself dispatches on, so the checker
+and the emitter cannot disagree about which member names exist.
+
+No `fix` is supplied. There is no deterministic repair: the member may be a
+misspelling, a method that exists on no receiver type, or a function the
+author meant to call directly, and a did-you-mean for an arbitrary name is a
+guess (the 127.106 / 131.78 lesson). When a function of that name is declared
+in the module, the message says so — a statement of fact, not an instruction.
+
+Related: E4027 is the module-member form of the same question
+(`str.nosuchfn(...)`), and E4026 is raised instead when the member does exist
+and the call disagrees with its arity.
 
 ### E4070
 
