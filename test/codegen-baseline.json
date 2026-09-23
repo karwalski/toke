@@ -541,8 +541,8 @@
  ],
  "test/standalone/test_str.tk": [
   true,
-  "signal",
-  null
+  0,
+  "dc204459f0719c24"
  ],
  "test/standalone/test_str_compare.tk": [
   true,

@@ -63,7 +63,7 @@ f=handlerstream(req:$req):$res{
 "; "line 4
 "; "line 5
 ");
-  let body=str.join(lines; "");
+  let body=str.join(""; lines);
   <http.resp(200; body; "text/plain")
 };
 

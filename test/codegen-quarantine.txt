@@ -1,0 +1,57 @@
+# codegen-quarantine.txt — programs that `make diff-codegen` may not certify.
+# Read by scripts/diff_codegen.py. Filed 2026-09-23 by story 127.139.
+#
+# One entry per line:  <path under a DIFF_CODEGEN_DIR>   # <date> <reason> <story>
+#
+# WHY THIS FILE EXISTS
+#
+# diff-codegen is the root of trust for the corpus programme (story 131.27's
+# re-freeze is premised on it). Until 2026-09-23 it only diffed behaviour
+# signatures, so a program that crashed or failed to compile was "green" as
+# long as it kept doing so. Thirteen of its 118 records were exactly that:
+# test/standalone/test_str.tk was recorded [true,"signal",null] — a clean build
+# that segfaults with zero bytes of stdout — and twelve more were recorded
+# [false,null,null]. The gate printed "118 checked, 0 behaviour change(s)".
+#
+# So an unhealthy outcome (compile failure, compile timeout, run timeout,
+# signal kill) now FAILS the gate unless it is named here with a reason.
+#
+# THIS LIST IS SELF-FAILING. An entry whose program has become healthy is
+# STALE and fails diff-codegen: remove the line and re-record the baseline.
+# Same contract as scripts/check_tki_skiplist.txt. You cannot quietly fix a
+# quarantined defect and leave the line rotting here, and you cannot quietly
+# add a fresh crash — `--record` refuses to write an unquarantined unhealthy
+# signature at all.
+#
+# A quarantine entry is a filed defect, not a permanent exemption. Every line
+# below needs a story that removes it.
+#
+# ── E2002: eleven e2e tests predate `=` ceasing to be equality ──────────────
+# Each uses `if(x=N)` where the parser now requires `==`. They have not
+# compiled for as long as the baseline has existed, and the baseline records
+# the parse failure as their expected behaviour. Mechanical fix (`=` -> `==`
+# inside `if(...)` conditions), but fixing them changes eleven baseline
+# signatures at once, so it belongs in its own story, not in 127.139.
+test/e2e/e2e_array_spread.tk              # 2026-09-23 E2002 `=` used for equality at lines 5-7; never migrated to `==` 127.139-followup
+test/e2e/e2e_array_spread_empty.tk        # 2026-09-23 E2002 `=` used for equality at lines 5-6 127.139-followup
+test/e2e/e2e_array_spread_multiple.tk     # 2026-09-23 E2002 `=` used for equality at lines 5-8 127.139-followup
+test/e2e/e2e_fastcc_bool_return.tk        # 2026-09-23 E2002 `=` used for equality at line 6 (`<n=0`) 127.139-followup
+test/e2e/e2e_fastcc_struct_return.tk      # 2026-09-23 E2002 `=` used for equality at lines 12-14 127.139-followup
+test/e2e/e2e_float_abi.tk                 # 2026-09-23 E2002 `=` used for equality at lines 8, 11, 16 127.139-followup
+test/e2e/e2e_mutable_vars.tk              # 2026-09-23 E2002 `=` used for equality at lines 8, 16, 19 127.139-followup
+test/e2e/e2e_overflow_check.tk            # 2026-09-23 E2002 `=` used for equality at lines 5, 7 127.139-followup
+test/e2e/e2e_sandbox_file.tk              # 2026-09-23 E2002 `=` used for equality at line 13 127.139-followup
+test/e2e/e2e_struct_field_disambiguation.tk # 2026-09-23 E2002 `=` used for equality at lines 9-11 127.139-followup
+test/e2e/e2e_tail_recursion.tk            # 2026-09-23 E2002 `=` used for equality at lines 3, 9, 15 127.139-followup
+#
+# ── E4026: interface/implementation arity disagreement ─────────────────────
+# db.exec and db.many are called with 3 arguments; the implementation takes 2.
+# The call sites pass a trailing `@()` bind-parameter array the implementation
+# does not accept. Either the .tki or the test is wrong — that is a decision
+# for whoever owns std.db, not for this gate.
+test/standalone/test_db_sandbox.tk        # 2026-09-23 E4026 db.exec/db.many called with 3 args, implementation takes 2 127.139-followup
+#
+# ── Crashes ────────────────────────────────────────────────────────────────
+# (none — test/standalone/test_str.tk was the only one and was fixed under
+# story 127.5 on 2026-09-23: it called str.join with the arguments reversed,
+# which passes --check and segfaults. See docs/spec/semantics.md:184.)
