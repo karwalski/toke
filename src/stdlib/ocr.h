@@ -30,8 +30,9 @@
  *      images on macOS 26.5.1: every recognised candidate scores exactly
  *      1.0 at revision 3 / accurate, including "|||||1100" for an image
  *      reading `Illlll1I0O` and "VOME" for one reading `ACME`.  At fast
- *      level every candidate scores exactly 0.5.  It is a label for how the
- *      request was configured.  A caller that flags a field on
+ *      level it takes at least two values (0.5 and 1.0 were both seen in
+ *      ONE image), so fast is not a constant -- but accurate is, and
+ *      accurate is the default.  A caller that flags a field on
  *      `run.confidence < 0.9` flags NOTHING.  The field is surfaced anyway,
  *      unaveraged, because it is what the platform reports and a future
  *      revision may put information in it — but docs/stdlib/ocr.md says

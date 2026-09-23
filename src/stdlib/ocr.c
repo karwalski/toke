@@ -76,8 +76,6 @@ static void set_err(TkOcrErr code, const char *msg)
     }
 }
 
-static void clear_err(void) { g_err_code = OCR_ERR_NONE; g_err_msg[0] = '\0'; }
-
 const char *ocr_lasterr(void)      { return g_err_msg; }
 const char *ocr_lasterr_kind(void) { return err_kind_name(g_err_code); }
 TkOcrErr    ocr_lasterr_code(void) { return g_err_code; }
@@ -185,6 +183,13 @@ static id           ms1(id o, const char *s, id a) { return ((Msg1)objc_msgSend)
 static TkNSUInteger msu(id o, const char *s)  { return ((MsgU0)objc_msgSend)(o, sel_getUid(s)); }
 static id           msidx(id o, const char *s, TkNSUInteger i) { return ((MsgIdx)objc_msgSend)(o, sel_getUid(s), i); }
 static const char  *msutf8(id o)              { return o ? ((MsgStr)objc_msgSend)(o, sel_getUid("UTF8String")) : NULL; }
+
+/* Only the macOS path ever succeeds, so only it ever clears.  Defined here
+ * rather than beside set_err() because off Apple nothing calls it and
+ * -Werror=unused-function is fatal -- which is how this was found: compiling
+ * this file with -U__APPLE__ failed the build, and no gate in this tree
+ * compiles a stdlib module .c file for a non-Apple target. */
+static void clear_err(void) { g_err_code = OCR_ERR_NONE; g_err_msg[0] = '\0'; }
 
 /* ── Configuration state ────────────────────────────────────────────── */
 
