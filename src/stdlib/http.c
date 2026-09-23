@@ -157,8 +157,51 @@ const char *http_path_only(const char *target, char *buf, size_t buflen)
 
 /* ── Pattern matching ───────────────────────────────────────────────── */
 
-static int match_pattern(const char *pat, const char *path,
-                         StrPair *out, int *cnt)
+/*
+ * http_free_params — release the key/value pairs http_match_pattern bound
+ * into `out` and reset the count (story 127.72).
+ *
+ * Every `:param` segment costs two malloc()s.  Nothing released them: the
+ * routing loop dropped non-selected bindings with a bare `pc = 0`, the
+ * selected route's bindings were overwritten by a second match, and the
+ * bindings the handler actually used were abandoned when the request ended.
+ * A `:param` route therefore grew the server on every request while a plain
+ * route — which allocates nothing — showed no growth at all, which is why it
+ * went unread for so long.  Measured before the fix on macOS/arm64 with one
+ * four-parameter route: 266.4 bytes per request, and 764.6 with four
+ * path-matching routes ahead of the winner.
+ *
+ * Safe on an already-empty block, and leaves `out` re-usable.
+ */
+void http_free_params(StrPair *out, int *cnt)
+{
+    if (!out || !cnt) return;
+    for (int i = 0; i < *cnt; i++) {
+        free((void *)(uintptr_t)out[i].key);
+        free((void *)(uintptr_t)out[i].val);
+        out[i].key = NULL;
+        out[i].val = NULL;
+    }
+    *cnt = 0;
+}
+
+/*
+ * http_match_pattern — match a route pattern against a request path,
+ * binding each `:param` segment into `out` (at most HTTP_MAX_PARAMS).
+ * Returns 1 on a match, 0 otherwise.
+ *
+ * On ANY non-match — a literal mismatch part way through, a length
+ * mismatch at the end, or a failed malloc — the bindings made so far are
+ * released before returning, so a caller only ever has to free after a 1.
+ *
+ * 127.72: this used to exist twice, once here and once as a verbatim static
+ * copy `tk_match_pattern` in tk_web_glue.c.  Both leaked, identically, and
+ * the copy had the HTTP_MAX_PARAMS bound this one was missing — so the two
+ * descriptions of one behaviour had already drifted in the direction of a
+ * stack overflow on a route with more than 32 parameters.  One function now.
+ */
+int http_match_pattern(const char *pat, const char *path,
+                       StrPair *out, int *cnt)
 {
     /* Wildcard catch-all: pattern "*" matches any path */
     if (strcmp(pat, "*") == 0) { *cnt = 0; return 1; }
@@ -168,19 +211,29 @@ static int match_pattern(const char *pat, const char *path,
             pat++;
             const char *ks = pat; while (*pat && *pat != '/') pat++;
             size_t kn = (size_t)(pat - ks);
-            char *key = malloc(kn + 1); if (!key) return 0;
+            char *key = malloc(kn + 1);
+            if (!key) { http_free_params(out, cnt); return 0; }
             memcpy(key, ks, kn); key[kn] = '\0';
             const char *vs = path; while (*path && *path != '/') path++;
             size_t vn = (size_t)(path - vs);
-            char *val = malloc(vn + 1); if (!val) { free(key); return 0; }
+            char *val = malloc(vn + 1);
+            if (!val) { free(key); http_free_params(out, cnt); return 0; }
             memcpy(val, vs, vn); val[vn] = '\0';
-            out[(*cnt)].key = key; out[(*cnt)].val = val; (*cnt)++;
+            /* Bound the write: `out` is a caller-owned HTTP_MAX_PARAMS block
+             * and this copy used to write past it without checking. */
+            if (*cnt < HTTP_MAX_PARAMS) {
+                out[(*cnt)].key = key; out[(*cnt)].val = val; (*cnt)++;
+            } else {
+                free(key); free(val);
+            }
         } else {
-            if (*pat != *path) return 0;
+            if (*pat != *path) { http_free_params(out, cnt); return 0; }
             pat++; path++;
         }
     }
-    return *pat == '\0' && *path == '\0';
+    if (*pat == '\0' && *path == '\0') return 1;
+    http_free_params(out, cnt);
+    return 0;
 }
 
 /* ── Request parsing ────────────────────────────────────────────────── */
@@ -253,8 +306,10 @@ static Req parse_request(const char *raw) {
  * by ~1.1-1.3 KB per request with no plateau — reproducible on a 404 path
  * where no toke code runs at all, which is what rules out the runtime arena.
  *
- * req.params is deliberately NOT touched: handle_connection points it at a
- * stack array of StrPair whose key/val strings are owned by match_pattern.
+ * req.params is deliberately NOT touched: the dispatchers point it at a
+ * stack array of StrPair whose key/val strings http_match_pattern owns, and
+ * each dispatcher releases them with http_free_params as soon as the handler
+ * has returned (127.72 — before that, nobody released them at all).
  */
 static void free_req(Req *req)
 {
@@ -1044,29 +1099,40 @@ static void handle_connection(int fd)
          * This ensures http.getstatic("/docs") takes priority over
          * http.servedir("*") even if registered later. */
         int best = -1;
+        /* 127.72: set when `params` already holds `best`'s bindings, so the
+         * winner is matched once rather than twice. */
+        int have_params = 0;
         for (int i = 0; i < route_count; i++) {
-            if (match_pattern(route_table[i].pattern,
-                              rpath_h1, params, &pc)) {
+            if (http_match_pattern(route_table[i].pattern,
+                                   rpath_h1, params, &pc)) {
                 path_matched = 1;
                 const char *check_method = is_head ? "GET" : req.method;
                 if (check_method &&
                     strcmp(route_table[i].method, check_method) == 0) {
                     /* Prefer non-wildcard routes over "*" */
                     if (strcmp(route_table[i].pattern, "*") != 0) {
-                        best = i; break; /* exact match — done */
+                        best = i; have_params = 1; break; /* exact — done */
                     }
                     if (best < 0) best = i; /* wildcard — keep as fallback */
                 }
-                pc = 0;
+                /* 127.72: was a bare `pc = 0`, which dropped one malloc'd
+                 * key and value per parameter of every route whose path
+                 * matched but whose method did not. */
+                http_free_params(params, &pc);
             }
         }
         if (best >= 0) {
-            match_pattern(route_table[best].pattern,
-                          rpath_h1, params, &pc);
+            if (!have_params)
+                http_match_pattern(route_table[best].pattern,
+                                   rpath_h1, params, &pc);
             req.params.data = params; req.params.len = (uint64_t)pc;
             res = route_table[best].h(req);
             handler_called = 1;
         }
+        /* 127.72: the handler has returned, so the bindings it borrowed go
+         * back now.  free_req deliberately leaves req.params alone. */
+        http_free_params(params, &pc);
+        req.params.data = NULL; req.params.len = 0;
         /* Path existed but no method matched → 405 (only if handler wasn't called) */
         if (path_matched && !handler_called && res.status == 404) {
             res = make_res(405, "Method Not Allowed");
@@ -3703,29 +3769,33 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             int h2_handler_called = 0;
             int h2_is_head = (strcmp(method, "HEAD") == 0);
             int h2_best = -1;
+            int h2_have_params = 0;   /* 127.72 */
             for (int r = 0; r < route_count; r++) {
-                if (match_pattern(route_table[r].pattern,
-                                  rpath_h2, h2_params, &h2_pc)) {
+                if (http_match_pattern(route_table[r].pattern,
+                                       rpath_h2, h2_params, &h2_pc)) {
                     h2_path_matched = 1;
                     const char *cm = h2_is_head ? "GET" : method;
                     if (cm && strcmp(route_table[r].method, cm) == 0) {
                         if (strcmp(route_table[r].pattern, "*") != 0) {
-                            h2_best = r; break;
+                            h2_best = r; h2_have_params = 1; break;
                         }
                         if (h2_best < 0) h2_best = r;
                     }
-                    h2_pc = 0;
+                    http_free_params(h2_params, &h2_pc);   /* 127.72 */
                 }
             }
             if (h2_best >= 0) {
-                match_pattern(route_table[h2_best].pattern,
-                              rpath_h2, h2_params, &h2_pc);
+                if (!h2_have_params)
+                    http_match_pattern(route_table[h2_best].pattern,
+                                       rpath_h2, h2_params, &h2_pc);
                 req.params.data = h2_params;
                 req.params.len  = (uint64_t)h2_pc;
                 res = route_table[h2_best].h(req);
                 h2_handler_called = 1;
                 if (h2_is_head) res.body = NULL;
             }
+            http_free_params(h2_params, &h2_pc);           /* 127.72 */
+            req.params.data = NULL; req.params.len = 0;
             if (h2_path_matched && !h2_handler_called && res.status == 404) {
                 res = make_res(405, "Method Not Allowed");
             }
@@ -4193,28 +4263,32 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         int tls_path_matched = 0;
         int tls_handler_called = 0;
         int tls_best = -1;
+        int tls_have_params = 0;   /* 127.72 */
         for (int i = 0; i < route_count; i++) {
-            if (match_pattern(route_table[i].pattern,
-                              rpath_tls, params, &pc)) {
+            if (http_match_pattern(route_table[i].pattern,
+                                   rpath_tls, params, &pc)) {
                 tls_path_matched = 1;
                 const char *check_method = tls_is_head ? "GET" : req.method;
                 if (check_method &&
                     strcmp(route_table[i].method, check_method) == 0) {
                     if (strcmp(route_table[i].pattern, "*") != 0) {
-                        tls_best = i; break;
+                        tls_best = i; tls_have_params = 1; break;
                     }
                     if (tls_best < 0) tls_best = i;
                 }
-                pc = 0;
+                http_free_params(params, &pc);   /* 127.72 */
             }
         }
         if (tls_best >= 0) {
-            match_pattern(route_table[tls_best].pattern,
-                          rpath_tls, params, &pc);
+            if (!tls_have_params)
+                http_match_pattern(route_table[tls_best].pattern,
+                                   rpath_tls, params, &pc);
             req.params.data = params; req.params.len = (uint64_t)pc;
             res = route_table[tls_best].h(req);
             tls_handler_called = 1;
         }
+        http_free_params(params, &pc);           /* 127.72 */
+        req.params.data = NULL; req.params.len = 0;
         if (tls_path_matched && !tls_handler_called && res.status == 404) {
             res = make_res(405, "Method Not Allowed");
         }

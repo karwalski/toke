@@ -208,34 +208,20 @@ int64_t tk_http_set_cors(int64_t origins_ptr) {
 /* ── Pattern matching for handler dispatch (Story 87.2.1) ────────────── */
 
 /*
- * tk_match_pattern — Match a route pattern against a request path.
- * Supports :param segments (e.g. "/api/greet/:name" matches "/api/greet/world").
- * Populates out[] with extracted key/value pairs. Returns 1 on match, 0 otherwise.
+ * 127.72: `tk_match_pattern` used to live here — a verbatim static copy of
+ * http.c's `match_pattern`.  Both leaked two malloc()s per bound `:param` on
+ * every request, and the two copies had already drifted: this one bounded the
+ * write to 32 entries and the original did not.  Two descriptions of one
+ * behaviour is the shape that produced that drift, so there is now one
+ * function, `http_match_pattern`, declared in http.h alongside
+ * `http_free_params`, and the dispatchers below call it.
+ *
+ * The contract that matters at each call site: after a 1 the bindings belong
+ * to the caller and MUST be released with http_free_params — both when the
+ * route is taken, once the handler has returned, and when it is not, before
+ * the next route overwrites the block.  That second case is what the old
+ * `pc = 0` got wrong.
  */
-static int tk_match_pattern(const char *pat, const char *path,
-                            StrPair *out, int *cnt) {
-    if (strcmp(pat, "*") == 0) { *cnt = 0; return 1; }
-    *cnt = 0;
-    while (*pat && *path) {
-        if (*pat == ':') {
-            pat++;
-            const char *ks = pat; while (*pat && *pat != '/') pat++;
-            size_t kn = (size_t)(pat - ks);
-            char *key = malloc(kn + 1); if (!key) return 0;
-            memcpy(key, ks, kn); key[kn] = '\0';
-            const char *vs = path; while (*path && *path != '/') path++;
-            size_t vn = (size_t)(path - vs);
-            char *val = malloc(vn + 1); if (!val) { free(key); return 0; }
-            memcpy(val, vs, vn); val[vn] = '\0';
-            if (*cnt < 32) { out[*cnt].key = key; out[*cnt].val = val; (*cnt)++; }
-            else { free(key); free(val); }
-        } else {
-            if (*pat != *path) return 0;
-            pat++; path++;
-        }
-    }
-    return *pat == '\0' && *path == '\0';
-}
 
 /* ── Dynamic GET handler dispatch (Story 46.1.3) ─────────────────────── */
 
@@ -256,15 +242,16 @@ static Res tk_get_handler_dispatch(Req req) {
     char pathbuf[2048];
     const char *rpath = http_path_only(req.path ? req.path : "/",
                                        pathbuf, sizeof pathbuf);
-    StrPair params[32]; int pc = 0;
+    StrPair params[HTTP_MAX_PARAMS]; int pc = 0;
     for (int i = 0; i < g_get_handler_count; i++) {
         if (g_get_handler_routes[i].path &&
-            tk_match_pattern(g_get_handler_routes[i].path, rpath, params, &pc)) {
+            http_match_pattern(g_get_handler_routes[i].path, rpath, params, &pc)) {
             /* Populate request params from pattern match */
             req.params.data = params;
             req.params.len  = (uint64_t)pc;
             Req *heap_req = (Req *)malloc(sizeof(Req));
             if (!heap_req) {
+                http_free_params(params, &pc);   /* 127.72 */
                 Res r;
                 r.status       = 500;
                 r.body         = "Internal Server Error";
@@ -275,6 +262,7 @@ static Res tk_get_handler_dispatch(Req req) {
             *heap_req = req;
             int64_t res_ptr = g_get_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
             free(heap_req);
+            http_free_params(params, &pc);   /* 127.72 */
             if (res_ptr) {
                 Res *rp = (Res *)(intptr_t)res_ptr;
                 Res r = *rp;
@@ -288,7 +276,8 @@ static Res tk_get_handler_dispatch(Req req) {
             r.headers.len  = 1;
             return r;
         }
-        pc = 0; /* reset for next iteration */
+        /* 127.72: was `pc = 0`, which dropped the bindings. */
+        http_free_params(params, &pc);
     }
     return tk_static_dispatch(req);
 }
@@ -500,14 +489,15 @@ static Res tk_post_handler_dispatch(Req req) {
     char pathbuf[2048];
     const char *rpath = http_path_only(req.path ? req.path : "/",
                                        pathbuf, sizeof pathbuf);
-    StrPair params[32]; int pc = 0;
+    StrPair params[HTTP_MAX_PARAMS]; int pc = 0;
     for (int i = 0; i < g_post_handler_count; i++) {
         if (g_post_handler_routes[i].path &&
-            tk_match_pattern(g_post_handler_routes[i].path, rpath, params, &pc)) {
+            http_match_pattern(g_post_handler_routes[i].path, rpath, params, &pc)) {
             req.params.data = params;
             req.params.len  = (uint64_t)pc;
             Req *heap_req = (Req *)malloc(sizeof(Req));
             if (!heap_req) {
+                http_free_params(params, &pc);   /* 127.72 */
                 Res r;
                 r.status       = 500;
                 r.body         = "Internal Server Error";
@@ -518,6 +508,7 @@ static Res tk_post_handler_dispatch(Req req) {
             *heap_req = req;
             int64_t res_ptr = g_post_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
             free(heap_req);
+            http_free_params(params, &pc);   /* 127.72 */
             if (res_ptr) {
                 Res *rp = (Res *)(intptr_t)res_ptr;
                 Res r = *rp;
@@ -531,7 +522,7 @@ static Res tk_post_handler_dispatch(Req req) {
             r.headers.len  = 1;
             return r;
         }
-        pc = 0;
+        http_free_params(params, &pc);   /* 127.72: was `pc = 0` */
     }
     return tk_post_dispatch(req);
 }
@@ -562,25 +553,28 @@ static Res tk_put_handler_dispatch(Req req) {
     char pathbuf[2048];
     const char *rpath = http_path_only(req.path ? req.path : "/",
                                        pathbuf, sizeof pathbuf);
-    StrPair params[32]; int pc = 0;
+    StrPair params[HTTP_MAX_PARAMS]; int pc = 0;
     for (int i = 0; i < g_put_handler_count; i++) {
         if (g_put_handler_routes[i].path &&
-            tk_match_pattern(g_put_handler_routes[i].path, rpath, params, &pc)) {
+            http_match_pattern(g_put_handler_routes[i].path, rpath, params, &pc)) {
             req.params.data = params;
             req.params.len  = (uint64_t)pc;
             Req *heap_req = (Req *)malloc(sizeof(Req));
             if (!heap_req) {
+                http_free_params(params, &pc);   /* 127.72 */
                 Res r; r.status = 500; r.body = "Internal Server Error";
                 r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
             }
             *heap_req = req;
             int64_t res_ptr = g_put_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
             free(heap_req);
+            http_free_params(params, &pc);   /* 127.72 */
             if (res_ptr) { Res *rp = (Res *)(intptr_t)res_ptr; Res r = *rp; free(rp); return r; }
             Res r; r.status = 500; r.body = "Handler returned null";
             r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
         }
-        pc = 0; /* reset for next iteration */
+        /* 127.72: was `pc = 0`, which dropped the bindings. */
+        http_free_params(params, &pc);
     }
     Res r; r.status = 404; r.body = "{\"error\":\"Not Found\"}";
     r.headers.data = &g_json_ct_hdr; r.headers.len = 1; return r;
@@ -612,25 +606,28 @@ static Res tk_delete_handler_dispatch(Req req) {
     char pathbuf[2048];
     const char *rpath = http_path_only(req.path ? req.path : "/",
                                        pathbuf, sizeof pathbuf);
-    StrPair params[32]; int pc = 0;
+    StrPair params[HTTP_MAX_PARAMS]; int pc = 0;
     for (int i = 0; i < g_delete_handler_count; i++) {
         if (g_delete_handler_routes[i].path &&
-            tk_match_pattern(g_delete_handler_routes[i].path, rpath, params, &pc)) {
+            http_match_pattern(g_delete_handler_routes[i].path, rpath, params, &pc)) {
             req.params.data = params;
             req.params.len  = (uint64_t)pc;
             Req *heap_req = (Req *)malloc(sizeof(Req));
             if (!heap_req) {
+                http_free_params(params, &pc);   /* 127.72 */
                 Res r; r.status = 500; r.body = "Internal Server Error";
                 r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
             }
             *heap_req = req;
             int64_t res_ptr = g_delete_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
             free(heap_req);
+            http_free_params(params, &pc);   /* 127.72 */
             if (res_ptr) { Res *rp = (Res *)(intptr_t)res_ptr; Res r = *rp; free(rp); return r; }
             Res r; r.status = 500; r.body = "Handler returned null";
             r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
         }
-        pc = 0; /* reset for next iteration */
+        /* 127.72: was `pc = 0`, which dropped the bindings. */
+        http_free_params(params, &pc);
     }
     Res r; r.status = 404; r.body = "{\"error\":\"Not Found\"}";
     r.headers.data = &g_json_ct_hdr; r.headers.len = 1; return r;
@@ -662,25 +659,28 @@ static Res tk_patch_handler_dispatch(Req req) {
     char pathbuf[2048];
     const char *rpath = http_path_only(req.path ? req.path : "/",
                                        pathbuf, sizeof pathbuf);
-    StrPair params[32]; int pc = 0;
+    StrPair params[HTTP_MAX_PARAMS]; int pc = 0;
     for (int i = 0; i < g_patch_handler_count; i++) {
         if (g_patch_handler_routes[i].path &&
-            tk_match_pattern(g_patch_handler_routes[i].path, rpath, params, &pc)) {
+            http_match_pattern(g_patch_handler_routes[i].path, rpath, params, &pc)) {
             req.params.data = params;
             req.params.len  = (uint64_t)pc;
             Req *heap_req = (Req *)malloc(sizeof(Req));
             if (!heap_req) {
+                http_free_params(params, &pc);   /* 127.72 */
                 Res r; r.status = 500; r.body = "Internal Server Error";
                 r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
             }
             *heap_req = req;
             int64_t res_ptr = g_patch_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
             free(heap_req);
+            http_free_params(params, &pc);   /* 127.72 */
             if (res_ptr) { Res *rp = (Res *)(intptr_t)res_ptr; Res r = *rp; free(rp); return r; }
             Res r; r.status = 500; r.body = "Handler returned null";
             r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
         }
-        pc = 0; /* reset for next iteration */
+        /* 127.72: was `pc = 0`, which dropped the bindings. */
+        http_free_params(params, &pc);
     }
     Res r; r.status = 404; r.body = "{\"error\":\"Not Found\"}";
     r.headers.data = &g_json_ct_hdr; r.headers.len = 1; return r;
