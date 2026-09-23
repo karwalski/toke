@@ -148,8 +148,15 @@ jobs:
   # Story 123.8 — the gates `make ci` runs that CI did not
   #
   # `make ci` has 17 members. Before this change the workflow above ran 10 of
-  # them. These are the other seven. They are cheap, they were already green
-  # locally, and nothing on a push or a pull request had ever read one.
+  # them. These are six of the other seven; the seventh, `conform-check`, is
+  # `make conform` plus an echo and is skipped as a duplicate rather than run
+  # twice. They are cheap, they were already green locally, and nothing on a
+  # push or a pull request had ever read one.
+  #
+  # STILL NOT IN CI, and not this story's to add: `diff-codegen`, which the
+  # corpus programme calls its root of trust. It is not a member of `make ci`
+  # either, so wiring it in is a change to what `make ci` means. Story
+  # 127.143 owns it and is open.
   # ══════════════════════════════════════════════════════════════════════════
   ci-gates:
     name: make ci gates missing from CI
