@@ -105,6 +105,19 @@
 #endif
 
 /*
+ * TKC_MAX_FALLIBLE_LOCALS — maximum number of let-bound fallible values
+ * tracked per function in codegen (135.16).  Each entry records how an
+ * ok/err `mt` over that binding must discriminate, and names the local
+ * that snapshots @tk_current_error at the binding site.  Overflow is not
+ * an error: the binding simply falls back to the value sentinel, which is
+ * the pre-135.16 behaviour.
+ * Safe range: >= 8.
+ */
+#ifndef TKC_MAX_FALLIBLE_LOCALS
+#define TKC_MAX_FALLIBLE_LOCALS 128
+#endif
+
+/*
  * TKC_MAX_PTR_LOCALS — maximum number of pointer-typed locals tracked
  * for struct type resolution in codegen.
  * Safe range: >= 8.
