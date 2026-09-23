@@ -28,6 +28,8 @@ A stale skip fails `make check-tki`, so the skiplist cannot silently outlive the
 
 A module with **no interface file at all** is not a quarantined export -- it is an absence on both sides, and nothing declares it, so no consumer can plan around it. Do not add such a module to this page or to the skiplist; there is nothing to skip.
 
+An export whose symbol **exists** but whose declared **arity** disagrees with the compiler is also not in this class: it links, it is just described wrongly. Those are recorded separately in [`scripts/check_tki_arity_skiplist.txt`](../../scripts/check_tki_arity_skiplist.txt) and gated by the same `make check-tki` (story 135.17). An entry here is cleared by writing glue; an entry there is cleared by an interface decision.
+
 ## Quarantined exports by module
 
 ### `canvas` (12)
