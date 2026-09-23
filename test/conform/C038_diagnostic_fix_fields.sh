@@ -514,17 +514,59 @@ f=main():i64{
   <0
 };'
 
-# F7 — E4036's message, the one genuinely good diagnostic in this batch.  Its
-# `fix` is deliberately ABSENT (toke has no UFCS, so `x.pair(a)` is not
-# `pair(x;a)` and saying so would be a `fix` that is not deterministically
-# correct — §3.1).  Pinned here so the absence reads as a decision rather than
-# an oversight, and so 127.153 is not "fixed" by inventing a rewrite.
+# F7 — E4036's message, the one genuinely good diagnostic in this batch.
 emits "F7 E4036 still explains the receiver-call mistake" E4036 - - \
 'm=t;
 f=pair(a:i64;b:str):i64{<a};
 f=main():i64{
   let x=1;
   let y=x.pair("A");
+  <0
+};'
+
+# ── G. 127.153 — E4036's fix, and the half of it that stays refused ────────
+echo ""
+echo "G. 127.153: E4036's fix is conditional, not unconditional"
+
+# The row asked for this field to be filled with `pair(x;"A")` because "the
+# compiler already located that function".  It knows such a function exists;
+# it does not know it was MEANT — toke has no UFCS, so `x.pair(a)` and
+# `pair(x;a)` share a name and nothing else, and 127.1 left the field empty
+# for exactly that reason.
+#
+# G1 — where the module function's declared arity equals the receiver plus the
+# supplied arguments, the rewrite is guaranteed well-formed and the receiver is
+# a genuine candidate first argument.  The field is filled AND states the two
+# numbers that justify it, so a consumer can check the reasoning.
+fixsays "G1 arity matches: the fix names the direct call" E4036 \
+    'it declares 2 parameters and this call supplies 2' \
+'m=t;
+f=pair(a:i64;b:str):i64{<a};
+f=main():i64{
+  let x=1;
+  let y=x.pair("A");
+  <0
+};'
+
+# G2 — where the arities DISAGREE the rewrite would not even compile, so the
+# field stays absent.  This is the §3.1 guard and it is the case that would
+# have been broken by doing what the row literally asked.
+fixlacks "G2 arity disagrees: no fix is offered" E4036 'call it directly' \
+'m=t;
+f=pair(a:i64;b:str;c:i64):i64{<a};
+f=main():i64{
+  let x=1;
+  let y=x.pair("A");
+  <0
+};'
+
+# G3 — a member that matches no module function at all keeps an absent fix:
+# a did-you-mean for an arbitrary member name is the 127.106 / 131.78 lesson.
+fixlacks "G3 no such module function: no fix is offered" E4036 'call it directly' \
+'m=t;
+f=main():i64{
+  let x=1;
+  let y=x.nosuchthingatall("A");
   <0
 };'
 
