@@ -76,7 +76,7 @@ The `}` closes the function body and the `;` terminates the function declaration
 ## Compile and run
 
 ```bash
-./build/tkc hello.tk -o hello
+tkc hello.tk -o hello
 ./hello
 ```
 
@@ -127,7 +127,7 @@ f=main():i64{
 Compile and run:
 
 ```bash
-./build/tkc fib.tk -o fib
+tkc fib.tk -o fib
 ./fib; echo $?
 # 55
 ```

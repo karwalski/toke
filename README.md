@@ -156,8 +156,12 @@ Or use the `toke` wrapper to compile and run in one step:
 git clone https://github.com/karwalski/toke.git
 cd toke
 make
-./build/tkc --version
+./toke --version
 ```
+
+`make` writes the compiler to the project root as `toke` and links `tkc` beside it
+as an alias. There is no `build/` directory. The rest of this documentation calls
+the compiler `tkc`, which is that symlink.
 
 **Homebrew** — *not published yet.* The tap `github.com/karwalski/homebrew-toke`
 does not exist, so `brew tap karwalski/toke` returns 404 today. The formula is

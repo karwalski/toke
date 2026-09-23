@@ -59,7 +59,7 @@ f=handle(req:http.$req):http.$res!$apierr{
 When you compile a toke source file, `tkc` can emit an interface file (`.tki`) that contains only the public type signatures -- no implementation:
 
 ```bash
-./build/tkc src/auth/login.tk --emit-interface
+tkc src/auth/login.tk --emit-interface
 ```
 
 This produces `src/auth/login.tki` containing something like:
@@ -111,7 +111,7 @@ The `src/` directory contains all `.tk` source files. The module path in each fi
 Pass all source files to `tkc`:
 
 ```bash
-./build/tkc src/myapp.tk src/auth/*.tk src/db/*.tk src/api/*.tk -o build/myapp
+tkc src/myapp.tk src/auth/*.tk src/db/*.tk src/api/*.tk -o build/myapp
 ```
 
 The compiler resolves imports by matching `i=alias:module.path` declarations against the `m=module.path` declarations in the provided source files.
@@ -123,11 +123,11 @@ SRC := $(shell find src -name '*.tk')
 OUT := build/myapp
 
 $(OUT): $(SRC)
-	./build/tkc $(SRC) -o $(OUT)
+	tkc $(SRC) -o $(OUT)
 
 .PHONY: check
 check:
-	./build/tkc $(SRC) --check
+	tkc $(SRC) --check
 
 .PHONY: clean
 clean:
@@ -141,7 +141,7 @@ The `--check` flag runs the lexer, parser, and type checker without generating a
 During development, you often want to check that your code compiles without building a binary:
 
 ```bash
-./build/tkc src/**/*.tk --check
+tkc src/**/*.tk --check
 ```
 
 This runs the full front-end pipeline (lex, parse, type-check) and reports any errors as structured JSON diagnostics. It skips LLVM IR generation and linking, which makes it significantly faster.
