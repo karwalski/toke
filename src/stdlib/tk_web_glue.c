@@ -262,7 +262,10 @@ static Res tk_get_handler_dispatch(Req req) {
             *heap_req = req;
             int64_t res_ptr = g_get_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
             free(heap_req);
-            http_free_params(params, &pc);   /* 127.72 */
+            /* 127.72: the Res this dispatcher is about to return may carry
+             * a :param value AS its body, and this block goes out of scope
+             * on return — so the bindings are deferred, not freed. */
+            http_defer_params(params, &pc);
             if (res_ptr) {
                 Res *rp = (Res *)(intptr_t)res_ptr;
                 Res r = *rp;
@@ -508,7 +511,10 @@ static Res tk_post_handler_dispatch(Req req) {
             *heap_req = req;
             int64_t res_ptr = g_post_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
             free(heap_req);
-            http_free_params(params, &pc);   /* 127.72 */
+            /* 127.72: the Res this dispatcher is about to return may carry
+             * a :param value AS its body, and this block goes out of scope
+             * on return — so the bindings are deferred, not freed. */
+            http_defer_params(params, &pc);
             if (res_ptr) {
                 Res *rp = (Res *)(intptr_t)res_ptr;
                 Res r = *rp;
@@ -568,7 +574,10 @@ static Res tk_put_handler_dispatch(Req req) {
             *heap_req = req;
             int64_t res_ptr = g_put_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
             free(heap_req);
-            http_free_params(params, &pc);   /* 127.72 */
+            /* 127.72: the Res this dispatcher is about to return may carry
+             * a :param value AS its body, and this block goes out of scope
+             * on return — so the bindings are deferred, not freed. */
+            http_defer_params(params, &pc);
             if (res_ptr) { Res *rp = (Res *)(intptr_t)res_ptr; Res r = *rp; free(rp); return r; }
             Res r; r.status = 500; r.body = "Handler returned null";
             r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
@@ -621,7 +630,10 @@ static Res tk_delete_handler_dispatch(Req req) {
             *heap_req = req;
             int64_t res_ptr = g_delete_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
             free(heap_req);
-            http_free_params(params, &pc);   /* 127.72 */
+            /* 127.72: the Res this dispatcher is about to return may carry
+             * a :param value AS its body, and this block goes out of scope
+             * on return — so the bindings are deferred, not freed. */
+            http_defer_params(params, &pc);
             if (res_ptr) { Res *rp = (Res *)(intptr_t)res_ptr; Res r = *rp; free(rp); return r; }
             Res r; r.status = 500; r.body = "Handler returned null";
             r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;
@@ -674,7 +686,10 @@ static Res tk_patch_handler_dispatch(Req req) {
             *heap_req = req;
             int64_t res_ptr = g_patch_handler_routes[i].handler((int64_t)(intptr_t)heap_req);
             free(heap_req);
-            http_free_params(params, &pc);   /* 127.72 */
+            /* 127.72: the Res this dispatcher is about to return may carry
+             * a :param value AS its body, and this block goes out of scope
+             * on return — so the bindings are deferred, not freed. */
+            http_defer_params(params, &pc);
             if (res_ptr) { Res *rp = (Res *)(intptr_t)res_ptr; Res r = *rp; free(rp); return r; }
             Res r; r.status = 500; r.body = "Handler returned null";
             r.headers.data = &g_text_ct_hdr; r.headers.len = 1; return r;

@@ -186,6 +186,69 @@ void http_free_params(StrPair *out, int *cnt)
 }
 
 /*
+ * http_defer_free / http_run_deferred_frees — release a pointer once the
+ * response has been written (story 127.72).
+ *
+ * WHY THIS EXISTS, AND IT IS NOT DECORATION.  A `:param` value belongs to the
+ * matcher, but a handler may hand that exact pointer back as the response
+ * body: `http.resok(http.param(req;"name"))` is the obvious way to write a
+ * `:param` handler, and http_Res_ok stores the pointer without copying it.
+ * Freeing the bindings the moment the handler returns therefore turns the
+ * body into freed memory — measured while fixing this story: every response
+ * came back EMPTY, where the same handler with the value copied into a new
+ * string answered correctly.  Trading a leak for a use-after-free is not a
+ * fix, so the selected route's bindings are handed to this list and released
+ * at the same point free_req() releases the parsed request: after the
+ * response, the gzip buffer and the log line have all been written.
+ *
+ * The dispatchers in http.c keep their block on the stack and could simply
+ * free late; the handler dispatchers in tk_web_glue.c cannot, because their
+ * block goes out of scope while the Res they return is still travelling, so
+ * the list is shared and exported.
+ *
+ * Capacity is one selected route's bindings from http.c plus one handler
+ * dispatcher's — 2 x HTTP_MAX_PARAMS keys and values.  If it were ever to
+ * overflow the pointer is freed immediately rather than dropped: a leak is
+ * the failure this story is about, and the alternative is the dangling body
+ * above.
+ */
+#define HTTP_MAX_DEFERRED (4 * HTTP_MAX_PARAMS)
+
+static void *g_deferred[HTTP_MAX_DEFERRED];
+static int   g_deferred_n;
+
+void http_defer_free(void *p)
+{
+    if (!p) return;
+    if (g_deferred_n >= HTTP_MAX_DEFERRED) { free(p); return; }
+    g_deferred[g_deferred_n++] = p;
+}
+
+void http_run_deferred_frees(void)
+{
+    for (int i = 0; i < g_deferred_n; i++) free(g_deferred[i]);
+    g_deferred_n = 0;
+}
+
+/*
+ * http_defer_params — hand `out`'s bindings to the deferred list and reset
+ * the count.  Use this for the bindings the HANDLER saw; use
+ * http_free_params for bindings no handler ever received, which nothing can
+ * alias and which are cheaper to release at once.
+ */
+void http_defer_params(StrPair *out, int *cnt)
+{
+    if (!out || !cnt) return;
+    for (int i = 0; i < *cnt; i++) {
+        http_defer_free((void *)(uintptr_t)out[i].key);
+        http_defer_free((void *)(uintptr_t)out[i].val);
+        out[i].key = NULL;
+        out[i].val = NULL;
+    }
+    *cnt = 0;
+}
+
+/*
  * http_match_pattern — match a route pattern against a request path,
  * binding each `:param` segment into `out` (at most HTTP_MAX_PARAMS).
  * Returns 1 on a match, 0 otherwise.
@@ -1132,9 +1195,9 @@ static void handle_connection(int fd)
             res = route_table[best].h(req);
             handler_called = 1;
         }
-        /* 127.72: the handler has returned, so the bindings it borrowed go
-         * back now.  free_req deliberately leaves req.params alone. */
-        http_free_params(params, &pc);
+        /* 127.72: the bindings the handler borrowed are released with the
+         * request, not here — res.body may BE one of them. */
+        http_defer_params(params, &pc);
         req.params.data = NULL; req.params.len = 0;
         /* Path existed but no method matched → 405 (only if handler wasn't called) */
         if (path_matched && !handler_called && res.status == 404) {
@@ -1193,8 +1256,11 @@ static void handle_connection(int fd)
 
         /* 127.65: release the parsed request before the next keep-alive
          * iteration.  Everything that may alias it (res.body, the gzip
-         * buffer, the access/error log lines) has already been written. */
+         * buffer, the access/error log lines) has already been written.
+         * 127.72: the route bindings go with it, for the same reason — a
+         * handler may return a :param value as the response body. */
         free_req(&req);
+        http_run_deferred_frees();
 
         if (!keep_alive) break;
     }
@@ -3797,7 +3863,7 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
                 h2_handler_called = 1;
                 if (h2_is_head) res.body = NULL;
             }
-            http_free_params(h2_params, &h2_pc);           /* 127.72 */
+            http_defer_params(h2_params, &h2_pc);          /* 127.72 */
             req.params.data = NULL; req.params.len = 0;
             if (h2_path_matched && !h2_handler_called && res.status == 404) {
                 res = make_res(405, "Method Not Allowed");
@@ -3859,6 +3925,9 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             }
             free(names);
             free(values);
+            /* 127.72: response written and logged — the route bindings it
+             * may alias can go now. */
+            http_run_deferred_frees();
             break;
         }
 
@@ -4285,7 +4354,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
             res = route_table[tls_best].h(req);
             tls_handler_called = 1;
         }
-        http_free_params(params, &pc);           /* 127.72 */
+        http_defer_params(params, &pc);          /* 127.72 */
         req.params.data = NULL; req.params.len = 0;
         if (tls_path_matched && !tls_handler_called && res.status == 404) {
             res = make_res(405, "Method Not Allowed");
@@ -4376,8 +4445,10 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
         }
 
         /* 127.65: release the parsed request before the next keep-alive
-         * iteration (same reasoning as the cleartext loop above). */
+         * iteration (same reasoning as the cleartext loop above).
+         * 127.72: and the route bindings with it — res.body may be one. */
         free_req(&req);
+        http_run_deferred_frees();
 
         if (!keep_alive) break;
     }

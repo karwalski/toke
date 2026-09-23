@@ -89,6 +89,20 @@ int  http_match_pattern(const char *pat, const char *path,
                         StrPair *out, int *cnt);
 void http_free_params(StrPair *out, int *cnt);
 
+/*
+ * A handler may return a `:param` value AS the response body —
+ * `http.resok(http.param(req;"name"))` is the obvious spelling, and the Res
+ * constructors store the pointer without copying.  Bindings a handler saw
+ * must therefore NOT be freed when it returns: hand them to
+ * http_defer_params, which releases them at http_run_deferred_frees(), called
+ * once per request beside free_req() after the response, the gzip buffer and
+ * the log line have all been written.  http_free_params stays correct for
+ * bindings no handler ever received.
+ */
+void http_defer_params(StrPair *out, int *cnt);
+void http_defer_free(void *p);
+void http_run_deferred_frees(void);
+
 /* Route registration */
 void http_GET   (const char *pattern, RouteHandler h);
 void http_POST  (const char *pattern, RouteHandler h);

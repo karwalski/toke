@@ -27,10 +27,21 @@
 #
 # MEASURED ON THIS TREE, macOS/arm64, with the C harness this script runs:
 #   before   A 257.5 B/request   B 760.0 B/request
-#   after    A   4.6 B/request   B   0.0 B/request
+#   after    A   6.8 B/request   B   2.3 B/request
 # and the residual is not per-request at all — at 12 connections instead of 8
 # a scenario's delta was 49152 bytes over 10800 requests, i.e. flat, where
 # before the fix it was strictly linear.
+#
+# CASE 2 IS WHAT STOPS THE FIX BEING A LEAK TRADED FOR A DANGLING POINTER.
+# A `:param` value belongs to the matcher, but a handler may hand that exact
+# pointer back as the response body — `http.resok(http.param(req;"name"))` is
+# the obvious way to write a `:param` handler, and the Res constructors store
+# the pointer without copying it.  The first version of this fix freed the
+# bindings the moment the handler returned, and every such response came back
+# EMPTY while the same handler with the value copied into a new string
+# answered correctly.  So the bindings a handler saw are deferred and released
+# beside free_req(), after the response, the gzip buffer and the log line have
+# been written.  Case 2 drives that end to end through a real toke server.
 #
 # WHY THE ASSERTION IS NOT AN RSS DELTA.  RSS cannot see this on a running
 # toke server.  The per-connection read buffer is ~1 MB and dwarfs a
@@ -52,7 +63,7 @@ PASS=0
 FAIL=0
 
 WORK="$(mktemp -d /tmp/tkc_routeleak_XXXXXX)"
-trap 'rm -rf "${WORK}"' EXIT
+trap 'rm -rf "${WORK}"; [ -n "${SRV:-}" ] && kill "${SRV}" 2>/dev/null; [ -n "${SRV:-}" ] && pkill -P "${SRV}" 2>/dev/null' EXIT
 
 echo "S005: the route matcher releases the params it binds"
 echo "--------------------------------------"
@@ -80,6 +91,58 @@ else
     echo "  FAIL: the route matcher is still retaining bound parameters"
     sed 's/^/      /' "${WORK}/run.log"
     FAIL=$((FAIL + 1))
+fi
+
+# ── Case 2: a handler that returns the :param value AS the response body ──
+TKC="${TKC:-${REPO_ROOT}/tkc}"
+if [ ! -x "${TKC}" ]; then
+    echo "  FAIL: tkc not found at ${TKC} — cannot run the dangling-body case"
+    FAIL=$((FAIL + 1))
+else
+    PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
+    cat > "${WORK}/srv.tk" <<EOF
+m=srv;
+i=http:std.http;
+f=greet(req:i64):i64{
+  <http.resok(http.param(req;"name"))
+};
+f=main():i64{
+  http.gethandler("/api/greet/:name";&greet);
+  http.serveworkers(${PORT};1);
+  <0
+};
+EOF
+    if ! (cd "${WORK}" && "${TKC}" --allow-all -o srv.bin srv.tk >srvbuild.log 2>&1) \
+       || [ ! -x "${WORK}/srv.bin" ]; then
+        echo "  FAIL: the param-as-body server did not build"
+        sed 's/^/      /' "${WORK}/srvbuild.log" | head -6
+        FAIL=$((FAIL + 1))
+    else
+        "${WORK}/srv.bin" >/dev/null 2>&1 &
+        SRV=$!
+        for _ in $(seq 1 80); do
+            python3 -c "
+import socket,sys
+s=socket.socket(); s.settimeout(0.3)
+sys.exit(0 if s.connect_ex(('127.0.0.1',${PORT}))==0 else 1)" && break
+            sleep 0.25
+        done
+        bad=0
+        for w in alpha bravo charlie delta echo; do
+            got="$(curl -s --max-time 10 "http://127.0.0.1:${PORT}/api/greet/${w}")"
+            if [ "${got}" != "${w}" ]; then
+                echo "  FAIL: /api/greet/${w} answered [${got}] — the body was freed before it was written"
+                bad=1
+            fi
+        done
+        kill "${SRV}" 2>/dev/null; pkill -P "${SRV}" 2>/dev/null; SRV=""
+        if [ "${bad}" -eq 0 ]; then
+            echo "  PASS: a handler may return a :param value as the response body"
+            PASS=$((PASS + 1))
+        else
+            FAIL=$((FAIL + 1))
+        fi
+    fi
 fi
 
 echo "--------------------------------------"
