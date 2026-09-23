@@ -60,7 +60,7 @@ sheet, `--probe` to re-derive the character set against the built compiler).
 | `corpus_records_v04_frozen` | **23,382** | `jq .total ../toke-corpus/regen/freeze/freeze_129_summary.json` — freeze `129-freeze-2026-08-19`, reopened by Epic 131 |
 | `corpus_records_v02_2026_04` | **46,754** | `jq .total_entries ../toke-corpus/corpus/manifest.json` — the **v0.2-era** corpus of 2026-04-01, historical |
 | `epics` | **136** | `grep -oE '^#{2,3} Epic [0-9]+' docs/progress.md \| awk '{print $3}' \| sort -u \| wc -l` — *live, not gated: re-derive before citing* |
-| `stories` | **2,654** | `grep -oE '^\| [0-9]+\.[0-9]+[a-z0-9.]* \|' docs/progress.md \| sort -u \| wc -l` — *live, not gated: moves with every tracker commit, re-derive before citing* |
+| `stories` | **2,662** | `grep -oE '^\| [0-9]+\.[0-9]+[a-z0-9.]* \|' docs/progress.md \| sort -u \| wc -l` — *live, not gated: moves with every tracker commit, re-derive before citing* |
 
 <!-- PROJECT-FACTS END -->
 
