@@ -182,8 +182,50 @@ src/llvm.o: src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h
 # corruption, e.g. adding a field to Node in parser.h). Silent if absent.
 -include $(OBJS:.o=.d)
 
+# ── Story 136.62: an object must remember the flags it was built with ───────
+#
+# -MMD made a .o depend on its headers.  Nothing made a .o depend on the
+# FLAGS, so changing them invalidated nothing and `make` reported a build it
+# had not done.  This is the mechanism behind 127.118 and 127.92 ("incremental
+# `make` produces a compiler that behaves like neither commit").
+#
+# Measured before this rule existed:
+#
+#   * `make CFLAGS="<host flags> -DW3_FLAG_PROBE=1"` on an up-to-date tree ran
+#     ZERO compile commands, left every .o byte-identical, and exited 0.
+#
+#   * `make build-all` -- three recursive makes for three different
+#     --target triples -- finished in 0.74s having run ZERO compile commands
+#     and exited 0.  Each sub-make found the HOST objects newer than their
+#     sources and did nothing.  AGENTS.md §14 asks contributors to report
+#     "make build-all: success on x86-64 and ARM64"; that is what "success"
+#     has meant.
+#
+# The fix is the standard one: write the flags to a file, make the objects
+# depend on that file.  The stamp is rewritten only when the text CHANGES
+# (cmp), so an unchanged build stays incremental.
+#
+# TKC_BUILD_FLAGS goes through the ENVIRONMENT rather than being interpolated
+# into the recipe because CFLAGS contains both single and double quotes
+# (-DTKC_STDLIB_DIR='"..."'), and every way of quoting that into a shell
+# command line mangles it.  A make variable defined in the makefile beats the
+# same name inherited from the environment, so each recursive sub-make of
+# build-all recomputes this from ITS OWN CFLAGS, which is the whole point.
+BUILD_FLAGS_STAMP = .build-flags
+export TKC_BUILD_FLAGS = $(CC)|$(CFLAGS)|$(REPRO_FLAGS)|$(LDLIBS)|$(SOURCE_DATE_EPOCH)
+
+.PHONY: FORCE
+FORCE:
+
+$(BUILD_FLAGS_STAMP): FORCE
+	@printf '%s\n' "$$TKC_BUILD_FLAGS" | cmp -s - $@ 2>/dev/null \
+	  || { printf '%s\n' "$$TKC_BUILD_FLAGS" > $@; \
+	       echo "build flags changed -- rebuilding all objects"; }
+
+$(OBJS): $(BUILD_FLAGS_STAMP)
+
 # encrypt.c uses __int128 for Ed25519 arithmetic — allowed under GCC but rejected by -Wpedantic
-src/stdlib/encrypt.o: src/stdlib/encrypt.c
+src/stdlib/encrypt.o: src/stdlib/encrypt.c $(BUILD_FLAGS_STAMP)
 	$(CC) $(CFLAGS) $(REPRO_FLAGS) -Wno-pedantic -c -o $@ $<
 
 # ── 135.3a ──────────────────────────────────────────────────────────────────
@@ -244,7 +286,50 @@ conform-sh:
 conform-check:
 	@bash test/run_conform.sh && echo "CONFORMANCE: 100%"
 
-build-all:
+# ── 136.62 exposed this target ──────────────────────────────────────────────
+# Three recursive makes for three --target triples, all writing into the SAME
+# object files.  Before 136.62 gave objects a record of their flags, nothing
+# invalidated them between the three, so sub-makes 2 and 3 found the host
+# objects newer than their sources and did nothing.  MEASURED 2026-09-23 on an
+# up-to-date tree: `make build-all` finished in 0.74s, ran ZERO compile
+# commands, and exited 0.  AGENTS.md §14 asks contributors to report
+# "make build-all: success on x86-64 and ARM64"; that is what "success" meant.
+#
+# With the flag stamp in place it does recompile, and then fails honestly:
+# the two Linux triples need a sysroot this macOS host does not have
+# (`fatal error: 'stdio.h' file not found`).  The target has never
+# cross-compiled anything here.  build-preflight below says so by name rather
+# than letting it surface as a missing libc header; fixing it needs a real
+# sysroot (or a container), and per-triple object directories so the three
+# builds stop overwriting each other and the host build.  Reported, not
+# papered over.
+.PHONY: build-preflight
+build-preflight:
+	@bad=""; \
+	for t in x86_64-linux-gnu aarch64-linux-gnu aarch64-apple-macos; do \
+	  printf '#include <stdio.h>\nint main(void){return 0;}\n' > /tmp/tkc_triple_probe.c; \
+	  $(CC) --target=$$t -c -o /tmp/tkc_triple_probe.o /tmp/tkc_triple_probe.c \
+	    >/dev/null 2>&1 || bad="$$bad $$t"; \
+	done; \
+	rm -f /tmp/tkc_triple_probe.c /tmp/tkc_triple_probe.o; \
+	if [ -n "$$bad" ]; then \
+	  echo "" >&2; \
+	  echo "ERROR: build-all cannot cross-compile for:$$bad" >&2; \
+	  echo "" >&2; \
+	  echo "  $(CC) accepts the --target flag but has no sysroot for these" >&2; \
+	  echo "  triples, so the build fails on the first system header." >&2; \
+	  echo "  This is not new: until story 136.62 nothing invalidated the" >&2; \
+	  echo "  objects between the three sub-makes, so build-all compiled" >&2; \
+	  echo "  NOTHING and exited 0.  Do not report 'build-all: success'" >&2; \
+	  echo "  from a host where this preflight fails." >&2; \
+	  echo "" >&2; \
+	  echo "  Needs a sysroot for each triple, and per-triple object dirs" >&2; \
+	  echo "  so the three builds stop overwriting each other." >&2; \
+	  echo "" >&2; \
+	  exit 1; \
+	fi
+
+build-all: build-preflight
 	$(MAKE) CC=cc CFLAGS="$(CFLAGS) --target=x86_64-linux-gnu"
 	$(MAKE) CC=cc CFLAGS="$(CFLAGS) --target=aarch64-linux-gnu"
 	$(MAKE) CC=cc CFLAGS="$(CFLAGS) --target=aarch64-apple-macos"
@@ -948,7 +1033,7 @@ test-standalone: $(BIN)
 # were `-include`d on the next build describing a different commit's
 # include graph.  `clean` now means clean.
 clean:
-	rm -f $(OBJS:.o=.d)
+	rm -f $(OBJS:.o=.d) $(BUILD_FLAGS_STAMP)
 	rm -f $(OBJS) $(BIN) tkc test/stdlib/test_str test/stdlib/test_db \
 	    test/stdlib/test_process test/stdlib/test_env test/stdlib/test_crypto \
 	    test/stdlib/test_time test/stdlib/test_tktest test/stdlib/test_log \
