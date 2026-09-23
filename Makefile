@@ -557,7 +557,7 @@ asan-clean:
 	@$(MAKE) --no-print-directory clean >/dev/null
 
 # The compiler itself, instrumented, driven through the conformance suite.
-test-asan-compiler:
+test-asan-compiler: asan-selftest
 	@echo "=== ASAN/UBSAN: tkc through the conformance suite ==="
 	$(MAKE) HARDEN=0 CFLAGS="$(SAN_CFLAGS)" $(BIN)
 	$(MAKE) HARDEN=0 CFLAGS="$(SAN_CFLAGS)" conform
@@ -594,7 +594,35 @@ ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-json test-stdlib-encoding \
 #       in SHIPPING code -- src/stdlib/tk_time.c:423-428 and
 #       src/stdlib/db_postgres.c:37 -- which no gate in this repository looks
 #       at for the same reason. Re-add this target when they are dealt with.
-test-asan-stdlib:
+# The negative control, run FIRST and never behind a flag: a planted
+# heap-use-after-free that this build configuration must catch. Without it,
+# "0 findings" and "the instrumentation never made it into the binary" are
+# the same output.
+.PHONY: asan-selftest
+asan-selftest:
+	@echo "=== ASAN self-test: the detector must catch a planted defect ==="
+	@$(CC) $(SAN_CFLAGS) -o /tmp/tkc_asan_selftest scripts/asan_selftest.c
+	@/tmp/tkc_asan_selftest > /tmp/tkc_asan_selftest.log 2>&1; rc=$$?; \
+	 if [ $$rc -ne 0 ] && \
+	    grep -a -q 'ERROR: AddressSanitizer: heap-use-after-free' \
+	      /tmp/tkc_asan_selftest.log; then \
+	   echo "  ok  planted use-after-free was caught:"; \
+	   sed -n '/ERROR: AddressSanitizer/p' /tmp/tkc_asan_selftest.log \
+	     | head -1 | sed 's/^/      /'; \
+	 else \
+	   echo ""; \
+	   echo "  exit=$$rc, and the AddressSanitizer banner is $$(grep -a -c \
+	     'ERROR: AddressSanitizer' /tmp/tkc_asan_selftest.log) line(s) of the output:"; \
+	   cat /tmp/tkc_asan_selftest.log | sed 's/^/      /'; \
+	   echo ""; \
+	   echo "ASAN SELF-TEST DID NOT FIRE -- refusing to report on a build"; \
+	   echo "whose sanitizer has not been seen to work. Nothing below ran."; \
+	   rm -f /tmp/tkc_asan_selftest /tmp/tkc_asan_selftest.log; \
+	   exit 1; \
+	 fi
+	@rm -f /tmp/tkc_asan_selftest /tmp/tkc_asan_selftest.log
+
+test-asan-stdlib: asan-selftest
 	@echo "=== ASAN/UBSAN: stdlib C unit tests ==="
 	@fail=0; total=0; \
 	for t in $(ASAN_STDLIB_TARGETS); do \
