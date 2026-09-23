@@ -60,6 +60,10 @@
 #   4. A NEGATIVE CONTROL for case 3 — a deliberately corrupted replacement
 #      must make it go red. A gate over 200-odd files that has never been
 #      seen to fail is not evidence.
+#   5. --fix MUST NOT STOP SHORT IN SILENCE. The 16-round cap is a fair loop
+#      guard; reaching it without saying so contradicts this function's own
+#      "a second --fix is a no-op". Case 5c is the control that stops the
+#      note from being printed unconditionally.
 #
 # Stories: 127.137, 127.138
 
@@ -318,6 +322,44 @@ read -r C_CHECKED C_MISMATCH C_BROKEN <<< "$(sweep "${WORK}/control.txt" corrupt
 expect "4b-control-gate-goes-red" \
     "$([ "${C_MISMATCH}" -gt 0 ] && echo red || echo green)" "red"
 echo "      (control: ${C_MISMATCH} of ${C_CHECKED} mismatched, ${C_BROKEN} stopped compiling)"
+
+# ── 5. --fix must not stop short in silence ─────────────────────────────
+#
+# Each round applies at most one fix per overlapping group, so a chain of N
+# single-use bindings needs N rounds, and src/main.c caps the loop at 16 after
+# the first application. The cap is a fair loop guard. Reaching it silently is
+# not: run_lint_mode's own contract says "the cycle repeats until no fix
+# applies (so a second --fix is a no-op)", and anything that ran --fix once and
+# believed that got a partially fixed file with no indication. Measured before
+# the fix: 22 chained bindings, one --fix, 5 left, exit 0, stderr silent.
+
+python3 - "${WORK}/chain.tk" <<'GEN'
+import sys
+n = 22
+L = ["m=t;", "f=main():i64{"]
+L += ["  let v%d=%d;" % (i, i) for i in range(n)]
+L += ["  <" + "+".join("v%d" % i for i in range(n)), "};"]
+open(sys.argv[1], "w").write("\n".join(L) + "\n")
+GEN
+
+cp "${WORK}/chain.tk" "${WORK}/chain_fixed.tk"
+chain_err="$("${TKC}" --lint --fix "${WORK}/chain_fixed.tk" 2>&1 >/dev/null)"
+expect "5a-cap-is-reported" \
+    "$(printf '%s' "${chain_err}" | grep -c 'stopped at the .*-round limit' || true)" "1"
+# ...and the note is telling the truth: bindings really are left behind.
+left="$(grep -c 'let v' "${WORK}/chain_fixed.tk" || true)"
+expect "5a-cap-really-was-hit" \
+    "$([ "${left}" -gt 0 ] && echo "left-behind" || echo "none-left")" "left-behind"
+# Running again continues, exactly as the note says.
+"${TKC}" --lint --fix "${WORK}/chain_fixed.tk" >/dev/null 2>&1
+expect "5b-second-run-finishes" "$(grep -c 'let v' "${WORK}/chain_fixed.tk" || true)" "0"
+
+# Control: a file that DOES reach its fixpoint in one run must stay silent,
+# so 5a is measuring the cap and not a note printed unconditionally.
+cp "${WORK}/hint.tk" "${WORK}/short_fixed.tk"
+short_err="$("${TKC}" --lint --fix "${WORK}/short_fixed.tk" 2>&1 >/dev/null)"
+expect "5c-no-note-when-fixpoint-reached" \
+    "$(printf '%s' "${short_err}" | grep -c 'round limit' || true)" "0"
 
 echo "--------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"

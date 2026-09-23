@@ -446,8 +446,18 @@ static int run_lint_mode(const char *path, const char *sbuf, long slen,
     lint_result_free(&lr);
     if (!do_fix) return errors_in_file ? ECOMPILE : 0;
 
-    /* Fixpoint rounds: re-parse and re-lint the rewritten buffer. */
-    int round = 0, ok = 1;
+    /* Fixpoint rounds: re-parse and re-lint the rewritten buffer.
+     *
+     * 127.137 (found while gating 127.138): the round cap is a legitimate
+     * loop guard, but until now hitting it was SILENT. Each round applies at
+     * most one fix per overlapping group, so a chain of N single-use bindings
+     * needs N rounds: measured 2026-09-24, a file with 22 of them came back
+     * from one `--lint --fix` with 5 still in it, and a second invocation
+     * removed those — while the function's own contract says "the cycle
+     * repeats until no fix applies (so a second --fix is a no-op)". Anything
+     * that ran --fix once and believed that got a partially fixed file and no
+     * indication of it. The cap stays; reaching it is now reported. */
+    int round = 0, ok = 1, reached_fixpoint = 0;
     while (total_applied > 0 && ok && round < 16) {
         round++;
         Arena *ar = arena_init();
@@ -476,9 +486,13 @@ static int run_lint_mode(const char *path, const char *sbuf, long slen,
         lint_result_free(&lr2);
         arena_free(ar);
         if (applied < 0) { ok = 0; rc = EINTERNAL; break; }
-        if (applied == 0) break;
+        if (applied == 0) { reached_fixpoint = 1; break; }
         total_applied += applied;
     }
+    if (ok && total_applied > 0 && !reached_fixpoint)
+        fprintf(stderr, "tkc: note: --fix stopped at the %d-round limit before "
+                        "no fixes remained in %s; run it again to continue\n",
+                round, path);
 
     if (ok && total_applied > 0) {
         if (dry_run) {
