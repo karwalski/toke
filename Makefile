@@ -90,7 +90,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-tki-names check-patterns render-patterns check-error-codes check-glue-core check-parallel-stdlib check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-parallel-stdlib check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -250,6 +250,21 @@ render-tki-quarantine:
 check-tki-names:
 	python3 scripts/check_tki_nameable.py
 
+# 136.43 — three sibling repos were found holding a staged revert of the Gate 1
+# correction, each with a worktree identical to HEAD, so the file on disk looked
+# untouched and only `git diff --cached` showed what a bare `git commit` would
+# land. Three of exactly that shape DID fire on 2026-09-21. §12.4's pathspec
+# commit protects the paths you name and not a bare commit at all, and no other
+# gate reads the index.
+check-index:
+	python3 scripts/check_clean_index.py
+
+# The cross-repo form, for a periodic sweep: the three that were found were in
+# three DIFFERENT repositories, so checking only this one would have missed all
+# of them.
+check-index-all:
+	python3 scripts/check_clean_index.py --sweep ..
+
 # 136.50 — a *_glue.c that never #includes its own core's header cannot call
 # anything that core declares, so whatever it returns it did not compute. This
 # is the detector for "the glue returns a plausible value while the C core
@@ -269,7 +284,7 @@ check-glue-core:
 check-parallel-stdlib:
 	python3 scripts/check_parallel_stdlib.py
 
-ci: lint conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
+ci: check-index lint conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
