@@ -673,7 +673,13 @@ test-asan: test-asan-compiler test-asan-stdlib
 # in the pull request that trips it, and a floor of 0 is a gate that cannot
 # fail, which is the thing this wave exists to remove. Raise it when the
 # measured number rises, in a change that says what raised it.
-COVERAGE_MIN ?= 0
+# MEASURED 2026-09-24 on this tree, tkc driven through `make conform`:
+#
+#     regions 34.06%   functions 31.96%   LINES 34.40%   branches 31.12%
+#
+# The floor is the line figure rounded DOWN to a whole number. Raise it when
+# the measured number rises, in a change that says what raised it.
+COVERAGE_MIN ?= 34
 COV_FLAGS     = -fprofile-instr-generate -fcoverage-mapping -O0
 
 # llvm-profdata/llvm-cov are on PATH on the Linux runner and behind xcrun on
@@ -721,11 +727,19 @@ coverage: coverage-preflight
 	@rm -f $(COV_DIR)/*.profraw
 
 check-coverage: coverage
+	@# llvm-cov's TOTAL row is: TOTAL <reg> <missed> <cover%> <fn> <missed>
+	@# <exec%> <lines> <missed> <cover%> <branches> <missed> <cover%>.
+	@# Field 10 is LINE coverage. The first version of this scanned backwards
+	@# for the last field ending in '%' and silently read field 13 -- BRANCH
+	@# coverage, a different and lower number -- while the message beside it
+	@# said "line coverage". Take the column by position, and check the row
+	@# has the shape this assumes.
 	@pct=$$("$(LLVM_COV)" report ./$(BIN) -instr-profile=$(COV_PROFDATA) $(SRCS) \
-	          | awk '/^TOTAL/{ for (i=NF; i>0; i--) if ($$i ~ /%$$/) { gsub(/%/,"",$$i); print $$i; exit } }'); \
+	          | awk '/^TOTAL/{ if (NF != 13) { exit } gsub(/%/,"",$$10); print $$10; exit }'); \
 	if [ -z "$$pct" ]; then \
-	  echo "ERROR: could not read a coverage percentage from llvm-cov." >&2; \
-	  echo "  Not reporting a pass on a number that was never parsed." >&2; \
+	  echo "ERROR: could not read a line-coverage percentage from llvm-cov." >&2; \
+	  echo "  Either there is no TOTAL row, or it does not have the 13 fields" >&2; \
+	  echo "  this parser assumes. Not reporting a pass on an unparsed number." >&2; \
 	  exit 1; \
 	fi; \
 	echo "line coverage: $$pct%   floor: $(COVERAGE_MIN)%"; \
@@ -868,8 +882,11 @@ test-ci-green:
 
 # Expected to fail. Runs so the failures stay visible and so that a target
 # that starts passing can be promoted.
+# No `-` prefix: this reports its real exit status, and the CI job that runs
+# it carries continue-on-error instead. A target that always exits 0 is a
+# target that cannot fail, which is the thing this wave is removing.
 test-ci-known-red:
-	-$(call run_test_list,$(TEST_CI_KNOWN_RED),test-ci-known-red)
+	$(call run_test_list,$(TEST_CI_KNOWN_RED),test-ci-known-red)
 
 test-ci: test-ci-green
 
