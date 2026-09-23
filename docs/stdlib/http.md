@@ -124,7 +124,9 @@ f=main():i64{
 
 ### http.serveworkers(port: u64; workers: u64): void
 
-Starts an HTTP server using a pre-fork worker pool. Passing `workers=1` is equivalent to `http.serve` and runs in a single process; values greater than one fork that many worker processes before accepting connections, which improves throughput on multi-core systems.
+Starts an HTTP server using a pre-fork worker pool. Passing `workers=1` runs in a single process with no fork at all; values greater than one fork that many worker processes before accepting connections, which improves throughput on multi-core systems. Passing `workers=0` auto-detects the CPU count, overridable with the `TK_HTTP_WORKERS` environment variable.
+
+`http.serve(port)` is `http.serveworkers(port;2)`, not the single-process path — so a measurement taken against `http.serve` is a measurement of two processes, and `http.serveworkers(port;1)` is the one to use when you need a single PID to watch.
 
 ```toke
 i=http:std.http;
@@ -143,6 +145,46 @@ f=main():void{
   http.servetls(443;"/etc/certs/server.crt";"/etc/certs/server.key");
 };
 ```
+
+## Abandoned requests
+
+A client that sends a request and goes away before reading the answer is
+ordinary browser behaviour: the browser has read part of a response, the user
+navigates away, the socket closes with data still queued, and the server's
+next write finds the connection reset.
+
+Until story 127.144 that killed the server. Nothing in the runtime suppressed
+`SIGPIPE`, whose default disposition terminates the process, so a single
+abandoned request exited `http.serveworkers(port;1)` and `http.servetls` with
+status 141, and cost `http.serve` a worker — which its supervisor then
+respawned, once per abandoned request. No handler code was involved and no
+configuration avoided it.
+
+Every write to a client socket now goes through one funnel that suppresses the
+signal per socket (`SO_NOSIGPIPE`, on macOS and the BSDs) and per send
+(`MSG_NOSIGNAL`, on Linux), and reports the broken connection as an ordinary
+error instead. `test/conform/S007_http_abandoned_request.sh` drives all three
+serve paths, because all three used to fail differently.
+
+### What servetls does to SIGPIPE on Linux
+
+One gap is not closable per socket or per send: OpenSSL writes the TLS record
+to the socket from inside its own BIO, using `write(2)`, so `MSG_NOSIGNAL`
+never reaches that call — and Linux has no `SO_NOSIGPIPE` to set on the socket
+instead. On a platform in that position, and only there, `http.servetls`
+installs `SIG_IGN` for `SIGPIPE` when it starts.
+
+**This is process-wide, and it is worth knowing about.** After
+`http.servetls` is called, a write to any broken pipe in that process returns
+`EPIPE` instead of terminating it, and because an *ignored* disposition
+survives `execve` as well as `fork`, any child process the server spawns
+inherits it too. A handler that shells out to a pipeline — the classic
+`… | head` shape, which relies on `SIGPIPE` to stop the producer — will see
+the difference.
+
+It is scoped as tightly as it can be: it is installed inside `http.servetls`,
+which never returns, so no program that has not committed to being a TLS
+server is affected, and on macOS and the BSDs it is not installed at all.
 
 ## Rate limiting
 
@@ -195,7 +237,14 @@ f=main():void{
 
 ### http.servedir(prefix: $str; dir: $str): void
 
-Serves files from the local directory `dir` under the URL path prefix `prefix`. Any request to a path beginning with `prefix` resolves the remainder against the filesystem root `dir`. Useful for serving static assets such as CSS, images, or JavaScript.
+Mounts the local directory `dir` under the URL path prefix `prefix`. Any
+request to a path beginning with `prefix` is resolved against `dir`. Useful
+for serving static assets such as CSS, images, or JavaScript.
+
+The request path is appended to `dir` **whole, including the prefix** — so
+`http.servedir("/static";"./public")` serves `/static/style.css` from
+`./public/static/style.css`, not from `./public/style.css`. Lay the directory
+out to match.
 
 ```toke
 i=http:std.http;
@@ -203,6 +252,35 @@ f=main():void{
   http.servedir("/static";"./public");
 };
 ```
+
+### Several mounts
+
+`http.servedir` may be called more than once, and each call is an independent
+mount:
+
+```toke
+f=main():void{
+  http.servedir("/static";"./public");
+  http.servedir("/media";"/var/lib/media");
+  http.serve(8080);
+};
+```
+
+Until story 127.75 this did not work: the prefix and root were a single pair
+of globals that every call overwrote, so every mount but the **last** silently
+stopped resolving — the earlier prefixes answered 404 while the last one
+answered 200, with nothing logged. Mounts are now kept in a table of up to 32,
+matched **longest prefix first**, so a narrower mount nested inside a broader
+one wins:
+
+```toke
+  http.servedir("/static";"./public");
+  http.servedir("/static/vendor";"/opt/vendor-assets");
+```
+
+Re-mounting a prefix that is already mounted replaces that mount's root rather
+than adding a second entry. Mounting a 33rd distinct prefix is refused with a
+message on stderr.
 
 ## Accessor Functions
 
@@ -225,6 +303,47 @@ let ct = http.header(req; "content-type");
 ```
 
 ## Response Constructors
+
+### Who owns the response body
+
+**A `$res` does not own its body.** All four constructors store the pointer
+they are given; nothing copies it and nothing downstream frees it. That is
+deliberate — it is what lets a handler answer with a literal, and it is what
+makes the obvious `:param` handler work:
+
+```toke
+f=greet(req:$req):$res{
+  <http.resok(http.param(req;"name"))
+};
+```
+
+`http.param` hands back memory that belongs to the *request*, which outlives
+the response by construction: the bindings are released only after the
+response, the compression buffer and the access-log line have all been
+written. Freeing them when the handler returned was tried once, under story
+127.72, and every such response came back **empty**.
+
+The rule this implies is only visible from the C side, so it is stated here
+as well. A body is exactly one of:
+
+| Kind | Example | Who releases it |
+|------|---------|-----------------|
+| static storage | a string literal, a MIME-type table entry | nobody; it is never freed |
+| request-owned memory | `http.param`, `http.header` | the request, after the response is written |
+| heap the handler allocated | a file read from disk, a rendered template | the handler, by handing the pointer to `http_defer_free()` in the same breath |
+
+There is no fourth case. A heap body that is not deferred is **leaked** — no
+code path anywhere frees a `$res` body — and until story 127.148 all three
+built-in handlers that build a body on the heap did exactly that:
+`http.servedir` leaked the whole file on every request, `http.servepages`
+leaked every rendered page, and the vhost static handler leaked the file plus
+its header block despite `router_static_serve`'s own written contract saying
+the caller must free them. A 64 KiB asset cost 81,920 bytes of heap per
+request; it now costs zero, measured by
+`test/conform/S009_http_res_body_ownership.sh`.
+
+This only concerns code that writes a handler in C. A toke handler returning
+`http.resok(...)` is always in one of the first two rows.
 
 ### http.$res.ok(body: $str): $res
 

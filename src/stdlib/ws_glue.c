@@ -6,6 +6,8 @@
  */
 #include "ws.h"
 #include "capabilities.h"   /* 124.4c: net capability gate */
+#include "tk_array.h"    /* 127.145: record/array backing blocks */
+#include "bytes_rt.h"    /* 127.145: [byte] marshalling */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,23 +42,65 @@ int64_t tk_ws_send_w(int64_t conn, int64_t msg) {
     return r.is_err ? -1 : 0;
 }
 
+/*
+ * 127.145 — ws.recv is declared `$wsconn -> $wsmsg!$wserr` and returned a
+ * bare `char *`.
+ *
+ * THE DEFECT.  This wrapper copied the frame payload into a NUL-terminated
+ * string and handed the string pointer back as the `$ok` arm.  A toke
+ * `$wsmsg` is a three-slot record, so `msg.payload` GEP'd slot 0 of a char
+ * buffer and loaded it as a pointer: SIGBUS, exit 138, verified against a
+ * live WebSocket server with a clean handshake and "hello" delivered.  The
+ * Combined Example in docs/stdlib/ws.md did exactly that, so the documented
+ * way to use the module crashed.
+ *
+ * Same family as 127.112 and pointing the other way: there a fabricated toke
+ * struct was read as a C handle, here a C string was handed out as a toke
+ * struct.  Both are the interface and the runtime disagreeing about what
+ * crosses the boundary, and in both directions the answer is to make the
+ * runtime keep the interface's promise.
+ *
+ * WHY A REAL $wsmsg AND NOT `str!$wserr`.  Narrowing the declared type would
+ * have matched the defect instead of fixing it, and it would have made three
+ * losses permanent.  `fin` and `opcode` are protocol facts the interface
+ * already promises and a fragmented or control-frame-aware client needs.
+ * Worse, the old code returned 0 — indistinguishable from the `$err` arm —
+ * for EVERY non-text frame, so `ws.sendbytes` existed with no way to receive
+ * what it sends, and an empty text frame was reported as a failure.  The ABI
+ * to do it properly was already in the tree and already exercised:
+ * `time.toparts` builds a record as an i64-slot block (one slot per field, in
+ * declaration order) and `tk_bytes_pack` builds a `[byte]` as an i64 array.
+ *
+ * Slot order is stdlib/ws.tki's field order: payload, fin, opcode.
+ */
 int64_t tk_ws_recv_w(int64_t conn) {
     WsConn *c = ws_handle(conn);
     if (!c) return 0;
     WsRecvResult r = ws_recv(c);
     if (r.is_err || !r.frame) return 0;
-    /* Return the payload as a string (for text frames) */
-    if (r.frame->opcode == WS_TEXT && r.frame->payload && r.frame->payload_len > 0) {
-        char *s = (char *)malloc(r.frame->payload_len + 1);
-        if (s) {
-            memcpy(s, r.frame->payload, r.frame->payload_len);
-            s[r.frame->payload_len] = '\0';
-            ws_frame_free(r.frame);
-            return (int64_t)(intptr_t)s;
-        }
+
+    /* Binary-safe: a [byte] is an i64 array, so an embedded NUL is data.
+     * A zero-length payload still yields a real, empty array handle — it is
+     * an empty message, not an error. */
+    int64_t payload = tk_bytes_pack(r.frame->payload,
+                                    r.frame->payload ? r.frame->payload_len : 0);
+    if (!payload) { ws_frame_free(r.frame); return 0; }
+
+    int64_t msg = tk_arr_alloc(3, 3);
+    if (!msg) {
+        /* The payload block was never published, so release it rather than
+         * leaving it behind on the OOM path. */
+        free((int64_t *)(intptr_t)payload - TK_ARR_HDR);
+        ws_frame_free(r.frame);
+        return 0;
     }
+    int64_t *slot = (int64_t *)(intptr_t)msg;
+    slot[0] = payload;                            /* payload : @($byte) */
+    slot[1] = r.frame->is_final ? 1 : 0;          /* fin     : bool     */
+    slot[2] = (int64_t)r.frame->opcode;           /* opcode  : u64      */
+
     ws_frame_free(r.frame);
-    return 0;
+    return msg;
 }
 
 int64_t tk_ws_close_w(int64_t conn) {
@@ -81,8 +125,6 @@ int64_t tk_ws_close_w(int64_t conn) {
  * and the caller took the $err arm, so nulls are compacted out first rather
  * than handed to ws_send.
  */
-#include "tk_array.h"
-
 int64_t tk_ws_broadcast_w(int64_t conns, int64_t text) {
     if (!conns || !text) return 0;
     int64_t n = tk_arr_len(conns);

@@ -31,6 +31,101 @@
 #include <openssl/err.h>
 #endif
 
+/* ── SIGPIPE: a client that leaves must not kill the server (127.144) ─ */
+
+/*
+ * THE DEFECT.  Nothing in src/ mentioned SIGPIPE, SO_NOSIGPIPE or
+ * MSG_NOSIGNAL — zero occurrences in the whole tree — so every write to a
+ * client socket carried the default disposition, which terminates the
+ * process.  One client that sends a request and resets before reading is
+ * enough.  Measured on this tree, macOS/arm64, one abandoned request:
+ *
+ *   http.serveworkers(p;1)   SERVER EXIT=141          (128+SIGPIPE)
+ *   http.servetls(p;…)       SERVER EXIT=141
+ *   http.serve(p)            parent survives; BOTH worker pids replaced —
+ *                            one worker killed per abandoned request, and
+ *                            the supervisor respawns into the next one.
+ *
+ * This is what a browser does on navigation: it has read part of a response,
+ * the user clicks away, the socket closes with data still queued, and the
+ * peer sees RST.  It also corrupted the 127.72 leak measurement, because a
+ * worker that is killed and respawned carries its leaked memory away with it.
+ *
+ * THE CHOICE, AND WHY.  Three mechanisms were on the table.
+ *
+ *   signal(SIGPIPE, SIG_IGN) at init — rejected as the primary mechanism.
+ *     It is process-wide: it changes the error path of every write in every
+ *     toke program, not just the server's.  A program that writes to a
+ *     closed pipe would stop dying and start looping on EPIPE, and because
+ *     an *ignored* disposition survives execve() as well as fork(), every
+ *     child a toke program spawns would inherit it too.  That is a language-
+ *     wide semantic change to pay for a server bug.
+ *
+ *   SO_NOSIGPIPE on the accepted socket — the primary mechanism where it
+ *     exists (macOS and the BSDs).  It is per-socket, so nothing outside the
+ *     connection is affected, and because it is a socket property it also
+ *     covers writes this file does not make: OpenSSL's BIO writes through
+ *     plain write(2), and SO_NOSIGPIPE covers those too.
+ *
+ *   MSG_NOSIGNAL on each send — the primary mechanism on Linux, which has no
+ *     SO_NOSIGPIPE.  It is per-call, so it only covers calls we make.
+ *
+ * So: both, applied together, and http_write_all is the single funnel that
+ * carries the flag.  The one gap the pair cannot close is OpenSSL's own
+ * write(2) on a platform without SO_NOSIGPIPE — i.e. TLS on Linux.  There,
+ * and only there, SIGPIPE is set to SIG_IGN, and only from inside
+ * http_serve_tls_workers(), which never returns.  The cost is stated in
+ * docs/stdlib/http.md under "What servetls does to SIGPIPE on Linux".
+ */
+
+#ifdef MSG_NOSIGNAL
+#define HTTP_SEND_FLAGS MSG_NOSIGNAL
+#else
+#define HTTP_SEND_FLAGS 0
+#endif
+
+void http_sock_nosigpipe(int fd)
+{
+#ifdef SO_NOSIGPIPE
+    int on = 1;
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
+#else
+    (void)fd;
+#endif
+}
+
+/*
+ * http_write_all — write the whole buffer to a client socket, never raising
+ * SIGPIPE, and never reporting a short write as success.
+ *
+ * send() rather than write() so MSG_NOSIGNAL can be passed.  http_handle_fd()
+ * is an embedding/test hook that is also handed pipes and regular files, on
+ * which send() fails with ENOTSOCK — that one errno falls back to write(),
+ * which is safe because a non-socket cannot be the RST case this exists for.
+ *
+ * Returns the byte count on success and -1 on error (EPIPE, ECONNRESET);
+ * errno is left set.  Partial writes are retried: a blocking socket
+ * interrupted by a signal can return short, and the previous code treated
+ * every write() as complete.
+ */
+ssize_t http_write_all(int fd, const void *buf, size_t len)
+{
+    const char *p   = (const char *)buf;
+    size_t      off = 0;
+    while (off < len) {
+        ssize_t n = send(fd, p + off, len - off, HTTP_SEND_FLAGS);
+        if (n < 0 && errno == ENOTSOCK)
+            n = write(fd, p + off, len - off);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (n == 0) return -1;
+        off += (size_t)n;
+    }
+    return (ssize_t)off;
+}
+
 /* ── Graceful shutdown flag (Story 27.1.10) ─────────────────────────── */
 
 static volatile sig_atomic_t g_shutdown_requested = 0;
@@ -215,7 +310,16 @@ void http_free_params(StrPair *out, int *cnt)
  * to write, which is the exact failure this list exists to prevent; a bounded
  * leak on an unreachable path is the cheaper of the two.
  */
-#define HTTP_MAX_DEFERRED (4 * HTTP_MAX_PARAMS)
+/*
+ * 127.148 raised this.  The 4 x HTTP_MAX_PARAMS above is exactly what the
+ * two parameter blocks can produce, with nothing left over, so the moment a
+ * handler started handing its response body to this list as well the worst
+ * case could overflow and silently DROP — i.e. leak — the body.  The extra
+ * 16 slots are the per-request handler budget: the largest producer is the
+ * vhost static handler at nine pointers (body, five header values, two
+ * header arrays, the StrPair block).
+ */
+#define HTTP_MAX_DEFERRED (4 * HTTP_MAX_PARAMS + 16)
 
 static void *g_deferred[HTTP_MAX_DEFERRED];
 static int   g_deferred_n;
@@ -493,19 +597,19 @@ int http_chunked_write(int fd, const char *data, size_t len, size_t chunk_size)
         char hdr[32];
         int hl = snprintf(hdr, sizeof(hdr), "%zx\r\n", csz);
         if (hl < 0) return -1;
-        if (write(fd, hdr, (size_t)hl) < 0) return -1;
+        if (http_write_all(fd, hdr, (size_t)hl) < 0) return -1;
 
         /* Write chunk data */
-        if (write(fd, data + off, csz) < 0) return -1;
+        if (http_write_all(fd, data + off, csz) < 0) return -1;
 
         /* Write chunk trailer \r\n */
-        if (write(fd, "\r\n", 2) < 0) return -1;
+        if (http_write_all(fd, "\r\n", 2) < 0) return -1;
 
         off += csz;
     }
 
     /* Terminating chunk */
-    if (write(fd, "0\r\n\r\n", 5) < 0) return -1;
+    if (http_write_all(fd, "0\r\n\r\n", 5) < 0) return -1;
 
     return 0;
 }
@@ -667,7 +771,7 @@ static void write_res_headers(int fd, Res res)
         if (!k || !v) continue;
         char line[512];
         int ln = snprintf(line, sizeof(line), "%s: %s\r\n", k, v);
-        if (ln > 0) write(fd, line, (size_t)ln);
+        if (ln > 0) http_write_all(fd, line, (size_t)ln);
     }
 }
 
@@ -678,7 +782,7 @@ static void write_security_headers(int fd)
         "X-Content-Type-Options: nosniff\r\n"
         "X-Frame-Options: DENY\r\n"
         "Referrer-Policy: strict-origin-when-cross-origin\r\n";
-    write(fd, hdrs, sizeof(hdrs) - 1);
+    http_write_all(fd, hdrs, sizeof(hdrs) - 1);
 }
 
 /*
@@ -718,7 +822,7 @@ static void write_cors_headers_for(int fd, const char *matched_origin)
         "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
         "Vary: Origin\r\n",
         matched_origin);
-    if (n > 0) write(fd, buf, (size_t)n);
+    if (n > 0) http_write_all(fd, buf, (size_t)n);
 }
 static void write_cors_headers(int fd) { write_cors_headers_for(fd, g_cors_matched); }
 
@@ -733,11 +837,11 @@ static void send_response(int fd, Res res, int keep_alive) {
             "Transfer-Encoding: chunked\r\n"
             "Connection: %s\r\n",
             res.status, reason(res.status), conn_hdr);
-        write(fd, hdr, (size_t)hl);
+        http_write_all(fd, hdr, (size_t)hl);
         write_res_headers(fd, res);
         write_security_headers(fd);
         write_cors_headers(fd);
-        write(fd, "\r\n", 2);
+        http_write_all(fd, "\r\n", 2);
         /* Default chunk size: 4096 bytes */
         http_chunked_write(fd, res.body, strlen(res.body), 4096);
     } else {
@@ -749,12 +853,12 @@ static void send_response(int fd, Res res, int keep_alive) {
             "Content-Length: %zu\r\n"
             "Connection: %s\r\n",
             res.status, reason(res.status), bl, conn_hdr);
-        write(fd, hdr, (size_t)hl);
+        http_write_all(fd, hdr, (size_t)hl);
         write_res_headers(fd, res);
         write_security_headers(fd);
         write_cors_headers(fd);
-        write(fd, "\r\n", 2);
-        if (bl) write(fd, res.body, bl);
+        http_write_all(fd, "\r\n", 2);
+        if (bl) http_write_all(fd, res.body, bl);
     }
 }
 
@@ -921,6 +1025,10 @@ static void handle_connection(int fd)
     char client_ip[64];
     fd_peer_ip(fd, client_ip, sizeof client_ip);
 
+    /* 127.144: before anything is written to this socket.  A peer that
+     * resets mid-response must give us EPIPE, not a fatal signal. */
+    http_sock_nosigpipe(fd);
+
     /* 127.60: the per-IP rate limiter that stood here is gone — see the note
      * where it was defined.  Rate limiting belongs in front of the server. */
 
@@ -1080,7 +1188,7 @@ static void handle_connection(int fd)
                     "HTTP/1.1 101 Switching Protocols\r\n"
                     "Connection: Upgrade\r\n"
                     "Upgrade: h2c\r\n\r\n";
-                write(fd, resp101, strlen(resp101));
+                http_write_all(fd, resp101, strlen(resp101));
                 handle_h2_connection(fd, NULL, client_ip);
                 free_req(&req);                 /* 127.65 */
                 free(raw);
@@ -1218,11 +1326,11 @@ static void handle_connection(int fd)
                 "Content-Length: %zu\r\n"
                 "Connection: %s\r\n",
                 res.status, reason(res.status), head_body_len, conn_hdr);
-            write(fd, hdr, (size_t)hl);
+            http_write_all(fd, hdr, (size_t)hl);
             write_res_headers(fd, res);
             write_security_headers(fd);
             write_cors_headers(fd);
-            write(fd, "\r\n", 2);
+            http_write_all(fd, "\r\n", 2);
             /* No body for HEAD */
             log_request(client_ip, &req, res.status, head_body_len);
         }
@@ -1242,12 +1350,12 @@ static void handle_connection(int fd)
                 "Vary: Accept-Encoding\r\n"
                 "Connection: %s\r\n",
                 res.status, reason(res.status), gz_len, conn_hdr);
-            write(fd, hdr, (size_t)hl);
+            http_write_all(fd, hdr, (size_t)hl);
             write_res_headers(fd, res);
             write_security_headers(fd);
             write_cors_headers(fd);
-            write(fd, "\r\n", 2);
-            write(fd, gz_buf, gz_len);
+            http_write_all(fd, "\r\n", 2);
+            http_write_all(fd, gz_buf, gz_len);
             log_request(client_ip, &req, res.status, gz_len);
             free(gz_buf);
         } else {
@@ -4078,6 +4186,12 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
     char client_ip[64];
     fd_peer_ip(fd, client_ip, sizeof client_ip);
 
+    /* 127.144: before SSL_accept, so the handshake's own writes are covered
+     * too.  OpenSSL writes through write(2), which MSG_NOSIGNAL cannot
+     * reach — on macOS/BSD this socket option is what protects the TLS
+     * path; see http_serve_tls_workers for what happens where it is absent. */
+    http_sock_nosigpipe(fd);
+
     /* Set socket timeouts BEFORE SSL_accept to prevent workers from
      * blocking indefinitely on incomplete TLS handshakes (e.g., port
      * scanners, bots sending plaintext to TLS port). */
@@ -4505,6 +4619,34 @@ TkHttpErr http_serve_tls_workers(TkHttpRouter *r, const char *host,
                                   uint64_t nworkers)
 {
     if (!tls) return TK_HTTP_ERR_BIND;
+
+#ifndef SO_NOSIGPIPE
+    /*
+     * 127.144 — the one gap the per-socket/per-send pair cannot close.
+     *
+     * OpenSSL writes the record to the socket with write(2) from inside its
+     * own BIO, so MSG_NOSIGNAL never reaches that call, and this platform has
+     * no SO_NOSIGPIPE to set on the socket instead.  Linux with TLS is
+     * therefore the only configuration left where an abandoned request still
+     * kills the process — measured at exit 141 — and the only remaining
+     * remedy is the process-wide disposition.
+     *
+     * It is installed HERE, not at program init: http_serve_tls_workers()
+     * does not return, so the change is scoped to a process that has already
+     * committed to being a TLS server.  The cost is real and is documented:
+     * writes to any broken pipe in this process, and in any child it execs,
+     * now return EPIPE instead of terminating it.  Nothing else in the
+     * runtime relies on SIGPIPE's default disposition, but a handler that
+     * shells out to a pipeline will see the difference.
+     */
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof sa);
+        sa.sa_handler = SIG_IGN;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGPIPE, &sa, NULL);
+    }
+#endif
 
     if (nworkers <= 1) {
         int srv = bind_listen(host, port);

@@ -39,12 +39,20 @@ functions; do not construct one and do not rely on its fields.
 | fin | bool | Whether this is the final fragment |
 | opcode | u64 | WebSocket frame opcode (1=text, 2=binary) |
 
-> **Do not read these fields yet.** `ws.recv` is declared to return
-> `$wsmsg!$wserr`, but the runtime does not currently return a `$wsmsg` —
-> reading `msg.payload` off the result traps (SIGBUS, exit 138), verified
-> against a live WebSocket server. Until that is resolved, match on `ws.recv`
-> to learn whether a message arrived; do not dereference the value. The
-> examples below are written that way. This is a defect, not a design.
+`ws.recv` returns one of these for every frame it receives, text or binary.
+`payload` holds the raw bytes — binary-safe, so an embedded `0x00` is data and
+not a terminator — `opcode` is 1 for a text frame and 2 for a binary one, and
+`fin` says whether this frame completes the message.
+
+> **This was a defect until story 127.145, and the fix is worth knowing
+> about.** `ws.recv` was declared to return `$wsmsg!$wserr` and the runtime
+> handed back a bare string pointer instead, so reading `msg.payload` off the
+> result trapped — SIGBUS, exit 138, verified against a live WebSocket server
+> with a clean handshake and `"hello"` delivered. The Combined Example below
+> did exactly that, so the documented way to use the module crashed. It also
+> meant every non-text frame came back as the `$err` arm, indistinguishable
+> from a real failure: `ws.sendbytes` existed with no way to receive what it
+> sends. Both are fixed; the fields below are now real and safe to read.
 
 ### $wserr
 
@@ -77,6 +85,7 @@ Leave, reporting the failure:
 ```toke
 m=app;
 i=ws:std.ws;
+i=io:std.io;
 i=log:std.log;
 
 f=fail(msg:$str):i64{
@@ -102,6 +111,7 @@ and let the decision belong to whoever can actually make it.
 ```toke
 m=app;
 i=ws:std.ws;
+i=io:std.io;
 i=log:std.log;
 
 f=fail(msg:$str):i64{
@@ -112,17 +122,23 @@ f=fail(msg:$str):i64{
 f=main():i64{
   let conn=mt ws.connect("ws://localhost:8080/chat"){$ok:c c;$err:e <fail("ws.connect failed")};
   mt ws.send(conn;"hello"){$ok:v v;$err:e log.warn("send failed";@())};
-  mt ws.recv(conn){$ok:m log.info("got a message";@());$err:e log.warn("recv failed";@())};
+  let n=mt ws.recv(conn){$ok:m m.payload.len;$err:e 0-1};
+  io.println(n as $str);
   ws.close(conn);
   <0
 };
 ```
+
+`m.payload` is the frame's bytes and `m.payload.len` its length; `m.opcode`
+distinguishes a text frame (1) from a binary one (2), and `m.fin` says whether
+the message is complete.
 
 ## Combined Example
 
 ```toke
 m=app;
 i=ws:std.ws;
+i=io:std.io;
 i=log:std.log;
 
 f=fail(msg:$str):i64{
@@ -134,7 +150,8 @@ f=main():i64{
   let conn=mt ws.connect("ws://localhost:8080/echo"){$ok:c c;$err:e <fail("ws.connect failed")};
 
   mt ws.send(conn;"ping"){$ok:v v;$err:e log.warn("send failed";@())};
-  mt ws.recv(conn){$ok:m log.info("echo received";@());$err:e log.warn("recv failed";@())};
+  let echoed=mt ws.recv(conn){$ok:m m.payload.len;$err:e 0-1};
+  io.println(echoed as $str);
 
   let c2=mt ws.connect("ws://localhost:8080/echo"){$ok:c c;$err:e <fail("second ws.connect failed")};
   ws.broadcast(@(conn;c2);"bye");

@@ -552,7 +552,9 @@ Res proxy_forward(ProxyUpstream *up, Req req, const char *client_ip)
     wtv.tv_usec = 0;
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &wtv, sizeof(wtv));
 
-    ssize_t sent = write(fd, req_str, strlen(req_str));
+    /* 127.144: a backend that resets mid-write must give us EPIPE. */
+    http_sock_nosigpipe(fd);
+    ssize_t sent = http_write_all(fd, req_str, strlen(req_str));
     free(req_str);
 
     if (sent <= 0) {
@@ -626,7 +628,8 @@ int proxy_health_probe(ProxyBackend *b, const char *path, int timeout)
              "Connection: close\r\n\r\n",
              path, b->host, b->port);
 
-    write(fd, req, strlen(req));
+    http_sock_nosigpipe(fd);            /* 127.144 */
+    http_write_all(fd, req, strlen(req));
 
     struct timeval tv;
     tv.tv_sec = timeout;

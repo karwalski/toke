@@ -13,6 +13,7 @@
  */
 
 #include "http2.h"
+#include "http.h"   /* 127.144: http_write_all */
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -40,7 +41,10 @@ static ssize_t h2_write(int fd, void *ssl, const uint8_t *buf, size_t len)
     if (ssl) return SSL_write((SSL *)ssl, buf, (int)len);
 #endif
     (void)ssl;
-    return write(fd, buf, len);
+    /* 127.144: the cleartext-h2 path writes to a client socket, so it goes
+     * through the same funnel as every other response write — a peer that
+     * resets mid-frame must give us EPIPE, not a fatal signal. */
+    return http_write_all(fd, buf, len);
 }
 
 /* Read exactly n bytes. Returns 0 on success, -1 on error/EOF. */
