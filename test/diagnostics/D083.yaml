@@ -18,7 +18,10 @@ input: |
     <r.len+q.len+v.len(h)+grow(r;1).len
   };
 flags: --lint
-expected_exit_code: 0
+# 127.137: `discarded-value-result` is severity "error"; since 2026-09-24
+# `--lint` exits non-zero when one is left standing, so the exit code and the
+# severity field finally agree. This case asserts the new contract.
+expected_exit_code: 1
 expected_error_codes: ["discarded-value-result"]
 expected_diag_field:
   field: severity
