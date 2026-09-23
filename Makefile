@@ -65,6 +65,26 @@ STDLIB_SRCS = \
 
 SRCS    += $(STDLIB_SRCS)
 OBJS    = $(SRCS:.c=.o)
+
+# ── Story 135.3a: what gets STATICALLY ANALYSED is not what gets LINKED ──────
+#
+# $(SRCS) is the LINK set for tkc: the compiler plus the 28-module curated
+# subset above.  Using it as the ANALYSIS set left the other 104 files in
+# src/stdlib/ analysed by nothing and compiled under -Werror by nothing --
+# tkc builds them at PROGRAM link time, host-only, with clang's default
+# warning level.  Six of them do not survive -Wall -Wextra -Wpedantic -Werror
+# even on the host; the #else branch of every platform conditional in them is
+# built by no gate on any platform.  (C033 compiles exactly one such file,
+# src/stdlib/ocr.c, with -U__APPLE__, and says so in its own comment.)
+#
+# 127.99's rule -- the module manifest in src/stdlib_deps.c states what the
+# standard library IS, never a directory glob -- governs the LINK set and is
+# unchanged.  A glob is the right thing HERE and only here: analysis coverage
+# should include every file present, including one the manifest has not
+# reached yet.  A file this glob picks up that the manifest does not name is
+# a file nothing ships, which T004 already catches.
+ANALYZE_SRCS = $(sort $(SRCS) $(wildcard src/stdlib/*.c))
+
 LDLIBS  = -lm -lz -lpthread
 BIN     = toke
 
@@ -90,7 +110,7 @@ export SOURCE_DATE_EPOCH ?= 0
 RUN_TEST_TIMEOUT ?= 180
 RUN_TEST = $(CURDIR)/test/run_test.sh $(RUN_TEST_TIMEOUT)
 
-.PHONY: all vendor-check clean lint conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-parallel-stdlib check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
+.PHONY: all vendor-check clean lint lint-nonhost lint-report conform conform-sh conform-check build-all ci check-docs render-tki-quarantine check-tki-names check-index check-index-all check-patterns render-patterns check-error-codes check-glue-core check-parallel-stdlib check-metrics check-canonical check-claims-all diff-codegen diff-codegen-record test-e2e test-companion test-companion-diff test-migrate verify-ir stress test-stdlib test-stdlib-process test-stdlib-ambient test-stdlib-env test-stdlib-crypto test-stdlib-auth test-stdlib-time test-stdlib-test test-stdlib-log test-stdlib-coverage test-stdlib-dataframe test-stdlib-analytics bench repro-check test-compress test-compress-stream test-compress-schema \
 	test-stdlib-encoding test-stdlib-encrypt test-stdlib-ws test-stdlib-sse test-stdlib-router \
 	test-stdlib-template test-stdlib-csv test-stdlib-math test-stdlib-llm test-stdlib-llm-tool \
 	test-stdlib-chart test-stdlib-html test-stdlib-dashboard test-stdlib-svg test-stdlib-canvas \
@@ -166,8 +186,36 @@ src/llvm.o: src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h
 src/stdlib/encrypt.o: src/stdlib/encrypt.c
 	$(CC) $(CFLAGS) $(REPRO_FLAGS) -Wno-pedantic -c -o $@ $<
 
+# ── 135.3a ──────────────────────────────────────────────────────────────────
+# `lint` used to be one line:
+#
+#     $(CC) $(CFLAGS) --analyze $(SRCS)
+#
+# It could not fail.  clang's --analyze does NOT honour -Werror, so the target
+# printed 97 analyzer warnings across 19 files and exited 0, and AGENTS.md
+# §14's reporting template has been asking for "make lint: 0 warnings" against
+# a command that never reported zero and never returned non-zero.  It also
+# analysed $(SRCS) -- the link set -- so 104 of the 132 files in src/stdlib/
+# were not analysed at all.  Proven by injecting a null dereference into
+# src/stdlib/xlsx.c: clang reported it when xlsx.c was analysed directly;
+# `make lint` did not mention the file and still exited 0.
+#
+# scripts/check_stdlib_analysis.py now runs three passes over $(ANALYZE_SRCS)
+# and FAILS on anything not accounted for on a checked-in, self-failing
+# skiplist.  See its header for what a pass does and does not prove.
 lint:
-	$(CC) $(CFLAGS) --analyze $(SRCS)
+	@python3 scripts/check_stdlib_analysis.py --compile --analyze $(ANALYZE_SRCS)
+
+# The #else branch of every platform conditional, built.  Generalises what
+# test/conform/C033_ocr_text_runs.sh does for src/stdlib/ocr.c alone.
+lint-nonhost:
+	@python3 scripts/check_stdlib_analysis.py --nonhost $(ANALYZE_SRCS)
+
+# Drafting aid: print proposed skiplist lines for everything now failing.
+# Writes nothing — paste the lines in and put a real reason and story on each.
+lint-report:
+	@python3 scripts/check_stdlib_analysis.py --compile --analyze --nonhost \
+	    --report $(ANALYZE_SRCS)
 
 conform:
 	@bash test/run_conform.sh
