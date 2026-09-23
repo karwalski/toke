@@ -265,8 +265,10 @@ def main():
 
         else:  # analyze
             actual = {}
+            unanalysable = set()
             for src, ok, out in results:
                 if not ok:
+                    unanalysable.add(src)
                     key = ("compile", src)
                     if key in skips:
                         # already accounted for as a compile failure
@@ -296,15 +298,20 @@ def main():
                     failures.append("ANALYZE: %s [%s]: %d warnings, not on the skiplist"
                                     % (path, checker, n))
                     proposed.append("%-8s %-44s %d  # " % ("analyze", "%s::%s" % (path, checker), n))
-            # an analyze skip that fired zero times is stale
+            # An analyze skip that fired zero times is stale — including one
+            # whose file has left $(ANALYZE_SRCS) entirely, which is how a
+            # deleted module would otherwise leave a line here forever.  The
+            # one exemption is a file that could not be analysed at all (its
+            # compile skip already accounts for it): nothing could have fired.
             for key, (allowed, _r, _ln) in skips.items():
                 if key[0] != "analyze" or key in used:
                     continue
                 path = key[1].split("::")[0]
-                if path in sources or any(path.startswith("stdlib/vendor/") for _ in (0,)):
-                    stale.append("analyze skip %s is STALE — it reports nothing now. "
-                                 "Remove the line from %s."
-                                 % (key[1], os.path.relpath(SKIPLIST, REPO_ROOT)))
+                if path in unanalysable:
+                    continue
+                stale.append("analyze skip %s is STALE — it reports nothing now. "
+                             "Remove the line from %s."
+                             % (key[1], os.path.relpath(SKIPLIST, REPO_ROOT)))
 
     # entries naming files outside the analysed set are stale too
     for (kind, key), (_n, _r, lineno) in sorted(skips.items()):
