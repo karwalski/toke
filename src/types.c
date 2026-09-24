@@ -734,6 +734,58 @@ static const Node *find_binding_node(const Node *root, const char *src,
 }
 
 /*
+ * find_binding_before — the binding of `name` that is in force at `use`.
+ *
+ * find_binding_node returns the FIRST binding of the name anywhere in the
+ * function, which is the wrong one whenever a name is re-bound in the same
+ * scope with a different type — a shape toke permits (test_shadow_retype.tk):
+ *
+ *     let s="abc"; io.println(s); let s=@(1;2); let c=s.get(0);
+ *
+ * `s.get(0)` was typed against `let s="abc"`.  While string literal bindings
+ * were TY_UNKNOWN that was harmless; once 127.157 typed them it became a
+ * false E4031 on a correct program, and the mirror-image shape (array first,
+ * string second) was already one at 444a55c: `io.println(s)` after
+ * `let s="abc"` was rejected as "expected 'str', got '@(i64)'".
+ *
+ * The binding in force is the nearest one that starts before the use and
+ * does not contain it (`let x=x+1` must not resolve `x` to itself).  If no
+ * binding precedes the use, the old first-found answer is kept, so nothing
+ * that resolved before stops resolving.
+ */
+static int node_contains(const Node *root, const Node *n) {
+    if (!root) return 0;
+    if (root == n) return 1;
+    for (int i = 0; i < root->child_count; i++)
+        if (node_contains(root->children[i], n)) return 1;
+    return 0;
+}
+static void find_binding_before_rec(const Node *root, const char *src,
+                                    const char *name, int nlen,
+                                    const Node *use, const Node **best) {
+    if (!root) return;
+    if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT
+         ||root->kind==NODE_LOOP_INIT)
+        &&root->child_count>0&&root->children[0]) {
+        int tl=root->children[0]->tok_len;
+        if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0
+            && root->start < use->start
+            && (!*best || root->start > (*best)->start)
+            && !node_contains(root, use))
+            *best = root;
+    }
+    for (int i=0;i<root->child_count;i++)
+        find_binding_before_rec(root->children[i],src,name,nlen,use,best);
+}
+static const Node *find_binding_before(const Node *root, const char *src,
+                                       const char *name, int nlen,
+                                       const Node *use) {
+    const Node *best = NULL;
+    if (use) find_binding_before_rec(root, src, name, nlen, use, &best);
+    return best ? best : find_binding_node(root, src, name, nlen);
+}
+
+/*
  * contains_ptr — return 1 if the type tree contains TY_PTR at any depth.
  *
  * Used to enforce the E2010 rule: pointer types (*T) are only valid in
@@ -2720,7 +2772,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         /* If not found at module scope, check current function's local binds. */
         if ((!d||!d->def_node)&&cx->fn_node) {
             /* Search the function body for local bindings with type annotations. */
-            const Node *bn=find_binding_node(cx->fn_node,cx->src,nb,nlen);
+            const Node *bn=find_binding_before(cx->fn_node,cx->src,nb,nlen,node);
             if (bn && (bn->kind==NODE_BIND_STMT||bn->kind==NODE_MUT_BIND_STMT)) {
                 /* Annotated `let x:T=init` → type at [1]. */
                 if (bn->child_count>2&&bn->children[1]) return resolve_type(cx,bn->children[1]);
