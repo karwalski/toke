@@ -25,14 +25,26 @@ import pathlib
 import re
 import sys
 
-# 127.134 — the .tki export-record scanners in src/llvm.c and src/names.c
-# delimit one record from the next with `strstr(p + 6, "\"kind\"")`, six sites
-# in all. That matches the six-character token `"kind"` WHEREVER it appears,
+# 127.134 — the .tki export-record scanners delimit one record from the next
+# with `strstr(p + 6, "\"kind\"")`. Recount 2026-09-24: SEVEN sites across
+# THREE files, not the six across two this comment used to claim --
+# src/llvm.c:1025,1191,1596,1710, src/names.c:2061,2163 and src/glue_gen.c:265,
+# which was never named here at all.
+#
+# That call matches the six-character token `"kind"` WHEREVER it appears,
 # including as the VALUE of a "name" key -- so a type whose field is called
 # `kind` truncates its own field list at that point, and `tkc --check` and
-# `tkc --out` then DISAGREE about whether the later fields exist. Until the
-# scanners parse rather than scan, no .tki may contain that token anywhere but
-# as a record key. This is a guard against a live corruption, not a style rule.
+# `tkc --out` then DISAGREE about whether the later fields exist.
+#
+# The defect is LIVE, not historical. Reproduced 2026-09-24 at main 04f6199 by
+# inserting `{"name": "kind"}` as the FIRST field of `math.linregresult`
+# (fields kind, slope, intercept, r2) and reading `r2` from toke source:
+#     tkc --check prog.tk   -> exit 0, zero bytes of output
+#     tkc --out   prog.tk   -> exit 2, E4025 "struct 'linregresult' has no
+#                              field 'r2'"
+# One compiler, one .tki, two answers. Until the scanners PARSE rather than
+# scan, no .tki may contain that token anywhere but as a record key. This is a
+# guard against a live corruption, not a style rule.
 KIND_TOKEN = re.compile(r'"kind"')
 
 # Structural punctuation in a .tki type expression: `$Rec`, `str!FileErr`,
@@ -94,9 +106,17 @@ def check_file(path, out):
 
 def main():
     root = pathlib.Path(__file__).resolve().parent.parent
-    files = sorted((root / "stdlib").glob("*.tki"))
+    # 127.134 (2026-09-24): this globbed `stdlib/*.tki` only. The scanners in
+    # src/ read whatever .tki they are pointed at, so a fixture, an example or
+    # a generated interface anywhere in the tree carries the same truncation
+    # and was not looked at. Sweep the whole repository instead; `.git` and
+    # build trees hold no .tki, and today the two sets are identical (68
+    # files), so widening it costs nothing and closes the hole before someone
+    # adds the first .tki outside stdlib/.
+    files = sorted(p for p in root.rglob("*.tki")
+                   if ".git" not in p.parts and "node_modules" not in p.parts)
     if not files:
-        print("FAIL anchor: no stdlib/*.tki files found — the check cannot run",
+        print("FAIL anchor: no *.tki files found — the check cannot run",
               file=sys.stderr)
         return 2
 
@@ -132,10 +152,11 @@ def main():
                   % (len(names), len({e[1] for e in names})), file=sys.stderr)
         if decoys:
             print("\n%d interface file(s) carry a '\"kind\"' token that is not a "
-                  "record key. The export scanners in src/llvm.c and src/names.c "
-                  "delimit records on that token, so the record TRUNCATES there "
-                  "and --check and --out disagree about the later fields "
-                  "(127.134). Rename the field." % len(decoys), file=sys.stderr)
+                  "record key. The export scanners -- seven sites across "
+                  "src/llvm.c, src/names.c and src/glue_gen.c -- delimit records "
+                  "on that token, so the record TRUNCATES there and --check and "
+                  "--out disagree about the later fields (127.134). Rename the "
+                  "field." % len(decoys), file=sys.stderr)
         return 1
 
     print("tki names OK: every identifier in %d interface file(s) is writeable "
