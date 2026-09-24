@@ -526,6 +526,27 @@ check-core-reach:
 check-test-orphans:
 	python3 scripts/check_test_orphans.py
 
+# 132.43 — the website's published toke programs, compiled by THIS compiler.
+# The website checks its own examples, but only on a push to the website: when
+# stdlib/io.tki landed here and made `io.printi` a diagnosable error, every
+# program the site published that used it broke and nothing on this side
+# looked, so it shipped in v3.0.0. This is the other direction of that
+# trigger. It runs the site's own verifier in --compile-only mode (the token-
+# count half of that gate is red on purpose pending an owner decision and a
+# compiler change cannot affect it). SITE_REPO defaults to the sibling
+# checkout; CI and the release workflow check the site out and pass it.
+SITE_REPO ?= ../toke-website
+SITE_VERIFY = $(SITE_REPO)/scripts/verify_site_examples.py
+
+check-site-compile: $(BIN)
+	@if [ ! -f "$(SITE_VERIFY)" ]; then \
+	  echo "SKIP check-site-compile: $(SITE_VERIFY) not found (set SITE_REPO=)"; \
+	elif ! grep -q -- '--compile-only' "$(SITE_VERIFY)"; then \
+	  echo "SKIP check-site-compile: $(SITE_REPO) predates --compile-only (132.43)"; \
+	else \
+	  TKC="$(abspath $(BIN))" python3 "$(SITE_VERIFY)" --check --compile-only; \
+	fi
+
 # 135.11 — a stdlib module must have exactly ONE description of each kind:
 # stdlib/<m>.tki (interface), src/stdlib/<m>.c (implementation) and
 # docs/stdlib/<m>.md (docs). A stdlib/<m>.tk reimplementation or a
@@ -935,7 +956,7 @@ define run_test_list
 	[ $$fail -eq 0 ]
 endef
 
-.PHONY: test-ci test-ci-green test-ci-known-red test-ci-unmeasured check-test-orphans
+.PHONY: test-ci test-ci-green test-ci-known-red test-ci-unmeasured check-test-orphans check-site-compile
 test-ci-green:
 	$(call run_test_list,$(TEST_CI_GREEN),test-ci-green)
 
@@ -961,7 +982,7 @@ test-ci: test-ci-green
 # leave it out. It is a prerequisite of `ci` as of this line.
 #
 # `$(BIN)` is already its own prerequisite, so ordering with `conform` is free.
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-site-compile check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).

@@ -213,6 +213,19 @@ jobs:
       - name: Every test source is built by something
         run: make check-test-orphans
 
+      # 132.43 — the website's published toke programs must compile under the
+      # compiler this push built. The website only checked them on a push to
+      # the website, so a compiler-side change (stdlib/io.tki making io.printi
+      # an error) broke them silently and shipped in v3.0.0.
+      - name: Check out the website
+        uses: actions/checkout@v4
+        with:
+          repository: karwalski/toke-web
+          path: .site
+
+      - name: Website examples compile under this compiler
+        run: make SITE_REPO=.site check-site-compile
+
       - name: No parallel stdlib descriptions
         run: make check-parallel-stdlib
 
