@@ -360,32 +360,24 @@ lint-report:
 	@python3 scripts/check_stdlib_analysis.py --compile --analyze --nonhost \
 	    --report $(ANALYZE_SRCS)
 
+# 127.156 / 136.65: every conformance entry point goes through
+# scripts/conform_isolated.sh, which pins a private copy of the compiler,
+# gives the run a private TMPDIR, caps concurrent runs machine-wide
+# (TKC_GATE_SLOTS, default 2) and runs the load-sensitive S005/S006 under a
+# machine-wide serial lock.  See the script's header for why each is needed.
+# One invocation for `conform`, not a recursive make, so a run holds exactly
+# one slot.
 conform:
-	@bash test/run_conform.sh
-	@$(MAKE) --no-print-directory conform-sh
+	@bash scripts/conform_isolated.sh all
 
 # 131.37: shell-script conformance cases (test/conform/*.sh) — each script
 # prints its own PASS/FAIL lines and exits non-zero on any failure.
-# 131.79: the per-suite log used to be one fixed /tmp path shared by every
-# invocation, so two concurrent runs of this target overwrote each other's
-# output and each reported the other's failures. mktemp per run, removed on
-# the way out.
+# 131.79 gave each run its own log; 127.156 its own compiler and TMPDIR.
 conform-sh:
-	@pass=0; fail=0; \
-	log="$$(mktemp "$${TMPDIR:-/tmp}/tkc_conform_sh.XXXXXX")" || exit 1; \
-	trap 'rm -f "$$log"' EXIT INT TERM; \
-	for s in test/conform/*.sh; do \
-	  if bash "$$s" > "$$log" 2>&1; then \
-	    pass=$$((pass+1)); echo "PASS $$s: $$(grep -E '^Results:' "$$log" | tail -1)"; \
-	  else \
-	    fail=$$((fail+1)); echo "FAIL $$s"; tail -25 "$$log" | sed 's/^/    /'; \
-	  fi; \
-	done; \
-	echo "conform-sh: $$pass scripts passed, $$fail failed"; \
-	[ $$fail -eq 0 ]
+	@bash scripts/conform_isolated.sh sh
 
 conform-check:
-	@bash test/run_conform.sh && echo "CONFORMANCE: 100%"
+	@bash scripts/conform_isolated.sh yaml && echo "CONFORMANCE: 100%"
 
 # ── 136.62 exposed this target ──────────────────────────────────────────────
 # Three recursive makes for three --target triples, all writing into the SAME
