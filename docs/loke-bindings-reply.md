@@ -350,6 +350,46 @@ out of the sources it compiles. Those are the groups credited with 37 and 34 pas
 the 306 — and ooke's own harness declines to build them. That exclusion is a direct statement about
 what the suite does not cover.
 
+### 7a. Re-measured 2026-09-24 (story 136.10)
+
+Since this reply was written, story 136.56 gave `test_keychain.c`, `test_webview.c` and
+`test_securemem.c` make targets, so every suite behind the 306 figure now runs. Each was run
+by its own target on toke `98f4819` (macOS arm64), one at a time, and its `pass:` lines
+counted; every suite exited 0 with no failing assertion:
+
+| Group | Target | Claimed in the archived document | Passing today |
+|---|---|---:|---:|
+| `std.keychain` | `test-stdlib-keychain-core` | 23 | 24 |
+| `std.infer` | `test-stdlib-infer` | 32 | 33 |
+| `std.secure_mem` (now `std.securemem`) | `test-stdlib-securemem` | 37 | 35 |
+| `std.webview` | `test-stdlib-webview` | 16 | 16 |
+| `std.vecstore` | `test-stdlib-vecstore` | 63 | 70 |
+| `std.mlx` | `test-stdlib-mlx` | 35 | 35 |
+| `std.infer` streaming | `test-stdlib-infer-stream` | 34 | 34 |
+| `std.mdns` | `test-stdlib-mdns` | 29 | 30 |
+| `std.tls` | `test-stdlib-tls` | 37 | 43 |
+| **Total** | | **306** | **320** |
+
+What this settles, and what it does not:
+
+- **The 306 was not produced by toke's build.** At the archived state (`ba67f2a`) the Makefile
+  names none of `test_keychain.c`, `test_webview.c` or `test_securemem.c`, so 76 of the 306
+  (23 + 16 + 37) came from suites `make` could not run. Whatever produced those numbers, it was
+  not a reproducible target, and the figure cannot be re-derived for that commit from the tree.
+- **A passing count here is not evidence that a binding works.** All nine are C unit tests of
+  the C module, called directly. None goes through a `.tki`, the compiler or a toke program, which
+  is the path loke uses — so every one of them could pass (and did) while a module was
+  unimportable under its documented name, or its interface disagreed with its implementation in
+  arity. That, not inflation, is how "306 passing" and "4 modules unusable" were both true.
+- The test that covers what loke depends on is the toke-level binding test, and those exist now
+  for keychain, securemem and vecstore (`test/stdlib/*_binding.sh`, `*_roundtrip.tk`). The
+  archived document should cite those, or no count at all.
+
+**Correction requested of loke:** replace the 306/306 line in
+`loke/docs/archive/ooke-bindings-required.md` with a dated note that the figure was C-unit
+coverage, not binding coverage, and was not reproducible from toke's build at the archived
+commit. That file lives in the loke repository; toke cannot edit it.
+
 ---
 
 ## 8. What you asked for next has started
