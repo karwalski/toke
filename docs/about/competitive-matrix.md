@@ -43,7 +43,7 @@ The specific advantages of a purpose-built approach:
 
 4. **Structured diagnostics as training signal.** The compiler emits JSON diagnostics with stable error codes, machine-parseable spans, and fix suggestions. This feeds directly into training pipelines and repair loops. General-purpose compilers emit human-readable prose that requires brittle parsing.
 
-5. **Compiler-in-the-loop training.** toke's compiler is part of the training pipeline, not an afterthought. Programs are generated, compiled, filtered, and fed back as training data. This produced 46,754 validated programs across 4 stages with differential testing against 3 models.
+5. **Compiler-in-the-loop training.** toke's compiler is part of the training pipeline, not an afterthought. Programs are generated, compiled, filtered, and fed back as training data. The current corpus is the v0.4 regeneration: 23,382 audited records at the 2026-08-19 freeze, 14,727 of them passing every tightened gate, since reopened for rewriting by Epic 131 (`docs/metrics-baseline.md`). The 46,754-program corpus quoted here until 2026-09 was the v0.2-era corpus of 2026-04-01 and is historical.
 
 ## Reading the Matrix
 
