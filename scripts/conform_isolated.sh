@@ -3,9 +3,12 @@
 # cannot interfere with each other.  127.156 / 136.65.
 #
 # Usage: bash scripts/conform_isolated.sh all|yaml|sh
+#        bash scripts/conform_isolated.sh exec -- CMD [ARGS...]
 #   all   test/run_conform.sh, then every test/conform/*.sh   (make conform)
 #   yaml  test/run_conform.sh only                            (make conform-check)
 #   sh    every test/conform/*.sh only                        (make conform-sh)
+#   exec  run CMD under the same slot, pinned $TKC and private $TMPDIR
+#         (136.58: make check-probes).  Exit status is CMD's.
 #
 # What was shared, and what each run now gets instead:
 #
@@ -37,7 +40,13 @@
 set -uo pipefail
 
 MODE="${1:-all}"
-case "${MODE}" in all|yaml|sh) ;; *) echo "usage: $0 all|yaml|sh" >&2; exit 2 ;; esac
+case "${MODE}" in
+    all|yaml|sh) ;;
+    exec) shift; [ "${1:-}" = "--" ] && shift
+          [ "$#" -gt 0 ] || { echo "usage: $0 exec -- CMD [ARGS...]" >&2; exit 2; }
+          CMD=("$@") ;;
+    *) echo "usage: $0 all|yaml|sh | exec -- CMD..." >&2; exit 2 ;;
+esac
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}" || exit 1
@@ -141,6 +150,11 @@ export TMPDIR="${PRIV}/tmp"
 echo "conform: pinned $(${TKC} --version 2>/dev/null) sha256 $(shasum -a 256 "${TKC}" | cut -c1-12) from ${SRC_TKC}"
 
 rc=0
+
+if [ "${MODE}" = exec ]; then
+    "${CMD[@]}"
+    exit $?
+fi
 
 if [ "${MODE}" = all ] || [ "${MODE}" = yaml ]; then
     bash test/run_conform.sh || rc=1
