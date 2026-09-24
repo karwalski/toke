@@ -375,7 +375,9 @@ def stdlib_facts():
 
 
 def conformance_facts():
-    yamls = glob.glob(os.path.join(ROOT, "test", "**", "*.yaml"), recursive=True)
+    # test/fuzz/ holds fuzz seed corpora (123.10), not conformance cases.
+    yamls = [y for y in glob.glob(os.path.join(ROOT, "test", "**", "*.yaml"), recursive=True)
+             if not os.path.relpath(y, ROOT).startswith(os.path.join("test", "fuzz") + os.sep)]
     shells = glob.glob(os.path.join(ROOT, "test", "conform", "*.sh"))
     by_series = {}
     for y in yamls:
