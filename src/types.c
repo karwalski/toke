@@ -734,6 +734,58 @@ static const Node *find_binding_node(const Node *root, const char *src,
 }
 
 /*
+ * find_binding_before — the binding of `name` that is in force at `use`.
+ *
+ * find_binding_node returns the FIRST binding of the name anywhere in the
+ * function, which is the wrong one whenever a name is re-bound in the same
+ * scope with a different type — a shape toke permits (test_shadow_retype.tk):
+ *
+ *     let s="abc"; io.println(s); let s=@(1;2); let c=s.get(0);
+ *
+ * `s.get(0)` was typed against `let s="abc"`.  While string literal bindings
+ * were TY_UNKNOWN that was harmless; once 127.157 typed them it became a
+ * false E4031 on a correct program, and the mirror-image shape (array first,
+ * string second) was already one at 444a55c: `io.println(s)` after
+ * `let s="abc"` was rejected as "expected 'str', got '@(i64)'".
+ *
+ * The binding in force is the nearest one that starts before the use and
+ * does not contain it (`let x=x+1` must not resolve `x` to itself).  If no
+ * binding precedes the use, the old first-found answer is kept, so nothing
+ * that resolved before stops resolving.
+ */
+static int node_contains(const Node *root, const Node *n) {
+    if (!root) return 0;
+    if (root == n) return 1;
+    for (int i = 0; i < root->child_count; i++)
+        if (node_contains(root->children[i], n)) return 1;
+    return 0;
+}
+static void find_binding_before_rec(const Node *root, const char *src,
+                                    const char *name, int nlen,
+                                    const Node *use, const Node **best) {
+    if (!root) return;
+    if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT
+         ||root->kind==NODE_LOOP_INIT)
+        &&root->child_count>0&&root->children[0]) {
+        int tl=root->children[0]->tok_len;
+        if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0
+            && root->start < use->start
+            && (!*best || root->start > (*best)->start)
+            && !node_contains(root, use))
+            *best = root;
+    }
+    for (int i=0;i<root->child_count;i++)
+        find_binding_before_rec(root->children[i],src,name,nlen,use,best);
+}
+static const Node *find_binding_before(const Node *root, const char *src,
+                                       const char *name, int nlen,
+                                       const Node *use) {
+    const Node *best = NULL;
+    if (use) find_binding_before_rec(root, src, name, nlen, use, &best);
+    return best ? best : find_binding_node(root, src, name, nlen);
+}
+
+/*
  * contains_ptr — return 1 if the type tree contains TY_PTR at any depth.
  *
  * Used to enforce the E2010 rule: pointer types (*T) are only valid in
@@ -1326,6 +1378,28 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         return NULL;
     }
     /*
+     * 127.157 (2026-09-24) — a string literal initialiser is a `str`.
+     *
+     * Without this `let a="x"; let b="y"; a+b` left both operands
+     * TY_UNKNOWN, the numeric-only `+` rule (ADR-0004; v0.3 spec §operators,
+     * "`+` add (numeric only)", not superseded by v0.4) could not fire, and
+     * the program compiled and printed "xy" — while the identical expression
+     * through two `str` parameters was E4031.  The rule is the spec's; the
+     * local-binding path was the false negative.
+     *
+     * Deliberately NOT routed through infer(): a literal's type is fixed by
+     * its token, and infer() on a STR_LIT runs check_interp_composites(),
+     * which re-lexes every `\(…)` and emits E4032 with no tc_first_report()
+     * guard — re-entering it once per reference to the binding would repeat
+     * that diagnostic.  The literal is still inferred exactly once, at its
+     * own binding statement.
+     *
+     * Only STR_LIT: the rest of the literal group (INT/FLOAT/BOOL, listed
+     * below) is a separate blast radius and stays held out.
+     */
+    case NODE_STR_LIT:
+        return mk_type(cx->env->arena, TY_STR);
+    /*
      * 127.114 (landed 2026-09-22) — NODE_MAP_LIT is now in the case above.
      *
      * It was held out here from 127.106 until the coercion question it
@@ -1345,12 +1419,9 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * STILL MISSING after 127.129/127.152, and measured rather than guessed
      * (same AST scan as above): INT_LIT 239 sites, BINARY_EXPR 111,
      * MATCH_STMT 110, STR_LIT 93, FLOAT_LIT 29, BOOL_LIT 18, IF_STMT 10,
-     * CLOSURE 5, UNARY_EXPR 4, PROPAGATE_EXPR 3.  The literal group is the
-     * root cause of 127.157 (`"x"+"y"` accepted through local bindings and
-     * rejected through parameters), because `let a="x"` leaves `a`
-     * TY_UNKNOWN and the numeric-only `+` rule cannot fire on an unknown.
-     * They are a larger blast radius than the container cases and are held
-     * out deliberately, not overlooked.
+     * CLOSURE 5, UNARY_EXPR 4, PROPAGATE_EXPR 3.  STR_LIT has since landed
+     * (127.157, above).  The rest are a larger blast radius than the
+     * container cases and are held out deliberately, not overlooked.
      */
     default:
         return NULL;
@@ -2336,6 +2407,66 @@ static void recv_arity_error(const Node *call, const char *member,
               (const char *)NULL);
 }
 
+/*
+ * 127.151 — which receiver KINDS each receiver method lowers correctly for.
+ *
+ * recv_method_known() answers "does this member exist on SOME receiver"; it
+ * cannot answer "on THIS one", so `s.push(1)` on a proven str passed --check
+ * and segfaulted (tk_array_append_w on a char*), and `s.keys()` passed and
+ * died at ld (`_keys`).
+ *
+ * This table is the emitter's dispatch chain (llvm.c, "Instance method calls
+ * on local variables" and the special cases above it), read branch by branch
+ * and written down per receiver kind.  A kind is listed only where the chain
+ * has a branch that picks glue for it:
+ *
+ *   append/push/pop          → tk_array_*            (Vec is its own path)
+ *   getor, keys              → tk_map_*
+ *   set                      → recv_is_map ? tk_map_set_w : tk_array_set_w
+ *   map/filter/reduce/fold/sort → tk_arr_*
+ *   contains                 → map / array / str, each by its own test
+ *   slice/find/indexof       → recv_is_array ? tk_arr_* : tk_str_*
+ *   join                     → str receiver = separator, else tk_arr_join_w
+ *   len                      → str / map / vec glue, arrays inline
+ *   toarray                  → Vec only
+ *   every other member       → tk_str_* (the chain's default is tk_str_eq_w)
+ *
+ * It is a copy, not the table itself: g_recv_methods lives in llvm.c, which
+ * this change may not edit.  C046 fails if a member is added to
+ * g_recv_methods without a row here, so the copy cannot silently fall
+ * behind; moving this column into g_recv_methods is the follow-up that makes
+ * it one table.  A member with no row here — `get`, whose one-argument form
+ * is an index expression — is not judged.
+ *
+ * The check fires only when recv_value_type() proves the receiver a str, an
+ * array or a map.  For those three the emitter's own kind tests
+ * (len_recv_kind, recv_is_array, recv_is_map) are decided by the same rtype
+ * the checker computes, so checker and emitter cannot disagree about the kind
+ * on any receiver this judges — the false-diagnostic risk 127.128's worker
+ * declined to take is closed by construction, not by hope.
+ */
+#define RK_S 1u
+#define RK_A 2u
+#define RK_M 4u
+typedef struct { const char *member; unsigned kinds; } RecvKinds;
+static const RecvKinds s_recv_kinds[] = {
+    {"len", RK_S|RK_A|RK_M}, {"keys", RK_M}, {"toarray", 0},
+    {"append", RK_A}, {"push", RK_A}, {"pop", RK_A},
+    {"set", RK_A|RK_M}, {"getor", RK_M},
+    {"map", RK_A}, {"filter", RK_A}, {"reduce", RK_A}, {"fold", RK_A},
+    {"sort", RK_A},
+    {"contains", RK_S|RK_A|RK_M},
+    {"slice", RK_S|RK_A}, {"find", RK_S|RK_A}, {"indexof", RK_S|RK_A},
+    {"join", RK_S|RK_A},
+    {"split", RK_S}, {"trim", RK_S}, {"charat", RK_S}, {"starts", RK_S},
+    {"substr", RK_S}, {"substring", RK_S}, {"concat", RK_S}, {"chars", RK_S},
+    {"sub", RK_S}, {"eq", RK_S}, {"upper", RK_S}, {"lower", RK_S},
+    {"ends", RK_S}, {"replace", RK_S}, {"fields", RK_S},
+    {NULL, 0}
+};
+
+static const Type *recv_value_type(Ctx *cx, const Node *recv);
+
 static void check_recv_method_call(Ctx *cx, const Node *call) {
     if (!call || call->child_count < 1) return;
     const Node *callee = call->children[0];
@@ -2486,6 +2617,35 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
         return;
     }
 
+    /* 127.151: the member exists, but does it exist on THIS receiver? */
+    {
+        const Type *rt = recv_value_type(cx, recv);
+        unsigned rk = !rt ? 0u : rt->kind == TY_STR ? RK_S
+                    : rt->kind == TY_ARRAY ? RK_A : rt->kind == TY_MAP ? RK_M : 0u;
+        const RecvKinds *row = NULL;
+        for (int i = 0; rk && s_recv_kinds[i].member; i++)
+            if (strcmp(s_recv_kinds[i].member, member) == 0) {
+                row = &s_recv_kinds[i]; break;
+            }
+        if (row && !(row->kinds & rk)) {
+            if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+            char msg[384], got[96];
+            const char *kn = rk == RK_S ? "str" : rk == RK_A ? "array" : "map";
+            snprintf(msg, sizeof msg,
+                     "no receiver method '%s' on a '%s': '.%s' is a receiver "
+                     "method of another type, and a '%s' does not answer it",
+                     member, type_name(rt), member, kn);
+            snprintf(got, sizeof got, "%s.%s", kn, member);
+            /* No `fix`: whether the receiver or the member is wrong is not
+             * decidable here (AGENTS.md §6). */
+            diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col,
+                      msg,
+                      "expected", "a member the receiver's type answers",
+                      "got", got, (const char *)NULL);
+            return;
+        }
+    }
+
     int want = recv_method_arity(member);
     if (want < 0) return;                 /* no established arity */
     int actual = call->child_count;       /* the receiver is argument 1 */
@@ -2495,6 +2655,75 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
 }
 
 static Type *infer_impl(Ctx *cx, const Node *node);
+
+/*
+ * recv_value_type — the checker's type for a method-call receiver, or NULL
+ * when it will not judge the receiver.
+ *
+ * Only an identifier or a string literal is judged.  Other receiver shapes
+ * (a call, a field, an index) are left alone: they are either module paths
+ * whose handling lives in check_recv_method_call, or expressions this check
+ * has no evidence about.
+ *
+ * infer_impl, not infer: infer() memoises onto node->rtype, and the emitter
+ * reads a receiver's rtype to pick glue (recv_is_map / recv_is_array /
+ * len_recv_kind).  A CHECK must not change what the emitter does to a
+ * program it accepts, so the receiver node is left exactly as it was.
+ */
+static const Type *recv_value_type(Ctx *cx, const Node *recv) {
+    if (!recv) return NULL;
+    if (recv->kind != NODE_IDENT && recv->kind != NODE_STR_LIT) return NULL;
+    const Type *t = infer_impl(cx, recv);
+    if (!t || t->kind == TY_UNKNOWN) return NULL;
+    return t;
+}
+
+/*
+ * check_array_store_elem — `a.set(i;v)` / `a.append(v)` / `a.push(v)` on an
+ * array whose element type is known must store a value of that type.
+ *
+ * semantics.md §1.2: an array is an "ordered, homogeneous sequence of element
+ * type T".  Without this, `let box=mut.@(0;0); box=box.set(0;src)` with `src`
+ * an @i64 was ACCEPTED at the store and then REJECTED at the read
+ * (`box.get(0).get(0)` → "cannot index into 'i64'") — the diagnostic landed
+ * two statements away from the defect.  That is test_array_inplace.tk's
+ * container-escape case, broken by 127.129 (886bdb0) typing the binding.
+ *
+ * Flow direction: the value flows INTO the element slot, so types_compat
+ * (value, elem) — u64/bool widen to i64 exactly as for any other store; no
+ * int -> float promotion (ADR-0004).  Silent when either side is unknown.
+ * No `fix`: the right repair is to change the value, the array's element
+ * type, or the data structure, and the checker cannot know which.
+ */
+static void check_array_store_elem(Ctx *cx, const Node *call) {
+    if (!call || call->child_count < 2) return;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2 ||
+        !callee->children[1]) return;
+    char member[32]; TOKSTR(member, cx->src, callee->children[1]);
+    int vi;
+    if (strcmp(member, "set") == 0) vi = 2;
+    else if (strcmp(member, "append") == 0 || strcmp(member, "push") == 0) vi = 1;
+    else return;
+    if (call->child_count != vi + 1) return;      /* arity is E4026's business */
+    const Type *rt = recv_value_type(cx, callee->children[0]);
+    if (!rt || rt->kind != TY_ARRAY || !rt->elem ||
+        rt->elem->kind == TY_UNKNOWN || rt->elem->kind == TY_VOID) return;
+    const Node *vn = call->children[vi];
+    const Type *vt = vn ? vn->rtype : NULL;
+    if (!vt || vt->kind == TY_UNKNOWN) return;
+    if (types_compat(vt, rt->elem)) return;
+    if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+    char en[64], vn_[64], msg[256];
+    snprintf(en, sizeof en, "%s", type_name(rt->elem));
+    snprintf(vn_, sizeof vn_, "%s", type_name(vt));
+    snprintf(msg, sizeof msg,
+             "type mismatch: '.%s' stores a '%s' into an array whose elements "
+             "are '%s'", member, vn_, en);
+    diag_emit(DIAG_ERROR, E4031, vn->start, vn->line, vn->col, msg,
+              "expected", en, "got", vn_, (const char *)NULL);
+}
+
 static Type *infer(Ctx *cx, const Node *node) {
     Type *t = infer_impl(cx, node);
     if (node) ((Node *)node)->rtype = t;
@@ -2578,8 +2807,22 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     case NODE_ARRAY_LIT: {
         Type *at = mk_type(A, TY_ARRAY);
         if (!at) return mk_type(A, TY_UNKNOWN);
-        if (node->child_count > 0)
-            at->elem = infer(cx, node->children[0]);
+        /* A typed-EMPTY literal `@($f64)` carries its element type as a
+         * type node, not a value.  infer() has no case for a type node and
+         * its default returns TY_VOID, so `@($f64)` typed as @(void) and
+         * `a=a+@(3.0)` was a false E4031 — dormant until 127.129 typed
+         * un-annotated ARRAY_LIT bindings, then live (test_f64_array.tk,
+         * GAM-117, the typed_empty_array fixture).  The set of type-node
+         * kinds is the emitter's own (llvm.c NODE_ARRAY_LIT: "skip
+         * type-annotation children"), so the two agree on what is an
+         * annotation. */
+        const Node *c0 = node->child_count > 0 ? node->children[0] : NULL;
+        if (c0 && (c0->kind == NODE_TYPE_IDENT || c0->kind == NODE_TYPE_EXPR ||
+                   c0->kind == NODE_ARRAY_TYPE || c0->kind == NODE_MAP_TYPE ||
+                   c0->kind == NODE_FUNC_TYPE  || c0->kind == NODE_PTR_TYPE))
+            at->elem = resolve_type(cx, c0);
+        else if (c0)
+            at->elem = infer(cx, c0);
         else
             at->elem = mk_type(A, TY_UNKNOWN);
         return at;
@@ -2687,7 +2930,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         /* If not found at module scope, check current function's local binds. */
         if ((!d||!d->def_node)&&cx->fn_node) {
             /* Search the function body for local bindings with type annotations. */
-            const Node *bn=find_binding_node(cx->fn_node,cx->src,nb,nlen);
+            const Node *bn=find_binding_before(cx->fn_node,cx->src,nb,nlen,node);
             if (bn && (bn->kind==NODE_BIND_STMT||bn->kind==NODE_MUT_BIND_STMT)) {
                 /* Annotated `let x:T=init` → type at [1]. */
                 if (bn->child_count>2&&bn->children[1]) return resolve_type(cx,bn->children[1]);
@@ -3005,6 +3248,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             /* 127.1/127.96/127.115/127.128: and, for a call whose receiver is
              * a VALUE rather than a module, enforce the receiver dispatch. */
             check_recv_method_call(cx,node);
+            /* and an array store must match the element type. */
+            check_array_store_elem(cx,node);
             return mk_type(A,TY_UNKNOWN);
         }
         const Node *fn=d->def_node; int pi=0;
@@ -3465,8 +3710,19 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     &&strcmp(cx->fn_ret->name,val->name)==0) ok=1;
             }
             if (!ok) {
+                /* AGENTS.md §6: the `fix` is populated only when it is
+                 * correct in every case.  "cast return value to T using
+                 * 'as'" was emitted for EVERY mismatch — including
+                 * `@(pt)` vs `@(void)` (ooke, 886bdb0), where no `as` cast
+                 * exists and the real defect was the checker's.  It now
+                 * fires only for a cast that compiles and cannot change the
+                 * value: any integer into i64, or f32 into f64.  Every
+                 * other mismatch gets no fix — narrowing, int<->float
+                 * (127.64) and non-scalars have no certain repair. */
+                int certain = (cx->fn_ret->kind==TY_I64 && is_integer(val))
+                           || (cx->fn_ret->kind==TY_F64 && val->kind==TY_F32);
                 char fix[128]; snprintf(fix,sizeof(fix),"cast return value to %s using 'as'",type_name(cx->fn_ret));
-                emit_mm(cx,node,cx->fn_ret,val,fix);
+                emit_mm(cx,node,cx->fn_ret,val,certain?fix:NULL);
             }
         }
         /* ── Escape analysis (W5001) ─────────────────────────────────────

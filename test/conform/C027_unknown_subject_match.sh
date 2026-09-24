@@ -42,6 +42,8 @@
 #            diagnostic is about arity exceeding what the lowering can
 #            dispatch, not about unknown subjects as such; widening it to all
 #            unknown subjects would break case 4's stdlib shapes.
+# Case 6:    a 2-arm match over an indexed element the checker DOES type as
+#            the sum is E4010 (non-exhaustive) -- see the note at case 5.
 #
 # Stories: 137.2, 127.113, 127.56, 114.41
 #
@@ -203,15 +205,46 @@ f=main():i64{
 # unknown subjects as such.  Widening it to every unknown subject would
 # reject the stdlib error-union shapes in case 4, whose scrutinee type is
 # likewise not a registered sum.
+#
+# CHANGED 2026-09-24 (Batch E2).  This case used to take its subject from
+# `xs.get(0)` on `let xs=@(mk(0))`.  Since 127.129/127.152 (886bdb0) the
+# checker types that binding as @($shape) and the index as $shape, so the
+# subject is no longer unestablished: it is a known sum type, and a 2-arm
+# match over it that omits `$tri` is a genuine non-exhaustive match -- E4010
+# is correct (case 6 now pins that).  The fixture therefore no longer tested
+# "don't fire on an unknown subject".  The subject now arrives through an
+# i64-typed parameter, case 2's shape, which nothing can establish.
 run_case "2-arm match on an unestablished subject still builds" "10" \
 "${SUM}
+f=pick(sh:i64):i64{
+  <mt(sh){\$circle:x 10;\$square:x 20}
+};
+f=main():i64{
+  io.println(\"\\(pick(mk(0) as i64))\");
+  <0
+};"
+
+# ── Case 6: once the checker DOES establish the subject, exhaustiveness
+# applies.  `xs.get(0)` on an @($shape) is a $shape (886bdb0), so a 2-arm
+# match that omits `$tri` is E4010 naming the missing variant, at --check.
+printf '%s\n' "${SUM}
 f=main():i64{
   let xs=@(mk(0));
   let a=xs.get(0);
   let r=mt(a){\$circle:x 10;\$square:x 20};
   io.println(\"\\(r)\");
   <0
-};"
+};" > idx.tk
+idx_out="$("${TKC}" --check idx.tk 2>&1)"
+if printf '%s' "${idx_out}" | grep -q '"error_code":"E4010"' &&
+   printf '%s' "${idx_out}" | grep -q "missing variant(s) 'tri'"; then
+    echo "  PASS: 2-arm match on an indexed \$shape is E4010 (missing 'tri')"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: 2-arm match on an indexed \$shape: expected E4010 missing 'tri'"
+    printf '%s\n' "${idx_out}" | sed 's/^/      /' | head -3
+    FAIL=$((FAIL + 1))
+fi
 
 echo "----------------------------------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"
