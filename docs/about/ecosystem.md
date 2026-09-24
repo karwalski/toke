@@ -19,7 +19,7 @@ The core programming language. Compiles to native code via LLVM. 59-character al
 
 toke's web framework and static site generator, written in toke. File-system routing (`pages/`), a flat-file content store with model-validated frontmatter, and a template engine (`.tkt`) with layouts, blocks, partials and Markdown. One native binary with `ooke new`, `build`, `serve` and `run`; routes under `pages/api/` are request handlers served by `ooke serve`, not rendered into the static build.
 
-ooke builds [tokelang.dev](https://tokelang.dev): `ooke build` renders the `/docs` pages, and a toke binary on `std.http` serves the site. It is written in and built with v0.4 toke. It is packaged as the release candidate **3.0.0-rc.1**, not yet published: until toke cuts a version for the v0.4 break, ooke's toke dependency is a pinned commit rather than a semver range. The binary links toke's C standard library and the system OpenSSL, zlib and SQLite libraries.
+ooke builds [tokelang.dev](https://tokelang.dev): `ooke build` renders the `/docs` pages, and a toke binary on `std.http` serves the site. It is written in and built with v0.4 toke. It is packaged as the release candidate **3.0.0-rc.1**, not yet published, and it still pins toke by commit rather than by version, because toke 3.0.0 — the version for the v0.4 break — is not yet published either. The binary links toke's C standard library and the system OpenSSL, zlib and SQLite libraries.
 
 What is and is not a stable interface is written down in the repository's `docs/public-api.md`: semver covers the command line, `ooke.toml`, the project layout and the template syntax, not the internal module interfaces.
 
