@@ -719,6 +719,12 @@ not.
 tracked until 2026-09-22 (136.42) — 2.9 MB that made `git status` permanently
 dirty, which is precisely what let the silent reverts above go unread.
 
+**After any file restore, `make clean` before trusting a build.** `git
+stash`, `git checkout -- <path>` and `cp -p` can leave a source older than
+its object, so make skips the rebuild; a `make -j2` raced a restore this way
+and linked a binary from stale objects (136.65). `make conform` pins its own
+copy of the compiler per run (127.156), but a build you run yourself does not.
+
 ---
 
 ## 13. Behaviour to Avoid
