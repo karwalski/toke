@@ -217,6 +217,10 @@ jobs:
       - name: Every test source is built by something
         run: make check-test-orphans
 
+      # 127.126 — the stdlib's own toke sources (m= files) type-check.
+      - name: stdlib toke sources type-check
+        run: make check-stdlib-tk
+
       # 132.43 — the website's published toke programs must compile under the
       # compiler this push built. The website only checked them on a push to
       # the website, so a compiler-side change (stdlib/io.tki making io.printi
