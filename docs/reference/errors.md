@@ -531,6 +531,23 @@ The workhorse type error. Emitted for mismatched operands in binary expressions,
 
 The diagnostic may include a fix suggestion such as `"cast RHS to i64 using 'as'"`.
 
+**Composite types print structurally** (127.54). `expected` and `got` render an
+array as `@(elem)`, a map as `@(key:value)` and a function as `func->ret`, so
+two types the checker treats as different always read as different. They used
+to print as the bare kind, which produced diagnostics like
+`type mismatch: expected 'array', got 'array'` — a mismatch reported between a
+type and itself, which an automated repair loop cannot act on. An element type
+the compiler has not established prints as `?`, as in `@(?)`.
+
+**`str + str` is not reported as a mismatch between `str` and `str`** (127.140).
+`+` is numeric-only in toke (ADR-0004), so the mismatch is between what the
+operator requires and what both operands are: `expected` is `a numeric type`
+and `got` is `str`. Its `fix` names the four canonical string-building
+patterns, and the argument order in each has been executed rather than read —
+`str.join` takes the **separator as its receiver**, so the call is
+`s.join(sep;arr)`. Until 127.140 this field recommended `s.join(arr;sep)`,
+which passes `--check`, builds, and exits 139.
+
 **Fix:** Ensure both sides of the operation have matching types. Use `as` for explicit casts.
 
 ---
@@ -641,6 +658,27 @@ The check is deliberately narrow. A `std.*` member that the hand-written interfa
 
 E4036 is the receiver-call form of the same question: `recv.member(...)` where `recv` is a value rather than an import alias.
 
+**An alias that collides with a type the module exports is still checked**
+(136.63). The check skips a call whose base names a module-scope function,
+const or binding, because then the identifier is not the module. A *type* of
+that name is not a skip reason: toke has no value of a type's name (see
+E4033), so `alias.member(...)` in call position must be the import. Treating a
+type as a shadow silently disabled this whole check for any module exporting a
+type named like its own alias — the most natural alias a user would pick.
+`i=canvas:std.canvas;` plus `canvas.nosuchmemberatall(c)` passed `--check` and
+died at the linker, while the identical program aliased `cv` was diagnosed
+correctly.
+
+**The `fix` names a candidate when there is one** (127.122). When the misspelled
+member is within edit distance 2 of a real export of that same alias, and
+exactly one export is that close, the fix reads `did you mean 'str.concat'?`
+instead of the generic text. All four guards matter and are deliberate: the
+candidate is always a recorded export rather than a name invented from the
+spelling; a tie between two equally close exports means the compiler does not
+know which was meant and keeps the generic text; and names shorter than four
+characters are not scored at all. AGENTS.md §3.1 forbids a `fix` that is a
+guess.
+
 **Fix:** Check the module's interface for the correct member name.
 
 ### E4032
@@ -663,8 +701,8 @@ Emitted when a `\(expr)` interpolates an array, struct, or map. Convert it to a 
 | Severity | error |
 | Stage    | typecheck |
 
-Emitted when a declared type's name stands in a value position. Two spellings
-reach it, from two stages:
+Emitted when a declared type's name stands in a value position. Three spellings
+reach it, from three stages:
 
 - **`$Type.member`** (typecheck, 127.90) — member access on a type rather than
   an instance. There is no value to take a field of, so the expression has no
@@ -679,6 +717,22 @@ reach it, from two stages:
   — naming an LLVM temporary rather than the program. In the 137 migration
   this hid a genuinely missing parameter and three functions referencing a
   binding declared nowhere.
+- **`keyword.member(...)` on a PRIMITIVE type keyword** (typecheck, 127.135) —
+  `str`, `i64`, `u64`, `f64`, `bool` and `void`, when no module is imported
+  under that alias and no binding of that name is in scope. The bullet above
+  keys on a user `DECL_TYPE`; the primitives are seeded as `DECL_PREDEFINED`
+  and so were exempt from it. The commonest way in is a forgotten import:
+  `str.concat("a";"b")` without `i=str:std.str;` passed `--check` **and**
+  `--lint` in silence and then failed at clang as `use of undefined value
+  '%str'`, naming a temporary `.ll` file the author never saw. For `str` the
+  `fix` names the import, because that repair is deterministic. For the
+  others no module of that name exists, so the field is absent (§3.1).
+
+  Note the shape of the old hole: whether a diagnostic appeared depended on
+  whether the member was **real**. `str.nosuchmember(...)` already produced a
+  clean `E9004` naming the missing import, so the one case with no diagnostic
+  at all was the correct-looking mistake — calling a real member of a module
+  you forgot to import.
 
 A name that is not also a type is still `E3011` (undefined identifier), and
 the legitimate bare-type positions — `as Type` casts, `$Type{…}` struct
@@ -789,11 +843,25 @@ The set of members the receiver dispatch lowers is a table in the code
 generator, and it is the gate the emitter itself dispatches on, so the checker
 and the emitter cannot disagree about which member names exist.
 
-No `fix` is supplied. There is no deterministic repair: the member may be a
-misspelling, a method that exists on no receiver type, or a function the
-author meant to call directly, and a did-you-mean for an arbitrary name is a
-guess (the 127.106 / 131.78 lesson). When a function of that name is declared
-in the module, the message says so — a statement of fact, not an instruction.
+The `fix` is **conditional** (127.153). In general there is no deterministic
+repair: the member may be a misspelling, a method that exists on no receiver
+type, or a function the author meant to call directly, and a did-you-mean for
+an arbitrary name is a guess (the 127.106 / 131.78 lesson). In those cases the
+field is absent, and when a function of that name is declared in the module
+the message says so — a statement of fact, not an instruction.
+
+One case is not a guess: a module function of that name whose **declared arity
+equals the receiver plus the supplied arguments**. The direct call is then
+guaranteed well-formed, the receiver is a genuine candidate first argument,
+and toke admits no other transformation — so the field is filled, and it
+states the two numbers that justify it so a consumer can check the reasoning
+rather than trust it. Where the arities disagree the rewrite would not
+compile, and the field stays absent.
+
+Note what is still refused: filling this field *unconditionally* with
+`pair(x;"A")`. The compiler knows such a function exists; it does not know it
+was meant. toke has no uniform-function-call syntax, so `x.pair(a)` and
+`pair(x;a)` share a name and nothing else.
 
 Related: E4027 is the module-member form of the same question
 (`str.nosuchfn(...)`), and E4026 is raised instead when the member does exist

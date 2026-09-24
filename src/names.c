@@ -363,7 +363,12 @@ static int is_known_module(const char *seg, int slen) {
     return 0;
 }
 
-static int levenshtein(const char *a, const char *b) {
+/* 127.122 — this was `static int levenshtein(...)`. It is now the one
+ * edit-distance routine in the compiler, exported through names.h so that
+ * types.c's E4027 "did you mean" can reuse it rather than grow a second
+ * implementation that would drift from this one. Case-insensitive, and
+ * returns 99 for operands too long to score. */
+int tk_edit_distance(const char *a, const char *b) {
     int la = (int)strlen(a);
     int lb = (int)strlen(b);
     if (la == 0) return lb;
@@ -392,7 +397,7 @@ static const char *find_closest_module(const char *seg) {
     const char *best = NULL;
     int best_dist = 3;
     for (int i = 0; s_known_modules[i] != NULL; i++) {
-        int d = levenshtein(seg, s_known_modules[i]);
+        int d = tk_edit_distance(seg, s_known_modules[i]);
         if (d < best_dist) {
             best_dist = d;
             best = s_known_modules[i];
@@ -1419,7 +1424,7 @@ static void resolve_ident(const Node *node, const char *src,
                 for (const Scope *sc = scope; sc; sc = sc->parent) {
                     for (const Decl *d = sc->head; d; d = d->next) {
                         if (!d->name) continue;
-                        int dist = levenshtein(nbuf, d->name);
+                        int dist = tk_edit_distance(nbuf, d->name);
                         if (dist < best_dist) {
                             best_dist = dist;
                             best_name = d->name;
