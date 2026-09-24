@@ -203,6 +203,12 @@ jobs:
       - name: Glue reaches a real core
         run: make check-glue-core
 
+      # 136.50a — the reverse direction: a public C function no .tki exports
+      # and nothing calls. Fails on an unclassified or stale finding; the
+      # classified gap backlog is reported, not asserted.
+      - name: Every unsurfaced C function is classified
+        run: make check-core-reach
+
       - name: No parallel stdlib descriptions
         run: make check-parallel-stdlib
 
