@@ -10,7 +10,7 @@ All content uses **default syntax** (v0.3-syntax-lock, 59-char set). All code sa
 |-----------|----------|-------|
 | [guide/](guide/) | Getting started, tutorials, learning path | 15 |
 | [reference/](reference/) | Language reference -- types, expressions, statements, modules, grammar | 15 |
-| [stdlib/](stdlib/) | Standard library reference (41 modules) | 41 |
+| [stdlib/](stdlib/) | Standard library reference, one page per documented module (module count: `metrics-baseline.md` § Project facts) | 55 |
 | [spec/](spec/) | Language specification (normative) -- grammar, semantics, error codes | 6 |
 | [cookbook/](cookbook/) | Multi-module worked examples | 3 |
 | [about/](about/) | Project info, design philosophy, changelog, ecosystem, loke, ooke | 10 |
