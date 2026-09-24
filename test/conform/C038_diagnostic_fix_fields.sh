@@ -450,7 +450,7 @@ emits "E4 alias colliding with an exported type is still checked" E4027 5 - \
 'm=t;
 i=canvas:std.canvas;
 f=main():i64{
-  let c=canvas.new(10;10);
+  let c=canvas.new("c";10;10);
   canvas.nosuchmemberatall(c);
   <0
 };'
@@ -504,7 +504,7 @@ emits "F4 the cv alias still gets its E4027" E4027 5 - \
 'm=t;
 i=cv:std.canvas;
 f=main():i64{
-  let c=cv.new(10;10);
+  let c=cv.new("c";10;10);
   cv.nosuchmemberatall(c);
   <0
 };'

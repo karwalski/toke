@@ -37,7 +37,7 @@ Opaque handle to a dashboard instance.
 | `dashboard.addchart` | `d: $dashboard; id: $str; spec: chart.$chartspec` | `$dashwidget` | Add a chart widget |
 | `dashboard.addtable` | `d: $dashboard; id: $str; headers: @($str)` | `$dashwidget` | Add a table widget with column headers |
 | `dashboard.update` | `d: $dashboard; w: $dashwidget; data: @($byte)` | `void` | Push new data to a widget (triggers live refresh) |
-| `dashboard.serve` | `d: $dashboard` | `void!$dasherr` | Start serving the dashboard |
+| `dashboard.serve` | `d: $dashboard; port: u64` | `void!$dasherr` | Start serving the dashboard on `port` |
 
 ## Usage
 
@@ -50,7 +50,7 @@ f=main():i64{
   let d = dashboard.new("Metrics"; 2);
   let c = chart.bar(@("Mon"; "Tue"; "Wed"); @(10.0; 20.0; 15.0); "Daily Hits");
   let w = dashboard.addchart(d; "hits"; c);
-  let res = dashboard.serve(d);
+  let res = dashboard.serve(d; 8080);
   <0;
 }
 ```
