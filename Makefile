@@ -1814,7 +1814,7 @@ fuzz-http-parse: test/fuzz/fuzz_http_parse.c
 	$(CC) $(FUZZ_FLAGS) -o fuzz-http-parse $^
 
 fuzz-url-route: test/fuzz/fuzz_url_route.c src/stdlib/router.o src/stdlib/str.o
-	$(CC) $(FUZZ_FLAGS) -I src/stdlib -o fuzz-url-route $^ -lz
+	$(CC) $(FUZZ_FLAGS) -iquote src/stdlib -o fuzz-url-route $^ -lz
 
 fuzz: fuzz-lexer fuzz-parser
 	./fuzz-lexer -max_total_time=60 test/fuzz/corpus/
