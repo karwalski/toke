@@ -358,7 +358,7 @@ follow a final symlink that those calls would refuse (AMB-07).
 **Zero is a real size.** An empty file returns `0` on the `$ok` arm. This is
 the one call in the module whose success value collides with the value-sentinel
 convention the others use for failure, so it is discriminated on the error slot
-instead ([`runtime-abi.md` §7.2](../runtime-abi.md): *"the zero filler is not
+instead ([`runtime-abi.md` §7.2](https://github.com/karwalski/toke/blob/main/docs/runtime-abi.md): *"the zero filler is not
 the discriminant"*). A directory and a fifo are **refused** rather than
 measured — `st_size` on either is not a count of readable bytes, and returning
 it would be a plausible wrong answer.
