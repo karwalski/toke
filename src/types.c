@@ -2887,10 +2887,54 @@ static Type *infer_impl(Ctx *cx, const Node *node);
  * len_recv_kind).  A CHECK must not change what the emitter does to a
  * program it accepts, so the receiver node is left exactly as it was.
  */
+/*
+ * stdlib_str_bound (127.176) — 1 when identifier `recv` is bound, by the
+ * binding in force, as `let x=alias.member(..)` and the imported interface
+ * declares that member's return as exactly `str`.
+ *
+ * `let t=st.trim(x); t.push(1)` passed --check: stdlib returns are not typed
+ * in the checker, so 127.151's member-kind check had no kind to judge.  The
+ * emitter tags that binding "$str" from the SAME declaration (llvm.c,
+ * tki_declared_tag, 127.80), and its receiver dispatch reads that tag when
+ * the node carries no rtype — so a receiver typed here is one the emitter
+ * already lowers as a str, and the check and the dispatch cannot disagree.
+ * Deliberately narrow:
+ *   - only `str`, never `T!E` (not a T) nor collections (the emitter's "@str"
+ *     overrides for split/chars/fields/json.keys/values are not modelled);
+ *   - only an immutable `let` (a `mut` binding can be re-assigned);
+ *   - only for this receiver check: infer() and the node's rtype are not
+ *     touched, so codegen of accepted programs cannot move.
+ */
+static int stdlib_str_bound(Ctx *cx, const Node *recv) {
+    if (!recv || recv->kind != NODE_IDENT || !cx->fn_node || !cx->env
+        || !cx->env->names) return 0;
+    char nb[128]; TOKSTR(nb, cx->src, recv);
+    int nlen = (int)strlen(nb);
+    if (!nlen || is_param(cx, nb, nlen)) return 0;
+    const Node *bn = find_binding_before(cx->fn_node, cx->src, nb, nlen, recv);
+    if (!bn || bn->kind != NODE_BIND_STMT || bn->child_count != 2) return 0;
+    const Node *init = bn->children[1];
+    if (!init || init->kind != NODE_CALL_EXPR || init->child_count < 1) return 0;
+    const Node *callee = init->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2
+        || !callee->children[0] || callee->children[0]->kind != NODE_IDENT
+        || !callee->children[1]) return 0;
+    char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
+    char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+    char pbuf[256];
+    if (!import_module_path(cx, ab, pbuf, sizeof pbuf)) return 0;
+    Decl *d = tc_lookup(cx->env->names->module_scope, ab, (int)strlen(ab));
+    if (d && d->def_node && d->def_node->kind != NODE_IMPORT) return 0;
+    const char *ret = imported_func_ret(cx->env->names, ab, mb);
+    return ret && (strcmp(ret, "str") == 0 || strcmp(ret, "$str") == 0);
+}
+
 static const Type *recv_value_type(Ctx *cx, const Node *recv) {
     if (!recv) return NULL;
     if (recv->kind != NODE_IDENT && recv->kind != NODE_STR_LIT) return NULL;
     const Type *t = infer_impl(cx, recv);
+    if ((!t || t->kind == TY_UNKNOWN) && stdlib_str_bound(cx, recv))
+        return mk_type(cx->env->arena, TY_STR);             /* 127.176 */
     if (!t || t->kind == TY_UNKNOWN) return NULL;
     return t;
 }
