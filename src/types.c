@@ -2432,7 +2432,7 @@ static void recv_arity_error(const Node *call, const char *member,
  *   every other member       → tk_str_* (the chain's default is tk_str_eq_w)
  *
  * It is a copy, not the table itself: g_recv_methods lives in llvm.c, which
- * this change may not edit.  C046 fails if a member is added to
+ * this change may not edit.  C049 fails if a member is added to
  * g_recv_methods without a row here, so the copy cannot silently fall
  * behind; moving this column into g_recv_methods is the follow-up that makes
  * it one table.  A member with no row here — `get`, whose one-argument form

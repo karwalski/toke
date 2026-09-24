@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# C046_recv_method_kind.sh — a receiver method that exists on SOME receiver
+# C049_recv_method_kind.sh — a receiver method that exists on SOME receiver
 # type but not on this one is E4036 at --check (story 127.151).
 #
 # THE DEFECT. 127.1's check asks "does this member exist on any receiver";

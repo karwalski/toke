@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# C047_return_mismatch_fix_certain.sh — a return-type E4031 carries a `fix`
+# C050_return_mismatch_fix_certain.sh — a return-type E4031 carries a `fix`
 # only when that fix is certain (AGENTS.md §6), and the ooke typed-empty
 # return shape checks clean.
 #
