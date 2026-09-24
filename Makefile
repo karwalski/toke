@@ -846,7 +846,8 @@ TEST_CI_GREEN = \
 	test-stdlib-mlx test-stdlib-svg-diagram-integration \
 	test-stdlib-web-server-integration test-stdlib-ws-handshake-integration \
 	test-pkg \
-	test-stdlib-infer test-stdlib-template-email-integration
+	test-stdlib-infer test-stdlib-template-email-integration \
+	test-stdlib-http
 
 # Green on macOS, not runnable on the Linux runner.  Excluded BY NAME so the
 # gap is visible: nothing on any platform covers these in CI today.
@@ -880,8 +881,6 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #   test-stdlib-router         test/stdlib/test_router.c calls a router entry
 #                              point with 3 args where it now takes 4, at 6
 #                              call sites. Stale TEST source, not a recipe.
-#   test-stdlib-http           links now; exits 1 with NO diagnostic inside
-#                              http_get() at test_http.c:103, after 22 passes.
 #   test-stdlib-viz-integration links now; "FAIL: test3: rendered contains
 #                              Chart.js" then SIGTRAP.
 #   test-stdlib-crypto         runtime failures
@@ -918,7 +917,12 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #   test-stdlib-infer and test-stdlib-template-email-integration were
 #   listed here by 136.56 with assertions that were wrong, not the modules;
 #   136.66 corrected both assertions and promoted them to -green.
-TEST_CI_KNOWN_RED = test-stdlib-auth test-stdlib-router test-stdlib-http \
+#   test-stdlib-http was listed here as "exits 1 with no diagnostic inside
+#   http_get()". The diagnostic was CAP001 (net not granted; the harness
+#   never called tk_cap_init), and behind it sat two stale assertions of
+#   behaviour removed on purpose (NULL-router guard, 27096b4; 30 s default
+#   timeout, 59.4.12). 127.147 fixed all three in the TEST; promoted.
+TEST_CI_KNOWN_RED = test-stdlib-auth test-stdlib-router \
 	test-stdlib-viz-integration test-stdlib-crypto test-stdlib-file \
 	test-stdlib-zip test-compress-schema test-e2e test-e2e-check \
 	test-standalone
