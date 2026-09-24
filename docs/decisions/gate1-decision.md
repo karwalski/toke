@@ -6,7 +6,7 @@ order: 4
 ---
 
 **Date:** 2026-04-03
-**Status:** recorded PASS 2026-04-03 — **verdict RE-OPENED 2026-09-19** (story 128.19)
+**Status:** recorded PASS 2026-04-03 — re-opened 2026-09-19 — **NOT PASSED, owner decision 2026-09-22** (story 128.19)
 **Deciders:** Matt Watt
 **Story:** 1.6.4
 
@@ -17,7 +17,7 @@ order: 4
 | # | Criterion | Threshold | Result | Verdict |
 |---|-----------|-----------|--------|---------|
 | 1 | Token reduction on held-out D2C tasks using legacy character set | >= 10% | 12.5% (8K vocab) / 13.1% (32K vocab) | **PASS** |
-| 2 | Functional Pass@1 on held-out tasks | >= 60% | **58.8%** (588/1,000) | **NOT MET — open** |
+| 2 | Functional Pass@1 on held-out tasks | >= 60% | **58.8%** (588/1,000) | **NOT MET** |
 
 > **Pass@1 corrected 2026-09-19 (story 128.19): 58.8%, not 63.7%.**
 > 1,000 solutions were generated, 923 compiled, 588 passed every hidden test. The
@@ -27,8 +27,9 @@ order: 4
 > quantity. A solution that fails to compile is a failed attempt, not an absent
 > one, so the denominator is the 1,000 generated: 588/1,000 = **58.8%**. No re-run
 > was needed; the correction is arithmetic over `toke-eval/benchmark/solutions/*.toke`.
-> **58.8% is below the declared `pass_at_1_minimum: 0.60`, so the Gate 1 verdict is
-> re-opened and has not been re-decided here.** Derivation:
+> **58.8% is below the declared `pass_at_1_minimum: 0.60`. The verdict was re-opened
+> on 2026-09-19, and on 2026-09-22 the owner decided Gate 1 NOT PASSED (story 128.19).**
+> Derivation:
 > `toke-eval/docs/suspect-numbers-128-1c.md` §1.
 
 (The criterion was also mislabelled "first-pass compile success". 58.8% is the
@@ -44,9 +45,12 @@ of **PASS**. That is the withdrawn figure and it is kept here, not erased.
 
 **Re-opened 2026-09-19 (story 128.19).** That decision rested on a Pass@1 of
 63.7%, which was computed on the wrong denominator. The corrected figure, 58.8%,
-is below the gate's own >= 60% threshold. Whether Gate 1 passes on the corrected
-number is the owner's decision and is **not** made here. The original decision is
-left above as the record of what was concluded at the time.
+is below the gate's own >= 60% threshold.
+
+**Decided 2026-09-22 (owner decision, story 128.19): Gate 1 is NOT PASSED.** It fails
+on criterion 2, functional Pass@1 (58.8% against >= 60%). Criterion 1, the token
+reduction, stands as met. The original decision is left above as the record of what
+was concluded at the time.
 
 ---
 
@@ -188,7 +192,7 @@ SAST (cppcheck + clang-tidy), libFuzzer fuzzing, secret scanning, dependency sca
 
 ## Next Steps
 
-With Gate 1 passed, the project proceeds to:
+As recorded 2026-04-03, with Gate 1 then passed, the project proceeded to:
 
 1. **Default syntax implementation** (Epic 2.1) — 56-character set, type sigils, array literals
 2. **Corpus default syntax transformation** (Epic 2.14) — transform 46K programs to default syntax
