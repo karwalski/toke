@@ -82,11 +82,10 @@
       "kind": "func",
       "name": "crypto.constanttimeequal",
       "params": [
-        "i64",
-        "i64"
+        "[byte]",
+        "[byte]"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "bool"
     },
     {
       "kind": "func",
