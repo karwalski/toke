@@ -3307,11 +3307,25 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (node->op==TK_PLUS &&
             ((l->kind==TY_STR && r->kind==TY_UNKNOWN) ||
              (l->kind==TY_UNKNOWN && r->kind==TY_STR))) {
-            emit_mm(cx, node, l, r,
-                    "`+` operand is $str and the other has unresolved type. "
-                    "If both are $str, use s.concat(a;b) or interpolation "
-                    "\"\\(a)\\(b)\". If the other is numeric, convert: "
-                    "s.fromint(n) / s.format(f;\"%.4f\"). See ADR-0004.");
+            /* 127.173: this went through emit_mm, which formats the two
+             * OPERAND types, so the headline named the unresolved side:
+             * "expected 'unknown', got 'str'" (or the mirror image) — right
+             * to reject, unreadable as a diagnosis.  The mismatch is between
+             * what `+` requires and the str operand, as 127.140 states it
+             * for str + str; `expected`/`got` say that.  The `fix` text is
+             * unchanged. */
+            if (tc_can_emit(cx))
+                diag_emit(DIAG_ERROR, E4031, node->start, node->line, node->col,
+                          "'+' requires numeric operands: one side is a 'str' "
+                          "and the other's type could not be determined; toke "
+                          "does not overload '+' for string concatenation",
+                          "expected", "a numeric type", "got", "str",
+                          "fix",
+                          "`+` operand is $str and the other has unresolved type. "
+                          "If both are $str, use s.concat(a;b) or interpolation "
+                          "\"\\(a)\\(b)\". If the other is numeric, convert: "
+                          "s.fromint(n) / s.format(f;\"%.4f\"). See ADR-0004.",
+                          (const char *)NULL);
             return mk_type(A,TY_UNKNOWN);
         }
         if (l->kind==TY_UNKNOWN||r->kind==TY_UNKNOWN) return mk_type(A,TY_UNKNOWN);
