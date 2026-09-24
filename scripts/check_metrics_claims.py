@@ -41,12 +41,13 @@ Exit:   0 clean (pending-story files warn only), 1 on a violation.
         --strict also fails on the pending-story files.
 
 --selftest (story 132.41) is the gate's negative control and `make check-metrics`
-runs it first. It feeds eleven fixed inputs through check_file(): six real
-defects this guard has shipped past, which must keep failing, and five wordings
-that must keep passing. Run it after any change to a rule — switching rule 1 off
+runs it first. It feeds fixed inputs through check_file(): real defects this
+guard has shipped past, which must keep failing, and wordings that must keep
+passing (132.47/132.48/132.60/132.61 added fourteen). Run it after any change to a rule — switching rule 1 off
 makes it exit 1, which is how it was verified. A gate nobody has watched fail is
 not a gate.
 """
+import functools
 import html
 import os
 import re
@@ -103,16 +104,78 @@ PENDING = {
 #
 # Do not re-add a repository-wide prefix here. If a specific file is mid-story,
 # name that file in PENDING above, with its story number.
+#
+# 132.61: a sibling-repo prefix is written `<repo>/<path>` and matched against
+# repo_key() -- the repository's IDENTITY, read from git -- never against a path
+# relative to this checkout. `../toke-spec/rfc/` only ever matched when this
+# repo and toke-spec were both checked out side by side under their own names;
+# from a worktree of either, the entry silently stopped applying.
 PENDING_PREFIXES = (
-    ("../toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec draft is v0.3-era)"),
+    ("toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec draft is v0.3-era)"),
 )
 
+# 132.60 / 132.61 widened what rule 4 can see (a structural `near` window; the
+# `-char` abbreviation), and the first workspace sweep found these live stale
+# counts that the old window or the old noun list had been hiding. Each is a
+# real finding, reported for correction in its own repository; each warns here
+# until it is corrected and its entry deleted. Keyed by repo_key().
+NEWLY_CAUGHT = "132.60/132.61 — newly caught stale count; correct it in its repo, then delete this entry"
+PENDING.update({
+    "toke/docs/consortium-proposal.md": NEWLY_CAUGHT,   # 228 conformance, 57 stdlib
+    "toke/docs/risk-register.md": NEWLY_CAUGHT,         # 228 conformance
+    "toke-mcp/TOOLS.md": NEWLY_CAUGHT,                  # 80-char / 55-char
+    "toke-mcp/server.js": NEWLY_CAUGHT,                 # 80-char / 56-char (live tool description)
+    "toke-mcp/tools/migrate.js": NEWLY_CAUGHT,          # 80-char / 56-char
+    "toke-spec/docs/prior-art.md": NEWLY_CAUGHT,        # 46,754 as the live corpus
+    "toke-spec/docs/string-escaping.md": NEWLY_CAUGHT,  # 80-char / 56-char
+    "toke-spec/tree-sitter-toke/grammar.js": NEWLY_CAUGHT,  # 55-char
+})
 
-def pending_owner(rel):
+
+@functools.lru_cache(maxsize=None)
+def _repo_of(dirpath):
+    """(repo name, repo root) for a directory, from git's own record.
+
+    A worktree's `.git` is a file naming `<main>/.git/worktrees/<wt>`, so the
+    name is the MAIN checkout's, whatever the worktree directory is called.
+    """
+    d = dirpath
+    while True:
+        g = os.path.join(d, ".git")
+        if os.path.isdir(g):
+            return os.path.basename(d), d
+        if os.path.isfile(g):
+            try:
+                line = open(g, encoding="utf-8").read().strip()
+            except OSError:
+                line = ""
+            m = re.match(r"gitdir:\s*(.+?)/\.git(?:/worktrees/[^/]+)?/?$", line)
+            if m:
+                return os.path.basename(m.group(1)), d
+            return os.path.basename(d), d
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None, None
+        d = parent
+
+
+def repo_key(path):
+    """`<repo>/<path inside it>` -- stable across checkouts and worktrees."""
+    norm = os.path.normpath(os.path.abspath(path))
+    name, root = _repo_of(os.path.dirname(norm) if not os.path.isdir(norm) else norm)
+    if not name:
+        return os.path.relpath(norm, ROOT)
+    return name + "/" + os.path.relpath(norm, root).replace(os.sep, "/")
+
+
+def pending_owner(rel, path=None):
     if rel in PENDING:
         return PENDING[rel]
+    key = repo_key(path) if path else None
+    if key and key in PENDING:
+        return PENDING[key]
     for prefix, story in PENDING_PREFIXES:
-        if rel.startswith(prefix):
+        if rel.startswith(prefix) or (key and key.startswith(prefix)):
             return story
     return None
 
@@ -206,8 +269,10 @@ ATTRIBUTED = re.compile(
     r"\b(KERN|KARN|NERD|Sigil|Vyxal|third[- ]party|they publish|their (own )?"
     r"(claim|figure|number|report))\b", re.I)
 
-# Markdown strikethrough around a percentage: `~~"40-75% fewer tokens"~~`.
-STRUCK = re.compile(r"~~[^~]*\d[\d.,]*\s?%[^~]*~~")
+# Strikethrough (`~~"40-75% fewer tokens"~~`, 132.36). 132.47: in any of its spellings, markdown or rendered HTML. Used to
+# REMOVE the struck text before the rest of the sentence is judged: a struck
+# figure is withdrawn, the sentence around it is not.
+STRUCK_SPAN = re.compile(r"~~[^~]+~~|<(del|s|strike)\b[^>]*>.*?</\1\s*>", re.I | re.S)
 
 SUPERSEDED = re.compile(
     r"\b(supersede[sd]?|withdraw(n|s)?|no longer|historical|does not reconcile|"
@@ -264,11 +329,31 @@ def _accepted(facts):
                              facts["diagnostic_codes_in_src"]},
         "epics": {facts["epics"]},
         "stories": {facts["stories"]},
-        "corpus_records": {facts.get("corpus_records_v04_frozen"),
-                           facts.get("corpus_records_v02_2026_04"),
-                           25953, 1583},
+        # 132.60: only LIVE corpus counts here. The historical ones are in
+        # HISTORICAL below and pass only when their own block dates them.
+        "corpus_records": {facts.get("corpus_records_v04_frozen"), 1583},
         "charset": {facts["charset_total"], 86},   # 86 = the legacy profile
     }
+
+
+# Story 132.60. A fact sheet value that describes a PAST state is not a live
+# count. `corpus_records_v02_2026_04` (46,754, the v0.2-era corpus of
+# 2026-04-01) and the 25,953-program v0.3 tokenizer training set were in the
+# accepted set above, so "This produced 46,754 validated programs"
+# (docs/about/competitive-matrix.md), stated in the present tense as toke's
+# corpus, passed rule 4 by matching a number that is only true of April.
+# From a worktree, where the fact sheet cannot read ../toke-corpus, the same
+# line passed instead because the 9-line `near` window happened to reach an
+# LL(1)-retirement date in the next list item. A historical value is accepted
+# only when its OWN block (paragraph, list item or table row) says it is
+# historical.
+def _historical(facts):
+    return {
+        "corpus_records": {facts.get("corpus_records_v02_2026_04"), 25953} - {None},
+    }
+
+
+HISTORICAL_CUE = re.compile(r"\bv0\.[0-3]\b|\bera\b|\bhistorical\b", re.I)
 
 
 # "Phase 2 keywords", "Gate 1 stories", "Tier 0 modules" are labels, not counts
@@ -315,8 +400,10 @@ COUNT_RULES = [
     (re.compile(r"(?<![\w.])" + NOT_LABEL + r"(?P<n>\d[\d,]*)\s*\+?\s*stories\b", re.I), "stories", "stories"),
     (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:corpus\s+records?|validated\s+(?:training\s+)?programs?|audited\s+records?)\b", re.I),
      "corpus records", "corpus_records"),
+    # 132.61: "55-char syntax" (toke-website templates/ooke.tkt) passed both
+    # guards because the noun was abbreviated. `char` counts as `character`.
     (re.compile(r"(?<![\w.])" + NOT_LABEL +
-                r"(?P<n>\d[\d,]*)[- ]character(?:s)?\b"
+                r"(?P<n>\d[\d,]*)(?:[- ]characters?|-chars?)\b"
                 r"(?=[^.|]{0,60}\b(?:alphabet|character set|charset|profile|syntax|"
                 r"ASCII|default mode|set\b)|\s*(?:default|legacy)\b)", re.I),
      "character set", "charset"),
@@ -383,6 +470,10 @@ def count_findings(line, near):
             ok = accepted.get(key, set())
             if n in ok:
                 continue
+            # 132.60: a past value, dated as past in its own block
+            if n in _historical(_facts()).get(key, set()) and \
+                    (HISTORICAL_CUE.search(line) or HISTORICAL_CUE.search(near)):
+                continue
             # a number given as an explicitly dated or superseded snapshot, a
             # stated target, or another language's figure is a record or a
             # comparison, not a claim about toke today
@@ -407,9 +498,152 @@ def count_findings(line, near):
     return out
 
 
+# ------------------------------------------------------ structural units ----
+# Story 132.60. `near` (the window a supersession note or a date may sit in)
+# was lines i-4..i+4, and the rule-1 N context was the 30 lines above. A line
+# count knows nothing about the document: it reached across list items, table
+# rows and paragraphs, so a live figure passed because the NEXT list item said
+# "retired on 2026-07-02", and two withdrawal-table rows passed rule 1 because
+# a sample size happened to sit 30 lines up. Both windows are now the
+# STRUCTURAL unit the line belongs to: a paragraph, one list item, one table
+# row, one heading -- or, in HTML, the block element it opens.
+LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+HTML_BLOCK = re.compile(
+    r"^\s*<(?:p|li|tr|h[1-6]|table|thead|tbody|ul|ol|div|blockquote|dt|dd|"
+    r"section|article|pre)\b", re.I)
+FENCE = re.compile(r"^\s*(```|~~~)")
+
+
+def block_spans(lines, is_html=False):
+    """[(start, end)] per line: the half-open span of its structural unit."""
+    spans = [None] * len(lines)
+    start = 0
+    in_fence = False
+
+    def close(end):
+        for k in range(start, end):
+            spans[k] = (start, end)
+
+    for i, ln in enumerate(lines):
+        if FENCE.match(ln):
+            in_fence = not in_fence
+        st = ln.strip()
+        boundary = False
+        own_line = False
+        if not in_fence:
+            if not st:
+                boundary = True
+            elif st.startswith("|") or st.startswith("#"):
+                own_line = True
+            elif LIST_ITEM.match(ln) or (is_html and HTML_BLOCK.match(ln)):
+                boundary = True
+        if own_line:
+            close(i)
+            spans[i] = (i, i + 1)
+            start = i + 1
+            continue
+        if boundary:
+            close(i)
+            start = i if st else i + 1
+            if not st:
+                spans[i] = (i, i + 1)
+    close(len(lines))
+    return spans
+
+
+TABLE_SEP = re.compile(r"^\s*\|?\s*:?-{3,}")
+# A table whose first header cell says its rows are claims being retired
+# (docs/about/canonical.md "| Never | Write instead |") is a claims table in
+# prose form: its rows name retired strings, they do not assert them.
+RETIRING_HEADER = re.compile(
+    r"^\s*\|\s*\**\s*(never|withdrawn|retired|stale|was|claim|do not|don't|"
+    r"what we (no longer|stopped))\b", re.I)
+NOTE_LEAD = re.compile(r"^\W{0,6}(superseded|withdrawn|retired|corrected|archived|"
+                       r"historical|note|update[d]?)\b", re.I)
+
+
+_TAG = re.compile(r"<[^>]+>")
+
+
+def _governing_html(lines, spans, i):
+    """governing() for a rendered page: the same three relations, by tag."""
+    lo, hi = spans[i]
+    parts, retiring = [], False
+    st = lines[lo].strip().lower()
+    if re.match(r"<t[rdh]\b", st):
+        k = lo
+        while k > 0 and "<table" not in lines[k].lower():
+            k -= 1
+        for j in range(k, lo):
+            if re.search(r"<t[rh]\b", lines[j], re.I):
+                head = _TAG.sub(" | ", lines[j]).strip()
+                parts.append(head)
+                retiring = bool(RETIRING_HEADER.match("| " + head.lstrip("| ")))
+                break
+    elif st.startswith("<li"):
+        k = lo
+        while k > 0 and not re.match(r"\s*<(ul|ol)\b", lines[k], re.I):
+            k -= 1
+        if k > 0:
+            plo, _ = spans[k - 1]
+            parts.append("\n".join(lines[plo:k]))
+    j = hi
+    while j < len(lines) and not _TAG.sub("", lines[j]).strip():
+        j += 1
+    if j < len(lines) and NOTE_LEAD.match(_TAG.sub("", lines[j]).strip()):
+        nlo, nhi = spans[j]
+        parts.append("\n".join(lines[nlo:nhi]))
+    return "\n".join(parts), retiring
+
+
+def governing(lines, spans, i, is_html=False):
+    """Text that structurally governs line i's unit, beyond the unit itself.
+
+    - a table row: the table's header row (the row above the |---| rule);
+    - a list item: the lead-in paragraph directly above the list;
+    - any unit: a note block directly after it that OPENS with a supersession
+      or correction marker ("**Superseded (2026-09-18).** ...") -- the
+      attached-note case the old +4-line window existed for.
+    Returns (text, retiring_table).
+    """
+    if is_html:
+        return _governing_html(lines, spans, i)
+    lo, hi = spans[i]
+    parts, retiring = [], False
+    st = lines[i].strip()
+    if st.startswith("|"):
+        k = i
+        while k > 0 and lines[k - 1].strip().startswith("|"):
+            k -= 1
+        if k + 1 < len(lines) and TABLE_SEP.match(lines[k + 1]):
+            parts.append(lines[k])
+            retiring = bool(RETIRING_HEADER.match(lines[k]))
+    elif LIST_ITEM.match(lines[lo]):
+        k = lo
+        while k > 0:
+            plo, _ = spans[k - 1]
+            if not lines[k - 1].strip():
+                k -= 1
+                continue
+            if LIST_ITEM.match(lines[plo]):
+                k = plo
+                continue
+            parts.append("\n".join(lines[plo:k]))
+            break
+    j = hi
+    while j < len(lines) and not lines[j].strip():
+        j += 1
+    if j < len(lines) and NOTE_LEAD.match(lines[j].strip()):
+        nlo, nhi = spans[j]
+        parts.append("\n".join(lines[nlo:nhi]))
+    return "\n".join(parts), retiring
+
+
 def sentences(line):
-    """Split a line into claim-sized units. Table cells split on '|' too."""
-    for cell in line.split("|"):
+    """Split a line into claim-sized units. Table cells split on '|' too, and
+    (132.60) on HTML cell boundaries, so a rendered table row is judged cell by
+    cell exactly as its markdown source is."""
+    for cell in re.split(r"\||</?t[dh]\b[^>]*>", line):
         for s in SENTENCE_SPLIT.split(cell):
             s = s.strip()
             if s:
@@ -436,8 +670,13 @@ def claims_token_percentage(s):
     # text, i.e. it asked the document to requalify a number it had just
     # retired. Both halves are required: strikethrough AND a supersession word
     # in the same sentence. A live percentage stays a live claim.
-    if STRUCK.search(s) and SUPERSEDED.search(s):
-        return False
+    #
+    # 132.47: that early return also excused every OTHER percentage in the
+    # sentence -- "~~52%~~ (withdrawn); toke is 40% fewer tokens than Python"
+    # passed whole. Now only the struck text is dropped (markdown ~~ or HTML
+    # <del>/<s>), and what is left is judged like any other sentence.
+    if STRUCK_SPAN.search(s) and SUPERSEDED.search(s):
+        s = STRUCK_SPAN.sub(" ", s)
     for m in PCT.finditer(s):
         before = s[max(0, m.start() - 24):m.start()]
         if THRESHOLD_PREFIX.search(before):
@@ -462,21 +701,16 @@ def claims_token_percentage(s):
 #
 # This is a path list, not a name list: `content/docs` cannot be excluded by the
 # directory name `docs` without blinding the guard to every real doc tree.
-GENERATED_MIRRORS = (
-    os.path.join("toke-website", "content", "docs"),   # copy of ~/tk/toke/docs
-    os.path.join("toke-website", "build-docs"),        # ooke-rendered HTML of the same
-)
+# 132.61: recognised by STRUCTURE only -- the directory sits beside the script
+# that writes it -- never by the checkout's name. The name-based list that used
+# to come first ("toke-website/content/docs") also matched any unrelated tree
+# that happened to be called that, and missed every worktree.
+GENERATED_MIRRORS = ("build-docs", os.path.join("content", "docs"))
 
 
 def is_generated_mirror(path):
     norm = os.path.normpath(os.path.abspath(path))
-    if any((os.sep + m + os.sep) in norm or norm.endswith(os.sep + m)
-           for m in GENERATED_MIRRORS):
-        return True
-    # 132.46: recognise the same two mirrors structurally too, beside the
-    # script that builds the site, so a worktree of the website (whose
-    # directory is not called toke-website) is treated identically.
-    for tail in ("build-docs", os.path.join("content", "docs")):
+    for tail in GENERATED_MIRRORS:
         if norm.endswith(os.sep + tail):
             site = norm[:-len(os.sep + tail)]
             if os.path.isfile(os.path.join(site, "scripts", "build_static.sh")):
@@ -511,6 +745,48 @@ def is_deployed_tree(path):
     path = os.path.normpath(os.path.abspath(path))
     return (os.path.basename(path) == "build" and
             os.path.isfile(os.path.join(os.path.dirname(path), DEPLOY_SCRIPT)))
+
+
+# 132.63: a deployed tree is only evidence about the sources it was built
+# from. The main checkout's build/ was found dated 2026-09-22 and differing from
+# a fresh build, so a scan of it described an old site -- green or red, the
+# verdict was about the wrong thing. Freshness is decided by the site's OWN
+# gate (scripts/check_build_fresh.py: build/ must be newer than static/,
+# templates/, content/, sites/ and pages/), never re-implemented here. A stale
+# tree is treated like a missing one: named, NOT scanned, and a failure under
+# --strict. Rebuild it (`make build` in the site) and it is scanned again.
+FRESH_SCRIPT = os.path.join("scripts", "check_build_fresh.py")
+STALE_TREES = {}          # build path -> the freshness gate's own message
+
+
+@functools.lru_cache(maxsize=None)
+def deployed_tree_fresh(build_path):
+    """(fresh?, message) for a deployed build/, from the site's own gate."""
+    import subprocess
+    site = os.path.dirname(os.path.normpath(os.path.abspath(build_path)))
+    script = os.path.join(site, FRESH_SCRIPT)
+    if not os.path.isfile(script):
+        return True, "no freshness gate in this site; scanned as found"
+    r = subprocess.run([sys.executable, script], capture_output=True, text=True)
+    msg = (r.stdout + r.stderr).strip().splitlines()
+    return r.returncode == 0, "; ".join(m.strip() for m in msg[:3])
+
+
+def scan_deployed_tree(build_path):
+    """True when the walk should descend into this deployed tree."""
+    fresh, msg = deployed_tree_fresh(build_path)
+    if not fresh:
+        STALE_TREES[os.path.normpath(os.path.abspath(build_path))] = msg
+    return fresh
+
+
+def report_stale_trees(strict):
+    """Print each stale deployed tree; return how many count as failures."""
+    for path, msg in sorted(STALE_TREES.items()):
+        print("SKIP  deployed tree is STALE, so not scanned: %s\n      %s\n"
+              "      (run `make build` in that site; --strict fails on this)"
+              % (os.path.relpath(path, ROOT), msg))
+    return len(STALE_TREES) if strict else 0
 
 
 @functools.lru_cache(maxsize=None)
@@ -588,7 +864,8 @@ def md_files(targets):
             for dirpath, dirs, files in os.walk(p):
                 dirs[:] = [d for d in dirs
                            if (d not in EXCLUDE_DIRS
-                               or is_deployed_tree(os.path.join(dirpath, d)))
+                               or (is_deployed_tree(os.path.join(dirpath, d))
+                                   and scan_deployed_tree(os.path.join(dirpath, d))))
                            and not is_generated_mirror(os.path.join(dirpath, d))]
                 for f in sorted(files):
                     if f.endswith(SCAN_EXT):
@@ -677,7 +954,7 @@ def check_file(path):
         return []
     # 132.46: judge HTML by the text a visitor reads. Rendered pages carry
     # `&gt;= 10%`, which THRESHOLD_PREFIX cannot see as the `>= 10%` it is.
-    if path.endswith(".html"):
+    if path.endswith((".html", ".tkt")):   # 132.60: templates carry entities too
         lines = [html.unescape(ln) for ln in lines]
     archived = is_archived(lines)
     if src and not archived:
@@ -687,14 +964,25 @@ def check_file(path):
         except OSError:
             pass
     table_lines = claims_table_lines(path) if path.endswith(".json") else frozenset()
+    is_markup = path.endswith((".html", ".htm", ".tkt"))
+    spans = block_spans(lines, is_markup)
     findings = []
     for i, line in enumerate(lines):
         in_claims_table = (i + 1) in table_lines
-        ctx_start = max(0, i - CONTEXT_LINES)
-        context = "\n".join(lines[ctx_start:i + 1])
-        # a supersession note may sit just after the sentence it qualifies, but it
-        # has to be adjacent to count — a marker 20 lines away qualifies nothing.
-        near = "\n".join(lines[max(0, i - 4):i + 5])
+        # 132.60: `near` -- the window a supersession note, a date or an era
+        # marker may EXCUSE a figure from -- is the line's structural unit
+        # (block_spans) plus what governs it (governing), not a line count.
+        lo, hi = spans[i]
+        # bounded, so a file with no blank lines (a JSON blob, a JS bundle) is
+        # not one quadratic block
+        lo, hi = max(lo, i - CONTEXT_LINES), min(hi, i + CONTEXT_LINES + 1)
+        gov, retiring_table = governing(lines, spans, i, is_markup)
+        near = "\n".join([gov, "\n".join(lines[lo:hi])])
+        # the rule-1 N context keeps its documented scope (TEMSpec: "the
+        # surrounding context block, up to CONTEXT_LINES above"): an N stated
+        # once for a section ("Basis for every number below: N = 2,000")
+        # governs the section. 132.60 is about `near`, which excuses.
+        context = "\n".join(lines[max(0, i - CONTEXT_LINES):i + 1])
         for s in sentences(line):
             if in_claims_table:
                 continue          # this line is inside the file's own claims table
@@ -708,7 +996,8 @@ def check_file(path):
                 if missing:
                     findings.append((i + 1, "missing " + " and ".join(missing), s))
             # Rule 3 — a withdrawn headline restated without its supersession
-            if TOKE_SUBJECT.search(s) and TOKEN_WORD.search(s) and not archived:
+            if TOKE_SUBJECT.search(s) and TOKEN_WORD.search(s) and not archived \
+                    and not retiring_table:
                 for pat, label in WITHDRAWN:
                     if ATTRIBUTED.search(s):
                         break
@@ -725,7 +1014,7 @@ def check_file(path):
                      "lane crossing: a toke-trained tokenizer compared against a "
                      "non-toke baseline", s))
         # Rule 4 — a count of things that disagrees with the tree
-        if not archived and not rel.startswith(FACTS_SKIP):
+        if not archived and not retiring_table and not rel.startswith(FACTS_SKIP):
             for why, frag, _span in count_findings(line, near):
                 if in_claims_table:
                     continue
@@ -790,14 +1079,105 @@ SELFTEST = [
     (False, "archived does NOT excuse an unqualified percentage",
      "**Archived 2026-09-15 — superseded by the Gate 1 re-measurement.**\n\n"
      "toke needs 52% fewer tokens than Python."),
+
+    # -- 132.60: `near` is the structural unit, not +/-4 lines ---------------
+    # Each REJECT here passed the line-count window (verified against the
+    # pre-132.60 guard) and each ACCEPT was a false positive of it or must
+    # stay accepted.
+    (False, "132.60: a date in the NEXT list item excuses nothing",
+     "- Spec v0.4 was cut on 2026-07-02.\n- toke has 12 keywords."),
+    (False, "132.60: a historical count stated as live (competitive-matrix.md:46)",
+     "toke's corpus holds 46,754 validated programs."),
+    (True, "132.60: the same historical count, dated in its own sentence",
+     "The v0.2-era corpus held 46,754 validated programs."),
+    (True, "132.60: a list quoted under a lead-in that retires it",
+     "The live card contains, quoted here as published text that is being retired:\n\n"
+     "- \"toke has a 55-character alphabet\" -- wrong."),
+    (True, "132.60: a retiring table names what it retires (canonical.md \u00a711)",
+     "| Never | Write instead |\n|---|---|\n| \"13 keywords\" | \"14 keywords\" |"),
+    (False, "132.60: the same row in an ordinary table is a live claim",
+     "| Fact | Value |\n|---|---|\n| Keywords | toke has 13 keywords |"),
+    (True, "132.60: a rendered withdrawal-table row is judged cell by cell",
+     "<table><tr><td>\"42% reduction vs Python\" (or 31% / 48%)</td>"
+     "<td>withdrawn outright: toke costs about 1.34x Python's cl100k_base tokens</td></tr></table>",
+     ".html"),
+
+    # -- 132.61: an abbreviated count noun ------------------------------------
+    (False, "132.61: \"55-char syntax\" (toke-website templates/ooke.tkt)",
+     "toke's 55-char syntax means an LLM generates a complete site in fewer tokens.",
+     ".tkt"),
+
+    # -- 132.48: a label is not a count; a wrong count still fails ------------
+    (True, "132.48: \"Profile-1 character set\" is a label (toke-ooke public-api.md:35)",
+     "toke's Profile-1 character set excludes `_`, so this is a language constraint."),
+    (False, "132.48: a genuinely wrong character-set count still fails",
+     "toke uses a 55-character set."),
+
+    # -- 132.47: struck-through withdrawn text --------------------------------
+    (True, "132.47: a struck, withdrawn figure (design handoff README)",
+     "- **Sounds like toke:** ~~\"40-75% fewer tokens than Python.\"~~ (withdrawn)"),
+    (True, "132.47: the same, rendered as <del>",
+     "<p><del>40-75% fewer tokens than Python</del> (withdrawn) -- toke keeps the register.</p>",
+     ".html"),
+    (False, "132.47: an UNSTRUCK stale claim still fails, withdrawn or not",
+     "toke is 40-75% fewer tokens than Python (withdrawn)."),
+    (False, "132.47: a live figure beside a struck one is not excused by it",
+     "Once ~~52% fewer tokens~~ (withdrawn); today toke is 40% fewer tokens than Python."),
 ]
+
+
+def selftest_structure():
+    """132.61: exclusions and pending entries follow what a tree IS, not what
+    its checkout is called. Builds throwaway trees under neutral names."""
+    import tempfile
+    bad = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        # a worktree of toke-spec, checked out as "wt_x": its .git is a file
+        wt = os.path.join(tmp, "wt_x")
+        os.makedirs(os.path.join(wt, "rfc"))
+        with open(os.path.join(wt, ".git"), "w") as fh:
+            fh.write("gitdir: /elsewhere/toke-spec/.git/worktrees/wt_x\n")
+        rfc = os.path.join(wt, "rfc", "draft.md")
+        if repo_key(rfc) != "toke-spec/rfc/draft.md" or \
+                not pending_owner(os.path.relpath(rfc, ROOT), rfc):
+            bad += 1
+            print("SELFTEST FAIL [structure] a toke-spec worktree's rfc/ lost its "
+                  "pending owner (repo_key=%r)" % repo_key(rfc))
+        # ...and a repo that is NOT toke-spec, with the same rfc/ path, does not get it
+        other = os.path.join(tmp, "other")
+        os.makedirs(os.path.join(other, ".git"))
+        os.makedirs(os.path.join(other, "rfc"))
+        orfc = os.path.join(other, "rfc", "draft.md")
+        if pending_owner(os.path.relpath(orfc, ROOT), orfc):
+            bad += 1
+            print("SELFTEST FAIL [structure] an unrelated repo's rfc/ was exempted")
+        # a website checkout under a neutral name: its mirrors are mirrors
+        site = os.path.join(tmp, "site_wt")
+        for d in ("scripts", "build-docs", os.path.join("content", "docs")):
+            os.makedirs(os.path.join(site, d))
+        open(os.path.join(site, "scripts", "build_static.sh"), "w").close()
+        for d in ("build-docs", os.path.join("content", "docs")):
+            if not is_generated_mirror(os.path.join(site, d)):
+                bad += 1
+                print("SELFTEST FAIL [structure] %s beside build_static.sh is not "
+                      "recognised as a mirror" % d)
+        # ...and a directory merely NAMED like one, with no build script, is scanned
+        fake = os.path.join(tmp, "toke-website", "content", "docs")
+        os.makedirs(fake)
+        if is_generated_mirror(fake):
+            bad += 1
+            print("SELFTEST FAIL [structure] a tree named toke-website/content/docs "
+                  "with no build script was excluded by name")
+    return bad
 
 
 def selftest():
     import tempfile
-    bad = 0
-    for accept, name, text in SELFTEST:
-        with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8",
+    bad = selftest_structure()
+    for case in SELFTEST:
+        accept, name, text = case[:3]
+        suffix = case[3] if len(case) > 3 else ".md"
+        with tempfile.NamedTemporaryFile("w", suffix=suffix, encoding="utf-8",
                                          delete=False) as fh:
             fh.write(text + "\n")
             tmp = fh.name
@@ -817,7 +1197,8 @@ def selftest():
               % (bad, len(SELFTEST)))
         return 1
     print("selftest: %d cases OK — %d wordings accepted, %d real defects still "
-          "rejected (one per rule, plus the archive exemption)."
+          "rejected (every rule, the archive exemption, and the 132.47/48/60/61 "
+          "windows and nouns)."
           % (len(SELFTEST), sum(1 for c in SELFTEST if c[0]),
              sum(1 for c in SELFTEST if not c[0])))
     return 0
@@ -853,7 +1234,9 @@ def main():
         src = deployed_source(path)
         divergent = bool(src) and not check_file(src)
         for lineno, why, sent in check_file(path):
-            owner = pending_owner(rel)
+            owner = pending_owner(rel, path)
+            if not owner and src:     # a rendered page inherits its source's owner
+                owner = pending_owner(os.path.relpath(src, ROOT), src)
             # a claim the renderer INTRODUCED (not in the source) still fails
             if divergent and not owner and in_source(sent, src):
                 owner = ("132.46 render divergence: source %s passes"
@@ -866,11 +1249,15 @@ def main():
 
     if "--list" in sys.argv:
         print(f"scanned {scanned} markdown files")
+    stale_fail = report_stale_trees(strict)
 
     for rel, lineno, why, sent, owner in warnings:
         print(f"WARN  {rel}:{lineno}: {why}\n      {sent[:200]}")
         print(f"      (owned by story {owner})")
 
+    if stale_fail:
+        print("\nERROR (--strict): %d deployed tree(s) stale, so unscanned." % stale_fail)
+        return 1
     if failures:
         print("\nERROR: token-efficiency claims without TEMSpec §6.3 qualifiers, "
               "crossing tokenizer lanes, or counts that disagree with the tree:\n")
@@ -889,7 +1276,8 @@ def main():
         return 1
 
     print(f"metrics claims OK: {scanned} files scanned, "
-          f"{len(warnings)} pending-story warning(s).")
+          f"{len(warnings)} pending-story warning(s), "
+          f"{len(STALE_TREES)} stale deployed tree(s) not scanned.")
     return 0
 
 
