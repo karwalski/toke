@@ -360,32 +360,24 @@ lint-report:
 	@python3 scripts/check_stdlib_analysis.py --compile --analyze --nonhost \
 	    --report $(ANALYZE_SRCS)
 
+# 127.156 / 136.65: every conformance entry point goes through
+# scripts/conform_isolated.sh, which pins a private copy of the compiler,
+# gives the run a private TMPDIR, caps concurrent runs machine-wide
+# (TKC_GATE_SLOTS, default 2) and runs the load-sensitive S005/S006 under a
+# machine-wide serial lock.  See the script's header for why each is needed.
+# One invocation for `conform`, not a recursive make, so a run holds exactly
+# one slot.
 conform:
-	@bash test/run_conform.sh
-	@$(MAKE) --no-print-directory conform-sh
+	@bash scripts/conform_isolated.sh all
 
 # 131.37: shell-script conformance cases (test/conform/*.sh) — each script
 # prints its own PASS/FAIL lines and exits non-zero on any failure.
-# 131.79: the per-suite log used to be one fixed /tmp path shared by every
-# invocation, so two concurrent runs of this target overwrote each other's
-# output and each reported the other's failures. mktemp per run, removed on
-# the way out.
+# 131.79 gave each run its own log; 127.156 its own compiler and TMPDIR.
 conform-sh:
-	@pass=0; fail=0; \
-	log="$$(mktemp "$${TMPDIR:-/tmp}/tkc_conform_sh.XXXXXX")" || exit 1; \
-	trap 'rm -f "$$log"' EXIT INT TERM; \
-	for s in test/conform/*.sh; do \
-	  if bash "$$s" > "$$log" 2>&1; then \
-	    pass=$$((pass+1)); echo "PASS $$s: $$(grep -E '^Results:' "$$log" | tail -1)"; \
-	  else \
-	    fail=$$((fail+1)); echo "FAIL $$s"; tail -25 "$$log" | sed 's/^/    /'; \
-	  fi; \
-	done; \
-	echo "conform-sh: $$pass scripts passed, $$fail failed"; \
-	[ $$fail -eq 0 ]
+	@bash scripts/conform_isolated.sh sh
 
 conform-check:
-	@bash test/run_conform.sh && echo "CONFORMANCE: 100%"
+	@bash scripts/conform_isolated.sh yaml && echo "CONFORMANCE: 100%"
 
 # ── 136.62 exposed this target ──────────────────────────────────────────────
 # Three recursive makes for three --target triples, all writing into the SAME
@@ -845,7 +837,9 @@ TEST_CI_GREEN = \
 	test-stdlib-infer-stream test-stdlib-ml-pipeline-integration \
 	test-stdlib-mlx test-stdlib-svg-diagram-integration \
 	test-stdlib-web-server-integration test-stdlib-ws-handshake-integration \
-	test-pkg
+	test-pkg \
+	test-stdlib-infer test-stdlib-template-email-integration \
+	test-stdlib-http test-stdlib-ws-client-tk
 
 # Green on macOS, not runnable on the Linux runner.  Excluded BY NAME so the
 # gap is visible: nothing on any platform covers these in CI today.
@@ -879,8 +873,6 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #   test-stdlib-router         test/stdlib/test_router.c calls a router entry
 #                              point with 3 args where it now takes 4, at 6
 #                              call sites. Stale TEST source, not a recipe.
-#   test-stdlib-http           links now; exits 1 with NO diagnostic inside
-#                              http_get() at test_http.c:103, after 22 passes.
 #   test-stdlib-viz-integration links now; "FAIL: test3: rendered contains
 #                              Chart.js" then SIGTRAP.
 #   test-stdlib-crypto         runtime failures
@@ -914,26 +906,18 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #                              tamper of a DECODED byte, or of a character
 #                              in the middle of the segment.
 #
-#   Added by 136.56 when the orphaned sources were wired up. Both are the
-#   TEST that is wrong, not the module, and neither was edited here:
-#   test-stdlib-infer          test_infer.c:188 asserts load_streaming's
-#                              error message contains "72.7". 127.99 removed
-#                              the placeholder that said "(Epic 72.7)"; the
-#                              stub in infer_stream.c now explains itself
-#                              without a story number. 34 of 35 pass.
-#   test-stdlib-template-email-integration
-#                              test_template_email_integration.c:95 asserts
-#                              the substring "onerror" is absent after
-#                              escaping "<img onerror=alert(1) src=x>". The
-#                              escaped output is "&lt;img onerror=..." --
-#                              inert, and the same file's line 212 EXPECTS
-#                              "onerror" in escaped output. The two
-#                              assertions contradict each other; the "<img"
-#                              check beside line 95 is the real one and passes.
-TEST_CI_KNOWN_RED = test-stdlib-auth test-stdlib-router test-stdlib-http \
+#   test-stdlib-infer and test-stdlib-template-email-integration were
+#   listed here by 136.56 with assertions that were wrong, not the modules;
+#   136.66 corrected both assertions and promoted them to -green.
+#   test-stdlib-http was listed here as "exits 1 with no diagnostic inside
+#   http_get()". The diagnostic was CAP001 (net not granted; the harness
+#   never called tk_cap_init), and behind it sat two stale assertions of
+#   behaviour removed on purpose (NULL-router guard, 27096b4; 30 s default
+#   timeout, 59.4.12). 127.147 fixed all three in the TEST; promoted.
+TEST_CI_KNOWN_RED = test-stdlib-auth test-stdlib-router \
 	test-stdlib-viz-integration test-stdlib-crypto test-stdlib-file \
 	test-stdlib-zip test-compress-schema test-e2e test-e2e-check \
-	test-standalone test-stdlib-infer test-stdlib-template-email-integration
+	test-standalone
 
 # Run a list of targets, one log each, never stopping at the first failure --
 # "3 of 61 failed, here they are" is actionable; "make: *** Error 1" after the
@@ -956,7 +940,7 @@ define run_test_list
 	[ $$fail -eq 0 ]
 endef
 
-.PHONY: test-ci test-ci-green test-ci-known-red test-ci-unmeasured check-test-orphans check-site-compile
+.PHONY: test-ci test-ci-green test-ci-known-red test-ci-unmeasured check-test-orphans check-site-compile check-examples check-stdlib-tk
 test-ci-green:
 	$(call run_test_list,$(TEST_CI_GREEN),test-ci-green)
 
@@ -982,7 +966,7 @@ test-ci: test-ci-green
 # leave it out. It is a prerequisite of `ci` as of this line.
 #
 # `$(BIN)` is already its own prerequisite, so ordering with `conform` is free.
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-site-compile check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -1002,6 +986,21 @@ ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki che
 check-docs: $(BIN)
 	python3 scripts/check_doc_examples.py --self-test
 	python3 scripts/check_doc_examples.py docs
+
+# 127.87 — the shipped examples/ compile. Nothing read examples/ before this,
+# and a multi-module example could not even be type-checked from a fresh clone
+# (its interfaces are gitignored build artifacts). Generates them in a private
+# dir, --checks every module in dependency order, builds the single-module
+# examples to binaries, and fails on any tracked example source it does not
+# list. See the script for why multi-module examples are not linked yet.
+check-examples: $(BIN)
+	@bash scripts/check_examples.sh
+
+# 127.126 — the stdlib's own toke sources type-check. No target compiled
+# stdlib/*.tk, which is how two of the five genuine modules broke unnoticed.
+# Failures must be on the script's self-failing KNOWN_RED list with a story.
+check-stdlib-tk: $(BIN)
+	@bash scripts/check_stdlib_tk.sh
 
 # 131.11 — pattern catalogue drift gate. Validates patterns/catalogue.json, regenerates
 # docs/spec/patterns-v0.4.md, docs/guide/11-patterns-and-efficiency.md and
@@ -1727,6 +1726,16 @@ test-stdlib-securemem: $(BIN)
 	$(RUN_TEST) ./test/stdlib/securemem_roundtrip.bin
 	@rm -f test/stdlib/securemem_roundtrip.bin
 
+# ── Story 127.149: test/stdlib/ws_client.tk, built and run ──────────────────
+# The file had never compiled at v0.4 and no target read it, so it implied
+# coverage that did not exist. Rewritten to v0.4; this compiles, links and runs
+# it. main() needs no server (the client helpers are type-checked and linked,
+# not called), so it is safe on a CI runner.
+test-stdlib-ws-client-tk: $(BIN)
+	@TKC_STDLIB_DIR=$(PWD)/src/stdlib ./$(BIN) test/stdlib/ws_client.tk -o test/stdlib/ws_client.bin
+	$(RUN_TEST) ./test/stdlib/ws_client.bin
+	@rm -f test/stdlib/ws_client.bin
+
 # ── Story 136.3: std.keychain binding, end to end ────────────────────────────
 # Compiles and RUNS a real .tk consumer, because that is the layer that was
 # broken: the C core was fine, the link line was not. Write and read happen in
@@ -1811,7 +1820,7 @@ fuzz-http-parse: test/fuzz/fuzz_http_parse.c
 	$(CC) $(FUZZ_FLAGS) -o fuzz-http-parse $^
 
 fuzz-url-route: test/fuzz/fuzz_url_route.c src/stdlib/router.o src/stdlib/str.o
-	$(CC) $(FUZZ_FLAGS) -I src/stdlib -o fuzz-url-route $^ -lz
+	$(CC) $(FUZZ_FLAGS) -iquote src/stdlib -o fuzz-url-route $^ -lz
 
 fuzz: fuzz-lexer fuzz-parser
 	./fuzz-lexer -max_total_time=60 test/fuzz/corpus/

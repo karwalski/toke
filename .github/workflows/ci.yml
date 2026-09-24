@@ -63,6 +63,10 @@ jobs:
       - name: Documentation examples compile and link
         run: make check-docs
 
+      # 127.87: the shipped examples/ compile (nothing read them before).
+      - name: Shipped examples compile
+        run: make check-examples
+
       # Every diagnostic the compiler emits is documented, and errors.md lists
       # no dead code.
       - name: Diagnostic codes are documented
@@ -212,6 +216,10 @@ jobs:
       # 136.56 — a tracked test source with no target and no caller.
       - name: Every test source is built by something
         run: make check-test-orphans
+
+      # 127.126 — the stdlib's own toke sources (m= files) type-check.
+      - name: stdlib toke sources type-check
+        run: make check-stdlib-tk
 
       # 132.43 — the website's published toke programs must compile under the
       # compiler this push built. The website only checked them on a push to

@@ -63,7 +63,7 @@ echo "--------------------------------------"
 # this file is unchanged and still -Werror.
 if ! "${CC}" -std=c99 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Werror \
         -Wno-misleading-indentation -Wno-unused-function -g \
-        -I"${REPO_ROOT}/src/stdlib" -I"${REPO_ROOT}/stdlib/vendor/tomlc99" \
+        -iquote "${REPO_ROOT}/src/stdlib" -I"${REPO_ROOT}/stdlib/vendor/tomlc99" \
         -o "${WORK}/test_http_res_body_ownership" \
         "${REPO_ROOT}/test/stdlib/test_http_res_body_ownership.c" \
         "${REPO_ROOT}/src/stdlib/tk_web_glue.c" \

@@ -436,6 +436,9 @@ def check_awaiting():
     return out
 
 
+ABSENT_SIBLINGS = []  # 127.88: surfaces skipped because their repo is not checked out
+
+
 def check_surfaces(canon):
     """Rule 1 — every declared surface reproduces its blocks verbatim."""
     failures, warnings = [], []
@@ -444,6 +447,14 @@ def check_surfaces(canon):
         full = resolve(rel)
         owner = surface.get("story")
         sink = warnings if owner else failures
+        # 127.88: a sibling repository that is not checked out at all is a
+        # fresh clone of toke alone, not a missing surface -- skip it by name,
+        # the way check-claims-all does. A sibling that IS checked out but
+        # lacks the file still fails below.
+        if rel.startswith("../") and \
+                not os.path.isdir(resolve("../" + rel[3:].split("/", 1)[0])):
+            ABSENT_SIBLINGS.append(rel)
+            continue
         if not os.path.exists(full):
             sink.append((rel, 0, "surface not present; the block has nowhere to live",
                          "", owner))
@@ -773,6 +784,9 @@ def main():
     if "--list" in sys.argv:
         print("scanned %d files against %s" % (scanned, os.path.relpath(CANON_JSON, ROOT)))
 
+    for rel in ABSENT_SIBLINGS:
+        print("skip (not checked out): %s" % rel)
+
     for rel, lineno, why, detail, owner in warnings:
         where = "%s:%d" % (rel, lineno) if lineno else rel
         print("WARN  %s: %s" % (where, why))
@@ -798,7 +812,11 @@ def main():
     print("canonical facts OK: %d surface(s) checked, %d files scanned, "
           "%d pending-story warning(s) (%d of them registry fields awaiting an "
           "owner-executed publish, story 132.4), %d stale deployed tree(s) not scanned."
-          % (len(SURFACES), scanned, len(warnings), len(AWAITING_PUBLISH), len(STALE_TREES)))
+          % (len(SURFACES) - len(ABSENT_SIBLINGS), scanned, len(warnings),
+             len(AWAITING_PUBLISH), len(STALE_TREES)))
+    if ABSENT_SIBLINGS:
+        print("  %d surface(s) skipped: their sibling repository is not checked "
+              "out beside this one (127.88)." % len(ABSENT_SIBLINGS))
     return 0
 
 

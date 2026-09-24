@@ -5,6 +5,6 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 TKC="${TKC:-tkc}"
-export TKC_STDLIB_DIR="${TKC_STDLIB_DIR:-/Users/matthew.watt/tk/toke/src/stdlib}"
+export TKC_STDLIB_DIR="${TKC_STDLIB_DIR:-$(cd ../.. && pwd)/src/stdlib}"
 "$TKC" model.tk calc.tk main.tk -o "${1:-mortgage}"
 echo "Built ${1:-mortgage}"

@@ -12,7 +12,11 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-TKC="${REPO_ROOT}/tkc"
+TKC="${TKC:-${REPO_ROOT}/tkc}"
+# 127.156: was the fixed path /tmp/tkc_conform_err, shared by every
+# concurrent run; each run now has its own.
+ERRF="$(mktemp "${TMPDIR:-/tmp}/tkc_l001_err.XXXXXX")"
+trap 'rm -f "${ERRF}"' EXIT
 
 PASS=0
 FAIL=0
@@ -35,8 +39,8 @@ check_compile_ok() {
     local out
     out=$(mktemp /tmp/tkc_conform_XXXXXX)
     local rc=0
-    "${TKC}" --out "${out}" "${src_file}" 2>/tmp/tkc_conform_err || rc=$?
-    rm -f "${out}" /tmp/tkc_conform_err
+    "${TKC}" --out "${out}" "${src_file}" 2>"${ERRF}" || rc=$?
+    rm -f "${out}" "${ERRF}"
     check "${name} (compiles without error)" "0" "${rc}"
 }
 
@@ -45,15 +49,15 @@ check_run_exit() {
     local out
     out=$(mktemp /tmp/tkc_conform_XXXXXX)
     local compile_rc=0
-    "${TKC}" --out "${out}" "${src_file}" 2>/tmp/tkc_conform_err || compile_rc=$?
+    "${TKC}" --out "${out}" "${src_file}" 2>"${ERRF}" || compile_rc=$?
     if [ "${compile_rc}" -ne 0 ]; then
         echo "  FAIL: ${name} (compile failed, rc=${compile_rc})"
-        cat /tmp/tkc_conform_err 2>/dev/null | sed 's/^/    /'
+        cat "${ERRF}" 2>/dev/null | sed 's/^/    /'
         FAIL=$((FAIL + 1))
-        rm -f "${out}" /tmp/tkc_conform_err
+        rm -f "${out}" "${ERRF}"
         return
     fi
-    rm -f /tmp/tkc_conform_err
+    rm -f "${ERRF}"
     local run_rc=0
     "${out}" 2>/dev/null || run_rc=$?
     rm -f "${out}"

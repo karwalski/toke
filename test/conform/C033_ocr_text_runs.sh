@@ -768,7 +768,7 @@ int main(void)
 }
 CEOF
 if cc -std=c99 -Wall -Wextra -Wpedantic -Werror -U__APPLE__ \
-      -I"${REPO_ROOT}/src/stdlib" -o "${WORK}/noengine" \
+      -iquote "${REPO_ROOT}/src/stdlib" -o "${WORK}/noengine" \
       "${WORK}/noengine.c" "${REPO_ROOT}/src/stdlib/ocr.c" \
       > "${WORK}/noengine.log" 2>&1; then
     echo "PASS noengine-branch-compiles"
