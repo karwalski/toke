@@ -1326,6 +1326,28 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         return NULL;
     }
     /*
+     * 127.157 (2026-09-24) — a string literal initialiser is a `str`.
+     *
+     * Without this `let a="x"; let b="y"; a+b` left both operands
+     * TY_UNKNOWN, the numeric-only `+` rule (ADR-0004; v0.3 spec §operators,
+     * "`+` add (numeric only)", not superseded by v0.4) could not fire, and
+     * the program compiled and printed "xy" — while the identical expression
+     * through two `str` parameters was E4031.  The rule is the spec's; the
+     * local-binding path was the false negative.
+     *
+     * Deliberately NOT routed through infer(): a literal's type is fixed by
+     * its token, and infer() on a STR_LIT runs check_interp_composites(),
+     * which re-lexes every `\(…)` and emits E4032 with no tc_first_report()
+     * guard — re-entering it once per reference to the binding would repeat
+     * that diagnostic.  The literal is still inferred exactly once, at its
+     * own binding statement.
+     *
+     * Only STR_LIT: the rest of the literal group (INT/FLOAT/BOOL, listed
+     * below) is a separate blast radius and stays held out.
+     */
+    case NODE_STR_LIT:
+        return mk_type(cx->env->arena, TY_STR);
+    /*
      * 127.114 (landed 2026-09-22) — NODE_MAP_LIT is now in the case above.
      *
      * It was held out here from 127.106 until the coercion question it
@@ -1345,12 +1367,9 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * STILL MISSING after 127.129/127.152, and measured rather than guessed
      * (same AST scan as above): INT_LIT 239 sites, BINARY_EXPR 111,
      * MATCH_STMT 110, STR_LIT 93, FLOAT_LIT 29, BOOL_LIT 18, IF_STMT 10,
-     * CLOSURE 5, UNARY_EXPR 4, PROPAGATE_EXPR 3.  The literal group is the
-     * root cause of 127.157 (`"x"+"y"` accepted through local bindings and
-     * rejected through parameters), because `let a="x"` leaves `a`
-     * TY_UNKNOWN and the numeric-only `+` rule cannot fire on an unknown.
-     * They are a larger blast radius than the container cases and are held
-     * out deliberately, not overlooked.
+     * CLOSURE 5, UNARY_EXPR 4, PROPAGATE_EXPR 3.  STR_LIT has since landed
+     * (127.157, above).  The rest are a larger blast radius than the
+     * container cases and are held out deliberately, not overlooked.
      */
     default:
         return NULL;
