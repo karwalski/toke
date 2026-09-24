@@ -114,23 +114,6 @@ PENDING_PREFIXES = (
     ("toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec draft is v0.3-era)"),
 )
 
-# 132.60 / 132.61 widened what rule 4 can see (a structural `near` window; the
-# `-char` abbreviation), and the first workspace sweep found these live stale
-# counts that the old window or the old noun list had been hiding. Each is a
-# real finding, reported for correction in its own repository; each warns here
-# until it is corrected and its entry deleted. Keyed by repo_key().
-NEWLY_CAUGHT = "132.60/132.61 — newly caught stale count; correct it in its repo, then delete this entry"
-PENDING.update({
-    "toke/docs/consortium-proposal.md": NEWLY_CAUGHT,   # 228 conformance, 57 stdlib
-    "toke/docs/risk-register.md": NEWLY_CAUGHT,         # 228 conformance
-    "toke-mcp/TOOLS.md": NEWLY_CAUGHT,                  # 80-char / 55-char
-    "toke-mcp/server.js": NEWLY_CAUGHT,                 # 80-char / 56-char (live tool description)
-    "toke-mcp/tools/migrate.js": NEWLY_CAUGHT,          # 80-char / 56-char
-    "toke-spec/docs/prior-art.md": NEWLY_CAUGHT,        # 46,754 as the live corpus
-    "toke-spec/docs/string-escaping.md": NEWLY_CAUGHT,  # 80-char / 56-char
-    "toke-spec/tree-sitter-toke/grammar.js": NEWLY_CAUGHT,  # 55-char
-})
-
 
 @functools.lru_cache(maxsize=None)
 def _repo_of(dirpath):
