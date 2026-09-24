@@ -2413,6 +2413,72 @@ static int emit_str_global(Ctx *c, const char *raw, int rlen, int *out_alen)
     return idx;
 }
 
+/*
+ * emit_bool_to_str (127.15 / 127.94) — render an i1 as "true" or "false".
+ *
+ * OWNER DECISION 2026-09-22 (127.15): `\(x)` on a bool prints true/false,
+ * matching the predefined identifiers and fmt.bool, so the two spellings of
+ * one value cannot disagree.  Interpolation used to zext the i1 and print it
+ * as a decimal (`1`), and `b as str` passed the i1 straight to
+ * tk_str_fromi64_w(i64 ...) — invalid IR ("'%tN' defined with type 'i1'"),
+ * which surfaced as E9003 from clang.  Both now come here.  Returns an i8*.
+ */
+static const TkiCacheEntry *tki_entry_for(Ctx *c, const char *alias,
+                                          const char *method); /* later */
+
+/* call_declares_bool (127.94) — `e` is a `<alias>.<method>(...)` stdlib call
+ * whose interface declares a `bool` return.  Such a value crosses the i64
+ * ABI, so the backend sees an i64 where the program has a bool; without this
+ * `\(str.contains(a;b))` printed `1` while `\(a==b)` printed `true`.  Must be
+ * asked while c->src points at the buffer `e`'s tokens index. */
+static int call_declares_bool(Ctx *c, const Node *e) {
+    if (!e || e->kind != NODE_CALL_EXPR || e->child_count < 1) return 0;
+    const Node *cal = e->children[0];
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2) return 0;
+    if (!cal->children[0] || cal->children[0]->kind != NODE_IDENT) return 0;
+    char alias[128], method[128];
+    tok_cp(c->src, cal->children[0], alias, sizeof alias);
+    tok_cp(c->src, cal->children[1], method, sizeof method);
+    const TkiCacheEntry *te = tki_entry_for(c, alias, method);
+    if (!te) return 0;
+    char b[64];
+    tki_base_return_type(te->toke_ret, b, sizeof b);
+    return !strcmp(b, "bool");
+}
+
+/* field_declares_bool (127.94) — `e` is `<rec>.<field>` on a struct whose
+ * declared field type is bool.  A struct slot is an i64, so the backend sees
+ * an integer; the declaration says bool.  Same c->src rule as above. */
+static int field_declares_bool(Ctx *c, const Node *e) {
+    if (!e || e->kind != NODE_FIELD_EXPR || e->child_count < 2) return 0;
+    const char *st = expr_struct_type(c, e->children[0]);
+    if (!st) return 0;
+    const StructInfo *si = lookup_struct(c, st[0] == '$' ? st + 1 : st);
+    if (!si) si = lookup_struct(c, st);
+    if (!si || si->is_sum) return 0;
+    char fname[128];
+    tok_cp(c->src, e->children[1], fname, sizeof fname);
+    for (int i = 0; i < si->field_count; i++)
+        if (!strcmp(si->field_names[i], fname))
+            return !strcmp(si->field_types[i], "bool");
+    return 0;
+}
+
+static int emit_bool_to_str(Ctx *c, int v) {
+    int at = 1, af = 1;
+    int st = emit_str_global(c, "\"true\"", 6, &at);
+    int sf = emit_str_global(c, "\"false\"", 7, &af);
+    int gt = next_tmp(c);
+    fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+            gt, at, at, c->module_prefix, st);
+    int gf = next_tmp(c);
+    fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+            gf, af, af, c->module_prefix, sf);
+    int sel = next_tmp(c);
+    fprintf(c->out, "  %%t%d = select i1 %%t%d, i8* %%t%d, i8* %%t%d\n", sel, v, gt, gf);
+    return sel;
+}
+
 /* ── Expression emission ───────────────────────────────────────────── */
 
 /* Forward declarations — needed because emit_expr and emit_stmt are
@@ -3278,6 +3344,9 @@ static int emit_expr(Ctx *c, const Node *n)
                          * the wrapper buffer — it reads the sub-expression's
                          * tokens. */
                         int unknown_ret = interp_operand_type_unknown(c, expr_node, ety, est);
+                        int abi_bool = ety && !strcmp(ety, "i64")
+                                       && (call_declares_bool(c, expr_node)
+                                           || field_declares_bool(c, expr_node));
                         c->src = saved_src;
                         /* 114.32: interpolation of a non-string value. Previously
                          * any i64 was inttoptr'd to i8* on the assumption it
@@ -3359,13 +3428,17 @@ static int emit_expr(Ctx *c, const Node *n)
                             seg_val = next_tmp(c);
                             fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
                                     seg_val, alenu, alenu, c->module_prefix, siu);
+                        } else if (ety && !strcmp(ety, "i1")) {
+                            /* 127.15/127.94: a bool prints true/false */
+                            seg_val = emit_bool_to_str(c, seg_val);
+                        } else if (abi_bool) {
+                            /* the same, for a bool that crossed the i64 ABI */
+                            int nz = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", nz, seg_val);
+                            seg_val = emit_bool_to_str(c, nz);
                         } else {
-                            /* raw int / bool → decimal string */
-                            if (ety && !strcmp(ety, "i1")) {
-                                int zx = next_tmp(c);
-                                fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", zx, seg_val);
-                                seg_val = zx;
-                            } else if (ety && (!strcmp(ety, "i8") || !strcmp(ety, "i16") || !strcmp(ety, "i32"))) {
+                            /* raw int → decimal string */
+                            if (ety && (!strcmp(ety, "i8") || !strcmp(ety, "i16") || !strcmp(ety, "i32"))) {
                                 int zx = next_tmp(c);
                                 fprintf(c->out, "  %%t%d = sext %s %%t%d to i64\n", zx, ety, seg_val);
                                 seg_val = zx;
@@ -5048,6 +5121,18 @@ static int emit_expr(Ctx *c, const Node *n)
                 } else if (!strcmp(src_ty, "i8*")) {
                     /* str -> str: identity */
                     fprintf(c->out, "  %%t%d = getelementptr i8, i8* %%t%d, i32 0\n", t, v);
+                } else if (!strcmp(src_ty, "i64")
+                           && (call_declares_bool(c, n->children[0])
+                               || field_declares_bool(c, n->children[0]))) {
+                    /* 127.94: a declared bool that crossed the i64 ABI */
+                    int nz = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", nz, v);
+                    t = emit_bool_to_str(c, nz);
+                } else if (!strcmp(src_ty, "i1")) {
+                    /* 127.94: bool -> "true"/"false", the same rendering as
+                     * interpolation and fmt.bool.  The %t reserved above is
+                     * left undefined, which is legal for named values. */
+                    t = emit_bool_to_str(c, v);
                 } else {
                     /* int -> str */
                     fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", t, v);
