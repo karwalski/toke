@@ -180,7 +180,9 @@ For a binary expression `lhs op rhs`:
   with embedded values. Lexed by `\(`; the interpolated expression must
   evaluate to `$str` (use `s.fromint(n)` / `s.format(f; "%.4f")` / `n as $str`
   for non-string values). Lowered to a single `tk_str_join_n` call regardless
-  of segment count.
+  of segment count, over the NON-EMPTY segments only: a literal that is one
+  interpolated value and nothing else (`"\(n)"`) is that value's string form
+  and performs no join (story 127.50).
 - **`s.join(sep: $str; arr: @$str): $str`** — delimiter-joined collection.
   Separator first, then the parts. Single allocation, O(N). (Corrected
   2026-09-23 by story 127.5: this entry carried the arguments reversed,

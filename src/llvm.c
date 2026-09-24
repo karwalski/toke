@@ -3071,7 +3071,13 @@ static int emit_expr(Ctx *c, const Node *n)
         int content_end = rlen - 1;     /* skip trailing `"` */
         for (int i = 1; i < content_end; i++) {
             if (raw[i] == '\\' && i + 1 < content_end && raw[i + 1] == '(') {
-                if (nsegs < MAX_SEGS) {
+                /* 127.50: an empty literal segment (the one before a
+                 * leading `\(`, or between two adjacent `\(…)\(…)`) adds
+                 * nothing to the result and is not recorded.  Recording it
+                 * is what made `"\(n)"` cost two allocations — the
+                 * conversion and a tk_str_join_n of ("", conversion) —
+                 * against one for `n as str`. */
+                if (i > last && nsegs < MAX_SEGS) {
                     segs[nsegs].start = last;
                     segs[nsegs].end   = i;
                     segs[nsegs].is_expr = 0;
@@ -3313,6 +3319,12 @@ static int emit_expr(Ctx *c, const Node *n)
             seg_vals[nvals++] = seg_val;
         }
         if (nvals == 1) {
+            /* 127.50: one non-empty segment — `"\(n)"`, `"\(s)"`, or a
+             * literal with an unparseable `\(` — IS the result; joining it
+             * with nothing would only copy it.  A number's segment is its
+             * fresh conversion; a string's is the string itself, which is
+             * sound because toke strings are immutable (no codegen path
+             * mutates or frees an i8* string in place). */
             accumulator = seg_vals[0];
         } else if (nvals >= 2) {
             /* 127.26: one tk_str_join_n(n, parts…) call — a single allocation
