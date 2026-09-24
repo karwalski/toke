@@ -20,7 +20,7 @@ f=main():$i64{
   cks("const-index-0";"\(a.0)";"10");
   cks("const-index-1";"\(a.1)";"20");
   cks("const-index-2";"\(a.2)";"30");
-  cks("const-index-eq-get";"\(a.1==a.get(1))";"1");
+  cks("const-index-eq-get";"\(a.1==a.get(1))";"true"); (* 127.94 *)
   cks("const-index-in-arith";"\(a.0+a.2)";"40");
   let names=@("ann";"bob");
   cks("const-index-str";names.1;"bob");
@@ -30,7 +30,7 @@ f=main():$i64{
   let p=$pt{x:a.1;y:a.2};
   cks("field-access-unaffected";"\(p.x) \(p.y)";"20 30");
   let fl=1.5;
-  cks("float-literal-unaffected";"\(fl>1.0)";"1");
+  cks("float-literal-unaffected";"\(fl>1.0)";"true"); (* 127.94 *)
   cks("call-chain-const-index";s.fields("p q r").1;"q");
   let nested=@(@(1;2);@(3;4));
   let inner=nested.1;

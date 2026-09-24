@@ -31,7 +31,7 @@ f=main():$i64{
   cks("six-seg";"p\(a)q\(n)r\(a)s";"pxq42rxs");
   cks("int";"n=\(n)";"n=42");
   cks("float";"f=\(f)";"f=1.5");
-  cks("bool";"b=\(b)";"b=1");
+  cks("bool";"b=\(b)";"b=true"); (* 127.94/127.15: owner decision, bools interpolate as true/false *)
   cks("expr";"\(n+1)";"43");
   cks("method";"\(a.upper())";"X");
   let inner="\(n)";

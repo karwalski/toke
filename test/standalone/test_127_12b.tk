@@ -19,7 +19,7 @@ f=main():$i64{
   let k=m.keys;
   cks("keys-property-len";"\(m.len) \(k.len)";"2 2");
   cks("keys-property-order";s.join(",";k);"a,b");
-  cks("keys-property-eq-call";"\(k.len==m.keys().len)";"1");
+  cks("keys-property-eq-call";"\(k.len==m.keys().len)";"true"); (* 127.94: a bool renders true/false *)
   let n=@(7:70;8:80);
   let nk=n.keys;
   cks("keys-property-int";"\(nk.0) \(nk.1)";"7 8");
