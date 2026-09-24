@@ -3710,8 +3710,19 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     &&strcmp(cx->fn_ret->name,val->name)==0) ok=1;
             }
             if (!ok) {
+                /* AGENTS.md §6: the `fix` is populated only when it is
+                 * correct in every case.  "cast return value to T using
+                 * 'as'" was emitted for EVERY mismatch — including
+                 * `@(pt)` vs `@(void)` (ooke, 886bdb0), where no `as` cast
+                 * exists and the real defect was the checker's.  It now
+                 * fires only for a cast that compiles and cannot change the
+                 * value: any integer into i64, or f32 into f64.  Every
+                 * other mismatch gets no fix — narrowing, int<->float
+                 * (127.64) and non-scalars have no certain repair. */
+                int certain = (cx->fn_ret->kind==TY_I64 && is_integer(val))
+                           || (cx->fn_ret->kind==TY_F64 && val->kind==TY_F32);
                 char fix[128]; snprintf(fix,sizeof(fix),"cast return value to %s using 'as'",type_name(cx->fn_ret));
-                emit_mm(cx,node,cx->fn_ret,val,fix);
+                emit_mm(cx,node,cx->fn_ret,val,certain?fix:NULL);
             }
         }
         /* ── Escape analysis (W5001) ─────────────────────────────────────
