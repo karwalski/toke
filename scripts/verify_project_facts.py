@@ -42,7 +42,9 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Sibling repo that holds the corpus freeze manifests.
-CORPUS = os.path.normpath(os.path.join(ROOT, "..", "toke-corpus"))
+# 132.68: from a worktree ROOT/.. is not the workspace; the Makefile passes it
+CORPUS = os.path.normpath(os.path.join(
+    os.environ.get("TOKE_WORKSPACE") or os.path.join(ROOT, ".."), "toke-corpus"))
 
 # Printable ASCII that the default profile rejects in structural position.
 # Derived below from src/lexer.c; asserted against the binary under --probe.
@@ -648,7 +650,12 @@ def sync_surfaces(facts, targets=None, write=False):
     paths = targets or SYNC_SURFACES
     drift, spans, files = [], 0, 0
     for rel in paths:
-        path = rel if os.path.isabs(rel) else os.path.join(ROOT, rel)
+        if os.path.isabs(rel):
+            path = rel
+        elif rel.startswith("../") and os.environ.get("TOKE_WORKSPACE"):
+            path = os.path.join(os.environ["TOKE_WORKSPACE"], rel[3:])  # 132.68
+        else:
+            path = os.path.join(ROOT, rel)
         if not os.path.exists(path):
             print("skip (not checked out): %s" % rel)
             continue

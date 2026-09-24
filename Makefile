@@ -1068,15 +1068,52 @@ check-canonical:
 # karwalski/tkc (an early copy of the compiler tree, public with no description).
 # A repo that is absent is reported by name as a skip, not silently passed over;
 # cloning them into the workspace is story 132.46.
-SIBLING_REPOS := ../toke-spec ../toke-corpus ../toke-model ../toke-eval ../toke-mcp \
-                 ../toke-console ../toke-cloud ../toke-ooke ../toke-test-programs \
-                 ../toke-tokenizer ../toke-website ../homebrew-toke \
-                 ../loke ../tkc
+#
+# 132.68 / 136.41 — siblings are resolved from the WORKSPACE, not from `..`.
+# `../toke-*` is relative to the current directory, so from a worktree
+# (~/tk/tmpwork/wt_x) every sibling printed "skip (not checked out)" and the
+# gate passed having checked nothing -- measured: 14 skips, "checking claims
+# across:" followed by nothing, exit 0.  The workspace is now the directory
+# holding the MAIN checkout, found through `git rev-parse --git-common-dir`
+# (from a worktree that is <main>/.git; from the main checkout, `.git`), so a
+# worktree sweeps the same repositories the main checkout does.  Override with
+# TOKE_WORKSPACE=<dir>.  The same variable is exported to check_canonical.py,
+# whose declared `../toke-*` surfaces resolve through it, and to
+# verify_project_facts.py, which reads ../toke-corpus.
+#
+# And a sweep that resolves NO sibling now FAILS instead of passing.  The one
+# place that is expected -- a GitHub runner, where no sibling is checked out
+# (story 132.46) -- says so explicitly with CLAIMS_ALLOW_NO_SIBLINGS=1, and the
+# run still prints that it checked zero repositories.
+ifndef TOKE_WORKSPACE
+TOKE_WORKSPACE := $(shell d=$$(git rev-parse --git-common-dir 2>/dev/null) && \
+                    cd "$$d/../.." 2>/dev/null && pwd)
+endif
+ifeq ($(strip $(TOKE_WORKSPACE)),)
+TOKE_WORKSPACE := $(abspath $(CURDIR)/..)
+endif
+SIBLING_NAMES := toke-spec toke-corpus toke-model toke-eval toke-mcp \
+                 toke-console toke-cloud toke-ooke toke-test-programs \
+                 toke-tokenizer toke-website homebrew-toke \
+                 loke tkc
+SIBLING_REPOS := $(addprefix $(TOKE_WORKSPACE)/,$(SIBLING_NAMES))
+check-canonical check-claims-all check-facts: export TOKE_WORKSPACE := $(TOKE_WORKSPACE)
 check-claims-all:
-	@repos=""; for r in $(SIBLING_REPOS); do \
-	  if [ -d "$$r" ]; then repos="$$repos $$r"; else echo "skip (not checked out): $$r"; fi; \
+	@echo "workspace: $(TOKE_WORKSPACE)"; \
+	repos=""; n=0; for r in $(SIBLING_REPOS); do \
+	  if [ -d "$$r" ]; then repos="$$repos $$r"; n=$$((n+1)); else echo "skip (not checked out): $$r"; fi; \
 	done; \
-	echo "checking claims across:$$repos"; \
+	if [ $$n -eq 0 ]; then \
+	  if [ "$${CLAIMS_ALLOW_NO_SIBLINGS:-0}" = 1 ]; then \
+	    echo "check-claims-all: resolved 0 sibling repositories under $(TOKE_WORKSPACE) -- CLAIMS_ALLOW_NO_SIBLINGS=1, so only this repo is checked"; \
+	  else \
+	    echo "check-claims-all: FAIL -- resolved 0 of $(words $(SIBLING_NAMES)) sibling repositories under $(TOKE_WORKSPACE)." >&2; \
+	    echo "  A sweep that finds nothing is not a pass (132.68). Set TOKE_WORKSPACE, or" >&2; \
+	    echo "  CLAIMS_ALLOW_NO_SIBLINGS=1 where no sibling can exist (a CI runner)." >&2; \
+	    exit 1; \
+	  fi; \
+	fi; \
+	echo "checking claims across $$n of $(words $(SIBLING_NAMES)) sibling repositories:$$repos"; \
 	python3 scripts/check_metrics_claims.py $$repos --list && \
 	python3 scripts/check_canonical.py $$repos --list
 
