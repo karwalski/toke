@@ -21,9 +21,21 @@ static char *dup_cstr(const char *s)
     return out;
 }
 
+/* 127.48 — `fmt.bool` returns one of two fixed, immutable strings, so the
+ * per-call `dup_cstr` bought nothing and cost everything: the runtime never
+ * frees a caller-owned string (runtime-abi §3 — "the runtime does not track
+ * or free them"), so 32M calls retained 32M minimum-size blocks — 278 MB of
+ * live garbage measured against 1.4 MB for the expression-`if` form.
+ *
+ * Returning shared read-only storage is not a new ownership rule: a toke
+ * string literal is *already* a pointer to a global constant (runtime-abi
+ * §3), and `ret_str()` in fmt_glue.c already hands back the literal `""` on
+ * allocation failure.  Nothing in the runtime mutates a string in place —
+ * `str.setat` copies (str_glue.c:409) — so the sharing is unobservable.
+ * The cast discards `const` only because the ABI spells strings `char *`. */
 char *fmt_bool(int b)
 {
-    return dup_cstr(b ? "true" : "false");
+    return (char *)(b ? "true" : "false");
 }
 
 char *fmt_join_i64(const int64_t *xs, int64_t n, const char *sep)
