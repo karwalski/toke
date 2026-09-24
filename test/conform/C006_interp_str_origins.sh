@@ -155,12 +155,11 @@ f=main():i64{
 #   std.str results, string literals, locals, ints, floats and bools all took
 #   a correct path before 127.80 and must be untouched by the fix.  If a
 #   number here ever prints as text (or a string as a number) the tag has
-#   leaked across origins.  `\(true)` printing `1` (not `true`) is this
-#   compiler's existing behaviour, pinned here as-is: 127.80 is about strings
-#   that print as numbers, and changing a second thing in the same commit
-#   would make a regression here ambiguous.
+#   leaked across origins.  `\(true)` printed `1` when this was written and
+#   was pinned as-is; 127.94 implemented the owner decision (127.15) that a
+#   bool renders `true`, and moved this expectation in its own commit.
 run_case "control: std.str, literals and numbers unchanged" \
-    "cat=ab trim=x up=AB loc=held n=42 neg=-7 f=1.5 t=1 fi=99" '
+    "cat=ab trim=x up=AB loc=held n=42 neg=-7 f=1.5 t=true fi=99" '
 m=t;
 i=io:std.io;
 i=s:std.str;

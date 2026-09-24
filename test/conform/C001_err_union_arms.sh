@@ -86,7 +86,7 @@ f=main():i64{
 # ── 1b: the SAME cases in struct style (a plain record error type) ─────────
 #   Struct-style unions already worked; pinned here so the variant-style fix
 #   cannot regress them.
-run_case "struct-style both arms" "err=200 ok=100 okzero=100 gfail=0 gok=1" '
+run_case "struct-style both arms" "err=200 ok=100 okzero=100 gfail=false gok=true" '
 m=t;
 i=io:std.io;
 t=$myerr{msg:$str};
@@ -102,7 +102,7 @@ f=main():i64{
 };'
 
 # ── 4: bool-valued union — the inverted-guard case ──────────────────────────
-run_case "bool union guard" "onfail=0 onok=1" '
+run_case "bool union guard" "onfail=false onok=true" '
 m=t;
 i=io:std.io;
 t=$err{$bad:$str};
