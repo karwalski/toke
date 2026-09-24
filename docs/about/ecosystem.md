@@ -17,7 +17,11 @@ The core programming language. Compiles to native code via LLVM. 59-character al
 
 ## ooke — web framework
 
-Static site generator and web framework built in toke. File-system routing, flat-file content store, template engine with Markdown, build and serve modes. Zero dependencies. Ships as a single binary. Serves [tokelang.dev](https://tokelang.dev) in production.
+toke's web framework and static site generator, written in toke. File-system routing (`pages/`), a flat-file content store with model-validated frontmatter, and a template engine (`.tkt`) with layouts, blocks, partials and Markdown. One native binary with `ooke new`, `build`, `serve` and `run`; routes under `pages/api/` are request handlers served by `ooke serve`, not rendered into the static build.
+
+ooke builds [tokelang.dev](https://tokelang.dev): `ooke build` renders the `/docs` pages, and a toke binary on `std.http` serves the site. It is written in and built with v0.4 toke. It is packaged as the release candidate **3.0.0-rc.1**, not yet published, and it still pins toke by commit rather than by version, because toke 3.0.0 — the version for the v0.4 break — is not yet published either. The binary links toke's C standard library and the system OpenSSL, zlib and SQLite libraries.
+
+What is and is not a stable interface is written down in the repository's `docs/public-api.md`: semver covers the command line, `ooke.toml`, the project layout and the template syntax, not the internal module interfaces.
 
 - [Project page](/ooke)
 - [GitHub](https://github.com/karwalski/ooke)
@@ -51,7 +55,7 @@ Every tool in the toke ecosystem uses a single consonant prefix followed by `oke
 |-------|------|--------|-------------|
 | Human experience | aoke | Reserved | UX, design systems, accessibility |
 | Intelligence | loke | **Production** | Privacy, token optimisation, routing |
-| Web | ooke | **Production** | Static site gen, web framework (builds tokelang.dev; std.http serves it) |
-| Language | toke | **Production** | Compiler, spec, stdlib (38 modules) |
+| Web | ooke | **Production** | Static site gen, web framework (builds tokelang.dev; std.http serves it); 3.0.0-rc.1, unpublished |
+| Language | toke | **Production** | Compiler, spec, stdlib (68 modules) |
 | Data/demo | moke | **Active** | Analysis demo (in loke) |
 | Hardware | zoke | Reserved | Drivers, ISA, FPGA |
