@@ -62,6 +62,7 @@ typedef enum {
 #define E4060 4060  /* FFI type mismatch                              */
 #define E4070 4070  /* assignment to immutable binding                 */
 #define E4071 4071  /* function body ends in a value expression with no '<' */
+#define E4072 4072  /* ambiguous variant constructor: several sum types declare it */
 
 typedef struct Type {
     TypeKind      kind;

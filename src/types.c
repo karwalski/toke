@@ -1152,6 +1152,146 @@ static int match_arms_all_pure(const Node *m) {
     return arms>0;
 }
 
+/*
+ * 127.59 — `$variant(payload)` returned from a function whose declared types
+ * do not own the variant.
+ *
+ * The emitter resolves the constructor-call form (variant_ctor_sum, llvm.c):
+ * the enclosing function's error type if it declares the variant, else the
+ * UNIQUE sum type that does, else the legacy untagged pass-through.  Measured
+ * at 39b6cfd, all with --check 0 and build 0:
+ *
+ *   t=$other{$neg:i64}; t=$myerr{$bad:i64};
+ *   f=g(x:i64):i64!$myerr{ <$neg(x) }      -> caller's $ok arm, v = the
+ *                                             $other box's heap address
+ *   (two sum types declaring $neg)         -> $ok arm, v = the raw payload
+ *
+ * The literal form `<$other{$neg:x}` already draws E4031 ("expected 'i64',
+ * got 'other'"); the call form was untyped.  This mirrors the emitter's
+ * resolution exactly, over the same set of sum types (the TYPE_DECLs of the
+ * program — prepass_structs registers nothing else), and judges only a
+ * `$v(x)` that is the direct operand of `<`:
+ *
+ *   resolves to the error type          -> an error return: correct;
+ *   resolves to the one owner, and that
+ *     owner is the declared ok type     -> an ok return of that sum: correct;
+ *   resolves to any other single owner  -> E4031, the literal form's code;
+ *   several owners, none the error type -> E4072: the emitter cannot tell
+ *                                          which, and returns the payload.
+ *
+ * A name no sum type declares is not judged (stdlib `$ok(..)`/`$err(..)`,
+ * E3011's undeclared names); nor is a return inside a closure, whose
+ * function the checker does not track.  No `fix` in either case: whether the
+ * variant, the return type or the error type is wrong is not decidable.
+ */
+static int tc_node_in_closure(const Node *root, const Node *n, int in) {
+    if (!root) return 0;
+    if (root == n) return in;
+    int nin = in || root->kind == NODE_CLOSURE;
+    for (int i = 0; i < root->child_count; i++) {
+        int r = tc_node_in_closure(root->children[i], n, nin);
+        if (r) return r;
+    }
+    return 0;
+}
+/* sum_decl_has_variant — 1 when TYPE_DECL `td` is a sum type (a field marked
+ * TK_DOLLAR, as register_struct reads it) declaring variant `v`. */
+static int sum_decl_has_variant(const char *src, const Node *td, const char *v) {
+    int is_sum = 0, has = 0;
+    for (int i = 1; i < td->child_count; i++) {
+        const Node *ch = td->children[i];
+        if (!ch) continue;
+        int nf = ch->kind == NODE_FIELD ? 1
+               : ch->kind == NODE_STMT_LIST ? ch->child_count : 0;
+        for (int j = 0; j < nf; j++) {
+            const Node *f = ch->kind == NODE_FIELD ? ch : ch->children[j];
+            if (!f || f->kind != NODE_FIELD) continue;
+            if (f->op == TK_DOLLAR) is_sum = 1;
+            char fb[128]; TOKSTR(fb, src, f);
+            if (strcmp(fb, v) == 0) has = 1;
+        }
+    }
+    return is_sum && has;
+}
+static void sum_owners_rec(const char *src, const Node *n, const char *v,
+                           char (*names)[128], const char **own, int *nown) {
+    if (!n) return;
+    if (n->kind == NODE_PROGRAM || n->kind == NODE_MODULE) {
+        for (int i = 0; i < n->child_count; i++)
+            sum_owners_rec(src, n->children[i], v, names, own, nown);
+        return;
+    }
+    if (n->kind != NODE_TYPE_DECL || n->child_count < 1 || !n->children[0]) return;
+    if (!sum_decl_has_variant(src, n, v)) return;
+    if (*nown < 8) {
+        TOKSTR(names[*nown], src, n->children[0]);
+        own[*nown] = names[*nown];
+    }
+    (*nown)++;
+}
+static void check_variant_ctor_return(Ctx *cx, const Node *ret) {
+    if (!ret || ret->child_count < 1 || !cx->fn_node || !cx->root) return;
+    const Node *call = ret->children[0];
+    if (!call || call->kind != NODE_CALL_EXPR || call->child_count != 2) return;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_TYPE_IDENT) return;
+    char v[128]; TOKSTR(v, cx->src, callee);
+    if (!v[0]) return;
+    /* a real function of that name wins, as in the emitter */
+    Decl *d = tc_lookup(cx->env->names->module_scope, v, (int)strlen(v));
+    if (d && d->def_node && d->def_node->kind == NODE_FUNC_DECL) return;
+    if (tc_node_in_closure(cx->fn_node, ret, 0)) return;
+
+    char names[8][128]; const char *own[8]; int nown = 0;
+    sum_owners_rec(cx->src, cx->root, v, names, own, &nown);
+    if (nown == 0) return;
+
+    /* the declared ok and error type spellings, as the emitter reads them */
+    char okn[128] = "", errn[128] = "";
+    for (int i = 0; i < cx->fn_node->child_count; i++) {
+        const Node *rs = cx->fn_node->children[i];
+        if (!rs || rs->kind != NODE_RETURN_SPEC) continue;
+        if (rs->child_count > 0 && rs->children[0]
+            && rs->children[0]->kind == NODE_TYPE_IDENT)
+            TOKSTR(okn, cx->src, rs->children[0]);
+        if (rs->child_count > 1 && rs->children[1])
+            TOKSTR(errn, cx->src, rs->children[1]);
+    }
+    int lim = nown < 8 ? nown : 8;
+    for (int i = 0; errn[0] && i < lim; i++)
+        if (strcmp(own[i], errn) == 0) return;          /* an error return */
+    if (nown == 1 && okn[0] && strcmp(own[0], okn) == 0) return;  /* ok sum */
+
+    if (!tc_first_report(cx, ret) || !tc_can_emit(cx)) return;
+    char msg[512], exp[160], got[160];
+    if (errn[0]) snprintf(exp, sizeof exp, "%s or %s",
+                          okn[0] ? okn : type_name(cx->fn_ret ? cx->fn_ret->elem : NULL), errn);
+    else snprintf(exp, sizeof exp, "%s", type_name(cx->fn_ret));
+    if (nown == 1) {
+        snprintf(msg, sizeof msg,
+                 "type mismatch: '$%s(..)' constructs a '$%s', which is %s; it "
+                 "would be returned as the ok value", v, own[0],
+                 errn[0] ? "neither this function's return type nor its error type"
+                         : "not this function's return type");
+        snprintf(got, sizeof got, "%s", own[0]);
+        diag_emit(DIAG_ERROR, E4031, ret->start, ret->line, ret->col, msg,
+                  "expected", exp, "got", got, "fix", (const char *)NULL);
+    } else {
+        char list[256] = "";
+        for (int i = 0; i < lim; i++) {
+            size_t l = strlen(list);
+            snprintf(list + l, sizeof list - l, "%s$%s", i ? ", " : "", own[i]);
+        }
+        snprintf(msg, sizeof msg,
+                 "ambiguous variant constructor: '$%s' is declared by %d sum "
+                 "types (%s) and none is this function's error type; write the "
+                 "qualified form '$T{$%s:..}'", v, nown, list, v);
+        snprintf(got, sizeof got, "$%s(..)", v);
+        diag_emit(DIAG_ERROR, E4072, ret->start, ret->line, ret->col, msg,
+                  "expected", exp, "got", got, "fix", (const char *)NULL);
+    }
+}
+
 static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
     if (!cx->fn_ret || cx->fn_ret->kind==TY_VOID || cx->fn_ret->kind==TY_UNKNOWN)
         return;
@@ -3710,6 +3850,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
      * ──────────────────────────────────────────────────────────────────── */
     case NODE_RETURN_STMT: {
         Type *val=node->child_count>0?infer(cx,node->children[0]):mk_type(A,TY_VOID);
+        check_variant_ctor_return(cx,node);   /* 127.59 */
         if (cx->fn_ret&&cx->fn_ret->kind==TY_VOID&&node->child_count>0
             &&val->kind!=TY_UNKNOWN&&val->kind!=TY_VOID) {
             if (tc_can_emit(cx)) {

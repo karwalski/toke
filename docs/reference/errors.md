@@ -923,7 +923,12 @@ is a wrong answer:
 * the last statement of the body is an expression statement, a complete
   `if`/`el`, or a `mt`, **and**
 * that statement evaluates to a value — either a type the checker resolved,
-  or an expression whose only possible effect is to compute one.
+  or an expression whose only possible effect is to compute one, **or** it
+  is a `!` propagation whose type the checker could not resolve (127.127:
+  `(file.listall("")!$storeerr)` ends the body with nothing returned on the
+  success path, so the caller receives the null filler — measured rc=139).
+  A propagation the checker proves `void` is a missing return, not this
+  diagnostic.
 
 A tail call returning `void` (`io.println(..)`) discards nothing and is not
 this diagnostic. Neither is a non-void function that simply never returns at
@@ -941,6 +946,38 @@ cast, or a composite literal. It is deliberately **absent** for
 
 Per `AGENTS.md` §3.1 an incorrect `fix` breaks the automated repair loop, and
 131.78 is the standing example of an "obvious" suggested fix that was wrong.
+
+### E4072
+
+**Ambiguous variant constructor**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | typecheck |
+
+`<$v(x)` returns a variant constructed by the call form, and `$v` is declared
+by two or more sum types of which none is the enclosing function's error
+type. The compiler resolves the call form to the function's error type if
+that declares the variant, else to the one sum type that does; with several
+candidates and no error-type match there is nothing to choose by, and the
+payload was returned untagged (story 127.59: measured rc=139 when the caller
+matched on it).
+
+<!-- skip-check -->
+```text
+m=test;
+t=$a{$v:i64;$w:i64};
+t=$b{$v:str};
+f=k(x: i64): $a { <$v(x) };
+```
+
+Write the qualified literal instead — `<$a{$v:x}`. There is no `fix` field:
+which sum type was meant is not decidable from the source.
+
+The single-owner case — `$v` declared by exactly one sum type that is neither
+the function's return type nor its error type — is a type mismatch and is
+reported as **E4031**, the code the literal form `<$other{$v:x}` already drew.
 
 ## Arena Errors (E5xxx)
 
