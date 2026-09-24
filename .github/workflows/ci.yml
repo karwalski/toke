@@ -153,10 +153,14 @@ jobs:
   # twice. They are cheap, they were already green locally, and nothing on a
   # push or a pull request had ever read one.
   #
-  # STILL NOT IN CI, and not this story's to add: `diff-codegen`, which the
-  # corpus programme calls its root of trust. It is not a member of `make ci`
-  # either, so wiring it in is a change to what `make ci` means. Story
-  # 127.143 owns it and is open.
+  # 127.143 closed the `diff-codegen` hole. It is the gate the corpus
+  # programme calls its root of trust — the only check here that notices a
+  # codegen change altering what a compiled program DOES — and it was a member
+  # of neither `make ci` nor this workflow, so it had never run on a push.
+  # Both now run it. Measured cost on an M4 Max with the binary already built:
+  # 118 programs compiled and executed, 265 s. That is 4.4 minutes against a
+  # `make ci` that already runs well over an hour, so cost was never the
+  # reason it was out.
   # ══════════════════════════════════════════════════════════════════════════
   ci-gates:
     name: make ci gates missing from CI
@@ -201,6 +205,17 @@ jobs:
 
       - name: No parallel stdlib descriptions
         run: make check-parallel-stdlib
+
+      # 127.143 — the root-of-trust gate. Compiles AND RUNS every full program
+      # under test/standalone, test/e2e and test/codegen and diffs
+      # (compiled, exit code, stdout hash) against test/codegen-baseline.json.
+      # No `continue-on-error`: a step that cannot fail is not a gate. If this
+      # is red, either a codegen change altered behaviour, or the baseline is
+      # stale and the change was intended — in which case re-record it with
+      # `make diff-codegen-record` in the commit that made the change, never
+      # in a separate tidy-up.
+      - name: Codegen behaviour unchanged (root of trust)
+        run: make diff-codegen
 
   # ══════════════════════════════════════════════════════════════════════════
   # Story 123.8 — the test families no PR job has ever run
