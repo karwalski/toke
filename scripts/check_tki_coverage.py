@@ -367,6 +367,12 @@ def load_skiplist(path: Path) -> dict[str, str]:
 QUARANTINE_MD = REPO_ROOT / "docs" / "reference" / "tki-quarantine.md"
 
 
+# 132.89: this page is rendered on the website too (/docs/reference/tki-quarantine/),
+# which serves docs/ and nothing else, so a relative link into scripts/ was dead
+# there. The skiplists are linked where they are served: the repository itself.
+REPO_BLOB = "https://github.com/karwalski/toke/blob/main/"
+
+
 def render_quarantine_md(quarantined, total, passed, stale_skips) -> str:
     """Render the quarantine population as Markdown, derived from the skiplist.
 
@@ -403,7 +409,7 @@ def render_quarantine_md(quarantined, total, passed, stale_skips) -> str:
                "defined in `src/stdlib/*.c`. Calling one does not link.")
     out.append("")
     out.append("**This page is generated.** The single authoritative record is "
-               "[`scripts/check_tki_skiplist.txt`](../../scripts/check_tki_skiplist.txt); "
+               "[`scripts/check_tki_skiplist.txt`](" + REPO_BLOB + "scripts/check_tki_skiplist.txt); "
                "`make check-tki` regenerates this page and fails on drift. Never "
                "restate this list by hand -- link to it. Two hand-maintained "
                "records of the same facts is the drift pattern story 136.7 "
@@ -431,7 +437,7 @@ def render_quarantine_md(quarantined, total, passed, stale_skips) -> str:
     out.append("An export whose symbol **exists** but whose declared **arity** "
                "disagrees with the compiler is also not in this class: it links, "
                "it is just described wrongly. Those are recorded separately in "
-               "[`scripts/check_tki_arity_skiplist.txt`](../../scripts/check_tki_arity_skiplist.txt) "
+               "[`scripts/check_tki_arity_skiplist.txt`](" + REPO_BLOB + "scripts/check_tki_arity_skiplist.txt) "
                "and gated by the same `make check-tki` (story 135.17). An entry "
                "here is cleared by writing glue; an entry there is cleared by an "
                "interface decision.")
