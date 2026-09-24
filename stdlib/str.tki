@@ -262,6 +262,16 @@
     },
     {
       "kind": "func",
+      "name": "str.indexfrom",
+      "params": [
+        "str",
+        "str",
+        "i64"
+      ],
+      "return": "i64"
+    },
+    {
+      "kind": "func",
       "name": "str.repeat",
       "params": [
         "str",

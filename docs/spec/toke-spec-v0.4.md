@@ -120,6 +120,24 @@ non-conforming".
 fields (whitespace-run split). Complements `str.split(s; sep)`. Normative signature
 lives in `stdlib/str.tki`.
 
+## F.1 `str.indexfrom` (extends v0.3 §16 stdlib `str`; story 127.91)
+
+`str.indexfrom(s: $str; sub: $str; start: i64) -> i64` is `str.indexof` with a
+start offset: the byte offset, counted from the start of `s`, of the first
+occurrence of `sub` at or after byte `start`, or `-1` if there is none. A
+negative `start` searches from 0; a `start` past the end of `s` finds nothing;
+a `start` equal to the length of `s` finds only the empty string. It is a new
+name rather than a third parameter on `str.indexof`, so every existing
+two-argument call keeps its meaning. A scanner can therefore advance through a
+string without re-slicing its tail before every search. Normative signature
+lives in `stdlib/str.tki`.
+
+Cost: the search is `strstr` from `start`. Because a toke string is a bare
+NUL-terminated buffer with no stored length, checking that `start` lies inside
+`s` reads the `start` bytes before it (one `memchr`, no allocation). A scan
+that calls it once per token is therefore still O(tokens × length) in bytes
+READ, but it no longer allocates or copies per token.
+
 ---
 
 ## G. Character set is 59 (supersedes v0.3 §7.1 and the RFC's "56")
@@ -187,3 +205,5 @@ documentation was never measured.
 - **2026-09-19 (story 132.14):** §G added — the character set is **59**, not the
   55 stated in v0.3 §7.1 or the 56 stated in the RFC. Resolved against
   `src/lexer.c`; `^ ~ % &` are live operators, none is reserved.
+- **2026-09-24 (story 127.91):** §F.1 added — `str.indexfrom(s; sub; start)`,
+  a start-offset form of `str.indexof`. Additive; no existing call changes.
