@@ -984,7 +984,7 @@ test-ci: test-ci-green
 # leave it out. It is a prerequisite of `ci` as of this line.
 #
 # `$(BIN)` is already its own prerequisite, so ordering with `conform` is free.
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans fuzz-smoke check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -1885,6 +1885,137 @@ fuzz-http: fuzz-http-parse fuzz-url-route
 	./fuzz-http-parse -max_total_time=120
 	./fuzz-url-route -max_total_time=120
 
+# ── 123.10: the eight 120.22 stdlib harnesses, wired ─────────────────────────
+#
+# test/fuzz/fuzz_{json,yaml,toml,toon,xml,template,multipart,ws_frame}.c were
+# written for 120.22 and built by NO target (136.56's orphan gate exempted
+# them by name, pending this story).  security-nightly.yml called
+# `fuzz-120-22` / `fuzz-120-22-run`, which did not exist either, so its fuzz
+# job was red by construction and was removed (123.10a).  Both are real now.
+#
+# TWO ENGINES, chosen by FUZZ_ENGINE (default auto):
+#   libfuzzer   -fsanitize=fuzzer.  libFuzzer supplies main() and mutates.
+#               This is fuzzing.  CI (Linux clang) builds this.
+#   standalone  the harness is linked against test/fuzz/standalone_main.c,
+#               which REPLAYS the files it is given -- no mutation.  Apple
+#               clang ships no libclang_rt.fuzzer_osx.a, so on a developer Mac
+#               this is the only way the harnesses build at all.  It proves
+#               they compile, link and run clean on the seed and adversarial
+#               corpora under ASAN+UBSAN.  It is a regression replay, NOT
+#               fuzzing, and every recipe that runs it says so.
+#   auto        libfuzzer if $(CC) can link a -fsanitize=fuzzer program, else
+#               standalone.  Probed once per make, and only when a fuzz
+#               target is actually built.
+#
+# The parser sources are compiled FROM SOURCE with the sanitizers, not linked
+# from the shipping .o files, so the code under test is itself instrumented.
+# UBSAN recovers by default and would print and carry on; it is made fatal.
+#
+# Seeds are tracked under test/fuzz/seeds/<target>/; the 120.x adversarial
+# regressions under test/fuzz/corpus-adversarial/<target>_*.  A libFuzzer run
+# never writes into either: it fuzzes a scratch copy under build/fuzz/corpus/
+# and merges (minimises) what it found into build/fuzz/corpus-min/, which the
+# nightly uploads.  Promoting a minimised input into seeds/ is a reviewed commit.
+FUZZ_ENGINE ?= auto
+FUZZ_SECONDS ?= 120
+FUZZ_OUT = build/fuzz
+FUZZ_SAN = -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+           -fno-omit-frame-pointer -g -O1
+FUZZ_STDLIB_CFLAGS = -std=c99 -D_GNU_SOURCE -iquote src/stdlib
+FUZZ_TARGETS_120_22 = json yaml toml toon xml template multipart ws_frame
+fuzz_have_libfuzzer = $(shell d=$$(mktemp -d "$${TMPDIR:-/tmp}/tkc_fuzzprobe.XXXXXX") && \
+    printf 'int LLVMFuzzerTestOneInput(const unsigned char *d, unsigned long n){(void)d;(void)n;return 0;}\n' > "$$d/p.c" && \
+    $(CC) -fsanitize=fuzzer -o "$$d/p" "$$d/p.c" >/dev/null 2>&1 && echo libfuzzer || echo standalone; \
+    [ -n "$$d" ] && rm -rf "$$d")
+# Memoised: evaluated on first use, then a plain value.
+FUZZ_ENGINE_R = $(eval FUZZ_ENGINE_R := $(if $(filter auto,$(FUZZ_ENGINE)),$(fuzz_have_libfuzzer),$(FUZZ_ENGINE)))$(FUZZ_ENGINE_R)
+FUZZ_LINK = $(if $(filter libfuzzer,$(FUZZ_ENGINE_R)),-fsanitize=fuzzer,test/fuzz/standalone_main.c)
+
+# $(1)=target  $(2)=harness + sources (the harness path written out, so
+# check-test-orphans can see it)  $(3)=extra flags/libs
+define fuzz_build_rule
+	@case "$(FUZZ_ENGINE_R)" in libfuzzer|standalone) ;; \
+	  *) echo "FUZZ_ENGINE=$(FUZZ_ENGINE_R): must be libfuzzer, standalone or auto" >&2; exit 2 ;; esac
+	@mkdir -p $(FUZZ_OUT)
+	@echo "fuzz: building fuzz-$(subst _,-,$(1)) [$(FUZZ_ENGINE_R)]"
+	$(CC) $(FUZZ_SAN) $(FUZZ_STDLIB_CFLAGS) -o $(FUZZ_OUT)/fuzz-$(subst _,-,$(1)) \
+	    $(FUZZ_LINK) $(2) $(3)
+endef
+
+.PHONY: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
+	fuzz-multipart fuzz-ws-frame fuzz-120-22 fuzz-120-22-run fuzz-smoke
+
+fuzz-json:
+	$(call fuzz_build_rule,json,test/fuzz/fuzz_json.c src/stdlib/json.c,)
+fuzz-yaml:
+	$(call fuzz_build_rule,yaml,test/fuzz/fuzz_yaml.c src/stdlib/yaml.c,)
+fuzz-toml:
+	$(call fuzz_build_rule,toml,test/fuzz/fuzz_toml.c src/stdlib/toml.c $(TOML_SRCS),$(TOML_FLAGS))
+fuzz-toon:
+	$(call fuzz_build_rule,toon,test/fuzz/fuzz_toon.c src/stdlib/toon.c,)
+fuzz-xml:
+	$(call fuzz_build_rule,xml,test/fuzz/fuzz_xml.c src/stdlib/xml.c,)
+fuzz-template:
+	$(call fuzz_build_rule,template,test/fuzz/fuzz_template.c src/stdlib/template.c,)
+# http.c's TLS paths are compiled out without TK_HAVE_OPENSSL; it still calls
+# the capability checks, hence capabilities.c (not in 120.22's link line).
+fuzz-multipart:
+	$(call fuzz_build_rule,multipart,test/fuzz/fuzz_multipart.c src/stdlib/http.c src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c src/stdlib/capabilities.c,-lz)
+fuzz-ws-frame:
+	$(call fuzz_build_rule,ws_frame,test/fuzz/fuzz_ws_frame.c src/stdlib/ws.c,)
+
+# Build all eight (the name security-nightly.yml calls).
+fuzz-120-22: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
+	fuzz-multipart fuzz-ws-frame
+
+# Replay every seed and adversarial input through every harness, once.  Works
+# under either engine (libFuzzer's -runs=0 executes the given corpus and
+# exits), so it is the same check here and on CI.  Fails on any sanitizer
+# report, on a harness that replays nothing, or on a target with no seeds.
+fuzz-smoke: fuzz-120-22
+	@echo "=== fuzz-smoke: replay seeds + adversarial inputs [$(FUZZ_ENGINE_R)] -- a replay, not fuzzing ==="
+	@fail=0; for t in $(FUZZ_TARGETS_120_22); do \
+	  b=$(FUZZ_OUT)/fuzz-$$(echo $$t | tr _ -); \
+	  [ -d test/fuzz/seeds/$$t ] && [ -n "$$(ls test/fuzz/seeds/$$t)" ] \
+	    || { echo "  FAIL $$t: no seeds in test/fuzz/seeds/$$t"; fail=1; continue; }; \
+	  adv=$$(ls test/fuzz/corpus-adversarial/$${t}_* 2>/dev/null); \
+	  if [ "$(FUZZ_ENGINE_R)" = libfuzzer ]; then \
+	    out=$$($$b -runs=0 test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; \
+	  else \
+	    out=$$($$b test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; \
+	  fi; \
+	  n=$$(ls test/fuzz/seeds/$$t | wc -l | tr -d ' '); a=$$(printf '%s\n' $$adv | grep -c . ); \
+	  if [ $$rc -eq 0 ]; then echo "  ok   $$t  ($$n seed(s), $$a adversarial)"; \
+	  else echo "  FAIL $$t (exit $$rc)"; \
+	    printf '%s\n' "$$out" | grep -a -E 'ERROR: |runtime error|SUMMARY|fuzz-replay' | head -6 | sed 's/^/      /'; fail=1; fi; \
+	done; \
+	[ $$fail -eq 0 ] && echo "fuzz-smoke: $(words $(FUZZ_TARGETS_120_22)) harnesses replayed clean" \
+	  || { echo "fuzz-smoke: FAILED"; exit 1; }
+
+# The nightly run.  libfuzzer: fuzz each target for FUZZ_SECONDS on a scratch
+# copy of its seeds, crash inputs to $(FUZZ_OUT)/crash-<target>-*, then
+# minimise the grown corpus into $(FUZZ_OUT)/corpus-min/<target>.
+# standalone: there is no fuzzer to run -- it says so by name and replays
+# (fuzz-smoke), rather than printing a green "fuzzed" it did not do.
+fuzz-120-22-run: fuzz-120-22
+	@if [ "$(FUZZ_ENGINE_R)" != libfuzzer ]; then \
+	  echo "SKIP fuzz-120-22-run: FUZZ_ENGINE=$(FUZZ_ENGINE_R) -- $(CC) cannot link -fsanitize=fuzzer here,"; \
+	  echo "     so NO FUZZING RAN.  Replaying the corpora instead (make fuzz-smoke)."; \
+	  $(MAKE) --no-print-directory fuzz-smoke FUZZ_ENGINE=standalone; exit $$?; \
+	fi; \
+	fail=0; for t in $(FUZZ_TARGETS_120_22); do \
+	  b=$(FUZZ_OUT)/fuzz-$$(echo $$t | tr _ -); \
+	  rm -rf $(FUZZ_OUT)/corpus/$$t $(FUZZ_OUT)/corpus-min/$$t; \
+	  mkdir -p $(FUZZ_OUT)/corpus/$$t $(FUZZ_OUT)/corpus-min/$$t; \
+	  cp test/fuzz/seeds/$$t/* $(FUZZ_OUT)/corpus/$$t/; \
+	  cp test/fuzz/corpus-adversarial/$${t}_* $(FUZZ_OUT)/corpus/$$t/ 2>/dev/null; \
+	  echo "=== fuzz $$t for $(FUZZ_SECONDS)s ==="; \
+	  $$b -max_total_time=$(FUZZ_SECONDS) -artifact_prefix=$(FUZZ_OUT)/crash-$$t- \
+	      $(FUZZ_OUT)/corpus/$$t || fail=1; \
+	  $$b -merge=1 $(FUZZ_OUT)/corpus-min/$$t $(FUZZ_OUT)/corpus/$$t >/dev/null 2>&1 || true; \
+	done; \
+	exit $$fail
+
 # ── 123.10a: SBOM refresh + dependency CVE recheck ────────────────────────
 # security-nightly.yml's weekly job called `make sbom` and `make cve-scan`
 # and neither target existed, so the job was red by construction.  Text is
@@ -1892,18 +2023,44 @@ fuzz-http: fuzz-http-parse fuzz-url-route
 # completely; the same syft invocation as release.yml, so SBOMs taken
 # between releases stay comparable.
 #
-# syft and grype are installed by the workflow, not vendored here; run
-# locally only if you have them.  --fail-on high honours the
-# dependency-tracking.md SLA: Medium/Low are reported, not gated.
+# syft and grype are installed by the workflow, not vendored here.  --fail-on
+# high honours the dependency-tracking.md SLA: Medium/Low are reported, not
+# gated.
+#
+# 123.10: local runs make NO network call, and a missing tool is a named SKIP
+# rather than `syft: command not found`.  In CI (GitHub sets CI=true) a
+# missing tool FAILS -- there the step is real or it is red.
+#   sbom      syft with its update check off (it phones home by default).
+#   cve-scan  grype needs a vulnerability database, which it downloads.
+#             Locally the download and the update check are off, so it uses
+#             a database already in its cache or fails saying it has none;
+#             CI downloads a fresh one, which is the point of the job.
+# SBOM_CI=1 forces the CI behaviour locally; SBOM_CI=0 the local one.
+SBOM_CI ?= $(if $(filter true 1,$(CI)),1,0)
 sbom: $(BIN)
-	syft packages file:./$(BIN) -o spdx-json > tkc-sbom.spdx.json
-	sha256sum tkc-sbom.spdx.json > tkc-sbom.spdx.json.sha256
-	@echo "Wrote tkc-sbom.spdx.json (+ .sha256)"
+	@if ! command -v syft >/dev/null 2>&1; then \
+	  if [ "$(SBOM_CI)" = 1 ]; then echo "sbom: FAIL -- syft is not installed (CI must install it)" >&2; exit 1; fi; \
+	  echo "SKIP sbom: syft is not installed (local run; the CI job installs it, and there this step is real)"; \
+	  exit 0; \
+	fi; \
+	SYFT_CHECK_FOR_APP_UPDATE=false syft packages file:./$(BIN) -o spdx-json > tkc-sbom.spdx.json && \
+	{ command -v sha256sum >/dev/null 2>&1 && sha256sum tkc-sbom.spdx.json || shasum -a 256 tkc-sbom.spdx.json; } \
+	  > tkc-sbom.spdx.json.sha256 && \
+	echo "Wrote tkc-sbom.spdx.json (+ .sha256)"
 
 cve-scan: sbom
-	grype sbom:tkc-sbom.spdx.json \
-	      --fail-on high \
-	      --output table
+	@if ! command -v grype >/dev/null 2>&1 || [ ! -s tkc-sbom.spdx.json ]; then \
+	  if [ "$(SBOM_CI)" = 1 ]; then echo "cve-scan: FAIL -- grype is not installed or no SBOM was written" >&2; exit 1; fi; \
+	  echo "SKIP cve-scan: $$(command -v grype >/dev/null 2>&1 && echo 'no SBOM (sbom skipped)' || echo 'grype is not installed') -- local run, nothing was scanned"; \
+	  exit 0; \
+	fi; \
+	if [ "$(SBOM_CI)" = 1 ]; then \
+	  grype sbom:tkc-sbom.spdx.json --fail-on high --output table; \
+	else \
+	  echo "cve-scan: local run -- DB auto-update and update check OFF (no network); using the cached DB"; \
+	  GRYPE_DB_AUTO_UPDATE=false GRYPE_CHECK_FOR_APP_UPDATE=false \
+	    grype sbom:tkc-sbom.spdx.json --fail-on high --output table; \
+	fi
 
 # ── Man page ────────────────────────────────────────────────────────────
 MANDIR ?= /usr/local/share/man/man1

@@ -219,6 +219,12 @@ jobs:
       - name: Every test source is built by something
         run: make check-test-orphans
 
+      # 123.10 — the eight 120.22 fuzz harnesses build and replay their seed
+      # and adversarial corpora clean under ASAN+UBSAN. A replay, not a fuzz
+      # run (that is security-nightly.yml); `auto` picks libFuzzer here.
+      - name: Fuzz harnesses build and replay clean
+        run: make CC=clang fuzz-smoke
+
       # 127.126 — the stdlib's own toke sources (m= files) type-check.
       - name: stdlib toke sources type-check
         run: make check-stdlib-tk
