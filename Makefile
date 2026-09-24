@@ -75,9 +75,16 @@ COMMA := ,
 # promotes to an error. A probe that only checks the exit status accepts a
 # flag the build cannot use. Third occurrence of this shape in one afternoon;
 # if you add a probe here, put -Werror in it.
-harden_ld_probe = $(shell printf 'int main(void){return 0;}\n' > /tmp/tkc_ldprobe.c 2>/dev/null && \
-                    $(CC) -Werror $(1) -o /tmp/tkc_ldprobe /tmp/tkc_ldprobe.c >/dev/null 2>&1 && echo '$(1)'; \
-                    rm -f /tmp/tkc_ldprobe.c /tmp/tkc_ldprobe)
+#
+# 136.41: a private mktemp directory per probe, not the fixed /tmp/tkc_ldprobe.
+# This probe runs whenever ANY make in ANY worktree parses this file, so two
+# concurrent makes shared one path: one's `rm` could delete the other's source
+# mid-probe, the probe failed, and the flag silently dropped out of the build
+# (and out of TKC_BUILD_FLAGS, forcing a full rebuild on the next run).
+harden_ld_probe = $(shell d=$$(mktemp -d "$${TMPDIR:-/tmp}/tkc_ldprobe.XXXXXX") && \
+                    printf 'int main(void){return 0;}\n' > "$$d/p.c" && \
+                    $(CC) -Werror $(1) -o "$$d/p" "$$d/p.c" >/dev/null 2>&1 && echo '$(1)'; \
+                    [ -n "$$d" ] && rm -rf "$$d")
 HARDEN_LDFLAGS = $(call harden_ld_probe,-pie)
 HARDEN_LDFLAGS += $(call harden_ld_probe,-Wl$(COMMA)-z$(COMMA)relro)
 HARDEN_LDFLAGS += $(call harden_ld_probe,-Wl$(COMMA)-z$(COMMA)now)
@@ -197,13 +204,23 @@ BIN     = toke
 #   -ffile-prefix-map=...   strip absolute paths from debug info / __FILE__
 #
 # SOURCE_DATE_EPOCH: if set in the environment, GCC/Clang use it for __DATE__
-# and __TIME__.  The Makefile exports it when available; CI pins it to the
-# commit timestamp.
+# and __TIME__.  CI pins it to the commit timestamp.
+#
+# 136.41: it is passed to the COMPILER BUILD ONLY ($(BUILD_ENV) on the three
+# recipes that make $(BIN) and its objects), not exported.  It used to be
+# `export SOURCE_DATE_EPOCH ?= 0`, which put 0 into the environment of every
+# recipe in this file -- every test target, every conformance suite -- and
+# anything else that honours the variable read it as "the time is 1970".
+# Python 3.14's zipfile does, and 1970 is below the 1980 DOS epoch a zip
+# header can hold, so C007's and C031's fixture builders died under `make`
+# and passed by hand (131.79).  Those suites now pin their own stamps; this
+# stops the next consumer being exposed the same way.
 # ──────────────────────────────────────────────────────────────────────────────
 REPRO_FLAGS = -frandom-seed=toke \
               -ffile-prefix-map=$(CURDIR)=.
 
-export SOURCE_DATE_EPOCH ?= 0
+SOURCE_DATE_EPOCH ?= 0
+BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 
 # Portable wall-clock timeout for test binaries (no GNU coreutils needed).
 # Uses perl alarm() which survives exec; SIGALRM default action kills the process.
@@ -264,7 +281,7 @@ vendor-check:
 	fi
 
 $(BIN): $(OBJS)
-	$(CC) $(CFLAGS) $(REPRO_FLAGS) -o $@ $^ $(HARDEN_LDFLAGS) $(LDLIBS)
+	$(BUILD_ENV) $(CC) $(CFLAGS) $(REPRO_FLAGS) -o $@ $^ $(HARDEN_LDFLAGS) $(LDLIBS)
 
 tkc: $(BIN)
 	ln -sf $(BIN) tkc
@@ -276,7 +293,7 @@ src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h: $(wildcard src/stdlib/*_glue.c
 src/llvm.o: src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h
 
 %.o: %.c
-	$(CC) $(CFLAGS) $(REPRO_FLAGS) -c -o $@ $<
+	$(BUILD_ENV) $(CC) $(CFLAGS) $(REPRO_FLAGS) -c -o $@ $<
 
 # Header-dependency files emitted by -MMD; pull them in so editing a .h
 # recompiles every .o that includes it (prevents stale-header struct-layout
@@ -327,7 +344,7 @@ $(OBJS): $(BUILD_FLAGS_STAMP)
 
 # encrypt.c uses __int128 for Ed25519 arithmetic — allowed under GCC but rejected by -Wpedantic
 src/stdlib/encrypt.o: src/stdlib/encrypt.c $(BUILD_FLAGS_STAMP)
-	$(CC) $(CFLAGS) $(REPRO_FLAGS) -Wno-pedantic -c -o $@ $<
+	$(BUILD_ENV) $(CC) $(CFLAGS) $(REPRO_FLAGS) -Wno-pedantic -c -o $@ $<
 
 # ── 135.3a ──────────────────────────────────────────────────────────────────
 # `lint` used to be one line:
@@ -398,13 +415,13 @@ conform-check:
 # papered over.
 .PHONY: build-preflight
 build-preflight:
-	@bad=""; \
+	@bad=""; d=$$(mktemp -d "$${TMPDIR:-/tmp}/tkc_triple_probe.XXXXXX") || exit 1; \
 	for t in x86_64-linux-gnu aarch64-linux-gnu aarch64-apple-macos; do \
-	  printf '#include <stdio.h>\nint main(void){return 0;}\n' > /tmp/tkc_triple_probe.c; \
-	  $(CC) --target=$$t -c -o /tmp/tkc_triple_probe.o /tmp/tkc_triple_probe.c \
+	  printf '#include <stdio.h>\nint main(void){return 0;}\n' > "$$d/p.c"; \
+	  $(CC) --target=$$t -c -o "$$d/p.o" "$$d/p.c" \
 	    >/dev/null 2>&1 || bad="$$bad $$t"; \
 	done; \
-	rm -f /tmp/tkc_triple_probe.c /tmp/tkc_triple_probe.o; \
+	rm -rf "$$d"; \
 	if [ -n "$$bad" ]; then \
 	  echo "" >&2; \
 	  echo "ERROR: build-all cannot cross-compile for:$$bad" >&2; \
@@ -650,26 +667,27 @@ ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-json test-stdlib-encoding \
 .PHONY: asan-selftest
 asan-selftest:
 	@echo "=== ASAN self-test: the detector must catch a planted defect ==="
-	@$(CC) $(SAN_CFLAGS) -o /tmp/tkc_asan_selftest scripts/asan_selftest.c
-	@/tmp/tkc_asan_selftest > /tmp/tkc_asan_selftest.log 2>&1; rc=$$?; \
+	@# 136.41: a private directory, not the fixed /tmp/tkc_asan_selftest{,.log}
+	@d=$$(mktemp -d "$${TMPDIR:-/tmp}/tkc_asan_selftest.XXXXXX") || exit 1; \
+	 trap 'rm -rf "$$d"' EXIT; \
+	 $(CC) $(SAN_CFLAGS) -o "$$d/selftest" scripts/asan_selftest.c || exit 1; \
+	 "$$d/selftest" > "$$d/selftest.log" 2>&1; rc=$$?; \
 	 if [ $$rc -ne 0 ] && \
 	    grep -a -q 'ERROR: AddressSanitizer: heap-use-after-free' \
-	      /tmp/tkc_asan_selftest.log; then \
+	      "$$d/selftest.log"; then \
 	   echo "  ok  planted use-after-free was caught:"; \
-	   sed -n '/ERROR: AddressSanitizer/p' /tmp/tkc_asan_selftest.log \
+	   sed -n '/ERROR: AddressSanitizer/p' "$$d/selftest.log" \
 	     | head -1 | sed 's/^/      /'; \
 	 else \
 	   echo ""; \
 	   echo "  exit=$$rc, and the AddressSanitizer banner is $$(grep -a -c \
-	     'ERROR: AddressSanitizer' /tmp/tkc_asan_selftest.log) line(s) of the output:"; \
-	   cat /tmp/tkc_asan_selftest.log | sed 's/^/      /'; \
+	     'ERROR: AddressSanitizer' "$$d/selftest.log") line(s) of the output:"; \
+	   cat "$$d/selftest.log" | sed 's/^/      /'; \
 	   echo ""; \
 	   echo "ASAN SELF-TEST DID NOT FIRE -- refusing to report on a build"; \
 	   echo "whose sanitizer has not been seen to work. Nothing below ran."; \
-	   rm -f /tmp/tkc_asan_selftest /tmp/tkc_asan_selftest.log; \
 	   exit 1; \
 	 fi
-	@rm -f /tmp/tkc_asan_selftest /tmp/tkc_asan_selftest.log
 
 test-asan-stdlib: asan-selftest
 	@echo "=== ASAN/UBSAN: stdlib C unit tests ==="
