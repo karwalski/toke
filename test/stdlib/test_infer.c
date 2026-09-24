@@ -185,8 +185,12 @@ int main(void)
         ASSERT_NULL(r.handle,    "load_streaming: handle is NULL");
         ASSERT(r.err.code == -2, "load_streaming: code == -2 (not implemented)");
         ASSERT_NOTNULL(r.err.msg, "load_streaming: err.msg is set");
-        ASSERT(contains(r.err.msg, "72.7"),
-               "load_streaming: err.msg references Epic 72.7");
+        /* 136.66: this asserted "72.7" -- the story number the superseded
+         * stub in infer.c carried, deleted by 127.99. The live stub in
+         * infer_stream.c says what is missing instead, and that is the
+         * property worth pinning: the caller is told the dependency. */
+        ASSERT(contains(r.err.msg, "llama.cpp"),
+               "load_streaming: err.msg names the missing llama.cpp dependency");
     }
 
     /* load_streaming with NULL dir also returns is_err */

@@ -845,7 +845,8 @@ TEST_CI_GREEN = \
 	test-stdlib-infer-stream test-stdlib-ml-pipeline-integration \
 	test-stdlib-mlx test-stdlib-svg-diagram-integration \
 	test-stdlib-web-server-integration test-stdlib-ws-handshake-integration \
-	test-pkg
+	test-pkg \
+	test-stdlib-infer test-stdlib-template-email-integration
 
 # Green on macOS, not runnable on the Linux runner.  Excluded BY NAME so the
 # gap is visible: nothing on any platform covers these in CI today.
@@ -914,26 +915,13 @@ TEST_CI_UNMEASURED = test-stdlib-mdns
 #                              tamper of a DECODED byte, or of a character
 #                              in the middle of the segment.
 #
-#   Added by 136.56 when the orphaned sources were wired up. Both are the
-#   TEST that is wrong, not the module, and neither was edited here:
-#   test-stdlib-infer          test_infer.c:188 asserts load_streaming's
-#                              error message contains "72.7". 127.99 removed
-#                              the placeholder that said "(Epic 72.7)"; the
-#                              stub in infer_stream.c now explains itself
-#                              without a story number. 34 of 35 pass.
-#   test-stdlib-template-email-integration
-#                              test_template_email_integration.c:95 asserts
-#                              the substring "onerror" is absent after
-#                              escaping "<img onerror=alert(1) src=x>". The
-#                              escaped output is "&lt;img onerror=..." --
-#                              inert, and the same file's line 212 EXPECTS
-#                              "onerror" in escaped output. The two
-#                              assertions contradict each other; the "<img"
-#                              check beside line 95 is the real one and passes.
+#   test-stdlib-infer and test-stdlib-template-email-integration were
+#   listed here by 136.56 with assertions that were wrong, not the modules;
+#   136.66 corrected both assertions and promoted them to -green.
 TEST_CI_KNOWN_RED = test-stdlib-auth test-stdlib-router test-stdlib-http \
 	test-stdlib-viz-integration test-stdlib-crypto test-stdlib-file \
 	test-stdlib-zip test-compress-schema test-e2e test-e2e-check \
-	test-standalone test-stdlib-infer test-stdlib-template-email-integration
+	test-standalone
 
 # Run a list of targets, one log each, never stopping at the first failure --
 # "3 of 61 failed, here they are" is actionable; "make: *** Error 1" after the
