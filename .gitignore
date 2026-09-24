@@ -136,3 +136,7 @@ test/tkir/*
 .coverage/
 *.profraw
 *.profdata
+
+# 136.56 — test/test_pkg.c builds its binary beside it (src/pkg.c is a
+# compiler unit, not stdlib).
+/test/test_pkg

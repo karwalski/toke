@@ -519,6 +519,13 @@ check-glue-core:
 check-core-reach:
 	python3 scripts/report_core_reach.py --check
 
+# 136.56 — every tracked test/**/*.c is named on a non-comment line of the
+# Makefile, a workflow, scripts/ or a test script. The Makefile hand-lists
+# every test target, so this is what notices the one it forgot: eighteen
+# sources, 6,691 lines, had no target when this was written.
+check-test-orphans:
+	python3 scripts/check_test_orphans.py
+
 # 135.11 — a stdlib module must have exactly ONE description of each kind:
 # stdlib/<m>.tki (interface), src/stdlib/<m>.c (implementation) and
 # docs/stdlib/<m>.md (docs). A stdlib/<m>.tk reimplementation or a
@@ -810,14 +817,38 @@ TEST_CI_GREEN = \
 	test-compress test-compress-stream \
 	test-standalone-check \
 	test-stdlib-http-cookies test-stdlib-http-multipart \
-	test-stdlib-http-form test-stdlib-log test-stdlib-coverage
+	test-stdlib-http-form test-stdlib-log test-stdlib-coverage \
+	test-stdlib-capabilities test-stdlib-auth-flow-integration \
+	test-stdlib-dashboard-integration test-stdlib-http-json-integration \
+	test-stdlib-http2 test-stdlib-image-pipeline-integration \
+	test-stdlib-infer-stream test-stdlib-ml-pipeline-integration \
+	test-stdlib-mlx test-stdlib-svg-diagram-integration \
+	test-stdlib-web-server-integration test-stdlib-ws-handshake-integration \
+	test-pkg
 
 # Green on macOS, not runnable on the Linux runner.  Excluded BY NAME so the
 # gap is visible: nothing on any platform covers these in CI today.
 #   test-stdlib-tls        links -framework Security -framework CoreFoundation
 #                          and -L/opt/homebrew/lib (TLS_TEST_LDFLAGS)
 #   test-stdlib-keychain   drives the macOS Keychain via a shell script
-TEST_CI_MACOS_ONLY = test-stdlib-tls test-stdlib-keychain
+#   test-stdlib-webview    Objective-C under __APPLE__, WebKit + Cocoa.
+#                          Green on macOS/arm64 2026-09-24 (136.56).
+#   test-stdlib-keychain-core
+#                          the C core of the above; writes to the login
+#                          keychain. NOT RUN by 136.56 (a keychain write can
+#                          raise a macOS access prompt), so unmeasured.
+TEST_CI_MACOS_ONLY = test-stdlib-tls test-stdlib-keychain \
+	test-stdlib-webview test-stdlib-keychain-core
+
+# Wired, and never run anywhere yet. Not green, not known red: UNMEASURED.
+# CI runs these in the allowed-to-fail step, which makes the Linux run their
+# first measurement; promote or demote from there.
+#   test-stdlib-mdns       on macOS it really advertises and browses over
+#                          Bonjour, which can raise the Local Network
+#                          permission prompt, so 136.56 did not run it here.
+#                          On Linux mdns.c is a stub and the test checks the
+#                          stub's safe return values.
+TEST_CI_UNMEASURED = test-stdlib-mdns
 
 # Red at HEAD on 2026-09-24, measured, with the reason.  CI runs these in a
 # job that is ALLOWED TO FAIL and says so on its face -- see
@@ -861,10 +892,27 @@ TEST_CI_MACOS_ONLY = test-stdlib-tls test-stdlib-keychain
 #                              bypass in the final signature byte. Needs a
 #                              tamper of a DECODED byte, or of a character
 #                              in the middle of the segment.
+#
+#   Added by 136.56 when the orphaned sources were wired up. Both are the
+#   TEST that is wrong, not the module, and neither was edited here:
+#   test-stdlib-infer          test_infer.c:188 asserts load_streaming's
+#                              error message contains "72.7". 127.99 removed
+#                              the placeholder that said "(Epic 72.7)"; the
+#                              stub in infer_stream.c now explains itself
+#                              without a story number. 34 of 35 pass.
+#   test-stdlib-template-email-integration
+#                              test_template_email_integration.c:95 asserts
+#                              the substring "onerror" is absent after
+#                              escaping "<img onerror=alert(1) src=x>". The
+#                              escaped output is "&lt;img onerror=..." --
+#                              inert, and the same file's line 212 EXPECTS
+#                              "onerror" in escaped output. The two
+#                              assertions contradict each other; the "<img"
+#                              check beside line 95 is the real one and passes.
 TEST_CI_KNOWN_RED = test-stdlib-auth test-stdlib-router test-stdlib-http \
 	test-stdlib-viz-integration test-stdlib-crypto test-stdlib-file \
 	test-stdlib-zip test-compress-schema test-e2e test-e2e-check \
-	test-standalone
+	test-standalone test-stdlib-infer test-stdlib-template-email-integration
 
 # Run a list of targets, one log each, never stopping at the first failure --
 # "3 of 61 failed, here they are" is actionable; "make: *** Error 1" after the
@@ -887,7 +935,7 @@ define run_test_list
 	[ $$fail -eq 0 ]
 endef
 
-.PHONY: test-ci test-ci-green test-ci-known-red
+.PHONY: test-ci test-ci-green test-ci-known-red test-ci-unmeasured check-test-orphans
 test-ci-green:
 	$(call run_test_list,$(TEST_CI_GREEN),test-ci-green)
 
@@ -898,6 +946,9 @@ test-ci-green:
 # target that cannot fail, which is the thing this wave is removing.
 test-ci-known-red:
 	$(call run_test_list,$(TEST_CI_KNOWN_RED),test-ci-known-red)
+
+test-ci-unmeasured:
+	$(call run_test_list,$(TEST_CI_UNMEASURED),test-ci-unmeasured)
 
 test-ci: test-ci-green
 
@@ -910,7 +961,7 @@ test-ci: test-ci-green
 # leave it out. It is a prerequisite of `ci` as of this line.
 #
 # `$(BIN)` is already its own prerequisite, so ordering with `conform` is free.
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -1386,6 +1437,133 @@ test-stdlib-data-pipeline:
 	    src/stdlib/analytics.c src/stdlib/chart.c src/stdlib/str.c -lm
 	$(RUN_TEST) ./test/stdlib/test_data_pipeline
 
+# ── 136.56: eighteen orphaned test sources, now targets ─────────────────────
+# Each of these was a tracked test source with no target and no caller --
+# 6,691 lines nothing compiled, eight of them the `*_integration.c` files that
+# docs/spec/spec-implementation-delta.md cites as evidence. Source lists were
+# found by linking and adding the defining module for each undefined symbol,
+# not copied from the files' own (stale) header comments. Every target was
+# built and run on macOS/arm64 on 2026-09-24 (G2) before being placed in a
+# TEST_CI_* list; `make check-test-orphans` fails on the next one.
+ORPHAN_LIBS = -lm -lz -lpthread
+
+test-stdlib-capabilities:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_capabilities \
+	    test/stdlib/test_capabilities.c src/stdlib/capabilities.c
+	$(RUN_TEST) ./test/stdlib/test_capabilities
+
+test-stdlib-auth-flow-integration:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_auth_flow_integration \
+	    test/stdlib/test_auth_flow_integration.c \
+	    src/stdlib/auth.c src/stdlib/encrypt.c src/stdlib/encoding.c \
+	    src/stdlib/crypto.c src/stdlib/json.c $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_auth_flow_integration
+
+test-stdlib-dashboard-integration:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_dashboard_integration \
+	    test/stdlib/test_dashboard_integration.c \
+	    src/stdlib/csv.c src/stdlib/dataframe.c src/stdlib/analytics.c \
+	    src/stdlib/chart.c src/stdlib/html.c src/stdlib/dashboard.c \
+	    src/stdlib/math.c src/stdlib/router.c src/stdlib/ws.c $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_dashboard_integration
+
+test-stdlib-http-json-integration:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_http_json_integration \
+	    test/stdlib/test_http_json_integration.c \
+	    src/stdlib/json.c src/stdlib/llm.c src/stdlib/http.c src/stdlib/str.c \
+	    src/stdlib/capabilities.c src/stdlib/encoding.c src/stdlib/log.c \
+	    $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_http_json_integration
+
+test-stdlib-http2:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_http2 \
+	    test/stdlib/test_http2.c src/stdlib/http2.c src/stdlib/http.c \
+	    src/stdlib/capabilities.c src/stdlib/encoding.c src/stdlib/log.c \
+	    $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_http2
+
+test-stdlib-image-pipeline-integration:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_image_pipeline_integration \
+	    test/stdlib/test_image_pipeline_integration.c src/stdlib/image.c \
+	    $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_image_pipeline_integration
+
+test-stdlib-infer:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_infer \
+	    test/stdlib/test_infer.c src/stdlib/infer.c src/stdlib/infer_stream.c \
+	    $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_infer
+
+test-stdlib-infer-stream:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_infer_stream \
+	    test/stdlib/test_infer_stream.c src/stdlib/infer_stream.c \
+	    $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_infer_stream
+
+test-stdlib-mdns:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_mdns \
+	    test/stdlib/test_mdns.c src/stdlib/mdns.c $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_mdns
+
+test-stdlib-ml-pipeline-integration:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_ml_pipeline_integration \
+	    test/stdlib/test_ml_pipeline_integration.c \
+	    src/stdlib/ml.c src/stdlib/csv.c src/stdlib/dataframe.c $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_ml_pipeline_integration
+
+test-stdlib-mlx:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_mlx \
+	    test/stdlib/test_mlx.c src/stdlib/mlx.c $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_mlx
+
+test-stdlib-svg-diagram-integration:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_svg_diagram_integration \
+	    test/stdlib/test_svg_diagram_integration.c \
+	    src/stdlib/svg.c src/stdlib/csv.c $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_svg_diagram_integration
+
+test-stdlib-template-email-integration:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_template_email_integration \
+	    test/stdlib/test_template_email_integration.c src/stdlib/template.c \
+	    $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_template_email_integration
+
+test-stdlib-web-server-integration:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_web_server_integration \
+	    test/stdlib/test_web_server_integration.c \
+	    src/stdlib/http.c src/stdlib/router.c src/stdlib/ws.c src/stdlib/sse.c \
+	    src/stdlib/capabilities.c src/stdlib/encoding.c src/stdlib/log.c \
+	    $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_web_server_integration
+
+test-stdlib-ws-handshake-integration:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_ws_handshake_integration \
+	    test/stdlib/test_ws_handshake_integration.c src/stdlib/ws.c $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/stdlib/test_ws_handshake_integration
+
+# src/pkg.c is the package registry, a compiler-side unit, so its test binary
+# sits beside its source in test/ rather than in test/stdlib/.
+test-pkg:
+	$(CC) $(CFLAGS) -iquote src -o test/test_pkg test/test_pkg.c src/pkg.c \
+	    $(ORPHAN_LIBS)
+	$(RUN_TEST) ./test/test_pkg
+
+# macOS only. webview.c is Objective-C under __APPLE__ and needs WebKit and
+# Cocoa; the test is headless by design (it never opens a real window).
+test-stdlib-webview:
+	$(CC) $(CFLAGS) -iquote src/stdlib -x objective-c -o test/stdlib/test_webview \
+	    src/stdlib/webview.c test/stdlib/test_webview.c \
+	    -framework WebKit -framework Cocoa
+	$(RUN_TEST) ./test/stdlib/test_webview
+
+# macOS only, and it WRITES TO THE USER'S LOGIN KEYCHAIN. The C-core sibling
+# of test-stdlib-keychain (which drives the toke binding).
+test-stdlib-keychain-core:
+	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_keychain \
+	    test/stdlib/test_keychain.c src/stdlib/keychain.c \
+	    -framework Security -framework CoreFoundation
+	$(RUN_TEST) ./test/stdlib/test_keychain
+
 test-stdlib-llm-live:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_llm_live \
 	    test/stdlib/test_llm_live.c \
@@ -1581,6 +1759,16 @@ clean:
 	    test/stdlib/test_chart test/stdlib/test_html test/stdlib/test_dashboard \
 	    test/stdlib/test_svg test/stdlib/test_canvas test/stdlib/test_image \
 	    test/stdlib/test_ml \
+	    test/stdlib/test_capabilities test/stdlib/test_auth_flow_integration \
+	    test/stdlib/test_dashboard_integration test/stdlib/test_http_json_integration \
+	    test/stdlib/test_http2 test/stdlib/test_image_pipeline_integration \
+	    test/stdlib/test_infer test/stdlib/test_infer_stream test/stdlib/test_mdns \
+	    test/stdlib/test_ml_pipeline_integration test/stdlib/test_mlx \
+	    test/stdlib/test_svg_diagram_integration \
+	    test/stdlib/test_template_email_integration \
+	    test/stdlib/test_web_server_integration \
+	    test/stdlib/test_ws_handshake_integration test/stdlib/test_webview \
+	    test/stdlib/test_keychain test/test_pkg \
 	    test/stdlib/test_security_integration test/stdlib/test_network_integration \
 	    test/stdlib/test_viz_integration test/stdlib/test_data_pipeline \
 	    test/stdlib/test_path test/stdlib/test_args \
