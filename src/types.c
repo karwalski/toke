@@ -2566,6 +2566,75 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
 }
 
 static Type *infer_impl(Ctx *cx, const Node *node);
+
+/*
+ * recv_value_type — the checker's type for a method-call receiver, or NULL
+ * when it will not judge the receiver.
+ *
+ * Only an identifier or a string literal is judged.  Other receiver shapes
+ * (a call, a field, an index) are left alone: they are either module paths
+ * whose handling lives in check_recv_method_call, or expressions this check
+ * has no evidence about.
+ *
+ * infer_impl, not infer: infer() memoises onto node->rtype, and the emitter
+ * reads a receiver's rtype to pick glue (recv_is_map / recv_is_array /
+ * len_recv_kind).  A CHECK must not change what the emitter does to a
+ * program it accepts, so the receiver node is left exactly as it was.
+ */
+static const Type *recv_value_type(Ctx *cx, const Node *recv) {
+    if (!recv) return NULL;
+    if (recv->kind != NODE_IDENT && recv->kind != NODE_STR_LIT) return NULL;
+    const Type *t = infer_impl(cx, recv);
+    if (!t || t->kind == TY_UNKNOWN) return NULL;
+    return t;
+}
+
+/*
+ * check_array_store_elem — `a.set(i;v)` / `a.append(v)` / `a.push(v)` on an
+ * array whose element type is known must store a value of that type.
+ *
+ * semantics.md §1.2: an array is an "ordered, homogeneous sequence of element
+ * type T".  Without this, `let box=mut.@(0;0); box=box.set(0;src)` with `src`
+ * an @i64 was ACCEPTED at the store and then REJECTED at the read
+ * (`box.get(0).get(0)` → "cannot index into 'i64'") — the diagnostic landed
+ * two statements away from the defect.  That is test_array_inplace.tk's
+ * container-escape case, broken by 127.129 (886bdb0) typing the binding.
+ *
+ * Flow direction: the value flows INTO the element slot, so types_compat
+ * (value, elem) — u64/bool widen to i64 exactly as for any other store; no
+ * int -> float promotion (ADR-0004).  Silent when either side is unknown.
+ * No `fix`: the right repair is to change the value, the array's element
+ * type, or the data structure, and the checker cannot know which.
+ */
+static void check_array_store_elem(Ctx *cx, const Node *call) {
+    if (!call || call->child_count < 2) return;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2 ||
+        !callee->children[1]) return;
+    char member[32]; TOKSTR(member, cx->src, callee->children[1]);
+    int vi;
+    if (strcmp(member, "set") == 0) vi = 2;
+    else if (strcmp(member, "append") == 0 || strcmp(member, "push") == 0) vi = 1;
+    else return;
+    if (call->child_count != vi + 1) return;      /* arity is E4026's business */
+    const Type *rt = recv_value_type(cx, callee->children[0]);
+    if (!rt || rt->kind != TY_ARRAY || !rt->elem ||
+        rt->elem->kind == TY_UNKNOWN || rt->elem->kind == TY_VOID) return;
+    const Node *vn = call->children[vi];
+    const Type *vt = vn ? vn->rtype : NULL;
+    if (!vt || vt->kind == TY_UNKNOWN) return;
+    if (types_compat(vt, rt->elem)) return;
+    if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+    char en[64], vn_[64], msg[256];
+    snprintf(en, sizeof en, "%s", type_name(rt->elem));
+    snprintf(vn_, sizeof vn_, "%s", type_name(vt));
+    snprintf(msg, sizeof msg,
+             "type mismatch: '.%s' stores a '%s' into an array whose elements "
+             "are '%s'", member, vn_, en);
+    diag_emit(DIAG_ERROR, E4031, vn->start, vn->line, vn->col, msg,
+              "expected", en, "got", vn_, (const char *)NULL);
+}
+
 static Type *infer(Ctx *cx, const Node *node) {
     Type *t = infer_impl(cx, node);
     if (node) ((Node *)node)->rtype = t;
@@ -3090,6 +3159,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             /* 127.1/127.96/127.115/127.128: and, for a call whose receiver is
              * a VALUE rather than a module, enforce the receiver dispatch. */
             check_recv_method_call(cx,node);
+            /* and an array store must match the element type. */
+            check_array_store_elem(cx,node);
             return mk_type(A,TY_UNKNOWN);
         }
         const Node *fn=d->def_node; int pi=0;

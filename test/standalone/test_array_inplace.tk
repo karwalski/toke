@@ -40,9 +40,13 @@ f=main():$i64{
   check("orig-mutated-elem";a.get(0);99);
   check("orig-mutated-len";a.len;4);
 
-  (* escape into a container: mutating the source must not change the stored copy *)
+  (* escape into a container: mutating the source must not change the stored copy.
+   * `box` holds arrays, so it is an @@i64 (semantics.md 1.2: an array is
+   * homogeneous). It was `@(0;0)` -- an @i64 -- until the checker learned to
+   * type it (127.129); storing an @i64 into an @i64 slot is E4031 at the
+   * `.set` (Batch E2), which is where the defect is. *)
   let src=mut.@(5;6;7);
-  let box=mut.@(0;0);
+  let box=mut.@(@(0);@(0));
   box=box.set(0;src);
   src=src.set(0;88);
   let inner=box.get(0);
