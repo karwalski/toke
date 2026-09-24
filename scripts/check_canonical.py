@@ -538,8 +538,22 @@ GENERATED_MIRRORS = (
 
 def is_generated_mirror(path):
     norm = os.path.normpath(os.path.abspath(path))
-    return any((os.sep + m + os.sep) in norm or norm.endswith(os.sep + m)
-               for m in GENERATED_MIRRORS)
+    if any((os.sep + m + os.sep) in norm or norm.endswith(os.sep + m)
+           for m in GENERATED_MIRRORS):
+        return True
+    # 132.46: recognise the same two mirrors structurally too, beside the
+    # script that builds the site, so a worktree of the website (whose
+    # directory is not called toke-website) is treated identically.
+    for tail in ("build-docs", os.path.join("content", "docs")):
+        if norm.endswith(os.sep + tail):
+            site = norm[:-len(os.sep + tail)]
+            if os.path.isfile(os.path.join(site, "scripts", "build_static.sh")):
+                return True
+    return False
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from check_metrics_claims import deployed_source, is_deployed_tree  # noqa: E402
+
 
 def scan_files(targets):
     out = []
@@ -551,7 +565,11 @@ def scan_files(targets):
             out.append(p)
         elif os.path.isdir(p):
             for dirpath, dirs, files in os.walk(p):
-                dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS
+                # 132.46: the website's deployed build/ is scanned; see
+                # check_metrics_claims.is_deployed_tree for why.
+                dirs[:] = [d for d in dirs
+                           if (d not in EXCLUDE_DIRS
+                               or is_deployed_tree(os.path.join(dirpath, d)))
                            and not is_generated_mirror(os.path.join(dirpath, d))]
                 for f in sorted(files):
                     if f.endswith(SCAN_EXT):
@@ -736,10 +754,25 @@ def main():
     scanned = 0
     for path in scan_files(targets):
         rel = relpath(path)
-        if rel.startswith(SKIP_PREFIXES):
+        # 132.46: a rendered page in the deployed tree takes its source's
+        # policy -- skip prefix and archive banner -- and, where the source
+        # passes, is reported rather than asserted (see check_metrics_claims).
+        src = deployed_source(path)
+        if rel.startswith(SKIP_PREFIXES) or \
+                (src and relpath(src).startswith(SKIP_PREFIXES)):
             continue
         scanned += 1
+        src_lines = []
+        if src:
+            src_lines = open(src, encoding="utf-8", errors="replace").read().splitlines()
+        if src and ARCHIVE_BANNER.search("\n".join(src_lines[:ARCHIVE_HEAD])):
+            continue
+        divergent = bool(src) and not check_stale(src, relpath(src))
         for item in check_stale(path, rel):
+            if divergent and not item[4] and \
+                    demarkup(item[3]).strip()[:40] in demarkup(" ".join(src_lines)):
+                item = item[:4] + ("132.46 render divergence: source %s passes"
+                                   % relpath(src),)
             (warnings if item[4] else failures).append(item)
 
     if strict:

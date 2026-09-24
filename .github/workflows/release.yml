@@ -55,6 +55,19 @@ jobs:
           export SOURCE_DATE_EPOCH
           make CFLAGS="-std=c99 -D_GNU_SOURCE -O2 -DNDEBUG -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -DTKC_STDLIB_DIR='\"./src/stdlib\"'"
 
+      # 132.43 — a tag is what makes a compiler public, and v3.0.0 shipped a
+      # compiler under which programs the website publishes no longer
+      # compiled. This is the release-ritual closure the tracker names as the
+      # one that would have caught it: the tag fails instead.
+      - name: Check out the website
+        uses: actions/checkout@v4
+        with:
+          repository: karwalski/toke-web
+          path: .site
+
+      - name: Website examples compile under the release compiler
+        run: make SITE_REPO=.site check-site-compile
+
       - name: Package release tarball
         run: |
           VERSION="${GITHUB_REF_NAME}"

@@ -47,6 +47,7 @@ that must keep passing. Run it after any change to a rule — switching rule 1 o
 makes it exit 1, which is how it was verified. A gate nobody has watched fail is
 not a gate.
 """
+import html
 import os
 import re
 import sys
@@ -469,8 +470,109 @@ GENERATED_MIRRORS = (
 
 def is_generated_mirror(path):
     norm = os.path.normpath(os.path.abspath(path))
-    return any((os.sep + m + os.sep) in norm or norm.endswith(os.sep + m)
-               for m in GENERATED_MIRRORS)
+    if any((os.sep + m + os.sep) in norm or norm.endswith(os.sep + m)
+           for m in GENERATED_MIRRORS):
+        return True
+    # 132.46: recognise the same two mirrors structurally too, beside the
+    # script that builds the site, so a worktree of the website (whose
+    # directory is not called toke-website) is treated identically.
+    for tail in ("build-docs", os.path.join("content", "docs")):
+        if norm.endswith(os.sep + tail):
+            site = norm[:-len(os.sep + tail)]
+            if os.path.isfile(os.path.join(site, "scripts", "build_static.sh")):
+                return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Deployed trees (story 132.46)
+# ---------------------------------------------------------------------------
+# `build` is in EXCLUDE_DIRS by NAME, which is right for a Python wheel's
+# build/ and wrong for exactly one directory: toke-website/build/ is what the
+# deploy rsyncs to the server, i.e. every page a visitor gets. Until 132.46 the
+# guard scanned the intermediate build-docs/ and pruned the deployed build/ by
+# name; 132.36 then excluded build-docs/ as a mirror, which left the deployed
+# tree scanned by nothing at all. It is scanned now.
+#
+# build/docs/<section>/<slug>/index.html is rendered from
+# ${TOKE}/docs/<dir>/<slug>.md, and a rendered page must be judged by the
+# policy of the source it came from: its archive banner is no longer in the
+# first 40 lines once a nav header is wrapped round it, and SKIP_PREFIXES /
+# FACTS_SKIP are keyed to source paths. Without this mapping the rendered copy
+# of the superseded v0.3 spec is a live claim again (132.36's complaint). The
+# section map is READ from the website's sync script, never retyped.
+# The deployed tree is recognised by what makes it one -- a `build/` whose
+# parent holds the script that produces it -- not by the checkout's directory
+# name, so a worktree of the website is scanned the same as the main checkout.
+DEPLOY_SCRIPT = os.path.join("scripts", "build_static.sh")
+
+
+def is_deployed_tree(path):
+    path = os.path.normpath(os.path.abspath(path))
+    return (os.path.basename(path) == "build" and
+            os.path.isfile(os.path.join(os.path.dirname(path), DEPLOY_SCRIPT)))
+
+
+@functools.lru_cache(maxsize=None)
+def _docs_section_map(site_root):
+    """{site section: toke docs dir} from scripts/sync_docs_content.sh."""
+    sync = os.path.join(site_root, "scripts", "sync_docs_content.sh")
+    try:
+        text = open(sync, encoding="utf-8").read()
+    except OSError:
+        return {}
+    m = re.search(r"^SECTIONS=\((.*?)^\)", text, re.M | re.S)
+    if not m:
+        return {}
+    return dict(re.findall(r'"([\w-]+):([\w/-]+)"', m.group(1)))
+
+
+@functools.lru_cache(maxsize=None)
+def _slug_index(docs_dir):
+    """{slug: [source .md]} under ROOT/docs/<docs_dir>, recursively: ooke
+    flattens subdirectories, so docs/about/reviews/kern-2026-08.md is served
+    at /docs/about/kern-2026-08/."""
+    idx = {}
+    base = os.path.join(ROOT, "docs", docs_dir)
+    for dirpath, _dirs, files in os.walk(base):
+        for f in files:
+            if f.endswith(".md"):
+                idx.setdefault(f[:-3], []).append(os.path.join(dirpath, f))
+    return idx
+
+
+def deployed_source(path):
+    """The toke docs source of a rendered page in a deployed tree, or None."""
+    norm = os.path.normpath(os.path.abspath(path))
+    if not norm.endswith(os.sep + "index.html"):
+        return None
+    parts = norm.split(os.sep)
+    for i in range(len(parts) - 1, 0, -1):
+        if parts[i] == "build" and is_deployed_tree(os.sep.join(parts[:i + 1])):
+            rest = parts[i + 1:-1]            # docs, <section>, <slug...>
+            if len(rest) < 3 or rest[0] != "docs":
+                return None
+            docs_dir = _docs_section_map(os.sep.join(parts[:i])).get(rest[1])
+            if not docs_dir:
+                return None
+            hits = _slug_index(docs_dir).get(rest[-1], [])
+            return hits[0] if len(hits) == 1 else None
+    return None
+
+
+_NUM = re.compile(r"\d[\d,.]*%?")
+
+
+def in_source(sent, src):
+    """True when every number in a rendered finding also appears in its
+    source file -- i.e. the claim is the source's, not the renderer's."""
+    try:
+        text = open(src, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return False
+    nums = _NUM.findall(re.sub(r"<[^>]+>", " ", html.unescape(sent)))
+    return bool(nums) and all(n in text for n in nums)
+
 
 def md_files(targets):
     out = []
@@ -484,7 +586,9 @@ def md_files(targets):
             out.append(p)
         else:
             for dirpath, dirs, files in os.walk(p):
-                dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS
+                dirs[:] = [d for d in dirs
+                           if (d not in EXCLUDE_DIRS
+                               or is_deployed_tree(os.path.join(dirpath, d)))
                            and not is_generated_mirror(os.path.join(dirpath, d))]
                 for f in sorted(files):
                     if f.endswith(SCAN_EXT):
@@ -561,13 +665,27 @@ def is_archived(lines):
 
 def check_file(path):
     rel = os.path.relpath(path, ROOT)
+    # 132.46: a rendered page in a deployed tree takes its source's policy
+    src = deployed_source(path)
+    if src:
+        rel = os.path.relpath(src, ROOT)
     if rel.startswith(SKIP_PREFIXES):
         return []
     try:
         lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
     except OSError:
         return []
+    # 132.46: judge HTML by the text a visitor reads. Rendered pages carry
+    # `&gt;= 10%`, which THRESHOLD_PREFIX cannot see as the `>= 10%` it is.
+    if path.endswith(".html"):
+        lines = [html.unescape(ln) for ln in lines]
     archived = is_archived(lines)
+    if src and not archived:
+        try:
+            archived = is_archived(open(src, encoding="utf-8",
+                                        errors="replace").read().splitlines())
+        except OSError:
+            pass
     table_lines = claims_table_lines(path) if path.endswith(".json") else frozenset()
     findings = []
     for i, line in enumerate(lines):
@@ -713,13 +831,33 @@ def main():
     targets = argv or DEFAULT_TARGETS
 
     failures, warnings, scanned = [], [], 0
+    # 132.46: build/ is gitignored, so a checkout that has not run `make build`
+    # has no deployed tree to scan. Say so by name rather than pass silently.
+    for t in targets:
+        tp = t if os.path.isabs(t) else os.path.join(ROOT, t)
+        if os.path.isfile(os.path.join(tp, DEPLOY_SCRIPT)) and \
+                not os.path.isdir(os.path.join(tp, "build")):
+            print("SKIP  deployed tree not built, so not scanned: %s/build "
+                  "(run `make build` there)" % os.path.relpath(tp, ROOT))
     for path in md_files(targets):
         rel = os.path.relpath(path, ROOT)
         if rel.startswith(SKIP_PREFIXES):
             continue
         scanned += 1
+        # 132.46: a rendered docs page whose SOURCE passes is reported, not
+        # asserted. Measured on the first deployed-tree scan: every such
+        # finding is a window artefact -- the source is exempted by text within
+        # 4 (or 30) lines, and rendering moves that text out of the window. At
+        # least one is a real claim the SOURCE scan is wrongly exempting, so
+        # these are printed by name, never dropped.
+        src = deployed_source(path)
+        divergent = bool(src) and not check_file(src)
         for lineno, why, sent in check_file(path):
             owner = pending_owner(rel)
+            # a claim the renderer INTRODUCED (not in the source) still fails
+            if divergent and not owner and in_source(sent, src):
+                owner = ("132.46 render divergence: source %s passes"
+                         % os.path.relpath(src, ROOT))
             item = (rel, lineno, why, sent, owner)
             if owner and not strict:
                 warnings.append(item)

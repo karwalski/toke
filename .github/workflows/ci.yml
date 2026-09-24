@@ -203,6 +203,29 @@ jobs:
       - name: Glue reaches a real core
         run: make check-glue-core
 
+      # 136.50a — the reverse direction: a public C function no .tki exports
+      # and nothing calls. Fails on an unclassified or stale finding; the
+      # classified gap backlog is reported, not asserted.
+      - name: Every unsurfaced C function is classified
+        run: make check-core-reach
+
+      # 136.56 — a tracked test source with no target and no caller.
+      - name: Every test source is built by something
+        run: make check-test-orphans
+
+      # 132.43 — the website's published toke programs must compile under the
+      # compiler this push built. The website only checked them on a push to
+      # the website, so a compiler-side change (stdlib/io.tki making io.printi
+      # an error) broke them silently and shipped in v3.0.0.
+      - name: Check out the website
+        uses: actions/checkout@v4
+        with:
+          repository: karwalski/toke-web
+          path: .site
+
+      - name: Website examples compile under this compiler
+        run: make SITE_REPO=.site check-site-compile
+
       - name: No parallel stdlib descriptions
         run: make check-parallel-stdlib
 
@@ -276,6 +299,16 @@ jobs:
           echo "::warning::on this job does not mean these succeeded. See"
           echo "::warning::TEST_CI_KNOWN_RED in the Makefile for each reason."
           make test-ci-known-red
+
+      # 136.56 — wired and never measured anywhere (see TEST_CI_UNMEASURED
+      # in the Makefile). This run is their first measurement; allowed to
+      # fail until it has been read and each one promoted or demoted.
+      - name: Test targets not yet measured (allowed to fail)
+        continue-on-error: true
+        run: |
+          echo "::warning::UNMEASURED targets. Allowed to fail; a green tick"
+          echo "::warning::here is not a pass. See TEST_CI_UNMEASURED."
+          make test-ci-unmeasured
 
   # ══════════════════════════════════════════════════════════════════════════
   # Story 123.9 (folds 122.1) — sanitizers and exploit-mitigation flags

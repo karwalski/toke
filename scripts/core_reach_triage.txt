@@ -1,0 +1,147 @@
+# 136.50a -- classification of every finding of scripts/report_core_reach.py.
+#
+# One line per public C function in src/stdlib/<m>.h that no .tki exports and
+# nothing in the C calls:   <c_symbol> <class>   # reason
+#
+#   gap       real capability with no surface.  REPORTED, NOT ASSERTED: each
+#             needs a surface decision (wrap + export, or delete).
+#   internal  never meant to cross the ABI.  Accepted.
+#   dup       a second copy of something that IS surfaced.  Candidate for
+#             deletion -- deleting C needs owner sign-off, so it stays listed.
+#
+# `make check-core-reach` fails on a finding with no line here (a new
+# unsurfaced function must be classified) and on a line with no finding (it
+# is stale: delete it).  The list only shrinks.  Classified 2026-09-24 (G2).
+
+auth_jwtdecode_claims gap        # no wrapper, no .tki entry
+auth_oauth2_token_exchange gap        # no wrapper, no .tki entry
+canvas_bezier_to gap        # no wrapper, no .tki entry
+canvas_gradient_linear gap        # no wrapper, no .tki entry
+canvas_line_width gap        # no wrapper, no .tki entry
+canvas_op_count internal   # introspection counter of accumulated draw ops; a test hook, not a drawing capability
+canvas_restore gap        # no wrapper, no .tki entry
+canvas_rotate gap        # no wrapper, no .tki entry
+canvas_scale gap        # no wrapper, no .tki entry
+canvas_stroke_style gap        # no wrapper, no .tki entry
+chart_area gap        # no wrapper, no .tki entry
+chart_histogram gap        # no wrapper, no .tki entry
+chart_horizontal_bar gap        # no wrapper, no .tki entry
+chart_radar gap        # no wrapper, no .tki entry
+chart_set_legend gap        # no wrapper, no .tki entry
+chart_set_theme gap        # no wrapper, no .tki entry
+chart_set_tooltip gap        # no wrapper, no .tki entry
+csv_reader_has_next dup        # inverse of csv.atend, which is surfaced
+dashboard_add_gauge gap        # no wrapper, no .tki entry
+dashboard_add_markdown gap        # no wrapper, no .tki entry
+dashboard_add_stat gap        # no wrapper, no .tki entry
+dashboard_export_json gap        # no wrapper, no .tki entry
+dashboard_set_refresh_interval gap        # no wrapper, no .tki entry
+dashboard_set_theme gap        # no wrapper, no .tki entry
+db_affected_rows gap        # no wrapper, no .tki entry
+db_begin gap        # transactions; db.exec("BEGIN") works meanwhile
+db_bind gap        # prepared-statement API; NOTE parameter binding IS surfaced via db.exec(sql, params)
+db_columns gap        # prepared-statement API (see db_bind)
+db_commit gap        # transactions; db.exec("COMMIT") works meanwhile
+db_finalize gap        # prepared-statement API (see db_bind)
+db_is_null gap        # prepared-statement API (see db_bind)
+db_prepare gap        # prepared-statement API (see db_bind)
+db_rollback gap        # transactions; db.exec("ROLLBACK") works meanwhile
+db_step gap        # prepared-statement API (see db_bind)
+encoding_utf8_rune_count gap        # no wrapper, no .tki entry
+encrypt_open gap        # no wrapper, no .tki entry
+encrypt_pbkdf2 gap        # no wrapper, no .tki entry
+encrypt_rsa_decrypt gap        # no wrapper, no .tki entry
+encrypt_rsa_encrypt gap        # no wrapper, no .tki entry
+encrypt_rsa_generate_keypair gap        # no wrapper, no .tki entry
+encrypt_rsa_sign gap        # no wrapper, no .tki entry
+encrypt_rsa_verify gap        # no wrapper, no .tki entry
+encrypt_seal gap        # no wrapper, no .tki entry
+env_list gap        # no wrapper, no .tki entry
+file_absolute gap        # no wrapper, no .tki entry
+file_basename dup        # duplicates path.base
+file_dirname dup        # duplicates path.dir
+file_ext dup        # duplicates path.ext
+file_is_file gap        # no wrapper, no .tki entry
+file_join dup        # duplicates path.join
+file_rmdir dup        # duplicates os.rmdir
+html_a gap        # no wrapper, no .tki entry
+html_br gap        # no wrapper, no .tki entry
+html_button gap        # no wrapper, no .tki entry
+html_class_add gap        # no wrapper, no .tki entry
+html_code gap        # no wrapper, no .tki entry
+html_form gap        # no wrapper, no .tki entry
+html_hr gap        # no wrapper, no .tki entry
+html_id gap        # no wrapper, no .tki entry
+html_img gap        # no wrapper, no .tki entry
+html_input gap        # no wrapper, no .tki entry
+html_label gap        # no wrapper, no .tki entry
+html_link_stylesheet gap        # no wrapper, no .tki entry
+html_meta gap        # no wrapper, no .tki entry
+html_ol gap        # no wrapper, no .tki entry
+html_pre gap        # no wrapper, no .tki entry
+html_select gap        # no wrapper, no .tki entry
+html_span gap        # no wrapper, no .tki entry
+html_textarea gap        # no wrapper, no .tki entry
+html_ul gap        # no wrapper, no .tki entry
+http_etag_fnv internal   # server-side ETag helper; belongs inside the static-file path, not the toke ABI (and currently uncalled there)
+http_form_get gap        # no wrapper, no .tki entry
+http_multipart_boundary internal   # Content-Type parsing step of the multipart reader; plumbing
+http_shutdown gap        # no wrapper, no .tki entry
+image_text_draw gap        # no wrapper, no .tki entry
+json_from_pairs gap        # no wrapper, no .tki entry
+json_pretty gap        # no wrapper, no .tki entry
+json_type gap        # no wrapper, no .tki entry
+llm_embeddings_batch gap        # no wrapper, no .tki entry
+llm_retry_backoff gap        # no wrapper, no .tki entry
+llm_usage gap        # no wrapper, no .tki entry
+llm_vision gap        # no wrapper, no .tki entry
+llm_tool_validate_args gap        # no wrapper, no .tki entry
+math_copysign gap        # no wrapper, no .tki entry
+math_factorial gap        # no wrapper, no .tki entry
+math_lcm gap        # no wrapper, no .tki entry
+math_mode gap        # no wrapper, no .tki entry
+ml_normalize gap        # no wrapper, no .tki entry
+ml_precision_recall_f1 gap        # no wrapper, no .tki entry
+ml_random_forest_predict gap        # no wrapper, no .tki entry
+ml_standardize gap        # no wrapper, no .tki entry
+ocr_lasterr_code dup        # enum form of ocr.lasterrkind, which is surfaced
+process_set_cwd gap        # no wrapper, no .tki entry
+process_stdin_write gap        # no wrapper, no .tki entry
+router_query_get gap        # no wrapper, no .tki entry
+router_resp_json gap        # no wrapper, no .tki entry
+router_static gap        # no wrapper, no .tki entry
+router_use_cors gap        # no wrapper, no .tki entry
+router_use_log gap        # no wrapper, no .tki entry
+router_ws gap        # no wrapper, no .tki entry
+sse_is_closed gap        # no wrapper, no .tki entry
+str_buf_add dup        # second implementation of str.add (see str_buf_new)
+str_buf_addbyte dup        # second implementation of str.addbyte (see str_buf_new)
+str_buf_done dup        # second implementation of str.done (see str_buf_new)
+str_buf_new dup        # str.buf is surfaced by a SEPARATE implementation in str_glue.c; this is a second copy
+str_count gap        # no wrapper, no .tki entry
+str_is_alnum gap        # no wrapper, no .tki entry
+str_is_alpha gap        # no wrapper, no .tki entry
+str_is_space gap        # no wrapper, no .tki entry
+str_replace_first gap        # no wrapper, no .tki entry
+str_rindex dup        # duplicates str.lastindex, whose glue does not call it
+str_split_lines gap        # no wrapper, no .tki entry
+svg_animate gap        # no wrapper, no .tki entry
+svg_defs gap        # no wrapper, no .tki entry
+svg_elem_set_style gap        # no wrapper, no .tki entry
+svg_ellipse gap        # no wrapper, no .tki entry
+svg_gradient_radial gap        # no wrapper, no .tki entry
+svg_save_file gap        # no wrapper, no .tki entry
+tk_test_assert_contains gap        # no wrapper, no .tki entry
+tk_test_assert_false gap        # no wrapper, no .tki entry
+tk_test_assert_gt gap        # no wrapper, no .tki entry
+tk_test_assert_gte gap        # no wrapper, no .tki entry
+tk_test_assert_lt gap        # no wrapper, no .tki entry
+tk_test_assert_lte gap        # no wrapper, no .tki entry
+tk_test_assert_nil gap        # no wrapper, no .tki entry
+tk_test_assert_not_contains gap        # no wrapper, no .tki entry
+tk_test_assert_not_nil gap        # no wrapper, no .tki entry
+tk_test_assert_true dup        # body identical in shape to tk_test_assert, surfaced as test.assert
+tk_test_summary gap        # no wrapper, no .tki entry
+tls_conn_free_id internal   # frees the id string inside a TlsConn; memory plumbing a toke program cannot hold
+ws_build_upgrade_response internal   # RFC 6455 handshake plumbing for the server loop
+xml_element_self_closing gap        # no wrapper, no .tki entry
