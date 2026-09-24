@@ -1158,6 +1158,7 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
 
     const Node *expr=NULL;
     int known = tail_ty && tail_ty->kind!=TY_VOID && tail_ty->kind!=TY_UNKNOWN;
+    int prop = 0;                          /* 127.127: unresolved tail `!` */
 
     switch (tail->kind) {
     case NODE_EXPR_STMT:
@@ -1178,6 +1179,20 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
          * TY_UNKNOWN for an un-annotated local (113.B.12 / 127.40 kept that
          * narrow on purpose), so requiring a known type here would let
          * `let y=x*2; y` through — the very shape 127.113 is about. */
+        /* 127.127: a tail `!` propagation whose type does not resolve —
+         * ooke's `(file.listall("")!$storeerr)` — ends the body on its ok
+         * path with nothing returned, so the caller receives the null filler
+         * as a value (rc 139 on its first use).  Whatever the callee's ok
+         * type, there is no reading under which that path returns: fire,
+         * with no `fix` (the author may have meant the error, not the value).
+         * A propagation proven void is a missing return, not a discarded
+         * value, and stays out of scope exactly as a void tail call does. */
+        if (!known && expr->kind==NODE_PROPAGATE_EXPR
+            && !(tail_ty && tail_ty->kind==TY_VOID)) {
+            expr=NULL;                     /* never a certain `<` repair */
+            prop=1;
+            break;
+        }
         if (!known && !tail_fix_is_certain(expr)) return;
         break;
     case NODE_IF_STMT:
@@ -1201,6 +1216,10 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
             "function body ends in a value expression of type '%s' with no '<': "
             "the value is computed and discarded, and the function returns 0",
             type_name(tail_ty));
+    else if (prop)
+        snprintf(msg,sizeof(msg),
+            "function body ends in an error propagation with no '<': on the "
+            "success path nothing is returned, and the function returns 0");
     else
         snprintf(msg,sizeof(msg),
             "function body ends in a value expression with no '<': the value is "
