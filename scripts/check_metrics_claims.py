@@ -37,6 +37,9 @@ practice are recognised and allowed.
 
 Usage:  python3 scripts/check_metrics_claims.py [paths...] [--strict] [--list]
         python3 scripts/check_metrics_claims.py --selftest
+        A path argument resolves against the current directory, like any other
+        command-line tool (story 132.79); with no path, the defaults below are
+        scanned in this repository wherever the command is run from.
 Exit:   0 clean (pending-story files warn only), 1 on a violation.
         --strict also fails on the pending-story files.
 
@@ -60,7 +63,8 @@ CONTEXT_LINES = 30
 DEFAULT_TARGETS = ["docs", "README.md", "PROJECT_STATUS.md"]
 
 # Story 132.15: the guard is run across the sibling repos too, by passing their
-# paths (absolute, or relative to this repo: `../toke-spec`). Claim surfaces are
+# paths (absolute, or relative to the current directory -- `make check-claims-all`
+# runs from this repo's root, so `../toke-spec` is the sibling). Claim surfaces are
 # prose and metadata, so the walk prunes dependency trees and generated data —
 # without this, `../toke-corpus` alone is 493,593 corpus JSON records and
 # `../toke-mcp/node_modules` reports a third party's "415 error code".
@@ -836,11 +840,10 @@ def in_source(sent, src):
 def md_files(targets):
     out = []
     for t in targets:
-        # accept a path relative to the repo root, or any path that exists as
-        # given (so sibling repos can be scanned: `... ../toke-tokenizer`)
-        p = t if os.path.exists(t) and os.path.isabs(t) else os.path.join(ROOT, t)
-        if not os.path.exists(p) and os.path.exists(t):
-            p = os.path.abspath(t)
+        # 132.79: main() hands over absolute paths. A relative one here is
+        # resolved against the cwd, never against ROOT: resolving `test` against
+        # this repo scanned toke's test/ when the caller stood in toke-mcp.
+        p = os.path.abspath(t)
         if os.path.isfile(p):
             out.append(p)
         else:
@@ -1192,13 +1195,21 @@ def main():
         return selftest()
     argv = [a for a in sys.argv[1:] if not a.startswith("--")]
     strict = "--strict" in sys.argv
-    targets = argv or DEFAULT_TARGETS
+    # 132.79: an argument is the caller's path, so it resolves against the cwd
+    # (`test`, typed in toke-mcp, is toke-mcp's test/). Only the DEFAULTS are
+    # this repository's own, so only they are joined to ROOT.
+    targets = ([os.path.abspath(t) for t in argv] if argv
+               else [os.path.join(ROOT, t) for t in DEFAULT_TARGETS])
+    for t in targets:
+        if not os.path.exists(t):
+            print("ERROR: no such path: %s" % t)
+            return 2
 
     failures, warnings, scanned = [], [], 0
     # 132.46: build/ is gitignored, so a checkout that has not run `make build`
     # has no deployed tree to scan. Say so by name rather than pass silently.
     for t in targets:
-        tp = t if os.path.isabs(t) else os.path.join(ROOT, t)
+        tp = t
         if os.path.isfile(os.path.join(tp, DEPLOY_SCRIPT)) and \
                 not os.path.isdir(os.path.join(tp, "build")):
             print("SKIP  deployed tree not built, so not scanned: %s/build "
