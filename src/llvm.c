@@ -1139,6 +1139,10 @@ typedef struct {
     char c_name[128];       /* extern_c: raw C symbol name, empty if none */
     const char *llvm_ret;   /* e.g. "i8*", "i64", "double", "void" */
     char ownership[16];     /* "static", "caller", "borrowed", or "" */
+    char file_module[64];   /* 124.2f-d: the interface FILE the entry came
+                             * from ("dataframe"), which differs from `module`
+                             * — the export's own prefix ("df") — whenever an
+                             * interface publishes a sub-namespace. */
 } TkiCacheEntry;
 
 static TkiCacheEntry g_tki_cache[TKI_CACHE_MAX];
@@ -1238,6 +1242,8 @@ static void load_stdlib_tki(const char *module) {
         strncpy(e->module, mod_part, sizeof(e->module) - 1);
         strncpy(e->method, meth_part, sizeof(e->method) - 1);
         strncpy(e->toke_ret, toke_ret, sizeof(e->toke_ret) - 1);
+        strncpy(e->file_module, module, sizeof(e->file_module) - 1);
+        e->file_module[sizeof(e->file_module) - 1] = '\0';
         e->c_name[0] = '\0';
         e->ownership[0] = '\0';
 
@@ -1945,6 +1951,50 @@ static const char *resolve_module_subpath_call(Ctx *c, const Node *callee) {
     return NULL;
 }
 
+/*
+ * resolve_interface_prefix_call (124.2f-d) — the glue symbol for a call whose
+ * prefix is not an import alias but IS a prefix an imported stdlib interface
+ * publishes, or NULL.
+ *
+ * stdlib/dataframe.tki exports `df.fromcsv`, `df.fromrows`, ...;
+ * stdlib/template.tki exports `tpl.vars`, ...  The checker accepts
+ * `i=dataframe:std.dataframe;` followed by `df.fromrows(...)` (C035's B6
+ * asserts exactly that), but the emitter only knew import aliases, so the
+ * call fell through every resolver to the bare-name fallback and was lowered
+ * as `call @fromrows` — a symbol nothing defines.  `--check` clean, then
+ * E9003 from `ld` at line 0 with an empty fix.
+ *
+ * The answer is read from the interface files, never a list: an export
+ * `<alias>.<method>` in the .tki of an imported std module means the call is
+ * that module's `<method>`, and the symbol is the one stdlib_symbol_for gives
+ * the module — the same symbol the module's own alias would reach.
+ *
+ * Not applied when `alias` is a local (a receiver value named like a prefix
+ * is a receiver), nor to the hard-coded sub-namespaces resolve_sub_namespace_call
+ * owns (`row` from std.db lowers to tk_row_*, not tk_db_*).
+ */
+static const char *resolve_interface_prefix_call(Ctx *c, const char *alias,
+                                                 const char *method) {
+    char sub_probe[256];
+    if (resolve_sub_namespace_call(alias, method, sub_probe, sizeof sub_probe))
+        return NULL;
+    if (name_is_local(c, alias)) return NULL;
+    ensure_tki_cache_loaded();
+    for (int i = 0; i < c->import_count; i++) {
+        if (!c->imports[i].is_std) continue;
+        const char *m = c->imports[i].module;
+        if (!strncmp(m, "std.", 4)) m += 4;
+        for (int k = 0; k < g_tki_cache_count; k++) {
+            const TkiCacheEntry *e = &g_tki_cache[k];
+            if (strcmp(e->file_module, m) || strcmp(e->module, alias)
+                || strcmp(e->method, method))
+                continue;
+            return stdlib_symbol_for(c->imports[i].module, 1, method);
+        }
+    }
+    return NULL;
+}
+
 static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *method) {
     /* Find which module this alias refers to */
     const char *mod = NULL;
@@ -1956,7 +2006,7 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
             break;
         }
     }
-    if (!mod) return NULL;
+    if (!mod) return resolve_interface_prefix_call(c, alias, method);
     return stdlib_symbol_for(mod, is_std, method);
 }
 

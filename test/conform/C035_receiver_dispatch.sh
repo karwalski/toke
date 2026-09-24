@@ -409,6 +409,49 @@ f=main():i64{
   <0
 };'
 
+# ── B6b (124.2f-d) — the same two prefixes must BUILD and RUN, not only check.
+# The two `accepts` above assert that `--check` is silent, and it was — over
+# programs that could not be built: the emitter did not know `df` / `tpl`, so
+# `df.fromcsv(...)` under `i=dataframe:std.dataframe;` fell to the bare-name
+# fallback and died at `ld` (`_fromcsv` undefined; E9003 at line 0, empty
+# fix).  That is the check-clean-then-link-failure shape this file exists to
+# close, and a control that stops at `--check` cannot see it.  So these assert
+# a VALUE.  (df.fromcsv is used rather than the df.fromrows above because
+# df.fromrows(@("a");@(@("1"))) passes [[str]] where the glue walks [csvrow]
+# and crashes — a separate defect, reported with 124.2f-d.)
+runs "sub-namespace prefix df.* under i=dataframe:std.dataframe builds and runs" "2 2" \
+'m=t;
+i=io:std.io;
+i=dataframe:std.dataframe;
+f=main():i64{
+  let d=df.fromcsv("a,b\n1,2\n3,4\n");
+  let s=df.shape(d);
+  io.println("\(s.rows) \(s.cols)");
+  <0
+};'
+
+runs "sub-namespace prefix tpl.* under i=template:std.template builds and runs" "ok" \
+'m=t;
+i=io:std.io;
+i=template:std.template;
+f=main():i64{
+  let v=tpl.vars(@("a":"b"));
+  io.println("ok");
+  <0
+};'
+
+# And the alias's own spelling must be unaffected by the prefix resolver.
+runs "the import alias itself: df.fromcsv under i=df:std.dataframe still runs" "2 2" \
+'m=t;
+i=io:std.io;
+i=df:std.dataframe;
+f=main():i64{
+  let d=df.fromcsv("a,b\n1,2\n3,4\n");
+  let s=df.shape(d);
+  io.println("\(s.rows) \(s.cols)");
+  <0
+};'
+
 # ── B7-B11 — receiver methods that work must keep working, and answer ────
 runs "str receiver methods still run" "HELLO
 1
