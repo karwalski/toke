@@ -391,8 +391,8 @@
  ],
  "test/standalone/test_crypto.tk": [
   true,
-  2,
-  "d5d35666f126f84c"
+  0,
+  "c069c82f4d1ae80b"
  ],
  "test/standalone/test_crypto_full.tk": [
   true,
@@ -411,13 +411,13 @@
  ],
  "test/standalone/test_encoding.tk": [
   true,
-  2,
-  "e34b31644e33821f"
+  0,
+  "3ac020a1e2795cf1"
  ],
  "test/standalone/test_encoding_full.tk": [
   true,
-  5,
-  "d0328007b8543015"
+  0,
+  "34953e21d315cc7d"
  ],
  "test/standalone/test_env.tk": [
   true,
