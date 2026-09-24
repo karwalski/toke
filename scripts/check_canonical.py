@@ -207,7 +207,9 @@ PENDING_PREFIXES = (
     # individual files with their story, never a repository.
     # 132.15 swept the rest of toke-spec: the v0.2/v0.3 documents now carry dated
     # archive banners and the live ones were corrected, so only the RFC is still pending.
-    ("../toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec RFC draft is v0.3-era)"),
+    # 132.61: keyed by repository identity (check_metrics_claims.repo_key),
+    # not by a path relative to this checkout.
+    ("toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec RFC draft is v0.3-era)"),
 )
 
 # Not live claim surfaces: the tracker, historical backlogs, third-party reviews
@@ -465,11 +467,12 @@ def check_surfaces(canon):
     return failures, warnings
 
 
-def owner_of(rel):
+def owner_of(rel, path=None):
     if rel in PENDING:
         return PENDING[rel]
+    key = repo_key(path) if path else None
     for prefix, story in PENDING_PREFIXES:
-        if rel.startswith(prefix):
+        if rel.startswith(prefix) or (key and key.startswith(prefix)):
             return story
     return None
 
@@ -512,7 +515,7 @@ def check_stale(path, rel):
             if CORRECTION.search(near) or negation_of(pat).search(near):
                 continue
             findings.append((rel, i + 1, 'stale fact "%s" — write %s' % (label, fix),
-                             line.strip()[:200], owner_of(rel)))
+                             line.strip()[:200], owner_of(rel, path)))
             break
     return findings
 
@@ -530,29 +533,12 @@ def check_stale(path, rel):
 #
 # This is a path list, not a name list: `content/docs` cannot be excluded by the
 # directory name `docs` without blinding the guard to every real doc tree.
-GENERATED_MIRRORS = (
-    os.path.join("toke-website", "content", "docs"),   # copy of ~/tk/toke/docs
-    os.path.join("toke-website", "build-docs"),        # ooke-rendered HTML of the same
-)
-
-
-def is_generated_mirror(path):
-    norm = os.path.normpath(os.path.abspath(path))
-    if any((os.sep + m + os.sep) in norm or norm.endswith(os.sep + m)
-           for m in GENERATED_MIRRORS):
-        return True
-    # 132.46: recognise the same two mirrors structurally too, beside the
-    # script that builds the site, so a worktree of the website (whose
-    # directory is not called toke-website) is treated identically.
-    for tail in ("build-docs", os.path.join("content", "docs")):
-        if norm.endswith(os.sep + tail):
-            site = norm[:-len(os.sep + tail)]
-            if os.path.isfile(os.path.join(site, "scripts", "build_static.sh")):
-                return True
-    return False
-
+# 132.61: one definition, recognised by structure (beside the script that
+# writes it), shared with check_metrics_claims -- never by the checkout's name.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_metrics_claims import deployed_source, is_deployed_tree  # noqa: E402
+from check_metrics_claims import (deployed_source, is_deployed_tree,  # noqa: E402
+                                  is_generated_mirror, repo_key,
+                                  scan_deployed_tree, report_stale_trees, STALE_TREES)
 
 
 def scan_files(targets):
@@ -569,7 +555,8 @@ def scan_files(targets):
                 # check_metrics_claims.is_deployed_tree for why.
                 dirs[:] = [d for d in dirs
                            if (d not in EXCLUDE_DIRS
-                               or is_deployed_tree(os.path.join(dirpath, d)))
+                               or (is_deployed_tree(os.path.join(dirpath, d))
+                                   and scan_deployed_tree(os.path.join(dirpath, d))))
                            and not is_generated_mirror(os.path.join(dirpath, d))]
                 for f in sorted(files):
                     if f.endswith(SCAN_EXT):
@@ -775,9 +762,13 @@ def main():
                                    % relpath(src),)
             (warnings if item[4] else failures).append(item)
 
+    stale_fail = report_stale_trees(strict)   # 132.63
     if strict:
         failures += warnings
         warnings = []
+    for path in sorted(STALE_TREES) if stale_fail else ():
+        failures.append((os.path.relpath(path, ROOT), 0,
+                         "deployed tree is stale, so unscanned (--strict)", "", None))
 
     if "--list" in sys.argv:
         print("scanned %d files against %s" % (scanned, os.path.relpath(CANON_JSON, ROOT)))
@@ -806,8 +797,8 @@ def main():
 
     print("canonical facts OK: %d surface(s) checked, %d files scanned, "
           "%d pending-story warning(s) (%d of them registry fields awaiting an "
-          "owner-executed publish, story 132.4)."
-          % (len(SURFACES), scanned, len(warnings), len(AWAITING_PUBLISH)))
+          "owner-executed publish, story 132.4), %d stale deployed tree(s) not scanned."
+          % (len(SURFACES), scanned, len(warnings), len(AWAITING_PUBLISH), len(STALE_TREES)))
     return 0
 
 

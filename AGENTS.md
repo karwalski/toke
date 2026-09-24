@@ -698,9 +698,14 @@ said nothing. Sweep before trusting a green result and before any push:
 
 ```bash
 for d in ~/tk/*/; do [ -d "$d/.git" ] || continue
-  n=$(git -C "$d" diff --cached --name-only | wc -l)
-  [ "$n" != 0 ] && echo "ARMED: $d ($n)"; done
+  n=$(git -C "$d" diff --cached --name-only | wc -l | tr -d ' ')
+  [ "$n" -ne 0 ] && echo "ARMED: $d ($n)"; done
 ```
+
+(132.62: BSD `wc -l` left-pads its count — `"       0"` — so the earlier
+string comparison `[ "$n" != 0 ]` was true for every repository on macOS and
+the sweep reported them all as armed. A check that always fires is as blind as
+one that never does. The `tr -d ' '` and the numeric `-ne` each fix it alone.)
 
 Defuse with `git restore --staged <paths>`, which leaves the working tree
 alone.
