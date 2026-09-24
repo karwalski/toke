@@ -984,7 +984,7 @@ test-ci: test-ci-green
 # leave it out. It is a prerequisite of `ci` as of this line.
 #
 # `$(BIN)` is already its own prerequisite, so ordering with `conform` is free.
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans fuzz-smoke check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans fuzz-smoke check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -1698,6 +1698,23 @@ bench:
 	    src/stdlib/env.c src/stdlib/log.c src/stdlib/tk_test.c \
 	    src/stdlib/db.c src/stdlib/http.c -lsqlite3
 	./test/stdlib/bench_stdlib
+
+# ── 123.11: performance-regression gate ────────────────────────────────────
+# Compares COUNTS (instructions retired, malloc-family calls) for tkc
+# compiling each bench/programs/*.tk at -O2 and for the binary it produced,
+# against bench/perf-baseline.json.  Not wall time: this host runs other
+# builds concurrently (load 20-290 measured) and a timing gate would be noise.
+# Thresholds and the reasoning are in scripts/perf_gate.py's header.  The
+# baseline is host-specific; elsewhere the gate SKIPs by name (bench.yml
+# compares base vs head on one runner instead).  Runs under
+# scripts/conform_isolated.sh for the pinned compiler and a gate slot.
+.PHONY: perf-check perf-record
+perf-check: $(BIN)
+	@bash scripts/conform_isolated.sh exec -- python3 scripts/perf_gate.py
+
+# Re-record deliberately, in the commit that justifies the new numbers.
+perf-record: $(BIN)
+	@bash scripts/conform_isolated.sh exec -- python3 scripts/perf_gate.py --record
 
 # ── Reproducible-build verification ───────────────────────────────────────────
 # Builds tkc twice into separate directories and compares SHA-256 hashes.
