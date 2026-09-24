@@ -3209,6 +3209,21 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     return mk_type(A,TY_UNKNOWN);
                 }
             }
+            /* 127.178: a loop variable `lp(let v=init;..)` — LOOP_INIT is
+             * [name, init].  find_binding_before has resolved it since
+             * cc2ac3e, but only BIND/MUT_BIND were typed, so `v as u64` on a
+             * `lp(let v=0;..)` counter lost the W1001 it had drawn (from the
+             * wrong, earlier binding) before the lookup was fixed.  An
+             * integer literal is i64 (the same answer infer() gives the
+             * literal); any other initialiser takes the un-annotated `let`
+             * rules in bind_init_type, so a loop variable is typed exactly
+             * when the equivalent `let` would be. */
+            if (bn && bn->kind==NODE_LOOP_INIT && bn->child_count>1 && bn->children[1]) {
+                if (bn->children[1]->kind==NODE_INT_LIT) return mk_type(A,TY_I64);
+                Type *it=bind_init_type(cx,bn);
+                if (it) return it;
+                return mk_type(A,TY_UNKNOWN);
+            }
         }
         if (!d||!d->def_node) return mk_type(A,TY_UNKNOWN);
         const Node *def=d->def_node;
