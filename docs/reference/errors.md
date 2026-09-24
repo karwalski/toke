@@ -979,6 +979,34 @@ The single-owner case — `$v` declared by exactly one sum type that is neither
 the function's return type nor its error type — is a type mismatch and is
 reported as **E4031**, the code the literal form `<$other{$v:x}` already drew.
 
+### E4073
+
+**Nested interpolation the interpolation lowering cannot delimit**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | typecheck |
+
+A `\(..)` interpolation whose expression contains another interpolated
+string. The lexer accepts it, but the lowering finds the end of each `\(..)`
+by counting parens while stepping over escape pairs, so the `(` of the inner
+`\(` is not counted and its `)` is: it would compile a slice that stops
+short. Until 127.47 this passed `--check` and failed the build with
+`E2002`/`E2004` reported at an offset inside the compiler's own wrapper
+buffer rather than the real line.
+
+<!-- skip-check -->
+```text
+m=test;
+f=tag(s: $str): $str { <"<\(s)>" };
+f=show(n: i64): $str { <"\(tag("\(n)"))" };
+```
+
+Bind the inner string first — `let t="\(n)"; <"\(tag(t))"`. There is no
+`fix` field: lifting the inner string ahead of the statement can reorder the
+side effects of the other interpolations in the same literal.
+
 ## Arena Errors (E5xxx)
 
 ### E5001

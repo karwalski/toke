@@ -562,6 +562,7 @@ static void shift_tok_offsets(Node *n, int delta, const Node *anchor) {
  * Only E4032 is raised here; the sub-expression is one codegen also compiles,
  * so inferring it introduces no new diagnostics for valid programs.
  */
+static int tc_can_emit(Ctx *cx);
 static void check_interp_composites(Ctx *cx, const Node *strnode) {
     if (!strnode || strnode->tok_len <= 3) return;
     int tl = strnode->tok_len;
@@ -571,8 +572,56 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
     raw[tl] = '\0';
     Arena *A = cx->env->arena;
 
+    int content_end = tl - 1;                     /* the closing `"` */
     for (int i = 0; i + 1 < tl; i++) {
+        /* 127.47: step over an ordinary escape exactly as the lowering does
+         * (llvm.c, STR_LIT), so `\\(` is a backslash and a paren, not an
+         * interpolation the lowering never sees. */
+        if (raw[i] == '\\' && raw[i + 1] != '(') { i++; continue; }
         if (raw[i] != '\\' || raw[i + 1] != '(') continue;
+        /* 127.47 — where does this interpolation end?  Three scanners answer:
+         *   the lexer   (lexer.c): counts every paren, strings and escapes
+         *                          included — this is the source of truth, it
+         *                          is what delimited the literal;
+         *   the lowering (llvm.c): counts parens but steps over every `\x`
+         *                          pair, so the `(` of a nested `\(` is not
+         *                          counted while its `)` is;
+         * and the loop below (string-aware).  Where the lowering's end is
+         * not the lexer's, codegen sub-parses a different slice from the one
+         * the source wrote: `"\(tag("\(n)"))"` passed --check and failed
+         * the build with E2002/E2004 reported at a wrapper-buffer offset.
+         * Say so here, at the literal's real position.  No `fix`: lifting
+         * the inner string into a `let` can reorder side effects of the
+         * other interpolations in the same literal. */
+        {
+            int lx = i + 2, ld = 1;
+            while (lx < tl && ld > 0) {
+                if (raw[lx] == '(') ld++;
+                else if (raw[lx] == ')') { if (--ld == 0) break; }
+                lx++;
+            }
+            int cg = i + 2, cd = 1;
+            while (cg < content_end && cd > 0) {
+                char ch = raw[cg];
+                if (ch == '\\' && cg + 1 < content_end) { cg += 2; continue; }
+                if (ch == '(') cd++;
+                else if (ch == ')') { if (--cd == 0) break; }
+                cg++;
+            }
+            if (ld == 0 && lx != cg) {
+                if (tc_first_report(cx, strnode) && tc_can_emit(cx))
+                    diag_emit(DIAG_ERROR, E4073, strnode->start, strnode->line,
+                              strnode->col,
+                              "a string interpolation '\\(..)' contains a nested "
+                              "interpolation, which the interpolation lowering "
+                              "cannot delimit; bind the inner string to a 'let' "
+                              "and interpolate that",
+                              "expected", "an interpolated expression with no nested '\\('",
+                              "got", "nested '\\(' inside '\\(..)'",
+                              "fix", (const char *)NULL);
+                return;
+            }
+        }
         /* Find the matching ')' with paren depth, ignoring nested strings. */
         int depth = 1, j = i + 2, instr = 0;
         for (; j < tl && depth > 0; j++) {
