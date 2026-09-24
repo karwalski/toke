@@ -108,21 +108,51 @@ import socket, sys, json
 port = int(sys.argv[1])
 REQ = b"GET /api/greet/world HTTP/1.1\r\nHost: h\r\nConnection: keep-alive\r\n\r\n"
 
+# 127.156: the server answers with Transfer-Encoding: chunked.  This used to
+# read a missing Content-Length as a zero-length body and return at the end
+# of the headers, leaving "2\r\nhi\r\n0\r\n\r\n" in the socket whenever the
+# body arrived in a later segment -- which on a loaded machine it does -- so
+# the NEXT response was parsed from the middle of a stream and its "status"
+# came out as "nosniff\r\nX-Frame-Options:".  That, not throttling, is why
+# S006 failed under concurrency.  Frame the body properly.
+def chunked_end(buf, start):
+    """Index just past the last chunk, or -1 while incomplete."""
+    pos = start
+    while True:
+        j = buf.find(b"\r\n", pos)
+        if j < 0: return -1
+        size = int(buf[pos:j].split(b";", 1)[0].strip() or b"0", 16)
+        pos = j + 2
+        if size == 0:
+            # trailers end with an empty line
+            k = buf.find(b"\r\n", pos)
+            while k >= 0 and k != pos:
+                pos = k + 2
+                k = buf.find(b"\r\n", pos)
+            return pos + 2 if k >= 0 else -1
+        if len(buf) < pos + size + 2: return -1
+        pos += size + 2
+
 def drain(s):
-    buf = b""; want = -1
+    buf = b""; hdr_end = -1; cl = 0; chunked = False
     while True:
         d = s.recv(65536)
         if not d: return buf
         buf += d
-        if want < 0:
+        if hdr_end < 0:
             i = buf.find(b"\r\n\r\n")
             if i < 0: continue
-            cl = 0
+            hdr_end = i + 4
             for line in buf[:i].split(b"\r\n"):
-                if line.lower().startswith(b"content-length:"):
+                low = line.lower()
+                if low.startswith(b"content-length:"):
                     cl = int(line.split(b":", 1)[1])
-            want = i + 4 + cl
-        if len(buf) >= want: return buf
+                elif low.startswith(b"transfer-encoding:") and b"chunked" in low:
+                    chunked = True
+        if chunked:
+            if chunked_end(buf, hdr_end) >= 0: return buf
+        elif len(buf) >= hdr_end + cl:
+            return buf
 
 def code(r):
     p = r.split(b" ")
