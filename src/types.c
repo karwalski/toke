@@ -1284,6 +1284,48 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
         return NULL;
     }
     /*
+     * 127.129 / 127.152 (landed 2026-09-24) — the three remaining container
+     * cases.  Measured before the change with the compiler's own AST
+     * (`--dump-ast` over 438 parsable .tk/.toke sources in this repo): 236
+     * un-annotated ARRAY_LIT bindings in 174 files, 59 INDEX_EXPR in 42, 40
+     * CAST_EXPR in 8.  A regex cannot find these — `;` is toke's argument
+     * separator as well as its statement separator — so the AST is the only
+     * honest way to size it.
+     *
+     * All three go through infer() and take the depth guard, because unlike
+     * MAP_LIT their operands can name other bindings (`let b=a.get(0); let
+     * a=b.get(0);` would otherwise recurse forever through NODE_IDENT).
+     *
+     * NODE_INDEX_EXPR is the `.get(k)` spelling: `parse_get_postfix` lowers a
+     * one-argument `.get` to an index expression, not a call, so `let
+     * s=m.get("k")` was TY_UNKNOWN even though `m` has been a typed map since
+     * 127.114.  That hole is what fed the segfaults in 127.128/127.151.
+     *
+     * Re-entry is what makes this delicate: infer() has no memo, so the
+     * initialiser is re-walked on every reference to the binding.  The three
+     * E4031s in NODE_INDEX_EXPR and the W1001 in NODE_CAST_EXPR had no
+     * tc_first_report() guard and would have double-reported; they are
+     * guarded now, the same fix 136.36 made for the map path.
+     */
+    case NODE_ARRAY_LIT: {
+        if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+        cx->bind_infer_depth++;
+        Type *it = infer(cx, initN);
+        cx->bind_infer_depth--;
+        /* An empty literal `@()` infers elem TY_UNKNOWN; that is still a
+         * useful array type, so only the kind is required here. */
+        if (it && it->kind == TY_ARRAY) return it;
+        return NULL;
+    }
+    case NODE_CAST_EXPR: case NODE_INDEX_EXPR: {
+        if (cx->bind_infer_depth >= MAX_BIND_INFER_DEPTH) return NULL;
+        cx->bind_infer_depth++;
+        Type *it = infer(cx, initN);
+        cx->bind_infer_depth--;
+        if (it && it->kind != TY_UNKNOWN && it->kind != TY_VOID) return it;
+        return NULL;
+    }
+    /*
      * 127.114 (landed 2026-09-22) — NODE_MAP_LIT is now in the case above.
      *
      * It was held out here from 127.106 until the coercion question it
@@ -1300,10 +1342,15 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      * diagnostic at --check, and the map-key type check NODE_INDEX_EXPR has
      * carried since 113.B.12.
      *
-     * STILL MISSING, and the reason 127.52 is not unblocked by this alone:
-     * NODE_ARRAY_LIT and NODE_CAST_EXPR have no case either, so `let
-     * a=@(1;2;3)` and `let n=mut.0 as u64` are both still TY_UNKNOWN.  The
-     * `__map__` retirement needs a string fallback for exactly those.
+     * STILL MISSING after 127.129/127.152, and measured rather than guessed
+     * (same AST scan as above): INT_LIT 239 sites, BINARY_EXPR 111,
+     * MATCH_STMT 110, STR_LIT 93, FLOAT_LIT 29, BOOL_LIT 18, IF_STMT 10,
+     * CLOSURE 5, UNARY_EXPR 4, PROPAGATE_EXPR 3.  The literal group is the
+     * root cause of 127.157 (`"x"+"y"` accepted through local bindings and
+     * rejected through parameters), because `let a="x"` leaves `a`
+     * TY_UNKNOWN and the numeric-only `+` rule cannot fire on an unknown.
+     * They are a larger blast radius than the container cases and are held
+     * out deliberately, not overlooked.
      */
     default:
         return NULL;
@@ -3034,7 +3081,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 if (src_t->kind==TY_F64&&(dst_t->kind==TY_I64||dst_t->kind==TY_U64)) lossy=1;
                 if (src_t->kind==TY_I64&&dst_t->kind==TY_U64) lossy=1;
                 if (src_t->kind==TY_U64&&dst_t->kind==TY_I64) lossy=1;
-                if (lossy) {
+                /* 127.129: bind_init_type() now re-enters a cast initialiser
+                 * on every reference to the binding, and infer() has no memo,
+                 * so this warning would be emitted once per reference.  Same
+                 * guard, same reason, as 136.36. */
+                if (lossy && tc_first_report(cx,node)) {
                     char msg[256];
                     snprintf(msg,sizeof(msg),"lossy cast from '%s' to '%s'",
                              type_name(src_t),type_name(dst_t));
@@ -3097,7 +3148,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (base->kind==TY_MAP) {
             Type *kt=base->elem;
             if (kt&&kt->kind!=TY_UNKNOWN&&idx->kind!=TY_UNKNOWN&&!types_equal(kt,idx)) {
-                if (tc_can_emit(cx)) {
+                /* 127.152: guarded because bind_init_type() re-enters an index
+                 * initialiser on every reference (136.36's reason). */
+                if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
                     char msg[256];
                     snprintf(msg,sizeof(msg),"type mismatch: map key must be '%s', got '%s'",type_name(kt),type_name(idx));
                     diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
@@ -3123,7 +3176,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             imported_type_lookup(cx->env->names,base->name))
             return mk_type(A,TY_UNKNOWN);
         if (base->kind!=TY_UNKNOWN&&base->kind!=TY_ARRAY) {
-            if (tc_can_emit(cx)) {
+            if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
                 char msg[256];
                 snprintf(msg,sizeof(msg),"type mismatch: cannot index into '%s'; expected array type",type_name(base));
                 diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
@@ -3140,7 +3193,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (idx->kind!=TY_UNKNOWN&&idx->kind!=TY_I64&&idx->kind!=TY_U64
             &&idx->kind!=TY_I8&&idx->kind!=TY_I16&&idx->kind!=TY_I32
             &&idx->kind!=TY_U8&&idx->kind!=TY_U16&&idx->kind!=TY_U32) {
-            if (tc_can_emit(cx)) {
+            if (tc_first_report(cx,node)&&tc_can_emit(cx)) {
                 char msg[256];
                 snprintf(msg,sizeof(msg),"type mismatch: array index must be integer, got '%s'",type_name(idx));
                 diag_emit(DIAG_ERROR,E4031,node->start,node->line,node->col,msg,
