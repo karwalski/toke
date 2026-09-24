@@ -85,12 +85,17 @@ jobs:
           # stdlib .tki interface files
           cp stdlib/*.tki "${STAGING}/stdlib/" 2>/dev/null || true
 
-          # Vendor sources (cmark, tomlc99)
-          cp -r stdlib/vendor/cmark "${STAGING}/stdlib/vendor/"
-          cp -r stdlib/vendor/tomlc99 "${STAGING}/stdlib/vendor/"
+          # Vendor sources (cmark, tomlc99, miniz). Copy the whole tree so a
+          # newly vendored library cannot be left out again (132.73: miniz was
+          # missing, so a std.zip program could not build from a release).
+          cp -r stdlib/vendor/. "${STAGING}/stdlib/vendor/"
+          for v in cmark tomlc99 miniz; do
+            test -d "${STAGING}/stdlib/vendor/$v" || { echo "vendor/$v missing from the tarball"; exit 1; }
+          done
 
-          # LICENSE
-          cp LICENSE "${STAGING}/"
+          # LICENSE and NOTICE -- the vendored licences require their
+          # attributions to travel with the binaries (132.35).
+          cp LICENSE NOTICE "${STAGING}/"
 
           tar czf "${STAGING}.tar.gz" "${STAGING}"
           echo "TARBALL=${STAGING}.tar.gz" >> "$GITHUB_ENV"
@@ -211,8 +216,8 @@ jobs:
             - `tkc` — the compiler binary
             - `src/stdlib/` — C sources needed for linking user programs
             - `stdlib/*.tki` — interface files for standard library modules
-            - `stdlib/vendor/` — vendored cmark and tomlc99 sources
-            - `LICENSE`
+            - `stdlib/vendor/` — vendored cmark, tomlc99 and miniz sources
+            - `LICENSE`, `NOTICE`
 
             ### Verifying the binary
 
