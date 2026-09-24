@@ -1,0 +1,115 @@
+{
+ "host": {
+  "arch": "arm64",
+  "cc": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+  "cpu": "Apple M2 Pro",
+  "os": "Darwin"
+ },
+ "programs": {
+  "binary_search": {
+   "compile_allocs": 417,
+   "compile_insns": 136871322,
+   "exit_status": 128,
+   "run_allocs": 197,
+   "run_insns": 114957109
+  },
+  "chained_calls": {
+   "compile_allocs": 417,
+   "compile_insns": 131673678,
+   "exit_status": 1,
+   "run_allocs": 196,
+   "run_insns": 27857930
+  },
+  "collatz": {
+   "compile_allocs": 417,
+   "compile_insns": 138961048,
+   "exit_status": 116,
+   "run_allocs": 196,
+   "run_insns": 580436982
+  },
+  "deep_recursion": {
+   "compile_allocs": 417,
+   "compile_insns": 128513106,
+   "exit_status": 253,
+   "run_allocs": 196,
+   "run_insns": 443844039
+  },
+  "fib_iterative": {
+   "compile_allocs": 417,
+   "compile_insns": 129158161,
+   "exit_status": 64,
+   "run_allocs": 196,
+   "run_insns": 324396056
+  },
+  "fib_recursive": {
+   "compile_allocs": 417,
+   "compile_insns": 130224160,
+   "exit_status": 201,
+   "run_allocs": 196,
+   "run_insns": 345575330
+  },
+  "gcd_euler": {
+   "compile_allocs": 417,
+   "compile_insns": 131403520,
+   "exit_status": 141,
+   "run_allocs": 196,
+   "run_insns": 5038541478
+  },
+  "large_expr": {
+   "compile_allocs": 417,
+   "compile_insns": 132416298,
+   "exit_status": 1,
+   "run_allocs": 196,
+   "run_insns": 22928293
+  },
+  "nested_loops": {
+   "compile_allocs": 278,
+   "compile_insns": 46318060,
+   "exit_status": 144,
+   "run_allocs": 196,
+   "run_insns": 21238936
+  },
+  "prime_sieve": {
+   "compile_allocs": 417,
+   "compile_insns": 125141151,
+   "exit_status": 13,
+   "run_allocs": 196,
+   "run_insns": 36304587
+  },
+  "struct_ops": {
+   "compile_allocs": 417,
+   "compile_insns": 138326845,
+   "exit_status": 1,
+   "run_allocs": 235,
+   "run_insns": 16252446
+  },
+  "sum_array": {
+   "compile_allocs": 417,
+   "compile_insns": 133002718,
+   "exit_status": 224,
+   "run_allocs": 197,
+   "run_insns": 42335427
+  }
+ },
+ "runs": 5,
+ "story": "123.11",
+ "thresholds": {
+  "compile_allocs": {
+   "abs": 16,
+   "pct": 0.02
+  },
+  "compile_insns": {
+   "abs": 0,
+   "pct": 0.15
+  },
+  "run_allocs": {
+   "abs": 16,
+   "pct": 0.02
+  },
+  "run_insns": {
+   "abs": 0,
+   "pct": 0.08
+  }
+ },
+ "tkc_version": "toke 3.0.0"
+}

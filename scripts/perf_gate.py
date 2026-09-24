@@ -18,7 +18,7 @@ there is a coin toss.  Every metric below is a COUNT, which load does not move:
   run_insns      instructions retired running the produced binary
   run_allocs     malloc-family calls made by the produced binary (macOS only)
 
-Instruction counts are not perfectly deterministic.  Measured on an M4 Max
+Instruction counts are not perfectly deterministic.  Measured on an Apple M2 Pro
 at load 50-290 (2026-09-24): a whole `tkc -O2` compile of a bench program is
 ~120-130M instructions and ten consecutive compiles of one program ranged
 125M-135M (+/-4%), and the noise is correlated in time -- one min-of-5 came
