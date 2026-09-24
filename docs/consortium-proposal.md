@@ -153,7 +153,7 @@ A C99 compiler with an LLVM backend producing native binaries for x86-64 and ARM
 
 ### 5.3 Conformance Test Suite
 
-228 conformance cases (222 YAML: 98 grammar, 89 diagnostics, 35 lexical; plus 6 shell scripts) covering lexical analysis, parsing, type checking, code generation, error handling, and standard library behaviour. The conformance suite is the normative definition of language behaviour where the specification is ambiguous.
+225 YAML conformance cases (98 grammar, 92 diagnostics, 35 lexical) plus a set of shell-script suites (current counts: `docs/metrics-baseline.md` § Project facts), covering lexical analysis, parsing, type checking, code generation, error handling, and standard library behaviour. The conformance suite is the normative definition of language behaviour where the specification is ambiguous.
 
 ### 5.4 Training Corpus
 
@@ -263,12 +263,12 @@ toke is and will remain open source under Apache 2.0. There are no licence fees,
 This proposal is aspirational but grounded. Transparency about where the project stands today:
 
 **What exists:**
-- A working compiler that passes 228 conformance cases at 100%.
+- A working compiler with a conformance suite of 225 YAML cases plus shell-script suites, which every compiler change must pass in full (`make conform`).
 - A formal specification at v0.4.
 - A validated training corpus: 23,382 audited v0.4 records today; 46,754 programs in the v0.2-era corpus on which Gate 1 was measured.
-- Gate 1 results (token reduction 12.5% -- 8K toke BPE vs cl100k_base on the same toke source, N = 46,754 programs, superseded; Pass@1 **58.8%**, 588/1,000). The token-reduction threshold was exceeded; the >= 60% Pass@1 threshold was not, and that verdict is re-opened. *(Published as 63.7% = 588/923 until 2026-09-19 -- story 128.19.)*
+- Gate 1 results (token reduction 12.5% -- 8K toke BPE vs cl100k_base on the same toke source, N = 46,754 programs, superseded; Pass@1 **58.8%**, 588/1,000). The token-reduction threshold was exceeded; the >= 60% Pass@1 threshold was not, and on 2026-09-22 the owner decided Gate 1 NOT PASSED. *(Published as 63.7% = 588/923 until 2026-09-19 -- story 128.19.)*
 - Published governance, contribution, security, and licensing documents.
-- 57 standard library modules (`stdlib/*.tki`) with C runtime implementations.
+- 68 standard library modules (`stdlib/*.tki`) with C runtime implementations.
 - An MCP server, tree-sitter grammar, web playground, and evaluation harness.
 
 **What does not yet exist:**

@@ -267,8 +267,9 @@ generated, 923 compiled, 588 passed every hidden test. The published 63.7% was
 denominator, which measures Pass@1 *given that the solution compiled* — a different
 and strictly more generous quantity. The denominator is the 1,000 generated:
 588/1,000 = **58.8%**. No re-run was needed; the correction is arithmetic.
-**58.8% is below the `pass_at_1_minimum: 0.60` Gate 1 declared, so the Gate 1
-verdict is re-opened and has not been re-decided here.** See
+**58.8% is below the `pass_at_1_minimum: 0.60` Gate 1 declared. The verdict was
+re-opened on 2026-09-19, and on 2026-09-22 the owner decided Gate 1 NOT PASSED
+(story 128.19)** — criterion 2 is not met; criterion 1 (token reduction) stands. See
 `docs/decisions/gate1-decision.md` and `toke-eval/docs/suspect-numbers-128-1c.md` §1.
 
 ---
