@@ -198,9 +198,18 @@ TKEOF
 
 # The two shapes that broke a regex scanner for this story.  `;` separates
 # ARGUMENTS as well as statements, so neither body has a tail expression at all.
+#
+# `std.str` MUST be imported here.  Until 127.135 landed, calling
+# `str.concat(...)` without it passed `--check` and `--lint` in silence and
+# died later as `use of undefined value '%str'` in a temp .ll file, so this
+# fixture compiled clean while being an incorrect program -- it was relying on
+# the defect.  127.135 makes it E4033 at the call site, which is right, and
+# which is what exposed the omission.  Part 2 asserts these programs are
+# CORRECT, so the import belongs here regardless of what this suite is about.
 cat > semicolons.tk <<'TKEOF'
 m=t;
 i=io:std.io;
+i=str:std.str;
 f=argsep():i64{ io.println(str.concat("a";"b")); <1 };
 f=arraylit():i64{ let a=@(1;2;3); <a.get(0) };
 f=xorish(x:i64):i64{ <(x*18) ^ (x/3) };
