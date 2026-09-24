@@ -940,7 +940,7 @@ define run_test_list
 	[ $$fail -eq 0 ]
 endef
 
-.PHONY: test-ci test-ci-green test-ci-known-red test-ci-unmeasured check-test-orphans check-site-compile
+.PHONY: test-ci test-ci-green test-ci-known-red test-ci-unmeasured check-test-orphans check-site-compile check-examples
 test-ci-green:
 	$(call run_test_list,$(TEST_CI_GREEN),test-ci-green)
 
@@ -966,7 +966,7 @@ test-ci: test-ci-green
 # leave it out. It is a prerequisite of `ci` as of this line.
 #
 # `$(BIN)` is already its own prerequisite, so ordering with `conform` is free.
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-site-compile check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-site-compile check-parallel-stdlib check-docs check-examples check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -986,6 +986,15 @@ ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki che
 check-docs: $(BIN)
 	python3 scripts/check_doc_examples.py --self-test
 	python3 scripts/check_doc_examples.py docs
+
+# 127.87 — the shipped examples/ compile. Nothing read examples/ before this,
+# and a multi-module example could not even be type-checked from a fresh clone
+# (its interfaces are gitignored build artifacts). Generates them in a private
+# dir, --checks every module in dependency order, builds the single-module
+# examples to binaries, and fails on any tracked example source it does not
+# list. See the script for why multi-module examples are not linked yet.
+check-examples: $(BIN)
+	@bash scripts/check_examples.sh
 
 # 131.11 — pattern catalogue drift gate. Validates patterns/catalogue.json, regenerates
 # docs/spec/patterns-v0.4.md, docs/guide/11-patterns-and-efficiency.md and

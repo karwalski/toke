@@ -63,6 +63,10 @@ jobs:
       - name: Documentation examples compile and link
         run: make check-docs
 
+      # 127.87: the shipped examples/ compile (nothing read them before).
+      - name: Shipped examples compile
+        run: make check-examples
+
       # Every diagnostic the compiler emits is documented, and errors.md lists
       # no dead code.
       - name: Diagnostic codes are documented
