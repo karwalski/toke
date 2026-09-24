@@ -521,6 +521,9 @@ static Type *infer(Ctx *cx, const Node *node);
  * interp check to resolve a bare composite-local identifier). */
 static const Node *find_binding_node(const Node *root, const char *src,
                                      const char *name, int nlen);
+static const Node *find_binding_before(const Node *root, const char *src,
+                                       const char *name, int nlen,
+                                       const Node *use);
 
 /* Shift a freshly-parsed sub-AST's token offsets by `delta` so they point into
  * the real source instead of the throwaway wrap buffer (123.11-fu).
@@ -689,8 +692,14 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
                  * that array/map literal init directly. */
                 if (!composite && expr->kind == NODE_IDENT) {
                     char nb[128]; TOKSTR(nb, cx->src, expr);
-                    const Node *bn = find_binding_node(cx->fn_node, cx->src,
-                                                       nb, (int)strlen(nb));
+                    /* 127.175: the binding IN FORCE at this literal, not the
+                     * first one in the function — `let s=@(1;2); ..;
+                     * let s="abc"; "\(s)"` drew a false E4032 from the
+                     * array binding.  The literal is the use: it is in the
+                     * tree, so `let s="\(s)"` skips its own binding. */
+                    const Node *bn = find_binding_before(cx->fn_node, cx->src,
+                                                         nb, (int)strlen(nb),
+                                                         strnode);
                     if (bn && (bn->kind == NODE_BIND_STMT || bn->kind == NODE_MUT_BIND_STMT)
                         && bn->child_count > 1 && bn->children[1]) {
                         NodeKind ik = bn->children[1]->kind;   /* [1]=init when un-annotated */
