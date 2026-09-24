@@ -847,7 +847,7 @@ TEST_CI_GREEN = \
 	test-stdlib-web-server-integration test-stdlib-ws-handshake-integration \
 	test-pkg \
 	test-stdlib-infer test-stdlib-template-email-integration \
-	test-stdlib-http
+	test-stdlib-http test-stdlib-ws-client-tk
 
 # Green on macOS, not runnable on the Linux runner.  Excluded BY NAME so the
 # gap is visible: nothing on any platform covers these in CI today.
@@ -1718,6 +1718,16 @@ test-stdlib-securemem: $(BIN)
 	@TKC_STDLIB_DIR=$(PWD)/src/stdlib ./$(BIN) test/stdlib/securemem_roundtrip.tk -o test/stdlib/securemem_roundtrip.bin
 	$(RUN_TEST) ./test/stdlib/securemem_roundtrip.bin
 	@rm -f test/stdlib/securemem_roundtrip.bin
+
+# ── Story 127.149: test/stdlib/ws_client.tk, built and run ──────────────────
+# The file had never compiled at v0.4 and no target read it, so it implied
+# coverage that did not exist. Rewritten to v0.4; this compiles, links and runs
+# it. main() needs no server (the client helpers are type-checked and linked,
+# not called), so it is safe on a CI runner.
+test-stdlib-ws-client-tk: $(BIN)
+	@TKC_STDLIB_DIR=$(PWD)/src/stdlib ./$(BIN) test/stdlib/ws_client.tk -o test/stdlib/ws_client.bin
+	$(RUN_TEST) ./test/stdlib/ws_client.bin
+	@rm -f test/stdlib/ws_client.bin
 
 # ── Story 136.3: std.keychain binding, end to end ────────────────────────────
 # Compiles and RUNS a real .tk consumer, because that is the layer that was
