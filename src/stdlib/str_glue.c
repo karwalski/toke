@@ -128,6 +128,29 @@ int64_t tk_str_indexof_w(int64_t s, int64_t sub) {
     return str_index((const char *)(intptr_t)s, (const char *)(intptr_t)sub);
 }
 
+/* 127.91: str.indexfrom(s; sub; start) — str.indexof with a start offset.
+ * Returns the byte offset (from the start of `s`, not of the search) of the
+ * first occurrence of `sub` at or after byte `start`, or -1.  A negative start
+ * searches from 0; a start past the end of `s` finds nothing (-1); a start
+ * equal to the length finds only the empty string.
+ *
+ * Without it a scanner must re-slice the tail before every search, which
+ * allocates and copies O(remaining) bytes per token and never frees them.
+ *
+ * The bounds check is O(start): a toke string is a bare NUL-terminated
+ * buffer with no length header, so the only way to know `start` lies inside
+ * `s` is to confirm no NUL precedes it.  memchr does that at memory
+ * bandwidth and allocates nothing; C11 7.24.5.1 requires it to stop at the
+ * first match, so it never reads past the terminator. */
+int64_t tk_str_indexfrom_w(int64_t s, int64_t sub, int64_t start) {
+    if (!s || !sub) return -1;
+    const char *cs = (const char *)(intptr_t)s;
+    if (start < 0) start = 0;
+    if (start > 0 && memchr(cs, '\0', (size_t)start)) return -1;
+    const char *p = strstr(cs + start, (const char *)(intptr_t)sub);
+    return p ? (int64_t)(p - cs) : -1;
+}
+
 int64_t tk_str_slice_w(int64_t s, int64_t start, int64_t end_) {
     if (!s) return 0;
     StrSliceResult r = str_slice((const char *)(intptr_t)s, (uint64_t)start, (uint64_t)end_);

@@ -4,6 +4,9 @@
 #
 # Usage: test/perf/perfmeasure.sh <file.tk> <PAT_N> [reps]
 #
+# TOKE=<path> measures with another compiler binary (default: the tree's
+# ./toke), so a before/after pair can be taken without rebuilding between.
+#
 # Wall is the MINIMUM of `reps` runs (default 3): the minimum is the run least
 # disturbed by other load, and these programs are deterministic.  Peak RSS is
 # ru_maxrss from /usr/bin/time -l on that same set (max taken).  Allocation
@@ -17,7 +20,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 TK=$1; N=$2; REPS=${3:-3}
 BIN=$(mktemp -t perfmeasure)
-"$ROOT/toke" -O2 --allow-all "$TK" --out "$BIN" >/dev/null || { echo "COMPILE FAILED: $TK" >&2; exit 1; }
+"${TOKE:-$ROOT/toke}" -O2 --allow-all "$TK" --out "$BIN" >/dev/null || { echo "COMPILE FAILED: $TK" >&2; exit 1; }
 best=99999; rss=0; out=""
 i=0
 while [ "$i" -lt "$REPS" ]; do

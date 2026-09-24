@@ -174,7 +174,7 @@ typedef struct { char toke_name[NAME_BUF]; char llvm_name[NAME_BUF]; } NameAlias
 /* Lifted closure buffer size (Story 76.1.9c) */
 #define TKC_LIFTED_BUF_SIZE (32 * 1024)
 
-typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; } Ctx;
+typedef struct { FILE *out; const char *src; Arena *arena; int tmp, str_idx, lbl; int term; int break_lbl; FnSig *fns; int fn_count; int fn_cap; PtrLocal *ptrs; int ptr_count; int ptr_cap; StructInfo *structs; int struct_count; int struct_cap; const char *cur_fn_ret; ImportAlias *imports; int import_count; int import_cap; LocalType *locals; int local_count; int local_cap; GlobalVar *globals; int global_count; int global_cap; NameAlias *aliases; int alias_count; int alias_cap; int name_scope; char str_globals[TKC_STR_GLOBALS_SIZE]; int str_globals_len; char cur_fn_name[NAME_BUF]; char cur_fn_err[NAME_BUF]; /* 114.41: current fn's T!$E error type name, or "" */ int err_box_pending; /* 127.109: the next struct/sum box emitted is THIS fn's error box -> allocate it from the per-thread error buffer, not malloc */ char fwd_decls[TKC_FWD_DECL_SIZE]; int fwd_decls_len; int max_iters; int loop_guard_idx; /* Debug metadata (Story 76.1.5) */ int debug; int dbg_next; int dbg_file; int dbg_cu; int cur_fn_dbg; char dbg_source_file[256]; char dbg_source_dir[512]; /* Closure support (Story 76.1.9c) */ NameEnv *names; int closure_idx; char lifted_buf[TKC_LIFTED_BUF_SIZE]; int lifted_len; /* FFI diagnostic (Story 76.1.2d) */ const char *source_file; /* Structured concurrency (Story 76.1.1b) */ int sc_scope; /* Symbol mangling: module path prefix for function names */ char module_prefix[256]; /* -I search paths for .tki lookup (Story 81b.8) */ const char **search_paths; int search_path_count; /* 114.18/ADR-0006: per-function set of linearly-owned array locals eligible for in-place mutation */ char linear_arr[64][NAME_BUF]; int linear_arr_count; /* 127.108: the module's AST root and the function under analysis, so la_bad_use can consult a user callee's body */ const Node *la_prog; const Node *la_fn; /* 126.8: mut array locals proven to hold strings (mut.@() + string append/assign) → tag @str */ char str_arr[64][NAME_BUF]; int str_arr_count; /* 127.10: let-bound locals proven (by RHS shape) to hold a str; feeds rhs_proves_str_array */ char str_loc[64][NAME_BUF]; int str_loc_count; /* 124.0a: closure lowering — deferred lifted-fn defs + closure-bound-local signatures */ const Node *pend_clos[512]; int pend_clos_count; char clos_lname[64][NAME_BUF]; const Node *clos_lnode[64]; int clos_lcount; /* 135.16: let-bound fallible values.  The gates that decide whether an ok/err match discriminates on the error channel (114.53/54/55), on the void status word (127.95), or on the value sentinel only ever inspected the `mt` scrutinee WHEN IT WAS A CALL, so `let r=f(); mt r` silently fell back to the sentinel and reported an ok value of 0 as a failure.  A fallible initialiser now records its convention here AND snapshots @tk_current_error into `fall_slot` at the binding, because the global is live state: any later fallible call would overwrite it before the `mt` ran. */ char fall_name[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_slot[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; char fall_errty[TKC_MAX_FALLIBLE_LOCALS][NAME_BUF]; unsigned char fall_uce[TKC_MAX_FALLIBLE_LOCALS]; unsigned char fall_zok[TKC_MAX_FALLIBLE_LOCALS]; int fall_count; } Ctx;
 
 /*
  * box_alloc (127.109) — which allocator the box about to be emitted comes
@@ -3071,7 +3071,13 @@ static int emit_expr(Ctx *c, const Node *n)
         int content_end = rlen - 1;     /* skip trailing `"` */
         for (int i = 1; i < content_end; i++) {
             if (raw[i] == '\\' && i + 1 < content_end && raw[i + 1] == '(') {
-                if (nsegs < MAX_SEGS) {
+                /* 127.50: an empty literal segment (the one before a
+                 * leading `\(`, or between two adjacent `\(…)\(…)`) adds
+                 * nothing to the result and is not recorded.  Recording it
+                 * is what made `"\(n)"` cost two allocations — the
+                 * conversion and a tk_str_join_n of ("", conversion) —
+                 * against one for `n as str`. */
+                if (i > last && nsegs < MAX_SEGS) {
                     segs[nsegs].start = last;
                     segs[nsegs].end   = i;
                     segs[nsegs].is_expr = 0;
@@ -3313,6 +3319,12 @@ static int emit_expr(Ctx *c, const Node *n)
             seg_vals[nvals++] = seg_val;
         }
         if (nvals == 1) {
+            /* 127.50: one non-empty segment — `"\(n)"`, `"\(s)"`, or a
+             * literal with an unparseable `\(` — IS the result; joining it
+             * with nothing would only copy it.  A number's segment is its
+             * fresh conversion; a string's is the string itself, which is
+             * sound because toke strings are immutable (no codegen path
+             * mutates or frees an i8* string in place). */
             accumulator = seg_vals[0];
         } else if (nvals >= 2) {
             /* 127.26: one tk_str_join_n(n, parts…) call — a single allocation
@@ -7885,9 +7897,10 @@ static int la_fresh_rhs(Ctx *c, const Node *rhs, const char *x) {
  * std.io (println/print/…) and std.fmt only walk the block for the duration
  * of the call and return fresh values, so a bare linear array passed to them
  * creates no alias — `<s.join("";acc)` must not demote every
- * `acc=acc.append(v)` to the copying path (O(N²) memory, 127.17). User
- * functions and every other module may store the pointer, so they still
- * disqualify. */
+ * `acc=acc.append(v)` to the copying path (O(N²) memory, 127.17). Every
+ * other stdlib module may store the pointer, so it still disqualifies.  A
+ * user function of this module is NOT decided here: its body is inspected
+ * instead (la_param_nonretaining, 127.108). */
 static int la_nonretaining_callee(Ctx *c, const Node *callee) {
     if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2) return 0;
     if (!callee->children[0] || callee->children[0]->kind != NODE_IDENT) return 0;
@@ -7902,17 +7915,97 @@ static int la_nonretaining_callee(Ctx *c, const Node *callee) {
     return 0;
 }
 
+static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int depth);
+
+/* 127.108: does `blk` bind `name` anywhere — a param of the function under
+ * analysis, or a let/mut binding in its body?  A call `name(…)` then may reach
+ * a local closure rather than the top-level function of that name, so the
+ * callee's body says nothing about it. */
+static int la_binds_name(Ctx *c, const Node *n, const char *name) {
+    if (!n) return 0;
+    if ((n->kind == NODE_PARAM || n->kind == NODE_BIND_STMT || n->kind == NODE_MUT_BIND_STMT)
+        && n->child_count > 0 && la_ident_is(c, n->children[0], name)) return 1;
+    for (int i = 0; i < n->child_count; i++)
+        if (la_binds_name(c, n->children[i], name)) return 1;
+    return 0;
+}
+
+/* 127.108: the top-level function declaration named `name` in this module,
+ * with a body, or NULL (extern, imported, or not a function at all). */
+static const Node *la_find_user_fn(Ctx *c, const char *name) {
+    const Node *root = c->la_prog;
+    if (!root) return NULL;
+    for (int i = 0; i < root->child_count; i++) {
+        const Node *ch = root->children[i];
+        if (!ch) continue;
+        const Node *list = ch;
+        int lo = 0, hi = 1;
+        if (ch->kind == NODE_MODULE) { lo = 0; hi = ch->child_count; }
+        for (int j = lo; j < hi; j++) {
+            const Node *fn = (ch->kind == NODE_MODULE) ? list->children[j] : ch;
+            if (!fn || fn->kind != NODE_FUNC_DECL || fn->child_count < 1) continue;
+            if (!la_ident_is(c, fn->children[0], name)) continue;
+            for (int k = 0; k < fn->child_count; k++)
+                if (fn->children[k] && fn->children[k]->kind == NODE_STMT_LIST) return fn;
+            return NULL;   /* extern — no body to inspect */
+        }
+    }
+    return NULL;
+}
+
+/* 127.108: is parameter `idx` of the user function `fn` NON-RETAINING — does
+ * the function only read the block its caller passes, holding no reference to
+ * it once the call returns?  Derived from the callee's own body, not from a
+ * list of names: the parameter must pass la_bad_use in STRICT mode (a terminal
+ * `<p` return is a retention there — the caller receives the block back), and
+ * the rule applies transitively, since passing p on as a bare argument is
+ * only accepted when THAT callee's parameter passes the same test.  Recursion
+ * and deep call chains are cut off at a small depth and answered "retains",
+ * which is the conservative answer. */
+static int la_param_nonretaining(Ctx *c, const Node *fn, int idx, int depth) {
+    if (!fn || depth > 4) return 0;
+    const Node *param = NULL, *body = NULL;
+    int pi = 0;
+    for (int i = 0; i < fn->child_count; i++) {
+        const Node *ch = fn->children[i];
+        if (!ch) continue;
+        if (ch->kind == NODE_PARAM) { if (pi == idx) param = ch; pi++; }
+        else if (ch->kind == NODE_STMT_LIST) body = ch;
+    }
+    if (!param || !body || param->child_count < 1 || !param->children[0]) return 0;
+    char p[NAME_BUF]; tok_cp(c->src, param->children[0], p, sizeof p);
+    const Node *saved = c->la_fn;
+    c->la_fn = fn;
+    int bad = la_bad_use(c, body, p, 1, depth + 1);
+    c->la_fn = saved;
+    return !bad;
+}
+
+/* 127.108: `call` is `f(a0;a1;…)` with f a top-level user function of this
+ * module; is its argument i (call child i+1) a non-retaining parameter? */
+static int la_user_arg_nonretaining(Ctx *c, const Node *call, int child_i, int depth) {
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_IDENT) return 0;
+    char fname[NAME_BUF]; tok_cp(c->src, callee, fname, sizeof fname);
+    if (c->la_fn && la_binds_name(c, c->la_fn, fname)) return 0;
+    const Node *fn = la_find_user_fn(c, fname);
+    if (!fn) return 0;
+    return la_param_nonretaining(c, fn, child_i - 1, depth);
+}
+
 /* Recursively detect a disqualifying (alias-creating) use of x. Allowed roles:
  * assign-LHS, method/field receiver, index base, bind name-slot, terminal
- * return operand, bare argument to a non-retaining stdlib call (127.25). Any
- * other bare occurrence — or any occurrence inside a closure — disqualifies. */
-static int la_bad_use(Ctx *c, const Node *n, const char *x, int in_closure) {
+ * return operand (not in STRICT mode — see la_param_nonretaining), bare
+ * argument to a non-retaining stdlib call (127.25), bare argument in a
+ * non-retaining parameter position of a user function (127.108). Any other
+ * bare occurrence — or any occurrence inside a closure or a spawn — disqualifies. */
+static int la_bad_use(Ctx *c, const Node *n, const char *x, int strict, int depth) {
     if (!n) return 0;
     if (n->kind == NODE_IDENT)
         return la_ident_is(c, n, x);   /* a bare ident reached here = a use */
-    if (n->kind == NODE_CLOSURE)
+    if (n->kind == NODE_CLOSURE || n->kind == NODE_SPAWN_EXPR)
         return la_mentions(c, n, x);    /* any capture of x is unsafe */
-    int skip0 = 0, skip_field_name = 0, skip_bare_args = 0;
+    int skip0 = 0, skip_field_name = 0, skip_bare_args = 0, user_call = 0;
     switch (n->kind) {
     case NODE_ASSIGN_STMT:
         if (la_ident_is(c, n->children[0], x)) skip0 = 1;     /* LHS */
@@ -7920,6 +8013,8 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int in_closure) {
     case NODE_CALL_EXPR:
         if (n->child_count > 0 && la_nonretaining_callee(c, n->children[0]))
             skip_bare_args = 1;                               /* 127.25 */
+        else if (n->child_count > 0 && n->children[0] && n->children[0]->kind == NODE_IDENT)
+            user_call = 1;                                    /* 127.108 */
         break;
     case NODE_FIELD_EXPR:
         if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) skip0 = 1; /* receiver */
@@ -7929,7 +8024,7 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int in_closure) {
         if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) skip0 = 1; /* base */
         break;
     case NODE_RETURN_STMT:
-        if (n->child_count > 0 && la_ident_is(c, n->children[0], x)) skip0 = 1; /* terminal */
+        if (!strict && n->child_count > 0 && la_ident_is(c, n->children[0], x)) skip0 = 1; /* terminal */
         break;
     case NODE_BIND_STMT:
     case NODE_MUT_BIND_STMT:
@@ -7941,9 +8036,10 @@ static int la_bad_use(Ctx *c, const Node *n, const char *x, int in_closure) {
         if (i == 0 && skip0) continue;
         if (i == 1 && skip_field_name) continue;
         if (i >= 1 && skip_bare_args && la_ident_is(c, n->children[i], x)) continue;
-        if (la_bad_use(c, n->children[i], x, in_closure)) return 1;
+        if (i >= 1 && user_call && la_ident_is(c, n->children[i], x) &&
+            la_user_arg_nonretaining(c, n, i, depth)) continue;
+        if (la_bad_use(c, n->children[i], x, strict, depth)) return 1;
     }
-    (void)in_closure;
     return 0;
 }
 
@@ -7975,6 +8071,7 @@ static int la_assigns_ok(Ctx *c, const Node *n, const char *x, int *binds, int *
  * are params; its NODE_STMT_LIST child is the body). */
 static void compute_linear_arrays(Ctx *c, const Node *fn) {
     c->linear_arr_count = 0;
+    c->la_fn = fn;   /* 127.108: la_binds_name consults it */
     const Node *body = NULL;
     for (int i = 0; i < fn->child_count; i++)
         if (fn->children[i]->kind == NODE_STMT_LIST) { body = fn->children[i]; break; }
@@ -8005,7 +8102,7 @@ static void compute_linear_arrays(Ctx *c, const Node *fn) {
                                 la_ident_is(c, p->children[0], x)) { is_param = 1; break; }
                         }
                         int binds = 0, self_updates = 0;
-                        if (!is_param && !la_bad_use(c, body, x, 0) &&
+                        if (!is_param && !la_bad_use(c, body, x, 0, 0) &&
                             la_assigns_ok(c, body, x, &binds, &self_updates) &&
                             binds >= 1 && self_updates >= 1) {
                             strncpy(c->linear_arr[c->linear_arr_count], x, NAME_BUF - 1);
@@ -9711,6 +9808,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
         return -1;
     }
     Ctx ctx; memset(&ctx, 0, sizeof ctx); ctx.out = f; ctx.src = src;
+    ctx.la_prog = ast;   /* 127.108 */
     /* Story 76.1.2d: store source file for FFI extern diagnostic */
     ctx.source_file = (env && env->source_file) ? env->source_file : "";
     /* 124.0a: thread the name-resolver's NameEnv (closure capture side-table)

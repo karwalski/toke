@@ -114,6 +114,41 @@ f=example():void{
 };
 ```
 
+### str.indexof(s: $str; sub: $str): i64
+
+Returns the byte offset of the first occurrence of `sub` in `s`, or `-1` if `sub` does not occur.
+
+```toke
+m=test;
+i=str:std.str;
+f=example():void{
+  let a = str.indexof("a,b,c"; ",");
+  let n = str.indexof("abc"; "x");
+};
+```
+
+### str.indexfrom(s: $str; sub: $str; start: i64): i64
+
+`str.indexof` with a start offset: returns the byte offset (counted from the start of `s`, not from `start`) of the first occurrence of `sub` at or after byte `start`, or `-1`. A negative `start` searches from 0; a `start` past the end of `s` returns `-1`. Use it to walk a string without slicing off the tail before each search.
+
+The bounds check reads the `start` bytes before the search point (toke strings store no length), so each call costs O(`start`) reads — but no allocation and no copy, where slicing the tail allocated and copied the rest of the string on every call.
+
+```toke
+m=test;
+i=io:std.io;
+i=str:std.str;
+f=example():void{
+  let t = "a,b,,c";
+  let n = mut.0;
+  let p = mut.str.indexfrom(t; ","; 0);
+  lp(let k = 0; p >= 0; k = k + 1){
+    n = n + 1;
+    p = str.indexfrom(t; ","; p + 1)
+  };
+  io.println("commas=\(n)");
+};
+```
+
 ### str.split(s: $str; sep: $str): @($str)
 
 Splits the string `s` on each occurrence of the separator `sep` and returns an array of substrings.
