@@ -220,13 +220,9 @@ PENDING_PREFIXES = (
     # 132.61: keyed by repository identity (check_metrics_claims.repo_key),
     # not by a path relative to this checkout.
     ("toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec RFC draft is v0.3-era)"),
-    # 132.69 added the retired Gate 1 verdict to Rule 2. These three toke-model
-    # surfaces still carry it and sit outside that batch's territory; they warn,
-    # keyed to 132.69, until toke-model is brought to NOT PASSED. Delete then.
-    ("toke-model/README.md", "132.69 — toke-model still states the open Gate 1 verdict"),
-    ("toke-model/huggingface/UPLOAD.md", "132.69 — toke-model still states the open Gate 1 verdict"),
-    ("toke-model/huggingface/model-card-toke-coder-7b-UNPUBLISHED.md",
-     "132.69 — toke-model still states the open Gate 1 verdict"),
+    # 132.86 deleted the three toke-model entries keyed to 132.69: README.md,
+    # huggingface/UPLOAD.md and the unpublished model card now state the
+    # 2026-09-22 NOT PASSED decision, so Rule 2 fails them if it comes back.
 )
 
 # Not live claim surfaces: the tracker, historical backlogs, third-party reviews
