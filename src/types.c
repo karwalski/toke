@@ -2578,8 +2578,22 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     case NODE_ARRAY_LIT: {
         Type *at = mk_type(A, TY_ARRAY);
         if (!at) return mk_type(A, TY_UNKNOWN);
-        if (node->child_count > 0)
-            at->elem = infer(cx, node->children[0]);
+        /* A typed-EMPTY literal `@($f64)` carries its element type as a
+         * type node, not a value.  infer() has no case for a type node and
+         * its default returns TY_VOID, so `@($f64)` typed as @(void) and
+         * `a=a+@(3.0)` was a false E4031 — dormant until 127.129 typed
+         * un-annotated ARRAY_LIT bindings, then live (test_f64_array.tk,
+         * GAM-117, the typed_empty_array fixture).  The set of type-node
+         * kinds is the emitter's own (llvm.c NODE_ARRAY_LIT: "skip
+         * type-annotation children"), so the two agree on what is an
+         * annotation. */
+        const Node *c0 = node->child_count > 0 ? node->children[0] : NULL;
+        if (c0 && (c0->kind == NODE_TYPE_IDENT || c0->kind == NODE_TYPE_EXPR ||
+                   c0->kind == NODE_ARRAY_TYPE || c0->kind == NODE_MAP_TYPE ||
+                   c0->kind == NODE_FUNC_TYPE  || c0->kind == NODE_PTR_TYPE))
+            at->elem = resolve_type(cx, c0);
+        else if (c0)
+            at->elem = infer(cx, c0);
         else
             at->elem = mk_type(A, TY_UNKNOWN);
         return at;
