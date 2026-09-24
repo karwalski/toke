@@ -49,8 +49,16 @@
         "i64",
         "i64"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "bool"
+    },
+    {
+      "kind": "func",
+      "name": "test.eqstr",
+      "params": [
+        "str",
+        "str"
+      ],
+      "return": "bool"
     },
     {
       "kind": "func",

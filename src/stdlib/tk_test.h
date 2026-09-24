@@ -16,6 +16,8 @@
  * Story: 2.7.5  Branch: feature/stdlib-2.7-crypto-time-test
  */
 
+#include <stdint.h>
+
 /* test.assert(cond:bool;msg:Str):bool
  * Passes if cond is non-zero; emits diagnostic and returns 0 otherwise. */
 int tk_test_assert(int cond, const char *msg);
@@ -23,6 +25,18 @@ int tk_test_assert(int cond, const char *msg);
 /* test.assert_eq(a:Str;b:Str;msg:Str):bool
  * Passes if strcmp(a, b) == 0; emits diagnostic and returns 0 otherwise. */
 int tk_test_assert_eq(const char *a, const char *b, const char *msg);
+
+/* test.eq(a:i64;b:i64):bool  (127.68)
+ * Integer equality as an assertion: 1 if a == b; otherwise a DIAGNOSTIC line
+ * on stderr, the current test marked failed, and 0. */
+int tk_test_eq_i64(int64_t a, int64_t b);
+
+/* test.eq(a:Str;b:Str):bool / test.eqstr  (127.68)
+ * String equality BY VALUE (strcmp), same failure contract. */
+int tk_test_eq_str(const char *a, const char *b);
+
+/* Mark the current test failed without printing (test.fail prints itself). */
+void tk_test_mark_failed(void);
 
 /* test.assert_ne(a:Str;b:Str;msg:Str):bool
  * Passes if strcmp(a, b) != 0; emits diagnostic and returns 0 otherwise. */

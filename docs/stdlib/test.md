@@ -56,6 +56,37 @@ f=main():i64{
 };
 ```
 
+### test.eq(a: i64; b: i64): bool
+
+Passes if `a` and `b` are equal. On failure, emits a diagnostic showing both values to stderr, marks the current test failed, and returns `false`.
+
+When either argument is a `$str` (and neither is a number or `bool`), the two strings are compared **by value** -- `test.eq(str.upper("hello"); "HELLO")` passes. Before 127.68 a string pair compared the two addresses and failed for equal strings. When the compiler cannot tell that an argument is a string, the integer comparison is used; write `test.eqstr` to say so explicitly.
+
+```toke
+m=tests;
+i=test:std.test;
+i=str:std.str;
+f=main():i64{
+  let r1=test.eq(2+2;4);
+  let r2=test.eq(str.upper("hello");"HELLO");
+  < 0
+};
+```
+
+### test.eqstr(a: $str; b: $str): bool
+
+Passes if strings `a` and `b` are equal by value. On failure, emits a diagnostic showing both strings to stderr, marks the current test failed, and returns `false`. Use it where the string type of an argument is not evident from the expression; `test.asserteq` is the same comparison with a caller-supplied message.
+
+```toke
+m=tests;
+i=test:std.test;
+i=str:std.str;
+f=main():i64{
+  let r1=test.eqstr(str.lower("ABC");"abc");
+  < 0
+};
+```
+
 ## Usage Examples
 
 ```toke

@@ -1951,6 +1951,40 @@ static const char *resolve_module_subpath_call(Ctx *c, const Node *callee) {
     return NULL;
 }
 
+static int expr_is_str_value(Ctx *c, const Node *e); /* defined later */
+
+/* expr_is_nonstr_scalar — `e` is statically a number or a bool: a numeric
+ * literal, or an expression the checker typed as one. */
+static int expr_is_nonstr_scalar(const Node *e) {
+    if (!e) return 0;
+    if (e->kind == NODE_INT_LIT || e->kind == NODE_FLOAT_LIT
+        || e->kind == NODE_BOOL_LIT)
+        return 1;
+    if (!e->rtype) return 0;
+    switch (e->rtype->kind) {
+    case TY_BOOL: case TY_I64: case TY_U64: case TY_F64: case TY_F32:
+    case TY_I8: case TY_I16: case TY_I32: case TY_U8: case TY_U16: case TY_U32:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/*
+ * test_eq_args_are_str (127.68) — lower `test.eq(a;b)` as a string compare.
+ *
+ * True when at least one argument is provably a str and neither is provably a
+ * number or bool.  Integer uses therefore keep exactly the compare they had,
+ * and a str pair — `test.eq(str.upper("hello");"HELLO")`, which returned 0
+ * for two equal strings because it compared their addresses — compares the
+ * contents.  A pair the backend cannot type either way keeps the integer
+ * compare: that is the old behaviour, not a new guess.
+ */
+static int test_eq_args_are_str(Ctx *c, const Node *a, const Node *b) {
+    if (expr_is_nonstr_scalar(a) || expr_is_nonstr_scalar(b)) return 0;
+    return expr_is_str_value(c, a) || expr_is_str_value(c, b);
+}
+
 /*
  * resolve_interface_prefix_call (124.2f-d) — the glue symbol for a call whose
  * prefix is not an import alias but IS a prefix an imported stdlib interface
@@ -4404,6 +4438,13 @@ static int emit_expr(Ctx *c, const Node *n)
                 const char *sp = resolve_module_subpath_call(c, n->children[0]);
                 if (sp) { resolved_fn = sp; }
             }
+            /* 127.68: test.eq on a str pair compares by value.  The i64 ABI
+             * cannot tell a str handle from an integer, so the choice is
+             * made here, from the static types, and never at run time. */
+            if (resolved_fn && !strcmp(resolved_fn, "tk_test_eq_w")
+                && n->child_count == 3
+                && test_eq_args_are_str(c, n->children[1], n->children[2]))
+                resolved_fn = "tk_test_eqstr_w";
             /* Disambiguate http.get/post by argument count:
              * 1 arg = HTTP client request, 2 args = route registration */
             if (resolved_fn) {
