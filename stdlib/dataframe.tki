@@ -39,7 +39,7 @@
         {"name": "msg", "type": "str"}
       ]
     },
-    {"kind": "func", "name": "df.fromcsv",    "params": ["[byte]"],                     "return": "dataframe!dferr"},
+    {"kind": "func", "name": "df.fromcsv",    "params": ["str"],                        "return": "dataframe!dferr"},
     {"kind": "func", "name": "df.fromrows",   "params": ["[str]", "[csvrow]"],           "return": "dataframe"},
     {"kind": "func", "name": "df.column",     "params": ["dataframe", "str"],            "return": "[f64]!dferr"},
     {"kind": "func", "name": "df.columnstr",  "params": ["dataframe", "str"],            "return": "[str]!dferr"},
@@ -49,7 +49,7 @@
     {"kind": "func", "name": "df.head",       "params": ["dataframe", "u64"],            "return": "dataframe"},
     {"kind": "func", "name": "df.shape",      "params": ["dataframe"],                   "return": "dfshape"},
     {"kind": "func", "name": "df.tojson",     "params": ["dataframe"],                   "return": "[byte]!dferr"},
-    {"kind": "func", "name": "df.tocsv",      "params": ["dataframe"],                   "return": "[byte]"},
+    {"kind": "func", "name": "df.tocsv",      "params": ["dataframe"],                   "return": "str"},
     {"kind": "func", "name": "df.schema",     "params": ["dataframe"],                   "return": "[series]"}
   ]
 }
