@@ -95,8 +95,10 @@ jobs:
       # one. On a GitHub runner none are, so this proves the runner works and
       # reports each skip by name; it is the local `make ci` that sweeps them
       # for real. Wiring the sibling checkouts in is story 132.46.
+      # 132.68: resolving zero siblings now FAILS by default (a sweep that
+      # finds nothing is not a pass); this runner says so on purpose.
       - name: Claim guards across sibling repos
-        run: make check-claims-all
+        run: make check-claims-all CLAIMS_ALLOW_NO_SIBLINGS=1
 
   lint:
     name: Lint and static analysis
@@ -216,6 +218,12 @@ jobs:
       # 136.56 — a tracked test source with no target and no caller.
       - name: Every test source is built by something
         run: make check-test-orphans
+
+      # 123.10 — the eight 120.22 fuzz harnesses build and replay their seed
+      # and adversarial corpora clean under ASAN+UBSAN. A replay, not a fuzz
+      # run (that is security-nightly.yml); `auto` picks libFuzzer here.
+      - name: Fuzz harnesses build and replay clean
+        run: make CC=clang fuzz-smoke
 
       # 127.126 — the stdlib's own toke sources (m= files) type-check.
       - name: stdlib toke sources type-check

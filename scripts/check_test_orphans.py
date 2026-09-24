@@ -27,16 +27,9 @@ import subprocess
 import sys
 
 # Owned elsewhere, named one by one so a NEW harness is not silently exempt.
-EXEMPT = {
-    'test/fuzz/fuzz_json.c':      '123.10 owns the fuzz harness wiring',
-    'test/fuzz/fuzz_multipart.c': '123.10 owns the fuzz harness wiring',
-    'test/fuzz/fuzz_template.c':  '123.10 owns the fuzz harness wiring',
-    'test/fuzz/fuzz_toml.c':      '123.10 owns the fuzz harness wiring',
-    'test/fuzz/fuzz_toon.c':      '123.10 owns the fuzz harness wiring',
-    'test/fuzz/fuzz_ws_frame.c':  '123.10 owns the fuzz harness wiring',
-    'test/fuzz/fuzz_xml.c':       '123.10 owns the fuzz harness wiring',
-    'test/fuzz/fuzz_yaml.c':      '123.10 owns the fuzz harness wiring',
-}
+# 123.10 wired the eight 120.22 fuzz harnesses and removed their exemptions,
+# so today nothing is exempt; the mechanism stays for the next owned file.
+EXEMPT = {}
 
 
 def live_lines(path):

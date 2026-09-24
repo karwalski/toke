@@ -3,11 +3,47 @@ name: stdlib benchmarks
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   release:
     types: [published]
 
 jobs:
+  # 123.11 — the perf-regression gate. Until this job, this workflow uploaded
+  # numbers and compared them with nothing, so no regression could fail it.
+  #
+  # It compares COUNTS, not wall time: instructions retired and malloc-family
+  # calls, for tkc compiling each bench/programs/*.tk and for the program it
+  # produced (scripts/perf_gate.py states the thresholds). Counts are host-
+  # specific, so the checked-in bench/perf-baseline.json is for the machine
+  # that recorded it (the gate SKIPs by name elsewhere). Here the PR's BASE
+  # commit is built and recorded on this same runner, then the HEAD compiler
+  # is compared against that record: same host, same toolchain, same programs.
+  perf-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build the base commit's compiler
+        run: |
+          git worktree add ../base "${{ github.event.pull_request.base.sha }}"
+          make -C ../base -j3
+          cp -L ../base/tkc "$RUNNER_TEMP/tkc-base"
+
+      - name: Build the head compiler
+        run: make -j3
+
+      - name: Record the base compiler's counts
+        run: python3 scripts/perf_gate.py --tkc "$RUNNER_TEMP/tkc-base" --record --baseline "$RUNNER_TEMP/base.json"
+
+      - name: Compare the head compiler (fails on a regression past threshold)
+        run: python3 scripts/perf_gate.py --tkc ./tkc --baseline "$RUNNER_TEMP/base.json" --require-host
+
   bench:
+    if: github.event_name != 'pull_request'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

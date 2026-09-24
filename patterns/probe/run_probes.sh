@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # Epic 131.2 — run every probe through `tkc --check`, `tkc --out`, and execution;
 # record compile / build / run / correct per probe into probe_results.json.
-# Usage: ./run_probes.sh [path-to-tkc]   (default ../../tkc)
+# Usage: ./run_probes.sh [path-to-tkc [output.json]]
+#   tkc     default $TKC, else ../../tkc
+#   output  default ./probe_results.json.  136.58's drift gate
+#           (scripts/check_probe_results.py) writes to a temp file instead
+#           and compares it with the committed one.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-TKC="${1:-$HERE/../../tkc}"
+TKC="${1:-${TKC:-$HERE/../../tkc}}"
 TKC="$(cd "$(dirname "$TKC")" && pwd)/$(basename "$TKC")"
-WORK="$(mktemp -d /tmp/tkprobe.XXXXXX)"
+OUT_JSON="${2:-$HERE/probe_results.json}"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/tkprobe.XXXXXX")"
 # 131.39: exec a private copy of the binary, not the symlink a concurrent `make` relinks
 # (same rule as scripts/patterns/tkc_pin.py; copied by hand here to keep the script self-contained)
 TKC_SRC="$TKC"
@@ -46,9 +51,9 @@ for src in "$HERE"/*.tk; do
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$check_rc" "$check_codes" "$build_rc" "$build_codes" "$undef" "${run_rc:-}" "$(printf '%s' "$stdout" | esc)" "$(printf '%s' "$expect" | esc)" "$correct" >> "$TSV"
   printf '%-28s check=%s build=%s run=%-4s correct=%s %s\n' "$name" "$check_rc" "$build_rc" "${run_rc:-na}" "$correct" "${undef:+undef:$undef}"
 done
-python3 - "$TSV" "$HERE/probe_results.json" "$TKC" "$TKC_SRC" "$TKC_BIN_SHA" <<'PY'
+python3 - "$TSV" "$OUT_JSON" "$TKC" "$TKC_SRC" "$TKC_BIN_SHA" "$HERE" <<'PY'
 import sys, json, subprocess, datetime
-tsv, out, tkc, tkc_src, tkc_bin_sha = sys.argv[1:6]
+tsv, out, tkc, tkc_src, tkc_bin_sha, here = sys.argv[1:7]
 rows = []
 for line in open(tsv):
     f = line.rstrip("\n").split("\t")
@@ -60,11 +65,18 @@ for line in open(tsv):
         "build": {"exit": int(brc), "ok": brc == "0", "codes": [c for c in bcodes.split(",") if c], "undefined_symbol": undef or None},
         "run": ({"exit": int(rrc), "ok": rrc == "0", "stdout": un(so)} if rrc else None),
         "expected": un(ex), "correct": ok == "true"})
-sha = subprocess.run(["git","-C",tkc_src.rsplit("/",1)[0],"rev-parse","HEAD"],capture_output=True,text=True).stdout.strip()
+# 136.58: the tree the probes were measured IN (this checkout), not the directory
+# the binary happens to sit in -- a pinned copy in a temp dir has no git at all.
+sha = subprocess.run(["git","-C",here,"rev-parse","HEAD"],capture_output=True,text=True).stdout.strip()
 ver = subprocess.run([tkc,"--version"],capture_output=True,text=True).stdout.strip()
 summary = {"probes": len(rows), "check_ok": sum(r["check"]["ok"] for r in rows), "build_ok": sum(r["build"]["ok"] for r in rows),
            "run_ok": sum(1 for r in rows if r["run"] and r["run"]["ok"]), "correct": sum(r["correct"] for r in rows)}
-json.dump({"story":"131.2","tkc_version":ver,"tkc_sha":sha,"tkc_bin_sha":tkc_bin_sha,"tkc_path":tkc_src,"generated":datetime.date.today().isoformat(),"summary":summary,"results":rows}, open(out,"w"), indent=1)
+# 136.58: never an absolute path -- this file is committed to a public repo
+import os
+repo = os.path.dirname(os.path.dirname(here))
+rel = os.path.relpath(os.path.realpath(tkc_src), os.path.realpath(repo))
+tkc_rel = rel if not rel.startswith("..") else os.path.basename(tkc_src)
+json.dump({"story":"131.2","tkc_version":ver,"tkc_sha":sha,"tkc_bin_sha":tkc_bin_sha,"tkc_path":tkc_rel,"generated":datetime.date.today().isoformat(),"summary":summary,"results":rows}, open(out,"w"), indent=1)
 print(json.dumps(summary))
 PY
 rm -rf "$WORK"
