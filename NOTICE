@@ -55,8 +55,10 @@ notices to accompany copies of the software, including binary copies.
    Licence:  MIT; full text in stdlib/vendor/miniz/LICENSE
      Copyright 2013-2014 RAD Game Tools and Valve Software
      Copyright 2010-2014 Rich Geldreich and Tenacious Software LLC
-   Note: the banner comment at the top of the vendored miniz.h still reads
-   "public domain", a leftover from the original 1.x releases, which were
-   dedicated to the public domain (Unlicense). Upstream has shipped the MIT
-   licence above since 2.0.0, and it governs the 3.0.2 sources vendored here.
-   miniz is not public domain.
+   Note on the licence: the vendored miniz.h banner still says "public
+   domain", and miniz.c still ends with an Unlicense (public-domain)
+   dedication. Both are carried over from the original 1.x releases.
+   Upstream has shipped the MIT LICENSE above since 2.0.0, so this project
+   treats miniz as MIT, not public domain, and gives the attribution MIT
+   requires. (miniz.c's PNG writer, by Alex Evans, 2011, is marked public
+   domain in its own comment.)

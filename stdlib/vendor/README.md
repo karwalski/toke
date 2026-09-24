@@ -42,8 +42,9 @@ Licences: cmark is BSD-2-Clause (`cmark/COPYING`), tomlc99 is MIT
 verbatim and tracked.
 
 > **miniz is MIT, not public domain.** The original miniz 1.x releases were
-> dedicated to the public domain (Unlicense), and the banner comment at the top
-> of `miniz.h` still says "public domain"; but upstream has shipped an MIT
+> dedicated to the public domain (Unlicense), and the vendored files still say
+> so: the banner at the top of `miniz.h` reads "public domain" and `miniz.c`
+> still ends with the Unlicense text. But upstream has shipped an MIT
 > `LICENSE` since 2.0.0 (verified at tags 2.0.0, 2.1.0 and 2.2.0 as well as
 > the 3.0.2 pinned here), naming RAD Game Tools, Valve Software, Rich
 > Geldreich and Tenacious Software. Attribution is therefore required:
