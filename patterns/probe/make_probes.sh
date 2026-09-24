@@ -39,6 +39,13 @@ mk keys_prop       '2 a'     'let m=@("a":1;"b":2);let k=m.keys;io.println("\(k.
 mk keys_method     '2 a'     'let m=@("a":1;"b":2);let k=m.keys();io.println("\(k.len) \(k.get(0))");'
 mk values_prop     '2 1'     'let m=@("a":1;"b":2);let v=m.values;io.println("\(v.len) \(v.get(0))");'
 mk values_method   '2 1'     'let m=@("a":1;"b":2);let v=m.values();io.println("\(v.len) \(v.get(0))");'
+# 136.59: the map rows of combinator-status.md that had no probe (m.len was
+# measured ad hoc; m.get and m=m.set were never measured by a probe either)
+mk map_get         '2'       'let m=@("a":1;"b":2);io.println("\(m.get("b"))");'
+mk map_set         '3'       'let m=mut.@("a":1;"b":2);m=m.set("c";3);io.println("\(m.get("c"))");'
+mk maplen          '2'       'let m=@("a":1;"b":2);io.println("\(m.len)");'
+mk maplen_after_set '3'      'let m=mut.@("a":1;"b":2);m=m.set("c";3);io.println("\(m.len)");'
+mk maplen_set_existing '2'   'let m=mut.@("a":1;"b":2);m=m.set("a";5);io.println("\(m.len)");'
 mk append_method   '4 9'     "let a=mut.@(3;1;2);a=a.append(9);io.println(\"\\(a.len) \\(a.get(3))\");"
 mk push_method     '4 9'     "let a=mut.@(3;1;2);a=a.push(9);io.println(\"\\(a.len) \\(a.get(3))\");"
 mk push_bare       '3'       "let a=mut.@(3;1;2);a.push(9);io.println(\"\\(a.len)\");"
@@ -117,6 +124,7 @@ mk trim_method     'a'       'let x="  a  ";io.println(x.trim());'
 mk trim_module     '[a]'     'let x="  a  ";io.println("[\(s.trim(x))]");'
 mk concat_method   'ab'      'let x="a";io.println(x.concat("b"));'
 mk concat_module   'ab'      'let x="a";io.println(s.concat(x;"b"));'
+mk fromint_module  '42 [7]'  'let i=42;let j=7;io.println("\(s.fromint(i)) [\(s.fromint(j))]");'  # 136.59: s.fromint had no probe
 # ── interpolation of method-call results (127.7 / 127.9) ───────────────────
 mk interp_trim_method   '[a]' 'let x="  a  ";io.println("[\(x.trim())]");'
 mk interp_trim_let      '[a]' 'let x="  a  ";let y=x.trim();io.println("[\(y)]");'
