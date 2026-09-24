@@ -890,7 +890,16 @@ test-ci-known-red:
 
 test-ci: test-ci-green
 
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress
+# 127.143 — `diff-codegen` is the root-of-trust gate: it is the only thing in
+# this repository that notices a codegen change altering what a compiled
+# program DOES. It was defined at line 1026 and named by no target above, so it
+# had never run in CI. Measured on this host (M4 Max, binary already built):
+# 118 programs compiled and executed in 265 s wall — 4.4 minutes against a
+# `make ci` that already runs well over an hour, so cost is not a reason to
+# leave it out. It is a prerequisite of `ci` as of this line.
+#
+# `$(BIN)` is already its own prerequisite, so ordering with `conform` is free.
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-parallel-stdlib check-docs check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
