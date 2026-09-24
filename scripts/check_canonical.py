@@ -39,6 +39,12 @@ a correction nor smuggles a stale claim past the gate. The mechanical argument i
 written instead: a small backtrack-free grammar with bounded lookahead is still
 cheap to constrain during decoding and cheap to parse.
 
+Rule 2 also carries one retired VERDICT (story 132.69): Gate 1 was decided NOT
+PASSED on 2026-09-22 (story 128.19), so "the verdict is re-opened", "has not been
+re-decided" and a present-tense "Gate 1 PASS" are stale. Those sentences always sit
+inside the Pass@1 correction, so the generic correction markers cannot excuse them;
+only the decision itself ("NOT PASSED" or its date) in the same window does.
+
 Usage:  python3 scripts/check_canonical.py [paths...] [--strict] [--list]
 Exit:   0 clean (pending-story surfaces and files warn only), 1 on a violation.
         --strict also fails on the pending-story entries.
@@ -210,6 +216,13 @@ PENDING_PREFIXES = (
     # 132.61: keyed by repository identity (check_metrics_claims.repo_key),
     # not by a path relative to this checkout.
     ("toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec RFC draft is v0.3-era)"),
+    # 132.69 added the retired Gate 1 verdict to Rule 2. These three toke-model
+    # surfaces still carry it and sit outside that batch's territory; they warn,
+    # keyed to 132.69, until toke-model is brought to NOT PASSED. Delete then.
+    ("toke-model/README.md", "132.69 — toke-model still states the open Gate 1 verdict"),
+    ("toke-model/huggingface/UPLOAD.md", "132.69 — toke-model still states the open Gate 1 verdict"),
+    ("toke-model/huggingface/model-card-toke-coder-7b-UNPUBLISHED.md",
+     "132.69 — toke-model still states the open Gate 1 verdict"),
 )
 
 # Not live claim surfaces: the tracker, historical backlogs, third-party reviews
@@ -239,7 +252,28 @@ STALE = [
      "14 keywords: m i t f let if el lp br rt as mt sc mut — toke-spec-v0.4.md §A"),
     (re.compile(r"\bexactly one token of lookahead\b", re.I), "one-token lookahead",
      "bounded lookahead of up to 3 tokens on an enumerated set of productions"),
+    # Story 132.69 — the retired Gate 1 VERDICT. The verdict was re-opened on
+    # 2026-09-19 and decided on 2026-09-22: Gate 1 NOT PASSED (story 128.19). A
+    # surface that still says the verdict "is re-opened" / "has not been
+    # re-decided", or announces "Gate 1 PASS" as current, publishes a verdict that
+    # no longer exists. The generic CORRECTION markers cannot excuse it: every one
+    # of these sentences sits inside the Pass@1 *correction* ("corrected",
+    # "withdrawn"), so that is exactly the wording that let eight surfaces keep the
+    # open verdict after the decision. Only the decision itself excuses it -- see
+    # VERDICT_DECIDED. Past tense ("was re-opened", "recorded PASS") is history and
+    # never matches.
+    (re.compile(r"(?i:\bverdict\b[^.\n]{0,30}\b(?:is|remains|stays)\s+re-?opened\b)"
+                r"|(?i:\bre-?opened\s+and\s+(?:has\s+not|hasn['’]t)\s+been\s+re-?decided\b)"
+                r"|\bGate[\s-]*1\s*[:—-]?\s*PASS\b"),   # PASS: upper case only
+     "Gate 1 verdict open / PASS",
+     "Gate 1 NOT PASSED — owner decision 2026-09-22, story 128.19 "
+     "(docs/decisions/gate1-decision.md)",
+     "verdict"),
 ]
+
+# Story 132.69 — the only thing that excuses the retired verdict is the decision
+# that retired it, stated within the same paragraph window.
+VERDICT_DECIDED = re.compile(r"\bnot\s+passed\b|\b2026-09-22\b", re.I)
 
 # Story 132.29 — a NEGATION of the retired fact itself: "it is NOT strict LL(1)",
 # "there are not 13 keywords". This is built per stale fact from that fact's own
@@ -520,10 +554,13 @@ def check_stale(path, rel):
         # <strong>13</strong> keywords are the same claim. The RAW line is still
         # what gets reported, so the human sees the text that has to change.
         claim = demarkup(line)
-        for pat, label, fix in STALE:
+        for pat, label, fix, *kind in STALE:
             if not pat.search(claim):
                 continue
-            if CORRECTION.search(near) or negation_of(pat).search(near):
+            if kind == ["verdict"]:
+                if VERDICT_DECIDED.search(near):
+                    continue
+            elif CORRECTION.search(near) or negation_of(pat).search(near):
                 continue
             findings.append((rel, i + 1, 'stale fact "%s" — write %s' % (label, fix),
                              line.strip()[:200], owner_of(rel, path)))
@@ -604,6 +641,23 @@ SELFTEST = [
     (False, "bare claim, wrapped",
      "The grammar is context-free and\nLL(1) (every production is decidable)."),
     (False, "bare keyword count", "toke has 13 keywords."),
+    # Story 132.69 — the retired Gate 1 verdict.
+    (False, "open verdict inside the Pass@1 correction (README.md:92 before 132.69)",
+     "Published as 63.7% until 2026-09-19 -- corrected: 58.8% is below the minimum, so "
+     "**the Gate 1 verdict is re-opened and has not been re-decided** (story 128.19)."),
+    (False, "open verdict, wrapped (1b-model-design.md:136-137 before 132.69)",
+     "solutions generated it is 588/1,000 = 58.8% (story 128.19). 58.8% is below Gate 1's\n"
+     "own >= 60% minimum, so the Gate 1 verdict is re-opened; see"),
+    (False, "present-tense PASS (changelog.md:16 before 132.69)",
+     "- **(2026-04-03)** **Gate 1 PASS**: 12.5% token reduction, corrected 2026-09-19."),
+    (True, "verdict decided in the same sentence",
+     "The verdict was re-opened on 2026-09-19, and on 2026-09-22 the owner decided "
+     "Gate 1 NOT PASSED (story 128.19)."),
+    (True, "recorded PASS is history",
+     "Gate 1 recorded PASS on 2026-04-03 at 63.7% Pass@1."),
+    (True, "open verdict followed by its decision on the next line",
+     "The verdict is re-opened by the correction above;\n"
+     "it was decided NOT PASSED on 2026-09-22."),
     (False, "one-token lookahead", "The parser needs exactly one token of lookahead."),
     (False, "negation of something else in the previous sentence",
      "The parser does not backtrack. The grammar is LL(1)."),

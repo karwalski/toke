@@ -405,8 +405,9 @@ dropped the 77 generated solutions that failed to compile out of the denominator
 so it measured Pass@1 *given that the solution compiled*. It is also a *functional*
 Pass@1, not a compile rate — the compile rate was 92.3%. On the 1,000 solutions
 generated, functional Pass@1 is 588/1,000 = **58.8%**. That is below the >= 60%
-minimum Gate 1 declared for itself, so the Gate 1 verdict is re-opened and has not
-been re-decided here (story 128.19; see `docs/decisions/gate1-decision.md`).
+minimum Gate 1 declared for itself: the verdict was re-opened on 2026-09-19, and on
+2026-09-22 the owner decided Gate 1 NOT PASSED (story 128.19; see
+`docs/decisions/gate1-decision.md`).
 
 Four caveats do the work here, and none of them may be dropped when a number is quoted.
 
