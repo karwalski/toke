@@ -319,17 +319,33 @@ f=main():i64{
 echo ""
 echo "B. 127.54: composite types print their element type"
 
-# The filed repro.  It used to read `expected 'array', got 'array'` because
-# type_name() returned the bare kind for every TY_ARRAY.  Note what the
-# distinguishing detail then revealed: the element types genuinely DIFFER, so
-# the comparison was right all along and only the rendering was wrong.
-B_SRC='m=t;
+# The filed repro was `f=e():@($rec){ <@($rec) }`.  It used to read
+# `expected 'array', got 'array'` because type_name() returned the bare kind
+# for every TY_ARRAY; once rendered, it read `expected '@(rec)', got
+# '@(void)'`, and this block concluded the element types "genuinely differ".
+# They do not: `@($rec)` is a typed-EMPTY literal of element type $rec, and
+# the program is correct.  The '@(void)' was the checker mistyping the
+# literal (fixed in Batch E2, e2e4ac4 -- the same defect that broke
+# test_f64_array.tk and ooke), and B2 was pinning the `fix` that mistake
+# produced, "cast return value to @(rec) using 'as'" -- an instruction that
+# does not compile, which AGENTS.md §6 forbids.  Rewritten 2026-09-24:
+#
+#   B0  the old repro is a correct program and is accepted;
+#   B1  a GENUINE array-vs-array mismatch still names both element types;
+#   B2  and its fix field is empty, because no `as` cast repairs it.
+accepts "B0 a typed-empty @(\$rec) returned as @(\$rec) is accepted" \
+'m=t;
 t=$rec{a:i64};
 f=e():@($rec){ <@($rec) };
 f=main():i64{<0};'
 
+B_SRC='m=t;
+t=$rec{a:i64};
+f=e():@($rec){ <@(1) };
+f=main():i64{<0};'
+
 notselfidentical "B1 array-vs-array names both element types" E4031 "${B_SRC}"
-fixsays "B2 the rendering reaches the fix field too" E4031 '@(rec)' "${B_SRC}"
+fixsays "B2 an array return mismatch offers no cast fix" E4031 '"fix":""' "${B_SRC}"
 
 # B3 — a map mismatch must be readable for the same reason.
 notselfidentical "B3 map-vs-map is not 'map' vs 'map'" E4031 \
