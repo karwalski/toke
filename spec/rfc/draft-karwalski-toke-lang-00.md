@@ -2090,7 +2090,8 @@ Table of Contents
    The following table presents targets, evaluation context, and
    measured values.  Gate 1 evaluation completed 2026-04-03 and was
    recorded as PASS; its Pass@1 was corrected on 2026-09-19 to 58.8%
-   and the verdict is re-opened (Section 20).
+   and on 2026-09-22 the owner decided Gate 1 NOT PASSED
+   (Section 20).
 
 ```
    Metric                    toke          Python       C            Notes
@@ -2124,7 +2125,9 @@ Table of Contents
    one, so the denominator is the 1,000 generated: 588/1,000 =
    58.8%.  No re-evaluation was performed; the correction is
    arithmetic.  58.8% is BELOW the >=60% threshold Gate 1 declared,
-   so the Gate 1 verdict is re-opened and has not been re-decided.  The accompanying 12.5% token-reduction
+   so the verdict was re-opened, and on 2026-09-22 the owner
+   decided Gate 1 NOT PASSED (story 128.19).  The accompanying
+   12.5% token-reduction
    figure was an 8K purpose-built BPE vocabulary measured against
    cl100k_base on *toke* text — a comparison of two tokenizers on one
    text, not a comparison with Python — and it is superseded by the
@@ -2206,7 +2209,7 @@ Table of Contents
    M3    LLVM IR backend, hello world to native binary            4    DONE
    M4    stdlib core: http, db, json, file                        6    DONE
    M5    Corpus: ~47K programs across Phases A-D                  8    DONE
-   M5.5  GATE 1: token efficiency + Pass@1 results                8    DONE (PASS)
+   M5.5  GATE 1: token efficiency + Pass@1 results                8    NOT PASSED
    M6    7B fine-tune, first accuracy benchmark                  10    DONE
    M7    Phase B-C corpus expansion                              14    —
    M8    Production profile tokenizer trained                     16    —
@@ -2229,7 +2232,7 @@ Table of Contents
    Pass@1 was corrected on 2026-09-19 to 58.8% (588 of 1,000
    generated; 63.7% was 588/923, after non-compiling solutions had
    been dropped from the denominator), which is BELOW the threshold,
-   so the verdict is re-opened and has not been re-decided.  Its
+   and on 2026-09-22 the owner decided Gate 1 NOT PASSED.  Its
    token criterion was met on the tokenizer lane only and is
    superseded (Sections 5.3 and 20).
    The milestone table above is historical: the dates after M6 have

@@ -668,9 +668,10 @@ When coordinating parallel sprints:
 Several workers share one repository. These rules exist because each was
 broken in practice, and the consequence is recorded beside it.
 
-**Never `git add -A`, `git add .`, or `git commit -a`.** On 2026-09-21 three
-commits silently reverted other workers' in-flight edits this way — one
-undid an entire fix, 226 deletions, and nobody noticed for hours.
+**Never `git add -A`, `git add .`, or `git commit -a`.** On 2026-09-19 three
+commits silently reverted other workers' in-flight edits this way (`00347fc`,
+`5334d4f`, `3771868`; story 132.34) — one undid an entire fix, 226 deletions,
+and nobody noticed for hours.
 
 **Commit by explicit pathspec:**
 

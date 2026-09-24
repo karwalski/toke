@@ -794,9 +794,6 @@ The checker reports it, so `tkc --check` sees it. Lowering reports it too, for
 a map whose type the checker cannot recover — `let m2 = m.set(k;v)` is typed by
 the backend's map tag and by nothing in the checker.
 
-Note that `m.values()`, the call form, is not this diagnostic: it has no
-implementation at all and currently fails at link time as an undefined symbol.
-
 No `fix` is supplied. There is no deterministic repair: `values` has no method
 form and no runtime support, so "add the parentheses" would be wrong — the
 lesson of 131.78 — and a did-you-mean for an arbitrary misspelling is a guess.
