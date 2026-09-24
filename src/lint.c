@@ -693,6 +693,113 @@ static int qual_type_used_in(const Node *node, const char *name, int name_len,
     return 0;
 }
 
+/* ── Unqualified references to a type no local declaration provides (137.8)
+ *
+ * An import does not only bring its alias into scope. Its record and sum
+ * types are also reachable UNQUALIFIED: `i=t:shared.types;` followed by
+ * `f=code(e:$lokeerr):i64{…}` resolves `$lokeerr` through the import, and
+ * the alias `t` never appears again. Deleting that import is E3011
+ * (`identifier 'lokeerr' is not declared`) on the next compile — measured on
+ * loke as 197 imports deleted in 119 files, with `--fix` reporting success.
+ *
+ * Lint runs on the parsed AST alone, before name resolution, so it cannot say
+ * WHICH import supplies such a name. What it can say exactly is whether the
+ * file refers to any type name that nothing in this file declares. When it
+ * does, no import can be proved unused, and the rule stays silent: a fix
+ * must never change what the program means (127.81), and a warning that
+ * cannot be acted on safely is not one to offer.
+ *
+ * Locally declared names are the `t=$name{…}` declarations and every field
+ * label inside them — a sum type's variants are fields, and match arms name
+ * them as `$variant:binding` — plus the names every program has without an
+ * import: names.c's `predefined[]` seed (true/false/…/ok/err/none) and the
+ * parser's scalar list (`is_scalar`, which also accepts `$str`, `$f64`, …).
+ * Keep this list in step with those two; a name missing here only makes the
+ * rule more cautious, never wrong.
+ */
+static const char *const lint_predefined_types[] = {
+    /* src/names.c predefined[] */
+    "true", "false", "bool", "i64", "u64", "f64", "str", "void",
+    "ok", "err", "none",
+    /* src/parser.c is_scalar() */
+    "u8", "u16", "u32", "i8", "i16", "i32", "f32", "byte", "Str", "Byte",
+    NULL
+};
+typedef struct { const char *s[256]; int n[256]; int count; int overflow; } NameSet;
+
+static void nameset_add(NameSet *ns, const char *s, int n)
+{
+    if (n <= 0) return;
+    if (ns->count >= 256) { ns->overflow = 1; return; }
+    ns->s[ns->count] = s; ns->n[ns->count] = n; ns->count++;
+}
+
+static int nameset_has(const NameSet *ns, const char *s, int n)
+{
+    for (int i = 0; i < ns->count; i++)
+        if (ns->n[i] == n && memcmp(ns->s[i], s, (size_t)n) == 0) return 1;
+    return 0;
+}
+
+/* The identifier text at a node's token, skipping a leading '$'. */
+static int node_name(const Node *n, const char *src, const char **out)
+{
+    int p = n->tok_start, e;
+    if (src[p] == '$') p++;
+    e = p;
+    while (isalnum((unsigned char)src[e]) || src[e] == '_') e++;
+    *out = src + p;
+    return e - p;
+}
+
+static void collect_local_type_names(const Node *n, const char *src,
+                                     NameSet *ns, int in_type_decl)
+{
+    const char *s; int len;
+    if (!n) return;
+    if (n->kind == NODE_TYPE_DECL) in_type_decl = 1;
+    if (in_type_decl && (n->kind == NODE_FIELD ||
+                         (n->kind == NODE_TYPE_IDENT && n->op != TK_DOT))) {
+        len = node_name(n, src, &s);
+        nameset_add(ns, s, len);
+    }
+    for (int i = 0; i < n->child_count; i++)
+        collect_local_type_names(n->children[i], src, ns, in_type_decl);
+}
+
+static int foreign_type_ref_in(const Node *n, const char *src, const NameSet *ns)
+{
+    const char *s; int len;
+    if (!n) return 0;
+    if ((n->kind == NODE_TYPE_IDENT && n->op != TK_DOT) ||
+        n->kind == NODE_STRUCT_LIT) {
+        len = node_name(n, src, &s);
+        if (len > 0 && !nameset_has(ns, s, len)) return 1;
+    }
+    for (int i = 0; i < n->child_count; i++)
+        if (foreign_type_ref_in(n->children[i], src, ns)) return 1;
+    return 0;
+}
+
+/* Does any non-import declaration name a type this file does not declare? */
+static int program_has_foreign_type_ref(const Node *root, const char *src)
+{
+    NameSet ns;
+    memset(&ns, 0, sizeof ns);
+    for (int i = 0; lint_predefined_types[i]; i++)
+        nameset_add(&ns, lint_predefined_types[i],
+                    (int)strlen(lint_predefined_types[i]));
+    for (int i = 0; i < root->child_count; i++)
+        collect_local_type_names(root->children[i], src, &ns, 0);
+    if (ns.overflow) return 1;   /* cannot tell — assume the worst */
+    for (int i = 0; i < root->child_count; i++) {
+        const Node *d = root->children[i];
+        if (!d || d->kind == NODE_IMPORT) continue;
+        if (foreign_type_ref_in(d, src, &ns)) return 1;
+    }
+    return 0;
+}
+
 /* ── Rule: unused-import ──────────────────────────────────────────────── */
 
 /*
@@ -705,6 +812,10 @@ static int rule_unused_import(const Node *root, const char *src,
                               const LintOptions *opts, LintResult *out)
 {
     if (!root || root->kind != NODE_PROGRAM) return 0;
+
+    /* 137.8: an unqualified `$type` this file does not declare arrives through
+     * SOME import, and lint cannot tell which — so none is provably unused. */
+    if (program_has_foreign_type_ref(root, src)) return 0;
 
     for (int i = 0; i < root->child_count; i++) {
         const Node *imp = root->children[i];
