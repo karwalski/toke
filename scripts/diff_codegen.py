@@ -38,8 +38,32 @@ STALE and fails the gate, so a quarantined defect cannot be quietly fixed and
 left rotting in the list. `--record` refuses to write an unquarantined
 unhealthy signature at all, which is the step that would otherwise re-bless a
 fresh crash the moment someone re-records.
+
+── A program that reports its own failure is not healthy (story 124.2f-a) ───
+
+127.139 closed the crash class and left a quieter one open: a program that
+prints `FAIL <assertion>` in words, exits normally, and is baselined as
+stable. test_crypto.tk / test_encoding.tk / test_encoding_full.tk were
+recorded that way for months ([True, 2, ...], [True, 2, ...], [True, 5, ...])
+while printing the 3.0.0 crypto defect verbatim.
+
+The decision is NOT to treat a non-zero exit as unhealthy. Measured on the
+2026-09-24 baseline: 36 of 118 programs exit non-zero, and 31 of those do so
+by design -- 30 test/e2e programs return their computed answer as the exit
+code (e2e_add exits 7, e2e_return exits 42) and test_shadow_retype.tk returns
+conv("100.0") == 1. A rule that needs 31 correct programs quarantined is a
+rule that trains people to quarantine.
+
+What IS the failure signal is the one this repository already uses: a stdout
+line that begins with `FAIL`. test/standalone/run_all.sh tallies exactly
+`grep -c "^FAIL"`. So a program whose stdout carries such a line is unhealthy
+("reports N failing assertion(s)") and fails the gate unless quarantined --
+the same contract as a crash. The line is read at probe time and not stored
+in the signature, so the baseline format does not change.
 """
-import sys, os, subprocess, hashlib, json, tempfile, argparse, glob
+import sys, os, re, subprocess, hashlib, json, tempfile, argparse, glob
+
+FAIL_LINE = re.compile(rb"^FAIL", re.MULTILINE)
 
 TOKE = os.environ.get("TOKE", "./toke")
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -48,14 +72,21 @@ QUARANTINE = os.path.join(REPO_ROOT, "test", "codegen-quarantine.txt")
 def is_full_program(src):
     return ("f=main" in src) or ("f= main" in src)
 
-def unhealthy(sig):
+# Programs whose stdout reported a failing assertion, by relpath -> count.
+# Filled by probe(); see the 124.2f-a note in the module docstring.
+REPORTED_FAIL = {}
+
+def unhealthy(sig, key=None):
     """Return a human reason if this signature is not a clean compile-and-run.
 
     None means healthy: compiled, ran, exited normally (any exit code — a test
-    that deliberately exits 3 is a legitimate baseline).
+    that deliberately exits 3 is a legitimate baseline) and printed no line
+    beginning with FAIL.
     """
     if sig is None:
         return None
+    if key is not None and REPORTED_FAIL.get(key):
+        return f"reports {REPORTED_FAIL[key]} failing assertion(s) (stdout ^FAIL)"
     compiled, code = sig[0], sig[1]
     if compiled == "compile-timeout":
         return "compile timed out"
@@ -89,7 +120,7 @@ def load_quarantine(path=QUARANTINE):
             entries[key] = reason
     return entries
 
-def probe(tk):
+def probe(tk, key=None):
     with tempfile.TemporaryDirectory() as d:
         out = os.path.join(d, "b")
         try:
@@ -118,6 +149,9 @@ def probe(tk):
         # gate unless the program is quarantined.
         if rr.returncode < 0:
             return [True, "signal", None]
+        nfail = len(FAIL_LINE.findall(rr.stdout))
+        if nfail and key is not None:
+            REPORTED_FAIL[key] = nfail
         return [True, rr.returncode, hashlib.sha256(rr.stdout).hexdigest()[:16]]
 
 def collect(dirs):
@@ -130,7 +164,8 @@ def collect(dirs):
                 continue
             if not is_full_program(src):
                 continue
-            sig[os.path.relpath(tk)] = probe(tk)
+            key = os.path.relpath(tk)
+            sig[key] = probe(tk, key)
     return sig
 
 def main():
@@ -145,12 +180,12 @@ def main():
 
     # Health classification runs for both --record and --baseline: the point is
     # that an unhealthy program can never enter the baseline in the first place.
-    broken = [(k, unhealthy(v)) for k, v in sorted(cur.items())
-              if unhealthy(v) and k not in quarantined]
+    broken = [(k, unhealthy(v, k)) for k, v in sorted(cur.items())
+              if unhealthy(v, k) and k not in quarantined]
     # A quarantined program that is now healthy: the defect is fixed, so the
     # line must go (same self-failing contract as check_tki_skiplist.txt).
     stale = [k for k in sorted(quarantined)
-             if k in cur and not unhealthy(cur[k])]
+             if k in cur and not unhealthy(cur[k], k)]
 
     for k, why in broken:
         print(f"  BROKEN  {k}\n    {why}; signature {cur[k]}\n"
