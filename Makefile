@@ -984,7 +984,7 @@ test-ci: test-ci-green
 # leave it out. It is a prerequisite of `ci` as of this line.
 #
 # `$(BIN)` is already its own prerequisite, so ordering with `conform` is free.
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans fuzz-smoke check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans fuzz-smoke check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -1147,6 +1147,41 @@ check-claims-all:
 # so the binary's own strings cannot drift from the lexer table.
 check-facts: $(BIN)
 	python3 scripts/verify_project_facts.py --check
+
+# ── 136.58 / 136.49 / 136.59: combinator-status.md is rendered, and gated ────
+# docs/reference/combinator-status.md was transcribed by hand from
+# patterns/probe/probe_results.json; the JSON stayed right and ~20 rows rotted
+# (136.53), and run_probes.sh was in no target, so nothing noticed (136.49).
+#
+#   check-combinator-status  cheap, deterministic: the committed document is
+#       exactly what scripts/render_combinator_status.py renders from the
+#       committed JSON + template.  Also fails if a probe has no row, a row
+#       names a probe with no result, a row's probes disagree, or the JSON
+#       does not cover patterns/probe/*.tk.
+#   check-probes  re-runs every probe against THIS compiler (pinned copy,
+#       private TMPDIR, a gate slot -- scripts/conform_isolated.sh exec) and
+#       fails if any probe's verdict differs from the committed JSON.  Slow:
+#       it compiles and runs ~136 programs.
+#   render-combinator-status  re-render the document; with PROBES=1, re-run
+#       the probes into the committed JSON first.
+.PHONY: check-combinator-status check-probes render-combinator-status
+check-combinator-status:
+	python3 scripts/render_combinator_status.py
+
+check-probes: $(BIN)
+	@bash scripts/conform_isolated.sh exec -- sh -c '\
+	  f="$$TMPDIR/probe_results.json"; \
+	  bash patterns/probe/run_probes.sh "$$TKC" "$$f" > "$$TMPDIR/probes.log" 2>&1 \
+	    || { echo "check-probes: run_probes.sh failed:"; tail -20 "$$TMPDIR/probes.log"; exit 1; }; \
+	  echo "probes: $$(tail -1 "$$TMPDIR/probes.log")"; \
+	  python3 scripts/render_combinator_status.py --compare "$$f"'
+
+render-combinator-status:
+ifeq ($(PROBES),1)
+	@$(MAKE) --no-print-directory $(BIN)
+	@bash scripts/conform_isolated.sh exec -- bash patterns/probe/run_probes.sh "" patterns/probe/probe_results.json
+endif
+	python3 scripts/render_combinator_status.py --write
 
 # 132.58a — structural gate on docs/progress.md, the canonical tracker. Until
 # this existed the file that tracks every epic was checked by nothing at all,
