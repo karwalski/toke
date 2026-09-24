@@ -113,8 +113,14 @@ def main():
     # build trees hold no .tki, and today the two sets are identical (68
     # files), so widening it costs nothing and closes the hole before someone
     # adds the first .tki outside stdlib/.
+    # A nested git tree (a worktree under .claude/worktrees/, a vendored
+    # checkout) is another repository's state, not this one's: sweeping it
+    # made the gate report a stale worktree's 64 names as this tree's.
+    nested = {d for d in root.rglob(".git") if d.parent != root}
+    nested_roots = [d.parent for d in nested]
     files = sorted(p for p in root.rglob("*.tki")
-                   if ".git" not in p.parts and "node_modules" not in p.parts)
+                   if ".git" not in p.parts and "node_modules" not in p.parts
+                   and not any(n in p.parents for n in nested_roots))
     if not files:
         print("FAIL anchor: no *.tki files found — the check cannot run",
               file=sys.stderr)
