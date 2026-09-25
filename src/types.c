@@ -1725,6 +1725,104 @@ static Type *arm_bind_lookup(Ctx *cx, const char *nb, int nlen, const Node *use)
     return NULL;
 }
 
+/*
+ * 127.202 — a `$ok`/`$err` match over a value that is not an error union.
+ *
+ * Codegen lowers a result match as `value != 0 ? $ok : $err` (emit_expr,
+ * NODE_MATCH_STMT: "non-zero i64 = Ok, zero i64 = Err").  Over a real
+ * error union that is the fallible-call convention.  Over a plain scalar it
+ * is a test against zero: `mt process.wait(h) {$ok:v v;$err:e 1}` —
+ * process.wait returns an i32 exit status — takes `$err` exactly when the
+ * child SUCCEEDED, and printed 1 for an exit of 0.  That silently broke
+ * `ooke compile`.
+ *
+ * mt_nonunion_scalar answers the scalar type spelling when the scrutinee is
+ * KNOWN to be a non-union scalar (where 0 is an ordinary value), else NULL:
+ *   - a numeric or bool literal;
+ *   - a call to a user function whose declared return is a scalar;
+ *   - a module-form call whose interface record states a scalar return with
+ *     no "error" key, and is not a `"gen":"abi"` placeholder record;
+ *   - a parameter annotated with a scalar type, or a `let` annotated with
+ *     one or bound to one of the above.
+ * Deliberately NOT judged: pointer-typed values (str, arrays, structs) —
+ * the zero test is then a null test, which is how every fallible stdlib
+ * pointer return signals failure, so an interface that omits its "error"
+ * key would be a false diagnostic; receiver calls and `.get` (optional
+ * results); anything the checker could not type.
+ */
+static const char *import_module_path(Ctx *cx, const char *alias,
+                                      char *buf, size_t bufsz);
+static int kind_is_scalar(TypeKind k) {
+    switch (k) {
+    case TY_BOOL: case TY_I64: case TY_U64: case TY_F64: case TY_I8:
+    case TY_I16: case TY_I32: case TY_U8: case TY_U16: case TY_U32:
+    case TY_F32: return 1;
+    default: return 0;
+    }
+}
+static int spelling_is_scalar(const char *t) {
+    static const char *sc[] = { "bool", "i64", "u64", "f64", "i8", "i16",
+                                "i32", "u8", "u16", "u32", "f32", "byte", NULL };
+    if (!t) return 0;
+    for (int i = 0; sc[i]; i++) if (strcmp(t, sc[i]) == 0) return 1;
+    return 0;
+}
+static const char *mt_nonunion_scalar(Ctx *cx, const Node *scr, int depth) {
+    if (!scr || depth > 2) return NULL;
+    switch (scr->kind) {
+    case NODE_INT_LIT:   return "i64";
+    case NODE_FLOAT_LIT: return "f64";
+    case NODE_BOOL_LIT:  return "bool";
+    case NODE_CALL_EXPR: {
+        if (scr->child_count < 1 || !scr->children[0]) return NULL;
+        const Node *callee = scr->children[0];
+        if (callee->kind == NODE_FIELD_EXPR) {
+            if (callee->child_count < 2 || !callee->children[0]
+                || callee->children[0]->kind != NODE_IDENT || !callee->children[1])
+                return NULL;
+            char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
+            char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+            char mbuf[256];
+            if (!import_module_path(cx, ab, mbuf, sizeof mbuf)) return NULL;
+            Decl *d = tc_lookup(cx->env->names->module_scope, ab, (int)strlen(ab));
+            if (d && d->kind != DECL_IMPORT_ALIAS) return NULL;
+            const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
+            if (!f || f->abi_ret || f->okret || !f->ret) return NULL;
+            return spelling_is_scalar(f->ret) ? f->ret : NULL;
+        }
+        if (callee->kind != NODE_IDENT) return NULL;
+        Type *rt = call_decl_ret_type(cx, scr);
+        return rt && kind_is_scalar(rt->kind) ? type_name(rt) : NULL;
+    }
+    case NODE_IDENT: {
+        if (!cx->fn_node) return NULL;
+        char nb[128]; TOKSTR(nb, cx->src, scr);
+        int nlen = (int)strlen(nb);
+        if (arm_bind_lookup(cx, nb, nlen, scr)) return NULL;
+        for (int pi = 0; pi < cx->fn_node->child_count; pi++) {
+            const Node *pc = cx->fn_node->children[pi];
+            if (!pc || pc->kind != NODE_PARAM || pc->child_count < 2) continue;
+            char pn[128]; TOKSTR(pn, cx->src, pc->children[0]);
+            if (strcmp(pn, nb) != 0) continue;
+            Type *pt = resolve_type(cx, pc->children[1]);
+            return pt && kind_is_scalar(pt->kind) ? type_name(pt) : NULL;
+        }
+        const Node *bn = local_in_force(cx, nb, nlen, scr);
+        if (!bn || (bn->kind != NODE_BIND_STMT && bn->kind != NODE_MUT_BIND_STMT))
+            return NULL;
+        if (bn->child_count > 2 && bn->children[1]) {
+            Type *lt = resolve_type(cx, bn->children[1]);
+            return lt && kind_is_scalar(lt->kind) ? type_name(lt) : NULL;
+        }
+        if (bn->child_count == 2 && bn->children[1])
+            return mt_nonunion_scalar(cx, bn->children[1], depth + 1);
+        return NULL;
+    }
+    default:
+        return NULL;
+    }
+}
+
 static Type *bind_init_type(Ctx *cx, const Node *bn) {
     if (!bn || bn->child_count < 2 || !bn->children[1]) return NULL;
     const Node *initN = bn->children[1];
@@ -4427,6 +4525,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (node->child_count<1) return mk_type(A,TY_VOID);
         Type *scr=infer(cx,node->children[0]),*arm_type=NULL; int has_t=0,has_f=0;
         int discarded=(cx->mt_discard==node);
+        int has_result_arm=0;   /* 127.202 */
         /* Collect match arm variant names for sum type exhaustiveness check */
         const char *arm_tags[64]; int arm_tag_count=0;
         for (int i=1;i<node->child_count;i++) {
@@ -4440,6 +4539,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (arm->child_count>0&&arm->children[0]&&arm->children[0]->kind==NODE_TYPE_IDENT) {
                 char tb[128]; TOKSTR(tb,cx->src,arm->children[0]);
                 if (arm_tag_count<64) arm_tags[arm_tag_count++]=ty_intern(A,tb);
+                if (!strcmp(tb,"ok")||!strcmp(tb,"Ok")||!strcmp(tb,"err")||!strcmp(tb,"Err"))
+                    has_result_arm=1;
             }
             /* 127.195: the arm's BODY is children[2]; children[1] is the
              * binding name.  Until this was fixed only the binding was
@@ -4484,6 +4585,20 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 diag_emit(DIAG_ERROR,E4011,body->start,body->line,body->col,msg,
                           "expected",type_name(arm_type),"got",type_name(at),
                           (const char*)NULL);
+            }
+        }
+        /* 127.202: a result match over a known non-union scalar. */
+        if (has_result_arm) {
+            const char *st=mt_nonunion_scalar(cx,node->children[0],0);
+            if (st&&tc_first_report(cx,node->children[0])&&tc_can_emit(cx)) {
+                const Node *sn=node->children[0];
+                char msg[384];
+                snprintf(msg,sizeof(msg),
+                    "type mismatch: expected an error union 'T!E', got '%s' — a "
+                    "'$ok'/'$err' match tests the value against 0, so a plain '%s' "
+                    "takes '$err' whenever it is 0",st,st);
+                diag_emit(DIAG_ERROR,E4031,sn->start,sn->line,sn->col,msg,
+                          "expected","T!E","got",st,(const char*)NULL);
             }
         }
         /* Bool exhaustiveness check */

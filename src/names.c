@@ -1075,6 +1075,7 @@ static void nameenv_add_ifunc(NameEnv *env, Arena *arena, const char *alias,
     }
     env->ifuncs[env->ifunc_count].param_types = ptypes;
     env->ifuncs[env->ifunc_count].param_count = ptypes ? pcount : 0;
+    env->ifuncs[env->ifunc_count].abi_ret = 0;
     env->ifunc_count++;
 }
 
@@ -1169,7 +1170,16 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
                     }
                 }
             }
+            int before = env->ifunc_count;
             nameenv_add_ifunc(env, arena, alias, name, ret, okret, ptypes, pcount);
+            {   /* 127.202: a generated ABI record's return is a placeholder */
+                char gen[16] = {0};
+                if (env->ifunc_count > before
+                    && tki_str_value(tki_obj_key(rec, end, "gen"), end,
+                                     gen, (int)sizeof gen)
+                    && strcmp(gen, "abi") == 0)
+                    env->ifuncs[env->ifunc_count - 1].abi_ret = 1;
+            }
             continue;
         }
         if (strcmp(kind, "type") != 0) continue;
