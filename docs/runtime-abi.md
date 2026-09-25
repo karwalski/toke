@@ -215,9 +215,9 @@ outlive the frame that raised it.
 **Ownership (127.109).** It is *not* `malloc`'d per error. Each thread owns
 exactly one error-box buffer (`tk_err_box`, `tk_runtime.c`), **reused by every
 raise on that thread**. A box is valid until the next raise on the same
-thread, which is exactly the window restriction 1 in §7.5 already defines for
-the `$err` arm's binding — so the rule adds no restriction, and there is
-nothing to free per error.
+thread, and so is the `$err` arm's binding of it — so there is nothing to free
+per error. A `let`-bound fallible value is the one place a box must outlive
+later raises, and it keeps its own copy (127.103, §7.5 item 1).
 
 The buffer is an inline thread-local array sized for the common box (a 2-slot
 sum, or a record of up to 8 fields), so the usual error return performs **no
@@ -297,10 +297,19 @@ zero filler.
 
 These are limitations of the current lowering, not of the design:
 
-1. **The payload is bound only when the `mt` scrutinee is the call
-   itself.** `let r = f(x); mt r {…}` binds nil in the `$err` arm,
-   because the slot is a single global and any call between the `let`
-   and the `mt` overwrites it. Match on the call directly.
+1. ~~**The payload is bound only when the `mt` scrutinee is the call
+   itself.**~~ **Fixed, 135.16 and 127.103.** 135.16 spilled the slot into a
+   per-binding local at the `let`, so `let r = f(x); mt r {…}` takes the
+   right arm. That was not yet a capture of the *payload*: the slot holds a
+   pointer into the one per-thread box (127.109), and the next raise on the
+   thread rewrote it, so `let a = g(0); let z = g(-1); mt a {…}` bound z's
+   payload (`1099` for `77`, measured at `2e932d6`). The `let` now copies the
+   box into a frame buffer the binding owns (`tk_err_keep`), and the `$err`
+   arm copies it back into the thread box (`tk_err_rebox`), so the bound `e`
+   has exactly the direct spelling's lifetime — valid until the next raise —
+   and never points into a frame it could outlive. No allocation: the copy is
+   an entry-block `alloca`. `test/conform/C084` pins it, including a
+   re-assigned binding and one inside a loop.
 2. ~~**The slot is process-wide, not thread-local.**~~ **Fixed, 127.101.**
    It is thread-local, as the compiler comments always claimed and this
    document previously denied. `tk_runtime.c` defines it `TK_TLS` and
@@ -345,8 +354,9 @@ three states. Both are supplied above.
 Restriction 2 was named here as the trigger that would force the question.
 127.101 answered it the cheaper way — a thread-local slot — so the trigger
 is spent and the two-word return is **not** required for concurrent error
-reporting. What would still force it is a caller needing two error payloads
-live at once, which restriction 1 forbids independently of this.
+reporting. A caller holding two error payloads live at once — the case
+that would otherwise have forced it — is now served by the `let` keeping its
+own copy of the box (127.103), still without changing any signature.
 
 ---
 

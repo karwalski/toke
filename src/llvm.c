@@ -3220,6 +3220,24 @@ static void fallible_local_forget(Ctx *c, const char *lname)
     c->fall_errty[i][0] = '\0';
 }
 
+/*
+ * err_box_bytes — 127.103.  The size of the error box an error type's raise
+ * builds (runtime-abi.md §7.3): 16 for a sum ({tag, payload}), 8 per field
+ * for a record, 0 for no box at all (no payload type, or a `str` payload,
+ * which is the message pointer itself and is never reused).
+ */
+static int err_box_bytes(Ctx *c, const char *err_type)
+{
+    if (!err_type || !strcmp(err_type, "str")) return 0;
+    const StructInfo *si = lookup_struct(c, err_type);
+    if (!si) return 0;
+    if (si->is_sum) return 16;
+    int n = si->field_count;
+    if (n <= 0) return 0;
+    if (n > TKC_MAX_PARAMS) n = TKC_MAX_PARAMS;
+    return n * 8;
+}
+
 /* Record `lname` as fallible and spill the channel.  `errv` is the temporary
  * already holding the load of @tk_current_error taken right after the call;
  * -1 means there is nothing to spill (the void status-word convention reads
@@ -3246,6 +3264,24 @@ static void fallible_local_record(Ctx *c, const char *lname, int uce, int zok,
         if (!c->fall_slot[i][0]) {
             snprintf(c->fall_slot[i], NAME_BUF, "%s.tkerr", lname);
             fprintf(c->out, "  %%%s = alloca i64\n", c->fall_slot[i]);
+            /* 127.103: the binding's own copy of the error box.  Minted with
+             * the slot (an assignment may later bind a boxed error to it);
+             * dead, and so removed, when nothing ever keeps a box in it. */
+            fprintf(c->out, "  %%%s.keep = alloca [%d x i64]\n", c->fall_slot[i], TKC_MAX_PARAMS);
+        }
+        /* 127.103: the channel holds a POINTER into the thread's one reused
+         * error box (127.109), so spilling the pointer was not a capture: the
+         * next raise on this thread overwrote the box it pointed at, and a
+         * later `mt` read that raise's payload (`1099` for 77).  Copy the box
+         * into the binding's own buffer and spill a pointer to the copy. */
+        int keep_nb = err_box_bytes(c, err_type);
+        if (keep_nb > 0) {
+            int kp = next_tmp(c), kv = next_tmp(c);
+            fprintf(c->out, "  %%t%d = bitcast [%d x i64]* %%%s.keep to i8*\n",
+                    kp, TKC_MAX_PARAMS, c->fall_slot[i]);
+            fprintf(c->out, "  %%t%d = call i64 @tk_err_keep(i64 %%t%d, i8* %%t%d, i64 %d) ; 127.103\n",
+                    kv, errv, kp, keep_nb);
+            errv = kv;
         }
         fprintf(c->out, "  store i64 %%t%d, i64* %%%s ; 135.16 error channel at the binding\n",
                 errv, c->fall_slot[i]);
@@ -6766,6 +6802,17 @@ static int emit_expr(Ctx *c, const Node *n)
                     int boxed = next_tmp(c);
                     fprintf(c->out, "  %%t%d = select i1 %%t%d, i64 0, i64 %%t%d\n", boxed, isflag, ev);
                     ev = boxed;
+                    /* 127.103: a let-bound payload lives in the binding's
+                     * frame copy; hand the arm a thread box like the direct
+                     * spelling's, so `e` has the same lifetime either way and
+                     * never points into a frame it could outlive. */
+                    { int rb_nb = err_src_slot ? err_box_bytes(c, eu_err_type) : 0;
+                      if (rb_nb > 0) {
+                          int rb = next_tmp(c);
+                          fprintf(c->out, "  %%t%d = call i64 @tk_err_rebox(i64 %%t%d, i64 %d) ; 127.103\n",
+                                  rb, ev, rb_nb);
+                          ev = rb;
+                      } }
                     if (err_is_str) {
                         int sp = next_tmp(c);
                         fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8* ; 135.5b str payload\n", sp, ev);
@@ -9581,6 +9628,9 @@ static const StdlibDecl g_stdlib_decls[] = {
     /* 127.109: the per-thread error box.  Error-union boxes come from here,
      * not malloc — one buffer per thread, reused, never leaked. */
     {"tk_err_box", "declare i8* @tk_err_box(i64)", 0},
+    /* 127.103: a let-bound error keeps its own copy of the box. */
+    {"tk_err_keep", "declare i64 @tk_err_keep(i64, i8*, i64)", 0},
+    {"tk_err_rebox", "declare i64 @tk_err_rebox(i64, i64)", 0},
     /* Runtime: json/str */
     {"tk_json_parse", "declare i64 @tk_json_parse(i8*)", 0},
     {"tk_json_print", "declare void @tk_json_print(i64)", 0},
