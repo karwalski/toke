@@ -1,10 +1,10 @@
 {
  "story": "131.2",
  "tkc_version": "toke 3.0.0",
- "tkc_sha": "4c8a4b0cdfef3316f7e5b470aca5cb47d0ee295b",
- "tkc_bin_sha": "bb6f1c0b97fce15bc1b4b20147cb2f51fc66d228473c0b57ac1a09b0ae866abc",
- "tkc_path": "toke",
- "generated": "2026-09-24",
+ "tkc_sha": "c4625aeb421fee33f46741aeefb3aabb9cd4f17e",
+ "tkc_bin_sha": "9eb3ef461b64c5bf2b0fb9f2ec0b8944562ff88a9c104aaab8701a317b4f2957",
+ "tkc_path": "tkc",
+ "generated": "2026-09-25",
  "summary": {
   "probes": 136,
   "check_ok": 106,
@@ -197,9 +197,9 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "true"
    },
-   "expected": "1",
+   "expected": "true",
    "correct": true
   },
   {
@@ -218,9 +218,9 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "true"
    },
-   "expected": "1",
+   "expected": "true",
    "correct": true
   },
   {
@@ -491,9 +491,9 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "true"
    },
-   "expected": "1",
+   "expected": "true",
    "correct": true
   },
   {
@@ -2339,9 +2339,9 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "true"
    },
-   "expected": "1",
+   "expected": "true",
    "correct": true
   },
   {
@@ -2381,9 +2381,9 @@
    "run": {
     "exit": 0,
     "ok": true,
-    "stdout": "1"
+    "stdout": "true"
    },
-   "expected": "1",
+   "expected": "true",
    "correct": true
   },
   {

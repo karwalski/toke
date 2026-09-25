@@ -34,10 +34,10 @@ and when a fresh probe run disagrees with the committed JSON
 
 | field | value |
 |---|---|
-| measured | 2026-09-24 |
+| measured | 2026-09-25 |
 | compiler | `toke 3.0.0` |
-| binary sha256 | `bb6f1c0b97fce15bc1b4b20147cb2f51fc66d228473c0b57ac1a09b0ae866abc` |
-| source tree | `4c8a4b0cdfef3316f7e5b470aca5cb47d0ee295b` |
+| binary sha256 | `9eb3ef461b64c5bf2b0fb9f2ec0b8944562ff88a9c104aaab8701a317b4f2957` |
+| source tree | `c4625aeb421fee33f46741aeefb3aabb9cd4f17e` |
 | result | **108 of 136 probes correct** (check clean 106, build clean 106, ran clean 105) |
 
 The `toke` binary is an untracked local build artifact, so the source SHA
