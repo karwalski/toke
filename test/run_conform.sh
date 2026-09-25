@@ -290,7 +290,12 @@ sys.exit(0)
             fail_reasons+=("fix field expected absent but was present in diagnostic output")
         fi
     elif [ -n "${expected_fix}" ]; then
-        if ! echo "${diag_json_output}" | grep -q "\"fix\".*\"${expected_fix}\""; then
+        # 127.184: a fixed-string match on the whole `"fix":"<value>"` pair.
+        # The old pattern was a regex with `.*` between the key and the value,
+        # so it matched the value in any later field, and a fix containing a
+        # bracket (E1003's "replace '[' ...") was an unbalanced-bracket regex
+        # error that could never pass.
+        if ! printf '%s\n' "${diag_json_output}" | grep -qF "\"fix\":\"${expected_fix}\""; then
             pass=false
             fail_reasons+=("fix field expected \"${expected_fix}\" not found in diagnostic output")
         fi
