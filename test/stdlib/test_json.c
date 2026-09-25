@@ -19,6 +19,25 @@ int64_t tk_json_encbool_w(int64_t b);
 int64_t tk_json_encf64_w(int64_t bits);
 int64_t tk_json_encarr_w(int64_t h, int64_t depth, int64_t kind);
 
+/* 127.193: the scalar accessors now keep the error slot truthful and raise
+ * through tk_err_box, both of which live in tk_runtime.c.  This test links
+ * json_glue.c without the runtime, so it provides the two symbols itself —
+ * thread-local, because a plain global against the glue's TLS extern links
+ * silently and then SIGBUSes (127.101). */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+_Thread_local int64_t tk_current_error = 0;
+#else
+__thread int64_t tk_current_error = 0;
+#endif
+static int64_t g_errbox[8];
+void *tk_err_box(int64_t nbytes) { (void)nbytes; memset(g_errbox, 0, sizeof g_errbox); return g_errbox; }
+
+int64_t tk_json_bool_w(int64_t obj, int64_t key);
+int64_t tk_json_getbool_w(int64_t obj, int64_t key);
+int64_t tk_json_i64_w(int64_t obj, int64_t key);
+int64_t tk_json_f64_w(int64_t obj, int64_t key);
+int64_t tk_json_u64_w(int64_t obj, int64_t key);
+
 static int g_pass = 0;
 static int g_fail = 0;
 
@@ -591,6 +610,46 @@ int main(void) {
         const char *gs = (const char *)(intptr_t)tk_json_encarr_w(so, 2, 1);
         CHECK(gs && strcmp(gs, "[[\"x\",\"y\"]]") == 0,
               "127.45 encarr: @@str nests with quoting");
+    }
+
+    /* --- 127.193: a false / 0 / 0.0 value is not an error --------------
+     * The slot is poisoned before each call, so "the wrapper never wrote it"
+     * reads as a failure rather than an accidental pass. */
+    {
+        JsonResult zr = json_dec("{\"off\":false,\"on\":true,\"n\":0,\"u\":0,\"x\":0.0,\"s\":\"str\"}");
+        Json *zj = &zr.ok;
+        int64_t o = (int64_t)(intptr_t)zj;
+#define K(s) ((int64_t)(intptr_t)(s))
+        tk_current_error = 0x5eed;
+        int64_t v = tk_json_getbool_w(o, K("off"));
+        CHECK(v == 0 && tk_current_error == 0, "127.193 getbool of false: value 0, slot clear");
+        tk_current_error = 0x5eed;
+        v = tk_json_bool_w(o, K("on"));
+        CHECK(v == 1 && tk_current_error == 0, "127.193 bool of true: value 1, slot clear");
+        tk_current_error = 0x5eed;
+        v = tk_json_i64_w(o, K("n"));
+        CHECK(v == 0 && tk_current_error == 0, "127.193 i64 of 0: slot clear");
+        tk_current_error = 0x5eed;
+        v = tk_json_u64_w(o, K("u"));
+        CHECK(v == 0 && tk_current_error == 0, "127.193 u64 of 0: slot clear");
+        tk_current_error = 0x5eed;
+        v = tk_json_f64_w(o, K("x"));
+        CHECK(v == 0 && tk_current_error == 0, "127.193 f64 of 0.0: slot clear");
+
+        tk_current_error = 0;
+        v = tk_json_bool_w(o, K("absent"));
+        int64_t *box = (int64_t *)(intptr_t)tk_current_error;
+        CHECK(box == g_errbox && box[0] == JSON_ERR_MISSING && box[1] != 0,
+              "127.193 bool of a missing key: slot holds a {Missing, msg} box");
+        tk_current_error = 0;
+        v = tk_json_i64_w(o, K("s"));
+        box = (int64_t *)(intptr_t)tk_current_error;
+        CHECK(box == g_errbox && box[0] == JSON_ERR_TYPE,
+              "127.193 i64 of a string: slot holds a {Type, msg} box");
+        tk_current_error = 0;
+        v = tk_json_bool_w(0, K("off"));
+        CHECK(tk_current_error != 0, "127.193 bool of a null object: slot set");
+#undef K
     }
 
     /* --- summary --- */

@@ -1525,6 +1525,35 @@ static int is_file_errbox_wrapper(const char *name) {
 }
 
 /*
+ * is_stdlib_slot_wrapper — 127.193.  Stdlib wrappers whose glue keeps
+ * @tk_current_error truthful on EVERY return (0 on success, a box or 1 on
+ * failure), so an ok/err match must decide on the slot, not on the value.
+ *
+ * std.json's scalar accessors return the value itself, and false / 0 / 0.0
+ * are values: `mt json.getbool(o;"off"){$ok:v v;$err:e true}` took the $err
+ * arm for a stored false, because the 0/null sentinel cannot tell a false
+ * from a failure (runtime-abi.md §7.2: "the zero filler is not the
+ * discriminant").  Same class and same cure as 114.53 (str.toint) and
+ * 127.67 (toml.bool/i64).  Their glue now maintains the slot
+ * (src/stdlib/json_glue.c); this list is what makes the slot authoritative.
+ * A name belongs here only if its glue sets the slot on every path — a
+ * wrapper that leaves it stale would read an earlier call's error.
+ */
+static int is_stdlib_slot_wrapper(const char *name) {
+    static const char *const names[] = {
+        "tk_json_bool_w", "tk_json_getbool_w",
+        "tk_json_i64_w", "tk_json_getint_w", "tk_json_geti64_w", "tk_json_geti32_w",
+        "tk_json_u64_w",
+        "tk_json_f64_w", "tk_json_getf32_w", "tk_json_getfloat_w",
+        NULL,
+    };
+    if (!name) return 0;
+    for (int i = 0; names[i]; i++)
+        if (!strcmp(name, names[i])) return 1;
+    return 0;
+}
+
+/*
  * json_array_end — Given a pointer to the opening '[' of a JSON array,
  * return a pointer to its MATCHING ']', honoring nested brackets and
  * brackets that appear inside JSON string values.
@@ -3015,6 +3044,7 @@ static void classify_fallible_call(Ctx *c, const Node *call,
         if (is_void_err_union_wrapper(prv)) *out_zok = 1;            /* 127.95 */
         if (is_num_parse_wrapper(prv)) *out_uce = 1;                 /* 114.53/54 */
         else if (is_file_errbox_wrapper(prv)) *out_uce = 1;          /* 135.12 */
+        else if (is_stdlib_slot_wrapper(prv)) *out_uce = 1;          /* 127.193 */
         else if (!prv) {                                             /* 114.55 */
             const FnSig *ucs = lookup_fn(c, pme);
             if (!ucs || !ucs->err_type_name[0]) {
@@ -5977,6 +6007,7 @@ static int emit_expr(Ctx *c, const Node *n)
                 const char *prv = resolve_stdlib_call(c, pal, pme);
                 if (is_num_parse_wrapper(prv)) prop_cur_err = 1;
                 else if (is_file_errbox_wrapper(prv)) prop_cur_err = 1;  /* 135.12 */
+                else if (is_stdlib_slot_wrapper(prv)) prop_cur_err = 1;  /* 127.193 */
                 else if (!prv) {
                     const FnSig *ucs = lookup_fn(c, pme);
                     if (!ucs || !ucs->err_type_name[0]) {

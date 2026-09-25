@@ -7,6 +7,7 @@
 
 #include "json.h"
 #include "tk_array.h"   /* 114.18: array backing-block header + helpers */
+#include "tk_runtime.h" /* 127.193: tk_current_error + tk_err_box (127.109) */
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -47,35 +48,62 @@ int64_t tk_json_str_w(int64_t obj, int64_t key) {
     return (int64_t)(intptr_t)res.ok;
 }
 
+/*
+ * 127.193 — the scalar accessors keep @tk_current_error truthful.
+ *
+ * They return the value itself, and false, 0 and 0.0 are values.  Under the
+ * 0/null sentinel a stored false was indistinguishable from a failure, so
+ * `mt json.getbool(o;"off"){$ok:v v;$err:e true}` took the $err arm and
+ * answered true — test_json_full.tk's "FAIL json.getbool false".  Every path
+ * below now sets the slot: 0 on success, and on failure a {tag, msg} box
+ * whose tag is the JsonErr variant index (Parse, Type, Missing — the order of
+ * stdlib/json.tki and of JsonErrKind), the same shape file_raise() builds
+ * (135.12).  llvm.c's is_stdlib_slot_wrapper() makes the slot authoritative
+ * for exactly these wrappers.  The success store is not optional: without it
+ * an EARLIER failure left in the slot would turn a success into an error
+ * (127.123).
+ */
+static int64_t json_raise(JsonErrKind kind, const char *msg) {
+    int64_t *box = (int64_t *)tk_err_box(2 * (int64_t)sizeof(int64_t));
+    box[0] = (int64_t)kind;
+    box[1] = (int64_t)(intptr_t)(msg ? msg : "");
+    tk_current_error = (int64_t)(intptr_t)box;
+    return 0;
+}
+
 int64_t tk_json_i64_w(int64_t obj, int64_t key) {
-    if (!obj || !key) return 0;
+    if (!obj || !key) return json_raise(JSON_ERR_MISSING, "json.i64: null object or key");
     Json *jp = (Json *)(intptr_t)obj;
     I64JsonResult res = json_i64(*jp, (const char *)(intptr_t)key);
-    if (res.is_err) return 0;
+    if (res.is_err) return json_raise(res.err.kind, res.err.msg);
+    tk_current_error = 0;
     return (int64_t)res.ok;
 }
 
 int64_t tk_json_u64_w(int64_t obj, int64_t key) {
-    if (!obj || !key) return 0;
+    if (!obj || !key) return json_raise(JSON_ERR_MISSING, "json.u64: null object or key");
     Json *jp = (Json *)(intptr_t)obj;
     U64JsonResult res = json_u64(*jp, (const char *)(intptr_t)key);
-    if (res.is_err) return 0;
+    if (res.is_err) return json_raise(res.err.kind, res.err.msg);
+    tk_current_error = 0;
     return (int64_t)res.ok;
 }
 
 int64_t tk_json_f64_w(int64_t obj, int64_t key) {
-    if (!obj || !key) return 0;
+    if (!obj || !key) return json_raise(JSON_ERR_MISSING, "json.f64: null object or key");
     Json *jp = (Json *)(intptr_t)obj;
     F64JsonResult res = json_f64(*jp, (const char *)(intptr_t)key);
-    if (res.is_err) return 0;
+    if (res.is_err) return json_raise(res.err.kind, res.err.msg);
+    tk_current_error = 0;
     return f64_to_i64(res.ok);
 }
 
 int64_t tk_json_bool_w(int64_t obj, int64_t key) {
-    if (!obj || !key) return 0;
+    if (!obj || !key) return json_raise(JSON_ERR_MISSING, "json.bool: null object or key");
     Json *jp = (Json *)(intptr_t)obj;
     BoolJsonResult res = json_bool(*jp, (const char *)(intptr_t)key);
-    if (res.is_err) return 0;
+    if (res.is_err) return json_raise(res.err.kind, res.err.msg);
+    tk_current_error = 0;
     return (int64_t)res.ok;
 }
 

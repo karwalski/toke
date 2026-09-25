@@ -476,8 +476,8 @@
  ],
  "test/standalone/test_json_full.tk": [
   true,
-  1,
-  "d444e6ac6653e3ba"
+  0,
+  "ad8133c28cd31553"
  ],
  "test/standalone/test_map_hash.tk": [
   true,
