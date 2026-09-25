@@ -29,9 +29,10 @@
 # T-2 program in the report is written in that shape.  Every program below
 # ends its success path in an explicit `<`.
 #
-# Cases 1-2: the defect — the two shapes that reproduce (a sum value read back
-#            out of an array, and one passed through an i64-typed parameter).
-#            Both must now be refused with E9005 and must NOT produce a binary.
+# Case 1:    a sum value read back out of an array.  Refused with E9005 until
+#            127.174; the checker types it as the sum, so it now dispatches.
+# Case 2:    the defect — a sum value passed through an i64-typed parameter.
+#            Refused with E9005; must NOT produce a binary.
 # Case 3:    a 3-arm match on a value WITH a known sum type still compiles and
 #            still dispatches to all three arms.  This is the guard that
 #            matters: a fix that refused every 3-arm match would pass 1-2 and
@@ -45,7 +46,7 @@
 # Case 6:    a 2-arm match over an indexed element the checker DOES type as
 #            the sum is E4010 (non-exhaustive) -- see the note at case 5.
 #
-# Stories: 137.2, 127.113, 127.56, 114.41
+# Stories: 137.2, 127.113, 127.56, 114.41, 127.174
 #
 # The E9005 message names the arm count and, when the sum type DID resolve but
 # the first arm names no variant of it, names both — so the two ways of
@@ -131,15 +132,24 @@ f=mk(k:i64):$shape{
 };'
 
 # ── Case 1: a sum value read back out of an array ───────────────────────
-# `xs.get(0)` gives an i64; nothing records that it is a $shape, so the tag
-# switch declines and the 3 arms fall into the binary lowering.
-reject_build "3-arm match on an array element" \
+# CHANGED 2026-09-25 (Batch Y1, 127.174).  This case used to assert E9005:
+# the backend's tags did not follow a sum out of an array, so the tag switch
+# declined.  But since 886bdb0 the checker types `xs.get(0)` as the $shape and
+# accepts the exhaustive match, so E9005 here was check-clean/build-fail —
+# the stage disagreement 127.174 records.  Match lowering now reads the
+# checker's type when the tags have nothing, so the match dispatches.  The
+# case now asserts all three variants (a fallback to the binary lowering would
+# still get the first right).  Case 2 keeps an unestablished subject refused.
+run_case "3-arm match on an array element" "10 20 30" \
 "${SUM}
 f=main():i64{
-  let xs=@(mk(0));
+  let xs=@(mk(0);mk(1);mk(2));
   let a=xs.get(0);
+  let b=xs.get(1);
   let r=mt(a){\$circle:x 10;\$square:x 20;\$tri:x 30};
-  io.println(\"\\(r)\");
+  let q=mt(b){\$circle:x 10;\$square:x 20;\$tri:x 30};
+  let z=mt(xs.get(2)){\$circle:x 10;\$square:x 20;\$tri:x 30};
+  io.println(\"\\(r) \\(q) \\(z)\");
   <0
 };"
 

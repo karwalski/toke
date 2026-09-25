@@ -6298,6 +6298,21 @@ static int emit_expr(Ctx *c, const Node *n)
          * the payload (slot[1]) interpreted per that variant's type. */
         const char *scr_sum = expr_struct_type(c, n->children[0]);
         const StructInfo *ssi = scr_sum ? lookup_struct(c, scr_sum) : NULL;
+        /* 127.174: the backend's own tags do not follow a sum value out of an
+         * array (`mt(xs.get(0))`, or `let a=xs.get(0); mt(a)`), so the tag
+         * switch declined and a 3-arm match died with E9005 — on a program
+         * the checker had accepted, because the checker DOES type the element
+         * as the sum (127.129/127.152).  Read the checker's type when the
+         * tags have nothing: a sum-typed rtype names the sum, and the box
+         * layout is the same whichever way the value arrived. */
+        if ((!ssi || !ssi->is_sum) && n->children[0]->rtype &&
+            n->children[0]->rtype->kind == TY_STRUCT &&
+            n->children[0]->rtype->name) {
+            const char *rn = n->children[0]->rtype->name;
+            const StructInfo *rsi = lookup_struct(c, rn);
+            if (!rsi && rn[0] == '$') rsi = lookup_struct(c, rn + 1);
+            if (rsi && rsi->is_sum) { ssi = rsi; scr_sum = rsi->name; }
+        }
         int sum_match = 0;
         if (ssi && ssi->is_sum && num_arms >= 1 && n->child_count >= 2 &&
             n->children[1]->child_count >= 1) {
