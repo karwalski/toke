@@ -6,3 +6,59 @@ Licensed under the Apache License, Version 2.0.
 This product includes software developed by the LLVM Project
 (https://llvm.org), licensed under the Apache License 2.0 with
 LLVM Exceptions.
+
+------------------------------------------------------------------------
+Vendored third-party software
+------------------------------------------------------------------------
+
+This repository includes, unmodified except where stated, the third-party
+C sources listed below under stdlib/vendor/. They are NOT covered by the
+Apache License above; each remains under its own licence, reproduced in
+full in the file named for it. Provenance (upstream URL and pinned commit)
+is recorded in stdlib/vendor/README.md.
+
+`tkc --out` compiles these sources into every program that imports the
+corresponding module (std.md, std.toml, std.zip). If you distribute such a
+program in binary form, these notices and licences apply to it as well:
+the BSD and MIT licences below require their copyright and permission
+notices to accompany copies of the software, including binary copies.
+
+1. cmark (CommonMark reference implementation) — backs std.md
+   Location: stdlib/vendor/cmark/
+   Upstream: https://github.com/commonmark/cmark
+   Licence:  BSD-2-Clause; full text in stdlib/vendor/cmark/COPYING
+     Copyright (c) 2014, John MacFarlane
+   The same COPYING file carries the notices for the parts of cmark
+   derived from other projects, which are present in the vendored sources:
+     houdini.h, houdini_href_e.c, houdini_html_e.c, houdini_html_u.c
+       — derived from houdini, Copyright (C) 2012 Vicent Martí (MIT)
+     buffer.h, buffer.c, chunk.h
+       — derived from code (C) 2012 Github, Inc. (MIT)
+     utf8.c, utf8.h
+       — derived from utf8proc, (C) 2009 Public Software Group e. V.,
+         Berlin, Germany (MIT)
+   Local additions: src/cmark_export.h and src/cmark_version.h are written
+   by this project to replace files upstream generates with CMake. The
+   COPYING sections for normalize.py, the CommonMark spec (test/spec.txt,
+   CC-BY-SA 4.0) and cmark's test/ directory cover files that are not
+   vendored here.
+
+2. tomlc99 — backs std.toml
+   Location: stdlib/vendor/tomlc99/
+   Upstream: https://github.com/cktan/tomlc99
+   Licence:  MIT; full text in stdlib/vendor/tomlc99/LICENSE
+     Copyright (c) CK Tan
+
+3. miniz 3.0.2 — backs std.zip
+   Location: stdlib/vendor/miniz/
+   Upstream: https://github.com/richgel999/miniz
+   Licence:  MIT; full text in stdlib/vendor/miniz/LICENSE
+     Copyright 2013-2014 RAD Game Tools and Valve Software
+     Copyright 2010-2014 Rich Geldreich and Tenacious Software LLC
+   Note on the licence: the vendored miniz.h banner still says "public
+   domain", and miniz.c still ends with an Unlicense (public-domain)
+   dedication. Both are carried over from the original 1.x releases.
+   Upstream has shipped the MIT LICENSE above since 2.0.0, so this project
+   treats miniz as MIT, not public domain, and gives the attribution MIT
+   requires. (miniz.c's PNG writer, by Alex Evans, 2011, is marked public
+   domain in its own comment.)

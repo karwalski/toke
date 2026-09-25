@@ -668,9 +668,10 @@ When coordinating parallel sprints:
 Several workers share one repository. These rules exist because each was
 broken in practice, and the consequence is recorded beside it.
 
-**Never `git add -A`, `git add .`, or `git commit -a`.** On 2026-09-21 three
-commits silently reverted other workers' in-flight edits this way — one
-undid an entire fix, 226 deletions, and nobody noticed for hours.
+**Never `git add -A`, `git add .`, or `git commit -a`.** On 2026-09-19 three
+commits silently reverted other workers' in-flight edits this way (`00347fc`,
+`5334d4f`, `3771868`; story 132.34) — one undid an entire fix, 226 deletions,
+and nobody noticed for hours.
 
 **Commit by explicit pathspec:**
 
@@ -718,6 +719,12 @@ not.
 **Never commit build output.** `toke` and the `test/**/test_*` binaries were
 tracked until 2026-09-22 (136.42) — 2.9 MB that made `git status` permanently
 dirty, which is precisely what let the silent reverts above go unread.
+
+**After any file restore, `make clean` before trusting a build.** `git
+stash`, `git checkout -- <path>` and `cp -p` can leave a source older than
+its object, so make skips the rebuild; a `make -j2` raced a restore this way
+and linked a binary from stale objects (136.65). `make conform` pins its own
+copy of the compiler per run (127.156), but a build you run yourself does not.
 
 ---
 

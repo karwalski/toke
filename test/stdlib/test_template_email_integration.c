@@ -92,8 +92,13 @@ int main(void)
             "email-xss: no unescaped </script> in output");
         ASSERT_NULL_SUBSTR(got, "<img",
             "email-xss: no unescaped <img in output");
-        ASSERT_NULL_SUBSTR(got, "onerror",
-            "email-xss: no onerror attribute in output");
+        /* 136.66: this asserted "onerror" ABSENT, which an escaper must
+         * not satisfy -- escaping keeps the text and neutralises the
+         * markup (section 8 below expects "onerror" in escaped output).
+         * What makes the attribute inert is that it sits inside an
+         * escaped tag, so assert exactly that. */
+        ASSERT(strstr(got, "&lt;img onerror=alert(1) src=x&gt;") != NULL,
+            "email-xss: onerror survives only inside an escaped &lt;img tag");
 
         /* Escaped forms must appear. */
         ASSERT(strstr(got, "&lt;script&gt;") != NULL,

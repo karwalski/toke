@@ -12,7 +12,7 @@
 
 toke is a statically typed, compiled programming language designed from first principles so that large language models can write better code. After 18 months of development, we have achieved:
 
-- **Gate 1 (2026-04-03):** **58.8%** functional Pass@1 with legacy syntax (588 of 1,000 solutions generated); 92.3% compiled. *Published as "63.7% Pass@1 compilation rate" until 2026-09-19 (story 128.19) — wrong twice over: 63.7% was 588/**923**, computed after the 77 non-compiling solutions had been dropped from the denominator, and it is the functional rate, not the compilation rate. 58.8% is below Gate 1's own >= 60% minimum, so that verdict is re-opened and has not been re-decided.*
+- **Gate 1 (2026-04-03):** **58.8%** functional Pass@1 with legacy syntax (588 of 1,000 solutions generated); 92.3% compiled. *Published as "63.7% Pass@1 compilation rate" until 2026-09-19 (story 128.19) — wrong twice over: 63.7% was 588/**923**, computed after the 77 non-compiling solutions had been dropped from the denominator, and it is the functional rate, not the compilation rate. 58.8% is below Gate 1's own >= 60% minimum, and on 2026-09-22 the owner decided Gate 1 NOT PASSED.*
 - **Gate 2 (2026-05-22):** 100% Pass@1 compilation rate with default syntax (7B model)
 - **Functional correctness:** 55.6% (corrected from ~8% after stdlib fix — see gate2-decision.md)
 
@@ -205,7 +205,7 @@ We welcome feedback in any form:
 
 | Date | Milestone |
 |------|-----------|
-| 2026-04-03 | Gate 1 recorded PASS (63.7% compile) — **verdict re-opened 2026-09-19**: the figure is 58.8% functional Pass@1 (588/1,000), below the >= 60% minimum (story 128.19) |
+| 2026-04-03 | Gate 1 recorded PASS (63.7% compile) — re-opened 2026-09-19: the figure is 58.8% functional Pass@1 (588/1,000), below the >= 60% minimum; **Gate 1 NOT PASSED, owner decision 2026-09-22** (story 128.19) |
 | 2026-05-22 | Gate 2 PASS (100% compile) |
 | 2026-06 (target) | Self-improvement loop: 30K execution-verified records |
 | 2026-07 (target) | Gate 3 attempt (>50% functional) |

@@ -17,6 +17,7 @@
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include "../../src/stdlib/http.h"
+#include "../../src/stdlib/capabilities.h"
 
 static int failures = 0;
 
@@ -31,6 +32,15 @@ static Res dummy_handler(Req req) { (void)req; return http_Res_ok("ok"); }
 int main(void)
 {
     alarm(120); /* safety net: HTTP client has 30s connect timeout per call */
+
+    /* 127.147: the client calls below are gated on the net capability, which
+     * is deny-by-default since 124.4. A toke program is granted it by
+     * tkc.toml or --allow-net; this C harness has neither, so without this
+     * http_get() stopped the process with CAP001 after 22 passes. Grant net
+     * only, not --allow-all, so any other class the module reaches for still
+     * fails loudly. */
+    char *cap_argv[] = {"test_http", "--allow-net", NULL};
+    tk_cap_init(2, cap_argv);
 
     /* ── Response constructors ─────────────────────────────────────── */
 
@@ -224,10 +234,16 @@ int main(void)
     http_router_free(router);
     ASSERT(1, "http_router_free did not crash");
 
-    /* http_serve_workers with NULL router returns TK_HTTP_ERR_SOCKET */
-    TkHttpErr wret = http_serve_workers(NULL, NULL, 19080, 1);
-    ASSERT(wret == TK_HTTP_ERR_SOCKET,
-           "http_serve_workers(NULL router) returns TK_HTTP_ERR_SOCKET");
+    /* 127.147: this asserted http_serve_workers(NULL, NULL, 19080, 1)
+     * returns TK_HTTP_ERR_SOCKET. 27096b4 (2026-05-20) removed that guard
+     * on purpose: a NULL router now means "serve the global route table",
+     * which is how tk_http_serveworkers_w calls it. So the old call bound
+     * 0.0.0.0:19080 and served until alarm() killed the whole test. Keep
+     * the NULL router (the live calling convention) and give it a host
+     * that cannot be bound, so the call must return, not serve. */
+    TkHttpErr wret = http_serve_workers(NULL, "not-an-address", 19080, 1);
+    ASSERT(wret == TK_HTTP_ERR_BIND,
+           "http_serve_workers(NULL router, bad host) returns TK_HTTP_ERR_BIND");
 
     /* ── Request size limits (Story 27.1.9) ────────────────────────── */
 
@@ -236,8 +252,10 @@ int main(void)
            "HTTP_DEFAULT_MAX_HEADER_SIZE == 8192");
     ASSERT(HTTP_DEFAULT_MAX_BODY_SIZE == 1048576U,
            "HTTP_DEFAULT_MAX_BODY_SIZE == 1048576");
-    ASSERT(HTTP_DEFAULT_TIMEOUT_SECS == 30U,
-           "HTTP_DEFAULT_TIMEOUT_SECS == 30");
+    /* 127.147: was 30. Story 59.4.12 cut the default request timeout to
+     * 10 s on purpose (workers tied up by slow clients; 904a2d8). */
+    ASSERT(HTTP_DEFAULT_TIMEOUT_SECS == 10U,
+           "HTTP_DEFAULT_TIMEOUT_SECS == 10");
 
     /*
      * Test: oversized header → 431 Request Header Fields Too Large

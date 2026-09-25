@@ -16,7 +16,7 @@ set -euo pipefail
 # ── Locate repo root (directory that contains the Makefile and tkc binary) ──
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-TKC="${REPO_ROOT}/tkc"
+TKC="${TKC:-${REPO_ROOT}/tkc}"
 TEST_DIR="${SCRIPT_DIR}"
 
 # ── Colour codes (disabled if not a terminal) ───────────────────────────────
@@ -417,7 +417,9 @@ echo "------------------------------------------------------------"
 # Sort by id for deterministic output
 while IFS= read -r -d '' yaml_file; do
     run_test "${yaml_file}"
-done < <(find "${TEST_DIR}" -name '*.yaml' -print0 | sort -z)
+# test/fuzz/ holds fuzz *seed corpora*, some of them YAML (123.10); they are
+# parser inputs, not conformance cases, and must not be run as cases.
+done < <(find "${TEST_DIR}" -path "${TEST_DIR}/fuzz" -prune -o -name '*.yaml' -print0 | sort -z)
 
 echo "------------------------------------------------------------"
 echo -e "Results: ${GREEN}${PASS} passed${RESET}, ${RED}${FAIL} failed${RESET}, ${SKIP} skipped"

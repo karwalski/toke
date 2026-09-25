@@ -134,7 +134,7 @@ Both baseline Pass@1 cells read 63.7% until 2026-09-19. That figure was 588/**92
 the Gate 1 harness dropped the 77 generated solutions that failed to compile out of the
 denominator, which measures Pass@1 *given that the solution compiled*. On the 1,000
 solutions generated it is 588/1,000 = **58.8%** (story 128.19). 58.8% is below Gate 1's
-own >= 60% minimum, so the Gate 1 verdict is re-opened; see
+own >= 60% minimum; on 2026-09-22 the owner decided Gate 1 NOT PASSED; see
 `docs/decisions/gate1-decision.md`.
 
 **Pass@1 > 80%** is the primary gate. The model must generate correct toke

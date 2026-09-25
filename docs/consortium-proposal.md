@@ -13,7 +13,7 @@ toke is a compiled programming language designed as a code generation target for
 
 The toke project has completed its first validation gate. At Gate 1, the language demonstrated 12.5% token reduction (8K purpose-built BPE vs cl100k_base on the **same toke source** -- mean 172.9 vs 197.6 tokens/program over 46,754 validated toke programs; a tokenizer-lane figure, not a comparison with Python, and superseded on v0.4 text -- `docs/metrics-baseline.md`) and **58.8%** functional Pass@1 on 1,000 held-out tasks (588/1,000) using a fine-tuned 7B model. The token-reduction threshold was exceeded; the Pass@1 threshold was not.
 
-*Pass@1 corrected 2026-09-19 (story 128.19).* This paragraph read "63.7% first-pass compilation accuracy ... These results exceeded the pre-registered go/no-go thresholds" until that date. 63.7% was 588/**923** -- the 77 solutions that failed to compile were dropped from the denominator, which measures Pass@1 *given that the solution compiled*. On the 1,000 generated it is 588/1,000 = **58.8%**, below the >= 60% minimum Gate 1 declared. (It is also the *functional* Pass@1, not a compilation rate; the compile rate was 92.3%.) The Gate 1 verdict is therefore re-opened and has not been re-decided here -- see `docs/decisions/gate1-decision.md`.
+*Pass@1 corrected 2026-09-19 (story 128.19).* This paragraph read "63.7% first-pass compilation accuracy ... These results exceeded the pre-registered go/no-go thresholds" until that date. 63.7% was 588/**923** -- the 77 solutions that failed to compile were dropped from the denominator, which measures Pass@1 *given that the solution compiled*. On the 1,000 generated it is 588/1,000 = **58.8%**, below the >= 60% minimum Gate 1 declared. (It is also the *functional* Pass@1, not a compilation rate; the compile rate was 92.3%.) The verdict was therefore re-opened, and on 2026-09-22 the owner decided Gate 1 NOT PASSED -- see `docs/decisions/gate1-decision.md`.
 
 This document proposes the formation of a **toke Language Consortium** to govern the language specification, steward its evolution toward version 1.0, establish a conformance certification program, and coordinate enterprise adoption. The consortium provides a neutral home for the specification and tooling, ensures no single organisation controls the language's future, and gives adopters confidence that their investment in toke integration is protected by transparent governance and compatibility guarantees.
 
@@ -34,7 +34,7 @@ Current target languages (Python, TypeScript, Go, Java) were designed for human 
 toke eliminates this overhead at the language level:
 
 - **Token efficiency is a measured, open question, not a settled claim.** Under one shared tokenizer (cl100k_base) toke currently costs **1.34x [1.22, 1.48]** the tokens of equivalent Python over the 60 Gate-1 tasks (N = 60, 2026-09-19) -- more, not fewer; and no shipped toke tokenizer yet beats cl100k_base on canonical v0.4 text (the 8K SentencePiece needs 15.4% more tokens, N = 2,000). The v0.3-era "52% reduction" was a tokenizer-vs-tokenizer figure on identical toke text (Toke-16K v0.3 vs cl100k_base, N = 42) and is superseded. A consortium-funded v0.4 tokenizer retrain (116.9) is precisely what would settle it. See `docs/metrics-baseline.md`.
-- **58.8% functional Pass@1** measured at Gate 1 (588 of 1,000 solutions generated), alongside a 92.3% first-pass *compilation* rate -- reducing the costly generate-compile-repair loop. *(This line read "63.7% first-pass compilation accuracy" until 2026-09-19: wrong denominator and wrong label. Story 128.19; the Gate 1 verdict is re-opened.)*
+- **58.8% functional Pass@1** measured at Gate 1 (588 of 1,000 solutions generated), alongside a 92.3% first-pass *compilation* rate -- reducing the costly generate-compile-repair loop. *(This line read "63.7% first-pass compilation accuracy" until 2026-09-19: wrong denominator and wrong label. Story 128.19; Gate 1 NOT PASSED, owner decision 2026-09-22.)*
 - **Structured JSON diagnostics** with stable error codes enable mechanical repair without parsing English prose.
 - **No comment syntax** -- documentation lives outside source files, so token cost is fixed regardless of coding standards.
 
@@ -70,7 +70,7 @@ The consortium owns and maintains the toke language specification. Responsibilit
 
 The consortium establishes and operates a conformance certification program for toke implementations:
 
-- A conformance test suite (currently 228 cases, targeting comprehensive coverage of the specification).
+- A conformance test suite (current size: `docs/metrics-baseline.md` § Project facts), targeting comprehensive coverage of the specification.
 - Certified implementations may use the "toke Certified" mark.
 - Annual recertification against the latest specification version.
 - Public registry of certified implementations.

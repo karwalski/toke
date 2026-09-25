@@ -394,7 +394,7 @@ form verbatim; `model-index` carrying the set name inside each metric name and n
   explicitly not to be copied anywhere. The 63.7% is additionally *wrong*, not merely
   historical: it is 588/**923**, computed after the 77 non-compiling solutions had been
   dropped from the denominator. Gate 1 Pass@1 is 588/1,000 = **58.8%** (story 128.19),
-  below the gate's own >= 60% minimum, so the Gate 1 verdict is re-opened.
+  below the gate's own >= 60% minimum; on 2026-09-22 the owner decided Gate 1 NOT PASSED.
 
 ### How to publish (owner)
 

@@ -14,7 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-TKC="${REPO_ROOT}/tkc"
+TKC="${TKC:-${REPO_ROOT}/tkc}"
 
 PASS=0
 FAIL=0

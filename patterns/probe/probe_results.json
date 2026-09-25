@@ -1,32 +1,34 @@
 {
  "story": "131.2",
  "tkc_version": "toke 3.0.0",
- "tkc_sha": "8f4e23d0c05b47a29c8b269c061eaedc655e049e",
- "tkc_bin_sha": "f1f935cfb254f5f6b96c08e587bf0d75da9fee618ba74299a313b16db7d94513",
- "tkc_path": "/private/tmp/tk_w2_gate/toke",
- "generated": "2026-09-23",
+ "tkc_sha": "4c8a4b0cdfef3316f7e5b470aca5cb47d0ee295b",
+ "tkc_bin_sha": "bb6f1c0b97fce15bc1b4b20147cb2f51fc66d228473c0b57ac1a09b0ae866abc",
+ "tkc_path": "toke",
+ "generated": "2026-09-24",
  "summary": {
-  "probes": 130,
-  "check_ok": 111,
-  "build_ok": 101,
-  "run_ok": 100,
-  "correct": 101
+  "probes": 136,
+  "check_ok": 106,
+  "build_ok": 106,
+  "run_ok": 105,
+  "correct": 108
  },
  "results": [
   {
    "probe": "all_method",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4036"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4036"
     ],
-    "undefined_symbol": "all"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "0",
@@ -56,17 +58,19 @@
   {
    "probe": "any_method",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4036"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4036"
     ],
-    "undefined_symbol": "any"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "1",
@@ -369,17 +373,19 @@
   {
    "probe": "count_method",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4036"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4036"
     ],
-    "undefined_symbol": "count"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "1",
@@ -409,17 +415,19 @@
   {
    "probe": "each_method",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4036"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4036"
     ],
-    "undefined_symbol": "each"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "3\n1\n2",
@@ -659,17 +667,19 @@
   {
    "probe": "first_method",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4036"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4036"
     ],
-    "undefined_symbol": "first"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "3",
@@ -758,6 +768,27 @@
    "run": null,
    "expected": "6",
    "correct": false
+  },
+  {
+   "probe": "fromint_module",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "42 [7]"
+   },
+   "expected": "42 [7]",
+   "correct": true
   },
   {
    "probe": "get_const_let",
@@ -1392,17 +1423,19 @@
   {
    "probe": "last_method",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4036"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4036"
     ],
-    "undefined_symbol": "last"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "2",
@@ -1556,6 +1589,27 @@
    "correct": true
   },
   {
+   "probe": "map_get",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "2"
+   },
+   "expected": "2",
+   "correct": true
+  },
+  {
    "probe": "map_method",
    "check": {
     "exit": 0,
@@ -1598,19 +1652,105 @@
    "correct": false
   },
   {
-   "probe": "max_method",
+   "probe": "map_set",
    "check": {
     "exit": 0,
     "ok": true,
     "codes": []
    },
    "build": {
-    "exit": 2,
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "3"
+   },
+   "expected": "3",
+   "correct": true
+  },
+  {
+   "probe": "maplen_after_set",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "3"
+   },
+   "expected": "3",
+   "correct": true
+  },
+  {
+   "probe": "maplen_set_existing",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "2"
+   },
+   "expected": "2",
+   "correct": true
+  },
+  {
+   "probe": "maplen",
+   "check": {
+    "exit": 0,
+    "ok": true,
+    "codes": []
+   },
+   "build": {
+    "exit": 0,
+    "ok": true,
+    "codes": [],
+    "undefined_symbol": null
+   },
+   "run": {
+    "exit": 0,
+    "ok": true,
+    "stdout": "2"
+   },
+   "expected": "2",
+   "correct": true
+  },
+  {
+   "probe": "max_method",
+   "check": {
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4036"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4036"
     ],
-    "undefined_symbol": "max"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "3",
@@ -1640,17 +1780,19 @@
   {
    "probe": "min_method",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4036"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4036"
     ],
-    "undefined_symbol": "min"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "1",
@@ -2478,17 +2620,19 @@
   {
    "probe": "sum_method",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4036"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4036"
     ],
-    "undefined_symbol": "sum"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "6",
@@ -2602,23 +2746,23 @@
   {
    "probe": "ufcs_extra_arg",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4026"
+    ]
    },
    "build": {
-    "exit": 0,
-    "ok": true,
-    "codes": [],
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4026"
+    ],
     "undefined_symbol": null
    },
-   "run": {
-    "exit": 0,
-    "ok": true,
-    "stdout": "xxA"
-   },
+   "run": null,
    "expected": "#checkfail",
-   "correct": false
+   "correct": true
   },
   {
    "probe": "upper_method",
@@ -2686,17 +2830,19 @@
   {
    "probe": "values_method",
    "check": {
-    "exit": 0,
-    "ok": true,
-    "codes": []
-   },
-   "build": {
-    "exit": 2,
+    "exit": 1,
     "ok": false,
     "codes": [
-     "E9003"
+     "E4036"
+    ]
+   },
+   "build": {
+    "exit": 1,
+    "ok": false,
+    "codes": [
+     "E4036"
     ],
-    "undefined_symbol": "values"
+    "undefined_symbol": null
    },
    "run": null,
    "expected": "2 1",

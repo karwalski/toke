@@ -1,0 +1,281 @@
+---
+title: Combinator and String Method Status
+slug: combinator-status
+section: reference
+order: 10
+---
+
+{{generated_notice}}
+
+# Combinator and string method status ({{pin.version}})
+
+Story 131.2; re-measured in full for story 136.53; generated since 136.58.
+
+**This document is rendered from a measurement, not written by hand.** Every
+verdict cell — `--check`, `build`, `runs`, `correct` — and the pin below are
+rendered by `scripts/render_combinator_status.py` from
+`patterns/probe/probe_results.json`, which `patterns/probe/run_probes.sh`
+produces by compiling and running one complete program per probe. The notes
+column and the prose are hand-written, in the template
+`patterns/probe/combinator-status.md.tmpl`. Every probe appears in some row,
+and every row names the probes behind it; a row whose probes disagree does not
+render.
+
+Until 136.58 every row was transcribed from the JSON by hand, and on
+2026-09-22 roughly twenty of them described a compiler from before
+127.4/127.6/127.7/127.10 and 137.12 landed, **every one claiming breakage that
+no longer existed**, while the JSON beside them was correct. `make ci` now
+fails when this file differs from its rendering (`check-combinator-status`)
+and when a fresh probe run disagrees with the committed JSON
+(`check-probes`). To change a verdict, change the compiler and re-run
+`make render-combinator-status PROBES=1`; to change a note, edit the template.
+
+## Measurement pin
+
+| field | value |
+|---|---|
+| measured | {{pin.generated}} |
+| compiler | `{{pin.version}}` |
+| binary sha256 | `{{pin.bin_sha}}` |
+| source tree | `{{pin.tree}}` |
+| result | **{{summary.correct}} of {{summary.probes}} probes correct** (check clean {{summary.check_ok}}, build clean {{summary.build_ok}}, ran clean {{summary.run_ok}}) |
+
+The `toke` binary is an untracked local build artifact, so the source SHA
+identifies the tree the probes were **measured in**, not provably the tree the
+binary was **built from**; the binary sha256 is the authoritative pin.
+
+Columns: `--check` = `tkc --check` exit 0; `build` = `tkc --out` produced a
+binary; `runs` = binary exited 0; `correct` = stdout matched the oracle. The
+oracle is the syntax card's known-good form, or — for symbols the card does
+not define — the natural semantic stated in the notes. `bool` values
+interpolate as `1`/`0` on 2.8.0 (native comparisons included), so bool
+oracles use `1`/`0`.
+
+Legend: **ABSENT** = no compiler dispatch entry and no runtime glue symbol for
+that call form (link fails with an undefined symbol, E9003 — no row has this
+verdict on the current pin; see *Symbols not implemented*); **REJECTED** =
+the call is refused at `--check` with a named diagnostic; **CRASH** = check and
+build clean, binary dies; **WRONG** = runs, wrong output.
+
+> **WITHDRAWN (136.47), and the failure mode has improved (136.53).** The
+> fourteen module-style `std.array` combinators — `map` `fold` `filter` `each`
+> `all` `any` `count` `first` `last` `max` `min` `reduce` `sort` `sum` — are
+> **not implemented** and remain withdrawn from the documentation until they
+> are. They would resolve to `tk_array_*_w` symbols that exist in no file under
+> `src/stdlib`.
+>
+> **What changed:** they no longer type-check clean and die at `ld`. Since the
+> generated `stdlib/array.tki` landed (137.12) every one of them is **rejected
+> at `--check` with E4027**, naming the member and the symbol the call would
+> have linked against — e.g. *"module 'std.array' has no member 'fold':
+> neither the interface nor the runtime declares it (the call would link
+> against 'tk_array_fold_w')"*. Any prose elsewhere still saying these
+> "type-check clean and die at `ld`" is describing a compiler older than this
+> pin.
+>
+> **The receiver form is unaffected and is the spelling to use**: `a.map(&f)`,
+> `a.filter(&p)`, `a.reduce(0;&f)`, `a.fold(0;&f)`, `a.sort(&cmp)` are
+> implemented and correct (rows below). Nine receiver combinators — `each`
+> `all` `any` `count` `sum` `min` `max` `first` `last` — are still **not
+> implemented**; since 127.151 they are **rejected at `--check` with E4036**
+> (*"no receiver method 'each': no built-in receiver type answers 'each'"*)
+> rather than type-checking clean and failing at link with E9003.
+>
+> `scripts/gen_tki.py` can only declare a method whose symbol is defined, so
+> the interface cannot drift back into promising the fourteen.
+
+## Arrays (`@i64` receiver `a=@(3;1;2)`)
+
+| symbol | call form | --check | build | runs | correct | notes / 127.x cross-ref |
+|---|---|---|---|---|---|---|
+| map | `a.map(&dbl)` | {{row:map_method}} | canonical |
+| map | `arr.map(a;&dbl)` (`i=arr:std.array;`) | {{row:map_module}} | REJECTED at check — **WITHDRAWN 136.47**; was recorded as clean-check/E9003-link, corrected 136.53 |
+| filter | `a.filter(&iseven)` | {{row:filter_method}} | canonical |
+| filter | `arr.filter(a;&p)` | {{row:filter_module}} | REJECTED at check — **WITHDRAWN 136.47** |
+| reduce | `a.reduce(0;&addf)` | {{row:reduce_method}} | canonical reduction form (`tk_arr_reduce`) |
+| reduce | `arr.reduce(a;0;&f)` | {{row:reduce_module}} | REJECTED at check — **WITHDRAWN 136.47** |
+| fold | `a.fold(0;&addf)` | {{row:fold_method}} | **127.4 closed** — `llvm.c` aliases receiver `fold` to `tk_arr_reduce`; returns 6. Was recorded ABSENT/E9003 here for months after the fix; corrected 136.53 |
+| fold | `arr.fold(a;0;&f)` | {{row:fold_module}} | REJECTED at check — **WITHDRAWN 136.47** |
+| sort | `a.sort(&cmp)` | {{row:sort_method}} | canonical (comparator returns `a-b`) |
+| sort | `arr.sort(a;&cmp)` | {{row:sort_module}} | REJECTED at check — **WITHDRAWN 136.47** |
+| each | `a.each(&pr)` | {{row:each_method}} | not implemented — REJECTED at check (E4036, 127.151); was E9003 at link (`tk_array_each_w` undefined) |
+| each | `arr.each(a;&pr)` | {{row:each_module}} | REJECTED at check — **WITHDRAWN 136.47** |
+| all | `a.all(&p)` | {{row:all_method}} | not implemented — REJECTED at check (E4036, 127.151); was E9003 at link |
+| all | `arr.all(a;&p)` | {{row:all_module}} | REJECTED at check — **WITHDRAWN 136.47** |
+| any | `a.any(&p)` | {{row:any_method}} | not implemented — REJECTED at check (E4036, 127.151); was E9003 at link |
+| any | `arr.any(a;&p)` | {{row:any_module}} | REJECTED at check — **WITHDRAWN 136.47** |
+| count | `a.count(&p)` | {{row:count_method}} | not implemented — REJECTED at check (E4036, 127.151); was E9003 at link |
+| count | `arr.count(a;&p)` | {{row:count_module}} | REJECTED at check — **WITHDRAWN 136.47** |
+| sum | `a.sum()` | {{row:sum_method}} | not implemented — REJECTED at check (E4036, 127.151); was E9003 at link |
+| sum | `arr.sum(a)` | {{row:sum_module}} | REJECTED at check — **WITHDRAWN 136.47** |
+| min | `a.min()` | {{row:min_method}} | not implemented — REJECTED at check (E4036, 127.151); was E9003 at link |
+| min | `arr.min(a)` | {{row:min_module}} | REJECTED at check — **WITHDRAWN 136.47** |
+| max | `a.max()` | {{row:max_method}} | not implemented — REJECTED at check (E4036, 127.151); was E9003 at link |
+| max | `arr.max(a)` | {{row:max_module}} | REJECTED at check — **WITHDRAWN 136.47** |
+| first | `a.first()` | {{row:first_method}} | not implemented — REJECTED at check (E4036, 127.151); was E9003 at link |
+| first | `arr.first(a)` | {{row:first_module}} | REJECTED at check — **WITHDRAWN 136.47** |
+| last | `a.last()` | {{row:last_method}} | not implemented — REJECTED at check (E4036, 127.151); was E9003 at link |
+| last | `arr.last(a)` | {{row:last_module}} | REJECTED at check — **WITHDRAWN 136.47** |
+| find | `a.find(2)` | {{row:find_method}} | **corrected 136.53** — was recorded as a SIGSEGV via string glue; gives 2 |
+| find | `arr.find(a;2)` | {{row:find_module}} | **corrected 136.53** — was ABSENT; `tk_array_find_w` in `collections_glue.c`, linked for `std.array` via `stdlib_deps.c:132`; gives 2 |
+| indexof | `a.indexof(1)` | {{row:indexof_method}} | **corrected 136.53** — was SIGSEGV; gives 1 |
+| indexof | `arr.indexof(a;1)` | {{row:indexof_module}} | **corrected 136.53** — was ABSENT; gives 1 |
+| contains | `a.contains(2)` | {{row:contains_method,arr_contains_let}} | **corrected 136.53** — was SIGSEGV; gives 1 |
+| contains | `arr.contains(a;2)` | {{row:contains_module}} | **corrected 136.53** — was ABSENT; gives 1, and 0 for an absent value |
+| slice | `a.slice(1;3)` | {{row:slice_method}} | **corrected 136.53** — was SIGSEGV; gives `@(1;2)` |
+| slice | `arr.slice(a;1;3)` | {{row:slice_module}} | **corrected 136.53** — was ABSENT; gives `@(1;2)` |
+| append | `a=a.append(9)` | {{row:append_method}} | canonical accumulator |
+| append | `a=arr.append(a;9)` | {{row:append_module}} | **corrected 136.53** — was ABSENT and separately suspected of ill-typed IR; neither reproduces, `len` goes 3 → 4 |
+| `+@()` | `a=a+@(9)` | {{row:arrconcat_op}} | canonical alternative (see 127.10) |
+| push | `a=a.push(9)` | {{row:push_method}} | alias of append |
+| push | `a.push(9);` (bare) | {{row:push_bare,push_bare_empty;mark=*}} | **127.2 NOT reproducible** on this pin: silent no-op (`len` unchanged), exit 0, also for `mut.@()` and inside loops. *Correct only in the value-semantics sense; see 127.3 |
+| push | `a=arr.push(a;9)` | {{row:push_module}} | module form works |
+| pop | `a.pop()` | {{row:pop_method}} | **corrected 136.53** — was ABSENT method-style; builds and runs |
+| pop | `arr.pop(a)` | {{row:pop_module}} | returns array minus last element |
+| set | `a=a.set(0;7)` | {{row:set_method}} | canonical |
+| set | `a.set(0;7);` (bare) | {{row:set_bare;mark=*}} | silent no-op (value semantics) — 127.3 diagnostic wanted |
+| set | `a=arr.set(a;0;7)` | {{row:set_module}} | |
+| get | `a.get(1)` | {{row:get_method}} | canonical |
+| get | `arr.get(a;1)` | {{row:get_module}} | |
+| get | `a.1` / `a.0` (constant index) | {{row:get_const,get_const_let,get_const0_let}} | **corrected 136.53** — was recorded as a parse error E2002; the card's "constant index may use `arr.0`" is true on this pin |
+| len | `a.len` | {{row:len_prop}} | canonical |
+| len | `a.len()` | {{row:len_method}} | |
+| len | `arr.len(a)` | {{row:len_module}} | |
+| join | `arr.join(p;"-")` (`@str` receiver) | {{row:join_module_arr}} | module form of `s.join` with the array first |
+
+## Maps (`m=@("a":1;"b":2)`)
+
+| symbol | call form | --check | build | runs | correct | notes / 127.x cross-ref |
+|---|---|---|---|---|---|---|
+| get | `m.get("b")` | {{row:map_get}} | canonical |
+| set | `m=m.set(k;v)` | {{row:map_set}} | canonical |
+| len | `m.len` | {{row:maplen,maplen_after_set,maplen_set_existing}} | **corrected 136.53** — was WRONG (returns 0); returns 2 for a 2-entry map, 3 after `m=m.set` adds a key, 2 after it overwrites one. Measured ad hoc until 136.59 added `maplen`, `maplen_after_set` and `maplen_set_existing` |
+| keys | `m.keys` (property — the card's form) | {{row:keys_prop,keys_prop_len}} | **corrected 136.53** — was WRONG (len 0, or garbage after `m=m.set`); `k.len`=2 and `k.get(0)`="a", including after `m=m.set` |
+| keys | `m.keys()` | {{row:keys_method,keys_method_len,keys_method_direct}} | `k.len`=2, `k.get(0)`="a", and the interpolated read is correct too (the 127.7 pointer symptom is gone) |
+| values | `m.values` | {{row:values_prop}} | REJECTED at check (property form not declared) — **corrected 136.53**, was recorded as building and exiting 1 on garbage |
+| values | `m.values()` | {{row:values_method}} | not implemented — REJECTED at check (E4036, 127.151); was E9003 at link (`tk_array_values_w` undefined) |
+
+## Strings — `s.` module style (`i=s:std.str;`)
+
+| symbol | call form | --check | build | runs | correct | notes / 127.x cross-ref |
+|---|---|---|---|---|---|---|
+| len | `s.len(x)` | {{row:strlen_module}} | canonical |
+| upper / lower | `s.upper(x)` / `s.lower(x)` | {{row:upper_module,lower_module,interp_upper_module}} | canonical; interpolates correctly |
+| replace | `s.replace(x;a;b)` | {{row:replace_module,interp_replace_module}} | canonical; interpolates correctly |
+| trim | `s.trim(x)` | {{row:trim_module,interp_trim_module}} | interpolates correctly |
+| concat | `s.concat(a;b)` | {{row:concat_module}} | |
+| concat | `s.concat(a;"A";"B")` (surplus arg) | {{row:ufcs_extra_arg_module}} | **corrected 136.53 — the one behaviour change since 2026-09-19.** Module-style stdlib calls **are** arity-checked now: *"wrong number of arguments for 'std.str.concat': the implementation takes 2 arguments, the call passes 3"*. Previously printed `xxA` (127.1 extension) |
+| split | `s.split(x;",")` | {{row:split_module,split_interp}} | element interpolation `"\(w.get(1))"` correct (tagged `@str`) |
+| fields | `s.fields(x)` | {{row:fields_module,fields_interp,fields_get_direct}} | direct and interpolated reads both correct — **127.9 no longer reproduces**, corrected 136.53 |
+| join | `s.join("-";p)` | {{row:join_module}} | canonical (separator first) |
+| join | `s.join(p;"-")` (swapped) | {{row:join_swapped}} | **127.5 STILL OPEN** — no E4031 at check time; the binary dies at runtime (exit 139). **The one row in this document that still records a live defect** |
+| startswith / endswith | `s.startswith(x;"a")` / `s.endswith(x;"b")` | {{row:startswith_module,endswith_module}} | bool renders `1` |
+| contains | `s.contains(x;"b")` | {{row:strcontains_module}} | bool renders `1` |
+| indexof | `s.indexof(x;"c")` | {{row:strindexof_module}} | |
+| find | `s.find(x;"c")` | {{row:strfind_module}} | not in `str.tki`; resolves via generic fallback |
+| slice | `s.slice(x;1;3)` | {{row:strslice_module}} | `str.tki` says `str!SliceErr`, but the plain value prints fine |
+| fromint | `s.fromint(i)` | {{row:fromint_module}} | interpolates correctly |
+
+## Strings — method / UFCS style (`x.op(...)`)
+
+**Every row in this table that previously recorded a 127.6 link failure or a
+127.7 pointer-instead-of-string now passes.** Those defects are fixed on this
+pin; the table had not been re-transcribed since.
+
+| symbol | call form | --check | build | runs | correct | notes / 127.x cross-ref |
+|---|---|---|---|---|---|---|
+| len | `x.len` / `x.len()` / `"abcdef".len` | {{row:strlen_prop,strlen_method,strlen_lit_prop}} | **corrected 136.53** — **127.8 no longer reproduces**; returns 6, and the interpolated read is correct |
+| len | `io.println(x.len)` (direct, unwrapped) | {{row:strlen_prop_direct}} | REJECTED at check — passing a length property straight to `io.println` is a type error, no longer a segfault |
+| upper | `x.upper()` | {{row:upper_method}} | **corrected 136.53** — **127.6 fixed**; was E9003 |
+| lower | `x.lower()` | {{row:lower_method}} | **corrected 136.53** — 127.6 fixed |
+| ends | `x.ends("b")` | {{row:ends_method}} | **corrected 136.53** — 127.6 fixed |
+| replace | `x.replace("-";"+")` | {{row:replace_method}} | **corrected 136.53** — 127.6 fixed |
+| fields | `x.fields()` | {{row:fields_method}} | **corrected 136.53** — was ABSENT method-style |
+| join | `p.join("-")` | {{row:join_method}} | **corrected 136.53** — was ABSENT method-style |
+| starts | `x.starts("a")` | {{row:starts_method}} | bool renders `1` |
+| contains | `x.contains("b")` | {{row:strcontains_method}} | |
+| indexof | `x.indexof("c")` | {{row:strindexof_method}} | |
+| find | `x.find("c")` | {{row:strfind_method}} | |
+| slice | `x.slice(1;3)` | {{row:strslice_method,interp_slice_method}} | **corrected 136.53** — `"\(x.slice(1;3))"` interpolates correctly; 127.7 fixed |
+| trim | `x.trim()` | {{row:trim_method,interp_trim_method,interp_trim_let,trim_let_direct}} | **corrected 136.53** — `"\(x.trim())"` and `let y=x.trim(); "\(y)"` both correct; 127.7 fixed |
+| concat | `x.concat("b")` | {{row:concat_method,interp_concat_method}} | **corrected 136.53** — interpolates correctly; 127.7 fixed |
+| concat | `a.concat("A";"B")` (surplus arg) | {{row:ufcs_extra_arg}} | **127.1 fixed** — rejected at check with E4026 (*"wrong number of arguments for '.concat': the implementation takes 2 arguments including the receiver, the call passes 3"*). Was recorded here as printing `xxA` until the renderer (136.58) first ran against a current build |
+| split | `x.split(",")` | {{row:split_method,split_method_direct,split_chain_direct,interp_split_get}} | **corrected 136.53** — `w.len`, `io.println(w.get(1))`, the chained `"a,b,c".split(",").get(1)`, **and** `"\(x.split(",").get(1))"` are all correct |
+
+## Interpolation-built strings stored via `append` (127.10)
+
+**127.10 no longer reproduces.** Every shape below that previously printed
+addresses now prints the strings. Corrected 136.53.
+
+| pattern | --check | build | runs | correct | notes |
+|---|---|---|---|---|---|
+| `let line="\(i): item"; items=items.append(line)` then `io.println(items.get(j))` | {{row:interp_append_loop}} | |
+| `items=items.append("\(i): item")` then `io.println(items.get(j))` | {{row:interp_append_direct}} | |
+| same, read back as `"\(items.get(j))"` | {{row:interp_append_interp_read}} | **was WRONG** (three distinct addresses) |
+| `s.concat`-built strings, read back directly with `io.println(items.get(j))` | {{row:concat_append_loop}} | |
+| `s.concat`-built strings, read back as `"\(items.get(j))"` | {{row:concat_append_interp_read}} | **was WRONG** |
+| plain literal `items=items.append("x")`, read back as `"\(items.get(j))"` | {{row:lit_append_interp_read}} | **was WRONG** |
+| `items=items+@("\(i): item")`, read back as `"\(items.get(j))"` | {{row:plusat_append_interp_read}} | |
+| D-FIO-0014v230 shape (`labels=labels.append("\(i+1)")` → `"\(labels.get(i)): …"`) | {{row:interp_append_dfio}} | **was WRONG**; no longer reproduces |
+| D-FIO shape built with `s.concat`/`s.fromint` instead of interpolation | {{row:concat_append_dfio}} | |
+| `labels=labels.append("\(i+1)")`, read back as `"\(labels.get(j))"` | {{row:interp_append_lit_get}} | |
+| seeded `mut.@()` variant (`interp_append_seeded`) | {{row:interp_append_seeded}} | REJECTED at check — the seeded-literal shape is now a type error rather than a silent wrong read |
+
+The reclassification in `docs/architecture/127-disposition-131.md` (127.10 is
+an inference problem, not a lifetime bug) is consistent with this: once the
+array is inferred as `@str`, the interpolated read is correct. That inference
+now happens for `.append`/`.push` as well as `+@()`.
+
+## Controls and diagnostics
+
+Probes that back a statement elsewhere in this document rather than a
+catalogue row.
+
+| probe | what it checks | --check | build | runs | correct | notes |
+|---|---|---|---|---|---|---|
+| `bool_native_interp` | `"\(1==1)"` | {{row:bool_native_interp}} | a native comparison interpolates as `1` |
+| `bool_userfn_interp` | `"\(iseven(2))"` | {{row:bool_userfn_interp}} | a user-function `bool` interpolates as `1` |
+| `user_fn_extra_arg` | `dbl(1;2)` (surplus arg to a user fn) | {{row:user_fn_extra_arg}} | rejected at check (E4026), as the receiver and module forms now are |
+| `fold_loop_control` | an `lp` accumulator summing `a` | {{row:fold_loop_control}} | oracle control for the fold/reduce rows: the expected `6` is reachable |
+
+## Symbols not implemented
+
+No dispatch entry in `src/llvm.c` and no runtime glue in `src/stdlib/`. Since
+127.151 each is **rejected at `--check`** (E4036) instead of failing at link
+with E9003:
+
+- **Array receiver combinators:** `each` `all` `any` `count` `sum` `min` `max`
+  `first` `last`
+- **Map:** `values()` (and `m.values` as a property is rejected at check, E4035)
+
+Module-style (`std.array`) `map filter reduce sort fold each all any count sum
+min max first last` are **not absent at link** — they are **rejected at
+`--check` with E4027**, which is the better failure and the one to expect.
+
+Module-style `find indexof contains slice append push pop get set len join`
+**do** exist and are correct; the previous edition of this document listed the
+first four as absent, which was wrong.
+
+## Safe for the canonical catalogue today
+
+- **Arrays:** `xs.map(&f)`, `xs.filter(&p)`, `xs.reduce(init;&f)`,
+  `xs.fold(init;&f)`, `xs.sort(&cmp)`, `xs=xs.append(v)`, `xs=xs.push(v)`,
+  `xs=xs+@(v)`, `xs=xs.set(i;v)`, `xs.get(i)`, `xs.0`, `xs.len`,
+  `xs.find(v)`, `xs.indexof(v)`, `xs.contains(v)`, `xs.slice(i;j)`,
+  `xs.pop()`. Element interpolation of a `mut.@()` string array is safe
+  however the array was built.
+- **Arrays, module form** (`i=arr:std.array;`): `arr.get arr.set arr.len
+  arr.append arr.push arr.pop arr.find arr.indexof arr.contains arr.slice
+  arr.join`. **Not** the fourteen combinators — those are E4027.
+- **Maps:** `m.get(k)`, `m=m.set(k;v)`, `m.len`, `m.keys`, `m.keys()`.
+  Avoid `m.values` / `m.values()`.
+- **Strings, module form:** `s.len s.upper s.lower s.replace s.trim s.concat
+  s.split s.fields s.join(sep;arr) s.startswith s.endswith s.contains
+  s.indexof s.find s.slice s.fromint`.
+- **Strings, method form:** `x.len x.upper x.lower x.ends x.starts x.contains
+  x.indexof x.find x.slice x.trim x.concat x.split x.fields p.join` — all
+  correct, direct and interpolated.
+- **Never in the catalogue until fixed:** the nine unimplemented array
+  receiver combinators, the fourteen module-style combinators, `m.values`,
+  and `s.join(arr;sep)` with the arguments swapped (**127.5**, segfaults with
+  no check-time diagnostic).
