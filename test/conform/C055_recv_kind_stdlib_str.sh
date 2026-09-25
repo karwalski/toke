@@ -51,7 +51,10 @@ prog good '  let t=st.trim(" ab ");
   io.println("\(t.upper()) \(t.len()) \(t.contains("a"))");'
 expect "2-str-members-clean" "$(codes "${WORK}/good.tk")" ""
 "${TKC}" "${WORK}/good.tk" -o "${WORK}/good" >/dev/null 2>&1
-expect "2-str-members-run" "$("${WORK}/good" 2>&1)" "AB 2 1"
+# CHANGED 2026-09-25 (Batch Y1, 127.194): `\(t.contains("a"))` renders as
+# `true` (owner decision 127.15); it printed `1` while receiver predicates
+# were invisible to 127.94.  The value is unchanged.
+expect "2-str-members-run" "$("${WORK}/good" 2>&1)" "AB 2 true"
 
 # ── 3. not judged ────────────────────────────────────────────────────────
 prog split '  let p=st.split("a,b";",");
