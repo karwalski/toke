@@ -4588,6 +4588,16 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * (codegen skips it for the same reason, 114.47).  An arm whose
              * type is unresolved is tolerated, as before. */
             if (body->kind==NODE_RETURN_STMT||!at||at->kind==TY_UNKNOWN) continue;
+            /* An `$err` arm whose body is a call is a call made for its
+             * effect on the failure path — `$err:e failret(e.msg)`, a test
+             * helper that records the failure and returns false (toke-ooke
+             * test_template.tk).  Its value is a filler, as `0` is below;
+             * it is not compared.  This misses a real conversion call of the
+             * wrong type in an `$err` arm. */
+            if (body->kind==NODE_CALL_EXPR&&arm->children[0]) {
+                char etag[8]; TOKSTR(etag,cx->src,arm->children[0]);
+                if (!strcmp(etag,"err")||!strcmp(etag,"Err")) continue;
+            }
             if (!arm_type) { arm_type=at; arm_body=body; continue; }
             /* The null filler: a literal `0` or `false` arm beside an arm of
              * a pointer type (str, array, map, struct) is the idiom
