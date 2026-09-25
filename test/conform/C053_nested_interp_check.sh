@@ -49,7 +49,7 @@ EOF2
 # ── 1. --check sees it ───────────────────────────────────────────────────
 expect "1-nested-is-E4073" "$(codes --check "${WORK}/n.tk")" "E4073 "
 expect "1-real-line" "$("${TKC}" --check "${WORK}/n.tk" 2>&1 | grep -o '"line":[0-9]*' | head -1)" '"line":6'
-expect "1-no-fix" "$("${TKC}" --check "${WORK}/n.tk" 2>&1 | grep -c '"fix":""' || true)" "1"
+expect "1-no-fix" "$("${TKC}" --check "${WORK}/n.tk" 2>&1 | grep '"error_code"' | grep -vc '"fix":' || true)" "1"
 # ── 2. the build stops on the same diagnostic ────────────────────────────
 expect "2-build-E4073" "$(codes "${WORK}/n.tk" -o "${WORK}/n")" "E4073 "
 

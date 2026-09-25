@@ -301,11 +301,17 @@ emit_json(DiagSeverity sev, int code,
         json_escape(stderr, fields->got);
     fputc('"', stderr);
 
-    /* fix field — always present for consistent schema */
-    fputs(",\"fix\":\"", stderr);
-    if (fields && fields->fix && fields->fix[0])
+    /* fix field — present only when there is a fix (127.183).  The schema
+     * does not require it (spec v0.3 Appendix A), docs/spec/errors.md records
+     * "Fix field: absent" for the codes with none, AGENTS.md §3.1 says to
+     * leave it absent when uncertain, and the lint emitter already omits it.
+     * An empty string here used to read as "a fix whose text is empty" to any
+     * consumer that tests for the key rather than its value. */
+    if (fields && fields->fix && fields->fix[0]) {
+        fputs(",\"fix\":\"", stderr);
         json_escape(stderr, fields->fix);
-    fputc('"', stderr);
+        fputc('"', stderr);
+    }
 
     /* source_line — the text of the line where the diagnostic occurred */
     {

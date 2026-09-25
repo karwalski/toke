@@ -1042,6 +1042,7 @@ static void nameenv_add_itype(NameEnv *env, Arena *arena,
 
 static void nameenv_add_ifunc(NameEnv *env, Arena *arena, const char *alias,
                               const char *fn, const char *ret,
+                              const char *okret,
                               const char **ptypes, int pcount) {
     if (!env || !alias || !fn || !ret) return;
     if (env->ifunc_count >= env->ifunc_cap) {
@@ -1061,6 +1062,8 @@ static void nameenv_add_ifunc(NameEnv *env, Arena *arena, const char *alias,
                                                        (int)strlen(fn));
     env->ifuncs[env->ifunc_count].ret   = arena_intern(arena, ret,
                                                        (int)strlen(ret));
+    env->ifuncs[env->ifunc_count].okret = (okret && okret[0])
+        ? arena_intern(arena, okret, (int)strlen(okret)) : NULL;
     /* 136.1: the call spelling is the export name past its last '.', because
      * a handwritten stdlib interface namespaces its exports ("infer.load",
      * "row.str") while ir.c's generated ones do not. */
@@ -1121,9 +1124,13 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
              * its arity is checkable; imported_func_ret() reports nothing for
              * it exactly as before. */
             if (!alias) continue;
+            char okret[128] = {0};
             if (!tki_obj_key(rec, end, "error"))
                 (void)tki_str_value(tki_obj_key(rec, end, "return"), end,
                                     ret, (int)sizeof ret);
+            else   /* 127.180: kept apart, for an `mt` ok-arm payload only */
+                (void)tki_str_value(tki_obj_key(rec, end, "return"), end,
+                                    okret, (int)sizeof okret);
             /* 136.1: lift the declared parameter list. A record with no
              * "params" key leaves param_types NULL — arity unknown, and the
              * call is not checked; an empty list is a real zero-arity
@@ -1162,7 +1169,7 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
                     }
                 }
             }
-            nameenv_add_ifunc(env, arena, alias, name, ret, ptypes, pcount);
+            nameenv_add_ifunc(env, arena, alias, name, ret, okret, ptypes, pcount);
             continue;
         }
         if (strcmp(kind, "type") != 0) continue;

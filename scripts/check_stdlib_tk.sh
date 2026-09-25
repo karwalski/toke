@@ -21,7 +21,6 @@ export TKC_STDLIB_DIR="${TKC_STDLIB_DIR:-${REPO_ROOT}/src/stdlib}"
 # file : story -- reason.  Remove the line in the commit that fixes the file.
 KNOWN_RED=(
   "stdlib/toon.tk:127.126 -- E1003 from line 209: the v0.3 migration (a6fe9cd) un-escaped its string escapes, leaving raw newlines, tabs and CRs inside literals and bare backslashes before quotes; it also still uses = for equality. Unused draft (std.toon is toon.c); fix or withdraw."
-  "stdlib/path.tk:127.126 -- E4031 at lines 71 and 97, expected str got func: a let named base shadows the module function base(), and a bare use of the local is typed as the function. Compiler defect (reproduces at 04f6199, so not 127.164); the source is correct."
 )
 
 [ -x "${TKC}" ] || { echo "check-stdlib-tk: no compiler at ${TKC} (run 'make')" >&2; exit 1; }

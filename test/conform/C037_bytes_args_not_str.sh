@@ -114,7 +114,7 @@ refuses() {
        && printf '%s' "${cout}" | grep -q '"error_code":"E4031"' \
        && printf '%s' "${cout}" | grep -q '"expected":"\(\[byte\]\|@(byte)\)"' \
        && printf '%s' "${cout}" | grep -q '"got":"str"' \
-       && ! printf '%s' "${cout}" | grep -q '"fix":""' \
+       && printf '%s' "${cout}" | grep -q '"fix":"' \
        && [ ! -x r_bin ]; then
         echo "  PASS: ${name} — E4031 names both types, fix is non-empty, no binary"
         PASS=$((PASS + 1))

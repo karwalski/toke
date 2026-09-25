@@ -844,6 +844,53 @@ static const Node *find_binding_before(const Node *root, const char *src,
 }
 
 /*
+ * local_in_force (127.169) — the local binding of `name` that codegen will
+ * resolve `use` to, or NULL when codegen resolves it to a module declaration.
+ *
+ * The emitter keeps one flat table of locals per function, filled in source
+ * order as each `let`/`mut`/loop variable is emitted, and a name in that
+ * table shadows a module function or global (name_is_local, llvm.c).
+ * Measured at d25ba32 with a module `f=sum(..)` and `let sum=fn..`:
+ *
+ *   use before the `let`                     -> the module function
+ *   use after it, same block                 -> the local
+ *   use after an `if` whose block holds it   -> the local (the table is flat)
+ *   `let` inside a closure body, use outside -> the module function (a
+ *                                               closure is emitted apart)
+ *
+ * So: the latest binding that starts before `use` and does not contain it,
+ * searching the whole function body except closures that do not contain
+ * `use`.  Unlike find_binding_before there is no "first found anywhere"
+ * fallback — a binding after the use is not in force, and the module
+ * declaration answers.
+ */
+static void local_in_force_rec(const Node *root, const char *src,
+                               const char *name, int nlen,
+                               const Node *use, const Node **best) {
+    if (!root) return;
+    if (root->kind == NODE_CLOSURE && !node_contains(root, use)) return;
+    if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT
+         ||root->kind==NODE_LOOP_INIT)
+        &&root->child_count>0&&root->children[0]) {
+        int tl=root->children[0]->tok_len;
+        if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0
+            && root->start < use->start
+            && (!*best || root->start > (*best)->start)
+            && !node_contains(root, use))
+            *best = root;
+    }
+    for (int i=0;i<root->child_count;i++)
+        local_in_force_rec(root->children[i],src,name,nlen,use,best);
+}
+static const Node *local_in_force(const Ctx *cx, const char *name, int nlen,
+                                  const Node *use) {
+    const Node *best = NULL;
+    if (!cx->fn_node || !use) return NULL;
+    local_in_force_rec(cx->fn_node, cx->src, name, nlen, use, &best);
+    return best;
+}
+
+/*
  * contains_ptr — return 1 if the type tree contains TY_PTR at any depth.
  *
  * Used to enforce the E2010 rule: pointer types (*T) are only valid in
@@ -1504,6 +1551,9 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
     char nb[128]; TOKSTR(nb, cx->src, call->children[0]);
     Decl *d = tc_lookup(cx->env->names->module_scope, nb, (int)strlen(nb));
     if (!d || !d->def_node || d->def_node->kind != NODE_FUNC_DECL) return NULL;
+    /* 127.169: a local closure of that name is what codegen calls. */
+    if (call->children[0]->kind == NODE_IDENT
+        && local_in_force(cx, nb, (int)strlen(nb), call)) return NULL;
     const Node *fn = d->def_node;
     for (int i = 0; i < fn->child_count; i++) {
         const Node *ch = fn->children[i];
@@ -1530,6 +1580,82 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
  * `bn` is the binding node; children are [name, init] (un-annotated form).
  */
 static Type *infer(Ctx *cx, const Node *node);
+
+/*
+ * 127.180 — the value of `let x = mt scr {$ok:v v; $err:e <anything>}`.
+ *
+ * Codegen types an `mt` expression by its FIRST arm that is not an early
+ * return, and when that arm's body is the bare binding of an `$ok` arm the
+ * value is the scrutinee's ok payload (expr_llvm_type / emit_expr, llvm.c
+ * NODE_MATCH_STMT).  The checker kept every `mt`-bound local TY_UNKNOWN, so
+ * `cfg.nosuchfield` after `let cfg=mt result {$ok:v v;$err:e 0}` type-checked
+ * and codegen lowered the unknown field to slot 0 — while the same field on a
+ * directly bound `$ookecfg` was E4025.
+ *
+ * This answers that one shape, the one codegen answers the same way, and
+ * nothing else: another first arm, a sum-type scrutinee, or a scrutinee whose
+ * ok type is not known leaves the binding unknown exactly as before.  The
+ * other arms are not consulted; codegen does not consult them either.
+ *
+ * mt_ok_payload_type is the `T` of a scrutinee that is a `T!E` call — a user
+ * function's return spec, or an imported export's "return" beside its
+ * "error" key (imported struct records only, the 127.66 rule) — or a local
+ * `let` bound to such a call.
+ */
+static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
+    if (!scr || depth > 2) return NULL;
+    if (scr->kind == NODE_IDENT) {
+        if (!cx->fn_node) return NULL;
+        char nb[128]; TOKSTR(nb, cx->src, scr);
+        const Node *bn = find_binding_before(cx->fn_node, cx->src, nb,
+                                             (int)strlen(nb), scr);
+        if (!bn || (bn->kind != NODE_BIND_STMT && bn->kind != NODE_MUT_BIND_STMT)
+            || bn->child_count != 2 || !bn->children[1])
+            return NULL;
+        return mt_ok_payload_type(cx, bn->children[1], depth + 1);
+    }
+    if (scr->kind != NODE_CALL_EXPR || scr->child_count < 1 || !scr->children[0])
+        return NULL;
+    const Node *callee = scr->children[0];
+    if (callee->kind == NODE_FIELD_EXPR) {
+        if (callee->child_count < 2 || !callee->children[0]
+            || callee->children[0]->kind != NODE_IDENT || !callee->children[1])
+            return NULL;
+        char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
+        char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+        const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
+        if (!f || !f->okret) return NULL;
+        return imported_struct_type(cx, f->okret, 0);
+    }
+    if (callee->kind != NODE_IDENT) return NULL;
+    Type *rt = call_decl_ret_type(cx, scr);
+    if (!rt || rt->kind != TY_ERROR_TYPE || !rt->elem) return NULL;
+    if (rt->elem->kind == TY_UNKNOWN || rt->elem->kind == TY_VOID) return NULL;
+    return rt->elem;
+}
+
+static Type *mt_bind_type(Ctx *cx, const Node *m) {
+    if (!m || m->kind != NODE_MATCH_STMT || m->child_count < 2) return NULL;
+    for (int i = 1; i < m->child_count; i++) {
+        const Node *arm = m->children[i];
+        if (!arm || arm->kind != NODE_MATCH_ARM || arm->child_count < 3
+            || !arm->children[2])
+            continue;
+        const Node *body = arm->children[2];
+        if (body->kind == NODE_RETURN_STMT) continue;   /* 114.47, as codegen */
+        /* This is codegen's arm.  Only a bare `$ok:v v` is answered. */
+        if (body->kind != NODE_IDENT || !arm->children[0] || !arm->children[1])
+            return NULL;
+        char tag[16]; TOKSTR(tag, cx->src, arm->children[0]);
+        if (strcmp(tag, "ok") != 0 && strcmp(tag, "Ok") != 0) return NULL;
+        char bb[128], vb[128];
+        TOKSTR(bb, cx->src, body); TOKSTR(vb, cx->src, arm->children[1]);
+        if (strcmp(bb, vb) != 0) return NULL;
+        return mt_ok_payload_type(cx, m->children[0], 0);
+    }
+    return NULL;
+}
+
 static Type *bind_init_type(Ctx *cx, const Node *bn) {
     if (!bn || bn->child_count < 2 || !bn->children[1]) return NULL;
     const Node *initN = bn->children[1];
@@ -1616,6 +1742,9 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      */
     case NODE_STR_LIT:
         return mk_type(cx->env->arena, TY_STR);
+    /* 127.180: `let x = mt scr {$ok:v v; ...}` — see mt_bind_type. */
+    case NODE_MATCH_STMT:
+        return mt_bind_type(cx, initN);
     /*
      * 127.114 (landed 2026-09-22) — NODE_MAP_LIT is now in the case above.
      *
@@ -3188,10 +3317,16 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             }
         }
         Decl *d=tc_lookup(cx->env->names->module_scope,nb,nlen);
+        /* 127.169: a local binding in force at this use shadows a module
+         * declaration of the same name, exactly as codegen resolves it
+         * (local_in_force).  `f=c(p:$str):$str{let base="x";<base}` beside a
+         * module `f=base(..)` typed `base` as the function: a false E4031
+         * "expected str, got func" on stdlib/path.tk. */
+        const Node *shadow=(d&&d->def_node)?local_in_force(cx,nb,nlen,node):NULL;
         /* If not found at module scope, check current function's local binds. */
-        if ((!d||!d->def_node)&&cx->fn_node) {
+        if (((!d||!d->def_node)||shadow)&&cx->fn_node) {
             /* Search the function body for local bindings with type annotations. */
-            const Node *bn=find_binding_before(cx->fn_node,cx->src,nb,nlen,node);
+            const Node *bn=shadow?shadow:find_binding_before(cx->fn_node,cx->src,nb,nlen,node);
             if (bn && (bn->kind==NODE_BIND_STMT||bn->kind==NODE_MUT_BIND_STMT)) {
                 /* Annotated `let x:T=init` → type at [1]. */
                 if (bn->child_count>2&&bn->children[1]) return resolve_type(cx,bn->children[1]);
@@ -3224,6 +3359,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 if (it) return it;
                 return mk_type(A,TY_UNKNOWN);
             }
+            if (shadow) return mk_type(A,TY_UNKNOWN);   /* never the module decl */
         }
         if (!d||!d->def_node) return mk_type(A,TY_UNKNOWN);
         const Node *def=d->def_node;
@@ -3521,6 +3657,14 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         char nb[128]; TOKSTR(nb,cx->src,node->children[0]);
 
         Decl *d=tc_lookup(cx->env->names->module_scope,nb,(int)strlen(nb));
+        /* 127.169: `let sum=fn..; sum(a)` calls the local closure in codegen,
+         * so the module function `sum` must not be the signature checked. */
+        if (d&&d->def_node&&d->def_node->kind==NODE_FUNC_DECL
+            &&node->children[0]->kind==NODE_IDENT
+            &&local_in_force(cx,nb,(int)strlen(nb),node)) {
+            for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
+            return mk_type(A,TY_UNKNOWN);
+        }
         if (!d||!d->def_node||d->def_node->kind!=NODE_FUNC_DECL) {
             for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
             /* 127.14: a `alias.method(...)` stdlib call the checker cannot

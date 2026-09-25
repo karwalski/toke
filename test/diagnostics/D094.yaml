@@ -1,0 +1,12 @@
+id: D094
+series: D
+description: "127.184: a default-mode '[' that can only open an array/map literal (here after '=') is E1003 with the one certain rewrite; the fix value is pinned exactly (AGENTS.md §6). D095 pins the closing ']', D096 the index case that must carry no fix"
+input: |
+  m=t;
+  f=main():i64{
+    let nums=[1;2;3];
+    <0
+  };
+expected_exit_code: 1
+expected_error_codes: ["E1003"]
+expected_fix: "replace '[' with '@(' for array/map literals"

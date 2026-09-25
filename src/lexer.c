@@ -120,6 +120,12 @@ typedef struct {
     int         out_n;
     Profile     profile;
     int         err_count;
+    /* 127.184: default-mode '[' / ']' are E1003.  One entry per open '[':
+     * 1 = it can only be an array/map literal or type (the '@(' fix is
+     * certain), 0 = it follows a value, so it is an index and no single
+     * rewrite is correct for every shape (read vs store, array vs map). */
+    unsigned char brk[64];
+    int         brk_n;
 } Lexer;
 
 /* Forward declarations. */
@@ -597,6 +603,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
     l.out_n     = 0;
     l.profile   = profile;
     l.err_count = 0;
+    l.brk_n     = 0;
 
     while (l.pos < l.len) {
         char c     = src[l.pos];
@@ -686,12 +693,38 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
         case '}':  sym = TK_RBRACE;   break;
         case '[':
             if (l.profile == PROFILE_DEFAULT) {
-                diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
-                          "square brackets are not allowed in default mode; "
-                          "use @() for arrays/maps",
-                          "fix", "replace '[' with '@(' for array/map literals",
-                          "got", "[",
-                          "expected", "@( for arrays/maps", NULL);
+                /* 127.184: after a value (name, literal, ')' or '}') a '['
+                 * is an index: `nums[i]` becomes `nums.get(i)` on a read
+                 * but not on a store, and a map may differ again, so no
+                 * `fix` is certain (AGENTS.md §6).  Anywhere else a '['
+                 * can only open an array/map literal or type, and '@(' is
+                 * the one correct rewrite. */
+                int is_lit = 1;
+                if (l.out_n > 0) {
+                    TokenKind pk = l.out[l.out_n - 1].kind;
+                    if (pk == TK_IDENT || pk == TK_TYPE_IDENT ||
+                        pk == TK_INT_LIT || pk == TK_FLOAT_LIT ||
+                        pk == TK_STR_LIT || pk == TK_BOOL_LIT ||
+                        pk == TK_RPAREN || pk == TK_RBRACE)
+                        is_lit = 0;
+                }
+                if (l.brk_n < (int)sizeof(l.brk))
+                    l.brk[l.brk_n] = (unsigned char)is_lit;
+                l.brk_n++;
+                if (is_lit)
+                    diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
+                              "square brackets are not allowed in default mode; "
+                              "use @() for arrays/maps",
+                              "fix", "replace '[' with '@(' for array/map literals",
+                              "got", "[",
+                              "expected", "@( for arrays/maps", NULL);
+                else
+                    diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
+                              "square brackets are not allowed in default mode; "
+                              "index with .get(i) (read), not [i]",
+                              "got", "[",
+                              "expected", "a method call such as .get(i) for element access",
+                              NULL);
                 sym_error = 1;
                 if (record_error(&l)) break;
                 advance(&l);
@@ -700,12 +733,26 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
             sym = TK_LBRACKET; break;
         case ']':
             if (l.profile == PROFILE_DEFAULT) {
-                diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
-                          "square brackets are not allowed in default mode; "
-                          "use @() for arrays/maps",
-                          "fix", "replace ']' with ')' to close @() array/map literal",
-                          "got", "]",
-                          "expected", ") to close @() array/map", NULL);
+                /* 127.184: the ')' fix is certain only when this ']' closes
+                 * a '[' that got the '@(' fix; an index or a stray ']'
+                 * gets none. */
+                int is_lit = 0;
+                if (l.brk_n > 0) {
+                    l.brk_n--;
+                    if (l.brk_n < (int)sizeof(l.brk)) is_lit = l.brk[l.brk_n];
+                }
+                if (is_lit)
+                    diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
+                              "square brackets are not allowed in default mode; "
+                              "use @() for arrays/maps",
+                              "fix", "replace ']' with ')' to close @() array/map literal",
+                              "got", "]",
+                              "expected", ") to close @() array/map", NULL);
+                else
+                    diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
+                              "square brackets are not allowed in default mode",
+                              "got", "]",
+                              "expected", "no ']' in default mode", NULL);
                 sym_error = 1;
                 if (record_error(&l)) break;
                 advance(&l);
