@@ -31,6 +31,10 @@ preceding one of the counted nouns must match the fact sheet derived by
 it as a historical snapshot. A date or era label excuses a count only when it
 sits in the count's own sentence (story 132.88) or, in a table, its own cell
 or the row's date-only cell (132.93); a date elsewhere dates something else.
+The same holds for a supersession or era cue ("withdrawn", "previously",
+"v0.2"): in a table it excuses a count only from the count's own cell, a
+status-only cell in its row, its column's header or a note below the table
+(132.96).
 
 Rule 2 — LANE CROSSING (story 132.13). A toke-trained tokenizer (Toke-16K,
 tokenizer_v03, proxy8k, the toke SentencePiece models) must never be named in a
@@ -502,6 +506,75 @@ def table_dating_unit(line, start, end):
     return " ".join(own + dates) if own else line
 
 
+# 132.96: a cell that is nothing but a status -- "Superseded", "**Withdrawn
+# 2026-09-18**", "historical", "superseded by 132.4" -- is the row's status
+# column, as a date-only cell is its date column: it marks every cell in its
+# row. "Nothing but": once the cue, dates, story numbers and markup are
+# removed, at most one word is left ("v0.2 grammar notes" leaves two, so it is
+# prose about something else, not a status).
+STATUS_CELL_LEFTOVER_WORDS = 1
+
+
+def _cells(line):
+    """[(start, end)] of the table cells in `line`."""
+    cells, pos = [], 0
+    for m in TABLE_CELL_SEP.finditer(line):
+        cells.append((pos, m.start()))
+        pos = m.end()
+    cells.append((pos, len(line)))
+    return cells
+
+
+def _status_cell(text, cue):
+    t = re.sub(r"<[^>]*>|[*_`]", " ", text).strip()
+    if not re.match(r"\W{0,3}" + cue.pattern, t, cue.flags):
+        return False
+    rest = re.sub(r"[^A-Za-z\s]", " ", cue.sub(" ", t))
+    return len(rest.split()) <= STATUS_CELL_LEFTOVER_WORDS
+
+
+def excusing_unit(line, start, end, near, cue):
+    """132.96: the text a supersession or era cue must sit in to excuse THIS
+    count.
+
+    Rule 4 read SUPERSEDED and HISTORICAL_CUE over the whole line and over
+    `near`, which for a table row is the row plus its header (and, for an HTML
+    table written on one line, the whole table), so "withdrawn" or "previously"
+    in ANY cell excused a count in every other. For a table row the unit is
+    now, as 132.93 made it for a date: the count's own cell; any cell in the
+    row that is only a status ("Superseded", "Withdrawn 2026-09-18"); the
+    markdown header cell of the count's own column; and any line of `near` that is not
+    a table row (a note attached below the table). Outside a table the unit is
+    unchanged: the line and `near`.
+    """
+    if not is_table_row(line):
+        return line + "\n" + near
+    cells = _cells(line)
+    col = next((k for k, (a, b) in enumerate(cells) if a <= start and end <= b),
+               None)
+    if col is None:
+        return line + "\n" + near
+    parts = [line[cells[col][0]:cells[col][1]]]
+    parts += [line[a:b] for a, b in cells if _status_cell(line[a:b], cue)]
+    for other in near.split("\n"):
+        if other == line or not other.strip():
+            continue
+        if not is_table_row(other):
+            parts.append(other)          # a note attached to the table
+            continue
+        ocells = _cells(other)
+        # another line of the same HTML row: its status-only cells. (Not a
+        # header: a "Superseded by" column header is not a status.)
+        if re.search(r"<td\b", other, re.I):
+            parts += [other[a:b] for a, b in ocells
+                      if _status_cell(other[a:b], cue)]
+        # a markdown header row: the header of the count's own column only
+        elif other.lstrip().startswith("|") and line.lstrip().startswith("|") \
+                and len(ocells) == len(cells):
+            parts.append(other[ocells[col][0]:ocells[col][1]])
+    return "\n".join(parts)
+
+
 def dating_unit(line, start, end, block=None, idx=0):
     """132.88: the text a date must sit in to date THIS count.
 
@@ -553,7 +626,8 @@ def count_findings(line, near, block=None, idx=0):
                 continue
             # 132.60: a past value, dated as past in its own block
             if n in _historical(_facts()).get(key, set()) and \
-                    (HISTORICAL_CUE.search(line) or HISTORICAL_CUE.search(near)):
+                    HISTORICAL_CUE.search(excusing_unit(
+                        line, m.start(), m.end(), near, HISTORICAL_CUE)):
                 continue
             # a number given as an explicitly dated or superseded snapshot, a
             # stated target, or another language's figure is a record or a
@@ -563,7 +637,10 @@ def count_findings(line, near, block=None, idx=0):
             if DATED_SNAPSHOT.search(dating_unit(line, m.start(), m.end(),
                                                  block, idx)):
                 continue
-            if SUPERSEDED.search(line) or SUPERSEDED.search(near):
+            # 132.96: in a table, only the count's own cell, a status-only
+            # cell, its column's header or a note below the table
+            if SUPERSEDED.search(excusing_unit(line, m.start(), m.end(),
+                                               near, SUPERSEDED)):
                 continue
             # 132.93: in a table row a target is stated by the count's own
             # cell -- "Gate-1 tasks" in the Token Density cell of toke-spec
@@ -1273,6 +1350,28 @@ SELFTEST = [
     (True, "132.93: a date-only cell is the row's date column",
      "<table><tr><td>2026-05-25</td><td>57 stdlib modules</td></tr></table>",
      ".html"),
+
+    # -- 132.96: a supersession or era cue excuses only its own cell --------
+    (False, "132.96: \"withdrawn\" in another cell's prose",
+     "| Language | Token Density | Ecosystem |\n|---|---|---|\n"
+     "| **toke** | the 52% headline was withdrawn | 57 stdlib modules |"),
+    (False, "132.96: the same in a one-line HTML table (near = the whole table)",
+     "<table><tr><td>the 52% figure was previously quoted</td>"
+     "<td>57 stdlib modules</td></tr></table>", ".html"),
+    (False, "132.96: another column's \"Superseded by\" header is not a status",
+     "| Ecosystem | Superseded by |\n|---|---|\n| 57 stdlib modules | nothing yet |"),
+    (False, "132.96: \"v0.2\" in another cell does not date a historical count",
+     "| Spec | Corpus |\n|---|---|\n| v0.2 grammar notes | 46,754 validated programs |"),
+    (True, "132.96: the cue in the count's own cell",
+     "| Language | Ecosystem |\n|---|---|\n"
+     "| **toke** | 57 stdlib modules (superseded) |"),
+    (True, "132.96: a status-only cell is the row's status column",
+     "<table><tr><td>57 stdlib modules</td><td><b>Withdrawn</b></td></tr></table>",
+     ".html"),
+    (True, "132.96: the header of the count's own column",
+     "| Historical ecosystem | Now |\n|---|---|\n| 57 stdlib modules | see facts |"),
+    (True, "132.96: an era cue in the historical count's own cell",
+     "| Spec | Corpus |\n|---|---|\n| grammar | v0.2-era: 46,754 validated programs |"),
 ]
 
 
