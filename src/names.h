@@ -177,6 +177,10 @@ typedef struct {
     const char  *fn;            /* export name (e.g. "cfgdefault")       */
     const char  *member;        /* `fn` past its last '.' (e.g. "load")  */
     const char  *ret;           /* declared toke return type spelling    */
+    const char  *okret;         /* 127.180: the `T` of a `T!E` export, or
+                                 * NULL; `ret` stays empty for those (a T!E
+                                 * is not a T), and this is read only where
+                                 * an `mt` arm binds the ok payload */
     int          param_count;   /* declared arity                        */
     const char **param_types;   /* arena array of toke type spellings    */
 } ImportedFunc;

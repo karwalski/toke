@@ -1581,6 +1581,81 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
  */
 static Type *infer(Ctx *cx, const Node *node);
 
+/*
+ * 127.180 — the value of `let x = mt scr {$ok:v v; $err:e <anything>}`.
+ *
+ * Codegen types an `mt` expression by its FIRST arm that is not an early
+ * return, and when that arm's body is the bare binding of an `$ok` arm the
+ * value is the scrutinee's ok payload (expr_llvm_type / emit_expr, llvm.c
+ * NODE_MATCH_STMT).  The checker kept every `mt`-bound local TY_UNKNOWN, so
+ * `cfg.nosuchfield` after `let cfg=mt result {$ok:v v;$err:e 0}` type-checked
+ * and codegen lowered the unknown field to slot 0 — while the same field on a
+ * directly bound `$ookecfg` was E4025.
+ *
+ * This answers that one shape, the one codegen answers the same way, and
+ * nothing else: another first arm, a sum-type scrutinee, or a scrutinee whose
+ * ok type is not known leaves the binding unknown exactly as before.  The
+ * other arms are not consulted; codegen does not consult them either.
+ *
+ * mt_ok_payload_type is the `T` of a scrutinee that is a `T!E` call — a user
+ * function's return spec, or an imported export's "return" beside its
+ * "error" key (imported struct records only, the 127.66 rule) — or a local
+ * `let` bound to such a call.
+ */
+static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
+    if (!scr || depth > 2) return NULL;
+    if (scr->kind == NODE_IDENT) {
+        if (!cx->fn_node) return NULL;
+        char nb[128]; TOKSTR(nb, cx->src, scr);
+        const Node *bn = find_binding_before(cx->fn_node, cx->src, nb,
+                                             (int)strlen(nb), scr);
+        if (!bn || (bn->kind != NODE_BIND_STMT && bn->kind != NODE_MUT_BIND_STMT)
+            || bn->child_count != 2 || !bn->children[1])
+            return NULL;
+        return mt_ok_payload_type(cx, bn->children[1], depth + 1);
+    }
+    if (scr->kind != NODE_CALL_EXPR || scr->child_count < 1 || !scr->children[0])
+        return NULL;
+    const Node *callee = scr->children[0];
+    if (callee->kind == NODE_FIELD_EXPR) {
+        if (callee->child_count < 2 || !callee->children[0]
+            || callee->children[0]->kind != NODE_IDENT || !callee->children[1])
+            return NULL;
+        char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
+        char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+        const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
+        if (!f || !f->okret) return NULL;
+        return imported_struct_type(cx, f->okret, 0);
+    }
+    if (callee->kind != NODE_IDENT) return NULL;
+    Type *rt = call_decl_ret_type(cx, scr);
+    if (!rt || rt->kind != TY_ERROR_TYPE || !rt->elem) return NULL;
+    if (rt->elem->kind == TY_UNKNOWN || rt->elem->kind == TY_VOID) return NULL;
+    return rt->elem;
+}
+
+static Type *mt_bind_type(Ctx *cx, const Node *m) {
+    if (!m || m->kind != NODE_MATCH_STMT || m->child_count < 2) return NULL;
+    for (int i = 1; i < m->child_count; i++) {
+        const Node *arm = m->children[i];
+        if (!arm || arm->kind != NODE_MATCH_ARM || arm->child_count < 3
+            || !arm->children[2])
+            continue;
+        const Node *body = arm->children[2];
+        if (body->kind == NODE_RETURN_STMT) continue;   /* 114.47, as codegen */
+        /* This is codegen's arm.  Only a bare `$ok:v v` is answered. */
+        if (body->kind != NODE_IDENT || !arm->children[0] || !arm->children[1])
+            return NULL;
+        char tag[16]; TOKSTR(tag, cx->src, arm->children[0]);
+        if (strcmp(tag, "ok") != 0 && strcmp(tag, "Ok") != 0) return NULL;
+        char bb[128], vb[128];
+        TOKSTR(bb, cx->src, body); TOKSTR(vb, cx->src, arm->children[1]);
+        if (strcmp(bb, vb) != 0) return NULL;
+        return mt_ok_payload_type(cx, m->children[0], 0);
+    }
+    return NULL;
+}
+
 static Type *bind_init_type(Ctx *cx, const Node *bn) {
     if (!bn || bn->child_count < 2 || !bn->children[1]) return NULL;
     const Node *initN = bn->children[1];
@@ -1667,6 +1742,9 @@ static Type *bind_init_type(Ctx *cx, const Node *bn) {
      */
     case NODE_STR_LIT:
         return mk_type(cx->env->arena, TY_STR);
+    /* 127.180: `let x = mt scr {$ok:v v; ...}` — see mt_bind_type. */
+    case NODE_MATCH_STMT:
+        return mt_bind_type(cx, initN);
     /*
      * 127.114 (landed 2026-09-22) — NODE_MAP_LIT is now in the case above.
      *
