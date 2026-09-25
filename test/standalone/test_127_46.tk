@@ -20,7 +20,7 @@ f=main():$i64{
   (* NB: `m.len` is deliberately not asserted here — tk_map_set_w mutates the
    * receiver in place, so the old binding sees the new key. That is a separate
    * (map value-semantics) question from 127.46's result tagging. *)
-  cks("fresh-set-contains";"\(m2.contains("b"))";"1");
+  cks("fresh-set-contains";"\(m2.contains("b"))";"true");
   cks("fresh-set-getor";"\(m2.getor("zz";7))";"7");
   cks("fresh-set-keys";"\(m2.keys.len)";"2");
   let t=@("x":"y");
