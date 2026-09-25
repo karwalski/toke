@@ -2010,6 +2010,40 @@ static void postpass_str_concat(char **bufp, int *blen_p)
     }
 }
 
+/* 127.160 / 127.161: count what prepass() would strip. The recognition rules
+ * are prepass()'s, deliberately duplicated rather than approximated: string
+ * state toggles on a `"` not preceded by `\`, `//` and `#` run to end of line,
+ * `(* *)` nests. prepass() also has bracket rewrites that bulk-copy text; if
+ * one of those ever swallowed a comment prefix, this count would be HIGHER
+ * than what prepass strips, which errs toward declining -- the safe side. */
+int tkc_migrate_count_comments(const char *src, int slen, int *first_line)
+{
+    int n = 0, line = 1, in_str = 0;
+    if (first_line) *first_line = 0;
+    for (int i = 0; i < slen; i++) {
+        if (src[i] == '\n') { line++; continue; }
+        if (src[i] == '"' && (i == 0 || src[i-1] != '\\')) { in_str = !in_str; continue; }
+        if (in_str) continue;
+        int is_line = (src[i] == '#') || (src[i] == '/' && i+1 < slen && src[i+1] == '/');
+        int is_block = (src[i] == '(' && i+1 < slen && src[i+1] == '*');
+        if (!is_line && !is_block) continue;
+        if (n++ == 0 && first_line) *first_line = line;
+        if (is_line) {
+            while (i+1 < slen && src[i+1] != '\n') i++;
+        } else {
+            int d = 1; i += 2;
+            while (i < slen && d > 0) {
+                if (src[i] == '\n') line++;
+                if (i+1 < slen && src[i]=='(' && src[i+1]=='*') { d++; i+=2; continue; }
+                if (i+1 < slen && src[i]=='*' && src[i+1]==')') { d--; i+=2; continue; }
+                i++;
+            }
+            i--;
+        }
+    }
+    return n;
+}
+
 static int s_migrate_depth = 0;  /* recursion guard */
 
 int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unused,

@@ -37,4 +37,17 @@
 int tkc_migrate(const char *src, int slen, const Token *toks, int tc,
                 FILE *out);
 
+/*
+ * tkc_migrate_count_comments — number of comments tkc_migrate() would strip.
+ *
+ * 127.160 / 127.161: tkc_migrate()'s prepass deletes every `(* *)`, `//` and
+ * `#` comment before lexing, and nothing downstream can put them back (see
+ * docs/architecture/migrate-comment-preservation.md). This scanner recognises
+ * comments with exactly the prepass's rules (same string tracking, same
+ * nesting) so a caller can refuse to run the migrator on source it would
+ * damage. Returns the count; *first_line (may be NULL) receives the 1-based
+ * line of the first one, or 0 when there are none.
+ */
+int tkc_migrate_count_comments(const char *src, int slen, int *first_line);
+
 #endif /* TKC_MIGRATE_H */
