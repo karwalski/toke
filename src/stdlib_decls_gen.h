@@ -4,7 +4,7 @@
  */
 
     {"tk_access_log_close", "declare void @tk_access_log_close(i64)", 0},
-    {"tk_access_log_set_format", "declare void @tk_access_log_set_format(i64)", 0},
+    {"tk_access_log_set_format", "declare i32 @tk_access_log_set_format(i64)", 0},
     {"tk_access_log_set_global", "declare void @tk_access_log_set_global(i64)", 0},
     {"tk_access_log_write", "declare void @tk_access_log_write(i64, i64, i64, i64, i32, i64, i64, i64)", 0},
     {"tk_analytics_anomalies_w", "declare i64 @tk_analytics_anomalies_w(i64, i64, i64)", 0},
