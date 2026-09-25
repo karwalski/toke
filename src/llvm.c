@@ -1139,6 +1139,10 @@ typedef struct {
     char c_name[128];       /* extern_c: raw C symbol name, empty if none */
     const char *llvm_ret;   /* e.g. "i8*", "i64", "double", "void" */
     char ownership[16];     /* "static", "caller", "borrowed", or "" */
+    char file_module[64];   /* 124.2f-d: the interface FILE the entry came
+                             * from ("dataframe"), which differs from `module`
+                             * — the export's own prefix ("df") — whenever an
+                             * interface publishes a sub-namespace. */
 } TkiCacheEntry;
 
 static TkiCacheEntry g_tki_cache[TKI_CACHE_MAX];
@@ -1238,6 +1242,8 @@ static void load_stdlib_tki(const char *module) {
         strncpy(e->module, mod_part, sizeof(e->module) - 1);
         strncpy(e->method, meth_part, sizeof(e->method) - 1);
         strncpy(e->toke_ret, toke_ret, sizeof(e->toke_ret) - 1);
+        strncpy(e->file_module, module, sizeof(e->file_module) - 1);
+        e->file_module[sizeof(e->file_module) - 1] = '\0';
         e->c_name[0] = '\0';
         e->ownership[0] = '\0';
 
@@ -1945,6 +1951,84 @@ static const char *resolve_module_subpath_call(Ctx *c, const Node *callee) {
     return NULL;
 }
 
+static int expr_is_str_value(Ctx *c, const Node *e); /* defined later */
+
+/* expr_is_nonstr_scalar — `e` is statically a number or a bool: a numeric
+ * literal, or an expression the checker typed as one. */
+static int expr_is_nonstr_scalar(const Node *e) {
+    if (!e) return 0;
+    if (e->kind == NODE_INT_LIT || e->kind == NODE_FLOAT_LIT
+        || e->kind == NODE_BOOL_LIT)
+        return 1;
+    if (!e->rtype) return 0;
+    switch (e->rtype->kind) {
+    case TY_BOOL: case TY_I64: case TY_U64: case TY_F64: case TY_F32:
+    case TY_I8: case TY_I16: case TY_I32: case TY_U8: case TY_U16: case TY_U32:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/*
+ * test_eq_args_are_str (127.68) — lower `test.eq(a;b)` as a string compare.
+ *
+ * True when at least one argument is provably a str and neither is provably a
+ * number or bool.  Integer uses therefore keep exactly the compare they had,
+ * and a str pair — `test.eq(str.upper("hello");"HELLO")`, which returned 0
+ * for two equal strings because it compared their addresses — compares the
+ * contents.  A pair the backend cannot type either way keeps the integer
+ * compare: that is the old behaviour, not a new guess.
+ */
+static int test_eq_args_are_str(Ctx *c, const Node *a, const Node *b) {
+    if (expr_is_nonstr_scalar(a) || expr_is_nonstr_scalar(b)) return 0;
+    return expr_is_str_value(c, a) || expr_is_str_value(c, b);
+}
+
+/*
+ * resolve_interface_prefix_call (124.2f-d) — the glue symbol for a call whose
+ * prefix is not an import alias but IS a prefix an imported stdlib interface
+ * publishes, or NULL.
+ *
+ * stdlib/dataframe.tki exports `df.fromcsv`, `df.fromrows`, ...;
+ * stdlib/template.tki exports `tpl.vars`, ...  The checker accepts
+ * `i=dataframe:std.dataframe;` followed by `df.fromrows(...)` (C035's B6
+ * asserts exactly that), but the emitter only knew import aliases, so the
+ * call fell through every resolver to the bare-name fallback and was lowered
+ * as `call @fromrows` — a symbol nothing defines.  `--check` clean, then
+ * E9003 from `ld` at line 0 with an empty fix.
+ *
+ * The answer is read from the interface files, never a list: an export
+ * `<alias>.<method>` in the .tki of an imported std module means the call is
+ * that module's `<method>`, and the symbol is the one stdlib_symbol_for gives
+ * the module — the same symbol the module's own alias would reach.
+ *
+ * Not applied when `alias` is a local (a receiver value named like a prefix
+ * is a receiver), nor to the hard-coded sub-namespaces resolve_sub_namespace_call
+ * owns (`row` from std.db lowers to tk_row_*, not tk_db_*).
+ */
+static const char *resolve_interface_prefix_call(Ctx *c, const char *alias,
+                                                 const char *method) {
+    char sub_probe[256];
+    if (resolve_sub_namespace_call(alias, method, sub_probe, sizeof sub_probe))
+        return NULL;
+    if (name_is_local(c, alias)) return NULL;
+    ensure_tki_cache_loaded();
+    for (int i = 0; i < c->import_count; i++) {
+        if (!c->imports[i].is_std) continue;
+        const char *m = c->imports[i].module;
+        if (!strncmp(m, "std.", 4)) m += 4;
+        for (int k = 0; k < g_tki_cache_count; k++) {
+            const TkiCacheEntry *e = &g_tki_cache[k];
+            if (strcmp(e->file_module, m) || strcmp(e->module, alias)
+                || strcmp(e->method, method))
+                continue;
+            return stdlib_symbol_for(c->imports[i].module, 1, method);
+        }
+    }
+    return NULL;
+}
+
 static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *method) {
     /* Find which module this alias refers to */
     const char *mod = NULL;
@@ -1956,7 +2040,7 @@ static const char *resolve_stdlib_call(Ctx *c, const char *alias, const char *me
             break;
         }
     }
-    if (!mod) return NULL;
+    if (!mod) return resolve_interface_prefix_call(c, alias, method);
     return stdlib_symbol_for(mod, is_std, method);
 }
 
@@ -2327,6 +2411,72 @@ static int emit_str_global(Ctx *c, const char *raw, int rlen, int *out_alen)
     str_buf_append(c, "\\00\"\n");
     if (out_alen) *out_alen = byte_count + 1; /* escaped bytes + NUL */
     return idx;
+}
+
+/*
+ * emit_bool_to_str (127.15 / 127.94) — render an i1 as "true" or "false".
+ *
+ * OWNER DECISION 2026-09-22 (127.15): `\(x)` on a bool prints true/false,
+ * matching the predefined identifiers and fmt.bool, so the two spellings of
+ * one value cannot disagree.  Interpolation used to zext the i1 and print it
+ * as a decimal (`1`), and `b as str` passed the i1 straight to
+ * tk_str_fromi64_w(i64 ...) — invalid IR ("'%tN' defined with type 'i1'"),
+ * which surfaced as E9003 from clang.  Both now come here.  Returns an i8*.
+ */
+static const TkiCacheEntry *tki_entry_for(Ctx *c, const char *alias,
+                                          const char *method); /* later */
+
+/* call_declares_bool (127.94) — `e` is a `<alias>.<method>(...)` stdlib call
+ * whose interface declares a `bool` return.  Such a value crosses the i64
+ * ABI, so the backend sees an i64 where the program has a bool; without this
+ * `\(str.contains(a;b))` printed `1` while `\(a==b)` printed `true`.  Must be
+ * asked while c->src points at the buffer `e`'s tokens index. */
+static int call_declares_bool(Ctx *c, const Node *e) {
+    if (!e || e->kind != NODE_CALL_EXPR || e->child_count < 1) return 0;
+    const Node *cal = e->children[0];
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2) return 0;
+    if (!cal->children[0] || cal->children[0]->kind != NODE_IDENT) return 0;
+    char alias[128], method[128];
+    tok_cp(c->src, cal->children[0], alias, sizeof alias);
+    tok_cp(c->src, cal->children[1], method, sizeof method);
+    const TkiCacheEntry *te = tki_entry_for(c, alias, method);
+    if (!te) return 0;
+    char b[64];
+    tki_base_return_type(te->toke_ret, b, sizeof b);
+    return !strcmp(b, "bool");
+}
+
+/* field_declares_bool (127.94) — `e` is `<rec>.<field>` on a struct whose
+ * declared field type is bool.  A struct slot is an i64, so the backend sees
+ * an integer; the declaration says bool.  Same c->src rule as above. */
+static int field_declares_bool(Ctx *c, const Node *e) {
+    if (!e || e->kind != NODE_FIELD_EXPR || e->child_count < 2) return 0;
+    const char *st = expr_struct_type(c, e->children[0]);
+    if (!st) return 0;
+    const StructInfo *si = lookup_struct(c, st[0] == '$' ? st + 1 : st);
+    if (!si) si = lookup_struct(c, st);
+    if (!si || si->is_sum) return 0;
+    char fname[128];
+    tok_cp(c->src, e->children[1], fname, sizeof fname);
+    for (int i = 0; i < si->field_count; i++)
+        if (!strcmp(si->field_names[i], fname))
+            return !strcmp(si->field_types[i], "bool");
+    return 0;
+}
+
+static int emit_bool_to_str(Ctx *c, int v) {
+    int at = 1, af = 1;
+    int st = emit_str_global(c, "\"true\"", 6, &at);
+    int sf = emit_str_global(c, "\"false\"", 7, &af);
+    int gt = next_tmp(c);
+    fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+            gt, at, at, c->module_prefix, st);
+    int gf = next_tmp(c);
+    fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
+            gf, af, af, c->module_prefix, sf);
+    int sel = next_tmp(c);
+    fprintf(c->out, "  %%t%d = select i1 %%t%d, i8* %%t%d, i8* %%t%d\n", sel, v, gt, gf);
+    return sel;
 }
 
 /* ── Expression emission ───────────────────────────────────────────── */
@@ -3194,6 +3344,9 @@ static int emit_expr(Ctx *c, const Node *n)
                          * the wrapper buffer — it reads the sub-expression's
                          * tokens. */
                         int unknown_ret = interp_operand_type_unknown(c, expr_node, ety, est);
+                        int abi_bool = ety && !strcmp(ety, "i64")
+                                       && (call_declares_bool(c, expr_node)
+                                           || field_declares_bool(c, expr_node));
                         c->src = saved_src;
                         /* 114.32: interpolation of a non-string value. Previously
                          * any i64 was inttoptr'd to i8* on the assumption it
@@ -3275,13 +3428,17 @@ static int emit_expr(Ctx *c, const Node *n)
                             seg_val = next_tmp(c);
                             fprintf(c->out, "  %%t%d = getelementptr inbounds [%d x i8], [%d x i8]* @.str.%s%d, i32 0, i32 0\n",
                                     seg_val, alenu, alenu, c->module_prefix, siu);
+                        } else if (ety && !strcmp(ety, "i1")) {
+                            /* 127.15/127.94: a bool prints true/false */
+                            seg_val = emit_bool_to_str(c, seg_val);
+                        } else if (abi_bool) {
+                            /* the same, for a bool that crossed the i64 ABI */
+                            int nz = next_tmp(c);
+                            fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", nz, seg_val);
+                            seg_val = emit_bool_to_str(c, nz);
                         } else {
-                            /* raw int / bool → decimal string */
-                            if (ety && !strcmp(ety, "i1")) {
-                                int zx = next_tmp(c);
-                                fprintf(c->out, "  %%t%d = zext i1 %%t%d to i64\n", zx, seg_val);
-                                seg_val = zx;
-                            } else if (ety && (!strcmp(ety, "i8") || !strcmp(ety, "i16") || !strcmp(ety, "i32"))) {
+                            /* raw int → decimal string */
+                            if (ety && (!strcmp(ety, "i8") || !strcmp(ety, "i16") || !strcmp(ety, "i32"))) {
                                 int zx = next_tmp(c);
                                 fprintf(c->out, "  %%t%d = sext %s %%t%d to i64\n", zx, ety, seg_val);
                                 seg_val = zx;
@@ -4354,6 +4511,13 @@ static int emit_expr(Ctx *c, const Node *n)
                 const char *sp = resolve_module_subpath_call(c, n->children[0]);
                 if (sp) { resolved_fn = sp; }
             }
+            /* 127.68: test.eq on a str pair compares by value.  The i64 ABI
+             * cannot tell a str handle from an integer, so the choice is
+             * made here, from the static types, and never at run time. */
+            if (resolved_fn && !strcmp(resolved_fn, "tk_test_eq_w")
+                && n->child_count == 3
+                && test_eq_args_are_str(c, n->children[1], n->children[2]))
+                resolved_fn = "tk_test_eqstr_w";
             /* Disambiguate http.get/post by argument count:
              * 1 arg = HTTP client request, 2 args = route registration */
             if (resolved_fn) {
@@ -4957,6 +5121,18 @@ static int emit_expr(Ctx *c, const Node *n)
                 } else if (!strcmp(src_ty, "i8*")) {
                     /* str -> str: identity */
                     fprintf(c->out, "  %%t%d = getelementptr i8, i8* %%t%d, i32 0\n", t, v);
+                } else if (!strcmp(src_ty, "i64")
+                           && (call_declares_bool(c, n->children[0])
+                               || field_declares_bool(c, n->children[0]))) {
+                    /* 127.94: a declared bool that crossed the i64 ABI */
+                    int nz = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = icmp ne i64 %%t%d, 0\n", nz, v);
+                    t = emit_bool_to_str(c, nz);
+                } else if (!strcmp(src_ty, "i1")) {
+                    /* 127.94: bool -> "true"/"false", the same rendering as
+                     * interpolation and fmt.bool.  The %t reserved above is
+                     * left undefined, which is legal for named values. */
+                    t = emit_bool_to_str(c, v);
                 } else {
                     /* int -> str */
                     fprintf(c->out, "  %%t%d = call i64 @tk_str_fromi64_w(i64 %%t%d)\n", t, v);

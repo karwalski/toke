@@ -19,15 +19,23 @@
 #include <stdint.h>
 
 /* ── dashboard wrappers (dashboard.h) ─────────────────────────────── */
-int64_t tk_dashboard_new_w(int64_t title) {
+/* 136.70: dashboard.new(title:str; cols:u64) -- the documented signature and
+ * dashboard_new()'s own.  The wrapper took the title alone and hard-coded
+ * 12 grid columns, so the documented `dashboard.new("Metrics"; 2)` was an
+ * arity error.  dashboard_new() clamps cols 0 to 1. */
+int64_t tk_dashboard_new_w(int64_t title, int64_t cols) {
     const char *t = title ? (const char *)(intptr_t)title : "Dashboard";
-    TkDashboard *d = dashboard_new(t, 12);
+    uint32_t n = (cols < 0 || cols > 0xFFFF) ? 0u : (uint32_t)cols;
+    TkDashboard *d = dashboard_new(t, n);
     return (int64_t)(intptr_t)d;
 }
 
-int64_t tk_dashboard_addchart_w(int64_t dash, int64_t chart) {
+/* 136.70: addchart(d; id; spec), as documented and as dashboard_addchart()
+ * takes it; the wrapper dropped the widget id. */
+int64_t tk_dashboard_addchart_w(int64_t dash, int64_t id, int64_t chart) {
     if (!dash || !chart) return 0;
-    dashboard_addchart((TkDashboard *)(intptr_t)dash, NULL, NULL,
+    dashboard_addchart((TkDashboard *)(intptr_t)dash,
+                        id ? (const char *)(intptr_t)id : NULL, NULL,
                         (TkChartSpec *)(intptr_t)chart, 0, 0, 1, 1);
     return dash;
 }

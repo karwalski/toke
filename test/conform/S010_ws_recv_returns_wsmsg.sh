@@ -168,7 +168,7 @@ rc=$?
 got="$(tr '\n' ' ' < "${WORK}/out.txt" | sed 's/  *$//')"
 
 # opcode fin len  |  opcode len byte0 byte3
-WANT="1 1 5 2 4 0 255"
+WANT="1 true 5 2 4 0 255"  # fin is a bool field: true since 127.94 (127.15 decision)
 
 if [ "${rc}" -ne 0 ]; then
     echo "  FAIL: the client exited ${rc} (138 = SIGBUS, the defect itself)"
@@ -176,7 +176,7 @@ if [ "${rc}" -ne 0 ]; then
     FAIL=$((FAIL + 1))
 else
     if [ "${got}" = "${WANT}" ]; then
-        echo "  PASS: text frame read as opcode=1 fin=1 payload.len=5"
+        echo "  PASS: text frame read as opcode=1 fin=true payload.len=5"
         PASS=$((PASS + 1))
         echo "  PASS: binary frame delivered as \$ok with opcode=2, len=4, an embedded NUL preserved"
         PASS=$((PASS + 1))

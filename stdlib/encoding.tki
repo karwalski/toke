@@ -89,19 +89,17 @@
       "kind": "func",
       "name": "encoding.base64encode",
       "params": [
-        "i64"
+        "[byte]"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
       "name": "encoding.base64urlencodenopad",
       "params": [
-        "i64"
+        "[byte]"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",
@@ -116,10 +114,9 @@
       "kind": "func",
       "name": "encoding.frombytes",
       "params": [
-        "i64"
+        "[byte]"
       ],
-      "return": "i64",
-      "gen": "abi"
+      "return": "str"
     },
     {
       "kind": "func",

@@ -26,6 +26,6 @@ f=main():$i64{
   cks("contains-after-set";"\(e.contains("new"))";"1");
   if(m.contains("a")){ io.println("PASS contains-in-if") }
   el{ io.println("FAIL contains-in-if") };
-  cks("str-contains-unchanged";"\(s.contains("hello";"ell"))";"1");
+  cks("str-contains-unchanged";"\(s.contains("hello";"ell"))";"true"); (* 127.94 *)
   <0
 };

@@ -62,6 +62,48 @@ int tk_test_assert_eq(const char *a, const char *b, const char *msg)
     return 0;
 }
 
+/*
+ * 127.68 — test.eq, split by argument type.
+ *
+ * tk_test_eq_w was `return (a == b)` on the raw i64 ABI value: for str
+ * arguments a comparison of POINTERS, so test.eq(str.upper("hello");"HELLO")
+ * returned 0 for two identical strings, printed nothing, and marked nothing.
+ * Every caller discarded the result, which made every assertion built on it
+ * inert (157 in ooke alone, 134.17).
+ *
+ * The integer meaning is unchanged: tk_test_eq_i64 compares the same two
+ * values and returns the same 1/0.  What is new is the assertion contract the
+ * rest of this file already keeps — a failure prints a DIAGNOSTIC line and
+ * marks the current test failed.  Strings compare by value in tk_test_eq_str,
+ * which the backend selects when an argument is a str (see llvm.c).
+ */
+int tk_test_eq_i64(int64_t a, int64_t b)
+{
+    if (a == b) return 1;
+    fprintf(stderr,
+            "DIAGNOSTIC: kind=assertion_failed msg=\"test.eq\" detail=\"eq: %" PRId64 " != %" PRId64 "\"\n",
+            a, b);
+    mark_current_test_failed();
+    return 0;
+}
+
+int tk_test_eq_str(const char *a, const char *b)
+{
+    if (a && b && strcmp(a, b) == 0) return 1;
+    fprintf(stderr,
+            "DIAGNOSTIC: kind=assertion_failed msg=\"test.eq\" detail=\"eq: \\\"%s\\\" != \\\"%s\\\"\"\n",
+            a ? a : "(null)", b ? b : "(null)");
+    mark_current_test_failed();
+    return 0;
+}
+
+/* 127.68: test.fail is a failure by definition; it now marks the current
+ * test failed, as every failing assertion here does. */
+void tk_test_mark_failed(void)
+{
+    mark_current_test_failed();
+}
+
 int tk_test_assert_ne(const char *a, const char *b, const char *msg)
 {
     if (!msg) msg = "(no message)";

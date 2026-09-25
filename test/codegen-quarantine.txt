@@ -55,3 +55,9 @@ test/standalone/test_db_sandbox.tk        # 2026-09-23 E4026 db.exec/db.many cal
 # (none — test/standalone/test_str.tk was the only one and was fixed under
 # story 127.5 on 2026-09-23: it called str.join with the arguments reversed,
 # which passes --check and segfaults. See docs/spec/semantics.md:184.)
+
+# ── Programs that report their own failure (124.2f-a, 2026-09-24) ──────────
+# A stdout line beginning with FAIL is now unhealthy, the same convention
+# test/standalone/run_all.sh tallies. See scripts/diff_codegen.py.
+test/standalone/test_io_eof.tk            # 2026-09-24 prints 2 FAIL lines under diff-codegen: it reads its fixture (a\n\nb) from stdin and the harness feeds /dev/null; permanent while the harness has no per-program stdin 124.2f-a
+test/standalone/test_json_full.tk         # 2026-09-24 prints "FAIL json.getbool false": `mt json.getbool(o;"off"){$ok:v v;$err:e true}` takes the $err arm for a false value (0 read as the error sentinel, the 114.53 class); new defect, to be filed 124.2f-a

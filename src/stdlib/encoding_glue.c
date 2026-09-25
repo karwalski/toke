@@ -37,8 +37,17 @@ int64_t tk_encoding_hexdecode_w(int64_t s) {
     if (d.data) free((void *)d.data);
     return out;
 }
-int64_t tk_encoding_urlencode_w(int64_t s) { return s; }   /* str-domain; unchanged */
-int64_t tk_encoding_urldecode_w(int64_t s) { return s; }
+/* 124.2f-a: these two were identity stubs from the 75.12 split and were
+ * never wired to encoding.c, so `enc.urlencode("a b")` returned "a b"
+ * unchanged. They are str -> str and call the real percent-coders. */
+int64_t tk_encoding_urlencode_w(int64_t s) {
+    const char *out = encoding_urlencode(s ? (const char *)(intptr_t)s : "");
+    return out ? (int64_t)(intptr_t)out : (int64_t)(intptr_t)"";
+}
+int64_t tk_encoding_urldecode_w(int64_t s) {
+    const char *out = encoding_urldecode(s ? (const char *)(intptr_t)s : "");
+    return out ? (int64_t)(intptr_t)out : (int64_t)(intptr_t)"";
+}
 int64_t tk_encoding_base64encode_w(int64_t b) {
     uint8_t *buf; uint64_t n = tk_bytes_unpack(b, &buf);
     ByteArray ba = { buf, n };

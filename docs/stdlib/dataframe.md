@@ -7,7 +7,7 @@ order: 10
 
 **Status: Implemented** -- C runtime backing.
 
-The `std.dataframe` module provides a columnar data frame for tabular data processing. Load data from CSV bytes or row arrays, then filter, group, join, slice, and export. Columns where every value parses as a 64-bit float are stored as `f64`; all others are stored as `$str`.
+The `std.dataframe` module provides a columnar data frame for tabular data processing. Load data from CSV text or row arrays, then filter, group, join, slice, and export. Columns where every value parses as a 64-bit float are stored as `f64`; all others are stored as `$str`.
 
 ## Types
 
@@ -49,9 +49,9 @@ Error value returned when a data frame operation fails.
 
 ## Functions
 
-### df.fromcsv(data: @($byte)): $dataframe!$dferr
+### df.fromcsv(data: $str): $dataframe!$dferr
 
-Parses CSV bytes into a new data frame, treating the first row as column headers. Columns where every cell parses as a finite 64-bit float are stored as `f64`; all other columns are stored as `$str`. Returns `$dferr` if the input is not valid CSV or if memory allocation fails.
+Parses CSV text into a new data frame, treating the first row as column headers. Columns where every cell parses as a finite 64-bit float are stored as `f64`; all other columns are stored as `$str`. Returns `$dferr` if the input is not valid CSV or if memory allocation fails.
 
 <!-- skip-check -->
 ```toke
@@ -134,14 +134,14 @@ Returns the row and column counts without allocating. Use this to validate a fra
 let s = df.shape(data);
 ```
 
-### df.tocsv(d: $dataframe): @($byte)
+### df.tocsv(d: $dataframe): $str
 
-Serialises the data frame as RFC 4180 CSV with a header row and returns the result as raw bytes. This function never fails; an empty frame produces a header-only CSV.
+Serialises the data frame as RFC 4180 CSV with a header row and returns the result as text. This function never fails; an empty frame produces a header-only CSV.
 
 <!-- skip-check -->
 ```toke
-let bytes = df.tocsv(result);
-mt file.write("output.csv"; bytes) {$ok:v ();$err:e <1};
+let text = df.tocsv(result);
+mt file.write("output.csv"; text) {$ok:v ();$err:e <1};
 ```
 
 ### df.tojson(d: $dataframe): @($byte)!$dferr

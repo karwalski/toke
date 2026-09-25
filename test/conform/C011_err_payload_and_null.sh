@@ -128,7 +128,7 @@ f=main():i64{
 #   The sentinel is NOT the empty string — a missing key and a key stored
 #   empty must stay distinguishable (docs/stdlib/securemem.md, test C005).
 run_case "null sentinel survives every comparison" \
-"len=0 eqempty=0 eqval=0 nefull=1 ltA=1 gtA=0
+"len=0 eqempty=false eqval=false nefull=true ltA=true gtA=false
 survived" '
 m=t;
 i=io:std.io;
@@ -164,7 +164,7 @@ f=main():i64{
 #   content in separately allocated strings must still compare equal, and
 #   ordering must still be lexicographic.
 run_case "control: non-null string comparison" \
-"eq=1 ne=1 selfeq=1 lt=1 gt=1 le=1 ge=1 emptyeq=1 emptylt=1" '
+"eq=true ne=true selfeq=true lt=true gt=true le=true ge=true emptyeq=true emptylt=true" '
 m=t;
 i=io:std.io;
 i=s:std.str;

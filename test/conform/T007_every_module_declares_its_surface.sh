@@ -276,7 +276,7 @@ check_case "dashboard.serve(d;port) — the real signature — compiles" 0 '
 m=t;
 i=d:std.dashboard;
 f=main():i64{
-  let x=d.new("t");
+  let x=d.new("t";2);
   let r=d.serve(x;8080);
   <0
 };'

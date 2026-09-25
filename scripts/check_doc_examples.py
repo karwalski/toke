@@ -210,7 +210,7 @@ f=main():i64{ io.println("ok"); <0 };
 _LINK_ONLY = """m=canary;
 i=cv:std.canvas;
 f=main():i64{{
-  let c=cv.new("x";1);
+  let c=cv.new("x";1;1);
   let d={call};
   <0
 }};

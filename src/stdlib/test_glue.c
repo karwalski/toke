@@ -50,7 +50,13 @@ int64_t tk_test_assertequal_w(int64_t a, int64_t b, int64_t msg) {
     return tk_test_asserteq_w(a, b, msg);
 }
 int64_t tk_test_ok_w(int64_t val) { return val ? 1 : 0; }
-int64_t tk_test_eq_w(int64_t a, int64_t b) { return (a == b) ? 1 : 0; }
+/* 127.68: integer meaning unchanged (same compare, same 1/0), now reported
+ * and marked on failure.  A str pair reaches tk_test_eqstr_w instead: the
+ * backend rewrites test.eq to it when an argument is a str. */
+int64_t tk_test_eq_w(int64_t a, int64_t b) { return tk_test_eq_i64(a, b); }
+int64_t tk_test_eqstr_w(int64_t a, int64_t b) {
+    return tk_test_eq_str((const char *)(intptr_t)a, (const char *)(intptr_t)b);
+}
 int64_t tk_test_run_w(int64_t suite) {
     /* suite is a function pointer to the test body; run it with a default name */
     TkTestFn fn = (TkTestFn)(intptr_t)suite;
@@ -67,5 +73,6 @@ int64_t tk_test_report_w(int64_t suite) {
 int64_t tk_test_fail_w(int64_t msg) {
     const char *m = msg ? (const char *)(intptr_t)msg : "test failed";
     fprintf(stderr, "FAIL: %s\n", m);
+    tk_test_mark_failed();
     return 0;
 }

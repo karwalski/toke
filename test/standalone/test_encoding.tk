@@ -16,7 +16,7 @@ f=main():i64{
     fail=fail+1
   };
 
-  let decoded=enc.b64decode(encoded);
+  let decoded=str.frombytes(enc.b64decode(encoded));
   if(str.eq(decoded;"hello")){
     io.println("PASS encoding.b64decode roundtrip equals hello");
     pass=pass+1

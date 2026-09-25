@@ -43,7 +43,7 @@ f=main():$i64{
   cks("module-contains";"\(arr.contains(a;3))";"1");
   cks("module-indexof";"\(arr.indexof(a;2))";"2");
   cks("module-slice";"\(arr.slice(a;1;3).get(0))";"1");
-  cks("str-contains-unchanged";"\(s.contains("hello";"ell"))";"1");
+  cks("str-contains-unchanged";"\(s.contains("hello";"ell"))";"true"); (* 127.94: a declared-bool stdlib return renders true/false *)
   cks("str-indexof-unchanged";"\(s.indexof("hello";"l"))";"2");
   cks("str-slice-unchanged";s.slice("hello";1;3);"el");
   let h="hello";
