@@ -169,6 +169,15 @@ run_test() {
     expected_exit="$(yaml_get "${yaml_file}" "expected_exit_code")"
     expected_fix="$(yaml_get "${yaml_file}" "expected_fix" 2>/dev/null || true)"
     expected_fix_absent="$(yaml_get "${yaml_file}" "expected_fix_absent" 2>/dev/null || echo "false")"
+    # 127.200: `expected_fix: ""` states that there is NO fix.  yaml_get
+    # returns the same empty string for an empty value and a missing key, so
+    # those files asserted nothing at all.  An explicitly empty value now
+    # means absent (127.183: the emitter omits the key rather than writing
+    # "fix":"").
+    if [ -z "${expected_fix}" ] && \
+       grep -Eq '^expected_fix:[[:space:]]*(""|'"''"')[[:space:]]*$' "${yaml_file}"; then
+        expected_fix_absent="true"
+    fi
 
     # Optional extra CLI flags (e.g. --legacy)
     local extra_flags

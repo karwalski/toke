@@ -1,0 +1,12 @@
+id: D099
+series: D
+description: "127.200: a misspelled `$type` is still offered the declared type it is closest to — the suggestion is restricted to types, not removed"
+input: |
+  m=t;
+  i=io:std.io;
+  t=$iorec{a:i64};
+  f=g(x:$iorc):i64{<0};
+  f=main():i64{<0};
+expected_exit_code: 1
+expected_error_codes: ["E3011"]
+expected_fix: "did you mean 'iorec'?"

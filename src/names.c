@@ -1368,6 +1368,41 @@ static const char *foreign_keyword_fix(const char *name) {
  *   scope     — the innermost scope at the point of reference.
  *   had_error — out-parameter; set to 1 if the identifier is unresolved.
  */
+/*
+ * 127.200 — which declarations E3011's "did you mean" may offer.
+ *
+ * s_markers holds the error markers resolve_ident inserts for undeclared
+ * names (DECL_PREDEFINED, no def_node — indistinguishable by kind from a
+ * real predefined).  Suggestions are only computed while fewer than
+ * MAX_NAME_ERRORS names have been reported, so no marker that could be a
+ * candidate falls outside the array.
+ *
+ * A `$name` (NODE_TYPE_IDENT) names a type or a variant: a declared type, or
+ * a seeded predefined (built-in and imported types, declared variants) other
+ * than true/false and the ok/err/none tags.  A bare name is a
+ * value: anything but a type, and of the predefineds only true/false —
+ * built-in type names, variant tags and imported type names are not values
+ * (137.4 / E4033).
+ */
+static const Decl *s_markers[MAX_NAME_ERRORS + 1];
+static int s_marker_count = 0;
+
+static int suggestion_fits(const Decl *d, int want_type) {
+    for (int i = 0; i < s_marker_count; i++)
+        if (s_markers[i] == d) return 0;
+    int is_bool_lit = strcmp(d->name, "true") == 0 || strcmp(d->name, "false") == 0;
+    if (want_type) {
+        if (d->kind == DECL_TYPE) return 1;
+        if (d->kind != DECL_PREDEFINED || is_bool_lit) return 0;
+        /* the result/option tags are seeded values of no declared type */
+        return strcmp(d->name, "ok") != 0 && strcmp(d->name, "err") != 0
+            && strcmp(d->name, "none") != 0;
+    }
+    if (d->kind == DECL_TYPE) return 0;
+    if (d->kind == DECL_PREDEFINED) return is_bool_lit;
+    return 1;
+}
+
 static void resolve_ident(const Node *node, const char *src,
                           Scope *scope, int *had_error) {
     const char *name = src + node->tok_start;
@@ -1428,9 +1463,15 @@ static void resolve_ident(const Node *node, const char *src,
             if (!fix) {
                 const char *best_name = NULL;
                 int best_dist = 4; /* max distance 3 */
+                int want_type = (node->kind == NODE_TYPE_IDENT);
                 for (const Scope *sc = scope; sc; sc = sc->parent) {
                     for (const Decl *d = sc->head; d; d = d->next) {
                         if (!d->name) continue;
+                        /* 127.200: suggest only a name of the kind the
+                         * position needs.  `$iorec` was offered the module
+                         * alias 'io', `foox` the type 'bool', and a second
+                         * misspelling the first one's error marker. */
+                        if (!suggestion_fits(d, want_type)) continue;
                         int dist = tk_edit_distance(nbuf, d->name);
                         if (dist < best_dist) {
                             best_dist = dist;
@@ -1459,6 +1500,8 @@ static void resolve_ident(const Node *node, const char *src,
                 ed->name     = arena_intern(s_name_env->arena, name, len);
                 ed->name_len = len;
                 ed->kind     = DECL_PREDEFINED; /* treated as built-in "error" */
+                if (s_marker_count < MAX_NAME_ERRORS + 1)
+                    s_markers[s_marker_count++] = ed;
                 ed->def_node = NULL;
                 ed->next     = scope->head;
                 scope->head  = ed;
@@ -1994,6 +2037,7 @@ int resolve_names(const Node *ast, const char *src,
 
     /* Reset the multi-error counter (story 84.1.8) */
     s_name_error_count = 0;
+    s_marker_count = 0;   /* 127.200 */
 
     /* Seed predefined identifiers */
     static const char *predefined[] = {

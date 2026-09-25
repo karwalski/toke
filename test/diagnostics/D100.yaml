@@ -1,0 +1,9 @@
+id: D100
+series: D
+description: "127.200: a bare (value) name is not offered a type name, nor another undeclared name. Before, `foox` was offered the type 'bool' and `fooy` was offered 'foox' — the error marker E3011 had just inserted for the first misspelling"
+input: |
+  m=t;
+  f=main():i64{let a=foox;let b=fooy;<0};
+expected_exit_code: 1
+expected_error_codes: ["E3011"]
+expected_fix_absent: true
