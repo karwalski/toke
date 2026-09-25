@@ -1762,7 +1762,9 @@ static Type *arm_bind_lookup(Ctx *cx, const char *nb, int nlen, const Node *use)
  *     no "error" key, and is not a `"gen":"abi"` placeholder record;
  *   - a parameter annotated with a scalar type, or a `let` annotated with
  *     one or bound to one of the above.
- * Deliberately NOT judged: pointer-typed values (str, arrays, structs) —
+ * Deliberately NOT judged: bool — the zero test IS the truth test, so
+ * `mt file.exists(p) {$ok:v v;$err:e false}` yields exactly the bool (toke-ooke
+ * test_cli.tk writes this three times); pointer-typed values (str, arrays, structs) —
  * the zero test is then a null test, which is how every fallible stdlib
  * pointer return signals failure, so an interface that omits its "error"
  * key would be a false diagnostic; receiver calls and `.get` (optional
@@ -1772,14 +1774,14 @@ static const char *import_module_path(Ctx *cx, const char *alias,
                                       char *buf, size_t bufsz);
 static int kind_is_scalar(TypeKind k) {
     switch (k) {
-    case TY_BOOL: case TY_I64: case TY_U64: case TY_F64: case TY_I8:
+    case TY_I64: case TY_U64: case TY_F64: case TY_I8:
     case TY_I16: case TY_I32: case TY_U8: case TY_U16: case TY_U32:
     case TY_F32: return 1;
     default: return 0;
     }
 }
 static int spelling_is_scalar(const char *t) {
-    static const char *sc[] = { "bool", "i64", "u64", "f64", "i8", "i16",
+    static const char *sc[] = { "i64", "u64", "f64", "i8", "i16",
                                 "i32", "u8", "u16", "u32", "f32", "byte", NULL };
     if (!t) return 0;
     for (int i = 0; sc[i]; i++) if (strcmp(t, sc[i]) == 0) return 1;
@@ -1790,7 +1792,6 @@ static const char *mt_nonunion_scalar(Ctx *cx, const Node *scr, int depth) {
     switch (scr->kind) {
     case NODE_INT_LIT:   return "i64";
     case NODE_FLOAT_LIT: return "f64";
-    case NODE_BOOL_LIT:  return "bool";
     case NODE_CALL_EXPR: {
         if (scr->child_count < 1 || !scr->children[0]) return NULL;
         const Node *callee = scr->children[0];
