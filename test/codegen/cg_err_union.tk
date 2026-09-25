@@ -1,0 +1,62 @@
+(* 123.6: error unions — a user sum-type error with three payload kinds, a
+ * record-style error, `!` propagation through two levels, an ok value of 0
+ * (the value the old sentinel mistook for failure), and the let-bound and
+ * mut-assigned forms (135.16, 135.16a).  Every arm's VALUE is asserted, not
+ * just which arm ran: the wrong payload compiles as happily as the right one.
+ * The let-bound payload case with a second failing call in between is
+ * 127.103 and lives in cg_err_letbound_payload.tk. *)
+m=cgerrunion;
+i=io:std.io;
+t=$perr{$neg:i64;$big:i64;$msg:str};
+t=$rec{code:i64;why:str};
+f=cs(n:str;got:str;want:str):i64{
+  if(got==want){io.println("ok \(n)")}el{io.println("FAIL \(n): got [\(got)] want [\(want)]")};
+  <0
+};
+f=check(n:i64):i64!$perr{
+  if(n<0){<$perr{$neg:n}};
+  if(n>100){<$perr{$big:n}};
+  if(n==50){<$perr{$msg:"fifty"}};
+  <n*2
+};
+f=twice(n:i64):i64!$perr{
+  let a=check(n)!$perr;
+  let b=check(a)!$perr;
+  <a+b
+};
+f=recerr(n:i64):str!$rec{
+  if(n==0){<$rec{code:7;why:"zero"}};
+  <"n=\(n)"
+};
+f=desc(e:$perr):str{
+  <mt e {$neg:n "neg|\(n)";$big:n "big|\(n)";$msg:s "msg|\(s)"}
+};
+f=show(r:i64):str{<"ok|\(r)"};
+f=main():i64{
+  cs("direct ok";mt check(3) {$ok:v show(v);$err:e desc(e)};"ok|6");
+  cs("direct ok zero";mt check(0) {$ok:v show(v);$err:e desc(e)};"ok|0");
+  cs("direct neg payload";mt check(0-4) {$ok:v show(v);$err:e desc(e)};"neg|-4");
+  cs("direct big payload";mt check(101) {$ok:v show(v);$err:e desc(e)};"big|101");
+  cs("direct str payload";mt check(50) {$ok:v show(v);$err:e desc(e)};"msg|fifty");
+  cs("propagate ok";mt twice(5) {$ok:v show(v);$err:e desc(e)};"ok|30");
+  cs("propagate inner fails";mt twice(60) {$ok:v show(v);$err:e desc(e)};"big|120");
+  cs("propagate outer fails";mt twice(0-1) {$ok:v show(v);$err:e desc(e)};"neg|-1");
+  cs("propagate str payload";mt twice(25) {$ok:v show(v);$err:e desc(e)};"msg|fifty");
+  let r1=check(8);
+  cs("let-bound ok";mt r1 {$ok:v show(v);$err:e desc(e)};"ok|16");
+  let r2=check(200);
+  cs("let-bound err";mt r2 {$ok:v show(v);$err:e desc(e)};"big|200");
+  let z=check(0);
+  let other=check(0-1);
+  cs("let-bound ok zero survives a later failing call";mt z {$ok:v show(v);$err:e desc(e)};"ok|0");
+  cs("record error fields";mt recerr(0) {$ok:s s;$err:e "rec|\(e.code)|\(e.why)"};"rec|7|zero");
+  cs("record ok";mt recerr(4) {$ok:s s;$err:e "rec|\(e.code)|\(e.why)"};"n=4");
+  let rr=recerr(0);
+  cs("let-bound record error";mt rr {$ok:s s;$err:e "rec|\(e.code)|\(e.why)"};"rec|7|zero");
+  let acc=mut.1;
+  acc=check(0-2);
+  cs("mut assigned err";mt acc {$ok:v show(v);$err:e desc(e)};"neg|-2");
+  acc=check(0);
+  cs("mut assigned ok zero";mt acc {$ok:v show(v);$err:e desc(e)};"ok|0");
+  <0
+};

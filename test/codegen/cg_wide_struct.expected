@@ -1,0 +1,7 @@
+ok literal, slots 0-3
+ok literal, slots 12-15
+ok literal, slots 16-19
+ok literal, slots 20-23
+ok returned from a function
+ok passed to a function
+ok stored in an array

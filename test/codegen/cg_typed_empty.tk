@@ -1,0 +1,41 @@
+(* 123.6: typed-empty array literals `@($T)` (127.164: they were typed
+ * `@(void)` for a day, which broke ooke and two diff-codegen programs).  An
+ * empty literal of every element kind, grown by append, returned from a user
+ * function both empty and non-empty, and read back field by field. *)
+m=cgtypedempty;
+i=io:std.io;
+i=s:std.str;
+t=$pt{x:i64;y:f64;tag:str};
+f=cs(n:str;got:str;want:str):i64{
+  if(got==want){io.println("ok \(n)")}el{io.println("FAIL \(n): got [\(got)] want [\(want)]")};
+  <0
+};
+f=mkpts(n:i64):@($pt){
+  let ps=mut.@($pt);
+  lp(let i=0;i<n;i=i+1){ ps=ps.append($pt{x:i;y:i as f64/2.0;tag:"p\(i)"}); };
+  <ps
+};
+f=main():i64{
+  let fs=mut.@($f64);
+  let fs0=fs.len;
+  fs=fs.append(1.5);
+  fs=fs.append(2.25);
+  cs("f64";"\(fs0) \(fs.len) \(fs.get(0)+fs.get(1))";"0 2 3.75");
+  let ss=mut.@($str);
+  let ss0=ss.len;
+  ss=ss.append("a");
+  ss=ss.append("b");
+  cs("str";"\(ss0) \(s.join("-";ss))";"0 a-b");
+  let is=mut.@($i64);
+  let is0=is.len;
+  is=is.append(42);
+  cs("i64";"\(is0) \(is.len) \(is.get(0))";"0 1 42");
+  let bs=mut.@($bool);
+  bs=bs.append(true);
+  cs("bool";"\(bs.len)";"1");
+  let none=mkpts(0);
+  let three=mkpts(3);
+  let p=three.get(2);
+  cs("struct, returned empty and non-empty";"\(none.len) \(three.len) \(p.x) \(p.y) \(p.tag)";"0 3 2 1 p2");
+  <0
+};

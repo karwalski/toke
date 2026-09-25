@@ -1,0 +1,29 @@
+(* 123.6 WITNESS (quarantined; new defect found by 123.6): the unsigned
+ * integer types are lowered with signed semantics.  A u8 holding 200 prints
+ * -56 and compares LESS than 100; a u32 of 3e9 compares less than 1e9; u64
+ * addition traps RT002 on crossing 2^63, which is in range for u64.  Expected
+ * output below is the correct one.  The overflow case runs last because
+ * today it ends the program. *)
+m=cgunsigned;
+i=io:std.io;
+f=cs(n:str;got:str;want:str):i64{
+  if(got==want){io.println("ok \(n)")}el{io.println("FAIL \(n): got [\(got)] want [\(want)]")};
+  <0
+};
+f=main():i64{
+  let e:u8=200 as u8;
+  let g:u16=60000 as u16;
+  let h:u32=4000000000 as u32;
+  cs("u8 prints";"\(e)";"200");
+  cs("u16 prints";"\(g)";"60000");
+  cs("u32 prints";"\(h)";"4000000000");
+  let small:u8=100 as u8;
+  cs("u8 compares unsigned";"\(e>small)";"true");
+  let p:u32=3000000000 as u32;
+  let q:u32=1000000000 as u32;
+  cs("u32 compares unsigned";"\(p>q)";"true");
+  let a:u64=9000000000000000000 as u64;
+  let s=a+a;
+  cs("u64 add past 2^63";"\(s>a)";"true");
+  <0
+};

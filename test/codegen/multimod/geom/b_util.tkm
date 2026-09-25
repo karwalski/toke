@@ -1,0 +1,11 @@
+(* 123.6 multi-module case, module 2 of 3: imports geom, re-exports through
+ * its own functions, and propagates geom's error with `!` across the module
+ * boundary. *)
+m=cgmm.util;
+i=g:cgmm.geom;
+f=origin():$pt{<g.mk(0;0)};
+f=d2(a:$pt):i64{<g.dist2(a;origin())};
+f=safe(a:$pt):i64!$gerr{
+  let p=g.checked(a)!$gerr;
+  <p.x+p.y
+};

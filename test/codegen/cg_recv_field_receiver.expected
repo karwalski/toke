@@ -1,0 +1,9 @@
+ok @i64 field get
+ok map field get
+ok @str field get bound first
+ok @str field get interpolated
+ok @str local-from-field get interpolated
+ok @str local-from-field contains
+ok map field len
+ok map field len interpolated
+ok map local-from-field len

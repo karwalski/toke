@@ -1,0 +1,13 @@
+ok signed
+ok i64 max
+ok floats
+ok bool literal
+ok bool local
+ok bool compare
+ok bool negation
+ok bool logic
+ok bool user fn
+ok struct fields
+ok as str
+ok single value is its own string
+ok adjacent segments

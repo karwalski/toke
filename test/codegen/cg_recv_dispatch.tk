@@ -1,0 +1,50 @@
+(* 123.6: receiver dispatch — one member name, several receiver kinds, each
+ * lowering to a different glue symbol (llvm.c g_recv_methods): len on
+ * str/array/map, contains on str/@i64/@str/map, slice and indexof on str and
+ * arrays, get on @i64/@str/map, set on array and map, plus the str-only
+ * members.  Receivers here are locals and function parameters; receivers
+ * that are STRUCT FIELDS, or locals bound from one, dispatch wrongly and are
+ * witnessed in cg_recv_field_receiver.tk.  Bool-returning members are read
+ * through a `bool` binding and compared, since their interpolation is 127.194. *)
+m=cgrecvdispatch;
+i=io:std.io;
+f=cs(n:str;got:str;want:str):i64{
+  if(got==want){io.println("ok \(n)")}el{io.println("FAIL \(n): got [\(got)] want [\(want)]")};
+  <0
+};
+f=yn(b:bool):str{<if(b){"y"}el{"n"}};
+f=slen(s:str):u64{<s.len};
+f=alen(a:@i64):u64{<a.len};
+f=mlen(m:@(str:i64)):u64{<m.len};
+f=main():i64{
+  let s="hello world";
+  let a=@(10;20;30;40);
+  let w=@("x";"yy";"zzz");
+  let m=@("one":1;"two":2;"three":3);
+  cs("len on each kind";"\(s.len) \(a.len) \(w.len) \(m.len)";"11 4 3 3");
+  cs("len through parameters";"\(slen(s)) \(alen(a)) \(mlen(m))";"11 4 3");
+  let c1:bool=s.contains("wor");
+  let c2:bool=s.contains("zzz");
+  let c3:bool=a.contains(30);
+  let c4:bool=a.contains(31);
+  let c5:bool=w.contains("yy");
+  let c6:bool=w.contains("y");
+  let c7:bool=m.contains("two");
+  let c8:bool=m.contains("four");
+  cs("contains on each kind";"\(yn(c1))\(yn(c2)) \(yn(c3))\(yn(c4)) \(yn(c5))\(yn(c6)) \(yn(c7))\(yn(c8))";"yn yn yn yn");
+  let sub=a.slice(1;3);
+  cs("slice on str and array";"\(s.slice(0;5)) \(sub.len) \(sub.get(0)) \(sub.get(1))";"hello 2 20 30");
+  cs("indexof on str, @i64, @str";"\(s.indexof("o")) \(a.indexof(40)) \(w.indexof("zzz")) \(a.indexof(99))";"4 3 2 -1");
+  cs("get on @i64, @str, map";"\(a.get(1)) \(w.get(2)) \(m.get("three"))";"20 zzz 3");
+  let a2=a.set(0;11);
+  let m2=m.set("one";100);
+  cs("set on array and map";"\(a2.get(0)) \(a.get(0)) \(m2.get("one")) \(m.get("one")) \(m2.len)";"11 10 100 1 3");
+  let parts=s.split(" ");
+  cs("split";"\(parts.len) \(parts.get(1))";"2 world");
+  let st:bool=s.starts("hel");
+  let en:bool=s.ends("rld");
+  cs("str members";"\(s.upper()) [\("  t  ".trim())] \(yn(st))\(yn(en)) \(s.replace("world";"there")) \("a".concat("b"))";"HELLO WORLD [t] yy hello there ab");
+  let ks=m.keys();
+  cs("keys";"\(ks.len) \(ks.get(0)) \(ks.get(2))";"3 one three");
+  <0
+};

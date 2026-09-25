@@ -1,0 +1,32 @@
+(* 123.6: a 24-field struct (127.190: past 16 fields the build read field
+ * names out of bounds and failed naming a field that exists).  Every kind
+ * (i64/str/f64/bool) sits both below and above slot 16; the struct is built
+ * by a literal, returned from a function, passed to one, and stored in and
+ * read back from an array.  Values: field i holds i*base (i64), "s<i>x<base>"
+ * (str), <i>.5 (f64), and a bool alternating every 4 fields.  A bool field
+ * read off an ARRAY ELEMENT is left out: it prints 1/0 in any struct, not
+ * just a wide one (127.194; witnessed in cg_interp_bool_shapes.tk). *)
+m=cgwidestruct;
+i=io:std.io;
+t=$wide{f0:i64;f1:str;f2:f64;f3:bool;f4:i64;f5:str;f6:f64;f7:bool;f8:i64;f9:str;f10:f64;f11:bool;f12:i64;f13:str;f14:f64;f15:bool;f16:i64;f17:str;f18:f64;f19:bool;f20:i64;f21:str;f22:f64;f23:bool};
+f=cs(n:str;got:str;want:str):i64{
+  if(got==want){io.println("ok \(n)")}el{io.println("FAIL \(n): got [\(got)] want [\(want)]")};
+  <0
+};
+f=mk():$wide{<$wide{f0:0;f1:"s1x3";f2:2.5;f3:false;f4:12;f5:"s5x3";f6:6.5;f7:true;f8:24;f9:"s9x3";f10:10.5;f11:false;f12:36;f13:"s13x3";f14:14.5;f15:true;f16:48;f17:"s17x3";f18:18.5;f19:false;f20:60;f21:"s21x3";f22:22.5;f23:true}};
+f=pick(w:$wide):str{<"\(w.f21) \(w.f22) \(w.f23)"};
+f=main():i64{
+  let w=$wide{f0:0;f1:"s1x1";f2:2.5;f3:false;f4:4;f5:"s5x1";f6:6.5;f7:true;f8:8;f9:"s9x1";f10:10.5;f11:false;f12:12;f13:"s13x1";f14:14.5;f15:true;f16:16;f17:"s17x1";f18:18.5;f19:false;f20:20;f21:"s21x1";f22:22.5;f23:true};
+  cs("literal, slots 0-3";"\(w.f0) \(w.f1) \(w.f2) \(w.f3)";"0 s1x1 2.5 false");
+  cs("literal, slots 12-15";"\(w.f12) \(w.f13) \(w.f14) \(w.f15)";"12 s13x1 14.5 true");
+  cs("literal, slots 16-19";"\(w.f16) \(w.f17) \(w.f18) \(w.f19)";"16 s17x1 18.5 false");
+  cs("literal, slots 20-23";"\(w.f20) \(w.f21) \(w.f22) \(w.f23)";"20 s21x1 22.5 true");
+  let v=mk();
+  cs("returned from a function";"\(v.f0) \(v.f5) \(v.f17) \(v.f20) \(v.f23)";"0 s5x3 s17x3 60 true");
+  cs("passed to a function";pick(v);"s21x3 22.5 true");
+  let arr=@(w;v);
+  let x=arr.get(1);
+  let y=arr.get(0);
+  cs("stored in an array";"\(x.f16) \(x.f17) \(x.f18) \(y.f20) \(y.f21)";"48 s17x3 18.5 20 s21x1");
+  <0
+};

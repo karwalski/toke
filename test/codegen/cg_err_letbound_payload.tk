@@ -1,0 +1,34 @@
+(* 123.6 WITNESS for 127.103 (quarantined): a let-bound error keeps ITS OWN
+ * payload after a later call fails with a different one.  Matching the call
+ * directly binds the right payload; binding it first and matching after a
+ * second failing call binds the SECOND call's payload.  Expected output below
+ * is the correct one — this program prints FAIL until 127.103 is fixed. *)
+m=cgerrletbound;
+i=io:std.io;
+t=$perr{$neg:i64;$big:i64};
+t=$rec{code:i64;why:str};
+f=cs(n:str;got:str;want:str):i64{
+  if(got==want){io.println("ok \(n)")}el{io.println("FAIL \(n): got [\(got)] want [\(want)]")};
+  <0
+};
+f=check(n:i64):i64!$perr{
+  if(n<0){<$perr{$neg:n}};
+  if(n>100){<$perr{$big:n}};
+  <n
+};
+f=recerr(n:i64):i64!$rec{
+  if(n<0){<$rec{code:n;why:"neg"}};
+  <n
+};
+f=desc(e:$perr):str{<mt e {$neg:n "neg|\(n)";$big:n "big|\(n)"}};
+f=main():i64{
+  let r1=check(0-7);
+  let r2=check(200);
+  cs("first error keeps its variant and payload";mt r1 {$ok:v "ok|\(v)";$err:e desc(e)};"neg|-7");
+  cs("second error";mt r2 {$ok:v "ok|\(v)";$err:e desc(e)};"big|200");
+  let a=recerr(0-1);
+  let b=recerr(0-2);
+  cs("first record error keeps its fields";mt a {$ok:v "ok|\(v)";$err:e "\(e.code)|\(e.why)"};"-1|neg");
+  cs("second record error";mt b {$ok:v "ok|\(v)";$err:e "\(e.code)|\(e.why)"};"-2|neg");
+  <0
+};

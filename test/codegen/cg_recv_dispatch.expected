@@ -1,0 +1,10 @@
+ok len on each kind
+ok len through parameters
+ok contains on each kind
+ok slice on str and array
+ok indexof on str, @i64, @str
+ok get on @i64, @str, map
+ok set on array and map
+ok split
+ok str members
+ok keys

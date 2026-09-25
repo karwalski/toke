@@ -1,0 +1,26 @@
+(* 123.6 multi-module case (127.76: every multi-source build failed from
+ * 2026-07-07 to 2026-09-25 because the driver passed all module paths to
+ * clang as ONE argument).  Three modules, built by one tkc invocation:
+ * a_geom.tkm b_util.tkm main.tkm.  Structs, strings, arrays and a sum-type
+ * error cross both boundaries.  Expected values are hand-derived. *)
+m=cgmm.main;
+i=io:std.io;
+i=s:std.str;
+i=g:cgmm.geom;
+i=u:cgmm.util;
+f=cs(n:str;got:str;want:str):i64{
+  if(got==want){io.println("ok \(n)")}el{io.println("FAIL \(n): got [\(got)] want [\(want)]")};
+  <0
+};
+f=main():i64{
+  let a=g.mk(3;4);
+  let o=u.origin();
+  cs("struct across modules";"\(a.x) \(a.y) \(a.label) \(o.label)";"3 4 p3,4 p0,0");
+  cs("i64 through two modules";"\(g.dist2(a;o)) \(u.d2(g.mk(30;40)))";"25 2500");
+  cs("fallible ok";mt u.safe(a) {$ok:v "ok|\(v)";$err:e "err"};"ok|7");
+  cs("propagated $neg";mt u.safe(g.mk(0-2;1)) {$ok:v "ok|\(v)";$err:e mt e {$neg:n "neg|\(n)";$far:l "far|\(l)"}};"neg|-2");
+  cs("propagated $far with str payload";mt u.safe(g.mk(2000;1)) {$ok:v "ok|\(v)";$err:e mt e {$neg:n "neg|\(n)";$far:l "far|\(l)"}};"far|p2000,1");
+  let ns=g.names(@(a;o;g.mk(5;6)));
+  cs("array of structs in, array of str out";s.join(" ";ns);"p3,4 p0,0 p5,6");
+  <0
+};

@@ -1,0 +1,15 @@
+(* 123.6 WITNESS (quarantined; new defect found by 123.6): interpolating a
+ * `byte` value compiles clean and the binary is killed by SIGSEGV before
+ * printing anything; `\(b as i64)` on the same value prints 65.  The byte
+ * type has no written rendering, so the only assertion is the one both
+ * possible renderings share: the program must not crash, and the line
+ * printed after it must appear. *)
+m=cginterpbyte;
+i=io:std.io;
+f=main():i64{
+  let by=65 as byte;
+  io.println("as i64 \(by as i64)");
+  let s="\(by)";
+  if(s.len>0){io.println("interpolated a byte without crashing")}el{io.println("FAIL interpolating a byte gave an empty string")};
+  <0
+};

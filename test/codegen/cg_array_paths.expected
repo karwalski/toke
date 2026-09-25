@@ -1,0 +1,13 @@
+ok alias unchanged by append and set
+ok original changed
+ok set inside a user fn copies
+ok append inside a user fn copies
+ok linear append loop
+ok linear append loop len
+ok linear set loop
+ok set loop after aliasing copies once
+ok pass to fn then append in the same loop
+ok str array value semantics
+ok concat makes a new array
+ok element copy leaves the container alone
+ok storing it back
