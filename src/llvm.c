@@ -6882,12 +6882,15 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
     }
     if (n->kind == NODE_IDENT) {
         char nb[128]; tok_cp(c->src, n, nb, sizeof nb);
-        const char *lst = ptr_local_struct_type(c, nb);
-        if (lst) return lst;
         /* 127.46: a local whose LLVM name was uniquified (`t2` → `t2.1`, because
          * `%t2` is already a temp) is registered under THAT name; without this
-         * fallback its tag ($str / @… / __map__) was invisible to every caller
-         * and the value took the untagged path. */
+         * its tag ($str / @… / __map__) was invisible to every caller and the
+         * value took the untagged path.
+         * 127.186: and the uniquified name is asked FIRST.  It is the binding
+         * in force -- the one emit_expr loads (get_llvm_name) -- so after
+         * `let s=@(1;2);let s="abc"` the raw name's "@i64" belongs to the
+         * shadowed binding; consulting it first typed "\(s)" as an array and
+         * failed a valid program with E4032. */
         {
             const char *aln = get_llvm_name(c, nb);
             if (aln && strcmp(aln, nb)) {
@@ -6895,6 +6898,8 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                 if (alst) return alst;
             }
         }
+        const char *lst = ptr_local_struct_type(c, nb);
+        if (lst) return lst;
         /* 114.44: a module-level mutable global's struct type (for .field) */
         if (!name_is_local(c, nb)) {
             const char *gst = global_struct_type(c, nb);
