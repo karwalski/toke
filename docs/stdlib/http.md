@@ -137,12 +137,23 @@ f=main():void{
 
 ### http.servetls(port: u64; cert_path: $str; key_path: $str): void
 
-Starts an HTTPS server with TLS termination, loading the certificate and private key from the given PEM file paths. The server blocks until shut down. Use `http.serveworkers` with TLS configuration for multi-worker HTTPS deployments.
+Starts an HTTPS server with TLS termination, loading the certificate and private key from the given PEM file paths. The server blocks until shut down. It runs a pre-fork worker pool sized to the CPU count, overridable with the `TK_HTTP_WORKERS` environment variable; use `http.servetlsworkers` to choose the count in the program.
 
 ```toke
 i=http:std.http;
 f=main():void{
   http.servetls(443;"/etc/certs/server.crt";"/etc/certs/server.key");
+};
+```
+
+### http.servetlsworkers(port: u64; cert_path: $str; key_path: $str; workers: u64): i64
+
+`http.servetls` with the worker count chosen by the caller, as `http.serveworkers` is for plain HTTP. `workers=1` runs in a single process with no fork; values greater than one fork that many workers; `workers=0` auto-detects the CPU count, overridable with `TK_HTTP_WORKERS` — which is what `http.servetls` always does. Returns `-1` if the certificate or key cannot be loaded or the port cannot be bound; otherwise the server blocks until shut down. (Story 127.192: before this, a program had no way to set the TLS worker count.)
+
+```toke
+i=http:std.http;
+f=main():void{
+  http.servetlsworkers(443;"/etc/certs/server.crt";"/etc/certs/server.key";4);
 };
 ```
 
