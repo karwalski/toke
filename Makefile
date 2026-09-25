@@ -287,10 +287,12 @@ tkc: $(BIN)
 	ln -sf $(BIN) tkc
 
 # Auto-generate stdlib IR declarations before compiling llvm.c (Story 103.11)
-src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h: $(wildcard src/stdlib/*_glue.c) $(wildcard src/stdlib/*.c) scripts/gen_stdlib_decls.py
+src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h src/stdlib_paramkind_gen.h: $(wildcard src/stdlib/*_glue.c) $(wildcard src/stdlib/*.c) scripts/gen_stdlib_decls.py
 	python3 scripts/gen_stdlib_decls.py
 
 src/llvm.o: src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h
+# 127.201: the checker reads each glue wrapper's parameter kinds.
+src/types.o: src/stdlib_paramkind_gen.h
 
 %.o: %.c
 	$(BUILD_ENV) $(CC) $(CFLAGS) $(REPRO_FLAGS) -c -o $@ $<

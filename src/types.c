@@ -2473,6 +2473,117 @@ static void check_tki_call(Ctx *cx, const Node *call) {
                     f->param_count, actual);
 }
 
+/* ── 127.201: module-form stdlib calls, argument REPRESENTATION ──────────
+ *
+ * `s.join(p;"-")` — `(@(str),str)` against `str.join(sep;arr)` — passed
+ * `--check`, built, and died with SIGSEGV: the glue read the array handle as
+ * a `char *` separator and the string literal as an array whose length word
+ * is at ptr[-1].  check_tki_call checks a std module call's arity against the
+ * glue and deliberately never its types, because a std module's `.tki`
+ * parameter types are ABI placeholders (`"gen":"abi"`, all `i64` — 127.165).
+ *
+ * So the types come from where 124.2f took them for `[byte]`: the glue
+ * bodies.  scripts/gen_stdlib_decls.py writes src/stdlib_paramkind_gen.h,
+ * one string per `tk_*_w` wrapper, one character per parameter:
+ *
+ *   S  the body reads it as a C string            -> a toke `str`;
+ *   A  the body reads it as an i64 array (ptr[-1]) -> a toke array;
+ *   .  neither, or both — not established, never judged.
+ *
+ * The rule fires only on a CERTAIN representation clash, with an argument
+ * type the checker established (arg->rtype; TY_UNKNOWN is never judged):
+ *
+ *   S parameter, argument an array, map or struct  -> a pointer read as text;
+ *   A parameter, argument a `str`                  -> a C string read as an
+ *                                                     array with a length word.
+ *
+ * Deliberately NOT judged, because a wrong diagnostic is worse than none:
+ *   - a scalar in an S or A slot — `0` is a legitimate null handle for
+ *     several wrappers (`if (!arr)`), and 127.14 already owns the print
+ *     family;
+ *   - a struct or map in an A slot — a wrapper may read a toke struct through
+ *     `int64_t *` (its fields are i64 slots);
+ *   - an A slot that 124.2f's [byte] table also covers — that check owns it
+ *     and carries the certain `str.bytes(...)` fix;
+ *   - a call whose argument count differs from the wrapper's — arity is
+ *     check_tki_call's diagnostic, and positions do not line up.
+ * No `fix`: swapping, converting or changing the callee are all possible
+ * repairs, and none is certain. */
+typedef struct { const char *sym; const char *kinds; } GlueParamKinds;
+static const GlueParamKinds s_glue_param_kinds[] = {
+#include "stdlib_paramkind_gen.h"
+    { NULL, NULL }
+};
+
+static const char *glue_param_kinds(const char *sym) {
+    if (!sym) return NULL;
+    for (int i = 0; s_glue_param_kinds[i].sym; i++)
+        if (strcmp(s_glue_param_kinds[i].sym, sym) == 0)
+            return s_glue_param_kinds[i].kinds;
+    return NULL;
+}
+
+static unsigned glue_byte_params(const char *sym);
+
+static void check_stdlib_param_kinds(Ctx *cx, const Node *call) {
+    if (!call || call->child_count < 1) return;
+    const Node *callee = call->children[0];
+    if (!callee || callee->kind != NODE_FIELD_EXPR || callee->child_count < 2)
+        return;
+    if (!callee->children[0] || callee->children[0]->kind != NODE_IDENT) return;
+    if (!callee->children[1]) return;
+    if (!cx->env || !cx->env->names) return;
+
+    char alias[128];  TOKSTR(alias, cx->src, callee->children[0]);
+    char member[128]; TOKSTR(member, cx->src, callee->children[1]);
+    char mbuf[256];
+    const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
+    if (!mpath || strncmp(mpath, "std.", 4) != 0) return;
+    {   /* the same alias gate check_stdlib_byte_args applies */
+        Decl *d = tc_lookup(cx->env->names->module_scope, alias,
+                            (int)strlen(alias));
+        if (d && d->kind != DECL_IMPORT_ALIAS) return;
+    }
+    const char *sym = stdlib_symbol_for(mpath, 1, member);
+    const char *kinds = glue_param_kinds(sym);
+    if (!kinds) return;
+    int actual = call->child_count - 1;
+    if (actual != (int)strlen(kinds)) return;
+    unsigned bytemask = glue_byte_params(sym);
+
+    for (int a = 1; a < call->child_count; a++) {
+        int idx = a - 1;
+        char k = kinds[idx];
+        const Node *arg = call->children[a];
+        if (!arg || (k != 'S' && k != 'A')) continue;
+        Type *at = arg->rtype;
+        if (!at) continue;
+        int clash = 0;
+        if (k == 'S')
+            clash = at->kind == TY_ARRAY || at->kind == TY_MAP
+                 || at->kind == TY_STRUCT;
+        else
+            clash = at->kind == TY_STR
+                 && !(idx < 32 && (bytemask & (1u << idx)));
+        if (!clash) continue;
+        if (!tc_first_report(cx, arg) || !tc_can_emit(cx)) continue;
+        const char *want = k == 'S' ? "str" : "an array";
+        char msg[448];
+        snprintf(msg, sizeof msg,
+                 "type mismatch: expected %s%s%s, got '%s' — argument %d of "
+                 "'%s.%s' is read by the runtime as %s",
+                 k == 'S' ? "'" : "", want, k == 'S' ? "'" : "",
+                 type_name(at), idx + 1, mpath, member,
+                 k == 'S' ? "a C string, so a handle of another kind is "
+                            "read as text"
+                          : "an array whose length precedes its first "
+                            "element, which a str does not have");
+        diag_emit(DIAG_ERROR, E4031, arg->start, arg->line, arg->col, msg,
+                  "expected", want, "got", type_name(at),
+                  (const char *)NULL);
+    }
+}
+
 /* ── 124.2f: a `str` where the runtime unpacks a toke `[byte]` array ──────
  *
  * THE DEFECT.  `crypto.sha256("hello")` compiled clean, exited 0, and
@@ -3755,6 +3866,9 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * to the digest of the empty string, and crashed on the second
              * call. */
             check_stdlib_byte_args(cx,node);
+            /* 127.201: and a str/array representation clash against the
+             * parameter kinds read out of the glue. */
+            check_stdlib_param_kinds(cx,node);
             /* 127.1/127.96/127.115/127.128: and, for a call whose receiver is
              * a VALUE rather than a module, enforce the receiver dispatch. */
             check_recv_method_call(cx,node);
