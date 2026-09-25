@@ -10395,6 +10395,12 @@ static const char *find_runtime_source(void) {
         snprintf(path, sizeof path, "%s/tk_runtime.c", env);
         FILE *f = fopen(path, "r"); if (f) { fclose(f); return path; }
     }
+    /* 127.179: the directory main() resolved (absolute, exported). */
+    const char *sd = getenv("TKC_STDLIB_DIR");
+    if (sd) {
+        snprintf(path, sizeof path, "%s/tk_runtime.c", sd);
+        FILE *f = fopen(path, "r"); if (f) { fclose(f); return path; }
+    }
     /* Try paths relative to known install locations */
     const char *candidates[] = {
         TKC_STDLIB_DIR "/tk_runtime.c",  /* set at compile time */
@@ -10419,6 +10425,12 @@ static const char *find_capabilities_source(void) {
     const char *env = getenv("TKC_RUNTIME_DIR");
     if (env) {
         snprintf(path, sizeof path, "%s/capabilities.c", env);
+        FILE *f = fopen(path, "r"); if (f) { fclose(f); return path; }
+    }
+    /* 127.179: the directory main() resolved (absolute, exported). */
+    const char *sd = getenv("TKC_STDLIB_DIR");
+    if (sd) {
+        snprintf(path, sizeof path, "%s/capabilities.c", sd);
         FILE *f = fopen(path, "r"); if (f) { fclose(f); return path; }
     }
     const char *candidates[] = {

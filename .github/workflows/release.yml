@@ -53,7 +53,10 @@ jobs:
         run: |
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
           export SOURCE_DATE_EPOCH
-          make CFLAGS="-std=c99 -D_GNU_SOURCE -O2 -DNDEBUG -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -DTKC_STDLIB_DIR='\"./src/stdlib\"'"
+          # 127.179: a RELATIVE TKC_STDLIB_DIR is resolved against the directory
+          # of the tkc executable (the tarball puts src/stdlib beside tkc), not
+          # the caller's cwd, so a released tkc works from any directory.
+          make CFLAGS="-std=c99 -D_GNU_SOURCE -O2 -DNDEBUG -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -DTKC_STDLIB_DIR='\"src/stdlib\"'"
 
       # 132.43 — a tag is what makes a compiler public, and v3.0.0 shipped a
       # compiler under which programs the website publishes no longer
@@ -126,7 +129,10 @@ jobs:
         run: |
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
           export SOURCE_DATE_EPOCH
-          make CFLAGS="-std=c99 -D_GNU_SOURCE -O2 -DNDEBUG -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -DTKC_STDLIB_DIR='\"./src/stdlib\"'"
+          # 127.179: a RELATIVE TKC_STDLIB_DIR is resolved against the directory
+          # of the tkc executable (the tarball puts src/stdlib beside tkc), not
+          # the caller's cwd, so a released tkc works from any directory.
+          make CFLAGS="-std=c99 -D_GNU_SOURCE -O2 -DNDEBUG -Wall -Wextra -Wpedantic -Werror -Wno-misleading-indentation -DTKC_STDLIB_DIR='\"src/stdlib\"'"
 
       # ── SBOM ──────────────────────────────────────────────────────────────
       - name: Install syft
