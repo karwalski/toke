@@ -69,9 +69,9 @@ expect "1c-push-int-into-f64-array"        "$(codes "${WORK}/badpush.tk")"   "E4
 expect "2-right-elem-checks"               "$(codes "${WORK}/good.tk")"      ""
 expect "2-right-elem-runs"                 "$(run "${WORK}/good.tk")"        "5 2 2|"
 expect "3-untyped-receiver-left-alone"     "$(codes "${WORK}/untyped.tk")"   ""
-# The schema always carries the key; an empty value is "no fix".
+# No fix means no "fix" key at all (127.183).
 expect "4-fix-field-empty" \
-    "$("${TKC}" --check "${WORK}/badset.tk" 2>&1 | grep -c '"fix":""' || true)" "1"
+    "$("${TKC}" --check "${WORK}/badset.tk" 2>&1 | grep '"error_code"' | grep -vc '"fix":' || true)" "1"
 
 echo "--------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"

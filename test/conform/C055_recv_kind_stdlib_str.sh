@@ -44,7 +44,7 @@ for call in 'keys()' 'pop()' 'push(1)' 'getor("a";1)' 'map(0)'; do
   let r=t.${call};"
     expect "1-trim-${call%%(*}-is-E4036" "$(codes "${WORK}/bad$n.tk")" "E4036 "
 done
-expect "1-no-fix" "$("${TKC}" --check "${WORK}/bad1.tk" 2>&1 | grep -c '"fix":""' || true)" "1"
+expect "1-no-fix" "$("${TKC}" --check "${WORK}/bad1.tk" 2>&1 | grep '"error_code"' | grep -vc '"fix":' || true)" "1"
 
 # ── 2. str members: clean and right ──────────────────────────────────────
 prog good '  let t=st.trim(" ab ");
