@@ -3787,16 +3787,11 @@ static int emit_expr(Ctx *c, const Node *n)
         const char *rty = expr_llvm_type(c, n->children[1]);
         /* Concat dispatch for `+` with at least one i8* operand.
          *
-         * Epic 111 / ADR-0004: `+` is type-checker-rejected for $str+$str.
-         * In practice a few patterns still slip through (e.g.
-         * `let formatted=s.format(...); formatted+"%"` — the let binding
-         * doesn't propagate TY_STR from the stdlib call, so the type
-         * checker sees TY_UNKNOWN + TY_STR and lets it through). Codegen
-         * dispatches on the operand struct-type marker:
+         * Epic 111 / ADR-0004: `+` is type-checker-rejected for $str+$str,
+         * in every shape since C043/C057.  Codegen dispatches on the
+         * operand struct-type marker:
          *   "@<elem>"  → tk_array_concat (real array)
-         *   "$str" / NULL → tk_str_concat (safe for strings; the
-         *                   migration tool flags these for rewriting
-         *                   but they shouldn't crash in the interim)
+         *   anything else → internal error (127.172; was tk_str_concat)
          */
         if (n->op == TK_PLUS && (!strcmp(lty, "i8*") || !strcmp(rty, "i8*"))) {
             /* 114.19c: adding a bare number/bool literal to an array or string
@@ -3860,7 +3855,18 @@ static int emit_expr(Ctx *c, const Node *n)
             if (is_array) {
                 fprintf(c->out, "  %%t%d = call i8* @tk_array_concat(i8* %%t%d, i8* %%t%d)\n", t, lhs, rhs);
             } else {
-                fprintf(c->out, "  %%t%d = call i8* @tk_str_concat(i8* %%t%d, i8* %%t%d) ; safety net — should be migrated\n", t, lhs, rhs);
+                /* 127.172: this was `tk_str_concat` — a "safety net" lowering
+                 * of `str + str`, the operator ADR-0004 removed.  The checker
+                 * now rejects every shape of it (E4031, C043/C057), so a
+                 * checked program cannot arrive here; if one does, the checker
+                 * has a hole, and quietly concatenating would hide it.  Say so
+                 * and fail the build.  No `fix` (AGENTS.md §3.1). */
+                diag_emit(DIAG_ERROR, E9002, n->start, n->line, n->col,
+                          "internal compiler error: '+' reached codegen with a "
+                          "string operand; toke has no string '+' (ADR-0004) "
+                          "and the type checker should have rejected it",
+                          (void *)0);
+                fprintf(c->out, "  %%t%d = inttoptr i64 0 to i8* ; 127.172 error stub\n", t);
             }
             return t;
         }
