@@ -2506,7 +2506,8 @@ static void check_tki_call(Ctx *cx, const Node *call) {
  *   - an A slot that 124.2f's [byte] table also covers — that check owns it
  *     and carries the certain `str.bytes(...)` fix;
  *   - a call whose argument count differs from the wrapper's — arity is
- *     check_tki_call's diagnostic, and positions do not line up.
+ *     check_tki_call's diagnostic, and positions do not line up;
+ *   - a symbol codegen redirects by argument type (`json.enc`, below).
  * No `fix`: swapping, converting or changing the callee are all possible
  * repairs, and none is certain. */
 typedef struct { const char *sym; const char *kinds; } GlueParamKinds;
@@ -2545,6 +2546,14 @@ static void check_stdlib_param_kinds(Ctx *cx, const Node *call) {
         if (d && d->kind != DECL_IMPORT_ALIAS) return;
     }
     const char *sym = stdlib_symbol_for(mpath, 1, member);
+    /* Symbols the emitter REDIRECTS by argument type before the call is
+     * lowered (emit_expr, NODE_CALL_EXPR): `j.enc(x)` becomes
+     * tk_json_encarr_w / encbool / encf64 / encnum for a non-str x, so the
+     * symbol's own parameter kind is not what the argument meets.  Keep in
+     * step with llvm.c; a redirect missing here is a false diagnostic. */
+    static const char *redirected[] = { "tk_json_enc_w", NULL };
+    for (int r = 0; sym && redirected[r]; r++)
+        if (strcmp(sym, redirected[r]) == 0) return;
     const char *kinds = glue_param_kinds(sym);
     if (!kinds) return;
     int actual = call->child_count - 1;
