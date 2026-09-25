@@ -140,3 +140,13 @@ test/tkir/*
 # 136.56 — test/test_pkg.c builds its binary beside it (src/pkg.c is a
 # compiler unit, not stdlib).
 /test/test_pkg
+
+# 123.10: SBOM outputs of `make sbom` (uploaded by CI, never committed) and the
+# root-level libFuzzer binaries of the older fuzz targets.  The 120.22 fuzz
+# binaries and their scratch corpora live under build/fuzz/ (ignored above).
+tkc-sbom.spdx.json
+tkc-sbom.spdx.json.sha256
+/fuzz-lexer
+/fuzz-parser
+/fuzz-http-parse
+/fuzz-url-route

@@ -14,23 +14,21 @@ name: Security nightly
 # docs/security/audit-120/ci-security.md specifies them completely), so the
 # weekly job below is real and can go red only for a real finding.
 #
-# The nightly 120.22 fuzz job is REMOVED rather than left failing, because it
-# cannot be made to pass without work that Story 123.10 owns. Section 2 of
-# ci-security.md is stale: its paste-ready text builds test/fuzz/fuzz_md.c and
-# fuzz_security.c, NEITHER OF WHICH EXISTS, omits four harnesses that do
-# (multipart, template, toml, ws_frame), and points its runners at
-# test/fuzz/corpus/<format>/ subdirectories that do not exist either — the
-# corpus directory holds .tk files. Adding those targets verbatim would leave
-# the job just as red.
-#
-# 123.10 already owns the 8 orphaned fuzz harnesses (json, multipart,
-# template, toml, toon, ws_frame, xml, yaml — exactly the set with no Makefile
-# rule). Re-add this job there, in the same change that lands the targets,
-# corpora and a corrected Section 2, so the workflow and the harnesses arrive
-# together and the result means something on day one.
+# 123.10: the nightly 120.22 fuzz job is BACK, in the same change that landed
+# its targets.  (123.10a had removed it rather than leave it red: it called
+# fuzz-120-22 / fuzz-120-22-run, which did not exist, and Section 2 of
+# ci-security.md named harnesses -- fuzz_md.c, fuzz_security.c -- that do not
+# exist either.)  The targets now build the eight harnesses that DO exist
+# (json, multipart, template, toml, toon, ws_frame, xml, yaml) in libFuzzer
+# mode on this Linux runner, fuzz each for FUZZ_SECONDS from the tracked seeds
+# in test/fuzz/seeds/<target>/, and minimise what they found into
+# build/fuzz/corpus-min/, uploaded below.  The job asserts the engine really
+# is libFuzzer: on a runner without it the Makefile would fall back to a
+# corpus replay, and a replay reported as a fuzz run is the thing to prevent.
 
 on:
   schedule:
+    - cron: '0 3 * * *'    # 03:00 UTC daily — 120.22 fuzz targets (123.10)
     - cron: '0 4 * * 1'    # 04:00 UTC Monday — dependency CVE + SBOM refresh
   workflow_dispatch:
 
@@ -38,8 +36,40 @@ permissions:
   contents: read
 
 jobs:
+  fuzz-120-22:
+    name: Fuzz the 120.22 stdlib parser harnesses (ASAN+UBSAN)
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev clang
+
+      # A replay is not a fuzz run. Fail here if the libFuzzer runtime is
+      # missing rather than let `auto` fall back to standalone replay.
+      - name: Build the eight harnesses in libFuzzer mode
+        run: make CC=clang FUZZ_ENGINE=libfuzzer fuzz-120-22
+
+      - name: Replay seeds and adversarial regressions
+        run: make CC=clang FUZZ_ENGINE=libfuzzer fuzz-smoke
+
+      - name: Fuzz each target (FUZZ_SECONDS each), then minimise
+        run: make CC=clang FUZZ_ENGINE=libfuzzer FUZZ_SECONDS=300 fuzz-120-22-run
+
+      - name: Upload crashes and the minimised corpus
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-120-22-${{ github.sha }}
+          path: |
+            build/fuzz/crash-*
+            build/fuzz/corpus-min/
+          if-no-files-found: ignore
+
   deps-cve-sbom:
     name: Dependency CVE recheck + SBOM refresh
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 4 * * 1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

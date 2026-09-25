@@ -61,7 +61,9 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WORKSPACE = os.path.dirname(ROOT)          # sibling repos live beside this one
+# sibling repos live beside the MAIN checkout; from a worktree `dirname(ROOT)`
+# is ~/tk/tmpwork, so the Makefile passes the real workspace (132.68)
+WORKSPACE = os.environ.get("TOKE_WORKSPACE") or os.path.dirname(ROOT)
 CANON_JSON = os.path.join(ROOT, "docs", "about", "canonical.json")
 CANON_MD = "docs/about/canonical.md"
 CORRECTION_LINES = 1                       # how far a correction marker may sit

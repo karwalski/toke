@@ -68,6 +68,13 @@ link cleanly and run without diagnostics on seed input.
 
 ## Proposed Makefile diff (NOT applied)
 
+> **123.10 (2026-09-24): wired, not as proposed.** The targets exist in the
+> `Makefile` now, built under two engines (`FUZZ_ENGINE=libfuzzer|standalone|auto`
+> — Apple clang has no libFuzzer runtime, so on a Mac the harnesses link
+> against `test/fuzz/standalone_main.c` and replay corpora instead of fuzzing).
+> `fuzz-multipart` also needs `src/stdlib/capabilities.c`, which the link line
+> below omits. The text below is the original proposal.
+
 Add the recipes below and extend the `fuzz`/`fuzz-http` aggregate + `.PHONY`
 lines. Recipes compile the target `.c` **from source** with `$(FUZZ_FLAGS)` so
 the parser code itself is sanitizer-instrumented (matching `fuzz-http-parse`).

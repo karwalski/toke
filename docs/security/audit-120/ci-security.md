@@ -118,6 +118,17 @@ is absent so local runs never hard-fail), add a gitleaks step to the existing
 
 ## 2. Extend the nightly fuzz job with the 120.22 targets under ASAN/UBSAN
 
+> **Superseded by 123.10 (2026-09-24).** The paste-ready text below was never
+> applied and is wrong in three ways: it builds `fuzz_md.c` and
+> `fuzz_security.c`, which do not exist; it omits four harnesses that do
+> (`multipart`, `template`, `toml`, `ws_frame`); and it points at
+> `test/fuzz/corpus/<format>/` directories that were never created. What is
+> wired is in the `Makefile` (search `123.10`): eight targets built from the
+> harnesses that exist, seeds in `test/fuzz/seeds/<target>/`, `fuzz-120-22`,
+> `fuzz-120-22-run`, `fuzz-smoke`, and the nightly job in
+> `.github/workflows/security-nightly.yml`. The text is kept as the record of
+> what was proposed.
+
 The 120 audit produced a prioritized fuzz-target list. `FUZZ_FLAGS` already
 compiles with `-fsanitize=address,undefined,fuzzer`, so ASAN + UBSAN are on
 for free — we only need harness targets and a nightly runner.

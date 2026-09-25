@@ -1,0 +1,6 @@
+a = """
+multi
+line"""
+b = 0x1F
+c = 1e3
+d = { x = 1, y = 2 }

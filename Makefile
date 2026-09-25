@@ -75,9 +75,16 @@ COMMA := ,
 # promotes to an error. A probe that only checks the exit status accepts a
 # flag the build cannot use. Third occurrence of this shape in one afternoon;
 # if you add a probe here, put -Werror in it.
-harden_ld_probe = $(shell printf 'int main(void){return 0;}\n' > /tmp/tkc_ldprobe.c 2>/dev/null && \
-                    $(CC) -Werror $(1) -o /tmp/tkc_ldprobe /tmp/tkc_ldprobe.c >/dev/null 2>&1 && echo '$(1)'; \
-                    rm -f /tmp/tkc_ldprobe.c /tmp/tkc_ldprobe)
+#
+# 136.41: a private mktemp directory per probe, not the fixed /tmp/tkc_ldprobe.
+# This probe runs whenever ANY make in ANY worktree parses this file, so two
+# concurrent makes shared one path: one's `rm` could delete the other's source
+# mid-probe, the probe failed, and the flag silently dropped out of the build
+# (and out of TKC_BUILD_FLAGS, forcing a full rebuild on the next run).
+harden_ld_probe = $(shell d=$$(mktemp -d "$${TMPDIR:-/tmp}/tkc_ldprobe.XXXXXX") && \
+                    printf 'int main(void){return 0;}\n' > "$$d/p.c" && \
+                    $(CC) -Werror $(1) -o "$$d/p" "$$d/p.c" >/dev/null 2>&1 && echo '$(1)'; \
+                    [ -n "$$d" ] && rm -rf "$$d")
 HARDEN_LDFLAGS = $(call harden_ld_probe,-pie)
 HARDEN_LDFLAGS += $(call harden_ld_probe,-Wl$(COMMA)-z$(COMMA)relro)
 HARDEN_LDFLAGS += $(call harden_ld_probe,-Wl$(COMMA)-z$(COMMA)now)
@@ -197,13 +204,23 @@ BIN     = toke
 #   -ffile-prefix-map=...   strip absolute paths from debug info / __FILE__
 #
 # SOURCE_DATE_EPOCH: if set in the environment, GCC/Clang use it for __DATE__
-# and __TIME__.  The Makefile exports it when available; CI pins it to the
-# commit timestamp.
+# and __TIME__.  CI pins it to the commit timestamp.
+#
+# 136.41: it is passed to the COMPILER BUILD ONLY ($(BUILD_ENV) on the three
+# recipes that make $(BIN) and its objects), not exported.  It used to be
+# `export SOURCE_DATE_EPOCH ?= 0`, which put 0 into the environment of every
+# recipe in this file -- every test target, every conformance suite -- and
+# anything else that honours the variable read it as "the time is 1970".
+# Python 3.14's zipfile does, and 1970 is below the 1980 DOS epoch a zip
+# header can hold, so C007's and C031's fixture builders died under `make`
+# and passed by hand (131.79).  Those suites now pin their own stamps; this
+# stops the next consumer being exposed the same way.
 # ──────────────────────────────────────────────────────────────────────────────
 REPRO_FLAGS = -frandom-seed=toke \
               -ffile-prefix-map=$(CURDIR)=.
 
-export SOURCE_DATE_EPOCH ?= 0
+SOURCE_DATE_EPOCH ?= 0
+BUILD_ENV = SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 
 # Portable wall-clock timeout for test binaries (no GNU coreutils needed).
 # Uses perl alarm() which survives exec; SIGALRM default action kills the process.
@@ -264,7 +281,7 @@ vendor-check:
 	fi
 
 $(BIN): $(OBJS)
-	$(CC) $(CFLAGS) $(REPRO_FLAGS) -o $@ $^ $(HARDEN_LDFLAGS) $(LDLIBS)
+	$(BUILD_ENV) $(CC) $(CFLAGS) $(REPRO_FLAGS) -o $@ $^ $(HARDEN_LDFLAGS) $(LDLIBS)
 
 tkc: $(BIN)
 	ln -sf $(BIN) tkc
@@ -276,7 +293,7 @@ src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h: $(wildcard src/stdlib/*_glue.c
 src/llvm.o: src/stdlib_decls_gen.h src/stdlib_dummyarg_gen.h
 
 %.o: %.c
-	$(CC) $(CFLAGS) $(REPRO_FLAGS) -c -o $@ $<
+	$(BUILD_ENV) $(CC) $(CFLAGS) $(REPRO_FLAGS) -c -o $@ $<
 
 # Header-dependency files emitted by -MMD; pull them in so editing a .h
 # recompiles every .o that includes it (prevents stale-header struct-layout
@@ -327,7 +344,7 @@ $(OBJS): $(BUILD_FLAGS_STAMP)
 
 # encrypt.c uses __int128 for Ed25519 arithmetic — allowed under GCC but rejected by -Wpedantic
 src/stdlib/encrypt.o: src/stdlib/encrypt.c $(BUILD_FLAGS_STAMP)
-	$(CC) $(CFLAGS) $(REPRO_FLAGS) -Wno-pedantic -c -o $@ $<
+	$(BUILD_ENV) $(CC) $(CFLAGS) $(REPRO_FLAGS) -Wno-pedantic -c -o $@ $<
 
 # ── 135.3a ──────────────────────────────────────────────────────────────────
 # `lint` used to be one line:
@@ -398,13 +415,13 @@ conform-check:
 # papered over.
 .PHONY: build-preflight
 build-preflight:
-	@bad=""; \
+	@bad=""; d=$$(mktemp -d "$${TMPDIR:-/tmp}/tkc_triple_probe.XXXXXX") || exit 1; \
 	for t in x86_64-linux-gnu aarch64-linux-gnu aarch64-apple-macos; do \
-	  printf '#include <stdio.h>\nint main(void){return 0;}\n' > /tmp/tkc_triple_probe.c; \
-	  $(CC) --target=$$t -c -o /tmp/tkc_triple_probe.o /tmp/tkc_triple_probe.c \
+	  printf '#include <stdio.h>\nint main(void){return 0;}\n' > "$$d/p.c"; \
+	  $(CC) --target=$$t -c -o "$$d/p.o" "$$d/p.c" \
 	    >/dev/null 2>&1 || bad="$$bad $$t"; \
 	done; \
-	rm -f /tmp/tkc_triple_probe.c /tmp/tkc_triple_probe.o; \
+	rm -rf "$$d"; \
 	if [ -n "$$bad" ]; then \
 	  echo "" >&2; \
 	  echo "ERROR: build-all cannot cross-compile for:$$bad" >&2; \
@@ -650,26 +667,27 @@ ASAN_STDLIB_TARGETS = test-stdlib test-stdlib-json test-stdlib-encoding \
 .PHONY: asan-selftest
 asan-selftest:
 	@echo "=== ASAN self-test: the detector must catch a planted defect ==="
-	@$(CC) $(SAN_CFLAGS) -o /tmp/tkc_asan_selftest scripts/asan_selftest.c
-	@/tmp/tkc_asan_selftest > /tmp/tkc_asan_selftest.log 2>&1; rc=$$?; \
+	@# 136.41: a private directory, not the fixed /tmp/tkc_asan_selftest{,.log}
+	@d=$$(mktemp -d "$${TMPDIR:-/tmp}/tkc_asan_selftest.XXXXXX") || exit 1; \
+	 trap 'rm -rf "$$d"' EXIT; \
+	 $(CC) $(SAN_CFLAGS) -o "$$d/selftest" scripts/asan_selftest.c || exit 1; \
+	 "$$d/selftest" > "$$d/selftest.log" 2>&1; rc=$$?; \
 	 if [ $$rc -ne 0 ] && \
 	    grep -a -q 'ERROR: AddressSanitizer: heap-use-after-free' \
-	      /tmp/tkc_asan_selftest.log; then \
+	      "$$d/selftest.log"; then \
 	   echo "  ok  planted use-after-free was caught:"; \
-	   sed -n '/ERROR: AddressSanitizer/p' /tmp/tkc_asan_selftest.log \
+	   sed -n '/ERROR: AddressSanitizer/p' "$$d/selftest.log" \
 	     | head -1 | sed 's/^/      /'; \
 	 else \
 	   echo ""; \
 	   echo "  exit=$$rc, and the AddressSanitizer banner is $$(grep -a -c \
-	     'ERROR: AddressSanitizer' /tmp/tkc_asan_selftest.log) line(s) of the output:"; \
-	   cat /tmp/tkc_asan_selftest.log | sed 's/^/      /'; \
+	     'ERROR: AddressSanitizer' "$$d/selftest.log") line(s) of the output:"; \
+	   cat "$$d/selftest.log" | sed 's/^/      /'; \
 	   echo ""; \
 	   echo "ASAN SELF-TEST DID NOT FIRE -- refusing to report on a build"; \
 	   echo "whose sanitizer has not been seen to work. Nothing below ran."; \
-	   rm -f /tmp/tkc_asan_selftest /tmp/tkc_asan_selftest.log; \
 	   exit 1; \
 	 fi
-	@rm -f /tmp/tkc_asan_selftest /tmp/tkc_asan_selftest.log
 
 test-asan-stdlib: asan-selftest
 	@echo "=== ASAN/UBSAN: stdlib C unit tests ==="
@@ -966,7 +984,7 @@ test-ci: test-ci-green
 # leave it out. It is a prerequisite of `ci` as of this line.
 #
 # `$(BIN)` is already its own prerequisite, so ordering with `conform` is free.
-ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
+ci: check-index lint lint-nonhost conform conform-sh conform-check check-tki check-tki-names check-glue-core check-core-reach check-test-orphans fuzz-smoke check-site-compile check-parallel-stdlib check-docs check-examples check-stdlib-tk check-error-codes check-patterns check-combinator-status check-probes perf-check check-facts check-metrics check-canonical check-claims-all check-hardening check-progress diff-codegen
 
 # 119.6 — compile-gate every full-program ```toke block in the canonical docs.
 # Fails on any regression (intentional error-demo pages are skip-listed in the script).
@@ -1068,15 +1086,52 @@ check-canonical:
 # karwalski/tkc (an early copy of the compiler tree, public with no description).
 # A repo that is absent is reported by name as a skip, not silently passed over;
 # cloning them into the workspace is story 132.46.
-SIBLING_REPOS := ../toke-spec ../toke-corpus ../toke-model ../toke-eval ../toke-mcp \
-                 ../toke-console ../toke-cloud ../toke-ooke ../toke-test-programs \
-                 ../toke-tokenizer ../toke-website ../homebrew-toke \
-                 ../loke ../tkc
+#
+# 132.68 / 136.41 — siblings are resolved from the WORKSPACE, not from `..`.
+# `../toke-*` is relative to the current directory, so from a worktree
+# (~/tk/tmpwork/wt_x) every sibling printed "skip (not checked out)" and the
+# gate passed having checked nothing -- measured: 14 skips, "checking claims
+# across:" followed by nothing, exit 0.  The workspace is now the directory
+# holding the MAIN checkout, found through `git rev-parse --git-common-dir`
+# (from a worktree that is <main>/.git; from the main checkout, `.git`), so a
+# worktree sweeps the same repositories the main checkout does.  Override with
+# TOKE_WORKSPACE=<dir>.  The same variable is exported to check_canonical.py,
+# whose declared `../toke-*` surfaces resolve through it, and to
+# verify_project_facts.py, which reads ../toke-corpus.
+#
+# And a sweep that resolves NO sibling now FAILS instead of passing.  The one
+# place that is expected -- a GitHub runner, where no sibling is checked out
+# (story 132.46) -- says so explicitly with CLAIMS_ALLOW_NO_SIBLINGS=1, and the
+# run still prints that it checked zero repositories.
+ifndef TOKE_WORKSPACE
+TOKE_WORKSPACE := $(shell d=$$(git rev-parse --git-common-dir 2>/dev/null) && \
+                    cd "$$d/../.." 2>/dev/null && pwd)
+endif
+ifeq ($(strip $(TOKE_WORKSPACE)),)
+TOKE_WORKSPACE := $(abspath $(CURDIR)/..)
+endif
+SIBLING_NAMES := toke-spec toke-corpus toke-model toke-eval toke-mcp \
+                 toke-console toke-cloud toke-ooke toke-test-programs \
+                 toke-tokenizer toke-website homebrew-toke \
+                 loke tkc
+SIBLING_REPOS := $(addprefix $(TOKE_WORKSPACE)/,$(SIBLING_NAMES))
+check-canonical check-claims-all check-facts: export TOKE_WORKSPACE := $(TOKE_WORKSPACE)
 check-claims-all:
-	@repos=""; for r in $(SIBLING_REPOS); do \
-	  if [ -d "$$r" ]; then repos="$$repos $$r"; else echo "skip (not checked out): $$r"; fi; \
+	@echo "workspace: $(TOKE_WORKSPACE)"; \
+	repos=""; n=0; for r in $(SIBLING_REPOS); do \
+	  if [ -d "$$r" ]; then repos="$$repos $$r"; n=$$((n+1)); else echo "skip (not checked out): $$r"; fi; \
 	done; \
-	echo "checking claims across:$$repos"; \
+	if [ $$n -eq 0 ]; then \
+	  if [ "$${CLAIMS_ALLOW_NO_SIBLINGS:-0}" = 1 ]; then \
+	    echo "check-claims-all: resolved 0 sibling repositories under $(TOKE_WORKSPACE) -- CLAIMS_ALLOW_NO_SIBLINGS=1, so only this repo is checked"; \
+	  else \
+	    echo "check-claims-all: FAIL -- resolved 0 of $(words $(SIBLING_NAMES)) sibling repositories under $(TOKE_WORKSPACE)." >&2; \
+	    echo "  A sweep that finds nothing is not a pass (132.68). Set TOKE_WORKSPACE, or" >&2; \
+	    echo "  CLAIMS_ALLOW_NO_SIBLINGS=1 where no sibling can exist (a CI runner)." >&2; \
+	    exit 1; \
+	  fi; \
+	fi; \
+	echo "checking claims across $$n of $(words $(SIBLING_NAMES)) sibling repositories:$$repos"; \
 	python3 scripts/check_metrics_claims.py $$repos --list && \
 	python3 scripts/check_canonical.py $$repos --list
 
@@ -1092,6 +1147,41 @@ check-claims-all:
 # so the binary's own strings cannot drift from the lexer table.
 check-facts: $(BIN)
 	python3 scripts/verify_project_facts.py --check
+
+# ── 136.58 / 136.49 / 136.59: combinator-status.md is rendered, and gated ────
+# docs/reference/combinator-status.md was transcribed by hand from
+# patterns/probe/probe_results.json; the JSON stayed right and ~20 rows rotted
+# (136.53), and run_probes.sh was in no target, so nothing noticed (136.49).
+#
+#   check-combinator-status  cheap, deterministic: the committed document is
+#       exactly what scripts/render_combinator_status.py renders from the
+#       committed JSON + template.  Also fails if a probe has no row, a row
+#       names a probe with no result, a row's probes disagree, or the JSON
+#       does not cover patterns/probe/*.tk.
+#   check-probes  re-runs every probe against THIS compiler (pinned copy,
+#       private TMPDIR, a gate slot -- scripts/conform_isolated.sh exec) and
+#       fails if any probe's verdict differs from the committed JSON.  Slow:
+#       it compiles and runs ~136 programs.
+#   render-combinator-status  re-render the document; with PROBES=1, re-run
+#       the probes into the committed JSON first.
+.PHONY: check-combinator-status check-probes render-combinator-status
+check-combinator-status:
+	python3 scripts/render_combinator_status.py
+
+check-probes: $(BIN)
+	@bash scripts/conform_isolated.sh exec -- sh -c '\
+	  f="$$TMPDIR/probe_results.json"; \
+	  bash patterns/probe/run_probes.sh "$$TKC" "$$f" > "$$TMPDIR/probes.log" 2>&1 \
+	    || { echo "check-probes: run_probes.sh failed:"; tail -20 "$$TMPDIR/probes.log"; exit 1; }; \
+	  echo "probes: $$(tail -1 "$$TMPDIR/probes.log")"; \
+	  python3 scripts/render_combinator_status.py --compare "$$f"'
+
+render-combinator-status:
+ifeq ($(PROBES),1)
+	@$(MAKE) --no-print-directory $(BIN)
+	@bash scripts/conform_isolated.sh exec -- bash patterns/probe/run_probes.sh "" patterns/probe/probe_results.json
+endif
+	python3 scripts/render_combinator_status.py --write
 
 # 132.58a — structural gate on docs/progress.md, the canonical tracker. Until
 # this existed the file that tracks every epic was checked by nothing at all,
@@ -1609,6 +1699,23 @@ bench:
 	    src/stdlib/db.c src/stdlib/http.c -lsqlite3
 	./test/stdlib/bench_stdlib
 
+# ── 123.11: performance-regression gate ────────────────────────────────────
+# Compares COUNTS (instructions retired, malloc-family calls) for tkc
+# compiling each bench/programs/*.tk at -O2 and for the binary it produced,
+# against bench/perf-baseline.json.  Not wall time: this host runs other
+# builds concurrently (load 20-290 measured) and a timing gate would be noise.
+# Thresholds and the reasoning are in scripts/perf_gate.py's header.  The
+# baseline is host-specific; elsewhere the gate SKIPs by name (bench.yml
+# compares base vs head on one runner instead).  Runs under
+# scripts/conform_isolated.sh for the pinned compiler and a gate slot.
+.PHONY: perf-check perf-record
+perf-check: $(BIN)
+	@bash scripts/conform_isolated.sh exec -- python3 scripts/perf_gate.py
+
+# Re-record deliberately, in the commit that justifies the new numbers.
+perf-record: $(BIN)
+	@bash scripts/conform_isolated.sh exec -- python3 scripts/perf_gate.py --record
+
 # ── Reproducible-build verification ───────────────────────────────────────────
 # Builds tkc twice into separate directories and compares SHA-256 hashes.
 # Exits non-zero if the two binaries differ.
@@ -1830,6 +1937,137 @@ fuzz-http: fuzz-http-parse fuzz-url-route
 	./fuzz-http-parse -max_total_time=120
 	./fuzz-url-route -max_total_time=120
 
+# ── 123.10: the eight 120.22 stdlib harnesses, wired ─────────────────────────
+#
+# test/fuzz/fuzz_{json,yaml,toml,toon,xml,template,multipart,ws_frame}.c were
+# written for 120.22 and built by NO target (136.56's orphan gate exempted
+# them by name, pending this story).  security-nightly.yml called
+# `fuzz-120-22` / `fuzz-120-22-run`, which did not exist either, so its fuzz
+# job was red by construction and was removed (123.10a).  Both are real now.
+#
+# TWO ENGINES, chosen by FUZZ_ENGINE (default auto):
+#   libfuzzer   -fsanitize=fuzzer.  libFuzzer supplies main() and mutates.
+#               This is fuzzing.  CI (Linux clang) builds this.
+#   standalone  the harness is linked against test/fuzz/standalone_main.c,
+#               which REPLAYS the files it is given -- no mutation.  Apple
+#               clang ships no libclang_rt.fuzzer_osx.a, so on a developer Mac
+#               this is the only way the harnesses build at all.  It proves
+#               they compile, link and run clean on the seed and adversarial
+#               corpora under ASAN+UBSAN.  It is a regression replay, NOT
+#               fuzzing, and every recipe that runs it says so.
+#   auto        libfuzzer if $(CC) can link a -fsanitize=fuzzer program, else
+#               standalone.  Probed once per make, and only when a fuzz
+#               target is actually built.
+#
+# The parser sources are compiled FROM SOURCE with the sanitizers, not linked
+# from the shipping .o files, so the code under test is itself instrumented.
+# UBSAN recovers by default and would print and carry on; it is made fatal.
+#
+# Seeds are tracked under test/fuzz/seeds/<target>/; the 120.x adversarial
+# regressions under test/fuzz/corpus-adversarial/<target>_*.  A libFuzzer run
+# never writes into either: it fuzzes a scratch copy under build/fuzz/corpus/
+# and merges (minimises) what it found into build/fuzz/corpus-min/, which the
+# nightly uploads.  Promoting a minimised input into seeds/ is a reviewed commit.
+FUZZ_ENGINE ?= auto
+FUZZ_SECONDS ?= 120
+FUZZ_OUT = build/fuzz
+FUZZ_SAN = -fsanitize=address,undefined -fno-sanitize-recover=undefined \
+           -fno-omit-frame-pointer -g -O1
+FUZZ_STDLIB_CFLAGS = -std=c99 -D_GNU_SOURCE -iquote src/stdlib
+FUZZ_TARGETS_120_22 = json yaml toml toon xml template multipart ws_frame
+fuzz_have_libfuzzer = $(shell d=$$(mktemp -d "$${TMPDIR:-/tmp}/tkc_fuzzprobe.XXXXXX") && \
+    printf 'int LLVMFuzzerTestOneInput(const unsigned char *d, unsigned long n){(void)d;(void)n;return 0;}\n' > "$$d/p.c" && \
+    $(CC) -fsanitize=fuzzer -o "$$d/p" "$$d/p.c" >/dev/null 2>&1 && echo libfuzzer || echo standalone; \
+    [ -n "$$d" ] && rm -rf "$$d")
+# Memoised: evaluated on first use, then a plain value.
+FUZZ_ENGINE_R = $(eval FUZZ_ENGINE_R := $(if $(filter auto,$(FUZZ_ENGINE)),$(fuzz_have_libfuzzer),$(FUZZ_ENGINE)))$(FUZZ_ENGINE_R)
+FUZZ_LINK = $(if $(filter libfuzzer,$(FUZZ_ENGINE_R)),-fsanitize=fuzzer,test/fuzz/standalone_main.c)
+
+# $(1)=target  $(2)=harness + sources (the harness path written out, so
+# check-test-orphans can see it)  $(3)=extra flags/libs
+define fuzz_build_rule
+	@case "$(FUZZ_ENGINE_R)" in libfuzzer|standalone) ;; \
+	  *) echo "FUZZ_ENGINE=$(FUZZ_ENGINE_R): must be libfuzzer, standalone or auto" >&2; exit 2 ;; esac
+	@mkdir -p $(FUZZ_OUT)
+	@echo "fuzz: building fuzz-$(subst _,-,$(1)) [$(FUZZ_ENGINE_R)]"
+	$(CC) $(FUZZ_SAN) $(FUZZ_STDLIB_CFLAGS) -o $(FUZZ_OUT)/fuzz-$(subst _,-,$(1)) \
+	    $(FUZZ_LINK) $(2) $(3)
+endef
+
+.PHONY: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
+	fuzz-multipart fuzz-ws-frame fuzz-120-22 fuzz-120-22-run fuzz-smoke
+
+fuzz-json:
+	$(call fuzz_build_rule,json,test/fuzz/fuzz_json.c src/stdlib/json.c,)
+fuzz-yaml:
+	$(call fuzz_build_rule,yaml,test/fuzz/fuzz_yaml.c src/stdlib/yaml.c,)
+fuzz-toml:
+	$(call fuzz_build_rule,toml,test/fuzz/fuzz_toml.c src/stdlib/toml.c $(TOML_SRCS),$(TOML_FLAGS))
+fuzz-toon:
+	$(call fuzz_build_rule,toon,test/fuzz/fuzz_toon.c src/stdlib/toon.c,)
+fuzz-xml:
+	$(call fuzz_build_rule,xml,test/fuzz/fuzz_xml.c src/stdlib/xml.c,)
+fuzz-template:
+	$(call fuzz_build_rule,template,test/fuzz/fuzz_template.c src/stdlib/template.c,)
+# http.c's TLS paths are compiled out without TK_HAVE_OPENSSL; it still calls
+# the capability checks, hence capabilities.c (not in 120.22's link line).
+fuzz-multipart:
+	$(call fuzz_build_rule,multipart,test/fuzz/fuzz_multipart.c src/stdlib/http.c src/stdlib/encoding.c src/stdlib/str.c src/stdlib/log.c src/stdlib/capabilities.c,-lz)
+fuzz-ws-frame:
+	$(call fuzz_build_rule,ws_frame,test/fuzz/fuzz_ws_frame.c src/stdlib/ws.c,)
+
+# Build all eight (the name security-nightly.yml calls).
+fuzz-120-22: fuzz-json fuzz-yaml fuzz-toml fuzz-toon fuzz-xml fuzz-template \
+	fuzz-multipart fuzz-ws-frame
+
+# Replay every seed and adversarial input through every harness, once.  Works
+# under either engine (libFuzzer's -runs=0 executes the given corpus and
+# exits), so it is the same check here and on CI.  Fails on any sanitizer
+# report, on a harness that replays nothing, or on a target with no seeds.
+fuzz-smoke: fuzz-120-22
+	@echo "=== fuzz-smoke: replay seeds + adversarial inputs [$(FUZZ_ENGINE_R)] -- a replay, not fuzzing ==="
+	@fail=0; for t in $(FUZZ_TARGETS_120_22); do \
+	  b=$(FUZZ_OUT)/fuzz-$$(echo $$t | tr _ -); \
+	  [ -d test/fuzz/seeds/$$t ] && [ -n "$$(ls test/fuzz/seeds/$$t)" ] \
+	    || { echo "  FAIL $$t: no seeds in test/fuzz/seeds/$$t"; fail=1; continue; }; \
+	  adv=$$(ls test/fuzz/corpus-adversarial/$${t}_* 2>/dev/null); \
+	  if [ "$(FUZZ_ENGINE_R)" = libfuzzer ]; then \
+	    out=$$($$b -runs=0 test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; \
+	  else \
+	    out=$$($$b test/fuzz/seeds/$$t $$adv 2>&1); rc=$$?; \
+	  fi; \
+	  n=$$(ls test/fuzz/seeds/$$t | wc -l | tr -d ' '); a=$$(printf '%s\n' $$adv | grep -c . ); \
+	  if [ $$rc -eq 0 ]; then echo "  ok   $$t  ($$n seed(s), $$a adversarial)"; \
+	  else echo "  FAIL $$t (exit $$rc)"; \
+	    printf '%s\n' "$$out" | grep -a -E 'ERROR: |runtime error|SUMMARY|fuzz-replay' | head -6 | sed 's/^/      /'; fail=1; fi; \
+	done; \
+	[ $$fail -eq 0 ] && echo "fuzz-smoke: $(words $(FUZZ_TARGETS_120_22)) harnesses replayed clean" \
+	  || { echo "fuzz-smoke: FAILED"; exit 1; }
+
+# The nightly run.  libfuzzer: fuzz each target for FUZZ_SECONDS on a scratch
+# copy of its seeds, crash inputs to $(FUZZ_OUT)/crash-<target>-*, then
+# minimise the grown corpus into $(FUZZ_OUT)/corpus-min/<target>.
+# standalone: there is no fuzzer to run -- it says so by name and replays
+# (fuzz-smoke), rather than printing a green "fuzzed" it did not do.
+fuzz-120-22-run: fuzz-120-22
+	@if [ "$(FUZZ_ENGINE_R)" != libfuzzer ]; then \
+	  echo "SKIP fuzz-120-22-run: FUZZ_ENGINE=$(FUZZ_ENGINE_R) -- $(CC) cannot link -fsanitize=fuzzer here,"; \
+	  echo "     so NO FUZZING RAN.  Replaying the corpora instead (make fuzz-smoke)."; \
+	  $(MAKE) --no-print-directory fuzz-smoke FUZZ_ENGINE=standalone; exit $$?; \
+	fi; \
+	fail=0; for t in $(FUZZ_TARGETS_120_22); do \
+	  b=$(FUZZ_OUT)/fuzz-$$(echo $$t | tr _ -); \
+	  rm -rf $(FUZZ_OUT)/corpus/$$t $(FUZZ_OUT)/corpus-min/$$t; \
+	  mkdir -p $(FUZZ_OUT)/corpus/$$t $(FUZZ_OUT)/corpus-min/$$t; \
+	  cp test/fuzz/seeds/$$t/* $(FUZZ_OUT)/corpus/$$t/; \
+	  cp test/fuzz/corpus-adversarial/$${t}_* $(FUZZ_OUT)/corpus/$$t/ 2>/dev/null; \
+	  echo "=== fuzz $$t for $(FUZZ_SECONDS)s ==="; \
+	  $$b -max_total_time=$(FUZZ_SECONDS) -artifact_prefix=$(FUZZ_OUT)/crash-$$t- \
+	      $(FUZZ_OUT)/corpus/$$t || fail=1; \
+	  $$b -merge=1 $(FUZZ_OUT)/corpus-min/$$t $(FUZZ_OUT)/corpus/$$t >/dev/null 2>&1 || true; \
+	done; \
+	exit $$fail
+
 # ── 123.10a: SBOM refresh + dependency CVE recheck ────────────────────────
 # security-nightly.yml's weekly job called `make sbom` and `make cve-scan`
 # and neither target existed, so the job was red by construction.  Text is
@@ -1837,18 +2075,44 @@ fuzz-http: fuzz-http-parse fuzz-url-route
 # completely; the same syft invocation as release.yml, so SBOMs taken
 # between releases stay comparable.
 #
-# syft and grype are installed by the workflow, not vendored here; run
-# locally only if you have them.  --fail-on high honours the
-# dependency-tracking.md SLA: Medium/Low are reported, not gated.
+# syft and grype are installed by the workflow, not vendored here.  --fail-on
+# high honours the dependency-tracking.md SLA: Medium/Low are reported, not
+# gated.
+#
+# 123.10: local runs make NO network call, and a missing tool is a named SKIP
+# rather than `syft: command not found`.  In CI (GitHub sets CI=true) a
+# missing tool FAILS -- there the step is real or it is red.
+#   sbom      syft with its update check off (it phones home by default).
+#   cve-scan  grype needs a vulnerability database, which it downloads.
+#             Locally the download and the update check are off, so it uses
+#             a database already in its cache or fails saying it has none;
+#             CI downloads a fresh one, which is the point of the job.
+# SBOM_CI=1 forces the CI behaviour locally; SBOM_CI=0 the local one.
+SBOM_CI ?= $(if $(filter true 1,$(CI)),1,0)
 sbom: $(BIN)
-	syft packages file:./$(BIN) -o spdx-json > tkc-sbom.spdx.json
-	sha256sum tkc-sbom.spdx.json > tkc-sbom.spdx.json.sha256
-	@echo "Wrote tkc-sbom.spdx.json (+ .sha256)"
+	@if ! command -v syft >/dev/null 2>&1; then \
+	  if [ "$(SBOM_CI)" = 1 ]; then echo "sbom: FAIL -- syft is not installed (CI must install it)" >&2; exit 1; fi; \
+	  echo "SKIP sbom: syft is not installed (local run; the CI job installs it, and there this step is real)"; \
+	  exit 0; \
+	fi; \
+	SYFT_CHECK_FOR_APP_UPDATE=false syft packages file:./$(BIN) -o spdx-json > tkc-sbom.spdx.json && \
+	{ command -v sha256sum >/dev/null 2>&1 && sha256sum tkc-sbom.spdx.json || shasum -a 256 tkc-sbom.spdx.json; } \
+	  > tkc-sbom.spdx.json.sha256 && \
+	echo "Wrote tkc-sbom.spdx.json (+ .sha256)"
 
 cve-scan: sbom
-	grype sbom:tkc-sbom.spdx.json \
-	      --fail-on high \
-	      --output table
+	@if ! command -v grype >/dev/null 2>&1 || [ ! -s tkc-sbom.spdx.json ]; then \
+	  if [ "$(SBOM_CI)" = 1 ]; then echo "cve-scan: FAIL -- grype is not installed or no SBOM was written" >&2; exit 1; fi; \
+	  echo "SKIP cve-scan: $$(command -v grype >/dev/null 2>&1 && echo 'no SBOM (sbom skipped)' || echo 'grype is not installed') -- local run, nothing was scanned"; \
+	  exit 0; \
+	fi; \
+	if [ "$(SBOM_CI)" = 1 ]; then \
+	  grype sbom:tkc-sbom.spdx.json --fail-on high --output table; \
+	else \
+	  echo "cve-scan: local run -- DB auto-update and update check OFF (no network); using the cached DB"; \
+	  GRYPE_DB_AUTO_UPDATE=false GRYPE_CHECK_FOR_APP_UPDATE=false \
+	    grype sbom:tkc-sbom.spdx.json --fail-on high --output table; \
+	fi
 
 # ── Man page ────────────────────────────────────────────────────────────
 MANDIR ?= /usr/local/share/man/man1

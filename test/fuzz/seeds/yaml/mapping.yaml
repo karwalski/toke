@@ -1,0 +1,6 @@
+name: toke
+list:
+  - a
+  - b
+nested:
+  k: v

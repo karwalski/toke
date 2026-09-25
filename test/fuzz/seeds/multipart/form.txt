@@ -1,0 +1,11 @@
+----b1
+------b1
+Content-Disposition: form-data; name="f"
+
+value
+------b1
+Content-Disposition: form-data; name="up"; filename="a.txt"
+Content-Type: text/plain
+
+file body
+------b1--
