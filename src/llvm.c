@@ -7434,6 +7434,17 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
         if (sig && (!strcmp(sig->ret_type_name, "@$str") ||
                     !strcmp(sig->ret_type_name, "@str")))
             return "@str";
+        /* Y1 (found by the 127.172 corpus sweep): an @f64 / @bool return is
+         * tagged the way an @f64 / @bool PARAMETER already is, so `.get(i)` on
+         * `let a=f(..)` reads a double (102.29b) or renders a bool (127.194).
+         * Without it `\(a.get(i))` printed the f64's bit pattern as an
+         * integer — 4607182418800017408 for 1.0 — at exit 0. */
+        if (sig && (!strcmp(sig->ret_type_name, "@f64") ||
+                    !strcmp(sig->ret_type_name, "@$f64")))
+            return "@f64";
+        if (sig && (!strcmp(sig->ret_type_name, "@bool") ||
+                    !strcmp(sig->ret_type_name, "@$bool")))
+            return "@bool";
         /* 136.28: a function returning an array of structs */
         if (sig) { const char *es = array_elem_struct_name(c, sig->ret_type_name);
                    if (es) return array_struct_tag(es); }

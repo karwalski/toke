@@ -21,8 +21,11 @@
 # control: `.get(i)` on an @i64, `.indexof`, `.len` and `.find` still print
 # digits.
 #
-# Negative control: TKC=<main 2e932d6 build> — cases 1-3 print 1/0, case 4
-# fails to compile.
+# 1c/1d: a function-returned @(bool) / @f64 is tagged like a parameter of that
+# type (found by the corpus sweep: 1d printed 4609434218613702656 for 1.5).
+#
+# Negative control: TKC=<main 2e932d6 build> — cases 1-3 print 1/0 (1d prints
+# bit patterns), case 4 fails to compile.
 #
 # Story: 127.194
 
@@ -66,6 +69,28 @@ f=show(b:@(bool)):str{
 };
 f=main():i64{
   io.println(show(@(false;true)));
+  <0
+};'
+
+runs "1c-bool-array-returned-by-a-function" "true false" 'm=t;
+i=io:std.io;
+f=bs():@(bool){
+  <@(true;false)
+};
+f=main():i64{
+  let d=bs();
+  io.println("\(d.get(0)) \(d.get(1))");
+  <0
+};'
+
+runs "1d-f64-array-returned-by-a-function" "1.5 2" 'm=t;
+i=io:std.io;
+f=id(v:@f64):@f64{
+  <v
+};
+f=main():i64{
+  let a=id(@(1.5;2.0));
+  io.println("\(a.get(0)) \(a.get(1))");
   <0
 };'
 
