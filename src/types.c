@@ -1686,6 +1686,19 @@ static Type *mt_bind_type(Ctx *cx, const Node *m) {
     return NULL;
 }
 
+/* 127.195: E4011's null-filler tolerance (see NODE_MATCH_STMT). */
+static int ptr_kind(const Type *t) {
+    return t && (t->kind==TY_STR || t->kind==TY_ARRAY || t->kind==TY_MAP
+                 || t->kind==TY_STRUCT);
+}
+static int null_filler(Ctx *cx, const Node *b) {
+    if (!b) return 0;
+    char tb[8]; TOKSTR(tb, cx->src, b);
+    if (b->kind == NODE_INT_LIT) return strcmp(tb, "0") == 0;
+    if (b->kind == NODE_BOOL_LIT) return strcmp(tb, "false") == 0;
+    return 0;
+}
+
 /*
  * 127.195 — the type of an `mt` arm's binding while its body is inferred.
  *
@@ -4530,6 +4543,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         if (node->child_count<1) return mk_type(A,TY_VOID);
         Type *scr=infer(cx,node->children[0]),*arm_type=NULL; int has_t=0,has_f=0;
         int discarded=(cx->mt_discard==node);
+        const Node *arm_body=NULL;   /* 127.195: the arm that set arm_type */
         int has_result_arm=0;   /* 127.202 */
         /* Collect match arm variant names for sum type exhaustiveness check */
         const char *arm_tags[64]; int arm_tag_count=0;
@@ -4573,7 +4587,15 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
              * (codegen skips it for the same reason, 114.47).  An arm whose
              * type is unresolved is tolerated, as before. */
             if (body->kind==NODE_RETURN_STMT||!at||at->kind==TY_UNKNOWN) continue;
-            if (!arm_type) { arm_type=at; continue; }
+            if (!arm_type) { arm_type=at; arm_body=body; continue; }
+            /* The null filler: a literal `0` or `false` arm beside an arm of
+             * a pointer type (str, array, map, struct) is the idiom
+             * `let cfg=mt r {$ok:v v;$err:e 0}` — codegen stores a null
+             * pointer, which is what was written (toke-ooke's tests use it,
+             * guarded by an earlier ok/err check).  Tolerated, and the
+             * pointer type becomes the one later arms are compared with. */
+            if (ptr_kind(arm_type)&&null_filler(cx,body)) continue;
+            if (ptr_kind(at)&&null_filler(cx,arm_body)) { arm_type=at; arm_body=body; continue; }
             /* E4011 only where the match's value is used.  A match standing
              * as a statement discards its value, and its arms are free to be
              * a void call in one arm and a value in another. */
@@ -4774,6 +4796,13 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                     diag_emit(DIAG_ERROR,E5002,ch->start,ch->line,ch->col,
                         "unreachable code after return statement","fix",(const char*)NULL);
                 break; /* stop checking after first unreachable */
+            }
+            /* 127.195: a match standing as a statement discards its value,
+             * so E4011 (arm agreement) does not apply to it. */
+            {
+                const Node *ms=ch;
+                if (ms->kind==NODE_EXPR_STMT&&ms->child_count>0) ms=ms->children[0];
+                if (ms&&ms->kind==NODE_MATCH_STMT) cx->mt_discard=ms;
             }
             last=infer(cx,ch);
             tail=ch;
