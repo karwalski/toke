@@ -744,15 +744,23 @@ def sentences(line):
                 yield s
 
 
+URL_TEXT = re.compile(r"\b(?:https?://|www\.)[^\s)\]>\"']+", re.I)
+
+
 def claims_token_percentage(s):
     """True when the sentence states a measured percentage about toke's tokens.
 
     Exempt: third-party results that carry a citation, and stated
     targets/thresholds — TEMSpec §6.3 governs published *results*.
     """
-    if not TOKE_SUBJECT.search(s):
+    # 132.94: a URL is an address, not the sentence's subject. Pointing the
+    # patterns catalogue's issue links at github.com/karwalski/toke made "toke"
+    # the subject of "token-tied but 10.2% slower than c" (a speed figure).
+    # The URL still counts as a CITATION below.
+    bare = URL_TEXT.sub(" ", s)
+    if not TOKE_SUBJECT.search(bare):
         return False
-    if CITATION.search(s) and not re.search(r"\btoke\b", s, re.I):
+    if CITATION.search(s) and not re.search(r"\btoke\b", bare, re.I):
         return False
     if UNMEASURED.search(s) and not MEASURED.search(s):
         return False
@@ -1253,6 +1261,12 @@ SELFTEST = [
     (False, "132.93: \"Gate-1\" in another cell is not a stated target for this one",
      "| Language | Token Density | Ecosystem |\n|---|---|---|\n"
      "| **toke** | Costs 1.34x on the Gate-1 tasks | 57 stdlib modules |"),
+    (True, "132.94: \"toke\" inside a link's URL is not the sentence's subject",
+     "- [127.10](https://github.com/karwalski/toke/blob/main/docs/progress.md): "
+     "form a is token-tied but 10.2% slower than c."),
+    (False, "132.94: the same sentence with toke as its subject still fails",
+     "- [127.10](https://github.com/karwalski/toke/blob/main/docs/progress.md): "
+     "toke is 10.2% fewer tokens than Python."),
     (True, "132.93: the date in the count's own cell",
      "| Language | Ecosystem |\n|---|---|\n"
      "| **toke** | 57 stdlib modules (2026-05-25) |"),
