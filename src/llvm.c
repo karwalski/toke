@@ -2721,7 +2721,8 @@ static const char *map_keys_elem_tag(Ctx *c, const Node *recv) {
  * `chain` distinguishes the members the big chain handles from the three that
  * a special case above it returns for (`len` inline or via tk_*_len_w, `keys`
  * on a map, `toarray` on a Vec).  Those must not enter the chain — its final
- * `else` is `tk_str_eq_w` — but the checker must still accept them.
+ * `else` is an internal-error diagnostic (127.167; it was `tk_str_eq_w`) —
+ * but the checker must still accept them.
  *
  * ARITY IS NOT IN THIS TABLE.  It is read from g_stdlib_decls, the compiler's
  * record of the native side, and only when EVERY candidate symbol agrees; a
@@ -4435,7 +4436,28 @@ static int emit_expr(Ctx *c, const Node *n)
                 else if (!strcmp(method_im, "chars"))   fn_im = "tk_str_chars_w";
                 else if (!strcmp(method_im, "sub"))     fn_im = "tk_str_sub_w";
                 else if (!strcmp(method_im, "substring"))fn_im = "tk_str_substr_w";
-                else                                    fn_im = "tk_str_eq_w";
+                else if (!strcmp(method_im, "eq"))      fn_im = "tk_str_eq_w";
+                else {
+                    /* 127.167: this `else` used to be `fn_im = "tk_str_eq_w"`,
+                     * so a member present in g_recv_methods with no branch
+                     * above lowered SILENTLY to str.eq with the wrong arity
+                     * (a trial `indexfrom` row made `t.indexfrom(",";2)`
+                     * print 0).  Every chain member now has its own branch
+                     * (C073 checks the table against this chain), so reaching
+                     * here is a compiler defect, not a user error: say so and
+                     * fail the build.  No `fix` — nothing the user can change
+                     * repairs it (AGENTS.md §3.1). */
+                    char imsg[256];
+                    snprintf(imsg, sizeof imsg,
+                             "internal compiler error: receiver method '%s' is "
+                             "in the dispatch table but the dispatch chain has "
+                             "no branch for it", method_im);
+                    diag_emit(DIAG_ERROR, E9002, n->start, n->line, n->col,
+                              imsg, (void *)0);
+                    t = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = add i64 0, 0 ; 127.167 error stub\n", t);
+                    return t;
+                }
                 /* Emit base object as first arg (coerce ptr→i64) */
                 int obj_v = emit_expr(c, n->children[0]->children[0]);
                 const char *obj_ty = expr_llvm_type(c, n->children[0]->children[0]);
