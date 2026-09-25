@@ -31,7 +31,7 @@ be told apart.
 | [toke-web](https://github.com/karwalski/toke-web) | Source for tokelang.dev, built with ooke and served by a toke binary on std.http. | MIT | `toke-website` |
 
 ooke and loke are toke sub-projects, not separate products — see
-[`docs/about/ecosystem.md`](ecosystem.md).
+[`docs/about/ecosystem.md`](/docs/about/ecosystem/).
 
 ## Private repositories
 

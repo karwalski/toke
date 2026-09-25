@@ -540,6 +540,103 @@ static int run_lint_mode(const char *path, const char *sbuf, long slen,
  * for source errors, or EINTERNAL (70) for tool failures.
  */
 
+/* ── Stdlib directory (127.179) ─────────────────────────────────────
+ *
+ * Every later consumer of the stdlib (names.c's .tki loader, llvm.c's
+ * selective linker and glue generator) reads getenv("TKC_STDLIB_DIR") first
+ * and the baked -DTKC_STDLIB_DIR second, resolving a relative value against
+ * the CURRENT DIRECTORY.  A released tkc was baked with "./src/stdlib", so it
+ * worked only when run from inside its extracted directory; anywhere else a
+ * program importing std.db failed E3011 "identifier 'row' is not declared".
+ *
+ * So the directory is resolved ONCE, here, and exported as an absolute
+ * TKC_STDLIB_DIR:
+ *   1. TKC_STDLIB_DIR from the environment, if set (it must be a stdlib dir);
+ *   2. the baked path, if it is absolute and exists;
+ *   3. relative to the executable: <exe dir>/<baked path> when the baked
+ *      path is relative, then <exe dir>/src/stdlib (the release tarball
+ *      layout) and <exe dir>/../src/stdlib;
+ * and if none holds a stdlib, E9022 says so instead of a misleading
+ * downstream error.  A stdlib directory is one containing tk_runtime.c. */
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>   /* _NSGetExecutablePath */
+#endif
+#include <limits.h>
+
+#define E9022 9022  /* stdlib directory not found */
+
+static int is_stdlib_dir(const char *dir)
+{
+    char probe[PATH_BUF];
+    if (!dir || !dir[0]) return 0;
+    snprintf(probe, sizeof probe, "%s/tk_runtime.c", dir);
+    FILE *f = fopen(probe, "r");
+    if (!f) return 0;
+    fclose(f);
+    return 1;
+}
+
+/* Directory holding the running executable, symlinks resolved; 0 on success. */
+static int exe_dir(char *out, size_t outsz)
+{
+    char raw[PATH_BUF];
+#if defined(__APPLE__)
+    uint32_t sz = (uint32_t)sizeof raw;
+    if (_NSGetExecutablePath(raw, &sz) != 0) return -1;
+#else
+    ssize_t n = readlink("/proc/self/exe", raw, sizeof raw - 1);
+    if (n <= 0) return -1;
+    raw[n] = '\0';
+#endif
+    char real[PATH_MAX];
+    if (!realpath(raw, real)) return -1;
+    char *slash = strrchr(real, '/');
+    if (!slash) return -1;
+    if (slash == real) slash[1] = '\0'; else *slash = '\0';
+    snprintf(out, outsz, "%s", real);
+    return 0;
+}
+
+/* Export dir as an absolute TKC_STDLIB_DIR. */
+static void export_stdlib_dir(const char *dir)
+{
+    char real[PATH_MAX];
+    setenv("TKC_STDLIB_DIR", realpath(dir, real) ? real : dir, 1);
+}
+
+static int resolve_stdlib_dir(void)
+{
+    char msg[PATH_BUF * 2];
+    const char *env = getenv("TKC_STDLIB_DIR");
+    if (env && env[0]) {
+        if (is_stdlib_dir(env)) { export_stdlib_dir(env); return 0; }
+        snprintf(msg, sizeof msg,
+                 "stdlib directory not found: TKC_STDLIB_DIR='%s' does not contain tk_runtime.c",
+                 env);
+        diag_emit(DIAG_ERROR, E9022, 0, 0, 0, msg, (void *)0);
+        return -1;
+    }
+    const char *baked = TKC_STDLIB_DIR;
+    if (baked[0] == '/' && is_stdlib_dir(baked)) { export_stdlib_dir(baked); return 0; }
+
+    char ed[PATH_BUF];
+    if (exe_dir(ed, sizeof ed) == 0) {
+        char cand[PATH_BUF * 2];
+        const char *rel[] = { baked[0] != '/' ? baked : NULL, "src/stdlib", "../src/stdlib" };
+        for (size_t i = 0; i < sizeof rel / sizeof rel[0]; i++) {
+            if (!rel[i]) continue;
+            snprintf(cand, sizeof cand, "%s/%s", ed, rel[i]);
+            if (is_stdlib_dir(cand)) { export_stdlib_dir(cand); return 0; }
+        }
+    }
+    snprintf(msg, sizeof msg,
+             "stdlib directory not found: the built-in path '%s' and the paths "
+             "beside this executable hold no tk_runtime.c; set TKC_STDLIB_DIR",
+             baked);
+    diag_emit(DIAG_ERROR, E9022, 0, 0, 0, msg, (void *)0);
+    return -1;
+}
+
 /* 114.40: compile several module source files into ONE linked binary.
  * Files must be listed in dependency order (imported modules before their
  * importers). Each is compiled to a temp .ll, with .tki interfaces emitted
@@ -560,7 +657,8 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
     sp[spc++] = tdir;
 
     char ll_paths[256][PATH_BUF];
-    char ll_joined[8192]; ll_joined[0] = '\0';
+    const char *ll_argv[256]; int nll = 0;   /* 127.76: one clang argument each */
+    for (int fi = 0; fi < 256; fi++) ll_paths[fi][0] = '\0';   /* cleanup unlinks only these */
     SymbolTable merged; merged.entries = (ImportEntry *)malloc(sizeof(ImportEntry) * 256);
     merged.count = 0; merged.search_path = tdir;
     int has_main = 0, rc = 0;
@@ -622,17 +720,19 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
             merged.entries[merged.count].resolved = st.entries[e].resolved;
             merged.count++;
         }
-        if (ll_joined[0]) strncat(ll_joined, " ", sizeof ll_joined - strlen(ll_joined) - 1);
-        strncat(ll_joined, ll_paths[fi], sizeof ll_joined - strlen(ll_joined) - 1);
+        ll_argv[nll++] = ll_paths[fi];
         symtab_free(&st); free(sbuf); arena_free(arena);
+        /* 127.181: diag kept a pointer to sbuf; the link-step E9003 below
+         * read its source_line from freed memory. */
+        diag_set_source(NULL, 0);
     }
     if (!has_main) { fputs("tkc: no f=main() found among the source files\n", stderr); rc = ECOMPILE; goto cleanup; }
-    if (compile_binary(ll_joined, out_bin, target, opt_level, &merged, debug_info) < 0) rc = EINTERNAL;
+    if (compile_binary_multi(ll_argv, nll, out_bin, target, opt_level, &merged, debug_info) < 0) rc = EINTERNAL;
 
 cleanup:
     for (int e = 0; e < merged.count; e++) free(merged.entries[e].module_path);
     free(merged.entries);
-    for (int fi = 0; fi < nfiles; fi++) unlink(ll_paths[fi]);
+    for (int fi = 0; fi < nfiles && fi < 256; fi++) if (ll_paths[fi][0]) unlink(ll_paths[fi]);
     /* best-effort: leave .tki/tempdir (harmless); /tmp is cleared by the OS */
     return rc;
 }
@@ -1471,6 +1571,16 @@ int main(int argc, char **argv)
     if (verify_companion_path) return verify_companion(verify_companion_path);
     if (source_file_count == 0) { puts(HELP); return EUSAGE; }
     if ((djson + dtext + dsarif) > 1) { fputs("tkc: --diag-json, --diag-text, and --diag-sarif are mutually exclusive\n", stderr); return EUSAGE; }
+
+    /* 127.179: find the stdlib before anything consults it.  The purely
+     * syntactic modes never do, so a missing stdlib does not stop them. */
+    if (!(fmt_only || pretty || expand || min_only || dump_ast)) {
+        diag_set_format(dsarif ? DIAG_FMT_SARIF :
+                        djson  ? DIAG_FMT_JSON  :
+                        dtext  ? DIAG_FMT_TEXT  :
+                        isatty(STDOUT_FILENO) ? DIAG_FMT_TEXT : DIAG_FMT_JSON);
+        if (resolve_stdlib_dir() < 0) { diag_flush_sarif(); return EINTERNAL; }
+    }
 
     /* Determine if --out is a directory path.
      * A path is treated as a directory if it ends with '/' or if it

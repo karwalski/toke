@@ -137,7 +137,7 @@ Emitted when an uppercase-cased keyword is used where the default (lowercase) pr
 Emitted when a `\(` interpolation appears in a string literal while compiling in the
 **legacy (80-column) profile**, which does not support interpolation. In the default
 profile, `\(expr)` interpolation **is** supported for scalar values (interpolating a
-composite value is the compile error `E4032` — see [types](types.md)).
+composite value is the compile error `E4032` — see [types](/docs/reference/types/)).
 
 **Fix:** in legacy-profile code, build the string with `str.concat()`; or use the
 default profile, where `\(expr)` works.
@@ -1132,6 +1132,25 @@ The compiler could not write the `.tkir` artifact.
 | Stage    | codegen |
 
 The compiler could not read a `.tkir` artifact.
+
+### E9022
+
+**Stdlib directory not found**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+The compiler could not find its standard library (a directory holding
+`tk_runtime.c`). It looks, in order, at `TKC_STDLIB_DIR` from the environment
+(which, when set, must be such a directory), the path built into the compiler
+if that path is absolute, and the paths beside the `tkc` executable
+(`<dir>/src/stdlib`, `<dir>/../src/stdlib`, or the built-in path taken
+relative to `<dir>`). Emitted once, before any source is read, instead of the
+unrelated undeclared-identifier errors a missing stdlib used to cause.
+Set `TKC_STDLIB_DIR` to the `src/stdlib` directory of a toke checkout or
+release (127.179).
 
 ## Semantic Warnings (W2xxx / W3xxx / W5xxx / W8xxx)
 

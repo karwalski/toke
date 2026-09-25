@@ -15,13 +15,13 @@
 #   2. a single-module example is also built to a binary, so a link failure
 #      is caught, not only a type error.
 #
-# Multi-module examples are NOT linked here: `tkc a.tk b.tk -o bin` has failed
-# for every input since a3adceb (2026-07-07), because the driver joins the
-# per-module .ll paths into ONE string and compile_binary now passes it to
-# clang as a single argv entry ("no such file or directory:
-# '/tmp/tkc_proj_X/m0.ll /tmp/tkc_proj_X/m1.ll ...'"). That is a compiler
-# defect, reported separately; set EXAMPLES_LINK_MULTI=1 to include those
-# builds and watch it.
+# Multi-module examples are linked too (127.76).  Until 127.76 they could not
+# be: from a3adceb (2026-07-07) the driver joined the per-module .ll paths into
+# ONE string and compile_binary passed it to clang as a single argv entry
+# ("no such file or directory: '/tmp/tkc_proj_X/m0.ll /tmp/tkc_proj_X/m1.ll'"),
+# so this gate skipped them behind EXAMPLES_LINK_MULTI=1.  That is now the
+# default; EXAMPLES_LINK_MULTI=0 restores the old check-only behaviour.
+# test/conform/C077 pins the driver fix itself.
 #
 # EVERY tracked examples/**/*.tk must appear in EXAMPLES below, so a new
 # example cannot slip past the gate by not being listed.
@@ -85,7 +85,7 @@ for e in "${EXAMPLES[@]}"; do
     fi
   done
   [ "${ok}" -eq 1 ] || continue
-  if [ "${#mods[@]}" -eq 1 ] || [ "${EXAMPLES_LINK_MULTI:-0}" = 1 ]; then
+  if [ "${#mods[@]}" -eq 1 ] || [ "${EXAMPLES_LINK_MULTI:-1}" = 1 ]; then
     bin="${WORK}/${dir}/bin"
     srcs=(); for m in "${mods[@]}"; do srcs+=("examples/${dir}/${m}"); done
     if "${TKC}" "${srcs[@]}" -o "${bin}" > "${WORK}/${dir}/build.log" 2>&1 && [ -x "${bin}" ]; then

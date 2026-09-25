@@ -3131,7 +3131,7 @@ The following tools **do read** companion files:
 
 #### 24.11.6 Reasoning Channel
 
-Companion files serve as the **out-of-band reasoning channel** for LLM code generation (see [reasoning-channel.md](reasoning-channel.md)). The model can:
+Companion files serve as the **out-of-band reasoning channel** for LLM code generation (see [reasoning-channel.md](/docs/spec/reasoning-channel/)). The model can:
 
 1. Reason about the problem in `(* *)` blocks during generation (lexer discards these)
 2. Emit structured reasoning in the `.tkc.md` file alongside the source

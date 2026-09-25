@@ -92,7 +92,11 @@ typedef struct { char name[NAME_BUF]; char struct_type[NAME_BUF]; } PtrLocal;
  * All struct fields are represented as i64 at the LLVM level; the struct
  * is laid out as { i64, i64, ... } with one slot per field.
  */
-typedef struct { char name[NAME_BUF]; int field_count; char field_names[TKC_MAX_PARAMS][NAME_BUF]; char field_types[TKC_MAX_PARAMS][NAME_BUF]; int field_is_map[TKC_MAX_PARAMS]; int is_sum; /* 114.41: fields are $-variants (discriminated union) */ } StructInfo;
+typedef struct { char name[NAME_BUF]; int field_count; int field_cap; char (*field_names)[NAME_BUF]; char (*field_types)[NAME_BUF]; int *field_is_map; int is_sum; /* 114.41: fields are $-variants (discriminated union) */ } StructInfo;
+/* 127.190: the field arrays are sized per struct (struct_alloc_fields), not
+ * TKC_MAX_PARAMS (16) wide.  At 16 the build dropped field 17 onward while the
+ * checker accepted them, and failed E4025 "struct has no field 'f16'" on a
+ * field that exists. */
 
 /*
  * ImportAlias — Maps a toke import alias to its module name.
@@ -417,6 +421,39 @@ static void record_elem_spelling(const char *src, const Node *ty, char *out) {
     memcpy(out + cur, el, strlen(el) + 1);
 }
 
+/* 127.190: give si room for n fields (at least one, so a lookup that falls
+ * back to slot 0 reads "" rather than NULL).  Zeroed.  Arena-backed when the
+ * context has an arena, otherwise heap (released by free_structs). */
+static int struct_alloc_fields(Ctx *c, StructInfo *si, int n) {
+    if (n < 1) n = 1;
+    size_t nb = (size_t)n * NAME_BUF;
+    if (c->arena) {
+        si->field_names  = arena_alloc(c->arena, (int)nb);
+        si->field_types  = arena_alloc(c->arena, (int)nb);
+        si->field_is_map = arena_alloc(c->arena, n * (int)sizeof(int));
+    } else {
+        si->field_names  = calloc((size_t)n, NAME_BUF);
+        si->field_types  = calloc((size_t)n, NAME_BUF);
+        si->field_is_map = calloc((size_t)n, sizeof(int));
+    }
+    if (!si->field_names || !si->field_types || !si->field_is_map) {
+        si->field_cap = 0; si->field_count = 0;
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: out of memory for struct fields", (void *)0);
+        return -1;
+    }
+    si->field_cap = n;
+    return 0;
+}
+
+static void free_structs(Ctx *c) {
+    if (!c->arena)
+        for (int i = 0; i < c->struct_count; i++) {
+            free(c->structs[i].field_names); free(c->structs[i].field_types);
+            free(c->structs[i].field_is_map);
+        }
+    free(c->structs);
+}
+
 static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, const char *src) {
     if (c->struct_count >= c->struct_cap) {
         diag_emit(DIAG_ERROR, E9010, 0, 0, 0, "compiler limit exceeded: too many struct types", "fix", NULL);
@@ -427,14 +464,15 @@ static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, 
     if (len >= 128) len = 127;
     memcpy(si->name, name, (size_t)len);
     si->name[len] = '\0';
-    si->field_count = fc;
     si->is_sum = 0;
+    if (struct_alloc_fields(c, si, fc) < 0) return;
+    si->field_count = fc;
     /* Extract field names from type decl.  Fields may be direct children
      * or wrapped in a NODE_STMT_LIST (from parse_field_list).
      * 114.41: a field marked op==TK_DOLLAR was a $-variant → this is a
      * discriminated sum type (any variant field marks the whole type). */
     int fi = 0;
-    for (int i = 1; i < decl->child_count && fi < TKC_MAX_PARAMS; i++) {
+    for (int i = 1; i < decl->child_count && fi < si->field_cap; i++) {
         const Node *ch = decl->children[i];
         if (!ch) continue;
         if (ch->kind == NODE_FIELD) {
@@ -449,7 +487,7 @@ static void register_struct(Ctx *c, const char *name, int fc, const Node *decl, 
             }
             fi++;
         } else if (ch->kind == NODE_STMT_LIST) {
-            for (int j = 0; j < ch->child_count && fi < TKC_MAX_PARAMS; j++) {
+            for (int j = 0; j < ch->child_count && fi < si->field_cap; j++) {
                 const Node *fj = ch->children[j];
                 if (fj && fj->kind == NODE_FIELD) {
                     tok_cp(src, fj, si->field_names[fi], 128);
@@ -1055,9 +1093,13 @@ static void register_tki_struct_types(Ctx *c) {
 
             StructInfo *si = &c->structs[c->struct_count];
             memcpy(si->name, tname, (size_t)tlen + 1);
+            /* 127.190: size the field arrays by the entries in this record. */
+            int nf = 0;
+            for (char *q = strstr(fields + 8, "\"name\""); q && q < bound; q = strstr(q + 6, "\"name\"")) nf++;
+            if (struct_alloc_fields(c, si, nf) < 0) { p = next_kind ? next_kind : p + 6; continue; }
             int fc = 0;
             char *fp = fields + 8;
-            while (fc < TKC_MAX_PARAMS) {
+            while (fc < si->field_cap) {
                 char *fn = strstr(fp, "\"name\"");
                 if (!fn || fn >= bound) break;
                 char *fq1 = strchr(fn + 6, '"');
@@ -1736,12 +1778,16 @@ static void load_tki_structs(Ctx *c, const char *tki_path) {
             if (arr) {
                 char *end = json_array_end(arr);
                 if (end) {
-                    /* Count fields and extract names */
-                    char field_names[TKC_MAX_PARAMS][128];
-                    char field_types[TKC_MAX_PARAMS][128];
+                    /* Count fields and extract names.  127.190: sized by the
+                     * record's own entry count, not TKC_MAX_PARAMS. */
+                    int fcap = 1;
+                    for (char *q = strstr(arr + 1, "\"name\""); q && q < end; q = strstr(q + 6, "\"name\"")) fcap++;
+                    char (*field_names)[128] = calloc((size_t)fcap, 128);
+                    char (*field_types)[128] = calloc((size_t)fcap, 128);
+                    if (!field_names || !field_types) { free(field_names); free(field_types); break; }
                     int fc = 0;
                     char *cp = arr + 1;
-                    while (cp < end && fc < TKC_MAX_PARAMS) {
+                    while (cp < end && fc < fcap) {
                         /* Find "name":"xxx" */
                         char *nm = strstr(cp, "\"name\"");
                         if (!nm || nm >= end) break;
@@ -1777,7 +1823,8 @@ static void load_tki_structs(Ctx *c, const char *tki_path) {
                         cp = q2 + 1;
                     }
 
-                    if (fc > 0 && c->struct_count < c->struct_cap) {
+                    if (fc > 0 && c->struct_count < c->struct_cap &&
+                        struct_alloc_fields(c, &c->structs[c->struct_count], fc) == 0) {
                         StructInfo *si = &c->structs[c->struct_count];
                         int sl = (int)strlen(sname);
                         if (sl >= 128) sl = 127;
@@ -1794,6 +1841,7 @@ static void load_tki_structs(Ctx *c, const char *tki_path) {
                           si->is_sum = (sk && (!next_kind || sk < next_kind)) ? 1 : 0; }
                         c->struct_count++;
                     }
+                    free(field_names); free(field_types);
                 }
             }
         }
@@ -3331,11 +3379,19 @@ static int emit_expr(Ctx *c, const Node *n)
                 char *wrap = (char *)arena_alloc(c->arena, wrap_cap);
                 int wlen = snprintf(wrap, (size_t)wrap_cap,
                                      "m=i;f=e():$str{<%.*s;};", elen, raw + segs[p].start);
+                /* 127.186: a diagnostic raised while this segment is lexed,
+                 * parsed or lowered carries WRAPPER offsets (line 1 of
+                 * "m=i;..."); report it at the segment inside the literal.
+                 * Popped on every path below, before c->src is restored. */
+                const int rb_prefix = 16;               /* strlen("m=i;f=e():$str{<") */
+                const int rb_base   = n->tok_start + segs[p].start;
+                diag_rebase_push(rb_prefix, rb_base, elen);
                 /* Lex */
                 int tcap = elen + 32;
                 Token *sub_toks = (Token *)arena_alloc(c->arena, tcap * (int)sizeof(Token));
                 int sub_tc = lex(wrap, wlen, sub_toks, tcap, 0 /* PROFILE_DEFAULT */);
                 if (sub_tc <= 0) {
+                    diag_rebase_pop();
                     /* fall back: emit empty string for unparseable expr */
                     int alen2 = 1;
                     int si2 = emit_str_global(c, "\"\"", 2, &alen2);
@@ -3379,6 +3435,7 @@ static int emit_expr(Ctx *c, const Node *n)
                         }
                     }
                     if (!expr_node) {
+                        diag_rebase_pop();
                         int alen3 = 1;
                         int si3 = emit_str_global(c, "\"\"", 2, &alen3);
                         seg_val = next_tmp(c);
@@ -3397,6 +3454,7 @@ static int emit_expr(Ctx *c, const Node *n)
                         int abi_bool = ety && !strcmp(ety, "i64")
                                        && (call_declares_bool(c, expr_node)
                                            || field_declares_bool(c, expr_node));
+                        diag_rebase_pop();
                         c->src = saved_src;
                         /* 114.32: interpolation of a non-string value. Previously
                          * any i64 was inttoptr'd to i8* on the assumption it
@@ -3415,10 +3473,13 @@ static int emit_expr(Ctx *c, const Node *n)
                         int est_is_composite = est && (est[0] == '@' ||
                                                        (est[0] == '$' && strcmp(est, "$str") != 0));
                         if (ety && !strcmp(ety, "i8*") && est_is_composite) {
+                            /* expr_node's position is in the wrapper (127.186) */
+                            diag_rebase_push(rb_prefix, rb_base, elen);
                             diag_emit(DIAG_ERROR, E4032, expr_node->start, expr_node->line, expr_node->col,
                                       "cannot interpolate a composite value (array/struct/map) into a string",
                                       "convert it to a string first (e.g. str.concat, or interpolate its fields/elements)",
                                       NULL);
+                            diag_rebase_pop();
                             /* Emit an empty-string placeholder so the IR stays
                              * well-formed (compilation has already failed). */
                             int alenc = 1;
@@ -6884,12 +6945,15 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
     }
     if (n->kind == NODE_IDENT) {
         char nb[128]; tok_cp(c->src, n, nb, sizeof nb);
-        const char *lst = ptr_local_struct_type(c, nb);
-        if (lst) return lst;
         /* 127.46: a local whose LLVM name was uniquified (`t2` → `t2.1`, because
          * `%t2` is already a temp) is registered under THAT name; without this
-         * fallback its tag ($str / @… / __map__) was invisible to every caller
-         * and the value took the untagged path. */
+         * its tag ($str / @… / __map__) was invisible to every caller and the
+         * value took the untagged path.
+         * 127.186: and the uniquified name is asked FIRST.  It is the binding
+         * in force -- the one emit_expr loads (get_llvm_name) -- so after
+         * `let s=@(1;2);let s="abc"` the raw name's "@i64" belongs to the
+         * shadowed binding; consulting it first typed "\(s)" as an array and
+         * failed a valid program with E4032. */
         {
             const char *aln = get_llvm_name(c, nb);
             if (aln && strcmp(aln, nb)) {
@@ -6897,6 +6961,8 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
                 if (alst) return alst;
             }
         }
+        const char *lst = ptr_local_struct_type(c, nb);
+        if (lst) return lst;
         /* 114.44: a module-level mutable global's struct type (for .field) */
         if (!name_is_local(c, nb)) {
             const char *gst = global_struct_type(c, nb);
@@ -10137,7 +10203,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     FILE *body_file = tmpfile();
     if (!body_file) {
         fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free(ctx.structs); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: cannot create temp file", (void*)0);
         return -1;
@@ -10168,6 +10234,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     if (ctx.struct_count < ctx.struct_cap && !lookup_struct(&ctx, "timeparts")) {
         StructInfo *si = &ctx.structs[ctx.struct_count];
         strcpy(si->name, "timeparts");
+        if (struct_alloc_fields(&ctx, si, 6) < 0) goto timeparts_done;
         si->field_count = 6;
         strcpy(si->field_names[0], "year");
         strcpy(si->field_names[1], "month");
@@ -10177,13 +10244,16 @@ int emit_llvm_ir(const Node *ast, const char *src,
         strcpy(si->field_names[5], "sec");
         ctx.struct_count++;
     }
+timeparts_done:
     /* Built-in $none struct: zero-field sentinel for option types (T!$none).
      * Story 76.1.8 */
     if (ctx.struct_count < ctx.struct_cap && !lookup_struct(&ctx, "none")) {
         StructInfo *si = &ctx.structs[ctx.struct_count];
         strcpy(si->name, "none");
-        si->field_count = 0;
-        ctx.struct_count++;
+        if (struct_alloc_fields(&ctx, si, 0) == 0) {   /* 127.190: one "" slot */
+            si->field_count = 0;
+            ctx.struct_count++;
+        }
     }
     /* Story 114.17: register record types from imported std .tki files so
      * field access on stdlib record returns resolves the correct GEP index. */
@@ -10294,7 +10364,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
     char *body_buf = (char *)malloc((size_t)body_len + 1);
     if (!body_buf) {
         fclose(body_file); fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free(ctx.structs); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: out of memory for body scan", (void*)0);
         return -1;
@@ -10361,12 +10431,12 @@ int emit_llvm_ir(const Node *ast, const char *src,
 
     if (fflush(f) || ferror(f)) {
         fclose(f);
-        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free(ctx.structs); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+        if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
         diag_emit(DIAG_ERROR, E9002, 0, 0, 0,
                   "LLVM IR emission failed: I/O error writing .ll file", (void*)0);
         return -1;
     }
-    if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free(ctx.structs); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
+    if (!ctx.arena) { free(ctx.fns); free(ctx.ptrs); free_structs(&ctx); free(ctx.imports); free(ctx.locals); free(ctx.aliases); }
     fclose(f);
     /* A DIAG_ERROR emitted during codegen (e.g. 114.19c array+scalar concat)
      * must fail the build — the .ll is written but callers treat <0 as failure
@@ -10396,6 +10466,12 @@ static const char *find_runtime_source(void) {
         snprintf(path, sizeof path, "%s/tk_runtime.c", env);
         FILE *f = fopen(path, "r"); if (f) { fclose(f); return path; }
     }
+    /* 127.179: the directory main() resolved (absolute, exported). */
+    const char *sd = getenv("TKC_STDLIB_DIR");
+    if (sd) {
+        snprintf(path, sizeof path, "%s/tk_runtime.c", sd);
+        FILE *f = fopen(path, "r"); if (f) { fclose(f); return path; }
+    }
     /* Try paths relative to known install locations */
     const char *candidates[] = {
         TKC_STDLIB_DIR "/tk_runtime.c",  /* set at compile time */
@@ -10420,6 +10496,12 @@ static const char *find_capabilities_source(void) {
     const char *env = getenv("TKC_RUNTIME_DIR");
     if (env) {
         snprintf(path, sizeof path, "%s/capabilities.c", env);
+        FILE *f = fopen(path, "r"); if (f) { fclose(f); return path; }
+    }
+    /* 127.179: the directory main() resolved (absolute, exported). */
+    const char *sd = getenv("TKC_STDLIB_DIR");
+    if (sd) {
+        snprintf(path, sizeof path, "%s/capabilities.c", sd);
         FILE *f = fopen(path, "r"); if (f) { fclose(f); return path; }
     }
     const char *candidates[] = {
@@ -10584,6 +10666,13 @@ static const char *find_stdlib_vendor_includes(void) {
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
                    int opt_level, const SymbolTable *st, int debug)
 {
+    return compile_binary_multi(&out_ll, 1, out_bin, target, opt_level, st, debug);
+}
+
+int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
+                         const char *target, int opt_level,
+                         const SymbolTable *st, int debug)
+{
     int ol = (opt_level < 0) ? 0 : (opt_level > 3) ? 3 : opt_level;
     const char *dbg_flag = debug ? " -g" : "";
 
@@ -10735,7 +10824,9 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
         if (target && target[0]) { argv[argc++] = "-target"; argv[argc++] = (char *)target; }
         argv[argc++] = "-o";
         argv[argc++] = (char *)out_bin;
-        argv[argc++] = (char *)out_ll;
+        /* 127.76: one argv element per module, never a joined string. */
+        for (int li = 0; li < nll && argc < AMAX - 1; li++)
+            argv[argc++] = (char *)lls[li];
         push_ws_tokens(argv, &argc, AMAX, sources);   /* leading space is skipped */
         push_ws_tokens(argv, &argc, AMAX, all_libs);
         argv[argc] = NULL;

@@ -9,6 +9,6 @@ Complete, working examples that demonstrate real-world toke patterns. Each recip
 
 ## Recipes
 
-- [Data Pipeline (CSV Analysis)](/docs/reference/cookbook/data-pipeline/) -- read, parse, and analyse CSV data
-- [Document Pipeline](/docs/reference/cookbook/doc-pipeline/) -- process and transform documents
-- [REST API with JSON Persistence](/docs/reference/cookbook/rest-api/) -- build an HTTP service with file-backed storage
+- [Data Pipeline (CSV Analysis)](/docs/cookbook/data-pipeline/) -- read, parse, and analyse CSV data
+- [Document Pipeline](/docs/cookbook/doc-pipeline/) -- process and transform documents
+- [REST API with JSON Persistence](/docs/cookbook/rest-api/) -- build an HTTP service with file-backed storage

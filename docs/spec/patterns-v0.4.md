@@ -382,7 +382,7 @@ f=pat(x:i64):str{
 
 **Bug caveats.**
 
-- [127.15](/docs/progress/): `"\(x%2==0)"` prints 1/0, not true/false — checksum differs (len=1000 vs 4500 at PAT_N=1000) — preferred when fixed: form `b`
+- [127.15](https://github.com/karwalski/toke/blob/main/docs/progress.md): `"\(x%2==0)"` prints 1/0, not true/false — checksum differs (len=1000 vs 4500 at PAT_N=1000) — preferred when fixed: form `b`
 
 **Lint.** `mut-flag-if` — severity `warning`, not auto-fixable (`tkc --lint`, story 131.9).
 
@@ -445,7 +445,7 @@ f=pat(xs:@i64):i64{
 
 **Bug caveats.**
 
-- [127.4](/docs/progress/): `xs.fold` links against an undefined symbol; `xs.reduce(init;&f)` is the working equivalent and is what form b uses
+- [127.4](https://github.com/karwalski/toke/blob/main/docs/progress.md): `xs.fold` links against an undefined symbol; `xs.reduce(init;&f)` is the working equivalent and is what form b uses
 
 **Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
 
@@ -809,7 +809,7 @@ f=pat(xs:@i64):@i64{
 
 **Bug caveats.**
 
-- [127.11](/docs/progress/): array receiver `.contains` was routed to the str glue and SIGSEGVed; CLOSED — form a unblocked and re-measured by 131.25 (2026-09-19) and is now canonical — preferred when fixed: form `a`
+- [127.11](https://github.com/karwalski/toke/blob/main/docs/progress.md): array receiver `.contains` was routed to the str glue and SIGSEGVed; CLOSED — form a unblocked and re-measured by 131.25 (2026-09-19) and is now canonical — preferred when fixed: form `a`
 
 **Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
 
@@ -1179,7 +1179,7 @@ f=pat(n:i64):str{
 
 **Bug caveats.**
 
-- [127.10](/docs/progress/): `"\(labels.get(i))"` on a `.append`-built array printed pointers (len=12872 vs 5890 at PAT_N=1000); CLOSED — form a unblocked and re-measured by 131.25 (2026-09-19), and is token-tied but 10.2% slower than c — preferred when fixed: form `a`
+- [127.10](https://github.com/karwalski/toke/blob/main/docs/progress.md): `"\(labels.get(i))"` on a `.append`-built array printed pointers (len=12872 vs 5890 at PAT_N=1000); CLOSED — form a unblocked and re-measured by 131.25 (2026-09-19), and is token-tied but 10.2% slower than c — preferred when fixed: form `a`
 
 **Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
 
@@ -1527,7 +1527,7 @@ f=pat(txt:str):i64{
 
 **Bug caveats.**
 
-- [127.7](/docs/progress/): interpolating rows.get(r).fields.get(j) prints a pointer (untagged @str from a module call); checksum uses s.len only
+- [127.7](https://github.com/karwalski/toke/blob/main/docs/progress.md): interpolating rows.get(r).fields.get(j) prints a pointer (untagged @str from a module call); checksum uses s.len only
 
 **Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
 
@@ -1683,7 +1683,7 @@ f=pat(line:str):@str{
 
 **Bug caveats.**
 
-- [127.9](/docs/progress/): "\(s.fields(x).get(i))" prints a pointer; fixture checksums use s.len only
+- [127.9](https://github.com/karwalski/toke/blob/main/docs/progress.md): "\(s.fields(x).get(i))" prints a pointer; fixture checksums use s.len only
 
 **Lint.** `hand-rolled-parser` — severity `warning`, not auto-fixable (`tkc --lint`, story 131.9).
 
@@ -1813,7 +1813,7 @@ f=pat(txt:str):i64{
 
 **Bug caveats.**
 
-- [127.7](/docs/progress/): "\(m.get(k))" on a str-valued map prints a pointer
+- [127.7](https://github.com/karwalski/toke/blob/main/docs/progress.md): "\(m.get(k))" on a str-valued map prints a pointer
 
 **Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
 
@@ -2333,7 +2333,7 @@ f=pat(xs:@i64;qs:@i64):i64{
 
 **Bug caveats.**
 
-- [127.11](/docs/progress/): array .contains/.find/.indexof/.slice dispatched to the str glue and segfaulted; CLOSED — form c unblocked and re-measured by 131.25 (2026-09-19): it runs, and is O(N*Q) as predicted — preferred when fixed: form `c`
+- [127.11](https://github.com/karwalski/toke/blob/main/docs/progress.md): array .contains/.find/.indexof/.slice dispatched to the str glue and segfaulted; CLOSED — form c unblocked and re-measured by 131.25 (2026-09-19): it runs, and is O(N*Q) as predicted — preferred when fixed: form `c`
 
 **Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
 
@@ -2411,7 +2411,7 @@ f=pat(xs:@i64;k:i64):@i64{
 
 **Bug caveats.**
 
-- [127.11](/docs/progress/): array .slice segfaulted; CLOSED — form c unblocked and re-measured by 131.25 (2026-09-19) and is now canonical — preferred when fixed: form `c`
+- [127.11](https://github.com/karwalski/toke/blob/main/docs/progress.md): array .slice segfaulted; CLOSED — form c unblocked and re-measured by 131.25 (2026-09-19) and is now canonical — preferred when fixed: form `c`
 
 **Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
 
@@ -2751,7 +2751,7 @@ f=pat():str{
 
 **Bug caveats.**
 
-- [127.7](/docs/progress/): "\(args.get(1))" prints a pointer
+- [127.7](https://github.com/karwalski/toke/blob/main/docs/progress.md): "\(args.get(1))" prints a pointer
 
 **Lint.** none — the non-canonical forms are not AST-decidable with low false positives.
 
@@ -2812,7 +2812,7 @@ f=pat(av:@str):@str{
 
 **Bug caveats.**
 
-- [127.10](/docs/progress/): .append-built string arrays print addresses when an element is interpolated; the loop form uses +@() instead
+- [127.10](https://github.com/karwalski/toke/blob/main/docs/progress.md): .append-built string arrays print addresses when an element is interpolated; the loop form uses +@() instead
 
 **Lint.** `loop-is-filter` — severity `hint`, not auto-fixable (`tkc --lint`, story 131.9).
 
@@ -2879,8 +2879,8 @@ f=pat(k:str;v:i64):str{
 
 **Bug caveats.**
 
-- [127.15](/docs/progress/): bools interpolate as 1/0, so a bool result still needs a hand formatter
-- [127.7](/docs/progress/): method-call-derived str values print a pointer under interpolation
+- [127.15](https://github.com/karwalski/toke/blob/main/docs/progress.md): bools interpolate as 1/0, so a bool result still needs a hand formatter
+- [127.7](https://github.com/karwalski/toke/blob/main/docs/progress.md): method-call-derived str values print a pointer under interpolation
 
 **Lint.** `nested-concat` — severity `warning`, auto-fixable (`tkc --lint`, story 131.9).
 

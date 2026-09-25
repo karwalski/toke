@@ -41,10 +41,36 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def workspace_root(root=ROOT):
+    """The directory the sibling repositories live in.
+
+    132.68 taught `make check-claims-all` to find it; 132.95 gives the scripts
+    the same default, so a run from a worktree under ~/tk/tmpwork/ answers as a
+    run from ~/tk/toke does instead of resolving siblings under tmpwork/. Order:
+    $TOKE_WORKSPACE, then the parent of the MAIN checkout (`git rev-parse
+    --git-common-dir` is <main>/.git from any worktree), then ROOT/.. .
+    """
+    env = os.environ.get("TOKE_WORKSPACE")
+    if env:
+        return os.path.abspath(env)
+    try:
+        out = subprocess.run(["git", "-C", root, "rev-parse", "--git-common-dir"],
+                             capture_output=True, text=True, timeout=10)
+        common = out.stdout.strip()
+        if out.returncode == 0 and common:
+            common = os.path.normpath(os.path.join(root, common))
+            if os.path.basename(common) == ".git":
+                return os.path.dirname(os.path.dirname(common))
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return os.path.abspath(os.path.join(root, ".."))
+
+
+WORKSPACE = workspace_root()
 # Sibling repo that holds the corpus freeze manifests.
-# 132.68: from a worktree ROOT/.. is not the workspace; the Makefile passes it
-CORPUS = os.path.normpath(os.path.join(
-    os.environ.get("TOKE_WORKSPACE") or os.path.join(ROOT, ".."), "toke-corpus"))
+CORPUS = os.path.join(WORKSPACE, "toke-corpus")
 
 # Printable ASCII that the default profile rejects in structural position.
 # Derived below from src/lexer.c; asserted against the binary under --probe.
@@ -654,8 +680,8 @@ def sync_surfaces(facts, targets=None, write=False):
     for rel in paths:
         if os.path.isabs(rel):
             path = rel
-        elif rel.startswith("../") and os.environ.get("TOKE_WORKSPACE"):
-            path = os.path.join(os.environ["TOKE_WORKSPACE"], rel[3:])  # 132.68
+        elif rel.startswith("../"):
+            path = os.path.join(WORKSPACE, rel[3:])  # 132.68 / 132.95
         else:
             path = os.path.join(ROOT, rel)
         if not os.path.exists(path):
