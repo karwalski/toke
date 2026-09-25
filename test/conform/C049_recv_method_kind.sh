@@ -18,22 +18,26 @@
 # WHY THIS CAN'T FIRE ON A CORRECT PROGRAM. The check judges only receivers
 # the checker proves are a str, an array or a map, and for exactly those the
 # emitter's own kind tests (len_recv_kind, recv_is_array, recv_is_map) are
-# decided by the same rtype. The per-member kind table (s_recv_kinds in
-# types.c) is the emitter's dispatch chain written down per kind.
+# decided by the same rtype. The per-member kind column (g_recv_methods in
+# llvm.c, since 127.177) is the emitter's dispatch chain written down per kind.
 #
 # WHAT IS ASSERTED:
 #   1. Wrong-kind members are E4036, with an empty `fix`.
 #   2. Every right-kind member still checks clean AND runs to the right
 #      answer — the guard against a false diagnostic.
 #   3. A receiver the checker cannot type is not judged.
-#   4. DRIFT GUARD: every member of the emitter's g_recv_methods (llvm.c) has
-#      a row in s_recv_kinds (types.c), except `get`, which is deliberately
-#      unjudged. A member added to the emitter without a kind row fails here.
-#   5. Negative control for 4: a table with one row removed must be detected.
+#   4. ONE TABLE (127.177): the kind column lives in the emitter's
+#      g_recv_methods (llvm.c) — every row carries one — and types.c holds no
+#      copy of it and reads recv_method_on_kind(). (Until 127.177 this section
+#      was a drift guard between two tables; with one table there is nothing
+#      to drift, so what is guarded now is that a second table does not come
+#      back.)
+#   5. Negative control for 4: a types.c with a copied kind table re-injected,
+#      and an llvm.c row with its kind column removed, must each be detected.
 #
 # Negative control for 1: TKC built from 444a55c gives no E4036 (all red).
 #
-# Story: 127.151
+# Story: 127.151; section 4 rewritten for 127.177 (one table)
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -111,26 +115,35 @@ prog untyped '  let t=st.trim(" ab ");
   io.println(u);'
 expect "3-untyped-receiver-not-judged" "$(codes "${WORK}/untyped.tk")" ""
 
-# ── 4. drift guard: emitter table vs checker table ───────────────────────
-emitter_members() {
+# ── 4. one table (127.177) ───────────────────────────────────────────────
+# rows_without_kinds FILE — members of g_recv_methods whose row does not carry
+# a kind column ({"member", chain, KINDS, {syms...}}).
+rows_without_kinds() {
     awk '/^static const RecvMethod g_recv_methods\[\]/{p=1;next} p&&/^};/{exit}
-         p{ if (match($0,/\{"[a-z]+"/)) print substr($0,RSTART+2,RLENGTH-3) }' "$1" | sort -u
+         p && /^    \{"[a-z]+"/ {
+             if ($0 !~ /^    \{"[a-z]+", *[01], *(0|RK_[A-Z_]+(\|RK_[A-Z_]+)*), *\{/) {
+                 match($0,/\{"[a-z]+"/); print substr($0,RSTART+2,RLENGTH-3) } }' "$1"
 }
-checker_members() {
-    awk '/^static const RecvKinds s_recv_kinds\[\]/{p=1;next} p&&/^};/{exit}
-         p{ s=$0; while (match(s,/\{"[a-z]+"/)) { print substr(s,RSTART+2,RLENGTH-3); s=substr(s,RSTART+RLENGTH) } }' "$1" | sort -u
+emitter_rows() {
+    awk '/^static const RecvMethod g_recv_methods\[\]/{p=1;next} p&&/^};/{exit}
+         p && /^    \{"[a-z]+"/ {n++} END{print n+0}' "$1"
 }
-emitter_members "${REPO_ROOT}/src/llvm.c" > "${WORK}/em.txt"
-checker_members "${REPO_ROOT}/src/types.c" | cat - <(echo get) | sort -u > "${WORK}/ck.txt"
-expect "4-emitter-table-read" "$([ "$(wc -l < "${WORK}/em.txt")" -ge 30 ] && echo ok || echo "only $(wc -l < "${WORK}/em.txt")")" "ok"
-expect "4-every-emitter-member-has-a-kind-row" "$(comm -23 "${WORK}/em.txt" "${WORK}/ck.txt" | tr '\n' ' ')" ""
-expect "4-no-kind-row-for-a-member-the-emitter-lacks" "$(comm -13 "${WORK}/em.txt" "${WORK}/ck.txt" | tr '\n' ' ')" ""
+# second_table FILE — a per-member kind table in the checker: the old
+# s_recv_kinds shape, or any {"member", RK_…} row.
+second_table() { grep -cE 's_recv_kinds\[\]|\{"[a-z]+", *RK_' "$1" || true; }
+expect "4-emitter-table-read" "$([ "$(emitter_rows "${REPO_ROOT}/src/llvm.c")" -ge 30 ] && echo ok || echo "only $(emitter_rows "${REPO_ROOT}/src/llvm.c")")" "ok"
+expect "4-every-emitter-row-carries-kinds" "$(rows_without_kinds "${REPO_ROOT}/src/llvm.c" | tr '\n' ' ')" ""
+expect "4-checker-holds-no-copy" "$(second_table "${REPO_ROOT}/src/types.c")" "0"
+expect "4-checker-reads-the-emitter-column" \
+    "$(grep -c 'recv_method_on_kind(member' "${REPO_ROOT}/src/types.c" || true)" "1"
 
-# ── 5. negative control for 4 ────────────────────────────────────────────
-sed 's/{"getor", RK_M}, *//' "${REPO_ROOT}/src/types.c" > "${WORK}/types_minus.c"
-expect "5a-injection-landed" "$(grep -c '{"getor", RK_M}' "${WORK}/types_minus.c" || true)" "0"
-checker_members "${WORK}/types_minus.c" | cat - <(echo get) | sort -u > "${WORK}/ck2.txt"
-expect "5b-missing-row-detected" "$(comm -23 "${WORK}/em.txt" "${WORK}/ck2.txt" | tr '\n' ' ')" "getor "
+# ── 5. negative controls for 4 ───────────────────────────────────────────
+{ cat "${REPO_ROOT}/src/types.c"; printf 'static const RecvKinds s_recv_kinds[] = {\n    {"getor", RK_M},\n};\n'; } > "${WORK}/types_plus.c"
+expect "5a-copy-injected" "$(grep -c '{"getor", RK_M}' "${WORK}/types_plus.c" || true)" "1"
+expect "5b-copy-detected" "$([ "$(second_table "${WORK}/types_plus.c")" -ge 1 ] && echo detected || echo missed)" "detected"
+sed 's/{"getor",     1, RK_M, /{"getor",     1, /' "${REPO_ROOT}/src/llvm.c" > "${WORK}/llvm_minus.c"
+expect "5c-kind-removal-landed" "$(grep -c '{"getor",     1, {' "${WORK}/llvm_minus.c" || true)" "1"
+expect "5d-row-without-kinds-detected" "$(rows_without_kinds "${WORK}/llvm_minus.c" | tr '\n' ' ')" "getor "
 
 echo "--------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"

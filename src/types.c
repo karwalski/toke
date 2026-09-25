@@ -2625,35 +2625,10 @@ static void recv_arity_error(const Node *call, const char *member,
 }
 
 /*
- * 127.151 — which receiver KINDS each receiver method lowers correctly for.
- *
- * recv_method_known() answers "does this member exist on SOME receiver"; it
- * cannot answer "on THIS one", so `s.push(1)` on a proven str passed --check
- * and segfaulted (tk_array_append_w on a char*), and `s.keys()` passed and
- * died at ld (`_keys`).
- *
- * This table is the emitter's dispatch chain (llvm.c, "Instance method calls
- * on local variables" and the special cases above it), read branch by branch
- * and written down per receiver kind.  A kind is listed only where the chain
- * has a branch that picks glue for it:
- *
- *   append/push/pop          → tk_array_*            (Vec is its own path)
- *   getor, keys              → tk_map_*
- *   set                      → recv_is_map ? tk_map_set_w : tk_array_set_w
- *   map/filter/reduce/fold/sort → tk_arr_*
- *   contains                 → map / array / str, each by its own test
- *   slice/find/indexof       → recv_is_array ? tk_arr_* : tk_str_*
- *   join                     → str receiver = separator, else tk_arr_join_w
- *   len                      → str / map / vec glue, arrays inline
- *   toarray                  → Vec only
- *   every other member       → tk_str_* (the chain's default is tk_str_eq_w)
- *
- * It is a copy, not the table itself: g_recv_methods lives in llvm.c, which
- * this change may not edit.  C049 fails if a member is added to
- * g_recv_methods without a row here, so the copy cannot silently fall
- * behind; moving this column into g_recv_methods is the follow-up that makes
- * it one table.  A member with no row here — `get`, whose one-argument form
- * is an index expression — is not judged.
+ * The per-kind receiver table (127.151) is the emitter's: g_recv_methods in
+ * llvm.c carries a `kinds` column beside the dispatch it describes, and this
+ * file asks recv_method_on_kind().  It used to be a copy here (s_recv_kinds),
+ * kept honest only by C049's drift guard; 127.177 made it one table.
  *
  * The check fires only when recv_value_type() proves the receiver a str, an
  * array or a map.  For those three the emitter's own kind tests
@@ -2662,25 +2637,10 @@ static void recv_arity_error(const Node *call, const char *member,
  * on any receiver this judges — the false-diagnostic risk 127.128's worker
  * declined to take is closed by construction, not by hope.
  */
+int recv_method_on_kind(const char *member, char kind);
 #define RK_S 1u
 #define RK_A 2u
 #define RK_M 4u
-typedef struct { const char *member; unsigned kinds; } RecvKinds;
-static const RecvKinds s_recv_kinds[] = {
-    {"len", RK_S|RK_A|RK_M}, {"keys", RK_M}, {"toarray", 0},
-    {"append", RK_A}, {"push", RK_A}, {"pop", RK_A},
-    {"set", RK_A|RK_M}, {"getor", RK_M},
-    {"map", RK_A}, {"filter", RK_A}, {"reduce", RK_A}, {"fold", RK_A},
-    {"sort", RK_A},
-    {"contains", RK_S|RK_A|RK_M},
-    {"slice", RK_S|RK_A}, {"find", RK_S|RK_A}, {"indexof", RK_S|RK_A},
-    {"join", RK_S|RK_A},
-    {"split", RK_S}, {"trim", RK_S}, {"charat", RK_S}, {"starts", RK_S},
-    {"substr", RK_S}, {"substring", RK_S}, {"concat", RK_S}, {"chars", RK_S},
-    {"sub", RK_S}, {"eq", RK_S}, {"upper", RK_S}, {"lower", RK_S},
-    {"ends", RK_S}, {"replace", RK_S}, {"fields", RK_S},
-    {NULL, 0}
-};
 
 static const Type *recv_value_type(Ctx *cx, const Node *recv);
 
@@ -2839,12 +2799,8 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
         const Type *rt = recv_value_type(cx, recv);
         unsigned rk = !rt ? 0u : rt->kind == TY_STR ? RK_S
                     : rt->kind == TY_ARRAY ? RK_A : rt->kind == TY_MAP ? RK_M : 0u;
-        const RecvKinds *row = NULL;
-        for (int i = 0; rk && s_recv_kinds[i].member; i++)
-            if (strcmp(s_recv_kinds[i].member, member) == 0) {
-                row = &s_recv_kinds[i]; break;
-            }
-        if (row && !(row->kinds & rk)) {
+        char kc = rk == RK_S ? 's' : rk == RK_A ? 'a' : rk == RK_M ? 'm' : 0;
+        if (kc && recv_method_on_kind(member, kc) == 0) {
             if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
             char msg[384], got[96];
             const char *kn = rk == RK_S ? "str" : rk == RK_A ? "array" : "map";

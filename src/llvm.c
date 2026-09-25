@@ -2730,52 +2730,75 @@ static const char *map_keys_elem_tag(Ctx *c, const Node *recv) {
  * is left unchecked rather than judged against a guess.  That is the same
  * ground 136.1/127.61 put the module-call arity check on.
  */
+/* Receiver kinds a member's dispatch handles (127.151, 127.177).  A kind is
+ * set only where the chain below has a branch that picks glue for that kind:
+ *   append/push/pop          → tk_array_*            (Vec is its own path)
+ *   getor, keys              → tk_map_*
+ *   set                      → recv_is_map ? tk_map_set_w : tk_array_set_w
+ *   map/filter/reduce/fold/sort → tk_arr_*
+ *   contains                 → map / array / str, each by its own test
+ *   slice/find/indexof       → recv_is_array ? tk_arr_* : tk_str_*
+ *   join                     → str receiver = separator, else tk_arr_join_w
+ *   len                      → str / map / vec glue, arrays inline
+ *   toarray                  → Vec only (no str/array/map kind)
+ *   the rest                 → tk_str_* only
+ * RK_UNJUDGED: `get`, whose one-argument form is an index expression; the
+ * checker says nothing about its receiver kind.
+ *
+ * This column used to be a copy in types.c (s_recv_kinds), kept honest only
+ * by C049's drift guard.  It lives here now, beside the dispatch it
+ * describes, and the checker reads it through recv_method_on_kind(). */
+#define RK_S 1u
+#define RK_A 2u
+#define RK_M 4u
+#define RK_UNJUDGED 8u
 typedef struct {
     const char *member;
     int         chain;        /* 1 = dispatched by the big chain below */
+    unsigned    kinds;        /* RK_* — the receiver kinds the dispatch lowers */
     const char *syms[5];      /* NULL-terminated; every symbol the chain may pick */
 } RecvMethod;
 
 static const RecvMethod g_recv_methods[] = {
     /* handled by a special case ABOVE the chain */
-    {"len",       0, {"tk_str_len_w", "tk_map_len_w", "tk_vec_len_w", NULL}},
-    {"keys",      0, {"tk_map_keys_w", NULL}},
-    {"toarray",   0, {"tk_vec_toarray_w", NULL}},
+    {"len",       0, RK_S|RK_A|RK_M, {"tk_str_len_w", "tk_map_len_w", "tk_vec_len_w", NULL}},
+    {"keys",      0, RK_M, {"tk_map_keys_w", NULL}},
+    {"toarray",   0, 0, {"tk_vec_toarray_w", NULL}},
     /* handled by the chain */
-    {"append",    1, {"tk_array_append_w", NULL}},
-    {"push",      1, {"tk_array_append_w", "tk_vec_push_w", NULL}},
-    {"pop",       1, {"tk_array_pop_w", "tk_vec_pop_w", NULL}},
-    {"set",       1, {"tk_map_set_w", "tk_array_set_w", "tk_vec_set_w", NULL}},
-    {"get",       1, {"tk_str_arrayget_w", "tk_vec_get_w", NULL}},
-    {"getor",     1, {"tk_map_getor_w", NULL}},
-    {"map",       1, {"tk_arr_map", NULL}},
-    {"filter",    1, {"tk_arr_filter", NULL}},
-    {"reduce",    1, {"tk_arr_reduce", NULL}},
-    {"fold",      1, {"tk_arr_reduce", NULL}},
-    {"sort",      1, {"tk_arr_sort", NULL}},
-    {"split",     1, {"tk_str_split_w", NULL}},
-    {"trim",      1, {"tk_str_trim_w", NULL}},
-    {"contains",  1, {"tk_map_contains_w", "tk_str_contains_w",
+    {"append",    1, RK_A, {"tk_array_append_w", NULL}},
+    {"push",      1, RK_A, {"tk_array_append_w", "tk_vec_push_w", NULL}},
+    {"pop",       1, RK_A, {"tk_array_pop_w", "tk_vec_pop_w", NULL}},
+    {"set",       1, RK_A|RK_M, {"tk_map_set_w", "tk_array_set_w", "tk_vec_set_w", NULL}},
+    {"get",       1, RK_UNJUDGED, {"tk_str_arrayget_w", "tk_vec_get_w", NULL}},
+    {"getor",     1, RK_M, {"tk_map_getor_w", NULL}},
+    {"map",       1, RK_A, {"tk_arr_map", NULL}},
+    {"filter",    1, RK_A, {"tk_arr_filter", NULL}},
+    {"reduce",    1, RK_A, {"tk_arr_reduce", NULL}},
+    {"fold",      1, RK_A, {"tk_arr_reduce", NULL}},
+    {"sort",      1, RK_A, {"tk_arr_sort", NULL}},
+    {"split",     1, RK_S, {"tk_str_split_w", NULL}},
+    {"trim",      1, RK_S, {"tk_str_trim_w", NULL}},
+    {"contains",  1, RK_S|RK_A|RK_M, {"tk_map_contains_w", "tk_str_contains_w",
                       "tk_arr_contains_w", "tk_arr_containsstr_w", NULL}},
-    {"charat",    1, {"tk_str_charat_w", NULL}},
-    {"slice",     1, {"tk_str_slice_w", "tk_arr_slice_w", NULL}},
-    {"find",      1, {"tk_str_find_w", "tk_arr_find_w", "tk_arr_findstr_w", NULL}},
-    {"starts",    1, {"tk_str_starts_w", NULL}},
-    {"indexof",   1, {"tk_str_indexof_w", "tk_arr_indexof_w",
+    {"charat",    1, RK_S, {"tk_str_charat_w", NULL}},
+    {"slice",     1, RK_S|RK_A, {"tk_str_slice_w", "tk_arr_slice_w", NULL}},
+    {"find",      1, RK_S|RK_A, {"tk_str_find_w", "tk_arr_find_w", "tk_arr_findstr_w", NULL}},
+    {"starts",    1, RK_S, {"tk_str_starts_w", NULL}},
+    {"indexof",   1, RK_S|RK_A, {"tk_str_indexof_w", "tk_arr_indexof_w",
                       "tk_arr_indexofstr_w", NULL}},
-    {"substr",    1, {"tk_str_substr_w", NULL}},
-    {"substring", 1, {"tk_str_substr_w", NULL}},
-    {"concat",    1, {"tk_str_concat_w", NULL}},
-    {"chars",     1, {"tk_str_chars_w", NULL}},
-    {"sub",       1, {"tk_str_sub_w", NULL}},
-    {"eq",        1, {"tk_str_eq_w", NULL}},
-    {"upper",     1, {"tk_str_upper_w", NULL}},
-    {"lower",     1, {"tk_str_lower_w", NULL}},
-    {"ends",      1, {"tk_str_ends_w", NULL}},
-    {"replace",   1, {"tk_str_replace_w", NULL}},
-    {"fields",    1, {"tk_str_fields_w", NULL}},
-    {"join",      1, {"tk_str_join_w", "tk_arr_join_w", NULL}},
-    {NULL, 0, {NULL}}
+    {"substr",    1, RK_S, {"tk_str_substr_w", NULL}},
+    {"substring", 1, RK_S, {"tk_str_substr_w", NULL}},
+    {"concat",    1, RK_S, {"tk_str_concat_w", NULL}},
+    {"chars",     1, RK_S, {"tk_str_chars_w", NULL}},
+    {"sub",       1, RK_S, {"tk_str_sub_w", NULL}},
+    {"eq",        1, RK_S, {"tk_str_eq_w", NULL}},
+    {"upper",     1, RK_S, {"tk_str_upper_w", NULL}},
+    {"lower",     1, RK_S, {"tk_str_lower_w", NULL}},
+    {"ends",      1, RK_S, {"tk_str_ends_w", NULL}},
+    {"replace",   1, RK_S, {"tk_str_replace_w", NULL}},
+    {"fields",    1, RK_S, {"tk_str_fields_w", NULL}},
+    {"join",      1, RK_S|RK_A, {"tk_str_join_w", "tk_arr_join_w", NULL}},
+    {NULL, 0, 0, {NULL}}
 };
 
 static const RecvMethod *recv_method_find(const char *m) {
@@ -2794,6 +2817,22 @@ static int recv_method_in_chain(const char *m) {
 
 /* 127.115: does the receiver dispatch lower this member at all? */
 int recv_method_known(const char *m) { return recv_method_find(m) != NULL; }
+
+/*
+ * recv_method_on_kind (127.151, 127.177) — does the dispatch lower member `m`
+ * on a receiver of kind `k` ('s' str, 'a' array, 'm' map)?  1 yes, 0 no, -1
+ * when there is nothing to judge: an unknown member, an unknown kind, or a
+ * member marked RK_UNJUDGED.  The checker's receiver-kind check (types.c,
+ * check_recv_method_call) reads this, so the kinds it refuses are the kinds
+ * this table says the chain has no branch for.
+ */
+int recv_method_on_kind(const char *m, char k) {
+    const RecvMethod *r = recv_method_find(m);
+    if (!r || (r->kinds & RK_UNJUDGED)) return -1;
+    unsigned bit = k == 's' ? RK_S : k == 'a' ? RK_A : k == 'm' ? RK_M : 0u;
+    if (!bit) return -1;
+    return (r->kinds & bit) ? 1 : 0;
+}
 
 /*
  * recv_method_arity — the call arity (receiver included) every glue symbol
