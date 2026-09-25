@@ -10732,12 +10732,10 @@ static char *ir_slurp(const char *path, size_t *len)
 {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
-    size_t cap = 1 << 16, n = 0, r;
-    char *b = (char *)malloc(cap + 1);
-    while (b && (r = fread(b + n, 1, cap - n, f)) > 0) {
-        n += r;
-        if (n == cap) { char *nb = (char *)realloc(b, cap * 2 + 1); if (!nb) { free(b); b = NULL; break; } b = nb; cap *= 2; }
-    }
+    long sz = (fseek(f, 0, SEEK_END) == 0) ? ftell(f) : -1;
+    if (sz < 0 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return NULL; }
+    char *b = (char *)malloc((size_t)sz + 1);
+    size_t n = b ? fread(b, 1, (size_t)sz, f) : 0;
     fclose(f);
     if (b) { b[n] = '\0'; *len = n; }
     return b;
