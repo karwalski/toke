@@ -168,7 +168,7 @@ build clean, binary dies; **WRONG** = runs, wrong output.
 | split | `s.split(x;",")` | {{row:split_module,split_interp}} | element interpolation `"\(w.get(1))"` correct (tagged `@str`) |
 | fields | `s.fields(x)` | {{row:fields_module,fields_interp,fields_get_direct}} | direct and interpolated reads both correct — **127.9 no longer reproduces**, corrected 136.53 |
 | join | `s.join("-";p)` | {{row:join_module}} | canonical (separator first) |
-| join | `s.join(p;"-")` (swapped) | {{row:join_swapped}} | **127.5 STILL OPEN** — no E4031 at check time; the binary dies at runtime (exit 139). **The one row in this document that still records a live defect** |
+| join | `s.join(p;"-")` (swapped) | {{row:join_swapped}} | **127.201 (127.5's checker half)**: E4031 at check time on both arguments — the glue reads `sep` as a C string and `arr` as an array, and the arguments are the other way round. Before, it checked clean, built, and died at runtime (exit 139) |
 | startswith / endswith | `s.startswith(x;"a")` / `s.endswith(x;"b")` | {{row:startswith_module,endswith_module}} | bool renders `1` |
 | contains | `s.contains(x;"b")` | {{row:strcontains_module}} | bool renders `1` |
 | indexof | `s.indexof(x;"c")` | {{row:strindexof_module}} | |
