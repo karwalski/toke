@@ -438,6 +438,8 @@ typedef struct {
 /* 136.36: cap on the "already reported" set; beyond it a repeat may double-report,
  * which is far better than dropping a real diagnostic. */
 #define TKC_MAX_TYPE_REPORTED 512
+/* 127.195: nesting cap for `mt` arm bindings tracked while inferring bodies. */
+#define TKC_MAX_ARM_BINDS 32
 
 typedef struct { TypeEnv *env; const char *src;
                  Type *fn_ret; int had_error;
@@ -454,6 +456,13 @@ typedef struct { TypeEnv *env; const char *src;
                   * emitted twice.  Pre-existing checks never noticed because
                   * they sit on nodes the binding path does not re-enter. */
                  const Node *reported[TKC_MAX_TYPE_REPORTED]; int reported_count;
+                 /* 127.195: `mt` arm bindings in force while an arm body is
+                  * inferred (innermost last), and the match whose value is
+                  * discarded because it stands as a statement. */
+                 struct { const char *name; int len; Type *ty; const Node *body; }
+                     armb[TKC_MAX_ARM_BINDS];
+                 int armb_count;
+                 const Node *mt_discard;
                } Ctx;
 
 /* tc_first_report — 1 the first time `n` is reported on, 0 afterwards. */
@@ -517,6 +526,7 @@ static int is_param(const Ctx *cx, const char *name, int name_len) {
 
 /* Forward declaration: infer() is the main recursive type-inference walker. */
 static Type *infer(Ctx *cx, const Node *node);
+static Type *arm_bind_lookup(Ctx *cx, const char *nb, int nlen, const Node *use);
 /* Forward decl: local-binding lookup (defined below; used by the 123.11-fu
  * interp check to resolve a bare composite-local identifier). */
 static const Node *find_binding_node(const Node *root, const char *src,
@@ -697,9 +707,10 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
                      * let s="abc"; "\(s)"` drew a false E4032 from the
                      * array binding.  The literal is the use: it is in the
                      * tree, so `let s="\(s)"` skips its own binding. */
-                    const Node *bn = find_binding_before(cx->fn_node, cx->src,
-                                                         nb, (int)strlen(nb),
-                                                         strnode);
+                    const Node *bn = arm_bind_lookup(cx, nb, (int)strlen(nb), strnode)
+                        ? NULL   /* 127.195: an `mt` arm binding, not a let */
+                        : find_binding_before(cx->fn_node, cx->src,
+                                              nb, (int)strlen(nb), strnode);
                     if (bn && (bn->kind == NODE_BIND_STMT || bn->kind == NODE_MUT_BIND_STMT)
                         && bn->child_count > 1 && bn->children[1]) {
                         NodeKind ik = bn->children[1]->kind;   /* [1]=init when un-annotated */
@@ -882,6 +893,18 @@ static void local_in_force_rec(const Node *root, const char *src,
     for (int i=0;i<root->child_count;i++)
         local_in_force_rec(root->children[i],src,name,nlen,use,best);
 }
+/* closure_between — 1 when a NODE_CLOSURE inside `root` contains `n`. */
+static int closure_between(const Node *root, const Node *n) {
+    if (!root || root == n) return 0;
+    for (int i = 0; i < root->child_count; i++) {
+        const Node *c = root->children[i];
+        if (!c || !node_contains(c, n)) continue;
+        if (c->kind == NODE_CLOSURE) return 1;
+        return closure_between(c, n);
+    }
+    return 0;
+}
+
 static const Node *local_in_force(const Ctx *cx, const char *name, int nlen,
                                   const Node *use) {
     const Node *best = NULL;
@@ -1553,7 +1576,8 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
     if (!d || !d->def_node || d->def_node->kind != NODE_FUNC_DECL) return NULL;
     /* 127.169: a local closure of that name is what codegen calls. */
     if (call->children[0]->kind == NODE_IDENT
-        && local_in_force(cx, nb, (int)strlen(nb), call)) return NULL;
+        && (local_in_force(cx, nb, (int)strlen(nb), call)
+            || arm_bind_lookup(cx, nb, (int)strlen(nb), call))) return NULL;
     const Node *fn = d->def_node;
     for (int i = 0; i < fn->child_count; i++) {
         const Node *ch = fn->children[i];
@@ -1607,6 +1631,7 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
     if (scr->kind == NODE_IDENT) {
         if (!cx->fn_node) return NULL;
         char nb[128]; TOKSTR(nb, cx->src, scr);
+        if (arm_bind_lookup(cx, nb, (int)strlen(nb), scr)) return NULL;
         const Node *bn = find_binding_before(cx->fn_node, cx->src, nb,
                                              (int)strlen(nb), scr);
         if (!bn || (bn->kind != NODE_BIND_STMT && bn->kind != NODE_MUT_BIND_STMT)
@@ -1652,6 +1677,50 @@ static Type *mt_bind_type(Ctx *cx, const Node *m) {
         TOKSTR(bb, cx->src, body); TOKSTR(vb, cx->src, arm->children[1]);
         if (strcmp(bb, vb) != 0) return NULL;
         return mt_ok_payload_type(cx, m->children[0], 0);
+    }
+    return NULL;
+}
+
+/*
+ * 127.195 — the type of an `mt` arm's binding while its body is inferred.
+ *
+ * Only the `$ok:v` arm of a `T!E` scrutinee is answered, with the ok payload
+ * type `T` that 127.180 already reads for codegen's first-arm value
+ * (mt_ok_payload_type).  Every other binding — `$err:e`, a sum-type
+ * variant's payload, an ok payload whose type is not known — stays
+ * TY_UNKNOWN, which checks nothing about it but still shadows whatever else
+ * carries the name.
+ */
+static Type *arm_bind_type(Ctx *cx, const Node *m, const Node *arm) {
+    Type *u = mk_type(cx->env->arena, TY_UNKNOWN);
+    if (!arm->children[0] || m->child_count < 1) return u;
+    char tag[16]; TOKSTR(tag, cx->src, arm->children[0]);
+    if (strcmp(tag, "ok") != 0 && strcmp(tag, "Ok") != 0) return u;
+    Type *t = mt_ok_payload_type(cx, m->children[0], 0);
+    return t ? t : u;
+}
+
+/*
+ * 127.195 — resolve `use` to an `mt` arm binding in force, innermost first.
+ * Returns the binding's type, or NULL when the name is not an arm binding
+ * here: a `let` of the same name inside the arm body, before the use, is the
+ * one in force.  A use inside a closure in the arm body is answered
+ * TY_UNKNOWN — a closure parameter of the same name would shadow the
+ * binding, and the checker does not track closure parameters.
+ */
+static Type *arm_bind_lookup(Ctx *cx, const char *nb, int nlen, const Node *use) {
+    for (int k = cx->armb_count - 1; k >= 0; k--) {
+        if (cx->armb[k].len != nlen || memcmp(cx->armb[k].name, nb, (size_t)nlen) != 0)
+            continue;
+        const Node *body = cx->armb[k].body;
+        /* A re-entered initialiser outside the arm is not in its scope. */
+        if (!node_contains(body, use)) continue;
+        if (cx->fn_node) {
+            const Node *bn = find_binding_before(cx->fn_node, cx->src, nb, nlen, use);
+            if (bn && node_contains(body, bn) && bn->start < use->start) return NULL;
+        }
+        if (closure_between(body, use)) return mk_type(cx->env->arena, TY_UNKNOWN);
+        return cx->armb[k].ty;
     }
     return NULL;
 }
@@ -3040,6 +3109,7 @@ static int stdlib_str_bound(Ctx *cx, const Node *recv) {
     char nb[128]; TOKSTR(nb, cx->src, recv);
     int nlen = (int)strlen(nb);
     if (!nlen || is_param(cx, nb, nlen)) return 0;
+    if (arm_bind_lookup(cx, nb, nlen, recv)) return 0;   /* 127.195 */
     const Node *bn = find_binding_before(cx->fn_node, cx->src, nb, nlen, recv);
     if (!bn || bn->kind != NODE_BIND_STMT || bn->child_count != 2) return 0;
     const Node *init = bn->children[1];
@@ -3278,6 +3348,11 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     case NODE_IDENT: {
         char nb[128]; TOKSTR(nb,cx->src,node);
         int nlen=(int)strlen(nb);
+        /* 127.195: an `mt` arm binding shadows everything outside its arm. */
+        if (cx->armb_count>0) {
+            Type *abt=arm_bind_lookup(cx,nb,nlen,node);
+            if (abt) return abt;
+        }
         /* 127.136 — PARAMETERS ARE LOOKED UP FIRST, before module scope.
          *
          * This lookup used to consult module scope first and fall back to the
@@ -3661,7 +3736,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
          * so the module function `sum` must not be the signature checked. */
         if (d&&d->def_node&&d->def_node->kind==NODE_FUNC_DECL
             &&node->children[0]->kind==NODE_IDENT
-            &&local_in_force(cx,nb,(int)strlen(nb),node)) {
+            &&(local_in_force(cx,nb,(int)strlen(nb),node)
+               ||arm_bind_lookup(cx,nb,(int)strlen(nb),node))) {
             for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
             return mk_type(A,TY_UNKNOWN);
         }
@@ -4227,6 +4303,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
     case NODE_MATCH_STMT: {
         if (node->child_count<1) return mk_type(A,TY_VOID);
         Type *scr=infer(cx,node->children[0]),*arm_type=NULL; int has_t=0,has_f=0;
+        int discarded=(cx->mt_discard==node);
         /* Collect match arm variant names for sum type exhaustiveness check */
         const char *arm_tags[64]; int arm_tag_count=0;
         for (int i=1;i<node->child_count;i++) {
@@ -4241,16 +4318,49 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 char tb[128]; TOKSTR(tb,cx->src,arm->children[0]);
                 if (arm_tag_count<64) arm_tags[arm_tag_count++]=ty_intern(A,tb);
             }
-            Type *at=arm->child_count>1&&arm->children[1]?infer(cx,arm->children[1]):mk_type(A,TY_VOID);
-            if (!arm_type) { arm_type=at; }
-            else if (at->kind!=TY_UNKNOWN&&arm_type->kind!=TY_UNKNOWN&&!types_equal(arm_type,at)) {
-                if (tc_can_emit(cx)) {
-                    char msg[256];
-                    snprintf(msg,sizeof(msg),"match arms have inconsistent types: '%s' vs '%s'",type_name(arm_type),type_name(at));
-                    diag_emit(DIAG_ERROR,E4011,arm->start,arm->line,arm->col,msg,
-                              "expected",type_name(arm_type),"got",type_name(at),
-                              "fix","ensure all match arms return the same type",(const char*)NULL);
-                }
+            /* 127.195: the arm's BODY is children[2]; children[1] is the
+             * binding name.  Until this was fixed only the binding was
+             * inferred, so no arm body was ever type-checked and E4011
+             * compared binding types.  The binding is in force while the
+             * body is inferred (arm_bind_type), shadowing any parameter,
+             * local or module name it collides with, as codegen binds it. */
+            if (arm->child_count<3||!arm->children[2]) continue;
+            const Node *body=arm->children[2];
+            int pushed=0;
+            if (arm->children[1]&&arm->children[1]->kind==NODE_IDENT
+                &&cx->armb_count<TKC_MAX_ARM_BINDS) {
+                int k=cx->armb_count++;
+                cx->armb[k].name=cx->src+arm->children[1]->tok_start;
+                cx->armb[k].len=arm->children[1]->tok_len;
+                cx->armb[k].ty=arm_bind_type(cx,node,arm);
+                cx->armb[k].body=body;
+                pushed=1;
+            }
+            /* An arm body of a discarded match is itself discarded. */
+            if (discarded&&body->kind==NODE_MATCH_STMT) cx->mt_discard=body;
+            Type *at=infer(cx,body);
+            if (pushed) cx->armb_count--;
+            /* An early-return arm leaves the function; it yields no value
+             * (codegen skips it for the same reason, 114.47).  An arm whose
+             * type is unresolved is tolerated, as before. */
+            if (body->kind==NODE_RETURN_STMT||!at||at->kind==TY_UNKNOWN) continue;
+            if (!arm_type) { arm_type=at; continue; }
+            /* E4011 only where the match's value is used.  A match standing
+             * as a statement discards its value, and its arms are free to be
+             * a void call in one arm and a value in another. */
+            if (discarded||types_equal(arm_type,at)) continue;
+            /* u64 beside i64 (`$ok:v v.len; $err:e 0`) is the widening
+             * types_compat already grants a value flow; bool is not. */
+            if ((at->kind==TY_U64&&arm_type->kind==TY_I64)
+                ||(at->kind==TY_I64&&arm_type->kind==TY_U64)) continue;
+            if (tc_first_report(cx,arm)&&tc_can_emit(cx)) {
+                char msg[256];
+                snprintf(msg,sizeof(msg),"match arms have inconsistent types: '%s' vs '%s'",type_name(arm_type),type_name(at));
+                /* No `fix`: which arm is wrong is not decidable (errors.md
+                 * E4011: fix field absent). */
+                diag_emit(DIAG_ERROR,E4011,body->start,body->line,body->col,msg,
+                          "expected",type_name(arm_type),"got",type_name(at),
+                          (const char*)NULL);
             }
         }
         /* Bool exhaustiveness check */
@@ -4297,7 +4407,10 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 }
             }
         }
-        return arm_type?arm_type:mk_type(A,TY_VOID);
+        /* 127.195: no arm yielded a known type (every arm unresolved or an
+         * early return) — the match's type is unknown, not void. */
+        if (!arm_type) return mk_type(A,node->child_count>1?TY_UNKNOWN:TY_VOID);
+        return arm_type;
     }
 
     /* ── Arena statement ──────────────────────────────────────────────
@@ -4540,6 +4653,7 @@ int type_check(const Node *ast, const char *src,
     Ctx cx; cx.env=out; cx.src=src; cx.fn_ret=NULL; cx.had_error=0; cx.fn_node=NULL;
     cx.scope_depth=0; cx.bind_count=0; cx.fn_error_count=0; cx.bind_infer_depth=0;
     cx.reported_count=0;
+    cx.armb_count=0; cx.mt_discard=NULL;
     cx.root=ast;
     for (int i=0;i<ast->child_count;i++) infer(&cx,ast->children[i]);
     return cx.had_error?-1:0;
