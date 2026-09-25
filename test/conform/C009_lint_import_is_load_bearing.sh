@@ -37,7 +37,22 @@
 #   3. THE RULE STILL FIRES ON A GENUINELY UNUSED IMPORT, and still offers
 #      the fix. A rule repaired by switching it off is not repaired.
 #
-# Story: 127.81
+#   4. THE UNQUALIFIED TYPE-ONLY USE (137.8). Cases 1-2 cover `alias.$rec`.
+#      An import's types are ALSO reachable unqualified -- `i=c:std.csv;` then
+#      `r:$csvreader` -- and then the alias never appears again at all. That
+#      is loke's spelling (`i=t:shared.types;` used only as `$lokeerr`): the
+#      rule deleted 197 imports in 119 files, `--fix` said "fixed", and the
+#      next compile was E3011. It is also this repo's own examples/mortgage
+#      and examples/bookmarks-api. Asserted: no diagnostic, `--fix` leaves
+#      the file byte-identical, and the file still checks.
+#
+#   5. THE CAUTION IS NARROW. Lint cannot tell WHICH import supplies an
+#      unqualified type, so a foreign `$type` silences the rule for the file.
+#      Names every program has (`$str`, `$ok`/`$err` arms) and the file's own
+#      types and variants are not foreign -- an unused import beside them
+#      must still be flagged, or case 4 was bought by switching the rule off.
+#
+# Story: 127.81, 137.8
 
 set -uo pipefail
 
@@ -146,6 +161,43 @@ cp "${WORK}/genuine.tk" "${WORK}/genuine_fixed.tk"
 "${TKC}" --lint --fix "${WORK}/genuine_fixed.tk" >/dev/null 2>&1
 "${TKC}" "${WORK}/genuine_fixed.tk" -o "${WORK}/genuine.bin" >/dev/null 2>&1
 expect "genuine-fixed-still-compiles" "$?" "0"
+
+# ── 4. unqualified type-only use (137.8) ─────────────────────────────────
+cat > "${WORK}/unqual.tk" <<'EOF'
+m=test;
+i=c:std.csv;
+f=getpos(r:$csvreader):u64{ <r.pos };
+f=main():i64{ <0 };
+EOF
+cp "${WORK}/unqual.tk" "${WORK}/unqual.orig"
+
+"${TKC}" --check "${WORK}/unqual.tk" >/dev/null 2>&1
+expect "unqual-typeonly-premise-checks" "$?" "0"
+
+unqual_diags="$("${TKC}" --lint "${WORK}/unqual.tk" 2>&1 | grep -c 'unused-import' || true)"
+expect "unqual-typeonly-import-not-flagged" "${unqual_diags}" "0"
+
+"${TKC}" --lint --fix "${WORK}/unqual.tk" >/dev/null 2>&1
+if cmp -s "${WORK}/unqual.tk" "${WORK}/unqual.orig"; then unqual_same=yes; else unqual_same=no; fi
+expect "unqual-typeonly-fix-leaves-file-alone" "${unqual_same}" "yes"
+
+"${TKC}" --check "${WORK}/unqual.tk" >/dev/null 2>&1
+expect "unqual-typeonly-still-checks-after-fix" "$?" "0"
+
+# ── 5. local types, variants and predefined names are not foreign ────────
+cat > "${WORK}/localtypes.tk" <<'EOF'
+m=test;
+i=c:std.csv;
+t=$loc{a:i64};
+t=$res{$good:i64;$bad:str};
+f=g(x:$res):i64{ mt x { $good:v <v; $bad:s <0 } };
+f=h(s:$str):$loc{ <$loc{a:1} };
+f=main():i64{ <0 };
+EOF
+"${TKC}" --check "${WORK}/localtypes.tk" >/dev/null 2>&1
+expect "localtypes-premise-checks" "$?" "0"
+local_diags="$("${TKC}" --lint "${WORK}/localtypes.tk" 2>&1 | grep -c 'unused-import' || true)"
+expect "localtypes-unused-import-still-flagged" "${local_diags}" "1"
 
 echo "--------------------------------------"
 echo "Results: ${PASS} passed, ${FAIL} failed"

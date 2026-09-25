@@ -795,6 +795,31 @@ static int process_file(const char *src, const RunOpts *o)
             rc = ECOMPILE;
             goto done;
         }
+        /* 127.160 / 127.161: the migrator strips every comment before it
+         * lexes and cannot put them back (architectural; design in
+         * docs/architecture/migrate-comment-preservation.md). The decline
+         * above only covers source that compiles STANDALONE, so a valid file
+         * of a multi-file module (an import --check cannot resolve alone) and
+         * genuinely legacy source both still reached it and lost every
+         * comment with exit 0. Refuse instead, naming the file, and echo it
+         * verbatim for the redirect. TKC_MIGRATE_FORCE=1 is the consent to
+         * lose them (and the old behaviour C041's negative control needs). */
+        {
+            const char *force = getenv("TKC_MIGRATE_FORCE");
+            int forced = force && force[0] && strcmp(force, "0") != 0;
+            int first_line = 0;
+            int ncom = tkc_migrate_count_comments(sbuf, (int)slen, &first_line);
+            if (!forced && ncom > 0) {
+                fwrite(sbuf, 1, (size_t)slen, stdout);
+                fprintf(stderr,
+                        "tkc: --migrate: '%s' has %d comment(s) (first at line %d) "
+                        "that migration would delete — declined, source echoed "
+                        "unchanged; set TKC_MIGRATE_FORCE=1 to migrate and lose them\n",
+                        src, ncom, first_line);
+                rc = ECOMPILE;
+                goto done;
+            }
+        }
         /* --migrate does its own prepass + re-lex internally.
          * Pass raw source directly — no external lex needed. */
         diag_reset();
