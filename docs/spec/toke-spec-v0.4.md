@@ -21,8 +21,8 @@ from-scratch training see one canonical, backtrack-free form.
 The five v0.4 changes are governed by [ADR-0007](/docs/decisions/ADR-0007/)
 (expression-`if`), [ADR-0008](/docs/decisions/ADR-0008/) (`=`/`==` split), and
 [ADR-0009](/docs/decisions/ADR-0009/) (backtrack-free parser). The machine-readable
-grammar of record is [`grammar.ebnf`](/docs/spec/grammar.ebnf) (with its normative
-**Appendix A**, FIRST-sets & bounded-lookahead) and [`toke.gbnf`](/docs/spec/toke.gbnf)
+grammar of record is [`grammar.ebnf`](https://github.com/karwalski/toke/blob/main/docs/spec/grammar.ebnf) (with its normative
+**Appendix A**, FIRST-sets & bounded-lookahead) and [`toke.gbnf`](https://github.com/karwalski/toke/blob/main/docs/spec/toke.gbnf)
 (GBNF for constrained decoding).
 
 ---

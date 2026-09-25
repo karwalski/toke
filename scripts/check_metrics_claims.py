@@ -29,8 +29,8 @@ preceding one of the counted nouns must match the fact sheet derived by
 `scripts/verify_project_facts.py`, or carry a dated exemption
 (`facts-exempt: YYYY-MM-DD ...` on the line or within two lines of it) marking
 it as a historical snapshot. A date or era label excuses a count only when it
-sits in the count's own sentence or table row (story 132.88); a date elsewhere
-in the paragraph dates something else.
+sits in the count's own sentence (story 132.88) or, in a table, its own cell
+or the row's date-only cell (132.93); a date elsewhere dates something else.
 
 Rule 2 — LANE CROSSING (story 132.13). A toke-trained tokenizer (Toke-16K,
 tokenizer_v03, proxy8k, the toke SentencePiece models) must never be named in a
@@ -459,6 +459,49 @@ PROSE_EXT = (".md", ".txt", ".html", ".htm", ".tkt")
 TABLE_ROW = re.compile(r"^\s*(?:\||<t[rdh]\b)", re.I)
 
 
+TABLE_CELL_SEP = re.compile(r"(?<!\\)\||</?t[dhr]\b[^>]*>", re.I)
+# A cell that holds nothing but a date or an era label is the row's date
+# column ("| 2026-05-25 | 57 stdlib modules |"): it dates every cell in its row.
+DATE_CELL = re.compile(
+    r"^[\s*_`]*(?:20\d\d-\d\d-\d\d|(?:January|February|March|April|May|June|July|"
+    r"August|September|October|November|December)\s+20\d\d|v0\.[0-3](?:[- ]era)?|"
+    r"20\d\d)[\s*_`]*$", re.I)
+
+
+def is_table_row(line):
+    """A markdown row, or a line holding HTML cells ("<table><tr><td>...")."""
+    return bool(TABLE_ROW.match(line) or re.search(r"<t[dh]\b", line, re.I))
+
+
+def cell_start(line, pos):
+    """Offset where the table cell holding `pos` begins."""
+    begin = 0
+    for m in TABLE_CELL_SEP.finditer(line):
+        if m.end() > pos:
+            break
+        begin = m.end()
+    return begin
+
+
+def table_dating_unit(line, start, end):
+    """132.93: the text a date must sit in to date a count in a table row.
+
+    132.88 took the whole row, so a date in any cell excused a count in every
+    other: toke-spec prior-art.md:80 carried "57 stdlib modules" (Ecosystem
+    column) as live, excused by "(N = 60, 2026-09-19)" in the Token Density
+    cell, which dates a different measurement. The unit is now the count's
+    own cell, plus any cell that is only a date (a date column dates its row).
+    """
+    cells, pos = [], 0
+    for m in TABLE_CELL_SEP.finditer(line):
+        cells.append((pos, m.start()))
+        pos = m.end()
+    cells.append((pos, len(line)))
+    own = [line[a:b] for a, b in cells if a <= start and end <= b]
+    dates = [line[a:b] for a, b in cells if DATE_CELL.match(line[a:b])]
+    return " ".join(own + dates) if own else line
+
+
 def dating_unit(line, start, end, block=None, idx=0):
     """132.88: the text a date must sit in to date THIS count.
 
@@ -473,8 +516,8 @@ def dating_unit(line, start, end, block=None, idx=0):
     caller passes no block), or `"analysis_date": "2026-05-25",` two lines up
     would read as the start of the count's sentence.
     """
-    if TABLE_ROW.match(line):
-        return line
+    if is_table_row(line):
+        return table_dating_unit(line, start, end)
     if block is None:
         block, idx = [line], 0
     before = " ".join(block[:idx])
@@ -522,10 +565,20 @@ def count_findings(line, near, block=None, idx=0):
                 continue
             if SUPERSEDED.search(line) or SUPERSEDED.search(near):
                 continue
-            if (UNMEASURED.search(line) or FUTURE_TARGET.search(line)) \
-                    and not MEASURED.search(line):
+            # 132.93: in a table row a target is stated by the count's own
+            # cell -- "Gate-1 tasks" in the Token Density cell of toke-spec
+            # prior-art.md:80 read as UNMEASURED and excused "57 stdlib
+            # modules" in the Ecosystem cell, alongside that cell's date.
+            unit = table_dating_unit(line, m.start(), m.end()) \
+                if is_table_row(line) else line
+            if (UNMEASURED.search(unit) or FUTURE_TARGET.search(unit)) \
+                    and not MEASURED.search(unit):
                 continue
-            if OTHER_LANG.search(line[:m.start()]):
+            # 132.93: another language named in the count's own cell, not
+            # the cell before it (markdown's '|' already stopped the match;
+            # an HTML cell boundary did not)
+            if OTHER_LANG.search(line[cell_start(line, m.start())
+                                      if is_table_row(line) else 0:m.start()]):
                 continue
             if SUBSET_PREFIX.search(line[max(0, m.start() - 30):m.start()]):
                 continue
@@ -691,15 +744,23 @@ def sentences(line):
                 yield s
 
 
+URL_TEXT = re.compile(r"\b(?:https?://|www\.)[^\s)\]>\"']+", re.I)
+
+
 def claims_token_percentage(s):
     """True when the sentence states a measured percentage about toke's tokens.
 
     Exempt: third-party results that carry a citation, and stated
     targets/thresholds — TEMSpec §6.3 governs published *results*.
     """
-    if not TOKE_SUBJECT.search(s):
+    # 132.94: a URL is an address, not the sentence's subject. Pointing the
+    # patterns catalogue's issue links at github.com/karwalski/toke made "toke"
+    # the subject of "token-tied but 10.2% slower than c" (a speed figure).
+    # The URL still counts as a CITATION below.
+    bare = URL_TEXT.sub(" ", s)
+    if not TOKE_SUBJECT.search(bare):
         return False
-    if CITATION.search(s) and not re.search(r"\btoke\b", s, re.I):
+    if CITATION.search(s) and not re.search(r"\btoke\b", bare, re.I):
         return False
     if UNMEASURED.search(s) and not MEASURED.search(s):
         return False
@@ -1188,6 +1249,30 @@ SELFTEST = [
      ".json"),
     (True, "132.88: a table row dates its own count",
      "| Snapshot | Count |\n|---|---|\n| 2026-05-25 | 57 stdlib modules |"),
+
+    # -- 132.93: a date excuses only the count in its own cell ---------------
+    (False, "132.93: a date in another cell's prose (toke-spec prior-art.md:80)",
+     "| Language | Token Density | Ecosystem |\n|---|---|---|\n"
+     "| **toke** | Costs 1.34x Python's tokens (N = 60, 2026-09-19) | "
+     "57 stdlib modules; mature |"),
+    (False, "132.93: the same, rendered as HTML cells",
+     "<table><tr><td>Costs 1.34x Python's tokens (N = 60, 2026-09-19)</td>"
+     "<td>57 stdlib modules</td></tr></table>", ".html"),
+    (False, "132.93: \"Gate-1\" in another cell is not a stated target for this one",
+     "| Language | Token Density | Ecosystem |\n|---|---|---|\n"
+     "| **toke** | Costs 1.34x on the Gate-1 tasks | 57 stdlib modules |"),
+    (True, "132.94: \"toke\" inside a link's URL is not the sentence's subject",
+     "- [127.10](https://github.com/karwalski/toke/blob/main/docs/progress.md): "
+     "form a is token-tied but 10.2% slower than c."),
+    (False, "132.94: the same sentence with toke as its subject still fails",
+     "- [127.10](https://github.com/karwalski/toke/blob/main/docs/progress.md): "
+     "toke is 10.2% fewer tokens than Python."),
+    (True, "132.93: the date in the count's own cell",
+     "| Language | Ecosystem |\n|---|---|\n"
+     "| **toke** | 57 stdlib modules (2026-05-25) |"),
+    (True, "132.93: a date-only cell is the row's date column",
+     "<table><tr><td>2026-05-25</td><td>57 stdlib modules</td></tr></table>",
+     ".html"),
 ]
 
 
