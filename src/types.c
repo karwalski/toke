@@ -1450,6 +1450,11 @@ static void check_variant_ctor_return(Ctx *cx, const Node *ret) {
 static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
     if (!cx->fn_ret || cx->fn_ret->kind==TY_VOID || cx->fn_ret->kind==TY_UNKNOWN)
         return;
+    /* 127.188: a `void!$e` function has no success value to return either;
+     * ending it on a propagation (`g(x)!$e`) is complete. */
+    if (cx->fn_ret->kind==TY_ERROR_TYPE && cx->fn_ret->elem
+        && cx->fn_ret->elem->kind==TY_VOID)
+        return;
 
     const Node *expr=NULL;
     int known = tail_ty && tail_ty->kind!=TY_VOID && tail_ty->kind!=TY_UNKNOWN;
