@@ -844,6 +844,53 @@ static const Node *find_binding_before(const Node *root, const char *src,
 }
 
 /*
+ * local_in_force (127.169) — the local binding of `name` that codegen will
+ * resolve `use` to, or NULL when codegen resolves it to a module declaration.
+ *
+ * The emitter keeps one flat table of locals per function, filled in source
+ * order as each `let`/`mut`/loop variable is emitted, and a name in that
+ * table shadows a module function or global (name_is_local, llvm.c).
+ * Measured at d25ba32 with a module `f=sum(..)` and `let sum=fn..`:
+ *
+ *   use before the `let`                     -> the module function
+ *   use after it, same block                 -> the local
+ *   use after an `if` whose block holds it   -> the local (the table is flat)
+ *   `let` inside a closure body, use outside -> the module function (a
+ *                                               closure is emitted apart)
+ *
+ * So: the latest binding that starts before `use` and does not contain it,
+ * searching the whole function body except closures that do not contain
+ * `use`.  Unlike find_binding_before there is no "first found anywhere"
+ * fallback — a binding after the use is not in force, and the module
+ * declaration answers.
+ */
+static void local_in_force_rec(const Node *root, const char *src,
+                               const char *name, int nlen,
+                               const Node *use, const Node **best) {
+    if (!root) return;
+    if (root->kind == NODE_CLOSURE && !node_contains(root, use)) return;
+    if ((root->kind==NODE_BIND_STMT||root->kind==NODE_MUT_BIND_STMT
+         ||root->kind==NODE_LOOP_INIT)
+        &&root->child_count>0&&root->children[0]) {
+        int tl=root->children[0]->tok_len;
+        if (tl==nlen&&memcmp(src+root->children[0]->tok_start,name,(size_t)nlen)==0
+            && root->start < use->start
+            && (!*best || root->start > (*best)->start)
+            && !node_contains(root, use))
+            *best = root;
+    }
+    for (int i=0;i<root->child_count;i++)
+        local_in_force_rec(root->children[i],src,name,nlen,use,best);
+}
+static const Node *local_in_force(const Ctx *cx, const char *name, int nlen,
+                                  const Node *use) {
+    const Node *best = NULL;
+    if (!cx->fn_node || !use) return NULL;
+    local_in_force_rec(cx->fn_node, cx->src, name, nlen, use, &best);
+    return best;
+}
+
+/*
  * contains_ptr — return 1 if the type tree contains TY_PTR at any depth.
  *
  * Used to enforce the E2010 rule: pointer types (*T) are only valid in
@@ -1504,6 +1551,9 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
     char nb[128]; TOKSTR(nb, cx->src, call->children[0]);
     Decl *d = tc_lookup(cx->env->names->module_scope, nb, (int)strlen(nb));
     if (!d || !d->def_node || d->def_node->kind != NODE_FUNC_DECL) return NULL;
+    /* 127.169: a local closure of that name is what codegen calls. */
+    if (call->children[0]->kind == NODE_IDENT
+        && local_in_force(cx, nb, (int)strlen(nb), call)) return NULL;
     const Node *fn = d->def_node;
     for (int i = 0; i < fn->child_count; i++) {
         const Node *ch = fn->children[i];
@@ -1530,6 +1580,7 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
  * `bn` is the binding node; children are [name, init] (un-annotated form).
  */
 static Type *infer(Ctx *cx, const Node *node);
+
 static Type *bind_init_type(Ctx *cx, const Node *bn) {
     if (!bn || bn->child_count < 2 || !bn->children[1]) return NULL;
     const Node *initN = bn->children[1];
@@ -3188,10 +3239,16 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             }
         }
         Decl *d=tc_lookup(cx->env->names->module_scope,nb,nlen);
+        /* 127.169: a local binding in force at this use shadows a module
+         * declaration of the same name, exactly as codegen resolves it
+         * (local_in_force).  `f=c(p:$str):$str{let base="x";<base}` beside a
+         * module `f=base(..)` typed `base` as the function: a false E4031
+         * "expected str, got func" on stdlib/path.tk. */
+        const Node *shadow=(d&&d->def_node)?local_in_force(cx,nb,nlen,node):NULL;
         /* If not found at module scope, check current function's local binds. */
-        if ((!d||!d->def_node)&&cx->fn_node) {
+        if (((!d||!d->def_node)||shadow)&&cx->fn_node) {
             /* Search the function body for local bindings with type annotations. */
-            const Node *bn=find_binding_before(cx->fn_node,cx->src,nb,nlen,node);
+            const Node *bn=shadow?shadow:find_binding_before(cx->fn_node,cx->src,nb,nlen,node);
             if (bn && (bn->kind==NODE_BIND_STMT||bn->kind==NODE_MUT_BIND_STMT)) {
                 /* Annotated `let x:T=init` → type at [1]. */
                 if (bn->child_count>2&&bn->children[1]) return resolve_type(cx,bn->children[1]);
@@ -3224,6 +3281,7 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
                 if (it) return it;
                 return mk_type(A,TY_UNKNOWN);
             }
+            if (shadow) return mk_type(A,TY_UNKNOWN);   /* never the module decl */
         }
         if (!d||!d->def_node) return mk_type(A,TY_UNKNOWN);
         const Node *def=d->def_node;
@@ -3521,6 +3579,14 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
         char nb[128]; TOKSTR(nb,cx->src,node->children[0]);
 
         Decl *d=tc_lookup(cx->env->names->module_scope,nb,(int)strlen(nb));
+        /* 127.169: `let sum=fn..; sum(a)` calls the local closure in codegen,
+         * so the module function `sum` must not be the signature checked. */
+        if (d&&d->def_node&&d->def_node->kind==NODE_FUNC_DECL
+            &&node->children[0]->kind==NODE_IDENT
+            &&local_in_force(cx,nb,(int)strlen(nb),node)) {
+            for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
+            return mk_type(A,TY_UNKNOWN);
+        }
         if (!d||!d->def_node||d->def_node->kind!=NODE_FUNC_DECL) {
             for (int i=1;i<node->child_count;i++) infer(cx,node->children[i]);
             /* 127.14: a `alias.method(...)` stdlib call the checker cannot
