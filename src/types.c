@@ -1453,10 +1453,13 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
          * as a value (rc 139 on its first use).  Whatever the callee's ok
          * type, there is no reading under which that path returns: fire,
          * with no `fix` (the author may have meant the error, not the value).
-         * A propagation proven void is a missing return, not a discarded
-         * value, and stays out of scope exactly as a void tail call does. */
-        if (!known && expr->kind==NODE_PROPAGATE_EXPR
-            && !(tail_ty && tail_ty->kind==TY_VOID)) {
+         * 127.188: a propagation PROVEN void (`g()!$e` with g a `void!$e`
+         * function) is the same shape — the success path falls off the end
+         * of a non-void body — and was the one propagation left silent.  It
+         * takes the same diagnostic: E4071's propagation message already
+         * says exactly this ("on the success path nothing is returned").  A
+         * plain void tail CALL (no `!`) is still not judged here. */
+        if (!known && expr->kind==NODE_PROPAGATE_EXPR) {
             expr=NULL;                     /* never a certain `<` repair */
             prop=1;
             break;
@@ -1493,7 +1496,9 @@ static void check_tail_expr(Ctx *cx, const Node *tail, Type *tail_ty) {
             "function body ends in a value expression with no '<': the value is "
             "computed and discarded, and the function returns 0");
 
-    const char *got = known ? type_name(tail_ty) : "unknown";
+    const char *got = known ? type_name(tail_ty)
+                    : (prop && tail_ty && tail_ty->kind==TY_VOID) ? "void"   /* 127.188 */
+                    : "unknown";
     if (expr && tail_fix_is_certain(expr))
         diag_emit(DIAG_ERROR,E4071,tail->start,tail->line,tail->col,msg,
                   "expected",type_name(cx->fn_ret),"got",got,
