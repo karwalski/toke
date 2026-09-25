@@ -441,6 +441,11 @@ int tk_log_with_context(const char *msg, const char *context_json)
 #include <zlib.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/file.h>   /* flock — 127.191 */
+#include <fcntl.h>
+#include <unistd.h>
 #include <errno.h>
 
 static const char *k_month_names[] = {
@@ -448,13 +453,43 @@ static const char *k_month_names[] = {
     "Jul","Aug","Sep","Oct","Nov","Dec"
 };
 
+/*
+ * 127.191 — rotation is shared state, so it is decided under a lock and from
+ * the FILE, never from a per-process counter.
+ *
+ * Three defects lost lines here, each on its own:
+ *   1. the archive name had one-second resolution, so a second rotation in
+ *      the same second renamed onto, and gzipped over, the first archive;
+ *   2. a pre-fork server opens the log once and forks, so every worker held
+ *      its own count and its own FILE*: when one rotated, the others went on
+ *      writing into the renamed inode, which the gzip step then unlinked;
+ *   3. the count started at 0 on every open, whatever the file already held.
+ *
+ * So every write now takes an exclusive flock on a sidecar lock file (the
+ * live file cannot carry the lock, because rotation replaces its inode), and
+ * under that lock: reopens the live file if its inode is not the one this
+ * process holds; counts the newlines appended since this process last looked
+ * (its own and every other writer's) — so the count is the shared file's,
+ * and on first open it is the whole existing file's; writes; and rotates
+ * when the count reaches max_lines.  Archive names carry microseconds and
+ * the pid, and a name already taken (plain or .gz) is never reused.
+ *
+ * flock() locks belong to the open file description, which fork() SHARES, so
+ * the lock fd is reopened in any process that did not open it (lock_pid).
+ */
 struct TkAccessLog {
     char *path;          /* full path to live log file */
     char *dir;           /* directory component          */
     char *stem;          /* filename stem (no extension) */
     char *ext;           /* extension incl. dot, or ""   */
+    char *lock_path;     /* sidecar lock file (127.191)  */
     FILE *fp;
-    int   line_count;
+    int   lock_fd;       /* -1 = not open in this process */
+    pid_t lock_pid;      /* process that opened lock_fd  */
+    dev_t cur_dev;       /* identity of the inode fp holds */
+    ino_t cur_ino;
+    off_t counted_to;    /* bytes of that inode already counted */
+    long  line_count;    /* newlines in that inode up to counted_to */
     int   max_lines;     /* 0 = no rotation              */
     int   max_files;     /* 0 = no limit                 */
     int   max_age_days;  /* 0 = disabled; >0 wins over max_files */
@@ -612,33 +647,128 @@ static void apply_retention(TkAccessLog *log)
     free(files);
 }
 
-/* ── Rotate: rename → gz → retention → reopen ─────────────────────────── */
+/* ── 127.191: the lock, the inode check and the count ─────────────────── */
 
-static void rotate_access_log(TkAccessLog *log)
+static int alog_lock(TkAccessLog *log)
 {
-    if (log->fp) { fflush(log->fp); fclose(log->fp); log->fp = NULL; }
-    log->line_count = 0;
+    if (log->lock_fd >= 0 && log->lock_pid != getpid()) {
+        /* Inherited across fork: the description (and so the lock) is shared
+         * with the parent.  Drop our copy and open our own. */
+        close(log->lock_fd);
+        log->lock_fd = -1;
+    }
+    if (log->lock_fd < 0) {
+        log->lock_fd = open(log->lock_path, O_RDWR | O_CREAT, 0644);
+        if (log->lock_fd < 0) return -1;
+        log->lock_pid = getpid();
+    }
+    while (flock(log->lock_fd, LOCK_EX) != 0) {
+        if (errno != EINTR) return -1;
+    }
+    return 0;
+}
 
-    time_t now = time(NULL);
+static void alog_unlock(TkAccessLog *log)
+{
+    if (log->lock_fd >= 0) flock(log->lock_fd, LOCK_UN);
+}
+
+/* (Re)open the live file and forget the count: it belongs to the old inode. */
+static void alog_reopen(TkAccessLog *log)
+{
+    if (log->fp) { fclose(log->fp); log->fp = NULL; }
+    log->counted_to = 0;
+    log->line_count = 0;
+    log->cur_dev = 0;
+    log->cur_ino = 0;
+    /* "a+" so the newline count can pread() what other writers appended. */
+    log->fp = fopen(log->path, "a+");
+    if (!log->fp) return;
+    setvbuf(log->fp, NULL, _IOLBF, 0);
+    struct stat st;
+    if (fstat(fileno(log->fp), &st) == 0) {
+        log->cur_dev = st.st_dev;
+        log->cur_ino = st.st_ino;
+    }
+}
+
+/* Make fp the file now at log->path.  Called with the lock held. */
+static void alog_sync_inode(TkAccessLog *log)
+{
+    struct stat ps;
+    if (!log->fp || stat(log->path, &ps) != 0 ||
+        ps.st_dev != log->cur_dev || ps.st_ino != log->cur_ino)
+        alog_reopen(log);
+}
+
+/* Count the newlines appended since counted_to — by anyone.  Lock held. */
+static void alog_count(TkAccessLog *log)
+{
+    if (!log->fp) return;
+    struct stat st;
+    if (fstat(fileno(log->fp), &st) != 0) return;
+    if (st.st_size < log->counted_to) {          /* truncated under us */
+        log->counted_to = 0;
+        log->line_count = 0;
+    }
+    char buf[65536];
+    while (log->counted_to < st.st_size) {
+        off_t want = st.st_size - log->counted_to;
+        size_t n = want > (off_t)sizeof buf ? sizeof buf : (size_t)want;
+        ssize_t r = pread(fileno(log->fp), buf, n, log->counted_to);
+        if (r <= 0) break;
+        for (ssize_t k = 0; k < r; k++) if (buf[k] == '\n') log->line_count++;
+        log->counted_to += r;
+    }
+}
+
+static int path_exists(const char *p)
+{
+    struct stat st;
+    return stat(p, &st) == 0;
+}
+
+/* ── Rotate: rename → reopen → (unlock) → gz → retention ──────────────── */
+
+/* Called with the lock held; returns with it RELEASED.  Only the rename and
+ * the reopen need the lock — once the live name points at a fresh inode no
+ * other writer can reach the old one — so the gzip, which is proportional to
+ * the file, does not stall every other worker. */
+static void rotate_access_log_locked(TkAccessLog *log)
+{
+    if (log->fp) fflush(log->fp);
+
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    time_t now = tv.tv_sec;
     struct tm *tm = gmtime(&now);
     char ts[20];
     strftime(ts, sizeof ts, "%Y%m%d-%H%M%S", tm);
 
-    /* rotated path: dir/stem.YYYYMMDD-HHMMSS.ext */
-    char rotated[1024];
-    snprintf(rotated, sizeof rotated,
-             "%s/%s.%s%s", log->dir, log->stem, ts, log->ext);
-
-    if (rename(log->path, rotated) == 0) {
-        char gzpath[1024];
+    /* rotated path: dir/stem.YYYYMMDD-HHMMSS.uuuuuu-PID[-N].ext — microseconds
+     * and the pid make a collision unlikely; the probe makes it impossible,
+     * because every rotator holds the lock while it chooses. */
+    char rotated[1024], gzpath[1100];
+    for (int n = 0; ; n++) {
+        if (n == 0)
+            snprintf(rotated, sizeof rotated, "%s/%s.%s.%06ld-%ld%s", log->dir,
+                     log->stem, ts, (long)tv.tv_usec, (long)getpid(), log->ext);
+        else
+            snprintf(rotated, sizeof rotated, "%s/%s.%s.%06ld-%ld-%d%s", log->dir,
+                     log->stem, ts, (long)tv.tv_usec, (long)getpid(), n, log->ext);
         snprintf(gzpath, sizeof gzpath, "%s.gz", rotated);
+        if (!path_exists(rotated) && !path_exists(gzpath)) break;
+        if (n > 10000) { alog_unlock(log); return; }   /* give up: keep writing */
+    }
+
+    int moved = rename(log->path, rotated) == 0;
+    alog_reopen(log);          /* creates the new live file */
+    alog_unlock(log);
+
+    if (moved) {
         compress_to_gz(rotated, gzpath);
         apply_retention(log);
     }
-    /* If rename fails (ENOENT), another worker already rotated — that's fine */
-
-    log->fp = fopen(log->path, "a");
-    if (log->fp) setvbuf(log->fp, NULL, _IOLBF, 0);
 }
 
 /* ── Public API ───────────────────────────────────────────────────────── */
@@ -657,29 +787,45 @@ TkAccessLog *tk_access_log_open(const char *path,
     log->max_lines    = max_lines;
     log->max_files    = max_files;
     log->max_age_days = max_age_days;
+    log->lock_fd      = -1;
 
     split_path(path, &log->dir, &log->stem, &log->ext);
     mkdir_single(log->dir);
 
-    log->fp = fopen(path, "a");
+    /* dir/.stem.ext.lock — hidden, and not matched by apply_retention (which
+     * takes only stem.*ext.gz). */
+    size_t ll = strlen(log->dir) + strlen(log->stem) + strlen(log->ext) + 16;
+    log->lock_path = malloc(ll);
+    if (!log->path || !log->lock_path) { tk_access_log_close(log); return NULL; }
+    snprintf(log->lock_path, ll, "%s/.%s%s.lock", log->dir, log->stem, log->ext);
+
+    if (alog_lock(log) != 0) { tk_access_log_close(log); return NULL; }
+    alog_reopen(log);
+    alog_count(log);           /* 127.191(3): the file's lines count */
+    alog_unlock(log);
     if (!log->fp) { tk_access_log_close(log); return NULL; }
-    /* Line-buffered: flush at each newline rather than on every fflush() call */
-    setvbuf(log->fp, NULL, _IOLBF, 0);
 
     return log;
 }
 
 /* ── Access log format selection (Story 47.1.3) ───────────────────────── */
 
-void tk_access_log_set_format(const char *fmt)
+int tk_access_log_set_format(const char *fmt)
 {
-    if (!fmt) return;
-    if (strcmp(fmt, "json") == 0) {
+    if (fmt && strcmp(fmt, "json") == 0) {
         g_access_format = TK_ACCESS_FMT_JSON;
-    } else if (strcmp(fmt, "combined") == 0) {
-        g_access_format = TK_ACCESS_FMT_COMBINED;
+        return 0;
     }
-    /* Unknown fmt strings are silently ignored. */
+    if (fmt && strcmp(fmt, "combined") == 0) {
+        g_access_format = TK_ACCESS_FMT_COMBINED;
+        return 0;
+    }
+    /* 127.191: an unknown format used to be ignored silently, so a typo
+     * ("jsno") left the log in combined format with nothing to say why. */
+    fprintf(stderr, "log.accessformat: unknown format \"%s\" "
+                    "(expected \"combined\" or \"json\"); format unchanged\n",
+            fmt ? fmt : "(null)");
+    return -1;
 }
 
 /*
@@ -712,10 +858,11 @@ void tk_access_log_write(TkAccessLog *log,
                           const char *ua)
 {
     if (!log) return;
-    if (!log->fp) {
-        log->fp = fopen(log->path, "a");
-        if (!log->fp) return;
-    }
+    /* 127.191: decide against the shared file, under the lock. */
+    int locked = alog_lock(log) == 0;
+    if (locked) alog_sync_inode(log);
+    else if (!log->fp) alog_reopen(log);
+    if (!log->fp) { if (locked) alog_unlock(log); return; }
 
     if (g_access_format == TK_ACCESS_FMT_JSON) {
         /* NDJSON format (Story 47.1.3) */
@@ -764,17 +911,22 @@ void tk_access_log_write(TkAccessLog *log,
                 referer ? referer : "-",
                 ua      ? ua      : "-");
     }
-    /* Line-buffered: stdio flushes automatically at the newline above */
+    fflush(log->fp);
+    if (!locked) return;       /* no lock, no shared count: never rotate blind */
 
-    log->line_count++;
+    alog_count(log);           /* this line and every other writer's */
     if (log->max_lines > 0 && log->line_count >= log->max_lines)
-        rotate_access_log(log);
+        rotate_access_log_locked(log);   /* releases the lock */
+    else
+        alog_unlock(log);
 }
 
 void tk_access_log_close(TkAccessLog *log)
 {
     if (!log) return;
     if (log->fp) { fflush(log->fp); fclose(log->fp); }
+    if (log->lock_fd >= 0) close(log->lock_fd);
+    free(log->lock_path);
     free(log->path);
     free(log->dir);
     free(log->stem);

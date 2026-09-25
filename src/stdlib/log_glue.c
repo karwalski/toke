@@ -63,8 +63,8 @@ int64_t tk_log_open_error_w(int64_t path_ptr, int64_t max_lines,
 int64_t tk_log_accessformat_w(int64_t fmt_ptr)
 {
     const char *fmt = (const char *)(intptr_t)fmt_ptr;
-    tk_access_log_set_format(fmt);
-    return 0;
+    /* 127.191: 0 = accepted, -1 = unknown format (message on stderr). */
+    return (int64_t)tk_access_log_set_format(fmt);
 }
 
 int64_t tk_log_info_w(int64_t msg, int64_t fields_map) {

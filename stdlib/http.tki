@@ -483,6 +483,18 @@
     },
     {
       "kind": "func",
+      "name": "http.servetlsworkers",
+      "params": [
+        "u64",
+        "str",
+        "str",
+        "u64"
+      ],
+      "return": "i64",
+      "note": "port; cert_path; key_path; workers \u2014 HTTPS pre-fork worker pool; workers=1 is single-process (127.192)"
+    },
+    {
+      "kind": "func",
       "name": "http.body",
       "params": [
         "i64"

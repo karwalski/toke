@@ -15,6 +15,24 @@ Beyond the basic transforms it carries the pieces a document pipeline needs befo
 analysis: arbitrary-angle rotation for deskew, adaptive thresholding for unevenly lit
 scans, a general convolution for noise reduction, and multi-page TIFF decode.
 
+Every fallible function returns `T!$str`, and the `$str` is the module's own
+message — `image_decode: not a PNG or TIFF file (bad signature)`, `page index is
+past the last page`, a named unsupported TIFF compression — readable in the
+`$err` arm (story 135.5b; until then every failure bound nil, so the causes were
+indistinguishable to a toke caller):
+
+```toke
+m=example;
+i=image:std.image;
+i=io:std.io;
+i=str:std.str;
+
+f=why():i64{
+  mt image.decode(str.bytes("not an image")) {$ok:i io.println("decoded");$err:e io.println(e)};
+  < 0
+};
+```
+
 ## Types
 
 ### $imgbuf

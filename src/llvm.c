@@ -1567,6 +1567,101 @@ static int is_file_errbox_wrapper(const char *name) {
 }
 
 /*
+ * is_stdlib_slot_wrapper — 127.193.  Stdlib wrappers whose glue keeps
+ * @tk_current_error truthful on EVERY return (0 on success, a box or 1 on
+ * failure), so an ok/err match must decide on the slot, not on the value.
+ *
+ * std.json's scalar accessors return the value itself, and false / 0 / 0.0
+ * are values: `mt json.getbool(o;"off"){$ok:v v;$err:e true}` took the $err
+ * arm for a stored false, because the 0/null sentinel cannot tell a false
+ * from a failure (runtime-abi.md §7.2: "the zero filler is not the
+ * discriminant").  Same class and same cure as 114.53 (str.toint) and
+ * 127.67 (toml.bool/i64).  Their glue now maintains the slot
+ * (src/stdlib/json_glue.c); this list is what makes the slot authoritative.
+ * A name belongs here only if its glue sets the slot on every path — a
+ * wrapper that leaves it stale would read an earlier call's error.
+ */
+static int is_stdlib_slot_wrapper(const char *name) {
+    static const char *const names[] = {
+        "tk_json_bool_w", "tk_json_getbool_w",
+        "tk_json_i64_w", "tk_json_getint_w", "tk_json_geti64_w", "tk_json_geti32_w",
+        "tk_json_u64_w",
+        "tk_json_f64_w", "tk_json_getf32_w", "tk_json_getfloat_w",
+        /* 127.182: {msg} box of stdlib/toml.tki's `tomlerr` record */
+        "tk_toml_load_w", "tk_toml_loadfile_w", "tk_toml_str_w",
+        "tk_toml_section_w", "tk_toml_bool_w", "tk_toml_i64_w",
+        /* 135.5b: `T!str` — the slot holds the message pointer itself */
+        "tk_image_decode_w", "tk_image_encode_w", "tk_image_crop_w",
+        "tk_image_pixelat_w", "tk_image_adaptivethreshold_w",
+        "tk_image_convolve_w", "tk_image_tiffdecode_w", "tk_image_tiffpages_w",
+        NULL,
+    };
+    if (!name) return 0;
+    for (int i = 0; names[i]; i++)
+        if (!strcmp(name, names[i])) return 1;
+    return 0;
+}
+
+/*
+ * stdlib_err_payload_type — 135.5b / 127.182.  The error type a stdlib
+ * wrapper's payload has, as its .tki declares it (`imgbuf!str` -> "str",
+ * `tomlval!tomlerr` -> "tomlerr"), or NULL when there is none to bind.
+ *
+ * THE GAP.  The $err arm's payload was resolved only through lookup_fn(),
+ * i.e. only for USER functions: a stdlib call never had a FnSig, so its arm
+ * bound nil whatever the glue stored — `e.msg` on a toml error was E4034 at
+ * compile time (tomlerr was declared `"kind":"record"`, which nothing
+ * registered) and RT005 at run time, and every `T!str` message in image.c
+ * was invisible.  Only a wrapper in is_stdlib_slot_wrapper() qualifies: its
+ * glue stores a payload of exactly the declared shape on every failure, and
+ * the slot is never stale.  "str" is returned as the literal "str" and bound
+ * as an i8*; a record is returned only if the .tki registered its layout.
+ * A sum-typed stdlib error (JsonErr, FileErr) is not registered from a .tki
+ * today, so it binds nil as before.
+ */
+static const char *stdlib_err_payload_type(Ctx *c, const char *prv,
+                                           char *buf, size_t bufsz)
+{
+    if (!is_stdlib_slot_wrapper(prv)) return NULL;
+    ensure_tki_cache_loaded();
+    for (int i = 0; i < g_tki_cache_count; i++) {
+        if (strcmp(g_tki_cache[i].wrapper_name, prv)) continue;
+        const char *bang = strchr(g_tki_cache[i].toke_ret, '!');
+        if (!bang) return NULL;
+        bang++;
+        if (*bang == '$') bang++;
+        snprintf(buf, bufsz, "%s", bang);
+        if (!strcmp(buf, "str")) return "str";
+        const StructInfo *si = lookup_struct(c, buf);
+        return (si && !si->is_sum) ? si->name : NULL;
+    }
+    return NULL;
+}
+
+/* 127.182: may a stdlib payload of type `from` pass through `!` into a
+ * function declaring `to`?  Only if the reader will find the layout it
+ * expects: the same type, or two records whose fields have the same types in
+ * the same order.  Anything else is re-raised payload-less by the caller, as
+ * 127.56 does for a sentinel-ABI callee — a {msg} box read as a sum's
+ * {tag, payload} would dispatch on a pointer. */
+static int stdlib_err_passes_through(Ctx *c, const char *from, const char *to)
+{
+    if (!from || !to) return 0;
+    const char *t = (*to == '$') ? to + 1 : to;
+    if (!strcmp(from, t)) return 1;
+    if (!strcmp(from, "str") || !strcmp(t, "str")) return 0;
+    const StructInfo *a = lookup_struct(c, from), *b = lookup_struct(c, to);
+    if (!a || !b || a->is_sum || b->is_sum || a->field_count != b->field_count) return 0;
+    for (int i = 0; i < a->field_count; i++) {
+        const char *x = a->field_types[i], *y = b->field_types[i];
+        if (*x == '$') x++;
+        if (*y == '$') y++;
+        if (strcmp(x, y)) return 0;
+    }
+    return 1;
+}
+
+/*
  * json_array_end — Given a pointer to the opening '[' of a JSON array,
  * return a pointer to its MATCHING ']', honoring nested brackets and
  * brackets that appear inside JSON string values.
@@ -3063,6 +3158,7 @@ static void classify_fallible_call(Ctx *c, const Node *call,
         if (is_void_err_union_wrapper(prv)) *out_zok = 1;            /* 127.95 */
         if (is_num_parse_wrapper(prv)) *out_uce = 1;                 /* 114.53/54 */
         else if (is_file_errbox_wrapper(prv)) *out_uce = 1;          /* 135.12 */
+        else if (is_stdlib_slot_wrapper(prv)) *out_uce = 1;          /* 127.193 */
         else if (!prv) {                                             /* 114.55 */
             const FnSig *ucs = lookup_fn(c, pme);
             if (!ucs || !ucs->err_type_name[0]) {
@@ -3127,6 +3223,18 @@ static void classify_fallible_call(Ctx *c, const Node *call,
             const StructInfo *esi = lookup_struct(c, cs->err_type_name);
             if (esi) *out_err_type = cs->err_type_name;
         }
+        /* 135.5b / 127.182: a stdlib call has no FnSig; its payload type is
+         * the one its .tki declares. */
+        if (!*out_err_type && sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
+            char al[128], mth[128], wb[128], eb[128];
+            tok_cp(c->src, sc->children[0], al, sizeof al);
+            tok_cp(c->src, sc->children[1], mth, sizeof mth);
+            const char *prv = resolve_stdlib_call(c, al, mth);
+            if (prv) {
+                snprintf(wb, sizeof wb, "%s", prv);
+                *out_err_type = stdlib_err_payload_type(c, wb, eb, sizeof eb);
+            }
+        }
     }
 }
 
@@ -3160,6 +3268,24 @@ static void fallible_local_forget(Ctx *c, const char *lname)
     c->fall_errty[i][0] = '\0';
 }
 
+/*
+ * err_box_bytes — 127.103.  The size of the error box an error type's raise
+ * builds (runtime-abi.md §7.3): 16 for a sum ({tag, payload}), 8 per field
+ * for a record, 0 for no box at all (no payload type, or a `str` payload,
+ * which is the message pointer itself and is never reused).
+ */
+static int err_box_bytes(Ctx *c, const char *err_type)
+{
+    if (!err_type || !strcmp(err_type, "str")) return 0;
+    const StructInfo *si = lookup_struct(c, err_type);
+    if (!si) return 0;
+    if (si->is_sum) return 16;
+    int n = si->field_count;
+    if (n <= 0) return 0;
+    if (n > TKC_MAX_PARAMS) n = TKC_MAX_PARAMS;
+    return n * 8;
+}
+
 /* Record `lname` as fallible and spill the channel.  `errv` is the temporary
  * already holding the load of @tk_current_error taken right after the call;
  * -1 means there is nothing to spill (the void status-word convention reads
@@ -3187,6 +3313,24 @@ static void fallible_local_record(Ctx *c, const char *lname, int uce, int zok,
         if (!c->fall_slot[i][0]) {
             snprintf(c->fall_slot[i], NAME_BUF, "%s.tkerr", lname);
             fprintf(c->out, "  %%%s = alloca i64\n", c->fall_slot[i]);
+            /* 127.103: the binding's own copy of the error box.  Minted with
+             * the slot (an assignment may later bind a boxed error to it);
+             * dead, and so removed, when nothing ever keeps a box in it. */
+            fprintf(c->out, "  %%%s.keep = alloca [%d x i64]\n", c->fall_slot[i], TKC_MAX_PARAMS);
+        }
+        /* 127.103: the channel holds a POINTER into the thread's one reused
+         * error box (127.109), so spilling the pointer was not a capture: the
+         * next raise on this thread overwrote the box it pointed at, and a
+         * later `mt` read that raise's payload (`1099` for 77).  Copy the box
+         * into the binding's own buffer and spill a pointer to the copy. */
+        int keep_nb = err_box_bytes(c, err_type);
+        if (keep_nb > 0) {
+            int kp = next_tmp(c), kv = next_tmp(c);
+            fprintf(c->out, "  %%t%d = bitcast [%d x i64]* %%%s.keep to i8*\n",
+                    kp, TKC_MAX_PARAMS, c->fall_slot[i]);
+            fprintf(c->out, "  %%t%d = call i64 @tk_err_keep(i64 %%t%d, i8* %%t%d, i64 %d) ; 127.103\n",
+                    kv, errv, kp, keep_nb);
+            errv = kv;
         }
         fprintf(c->out, "  store i64 %%t%d, i64* %%%s ; 135.16 error channel at the binding\n",
                 errv, c->fall_slot[i]);
@@ -6079,6 +6223,9 @@ static int emit_expr(Ctx *c, const Node *n)
          * signals failure via tk_current_error, so propagate on that rather than
          * the value-vs-0 sentinel (which a 0/0.0 ok value collides with). */
         int prop_cur_err = 0;
+        /* 127.182: a stdlib payload re-raised payload-less unless its layout
+         * is the one the enclosing function's error type declares. */
+        int prop_reraise = 0;
         if (n->children[0]->kind == NODE_CALL_EXPR && n->children[0]->child_count >= 1) {
             const Node *sc = n->children[0]->children[0];
             if (sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
@@ -6088,6 +6235,13 @@ static int emit_expr(Ctx *c, const Node *n)
                 const char *prv = resolve_stdlib_call(c, pal, pme);
                 if (is_num_parse_wrapper(prv)) prop_cur_err = 1;
                 else if (is_file_errbox_wrapper(prv)) prop_cur_err = 1;  /* 135.12 */
+                else if (is_stdlib_slot_wrapper(prv)) prop_cur_err = 1;  /* 127.193 */
+                if (prv && is_stdlib_slot_wrapper(prv) && c->cur_fn_err[0]) {
+                    char wb[128], eb[128];
+                    snprintf(wb, sizeof wb, "%s", prv);
+                    const char *from = stdlib_err_payload_type(c, wb, eb, sizeof eb);
+                    prop_reraise = !stdlib_err_passes_through(c, from, c->cur_fn_err);
+                }
                 else if (!prv) {
                     const FnSig *ucs = lookup_fn(c, pme);
                     if (!ucs || !ucs->err_type_name[0]) {
@@ -6145,7 +6299,7 @@ static int emit_expr(Ctx *c, const Node *n)
          * declared error type (payload 0, tag -1 = "no named variant", so a
          * nested `mt e {$variants}` reads a real box and falls to its
          * catch-all arm rather than dereferencing a sentinel). */
-        if (c->cur_fn_err[0] && !prop_cur_err) {
+        if (c->cur_fn_err[0] && (!prop_cur_err || prop_reraise)) {
             const StructInfo *pesi = lookup_struct(c, c->cur_fn_err);
             if (pesi && pesi->is_sum) {
                 int box = next_tmp(c);
@@ -6719,7 +6873,10 @@ static int emit_expr(Ctx *c, const Node *n)
                     strncpy(vname, uname, sizeof vname - 1);
                     vname[sizeof vname - 1] = '\0';
                 }
-                const char *bind_ty = (!is_ok && eu_err_type) ? "i64" : scr_ty;
+                /* 135.5b: a `T!str` payload is the message pointer itself. */
+                const int err_is_str = eu_err_type && !strcmp(eu_err_type, "str");
+                const char *bind_ty = (!is_ok && eu_err_type)
+                                      ? (err_is_str ? "i8*" : "i64") : scr_ty;
                 set_local_type(c, vname, bind_ty);
                 /* 127.71: the $ok arm binds the scrutinee's value, so it earns
                  * the scrutinee's tag ("$str", "@str", a struct name).  It was
@@ -6756,6 +6913,22 @@ static int emit_expr(Ctx *c, const Node *n)
                     int boxed = next_tmp(c);
                     fprintf(c->out, "  %%t%d = select i1 %%t%d, i64 0, i64 %%t%d\n", boxed, isflag, ev);
                     ev = boxed;
+                    /* 127.103: a let-bound payload lives in the binding's
+                     * frame copy; hand the arm a thread box like the direct
+                     * spelling's, so `e` has the same lifetime either way and
+                     * never points into a frame it could outlive. */
+                    { int rb_nb = err_src_slot ? err_box_bytes(c, eu_err_type) : 0;
+                      if (rb_nb > 0) {
+                          int rb = next_tmp(c);
+                          fprintf(c->out, "  %%t%d = call i64 @tk_err_rebox(i64 %%t%d, i64 %d) ; 127.103\n",
+                                  rb, ev, rb_nb);
+                          ev = rb;
+                      } }
+                    if (err_is_str) {
+                        int sp = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8* ; 135.5b str payload\n", sp, ev);
+                        fprintf(c->out, "  store i8* %%t%d, i8** %%%s\n", sp, vname);
+                    } else {
                     fprintf(c->out, "  store i64 %%t%d, i64* %%%s\n", ev, vname);
                     mark_ptr_with_type(c, vname, eu_err_type);
                     /* 127.71: field access on the error payload looks the raw
@@ -6763,6 +6936,7 @@ static int emit_expr(Ctx *c, const Node *n)
                      * there too — otherwise `e.msg` resolves against whatever
                      * the outer binding of that name was. */
                     if (vshadow) mark_ptr_with_type(c, vraw, eu_err_type);
+                    }
                 } else {
                     if (!strcmp(scr_ty, "i8*"))
                         fprintf(c->out, "  store i8* null, i8** %%%s\n", vname);
@@ -9573,6 +9747,9 @@ static const StdlibDecl g_stdlib_decls[] = {
     /* 127.109: the per-thread error box.  Error-union boxes come from here,
      * not malloc — one buffer per thread, reused, never leaked. */
     {"tk_err_box", "declare i8* @tk_err_box(i64)", 0},
+    /* 127.103: a let-bound error keeps its own copy of the box. */
+    {"tk_err_keep", "declare i64 @tk_err_keep(i64, i8*, i64)", 0},
+    {"tk_err_rebox", "declare i64 @tk_err_rebox(i64, i64)", 0},
     /* Runtime: json/str */
     {"tk_json_parse", "declare i64 @tk_json_parse(i8*)", 0},
     {"tk_json_print", "declare void @tk_json_print(i64)", 0},

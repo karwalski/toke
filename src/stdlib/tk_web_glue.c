@@ -732,6 +732,36 @@ int64_t tk_http_servetls(int64_t port, int64_t cert_ptr, int64_t key_ptr) {
     return (err == TK_HTTP_OK) ? 0 : -1;
 }
 
+/*
+ * 127.192 — http.servetlsworkers(port; cert; key; workers).
+ *
+ * http.servetls takes no worker count: tk_http_servetls() reaches
+ * http_serve_tls(), which sizes the pool from the CPU count or the
+ * TK_HTTP_WORKERS environment variable, so a program (ooke's
+ * [server].workers) had no way to choose it — the setting was silently
+ * ignored under TLS while it worked for plain http.serveworkers.  The C
+ * http_serve_tls_workers() always took a count; this exposes it.  Additive:
+ * http.servetls keeps its signature and behaviour.  As for
+ * http.serveworkers: workers=1 is the single-process path, and workers=0
+ * auto-detects the CPU count (TK_HTTP_WORKERS overrides).
+ */
+int64_t tk_http_servetlsworkers_w(int64_t port, int64_t cert_ptr, int64_t key_ptr,
+                                  int64_t workers) {
+    int p = (int)port;
+    if (p <= 0 || p > 65535) p = 8443;
+    const char *cert = (const char *)(intptr_t)cert_ptr;
+    const char *key  = (const char *)(intptr_t)key_ptr;
+    TkTlsCtx *tls = http_tls_ctx_new(cert, key);
+    if (!tls) return -1;
+    /* workers=0 auto-detects, as http.serveworkers does: http_serve_tls()
+     * is exactly that sizing (CPU count, TK_HTTP_WORKERS overrides). */
+    TkHttpErr err = workers > 0
+        ? http_serve_tls_workers(NULL, NULL, (uint64_t)p, tls, (uint64_t)workers)
+        : http_serve_tls(NULL, NULL, (uint64_t)p, tls);
+    http_tls_ctx_free(tls);
+    return (err == TK_HTTP_OK) ? 0 : -1;
+}
+
 /* ── Static file directory handler ───────────────────────────────────── */
 
 /*
