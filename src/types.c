@@ -2817,6 +2817,34 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
                       "got", got, (const char *)NULL);
             return;
         }
+        /* 127.168: `.join` has str glue only.  Both of its lowerings
+         * (`arr.join(sep)` → tk_arr_join_w, `sep.join(arr)` → tk_str_join_w)
+         * read every element as a char*, so on an @i64 the first element
+         * was dereferenced as an address: `@(1;2).join(",")` passed --check
+         * and exited 139.  Judged only when the element type is KNOWN and is
+         * not str; an unknown element type is left alone. */
+        if (strcmp(member, "join") == 0 && (rk == RK_A || rk == RK_S)) {
+            const Type *at = NULL;
+            if (rk == RK_A) at = rt;
+            else if (call->child_count == 2 && call->children[1])
+                at = call->children[1]->rtype;
+            const Type *et = (at && at->kind == TY_ARRAY) ? at->elem : NULL;
+            if (et && et->kind != TY_UNKNOWN && et->kind != TY_STR) {
+                if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
+                char msg[384], got[96], an[64];
+                snprintf(an, sizeof an, "%s", type_name(at));
+                snprintf(msg, sizeof msg,
+                         "'.join' joins the elements of a '@(str)', but this "
+                         "array is a '%s': its elements are not strings", an);
+                snprintf(got, sizeof got, "%s", an);
+                /* No `fix`: converting each element (and how) is the
+                 * program's choice, not a mechanical rewrite. */
+                diag_emit(DIAG_ERROR, E4036, call->start, call->line, call->col,
+                          msg, "expected", "@(str)", "got", got,
+                          (const char *)NULL);
+                return;
+            }
+        }
     }
 
     int want = recv_method_arity(member);
@@ -2887,7 +2915,13 @@ static int stdlib_str_bound(Ctx *cx, const Node *recv) {
 
 static const Type *recv_value_type(Ctx *cx, const Node *recv) {
     if (!recv) return NULL;
-    if (recv->kind != NODE_IDENT && recv->kind != NODE_STR_LIT) return NULL;
+    /* 127.168: an array or map LITERAL is as proven a receiver as a string
+     * literal — `@(1;2;3).replace(1;2)` passed --check and exited 139 because
+     * only identifiers and string literals were judged.  The emitter's kind
+     * tests read a literal's shape directly (expr_struct_type "@…" /
+     * NODE_MAP_LIT), so they agree with the checker here too. */
+    if (recv->kind != NODE_IDENT && recv->kind != NODE_STR_LIT &&
+        recv->kind != NODE_ARRAY_LIT && recv->kind != NODE_MAP_LIT) return NULL;
     const Type *t = infer_impl(cx, recv);
     if ((!t || t->kind == TY_UNKNOWN) && stdlib_str_bound(cx, recv))
         return mk_type(cx->env->arena, TY_STR);             /* 127.176 */
