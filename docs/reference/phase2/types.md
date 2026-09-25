@@ -143,5 +143,5 @@ The `as` keyword and all cast rules are identical to the legacy profile.
 ## See Also
 
 - [Type System](/docs/reference/types/) — production type reference
-- [Default Syntax Overview](/docs/reference/phase2/overview/) — complete profile comparison
-- [Default Syntax Grammar](/docs/reference/phase2/grammar/) — production rule differences
+- [Default Syntax Overview](/docs/reference/phase2-overview/) — complete profile comparison
+- [Default Syntax Grammar](/docs/reference/phase2-grammar/) — production rule differences

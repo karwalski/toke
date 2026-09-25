@@ -4,7 +4,7 @@
 **Date:** 2026-05-23 (updated with research review responses)
 **Author:** Matthew Watt (karwalski)
 **Status:** Post-Gate 2, planning 12-week functional correctness sprint. v0.3 syntax locked.
-**Reasoning channel:** Out-of-band reasoning mandated via `.tkc` companion files — see [reasoning-channel.md](reasoning-channel.md)
+**Reasoning channel:** Out-of-band reasoning mandated via `.tkc` companion files — see [reasoning-channel.md](/docs/spec/reasoning-channel/)
 
 ---
 
@@ -42,10 +42,10 @@ LLMs waste tokens on syntactic overhead that provides no semantic value. Comment
 ### Language Specification
 
 The full normative specification is available at:
-- **Spec:** [toke-spec-v0.3.md](toke-spec-v0.3.md) (142KB, 31 sections)
-- **Grammar:** [grammar.ebnf](grammar.ebnf) (EBNF, 53 productions; Appendix A gives the FIRST-sets and the enumerated bounded-lookahead exceptions)
-- **Gate 1 decision:** [gate1-decision.md](../docs/gate1-decision.md)
-- **Gate 2 decision:** [gate2-decision.md](gate2-decision.md)
+- **Spec:** [toke-spec-v0.3.md](/docs/spec/toke-spec-v0.3/) (142KB, 31 sections)
+- **Grammar:** [grammar.ebnf](https://github.com/karwalski/toke/blob/main/docs/spec/grammar.ebnf) (EBNF, 53 productions; Appendix A gives the FIRST-sets and the enumerated bounded-lookahead exceptions)
+- **Gate 1 decision:** [gate1-decision.md](/docs/decisions/gate1-decision/)
+- **Gate 2 decision:** [gate2-decision.md](https://github.com/karwalski/toke/blob/1c5ffce/docs/spec/gate2-decision.md)
 
 ---
 

@@ -18,8 +18,8 @@
 > grammar with bounded lookahead exactly as it held for the label. The review body below is
 > **unedited**, deliberately, because it is the record of what an external reader concluded
 > from what we published. The accurate wording is in
-> [`docs/about/canonical.md`](../canonical.md); the repositioning it prompted is in
-> [`docs/about/positioning-2026-09.md`](../positioning-2026-09.md).
+> [`docs/about/canonical.md`](/docs/about/canonical/); the repositioning it prompted is in
+> [`docs/about/positioning-2026-09.md`](/docs/about/positioning-2026-09/).
 
 ## TL;DR
 - The thesis that a purpose-built language plus a purpose-built tokenizer is a worthwhile route to token efficiency is partly weakened and partly re-confirmed by a year of evidence: the tokenizer half is real but is being commoditised by superword BPE (SuperBPE, up to 33% fewer tokens with an accuracy gain) and threatened at the root by tokenizer-free architectures (H-Net, Byte Latent Transformer); the strict-compiler half is largely reproducible today with constrained decoding plus type-constrained generation on an existing language, without a new language.

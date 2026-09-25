@@ -64,4 +64,4 @@ id
 ## See Also
 
 - [std.str](/docs/stdlib/str) -- general string manipulation (`s.join`, `s.fromint`)
-- [std.io](/docs/stdlib/io) -- `io.println`
+- `std.io` -- `io.println`

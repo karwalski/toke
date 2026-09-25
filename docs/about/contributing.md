@@ -37,7 +37,7 @@ Expand the conformance suite, write edge-case tests for the lexer or parser, or 
 The toke project spans eleven public repositories, plus two private ones. The full
 map — including the private, archived and undescribed repositories, and the local
 directory names that differ from the GitHub names — is
-[`docs/about/repos.md`](repos.md).
+[`docs/about/repos.md`](/docs/about/repos/).
 
 | Repository | Role |
 |------------|------|

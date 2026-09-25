@@ -137,7 +137,7 @@ Emitted when an uppercase-cased keyword is used where the default (lowercase) pr
 Emitted when a `\(` interpolation appears in a string literal while compiling in the
 **legacy (80-column) profile**, which does not support interpolation. In the default
 profile, `\(expr)` interpolation **is** supported for scalar values (interpolating a
-composite value is the compile error `E4032` — see [types](types.md)).
+composite value is the compile error `E4032` — see [types](/docs/reference/types/)).
 
 **Fix:** in legacy-profile code, build the string with `str.concat()`; or use the
 default profile, where `\(expr)` works.

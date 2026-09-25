@@ -252,7 +252,7 @@ Everything not listed above is identical between profiles:
 ## See Also
 
 - [Type System](/docs/reference/types/) — production type reference (default syntax notation)
-- [Default Syntax Type Details](/docs/reference/phase2/types/) — type transformation details
+- [Default Syntax Type Details](/docs/reference/phase2-types/) — type transformation details
 - [Grammar](/docs/reference/grammar/) — production grammar reference (default syntax notation)
-- [Default Syntax Grammar Details](/docs/reference/phase2/grammar/) — grammar transformation details
-- [Design Principles](/about/design/) — why toke has two profiles
+- [Default Syntax Grammar Details](/docs/reference/phase2-grammar/) — grammar transformation details
+- [Design Principles](/docs/about/design/) — why toke has two profiles
