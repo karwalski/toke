@@ -3904,9 +3904,12 @@ static int emit_expr(Ctx *c, const Node *n)
                 /* 127.172: this was `tk_str_concat` — a "safety net" lowering
                  * of `str + str`, the operator ADR-0004 removed.  The checker
                  * now rejects every shape of it (E4031, C043/C057), so a
-                 * checked program cannot arrive here; if one does, the checker
-                 * has a hole, and quietly concatenating would hide it.  Say so
-                 * and fail the build.  No `fix` (AGENTS.md §3.1). */
+                 * checked STRING cannot arrive here.  What can is an integer
+                 * the backend mistyped as i8* while the checker left the sum
+                 * unknown — `arr.get(0).get(1)` on an @(@i64) (the round-trip
+                 * fixture struct_literal.tk) — which tk_str_concat turned into
+                 * a segfault at run time.  Either way the lowering cannot be
+                 * trusted: say so and fail the build.  No `fix` (§3.1). */
                 diag_emit(DIAG_ERROR, E9002, n->start, n->line, n->col,
                           "internal compiler error: '+' reached codegen with a "
                           "pointer operand that is not an array and that the "
