@@ -821,10 +821,11 @@ static const Node *find_binding_node(const Node *root, const char *src,
  * string second) was already one at 444a55c: `io.println(s)` after
  * `let s="abc"` was rejected as "expected 'str', got '@(i64)'".
  *
- * The binding in force is the nearest one that starts before the use and
- * does not contain it (`let x=x+1` must not resolve `x` to itself).  If no
- * binding precedes the use, the old first-found answer is kept, so nothing
- * that resolved before stops resolving.
+ * The binding in force is the nearest one that starts before the use, does
+ * not contain it (`let x=x+1` must not resolve `x` to itself), and is not in
+ * a block that closed before the use (127.206).  If no binding precedes the
+ * use, the old first-found answer is kept, so nothing that resolved before
+ * stops resolving.
  */
 static int node_contains(const Node *root, const Node *n) {
     if (!root) return 0;
@@ -847,8 +848,16 @@ static void find_binding_before_rec(const Node *root, const char *src,
             && !node_contains(root, use))
             *best = root;
     }
-    for (int i=0;i<root->child_count;i++)
-        find_binding_before_rec(root->children[i],src,name,nlen,use,best);
+    for (int i=0;i<root->child_count;i++) {
+        const Node *ch=root->children[i];
+        /* 127.206: a block that does not contain the use has closed by the
+         * time the use runs, and its bindings with it — codegen restores
+         * the outer binding on block exit (`let s="abc"; if(..){let
+         * s=@(1;2)}; "\(s)"` prints abc).  Only when no binding at all is
+         * in force does the first-found fallback below still answer. */
+        if (ch && ch->kind==NODE_STMT_LIST && !node_contains(ch,use)) continue;
+        find_binding_before_rec(ch,src,name,nlen,use,best);
+    }
 }
 static const Node *find_binding_before(const Node *root, const char *src,
                                        const char *name, int nlen,
