@@ -1108,14 +1108,28 @@ static Type *resolve_type(Ctx *cx, const Node *n) {
         if (nn) { char snb[128]; TOKSTR(snb,cx->src,nn); st->name=ty_intern(cx->env->arena,snb); }
         /* Collect NODE_FIELD children — they may be direct children of the
          * TYPE_DECL or wrapped in a NODE_STMT_LIST (from parse_field_list). */
-        const Node *fields[64]; int fc=0;
+        /* 127.205: no field cap.  A fixed 64-slot array dropped field 65
+         * onward, so `--check` reported E4025 "struct 'big' has no field
+         * 'f64'" for a field that exists, while codegen (127.190) handles
+         * any width.  Count, then size the array to the struct. */
+        int fcap=0;
         for (int i=1;i<decl->child_count;i++) {
             const Node *ci=decl->children[i]; if(!ci) continue;
-            if (ci->kind==NODE_FIELD) { if(fc<64)fields[fc++]=ci; }
+            if (ci->kind==NODE_FIELD) fcap++;
+            else if (ci->kind==NODE_STMT_LIST)
+                for (int j=0;j<ci->child_count;j++)
+                    if (ci->children[j]&&ci->children[j]->kind==NODE_FIELD) fcap++;
+        }
+        const Node **fields=fcap>0
+            ?(const Node**)arena_alloc(cx->env->arena,fcap*(int)sizeof(Node*)):NULL;
+        int fc=0;
+        for (int i=1;fields&&i<decl->child_count;i++) {
+            const Node *ci=decl->children[i]; if(!ci) continue;
+            if (ci->kind==NODE_FIELD) { if(fc<fcap)fields[fc++]=ci; }
             else if (ci->kind==NODE_STMT_LIST) {
                 for (int j=0;j<ci->child_count;j++) {
                     const Node *fj=ci->children[j];
-                    if (fj&&fj->kind==NODE_FIELD&&fc<64) fields[fc++]=fj;
+                    if (fj&&fj->kind==NODE_FIELD&&fc<fcap) fields[fc++]=fj;
                 }
             }
         }

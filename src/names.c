@@ -907,10 +907,6 @@ static int scope_insert(Scope *s, Arena *arena, const char *src,
  *   name  — the predefined identifier as a C string literal.
  */
 
-/* Field cap for a .tki type record — matches the 64-field cap the type
- * checker applies to a local `t=` declaration (types.c resolve_type). */
-#define TKC_MAX_TKI_FIELDS 64
-
 /* 136.1: parameter cap for a .tki func record. Generously above
  * TKC_MAX_PARAMS (16) so a declaration the compiler would reject anyway is
  * still read in full rather than silently truncated into a false arity. */
@@ -1199,11 +1195,29 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
         if (fa && fa < end && *fa == '[') {
             const char *fe = tki_scan_value(fa, end);
             if (fe) {
-                const char *names_buf[TKC_MAX_TKI_FIELDS];
-                const char *types_buf[TKC_MAX_TKI_FIELDS];
+                /* 127.205: sized to the record, not capped at 64 — a wider
+                 * imported struct lost its high fields exactly as a local
+                 * one did in types.c.  Every field record is a `{`, so
+                 * counting the top-level objects bounds the count. */
+                int fcap = 0;
+                {
+                    const char *q = fa + 1;
+                    while (q < fe) {
+                        while (q < fe && *q != '{') q++;
+                        if (q >= fe) break;
+                        const char *qe = tki_scan_value(q, fe);
+                        if (!qe) break;
+                        fcap++;
+                        q = qe;
+                    }
+                }
+                const char **names_buf = fcap > 0 ? (const char **)arena_alloc(
+                    arena, fcap * (int)sizeof(const char *)) : NULL;
+                const char **types_buf = fcap > 0 ? (const char **)arena_alloc(
+                    arena, fcap * (int)sizeof(const char *)) : NULL;
                 int fc = 0;
                 const char *fp = fa + 1;
-                while (fp < fe && fc < TKC_MAX_TKI_FIELDS) {
+                while (names_buf && types_buf && fp < fe && fc < fcap) {
                     while (fp < fe && (*fp == ' ' || *fp == '\t' ||
                                        *fp == '\n' || *fp == '\r' ||
                                        *fp == ',')) fp++;
@@ -1228,19 +1242,9 @@ static void tki_record_exports(NameEnv *env, Arena *arena, const char *alias,
                     fp = fend;
                 }
                 if (fc > 0) {
-                    const char **fn_arr = (const char **)arena_alloc(
-                        arena, fc * (int)sizeof(const char *));
-                    const char **ft_arr = (const char **)arena_alloc(
-                        arena, fc * (int)sizeof(const char *));
-                    if (fn_arr && ft_arr) {
-                        memcpy(fn_arr, names_buf,
-                               (size_t)fc * sizeof(const char *));
-                        memcpy(ft_arr, types_buf,
-                               (size_t)fc * sizeof(const char *));
-                        it.field_names = fn_arr;
-                        it.field_types = ft_arr;
-                        it.field_count = fc;
-                    }
+                    it.field_names = names_buf;
+                    it.field_types = types_buf;
+                    it.field_count = fc;
                 }
             }
         }
