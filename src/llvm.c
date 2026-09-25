@@ -2464,6 +2464,51 @@ static int field_declares_bool(Ctx *c, const Node *e) {
     return 0;
 }
 
+/* recv_call_is_bool (127.194) — `e` is a value-receiver call whose result
+ * the program reads as a bool, but which reaches the backend as an i64:
+ *   - a predicate member of the receiver dispatch (`s.contains(x)`,
+ *     `m.contains(k)`, `a.contains(v)`, `s.starts(p)`, `s.ends(p)`,
+ *     `s.eq(t)`) — every glue symbol those lower to returns 0/1;
+ *   - `.get(i)` on an array whose elements are bool — an array slot is an
+ *     i64, so the element arrives as 0/1.
+ * Interpolation printed both as `1` after 127.94 had made every other bool
+ * print `true`.  Same c->src rule as call_declares_bool. */
+static const char *get_llvm_name(Ctx *c, const char *toke_name);
+static int recv_method_in_chain(const char *m);
+static int arr_elem_is_bool(Ctx *c, const Node *r) {
+    if (!r) return 0;
+    if (r->rtype && r->rtype->kind == TY_ARRAY && r->rtype->elem &&
+        r->rtype->elem->kind != TY_UNKNOWN)
+        return r->rtype->elem->kind == TY_BOOL;
+    if (r->kind == NODE_IDENT) {
+        char nb[128]; tok_cp(c->src, r, nb, sizeof nb);
+        const char *st = ptr_local_struct_type(c, get_llvm_name(c, nb));
+        if (!st) st = ptr_local_struct_type(c, nb);
+        return st && !strcmp(st, "@bool");
+    }
+    return 0;
+}
+static int recv_call_is_bool(Ctx *c, const Node *e) {
+    /* `a.get(i)` with one argument parses as an index expression. */
+    if (e && e->kind == NODE_INDEX_EXPR && e->child_count >= 2)
+        return arr_elem_is_bool(c, e->children[0]);
+    if (!e || e->kind != NODE_CALL_EXPR || e->child_count < 1) return 0;
+    const Node *cal = e->children[0];
+    if (!cal || cal->kind != NODE_FIELD_EXPR || cal->child_count < 2 ||
+        !cal->children[0] || !cal->children[1]) return 0;
+    char recv[128], member[128];
+    tok_cp(c->src, cal->children[0], recv, sizeof recv);
+    tok_cp(c->src, cal->children[1], member, sizeof member);
+    for (int ii = 0; ii < c->import_count; ii++)
+        if (!strcmp(c->imports[ii].alias, recv)) return 0;   /* a module call */
+    if (!strcmp(member, "contains") || !strcmp(member, "starts") ||
+        !strcmp(member, "ends") || !strcmp(member, "eq"))
+        return recv_method_in_chain(member);
+    if (!strcmp(member, "get") && e->child_count == 2)
+        return arr_elem_is_bool(c, cal->children[0]);
+    return 0;
+}
+
 static int emit_bool_to_str(Ctx *c, int v) {
     int at = 1, af = 1;
     int st = emit_str_global(c, "\"true\"", 6, &at);
@@ -3386,7 +3431,8 @@ static int emit_expr(Ctx *c, const Node *n)
                         int unknown_ret = interp_operand_type_unknown(c, expr_node, ety, est);
                         int abi_bool = ety && !strcmp(ety, "i64")
                                        && (call_declares_bool(c, expr_node)
-                                           || field_declares_bool(c, expr_node));
+                                           || field_declares_bool(c, expr_node)
+                                           || recv_call_is_bool(c, expr_node));
                         c->src = saved_src;
                         /* 114.32: interpolation of a non-string value. Previously
                          * any i64 was inttoptr'd to i8* on the assumption it
@@ -6889,6 +6935,11 @@ static const char *expr_struct_type(Ctx *c, const Node *n) {
             if (ck == NODE_FLOAT_LIT) return "@f64";
             const char *ety = expr_llvm_type(c, n->children[i]);
             if (!strcmp(ety, "double")) return "@f64";
+            /* 127.194: a bool-element literal is "@bool" — the tag an @bool
+             * PARAMETER already gets (the "@<elem>" marker) — so `.get(i)`
+             * on it can be rendered as a bool.  Nothing else reads the
+             * difference: every other test is on the '@' prefix. */
+            if (!strcmp(ety, "i1")) return "@bool";
             /* 126.6: a string-element array literal (`@("x";"y")`) must be
              * tagged "@str" (not "@i64") so element access `arr.get(i)` types
              * as $str — else `\(arr.get(i))` interpolation and var-to-var `=`
@@ -7743,7 +7794,12 @@ static const char *expr_llvm_type(Ctx *c, const Node *n) {
          * `zext` before an `inttoptr`).  Adding a widening instruction would
          * not have helped: the coercion site is correct and complete, it was
          * being told the wrong source type. */
+        /* 127.194: not for a receiver call (`a.contains(true)`): that is the
+         * dispatch chain, whose result is always the glue's i64.  Answering
+         * with the ARGUMENT's type here said "i1", and interpolating the call
+         * emitted `select i1` on an i64 — E9003 from clang. */
         if (n->child_count == 2 && strncmp(fn, "tk_", 3) != 0 &&
+            n->children[0]->kind != NODE_FIELD_EXPR &&
             !variant_ctor_sum(c, n)) {
             const char *aty = expr_llvm_type(c, n->children[1]);
             /* emit_expr ptrtoints an i8* argument into the i64 slot. */

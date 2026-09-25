@@ -453,8 +453,14 @@ f=main():i64{
 };'
 
 # ── B7-B11 — receiver methods that work must keep working, and answer ────
+# CHANGED 2026-09-25 (Batch Y1, 127.194).  B7-B9 pinned `\(x.contains(y))`
+# printing `1`.  That was the pre-127.15 rendering: the owner decision of
+# 2026-09-22 is that a bool interpolates as `true`/`false`, 127.94 made every
+# other bool spelling do so, and these three were the receiver-method shape
+# it could not see (the glue returns an i64 0/1).  The expected output is now
+# `true`; the methods themselves, which is what B7-B9 guard, are unchanged.
 runs "str receiver methods still run" "HELLO
-1
+true
 he" \
 'm=t;
 i=io:std.io;
@@ -467,7 +473,7 @@ f=main():i64{
 };'
 
 runs "array receiver methods still run" "4
-1" \
+true" \
 'm=t;
 i=io:std.io;
 f=main():i64{
@@ -479,7 +485,7 @@ f=main():i64{
 };'
 
 runs "map receiver methods still run" "v
-1" \
+true" \
 'm=t;
 i=io:std.io;
 f=main():i64{
