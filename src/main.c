@@ -624,6 +624,9 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
         }
         ll_argv[nll++] = ll_paths[fi];
         symtab_free(&st); free(sbuf); arena_free(arena);
+        /* 127.181: diag kept a pointer to sbuf; the link-step E9003 below
+         * read its source_line from freed memory. */
+        diag_set_source(NULL, 0);
     }
     if (!has_main) { fputs("tkc: no f=main() found among the source files\n", stderr); rc = ECOMPILE; goto cleanup; }
     if (compile_binary_multi(ll_argv, nll, out_bin, target, opt_level, &merged, debug_info) < 0) rc = EINTERNAL;

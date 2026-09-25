@@ -119,9 +119,17 @@ void diag_set_source(const char *src, size_t len) { s_source_buf = src; s_source
  * NUL-terminates.  Returns 0 on success, -1 if no source is available.
  */
 static int
-extract_source_line(int byte_offset, char *buf, size_t buf_size)
+extract_source_line(int byte_offset, int line, char *buf, size_t buf_size)
 {
     if (!s_source_buf || s_source_len == 0 || byte_offset < 0 || buf_size == 0) {
+        if (buf_size > 0) buf[0] = '\0';
+        return -1;
+    }
+    /* 127.181: a diagnostic with no position (line 0, offset 0 -- E9003
+     * "clang invocation failed" is the case) has no source line.  Before this
+     * it printed line 1 of whatever buffer was registered, which in the
+     * multi-module driver had already been freed. */
+    if (line <= 0 && byte_offset == 0) {
         if (buf_size > 0) buf[0] = '\0';
         return -1;
     }
@@ -310,7 +318,7 @@ emit_json(DiagSeverity sev, int code,
     /* source_line — the text of the line where the diagnostic occurred */
     {
         char sl_buf[1024];
-        if (extract_source_line(byte_offset, sl_buf, sizeof(sl_buf)) == 0) {
+        if (extract_source_line(byte_offset, line, sl_buf, sizeof(sl_buf)) == 0) {
             fputs(",\"source_line\":\"", stderr);
             json_escape(stderr, sl_buf);
             fputc('"', stderr);
@@ -344,7 +352,7 @@ emit_text(DiagSeverity sev, int code, int byte_offset, int line, int col,
     fprintf(stderr, " --> %s:%d:%d\n", s_source_file[0] ? s_source_file : "<input>", line, col);
 
     char sl_buf[1024];
-    if (extract_source_line(byte_offset, sl_buf, sizeof(sl_buf)) == 0) {
+    if (extract_source_line(byte_offset, line, sl_buf, sizeof(sl_buf)) == 0) {
         /* Compute gutter width for the line number */
         char line_str[16];
         snprintf(line_str, sizeof(line_str), "%d", line);
