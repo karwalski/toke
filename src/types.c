@@ -648,9 +648,13 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
         int delta = (strnode->tok_start + i + 2) - (int)(sizeof(WRAP_PREFIX) - 1);
         int tcap = elen + 32;
         Token *toks = (Token *)arena_alloc(A, (size_t)tcap * sizeof(Token));
+        /* 127.186: a lex/parse error in the segment is reported inside the
+         * literal, not at the wrapper's offset on line 1. */
+        diag_rebase_push((int)(sizeof(WRAP_PREFIX) - 1), strnode->tok_start + i + 2, elen);
         int tc = lex(wrap, wlen, toks, tcap, 0 /* PROFILE_DEFAULT */);
+        Node *ast = tc > 0 ? parse(toks, tc, wrap, A, 0) : NULL;
+        diag_rebase_pop();
         if (tc > 0) {
-            Node *ast = parse(toks, tc, wrap, A, 0);
             Node *expr = NULL, *fn = NULL;
             if (ast) {
                 for (int k = 0; k < ast->child_count; k++) {

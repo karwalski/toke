@@ -105,6 +105,49 @@ void diag_set_format(DiagFormat fmt)
         s_mode     = (fmt == DIAG_FMT_JSON) ? DIAG_MODE_JSON : DIAG_MODE_TEXT;
     }
 }
+/* ── Wrapper-buffer rebasing (127.186) ─────────────────────────────── */
+enum { DIAG_REBASE_MAX = 16 };
+typedef struct { int prefix; int base; int len; } DiagRebase;
+static DiagRebase s_rebase[DIAG_REBASE_MAX];
+static int        s_rebase_depth = 0;   /* may exceed MAX: extra pushes are no-ops */
+
+/* Map an offset in the innermost wrapper to an absolute source offset. */
+static int rebase_offset(int off)
+{
+    int d = s_rebase_depth < DIAG_REBASE_MAX ? s_rebase_depth : DIAG_REBASE_MAX;
+    if (d <= 0) return off;
+    const DiagRebase *r = &s_rebase[d - 1];
+    int rel = off - r->prefix;
+    if (rel < 0) rel = 0;
+    if (rel > r->len) rel = r->len;
+    return r->base + rel;
+}
+
+void diag_rebase_push(int wrap_prefix_len, int src_offset, int expr_len)
+{
+    if (s_rebase_depth < DIAG_REBASE_MAX) {
+        DiagRebase r = { wrap_prefix_len, rebase_offset(src_offset), expr_len };
+        s_rebase[s_rebase_depth] = r;
+    }
+    s_rebase_depth++;
+}
+
+void diag_rebase_pop(void) { if (s_rebase_depth > 0) s_rebase_depth--; }
+
+/* Rewrite (offset, line, col) in place when a rebase is active. */
+static void rebase_pos(int *off, int *line, int *col)
+{
+    if (s_rebase_depth <= 0) return;
+    int o = rebase_offset(*off);
+    *off = o;
+    if (!s_source_buf || o < 0 || (size_t)o > s_source_len) return;
+    int ln = 1; size_t ls = 0;
+    for (size_t i = 0; i < (size_t)o; i++)
+        if (s_source_buf[i] == '\n') { ln++; ls = i + 1; }
+    *line = ln;
+    *col  = (int)((size_t)o - ls) + 1;
+}
+
 /* diag_set_source_file — Record the path used in SARIF artifact locations. */
 void diag_set_source_file(const char *path) { s_source_file = path ? path : ""; }
 
@@ -119,9 +162,17 @@ void diag_set_source(const char *src, size_t len) { s_source_buf = src; s_source
  * NUL-terminates.  Returns 0 on success, -1 if no source is available.
  */
 static int
-extract_source_line(int byte_offset, char *buf, size_t buf_size)
+extract_source_line(int byte_offset, int line, char *buf, size_t buf_size)
 {
     if (!s_source_buf || s_source_len == 0 || byte_offset < 0 || buf_size == 0) {
+        if (buf_size > 0) buf[0] = '\0';
+        return -1;
+    }
+    /* 127.181: a diagnostic with no position (line 0, offset 0 -- E9003
+     * "clang invocation failed" is the case) has no source line.  Before this
+     * it printed line 1 of whatever buffer was registered, which in the
+     * multi-module driver had already been freed. */
+    if (line <= 0 && byte_offset == 0) {
         if (buf_size > 0) buf[0] = '\0';
         return -1;
     }
@@ -316,7 +367,7 @@ emit_json(DiagSeverity sev, int code,
     /* source_line — the text of the line where the diagnostic occurred */
     {
         char sl_buf[1024];
-        if (extract_source_line(byte_offset, sl_buf, sizeof(sl_buf)) == 0) {
+        if (extract_source_line(byte_offset, line, sl_buf, sizeof(sl_buf)) == 0) {
             fputs(",\"source_line\":\"", stderr);
             json_escape(stderr, sl_buf);
             fputc('"', stderr);
@@ -350,7 +401,7 @@ emit_text(DiagSeverity sev, int code, int byte_offset, int line, int col,
     fprintf(stderr, " --> %s:%d:%d\n", s_source_file[0] ? s_source_file : "<input>", line, col);
 
     char sl_buf[1024];
-    if (extract_source_line(byte_offset, sl_buf, sizeof(sl_buf)) == 0) {
+    if (extract_source_line(byte_offset, line, sl_buf, sizeof(sl_buf)) == 0) {
         /* Compute gutter width for the line number */
         char line_str[16];
         snprintf(line_str, sizeof(line_str), "%d", line);
@@ -437,6 +488,7 @@ diag_emit(DiagSeverity sev, int code,
     va_end(ap);
 
     if (s_suppress) return;
+    rebase_pos(&byte_offset, &line, &col);
     update_counters(sev);
     if (s_int_mode == DIAG_INT_TEXT)
         emit_text(sev, code, byte_offset, line, col, 0, message, &fields);
@@ -457,6 +509,7 @@ diag_emit_span(DiagSeverity sev, int code,
     va_end(ap);
 
     if (s_suppress) return;
+    rebase_pos(&byte_offset, &line, &col);
     update_counters(sev);
     if (s_int_mode == DIAG_INT_TEXT)
         emit_text(sev, code, byte_offset, line, col, span_len, message, &fields);
