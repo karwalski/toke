@@ -1,0 +1,16 @@
+id: T009
+series: T
+description: "valid: receiver members on str, arrays and maps check clean"
+input: |
+  m=t;
+  f=use(s:str;a:@i64;w:@str;m:@(str:i64)):i64{
+    let n=s.len as i64+a.len as i64+w.len as i64+m.len as i64;
+    let c:bool=s.contains("x");
+    let d:bool=m.contains("k");
+    let parts=s.split(",");
+    let a2=a.set(0;1).append(2);
+    let m2=m.set("k";1);
+    <n+a2.get(0)+m2.get("k")+parts.len as i64+w.indexof("q")
+  };
+expected_exit_code: 0
+expected_error_codes: []

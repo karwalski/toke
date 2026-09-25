@@ -1,0 +1,8 @@
+id: T012
+series: T
+description: "invalid: str + str is E4031 (+ is numeric-only, ADR-0004)"
+input: |
+  m=t;
+  f=g(a:str;b:str):str{<a+b};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]

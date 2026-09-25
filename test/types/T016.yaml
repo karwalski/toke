@@ -1,0 +1,9 @@
+id: T016
+series: T
+description: "invalid: a sum-type match missing a variant is E4010"
+input: |
+  m=t;
+  t=$e{$a:i64;$b:i64};
+  f=g(x:$e):i64{<mt x {$a:n n}};
+expected_exit_code: 1
+expected_error_codes: ["E4010"]

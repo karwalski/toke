@@ -1,0 +1,8 @@
+id: T037
+series: T
+description: "invalid: a surplus argument to a receiver method is E4026, not dropped (127.1)"
+input: |
+  m=t;
+  f=g():str{let a="xx";<a.concat("A";"B")};
+expected_exit_code: 1
+expected_error_codes: ["E4026"]

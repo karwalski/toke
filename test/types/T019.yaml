@@ -1,0 +1,9 @@
+id: T019
+series: T
+description: "invalid: reading a field the struct does not declare is E4025"
+input: |
+  m=t;
+  t=$p{x:i64};
+  f=g(p:$p):i64{<p.z};
+expected_exit_code: 1
+expected_error_codes: ["E4025"]

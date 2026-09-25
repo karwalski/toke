@@ -1,0 +1,8 @@
+id: T026
+series: T
+description: "invalid: a map literal with mixed value types is E4043"
+input: |
+  m=t;
+  f=g():i64{let m=@(1:10;2:"x");<0};
+expected_exit_code: 1
+expected_error_codes: ["E4043"]

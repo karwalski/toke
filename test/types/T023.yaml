@@ -1,0 +1,8 @@
+id: T023
+series: T
+description: "invalid: comparing str with i64 is E4031"
+input: |
+  m=t;
+  f=g(s:str):bool{<s==1};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]

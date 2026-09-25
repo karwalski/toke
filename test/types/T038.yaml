@@ -1,0 +1,10 @@
+id: T038
+series: T
+description: "invalid: an ambiguous variant constructor is E4072"
+input: |
+  m=t;
+  t=$a{$v:i64;$w:i64};
+  t=$b{$v:str};
+  f=k(x:i64):$a{<$v(x)};
+expected_exit_code: 1
+expected_error_codes: ["E4072"]

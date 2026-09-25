@@ -1,0 +1,8 @@
+id: T028
+series: T
+description: "invalid: a body ending in a value with no < is E4071"
+input: |
+  m=t;
+  f=g():i64{1+2};
+expected_exit_code: 1
+expected_error_codes: ["E4071"]

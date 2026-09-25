@@ -1,0 +1,11 @@
+id: T002
+series: T
+description: "valid: fallible fn, ! propagation and $ok/$err match check clean"
+input: |
+  m=t;
+  t=$e{$neg:i64;$msg:str};
+  f=chk(n:i64):i64!$e{if(n<0){<$e{$neg:n}};<n};
+  f=twice(n:i64):i64!$e{let a=chk(n)!$e;let b=chk(a)!$e;<a+b};
+  f=use(n:i64):str{<mt twice(n) {$ok:v "ok";$err:e mt e {$neg:x "neg";$msg:s s}}};
+expected_exit_code: 0
+expected_error_codes: []

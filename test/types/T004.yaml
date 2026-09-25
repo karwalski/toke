@@ -1,0 +1,10 @@
+id: T004
+series: T
+description: "valid: typed-empty array of a struct, appended and returned, checks clean (127.164)"
+input: |
+  m=t;
+  t=$pt{x:i64};
+  f=mk():@($pt){let ps=mut.@($pt);ps=ps.append($pt{x:1});<ps};
+  f=fs():@f64{let a=mut.@($f64);a=a.append(1.5);<a};
+expected_exit_code: 0
+expected_error_codes: []

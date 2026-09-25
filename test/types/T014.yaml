@@ -1,0 +1,9 @@
+id: T014
+series: T
+description: "invalid: a str argument to an i64 parameter is E4031"
+input: |
+  m=t;
+  f=h(n:i64):i64{<n};
+  f=g():i64{<h("x")};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]

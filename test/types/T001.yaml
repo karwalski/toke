@@ -1,0 +1,11 @@
+id: T001
+series: T
+description: "valid: explicit casts between every signed width and f64 check clean"
+input: |
+  m=t;
+  f=widths(a:i8;b:i16;c:i32;d:i64;x:f64):f64{
+    let s=a as i64+b as i64+c as i64+d;
+    <s as f64+x
+  };
+expected_exit_code: 0
+expected_error_codes: []

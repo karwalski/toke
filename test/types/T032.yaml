@@ -1,0 +1,10 @@
+id: T032
+series: T
+description: "invalid: a type name in a value position is E4033"
+input: |
+  m=t;
+  t=$thing{n:i64};
+  f=take(v:i64):i64{<v};
+  f=g():i64{<take(thing)};
+expected_exit_code: 1
+expected_error_codes: ["E4033"]

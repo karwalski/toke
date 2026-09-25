@@ -1,0 +1,8 @@
+id: T033
+series: T
+description: "invalid: a let annotation that disagrees with its initializer is E4031"
+input: |
+  m=t;
+  f=g():i64{let x:str=5;<0};
+expected_exit_code: 1
+expected_error_codes: ["E4031"]
