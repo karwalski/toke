@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# C051_test_eq_by_value.sh — `test.eq` is an assertion that can fail, and a
+# C070_test_eq_by_value.sh — `test.eq` is an assertion that can fail, and a
 # str pair compares by value.
 #
 # Story: 127.68.
@@ -41,7 +41,7 @@ WORK="$(mktemp -d /tmp/tkc_testeq_XXXXXX)"
 trap 'rm -rf "${WORK}"' EXIT
 cd "${WORK}"
 
-echo "C051: test.eq is a real assertion, and compares strings by value"
+echo "C070: test.eq is a real assertion, and compares strings by value"
 echo "----------------------------------------------------------------"
 
 # case NAME WANT_STDOUT WANT_DIAG SOURCE — build, run, and compare stdout

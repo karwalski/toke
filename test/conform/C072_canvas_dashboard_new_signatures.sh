@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# C053_canvas_dashboard_new_signatures.sh — canvas.new and dashboard.new take
+# C072_canvas_dashboard_new_signatures.sh — canvas.new and dashboard.new take
 # the arguments their documentation shows, and use them.
 #
 # Story: 136.70 (the 124.2f-b/c interface-drift class, in arity).
@@ -42,7 +42,7 @@ WORK="$(mktemp -d /tmp/tkc_ctornew_XXXXXX)"
 trap 'rm -rf "${WORK}"' EXIT
 cd "${WORK}"
 
-echo "C053: canvas.new / dashboard.new signatures agree with their docs"
+echo "C072: canvas.new / dashboard.new signatures agree with their docs"
 echo "-----------------------------------------------------------------"
 
 runs() {

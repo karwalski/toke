@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# C052_bool_renders_true_false.sh — a bool renders as `true`/`false`, the same
+# C071_bool_renders_true_false.sh — a bool renders as `true`/`false`, the same
 # way on every path, and `b as str` is valid IR.
 #
 # Stories: 127.94, 127.15 (owner decision 2026-09-22: "`\(x)` on a bool prints
@@ -39,7 +39,7 @@ WORK="$(mktemp -d /tmp/tkc_boolstr_XXXXXX)"
 trap 'rm -rf "${WORK}"' EXIT
 cd "${WORK}"
 
-echo "C052: a bool renders as true/false on every path"
+echo "C071: a bool renders as true/false on every path"
 echo "-------------------------------------------------"
 
 # runs NAME EXPECTED SOURCE — build, run, compare stdout exactly.
