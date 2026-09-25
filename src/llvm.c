@@ -3329,11 +3329,19 @@ static int emit_expr(Ctx *c, const Node *n)
                 char *wrap = (char *)arena_alloc(c->arena, wrap_cap);
                 int wlen = snprintf(wrap, (size_t)wrap_cap,
                                      "m=i;f=e():$str{<%.*s;};", elen, raw + segs[p].start);
+                /* 127.186: a diagnostic raised while this segment is lexed,
+                 * parsed or lowered carries WRAPPER offsets (line 1 of
+                 * "m=i;..."); report it at the segment inside the literal.
+                 * Popped on every path below, before c->src is restored. */
+                const int rb_prefix = 16;               /* strlen("m=i;f=e():$str{<") */
+                const int rb_base   = n->tok_start + segs[p].start;
+                diag_rebase_push(rb_prefix, rb_base, elen);
                 /* Lex */
                 int tcap = elen + 32;
                 Token *sub_toks = (Token *)arena_alloc(c->arena, tcap * (int)sizeof(Token));
                 int sub_tc = lex(wrap, wlen, sub_toks, tcap, 0 /* PROFILE_DEFAULT */);
                 if (sub_tc <= 0) {
+                    diag_rebase_pop();
                     /* fall back: emit empty string for unparseable expr */
                     int alen2 = 1;
                     int si2 = emit_str_global(c, "\"\"", 2, &alen2);
@@ -3377,6 +3385,7 @@ static int emit_expr(Ctx *c, const Node *n)
                         }
                     }
                     if (!expr_node) {
+                        diag_rebase_pop();
                         int alen3 = 1;
                         int si3 = emit_str_global(c, "\"\"", 2, &alen3);
                         seg_val = next_tmp(c);
@@ -3395,6 +3404,7 @@ static int emit_expr(Ctx *c, const Node *n)
                         int abi_bool = ety && !strcmp(ety, "i64")
                                        && (call_declares_bool(c, expr_node)
                                            || field_declares_bool(c, expr_node));
+                        diag_rebase_pop();
                         c->src = saved_src;
                         /* 114.32: interpolation of a non-string value. Previously
                          * any i64 was inttoptr'd to i8* on the assumption it
@@ -3413,10 +3423,13 @@ static int emit_expr(Ctx *c, const Node *n)
                         int est_is_composite = est && (est[0] == '@' ||
                                                        (est[0] == '$' && strcmp(est, "$str") != 0));
                         if (ety && !strcmp(ety, "i8*") && est_is_composite) {
+                            /* expr_node's position is in the wrapper (127.186) */
+                            diag_rebase_push(rb_prefix, rb_base, elen);
                             diag_emit(DIAG_ERROR, E4032, expr_node->start, expr_node->line, expr_node->col,
                                       "cannot interpolate a composite value (array/struct/map) into a string",
                                       "convert it to a string first (e.g. str.concat, or interpolate its fields/elements)",
                                       NULL);
+                            diag_rebase_pop();
                             /* Emit an empty-string placeholder so the IR stays
                              * well-formed (compilation has already failed). */
                             int alenc = 1;
