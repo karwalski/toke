@@ -27,7 +27,8 @@
 #      branch in the chain, and the chain names no member the table lacks.
 #   2. The chain's final `else` emits E9002 and assigns no glue symbol.
 #   3. The `+` lowering emits no call to @tk_str_concat and emits E9002.
-#   4. A checked program cannot reach 3: `str + str` is E4031 at --check.
+#   4. A checked program cannot reach 3 with a string: `str + str` is E4031
+#      at --check; and (4b) arrays returned by calls concatenate.
 #   5. Negative controls: a copy of llvm.c with one branch deleted, with the
 #      old `else fn_im = "tk_str_eq_w"` restored, and with the old concat
 #      restored, is each detected.
@@ -94,6 +95,28 @@ check_all "${LLVM_C}" ""
 printf 'm=t;\ni=io:std.io;\nf=main():i64{\n  let a="x";\n  let b="y";\n  io.println(a+b);\n  <0\n};\n' > "${WORK}/plus.tk"
 expect "4-str-plus-str-is-E4031-at-check" \
     "$("${TKC}" --check "${WORK}/plus.tk" 2>&1 | awk 'match($0,/"error_code":"[A-Z][0-9]+"/){printf "%s ",substr($0,RSTART+14,RLENGTH-15)}')" "E4031 "
+
+# ── 4b. arrays the tag tests cannot see go to array concat ──────────────
+# The Y1 corpus sweep found 18 check-clean records reaching the old
+# tk_str_concat fallback: `f(a)+b+f(c)` where the operands are arrays
+# returned by calls. At main they printed garbage at exit 0; the checker's
+# array type now routes them to tk_array_concat.
+cat > "${WORK}/cat.tk" <<'EOF'
+m=t;
+i=io:std.io;
+f=two(x:i64):@i64{
+  <@(x;x+1)
+};
+f=main():i64{
+  let e=@(9);
+  let r=two(1)+e+two(5);
+  io.println("\(r.len) \(r.get(0)) \(r.get(2)) \(r.get(4))");
+  <0
+};
+EOF
+rm -f "${WORK}/cat_bin"
+"${TKC}" --allow-all --out "${WORK}/cat_bin" "${WORK}/cat.tk" > /dev/null 2>&1
+expect "4b-call-result-arrays-concatenate" "$("${WORK}/cat_bin" 2>&1)" "5 1 9 6"
 
 # ── 5. negative controls ────────────────────────────────────────────────
 sed 's/^\( *\)else if (!strcmp(method_im, "charat"))  fn_im = "tk_str_charat_w";/\1\/\* deleted \*\//' "${LLVM_C}" > "${WORK}/nobranch.c"

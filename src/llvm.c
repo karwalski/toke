@@ -3879,6 +3879,17 @@ static int emit_expr(Ctx *c, const Node *n)
                     if (rhs_mark && rhs_mark[0] == '@') is_array = 1;
                 }
             }
+            /* 127.172: the checker's type is authoritative where it has one.
+             * The local-tag tests above see only literals and identifiers, so
+             * `quicksort(less)+equal+quicksort(greater)` — arrays returned by
+             * calls — fell to the str-concat "safety net" and printed garbage
+             * at exit 0 (18 corpus records, P3-A-SRT-0013/14/15). */
+            if (!is_array) {
+                const Type *lt0 = n->children[0]->rtype;
+                const Type *rt0 = n->child_count > 1 ? n->children[1]->rtype : NULL;
+                if ((lt0 && lt0->kind == TY_ARRAY) || (rt0 && rt0->kind == TY_ARRAY))
+                    is_array = 1;
+            }
             /* NOTE (Story 114.19c): an earlier codegen guard here rejected
              * `array + i64` to catch `@(a)+b` (unwrapped-scalar append). It was
              * reverted — an array handle is itself often an i64 (e.g. a @byte
