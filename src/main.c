@@ -658,6 +658,7 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
 
     char ll_paths[256][PATH_BUF];
     const char *ll_argv[256]; int nll = 0;   /* 127.76: one clang argument each */
+    for (int fi = 0; fi < 256; fi++) ll_paths[fi][0] = '\0';   /* cleanup unlinks only these */
     SymbolTable merged; merged.entries = (ImportEntry *)malloc(sizeof(ImportEntry) * 256);
     merged.count = 0; merged.search_path = tdir;
     int has_main = 0, rc = 0;
@@ -731,7 +732,7 @@ static int link_multi_module(const char **files, int nfiles, const char *out_bin
 cleanup:
     for (int e = 0; e < merged.count; e++) free(merged.entries[e].module_path);
     free(merged.entries);
-    for (int fi = 0; fi < nfiles; fi++) unlink(ll_paths[fi]);
+    for (int fi = 0; fi < nfiles && fi < 256; fi++) if (ll_paths[fi][0]) unlink(ll_paths[fi]);
     /* best-effort: leave .tki/tempdir (harmless); /tmp is cleared by the OS */
     return rc;
 }
