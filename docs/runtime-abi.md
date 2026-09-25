@@ -155,7 +155,7 @@ Error unions (`T!Err`) are **split across two channels**: the ordinary
 return register carries the success value, and a separate runtime slot
 carries the error. There is no two-word return and no tagged value.
 
-Stories: 114.41, 114.55, 124.0a, 127.56, 127.97.
+Stories: 114.41, 114.55, 124.0a, 127.56, 127.97, 127.193, 135.5b, 127.182, 127.103.
 
 ### 7.1 The two channels
 
@@ -253,6 +253,33 @@ its last arm rather than dereferencing a sentinel (127.56).
 **Record-typed errors** (`t=$myerr{code:i64;msg:$str}`) are an ordinary
 struct per §5 — a `malloc`'d flat `i64` array, one slot per field, in
 declaration order.
+
+**Stdlib errors (135.5b, 127.182).** A stdlib wrapper has no toke body, so
+its payload is whatever its C glue stores, and the `$err` arm can bind it only
+if the compiler knows that the glue stores the declared shape and never leaves
+the slot stale. The wrappers for which that holds are listed in `llvm.c`'s
+`is_stdlib_slot_wrapper()` (std.json scalars, std.toml, std.image); for them
+the payload type is read from the `.tki` declaration and:
+
+| Declared error | Slot on failure | `$err:e` binds |
+|---|---|---|
+| `T!str` (std.image) | the message pointer itself — never `0` or `1` | `e` as the `str` |
+| a record, e.g. `tomlval!tomlerr` with `tomlerr{msg:str}` | a `tk_err_box` of the record's layout | `e` as that record (`e.msg`) |
+| a sum not registered from a `.tki` (`JsonErr`, `FileErr`) | a `{tag, msg}` box | nil, as before |
+
+Until 135.5b every stdlib `T!str` failure stored the payload-less flag `1`,
+and the payload lookup consulted only user functions' signatures — so the
+parser's and the decoder's own messages were reachable from the C tests and
+invisible from toke, and `e.msg` on a toml error was E4034 (the record was
+declared `"kind":"record"`, which nothing registered) or RT005.
+
+`!` passes a stdlib payload through only into an error type of the same
+layout — the same type, or a record whose fields have the same types in the
+same order. Anything else is re-raised payload-less exactly as a
+sentinel-ABI callee is (127.56): a tag `-1` box into a sum, `1` otherwise.
+Passing it through blind would let a `{msg}` box be read as a sum's
+`{tag, payload}`, or a `JsonErr {Missing, msg}` box select a user sum's third
+variant.
 
 ### 7.4 Consuming an error union
 
