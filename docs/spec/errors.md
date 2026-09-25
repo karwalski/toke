@@ -103,6 +103,7 @@ source and `docs/reference/errors.md` by `python3 scripts/check_error_codes.py
 | E9010 | error | codegen | Compiler limit exceeded | n/s |
 | E9020 | error | codegen | Failed to write .tkir file | n/s |
 | E9021 | error | codegen | Failed to read .tkir file | n/s |
+| E9022 | error | codegen | Stdlib directory not found | n/s |
 
 **Legend:** `--` = no dedicated conformance test yet (code is exercised by compiler but not by a D/G-series test); `n/s` = not surveyed for this table — see `docs/reference/errors.md`.
 
