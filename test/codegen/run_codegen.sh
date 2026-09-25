@@ -19,7 +19,7 @@
 #   <name>.tk         single-file program with f=main
 #   <name>.expected   exact expected stdout
 #   header comment    `expect-exit: N`     (default 0)
-#                     `expect-stderr: TEXT` (a full stderr line that must appear)
+#                     `expect-stderr: TEXT` (some stderr line must START with TEXT)
 #   multimod/<case>/  a multi-module program: every *.tkm in the directory is
 #                     passed to one tkc invocation (sorted, so name the files
 #                     in dependency order); expected output in
@@ -79,17 +79,24 @@ check() {
             problems+=("${o}: did not build: $(awk '/"severity":"error"/' "${WORK}/build.log" | head -1 | cut -c1-220)")
             continue
         fi
-        "${bin}" < /dev/null > "${WORK}/out" 2> "${WORK}/err" || rc=$?
+        # The subshell keeps bash's own "Segmentation fault" notice out of the log.
+        # (the trailing `exit` stops bash exec-ing the binary in place of the
+        # subshell, which would move the notice back to this shell's stderr).
+        ( "${bin}" < /dev/null > "${WORK}/out" 2> "${WORK}/err"; exit $? ) 2>/dev/null || rc=$?
         if [ "${rc}" != "${want_exit}" ]; then
-            problems+=("${o}: exit ${rc}, want ${want_exit}")
+            if [ "${rc}" -gt 128 ]; then
+                problems+=("${o}: killed by signal $((rc - 128)), want exit ${want_exit}")
+            else
+                problems+=("${o}: exit ${rc}, want ${want_exit}")
+            fi
         fi
         if ! cmp -s "${WORK}/out" "${expf}"; then
             problems+=("${o}: stdout differs from ${expf#"${REPO_ROOT}/"}:")
             while IFS= read -r l; do problems+=("    ${l}"); done \
                 < <(diff "${expf}" "${WORK}/out" | head -12)
         fi
-        if [ -n "${want_err}" ] && ! grep -qxF -- "${want_err}" "${WORK}/err"; then
-            problems+=("${o}: stderr lacks the line '${want_err}'; got: $(head -2 "${WORK}/err" | tr '\n' '|')")
+        if [ -n "${want_err}" ] && ! awk -v p="${want_err}" 'index($0,p)==1{f=1} END{exit !f}' "${WORK}/err"; then
+            problems+=("${o}: no stderr line starts with '${want_err}'; got: $(head -2 "${WORK}/err" | tr '\n' '|')")
         fi
     done
     if quarantined "${rel}"; then
