@@ -86,8 +86,12 @@ f=main():i64{
 # ── Case 2: a chain of derived maps are distinct objects ─────────────────
 # Before the fix this printed "m=3 m2=3 m3=3" and "m has c=1" — the original
 # map reported a key added two statements later.
+# CHANGED 2026-09-25 (Batch Y1, 127.194): `\(m.contains("c"))` renders as
+# `false` (owner decision 127.15, bools interpolate as true/false); it
+# printed `0` while receiver predicates were invisible to 127.94.  The
+# assertion — m does not see m3's key — is unchanged.
 run_case "a derivation chain does not alias" "m=1 m2=2 m3=3
-m has c=0" \
+m has c=false" \
 'm=main;
 i=io:std.io;
 f=main():i64{
