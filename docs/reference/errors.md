@@ -1152,6 +1152,25 @@ unrelated undeclared-identifier errors a missing stdlib used to cause.
 Set `TKC_STDLIB_DIR` to the `src/stdlib` directory of a toke checkout or
 release (127.179).
 
+### E9023
+
+**No main function defined**
+
+| Field    | Value |
+|----------|-------|
+| Severity | error |
+| Stage    | codegen |
+
+A build to an executable was requested for a program that declares no
+`f=main()`. Emitted before any IR is written, instead of the linker's
+"`_main` not found". Declare `f=main():i64{...};`, or use `--check` to
+type-check a library module that has no entry point. The diagnostic carries
+no `fix`: the only mechanical fix, an empty `main`, builds a program that does
+nothing.
+
+Before 127.208 this condition was reported as E9020, a code whose meaning is
+"failed to write .tkir file"; E9020 now means only that.
+
 ## Semantic Warnings (W2xxx / W3xxx / W5xxx / W8xxx)
 
 Non-fatal diagnostics from later stages.
