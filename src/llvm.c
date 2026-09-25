@@ -9278,6 +9278,48 @@ static void emit_stmt(Ctx *c, const Node *n)
  *     Silently skipped (imports have no IR representation; they were
  *     handled by prepass_imports).
  */
+/* ── 137.13: which toke declaration an IR symbol came from ─────────────
+ *
+ * A clang or ld failure on the emitted module used to surface as a bare
+ * "clang invocation failed" E9003 at line 0: nothing in the record said which
+ * toke function the bad IR belonged to.  Every function definition, extern
+ * and lifted closure records here, as it is emitted, its IR symbol, its toke
+ * name and its toke file:line.  The IR LINE RANGE of each is not recorded
+ * while emitting: the body is written to a tmpfile, its allocas are then
+ * hoisted and the stdlib declarations are prepended, so every line moves.
+ * compile_binary_multi instead reads the finished .ll, where each `define
+ * ... @sym(` .. `}` range is exact, and maps clang's `<file>.ll:<line>:` or
+ * ld's undefined symbol through this table.  Kept across emit_llvm_ir calls
+ * so a multi-module build (one .ll per module) resolves every module. */
+typedef struct {
+    char ll[PATH_BUF];     /* .ll file the symbol was emitted into          */
+    char sym[NAME_BUF];    /* IR symbol, without the @                      */
+    char name[NAME_BUF];   /* toke name ("closure" for a lifted closure)     */
+    char file[PATH_BUF];   /* toke source file                               */
+    int  off, line, col;   /* toke position of the declaration               */
+    int  is_fn;            /* 1 = f= declaration, 0 = closure                 */
+} IrDecl;
+static IrDecl *g_ir_decls;
+static int     g_ir_decl_n, g_ir_decl_cap;
+static char    g_ir_cur_ll[PATH_BUF];
+
+static void ir_decl_record(const char *sym, const char *name, const Node *n, int is_fn)
+{
+    if (!sym || !n) return;
+    if (g_ir_decl_n == g_ir_decl_cap) {
+        int ncap = g_ir_decl_cap ? g_ir_decl_cap * 2 : 64;
+        IrDecl *p = (IrDecl *)realloc(g_ir_decls, (size_t)ncap * sizeof *p);
+        if (!p) return;          /* bookkeeping only: never fail the build */
+        g_ir_decls = p; g_ir_decl_cap = ncap;
+    }
+    IrDecl *d = &g_ir_decls[g_ir_decl_n++];
+    snprintf(d->ll, sizeof d->ll, "%s", g_ir_cur_ll);
+    snprintf(d->sym, sizeof d->sym, "%s", sym);
+    snprintf(d->name, sizeof d->name, "%s", name);
+    snprintf(d->file, sizeof d->file, "%s", diag_get_source_file());
+    d->off = n->tok_start; d->line = n->line; d->col = n->col; d->is_fn = is_fn;
+}
+
 static void emit_toplevel(Ctx *c, const Node *n)
 {
     char tb[256];
@@ -9327,9 +9369,12 @@ static void emit_toplevel(Ctx *c, const Node *n)
         break;
     case NODE_FUNC_DECL: {
         tok_cp(c->src, n->children[0], tb, sizeof tb);
+        char toke_nm[NAME_BUF];                     /* 137.13 */
+        snprintf(toke_nm, sizeof toke_nm, "%s", tb);
         /* Rename toke main to tk_main to avoid collision with C main wrapper */
         if (!strcmp(tb, "main")) strcpy(tb, "tk_main");
         mangle_fn_name(c, tb, sizeof tb);
+        ir_decl_record(tb, toke_nm, n, 1);
         /* Determine return type from NODE_RETURN_SPEC if present */
         const char *ret = "void";
         int body_i = -1;
@@ -10041,6 +10086,8 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
     c->cur_fn_ret = ret; c->cur_fn_err[0] = '\0';
     strncpy(c->cur_fn_name, "closure", NAME_BUF - 1); c->cur_fn_name[NAME_BUF - 1] = '\0';
     fprintf(c->out, "\ndefine internal fastcc %s @__tk_closure_%d(i8* %%__env", ret, cid);
+    { char cs[NAME_BUF]; snprintf(cs, sizeof cs, "__tk_closure_%d", cid);
+      ir_decl_record(cs, "closure", clos, 0); }       /* 137.13 */
     const Node *body = NULL;
     for (int i = 0; i < clos->child_count; i++) {
         if (clos->children[i]->kind == NODE_STMT_LIST) body = clos->children[i];
@@ -10102,6 +10149,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
                   "LLVM IR emission failed: cannot open output file", (void*)0);
         return -1;
     }
+    snprintf(g_ir_cur_ll, sizeof g_ir_cur_ll, "%s", out_ll);   /* 137.13 */
     Ctx ctx; memset(&ctx, 0, sizeof ctx); ctx.out = f; ctx.src = src;
     ctx.la_prog = ast;   /* 127.108 */
     /* Story 76.1.2d: store source file for FFI extern diagnostic */
@@ -10669,6 +10717,144 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
     return compile_binary_multi(&out_ll, 1, out_bin, target, opt_level, st, debug);
 }
 
+/* ── 137.13: map a clang/ld failure back to a toke declaration ─────────── */
+
+static int ir_ident_ch(int ch) { return isalnum(ch) || ch == '_' || ch == '.' || ch == '$'; }
+
+static const IrDecl *ir_decl_by_sym(const char *sym)
+{
+    for (int i = 0; i < g_ir_decl_n; i++)
+        if (!strcmp(g_ir_decls[i].sym, sym)) return &g_ir_decls[i];
+    return NULL;
+}
+
+static char *ir_slurp(const char *path, size_t *len)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    size_t cap = 1 << 16, n = 0, r;
+    char *b = (char *)malloc(cap + 1);
+    while (b && (r = fread(b + n, 1, cap - n, f)) > 0) {
+        n += r;
+        if (n == cap) { char *nb = (char *)realloc(b, cap * 2 + 1); if (!nb) { free(b); b = NULL; break; } b = nb; cap *= 2; }
+    }
+    fclose(f);
+    if (b) { b[n] = '\0'; *len = n; }
+    return b;
+}
+
+/* Walk the .ll text in buf.  want_line > 0: the symbol of the `define` whose
+ * body holds that line.  want_sym: the symbol of the first `define` whose body
+ * references @want_sym.  Copies the symbol into out; 0 if found, -1 if not. */
+static int ll_enclosing_define(const char *buf, size_t len, long want_line,
+                               const char *want_sym, char *out, size_t outsz)
+{
+    char cur[NAME_BUF] = "";
+    size_t wl = want_sym ? strlen(want_sym) : 0;
+    long ln = 0;
+    for (size_t i = 0; i < len; ) {
+        const char *ls = buf + i;
+        const char *le = memchr(ls, '\n', len - i);
+        size_t ll = le ? (size_t)(le - ls) : len - i;
+        ln++;
+        if (ll >= 7 && !memcmp(ls, "define ", 7)) {
+            const char *at = memchr(ls, '@', ll);
+            cur[0] = '\0';
+            if (at) {
+                size_t k = 0;
+                for (const char *q = at + 1; q < ls + ll && ir_ident_ch((unsigned char)*q) && k < sizeof cur - 1; q++)
+                    cur[k++] = *q;
+                cur[k] = '\0';
+            }
+        } else if (ll == 1 && ls[0] == '}') {
+            if (want_line > 0 && ln == want_line) break;
+            cur[0] = '\0';
+        } else if (cur[0] && wl) {
+            for (const char *q = ls; q + wl < ls + ll; q++)
+                if (*q == '@' && !memcmp(q + 1, want_sym, wl) &&
+                    !ir_ident_ch((unsigned char)q[1 + wl])) {
+                    snprintf(out, outsz, "%s", cur);
+                    return 0;
+                }
+        }
+        if (want_line > 0 && ln == want_line) break;
+        i += ll + 1;
+    }
+    if (want_line > 0 && ln == want_line && cur[0]) { snprintf(out, outsz, "%s", cur); return 0; }
+    return -1;
+}
+
+/* Read clang's captured stderr and find the toke declaration it is about.
+ * Returns the declaration (or NULL) and writes a short cause into why. */
+static const IrDecl *ir_map_failure(const char *err, const char *const *lls, int nll,
+                                    char *why, size_t whysz, const IrDecl **undef_decl)
+{
+    char sym[NAME_BUF];
+    *undef_decl = NULL;
+    why[0] = '\0';
+    /* 1. clang on the IR: "<file>.ll:<line>:<col>: error: <text>" */
+    for (const char *l = err; l && *l; ) {
+        const char *e = strchr(l, '\n');
+        size_t n = e ? (size_t)(e - l) : strlen(l);
+        for (int i = 0; i < nll; i++) {
+            size_t pl = strlen(lls[i]);
+            if (n <= pl + 1 || strncmp(l, lls[i], pl) || l[pl] != ':') continue;
+            long line = strtol(l + pl + 1, NULL, 10);
+            const char *et = strstr(l, "error: ");
+            if (line <= 0 || !et || et > l + n) continue;
+            size_t tl = (size_t)(l + n - (et + 7));
+            snprintf(why, whysz, "%.*s", (int)(tl < 200 ? tl : 200), et + 7);
+            size_t blen = 0; char *buf = ir_slurp(lls[i], &blen);
+            int ok = buf ? ll_enclosing_define(buf, blen, line, NULL, sym, sizeof sym) : -1;
+            free(buf);
+            if (ok == 0) return ir_decl_by_sym(sym);
+            return NULL;
+        }
+        l = e ? e + 1 : NULL;
+    }
+    /* 2. the linker: an undefined symbol, mapped through the IR that
+     *    references it (the pre-optimisation IR: after inlining, ld names
+     *    whichever function the call ended up in). */
+    const char *u = NULL; size_t ul = 0;
+    const char *m;
+    if ((m = strstr(err, "\", referenced from:")) != NULL) {        /* Apple ld */
+        const char *q = m;
+        while (q > err && q[-1] != '"') q--;
+        u = q; ul = (size_t)(m - q);
+#if defined(__APPLE__)
+        if (ul > 0 && u[0] == '_') { u++; ul--; }
+#endif
+    } else if ((m = strstr(err, "undefined reference to `")) != NULL) {  /* GNU ld / lld */
+        u = m + 24;
+        const char *q = strchr(u, '\'');
+        ul = q ? (size_t)(q - u) : 0;
+    } else if ((m = strstr(err, "undefined symbol: ")) != NULL) {        /* lld */
+        u = m + 18;
+        while (u[ul] && u[ul] != '\n' && u[ul] != ' ' && u[ul] != '\r') ul++;
+    }
+    if (u && ul > 0 && ul < sizeof sym) {
+        char us[NAME_BUF];
+        snprintf(us, sizeof us, "%.*s", (int)ul, u);
+        snprintf(why, whysz, "undefined symbol '%s'", us);
+        *undef_decl = ir_decl_by_sym(us);
+        for (int i = 0; i < nll; i++) {
+            size_t blen = 0; char *buf = ir_slurp(lls[i], &blen);
+            int ok = buf ? ll_enclosing_define(buf, blen, 0, us, sym, sizeof sym) : -1;
+            free(buf);
+            if (ok == 0) return ir_decl_by_sym(sym);
+        }
+        return NULL;
+    }
+    /* 3. an LLVM backend error naming the function: "in function <sym> " */
+    if ((m = strstr(err, "in function ")) != NULL) {
+        const char *q = m + 12; size_t k = 0;
+        while (ir_ident_ch((unsigned char)q[k]) && k < sizeof sym - 1) { sym[k] = q[k]; k++; }
+        sym[k] = '\0';
+        if (k) return ir_decl_by_sym(sym);
+    }
+    return NULL;
+}
+
 int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
                          const char *target, int opt_level,
                          const SymbolTable *st, int debug)
@@ -10831,9 +11017,17 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
         push_ws_tokens(argv, &argc, AMAX, all_libs);
         argv[argc] = NULL;
 
+        /* 137.13: clang's stderr goes to a temp file instead of straight to
+         * ours, so a failure can be mapped back to a toke declaration.  It is
+         * copied to our stderr unchanged afterwards, so what a user sees is
+         * the same as before, followed by the E9003 record. */
+        char errpath[] = "/tmp/tkc_clang_XXXXXX";
+        int errfd = mkstemp(errpath);
         int rc = -1;
+        fflush(stderr);
         pid_t pid = fork();
         if (pid == 0) {
+            if (errfd >= 0) dup2(errfd, 2);
             execvp("clang", argv);
             _exit(127);                                /* exec failed */
         } else if (pid > 0) {
@@ -10841,14 +11035,43 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
             if (waitpid(pid, &status, 0) == pid && WIFEXITED(status))
                 rc = WEXITSTATUS(status);
         }
+        char *cerr = NULL;
+        if (errfd >= 0) {
+            size_t clen = 0;
+            close(errfd);
+            cerr = ir_slurp(errpath, &clen);
+            if (cerr && clen) { fwrite(cerr, 1, clen, stderr); fflush(stderr); }
+            unlink(errpath);
+        }
         /* Clean up temp glue file */
         if (glue_path[0]) remove(glue_path);
         if (rc != 0) {
-            char msg[256];
-            snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
-            diag_emit(DIAG_ERROR, E9003, 0, 0, 0, msg, (void *)0);
+            char msg[1024], why[256] = "";
+            const IrDecl *undef = NULL;
+            const IrDecl *d = cerr ? ir_map_failure(cerr, lls, nll, why, sizeof why, &undef) : NULL;
+            int n = snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
+            if (why[0] && n > 0 && (size_t)n < sizeof msg)
+                n += snprintf(msg + n, sizeof msg - (size_t)n, ": %s", why);
+            if (undef && undef->is_fn && n > 0 && (size_t)n < sizeof msg)
+                n += snprintf(msg + n, sizeof msg - (size_t)n,
+                              " (declared as f=%s at %s:%d)", undef->name, undef->file, undef->line);
+            if (d && n > 0 && (size_t)n < sizeof msg) {
+                snprintf(msg + n, sizeof msg - (size_t)n, " \xe2\x80\x94 while compiling %s%s at %s:%d",
+                         d->is_fn ? "f=" : "", d->name, d->file, d->line);
+                /* The record's file must be the declaration's; in a multi-
+                 * module build the registered source text is another file's. */
+                if (strcmp(diag_get_source_file(), d->file)) {
+                    diag_set_source(NULL, 0);
+                    diag_set_source_file(d->file);
+                }
+                diag_emit(DIAG_ERROR, E9003, d->off, d->line, d->col, msg, (void *)0);
+            } else {
+                diag_emit(DIAG_ERROR, E9003, 0, 0, 0, msg, (void *)0);
+            }
+            free(cerr);
             return -1;
         }
+        free(cerr);
         return 0;
     }
 }

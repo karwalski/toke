@@ -1067,7 +1067,19 @@ Code generation could not emit valid LLVM IR (also emitted when a build-time pat
 | Severity | error |
 | Stage    | codegen |
 
-The clang/linker sub-process returned a non-zero exit status.
+The clang/linker sub-process returned a non-zero exit status. clang's own
+output is printed first, unchanged; the record follows it.
+
+When the failure can be traced to a toke declaration, the message ends
+`— while compiling f=<name> at <file>:<line>` (or `closure at <file>:<line>`
+for a lifted closure), and the record's `file` and `pos` are that
+declaration's. It is traced when clang reports a line of the emitted IR (the
+line is looked up in the `define` that contains it), or when the linker
+reports an undefined symbol (looked up in the first function whose IR
+references it; if the symbol is itself a toke extern, the message also says
+where it was declared). The message also carries clang's first error text or
+the undefined symbol's name. A failure with no such trace — an unwritable
+output path, a missing C library — stays at line 0 (137.13).
 
 ### E9004
 

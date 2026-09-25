@@ -151,6 +151,10 @@ static void rebase_pos(int *off, int *line, int *col)
 /* diag_set_source_file — Record the path used in SARIF artifact locations. */
 void diag_set_source_file(const char *path) { s_source_file = path ? path : ""; }
 
+/* 137.13: codegen records which source file each emitted declaration came
+ * from, so a later clang/ld failure can name it. */
+const char *diag_get_source_file(void) { return s_source_file ? s_source_file : ""; }
+
 /* diag_set_source — Store a pointer to the source text for line extraction. */
 void diag_set_source(const char *src, size_t len) { s_source_buf = src; s_source_len = len; }
 
