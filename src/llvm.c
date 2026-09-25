@@ -10531,6 +10531,13 @@ static const char *find_stdlib_vendor_includes(void) {
 int compile_binary(const char *out_ll, const char *out_bin, const char *target,
                    int opt_level, const SymbolTable *st, int debug)
 {
+    return compile_binary_multi(&out_ll, 1, out_bin, target, opt_level, st, debug);
+}
+
+int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
+                         const char *target, int opt_level,
+                         const SymbolTable *st, int debug)
+{
     int ol = (opt_level < 0) ? 0 : (opt_level > 3) ? 3 : opt_level;
     const char *dbg_flag = debug ? " -g" : "";
 
@@ -10682,7 +10689,9 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
         if (target && target[0]) { argv[argc++] = "-target"; argv[argc++] = (char *)target; }
         argv[argc++] = "-o";
         argv[argc++] = (char *)out_bin;
-        argv[argc++] = (char *)out_ll;
+        /* 127.76: one argv element per module, never a joined string. */
+        for (int li = 0; li < nll && argc < AMAX - 1; li++)
+            argv[argc++] = (char *)lls[li];
         push_ws_tokens(argv, &argc, AMAX, sources);   /* leading space is skipped */
         push_ws_tokens(argv, &argc, AMAX, all_libs);
         argv[argc] = NULL;
