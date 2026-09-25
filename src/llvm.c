@@ -3909,8 +3909,9 @@ static int emit_expr(Ctx *c, const Node *n)
                  * and fail the build.  No `fix` (AGENTS.md §3.1). */
                 diag_emit(DIAG_ERROR, E9002, n->start, n->line, n->col,
                           "internal compiler error: '+' reached codegen with a "
-                          "string operand; toke has no string '+' (ADR-0004) "
-                          "and the type checker should have rejected it",
+                          "pointer operand that is not an array and that the "
+                          "type checker did not type as a number; toke has no "
+                          "string '+' (ADR-0004)",
                           (void *)0);
                 fprintf(c->out, "  %%t%d = inttoptr i64 0 to i8* ; 127.172 error stub\n", t);
             }
