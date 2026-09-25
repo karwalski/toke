@@ -46,7 +46,11 @@ inside the Pass@1 correction, so the generic correction markers cannot excuse th
 only the decision itself ("NOT PASSED" or its date) in the same window does.
 
 Usage:  python3 scripts/check_canonical.py [paths...] [--strict] [--list]
-Exit:   0 clean (pending-story surfaces and files warn only), 1 on a violation.
+        A path argument resolves against the current directory, like any other
+        command-line tool (story 132.87); with no path, the defaults below are
+        scanned in this repository wherever the command is run from.
+Exit:   0 clean (pending-story surfaces and files warn only), 1 on a violation,
+        2 when a path argument does not exist.
         --strict also fails on the pending-story entries.
 """
 import difflib
@@ -218,13 +222,9 @@ PENDING_PREFIXES = (
     # 132.61: keyed by repository identity (check_metrics_claims.repo_key),
     # not by a path relative to this checkout.
     ("toke-spec/rfc/", "132.8 — RFC alignment (the toke-spec RFC draft is v0.3-era)"),
-    # 132.69 added the retired Gate 1 verdict to Rule 2. These three toke-model
-    # surfaces still carry it and sit outside that batch's territory; they warn,
-    # keyed to 132.69, until toke-model is brought to NOT PASSED. Delete then.
-    ("toke-model/README.md", "132.69 — toke-model still states the open Gate 1 verdict"),
-    ("toke-model/huggingface/UPLOAD.md", "132.69 — toke-model still states the open Gate 1 verdict"),
-    ("toke-model/huggingface/model-card-toke-coder-7b-UNPUBLISHED.md",
-     "132.69 — toke-model still states the open Gate 1 verdict"),
+    # 132.86 deleted the three toke-model entries keyed to 132.69: README.md,
+    # huggingface/UPLOAD.md and the unpublished model card now state the
+    # 2026-09-22 NOT PASSED decision, so Rule 2 fails them if it comes back.
 )
 
 # Not live claim surfaces: the tracker, historical backlogs, third-party reviews
@@ -594,9 +594,11 @@ from check_metrics_claims import (deployed_source, is_deployed_tree,  # noqa: E4
 def scan_files(targets):
     out = []
     for t in targets:
-        p = t if os.path.isabs(t) else os.path.join(ROOT, t)
-        if not os.path.exists(p) and os.path.exists(t):
-            p = os.path.abspath(t)
+        # 132.87: main() hands over absolute paths. A relative one here is
+        # resolved against the cwd, never against ROOT -- the bug 132.79 fixed
+        # in check_metrics_claims.py: `README.md` typed in toke-model scanned
+        # toke's README and passed toke-model's own over.
+        p = os.path.abspath(t)
         if os.path.isfile(p):
             out.append(p)
         elif os.path.isdir(p):
@@ -799,7 +801,15 @@ def main():
         return selftest()
     argv = [a for a in sys.argv[1:] if not a.startswith("--")]
     strict = "--strict" in sys.argv
-    targets = argv or DEFAULT_TARGETS
+    # 132.87: an argument is the caller's path, so it resolves against the cwd
+    # (`README.md`, typed in toke-model, is toke-model's README). Only the
+    # DEFAULTS are this repository's own, so only they are joined to ROOT.
+    targets = ([os.path.abspath(t) for t in argv] if argv
+               else [os.path.join(ROOT, t) for t in DEFAULT_TARGETS])
+    for t in targets:
+        if not os.path.exists(t):
+            print("ERROR: no such path: %s" % t)
+            return 2
 
     canon = load_canonical()
     failures, warnings = check_surfaces(canon)

@@ -77,7 +77,7 @@ The consortium establishes and operates a conformance certification program for 
 
 ### 3.4 Reference Implementation Maintenance
 
-The consortium funds and coordinates maintenance of the reference compiler (`tkc`) and standard library (38 modules with C runtime backing). This includes:
+The consortium funds and coordinates maintenance of the reference compiler (`tkc`) and standard library (with C runtime backing; module count in `docs/metrics-baseline.md` § Project facts). This includes:
 
 - Bug fixes and security patches.
 - New specification feature implementation.

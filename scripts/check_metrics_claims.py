@@ -28,7 +28,9 @@ checkable in seconds, and none of them was checked. A number immediately
 preceding one of the counted nouns must match the fact sheet derived by
 `scripts/verify_project_facts.py`, or carry a dated exemption
 (`facts-exempt: YYYY-MM-DD ...` on the line or within two lines of it) marking
-it as a historical snapshot.
+it as a historical snapshot. A date or era label excuses a count only when it
+sits in the count's own sentence or table row (story 132.88); a date elsewhere
+in the paragraph dates something else.
 
 Rule 2 — LANE CROSSING (story 132.13). A toke-trained tokenizer (Toke-16K,
 tokenizer_v03, proxy8k, the toke SentencePiece models) must never be named in a
@@ -377,9 +379,21 @@ COUNT_RULES = [
      "EBNF productions", "productions"),
     (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:stdlib|standard[- ]library)\s+modules?\b", re.I),
      "standard library modules", "stdlib_modules"),
+    # 132.88: the parenthesised form, "The standard library (57 modules)" /
+    # "stdlib (38 modules)", named the stdlib without putting it next to the
+    # number. A bare "(12 modules)" is NOT matched: ooke and loke have modules too.
+    # A dot inside a name (`std.*`) is not a sentence end, so it may be crossed.
+    # `stdlib/` is a directory path (a docs tree, an old site section), not the library.
+    (re.compile(r"\b(?:stdlib|standard[- ]library)\b(?!/)(?:[^.|()\n]|\.(?!\s)){0,24}\(\s*"
+                r"(?:currently|now|today)?\s*(?P<n>\d[\d,]*)\s*\+?\s*modules?\b", re.I),
+     "standard library modules", "stdlib_modules"),
     (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*conformance\s+(?:tests?|cases?)\b", re.I),
      "conformance tests", "conformance"),
-    (re.compile(r"conformance\s+(?:suite|tests?|cases?)[^.|]{0,20}?\((?P<n>\d[\d,]*)\s*(?:tests?|cases?)?\)", re.I),
+    # 132.88: "(currently 228 cases" -- a qualifier before the number, and a
+    # parenthesis that does not close straight after the noun -- was unmatched.
+    (re.compile(r"conformance\s+(?:suite|tests?|cases?)[^.|]{0,20}?\(\s*"
+                r"(?:currently|now|today)?\s*(?P<n>\d[\d,]*)\s*\+?\s*"
+                r"(?:(?:tests?|cases?)\b|\))", re.I),
      "conformance tests", "conformance"),
     (re.compile(r"(?<![\w.])(?P<n>\d[\d,]*)\s*\+?\s*(?:distinct\s+)?(?:diagnostic|error)\s+codes?\b", re.I),
      "diagnostic codes", "diagnostic_codes"),
@@ -441,7 +455,44 @@ FACTS_SKIP = SKIP_PREFIXES + (
 )
 
 
-def count_findings(line, near):
+PROSE_EXT = (".md", ".txt", ".html", ".htm", ".tkt")
+TABLE_ROW = re.compile(r"^\s*(?:\||<t[rdh]\b)", re.I)
+
+
+def dating_unit(line, start, end, block=None, idx=0):
+    """132.88: the text a date must sit in to date THIS count.
+
+    DATED_SNAPSHOT used to be searched over the whole structural block, so any
+    date in a paragraph excused every count in it: toke-spec's prior-art.md
+    carried "57 stdlib modules" as live, excused by an unrelated "(N = 60,
+    2026-09-19)" earlier in the same blockquote. A date, era label or
+    "superseded" dates the count only when it is in the count's own sentence
+    -- or, for a table, its own row. Sentences may wrap across lines, so the
+    sentence is found in the block (the line's structural unit), not the line.
+    Only PROSE wraps: in JSON, code or config each line is its own unit (the
+    caller passes no block), or `"analysis_date": "2026-05-25",` two lines up
+    would read as the start of the count's sentence.
+    """
+    if TABLE_ROW.match(line):
+        return line
+    if block is None:
+        block, idx = [line], 0
+    before = " ".join(block[:idx])
+    after = " ".join(block[idx + 1:])
+    off = len(before) + (1 if before else 0)
+    text = " ".join(x for x in (before, line, after) if x)
+    s, e = off + start, off + end
+    lo, hi = 0, len(text)
+    for m in SENTENCE_SPLIT.finditer(text):
+        if m.end() <= s:
+            lo = m.end()
+        elif m.start() >= e:
+            hi = m.start()
+            break
+    return text[lo:hi]
+
+
+def count_findings(line, near, block=None, idx=0):
     out = []
     accepted = _accepted(_facts())
     if not accepted:
@@ -463,8 +514,11 @@ def count_findings(line, near):
                 continue
             # a number given as an explicitly dated or superseded snapshot, a
             # stated target, or another language's figure is a record or a
-            # comparison, not a claim about toke today
-            if DATED_SNAPSHOT.search(line) or DATED_SNAPSHOT.search(near):
+            # comparison, not a claim about toke today. 132.88: the date must
+            # sit in the count's own sentence or table row, not anywhere in
+            # the block.
+            if DATED_SNAPSHOT.search(dating_unit(line, m.start(), m.end(),
+                                                 block, idx)):
                 continue
             if SUPERSEDED.search(line) or SUPERSEDED.search(near):
                 continue
@@ -951,6 +1005,7 @@ def check_file(path):
             pass
     table_lines = claims_table_lines(path) if path.endswith(".json") else frozenset()
     is_markup = path.endswith((".html", ".htm", ".tkt"))
+    prose = path.endswith(PROSE_EXT)       # 132.88: where a sentence may wrap
     spans = block_spans(lines, is_markup)
     findings = []
     for i, line in enumerate(lines):
@@ -1001,7 +1056,8 @@ def check_file(path):
                      "non-toke baseline", s))
         # Rule 4 — a count of things that disagrees with the tree
         if not archived and not retiring_table and not rel.startswith(FACTS_SKIP):
-            for why, frag, _span in count_findings(line, near):
+            for why, frag, _span in count_findings(
+                    line, near, lines[lo:hi] if prose else None, i - lo):
                 if in_claims_table:
                     continue
                 findings.append((i + 1, why, frag))
@@ -1109,6 +1165,29 @@ SELFTEST = [
      "toke is 40-75% fewer tokens than Python (withdrawn)."),
     (False, "132.47: a live figure beside a struck one is not excused by it",
      "Once ~~52% fewer tokens~~ (withdrawn); today toke is 40% fewer tokens than Python."),
+
+    # -- 132.88: a date excuses only the count in its own sentence or row -----
+    (False, "132.88: an unrelated date earlier in the block (toke-spec prior-art.md:25-28)",
+     "> toke costs **1.34x** the tokens of equivalent Python on the 60 Gate-1 tasks\n"
+     "> (N = 60, 2026-09-19) — more, not fewer. Project-scale counts (59 characters, 14 keywords,\n"
+     "> 57 stdlib modules) come from the same file's \"Project facts\" table."),
+    (True, "132.88: the date in the count's own (wrapped) sentence",
+     "On 2026-05-25, the date of this analysis, the tree held\n"
+     "57 stdlib modules."),
+    (False, "132.88: \"(57 modules)\" after the standard library (prior-art.md:193)",
+     "- The standard library (57 modules) covers the core functionality."),
+    (True, "132.88: the same parenthesised form, dated in its sentence",
+     "- The v0.3-era standard library (14 modules) covered the Gate 1 tasks."),
+    (True, "132.88: a bare \"(12 modules)\" is not the stdlib",
+     "The ooke framework (12 modules) renders the site."),
+    (False, "132.88: \"(currently 228 cases\" of the conformance suite",
+     "The conformance suite (currently 228 cases, all passing) gates every change."),
+    (False, "132.88: in JSON a date two lines up is another field, not the sentence",
+     "{\n  \"analysis_date\": \"2026-05-25\",\n  \"story\": \"102.11\",\n"
+     "  \"note\": \"The conformance suite (currently 228 cases) gates every program.\"\n}",
+     ".json"),
+    (True, "132.88: a table row dates its own count",
+     "| Snapshot | Count |\n|---|---|\n| 2026-05-25 | 57 stdlib modules |"),
 ]
 
 

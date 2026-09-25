@@ -151,7 +151,7 @@ All code, data, and training configurations are available:
 
 | Repository | Contents |
 |-----------|----------|
-| [toke](https://github.com/karwalski/toke) | Compiler, spec, grammar, stdlib (38 modules) |
+| [toke](https://github.com/karwalski/toke) | Compiler, spec, grammar, standard library |
 | [toke-models](https://github.com/karwalski/toke-models) | Corpus, tokenizer, training configs |
 | [toke-eval](https://github.com/karwalski/toke-eval) | Benchmark tasks, evaluation harness |
 | [toke-mcp](https://github.com/karwalski/toke-mcp) | MCP server, VS Code extension, LSP |
