@@ -63,6 +63,8 @@ void diag_set_format(DiagFormat fmt);
 
 /* Set the source filename for SARIF location reporting. */
 void diag_set_source_file(const char *path);
+/* The path last passed to diag_set_source_file ("" if none). */
+const char *diag_get_source_file(void);
 
 /* Store a pointer to the source text so diagnostics can include source lines.
  * The pointer must remain valid for the lifetime of the compilation unit. */

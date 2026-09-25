@@ -103,12 +103,18 @@ void tkir_buf_str(TkirBuf *b, const char *s, size_t len)
 #include "diag.h"
 #include "tkc_limits.h"
 
+/* 127.207: a struct's field-type table is allocated to its width.  It was
+ * `field_type_idxs[TKC_MAX_PARAMS]`, so a struct of more than 16 fields was
+ * written to the .tkir truncated to 16, silently -- the same limit Y2 lifted
+ * from llvm.c in 127.190.  The companion `field_names[16][NAME_BUF]` array
+ * was never serialised or read and is gone; with it each entry drops 2 KB,
+ * which mattered because Enc lives on the stack (256 entries). */
 typedef struct {
-    uint8_t  kind;
-    char     name[NAME_BUF];
-    int      field_count;
-    char     field_names[TKC_MAX_PARAMS][NAME_BUF];
-    uint32_t field_type_idxs[TKC_MAX_PARAMS];
+    uint8_t   kind;
+    char      name[NAME_BUF];
+    int       field_count;
+    int       field_cap;
+    uint32_t *field_type_idxs;
 } EncTypeEntry;
 
 typedef struct {
@@ -137,6 +143,8 @@ typedef struct {
 
 #define ENC_MAX_TYPES  256
 #define ENC_MAX_DATA  1024
+/* The type section stores a struct's field count as a u16. */
+#define ENC_MAX_FIELDS 65535
 
 typedef struct {
     const char    *src;
@@ -305,7 +313,40 @@ static void enc_emit_ret_void(Enc *e)
 
 /* ── Encoder: prepass ────────────────────────────────────────────────── */
 
-static void enc_prepass_types(Enc *e, const Node *ast)
+/* Append one field type to a struct entry, growing its table.  Returns -1
+ * (E9010 emitted) when memory runs out or the u16 count would overflow. */
+static int enc_add_field(EncTypeEntry *te, uint32_t type_idx)
+{
+    if (te->field_count >= ENC_MAX_FIELDS) {
+        diag_emit(DIAG_ERROR, E9010, 0, 0, 0,
+                  "compiler limit exceeded: too many struct fields for .tkir", (void *)0);
+        return -1;
+    }
+    if (te->field_count == te->field_cap) {
+        int ncap = te->field_cap ? te->field_cap * 2 : 16;
+        if (ncap > ENC_MAX_FIELDS) ncap = ENC_MAX_FIELDS;
+        uint32_t *p = realloc(te->field_type_idxs, (size_t)ncap * sizeof(*p));
+        if (!p) {
+            diag_emit(DIAG_ERROR, E9010, 0, 0, 0,
+                      "compiler limit exceeded: out of memory for struct fields", (void *)0);
+            return -1;
+        }
+        te->field_type_idxs = p;
+        te->field_cap = ncap;
+    }
+    te->field_type_idxs[te->field_count++] = type_idx;
+    return 0;
+}
+
+static void enc_free_types(Enc *e)
+{
+    for (int i = 0; i < e->type_count; i++) {
+        free(e->type_entries[i].field_type_idxs);
+        e->type_entries[i].field_type_idxs = NULL;
+    }
+}
+
+static int enc_prepass_types(Enc *e, const Node *ast)
 {
     enc_ensure_scalar(e, TKIR_TY_I64);
     enc_ensure_scalar(e, TKIR_TY_F64);
@@ -324,36 +365,26 @@ static void enc_prepass_types(Enc *e, const Node *ast)
                 !strcmp(e->type_entries[j].name, name)) { found = 1; break; }
         }
         if (found || e->type_count >= ENC_MAX_TYPES) continue;
-        EncTypeEntry *te = &e->type_entries[e->type_count];
+        /* Claim the slot before walking the fields: resolving a field's type
+         * may append a type entry, which must not land in this one. */
+        EncTypeEntry *te = &e->type_entries[e->type_count++];
         te->kind = TKIR_TY_STRUCT;
         strncpy(te->name, name, NAME_BUF - 1);
         te->name[NAME_BUF - 1] = '\0';
         te->field_count = 0;
         for (int c = 1; c < decl->child_count; c++) {
             const Node *child = decl->children[c];
-            if (child->kind == NODE_STMT_LIST) {
-                for (int k = 0; k < child->child_count; k++) {
-                    const Node *fld = child->children[k];
-                    if (fld->kind == NODE_FIELD && te->field_count < TKC_MAX_PARAMS) {
-                        enc_tok_text(e->src, fld->children[0],
-                                     te->field_names[te->field_count], NAME_BUF);
-                        te->field_type_idxs[te->field_count] =
-                            (fld->child_count > 1) ? enc_type_idx_from_node(e, fld->children[1])
-                                                   : enc_ensure_scalar(e, TKIR_TY_I64);
-                        te->field_count++;
-                    }
-                }
-            } else if (child->kind == NODE_FIELD && te->field_count < TKC_MAX_PARAMS) {
-                enc_tok_text(e->src, child->children[0],
-                             te->field_names[te->field_count], NAME_BUF);
-                te->field_type_idxs[te->field_count] =
-                    (child->child_count > 1) ? enc_type_idx_from_node(e, child->children[1])
-                                             : enc_ensure_scalar(e, TKIR_TY_I64);
-                te->field_count++;
+            int nfld = child->kind == NODE_STMT_LIST ? child->child_count : 1;
+            for (int k = 0; k < nfld; k++) {
+                const Node *fld = child->kind == NODE_STMT_LIST ? child->children[k] : child;
+                if (fld->kind != NODE_FIELD) continue;
+                uint32_t ti = (fld->child_count > 1) ? enc_type_idx_from_node(e, fld->children[1])
+                                                     : enc_ensure_scalar(e, TKIR_TY_I64);
+                if (enc_add_field(te, ti) < 0) return -1;
             }
         }
-        e->type_count++;
     }
+    return 0;
 }
 
 static void enc_prepass_funcs(Enc *e, const Node *ast)
@@ -734,7 +765,11 @@ int emit_tkir(const Node *ast, const char *src,
     e.src = src; e.types = types; e.names = names; e.target = target;
     tkir_buf_init(&e.code);
 
-    enc_prepass_types(&e, ast);
+    if (enc_prepass_types(&e, ast) < 0) {
+        enc_free_types(&e);
+        tkir_buf_free(&e.code);
+        return -1;
+    }
     enc_prepass_funcs(&e, ast);
     enc_prepass_imports(&e, ast);
 
@@ -742,6 +777,7 @@ int emit_tkir(const Node *ast, const char *src,
     if (!e.func_code_offsets && e.func_count > 0) {
         diag_emit(DIAG_ERROR, E9020, 0, 0, 0,
                   "failed to allocate code offset table", "fix", NULL);
+        enc_free_types(&e);
         tkir_buf_free(&e.code);
         return -1;
     }
@@ -758,6 +794,7 @@ int emit_tkir(const Node *ast, const char *src,
     enc_write_data_section(&out, &e);
     enc_write_import_section(&out, &e);
     enc_write_export_section(&out, &e);
+    enc_free_types(&e);
 
     FILE *f = fopen(out_path, "wb");
     if (!f) {
@@ -769,8 +806,12 @@ int emit_tkir(const Node *ast, const char *src,
         return -1;
     }
     size_t written = fwrite(out.data, 1, out.len, f);
-    fclose(f);
-    int rc = (written != out.len) ? -1 : 0;
+    int cerr = fclose(f);
+    int rc = (written != out.len || cerr != 0) ? -1 : 0;
+    /* 127.207: a short write returned -1 with no diagnostic (AGENTS.md §3.1). */
+    if (rc < 0)
+        diag_emit(DIAG_ERROR, E9020, 0, 0, 0,
+                  "failed to write .tkir output file", (void *)0);
     tkir_buf_free(&out);
     tkir_buf_free(&e.code);
     free(e.func_code_offsets);
