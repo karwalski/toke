@@ -1,0 +1,14 @@
+(* 123.6 / ADR-0012 (a): a negative index traps RT003; the check compares
+ * the index as unsigned, so -1 must not wrap into a huge in-range read.
+ * expect-exit: 1
+ * expect-stderr: RT003: index -1 out of bounds for length 3 *)
+m=cgtrapboundsneg;
+i=io:std.io;
+f=neg(n:i64):i64{<0-n};
+f=main():i64{
+  let a=@("x";"y";"z");
+  io.println("in range \(a.get(0))");
+  let v=a.get(neg(1));
+  io.println("FAIL negative index returned \(v)");
+  <0
+};

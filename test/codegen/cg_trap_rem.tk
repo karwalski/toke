@@ -1,0 +1,14 @@
+(* 123.6 / ADR-0012 (b): remainder by a runtime zero traps RT004 and names
+ * the operation as remainder, not division.
+ * expect-exit: 1
+ * expect-stderr: RT004: remainder by zero *)
+m=cgtraprem;
+i=io:std.io;
+f=zero(n:i64):i64{<n-n};
+f=main():i64{
+  let z=zero(5);
+  io.println("nonzero \(100%(z+7))");
+  let q=100%z;
+  io.println("FAIL remainder by zero returned \(q)");
+  <0
+};

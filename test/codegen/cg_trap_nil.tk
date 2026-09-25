@@ -1,0 +1,16 @@
+(* 123.6 / ADR-0012 (d): a map lookup that misses returns the nil sentinel;
+ * reading a field through it traps RT005 instead of reading address 0+off.
+ * expect-exit: 1
+ * expect-stderr: RT005: nil dereference *)
+m=cgtrapnil;
+i=io:std.io;
+t=$pt{x:i64;y:i64};
+f=main():i64{
+  let m=@("a":$pt{x:1;y:2});
+  let p=m.get("a");
+  io.println("hit \(p.y)");
+  let q=m.get("zz");
+  io.println("miss looked up");
+  io.println("FAIL nil field read returned \(q.x)");
+  <0
+};
