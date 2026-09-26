@@ -214,7 +214,10 @@ int64_t tk_ml_kmeanstrain_w(int64_t rows, int64_t k, int64_t maxiter) {
         for (uint64_t d = 0; d < m.ndim; d++)
             memcpy(&cs[d], &m.centroids[c * m.ndim + d], sizeof(int64_t));
         int64_t *cent = (int64_t *)malloc(2 * sizeof(int64_t));
-        if (!cent) { tk_arr_setlen(arr, (int64_t)c); break; }
+        if (!cent) {   /* 135.3c: `center` leaked here */
+            free((int64_t *)(intptr_t)center - TK_ARR_HDR);
+            tk_arr_setlen(arr, (int64_t)c); break;
+        }
         cent[0] = (int64_t)c;      /* $centroid.id     */
         cent[1] = center;          /* $centroid.center */
         slots[c] = (int64_t)(intptr_t)cent;
@@ -222,7 +225,17 @@ int64_t tk_ml_kmeanstrain_w(int64_t rows, int64_t k, int64_t maxiter) {
     ml_kmeans_free(&m);
 
     int64_t *model = (int64_t *)malloc(2 * sizeof(int64_t));
-    if (!model) return 0;
+    if (!model) {
+        /* 135.3c: the centroid array and every centroid leaked here. */
+        int64_t *sl = (int64_t *)(intptr_t)arr;
+        for (int64_t c = 0; c < tk_arr_len(arr); c++) {
+            int64_t *cent = (int64_t *)(intptr_t)sl[c];
+            free((int64_t *)(intptr_t)cent[1] - TK_ARR_HDR);
+            free(cent);
+        }
+        free((int64_t *)(intptr_t)arr - TK_ARR_HDR);
+        return 0;
+    }
     model[0] = arr;                        /* $kmeansmodel.centroids */
     model[1] = tk_arr_len(arr);            /* $kmeansmodel.k         */
     return (int64_t)(intptr_t)model;

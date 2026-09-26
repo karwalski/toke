@@ -1184,6 +1184,9 @@ static int parse_page_directives(const char *src, char **layout_name,
                 while (*p && *p != '"') p++;
                 if (*p != '"') return 0;
                 size_t nlen = (size_t)(p - name_start);
+                /* 135.3c: a second layout("...") overwrote -- and leaked --
+                 * the first; the last one wins, as before. */
+                free(*layout_name);
                 *layout_name = (char *)malloc(nlen + 1);
                 if (!*layout_name) return 0;
                 memcpy(*layout_name, name_start, nlen);
