@@ -19,6 +19,11 @@
   0,
   "f8fb9145bca3fa2b"
  ],
+ "test/codegen/cg_json_print_str.tk": [
+  true,
+  0,
+  "e1392d3a92c97bf2"
+ ],
  "test/codegen/cg_map.tk": [
   true,
   0,

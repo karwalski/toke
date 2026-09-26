@@ -5295,8 +5295,28 @@ static int emit_expr(Ctx *c, const Node *n)
             } else if (!strcmp(aty0, "i64")) {
                 /* 127.43: tk_json_print treats any value over 1e9 as a pointer,
                  * so `j.print(4294967296)` walked the number as a char* and
-                 * segfaulted. A checker-typed i64 prints as a number. */
-                fprintf(c->out, "  call void @tk_json_print_i64(i64 %%t%d)\n", args[0]);
+                 * segfaulted. A checker-typed i64 prints as a number.
+                 * 127.215: but a str returned by a user function or a str
+                 * method (`g()`, `let r=g()`, `r.slice(..)`) also reaches here
+                 * as an i64 handle, and printed as its address. Consult the
+                 * checker type / backend tag exactly as the enc path below
+                 * does, and print a string as a string. */
+                const Node *jn0 = n->children[1];
+                int j_is_str = (jn0->rtype && jn0->rtype->kind == TY_STR) ||
+                               jn0->kind == NODE_STR_LIT;
+                if (!j_is_str && !(jn0->rtype && jn0->rtype->kind != TY_UNKNOWN)) {
+                    const char *jst = expr_struct_type(c, jn0);
+                    j_is_str = jst && (!strcmp(jst, "$str") || !strcmp(jst, "str"));
+                }
+                if (j_is_str) {
+                    int z = next_tmp(c);
+                    fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8*\n", z, args[0]);
+                    fprintf(c->out, "  call void @tk_json_print_str(i8* %%t%d)\n", z);
+                } else if (jn0->rtype && jn0->rtype->kind == TY_BOOL) {
+                    fprintf(c->out, "  call void @tk_json_print_bool(i64 %%t%d)\n", args[0]);
+                } else {
+                    fprintf(c->out, "  call void @tk_json_print_i64(i64 %%t%d)\n", args[0]);
+                }
                 t = next_tmp(c);
                 fprintf(c->out, "  %%t%d = add i64 0, 0 ; void call result\n", t);
                 return t;

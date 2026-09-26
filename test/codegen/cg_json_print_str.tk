@@ -1,0 +1,27 @@
+(* 127.215: `j.print` of a str that reaches the i64 ABI — a user function's
+ * return, a binding of one, a str method's result, a struct field — printed
+ * the string's address as a number. Each line below is a JSON string; a
+ * user bool and a large i64 are pinned beside them so the fix cannot turn
+ * every i64-ABI value into a string. Expected output derived by hand. *)
+m=cgjsonprintstr;
+i=j:std.json;
+t=$p{n:str;k:i64};
+f=g():str{<"ab"};
+f=yes():bool{<true};
+f=big():i64{<5000000000};
+f=main():i64{
+  j.print(g());
+  let r=g();
+  j.print(r);
+  let q=r.slice(0;1);
+  j.print(q);
+  j.print(r.upper());
+  let s:str=g();
+  j.print(s);
+  let p=$p{n:"zz";k:3};
+  j.print(p.n);
+  j.print(p.k);
+  j.print(yes());
+  j.print(big());
+  <0
+};
