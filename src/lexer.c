@@ -262,7 +262,7 @@ static int lex_number(Lexer *l, int start, int line, int col)
             if (l->pos >= l->len || !is_hex(l->src[l->pos])) {
                 diag_emit(DIAG_ERROR, LEX_E1005, start, line, col,
                           "invalid numeric literal: 0x requires hex digits",
-                          "fix", "provide hex digits after 0x (e.g., 0xFF)",
+                          /* 127.221: no fix — the intended digits are unknown */
                           "got", "0x with no hex digits",
                           "expected", "hexadecimal digit (0-9, a-f)", NULL);
                 return -1;
@@ -283,7 +283,7 @@ static int lex_number(Lexer *l, int start, int line, int col)
             if (l->pos >= l->len || (l->src[l->pos] != '0' && l->src[l->pos] != '1')) {
                 diag_emit(DIAG_ERROR, LEX_E1005, start, line, col,
                           "invalid numeric literal: 0b requires binary digits",
-                          "fix", "provide binary digits after 0b (e.g., 0b1010)",
+                          /* 127.221: no fix — the intended digits are unknown */
                           "got", "0b with no binary digits",
                           "expected", "binary digit (0 or 1)", NULL);
                 return -1;
@@ -350,7 +350,7 @@ static int lex_string(Lexer *l, int start, int line, int col)
                 } else {
                     diag_emit(DIAG_ERROR, LEX_E1001, l->pos, l->line, l->col,
                               "invalid escape sequence: \\x requires two hex digits",
-                              "fix", "use \\xHH with exactly two hex digits (e.g., \\x0A)",
+                              /* 127.221: no fix — the intended byte is unknown */
                               "got", "\\x without two hex digits",
                               "expected", "\\xHH (two hex digits 0-9, a-f)", NULL);
                     had_error = 1;
@@ -526,7 +526,8 @@ static int lex_ident(Lexer *l, int start, int line, int col)
                  "identifier '%s' contains underscore (v0.2 syntax); "
                  "run `toke --migrate` to convert to v0.3", id_buf);
         diag_emit(DIAG_ERROR, LEX_E1003, start, line, col, msg,
-                  "fix", "remove underscores: concatenate words (e.g., to_int -> toint)",
+                  /* 127.221: no fix — joining the words can collide with
+                   * another name (`to_int` beside `toint`); --migrate owns it */
                   "got", id_buf,
                   "expected", "identifier without underscores (a-z, A-Z, 0-9)", NULL);
         return -1;
@@ -853,7 +854,7 @@ int lex(const char *src, int src_len, Token *out, int out_cap, Profile profile)
             if (l.profile == PROFILE_LEGACY) {
                 diag_emit(DIAG_ERROR, LEX_E1003, start, line, col,
                           "character outside Profile 1 character set",
-                          "fix", "remove '@'; use --default mode for @() array/map syntax",
+                          /* 127.221: no fix — two different remedies */
                           "got", "@", NULL);
                 sym_error = 1;
                 if (record_error(&l)) break;

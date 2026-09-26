@@ -1911,7 +1911,7 @@ parse(Token *tokens, int count, const char *src, Arena *arena, Profile profile)
             else { ch(&p,n,parse_module_path(&p)); opt_semi(&p); ch(&p,root,n); }
         }
     }
-    else { diag_emit(DIAG_ERROR,E2001,first->start,first->line,first->col,"module declaration must appear first","fix","add 'm=modulename;' as the first declaration",NULL); p.errs++; }
+    else { diag_emit(DIAG_ERROR,E2001,first->start,first->line,first->col,"module declaration must appear first",NULL); /* 127.221: no fix — the declaration may exist later (move, not add), and the name is the author's */ p.errs++; }
     int phase=1; /* 1=import 2=type 3=const 4=global 5=func */
     while(peek(&p)!=TK_EOF){
         if(p.errs>=MAX_PARSE_ERRORS) break;

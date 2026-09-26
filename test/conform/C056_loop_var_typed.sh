@@ -9,8 +9,11 @@
 # lookup right and the warning vanished.
 #
 # WHAT IS ASSERTED:
-#   1. `lp(let v=0;..){ v as u64 }` is W1001 (i64 -> u64), in both the
-#      counter and the shadowing shape the corpus records have.
+#   1. `(v-1)` over `lp(let v=0;..)`'s counter is typed
+#      i64, so `(v-1) as u64` is W1001, in both the counter and the shadowing
+#      shape the corpus records have. (127.189 deliberately stopped W1001 on
+#      the counter itself — provably non-negative — and 127.204 on a literal
+#      cast, so neither can witness the typing any more; `v-1` can.)
 #   2. A loop variable typed by a cast init carries that type.
 #   3. Correct loops stay error-free and run: mixing the i64 counter with a
 #      u64 `.len` in the condition, indexing, arithmetic, append.
@@ -36,7 +39,7 @@ cat > "${WORK}/a.tk" <<'EOF2'
 m=t;
 f=g():@u64{
   let out=mut.@();
-  lp(let v=0;v<3;v=v+1){ out=out.append(v as u64) };
+  lp(let v=0;v<3;v=v+1){ out=out.append((v-1) as u64) };
   <out
 };
 EOF2
@@ -50,7 +53,7 @@ f=g(arr:@u64):@u64{
     let v=arr.get(i);
     out=out.append(v)
   };
-  lp(let v=0;v<2;v=v+1){ out=out.append(v as u64) };
+  lp(let v=0;v<2;v=v+1){ out=out.append((v-1) as u64) };
   <out
 };
 EOF2
@@ -64,7 +67,7 @@ f=g(n:u64):u64{
   <s
 };
 EOF2
-expect "2-cast-init-typed" "$(diags "${WORK}/c.tk")" "W1001@3 W1001@4 W1001@4 "
+expect "2-cast-init-typed" "$(diags "${WORK}/c.tk")" "W1001@4 W1001@4 "
 
 cat > "${WORK}/ok.tk" <<'EOF2'
 m=t;

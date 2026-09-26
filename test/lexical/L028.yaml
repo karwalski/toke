@@ -6,7 +6,7 @@ input: |
   f=bad():i64{<0xZZ};
 expected_exit_code: 1
 expected_error_codes: ["E1005"]
-# 127.200: this file said expected_fix: "", which asserted nothing.  The fix
-# below is what the compiler emits; it is guidance, not a deterministic
-# repair (AGENTS §6) — reported as a defect, pinned here so it cannot drift.
-expected_fix: provide hex digits after 0x (e.g., 0xFF)
+# 127.221: the fix this code carried was guidance, not a deterministic
+# repair (AGENTS §6), and docs/spec/errors.md already specified none; the
+# compiler now emits none, and this pins its absence.
+expected_fix_absent: true

@@ -463,6 +463,9 @@ typedef struct { TypeEnv *env; const char *src;
                      armb[TKC_MAX_ARM_BINDS];
                  int armb_count;
                  const Node *mt_discard;
+                 /* 127.221: the string literal whose `\(..)` sub-parse
+                  * is being inferred — its nodes are not in the tree. */
+                 const Node *interp_host;
                } Ctx;
 
 /* tc_first_report — 1 the first time `n` is reported on, 0 afterwards. */
@@ -527,6 +530,7 @@ static int is_param(const Ctx *cx, const char *name, int name_len) {
 /* Forward declaration: infer() is the main recursive type-inference walker. */
 static Type *infer(Ctx *cx, const Node *node);
 static Type *arm_bind_lookup(Ctx *cx, const char *nb, int nlen, const Node *use);
+static int alias_shadowed(Ctx *cx, const Node *id);   /* 127.214 */
 /* Forward decl: local-binding lookup (defined below; used by the 123.11-fu
  * interp check to resolve a bare composite-local identifier). */
 static const Node *find_binding_node(const Node *root, const char *src,
@@ -695,7 +699,10 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
                 /* Re-home the sub-expression onto the real source, then infer
                  * against the real environment (no src swap). */
                 shift_tok_offsets(expr, delta, strnode);
+                const Node *saved_host = cx->interp_host;
+                cx->interp_host = strnode;
                 Type *t = infer(cx, expr);
+                cx->interp_host = saved_host;
                 int composite = t && (t->kind == TY_ARRAY || t->kind == TY_MAP ||
                                       t->kind == TY_STRUCT);
                 /* 123.11-fu: a bare composite *local* (`\(arrVar)`) infers
@@ -936,12 +943,101 @@ static int closure_between(const Node *root, const Node *n) {
     return 0;
 }
 
+/*
+ * in_tree_use (127.221) — the node that stands for `use` in the function
+ * tree.  check_interp_composites infers each `\(..)` from a fresh sub-parse
+ * whose nodes are re-homed onto the real source but are NOT in the tree, so
+ * every node_contains() test below answered "no" for them: a closure or an
+ * `mt` arm body never contained an interpolated use.  Measured on main
+ * (8f4a843): `mt r{$ok:t io.println("\(t.upper())")};let t=@("x")` drew a
+ * false E4036 — the arm binding was skipped and the later array `let` was
+ * found instead.  The literal holding the interpolation is in the tree and is
+ * at the same place, so it answers for the use.  find_binding_before, which
+ * has no Ctx, anchors on its own (tree_anchor_rec).
+ */
+static const Node *in_tree_use(const Ctx *cx, const Node *use) {
+    if (!use || !cx->interp_host) return use;
+    const Node *root = cx->fn_node ? cx->fn_node : cx->root;
+    if (root && !node_contains(root, use)) return cx->interp_host;
+    return use;
+}
+
 static const Node *local_in_force(const Ctx *cx, const char *name, int nlen,
                                   const Node *use) {
     const Node *best = NULL;
     if (!cx->fn_node || !use) return NULL;
+    use = in_tree_use(cx, use);
     local_in_force_rec(cx->fn_node, cx->src, name, nlen, use, &best);
     return best;
+}
+
+/*
+ * cast_src_nonneg (127.189 / 127.204) — 1 when the i64 operand of an
+ * `as u64` cast is provably non-negative, so W1001 "lossy cast" is false:
+ *
+ *   * an integer literal.  The grammar has no negative literal — `-1` is a
+ *     unary minus over `1` — so every NODE_INT_LIT is >= 0 (`args.get(1 as
+ *     u64)`, 127.204);
+ *   * a loop counter `lp(let v=<literal>;..;v=v+<literal>)` that nothing else
+ *     in the function assigns: it starts >= 0 and only ever grows (127.189).
+ *     Reaching a negative value would take 2^63 / step iterations of the
+ *     loop, and the step is the only write.  A parameter or `mt` arm binding
+ *     of the same name answers first in infer(), so either one disqualifies.
+ *
+ * Anything else — a computed value, a `let`, a counter with a non-literal
+ * start or step, or one the body also assigns — keeps the warning.
+ */
+static const Node *parent_of(const Node *r, const Node *n) {
+    if (!r) return NULL;
+    for (int i = 0; i < r->child_count; i++) {
+        if (r->children[i] == n) return r;
+        const Node *p = parent_of(r->children[i], n);
+        if (p) return p;
+    }
+    return NULL;
+}
+static int assigns_name(const Node *r, const char *src, const Node *id,
+                        const Node *except) {
+    if (!r) return 0;
+    if (r != except && (r->kind == NODE_ASSIGN_STMT
+                        || (r->kind == NODE_LOOP_INIT && r->op != TK_KW_LET))
+        && r->child_count > 0 && r->children[0]
+        && r->children[0]->tok_len == id->tok_len
+        && memcmp(src + r->children[0]->tok_start, src + id->tok_start,
+                  (size_t)id->tok_len) == 0) return 1;
+    for (int i = 0; i < r->child_count; i++)
+        if (assigns_name(r->children[i], src, id, except)) return 1;
+    return 0;
+}
+static int same_ident(const char *src, const Node *a, const Node *b) {
+    return a && b && a->kind == NODE_IDENT && a->tok_len == b->tok_len
+        && memcmp(src + a->tok_start, src + b->tok_start, (size_t)a->tok_len) == 0;
+}
+static int cast_src_nonneg(Ctx *cx, const Node *e) {
+    if (!e) return 0;
+    if (e->kind == NODE_INT_LIT) return 1;
+    if (e->kind != NODE_IDENT || !cx->fn_node) return 0;
+    const char *nm = cx->src + e->tok_start;
+    int nl = e->tok_len;
+    if (is_param(cx, nm, nl)) return 0;
+    if (cx->armb_count > 0 && arm_bind_lookup(cx, nm, nl, e)) return 0;
+    const Node *bn = find_binding_before(cx->fn_node, cx->src, nm, nl, e);
+    if (!bn || bn->kind != NODE_LOOP_INIT || bn->op != TK_KW_LET
+        || bn->child_count < 2 || !bn->children[1]
+        || bn->children[1]->kind != NODE_INT_LIT) return 0;
+    const Node *lp = parent_of(cx->fn_node, bn);
+    if (!lp || lp->kind != NODE_LOOP_STMT || lp->child_count < 3) return 0;
+    const Node *step = lp->children[2];
+    if (!step || step->kind != NODE_ASSIGN_STMT || step->child_count < 2
+        || !same_ident(cx->src, step->children[0], e)) return 0;
+    const Node *rhs = step->children[1];
+    if (!rhs || rhs->kind != NODE_BINARY_EXPR || rhs->op != TK_PLUS
+        || rhs->child_count < 2) return 0;
+    const Node *x = rhs->children[0], *y = rhs->children[1];
+    if (!((same_ident(cx->src, x, e) && y && y->kind == NODE_INT_LIT)
+          || (same_ident(cx->src, y, e) && x && x->kind == NODE_INT_LIT)))
+        return 0;
+    return !assigns_name(cx->fn_node, cx->src, e, step);
 }
 
 /*
@@ -1618,6 +1714,7 @@ static Type *call_decl_ret_type(Ctx *cx, const Node *call) {
             && callee->children[1]) {
             char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
             char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+            if (alias_shadowed(cx, callee->children[0])) return NULL;   /* 127.214 */
             const char *ret = imported_func_ret(cx->env->names, ab, mb);
             if (ret && !strchr(ret, '!')) {
                 Type *ist = imported_struct_type(cx, ret, 0);
@@ -1703,6 +1800,7 @@ static Type *mt_ok_payload_type(Ctx *cx, const Node *scr, int depth) {
             return NULL;
         char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
         char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
+        if (alias_shadowed(cx, callee->children[0])) return NULL;   /* 127.214 */
         const ImportedFunc *f = imported_func_lookup(cx->env->names, ab, mb);
         if (!f || !f->okret) return NULL;
         return imported_struct_type(cx, f->okret, 0);
@@ -1781,8 +1879,15 @@ static Type *arm_bind_lookup(Ctx *cx, const char *nb, int nlen, const Node *use)
         if (cx->armb[k].len != nlen || memcmp(cx->armb[k].name, nb, (size_t)nlen) != 0)
             continue;
         const Node *body = cx->armb[k].body;
-        /* A re-entered initialiser outside the arm is not in its scope. */
-        if (!node_contains(body, use)) continue;
+        /* A re-entered initialiser outside the arm is not in its scope.
+         * 127.221: a use in an interpolation sub-parse is in the arm when
+         * the literal holding it is — unless the `mt` is itself inside the
+         * interpolation, and then the use is in its (sub-parse) body. */
+        if (!node_contains(body, use)) {
+            const Node *host = in_tree_use(cx, use);
+            if (host == use || !node_contains(body, host)) continue;
+            use = host;
+        }
         if (cx->fn_node) {
             const Node *bn = find_binding_before(cx->fn_node, cx->src, nb, nlen, use);
             if (bn && node_contains(body, bn) && bn->start < use->start) return NULL;
@@ -1791,6 +1896,87 @@ static Type *arm_bind_lookup(Ctx *cx, const char *nb, int nlen, const Node *use)
         return cx->armb[k].ty;
     }
     return NULL;
+}
+
+/*
+ * tk_name_bound_at (127.214) — 1 when `name`, used at `use`, is there bound
+ * LEXICALLY inside `root`: a parameter of the function or of a closure around
+ * it, a `let`/`mut` earlier in an enclosing block, the
+ * variable of an enclosing `lp`, or the binding of the `mt` arm whose body
+ * holds it.  A binding in a block that has already closed does not count, nor
+ * does the `let` whose initialiser holds `use`.  `name` is passed apart from
+ * `use` because the emitter reads a sub-parsed interpolation's tokens from a
+ * different buffer; `anchor` (the string literal) stands in for a `use` that
+ * is not in the tree.
+ *
+ * Deliberately lexical, not local_in_force's flat per-function table
+ * (127.169): that table is the emitter's model for FUNCTIONS, and its leak
+ * past a closed block is 127.196.  Applied to import aliases it would turn
+ * `if(c){let io=..}; io.println(..)` — a program that works — into a module
+ * call on a stale local.  Exported so llvm.c answers with this same walk.
+ */
+static int ident_same(const Node *x, const char *src, const char *nm, int nl) {
+    return x && x->tok_len == nl && nl > 0
+        && memcmp(src + x->tok_start, nm, (size_t)nl) == 0;
+}
+static int ident_bound_rec(const Node *a, const char *src, const Node *use,
+                           const char *nm, int nl, int *found) {
+    if (!a) return 0;
+    if (a == use) { *found = 1; return 0; }
+    for (int i = 0; i < a->child_count; i++) {
+        int f = 0;
+        int b = ident_bound_rec(a->children[i], src, use, nm, nl, &f);
+        if (!f) continue;
+        *found = 1;
+        if (b) return 1;
+        /* children[i] holds `use`: is the name bound at this level? */
+        if (a->kind == NODE_FUNC_DECL || a->kind == NODE_CLOSURE)
+            for (int j = 0; j < a->child_count; j++) {
+                const Node *pc = a->children[j];
+                if (pc && pc->kind == NODE_PARAM && pc->child_count > 0
+                    && ident_same(pc->children[0], src, nm, nl)) return 1;
+            }
+        if (a->kind == NODE_LOOP_STMT && i > 0 && a->children[0]
+            && a->children[0]->kind == NODE_LOOP_INIT
+            && a->children[0]->child_count > 0
+            && ident_same(a->children[0]->children[0], src, nm, nl)) return 1;
+        if (a->kind == NODE_MATCH_ARM && i == 2 && a->child_count > 1
+            && ident_same(a->children[1], src, nm, nl)) return 1;
+        for (int j = 0; j < i; j++) {
+            const Node *st = a->children[j];
+            if (st && (st->kind == NODE_BIND_STMT || st->kind == NODE_MUT_BIND_STMT)
+                && st->child_count > 0 && ident_same(st->children[0], src, nm, nl))
+                return 1;
+        }
+        return 0;
+    }
+    return 0;
+}
+int tk_name_bound_at(const Node *root, const char *src, const Node *use,
+                     const char *name, int nlen, const Node *anchor) {
+    int found = 0;
+    if (!root || !src || !use || !name || nlen <= 0) return 0;
+    int b = ident_bound_rec(root, src, use, name, nlen, &found);
+    if (found || !anchor) return b;
+    /* `use` is not in the tree: an interpolation's sub-parse.  Ask at the
+     * string literal that holds it. */
+    return ident_bound_rec(root, src, anchor, name, nlen, &found);
+}
+
+/*
+ * alias_shadowed (127.214) — 1 when the identifier `id`, spelled like an `I=`
+ * import alias, is at that point a VALUE (tk_name_bound_at).  Then
+ * `id.member(...)` is a receiver call on that value, not a call into the
+ * module — the 75.1.7 shadowing decision.
+ *
+ * `i=s:std.str; f=first(s:str):str{<s.slice(0;1)}` was checked as
+ * std.str.slice with two arguments: a false E4026.
+ */
+static int alias_shadowed(Ctx *cx, const Node *id) {
+    if (!id || id->kind != NODE_IDENT) return 0;
+    return tk_name_bound_at(cx->fn_node ? cx->fn_node : cx->root, cx->src, id,
+                            cx->src + id->tok_start, id->tok_len,
+                            cx->interp_host);
 }
 
 /*
@@ -1853,6 +2039,7 @@ static const char *mt_nonunion_scalar(Ctx *cx, const Node *scr, int depth) {
             char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
             char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
             char mbuf[256];
+            if (alias_shadowed(cx, callee->children[0])) return NULL;   /* 127.214 */
             if (!import_module_path(cx, ab, mbuf, sizeof mbuf)) return NULL;
             Decl *d = tc_lookup(cx->env->names->module_scope, ab, (int)strlen(ab));
             if (d && d->kind != DECL_IMPORT_ALIAS) return NULL;
@@ -2105,6 +2292,7 @@ static const StdStrSig *std_sig_for(Ctx *cx, const Node *call) {
     char alias[128]; TOKSTR(alias, cx->src, callee->children[0]);
     char method[128]; TOKSTR(method, cx->src, callee->children[1]);
     char mbuf[256];
+    if (alias_shadowed(cx, callee->children[0])) return NULL;   /* 127.214 */
     const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
     if (!mpath) return NULL;
 
@@ -2401,6 +2589,9 @@ static void check_tki_call(Ctx *cx, const Node *call) {
      * declaration of the same name (a function, type or const) means the
      * identifier is not the module, so the call is not ours to judge. */
     char mbuf[256];
+    /* 127.214: a parameter or local in force named like the alias is a
+     * receiver value, so the call is not a module call and not ours. */
+    if (alias_shadowed(cx, callee->children[0])) return;
     const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
     /* 127.135 — `str.concat("a";"b")` with `std.str` NOT imported.
      *
@@ -2713,6 +2904,7 @@ static void check_stdlib_param_kinds(Ctx *cx, const Node *call) {
     char alias[128];  TOKSTR(alias, cx->src, callee->children[0]);
     char member[128]; TOKSTR(member, cx->src, callee->children[1]);
     char mbuf[256];
+    if (alias_shadowed(cx, callee->children[0])) return;   /* 127.214 */
     const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
     if (!mpath || strncmp(mpath, "std.", 4) != 0) return;
     {   /* the same alias gate check_stdlib_byte_args applies */
@@ -2930,6 +3122,7 @@ static void check_stdlib_byte_args(Ctx *cx, const Node *call) {
      * gate check_tki_call applies, for the same reason: a module-scope
      * declaration of that name means the identifier is not the module. */
     char mbuf[256];
+    if (alias_shadowed(cx, callee->children[0])) return;   /* 127.214 */
     const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
     if (!mpath) return;
     {
@@ -3098,14 +3291,15 @@ static int recv_ident_is_bound(Ctx *cx, const char *name) {
 }
 
 static void recv_arity_error(const Node *call, const char *member,
-                             int expected, int actual) {
-    char msg[384], exp_str[16], got_str[16];
+                             int expected, int actual, const char *note) {
+    char msg[640], exp_str[16], got_str[16];
     snprintf(exp_str, sizeof exp_str, "%d", expected);
     snprintf(got_str, sizeof got_str, "%d", actual);
     snprintf(msg, sizeof msg,
              "wrong number of arguments for '.%s': the implementation takes "
-             "%d argument%s including the receiver, the call passes %d",
-             member, expected, expected == 1 ? "" : "s", actual);
+             "%d argument%s including the receiver, the call passes %d%s",
+             member, expected, expected == 1 ? "" : "s", actual,
+             note ? note : "");
     /* AGENTS.md §3.1 — the `fix` must hold in every case this fires. It must
      * not say "remove an argument": too few is the same diagnostic as too
      * many, and the surplus-argument form was silently DROPPING them, so the
@@ -3151,13 +3345,23 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
 
     if (recv->kind == NODE_TYPE_IDENT) return;   /* E4033's business */
 
+    /* 127.214: when the receiver is a local spelled like an import alias,
+     * every message below says so — `s.len(s)` in `f(s:str)` reads as a
+     * module call and is not one, and that is the thing to repair. */
+    char note[256]; note[0] = '\0';
     if (recv->kind == NODE_IDENT) {
         char alias[128]; TOKSTR(alias, cx->src, recv);
         char mbuf[256];
-        if (import_module_path(cx, alias, mbuf, sizeof mbuf)) return;
+        /* 127.214: a value named like an alias is a receiver — judge it here. */
+        int shadowed = alias_shadowed(cx, recv);
+        if (!shadowed && import_module_path(cx, alias, mbuf, sizeof mbuf)) return;
+        if (shadowed && import_module_path(cx, alias, mbuf, sizeof mbuf))
+            snprintf(note, sizeof note,
+                     " ('%s' here is a local value, which shadows the import "
+                     "alias '%s' of %s)", alias, alias, mbuf);
         Decl *d = tc_lookup(cx->env->names->module_scope, alias,
                             (int)strlen(alias));
-        if (d && d->kind == DECL_IMPORT_ALIAS) return;
+        if (!shadowed && d && d->kind == DECL_IMPORT_ALIAS) return;
         if (tki_subnamespace_member(cx->env->names, alias, member)) return;
         /* An identifier that names NOTHING is not a receiver: it is an
          * unresolved name, and saying anything about its member would be
@@ -3174,7 +3378,8 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
         char alias[128]; TOKSTR(alias, cx->src, recv->children[0]);
         char seg[128];   TOKSTR(seg,   cx->src, recv->children[1]);
         char mbuf[256];
-        const char *mpath = import_module_path(cx, alias, mbuf, sizeof mbuf);
+        const char *mpath = alias_shadowed(cx, recv->children[0]) ? NULL   /* 127.214 */
+                          : import_module_path(cx, alias, mbuf, sizeof mbuf);
         if (mpath) {
             /* `http.res.ok(body)` — a module sub-path, not a value receiver.
              * It lowers through stdlib_subpath_symbol, so judge it against
@@ -3208,7 +3413,7 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
 
     if (!recv_method_known(member)) {
         if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
-        char msg[384];
+        char msg[640];
         /* 127.1: when a module-scope function of that name exists, say so.
          * It is the commonest way into this diagnostic and it is a statement
          * of fact, not an instruction — toke has no UFCS, so `x.pair(a)` is
@@ -3220,12 +3425,12 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
             snprintf(msg, sizeof msg,
                      "no receiver method '%s': a value receiver has no member "
                      "'%s' (a function '%s' is declared in this module, but a "
-                     "receiver call is not a call to it)",
-                     member, member, member);
+                     "receiver call is not a call to it)%s",
+                     member, member, member, note);
         else
             snprintf(msg, sizeof msg,
                      "no receiver method '%s': no built-in receiver type "
-                     "answers '%s'", member, member);
+                     "answers '%s'%s", member, member, note);
         /* 127.153 — the `fix`, and why it is CONDITIONAL.
          *
          * The row asked for this field to be filled with `pair(x;"A")`,
@@ -3295,12 +3500,12 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
         char kc = rk == RK_S ? 's' : rk == RK_A ? 'a' : rk == RK_M ? 'm' : 0;
         if (kc && recv_method_on_kind(member, kc) == 0) {
             if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
-            char msg[384], got[96];
+            char msg[640], got[96];
             const char *kn = rk == RK_S ? "str" : rk == RK_A ? "array" : "map";
             snprintf(msg, sizeof msg,
                      "no receiver method '%s' on a '%s': '.%s' is a receiver "
-                     "method of another type, and a '%s' does not answer it",
-                     member, type_name(rt), member, kn);
+                     "method of another type, and a '%s' does not answer it%s",
+                     member, type_name(rt), member, kn, note);
             snprintf(got, sizeof got, "%s.%s", kn, member);
             /* No `fix`: whether the receiver or the member is wrong is not
              * decidable here (AGENTS.md §6). */
@@ -3345,7 +3550,7 @@ static void check_recv_method_call(Ctx *cx, const Node *call) {
     int actual = call->child_count;       /* the receiver is argument 1 */
     if (actual == want) return;
     if (!tc_first_report(cx, call) || !tc_can_emit(cx)) return;
-    recv_arity_error(call, member, want, actual);
+    recv_arity_error(call, member, want, actual, note);
 }
 
 static Type *infer_impl(Ctx *cx, const Node *node);
@@ -3400,6 +3605,7 @@ static int stdlib_str_bound(Ctx *cx, const Node *recv) {
     char ab[128]; TOKSTR(ab, cx->src, callee->children[0]);
     char mb[128]; TOKSTR(mb, cx->src, callee->children[1]);
     char pbuf[256];
+    if (alias_shadowed(cx, callee->children[0])) return 0;   /* 127.214 */
     if (!import_module_path(cx, ab, pbuf, sizeof pbuf)) return 0;
     Decl *d = tc_lookup(cx->env->names->module_scope, ab, (int)strlen(ab));
     if (d && d->def_node && d->def_node->kind != NODE_IMPORT) return 0;
@@ -4122,7 +4328,8 @@ static Type *infer_impl(Ctx *cx, const Node *node) {
             if (src_t->kind!=TY_UNKNOWN&&dst_t->kind!=TY_UNKNOWN) {
                 int lossy=0;
                 if (src_t->kind==TY_F64&&(dst_t->kind==TY_I64||dst_t->kind==TY_U64)) lossy=1;
-                if (src_t->kind==TY_I64&&dst_t->kind==TY_U64) lossy=1;
+                if (src_t->kind==TY_I64&&dst_t->kind==TY_U64
+                    &&!cast_src_nonneg(cx,node->children[0])) lossy=1;
                 if (src_t->kind==TY_U64&&dst_t->kind==TY_I64) lossy=1;
                 /* 127.129: bind_init_type() now re-enters a cast initialiser
                  * on every reference to the binding, and infer() has no memo,
