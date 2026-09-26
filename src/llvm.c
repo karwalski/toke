@@ -1615,6 +1615,8 @@ static int is_stdlib_slot_wrapper(const char *name) {
         "tk_image_decode_w", "tk_image_encode_w", "tk_image_crop_w",
         "tk_image_pixelat_w", "tk_image_adaptivethreshold_w",
         "tk_image_convolve_w", "tk_image_tiffdecode_w", "tk_image_tiffpages_w",
+        /* 127.104: `TlsKeypair!str` — the slot holds tls.c's message */
+        "tk_tls_genselfsigned_w", "tk_tls_genselfsignedalg_w",
         NULL,
     };
     if (!name) return 0;

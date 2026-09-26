@@ -27,18 +27,8 @@
         {"name": "keypem",  "type": "str"}
       ]
     },
-    {
-      "kind": "sum_type",
-      "name": "TlsErr",
-      "variants": [
-        {"name": "CertErr",    "type": "str"},
-        {"name": "ConnErr",    "type": "str"},
-        {"name": "PinErr",     "type": "str"},
-        {"name": "IoErr",      "type": "str"}
-      ]
-    },
-    {"kind": "func", "name": "tls.genselfsigned", "params": ["str", "i32"],               "return": "TlsKeypair!TlsErr"},
-    {"kind": "func", "name": "tls.genselfsignedalg", "params": ["str", "i32", "str"], "return": "TlsKeypair!TlsErr"},
+    {"kind": "func", "name": "tls.genselfsigned", "params": ["str", "i32"],               "return": "TlsKeypair!str"},
+    {"kind": "func", "name": "tls.genselfsignedalg", "params": ["str", "i32", "str"], "return": "TlsKeypair!str"},
     {"kind": "func", "name": "tls.certof",           "params": ["TlsKeypair"],               "return": "str"},
     {"kind": "func", "name": "tls.keyof",            "params": ["TlsKeypair"],               "return": "str"},
     {"kind": "func", "name": "tls.freekeypair",      "params": ["TlsKeypair"],               "return": "bool"},

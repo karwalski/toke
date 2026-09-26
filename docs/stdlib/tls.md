@@ -46,17 +46,21 @@ An opaque handle to an established connection, as an `i64`. `0` means no connect
 
 A freshly generated certificate (`certpem`) and its private key (`keypem`). Opaque as an `i64` in practice; read the two halves with `tls.certof` and `tls.keyof`, and release it with `tls.freekeypair`.
 
-### TlsErr
+### Errors
 
-The error side of the fallible calls: `CertErr` (generation, parsing or verification), `ConnErr` (handshake or peer rejection), `PinErr` (the peer presented a different certificate), `IoErr` (socket failure).
+The two key-generation calls are the module's only fallible calls, and their error is a `str`: the reason generation failed, as the TLS core reports it (for example `unsupported key_alg (want ecdsa-p384 or ml-dsa-65)`, `common_name must not be empty`, or an OpenSSL reason). `$err:e` binds that message. On failure the returned value is also `0`, so a plain `kp==0` check still works; use `mt` when you want the reason.
+
+Connection failures are not errors in this sense: `tls.connect`, `tls.read` and `tls.peercert` return an optional that is `0` when there is nothing, and `tls.listen`, `tls.write` and `tls.close` return `bool`.
+
+Until story 127.104 this page and `tls.tki` declared a `TlsErr` sum with four variants (`CertErr`, `ConnErr`, `PinErr`, `IoErr`). No function returned three of them, the fourth was never populated (the message was discarded), and the variant names could not be written in the default syntax, so there are no callers to migrate.
 
 ## Key and certificate generation
 
-### tls.genselfsigned(commonname: str; validdays: i32): TlsKeypair!TlsErr
+### tls.genselfsigned(commonname: str; validdays: i32): TlsKeypair!str
 
-Generates a P-384 EC keypair and a self-signed X.509 certificate with `commonname` as both subject and issuer CN, valid for `validdays` days from now. Returns `0` on failure.
+Generates a P-384 EC keypair and a self-signed X.509 certificate with `commonname` as both subject and issuer CN, valid for `validdays` days from now. On failure the error is the reason (see [Errors](#errors)) and the value is `0`.
 
-### tls.genselfsignedalg(commonname: str; validdays: i32; keyalg: str): TlsKeypair!TlsErr
+### tls.genselfsignedalg(commonname: str; validdays: i32; keyalg: str): TlsKeypair!str
 
 As `tls.genselfsigned`, but chooses the certificate's signing key:
 
@@ -65,7 +69,20 @@ As `tls.genselfsigned`, but chooses the certificate's signing key:
 | `""` or `"ecdsa-p384"` | Classical P-384 ECDSA — the default, broad interoperability |
 | `"ml-dsa-65"` | Post-quantum ML-DSA-65 (FIPS 204). Requires OpenSSL 3.5 or later |
 
-**It does not fall back.** An algorithm name it does not recognise is refused, and an ML-DSA keygen that fails on an OpenSSL without ML-DSA support is refused — neither quietly returns a P-384 certificate. A caller asking for ML-DSA is asking because it matters to them, so a classical certificate handed back under that name would be the worst available answer. Returns `0` on failure, like every call in this module.
+**It does not fall back.** An algorithm name it does not recognise is refused, and an ML-DSA keygen that fails on an OpenSSL without ML-DSA support is refused — neither quietly returns a P-384 certificate. A caller asking for ML-DSA is asking because it matters to them, so a classical certificate handed back under that name would be the worst available answer. On failure the error is the reason and the value is `0`:
+
+```toke
+m=tlsalg;
+i=tls:std.tls;
+i=io:std.io;
+
+f=main():i64{
+  let why=mt tls.genselfsignedalg("pq-host";30;"ml-dsa-65"){$ok:kp "";$err:e e};
+  if(why==""){ io.println("ml-dsa-65 certificate generated"); <0 };
+  io.println(why);
+  <1
+};
+```
 
 ML-DSA certificates are opt-in for a reason: they will not verify against a classical-only peer. Use them where you control both ends.
 

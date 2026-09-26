@@ -37,6 +37,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 127.101: tk_current_error is thread-local (runtime-abi.md §7, tk_runtime.h).
+ * A plain-global declaration here links with no diagnostic and then SIGBUSes
+ * on the first access, so the spelling must match the definition. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+extern _Thread_local int64_t tk_current_error;
+#else
+extern __thread int64_t tk_current_error;
+#endif
+
 /* ── handle plumbing ─────────────────────────────────────────────────────── */
 
 typedef struct {
@@ -144,27 +153,57 @@ int64_t tk_tls_freeconfig_w(int64_t cfg)
 
 /* ── self-signed material ────────────────────────────────────────────────── */
 
+/*
+ * 127.104: the two keygen calls are `TlsKeypair!str` (stdlib/tls.tki).
+ *
+ * The interface used to say `TlsKeypair!TlsErr` with four variants
+ * (CertErr/ConnErr/PinErr/IoErr) while these wrappers returned a bare 0 and
+ * threw away the message tls.c produces.  Measured: every failure the core can
+ * report here is a certificate-generation failure with a static message
+ * ("unsupported key_alg ...", an OpenSSL reason string); ConnErr/PinErr/IoErr
+ * are returned by no function in the module, and the variant names were not
+ * even writable in the default syntax.  So the error is the message, as for
+ * std.image (runtime-abi.md §7.3): on failure the slot holds the message
+ * pointer and the value is 0; on success the slot is 0.  Both wrappers set
+ * the slot on every return, which is what lets llvm.c's
+ * is_stdlib_slot_wrapper() list them.
+ */
+static int64_t tls_keypair_or_raise(TlsKeypairResult r)
+{
+    if (r.is_err) {
+        tk_current_error = (int64_t)(intptr_t)(r.err_msg && r.err_msg[0]
+                                               ? r.err_msg
+                                               : "tls: key generation failed");
+        return 0;
+    }
+    TkTlsKeypair *kp = calloc(1, sizeof *kp);
+    if (!kp) {
+        free(r.cert_pem); free(r.key_pem);
+        tk_current_error = (int64_t)(intptr_t)"tls: out of memory";
+        return 0;
+    }
+    kp->cert = r.cert_pem;
+    kp->key  = r.key_pem;
+    tk_current_error = 0;
+    return (int64_t)(intptr_t)kp;
+}
+
 /* tls.genselfsigned(commonname; validdays) — P-384 self-signed keypair.
  *
- * Returns a keypair handle, or 0 on failure.  Arity 2 matches stdlib/tls.tki
- * ("str", "i32") and tls_gen_self_signed; the old arity-1 stub discarded its
- * one argument, so there was no behaviour to preserve. */
+ * Returns a keypair handle; on failure 0, with the reason in the error slot.
+ * Arity 2 matches stdlib/tls.tki ("str", "i32") and tls_gen_self_signed. */
 int64_t tk_tls_genselfsigned_w(int64_t common_name, int64_t valid_days)
 {
     const char *cn = as_str(common_name);
-    if (!cn || *cn == '\0') return 0;
+    if (!cn || *cn == '\0') {
+        tk_current_error = (int64_t)(intptr_t)"common_name must not be empty";
+        return 0;
+    }
 
     int32_t days = (int32_t)valid_days;
     if (days <= 0) days = 365;
 
-    TlsKeypairResult r = tls_gen_self_signed(cn, days);
-    if (r.is_err) return 0;
-
-    TkTlsKeypair *kp = calloc(1, sizeof *kp);
-    if (!kp) { free(r.cert_pem); free(r.key_pem); return 0; }
-    kp->cert = r.cert_pem;
-    kp->key  = r.key_pem;
-    return (int64_t)(intptr_t)kp;
+    return tls_keypair_or_raise(tls_gen_self_signed(cn, days));
 }
 
 /*
@@ -175,10 +214,7 @@ int64_t tk_tls_genselfsigned_w(int64_t common_name, int64_t valid_days)
  * WHY THIS EXISTS SEPARATELY FROM tls.genselfsigned.  tls_gen_self_signed_alg
  * has been implemented and linked in tls.c since 124.1 shipped ADR-0013's
  * crypto agility, and it had NO wrapper and NO .tki export, so ML-DSA-65
- * certificate generation was unreachable from toke.  136.44's sweep could not
- * have found it: that sweep compared declared .tki exports against the glue,
- * and this one was never declared, so there was nothing to disagree with.
- * Filed as 136.44a.
+ * certificate generation was unreachable from toke (136.44a).
  *
  * The core FAILS CLOSED and this wrapper must not soften that: an unsupported
  * algorithm name is an error, and an ML-DSA keygen failure is an error.
@@ -186,20 +222,18 @@ int64_t tk_tls_genselfsigned_w(int64_t common_name, int64_t valid_days)
  * place of a post-quantum one is the worst outcome available here, because the
  * caller asked for ML-DSA precisely because it matters to them.
  *
- * FAILURE CONVENTION.  This returns 0 on failure, matching every other
- * std.tls wrapper, and therefore inherits the module's value-sentinel
- * convention rather than the error box of 127.109.  That is deliberate and it
- * is not a design: 0 is not a valid keypair handle here, so the sentinel is at
- * least sound for THIS call, and migrating std.tls to the error channel is one
- * change for the whole module (the err_msg tls.c already produces is thrown
- * away by every wrapper in this file, not just this one).  Landing a fraction
- * of it alongside a new entry point would ship that break out of band.
+ * FAILURE CONVENTION (127.104): 0, with the core's message in the error slot
+ * — see tls_keypair_or_raise.  The other std.tls wrappers are not fallible
+ * in the interface (bool / optional returns) and keep their 0 sentinel.
  */
 int64_t tk_tls_genselfsignedalg_w(int64_t common_name, int64_t valid_days,
                                   int64_t key_alg)
 {
     const char *cn = as_str(common_name);
-    if (!cn || *cn == '\0') return 0;
+    if (!cn || *cn == '\0') {
+        tk_current_error = (int64_t)(intptr_t)"common_name must not be empty";
+        return 0;
+    }
 
     int32_t days = (int32_t)valid_days;
     if (days <= 0) days = 365;
@@ -209,14 +243,7 @@ int64_t tk_tls_genselfsignedalg_w(int64_t common_name, int64_t valid_days,
     const char *alg = as_str(key_alg);
     if (alg && *alg == '\0') alg = NULL;
 
-    TlsKeypairResult r = tls_gen_self_signed_alg(cn, days, alg);
-    if (r.is_err) return 0;
-
-    TkTlsKeypair *kp = calloc(1, sizeof *kp);
-    if (!kp) { free(r.cert_pem); free(r.key_pem); return 0; }
-    kp->cert = r.cert_pem;
-    kp->key  = r.key_pem;
-    return (int64_t)(intptr_t)kp;
+    return tls_keypair_or_raise(tls_gen_self_signed_alg(cn, days, alg));
 }
 
 /* tls.certof(keypair) — the certificate PEM (public material). */
