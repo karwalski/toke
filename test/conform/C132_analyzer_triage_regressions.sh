@@ -22,6 +22,11 @@
 #      up front, so no grow happens and this path is unreachable at runtime;
 #      it is fixed anyway and the analyzer count is its control.
 #      merge-oom-sweep below guards merge's OTHER allocation paths.
+#   4. router.c match_route() freed its param strings on a no-match but left
+#      res.nparam set, and router_ws_try_upgrade() frees mr.names[] for every
+#      result, matched or not -- a DOUBLE FREE for any WebSocket upgrade whose
+#      path matches a `:param` segment and then misses a later one.
+#      Reachable by any client.  [unix.Malloc router.c:873]
 #
 # HOW IT IS OBSERVED.  json.c is compiled with malloc/realloc/free renamed to
 # a counting allocator in the harness below.  The allocator records every
@@ -35,13 +40,17 @@
 #   at-oom-sweep           json_at under every single OOM: 0 leaks, 0 bad frees
 #   from-pairs-oom-sweep   json_from_pairs under every single OOM: 0 bad frees, 0 leaks
 #   merge-oom-sweep        json_merge under every single OOM: 0 leaks, 0 bad frees
+#   router-ws-param-miss   an upgrade to /ws/abc/other against /ws/:room/chat
+#                          exits 0 (it aborted in malloc with a double free)
 #   sweep-covered-N        each sweep really injected >= 3 failures (so a
 #                          sweep that failed nothing cannot pass)
 #
 # Negative control (2026-09-26, JSON_SRC=<json.c at 8f4a843>): 5 passed,
 # 3 failed -- at-nested-no-leak "2 0" (two leaked intermediate copies),
 # at-oom-sweep "22 0", from-pairs-oom-sweep "0 6" (six free()s of a literal).
-# merge-oom-sweep passes on both, as item 3 explains.  8/0 on the fix.
+# merge-oom-sweep passes on both, as item 3 explains.  Against router.c at
+# 8f4a843: router-ws-param-miss "133 0" (SIGTRAP in malloc's double-free
+# check, never reached "survived").  9/0 on the fixes.
 #
 # Story: 135.3c
 
@@ -162,6 +171,38 @@ for k in at pairs merge; do
     n="$(field "$k" 4)"
     expect "sweep-covered-${k}" "$([ -n "$n" ] && [ "$n" -ge 3 ] && echo yes || echo "no (${n:-missing})")" "yes"
 done
+
+# -- 4. router: WebSocket upgrade that half-matches a param route ----------
+ROUTER_SRC="${ROUTER_SRC:-${REPO_ROOT}/src/stdlib/router.c}"
+cat > "${WORK}/rt.c" <<'EOF'
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include "router.h"
+static void on_open(int fd) { (void)fd; }
+static void on_msg(int fd, const char *m, size_t n, int b) { (void)fd; (void)m; (void)n; (void)b; }
+static void on_close(int fd) { (void)fd; }
+int main(void) {
+    TkRouter *r = router_new();
+    router_ws(r, "/ws/:room/chat", on_open, on_msg, on_close);
+    int sv[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) return 3;
+    const char *req = "GET /ws/abc/other HTTP/1.1\r\nHost: x\r\n"
+                      "Upgrade: websocket\r\nConnection: Upgrade\r\n\r\n";
+    if (write(sv[0], req, strlen(req)) < 0) return 3;
+    router_handle_fd(r, sv[1]);
+    printf("survived\n");
+    return 0;
+}
+EOF
+if "${CC}" -std=c99 -D_GNU_SOURCE -w -iquote "${REPO_ROOT}/src/stdlib" -o "${WORK}/rt" \
+        "${WORK}/rt.c" "${ROUTER_SRC}" "${REPO_ROOT}/src/stdlib/ws.c" -lz 2> "${WORK}/cc3.err"; then
+    "${WORK}/rt" > "${WORK}/rt.out" 2>&1; rc=$?
+    expect "router-ws-param-miss" "${rc} $(awk '/^survived$/{n++} END{print n+0}' "${WORK}/rt.out")" "0 1"
+else
+    echo "FAIL build-router"; sed 's/^/        /' "${WORK}/cc3.err" | head -5; FAIL=$((FAIL + 1))
+fi
 
 echo "C132: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ] && [ "${PASS}" -gt 0 ]

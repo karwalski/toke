@@ -176,6 +176,11 @@ no_match:
         free((char *)res.names[i]);
         free((char *)res.values[i]);
     }
+    /* 135.3c: say so.  With nparam left set, router_ws_try_upgrade() -- which
+     * frees mr.names[] for every result, matched or not -- freed the same
+     * strings again: a double free on any WebSocket upgrade that matched a
+     * `:param` segment and then missed. */
+    res.nparam = 0;
     free(pat_buf);
     free(req_buf);
     res.matched = 0;
@@ -1354,7 +1359,8 @@ TkRouteResp router_static_serve(const char *dir_path, const char *rel_path,
                 snprintf(cr_hdr, sizeof cr_hdr, "bytes */%zu", total);
                 const char **h416n = malloc(sizeof(char *));
                 const char **h416v = malloc(sizeof(char *));
-                if (h416n && h416v) {
+                if (!h416n || !h416v) { free(h416n); free(h416v); }  /* 135.3c: leaked one */
+                else {
                     h416n[0] = "Content-Range"; h416v[0] = strdup(cr_hdr);
                     TkRouteResp r416;
                     memset(&r416, 0, sizeof(r416));
