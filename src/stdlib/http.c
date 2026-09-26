@@ -390,12 +390,14 @@ int http_match_pattern(const char *pat, const char *path,
             if (!val) { free(key); http_free_params(out, cnt); return 0; }
             memcpy(val, vs, vn); val[vn] = '\0';
             /* Bound the write: `out` is a caller-owned HTTP_MAX_PARAMS block
-             * and this copy used to write past it without checking. */
-            if (*cnt < HTTP_MAX_PARAMS) {
-                out[(*cnt)].key = key; out[(*cnt)].val = val; (*cnt)++;
-            } else {
-                free(key); free(val);
+             * and this copy used to write past it without checking.
+             * 127.146: a route with more `:param` segments than that is a
+             * no-match, as in router.c.  It used to match with the extra
+             * bindings dropped, so the handler read "" for them. */
+            if (*cnt >= HTTP_MAX_PARAMS) {
+                free(key); free(val); http_free_params(out, cnt); return 0;
             }
+            out[(*cnt)].key = key; out[(*cnt)].val = val; (*cnt)++;
         } else {
             if (*pat != *path) { http_free_params(out, cnt); return 0; }
             pat++; path++;
@@ -1264,7 +1266,7 @@ static void handle_connection(int fd)
                         route_table[_d].pattern ? route_table[_d].pattern : "?");
         }
         Res res = make_res(404, "Not Found");
-        StrPair params[32]; int pc = 0;
+        StrPair params[HTTP_MAX_PARAMS]; int pc = 0;
         /* 127.100: route on the path component; the query string is not
          * part of the path and must not take part in matching. */
         char pathbuf_h1[2048];
@@ -3942,7 +3944,7 @@ static void handle_h2_connection(int fd, void *ssl, const char *client_ip)
             /* Dispatch through route table — two-pass: exact match
              * over wildcard, same logic as HTTP/1.1 TLS path (Story 75.2) */
             Res res = make_res(404, "Not Found");
-            StrPair h2_params[32]; int h2_pc = 0;
+            StrPair h2_params[HTTP_MAX_PARAMS]; int h2_pc = 0;
             /* 127.100: :path carries the query string; route on the path. */
             char pathbuf_h2[2048];
             const char *rpath_h2 =
@@ -4440,7 +4442,7 @@ static void handle_tls_connection(int fd, SSL_CTX *ssl_ctx)
                         route_table[_d].pattern ? route_table[_d].pattern : "?");
         }
         Res res = make_res(404, "Not Found");
-        StrPair params[32]; int pc = 0;
+        StrPair params[HTTP_MAX_PARAMS]; int pc = 0;
         /* 127.100: route on the path component; the query string is not
          * part of the path and must not take part in matching. */
         char pathbuf_tls[2048];
