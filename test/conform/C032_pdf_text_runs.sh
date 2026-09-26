@@ -136,9 +136,12 @@ gen_died() {
 
 # reportlab, pikepdf and Pillow are the independent producers.  None is a
 # build dependency of this repository, so a checkout without them SKIPS
-# rather than fails — but it skips LOUDLY, with a non-zero exit, because a
-# silent skip of the only behavioural test for a module is how a module comes
-# to be unprotected.
+# rather than fails.  127.166: the skip exits 0 with a `CONFORM-SKIP:` line,
+# which scripts/conform_isolated.sh counts and prints as SKIP in its summary,
+# so it is loud without failing `make conform` on a host that lacks them.  CI
+# installs them and sets TKC_CONFORM_NO_SKIP=1, which turns any skip back
+# into a failure there.  (It used to exit 1, and to fall back to a shared
+# /tmp/pdfvenv that came and went between runs.)
 #
 # `-P` is not decoration: without it Python puts the script's own directory
 # at the front of sys.path, and a stray `math.py` beside it shadows the
@@ -146,7 +149,7 @@ gen_died() {
 # nowhere near the real cause.
 PY="${TKC_PY:-python3}"
 if ! "${PY}" -P -c 'import reportlab, pikepdf, PIL' >/dev/null 2>&1; then
-    for cand in /tmp/pdfvenv/bin/python "${HOME}/.venvs/pdf/bin/python"; do
+    for cand in "${HOME}/.venvs/pdf/bin/python"; do
         if [ -x "${cand}" ] && "${cand}" -P -c 'import reportlab, pikepdf, PIL' >/dev/null 2>&1; then
             PY="${cand}"
             break
@@ -162,7 +165,8 @@ if ! "${PY}" -P -c 'import reportlab, pikepdf, PIL' >/dev/null 2>&1; then
     echo "      a fixture written by the same hand as the parser agrees with"
     echo "      the parser's mistakes, which is the one thing this test"
     echo "      exists to rule out."
-    exit 1
+    echo "CONFORM-SKIP: reportlab / pikepdf / Pillow not installed (set TKC_PY to a python that has them)"
+    exit 0
 fi
 
 if ! "${PY}" -P - "${FIX}" "${WORK}" > "${GEN_LOG}" 2>&1 <<'PY'

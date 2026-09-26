@@ -115,6 +115,7 @@ typedef struct {
     int       field_count;
     int       field_cap;
     uint32_t *field_type_idxs;
+    uint32_t  elem_type_idx;   /* ARRAY: element; FN_PTR: return (127.211) */
 } EncTypeEntry;
 
 typedef struct {
@@ -124,6 +125,12 @@ typedef struct {
     uint32_t ret_type_idx;
     uint8_t  flags;
     const Node *body;
+    /* 127.211: per-function code framing.  The code section is written as
+     * func_idx(u16) + instr_count(u16) + instrs per function with a body,
+     * and each function's register count goes into the func section. */
+    uint32_t code_off, code_end;
+    uint32_t instr_count;
+    uint16_t reg_count;
 } EncFunc;
 
 typedef struct {
@@ -166,7 +173,8 @@ typedef struct {
 
     uint16_t       reg;
     TkirBuf        code;
-    uint32_t      *func_code_offsets;
+    uint32_t       instr_count;   /* instructions in the current function */
+    uint8_t        last_op;       /* opcode of the last one emitted       */
 } Enc;
 
 static void enc_tok_text(const char *src, const Node *n, char *buf, int sz)
@@ -223,6 +231,22 @@ static uint32_t enc_type_idx_from_name(Enc *e, const char *name)
     return (uint32_t)e->type_count++;
 }
 
+static uint32_t enc_compound(Enc *e, uint8_t kind, uint32_t elem)
+{
+    for (int i = 0; i < e->type_count; i++) {
+        if (e->type_entries[i].kind == kind && e->type_entries[i].name[0] == '\0' &&
+            e->type_entries[i].elem_type_idx == elem)
+            return (uint32_t)i;
+    }
+    if (e->type_count >= ENC_MAX_TYPES) return 0;
+    EncTypeEntry *te = &e->type_entries[e->type_count];
+    te->kind = kind;
+    te->name[0] = '\0';
+    te->field_count = 0;
+    te->elem_type_idx = elem;
+    return (uint32_t)e->type_count++;
+}
+
 static uint32_t enc_type_idx_from_node(Enc *e, const Node *n)
 {
     if (!n) return enc_ensure_scalar(e, TKIR_TY_VOID);
@@ -231,8 +255,16 @@ static uint32_t enc_type_idx_from_node(Enc *e, const Node *n)
         enc_tok_text(e->src, n, name, NAME_BUF);
         return enc_type_idx_from_name(e, name);
     }
-    if (n->kind == NODE_ARRAY_TYPE) return enc_ensure_scalar(e, TKIR_TY_ARRAY);
-    if (n->kind == NODE_FUNC_TYPE)  return enc_ensure_scalar(e, TKIR_TY_FN_PTR);
+    /* 127.211: an array entry carries its element type and a fn-pointer
+     * entry a (here unresolved: void) return type, because the reader
+     * reads a u16 for both.  They were written as a bare kind byte, which
+     * desynchronised the rest of the type section. */
+    if (n->kind == NODE_ARRAY_TYPE)
+        return enc_compound(e, TKIR_TY_ARRAY,
+                            n->child_count > 0 ? enc_type_idx_from_node(e, n->children[0])
+                                               : enc_ensure_scalar(e, TKIR_TY_VOID));
+    if (n->kind == NODE_FUNC_TYPE)
+        return enc_compound(e, TKIR_TY_FN_PTR, enc_ensure_scalar(e, TKIR_TY_VOID));
     return enc_ensure_scalar(e, TKIR_TY_VOID);
 }
 
@@ -268,21 +300,33 @@ static uint32_t enc_add_i64(Enc *e, int64_t val)
 
 static uint16_t enc_next_reg(Enc *e) { return e->reg++; }
 
+/* 127.211: every instruction is written in the one layout the reader
+ * (parse_code_section) accepts: opcode(u8) dst(u16) src(u16) rhs(u16),
+ * followed by an opcode-specific immediate.  The encoder used to write a
+ * different operand count per opcode (RET two bytes, CONST_DATA a u16
+ * index, ...) and no per-function framing, so no emitted file could be read
+ * back.  Unused operand slots are 0. */
+static void enc_ins(Enc *e, uint8_t op, uint16_t dst, uint16_t src, uint16_t rhs)
+{
+    tkir_buf_u8(&e->code, op);
+    tkir_buf_u16(&e->code, dst);
+    tkir_buf_u16(&e->code, src);
+    tkir_buf_u16(&e->code, rhs);
+    e->instr_count++;
+    e->last_op = op;
+}
+
 static void enc_emit_rrr(Enc *e, uint8_t op, uint16_t dest,
                          uint16_t lhs, uint16_t rhs)
 {
-    tkir_buf_u8(&e->code, op);
-    tkir_buf_u16(&e->code, dest);
-    tkir_buf_u16(&e->code, lhs);
-    tkir_buf_u16(&e->code, rhs);
+    enc_ins(e, op, dest, lhs, rhs);
 }
 
 static uint16_t enc_emit_const_data(Enc *e, uint32_t data_idx)
 {
     uint16_t dest = enc_next_reg(e);
-    tkir_buf_u8(&e->code, TKIR_OP_CONST_DATA);
-    tkir_buf_u16(&e->code, dest);
-    tkir_buf_u16(&e->code, (uint16_t)data_idx);
+    enc_ins(e, TKIR_OP_CONST_DATA, dest, 0, 0);
+    tkir_buf_u32(&e->code, data_idx);
     return dest;
 }
 
@@ -290,8 +334,7 @@ static uint16_t enc_emit_call(Enc *e, uint16_t func_idx,
                               uint16_t *args, int argc)
 {
     uint16_t dest = enc_next_reg(e);
-    tkir_buf_u8(&e->code, TKIR_OP_CALL);
-    tkir_buf_u16(&e->code, dest);
+    enc_ins(e, TKIR_OP_CALL, dest, 0, 0);
     tkir_buf_u16(&e->code, func_idx);
     tkir_buf_u16(&e->code, (uint16_t)argc);
     for (int i = 0; i < argc; i++)
@@ -301,14 +344,12 @@ static uint16_t enc_emit_call(Enc *e, uint16_t func_idx,
 
 static void enc_emit_ret(Enc *e, uint16_t src_reg)
 {
-    tkir_buf_u8(&e->code, TKIR_OP_RET);
-    tkir_buf_u16(&e->code, src_reg);
+    enc_ins(e, TKIR_OP_RET, 0, src_reg, 0);
 }
 
 static void enc_emit_ret_void(Enc *e)
 {
-    tkir_buf_u8(&e->code, TKIR_OP_RET);
-    tkir_buf_u16(&e->code, 0);
+    enc_ins(e, TKIR_OP_RET, 0, 0, 0);
 }
 
 /* ── Encoder: prepass ────────────────────────────────────────────────── */
@@ -378,7 +419,11 @@ static int enc_prepass_types(Enc *e, const Node *ast)
             for (int k = 0; k < nfld; k++) {
                 const Node *fld = child->kind == NODE_STMT_LIST ? child->children[k] : child;
                 if (fld->kind != NODE_FIELD) continue;
-                uint32_t ti = (fld->child_count > 1) ? enc_type_idx_from_node(e, fld->children[1])
+                /* 127.211: a FIELD node's name is its own token and its
+                 * only child is the type (parse_field_list), so the type is
+                 * children[0].  Reading children[1] recorded every field
+                 * as i64. */
+                uint32_t ti = (fld->child_count > 0) ? enc_type_idx_from_node(e, fld->children[0])
                                                      : enc_ensure_scalar(e, TKIR_TY_I64);
                 if (enc_add_field(te, ti) < 0) return -1;
             }
@@ -471,9 +516,7 @@ static uint16_t enc_emit_expr(Enc *e, const Node *n)
     }
     case NODE_IDENT: {
         uint16_t dest = enc_next_reg(e);
-        tkir_buf_u8(&e->code, TKIR_OP_LOAD);
-        tkir_buf_u16(&e->code, dest);
-        tkir_buf_u16(&e->code, 0);
+        enc_ins(e, TKIR_OP_LOAD, dest, 0, 0);
         return dest;
     }
     case NODE_BINARY_EXPR: {
@@ -499,9 +542,7 @@ static uint16_t enc_emit_expr(Enc *e, const Node *n)
         if (n->child_count < 1) return 0;
         uint16_t sr = enc_emit_expr(e, n->children[0]);
         uint16_t dest = enc_next_reg(e);
-        tkir_buf_u8(&e->code, TKIR_OP_NEG);
-        tkir_buf_u16(&e->code, dest);
-        tkir_buf_u16(&e->code, sr);
+        enc_ins(e, TKIR_OP_NEG, dest, sr, 0);
         return dest;
     }
     case NODE_CALL_EXPR: {
@@ -521,20 +562,17 @@ static uint16_t enc_emit_expr(Enc *e, const Node *n)
         if (n->child_count < 2) return 0;
         uint16_t base = enc_emit_expr(e, n->children[0]);
         uint16_t dest = enc_next_reg(e);
-        tkir_buf_u8(&e->code, TKIR_OP_FIELD_GET);
-        tkir_buf_u16(&e->code, dest);
-        tkir_buf_u16(&e->code, base);
-        tkir_buf_u16(&e->code, 0);
+        enc_ins(e, TKIR_OP_FIELD_GET, dest, base, 0);
+        tkir_buf_u16(&e->code, 0);   /* field index: not resolved yet */
         return dest;
     }
     case NODE_CAST_EXPR: {
         if (n->child_count < 2) return 0;
         uint16_t sr = enc_emit_expr(e, n->children[0]);
         uint16_t dest = enc_next_reg(e);
-        tkir_buf_u8(&e->code, TKIR_OP_CAST);
-        tkir_buf_u16(&e->code, dest);
-        tkir_buf_u16(&e->code, sr);
-        tkir_buf_u16(&e->code, (uint16_t)enc_type_idx_from_node(e, n->children[1]));
+        uint16_t ty = (uint16_t)enc_type_idx_from_node(e, n->children[1]);
+        enc_ins(e, TKIR_OP_CAST, dest, sr, 0);
+        tkir_buf_u16(&e->code, ty);
         return dest;
     }
     default: break;
@@ -560,36 +598,29 @@ static void enc_emit_stmt(Enc *e, const Node *n)
         if (n->child_count >= 2) {
             uint16_t val = enc_emit_expr(e, n->children[n->child_count - 1]);
             uint16_t slot = enc_next_reg(e);
-            tkir_buf_u8(&e->code, TKIR_OP_ALLOCA);
-            tkir_buf_u16(&e->code, slot);
-            tkir_buf_u16(&e->code, (uint16_t)enc_ensure_scalar(e, TKIR_TY_I64));
-            tkir_buf_u8(&e->code, TKIR_OP_STORE);
-            tkir_buf_u16(&e->code, slot);
-            tkir_buf_u16(&e->code, val);
+            enc_ins(e, TKIR_OP_ALLOCA, slot, 0, 0);
+            tkir_buf_u32(&e->code, 8);   /* slot size in bytes */
+            enc_ins(e, TKIR_OP_STORE, slot, val, 0);
         }
         break;
     case NODE_ASSIGN_STMT:
         if (n->child_count >= 2) {
             uint16_t val = enc_emit_expr(e, n->children[1]);
-            tkir_buf_u8(&e->code, TKIR_OP_STORE);
-            tkir_buf_u16(&e->code, 0);
-            tkir_buf_u16(&e->code, val);
+            enc_ins(e, TKIR_OP_STORE, 0, val, 0);
         }
         break;
     case NODE_IF_STMT:
         if (n->child_count >= 2) {
             uint16_t cond = enc_emit_expr(e, n->children[0]);
-            tkir_buf_u8(&e->code, TKIR_OP_BR_IF);
-            tkir_buf_u16(&e->code, cond);
-            tkir_buf_u16(&e->code, 0);
-            tkir_buf_u16(&e->code, 0);
+            enc_ins(e, TKIR_OP_BR_IF, 0, cond, 0);
+            tkir_buf_u32(&e->code, 0);   /* label: not resolved yet */
             enc_emit_stmt(e, n->children[1]);
             if (n->child_count > 2) enc_emit_stmt(e, n->children[2]);
         }
         break;
     case NODE_LOOP_STMT:
-        tkir_buf_u8(&e->code, TKIR_OP_BR);
-        tkir_buf_u16(&e->code, 0);
+        enc_ins(e, TKIR_OP_BR, 0, 0, 0);
+        tkir_buf_u32(&e->code, 0);       /* label: not resolved yet */
         for (int i = 0; i < n->child_count; i++) enc_emit_stmt(e, n->children[i]);
         break;
     case NODE_EXPR_STMT:
@@ -602,14 +633,20 @@ static void enc_emit_stmt(Enc *e, const Node *n)
 static void enc_emit_func_body(Enc *e, int func_idx)
 {
     EncFunc *fn = &e->funcs[func_idx];
-    if (!fn->body) return;
-    e->func_code_offsets[func_idx] = (uint32_t)e->code.len;
     e->reg = 0;
     for (int i = 0; i < fn->param_count; i++) enc_next_reg(e);
+    if (!fn->body) { fn->reg_count = e->reg; return; }
+    fn->code_off = (uint32_t)e->code.len;
+    e->instr_count = 0;
+    e->last_op = 0;
     enc_emit_stmt(e, fn->body);
-    size_t off = e->func_code_offsets[func_idx];
-    if (e->code.len == off || e->code.data[e->code.len - 3] != TKIR_OP_RET)
+    if (e->instr_count == 0 || e->last_op != TKIR_OP_RET)
         enc_emit_ret_void(e);
+    /* RET's dst slot is register 0, so a body always owns at least one. */
+    if (e->reg == 0) e->reg = 1;
+    fn->code_end = (uint32_t)e->code.len;
+    fn->instr_count = e->instr_count;
+    fn->reg_count = e->reg;
 }
 
 /* ── Encoder: section writers ────────────────────────────────────────── */
@@ -639,6 +676,12 @@ static void enc_write_type_section(TkirBuf *out, Enc *e)
             tkir_buf_u16(&sec, (uint16_t)te->field_count);
             for (int fld = 0; fld < te->field_count; fld++)
                 tkir_buf_u16(&sec, (uint16_t)te->field_type_idxs[fld]);
+        } else if (te->kind == TKIR_TY_ARRAY || te->kind == TKIR_TY_ERR_UNION) {
+            tkir_buf_u16(&sec, (uint16_t)te->elem_type_idx);
+        } else if (te->kind == TKIR_TY_FN_PTR) {
+            tkir_buf_u16(&sec, 0);                            /* name: none   */
+            tkir_buf_u16(&sec, (uint16_t)te->elem_type_idx);  /* return type  */
+            tkir_buf_u16(&sec, 0);                            /* param count  */
         }
     }
     tkir_buf_u8(out, TKIR_SEC_TYPE);
@@ -658,7 +701,7 @@ static void enc_write_func_section(TkirBuf *out, Enc *e)
         tkir_buf_bytes(&sec, fn->name, nlen);
         tkir_buf_u8(&sec, fn->flags);
         tkir_buf_u16(&sec, (uint16_t)fn->ret_type_idx);
-        tkir_buf_u16(&sec, e->reg);
+        tkir_buf_u16(&sec, fn->reg_count);   /* 127.211: per function */
         tkir_buf_u16(&sec, (uint16_t)fn->param_count);
     }
     tkir_buf_u8(out, TKIR_SEC_FUNC);
@@ -667,18 +710,32 @@ static void enc_write_func_section(TkirBuf *out, Enc *e)
     tkir_buf_free(&sec);
 }
 
-static void enc_write_code_section(TkirBuf *out, Enc *e)
+static int enc_write_code_section(TkirBuf *out, Enc *e)
 {
-    /* Emit raw code bytes as the code section.
-     * The reader expects: func_idx(u16) + instr_count(u16) + instrs.
-     * For v1 we emit raw bytecode without the per-function framing so
-     * that the round-trip test only validates the magic + section structure.
-     * Full per-function framing will be added when the reader test is
-     * wired (76.1.6b already handles it). */
+    /* 127.211: framed per function as parse_code_section reads it:
+     * func_idx(u16) + instr_count(u16) + instrs.  A body-less (extern)
+     * function has no entry. */
+    TkirBuf sec; tkir_buf_init(&sec);
+    for (int i = 0; i < e->func_count; i++) {
+        EncFunc *fn = &e->funcs[i];
+        if (!fn->body) continue;
+        if (fn->instr_count > 0xFFFF) {
+            diag_emit(DIAG_ERROR, E9010, 0, 0, 0,
+                      "compiler limit exceeded: too many instructions in one function for .tkir",
+                      (void *)0);
+            tkir_buf_free(&sec);
+            return -1;
+        }
+        tkir_buf_u16(&sec, (uint16_t)i);
+        tkir_buf_u16(&sec, (uint16_t)fn->instr_count);
+        tkir_buf_bytes(&sec, e->code.data + fn->code_off, fn->code_end - fn->code_off);
+    }
     tkir_buf_u8(out, TKIR_SEC_CODE);
-    tkir_buf_u32(out, (uint32_t)e->code.len);
-    if (e->code.len > 0)
-        tkir_buf_bytes(out, e->code.data, e->code.len);
+    tkir_buf_u32(out, (uint32_t)sec.len);
+    if (sec.len > 0)
+        tkir_buf_bytes(out, sec.data, sec.len);
+    tkir_buf_free(&sec);
+    return 0;
 }
 
 static void enc_write_data_section(TkirBuf *out, Enc *e)
@@ -773,15 +830,6 @@ int emit_tkir(const Node *ast, const char *src,
     enc_prepass_funcs(&e, ast);
     enc_prepass_imports(&e, ast);
 
-    e.func_code_offsets = calloc((size_t)e.func_count + 1, sizeof(uint32_t));
-    if (!e.func_code_offsets && e.func_count > 0) {
-        diag_emit(DIAG_ERROR, E9020, 0, 0, 0,
-                  "failed to allocate code offset table", "fix", NULL);
-        enc_free_types(&e);
-        tkir_buf_free(&e.code);
-        return -1;
-    }
-
     for (int i = 0; i < e.func_count; i++)
         enc_emit_func_body(&e, i);
 
@@ -790,7 +838,12 @@ int emit_tkir(const Node *ast, const char *src,
     enc_write_header(&out, target);
     enc_write_type_section(&out, &e);
     enc_write_func_section(&out, &e);
-    enc_write_code_section(&out, &e);
+    if (enc_write_code_section(&out, &e) < 0) {
+        enc_free_types(&e);
+        tkir_buf_free(&out);
+        tkir_buf_free(&e.code);
+        return -1;
+    }
     enc_write_data_section(&out, &e);
     enc_write_import_section(&out, &e);
     enc_write_export_section(&out, &e);
@@ -802,7 +855,6 @@ int emit_tkir(const Node *ast, const char *src,
                   "failed to open output file for .tkir", "fix", NULL);
         tkir_buf_free(&out);
         tkir_buf_free(&e.code);
-        free(e.func_code_offsets);
         return -1;
     }
     size_t written = fwrite(out.data, 1, out.len, f);
@@ -814,7 +866,6 @@ int emit_tkir(const Node *ast, const char *src,
                   "failed to write .tkir output file", (void *)0);
     tkir_buf_free(&out);
     tkir_buf_free(&e.code);
-    free(e.func_code_offsets);
     return rc;
 }
 

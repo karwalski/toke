@@ -20,6 +20,16 @@ jobs:
       - name: Build tkc
         run: make
 
+      # 127.166: C031/C032 read fixtures written by openpyxl / reportlab /
+      # pikepdf / Pillow. Without them they SKIP (exit 0, counted as skipped);
+      # here they are installed and TKC_CONFORM_NO_SKIP=1 makes a skip fail.
+      - name: Python libraries for C031/C032
+        run: |
+          python3 -m venv "$RUNNER_TEMP/tkpy"
+          "$RUNNER_TEMP/tkpy/bin/pip" install --quiet openpyxl reportlab pikepdf pillow
+          echo "TKC_PY=$RUNNER_TEMP/tkpy/bin/python" >> "$GITHUB_ENV"
+          echo "TKC_CONFORM_NO_SKIP=1" >> "$GITHUB_ENV"
+
       - name: Conformance suite
         run: make conform
 
@@ -186,10 +196,20 @@ jobs:
       - name: Build tkc
         run: make
 
+      # 127.166: C031/C032 read fixtures written by openpyxl / reportlab /
+      # pikepdf / Pillow. Without them they SKIP (exit 0, counted as skipped);
+      # here they are installed and TKC_CONFORM_NO_SKIP=1 makes a skip fail.
+      - name: Python libraries for C031/C032
+        run: |
+          python3 -m venv "$RUNNER_TEMP/tkpy"
+          "$RUNNER_TEMP/tkpy/bin/pip" install --quiet openpyxl reportlab pikepdf pillow
+          echo "TKC_PY=$RUNNER_TEMP/tkpy/bin/python" >> "$GITHUB_ENV"
+          echo "TKC_CONFORM_NO_SKIP=1" >> "$GITHUB_ENV"
+
       # The shell-script conformance cases. test/conform/*.sh is 100+ scripts
-      # that `make conform` runs and the workflow's `make conform` step... also
-      # runs, since conform depends on conform-sh. Run explicitly so a failure
-      # is attributed to the right suite.
+      # that the build-and-test job's `make conform` also runs (conform is
+      # scripts/conform_isolated.sh all: the YAML cases, then these). Run
+      # explicitly so a failure is attributed to the right suite.
       - name: Shell conformance cases
         run: make conform-sh
 

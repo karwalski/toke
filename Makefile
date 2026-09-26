@@ -1882,10 +1882,12 @@ test-tkir-encoder: $(BIN)
 # docs/security/audit-120/compiler-codegen.md cites the .tkir reader's bounds
 # checks as audited *precisely because* this test reaches them — a citation
 # resting on 15 cases nothing ran. Needs src/diag.c: tkir.c calls diag_emit.
-test-tkir-reader:
+# 127.211: it is also given the compiler, so one case emits a real .tkir
+# and reads it back; the other cases all decode hand-built buffers.
+test-tkir-reader: $(BIN)
 	$(CC) $(CFLAGS) -o test/tkir/test_tkir_reader \
 	    test/tkir/test_tkir_reader.c src/tkir.c src/diag.c
-	$(RUN_TEST) ./test/tkir/test_tkir_reader
+	$(RUN_TEST) ./test/tkir/test_tkir_reader ./$(BIN)
 
 test-standalone: $(BIN)
 	@test/standalone/run_all.sh

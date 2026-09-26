@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <unistd.h>
 
 #include "../../src/tkir.h"
 
@@ -643,10 +644,105 @@ static void test_type_kind_names(void)
     assert(strcmp(tkir_type_kind_name(0xFF), "UNKNOWN") == 0);
 }
 
+/* 127.211: the header the helpers build must start with the same four
+ * ASCII bytes the encoder writes.  TKIR_MAGIC was 0x544B4952, which a
+ * little-endian u32 writes as "RIKT", so every hand-built buffer here
+ * agreed with the reader and disagreed with every real file. */
+static void test_magic_is_ascii(void)
+{
+    TkirBuf buf; tkir_buf_init(&buf);
+    write_header(&buf, 0);
+    assert(buf.len >= 4 && memcmp(buf.data, "TKIR", 4) == 0);
+    tkir_buf_free(&buf);
+}
+
+/* 127.211: emit -> read with the real encoder.  Every other test here
+ * decodes a buffer built by hand, which is how an encoder and a reader that
+ * disagreed on the magic, the code-section framing, the instruction layout
+ * and a struct's field types all passed.  Needs the compiler: argv[1]. */
+static const char *g_tkc = NULL;
+
+static void test_emit_read_roundtrip(void)
+{
+    char dir[] = "/tmp/tkir_rt_XXXXXX";
+    char *made = mkdtemp(dir);
+    assert(made != NULL);
+    char src[512], out[512], cmd[2048];
+    snprintf(src, sizeof src, "%s/p.tk", dir);
+    snprintf(out, sizeof out, "%s/p.tkir", dir);
+    FILE *f = fopen(src, "w");
+    assert(f);
+    fputs("m=roundtrip;\n"
+          "t=$pt{name:$str;w:f64;ok:bool;n:i64;xs:@f64};\n"
+          "f=add(a:i64;b:i64):i64{<a+b};\n"
+          "f=main():i64{let s=\"hi\";<add(1;2)};\n", f);
+    fclose(f);
+    snprintf(cmd, sizeof cmd, "'%s' --emit-tkir '%s' --out '%s' >/dev/null 2>&1",
+             g_tkc, src, out);
+    int src_rc = system(cmd);
+    assert(src_rc == 0);
+
+    TkirModule mod;
+    char err[256] = {0};
+    int rc = tkir_read(out, &mod, err, sizeof err);
+    if (rc != 0) fprintf(stderr, "\n    tkir_read: %s\n", err);
+    assert(rc == 0);
+
+    /* The struct keeps its declared field types, in order. */
+    const TkirTypeEntry *pt = NULL;
+    for (int i = 0; i < mod.type_count; i++)
+        if (mod.types[i].kind == TKIR_TY_STRUCT && !strcmp(mod.types[i].name, "pt"))
+            pt = &mod.types[i];
+    assert(pt && pt->field_count == 5);
+    static const uint8_t want[5] = { TKIR_TY_STR, TKIR_TY_F64, TKIR_TY_BOOL,
+                                     TKIR_TY_I64, TKIR_TY_ARRAY };
+    for (int k = 0; k < 5; k++) {
+        assert(pt->field_type_idxs[k] < mod.type_count);
+        assert(mod.types[pt->field_type_idxs[k]].kind == want[k]);
+    }
+    const TkirTypeEntry *arr = &mod.types[pt->field_type_idxs[4]];
+    assert(arr->elem_type_idx < mod.type_count);
+    assert(mod.types[arr->elem_type_idx].kind == TKIR_TY_F64);
+
+    /* Both functions come back with framed, decodable code ending in RET. */
+    assert(mod.func_count == 2);
+    for (int i = 0; i < 2; i++) {
+        const TkirFuncDef *fn = &mod.funcs[i];
+        assert(fn->instr_count > 0);
+        assert(fn->instrs[fn->instr_count - 1].opcode == TKIR_OP_RET);
+    }
+    assert(!strcmp(mod.funcs[0].name, "add") && mod.funcs[0].param_count == 2);
+    int adds = 0;
+    for (int j = 0; j < mod.funcs[0].instr_count; j++)
+        adds += mod.funcs[0].instrs[j].opcode == TKIR_OP_ADD;
+    assert(adds == 1);
+    int calls = 0;
+    for (int j = 0; j < mod.funcs[1].instr_count; j++)
+        if (mod.funcs[1].instrs[j].opcode == TKIR_OP_CALL) {
+            calls++;
+            assert(mod.funcs[1].instrs[j].imm.u32 == 0);        /* add */
+            assert(mod.funcs[1].instrs[j].arg_count == 2);
+        }
+    assert(calls == 1);
+
+    /* The string literal reaches the data section. */
+    int hi = 0;
+    for (int i = 0; i < mod.data_count; i++)
+        if (mod.data[i].kind == TKIR_DATA_STR && mod.data[i].size == 2 &&
+            !memcmp(mod.data[i].bytes, "hi", 2)) hi = 1;
+    assert(hi);
+    assert(mod.export_count == 1 && !strcmp(mod.exports[0].name, "main"));
+
+    tkir_module_free(&mod);
+    snprintf(cmd, sizeof cmd, "rm -rf '%s'", dir);
+    (void)system(cmd);
+}
+
 /* ── Main ───────────��────────────────────────────────────────────────── */
 
-int main(void)
+int main(int argc, char **argv)
 {
+    if (argc > 1) g_tkc = argv[1];
     fprintf(stderr, "=== TKIR Reader Tests ===\n");
 
     TEST(test_empty_module);
@@ -664,6 +760,9 @@ int main(void)
     TEST(test_dump);
     TEST(test_unknown_section_skipped);
     TEST(test_type_kind_names);
+    TEST(test_magic_is_ascii);
+    if (g_tkc) TEST(test_emit_read_roundtrip);
+    else fprintf(stderr, "  SKIP test_emit_read_roundtrip (no compiler path given)\n");
 
     fprintf(stderr, "\n%d/%d tests passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

@@ -78,8 +78,13 @@ struct TkRouter {
 /* ----------------------------------------------------------------------- */
 
 /* Split 'path' on '/' into segments stored in out[].
- * Returns the number of segments.  out[] holds pointers into a heap copy
- * of path that the caller must free (returned via *buf_out). */
+ * Returns the number of segments, or -1 when the path has more than
+ * max_segs of them.  out[] holds pointers into a heap copy of path that the
+ * caller must free (returned via *buf_out) in either case.
+ *
+ * 127.146: it used to stop at max_segs and return max_segs, dropping the
+ * rest, so a request with more segments than that compared equal on its
+ * first max_segs and matched a route it does not match. */
 static int split_path(const char *path, char **out, int max_segs, char **buf_out)
 {
     /* skip leading slash */
@@ -91,7 +96,8 @@ static int split_path(const char *path, char **out, int max_segs, char **buf_out
 
     int n = 0;
     char *p = buf;
-    while (*p && n < max_segs) {
+    while (*p) {
+        if (n >= max_segs) return -1;
         out[n++] = p;
         char *slash = strchr(p, '/');
         if (!slash) break;
@@ -133,6 +139,7 @@ static MatchResult match_route(const char *pattern, const char *path)
 
     int npat = split_path(pattern, pat_segs, MAX_PARAMS * 2, &pat_buf);
     int nreq = split_path(path,    req_segs, MAX_PARAMS * 2, &req_buf);
+    if (npat < 0 || nreq < 0) goto no_match;   /* 127.146: too many segments */
 
     /* Wildcard: last pattern segment is '*' */
     int has_wildcard = (npat > 0 && strcmp(pat_segs[npat - 1], "*") == 0);

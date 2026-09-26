@@ -2212,12 +2212,12 @@ int tkc_migrate(const char *src, int slen, const Token *toks_unused, int tc_unus
 
         case TK_DOLLAR: buf[blen++] = '$'; break;
 
-        case TK_CARET: case TK_TILDE:
-            fprintf(stderr, "migrate: warning: bitwise '%.*s' at line %d removed (v0.5)\n", t->len, c+t->start, t->line);
-            break;
-        case TK_SHL: case TK_SHR:
-            fprintf(stderr, "migrate: warning: shift '%.*s' at line %d removed (v0.5)\n", t->len, c+t->start, t->line);
-            break;
+        /* 127.213: `^` `~` `<<` `>>` are live operators in both modes
+         * (spec v0.4 §charset; story 114.8 assigned `^`/`~`), so they are
+         * copied through by the default case.  This switch used to drop
+         * them with a "removed (v0.5)" warning, which turned `a^3` into the
+         * identifier `a3` and `2^3` into the literal `23` -- the latter
+         * compiled silently to a different value. */
 
         default:
             memcpy(buf+blen, c+t->start, (size_t)t->len); blen += t->len;

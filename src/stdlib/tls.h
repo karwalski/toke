@@ -10,7 +10,8 @@
  *   str           = const char *  (null-terminated UTF-8; caller owns)
  *   bool          = int           (0 = false, 1 = true)
  *   ?(T)          = T + is_none flag
- *   T!TlsErr      = T + is_err flag + err_msg
+ *   T!str         = T + is_err flag + err_msg (the message is the error;
+ *                   127.104 — tls_glue.c puts it in the error slot)
  *
  * malloc is permitted: this is a stdlib boundary, not arena-managed
  * compiler code. Callers own all returned pointers.
@@ -88,7 +89,7 @@ typedef void (*TlsConnCallback)(TlsConn conn);
  * ========================================================================= */
 
 /*
- * tls.genselfsigned(common_name, valid_days) -> TlsKeypair!TlsErr
+ * tls.genselfsigned(common_name, valid_days) -> TlsKeypair!str
  *
  * Generates a P-384 EC keypair and a self-signed X.509 v3 certificate.
  * On success: result.cert_pem and result.key_pem are heap-allocated PEM
@@ -99,7 +100,7 @@ typedef void (*TlsConnCallback)(TlsConn conn);
 TlsKeypairResult tls_gen_self_signed(const char *common_name, int32_t valid_days);
 
 /*
- * tls.genselfsignedalg(common_name, valid_days, key_alg) -> TlsKeypair!TlsErr
+ * tls.genselfsignedalg(common_name, valid_days, key_alg) -> TlsKeypair!str
  *
  * As tls_gen_self_signed, but selects the certificate signing key:
  *   NULL / "ecdsa-p384" -> classical P-384 ECDSA (default, broad interop)

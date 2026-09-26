@@ -804,7 +804,8 @@ At the end of each development cycle, report using this structure:
 
 **Validation:** (copy each gate's own last line; do not paraphrase)
 - make conform: <e.g. "447/447 pass" — the suite prints this>
-- make conform-sh: <e.g. "N scripts passed, 0 failed">
+- make conform-sh: <e.g. "N scripts passed, 0 failed, K skipped" — name each
+  SKIP line; a skip is not a pass>
 - make lint: <e.g. "OK against the 65-entry skiplist in
   scripts/check_stdlib_analysis_skiplist.txt; M entries dated <date>">
 - make lint-nonhost: <same shape, 8-entry portion of the same file>

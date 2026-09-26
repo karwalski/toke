@@ -161,15 +161,19 @@ gen_died() {
 export SOURCE_DATE_EPOCH=315532800   # 1980-01-01T00:00:00Z, the DOS zero
 
 # openpyxl is the independent encoder.  It is not a build dependency of this
-# repository, so a checkout without it SKIPS rather than fails — but it skips
-# LOUDLY, with a non-zero exit, because a silent skip of the only behavioural
-# test for a module is how a module comes to be unprotected.
+# repository, so a checkout without it SKIPS rather than fails.  127.166: the
+# skip exits 0 with a `CONFORM-SKIP:` line, which scripts/conform_isolated.sh
+# counts and prints as SKIP in its summary ("N passed, M failed, K skipped"),
+# so it is loud without failing `make conform` on a host that lacks the
+# library.  CI installs it and sets TKC_CONFORM_NO_SKIP=1, which turns any
+# skip back into a failure there.  (It used to exit 1, and to fall back to a
+# shared /tmp/xlsxvenv that came and went between runs.)
 PY="${TKC_PY:-python3}"
 if ! "${PY}" - <<'PY' >/dev/null 2>&1
 import openpyxl
 PY
 then
-    for cand in /tmp/xlsxvenv/bin/python "${HOME}/.venvs/xlsx/bin/python"; do
+    for cand in "${HOME}/.venvs/xlsx/bin/python"; do
         if [ -x "${cand}" ] && "${cand}" -c 'import openpyxl' >/dev/null 2>&1; then
             PY="${cand}"
             break
@@ -184,7 +188,8 @@ if ! "${PY}" -c 'import openpyxl' >/dev/null 2>&1; then
     echo "      hand-written fixture: a fixture written by the same hand as"
     echo "      the parser agrees with the parser's mistakes, which is the"
     echo "      one thing this test exists to rule out."
-    exit 1
+    echo "CONFORM-SKIP: openpyxl not installed (set TKC_PY to a python that has it)"
+    exit 0
 fi
 
 if ! "${PY}" - "${FIX}" > "${GEN_LOG}" 2>&1 <<'PY'
