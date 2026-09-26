@@ -2131,6 +2131,9 @@ static void check_std_str_args(Ctx *cx, const Node *call) {
             }
             if (!at || at->kind == TY_UNKNOWN || at->kind == TY_STR) continue;
             if (!tc_can_emit(cx)) return;
+            /* 127.201's representation check runs after this one over the
+             * same argument; marking it reported keeps one E4031 per arg. */
+            if (!tc_first_report(cx, arg)) continue;
             char msg[256];
             snprintf(msg, sizeof(msg),
                      "type mismatch: expected 'str', got '%s'", type_name(at));
