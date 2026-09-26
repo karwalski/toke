@@ -109,14 +109,16 @@ int64_t tk_template_load_w(int64_t path) {
     /* Read file contents, compile, and return handle */
     FILE *f = fopen(p, "rb");
     if (!f) return 0;
-    fseek(f, 0, SEEK_END);
+    /* 135.3c: every step checked.  The seeks were unchecked (rewind() can
+     * only report through errno, which nothing read -- clang unix.Errno),
+     * and a short fread left buf[nread..sz) uninitialised but compiled. */
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return 0; }
     long sz = ftell(f);
-    rewind(f);
-    if (sz <= 0) { fclose(f); return 0; }
+    if (sz <= 0 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return 0; }
     char *buf = (char *)malloc((size_t)sz + 1);
     if (!buf) { fclose(f); return 0; }
-    fread(buf, 1, (size_t)sz, f);
-    buf[sz] = '\0';
+    size_t nread = fread(buf, 1, (size_t)sz, f);
+    buf[nread] = '\0';
     fclose(f);
     TkTmpl *t = tmpl_compile(buf);
     free(buf);

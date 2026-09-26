@@ -78,7 +78,12 @@ StrFileResult file_read(const char *path)
         fclose(f);
         r.is_err = 1; r.err = make_err(errno, "ftell failed"); return r;
     }
-    rewind(f);
+    /* 135.3c: fseek, not rewind() -- rewind reports failure only through errno, which nothing read (clang unix.Errno). */
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        int e = errno;
+        fclose(f);
+        r.is_err = 1; r.err = make_err(e, "seek failed"); return r;
+    }
 
     char *buf = malloc((size_t)sz + 1);
     if (!buf) {

@@ -1095,7 +1095,8 @@ const char *tmpl_renderfile(const char *path, const TkTmplVar *vars,
     if (fseek(fp, 0, SEEK_END) != 0) { fclose(fp); return NULL; }
     long fsize = ftell(fp);
     if (fsize < 0) { fclose(fp); return NULL; }
-    rewind(fp);
+    /* 135.3c: fseek, not rewind() -- rewind reports failure only through errno, which nothing read (clang unix.Errno). */
+    if (fseek(fp, 0, SEEK_SET) != 0) { fclose(fp); return NULL; }
 
     char *src = (char *)malloc((size_t)fsize + 1);
     if (!src) { fclose(fp); return NULL; }
@@ -1135,7 +1136,8 @@ static char *tmpl_readfile(const char *path) {
     if (fseek(fp, 0, SEEK_END) != 0) { fclose(fp); return NULL; }
     long fsize = ftell(fp);
     if (fsize < 0) { fclose(fp); return NULL; }
-    rewind(fp);
+    /* 135.3c: fseek, not rewind() -- rewind reports failure only through errno, which nothing read (clang unix.Errno). */
+    if (fseek(fp, 0, SEEK_SET) != 0) { fclose(fp); return NULL; }
     char *buf = (char *)malloc((size_t)fsize + 1);
     if (!buf) { fclose(fp); return NULL; }
     size_t nread = fread(buf, 1, (size_t)fsize, fp);

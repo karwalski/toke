@@ -1200,7 +1200,8 @@ TkPdfDoc *pdf_open_file(const char *path)
         pdf_fail(TK_PDF_E_TOOLARGE, "pdf: %s is %ld bytes, cap is %u", path, size, TK_PDF_MAX_FILE);
         return NULL;
     }
-    rewind(f);
+    /* 135.3c: fseek, not rewind() -- rewind reports failure only through errno, which nothing read (clang unix.Errno). */
+    if (fseek(f, 0, SEEK_SET) != 0) { fclose(f); pdf_fail(TK_PDF_E_IO, "pdf: cannot seek %s", path); return NULL; }
     buf = (uint8_t *)malloc((size_t)size + 1);
     if (!buf) { fclose(f); pdf_fail(TK_PDF_E_IO, "pdf: out of memory"); return NULL; }
     if (fread(buf, 1, (size_t)size, f) != (size_t)size) {
