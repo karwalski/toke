@@ -45,6 +45,8 @@ typedef struct { int       ok; int is_err; JsonErr err; } BoolJsonResult;
 typedef struct { JsonArray ok; int is_err; JsonErr err; } JsonArrayResult;
 typedef struct { StrArray  ok; int is_err; JsonErr err; } StrArrayJsonResult;
 
+/* json_enc: quoted, escaped copy of v (NULL is treated as ""). Always
+ * heap-owned -- the caller frees it -- or NULL on allocation failure. */
 const char    *json_enc(const char *v);
 JsonResult     json_dec(const char *s);
 StrJsonResult  json_str(Json j, const char *key);

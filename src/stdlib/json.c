@@ -154,13 +154,18 @@ static int find_json_key(const char *raw, const char *key,
 /* Public API                                                           */
 /* ------------------------------------------------------------------ */
 
-/* json_enc — Profile 1 stub: wrap Str in quotes with minimal escaping */
+/* json_enc — Profile 1 stub: wrap Str in quotes with minimal escaping.
+ *
+ * The result is ALWAYS heap-owned, or NULL on allocation failure; every
+ * caller frees it.  135.3c: this used to return the string LITERAL "\"\""
+ * for a NULL input and on OOM, so every caller's free() of the result was a
+ * free() of a global (clang unix.Malloc at json.c json_from_pairs). */
 const char *json_enc(const char *v) {
-    if (!v) return "\"\"";
+    if (!v) v = "";
     size_t n = strlen(v);
     /* worst case: every char escaped + 2 quotes + NUL */
     char *buf = malloc(2 * n + 3);
-    if (!buf) return "\"\"";
+    if (!buf) return NULL;
     char *w = buf;
     *w++ = '"';
     for (size_t i = 0; i < n; i++) {
@@ -652,6 +657,10 @@ JsonResult json_at(Json j, const char *path) {
     memcpy(buf, path, plen + 1);
 
     Json cur = j;
+    /* 135.3c: each descent copies the sub-value into a fresh buffer.  `owned`
+     * is the one currently held; it is freed when superseded and on every
+     * error path (they used to leak), and handed to the caller on success. */
+    char *owned = NULL;
     char *seg = buf;
     int done = 0;
     while (!done) {
@@ -666,39 +675,42 @@ JsonResult json_at(Json j, const char *path) {
         /* determine current JSON type */
         const char *p = skip_ws(cur.raw);
         if (!p) {
-            free(buf);
-            r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, seg); return r;
+            /* 135.3c: the message used to be `seg`, which points INTO buf --
+             * read after the free() on the line above (use after free). */
+            free(buf); free(owned);
+            r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "null value"); return r;
         }
 
         if (*p == '{') {
             /* object: look up key */
             const char *vs, *ve;
             if (!find_json_key(cur.raw, seg, &vs, &ve)) {
-                free(buf);
+                free(buf); free(owned);
                 r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "key not found"); return r;
             }
             size_t vlen = (size_t)(ve - vs);
             char *vbuf = malloc(vlen + 1);
-            if (!vbuf) { free(buf); r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
+            if (!vbuf) { free(buf); free(owned); r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
             memcpy(vbuf, vs, vlen);
             vbuf[vlen] = '\0';
             /* cur.raw now points to a heap-allocated string; we need to manage it.
              * For simplicity, we track only the final value — intermediate buffers
              * are freed on the next iteration via a local variable. */
+            free(owned);      /* vs/ve pointed into it; copied above */
+            owned = vbuf;
             cur.raw = vbuf;
-            /* mark so we free it on next iteration */
         } else if (*p == '[') {
             /* array: parse segment as integer index */
             char *endptr;
             unsigned long idx = strtoul(seg, &endptr, 10);
             if (endptr == seg || *endptr != '\0') {
-                free(buf);
+                free(buf); free(owned);
                 r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "invalid array index"); return r;
             }
             /* find the idx-th element */
             const char *ap = skip_ws(p + 1);
             if (*ap == ']') {
-                free(buf);
+                free(buf); free(owned);
                 r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "index out of bounds"); return r;
             }
             unsigned long count = 0;
@@ -708,7 +720,7 @@ JsonResult json_at(Json j, const char *path) {
                 elem_s = skip_ws(ap);
                 elem_e = skip_value(elem_s);
                 if (!elem_e) {
-                    free(buf);
+                    free(buf); free(owned);
                     r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "bad array"); return r;
                 }
                 if (count == idx) break;
@@ -716,22 +728,24 @@ JsonResult json_at(Json j, const char *path) {
                 ap = skip_ws(elem_e);
                 if (*ap == ']') { elem_s = NULL; break; }
                 if (*ap == ',') { ap++; continue; }
-                free(buf);
+                free(buf); free(owned);
                 r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "bad array"); return r;
             }
             if (!elem_s || count != idx) {
-                free(buf);
+                free(buf); free(owned);
                 r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "index out of bounds"); return r;
             }
             size_t vlen = (size_t)(elem_e - elem_s);
             char *vbuf = malloc(vlen + 1);
-            if (!vbuf) { free(buf); r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
+            if (!vbuf) { free(buf); free(owned); r.is_err = 1; r.err = make_err(JSON_ERR_PARSE, "oom"); return r; }
             memcpy(vbuf, elem_s, vlen);
             vbuf[vlen] = '\0';
+            free(owned);      /* elem_s/elem_e pointed into it; copied above */
+            owned = vbuf;
             cur.raw = vbuf;
         } else {
             /* scalar — cannot descend further */
-            free(buf);
+            free(buf); free(owned);
             r.is_err = 1; r.err = make_err(JSON_ERR_MISSING, "cannot descend into scalar"); return r;
         }
 
@@ -852,14 +866,16 @@ JsonResult json_merge(Json j1, Json j2) {
         const char *ve = skip_value(vs);
         if (!ve) { free(ktmp); break; }
 
-        /* only emit if j2 does NOT have this key */
-        if (!json_has(j2, ktmp)) {
+        /* only emit if j2 does NOT have this key.  135.3c: ktmp is freed
+         * BEFORE the appends, whose OOM path returns early and leaked it. */
+        int j2_has = json_has(j2, ktmp);
+        free(ktmp);
+        if (!j2_has) {
             if (!first) MERGE_PUTC(',');
             first = 0;
             /* emit "key":value */
             MERGE_APPEND(ks, (size_t)(ve - ks));
         }
-        free(ktmp);
 
         q = skip_ws(ve);
         if (*q == ',') q++;
@@ -917,12 +933,15 @@ Json json_from_pairs(const char *const *keys, const char *const *values, uint64_
     if (!out) return result;
 
     size_t pos = 0;
+    /* 135.3c: the json_enc() result being appended, freed if a grow fails
+     * mid-append (it leaked there). */
+    const char *pending = NULL;
 
 #define PAIRS_ENSURE(nn) do { \
     if (pos + (nn) + 1 >= cap) { \
         cap = cap * 2 + (nn) + 1; \
         char *tmp = realloc(out, cap); \
-        if (!tmp) { free(out); result.raw = NULL; return result; } \
+        if (!tmp) { free(out); free((void *)pending); result.raw = NULL; return result; } \
         out = tmp; \
     } \
 } while(0)
@@ -935,18 +954,24 @@ Json json_from_pairs(const char *const *keys, const char *const *values, uint64_
         if (i > 0) PAIRS_PUTC(',');
         /* key as JSON string */
         const char *enc_key = json_enc(keys[i]);
+        if (!enc_key) { free(out); return result; }
+        pending = enc_key;
         size_t klen = strlen(enc_key);
         PAIRS_APPEND(enc_key, klen);
         /* json_enc returns a malloc'd string — free it */
         free((void *)enc_key);
+        pending = NULL;
 
         PAIRS_PUTC(':');
 
         /* value as JSON string */
         const char *enc_val = json_enc(values[i]);
+        if (!enc_val) { free(out); return result; }
+        pending = enc_val;
         size_t vlen = strlen(enc_val);
         PAIRS_APPEND(enc_val, vlen);
         free((void *)enc_val);
+        pending = NULL;
     }
     PAIRS_PUTC('}');
     out[pos] = '\0';

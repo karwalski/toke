@@ -27,7 +27,8 @@ static int64_t f64_to_i64(double d) {
 
 int64_t tk_json_enc_w(int64_t val) {
     if (!val) return (int64_t)(intptr_t)"\"\"";
-    return (int64_t)(intptr_t)json_enc((const char *)(intptr_t)val);
+    const char *e = json_enc((const char *)(intptr_t)val);
+    return (int64_t)(intptr_t)(e ? e : "\"\"");
 }
 
 int64_t tk_json_dec_w(int64_t s) {
@@ -118,12 +119,13 @@ int64_t tk_json_set_w(int64_t obj, int64_t key, int64_t val) {
     const char *kstr = (const char *)(intptr_t)key;
     const char *vstr = val ? (const char *)(intptr_t)val : "";
     const char *enc_val = json_enc(vstr);
+    if (!enc_val) return obj;
     /* Build {"key":enc_val} */
     size_t klen = strlen(kstr);
     size_t vlen = strlen(enc_val);
     size_t blen = 1 + klen + 2 + 1 + vlen + 1 + 1;
     char *patch = (char *)malloc(blen);
-    if (!patch) return obj;
+    if (!patch) { free((void *)enc_val); return obj; }
     snprintf(patch, blen, "{\"%s\":%s}", kstr, enc_val);
     free((void *)enc_val);
     Json j2 = { patch };
@@ -183,10 +185,11 @@ int64_t tk_json_err_w(int64_t msg) {
     /* Encode an error as a JSON object: {"error":"msg"} */
     const char *mstr = msg ? (const char *)(intptr_t)msg : "error";
     const char *enc = json_enc(mstr);
+    if (!enc) return 0;
     size_t elen = strlen(enc);
     size_t blen = 10 + elen + 2;
     char *buf = (char *)malloc(blen);
-    if (!buf) return 0;
+    if (!buf) { free((void *)enc); return 0; }
     snprintf(buf, blen, "{\"error\":%s}", enc);
     free((void *)enc);
     Json *jp = (Json *)malloc(sizeof(Json));
@@ -198,10 +201,11 @@ int64_t tk_json_ok_w(int64_t val) {
     /* Encode an ok result as a JSON object: {"ok":"val"} */
     const char *vstr = val ? (const char *)(intptr_t)val : "";
     const char *enc = json_enc(vstr);
+    if (!enc) return 0;
     size_t elen = strlen(enc);
     size_t blen = 7 + elen + 2;
     char *buf = (char *)malloc(blen);
-    if (!buf) return 0;
+    if (!buf) { free((void *)enc); return 0; }
     snprintf(buf, blen, "{\"ok\":%s}", enc);
     free((void *)enc);
     Json *jp = (Json *)malloc(sizeof(Json));
@@ -344,7 +348,8 @@ int64_t tk_json_isnullkey_w(int64_t obj, int64_t key) {
 /* json.encstr(s) — JSON-escape a string (with quotes) */
 int64_t tk_json_encstr_w(int64_t s) {
     if (!s) return (int64_t)(intptr_t)"\"\"";
-    return (int64_t)(intptr_t)json_enc((const char *)(intptr_t)s);
+    const char *e = json_enc((const char *)(intptr_t)s);
+    return (int64_t)(intptr_t)(e ? e : "\"\"");
 }
 
 /* json.encode(val) — alias for json.enc */
@@ -459,6 +464,7 @@ int64_t tk_json_kv_w(int64_t key, int64_t value) {
     const char *k = (const char *)(intptr_t)key;
     const char *v = value ? (const char *)(intptr_t)value : "";
     const char *enc_v = json_enc(v);
+    if (!enc_v) return 0;
     size_t klen = strlen(k), vlen = strlen(enc_v);
     size_t blen = 2 + klen + 2 + vlen + 2;
     char *buf = (char *)malloc(blen);
@@ -505,6 +511,7 @@ int64_t tk_json_strarr_w(int64_t arr) {
     for (int64_t i = 0; i < len; i++) {
         const char *s = (const char *)(intptr_t)ptr[i];
         const char *enc = json_enc(s ? s : "");
+        if (!enc) { free(buf); return (int64_t)(intptr_t)"[]"; }
         size_t elen = strlen(enc);
         size_t needed = pos + elen + 2; /* comma + bracket */
         if (needed > cap) {
@@ -684,6 +691,7 @@ static void jbuf_elem(JBuf *b, int64_t v, int64_t kind) {
         if (!s) { jbuf_puts(b, "null"); return; }
         /* json_enc returns an owned, quoted, escaped string for non-NULL. */
         const char *enc = json_enc(s);
+        if (!enc) { jbuf_puts(b, "null"); return; }
         jbuf_puts(b, enc);
         free((void *)enc);
         return;
@@ -725,10 +733,16 @@ static void jbuf_arr(JBuf *b, int64_t h, int64_t depth, int64_t kind) {
     jbuf_puts(b, "]");
 }
 
-/* json.encarr(h, depth, kind) — JSON text of an array, as an owned string. */
-int64_t tk_json_encarr_w(int64_t h, int64_t depth, int64_t kind) {
+/* The array's JSON text in a heap buffer, or NULL if allocation failed. */
+static char *json_arr_text(int64_t h, int64_t depth, int64_t kind) {
     JBuf b = { NULL, 0, 0 };
     jbuf_arr(&b, h, depth, kind);
+    return b.p;
+}
+
+/* json.encarr(h, depth, kind) — JSON text of an array, as an owned string. */
+int64_t tk_json_encarr_w(int64_t h, int64_t depth, int64_t kind) {
+    JBuf b = { json_arr_text(h, depth, kind), 0, 0 };
     if (!b.p) {
         char *empty = (char *)malloc(3);
         if (!empty) return (int64_t)(intptr_t)"[]";
@@ -740,8 +754,10 @@ int64_t tk_json_encarr_w(int64_t h, int64_t depth, int64_t kind) {
 
 /* json.printarr(h, depth, kind) — the same text, to stdout, with a newline. */
 void tk_json_printarr_w(int64_t h, int64_t depth, int64_t kind) {
-    int64_t s = tk_json_encarr_w(h, depth, kind);
-    const char *text = (const char *)(intptr_t)s;
-    printf("%s\n", text ? text : "null");
-    if (text) free((void *)(intptr_t)s);
+    /* 135.3c: this used to call tk_json_encarr_w(), which returns the string
+     * LITERAL "[]" when allocation fails, and then free() it -- a free() of a
+     * global (clang unix.Malloc).  Take the text before that fallback. */
+    char *text = json_arr_text(h, depth, kind);
+    printf("%s\n", text ? text : "[]");
+    free(text);
 }
