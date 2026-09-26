@@ -217,7 +217,21 @@ f=main():i64{{
   <0
 }};
 """
+# 127.224 (4) made --check reject a call to any quarantined export, so the
+# quarantine population no longer yields a link-only canary. A bodyless user
+# extern keeps its bare C name (127.212) and the front end cannot know whether
+# the symbol exists, so an extern for a symbol nothing defines passes --check
+# (W8001 only) and can fail nowhere but at link -- independent of what the
+# quarantine list holds. It is tried first; the old entries stay as fallbacks.
+_LINK_ONLY_EXTERN = """m=canary;
+f=tkcanarynosuchsymbol(x:i64):i64;
+f=main():i64{
+  let d=tkcanarynosuchsymbol(1);
+  <0
+};
+"""
 CANARY_LINK_ONLY = [
+    ("extern tkcanarynosuchsymbol", _LINK_ONLY_EXTERN),
     ("canvas.beginpath", _LINK_ONLY.format(call="cv.beginpath(c)")),
     ("canvas.moveto", _LINK_ONLY.format(call="cv.moveto(c;0.0;0.0)")),
     ("canvas.lineto", _LINK_ONLY.format(call="cv.lineto(c;1.0;1.0)")),
