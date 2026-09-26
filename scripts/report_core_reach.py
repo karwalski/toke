@@ -71,7 +71,10 @@ NOISE = re.compile(r'(_free|_init|_destroy|_cleanup|_release|_reset)$')
 # C header stem -> .tki stem, where they differ.  Without this the whole of
 # tk_test.h was reported as unsurfaced, including `test.assert`, which is
 # exported from stdlib/test.tki.
-TKI_ALIAS = {'tk_test': 'test', 'llm_tool': 'llmtool'}
+# 135.3b renamed math.h -> tkmath.h (so it cannot shadow <math.h>); without
+# the alias the gate lost sight of every math core and called their triage
+# lines stale.
+TKI_ALIAS = {'tk_test': 'test', 'llm_tool': 'llmtool', 'tkmath': 'math'}
 CLASSES = ('gap', 'internal', 'dup')
 
 

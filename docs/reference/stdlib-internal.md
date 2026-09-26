@@ -109,10 +109,10 @@ Every `tk_*` function defined in `src/stdlib/*.c` that no `.tki` export resolves
 | Class | Meaning | Symbols |
 |---|---|---|
 | `emitted` | the compiler emits a call to it by name: a lowering target | 69 |
-| `c-internal` | called only from other C in `src/stdlib/` | 140 |
+| `c-internal` | called only from other C in `src/stdlib/` | 148 |
 | `alias` | reachable from toke only under a spelling generation will not publish -- a legacy alias of a published name | 9 |
-| `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 95 |
-| | **total** | **313** |
+| `dead` | nothing in `src/` calls it and no toke spelling reaches it (a unit test under `test/` may) | 97 |
+| | **total** | **323** |
 
 A `dead` symbol is finished or half-finished code with no way in: wiring it up is an interface decision, and deleting it is a glue decision. Neither is made by this page.
 
@@ -190,7 +190,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_str_to_float_w` | `str_glue.c` | - |
 | `tk_str_to_int` | `str_glue.c` | - |
 
-### `c-internal` (140)
+### `c-internal` (148)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -224,6 +224,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_log_debug` | `log.c` | log_glue.c |
 | `tk_log_error` | `log.c` | log_glue.c |
 | `tk_log_info` | `log.c` | log.c, log_glue.c |
+| `tk_log_redact_keys` | `log.c` | log.c |
 | `tk_log_set_format` | `log.c` | log_glue.c |
 | `tk_log_set_level` | `log.c` | log_glue.c |
 | `tk_log_warn` | `log.c` | log_glue.c |
@@ -238,7 +239,10 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_map_put_w` | `collections_glue.c` | collections_glue.c |
 | `tk_map_rehash` | `collections_glue.c` | collections_glue.c |
 | `tk_map_slot_insert` | `collections_glue.c` | collections_glue.c |
+| `tk_message_trusted` | `webview.c` | webview.c |
+| `tk_nsurl_trusted` | `webview.c` | webview.c |
 | `tk_page_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
+| `tk_page_trusted` | `webview.c` | webview.c |
 | `tk_patch_handler_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
 | `tk_path_snapshot` | `tk_runtime.c` | process.c |
 | `tk_post_dispatch` | `tk_web_glue.c` | tk_web_glue.c |
@@ -333,7 +337,11 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_vec_set` | `collections.c` | collections_glue.c |
 | `tk_vec_toarray` | `collections.c` | collections_glue.c |
 | `tk_vec_tovec` | `collections.c` | collections_glue.c |
+| `tk_webview_handler_name_ok` | `webview.c` | webview.c |
+| `tk_webview_js_escape` | `webview.c` | webview.c |
 | `tk_webview_open` | `webview.c` | webview.c |
+| `tk_webview_origin_parse` | `webview.c` | webview.c |
+| `tk_webview_origin_trusted` | `webview.c` | webview.c |
 
 ### `alias` (9)
 
@@ -349,7 +357,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_task_spawn_w` | `tk_web_glue.c` | task.spawn_w |
 | `tk_time_to_parts_w` | `time_glue.c` | time.to_parts |
 
-### `dead` (95)
+### `dead` (97)
 
 | Symbol | Defined in | Detail |
 |---|---|---|
@@ -357,7 +365,6 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_base64_decode_w` | `encoding_glue.c` | - |
 | `tk_cache_del_w` | `tk_web_glue.c` | - |
 | `tk_cache_get_w` | `tk_web_glue.c` | - |
-| `tk_cache_hash` | `tk_web_glue.c` | - |
 | `tk_cache_new_w` | `tk_web_glue.c` | - |
 | `tk_cache_set_w` | `tk_web_glue.c` | - |
 | `tk_cap_check` | `capabilities.c` | - |
@@ -399,6 +406,8 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_infer_unload` | `infer.c` | - |
 | `tk_json_print_arr_bool` | `tk_runtime.c` | - |
 | `tk_json_print_arr_str` | `tk_runtime.c` | - |
+| `tk_log_security` | `log.c` | - |
+| `tk_log_security_set_output` | `log.c` | - |
 | `tk_log_set_output` | `log.c` | - |
 | `tk_log_with_context` | `log.c` | - |
 | `tk_map_getint_w` | `collections_glue.c` | - |
@@ -441,6 +450,7 @@ A `dead` symbol is finished or half-finished code with no way in: wiring it up i
 | `tk_validate_email_w` | `tk_web_glue.c` | - |
 | `tk_validate_range_w` | `tk_web_glue.c` | - |
 | `tk_validate_url_w` | `tk_web_glue.c` | - |
+| `tk_webview_allow_origin` | `webview.c` | - |
 | `tk_webview_close` | `webview.c` | - |
 | `tk_webview_eval_js` | `webview.c` | - |
 | `tk_webview_is_available` | `webview.c` | - |
