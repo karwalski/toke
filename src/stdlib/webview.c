@@ -26,6 +26,161 @@
 #include <stdio.h>
 
 /* ======================================================================
+ * Bridge trust policy — platform-independent (story 122.11)
+ *
+ * Before 122.11 the bridge honoured every caller: window.toke handlers were
+ * injected into every frame (forMainFrameOnly:NO) and the message handler
+ * never looked at who sent the message, so any page the view reached -- a
+ * redirect target, a clicked link, a third-party iframe -- could call every
+ * native handler; tk_webview_eval_js ran into whatever page was loaded; and
+ * the loke:// handler answered requests initiated by any page.  The policy
+ * lives here, outside the __APPLE__ block, so it compiles and is unit-tested
+ * on every host (test/conform/C139_webview_bridge_policy.sh).
+ * ====================================================================== */
+
+static int tkwv_lower_copy(char *dst, size_t cap, const char *s, size_t n)
+{
+    if (n + 1 > cap) return 0;
+    for (size_t i = 0; i < n; i++) {
+        char c = s[i];
+        dst[i] = (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
+    }
+    dst[n] = '\0';
+    return 1;
+}
+
+/* default port for a scheme, or -1 if the scheme has none we normalise */
+static int tkwv_default_port(const char *scheme)
+{
+    if (!strcmp(scheme, "http")  || !strcmp(scheme, "ws"))  return 80;
+    if (!strcmp(scheme, "https") || !strcmp(scheme, "wss")) return 443;
+    return -1;
+}
+
+int tk_webview_origin_parse(const char *url, TkWebviewOrigin *out)
+{
+    if (!url || !out) return 0;
+    memset(out, 0, sizeof *out);
+
+    /* scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":" */
+    const char *p = url;
+    if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z'))) return 0;
+    while ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+           (*p >= '0' && *p <= '9') || *p == '+' || *p == '-' || *p == '.')
+        p++;
+    if (*p != ':') return 0;
+    if (!tkwv_lower_copy(out->scheme, sizeof out->scheme, url, (size_t)(p - url)))
+        return 0;
+    p++;
+    if (p[0] != '/' || p[1] != '/') {
+        /* no authority (about:blank, data:, ...): host stays "" */
+        return 1;
+    }
+    p += 2;
+
+    /* authority ends at '/', '?', '#' or end of string */
+    const char *a = p;
+    while (*p && *p != '/' && *p != '?' && *p != '#') p++;
+    const char *aend = p;
+
+    /* strip userinfo: it ends at the LAST '@' of the authority, so
+     * "https://trusted.example@evil.example" is evil.example. */
+    for (const char *q = a; q < aend; q++)
+        if (*q == '@') a = q + 1;
+
+    const char *hend = aend;
+    const char *port_s = NULL;
+    if (a < aend && *a == '[') {                     /* IPv6 literal */
+        const char *rb = memchr(a, ']', (size_t)(aend - a));
+        if (!rb) return 0;
+        hend = rb + 1;
+        if (hend < aend) {
+            if (*hend != ':') return 0;
+            port_s = hend + 1;
+        }
+    } else {
+        for (const char *q = a; q < aend; q++)
+            if (*q == ':') { hend = q; port_s = q + 1; break; }
+    }
+    if (!tkwv_lower_copy(out->host, sizeof out->host, a, (size_t)(hend - a)))
+        return 0;
+
+    if (port_s) {
+        long port = 0;
+        if (port_s == aend) port = -1;               /* "host:" = default */
+        for (const char *q = port_s; q < aend; q++) {
+            if (*q < '0' || *q > '9') return 0;
+            port = port * 10 + (*q - '0');
+            if (port > 65535) return 0;
+        }
+        out->port = port < 0 ? 0 : (int)port;
+    }
+    if (out->port != 0 && out->port == tkwv_default_port(out->scheme))
+        out->port = 0;
+    return 1;
+}
+
+int tk_webview_origin_trusted(const TkWebviewOrigin *o,
+                              const TkWebviewOrigin *allow, int nallow)
+{
+    if (!o || o->scheme[0] == '\0') return 0;
+    if (!strcmp(o->scheme, "loke") || !strcmp(o->scheme, "file")) return 1;
+    if (o->host[0] == '\0') return 0;                /* about:, data:, blob: */
+    for (int i = 0; allow && i < nallow; i++) {
+        if (!strcmp(o->scheme, allow[i].scheme) &&
+            !strcmp(o->host, allow[i].host) &&
+            o->port == allow[i].port)
+            return 1;
+    }
+    return 0;
+}
+
+int tk_webview_handler_name_ok(const char *name)
+{
+    if (!name) return 0;
+    if (!strcmp(name, "loke_scheme")) return 1;      /* reserved, never spliced */
+    if (!((*name >= 'a' && *name <= 'z') || (*name >= 'A' && *name <= 'Z')))
+        return 0;
+    size_t n = 0;
+    for (const char *p = name; *p; p++, n++) {
+        if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+              (*p >= '0' && *p <= '9')))
+            return 0;
+    }
+    return n <= 64;
+}
+
+char *tk_webview_js_escape(const char *s)
+{
+    if (!s) s = "";
+    /* worst case: every byte becomes a 6-byte \uXXXX escape */
+    size_t n = strlen(s);
+    if (n > (((size_t)-1) - 1) / 6) return NULL;
+    char *out = malloc(n * 6 + 1);
+    if (!out) return NULL;
+    size_t o = 0;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == 0xE2 && i + 2 < n && (unsigned char)s[i + 1] == 0x80 &&
+            ((unsigned char)s[i + 2] == 0xA8 || (unsigned char)s[i + 2] == 0xA9)) {
+            /* U+2028 / U+2029 end a line inside a JS string literal */
+            o += (size_t)snprintf(out + o, 7, "\\u%04x",
+                                 (unsigned char)s[i + 2] == 0xA8 ? 0x2028u : 0x2029u);
+            i += 2;
+        } else if (c == '"' || c == '\\') {
+            out[o++] = '\\';
+            out[o++] = (char)c;
+        } else if (c < 0x20 || c == 0x7F || c == '<' || c == '>') {
+            o += (size_t)snprintf(out + o, 7, "\\u%04x", (unsigned)c);
+        } else {
+            out[o++] = (char)c;
+        }
+    }
+    out[o] = '\0';
+    return out;
+}
+
+/* ======================================================================
  * macOS implementation — plain C99 using ObjC runtime C API
  * ====================================================================== */
 #ifdef __APPLE__
@@ -97,6 +252,9 @@ static id ms_url_mime_len_enc(id o, const char *s, id url, id mime,
     { return ((ObjcMsgUrlMimeLen)objc_msgSend)(o, sel_getUid(s), url, mime, len, enc); }
 static id ms_src_time_main(id o, const char *s, id src, TkNSInteger t, BOOL main_only)
     { return ((ObjcMsgSrcTimeMain)objc_msgSend)(o, sel_getUid(s), src, t, main_only); }
+typedef id   (*ObjcMsgErr)(id, SEL, id, TkNSInteger, id);
+static id ms_err(id o, const char *s, id domain, TkNSInteger code, id info)
+    { return ((ObjcMsgErr)objc_msgSend)(o, sel_getUid(s), domain, code, info); }
 
 /* ------------------------------------------------------------------
  * Internal handler registry
@@ -126,6 +284,9 @@ typedef struct TkWebviewState {
 
     TkHandlerEntry      handlers[TK_WEBVIEW_MAX_HANDLERS];
     int                 handler_count;
+
+    TkWebviewOrigin     allow[TK_WEBVIEW_MAX_ORIGINS];   /* 122.11 */
+    int                 allow_count;
 } TkWebviewState;
 
 /* ------------------------------------------------------------------
@@ -151,46 +312,109 @@ static id ns_string(const char *s)
  * ------------------------------------------------------------------ */
 static void tk_inject_bootstrap(TkWebviewState *st)
 {
-    char buf[16384];
-    int pos = 0;
-
-    pos += snprintf(buf + pos, sizeof(buf) - (size_t)pos,
-        "(function(){\n"
-        "  if(!window.toke) window.toke={};\n");
+    /* 122.11: sized, not a fixed 16 KiB stack buffer.  The old
+     * `pos += snprintf(buf+pos, sizeof buf - pos, ...)` loop ran past the
+     * buffer once enough handlers were registered: pos exceeded the size,
+     * the size_t subtraction wrapped, and snprintf wrote off the stack.
+     * Names are validated identifiers (tk_webview_handler_name_ok), so they
+     * are safe to splice into the script. */
+    static const char head[] = "(function(){\n  if(!window.toke) window.toke={};\n";
+    static const char tail[] = "})();\n";
+    static const char per[] =
+        "  window.toke['%s']=function(data){\n"
+        "    return new Promise(function(resolve){\n"
+        "      var key='_toke_reply_%s';\n"
+        "      window.addEventListener(key,function h(e){\n"
+        "        window.removeEventListener(key,h);\n"
+        "        resolve(e.detail);\n"
+        "      });\n"
+        "      window.webkit.messageHandlers['%s'].postMessage(\n"
+        "        typeof data==='string'?data:JSON.stringify(data));\n"
+        "    });\n"
+        "  };\n";
+    size_t cap = sizeof head + sizeof tail;
+    for (int i = 0; i < st->handler_count; i++)
+        cap += sizeof per + 3 * strlen(st->handlers[i].name);
+    char *buf = malloc(cap);
+    if (!buf) return;
+    size_t pos = (size_t)snprintf(buf, cap, "%s", head);
 
     for (int i = 0; i < st->handler_count; i++) {
         if (strcmp(st->handlers[i].name, "loke_scheme") == 0) continue;
-        pos += snprintf(buf + pos, sizeof(buf) - (size_t)pos,
-            "  window.toke['%s']=function(data){\n"
-            "    return new Promise(function(resolve){\n"
-            "      var key='_toke_reply_%s';\n"
-            "      window.addEventListener(key,function h(e){\n"
-            "        window.removeEventListener(key,h);\n"
-            "        resolve(e.detail);\n"
-            "      });\n"
-            "      window.webkit.messageHandlers['%s'].postMessage(\n"
-            "        typeof data==='string'?data:JSON.stringify(data));\n"
-            "    });\n"
-            "  };\n",
+        pos += (size_t)snprintf(buf + pos, cap - pos, per,
             st->handlers[i].name,
             st->handlers[i].name,
             st->handlers[i].name);
     }
-    snprintf(buf + pos, sizeof(buf) - (size_t)pos, "})();\n");
+    snprintf(buf + pos, cap - pos, "%s", tail);
 
     /* Remove existing user scripts */
     mv0(st->ucc, "removeAllUserScripts");
 
     /* Build WKUserScript(source:injectionTime:forMainFrameOnly:) */
     id src    = ns_string(buf);
+    free(buf);
+    /* forMainFrameOnly:YES (122.11) -- sub-frames never get window.toke.
+     * That is hygiene, not the gate: WebKit exposes messageHandlers to
+     * every frame, so delegate_did_receive_message checks the sender. */
     id script = ms_src_time_main(
         ms0((id)objc_getClass("WKUserScript"), "alloc"),
         "initWithSource:injectionTime:forMainFrameOnly:",
         src,
         (TkNSInteger)0,   /* WKUserScriptInjectionTimeAtDocumentStart */
-        NO
+        YES
     );
     mv1(st->ucc, "addUserScript:", script);
+}
+
+/* ------------------------------------------------------------------
+ * 122.11 trust checks against live WebKit objects
+ * ------------------------------------------------------------------ */
+
+typedef BOOL        (*ObjcBool0)(id, SEL);
+typedef TkNSInteger (*ObjcNSInt0)(id, SEL);
+
+/* origin of an NSURL (nil -> untrusted) */
+static int tk_nsurl_trusted(TkWebviewState *st, id url)
+{
+    if (!url) return 0;
+    id abs = ms0(url, "absoluteString");
+    const char *s = abs ? (const char *)ms0(abs, "UTF8String") : NULL;
+    TkWebviewOrigin o;
+    if (!s || !tk_webview_origin_parse(s, &o)) return 0;
+    return tk_webview_origin_trusted(&o, st->allow, st->allow_count);
+}
+
+/* is the document currently loaded in the view trusted? */
+static int tk_page_trusted(TkWebviewState *st)
+{
+    return st && st->webview && tk_nsurl_trusted(st, ms0(st->webview, "URL"));
+}
+
+/* did a script message come from the main frame of a trusted origin? */
+static int tk_message_trusted(TkWebviewState *st, id message)
+{
+    id fi = ms0(message, "frameInfo");
+    if (!fi) return 0;
+    if (!((ObjcBool0)objc_msgSend)(fi, sel_getUid("isMainFrame"))) return 0;
+    id so = ms0(fi, "securityOrigin");
+    if (!so) return 0;
+    id proto = ms0(so, "protocol");
+    id host  = ms0(so, "host");
+    const char *ps = proto ? (const char *)ms0(proto, "UTF8String") : NULL;
+    const char *hs = host  ? (const char *)ms0(host,  "UTF8String") : "";
+    TkNSInteger port = ((ObjcNSInt0)objc_msgSend)(so, sel_getUid("port"));
+    if (!ps || !hs || port < 0 || port > 65535) return 0;
+    char url[400];
+    int n = port ? snprintf(url, sizeof url, "%s://%s:%ld", ps, hs, (long)port)
+                 : snprintf(url, sizeof url, "%s://%s", ps, hs);
+    if (n < 0 || (size_t)n >= sizeof url) return 0;
+    TkWebviewOrigin o;
+    if (!tk_webview_origin_parse(url, &o)) return 0;
+    /* the page itself must still be trusted: the frame's origin is the
+     * sender, the page URL is where the reply will be evaluated */
+    return tk_webview_origin_trusted(&o, st->allow, st->allow_count) &&
+           tk_page_trusted(st);
 }
 
 /* ------------------------------------------------------------------
@@ -205,6 +429,10 @@ static void delegate_did_receive_message(id self, SEL cmd,
     TkWebviewState *st = NULL;
     object_getInstanceVariable(self, "state", (void **)&st);
     if (!st) return;
+
+    /* 122.11: drop a message from a sub-frame or an untrusted origin
+     * before any handler runs. */
+    if (!tk_message_trusted(st, message)) return;
 
     id name_obj = ms0(message, "name");
     const char *handler_name = (const char *)ms0(name_obj, "UTF8String");
@@ -226,26 +454,25 @@ static void delegate_did_receive_message(id self, SEL cmd,
             char *result = st->handlers[i].cb(body_str,
                                                st->handlers[i].userdata);
             if (result) {
-                /* Escape result for inline JS string literal */
-                char escaped[8192];
-                size_t out = 0;
-                for (size_t k = 0; result[k] && out < sizeof(escaped) - 3; k++) {
-                    if      (result[k] == '"')  { escaped[out++] = '\\'; escaped[out++] = '"';  }
-                    else if (result[k] == '\\') { escaped[out++] = '\\'; escaped[out++] = '\\'; }
-                    else                         { escaped[out++] = result[k]; }
-                }
-                escaped[out] = '\0';
-
-                char js[8256];
-                snprintf(js, sizeof(js),
+                /* 122.11: every control char, quote, backslash, '<', '>' and
+                 * U+2028/9 escaped, and never truncated (the old 8 KiB
+                 * buffer cut the reply mid-escape; a newline in a reply was
+                 * a JS syntax error). */
+                char *escaped = tk_webview_js_escape(result);
+                static const char fmt[] =
                     "(function(){"
                     "var e=new CustomEvent('_toke_reply_%s',{detail:\"%s\"});"
                     "window.dispatchEvent(e);"
-                    "})()",
-                    handler_name, escaped);
-
-                mv2(st->webview, "evaluateJavaScript:completionHandler:",
-                    ns_string(js), (id)nil);
+                    "})()";
+                size_t jcap = escaped ? sizeof fmt + strlen(handler_name) + strlen(escaped) : 0;
+                char *js = escaped ? malloc(jcap) : NULL;
+                if (js && tk_page_trusted(st)) {
+                    snprintf(js, jcap, fmt, handler_name, escaped);
+                    mv2(st->webview, "evaluateJavaScript:completionHandler:",
+                        ns_string(js), (id)nil);
+                }
+                free(js);
+                free(escaped);
                 free(result);
             }
             return;
@@ -306,6 +533,26 @@ static void scheme_start(id self, SEL cmd, id webview, id task)
     id url_obj = ms0(request, "URL");
     id abs_str = ms0(url_obj, "absoluteString");
     const char *url_str = (const char *)ms0(abs_str, "UTF8String");
+
+    /* 122.11: a loke:// request is served only for a trusted initiator.
+     * mainDocumentURL is the document that caused the load; for the
+     * top-level loke:// navigation it is the loke:// URL itself.  With no
+     * mainDocumentURL, judge by the page currently in the view, and for the
+     * very first load (no page yet) by the request's own URL. */
+    int trusted = 0;
+    if (st) {
+        id mdu = ms0(request, "mainDocumentURL");
+        if (mdu)                               trusted = tk_nsurl_trusted(st, mdu);
+        else if (ms0(st->webview, "URL"))      trusted = tk_page_trusted(st);
+        else                                   trusted = tk_nsurl_trusted(st, url_obj);
+    }
+    if (!trusted) {
+        id err = ms_err((id)objc_getClass("NSError"),
+                        "errorWithDomain:code:userInfo:",
+                        ns_string("TkWebviewBridge"), (TkNSInteger)403, (id)nil);
+        mv1(task, "didFailWithError:", err);
+        return;
+    }
 
     char *result = NULL;
     if (st) {
@@ -489,6 +736,7 @@ int tk_webview_register_handler(TkWebviewHandle *h, const char *name,
 {
     TkWebviewState *st = tk_state_from_handle(h);
     if (!st || !name || !cb) return 0;
+    if (!tk_webview_handler_name_ok(name)) return 0;   /* 122.11: spliced into JS */
     if (st->handler_count >= TK_WEBVIEW_MAX_HANDLERS) return 0;
 
     TkHandlerEntry *entry = &st->handlers[st->handler_count];
@@ -510,8 +758,22 @@ int tk_webview_eval_js(TkWebviewHandle *h, const char *js)
 {
     TkWebviewState *st = tk_state_from_handle(h);
     if (!st || !js) return 0;
+    /* 122.11: never evaluate into a page the app does not trust -- after a
+     * redirect or link the view may hold a remote document. */
+    if (!tk_page_trusted(st)) return 0;
     mv2(st->webview, "evaluateJavaScript:completionHandler:",
         ns_string(js), (id)nil);
+    return 1;
+}
+
+int tk_webview_allow_origin(TkWebviewHandle *h, const char *origin)
+{
+    TkWebviewState *st = tk_state_from_handle(h);
+    if (!st || !origin) return 0;
+    if (st->allow_count >= TK_WEBVIEW_MAX_ORIGINS) return 0;
+    TkWebviewOrigin o;
+    if (!tk_webview_origin_parse(origin, &o) || o.host[0] == '\0') return 0;
+    st->allow[st->allow_count++] = o;
     return 1;
 }
 
@@ -543,6 +805,7 @@ void tk_webview_on_close(TkWebviewHandle *h, TkWebviewCloseCb cb, void *ud) { (v
 int  tk_webview_register_handler(TkWebviewHandle *h, const char *n, TkWebviewHandlerCb cb, void *ud) { (void)h; (void)n; (void)cb; (void)ud; return 0; }
 int  tk_webview_eval_js(TkWebviewHandle *h, const char *js) { (void)h; (void)js; return 0; }
 void tk_webview_run_event_loop(void) {}
+int  tk_webview_allow_origin(TkWebviewHandle *h, const char *o) { (void)h; (void)o; return 0; }
 
 /* ======================================================================
  * All other platforms — safe no-op stubs
@@ -566,5 +829,6 @@ void tk_webview_on_close(TkWebviewHandle *h, TkWebviewCloseCb cb, void *ud) { (v
 int  tk_webview_register_handler(TkWebviewHandle *h, const char *n, TkWebviewHandlerCb cb, void *ud) { (void)h; (void)n; (void)cb; (void)ud; return 0; }
 int  tk_webview_eval_js(TkWebviewHandle *h, const char *js) { (void)h; (void)js; return 0; }
 void tk_webview_run_event_loop(void) {}
+int  tk_webview_allow_origin(TkWebviewHandle *h, const char *o) { (void)h; (void)o; return 0; }
 
 #endif /* platform */

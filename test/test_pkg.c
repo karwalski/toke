@@ -361,6 +361,181 @@ test_end_to_end(void)
     unlink(lockpath);
 }
 
+/* ── Supply-chain checks (story 122.10) ────────────────────────────────────── */
+
+#define C40 "3f786850e387550fdab836ed7e6dc881de23001b"
+#define C64 "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+#define H1  "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+#define H2  "sha256:486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7"
+
+static char tmp_path[256];
+
+static const char *
+write_tmp(const char *text)
+{
+    snprintf(tmp_path, sizeof(tmp_path), "%s/test_pkg_122_10_%d.lock",
+             getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp", (int)getpid());
+    FILE *f = fopen(tmp_path, "w");
+    if (!f) return tmp_path;
+    fputs(text, f);
+    fclose(f);
+    return tmp_path;
+}
+
+static void
+test_name_policy(void)
+{
+    ASSERT(pkg_name_valid("webframework"), "name webframework ok");
+    ASSERT(pkg_name_valid("json2"), "name json2 ok");
+    ASSERT(!pkg_name_valid("json_parser"), "underscore refused");
+    ASSERT(!pkg_name_valid("json-parser"), "hyphen refused");
+    ASSERT(!pkg_name_valid("Web"), "upper case refused");
+    ASSERT(!pkg_name_valid("2web"), "leading digit refused");
+    ASSERT(!pkg_name_valid(""), "empty name refused");
+    ASSERT(!pkg_name_valid(NULL), "NULL name refused");
+    ASSERT(!pkg_name_valid("std"), "std reserved");
+    ASSERT(!pkg_name_valid("pkg"), "pkg reserved");
+    ASSERT(!pkg_name_valid("toke"), "toke reserved");
+    ASSERT(!pkg_name_valid("tkc"), "tkc reserved");
+    ASSERT(!pkg_name_valid("a\"b"), "quote refused");
+    char n63[64], n64[65];
+    memset(n63, 'a', 63); n63[63] = '\0';
+    memset(n64, 'a', 64); n64[64] = '\0';
+    ASSERT(pkg_name_valid(n63), "63-char name ok");
+    ASSERT(!pkg_name_valid(n64), "64-char name refused");
+
+    PkgManifest m;
+    char err[256] = {0};
+    ASSERT(pkg_manifest_parse_str("[package]\nname = \"app\"\nversion = \"1.0.0\"\n"
+                                  "[dependencies]\njson_parser = \">=1.0.0\"\n",
+                                  &m, err, (int)sizeof(err)) == -1,
+           "manifest: underscore dependency refused");
+    ASSERT(strstr(err, "json_parser") != NULL, "manifest error names the dependency");
+    ASSERT(pkg_manifest_parse_str("[package]\nname = \"std\"\nversion = \"1.0.0\"\n",
+                                  &m, NULL, 0) == -1,
+           "manifest: reserved package name refused");
+}
+
+static void
+test_commit_hash_grammar(void)
+{
+    ASSERT(pkg_commit_valid(C40), "40-hex commit ok");
+    ASSERT(pkg_commit_valid(C64), "64-hex commit ok");
+    ASSERT(!pkg_commit_valid("main"), "branch name refused");
+    ASSERT(!pkg_commit_valid("v1.2.0"), "tag name refused");
+    ASSERT(!pkg_commit_valid("3f78685"), "abbreviated commit refused");
+    ASSERT(!pkg_commit_valid("3F786850E387550FDAB836ED7E6DC881DE23001B"), "upper-case hex refused");
+    ASSERT(!pkg_commit_valid("0000000000000000000000000000000000000000"), "null object id refused");
+    ASSERT(!pkg_commit_valid(C40 "0"), "41 digits refused");
+    ASSERT(!pkg_commit_valid(NULL), "NULL commit refused");
+    ASSERT(pkg_hash_valid(H1), "sha256 hash ok");
+    ASSERT(!pkg_hash_valid(&H1[7]), "hash without algorithm refused");
+    ASSERT(!pkg_hash_valid("sha1:" C40), "sha1 refused");
+    ASSERT(!pkg_hash_valid("sha256:abc"), "short hash refused");
+    ASSERT(!pkg_hash_valid(NULL), "NULL hash refused");
+}
+
+static void
+test_lock_pins(void)
+{
+    PkgLock orig;
+    memset(&orig, 0, sizeof(orig));
+    orig.count = 2;
+    snprintf(orig.entries[0].name, sizeof(orig.entries[0].name), "webframework");
+    orig.entries[0].version = (PkgVersion){0, 3, 0};
+    snprintf(orig.entries[0].commit, sizeof(orig.entries[0].commit), "%s", C40);
+    snprintf(orig.entries[0].hash, sizeof(orig.entries[0].hash), "%s", H1);
+    snprintf(orig.entries[1].name, sizeof(orig.entries[1].name), "jsonparser");
+    orig.entries[1].version = (PkgVersion){1, 2, 0};
+    snprintf(orig.entries[1].commit, sizeof(orig.entries[1].commit), "%s", C64);
+    snprintf(orig.entries[1].hash, sizeof(orig.entries[1].hash), "%s", H2);
+
+    const char *path = write_tmp("");
+    ASSERT(pkg_lock_write(path, &orig) == 0, "write pinned lock");
+    PkgLock back;
+    ASSERT(pkg_lock_read(path, &back) == 0, "read pinned lock");
+    ASSERT(back.count == 2, "pinned lock count");
+    ASSERT(strcmp(back.entries[0].commit, C40) == 0, "commit[0] round-trips");
+    ASSERT(strcmp(back.entries[0].hash, H1) == 0, "hash[0] round-trips");
+    ASSERT(strcmp(back.entries[1].commit, C64) == 0, "commit[1] round-trips");
+    ASSERT(strcmp(back.entries[1].hash, H2) == 0, "hash[1] round-trips");
+
+    char err[256] = {0};
+    ASSERT(pkg_lock_check_pinned(&back, err, (int)sizeof(err)) == 0, "fully pinned lock accepted");
+    ASSERT(pkg_lock_verify(&back.entries[0], C40, H1, err, (int)sizeof(err)) == 0,
+           "verify: matching commit+hash accepted");
+    err[0] = '\0';
+    ASSERT(pkg_lock_verify(&back.entries[0], C64, H1, err, (int)sizeof(err)) == -1,
+           "verify: moved tag (other commit) refused");
+    ASSERT(strstr(err, "commit mismatch") != NULL, "verify names the commit mismatch");
+    err[0] = '\0';
+    ASSERT(pkg_lock_verify(&back.entries[0], C40, H2, err, (int)sizeof(err)) == -1,
+           "verify: tampered content (other hash) refused");
+    ASSERT(strstr(err, "content hash mismatch") != NULL, "verify names the hash mismatch");
+
+    /* unpinned entries */
+    back.entries[1].hash[0] = '\0';
+    err[0] = '\0';
+    ASSERT(pkg_lock_check_pinned(&back, err, (int)sizeof(err)) == -1, "entry with no hash refused");
+    ASSERT(strstr(err, "jsonparser") != NULL, "unpinned error names the package");
+    back.entries[0].commit[0] = '\0';
+    ASSERT(pkg_lock_check_pinned(&back, err, (int)sizeof(err)) == -1, "entry with no commit refused");
+    ASSERT(pkg_lock_verify(&back.entries[0], C40, H1, err, (int)sizeof(err)) == -1,
+           "verify against an unpinned entry refused");
+
+    /* a resolve-only lock (no pins) is still writable and readable */
+    PkgLock plain;
+    memset(&plain, 0, sizeof(plain));
+    plain.count = 1;
+    snprintf(plain.entries[0].name, sizeof(plain.entries[0].name), "web");
+    plain.entries[0].version = (PkgVersion){0, 1, 0};
+    ASSERT(pkg_lock_write(path, &plain) == 0, "resolve-only lock written");
+    ASSERT(pkg_lock_read(path, &back) == 0 && back.count == 1 && back.entries[0].commit[0] == '\0',
+           "resolve-only lock reads back unpinned");
+    ASSERT(pkg_lock_check_pinned(&back, NULL, 0) == -1, "resolve-only lock refused for fetch");
+
+    /* the writer refuses to inject */
+    PkgLock evil = plain;
+    snprintf(evil.entries[0].name, sizeof(evil.entries[0].name), "web\"\n[commit]\nweb");
+    unlink(path);
+    ASSERT(pkg_lock_write(path, &evil) == -1, "writer refuses a name that would inject lines");
+    FILE *f = fopen(path, "r");
+    ASSERT(f == NULL, "refused write creates no file");
+    if (f) fclose(f);
+    evil = plain;
+    snprintf(evil.entries[0].commit, sizeof(evil.entries[0].commit), "main");
+    ASSERT(pkg_lock_write(path, &evil) == -1, "writer refuses a branch-name commit");
+    unlink(path);
+}
+
+static void
+test_lock_read_rejects(void)
+{
+    PkgLock l;
+    static const struct { const char *text; const char *what; } bad[] = {
+        { "[resolved]\nweb = \"0.1.0\"\n[commit]\nother = \"" C40 "\"\n", "pin for an unresolved package" },
+        { "[resolved]\nweb = \"0.1.0\"\n[commit]\nweb = \"main\"\n", "branch name as commit" },
+        { "[resolved]\nweb = \"0.1.0\"\n[commit]\nweb = \"3f78685\"\n", "abbreviated commit" },
+        { "[resolved]\nweb = \"0.1.0\"\n[hash]\nweb = \"md5:abc\"\n", "non-sha256 hash" },
+        { "[resolved]\nweb = \"0.1.0\"\nweb = \"0.2.0\"\n", "duplicate resolved entry" },
+        { "[resolved]\nweb = \"0.1.0\"\n[commit]\nweb = \"" C40 "\"\nweb = \"" C64 "\"\n", "commit pinned twice" },
+        { "[resolved]\nweb_x = \"0.1.0\"\n", "invalid name in [resolved]" },
+        { "lock-version = \"3\"\n[resolved]\nweb = \"0.1.0\"\n", "unknown lock-version" },
+        { "[resolved]\nweb = \"0.1\"\n", "malformed version" },
+    };
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        const char *path = write_tmp(bad[i].text);
+        char msg[160];
+        snprintf(msg, sizeof(msg), "reader refuses: %s", bad[i].what);
+        ASSERT(pkg_lock_read(path, &l) == -1, msg);
+    }
+    /* pre-122.10 lock (no lock-version, no pins) still reads */
+    const char *path = write_tmp("# old\n[resolved]\nweb = \"0.3.0\"\n");
+    ASSERT(pkg_lock_read(path, &l) == 0 && l.count == 1 && l.entries[0].commit[0] == '\0',
+           "pre-122.10 lock reads, unpinned");
+    unlink(path);
+}
+
 /* ── main ──────────────────────────────────────────────────────────────────── */
 
 int
@@ -392,6 +567,12 @@ main(void)
 
     /* End-to-end */
     test_end_to_end();
+
+    /* Supply-chain checks (122.10) */
+    test_name_policy();
+    test_commit_hash_grammar();
+    test_lock_pins();
+    test_lock_read_rejects();
 
     printf("\n%d / %d tests passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

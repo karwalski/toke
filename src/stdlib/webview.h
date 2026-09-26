@@ -9,14 +9,10 @@
  * frameworks.  On other platforms all functions are safe stubs.
  *
  * COMPILATION NOTE:
- *   On macOS (when __APPLE__ is defined) the companion implementation file
- *   (webview.c) must be compiled as Objective-C.  Pass `-x objective-c` to
- *   the C compiler, or rename/symlink webview.c to webview.m:
- *
- *     cc -x objective-c ... -framework WebKit -framework Cocoa webview.c
- *
- *   On all other platforms webview.c compiles as plain C99 with no external
- *   dependencies.
+ *   webview.c is plain C99 on every platform: on macOS it reaches WebKit
+ *   through the Objective-C runtime C API, so no `-x objective-c` is needed
+ *   (verified 2026-09-26, 122.11: `cc -std=c99 -Wpedantic -Werror -c`).
+ *   It LINKS on macOS only with -framework WebKit -framework Cocoa -lobjc.
  *
  * Type mappings:
  *   str   = const char *  (null-terminated UTF-8)
@@ -144,6 +140,67 @@ void tk_webview_run_event_loop(void);
  * 0 otherwise.  Safe to call at any time with no side effects.
  */
 int tk_webview_is_available(void);
+
+/* ------------------------------------------------------------------
+ * Bridge trust policy (story 122.11)
+ *
+ * The native bridge -- window.toke.<name>() handlers, the reply and
+ * tk_webview_eval_js() (both evaluateJavaScript:), and the loke:// scheme
+ * -- is only honoured for a TRUSTED origin:
+ *
+ *   loke:  any loke:// document (the app's own content)
+ *   file:  any file:// document (local content shipped with the app)
+ *   other  only an origin added with tk_webview_allow_origin()
+ *
+ * Messages must also come from the MAIN frame: a message from any
+ * sub-frame is dropped, whatever its origin.  Everything else (a remote
+ * page reached by redirect or link, an ad iframe, about:blank) is
+ * denied: its messages are dropped, eval_js returns 0, and loke://
+ * requests it initiates fail.
+ *
+ * UNSAFE CASE: loading an untrusted or remote URL into a bridged webview
+ * and then allowing its origin hands that page every registered handler.
+ * Only allow origins you control, over https.
+ *
+ * The helpers below are platform-independent (compiled on every host) so
+ * the policy can be tested without a display.
+ * ------------------------------------------------------------------ */
+
+#include <stddef.h>
+
+#define TK_WEBVIEW_MAX_ORIGINS 16   /* allowlist size per window */
+
+typedef struct {
+    char scheme[16];    /* lower-case, e.g. "https"                   */
+    char host[256];     /* lower-case; "" for file:                   */
+    int  port;          /* 0 = the scheme's default port              */
+} TkWebviewOrigin;
+
+/*
+ * tk_webview_allow_origin(h, origin) -> int
+ * Adds "scheme://host[:port]" to the window's trusted origins.  Any path
+ * is ignored.  Returns 1 on success, 0 on a malformed origin, a full list
+ * or an invalid handle.
+ */
+int tk_webview_allow_origin(TkWebviewHandle *h, const char *origin);
+
+/* Parse the origin of a URL.  Returns 1 on success, 0 if malformed.
+ * Userinfo is stripped ("https://a.com@b.com" is origin b.com). */
+int tk_webview_origin_parse(const char *url, TkWebviewOrigin *out);
+
+/* Returns 1 if o is trusted under the policy above, else 0. */
+int tk_webview_origin_trusted(const TkWebviewOrigin *o,
+                              const TkWebviewOrigin *allow, int nallow);
+
+/* Handler names are spliced into JavaScript, so only [A-Za-z][A-Za-z0-9]{0,63}
+ * is accepted (plus the reserved "loke_scheme").  Returns 1 if valid. */
+int tk_webview_handler_name_ok(const char *name);
+
+/* Escape s for the inside of a double-quoted JavaScript string literal:
+ * quote, backslash, every control character, '<', '>', U+2028 and U+2029
+ * become escapes.  Returns a malloc'd string (never truncated), or NULL
+ * on allocation failure. */
+char *tk_webview_js_escape(const char *s);
 
 #ifdef __cplusplus
 }

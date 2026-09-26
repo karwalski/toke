@@ -10,6 +10,7 @@
 
 #include "http.h"
 #include "encoding.h"
+#include "strbuf.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -197,22 +198,27 @@ static uint8_t *acme_es256_sign(EVP_PKEY *key, const uint8_t *data,
 static char *acme_jws(AcmeClient *ac, const char *url,
                        const char *payload, const char *nonce)
 {
-    /* Header */
-    char header[1024];
+    /* Header.  122.2: was a char[1024]; the account URL, nonce and request
+     * URL all come from the ACME server, and a long one truncated the
+     * protected header into invalid JSON that was then signed and sent. */
+    TkStrBuf hb = TK_STRBUF_INIT;
     if (ac->account_url) {
-        snprintf(header, sizeof(header),
+        strbuf_appendf(&hb,
                  "{\"alg\":\"ES256\",\"kid\":\"%s\",\"nonce\":\"%s\",\"url\":\"%s\"}",
                  ac->account_url, nonce, url);
     } else {
         char *jwk = acme_jwk_json(ac->account_key);
         if (!jwk) return NULL;
-        snprintf(header, sizeof(header),
+        strbuf_appendf(&hb,
                  "{\"alg\":\"ES256\",\"jwk\":%s,\"nonce\":\"%s\",\"url\":\"%s\"}",
                  jwk, nonce, url);
         free(jwk);
     }
+    char *header = strbuf_take(&hb);
+    if (!header) return NULL;
 
     char *hdr_b64 = b64url((uint8_t *)header, strlen(header));
+    free(header);
     char *pay_b64 = b64url((uint8_t *)payload, strlen(payload));
 
     /* Signing input: header.payload */
@@ -389,17 +395,20 @@ int acme_register_account(AcmeClient *ac, const char *email)
     char *nonce = acme_get_nonce(ac);
     if (!nonce) return -1;
 
-    char payload[512];
+    /* 122.2: was a char[512]; a long contact address was cut mid-JSON. */
+    TkStrBuf pb = TK_STRBUF_INIT;
     if (email) {
-        snprintf(payload, sizeof(payload),
+        strbuf_appendf(&pb,
                  "{\"termsOfServiceAgreed\":true,"
                  "\"contact\":[\"mailto:%s\"]}", email);
     } else {
-        snprintf(payload, sizeof(payload),
-                 "{\"termsOfServiceAgreed\":true}");
+        strbuf_append(&pb, "{\"termsOfServiceAgreed\":true}");
     }
+    char *payload = strbuf_take(&pb);
+    if (!payload) { free(nonce); return -1; }
 
     char *jws = acme_jws(ac, ac->new_account_url, payload, nonce);
+    free(payload);
     free(nonce);
     if (!jws) return -1;
 
@@ -432,6 +441,35 @@ int acme_register_account(AcmeClient *ac, const char *email)
 
 /* ── Order and certificate issuance (61.1.1) ─────────────────────────── */
 
+/* acme_identifiers_json -- the newOrder payload for `domains`.  122.2: this
+ * was `off += snprintf(identifiers+off, sizeof identifiers - off, ...)` into a
+ * char[4096]; past ~90 domains `off` passed the end, the size underflowed and
+ * snprintf wrote past the stack array (121.19 ACME-01).  Returns malloc'd, or
+ * NULL on OOM. */
+static char *acme_identifiers_json(const char **domains, int ndomain)
+{
+    TkStrBuf b = TK_STRBUF_INIT;
+    strbuf_append(&b, "{\"identifiers\":[");
+    for (int i = 0; i < ndomain; i++) {
+        if (i > 0) strbuf_putc(&b, ',');
+        strbuf_appendf(&b, "{\"type\":\"dns\",\"value\":\"%s\"}", domains[i]);
+    }
+    strbuf_append(&b, "]}");
+    return strbuf_take(&b);
+}
+
+/* acme_san_list -- "DNS:a,DNS:b,..." for the CSR's subjectAltName.  Same
+ * char[4096] + snprintf-offset overflow as acme_identifiers_json (122.2). */
+static char *acme_san_list(const char **domains, int ndomain)
+{
+    TkStrBuf b = TK_STRBUF_INIT;
+    for (int i = 0; i < ndomain; i++) {
+        if (i > 0) strbuf_putc(&b, ',');
+        strbuf_appendf(&b, "DNS:%s", domains[i]);
+    }
+    return strbuf_take(&b);
+}
+
 /* Place a new order for a certificate */
 int acme_order_certificate(AcmeClient *ac, const char **domains,
                             int ndomain, const char *cert_path,
@@ -440,22 +478,14 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
     if (!ac || !ac->account_url || !domains || ndomain <= 0) return -1;
 
     /* Build identifiers JSON */
-    char identifiers[4096];
-    int off = 0;
-    off += snprintf(identifiers + off, sizeof(identifiers) - (size_t)off,
-                    "{\"identifiers\":[");
-    for (int i = 0; i < ndomain; i++) {
-        if (i > 0) off += snprintf(identifiers + off,
-                                   sizeof(identifiers) - (size_t)off, ",");
-        off += snprintf(identifiers + off, sizeof(identifiers) - (size_t)off,
-                        "{\"type\":\"dns\",\"value\":\"%s\"}", domains[i]);
-    }
-    off += snprintf(identifiers + off, sizeof(identifiers) - (size_t)off, "]}");
+    char *identifiers = acme_identifiers_json(domains, ndomain);
+    if (!identifiers) return -1;
 
     char *nonce = acme_get_nonce(ac);
-    if (!nonce) return -1;
+    if (!nonce) { free(identifiers); return -1; }
 
     char *jws = acme_jws(ac, ac->new_order_url, identifiers, nonce);
+    free(identifiers);
     free(nonce);
     if (!jws) return -1;
 
@@ -692,17 +722,10 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
 
     /* Add SAN extension */
     STACK_OF(X509_EXTENSION) *exts = sk_X509_EXTENSION_new_null();
-    char san_buf[4096];
-    int san_off = 0;
-    for (int i = 0; i < ndomain; i++) {
-        if (i > 0) san_off += snprintf(san_buf + san_off,
-                                       sizeof(san_buf) - (size_t)san_off, ",");
-        san_off += snprintf(san_buf + san_off,
-                            sizeof(san_buf) - (size_t)san_off,
-                            "DNS:%s", domains[i]);
-    }
+    char *san_buf = acme_san_list(domains, ndomain);
     X509_EXTENSION *san_ext = X509V3_EXT_nconf_nid(
-        NULL, NULL, NID_subject_alt_name, san_buf);
+        NULL, NULL, NID_subject_alt_name, san_buf ? san_buf : "");
+    free(san_buf);
     if (san_ext) {
         sk_X509_EXTENSION_push(exts, san_ext);
         X509_REQ_add_extensions(csr, exts);
@@ -723,14 +746,18 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
 
     /* Finalize the order */
     if (finalize_url && csr_b64) {
-        char fin_payload[8192];
-        snprintf(fin_payload, sizeof(fin_payload),
-                 "{\"csr\":\"%s\"}", csr_b64);
+        /* 122.2: was a char[8192]; a CSR carrying many SANs outgrew it and
+         * was sent truncated. */
+        TkStrBuf fb = TK_STRBUF_INIT;
+        strbuf_appendf(&fb, "{\"csr\":\"%s\"}", csr_b64);
+        char *fin_payload = strbuf_take(&fb);
 
-        nonce = acme_get_nonce(ac);
+        nonce = fin_payload ? acme_get_nonce(ac) : NULL;
         if (nonce) {
             jws = acme_jws(ac, finalize_url, fin_payload, nonce);
             free(nonce);
+            free(fin_payload);
+            fin_payload = NULL;
             if (jws) {
                 resp = http_post(ac->client, finalize_url,
                                   (uint8_t *)jws, (uint64_t)strlen(jws),
@@ -785,6 +812,7 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
                 }
             }
         }
+        free(fin_payload);
     }
 
     free(csr_b64);
@@ -821,16 +849,21 @@ int acme_order_certificate(AcmeClient *ac, const char **domains,
 /* Write data to file atomically with secure permissions */
 static int acme_write_file(const char *path, const uint8_t *data, size_t len)
 {
-    char tmp[1024];
-    snprintf(tmp, sizeof(tmp), "%s.tmp.%d", path, (int)getpid());
+    /* 122.2: was a char[1024]; for a path of 1024+ bytes the temporary name
+     * was truncated to a prefix of `path` itself -- no ".tmp.<pid>" suffix --
+     * so O_TRUNC opened and clobbered whatever file had that name. */
+    TkStrBuf tb = TK_STRBUF_INIT;
+    strbuf_appendf(&tb, "%s.tmp.%d", path, (int)getpid());
+    char *tmp = strbuf_take(&tb);
+    if (!tmp) return -1;
 
     int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd < 0) return -1;
+    if (fd < 0) { free(tmp); return -1; }
 
     size_t written = 0;
     while (written < len) {
         ssize_t w = write(fd, data + written, len - written);
-        if (w <= 0) { close(fd); unlink(tmp); return -1; }
+        if (w <= 0) { close(fd); unlink(tmp); free(tmp); return -1; }
         written += (size_t)w;
     }
     close(fd);
@@ -838,8 +871,10 @@ static int acme_write_file(const char *path, const uint8_t *data, size_t len)
     /* Atomic rename */
     if (rename(tmp, path) != 0) {
         unlink(tmp);
+        free(tmp);
         return -1;
     }
+    free(tmp);
     return 0;
 }
 

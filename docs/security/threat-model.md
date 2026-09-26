@@ -179,3 +179,87 @@ here are **remote-unauth**.
 3. **Buffer sizing by assumption.** Repeated fixed-size buffers (`4096`, `8 KiB`, `2048`)
    with `snprintf`-return accumulation appear across parsers, TLS, ACME, DB, and CSP. A
    grow-or-reject buffer helper used uniformly would retire many overflow findings.
+
+---
+
+# Part III — Post-quantum posture and crypto agility
+
+**Added:** 2026-09-26 (story 122.6; decision record ADR-0013 (f), roadmap 122.5)
+
+A cryptographically relevant quantum computer (CRQC) breaks the classical
+**asymmetric** primitives (RSA, finite-field and elliptic-curve Diffie-Hellman,
+ECDSA, Ed25519) outright. It weakens symmetric ciphers and hashes far less:
+AES-256, ChaCha20, SHA-256/512 and HMAC at the sizes toke uses remain adequate.
+The practical threat today is **harvest now, decrypt later (HNDL)**: traffic or
+ciphertext recorded now is decrypted once a CRQC exists, so anything that must
+stay confidential for years is already exposed if a classical key exchange
+protected it. Signatures are the opposite case: a forged signature only matters
+once a CRQC exists, so the risk is to signatures that must still verify then.
+
+## What toke ships, by quantum status
+
+Checked against the source on 2026-09-26. "Toke-callable" means declared in a
+`stdlib/*.tki` interface; C-only functions are not reachable from a toke program.
+
+| Surface | Primitive | Toke-callable | Quantum status | Notes |
+|---|---|---|---|---|
+| `std.encrypt` AEAD (`aes256gcm*`) | AES-256-GCM | yes | adequate | versioned, algorithm-tagged envelope in `encrypt.c` (124.1, ADR-0013 (a)) |
+| `std.encrypt` KDF (`hkdfsha256`) | HKDF-SHA-256 | yes | adequate | |
+| `std.encrypt` key agreement (`x25519keypair`, `x25519dh`) | X25519 | yes | **vulnerable** (HNDL) | no hybrid or ML-KEM alternative in `std.encrypt` yet |
+| `std.encrypt` signatures (`ed25519*`) | Ed25519 | yes | **vulnerable** (forgery once a CRQC exists) | no ML-DSA alternative in `std.encrypt` yet |
+| `std.tls` key exchange | X25519MLKEM768 hybrid, then classical groups | yes (negotiated) | **hybrid when both sides support it** | `tls.c` prefers `X25519MLKEM768`; with OpenSSL older than 3.5, or a peer without the group, it falls back to classical X25519/ECDH **silently** |
+| `std.tls` self-signed certificates (`genselfsigned`, `genselfsignedalg`) | ECDSA P-384 by default; ML-DSA-65 opt-in | yes | default **vulnerable**; `ml-dsa-65` post-quantum | ML-DSA-65 certificates do not verify with classical-only peers |
+| `std.auth` JWT | HMAC-SHA-256 (HS256 only, allowlisted) | yes | adequate | symmetric |
+| ACME account key (`acme.c`) | ECDSA P-256 (ES256) | via `std.http` | **vulnerable** | bound by what ACME CAs accept |
+| RSA in `encrypt.c` | RSA-OAEP / signatures | **no** (C-only) | vulnerable | not reachable from toke |
+| Release signing | sigstore cosign keyless | n/a | classical | see `docs/security/release-signing.md` |
+
+## Guidance for toke programs (HNDL)
+
+1. **Transport.** Use `std.tls` with an OpenSSL of 3.5 or later on both ends; the
+   hybrid group is then negotiated automatically. There is currently no API to
+   observe which group a connection negotiated, so a silent classical fallback is
+   not detectable from toke code (reported for triage with 122.6).
+2. **Data at rest.** Encrypt with `std.encrypt`'s AES-256-GCM under a key that is
+   *not* derived solely from `x25519dh`. A key that only X25519 protects in transit
+   or in storage is as long-lived as the ciphertext it unlocks.
+3. **Key agreement for long-lived secrets.** Do not use `encrypt.x25519dh` alone to
+   establish a key that protects data meant to stay confidential for years. Until
+   `std.encrypt` gains a hybrid X25519 + ML-KEM-768 construction (122.5), prefer a
+   pre-shared symmetric key or a `std.tls` channel negotiated with the hybrid group.
+4. **Signatures that must verify for years** (archival records, firmware, long-lived
+   certificates): Ed25519 and ECDSA will be forgeable once a CRQC exists. Use
+   `tls.genselfsignedalg(...; "ml-dsa-65")` where the peers support it, and plan to
+   re-sign with a post-quantum scheme.
+5. **Short-lived secrets** (session tokens, one-off handshakes whose content has no
+   long-term value) are not an HNDL concern; classical primitives remain acceptable
+   for them.
+
+## Deprecation track: classical-only asymmetric protection of long-lived data
+
+Governed by `docs/governance.md` §4.3 (a deprecation cycle of at least two minor
+releases or six months between notice and removal) and §4.2 (a stdlib signature may
+break only in a major release).
+
+| Stage | Trigger | What changes |
+|---|---|---|
+| **0 — notice** (now, 122.6) | this document | X25519 key agreement and Ed25519/ECDSA signatures are documented as quantum-vulnerable, here and in `docs/stdlib/encrypt.md` |
+| **1 — deprecation** | a hybrid (X25519 + ML-KEM-768) key agreement and an ML-DSA signature API ship in `std.encrypt` (122.5) | `encrypt.x25519dh` and `encrypt.ed25519sign` are marked deprecated **for protecting long-lived data**; the docs name the replacement |
+| **2 — default change** | at least one deprecation cycle after stage 1 | new code defaults to the hybrid and post-quantum APIs; `tls.genselfsigned`'s default algorithm is re-evaluated against peer support |
+| **3 — removal (optional)** | a major release, no sooner than §4.3 allows after stage 1 | classical-only functions are removed or kept only as components of hybrid constructions |
+
+No stage beyond 0 has a date: a deprecation without a replacement to move to would
+only strand users. Classical algorithms are not being removed from hybrids; X25519
+remains half of `X25519MLKEM768`.
+
+## Runtime advisory: decided against (122.6)
+
+ADR-0013 (f) asked whether a build-time or runtime advisory should fire when a
+quantum-vulnerable primitive protects long-lived data. **Not at runtime:** the
+library cannot tell at a call site whether the data is long-lived, so a log line from
+`x25519dh` or `ed25519sign` would fire on every short-lived use, and output from the
+stdlib pollutes a program's stdout/stderr. **A compile-time lint note is the right
+place** (it can point at the call and at this section without affecting the program),
+and it needs a new lint code, so it is proposed as a follow-up story rather than
+implemented here.
+

@@ -14,24 +14,13 @@
 #include <string.h>
 
 /*
- * 121.9 (WEB-01): bounded append for the proxy request builder. The prior
- * `off += snprintf(buf+off, cap-(size_t)off, …)` overflowed the heap — when off
- * exceeded cap, `cap-(size_t)off` underflowed to a huge size and snprintf wrote
- * past `buf`. p_emit never passes a negative size and clamps off to cap-1
- * (truncate, don't overflow). Returns the new offset.
+ * 121.9 (WEB-01) replaced an overflowing `off += snprintf(buf+off, cap-off,…)`
+ * with a clamp at a fixed 4096 bytes, which truncated instead: a request with
+ * many or long headers lost its tail, and a body that did not fit was DROPPED
+ * while the Content-Length header announcing it was still sent -- the backend
+ * then waited for bytes that never came.  122.2: append to a TkStrBuf.
  */
-static int p_emit(char *buf, int off, size_t cap, const char *fmt, ...) {
-    if (cap == 0) return 0;
-    if (off < 0) off = 0;
-    if ((size_t)off >= cap - 1) return (int)(cap - 1);
-    va_list ap; va_start(ap, fmt);
-    int n = vsnprintf(buf + off, cap - (size_t)off, fmt, ap);
-    va_end(ap);
-    if (n < 0) return off;
-    off += n;
-    if ((size_t)off >= cap) off = (int)(cap - 1);
-    return off;
-}
+#include "strbuf.h"
 #include <strings.h>
 #include <unistd.h>
 #include <errno.h>
@@ -308,23 +297,20 @@ static ProxyBackend *lb_select(ProxyUpstream *up, const char *client_ip)
 static char *proxy_build_request(Req *req, const char *host, int port,
                                   const char *client_ip)
 {
-    size_t cap = 4096;
-    char *buf = malloc(cap);
-    if (!buf) return NULL;
+    TkStrBuf b = TK_STRBUF_INIT;
 
-    int off = p_emit(buf, 0, cap,"%s %s HTTP/1.1\r\n",
-                       req->method ? req->method : "GET",
-                       req->path ? req->path : "/");
+    strbuf_appendf(&b, "%s %s HTTP/1.1\r\n",
+                   req->method ? req->method : "GET",
+                   req->path ? req->path : "/");
 
     /* Host header */
-    off = p_emit(buf, off, cap,"Host: %s:%d\r\n",
-                    host, port);
+    strbuf_appendf(&b, "Host: %s:%d\r\n", host, port);
 
     /* Forwarding metadata headers (62.1.4) */
-    off = p_emit(buf, off, cap,
-                    "X-Forwarded-For: %s\r\n"
-                    "X-Forwarded-Proto: https\r\n",
-                    client_ip ? client_ip : "unknown");
+    strbuf_appendf(&b,
+                   "X-Forwarded-For: %s\r\n"
+                   "X-Forwarded-Proto: https\r\n",
+                   client_ip ? client_ip : "unknown");
 
     /* Copy non-hop-by-hop headers */
     for (uint64_t i = 0; i < req->headers.len; i++) {
@@ -332,26 +318,20 @@ static char *proxy_build_request(Req *req, const char *host, int port,
         const char *val  = req->headers.data[i].val;
         if (is_hop_by_hop(name)) continue;
         if (strcasecmp(name, "Host") == 0) continue; /* already set */
-        off = p_emit(buf, off, cap,"%s: %s\r\n",
-                        name, val);
+        strbuf_appendf(&b, "%s: %s\r\n", name, val);
     }
 
     /* Body */
     size_t body_len = req->body ? strlen(req->body) : 0;
-    if (body_len > 0) {
-        off = p_emit(buf, off, cap,
-                        "Content-Length: %zu\r\n", body_len);
-    }
+    if (body_len > 0)
+        strbuf_appendf(&b, "Content-Length: %zu\r\n", body_len);
 
-    off = p_emit(buf, off, cap,"Connection: keep-alive\r\n\r\n");
+    strbuf_append(&b, "Connection: keep-alive\r\n\r\n");
 
-    if (body_len > 0 && (size_t)off + body_len < cap) {
-        memcpy(buf + off, req->body, body_len);
-        off += (int)body_len;
-    }
-    buf[off] = '\0';
+    if (body_len > 0)
+        strbuf_appendn(&b, req->body, body_len);
 
-    return buf;
+    return strbuf_take(&b);
 }
 
 /* Parse a backend HTTP response (minimal) */
@@ -622,14 +602,19 @@ int proxy_health_probe(ProxyBackend *b, const char *path, int timeout)
     int fd = proxy_connect(b->host, b->port, timeout);
     if (fd < 0) return -1;
 
-    char req[512];
-    snprintf(req, sizeof(req),
-             "GET %s HTTP/1.1\r\nHost: %s:%d\r\n"
-             "Connection: close\r\n\r\n",
-             path, b->host, b->port);
+    /* 122.2: was a char[512]; a long path or host was cut mid-request and
+     * the probe sent a request with no terminating blank line. */
+    TkStrBuf rq = TK_STRBUF_INIT;
+    strbuf_appendf(&rq,
+                   "GET %s HTTP/1.1\r\nHost: %s:%d\r\n"
+                   "Connection: close\r\n\r\n",
+                   path, b->host, b->port);
+    char *req = strbuf_take(&rq);
+    if (!req) { close(fd); return -1; }
 
     http_sock_nosigpipe(fd);            /* 127.144 */
     http_write_all(fd, req, strlen(req));
+    free(req);
 
     struct timeval tv;
     tv.tv_sec = timeout;

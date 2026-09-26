@@ -17,6 +17,7 @@
  */
 
 #include "toon.h"
+#include "strbuf.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -353,14 +354,13 @@ const char *toon_from_json(const char *json) {
         /* Single object: wrap as one-row TOON */
         if (*p != '{') return "";
         /* Extract keys from the object */
-        size_t cap = 4096;
-        char *out = (char *)malloc(cap);
-        if (!out) return "";
-        int pos = 0;
+        /* 122.2: this path had no growth at all -- a value longer than the
+         * old 4096-byte buffer wrote past it (heap overflow). */
+        TkStrBuf ob = TK_STRBUF_INIT;
 
         /* Collect keys */
         const char *kp = p + 1;
-        pos += snprintf(out + pos, cap - (size_t)pos, "{");
+        strbuf_appendf(&ob, "{");
         int first_key = 1;
         while (*kp && *kp != '}') {
             while (*kp == ' ' || *kp == '\t' || *kp == '\n' || *kp == '\r') kp++;
@@ -368,8 +368,8 @@ const char *toon_from_json(const char *json) {
             kp++; /* skip opening quote */
             const char *ks = kp;
             while (*kp && *kp != '"') kp++;
-            if (!first_key) pos += snprintf(out + pos, cap - (size_t)pos, ",");
-            pos += snprintf(out + pos, cap - (size_t)pos, "%.*s", (int)(kp - ks), ks);
+            if (!first_key) strbuf_appendf(&ob, ",");
+            strbuf_appendf(&ob, "%.*s", (int)(kp - ks), ks);
             first_key = 0;
             if (*kp == '"') kp++;
             while (*kp == ' ' || *kp == ':') kp++;
@@ -383,7 +383,7 @@ const char *toon_from_json(const char *json) {
             }
             if (*kp == ',') kp++;
         }
-        pos += snprintf(out + pos, cap - (size_t)pos, "}:\n");
+        strbuf_appendf(&ob, "}:\n");
 
         /* Collect values */
         kp = p + 1;
@@ -395,13 +395,13 @@ const char *toon_from_json(const char *json) {
             while (*kp && *kp != '"') kp++;
             if (*kp == '"') kp++;
             while (*kp == ' ' || *kp == ':') kp++;
-            if (!first_val) pos += snprintf(out + pos, cap - (size_t)pos, "|");
+            if (!first_val) strbuf_appendf(&ob, "|");
             first_val = 0;
             if (*kp == '"') {
                 kp++;
                 const char *vs = kp;
                 while (*kp && !(*kp == '"' && *(kp - 1) != '\\')) kp++;
-                pos += snprintf(out + pos, cap - (size_t)pos, "%.*s", (int)(kp - vs), vs);
+                strbuf_appendf(&ob, "%.*s", (int)(kp - vs), vs);
                 if (*kp == '"') kp++;
             } else {
                 const char *vs = kp;
@@ -409,25 +409,22 @@ const char *toon_from_json(const char *json) {
                 /* trim trailing whitespace */
                 const char *ve = kp;
                 while (ve > vs && (*(ve - 1) == ' ' || *(ve - 1) == '\t')) ve--;
-                pos += snprintf(out + pos, cap - (size_t)pos, "%.*s", (int)(ve - vs), vs);
+                strbuf_appendf(&ob, "%.*s", (int)(ve - vs), vs);
             }
             if (*kp == ',') kp++;
         }
-        pos += snprintf(out + pos, cap - (size_t)pos, "\n");
-        out[pos] = '\0';
-        return out;
+        strbuf_appendf(&ob, "\n");
+        char *out = strbuf_take(&ob);
+        return out ? out : "";
     }
 
     /* Array of objects */
-    size_t cap = 8192;
-    char *out = (char *)malloc(cap);
-    if (!out) return "";
-    int pos = 0;
+    TkStrBuf ob = TK_STRBUF_INIT;
 
     /* Count elements and extract keys from first object */
     p++; /* skip '[' */
     while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
-    if (*p != '{') { free(out); return ""; }
+    if (*p != '{') return "";
 
     /* Extract keys from first object */
     char *keys[64];
@@ -466,12 +463,12 @@ const char *toon_from_json(const char *json) {
     }
 
     /* Schema line */
-    pos += snprintf(out + pos, cap - (size_t)pos, "data[%d]{", obj_count);
+    strbuf_appendf(&ob, "data[%d]{", obj_count);
     for (int i = 0; i < nkeys; i++) {
-        if (i > 0) pos += snprintf(out + pos, cap - (size_t)pos, ",");
-        pos += snprintf(out + pos, cap - (size_t)pos, "%s", keys[i]);
+        if (i > 0) strbuf_appendf(&ob, ",");
+        strbuf_appendf(&ob, "%s", keys[i]);
     }
-    pos += snprintf(out + pos, cap - (size_t)pos, "}:\n");
+    strbuf_appendf(&ob, "}:\n");
 
     /* Extract values from each object */
     const char *op = p;
@@ -502,15 +499,9 @@ const char *toon_from_json(const char *json) {
                     vs = search;
                     while (*search && !(*search == '"' && *(search - 1) != '\\')) search++;
                     if (match) {
-                        if (!first) pos += snprintf(out + pos, cap - (size_t)pos, "|");
+                        if (!first) strbuf_appendf(&ob, "|");
                         first = 0;
-                        /* Grow buffer if needed */
-                        size_t need = (size_t)(search - vs) + 16;
-                        if ((size_t)pos + need >= cap) {
-                            cap *= 2;
-                            out = (char *)realloc(out, cap);
-                        }
-                        pos += snprintf(out + pos, cap - (size_t)pos, "%.*s",
+                        strbuf_appendf(&ob, "%.*s",
                                         (int)(search - vs), vs);
                         found = 1;
                     }
@@ -518,16 +509,11 @@ const char *toon_from_json(const char *json) {
                 } else {
                     while (*search && *search != ',' && *search != '}') search++;
                     if (match) {
-                        if (!first) pos += snprintf(out + pos, cap - (size_t)pos, "|");
+                        if (!first) strbuf_appendf(&ob, "|");
                         first = 0;
                         const char *ve = search;
                         while (ve > vs && (*(ve - 1) == ' ' || *(ve - 1) == '\t')) ve--;
-                        size_t need = (size_t)(ve - vs) + 16;
-                        if ((size_t)pos + need >= cap) {
-                            cap *= 2;
-                            out = (char *)realloc(out, cap);
-                        }
-                        pos += snprintf(out + pos, cap - (size_t)pos, "%.*s",
+                        strbuf_appendf(&ob, "%.*s",
                                         (int)(ve - vs), vs);
                         found = 1;
                     }
@@ -536,19 +522,19 @@ const char *toon_from_json(const char *json) {
                 if (*search == ',') search++;
             }
             if (!found) {
-                if (!first) pos += snprintf(out + pos, cap - (size_t)pos, "|");
+                if (!first) strbuf_appendf(&ob, "|");
                 first = 0;
             }
         }
-        pos += snprintf(out + pos, cap - (size_t)pos, "\n");
+        strbuf_appendf(&ob, "\n");
         /* Advance past '}' */
         while (*op && *op != '}') op++;
         if (*op == '}') op++;
     }
 
     for (int i = 0; i < nkeys; i++) free(keys[i]);
-    out[pos] = '\0';
-    return out;
+    char *out = strbuf_take(&ob);
+    return out ? out : "";
 }
 
 /*
@@ -565,15 +551,10 @@ const char *toon_to_json(const char *toon_str) {
 
     if (!parse_schema(&p, &fields, &nfields, &rowcount)) return "[]";
 
-    size_t cap = 4096;
-    char *out = (char *)malloc(cap);
-    if (!out) {
-        for (int i = 0; i < nfields; i++) free(fields[i]);
-        free(fields);
-        return "[]";
-    }
-    int pos = 0;
-    pos += snprintf(out + pos, cap - (size_t)pos, "[");
+    /* 122.2: grew by ONE doubling when a value did not fit, so a field
+     * name or value longer than the buffer still wrote past it. */
+    TkStrBuf ob = TK_STRBUF_INIT;
+    strbuf_appendf(&ob, "[");
 
     int row = 0;
     while (*p) {
@@ -581,24 +562,17 @@ const char *toon_to_json(const char *toon_str) {
         while (*p && *p != '\n') p++;
         if (p == line_start) { if (*p == '\n') p++; continue; }
 
-        if (row > 0) pos += snprintf(out + pos, cap - (size_t)pos, ",");
-        pos += snprintf(out + pos, cap - (size_t)pos, "{");
+        if (row > 0) strbuf_appendf(&ob, ",");
+        strbuf_appendf(&ob, "{");
 
         /* Parse pipe-delimited values */
         const char *vp = line_start;
         for (int fi = 0; fi < nfields; fi++) {
-            if (fi > 0) pos += snprintf(out + pos, cap - (size_t)pos, ",");
+            if (fi > 0) strbuf_appendf(&ob, ",");
 
             const char *vs = vp;
             while (vp < p && *vp != '|') vp++;
             const char *ve = vp;
-
-            /* Grow buffer if needed */
-            size_t need = (size_t)(ve - vs) + strlen(fields[fi]) + 16;
-            if ((size_t)pos + need >= cap) {
-                cap *= 2;
-                out = (char *)realloc(out, cap);
-            }
 
             /* Detect if value is numeric or boolean */
             int is_num = 1;
@@ -618,25 +592,25 @@ const char *toon_to_json(const char *toon_str) {
             if (vlen == 5 && strncmp(vs, "false", 5) == 0) is_bool = 1;
             if (vlen == 4 && strncmp(vs, "null", 4) == 0) is_bool = 1;
 
-            pos += snprintf(out + pos, cap - (size_t)pos, "\"%s\":", fields[fi]);
+            strbuf_appendf(&ob, "\"%s\":", fields[fi]);
             if (is_num || is_bool) {
-                pos += snprintf(out + pos, cap - (size_t)pos, "%.*s", (int)(ve - vs), vs);
+                strbuf_appendf(&ob, "%.*s", (int)(ve - vs), vs);
             } else {
-                pos += snprintf(out + pos, cap - (size_t)pos, "\"%.*s\"", (int)(ve - vs), vs);
+                strbuf_appendf(&ob, "\"%.*s\"", (int)(ve - vs), vs);
             }
 
             if (vp < p && *vp == '|') vp++;
         }
 
-        pos += snprintf(out + pos, cap - (size_t)pos, "}");
+        strbuf_appendf(&ob, "}");
         row++;
         if (*p == '\n') p++;
     }
 
-    pos += snprintf(out + pos, cap - (size_t)pos, "]");
-    out[pos] = '\0';
+    strbuf_appendf(&ob, "]");
 
     for (int i = 0; i < nfields; i++) free(fields[i]);
     free(fields);
-    return out;
+    char *out = strbuf_take(&ob);
+    return out ? out : "[]";
 }

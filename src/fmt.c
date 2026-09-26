@@ -30,57 +30,20 @@
 
 /* ── Dynamic string buffer ────────────────────────────────────────── */
 
-typedef struct {
-    char *buf;
-    int   len;
-    int   cap;
-} Buf;
+/* 122.2: the file-local Buf that lived here was promoted to the stdlib's
+ * shared src/stdlib/strbuf.h.  The old copy ignored a failed realloc and
+ * then memcpy'd past the end of the old buffer; strbuf's OOM is sticky and
+ * appends after it are no-ops, and tkc_format/tkc_minify return NULL. */
+#include "stdlib/strbuf.h"
 
-/* buf_init — Allocate an initial 4 KiB buffer for output accumulation. */
-static void buf_init(Buf *b)
-{
-    b->cap = 4096;
-    b->buf = malloc((size_t)b->cap);
-    b->len = 0;
-    if (b->buf) b->buf[0] = '\0';
-}
-
-/* buf_grow — Ensure at least need bytes of free space, doubling capacity as needed. */
-static void buf_grow(Buf *b, int need)
-{
-    if (b->len + need + 1 <= b->cap) return;
-    int nc = b->cap * 2;
-    while (nc < b->len + need + 1) nc *= 2;
-    char *nb = realloc(b->buf, (size_t)nc);
-    if (!nb) return;
-    b->buf = nb;
-    b->cap = nc;
-}
-
-/* buf_puts — Append a NUL-terminated string to the buffer. */
-static void buf_puts(Buf *b, const char *s)
-{
-    int n = (int)strlen(s);
-    buf_grow(b, n);
-    memcpy(b->buf + b->len, s, (size_t)n);
-    b->len += n;
-    b->buf[b->len] = '\0';
-}
-
-/* buf_putc — Append a single character to the buffer. */
-static void buf_putc(Buf *b, char c)
-{
-    buf_grow(b, 1);
-    b->buf[b->len++] = c;
-    b->buf[b->len] = '\0';
-}
+typedef TkStrBuf Buf;
 
 /* buf_indent — Emit depth*2 spaces for indentation. */
 static void buf_indent(Buf *b, int depth)
 {
     for (int i = 0; i < depth; i++) {
-        buf_putc(b, ' ');
-        buf_putc(b, ' ');
+        strbuf_putc(b, ' ');
+        strbuf_putc(b, ' ');
     }
 }
 
@@ -285,10 +248,7 @@ static int src_paren_layers(const Node *n)
 
 static void buf_put_span(Buf *b, const char *src, int start, int len)
 {
-    buf_grow(b, len);
-    memcpy(b->buf + b->len, src + start, (size_t)len);
-    b->len += len;
-    b->buf[b->len] = '\0';
+    if (len > 0) strbuf_appendn(b, src + start, (size_t)len);
 }
 
 /* fs_emit_comments_before — every not-yet-emitted comment that starts before
@@ -301,7 +261,7 @@ static void fs_emit_comments_before(Buf *b, int pos, int depth)
         const FmtComment *c = &g_fs->comments[g_fs->next++];
         buf_indent(b, depth);
         buf_put_span(b, g_fs->src, c->start, c->len);
-        buf_putc(b, '\n');
+        strbuf_putc(b, '\n');
     }
 }
 
@@ -313,7 +273,7 @@ static void fs_emit_trailing_comments(Buf *b, int end, int depth)
     if (!g_fs || end < 0) return;
     while (g_fs->next < g_fs->ncomments && g_fs->comments[g_fs->next].start < end) {
         const FmtComment *c = &g_fs->comments[g_fs->next++];
-        buf_putc(b, '\n');
+        strbuf_putc(b, '\n');
         buf_indent(b, depth);
         buf_put_span(b, g_fs->src, c->start, c->len);
     }
@@ -352,12 +312,12 @@ static void emit_type_ident(Buf *b, const Node *n, const char *src)
             int e = p - 1, st = e;
             while (st > 0 && fs_is_word(src[st - 1])) st--;
             buf_put_span(b, src, st, e - st);
-            buf_putc(b, '.');
+            strbuf_putc(b, '.');
         }
-        buf_putc(b, '$');
+        strbuf_putc(b, '$');
     }
     char *t = tok_text(n, src);
-    buf_puts(b, t);
+    strbuf_append(b, t);
     free(t);
 }
 
@@ -458,7 +418,7 @@ static void fmt_type_expr(Buf *b, const Node *n, const char *src)
         emit_type_ident(b, n, src);
         break;
     case NODE_PTR_TYPE:
-        buf_putc(b, '*');
+        strbuf_putc(b, '*');
         if (n->child_count > 0)
             fmt_type_expr(b, n->children[0], src);
         break;
@@ -466,38 +426,38 @@ static void fmt_type_expr(Buf *b, const Node *n, const char *src)
         /* 131.37: default syntax `@T` (legacy `[T]` is E1003 in default mode);
          * 131.46: keep the source's `@(T)` spelling (`@(@i64)`). */
         int paren = src[n->tok_start] == '@' && src[n->tok_start + 1] == '(';
-        buf_putc(b, '@');
-        if (paren) buf_putc(b, '(');
+        strbuf_putc(b, '@');
+        if (paren) strbuf_putc(b, '(');
         if (n->child_count > 0)
             fmt_type_expr(b, n->children[0], src);
-        if (paren) buf_putc(b, ')');
+        if (paren) strbuf_putc(b, ')');
         break;
     }
     case NODE_MAP_TYPE:
-        buf_puts(b, "@(");
+        strbuf_append(b, "@(");
         if (n->child_count > 0)
             fmt_type_expr(b, n->children[0], src);
-        buf_putc(b, ':');
+        strbuf_putc(b, ':');
         if (n->child_count > 1)
             fmt_type_expr(b, n->children[1], src);
-        buf_putc(b, ')');
+        strbuf_putc(b, ')');
         break;
     case NODE_FUNC_TYPE: {
-        buf_putc(b, '(');
+        strbuf_putc(b, '(');
         /* Parameters: all children except last are param types, last is return */
         int last = n->child_count - 1;
         for (int i = 0; i < last; i++) {
-            if (i > 0) buf_puts(b, "; ");
+            if (i > 0) strbuf_append(b, "; ");
             fmt_type_expr(b, n->children[i], src);
         }
-        buf_puts(b, "):");
+        strbuf_append(b, "):");
         if (last >= 0)
             fmt_type_expr(b, n->children[last], src);
         break;
     }
     default: {
         char *t = tok_text(n, src);
-        buf_puts(b, t);
+        strbuf_append(b, t);
         free(t);
         break;
     }
@@ -520,9 +480,9 @@ static void fmt_expr(Buf *b, const Node *n, const char *src)
 {
     if (!n) return;
     int layers = src_paren_layers(n);
-    for (int i = 0; i < layers; i++) buf_putc(b, '(');
+    for (int i = 0; i < layers; i++) strbuf_putc(b, '(');
     fmt_expr_inner(b, n, src);
-    for (int i = 0; i < layers; i++) buf_putc(b, ')');
+    for (int i = 0; i < layers; i++) strbuf_putc(b, ')');
 }
 
 static void fmt_expr_inner(Buf *b, const Node *n, const char *src)
@@ -535,7 +495,7 @@ static void fmt_expr_inner(Buf *b, const Node *n, const char *src)
     case NODE_BOOL_LIT:
     case NODE_IDENT: {
         char *t = tok_text(n, src);
-        buf_puts(b, t);
+        strbuf_append(b, t);
         free(t);
         break;
     }
@@ -543,14 +503,14 @@ static void fmt_expr_inner(Buf *b, const Node *n, const char *src)
         emit_type_ident(b, n, src);
         break;
     case NODE_FUNC_REF: {
-        buf_putc(b, '&');
+        strbuf_putc(b, '&');
         char *t = tok_text(n, src);
-        buf_puts(b, t);
+        strbuf_append(b, t);
         free(t);
         break;
     }
     case NODE_SPAWN_EXPR:
-        buf_puts(b, "spawn ");
+        strbuf_append(b, "spawn ");
         if (n->child_count > 0) fmt_expr(b, n->children[0], src);
         break;
     case NODE_BINARY_EXPR:
@@ -558,34 +518,34 @@ static void fmt_expr_inner(Buf *b, const Node *n, const char *src)
             /* precedence parens only as a fallback when the source had none */
             int pl = needs_paren(n->children[0], n->op, 0) && !src_paren_layers(n->children[0]);
             int pr = needs_paren(n->children[1], n->op, 1) && !src_paren_layers(n->children[1]);
-            if (pl) buf_putc(b, '(');
+            if (pl) strbuf_putc(b, '(');
             fmt_expr(b, n->children[0], src);
-            if (pl) buf_putc(b, ')');
-            buf_puts(b, op_str(n->op));
-            if (pr) buf_putc(b, '(');
+            if (pl) strbuf_putc(b, ')');
+            strbuf_append(b, op_str(n->op));
+            if (pr) strbuf_putc(b, '(');
             fmt_expr(b, n->children[1], src);
-            if (pr) buf_putc(b, ')');
+            if (pr) strbuf_putc(b, ')');
         }
         break;
     case NODE_UNARY_EXPR:
-        buf_puts(b, op_str(n->op));
+        strbuf_append(b, op_str(n->op));
         if (n->child_count > 0) {
             int pc = needs_paren(n->children[0], TK_ERROR, 0) && !src_paren_layers(n->children[0]);
-            if (pc) buf_putc(b, '(');
+            if (pc) strbuf_putc(b, '(');
             fmt_expr(b, n->children[0], src);
-            if (pc) buf_putc(b, ')');
+            if (pc) strbuf_putc(b, ')');
         }
         break;
     case NODE_CALL_EXPR:
         /* child[0] = callee, child[1..] = args */
         if (n->child_count > 0)
             fmt_expr(b, n->children[0], src);
-        buf_putc(b, '(');
+        strbuf_putc(b, '(');
         for (int i = 1; i < n->child_count; i++) {
-            if (i > 1) buf_puts(b, "; ");
+            if (i > 1) strbuf_append(b, "; ");
             fmt_expr(b, n->children[i], src);
         }
-        buf_putc(b, ')');
+        strbuf_putc(b, ')');
         break;
     case NODE_CAST_EXPR: {
         /* child[0] = expr, child[1] = type — `as` binds tighter than any
@@ -593,11 +553,11 @@ static void fmt_expr_inner(Buf *b, const Node *n, const char *src)
         if (n->child_count > 0) {
             const Node *c = n->children[0];
             int pc = (c->kind == NODE_BINARY_EXPR || c->kind == NODE_UNARY_EXPR) && !src_paren_layers(c);
-            if (pc) buf_putc(b, '(');
+            if (pc) strbuf_putc(b, '(');
             fmt_expr(b, c, src);
-            if (pc) buf_putc(b, ')');
+            if (pc) strbuf_putc(b, ')');
         }
-        buf_puts(b, " as ");
+        strbuf_append(b, " as ");
         if (n->child_count > 1)
             fmt_type_expr(b, n->children[1], src);
         break;
@@ -606,7 +566,7 @@ static void fmt_expr_inner(Buf *b, const Node *n, const char *src)
         /* child[0] = expr, child[1] = error type */
         if (n->child_count > 0)
             fmt_expr(b, n->children[0], src);
-        buf_putc(b, '!');
+        strbuf_putc(b, '!');
         if (n->child_count > 1)
             fmt_type_expr(b, n->children[1], src);
         break;
@@ -614,95 +574,95 @@ static void fmt_expr_inner(Buf *b, const Node *n, const char *src)
         /* child[0] = target, child[1] = index */
         if (n->child_count > 0)
             fmt_expr(b, n->children[0], src);
-        buf_puts(b, ".get(");   /* 131.37: default syntax; `a[i]` is E1003 */
+        strbuf_append(b, ".get(");   /* 131.37: default syntax; `a[i]` is E1003 */
         if (n->child_count > 1)
             fmt_expr(b, n->children[1], src);
-        buf_putc(b, ')');
+        strbuf_putc(b, ')');
         break;
     case NODE_FIELD_EXPR:
         /* child[0] = target, child[1] = field ident */
         if (n->child_count > 0)
             fmt_expr(b, n->children[0], src);
-        buf_putc(b, '.');
+        strbuf_putc(b, '.');
         if (n->child_count > 1) {
             char *t = tok_text(n->children[1], src);
-            buf_puts(b, t);
+            strbuf_append(b, t);
             free(t);
         }
         break;
     case NODE_ARRAY_LIT:
-        buf_puts(b, "@(");
+        strbuf_append(b, "@(");
         for (int i = 0; i < n->child_count; i++) {
-            if (i > 0) buf_puts(b, "; ");
+            if (i > 0) strbuf_append(b, "; ");
             fmt_expr(b, n->children[i], src);
         }
-        buf_putc(b, ')');
+        strbuf_putc(b, ')');
         break;
     case NODE_MAP_LIT:
-        buf_puts(b, "@(");
+        strbuf_append(b, "@(");
         for (int i = 0; i < n->child_count; i++) {
-            if (i > 0) buf_puts(b, "; ");
+            if (i > 0) strbuf_append(b, "; ");
             /* Each child is a NODE_MAP_ENTRY with key:value */
             const Node *entry = n->children[i];
             if (entry->kind == NODE_MAP_ENTRY && entry->child_count >= 2) {
                 fmt_expr(b, entry->children[0], src);
-                buf_putc(b, ':');
+                strbuf_putc(b, ':');
                 fmt_expr(b, entry->children[1], src);
             }
         }
-        buf_putc(b, ')');
+        strbuf_putc(b, ')');
         break;
     case NODE_STRUCT_LIT: {
         /* tok = TypeName, children = NODE_FIELD_INIT.  131.46: default syntax
          * is `$Name{field:val; $variant:val}` — sigils recovered from source. */
         int sigil = has_sigil(n, src);
-        if (sigil) buf_putc(b, '$');
+        if (sigil) strbuf_putc(b, '$');
         char *t = tok_text(n, src);
-        buf_puts(b, t);
+        strbuf_append(b, t);
         free(t);
-        buf_puts(b, sigil ? "{" : " {");
+        strbuf_append(b, sigil ? "{" : " {");
         for (int i = 0; i < n->child_count; i++) {
-            if (i > 0) buf_puts(b, "; ");
+            if (i > 0) strbuf_append(b, "; ");
             const Node *fi = n->children[i];
             if (fi->kind == NODE_FIELD_INIT) {
-                if (has_sigil(fi, src)) buf_putc(b, '$');
+                if (has_sigil(fi, src)) strbuf_putc(b, '$');
                 char *fn = tok_text(fi, src);
-                buf_puts(b, fn);
+                strbuf_append(b, fn);
                 free(fn);
-                buf_putc(b, ':');
+                strbuf_putc(b, ':');
                 if (fi->child_count > 0)
                     fmt_expr(b, fi->children[0], src);
             }
         }
-        buf_putc(b, '}');
+        strbuf_putc(b, '}');
         break;
     }
     case NODE_MATCH_STMT: {
         /* child[0] = scrutinee expr, child[1..] = match arms.
          * 131.46: keyword-led `mt x {$ok:v v; $err:e <0}` (the `x | {..}`
          * form is v0.2 and E2002 in default mode). */
-        buf_puts(b, "mt ");
+        strbuf_append(b, "mt ");
         if (n->child_count > 0)
             fmt_expr(b, n->children[0], src);
-        buf_puts(b, " {");
+        strbuf_append(b, " {");
         for (int i = 1; i < n->child_count; i++) {
-            if (i > 1) buf_puts(b, "; ");
+            if (i > 1) strbuf_append(b, "; ");
             const Node *arm = n->children[i];
             if (arm->kind == NODE_MATCH_ARM) {
                 /* child[0]=pattern(TYPE_IDENT), child[1]=binding(IDENT), child[2]=body */
                 if (arm->child_count > 0)
                     emit_type_ident(b, arm->children[0], src);
-                buf_putc(b, ':');
+                strbuf_putc(b, ':');
                 if (arm->child_count > 1) {
                     char *bt = tok_text(arm->children[1], src);
-                    buf_puts(b, bt);
+                    strbuf_append(b, bt);
                     free(bt);
                 }
                 if (arm->child_count > 2) {
-                    buf_putc(b, ' ');
+                    strbuf_putc(b, ' ');
                     const Node *body = arm->children[2];
                     if (body->kind == NODE_RETURN_STMT) {   /* `<expr` arm body */
-                        buf_putc(b, '<');
+                        strbuf_putc(b, '<');
                         if (body->child_count > 0) fmt_expr(b, body->children[0], src);
                     } else {
                         fmt_expr(b, body, src);
@@ -710,43 +670,43 @@ static void fmt_expr_inner(Buf *b, const Node *n, const char *src)
                 }
             }
         }
-        buf_putc(b, '}');
+        strbuf_putc(b, '}');
         break;
     }
     case NODE_CLOSURE: {
         /* fn(params):ReturnSpec{body} */
-        buf_puts(b, "fn(");
+        strbuf_append(b, "fn(");
         int ci = 0;
         int first_param = 1;
         while (ci < n->child_count && n->children[ci]->kind == NODE_PARAM) {
-            if (!first_param) buf_puts(b, "; ");
+            if (!first_param) strbuf_append(b, "; ");
             first_param = 0;
             const Node *pm = n->children[ci];
             if (pm->child_count > 0) {
                 char *pn = tok_text(pm->children[0], src);
-                buf_puts(b, pn);
+                strbuf_append(b, pn);
                 free(pn);
             }
-            buf_putc(b, ':');
+            strbuf_putc(b, ':');
             if (pm->child_count > 1)
                 fmt_type_expr(b, pm->children[1], src);
             ci++;
         }
-        buf_putc(b, ')');
+        strbuf_putc(b, ')');
         if (ci < n->child_count && n->children[ci]->kind == NODE_RETURN_SPEC) {
-            buf_putc(b, ':');
+            strbuf_putc(b, ':');
             fmt_return_spec(b, n->children[ci], src);
             ci++;
         }
         if (ci < n->child_count && n->children[ci]->kind == NODE_STMT_LIST) {
-            buf_putc(b, '{');
+            strbuf_putc(b, '{');
             const Node *body = n->children[ci];
             if (body->child_count > 0) {
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
                 fmt_stmt_list(b, body, src, 1);
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
             }
-            buf_putc(b, '}');
+            strbuf_putc(b, '}');
         }
         break;
     }
@@ -754,20 +714,20 @@ static void fmt_expr_inner(Buf *b, const Node *n, const char *src)
         /* 131.37 / A1: `if` in expression position (bind, return, argument).
          * Inline, `;`-separated bodies; `el` / `el if` chain walked flat. */
         for (const Node *c = n;;) {
-            buf_puts(b, "if(");
+            strbuf_append(b, "if(");
             if (c->child_count > 0) fmt_expr(b, c->children[0], src);
-            buf_puts(b, "){");
+            strbuf_append(b, "){");
             if (c->child_count > 1) fmt_inline_stmts(b, c->children[1], src);
-            buf_putc(b, '}');
+            strbuf_putc(b, '}');
             if (c->child_count <= 2) break;
             if (c->children[2]->kind == NODE_IF_STMT) {
-                buf_puts(b, "el ");
+                strbuf_append(b, "el ");
                 c = c->children[2];
                 continue;
             }
-            buf_puts(b, "el{");
+            strbuf_append(b, "el{");
             fmt_inline_stmts(b, c->children[2], src);
-            buf_putc(b, '}');
+            strbuf_putc(b, '}');
             break;
         }
         break;
@@ -780,7 +740,7 @@ static void fmt_expr_inner(Buf *b, const Node *n, const char *src)
     default: {
         /* Fallback: emit token text */
         char *t = tok_text(n, src);
-        buf_puts(b, t);
+        strbuf_append(b, t);
         free(t);
         break;
     }
@@ -794,7 +754,7 @@ static void fmt_stmt_list(Buf *b, const Node *n, const char *src, int depth)
 {
     if (!n || n->kind != NODE_STMT_LIST) return;
     for (int i = 0; i < n->child_count; i++) {
-        if (i > 0) buf_puts(b, ";\n");   /* 131.37: statements are ';'-separated */
+        if (i > 0) strbuf_append(b, ";\n");   /* 131.37: statements are ';'-separated */
         fs_emit_comments_before(b, node_lo(n->children[i]), depth);   /* 131.46 */
         fmt_stmt(b, n->children[i], src, depth);
     }
@@ -807,7 +767,7 @@ static void fmt_inline_stmts(Buf *b, const Node *n, const char *src)
 {
     if (!n || n->kind != NODE_STMT_LIST) return;
     for (int i = 0; i < n->child_count; i++) {
-        if (i > 0) buf_putc(b, ';');
+        if (i > 0) strbuf_putc(b, ';');
         if (n->children[i] && n->children[i]->kind == NODE_IF_STMT)
             fmt_expr(b, n->children[i], src);     /* nested if-expr: stay inline */
         else
@@ -830,17 +790,17 @@ static void fmt_stmt(Buf *b, const Node *n, const char *src, int depth)
         /* let name[:type] = [mut.]expr — children [name, type?, value]
          * (131.46: a typed binding put the type where the value goes). */
         buf_indent(b, depth);
-        buf_puts(b, "let ");
+        strbuf_append(b, "let ");
         if (n->child_count > 0) {
             char *name = tok_text(n->children[0], src);
-            buf_puts(b, name);
+            strbuf_append(b, name);
             free(name);
         }
         if (n->child_count > 2) {
-            buf_putc(b, ':');
+            strbuf_putc(b, ':');
             fmt_type_expr(b, n->children[1], src);
         }
-        buf_puts(b, n->kind == NODE_MUT_BIND_STMT ? "=mut." : "=");
+        strbuf_append(b, n->kind == NODE_MUT_BIND_STMT ? "=mut." : "=");
         if (n->child_count > 1)
             fmt_expr(b, n->children[n->child_count - 1], src);
         break;
@@ -849,56 +809,56 @@ static void fmt_stmt(Buf *b, const Node *n, const char *src, int depth)
         buf_indent(b, depth);
         if (n->child_count > 0) {
             char *name = tok_text(n->children[0], src);
-            buf_puts(b, name);
+            strbuf_append(b, name);
             free(name);
         }
-        buf_puts(b, "=");
+        strbuf_append(b, "=");
         if (n->child_count > 1)
             fmt_expr(b, n->children[1], src);
         break;
     case NODE_RETURN_STMT:
         buf_indent(b, depth);
         /* 131.46: keep the source's spelling — `<expr` or the `rt expr` keyword */
-        if (src[n->tok_start] == 'r') buf_puts(b, n->child_count > 0 ? "rt " : "rt");
-        else buf_putc(b, '<');
+        if (src[n->tok_start] == 'r') strbuf_append(b, n->child_count > 0 ? "rt " : "rt");
+        else strbuf_putc(b, '<');
         if (n->child_count > 0) {
             fmt_expr(b, n->children[0], src);
         }
         break;
     case NODE_BREAK_STMT:
         buf_indent(b, depth);
-        buf_puts(b, "br");
+        strbuf_append(b, "br");
         break;
     case NODE_IF_STMT: {
         buf_indent(b, depth);
         /* 127.23: child[2] may be a nested NODE_IF_STMT (`el if` chain) —
          * walk the chain iteratively so every arm sits at the same depth. */
         for (const Node *c = n;;) {
-            buf_puts(b, "if (");
+            strbuf_append(b, "if (");
             if (c->child_count > 0)
                 fmt_expr(b, c->children[0], src);
-            buf_puts(b, ") {");
+            strbuf_append(b, ") {");
             /* child[1] = then stmt list */
             if (c->child_count > 1) {
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
                 fmt_stmt_list(b, c->children[1], src, depth + 1);
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
             }
             buf_indent(b, depth);
-            buf_putc(b, '}');
+            strbuf_putc(b, '}');
             /* child[2] = else stmt list or chained if (optional) */
             if (c->child_count <= 2) break;
             if (c->children[2]->kind == NODE_IF_STMT) {
-                buf_puts(b, " el ");
+                strbuf_append(b, " el ");
                 c = c->children[2];
                 continue;
             }
-            buf_puts(b, " el {");
-            buf_putc(b, '\n');
+            strbuf_append(b, " el {");
+            strbuf_putc(b, '\n');
             fmt_stmt_list(b, c->children[2], src, depth + 1);
-            buf_putc(b, '\n');
+            strbuf_putc(b, '\n');
             buf_indent(b, depth);
-            buf_putc(b, '}');
+            strbuf_putc(b, '}');
             break;
         }
         break;
@@ -909,84 +869,84 @@ static void fmt_stmt(Buf *b, const Node *n, const char *src, int depth)
                         n->children[0]->kind != NODE_LOOP_INIT);
         if (is_while) {
             /* while-loop form: lp(expr){body} */
-            buf_puts(b, "lp (");
+            strbuf_append(b, "lp (");
             fmt_expr(b, n->children[0], src);
-            buf_puts(b, ") {");
+            strbuf_append(b, ") {");
             if (n->child_count > 1) {
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
                 fmt_stmt_list(b, n->children[1], src, depth + 1);
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
             }
         } else {
             /* 3-clause form: child[0]=init, child[1]=cond, child[2]=step, child[3]=body */
-            buf_puts(b, "lp (");
+            strbuf_append(b, "lp (");
             /* Init: NODE_LOOP_INIT -> child[0]=ident, child[1]=expr */
             if (n->child_count > 0) {
                 const Node *init = n->children[0];
                 if (init->kind == NODE_LOOP_INIT) {
                     if (init->op == TK_KW_LET)
-                        buf_puts(b, "let ");
+                        strbuf_append(b, "let ");
                     if (init->child_count > 0) {
                         char *name = tok_text(init->children[0], src);
-                        buf_puts(b, name);
+                        strbuf_append(b, name);
                         free(name);
                     }
-                    buf_putc(b, '=');
+                    strbuf_putc(b, '=');
                     if (init->child_count > 1)
                         fmt_expr(b, init->children[1], src);
                 }
             }
-            buf_puts(b, "; ");
+            strbuf_append(b, "; ");
             /* Condition */
             if (n->child_count > 1)
                 fmt_expr(b, n->children[1], src);
-            buf_puts(b, "; ");
+            strbuf_append(b, "; ");
             /* Step: NODE_ASSIGN_STMT */
             if (n->child_count > 2) {
                 const Node *step = n->children[2];
                 if (step->child_count > 0) {
                     char *name = tok_text(step->children[0], src);
-                    buf_puts(b, name);
+                    strbuf_append(b, name);
                     free(name);
                 }
-                buf_putc(b, '=');
+                strbuf_putc(b, '=');
                 if (step->child_count > 1)
                     fmt_expr(b, step->children[1], src);
             }
-            buf_puts(b, ") {");
+            strbuf_append(b, ") {");
             /* Body */
             if (n->child_count > 3) {
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
                 fmt_stmt_list(b, n->children[3], src, depth + 1);
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
             }
         }
         buf_indent(b, depth);
-        buf_putc(b, '}');
+        strbuf_putc(b, '}');
         break;
     }
     case NODE_ARENA_STMT: {
         buf_indent(b, depth);
-        buf_puts(b, "{arena");
+        strbuf_append(b, "{arena");
         if (n->child_count > 0) {
-            buf_putc(b, '\n');
+            strbuf_putc(b, '\n');
             fmt_stmt_list(b, n->children[0], src, depth + 1);
-            buf_putc(b, '\n');
+            strbuf_putc(b, '\n');
         }
         buf_indent(b, depth);
-        buf_putc(b, '}');
+        strbuf_putc(b, '}');
         break;
     }
     case NODE_SCOPE_STMT: {
         buf_indent(b, depth);
-        buf_puts(b, "sc {");
+        strbuf_append(b, "sc {");
         if (n->child_count > 0) {
-            buf_putc(b, '\n');
+            strbuf_putc(b, '\n');
             fmt_stmt_list(b, n->children[0], src, depth + 1);
-            buf_putc(b, '\n');
+            strbuf_putc(b, '\n');
         }
         buf_indent(b, depth);
-        buf_putc(b, '}');
+        strbuf_putc(b, '}');
         break;
     }
     case NODE_EXPR_STMT:
@@ -1007,9 +967,9 @@ static void fmt_module_path(Buf *b, const Node *n, const char *src)
 {
     if (!n || n->kind != NODE_MODULE_PATH) return;
     for (int i = 0; i < n->child_count; i++) {
-        if (i > 0) buf_putc(b, '.');
+        if (i > 0) strbuf_putc(b, '.');
         char *seg = tok_text(n->children[i], src);
-        buf_puts(b, seg);
+        strbuf_append(b, seg);
         free(seg);
     }
 }
@@ -1023,7 +983,7 @@ static void fmt_return_spec(Buf *b, const Node *n, const char *src)
     if (n->child_count > 0)
         fmt_type_expr(b, n->children[0], src);
     if (n->child_count > 1) {
-        buf_putc(b, '!');
+        strbuf_putc(b, '!');
         fmt_type_expr(b, n->children[1], src);
     }
 }
@@ -1042,104 +1002,104 @@ static void fmt_decl(Buf *b, const Node *n, const char *src)
     if (!n) return;
     switch (n->kind) {
     case NODE_MODULE:
-        buf_puts(b, "m=");
+        strbuf_append(b, "m=");
         if (n->child_count > 0)
             fmt_module_path(b, n->children[0], src);
         break;
     case NODE_IMPORT: {
-        buf_puts(b, "i=");
+        strbuf_append(b, "i=");
         /* child[0]=alias(IDENT), child[1]=module path, child[2]=optional version */
         if (n->child_count > 0) {
             char *alias = tok_text(n->children[0], src);
-            buf_puts(b, alias);
+            strbuf_append(b, alias);
             free(alias);
         }
-        buf_putc(b, ':');
+        strbuf_putc(b, ':');
         if (n->child_count > 1)
             fmt_module_path(b, n->children[1], src);
         if (n->child_count > 2) {
-            buf_putc(b, ' ');
+            strbuf_putc(b, ' ');
             char *ver = tok_text(n->children[2], src);
-            buf_puts(b, ver);
+            strbuf_append(b, ver);
             free(ver);
         }
         break;
     }
     case NODE_TYPE_DECL: {
-        buf_puts(b, "t=");
+        strbuf_append(b, "t=");
         /* child[0]=type name, child[1]=field list.  131.46: default syntax is
          * `t=$name{field:T; $variant:T}` — sigils from source / TK_DOLLAR mark. */
         int sigil = n->child_count > 0 && has_sigil(n->children[0], src);
         if (n->child_count > 0) {
-            if (sigil) buf_putc(b, '$');
+            if (sigil) strbuf_putc(b, '$');
             char *name = tok_text(n->children[0], src);
-            buf_puts(b, name);
+            strbuf_append(b, name);
             free(name);
         }
-        buf_puts(b, sigil ? "{" : " {");
+        strbuf_append(b, sigil ? "{" : " {");
         if (n->child_count > 1) {
             const Node *fields = n->children[1];
             for (int i = 0; i < fields->child_count; i++) {
-                if (i > 0) buf_putc(b, ';');
-                buf_putc(b, '\n');
+                if (i > 0) strbuf_putc(b, ';');
+                strbuf_putc(b, '\n');
                 buf_indent(b, 1);
                 const Node *f = fields->children[i];
-                if (f->op == TK_DOLLAR) buf_putc(b, '$');
+                if (f->op == TK_DOLLAR) strbuf_putc(b, '$');
                 char *fname = tok_text(f, src);
-                buf_puts(b, fname);
+                strbuf_append(b, fname);
                 free(fname);
-                buf_putc(b, ':');
+                strbuf_putc(b, ':');
                 if (f->child_count > 0)
                     fmt_type_expr(b, f->children[0], src);
             }
         }
-        buf_putc(b, '\n');
-        buf_putc(b, '}');
+        strbuf_putc(b, '\n');
+        strbuf_putc(b, '}');
         break;
     }
     case NODE_CONST_DECL: {
         /* child[0]=name, child[1]=value, child[2]=type */
         if (n->child_count > 0) {
             char *name = tok_text(n->children[0], src);
-            buf_puts(b, name);
+            strbuf_append(b, name);
             free(name);
         }
-        buf_putc(b, '=');
+        strbuf_putc(b, '=');
         if (n->child_count > 1)
             fmt_expr(b, n->children[1], src);
-        buf_putc(b, ':');
+        strbuf_putc(b, ':');
         if (n->child_count > 2)
             fmt_type_expr(b, n->children[2], src);
         break;
     }
     case NODE_FUNC_DECL: {
-        buf_puts(b, "f=");
+        strbuf_append(b, "f=");
         /* child layout: [0]=name, then params, then return_spec, then optional body */
         if (n->child_count < 1) break;
         char *name = tok_text(n->children[0], src);
-        buf_puts(b, name);
+        strbuf_append(b, name);
         free(name);
-        buf_putc(b, '(');
+        strbuf_putc(b, '(');
 
         /* Collect params: children[1..] that are NODE_PARAM */
         int pi = 1;
         int first_param = 1;
         while (pi < n->child_count && n->children[pi]->kind == NODE_PARAM) {
-            if (!first_param) buf_puts(b, "; ");
+            if (!first_param) strbuf_append(b, "; ");
             first_param = 0;
             const Node *pm = n->children[pi];
             /* pm->children[0]=ident, pm->children[1]=type */
             if (pm->child_count > 0) {
                 char *pn = tok_text(pm->children[0], src);
-                buf_puts(b, pn);
+                strbuf_append(b, pn);
                 free(pn);
             }
-            buf_putc(b, ':');
+            strbuf_putc(b, ':');
             if (pm->child_count > 1)
                 fmt_type_expr(b, pm->children[1], src);
             pi++;
         }
-        buf_puts(b, "):");
+        strbuf_append(b, "):");
 
         /* Return spec */
         if (pi < n->child_count && n->children[pi]->kind == NODE_RETURN_SPEC) {
@@ -1149,14 +1109,14 @@ static void fmt_decl(Buf *b, const Node *n, const char *src)
 
         /* Body (stmt list) — if present */
         if (pi < n->child_count && n->children[pi]->kind == NODE_STMT_LIST) {
-            buf_puts(b, " {");
+            strbuf_append(b, " {");
             const Node *body = n->children[pi];
             if (body->child_count > 0) {
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
                 fmt_stmt_list(b, body, src, 1);
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
             }
-            buf_putc(b, '}');
+            strbuf_putc(b, '}');
         }
         break;
     }
@@ -1178,9 +1138,7 @@ char *tkc_format(const Node *root, const char *src)
 {
     if (!root || root->kind != NODE_PROGRAM || !src) return NULL;
 
-    Buf b;
-    buf_init(&b);
-    if (!b.buf) return NULL;
+    Buf b = TK_STRBUF_INIT;
     g_fs = fs_build(src, (int)strlen(src));   /* 131.46: parens + comments */
 
     int first_decl = 1;
@@ -1192,10 +1150,10 @@ char *tkc_format(const Node *root, const char *src)
 
         if (!first_decl) {
             /* Semicolon separator after previous declaration */
-            buf_puts(&b, ";\n");
+            strbuf_append(&b, ";\n");
             /* Blank line between top-level declarations, except after module */
             if (!prev_was_module)
-                buf_putc(&b, '\n');
+                strbuf_putc(&b, '\n');
         }
 
         fs_emit_comments_before(&b, node_lo(child), 0);
@@ -1206,12 +1164,12 @@ char *tkc_format(const Node *root, const char *src)
 
     /* Final newline */
     if (b.len > 0)
-        buf_putc(&b, '\n');
+        strbuf_putc(&b, '\n');
     fs_emit_comments_before(&b, INT_MAX, 0);   /* comments after the last declaration */
 
     fs_free(g_fs);
     g_fs = NULL;
-    return b.buf;
+    return strbuf_take(&b);
 }
 
 /* fmt_is_word — is `c` an identifier/word char (letters, digits, underscore)? */
@@ -1242,20 +1200,20 @@ static void min_put_str(Buf *b, const char *t, int len)
             if      (c == '(') depth++;
             else if (c == ')') depth--;
             if (c == '\n' || c == '\t' || c == '\r') c = ' ';
-            buf_putc(b, c);
+            strbuf_putc(b, c);
             continue;
         }
         if (c == '\\' && k + 1 < len) {
-            buf_putc(b, c);
-            buf_putc(b, t[++k]);
+            strbuf_putc(b, c);
+            strbuf_putc(b, t[++k]);
             if (t[k] == '(') depth = 1;
             continue;
         }
         switch (c) {
-        case '\n': buf_puts(b, "\\n"); break;
-        case '\t': buf_puts(b, "\\t"); break;
-        case '\r': buf_puts(b, "\\r"); break;
-        default:   buf_putc(b, c);
+        case '\n': strbuf_append(b, "\\n"); break;
+        case '\t': strbuf_append(b, "\\t"); break;
+        case '\r': strbuf_append(b, "\\r"); break;
+        default:   strbuf_putc(b, c);
         }
     }
 }
@@ -1284,9 +1242,7 @@ char *tkc_minify(const char *src, int src_len)
     int nt = lex(src, src_len, toks, cap, PROFILE_DEFAULT);
     if (nt < 0) { free(toks); return NULL; }
 
-    Buf b;
-    buf_init(&b);
-    if (!b.buf) { free(toks); return NULL; }
+    Buf b = TK_STRBUF_INIT;
 
     char prev_last = 0;
     for (int i = 0; i < nt; i++) {
@@ -1294,17 +1250,17 @@ char *tkc_minify(const char *src, int src_len)
         if (toks[i].len <= 0) continue;
         const char *t = src + toks[i].start;
         if (prev_last && fmt_is_word(prev_last) && fmt_is_word(t[0]))
-            buf_putc(&b, ' ');
+            strbuf_putc(&b, ' ');
         if (toks[i].kind == TK_STR_LIT)
             min_put_str(&b, t, toks[i].len);
         else
             for (int k = 0; k < toks[i].len; k++)
-                buf_putc(&b, t[k]);
+                strbuf_putc(&b, t[k]);
         prev_last = t[toks[i].len - 1];
     }
 
     free(toks);
-    return b.buf;
+    return strbuf_take(&b);
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1391,7 +1347,7 @@ static void pfmt_ident(Buf *b, const Node *n, const char *src,
                         FmtOptions opts, const Node *root)
 {
     char *name = tok_text(n, src);
-    buf_puts(b, name);
+    strbuf_append(b, name);
     if (opts.expand) {
         const char *exp = expand_ident(name);
         /* Context-aware: loop counters expand to "index" variants */
@@ -1399,9 +1355,9 @@ static void pfmt_ident(Buf *b, const Node *n, const char *src,
             exp = "index";
         }
         if (exp) {
-            buf_puts(b, " /* ");
-            buf_puts(b, exp);
-            buf_puts(b, " */");
+            strbuf_append(b, " /* ");
+            strbuf_append(b, exp);
+            strbuf_append(b, " */");
         }
     }
     free(name);
@@ -1416,7 +1372,7 @@ static void pfmt_inline_stmts(Buf *b, const Node *n, const char *src,
 {
     if (!n || n->kind != NODE_STMT_LIST) return;
     for (int i = 0; i < n->child_count; i++) {
-        if (i > 0) { buf_putc(b, ';'); if (opts.pretty) buf_putc(b, ' '); }
+        if (i > 0) { strbuf_putc(b, ';'); if (opts.pretty) strbuf_putc(b, ' '); }
         if (n->children[i] && n->children[i]->kind == NODE_IF_STMT)
             pfmt_expr(b, n->children[i], src, opts, root);
         else
@@ -1430,9 +1386,9 @@ static void pfmt_expr(Buf *b, const Node *n, const char *src,
 {
     if (!n) return;
     int layers = src_paren_layers(n);
-    for (int i = 0; i < layers; i++) buf_putc(b, '(');
+    for (int i = 0; i < layers; i++) strbuf_putc(b, '(');
     pfmt_expr_inner(b, n, src, opts, root);
-    for (int i = 0; i < layers; i++) buf_putc(b, ')');
+    for (int i = 0; i < layers; i++) strbuf_putc(b, ')');
 }
 
 static void pfmt_expr_inner(Buf *b, const Node *n, const char *src,
@@ -1445,7 +1401,7 @@ static void pfmt_expr_inner(Buf *b, const Node *n, const char *src,
     case NODE_STR_LIT:
     case NODE_BOOL_LIT: {
         char *t = tok_text(n, src);
-        buf_puts(b, t);
+        strbuf_append(b, t);
         free(t);
         break;
     }
@@ -1456,172 +1412,172 @@ static void pfmt_expr_inner(Buf *b, const Node *n, const char *src,
         emit_type_ident(b, n, src);
         break;
     case NODE_FUNC_REF: {
-        buf_putc(b, '&');
+        strbuf_putc(b, '&');
         char *t = tok_text(n, src);
-        buf_puts(b, t);
+        strbuf_append(b, t);
         free(t);
         break;
     }
     case NODE_SPAWN_EXPR:
-        buf_puts(b, "spawn ");
+        strbuf_append(b, "spawn ");
         if (n->child_count > 0) pfmt_expr(b, n->children[0], src, opts, root);
         break;
     case NODE_BINARY_EXPR:
         if (n->child_count >= 2) {
             int pl = needs_paren(n->children[0], n->op, 0) && !src_paren_layers(n->children[0]);
             int pr = needs_paren(n->children[1], n->op, 1) && !src_paren_layers(n->children[1]);
-            if (pl) buf_putc(b, '(');
+            if (pl) strbuf_putc(b, '(');
             pfmt_expr(b, n->children[0], src, opts, root);
-            if (pl) buf_putc(b, ')');
+            if (pl) strbuf_putc(b, ')');
             if (opts.pretty) {
-                buf_putc(b, ' ');
-                buf_puts(b, op_str(n->op));
-                buf_putc(b, ' ');
+                strbuf_putc(b, ' ');
+                strbuf_append(b, op_str(n->op));
+                strbuf_putc(b, ' ');
             } else {
-                buf_puts(b, op_str(n->op));
+                strbuf_append(b, op_str(n->op));
             }
-            if (pr) buf_putc(b, '(');
+            if (pr) strbuf_putc(b, '(');
             pfmt_expr(b, n->children[1], src, opts, root);
-            if (pr) buf_putc(b, ')');
+            if (pr) strbuf_putc(b, ')');
         }
         break;
     case NODE_UNARY_EXPR:
-        buf_puts(b, op_str(n->op));
+        strbuf_append(b, op_str(n->op));
         if (n->child_count > 0) {
             int pc = needs_paren(n->children[0], TK_ERROR, 0) && !src_paren_layers(n->children[0]);
-            if (pc) buf_putc(b, '(');
+            if (pc) strbuf_putc(b, '(');
             pfmt_expr(b, n->children[0], src, opts, root);
-            if (pc) buf_putc(b, ')');
+            if (pc) strbuf_putc(b, ')');
         }
         break;
     case NODE_CALL_EXPR:
         if (n->child_count > 0)
             pfmt_expr(b, n->children[0], src, opts, root);
-        buf_putc(b, '(');
+        strbuf_putc(b, '(');
         for (int i = 1; i < n->child_count; i++) {
             if (i > 1) {
-                buf_putc(b, ';');
-                if (opts.pretty) buf_putc(b, ' ');
+                strbuf_putc(b, ';');
+                if (opts.pretty) strbuf_putc(b, ' ');
             }
             pfmt_expr(b, n->children[i], src, opts, root);
         }
-        buf_putc(b, ')');
+        strbuf_putc(b, ')');
         break;
     case NODE_CAST_EXPR:
         if (n->child_count > 0) {
             const Node *c = n->children[0];
             int pc = (c->kind == NODE_BINARY_EXPR || c->kind == NODE_UNARY_EXPR) && !src_paren_layers(c);
-            if (pc) buf_putc(b, '(');
+            if (pc) strbuf_putc(b, '(');
             pfmt_expr(b, c, src, opts, root);
-            if (pc) buf_putc(b, ')');
+            if (pc) strbuf_putc(b, ')');
         }
-        buf_puts(b, " as ");
+        strbuf_append(b, " as ");
         if (n->child_count > 1)
             pfmt_type_expr(b, n->children[1], src);
         break;
     case NODE_PROPAGATE_EXPR:
         if (n->child_count > 0)
             pfmt_expr(b, n->children[0], src, opts, root);
-        buf_putc(b, '!');
+        strbuf_putc(b, '!');
         if (n->child_count > 1)
             pfmt_type_expr(b, n->children[1], src);
         break;
     case NODE_INDEX_EXPR:
         if (n->child_count > 0)
             pfmt_expr(b, n->children[0], src, opts, root);
-        buf_puts(b, ".get(");
+        strbuf_append(b, ".get(");
         if (n->child_count > 1)
             pfmt_expr(b, n->children[1], src, opts, root);
-        buf_putc(b, ')');
+        strbuf_putc(b, ')');
         break;
     case NODE_FIELD_EXPR:
         if (n->child_count > 0)
             pfmt_expr(b, n->children[0], src, opts, root);
-        buf_putc(b, '.');
+        strbuf_putc(b, '.');
         if (n->child_count > 1) {
             char *t = tok_text(n->children[1], src);
-            buf_puts(b, t);
+            strbuf_append(b, t);
             free(t);
         }
         break;
     case NODE_ARRAY_LIT:
-        buf_puts(b, "@(");
+        strbuf_append(b, "@(");
         for (int i = 0; i < n->child_count; i++) {
             if (i > 0) {
-                buf_putc(b, ';');
-                if (opts.pretty) buf_putc(b, ' ');
+                strbuf_putc(b, ';');
+                if (opts.pretty) strbuf_putc(b, ' ');
             }
             pfmt_expr(b, n->children[i], src, opts, root);
         }
-        buf_putc(b, ')');
+        strbuf_putc(b, ')');
         break;
     case NODE_MAP_LIT:
-        buf_puts(b, "@(");
+        strbuf_append(b, "@(");
         for (int i = 0; i < n->child_count; i++) {
             if (i > 0) {
-                buf_putc(b, ';');
-                if (opts.pretty) buf_putc(b, ' ');
+                strbuf_putc(b, ';');
+                if (opts.pretty) strbuf_putc(b, ' ');
             }
             const Node *entry = n->children[i];
             if (entry->kind == NODE_MAP_ENTRY && entry->child_count >= 2) {
                 pfmt_expr(b, entry->children[0], src, opts, root);
-                buf_putc(b, ':');
+                strbuf_putc(b, ':');
                 pfmt_expr(b, entry->children[1], src, opts, root);
             }
         }
-        buf_putc(b, ')');
+        strbuf_putc(b, ')');
         break;
     case NODE_STRUCT_LIT: {
         int sigil = has_sigil(n, src);
-        if (sigil) buf_putc(b, '$');
+        if (sigil) strbuf_putc(b, '$');
         char *t = tok_text(n, src);
-        buf_puts(b, t);
+        strbuf_append(b, t);
         free(t);
-        buf_puts(b, sigil ? "{" : " {");
+        strbuf_append(b, sigil ? "{" : " {");
         for (int i = 0; i < n->child_count; i++) {
             if (i > 0) {
-                buf_putc(b, ';');
-                if (opts.pretty) buf_putc(b, ' ');
+                strbuf_putc(b, ';');
+                if (opts.pretty) strbuf_putc(b, ' ');
             }
             const Node *fi = n->children[i];
             if (fi->kind == NODE_FIELD_INIT) {
-                if (has_sigil(fi, src)) buf_putc(b, '$');
+                if (has_sigil(fi, src)) strbuf_putc(b, '$');
                 char *fn = tok_text(fi, src);
-                buf_puts(b, fn);
+                strbuf_append(b, fn);
                 free(fn);
-                buf_putc(b, ':');
+                strbuf_putc(b, ':');
                 if (fi->child_count > 0)
                     pfmt_expr(b, fi->children[0], src, opts, root);
             }
         }
-        buf_putc(b, '}');
+        strbuf_putc(b, '}');
         break;
     }
     case NODE_MATCH_STMT: {
-        buf_puts(b, "mt ");
+        strbuf_append(b, "mt ");
         if (n->child_count > 0)
             pfmt_expr(b, n->children[0], src, opts, root);
-        buf_puts(b, " {");
+        strbuf_append(b, " {");
         for (int i = 1; i < n->child_count; i++) {
             if (i > 1) {
-                buf_putc(b, ';');
-                if (opts.pretty) buf_putc(b, ' ');
+                strbuf_putc(b, ';');
+                if (opts.pretty) strbuf_putc(b, ' ');
             }
             const Node *arm = n->children[i];
             if (arm->kind == NODE_MATCH_ARM) {
                 if (arm->child_count > 0)
                     emit_type_ident(b, arm->children[0], src);
-                buf_putc(b, ':');
+                strbuf_putc(b, ':');
                 if (arm->child_count > 1) {
                     char *bt = tok_text(arm->children[1], src);
-                    buf_puts(b, bt);
+                    strbuf_append(b, bt);
                     free(bt);
                 }
                 if (arm->child_count > 2) {
-                    buf_putc(b, ' ');
+                    strbuf_putc(b, ' ');
                     const Node *body = arm->children[2];
                     if (body->kind == NODE_RETURN_STMT) {
-                        buf_putc(b, '<');
+                        strbuf_putc(b, '<');
                         if (body->child_count > 0) pfmt_expr(b, body->children[0], src, opts, root);
                     } else {
                         pfmt_expr(b, body, src, opts, root);
@@ -1629,45 +1585,45 @@ static void pfmt_expr_inner(Buf *b, const Node *n, const char *src,
                 }
             }
         }
-        buf_putc(b, '}');
+        strbuf_putc(b, '}');
         break;
     }
     case NODE_CLOSURE: {
-        buf_puts(b, "fn(");
+        strbuf_append(b, "fn(");
         int ci = 0;
         int first_param = 1;
         while (ci < n->child_count && n->children[ci]->kind == NODE_PARAM) {
             if (!first_param) {
-                buf_putc(b, ';');
-                if (opts.pretty) buf_putc(b, ' ');
+                strbuf_putc(b, ';');
+                if (opts.pretty) strbuf_putc(b, ' ');
             }
             first_param = 0;
             const Node *pm = n->children[ci];
             if (pm->child_count > 0) {
                 char *pn = tok_text(pm->children[0], src);
-                buf_puts(b, pn);
+                strbuf_append(b, pn);
                 free(pn);
             }
-            buf_putc(b, ':');
+            strbuf_putc(b, ':');
             if (pm->child_count > 1)
                 pfmt_type_expr(b, pm->children[1], src);
             ci++;
         }
-        buf_putc(b, ')');
+        strbuf_putc(b, ')');
         if (ci < n->child_count && n->children[ci]->kind == NODE_RETURN_SPEC) {
-            buf_putc(b, ':');
+            strbuf_putc(b, ':');
             fmt_return_spec(b, n->children[ci], src);
             ci++;
         }
         if (ci < n->child_count && n->children[ci]->kind == NODE_STMT_LIST) {
-            buf_putc(b, '{');
+            strbuf_putc(b, '{');
             const Node *body = n->children[ci];
             if (body->child_count > 0) {
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
                 pfmt_stmt_list(b, body, src, 1, opts, root);
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
             }
-            buf_putc(b, '}');
+            strbuf_putc(b, '}');
         }
         break;
     }
@@ -1675,20 +1631,20 @@ static void pfmt_expr_inner(Buf *b, const Node *n, const char *src,
         /* 131.46: `if` in expression position (bind, return, argument) —
          * inline bodies, `el` / `el if` chain walked flat (see fmt_expr). */
         for (const Node *c = n;;) {
-            buf_puts(b, opts.pretty ? "if (" : "if(");
+            strbuf_append(b, opts.pretty ? "if (" : "if(");
             if (c->child_count > 0) pfmt_expr(b, c->children[0], src, opts, root);
-            buf_puts(b, opts.pretty ? ") { " : "){");
+            strbuf_append(b, opts.pretty ? ") { " : "){");
             if (c->child_count > 1) pfmt_inline_stmts(b, c->children[1], src, opts, root);
-            buf_puts(b, opts.pretty ? " }" : "}");
+            strbuf_append(b, opts.pretty ? " }" : "}");
             if (c->child_count <= 2) break;
             if (c->children[2]->kind == NODE_IF_STMT) {
-                buf_puts(b, opts.pretty ? " el " : "el ");
+                strbuf_append(b, opts.pretty ? " el " : "el ");
                 c = c->children[2];
                 continue;
             }
-            buf_puts(b, opts.pretty ? " el { " : "el{");
+            strbuf_append(b, opts.pretty ? " el { " : "el{");
             pfmt_inline_stmts(b, c->children[2], src, opts, root);
-            buf_puts(b, opts.pretty ? " }" : "}");
+            strbuf_append(b, opts.pretty ? " }" : "}");
             break;
         }
         break;
@@ -1699,7 +1655,7 @@ static void pfmt_expr_inner(Buf *b, const Node *n, const char *src,
         break;
     default: {
         char *t = tok_text(n, src);
-        buf_puts(b, t);
+        strbuf_append(b, t);
         free(t);
         break;
     }
@@ -1713,12 +1669,12 @@ static void pfmt_stmt_list(Buf *b, const Node *n, const char *src,
 {
     if (!n || n->kind != NODE_STMT_LIST) return;
     for (int i = 0; i < n->child_count; i++) {
-        if (i > 0) buf_puts(b, ";\n");   /* 131.37: statements are ';'-separated */
+        if (i > 0) strbuf_append(b, ";\n");   /* 131.37: statements are ';'-separated */
         /* Pretty: blank line before loops and returns (except first stmt) */
         if (opts.pretty && i > 0) {
             NodeKind k = n->children[i]->kind;
             if (k == NODE_LOOP_STMT || k == NODE_RETURN_STMT)
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
         }
         fs_emit_comments_before(b, node_lo(n->children[i]), depth);   /* 131.46 */
         pfmt_stmt(b, n->children[i], src, depth, opts, root);
@@ -1733,18 +1689,18 @@ static void pfmt_bind(Buf *b, const Node *n, const char *src,
                        const Node *root)
 {
     buf_indent(b, depth);
-    buf_puts(b, "let ");
+    strbuf_append(b, "let ");
     if (n->child_count > 0) {
         char *name = tok_text(n->children[0], src);
-        buf_puts(b, name);
+        strbuf_append(b, name);
         free(name);
     }
     if (n->child_count > 2) {                 /* 131.46: `let x:T=…` */
-        buf_putc(b, ':');
+        strbuf_putc(b, ':');
         pfmt_type_expr(b, n->children[1], src);
     }
-    buf_putc(b, '=');
-    if (is_mut) buf_puts(b, "mut.");
+    strbuf_putc(b, '=');
+    if (is_mut) strbuf_append(b, "mut.");
     if (n->child_count > 1)
         pfmt_expr(b, n->children[n->child_count - 1], src, opts, root);
 
@@ -1764,11 +1720,11 @@ static void pfmt_bind(Buf *b, const Node *n, const char *src,
         }
 
         if (exp || type_hint) {
-            buf_puts(b, " /* ");
-            if (exp) buf_puts(b, exp);
-            if (exp && type_hint) buf_putc(b, ':');
-            if (type_hint) buf_puts(b, type_hint);
-            buf_puts(b, " */");
+            strbuf_append(b, " /* ");
+            if (exp) strbuf_append(b, exp);
+            if (exp && type_hint) strbuf_putc(b, ':');
+            if (type_hint) strbuf_append(b, type_hint);
+            strbuf_append(b, " */");
         }
         free(name);
     }
@@ -1790,50 +1746,50 @@ static void pfmt_stmt(Buf *b, const Node *n, const char *src,
         if (n->child_count > 0)
             pfmt_ident(b, n->children[0], src, opts, root);
         if (opts.pretty)
-            buf_puts(b, " = ");
+            strbuf_append(b, " = ");
         else
-            buf_putc(b, '=');
+            strbuf_putc(b, '=');
         if (n->child_count > 1)
             pfmt_expr(b, n->children[1], src, opts, root);
         break;
     case NODE_RETURN_STMT:
         buf_indent(b, depth);
-        if (src[n->tok_start] == 'r') buf_puts(b, n->child_count > 0 ? "rt " : "rt");
-        else buf_putc(b, '<');
+        if (src[n->tok_start] == 'r') strbuf_append(b, n->child_count > 0 ? "rt " : "rt");
+        else strbuf_putc(b, '<');
         if (n->child_count > 0)
             pfmt_expr(b, n->children[0], src, opts, root);
         break;
     case NODE_BREAK_STMT:
         buf_indent(b, depth);
-        buf_puts(b, "br");
+        strbuf_append(b, "br");
         break;
     case NODE_IF_STMT: {
         buf_indent(b, depth);
         /* 127.23: `el if` chains — see fmt_stmt. */
         for (const Node *c = n;;) {
-            buf_puts(b, "if (");
+            strbuf_append(b, "if (");
             if (c->child_count > 0)
                 pfmt_expr(b, c->children[0], src, opts, root);
-            buf_puts(b, ") {");
+            strbuf_append(b, ") {");
             if (c->child_count > 1) {
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
                 pfmt_stmt_list(b, c->children[1], src, depth + 1, opts, root);
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
             }
             buf_indent(b, depth);
-            buf_putc(b, '}');
+            strbuf_putc(b, '}');
             if (c->child_count <= 2) break;
             if (c->children[2]->kind == NODE_IF_STMT) {
-                buf_puts(b, " el ");
+                strbuf_append(b, " el ");
                 c = c->children[2];
                 continue;
             }
-            buf_puts(b, " el {");
-            buf_putc(b, '\n');
+            strbuf_append(b, " el {");
+            strbuf_putc(b, '\n');
             pfmt_stmt_list(b, c->children[2], src, depth + 1, opts, root);
-            buf_putc(b, '\n');
+            strbuf_putc(b, '\n');
             buf_indent(b, depth);
-            buf_putc(b, '}');
+            strbuf_putc(b, '}');
             break;
         }
         break;
@@ -1844,85 +1800,85 @@ static void pfmt_stmt(Buf *b, const Node *n, const char *src,
                         n->children[0]->kind != NODE_LOOP_INIT);
         if (is_while) {
             /* while-loop form: lp(expr){body} */
-            buf_puts(b, "lp (");
+            strbuf_append(b, "lp (");
             pfmt_expr(b, n->children[0], src, opts, root);
-            buf_puts(b, ") {");
+            strbuf_append(b, ") {");
             if (n->child_count > 1) {
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
                 pfmt_stmt_list(b, n->children[1], src, depth + 1, opts, root);
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
             }
         } else {
-            buf_puts(b, "lp (");
+            strbuf_append(b, "lp (");
             if (n->child_count > 0) {
                 const Node *init = n->children[0];
                 if (init->kind == NODE_LOOP_INIT) {
                     if (init->op == TK_KW_LET)
-                        buf_puts(b, "let ");
+                        strbuf_append(b, "let ");
                     if (init->child_count > 0) {
                         char *name = tok_text(init->children[0], src);
-                        buf_puts(b, name);
+                        strbuf_append(b, name);
                         free(name);
                     }
                     if (opts.pretty)
-                        buf_puts(b, " = ");
+                        strbuf_append(b, " = ");
                     else
-                        buf_putc(b, '=');
+                        strbuf_putc(b, '=');
                     if (init->child_count > 1)
                         pfmt_expr(b, init->children[1], src, opts, root);
                 }
             }
-            buf_puts(b, "; ");
+            strbuf_append(b, "; ");
             if (n->child_count > 1)
                 pfmt_expr(b, n->children[1], src, opts, root);
-            buf_puts(b, "; ");
+            strbuf_append(b, "; ");
             if (n->child_count > 2) {
                 const Node *step = n->children[2];
                 if (step->child_count > 0) {
                     char *name = tok_text(step->children[0], src);
-                    buf_puts(b, name);
+                    strbuf_append(b, name);
                     free(name);
                 }
                 if (opts.pretty)
-                    buf_puts(b, " = ");
+                    strbuf_append(b, " = ");
                 else
-                    buf_putc(b, '=');
+                    strbuf_putc(b, '=');
                 if (step->child_count > 1)
                     pfmt_expr(b, step->children[1], src, opts, root);
             }
-            buf_puts(b, ") {");
+            strbuf_append(b, ") {");
             if (n->child_count > 3) {
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
                 pfmt_stmt_list(b, n->children[3], src, depth + 1, opts, root);
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
             }
         }
         buf_indent(b, depth);
-        buf_putc(b, '}');
+        strbuf_putc(b, '}');
         break;
     }
     case NODE_ARENA_STMT: {
         buf_indent(b, depth);
-        buf_puts(b, "{arena");
+        strbuf_append(b, "{arena");
         if (n->child_count > 0) {
-            buf_putc(b, '\n');
+            strbuf_putc(b, '\n');
             pfmt_stmt_list(b, n->children[0], src, depth + 1, opts, root);
-            buf_putc(b, '\n');
+            strbuf_putc(b, '\n');
         }
         buf_indent(b, depth);
-        buf_putc(b, '}');
+        strbuf_putc(b, '}');
         break;
     }
     case NODE_SCOPE_STMT: {
         buf_indent(b, depth);
-        buf_puts(b, "sc {");
+        strbuf_append(b, "sc {");
         if (n->child_count > 0) {
-            buf_putc(b, '\n');
+            strbuf_putc(b, '\n');
             pfmt_stmt_list(b, n->children[0], src, depth + 1, opts, root);
-            buf_putc(b, '\n');
+            strbuf_putc(b, '\n');
         }
         buf_indent(b, depth);
-        buf_putc(b, '}');
+        strbuf_putc(b, '}');
         break;
     }
     case NODE_EXPR_STMT:
@@ -1945,100 +1901,100 @@ static void pfmt_decl(Buf *b, const Node *n, const char *src,
     if (!n) return;
     switch (n->kind) {
     case NODE_MODULE:
-        buf_puts(b, "m=");
+        strbuf_append(b, "m=");
         if (n->child_count > 0)
             fmt_module_path(b, n->children[0], src);
         break;
     case NODE_IMPORT: {
-        buf_puts(b, "i=");
+        strbuf_append(b, "i=");
         if (n->child_count > 0) {
             char *alias = tok_text(n->children[0], src);
-            buf_puts(b, alias);
+            strbuf_append(b, alias);
             free(alias);
         }
-        buf_putc(b, ':');
+        strbuf_putc(b, ':');
         if (n->child_count > 1)
             fmt_module_path(b, n->children[1], src);
         if (n->child_count > 2) {
-            buf_putc(b, ' ');
+            strbuf_putc(b, ' ');
             char *ver = tok_text(n->children[2], src);
-            buf_puts(b, ver);
+            strbuf_append(b, ver);
             free(ver);
         }
         break;
     }
     case NODE_TYPE_DECL: {
-        buf_puts(b, "t=");
+        strbuf_append(b, "t=");
         int sigil = n->child_count > 0 && has_sigil(n->children[0], src);
         if (n->child_count > 0) {
-            if (sigil) buf_putc(b, '$');
+            if (sigil) strbuf_putc(b, '$');
             char *name = tok_text(n->children[0], src);
-            buf_puts(b, name);
+            strbuf_append(b, name);
             free(name);
         }
-        buf_puts(b, sigil ? "{" : " {");
+        strbuf_append(b, sigil ? "{" : " {");
         if (n->child_count > 1) {
             const Node *fields = n->children[1];
             for (int i = 0; i < fields->child_count; i++) {
-                if (i > 0) buf_putc(b, ';');
-                buf_putc(b, '\n');
+                if (i > 0) strbuf_putc(b, ';');
+                strbuf_putc(b, '\n');
                 buf_indent(b, 1);
                 const Node *f = fields->children[i];
-                if (f->op == TK_DOLLAR) buf_putc(b, '$');
+                if (f->op == TK_DOLLAR) strbuf_putc(b, '$');
                 char *fname = tok_text(f, src);
-                buf_puts(b, fname);
+                strbuf_append(b, fname);
                 free(fname);
-                buf_putc(b, ':');
+                strbuf_putc(b, ':');
                 if (f->child_count > 0)
                     pfmt_type_expr(b, f->children[0], src);
             }
         }
-        buf_putc(b, '\n');
-        buf_putc(b, '}');
+        strbuf_putc(b, '\n');
+        strbuf_putc(b, '}');
         break;
     }
     case NODE_CONST_DECL: {
         if (n->child_count > 0) {
             char *name = tok_text(n->children[0], src);
-            buf_puts(b, name);
+            strbuf_append(b, name);
             free(name);
         }
-        buf_putc(b, '=');
+        strbuf_putc(b, '=');
         if (n->child_count > 1)
             pfmt_expr(b, n->children[1], src, opts, root);
-        buf_putc(b, ':');
+        strbuf_putc(b, ':');
         if (n->child_count > 2)
             pfmt_type_expr(b, n->children[2], src);
         break;
     }
     case NODE_FUNC_DECL: {
-        buf_puts(b, "f=");
+        strbuf_append(b, "f=");
         if (n->child_count < 1) break;
         char *name = tok_text(n->children[0], src);
-        buf_puts(b, name);
+        strbuf_append(b, name);
         free(name);
-        buf_putc(b, '(');
+        strbuf_putc(b, '(');
 
         int pi = 1;
         int first_param = 1;
         while (pi < n->child_count && n->children[pi]->kind == NODE_PARAM) {
             if (!first_param) {
-                buf_putc(b, ';');
-                buf_putc(b, ' ');
+                strbuf_putc(b, ';');
+                strbuf_putc(b, ' ');
             }
             first_param = 0;
             const Node *pm = n->children[pi];
             if (pm->child_count > 0) {
                 char *pn = tok_text(pm->children[0], src);
-                buf_puts(b, pn);
+                strbuf_append(b, pn);
                 free(pn);
             }
-            buf_putc(b, ':');
+            strbuf_putc(b, ':');
             if (pm->child_count > 1)
                 pfmt_type_expr(b, pm->children[1], src);
             pi++;
         }
-        buf_puts(b, "):");
+        strbuf_append(b, "):");
 
         if (pi < n->child_count && n->children[pi]->kind == NODE_RETURN_SPEC) {
             fmt_return_spec(b, n->children[pi], src);
@@ -2046,14 +2002,14 @@ static void pfmt_decl(Buf *b, const Node *n, const char *src,
         }
 
         if (pi < n->child_count && n->children[pi]->kind == NODE_STMT_LIST) {
-            buf_puts(b, " {");
+            strbuf_append(b, " {");
             const Node *body = n->children[pi];
             if (body->child_count > 0) {
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
                 pfmt_stmt_list(b, body, src, 1, opts, root);
-                buf_putc(b, '\n');
+                strbuf_putc(b, '\n');
             }
-            buf_putc(b, '}');
+            strbuf_putc(b, '}');
         }
         break;
     }
@@ -2077,9 +2033,7 @@ char *tkc_format_pretty(const Node *root, const char *src, FmtOptions opts)
 {
     if (!root || root->kind != NODE_PROGRAM || !src) return NULL;
 
-    Buf b;
-    buf_init(&b);
-    if (!b.buf) return NULL;
+    Buf b = TK_STRBUF_INIT;
     g_fs = fs_build(src, (int)strlen(src));   /* 131.46: parens + comments */
 
     int first_decl = 1;
@@ -2090,9 +2044,9 @@ char *tkc_format_pretty(const Node *root, const char *src, FmtOptions opts)
         if (!child) continue;
 
         if (!first_decl) {
-            buf_puts(&b, ";\n");
+            strbuf_append(&b, ";\n");
             if (!prev_was_module)
-                buf_putc(&b, '\n');
+                strbuf_putc(&b, '\n');
         }
 
         fs_emit_comments_before(&b, node_lo(child), 0);
@@ -2102,10 +2056,10 @@ char *tkc_format_pretty(const Node *root, const char *src, FmtOptions opts)
     }
 
     if (b.len > 0)
-        buf_putc(&b, '\n');
+        strbuf_putc(&b, '\n');
     fs_emit_comments_before(&b, INT_MAX, 0);
 
     fs_free(g_fs);
     g_fs = NULL;
-    return b.buf;
+    return strbuf_take(&b);
 }

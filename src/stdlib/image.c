@@ -40,6 +40,44 @@
  * Utility helpers
  * ========================================================================= */
 
+/*
+ * 122.9 — size budget and geometry checks.
+ *
+ * IMG_MAX_BYTES bounds every pixel buffer this file allocates from a size it
+ * did not choose: a decoded PNG or TIFF, a caller's TkImgBuf, a resize
+ * target.  1 GiB is 16384 x 16384 RGBA, and it is the same bound the TIFF
+ * decoder already applied as "256 megapixels" (135.5) at four channels.  It
+ * keeps every product below computed in uint64_t with no wrap, keeps a row
+ * stride inside uint32_t, and turns a hostile IHDR into a named error instead
+ * of a multi-gigabyte allocation.
+ *
+ * img_buf_ok is the check every transform makes before it reads a pixel.  A
+ * $imgbuf is an ordinary toke struct (image_glue.c), so its width, height and
+ * channels are whatever the program wrote; before 122.9 every transform
+ * trusted them and read width*height*channels bytes from a buffer that could
+ * be shorter -- a heap over-read reachable from `$imgbuf{...;data:@()}`.
+ */
+#define IMG_MAX_BYTES (1ull << 30)
+
+static int img_geom(uint64_t w, uint64_t h, uint64_t ch, uint64_t *bytes)
+{
+    if (w == 0 || h == 0 || ch == 0 || ch > 4) return 0;
+    if (w > IMG_MAX_BYTES || h > IMG_MAX_BYTES) return 0;
+    uint64_t px = w * h;                        /* < 2^60: no wrap */
+    if (px > IMG_MAX_BYTES / ch) return 0;
+    if (bytes) *bytes = px * ch;
+    return 1;
+}
+
+static int img_buf_ok(const TkImgBuf *b, uint64_t *bytes)
+{
+    uint64_t need = 0;
+    if (!b->data || !img_geom(b->width, b->height, b->channels, &need)) return 0;
+    if (b->data_len < need) return 0;
+    if (bytes) *bytes = need;
+    return 1;
+}
+
 static uint32_t read_u32_be(const uint8_t *p)
 {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16)
@@ -285,7 +323,9 @@ typedef struct {
     uint8_t  *buf;
     uint64_t  len;
     uint64_t  cap;
+    uint64_t  limit;   /* 122.9: most bytes this buffer may ever hold */
     int       error;
+    int       over;    /* set when a push was refused by `limit` */
 } OutBuf;
 
 static void outbuf_init(OutBuf *ob)
@@ -293,14 +333,24 @@ static void outbuf_init(OutBuf *ob)
     ob->buf   = NULL;
     ob->len   = 0;
     ob->cap   = 0;
+    ob->limit = UINT64_MAX;
     ob->error = 0;
+    ob->over  = 0;
 }
 
+/* 122.9: the inflate output cap.  A decoder knows, before it inflates, how
+ * many bytes a well-formed stream produces (PNG: height * (1 + stride); a
+ * TIFF strip: its row bytes).  Before 122.9 the inflater grew without bound
+ * and only compared the size afterwards, so a few kilobytes of IDAT could
+ * demand gigabytes (a decompression bomb) before being rejected.  Now the
+ * first byte past `limit` stops the inflate. */
 static void outbuf_push(OutBuf *ob, uint8_t byte)
 {
     if (ob->error) return;
+    if (ob->len >= ob->limit) { ob->over = 1; ob->error = 1; return; }
     if (ob->len == ob->cap) {
         uint64_t newcap = ob->cap ? ob->cap * 2 : 4096;
+        if (newcap > ob->limit && ob->limit > ob->len) newcap = ob->limit;
         uint8_t *newbuf = (uint8_t *)realloc(ob->buf, newcap);
         if (!newbuf) { ob->error = 1; return; }
         ob->buf = newbuf;
@@ -444,13 +494,15 @@ static int inflate_dynamic(BitStream *bs, OutBuf *ob)
  * Returns heap-allocated data in ob on success (caller frees), -1 on error.
  * ------------------------------------------------------------------------- */
 
-static int inflate_all(const uint8_t *src, uint64_t src_len, OutBuf *ob)
+static int inflate_all(const uint8_t *src, uint64_t src_len, OutBuf *ob,
+                       uint64_t limit)
 {
     if (!fixed_trees_built) build_fixed_trees();
 
     BitStream bs;
     bs_init(&bs, src, src_len);
     outbuf_init(ob);
+    ob->limit = limit;
 
     int bfinal;
     do {
@@ -492,12 +544,14 @@ static uint8_t paeth_predictor(int a, int b, int c)
 static int png_unfilter(const uint8_t *raw, uint8_t *out,
                         uint32_t width, uint32_t height, uint8_t channels)
 {
+    /* 122.9: row offsets in uint64_t; image_decode has already bounded
+     * width*height*channels by IMG_MAX_BYTES, so stride fits uint32_t. */
     uint32_t stride = width * channels;
     for (uint32_t y = 0; y < height; y++) {
-        uint8_t filter = raw[y * (stride + 1)];
-        const uint8_t *row  = raw + y * (stride + 1) + 1;
-        uint8_t       *prev = (y == 0) ? NULL : out + (y - 1) * stride;
-        uint8_t       *cur  = out + y * stride;
+        uint8_t filter = raw[(uint64_t)y * (stride + 1)];
+        const uint8_t *row  = raw + (uint64_t)y * (stride + 1) + 1;
+        uint8_t       *prev = (y == 0) ? NULL : out + (uint64_t)(y - 1) * stride;
+        uint8_t       *cur  = out + (uint64_t)y * stride;
 
         if (filter == 0) { /* None */
             memcpy(cur, row, stride);
@@ -584,7 +638,18 @@ ImgResult image_decode(const uint8_t *bytes, uint64_t len)
         }
 
         const uint8_t *chunk_data = bytes + pos;
-        /* uint32_t chunk_crc = read_u32_be(bytes + pos + chunk_len); -- we skip CRC validation */
+        /* 122.9: the CRC gate.  Every chunk's CRC-32 (over type + data) is
+         * checked before its contents are used; until 122.9 it was skipped,
+         * so a corrupted or tampered chunk went straight into the inflater. */
+        uint32_t chunk_crc = read_u32_be(bytes + pos + chunk_len);
+        uint32_t calc_crc  = crc32_update(crc32_update(0, chunk_type, 4),
+                                          chunk_data, chunk_len);
+        if (chunk_crc != calc_crc) {
+            free(idat_buf);
+            res.is_err  = 1;
+            res.err_msg = "image_decode: PNG chunk CRC mismatch (corrupt or tampered file)";
+            return res;
+        }
         pos += chunk_len + 4; /* data + CRC */
 
         if (memcmp(chunk_type, "IHDR", 4) == 0) {
@@ -614,6 +679,14 @@ ImgResult image_decode(const uint8_t *bytes, uint64_t len)
                 free(idat_buf);
                 res.is_err  = 1;
                 res.err_msg = "image_decode: unsupported PNG color type";
+                return res;
+            }
+            /* 122.9: checked size math.  The decoded size is fixed by IHDR,
+             * so it is bounded here, before a byte is inflated. */
+            if (!img_geom(width, height, channels, NULL)) {
+                free(idat_buf);
+                res.is_err  = 1;
+                res.err_msg = "image_decode: PNG dimensions are zero or exceed the 1 GiB decoded-size cap";
                 return res;
             }
         } else if (memcmp(chunk_type, "IDAT", 4) == 0) {
@@ -663,18 +736,23 @@ ImgResult image_decode(const uint8_t *bytes, uint64_t len)
     const uint8_t *deflate_data = idat_buf + 2;
     uint64_t       deflate_len  = idat_len - 6;
 
+    /* Expected size: height rows × (1 + width*channels) bytes.  Bounded by
+     * the IHDR check above, so it is also the inflate output cap. */
+    uint64_t expected = (uint64_t)height * ((uint64_t)width * channels + 1);
+
     OutBuf ob;
-    if (inflate_all(deflate_data, deflate_len, &ob) != 0) {
+    if (inflate_all(deflate_data, deflate_len, &ob, expected) != 0) {
+        int bomb = ob.over;
         free(idat_buf);
         free(ob.buf);
         res.is_err  = 1;
-        res.err_msg = "image_decode: DEFLATE inflate failed";
+        res.err_msg = bomb
+            ? "image_decode: decompressed data exceeds the size IHDR declares (decompression bomb)"
+            : "image_decode: DEFLATE inflate failed";
         return res;
     }
     free(idat_buf);
 
-    /* Expected size: height rows × (1 + width*channels) bytes */
-    uint64_t expected = (uint64_t)height * ((uint64_t)width * channels + 1);
     if (ob.len != expected) {
         free(ob.buf);
         res.is_err  = 1;
@@ -803,8 +881,7 @@ ImgEncResult image_encode(TkImgBuf buf, TkImgFmt fmt, uint8_t quality)
     }
     if (fmt == IMG_FMT_BMP) {
         /* 24-bit uncompressed BMP (no alpha). */
-        if (!buf.data || buf.width == 0 || buf.height == 0 ||
-            buf.channels == 0 || buf.channels > 4) {
+        if (!img_buf_ok(&buf, NULL)) {                    /* 122.9 */
             res.is_err  = 1;
             res.err_msg = "image_encode: invalid TkImgBuf";
             return res;
@@ -813,11 +890,21 @@ ImgEncResult image_encode(TkImgBuf buf, TkImgFmt fmt, uint8_t quality)
         uint32_t w = buf.width;
         uint32_t h = buf.height;
         /* Each row: 3 bytes per pixel, padded to 4-byte boundary. */
-        uint32_t row_bytes   = w * 3;
-        uint32_t row_padding = (4 - (row_bytes % 4)) % 4;
-        uint32_t row_stride  = row_bytes + row_padding;
-        uint32_t pixel_size  = row_stride * h;
-        uint32_t file_size   = 14 + 40 + pixel_size;
+        /* 122.9: sized in uint64_t.  In uint32_t a 1 x 2^30 greyscale
+         * image padded to 4 bytes a row made pixel_size exactly 2^32, which
+         * wrapped to 0: a 54-byte allocation followed by 4 GiB of writes.
+         * The BMP header stores the file size in 32 bits, so a larger
+         * image is refused by name. */
+        uint64_t row_bytes   = (uint64_t)w * 3;
+        uint64_t row_padding = (4 - (row_bytes % 4)) % 4;
+        uint64_t row_stride  = row_bytes + row_padding;
+        uint64_t pixel_size  = row_stride * h;
+        if (pixel_size > 0xFFFFFFFFull - 54) {
+            res.is_err  = 1;
+            res.err_msg = "image_encode: image too large for a BMP (4 GiB file limit)";
+            return res;
+        }
+        uint32_t file_size   = (uint32_t)(14 + 40 + pixel_size);
 
         uint8_t *out = (uint8_t *)malloc(file_size);
         if (!out) {
@@ -890,8 +977,7 @@ ImgEncResult image_encode(TkImgBuf buf, TkImgFmt fmt, uint8_t quality)
     }
 
     /* PNG encode */
-    if (!buf.data || buf.width == 0 || buf.height == 0 ||
-        buf.channels == 0 || buf.channels > 4) {
+    if (!img_buf_ok(&buf, NULL)) {                        /* 122.9 */
         res.is_err  = 1;
         res.err_msg = "image_encode: invalid TkImgBuf";
         return res;
@@ -977,10 +1063,13 @@ TkImgBuf image_resize(TkImgBuf buf, uint32_t width, uint32_t height)
     TkImgBuf out;
     memset(&out, 0, sizeof(out));
 
-    if (!buf.data || buf.width == 0 || buf.height == 0 || width == 0 || height == 0)
+    uint64_t out_len = 0;
+    /* 122.9: the input is checked against its own buffer, and the target
+     * size against the same cap -- width*height*channels from two caller
+     * u32s wrapped uint64_t before, allocating less than it then wrote. */
+    if (!img_buf_ok(&buf, NULL) ||
+        !img_geom(width, height, buf.channels, &out_len))
         return out;
-
-    uint64_t out_len = (uint64_t)width * height * buf.channels;
     uint8_t *data = (uint8_t *)malloc(out_len);
     if (!data) return out;
 
@@ -1035,9 +1124,9 @@ ImgResult image_crop(TkImgBuf buf, uint32_t x, uint32_t y,
     ImgResult res;
     memset(&res, 0, sizeof(res));
 
-    if (!buf.data) {
+    if (!img_buf_ok(&buf, NULL)) {                        /* 122.9 */
         res.is_err  = 1;
-        res.err_msg = "image_crop: null image buffer";
+        res.err_msg = "image_crop: invalid image buffer (null, or shorter than width*height*channels)";
         return res;
     }
     if ((uint64_t)x + width > buf.width || (uint64_t)y + height > buf.height) {
@@ -1079,7 +1168,7 @@ TkImgBuf image_to_grayscale(TkImgBuf buf)
     TkImgBuf out;
     memset(&out, 0, sizeof(out));
 
-    if (!buf.data || buf.channels == 0) return out;
+    if (!img_buf_ok(&buf, NULL)) return out;   /* 122.9 */
 
     uint64_t num_pixels = (uint64_t)buf.width * buf.height;
     uint8_t *data = (uint8_t *)malloc(num_pixels);
@@ -1116,9 +1205,12 @@ TkImgBuf image_flip_h(TkImgBuf buf)
     TkImgBuf out;
     memset(&out, 0, sizeof(out));
 
-    if (!buf.data || buf.width == 0 || buf.height == 0) return out;
+    uint64_t need = 0;
+    if (!img_buf_ok(&buf, &need)) return out;   /* 122.9 */
 
-    uint8_t *data = (uint8_t *)malloc(buf.data_len);
+    /* 122.9: sized by the geometry, not data_len -- a longer buffer left
+     * its tail uninitialised in the output, heap bytes handed to the caller */
+    uint8_t *data = (uint8_t *)malloc(need);
     if (!data) return out;
 
     uint32_t stride = buf.width * buf.channels;
@@ -1136,7 +1228,7 @@ TkImgBuf image_flip_h(TkImgBuf buf)
     out.height   = buf.height;
     out.channels = buf.channels;
     out.data     = data;
-    out.data_len = buf.data_len;
+    out.data_len = need;
     return out;
 }
 
@@ -1149,9 +1241,12 @@ TkImgBuf image_flip_v(TkImgBuf buf)
     TkImgBuf out;
     memset(&out, 0, sizeof(out));
 
-    if (!buf.data || buf.width == 0 || buf.height == 0) return out;
+    uint64_t need = 0;
+    if (!img_buf_ok(&buf, &need)) return out;   /* 122.9 */
 
-    uint8_t *data = (uint8_t *)malloc(buf.data_len);
+    /* 122.9: sized by the geometry, not data_len -- a longer buffer left
+     * its tail uninitialised in the output, heap bytes handed to the caller */
+    uint8_t *data = (uint8_t *)malloc(need);
     if (!data) return out;
 
     uint32_t stride = buf.width * buf.channels;
@@ -1165,7 +1260,7 @@ TkImgBuf image_flip_v(TkImgBuf buf)
     out.height   = buf.height;
     out.channels = buf.channels;
     out.data     = data;
-    out.data_len = buf.data_len;
+    out.data_len = need;
     return out;
 }
 
@@ -1178,7 +1273,7 @@ PixelResult image_pixel_at(TkImgBuf buf, uint32_t x, uint32_t y)
     PixelResult res;
     memset(&res, 0, sizeof(res));
 
-    if (!buf.data || x >= buf.width || y >= buf.height) {
+    if (!img_buf_ok(&buf, NULL) || x >= buf.width || y >= buf.height) {
         res.is_err  = 1;
         res.err_msg = "image_pixel_at: coordinates out of bounds";
         return res;
@@ -1209,7 +1304,8 @@ TkImgBuf image_from_raw(const uint8_t *data, uint32_t width,
     TkImgBuf out;
     memset(&out, 0, sizeof(out));
 
-    uint64_t len = (uint64_t)width * height * channels;
+    uint64_t len = 0;
+    if (!img_geom(width, height, channels, &len)) return out;   /* 122.9 */
     uint8_t *copy = (uint8_t *)malloc(len);
     if (!copy) return out;
 
@@ -1248,7 +1344,7 @@ void image_buf_free(TkImgBuf *buf)
  * ------------------------------------------------------------------------- */
 static uint8_t clamp_u8(double v)
 {
-    if (v < 0.0)   return 0;
+    if (!(v >= 0.0)) return 0;   /* 122.9: NaN too -- casting it is UB */
     if (v > 255.0) return 255;
     return (uint8_t)(v + 0.5);
 }
@@ -1263,7 +1359,7 @@ TkImgBuf image_rotate(TkImgBuf buf, double angle_deg)
     TkImgBuf out;
     memset(&out, 0, sizeof(out));
 
-    if (!buf.data || buf.width == 0 || buf.height == 0) return out;
+    if (!img_buf_ok(&buf, NULL)) return out;   /* 122.9 */
 
     uint64_t out_len = (uint64_t)buf.width * buf.height * buf.channels;
     uint8_t *data = (uint8_t *)malloc(out_len);
@@ -1286,17 +1382,21 @@ TkImgBuf image_rotate(TkImgBuf buf, double angle_deg)
             double sx = cos_a * dx - sin_a * dy + cx;
             double sy = sin_a * dx + cos_a * dy + cy;
 
+            /* 122.9: range-check the double BEFORE converting it.  A NaN
+             * or infinite angle made sx NaN, and (int)NaN is undefined
+             * behaviour.  The test admits exactly the truncations the old
+             * integer test admitted: x0 in [0, width-2]. */
+            if (!(sx > -1.0 && sy > -1.0 &&
+                  sx < (double)buf.width - 1.0 && sy < (double)buf.height - 1.0)) {
+                /* Out of bounds — leave as 0 */
+                continue;
+            }
+
             /* Bilinear interpolation */
             int x0 = (int)sx;
             int y0 = (int)sy;
             int x1 = x0 + 1;
             int y1 = y0 + 1;
-
-            if (x0 < 0 || y0 < 0 ||
-                x1 >= (int)buf.width || y1 >= (int)buf.height) {
-                /* Out of bounds — leave as 0 */
-                continue;
-            }
 
             double wx = sx - (double)x0;
             double wy = sy - (double)y0;
@@ -1365,7 +1465,7 @@ TkImgBuf image_blur(TkImgBuf buf, int radius)
     TkImgBuf out;
     memset(&out, 0, sizeof(out));
 
-    if (!buf.data || buf.width == 0 || buf.height == 0) return out;
+    if (!img_buf_ok(&buf, NULL)) return out;   /* 122.9 */
     if (radius < 1) radius = 1;
 
     uint64_t len  = (uint64_t)buf.width * buf.height * buf.channels;
@@ -1400,7 +1500,7 @@ TkImgBuf image_sharpen(TkImgBuf buf)
     TkImgBuf out;
     memset(&out, 0, sizeof(out));
 
-    if (!buf.data || buf.width == 0 || buf.height == 0) return out;
+    if (!img_buf_ok(&buf, NULL)) return out;   /* 122.9 */
 
     uint64_t len = (uint64_t)buf.width * buf.height * buf.channels;
     uint8_t *data = (uint8_t *)malloc(len);
@@ -1455,7 +1555,7 @@ TkImgBuf image_brightness(TkImgBuf buf, double factor)
     TkImgBuf out;
     memset(&out, 0, sizeof(out));
 
-    if (!buf.data || buf.width == 0 || buf.height == 0) return out;
+    if (!img_buf_ok(&buf, NULL)) return out;   /* 122.9 */
 
     uint64_t len = (uint64_t)buf.width * buf.height * buf.channels;
     uint8_t *data = (uint8_t *)malloc(len);
@@ -1492,7 +1592,7 @@ TkImgBuf image_contrast(TkImgBuf buf, double factor)
     TkImgBuf out;
     memset(&out, 0, sizeof(out));
 
-    if (!buf.data || buf.width == 0 || buf.height == 0) return out;
+    if (!img_buf_ok(&buf, NULL)) return out;   /* 122.9 */
 
     uint64_t len = (uint64_t)buf.width * buf.height * buf.channels;
     uint8_t *data = (uint8_t *)malloc(len);
@@ -1529,18 +1629,19 @@ TkImgBuf image_paste(TkImgBuf dst, TkImgBuf src, int x, int y)
     TkImgBuf out;
     memset(&out, 0, sizeof(out));
 
-    if (!dst.data || dst.width == 0 || dst.height == 0) return out;
-    if (!src.data || src.width == 0 || src.height == 0) {
-        /* Nothing to paste — return a copy of dst */
-        uint8_t *copy = (uint8_t *)malloc(dst.data_len);
+    uint64_t len = 0;
+    if (!img_buf_ok(&dst, &len)) return out;   /* 122.9 */
+    if (!img_buf_ok(&src, NULL)) {
+        /* Nothing (valid) to paste — return a copy of dst */
+        uint8_t *copy = (uint8_t *)malloc(len);
         if (!copy) return out;
-        memcpy(copy, dst.data, dst.data_len);
+        memcpy(copy, dst.data, len);
         out = dst;
         out.data = copy;
+        out.data_len = len;
         return out;
     }
 
-    uint64_t len  = dst.data_len;
     uint8_t *data = (uint8_t *)malloc(len);
     if (!data) return out;
     memcpy(data, dst.data, len);
@@ -1595,7 +1696,7 @@ ImgHistogram image_histogram(TkImgBuf buf)
 {
     ImgHistogram h;
     memset(&h, 0, sizeof(h));
-    if (!buf.data) return h;
+    if (!img_buf_ok(&buf, NULL)) return h;   /* 122.9 */
 
     uint64_t num_pixels = (uint64_t)buf.width * buf.height;
     for (uint64_t i = 0; i < num_pixels; i++) {
@@ -1637,8 +1738,7 @@ TkImgBuf image_quantize(TkImgBuf buf, uint64_t ncolors)
     TkImgBuf zero;
     memset(&zero, 0, sizeof(zero));
 
-    if (!buf.data || buf.width == 0 || buf.height == 0 ||
-        buf.channels < 3 || ncolors == 0)
+    if (!img_buf_ok(&buf, NULL) || buf.channels < 3 || ncolors == 0)   /* 122.9 */
         return zero;
 
     uint64_t npix = (uint64_t)buf.width * buf.height;
@@ -1868,7 +1968,7 @@ TkImgBuf image_text_draw(TkImgBuf buf, const char *text,
     TkImgBuf zero;
     memset(&zero, 0, sizeof(zero));
 
-    if (!buf.data || buf.width == 0 || buf.height == 0 || !text || size < 1)
+    if (!img_buf_ok(&buf, NULL) || !text || size < 1)   /* 122.9 */
         return zero;
 
     uint64_t npix = (uint64_t)buf.width * buf.height;
@@ -1883,10 +1983,18 @@ TkImgBuf image_text_draw(TkImgBuf buf, const char *text,
     uint8_t cb = (uint8_t)((color >>  8) & 0xFF);
     uint8_t ca = (uint8_t)( color        & 0xFF);
 
-    int cursor_x = x;
-    int advance  = (5 + 1) * size; /* 5 columns + 1 pixel gap, scaled */
+    /* 122.9: glyph geometry in int64_t.  In int, `(5+1)*size`,
+     * `row*size` and the advancing cursor overflowed (undefined behaviour)
+     * for a large size or a long string, and each set pixel looped size*size
+     * times even when the whole block was off the image.  The block is now
+     * clipped to the image first, so the work is bounded by the pixels
+     * actually written. */
+    const int64_t W = (int64_t)buf.width, H = (int64_t)buf.height;
+    int64_t cursor_x = x;
+    int64_t advance  = (int64_t)(5 + 1) * size; /* 5 columns + 1 pixel gap, scaled */
 
     for (const char *cp = text; *cp != '\0'; cp++) {
+        if (cursor_x >= W) break;   /* every later glyph is off the right edge */
         unsigned int c = (unsigned int)(unsigned char)*cp;
         if (c < 32 || c > 126) {
             cursor_x += advance;
@@ -1901,13 +2009,13 @@ TkImgBuf image_text_draw(TkImgBuf buf, const char *text,
                 if (!(bits & (uint8_t)(0x10u >> (unsigned)col)))
                     continue;
 
-                /* Scale each set pixel to a size×size block. */
-                for (int sy = 0; sy < size; sy++) {
-                    int py = y + row * size + sy;
-                    if (py < 0 || py >= (int)buf.height) continue;
-                    for (int sx = 0; sx < size; sx++) {
-                        int px = cursor_x + col * size + sx;
-                        if (px < 0 || px >= (int)buf.width) continue;
+                /* Scale each set pixel to a size×size block, clipped. */
+                int64_t y0 = (int64_t)y + (int64_t)row * size;
+                int64_t x0 = cursor_x + (int64_t)col * size;
+                int64_t ya = y0 < 0 ? 0 : y0, yb = y0 + size < H ? y0 + size : H;
+                int64_t xa = x0 < 0 ? 0 : x0, xb = x0 + size < W ? x0 + size : W;
+                for (int64_t py = ya; py < yb; py++) {
+                    for (int64_t px = xa; px < xb; px++) {
 
                         uint8_t *dst = data +
                             ((uint64_t)py * buf.width + (uint64_t)px) * ch;
@@ -1947,10 +2055,9 @@ TkImgBuf image_text_draw(TkImgBuf buf, const char *text,
  * (BT.601, matching image_to_grayscale).  Caller frees. */
 static uint8_t *img_gray_plane(TkImgBuf buf)
 {
-    if (!buf.data || buf.width == 0 || buf.height == 0) return NULL;
-    uint8_t  ch = buf.channels ? buf.channels : 1;
+    if (!img_buf_ok(&buf, NULL)) return NULL;   /* 122.9: n*ch could wrap */
+    uint8_t  ch = buf.channels;
     uint64_t n  = (uint64_t)buf.width * buf.height;
-    if (buf.data_len < n * ch) return NULL;
 
     uint8_t *g = (uint8_t *)malloc(n);
     if (!g) return NULL;
@@ -2129,8 +2236,8 @@ ImgResult image_convolve(TkImgBuf buf, const double *kernel, uint32_t ksize,
 
     uint8_t  ch     = buf.channels ? buf.channels : 1;
     uint32_t w      = buf.width, h = buf.height;
-    uint64_t need   = (uint64_t)w * h * ch;
-    if (buf.data_len < need) {
+    uint64_t need   = 0;
+    if (!img_buf_ok(&buf, &need)) {     /* 122.9: w*h*ch could wrap */
         res.is_err = 1;
         res.err_msg = "image_convolve: pixel buffer shorter than "
                       "width*height*channels";
@@ -2466,7 +2573,12 @@ static int tiff_inflate(const uint8_t *src, uint64_t srclen,
 {
     if (srclen < 3) return -1;
     OutBuf ob;
-    if (inflate_all(src + 2, srclen - 2, &ob) != 0 || !ob.buf) {
+    /* 122.9: inflate no further than the strip needs.  A stream that runs
+     * past it (a padded last strip, or a bomb) is cut at dstlen, which is
+     * the most this function ever copied out anyway. */
+    int rc = inflate_all(src + 2, srclen - 2, &ob, dstlen);
+    if (rc != 0 && ob.over) rc = 0;
+    if (rc != 0 || !ob.buf) {
         free(ob.buf);
         return -1;
     }

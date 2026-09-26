@@ -100,6 +100,36 @@ int tk_log_set_output(const char *path);
  */
 int tk_log_with_context(const char *msg, const char *context_json);
 
+/* ── 122.8: redaction and the security-event stream ───────────────────
+ *
+ * Every sink (JSON, text, combined and NDJSON access logs) escapes control
+ * bytes, so no caller-supplied string can forge a line.  On top of that:
+ *
+ * tk_log_redact_keys — set which field KEYS have their values replaced by
+ *   "[REDACTED]".  A key matches when, lower-cased with '_' '-' '.' removed,
+ *   it contains one of the names.  csv == NULL restores the defaults
+ *   (password passwd secret token apikey authorization cookie session
+ *   credential privatekey); "off" disables key redaction; otherwise a
+ *   comma-separated list.  The environment variable TK_LOG_REDACT, read on
+ *   first use, takes the same values.  Returns the number of active names.
+ *   Bearer/Basic credentials and JWTs are masked in messages and values
+ *   regardless; in the access log, secret-named query parameters in the
+ *   path and referer are masked.
+ *
+ * tk_log_security — write one security-event line (level "security", an
+ *   "event" field, then the fields as for tk_log_info).  Never filtered by
+ *   the log level.  Returns 1 if written.
+ *
+ * tk_log_security_set_output — send security events to their own file
+ *   (opened for append); NULL sends them back to the main log output.
+ *   Returns 1 on success, 0 if the file could not be opened.
+ *
+ * C interface only: std.log's .tki does not expose these yet (122.8).
+ */
+int tk_log_redact_keys(const char *csv);
+int tk_log_security(const char *event, const char **fields, int field_count);
+int tk_log_security_set_output(const char *path);
+
 /* ── Access log with rotation ────────────────────────────────────────── */
 
 /*

@@ -158,7 +158,27 @@ int64_t tk_image_pixelat_w(int64_t buf, int64_t x, int64_t y) {
 int64_t tk_image_fromraw_w(int64_t bytes, int64_t width, int64_t height,
                            int64_t channels) {
     uint8_t *buf = NULL;
-    tk_bytes_unpack(bytes, &buf);
+    uint64_t n = tk_bytes_unpack(bytes, &buf);
+    /* 122.9: image_from_raw copies width*height*channels bytes and cannot
+     * see how many `bytes` holds; the length the array carries was dropped
+     * here, so a short array was a heap over-read.  Out-of-range arguments
+     * are refused (an empty $imgbuf) rather than truncated into u32/u8, and
+     * a short array is zero-padded to the declared size. */
+    if (width <= 0 || height <= 0 || channels <= 0 || channels > 4 ||
+        width > 0xFFFFFFFFll || height > 0xFFFFFFFFll) {
+        free(buf);
+        TkImgBuf none; memset(&none, 0, sizeof none);
+        return imgbuf_to_toke(none);
+    }
+    uint64_t px = (uint64_t)width * (uint64_t)height;
+    uint64_t need = px <= (UINT64_MAX / 4) ? px * (uint64_t)channels : UINT64_MAX;
+    if (n < need && need <= (1ull << 30)) {
+        uint8_t *grown = (uint8_t *)realloc(buf, (size_t)need);
+        if (!grown) { free(buf); buf = NULL; }
+        else { memset(grown + n, 0, (size_t)(need - n)); buf = grown; }
+    } else if (n < need) {
+        free(buf); buf = NULL;     /* over the cap: image_from_raw refuses it */
+    }
     TkImgBuf out = image_from_raw(buf, (uint32_t)width, (uint32_t)height,
                                   (uint8_t)channels);
     free(buf);

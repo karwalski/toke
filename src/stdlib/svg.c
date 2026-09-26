@@ -11,6 +11,7 @@
  */
 
 #include "svg.h"
+#include "strbuf.h"
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,45 +26,11 @@ extern double sqrt(double);
  * Internal buffer helpers
  * ----------------------------------------------------------------------- */
 
-typedef struct {
-    char   *data;
-    size_t  len;
-    size_t  cap;
-} Buf;
-
-static void buf_init(Buf *b)
-{
-    b->cap  = 256;
-    b->data = (char *)malloc(b->cap);
-    b->len  = 0;
-    if (b->data) b->data[0] = '\0';
-}
-
-static void buf_ensure(Buf *b, size_t extra)
-{
-    if (b->len + extra + 1 > b->cap) {
-        while (b->len + extra + 1 > b->cap) b->cap *= 2;
-        b->data = (char *)realloc(b->data, b->cap);
-    }
-}
-
-static void buf_append(Buf *b, const char *s)
-{
-    size_t n = strlen(s);
-    buf_ensure(b, n);
-    memcpy(b->data + b->len, s, n + 1);
-    b->len += n;
-}
-
-static void buf_appendf(Buf *b, const char *fmt, ...)
-{
-    char tmp[256];
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(tmp, sizeof(tmp), fmt, ap);
-    va_end(ap);
-    buf_append(b, tmp);
-}
+/* 122.2: svg.c's private Buf (malloc/realloc unchecked, and a buf_appendf
+ * that formatted into a char[256] first, so any element whose markup passed
+ * 255 bytes -- a long path "d", a long text run -- was silently cut
+ * mid-attribute) is replaced by the shared TkStrBuf. */
+typedef TkStrBuf Buf;
 
 /* -----------------------------------------------------------------------
  * Style serialisation
@@ -72,37 +39,37 @@ static void buf_appendf(Buf *b, const char *fmt, ...)
 static void buf_append_style(Buf *b, TkSvgStyle s)
 {
     int any = 0;
-    buf_append(b, " style=\"");
+    strbuf_append(b, " style=\"");
     if (s.fill) {
-        buf_appendf(b, "fill:%s", s.fill);
+        strbuf_appendf(b, "fill:%s", s.fill);
         any = 1;
     }
     if (s.stroke) {
-        if (any) buf_append(b, ";");
-        buf_appendf(b, "stroke:%s", s.stroke);
+        if (any) strbuf_append(b, ";");
+        strbuf_appendf(b, "stroke:%s", s.stroke);
         any = 1;
     }
     if (s.stroke_width != 0.0) {
-        if (any) buf_append(b, ";");
-        buf_appendf(b, "stroke-width:%.2f", s.stroke_width);
+        if (any) strbuf_append(b, ";");
+        strbuf_appendf(b, "stroke-width:%.2f", s.stroke_width);
         any = 1;
     }
     if (s.opacity != 0.0) {
-        if (any) buf_append(b, ";");
-        buf_appendf(b, "opacity:%.2f", s.opacity);
+        if (any) strbuf_append(b, ";");
+        strbuf_appendf(b, "opacity:%.2f", s.opacity);
         any = 1;
     }
     if (s.font_size != 0.0) {
-        if (any) buf_append(b, ";");
-        buf_appendf(b, "font-size:%.2f", s.font_size);
+        if (any) strbuf_append(b, ";");
+        strbuf_appendf(b, "font-size:%.2f", s.font_size);
         any = 1;
     }
     if (s.font_family) {
-        if (any) buf_append(b, ";");
-        buf_appendf(b, "font-family:%s", s.font_family);
+        if (any) strbuf_append(b, ";");
+        strbuf_appendf(b, "font-family:%s", s.font_family);
         /* any = 1; */
     }
-    buf_append(b, "\"");
+    strbuf_append(b, "\"");
 }
 
 /* -----------------------------------------------------------------------
@@ -111,12 +78,12 @@ static void buf_append_style(Buf *b, TkSvgStyle s)
 
 static void buf_append_points(Buf *b, double *pts, uint64_t npts)
 {
-    buf_append(b, " points=\"");
+    strbuf_append(b, " points=\"");
     for (uint64_t i = 0; i + 1 < npts; i += 2) {
-        if (i > 0) buf_append(b, " ");
-        buf_appendf(b, "%.2f,%.2f", pts[i], pts[i + 1]);
+        if (i > 0) strbuf_append(b, " ");
+        strbuf_appendf(b, "%.2f,%.2f", pts[i], pts[i + 1]);
     }
-    buf_append(b, "\"");
+    strbuf_append(b, "\"");
 }
 
 /* -----------------------------------------------------------------------
@@ -425,11 +392,11 @@ static void render_elem(Buf *b, TkSvgElem *e);
 static void render_arrow(Buf *b, TkSvgElem *e)
 {
     /* Shaft */
-    buf_append(b, "<line");
-    buf_appendf(b, " x1=\"%.2f\" y1=\"%.2f\" x2=\"%.2f\" y2=\"%.2f\"",
+    strbuf_append(b, "<line");
+    strbuf_appendf(b, " x1=\"%.2f\" y1=\"%.2f\" x2=\"%.2f\" y2=\"%.2f\"",
                 e->x1, e->y1, e->x2, e->y2);
     buf_append_style(b, e->style);
-    buf_append(b, "/>");
+    strbuf_append(b, "/>");
 
     /* Arrowhead: small filled triangle at (x2,y2) pointing away from (x1,y1) */
     double dx   = e->x2 - e->x1;
@@ -456,15 +423,15 @@ static void render_arrow(Buf *b, TkSvgElem *e)
     TkSvgStyle hs = e->style;
     if (e->style.stroke) hs.fill = e->style.stroke;
 
-    buf_append(b, "<polygon");
-    buf_append(b, " points=\"");
-    buf_appendf(b, "%.2f,%.2f %.2f,%.2f %.2f,%.2f",
+    strbuf_append(b, "<polygon");
+    strbuf_append(b, " points=\"");
+    strbuf_appendf(b, "%.2f,%.2f %.2f,%.2f %.2f,%.2f",
                 head_pts[0], head_pts[1],
                 head_pts[2], head_pts[3],
                 head_pts[4], head_pts[5]);
-    buf_append(b, "\"");
+    strbuf_append(b, "\"");
     buf_append_style(b, hs);
-    buf_append(b, "/>");
+    strbuf_append(b, "/>");
 }
 
 static void render_elem(Buf *b, TkSvgElem *e)
@@ -472,71 +439,71 @@ static void render_elem(Buf *b, TkSvgElem *e)
     if (!e) return;
     switch (e->kind) {
     case ELEM_RECT:
-        buf_append(b, "<rect");
-        buf_appendf(b, " x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\"",
+        strbuf_append(b, "<rect");
+        strbuf_appendf(b, " x=\"%.2f\" y=\"%.2f\" width=\"%.2f\" height=\"%.2f\"",
                     e->x, e->y, e->w, e->h);
         buf_append_style(b, e->style);
-        buf_append(b, "/>");
+        strbuf_append(b, "/>");
         break;
 
     case ELEM_CIRCLE:
-        buf_append(b, "<circle");
-        buf_appendf(b, " cx=\"%.2f\" cy=\"%.2f\" r=\"%.2f\"",
+        strbuf_append(b, "<circle");
+        strbuf_appendf(b, " cx=\"%.2f\" cy=\"%.2f\" r=\"%.2f\"",
                     e->cx, e->cy, e->r);
         buf_append_style(b, e->style);
-        buf_append(b, "/>");
+        strbuf_append(b, "/>");
         break;
 
     case ELEM_LINE:
-        buf_append(b, "<line");
-        buf_appendf(b, " x1=\"%.2f\" y1=\"%.2f\" x2=\"%.2f\" y2=\"%.2f\"",
+        strbuf_append(b, "<line");
+        strbuf_appendf(b, " x1=\"%.2f\" y1=\"%.2f\" x2=\"%.2f\" y2=\"%.2f\"",
                     e->x1, e->y1, e->x2, e->y2);
         buf_append_style(b, e->style);
-        buf_append(b, "/>");
+        strbuf_append(b, "/>");
         break;
 
     case ELEM_PATH:
-        buf_append(b, "<path");
-        if (e->path_d) buf_appendf(b, " d=\"%s\"", e->path_d);
+        strbuf_append(b, "<path");
+        if (e->path_d) strbuf_appendf(b, " d=\"%s\"", e->path_d);
         buf_append_style(b, e->style);
-        buf_append(b, "/>");
+        strbuf_append(b, "/>");
         break;
 
     case ELEM_TEXT:
-        buf_append(b, "<text");
-        buf_appendf(b, " x=\"%.2f\" y=\"%.2f\"", e->x, e->y);
+        strbuf_append(b, "<text");
+        strbuf_appendf(b, " x=\"%.2f\" y=\"%.2f\"", e->x, e->y);
         buf_append_style(b, e->style);
-        buf_append(b, ">");
-        if (e->text_content) buf_append(b, e->text_content);
-        buf_append(b, "</text>");
+        strbuf_append(b, ">");
+        if (e->text_content) strbuf_append(b, e->text_content);
+        strbuf_append(b, "</text>");
         break;
 
     case ELEM_GROUP:
         if (e->transform) {
-            buf_append(b, "<g");
-            buf_appendf(b, " transform=\"%s\"", e->transform);
-            buf_append(b, ">");
+            strbuf_append(b, "<g");
+            strbuf_appendf(b, " transform=\"%s\"", e->transform);
+            strbuf_append(b, ">");
         } else {
-            buf_append(b, "<g>");
+            strbuf_append(b, "<g>");
         }
         for (uint64_t i = 0; i < e->nchildren; i++) {
             render_elem(b, e->children[i]);
         }
-        buf_append(b, "</g>");
+        strbuf_append(b, "</g>");
         break;
 
     case ELEM_POLYLINE:
-        buf_append(b, "<polyline");
+        strbuf_append(b, "<polyline");
         buf_append_points(b, e->pts, e->npts);
         buf_append_style(b, e->style);
-        buf_append(b, "/>");
+        strbuf_append(b, "/>");
         break;
 
     case ELEM_POLYGON:
-        buf_append(b, "<polygon");
+        strbuf_append(b, "<polygon");
         buf_append_points(b, e->pts, e->npts);
         buf_append_style(b, e->style);
-        buf_append(b, "/>");
+        strbuf_append(b, "/>");
         break;
 
     case ELEM_ARROW:
@@ -570,25 +537,28 @@ static char *inject_animates(const char *src,
      * If the target element is self-closing (""/>"), the animate is appended
      * before the closing </svg> instead (still valid to have it in the doc).
      */
-    Buf out;
-    buf_init(&out);
-    buf_append(&out, src);  /* start with full copy */
+    Buf out = TK_STRBUF_INIT;
+    strbuf_append(&out, src);  /* start with full copy */
 
     uint64_t i;
     for (i = 0; i < nanim; i++) {
-        /* Build the <animate> tag */
-        char atag[512];
-        snprintf(atag, sizeof(atag),
+        /* Build the <animate> tag.  122.2: atag was a char[512] and needle a
+         * char[256]; a long target id truncated the needle, dropping its
+         * closing quote, so it matched any element whose id merely STARTED
+         * with the truncated text. */
+        Buf at = TK_STRBUF_INIT, nd = TK_STRBUF_INIT;
+        strbuf_appendf(&at,
                  "<animate attributeName=\"%s\" from=\"%s\" to=\"%s\""
                  " dur=\"%.2fs\" repeatCount=\"indefinite\"/>",
                  anim[i].attr, anim[i].from_val, anim[i].to_val,
                  anim[i].duration_s);
+        strbuf_appendf(&nd, "id=\"%s\"", anim[i].target_id);
+        const char *atag = strbuf_cstr(&at);
+        const char *needle = strbuf_cstr(&nd);
+        const char *data = strbuf_cstr(&out);
 
-        /* Search for id="target_id" in the current buffer */
-        char needle[256];
-        snprintf(needle, sizeof(needle), "id=\"%s\"", anim[i].target_id);
-
-        const char *hit = strstr(out.data, needle);
+        size_t insert_pos;
+        const char *hit = strstr(data, needle);
         if (hit) {
             /* Find end of the opening element after the id attribute */
             const char *end_tag = hit + strlen(needle);
@@ -597,42 +567,28 @@ static char *inject_animates(const char *src,
                 end_tag++;
             }
 
-            /* Compute insertion point */
-            size_t insert_pos;
             if (*end_tag == '/') {
                 /* Self-closing: insert before the "/>" */
-                insert_pos = (size_t)(end_tag - out.data);
+                insert_pos = (size_t)(end_tag - data);
             } else if (*end_tag == '>') {
                 /* Opening tag: insert after the ">" */
-                insert_pos = (size_t)(end_tag - out.data + 1);
+                insert_pos = (size_t)(end_tag - data + 1);
             } else {
                 /* Malformed — append before </svg> */
-                const char *close = strstr(out.data, "</svg>");
-                insert_pos = close ? (size_t)(close - out.data) : out.len;
+                const char *close = strstr(data, "</svg>");
+                insert_pos = close ? (size_t)(close - data) : out.len;
             }
-
-            size_t atag_len = strlen(atag);
-            buf_ensure(&out, atag_len);
-            memmove(out.data + insert_pos + atag_len,
-                    out.data + insert_pos,
-                    out.len - insert_pos + 1); /* +1 for NUL */
-            memcpy(out.data + insert_pos, atag, atag_len);
-            out.len += atag_len;
         } else {
             /* No matching element — append animate before </svg> */
-            const char *close = strstr(out.data, "</svg>");
-            size_t insert_pos = close ? (size_t)(close - out.data) : out.len;
-            size_t atag_len = strlen(atag);
-            buf_ensure(&out, atag_len);
-            memmove(out.data + insert_pos + atag_len,
-                    out.data + insert_pos,
-                    out.len - insert_pos + 1);
-            memcpy(out.data + insert_pos, atag, atag_len);
-            out.len += atag_len;
+            const char *close = strstr(data, "</svg>");
+            insert_pos = close ? (size_t)(close - data) : out.len;
         }
+        strbuf_insertn(&out, insert_pos, atag, strlen(atag));
+        strbuf_free(&at);
+        strbuf_free(&nd);
     }
 
-    return out.data; /* caller must free */
+    return strbuf_take(&out); /* caller must free */
 }
 
 const char *svg_render(TkSvgDoc *doc)
@@ -641,11 +597,10 @@ const char *svg_render(TkSvgDoc *doc)
     free(doc->rendered);
     doc->rendered = NULL;
 
-    Buf b;
-    buf_init(&b);
+    Buf b = TK_STRBUF_INIT;
 
     /* Opening tag */
-    buf_appendf(&b,
+    strbuf_appendf(&b,
         "<svg xmlns=\"http://www.w3.org/2000/svg\""
         " width=\"%.2f\" height=\"%.2f\""
         " viewBox=\"0 0 %.2f %.2f\">",
@@ -654,9 +609,9 @@ const char *svg_render(TkSvgDoc *doc)
 
     /* <defs> section (gradients + explicit defs content) */
     if (doc->defs_buf && doc->defs_buf[0] != '\0') {
-        buf_append(&b, "<defs>");
-        buf_append(&b, doc->defs_buf);
-        buf_append(&b, "</defs>");
+        strbuf_append(&b, "<defs>");
+        strbuf_append(&b, doc->defs_buf);
+        strbuf_append(&b, "</defs>");
     }
 
     /* Tree elements */
@@ -666,18 +621,18 @@ const char *svg_render(TkSvgDoc *doc)
 
     /* Raw string elements (ellipse, etc.) */
     for (uint64_t i = 0; i < doc->nraw; i++) {
-        buf_append(&b, doc->raw_elems[i]);
+        strbuf_append(&b, doc->raw_elems[i]);
     }
 
-    buf_append(&b, "</svg>");
+    strbuf_append(&b, "</svg>");
 
     /* Animate injection */
     if (doc->nanimates > 0) {
-        char *injected = inject_animates(b.data, doc->animates, doc->nanimates);
-        free(b.data);
+        char *injected = inject_animates(strbuf_cstr(&b), doc->animates, doc->nanimates);
+        strbuf_free(&b);
         doc->rendered = injected;
     } else {
-        doc->rendered = b.data;
+        doc->rendered = strbuf_take(&b);
     }
 
     return doc->rendered;
@@ -697,16 +652,15 @@ const char *svg_ellipse(TkSvgDoc *doc, double cx, double cy,
 {
     if (!doc) return NULL;
 
-    Buf b;
-    buf_init(&b);
-    buf_appendf(&b, "<ellipse cx=\"%.2f\" cy=\"%.2f\" rx=\"%.2f\" ry=\"%.2f\"",
+    Buf b = TK_STRBUF_INIT;
+    strbuf_appendf(&b, "<ellipse cx=\"%.2f\" cy=\"%.2f\" rx=\"%.2f\" ry=\"%.2f\"",
                 cx, cy, rx, ry);
     if (style && style[0] != '\0') {
-        buf_append(&b, " style=\"");
-        buf_append(&b, style);
-        buf_append(&b, "\"");
+        strbuf_append(&b, " style=\"");
+        strbuf_append(&b, style);
+        strbuf_append(&b, "\"");
     }
-    buf_append(&b, "/>");
+    strbuf_append(&b, "/>");
 
     /* Grow raw_elems if needed */
     if (doc->nraw >= doc->raw_cap) {
@@ -714,8 +668,10 @@ const char *svg_ellipse(TkSvgDoc *doc, double cx, double cy,
         doc->raw_elems = (char **)realloc(doc->raw_elems,
                                           doc->raw_cap * sizeof(char *));
     }
-    doc->raw_elems[doc->nraw++] = b.data;
-    return b.data;
+    char *elem = strbuf_take(&b);
+    if (!elem) return NULL;
+    doc->raw_elems[doc->nraw++] = elem;
+    return elem;
 }
 
 /* --- gradient helpers -------------------------------------------------- */
@@ -724,7 +680,7 @@ static void buf_append_stops(Buf *b, const SvgStop *stops, uint64_t nstops)
 {
     uint64_t i;
     for (i = 0; i < nstops; i++) {
-        buf_appendf(b, "<stop offset=\"%.0f%%\" stop-color=\"%s\""
+        strbuf_appendf(b, "<stop offset=\"%.0f%%\" stop-color=\"%s\""
                     " stop-opacity=\"%.2f\"/>",
                     stops[i].offset * 100.0,
                     stops[i].color ? stops[i].color : "black",
@@ -735,9 +691,9 @@ static void buf_append_stops(Buf *b, const SvgStop *stops, uint64_t nstops)
 static const char *store_grad_url(TkSvgDoc *doc, const char *id)
 {
     /* Build url(#id) string and keep it alive in doc */
-    char tmp[256];
-    snprintf(tmp, sizeof(tmp), "url(#%s)", id);
-    char *url = strdup(tmp);
+    Buf ub = TK_STRBUF_INIT;           /* 122.2: was a char[256] */
+    strbuf_appendf(&ub, "url(#%s)", id);
+    char *url = strbuf_take(&ub);
     if (!url) return NULL;
 
     if (doc->ngrad_urls >= doc->grad_cap) {
@@ -769,17 +725,16 @@ const char *svg_gradient_linear(TkSvgDoc *doc, const char *id,
 {
     if (!doc || !id) return NULL;
 
-    Buf b;
-    buf_init(&b);
-    buf_appendf(&b,
+    Buf b = TK_STRBUF_INIT;
+    strbuf_appendf(&b,
                 "<linearGradient id=\"%s\" x1=\"%.0f%%\" y1=\"%.0f%%\""
                 " x2=\"%.0f%%\" y2=\"%.0f%%\">",
                 id, x1 * 100.0, y1 * 100.0, x2 * 100.0, y2 * 100.0);
     if (stops && nstops > 0) buf_append_stops(&b, stops, nstops);
-    buf_append(&b, "</linearGradient>");
+    strbuf_append(&b, "</linearGradient>");
 
-    defs_append(doc, b.data);
-    free(b.data);
+    defs_append(doc, strbuf_cstr(&b));
+    strbuf_free(&b);
 
     return store_grad_url(doc, id);
 }
@@ -790,17 +745,16 @@ const char *svg_gradient_radial(TkSvgDoc *doc, const char *id,
 {
     if (!doc || !id) return NULL;
 
-    Buf b;
-    buf_init(&b);
-    buf_appendf(&b,
+    Buf b = TK_STRBUF_INIT;
+    strbuf_appendf(&b,
                 "<radialGradient id=\"%s\" cx=\"%.0f%%\" cy=\"%.0f%%\""
                 " r=\"%.0f%%\">",
                 id, cx * 100.0, cy * 100.0, r * 100.0);
     if (stops && nstops > 0) buf_append_stops(&b, stops, nstops);
-    buf_append(&b, "</radialGradient>");
+    strbuf_append(&b, "</radialGradient>");
 
-    defs_append(doc, b.data);
-    free(b.data);
+    defs_append(doc, strbuf_cstr(&b));
+    strbuf_free(&b);
 
     return store_grad_url(doc, id);
 }

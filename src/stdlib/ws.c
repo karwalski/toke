@@ -14,6 +14,7 @@
  */
 
 #include "ws.h"
+#include "strbuf.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -700,8 +701,7 @@ WsConnResult ws_connect(const char *url)
     char port_str[8];
     char *ws_key = NULL;
     const char *expected_accept = NULL;
-    char request[1024];
-    int req_len;
+    char *request = NULL;
     char response[4096];
     int resp_len = 0;
     ssize_t n;
@@ -786,17 +786,32 @@ WsConnResult ws_connect(const char *url)
         goto cleanup;
     }
 
-    req_len = snprintf(request, sizeof(request),
-        "GET %s HTTP/1.1\r\n"
-        "Host: %s:%d\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        "Sec-WebSocket-Key: %s\r\n"
-        "Sec-WebSocket-Version: 13\r\n"
-        "\r\n",
-        path, host, (int)port, ws_key);
+    /* 122.2: this was snprintf into a char[1024], and the RETURN value
+     * (the would-be length) was the byte count sent -- so a path longer than
+     * ~900 bytes sent the truncated request plus whatever followed it on
+     * the stack.  Built in a TkStrBuf now; the length sent is the length
+     * built. */
+    {
+        TkStrBuf rb = TK_STRBUF_INIT;
+        strbuf_appendf(&rb,
+            "GET %s HTTP/1.1\r\n"
+            "Host: %s:%d\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            "Sec-WebSocket-Key: %s\r\n"
+            "Sec-WebSocket-Version: 13\r\n"
+            "\r\n",
+            path, host, (int)port, ws_key);
+        request = strbuf_take(&rb);
+    }
+    if (!request) {
+        res.is_err  = 1;
+        res.err_msg = "ws_connect: out of memory building upgrade request";
+        close(fd);   /* cleanup: does not read fd */
+        goto cleanup;
+    }
 
-    if (ws_send_all(fd, (const uint8_t *)request, (uint64_t)req_len) != 0) {
+    if (ws_send_all(fd, (const uint8_t *)request, (uint64_t)strlen(request)) != 0) {
         res.is_err  = 1;
         res.err_msg = "ws_connect: failed to send upgrade request";
         close(fd);
@@ -872,6 +887,7 @@ WsConnResult ws_connect(const char *url)
     fd = -1;  /* ownership transferred */
 
 cleanup:
+    free(request);
     free(host);
     free(path);
     free(ws_key);

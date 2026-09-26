@@ -14,6 +14,7 @@
  */
 
 #include "dataframe.h"
+#include "strbuf.h"
 #include "csv.h"
 
 #include <stdlib.h>
@@ -347,54 +348,23 @@ TkDataframe *df_head(TkDataframe *df, uint64_t n)
  * df_tojson
  * ========================================================================= */
 
-/* Simple dynamic string buffer for JSON construction. */
-typedef struct {
-    char    *buf;
-    size_t   len;
-    size_t   cap;
-} DfBuf;
-
-static int sb_init(DfBuf *sb)
-{
-    sb->cap = 256;
-    sb->len = 0;
-    sb->buf = malloc(sb->cap);
-    return sb->buf ? 0 : -1;
-}
-
-static int sb_grow(DfBuf *sb, size_t needed)
-{
-    while (sb->len + needed + 1 > sb->cap) {
-        sb->cap *= 2;
-        char *p = realloc(sb->buf, sb->cap);
-        if (!p) return -1;
-        sb->buf = p;
-    }
-    return 0;
-}
-
-static void sb_append(DfBuf *sb, const char *s)
-{
-    size_t n = strlen(s);
-    if (sb_grow(sb, n) == 0) {
-        memcpy(sb->buf + sb->len, s, n);
-        sb->len += n;
-        sb->buf[sb->len] = '\0';
-    }
-}
+/* 122.2: the private DfBuf/sb_* copy is replaced by the shared TkStrBuf.
+ * The old one dropped any append whose growth failed and still returned the
+ * rest as if it were whole; strbuf_take returns NULL instead. */
+typedef TkStrBuf DfBuf;
 
 static void sb_append_f64(DfBuf *sb, double v)
 {
     char tmp[64];
     /* Use %g to produce compact output; fall back to full precision. */
     snprintf(tmp, sizeof(tmp), "%.17g", v);
-    sb_append(sb, tmp);
+    strbuf_append(sb, tmp);
 }
 
 /* Append a JSON-escaped quoted string. */
 static void sb_append_json_str(DfBuf *sb, const char *s)
 {
-    sb_append(sb, "\"");
+    strbuf_append(sb, "\"");
     for (; *s; s++) {
         char esc[4] = {0, 0, 0, 0};
         switch (*s) {
@@ -405,27 +375,26 @@ static void sb_append_json_str(DfBuf *sb, const char *s)
             case '\t': esc[0]='\\'; esc[1]='t';  break;
             default:   esc[0]=*s; break;
         }
-        sb_append(sb, esc);
+        strbuf_append(sb, esc);
     }
-    sb_append(sb, "\"");
+    strbuf_append(sb, "\"");
 }
 
 const char *df_tojson(TkDataframe *df)
 {
     if (!df) return NULL;
 
-    DfBuf sb;
-    if (sb_init(&sb) != 0) return NULL;
+    DfBuf sb = TK_STRBUF_INIT;
 
-    sb_append(&sb, "[");
+    strbuf_append(&sb, "[");
     for (uint64_t r = 0; r < df->nrows; r++) {
-        if (r > 0) sb_append(&sb, ",");
-        sb_append(&sb, "{");
+        if (r > 0) strbuf_append(&sb, ",");
+        strbuf_append(&sb, "{");
         for (uint64_t j = 0; j < df->ncols; j++) {
-            if (j > 0) sb_append(&sb, ",");
+            if (j > 0) strbuf_append(&sb, ",");
             DfCol *c = &df->cols[j];
             sb_append_json_str(&sb, c->name);
-            sb_append(&sb, ":");
+            strbuf_append(&sb, ":");
             if (c->type == DF_COL_F64) {
                 sb_append_f64(&sb, c->f64_data[r]);
             } else {
@@ -433,11 +402,11 @@ const char *df_tojson(TkDataframe *df)
                 sb_append_json_str(&sb, sv ? sv : "");
             }
         }
-        sb_append(&sb, "}");
+        strbuf_append(&sb, "}");
     }
-    sb_append(&sb, "]");
+    strbuf_append(&sb, "]");
 
-    return sb.buf;  /* caller owns */
+    return strbuf_take(&sb);  /* caller owns */
 }
 
 /* =========================================================================
@@ -1532,14 +1501,14 @@ static void sb_append_html(DfBuf *sb, const char *s)
     if (!s) return;
     for (; *s; s++) {
         switch (*s) {
-            case '<':  sb_append(sb, "&lt;");   break;
-            case '>':  sb_append(sb, "&gt;");   break;
-            case '&':  sb_append(sb, "&amp;");  break;
-            case '"':  sb_append(sb, "&quot;"); break;
-            case '\'': sb_append(sb, "&#39;");  break;
+            case '<':  strbuf_append(sb, "&lt;");   break;
+            case '>':  strbuf_append(sb, "&gt;");   break;
+            case '&':  strbuf_append(sb, "&amp;");  break;
+            case '"':  strbuf_append(sb, "&quot;"); break;
+            case '\'': strbuf_append(sb, "&#39;");  break;
             default: {
                 char tmp[2] = { *s, '\0' };
-                sb_append(sb, tmp);
+                strbuf_append(sb, tmp);
                 break;
             }
         }
@@ -1550,37 +1519,36 @@ const char *df_to_html(TkDataframe *df)
 {
     if (!df) return NULL;
 
-    DfBuf sb;
-    if (sb_init(&sb) != 0) return NULL;
+    DfBuf sb = TK_STRBUF_INIT;
 
-    sb_append(&sb, "<table>\n<thead>\n<tr>");
+    strbuf_append(&sb, "<table>\n<thead>\n<tr>");
     for (uint64_t j = 0; j < df->ncols; j++) {
-        sb_append(&sb, "<th>");
+        strbuf_append(&sb, "<th>");
         sb_append_html(&sb, df->cols[j].name ? df->cols[j].name : "");
-        sb_append(&sb, "</th>");
+        strbuf_append(&sb, "</th>");
     }
-    sb_append(&sb, "</tr>\n</thead>\n<tbody>\n");
+    strbuf_append(&sb, "</tr>\n</thead>\n<tbody>\n");
 
     char numtmp[64];
     for (uint64_t r = 0; r < df->nrows; r++) {
-        sb_append(&sb, "<tr>");
+        strbuf_append(&sb, "<tr>");
         for (uint64_t j = 0; j < df->ncols; j++) {
             DfCol *c = &df->cols[j];
-            sb_append(&sb, "<td>");
+            strbuf_append(&sb, "<td>");
             if (c->type == DF_COL_F64) {
                 snprintf(numtmp, sizeof(numtmp), "%.17g", c->f64_data[r]);
-                sb_append(&sb, numtmp);
+                strbuf_append(&sb, numtmp);
             } else {
                 const char *v = (c->str_data && c->str_data[r]) ? c->str_data[r] : "";
                 sb_append_html(&sb, v);
             }
-            sb_append(&sb, "</td>");
+            strbuf_append(&sb, "</td>");
         }
-        sb_append(&sb, "</tr>\n");
+        strbuf_append(&sb, "</tr>\n");
     }
 
-    sb_append(&sb, "</tbody>\n</table>");
-    return sb.buf; /* caller owns */
+    strbuf_append(&sb, "</tbody>\n</table>");
+    return strbuf_take(&sb); /* caller owns */
 }
 
 /* -------------------------------------------------------------------------

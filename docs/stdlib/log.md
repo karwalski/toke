@@ -42,6 +42,34 @@ When the format is set to `text`, output is human-readable:
 
 The output format is controlled with `log.setformat` or by the `TK_LOG_FORMAT` environment variable (`"json"` or `"text"`).
 
+### Injection safety (122.8)
+
+No string you pass — and no request path, referer or user-agent the access log records — can put a raw control character into a log line, so no input can forge a second line or a field:
+
+| Sink | What is escaped |
+|---|---|
+| JSON lines, NDJSON access log | `"`, `\` and every byte below 0x20 (`\n`, `\r`, `\t`, otherwise `\u00XX`), and 0x7F |
+| Text lines | the message: `\` and control bytes (`\n`, `\r`, `\t`, `\xHH`). A field value that is empty or contains a space, `=`, `"`, `\` or a control byte is written in double quotes, `key="a b"`; other values are written bare |
+| Combined access log | as Apache's `ap_escape_logitem`: `"` and `\` backslash-escaped, control bytes as `\n` `\r` `\t` or `\xHH`; in the unquoted method and IP positions a space is `\x20` |
+
+Before 122.8 the text format and the combined access log wrote these strings raw, and the NDJSON access log escaped only `"` and `\`. Text-format output changes only for values that need quoting.
+
+### Redaction (122.8)
+
+A field whose **key** names a secret is written as `[REDACTED]` in every format. A key matches when, lower-cased with `_`, `-` and `.` removed, it contains one of:
+
+`password` `passwd` `secret` `token` `apikey` `authorization` `cookie` `session` `credential` `privatekey`
+
+so `access_token`, `X-Api-Key` and `session_id` all match. Set `TK_LOG_REDACT` to a comma-separated list to replace the names, or to `off` to turn key redaction off. It is read once, on the first log call.
+
+Independently of the key list, `Bearer …` and `Basic …` credentials and JWTs are masked wherever they appear in a message or value, and the access log masks the values of secret-named query parameters in the request path and referer (`/cb?token=[REDACTED]&x=2`).
+
+Matching is by substring, so it errs towards hiding: a field named `tokens_used` is redacted too. Rename such fields or narrow `TK_LOG_REDACT`.
+
+### Security events
+
+The C runtime has a separate security-event stream (`tk_log_security`, `tk_log_security_set_output` in `log.h`): one line at level `security` with an `event` field, never filtered by `TK_LOG_LEVEL`, optionally written to its own file. It is not yet part of the `std.log` interface a toke program imports.
+
 ## Functions
 
 ### log.info(msg: $str; fields: @(@($str))): bool

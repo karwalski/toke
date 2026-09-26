@@ -25,24 +25,12 @@
 #include <stdarg.h>
 
 /*
- * 121.4 (PAR-01): bounded append. The prior `pos += snprintf(out+pos, cap-pos,…)`
- * pattern overflowed the heap: snprintf returns the would-be length, so once
- * pos exceeded cap, `(size_t)(cap-pos)` underflowed to a huge size and the next
- * snprintf wrote past `out`. y_emit never passes a negative size and clamps pos
- * to cap-1, so writes stay in-bounds (output is truncated, not overflowed).
+ * 121.4 (PAR-01) replaced an overflowing `pos += snprintf(out+pos, cap-pos,…)`
+ * with a clamp, which traded the overflow for silent truncation at a cap of
+ * 2*strlen(input)+256 (an int, so it also overflowed past 1 GiB of input).
+ * 122.2: both converters now append to a TkStrBuf, which grows instead.
  */
-static int y_emit(char *out, int pos, int cap, const char *fmt, ...) {
-    if (cap <= 0) return 0;
-    if (pos < 0) pos = 0;
-    if (pos >= cap - 1) return cap - 1;        /* full: no room left */
-    va_list ap; va_start(ap, fmt);
-    int n = vsnprintf(out + pos, (size_t)(cap - pos), fmt, ap);
-    va_end(ap);
-    if (n < 0) return pos;
-    pos += n;
-    if (pos >= cap) pos = cap - 1;             /* snprintf truncated; clamp */
-    return pos;
-}
+#include "strbuf.h"
 
 /* Bound converter recursion depth (121.6 companion) — indent grows by 2/level. */
 #define YAML_MAX_INDENT 512
@@ -398,14 +386,14 @@ static const char *json_skip_value(const char *p) {
 }
 
 /* Recursive JSON-to-YAML with indentation */
-static int json_to_yaml_r(const char **pp, char *out, int pos, int cap, int indent) {
-    if (indent > YAML_MAX_INDENT) return pos;   /* 121.6: bound recursion depth */
+static void json_to_yaml_r(const char **pp, TkStrBuf *ob, int indent) {
+    if (indent > YAML_MAX_INDENT) return;   /* 121.6: bound recursion depth */
     const char *p = json_skip_ws(*pp);
 
     if (*p == '{') {
         p++;
         p = json_skip_ws(p);
-        if (*p == '}') { *pp = p + 1; pos = y_emit(out, pos, cap,"{}"); return pos; }
+        if (*p == '}') { *pp = p + 1; strbuf_appendf(ob, "{}"); return; }
         int first = 1;
         while (*p && *p != '}') {
             if (!first) { /* already on new line */ }
@@ -416,54 +404,53 @@ static int json_to_yaml_r(const char **pp, char *out, int pos, int cap, int inde
             p++;
             const char *ks = p;
             while (*p && *p != '"') p++;
-            pos = y_emit(out, pos, cap,"\n%*s%.*s: ",
+            strbuf_appendf(ob, "\n%*s%.*s: ",
                             indent, "", (int)(p - ks), ks);
             if (*p == '"') p++;
             p = json_skip_ws(p);
             if (*p == ':') p++;
             p = json_skip_ws(p);
             /* Value */
-            pos = json_to_yaml_r(&p, out, pos, cap, indent + 2);
+            json_to_yaml_r(&p, ob, indent + 2);
             p = json_skip_ws(p);
             if (*p == ',') p++;
         }
         if (*p == '}') p++;
         *pp = p;
-        return pos;
+        return;
     }
 
     if (*p == '[') {
         p++;
         p = json_skip_ws(p);
-        if (*p == ']') { *pp = p + 1; pos = y_emit(out, pos, cap,"[]"); return pos; }
+        if (*p == ']') { *pp = p + 1; strbuf_appendf(ob, "[]"); return; }
         while (*p && *p != ']') {
             p = json_skip_ws(p);
-            pos = y_emit(out, pos, cap,"\n%*s- ", indent, "");
-            pos = json_to_yaml_r(&p, out, pos, cap, indent + 2);
+            strbuf_appendf(ob, "\n%*s- ", indent, "");
+            json_to_yaml_r(&p, ob, indent + 2);
             p = json_skip_ws(p);
             if (*p == ',') p++;
         }
         if (*p == ']') p++;
         *pp = p;
-        return pos;
+        return;
     }
 
     if (*p == '"') {
         p++;
         const char *vs = p;
         while (*p && !(*p == '"' && *(p - 1) != '\\')) p++;
-        pos = y_emit(out, pos, cap,"%.*s", (int)(p - vs), vs);
+        strbuf_appendf(ob, "%.*s", (int)(p - vs), vs);
         if (*p == '"') p++;
         *pp = p;
-        return pos;
+        return;
     }
 
     /* Number, boolean, null — copy literally */
     const char *start = p;
     p = json_skip_value(p);
-    pos = y_emit(out, pos, cap,"%.*s", (int)(p - start), start);
+    strbuf_appendf(ob, "%.*s", (int)(p - start), start);
     *pp = p;
-    return pos;
 }
 
 /*
@@ -471,17 +458,13 @@ static int json_to_yaml_r(const char **pp, char *out, int pos, int cap, int inde
  */
 const char *yaml_from_json(const char *json) {
     if (!json) return "";
-    int cap = (int)strlen(json) * 2 + 256;
-    char *out = (char *)malloc((size_t)cap);
-    if (!out) return "";
+    TkStrBuf ob = TK_STRBUF_INIT;
     const char *p = json;
-    int pos = json_to_yaml_r(&p, out, 0, cap, 0);
+    json_to_yaml_r(&p, &ob, 0);
+    char *out = strbuf_take(&ob);
+    if (!out) return "";
     /* Trim leading newline */
-    if (pos > 0 && out[0] == '\n') {
-        memmove(out, out + 1, (size_t)pos);
-        pos--;
-    }
-    out[pos] = '\0';
+    if (out[0] == '\n') memmove(out, out + 1, strlen(out));
     return out;
 }
 
@@ -493,16 +476,13 @@ const char *yaml_to_json(const char *yaml_str) {
     if (!yaml_str) return "{}";
     const char *p = yaml_str;
 
-    int cap = (int)strlen(yaml_str) * 2 + 256;
-    char *out = (char *)malloc((size_t)cap);
-    if (!out) return "{}";
-    int pos = 0;
+    TkStrBuf ob = TK_STRBUF_INIT;
 
     /* Detect if top-level is a sequence or mapping */
     const char *first_line = skip_inline_ws(p);
     if (*first_line == '-') {
         /* Sequence */
-        pos = y_emit(out, pos, cap,"[");
+        strbuf_appendf(&ob, "[");
         int first = 1;
         while (*p) {
             const char *line = skip_inline_ws(p);
@@ -510,7 +490,7 @@ const char *yaml_to_json(const char *yaml_str) {
             if (line >= eol) { p = skip_newline(eol); continue; }
 
             if (*line == '-') {
-                if (!first) pos = y_emit(out, pos, cap,",");
+                if (!first) strbuf_appendf(&ob, ",");
                 first = 0;
                 const char *item = skip_inline_ws(line + 1);
                 if (*item == ' ') item++;
@@ -530,22 +510,22 @@ const char *yaml_to_json(const char *yaml_str) {
                               (ilen == 5 && strncmp(item, "false", 5) == 0) ||
                               (ilen == 4 && strncmp(item, "null", 4) == 0);
                 if (is_num || is_bool) {
-                    pos = y_emit(out, pos, cap,"%.*s", (int)ilen, item);
+                    strbuf_appendf(&ob, "%.*s", (int)ilen, item);
                 } else {
                     /* Strip quotes if present */
                     if (ilen >= 2 && ((*item == '"' && *(ie - 1) == '"') ||
                                       (*item == '\'' && *(ie - 1) == '\''))) {
                         item++; ie--; ilen -= 2;
                     }
-                    pos = y_emit(out, pos, cap,"\"%.*s\"", (int)ilen, item);
+                    strbuf_appendf(&ob, "\"%.*s\"", (int)ilen, item);
                 }
             }
             p = skip_newline(eol);
         }
-        pos = y_emit(out, pos, cap,"]");
+        strbuf_appendf(&ob, "]");
     } else {
         /* Mapping */
-        pos = y_emit(out, pos, cap,"{");
+        strbuf_appendf(&ob, "{");
         int first = 1;
         while (*p) {
             const char *line = skip_inline_ws(p);
@@ -557,13 +537,13 @@ const char *yaml_to_json(const char *yaml_str) {
             while (colon < eol && *colon != ':') colon++;
             if (colon >= eol) { p = skip_newline(eol); continue; }
 
-            if (!first) pos = y_emit(out, pos, cap,",");
+            if (!first) strbuf_appendf(&ob, ",");
             first = 0;
 
             /* Key */
             const char *ke = colon;
             while (ke > line && (*(ke - 1) == ' ' || *(ke - 1) == '\t')) ke--;
-            pos = y_emit(out, pos, cap,"\"%.*s\":", (int)(ke - line), line);
+            strbuf_appendf(&ob, "\"%.*s\":", (int)(ke - line), line);
 
             /* Value */
             const char *vs = skip_inline_ws(colon + 1);
@@ -587,16 +567,16 @@ const char *yaml_to_json(const char *yaml_str) {
                           (vlen == 5 && strncmp(vs, "false", 5) == 0) ||
                           (vlen == 4 && strncmp(vs, "null", 4) == 0);
             if (is_num || is_bool) {
-                pos = y_emit(out, pos, cap,"%.*s", (int)vlen, vs);
+                strbuf_appendf(&ob, "%.*s", (int)vlen, vs);
             } else {
-                pos = y_emit(out, pos, cap,"\"%.*s\"", (int)vlen, vs);
+                strbuf_appendf(&ob, "\"%.*s\"", (int)vlen, vs);
             }
 
             p = skip_newline(eol);
         }
-        pos = y_emit(out, pos, cap,"}");
+        strbuf_appendf(&ob, "}");
     }
 
-    out[pos] = '\0';
-    return out;
+    char *out = strbuf_take(&ob);
+    return out ? out : "{}";
 }
