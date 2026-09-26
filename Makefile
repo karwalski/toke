@@ -191,7 +191,10 @@ OBJS    = $(SRCS:.c=.o)
 # should include every file present, including one the manifest has not
 # reached yet.  A file this glob picks up that the manifest does not name is
 # a file nothing ships, which T004 already catches.
-ANALYZE_SRCS = $(sort $(SRCS) $(wildcard src/stdlib/*.c))
+# 136.64: src/wasm_api.c (the browser build's entry point, Makefile.wasm) is
+# in neither set otherwise; it is analysed with -DTKC_WASM_BUILD (the script's
+# EXTRA_FLAGS), since without it the file is a one-typedef stub.
+ANALYZE_SRCS = $(sort $(SRCS) $(wildcard src/stdlib/*.c) src/wasm_api.c)
 
 LDLIBS  = -lm -lz -lpthread
 BIN     = toke

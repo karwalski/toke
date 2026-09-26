@@ -118,6 +118,9 @@ EXTRA_FLAGS = {
     # __int128 for Ed25519 arithmetic — allowed by GCC/clang, rejected by
     # -Wpedantic.  Same suppression the Makefile applies to encrypt.o.
     "src/stdlib/encrypt.c": ["-Wno-pedantic"],
+    # 136.64: the WASM entry point; without the macro it is a one-typedef stub.
+    # Mirrors Makefile.wasm's CFLAGS.
+    "src/wasm_api.c": ["-DTKC_WASM_BUILD"],
 }
 
 # ── 135.3e: OpenSSL, found rather than assumed ────────────────────────────────
