@@ -87,6 +87,8 @@ typedef struct TypeEnv {
  * Returns 0 if no type errors were found, -1 otherwise.
  * out->arena_depth is always left at 0 on return.
  */
+/* 127.226: a typed-empty literal — `@($t)` or `@($k:$v)` / `@($k:@($t))`. */
+int map_lit_typed_empty(const Node *n);
 int type_check(const Node *ast, const char *src,
                NameEnv *names, Arena *arena, TypeEnv *out);
 

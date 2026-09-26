@@ -1,0 +1,19 @@
+(* 127.226 multi-module certificate: the checker read only SCALAR field
+ * spellings out of an imported struct's .tki, so a `[str:[tok]]` field was
+ * untyped and `.len` / `.contains` / `.set` / `.keys()` on it lowered as the
+ * array glue (`0 false`, then RT003, then an undefined `_keys`).  Expected
+ * output below is the correct one. *)
+m=cgmm.cachemain;
+i=io:std.io;
+i=cl:cgmm.cachelib;
+f=main():i64{
+  let c=cl.newcache();
+  io.println("empty \(c.entries.len)");
+  let c2=cl.put(c;"a";5);
+  io.println("lib-set \(c2.entries.len) \(c2.entries.contains("a")) \(c2.entries.get("a").get(0).v)");
+  let e=c2.entries.set("b";cl.one(6));
+  io.println("main-set \(e.len) \(e.contains("b"))");
+  let ks=c2.entries.keys();
+  io.println("keys \(ks.len)");
+  <0
+};

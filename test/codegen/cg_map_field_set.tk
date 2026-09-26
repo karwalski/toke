@@ -1,0 +1,30 @@
+(* 127.226 CERTIFICATE: a method call on a struct FIELD of map type, and the
+ * typed-empty map literal.  `c.entries.set(k;v)` lowered to the ARRAY store
+ * (a silent no-op, then RT003 after 127.217), `.keys()` on a field linked
+ * against `_keys`, `.contains` on a field ran the str glue, and
+ * `@($str:@($tok))` built a one-entry map keyed by "".  This is ooke's
+ * template cache in miniature: a cache that must store what it is given. *)
+m=cgmapfieldset;
+i=io:std.io;
+t=$tok{v:i64};
+t=$cache{entries:@(str:@$tok);hits:i64};
+t=$outer{c:$cache};
+f=put(c:$cache;k:str;v:i64):$cache{
+  <$cache{entries:c.entries.set(k;@($tok{v:v}));hits:c.hits}
+};
+f=main():i64{
+  let c0=$cache{entries:@($str:@($tok));hits:0};
+  io.println("empty \(c0.entries.len)");
+  let c1=put(put(c0;"a";1);"b";2);
+  io.println("stored \(c1.entries.len) \(c1.entries.get("b").get(0).v)");
+  io.println("contains \(c1.entries.contains("a")) \(c1.entries.contains("z"))");
+  let ks=c1.entries.keys();
+  io.println("keys \(ks.len)");
+  let o=$outer{c:c1};
+  let n=o.c.entries.set("n";@($tok{v:9}));
+  io.println("nested \(n.len) \(o.c.entries.len)");
+  let m=c1.entries;
+  let m2=m.set("m";@($tok{v:3}));
+  io.println("rebind \(m2.len) \(c0.entries.len)");
+  <0
+};
