@@ -15,6 +15,7 @@
  */
 
 #include "csv.h"
+#include "strbuf.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,59 +33,11 @@ static int  csv_fail(const char *kind, uint64_t line, const char *fmt, ...);
  * ----------------------------------------------------------------------- */
 
 /* Growable byte buffer used by both the reader (field accumulation) and the
- * writer (output accumulation). */
-typedef struct {
-    char    *data;
-    uint64_t len;
-    uint64_t cap;
-} GrowBuf;
-
-static void gbuf_init(GrowBuf *b)
-{
-    b->data = NULL;
-    b->len  = 0;
-    b->cap  = 0;
-}
-
-static void gbuf_free(GrowBuf *b)
-{
-    free(b->data);
-    b->data = NULL;
-    b->len  = 0;
-    b->cap  = 0;
-}
-
-static void gbuf_ensure(GrowBuf *b, uint64_t extra)
-{
-    uint64_t need = b->len + extra;
-    if (need <= b->cap) return;
-    uint64_t newcap = b->cap ? b->cap * 2 : 64;
-    while (newcap < need) newcap *= 2;
-    b->data = (char *)realloc(b->data, newcap);
-    b->cap  = newcap;
-}
-
-static void gbuf_push(GrowBuf *b, char c)
-{
-    gbuf_ensure(b, 1);
-    b->data[b->len++] = c;
-}
-
-static void gbuf_append(GrowBuf *b, const char *s, uint64_t n)
-{
-    gbuf_ensure(b, n);
-    memcpy(b->data + b->len, s, n);
-    b->len += n;
-}
-
-/* Return a heap-allocated NUL-terminated copy of b's contents. */
-static char *gbuf_to_str(GrowBuf *b)
-{
-    char *s = (char *)malloc(b->len + 1);
-    if (b->len) memcpy(s, b->data, b->len);
-    s[b->len] = '\0';
-    return s;
-}
+ * writer (output accumulation).  122.2: this was a private copy (GrowBuf,
+ * gbuf_*) whose realloc and malloc were unchecked; it is the shared TkStrBuf
+ * now.  `len` is authoritative -- fields may carry NUL bytes -- which is why
+ * copies go through strbuf_dup rather than strdup. */
+typedef TkStrBuf GrowBuf;
 
 /* -----------------------------------------------------------------------
  * Row (field list) accumulation
@@ -182,7 +135,7 @@ static RowParse parse_row_ex(const char *data, uint64_t len, uint64_t *pos,
     if (*pos >= len) return RP_EOF;
 
     GrowBuf field;
-    gbuf_init(&field);
+    strbuf_init(&field);
     rowbuf_init(row);
 
     int      in_quotes   = 0;
@@ -197,7 +150,7 @@ static RowParse parse_row_ex(const char *data, uint64_t len, uint64_t *pos,
                 /* Peek at next char to distinguish doubled-quote from close */
                 if (*pos + 1 < len && data[*pos + 1] == quote_char) {
                     /* Escaped quote: qq -> q */
-                    gbuf_push(&field, quote_char);
+                    strbuf_putc(&field, quote_char);
                     *pos += 2;
                 } else {
                     /* Closing quote */
@@ -210,21 +163,21 @@ static RowParse parse_row_ex(const char *data, uint64_t len, uint64_t *pos,
                  * counter still advances, so the NEXT record is numbered
                  * against the file rather than against the record count. */
                 if (c == '\n') (*line)++;
-                gbuf_push(&field, c);
+                strbuf_putc(&field, c);
                 (*pos)++;
             }
         } else {
             if (c == quote_char) {
                 if (lazyquotes && field.len > 0) {
                     /* Lenient: a quote after content is a literal character. */
-                    gbuf_push(&field, c);
+                    strbuf_putc(&field, c);
                     (*pos)++;
                 } else if (strict && (field.len > 0 || just_closed)) {
                     /* ab"cd" style.  The lax parser opens a quoted section
                      * here and swallows everything to the next quote, which
                      * is how a description field eats the rest of the file. */
                     if (err_line) *err_line = *line;
-                    gbuf_free(&field);
+                    strbuf_free(&field);
                     rowbuf_free_fields(row);
                     return just_closed ? RP_AFTERQUOTE : RP_BAREQUOTE;
                 } else {
@@ -234,7 +187,7 @@ static RowParse parse_row_ex(const char *data, uint64_t len, uint64_t *pos,
                     (*pos)++;
                 }
             } else if (c == sep) {
-                rowbuf_push(row, gbuf_to_str(&field));
+                rowbuf_push(row, strbuf_dup(&field));
                 field.len   = 0; /* reset without freeing buffer */
                 just_closed = 0;
                 (*pos)++;
@@ -243,25 +196,25 @@ static RowParse parse_row_ex(const char *data, uint64_t len, uint64_t *pos,
                 (*pos)++;
                 if (*pos < len && data[*pos] == '\n') (*pos)++;
                 (*line)++;
-                rowbuf_push(row, gbuf_to_str(&field));
-                gbuf_free(&field);
+                rowbuf_push(row, strbuf_dup(&field));
+                strbuf_free(&field);
                 return RP_OK;
             } else if (c == '\n') {
                 (*pos)++;
                 (*line)++;
-                rowbuf_push(row, gbuf_to_str(&field));
-                gbuf_free(&field);
+                rowbuf_push(row, strbuf_dup(&field));
+                strbuf_free(&field);
                 return RP_OK;
             } else {
                 if (strict && just_closed) {
                     /* "abc"def — the lax parser appends def to abc and says
                      * nothing, so the field is quietly wrong. */
                     if (err_line) *err_line = *line;
-                    gbuf_free(&field);
+                    strbuf_free(&field);
                     rowbuf_free_fields(row);
                     return RP_AFTERQUOTE;
                 }
-                gbuf_push(&field, c);
+                strbuf_putc(&field, c);
                 (*pos)++;
             }
         }
@@ -271,14 +224,14 @@ static RowParse parse_row_ex(const char *data, uint64_t len, uint64_t *pos,
         /* EOF inside a quoted field.  The lax parser flushes what it has and
          * returns a row, so a file truncated mid-quote looks complete. */
         if (err_line) *err_line = quote_line;
-        gbuf_free(&field);
+        strbuf_free(&field);
         rowbuf_free_fields(row);
         return RP_UNTERMINATED;
     }
 
     /* EOF: flush last field */
-    rowbuf_push(row, gbuf_to_str(&field));
-    gbuf_free(&field);
+    rowbuf_push(row, strbuf_dup(&field));
+    strbuf_free(&field);
     return RP_OK;
 }
 
@@ -451,7 +404,7 @@ struct TkCsvWriter {
 TkCsvWriter *csv_writer_new(void)
 {
     TkCsvWriter *w = (TkCsvWriter *)malloc(sizeof(TkCsvWriter));
-    gbuf_init(&w->buf);
+    strbuf_init(&w->buf);
     w->first_row = 1;
     w->sep       = ',';
     w->use_crlf  = 1; /* RFC 4180 default */
@@ -471,7 +424,7 @@ void csv_writer_use_crlf(TkCsvWriter *w, int enabled)
 void csv_writer_free(TkCsvWriter *w)
 {
     if (!w) return;
-    gbuf_free(&w->buf);
+    strbuf_free(&w->buf);
     free(w);
 }
 
@@ -488,32 +441,32 @@ void csv_writer_writerow(TkCsvWriter *w, StrArray row)
 {
     if (!w->first_row) {
         if (w->use_crlf) {
-            gbuf_append(&w->buf, "\r\n", 2);
+            strbuf_appendn(&w->buf, "\r\n", 2);
         } else {
-            gbuf_push(&w->buf, '\n');
+            strbuf_putc(&w->buf, '\n');
         }
     }
     w->first_row = 0;
 
     for (uint64_t i = 0; i < row.len; i++) {
-        if (i > 0) gbuf_push(&w->buf, w->sep);
+        if (i > 0) strbuf_putc(&w->buf, w->sep);
         const char *f = row.data[i] ? row.data[i] : "";
         if (field_needs_quoting(f, w->sep)) {
-            gbuf_push(&w->buf, '"');
+            strbuf_putc(&w->buf, '"');
             for (const char *p = f; *p; p++) {
-                if (*p == '"') gbuf_push(&w->buf, '"'); /* double it */
-                gbuf_push(&w->buf, *p);
+                if (*p == '"') strbuf_putc(&w->buf, '"'); /* double it */
+                strbuf_putc(&w->buf, *p);
             }
-            gbuf_push(&w->buf, '"');
+            strbuf_putc(&w->buf, '"');
         } else {
-            gbuf_append(&w->buf, f, (uint64_t)strlen(f));
+            strbuf_appendn(&w->buf, f, (uint64_t)strlen(f));
         }
     }
 }
 
 const char *csv_writer_flush(TkCsvWriter *w)
 {
-    return gbuf_to_str(&w->buf);
+    return strbuf_dup(&w->buf);
 }
 
 /* -----------------------------------------------------------------------
@@ -689,14 +642,14 @@ static const uint16_t CP1252_HIGH[32] = {
 static void utf8_emit(GrowBuf *b, uint32_t cp)
 {
     if (cp < 0x80) {
-        gbuf_push(b, (char)cp);
+        strbuf_putc(b, (char)cp);
     } else if (cp < 0x800) {
-        gbuf_push(b, (char)(0xC0 | (cp >> 6)));
-        gbuf_push(b, (char)(0x80 | (cp & 0x3F)));
+        strbuf_putc(b, (char)(0xC0 | (cp >> 6)));
+        strbuf_putc(b, (char)(0x80 | (cp & 0x3F)));
     } else {
-        gbuf_push(b, (char)(0xE0 | (cp >> 12)));
-        gbuf_push(b, (char)(0x80 | ((cp >> 6) & 0x3F)));
-        gbuf_push(b, (char)(0x80 | (cp & 0x3F)));
+        strbuf_putc(b, (char)(0xE0 | (cp >> 12)));
+        strbuf_putc(b, (char)(0x80 | ((cp >> 6) & 0x3F)));
+        strbuf_putc(b, (char)(0x80 | (cp & 0x3F)));
     }
 }
 
@@ -707,12 +660,12 @@ static char *transcode_single_byte(const unsigned char *p, uint64_t n,
                                    int enc, uint64_t *out_len)
 {
     GrowBuf b;
-    gbuf_init(&b);
+    strbuf_init(&b);
     uint64_t line = 1;
     for (uint64_t i = 0; i < n; i++) {
         unsigned char c = p[i];
         if (c == '\n') line++;
-        if (c < 0x80) { gbuf_push(&b, (char)c); continue; }
+        if (c < 0x80) { strbuf_putc(&b, (char)c); continue; }
         if (enc == ENC_LATIN1) { utf8_emit(&b, c); continue; }
         /* CP1252 */
         if (c < 0xA0) {
@@ -722,7 +675,7 @@ static char *transcode_single_byte(const unsigned char *p, uint64_t n,
                          "byte 0x%02X at offset %llu is undefined in CP1252; "
                          "the file is not CP1252 -- try encoding \"latin-1\"",
                          c, (unsigned long long)i);
-                gbuf_free(&b);
+                strbuf_free(&b);
                 return NULL;
             }
             utf8_emit(&b, cp);
@@ -731,8 +684,8 @@ static char *transcode_single_byte(const unsigned char *p, uint64_t n,
         }
     }
     *out_len = b.len;
-    char *out = gbuf_to_str(&b);   /* NUL-terminated, but len is authoritative */
-    gbuf_free(&b);
+    char *out = strbuf_dup(&b);   /* NUL-terminated, but len is authoritative */
+    strbuf_free(&b);
     return out;
 }
 

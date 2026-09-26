@@ -151,6 +151,18 @@ static inline void strbuf_free(TkStrBuf *b)
     strbuf_init(b);
 }
 
+/* strbuf_dup — a malloc'd, NUL-terminated copy of the contents (len bytes,
+ * which may include NULs), leaving b as it is.  NULL on OOM, now or earlier. */
+static inline char *strbuf_dup(const TkStrBuf *b)
+{
+    if (b->oom) return NULL;
+    char *s = (char *)malloc(b->len + 1);
+    if (!s) return NULL;
+    if (b->len) memcpy(s, b->buf, b->len);
+    s[b->len] = '\0';
+    return s;
+}
+
 /* strbuf_take — hand the buffer to the caller (malloc'd, NUL-terminated, the
  * caller frees) and reset b.  Returns NULL if any append hit OOM: a partial
  * string is never handed out as if it were whole. */
