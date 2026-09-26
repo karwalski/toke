@@ -1567,6 +1567,101 @@ static int is_file_errbox_wrapper(const char *name) {
 }
 
 /*
+ * is_stdlib_slot_wrapper — 127.193.  Stdlib wrappers whose glue keeps
+ * @tk_current_error truthful on EVERY return (0 on success, a box or 1 on
+ * failure), so an ok/err match must decide on the slot, not on the value.
+ *
+ * std.json's scalar accessors return the value itself, and false / 0 / 0.0
+ * are values: `mt json.getbool(o;"off"){$ok:v v;$err:e true}` took the $err
+ * arm for a stored false, because the 0/null sentinel cannot tell a false
+ * from a failure (runtime-abi.md §7.2: "the zero filler is not the
+ * discriminant").  Same class and same cure as 114.53 (str.toint) and
+ * 127.67 (toml.bool/i64).  Their glue now maintains the slot
+ * (src/stdlib/json_glue.c); this list is what makes the slot authoritative.
+ * A name belongs here only if its glue sets the slot on every path — a
+ * wrapper that leaves it stale would read an earlier call's error.
+ */
+static int is_stdlib_slot_wrapper(const char *name) {
+    static const char *const names[] = {
+        "tk_json_bool_w", "tk_json_getbool_w",
+        "tk_json_i64_w", "tk_json_getint_w", "tk_json_geti64_w", "tk_json_geti32_w",
+        "tk_json_u64_w",
+        "tk_json_f64_w", "tk_json_getf32_w", "tk_json_getfloat_w",
+        /* 127.182: {msg} box of stdlib/toml.tki's `tomlerr` record */
+        "tk_toml_load_w", "tk_toml_loadfile_w", "tk_toml_str_w",
+        "tk_toml_section_w", "tk_toml_bool_w", "tk_toml_i64_w",
+        /* 135.5b: `T!str` — the slot holds the message pointer itself */
+        "tk_image_decode_w", "tk_image_encode_w", "tk_image_crop_w",
+        "tk_image_pixelat_w", "tk_image_adaptivethreshold_w",
+        "tk_image_convolve_w", "tk_image_tiffdecode_w", "tk_image_tiffpages_w",
+        NULL,
+    };
+    if (!name) return 0;
+    for (int i = 0; names[i]; i++)
+        if (!strcmp(name, names[i])) return 1;
+    return 0;
+}
+
+/*
+ * stdlib_err_payload_type — 135.5b / 127.182.  The error type a stdlib
+ * wrapper's payload has, as its .tki declares it (`imgbuf!str` -> "str",
+ * `tomlval!tomlerr` -> "tomlerr"), or NULL when there is none to bind.
+ *
+ * THE GAP.  The $err arm's payload was resolved only through lookup_fn(),
+ * i.e. only for USER functions: a stdlib call never had a FnSig, so its arm
+ * bound nil whatever the glue stored — `e.msg` on a toml error was E4034 at
+ * compile time (tomlerr was declared `"kind":"record"`, which nothing
+ * registered) and RT005 at run time, and every `T!str` message in image.c
+ * was invisible.  Only a wrapper in is_stdlib_slot_wrapper() qualifies: its
+ * glue stores a payload of exactly the declared shape on every failure, and
+ * the slot is never stale.  "str" is returned as the literal "str" and bound
+ * as an i8*; a record is returned only if the .tki registered its layout.
+ * A sum-typed stdlib error (JsonErr, FileErr) is not registered from a .tki
+ * today, so it binds nil as before.
+ */
+static const char *stdlib_err_payload_type(Ctx *c, const char *prv,
+                                           char *buf, size_t bufsz)
+{
+    if (!is_stdlib_slot_wrapper(prv)) return NULL;
+    ensure_tki_cache_loaded();
+    for (int i = 0; i < g_tki_cache_count; i++) {
+        if (strcmp(g_tki_cache[i].wrapper_name, prv)) continue;
+        const char *bang = strchr(g_tki_cache[i].toke_ret, '!');
+        if (!bang) return NULL;
+        bang++;
+        if (*bang == '$') bang++;
+        snprintf(buf, bufsz, "%s", bang);
+        if (!strcmp(buf, "str")) return "str";
+        const StructInfo *si = lookup_struct(c, buf);
+        return (si && !si->is_sum) ? si->name : NULL;
+    }
+    return NULL;
+}
+
+/* 127.182: may a stdlib payload of type `from` pass through `!` into a
+ * function declaring `to`?  Only if the reader will find the layout it
+ * expects: the same type, or two records whose fields have the same types in
+ * the same order.  Anything else is re-raised payload-less by the caller, as
+ * 127.56 does for a sentinel-ABI callee — a {msg} box read as a sum's
+ * {tag, payload} would dispatch on a pointer. */
+static int stdlib_err_passes_through(Ctx *c, const char *from, const char *to)
+{
+    if (!from || !to) return 0;
+    const char *t = (*to == '$') ? to + 1 : to;
+    if (!strcmp(from, t)) return 1;
+    if (!strcmp(from, "str") || !strcmp(t, "str")) return 0;
+    const StructInfo *a = lookup_struct(c, from), *b = lookup_struct(c, to);
+    if (!a || !b || a->is_sum || b->is_sum || a->field_count != b->field_count) return 0;
+    for (int i = 0; i < a->field_count; i++) {
+        const char *x = a->field_types[i], *y = b->field_types[i];
+        if (*x == '$') x++;
+        if (*y == '$') y++;
+        if (strcmp(x, y)) return 0;
+    }
+    return 1;
+}
+
+/*
  * json_array_end — Given a pointer to the opening '[' of a JSON array,
  * return a pointer to its MATCHING ']', honoring nested brackets and
  * brackets that appear inside JSON string values.
@@ -3063,6 +3158,7 @@ static void classify_fallible_call(Ctx *c, const Node *call,
         if (is_void_err_union_wrapper(prv)) *out_zok = 1;            /* 127.95 */
         if (is_num_parse_wrapper(prv)) *out_uce = 1;                 /* 114.53/54 */
         else if (is_file_errbox_wrapper(prv)) *out_uce = 1;          /* 135.12 */
+        else if (is_stdlib_slot_wrapper(prv)) *out_uce = 1;          /* 127.193 */
         else if (!prv) {                                             /* 114.55 */
             const FnSig *ucs = lookup_fn(c, pme);
             if (!ucs || !ucs->err_type_name[0]) {
@@ -3127,6 +3223,18 @@ static void classify_fallible_call(Ctx *c, const Node *call,
             const StructInfo *esi = lookup_struct(c, cs->err_type_name);
             if (esi) *out_err_type = cs->err_type_name;
         }
+        /* 135.5b / 127.182: a stdlib call has no FnSig; its payload type is
+         * the one its .tki declares. */
+        if (!*out_err_type && sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
+            char al[128], mth[128], wb[128], eb[128];
+            tok_cp(c->src, sc->children[0], al, sizeof al);
+            tok_cp(c->src, sc->children[1], mth, sizeof mth);
+            const char *prv = resolve_stdlib_call(c, al, mth);
+            if (prv) {
+                snprintf(wb, sizeof wb, "%s", prv);
+                *out_err_type = stdlib_err_payload_type(c, wb, eb, sizeof eb);
+            }
+        }
     }
 }
 
@@ -3160,6 +3268,24 @@ static void fallible_local_forget(Ctx *c, const char *lname)
     c->fall_errty[i][0] = '\0';
 }
 
+/*
+ * err_box_bytes — 127.103.  The size of the error box an error type's raise
+ * builds (runtime-abi.md §7.3): 16 for a sum ({tag, payload}), 8 per field
+ * for a record, 0 for no box at all (no payload type, or a `str` payload,
+ * which is the message pointer itself and is never reused).
+ */
+static int err_box_bytes(Ctx *c, const char *err_type)
+{
+    if (!err_type || !strcmp(err_type, "str")) return 0;
+    const StructInfo *si = lookup_struct(c, err_type);
+    if (!si) return 0;
+    if (si->is_sum) return 16;
+    int n = si->field_count;
+    if (n <= 0) return 0;
+    if (n > TKC_MAX_PARAMS) n = TKC_MAX_PARAMS;
+    return n * 8;
+}
+
 /* Record `lname` as fallible and spill the channel.  `errv` is the temporary
  * already holding the load of @tk_current_error taken right after the call;
  * -1 means there is nothing to spill (the void status-word convention reads
@@ -3187,6 +3313,24 @@ static void fallible_local_record(Ctx *c, const char *lname, int uce, int zok,
         if (!c->fall_slot[i][0]) {
             snprintf(c->fall_slot[i], NAME_BUF, "%s.tkerr", lname);
             fprintf(c->out, "  %%%s = alloca i64\n", c->fall_slot[i]);
+            /* 127.103: the binding's own copy of the error box.  Minted with
+             * the slot (an assignment may later bind a boxed error to it);
+             * dead, and so removed, when nothing ever keeps a box in it. */
+            fprintf(c->out, "  %%%s.keep = alloca [%d x i64]\n", c->fall_slot[i], TKC_MAX_PARAMS);
+        }
+        /* 127.103: the channel holds a POINTER into the thread's one reused
+         * error box (127.109), so spilling the pointer was not a capture: the
+         * next raise on this thread overwrote the box it pointed at, and a
+         * later `mt` read that raise's payload (`1099` for 77).  Copy the box
+         * into the binding's own buffer and spill a pointer to the copy. */
+        int keep_nb = err_box_bytes(c, err_type);
+        if (keep_nb > 0) {
+            int kp = next_tmp(c), kv = next_tmp(c);
+            fprintf(c->out, "  %%t%d = bitcast [%d x i64]* %%%s.keep to i8*\n",
+                    kp, TKC_MAX_PARAMS, c->fall_slot[i]);
+            fprintf(c->out, "  %%t%d = call i64 @tk_err_keep(i64 %%t%d, i8* %%t%d, i64 %d) ; 127.103\n",
+                    kv, errv, kp, keep_nb);
+            errv = kv;
         }
         fprintf(c->out, "  store i64 %%t%d, i64* %%%s ; 135.16 error channel at the binding\n",
                 errv, c->fall_slot[i]);
@@ -3254,6 +3398,10 @@ static void fallible_local_premint(Ctx *c, const char *lname)
     c->fall_pre[i] = 1;
     snprintf(c->fall_slot[i], NAME_BUF, "%s.tkerr", lname);
     fprintf(c->out, "  %%%s = alloca i64\n", c->fall_slot[i]);
+    /* 127.103's per-binding box copy: fallible_local_record() mints it only
+     * when it mints the slot, so a slot pre-minted here must carry it too, or
+     * the later fallible assignment's keep references an undefined value. */
+    fprintf(c->out, "  %%%s.keep = alloca [%d x i64]\n", c->fall_slot[i], TKC_MAX_PARAMS);
     fprintf(c->out, "  store i64 0, i64* %%%s ; 135.16a no error until a fallible assignment\n",
             c->fall_slot[i]);
 }
@@ -6079,6 +6227,9 @@ static int emit_expr(Ctx *c, const Node *n)
          * signals failure via tk_current_error, so propagate on that rather than
          * the value-vs-0 sentinel (which a 0/0.0 ok value collides with). */
         int prop_cur_err = 0;
+        /* 127.182: a stdlib payload re-raised payload-less unless its layout
+         * is the one the enclosing function's error type declares. */
+        int prop_reraise = 0;
         if (n->children[0]->kind == NODE_CALL_EXPR && n->children[0]->child_count >= 1) {
             const Node *sc = n->children[0]->children[0];
             if (sc->kind == NODE_FIELD_EXPR && sc->child_count >= 2) {
@@ -6088,6 +6239,13 @@ static int emit_expr(Ctx *c, const Node *n)
                 const char *prv = resolve_stdlib_call(c, pal, pme);
                 if (is_num_parse_wrapper(prv)) prop_cur_err = 1;
                 else if (is_file_errbox_wrapper(prv)) prop_cur_err = 1;  /* 135.12 */
+                else if (is_stdlib_slot_wrapper(prv)) prop_cur_err = 1;  /* 127.193 */
+                if (prv && is_stdlib_slot_wrapper(prv) && c->cur_fn_err[0]) {
+                    char wb[128], eb[128];
+                    snprintf(wb, sizeof wb, "%s", prv);
+                    const char *from = stdlib_err_payload_type(c, wb, eb, sizeof eb);
+                    prop_reraise = !stdlib_err_passes_through(c, from, c->cur_fn_err);
+                }
                 else if (!prv) {
                     const FnSig *ucs = lookup_fn(c, pme);
                     if (!ucs || !ucs->err_type_name[0]) {
@@ -6145,7 +6303,7 @@ static int emit_expr(Ctx *c, const Node *n)
          * declared error type (payload 0, tag -1 = "no named variant", so a
          * nested `mt e {$variants}` reads a real box and falls to its
          * catch-all arm rather than dereferencing a sentinel). */
-        if (c->cur_fn_err[0] && !prop_cur_err) {
+        if (c->cur_fn_err[0] && (!prop_cur_err || prop_reraise)) {
             const StructInfo *pesi = lookup_struct(c, c->cur_fn_err);
             if (pesi && pesi->is_sum) {
                 int box = next_tmp(c);
@@ -6719,7 +6877,10 @@ static int emit_expr(Ctx *c, const Node *n)
                     strncpy(vname, uname, sizeof vname - 1);
                     vname[sizeof vname - 1] = '\0';
                 }
-                const char *bind_ty = (!is_ok && eu_err_type) ? "i64" : scr_ty;
+                /* 135.5b: a `T!str` payload is the message pointer itself. */
+                const int err_is_str = eu_err_type && !strcmp(eu_err_type, "str");
+                const char *bind_ty = (!is_ok && eu_err_type)
+                                      ? (err_is_str ? "i8*" : "i64") : scr_ty;
                 set_local_type(c, vname, bind_ty);
                 /* 127.71: the $ok arm binds the scrutinee's value, so it earns
                  * the scrutinee's tag ("$str", "@str", a struct name).  It was
@@ -6756,6 +6917,22 @@ static int emit_expr(Ctx *c, const Node *n)
                     int boxed = next_tmp(c);
                     fprintf(c->out, "  %%t%d = select i1 %%t%d, i64 0, i64 %%t%d\n", boxed, isflag, ev);
                     ev = boxed;
+                    /* 127.103: a let-bound payload lives in the binding's
+                     * frame copy; hand the arm a thread box like the direct
+                     * spelling's, so `e` has the same lifetime either way and
+                     * never points into a frame it could outlive. */
+                    { int rb_nb = err_src_slot ? err_box_bytes(c, eu_err_type) : 0;
+                      if (rb_nb > 0) {
+                          int rb = next_tmp(c);
+                          fprintf(c->out, "  %%t%d = call i64 @tk_err_rebox(i64 %%t%d, i64 %d) ; 127.103\n",
+                                  rb, ev, rb_nb);
+                          ev = rb;
+                      } }
+                    if (err_is_str) {
+                        int sp = next_tmp(c);
+                        fprintf(c->out, "  %%t%d = inttoptr i64 %%t%d to i8* ; 135.5b str payload\n", sp, ev);
+                        fprintf(c->out, "  store i8* %%t%d, i8** %%%s\n", sp, vname);
+                    } else {
                     fprintf(c->out, "  store i64 %%t%d, i64* %%%s\n", ev, vname);
                     mark_ptr_with_type(c, vname, eu_err_type);
                     /* 127.71: field access on the error payload looks the raw
@@ -6763,6 +6940,7 @@ static int emit_expr(Ctx *c, const Node *n)
                      * there too — otherwise `e.msg` resolves against whatever
                      * the outer binding of that name was. */
                     if (vshadow) mark_ptr_with_type(c, vraw, eu_err_type);
+                    }
                 } else {
                     if (!strcmp(scr_ty, "i8*"))
                         fprintf(c->out, "  store i8* null, i8** %%%s\n", vname);
@@ -9278,6 +9456,48 @@ static void emit_stmt(Ctx *c, const Node *n)
  *     Silently skipped (imports have no IR representation; they were
  *     handled by prepass_imports).
  */
+/* ── 137.13: which toke declaration an IR symbol came from ─────────────
+ *
+ * A clang or ld failure on the emitted module used to surface as a bare
+ * "clang invocation failed" E9003 at line 0: nothing in the record said which
+ * toke function the bad IR belonged to.  Every function definition, extern
+ * and lifted closure records here, as it is emitted, its IR symbol, its toke
+ * name and its toke file:line.  The IR LINE RANGE of each is not recorded
+ * while emitting: the body is written to a tmpfile, its allocas are then
+ * hoisted and the stdlib declarations are prepended, so every line moves.
+ * compile_binary_multi instead reads the finished .ll, where each `define
+ * ... @sym(` .. `}` range is exact, and maps clang's `<file>.ll:<line>:` or
+ * ld's undefined symbol through this table.  Kept across emit_llvm_ir calls
+ * so a multi-module build (one .ll per module) resolves every module. */
+typedef struct {
+    char ll[PATH_BUF];     /* .ll file the symbol was emitted into          */
+    char sym[NAME_BUF];    /* IR symbol, without the @                      */
+    char name[NAME_BUF];   /* toke name ("closure" for a lifted closure)     */
+    char file[PATH_BUF];   /* toke source file                               */
+    int  off, line, col;   /* toke position of the declaration               */
+    int  is_fn;            /* 1 = f= declaration, 0 = closure                 */
+} IrDecl;
+static IrDecl *g_ir_decls;
+static int     g_ir_decl_n, g_ir_decl_cap;
+static char    g_ir_cur_ll[PATH_BUF];
+
+static void ir_decl_record(const char *sym, const char *name, const Node *n, int is_fn)
+{
+    if (!sym || !n) return;
+    if (g_ir_decl_n == g_ir_decl_cap) {
+        int ncap = g_ir_decl_cap ? g_ir_decl_cap * 2 : 64;
+        IrDecl *p = (IrDecl *)realloc(g_ir_decls, (size_t)ncap * sizeof *p);
+        if (!p) return;          /* bookkeeping only: never fail the build */
+        g_ir_decls = p; g_ir_decl_cap = ncap;
+    }
+    IrDecl *d = &g_ir_decls[g_ir_decl_n++];
+    snprintf(d->ll, sizeof d->ll, "%s", g_ir_cur_ll);
+    snprintf(d->sym, sizeof d->sym, "%s", sym);
+    snprintf(d->name, sizeof d->name, "%s", name);
+    snprintf(d->file, sizeof d->file, "%s", diag_get_source_file());
+    d->off = n->tok_start; d->line = n->line; d->col = n->col; d->is_fn = is_fn;
+}
+
 static void emit_toplevel(Ctx *c, const Node *n)
 {
     char tb[256];
@@ -9327,9 +9547,12 @@ static void emit_toplevel(Ctx *c, const Node *n)
         break;
     case NODE_FUNC_DECL: {
         tok_cp(c->src, n->children[0], tb, sizeof tb);
+        char toke_nm[NAME_BUF];                     /* 137.13 */
+        snprintf(toke_nm, sizeof toke_nm, "%s", tb);
         /* Rename toke main to tk_main to avoid collision with C main wrapper */
         if (!strcmp(tb, "main")) strcpy(tb, "tk_main");
         mangle_fn_name(c, tb, sizeof tb);
+        ir_decl_record(tb, toke_nm, n, 1);
         /* Determine return type from NODE_RETURN_SPEC if present */
         const char *ret = "void";
         int body_i = -1;
@@ -9573,6 +9796,9 @@ static const StdlibDecl g_stdlib_decls[] = {
     /* 127.109: the per-thread error box.  Error-union boxes come from here,
      * not malloc — one buffer per thread, reused, never leaked. */
     {"tk_err_box", "declare i8* @tk_err_box(i64)", 0},
+    /* 127.103: a let-bound error keeps its own copy of the box. */
+    {"tk_err_keep", "declare i64 @tk_err_keep(i64, i8*, i64)", 0},
+    {"tk_err_rebox", "declare i64 @tk_err_rebox(i64, i64)", 0},
     /* Runtime: json/str */
     {"tk_json_parse", "declare i64 @tk_json_parse(i8*)", 0},
     {"tk_json_print", "declare void @tk_json_print(i64)", 0},
@@ -10041,6 +10267,8 @@ static void emit_lifted_closure(Ctx *c, const Node *clos, int cid) {
     c->cur_fn_ret = ret; c->cur_fn_err[0] = '\0';
     strncpy(c->cur_fn_name, "closure", NAME_BUF - 1); c->cur_fn_name[NAME_BUF - 1] = '\0';
     fprintf(c->out, "\ndefine internal fastcc %s @__tk_closure_%d(i8* %%__env", ret, cid);
+    { char cs[NAME_BUF]; snprintf(cs, sizeof cs, "__tk_closure_%d", cid);
+      ir_decl_record(cs, "closure", clos, 0); }       /* 137.13 */
     const Node *body = NULL;
     for (int i = 0; i < clos->child_count; i++) {
         if (clos->children[i]->kind == NODE_STMT_LIST) body = clos->children[i];
@@ -10102,6 +10330,7 @@ int emit_llvm_ir(const Node *ast, const char *src,
                   "LLVM IR emission failed: cannot open output file", (void*)0);
         return -1;
     }
+    snprintf(g_ir_cur_ll, sizeof g_ir_cur_ll, "%s", out_ll);   /* 137.13 */
     Ctx ctx; memset(&ctx, 0, sizeof ctx); ctx.out = f; ctx.src = src;
     ctx.la_prog = ast;   /* 127.108 */
     /* Story 76.1.2d: store source file for FFI extern diagnostic */
@@ -10669,6 +10898,142 @@ int compile_binary(const char *out_ll, const char *out_bin, const char *target,
     return compile_binary_multi(&out_ll, 1, out_bin, target, opt_level, st, debug);
 }
 
+/* ── 137.13: map a clang/ld failure back to a toke declaration ─────────── */
+
+static int ir_ident_ch(int ch) { return isalnum(ch) || ch == '_' || ch == '.' || ch == '$'; }
+
+static const IrDecl *ir_decl_by_sym(const char *sym)
+{
+    for (int i = 0; i < g_ir_decl_n; i++)
+        if (!strcmp(g_ir_decls[i].sym, sym)) return &g_ir_decls[i];
+    return NULL;
+}
+
+static char *ir_slurp(const char *path, size_t *len)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    long sz = (fseek(f, 0, SEEK_END) == 0) ? ftell(f) : -1;
+    if (sz < 0 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return NULL; }
+    char *b = (char *)malloc((size_t)sz + 1);
+    size_t n = b ? fread(b, 1, (size_t)sz, f) : 0;
+    fclose(f);
+    if (b) { b[n] = '\0'; *len = n; }
+    return b;
+}
+
+/* Walk the .ll text in buf.  want_line > 0: the symbol of the `define` whose
+ * body holds that line.  want_sym: the symbol of the first `define` whose body
+ * references @want_sym.  Copies the symbol into out; 0 if found, -1 if not. */
+static int ll_enclosing_define(const char *buf, size_t len, long want_line,
+                               const char *want_sym, char *out, size_t outsz)
+{
+    char cur[NAME_BUF] = "";
+    size_t wl = want_sym ? strlen(want_sym) : 0;
+    long ln = 0;
+    for (size_t i = 0; i < len; ) {
+        const char *ls = buf + i;
+        const char *le = memchr(ls, '\n', len - i);
+        size_t ll = le ? (size_t)(le - ls) : len - i;
+        ln++;
+        if (ll >= 7 && !memcmp(ls, "define ", 7)) {
+            const char *at = memchr(ls, '@', ll);
+            cur[0] = '\0';
+            if (at) {
+                size_t k = 0;
+                for (const char *q = at + 1; q < ls + ll && ir_ident_ch((unsigned char)*q) && k < sizeof cur - 1; q++)
+                    cur[k++] = *q;
+                cur[k] = '\0';
+            }
+        } else if (ll == 1 && ls[0] == '}') {
+            if (want_line > 0 && ln == want_line) break;
+            cur[0] = '\0';
+        } else if (cur[0] && wl) {
+            for (const char *q = ls; q + wl < ls + ll; q++)
+                if (*q == '@' && !memcmp(q + 1, want_sym, wl) &&
+                    !ir_ident_ch((unsigned char)q[1 + wl])) {
+                    snprintf(out, outsz, "%s", cur);
+                    return 0;
+                }
+        }
+        if (want_line > 0 && ln == want_line) break;
+        i += ll + 1;
+    }
+    if (want_line > 0 && ln == want_line && cur[0]) { snprintf(out, outsz, "%s", cur); return 0; }
+    return -1;
+}
+
+/* Read clang's captured stderr and find the toke declaration it is about.
+ * Returns the declaration (or NULL) and writes a short cause into why. */
+static const IrDecl *ir_map_failure(const char *err, const char *const *lls, int nll,
+                                    char *why, size_t whysz, const IrDecl **undef_decl)
+{
+    char sym[NAME_BUF];
+    *undef_decl = NULL;
+    why[0] = '\0';
+    /* 1. clang on the IR: "<file>.ll:<line>:<col>: error: <text>" */
+    for (const char *l = err; l && *l; ) {
+        const char *e = strchr(l, '\n');
+        size_t n = e ? (size_t)(e - l) : strlen(l);
+        for (int i = 0; i < nll; i++) {
+            size_t pl = strlen(lls[i]);
+            if (n <= pl + 1 || strncmp(l, lls[i], pl) || l[pl] != ':') continue;
+            long line = strtol(l + pl + 1, NULL, 10);
+            const char *et = strstr(l, "error: ");
+            if (line <= 0 || !et || et > l + n) continue;
+            size_t tl = (size_t)(l + n - (et + 7));
+            snprintf(why, whysz, "%.*s", (int)(tl < 200 ? tl : 200), et + 7);
+            size_t blen = 0; char *buf = ir_slurp(lls[i], &blen);
+            int ok = buf ? ll_enclosing_define(buf, blen, line, NULL, sym, sizeof sym) : -1;
+            free(buf);
+            if (ok == 0) return ir_decl_by_sym(sym);
+            return NULL;
+        }
+        l = e ? e + 1 : NULL;
+    }
+    /* 2. the linker: an undefined symbol, mapped through the IR that
+     *    references it (the pre-optimisation IR: after inlining, ld names
+     *    whichever function the call ended up in). */
+    const char *u = NULL; size_t ul = 0;
+    const char *m;
+    if ((m = strstr(err, "\", referenced from:")) != NULL) {        /* Apple ld */
+        const char *q = m;
+        while (q > err && q[-1] != '"') q--;
+        u = q; ul = (size_t)(m - q);
+#if defined(__APPLE__)
+        if (ul > 0 && u[0] == '_') { u++; ul--; }
+#endif
+    } else if ((m = strstr(err, "undefined reference to `")) != NULL) {  /* GNU ld / lld */
+        u = m + 24;
+        const char *q = strchr(u, '\'');
+        ul = q ? (size_t)(q - u) : 0;
+    } else if ((m = strstr(err, "undefined symbol: ")) != NULL) {        /* lld */
+        u = m + 18;
+        while (u[ul] && u[ul] != '\n' && u[ul] != ' ' && u[ul] != '\r') ul++;
+    }
+    if (u && ul > 0 && ul < sizeof sym) {
+        char us[NAME_BUF];
+        snprintf(us, sizeof us, "%.*s", (int)ul, u);
+        snprintf(why, whysz, "undefined symbol '%s'", us);
+        *undef_decl = ir_decl_by_sym(us);
+        for (int i = 0; i < nll; i++) {
+            size_t blen = 0; char *buf = ir_slurp(lls[i], &blen);
+            int ok = buf ? ll_enclosing_define(buf, blen, 0, us, sym, sizeof sym) : -1;
+            free(buf);
+            if (ok == 0) return ir_decl_by_sym(sym);
+        }
+        return NULL;
+    }
+    /* 3. an LLVM backend error naming the function: "in function <sym> " */
+    if ((m = strstr(err, "in function ")) != NULL) {
+        const char *q = m + 12; size_t k = 0;
+        while (ir_ident_ch((unsigned char)q[k]) && k < sizeof sym - 1) { sym[k] = q[k]; k++; }
+        sym[k] = '\0';
+        if (k) return ir_decl_by_sym(sym);
+    }
+    return NULL;
+}
+
 int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
                          const char *target, int opt_level,
                          const SymbolTable *st, int debug)
@@ -10831,9 +11196,17 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
         push_ws_tokens(argv, &argc, AMAX, all_libs);
         argv[argc] = NULL;
 
+        /* 137.13: clang's stderr goes to a temp file instead of straight to
+         * ours, so a failure can be mapped back to a toke declaration.  It is
+         * copied to our stderr unchanged afterwards, so what a user sees is
+         * the same as before, followed by the E9003 record. */
+        char errpath[] = "/tmp/tkc_clang_XXXXXX";
+        int errfd = mkstemp(errpath);
         int rc = -1;
+        fflush(stderr);
         pid_t pid = fork();
         if (pid == 0) {
+            if (errfd >= 0) dup2(errfd, 2);
             execvp("clang", argv);
             _exit(127);                                /* exec failed */
         } else if (pid > 0) {
@@ -10841,14 +11214,43 @@ int compile_binary_multi(const char *const *lls, int nll, const char *out_bin,
             if (waitpid(pid, &status, 0) == pid && WIFEXITED(status))
                 rc = WEXITSTATUS(status);
         }
+        char *cerr = NULL;
+        if (errfd >= 0) {
+            size_t clen = 0;
+            close(errfd);
+            cerr = ir_slurp(errpath, &clen);
+            if (cerr && clen) { fwrite(cerr, 1, clen, stderr); fflush(stderr); }
+            unlink(errpath);
+        }
         /* Clean up temp glue file */
         if (glue_path[0]) remove(glue_path);
         if (rc != 0) {
-            char msg[256];
-            snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
-            diag_emit(DIAG_ERROR, E9003, 0, 0, 0, msg, (void *)0);
+            char msg[1024], why[256] = "";
+            const IrDecl *undef = NULL;
+            const IrDecl *d = cerr ? ir_map_failure(cerr, lls, nll, why, sizeof why, &undef) : NULL;
+            int n = snprintf(msg, sizeof msg, "clang invocation failed with exit code %d", rc);
+            if (why[0] && n > 0 && (size_t)n < sizeof msg)
+                n += snprintf(msg + n, sizeof msg - (size_t)n, ": %s", why);
+            if (undef && undef->is_fn && n > 0 && (size_t)n < sizeof msg)
+                n += snprintf(msg + n, sizeof msg - (size_t)n,
+                              " (declared as f=%s at %s:%d)", undef->name, undef->file, undef->line);
+            if (d && n > 0 && (size_t)n < sizeof msg) {
+                snprintf(msg + n, sizeof msg - (size_t)n, " \xe2\x80\x94 while compiling %s%s at %s:%d",
+                         d->is_fn ? "f=" : "", d->name, d->file, d->line);
+                /* The record's file must be the declaration's; in a multi-
+                 * module build the registered source text is another file's. */
+                if (strcmp(diag_get_source_file(), d->file)) {
+                    diag_set_source(NULL, 0);
+                    diag_set_source_file(d->file);
+                }
+                diag_emit(DIAG_ERROR, E9003, d->off, d->line, d->col, msg, (void *)0);
+            } else {
+                diag_emit(DIAG_ERROR, E9003, 0, 0, 0, msg, (void *)0);
+            }
+            free(cerr);
             return -1;
         }
+        free(cerr);
         return 0;
     }
 }

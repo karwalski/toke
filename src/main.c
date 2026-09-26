@@ -564,6 +564,7 @@ static int run_lint_mode(const char *path, const char *sbuf, long slen,
 #include <limits.h>
 
 #define E9022 9022  /* stdlib directory not found */
+#define E9023 9023  /* no main function defined */
 
 static int is_stdlib_dir(const char *dir)
 {
@@ -1255,8 +1256,13 @@ static int process_file(const char *src, const RunOpts *o)
     /* Default: compile to binary */
     {
         /* Story 111.14: an executable binary requires `f=main()`. Detect the
-         * absence here and emit a clear E9020 before the linker fails with
-         * a cryptic "_main not found" message that the model can't act on. */
+         * absence here and emit a clear diagnostic before the linker fails
+         * with a cryptic "_main not found" message that the model can't act
+         * on.  127.208: this was E9020, whose meaning is "failed to write
+         * .tkir file"; it has its own code now.  No fix field: the only
+         * mechanical fix, an empty `f=main():i64{<0};`, makes the build
+         * succeed with a program that does nothing, which is not certain to
+         * be what the author wanted (AGENTS.md §3.1). */
         int has_main = 0;
         for (int i = 0; ast && i < ast->child_count; i++) {
             const Node *ch = ast->children[i];
@@ -1288,10 +1294,10 @@ static int process_file(const char *src, const RunOpts *o)
             }
         }
         if (!has_main) {
-            diag_emit(DIAG_ERROR, 9020, 0, 1, 1,
-                      "no main function defined — every executable toke program needs an entry point",
-                      "fix", "add `f=main():$i64{<0}` (or a body that calls your helper functions)",
-                      NULL);
+            diag_emit(DIAG_ERROR, E9023, 0, 1, 1,
+                      "no main function defined — every executable toke program needs an entry point, "
+                      "e.g. `f=main():i64{...};`; to type-check a library module without one use --check",
+                      (void *)0);
             symtab_free(&st);
             rc = ECOMPILE;
             goto done;

@@ -1389,6 +1389,9 @@ test-stdlib-log:
 	$(CC) $(CFLAGS) -o test/stdlib/test_log \
 	    test/stdlib/test_log.c src/stdlib/log.c src/stdlib/tk_time.c -lz
 	$(RUN_TEST) ./test/stdlib/test_log
+	$(CC) $(CFLAGS) -o test/stdlib/test_log_rotate \
+	    test/stdlib/test_log_rotate.c src/stdlib/log.c src/stdlib/tk_time.c -lz
+	$(RUN_TEST) ./test/stdlib/test_log_rotate
 
 test-stdlib-toon:
 	$(CC) $(CFLAGS) -iquote src/stdlib -o test/stdlib/test_toon \
