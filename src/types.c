@@ -679,15 +679,14 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
         Token *toks = (Token *)arena_alloc(A, (size_t)tcap * sizeof(Token));
         /* 127.186: a lex/parse error in the segment is reported inside the
          * literal, not at the wrapper's offset on line 1. */
-        int tc = 0;
-        Node *ast = NULL;
-        if (!attached) {
-            diag_rebase_push((int)(sizeof(WRAP_PREFIX) - 1), strnode->tok_start + i + 2, elen);
-            tc = lex(wrap, wlen, toks, tcap, 0 /* PROFILE_DEFAULT */);
-            ast = tc > 0 ? parse(toks, tc, wrap, A, 0) : NULL;
-            diag_rebase_pop();
-        }
-        if (tc > 0 || attached) {
+        /* The segment is still lexed and parsed here even when the parser
+         * attached it: the parser's own sub-parse reports nothing, so this
+         * is where a lex/parse error inside `\(..)` is diagnosed (C078). */
+        diag_rebase_push((int)(sizeof(WRAP_PREFIX) - 1), strnode->tok_start + i + 2, elen);
+        int tc = lex(wrap, wlen, toks, tcap, 0 /* PROFILE_DEFAULT */);
+        Node *ast = tc > 0 ? parse(toks, tc, wrap, A, 0) : NULL;
+        diag_rebase_pop();
+        if (tc > 0) {
             Node *expr = NULL, *fn = NULL;
             if (ast) {
                 for (int k = 0; k < ast->child_count; k++) {
@@ -714,7 +713,7 @@ static void check_interp_composites(Ctx *cx, const Node *strnode) {
                         }
                 }
             }
-            if (attached) expr = (Node *)attached;
+            if (expr && attached) expr = (Node *)attached;
             else if (expr)
                 /* Re-home the sub-expression onto the real source, then infer
                  * against the real environment (no src swap). */
