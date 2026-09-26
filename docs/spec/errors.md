@@ -232,7 +232,7 @@ f=bad():i64{let 3x=1;<3x};
 | **Stage** | lex |
 | **Severity** | error |
 | **Message** | `invalid numeric literal: 0x requires hex digits` (or `0b requires binary digits`) |
-| **Fix field** | informational text (e.g. `provide hex digits after 0x (e.g., 0xFF)`) |
+| **Fix field** | absent (127.221: the intended digits are unknown) |
 | **Conformance test** | -- |
 
 **Notes:** A numeric literal is malformed -- a `0x` or `0b` prefix with no
