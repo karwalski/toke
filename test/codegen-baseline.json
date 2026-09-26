@@ -4,6 +4,11 @@
   0,
   "28802aecbbe1ca37"
  ],
+ "test/codegen/cg_err_letbound_payload.tk": [
+  true,
+  0,
+  "63c6a18fd1970fdb"
+ ],
  "test/codegen/cg_err_union.tk": [
   true,
   0,

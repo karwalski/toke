@@ -1,8 +1,7 @@
-(* 123.6 WITNESS for 127.103 (quarantined): a let-bound error keeps ITS OWN
- * payload after a later call fails with a different one.  Matching the call
- * directly binds the right payload; binding it first and matching after a
- * second failing call binds the SECOND call's payload.  Expected output below
- * is the correct one — this program prints FAIL until 127.103 is fixed. *)
+(* 123.6 certificate for 127.103: a let-bound error keeps ITS OWN payload
+ * after a later call fails with a different one.  Until da7be68 binding it
+ * first and matching after a second failing call bound the SECOND call's
+ * payload (this program printed FAIL x2 and was quarantined as a witness). *)
 m=cgerrletbound;
 i=io:std.io;
 t=$perr{$neg:i64;$big:i64};

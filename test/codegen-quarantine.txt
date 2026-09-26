@@ -68,7 +68,6 @@ test/standalone/test_io_eof.tk            # 2026-09-24 prints 2 FAIL lines under
 # moment it passes. The multimod/ entries are directories: diff-codegen never
 # builds them (it compiles one .tk at a time), and ignores these lines; only
 # test/codegen/run_codegen.sh reads them.
-test/codegen/cg_err_letbound_payload.tk   # 2026-09-25 a let-bound error takes the payload of a LATER failing call (prints FAIL x2) 127.103
 test/codegen/cg_interp_bool_shapes.tk     # 2026-09-25 bool array element, bool field of an array element, and .contains interpolate as 1/0 (FAIL x5) 127.194
 test/codegen/cg_trap_div_intmin.tk        # 2026-09-25 INT64_MIN / -1 is not guarded (ADR-0012 b): -O0 gives INT64_MIN, -O2 gives 0 121.36
 test/codegen/cg_trap_set_oob.tk           # 2026-09-25 .set out of range is a silent no-op, not RT003 (ADR-0012 a); new defect, to be filed 123.6

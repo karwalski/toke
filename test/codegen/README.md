@@ -44,7 +44,7 @@ be removed with the fix.
 | RT003 bounds (ADR-0012 a) | `cg_trap_bounds_{high,neg,loop,struct}`, witness `cg_trap_set_oob` |
 | RT004 division (ADR-0012 b) | `cg_trap_div`, `cg_trap_rem`, witness `cg_trap_div_intmin` (121.36) |
 | RT005 nil (ADR-0012 d) | `cg_trap_nil` |
-| error unions, `!`, let-bound / mut-assigned | `cg_err_union`, witness `cg_err_letbound_payload` (127.103) |
+| error unions, `!`, let-bound / mut-assigned | `cg_err_union`, `cg_err_letbound_payload` (127.103, fixed da7be68) |
 | interpolation of scalars | `cg_interp_scalars`, witnesses `cg_interp_bool_shapes` (127.194), `cg_unsigned`, `cg_unsigned_as_str`, `cg_interp_byte` |
 | maps | `cg_map` |
 | arrays, in-place vs copying | `cg_array_paths` |
